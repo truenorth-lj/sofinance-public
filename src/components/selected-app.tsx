@@ -87,8 +87,11 @@ export function SelectedApp() {
     <div className="relative mx-auto max-w-5xl px-5 pb-32 pt-6 sm:px-8 sm:pt-10">
       <header className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3"><div className="flex h-10 w-10 items-center justify-center rounded-xl border border-sky-400/40 bg-sky-400/10 text-lg font-bold text-sky-300">S</div><div><div className="text-sm font-bold tracking-wide">SoFinance</div><div className="text-xs text-slate-400">Solana · Raydium CLMM</div></div></div>
-        {connected && wallet ? <Button variant="secondary" className="max-w-[160px] px-3 py-2" onClick={disconnect}><Wallet className="h-4 w-4" />{short(wallet)}</Button>
-          : <Button variant="secondary" className="px-3 py-2" onClick={connect}><Wallet className="h-4 w-4" />Connect wallet</Button>}
+        <div className="flex items-center gap-2">
+          <a href="/rwa-pairs" className="rounded-xl border border-slate-600 bg-slate-800/80 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-700">RWA pairs</a>
+          {connected && wallet ? <Button variant="secondary" className="max-w-[160px] px-3 py-2" onClick={disconnect}><Wallet className="h-4 w-4" />{short(wallet)}</Button>
+            : <Button variant="secondary" className="px-3 py-2" onClick={connect}><Wallet className="h-4 w-4" />Connect wallet</Button>}
+        </div>
       </header>
 
       <div className="mb-6 mt-8 sm:mt-10"><h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Manage my liquidity positions</h1><p className="mt-2 text-sm text-slate-400">Add yield back to original position, or invest new capital.</p></div>

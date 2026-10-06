@@ -6,6 +6,7 @@ import {
   quoteCompoundSchema,
   submitSignedTransactionSchema,
   submitCompoundTransactionSchema,
+  listRwaPairsSchema,
 } from "./schemas";
 
 describe("MCP Schemas", () => {
@@ -270,5 +271,28 @@ describe("MCP Schemas", () => {
       });
       expect(result.success).toBe(false);
     });
+  });
+});
+
+
+describe("listRwaPairsSchema", () => {
+  it("accepts empty object and applies defaults", () => {
+    const result = listRwaPairsSchema.safeParse({});
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.minTvl).toBe(0);
+      expect(result.data.maxPages).toBe(10);
+      expect(result.data.sortBy).toBe("estimatedFeeApr");
+    }
+  });
+
+  it("rejects invalid sortBy", () => {
+    const result = listRwaPairsSchema.safeParse({ sortBy: "apy" });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects maxPages out of range", () => {
+    expect(listRwaPairsSchema.safeParse({ maxPages: 0 }).success).toBe(false);
+    expect(listRwaPairsSchema.safeParse({ maxPages: 31 }).success).toBe(false);
   });
 });

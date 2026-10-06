@@ -14,6 +14,7 @@ import { rpcConnection } from "../lib/rpc";
 import { readCompoundPositionState } from "../lib/compound-state";
 import { simulateAndVerifyCompound } from "../lib/compound-simulation";
 import type { CompoundSummary } from "../lib/compound-types";
+import { discoverRwaPairs } from "../lib/rwa-pairs";
 import type {
   ListPositionsInput,
   QuoteAddLiquidityInput,
@@ -21,6 +22,7 @@ import type {
   QuoteCompoundInput,
   SubmitSignedTransactionInput,
   SubmitCompoundTransactionInput,
+  ListRwaPairsInput,
 } from "./schemas";
 
 /**
@@ -523,4 +525,55 @@ export async function submitCompoundTransaction(input: SubmitCompoundTransaction
   }
 
   return { signature };
+}
+
+/**
+ * List Raydium CLMM pools where both sides are the same underlying RWA
+ * (wrapped vs unwrapped / xStock style), with fee/TVL/yield annotations.
+ *
+ * Safety: Read-only; uses public Raydium API. No wallet or private keys.
+ */
+export async function listRwaPairs(input: ListRwaPairsInput) {
+  const result = await discoverRwaPairs({
+    minTvl: input.minTvl,
+    maxPages: input.maxPages,
+    sortBy: input.sortBy,
+  });
+
+  return {
+    pairingRule: result.pairingRuleSummary,
+    estimatedFeeAprLabel: result.estimatedFeeAprLabel,
+    source: result.source,
+    fetchedAt: result.fetchedAt,
+    scannedPools: result.scannedPools,
+    pagesFetched: result.pagesFetched,
+    count: result.pairs.length,
+    pairs: result.pairs.map((pair) => ({
+      poolAddress: pair.poolAddress,
+      mintA: pair.mintA,
+      mintB: pair.mintB,
+      symbolA: pair.symbolA,
+      symbolB: pair.symbolB,
+      nameA: pair.nameA,
+      nameB: pair.nameB,
+      baseSymbol: pair.baseSymbol,
+      wrappedSymbol: pair.wrappedSymbol,
+      plainSymbol: pair.plainSymbol,
+      wrapKind: pair.wrapKind,
+      relatedness: pair.relatedness,
+      feeRate: pair.feeRate,
+      feeTierBps: pair.feeTierBps,
+      tvlUsd: pair.tvlUsd,
+      volume24hUsd: pair.volume24hUsd,
+      fees24hUsd: pair.fees24hUsd,
+      raydiumFeeApr24h: pair.raydiumFeeApr24h,
+      estimatedFeeAprPct: pair.estimatedFeeAprPct,
+      estimatedFeeAprLabel: pair.estimatedFeeAprLabel,
+      token2022A: pair.token2022A,
+      token2022B: pair.token2022B,
+      freezeRiskA: pair.freezeRiskA,
+      freezeRiskB: pair.freezeRiskB,
+      freezeRisk: pair.freezeRisk,
+    })),
+  };
 }

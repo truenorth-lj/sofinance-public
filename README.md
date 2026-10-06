@@ -17,6 +17,7 @@ The server never holds private keys. Agents/users sign locally; broadcast re-ver
 - **Resale-ratio floor** (default 99%): conservative quote of swapping position outputs back to the same input asset
 - **One-click compound**: harvest fees/rewards, swap to range ratio, reinvest (phase one rejects third reward mints without a verifiable path)
 - Web UI Advanced settings for resale gap and price tolerance; MCP exposes the same knobs
+- **Same-asset RWA pair discovery**: Raydium CLMM pools where both sides are the same underlying (e.g. `MSTRx`/`MSTR`, `NVDAx`/`NVDA`) with fee tier, TVL, 24h volume/fees, estimated fee APR, Token-2022 / freeze flags — MCP `list_rwa_pairs` and read-only `/rwa-pairs` UI
 
 ## Safety gates
 
@@ -33,7 +34,7 @@ Kept on both web API and MCP paths:
 | HMAC permit | Binds message, wallet, selection, amounts, floor, starting state |
 | Re-verify | On submit: permit, on-chain state, re-simulate, then broadcast |
 
-## MCP tools (7)
+## MCP tools (8)
 
 | Tool | Purpose | Key params |
 |------|---------|------------|
@@ -129,6 +130,17 @@ flowchart LR
 ```
 
 Stack: Next.js 16 / React 19 / TypeScript / pnpm / Vitest; `@raydium-io/raydium-sdk-v2`, Jupiter `/swap/v2/build`, `@solana/web3.js`, Zod, MCP SDK.
+
+
+## RWA same-asset pairing
+
+Discovers Raydium CLMM pools via the official API (`/pools/info/list?poolType=concentrated`) where both mints are the same underlying asset:
+
+1. Symbols form a wrap pair: `FOOx`/`FOO`, `FOO-x`/`FOO`, or `xFOO`/`FOO` (stablecoin bases excluded)
+2. At least one side has xStock / Backpack / tokenized naming evidence
+3. The counterparty name is related (both tokenized, shared company stem, or plain name equals the ticker)
+
+Annotated with fee tier, TVL, 24h volume/fees, Raydium `feeApr`, and **estimated fee APR** = `(24h fees / TVL) × 365 × 100` (labeled in API/UI; not a promise of LP returns). Freeze / Token-2022 flags come from Raydium mint metadata tags/program ids.
 
 ## Limitations
 

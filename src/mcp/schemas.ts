@@ -74,3 +74,11 @@ export const submitCompoundTransactionSchema = z.object({
   summary: z.any(), // Complex object, validated by existing code
 });
 export type SubmitCompoundTransactionInput = z.infer<typeof submitCompoundTransactionSchema>;
+
+// List RWA same-asset CLMM pairs (read-only discovery)
+export const listRwaPairsSchema = z.object({
+  minTvl: z.number().min(0).default(0),
+  maxPages: z.number().int().min(1).max(30).default(10),
+  sortBy: z.enum(["estimatedFeeApr", "tvl", "volume24h"]).default("estimatedFeeApr"),
+});
+export type ListRwaPairsInput = z.infer<typeof listRwaPairsSchema>;
