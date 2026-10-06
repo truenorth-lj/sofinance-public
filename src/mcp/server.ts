@@ -15,6 +15,7 @@ import {
   quoteCompoundSchema,
   submitSignedTransactionSchema,
   submitCompoundTransactionSchema,
+  listRwaPairsSchema,
 } from "./schemas.js";
 import {
   listPositions,
@@ -24,6 +25,7 @@ import {
   prepareCompoundTransaction,
   submitSignedTransaction,
   submitCompoundTransaction,
+  listRwaPairs,
 } from "./tools.js";
 
 /**
@@ -58,6 +60,35 @@ const server = new Server(
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
     tools: [
+
+      {
+        name: "list_rwa_pairs",
+        description:
+          "Discover Raydium CLMM pools where BOTH sides are the same underlying RWA asset (wrapped vs unwrapped / xStock style), e.g. SPCXx/SPCX, MSTRx/MSTR, NVDAx/NVDA. Excludes RWA/USDC and unrelated meme collisions. Returns pool address, mint symbols, fee tier, TVL, 24h volume/fees, Raydium fee APR, estimated fee APR from (24h fees/TVL)*365*100 (labeled), Token-2022 and freeze-risk flags. Read-only; no wallet required. Pairing rule: FOOx/FOO (or FOO-x / xFOO) symbol wrap + xStock/Backpack/tokenized naming evidence + related counterparty name.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            minTvl: {
+              type: "number",
+              description: "Minimum pool TVL in USD (default 0)",
+              default: 0,
+            },
+            maxPages: {
+              type: "number",
+              description: "Max Raydium list pages to scan, page size 1000 (1-30, default 10)",
+              default: 10,
+            },
+            sortBy: {
+              type: "string",
+              enum: ["estimatedFeeApr", "tvl", "volume24h"],
+              description:
+                "Sort key. estimatedFeeApr uses (24h fees/TVL)*365*100 when available; also returns raydiumFeeApr24h from the API.",
+              default: "estimatedFeeApr",
+            },
+          },
+          required: [],
+        },
+      },
       {
         name: "list_positions",
         description:
@@ -332,6 +363,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
 
     switch (name) {
+
+      case "list_rwa_pairs": {
+        const input = listRwaPairsSchema.parse(args ?? {});
+        const result = await listRwaPairs(input);
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(result, null, 2),
+            },
+          ],
+        };
+      }
       case "list_positions": {
         const input = listPositionsSchema.parse(args);
         const result = await listPositions(input);
