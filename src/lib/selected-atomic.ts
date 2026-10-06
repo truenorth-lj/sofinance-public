@@ -2,7 +2,7 @@ import "server-only";
 
 import { createHash } from "node:crypto";
 import BN from "bn.js";
-import { PersonalPositionLayout, Raydium, TxVersion } from "@raydium-io/raydium-sdk-v2";
+import { ClmmInstrument, PersonalPositionLayout, Raydium } from "@raydium-io/raydium-sdk-v2";
 import { createAssociatedTokenAccountIdempotentInstruction, createSyncNativeInstruction, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID, unpackAccount } from "@solana/spl-token";
 import { ComputeBudgetProgram, PublicKey, SystemProgram, TransactionMessage, VersionedTransaction, type Connection, type TransactionInstruction } from "@solana/web3.js";
 import { NATIVE_SOL_MINT, QUOTE_TTL_MS } from "./ids";
@@ -53,17 +53,28 @@ export async function buildAndSimulateSelectedZap(
   const { poolInfo, poolKeys } = await raydium.clmm.getPoolInfoFromRpc(state.poolId);
   if (poolInfo.programId !== state.programId || poolInfo.mintA.address !== state.mintA ||
     poolInfo.mintB.address !== state.mintB) throw new Error("Raydium pool program or mint mismatch");
-  const built = await raydium.clmm.increasePositionFromLiquidity({
-    poolInfo, poolKeys, ownerPosition, ownerInfo: { useSOLBalance: false },
+  // Build increase_liquidity_v2 directly against the wallet's derived ATAs.
+  // The SDK helper returns no token account (and then crashes) when an ATA
+  // does not exist yet, e.g. a wallet that has never held WSOL. Missing ATAs
+  // are created idempotently below, after the swap legs have run.
+  const built = ClmmInstrument.increasePositionFromLiquidityInstructions({
+    poolInfo, poolKeys, ownerPosition,
+    ownerInfo: { wallet, tokenAccountA: new PublicKey(state.ataA), tokenAccountB: new PublicKey(state.ataB) },
     liquidity: new BN(quote.liquidity), amountMaxA: new BN(quote.amountMaxA),
-    amountMaxB: new BN(quote.amountMaxB), checkCreateATAOwner: true, txVersion: TxVersion.V0,
+    amountMaxB: new BN(quote.amountMaxB), nft2022: state.nftProgram === TOKEN_2022_PROGRAM_ID.toBase58(),
   });
   if (built.signers.length) throw new Error("Raydium liquidity addition requires additional signers, atomic transaction stopped");
-  const raydiumTables = await readLookupTables(connection,
-    built.transaction.message.addressTableLookups.map((table) => table.accountKey));
-  const raydiumInstructions = TransactionMessage.decompile(built.transaction.message,
-    { addressLookupTableAccounts: raydiumTables }).instructions
-    .filter((ix) => !ix.programId.equals(ComputeBudgetProgram.programId));
+  // Raydium's mainnet common ALT plus the pool's own ALT (same sources as the
+  // compound builder), freshly resolved through RPC. Compilation only
+  // compresses exact instruction keys; no API data controls writes.
+  const [apiPoolKeys] = await raydium.api.fetchPoolKeysById({ idList: [state.poolId] }).catch(() => []);
+  const poolTable = apiPoolKeys?.id === state.poolId ? apiPoolKeys.lookupTableAccount : undefined;
+  const raydiumTables = (await readLookupTables(connection, [new PublicKey("AcL1Vo8oy1ULiavEcjSUcwfBSForXMudcZvDZy5nzJkU"),
+    ...(poolTable && poolTable !== PublicKey.default.toBase58() ? [new PublicKey(poolTable)] : []),
+    ...built.lookupTableAddress.map((address) => new PublicKey(address))])).filter((table) => table.isActive());
+  const [ataAInfo, ataBInfo] = await connection.getMultipleAccountsInfo(
+    [new PublicKey(state.ataA), new PublicKey(state.ataB)], "confirmed");
+  const raydiumInstructions = built.instructions;
   const addInstructions = raydiumInstructions.filter((ix) => ix.programId.toBase58() === state.programId);
   const addDiscriminator = createHash("sha256").update("global:increase_liquidity_v2").digest().subarray(0, 8);
   const add = addInstructions[0];
@@ -91,13 +102,21 @@ export async function buildAndSimulateSelectedZap(
       toPubkey: new PublicKey(state.mintA === NATIVE_SOL_MINT ? state.ataA : state.ataB), lamports: directSol.spend }),
     createSyncNativeInstruction(new PublicKey(state.mintA === NATIVE_SOL_MINT ? state.ataA : state.ataB)),
   ] : [];
+  // The direct SOL wrap above already creates its ATA idempotently.
+  const wrappedAta = directSol ? (state.mintA === NATIVE_SOL_MINT ? state.ataA : state.ataB) : null;
+  const createAtaInstructions = [
+    ...(ataAInfo || wrappedAta === state.ataA ? [] : [createAssociatedTokenAccountIdempotentInstruction(wallet, new PublicKey(state.ataA), wallet,
+      new PublicKey(state.mintA), new PublicKey(state.programA))]),
+    ...(ataBInfo || wrappedAta === state.ataB ? [] : [createAssociatedTokenAccountIdempotentInstruction(wallet, new PublicKey(state.ataB), wallet,
+      new PublicKey(state.mintB), new PublicKey(state.programB))]),
+  ];
   const tables = [...new Map([...routeTables, ...raydiumTables]
     .map((table) => [table.key.toBase58(), table])).values()];
   const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
   const transaction = new VersionedTransaction(new TransactionMessage({
     payerKey: wallet, recentBlockhash: blockhash,
     instructions: [ComputeBudgetProgram.setComputeUnitLimit({ units: 1_400_000 }),
-      ...routeInstructions, ...wrapInstructions, ...raydiumInstructions],
+      ...routeInstructions, ...wrapInstructions, ...createAtaInstructions, ...raydiumInstructions],
   }).compileToV0Message(tables));
   // web3.js allocates a 1,232-byte buffer while serializing a v0 message.
   // Oversized messages throw before a later size comparison can run.
