@@ -19,8 +19,8 @@ function pacedFetch(url: URL, key: string) {
   const result = requestQueue.then(async () => {
     const wait = Math.max(0, nextJupiterRequest - Date.now());
     if (wait) await new Promise((resolve) => setTimeout(resolve, wait));
-    nextJupiterRequest = Date.now() + 1_100; // Jupiter free tier is one request per second.
-    return fetch(url, { headers: { "x-api-key": key }, cache: "no-store", signal: AbortSignal.timeout(12_000) });
+    nextJupiterRequest = Date.now() + Number(process.env.E2E_JUP_PACE_MS || 1_100); // Jupiter free tier is one request per second.
+    return fetch(url, { headers: process.env.E2E_KEYLESS_JUPITER === "1" ? {} : { "x-api-key": key }, cache: "no-store", signal: AbortSignal.timeout(12_000) });
   });
   requestQueue = result.catch(() => undefined);
   return result;

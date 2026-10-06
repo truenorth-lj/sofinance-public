@@ -81,6 +81,7 @@ export async function quoteAddLiquidity(input: QuoteAddLiquidityInput) {
     selection,
     input.amount,
     input.resaleFloorBps,
+    input.slippageToleranceBps,
   );
   
   // Return only essential quote data, omit internal state
@@ -105,6 +106,9 @@ export async function quoteAddLiquidity(input: QuoteAddLiquidityInput) {
     liquidity: quote.liquidity,
     amountMaxA: quote.amountMaxA,
     amountMaxB: quote.amountMaxB,
+    requiredA: quote.requiredA,
+    requiredB: quote.requiredB,
+    slippageToleranceBps: quote.toleranceBps,
     dustA: quote.dustA,
     dustB: quote.dustB,
     resaleInput: quote.resaleInput,
@@ -141,6 +145,7 @@ export async function prepareTransaction(input: PrepareTransactionInput) {
     selection,
     input.amount,
     input.resaleFloorBps,
+    input.slippageToleranceBps,
   );
   
   const jupiterApiKey = process.env.JUPITER_API_KEY || "";
@@ -191,6 +196,9 @@ export async function prepareTransaction(input: PrepareTransactionInput) {
         liquidity: summary.quote.liquidity,
         passesFloor: summary.quote.passesFloor,
         floorBps: summary.quote.floorBps,
+        slippageToleranceBps: summary.quote.toleranceBps,
+        amountMaxA: summary.quote.amountMaxA,
+        amountMaxB: summary.quote.amountMaxB,
         expiresAt: summary.quote.expiresAt,
       },
       sizeBytes: summary.sizeBytes,

@@ -19,3 +19,22 @@ export function allocateSpend(total: bigint, targetA: bigint, targetB: bigint, r
 export function quoteIsFresh(expiresAt: number, now = Date.now()) {
   return Number.isFinite(expiresAt) && now < expiresAt;
 }
+
+// Shrink liquidity so that, at the projected price, each side needs at most
+// out / (1 + tolerance). Any side may then grow by `toleranceBps` (pool price
+// drift before execution) and still fit inside the guaranteed swap output.
+export function toleranceLiquidity(liquidity: bigint, toleranceBps: number): bigint {
+  if (liquidity < 0n || !Number.isInteger(toleranceBps) || toleranceBps < 0) throw new Error("Invalid liquidity tolerance input");
+  return liquidity * 10_000n / (10_000n + BigInt(toleranceBps));
+}
+
+// amountMax handed to increase_liquidity_v2: the required amount padded by the
+// tolerance, never above the conservative swap output (minOut), so the
+// instruction can never draw on assets the wallet already held.
+export function padAmountMax(required: bigint, available: bigint, toleranceBps: number): bigint {
+  if (required < 0n || available < required || !Number.isInteger(toleranceBps) || toleranceBps < 0) {
+    throw new Error("Invalid amountMax padding input");
+  }
+  const padded = (required * (10_000n + BigInt(toleranceBps)) + 9_999n) / 10_000n;
+  return padded < available ? padded : available;
+}

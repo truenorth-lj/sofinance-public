@@ -65,6 +65,26 @@ describe("MCP Schemas", () => {
       expect(result.success).toBe(false);
     });
 
+    it("defaults slippageToleranceBps to 1%", () => {
+      const result = quoteAddLiquiditySchema.parse(validInput);
+      expect(result.slippageToleranceBps).toBe(100);
+    });
+
+    it("accepts slippageToleranceBps from 0 to 5% in 0.1% steps", () => {
+      for (const value of [0, 10, 250, 500]) {
+        expect(quoteAddLiquiditySchema.parse({ ...validInput, slippageToleranceBps: value }).slippageToleranceBps).toBe(value);
+        expect(prepareTransactionSchema.parse({ ...validInput, slippageToleranceBps: value }).slippageToleranceBps).toBe(value);
+      }
+    });
+
+    it("rejects slippageToleranceBps outside 0-500 or not a multiple of 10", () => {
+      for (const value of [-10, 510, 1000, 15, 99.5]) {
+        expect(quoteAddLiquiditySchema.safeParse({ ...validInput, slippageToleranceBps: value }).success).toBe(false);
+        expect(prepareTransactionSchema.safeParse({ ...validInput, slippageToleranceBps: value }).success).toBe(false);
+      }
+      expect(quoteAddLiquiditySchema.safeParse({ ...validInput, slippageToleranceBps: "100" }).success).toBe(false);
+    });
+
     it("validates token inputKind", () => {
       const result = quoteAddLiquiditySchema.safeParse({
         ...validInput,

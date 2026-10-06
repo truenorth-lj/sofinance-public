@@ -91,7 +91,7 @@ export async function simulateAndVerifySelectedTransaction(input: VerifyInput) {
     spentInput = inputBefore - inputAfter;
     const directInput = state.inputMint === state.mintA || state.inputMint === state.mintB;
     if (spentInput <= 0n || spentInput > requested || (!directInput && requested - spentInput > 1n)) {
-      throw new Error("Simulated input asset expenditure does not match limit");
+      throw new Error(`Simulated input asset expenditure does not match limit (spent ${spentInput} of ${requested}, direct=${directInput})`);
     }
   } else if (solDebit < requested - 1n) {
     throw new Error("Simulated native SOL expenditure below selected input amount");
