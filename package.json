@@ -9,8 +9,8 @@
     "lint": "eslint --max-warnings=0",
     "typecheck": "tsc --noEmit --incremental false",
     "test": "vitest run",
-    "mcp:start": "NODE_OPTIONS='--require ./src/mcp/server-only-mock.js' tsx src/mcp/server.ts",
-    "mcp:dev": "NODE_OPTIONS='--require ./src/mcp/server-only-mock.js' tsx watch src/mcp/server.ts"
+    "mcp:start": "tsx src/mcp/server.ts",
+    "mcp:dev": "tsx watch src/mcp/server.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",
