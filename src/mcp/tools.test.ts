@@ -282,6 +282,24 @@ describe("MCP Tools", () => {
       expect(result.permit).toBe("mock-permit");
       expect(result.summary.simulated).toBe(true);
       expect(result.instructions).toBeDefined();
+      // submitArgs must carry every permit-bound field submit_signed_transaction needs
+      expect(result.submitArgs).toEqual({
+        permit: "mock-permit",
+        wallet: "7BgBvyjrZX1YKz4oh9mjb8ZScatkkwb8DzFx7LoiVkM3",
+        selection: {
+          positionMint: "8BgBvyjrZX1YKz4oh9mjb8ZScatkkwb8DzFx7LoiVkM4",
+          inputMint: "So11111111111111111111111111111111111111112",
+          inputKind: "native",
+        },
+        requested: "1500000000",
+        expectedLiquidity: "1000000",
+        startingLiquidity: "900000",
+        floorBps: 9900,
+        expiresAt: mockSummary.expiresAt,
+        lastValidBlockHeight: 1000000,
+        rangeSide: "inside",
+        startingBalances: { input: "5000000000", a: "1000000", b: "2000000" },
+      });
     });
   });
 
@@ -375,6 +393,8 @@ describe("MCP Tools", () => {
       expect(result.unsignedTransaction).toBeDefined();
       expect(result.permit).toBe("mock-compound-permit");
       expect(result.summary.operation).toBe("compound");
+      // The permit covers the complete summary, so it must be returned unchanged
+      expect(result.summary).toEqual(mockSummary);
       expect(result.instructions).toBeDefined();
     });
   });
