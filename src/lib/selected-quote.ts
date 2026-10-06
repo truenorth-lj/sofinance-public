@@ -2,9 +2,9 @@ import "server-only";
 
 import BN from "bn.js";
 import { LiquidityMathUtil, SqrtPriceMath, TickUtil } from "@raydium-io/raydium-sdk-v2";
-import { DEFAULT_RESALE_FLOOR_BPS, MAX_PRICE_IMPACT_BPS, QUOTE_TTL_MS, SLIPPAGE_BPS } from "./ids";
-import { meetsResaleFloor, parseResaleFloorBps, parseTokenAmount } from "./amount";
-import { allocateSpend, positionSide } from "./quote-math";
+import { DEFAULT_ADD_TOLERANCE_BPS, DEFAULT_RESALE_FLOOR_BPS, MAX_PRICE_IMPACT_BPS, QUOTE_TTL_MS, SLIPPAGE_BPS } from "./ids";
+import { meetsResaleFloor, parseAddToleranceBps, parseResaleFloorBps, parseTokenAmount } from "./amount";
+import { allocateSpend, padAmountMax, positionSide, toleranceLiquidity } from "./quote-math";
 import { buildRoute, type BuildRoute } from "./jupiter-route";
 import { readSelectedPositionState, type PositionSelection, type SelectedPositionState } from "./selected-state";
 
@@ -49,9 +49,10 @@ function priceImpactAgainstProbe(actual: SwapLeg, sample: SwapLeg, probe: bigint
 
 export async function getSelectedQuoteBundle(
   wallet: string, selection: PositionSelection, amount: string,
-  requestedFloorBps = DEFAULT_RESALE_FLOOR_BPS,
+  requestedFloorBps = DEFAULT_RESALE_FLOOR_BPS, requestedToleranceBps = DEFAULT_ADD_TOLERANCE_BPS,
 ) {
   const floorBps = parseResaleFloorBps(requestedFloorBps);
+  const toleranceBps = parseAddToleranceBps(requestedToleranceBps);
   const state = await readSelectedPositionState(wallet, selection);
   if (!state.ownsNft) throw new Error("Wallet does not have an available position NFT ATA for the selected position");
   if (state.paused || state.frozen || state.transferFee || state.unsupportedExtensions.length) {
@@ -101,17 +102,24 @@ export async function getSelectedQuoteBundle(
   }
   const outA = legs.find((item) => item.outputMint === state.mintA)?.minOut || 0n;
   const outB = legs.find((item) => item.outputMint === state.mintB)?.minOut || 0n;
-  const liquidity = LiquidityMathUtil.getLiquidityFromAmounts(projected,
+  const fullLiquidity = LiquidityMathUtil.getLiquidityFromAmounts(projected,
     new BN(state.lowerSqrtX64), new BN(state.upperSqrtX64), new BN(outA.toString()), new BN(outB.toString()));
-  liquidity.isubn(1);
+  fullLiquidity.isubn(1);
+  const liquidity = new BN(toleranceLiquidity(BigInt(fullLiquidity.toString()), toleranceBps).toString());
   if (liquidity.lten(0)) throw new Error("Conservative minimum output insufficient to add valid liquidity");
   const amounts = amountsAt(state, projected, liquidity);
   const requiredA = BigInt(amounts.amountA.toString());
   const requiredB = BigInt(amounts.amountB.toString());
   if (requiredA > outA || requiredB > outB) throw new Error("amountMax exceeds conservative swap minOut");
+  const amountMaxA = padAmountMax(requiredA, outA, toleranceBps);
+  const amountMaxB = padAmountMax(requiredB, outB, toleranceBps);
+  // Value everything the wallet ends up with: the position deposit plus the
+  // tolerance reserve that stays in the wallet as pool assets. The reserve is
+  // not lost, so it must not count against the resale floor; the floor still
+  // gates swap round-trip cost and price impact on the full swap output.
   const resaleLegs = await Promise.all([
-    requiredA > 0n ? leg(wallet, state.mintA, state.inputMint, requiredA) : null,
-    requiredB > 0n ? leg(wallet, state.mintB, state.inputMint, requiredB) : null,
+    outA > 0n ? leg(wallet, state.mintA, state.inputMint, outA) : null,
+    outB > 0n ? leg(wallet, state.mintB, state.inputMint, outB) : null,
   ]);
   const resale = resaleLegs.reduce((sum, item) => sum + (item?.minOut || 0n), 0n);
   const timestamp = Date.now();
@@ -121,7 +129,8 @@ export async function getSelectedQuoteBundle(
     mintA: state.mintA, mintB: state.mintB, decimalsA: state.decimalsA, decimalsB: state.decimalsB,
     rangeSide: state.rangeSide, requested: requested.toString(), spendA: spendA.toString(),
     spendB: (requested - spendA).toString(), minOutA: outA.toString(), minOutB: outB.toString(),
-    liquidity: liquidity.toString(), amountMaxA: amounts.amountA.toString(), amountMaxB: amounts.amountB.toString(),
+    liquidity: liquidity.toString(), amountMaxA: amountMaxA.toString(), amountMaxB: amountMaxB.toString(),
+    requiredA: requiredA.toString(), requiredB: requiredB.toString(), toleranceBps,
     dustA: (outA - requiredA).toString(), dustB: (outB - requiredB).toString(),
     resaleInput: resale.toString(), minimumResaleInput: ((requested * BigInt(floorBps) + 9_999n) / 10_000n).toString(),
     roundtripCostInput: (requested > resale ? requested - resale : 0n).toString(),
