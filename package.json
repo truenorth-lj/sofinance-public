@@ -50,5 +50,6 @@
     "typescript": "^5",
     "vitest": "^5.0.2"
   },
-  "packageManager": "pnpm@10.18.2"
+  "packageManager": "pnpm@10.18.2",
+  "license": "MIT"
 }
