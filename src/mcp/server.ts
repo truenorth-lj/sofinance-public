@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+// Must stay the first import: lets the Next.js "server-only" guard load in a
+// plain Node process, so `npx tsx src/mcp/server.ts` works without NODE_OPTIONS.
+import "./server-only-mock.js";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
@@ -199,7 +202,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: "submit_signed_transaction",
         description:
-          "Submit a signed add-liquidity transaction. Re-verifies HMAC permit, re-reads on-chain state, re-simulates, then broadcasts. Requires all parameters from prepare_transaction response. Failure modes: permit mismatch, state changed (liquidity, balance, NFT), expired (time or blockhash), simulation failure. Returns transaction signature on success.",
+          "Submit a signed add-liquidity transaction. Re-verifies HMAC permit, re-reads on-chain state, re-simulates, then broadcasts. Pass signedTransaction plus every field of submitArgs from the prepare_transaction response, unchanged. Failure modes: permit mismatch, state changed (liquidity, balance, NFT), expired (time or blockhash), simulation failure. Returns transaction signature on success.",
         inputSchema: {
           type: "object",
           properties: {
@@ -301,7 +304,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             summary: {
               type: "object",
               description:
-                "Complete summary object from prepare_compound_transaction response",
+                "Complete summary object from prepare_compound_transaction response, unchanged (bound by the permit)",
             },
           },
           required: ["signedTransaction", "permit", "wallet", "summary"],
