@@ -11,6 +11,9 @@ import { verifyCompoundPermit } from "../lib/compound-permit";
 import { simulateAndVerifySelectedTransaction } from "../lib/selected-simulation";
 import { readSelectedPositionState } from "../lib/selected-state";
 import { rpcConnection } from "../lib/rpc";
+import { readCompoundPositionState } from "../lib/compound-state";
+import { simulateAndVerifyCompound } from "../lib/compound-simulation";
+import type { CompoundSummary } from "../lib/compound-types";
 import type {
   ListPositionsInput,
   QuoteAddLiquidityInput,
@@ -155,9 +158,26 @@ export async function prepareTransaction(input: PrepareTransactionInput) {
     startingBalances: summary.startingBalances,
   });
   
+  // Every field submit_signed_transaction needs besides the signed transaction.
+  // These values are bound by the permit, so they must be passed back unchanged.
+  const submitArgs = {
+    permit,
+    wallet: input.wallet,
+    selection,
+    requested: summary.quote.requested,
+    expectedLiquidity: summary.quote.liquidity,
+    startingLiquidity: summary.startingLiquidity,
+    floorBps: summary.quote.floorBps,
+    expiresAt: summary.expiresAt,
+    lastValidBlockHeight: summary.lastValidBlockHeight,
+    rangeSide: summary.quote.rangeSide,
+    startingBalances: summary.startingBalances,
+  };
+
   return {
     unsignedTransaction: Buffer.from(transaction.serialize()).toString("base64"),
     permit,
+    submitArgs,
     summary: {
       simulated: summary.simulated,
       quote: {
@@ -166,6 +186,7 @@ export async function prepareTransaction(input: PrepareTransactionInput) {
         inputKind: summary.quote.inputKind,
         positionMint: summary.quote.positionMint,
         poolId: summary.quote.poolId,
+        rangeSide: summary.quote.rangeSide,
         requested: summary.quote.requested,
         liquidity: summary.quote.liquidity,
         passesFloor: summary.quote.passesFloor,
@@ -178,27 +199,14 @@ export async function prepareTransaction(input: PrepareTransactionInput) {
       lastValidBlockHeight: summary.lastValidBlockHeight,
       blockhash: summary.blockhash,
       startingLiquidity: summary.startingLiquidity,
+      startingBalances: summary.startingBalances,
       simulatedEndingLiquidity: summary.simulatedEndingLiquidity,
       simulatedInputSpent: summary.simulatedInputSpent,
       simulatedSolDebitLamports: summary.simulatedSolDebitLamports,
       expiresAt: summary.expiresAt,
     },
     instructions: {
-      message: "Sign the unsignedTransaction with your wallet, then call submit_signed_transaction with the signed transaction, permit, and all required parameters.",
-      requiredForSubmit: [
-        "signedTransaction",
-        "permit",
-        "wallet",
-        "selection (positionMint, inputMint, inputKind)",
-        "requested",
-        "expectedLiquidity",
-        "startingLiquidity",
-        "floorBps",
-        "expiresAt",
-        "lastValidBlockHeight",
-        "rangeSide",
-        "startingBalances (input, a, b)",
-      ],
+      message: "Sign unsignedTransaction with the wallet, then call submit_signed_transaction with { signedTransaction, ...submitArgs }. Do not modify submitArgs; they are bound by the permit.",
     },
   };
 }
@@ -265,26 +273,14 @@ export async function prepareCompoundTransaction(input: QuoteCompoundInput) {
     message: Buffer.from(transaction.message.serialize()).toString("base64"),
   });
   
+  // The permit is an HMAC over the complete summary, so the complete object
+  // must be returned and passed back unchanged to submit_compound_transaction.
   return {
     unsignedTransaction: Buffer.from(transaction.serialize()).toString("base64"),
     permit,
-    summary: {
-      operation: summary.operation,
-      simulated: summary.simulated,
-      positionMint: summary.positionMint,
-      liquidity: summary.liquidity,
-      sizeBytes: summary.sizeBytes,
-      feeLamports: summary.feeLamports,
-      expiresAt: summary.expiresAt,
-    },
+    summary,
     instructions: {
-      message: "Sign the unsignedTransaction with your wallet, then call submit_compound_transaction with the signed transaction, permit, wallet, and complete summary object.",
-      requiredForSubmit: [
-        "signedTransaction",
-        "permit",
-        "wallet",
-        "summary (complete object from this response)",
-      ],
+      message: "Sign unsignedTransaction with the wallet, then call submit_compound_transaction with { signedTransaction, permit, wallet, summary }. Pass summary back exactly as returned; it is bound by the permit.",
     },
   };
 }
@@ -298,6 +294,13 @@ export async function prepareCompoundTransaction(input: QuoteCompoundInput) {
  */
 export async function submitSignedTransaction(input: SubmitSignedTransactionInput) {
   const walletAddress = input.wallet;
+  if (
+    BigInt(input.requested) <= 0n ||
+    BigInt(input.expectedLiquidity) <= 0n ||
+    input.expiresAt <= Date.now()
+  ) {
+    throw new Error("Invalid or expired signed transaction input");
+  }
   const transaction = VersionedTransaction.deserialize(
     Buffer.from(input.signedTransaction, "base64")
   );
@@ -439,25 +442,65 @@ export async function submitCompoundTransaction(input: SubmitCompoundTransaction
     throw new Error("Compound payer, signature, or transaction size mismatch");
   }
   
-  // Expiry check
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const summary = input.summary as any;
+  // Summary fields become trusted only after the complete HMAC is verified.
+  const summary = input.summary as CompoundSummary;
   if (
+    summary.operation !== "compound" ||
     !Number.isSafeInteger(summary.expiresAt) ||
     summary.expiresAt <= Date.now() ||
     !Number.isSafeInteger(summary.lastValidBlockHeight) ||
-    summary.lastValidBlockHeight <= 0
+    summary.lastValidBlockHeight <= 0 ||
+    summary.blockhash !== transaction.message.recentBlockhash ||
+    summary.state?.wallet !== input.wallet
   ) {
-    throw new Error("Compound authorization expired");
+    throw new Error("Compound authorization type, wallet, or expiry mismatch");
   }
-  
+
+  // Re-read on-chain state and re-simulate, exactly like the web broadcast route.
   const connection = rpcConnection();
-  const height = await connection.getBlockHeight("confirmed");
-  
+  const [height, state] = await Promise.all([
+    connection.getBlockHeight("confirmed"),
+    readCompoundPositionState(input.wallet, summary.positionMint, connection),
+  ]);
   if (height > summary.lastValidBlockHeight) {
-    throw new Error("Transaction blockhash expired");
+    throw new Error("Compound blockhash expired");
   }
-  
+  if (
+    !state.eligible ||
+    state.positionAccount !== summary.positionAccount ||
+    state.poolId !== summary.poolId ||
+    state.tickLower !== summary.state.tickLower ||
+    state.tickUpper !== summary.state.tickUpper ||
+    state.liquidity !== summary.startingLiquidity ||
+    state.mintA !== summary.state.mintA ||
+    state.mintB !== summary.state.mintB ||
+    state.programA !== summary.state.programA ||
+    state.programB !== summary.state.programB ||
+    state.nftAta !== summary.state.nftAta ||
+    state.rangeSide !== summary.state.rangeSide
+  ) {
+    throw new Error("Compound position identity, liquidity, or availability status has changed");
+  }
+  const verified = await simulateAndVerifyCompound({
+    connection,
+    transaction,
+    state,
+    compoundAccounts: summary.compoundAccounts,
+    priorSources: summary.priorSources,
+    expectedLiquidity: BigInt(summary.liquidity),
+    maxSolDebitLamports: BigInt(summary.maxSolDebitLamports),
+    sigVerify: true,
+  });
+  if (verified.rewards.some((reward) => BigInt(reward.amount) > 0n)) {
+    throw new Error("Third reward yield appeared with no isolated swap path, cannot fully reinvest; transaction not sent");
+  }
+  if (
+    Date.now() >= summary.expiresAt ||
+    (await connection.getBlockHeight("confirmed")) > summary.lastValidBlockHeight
+  ) {
+    throw new Error("Compound transaction expired before broadcast");
+  }
+
   // Broadcast
   const walletSignature = transaction.signatures[0]!;
   const expectedSignature = bs58.encode(walletSignature);
@@ -466,10 +509,10 @@ export async function submitCompoundTransaction(input: SubmitCompoundTransaction
     preflightCommitment: "confirmed",
     maxRetries: 3,
   });
-  
+
   if (signature !== expectedSignature) {
-    throw new Error("RPC returned transaction signature mismatch");
+    throw new Error("RPC returned compound signature mismatch, please verify on-chain status");
   }
-  
+
   return { signature };
 }

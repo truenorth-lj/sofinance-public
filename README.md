@@ -126,6 +126,8 @@ cp .env.example .env.local
 # Set SOLANA_RPC_URL and JUPITER_API_KEY in .env.local
 ```
 
+`JUPITER_API_KEY` is required for quotes and also serves as the server-side HMAC key for transaction permits, so `quote_add_liquidity` and all `prepare_*`/`submit_*` tools fail without it. `list_positions` and `quote_compound` only need `SOLANA_RPC_URL`. For compound, pass the complete `summary` from `prepare_compound_transaction` back to `submit_compound_transaction` unchanged.
+
 **2. Run the MCP server:**
 
 ```bash
@@ -238,8 +240,9 @@ Agent calls `prepare_transaction` with same parameters:
 Returns:
 - `unsignedTransaction`: Base64-encoded transaction for signing
 - `permit`: HMAC permit binding transaction to verified state
+- `submitArgs`: Every permit-bound field `submit_signed_transaction` needs (pass back unchanged)
 - `summary`: Transaction details and expiry
-- `instructions`: What parameters to pass to submit
+- `instructions`: How to submit
 
 **Step 4: Sign transaction**
 
@@ -251,7 +254,7 @@ Returns:
 
 **Step 5: Submit signed transaction**
 
-Agent calls `submit_signed_transaction` with:
+Agent calls `submit_signed_transaction` with `{ signedTransaction, ...submitArgs }`, i.e.:
 
 ```json
 {
