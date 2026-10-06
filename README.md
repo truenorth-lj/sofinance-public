@@ -216,9 +216,12 @@ Agent calls `quote_add_liquidity`:
   "inputMint": "So11111111111111111111111111111111111111112",
   "inputKind": "native",
   "amount": "1.5",
-  "resaleFloorBps": 9900
+  "resaleFloorBps": 9900,
+  "slippageToleranceBps": 100
 }
 ```
+
+`slippageToleranceBps` (optional, 0-500 in steps of 10, default 100 = 1%) is the add-liquidity price tolerance: liquidity is sized about 1% below the guaranteed swap outputs and the Raydium `amountMax` values are padded by the same tolerance (never above those outputs), so pool price drift between quote and execution does not trip Raydium's `PriceSlippageCheck` (6017). The unused reserve stays in the wallet as pool assets and still counts toward the resale ratio. Jupiter swap slippage remains fixed at 0.5%.
 
 Returns quote with swap routes, price impact, estimated outputs, and resale protection check.
 

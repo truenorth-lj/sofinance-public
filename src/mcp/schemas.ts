@@ -17,6 +17,7 @@ export const quoteAddLiquiditySchema = z.object({
   inputKind: z.enum(["native", "token"]),
   amount: z.string().regex(/^\d+(\.\d+)?$/, "Amount must be a valid decimal number"),
   resaleFloorBps: z.number().int().min(9500).max(10000).multipleOf(10).default(9900),
+  slippageToleranceBps: z.number().int().min(0).max(500).multipleOf(10).default(100),
 });
 export type QuoteAddLiquidityInput = z.infer<typeof quoteAddLiquiditySchema>;
 
@@ -28,6 +29,7 @@ export const prepareTransactionSchema = z.object({
   inputKind: z.enum(["native", "token"]),
   amount: z.string().regex(/^\d+(\.\d+)?$/, "Amount must be a valid decimal number"),
   resaleFloorBps: z.number().int().min(9500).max(10000).multipleOf(10).default(9900),
+  slippageToleranceBps: z.number().int().min(0).max(500).multipleOf(10).default(100),
 });
 export type PrepareTransactionInput = z.infer<typeof prepareTransactionSchema>;
 

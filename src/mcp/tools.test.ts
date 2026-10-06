@@ -153,6 +153,9 @@ describe("MCP Tools", () => {
         liquidity: "1000000",
         amountMaxA: "745000000",
         amountMaxB: "745000000",
+        requiredA: "740000000",
+        requiredB: "740000000",
+        toleranceBps: 100,
         dustA: "0",
         dustB: "0",
         resaleInput: "1485000000",
@@ -183,8 +186,17 @@ describe("MCP Tools", () => {
         inputKind: "native",
         amount: "1.5",
         resaleFloorBps: 9900,
+        slippageToleranceBps: 200,
       });
 
+      expect(getSelectedQuoteBundle).toHaveBeenCalledWith(
+        "7BgBvyjrZX1YKz4oh9mjb8ZScatkkwb8DzFx7LoiVkM3",
+        expect.objectContaining({ inputKind: "native" }),
+        "1.5",
+        9900,
+        200,
+      );
+      expect(result.slippageToleranceBps).toBe(100);
       expect(result.wallet).toBe(mockQuote.wallet);
       expect(result.requested).toBe(mockQuote.requested);
       expect(result.passesFloor).toBe(true);
@@ -215,6 +227,9 @@ describe("MCP Tools", () => {
           liquidity: "1000000",
           amountMaxA: "745000000",
           amountMaxB: "745000000",
+          requiredA: "740000000",
+          requiredB: "740000000",
+          toleranceBps: 100,
           dustA: "0",
           dustB: "0",
           resaleInput: "1485000000",
@@ -276,6 +291,7 @@ describe("MCP Tools", () => {
         inputKind: "native",
         amount: "1.5",
         resaleFloorBps: 9900,
+        slippageToleranceBps: 100,
       });
 
       expect(result.unsignedTransaction).toBeDefined();

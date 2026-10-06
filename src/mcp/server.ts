@@ -107,6 +107,12 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                 "Minimum resale ratio in basis points (9500-10000, default 9900 = 1% max loss). Conservative immediate-resale protection.",
               default: 9900,
             },
+            slippageToleranceBps: {
+              type: "number",
+              description:
+                "Add-liquidity price tolerance in basis points (0-500, multiple of 10, default 100 = 1%). Liquidity is sized so the pool price may drift this much before execution; the unused reserve stays in the wallet. Jupiter swap slippage stays fixed at 0.5%.",
+              default: 100,
+            },
           },
           required: ["wallet", "positionMint", "inputMint", "inputKind", "amount"],
         },
@@ -143,6 +149,12 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               type: "number",
               description: "Resale floor in basis points (9500-10000, default 9900)",
               default: 9900,
+            },
+            slippageToleranceBps: {
+              type: "number",
+              description:
+                "Add-liquidity price tolerance in basis points (0-500, multiple of 10, default 100)",
+              default: 100,
             },
           },
           required: ["wallet", "positionMint", "inputMint", "inputKind", "amount"],

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
-import { formatAmount, parseTokenAmount, resaleFloorFromMaxCostPercent } from "@/lib/amount";
+import { formatAmount, parseTokenAmount, resaleFloorFromMaxCostPercent, toleranceFromPercent } from "@/lib/amount";
 import { mayStartAnotherAttempt, type AtomicStatus } from "@/lib/attempt-status";
 import { loadSelectedAttempt, selectedAttemptKey, type SelectedAttempt } from "@/lib/selected-attempt";
 import { readObsoleteAttempts } from "@/lib/obsolete-attempt";
@@ -38,6 +38,7 @@ export function useSelectedController() {
   const [selectedState, setSelectedState] = useState<SelectedPositionState | null>(null);
   const [amount, setAmount] = useState("");
   const [maxCostPercent, setMaxCostPercent] = useState("1.0");
+  const [tolerancePercent, setTolerancePercent] = useState("1.0");
   const [preview, setPreview] = useState<Preview>({ kind: "idle" });
   const [attempt, setAttempt] = useState<SelectedAttempt | null>(null);
   const [attemptStatus, setAttemptStatus] = useState<AtomicStatus | null>(null);
@@ -210,13 +211,17 @@ export function useSelectedController() {
   let floorBps: number | null = null;
   try { floorBps = resaleFloorFromMaxCostPercent(maxCostPercent); }
   catch { /* The status text gives setting guidance. */ }
+  let toleranceBps: number | null = null;
+  try { toleranceBps = toleranceFromPercent(tolerancePercent); }
+  catch { /* The status text gives setting guidance. */ }
   const affordable = visibleState && rawAmount <= BigInt(visibleState.inputBalance);
   const ready = connected && attemptLoadedWallet === wallet && !!visibleState && visibleState.ownsNft &&
     !visibleState.paused && !visibleState.frozen && !visibleState.transferFee &&
     !visibleState.unsupportedExtensions.length && visibleState.sufficientSol && rawAmount > 0n &&
-    affordable && floorBps !== null && mayStartAnotherAttempt(attemptStatus) && !obsoletePending;
+    affordable && floorBps !== null && toleranceBps !== null && mayStartAnotherAttempt(attemptStatus) && !obsoletePending;
   const quote = result && result.quote.wallet === wallet && selectionKey(result.quote) === selectionKey(selection) &&
-    BigInt(result.quote.requested) === rawAmount && result.quote.floorBps === floorBps ? result.quote : null;
+    BigInt(result.quote.requested) === rawAmount && result.quote.floorBps === floorBps &&
+    result.quote.toleranceBps === toleranceBps ? result.quote : null;
   const displayedResult = quote ? result : null;
   const fresh = quote ? now < (result?.expiresAt ?? quote.expiresAt) : false;
   const calculating = Boolean(ready && (quoteLoading || !quote || !fresh) && !quoteError && !busy);
@@ -237,6 +242,7 @@ export function useSelectedController() {
       visibleState.unsupportedExtensions.length) return "Selected pool asset settings not yet supported";
     if (!visibleState.sufficientSol) return "SOL insufficient, need to reserve at least 0.01 SOL";
     if (floorBps === null) return "Resale ratio setting must be 95–100%, adjust by 0.1% each time";
+    if (toleranceBps === null) return "Price tolerance must be 0–5%, adjust by 0.1% each time";
     if (rawAmount <= 0n) return "Please enter input amount matching asset precision";
     if (!affordable) return "Selected asset balance insufficient";
     if (quoteError) return quoteError;
@@ -248,7 +254,7 @@ export function useSelectedController() {
   })();
 
   useEffect(() => {
-    if (!ready || !wallet || !selection || floorBps === null || busy) return;
+    if (!ready || !wallet || !selection || floorBps === null || toleranceBps === null || busy) return;
     const requestId = ++quoteRequestRef.current;
     const aborter = new AbortController();
     const key = selectionKey(selection);
@@ -264,7 +270,7 @@ export function useSelectedController() {
       const load = async () => {
         setQuoteLoading(true); setPreview({ kind: "idle" }); setQuoteError("");
         try {
-          const body = JSON.stringify({ wallet, ...selection, amount, floorBps });
+          const body = JSON.stringify({ wallet, ...selection, amount, floorBps, toleranceBps });
           const response = await fetch("/api/selected-quote", { method: "POST",
             headers: { "Content-Type": "application/json" }, body, cache: "no-store", signal: aborter.signal });
           const data = await response.json() as SelectedQuote | ApiError;
@@ -272,7 +278,8 @@ export function useSelectedController() {
           if (!response.ok) throw new Error((data as ApiError).error);
           const currentQuote = data as SelectedQuote;
           if (currentQuote.wallet !== wallet || selectionKey(currentQuote) !== key ||
-            currentQuote.requested !== requested || currentQuote.floorBps !== floorBps) {
+            currentQuote.requested !== requested || currentQuote.floorBps !== floorBps ||
+            currentQuote.toleranceBps !== toleranceBps) {
             throw new Error("Quote and current input mismatch, please re-enter amount");
           }
           setPreview({ kind: "quoted", result: { quote: currentQuote, simulated: false } });
@@ -290,7 +297,7 @@ export function useSelectedController() {
           const checked = full as Preflight;
           if (!checked.simulated || !checked.quote.passesFloor || checked.quote.wallet !== wallet ||
             selectionKey(checked.quote) !== key || checked.quote.requested !== requested ||
-            checked.quote.floorBps !== floorBps) throw new Error("Complete check and current input mismatch");
+            checked.quote.floorBps !== floorBps || checked.quote.toleranceBps !== toleranceBps) throw new Error("Complete check and current input mismatch");
           setPreview({ kind: "quoted", result: checked }); setNow(Date.now());
           scheduleRefresh(checked.expiresAt ?? checked.quote.expiresAt);
           void refreshState();
@@ -306,11 +313,11 @@ export function useSelectedController() {
       aborter.abort(); window.clearTimeout(timer);
       if (expiryTimer !== undefined) window.clearTimeout(expiryTimer);
     };
-  }, [amount, busy, floorBps, quoteRevision, rawAmount, ready, refreshState, selection, wallet]);
+  }, [amount, busy, floorBps, toleranceBps, quoteRevision, rawAmount, ready, refreshState, selection, wallet]);
 
   async function signAndSend() {
     if (!ready || busy || submittingRef.current || quoteLoading || !result?.simulated || !quote?.passesFloor || !fresh ||
-      !wallet || !selection || !visibleState || floorBps === null) return;
+      !wallet || !selection || !visibleState || floorBps === null || toleranceBps === null) return;
     submittingRef.current = true;
     const key = selectionKey(selection);
     const inputRevision = inputRevisionRef.current;
@@ -320,7 +327,7 @@ export function useSelectedController() {
         window.localStorage.removeItem(selectedAttemptKey(wallet)); setAttempt(null); setAttemptStatus(null);
       }
       const response = await fetch("/api/selected-prepare", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ wallet, ...selection, amount, floorBps }), cache: "no-store" });
+        body: JSON.stringify({ wallet, ...selection, amount, floorBps, toleranceBps }), cache: "no-store" });
       const data = await response.json() as Prepared | ApiError;
       if (!response.ok) throw new Error((data as ApiError).error);
       const prepared = data as Prepared;
@@ -328,7 +335,7 @@ export function useSelectedController() {
         !prepared.simulated || !prepared.permit || !prepared.startingBalances ||
         !prepared.quote.passesFloor || prepared.quote.wallet !== wallet ||
         selectionKey(prepared.quote) !== key || prepared.quote.requested !== rawAmount.toString() ||
-        prepared.quote.floorBps !== floorBps || Date.now() >= prepared.expiresAt) {
+        prepared.quote.floorBps !== floorBps || prepared.quote.toleranceBps !== toleranceBps || Date.now() >= prepared.expiresAt) {
         throw new Error("Requote or transaction authorization and current selection mismatch");
       }
       const bytes = Uint8Array.from(atob(prepared.unsignedTransaction), (character) => character.charCodeAt(0));
@@ -384,6 +391,10 @@ export function useSelectedController() {
     inputRevisionRef.current++; quoteRequestRef.current++; setMaxCostPercent(value); setPreview({ kind: "idle" });
     setError(""); setQuoteError("");
   };
+  const changeTolerance = (value: string) => {
+    inputRevisionRef.current++; quoteRequestRef.current++; setTolerancePercent(value); setPreview({ kind: "idle" });
+    setError(""); setQuoteError("");
+  };
   const retryCalculation = () => { setQuoteError(""); setPreview({ kind: "idle" }); setQuoteRevision((current) => current + 1); };
   const fillMax = () => changeAmount(visibleState ? formatAmount(visibleState.inputBalance, visibleState.inputDecimals, visibleState.inputDecimals) : "");
   const choosePosition = (positionMint: string) => setSelection((current) => current ? { ...current, positionMint } : null);
@@ -404,9 +415,9 @@ export function useSelectedController() {
     window.localStorage.removeItem(selectedAttemptKey(wallet)); setAttemptStatus(null);
   };
   return { wallet, connected, connect, disconnect, isMobile, walletsCount, connectionError,
-    discovery, selection, state: visibleState, amount, maxCostPercent, result: displayedResult, attempt,
+    discovery, selection, state: visibleState, amount, maxCostPercent, tolerancePercent, result: displayedResult, attempt,
     attemptStatus, obsoletePending, error: error || quoteError, quoteError, busy, calculating, now, floorBps, quote, fresh, status,
-    actionLabel, actionDisabled, walletBlocked, primaryAction, changeAmount, changeMaxCost, fillMax,
+    actionLabel, actionDisabled, walletBlocked, primaryAction, changeAmount, changeMaxCost, changeTolerance, fillMax,
     choosePosition, chooseAsset, refreshDiscovery, refreshState, retryCalculation, retryReconcile, retryObsoleteReconcile, clearObsoleteRecords,
     clearInvalidAttempt };
 }

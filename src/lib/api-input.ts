@@ -1,5 +1,5 @@
 import { PublicKey } from "@solana/web3.js";
-import { parseResaleFloorBps } from "./amount";
+import { parseAddToleranceBps, parseResaleFloorBps } from "./amount";
 import type { PositionSelection } from "./selected-state";
 
 export function parseWallet(value: unknown): string {
@@ -26,5 +26,6 @@ export async function parseSelectedQuoteRequest(request: Request) {
   if (fields.inputKind !== "native" && fields.inputKind !== "token") throw new Error("Invalid input asset type");
   if (typeof fields.amount !== "string" || fields.amount.length > 40) throw new Error("Invalid input amount");
   const selection: PositionSelection = { positionMint, inputMint, inputKind: fields.inputKind };
-  return { wallet, selection, amount: fields.amount, floorBps: parseResaleFloorBps(fields.floorBps) };
+  return { wallet, selection, amount: fields.amount, floorBps: parseResaleFloorBps(fields.floorBps),
+    toleranceBps: parseAddToleranceBps(fields.toleranceBps) };
 }

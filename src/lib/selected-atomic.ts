@@ -32,10 +32,11 @@ async function rejectUnselectedWalletTokenWrites(
 
 export async function buildAndSimulateSelectedZap(
   walletAddress: string, selection: PositionSelection, amount: string, floorBps: number,
+  toleranceBps?: number,
 ) {
   const connection = rpcConnection();
   const wallet = new PublicKey(walletAddress);
-  const { quote, legs, state } = await getSelectedQuoteBundle(walletAddress, selection, amount, floorBps);
+  const { quote, legs, state } = await getSelectedQuoteBundle(walletAddress, selection, amount, floorBps, toleranceBps);
   if (!quote.passesFloor) throw new Error("Conservative immediate resale ratio below selected threshold");
   if (Date.now() >= quote.expiresAt) throw new Error("Quote expired, please resimulate");
   const routes = legs.flatMap((item) => item.route ? [item.route] : []);
