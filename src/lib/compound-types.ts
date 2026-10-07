@@ -8,6 +8,7 @@ export type CompoundPositionState = SelectedPositionState & {
   eligible: boolean; reason: string | null; status: number;
   vaultA: string; vaultB: string; tickSpacing: number;
   fees: { a: string; b: string }; rewards: CompoundReward[];
+  pricing?: { priceUsdA: number | null; priceUsdB: number | null };
 };
 export type CompoundAccount = {
   seed: string; address: string; mint: string; program: string;
