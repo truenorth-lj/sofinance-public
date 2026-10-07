@@ -6,6 +6,20 @@ import { formatAmount } from "@/lib/amount";
 import type { CompoundController } from "./use-compound-controller";
 
 const short = (value: string) => `${value.slice(0, 5)}…${value.slice(-5)}`;
+
+function calculateUsdValue(rawAmount: string, decimals: number, priceUsd: number | null): string | null {
+  if (priceUsd === null || !Number.isFinite(priceUsd) || priceUsd < 0) return null;
+  try {
+    const amount = Number(rawAmount) / Math.pow(10, decimals);
+    if (!Number.isFinite(amount) || amount < 0) return null;
+    const usdValue = amount * priceUsd;
+    if (!Number.isFinite(usdValue)) return null;
+    return usdValue < 0.01 ? "< $0.01" : `≈ $${usdValue.toFixed(2)}`;
+  } catch {
+    return null;
+  }
+}
+
 const statusText = {
   pending: "Transaction confirming, do not resubmit",
   success: "Compound confirmed on-chain",
@@ -55,8 +69,10 @@ export function CompoundPanel({ controller: c, tokenLabel = short }: {
     </div>
     {state && <>
       <div className="mt-4 grid grid-cols-2 gap-3">
-        <YieldItem title={`Pending trading fees · ${a}`} value={`${amount(state.fees.a, state.decimalsA)} ${a}`} />
-        <YieldItem title={`Pending trading fees · ${b}`} value={`${amount(state.fees.b, state.decimalsB)} ${b}`} />
+        <YieldItem title={`Pending trading fees · ${a}`} value={`${amount(state.fees.a, state.decimalsA)} ${a}`} 
+          usdValue={state.pricing ? calculateUsdValue(state.fees.a, state.decimalsA, state.pricing.priceUsdA) : null} />
+        <YieldItem title={`Pending trading fees · ${b}`} value={`${amount(state.fees.b, state.decimalsB)} ${b}`}
+          usdValue={state.pricing ? calculateUsdValue(state.fees.b, state.decimalsB, state.pricing.priceUsdB) : null} />
       </div>
       <p className="mt-2 text-xs leading-5 text-neutral-600">Pending amounts are current on-chain estimates; after clicking &quot;One-click compound&quot; will re-read, simulate harvest, swap and increase. Only uses assets in yield accounts.</p>
       {c.priorReceipts.length > 0 && <p className="mt-3 text-xs leading-5 text-neutral-300">Will verify this NFT&apos;s {c.priorReceipts.length} prior yield account records, and swap and reinvest yield still in accounts together; actual available amount subject to on-chain query.</p>}
@@ -108,6 +124,10 @@ export function CompoundPanel({ controller: c, tokenLabel = short }: {
   </section>;
 }
 
-function YieldItem({ title, value }: { title: string; value: string }) {
-  return <div className="min-w-0 rounded-xl border border-neutral-800/40 bg-neutral-900/30 p-3 sm:p-4"><div className="text-xs text-neutral-500">{title}</div><div className="mt-2 break-all text-sm font-semibold tabular-nums text-neutral-100">{value}</div></div>;
+function YieldItem({ title, value, usdValue }: { title: string; value: string; usdValue?: string | null }) {
+  return <div className="min-w-0 rounded-xl border border-neutral-800/40 bg-neutral-900/30 p-3 sm:p-4">
+    <div className="text-xs text-neutral-500">{title}</div>
+    <div className="mt-2 break-all text-sm font-semibold tabular-nums text-neutral-100">{value}</div>
+    {usdValue && <div className="mt-1 text-xs text-neutral-600">{usdValue}</div>}
+  </div>;
 }

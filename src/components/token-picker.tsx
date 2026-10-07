@@ -14,6 +14,19 @@ const displayBalance = (asset: WalletAsset) => {
   return balance === "0" && BigInt(asset.balance) > 0n ? "<0.000001" : balance;
 };
 
+function calculateBalanceUsd(rawAmount: string, decimals: number, priceUsd: number | null): string | null {
+  if (priceUsd === null || !Number.isFinite(priceUsd) || priceUsd < 0) return null;
+  try {
+    const amount = Number(rawAmount) / Math.pow(10, decimals);
+    if (!Number.isFinite(amount) || amount < 0) return null;
+    const usdValue = amount * priceUsd;
+    if (!Number.isFinite(usdValue)) return null;
+    return usdValue < 0.01 ? "< $0.01" : `≈ $${usdValue.toFixed(2)}`;
+  } catch {
+    return null;
+  }
+}
+
 export function assetMetadata(asset: WalletAsset, metadata: Record<string, TokenMetadata>) {
   const item = metadata[asset.mint];
   return item && item.decimals === asset.decimals &&
@@ -61,9 +74,10 @@ function AssetRow({ asset, item, selected, onSelect }: {
     : <div aria-disabled="true" className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 opacity-60">{content}</div>;
 }
 
-export function TokenPicker({ assets, selectedAsset, metadata, disabled, onSelect }: {
+export function TokenPicker({ assets, selectedAsset, metadata, disabled, onSelect, inputPriceUsd }: {
   assets: WalletAsset[]; selectedAsset: WalletAsset | undefined; metadata: Record<string, TokenMetadata>;
   disabled: boolean; onSelect: (kind: WalletAsset["kind"], mint: string) => void;
+  inputPriceUsd?: number | null;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -85,13 +99,16 @@ export function TokenPicker({ assets, selectedAsset, metadata, disabled, onSelec
   const usable = matching.filter((asset) => asset.eligible);
   const unavailable = matching.filter((asset) => !asset.eligible);
   const selectedItem = selectedAsset ? assetMetadata(selectedAsset, metadata) : null;
+  const selectedBalanceUsd = selectedAsset && inputPriceUsd !== null && inputPriceUsd !== undefined
+    ? calculateBalanceUsd(selectedAsset.balance, selectedAsset.decimals, inputPriceUsd)
+    : null;
   return <>
     <button ref={triggerRef} type="button" aria-labelledby="asset-label" aria-haspopup="dialog" aria-expanded={open}
       disabled={disabled} onClick={() => setOpen(true)}
       className="mt-2 flex min-h-20 w-full items-center gap-3 rounded-2xl border border-slate-600 bg-[#0b1523] px-4 py-3 text-left transition-colors hover:border-sky-400/60 focus-visible:outline-2 focus-visible:outline-sky-400 disabled:cursor-not-allowed disabled:opacity-50">
       {selectedAsset ? <><TokenIcon symbol={assetSymbol(selectedAsset, selectedItem)} icon={selectedItem?.icon || null} />
         <span className="min-w-0 flex-1"><span className="block truncate text-base font-semibold">{assetSymbol(selectedAsset, selectedItem)}</span><span className="block truncate text-xs text-slate-400">{assetName(selectedAsset, selectedItem)} · {short(selectedAsset.mint)}</span></span>
-        <span className="hidden shrink-0 text-right text-xs text-slate-400 sm:block" title={formatAmount(selectedAsset.balance, selectedAsset.decimals, selectedAsset.decimals)}>Balance<span className="mt-1 block text-sm font-semibold tabular-nums text-slate-200">{displayBalance(selectedAsset)}</span></span>
+        <span className="hidden shrink-0 text-right text-xs text-slate-400 sm:block" title={formatAmount(selectedAsset.balance, selectedAsset.decimals, selectedAsset.decimals)}>Balance<span className="mt-1 block text-sm font-semibold tabular-nums text-slate-200">{displayBalance(selectedAsset)}</span>{selectedBalanceUsd && <span className="mt-0.5 block text-xs tabular-nums text-slate-500">{selectedBalanceUsd}</span>}</span>
       </> : <span className="flex-1 text-sm text-slate-400">{assets.length ? "Select wallet asset" : "No wallet assets found"}</span>}
       <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
     </button>
