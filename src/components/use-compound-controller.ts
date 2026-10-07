@@ -4,8 +4,8 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { VersionedTransaction } from "@solana/web3.js";
 import { mayStartAnotherAttempt, type AtomicStatus } from "@/lib/attempt-status";
 import { compoundAttemptKey, loadCompoundAttempt, loadCompoundReceipts, persistCompoundAttempt, persistCompoundReceipt,
-  removeConsumedCompoundReceipts, removeRecoveredReceipt, signedCompoundTransaction, type CompoundAttempt, type CompoundPrepared,
-  type CompoundReceipt, type RecoveryPrepared } from "@/lib/compound-attempt";
+  removeConsumedCompoundReceipts, removeRecoveredReceipt, removeUnconfirmedCompoundReceipt, signedCompoundTransaction,
+  type CompoundAttempt, type CompoundPrepared, type CompoundReceipt, type RecoveryPrepared } from "@/lib/compound-attempt";
 import type { CompoundPositionState, CompoundSummary } from "@/lib/compound-types";
 import type { CompoundRecoverySummary } from "@/lib/compound-recovery-types";
 import { useWalletConnection } from "./wallet-connection";
@@ -92,10 +92,12 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
       const next = await post<CompoundPositionState>("/api/compound-state", { wallet: requestedWallet, positionMint: requestedMint });
       if (identityRef.current !== requestedIdentity || requestId !== stateRequest.current) return;
       if (next.wallet !== requestedWallet || next.positionMint !== requestedMint) throw new Error("Yield reading does not match selected position");
-      setState(next);
+      setState(next); setError("");
     } catch (caught) {
       if (identityRef.current === requestedIdentity && requestId === stateRequest.current) {
-        setState(null); setError(caught instanceof Error ? caught.message : "Yield reading failed");
+        // Keep the last yield snapshot so a transient RPC failure (skipped slot,
+        // getBlockTime) cannot grey out One-click compound.
+        setError(caught instanceof Error ? caught.message : "Yield reading failed");
       }
     } finally {
       if (identityRef.current === requestedIdentity && requestId === stateRequest.current) setLoading(false);
@@ -116,6 +118,10 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
     setAttemptStatus(checked.status); setConfirmation(checked);
     if (checked.status === "success" || checked.status === "failed" || checked.status === "expired") {
       setError("");
+      if ((checked.status === "failed" || checked.status === "expired") && current.kind === "compound") {
+        removeUnconfirmedCompoundReceipt(window.localStorage, current);
+        setReceipts(loadCompoundReceipts(window.localStorage, current.wallet).receipts);
+      }
       if (checked.status === "success" && current.kind === "recovery") {
         removeRecoveredReceipt(window.localStorage, current);
         setReceipts(loadCompoundReceipts(window.localStorage, current.wallet).receipts);
@@ -153,7 +159,10 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
   const busy = stage !== null;
   const walletBlocked = Boolean(wallet && (loadedWallet !== wallet || storageInvalid || busy || !mayStartAnotherAttempt(attemptStatus)));
   const priorReceipts = loadedWallet === wallet ? receipts.filter((receipt) => receipt.positionMint === positionMint) : [];
-  const sourceSignatures = [...new Set(priorReceipts.map((receipt) => receipt.sourceSignature))];
+  const skipOrphanSignature = visibleAttempt && (attemptStatus === "expired" || attemptStatus === "failed")
+    ? visibleAttempt.signature : undefined;
+  const sourceSignatures = [...new Set(priorReceipts.filter((receipt) => receipt.sourceSignature !== skipOrphanSignature)
+    .map((receipt) => receipt.sourceSignature))];
   const hasFees = (visibleState ? BigInt(visibleState.fees.a) > 0n || BigInt(visibleState.fees.b) > 0n ||
     visibleState.rewards.some((reward) => BigInt(reward.estimatedAmount) > 0n) : false) || sourceSignatures.length > 0;
   const canCompound = !!wallet && !!positionMint && connection.connected && loadedWallet === wallet &&

@@ -5,6 +5,7 @@ import BN from "bn.js";
 import { ClmmConfigLayout, ClmmInstrument, getPdaExBitmapAccount, getPdaObservationAccount, getPdaTickArrayAddress, MEMO_PROGRAM_ID, PoolUtils, swapInternal, TickArrayLayout, TickArrayUtil, type ClmmKeys, type ComputeClmmPoolInfo, type ReturnTypeFetchMultiplePoolTickArrays, type SimpleClmmPoolInfo } from "@raydium-io/raydium-sdk-v2";
 import { TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { Connection, PublicKey, type TransactionInstruction } from "@solana/web3.js";
+import { readRecentBlockTime } from "./block-time";
 import { MAX_U64, sizeCompoundLiquidity } from "./compound-math";
 import { SLIPPAGE_BPS } from "./ids";
 import type { CompoundAccount, CompoundPositionState } from "./compound-types";
@@ -126,7 +127,7 @@ export async function buildCompoundSwapPlan(input: {
   if (!configAccount || configAccount.owner.toBase58() !== state.programId) throw new Error("Compound swap config program mismatch");
   const configInfo = ClmmConfigLayout.decode(configAccount.data);
   if (configInfo.tradeFeeRate !== computePoolInfo.ammConfig.tradeFeeRate || configInfo.tickSpacing !== state.tickSpacing) throw new Error("Compound swap config has changed");
-  const blockTimestamp = await connection.getBlockTime(slot);
+  const blockTimestamp = await readRecentBlockTime(connection, slot);
   if (blockTimestamp === null) throw new Error("Unable to get on-chain time for yield swap");
   // The SDK mutates dynamicFeeInfo while quoting. Every candidate must start
   // from the same chain snapshot, including the final minimal-account quote.

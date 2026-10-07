@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { Keypair, SystemProgram, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
 import { compoundAttemptKey, compoundReceiptsKey, loadCompoundAttempt, loadCompoundReceipts,
-  parseCompoundAttempt, persistCompoundAttempt, persistCompoundReceipt, removeConsumedCompoundReceipts, removeRecoveredReceipt, signedCompoundTransaction,
-  type CompoundAttempt } from "./compound-attempt";
+  parseCompoundAttempt, persistCompoundAttempt, persistCompoundReceipt, removeConsumedCompoundReceipts, removeRecoveredReceipt,
+  removeUnconfirmedCompoundReceipt, signedCompoundTransaction, type CompoundAttempt } from "./compound-attempt";
 import type { CompoundSummary } from "./compound-types";
 import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
 
@@ -106,6 +106,40 @@ describe("compound signature and recovery persistence", () => {
     expect(parseCompoundAttempt(current, current.wallet)).toEqual(current);
     expect(parseCompoundAttempt({ ...current, summary: { ...current.summary, swaps: [{ ...current.summary.swaps[0], minOutputAmount: "NaN" }] } }, current.wallet)).toBeNull();
     expect(parseCompoundAttempt({ ...current, summary: { ...current.summary, priorSources: [{ ...current.summary.priorSources[0], amount: undefined }] } }, current.wallet)).toBeNull();
+  });
+
+  it("drops only the expired or failed attempt's pre-broadcast receipt and keeps prior dust", () => {
+    const storage = memoryStorage();
+    const prior = attempt();
+    const expired = attempt(prior.wallet);
+    persistCompoundAttempt(storage, prior);
+    persistCompoundAttempt(storage, expired);
+    removeUnconfirmedCompoundReceipt(storage, expired);
+    expect(loadCompoundReceipts(storage, prior.wallet).receipts.map((item) => item.sourceSignature))
+      .toEqual([prior.signature]);
+    expect(loadCompoundAttempt(storage, prior.wallet).attempt?.signature).toBe(expired.signature);
+    removeUnconfirmedCompoundReceipt(storage, expired);
+    expect(loadCompoundReceipts(storage, prior.wallet).receipts).toHaveLength(1);
+  });
+
+  it("does not discard a recovery attempt or silently lose records when receipt storage cannot be updated", () => {
+    const storage = memoryStorage();
+    const current = attempt();
+    persistCompoundAttempt(storage, current);
+    const recovery: CompoundAttempt = { ...current, kind: "recovery", sourceSignature: current.signature,
+      summary: { operation: "recovery", simulated: true, wallet: current.wallet,
+        compoundAccounts: current.summary.compoundAccounts.map((item) => ({ ...item, amount: "1", decimals: 6,
+          destination: key(), sourceLamports: item.rentLamports })),
+        feeLamports: 5_000, sizeBytes: 400, blockhash: key(), lastValidBlockHeight: 123,
+        expiresAt: Date.now() + 30_000 } };
+    removeUnconfirmedCompoundReceipt(storage, recovery);
+    expect(loadCompoundReceipts(storage, current.wallet).receipts).toHaveLength(1);
+    expect(() => removeUnconfirmedCompoundReceipt({ getItem: storage.getItem, setItem: () => undefined }, current))
+      .toThrow("Unable to clear unconfirmed yield account record");
+    expect(loadCompoundReceipts(storage, current.wallet).receipts[0]?.sourceSignature).toBe(current.signature);
+    storage.setItem(compoundReceiptsKey(current.wallet), "{corrupt");
+    expect(() => removeUnconfirmedCompoundReceipt(storage, current)).toThrow("need verification");
+    expect(storage.getItem(compoundReceiptsKey(current.wallet))).toBe("{corrupt");
   });
 
   it("retains source receipts before confirmation and removes only consumed sources after confirmation", () => {
