@@ -2,7 +2,17 @@
 
 ## Mission Accomplished ✅
 
-Successfully converted SoFinance MCP from **local stdio requiring secrets** to **remote HTTP MCP with zero local secrets**.
+Successfully converted SoFinance MCP from **local stdio requiring secrets** to **remote HTTP MCP with zero local secrets and signature-verified authentication**.
+
+## 🔒 Critical Security Update
+
+**Blocker Fixed:** Previously, anyone could mint tokens for any wallet without proof of ownership.
+
+**Solution:** Signature verification flow:
+1. Server issues challenge message
+2. Wallet signs challenge (ed25519)
+3. Server verifies signature before minting token
+4. 5-minute freshness window prevents replay attacks
 
 ## Before vs After
 
