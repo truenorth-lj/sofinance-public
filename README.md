@@ -65,11 +65,80 @@ pnpm lint && pnpm typecheck && pnpm test && pnpm build
 
 Never commit `.env.local`, mnemonics, or API keys. Do not prefix `SOLANA_RPC_URL` / `JUPITER_API_KEY` with `NEXT_PUBLIC_`.
 
-## Quickstart — MCP (Claude Desktop / Cursor)
+## Quickstart — MCP for AI Agents (Remote, Zero Local Secrets)
 
-Requires Node 20+, `pnpm install` in this repo, and the same server env vars.
+**Recommended:** Use the remote MCP endpoint with zero local secrets. The MCP server runs on Vercel; your laptop needs only a connection URL + auth token.
 
-Example Cursor / Claude MCP config (adjust the absolute path):
+### Getting Started (Remote MCP)
+
+1. **Connect your wallet** on [sofinance-alpha.vercel.app](https://sofinance-alpha.vercel.app)
+2. **Expand "MCP Connection (AI Agents)"** after wallet connect
+3. **Sign the challenge message** in your wallet (proves ownership)
+4. **Copy the generated config** — includes a short-lived token bound to your wallet
+5. **Paste into your AI agent:**
+
+   **Cursor / Claude (if HTTP MCP supported):** Use the direct HTTP config
+
+   **Cursor / Claude (if stdio only):** Use the zero-secret shim config
+
+The UI shows both configs after wallet connect. Choose based on what your agent supports.
+
+### Option A: Direct HTTP (Preferred)
+
+If Cursor/Claude supports HTTP MCP with custom headers:
+
+```json
+{
+  "mcpServers": {
+    "sofinance": {
+      "url": "https://sofinance-alpha.vercel.app/api/mcp",
+      "headers": {
+        "Authorization": "Bearer <your-token-here>"
+      }
+    }
+  }
+}
+```
+
+### Option B: Zero-Secret Shim (Fallback)
+
+If your agent only supports stdio, use this shim that requires ZERO RPC/Jupiter secrets:
+
+```json
+{
+  "mcpServers": {
+    "sofinance": {
+      "command": "npx",
+      "args": ["tsx", "src/mcp/remote-shim.ts"],
+      "cwd": "/absolute/path/to/sofinance-public",
+      "env": {
+        "SOFINANCE_MCP_URL": "https://sofinance-alpha.vercel.app/api/mcp",
+        "SOFINANCE_MCP_TOKEN": "<your-token-here>"
+      }
+    }
+  }
+}
+```
+
+**Benefits:**
+- ✅ Zero local secrets (no SOLANA_RPC_URL or JUPITER_API_KEY on laptop)
+- ✅ Signature-verified tokens (prove wallet ownership before minting)
+- ✅ Always up-to-date (talks to production Vercel backend)
+- ✅ Short-lived tokens (24h expiry, regenerate anytime)
+- ✅ Wallet-bound auth (token only works for your wallet)
+
+**Agent flow:** `list_positions` → `quote_add_liquidity` → `prepare_transaction` → wallet signs locally → `submit_signed_transaction`. Server never holds your private keys.
+
+### Alternative: Local MCP (Power Users)
+
+For local development or testing, you can run the MCP server locally:
+
+```bash
+pnpm install
+pnpm mcp:start  # Requires SOLANA_RPC_URL and JUPITER_API_KEY in env
+```
+
+Cursor / Claude config for local stdio:
 
 ```json
 {
@@ -92,10 +161,9 @@ Or: `pnpm mcp:start` with env already exported.
 
 **Agent flow:** `list_positions` → `quote_add_liquidity` → `prepare_transaction` → wallet signs `unsignedTransaction` → `submit_signed_transaction` with `{ signedTransaction, ...submitArgs }`. Compound: `quote_compound` / `prepare_compound_transaction` → sign → `submit_compound_transaction` with the complete `summary`.
 
-**Sign deep-link:** After `prepare_transaction` or `prepare_compound_transaction`, the agent receives a `signUrl` (e.g. `https://sofinance-alpha.vercel.app/sign/<token>`) that can be opened in a browser. The token is a self-contained, HMAC-signed, compressed payload containing the unsigned transaction, permit, and submit arguments. With the correct wallet connected via Reown AppKit, the user reviews the transaction summary and signs with one click. The signed transaction is automatically submitted via the existing re-verification and broadcast paths. This bridges the gap for agents that can prepare transactions but delegate signing to the user's wallet UI. Sign tokens expire after 60-120 seconds (matching permit/blockhash lifetime). The token is verified server-side using `JUPITER_API_KEY` as the HMAC secret, so MCP (local) and Vercel (production) can share the same signing mechanism without shared memory.
+**Sign deep-link:** After `prepare_transaction` or `prepare_compound_transaction`, the agent receives a `signUrl` (e.g. `https://sofinance-alpha.vercel.app/sign/<token>`) that can be opened in a browser. The token is a self-contained, HMAC-signed, compressed payload containing the unsigned transaction, permit, and submit arguments. With the correct wallet connected via Reown AppKit, the user reviews the transaction summary and signs with one click. The signed transaction is automatically submitted via the existing re-verification and broadcast paths. This bridges the gap for agents that can prepare transactions but delegate signing to the user's wallet UI. Sign tokens expire after 60-120 seconds (matching permit/blockhash lifetime). The token is verified server-side using `JUPITER_API_KEY` as the HMAC secret, so MCP (local/remote) and Vercel (production) can share the same signing mechanism without shared memory.
 
-`JUPITER_API_KEY` is used for Jupiter swap quotes, permit HMACs, and sign token HMACs. Quotes expire quickly; always re-prepare before signing.
-
+`JUPITER_API_KEY` is used for Jupiter swap quotes, permit HMACs, sign token HMACs, and MCP token HMACs. Quotes expire quickly; always re-prepare before signing.
 ## Architecture
 
 ```mermaid
