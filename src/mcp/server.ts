@@ -67,7 +67,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: "get_position_performance",
         description:
-          "Compute holding-period return and realized fee APR for a Raydium CLMM position NFT from on-chain facts (no database, not Raydium pool 24h feeApr). Discovers open/increase/decrease txs via signatures on the personal-position PDA, parses CreatePersonalPositionEvent / IncreaseLiquidityEvent / DecreaseLiquidityEvent amounts, adds current liquidity value + uncollected fees, and reports holdingDays, net invested, current equity, fees earned, PnL, holdingPeriodReturnPct, annualizedReturnPct (simple ×365/days), and feeOnlyAprPct. USD uses Jupiter Price API v3 at evaluation time (labeled). Read-only.",
+          "Compute holding-period return and realized fee APR for a Raydium CLMM position NFT from on-chain facts (no database, not Raydium pool 24h feeApr). Prefer token-native metrics: for same-asset RWA wrap pairs (e.g. SPCXx/SPCX) report TE in the plain/base ticker using current tick mid (1.0001^tick×10^(decA−decB)), plus raw A/B inventory, holdingDays, feeOnlyAprPct and annualizedReturnPct (HPR×365/days; feesEarned/deposited×365/days). USD is optional/secondary (Jupiter Price v3 / Raydium stable-leg, labeled current — not historical). Discovers open/increase/decrease txs via personal-position signatures + Anchor events + current equity. Read-only.",
         inputSchema: {
           type: "object",
           properties: {
@@ -86,7 +86,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             skipPricing: {
               type: "boolean",
-              description: "If true, skip Jupiter USD pricing (token-raw metrics only)",
+              description: "If true, skip Jupiter/Raydium USD pricing (token-native / TE metrics still computed)",
               default: false,
             },
           },
