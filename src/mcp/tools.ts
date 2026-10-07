@@ -16,6 +16,7 @@ import { simulateAndVerifyCompound } from "../lib/compound-simulation";
 import type { CompoundSummary } from "../lib/compound-types";
 import { discoverRwaPairs } from "../lib/rwa-pairs";
 import { getPositionPerformance as readPositionPerformance } from "../lib/position-performance";
+import { createSignToken } from "../lib/pending-sign-token";
 import type {
   ListPositionsInput,
   QuoteAddLiquidityInput,
@@ -182,11 +183,34 @@ export async function prepareTransaction(input: PrepareTransactionInput) {
     rangeSide: summary.quote.rangeSide,
     startingBalances: summary.startingBalances,
   };
+  
+  const unsignedTransactionBase64 = Buffer.from(transaction.serialize()).toString("base64");
+  
+  // Create self-contained signed token (no shared storage required)
+  const signToken = await createSignToken(
+    {
+      kind: "add-liquidity",
+      wallet: input.wallet,
+      unsignedTransaction: unsignedTransactionBase64,
+      permit,
+      submitArgs,
+      expiresAt: summary.expiresAt,
+    },
+    jupiterApiKey
+  );
+  
+  const baseUrl = (
+    process.env.NEXT_PUBLIC_APP_URL || 
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "")
+  ).replace(/\/$/, "");
+  const signUrl = baseUrl ? `${baseUrl}/sign/${signToken}` : `/sign/${signToken}`;
 
   return {
-    unsignedTransaction: Buffer.from(transaction.serialize()).toString("base64"),
+    unsignedTransaction: unsignedTransactionBase64,
     permit,
     submitArgs,
+    signToken,
+    signUrl,
     summary: {
       simulated: summary.simulated,
       quote: {
@@ -218,7 +242,7 @@ export async function prepareTransaction(input: PrepareTransactionInput) {
       expiresAt: summary.expiresAt,
     },
     instructions: {
-      message: "Sign unsignedTransaction with the wallet, then call submit_signed_transaction with { signedTransaction, ...submitArgs }. Do not modify submitArgs; they are bound by the permit.",
+      message: "Sign unsignedTransaction with the wallet, then call submit_signed_transaction with { signedTransaction, ...submitArgs }. Do not modify submitArgs; they are bound by the permit. Or open signUrl in a browser with the wallet connected to sign via UI.",
     },
   };
 }
@@ -285,14 +309,44 @@ export async function prepareCompoundTransaction(input: QuoteCompoundInput) {
     message: Buffer.from(transaction.message.serialize()).toString("base64"),
   });
   
+  const unsignedTransactionBase64 = Buffer.from(transaction.serialize()).toString("base64");
+  
+  // submitArgs for compound includes signedTransaction, permit, wallet, and full summary
+  const submitArgs = {
+    permit,
+    wallet: input.wallet,
+    summary,
+  };
+  
+  // Create self-contained signed token (no shared storage required)
+  const signToken = await createSignToken(
+    {
+      kind: "compound",
+      wallet: input.wallet,
+      unsignedTransaction: unsignedTransactionBase64,
+      permit,
+      submitArgs,
+      expiresAt: summary.expiresAt,
+    },
+    jupiterApiKey
+  );
+  
+  const baseUrl = (
+    process.env.NEXT_PUBLIC_APP_URL || 
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "")
+  ).replace(/\/$/, "");
+  const signUrl = baseUrl ? `${baseUrl}/sign/${signToken}` : `/sign/${signToken}`;
+  
   // The permit is an HMAC over the complete summary, so the complete object
   // must be returned and passed back unchanged to submit_compound_transaction.
   return {
-    unsignedTransaction: Buffer.from(transaction.serialize()).toString("base64"),
+    unsignedTransaction: unsignedTransactionBase64,
     permit,
     summary,
+    signToken,
+    signUrl,
     instructions: {
-      message: "Sign unsignedTransaction with the wallet, then call submit_compound_transaction with { signedTransaction, permit, wallet, summary }. Pass summary back exactly as returned; it is bound by the permit.",
+      message: "Sign unsignedTransaction with the wallet, then call submit_compound_transaction with { signedTransaction, permit, wallet, summary }. Pass summary back exactly as returned; it is bound by the permit. Or open signUrl in a browser with the wallet connected to sign via UI.",
     },
   };
 }

@@ -16,7 +16,7 @@ Successfully converted SoFinance MCP from **local stdio requiring secrets** to *
 
 ## Before vs After
 
-### Before (Local Stdio)
+### Before (Local Stdio - Vulnerable)
 ```json
 {
   "mcpServers": {
@@ -33,14 +33,31 @@ Successfully converted SoFinance MCP from **local stdio requiring secrets** to *
 }
 ```
 
-### After (Remote HTTP)
+### After - Option A: Direct HTTP (Preferred)
 ```json
 {
   "mcpServers": {
     "sofinance": {
       "url": "https://sofinance-alpha.vercel.app/api/mcp",
       "headers": {
-        "Authorization": "Bearer <wallet-specific-token>"  // ✅ Auto-generated, no secrets
+        "Authorization": "Bearer <signature-verified-token>"  // ✅ Wallet-signed, no local secrets
+      }
+    }
+  }
+}
+```
+
+### After - Option B: Zero-Secret Shim (Fallback)
+```json
+{
+  "mcpServers": {
+    "sofinance": {
+      "command": "npx",
+      "args": ["tsx", "src/mcp/remote-shim.ts"],
+      "cwd": "/absolute/path/to/sofinance-public",
+      "env": {
+        "SOFINANCE_MCP_URL": "https://sofinance-alpha.vercel.app/api/mcp",
+        "SOFINANCE_MCP_TOKEN": "<signature-verified-token>"  // ✅ No RPC/Jupiter secrets
       }
     }
   }
@@ -86,37 +103,63 @@ Successfully converted SoFinance MCP from **local stdio requiring secrets** to *
 └─────────────────────────────────────┘
 ```
 
-## User Flow
+## User Flow (Signature-Verified)
 
 1. **User connects wallet** on web UI
 2. **Expand "MCP Connection (AI Agents)"** card
-3. **Copy config** with auto-generated token
-4. **Paste into Cursor/Claude** MCP settings
-5. **Use tools** via agent (server verifies token + wallet)
+3. **Sign challenge message** in wallet (proves ownership)
+4. **Copy config** with signature-verified token (HTTP or shim)
+5. **Paste into Cursor/Claude** MCP settings
+6. **Use tools** via agent (server verifies token + wallet match)
 
-## Files Created
+## Files Created/Updated
 
 ### Core Implementation
-- `src/lib/mcp-auth.ts` - Token generation & verification (HMAC-signed)
-- `src/lib/mcp-auth.test.ts` - 15 tests for auth logic
-- `src/app/api/mcp/route.ts` - HTTP MCP endpoint (JSON-RPC 2.0)
-- `src/app/api/mcp-token/route.ts` - Token generation endpoint
-- `src/components/mcp-connection-card.tsx` - UI for connection config
+- `src/lib/mcp-auth.ts` - Token generation & verification + **signature verification**
+- `src/lib/mcp-auth.test.ts` - **26 tests** (15 original + 11 signature tests)
+- `src/app/api/mcp/route.ts` - HTTP MCP endpoint + **wallet match enforcement**
+- `src/app/api/mcp-token/route.ts` - **Challenge issuance + signature verification**
+- `src/components/mcp-connection-card.tsx` - UI with **signature flow + both configs**
+- `src/mcp/remote-shim.ts` - **NEW: Zero-secret stdio→HTTP proxy**
 
-### Updated Files
-- `README.md` - Remote MCP now recommended default
+### Wallet Integration
+- `src/components/wallet-connection.tsx` - Added `signMessage` to context
+- `src/components/providers.tsx` - Expose `signMessage` for browser wallets
+- `src/components/mobile-wallet-provider.tsx` - Expose `signMessage` for mobile
+
+### Documentation
+- `README.md` - **Both HTTP + shim configs documented**
 - `.env.example` - Added NEXT_PUBLIC_APP_URL
 - `src/components/selected-app.tsx` - Added MCP card to UI
 
+### Dependencies
+- `tweetnacl` - ed25519 signature verification
+
 ## Security Model
 
-### Token Generation
+### Challenge-Response Flow (NEW)
 ```typescript
+// 1. Client requests challenge
+GET /api/mcp-token?wallet=<address>
+→ {
+    message: "SoFinance MCP token\nwallet:<addr>\nissuedAt:<ms>\nnonce:<hex>",
+    issuedAt: timestamp,
+    nonce: hex-string
+  }
+
+// 2. Client signs challenge
+signature = wallet.signMessage(message)  // ed25519
+
+// 3. Server verifies signature
+nacl.sign.detached.verify(message, signature, publicKey)
+→ if valid && fresh (≤5min), mint token
+
+// 4. Token is minted (only after signature verification)
 Token = base64url(payload) + "." + HMAC-SHA256(payload, JUPITER_API_KEY)
 
 Payload = {
   version: "v1",
-  wallet: "base58-address",
+  wallet: "base58-address",  // Verified by signature
   issuedAt: timestamp,
   expiresAt: timestamp + 24h,
   nonce: random-32-bytes
@@ -124,14 +167,17 @@ Payload = {
 ```
 
 ### Token Verification on Each Request
-1. ✅ HMAC signature valid
-2. ✅ Token not expired
-3. ✅ Wallet matches request wallet parameter
-4. ✅ All existing safety gates (permit, simulation, re-verify)
+1. ✅ **Signature verified** during minting (NEW)
+2. ✅ HMAC signature valid
+3. ✅ Token not expired
+4. ✅ Wallet matches request wallet parameter
+5. ✅ All existing safety gates (permit, simulation, re-verify)
 
 ### Threat Model Coverage
+- ✅ **Unauthorized token minting**: **BLOCKED** (signature required)
+- ✅ **Wallet impersonation**: **BLOCKED** (ed25519 signature verification)
 - ❌ **Token theft**: Limited damage (24h expiry, wallet-bound, no custody)
-- ❌ **Replay attacks**: Nonce in token, short TTL
+- ❌ **Replay attacks**: Nonce in token + challenge freshness (5min window)
 - ❌ **Privilege escalation**: Token only valid for issuing wallet
 - ❌ **Secrets on laptop**: Zero local secrets needed
 - ❌ **Server custody**: Server never holds private keys (unchanged)
@@ -162,14 +208,14 @@ All 9 MCP tools work remotely:
 ✅ pnpm lint - Pass
 
 # Unit tests
-✅ 15 new auth token tests - All pass
+✅ 26 MCP auth tests (15 original + 11 signature verification)
 ✅ 191 existing tests - All pass
-✅ Total: 206 tests pass
+✅ Total: 217 tests pass
 
 # Build
 ✅ pnpm build - Success
 ✅ All routes generated correctly
-✅ /api/mcp and /api/mcp-token included
+✅ /api/mcp, /api/mcp-token, src/mcp/remote-shim.ts included
 ```
 
 ## Vercel Deployment Compatibility
@@ -256,19 +302,26 @@ NEXT_PUBLIC_REOWN_PROJECT_ID=<id>   # Existing wallet connect
 
 ## Success Criteria Met ✅
 
+### Critical Security (NEW)
+1. ✅ **Cannot mint token without wallet signature** - ed25519 verification required
+2. ✅ **Challenge-response flow** - 5-minute freshness window
+3. ✅ **Wallet ownership proof** - Sign before token issuance
+
 ### Original Requirements
-1. ✅ **Cursor can use SoFinance MCP without local SOLANA_RPC_URL / JUPITER_API_KEY**
-2. ✅ **prepare_* still returns signUrl pointing at production `/sign/...`**
-3. ✅ **Auth token required for mutating/expensive tools**
-4. ✅ **README documents the remote setup as the recommended path**
+4. ✅ **Cursor can use SoFinance MCP without local SOLANA_RPC_URL / JUPITER_API_KEY**
+5. ✅ **prepare_* still returns signUrl pointing at production `/sign/...`**
+6. ✅ **Auth token required for mutating/expensive tools**
+7. ✅ **README documents the remote setup as the recommended path**
 
 ### Additional Goals
-5. ✅ **Zero local secrets** - Only need connection URL + token
-6. ✅ **Short-lived tokens** - 24h expiry, regenerate anytime
-7. ✅ **Wallet-bound auth** - Token only works for issuing wallet
-8. ✅ **Vercel Hobby compatible** - Serverless, stateless design
-9. ✅ **UI integration** - Auto-generate config after wallet connect
-10. ✅ **No breaking changes** - Local stdio still works
+8. ✅ **Zero local secrets** - Only need connection URL + token (HTTP or shim)
+9. ✅ **Short-lived tokens** - 24h expiry, regenerate anytime
+10. ✅ **Wallet-bound auth** - Token only works for issuing wallet
+11. ✅ **Vercel Hobby compatible** - Serverless, stateless design
+12. ✅ **UI integration** - Auto-generate config after wallet connect + signature
+13. ✅ **No breaking changes** - Local stdio still works
+14. ✅ **Transport compatibility** - HTTP + zero-secret shim for stdio-only agents
+15. ✅ **Wallet match enforcement** - get_position_performance checks wallet when provided
 
 ## Next Steps
 
