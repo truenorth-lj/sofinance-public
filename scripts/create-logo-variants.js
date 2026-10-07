@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 
 async function createLogoVariants() {
-  console.log('Creating SoFinance logo variants from OpenIntern avatar...');
+  console.log('Creating SoFinance logo variants from professional OpenIntern avatar...');
   
   const avatarPath = path.join(__dirname, '../public/avatar-full.png');
   const publicDir = path.join(__dirname, '../public');
@@ -14,10 +14,10 @@ async function createLogoVariants() {
     const metadata = await avatar.metadata();
     console.log(`Original avatar: ${metadata.width}x${metadata.height}`);
     
-    // Create circular cropped version for header (40x40)
-    // Focus on the face/head area (upper portion of the image)
-    const cropSize = 900; // Crop a square from the top-center
-    const cropTop = 0;
+    // Create cropped version for header (40x40)
+    // Focus on the face/head area with glasses (upper portion)
+    const cropSize = 850; // Crop a square from the top-center (includes face + glasses)
+    const cropTop = 50;
     const cropLeft = Math.floor((metadata.width - cropSize) / 2);
     
     await avatar
