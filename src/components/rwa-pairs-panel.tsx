@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { ArrowUpRight, LoaderCircle, RefreshCw } from "lucide-react";
-import { Button } from "./ui/button";
 
 type RwaPair = {
   poolAddress: string;
@@ -95,90 +94,99 @@ export function RwaPairsPanel() {
   };
 
   return (
-    <section className="rounded-2xl border border-white/10 bg-[#111d2c]/95 p-4 sm:p-5" aria-labelledby="rwa-pairs-heading">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <section 
+      className="rounded-[20px] border border-neutral-800/80 bg-[#0a0a0a] p-6 sm:p-8" 
+      aria-labelledby="rwa-pairs-heading"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-neutral-800/50 pb-5">
         <div>
-          <h2 id="rwa-pairs-heading" className="text-sm font-semibold">Same-asset RWA CLMM pairs</h2>
-          <p className="mt-1 max-w-2xl text-xs leading-5 text-slate-400">
+          <h2 id="rwa-pairs-heading" className="text-base font-semibold text-neutral-100">
+            Same-asset RWA CLMM pairs
+          </h2>
+          <p className="mt-2 max-w-2xl text-xs leading-5 text-neutral-500">
             Raydium concentrated pools where both sides are the same underlying (e.g. MSTRx/MSTR, NVDAx/NVDA),
             filtered by Jupiter tags (stocks|rwa) and the Backed xStocks whitelist. Read-only — does not open positions.
           </p>
         </div>
-        <Button variant="secondary" className="px-3 py-2 text-xs" disabled={loading} onClick={refresh}>
+        <button 
+          className="inline-flex items-center justify-center gap-2 rounded-xl border border-neutral-700 bg-transparent px-3 py-2 text-xs font-semibold text-neutral-300 transition-colors hover:border-neutral-600 hover:bg-neutral-900/50 disabled:opacity-40 disabled:cursor-not-allowed"
+          disabled={loading} 
+          onClick={refresh}
+        >
           {loading ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
           Refresh
-        </Button>
+        </button>
       </div>
 
       {data && (
-        <p className="mt-3 text-[11px] leading-5 text-slate-500">
+        <p className="mt-4 text-[11px] leading-5 text-neutral-600">
           {data.pairingRuleSummary} Yield: {data.estimatedFeeAprLabel} Scanned {data.scannedPools} pools
           ({data.pagesFetched} pages). Sorted by estimated fee APR.
         </p>
       )}
 
       {error && (
-        <div role="alert" className="mt-4 rounded-xl border border-rose-400/25 bg-rose-400/10 p-3 text-sm text-rose-200">
+        <div role="alert" className="mt-6 rounded-xl border border-neutral-700 bg-neutral-900/50 p-4 text-sm text-neutral-300">
           {error}
         </div>
       )}
 
       {loading && !data && (
-        <p role="status" className="mt-6 inline-flex items-center gap-2 text-sm text-sky-300">
+        <p role="status" className="mt-8 inline-flex items-center gap-2 text-sm text-neutral-400">
           <LoaderCircle className="h-4 w-4 animate-spin" /> Scanning Raydium CLMM pools…
         </p>
       )}
 
       {data && data.pairs.length === 0 && !loading && (
-        <p className="mt-6 text-sm text-slate-400">No same-asset RWA pairs found in the scanned range.</p>
+        <p className="mt-8 text-sm text-neutral-500">No same-asset RWA pairs found in the scanned range.</p>
       )}
 
       {data && data.pairs.length > 0 && (
-        <div className="mt-4 overflow-x-auto">
+        <div className="mt-6 overflow-x-auto">
           <table className="w-full min-w-[720px] border-collapse text-left text-xs">
             <thead>
-              <tr className="border-b border-white/10 text-slate-400">
-                <th className="py-2 pr-3 font-medium">Pair</th>
-                <th className="py-2 pr-3 font-medium">Est. fee APR</th>
-                <th className="py-2 pr-3 font-medium">Raydium APR</th>
-                <th className="py-2 pr-3 font-medium">TVL</th>
-                <th className="py-2 pr-3 font-medium">24h vol</th>
-                <th className="py-2 pr-3 font-medium">Fee</th>
-                <th className="py-2 pr-3 font-medium">Flags</th>
-                <th className="py-2 font-medium">Pool</th>
+              <tr className="border-b border-neutral-800/60">
+                <th className="pb-3 pr-4 font-semibold text-neutral-400">Pair</th>
+                <th className="pb-3 pr-4 font-semibold text-neutral-400">Est. fee APR</th>
+                <th className="pb-3 pr-4 font-semibold text-neutral-400">Raydium APR</th>
+                <th className="pb-3 pr-4 font-semibold text-neutral-400">TVL</th>
+                <th className="pb-3 pr-4 font-semibold text-neutral-400">24h vol</th>
+                <th className="pb-3 pr-4 font-semibold text-neutral-400">Fee</th>
+                <th className="pb-3 pr-4 font-semibold text-neutral-400">Flags</th>
+                <th className="pb-3 font-semibold text-neutral-400">Pool</th>
               </tr>
             </thead>
             <tbody>
               {data.pairs.map((pair) => (
-                <tr key={pair.poolAddress} className="border-b border-white/5 align-top text-slate-200">
-                  <td className="py-3 pr-3">
-                    <div className="font-semibold text-sky-200">
+                <tr key={pair.poolAddress} className="border-b border-neutral-800/30 align-top">
+                  <td className="py-4 pr-4">
+                    <div className="font-semibold text-neutral-100">
                       {pair.wrappedSymbol}/{pair.plainSymbol}
                     </div>
-                    <div className="mt-0.5 max-w-[220px] truncate text-[11px] text-slate-500" title={`${pair.nameA} / ${pair.nameB}`}>
+                    <div className="mt-0.5 max-w-[220px] truncate text-[11px] text-neutral-600" title={`${pair.nameA} / ${pair.nameB}`}>
                       {pair.nameA} / {pair.nameB}
                     </div>
                   </td>
-                  <td className="py-3 pr-3 font-medium tabular-nums text-emerald-300">{pct(pair.estimatedFeeAprPct)}</td>
-                  <td className="py-3 pr-3 tabular-nums text-slate-300">{pct(pair.raydiumFeeApr24h)}</td>
-                  <td className="py-3 pr-3 tabular-nums">{money(pair.tvlUsd)}</td>
-                  <td className="py-3 pr-3 tabular-nums">{money(pair.volume24hUsd)}</td>
-                  <td className="py-3 pr-3 tabular-nums">
+                  <td className="py-4 pr-4 font-semibold tabular-nums text-neutral-100">{pct(pair.estimatedFeeAprPct)}</td>
+                  <td className="py-4 pr-4 tabular-nums text-neutral-300">{pct(pair.raydiumFeeApr24h)}</td>
+                  <td className="py-4 pr-4 tabular-nums text-neutral-300">{money(pair.tvlUsd)}</td>
+                  <td className="py-4 pr-4 tabular-nums text-neutral-300">{money(pair.volume24hUsd)}</td>
+                  <td className="py-4 pr-4 tabular-nums text-neutral-300">
                     {pair.feeTierBps === null ? "—" : `${pair.feeTierBps} bps`}
                   </td>
-                  <td className="py-3 pr-3">
+                  <td className="py-4 pr-4">
                     <div className="flex flex-wrap gap-1">
                       {(pair.token2022A || pair.token2022B) && (
-                        <span className="rounded-full bg-violet-400/15 px-2 py-0.5 text-[10px] text-violet-200">Token-2022</span>
+                        <span className="rounded-full border border-neutral-700 bg-neutral-800/50 px-2 py-0.5 text-[10px] text-neutral-400">Token-2022</span>
                       )}
                       {pair.freezeRisk && (
-                        <span className="rounded-full bg-amber-400/15 px-2 py-0.5 text-[10px] text-amber-200">Freeze risk</span>
+                        <span className="rounded-full border border-neutral-700 bg-neutral-800/50 px-2 py-0.5 text-[10px] text-neutral-400">Freeze risk</span>
                       )}
                     </div>
                   </td>
-                  <td className="py-3">
+                  <td className="py-4">
                     <a
-                      className="inline-flex items-center gap-1 text-sky-300 underline"
+                      className="inline-flex items-center gap-1 text-neutral-300 underline decoration-neutral-700 underline-offset-2 transition-colors hover:text-neutral-100 hover:decoration-neutral-500"
                       href={`https://raydium.io/clmm/create-position/?pool_id=${pair.poolAddress}`}
                       target="_blank"
                       rel="noreferrer"
