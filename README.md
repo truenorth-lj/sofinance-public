@@ -42,11 +42,12 @@ Kept on both web API and MCP paths:
 | `get_position_performance` | Holding-period / fee APR from chain; TE for same-asset RWA wrap pairs | `positionMint`, `wallet?`, `maxSignatures?`, `skipPricing?` |
 | `list_positions` | Positions + eligible assets | `wallet` |
 | `quote_add_liquidity` | Read-only zap quote | `wallet`, `positionMint`, `inputMint`, `inputKind` (`native`\|`token`), `amount`, `resaleFloorBps?` (9500–10000, default 9900), `slippageToleranceBps?` (0–500 step 10, default 100) |
-| `prepare_transaction` | Unsigned zap tx + permit + `submitArgs` | same as quote |
+| `prepare_transaction` | Unsigned zap tx + permit + `submitArgs` + `signUrl` | same as quote |
 | `submit_signed_transaction` | Permit check → re-sim → broadcast | `signedTransaction` + every `submitArgs` field unchanged |
 | `quote_compound` | Compound quote | `wallet`, `positionMint`, `sourceSignatures?` (≤3) |
-| `prepare_compound_transaction` | Unsigned compound tx + permit | same as quote_compound |
+| `prepare_compound_transaction` | Unsigned compound tx + permit + `signUrl` | same as quote_compound |
 | `submit_compound_transaction` | Permit check → re-sim → broadcast | `signedTransaction`, `permit`, `wallet`, full `summary` unchanged |
+| `list_rwa_pairs` | Discover same-asset RWA pairs | `minTvl?`, `maxPages?`, `sortBy?` |
 
 ## Quickstart — web
 
@@ -148,13 +149,21 @@ Cursor / Claude config for local stdio:
       "cwd": "/absolute/path/to/sofinance-public",
       "env": {
         "SOLANA_RPC_URL": "https://your-solana-rpc",
-        "JUPITER_API_KEY": "your-jupiter-key"
+        "JUPITER_API_KEY": "your-jupiter-key",
+        "NEXT_PUBLIC_APP_URL": "https://sofinance-alpha.vercel.app"
       }
     }
   }
 }
 ```
 
+Or: `pnpm mcp:start` with env already exported.
+
+**Agent flow:** `list_positions` → `quote_add_liquidity` → `prepare_transaction` → wallet signs `unsignedTransaction` → `submit_signed_transaction` with `{ signedTransaction, ...submitArgs }`. Compound: `quote_compound` / `prepare_compound_transaction` → sign → `submit_compound_transaction` with the complete `summary`.
+
+**Sign deep-link:** After `prepare_transaction` or `prepare_compound_transaction`, the agent receives a `signUrl` (e.g. `https://sofinance-alpha.vercel.app/sign/<token>`) that can be opened in a browser. The token is a self-contained, HMAC-signed, compressed payload containing the unsigned transaction, permit, and submit arguments. With the correct wallet connected via Reown AppKit, the user reviews the transaction summary and signs with one click. The signed transaction is automatically submitted via the existing re-verification and broadcast paths. This bridges the gap for agents that can prepare transactions but delegate signing to the user's wallet UI. Sign tokens expire after 60-120 seconds (matching permit/blockhash lifetime). The token is verified server-side using `JUPITER_API_KEY` as the HMAC secret, so MCP (local/remote) and Vercel (production) can share the same signing mechanism without shared memory.
+
+`JUPITER_API_KEY` is used for Jupiter swap quotes, permit HMACs, sign token HMACs, and MCP token HMACs. Quotes expire quickly; always re-prepare before signing.
 ## Architecture
 
 ```mermaid
