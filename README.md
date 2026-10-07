@@ -17,7 +17,7 @@ The server never holds private keys. Agents/users sign locally; broadcast re-ver
 - **Resale-ratio floor** (default 99%): conservative quote of swapping position outputs back to the same input asset
 - **One-click compound**: harvest fees/rewards, swap to range ratio, reinvest (phase one rejects third reward mints without a verifiable path)
 - Web UI Advanced settings for resale gap and price tolerance; MCP exposes the same knobs
-- **Position performance / realized fee APR**: holding-period return from on-chain open/increase/decrease events + current equity (not Raydium pool 24h feeApr) — MCP `get_position_performance`, `/api/position-performance`, `/position-performance` UI
+- **Position performance / realized fee APR**: holding-period return from on-chain open/increase/decrease events + current equity (not Raydium pool 24h feeApr). Same-asset RWA pairs prefer **token-equivalent (TE)** in the plain/base ticker via current tick mid (raw A/B + TE; USD secondary) — MCP `get_position_performance`, `/api/position-performance`, `/position-performance` UI
 - **Same-asset RWA pair discovery**: Raydium CLMM pools where both sides are the same underlying (e.g. `MSTRx`/`MSTR`, `NVDAx`/`NVDA`), filtered by Jupiter Tokens API tags (`stocks`|`rwa`) plus Backed xStocks whitelist, with fee tier, TVL, 24h volume/fees, estimated fee APR, Token-2022 / freeze flags — MCP `list_rwa_pairs` and read-only `/rwa-pairs` UI
 
 ## Safety gates
@@ -39,7 +39,7 @@ Kept on both web API and MCP paths:
 
 | Tool | Purpose | Key params |
 |------|---------|------------|
-| `get_position_performance` | Holding-period return / fee APR from chain events | `positionMint`, `wallet?`, `maxSignatures?`, `skipPricing?` |
+| `get_position_performance` | Holding-period / fee APR from chain; TE for same-asset RWA wrap pairs | `positionMint`, `wallet?`, `maxSignatures?`, `skipPricing?` |
 | `list_positions` | Positions + eligible assets | `wallet` |
 | `quote_add_liquidity` | Read-only zap quote | `wallet`, `positionMint`, `inputMint`, `inputKind` (`native`\|`token`), `amount`, `resaleFloorBps?` (9500–10000, default 9900), `slippageToleranceBps?` (0–500 step 10, default 100) |
 | `prepare_transaction` | Unsigned zap tx + permit + `submitArgs` | same as quote |
