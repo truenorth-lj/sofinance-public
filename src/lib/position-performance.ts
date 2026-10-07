@@ -26,9 +26,14 @@ import {
 import {
   ASSUMPTIONS_LABEL,
   computePositionPerformance,
+  computeTokenNativeMetrics,
   PERFORMANCE_METHOD,
+  TOKEN_NATIVE_ASSUMPTIONS,
   type PositionPerformanceMetrics,
+  type TokenNativeMetrics,
 } from "./position-performance-math";
+import { matchWrapPairShape } from "./rwa-pairing";
+import { getTokenMetadata } from "./token-metadata";
 
 const POSITION_DISCRIMINATOR = createHash("sha256").update("account:PersonalPositionState").digest().subarray(0, 8);
 const POOL_DISCRIMINATOR = createHash("sha256").update("account:PoolState").digest().subarray(0, 8);
@@ -84,6 +89,8 @@ export type PositionPerformanceResult = {
     decreaseCount: number;
   };
   metrics: PositionPerformanceMetrics;
+  /** Token-native inventory + preferred TE for same-asset RWA wrap pairs. USD stays secondary. */
+  tokenNative: TokenNativeMetrics;
   pricing: {
     source: "jupiter-price-v3" | "raydium-pool-stable" | "none";
     label: string;
@@ -154,6 +161,27 @@ async function fetchRaydiumPoolUsdPrices(
     prices.set(mintB, 1 / ratio);
   }
   return prices;
+}
+
+
+async function fetchRaydiumPoolSymbols(
+  poolId: string,
+  fetcher: typeof fetch,
+): Promise<{ symbolA: string | null; symbolB: string | null }> {
+  const url = `${RAYDIUM_POOL_IDS}?ids=${encodeURIComponent(poolId)}`;
+  try {
+    const response = await fetcher(url, { headers: { Accept: "application/json" } });
+    if (!response.ok) return { symbolA: null, symbolB: null };
+    const body = (await response.json()) as {
+      data?: Array<{ mintA?: { symbol?: string }; mintB?: { symbol?: string } } | null>;
+    };
+    const pool = body.data?.[0];
+    const symbolA = typeof pool?.mintA?.symbol === "string" ? pool.mintA.symbol.trim() : null;
+    const symbolB = typeof pool?.mintB?.symbol === "string" ? pool.mintB.symbol.trim() : null;
+    return { symbolA: symbolA || null, symbolB: symbolB || null };
+  } catch {
+    return { symbolA: null, symbolB: null };
+  }
 }
 
 async function readUncollectedFees(connection: Connection, programId: PublicKey, poolId: PublicKey, position: ReturnType<typeof PersonalPositionLayout.decode>, pool: ReturnType<typeof PoolInfoLayout.decode>) {
@@ -296,13 +324,14 @@ export async function getPositionPerformance(
     BigInt(upper.toString()),
   );
 
+  const mintA = pool.mintA.toBase58();
+  const mintB = pool.mintB.toBase58();
+
   let priceUsdA: number | null = null;
   let priceUsdB: number | null = null;
   let pricingSource: "jupiter-price-v3" | "raydium-pool-stable" | "none" = "none";
-  let pricingLabel = "USD pricing skipped; token-raw metrics only.";
+  let pricingLabel = "USD pricing skipped; token-raw / token-native metrics only.";
   if (!options.skipPricing) {
-    const mintA = pool.mintA.toBase58();
-    const mintB = pool.mintB.toBase58();
     try {
       const prices = await fetchJupiterPricesUsd(
         [mintA, mintB],
@@ -348,14 +377,63 @@ export async function getPositionPerformance(
     decimalsB: pool.mintDecimalsB,
   });
 
+  let symbolA: string | null = null;
+  let symbolB: string | null = null;
+  try {
+    const raySymbols = await fetchRaydiumPoolSymbols(poolId.toBase58(), fetcher);
+    symbolA = raySymbols.symbolA;
+    symbolB = raySymbols.symbolB;
+  } catch {
+    /* ignore */
+  }
+  if (!symbolA || !symbolB) {
+    try {
+      const meta = await getTokenMetadata(
+        [mintA, mintB],
+        fetcher,
+        options.jupiterApiKey ?? process.env.JUPITER_API_KEY,
+      );
+      symbolA = symbolA ?? meta[mintA]?.symbol ?? null;
+      symbolB = symbolB ?? meta[mintB]?.symbol ?? null;
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const wrap = matchWrapPairShape(symbolA ?? "", symbolB ?? "");
+  const sameAssetWrap = wrap.matched === true;
+  const tokenNative = computeTokenNativeMetrics({
+    deposited: { a: cashflows.depositedA, b: cashflows.depositedB },
+    withdrawnPrincipal: { a: cashflows.withdrawnPrincipalA, b: cashflows.withdrawnPrincipalB },
+    feesCollected: { a: cashflows.feesCollectedA, b: cashflows.feesCollectedB },
+    liquidityAmounts: {
+      a: BigInt(currentAmounts.amountA.toString()),
+      b: BigInt(currentAmounts.amountB.toString()),
+    },
+    uncollectedFees: uncollected,
+    holdingDays: metrics.holdingDays,
+    decimalsA: pool.mintDecimalsA,
+    decimalsB: pool.mintDecimalsB,
+    tickCurrent: pool.tickCurrent,
+    symbolA,
+    symbolB,
+    sameAssetWrap,
+    wrapKind: sameAssetWrap ? wrap.wrapKind : null,
+    wrappedSide: sameAssetWrap ? wrap.wrappedSide : null,
+    plainSymbol: sameAssetWrap ? wrap.plainSymbol : null,
+    wrappedSymbol: sameAssetWrap ? wrap.wrappedSymbol : null,
+  });
+
+  const assumptions = [ASSUMPTIONS_LABEL, TOKEN_NATIVE_ASSUMPTIONS].join(" ");
+
   return {
     wallet: options.wallet ?? null,
     ownsNft,
     positionMint,
     positionAccount: positionPda.toBase58(),
     poolId: poolId.toBase58(),
-    mintA: pool.mintA.toBase58(),
-    mintB: pool.mintB.toBase58(),
+    mintA,
+    mintB,
     decimalsA: pool.mintDecimalsA,
     decimalsB: pool.mintDecimalsB,
     tickLower: position.tickLower,
@@ -383,6 +461,7 @@ export async function getPositionPerformance(
       decreaseCount: cashflows.decreaseCount,
     },
     metrics,
+    tokenNative,
     pricing: {
       source: pricingSource,
       label: pricingLabel,
@@ -390,7 +469,7 @@ export async function getPositionPerformance(
       priceUsdB,
     },
     method: PERFORMANCE_METHOD,
-    assumptions: ASSUMPTIONS_LABEL,
+    assumptions,
   };
 }
 

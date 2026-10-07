@@ -591,6 +591,9 @@ export async function listRwaPairs(input: ListRwaPairsInput) {
  * Compute holding-period return / realized fee APR for a Raydium CLMM position NFT
  * from on-chain facts (signatures + Anchor events + current equity). No database.
  *
+ * Prefer token-native / token-equivalent (TE) metrics for same-asset RWA wrap pairs
+ * (plain/base ticker via current tick mid). USD is optional/secondary.
+ *
  * Safety: Read-only. Optional wallet only checks NFT ownership. USD uses current
  * Jupiter Price v3 (Raydium stable-leg fallback) when available (labeled — not historical).
  */
@@ -648,6 +651,7 @@ export async function getPositionPerformance(input: GetPositionPerformanceInput)
       annualizedReturnPct: result.metrics.annualizedReturnPct,
       feeOnlyAprPct: result.metrics.feeOnlyAprPct,
     },
+    tokenNative: result.tokenNative,
     history: result.history.map((item) => ({
       signature: item.signature,
       blockTime: item.blockTime,
