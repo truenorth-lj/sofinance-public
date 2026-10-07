@@ -1,15 +1,66 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PublicKey } from "@solana/web3.js";
-import { generateMcpToken } from "@/lib/mcp-auth";
+import {
+  generateMcpToken,
+  generateChallenge,
+  verifyChallengeSignature,
+} from "@/lib/mcp-auth";
+
+/**
+ * GET /api/mcp-token?wallet=<address>
+ * 
+ * Generate a challenge for wallet to sign.
+ * 
+ * Response:
+ * {
+ *   "wallet": "address",
+ *   "message": "challenge-message",
+ *   "issuedAt": 1234567890000,
+ *   "nonce": "hex-string"
+ * }
+ */
+export async function GET(request: NextRequest) {
+  try {
+    const searchParams = request.nextUrl.searchParams;
+    const wallet = searchParams.get("wallet");
+
+    if (!wallet) {
+      return NextResponse.json(
+        { error: "Wallet address is required" },
+        { status: 400 }
+      );
+    }
+
+    try {
+      new PublicKey(wallet);
+    } catch {
+      return NextResponse.json(
+        { error: "Invalid wallet address" },
+        { status: 400 }
+      );
+    }
+
+    const challenge = generateChallenge(wallet);
+    return NextResponse.json(challenge);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return NextResponse.json(
+      { error: "Failed to generate challenge", details: message },
+      { status: 500 }
+    );
+  }
+}
 
 /**
  * POST /api/mcp-token
  * 
- * Generate a short-lived MCP auth token for a wallet.
+ * Mint a short-lived MCP auth token after verifying wallet signature.
  * 
  * Request body:
  * {
- *   "wallet": "base58-public-key"
+ *   "wallet": "base58-public-key",
+ *   "message": "signed-challenge-message",
+ *   "signature": "base58-signature"
  * }
  * 
  * Response:
@@ -32,11 +83,25 @@ import { generateMcpToken } from "@/lib/mcp-auth";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { wallet } = body;
+    const { wallet, message, signature } = body;
 
     if (!wallet || typeof wallet !== "string") {
       return NextResponse.json(
         { error: "Wallet address is required" },
+        { status: 400 }
+      );
+    }
+
+    if (!message || typeof message !== "string") {
+      return NextResponse.json(
+        { error: "Signed message is required" },
+        { status: 400 }
+      );
+    }
+
+    if (!signature || typeof signature !== "string") {
+      return NextResponse.json(
+        { error: "Signature is required" },
         { status: 400 }
       );
     }
@@ -47,6 +112,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: "Invalid wallet address" },
         { status: 400 }
+      );
+    }
+
+    // Verify signature
+    if (!verifyChallengeSignature(wallet, message, signature)) {
+      return NextResponse.json(
+        { error: "Invalid signature or expired challenge" },
+        { status: 401 }
       );
     }
 
@@ -91,9 +164,11 @@ export async function POST(request: NextRequest) {
       mcpConfig,
       instructions: {
         cursor: "Add the mcpConfig object to your Cursor MCP settings",
-        claudeDesktop: "Add the mcpConfig object to ~/Library/Application Support/Claude/claude_desktop_config.json (Mac) or %APPDATA%/Claude/claude_desktop_config.json (Windows)",
+        claudeDesktop:
+          "Add the mcpConfig object to ~/Library/Application Support/Claude/claude_desktop_config.json (Mac) or %APPDATA%/Claude/claude_desktop_config.json (Windows)",
         note: "This token authorizes MCP calls for your wallet only. Keep it secure.",
       },
+      verified: true,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

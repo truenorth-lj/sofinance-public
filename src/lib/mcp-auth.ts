@@ -1,4 +1,7 @@
 import { createHmac, randomBytes } from "crypto";
+import { PublicKey } from "@solana/web3.js";
+import nacl from "tweetnacl";
+import bs58 from "bs58";
 
 /**
  * MCP Authentication Token System
@@ -7,6 +10,7 @@ import { createHmac, randomBytes } from "crypto";
  * Tokens authorize read/prepare/submit operations without exposing RPC/Jupiter keys locally.
  * 
  * Security:
+ * - Requires ed25519 signature proof of wallet ownership before minting
  * - Tokens expire (default 24h, configurable)
  * - HMAC-signed with JUPITER_API_KEY (server-side secret)
  * - Bound to specific wallet address
@@ -15,6 +19,7 @@ import { createHmac, randomBytes } from "crypto";
 
 const TOKEN_VERSION = "v1";
 const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const CHALLENGE_SKEW_MS = 5 * 60 * 1000; // 5 minutes
 
 export interface McpTokenPayload {
   version: string;
@@ -24,8 +29,135 @@ export interface McpTokenPayload {
   nonce: string;
 }
 
+export interface TokenChallenge {
+  wallet: string;
+  issuedAt: number;
+  nonce: string;
+}
+
 /**
- * Generate a short-lived MCP auth token for a wallet.
+ * Create a deterministic challenge message for wallet to sign.
+ * This proves wallet ownership before minting a token.
+ * 
+ * @param wallet - Solana wallet public key (base58)
+ * @param issuedAt - Unix timestamp in milliseconds
+ * @param nonce - Random hex string
+ * @returns Message to sign
+ */
+export function createChallengeMessage(
+  wallet: string,
+  issuedAt: number,
+  nonce: string
+): string {
+  return `SoFinance MCP token\nwallet:${wallet}\nissuedAt:${issuedAt}\nnonce:${nonce}`;
+}
+
+/**
+ * Generate a challenge for the wallet to sign.
+ * Client must sign this message and return signature + message to prove ownership.
+ * 
+ * @param wallet - Solana wallet public key (base58)
+ * @returns Challenge object with message
+ */
+export function generateChallenge(wallet: string): {
+  wallet: string;
+  message: string;
+  issuedAt: number;
+  nonce: string;
+} {
+  if (!wallet) {
+    throw new Error("Wallet is required");
+  }
+
+  // Validate wallet format
+  try {
+    new PublicKey(wallet);
+  } catch {
+    throw new Error("Invalid wallet address");
+  }
+
+  const issuedAt = Date.now();
+  const nonce = randomBytes(16).toString("hex");
+  const message = createChallengeMessage(wallet, issuedAt, nonce);
+
+  return { wallet, message, issuedAt, nonce };
+}
+
+/**
+ * Verify a wallet signature over a challenge message.
+ * 
+ * @param wallet - Claimed wallet public key (base58)
+ * @param message - Challenge message that was signed
+ * @param signature - Base58-encoded ed25519 signature
+ * @returns True if signature is valid and fresh
+ */
+export function verifyChallengeSignature(
+  wallet: string,
+  message: string,
+  signature: string
+): boolean {
+  try {
+    // Validate wallet
+    const publicKey = new PublicKey(wallet);
+    
+    // Decode signature
+    const signatureBytes = bs58.decode(signature);
+    
+    // Verify signature
+    const messageBytes = new TextEncoder().encode(message);
+    const publicKeyBytes = publicKey.toBytes();
+    
+    const valid = nacl.sign.detached.verify(
+      messageBytes,
+      signatureBytes,
+      publicKeyBytes
+    );
+
+    if (!valid) {
+      return false;
+    }
+
+    // Parse and validate message freshness
+    const lines = message.split("\n");
+    if (lines.length !== 4 || lines[0] !== "SoFinance MCP token") {
+      return false;
+    }
+
+    const walletLine = lines[1];
+    const issuedAtLine = lines[2];
+
+    if (!walletLine?.startsWith("wallet:") || !issuedAtLine?.startsWith("issuedAt:")) {
+      return false;
+    }
+
+    const messageWallet = walletLine.slice(7);
+    const issuedAtStr = issuedAtLine.slice(9);
+
+    if (messageWallet !== wallet) {
+      return false;
+    }
+
+    const issuedAt = parseInt(issuedAtStr, 10);
+    if (!Number.isSafeInteger(issuedAt)) {
+      return false;
+    }
+
+    // Check freshness (allow 5 minute skew)
+    const now = Date.now();
+    if (Math.abs(now - issuedAt) > CHALLENGE_SKEW_MS) {
+      return false;
+    }
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Generate a short-lived MCP auth token for a wallet AFTER signature verification.
+ * 
+ * SECURITY: This should only be called after verifying wallet ownership via signature.
  * 
  * @param wallet - Solana wallet public key (base58)
  * @param secret - HMAC secret (use JUPITER_API_KEY from env)
@@ -39,6 +171,13 @@ export function generateMcpToken(
 ): string {
   if (!wallet || !secret) {
     throw new Error("Wallet and secret are required");
+  }
+
+  // Validate wallet format
+  try {
+    new PublicKey(wallet);
+  } catch {
+    throw new Error("Invalid wallet address");
   }
 
   const now = Date.now();
