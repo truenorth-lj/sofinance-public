@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { VersionedTransaction } from "@solana/web3.js";
-import { mayStartAnotherAttempt, type AtomicStatus } from "@/lib/attempt-status";
+import { clearsSubmitError, mayStartAnotherAttempt, type AtomicStatus } from "@/lib/attempt-status";
+import { prepareIsStale } from "@/lib/fresh-blockhash";
 import { compoundAttemptKey, loadCompoundAttempt, loadCompoundReceipts, persistCompoundAttempt, persistCompoundReceipt,
   removeConsumedCompoundReceipts, removeRecoveredReceipt, removeUnconfirmedCompoundReceipt, signedCompoundTransaction,
   type CompoundAttempt, type CompoundPrepared, type CompoundReceipt, type RecoveryPrepared } from "@/lib/compound-attempt";
@@ -50,6 +51,7 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
   const submitting = useRef(false);
   const attemptSignatureRef = useRef<string | null>(null);
   const previousTerminal = useRef<string | null>(null);
+  const keepSubmitErrorRef = useRef(false);
   useLayoutEffect(() => {
     identityRef.current = identity; walletRef.current = wallet;
     externalBlockedRef.current = externalBlocked; onConfirmedRef.current = onConfirmed;
@@ -59,7 +61,7 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
   useEffect(() => {
     let cancelled = false;
     const timer = window.setTimeout(() => {
-      setPreview(null); setConfirmation(null); setError("");
+      setPreview(null); setConfirmation(null); setError(""); keepSubmitErrorRef.current = false;
       if (!wallet) { setAttempt(null); setAttemptStatus(null); setReceipts([]); setLoadedWallet(null); setStorageInvalid(false); attemptSignatureRef.current = null; return; }
       try {
         const saved = loadCompoundAttempt(window.localStorage, wallet);
@@ -92,12 +94,14 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
       const next = await post<CompoundPositionState>("/api/compound-state", { wallet: requestedWallet, positionMint: requestedMint });
       if (identityRef.current !== requestedIdentity || requestId !== stateRequest.current) return;
       if (next.wallet !== requestedWallet || next.positionMint !== requestedMint) throw new Error("Yield reading does not match selected position");
-      setState(next); setError("");
+      setState(next);
+      if (!keepSubmitErrorRef.current) setError("");
     } catch (caught) {
       if (identityRef.current === requestedIdentity && requestId === stateRequest.current) {
         // Keep the last yield snapshot so a transient RPC failure (skipped slot,
-        // getBlockTime) cannot grey out One-click compound.
-        setError(caught instanceof Error ? caught.message : "Yield reading failed");
+        // getBlockTime) cannot grey out One-click compound. Do not overwrite a
+        // broadcast/prepare error that expired confirm must still show.
+        if (!keepSubmitErrorRef.current) setError(caught instanceof Error ? caught.message : "Yield reading failed");
       }
     } finally {
       if (identityRef.current === requestedIdentity && requestId === stateRequest.current) setLoading(false);
@@ -117,7 +121,10 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
     // The chain result belongs to the stored attempt, regardless of the currently selected NFT.
     setAttemptStatus(checked.status); setConfirmation(checked);
     if (checked.status === "success" || checked.status === "failed" || checked.status === "expired") {
-      setError("");
+      if (clearsSubmitError(checked.status)) {
+        keepSubmitErrorRef.current = false;
+        setError("");
+      }
       if ((checked.status === "failed" || checked.status === "expired") && current.kind === "compound") {
         removeUnconfirmedCompoundReceipt(window.localStorage, current);
         setReceipts(loadCompoundReceipts(window.localStorage, current.wallet).receipts);
@@ -177,22 +184,29 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
     const submittedIdentity = identity;
     const current = () => identityRef.current === submittedIdentity && walletRef.current === submittedWallet &&
       connectionRef.current.address === submittedWallet && connectionRef.current.connected;
-    setStage("preparing"); setError(""); setConfirmation(null);
+    setStage("preparing"); setError(""); setConfirmation(null); keepSubmitErrorRef.current = false;
+    let persisted = false;
     try {
-      const prepared = receipt
-        ? await post<RecoveryPrepared>("/api/compound-recover-prepare", { wallet: submittedWallet, compoundAccounts: receipt.compoundAccounts })
-        : await post<CompoundPrepared>("/api/compound-prepare", { wallet: submittedWallet, positionMint: submittedMint, sourceSignatures });
-      if (!current() || externalBlockedRef.current) throw new Error("Wallet or position changed; transaction not yet signed");
-      const summary = prepared.summary;
-      if (!prepared.permit || !summary.simulated || Date.now() >= summary.expiresAt ||
-        (receipt ? summary.operation !== "recovery" || (summary as CompoundRecoverySummary).wallet !== wallet :
-          summary.operation !== "compound" || (summary as CompoundSummary).state.wallet !== wallet ||
-          (summary as CompoundSummary).positionMint !== positionMint)) throw new Error("Simulation result and selection mismatch or expired");
-      if (!receipt) setPreview(summary as CompoundSummary);
-      const unsigned = VersionedTransaction.deserialize(Uint8Array.from(atob(prepared.unsignedTransaction), (item) => item.charCodeAt(0)));
-      if (unsigned.message.staticAccountKeys[0]?.toBase58() !== wallet || unsigned.message.recentBlockhash !== summary.blockhash) {
-        throw new Error("Transaction payer or blockhash and preparation result mismatch");
-      }
+      const requestPrepare = () => receipt
+        ? post<RecoveryPrepared>("/api/compound-recover-prepare", { wallet: submittedWallet, compoundAccounts: receipt.compoundAccounts })
+        : post<CompoundPrepared>("/api/compound-prepare", { wallet: submittedWallet, positionMint: submittedMint, sourceSignatures });
+      const acceptPrepared = (prepared: CompoundPrepared | RecoveryPrepared) => {
+        if (!current() || externalBlockedRef.current) throw new Error("Wallet or position changed; transaction not yet signed");
+        const summary = prepared.summary;
+        if (!prepared.permit || !summary.simulated || Date.now() >= summary.expiresAt ||
+          (receipt ? summary.operation !== "recovery" || (summary as CompoundRecoverySummary).wallet !== wallet :
+            summary.operation !== "compound" || (summary as CompoundSummary).state.wallet !== wallet ||
+            (summary as CompoundSummary).positionMint !== positionMint)) throw new Error("Simulation result and selection mismatch or expired");
+        const unsigned = VersionedTransaction.deserialize(Uint8Array.from(atob(prepared.unsignedTransaction), (item) => item.charCodeAt(0)));
+        if (unsigned.message.staticAccountKeys[0]?.toBase58() !== wallet || unsigned.message.recentBlockhash !== summary.blockhash) {
+          throw new Error("Transaction payer or blockhash and preparation result mismatch");
+        }
+        return { prepared, summary, unsigned };
+      };
+      let loaded = acceptPrepared(await requestPrepare());
+      if (prepareIsStale(loaded.summary)) loaded = acceptPrepared(await requestPrepare());
+      if (!receipt) setPreview(loaded.summary as CompoundSummary);
+      const { prepared, summary, unsigned } = loaded;
       const originalMessage = Uint8Array.from(unsigned.message.serialize());
       setStage("wallet");
       const signed = await connectionRef.current.signTransaction(unsigned);
@@ -206,6 +220,7 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
         ? { ...base, kind: "recovery", summary: summary as CompoundRecoverySummary, sourceSignature: receipt.sourceSignature }
         : { ...base, kind: "compound", summary: summary as CompoundSummary };
       persistCompoundAttempt(window.localStorage, next);
+      persisted = true;
       confirmationRequest.current++;
       attemptSignatureRef.current = next.signature;
       setAttempt(next); setAttemptStatus("pending");
@@ -218,7 +233,10 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
       if (response.signature !== next.signature) throw new Error("Broadcast returned inconsistent signature; retain original signature and check on-chain result");
       await reconcile(next);
     } catch (caught) {
-      if (walletRef.current === submittedWallet) setError(caught instanceof Error ? caught.message : "Transaction not confirmed, verify signature first");
+      if (walletRef.current === submittedWallet) {
+        if (persisted) keepSubmitErrorRef.current = true;
+        setError(caught instanceof Error ? caught.message : "Transaction not confirmed, verify signature first");
+      }
     } finally { submitting.current = false; setStage(null); }
   }
 
