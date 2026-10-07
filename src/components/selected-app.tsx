@@ -97,21 +97,7 @@ export function SelectedApp() {
   };
   return <div className="min-h-screen bg-[#050505] text-neutral-100">
     <div className="relative mx-auto max-w-5xl px-5 pb-32 pt-6 sm:px-8 sm:pt-10">
-<<<<<<< HEAD
       <InkNav wallet={wallet} connected={connected} onConnect={connect} onDisconnect={disconnect} />
-=======
-      <InkNav 
-        subtitle="Solana · Raydium CLMM"
-        navLinks={[
-          { href: "/position-performance", label: "Position performance" },
-          { href: "/rwa-pairs", label: "RWA pairs" },
-        ]}
-        showWallet={true}
-        walletAddress={wallet}
-        onWalletConnect={connect}
-        onWalletDisconnect={disconnect}
-      />
->>>>>>> origin/main
 
       <div className="mb-6 mt-8 sm:mt-10"><h1 className="text-2xl font-semibold tracking-tight text-neutral-100 sm:text-3xl">Manage my liquidity positions</h1><p className="mt-2 text-sm leading-relaxed text-neutral-500">Add yield back to original position, or invest new capital.</p></div>
 
