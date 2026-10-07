@@ -11,6 +11,7 @@ import { TransactionStatusDialog } from "./transaction-status-dialog";
 import { CompoundPanel } from "./compound-panel";
 import { useCompoundController } from "./use-compound-controller";
 import { InkNav } from "./ink";
+import { McpConnectionCard } from "./mcp-connection-card";
 
 const short = (value: string) => `${value.slice(0, 5)}…${value.slice(-5)}`;
 const money = (value: string, decimals: number, digits = 6) => formatAmount(value, decimals, digits);
@@ -100,6 +101,12 @@ export function SelectedApp() {
       <InkNav wallet={wallet} connected={connected} onConnect={connect} onDisconnect={disconnect} />
 
       <div className="mb-6 mt-8 sm:mt-10"><h1 className="text-2xl font-semibold tracking-tight text-neutral-100 sm:text-3xl">Manage my liquidity positions</h1><p className="mt-2 text-sm leading-relaxed text-neutral-500">Add yield back to original position, or invest new capital.</p></div>
+
+      {connected && wallet && (
+        <div className="mb-6">
+          <McpConnectionCard wallet={wallet} />
+        </div>
+      )}
 
       <section aria-labelledby="position-heading" className="rounded-[20px] border border-neutral-800/80 bg-[#0a0a0a] p-5 sm:p-7">
         <div className="flex items-center justify-between gap-3"><h2 id="position-heading" className="text-base font-semibold text-neutral-100">My positions</h2><button type="button" disabled={!wallet || busy} onClick={() => void refreshDiscovery()} className="text-xs font-semibold text-neutral-300 transition-opacity hover:opacity-70 disabled:opacity-40">Rescan wallet</button></div>
