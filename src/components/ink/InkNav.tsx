@@ -19,6 +19,7 @@ const NAV_LINKS = [
   { href: "/", label: "Positions" },
   { href: "/position-performance", label: "Position performance" },
   { href: "/rwa-pairs", label: "RWA pairs" },
+  { href: "/ai", label: "Use AI to manage" },
 ] as const;
 
 export function InkNav({ wallet, connected, onConnect, onDisconnect }: InkNavProps) {
