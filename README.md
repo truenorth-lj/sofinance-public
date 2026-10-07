@@ -72,14 +72,19 @@ Never commit `.env.local`, mnemonics, or API keys. Do not prefix `SOLANA_RPC_URL
 
 1. **Connect your wallet** on [sofinance-alpha.vercel.app](https://sofinance-alpha.vercel.app)
 2. **Expand "MCP Connection (AI Agents)"** after wallet connect
-3. **Copy the generated config** — it includes a short-lived token bound to your wallet
-4. **Paste into your AI agent's MCP settings:**
+3. **Sign the challenge message** in your wallet (proves ownership)
+4. **Copy the generated config** — includes a short-lived token bound to your wallet
+5. **Paste into your AI agent:**
 
-   **Cursor:** Open MCP settings and paste the config
+   **Cursor / Claude (if HTTP MCP supported):** Use the direct HTTP config
 
-   **Claude Desktop:** Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (Mac) or `%APPDATA%/Claude/claude_desktop_config.json` (Windows)
+   **Cursor / Claude (if stdio only):** Use the zero-secret shim config
 
-Example config (auto-generated on the website):
+The UI shows both configs after wallet connect. Choose based on what your agent supports.
+
+### Option A: Direct HTTP (Preferred)
+
+If Cursor/Claude supports HTTP MCP with custom headers:
 
 ```json
 {
@@ -94,8 +99,29 @@ Example config (auto-generated on the website):
 }
 ```
 
+### Option B: Zero-Secret Shim (Fallback)
+
+If your agent only supports stdio, use this shim that requires ZERO RPC/Jupiter secrets:
+
+```json
+{
+  "mcpServers": {
+    "sofinance": {
+      "command": "npx",
+      "args": ["tsx", "src/mcp/remote-shim.ts"],
+      "cwd": "/absolute/path/to/sofinance-public",
+      "env": {
+        "SOFINANCE_MCP_URL": "https://sofinance-alpha.vercel.app/api/mcp",
+        "SOFINANCE_MCP_TOKEN": "<your-token-here>"
+      }
+    }
+  }
+}
+```
+
 **Benefits:**
-- ✅ Zero local secrets (no SOLANA_RPC_URL or JUPITER_API_KEY on your laptop)
+- ✅ Zero local secrets (no SOLANA_RPC_URL or JUPITER_API_KEY on laptop)
+- ✅ Signature-verified tokens (prove wallet ownership before minting)
 - ✅ Always up-to-date (talks to production Vercel backend)
 - ✅ Short-lived tokens (24h expiry, regenerate anytime)
 - ✅ Wallet-bound auth (token only works for your wallet)

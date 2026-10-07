@@ -94,11 +94,19 @@ async function handleToolCall(name: string, args: unknown, walletFromToken: stri
   switch (name) {
     case "get_position_performance": {
       const input = getPositionPerformanceSchema.parse(args ?? {});
+      // Enforce wallet match when wallet is provided
+      if (input.wallet && input.wallet !== walletFromToken) {
+        throw new Error(
+          `Token wallet mismatch: token is for ${walletFromToken}, requested ${input.wallet}`
+        );
+      }
       return await getPositionPerformance(input);
     }
 
     case "list_rwa_pairs": {
       const input = listRwaPairsSchema.parse(args ?? {});
+      // Note: This tool can be slow on Vercel Hobby (10s timeout).
+      // Recommend maxPages ≤ 5 or call with smaller minTvl filter.
       return await listRwaPairs(input);
     }
 
@@ -124,6 +132,8 @@ async function handleToolCall(name: string, args: unknown, walletFromToken: stri
       if (input.wallet !== walletFromToken) {
         throw new Error(`Token wallet mismatch: token is for ${walletFromToken}, requested ${input.wallet}`);
       }
+      // Note: Can take 5-10s on complex swaps (Jupiter routing + simulation).
+      // Vercel Hobby timeout is 10s; most calls complete in time.
       return await prepareTransaction(input);
     }
 

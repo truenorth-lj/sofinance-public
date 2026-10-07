@@ -30,7 +30,10 @@ if (typeof window !== "undefined" && projectId) {
 
 export function MobileWalletProvider({ children }: { children: React.ReactNode }) {
   const account = useAppKitAccount({ namespace: "solana" });
-  const { walletProvider } = useAppKitProvider<{ signTransaction?: (transaction: VersionedTransaction) => Promise<VersionedTransaction> }>("solana");
+  const { walletProvider } = useAppKitProvider<{
+    signTransaction?: (transaction: VersionedTransaction) => Promise<VersionedTransaction>;
+    signMessage?: (message: Uint8Array) => Promise<Uint8Array>;
+  }>("solana");
   const { disconnect } = useDisconnect();
   const [connectionError, setConnectionError] = useState("");
   const { connect } = useAppKitWallet({
@@ -63,5 +66,9 @@ export function MobileWalletProvider({ children }: { children: React.ReactNode }
       if (!walletProvider?.signTransaction) throw new Error("Mobile wallet does not support this transaction signing method");
       return walletProvider.signTransaction(transaction);
     },
+    signMessage: walletProvider?.signMessage ? async (message) => {
+      if (!walletProvider.signMessage) throw new Error("Mobile wallet does not support message signing");
+      return walletProvider.signMessage(message);
+    } : undefined,
   }}>{children}</WalletConnectionContext.Provider>;
 }

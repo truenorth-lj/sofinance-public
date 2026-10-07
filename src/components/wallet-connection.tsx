@@ -12,6 +12,7 @@ export type WalletConnection = {
   walletsCount: number;
   connectionError: string;
   signTransaction: (transaction: VersionedTransaction) => Promise<VersionedTransaction>;
+  signMessage?: (message: Uint8Array) => Promise<Uint8Array>;
 };
 
 export const WalletConnectionContext = createContext<WalletConnection | null>(null);
