@@ -9,7 +9,7 @@ import {
 import type { CompoundAccount } from "./compound-types";
 import type { CompoundRecoveryAccount, CompoundRecoverySummary } from "./compound-recovery-types";
 import { rpcConnection } from "./rpc";
-import { QUOTE_TTL_MS } from "./ids";
+import { restampVersionedTransaction, stampPreparedBlockhash } from "./fresh-blockhash";
 
 function tokenBalance(info: AccountInfo<Buffer> | null, address: PublicKey, program: PublicKey, wallet: PublicKey, mint: PublicKey) {
   if (!info) return 0n;
@@ -124,18 +124,19 @@ export async function buildAndSimulateCompoundRecovery(walletAddress: string, de
       createTransferCheckedInstruction(source, mint, destination, wallet, BigInt(account.amount), account.decimals, [], program)] : []),
       createCloseAccountInstruction(source, wallet, wallet, [], program)];
   });
-  const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
-  const transaction = new VersionedTransaction(new TransactionMessage({ payerKey: wallet,
-    recentBlockhash: blockhash, instructions }).compileToV0Message());
+  const simulation = await connection.getLatestBlockhash("confirmed");
+  const simulated = new VersionedTransaction(new TransactionMessage({ payerKey: wallet,
+    recentBlockhash: simulation.blockhash, instructions }).compileToV0Message());
   let sizeBytes: number;
-  try { sizeBytes = transaction.serialize().length; } catch { throw new Error("Recovery transaction exceeds size limit"); }
+  try { sizeBytes = simulated.serialize().length; } catch { throw new Error("Recovery transaction exceeds size limit"); }
   if (sizeBytes > 1_232) throw new Error("Recovery transaction exceeds size limit");
-  const fee = await connection.getFeeForMessage(transaction.message, "confirmed");
+  const fee = await connection.getFeeForMessage(simulated.message, "confirmed");
   if (fee.value === null) throw new Error("Unable to estimate recovery transaction fee");
   const summary: CompoundRecoverySummary = { operation: "recovery", simulated: true, wallet: walletAddress,
-    compoundAccounts: accounts, feeLamports: fee.value, sizeBytes, blockhash, lastValidBlockHeight,
-    expiresAt: Date.now() + QUOTE_TTL_MS };
-  const verified = await simulateAndVerifyRecovery({ connection, transaction, summary, sigVerify: false });
+    compoundAccounts: accounts, feeLamports: fee.value, sizeBytes, ...stampPreparedBlockhash(simulation) };
+  const verified = await simulateAndVerifyRecovery({ connection, transaction: simulated, summary, sigVerify: false });
+  const latest = await connection.getLatestBlockhash("confirmed");
+  Object.assign(summary, stampPreparedBlockhash(latest));
   summary.unitsConsumed = verified.unitsConsumed;
-  return { transaction, summary };
+  return { transaction: restampVersionedTransaction(simulated, latest.blockhash), summary };
 }
