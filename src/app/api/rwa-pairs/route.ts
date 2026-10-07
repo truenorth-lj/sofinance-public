@@ -62,9 +62,12 @@ export async function GET(request: Request) {
       }
       
       // Return cached data with CDN caching enabled
+      // Use Vercel-specific headers that bypass Next.js dynamic route override
       return Response.json(result, {
         headers: {
-          "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=86400",
+          "Cache-Control": "public, max-age=0, must-revalidate",
+          "CDN-Cache-Control": "public, s-maxage=3600, stale-while-revalidate=86400",
+          "Vercel-CDN-Cache-Control": "public, s-maxage=3600, stale-while-revalidate=86400",
         },
       });
     }
@@ -98,9 +101,12 @@ export async function GET(request: Request) {
       });
     }
     
+    // Use Vercel-specific headers that bypass Next.js dynamic route override
     return Response.json(responseWithMeta, {
       headers: {
-        "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=86400",
+        "Cache-Control": "public, max-age=0, must-revalidate",
+        "CDN-Cache-Control": "public, s-maxage=3600, stale-while-revalidate=86400",
+        "Vercel-CDN-Cache-Control": "public, s-maxage=3600, stale-while-revalidate=86400",
       },
     });
   } catch (error) {
