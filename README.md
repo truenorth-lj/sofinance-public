@@ -17,6 +17,7 @@ The server never holds private keys. Agents/users sign locally; broadcast re-ver
 - **Resale-ratio floor** (default 99%): conservative quote of swapping position outputs back to the same input asset
 - **One-click compound**: harvest fees/rewards, swap to range ratio, reinvest (phase one rejects third reward mints without a verifiable path)
 - Web UI Advanced settings for resale gap and price tolerance; MCP exposes the same knobs
+- **Position performance / realized fee APR**: holding-period return from on-chain open/increase/decrease events + current equity (not Raydium pool 24h feeApr) — MCP `get_position_performance`, `/api/position-performance`, `/position-performance` UI
 - **Same-asset RWA pair discovery**: Raydium CLMM pools where both sides are the same underlying (e.g. `MSTRx`/`MSTR`, `NVDAx`/`NVDA`), filtered by Jupiter Tokens API tags (`stocks`|`rwa`) plus Backed xStocks whitelist, with fee tier, TVL, 24h volume/fees, estimated fee APR, Token-2022 / freeze flags — MCP `list_rwa_pairs` and read-only `/rwa-pairs` UI
 
 ## Safety gates
@@ -34,10 +35,11 @@ Kept on both web API and MCP paths:
 | HMAC permit | Binds message, wallet, selection, amounts, floor, starting state |
 | Re-verify | On submit: permit, on-chain state, re-simulate, then broadcast |
 
-## MCP tools (8)
+## MCP tools (9)
 
 | Tool | Purpose | Key params |
 |------|---------|------------|
+| `get_position_performance` | Holding-period return / fee APR from chain events | `positionMint`, `wallet?`, `maxSignatures?`, `skipPricing?` |
 | `list_positions` | Positions + eligible assets | `wallet` |
 | `quote_add_liquidity` | Read-only zap quote | `wallet`, `positionMint`, `inputMint`, `inputKind` (`native`\|`token`), `amount`, `resaleFloorBps?` (9500–10000, default 9900), `slippageToleranceBps?` (0–500 step 10, default 100) |
 | `prepare_transaction` | Unsigned zap tx + permit + `submitArgs` | same as quote |
@@ -141,6 +143,19 @@ Discovers Raydium CLMM pools via the official API (`/pools/info/list?poolType=co
 3. **Secondary**: Backed xStocks public assets whitelist (`https://api.xstocks.fi/api/v2/public/assets`, Solana deployments) so known Backed mints still qualify if Jupiter tags lag
 
 Name heuristics are not used as the primary filter. Annotated with fee tier, TVL, 24h volume/fees, Raydium `feeApr`, and **estimated fee APR** = `(24h fees / TVL) × 365 × 100` (labeled in API/UI; not a promise of LP returns). Freeze / Token-2022 flags come from Raydium mint metadata tags/program ids.
+
+
+## Position performance (realized fee APR)
+
+Computes a position NFT's **actual holding-period return** from on-chain facts (no database):
+
+1. `getSignaturesForAddress` on the Raydium `PersonalPositionState` PDA
+2. Parse Anchor events from logs: `CreatePersonalPositionEvent`, `IncreaseLiquidityEvent`, `DecreaseLiquidityEvent` (exact deposit / principal-out / fee-out amounts)
+3. Current equity = liquidity token amounts (`LiquidityMath`) + uncollected fees (fee-growth accrual, same math as compound)
+4. Metrics: `holdingDays`, deposited / withdrawn / fees, PnL, `holdingPeriodReturnPct`, `annualizedReturnPct` (simple ×365/days), `feeOnlyAprPct`
+5. Optional USD via Jupiter Price API v3 **at evaluation time** (explicitly labeled — not historical tx-time prices)
+
+This is **not** Raydium's pool `day.feeApr`. Read-only UI: `/position-performance`.
 
 ## Limitations
 

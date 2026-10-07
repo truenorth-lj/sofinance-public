@@ -7,6 +7,7 @@ import {
   submitSignedTransactionSchema,
   submitCompoundTransactionSchema,
   listRwaPairsSchema,
+  getPositionPerformanceSchema,
 } from "./schemas";
 
 describe("MCP Schemas", () => {
@@ -294,5 +295,32 @@ describe("listRwaPairsSchema", () => {
   it("rejects maxPages out of range", () => {
     expect(listRwaPairsSchema.safeParse({ maxPages: 0 }).success).toBe(false);
     expect(listRwaPairsSchema.safeParse({ maxPages: 31 }).success).toBe(false);
+  });
+});
+
+
+describe("getPositionPerformanceSchema", () => {
+  it("requires positionMint and defaults maxSignatures", () => {
+    const result = getPositionPerformanceSchema.parse({
+      positionMint: "8BgBvyjrZX1YKz4oh9mjb8ZScatkkwb8DzFx7LoiVkM4",
+    });
+    expect(result.maxSignatures).toBe(100);
+    expect(result.skipPricing).toBe(false);
+  });
+
+  it("accepts optional wallet and caps", () => {
+    const result = getPositionPerformanceSchema.parse({
+      positionMint: "8BgBvyjrZX1YKz4oh9mjb8ZScatkkwb8DzFx7LoiVkM4",
+      wallet: "7BgBvyjrZX1YKz4oh9mjb8ZScatkkwb8DzFx7LoiVkM3",
+      maxSignatures: 50,
+      skipPricing: true,
+    });
+    expect(result.wallet).toBe("7BgBvyjrZX1YKz4oh9mjb8ZScatkkwb8DzFx7LoiVkM3");
+    expect(result.maxSignatures).toBe(50);
+    expect(result.skipPricing).toBe(true);
+  });
+
+  it("rejects invalid mint", () => {
+    expect(getPositionPerformanceSchema.safeParse({ positionMint: "x" }).success).toBe(false);
   });
 });
