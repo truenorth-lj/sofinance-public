@@ -1,5 +1,6 @@
+import { after } from "next/server";
 import { apiError } from "@/lib/api-response";
-import { discoverRwaPairs, type RwaPairSortBy } from "@/lib/rwa-pairs";
+import { discoverRwaPairs, getCachedRwaPairs, type RwaPairSortBy } from "@/lib/rwa-pairs";
 
 export const dynamic = "force-dynamic";
 
@@ -22,13 +23,42 @@ export async function GET(request: Request) {
     if (!allowed.includes(sortRaw as RwaPairSortBy)) {
       throw new Error("sortBy must be estimatedFeeApr, tvl, or volume24h");
     }
-    const result = await discoverRwaPairs({
-      minTvl,
-      maxPages,
-      sortBy: sortRaw as RwaPairSortBy,
-    });
+    const sortBy = sortRaw as RwaPairSortBy;
+
+    // Check cache first - always return cached data immediately if available
+    const cached = getCachedRwaPairs(minTvl, maxPages, sortBy);
+    
+    if (cached) {
+      // We have cached data - return it immediately
+      const result = cached;
+      
+      // If stale (> 1 hour), schedule a background refresh
+      if (cached.stale) {
+        after(async () => {
+          try {
+            // Refresh in background - don't await, don't block response
+            await discoverRwaPairs({ minTvl, maxPages, sortBy });
+          } catch {
+            // Silently fail - stale data already returned to user
+          }
+        });
+      }
+      
+      // Return cached data with longer CDN cache and SWR
+      return Response.json(result, {
+        headers: {
+          "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=86400",
+        },
+      });
+    }
+
+    // No cache - this is a cold start, must block on fresh discovery
+    const result = await discoverRwaPairs({ minTvl, maxPages, sortBy });
+    
     return Response.json(result, {
-      headers: { "Cache-Control": "public, max-age=30, stale-while-revalidate=60" },
+      headers: {
+        "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=86400",
+      },
     });
   } catch (error) {
     return apiError(error, "RWA pair discovery failed", 503);
