@@ -7,14 +7,14 @@ import bs58 from "bs58";
 import { LoaderCircle, CircleAlert, CheckCircle2 } from "lucide-react";
 import { InkShell, InkCard, InkNav } from "@/components/ink";
 import { useWalletConnection } from "@/components/wallet-connection";
-import type { PendingSignPayload } from "@/lib/pending-sign-store";
+import type { PendingSignPayload } from "@/lib/pending-sign-token";
 
 type Status = "loading" | "expired" | "wallet-mismatch" | "ready" | "signing" | "submitting" | "success" | "error";
 
 const short = (value: string) => `${value.slice(0, 5)}…${value.slice(-5)}`;
 
 export default function SignPage() {
-  const params = useParams<{ id: string }>();
+  const params = useParams<{ token: string }>();
   const router = useRouter();
   const { address: wallet, connected, connect, disconnect, signTransaction } = useWalletConnection();
   
@@ -24,9 +24,8 @@ export default function SignPage() {
   const [error, setError] = useState("");
   const [signature, setSignature] = useState("");
 
-  const signId = params.id;
+  const signToken = params.token;
   
-  // Compute overall status from load and sign status
   const status: Status = (() => {
     if (loadStatus === "loading") return "loading";
     if (loadStatus === "expired") return "expired";
@@ -40,21 +39,22 @@ export default function SignPage() {
   })();
 
   useEffect(() => {
-    if (!signId) return;
+    if (!signToken) return;
     
     const load = async () => {
       try {
-        const response = await fetch(`/api/pending-sign/${signId}`, { cache: "no-store" });
+        const response = await fetch("/api/verify-sign-token", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token: signToken }),
+          cache: "no-store",
+        });
+        
         const data = await response.json();
         
         if (!response.ok) {
-          if (data.error?.includes("expired") || data.error?.includes("not found")) {
-            setLoadStatus("expired");
-            setError("Sign request expired or not found");
-          } else {
-            setLoadStatus("error");
-            setError(data.error || "Failed to load sign request");
-          }
+          setLoadStatus("expired");
+          setError(data.error || "Sign token invalid, expired, or malformed");
           return;
         }
         
@@ -62,12 +62,12 @@ export default function SignPage() {
         setLoadStatus("loaded");
       } catch (caught) {
         setLoadStatus("error");
-        setError(caught instanceof Error ? caught.message : "Failed to load sign request");
+        setError(caught instanceof Error ? caught.message : "Failed to verify sign token");
       }
     };
     
     void load();
-  }, [signId]);
+  }, [signToken]);
 
   const handleSign = async () => {
     if (!payload || !wallet || wallet !== payload.wallet) return;
@@ -110,7 +110,12 @@ export default function SignPage() {
       
       const submitBody = payload.kind === "add-liquidity"
         ? { signedTransaction, ...payload.submitArgs }
-        : { signedTransaction, ...payload.submitArgs };
+        : { 
+            signedTransaction, 
+            permit: payload.submitArgs.permit,
+            wallet: payload.submitArgs.wallet,
+            summary: payload.submitArgs.summary,
+          };
       
       const response = await fetch(submitPath, {
         method: "POST",
@@ -145,9 +150,9 @@ export default function SignPage() {
   const statusMessage = (() => {
     switch (status) {
       case "loading":
-        return "Loading sign request...";
+        return "Verifying sign token...";
       case "expired":
-        return "This sign request has expired. Sign requests expire after 60-120 seconds.";
+        return "This sign token has expired or is invalid. Sign tokens expire after 60-120 seconds.";
       case "wallet-mismatch":
         return `Wrong wallet connected. Please connect wallet ${payload ? short(payload.wallet) : ""}.`;
       case "ready":

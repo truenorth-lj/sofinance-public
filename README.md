@@ -80,7 +80,8 @@ Example Cursor / Claude MCP config (adjust the absolute path):
       "cwd": "/absolute/path/to/sofinance-public",
       "env": {
         "SOLANA_RPC_URL": "https://your-solana-rpc",
-        "JUPITER_API_KEY": "your-jupiter-key"
+        "JUPITER_API_KEY": "your-jupiter-key",
+        "NEXT_PUBLIC_APP_URL": "https://sofinance-alpha.vercel.app"
       }
     }
   }
@@ -91,9 +92,9 @@ Or: `pnpm mcp:start` with env already exported.
 
 **Agent flow:** `list_positions` → `quote_add_liquidity` → `prepare_transaction` → wallet signs `unsignedTransaction` → `submit_signed_transaction` with `{ signedTransaction, ...submitArgs }`. Compound: `quote_compound` / `prepare_compound_transaction` → sign → `submit_compound_transaction` with the complete `summary`.
 
-**Sign deep-link:** After `prepare_transaction` or `prepare_compound_transaction`, the agent receives a `signUrl` (e.g. `https://app.example.com/sign/<id>`) that can be opened in a browser. With the correct wallet connected via Reown AppKit, the user reviews the transaction summary and signs with one click. The signed transaction is automatically submitted via the existing re-verification and broadcast paths. This bridges the gap for agents that can prepare transactions but delegate signing to the user's wallet UI. The sign payload expires after 60-120 seconds (matching permit/blockhash lifetime).
+**Sign deep-link:** After `prepare_transaction` or `prepare_compound_transaction`, the agent receives a `signUrl` (e.g. `https://sofinance-alpha.vercel.app/sign/<token>`) that can be opened in a browser. The token is a self-contained, HMAC-signed, compressed payload containing the unsigned transaction, permit, and submit arguments. With the correct wallet connected via Reown AppKit, the user reviews the transaction summary and signs with one click. The signed transaction is automatically submitted via the existing re-verification and broadcast paths. This bridges the gap for agents that can prepare transactions but delegate signing to the user's wallet UI. Sign tokens expire after 60-120 seconds (matching permit/blockhash lifetime). The token is verified server-side using `JUPITER_API_KEY` as the HMAC secret, so MCP (local) and Vercel (production) can share the same signing mechanism without shared memory.
 
-`JUPITER_API_KEY` is also the HMAC secret for permits. Quotes expire quickly; always re-prepare before signing.
+`JUPITER_API_KEY` is used for Jupiter swap quotes, permit HMACs, and sign token HMACs. Quotes expire quickly; always re-prepare before signing.
 
 ## Architecture
 
