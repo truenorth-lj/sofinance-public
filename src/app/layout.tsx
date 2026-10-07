@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
+import { Geist } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/providers";
+
+const geist = Geist({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "SoFinance",
@@ -9,8 +12,8 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="zh-Hant" className="h-full antialiased">
-      <body className="min-h-full flex flex-col"><Providers>{children}</Providers></body>
+    <html lang="zh-Hant" className={`h-full antialiased ${geist.className}`}>
+      <body className="min-h-full flex flex-col bg-[#050505] text-neutral-100"><Providers>{children}</Providers></body>
     </html>
   );
 }
