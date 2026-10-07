@@ -303,7 +303,7 @@ export function McpConnectionCard({ wallet }: McpConnectionCardProps) {
               <strong className="text-neutral-400">Try Option A first:</strong> Direct HTTP is simpler (no local files needed)
             </li>
             <li>
-              <strong className="text-neutral-400">If that doesn't work:</strong> Use Option B shim (requires <code className="rounded bg-neutral-800 px-1">pnpm install</code> in repo)
+              <strong className="text-neutral-400">If that doesn&apos;t work:</strong> Use Option B shim (requires <code className="rounded bg-neutral-800 px-1">pnpm install</code> in repo)
             </li>
             <li>
               <strong className="text-neutral-400">Cursor:</strong> Paste into MCP settings
