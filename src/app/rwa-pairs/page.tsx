@@ -2,27 +2,14 @@
 
 import { InkShell, InkNav } from "@/components/ink";
 import { RwaPairsPanel } from "@/components/rwa-pairs-panel";
-<<<<<<< HEAD
 import { useWalletConnection } from "@/components/wallet-connection";
-=======
->>>>>>> origin/main
 
 export default function RwaPairsPage() {
   const { address, connected, connect, disconnect } = useWalletConnection();
 
   return (
     <InkShell>
-<<<<<<< HEAD
       <InkNav wallet={address} connected={connected} onConnect={connect} onDisconnect={disconnect} />
-=======
-      <InkNav
-        subtitle="Solana · Raydium CLMM"
-        navLinks={[
-          { href: "/", label: "Positions" },
-          { href: "/position-performance", label: "Position performance" },
-        ]}
-      />
->>>>>>> origin/main
 
       <div className="mb-8 mt-10 sm:mt-12">
         <h1 className="text-2xl font-semibold tracking-tight text-neutral-100 sm:text-3xl">Same-asset RWA pairs</h1>
