@@ -2,7 +2,6 @@
 
 import { useCallback, useState } from "react";
 import { LoaderCircle, Search } from "lucide-react";
-import { Button } from "./ui/button";
 
 type UiSide = { a: number; b: number };
 
@@ -152,40 +151,45 @@ export function PositionPerformancePanel() {
   const preferTe = Boolean(te);
 
   return (
-    <section className="rounded-2xl border border-white/10 bg-[#111d2c]/95 p-4 sm:p-5" aria-labelledby="perf-heading">
-      <h2 id="perf-heading" className="text-sm font-semibold text-slate-100">
+    <section className="rounded-[20px] border border-neutral-800/80 bg-[#0a0a0a] p-5 sm:p-7" aria-labelledby="perf-heading">
+      <h2 id="perf-heading" className="text-base font-semibold text-neutral-100">
         Lookup by position NFT mint
       </h2>
 
       <div className="mt-4 space-y-3">
-        <label className="block text-xs text-slate-400">
+        <label className="block text-xs text-neutral-400">
           Position mint
           <input
-            className="mt-1 w-full rounded-xl border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-slate-100"
+            className="mt-1 w-full rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 focus:border-neutral-600 focus:outline-none"
             value={positionMint}
             onChange={(event) => setPositionMint(event.target.value)}
             placeholder="Position NFT mint (base58)"
             spellCheck={false}
           />
         </label>
-        <label className="block text-xs text-slate-400">
+        <label className="block text-xs text-neutral-400">
           Wallet (optional ownership check)
           <input
-            className="mt-1 w-full rounded-xl border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-slate-100"
+            className="mt-1 w-full rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 focus:border-neutral-600 focus:outline-none"
             value={wallet}
             onChange={(event) => setWallet(event.target.value)}
             placeholder="Wallet pubkey"
             spellCheck={false}
           />
         </label>
-        <Button type="button" onClick={() => void load()} disabled={loading}>
+        <button
+          type="button"
+          onClick={() => void load()}
+          disabled={loading}
+          className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-neutral-700 bg-transparent px-4 py-3 text-sm font-semibold text-neutral-100 transition-colors hover:border-neutral-600 hover:bg-neutral-900/50 disabled:cursor-not-allowed disabled:opacity-40"
+        >
           {loading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
           Compute performance
-        </Button>
+        </button>
       </div>
 
       {error && (
-        <p className="mt-4 rounded-xl border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-sm text-rose-200" role="alert">
+        <p className="mt-4 rounded-xl border border-neutral-700 bg-neutral-900/50 px-3 py-2 text-sm text-neutral-300" role="alert">
           {error}
         </p>
       )}
@@ -244,37 +248,36 @@ export function PositionPerformancePanel() {
           </div>
 
           {tn && (
-            <div className="rounded-xl border border-sky-500/20 bg-sky-500/5 p-3">
-              <div className="text-[11px] uppercase tracking-wide text-sky-300/80">
+            <div className="rounded-xl border border-neutral-800/60 bg-neutral-900/30 p-3">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400">
                 Inventory (raw A / B){tn.sameAssetWrap ? " · same-asset wrap" : ""}
               </div>
-              <div className="mt-2 grid gap-2 sm:grid-cols-2 text-xs text-slate-200">
+              <div className="mt-2 grid gap-2 sm:grid-cols-2 text-xs text-neutral-200">
                 <div>
-                  <div className="text-slate-500">{symA} deposited → equity</div>
-                  <div className="font-semibold">
+                  <div className="text-neutral-500">{symA} deposited → equity</div>
+                  <div className="font-semibold text-neutral-100">
                     {tok(tn.amounts.deposited.a)} → {tok(tn.amounts.currentEquity.a)}
                   </div>
-                  <div className="text-slate-400">
+                  <div className="text-neutral-400">
                     fees {tok(tn.amounts.feesEarned.a)} · side fee APR {pct(tn.perSideFeeAprPct.a)}
                   </div>
                 </div>
                 <div>
-                  <div className="text-slate-500">{symB} deposited → equity</div>
-                  <div className="font-semibold">
+                  <div className="text-neutral-500">{symB} deposited → equity</div>
+                  <div className="font-semibold text-neutral-100">
                     {tok(tn.amounts.deposited.b)} → {tok(tn.amounts.currentEquity.b)}
                   </div>
-                  <div className="text-slate-400">
+                  <div className="text-neutral-400">
                     fees {tok(tn.amounts.feesEarned.b)} · side fee APR {pct(tn.perSideFeeAprPct.b)}
                   </div>
                 </div>
               </div>
               {te && (
-                <div className="mt-3 text-[11px] leading-5 text-slate-400">
+                <div className="mt-3 text-[11px] leading-5 text-neutral-500">
                   {te.basis}. Tick {te.tickUsed}; UI mid {te.uiPriceBPerA.toPrecision(8)} {symB}/{symA}.{" "}
                   {te.note}
                 </div>
               )}
-              {/* Simple inventory bar */}
               <InventoryBar
                 labelA={symA}
                 labelB={symB}
@@ -286,8 +289,8 @@ export function PositionPerformancePanel() {
           )}
 
           {preferTe && (
-            <details className="rounded-xl border border-white/10 bg-black/20 p-3 text-xs text-slate-300">
-              <summary className="cursor-pointer text-slate-400">USD (secondary · current prices)</summary>
+            <details className="rounded-xl border border-neutral-800/40 bg-neutral-900/20 p-3 text-xs text-neutral-300">
+              <summary className="cursor-pointer text-neutral-400">USD (secondary · current prices)</summary>
               <div className="mt-3 grid gap-2 sm:grid-cols-2">
                 <Stat label="HPR (USD)" value={pct(data.metrics.holdingPeriodReturnPct)} />
                 <Stat label="Annualized (USD)" value={pct(data.metrics.annualizedReturnPct)} />
@@ -300,7 +303,7 @@ export function PositionPerformancePanel() {
             </details>
           )}
 
-          <div className="rounded-xl border border-white/10 bg-black/20 p-3 text-xs text-slate-300">
+          <div className="rounded-xl border border-neutral-800/40 bg-neutral-900/20 p-3 text-xs text-neutral-300">
             <div>
               Position {short(data.positionMint)} · pool {short(data.poolId)} · pair {symA}/{symB}
             </div>
@@ -321,10 +324,10 @@ export function PositionPerformancePanel() {
             )}
             {data.ownsNft !== null && <div>Owns NFT: {data.ownsNft ? "yes" : "no"}</div>}
             {data.truncated && (
-              <div className="text-amber-300">History truncated at signature cap — earlier txs may be missing.</div>
+              <div className="font-medium text-neutral-300">History truncated at signature cap — earlier txs may be missing.</div>
             )}
-            <div className="mt-2 text-slate-400">{data.pricing.label}</div>
-            <div className="mt-1 text-slate-500">{data.assumptions}</div>
+            <div className="mt-2 text-neutral-500">{data.pricing.label}</div>
+            <div className="mt-1 text-neutral-600">{data.assumptions}</div>
           </div>
         </div>
       )}
@@ -351,7 +354,7 @@ function InventoryBar({
   const shareB = 100 - shareA;
   return (
     <div className="mt-3">
-      <div className="mb-1 flex justify-between text-[11px] text-slate-400">
+      <div className="mb-1 flex justify-between text-[11px] text-neutral-400">
         <span>
           {labelA} {tok(amountA, 5)}
         </span>
@@ -359,11 +362,11 @@ function InventoryBar({
           {labelB} {tok(amountB, 5)}
         </span>
       </div>
-      <div className="flex h-2 overflow-hidden rounded-full bg-slate-800" aria-hidden>
-        <div className="bg-sky-400/80" style={{ width: `${shareA}%` }} />
-        <div className="bg-violet-400/80" style={{ width: `${shareB}%` }} />
+      <div className="flex h-2 overflow-hidden rounded-full bg-neutral-800" aria-hidden>
+        <div className="bg-neutral-500" style={{ width: `${shareA}%` }} />
+        <div className="bg-neutral-600" style={{ width: `${shareB}%` }} />
       </div>
-      <div className="mt-1 text-[10px] text-slate-500">
+      <div className="mt-1 text-[10px] text-neutral-600">
         Equity mix (TE-weighted when tick mid available)
       </div>
     </div>
@@ -374,11 +377,11 @@ function Stat({ label, value, emphasize }: { label: string; value: string; empha
   return (
     <div
       className={`rounded-xl border px-3 py-2 ${
-        emphasize ? "border-sky-400/30 bg-sky-400/10" : "border-white/10 bg-black/20"
+        emphasize ? "border-neutral-700 bg-neutral-800/50" : "border-neutral-800/40 bg-neutral-900/20"
       }`}
     >
-      <div className="text-[11px] uppercase tracking-wide text-slate-500">{label}</div>
-      <div className={`mt-1 font-semibold ${emphasize ? "text-sky-100" : "text-slate-100"}`}>{value}</div>
+      <div className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">{label}</div>
+      <div className={`mt-1 font-semibold ${emphasize ? "text-neutral-100" : "text-neutral-200"}`}>{value}</div>
     </div>
   );
 }
