@@ -16,7 +16,7 @@ import { simulateAndVerifyCompound } from "../lib/compound-simulation";
 import type { CompoundSummary } from "../lib/compound-types";
 import { discoverRwaPairs } from "../lib/rwa-pairs";
 import { getPositionPerformance as readPositionPerformance } from "../lib/position-performance";
-import { storePendingSign } from "../lib/pending-sign-store";
+import { createSignToken } from "../lib/pending-sign-token";
 import type {
   ListPositionsInput,
   QuoteAddLiquidityInput,
@@ -186,26 +186,30 @@ export async function prepareTransaction(input: PrepareTransactionInput) {
   
   const unsignedTransactionBase64 = Buffer.from(transaction.serialize()).toString("base64");
   
-  // Store pending sign payload and generate sign URL
-  const signId = storePendingSign(
-    "add-liquidity",
-    input.wallet,
-    unsignedTransactionBase64,
-    permit,
-    submitArgs,
-    summary.expiresAt
+  // Create self-contained signed token (no shared storage required)
+  const signToken = await createSignToken(
+    {
+      kind: "add-liquidity",
+      wallet: input.wallet,
+      unsignedTransaction: unsignedTransactionBase64,
+      permit,
+      submitArgs,
+      expiresAt: summary.expiresAt,
+    },
+    jupiterApiKey
   );
   
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL 
-    ? `https://${process.env.VERCEL_URL}` 
-    : "";
-  const signUrl = baseUrl ? `${baseUrl}/sign/${signId}` : `/sign/${signId}`;
+  const baseUrl = (
+    process.env.NEXT_PUBLIC_APP_URL || 
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "")
+  ).replace(/\/$/, "");
+  const signUrl = baseUrl ? `${baseUrl}/sign/${signToken}` : `/sign/${signToken}`;
 
   return {
     unsignedTransaction: unsignedTransactionBase64,
     permit,
     submitArgs,
-    signId,
+    signToken,
     signUrl,
     summary: {
       simulated: summary.simulated,
@@ -307,20 +311,31 @@ export async function prepareCompoundTransaction(input: QuoteCompoundInput) {
   
   const unsignedTransactionBase64 = Buffer.from(transaction.serialize()).toString("base64");
   
-  // Store pending sign payload and generate sign URL
-  const signId = storePendingSign(
-    "compound",
-    input.wallet,
-    unsignedTransactionBase64,
+  // submitArgs for compound includes signedTransaction, permit, wallet, and full summary
+  const submitArgs = {
     permit,
-    { summary }, // submitArgs for compound includes the complete summary
-    summary.expiresAt
+    wallet: input.wallet,
+    summary,
+  };
+  
+  // Create self-contained signed token (no shared storage required)
+  const signToken = await createSignToken(
+    {
+      kind: "compound",
+      wallet: input.wallet,
+      unsignedTransaction: unsignedTransactionBase64,
+      permit,
+      submitArgs,
+      expiresAt: summary.expiresAt,
+    },
+    jupiterApiKey
   );
   
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL 
-    ? `https://${process.env.VERCEL_URL}` 
-    : "";
-  const signUrl = baseUrl ? `${baseUrl}/sign/${signId}` : `/sign/${signId}`;
+  const baseUrl = (
+    process.env.NEXT_PUBLIC_APP_URL || 
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "")
+  ).replace(/\/$/, "");
+  const signUrl = baseUrl ? `${baseUrl}/sign/${signToken}` : `/sign/${signToken}`;
   
   // The permit is an HMAC over the complete summary, so the complete object
   // must be returned and passed back unchanged to submit_compound_transaction.
@@ -328,7 +343,7 @@ export async function prepareCompoundTransaction(input: QuoteCompoundInput) {
     unsignedTransaction: unsignedTransactionBase64,
     permit,
     summary,
-    signId,
+    signToken,
     signUrl,
     instructions: {
       message: "Sign unsignedTransaction with the wallet, then call submit_compound_transaction with { signedTransaction, permit, wallet, summary }. Pass summary back exactly as returned; it is bound by the permit. Or open signUrl in a browser with the wallet connected to sign via UI.",
