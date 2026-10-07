@@ -10,6 +10,7 @@ import { useSelectedController } from "./use-selected-controller";
 import { TransactionStatusDialog } from "./transaction-status-dialog";
 import { CompoundPanel } from "./compound-panel";
 import { useCompoundController } from "./use-compound-controller";
+import { InkNav } from "./ink";
 
 const short = (value: string) => `${value.slice(0, 5)}…${value.slice(-5)}`;
 const money = (value: string, decimals: number, digits = 6) => formatAmount(value, decimals, digits);
@@ -96,14 +97,7 @@ export function SelectedApp() {
   };
   return <div className="min-h-screen bg-[#050505] text-neutral-100">
     <div className="relative mx-auto max-w-5xl px-5 pb-32 pt-6 sm:px-8 sm:pt-10">
-      <header className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3"><div className="flex h-10 w-10 items-center justify-center rounded-xl border border-neutral-800 bg-neutral-900 text-lg font-bold text-neutral-100">S</div><div><div className="text-sm font-bold tracking-wide text-neutral-100">SoFinance</div><div className="text-xs text-neutral-500">Solana · Raydium CLMM</div></div></div>
-        <div className="flex items-center gap-2">
-          <a href="/rwa-pairs" className="rounded-xl border border-neutral-800 bg-transparent px-3 py-2 text-xs font-semibold text-neutral-300 transition-colors hover:border-neutral-700 hover:bg-neutral-900/50">RWA pairs</a>
-          {connected && wallet ? <button onClick={disconnect} className="max-w-[160px] inline-flex items-center justify-center gap-2 rounded-xl border border-neutral-700 bg-transparent px-3 py-2 text-xs font-semibold text-neutral-300 transition-colors hover:border-neutral-600 hover:bg-neutral-900/50"><Wallet className="h-4 w-4" />{short(wallet)}</button>
-            : <button onClick={connect} className="inline-flex items-center justify-center gap-2 rounded-xl border border-neutral-700 bg-transparent px-3 py-2 text-xs font-semibold text-neutral-300 transition-colors hover:border-neutral-600 hover:bg-neutral-900/50"><Wallet className="h-4 w-4" />Connect wallet</button>}
-        </div>
-      </header>
+      <InkNav wallet={wallet} connected={connected} onConnect={connect} onDisconnect={disconnect} />
 
       <div className="mb-6 mt-8 sm:mt-10"><h1 className="text-2xl font-semibold tracking-tight text-neutral-100 sm:text-3xl">Manage my liquidity positions</h1><p className="mt-2 text-sm leading-relaxed text-neutral-500">Add yield back to original position, or invest new capital.</p></div>
 

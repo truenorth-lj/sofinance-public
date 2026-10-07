@@ -1,21 +1,15 @@
-import { InkShell, InkHeader } from "@/components/ink";
-import { RwaPairsPanel } from "@/components/rwa-pairs-panel";
+"use client";
 
-export const metadata = {
-  title: "RWA pairs · SoFinance",
-  description: "Discover Raydium CLMM same-asset RWA trading pairs filtered by Jupiter tags and xStocks whitelist.",
-};
+import { InkShell, InkNav } from "@/components/ink";
+import { RwaPairsPanel } from "@/components/rwa-pairs-panel";
+import { useWalletConnection } from "@/components/wallet-connection";
 
 export default function RwaPairsPage() {
+  const { address, connected, connect, disconnect } = useWalletConnection();
+
   return (
     <InkShell>
-      <InkHeader
-        subtitle="RWA pair discovery"
-        navLinks={[
-          { href: "/position-performance", label: "Position performance" },
-          { href: "/", label: "Back to positions" },
-        ]}
-      />
+      <InkNav wallet={address} connected={connected} onConnect={connect} onDisconnect={disconnect} />
 
       <div className="mb-8 mt-10 sm:mt-12">
         <h1 className="text-2xl font-semibold tracking-tight text-neutral-100 sm:text-3xl">Same-asset RWA pairs</h1>
