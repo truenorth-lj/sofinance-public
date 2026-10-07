@@ -10,7 +10,6 @@ import { readSelectedPositionState } from "./selected-state";
 import { accruedFee, MAX_U64, wrappingSub128 } from "./compound-math";
 import { positionSide } from "./quote-math";
 import type { CompoundPositionState, CompoundReward } from "./compound-types";
-import { fetchJupiterPricesUsd, fetchRaydiumPoolUsdPrices } from "./token-prices";
 
 const supported = new Set([
   ExtensionType.MintCloseAuthority, ExtensionType.PermanentDelegate, ExtensionType.PausableConfig,
@@ -110,25 +109,7 @@ export async function readCompoundPositionState(wallet: string, positionMint: st
       estimatedAmount: estimated.toString(), compounded: reward.mint.toBase58() === selected.mintA || reward.mint.toBase58() === selected.mintB });
   }
   if (rewards.length && pool.status & 8) issues.push("Pool has disabled reward collection");
-  
-  let priceUsdA: number | null = null;
-  let priceUsdB: number | null = null;
-  try {
-    const apiKey = process.env.JUPITER_API_KEY;
-    const prices = await fetchJupiterPricesUsd([selected.mintA, selected.mintB], fetch, apiKey);
-    priceUsdA = prices.get(selected.mintA) ?? null;
-    priceUsdB = prices.get(selected.mintB) ?? null;
-    if (priceUsdA === null || priceUsdB === null) {
-      const fallback = await fetchRaydiumPoolUsdPrices(selected.poolId, selected.mintA, selected.mintB, fetch);
-      priceUsdA = fallback.get(selected.mintA) ?? priceUsdA;
-      priceUsdB = fallback.get(selected.mintB) ?? priceUsdB;
-    }
-  } catch {
-    // Price fetch failed, continue without prices
-  }
-
   return { ...snapshot, eligible: !issues.length, reason: issues.join("; ") || null, status: pool.status,
     vaultA: pool.vaultA.toBase58(), vaultB: pool.vaultB.toBase58(), tickSpacing: pool.tickSpacing,
-    fees: { a: fee("A"), b: fee("B") }, rewards,
-    pricing: priceUsdA !== null && priceUsdB !== null ? { priceUsdA, priceUsdB } : undefined };
+    fees: { a: fee("A"), b: fee("B") }, rewards };
 }
