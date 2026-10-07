@@ -15,6 +15,7 @@ import { readCompoundPositionState } from "../lib/compound-state";
 import { simulateAndVerifyCompound } from "../lib/compound-simulation";
 import type { CompoundSummary } from "../lib/compound-types";
 import { discoverRwaPairs } from "../lib/rwa-pairs";
+import { getPositionPerformance as readPositionPerformance } from "../lib/position-performance";
 import type {
   ListPositionsInput,
   QuoteAddLiquidityInput,
@@ -23,6 +24,7 @@ import type {
   SubmitSignedTransactionInput,
   SubmitCompoundTransactionInput,
   ListRwaPairsInput,
+  GetPositionPerformanceInput,
 } from "./schemas";
 
 /**
@@ -581,5 +583,79 @@ export async function listRwaPairs(input: ListRwaPairsInput) {
       freezeRiskB: pair.freezeRiskB,
       freezeRisk: pair.freezeRisk,
     })),
+  };
+}
+
+
+/**
+ * Compute holding-period return / realized fee APR for a Raydium CLMM position NFT
+ * from on-chain facts (signatures + Anchor events + current equity). No database.
+ *
+ * Safety: Read-only. Optional wallet only checks NFT ownership. USD uses current
+ * Jupiter Price v3 (Raydium stable-leg fallback) when available (labeled — not historical).
+ */
+export async function getPositionPerformance(input: GetPositionPerformanceInput) {
+  const result = await readPositionPerformance(input.positionMint, {
+    wallet: input.wallet,
+    maxSignatures: input.maxSignatures,
+    skipPricing: input.skipPricing,
+  });
+
+  return {
+    wallet: result.wallet,
+    ownsNft: result.ownsNft,
+    positionMint: result.positionMint,
+    positionAccount: result.positionAccount,
+    poolId: result.poolId,
+    mintA: result.mintA,
+    mintB: result.mintB,
+    decimalsA: result.decimalsA,
+    decimalsB: result.decimalsB,
+    tickLower: result.tickLower,
+    tickUpper: result.tickUpper,
+    tickCurrent: result.tickCurrent,
+    rangeSide: result.rangeSide,
+    liquidity: result.liquidity,
+    openedAt: result.openedAt,
+    openedAtIso: result.openedAtIso,
+    evaluatedAt: result.evaluatedAt,
+    evaluatedAtIso: result.evaluatedAtIso,
+    signatureCount: result.signatureCount,
+    truncated: result.truncated,
+    maxSignatures: result.maxSignatures,
+    cashflows: result.cashflows,
+    metrics: {
+      holdingDays: result.metrics.holdingDays,
+      depositedRaw: result.metrics.depositedRaw,
+      withdrawnPrincipalRaw: result.metrics.withdrawnPrincipalRaw,
+      feesCollectedRaw: result.metrics.feesCollectedRaw,
+      uncollectedFeesRaw: result.metrics.uncollectedFeesRaw,
+      liquidityAmountsRaw: result.metrics.liquidityAmountsRaw,
+      currentEquityRaw: result.metrics.currentEquityRaw,
+      feesEarnedRaw: result.metrics.feesEarnedRaw,
+      pnlRaw: result.metrics.pnlRaw,
+      priceUsdA: result.metrics.priceUsdA,
+      priceUsdB: result.metrics.priceUsdB,
+      depositedUsd: result.metrics.depositedUsd,
+      withdrawnPrincipalUsd: result.metrics.withdrawnPrincipalUsd,
+      feesCollectedUsd: result.metrics.feesCollectedUsd,
+      uncollectedFeesUsd: result.metrics.uncollectedFeesUsd,
+      feesEarnedUsd: result.metrics.feesEarnedUsd,
+      liquidityUsd: result.metrics.liquidityUsd,
+      currentEquityUsd: result.metrics.currentEquityUsd,
+      pnlUsd: result.metrics.pnlUsd,
+      holdingPeriodReturnPct: result.metrics.holdingPeriodReturnPct,
+      annualizedReturnPct: result.metrics.annualizedReturnPct,
+      feeOnlyAprPct: result.metrics.feeOnlyAprPct,
+    },
+    history: result.history.map((item) => ({
+      signature: item.signature,
+      blockTime: item.blockTime,
+      slot: item.slot,
+      events: item.events,
+    })),
+    pricing: result.pricing,
+    method: result.method,
+    assumptions: result.assumptions,
   };
 }
