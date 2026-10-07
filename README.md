@@ -42,11 +42,12 @@ Kept on both web API and MCP paths:
 | `get_position_performance` | Holding-period / fee APR from chain; TE for same-asset RWA wrap pairs | `positionMint`, `wallet?`, `maxSignatures?`, `skipPricing?` |
 | `list_positions` | Positions + eligible assets | `wallet` |
 | `quote_add_liquidity` | Read-only zap quote | `wallet`, `positionMint`, `inputMint`, `inputKind` (`native`\|`token`), `amount`, `resaleFloorBps?` (9500–10000, default 9900), `slippageToleranceBps?` (0–500 step 10, default 100) |
-| `prepare_transaction` | Unsigned zap tx + permit + `submitArgs` | same as quote |
+| `prepare_transaction` | Unsigned zap tx + permit + `submitArgs` + `signUrl` | same as quote |
 | `submit_signed_transaction` | Permit check → re-sim → broadcast | `signedTransaction` + every `submitArgs` field unchanged |
 | `quote_compound` | Compound quote | `wallet`, `positionMint`, `sourceSignatures?` (≤3) |
-| `prepare_compound_transaction` | Unsigned compound tx + permit | same as quote_compound |
+| `prepare_compound_transaction` | Unsigned compound tx + permit + `signUrl` | same as quote_compound |
 | `submit_compound_transaction` | Permit check → re-sim → broadcast | `signedTransaction`, `permit`, `wallet`, full `summary` unchanged |
+| `list_rwa_pairs` | Discover same-asset RWA pairs | `minTvl?`, `maxPages?`, `sortBy?` |
 
 ## Quickstart — web
 
@@ -89,6 +90,8 @@ Example Cursor / Claude MCP config (adjust the absolute path):
 Or: `pnpm mcp:start` with env already exported.
 
 **Agent flow:** `list_positions` → `quote_add_liquidity` → `prepare_transaction` → wallet signs `unsignedTransaction` → `submit_signed_transaction` with `{ signedTransaction, ...submitArgs }`. Compound: `quote_compound` / `prepare_compound_transaction` → sign → `submit_compound_transaction` with the complete `summary`.
+
+**Sign deep-link:** After `prepare_transaction` or `prepare_compound_transaction`, the agent receives a `signUrl` (e.g. `https://app.example.com/sign/<id>`) that can be opened in a browser. With the correct wallet connected via Reown AppKit, the user reviews the transaction summary and signs with one click. The signed transaction is automatically submitted via the existing re-verification and broadcast paths. This bridges the gap for agents that can prepare transactions but delegate signing to the user's wallet UI. The sign payload expires after 60-120 seconds (matching permit/blockhash lifetime).
 
 `JUPITER_API_KEY` is also the HMAC secret for permits. Quotes expire quickly; always re-prepare before signing.
 

@@ -16,6 +16,7 @@ import { simulateAndVerifyCompound } from "../lib/compound-simulation";
 import type { CompoundSummary } from "../lib/compound-types";
 import { discoverRwaPairs } from "../lib/rwa-pairs";
 import { getPositionPerformance as readPositionPerformance } from "../lib/position-performance";
+import { storePendingSign } from "../lib/pending-sign-store";
 import type {
   ListPositionsInput,
   QuoteAddLiquidityInput,
@@ -182,11 +183,30 @@ export async function prepareTransaction(input: PrepareTransactionInput) {
     rangeSide: summary.quote.rangeSide,
     startingBalances: summary.startingBalances,
   };
-
-  return {
-    unsignedTransaction: Buffer.from(transaction.serialize()).toString("base64"),
+  
+  const unsignedTransactionBase64 = Buffer.from(transaction.serialize()).toString("base64");
+  
+  // Store pending sign payload and generate sign URL
+  const signId = storePendingSign(
+    "add-liquidity",
+    input.wallet,
+    unsignedTransactionBase64,
     permit,
     submitArgs,
+    summary.expiresAt
+  );
+  
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL 
+    ? `https://${process.env.VERCEL_URL}` 
+    : "";
+  const signUrl = baseUrl ? `${baseUrl}/sign/${signId}` : `/sign/${signId}`;
+
+  return {
+    unsignedTransaction: unsignedTransactionBase64,
+    permit,
+    submitArgs,
+    signId,
+    signUrl,
     summary: {
       simulated: summary.simulated,
       quote: {
@@ -218,7 +238,7 @@ export async function prepareTransaction(input: PrepareTransactionInput) {
       expiresAt: summary.expiresAt,
     },
     instructions: {
-      message: "Sign unsignedTransaction with the wallet, then call submit_signed_transaction with { signedTransaction, ...submitArgs }. Do not modify submitArgs; they are bound by the permit.",
+      message: "Sign unsignedTransaction with the wallet, then call submit_signed_transaction with { signedTransaction, ...submitArgs }. Do not modify submitArgs; they are bound by the permit. Or open signUrl in a browser with the wallet connected to sign via UI.",
     },
   };
 }
@@ -285,14 +305,33 @@ export async function prepareCompoundTransaction(input: QuoteCompoundInput) {
     message: Buffer.from(transaction.message.serialize()).toString("base64"),
   });
   
+  const unsignedTransactionBase64 = Buffer.from(transaction.serialize()).toString("base64");
+  
+  // Store pending sign payload and generate sign URL
+  const signId = storePendingSign(
+    "compound",
+    input.wallet,
+    unsignedTransactionBase64,
+    permit,
+    { summary }, // submitArgs for compound includes the complete summary
+    summary.expiresAt
+  );
+  
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL 
+    ? `https://${process.env.VERCEL_URL}` 
+    : "";
+  const signUrl = baseUrl ? `${baseUrl}/sign/${signId}` : `/sign/${signId}`;
+  
   // The permit is an HMAC over the complete summary, so the complete object
   // must be returned and passed back unchanged to submit_compound_transaction.
   return {
-    unsignedTransaction: Buffer.from(transaction.serialize()).toString("base64"),
+    unsignedTransaction: unsignedTransactionBase64,
     permit,
     summary,
+    signId,
+    signUrl,
     instructions: {
-      message: "Sign unsignedTransaction with the wallet, then call submit_compound_transaction with { signedTransaction, permit, wallet, summary }. Pass summary back exactly as returned; it is bound by the permit.",
+      message: "Sign unsignedTransaction with the wallet, then call submit_compound_transaction with { signedTransaction, permit, wallet, summary }. Pass summary back exactly as returned; it is bound by the permit. Or open signUrl in a browser with the wallet connected to sign via UI.",
     },
   };
 }
