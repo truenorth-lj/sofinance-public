@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { confirmedAtomicSuccess, instructionLiquidity, mayStartAnotherAttempt } from "./attempt-status";
+import { clearsSubmitError, confirmedAtomicSuccess, instructionLiquidity, mayStartAnotherAttempt } from "./attempt-status";
 
 describe("selected transaction recovery", () => {
   it("blocks another spend while a signature may still land", () => {
@@ -8,6 +8,14 @@ describe("selected transaction recovery", () => {
     expect(mayStartAnotherAttempt("expired")).toBe(true);
     expect(mayStartAnotherAttempt("failed")).toBe(true);
     expect(mayStartAnotherAttempt("success")).toBe(true);
+  });
+
+  it("does not clear a useful broadcast error when confirm becomes expired", () => {
+    expect(clearsSubmitError("expired")).toBe(false);
+    expect(clearsSubmitError("pending")).toBe(false);
+    expect(clearsSubmitError("manual-review")).toBe(false);
+    expect(clearsSubmitError("success")).toBe(true);
+    expect(clearsSubmitError("failed")).toBe(true);
   });
 
   it("requires the signed exact-position instruction and its actual liquidity delta", () => {

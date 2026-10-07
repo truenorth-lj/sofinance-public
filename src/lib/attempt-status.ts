@@ -4,6 +4,11 @@ export function mayStartAnotherAttempt(status: AtomicStatus | null) {
   return status === null || status === "expired" || status === "failed" || status === "success";
 }
 
+/** Expired means the signature was not found on-chain. Keep a prior broadcast/prepare error so never-sent is visible. */
+export function clearsSubmitError(status: AtomicStatus) {
+  return status === "success" || status === "failed";
+}
+
 // Raydium increase_liquidity_v2: 8-byte discriminator followed by a little-endian u128 liquidity.
 export function instructionLiquidity(data: Uint8Array) {
   if (data.length < 24) return null;
