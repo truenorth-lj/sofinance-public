@@ -8,6 +8,13 @@ const geist = Geist({ subsets: ["latin"] });
 export const metadata: Metadata = {
   title: "SoFinance",
   description: "Choose a wallet asset and an existing Raydium CLMM position, then preview an atomic liquidity add.",
+  icons: {
+    icon: [
+      { url: "/favicon.svg", type: "image/svg+xml" },
+      { url: "/favicon.ico", sizes: "any" },
+    ],
+    apple: "/apple-touch-icon.png",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
