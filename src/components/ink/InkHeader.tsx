@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { INK_COLORS } from "./ink-tokens";
 
 interface NavLink {
@@ -15,9 +16,13 @@ export function InkHeader({ subtitle, navLinks = [] }: InkHeaderProps) {
   return (
     <header className="flex items-center justify-between gap-4">
       <Link href="/" className="flex items-center gap-3 transition-opacity hover:opacity-70">
-        <div className={`flex h-10 w-10 items-center justify-center rounded-xl border border-${INK_COLORS.logoBorder} bg-${INK_COLORS.logoBg} text-lg font-bold text-${INK_COLORS.textPrimary}`}>
-          S
-        </div>
+        <Image 
+          src="/logo.png" 
+          alt="SoFinance" 
+          width={40} 
+          height={40}
+          className="flex-shrink-0 rounded-lg"
+        />
         <div>
           <div className={`text-sm font-bold tracking-wide text-${INK_COLORS.textPrimary}`}>
             SoFinance
