@@ -17,6 +17,19 @@ const money = (value: string, decimals: number, digits = 6) => formatAmount(valu
 const tokenLabel = (mint: string, kind?: "native" | "token") =>
   kind === "native" ? "SOL" : mint === USDC_MINT ? "USDC" : mint === NATIVE_SOL_MINT ? "WSOL" : short(mint);
 
+function calculateInputUsd(amount: string, priceUsd: number | null): string | null {
+  if (!amount || priceUsd === null || !Number.isFinite(priceUsd) || priceUsd < 0) return null;
+  try {
+    const parsed = Number(amount);
+    if (!Number.isFinite(parsed) || parsed <= 0) return null;
+    const usdValue = parsed * priceUsd;
+    if (!Number.isFinite(usdValue)) return null;
+    return usdValue < 0.01 ? "< $0.01" : `≈ $${usdValue.toFixed(2)}`;
+  } catch {
+    return null;
+  }
+}
+
 export function SelectedApp() {
   const controller = useSelectedController();
   const { wallet, connected, connect, disconnect, isMobile, walletsCount, connectionError,
@@ -124,10 +137,14 @@ export function SelectedApp() {
         <section className="min-w-0 rounded-3xl border border-white/10 bg-[#111d2c]/95 p-5 shadow-2xl shadow-black/20 sm:p-8">
           <h2 className="text-lg font-semibold">Deposit funds</h2><p className="mt-2 text-xs leading-5 text-slate-400">Select wallet assets, swap and add to position selected above.</p>
           <span id="asset-label" className="mt-6 block text-xs font-medium uppercase tracking-[0.16em] text-slate-400">From wallet deposit</span>
-          <TokenPicker assets={assetOptions} selectedAsset={selectedAsset} metadata={metadata} disabled={!assetOptions.length || busy} onSelect={chooseAsset} />
+          <TokenPicker assets={assetOptions} selectedAsset={selectedAsset} metadata={metadata} disabled={!assetOptions.length || busy} onSelect={chooseAsset} inputPriceUsd={state?.pricing?.priceUsdInput} />
           {selectedAsset && <details className="mt-2 text-[11px] leading-5 text-slate-500"><summary className="cursor-pointer">Asset address and balance source</summary><p className="mt-2 break-all">Mint {selectedAsset.mint} · Available for input ATA/SOL balance {money(selectedAsset.balance, selectedAsset.decimals, selectedAsset.decimals)}{selectedAsset.totalBalance !== selectedAsset.balance ? `; wallet total holdings ${money(selectedAsset.totalBalance, selectedAsset.decimals, selectedAsset.decimals)}` : ""}</p></details>}
           <label htmlFor="amount" className="mt-7 block text-xs font-medium uppercase tracking-[0.16em] text-slate-400">Input limit</label>
           <div className="mt-2 flex items-center gap-2 rounded-2xl border border-slate-600/70 bg-[#0b1523] px-4 py-3 focus-within:border-sky-400"><input id="amount" disabled={busy || !selection} inputMode="decimal" placeholder="Enter amount" value={amount} onChange={(event) => changeAmount(event.target.value)} className="min-w-0 flex-1 bg-transparent text-3xl font-semibold outline-none placeholder:text-slate-600" /><span className="text-sm font-semibold text-slate-300">{inputLabel}</span></div>
+          {state?.pricing?.priceUsdInput !== undefined && state.pricing.priceUsdInput !== null && amount && (() => {
+            const inputUsd = calculateInputUsd(amount, state.pricing.priceUsdInput);
+            return inputUsd ? <div className="mt-2 text-center text-sm text-slate-500">{inputUsd}</div> : null;
+          })()}
           <div className="mt-3 flex items-center justify-between text-xs text-slate-400"><span>Available for input balance: {state ? `${money(state.inputBalance, state.inputDecimals, state.inputDecimals)} ${inputLabel}` : "—"}</span><button type="button" className="font-semibold text-sky-300 hover:text-sky-200 disabled:opacity-45" onClick={fillMax} disabled={busy || !state}>MAX</button></div>
           <details className="mt-5 text-xs text-slate-400"><summary className="cursor-pointer font-semibold">Advanced settings · Max resale difference {maxCostPercent}% · Price tolerance {tolerancePercent}%</summary>
           <div className="mt-3 flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-[#0b1523] px-4 py-3"><div><label htmlFor="max-cost" className="text-sm font-medium">Maximum estimated immediate resale difference</label><p className="mt-1 text-xs leading-5 text-slate-400">Estimated ratio to swap back to same input asset; can set 0–5%, by 0.1%. Transaction slippage fixed at 0.5%.</p></div><div className="flex shrink-0 items-center gap-1"><input id="max-cost" disabled={busy} type="number" inputMode="decimal" min="0" max="5" step="0.1" value={maxCostPercent} onChange={(event) => changeMaxCost(event.target.value)} className="w-16 rounded-lg border border-slate-600 bg-[#111d2c] px-2 py-1.5 text-right text-sm font-semibold outline-none focus:border-sky-400" /><span className="text-sm text-slate-300">%</span></div></div>
