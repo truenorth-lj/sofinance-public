@@ -2,14 +2,14 @@
 
 ## 🎨 Design Delivered
 
-**Cute Grokbot-style character mascot** replacing the plain "S in square" as requested by LJ.
+**OpenIntern manga-style character mascot** as the SoFinance brand mark, as requested by LJ.
 
 ### Character Features
-- ⚪ **White circular face** on black background (maintains Ink aesthetic)
-- 👀 **Two black oval eyes** with curious upward-right gaze
-- ⭐ **Orange star badge** at bottom-right (single color accent: `#ff6b35`)
-- Modern, minimal, friendly design
-- Readable at all sizes: 16px favicon → 128px+
+- 📚 **Manga-style B&W illustration** (girl with clipboard from OpenIntern)
+- ⚫⚪ **Monochrome aesthetic** maintains Ink design system
+- 📐 **Rounded square presentation** in header (40×40 with rounded-lg)
+- 🎯 **Professional, distinctive branding** from LJ's OpenIntern project
+- Readable at all sizes: 16px favicon → 180px apple-touch-icon
 
 ## 📸 Visual Evidence
 
