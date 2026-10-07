@@ -57,7 +57,39 @@ describe("Jupiter tag helpers", () => {
 describe("matchWrapPairShape", () => {
   it("matches FOOx/FOO and rejects stables", () => {
     expect(matchWrapPairShape("MSTRx", "MSTR").matched).toBe(true);
+    expect(matchWrapPairShape("INTCx", "INTC").matched).toBe(true);
     expect(matchWrapPairShape("USDCx", "USDC").matched).toBe(false);
+  });
+
+  it("matches SPCXx/SPCX when plain ticker ends in X (both look wrapped in isolation)", () => {
+    // parseWrapSymbol("SPCX") → SPC; parseWrapSymbol("SPCXx") → SPCX
+    expect(parseWrapSymbol("SPCX")).toEqual({ base: "SPC", kind: "suffix-x" });
+    expect(parseWrapSymbol("SPCXx")).toEqual({ base: "SPCX", kind: "suffix-x" });
+
+    const ab = matchWrapPairShape("SPCXx", "SPCX");
+    expect(ab.matched).toBe(true);
+    if (ab.matched) {
+      expect(ab.baseSymbol).toBe("SPCX");
+      expect(ab.wrappedSymbol).toBe("SPCXx");
+      expect(ab.plainSymbol).toBe("SPCX");
+      expect(ab.wrappedSide).toBe("A");
+      expect(ab.wrapKind).toBe("suffix-x");
+    }
+
+    const ba = matchWrapPairShape("SPCX", "SPCXx");
+    expect(ba.matched).toBe(true);
+    if (ba.matched) {
+      expect(ba.baseSymbol).toBe("SPCX");
+      expect(ba.wrappedSymbol).toBe("SPCXx");
+      expect(ba.plainSymbol).toBe("SPCX");
+      expect(ba.wrappedSide).toBe("B");
+    }
+  });
+
+  it("still rejects unrelated both-wrapped pairs", () => {
+    const result = matchWrapPairShape("NVDAx", "MSTRx");
+    expect(result.matched).toBe(false);
+    if (!result.matched) expect(result.reason).toMatch(/both symbols look wrapped/i);
   });
 });
 
@@ -74,6 +106,33 @@ describe("matchSameAssetPair", () => {
       expect(result.plainSymbol).toBe("MSTR");
       expect(result.relatedness).toBe("both-jupiter-tagged");
       expect(result.preferredTags).toBe(true);
+    }
+  });
+
+  it("matches INTCx / INTC when both are Jupiter-tagged", () => {
+    const result = matchSameAssetPair(
+      { symbol: "INTCx", jupiterTags: ["stocks", "rwa"] },
+      { symbol: "INTC", jupiterTags: ["stocks", "rwa"] },
+    );
+    expect(result.matched).toBe(true);
+    if (result.matched) {
+      expect(result.baseSymbol).toBe("INTC");
+      expect(result.wrappedSymbol).toBe("INTCx");
+      expect(result.plainSymbol).toBe("INTC");
+    }
+  });
+
+  it("matches SPCXx / SPCX (plain ends in X) when both are Jupiter-tagged", () => {
+    const result = matchSameAssetPair(
+      { symbol: "SPCXx", jupiterTags: ["xstocks", "stocks", "rwa"] },
+      { symbol: "SPCX", jupiterTags: ["stocks", "rwa"] },
+    );
+    expect(result.matched).toBe(true);
+    if (result.matched) {
+      expect(result.baseSymbol).toBe("SPCX");
+      expect(result.wrappedSymbol).toBe("SPCXx");
+      expect(result.plainSymbol).toBe("SPCX");
+      expect(result.relatedness).toBe("both-jupiter-tagged");
     }
   });
 
