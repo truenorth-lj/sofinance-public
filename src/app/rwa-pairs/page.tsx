@@ -19,9 +19,14 @@ export default function RwaPairsPage() {
               <div className="text-xs text-slate-400">RWA pair discovery</div>
             </div>
           </Link>
-          <Link href="/" className="rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-100 hover:bg-slate-700">
-            Back to positions
-          </Link>
+          <div className="flex gap-2">
+            <Link href="/position-performance" className="rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-100 hover:bg-slate-700">
+              Position performance
+            </Link>
+            <Link href="/" className="rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-100 hover:bg-slate-700">
+              Back to positions
+            </Link>
+          </div>
         </header>
 
         <div className="mb-6 mt-8 sm:mt-10">
