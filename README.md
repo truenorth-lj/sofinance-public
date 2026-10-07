@@ -64,11 +64,54 @@ pnpm lint && pnpm typecheck && pnpm test && pnpm build
 
 Never commit `.env.local`, mnemonics, or API keys. Do not prefix `SOLANA_RPC_URL` / `JUPITER_API_KEY` with `NEXT_PUBLIC_`.
 
-## Quickstart — MCP (Claude Desktop / Cursor)
+## Quickstart — MCP for AI Agents (Remote, Zero Local Secrets)
 
-Requires Node 20+, `pnpm install` in this repo, and the same server env vars.
+**Recommended:** Use the remote MCP endpoint with zero local secrets. The MCP server runs on Vercel; your laptop needs only a connection URL + auth token.
 
-Example Cursor / Claude MCP config (adjust the absolute path):
+### Getting Started (Remote MCP)
+
+1. **Connect your wallet** on [sofinance-alpha.vercel.app](https://sofinance-alpha.vercel.app)
+2. **Expand "MCP Connection (AI Agents)"** after wallet connect
+3. **Copy the generated config** — it includes a short-lived token bound to your wallet
+4. **Paste into your AI agent's MCP settings:**
+
+   **Cursor:** Open MCP settings and paste the config
+
+   **Claude Desktop:** Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (Mac) or `%APPDATA%/Claude/claude_desktop_config.json` (Windows)
+
+Example config (auto-generated on the website):
+
+```json
+{
+  "mcpServers": {
+    "sofinance": {
+      "url": "https://sofinance-alpha.vercel.app/api/mcp",
+      "headers": {
+        "Authorization": "Bearer <your-token-here>"
+      }
+    }
+  }
+}
+```
+
+**Benefits:**
+- ✅ Zero local secrets (no SOLANA_RPC_URL or JUPITER_API_KEY on your laptop)
+- ✅ Always up-to-date (talks to production Vercel backend)
+- ✅ Short-lived tokens (24h expiry, regenerate anytime)
+- ✅ Wallet-bound auth (token only works for your wallet)
+
+**Agent flow:** `list_positions` → `quote_add_liquidity` → `prepare_transaction` → wallet signs locally → `submit_signed_transaction`. Server never holds your private keys.
+
+### Alternative: Local MCP (Power Users)
+
+For local development or testing, you can run the MCP server locally:
+
+```bash
+pnpm install
+pnpm mcp:start  # Requires SOLANA_RPC_URL and JUPITER_API_KEY in env
+```
+
+Cursor / Claude config for local stdio:
 
 ```json
 {
@@ -85,12 +128,6 @@ Example Cursor / Claude MCP config (adjust the absolute path):
   }
 }
 ```
-
-Or: `pnpm mcp:start` with env already exported.
-
-**Agent flow:** `list_positions` → `quote_add_liquidity` → `prepare_transaction` → wallet signs `unsignedTransaction` → `submit_signed_transaction` with `{ signedTransaction, ...submitArgs }`. Compound: `quote_compound` / `prepare_compound_transaction` → sign → `submit_compound_transaction` with the complete `summary`.
-
-`JUPITER_API_KEY` is also the HMAC secret for permits. Quotes expire quickly; always re-prepare before signing.
 
 ## Architecture
 
