@@ -2,10 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   estimateFeeAprPct,
   hasFreezeTag,
+  hasJupiterStocksOrRwaTags,
+  hasPreferredJupiterTags,
   isToken2022Program,
   matchSameAssetPair,
-  namesShareCompanyStem,
+  matchWrapPairShape,
   parseWrapSymbol,
+  qualifyRwaMint,
   TOKEN_2022_PROGRAM_ID,
 } from "./rwa-pairing";
 
@@ -31,101 +34,125 @@ describe("parseWrapSymbol", () => {
   });
 });
 
+describe("Jupiter tag helpers", () => {
+  it("accepts stocks or rwa", () => {
+    expect(hasJupiterStocksOrRwaTags(["stocks"])).toBe(true);
+    expect(hasJupiterStocksOrRwaTags(["RWA"])).toBe(true);
+    expect(hasJupiterStocksOrRwaTags(["verified", "token-2022"])).toBe(false);
+    expect(hasPreferredJupiterTags(["xstocks", "stocks"])).toBe(true);
+    expect(hasPreferredJupiterTags(["backpack"])).toBe(true);
+    expect(hasPreferredJupiterTags(["stocks"])).toBe(false);
+  });
+
+  it("qualifies via Jupiter first, then whitelist", () => {
+    expect(qualifyRwaMint({ symbol: "A", jupiterTags: ["stocks"] })).toBe("jupiter-tags");
+    expect(qualifyRwaMint({ symbol: "A", onXstocksWhitelist: true })).toBe("xstocks-whitelist");
+    expect(
+      qualifyRwaMint({ symbol: "A", jupiterTags: ["stocks"], onXstocksWhitelist: true }),
+    ).toBe("jupiter-tags");
+    expect(qualifyRwaMint({ symbol: "A" })).toBeNull();
+  });
+});
+
+describe("matchWrapPairShape", () => {
+  it("matches FOOx/FOO and rejects stables", () => {
+    expect(matchWrapPairShape("MSTRx", "MSTR").matched).toBe(true);
+    expect(matchWrapPairShape("USDCx", "USDC").matched).toBe(false);
+  });
+});
+
 describe("matchSameAssetPair", () => {
-  it("matches MSTRx / MSTR with Backpack counterparty", () => {
+  it("matches MSTRx / MSTR when both are Jupiter-tagged", () => {
     const result = matchSameAssetPair(
-      { symbol: "MSTRx", name: "MicroStrategy xStock", extensionsText: '{"tips":{"text":"Backed"}}' },
-      { symbol: "MSTR", name: "Strategy - Backpack Securities" },
+      { symbol: "MSTRx", jupiterTags: ["xstocks", "stocks", "rwa"] },
+      { symbol: "MSTR", jupiterTags: ["backpack", "stocks", "rwa"] },
     );
     expect(result.matched).toBe(true);
     if (result.matched) {
       expect(result.baseSymbol).toBe("MSTR");
       expect(result.wrappedSymbol).toBe("MSTRx");
       expect(result.plainSymbol).toBe("MSTR");
-      expect(result.relatedness).toBe("both-tokenized");
+      expect(result.relatedness).toBe("both-jupiter-tagged");
+      expect(result.preferredTags).toBe(true);
     }
   });
 
-  it("matches NVDAx / NVDA when plain name is the ticker", () => {
+  it("matches when one side is only on the xStocks whitelist", () => {
     const result = matchSameAssetPair(
-      { symbol: "NVDAx", name: "NVIDIA xStock" },
-      { symbol: "NVDA", name: "NVDA" },
+      { symbol: "NVDAx", jupiterTags: ["stocks", "rwa", "xstocks"] },
+      { symbol: "NVDA", jupiterTags: [], onXstocksWhitelist: true },
     );
     expect(result.matched).toBe(true);
     if (result.matched) {
-      expect(result.relatedness).toBe("plain-is-ticker");
-      expect(result.wrapKind).toBe("suffix-x");
+      expect(result.relatedness).toBe("mixed-jupiter-whitelist");
+      expect(result.qualificationB).toBe("xstocks-whitelist");
     }
   });
 
-  it("matches FOO-x / FOO with shared company stem", () => {
+  it("matches both-whitelisted when Jupiter tags lag", () => {
     const result = matchSameAssetPair(
-      { symbol: "INTC-x", name: "Intel xStock" },
-      { symbol: "INTC", name: "Intel Corp" },
+      { symbol: "AAPLx", onXstocksWhitelist: true },
+      { symbol: "AAPL", onXstocksWhitelist: true },
     );
     expect(result.matched).toBe(true);
     if (result.matched) {
-      expect(result.wrapKind).toBe("suffix-dash-x");
-      expect(result.relatedness).toBe("shared-stem");
+      expect(result.relatedness).toBe("both-whitelisted");
     }
   });
 
   it("rejects RWA vs USDC", () => {
     const result = matchSameAssetPair(
-      { symbol: "NVDAx", name: "NVIDIA xStock" },
-      { symbol: "USDC", name: "USD Coin" },
+      { symbol: "NVDAx", jupiterTags: ["stocks"] },
+      { symbol: "USDC", jupiterTags: ["stable"] },
     );
     expect(result.matched).toBe(false);
   });
 
-  it("rejects unrelated meme ticker collision", () => {
+  it("rejects unrelated meme ticker collision without Jupiter/whitelist", () => {
     const result = matchSameAssetPair(
-      { symbol: "HOODx", name: "Robinhood xStock" },
-      { symbol: "HOOD", name: "foreskin" },
+      { symbol: "HOODx", jupiterTags: ["stocks", "rwa", "xstocks"] },
+      { symbol: "HOOD", jupiterTags: ["unknown"] },
     );
     expect(result.matched).toBe(false);
-    if (!result.matched) expect(result.reason).toMatch(/unrelated/i);
+    if (!result.matched) expect(result.reason).toMatch(/mint B|lack Jupiter/i);
   });
 
   it("rejects stablecoin wrap pairs", () => {
     const result = matchSameAssetPair(
-      { symbol: "USDCx", name: "USDC xStock" },
-      { symbol: "USDC", name: "USD Coin" },
+      { symbol: "USDCx", jupiterTags: ["stocks"] },
+      { symbol: "USDC", jupiterTags: ["stocks"] },
     );
     expect(result.matched).toBe(false);
     if (!result.matched) expect(result.reason).toMatch(/stablecoin/i);
   });
 
-  it("rejects identical symbols that only differ by whitespace after trim equality path", () => {
+  it("rejects identical symbols", () => {
     const result = matchSameAssetPair(
-      { symbol: "USDC", name: "USD Coin" },
-      { symbol: "USDC", name: "USD Coin" },
+      { symbol: "USDC", jupiterTags: ["stocks"] },
+      { symbol: "USDC", jupiterTags: ["stocks"] },
     );
     expect(result.matched).toBe(false);
   });
 
-  it("rejects pools with no tokenized evidence", () => {
+  it("rejects pools with no Jupiter tags and no whitelist", () => {
     const result = matchSameAssetPair(
       { symbol: "ABCx", name: "Random Wrap" },
       { symbol: "ABC", name: "ABC" },
     );
     expect(result.matched).toBe(false);
   });
-});
 
-describe("namesShareCompanyStem", () => {
-  it("detects shared Intel stem", () => {
-    expect(namesShareCompanyStem("Intel xStock", "Intel - Backpack Securities")).toBe(true);
-  });
-
-  it("rejects unrelated names", () => {
-    expect(namesShareCompanyStem("Robinhood xStock", "foreskin")).toBe(false);
+  it("does not use name heuristics as primary (tokenized names alone are insufficient)", () => {
+    const result = matchSameAssetPair(
+      { symbol: "HOODx", name: "Robinhood xStock" },
+      { symbol: "HOOD", name: "Robinhood - Backpack Securities" },
+    );
+    expect(result.matched).toBe(false);
   });
 });
 
 describe("estimateFeeAprPct", () => {
   it("annualizes 24h fees over TVL", () => {
-    // 100 fees / 10000 TVL * 365 * 100 = 365%
     expect(estimateFeeAprPct(100, 10_000)).toBeCloseTo(365, 6);
   });
 

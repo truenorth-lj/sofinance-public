@@ -530,8 +530,9 @@ export async function submitCompoundTransaction(input: SubmitCompoundTransaction
 /**
  * List Raydium CLMM pools where both sides are the same underlying RWA
  * (wrapped vs unwrapped / xStock style), with fee/TVL/yield annotations.
+ * Filter: Jupiter Tokens API tags (stocks|rwa) + Backed xStocks whitelist.
  *
- * Safety: Read-only; uses public Raydium API. No wallet or private keys.
+ * Safety: Read-only; uses public Raydium / Jupiter / xStocks APIs. No wallet or private keys.
  */
 export async function listRwaPairs(input: ListRwaPairsInput) {
   const result = await discoverRwaPairs({
@@ -561,6 +562,11 @@ export async function listRwaPairs(input: ListRwaPairsInput) {
       plainSymbol: pair.plainSymbol,
       wrapKind: pair.wrapKind,
       relatedness: pair.relatedness,
+      qualificationA: pair.qualificationA,
+      qualificationB: pair.qualificationB,
+      preferredTags: pair.preferredTags,
+      jupiterTagsA: pair.jupiterTagsA,
+      jupiterTagsB: pair.jupiterTagsB,
       feeRate: pair.feeRate,
       feeTierBps: pair.feeTierBps,
       tvlUsd: pair.tvlUsd,

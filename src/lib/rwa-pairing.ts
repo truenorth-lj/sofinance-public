@@ -11,16 +11,17 @@
  *    - The other side equals `BASE` exactly.
  *    - Examples: `SPCXx`/`SPCX`, `MSTRx`/`MSTR`, `NVDAx`/`NVDA`, `FOO-x`/`FOO`.
  * 2. **Not a stablecoin base**: `BASE` is not USDC/USDT/etc. (excludes spam wrap-of-stable pools).
- * 3. **Tokenized-stock evidence** on at least one mint name or Raydium `extensions` text:
- *    matches `/xstock|backed|backpack|tokeni[sz]ed|securities/i` (xStocks / Backpack style).
- * 4. **Relatedness** (excludes FOOx vs unrelated meme with the same ticker):
- *    - Both mints have tokenized-stock evidence, **or**
- *    - The non-wrapped mint shares a significant name stem (≥5 chars) with the wrapped
- *      mint’s company words (after stripping xStock/Backed/Backpack boilerplate), **or**
- *    - The non-wrapped mint’s entire name equals `BASE` (ticker-as-name).
+ * 3. **Primary — Jupiter Tokens API tags**: **both** mints have tags including `stocks` **or**
+ *    `rwa` (case-insensitive). Tags such as `xstocks` / `backpack` are preferred when present
+ *    but are not required.
+ * 4. **Secondary — Backed xStocks whitelist**: a mint on the Backed xStocks public assets list
+ *    (Solana deployment address) also qualifies even if Jupiter tags lag.
+ *
+ * Name / string heuristics are **not** used as the primary filter (they previously matched
+ * unrelated meme tickers that collided on the bare symbol).
  *
  * Pools like `NVDAx`/`USDC` or `MSTRx`/`SOL` fail rule 1. Unrelated meme tickers that
- * only collide on the bare symbol fail rule 4.
+ * only collide on the bare symbol fail rules 3–4.
  *
  * ## Yield / fee APR labeling
  *
@@ -37,10 +38,20 @@ export const STABLECOIN_BASES = new Set([
   "USDC", "USDT", "USD1", "PYUSD", "DAI", "USDS", "USDE", "FDUSD", "USD", "USDG", "AUSD",
 ]);
 
-const TOKENIZED_RE = /xstock|backed\.?fi|\bbacked\b|backpack|tokeni[sz]ed|\bsecurities\b/i;
-const BOILERPLATE_RE = /\b(xstock|backed|backpack|securities|token|tokenized|inc|corp|com|the|and|global|variable|pp)\b/gi;
+/** Jupiter tags that qualify a mint as stocks/RWA (primary filter). */
+export const JUPITER_RWA_TAGS = new Set(["stocks", "rwa"]);
+
+/** Preferred Jupiter tags (not required; used for ranking / labels). */
+export const JUPITER_PREFERRED_TAGS = new Set(["xstocks", "backpack"]);
 
 export type WrapKind = "suffix-x" | "suffix-dash-x" | "suffix-underscore-x" | "prefix-x";
+
+export type RwaQualificationSource = "jupiter-tags" | "xstocks-whitelist";
+
+export type Relatedness =
+  | "both-jupiter-tagged"
+  | "both-whitelisted"
+  | "mixed-jupiter-whitelist";
 
 export type PairingMatch = {
   matched: true;
@@ -49,8 +60,12 @@ export type PairingMatch = {
   plainSymbol: string;
   wrapKind: WrapKind;
   wrappedSide: "A" | "B";
-  tokenizedEvidence: "both" | "wrapped" | "plain";
-  relatedness: "both-tokenized" | "shared-stem" | "plain-is-ticker";
+  /** How each side was qualified as RWA. */
+  qualificationA: RwaQualificationSource;
+  qualificationB: RwaQualificationSource;
+  relatedness: Relatedness;
+  /** True when at least one side carries preferred Jupiter tags (xstocks / backpack). */
+  preferredTags: boolean;
 };
 
 export type PairingReject = { matched: false; reason: string };
@@ -60,7 +75,10 @@ export type PairingResult = PairingMatch | PairingReject;
 export type MintHints = {
   symbol: string;
   name?: string | null;
-  extensionsText?: string | null;
+  /** Jupiter Tokens API `tags` for this mint (cached). */
+  jupiterTags?: string[] | null;
+  /** True when mint is a Solana deployment on Backed xStocks public assets. */
+  onXstocksWhitelist?: boolean;
 };
 
 /** Parse FOOx / FOO-x / FOO_x / xFOO style wrap symbols. */
@@ -82,28 +100,90 @@ export function parseWrapSymbol(symbol: string): { base: string; kind: WrapKind 
   return null;
 }
 
-export function hasTokenizedStockEvidence(name?: string | null, extensionsText?: string | null): boolean {
-  return TOKENIZED_RE.test(name || "") || TOKENIZED_RE.test(extensionsText || "");
+function normalizeTag(tag: string): string {
+  return tag.trim().toLowerCase();
 }
 
-function significantStems(name: string): Set<string> {
-  const cleaned = name.replace(BOILERPLATE_RE, " ").toLowerCase();
-  const stems = new Set<string>();
-  for (const part of cleaned.split(/[^a-z0-9]+/)) {
-    if (part.length >= 5) stems.add(part);
+/** True when Jupiter tags include `stocks` or `rwa`. */
+export function hasJupiterStocksOrRwaTags(tags?: string[] | null): boolean {
+  if (!Array.isArray(tags)) return false;
+  return tags.some((t) => typeof t === "string" && JUPITER_RWA_TAGS.has(normalizeTag(t)));
+}
+
+/** True when Jupiter tags include preferred `xstocks` or `backpack`. */
+export function hasPreferredJupiterTags(tags?: string[] | null): boolean {
+  if (!Array.isArray(tags)) return false;
+  return tags.some((t) => typeof t === "string" && JUPITER_PREFERRED_TAGS.has(normalizeTag(t)));
+}
+
+/**
+ * Qualify a mint as RWA: Jupiter stocks/rwa tags (primary) or Backed xStocks whitelist (secondary).
+ * Prefer reporting Jupiter when both apply.
+ */
+export function qualifyRwaMint(hints: MintHints): RwaQualificationSource | null {
+  if (hasJupiterStocksOrRwaTags(hints.jupiterTags)) return "jupiter-tags";
+  if (hints.onXstocksWhitelist) return "xstocks-whitelist";
+  return null;
+}
+
+
+export type WrapPairShape = {
+  matched: true;
+  baseSymbol: string;
+  wrappedSymbol: string;
+  plainSymbol: string;
+  wrapKind: WrapKind;
+  wrappedSide: "A" | "B";
+};
+
+/**
+ * Structural FOOx/FOO (or xFOO/FOO) wrap check + stablecoin exclusion only.
+ * Does not consult Jupiter tags or the xStocks whitelist.
+ */
+export function matchWrapPairShape(
+  symbolA: string,
+  symbolB: string,
+): WrapPairShape | PairingReject {
+  const a = (symbolA || "").trim();
+  const b = (symbolB || "").trim();
+  if (!a || !b) return { matched: false, reason: "missing symbol" };
+  if (a.toUpperCase() === b.toUpperCase()) {
+    return { matched: false, reason: "identical symbols (not wrap vs plain)" };
   }
-  return stems;
-}
 
-export function namesShareCompanyStem(wrappedName: string, plainName: string): boolean {
-  const wrapped = significantStems(wrappedName);
-  const plain = significantStems(plainName);
-  for (const a of wrapped) {
-    for (const b of plain) {
-      if (a === b || a.includes(b) || b.includes(a)) return true;
+  const wrapA = parseWrapSymbol(a);
+  const wrapB = parseWrapSymbol(b);
+
+  if (wrapA && !wrapB && wrapA.base === b.toUpperCase()) {
+    if (STABLECOIN_BASES.has(wrapA.base)) {
+      return { matched: false, reason: `stablecoin base ${wrapA.base} excluded` };
     }
+    return {
+      matched: true,
+      baseSymbol: wrapA.base,
+      wrappedSymbol: a,
+      plainSymbol: b,
+      wrapKind: wrapA.kind,
+      wrappedSide: "A",
+    };
   }
-  return false;
+  if (wrapB && !wrapA && wrapB.base === a.toUpperCase()) {
+    if (STABLECOIN_BASES.has(wrapB.base)) {
+      return { matched: false, reason: `stablecoin base ${wrapB.base} excluded` };
+    }
+    return {
+      matched: true,
+      baseSymbol: wrapB.base,
+      wrappedSymbol: b,
+      plainSymbol: a,
+      wrapKind: wrapB.kind,
+      wrappedSide: "B",
+    };
+  }
+  if (wrapA && wrapB) {
+    return { matched: false, reason: "both symbols look wrapped" };
+  }
+  return { matched: false, reason: "symbols are not a FOOx/FOO (or xFOO/FOO) wrap pair" };
 }
 
 /**
@@ -111,65 +191,34 @@ export function namesShareCompanyStem(wrappedName: string, plainName: string): b
  * Pure function — safe for unit tests without network.
  */
 export function matchSameAssetPair(mintA: MintHints, mintB: MintHints): PairingResult {
-  const symbolA = (mintA.symbol || "").trim();
-  const symbolB = (mintB.symbol || "").trim();
-  if (!symbolA || !symbolB) return { matched: false, reason: "missing symbol" };
-  if (symbolA.toUpperCase() === symbolB.toUpperCase()) {
-    return { matched: false, reason: "identical symbols (not wrap vs plain)" };
+  const shape = matchWrapPairShape(mintA.symbol || "", mintB.symbol || "");
+  if (!shape.matched) return shape;
+
+  const { baseSymbol, wrappedSymbol, plainSymbol, wrapKind, wrappedSide } = shape;
+
+
+  const qualificationA = qualifyRwaMint(mintA);
+  const qualificationB = qualifyRwaMint(mintB);
+  if (!qualificationA || !qualificationB) {
+    const missing =
+      !qualificationA && !qualificationB
+        ? "both mints"
+        : !qualificationA
+          ? "mint A"
+          : "mint B";
+    return {
+      matched: false,
+      reason: `${missing} lack Jupiter stocks/rwa tags and are not on the xStocks whitelist`,
+    };
   }
 
-  const wrapA = parseWrapSymbol(symbolA);
-  const wrapB = parseWrapSymbol(symbolB);
-
-  let baseSymbol: string;
-  let wrappedSymbol: string;
-  let plainSymbol: string;
-  let wrapKind: WrapKind;
-  let wrappedSide: "A" | "B";
-  let wrappedHints: MintHints;
-  let plainHints: MintHints;
-
-  if (wrapA && !wrapB && wrapA.base === symbolB.toUpperCase()) {
-    baseSymbol = wrapA.base;
-    wrappedSymbol = symbolA;
-    plainSymbol = symbolB;
-    wrapKind = wrapA.kind;
-    wrappedSide = "A";
-    wrappedHints = mintA;
-    plainHints = mintB;
-  } else if (wrapB && !wrapA && wrapB.base === symbolA.toUpperCase()) {
-    baseSymbol = wrapB.base;
-    wrappedSymbol = symbolB;
-    plainSymbol = symbolA;
-    wrapKind = wrapB.kind;
-    wrappedSide = "B";
-    wrappedHints = mintB;
-    plainHints = mintA;
-  } else if (wrapA && wrapB) {
-    return { matched: false, reason: "both symbols look wrapped" };
+  let relatedness: Relatedness;
+  if (qualificationA === "jupiter-tags" && qualificationB === "jupiter-tags") {
+    relatedness = "both-jupiter-tagged";
+  } else if (qualificationA === "xstocks-whitelist" && qualificationB === "xstocks-whitelist") {
+    relatedness = "both-whitelisted";
   } else {
-    return { matched: false, reason: "symbols are not a FOOx/FOO (or xFOO/FOO) wrap pair" };
-  }
-
-  if (STABLECOIN_BASES.has(baseSymbol)) {
-    return { matched: false, reason: `stablecoin base ${baseSymbol} excluded` };
-  }
-
-  const wrappedTok = hasTokenizedStockEvidence(wrappedHints.name, wrappedHints.extensionsText);
-  const plainTok = hasTokenizedStockEvidence(plainHints.name, plainHints.extensionsText);
-  if (!wrappedTok && !plainTok) {
-    return { matched: false, reason: "no xStock/Backpack/tokenized naming evidence" };
-  }
-
-  let relatedness: PairingMatch["relatedness"];
-  if (wrappedTok && plainTok) {
-    relatedness = "both-tokenized";
-  } else if ((plainHints.name || "").trim().toUpperCase() === baseSymbol) {
-    relatedness = "plain-is-ticker";
-  } else if (namesShareCompanyStem(wrappedHints.name || "", plainHints.name || "")) {
-    relatedness = "shared-stem";
-  } else {
-    return { matched: false, reason: "counterparty name unrelated to tokenized side" };
+    relatedness = "mixed-jupiter-whitelist";
   }
 
   return {
@@ -179,8 +228,11 @@ export function matchSameAssetPair(mintA: MintHints, mintB: MintHints): PairingR
     plainSymbol,
     wrapKind,
     wrappedSide,
-    tokenizedEvidence: wrappedTok && plainTok ? "both" : wrappedTok ? "wrapped" : "plain",
+    qualificationA,
+    qualificationB,
     relatedness,
+    preferredTags:
+      hasPreferredJupiterTags(mintA.jupiterTags) || hasPreferredJupiterTags(mintB.jupiterTags),
   };
 }
 
@@ -196,6 +248,9 @@ export function estimateFeeAprPct(fee24hUsd: number, tvlUsd: number): number | n
 
 export const FEE_APR_ESTIMATE_LABEL =
   "Estimated fee APR = (24h pool fees USD / TVL USD) × 365 × 100. Not LP return; ignores IL, range, and rewards.";
+
+export const PAIRING_RULE_SUMMARY =
+  "FOOx/FOO (or FOO-x / xFOO) symbol wrap + both mints Jupiter-tagged (stocks|rwa) or on Backed xStocks whitelist; stables excluded.";
 
 export function isToken2022Program(programId?: string | null): boolean {
   return (programId || "") === TOKEN_2022_PROGRAM_ID;

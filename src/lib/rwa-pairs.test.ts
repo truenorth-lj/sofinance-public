@@ -3,9 +3,15 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 
 import { clearRwaPairsCache, discoverRwaPairs, parseRaydiumPoolAsRwaPair } from "./rwa-pairs";
+import { clearJupiterTagsCache } from "./rwa-jupiter-tags";
+import { clearXstocksWhitelistCache } from "./rwa-xstocks-whitelist";
 import { TOKEN_2022_PROGRAM_ID } from "./rwa-pairing";
 
 const TOKEN_PROGRAM = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
+const MINT_A = "MintA1111111111111111111111111111111111111";
+const MINT_B = "MintB1111111111111111111111111111111111111";
+const MINT_C = "MintC1111111111111111111111111111111111111";
+const MINT_D = "MintD1111111111111111111111111111111111111";
 
 function poolFixture(overrides: Record<string, unknown> = {}) {
   return {
@@ -14,7 +20,7 @@ function poolFixture(overrides: Record<string, unknown> = {}) {
     feeRate: 0.0005,
     tvl: 10_000,
     mintA: {
-      address: "MintA1111111111111111111111111111111111111",
+      address: MINT_A,
       symbol: "MSTRx",
       name: "MicroStrategy xStock",
       programId: TOKEN_2022_PROGRAM_ID,
@@ -22,7 +28,7 @@ function poolFixture(overrides: Record<string, unknown> = {}) {
       extensions: { tips: { text: "This is a Backed tokenized equity." } },
     },
     mintB: {
-      address: "MintB1111111111111111111111111111111111111",
+      address: MINT_B,
       symbol: "MSTR",
       name: "Strategy - Backpack Securities",
       programId: TOKEN_2022_PROGRAM_ID,
@@ -38,9 +44,17 @@ function poolFixture(overrides: Record<string, unknown> = {}) {
   };
 }
 
+const defaultQualifiers = {
+  jupiterTagsByMint: new Map<string, string[]>([
+    [MINT_A, ["stocks", "rwa", "xstocks"]],
+    [MINT_B, ["stocks", "rwa", "backpack"]],
+  ]),
+  xstocksMints: new Set<string>(),
+};
+
 describe("parseRaydiumPoolAsRwaPair", () => {
   it("parses a matching CLMM pool with yield metrics and risk flags", () => {
-    const row = parseRaydiumPoolAsRwaPair(poolFixture());
+    const row = parseRaydiumPoolAsRwaPair(poolFixture(), defaultQualifiers);
     expect(row).not.toBeNull();
     expect(row!.poolAddress).toMatch(/^Pool/);
     expect(row!.wrappedSymbol).toBe("MSTRx");
@@ -54,6 +68,8 @@ describe("parseRaydiumPoolAsRwaPair", () => {
     expect(row!.estimatedFeeAprLabel).toMatch(/24h pool fees/i);
     expect(row!.token2022A).toBe(true);
     expect(row!.freezeRisk).toBe(true);
+    expect(row!.relatedness).toBe("both-jupiter-tagged");
+    expect(row!.preferredTags).toBe(true);
   });
 
   it("returns null for RWA/USDC pools", () => {
@@ -68,8 +84,26 @@ describe("parseRaydiumPoolAsRwaPair", () => {
           extensions: {},
         },
       }),
+      defaultQualifiers,
     );
     expect(row).toBeNull();
+  });
+
+  it("returns null when Jupiter tags and whitelist are missing", () => {
+    const row = parseRaydiumPoolAsRwaPair(poolFixture(), {
+      jupiterTagsByMint: new Map(),
+      xstocksMints: new Set(),
+    });
+    expect(row).toBeNull();
+  });
+
+  it("accepts whitelist-only qualification", () => {
+    const row = parseRaydiumPoolAsRwaPair(poolFixture(), {
+      jupiterTagsByMint: new Map(),
+      xstocksMints: new Set([MINT_A, MINT_B]),
+    });
+    expect(row).not.toBeNull();
+    expect(row!.relatedness).toBe("both-whitelisted");
   });
 
   it("returns null for malformed rows", () => {
@@ -81,10 +115,12 @@ describe("parseRaydiumPoolAsRwaPair", () => {
 describe("discoverRwaPairs", () => {
   afterEach(() => {
     clearRwaPairsCache();
+    clearJupiterTagsCache();
+    clearXstocksWhitelistCache();
     vi.restoreAllMocks();
   });
 
-  it("filters and sorts pairs from mocked Raydium pages", async () => {
+  it("filters and sorts pairs using Jupiter tags + xStocks whitelist", async () => {
     const matching = poolFixture();
     const unrelated = poolFixture({
       id: "PoolUnrelated000000000000000000000000001",
@@ -105,12 +141,31 @@ describe("discoverRwaPairs", () => {
         extensions: {},
       },
     });
+    const memeCollision = poolFixture({
+      id: "PoolMeme0000000000000000000000000000001",
+      mintA: {
+        address: MINT_C,
+        symbol: "HOODx",
+        name: "Robinhood xStock",
+        programId: TOKEN_2022_PROGRAM_ID,
+        tags: ["hasFreeze"],
+        extensions: {},
+      },
+      mintB: {
+        address: MINT_D,
+        symbol: "HOOD",
+        name: "foreskin",
+        programId: TOKEN_PROGRAM,
+        tags: [],
+        extensions: {},
+      },
+    });
     const lowTvl = poolFixture({
       id: "PoolLowTvl00000000000000000000000000001",
       tvl: 1,
       day: { volume: 0, volumeFee: 0, feeApr: 0 },
       mintA: {
-        address: "MintC1111111111111111111111111111111111111",
+        address: "MintE1111111111111111111111111111111111111",
         symbol: "NVDAx",
         name: "NVIDIA xStock",
         programId: TOKEN_2022_PROGRAM_ID,
@@ -118,7 +173,7 @@ describe("discoverRwaPairs", () => {
         extensions: {},
       },
       mintB: {
-        address: "MintD1111111111111111111111111111111111111",
+        address: "MintF1111111111111111111111111111111111111",
         symbol: "NVDA",
         name: "NVDA",
         programId: TOKEN_2022_PROGRAM_ID,
@@ -127,15 +182,42 @@ describe("discoverRwaPairs", () => {
       },
     });
 
-    const fetcher = vi.fn(async () =>
-      new Response(
-        JSON.stringify({
-          success: true,
-          data: { count: 3, data: [matching, unrelated, lowTvl], hasNextPage: false },
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
-    );
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("api-v3.raydium.io")) {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            data: {
+              count: 4,
+              data: [matching, unrelated, memeCollision, lowTvl],
+              hasNextPage: false,
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url.includes("api.jup.ag/tokens/v2/search")) {
+        return new Response(
+          JSON.stringify([
+            { id: MINT_A, tags: ["stocks", "rwa", "xstocks"] },
+            { id: MINT_B, tags: ["stocks", "rwa", "backpack"] },
+            { id: MINT_C, tags: ["stocks", "rwa", "xstocks"] },
+            // MINT_D intentionally untagged (meme)
+            { id: "MintE1111111111111111111111111111111111111", tags: ["stocks", "rwa"] },
+            { id: "MintF1111111111111111111111111111111111111", tags: ["stocks", "rwa"] },
+          ]),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url.includes("api.xstocks.fi")) {
+        return new Response(
+          JSON.stringify({ nodes: [], page: { currentPage: 1, hasNextPage: false } }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response("not found", { status: 404 });
+    });
 
     const result = await discoverRwaPairs({
       minTvl: 10,
@@ -143,14 +225,18 @@ describe("discoverRwaPairs", () => {
       sortBy: "estimatedFeeApr",
       fetcher: fetcher as unknown as typeof fetch,
       bypassCache: true,
+      jupiterApiKey: "test-key",
     });
 
-    expect(result.scannedPools).toBe(3);
+    expect(result.scannedPools).toBe(4);
     expect(result.pagesFetched).toBe(1);
     expect(result.pairs).toHaveLength(1);
     expect(result.pairs[0]!.wrappedSymbol).toBe("MSTRx");
     expect(result.pairs[0]!.estimatedFeeAprPct).toBeCloseTo(91.25, 5);
-    expect(result.pairingRuleSummary).toMatch(/FOOx\/FOO/);
+    expect(result.pairs[0]!.relatedness).toBe("both-jupiter-tagged");
+    expect(result.pairingRuleSummary).toMatch(/Jupiter/i);
+    expect(result.pairingRuleSummary).toMatch(/xStocks/i);
     expect(result.source).toMatch(/api-v3\.raydium\.io/);
+    expect(result.source).toMatch(/Jupiter/);
   });
 });

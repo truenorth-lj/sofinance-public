@@ -23,6 +23,9 @@ type RwaPair = {
   token2022B: boolean;
   freezeRisk: boolean;
   relatedness: string;
+  preferredTags?: boolean;
+  qualificationA?: string;
+  qualificationB?: string;
 };
 
 type RwaPairsResponse = {
@@ -97,8 +100,8 @@ export function RwaPairsPanel() {
         <div>
           <h2 id="rwa-pairs-heading" className="text-sm font-semibold">Same-asset RWA CLMM pairs</h2>
           <p className="mt-1 max-w-2xl text-xs leading-5 text-slate-400">
-            Raydium concentrated pools where both sides are the same underlying (e.g. MSTRx/MSTR, NVDAx/NVDA).
-            Read-only discovery — does not open positions.
+            Raydium concentrated pools where both sides are the same underlying (e.g. MSTRx/MSTR, NVDAx/NVDA),
+            filtered by Jupiter tags (stocks|rwa) and the Backed xStocks whitelist. Read-only — does not open positions.
           </p>
         </div>
         <Button variant="secondary" className="px-3 py-2 text-xs" disabled={loading} onClick={refresh}>
