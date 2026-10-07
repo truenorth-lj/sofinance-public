@@ -2,27 +2,14 @@
 
 import { InkShell, InkNav } from "@/components/ink";
 import { PositionPerformancePanel } from "@/components/position-performance-panel";
-<<<<<<< HEAD
 import { useWalletConnection } from "@/components/wallet-connection";
-=======
->>>>>>> origin/main
 
 export default function PositionPerformancePage() {
   const { address, connected, connect, disconnect } = useWalletConnection();
 
   return (
     <InkShell maxWidth="3xl">
-<<<<<<< HEAD
       <InkNav wallet={address} connected={connected} onConnect={connect} onDisconnect={disconnect} />
-=======
-      <InkNav
-        subtitle="Solana · Raydium CLMM"
-        navLinks={[
-          { href: "/", label: "Positions" },
-          { href: "/rwa-pairs", label: "RWA pairs" },
-        ]}
-      />
->>>>>>> origin/main
 
       <div className="mb-6 mt-8 sm:mt-10">
         <h1 className="text-2xl font-semibold tracking-tight text-neutral-100 sm:text-3xl">Position performance</h1>
