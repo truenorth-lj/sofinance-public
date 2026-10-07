@@ -179,7 +179,7 @@ export function RwaPairsPanel() {
                   <td className="py-3">
                     <a
                       className="inline-flex items-center gap-1 text-sky-300 underline"
-                      href={`https://solscan.io/account/${pair.poolAddress}`}
+                      href={`https://raydium.io/clmm/create-position/?pool_id=${pair.poolAddress}`}
                       target="_blank"
                       rel="noreferrer"
                     >
