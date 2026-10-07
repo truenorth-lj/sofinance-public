@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <!-- Background -->
+  <rect width="32" height="32" fill="#050505"/>
+  
+  <!-- White circular face -->
+  <circle cx="16" cy="14.5" r="10.5" fill="#ffffff"/>
+  
+  <!-- Left eye (black oval, looking up-right) -->
+  <ellipse cx="13" cy="13" rx="1.8" ry="2.4" fill="#050505"/>
+  
+  <!-- Right eye (black oval, looking up-right) -->
+  <ellipse cx="19" cy="13" rx="1.8" ry="2.4" fill="#050505"/>
+  
+  <!-- Orange badge circle at bottom-right -->
+  <circle cx="23.5" cy="23.5" r="4.5" fill="#ff6b35"/>
+  
+  <!-- White star inside orange badge -->
+  <path d="M23.5 21l.9 1.8 2 .3-1.4 1.4.3 2-1.8-1-1.8 1 .3-2-1.4-1.4 2-.3z" fill="#ffffff"/>
+</svg>
