@@ -11,6 +11,7 @@ import { MIN_SOL_LAMPORTS, NATIVE_SOL_MINT } from "./ids";
 import { positionSide } from "./quote-math";
 import { rpcConnection } from "./rpc";
 import { discoverWallet } from "./wallet-discovery";
+import { fetchJupiterPricesUsd, fetchRaydiumPoolUsdPrices } from "./token-prices";
 
 export type PositionSelection = { positionMint: string; inputMint: string; inputKind: "native" | "token" };
 const tokenPrograms = [TOKEN_PROGRAM_ID.toBase58(), TOKEN_2022_PROGRAM_ID.toBase58()];
@@ -120,6 +121,26 @@ export async function readSelectedPositionState(
   const solLamports = await connection.getBalance(wallet, "confirmed");
   const inputBalance = selection.inputKind === "native"
     ? Math.max(0, solLamports - MIN_SOL_LAMPORTS).toString() : inputAsset.balance;
+  
+  let priceUsdInput: number | null = null;
+  let priceUsdA: number | null = null;
+  let priceUsdB: number | null = null;
+  try {
+    const apiKey = process.env.JUPITER_API_KEY;
+    const mints = [selection.inputMint, pool.mintA.toBase58(), pool.mintB.toBase58()];
+    const prices = await fetchJupiterPricesUsd(mints, fetch, apiKey);
+    priceUsdInput = prices.get(selection.inputMint) ?? null;
+    priceUsdA = prices.get(pool.mintA.toBase58()) ?? null;
+    priceUsdB = prices.get(pool.mintB.toBase58()) ?? null;
+    if (priceUsdA === null || priceUsdB === null) {
+      const fallback = await fetchRaydiumPoolUsdPrices(selectedPosition.poolId, pool.mintA.toBase58(), pool.mintB.toBase58(), fetch);
+      priceUsdA = fallback.get(pool.mintA.toBase58()) ?? priceUsdA;
+      priceUsdB = fallback.get(pool.mintB.toBase58()) ?? priceUsdB;
+    }
+  } catch {
+    // Price fetch failed, continue without prices
+  }
+
   return {
     wallet: walletAddress, slot: discovered.slot, fetchedAt: Date.now(),
     positionMint: selection.positionMint, positionAccount: positionKey.toBase58(), poolId: selectedPosition.poolId,
@@ -140,6 +161,9 @@ export async function readSelectedPositionState(
     currentAmounts: { a: currentAmounts.amountA.toString(), b: currentAmounts.amountB.toString() },
     ownsNft, paused: Boolean(paused), transferFee: Boolean(transferFee), frozen, unsupportedExtensions,
     solLamports, sufficientSol: solLamports >= MIN_SOL_LAMPORTS,
+    pricing: priceUsdInput !== null || priceUsdA !== null || priceUsdB !== null
+      ? { priceUsdInput, priceUsdA, priceUsdB }
+      : undefined,
   };
 }
 
