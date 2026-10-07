@@ -2,7 +2,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-import { clearRwaPairsCache, discoverRwaPairs, parseRaydiumPoolAsRwaPair } from "./rwa-pairs";
+import {
+  clearRwaPairsCache,
+  discoverRwaPairs,
+  getCachedRwaPairs,
+  parseRaydiumPoolAsRwaPair,
+} from "./rwa-pairs";
 import { clearJupiterTagsCache } from "./rwa-jupiter-tags";
 import { clearXstocksWhitelistCache } from "./rwa-xstocks-whitelist";
 import { TOKEN_2022_PROGRAM_ID } from "./rwa-pairing";
@@ -238,5 +243,184 @@ describe("discoverRwaPairs", () => {
     expect(result.pairingRuleSummary).toMatch(/xStocks/i);
     expect(result.source).toMatch(/api-v3\.raydium\.io/);
     expect(result.source).toMatch(/Jupiter/);
+  });
+
+  it("returns null from getCachedRwaPairs when cache is empty", () => {
+    const cached = getCachedRwaPairs(0, 10, "estimatedFeeApr");
+    expect(cached).toBeNull();
+  });
+
+  it("returns cached data with metadata when cache exists and is fresh", async () => {
+    const matching = poolFixture();
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("api-v3.raydium.io")) {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            data: { count: 1, data: [matching], hasNextPage: false },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url.includes("api.jup.ag/tokens/v2/search")) {
+        return new Response(
+          JSON.stringify([
+            { id: MINT_A, tags: ["stocks", "rwa", "xstocks"] },
+            { id: MINT_B, tags: ["stocks", "rwa", "backpack"] },
+          ]),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url.includes("api.xstocks.fi")) {
+        return new Response(
+          JSON.stringify({ nodes: [], page: { currentPage: 1, hasNextPage: false } }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response("not found", { status: 404 });
+    });
+
+    // First call populates cache
+    await discoverRwaPairs({
+      minTvl: 0,
+      maxPages: 10,
+      sortBy: "estimatedFeeApr",
+      fetcher: fetcher as unknown as typeof fetch,
+      jupiterApiKey: "test-key",
+    });
+
+    // Second call should return cached data
+    const cached = getCachedRwaPairs(0, 10, "estimatedFeeApr");
+    expect(cached).not.toBeNull();
+    expect(cached!.cacheHit).toBe(true);
+    expect(cached!.cachedAt).toBeDefined();
+    expect(cached!.stale).toBe(false);
+    expect(cached!.ageSeconds).toBeGreaterThanOrEqual(0);
+    expect(cached!.ageSeconds).toBeLessThan(60);
+    expect(cached!.pairs).toHaveLength(1);
+  });
+
+  it("marks cached data as stale when age exceeds 1 hour", async () => {
+    const matching = poolFixture();
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("api-v3.raydium.io")) {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            data: { count: 1, data: [matching], hasNextPage: false },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url.includes("api.jup.ag/tokens/v2/search")) {
+        return new Response(
+          JSON.stringify([
+            { id: MINT_A, tags: ["stocks", "rwa", "xstocks"] },
+            { id: MINT_B, tags: ["stocks", "rwa", "backpack"] },
+          ]),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url.includes("api.xstocks.fi")) {
+        return new Response(
+          JSON.stringify({ nodes: [], page: { currentPage: 1, hasNextPage: false } }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response("not found", { status: 404 });
+    });
+
+    // Populate cache
+    await discoverRwaPairs({
+      minTvl: 0,
+      maxPages: 10,
+      sortBy: "estimatedFeeApr",
+      fetcher: fetcher as unknown as typeof fetch,
+      jupiterApiKey: "test-key",
+    });
+
+    // Mock Date.now to simulate 2 hours passing
+    const realNow = Date.now;
+    const originalTime = realNow();
+    vi.spyOn(Date, "now").mockImplementation(() => originalTime + 2 * 3_600_000);
+
+    const cached = getCachedRwaPairs(0, 10, "estimatedFeeApr");
+    expect(cached).not.toBeNull();
+    expect(cached!.stale).toBe(true);
+    expect(cached!.ageSeconds).toBeGreaterThanOrEqual(7200);
+    expect(cached!.pairs).toHaveLength(1);
+
+    Date.now = realNow;
+  });
+
+  it("prevents stampedes by reusing in-flight refresh promises", async () => {
+    const matching = poolFixture();
+    let fetchCallCount = 0;
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("api-v3.raydium.io")) {
+        fetchCallCount += 1;
+        // Simulate slow network
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        return new Response(
+          JSON.stringify({
+            success: true,
+            data: { count: 1, data: [matching], hasNextPage: false },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url.includes("api.jup.ag/tokens/v2/search")) {
+        return new Response(
+          JSON.stringify([
+            { id: MINT_A, tags: ["stocks", "rwa", "xstocks"] },
+            { id: MINT_B, tags: ["stocks", "rwa", "backpack"] },
+          ]),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url.includes("api.xstocks.fi")) {
+        return new Response(
+          JSON.stringify({ nodes: [], page: { currentPage: 1, hasNextPage: false } }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response("not found", { status: 404 });
+    });
+
+    // Start three concurrent requests with the same params
+    const [result1, result2, result3] = await Promise.all([
+      discoverRwaPairs({
+        minTvl: 0,
+        maxPages: 10,
+        sortBy: "estimatedFeeApr",
+        fetcher: fetcher as unknown as typeof fetch,
+        jupiterApiKey: "test-key",
+      }),
+      discoverRwaPairs({
+        minTvl: 0,
+        maxPages: 10,
+        sortBy: "estimatedFeeApr",
+        fetcher: fetcher as unknown as typeof fetch,
+        jupiterApiKey: "test-key",
+      }),
+      discoverRwaPairs({
+        minTvl: 0,
+        maxPages: 10,
+        sortBy: "estimatedFeeApr",
+        fetcher: fetcher as unknown as typeof fetch,
+        jupiterApiKey: "test-key",
+      }),
+    ]);
+
+    // All should return the same result
+    expect(result1.pairs).toHaveLength(1);
+    expect(result2.pairs).toHaveLength(1);
+    expect(result3.pairs).toHaveLength(1);
+
+    // But Raydium API should only be called once (stampede prevented)
+    expect(fetchCallCount).toBe(1);
   });
 });

@@ -18,7 +18,7 @@ import { fetchXstocksSolanaMintSet } from "./rwa-xstocks-whitelist";
 export const RAYDIUM_API_V3 = "https://api-v3.raydium.io";
 const DEFAULT_PAGE_SIZE = 1000;
 const DEFAULT_MAX_PAGES = 10;
-const CACHE_TTL_MS = 90_000;
+const STALE_THRESHOLD_MS = 3_600_000; // 1 hour
 
 export type RwaPairSortBy = "estimatedFeeApr" | "tvl" | "volume24h";
 
@@ -82,6 +82,12 @@ export type DiscoverRwaPairsResult = {
   pairingRuleSummary: string;
   estimatedFeeAprLabel: string;
   source: string;
+  /** ISO timestamp when this result was originally cached. */
+  cachedAt?: string;
+  /** True if this result is stale (age > 1 hour) and a background refresh was triggered. */
+  stale?: boolean;
+  /** Age of the cached result in seconds. */
+  ageSeconds?: number;
 };
 
 type RaydiumMint = {
@@ -108,8 +114,15 @@ type RaydiumPool = {
   };
 };
 
-type CacheEntry = { expiresAt: number; key: string; value: DiscoverRwaPairsResult };
+type CacheEntry = {
+  key: string;
+  value: DiscoverRwaPairsResult;
+  createdAt: number;
+};
 let cache: CacheEntry | null = null;
+
+/** Track in-flight refreshes to prevent stampedes (key -> Promise). */
+const refreshLocks = new Map<string, Promise<DiscoverRwaPairsResult>>();
 
 function asNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -319,9 +332,41 @@ function sortPairs(pairs: RwaPairRow[], sortBy: RwaPairSortBy): RwaPairRow[] {
 }
 
 /**
+ * Check if a cached result exists for the given parameters.
+ * Returns the cached result with metadata (age, stale flag) if available, or null.
+ * 
+ * This checks the in-memory cache within a single serverless instance.
+ * Cross-instance caching is handled by CDN headers (Cache-Control) on the HTTP response.
+ */
+export function getCachedRwaPairs(
+  minTvl: number,
+  maxPages: number,
+  sortBy: RwaPairSortBy,
+): (DiscoverRwaPairsResult & { cacheHit: true }) | null {
+  const cacheKey = `${minTvl}|${maxPages}|${sortBy}`;
+  if (!cache || cache.key !== cacheKey) return null;
+
+  const now = Date.now();
+  const ageMs = now - cache.createdAt;
+  const ageSeconds = Math.round(ageMs / 1000);
+  const stale = ageMs > STALE_THRESHOLD_MS;
+
+  return {
+    ...cache.value,
+    cachedAt: new Date(cache.createdAt).toISOString(),
+    stale,
+    ageSeconds,
+    cacheHit: true,
+  };
+}
+
+/**
  * Discover Raydium CLMM pools where both sides are the same underlying RWA
  * (wrapped vs unwrapped / xStock style). Uses Raydium API v3 list, Jupiter
  * Tokens API tags (primary), and Backed xStocks whitelist (secondary).
+ *
+ * This function always performs a fresh discovery (no cache). For SWR behavior,
+ * use getCachedRwaPairs first and only call this if you need fresh data.
  */
 export async function discoverRwaPairs(
   options: DiscoverRwaPairsOptions = {},
@@ -332,63 +377,78 @@ export async function discoverRwaPairs(
   const fetcher = options.fetcher ?? fetch;
   const cacheKey = `${minTvl}|${maxPages}|${sortBy}`;
 
-  if (!options.bypassCache && cache && cache.key === cacheKey && cache.expiresAt > Date.now()) {
-    return cache.value;
+  // If bypassCache is false and we have an in-flight refresh for this key, wait for it
+  if (!options.bypassCache && refreshLocks.has(cacheKey)) {
+    return refreshLocks.get(cacheKey)!;
   }
 
-  const structuralRows: unknown[] = [];
-  let scannedPools = 0;
-  let pagesFetched = 0;
+  // Create a promise for this refresh and store it to prevent stampedes
+  const refreshPromise = (async () => {
+    try {
+      const structuralRows: unknown[] = [];
+      let scannedPools = 0;
+      let pagesFetched = 0;
 
-  for (let page = 1; page <= maxPages; page += 1) {
-    const { rows, hasNextPage } = await fetchClmmPage(page, DEFAULT_PAGE_SIZE, fetcher);
-    pagesFetched += 1;
-    scannedPools += rows.length;
-    for (const row of rows) {
-      if (isStructuralWrapPairCandidate(row)) structuralRows.push(row);
+      for (let page = 1; page <= maxPages; page += 1) {
+        const { rows, hasNextPage } = await fetchClmmPage(page, DEFAULT_PAGE_SIZE, fetcher);
+        pagesFetched += 1;
+        scannedPools += rows.length;
+        for (const row of rows) {
+          if (isStructuralWrapPairCandidate(row)) structuralRows.push(row);
+        }
+        if (!hasNextPage || rows.length === 0) break;
+      }
+
+      const mintSet = new Set<string>();
+      for (const row of structuralRows) {
+        const candidate = isStructuralWrapPairCandidate(row);
+        if (!candidate) continue;
+        mintSet.add(candidate.addressA);
+        mintSet.add(candidate.addressB);
+      }
+      const mints = [...mintSet];
+
+      const [jupiterTagsByMint, xstocksMints] = await Promise.all([
+        fetchJupiterTagsByMint(mints, {
+          fetcher,
+          apiKey: options.jupiterApiKey,
+          bypassCache: options.bypassCache,
+        }),
+        fetchXstocksSolanaMintSet({ fetcher, bypassCache: options.bypassCache }),
+      ]);
+
+      const qualifiers: MintQualifierLookup = { jupiterTagsByMint, xstocksMints };
+      const pairs: RwaPairRow[] = [];
+      for (const row of structuralRows) {
+        const parsed = parseRaydiumPoolAsRwaPair(row, qualifiers);
+        if (!parsed) continue;
+        if ((parsed.tvlUsd ?? 0) < minTvl) continue;
+        pairs.push(parsed);
+      }
+
+      const result: DiscoverRwaPairsResult = {
+        pairs: sortPairs(pairs, sortBy),
+        scannedPools,
+        pagesFetched,
+        fetchedAt: new Date().toISOString(),
+        pairingRuleSummary: PAIRING_RULE_SUMMARY,
+        estimatedFeeAprLabel: FEE_APR_ESTIMATE_LABEL,
+        source: `${RAYDIUM_API_V3}/pools/info/list?poolType=concentrated + Jupiter tokens/v2/search tags + xStocks whitelist`,
+      };
+
+      cache = { key: cacheKey, value: result, createdAt: Date.now() };
+      return result;
+    } finally {
+      // Always clean up the lock when done
+      refreshLocks.delete(cacheKey);
     }
-    if (!hasNextPage || rows.length === 0) break;
+  })();
+
+  if (!options.bypassCache) {
+    refreshLocks.set(cacheKey, refreshPromise);
   }
 
-  const mintSet = new Set<string>();
-  for (const row of structuralRows) {
-    const candidate = isStructuralWrapPairCandidate(row);
-    if (!candidate) continue;
-    mintSet.add(candidate.addressA);
-    mintSet.add(candidate.addressB);
-  }
-  const mints = [...mintSet];
-
-  const [jupiterTagsByMint, xstocksMints] = await Promise.all([
-    fetchJupiterTagsByMint(mints, {
-      fetcher,
-      apiKey: options.jupiterApiKey,
-      bypassCache: options.bypassCache,
-    }),
-    fetchXstocksSolanaMintSet({ fetcher, bypassCache: options.bypassCache }),
-  ]);
-
-  const qualifiers: MintQualifierLookup = { jupiterTagsByMint, xstocksMints };
-  const pairs: RwaPairRow[] = [];
-  for (const row of structuralRows) {
-    const parsed = parseRaydiumPoolAsRwaPair(row, qualifiers);
-    if (!parsed) continue;
-    if ((parsed.tvlUsd ?? 0) < minTvl) continue;
-    pairs.push(parsed);
-  }
-
-  const result: DiscoverRwaPairsResult = {
-    pairs: sortPairs(pairs, sortBy),
-    scannedPools,
-    pagesFetched,
-    fetchedAt: new Date().toISOString(),
-    pairingRuleSummary: PAIRING_RULE_SUMMARY,
-    estimatedFeeAprLabel: FEE_APR_ESTIMATE_LABEL,
-    source: `${RAYDIUM_API_V3}/pools/info/list?poolType=concentrated + Jupiter tokens/v2/search tags + xStocks whitelist`,
-  };
-
-  cache = { key: cacheKey, expiresAt: Date.now() + CACHE_TTL_MS, value: result };
-  return result;
+  return refreshPromise;
 }
 
 /** Test helper to clear the module cache. */
