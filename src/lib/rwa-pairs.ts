@@ -6,8 +6,14 @@ import {
   hasFreezeTag,
   isToken2022Program,
   matchSameAssetPair,
+  matchWrapPairShape,
+  PAIRING_RULE_SUMMARY,
   type PairingMatch,
+  type Relatedness,
+  type RwaQualificationSource,
 } from "./rwa-pairing";
+import { fetchJupiterTagsByMint } from "./rwa-jupiter-tags";
+import { fetchXstocksSolanaMintSet } from "./rwa-xstocks-whitelist";
 
 export const RAYDIUM_API_V3 = "https://api-v3.raydium.io";
 const DEFAULT_PAGE_SIZE = 1000;
@@ -24,8 +30,10 @@ export type DiscoverRwaPairsOptions = {
   sortBy?: RwaPairSortBy;
   /** Injected fetch for tests. */
   fetcher?: typeof fetch;
-  /** Skip in-memory cache (tests). */
+  /** Skip in-memory caches (tests). */
   bypassCache?: boolean;
+  /** Override Jupiter API key (tests). Defaults to process.env.JUPITER_API_KEY. */
+  jupiterApiKey?: string | undefined;
 };
 
 export type RwaPairRow = {
@@ -40,7 +48,12 @@ export type RwaPairRow = {
   wrappedSymbol: string;
   plainSymbol: string;
   wrapKind: PairingMatch["wrapKind"];
-  relatedness: PairingMatch["relatedness"];
+  relatedness: Relatedness;
+  qualificationA: RwaQualificationSource;
+  qualificationB: RwaQualificationSource;
+  preferredTags: boolean;
+  jupiterTagsA: string[];
+  jupiterTagsB: string[];
   feeRate: number | null;
   feeTierBps: number | null;
   tvlUsd: number | null;
@@ -98,9 +111,6 @@ type RaydiumPool = {
 type CacheEntry = { expiresAt: number; key: string; value: DiscoverRwaPairsResult };
 let cache: CacheEntry | null = null;
 
-const PAIRING_RULE_SUMMARY =
-  "FOOx/FOO (or FOO-x / xFOO) symbol wrap + xStock/Backpack/tokenized naming evidence + related counterparty name; stables excluded.";
-
 function asNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string" && value.trim() !== "") {
@@ -114,22 +124,31 @@ function asString(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
 
-function extensionsToText(extensions: unknown): string {
-  if (!extensions) return "";
-  if (typeof extensions === "string") return extensions;
-  try {
-    return JSON.stringify(extensions);
-  } catch {
-    return "";
-  }
-}
-
 function mintTags(tags: unknown): string[] {
   return Array.isArray(tags) ? tags.filter((t): t is string => typeof t === "string") : [];
 }
 
-/** Parse one Raydium list row into an RWA pair row, or null if not a match. */
-export function parseRaydiumPoolAsRwaPair(raw: unknown): RwaPairRow | null {
+export type MintQualifierLookup = {
+  jupiterTagsByMint: Map<string, string[]>;
+  xstocksMints: Set<string>;
+};
+
+type StructuralCandidate = {
+  pool: RaydiumPool;
+  poolAddress: string;
+  addressA: string;
+  addressB: string;
+  symbolA: string;
+  symbolB: string;
+  nameA: string;
+  nameB: string;
+};
+
+/**
+ * Structural FOOx/FOO gate only (no Jupiter / whitelist yet).
+ * Used to collect candidate pools before mint qualification lookups.
+ */
+export function isStructuralWrapPairCandidate(raw: unknown): StructuralCandidate | null {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const pool = raw as RaydiumPool;
   const poolAddress = asString(pool.id);
@@ -141,9 +160,57 @@ export function parseRaydiumPoolAsRwaPair(raw: unknown): RwaPairRow | null {
   const symbolB = asString(mintB.symbol);
   if (!poolAddress || !addressA || !addressB || !symbolA || !symbolB) return null;
 
+  const shape = matchWrapPairShape(symbolA, symbolB);
+  if (!shape.matched) return null;
+
+  return {
+    pool,
+    poolAddress,
+    addressA,
+    addressB,
+    symbolA,
+    symbolB,
+    nameA: asString(mintA.name),
+    nameB: asString(mintB.name),
+  };
+}
+
+/** Build an RWA pair row when structural + Jupiter/xStocks qualification both pass. */
+export function parseRaydiumPoolAsRwaPair(
+  raw: unknown,
+  qualifiers?: MintQualifierLookup,
+): RwaPairRow | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const pool = raw as RaydiumPool;
+  const poolAddress = asString(pool.id);
+  const mintA = pool.mintA || {};
+  const mintB = pool.mintB || {};
+  const addressA = asString(mintA.address);
+  const addressB = asString(mintB.address);
+  const symbolA = asString(mintA.symbol);
+  const symbolB = asString(mintB.symbol);
+  if (!poolAddress || !addressA || !addressB || !symbolA || !symbolB) return null;
+
+  const jupiterTagsA = qualifiers?.jupiterTagsByMint.get(addressA) ?? [];
+  const jupiterTagsB = qualifiers?.jupiterTagsByMint.get(addressB) ?? [];
+  const onWhitelistA = qualifiers?.xstocksMints.has(addressA) ?? false;
+  const onWhitelistB = qualifiers?.xstocksMints.has(addressB) ?? false;
+
+  // When no qualifier lookup is supplied (unit tests), require explicit tags on the call
+  // site via a synthetic qualifier map — empty lookup means unqualified.
   const match = matchSameAssetPair(
-    { symbol: symbolA, name: asString(mintA.name), extensionsText: extensionsToText(mintA.extensions) },
-    { symbol: symbolB, name: asString(mintB.name), extensionsText: extensionsToText(mintB.extensions) },
+    {
+      symbol: symbolA,
+      name: asString(mintA.name),
+      jupiterTags: jupiterTagsA,
+      onXstocksWhitelist: onWhitelistA,
+    },
+    {
+      symbol: symbolB,
+      name: asString(mintB.name),
+      jupiterTags: jupiterTagsB,
+      onXstocksWhitelist: onWhitelistB,
+    },
   );
   if (!match.matched) return null;
 
@@ -174,6 +241,11 @@ export function parseRaydiumPoolAsRwaPair(raw: unknown): RwaPairRow | null {
     plainSymbol: match.plainSymbol,
     wrapKind: match.wrapKind,
     relatedness: match.relatedness,
+    qualificationA: match.qualificationA,
+    qualificationB: match.qualificationB,
+    preferredTags: match.preferredTags,
+    jupiterTagsA,
+    jupiterTagsB,
     feeRate,
     feeTierBps,
     tvlUsd,
@@ -237,15 +309,19 @@ function sortPairs(pairs: RwaPairRow[], sortBy: RwaPairSortBy): RwaPairRow[] {
     return row.estimatedFeeAprPct ?? row.raydiumFeeApr24h ?? -1;
   };
   return [...pairs].sort((a, b) => {
+    // Prefer pools with xstocks/backpack tags when APR ties.
+    const pref = Number(b.preferredTags) - Number(a.preferredTags);
     const diff = score(b) - score(a);
     if (diff !== 0) return diff;
+    if (pref !== 0) return pref;
     return (b.tvlUsd ?? 0) - (a.tvlUsd ?? 0);
   });
 }
 
 /**
  * Discover Raydium CLMM pools where both sides are the same underlying RWA
- * (wrapped vs unwrapped / xStock style). Uses the official Raydium API v3 list.
+ * (wrapped vs unwrapped / xStock style). Uses Raydium API v3 list, Jupiter
+ * Tokens API tags (primary), and Backed xStocks whitelist (secondary).
  */
 export async function discoverRwaPairs(
   options: DiscoverRwaPairsOptions = {},
@@ -260,7 +336,7 @@ export async function discoverRwaPairs(
     return cache.value;
   }
 
-  const pairs: RwaPairRow[] = [];
+  const structuralRows: unknown[] = [];
   let scannedPools = 0;
   let pagesFetched = 0;
 
@@ -269,12 +345,36 @@ export async function discoverRwaPairs(
     pagesFetched += 1;
     scannedPools += rows.length;
     for (const row of rows) {
-      const parsed = parseRaydiumPoolAsRwaPair(row);
-      if (!parsed) continue;
-      if ((parsed.tvlUsd ?? 0) < minTvl) continue;
-      pairs.push(parsed);
+      if (isStructuralWrapPairCandidate(row)) structuralRows.push(row);
     }
     if (!hasNextPage || rows.length === 0) break;
+  }
+
+  const mintSet = new Set<string>();
+  for (const row of structuralRows) {
+    const candidate = isStructuralWrapPairCandidate(row);
+    if (!candidate) continue;
+    mintSet.add(candidate.addressA);
+    mintSet.add(candidate.addressB);
+  }
+  const mints = [...mintSet];
+
+  const [jupiterTagsByMint, xstocksMints] = await Promise.all([
+    fetchJupiterTagsByMint(mints, {
+      fetcher,
+      apiKey: options.jupiterApiKey,
+      bypassCache: options.bypassCache,
+    }),
+    fetchXstocksSolanaMintSet({ fetcher, bypassCache: options.bypassCache }),
+  ]);
+
+  const qualifiers: MintQualifierLookup = { jupiterTagsByMint, xstocksMints };
+  const pairs: RwaPairRow[] = [];
+  for (const row of structuralRows) {
+    const parsed = parseRaydiumPoolAsRwaPair(row, qualifiers);
+    if (!parsed) continue;
+    if ((parsed.tvlUsd ?? 0) < minTvl) continue;
+    pairs.push(parsed);
   }
 
   const result: DiscoverRwaPairsResult = {
@@ -284,7 +384,7 @@ export async function discoverRwaPairs(
     fetchedAt: new Date().toISOString(),
     pairingRuleSummary: PAIRING_RULE_SUMMARY,
     estimatedFeeAprLabel: FEE_APR_ESTIMATE_LABEL,
-    source: `${RAYDIUM_API_V3}/pools/info/list?poolType=concentrated`,
+    source: `${RAYDIUM_API_V3}/pools/info/list?poolType=concentrated + Jupiter tokens/v2/search tags + xStocks whitelist`,
   };
 
   cache = { key: cacheKey, expiresAt: Date.now() + CACHE_TTL_MS, value: result };

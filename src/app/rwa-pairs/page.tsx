@@ -3,7 +3,7 @@ import { RwaPairsPanel } from "@/components/rwa-pairs-panel";
 
 export const metadata = {
   title: "RWA pairs · SoFinance",
-  description: "Discover Raydium CLMM same-asset RWA trading pairs (xStock / Backpack style).",
+  description: "Discover Raydium CLMM same-asset RWA trading pairs filtered by Jupiter tags and xStocks whitelist.",
 };
 
 export default function RwaPairsPage() {
@@ -28,7 +28,7 @@ export default function RwaPairsPage() {
           <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Same-asset RWA pairs</h1>
           <p className="mt-2 max-w-2xl text-sm text-slate-400">
             Find Raydium CLMM pools where both tokens represent the same underlying (wrapped vs unwrapped /
-            xStock style). Ranked by estimated fee APR from 24h fees and TVL. Read-only — no auto-open position.
+            Jupiter stocks/rwa tags + xStocks whitelist). Ranked by estimated fee APR from 24h fees and TVL. Read-only — no auto-open position.
           </p>
         </div>
 
