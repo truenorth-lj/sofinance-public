@@ -5,9 +5,9 @@ import BN from "bn.js";
 import { ClmmInstrument, getPdaExBitmapAccount, getPdaProtocolPositionAddress, getPdaTickArrayAddress, PersonalPositionLayout, Raydium, TickArrayUtil } from "@raydium-io/raydium-sdk-v2";
 import { createAssociatedTokenAccountIdempotentInstruction, createInitializeAccount3Instruction, getAccountLenForMint, TOKEN_2022_PROGRAM_ID, unpackMint } from "@solana/spl-token";
 import { ComputeBudgetProgram, PublicKey, SystemProgram, TransactionMessage, VersionedTransaction, type TransactionInstruction } from "@solana/web3.js";
-import { QUOTE_TTL_MS } from "./ids";
 import { rpcConnection } from "./rpc";
 import { readLookupTables } from "./transaction-helpers";
+import { restampVersionedTransaction, stampPreparedBlockhash } from "./fresh-blockhash";
 import { readCompoundPositionState } from "./compound-state";
 import { simulateAndVerifyCompound } from "./compound-simulation";
 import { sizeCompoundLiquidity } from "./compound-math";
@@ -124,8 +124,8 @@ export async function buildAndSimulateCompound(walletAddress: string, positionMi
     ...(poolTable && poolTable !== PublicKey.default.toBase58() ? [new PublicKey(poolTable)] : []),
     ...harvest.lookupTableAddress.map((address) => new PublicKey(address))]);
   if (tables.some((table) => !table.isActive())) throw new Error("Compound address lookup table is disabled");
-  const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
-  const build = (instructions: TransactionInstruction[]) => new VersionedTransaction(new TransactionMessage({ payerKey: wallet, recentBlockhash: blockhash,
+  const simulationBlockhash = (await connection.getLatestBlockhash("confirmed")).blockhash;
+  const build = (instructions: TransactionInstruction[]) => new VersionedTransaction(new TransactionMessage({ payerKey: wallet, recentBlockhash: simulationBlockhash,
     instructions: [ComputeBudgetProgram.setComputeUnitLimit({ units: 1_400_000 }), ...setup, ...instructions] }).compileToV0Message(tables));
   const baseline = build(harvest.instructions);
   transactionSize(baseline);
@@ -145,14 +145,15 @@ export async function buildAndSimulateCompound(walletAddress: string, positionMi
   const add = ClmmInstrument.increasePositionFromLiquidityInstructions({ ...common, liquidity: new BN(sized.liquidity.toString()), amountMaxA: new BN(swapped.endingA), amountMaxB: new BN(swapped.endingB) });
   if (add.signers.length || add.instructions.length !== 1) throw new Error("Compound increase instruction mismatch");
   validateCompoundRaydiumInstructions([...harvest.instructions, ...add.instructions], state, accounts, sized.liquidity, BigInt(swapped.endingA), BigInt(swapped.endingB));
-  const transaction = build([...harvest.instructions, ...swapInstructions, ...add.instructions]);
-  const sizeBytes = transactionSize(transaction);
-  const verified = await simulate(transaction, sized.liquidity);
+  const simulated = build([...harvest.instructions, ...swapInstructions, ...add.instructions]);
+  const sizeBytes = transactionSize(simulated);
+  const verified = await simulate(simulated, sized.liquidity);
   if (verified.rewards.some((reward) => BigInt(reward.amount) > 0n)) throw new Error("Simulation found unswapped third reward yield, cannot fully reinvest; please reprepare");
   const creditedPrior = (mint: string) => prior.sources.filter((source) => source.mint === mint).reduce((sum, source) => sum + BigInt(source.amount), 0n);
   const swap = plan.swap ? { ...plan.swap, sqrtPriceAfterX64: swapped.sqrtPriceX64,
     simulatedOutputAmount: (plan.swap.outputMint === state.mintA ? BigInt(swapped.endingA) - BigInt(harvestResult.endingA) : BigInt(swapped.endingB) - BigInt(harvestResult.endingB)).toString() } : null;
-  const timestamp = Date.now();
+  const latest = await connection.getLatestBlockhash("confirmed");
+  const transaction = restampVersionedTransaction(simulated, latest.blockhash, tables);
   const summary: CompoundSummary = { operation: "compound", simulated: true, state,
     positionMint, positionAccount: state.positionAccount, poolId: state.poolId, startingLiquidity: state.liquidity, liquidity: sized.liquidity.toString(),
     amountMaxA: swapped.endingA, amountMaxB: swapped.endingB, compoundAccounts: accounts,
@@ -161,6 +162,6 @@ export async function buildAndSimulateCompound(walletAddress: string, positionMi
     simulatedEndingLiquidity: verified.endingLiquidity, simulatedDustA: verified.endingA, simulatedDustB: verified.endingB,
     simulatedSolDebitLamports: verified.solDebitLamports, maxSolDebitLamports: maxSolDebitLamports.toString(),
     feeLamports: fee.value, rentLamports, sizeBytes, unitsConsumed: verified.unitsConsumed,
-    blockhash, lastValidBlockHeight, simulatedAt: timestamp, expiresAt: timestamp + QUOTE_TTL_MS };
+    ...stampPreparedBlockhash(latest) };
   return { summary, transaction };
 }
