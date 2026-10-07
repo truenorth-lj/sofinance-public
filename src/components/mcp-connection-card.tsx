@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { Copy, Check, Code, ExternalLink, ShieldCheck } from "lucide-react";
 import { useWalletConnection } from "./wallet-connection";
 import bs58 from "bs58";
@@ -10,7 +10,7 @@ interface McpConnectionCardProps {
 }
 
 export function McpConnectionCard({ wallet }: McpConnectionCardProps) {
-  const walletConnection = useWalletConnection();
+  const { signMessage } = useWalletConnection();
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -25,8 +25,8 @@ export function McpConnectionCard({ wallet }: McpConnectionCardProps) {
       setError(null);
       setSigning(false);
 
-      // Check if wallet supports message signing
-      if (!walletConnection.signMessage) {
+      // WalletConnect session is not ownership proof — require an explicit ed25519 signature.
+      if (!signMessage) {
         setError(
           "Your wallet does not support message signing. Please use a different wallet or connection method."
         );
@@ -49,7 +49,7 @@ export function McpConnectionCard({ wallet }: McpConnectionCardProps) {
       let signatureBytes: Uint8Array;
       
       try {
-        signatureBytes = await walletConnection.signMessage(messageBytes);
+        signatureBytes = await signMessage(messageBytes);
       } catch (signError) {
         if (signError instanceof Error && signError.message.includes("rejected")) {
           throw new Error("Signature rejected by wallet. Please try again and approve the message.");
@@ -87,20 +87,7 @@ export function McpConnectionCard({ wallet }: McpConnectionCardProps) {
       setLoading(false);
       setSigning(false);
     }
-  }, [wallet, walletConnection]);
-
-  useEffect(() => {
-    let mounted = true;
-    const run = async () => {
-      if (mounted) {
-        await generateToken();
-      }
-    };
-    void run();
-    return () => {
-      mounted = false;
-    };
-  }, [generateToken]);
+  }, [wallet, signMessage]);
 
   const appUrl = useMemo(
     () =>
@@ -196,6 +183,7 @@ export function McpConnectionCard({ wallet }: McpConnectionCardProps) {
             Failed to generate MCP token: {error}
           </div>
           <button
+            type="button"
             onClick={() => void generateToken()}
             className="text-xs font-semibold text-neutral-300 underline hover:text-neutral-100"
           >
@@ -207,7 +195,21 @@ export function McpConnectionCard({ wallet }: McpConnectionCardProps) {
   }
 
   if (!token) {
-    return null;
+    return (
+      <div className="rounded-xl border border-neutral-800/80 bg-neutral-900/50 p-4">
+        <button
+          type="button"
+          onClick={() => void generateToken()}
+          className="inline-flex items-center justify-center gap-2 rounded-xl bg-neutral-100 px-4 py-2.5 text-sm font-semibold text-neutral-950 transition-colors hover:bg-neutral-200"
+        >
+          <ShieldCheck className="h-4 w-4" />
+          Sign to get MCP config
+        </button>
+        <p className="mt-3 text-xs leading-5 text-neutral-500">
+          WalletConnect connects the session; signing proves you control the key for the short-lived token.
+        </p>
+      </div>
+    );
   }
 
   return (
