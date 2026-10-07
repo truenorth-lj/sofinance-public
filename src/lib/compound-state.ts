@@ -5,6 +5,7 @@ import { getPdaTickArrayAddress, LiquidityMathUtil, PersonalPositionLayout, Pool
 import { AccountState, ExtensionType, getAssociatedTokenAddressSync, getDefaultAccountState, getExtensionTypes, getPausableConfig, getScaledUiAmountConfig, getTransferFeeConfig, getTransferHook, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID, unpackAccount, unpackMint } from "@solana/spl-token";
 import { Connection, PublicKey } from "@solana/web3.js";
 import { NATIVE_SOL_MINT } from "./ids";
+import { readRecentBlockTime } from "./block-time";
 import { rpcConnection } from "./rpc";
 import { readSelectedPositionState } from "./selected-state";
 import { accruedFee, MAX_U64, wrappingSub128 } from "./compound-math";
@@ -67,7 +68,7 @@ export async function readCompoundPositionState(wallet: string, positionMint: st
   if (pool.status & 1) issues.push("Pool has disabled liquidity addition");
   if (pool.status & 4) issues.push("Pool has disabled fee collection");
   const slot = await connection.getSlot("confirmed");
-  const chainTime = await connection.getBlockTime(slot);
+  const chainTime = await readRecentBlockTime(connection, slot);
   if (chainTime === null) throw new Error("Unable to read on-chain time to estimate rewards");
   const updatedRewards = pool.rewardInfos.map((reward) => {
     let growth = BigInt(reward.growthGlobalX64.toString());

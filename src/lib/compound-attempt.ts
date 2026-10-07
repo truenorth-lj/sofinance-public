@@ -137,6 +137,22 @@ export function removeRecoveredReceipt(storage: StorageWrite, attempt: CompoundA
       !item.compoundAccounts.every((account) => recoveredAddresses.includes(account.address)))));
 }
 
+// Pre-broadcast receipts exist so a crash after send can still recover ATAs. Expired or
+// failed compounds never create those accounts (Solana txs are atomic); drop only this
+// attempt's receipt so the next prepare does not look up a signature that never landed.
+export function removeUnconfirmedCompoundReceipt(storage: StorageWrite, attempt: CompoundAttempt) {
+  if (attempt.kind !== "compound") return;
+  const saved = loadCompoundReceipts(storage, attempt.wallet);
+  if (saved.invalid) throw new Error("Compound did not complete, but local yield account records need verification");
+  const remaining = saved.receipts.filter((receipt) => receipt.sourceSignature !== attempt.signature);
+  if (remaining.length === saved.receipts.length) return;
+  const serialized = JSON.stringify(remaining);
+  storage.setItem(compoundReceiptsKey(attempt.wallet), serialized);
+  if (storage.getItem(compoundReceiptsKey(attempt.wallet)) !== serialized) {
+    throw new Error("Unable to clear unconfirmed yield account record");
+  }
+}
+
 // Call only after chain confirmation: a prepared or ambiguous transaction has not consumed the old accounts.
 export function removeConsumedCompoundReceipts(storage: StorageWrite, attempt: CompoundAttempt) {
   if (attempt.kind !== "compound") return;
