@@ -2,13 +2,15 @@
 
 ## 🎨 Design Delivered
 
-**OpenIntern manga-style character mascot** as the SoFinance brand mark, as requested by LJ.
+**Professional OpenIntern character** with 學霸 (academic expert) vibe — intelligent assistant managing your positions.
 
 ### Character Features
-- 📚 **Manga-style B&W illustration** (girl with clipboard from OpenIntern)
+- 👓 **Glasses** (學霸 academic/intelligent style)
+- 💼 **Professional business suit** (upgraded from casual outfit)
+- 📚 **Manga-style B&W illustration** from OpenIntern
 - ⚫⚪ **Monochrome aesthetic** maintains Ink design system
 - 📐 **Rounded square presentation** in header (40×40 with rounded-lg)
-- 🎯 **Professional, distinctive branding** from LJ's OpenIntern project
+- 🎯 Vibe: **學霸幫你控制倉位** (smart expert managing positions)
 - Readable at all sizes: 16px favicon → 180px apple-touch-icon
 
 ## 📸 Visual Evidence
