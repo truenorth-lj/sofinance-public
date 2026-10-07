@@ -1,19 +1,16 @@
-import { InkShell, InkHeader } from "@/components/ink";
-import { PositionPerformancePanel } from "@/components/position-performance-panel";
+"use client";
 
-export const metadata = {
-  title: "Position performance · SoFinance",
-  description: "Holding-period return and realized fee APR for a Raydium CLMM position NFT from on-chain facts.",
-};
+import { InkShell, InkNav } from "@/components/ink";
+import { PositionPerformancePanel } from "@/components/position-performance-panel";
 
 export default function PositionPerformancePage() {
   return (
     <InkShell maxWidth="3xl">
-      <InkHeader
-        subtitle="Position performance"
+      <InkNav
+        subtitle="Solana · Raydium CLMM"
         navLinks={[
-          { href: "/rwa-pairs", label: "RWA pairs" },
           { href: "/", label: "Positions" },
+          { href: "/rwa-pairs", label: "RWA pairs" },
         ]}
       />
 
