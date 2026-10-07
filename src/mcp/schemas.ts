@@ -82,3 +82,13 @@ export const listRwaPairsSchema = z.object({
   sortBy: z.enum(["estimatedFeeApr", "tvl", "volume24h"]).default("estimatedFeeApr"),
 });
 export type ListRwaPairsInput = z.infer<typeof listRwaPairsSchema>;
+
+
+// Position holding-period / realized fee APR (read-only, no DB)
+export const getPositionPerformanceSchema = z.object({
+  positionMint: publicKeySchema,
+  wallet: publicKeySchema.optional(),
+  maxSignatures: z.number().int().min(1).max(500).default(100),
+  skipPricing: z.boolean().default(false),
+});
+export type GetPositionPerformanceInput = z.infer<typeof getPositionPerformanceSchema>;

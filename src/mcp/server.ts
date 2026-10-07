@@ -16,6 +16,7 @@ import {
   submitSignedTransactionSchema,
   submitCompoundTransactionSchema,
   listRwaPairsSchema,
+  getPositionPerformanceSchema,
 } from "./schemas.js";
 import {
   listPositions,
@@ -26,6 +27,7 @@ import {
   submitSignedTransaction,
   submitCompoundTransaction,
   listRwaPairs,
+  getPositionPerformance,
 } from "./tools.js";
 
 /**
@@ -61,6 +63,36 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
     tools: [
 
+
+      {
+        name: "get_position_performance",
+        description:
+          "Compute holding-period return and realized fee APR for a Raydium CLMM position NFT from on-chain facts (no database, not Raydium pool 24h feeApr). Discovers open/increase/decrease txs via signatures on the personal-position PDA, parses CreatePersonalPositionEvent / IncreaseLiquidityEvent / DecreaseLiquidityEvent amounts, adds current liquidity value + uncollected fees, and reports holdingDays, net invested, current equity, fees earned, PnL, holdingPeriodReturnPct, annualizedReturnPct (simple ×365/days), and feeOnlyAprPct. USD uses Jupiter Price API v3 at evaluation time (labeled). Read-only.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            positionMint: {
+              type: "string",
+              description: "Position NFT mint address (from list_positions)",
+            },
+            wallet: {
+              type: "string",
+              description: "Optional wallet to verify NFT ownership (does not change math)",
+            },
+            maxSignatures: {
+              type: "number",
+              description: "Max personal-position signatures to scan (1-500, default 100)",
+              default: 100,
+            },
+            skipPricing: {
+              type: "boolean",
+              description: "If true, skip Jupiter USD pricing (token-raw metrics only)",
+              default: false,
+            },
+          },
+          required: ["positionMint"],
+        },
+      },
       {
         name: "list_rwa_pairs",
         description:
@@ -363,6 +395,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
 
     switch (name) {
+
+
+      case "get_position_performance": {
+        const input = getPositionPerformanceSchema.parse(args ?? {});
+        const result = await getPositionPerformance(input);
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(result, null, 2),
+            },
+          ],
+        };
+      }
 
       case "list_rwa_pairs": {
         const input = listRwaPairsSchema.parse(args ?? {});

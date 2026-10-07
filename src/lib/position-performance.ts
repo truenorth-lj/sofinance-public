@@ -1,0 +1,411 @@
+import "server-only";
+
+import BN from "bn.js";
+import {
+  CLMM_PROGRAM_ID,
+  getPdaPersonalPositionAddress,
+  getPdaTickArrayAddress,
+  LiquidityMathUtil,
+  PersonalPositionLayout,
+  PoolInfoLayout,
+  TickArrayLayout,
+  TickArrayUtil,
+  TickUtil,
+} from "@raydium-io/raydium-sdk-v2";
+import { getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { Connection, PublicKey } from "@solana/web3.js";
+import { createHash } from "node:crypto";
+import { accruedFee } from "./compound-math";
+import { positionSide } from "./quote-math";
+import { rpcConnection } from "./rpc";
+import {
+  aggregateCashflowsForPosition,
+  parseRaydiumEventsFromLogs,
+  type PositionCashflowEvent,
+} from "./position-performance-events";
+import {
+  ASSUMPTIONS_LABEL,
+  computePositionPerformance,
+  PERFORMANCE_METHOD,
+  type PositionPerformanceMetrics,
+} from "./position-performance-math";
+
+const POSITION_DISCRIMINATOR = createHash("sha256").update("account:PersonalPositionState").digest().subarray(0, 8);
+const POOL_DISCRIMINATOR = createHash("sha256").update("account:PoolState").digest().subarray(0, 8);
+
+export const DEFAULT_MAX_SIGNATURES = 100;
+export const JUPITER_PRICE_V3 = "https://api.jup.ag/price/v3";
+export const RAYDIUM_POOL_IDS = "https://api-v3.raydium.io/pools/info/ids";
+
+const STABLE_USD_MINTS = new Set([
+  "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", // USDC
+  "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", // USDT
+]);
+
+export type PositionHistoryEvent = {
+  signature: string;
+  blockTime: number | null;
+  slot: number;
+  events: PositionCashflowEvent[];
+};
+
+export type PositionPerformanceResult = {
+  wallet: string | null;
+  ownsNft: boolean | null;
+  positionMint: string;
+  positionAccount: string;
+  poolId: string;
+  mintA: string;
+  mintB: string;
+  decimalsA: number;
+  decimalsB: number;
+  tickLower: number;
+  tickUpper: number;
+  tickCurrent: number;
+  rangeSide: "below" | "inside" | "above";
+  liquidity: string;
+  openedAt: number | null;
+  openedAtIso: string | null;
+  evaluatedAt: number;
+  evaluatedAtIso: string;
+  signatureCount: number;
+  truncated: boolean;
+  maxSignatures: number;
+  history: PositionHistoryEvent[];
+  cashflows: {
+    depositedA: string;
+    depositedB: string;
+    withdrawnPrincipalA: string;
+    withdrawnPrincipalB: string;
+    feesCollectedA: string;
+    feesCollectedB: string;
+    openCount: number;
+    increaseCount: number;
+    decreaseCount: number;
+  };
+  metrics: PositionPerformanceMetrics;
+  pricing: {
+    source: "jupiter-price-v3" | "raydium-pool-stable" | "none";
+    label: string;
+    priceUsdA: number | null;
+    priceUsdB: number | null;
+  };
+  method: string;
+  assumptions: string;
+};
+
+export type GetPositionPerformanceOptions = {
+  wallet?: string;
+  maxSignatures?: number;
+  /** Skip Jupiter USD pricing (tests / offline). */
+  skipPricing?: boolean;
+  connection?: Connection;
+  fetcher?: typeof fetch;
+  jupiterApiKey?: string;
+  /** Injected now (unix seconds) for tests. */
+  nowSeconds?: number;
+};
+
+async function fetchJupiterPricesUsd(
+  mints: string[],
+  fetcher: typeof fetch,
+  apiKey?: string,
+): Promise<Map<string, number>> {
+  const unique = [...new Set(mints.filter(Boolean))];
+  const prices = new Map<string, number>();
+  if (!unique.length) return prices;
+  const url = new URL(JUPITER_PRICE_V3);
+  url.searchParams.set("ids", unique.join(","));
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (apiKey) headers["x-api-key"] = apiKey;
+  const response = await fetcher(url.toString(), { headers });
+  if (!response.ok) return prices;
+  // V3 returns { [mint]: { usdPrice, ... } } — omitted mints have no key.
+  const body = (await response.json()) as Record<string, { usdPrice?: number | string } | null>;
+  for (const mint of unique) {
+    const raw = body[mint]?.usdPrice;
+    const value = typeof raw === "number" ? raw : raw !== null && raw !== undefined ? Number(raw) : NaN;
+    if (Number.isFinite(value) && value >= 0) prices.set(mint, value);
+  }
+  return prices;
+}
+
+/** Fallback: Raydium pool mid price + $1 stable for USDC/USDT legs. */
+async function fetchRaydiumPoolUsdPrices(
+  poolId: string,
+  mintA: string,
+  mintB: string,
+  fetcher: typeof fetch,
+): Promise<Map<string, number>> {
+  const prices = new Map<string, number>();
+  const url = `${RAYDIUM_POOL_IDS}?ids=${encodeURIComponent(poolId)}`;
+  const response = await fetcher(url, { headers: { Accept: "application/json" } });
+  if (!response.ok) return prices;
+  const body = (await response.json()) as { data?: Array<{ price?: number | string } | null> };
+  const pool = body.data?.[0];
+  const ratio = pool?.price !== null && pool?.price !== undefined ? Number(pool.price) : NaN; // tokenA per tokenB? Raydium: price = mintA/mintB quote
+  // Raydium docs: `price` is mintA quoted in mintB (how many B per 1 A).
+  if (!Number.isFinite(ratio) || ratio <= 0) return prices;
+  if (STABLE_USD_MINTS.has(mintB)) {
+    prices.set(mintB, 1);
+    prices.set(mintA, ratio);
+  } else if (STABLE_USD_MINTS.has(mintA)) {
+    prices.set(mintA, 1);
+    prices.set(mintB, 1 / ratio);
+  }
+  return prices;
+}
+
+async function readUncollectedFees(connection: Connection, programId: PublicKey, poolId: PublicKey, position: ReturnType<typeof PersonalPositionLayout.decode>, pool: ReturnType<typeof PoolInfoLayout.decode>) {
+  const ticks = [position.tickLower, position.tickUpper];
+  const starts = ticks.map((tick) => TickArrayUtil.getTickArrayStartIndex(tick, pool.tickSpacing));
+  const keys = starts.map((start) => getPdaTickArrayAddress(programId, poolId, start).publicKey);
+  const infos = await connection.getMultipleAccountsInfo(keys, "confirmed");
+  const boundaries = infos.map((info, index) => {
+    if (!info || !info.owner.equals(programId)) throw new Error("Boundary tick array missing for fee accrual");
+    const array = TickArrayLayout.decode(info.data);
+    if (array.poolId.toBase58() !== poolId.toBase58() || array.startTickIndex !== starts[index]) {
+      throw new Error("Tick array does not match pool or start index");
+    }
+    const tick = array.ticks[TickArrayUtil.getTickOffsetInArray(ticks[index]!, pool.tickSpacing)];
+    if (!tick || tick.tick !== ticks[index]) throw new Error("Boundary tick not initialized");
+    return tick;
+  });
+  const lower = boundaries[0]!;
+  const upper = boundaries[1]!;
+  const fee = (side: "A" | "B") =>
+    accruedFee({
+      tickCurrent: pool.tickCurrent,
+      tickLower: position.tickLower,
+      tickUpper: position.tickUpper,
+      global: BigInt(pool[`feeGrowthGlobalX64${side}`].toString()),
+      lowerOutside: BigInt(lower[`feeGrowthOutsideX64${side}`].toString()),
+      upperOutside: BigInt(upper[`feeGrowthOutsideX64${side}`].toString()),
+      lastInside: BigInt(position[`feeGrowthInsideLastX64${side}`].toString()),
+      liquidity: BigInt(position.liquidity.toString()),
+      owed: BigInt(position[`tokenFeesOwed${side}`].toString()),
+    });
+  return { a: fee("A"), b: fee("B") };
+}
+
+async function walletOwnsNft(connection: Connection, wallet: PublicKey, mint: PublicKey): Promise<boolean> {
+  for (const program of [TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID]) {
+    const ata = getAssociatedTokenAddressSync(mint, wallet, false, program);
+    const info = await connection.getAccountInfo(ata, "confirmed");
+    if (!info) continue;
+    // amount is u64 at offset 64 in SPL token account
+    if (info.data.length >= 72) {
+      const amount = info.data.readBigUInt64LE(64);
+      if (amount === 1n) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Compute holding-period / realized fee APR for a Raydium CLMM position NFT
+ * from on-chain facts only (no database).
+ */
+export async function getPositionPerformance(
+  positionMint: string,
+  options: GetPositionPerformanceOptions = {},
+): Promise<PositionPerformanceResult> {
+  const connection = options.connection ?? rpcConnection();
+  const maxSignatures = Math.min(Math.max(1, options.maxSignatures ?? DEFAULT_MAX_SIGNATURES), 500);
+  const fetcher = options.fetcher ?? fetch;
+  const nowSeconds = options.nowSeconds ?? Math.floor(Date.now() / 1000);
+
+  const mint = new PublicKey(positionMint);
+  const positionPda = getPdaPersonalPositionAddress(CLMM_PROGRAM_ID, mint).publicKey;
+  const positionInfo = await connection.getAccountInfo(positionPda, "confirmed");
+  if (
+    !positionInfo ||
+    !positionInfo.owner.equals(CLMM_PROGRAM_ID) ||
+    !positionInfo.data.subarray(0, 8).equals(POSITION_DISCRIMINATOR)
+  ) {
+    throw new Error("Raydium CLMM personal position account not found for this NFT mint");
+  }
+  const position = PersonalPositionLayout.decode(positionInfo.data);
+  if (!position.nftMint.equals(mint)) throw new Error("Position NFT mint mismatch");
+
+  const poolId = position.poolId;
+  const poolInfo = await connection.getAccountInfo(poolId, "confirmed");
+  if (
+    !poolInfo ||
+    !poolInfo.owner.equals(CLMM_PROGRAM_ID) ||
+    !poolInfo.data.subarray(0, 8).equals(POOL_DISCRIMINATOR)
+  ) {
+    throw new Error("Pool account missing or not a Raydium CLMM pool");
+  }
+  const pool = PoolInfoLayout.decode(poolInfo.data);
+
+  let ownsNft: boolean | null = null;
+  if (options.wallet) {
+    ownsNft = await walletOwnsNft(connection, new PublicKey(options.wallet), mint);
+  }
+
+  const sigInfos = await connection.getSignaturesForAddress(positionPda, { limit: maxSignatures }, "confirmed");
+  const truncated = sigInfos.length >= maxSignatures;
+  // RPC returns newest-first; reverse for chronological processing / open time.
+  const chronological = [...sigInfos].reverse();
+
+  const history: PositionHistoryEvent[] = [];
+  for (const info of chronological) {
+    if (info.err) continue;
+    const tx = await connection.getParsedTransaction(info.signature, {
+      commitment: "confirmed",
+      maxSupportedTransactionVersion: 0,
+    });
+    if (!tx?.meta || tx.meta.err) continue;
+    const events = parseRaydiumEventsFromLogs(tx.meta.logMessages);
+    const relevant = events.filter((event) => {
+      if (event.kind === "open") return event.poolState === poolId.toBase58();
+      return event.positionNftMint === positionMint;
+    });
+    if (!relevant.length) continue;
+    history.push({
+      signature: info.signature,
+      blockTime: info.blockTime ?? tx.blockTime ?? null,
+      slot: info.slot,
+      events: relevant,
+    });
+  }
+
+  const allEvents = history.flatMap((item) => item.events);
+  const cashflows = aggregateCashflowsForPosition(allEvents, positionMint, poolId.toBase58());
+
+  const openedAt =
+    history.find((item) => item.events.some((event) => event.kind === "open"))?.blockTime ??
+    history[0]?.blockTime ??
+    null;
+  const holdingSeconds = openedAt !== null && openedAt > 0 ? Math.max(0, nowSeconds - openedAt) : 0;
+
+  const lower = TickUtil.getSqrtPriceAtTick(position.tickLower);
+  const upper = TickUtil.getSqrtPriceAtTick(position.tickUpper);
+  const currentAmounts = LiquidityMathUtil.getAmountsForLiquidity(
+    pool.sqrtPriceX64,
+    lower,
+    upper,
+    position.liquidity,
+    false,
+  );
+  const uncollected = await readUncollectedFees(connection, CLMM_PROGRAM_ID, poolId, position, pool);
+  const rangeSide = positionSide(
+    BigInt(pool.sqrtPriceX64.toString()),
+    BigInt(lower.toString()),
+    BigInt(upper.toString()),
+  );
+
+  let priceUsdA: number | null = null;
+  let priceUsdB: number | null = null;
+  let pricingSource: "jupiter-price-v3" | "raydium-pool-stable" | "none" = "none";
+  let pricingLabel = "USD pricing skipped; token-raw metrics only.";
+  if (!options.skipPricing) {
+    const mintA = pool.mintA.toBase58();
+    const mintB = pool.mintB.toBase58();
+    try {
+      const prices = await fetchJupiterPricesUsd(
+        [mintA, mintB],
+        fetcher,
+        options.jupiterApiKey ?? process.env.JUPITER_API_KEY,
+      );
+      priceUsdA = prices.get(mintA) ?? null;
+      priceUsdB = prices.get(mintB) ?? null;
+      if (priceUsdA !== null && priceUsdB !== null) {
+        pricingSource = "jupiter-price-v3";
+        pricingLabel =
+          "USD uses Jupiter Price API v3 at evaluation time (current), NOT historical tx-time prices.";
+      } else {
+        const fallback = await fetchRaydiumPoolUsdPrices(poolId.toBase58(), mintA, mintB, fetcher);
+        priceUsdA = fallback.get(mintA) ?? priceUsdA;
+        priceUsdB = fallback.get(mintB) ?? priceUsdB;
+        if (priceUsdA !== null && priceUsdB !== null) {
+          pricingSource = "raydium-pool-stable";
+          pricingLabel =
+            "USD from Raydium pool mid price with USDC/USDT ≈ $1 fallback (current), NOT historical tx-time prices. Jupiter Price v3 did not return both mints.";
+        } else {
+          pricingLabel = "Neither Jupiter Price v3 nor Raydium stable-leg fallback returned both mint prices; USD metrics null.";
+        }
+      }
+    } catch {
+      pricingLabel = "USD pricing request failed; USD metrics null.";
+    }
+  }
+
+  const metrics = computePositionPerformance({
+    deposited: { a: cashflows.depositedA, b: cashflows.depositedB },
+    withdrawnPrincipal: { a: cashflows.withdrawnPrincipalA, b: cashflows.withdrawnPrincipalB },
+    feesCollected: { a: cashflows.feesCollectedA, b: cashflows.feesCollectedB },
+    liquidityAmounts: {
+      a: BigInt(currentAmounts.amountA.toString()),
+      b: BigInt(currentAmounts.amountB.toString()),
+    },
+    uncollectedFees: uncollected,
+    holdingSeconds,
+    priceUsdA,
+    priceUsdB,
+    decimalsA: pool.mintDecimalsA,
+    decimalsB: pool.mintDecimalsB,
+  });
+
+  return {
+    wallet: options.wallet ?? null,
+    ownsNft,
+    positionMint,
+    positionAccount: positionPda.toBase58(),
+    poolId: poolId.toBase58(),
+    mintA: pool.mintA.toBase58(),
+    mintB: pool.mintB.toBase58(),
+    decimalsA: pool.mintDecimalsA,
+    decimalsB: pool.mintDecimalsB,
+    tickLower: position.tickLower,
+    tickUpper: position.tickUpper,
+    tickCurrent: pool.tickCurrent,
+    rangeSide,
+    liquidity: position.liquidity.toString(),
+    openedAt,
+    openedAtIso: openedAt !== null ? new Date(openedAt * 1000).toISOString() : null,
+    evaluatedAt: nowSeconds,
+    evaluatedAtIso: new Date(nowSeconds * 1000).toISOString(),
+    signatureCount: chronological.length,
+    truncated,
+    maxSignatures,
+    history,
+    cashflows: {
+      depositedA: cashflows.depositedA.toString(),
+      depositedB: cashflows.depositedB.toString(),
+      withdrawnPrincipalA: cashflows.withdrawnPrincipalA.toString(),
+      withdrawnPrincipalB: cashflows.withdrawnPrincipalB.toString(),
+      feesCollectedA: cashflows.feesCollectedA.toString(),
+      feesCollectedB: cashflows.feesCollectedB.toString(),
+      openCount: cashflows.openCount,
+      increaseCount: cashflows.increaseCount,
+      decreaseCount: cashflows.decreaseCount,
+    },
+    metrics,
+    pricing: {
+      source: pricingSource,
+      label: pricingLabel,
+      priceUsdA,
+      priceUsdB,
+    },
+    method: PERFORMANCE_METHOD,
+    assumptions: ASSUMPTIONS_LABEL,
+  };
+}
+
+/** Lightweight re-export for callers that only need BN-backed sqrt helpers in tests. */
+export function amountsForLiquidityAtPoolPrice(
+  sqrtPriceX64: BN,
+  tickLower: number,
+  tickUpper: number,
+  liquidity: BN,
+) {
+  return LiquidityMathUtil.getAmountsForLiquidity(
+    sqrtPriceX64,
+    TickUtil.getSqrtPriceAtTick(tickLower),
+    TickUtil.getSqrtPriceAtTick(tickUpper),
+    liquidity,
+    false,
+  );
+}
