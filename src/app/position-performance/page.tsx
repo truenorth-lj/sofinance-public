@@ -8,7 +8,7 @@ export default function PositionPerformancePage() {
   const { address, connected, connect, disconnect } = useWalletConnection();
 
   return (
-    <InkShell maxWidth="3xl">
+    <InkShell>
       <InkNav wallet={address} connected={connected} onConnect={connect} onDisconnect={disconnect} />
 
       <div className="mb-6 mt-8 sm:mt-10">

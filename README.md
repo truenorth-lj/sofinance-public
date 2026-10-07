@@ -71,9 +71,9 @@ Never commit `.env.local`, mnemonics, or API keys. Do not prefix `SOLANA_RPC_URL
 
 ### Getting Started (Remote MCP)
 
-1. **Connect your wallet** on [sofinance-alpha.vercel.app](https://sofinance-alpha.vercel.app)
-2. **Expand "MCP Connection (AI Agents)"** after wallet connect
-3. **Sign the challenge message** in your wallet (proves ownership)
+1. **Connect your wallet** on [sofinance-alpha.vercel.app](https://sofinance-alpha.vercel.app) (or `/ai`)
+2. **Click "Sign to get MCP config"** — a WalletConnect session is not ownership proof
+3. **Sign the challenge message** in your wallet (proves you control the key)
 4. **Copy the generated config** — includes a short-lived token bound to your wallet
 5. **Paste into your AI agent:**
 
@@ -81,7 +81,7 @@ Never commit `.env.local`, mnemonics, or API keys. Do not prefix `SOLANA_RPC_URL
 
    **Cursor / Claude (if stdio only):** Use the zero-secret shim config
 
-The UI shows both configs after wallet connect. Choose based on what your agent supports.
+The UI shows both configs after you sign. Choose based on what your agent supports.
 
 ### Option A: Direct HTTP (Preferred)
 
