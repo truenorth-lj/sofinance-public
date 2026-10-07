@@ -6,9 +6,12 @@
  * A pool qualifies as a same-asset RWA pair when **all** of the following hold:
  *
  * 1. **Symbol wrap pair** (after trim; case-insensitive):
- *    - Exactly one side matches `BASEx`, `BASE-x`, or `BASE_x` (suffix), or
+ *    - One side matches `BASEx`, `BASE-x`, or `BASE_x` (suffix), or
  *      `xBASE` / `x-BASE` / `x_BASE` (prefix), where `BASE` is 2–12 alphanumeric chars.
- *    - The other side equals `BASE` exactly.
+ *    - The other side equals `BASE` exactly (the plain ticker). A plain ticker that itself
+ *      ends in `X` (e.g. `SPCX`) may also match `parseWrapSymbol` in isolation; when both
+ *      sides look wrapped, prefer the longer wrap of the shorter plain ticker
+ *      (`SPCXx`/`SPCX`) over rejecting as "both wrapped".
  *    - Examples: `SPCXx`/`SPCX`, `MSTRx`/`MSTR`, `NVDAx`/`NVDA`, `FOO-x`/`FOO`.
  * 2. **Not a stablecoin base**: `BASE` is not USDC/USDT/etc. (excludes spam wrap-of-stable pools).
  * 3. **Primary — Jupiter Tokens API tags**: **both** mints have tags including `stocks` **or**
@@ -136,9 +139,32 @@ export type WrapPairShape = {
   wrappedSide: "A" | "B";
 };
 
+function wrapPairMatch(
+  wrapped: string,
+  plain: string,
+  wrap: { base: string; kind: WrapKind },
+  wrappedSide: "A" | "B",
+): WrapPairShape | PairingReject {
+  if (STABLECOIN_BASES.has(wrap.base)) {
+    return { matched: false, reason: `stablecoin base ${wrap.base} excluded` };
+  }
+  return {
+    matched: true,
+    baseSymbol: wrap.base,
+    wrappedSymbol: wrapped,
+    plainSymbol: plain,
+    wrapKind: wrap.kind,
+    wrappedSide,
+  };
+}
+
 /**
  * Structural FOOx/FOO (or xFOO/FOO) wrap check + stablecoin exclusion only.
  * Does not consult Jupiter tags or the xStocks whitelist.
+ *
+ * When both symbols match {@link parseWrapSymbol} (e.g. `SPCX` → SPC and `SPCXx` → SPCX),
+ * accept the longer symbol as the wrap of the shorter if its parsed base equals the
+ * other symbol exactly — plain tickers that end in X are not rejected solely for that.
  */
 export function matchWrapPairShape(
   symbolA: string,
@@ -153,32 +179,22 @@ export function matchWrapPairShape(
 
   const wrapA = parseWrapSymbol(a);
   const wrapB = parseWrapSymbol(b);
+  const aUpper = a.toUpperCase();
+  const bUpper = b.toUpperCase();
 
-  if (wrapA && !wrapB && wrapA.base === b.toUpperCase()) {
-    if (STABLECOIN_BASES.has(wrapA.base)) {
-      return { matched: false, reason: `stablecoin base ${wrapA.base} excluded` };
-    }
-    return {
-      matched: true,
-      baseSymbol: wrapA.base,
-      wrappedSymbol: a,
-      plainSymbol: b,
-      wrapKind: wrapA.kind,
-      wrappedSide: "A",
-    };
+  // Prefer wrap(plain) even when the plain ticker itself ends in X and looks wrapped.
+  const aWrapsB = Boolean(wrapA && wrapA.base === bUpper);
+  const bWrapsA = Boolean(wrapB && wrapB.base === aUpper);
+
+  if (aWrapsB && bWrapsA) {
+    // Pathological mutual wrap (e.g. equal-length ambiguity); reject.
+    return { matched: false, reason: "both symbols look wrapped" };
   }
-  if (wrapB && !wrapA && wrapB.base === a.toUpperCase()) {
-    if (STABLECOIN_BASES.has(wrapB.base)) {
-      return { matched: false, reason: `stablecoin base ${wrapB.base} excluded` };
-    }
-    return {
-      matched: true,
-      baseSymbol: wrapB.base,
-      wrappedSymbol: b,
-      plainSymbol: a,
-      wrapKind: wrapB.kind,
-      wrappedSide: "B",
-    };
+  if (aWrapsB && wrapA) {
+    return wrapPairMatch(a, b, wrapA, "A");
+  }
+  if (bWrapsA && wrapB) {
+    return wrapPairMatch(b, a, wrapB, "B");
   }
   if (wrapA && wrapB) {
     return { matched: false, reason: "both symbols look wrapped" };
