@@ -32,30 +32,32 @@ File: `artifacts/favicon-in-tab.png`
 
 ## 🚀 What's Included
 
-### Assets Created
-- `public/logo.svg` — 40×40 header logo (SVG, scales perfectly)
-- `public/favicon.svg` — 32×32, 16×16 favicon (SVG)
-- `public/apple-touch-icon.png` — Apple device icon
-- `public/favicon.ico` — Legacy browser fallback
+### Assets Source
+- `avatar-full.png` — Original OpenIntern character (1024×1024)
+- `favicon.ico` — OpenIntern's multi-size ICO
+
+### Assets Generated (via sharp)
+- `public/logo.png` — 40×40 cropped header logo (rounded corners)
+- `public/favicon-16.png`, `favicon-32.png` — Favicon sizes
+- `public/apple-touch-icon.png` — 180×180 Apple device icon
 - `public/favicon-preview.html` — Interactive preview page
 
 ### Code Changes
-- ✅ `InkHeader.tsx` — Uses shared `logo.svg` instead of styled text box
-- ✅ `layout.tsx` — Added favicon metadata (SVG, ICO, apple-touch-icon)
-- ✅ Consistent branding across all pages
+- ✅ `InkHeader.tsx` — Uses `logo.png` with `rounded-lg` class
+- ✅ `layout.tsx` — Updated favicon metadata (PNG variants + ICO)
+- ✅ `scripts/create-logo-variants.js` — Image processing with sharp
+- ✅ Consistent OpenIntern branding across all pages
 
 ## 📋 Technical Details
 
-**Format:** SVG (vector, infinitely scalable)  
-**Colors:** 
-- Background: `#050505` (near-black)
-- Face: `#ffffff` (white)
-- Eyes: `#050505` (black)
-- Star badge: `#ff6b35` (orange)
+**Format:** PNG (header/favicons), ICO (legacy fallback)  
+**Colors:** Monochrome B&W (maintains Ink aesthetic)  
+**Source:** OpenIntern project (`truenorth-lj/open-intern`)
 
 **Dimensions:**
-- Header logo: 40×40px
-- Favicon: 32×32px, 16×16px
+- Header logo: 40×40px PNG (rounded-lg)
+- Favicons: 16×16, 32×32 PNG + multi-size ICO
+- Apple touch: 180×180 PNG
 
 ## 🔗 Pull Request
 
@@ -72,4 +74,15 @@ File: `artifacts/favicon-in-tab.png`
 
 ---
 
-**Design Reference:** Based on the Grokbot character style provided by LJ (white circular face, curious eyes, orange badge).
+## 🔄 Change History
+
+**v2 (Current):** OpenIntern character
+- Uses manga-style B&W girl character from LJ's OpenIntern project
+- Monochrome aesthetic, professional appearance
+- Cropped and optimized for header/favicon use
+
+**v1 (Replaced):** Grokbot-style circular face
+- Too similar to Grokbot branding
+- Replaced per LJ's feedback
+
+**Design Source:** OpenIntern project (`truenorth-lj/open-intern`) — creates brand consistency across LJ's portfolio.
