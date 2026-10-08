@@ -13,7 +13,7 @@ export type CompoundReceipt = { wallet: string; positionMint: string; sourceSign
 export type CompoundPrepared = { summary: CompoundSummary; permit: string; unsignedTransaction: string };
 export type RecoveryPrepared = { summary: CompoundRecoverySummary; permit: string; unsignedTransaction: string };
 type StorageRead = Pick<Storage, "getItem">;
-type StorageWrite = StorageRead & Pick<Storage, "setItem">;
+type StorageWrite = StorageRead & Pick<Storage, "setItem"> & Partial<Pick<Storage, "removeItem">>;
 
 export const compoundAttemptKey = (wallet: string) => `sofinance:compound:v1:${wallet}`;
 export const compoundReceiptsKey = (wallet: string) => `sofinance:compound-receipts:v1:${wallet}`;
@@ -140,6 +140,17 @@ export function removeRecoveredReceipt(storage: StorageWrite, attempt: CompoundA
 // Pre-broadcast receipts exist so a crash after send can still recover ATAs. Expired or
 // failed compounds never create those accounts (Solana txs are atomic); drop only this
 // attempt's receipt so the next prepare does not look up a signature that never landed.
+export function abandonUnsentCompoundAttempt(storage: StorageWrite, attempt: CompoundAttempt) {
+  removeUnconfirmedCompoundReceipt(storage, attempt);
+  const saved = loadCompoundAttempt(storage, attempt.wallet);
+  if (saved.invalid) throw new Error("Compound was not sent, but local records need verification");
+  if (saved.attempt?.signature !== attempt.signature) return;
+  const key = compoundAttemptKey(attempt.wallet);
+  if (!storage.removeItem) throw new Error("Unable to clear unsent compound record");
+  storage.removeItem(key);
+  if (storage.getItem(key) !== null) throw new Error("Unable to clear unsent compound record");
+}
+
 export function removeUnconfirmedCompoundReceipt(storage: StorageWrite, attempt: CompoundAttempt) {
   if (attempt.kind !== "compound") return;
   const saved = loadCompoundReceipts(storage, attempt.wallet);

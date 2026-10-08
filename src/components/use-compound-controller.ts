@@ -4,7 +4,8 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { VersionedTransaction } from "@solana/web3.js";
 import { clearsSubmitError, mayStartAnotherAttempt, type AtomicStatus } from "@/lib/attempt-status";
 import { prepareIsStale } from "@/lib/fresh-blockhash";
-import { compoundAttemptKey, loadCompoundAttempt, loadCompoundReceipts, persistCompoundAttempt, persistCompoundReceipt,
+import { ApiRequestError, resolveCompoundBroadcastFailure } from "@/lib/public-error";
+import { abandonUnsentCompoundAttempt, compoundAttemptKey, loadCompoundAttempt, loadCompoundReceipts, persistCompoundAttempt, persistCompoundReceipt,
   removeConsumedCompoundReceipts, removeRecoveredReceipt, removeUnconfirmedCompoundReceipt, signedCompoundTransaction,
   type CompoundAttempt, type CompoundPrepared, type CompoundReceipt, type RecoveryPrepared } from "@/lib/compound-attempt";
 import type { CompoundPositionState, CompoundSummary } from "@/lib/compound-types";
@@ -21,8 +22,11 @@ const statusValues: AtomicStatus[] = ["pending", "expired", "failed", "success",
 async function post<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
   const response = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body), cache: "no-store", signal });
-  const value = await response.json() as T & { error?: string };
-  if (!response.ok) throw new Error(value.error || "Unable to complete on-chain query, please retry later");
+  const value = await response.json() as T & { error?: string; sent?: boolean };
+  if (!response.ok) {
+    throw new ApiRequestError(value.error || "Unable to complete on-chain query, please retry later",
+      value.sent === false ? false : undefined);
+  }
   return value;
 }
 
@@ -186,6 +190,7 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
       connectionRef.current.address === submittedWallet && connectionRef.current.connected;
     setStage("preparing"); setError(""); setConfirmation(null); keepSubmitErrorRef.current = false;
     let persisted = false;
+    let next: CompoundAttempt | undefined;
     try {
       const requestPrepare = () => receipt
         ? post<RecoveryPrepared>("/api/compound-recover-prepare", { wallet: submittedWallet, compoundAccounts: receipt.compoundAccounts })
@@ -216,26 +221,43 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
       }
       const base = { version: 1 as const, wallet: submittedWallet, positionMint: receipt?.positionMint || submittedMint,
         signature: signedResult.signature, createdAt: Date.now() };
-      const next: CompoundAttempt = receipt
+      const created: CompoundAttempt = receipt
         ? { ...base, kind: "recovery", summary: summary as CompoundRecoverySummary, sourceSignature: receipt.sourceSignature }
         : { ...base, kind: "compound", summary: summary as CompoundSummary };
-      persistCompoundAttempt(window.localStorage, next);
+      next = created;
+      persistCompoundAttempt(window.localStorage, created);
       persisted = true;
       confirmationRequest.current++;
-      attemptSignatureRef.current = next.signature;
-      setAttempt(next); setAttemptStatus("pending");
+      attemptSignatureRef.current = created.signature;
+      setAttempt(created); setAttemptStatus("pending");
       setReceipts(loadCompoundReceipts(window.localStorage, submittedWallet).receipts);
       setStage("broadcasting");
       const response = await post<{ signature: string }>(receipt ? "/api/compound-recover-broadcast" : "/api/compound-broadcast", {
-        wallet: submittedWallet, positionMint: next.positionMint, summary, permit: prepared.permit,
+        wallet: submittedWallet, positionMint: created.positionMint, summary, permit: prepared.permit,
         signedTransaction: signedResult.signedTransaction,
       });
-      if (response.signature !== next.signature) throw new Error("Broadcast returned inconsistent signature; retain original signature and check on-chain result");
-      await reconcile(next);
+      if (response.signature !== created.signature) throw new Error("Broadcast returned inconsistent signature; retain original signature and check on-chain result");
+      await reconcile(created);
     } catch (caught) {
       if (walletRef.current === submittedWallet) {
-        if (persisted) keepSubmitErrorRef.current = true;
-        setError(caught instanceof Error ? caught.message : "Transaction not confirmed, verify signature first");
+        const message = caught instanceof Error ? caught.message : "Transaction not confirmed, verify signature first";
+        const sent = caught instanceof ApiRequestError ? caught.sent : undefined;
+        const outcome = resolveCompoundBroadcastFailure({ persisted, sent, message });
+        if (outcome.abandon && next) {
+          confirmationRequest.current++;
+          attemptSignatureRef.current = null;
+          abandonUnsentCompoundAttempt(window.localStorage, next);
+          setAttempt(null); setAttemptStatus(null); setConfirmation(null);
+          setReceipts(loadCompoundReceipts(window.localStorage, submittedWallet).receipts);
+          keepSubmitErrorRef.current = true;
+          setError(outcome.error);
+        } else if (outcome.keepPending) {
+          keepSubmitErrorRef.current = false;
+          setError("");
+        } else {
+          keepSubmitErrorRef.current = persisted;
+          setError(outcome.error);
+        }
       }
     } finally { submitting.current = false; setStage(null); }
   }
