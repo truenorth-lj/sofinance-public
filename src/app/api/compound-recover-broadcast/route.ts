@@ -2,10 +2,12 @@ import bs58 from "bs58";
 import { parseCompoundBroadcast } from "@/lib/compound-api";
 import { simulateAndVerifyRecovery } from "@/lib/compound-recovery";
 import type { CompoundRecoverySummary } from "@/lib/compound-recovery-types";
+import { isPreflightOrUnsentFailure } from "@/lib/public-error";
 import { rpcConnection } from "@/lib/rpc";
 import { apiError } from "@/lib/api-response";
 
 export async function POST(request: Request) {
+  let submitted = false;
   try {
     const { wallet, summary: approved, transaction } = await parseCompoundBroadcast(request, "recovery");
     const summary = approved as CompoundRecoverySummary;
@@ -18,10 +20,14 @@ export async function POST(request: Request) {
       throw new Error("Recovery transaction expired before broadcast");
     }
     const expected = bs58.encode(transaction.signatures[0]!);
+    submitted = true;
     const signature = await connection.sendRawTransaction(transaction.serialize(), {
       skipPreflight: false, preflightCommitment: "confirmed", maxRetries: 3,
     });
     if (signature !== expected) throw new Error("RPC returned recovery signature mismatch, please verify on-chain status");
     return Response.json({ signature }, { headers: { "Cache-Control": "no-store" } });
-  } catch (error) { return apiError(error, "Recovery broadcast failed"); }
+  } catch (error) {
+    const sent = !submitted || isPreflightOrUnsentFailure(error) ? false : undefined;
+    return apiError(error, "Recovery broadcast failed", 400, sent === false ? { sent: false } : undefined);
+  }
 }

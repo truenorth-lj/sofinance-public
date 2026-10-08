@@ -10,7 +10,7 @@ import { readLookupTables } from "./transaction-helpers";
 import { restampVersionedTransaction, stampPreparedBlockhash } from "./fresh-blockhash";
 import { readCompoundPositionState } from "./compound-state";
 import { simulateAndVerifyCompound } from "./compound-simulation";
-import { sizeCompoundLiquidity } from "./compound-math";
+import { conservativeSwapBalances, sizeBufferedCompoundLiquidity } from "./compound-math";
 import { buildCompoundSwapPlan } from "./compound-swap";
 import { readCompoundPriorSources } from "./compound-prior-sources";
 import type { CompoundAccount, CompoundPositionState, CompoundSummary } from "./compound-types";
@@ -140,23 +140,31 @@ export async function buildAndSimulateCompound(walletAddress: string, positionMi
     amountA: BigInt(harvestResult.endingA), amountB: BigInt(harvestResult.endingB) });
   const swapInstructions = plan.instruction ? [plan.instruction] : [];
   const swapped = plan.instruction ? await simulate(build([...harvest.instructions, ...swapInstructions]), 0n) : harvestResult;
-  const sized = sizeCompoundLiquidity(BigInt(swapped.sqrtPriceX64), BigInt(state.lowerSqrtX64), BigInt(state.upperSqrtX64), BigInt(swapped.endingA), BigInt(swapped.endingB), BigInt(state.liquidity));
+  const simulatedOutputAmount = plan.swap
+    ? (plan.swap.outputMint === state.mintA ? BigInt(swapped.endingA) - BigInt(harvestResult.endingA)
+      : BigInt(swapped.endingB) - BigInt(harvestResult.endingB)).toString() : undefined;
+  const conservative = conservativeSwapBalances({
+    endingA: BigInt(swapped.endingA), endingB: BigInt(swapped.endingB), mintA: state.mintA, mintB: state.mintB,
+    swap: plan.swap ? { ...plan.swap, simulatedOutputAmount } : null,
+  });
+  const sized = sizeBufferedCompoundLiquidity(BigInt(swapped.sqrtPriceX64), BigInt(state.lowerSqrtX64), BigInt(state.upperSqrtX64),
+    conservative.a, conservative.b, BigInt(state.liquidity));
   if (sized.liquidity === 0n) throw new Error("After yield swap still insufficient for minimum liquidity unit, cannot reinvest");
-  const add = ClmmInstrument.increasePositionFromLiquidityInstructions({ ...common, liquidity: new BN(sized.liquidity.toString()), amountMaxA: new BN(swapped.endingA), amountMaxB: new BN(swapped.endingB) });
+  const add = ClmmInstrument.increasePositionFromLiquidityInstructions({ ...common, liquidity: new BN(sized.liquidity.toString()),
+    amountMaxA: new BN(sized.amountMaxA.toString()), amountMaxB: new BN(sized.amountMaxB.toString()) });
   if (add.signers.length || add.instructions.length !== 1) throw new Error("Compound increase instruction mismatch");
-  validateCompoundRaydiumInstructions([...harvest.instructions, ...add.instructions], state, accounts, sized.liquidity, BigInt(swapped.endingA), BigInt(swapped.endingB));
+  validateCompoundRaydiumInstructions([...harvest.instructions, ...add.instructions], state, accounts, sized.liquidity, sized.amountMaxA, sized.amountMaxB);
   const simulated = build([...harvest.instructions, ...swapInstructions, ...add.instructions]);
   const sizeBytes = transactionSize(simulated);
   const verified = await simulate(simulated, sized.liquidity);
   if (verified.rewards.some((reward) => BigInt(reward.amount) > 0n)) throw new Error("Simulation found unswapped third reward yield, cannot fully reinvest; please reprepare");
   const creditedPrior = (mint: string) => prior.sources.filter((source) => source.mint === mint).reduce((sum, source) => sum + BigInt(source.amount), 0n);
-  const swap = plan.swap ? { ...plan.swap, sqrtPriceAfterX64: swapped.sqrtPriceX64,
-    simulatedOutputAmount: (plan.swap.outputMint === state.mintA ? BigInt(swapped.endingA) - BigInt(harvestResult.endingA) : BigInt(swapped.endingB) - BigInt(harvestResult.endingB)).toString() } : null;
+  const swap = plan.swap ? { ...plan.swap, sqrtPriceAfterX64: swapped.sqrtPriceX64, simulatedOutputAmount } : null;
   const latest = await connection.getLatestBlockhash("confirmed");
   const transaction = restampVersionedTransaction(simulated, latest.blockhash, tables);
   const summary: CompoundSummary = { operation: "compound", simulated: true, state,
     positionMint, positionAccount: state.positionAccount, poolId: state.poolId, startingLiquidity: state.liquidity, liquidity: sized.liquidity.toString(),
-    amountMaxA: swapped.endingA, amountMaxB: swapped.endingB, compoundAccounts: accounts,
+    amountMaxA: sized.amountMaxA.toString(), amountMaxB: sized.amountMaxB.toString(), compoundAccounts: accounts,
     swaps: swap ? [swap] : [], priorSources: prior.sources,
     simulatedHarvest: { a: (BigInt(harvestResult.endingA) - creditedPrior(state.mintA)).toString(), b: (BigInt(harvestResult.endingB) - creditedPrior(state.mintB)).toString() }, simulatedRewards: verified.rewards,
     simulatedEndingLiquidity: verified.endingLiquidity, simulatedDustA: verified.endingA, simulatedDustB: verified.endingB,
