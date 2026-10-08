@@ -7,6 +7,7 @@ import bs58 from "bs58";
 import { LoaderCircle, CircleAlert, CheckCircle2 } from "lucide-react";
 import { InkShell, InkCard, InkNav } from "@/components/ink";
 import { useWalletConnection } from "@/components/wallet-connection";
+import { notSentRetryMessage } from "@/lib/public-error";
 import type { PendingSignPayload } from "@/lib/pending-sign-token";
 
 type Status = "loading" | "expired" | "wallet-mismatch" | "ready" | "signing" | "submitting" | "success" | "error";
@@ -127,7 +128,8 @@ export default function SignPage() {
       const result = await response.json();
       
       if (!response.ok) {
-        throw new Error(result.error || "Transaction submission failed");
+        const reason = result.error || "Transaction submission failed";
+        throw new Error(result.sent === false ? notSentRetryMessage(reason) : reason);
       }
       
       if (result.signature !== txSignature) {

@@ -1,3 +1,6 @@
+import { DEFAULT_ADD_TOLERANCE_BPS } from "./ids";
+import { padAmountMax, toleranceLiquidity } from "./quote-math";
+
 const Q64 = 1n << 64n;
 const U128 = 1n << 128n;
 export const MAX_U64 = (1n << 64n) - 1n;
@@ -41,4 +44,52 @@ export function sizeCompoundLiquidity(price: bigint, lower: bigint, upper: bigin
     else high = candidate - 1n;
   }
   return { liquidity: low, ...amountsForCompoundLiquidity(price, lower, upper, low) };
+}
+
+/** Reduce the swap-output side to minOut so add sizing matches the on-chain floor. */
+export function conservativeSwapBalances(input: {
+  endingA: bigint; endingB: bigint; mintA: string; mintB: string;
+  swap?: { outputMint: string; quotedOutputAmount: string; minOutputAmount: string; simulatedOutputAmount?: string } | null;
+}) {
+  const swap = input.swap;
+  if (!swap) return { a: input.endingA, b: input.endingB };
+  const simulated = BigInt(swap.simulatedOutputAmount ?? swap.quotedOutputAmount);
+  const minOut = BigInt(swap.minOutputAmount);
+  if (minOut > simulated) throw new Error("Compound swap minimum exceeds simulated output");
+  const haircut = simulated - minOut;
+  if (swap.outputMint === input.mintA) {
+    if (haircut > input.endingA) throw new Error("Conservative swap output exceeds simulated balance");
+    return { a: input.endingA - haircut, b: input.endingB };
+  }
+  if (swap.outputMint === input.mintB) {
+    if (haircut > input.endingB) throw new Error("Conservative swap output exceeds simulated balance");
+    return { a: input.endingA, b: input.endingB - haircut };
+  }
+  return { a: input.endingA, b: input.endingB };
+}
+
+/**
+ * Size below the exact harvested/swapped balances by the add-liquidity tolerance
+ * so a small pool-price move cannot trip Raydium PriceSlippageCheck (6017).
+ * amountMax is the required amount padded by the same tolerance, never above the
+ * conservative available balances. Leftovers stay in the yield accounts.
+ */
+export function sizeBufferedCompoundLiquidity(
+  price: bigint, lower: bigint, upper: bigint, a: bigint, b: bigint,
+  startingLiquidity = 0n, toleranceBps = DEFAULT_ADD_TOLERANCE_BPS,
+) {
+  const full = sizeCompoundLiquidity(price, lower, upper, a, b, startingLiquidity);
+  let liquidity = toleranceLiquidity(full.liquidity, toleranceBps);
+  if (liquidity === 0n && full.liquidity > 0n) {
+    const one = amountsForCompoundLiquidity(price, lower, upper, 1n);
+    liquidity = one.a <= a && one.b <= b ? 1n : 0n;
+  }
+  const required = amountsForCompoundLiquidity(price, lower, upper, liquidity);
+  return {
+    liquidity,
+    a: required.a,
+    b: required.b,
+    amountMaxA: padAmountMax(required.a, a, toleranceBps),
+    amountMaxB: padAmountMax(required.b, b, toleranceBps),
+  };
 }

@@ -94,7 +94,9 @@ export function CompoundPanel({ controller: c, tokenLabel = short }: {
     </div>
     {c.attempt && <div className="mt-5 rounded-xl border border-neutral-800/60 p-4 text-xs leading-6">
       <div className="flex flex-wrap items-center justify-between gap-2"><p role="status" className="text-neutral-200">
-        {c.attempt.kind === "recovery" && c.attemptStatus === "success" ? "Balance and account rent recovered" : c.attemptStatus ? statusText[c.attemptStatus] : "Loading records"}
+        {c.attempt.kind === "recovery" && c.attemptStatus === "success" ? "Balance and account rent recovered"
+          : c.attemptStatus === "pending" && c.error ? "Last attempt did not confirm; see the error below"
+          : c.attemptStatus ? statusText[c.attemptStatus] : "Loading records"}
       </p><a className="text-neutral-300 underline" href={`https://solscan.io/tx/${c.attempt.signature}`} target="_blank" rel="noreferrer">View transaction {short(c.attempt.signature)}</a></div>
       {c.confirmation?.receipt && c.attempt.kind === "compound" && <p className="mt-2 text-neutral-300">Actual input: {amount(c.confirmation.receipt.investedA, c.attempt.summary.state.decimalsA)} {tokenLabel(c.attempt.summary.state.mintA)}  +  {amount(c.confirmation.receipt.investedB, c.attempt.summary.state.decimalsB)} {tokenLabel(c.attempt.summary.state.mintB)}</p>}
       <button type="button" onClick={c.retryReconcile} disabled={c.busy} className="mt-2 block text-neutral-300 underline disabled:opacity-40">Requery on-chain result</button>
