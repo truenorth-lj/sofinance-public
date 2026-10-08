@@ -3,7 +3,7 @@ import { LiquidityMathUtil, TickUtil } from "@raydium-io/raydium-sdk-v2";
 import { expect, it } from "vitest";
 import { accruedFee, amountsForCompoundLiquidity, conservativeSwapBalances, MAX_U64, MAX_U128,
   sizeBufferedCompoundLiquidity, sizeCompoundLiquidity } from "./compound-math";
-import { DEFAULT_ADD_TOLERANCE_BPS } from "./ids";
+import { DEFAULT_COMPOUND_ADD_TOLERANCE_BPS } from "./ids";
 
 it("includes growth since the checkpoint and uses both boundary ticks", () => {
   const q = 1n << 64n;
@@ -71,20 +71,23 @@ it("sizes below exact balances and keeps amountMax inside the conservative lefto
   const price = 1n << 64n;
   const a = 2_000_000n, b = 3_000_000n;
   const full = sizeCompoundLiquidity(price, lower, upper, a, b);
-  const buffered = sizeBufferedCompoundLiquidity(price, lower, upper, a, b, 0n, DEFAULT_ADD_TOLERANCE_BPS);
+  const buffered = sizeBufferedCompoundLiquidity(price, lower, upper, a, b, 0n, DEFAULT_COMPOUND_ADD_TOLERANCE_BPS);
   expect(buffered.liquidity).toBeLessThan(full.liquidity);
   expect(buffered.liquidity).toBeGreaterThan(0n);
-  expect(buffered.amountMaxA).toBeLessThanOrEqual(a);
-  expect(buffered.amountMaxB).toBeLessThanOrEqual(b);
-  expect(buffered.amountMaxA).toBeGreaterThanOrEqual(buffered.a);
-  expect(buffered.amountMaxB).toBeGreaterThanOrEqual(buffered.b);
-  expect(buffered.a * (10_000n + BigInt(DEFAULT_ADD_TOLERANCE_BPS))).toBeLessThanOrEqual(buffered.amountMaxA * 10_000n + 10_000n);
-  expect(buffered.b * (10_000n + BigInt(DEFAULT_ADD_TOLERANCE_BPS))).toBeLessThanOrEqual(buffered.amountMaxB * 10_000n + 10_000n);
+  expect(buffered.amountMaxA).toBe(a);
+  expect(buffered.amountMaxB).toBe(b);
+  expect(buffered.a).toBeLessThan(a);
+  expect(buffered.b).toBeLessThan(b);
+  expect(buffered.a * (10_000n + BigInt(DEFAULT_COMPOUND_ADD_TOLERANCE_BPS))).toBeLessThanOrEqual(a * 10_000n + 10_000n);
+  expect(buffered.b * (10_000n + BigInt(DEFAULT_COMPOUND_ADD_TOLERANCE_BPS))).toBeLessThanOrEqual(b * 10_000n + 10_000n);
   const next = amountsForCompoundLiquidity(price, lower, upper, buffered.liquidity);
   expect(next.a).toBe(buffered.a);
   expect(next.b).toBe(buffered.b);
-  expect(buffered.a).toBeLessThan(a);
-  expect(buffered.b).toBeLessThan(b);
+  const onePercent = sizeBufferedCompoundLiquidity(price, lower, upper, a, b, 0n, 100);
+  expect(buffered.liquidity).toBeLessThan(onePercent.liquidity);
+  // Observed busy-pool drift was ~1.8% over ~70s; required+1.8% must still fit the cap.
+  expect(buffered.a * 10_180n / 10_000n).toBeLessThanOrEqual(buffered.amountMaxA);
+  expect(buffered.b * 10_180n / 10_000n).toBeLessThanOrEqual(buffered.amountMaxB);
 });
 it("keeps a one-unit add when the tolerance haircut would otherwise drop dust to zero", () => {
   const q = 1n << 64n;

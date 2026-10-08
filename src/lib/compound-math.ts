@@ -1,5 +1,5 @@
-import { DEFAULT_ADD_TOLERANCE_BPS } from "./ids";
-import { padAmountMax, toleranceLiquidity } from "./quote-math";
+import { DEFAULT_COMPOUND_ADD_TOLERANCE_BPS } from "./ids";
+import { toleranceLiquidity } from "./quote-math";
 
 const Q64 = 1n << 64n;
 const U128 = 1n << 128n;
@@ -76,7 +76,7 @@ export function conservativeSwapBalances(input: {
  */
 export function sizeBufferedCompoundLiquidity(
   price: bigint, lower: bigint, upper: bigint, a: bigint, b: bigint,
-  startingLiquidity = 0n, toleranceBps = DEFAULT_ADD_TOLERANCE_BPS,
+  startingLiquidity = 0n, toleranceBps = DEFAULT_COMPOUND_ADD_TOLERANCE_BPS,
 ) {
   const full = sizeCompoundLiquidity(price, lower, upper, a, b, startingLiquidity);
   let liquidity = toleranceLiquidity(full.liquidity, toleranceBps);
@@ -85,11 +85,13 @@ export function sizeBufferedCompoundLiquidity(
     liquidity = one.a <= a && one.b <= b ? 1n : 0n;
   }
   const required = amountsForCompoundLiquidity(price, lower, upper, liquidity);
+  // Isolated yield leftovers are intended for this add. Cap at the conservative
+  // (min-out) balances so a price move can consume the haircut, not more.
   return {
     liquidity,
     a: required.a,
     b: required.b,
-    amountMaxA: padAmountMax(required.a, a, toleranceBps),
-    amountMaxB: padAmountMax(required.b, b, toleranceBps),
+    amountMaxA: a,
+    amountMaxB: b,
   };
 }
