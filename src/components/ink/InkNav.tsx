@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { usePathname } from "next/navigation";
+import { BrandMark } from "@/components/brand-mark";
 import { Wallet } from "lucide-react";
 import { INK_COLORS } from "./ink-tokens";
 import { APP_ROUTES } from "@/lib/public-urls";
@@ -29,13 +29,7 @@ export function InkNav({ wallet, connected, onConnect, onDisconnect }: InkNavPro
   return (
     <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
       <Link href={APP_ROUTES.home} className="flex items-center gap-3 transition-opacity hover:opacity-70">
-        <Image
-          src="/logo.png"
-          alt="SoFinance"
-          width={40}
-          height={40}
-          className="flex-shrink-0 rounded-lg"
-        />
+        <BrandMark className="h-10 w-10 flex-shrink-0 text-neutral-100" />
         <div>
           <div className={`text-sm font-bold tracking-wide text-${INK_COLORS.textPrimary}`}>
             SoFinance
