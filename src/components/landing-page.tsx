@@ -1,5 +1,5 @@
 import Link from "next/link";
-import Image from "next/image";
+import { BrandMark } from "@/components/brand-mark";
 import {
   BookOpen,
   Wallet,
@@ -32,7 +32,7 @@ export function LandingPage() {
       <header className="sticky top-0 z-20 border-b border-neutral-800/50 bg-[#050505]/85 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-5 py-3.5 sm:px-8">
           <Link href="/" className="flex items-center gap-3 transition-opacity hover:opacity-70">
-            <Image src="/logo.png" alt="SoFinance" width={36} height={36} className="rounded-lg" />
+            <BrandMark className="h-9 w-9 text-neutral-100" />
             <span className="text-sm font-bold tracking-wide">SoFinance</span>
           </Link>
           <Link href={APP_ROUTES.home} className={primaryCta}>
@@ -44,14 +44,7 @@ export function LandingPage() {
       <main>
         <section className="mx-auto max-w-6xl px-5 pb-16 pt-14 sm:px-8 sm:pb-24 sm:pt-20">
           <div className="mx-auto max-w-3xl text-center">
-            <Image
-              src="/logo.png"
-              alt=""
-              width={88}
-              height={88}
-              priority
-              className="mx-auto rounded-2xl"
-            />
+            <BrandMark className="mx-auto h-[88px] w-[88px] text-neutral-50" />
             <h1 className="mt-8 text-3xl font-semibold tracking-tight text-neutral-50 sm:text-5xl sm:leading-[1.1]">
               Strategy recipes for AI agents and humans
             </h1>
