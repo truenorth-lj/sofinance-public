@@ -15,6 +15,12 @@ describe("landing page copy and routes", () => {
     expect(src).not.toMatch(/\btrading\b/i);
   });
 
+  it("uses the inline C3 BrandMark, not the old square logo image", () => {
+    expect(src).toContain("BrandMark");
+    expect(src).not.toContain("/logo.png");
+    expect(src).not.toContain("next/image");
+  });
+
   it("links Launch App and the live RWA Yield scenario into /app", () => {
     expect(src).toContain("APP_ROUTES.home");
     expect(src).toContain("APP_ROUTES.ai");
