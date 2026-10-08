@@ -10,7 +10,6 @@ import {
   MoveHorizontal,
   Coins,
   ArrowRight,
-  Github,
 } from "lucide-react";
 import { APP_ROUTES } from "@/lib/public-urls";
 
@@ -74,9 +73,8 @@ export function LandingPage() {
                 href={GITHUB_URL}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center gap-1.5 text-sm text-neutral-500 underline-offset-4 transition-colors hover:text-neutral-300 hover:underline"
+                className="text-sm text-neutral-500 underline-offset-4 transition-colors hover:text-neutral-300 hover:underline"
               >
-                <Github className="h-3.5 w-3.5" />
                 Source on GitHub
               </a>
             </p>
@@ -282,7 +280,6 @@ export function LandingPage() {
               ].map((card) => (
                 <article
                   key={card.title}
-                  aria-disabled="true"
                   className="rounded-[20px] border border-neutral-800/70 bg-[#0a0a0a] p-5 opacity-50 sm:p-7"
                 >
                   <div className="flex items-start justify-between gap-3">
