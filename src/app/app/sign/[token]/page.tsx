@@ -138,7 +138,7 @@ export default function SignPage() {
       setSignStatus("success");
       
       setTimeout(() => {
-        router.push("/");
+        router.push("/app");
       }, 5000);
     } catch (caught) {
       setSignStatus("idle");
@@ -164,7 +164,7 @@ export default function SignPage() {
       case "submitting":
         return "Broadcasting transaction to Solana...";
       case "success":
-        return "Transaction submitted successfully! Redirecting to home...";
+        return "Transaction submitted successfully! Redirecting to the app...";
       case "error":
         return error || "An error occurred";
     }
@@ -309,10 +309,10 @@ export default function SignPage() {
       
       <div className="mt-6 text-center">
         <button
-          onClick={() => router.push("/")}
+          onClick={() => router.push("/app")}
           className="text-sm text-neutral-400 underline hover:text-neutral-300"
         >
-          Return to home
+          Return to app
         </button>
       </div>
     </InkShell>

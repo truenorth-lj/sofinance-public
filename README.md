@@ -9,6 +9,18 @@ One shared engine in `src/lib` powers:
 
 The server never holds private keys. Agents/users sign locally; broadcast re-verifies an HMAC permit and re-simulates before send.
 
+The marketing landing page lives at `/`. Product UI lives under `/app` (Positions, RWA pairs, position performance, Use AI, and sign deep-links). `/api/*` is unchanged.
+
+| Old path | New path |
+|----------|----------|
+| `/` (app home) | `/app` |
+| `/rwa-pairs` | `/app/rwa-pairs` |
+| `/position-performance` | `/app/position-performance` |
+| `/ai` | `/app/ai` |
+| `/sign/<token>` | `/app/sign/<token>` |
+
+Former page paths permanently redirect. MCP `prepare_*` tools now emit `/app/sign/<token>`.
+
 ## Features
 
 - Discover Raydium CLMM position NFTs and eligible ATA / native SOL balances
@@ -17,8 +29,8 @@ The server never holds private keys. Agents/users sign locally; broadcast re-ver
 - **Resale-ratio floor** (default 99%): conservative quote of swapping position outputs back to the same input asset
 - **One-click compound**: harvest fees/rewards, swap to range ratio, reinvest (phase one rejects third reward mints without a verifiable path)
 - Web UI Advanced settings for resale gap and price tolerance; MCP exposes the same knobs
-- **Position performance / realized fee APR**: holding-period return from on-chain open/increase/decrease events + current equity (not Raydium pool 24h feeApr). Same-asset RWA pairs prefer **token-equivalent (TE)** in the plain/base ticker via current tick mid (raw A/B + TE; USD secondary) — MCP `get_position_performance`, `/api/position-performance`, `/position-performance` UI
-- **Same-asset RWA pair discovery**: Raydium CLMM pools where both sides are the same underlying (e.g. `MSTRx`/`MSTR`, `NVDAx`/`NVDA`), filtered by Jupiter Tokens API tags (`stocks`|`rwa`) plus Backed xStocks whitelist, with fee tier, TVL, 24h volume/fees, estimated fee APR, Token-2022 / freeze flags — MCP `list_rwa_pairs` and read-only `/rwa-pairs` UI
+- **Position performance / realized fee APR**: holding-period return from on-chain open/increase/decrease events + current equity (not Raydium pool 24h feeApr). Same-asset RWA pairs prefer **token-equivalent (TE)** in the plain/base ticker via current tick mid (raw A/B + TE; USD secondary) — MCP `get_position_performance`, `/api/position-performance`, `/app/position-performance` UI
+- **Same-asset RWA pair discovery**: Raydium CLMM pools where both sides are the same underlying (e.g. `MSTRx`/`MSTR`, `NVDAx`/`NVDA`), filtered by Jupiter Tokens API tags (`stocks`|`rwa`) plus Backed xStocks whitelist, with fee tier, TVL, 24h volume/fees, estimated fee APR, Token-2022 / freeze flags — MCP `list_rwa_pairs` and read-only `/app/rwa-pairs` UI
 
 ## Safety gates
 
@@ -71,7 +83,7 @@ Never commit `.env.local`, mnemonics, or API keys. Do not prefix `SOLANA_RPC_URL
 
 ### Getting Started (Remote MCP)
 
-1. **Connect your wallet** on [sofinance-alpha.vercel.app](https://sofinance-alpha.vercel.app) (or `/ai`)
+1. **Connect your wallet** on [sofinance-alpha.vercel.app/app](https://sofinance-alpha.vercel.app/app) (or `/app/ai`)
 2. **Click "Sign to get MCP config"** — a WalletConnect session is not ownership proof
 3. **Sign the challenge message** in your wallet (proves you control the key)
 4. **Copy the generated config** — includes a short-lived token bound to your wallet
@@ -161,7 +173,7 @@ Or: `pnpm mcp:start` with env already exported.
 
 **Agent flow:** `list_positions` → `quote_add_liquidity` → `prepare_transaction` → wallet signs `unsignedTransaction` → `submit_signed_transaction` with `{ signedTransaction, ...submitArgs }`. Compound: `quote_compound` / `prepare_compound_transaction` → sign → `submit_compound_transaction` with the complete `summary`.
 
-**Sign deep-link:** After `prepare_transaction` or `prepare_compound_transaction`, the agent receives a `signUrl` (e.g. `https://sofinance-alpha.vercel.app/sign/<token>`) that can be opened in a browser. The token is a self-contained, HMAC-signed, compressed payload containing the unsigned transaction, permit, and submit arguments. With the correct wallet connected via Reown AppKit, the user reviews the transaction summary and signs with one click. The signed transaction is automatically submitted via the existing re-verification and broadcast paths. This bridges the gap for agents that can prepare transactions but delegate signing to the user's wallet UI. Sign tokens expire after 60-120 seconds (matching permit/blockhash lifetime). The token is verified server-side using `JUPITER_API_KEY` as the HMAC secret, so MCP (local/remote) and Vercel (production) can share the same signing mechanism without shared memory.
+**Sign deep-link:** After `prepare_transaction` or `prepare_compound_transaction`, the agent receives a `signUrl` (e.g. `https://sofinance-alpha.vercel.app/app/sign/<token>`) that can be opened in a browser. Legacy `/sign/<token>` URLs permanently redirect to `/app/sign/<token>`. The token is a self-contained, HMAC-signed, compressed payload containing the unsigned transaction, permit, and submit arguments. With the correct wallet connected via Reown AppKit, the user reviews the transaction summary and signs with one click. The signed transaction is automatically submitted via the existing re-verification and broadcast paths. This bridges the gap for agents that can prepare transactions but delegate signing to the user's wallet UI. Sign tokens expire after 60-120 seconds (matching permit/blockhash lifetime). The token is verified server-side using `JUPITER_API_KEY` as the HMAC secret, so MCP (local/remote) and Vercel (production) can share the same signing mechanism without shared memory.
 
 `JUPITER_API_KEY` is used for Jupiter swap quotes, permit HMACs, sign token HMACs, and MCP token HMACs. Quotes expire quickly; always re-prepare before signing.
 ## Architecture
@@ -227,7 +239,7 @@ Computes a position NFT's **actual holding-period return** from on-chain facts (
 4. Metrics: `holdingDays`, deposited / withdrawn / fees, PnL, `holdingPeriodReturnPct`, `annualizedReturnPct` (simple ×365/days), `feeOnlyAprPct`
 5. Optional USD via Jupiter Price API v3 **at evaluation time** (explicitly labeled — not historical tx-time prices)
 
-This is **not** Raydium's pool `day.feeApr`. Read-only UI: `/position-performance`.
+This is **not** Raydium's pool `day.feeApr`. Read-only UI: `/app/position-performance`.
 
 ## Limitations
 
@@ -243,6 +255,10 @@ This is **not** Raydium's pool `day.feeApr`. Read-only UI: `/position-performanc
 - Clearer agent-facing error codes and recovery hints
 - Optional ALT / route shaping to reduce 1232-byte failures on heavy Jupiter paths
 - More pool venues only if the same simulation + permit model can be preserved
+
+## Custom domain / `app.` subdomain
+
+Hobby `*.vercel.app` hosts cannot use a real `app.` subdomain, so this does nothing on [sofinance-alpha.vercel.app](https://sofinance-alpha.vercel.app). After you attach a custom domain (e.g. `sofinance.xyz`), also add `app.sofinance.xyz` in Vercel. `src/proxy.ts` (Next.js 16 Proxy, formerly middleware) rewrites `app.<domain>/<path>` → `/app/<path>` so the App can be served on the subdomain while the apex stays the landing page. `/api/*` is not rewritten. Until then, use `https://sofinance-alpha.vercel.app/app`.
 
 ## License
 
