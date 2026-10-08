@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Keypair, SystemProgram, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
-import { compoundAttemptKey, compoundReceiptsKey, loadCompoundAttempt, loadCompoundReceipts,
+import { abandonUnsentCompoundAttempt, compoundAttemptKey, compoundReceiptsKey, loadCompoundAttempt, loadCompoundReceipts,
   parseCompoundAttempt, persistCompoundAttempt, persistCompoundReceipt, removeConsumedCompoundReceipts, removeRecoveredReceipt,
   removeUnconfirmedCompoundReceipt, signedCompoundTransaction, type CompoundAttempt } from "./compound-attempt";
 import type { CompoundSummary } from "./compound-types";
@@ -12,7 +12,8 @@ function memoryStorage() {
   const values = new Map<string, string>();
   const writes: string[] = [];
   return { values, writes, getItem: (name: string) => values.get(name) ?? null,
-    setItem: (name: string, value: string) => { writes.push(name); values.set(name, value); } };
+    setItem: (name: string, value: string) => { writes.push(name); values.set(name, value); },
+    removeItem: (name: string) => { writes.push(`-${name}`); values.delete(name); } };
 }
 function attempt(wallet = key()): CompoundAttempt & { kind: "compound" } {
   const positionMint = key();
@@ -106,6 +107,30 @@ describe("compound signature and recovery persistence", () => {
     expect(parseCompoundAttempt(current, current.wallet)).toEqual(current);
     expect(parseCompoundAttempt({ ...current, summary: { ...current.summary, swaps: [{ ...current.summary.swaps[0], minOutputAmount: "NaN" }] } }, current.wallet)).toBeNull();
     expect(parseCompoundAttempt({ ...current, summary: { ...current.summary, priorSources: [{ ...current.summary.priorSources[0], amount: undefined }] } }, current.wallet)).toBeNull();
+  });
+
+  it("clears an unsent attempt and only that attempt's yield receipt", () => {
+    const storage = memoryStorage();
+    const prior = attempt();
+    const unsent = attempt(prior.wallet);
+    persistCompoundAttempt(storage, prior);
+    persistCompoundAttempt(storage, unsent);
+    abandonUnsentCompoundAttempt(storage, unsent);
+    expect(loadCompoundAttempt(storage, prior.wallet).attempt).toBeNull();
+    expect(loadCompoundReceipts(storage, prior.wallet).receipts.map((item) => item.sourceSignature))
+      .toEqual([prior.signature]);
+  });
+
+  it("does not drop a newer attempt when abandoning an older unsent signature", () => {
+    const storage = memoryStorage();
+    const first = attempt();
+    const second = attempt(first.wallet);
+    persistCompoundAttempt(storage, first);
+    persistCompoundAttempt(storage, second);
+    abandonUnsentCompoundAttempt(storage, first);
+    expect(loadCompoundAttempt(storage, first.wallet).attempt?.signature).toBe(second.signature);
+    expect(loadCompoundReceipts(storage, first.wallet).receipts.map((item) => item.sourceSignature))
+      .toEqual([second.signature]);
   });
 
   it("drops only the expired or failed attempt's pre-broadcast receipt and keeps prior dust", () => {

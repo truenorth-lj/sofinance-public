@@ -11,8 +11,8 @@ import { verifyCompoundPermit } from "../lib/compound-permit";
 import { simulateAndVerifySelectedTransaction } from "../lib/selected-simulation";
 import { readSelectedPositionState } from "../lib/selected-state";
 import { rpcConnection } from "../lib/rpc";
-import { readCompoundPositionState } from "../lib/compound-state";
-import { simulateAndVerifyCompound } from "../lib/compound-simulation";
+import { sendSignedCompoundTransaction } from "../lib/compound-send";
+import { CompoundSendError, notSentRetryMessage, sanitizePublicError } from "../lib/public-error";
 import type { CompoundSummary } from "../lib/compound-types";
 import { discoverRwaPairs } from "../lib/rwa-pairs";
 import { getPositionPerformance as readPositionPerformance } from "../lib/position-performance";
@@ -469,111 +469,58 @@ export async function submitSignedTransaction(input: SubmitSignedTransactionInpu
  * Safety: Same as submitSignedTransaction.
  */
 export async function submitCompoundTransaction(input: SubmitCompoundTransactionInput) {
-  const transaction = VersionedTransaction.deserialize(
-    Buffer.from(input.signedTransaction, "base64")
-  );
-  
-  // Verify permit
-  const jupiterApiKey = process.env.JUPITER_API_KEY || "";
-  if (
-    !verifyCompoundPermit(
-      jupiterApiKey,
-      {
-        wallet: input.wallet,
-        message: Buffer.from(transaction.message.serialize()).toString("base64"),
-        summary: input.summary,
-      },
-      input.permit
-    )
-  ) {
-    throw new Error("Transaction does not match simulated compound authorization");
-  }
-  
-  // Basic checks
-  if (
-    transaction.serialize().length > 1_232 ||
-    transaction.message.staticAccountKeys[0]?.toBase58() !== input.wallet ||
-    transaction.message.header.numRequiredSignatures !== 1 ||
-    transaction.signatures.length !== 1 ||
-    !transaction.signatures[0] ||
-    transaction.signatures[0].every((byte) => byte === 0)
-  ) {
-    throw new Error("Compound payer, signature, or transaction size mismatch");
-  }
-  
-  // Summary fields become trusted only after the complete HMAC is verified.
-  const summary = input.summary as CompoundSummary;
-  if (
-    summary.operation !== "compound" ||
-    !Number.isSafeInteger(summary.expiresAt) ||
-    summary.expiresAt <= Date.now() ||
-    !Number.isSafeInteger(summary.lastValidBlockHeight) ||
-    summary.lastValidBlockHeight <= 0 ||
-    summary.blockhash !== transaction.message.recentBlockhash ||
-    summary.state?.wallet !== input.wallet
-  ) {
-    throw new Error("Compound authorization type, wallet, or expiry mismatch");
-  }
+  try {
+    const transaction = VersionedTransaction.deserialize(
+      Buffer.from(input.signedTransaction, "base64")
+    );
 
-  // Re-read on-chain state and re-simulate, exactly like the web broadcast route.
-  const connection = rpcConnection();
-  const [height, state] = await Promise.all([
-    connection.getBlockHeight("confirmed"),
-    readCompoundPositionState(input.wallet, summary.positionMint, connection),
-  ]);
-  if (height > summary.lastValidBlockHeight) {
-    throw new Error("Compound blockhash expired");
-  }
-  if (
-    !state.eligible ||
-    state.positionAccount !== summary.positionAccount ||
-    state.poolId !== summary.poolId ||
-    state.tickLower !== summary.state.tickLower ||
-    state.tickUpper !== summary.state.tickUpper ||
-    state.liquidity !== summary.startingLiquidity ||
-    state.mintA !== summary.state.mintA ||
-    state.mintB !== summary.state.mintB ||
-    state.programA !== summary.state.programA ||
-    state.programB !== summary.state.programB ||
-    state.nftAta !== summary.state.nftAta ||
-    state.rangeSide !== summary.state.rangeSide
-  ) {
-    throw new Error("Compound position identity, liquidity, or availability status has changed");
-  }
-  const verified = await simulateAndVerifyCompound({
-    connection,
-    transaction,
-    state,
-    compoundAccounts: summary.compoundAccounts,
-    priorSources: summary.priorSources,
-    expectedLiquidity: BigInt(summary.liquidity),
-    maxSolDebitLamports: BigInt(summary.maxSolDebitLamports),
-    sigVerify: true,
-  });
-  if (verified.rewards.some((reward) => BigInt(reward.amount) > 0n)) {
-    throw new Error("Third reward yield appeared with no isolated swap path, cannot fully reinvest; transaction not sent");
-  }
-  if (
-    Date.now() >= summary.expiresAt ||
-    (await connection.getBlockHeight("confirmed")) > summary.lastValidBlockHeight
-  ) {
-    throw new Error("Compound transaction expired before broadcast");
-  }
+    const jupiterApiKey = process.env.JUPITER_API_KEY || "";
+    if (
+      !verifyCompoundPermit(
+        jupiterApiKey,
+        {
+          wallet: input.wallet,
+          message: Buffer.from(transaction.message.serialize()).toString("base64"),
+          summary: input.summary,
+        },
+        input.permit
+      )
+    ) {
+      throw new Error("Transaction does not match simulated compound authorization");
+    }
 
-  // Broadcast
-  const walletSignature = transaction.signatures[0]!;
-  const expectedSignature = bs58.encode(walletSignature);
-  const signature = await connection.sendRawTransaction(transaction.serialize(), {
-    skipPreflight: false,
-    preflightCommitment: "confirmed",
-    maxRetries: 3,
-  });
+    if (
+      transaction.serialize().length > 1_232 ||
+      transaction.message.staticAccountKeys[0]?.toBase58() !== input.wallet ||
+      transaction.message.header.numRequiredSignatures !== 1 ||
+      transaction.signatures.length !== 1 ||
+      !transaction.signatures[0] ||
+      transaction.signatures[0].every((byte) => byte === 0)
+    ) {
+      throw new Error("Compound payer, signature, or transaction size mismatch");
+    }
 
-  if (signature !== expectedSignature) {
-    throw new Error("RPC returned compound signature mismatch, please verify on-chain status");
+    const summary = input.summary as CompoundSummary;
+    if (
+      summary.operation !== "compound" ||
+      !Number.isSafeInteger(summary.expiresAt) ||
+      summary.expiresAt <= Date.now() ||
+      !Number.isSafeInteger(summary.lastValidBlockHeight) ||
+      summary.lastValidBlockHeight <= 0 ||
+      summary.blockhash !== transaction.message.recentBlockhash ||
+      summary.state?.wallet !== input.wallet
+    ) {
+      throw new Error("Compound authorization type, wallet, or expiry mismatch");
+    }
+
+    return await sendSignedCompoundTransaction(input.wallet, transaction, summary);
+  } catch (error) {
+    if (error instanceof CompoundSendError) {
+      const message = sanitizePublicError(error.cause ?? error, "Compound transaction broadcast failed");
+      throw new Error(error.sent === false ? notSentRetryMessage(message) : message);
+    }
+    throw new Error(notSentRetryMessage(sanitizePublicError(error, "Compound transaction broadcast failed")));
   }
-
-  return { signature };
 }
 
 /**

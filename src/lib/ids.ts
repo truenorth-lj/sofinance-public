@@ -13,5 +13,8 @@ export const SLIPPAGE_BPS = 50;
 // outputs so the pool price may drift by this much between quote and execution
 // without failing Raydium's PriceSlippageCheck (6017).
 export const DEFAULT_ADD_TOLERANCE_BPS = 100;
+// Compound harvest+swap shares the same busy CLMM. 1% (zap default) is not
+// enough for ~30–75s of SPCX/SPCXx-class activity between prepare and send.
+export const DEFAULT_COMPOUND_ADD_TOLERANCE_BPS = 300;
 export const MAX_ADD_TOLERANCE_BPS = 500;
 export const MIN_SOL_LAMPORTS = 10_000_000;
