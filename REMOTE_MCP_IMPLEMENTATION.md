@@ -309,7 +309,7 @@ NEXT_PUBLIC_REOWN_PROJECT_ID=<id>   # Existing wallet connect
 
 ### Original Requirements
 4. ✅ **Cursor can use SoFinance MCP without local SOLANA_RPC_URL / JUPITER_API_KEY**
-5. ✅ **prepare_* still returns signUrl pointing at production `/sign/...`**
+5. ✅ **prepare_* still returns signUrl pointing at production `/app/sign/...` (legacy `/sign/...` redirects)**
 6. ✅ **Auth token required for mutating/expensive tools**
 7. ✅ **README documents the remote setup as the recommended path**
 

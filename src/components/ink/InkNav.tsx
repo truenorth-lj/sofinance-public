@@ -5,6 +5,7 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { Wallet } from "lucide-react";
 import { INK_COLORS } from "./ink-tokens";
+import { APP_ROUTES } from "@/lib/public-urls";
 
 interface InkNavProps {
   wallet?: string | null;
@@ -16,22 +17,22 @@ interface InkNavProps {
 const short = (value: string) => `${value.slice(0, 5)}…${value.slice(-5)}`;
 
 const NAV_LINKS = [
-  { href: "/", label: "Positions" },
-  { href: "/position-performance", label: "Position performance" },
-  { href: "/rwa-pairs", label: "RWA pairs" },
-  { href: "/ai", label: "Use AI" },
+  { href: APP_ROUTES.home, label: "Positions", shortLabel: "Positions" },
+  { href: APP_ROUTES.positionPerformance, label: "Position performance", shortLabel: "Performance" },
+  { href: APP_ROUTES.rwaPairs, label: "RWA pairs", shortLabel: "RWA" },
+  { href: APP_ROUTES.ai, label: "Use AI", shortLabel: "AI" },
 ] as const;
 
 export function InkNav({ wallet, connected, onConnect, onDisconnect }: InkNavProps) {
   const pathname = usePathname();
 
   return (
-    <header className="flex items-center justify-between gap-4">
-      <Link href="/" className="flex items-center gap-3 transition-opacity hover:opacity-70">
-        <Image 
-          src="/logo.png" 
-          alt="SoFinance" 
-          width={40} 
+    <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <Link href={APP_ROUTES.home} className="flex items-center gap-3 transition-opacity hover:opacity-70">
+        <Image
+          src="/logo.png"
+          alt="SoFinance"
+          width={40}
           height={40}
           className="flex-shrink-0 rounded-lg"
         />
@@ -45,7 +46,7 @@ export function InkNav({ wallet, connected, onConnect, onDisconnect }: InkNavPro
         </div>
       </Link>
 
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         {NAV_LINKS.map((link) => {
           const isActive = pathname === link.href;
           return (
@@ -58,7 +59,8 @@ export function InkNav({ wallet, connected, onConnect, onDisconnect }: InkNavPro
                   : `border-${INK_COLORS.cardBorder} bg-transparent text-${INK_COLORS.textSecondary} hover:border-${INK_COLORS.buttonBorderHover} hover:bg-${INK_COLORS.buttonBgHover}`
               }`}
             >
-              {link.label}
+              <span className="sm:hidden">{link.shortLabel}</span>
+              <span className="hidden sm:inline">{link.label}</span>
             </Link>
           );
         })}
