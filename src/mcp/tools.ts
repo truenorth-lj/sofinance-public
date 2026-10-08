@@ -17,6 +17,7 @@ import type { CompoundSummary } from "../lib/compound-types";
 import { discoverRwaPairs } from "../lib/rwa-pairs";
 import { getPositionPerformance as readPositionPerformance } from "../lib/position-performance";
 import { createSignToken } from "../lib/pending-sign-token";
+import { buildSignUrl } from "../lib/public-urls";
 import type {
   ListPositionsInput,
   QuoteAddLiquidityInput,
@@ -199,11 +200,7 @@ export async function prepareTransaction(input: PrepareTransactionInput) {
     jupiterApiKey
   );
   
-  const baseUrl = (
-    process.env.NEXT_PUBLIC_APP_URL || 
-    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "")
-  ).replace(/\/$/, "");
-  const signUrl = baseUrl ? `${baseUrl}/sign/${signToken}` : `/sign/${signToken}`;
+  const signUrl = buildSignUrl(signToken);
 
   return {
     unsignedTransaction: unsignedTransactionBase64,
@@ -331,12 +328,8 @@ export async function prepareCompoundTransaction(input: QuoteCompoundInput) {
     jupiterApiKey
   );
   
-  const baseUrl = (
-    process.env.NEXT_PUBLIC_APP_URL || 
-    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "")
-  ).replace(/\/$/, "");
-  const signUrl = baseUrl ? `${baseUrl}/sign/${signToken}` : `/sign/${signToken}`;
-  
+  const signUrl = buildSignUrl(signToken);
+
   // The permit is an HMAC over the complete summary, so the complete object
   // must be returned and passed back unchanged to submit_compound_transaction.
   return {
