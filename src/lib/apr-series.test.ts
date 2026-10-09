@@ -3,6 +3,9 @@ import {
   calendarRange,
   calendarizeDailyApr,
   calendarizeValues,
+  isIncompleteUtcDay,
+  lastCompleteDayAprCopy,
+  lastCompleteUtcDayStart,
   lineSegments,
   maxFinite,
   utcDate,
@@ -58,5 +61,22 @@ describe("apr-series", () => {
   it("uses 0 as the default max when every value is null", () => {
     expect(maxFinite([null, undefined])).toBe(0);
     expect(maxFinite([null, 4, 1.5])).toBe(4);
+  });
+
+  it("treats the UTC day containing a fixed clock as incomplete", () => {
+    const midDay = END + 15 * 3600; // 2026-10-09 15:00 UTC
+    expect(lastCompleteUtcDayStart(midDay)).toBe(END - DAY);
+    expect(utcDate(lastCompleteUtcDayStart(midDay))).toBe("2026-10-08");
+    expect(isIncompleteUtcDay(END, midDay)).toBe(true);
+    expect(isIncompleteUtcDay(END - DAY, midDay)).toBe(false);
+    expect(isIncompleteUtcDay(END, END)).toBe(true);
+  });
+
+  it("labels the last complete UTC day for sparkline tooltip and visible text", () => {
+    expect(lastCompleteDayAprCopy("2026-10-08", 17.2)).toEqual({
+      label: "17.20% · 2026-10-08",
+      title: "last complete UTC day 2026-10-08: 17.20%",
+    });
+    expect(lastCompleteDayAprCopy("2026-10-08", 114.57).label).toBe("114.6% · 2026-10-08");
   });
 });
