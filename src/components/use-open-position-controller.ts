@@ -265,6 +265,8 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
       if (unsigned.message.staticAccountKeys[0]?.toBase58() !== wallet) {
         throw new Error("Transaction payer mismatch");
       }
+      setQuote(prepared.summary.quote);
+      setNow(Date.now());
       setSubmitStage("wallet");
       const signedByWallet = await signTransaction(unsigned);
       const originalMessage = unsigned.message.serialize();

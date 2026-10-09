@@ -14,6 +14,10 @@ export type BuildRoute = {
   addressesByLookupTableAddress: Record<string, string[]> | null;
 };
 
+export class JupiterNoRouteError extends Error {
+  constructor() { super("Jupiter has no available route for this account budget"); }
+}
+
 let nextJupiterRequest = 0;
 let requestQueue: Promise<unknown> = Promise.resolve();
 function pacedFetch(url: URL, key: string) {
@@ -27,30 +31,39 @@ function pacedFetch(url: URL, key: string) {
   return result;
 }
 
+function resolveConstraints(constraints?: JupiterRouteConstraints | number): JupiterRouteConstraints {
+  if (typeof constraints === "number") return { maxAccounts: constraints };
+  return constraints ?? { maxAccounts: 48 };
+}
+
 export async function buildRoute(
   wallet: string,
   inputMint: string,
   outputMint: string,
   amount: bigint,
   wrapAndUnwrapSol?: boolean,
-  constraints: JupiterRouteConstraints = { maxAccounts: 48 },
+  constraints: JupiterRouteConstraints | number = { maxAccounts: 48 },
 ): Promise<BuildRoute> {
   const key = process.env.JUPITER_API_KEY;
   if (!key) throw new Error("Server-side JUPITER_API_KEY not set, cannot obtain real-time quotes");
   if (amount <= 0n) throw new Error("Route amount must be greater than zero");
+  const resolved = resolveConstraints(constraints);
+  if (!Number.isInteger(resolved.maxAccounts) || resolved.maxAccounts < 1 || resolved.maxAccounts > 64) {
+    throw new Error("Invalid Jupiter route account budget");
+  }
   const url = new URL("https://api.jup.ag/swap/v2/build");
   url.search = new URLSearchParams({
-    inputMint,
-    outputMint,
-    amount: amount.toString(),
-    taker: wallet,
-    slippageBps: String(SLIPPAGE_BPS),
-    maxAccounts: String(constraints.maxAccounts),
+    inputMint, outputMint, amount: amount.toString(), taker: wallet,
+    slippageBps: String(SLIPPAGE_BPS), maxAccounts: String(resolved.maxAccounts),
   }).toString();
-  if (constraints.onlyDirectRoutes) url.searchParams.set("onlyDirectRoutes", "true");
+  if (resolved.onlyDirectRoutes) url.searchParams.set("onlyDirectRoutes", "true");
   if (wrapAndUnwrapSol !== undefined) url.searchParams.set("wrapAndUnwrapSol", String(wrapAndUnwrapSol));
   const response = await pacedFetch(url, key);
-  if (!response.ok) throw new Error(`Jupiter /build has no available routes (HTTP ${response.status})`);
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { error?: unknown } | null;
+    if (response.status === 400 && typeof body?.error === "string" && /^no routes found$/i.test(body.error)) throw new JupiterNoRouteError();
+    throw new Error(`Jupiter /build has no available routes (HTTP ${response.status})`);
+  }
   const route = await response.json() as BuildRoute;
   if (route.inputMint !== inputMint || route.outputMint !== outputMint || BigInt(route.inAmount) !== amount || route.swapMode !== "ExactIn" || route.slippageBps !== SLIPPAGE_BPS || BigInt(route.otherAmountThreshold) <= 0n || BigInt(route.otherAmountThreshold) > BigInt(route.outAmount) || !route.swapInstruction || !Array.isArray(route.routePlan) || route.routePlan.length === 0) throw new Error("Jupiter route content does not match request");
   if (!acceptableReportedPriceImpact(route.priceImpactPct, MAX_PRICE_IMPACT_BPS)) throw new Error(`Swap price impact invalid or exceeds ${MAX_PRICE_IMPACT_BPS / 100}% limit`);
