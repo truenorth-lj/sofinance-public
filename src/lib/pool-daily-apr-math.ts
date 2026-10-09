@@ -1,5 +1,5 @@
 import { estimateFeeAprPct } from "./rwa-pairing";
-import { utcDate, utcDayStart, type DailyAprPoint } from "./apr-series";
+import { isIncompleteUtcDay, utcDate, utcDayStart, type DailyAprPoint } from "./apr-series";
 
 export const POOL_DAILY_APR_LABEL = "Pool fee APR (daily, estimated)";
 
@@ -8,6 +8,7 @@ export const POOL_DAILY_APR_ASSUMPTIONS = [
   "Volume: GeckoTerminal daily OHLCV (currency=usd). TVL: Raydium /pools/line/liquidity (≤30 daily points).",
   "feeRate: Raydium /pools/info/ids. This is not Raydium-published daily feeApr (API v3 has no daily feeApr series).",
   "Ignores concentrated range, IL, rewards, and LP vs protocol fee split. Days missing volume or TVL are gaps — not interpolated.",
+  "The current incomplete UTC day is omitted (partial volume would understate APR).",
 ].join(" ");
 
 export type RaydiumLiquidityLinePoint = {
@@ -120,17 +121,10 @@ export function buildPoolDailyAprPoints(input: {
   const tvlByDay = new Map<number, number>();
   for (const row of input.tvl) tvlByDay.set(row.time, row.tvlUsd);
 
-  const today = utcDayStart(input.nowSeconds);
-  if (!volumeByDay.has(today) && input.snapshot.dayVolumeUsd !== null) {
-    volumeByDay.set(today, input.snapshot.dayVolumeUsd);
-  }
-  if (!tvlByDay.has(today) && input.snapshot.tvlUsd !== null && input.snapshot.tvlUsd > 0) {
-    tvlByDay.set(today, input.snapshot.tvlUsd);
-  }
-
   const days = new Set<number>([...volumeByDay.keys(), ...tvlByDay.keys()]);
   const points: DailyAprPoint[] = [];
   for (const time of [...days].sort((a, b) => a - b)) {
+    if (isIncompleteUtcDay(time, input.nowSeconds)) continue;
     const volumeUsd = volumeByDay.get(time) ?? null;
     const tvlUsd = tvlByDay.get(time) ?? null;
     const feesUsd =

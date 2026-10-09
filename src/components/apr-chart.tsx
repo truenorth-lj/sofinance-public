@@ -3,6 +3,9 @@
 import { useMemo, useState } from "react";
 import {
   calendarizeValues,
+  formatAprPct,
+  lastCompleteDayAprCopy,
+  lastCompleteUtcDayStart,
   lineSegments,
   maxFinite,
   type AprRangeDays,
@@ -18,12 +21,6 @@ export type AprChartSeries = {
 };
 
 const RANGES: AprRangeDays[] = [7, 30, 90];
-
-function formatPct(value: number) {
-  const abs = Math.abs(value);
-  const digits = abs >= 100 ? 1 : abs >= 10 ? 2 : 2;
-  return `${value.toFixed(digits)}%`;
-}
 
 function formatAxisDate(time: number, range: AprRangeDays) {
   const iso = new Date(time * 1000).toISOString().slice(0, 10);
@@ -44,13 +41,15 @@ export function AprLineChart({
   nowSeconds: number;
   emptyLabel?: string;
 }) {
+  const seriesEnd = lastCompleteUtcDayStart(nowSeconds);
+
   const available = useMemo(() => {
     const times = series.flatMap((item) => item.points.filter((p) => p.value !== null).map((p) => p.time));
     if (times.length === 0) return { has90: false };
     const min = Math.min(...times);
-    const spanDays = (nowSeconds - min) / 86_400;
+    const spanDays = (seriesEnd - min) / 86_400;
     return { has90: spanDays >= 30 };
-  }, [nowSeconds, series]);
+  }, [series, seriesEnd]);
 
   const [range, setRange] = useState<AprRangeDays>(30);
   const [hover, setHover] = useState<{ index: number; x: number; y: number } | null>(null);
@@ -59,9 +58,9 @@ export function AprLineChart({
     return series.map((item) => {
       const known = new Map<number, number | null>();
       for (const point of item.points) known.set(point.time, point.value);
-      return { ...item, values: calendarizeValues(known, nowSeconds, range) };
+      return { ...item, values: calendarizeValues(known, seriesEnd, range) };
     });
-  }, [nowSeconds, range, series]);
+  }, [range, series, seriesEnd]);
 
   const axis = ranged[0]?.values ?? [];
   const allValues = ranged.flatMap((item) => item.values.map((p) => p.value));
@@ -144,7 +143,7 @@ export function AprLineChart({
                 <g key={frac}>
                   <line x1={pad.l} y1={y} x2={width - pad.r} y2={y} stroke="#262626" strokeWidth="1" />
                   <text x={pad.l - 6} y={y + 3} textAnchor="end" fill="#737373" fontSize="10">
-                    {formatPct(value)}
+                    {formatAprPct(value)}
                   </text>
                 </g>
               );
@@ -234,7 +233,7 @@ export function AprLineChart({
                   <div key={item.id} className="mt-0.5 text-neutral-400">
                     {item.label}:{" "}
                     <span className="text-neutral-200">
-                      {point?.value === null || point?.value === undefined ? "—" : formatPct(point.value)}
+                      {point?.value === null || point?.value === undefined ? "—" : formatAprPct(point.value)}
                     </span>
                   </div>
                 );
@@ -270,7 +269,7 @@ export function AprSparkline({
 }) {
   const known = new Map<number, number | null>();
   for (const point of points) known.set(point.time, point.value);
-  const values = calendarizeValues(known, nowSeconds, 30);
+  const values = calendarizeValues(known, lastCompleteUtcDayStart(nowSeconds), 30);
   const segments = lineSegments(values);
   const width = 88;
   const height = 28;
@@ -278,6 +277,8 @@ export function AprSparkline({
   const xAt = (index: number) => (values.length <= 1 ? width / 2 : (index / (values.length - 1)) * width);
   const yAt = (value: number) => height - (value / yMax) * (height - 2) - 1;
   const latest = [...values].reverse().find((p) => p.value !== null);
+  const lastCopy =
+    latest && latest.value !== null ? lastCompleteDayAprCopy(latest.date, latest.value) : null;
 
   if (segments.length === 0) {
     return (
@@ -288,7 +289,7 @@ export function AprSparkline({
   }
 
   return (
-    <span className="inline-flex items-center gap-2" title={`${label}${latest ? ` · last ${latest.date} ${formatPct(latest.value as number)}` : ""}`}>
+    <span className="inline-flex items-center gap-2" title={`${label} · ${lastCopy?.title ?? ""}`.trim()}>
       <svg viewBox={`0 0 ${width} ${height}`} className="h-7 w-[88px]" aria-hidden>
         {segments.map((segment, segIndex) => {
           if (segment.length === 1) {
@@ -308,7 +309,7 @@ export function AprSparkline({
         })}
       </svg>
       <span className="tabular-nums text-[11px] text-neutral-300">
-        {latest?.value === null || latest?.value === undefined ? "—" : formatPct(latest.value)}
+        {lastCopy?.label ?? "—"}
       </span>
     </span>
   );
