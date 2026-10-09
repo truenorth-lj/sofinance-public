@@ -83,6 +83,8 @@ describe("MCP Tools", () => {
             decimalsA: 9,
             decimalsB: 6,
             feeTierBps: 1,
+            symbolA: "WSOL",
+            symbolB: "USDC",
             tickLower: -1000,
             tickUpper: 1000,
             tickCurrent: 0,
