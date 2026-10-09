@@ -5,6 +5,7 @@ import {
   initialWalletField,
   parseListedPositions,
   parsePerformanceQuery,
+  queryFromSearchParams,
   resetWalletFieldToConnected,
   resolveWalletField,
   showUseConnectedWallet,
@@ -28,6 +29,18 @@ describe("parsePerformanceQuery", () => {
       mint: "explicit",
       wallet: connected,
     });
+  });
+
+  it("reads mint and wallet from a live URLSearchParams object", () => {
+    expect(
+      queryFromSearchParams(
+        new URLSearchParams("mint=33333333333333333333333333333333&wallet=22222222222222222222222222222222"),
+      ),
+    ).toEqual({
+      mint: "33333333333333333333333333333333",
+      wallet: "22222222222222222222222222222222",
+    });
+    expect(queryFromSearchParams(new URLSearchParams())).toEqual({ mint: "", wallet: "" });
   });
 
   it("treats missing or blank query values as empty", () => {
