@@ -63,6 +63,7 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
   const [quote, setQuote] = useState<OpenPositionQuote | null>(null);
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [quoteError, setQuoteError] = useState("");
+  const [quoteRevision, setQuoteRevision] = useState(0);
   const [submitStage, setSubmitStage] = useState<OpenSubmitStage>(null);
   const [error, setError] = useState("");
   const [signature, setSignature] = useState("");
@@ -149,6 +150,9 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
     const raw = parsedAmount;
     const requestId = ++quoteRequestRef.current;
     const aborter = new AbortController();
+    let expiryTimer: number | undefined;
+    const currentRequest = () => requestId === quoteRequestRef.current &&
+      !aborter.signal.aborted && walletRef.current === wallet;
     const timer = window.setTimeout(() => {
       const load = async () => {
         setQuoteLoading(true);
@@ -166,18 +170,23 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
             signal: aborter.signal,
           });
           const data = await response.json() as OpenPositionQuote | ApiError;
-          if (requestId !== quoteRequestRef.current) return;
+          if (!currentRequest()) return;
           if (!response.ok) throw new Error((data as ApiError).error);
           const current = data as OpenPositionQuote;
           if (current.requested !== raw.toString()) throw new Error("Quote and current input mismatch, please re-enter amount");
           setQuote(current);
           setNow(Date.now());
+          expiryTimer = window.setTimeout(() => {
+            if (!currentRequest()) return;
+            setNow(Date.now());
+            setQuoteRevision((revision) => revision + 1);
+          }, Math.max(1_000, current.expiresAt - Date.now()));
         } catch (caught) {
-          if (requestId === quoteRequestRef.current && !aborter.signal.aborted) {
+          if (currentRequest()) {
             setQuoteError(caught instanceof Error ? caught.message : "Quote failed");
           }
         } finally {
-          if (requestId === quoteRequestRef.current) setQuoteLoading(false);
+          if (currentRequest()) setQuoteLoading(false);
         }
       };
       void load();
@@ -185,32 +194,42 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
     return () => {
       aborter.abort();
       window.clearTimeout(timer);
+      if (expiryTimer !== undefined) window.clearTimeout(expiryTimer);
     };
-  }, [amount, busy, formError, inputKind, inputMint, maxPrice, minPrice, pair, parsedAmount, rangePreset, selectedAsset, submitStage, wallet]);
+  }, [amount, busy, formError, inputKind, inputMint, maxPrice, minPrice, pair, parsedAmount, quoteRevision, rangePreset, selectedAsset, submitStage, wallet]);
 
-  const changeAmount = (value: string) => {
+  const clearQuote = () => {
     quoteRequestRef.current += 1;
-    setAmount(value);
     setQuote(null);
+    setQuoteLoading(false);
     setError("");
     setQuoteError("");
+  };
+
+  const changeAmount = (value: string) => {
+    clearQuote();
+    setAmount(value);
   };
 
   const chooseAsset = (kind: "native" | "token", mint: string) => {
-    quoteRequestRef.current += 1;
+    clearQuote();
     setInputKind(kind);
     setInputMint(mint);
-    setQuote(null);
-    setError("");
-    setQuoteError("");
   };
 
   const choosePreset = (preset: OpenRangePreset) => {
-    quoteRequestRef.current += 1;
+    clearQuote();
     setRangePreset(preset);
-    setQuote(null);
-    setError("");
-    setQuoteError("");
+  };
+
+  const changeMinPrice = (value: string) => { clearQuote(); setMinPrice(value); };
+  const changeMaxPrice = (value: string) => { clearQuote(); setMaxPrice(value); };
+  const canRefreshQuote = !busy && submitStage !== "confirmed" && Boolean(pair && wallet && inputMint &&
+    selectedAsset?.eligible && parsedAmount !== null && !formError);
+  const refreshQuote = () => {
+    if (!canRefreshQuote || quoteLoading) return;
+    clearQuote();
+    setQuoteRevision((revision) => revision + 1);
   };
 
   const fillMax = () => {
@@ -219,7 +238,7 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
   };
 
   const signAndSend = useCallback(async () => {
-    if (!pair || !wallet || !inputMint || !quote || !fresh || busy || submittingRef.current || quoteLoading) return;
+    if (!pair || !wallet || !inputMint || !quote || !fresh || !quote.passesFloor || busy || submittingRef.current || quoteLoading) return;
     submittingRef.current = true;
     setSubmitStage("preparing");
     setError("");
@@ -300,13 +319,22 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
         ? (selectedAsset.reason || "Selected asset is not eligible")
         : null;
 
-  const actionDisabled = busy || quoteLoading || !quote || !fresh || !quote.passesFloor || Boolean(walletBlockedReason);
+  const actionBlockedReason = walletBlockedReason || formError ||
+    (quoteLoading ? "Fetching quote…"
+      : quoteError ? quoteError
+        : parsedAmount === null ? "Enter an amount to get a quote"
+          : !quote ? "Waiting for quote…"
+            : !fresh ? "Quote expired, refreshing…"
+              : !quote.passesFloor ? `Estimated immediate resale is below the ${(quote.floorBps / 100).toFixed(1)}% minimum. Try a different input asset or amount.`
+                : null);
+  const actionDisabled = busy || Boolean(actionBlockedReason);
 
   return {
     wallet, connected, connect, inputAssets, selectedAsset, inputMint, inputKind,
     amount, rangePreset, minPrice, maxPrice, quote, quoteLoading, quoteError: formError || quoteError, error,
     submitStage, signature, positionMint, presets: OPEN_RANGE_PRESETS, fresh, busy,
-    actionDisabled, walletBlockedReason, changeAmount, chooseAsset, choosePreset,
-    setMinPrice, setMaxPrice, fillMax, signAndSend,
+    actionDisabled, actionBlockedReason, walletBlockedReason, changeAmount, chooseAsset, choosePreset,
+    setMinPrice: changeMinPrice, setMaxPrice: changeMaxPrice, fillMax, signAndSend,
+    now, refreshQuote, canRefreshQuote,
   };
 }
