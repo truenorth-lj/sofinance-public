@@ -160,13 +160,13 @@ describe("open-position quote validation", () => {
     )).rejects.toThrow(/Price impact/);
   });
 
-  it("uses only forward Jupiter routes, without requiring a reverse resale route", async () => {
+  it("quotes reverse resale so the floor fields stay populated without blocking the quote", async () => {
     vi.mocked(readOpenPoolState).mockResolvedValue(state({ inputMint: mintB, inputDecimals: 9, inputKind: "token" }));
     vi.mocked(buildRoute).mockImplementation(async (_wallet, inputMint, outputMint, spend) => {
-      if (inputMint !== mintB || outputMint !== mintA) throw new Error("No reverse resale route available");
+      const out = inputMint === mintB && outputMint === mintA ? spend / 1000n : spend;
       return {
-        inputMint, outputMint, inAmount: spend.toString(), outAmount: (spend / 1000n).toString(),
-        otherAmountThreshold: (spend / 1000n).toString(), swapMode: "ExactIn", slippageBps: 50,
+        inputMint, outputMint, inAmount: spend.toString(), outAmount: out.toString(),
+        otherAmountThreshold: out.toString(), swapMode: "ExactIn", slippageBps: 50,
         priceImpactPct: "0", routePlan: [], setupInstructions: [], swapInstruction: {},
         cleanupInstruction: null, otherInstructions: [], addressesByLookupTableAddress: {},
       } as never;
@@ -176,7 +176,50 @@ describe("open-position quote validation", () => {
       { preset: "custom", minPrice: "1", maxPrice: "2" });
     expect(quote.minOutA).toBe("100000");
     expect(quote.maxImpactBps).toBe(500);
-    expect(quote).not.toHaveProperty("floorBps");
-    expect(buildRoute).toHaveBeenCalledTimes(2);
+    expect(quote.floorBps).toBe(9900);
+    expect(quote.passesFloor).toBe(false);
+    expect(quote.achievedResaleBps).toBe(10);
+    expect(buildRoute).toHaveBeenCalledTimes(3);
   });
+  it("sizes sequential LP from conservative primary output and applies the same account budget to both probes and swaps", async () => {
+    const firstMint = Keypair.generate().publicKey.toBase58(), secondMint = Keypair.generate().publicKey.toBase58();
+    const snapshot = state({ mintA: firstMint, mintB: secondMint, decimalsA: 6, decimalsB: 6,
+      inputMint: mintA, inputDecimals: 6, fetchedAt: Date.now(), price: "1" });
+    vi.mocked(buildRoute).mockImplementation(async (_wallet, inputMint, outputMint, spend) => ({
+      inputMint, outputMint, inAmount: spend.toString(), outAmount: spend.toString(),
+      otherAmountThreshold: (spend * 99n / 100n).toString(), swapMode: "ExactIn", slippageBps: 50,
+      priceImpactPct: "0.001", routePlan: [], setupInstructions: [], swapInstruction: {},
+      cleanupInstruction: null, otherInstructions: [], addressesByLookupTableAddress: {},
+    } as never));
+    const { quote, legs } = await getOpenPositionQuoteBundle(wallet,
+      { poolId, inputMint: mintA, inputKind: "token" }, "0.1", { preset: "standard" }, 9900, 100, 24, snapshot, "sequential");
+    expect(legs[0]!.spend).toBe(100000n);
+    expect(legs[1]!.inputMint).toBe(firstMint);
+    expect(legs[0]!.minOut + legs[1]!.spend).toBe(99000n);
+    expect(BigInt(quote.amountMaxA)).toBeLessThanOrEqual(legs[0]!.minOut);
+    expect(BigInt(quote.amountMaxB)).toBeLessThanOrEqual(legs[1]!.minOut);
+    expect(buildRoute).toHaveBeenCalledWith(wallet, firstMint, secondMint, expect.any(BigInt), false, 24);
+    expect(vi.mocked(buildRoute).mock.calls.every(call => call[5] === 24 && call[4] === false)).toBe(true);
+    expect(readOpenPoolState).not.toHaveBeenCalled();
+  });
+
+  it("rejects combined impact above 5% even when each sequential route reports less than 5%", async () => {
+    const firstMint = Keypair.generate().publicKey.toBase58(), secondMint = Keypair.generate().publicKey.toBase58();
+    const snapshot = state({ mintA: firstMint, mintB: secondMint, decimalsA: 6, decimalsB: 6,
+      inputMint: mintA, inputDecimals: 6, fetchedAt: Date.now(), price: "1" });
+    vi.mocked(buildRoute).mockImplementation(async (_wallet, inputMint, outputMint, spend) => ({
+      inputMint, outputMint, inAmount: spend.toString(), outAmount: spend.toString(),
+      otherAmountThreshold: spend.toString(), priceImpactPct: "0.03", routePlan: [],
+    } as never));
+    await expect(getOpenPositionQuoteBundle(wallet, { poolId, inputMint: mintA, inputKind: "token" },
+      "0.1", { preset: "standard" }, 9900, 100, 24, snapshot, "sequential")).rejects.toThrow("Combined sequential swap price impact exceeds 5%");
+  });
+
+  it("does not extend the lifetime of a reused pool snapshot", async () => {
+    const snapshot = state({ fetchedAt: Date.now() - 75001 });
+    await expect(getOpenPositionQuoteBundle(wallet, { poolId, inputMint: mintA, inputKind: "token" },
+      "0.1", { preset: "standard" }, 9900, 100, 24, snapshot)).rejects.toThrow("snapshot expired");
+    expect(buildRoute).not.toHaveBeenCalled();
+  });
+
 });
