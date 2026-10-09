@@ -21,7 +21,9 @@ export default function PositionPerformancePage() {
           Prove holding-period return and realized fee APR from Raydium CLMM on-chain events
           (open / increase / decrease) plus current equity — not the pool&apos;s 24h feeApr.
           Same-asset RWA wrap pairs prefer token-equivalent (TE) in the plain/base ticker via
-          current tick mid; raw A/B inventory always shown. USD is secondary. Read-only; no database.
+          current tick mid; raw A/B inventory always shown. USD is secondary. The daily chart is
+          estimated pool fee APR (Raydium TVL history × GeckoTerminal volume), plus sparse
+          on-chain realized fee APR points — not interpolated. Read-only; no database.
         </p>
       </div>
 

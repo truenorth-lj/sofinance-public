@@ -34,6 +34,10 @@ import {
 } from "./position-performance-math";
 import { matchWrapPairShape } from "./rwa-pairing";
 import { getTokenMetadata } from "./token-metadata";
+import {
+  buildRealizedFeeAprSeries,
+  type RealizedFeeAprSeries,
+} from "./realized-fee-apr-series";
 
 const POSITION_DISCRIMINATOR = createHash("sha256").update("account:PersonalPositionState").digest().subarray(0, 8);
 const POOL_DISCRIMINATOR = createHash("sha256").update("account:PoolState").digest().subarray(0, 8);
@@ -99,6 +103,8 @@ export type PositionPerformanceResult = {
   };
   method: string;
   assumptions: string;
+  /** Sparse cumulative realized fee APR from already-parsed events. Not a daily fill. */
+  realizedFeeAprSeries: RealizedFeeAprSeries;
 };
 
 export type GetPositionPerformanceOptions = {
@@ -426,6 +432,19 @@ export async function getPositionPerformance(
 
   const assumptions = [ASSUMPTIONS_LABEL, TOKEN_NATIVE_ASSUMPTIONS].join(" ");
 
+  const realizedFeeAprSeries = buildRealizedFeeAprSeries({
+    history,
+    positionMint,
+    poolId: poolId.toBase58(),
+    evaluatedAt: nowSeconds,
+    uncollectedFees: uncollected,
+    priceUsdA,
+    priceUsdB,
+    decimalsA: pool.mintDecimalsA,
+    decimalsB: pool.mintDecimalsB,
+    openedAt,
+  });
+
   return {
     wallet: options.wallet ?? null,
     ownsNft,
@@ -470,6 +489,7 @@ export async function getPositionPerformance(
     },
     method: PERFORMANCE_METHOD,
     assumptions,
+    realizedFeeAprSeries,
   };
 }
 

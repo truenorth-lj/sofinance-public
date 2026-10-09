@@ -47,7 +47,7 @@ export function CompoundPanel({ controller: c, tokenLabel = short }: {
         state && !c.hasFees ? "Currently no yield available to compound" : null;
   const simulationDetails = displaySummary && <div className="mt-5 space-y-3 rounded-2xl border border-neutral-800/60 bg-neutral-900/30 p-4 text-sm">
       <h3 className="font-semibold text-neutral-100">{preview ? "This transaction simulation" : "Previous transaction simulation record"}</h3>
-      {!preview && <p className="text-xs text-neutral-500">This is previous transaction estimate; clicking &quot;One-click compound&quot; will re-read yield and simulate.</p>}
+      {!preview && <p className="text-xs text-neutral-500">{'This is previous transaction estimate; clicking "One-click compound" will re-read yield and simulate.'}</p>}
       <p className="text-neutral-300">This harvest: {amount(displaySummary.simulatedHarvest.a, displaySummary.state.decimalsA)} {tokenLabel(displaySummary.state.mintA)}  +  {amount(displaySummary.simulatedHarvest.b, displaySummary.state.decimalsB)} {tokenLabel(displaySummary.state.mintB)}</p>
       {(displaySummary.priorSources?.length || 0) > 0 && <div className="space-y-1 text-xs text-neutral-400"><p>Prior yield to be reinvested together:</p>{displaySummary.priorSources?.map((source) => <p key={source.address}>
         {amount(source.amount, source.mint === displaySummary.state.mintA ? displaySummary.state.decimalsA : displaySummary.state.decimalsB)} {tokenLabel(source.mint)} · original transaction {short(source.sourceSignature)}
@@ -74,7 +74,7 @@ export function CompoundPanel({ controller: c, tokenLabel = short }: {
         <YieldItem title={`Pending trading fees · ${b}`} value={`${amount(state.fees.b, state.decimalsB)} ${b}`}
           usdValue={state.pricing ? calculateUsdValue(state.fees.b, state.decimalsB, state.pricing.priceUsdB) : null} />
       </div>
-      <p className="mt-2 text-xs leading-5 text-neutral-600">Pending amounts are current on-chain estimates; after clicking &quot;One-click compound&quot; will re-read, simulate harvest, swap and increase. Only uses assets in yield accounts.</p>
+      <p className="mt-2 text-xs leading-5 text-neutral-600">{'Pending amounts are current on-chain estimates; after clicking "One-click compound" will re-read, simulate harvest, swap and increase. Only uses assets in yield accounts.'}</p>
       {c.priorReceipts.length > 0 && <p className="mt-3 text-xs leading-5 text-neutral-300">Will verify this NFT&apos;s {c.priorReceipts.length} prior yield account records, and swap and reinvest yield still in accounts together; actual available amount subject to on-chain query.</p>}
       {state.rewards.some((reward) => reward.estimatedAmount !== "0") && <div className="mt-4 space-y-2 rounded-xl border border-neutral-800/40 bg-neutral-900/30 p-4">
         <h3 className="text-xs font-medium text-neutral-400">Additional rewards</h3>

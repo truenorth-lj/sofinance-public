@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { ArrowUpRight, LoaderCircle, RefreshCw } from "lucide-react";
+import { PoolAprSparkline } from "./pool-daily-apr-panel";
 
 type RwaPair = {
   poolAddress: string;
@@ -120,8 +121,9 @@ export function RwaPairsPanel() {
 
       {data && (
         <p className="mt-4 text-[11px] leading-5 text-neutral-600">
-          {data.pairingRuleSummary} Yield: {data.estimatedFeeAprLabel} Scanned {data.scannedPools} pools
-          ({data.pagesFetched} pages). Sorted by estimated fee APR.
+          {data.pairingRuleSummary} Yield: {data.estimatedFeeAprLabel} Daily APR sparklines (top 8 rows) use
+          GeckoTerminal volume × Raydium feeRate ÷ Raydium daily TVL, cached 1h — not Raydium-published daily
+          feeApr. Scanned {data.scannedPools} pools ({data.pagesFetched} pages). Sorted by estimated fee APR.
         </p>
       )}
 
@@ -148,6 +150,7 @@ export function RwaPairsPanel() {
               <tr className="border-b border-neutral-800/60">
                 <th className="pb-3 pr-4 font-semibold text-neutral-400">Pair</th>
                 <th className="pb-3 pr-4 font-semibold text-neutral-400">Est. fee APR</th>
+                <th className="pb-3 pr-4 font-semibold text-neutral-400">Daily APR</th>
                 <th className="pb-3 pr-4 font-semibold text-neutral-400">Raydium APR</th>
                 <th className="pb-3 pr-4 font-semibold text-neutral-400">TVL</th>
                 <th className="pb-3 pr-4 font-semibold text-neutral-400">24h vol</th>
@@ -157,7 +160,7 @@ export function RwaPairsPanel() {
               </tr>
             </thead>
             <tbody>
-              {data.pairs.map((pair) => (
+              {data.pairs.map((pair, index) => (
                 <tr key={pair.poolAddress} className="border-b border-neutral-800/30 align-top">
                   <td className="py-4 pr-4">
                     <div className="font-semibold text-neutral-100">
@@ -168,6 +171,9 @@ export function RwaPairsPanel() {
                     </div>
                   </td>
                   <td className="py-4 pr-4 font-semibold tabular-nums text-neutral-100">{pct(pair.estimatedFeeAprPct)}</td>
+                  <td className="py-4 pr-4">
+                    {index < 8 ? <PoolAprSparkline poolId={pair.poolAddress} /> : <span className="text-neutral-600">—</span>}
+                  </td>
                   <td className="py-4 pr-4 tabular-nums text-neutral-300">{pct(pair.raydiumFeeApr24h)}</td>
                   <td className="py-4 pr-4 tabular-nums text-neutral-300">{money(pair.tvlUsd)}</td>
                   <td className="py-4 pr-4 tabular-nums text-neutral-300">{money(pair.volume24hUsd)}</td>

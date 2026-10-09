@@ -11,6 +11,7 @@ import {
 } from "../lib/position-performance-form";
 import { PositionSelect } from "./position-select";
 import { useTokenMetadata } from "./use-token-metadata";
+import { PoolDailyAprChart } from "./pool-daily-apr-panel";
 
 type UiSide = { a: number; b: number };
 
@@ -95,6 +96,11 @@ type PerformanceResponse = {
   pricing: { source: string; label: string; priceUsdA: number | null; priceUsdB: number | null };
   assumptions: string;
   method: string;
+  realizedFeeAprSeries?: {
+    label: string;
+    assumptions: string;
+    points: Array<{ time: number; date: string; aprPct: number | null; kind: string }>;
+  };
   error?: string;
 };
 
@@ -124,9 +130,11 @@ const uiAmount = (raw: string, decimals: number) => {
 export function PositionPerformancePanel({
   initialMint = "",
   initialWallet = "",
+  previewPoolId = "",
 }: {
   initialMint?: string;
   initialWallet?: string;
+  previewPoolId?: string;
 }) {
   const { address, connected } = useWalletConnection();
   const connectedAddress = connected ? address : undefined;
@@ -448,6 +456,32 @@ export function PositionPerformancePanel({
             <div className="mt-2 text-neutral-500">{data.pricing.label}</div>
             <div className="mt-1 text-neutral-600">{data.assumptions}</div>
           </div>
+        </div>
+      )}
+
+      {(data?.poolId || previewPoolId) && (
+        <div className="mt-6">
+          <PoolDailyAprChart
+            poolId={data?.poolId || previewPoolId}
+            nowSeconds={
+              data?.evaluatedAtIso
+                ? Math.floor(new Date(data.evaluatedAtIso).getTime() / 1000) || undefined
+                : undefined
+            }
+            overlay={
+              data?.realizedFeeAprSeries
+                ? {
+                    label: data.realizedFeeAprSeries.label,
+                    assumptions: data.realizedFeeAprSeries.assumptions,
+                    points: data.realizedFeeAprSeries.points.map((point) => ({
+                      time: point.time,
+                      date: point.date,
+                      value: point.aprPct,
+                    })),
+                  }
+                : undefined
+            }
+          />
         </div>
       )}
     </section>
