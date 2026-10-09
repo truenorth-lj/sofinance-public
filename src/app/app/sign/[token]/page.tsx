@@ -8,6 +8,7 @@ import { LoaderCircle, CircleAlert, CheckCircle2 } from "lucide-react";
 import { InkShell, InkCard, InkNav } from "@/components/ink";
 import { useWalletConnection } from "@/components/wallet-connection";
 import { notSentRetryMessage } from "@/lib/public-error";
+import { preserveExtraSignatures } from "@/lib/open-signatures";
 import type { PendingSignPayload } from "@/lib/pending-sign-token";
 
 type Status = "loading" | "expired" | "wallet-mismatch" | "ready" | "signing" | "submitting" | "success" | "error";
@@ -84,20 +85,28 @@ export default function SignPage() {
         throw new Error("Transaction payer mismatch");
       }
       
-      const signed = await signTransaction(unsigned);
+      const signedByWallet = await signTransaction(unsigned);
       
       const originalMessage = unsigned.message.serialize();
-      const signedMessage = signed.message.serialize();
+      const signedMessage = signedByWallet.message.serialize();
       if (
         signedMessage.length !== originalMessage.length ||
         signedMessage.some((byte, index) => byte !== originalMessage[index])
       ) {
         throw new Error("Wallet modified transaction content");
       }
+
+      const signed = payload.kind === "open-position"
+        ? preserveExtraSignatures(unsigned, signedByWallet)
+        : signedByWallet;
       
       const signatureBytes = signed.signatures[0];
       if (!signatureBytes || signatureBytes.every((byte) => byte === 0)) {
         throw new Error("Invalid signature from wallet");
+      }
+      if (payload.kind === "open-position" &&
+        (!signed.signatures[1] || signed.signatures[1].every((byte) => byte === 0))) {
+        throw new Error("Position NFT mint partial signature missing after wallet sign");
       }
       
       const txSignature = bs58.encode(signatureBytes);
@@ -105,9 +114,11 @@ export default function SignPage() {
       
       setSignStatus("submitting");
       
-      const submitPath = payload.kind === "add-liquidity" 
-        ? "/api/selected-broadcast" 
-        : "/api/compound-broadcast";
+      const submitPath = payload.kind === "add-liquidity"
+        ? "/api/selected-broadcast"
+        : payload.kind === "open-position"
+          ? "/api/open-broadcast"
+          : "/api/compound-broadcast";
       
       const submitBody = payload.kind === "add-liquidity"
         ? { signedTransaction, ...payload.submitArgs }
@@ -172,7 +183,11 @@ export default function SignPage() {
     }
   })();
 
-  const kindLabel = payload?.kind === "add-liquidity" ? "Add Liquidity" : "Compound";
+  const kindLabel = payload?.kind === "add-liquidity"
+    ? "Add Liquidity"
+    : payload?.kind === "open-position"
+      ? "Open position"
+      : "Compound";
   const showSign = status === "ready" && connected && wallet === payload?.wallet;
   const showConnect = status === "ready" && !connected;
   const isBusy = status === "signing" || status === "submitting";
@@ -243,6 +258,23 @@ export default function SignPage() {
                     {short((payload.submitArgs.summary as { positionMint: string }).positionMint)}
                   </span>
                 </div>
+              )}
+
+              {payload.kind === "open-position" && (
+                <>
+                  <div className="flex items-start justify-between gap-4 text-sm">
+                    <span className="text-neutral-500">Pool</span>
+                    <span className="font-mono text-xs text-neutral-300">
+                      {short((payload.submitArgs.summary as { poolId: string }).poolId)}
+                    </span>
+                  </div>
+                  <div className="flex items-start justify-between gap-4 text-sm">
+                    <span className="text-neutral-500">New position NFT</span>
+                    <span className="font-mono text-xs text-neutral-300">
+                      {short((payload.submitArgs.summary as { nftMint: string }).nftMint)}
+                    </span>
+                  </div>
+                </>
               )}
               
               <div className="flex items-start justify-between gap-4 text-sm">

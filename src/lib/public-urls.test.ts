@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { APP_ROUTES, SIGN_PATH, buildSignPath, buildSignUrl, getPublicBaseUrl } from "./public-urls";
+import { APP_ROUTES, SIGN_PATH, buildOpenPositionUrl, buildSignPath, buildSignUrl, getPublicBaseUrl } from "./public-urls";
 
 describe("public app URLs", () => {
   const originalAppUrl = process.env.NEXT_PUBLIC_APP_URL;
@@ -35,5 +35,13 @@ describe("public app URLs", () => {
 
     delete process.env.VERCEL_URL;
     expect(buildSignUrl("tok")).toBe("/app/sign/tok");
+  });
+
+  it("builds an open-position deep link under /app/rwa-pairs", () => {
+    delete process.env.NEXT_PUBLIC_APP_URL;
+    delete process.env.VERCEL_URL;
+    expect(buildOpenPositionUrl("Pool1111111111111111111111111111111111111")).toBe(
+      "/app/rwa-pairs?pool=Pool1111111111111111111111111111111111111&open=1",
+    );
   });
 });

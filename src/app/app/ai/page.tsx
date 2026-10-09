@@ -74,9 +74,9 @@ export default function AIManagementPage() {
                     Step 3: Start using AI agents
                   </h2>
                   <p className="mt-2 text-sm leading-6 text-neutral-400">
-                    Your AI agent will be able to list your positions, quote transactions, and prepare
-                    unsigned transactions. When ready to sign, open the provided link with your wallet
-                    connected for one-click approval.
+                    Your AI agent will be able to list positions and RWA pairs, quote add-liquidity /
+                    compound / open-position, and prepare unsigned transactions (12 MCP tools). When
+                    ready to sign, open the provided link with your wallet connected for one-click approval.
                   </p>
                 </div>
               </div>
@@ -148,7 +148,7 @@ export default function AIManagementPage() {
                       <p>
                         Your AI agent uses the MCP configuration to call the remote SoFinance API
                         at <code className="rounded bg-neutral-800 px-1.5 py-0.5">/api/mcp</code> over
-                        HTTPS. No local RPC or API keys needed.
+                        HTTPS (12 tools, including quote/prepare/submit_open_position). No local RPC or API keys needed.
                       </p>
                     </div>
                     <div className="flex gap-3">

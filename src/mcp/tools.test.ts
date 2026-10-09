@@ -37,6 +37,23 @@ vi.mock("../lib/compound-permit", () => ({
   verifyCompoundPermit: vi.fn(() => true),
 }));
 
+vi.mock("../lib/open-quote", () => ({
+  getOpenPositionQuoteBundle: vi.fn(),
+}));
+
+vi.mock("../lib/open-atomic", () => ({
+  buildAndSimulateOpenPosition: vi.fn(),
+}));
+
+vi.mock("../lib/open-permit", () => ({
+  issueOpenPositionPermit: vi.fn(() => "mock-open-permit"),
+  verifyOpenPositionPermit: vi.fn(() => true),
+}));
+
+vi.mock("../lib/rwa-pairs", () => ({
+  discoverRwaPairs: vi.fn(),
+}));
+
 vi.mock("../lib/rpc", () => ({
   rpcConnection: vi.fn(() => ({
     getBlockHeight: vi.fn(() => Promise.resolve(1000)),
@@ -56,11 +73,17 @@ import {
   prepareTransaction,
   quoteCompound,
   prepareCompoundTransaction,
+  quoteOpenPosition,
+  prepareOpenPosition,
+  listRwaPairs,
 } from "./tools";
 import { discoverWallet } from "../lib/wallet-discovery";
 import { getSelectedQuoteBundle } from "../lib/selected-quote";
 import { buildAndSimulateSelectedZap } from "../lib/selected-atomic";
 import { buildAndSimulateCompound } from "../lib/compound-atomic";
+import { getOpenPositionQuoteBundle } from "../lib/open-quote";
+import { buildAndSimulateOpenPosition } from "../lib/open-atomic";
+import { discoverRwaPairs } from "../lib/rwa-pairs";
 
 describe("MCP Tools", () => {
   beforeEach(() => {
@@ -417,6 +440,130 @@ describe("MCP Tools", () => {
       // The permit covers the complete summary, so it must be returned unchanged
       expect(result.summary).toEqual(mockSummary);
       expect(result.instructions).toBeDefined();
+    });
+  });
+
+  describe("listRwaPairs", () => {
+    it("includes openPositionUrl and recommendedRanges on each pair", async () => {
+      const poolId = "So11111111111111111111111111111111111111112";
+      vi.mocked(discoverRwaPairs).mockResolvedValue({
+        pairingRuleSummary: "rule",
+        estimatedFeeAprLabel: "label",
+        source: "raydium",
+        fetchedAt: "now",
+        scannedPools: 1,
+        pagesFetched: 1,
+        pairs: [{
+          poolAddress: poolId,
+          mintA: poolId,
+          mintB: poolId,
+          symbolA: "FOOx",
+          symbolB: "FOO",
+          nameA: "FOOx",
+          nameB: "FOO",
+          baseSymbol: "FOO",
+          wrappedSymbol: "FOOx",
+          plainSymbol: "FOO",
+          wrapKind: "suffix-x",
+          relatedness: "same-asset",
+          qualificationA: "jupiter",
+          qualificationB: "jupiter",
+          preferredTags: true,
+          jupiterTagsA: ["stocks"],
+          jupiterTagsB: ["stocks"],
+          feeRate: 0.0004,
+          feeTierBps: 4,
+          tvlUsd: 1,
+          volume24hUsd: 1,
+          fees24hUsd: 1,
+          raydiumFeeApr24h: 1,
+          estimatedFeeAprPct: 1,
+          estimatedFeeAprLabel: "label",
+          token2022A: false,
+          token2022B: false,
+          freezeRiskA: false,
+          freezeRiskB: false,
+          freezeRisk: false,
+        }],
+      } as never);
+
+      const result = await listRwaPairs({ minTvl: 0, maxPages: 1, sortBy: "estimatedFeeApr" });
+      expect(result.pairs[0]?.openPositionUrl).toContain(`/app/rwa-pairs?pool=${poolId}&open=1`);
+      expect(result.pairs[0]?.recommendedRanges.some((item: { id: string }) => item.id === "standard")).toBe(true);
+    });
+  });
+
+  describe("quoteOpenPosition", () => {
+    it("returns the open-position quote", async () => {
+      const poolId = "So11111111111111111111111111111111111111112";
+      vi.mocked(getOpenPositionQuoteBundle).mockResolvedValue({
+        quote: {
+          wallet: "11111111111111111111111111111111",
+          poolId,
+          requested: "1000000",
+          tickLower: -30,
+          tickUpper: 30,
+          rangeSide: "inside",
+          passesFloor: true,
+        },
+        legs: [],
+        state: {},
+        range: {},
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any);
+
+      const result = await quoteOpenPosition({
+        wallet: "11111111111111111111111111111111",
+        poolId,
+        inputMint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        inputKind: "token",
+        amount: "1",
+        rangePreset: "standard",
+        resaleFloorBps: 9900,
+        slippageToleranceBps: 100,
+      });
+      expect(result.poolId).toBe(poolId);
+      expect(result.tickLower).toBe(-30);
+    });
+  });
+
+  describe("prepareOpenPosition", () => {
+    it("returns signUrl, permit, and summary for the new tx kind", async () => {
+      process.env.JUPITER_API_KEY = "test-secret";
+      const mockSummary = {
+        operation: "open-position",
+        simulated: true,
+        nftMint: "11111111111111111111111111111112",
+        poolId: "So11111111111111111111111111111111111111112",
+        expiresAt: Date.now() + 30000,
+        quote: { requested: "1000000", liquidity: "10" },
+      };
+      const mockTransaction = {
+        serialize: () => Buffer.from("mock-open-transaction"),
+        message: { serialize: () => Buffer.from("mock-open-message") },
+      };
+      vi.mocked(buildAndSimulateOpenPosition).mockResolvedValue({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        summary: mockSummary as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        transaction: mockTransaction as any,
+      });
+
+      const result = await prepareOpenPosition({
+        wallet: "11111111111111111111111111111111",
+        poolId: "So11111111111111111111111111111111111111112",
+        inputMint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        inputKind: "token",
+        amount: "1",
+        rangePreset: "standard",
+        resaleFloorBps: 9900,
+        slippageToleranceBps: 100,
+      });
+
+      expect(result.permit).toBe("mock-open-permit");
+      expect(result.signUrl).toContain("/app/sign/");
+      expect(result.summary).toEqual(mockSummary);
+      expect(result.unsignedTransaction).toBeDefined();
     });
   });
 });

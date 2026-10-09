@@ -114,9 +114,9 @@ export function LandingPage() {
                 </div>
                 <h3 className="mt-5 text-base font-semibold text-neutral-100">Recipes, not primitives</h3>
                 <p className="mt-3 text-sm leading-6 text-neutral-400">
-                  Compound, zap, position performance, and RWA pair discovery are tested, simulated
-                  multi-step flows. Agents call a recipe instead of hand-assembling swap plus
-                  liquidity instructions.
+                  Compound, zap, open a new CLMM position, position performance, and RWA pair
+                  discovery are tested, simulated multi-step flows. Agents call a recipe instead of
+                  hand-assembling swap plus liquidity instructions.
                 </p>
               </article>
               <article className="rounded-[20px] border border-neutral-800/80 bg-[#0a0a0a] p-5 sm:p-7">
