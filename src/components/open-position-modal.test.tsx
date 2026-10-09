@@ -31,7 +31,7 @@ const pair: OpenPositionPair = {
   token2022A: true, token2022B: false, freezeRisk: true,
 };
 
-function quote(passesFloor = true): OpenPositionQuote {
+function quote(): OpenPositionQuote {
   return {
     wallet: mocks.wallet, poolId: pair.poolAddress, inputMint: NATIVE_SOL_MINT, inputKind: "native",
     inputDecimals: 9, mintA: pair.mintA, mintB: pair.mintB, decimalsA: 6, decimalsB: 6,
@@ -42,12 +42,11 @@ function quote(passesFloor = true): OpenPositionQuote {
     spendA: "60000000", spendB: "60000000", liquidity: "1000",
     amountMaxA: "64636", amountMaxB: "56124", requiredA: "64000", requiredB: "55000",
     toleranceBps: 100, dustA: "636", dustB: "1124",
-    resaleInput: passesFloor ? "119000000" : "117000000", minimumResaleInput: "118800000",
-    roundtripCostInput: passesFloor ? "1000000" : "3000000", slippageBps: 50,
+    slippageBps: 50,
     routeTouchesTargetPool: false, token2022A: true, token2022B: false,
     freezeRiskA: true, freezeRiskB: false, freezeRisk: true,
     transferFee: false, paused: false, frozen: false, unsupportedExtensions: [],
-    passesFloor, floorBps: 9900, maxImpactBps: 500, tickLower: -26, tickUpper: 94,
+    maxImpactBps: 500, tickLower: -26, tickUpper: 94,
     rangeSide: "inside", warnings: [], solLamports: "226500000", networkFeeLamportsEstimate: "50000",
     rent: {
       refundableLamports: "7800000", nonRefundableLamports: "1800000",
@@ -62,7 +61,6 @@ function quote(passesFloor = true): OpenPositionQuote {
 
 let root: Root;
 let container: HTMLDivElement;
-let passesFloor: boolean;
 let failQuote: boolean;
 let quoteCalls: number;
 let deferredQuote: Promise<unknown> | null;
@@ -88,7 +86,6 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   mocks.wallet = "wallet";
   mocks.controller = null;
-  passesFloor = true;
   failQuote = false;
   quoteCalls = 0;
   deferredQuote = null;
@@ -99,7 +96,7 @@ beforeEach(() => {
     if (url === "/api/open-quote") {
       quoteCalls++;
       if (deferredQuote) return deferredQuote;
-      return { ok: !failQuote, json: async () => failQuote ? { error: "Quote service unavailable" } : quote(passesFloor) };
+      return { ok: !failQuote, json: async () => failQuote ? { error: "Quote service unavailable" } : quote() };
     }
     if (url === "/api/open-prepare") return new Promise(() => undefined);
     throw new Error(`Unexpected request: ${url}`);
@@ -118,35 +115,32 @@ afterEach(async () => {
 });
 
 describe("open-position signing and quote refresh", () => {
-  it("explains a failed resale floor and displays the amounts instead of asking to complete the form", async () => {
-    passesFloor = false;
+  it("enables signing with a fresh quote that has no resale-floor fields", async () => {
     await mount();
-    expect(signButton().disabled).toBe(true);
-    expect(container.textContent).toContain("below the 99.0% minimum");
-    expect(container.textContent).toContain("0.117 SOL");
-    expect(container.textContent).toContain("0.1188 SOL");
+    expect(signButton().disabled).toBe(false);
+    expect(container.textContent).toContain("Ready to sign");
+    expect(container.textContent).not.toContain("Minimum resale");
     expect(container.textContent).not.toContain("Complete the form to sign");
-    expect(signButton().title).toContain("99.0%");
+    await act(async () => { signButton().click(); });
+    expect(container.textContent).toContain("Preparing latest transaction");
   });
 
-  it("refreshes at expiry, keeps signing disabled while refreshing, and accepts the new quote", async () => {
+  it("fetches a new quote every three seconds without waiting for expiry", async () => {
     await mount();
     expect(signButton().disabled).toBe(false);
-    await advance(QUOTE_TTL_MS + 1000);
-    expect(signButton().disabled).toBe(true);
-    expect(container.textContent).toMatch(/expired|Fetching quote/);
-    await advance(450);
+    await advance(2999);
+    expect(quoteCalls).toBe(1);
+    await advance(1);
     expect(quoteCalls).toBe(2);
     expect(signButton().disabled).toBe(false);
-    await advance(5000);
-    expect(quoteCalls).toBe(2);
+    await advance(3000);
+    expect(quoteCalls).toBe(3);
   });
 
   it("lets the user retry a failed refresh without editing a valid amount", async () => {
     await mount();
     failQuote = true;
-    await advance(QUOTE_TTL_MS + 1000);
-    await advance(450);
+    await advance(3000);
     expect(signButton().disabled).toBe(true);
     expect(container.textContent).toContain("Quote service unavailable");
     const retry = [...container.querySelectorAll("button")].find((button) => button.textContent === "Refresh quote");
@@ -160,7 +154,7 @@ describe("open-position signing and quote refresh", () => {
 
   it("cancels the previous expiry timer when the amount changes", async () => {
     await mount();
-    await advance(10000);
+    await advance(1000);
     await act(async () => { mocks.controller!.changeAmount(""); });
     await advance(QUOTE_TTL_MS);
     expect(quoteCalls).toBe(1);
@@ -194,5 +188,45 @@ describe("open-position signing and quote refresh", () => {
     await act(async () => { root.unmount(); });
     await advance(QUOTE_TTL_MS + 1000);
     expect(quoteCalls).toBe(1);
+  });
+
+  it("keeps a fresh quote usable during a slow refresh without overlapping requests", async () => {
+    await mount();
+    let resolveQuote!: (value: unknown) => void;
+    deferredQuote = new Promise((resolve) => { resolveQuote = resolve; });
+    await advance(3000);
+    expect(quoteCalls).toBe(2);
+    expect(mocks.controller!.quoteLoading).toBe(true);
+    expect(signButton().disabled).toBe(false);
+    await advance(9000);
+    expect(quoteCalls).toBe(2);
+    await act(async () => { resolveQuote({ ok: true, json: async () => quote() }); });
+    expect(signButton().disabled).toBe(false);
+    expect(mocks.controller!.quoteLoading).toBe(false);
+  });
+
+  it("disables signing if the last quote expires while a refresh is stalled", async () => {
+    await mount();
+    deferredQuote = new Promise(() => undefined);
+    await advance(3000);
+    await advance(QUOTE_TTL_MS + 1000);
+    expect(signButton().disabled).toBe(true);
+    expect(quoteCalls).toBe(2);
+  });
+
+  it("starts preparation during a background refresh and ignores its late response", async () => {
+    await mount();
+    const previousQuote = mocks.controller!.quote;
+    let resolveQuote!: (value: unknown) => void;
+    deferredQuote = new Promise((resolve) => { resolveQuote = resolve; });
+    await advance(3000);
+    await act(async () => { signButton().click(); });
+    expect(mocks.controller!.submitStage).toBe("preparing");
+    expect(mocks.controller!.quoteLoading).toBe(false);
+    await act(async () => { resolveQuote({ ok: true, json: async () => quote() }); });
+    expect(mocks.controller!.quote).toBe(previousQuote);
+    expect(mocks.controller!.quoteError).toBe("");
+    await advance(9000);
+    expect(quoteCalls).toBe(2);
   });
 });

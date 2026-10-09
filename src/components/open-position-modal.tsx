@@ -31,11 +31,8 @@ export function OpenPositionModal({
     : c.submitStage === "wallet" ? "Waiting for wallet signature…"
       : c.submitStage === "broadcasting" ? "Confirming on-chain…"
         : c.submitStage === "confirmed" ? "Position opened"
-          : c.quoteLoading ? "Fetching quote…"
+          : c.quoteLoading && !quote ? "Fetching quote…"
             : c.actionBlockedReason || "Ready to sign";
-  const inputLabel = quote?.inputKind === "native" ? "SOL"
-    : quote ? tokenSymbol(quote.inputMint, undefined,
-      quote.inputMint === pair.mintA ? pair.symbolA : quote.inputMint === pair.mintB ? pair.symbolB : undefined) : "";
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center" role="dialog" aria-modal="true" aria-labelledby="open-position-title">
@@ -155,8 +152,6 @@ export function OpenPositionModal({
             <div className="flex justify-between gap-3"><dt className="text-neutral-500">Aligned range</dt><dd>{formatPositionPriceRange(quote)}</dd></div>
             <div className="flex justify-between gap-3"><dt className="text-neutral-500">Status</dt><dd>{formatRangeStatus(quote.rangeSide) ?? "—"}</dd></div>
             <div className="flex justify-between gap-3"><dt className="text-neutral-500">Quote validity</dt><dd>{c.fresh ? `${Math.max(0, Math.ceil((quote.expiresAt - c.now) / 1000))} seconds remaining` : "Expired"}</dd></div>
-            <div className="flex justify-between gap-3"><dt className="text-neutral-500">Estimated immediate resale</dt><dd>{formatAmount(quote.resaleInput, quote.inputDecimals)} {inputLabel}</dd></div>
-            <div className="flex justify-between gap-3"><dt className="text-neutral-500">Minimum resale ({(quote.floorBps / 100).toFixed(1)}%)</dt><dd>{formatAmount(quote.minimumResaleInput, quote.inputDecimals)} {inputLabel}</dd></div>
             <div className="flex justify-between gap-3"><dt className="text-neutral-500">Price impact cap</dt><dd>≤ {quote.maxImpactBps / 100}%</dd></div>
             <div className="flex justify-between gap-3"><dt className="text-neutral-500">Refundable rent (NFT)</dt><dd>{lamports(quote.rent.refundableLamports)}</dd></div>
             <div className="flex justify-between gap-3"><dt className="text-neutral-500">Non-refundable rent</dt><dd>{lamports(quote.rent.nonRefundableLamports)}</dd></div>
@@ -165,7 +160,7 @@ export function OpenPositionModal({
             <div className="flex justify-between gap-3"><dt className="text-neutral-500">Resale floor</dt><dd>{quote.passesFloor ? `Meets ${(quote.floorBps / 100).toFixed(1)}%` : `Below ${(quote.floorBps / 100).toFixed(1)}%`}</dd></div>
           </dl>
         )}
-        {quote && <p className="mt-2 text-xs leading-5 text-neutral-500">Immediate resale estimates swapping the conservative token outputs back to the input asset. SOL fees and rent are calculated separately.</p>}
+        <p className="mt-2 text-xs leading-5 text-neutral-500">Quotes refresh every 3 seconds. {c.quoteLoading && quote ? "Updating quote…" : ""} SOL fees and rent are calculated separately.</p>
 
         {quote && !quote.passesFloor && quote.warning && (
           <p role="status" className="mt-3 rounded-xl border border-amber-800/70 bg-amber-950/40 p-3 text-xs leading-5 text-amber-100">

@@ -526,7 +526,6 @@ describe("MCP Tools", () => {
           tickLower: -30,
           tickUpper: 30,
           rangeSide: "inside",
-          passesFloor: true,
         },
         legs: [],
         state: {},
@@ -541,7 +540,6 @@ describe("MCP Tools", () => {
         inputKind: "token",
         amount: "1",
         rangePreset: "standard",
-        resaleFloorBps: 9900,
         slippageToleranceBps: 100,
       });
       expect(result.poolId).toBe(poolId);
@@ -578,7 +576,6 @@ describe("MCP Tools", () => {
         inputKind: "token",
         amount: "1",
         rangePreset: "standard",
-        resaleFloorBps: 9900,
         slippageToleranceBps: 100,
       });
 

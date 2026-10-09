@@ -5,9 +5,9 @@ import { issueOpenPositionPermit } from "@/lib/open-permit";
 
 export async function POST(request: Request) {
   try {
-    const { wallet, selection, amount, range, floorBps, toleranceBps } = await parseOpenQuoteRequest(request);
+    const { wallet, selection, amount, range, toleranceBps } = await parseOpenQuoteRequest(request);
     const { summary, transaction } = await buildAndSimulateOpenPosition(
-      wallet, selection, amount, range, floorBps, toleranceBps,
+      wallet, selection, amount, range, toleranceBps,
     );
     const permit = issueOpenPositionPermit(process.env.JUPITER_API_KEY || "", {
       wallet,
