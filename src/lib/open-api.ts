@@ -1,7 +1,7 @@
 import "server-only";
 
 import { PublicKey } from "@solana/web3.js";
-import { parseAddToleranceBps, parseResaleFloorBps } from "./amount";
+import { parseAddToleranceBps } from "./amount";
 import { parseWallet } from "./api-input";
 import { DEFAULT_OPEN_RANGE_PRESET, type OpenRangeInput, type OpenRangePreset } from "./open-range";
 import type { OpenPositionSelection } from "./open-state";
@@ -41,7 +41,6 @@ export async function parseOpenQuoteRequest(request: Request) {
   const selection: OpenPositionSelection = { poolId, inputMint, inputKind: fields.inputKind };
   return {
     wallet, selection, amount: fields.amount, range: parseOpenRange(fields),
-    floorBps: parseResaleFloorBps(fields.resaleFloorBps ?? fields.floorBps),
     toleranceBps: parseAddToleranceBps(fields.slippageToleranceBps ?? fields.toleranceBps),
   };
 }

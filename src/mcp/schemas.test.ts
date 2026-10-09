@@ -366,6 +366,7 @@ describe("quoteOpenPositionSchema", () => {
     const result = quoteOpenPositionSchema.parse(validInput);
     expect(result.rangePreset).toBe("standard");
     expect(result.slippageToleranceBps).toBe(100);
+    expect(result).not.toHaveProperty("resaleFloorBps");
   });
 
   it("accepts a custom range", () => {

@@ -430,11 +430,6 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             minPrice: { type: "string", description: "Custom range min price (B per 1 A), required if rangePreset=custom" },
             maxPrice: { type: "string", description: "Custom range max price (B per 1 A), required if rangePreset=custom" },
-            resaleFloorBps: {
-              type: "number",
-              description: "Minimum resale ratio in basis points (9500-10000, default 9900)",
-              default: 9900,
-            },
             slippageToleranceBps: {
               type: "number",
               description: "Open-position price tolerance in basis points (0-500, default 100). Jupiter swap slippage stays 0.5%.",
@@ -463,7 +458,6 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             minPrice: { type: "string" },
             maxPrice: { type: "string" },
-            resaleFloorBps: { type: "number", default: 9900 },
             slippageToleranceBps: { type: "number", default: 100 },
           },
           required: ["wallet", "poolId", "inputMint", "inputKind", "amount"],

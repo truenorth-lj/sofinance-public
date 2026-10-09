@@ -159,4 +159,24 @@ describe("open-position quote validation", () => {
       { preset: "custom", minPrice: "1", maxPrice: "2" },
     )).rejects.toThrow(/Price impact/);
   });
+
+  it("uses only forward Jupiter routes, without requiring a reverse resale route", async () => {
+    vi.mocked(readOpenPoolState).mockResolvedValue(state({ inputMint: mintB, inputDecimals: 9, inputKind: "token" }));
+    vi.mocked(buildRoute).mockImplementation(async (_wallet, inputMint, outputMint, spend) => {
+      if (inputMint !== mintB || outputMint !== mintA) throw new Error("No reverse resale route available");
+      return {
+        inputMint, outputMint, inAmount: spend.toString(), outAmount: (spend / 1000n).toString(),
+        otherAmountThreshold: (spend / 1000n).toString(), swapMode: "ExactIn", slippageBps: 50,
+        priceImpactPct: "0", routePlan: [], setupInstructions: [], swapInstruction: {},
+        cleanupInstruction: null, otherInstructions: [], addressesByLookupTableAddress: {},
+      } as never;
+    });
+    const { quote } = await getOpenPositionQuoteBundle(wallet,
+      { poolId, inputMint: mintB, inputKind: "token" }, "0.1",
+      { preset: "custom", minPrice: "1", maxPrice: "2" });
+    expect(quote.minOutA).toBe("100000");
+    expect(quote.maxImpactBps).toBe(500);
+    expect(quote).not.toHaveProperty("floorBps");
+    expect(buildRoute).toHaveBeenCalledTimes(2);
+  });
 });

@@ -150,14 +150,16 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
     const raw = parsedAmount;
     const requestId = ++quoteRequestRef.current;
     const aborter = new AbortController();
-    let expiryTimer: number | undefined;
+    let pollTimer: number | undefined;
+    let inFlight = false;
     const currentRequest = () => requestId === quoteRequestRef.current &&
       !aborter.signal.aborted && walletRef.current === wallet;
     const timer = window.setTimeout(() => {
       const load = async () => {
+        if (inFlight || !currentRequest()) return;
+        inFlight = true;
         setQuoteLoading(true);
         setQuoteError("");
-        setQuote(null);
         try {
           const response = await fetch("/api/open-quote", {
             method: "POST",
@@ -176,25 +178,23 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
           if (current.requested !== raw.toString()) throw new Error("Quote and current input mismatch, please re-enter amount");
           setQuote(current);
           setNow(Date.now());
-          expiryTimer = window.setTimeout(() => {
-            if (!currentRequest()) return;
-            setNow(Date.now());
-            setQuoteRevision((revision) => revision + 1);
-          }, Math.max(1_000, current.expiresAt - Date.now()));
         } catch (caught) {
           if (currentRequest()) {
+            setQuote(null);
             setQuoteError(caught instanceof Error ? caught.message : "Quote failed");
           }
         } finally {
+          inFlight = false;
           if (currentRequest()) setQuoteLoading(false);
         }
       };
+      pollTimer = window.setInterval(() => void load(), 3_000);
       void load();
     }, 450);
     return () => {
       aborter.abort();
       window.clearTimeout(timer);
-      if (expiryTimer !== undefined) window.clearTimeout(expiryTimer);
+      if (pollTimer !== undefined) window.clearInterval(pollTimer);
     };
   }, [amount, busy, formError, inputKind, inputMint, maxPrice, minPrice, pair, parsedAmount, quoteRevision, rangePreset, selectedAsset, submitStage, wallet]);
 
@@ -238,8 +238,9 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
   };
 
   const signAndSend = useCallback(async () => {
-    if (!pair || !wallet || !inputMint || !quote || !fresh || !quote.passesFloor || busy || submittingRef.current || quoteLoading) return;
+    if (!pair || !wallet || !inputMint || !quote || !fresh || Date.now() >= quote.expiresAt || busy || submittingRef.current) return;
     submittingRef.current = true;
+    setQuoteLoading(false);
     setSubmitStage("preparing");
     setError("");
     try {
@@ -309,7 +310,7 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
     } finally {
       submittingRef.current = false;
     }
-  }, [amount, busy, fresh, inputKind, inputMint, maxPrice, minPrice, pair, quote, quoteLoading, rangePreset, signTransaction, wallet]);
+  }, [amount, busy, fresh, inputKind, inputMint, maxPrice, minPrice, pair, quote, rangePreset, signTransaction, wallet]);
 
   const walletBlockedReason = !connected
     ? "Connect a wallet to add liquidity"
@@ -320,13 +321,12 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
         : null;
 
   const actionBlockedReason = walletBlockedReason || formError ||
-    (quoteLoading ? "Fetching quote…"
+    (quoteLoading && (!quote || !fresh) ? "Fetching quote…"
       : quoteError ? quoteError
         : parsedAmount === null ? "Enter an amount to get a quote"
           : !quote ? "Waiting for quote…"
             : !fresh ? "Quote expired, refreshing…"
-              : !quote.passesFloor ? `Estimated immediate resale is below the ${(quote.floorBps / 100).toFixed(1)}% minimum. Try a different input asset or amount.`
-                : null);
+              : null);
   const actionDisabled = busy || Boolean(actionBlockedReason);
 
   return {

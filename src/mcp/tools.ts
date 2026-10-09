@@ -742,7 +742,7 @@ export async function quoteOpenPosition(input: QuoteOpenPositionInput) {
   };
   const { quote } = await getOpenPositionQuoteBundle(
     input.wallet, selection, input.amount, openRangeFromInput(input),
-    input.resaleFloorBps, input.slippageToleranceBps,
+    input.slippageToleranceBps,
   );
   return quote;
 }
@@ -760,7 +760,7 @@ export async function prepareOpenPosition(input: PrepareOpenPositionInput) {
   };
   const { summary, transaction } = await buildAndSimulateOpenPosition(
     input.wallet, selection, input.amount, openRangeFromInput(input),
-    input.resaleFloorBps, input.slippageToleranceBps,
+    input.slippageToleranceBps,
   );
   const jupiterApiKey = process.env.JUPITER_API_KEY || "";
   const permit = issueOpenPositionPermit(jupiterApiKey, {
