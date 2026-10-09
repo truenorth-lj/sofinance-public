@@ -15,6 +15,8 @@ export type ListedPosition = {
   decimalsA?: number;
   decimalsB?: number;
   feeTierBps?: number | null;
+  symbolA?: string | null;
+  symbolB?: string | null;
 };
 
 function firstQueryValue(value: string | string[] | null | undefined): string {
@@ -109,6 +111,8 @@ export function parseListedPositions(body: unknown): ListedPosition[] {
     const decimalsA = typeof rec.decimalsA === "number" && Number.isInteger(rec.decimalsA) ? rec.decimalsA : undefined;
     const decimalsB = typeof rec.decimalsB === "number" && Number.isInteger(rec.decimalsB) ? rec.decimalsB : undefined;
     const feeTierBps = typeof rec.feeTierBps === "number" && Number.isFinite(rec.feeTierBps) ? rec.feeTierBps : undefined;
+    const symbolA = typeof rec.symbolA === "string" ? rec.symbolA : undefined;
+    const symbolB = typeof rec.symbolB === "string" ? rec.symbolB : undefined;
     return [
       {
         positionMint: rec.positionMint,
@@ -120,6 +124,8 @@ export function parseListedPositions(body: unknown): ListedPosition[] {
         ...(decimalsA !== undefined ? { decimalsA } : {}),
         ...(decimalsB !== undefined ? { decimalsB } : {}),
         ...(feeTierBps !== undefined ? { feeTierBps } : {}),
+        ...(symbolA !== undefined ? { symbolA } : {}),
+        ...(symbolB !== undefined ? { symbolB } : {}),
       },
     ];
   });

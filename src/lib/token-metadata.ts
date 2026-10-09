@@ -32,13 +32,15 @@ function trustedIcon(value: unknown): string | null {
 export async function getTokenMetadata(
   mints: string[], fetcher: typeof fetch = fetch, apiKey = process.env.JUPITER_API_KEY,
 ): Promise<Record<string, TokenMetadata>> {
-  if (!apiKey || !mints.length) return {};
+  if (!mints.length) return {};
   const requested = new Set(mints);
   const url = new URL("https://api.jup.ag/tokens/v2/search");
   url.searchParams.set("query", mints.join(","));
+  const headers: Record<string, string> = {};
+  if (apiKey) headers["x-api-key"] = apiKey;
   try {
     const response = await fetcher(url, {
-      headers: { "x-api-key": apiKey }, next: { revalidate: 3600 }, signal: AbortSignal.timeout(6_000),
+      headers, next: { revalidate: 3600 }, signal: AbortSignal.timeout(6_000),
     });
     if (!response.ok) return {};
     const rows: unknown = await response.json();

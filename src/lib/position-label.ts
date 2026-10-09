@@ -5,6 +5,8 @@ export type PositionLabelInput = {
   positionMint: string;
   mintA: string;
   mintB: string;
+  symbolA?: string | null;
+  symbolB?: string | null;
   tickLower: number;
   tickUpper: number;
   rangeSide?: string | null;
@@ -24,7 +26,13 @@ export function shortMint(mint: string): string {
   return `${value.slice(0, 4)}…${value.slice(-4)}`;
 }
 
-export function tokenSymbol(mint: string, metadata?: PositionLabelMetadata): string {
+export function tokenSymbol(
+  mint: string,
+  metadata?: PositionLabelMetadata,
+  explicit?: string | null,
+): string {
+  const fromPosition = explicit?.trim();
+  if (fromPosition) return fromPosition;
   const symbol = metadata?.[mint]?.symbol?.trim();
   if (symbol) return symbol;
   if (mint === USDC_MINT) return "USDC";
@@ -88,7 +96,9 @@ export function formatPositionLabel(
   position: PositionLabelInput,
   metadata?: PositionLabelMetadata,
 ): string {
-  const parts = [`${tokenSymbol(position.mintA, metadata)}/${tokenSymbol(position.mintB, metadata)}`];
+  const parts = [
+    `${tokenSymbol(position.mintA, metadata, position.symbolA)}/${tokenSymbol(position.mintB, metadata, position.symbolB)}`,
+  ];
   const fee = formatFeeTier(position.feeTierBps);
   if (fee) parts.push(fee);
   parts.push(`range ${formatPositionPriceRange(position)}`);

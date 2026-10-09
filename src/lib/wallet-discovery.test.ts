@@ -5,7 +5,12 @@ import { AccountType, ExtensionType, getAssociatedTokenAddressSync, getMintLen, 
 import { Keypair, type AccountInfo, type Connection, type PublicKey } from "@solana/web3.js";
 
 vi.mock("server-only", () => ({}));
+vi.mock("./mint-symbols", () => ({
+  resolveMintSymbols: vi.fn(async () => ({})),
+  symbolFromMintAccount: () => null,
+}));
 import { discoverWallet } from "./wallet-discovery";
+import { resolveMintSymbols } from "./mint-symbols";
 
 function info(data: Buffer, owner: PublicKey): AccountInfo<Buffer> {
   return { data, owner, executable: false, lamports: 2_039_280, rentEpoch: 0 };
@@ -108,12 +113,16 @@ describe("discoverWallet", () => {
       getBalance: vi.fn().mockResolvedValue(30_000_000),
       getSlot: vi.fn().mockResolvedValue(456),
     } as unknown as Connection;
+    vi.mocked(resolveMintSymbols).mockResolvedValueOnce({
+      [mintA.toBase58()]: "HOODx",
+      [mintB.toBase58()]: "HOOD",
+    });
     const result = await discoverWallet(wallet.toBase58(), connection);
     expect(result.positions).toHaveLength(2);
     expect(result.positions).toContainEqual(expect.objectContaining({ positionMint: nft.toBase58(), poolId: poolKey.toBase58(),
       mintA: mintA.toBase58(), mintB: mintB.toBase58(), tickLower: -100, tickUpper: 100,
       rangeSide: "inside", liquidity: "10", decimalsA: expect.any(Number), decimalsB: expect.any(Number),
-      feeTierBps: null }));
+      feeTierBps: null, symbolA: "HOODx", symbolB: "HOOD" }));
     expect(result.assets.find((asset) => asset.mint === input.toBase58())).toMatchObject({
       balance: "2000000", totalBalance: "5000000", eligible: true, account: ata.toBase58(),
     });
