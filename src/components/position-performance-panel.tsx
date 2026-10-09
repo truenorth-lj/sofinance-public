@@ -130,9 +130,11 @@ const uiAmount = (raw: string, decimals: number) => {
 export function PositionPerformancePanel({
   initialMint = "",
   initialWallet = "",
+  previewPoolId = "",
 }: {
   initialMint?: string;
   initialWallet?: string;
+  previewPoolId?: string;
 }) {
   const { address, connected } = useWalletConnection();
   const connectedAddress = connected ? address : undefined;
@@ -372,24 +374,6 @@ export function PositionPerformancePanel({
             )}
           </div>
 
-          <PoolDailyAprChart
-            poolId={data.poolId}
-            nowSeconds={Math.floor(new Date(data.evaluatedAtIso).getTime() / 1000) || undefined}
-            overlay={
-              data.realizedFeeAprSeries
-                ? {
-                    label: data.realizedFeeAprSeries.label,
-                    assumptions: data.realizedFeeAprSeries.assumptions,
-                    points: data.realizedFeeAprSeries.points.map((point) => ({
-                      time: point.time,
-                      date: point.date,
-                      value: point.aprPct,
-                    })),
-                  }
-                : undefined
-            }
-          />
-
           {tn && (
             <div className="rounded-xl border border-neutral-800/60 bg-neutral-900/30 p-3">
               <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400">
@@ -472,6 +456,32 @@ export function PositionPerformancePanel({
             <div className="mt-2 text-neutral-500">{data.pricing.label}</div>
             <div className="mt-1 text-neutral-600">{data.assumptions}</div>
           </div>
+        </div>
+      )}
+
+      {(data?.poolId || previewPoolId) && (
+        <div className="mt-6">
+          <PoolDailyAprChart
+            poolId={data?.poolId || previewPoolId}
+            nowSeconds={
+              data?.evaluatedAtIso
+                ? Math.floor(new Date(data.evaluatedAtIso).getTime() / 1000) || undefined
+                : undefined
+            }
+            overlay={
+              data?.realizedFeeAprSeries
+                ? {
+                    label: data.realizedFeeAprSeries.label,
+                    assumptions: data.realizedFeeAprSeries.assumptions,
+                    points: data.realizedFeeAprSeries.points.map((point) => ({
+                      time: point.time,
+                      date: point.date,
+                      value: point.aprPct,
+                    })),
+                  }
+                : undefined
+            }
+          />
         </div>
       )}
     </section>

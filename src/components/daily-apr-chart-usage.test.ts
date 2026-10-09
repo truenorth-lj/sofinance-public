@@ -7,7 +7,8 @@ describe("daily APR chart wiring", () => {
     const src = readFileSync(resolve("src/components/position-performance-panel.tsx"), "utf8");
     expect(src).toContain("PoolDailyAprChart");
     expect(src).toContain("realizedFeeAprSeries");
-    expect(src).toContain("poolId={data.poolId}");
+    expect(src).toContain("previewPoolId");
+    expect(src).toContain("data?.poolId || previewPoolId");
   });
 
   it("shows per-pool daily APR sparklines on the RWA pairs table", () => {

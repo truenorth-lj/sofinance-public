@@ -20,5 +20,7 @@ describe("position-performance page shell", () => {
     expect(queryPanel).toContain("queryFromSearchParams");
     expect(queryPanel).toContain("initialMint={query.mint}");
     expect(queryPanel).toContain("initialWallet={query.wallet}");
+    expect(queryPanel).toContain("previewPoolId");
+    expect(queryPanel).toContain('searchParams.get("pool")');
   });
 });
