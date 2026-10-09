@@ -1,18 +1,15 @@
 "use client";
 
-import { use } from "react";
+import { Suspense } from "react";
 import { InkShell, InkNav } from "@/components/ink";
-import { PositionPerformancePanel } from "@/components/position-performance-panel";
+import {
+  PositionPerformancePanelFallback,
+  PositionPerformanceQueryPanel,
+} from "@/components/position-performance-query-panel";
 import { useWalletConnection } from "@/components/wallet-connection";
-import { parsePerformanceQuery } from "@/lib/position-performance-form";
 
-export default function PositionPerformancePage({
-  searchParams,
-}: {
-  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
-}) {
+export default function PositionPerformancePage() {
   const { address, connected, connect, disconnect } = useWalletConnection();
-  const query = parsePerformanceQuery(use(searchParams));
 
   return (
     <InkShell>
@@ -28,11 +25,9 @@ export default function PositionPerformancePage({
         </p>
       </div>
 
-      <PositionPerformancePanel
-        key={`${query.mint}:${query.wallet}`}
-        initialMint={query.mint}
-        initialWallet={query.wallet}
-      />
+      <Suspense fallback={<PositionPerformancePanelFallback />}>
+        <PositionPerformanceQueryPanel />
+      </Suspense>
     </InkShell>
   );
 }
