@@ -31,6 +31,17 @@ export function parsePerformanceQuery(search: {
   };
 }
 
+/** Client URL (`useSearchParams`) — not the prerendered page `searchParams` prop. */
+export function queryFromSearchParams(searchParams: {
+  get: (name: string) => string | null;
+}): { mint: string; wallet: string } {
+  return parsePerformanceQuery({
+    mint: searchParams.get("mint"),
+    wallet: searchParams.get("wallet"),
+    positionMint: searchParams.get("positionMint"),
+  });
+}
+
 export function createWalletField(urlWallet: string): WalletFieldState {
   const value = urlWallet.trim();
   return value ? { value, intent: "url" } : { value: "", intent: "auto" };

@@ -9,12 +9,16 @@ describe("position-performance page shell", () => {
     expect(src).not.toMatch(/maxWidth=["']3xl["']/);
   });
 
-  it("forwards ?mint= and ?wallet= into the lookup form", () => {
-    const src = readFileSync(resolve("src/app/app/position-performance/page.tsx"), "utf8");
-    expect(src).toContain("searchParams");
-    expect(src).toContain("parsePerformanceQuery");
-    expect(src).toContain("initialMint={query.mint}");
-    expect(src).toContain("initialWallet={query.wallet}");
-    expect(src).toContain("key={`${query.mint}:${query.wallet}`}");
+  it("reads ?mint= and ?wallet= from the browser URL, not prerendered page searchParams", () => {
+    const page = readFileSync(resolve("src/app/app/position-performance/page.tsx"), "utf8");
+    const queryPanel = readFileSync(resolve("src/components/position-performance-query-panel.tsx"), "utf8");
+    expect(page).toContain("Suspense");
+    expect(page).toContain("PositionPerformanceQueryPanel");
+    expect(page).not.toContain("use(searchParams)");
+    expect(page).not.toMatch(/searchParams:\s*Promise/);
+    expect(queryPanel).toContain("useSearchParams");
+    expect(queryPanel).toContain("queryFromSearchParams");
+    expect(queryPanel).toContain("initialMint={query.mint}");
+    expect(queryPanel).toContain("initialWallet={query.wallet}");
   });
 });
