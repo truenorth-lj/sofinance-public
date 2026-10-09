@@ -34,6 +34,30 @@ export function utcDate(time: number): string {
   return new Date(utcDayStart(time) * 1000).toISOString().slice(0, 10);
 }
 
+/** 00:00 UTC of the most recently finished UTC day (yesterday relative to `nowSeconds`). */
+export function lastCompleteUtcDayStart(nowSeconds: number): number {
+  return utcDayStart(nowSeconds) - SECONDS_PER_DAY;
+}
+
+/** True when `time` falls on the still-open UTC day that contains `nowSeconds`. */
+export function isIncompleteUtcDay(time: number, nowSeconds: number): boolean {
+  return utcDayStart(time) >= utcDayStart(nowSeconds);
+}
+
+export function formatAprPct(value: number): string {
+  const digits = Math.abs(value) >= 100 ? 1 : 2;
+  return `${value.toFixed(digits)}%`;
+}
+
+/** Visible label + tooltip copy for the last complete UTC day's APR. */
+export function lastCompleteDayAprCopy(date: string, aprPct: number): { label: string; title: string } {
+  const pct = formatAprPct(aprPct);
+  return {
+    label: `${pct} · ${date}`,
+    title: `last complete UTC day ${date}: ${pct}`,
+  };
+}
+
 export function calendarRange(endTime: number, days: AprRangeDays): number[] {
   const end = utcDayStart(endTime);
   const start = end - (days - 1) * SECONDS_PER_DAY;
