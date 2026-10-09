@@ -1,11 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { ArrowUpRight, LoaderCircle, RefreshCw } from "lucide-react";
+import { useSearchParams } from "next/navigation";
+import { LoaderCircle, RefreshCw } from "lucide-react";
 import { PoolAprSparkline } from "./pool-daily-apr-panel";
+import { OpenPositionModal } from "./open-position-modal";
+import type { OpenPositionPair } from "./use-open-position-controller";
 
 type RwaPair = {
   poolAddress: string;
+  mintA: string;
+  mintB: string;
   symbolA: string;
   symbolB: string;
   nameA: string;
@@ -53,9 +58,11 @@ const pct = (value: number | null) => {
 const short = (value: string) => `${value.slice(0, 4)}…${value.slice(-4)}`;
 
 export function RwaPairsPanel() {
+  const searchParams = useSearchParams();
   const [data, setData] = useState<RwaPairsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [openPair, setOpenPair] = useState<OpenPositionPair | null>(null);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -88,6 +95,30 @@ export function RwaPairsPanel() {
     };
   }, [load]);
 
+  useEffect(() => {
+    if (!data || searchParams.get("open") !== "1") return;
+    const pool = searchParams.get("pool");
+    if (!pool) return;
+    const pair = data.pairs.find((item) => item.poolAddress === pool);
+    if (!pair) return;
+    const timer = window.setTimeout(() => {
+      setOpenPair({
+        poolAddress: pair.poolAddress,
+        mintA: pair.mintA,
+        mintB: pair.mintB,
+        symbolA: pair.symbolA,
+        symbolB: pair.symbolB,
+        wrappedSymbol: pair.wrappedSymbol,
+        plainSymbol: pair.plainSymbol,
+        feeTierBps: pair.feeTierBps,
+        token2022A: pair.token2022A,
+        token2022B: pair.token2022B,
+        freezeRisk: pair.freezeRisk,
+      });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [data, searchParams]);
+
   const refresh = () => {
     setLoading(true);
     setError(null);
@@ -106,7 +137,7 @@ export function RwaPairsPanel() {
           </h2>
           <p className="mt-2 max-w-2xl text-xs leading-5 text-neutral-500">
             Raydium concentrated pools where both sides are the same underlying (e.g. MSTRx/MSTR, NVDAx/NVDA),
-            filtered by Jupiter tags (stocks|rwa) and the Backed xStocks whitelist. Read-only — does not open positions.
+            filtered by Jupiter tags (stocks|rwa) and the Backed xStocks whitelist. Add liquidity opens a new CLMM position in SoFinance.
           </p>
         </div>
         <button 
@@ -156,7 +187,7 @@ export function RwaPairsPanel() {
                 <th className="pb-3 pr-4 font-semibold text-neutral-400">24h vol</th>
                 <th className="pb-3 pr-4 font-semibold text-neutral-400">Fee</th>
                 <th className="pb-3 pr-4 font-semibold text-neutral-400">Flags</th>
-                <th className="pb-3 font-semibold text-neutral-400">Pool</th>
+                <th className="pb-3 font-semibold text-neutral-400">Liquidity</th>
               </tr>
             </thead>
             <tbody>
@@ -191,14 +222,26 @@ export function RwaPairsPanel() {
                     </div>
                   </td>
                   <td className="py-4">
-                    <a
-                      className="inline-flex items-center gap-1 text-neutral-300 underline decoration-neutral-700 underline-offset-2 transition-colors hover:text-neutral-100 hover:decoration-neutral-500"
-                      href={`https://raydium.io/clmm/create-position/?pool_id=${pair.poolAddress}`}
-                      target="_blank"
-                      rel="noreferrer"
+                    <button
+                      type="button"
+                      className="rounded-lg border border-neutral-700 px-2.5 py-1 text-[11px] font-semibold text-neutral-200 hover:border-neutral-500"
+                      onClick={() => setOpenPair({
+                        poolAddress: pair.poolAddress,
+                        mintA: pair.mintA,
+                        mintB: pair.mintB,
+                        symbolA: pair.symbolA,
+                        symbolB: pair.symbolB,
+                        wrappedSymbol: pair.wrappedSymbol,
+                        plainSymbol: pair.plainSymbol,
+                        feeTierBps: pair.feeTierBps,
+                        token2022A: pair.token2022A,
+                        token2022B: pair.token2022B,
+                        freezeRisk: pair.freezeRisk,
+                      })}
                     >
-                      {short(pair.poolAddress)} <ArrowUpRight className="h-3 w-3" />
-                    </a>
+                      Add liquidity
+                    </button>
+                    <div className="mt-1 font-mono text-[10px] text-neutral-600">{short(pair.poolAddress)}</div>
                   </td>
                 </tr>
               ))}
@@ -206,6 +249,8 @@ export function RwaPairsPanel() {
           </table>
         </div>
       )}
+
+      {openPair && <OpenPositionModal pair={openPair} onClose={() => setOpenPair(null)} />}
     </section>
   );
 }

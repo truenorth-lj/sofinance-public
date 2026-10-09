@@ -83,6 +83,32 @@ export const listRwaPairsSchema = z.object({
 });
 export type ListRwaPairsInput = z.infer<typeof listRwaPairsSchema>;
 
+const openRangePresetSchema = z.enum(["tight", "standard", "wide", "custom"]).default("standard");
+
+export const quoteOpenPositionSchema = z.object({
+  wallet: publicKeySchema,
+  poolId: publicKeySchema,
+  inputMint: publicKeySchema,
+  inputKind: z.enum(["native", "token"]),
+  amount: z.string().regex(/^\d+(\.\d+)?$/, "Amount must be a valid decimal number"),
+  rangePreset: openRangePresetSchema,
+  minPrice: z.string().regex(/^\d+(\.\d+)?$/).optional(),
+  maxPrice: z.string().regex(/^\d+(\.\d+)?$/).optional(),
+  resaleFloorBps: z.number().int().min(9500).max(10000).multipleOf(10).default(9900),
+  slippageToleranceBps: z.number().int().min(0).max(500).multipleOf(10).default(100),
+});
+export type QuoteOpenPositionInput = z.infer<typeof quoteOpenPositionSchema>;
+export const prepareOpenPositionSchema = quoteOpenPositionSchema;
+export type PrepareOpenPositionInput = QuoteOpenPositionInput;
+
+export const submitOpenPositionSchema = z.object({
+  signedTransaction: z.string().max(2500, "Signed transaction too large"),
+  permit: z.string(),
+  wallet: publicKeySchema,
+  summary: z.any(),
+});
+export type SubmitOpenPositionInput = z.infer<typeof submitOpenPositionSchema>;
+
 
 // Position holding-period / realized fee APR (read-only, no DB)
 export const getPositionPerformanceSchema = z.object({
