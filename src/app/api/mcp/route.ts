@@ -10,6 +10,9 @@ import {
   submitCompoundTransaction,
   listRwaPairs,
   getPositionPerformance,
+  quoteOpenPosition,
+  prepareOpenPosition,
+  submitOpenPosition,
 } from "@/mcp/tools";
 import {
   listPositionsSchema,
@@ -20,6 +23,9 @@ import {
   submitCompoundTransactionSchema,
   listRwaPairsSchema,
   getPositionPerformanceSchema,
+  quoteOpenPositionSchema,
+  prepareOpenPositionSchema,
+  submitOpenPositionSchema,
 } from "@/mcp/schemas";
 
 /**
@@ -169,6 +175,30 @@ async function handleToolCall(name: string, args: unknown, walletFromToken: stri
       return await submitCompoundTransaction(input);
     }
 
+    case "quote_open_position": {
+      const input = quoteOpenPositionSchema.parse(args);
+      if (input.wallet !== walletFromToken) {
+        throw new Error(`Token wallet mismatch: token is for ${walletFromToken}, requested ${input.wallet}`);
+      }
+      return await quoteOpenPosition(input);
+    }
+
+    case "prepare_open_position": {
+      const input = prepareOpenPositionSchema.parse(args);
+      if (input.wallet !== walletFromToken) {
+        throw new Error(`Token wallet mismatch: token is for ${walletFromToken}, requested ${input.wallet}`);
+      }
+      return await prepareOpenPosition(input);
+    }
+
+    case "submit_open_position": {
+      const input = submitOpenPositionSchema.parse(args);
+      if (input.wallet !== walletFromToken) {
+        throw new Error(`Token wallet mismatch: token is for ${walletFromToken}, requested ${input.wallet}`);
+      }
+      return await submitOpenPosition(input);
+    }
+
     default:
       throw new Error(`Unknown tool: ${name}`);
   }
@@ -207,7 +237,7 @@ const TOOL_DEFINITIONS = [
   {
     name: "list_rwa_pairs",
     description:
-      "Discover Raydium CLMM pools where BOTH sides are the same underlying RWA asset (wrapped vs unwrapped / xStock style), e.g. SPCXx/SPCX, MSTRx/MSTR, NVDAx/NVDA. Excludes RWA/USDC and unrelated meme collisions. Returns pool address, mint symbols, fee tier, TVL, 24h volume/fees, Raydium fee APR, estimated fee APR from (24h fees/TVL)*365*100 (labeled), Token-2022 and freeze-risk flags. Read-only; no wallet required. Pairing rule: FOOx/FOO (or FOO-x / xFOO) symbol wrap + both mints Jupiter-tagged (stocks|rwa; prefer xstocks/backpack) or on the Backed xStocks Solana whitelist.",
+      "Discover Raydium CLMM pools where BOTH sides are the same underlying RWA asset (wrapped vs unwrapped / xStock style), e.g. SPCXx/SPCX, MSTRx/MSTR, NVDAx/NVDA. Excludes RWA/USDC and unrelated meme collisions. Returns pool address, mint symbols, fee tier, TVL, 24h volume/fees, Raydium fee APR, estimated fee APR from (24h fees/TVL)*365*100 (labeled), Token-2022 and freeze-risk flags, openPositionUrl deep link (/app/rwa-pairs?pool=<id>&open=1), and recommendedRanges (tight ±0.05%, standard ±0.3% default, wide ±1%, B per 1 A). Chain: list_rwa_pairs → quote_open_position → prepare_open_position → sign via signUrl → list_positions. Read-only; no wallet required. Pairing rule: FOOx/FOO (or FOO-x / xFOO) symbol wrap + both mints Jupiter-tagged (stocks|rwa; prefer xstocks/backpack) or on the Backed xStocks Solana whitelist.",
     inputSchema: {
       type: "object",
       properties: {
@@ -491,6 +521,83 @@ const TOOL_DEFINITIONS = [
           type: "object",
           description:
             "Complete summary object from prepare_compound_transaction response, unchanged (bound by the permit)",
+        },
+      },
+      required: ["signedTransaction", "permit", "wallet", "summary"],
+    },
+  },
+  {
+    name: "quote_open_position",
+    description:
+      "Quote opening a NEW Raydium CLMM position in a pool (no existing NFT). Input SOL/USDC/pool token, amount, and a price range (presets tight ±0.05% / standard ±0.3% / wide ±1%, or custom minPrice/maxPrice in B per 1 A). Returns expected A/B after Jupiter swap-to-ratio, tick-aligned range, in/out-of-range, price impact, refundable vs non-refundable SOL rent (NFT + tick arrays), and Token-2022/freeze flags. Fails clearly on insufficient balance, >5% impact, transfer-fee/freeze, or unfunded tick arrays the wallet cannot pay. Read-only.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        wallet: { type: "string", description: "Wallet public key" },
+        poolId: { type: "string", description: "Raydium CLMM pool id (from list_rwa_pairs)" },
+        inputMint: { type: "string", description: "SOL, USDC, or a mint in the pool" },
+        inputKind: { type: "string", enum: ["native", "token"], description: "'native' for SOL, 'token' otherwise" },
+        amount: { type: "string", description: "Amount in token units (e.g. '1.5')" },
+        rangePreset: {
+          type: "string",
+          enum: ["tight", "standard", "wide", "custom"],
+          description: "Default standard (±0.3% around current B-per-A price)",
+          default: "standard",
+        },
+        minPrice: { type: "string", description: "Custom range min price (B per 1 A), required if rangePreset=custom" },
+        maxPrice: { type: "string", description: "Custom range max price (B per 1 A), required if rangePreset=custom" },
+        resaleFloorBps: {
+          type: "number",
+          description: "Minimum resale ratio in basis points (9500-10000, default 9900)",
+          default: 9900,
+        },
+        slippageToleranceBps: {
+          type: "number",
+          description: "Open-position price tolerance in basis points (0-500, default 100). Jupiter swap slippage stays 0.5%.",
+          default: 100,
+        },
+      },
+      required: ["wallet", "poolId", "inputMint", "inputKind", "amount"],
+    },
+  },
+  {
+    name: "prepare_open_position",
+    description:
+      "Prepare an unsigned, fully-simulated transaction that opens a new CLMM position. Returns base64 tx (already partial-signed by the ephemeral NFT mint; wallet signs as fee payer), HMAC permit, summary, and signUrl. Server never holds keys after prepare; the mint secret is discarded. 1232-byte limit, fresh blockhash, full simulation. After signing, call submit_open_position (not submit_signed_transaction — this tx has two required signers).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        wallet: { type: "string", description: "Wallet public key" },
+        poolId: { type: "string", description: "Raydium CLMM pool id" },
+        inputMint: { type: "string", description: "Input asset mint" },
+        inputKind: { type: "string", enum: ["native", "token"] },
+        amount: { type: "string", description: "Amount in token units" },
+        rangePreset: {
+          type: "string",
+          enum: ["tight", "standard", "wide", "custom"],
+          default: "standard",
+        },
+        minPrice: { type: "string" },
+        maxPrice: { type: "string" },
+        resaleFloorBps: { type: "number", default: 9900 },
+        slippageToleranceBps: { type: "number", default: 100 },
+      },
+      required: ["wallet", "poolId", "inputMint", "inputKind", "amount"],
+    },
+  },
+  {
+    name: "submit_open_position",
+    description:
+      "Submit a signed open-position transaction. Re-verifies HMAC permit, re-reads pool/balances, re-simulates (sigVerify true, including the NFT-mint partial signature), then broadcasts. Pass signedTransaction plus permit, wallet, and the complete summary from prepare_open_position, unchanged. Returns signature and the new positionMint.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        signedTransaction: { type: "string", description: "Base64-encoded signed transaction" },
+        permit: { type: "string", description: "HMAC permit from prepare_open_position" },
+        wallet: { type: "string", description: "Wallet public key" },
+        summary: {
+          type: "object",
+          description: "Complete summary object from prepare_open_position, unchanged (bound by the permit)",
         },
       },
       required: ["signedTransaction", "permit", "wallet", "summary"],

@@ -20,7 +20,7 @@ Successfully added a minimal, production-ready MCP (Model Context Protocol) serv
 
 **Total:** ~1,600 lines of new code
 
-### 2. MCP Tools (7 total)
+### 2. MCP Tools (12 total)
 
 | Tool | Type | Description |
 |------|------|-------------|
@@ -31,6 +31,11 @@ Successfully added a minimal, production-ready MCP (Model Context Protocol) serv
 | `prepare_compound_transaction` | Prepare | Build unsigned compound transaction |
 | `submit_signed_transaction` | Broadcast | Re-verify and broadcast signed transaction |
 | `submit_compound_transaction` | Broadcast | Re-verify and broadcast compound transaction |
+| `list_rwa_pairs` | Read-only | Discover same-asset RWA CLMM pairs |
+| `get_position_performance` | Read-only | Holding-period / realized fee APR |
+| `quote_open_position` | Read-only | Quote opening a new CLMM position |
+| `prepare_open_position` | Prepare | Unsigned open-position tx + NFT mint partial signature |
+| `submit_open_position` | Broadcast | Re-verify and broadcast open-position tx |
 
 ### 3. Safety Guarantees (unchanged from web UI)
 

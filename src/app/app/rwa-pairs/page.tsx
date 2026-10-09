@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import { InkShell, InkNav } from "@/components/ink";
 import { RwaPairsPanel } from "@/components/rwa-pairs-panel";
 import { useWalletConnection } from "@/components/wallet-connection";
@@ -16,11 +17,14 @@ export default function RwaPairsPage() {
         <p className="mt-2 max-w-2xl text-sm leading-relaxed text-neutral-500">
           Find Raydium CLMM pools where both tokens represent the same underlying (wrapped vs unwrapped /
           Jupiter stocks/rwa tags + xStocks whitelist). Ranked by estimated fee APR from 24h fees and TVL.
-          Daily APR sparklines are estimated (volume × feeRate ÷ TVL), not Raydium daily feeApr. Read-only — no auto-open position.
+          Daily APR sparklines are estimated (volume × feeRate ÷ TVL), not Raydium daily feeApr.
+          Add liquidity opens a new concentrated position without leaving SoFinance.
         </p>
       </div>
 
-      <RwaPairsPanel />
+      <Suspense fallback={<p className="text-sm text-neutral-500">Loading pairs…</p>}>
+        <RwaPairsPanel />
+      </Suspense>
     </InkShell>
   );
 }

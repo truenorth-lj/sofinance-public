@@ -184,7 +184,7 @@ Payload = {
 
 ## Tool Support
 
-All 9 MCP tools work remotely:
+All 12 MCP tools work remotely:
 
 | Tool | Auth Required | Notes |
 |------|--------------|-------|
@@ -197,6 +197,9 @@ All 9 MCP tools work remotely:
 | `prepare_compound_transaction` | ✅ | Wallet must match token |
 | `submit_signed_transaction` | ✅ | Wallet must match token |
 | `submit_compound_transaction` | ✅ | Wallet must match token |
+| `quote_open_position` | ✅ | Wallet must match token |
+| `prepare_open_position` | ✅ | Wallet must match token |
+| `submit_open_position` | ✅ | Wallet must match token |
 
 ## Testing Results
 
