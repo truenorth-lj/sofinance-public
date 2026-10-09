@@ -11,6 +11,7 @@ import {
 } from "../lib/position-performance-form";
 import { PositionSelect } from "./position-select";
 import { useTokenMetadata } from "./use-token-metadata";
+import { PoolDailyAprChart } from "./pool-daily-apr-panel";
 
 type UiSide = { a: number; b: number };
 
@@ -95,6 +96,11 @@ type PerformanceResponse = {
   pricing: { source: string; label: string; priceUsdA: number | null; priceUsdB: number | null };
   assumptions: string;
   method: string;
+  realizedFeeAprSeries?: {
+    label: string;
+    assumptions: string;
+    points: Array<{ time: number; date: string; aprPct: number | null; kind: string }>;
+  };
   error?: string;
 };
 
@@ -365,6 +371,24 @@ export function PositionPerformancePanel({
               </>
             )}
           </div>
+
+          <PoolDailyAprChart
+            poolId={data.poolId}
+            nowSeconds={Math.floor(new Date(data.evaluatedAtIso).getTime() / 1000) || undefined}
+            overlay={
+              data.realizedFeeAprSeries
+                ? {
+                    label: data.realizedFeeAprSeries.label,
+                    assumptions: data.realizedFeeAprSeries.assumptions,
+                    points: data.realizedFeeAprSeries.points.map((point) => ({
+                      time: point.time,
+                      date: point.date,
+                      value: point.aprPct,
+                    })),
+                  }
+                : undefined
+            }
+          />
 
           {tn && (
             <div className="rounded-xl border border-neutral-800/60 bg-neutral-900/30 p-3">

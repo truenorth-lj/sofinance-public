@@ -15,7 +15,8 @@ export default function RwaPairsPage() {
         <h1 className="text-2xl font-semibold tracking-tight text-neutral-100 sm:text-3xl">Same-asset RWA pairs</h1>
         <p className="mt-2 max-w-2xl text-sm leading-relaxed text-neutral-500">
           Find Raydium CLMM pools where both tokens represent the same underlying (wrapped vs unwrapped /
-          Jupiter stocks/rwa tags + xStocks whitelist). Ranked by estimated fee APR from 24h fees and TVL. Read-only — no auto-open position.
+          Jupiter stocks/rwa tags + xStocks whitelist). Ranked by estimated fee APR from 24h fees and TVL.
+          Daily APR sparklines are estimated (volume × feeRate ÷ TVL), not Raydium daily feeApr. Read-only — no auto-open position.
         </p>
       </div>
 
