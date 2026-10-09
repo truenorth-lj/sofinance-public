@@ -9,6 +9,7 @@ import {
 } from "@solana/spl-token";
 import { Connection, PublicKey, type AccountInfo } from "@solana/web3.js";
 import { MIN_SOL_LAMPORTS, NATIVE_SOL_MINT } from "./ids";
+import { resolveMintSymbols, symbolFromMintAccount } from "./mint-symbols";
 import { positionSide } from "./quote-math";
 import { rpcConnection } from "./rpc";
 
@@ -28,6 +29,7 @@ export type WalletAsset = {
 };
 export type WalletPosition = {
   positionMint: string; positionAccount: string; poolId: string; mintA: string; mintB: string;
+  symbolA: string | null; symbolB: string | null;
   decimalsA: number; decimalsB: number; feeTierBps: number | null;
   tickLower: number; tickUpper: number; tickCurrent: number; rangeSide: "below" | "inside" | "above";
   liquidity: string;
@@ -155,6 +157,7 @@ export async function discoverWallet(walletAddress: string, connection = rpcConn
       const configId = pool.configId ? pool.configId.toBase58() : "";
       return [{ positionMint: position.nftMint.toBase58(), positionAccount: address.toBase58(), poolId,
         mintA: pool.mintA.toBase58(), mintB: pool.mintB.toBase58(),
+        symbolA: null, symbolB: null,
         decimalsA: pool.mintDecimalsA, decimalsB: pool.mintDecimalsB,
         feeTierBps: configId ? feeByConfig.get(configId) ?? null : null,
         tickLower: position.tickLower,
@@ -163,8 +166,40 @@ export async function discoverWallet(walletAddress: string, connection = rpcConn
         liquidity: position.liquidity.toString() }];
     } catch { return []; }
   });
+  await attachPositionSymbols(connection, mintData, positions);
   positions.sort((a, b) => a.poolId.localeCompare(b.poolId) || a.tickLower - b.tickLower || a.positionMint.localeCompare(b.positionMint));
   return { wallet: walletAddress, slot, fetchedAt: Date.now(), positions, assets };
+}
+
+async function attachPositionSymbols(
+  connection: Connection,
+  mintData: Map<string, AccountInfo<Buffer> | null | undefined>,
+  positions: WalletPosition[],
+) {
+  const pairMints = [...new Set(positions.flatMap((item) => [item.mintA, item.mintB]).filter(Boolean))];
+  if (!pairMints.length) return;
+  const extraKeys = pairMints.filter((mint) => !mintData.has(mint)).map((mint) => new PublicKey(mint));
+  const extraInfos = extraKeys.length ? await accountsInBatches(connection, extraKeys) : [];
+  const onChain: Record<string, string> = {};
+  for (const mint of pairMints) {
+    const known = mintData.get(mint);
+    if (known === undefined) continue;
+    const symbol = symbolFromMintAccount(new PublicKey(mint), known ?? null);
+    if (symbol) onChain[mint] = symbol;
+  }
+  extraKeys.forEach((key, index) => {
+    const symbol = symbolFromMintAccount(key, extraInfos[index] ?? null);
+    if (symbol) onChain[key.toBase58()] = symbol;
+  });
+  try {
+    const symbols = await resolveMintSymbols(pairMints, { onChain });
+    for (const position of positions) {
+      position.symbolA = symbols[position.mintA] ?? null;
+      position.symbolB = symbols[position.mintB] ?? null;
+    }
+  } catch {
+    /* Labels fall back to shortened mints */
+  }
 }
 
 function readFeeTierBps(info: AccountInfo<Buffer> | null): number | null {
