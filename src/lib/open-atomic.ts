@@ -239,7 +239,7 @@ export async function buildAndSimulateOpenPosition(
   const attempts = [
     ...[48, 40, 32, 24].map(maxAccounts => ({ maxAccounts, strategy: "parallel" as const })),
     ...(![state.mintA, state.mintB].includes(state.inputMint)
-      ? [32, 24].map(maxAccounts => ({ maxAccounts, strategy: "sequential" as const })) : []),
+      ? [32, 28, 24, 23].map(maxAccounts => ({ maxAccounts, strategy: "sequential" as const })) : []),
   ];
   for (const { maxAccounts, strategy } of attempts) {
     try {
