@@ -23,11 +23,13 @@ export function PositionPerformancePanelFallback() {
 export function PositionPerformanceQueryPanel() {
   const searchParams = useSearchParams();
   const query = queryFromSearchParams(searchParams);
+  const previewPoolId = (searchParams.get("pool") ?? "").trim();
   return (
     <PositionPerformancePanel
-      key={`${query.mint}:${query.wallet}`}
+      key={`${query.mint}:${query.wallet}:${previewPoolId}`}
       initialMint={query.mint}
       initialWallet={query.wallet}
+      previewPoolId={previewPoolId}
     />
   );
 }
