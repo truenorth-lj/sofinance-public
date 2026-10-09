@@ -42,6 +42,8 @@ describe("PositionPerformancePanel wallet defaults", () => {
     expect(markup).toContain("Defaults to the connected wallet");
     expect(markup).toContain("Pre-filled from the connected wallet");
     expect(markup).toContain("Connected wallet positions");
+    expect(markup).toContain('id="perf-position"');
+    expect(markup).toContain("Position NFT mint (base58)");
     expect(markup).toContain("or pick one from the connected wallet");
     expect(markup).not.toContain("Use connected wallet");
   });

@@ -12,6 +12,9 @@ export type ListedPosition = {
   tickLower: number;
   tickUpper: number;
   rangeSide: string;
+  decimalsA?: number;
+  decimalsB?: number;
+  feeTierBps?: number | null;
 };
 
 function firstQueryValue(value: string | string[] | null | undefined): string {
@@ -103,6 +106,9 @@ export function parseListedPositions(body: unknown): ListedPosition[] {
     if (!item || typeof item !== "object") return [];
     const rec = item as Record<string, unknown>;
     if (typeof rec.positionMint !== "string" || !rec.positionMint) return [];
+    const decimalsA = typeof rec.decimalsA === "number" && Number.isInteger(rec.decimalsA) ? rec.decimalsA : undefined;
+    const decimalsB = typeof rec.decimalsB === "number" && Number.isInteger(rec.decimalsB) ? rec.decimalsB : undefined;
+    const feeTierBps = typeof rec.feeTierBps === "number" && Number.isFinite(rec.feeTierBps) ? rec.feeTierBps : undefined;
     return [
       {
         positionMint: rec.positionMint,
@@ -111,6 +117,9 @@ export function parseListedPositions(body: unknown): ListedPosition[] {
         tickLower: typeof rec.tickLower === "number" ? rec.tickLower : 0,
         tickUpper: typeof rec.tickUpper === "number" ? rec.tickUpper : 0,
         rangeSide: typeof rec.rangeSide === "string" ? rec.rangeSide : "",
+        ...(decimalsA !== undefined ? { decimalsA } : {}),
+        ...(decimalsB !== undefined ? { decimalsB } : {}),
+        ...(feeTierBps !== undefined ? { feeTierBps } : {}),
       },
     ];
   });
