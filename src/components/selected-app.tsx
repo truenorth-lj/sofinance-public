@@ -5,7 +5,8 @@ import { ArrowDown, ArrowUpRight, CircleAlert, LoaderCircle, Sprout } from "luci
 import { assetMetadata, assetSymbol, TokenPicker } from "./token-picker";
 import { formatAmount } from "@/lib/amount";
 import { NATIVE_SOL_MINT, USDC_MINT } from "@/lib/ids";
-import type { TokenMetadata } from "@/lib/token-metadata";
+import { PositionSelect } from "./position-select";
+import { useTokenMetadata } from "./use-token-metadata";
 import { useSelectedController } from "./use-selected-controller";
 import { TransactionStatusDialog } from "./transaction-status-dialog";
 import { CompoundPanel } from "./compound-panel";
@@ -44,8 +45,11 @@ export function SelectedApp() {
   const busy = addBusy || compound.busy;
   const actionDisabled = addDisabled || compound.walletBlocked;
   const primaryAction = () => { if (!compound.walletBlocked) addAction(); };
-  const mintQuery = discovery?.assets.map((asset) => asset.mint).join(",") || "";
-  const [metadataState, setMetadataState] = useState<{ query: string; tokens: Record<string, TokenMetadata> }>({ query: "", tokens: {} });
+  const metadataMints = [
+    ...(discovery?.assets.map((asset) => asset.mint) || []),
+    ...(discovery?.positions.flatMap((item) => [item.mintA, item.mintB]) || []),
+  ];
+  const metadata = useTokenMetadata(metadataMints);
   const [statusDialogOpen, setStatusDialogOpen] = useState(false);
   const [activeView, setActiveView] = useState<"compound" | "deposit">("compound");
   const shownSignatureRef = useRef<string | null>(null);
@@ -70,23 +74,6 @@ export function SelectedApp() {
       window.localStorage.setItem(`sofinance:status-dialog-terminal:${visibleAttempt.wallet}`, visibleAttempt.signature);
     }
   }, [visibleAttempt, attemptStatus]);
-  useEffect(() => {
-    if (!mintQuery) return;
-    const aborter = new AbortController();
-    const load = async () => {
-      const tokens: Record<string, TokenMetadata> = {};
-      const mints = mintQuery.split(",");
-      for (let index = 0; index < mints.length; index += 100) {
-        const response = await fetch("/api/token-metadata", { method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ mints: mints.slice(index, index + 100) }), signal: aborter.signal });
-        if (response.ok) Object.assign(tokens, (await response.json() as { tokens: Record<string, TokenMetadata> }).tokens);
-      }
-      if (!aborter.signal.aborted) setMetadataState({ query: mintQuery, tokens });
-    };
-    void load().catch(() => undefined); // Mint metadata is optional; on-chain balances remain usable.
-    return () => aborter.abort();
-  }, [mintQuery]);
-  const metadata = metadataState.query === mintQuery ? metadataState.tokens : {};
   const selectedAsset = discovery?.assets.find((asset) => asset.kind === selection?.inputKind && asset.mint === selection?.inputMint);
   const inputLabel = selectedAsset ? assetSymbol(selectedAsset, assetMetadata(selectedAsset, metadata)) : "Input asset";
   const positionOptions = discovery?.positions || [];
@@ -103,11 +90,18 @@ export function SelectedApp() {
 
       <section aria-labelledby="position-heading" className="rounded-[20px] border border-neutral-800/80 bg-[#0a0a0a] p-5 sm:p-7">
         <div className="flex items-center justify-between gap-3"><h2 id="position-heading" className="text-base font-semibold text-neutral-100">My positions</h2><button type="button" disabled={!wallet || busy} onClick={() => void refreshDiscovery()} className="text-xs font-semibold text-neutral-300 transition-opacity hover:opacity-70 disabled:opacity-40">Rescan wallet</button></div>
-        <label htmlFor="position" className="sr-only">Select Raydium position</label>
-        <select id="position" value={selection?.positionMint || ""} disabled={!positionOptions.length || busy} onChange={(event) => choosePosition(event.target.value)} className="mt-3 w-full rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-3 text-sm text-neutral-100 outline-none focus:border-neutral-600">
-          {!positionOptions.length && <option value="">{connected ? "No identifiable position found" : "Connect wallet to view positions"}</option>}
-          {positionOptions.map((item) => <option key={item.positionMint} value={item.positionMint}>{poolLabel(item.mintA)} / {poolLabel(item.mintB)} · NFT {short(item.positionMint)} · ticks {item.tickLower}–{item.tickUpper}</option>)}
-        </select>
+        <PositionSelect
+          id="position"
+          label="Select Raydium position"
+          labelSrOnly
+          value={selection?.positionMint || ""}
+          disabled={!positionOptions.length || busy}
+          onChange={choosePosition}
+          positions={positionOptions}
+          metadata={metadata}
+          placeholder={!positionOptions.length ? (connected ? "No identifiable position found" : "Connect wallet to view positions") : undefined}
+          className="mt-3 w-full rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-3 text-sm text-neutral-100 outline-none focus:border-neutral-600"
+        />
         {state && <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs">
           <span className={`rounded-full border px-2.5 py-1 ${state.inRange ? "border-neutral-600 bg-neutral-800/50 text-neutral-300" : "border-neutral-700 bg-neutral-800/30 text-neutral-400"}`}>{state.rangeSide === "above" ? "Above range · single-sided" : state.rangeSide === "below" ? "Below range · single-sided" : "Price within range"}</span>
           <span className="text-neutral-500">Position assets: {money(state.currentAmounts.a, state.decimalsA)} {poolLabel(state.mintA)}  +  {money(state.currentAmounts.b, state.decimalsB)} {poolLabel(state.mintB)}</span>

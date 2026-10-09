@@ -112,7 +112,8 @@ describe("discoverWallet", () => {
     expect(result.positions).toHaveLength(2);
     expect(result.positions).toContainEqual(expect.objectContaining({ positionMint: nft.toBase58(), poolId: poolKey.toBase58(),
       mintA: mintA.toBase58(), mintB: mintB.toBase58(), tickLower: -100, tickUpper: 100,
-      rangeSide: "inside", liquidity: "10" }));
+      rangeSide: "inside", liquidity: "10", decimalsA: expect.any(Number), decimalsB: expect.any(Number),
+      feeTierBps: null }));
     expect(result.assets.find((asset) => asset.mint === input.toBase58())).toMatchObject({
       balance: "2000000", totalBalance: "5000000", eligible: true, account: ata.toBase58(),
     });
