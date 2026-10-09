@@ -315,7 +315,7 @@ export function toTokenEquivalentUi(
   return amounts.a * uiPriceBPerA + amounts.b;
 }
 
-function feeAprFromRatio(fees: number, deposited: number, holdingDays: number | null): number | null {
+export function feeAprFromRatio(fees: number, deposited: number, holdingDays: number | null): number | null {
   if (holdingDays === null || !(holdingDays > 0) || !(deposited > 0) || !Number.isFinite(fees) || !Number.isFinite(deposited)) {
     return null;
   }
