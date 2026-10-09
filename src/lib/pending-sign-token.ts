@@ -5,7 +5,7 @@ import { promisify } from "util";
 const deflateAsync = promisify(deflate);
 const inflateAsync = promisify(inflate);
 
-export type PendingSignKind = "add-liquidity" | "compound";
+export type PendingSignKind = "add-liquidity" | "compound" | "open-position";
 
 export interface PendingSignPayload {
   kind: PendingSignKind;

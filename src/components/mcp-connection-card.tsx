@@ -315,7 +315,8 @@ export function McpConnectionCard({ wallet }: McpConnectionCardProps) {
               <strong>Tools:</strong> list_positions, quote_add_liquidity,
               prepare_transaction, submit_signed_transaction, quote_compound,
               prepare_compound_transaction, submit_compound_transaction,
-              list_rwa_pairs, get_position_performance
+              list_rwa_pairs, get_position_performance, quote_open_position,
+              prepare_open_position, submit_open_position
             </li>
           </ol>
         </div>
@@ -325,7 +326,7 @@ export function McpConnectionCard({ wallet }: McpConnectionCardProps) {
             Server never holds your private keys. Signing happens locally.
           </span>
           <a
-            href="https://github.com/truenorth-lj/sofinance-public#mcp-tools-9"
+            href="https://github.com/truenorth-lj/sofinance-public#mcp-tools-12"
             target="_blank"
             rel="noreferrer"
             className="flex items-center gap-1 font-semibold text-neutral-400 transition-colors hover:text-neutral-200"

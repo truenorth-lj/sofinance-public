@@ -8,6 +8,8 @@ import {
   submitCompoundTransactionSchema,
   listRwaPairsSchema,
   getPositionPerformanceSchema,
+  quoteOpenPositionSchema,
+  submitOpenPositionSchema,
 } from "./schemas";
 
 describe("MCP Schemas", () => {
@@ -322,5 +324,52 @@ describe("getPositionPerformanceSchema", () => {
 
   it("rejects invalid mint", () => {
     expect(getPositionPerformanceSchema.safeParse({ positionMint: "x" }).success).toBe(false);
+  });
+});
+
+describe("quoteOpenPositionSchema", () => {
+  const validInput = {
+    wallet: "11111111111111111111111111111111",
+    poolId: "So11111111111111111111111111111111111111112",
+    inputMint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+    inputKind: "token" as const,
+    amount: "1.5",
+  };
+
+  it("defaults to the standard range preset", () => {
+    const result = quoteOpenPositionSchema.parse(validInput);
+    expect(result.rangePreset).toBe("standard");
+    expect(result.slippageToleranceBps).toBe(100);
+  });
+
+  it("accepts a custom range", () => {
+    const result = quoteOpenPositionSchema.parse({
+      ...validInput,
+      rangePreset: "custom",
+      minPrice: "0.997",
+      maxPrice: "1.003",
+    });
+    expect(result.rangePreset).toBe("custom");
+    expect(result.minPrice).toBe("0.997");
+  });
+
+  it("rejects an invalid amount", () => {
+    expect(quoteOpenPositionSchema.safeParse({ ...validInput, amount: "nope" }).success).toBe(false);
+  });
+});
+
+describe("submitOpenPositionSchema", () => {
+  it("requires summary like compound submit", () => {
+    expect(submitOpenPositionSchema.safeParse({
+      signedTransaction: "tx",
+      permit: "permit",
+      wallet: "11111111111111111111111111111111",
+    }).success).toBe(false);
+    expect(submitOpenPositionSchema.safeParse({
+      signedTransaction: "tx",
+      permit: "permit",
+      wallet: "11111111111111111111111111111111",
+      summary: { operation: "open-position" },
+    }).success).toBe(true);
   });
 });

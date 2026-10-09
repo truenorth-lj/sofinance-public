@@ -33,3 +33,14 @@ export function buildSignUrl(signToken: string): string {
   const base = getPublicBaseUrl();
   return base ? `${base}${path}` : path;
 }
+
+export function buildOpenPositionPath(poolId: string): string {
+  return `${APP_ROUTES.rwaPairs}?pool=${encodeURIComponent(poolId)}&open=1`;
+}
+
+/** Deep link that opens the add-liquidity modal on /app/rwa-pairs. */
+export function buildOpenPositionUrl(poolId: string): string {
+  const path = buildOpenPositionPath(poolId);
+  const base = getPublicBaseUrl();
+  return base ? `${base}${path}` : path;
+}

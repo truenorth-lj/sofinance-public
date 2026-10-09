@@ -17,7 +17,14 @@ import type { CompoundSummary } from "../lib/compound-types";
 import { discoverRwaPairs } from "../lib/rwa-pairs";
 import { getPositionPerformance as readPositionPerformance } from "../lib/position-performance";
 import { createSignToken } from "../lib/pending-sign-token";
-import { buildSignUrl } from "../lib/public-urls";
+import { buildOpenPositionUrl, buildSignUrl } from "../lib/public-urls";
+import { OPEN_RANGE_PRESETS } from "../lib/open-range-presets";
+import { rangeInputFromFields } from "../lib/open-range";
+import { getOpenPositionQuoteBundle } from "../lib/open-quote";
+import { buildAndSimulateOpenPosition } from "../lib/open-atomic";
+import { issueOpenPositionPermit } from "../lib/open-permit";
+import { submitOpenPositionFromParts } from "../lib/open-send";
+import type { OpenPositionSummary } from "../lib/open-types";
 import type {
   ListPositionsInput,
   QuoteAddLiquidityInput,
@@ -27,6 +34,9 @@ import type {
   SubmitCompoundTransactionInput,
   ListRwaPairsInput,
   GetPositionPerformanceInput,
+  QuoteOpenPositionInput,
+  PrepareOpenPositionInput,
+  SubmitOpenPositionInput,
 } from "./schemas";
 
 /**
@@ -576,6 +586,8 @@ export async function listRwaPairs(input: ListRwaPairsInput) {
       freezeRiskA: pair.freezeRiskA,
       freezeRiskB: pair.freezeRiskB,
       freezeRisk: pair.freezeRisk,
+      openPositionUrl: buildOpenPositionUrl(pair.poolAddress),
+      recommendedRanges: OPEN_RANGE_PRESETS,
     })),
   };
 }
@@ -657,4 +669,92 @@ export async function getPositionPerformance(input: GetPositionPerformanceInput)
     assumptions: result.assumptions,
     realizedFeeAprSeries: result.realizedFeeAprSeries,
   };
+}
+
+function openRangeFromInput(input: QuoteOpenPositionInput) {
+  return rangeInputFromFields(input.rangePreset, input.minPrice, input.maxPrice);
+}
+
+/**
+ * Quote opening a new Raydium CLMM position in a pool (no existing NFT required).
+ * Swaps the input asset toward the in-range pool ratio via Jupiter, then sizes liquidity.
+ */
+export async function quoteOpenPosition(input: QuoteOpenPositionInput) {
+  const selection = {
+    poolId: input.poolId,
+    inputMint: input.inputMint,
+    inputKind: input.inputKind,
+  };
+  const { quote } = await getOpenPositionQuoteBundle(
+    input.wallet, selection, input.amount, openRangeFromInput(input),
+    input.resaleFloorBps, input.slippageToleranceBps,
+  );
+  return quote;
+}
+
+/**
+ * Prepare an unsigned open-position transaction. The NFT mint keypair is generated
+ * server-side, partial-signs the v0 message, and is discarded — never persisted.
+ * The wallet still signs as fee payer. After signing, call submit_open_position.
+ */
+export async function prepareOpenPosition(input: PrepareOpenPositionInput) {
+  const selection = {
+    poolId: input.poolId,
+    inputMint: input.inputMint,
+    inputKind: input.inputKind,
+  };
+  const { summary, transaction } = await buildAndSimulateOpenPosition(
+    input.wallet, selection, input.amount, openRangeFromInput(input),
+    input.resaleFloorBps, input.slippageToleranceBps,
+  );
+  const jupiterApiKey = process.env.JUPITER_API_KEY || "";
+  const permit = issueOpenPositionPermit(jupiterApiKey, {
+    wallet: input.wallet,
+    summary,
+    message: Buffer.from(transaction.message.serialize()).toString("base64"),
+  });
+  const unsignedTransactionBase64 = Buffer.from(transaction.serialize()).toString("base64");
+  const submitArgs = { permit, wallet: input.wallet, summary };
+  const signToken = await createSignToken(
+    {
+      kind: "open-position",
+      wallet: input.wallet,
+      unsignedTransaction: unsignedTransactionBase64,
+      permit,
+      submitArgs,
+      expiresAt: summary.expiresAt,
+    },
+    jupiterApiKey,
+  );
+  return {
+    unsignedTransaction: unsignedTransactionBase64,
+    permit,
+    summary,
+    signToken,
+    signUrl: buildSignUrl(signToken),
+    instructions: {
+      message: "Sign unsignedTransaction with the wallet (keep the existing NFT-mint partial signature), then call submit_open_position with { signedTransaction, permit, wallet, summary }. Pass summary back exactly as returned. Or open signUrl in a browser with the wallet connected.",
+    },
+  };
+}
+
+/**
+ * Submit a signed open-position transaction. Dedicated tool (not submit_signed_transaction)
+ * because the v0 message has two required signers (wallet + ephemeral NFT mint).
+ */
+export async function submitOpenPosition(input: SubmitOpenPositionInput) {
+  try {
+    return await submitOpenPositionFromParts({
+      signedTransaction: input.signedTransaction,
+      permit: input.permit,
+      wallet: input.wallet,
+      summary: input.summary as OpenPositionSummary,
+    });
+  } catch (error) {
+    if (error instanceof CompoundSendError) {
+      const message = sanitizePublicError(error.cause ?? error, "Open-position transaction broadcast failed");
+      throw new Error(error.sent === false ? notSentRetryMessage(message) : message);
+    }
+    throw new Error(notSentRetryMessage(sanitizePublicError(error, "Open-position transaction broadcast failed")));
+  }
 }
