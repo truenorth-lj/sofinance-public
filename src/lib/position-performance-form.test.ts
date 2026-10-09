@@ -154,6 +154,8 @@ describe("parseListedPositions", () => {
             decimalsA: 6,
             decimalsB: 8,
             feeTierBps: 1,
+            symbolA: "HOODx",
+            symbolB: "HOOD",
           },
           { positionMint: "" },
           { notAPosition: true },
@@ -171,6 +173,8 @@ describe("parseListedPositions", () => {
         decimalsA: 6,
         decimalsB: 8,
         feeTierBps: 1,
+        symbolA: "HOODx",
+        symbolB: "HOOD",
       },
     ]);
     expect(parseListedPositions({ error: "nope" })).toEqual([]);

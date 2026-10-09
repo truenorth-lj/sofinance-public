@@ -22,6 +22,7 @@ describe("shortMint", () => {
 
 describe("tokenSymbol", () => {
   it("prefers metadata, then known mints, then a shortened mint", () => {
+    expect(tokenSymbol(MINT_A, undefined, "HOODx")).toBe("HOODx");
     expect(tokenSymbol(MINT_A, { [MINT_A]: { symbol: " SPCXx " } })).toBe("SPCXx");
     expect(tokenSymbol(USDC_MINT)).toBe("USDC");
     expect(tokenSymbol(NATIVE_SOL_MINT)).toBe("WSOL");
@@ -101,6 +102,24 @@ describe("formatPositionLabel", () => {
         { [MINT_A]: { symbol: "SPCXx" }, [MINT_B]: { symbol: "SPCX" } },
       ),
     ).toBe("SPCXx/SPCX · 0.01% fee · range 1.0012–1.0016 · In range · #3333…3333");
+  });
+
+  it("prefers server-resolved symbolA/symbolB over shortened mints", () => {
+    expect(
+      formatPositionLabel({
+        positionMint: POSITION_MINT,
+        mintA: MINT_A,
+        mintB: MINT_B,
+        symbolA: "HOODx",
+        symbolB: "HOOD",
+        tickLower: 12,
+        tickUpper: 16,
+        rangeSide: "inside",
+        decimalsA: 6,
+        decimalsB: 6,
+        feeTierBps: 25,
+      }),
+    ).toBe("HOODx/HOOD · 0.25% fee · range 1.0012–1.0016 · In range · #3333…3333");
   });
 
   it("omits fee when unknown and still distinguishes out-of-range sides", () => {
