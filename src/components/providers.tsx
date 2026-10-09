@@ -18,6 +18,8 @@ export function Providers({ children }: { children: React.ReactNode }) {
 }
 
 function BrowserWalletProvider({ children }: { children: React.ReactNode }) {
+  // Empty list on purpose: @solana/wallet-adapter-react auto-detects Wallet Standard
+  // wallets (Phantom, Solflare, Backpack, …). Passing those adapters would duplicate them.
   const wallets = useMemo(() => [], []);
   return <WalletProvider wallets={wallets} autoConnect><WalletModalProvider><BrowserWalletConnection>{children}</BrowserWalletConnection></WalletModalProvider></WalletProvider>;
 }
