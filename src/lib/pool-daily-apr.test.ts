@@ -74,11 +74,40 @@ describe("fetchPoolDailyApr", () => {
     const byDate = Object.fromEntries(result.points.map((p) => [p.date, p]));
     expect(byDate["2026-10-07"]?.aprPct).toBeCloseTo((50_000 * 0.0001 / 180_000) * 365 * 100, 6);
     expect(byDate["2026-10-08"]?.aprPct).toBeCloseTo((60_000 * 0.0001 / 190_000) * 365 * 100, 6);
-    // Today: Raydium day.volume fallback + TVL line
-    expect(byDate["2026-10-09"]?.aprPct).toBeCloseTo((80_000 * 0.0001 / 200_000) * 365 * 100, 6);
+    expect(byDate["2026-10-09"]).toBeUndefined();
   });
 
-  it("still returns a series when GeckoTerminal is down, using Raydium day volume for today only", async () => {
+  it("omits the incomplete UTC day from the API series at a fixed mid-day clock", async () => {
+    const now = D3 + 16 * 3600; // 2026-10-09 16:00 UTC
+    const fetcher: typeof fetch = async (input) => {
+      const url = String(input);
+      if (url.includes("/pools/info/ids")) {
+        return jsonResponse({
+          success: true,
+          data: [{ feeRate: 0.0001, tvl: 200_000, day: { volume: 1_000, feeApr: 0.18 } }],
+        });
+      }
+      if (url.includes("/pools/line/liquidity")) {
+        return jsonResponse({
+          success: true,
+          data: { line: [{ time: D2, liquidity: 190_000 }, { time: D3, liquidity: 200_000 }] },
+        });
+      }
+      if (url.includes("geckoterminal.com")) {
+        return jsonResponse({
+          data: { attributes: { ohlcv_list: [[D2, 1, 1, 1, 1, 60_000], [D3, 1, 1, 1, 1, 800]] } },
+        });
+      }
+      throw new Error(`unexpected url ${url}`);
+    };
+
+    const result = await fetchPoolDailyApr(POOL, { fetcher, nowSeconds: now, bypassCache: true });
+    expect(result.points.map((p) => p.date)).toEqual(["2026-10-08"]);
+    expect(result.assumptions).toMatch(/incomplete UTC day/i);
+    expect(result.points[0]?.aprPct).toBeCloseTo((60_000 * 0.0001 / 190_000) * 365 * 100, 6);
+  });
+
+  it("still returns a series when GeckoTerminal is down, using complete-day TVL+volume only", async () => {
     const fetcher: typeof fetch = async (input) => {
       const url = String(input);
       if (url.includes("/pools/info/ids")) {
@@ -88,7 +117,10 @@ describe("fetchPoolDailyApr", () => {
         });
       }
       if (url.includes("/pools/line/liquidity")) {
-        return jsonResponse({ success: true, data: { line: [{ time: D3, liquidity: 10_000 }] } });
+        return jsonResponse({
+          success: true,
+          data: { line: [{ time: D2, liquidity: 10_000 }, { time: D3, liquidity: 10_000 }] },
+        });
       }
       if (url.includes("geckoterminal.com")) {
         return jsonResponse({ error: "nope" }, false);
@@ -96,9 +128,14 @@ describe("fetchPoolDailyApr", () => {
       throw new Error(`unexpected url ${url}`);
     };
 
-    const result = await fetchPoolDailyApr(POOL, { fetcher, nowSeconds: D3, bypassCache: true });
-    expect(result.points).toHaveLength(1);
-    expect(result.points[0]?.aprPct).toBeCloseTo(0.365, 6);
+    const result = await fetchPoolDailyApr(POOL, {
+      fetcher,
+      nowSeconds: D3 + 12 * 3600,
+      bypassCache: true,
+    });
+    expect(result.points.map((p) => p.date)).toEqual(["2026-10-08"]);
+    expect(result.points[0]?.aprPct).toBeNull();
+    expect(result.points.find((p) => p.date === "2026-10-09")).toBeUndefined();
     expect(result.sources.some((s) => s.includes("geckoterminal"))).toBe(false);
   });
 

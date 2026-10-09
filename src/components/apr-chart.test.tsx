@@ -18,9 +18,9 @@ describe("AprLineChart", () => {
             label: "Pool fee APR (daily, estimated)",
             stroke: "#e5e5e5",
             points: [
-              { time: END - 2 * 86_400, value: 4 },
-              { time: END - 86_400, value: 5 },
-              { time: END, value: 6 },
+              { time: END - 3 * 86_400, value: 4 },
+              { time: END - 2 * 86_400, value: 5 },
+              { time: END - 86_400, value: 6 },
             ],
           },
         ],
@@ -50,19 +50,23 @@ describe("AprLineChart", () => {
 });
 
 describe("AprSparkline", () => {
-  it("renders a compact path and the latest percent", () => {
+  it("shows the last complete UTC day's date in the visible label and tooltip", () => {
+    const now = END + 14 * 3600; // 2026-10-09 14:00 UTC
     const markup = renderToStaticMarkup(
       createElement(AprSparkline, {
-        nowSeconds: END,
+        nowSeconds: now,
         label: "Pool fee APR (daily, estimated)",
         points: [
+          { time: END - 2 * 86_400, date: "2026-10-07", value: 4.1 },
           { time: END - 86_400, date: "2026-10-08", value: 3.5 },
-          { time: END, date: "2026-10-09", value: 4.25 },
+          { time: END, date: "2026-10-09", value: 0.25 },
         ],
       }),
     );
     expect(markup).toContain("<path");
-    expect(markup).toContain("4.25%");
+    expect(markup).toContain("3.50% · 2026-10-08");
+    expect(markup).toContain("last complete UTC day 2026-10-08: 3.50%");
+    expect(markup).not.toContain("0.25%");
     expect(markup).toContain("Pool fee APR (daily, estimated)");
   });
 });

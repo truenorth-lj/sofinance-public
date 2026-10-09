@@ -84,8 +84,35 @@ describe("pool-daily-apr-math", () => {
     expect(byDate["2026-10-07"]?.aprPct).toBeCloseTo(3.65, 8);
     // TVL without volume → gap
     expect(byDate["2026-10-08"]?.aprPct).toBeNull();
-    // Today: Gecko volume + snapshot TVL fallback
-    expect(byDate["2026-10-09"]?.aprPct).toBeCloseTo((20_000 * 0.001 / 120_000) * 365 * 100, 8);
+    // Current UTC day is omitted even when volume/TVL exist
+    expect(byDate["2026-10-09"]).toBeUndefined();
+  });
+
+  it("excludes the current incomplete UTC day when the clock is mid-day", () => {
+    const now = D3 + 15 * 3600; // 2026-10-09 15:00 UTC
+    const points = buildPoolDailyAprPoints({
+      volumes: [
+        { time: D2, volumeUsd: 10_000 },
+        { time: D3, volumeUsd: 100 },
+      ],
+      tvl: [
+        { time: D2, tvlUsd: 100_000 },
+        { time: D3, tvlUsd: 100_000 },
+      ],
+      snapshot: {
+        feeRate: 0.001,
+        tvlUsd: 100_000,
+        dayVolumeUsd: 50,
+        dayVolumeFeeUsd: null,
+        dayFeeApr: 0.18,
+        weekFeeApr: null,
+        monthFeeApr: null,
+      },
+      nowSeconds: now,
+    });
+    expect(points.map((p) => p.date)).toEqual(["2026-10-08"]);
+    expect(points[0]?.aprPct).toBeCloseTo(3.65, 8);
+    expect(points.find((p) => p.date === "2026-10-09")).toBeUndefined();
   });
 
   it("does not invent points when feeRate is missing", () => {
@@ -101,7 +128,7 @@ describe("pool-daily-apr-math", () => {
         weekFeeApr: null,
         monthFeeApr: null,
       },
-      nowSeconds: D1,
+      nowSeconds: D2,
     });
     expect(points).toHaveLength(1);
     expect(points[0]?.aprPct).toBeNull();
@@ -120,7 +147,7 @@ describe("pool-daily-apr-math", () => {
         weekFeeApr: null,
         monthFeeApr: null,
       },
-      nowSeconds: D1,
+      nowSeconds: D2,
     });
     expect(points[0]?.aprPct).toBe(0);
   });
