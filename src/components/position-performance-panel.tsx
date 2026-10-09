@@ -1,7 +1,14 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { LoaderCircle, Search } from "lucide-react";
+import { useWalletConnection } from "./wallet-connection";
+import {
+  parseListedPositions,
+  resolveWalletField,
+  showUseConnectedWallet,
+  type ListedPosition,
+} from "../lib/position-performance-form";
 
 type UiSide = { a: number; b: number };
 
@@ -112,12 +119,72 @@ const uiAmount = (raw: string, decimals: number) => {
   return value.toPrecision(6);
 };
 
-export function PositionPerformancePanel() {
-  const [positionMint, setPositionMint] = useState("");
-  const [wallet, setWallet] = useState("");
+export function PositionPerformancePanel({
+  initialMint = "",
+  initialWallet = "",
+}: {
+  initialMint?: string;
+  initialWallet?: string;
+}) {
+  const { address, connected } = useWalletConnection();
+  const connectedAddress = connected ? address : undefined;
+  const [positionMint, setPositionMint] = useState(initialMint);
+  const [manualWallet, setManualWallet] = useState<string | null>(null);
+  const [ignoreUrlWallet, setIgnoreUrlWallet] = useState(false);
+  const [fetchedPositions, setFetchedPositions] = useState<{
+    wallet: string;
+    positions: ListedPosition[];
+    status: "ready" | "error";
+  } | null>(null);
   const [data, setData] = useState<PerformanceResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const walletField = resolveWalletField({
+    urlWallet: initialWallet,
+    connectedAddress,
+    manualValue: manualWallet,
+    ignoreUrl: ignoreUrlWallet,
+  });
+  const wallet = walletField.value;
+  const listedPositions =
+    fetchedPositions && fetchedPositions.wallet === connectedAddress ? fetchedPositions.positions : [];
+  const positionsStatus: "idle" | "loading" | "ready" | "error" = !connectedAddress
+    ? "idle"
+    : fetchedPositions && fetchedPositions.wallet === connectedAddress
+      ? fetchedPositions.status
+      : "loading";
+
+  useEffect(() => {
+    if (!connectedAddress) return;
+    const aborter = new AbortController();
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const response = await fetch(`/api/wallet?wallet=${encodeURIComponent(connectedAddress)}`, {
+            cache: "no-store",
+            signal: aborter.signal,
+            headers: { Accept: "application/json" },
+          });
+          const body: unknown = await response.json();
+          if (!response.ok) throw new Error("Wallet scan failed");
+          if (aborter.signal.aborted) return;
+          setFetchedPositions({
+            wallet: connectedAddress,
+            positions: parseListedPositions(body),
+            status: "ready",
+          });
+        } catch {
+          if (!aborter.signal.aborted) {
+            setFetchedPositions({ wallet: connectedAddress, positions: [], status: "error" });
+          }
+        }
+      })();
+    }, 0);
+    return () => {
+      window.clearTimeout(timer);
+      aborter.abort();
+    };
+  }, [connectedAddress]);
 
   const load = useCallback(async () => {
     const mint = positionMint.trim();
@@ -165,18 +232,74 @@ export function PositionPerformancePanel() {
             onChange={(event) => setPositionMint(event.target.value)}
             placeholder="Position NFT mint (base58)"
             spellCheck={false}
+            autoComplete="off"
           />
         </label>
-        <label className="block text-xs text-neutral-400">
-          Wallet (optional ownership check)
+        <p className="text-[11px] leading-4 text-neutral-600">
+          Paste any position NFT mint
+          {connectedAddress ? ", or pick one from the connected wallet." : "."}
+        </p>
+        {connectedAddress && (
+          <label className="block text-xs text-neutral-400">
+            Connected wallet positions
+            <select
+              className="mt-1 w-full rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 focus:border-neutral-600 focus:outline-none disabled:opacity-50"
+              value={listedPositions.some((item) => item.positionMint === positionMint) ? positionMint : ""}
+              disabled={positionsStatus !== "ready" || listedPositions.length === 0}
+              onChange={(event) => {
+                if (event.target.value) setPositionMint(event.target.value);
+              }}
+            >
+              <option value="">
+                {positionsStatus === "loading"
+                  ? "Loading positions…"
+                  : positionsStatus === "error"
+                    ? "Could not load positions — paste a mint"
+                    : listedPositions.length
+                      ? "Select a position NFT"
+                      : "No CLMM positions on this wallet"}
+              </option>
+              {listedPositions.map((item) => (
+                <option key={item.positionMint} value={item.positionMint}>
+                  NFT {short(item.positionMint)} · ticks {item.tickLower}–{item.tickUpper}
+                  {item.rangeSide ? ` · ${item.rangeSide}` : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        <div>
+          <div className="flex items-center justify-between gap-3">
+            <label htmlFor="perf-wallet" className="text-xs text-neutral-400">
+              Wallet (optional ownership check)
+            </label>
+            {showUseConnectedWallet(wallet, connectedAddress) && connectedAddress && (
+              <button
+                type="button"
+                onClick={() => {
+                  setManualWallet(null);
+                  setIgnoreUrlWallet(true);
+                }}
+                className="text-[11px] font-medium text-neutral-500 transition-colors hover:text-neutral-300"
+              >
+                Use connected wallet
+              </button>
+            )}
+          </div>
           <input
+            id="perf-wallet"
             className="mt-1 w-full rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 focus:border-neutral-600 focus:outline-none"
             value={wallet}
-            onChange={(event) => setWallet(event.target.value)}
-            placeholder="Wallet pubkey"
+            onChange={(event) => setManualWallet(event.target.value)}
+            placeholder="Defaults to the connected wallet"
             spellCheck={false}
+            autoComplete="off"
           />
-        </label>
+          <p className="mt-1 text-[11px] leading-4 text-neutral-600">
+            Optional ownership check. Pre-filled from the connected wallet; clear or paste another
+            pubkey to override.
+          </p>
+        </div>
         <button
           type="button"
           onClick={() => void load()}
