@@ -32,7 +32,10 @@ export function OpenPositionModal({
       : c.submitStage === "broadcasting" ? "Confirming on-chain…"
         : c.submitStage === "confirmed" ? "Position opened"
           : c.quoteLoading ? "Fetching quote…"
-            : c.walletBlockedReason || (c.actionDisabled ? "Complete the form to sign" : "Ready to sign");
+            : c.actionBlockedReason || "Ready to sign";
+  const inputLabel = quote?.inputKind === "native" ? "SOL"
+    : quote ? tokenSymbol(quote.inputMint, undefined,
+      quote.inputMint === pair.mintA ? pair.symbolA : quote.inputMint === pair.mintB ? pair.symbolB : undefined) : "";
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center" role="dialog" aria-modal="true" aria-labelledby="open-position-title">
@@ -151,6 +154,9 @@ export function OpenPositionModal({
             <div className="flex justify-between gap-3"><dt className="text-neutral-500">Token B</dt><dd>{formatAmount(quote.minOutB, quote.decimalsB)} {tokenSymbol(quote.mintB, undefined, pair.symbolB)}</dd></div>
             <div className="flex justify-between gap-3"><dt className="text-neutral-500">Aligned range</dt><dd>{formatPositionPriceRange(quote)}</dd></div>
             <div className="flex justify-between gap-3"><dt className="text-neutral-500">Status</dt><dd>{formatRangeStatus(quote.rangeSide) ?? "—"}</dd></div>
+            <div className="flex justify-between gap-3"><dt className="text-neutral-500">Quote validity</dt><dd>{c.fresh ? `${Math.max(0, Math.ceil((quote.expiresAt - c.now) / 1000))} seconds remaining` : "Expired"}</dd></div>
+            <div className="flex justify-between gap-3"><dt className="text-neutral-500">Estimated immediate resale</dt><dd>{formatAmount(quote.resaleInput, quote.inputDecimals)} {inputLabel}</dd></div>
+            <div className="flex justify-between gap-3"><dt className="text-neutral-500">Minimum resale ({(quote.floorBps / 100).toFixed(1)}%)</dt><dd>{formatAmount(quote.minimumResaleInput, quote.inputDecimals)} {inputLabel}</dd></div>
             <div className="flex justify-between gap-3"><dt className="text-neutral-500">Price impact cap</dt><dd>≤ {quote.maxImpactBps / 100}%</dd></div>
             <div className="flex justify-between gap-3"><dt className="text-neutral-500">Refundable rent (NFT)</dt><dd>{lamports(quote.rent.refundableLamports)}</dd></div>
             <div className="flex justify-between gap-3"><dt className="text-neutral-500">Non-refundable rent</dt><dd>{lamports(quote.rent.nonRefundableLamports)}</dd></div>
@@ -159,6 +165,7 @@ export function OpenPositionModal({
             <div className="flex justify-between gap-3"><dt className="text-neutral-500">Resale floor</dt><dd>{quote.passesFloor ? `Meets ${(quote.floorBps / 100).toFixed(1)}%` : `Below ${(quote.floorBps / 100).toFixed(1)}%`}</dd></div>
           </dl>
         )}
+        {quote && <p className="mt-2 text-xs leading-5 text-neutral-500">Immediate resale estimates swapping the conservative token outputs back to the input asset. SOL fees and rent are calculated separately.</p>}
 
         {quote && !quote.passesFloor && quote.warning && (
           <p role="status" className="mt-3 rounded-xl border border-amber-800/70 bg-amber-950/40 p-3 text-xs leading-5 text-amber-100">
@@ -175,6 +182,12 @@ export function OpenPositionModal({
         )}
 
         <p className="mt-4 text-xs text-neutral-500" role="status">{status}</p>
+        {c.canRefreshQuote && (c.quoteError || (quote && !c.fresh)) && (
+          <button type="button" onClick={c.refreshQuote} disabled={c.quoteLoading}
+            className="mt-2 rounded-xl border border-neutral-700 px-3 py-2 text-xs text-neutral-300 disabled:opacity-40">
+            Refresh quote
+          </button>
+        )}
 
         {c.submitStage === "confirmed" ? (
           <div className="mt-3 space-y-2 text-sm">
@@ -197,7 +210,7 @@ export function OpenPositionModal({
           <button
             type="button"
             disabled={c.actionDisabled}
-            title={c.walletBlockedReason || undefined}
+            title={c.actionBlockedReason || undefined}
             onClick={() => void c.signAndSend()}
             className="mt-4 w-full rounded-xl border border-neutral-700 px-4 py-3 text-sm font-semibold text-neutral-100 disabled:cursor-not-allowed disabled:opacity-40"
           >
