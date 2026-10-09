@@ -2,18 +2,25 @@
 
 import { SolanaAdapter } from "@reown/appkit-adapter-solana/react";
 import { solana } from "@reown/appkit/networks";
-import { createAppKit, useAppKitAccount, useDisconnect } from "@reown/appkit/react";
-import { useAppKitProvider } from "@reown/appkit/react";
-import type { VersionedTransaction } from "@solana/web3.js";
-import { useAppKitWallet } from "@reown/appkit-wallet-button/react";
+import { createAppKit, useAppKit, useAppKitAccount, useAppKitProvider, useDisconnect } from "@reown/appkit/react";
 import { useState } from "react";
+import {
+  APPKIT_FEATURES,
+  APPKIT_THEME_MODE,
+  APPKIT_THEME_VARIABLES,
+  FEATURED_SOLANA_WALLET_IDS,
+  appKitSignMessage,
+  signAppKitTransaction,
+  type AppKitSolanaWalletProvider,
+} from "../lib/appkit-wallet";
 import { WalletConnectionContext } from "./wallet-connection";
 
 const projectId = process.env.NEXT_PUBLIC_REOWN_PROJECT_ID?.trim();
 
 if (typeof window !== "undefined" && projectId) {
   createAppKit({
-    adapters: [new SolanaAdapter({ wallets: [] })],
+    // Wallet Standard extensions are auto-detected via SolanaAdapter.watchStandard().
+    adapters: [new SolanaAdapter()],
     networks: [solana],
     defaultNetwork: solana,
     projectId,
@@ -23,32 +30,30 @@ if (typeof window !== "undefined" && projectId) {
       url: window.location.origin,
       icons: [],
     },
-    features: { analytics: false, email: false, socials: [] },
-    enableWallets: false,
+    features: APPKIT_FEATURES,
+    enableWallets: true,
+    featuredWalletIds: [...FEATURED_SOLANA_WALLET_IDS],
+    allWallets: "SHOW",
+    themeMode: APPKIT_THEME_MODE,
+    themeVariables: APPKIT_THEME_VARIABLES,
   });
 }
 
 export function MobileWalletProvider({ children }: { children: React.ReactNode }) {
   const account = useAppKitAccount({ namespace: "solana" });
-  const { walletProvider } = useAppKitProvider<{
-    signTransaction?: (transaction: VersionedTransaction) => Promise<VersionedTransaction>;
-    signMessage?: (message: Uint8Array) => Promise<Uint8Array>;
-  }>("solana");
+  const { walletProvider } = useAppKitProvider<AppKitSolanaWalletProvider>("solana");
+  const { open } = useAppKit();
   const { disconnect } = useDisconnect();
   const [connectionError, setConnectionError] = useState("");
-  const { connect } = useAppKitWallet({
-    namespace: "solana",
-    onError: () => setConnectionError("Mobile wallet connection incomplete, please reopen QR Code."),
-  });
 
-  function openMobileWallet() {
+  function openWalletModal() {
     setConnectionError("");
-    void connect("jupiter").catch(() => {
-      setConnectionError("Mobile wallet connection incomplete, please reopen QR Code.");
+    void Promise.resolve(open({ view: "Connect", namespace: "solana" })).catch(() => {
+      setConnectionError("Wallet connection incomplete, please try again.");
     });
   }
 
-  function disconnectMobileWallet() {
+  function disconnectWallet() {
     void disconnect({ namespace: "solana" }).catch(() => {
       setConnectionError("Disconnect failed, please retry.");
     });
@@ -57,18 +62,12 @@ export function MobileWalletProvider({ children }: { children: React.ReactNode }
   return <WalletConnectionContext.Provider value={{
     address: account.address,
     connected: account.isConnected && !!account.address,
-    connect: openMobileWallet,
-    disconnect: disconnectMobileWallet,
+    connect: openWalletModal,
+    disconnect: disconnectWallet,
     isMobile: true,
-    walletsCount: 1,
+    walletsCount: FEATURED_SOLANA_WALLET_IDS.length,
     connectionError,
-    signTransaction: async (transaction) => {
-      if (!walletProvider?.signTransaction) throw new Error("Mobile wallet does not support this transaction signing method");
-      return walletProvider.signTransaction(transaction);
-    },
-    signMessage: walletProvider?.signMessage ? async (message) => {
-      if (!walletProvider.signMessage) throw new Error("Mobile wallet does not support message signing");
-      return walletProvider.signMessage(message);
-    } : undefined,
+    signTransaction: (transaction) => signAppKitTransaction(walletProvider, transaction),
+    signMessage: appKitSignMessage(walletProvider),
   }}>{children}</WalletConnectionContext.Provider>;
 }

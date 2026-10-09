@@ -17,10 +17,11 @@ describe("JSX quote entities", () => {
     }
   });
 
-  it("uses real quotes in the mobile Jupiter Wallet hint", () => {
+  it("uses wallet-agnostic connect copy instead of Jupiter-only QR hints", () => {
     const src = readFileSync(resolve("src/components/selected-app.tsx"), "utf8");
-    expect(src).toContain('scan QR Code after clicking "Connect wallet".');
-    expect(src.match(/scan QR Code after clicking "Connect wallet"\./g)?.length).toBe(2);
+    expect(src).toContain("Connect your Solana wallet: browser extension or scan the QR code with a mobile wallet.");
+    expect(src.match(/Connect your Solana wallet: browser extension or scan the QR code with a mobile wallet\./g)?.length).toBe(2);
+    expect(src).not.toContain("mobile Jupiter Wallet");
   });
 
   it("uses real quotes in the compound confirmation copy", () => {
