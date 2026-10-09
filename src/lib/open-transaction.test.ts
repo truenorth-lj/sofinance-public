@@ -64,6 +64,20 @@ describe("open-position transaction compaction", () => {
     };
     expect(accountRoles(compact.transaction, compact.tables)).toEqual(accountRoles(original, alts));
   });
+  it("finds a smaller overlapping table subset than greedy coverage", () => {
+    const payer = Keypair.generate().publicKey, accounts = Array.from({ length: 6 }, () => Keypair.generate().publicKey);
+    const table = (indexes: number[]) => new AddressLookupTableAccount({ key: Keypair.generate().publicKey, state: {
+      deactivationSlot: 2n ** 64n - 1n, lastExtendedSlot: 0, lastExtendedSlotStartIndex: 0, addresses: indexes.map(index => accounts[index]!),
+    } });
+    const alts = [table([0, 1, 2, 3]), table([0, 1, 4]), table([2, 3, 5])];
+    const message = { payerKey: payer, recentBlockhash: fixture.blockhash, instructions: [new TransactionInstruction({
+      programId: TOKEN_PROGRAM_ID, keys: accounts.map(pubkey => ({ pubkey, isSigner: false, isWritable: true })), data: Buffer.alloc(1),
+    })] };
+    const compact = compileCompactOpenTransaction(message, alts);
+    const original = new VersionedTransaction(new TransactionMessage(message).compileToV0Message(alts));
+    expect(versionedTransactionSize(compact.transaction)).toBe(versionedTransactionSize(original) - 34);
+    expect(compact.tables).toEqual(alts.slice(1));
+  });
   it("measures exactly across short-vector boundaries including both signatures", () => {
     const payer = Keypair.generate().publicKey;
     for (const length of [1, 127, 128, 180]) {

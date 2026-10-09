@@ -60,7 +60,35 @@ export function compileCompactOpenTransaction(
   });
   const original = compile(tables);
   const compact = compile(ordered);
-  return versionedTransactionSize(compact.transaction) < versionedTransactionSize(original.transaction) ? compact : original;
+  let best = versionedTransactionSize(compact.transaction) < versionedTransactionSize(original.transaction) ? compact : original;
+  // Greedy coverage can miss a smaller union of overlapping tables. At the
+  // small table counts returned for a two-leg route, exhaustively choose the
+  // subset with the largest net saving; do not enumerate transaction encodings.
+  if (tables.length <= 12) {
+    const eligible = [...new Set(input.instructions.flatMap(ix => ix.keys.map(key => key.pubkey.toBase58()))
+      .filter(key => !signers.has(key) && !invoked.has(key)))];
+    const index = new Map(eligible.map((key, offset) => [key, offset]));
+    const masks = tables.map(table => table.state.addresses.reduce((mask, key) => {
+      const offset = index.get(key.toBase58());
+      return offset === undefined ? mask : mask | (1n << BigInt(offset));
+    }, 0n));
+    const unions: bigint[] = [0n];
+    const counts = [0];
+    let bestSubset = 0, bestSaving = 0;
+    for (let subset = 1; subset < 1 << tables.length; subset++) {
+      const bit = subset & -subset;
+      const previous = subset ^ bit;
+      const tableIndex = 31 - Math.clz32(bit);
+      unions[subset] = unions[previous]! | masks[tableIndex]!;
+      counts[subset] = counts[previous]! + 1;
+      const covered = unions[subset]!.toString(2).replaceAll("0", "").length;
+      const saving = 31 * covered - 34 * counts[subset]!;
+      if (saving > bestSaving) { bestSaving = saving; bestSubset = subset; }
+    }
+    const optimal = compile(tables.filter((_, offset) => bestSubset & (1 << offset)));
+    if (versionedTransactionSize(optimal.transaction) < versionedTransactionSize(best.transaction)) best = optimal;
+  }
+  return best;
 }
 
 function idempotentAta(ix: TransactionInstruction) {
