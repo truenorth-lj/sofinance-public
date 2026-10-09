@@ -9,6 +9,8 @@ import {
   showUseConnectedWallet,
   type ListedPosition,
 } from "../lib/position-performance-form";
+import { PositionSelect } from "./position-select";
+import { useTokenMetadata } from "./use-token-metadata";
 
 type UiSide = { a: number; b: number };
 
@@ -148,6 +150,7 @@ export function PositionPerformancePanel({
   const wallet = walletField.value;
   const listedPositions =
     fetchedPositions && fetchedPositions.wallet === connectedAddress ? fetchedPositions.positions : [];
+  const positionMetadata = useTokenMetadata(listedPositions.flatMap((item) => [item.mintA, item.mintB]));
   const positionsStatus: "idle" | "loading" | "ready" | "error" = !connectedAddress
     ? "idle"
     : fetchedPositions && fetchedPositions.wallet === connectedAddress
@@ -240,33 +243,26 @@ export function PositionPerformancePanel({
           {connectedAddress ? ", or pick one from the connected wallet." : "."}
         </p>
         {connectedAddress && (
-          <label className="block text-xs text-neutral-400">
-            Connected wallet positions
-            <select
-              className="mt-1 w-full rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 focus:border-neutral-600 focus:outline-none disabled:opacity-50"
-              value={listedPositions.some((item) => item.positionMint === positionMint) ? positionMint : ""}
-              disabled={positionsStatus !== "ready" || listedPositions.length === 0}
-              onChange={(event) => {
-                if (event.target.value) setPositionMint(event.target.value);
-              }}
-            >
-              <option value="">
-                {positionsStatus === "loading"
-                  ? "Loading positions…"
-                  : positionsStatus === "error"
-                    ? "Could not load positions — paste a mint"
-                    : listedPositions.length
-                      ? "Select a position NFT"
-                      : "No CLMM positions on this wallet"}
-              </option>
-              {listedPositions.map((item) => (
-                <option key={item.positionMint} value={item.positionMint}>
-                  NFT {short(item.positionMint)} · ticks {item.tickLower}–{item.tickUpper}
-                  {item.rangeSide ? ` · ${item.rangeSide}` : ""}
-                </option>
-              ))}
-            </select>
-          </label>
+          <PositionSelect
+            id="perf-position"
+            label="Connected wallet positions"
+            value={listedPositions.some((item) => item.positionMint === positionMint) ? positionMint : ""}
+            disabled={positionsStatus !== "ready" || listedPositions.length === 0}
+            onChange={(next) => {
+              if (next) setPositionMint(next);
+            }}
+            positions={listedPositions}
+            metadata={positionMetadata}
+            placeholder={
+              positionsStatus === "loading"
+                ? "Loading positions…"
+                : positionsStatus === "error"
+                  ? "Could not load positions — paste a mint"
+                  : listedPositions.length
+                    ? "Select a position NFT"
+                    : "No CLMM positions on this wallet"
+            }
+          />
         )}
         <div>
           <div className="flex items-center justify-between gap-3">

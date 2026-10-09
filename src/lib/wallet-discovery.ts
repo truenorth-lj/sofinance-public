@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createHash } from "node:crypto";
-import { CLMM_PROGRAM_ID, getPdaPersonalPositionAddress, PersonalPositionLayout, PoolInfoLayout, TickUtil } from "@raydium-io/raydium-sdk-v2";
+import { ClmmConfigLayout, CLMM_PROGRAM_ID, getPdaPersonalPositionAddress, PersonalPositionLayout, PoolInfoLayout, TickUtil } from "@raydium-io/raydium-sdk-v2";
 import {
   AccountState, ExtensionType, getDefaultAccountState, getExtensionTypes, getPausableConfig,
   getScaledUiAmountConfig, getTransferFeeConfig, getTransferHook, getAssociatedTokenAddressSync,
@@ -28,6 +28,7 @@ export type WalletAsset = {
 };
 export type WalletPosition = {
   positionMint: string; positionAccount: string; poolId: string; mintA: string; mintB: string;
+  decimalsA: number; decimalsB: number; feeTierBps: number | null;
   tickLower: number; tickUpper: number; tickCurrent: number; rangeSide: "below" | "inside" | "above";
   liquidity: string;
 };
@@ -132,17 +133,31 @@ export async function discoverWallet(walletAddress: string, connection = rpcConn
   const poolIds = [...new Set(candidates.map(({ position }) => position.poolId.toBase58()))];
   const poolKeys = poolIds.map((id) => new PublicKey(id));
   const poolInfos = await accountsInBatches(connection, poolKeys);
-  const pools = new Map(poolIds.map((id, index) => [id, poolInfos[index]] as const));
+  const pools = new Map<string, ReturnType<typeof PoolInfoLayout.decode>>();
+  for (const [index, id] of poolIds.entries()) {
+    const info = poolInfos[index];
+    if (!info || !info.owner.equals(CLMM_PROGRAM_ID) || !info.data.subarray(0, 8).equals(POOL_DISCRIMINATOR)) continue;
+    try { pools.set(id, PoolInfoLayout.decode(info.data)); } catch { /* skip undecodable pool */ }
+  }
+  const configIds = [...new Set([...pools.values()].flatMap((pool) => {
+    try { return pool.configId ? [pool.configId.toBase58()] : []; } catch { return []; }
+  }))];
+  const configKeys = configIds.map((id) => new PublicKey(id));
+  const configInfos = await accountsInBatches(connection, configKeys);
+  const feeByConfig = new Map(configIds.map((id, index) => [id, readFeeTierBps(configInfos[index] ?? null)] as const));
   const positions: WalletPosition[] = candidates.flatMap(({ position, address }) => {
     const poolId = position.poolId.toBase58();
-    const info = pools.get(poolId);
-    if (!info || !info.owner.equals(CLMM_PROGRAM_ID) || !info.data.subarray(0, 8).equals(POOL_DISCRIMINATOR)) return [];
+    const pool = pools.get(poolId);
+    if (!pool) return [];
     try {
-      const pool = PoolInfoLayout.decode(info.data);
       const lower = TickUtil.getSqrtPriceAtTick(position.tickLower);
       const upper = TickUtil.getSqrtPriceAtTick(position.tickUpper);
+      const configId = pool.configId ? pool.configId.toBase58() : "";
       return [{ positionMint: position.nftMint.toBase58(), positionAccount: address.toBase58(), poolId,
-        mintA: pool.mintA.toBase58(), mintB: pool.mintB.toBase58(), tickLower: position.tickLower,
+        mintA: pool.mintA.toBase58(), mintB: pool.mintB.toBase58(),
+        decimalsA: pool.mintDecimalsA, decimalsB: pool.mintDecimalsB,
+        feeTierBps: configId ? feeByConfig.get(configId) ?? null : null,
+        tickLower: position.tickLower,
         tickUpper: position.tickUpper, tickCurrent: pool.tickCurrent,
         rangeSide: positionSide(BigInt(pool.sqrtPriceX64.toString()), BigInt(lower.toString()), BigInt(upper.toString())),
         liquidity: position.liquidity.toString() }];
@@ -150,6 +165,18 @@ export async function discoverWallet(walletAddress: string, connection = rpcConn
   });
   positions.sort((a, b) => a.poolId.localeCompare(b.poolId) || a.tickLower - b.tickLower || a.positionMint.localeCompare(b.positionMint));
   return { wallet: walletAddress, slot, fetchedAt: Date.now(), positions, assets };
+}
+
+function readFeeTierBps(info: AccountInfo<Buffer> | null): number | null {
+  if (!info || !info.owner.equals(CLMM_PROGRAM_ID)) return null;
+  try {
+    const config = ClmmConfigLayout.decode(info.data);
+    const rate = Number(config.tradeFeeRate);
+    if (!Number.isFinite(rate) || rate < 0) return null;
+    return rate / 100;
+  } catch {
+    return null;
+  }
 }
 
 export type WalletDiscovery = Awaited<ReturnType<typeof discoverWallet>>;

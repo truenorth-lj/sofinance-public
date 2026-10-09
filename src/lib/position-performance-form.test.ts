@@ -151,6 +151,9 @@ describe("parseListedPositions", () => {
             tickLower: -10,
             tickUpper: 10,
             rangeSide: "inside",
+            decimalsA: 6,
+            decimalsB: 8,
+            feeTierBps: 1,
           },
           { positionMint: "" },
           { notAPosition: true },
@@ -165,6 +168,9 @@ describe("parseListedPositions", () => {
         tickLower: -10,
         tickUpper: 10,
         rangeSide: "inside",
+        decimalsA: 6,
+        decimalsB: 8,
+        feeTierBps: 1,
       },
     ]);
     expect(parseListedPositions({ error: "nope" })).toEqual([]);
