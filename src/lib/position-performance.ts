@@ -40,6 +40,8 @@ import {
   type TokenNativeMetrics,
 } from "./position-performance-math";
 import { matchWrapPairShape } from "./rwa-pairing";
+import { JUPITER_PRICE_V3 } from "./jupiter/urls";
+import { fetchJupiterPricesUsd } from "./token-prices";
 import { getTokenMetadata } from "./token-metadata";
 import {
   buildRealizedFeeAprSeries,
@@ -50,7 +52,7 @@ const POSITION_DISCRIMINATOR = createHash("sha256").update("account:PersonalPosi
 const POOL_DISCRIMINATOR = createHash("sha256").update("account:PoolState").digest().subarray(0, 8);
 
 export const DEFAULT_MAX_SIGNATURES = 100;
-export const JUPITER_PRICE_V3 = "https://api.jup.ag/price/v3";
+export { JUPITER_PRICE_V3 };
 export const RAYDIUM_POOL_IDS = "https://api-v3.raydium.io/pools/info/ids";
 
 const STABLE_USD_MINTS = new Set([
@@ -133,30 +135,6 @@ export type GetPositionPerformanceOptions = {
   /** Non-Solami RPC for history fallback (tests). Defaults to `defaultRpcConnection()`. */
   fallbackConnection?: HistoryConnection;
 };
-
-async function fetchJupiterPricesUsd(
-  mints: string[],
-  fetcher: typeof fetch,
-  apiKey?: string,
-): Promise<Map<string, number>> {
-  const unique = [...new Set(mints.filter(Boolean))];
-  const prices = new Map<string, number>();
-  if (!unique.length) return prices;
-  const url = new URL(JUPITER_PRICE_V3);
-  url.searchParams.set("ids", unique.join(","));
-  const headers: Record<string, string> = { Accept: "application/json" };
-  if (apiKey) headers["x-api-key"] = apiKey;
-  const response = await fetcher(url.toString(), { headers });
-  if (!response.ok) return prices;
-  // V3 returns { [mint]: { usdPrice, ... } } — omitted mints have no key.
-  const body = (await response.json()) as Record<string, { usdPrice?: number | string } | null>;
-  for (const mint of unique) {
-    const raw = body[mint]?.usdPrice;
-    const value = typeof raw === "number" ? raw : raw !== null && raw !== undefined ? Number(raw) : NaN;
-    if (Number.isFinite(value) && value >= 0) prices.set(mint, value);
-  }
-  return prices;
-}
 
 /** Fallback: Raydium pool mid price + $1 stable for USDC/USDT legs. */
 async function fetchRaydiumPoolUsdPrices(

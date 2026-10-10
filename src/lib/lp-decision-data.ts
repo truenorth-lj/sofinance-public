@@ -4,6 +4,7 @@ import { CLMM_PROGRAM_ID, getPdaPersonalPositionAddress, PersonalPositionLayout,
 import { createHash } from "node:crypto";
 import { observePositionTransaction, type TransactionEvidence, type PublicTransaction } from "./lp-position-observations";
 import type { DecisionRequest, LedgerEvent } from "./lp-accounting";
+import { jupiterQuote } from "./jupiter";
 import { asRpcUserError } from "./rpc/errors";
 import { rpcRequest } from "./rpc";
 export function validPrincipalQuote(q: Record<string, unknown>, mint: string, amount: string): boolean {
@@ -70,9 +71,9 @@ export async function readDecisionObservations(req: DecisionRequest, fetcher: ty
       for(const [mint,inputAtomic] of [[result.pool.mintA,amounts.amountA.toString()],[result.pool.mintB,amounts.amountB.toString()]] as const) {
         if(inputAtomic==="0")continue;
         try {
-          const q=await json(`https://api.jup.ag/swap/v1/quote?inputMint=${mint}&outputMint=${USDC}&amount=${inputAtomic}&slippageBps=50`);
+          const q=await jupiterQuote({inputMint:mint,outputMint:USDC,amount:inputAtomic,slippageBps:50,signal:budgetSignal,fetcher});
           if(!validPrincipalQuote(q,mint,inputAtomic))throw new Error("Quote context/amount/route invalid");
-          result.exitPrincipal.quotes.push({mint,inputAtomic,outputUSDCAtomic:q.outAmount,thresholdUSDCAtomic:q.otherAmountThreshold,contextSlot:Number.isSafeInteger(q.contextSlot)?q.contextSlot:null,observedAt:now(),expiresAt:null});
+          result.exitPrincipal.quotes.push({mint,inputAtomic,outputUSDCAtomic:String(q.outAmount),thresholdUSDCAtomic:String(q.otherAmountThreshold),contextSlot:Number.isSafeInteger(q.contextSlot)?Number(q.contextSlot):null,observedAt:now(),expiresAt:null});
         }catch(e){result.attempts.push({source:"Jupiter principal-only quote",status:"error",observedAt:now(),detail:e instanceof Error?e.message:"Quote unavailable"});}
       }
       result.attempts.push({source:"Raydium liquidity math / Jupiter GET quote",status:"partial",observedAt:now(),detail:"Read-only principal token amounts and independent swap route observations; not a full withdraw+swap executable net quote. No quote expiry supplied; no build/sign/broadcast."});

@@ -34,6 +34,7 @@ type Ledger = {
 type Exit = {
   status: string;
   error?: string;
+  errorCode?: string;
   reason?: string;
   recoveryUSDCAtomic?: string;
   recoverySOLLamports?: string;
@@ -49,6 +50,10 @@ type Exit = {
 
 function oversizedExit(exit: Exit): boolean {
   return /exceeds 1232 bytes/i.test(exit.reason ?? exit.error ?? "");
+}
+
+function jupiterQuoteError(message: string, code?: string): boolean {
+  return code === "jupiter_unavailable" || /jupiter swap quotes are temporarily unavailable/i.test(message);
 }
 
 const number = (value: string) => new Decimal(value).toFixed(4);
@@ -131,7 +136,12 @@ export function LpPositionEvidence({ positionId, className = "" }: { positionId:
         const response = await fetch(url, { signal: job.signal });
         const body = await response.json();
         if (!job.current()) return;
-        if (!response.ok) throw new Error(body.error ?? "Public source is unavailable right now");
+        if (!response.ok) {
+          const message = typeof body.error === "string" && body.error ? body.error : "Public source is unavailable right now";
+          const failure = new Error(message);
+          if (typeof body.errorCode === "string") failure.name = body.errorCode;
+          throw failure;
+        }
         if (kind === "exit") {
           if (body.sent !== false || body.executable !== false) throw new Error("Read-only exit contract mismatch");
           if (
@@ -219,6 +229,7 @@ export function LpPositionEvidence({ positionId, className = "" }: { positionId:
 
       {error && (
         <p role="alert" className="mt-5 rounded-2xl border border-lemon/25 bg-lemon/10 px-4 py-3 text-sm text-lemon">
+          {jupiterQuoteError(error) ? <span className="block font-semibold">Jupiter quotes unavailable</span> : null}
           {error}
         </p>
       )}
