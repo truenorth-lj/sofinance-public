@@ -1,5 +1,5 @@
 import { abortError, isUserAbort } from "../rpc/errors";
-import { computeBackoffMs, retryConfig, sleep, type RetryConfig } from "../rpc/retry";
+import { computeBackoffMs, sleep, type RetryConfig } from "../rpc/retry";
 import { quoteCacheKey, withJupiterCache } from "./cache";
 import {
   classifyJupiterError,
