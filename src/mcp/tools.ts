@@ -11,6 +11,7 @@ import { verifyCompoundPermit } from "../lib/compound-permit";
 import { simulateAndVerifySelectedTransaction } from "../lib/selected-simulation";
 import { readSelectedPositionState } from "../lib/selected-state";
 import { rpcConnection } from "../lib/rpc";
+import { lookupBeamAfterSend } from "../lib/solami-beam";
 import { sendSignedCompoundTransaction } from "../lib/compound-send";
 import { CompoundSendError, notSentRetryMessage, sanitizePublicError } from "../lib/public-error";
 import type { CompoundSummary } from "../lib/compound-types";
@@ -474,7 +475,8 @@ export async function submitSignedTransaction(input: SubmitSignedTransactionInpu
     throw new Error("RPC returned transaction signature mismatch");
   }
   
-  return { signature };
+  const beam = await lookupBeamAfterSend(signature);
+  return { signature, beam: beam.beam, beamLabel: beam.label };
 }
 
 /**
