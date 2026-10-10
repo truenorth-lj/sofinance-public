@@ -45,3 +45,10 @@ export function buildOpenPositionUrl(poolId: string): string {
   const base = getPublicBaseUrl();
   return base ? `${base}${path}` : path;
 }
+
+/** Plan page for a specific pool. `pair` is a display label only. */
+export function buildPlanPath(input: { poolId: string; pair?: string }): string {
+  const params = new URLSearchParams({ pool: input.poolId });
+  if (input.pair) params.set("pair", input.pair);
+  return `${APP_ROUTES.plan}?${params}`;
+}
