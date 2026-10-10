@@ -1,4 +1,12 @@
-import { blurSubscribeFilter, blurWsUrl, eventMatchesPool, isBlurConfigured, parseBlurTrade } from "@/lib/solami-blur";
+import {
+  blurSubscribeFilter,
+  blurWsUrl,
+  encodeSseEvent,
+  formatSseComment,
+  isBlurConfigured,
+  parseBlurLiveEvent,
+  rememberBlurEvent,
+} from "@/lib/solami-blur";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -17,17 +25,14 @@ function parsePoolId(raw: string | null) {
   return raw;
 }
 
-function sse(event: string, data: unknown): string {
-  return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-}
-
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
     const poolId = parsePoolId(url.searchParams.get("poolId"));
 
-    if (!isBlurConfigured()) {
-      return new Response(sse("unavailable", { available: false, poolId }), {
+    const unavailable = encodeSseEvent("unavailable", { available: false, poolId });
+    if (!isBlurConfigured() || !unavailable) {
+      return new Response(unavailable ?? "event: unavailable\ndata: {}\n\n", {
         headers: {
           "Content-Type": "text/event-stream; charset=utf-8",
           "Cache-Control": "no-store",
@@ -37,7 +42,7 @@ export async function GET(request: Request) {
 
     const wsUrl = blurWsUrl(poolId);
     if (!wsUrl) {
-      return new Response(sse("unavailable", { available: false, poolId }), {
+      return new Response(unavailable, {
         headers: {
           "Content-Type": "text/event-stream; charset=utf-8",
           "Cache-Control": "no-store",
@@ -50,18 +55,24 @@ export async function GET(request: Request) {
         const encoder = new TextEncoder();
         let closed = false;
         let socket: WebSocket | undefined;
+        const seen = new Set<string>();
         const timers: {
           heartbeat?: ReturnType<typeof setInterval>;
           hold?: ReturnType<typeof setTimeout>;
         } = {};
 
-        const send = (event: string, data: unknown) => {
+        const enqueue = (chunk: string) => {
           if (closed) return;
           try {
-            controller.enqueue(encoder.encode(sse(event, data)));
+            controller.enqueue(encoder.encode(chunk));
           } catch {
             cleanup();
           }
+        };
+
+        const send = (event: string, data: unknown) => {
+          const chunk = encodeSseEvent(event, data);
+          if (chunk) enqueue(chunk);
         };
 
         const cleanup = () => {
@@ -95,7 +106,7 @@ export async function GET(request: Request) {
           try {
             socket?.send(JSON.stringify(blurSubscribeFilter(poolId)));
           } catch {
-            /* filter is best-effort; query-string type=swap,liquidity&address= still applies */
+            /* filter is best-effort; query-string type=swap,liquidity&pool= still applies */
           }
           send("ready", { poolId, types: ["swap", "liquidity"] });
         });
@@ -107,15 +118,10 @@ export async function GET(request: Request) {
           } catch {
             return;
           }
-          if (!eventMatchesPool(parsed, poolId)) return;
-          const record = parsed as { type?: string };
-          const type = typeof record.type === "string" ? record.type : "swap";
-          if (type === "liquidity") {
-            send("liquidity", parsed);
-            return;
-          }
-          const trade = parseBlurTrade(parsed);
-          if (trade) send("swap", trade);
+          const event = parseBlurLiveEvent(parsed, poolId);
+          if (!event) return;
+          if (!rememberBlurEvent(seen, event.trade)) return;
+          send(event.kind, event.trade);
         });
 
         socket.addEventListener("error", () => {
@@ -128,7 +134,10 @@ export async function GET(request: Request) {
           cleanup();
         });
 
-        timers.heartbeat = setInterval(() => send("ping", { t: Date.now() }), HEARTBEAT_MS);
+        timers.heartbeat = setInterval(() => {
+          enqueue(formatSseComment("heartbeat"));
+          send("ping", { t: Date.now() });
+        }, HEARTBEAT_MS);
         timers.hold = setTimeout(() => {
           send("end", { reason: "maxDuration", poolId });
           cleanup();
