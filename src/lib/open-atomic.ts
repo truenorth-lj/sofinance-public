@@ -14,6 +14,7 @@ import { instruction, validateRouteTables } from "./transaction-helpers";
 import { assertOpenTransactionSize, compactAtaInstructions, compileCompactOpenTransaction, OpenTransactionSizeError, openLookupTableReader } from "./open-transaction";
 import { rpcConnection } from "./rpc";
 import { JupiterNoRouteError } from "./jupiter-route";
+import { BEAM_MIN_TIP_LAMPORTS, beamTipInstruction, chooseBeamTransaction, fetchBeamTipAddress } from "./solami-beam";
 import { getOpenPositionQuoteBundle } from "./open-quote";
 import { simulateAndVerifyOpenTransaction } from "./open-simulation";
 import type { OpenRangeInput } from "./open-range";
@@ -161,9 +162,18 @@ async function buildOpenPositionAttempt(
       ComputeBudgetProgram.setComputeUnitLimit({ units: 1_400_000 }),
       ...wrapInstructions, ...createAtaInstructions, ...routeInstructions, ...raydiumInstructions, ...cleanupInstructions,
     ]);
-    const { transaction: simulated, tables } = compileCompactOpenTransaction({
-      payerKey: wallet, recentBlockhash: simulationBlockhash, instructions,
-    }, availableTables);
+    const messageInput = { payerKey: wallet, recentBlockhash: simulationBlockhash, instructions };
+    const withoutTip = compileCompactOpenTransaction(messageInput, availableTables);
+    const tip = await fetchBeamTipAddress();
+    const withTip = tip
+      ? compileCompactOpenTransaction({
+        ...messageInput,
+        instructions: [...instructions, beamTipInstruction(wallet, tip.address, tip.lamports)],
+      }, availableTables)
+      : null;
+    const chosen = chooseBeamTransaction(withoutTip.transaction, withTip?.transaction ?? null);
+    const simulated = chosen.transaction;
+    const tables = chosen.included && withTip ? withTip.tables : withoutTip.tables;
     if (simulated.message.header.numRequiredSignatures !== 2) {
       throw new Error("Open-position transaction must require wallet + NFT mint signatures");
     }
@@ -173,7 +183,8 @@ async function buildOpenPositionAttempt(
     const feeEstimate = await connection.getFeeForMessage(simulated.message, "confirmed");
     if (feeEstimate.value === null) throw new Error("Unable to estimate complete transaction network fee");
     const maxSolDebitLamports = (state.inputKind === "native" ? BigInt(quote.requested) : 0n)
-      + rentLamports + BigInt(feeEstimate.value) + 100_000n;
+      + rentLamports + BigInt(feeEstimate.value) + 100_000n
+      + (chosen.included ? BigInt(BEAM_MIN_TIP_LAMPORTS) : 0n);
     const verified = await simulateAndVerifyOpenTransaction({
       connection, transaction: simulated, wallet, state, nftMint,
       tickLower: quote.tickLower, tickUpper: quote.tickUpper,
@@ -197,6 +208,12 @@ async function buildOpenPositionAttempt(
       maxSolDebitLamports: maxSolDebitLamports.toString(),
       feeLamports: fee.value, rentLamports: Number(rentLamports > BigInt(Number.MAX_SAFE_INTEGER) ? Number.MAX_SAFE_INTEGER : rentLamports),
       sizeBytes, unitsConsumed: verified.unitsConsumed,
+      beam: {
+        included: chosen.included,
+        tipLamports: chosen.included && tip ? tip.lamports : 0,
+        tipAddress: chosen.included && tip ? tip.address.toBase58() : null,
+        skippedReason: chosen.included ? null : chosen.skippedReason,
+      },
       ...stampPreparedBlockhash(latest),
     };
     if (BigInt(MIN_SOL_LAMPORTS) + BigInt(summary.rentLamports) + BigInt(fee.value) > BigInt(state.solLamports)

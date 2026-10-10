@@ -4,7 +4,7 @@ import {
   getPdaProtocolPositionAddress, getPdaTickArrayAddress, PersonalPositionLayout,
   ProtocolPositionLayout, TickArrayLayout, TickArrayUtil,
 } from "@raydium-io/raydium-sdk-v2";
-import { PublicKey, type Connection } from "@solana/web3.js";
+import { PublicKey, type AccountInfo, type Connection } from "@solana/web3.js";
 
 // Token-2022 position NFT mints carry metadata extensions, larger than 82-byte legacy mints.
 const TOKEN_2022_NFT_MINT_SPACE = 698;
@@ -40,9 +40,14 @@ export async function estimateOpenPositionRent(input: {
   ])];
   const tickArrayKeys = starts.map((start) => getPdaTickArrayAddress(program, pool, start).publicKey);
   const protocolKey = getPdaProtocolPositionAddress(program, pool, tickLower, tickUpper).publicKey;
-  const infos = await connection.getMultipleAccountsInfo([...tickArrayKeys, protocolKey], "confirmed");
-  const missingTickArrays = tickArrayKeys.filter((_, index) => !infos[index]);
-  const protocolMissing = !infos[tickArrayKeys.length];
+  // Look up the protocol position on its own key so a missing/extra tick-array
+  // slot cannot be misread as "protocol init required" when the account exists.
+  const [tickInfos, protocolInfo] = await Promise.all([
+    connection.getMultipleAccountsInfo(tickArrayKeys, "confirmed"),
+    connection.getAccountInfo(protocolKey, "confirmed"),
+  ]);
+  const missingTickArrays = tickArrayKeys.filter((_, index) => !isOwnedAccount(tickInfos[index], program));
+  const protocolMissing = !isOwnedAccount(protocolInfo, program);
   const [
     positionNftLamports,
     nftAtaLamports,
@@ -72,4 +77,8 @@ export async function estimateOpenPositionRent(input: {
     protocolPositionInitRequired: protocolMissing,
     tickArrayAccounts: missingTickArrays.map((key) => key.toBase58()),
   };
+}
+
+function isOwnedAccount(info: AccountInfo<Buffer> | null | undefined, owner: PublicKey) {
+  return Boolean(info && info.owner.equals(owner) && info.data.length > 0);
 }

@@ -55,7 +55,17 @@ function asFiniteNumber(value: unknown): number | null {
 }
 
 function asBoolean(value: unknown): boolean | null {
-  return typeof value === "boolean" ? value : null;
+  if (typeof value === "boolean") return value;
+  if (value === 1 || value === "1" || value === "true") return true;
+  if (value === 0 || value === "0" || value === "false") return false;
+  return null;
+}
+
+function landingRecord(raw: unknown): Record<string, unknown> | null {
+  const record = asRecord(raw);
+  if (!record) return null;
+  const nested = asRecord(record.data) ?? asRecord(record.result) ?? asRecord(record.tx);
+  return nested ? { ...nested, ...record } : record;
 }
 
 /** Live shape (verified): a JSON array of base58 tip addresses. Also accept `{ addresses }`. */
@@ -75,13 +85,17 @@ export function parseTipAddresses(raw: unknown): string[] {
 }
 
 export function parseBeamLanding(raw: unknown, fallbackSignature?: string): BeamLanding | null {
-  const record = asRecord(raw);
+  const record = landingRecord(raw);
   if (!record) return null;
   const signature = asString(record.signature) ?? fallbackSignature ?? null;
   if (!signature) return null;
+  const status = asString(record.status)?.toLowerCase();
+  const isLanded = asBoolean(record.is_landed) ?? asBoolean(record.isLanded) ?? asBoolean(record.landed)
+    ?? (status === "landed" || status === "success" ? true : null)
+    ?? false;
   return {
     signature,
-    isLanded: record.is_landed === true || record.isLanded === true,
+    isLanded,
     region: asString(record.region),
     tipLamports: asFiniteNumber(record.tip_lamports) ?? asFiniteNumber(record.tipLamports),
     tipAddress: asString(record.tip_address) ?? asString(record.tipAddress),
@@ -139,11 +153,19 @@ export async function fetchBeamTipAddress(
 
 export async function fetchBeamLanding(
   signature: string,
-  options: { fetcher?: typeof fetch } = {},
+  options: { fetcher?: typeof fetch; env?: BeamEnv } = {},
 ): Promise<BeamLanding | null> {
   const fetcher = options.fetcher ?? fetch;
+  const env = options.env ?? (process.env as BeamEnv);
+  const key = env.SOLAMI_API_KEY?.trim();
   try {
-    const response = await fetcher(beamLandingUrl(signature), { headers: { Accept: "application/json" }, cache: "no-store" });
+    const response = await fetcher(beamLandingUrl(signature), {
+      headers: {
+        Accept: "application/json",
+        ...(key ? { Authorization: `Bearer ${key}`, "x-api-key": key } : {}),
+      },
+      cache: "no-store",
+    });
     if (!response.ok) return null;
     return parseBeamLanding(await response.json(), signature);
   } catch {
@@ -151,8 +173,8 @@ export async function fetchBeamLanding(
   }
 }
 
-export const BEAM_LOOKUP_ATTEMPTS = 4;
-export const BEAM_LOOKUP_GAP_MS = 1_500;
+export const BEAM_LOOKUP_ATTEMPTS = 8;
+export const BEAM_LOOKUP_GAP_MS = 2_000;
 
 export async function lookupBeamAfterSend(
   signature: string,
@@ -167,10 +189,9 @@ export async function lookupBeamAfterSend(
   const provider = options.provider ?? rpcProvider(env);
   const url = beamLandingUrl(signature);
   const wait = options.nowWait ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
-  if (!isBeamEnabled(env)) return { beam: null, label: null, provider, beamLandingUrl: url };
   let landing: BeamLanding | null = null;
   for (let attempt = 0; attempt < BEAM_LOOKUP_ATTEMPTS; attempt += 1) {
-    landing = await fetchBeamLanding(signature, { fetcher: options.fetcher });
+    landing = await fetchBeamLanding(signature, { fetcher: options.fetcher, env });
     if (landing?.isLanded) break;
     if (attempt < BEAM_LOOKUP_ATTEMPTS - 1) await wait(BEAM_LOOKUP_GAP_MS);
   }

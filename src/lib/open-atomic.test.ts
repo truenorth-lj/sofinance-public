@@ -8,6 +8,10 @@ vi.mock("./open-state", () => ({ readOpenPoolState: vi.fn() }));
 vi.mock("./open-quote", () => ({ getOpenPositionQuoteBundle: vi.fn() }));
 vi.mock("./open-simulation", () => ({ simulateAndVerifyOpenTransaction: vi.fn() }));
 vi.mock("./open-transaction", async importOriginal => ({ ...await importOriginal<object>(), openLookupTableReader: vi.fn() }));
+vi.mock("./solami-beam", async importOriginal => ({
+  ...await importOriginal<object>(),
+  fetchBeamTipAddress: vi.fn(async () => null),
+}));
 vi.mock("@raydium-io/raydium-sdk-v2", async importOriginal => ({ ...await importOriginal<object>(),
   Raydium: { load: vi.fn() }, ClmmInstrument: { openPositionFromLiquidityInstructions: vi.fn() },
 }));
@@ -99,6 +103,19 @@ it("re-quotes oversized captured routes before simulating a fitting sequential t
   expect(transaction.signatures[0]!.every(byte => byte === 0)).toBe(true);
   expect(transaction.signatures[1]!.some(byte => byte !== 0)).toBe(true);
 });
+it("enforces the resale floor for agent/MCP prepares unless the caller disables it", async () => {
+  vi.mocked(getOpenPositionQuoteBundle).mockResolvedValue({
+    state, quote: { expiresAt: Date.now() + 75000, requested: "30000000", rangeSide: "inside",
+      passesFloor: false, warning: "Conservative immediate resale is 90.00% of input",
+      rent: { refundableLamports: "0", nonRefundableLamports: "0" } },
+    legs: [],
+  } as never);
+  await expect(prepare()).rejects.toThrow(/resale/i);
+  await expect(buildAndSimulateOpenPosition(wallet, { poolId, inputMint, inputKind: "native" }, "0.03",
+    { preset: "standard" }, 9900, 100, { enforceResaleFloor: false }))
+    .rejects.toThrow(/Swap route does not match/);
+});
+
 it("stops on quote safety failures instead of retrying with relaxed guards", async () => {
   vi.mocked(getOpenPositionQuoteBundle).mockRejectedValue(new Error("Price impact exceeds 5% limit"));
   await expect(prepare()).rejects.toThrow("Price impact");

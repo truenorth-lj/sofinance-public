@@ -540,10 +540,19 @@ describe("MCP Tools", () => {
         inputKind: "token",
         amount: "1",
         rangePreset: "standard",
+        resaleFloorBps: 9900,
         slippageToleranceBps: 100,
       });
       expect(result.poolId).toBe(poolId);
       expect(result.tickLower).toBe(-30);
+      expect(getOpenPositionQuoteBundle).toHaveBeenCalledWith(
+        "11111111111111111111111111111111",
+        { poolId, inputMint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", inputKind: "token" },
+        "1",
+        { preset: "standard" },
+        9900,
+        100,
+      );
     });
   });
 
@@ -576,8 +585,21 @@ describe("MCP Tools", () => {
         inputKind: "token",
         amount: "1",
         rangePreset: "standard",
+        resaleFloorBps: 9800,
         slippageToleranceBps: 100,
       });
+      expect(buildAndSimulateOpenPosition).toHaveBeenCalledWith(
+        "11111111111111111111111111111111",
+        {
+          poolId: "So11111111111111111111111111111111111111112",
+          inputMint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+          inputKind: "token",
+        },
+        "1",
+        { preset: "standard" },
+        9800,
+        100,
+      );
 
       expect(result.permit).toBe("mock-open-permit");
       expect(result.signUrl).toContain("/app/sign/");
