@@ -12,7 +12,6 @@ import { TransactionStatusDialog } from "./transaction-status-dialog";
 import { CompoundPanel } from "./compound-panel";
 import { useCompoundController } from "./use-compound-controller";
 import { InkHero, InkNav } from "./ink";
-import { PoolActivityPanel } from "./pool-activity-panel";
 import { PositionPerformancePanel } from "./position-performance-panel";
 import { ConnectWalletPrompt } from "./connect-wallet-prompt";
 
@@ -127,20 +126,6 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
         {connected && <details className="mt-5 border-t border-white/10 pt-4 text-xs text-smoke"><summary className="cursor-pointer font-semibold text-cream/80">Detailed information and asset risks</summary><div className="mt-4 space-y-2 break-all leading-5">{state && <><p>Real-time pool price: {Number(state.price).toPrecision(8)} · ticks {state.tickLower}–{state.tickUpper} · slot {state.slot}</p><p>Wallet pool asset balance: {money(state.balances.a, state.decimalsA)} {poolLabel(state.mintA)}  +  {money(state.balances.b, state.decimalsB)} {poolLabel(state.mintB)} · SOL {money(String(state.solLamports), 9)}</p><button type="button" onClick={() => void refreshState()} disabled={busy} className="text-cream/80 underline disabled:opacity-40">Reload on-chain</button><p>Pool: <a className="text-cream/80 underline" href={`https://solscan.io/account/${state.poolId}`} target="_blank" rel="noreferrer">{state.poolId} <ArrowUpRight className="inline h-3 w-3" /></a></p><p>Position NFT: {state.positionMint}</p><p>Pool A mint: {state.mintA}</p><p>Pool B mint: {state.mintB}</p><p>Input mint: {selection?.inputMint}</p></>}<p>Different tokens may have issuer, transfer restrictions, or routing liquidity risks. APR does not represent this position&apos;s realizable returns; no trading fees earned for this range while outside.</p></div></details>}
       </section>
       </div>
-
-      {state?.poolId && (
-        <div className="mt-3">
-          <PoolActivityPanel
-            poolId={state.poolId}
-            tickLower={state.tickLower}
-            tickUpper={state.tickUpper}
-            decimalsA={state.decimalsA}
-            decimalsB={state.decimalsB}
-            mintA={state.mintA}
-            mintB={state.mintB}
-          />
-        </div>
-      )}
 
       <nav aria-label="Position operations" className="mt-3 flex gap-1.5 rounded-full border border-white/12 bg-char p-1.5">
         <button type="button" aria-pressed={activeView === "compound"} aria-controls="compound-view" onClick={() => setActiveView("compound")} className={`flex flex-1 items-center justify-center gap-2 rounded-full px-3 py-3 text-sm font-semibold transition-colors ${activeView === "compound" ? "bg-lemon text-ink" : "text-smoke hover:text-cream/80"}`}><Sprout className="h-4 w-4" />Yield Compound</button>
