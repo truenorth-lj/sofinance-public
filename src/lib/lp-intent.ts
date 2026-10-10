@@ -209,17 +209,32 @@ export function paceToTarget(
   nowMs: number,
   positionId?: string,
 ): { scenarioId: string; days: number | null } | null {
-  const reaches = (days: number) =>
-    outlookFor(runSample(intent.amount, days, nowMs, positionId), { ...intent, days })[0]?.reachesTarget ?? false;
-  const first = runSample(intent.amount, 1, nowMs, positionId).scenarios[0];
-  if (!first) return null;
-  if (!reaches(MAX_PLAN_DAYS)) return { scenarioId: first.id, days: null };
-  let low = 1;
+  const at = (days: number) =>
+    outlookFor(runSample(intent.amount, days, nowMs, positionId), { ...intent, days })[0];
+  const year = at(MAX_PLAN_DAYS);
+  if (!year) return null;
+  if (!year.reachesTarget) return { scenarioId: year.id, days: null };
+  const first = at(1);
+  if (first?.reachesTarget) return { scenarioId: year.id, days: 1 };
+
+  let low = 2;
   let high = MAX_PLAN_DAYS;
+  // The steady path earns the same each day, so two points usually pin the answer.
+  // The guess is still checked, and anything non-linear falls through to the search.
+  if (first && first.outcome !== null && year.outcome !== null) {
+    const perDay = new D(year.outcome).sub(first.outcome).div(MAX_PLAN_DAYS - 1);
+    if (perDay.gt(0)) {
+      const estimate = new D(intent.target).sub(first.outcome).div(perDay).add(1).ceil().toNumber();
+      const guess = Math.min(high, Math.max(low, estimate));
+      if (at(guess)?.reachesTarget) high = guess;
+      else low = guess + 1;
+      if (high === guess && guess > low && !at(guess - 1)?.reachesTarget) low = guess;
+    }
+  }
   while (low < high) {
     const mid = Math.floor((low + high) / 2);
-    if (reaches(mid)) high = mid;
+    if (at(mid)?.reachesTarget) high = mid;
     else low = mid + 1;
   }
-  return { scenarioId: first.id, days: low };
+  return { scenarioId: year.id, days: low };
 }

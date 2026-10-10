@@ -7,13 +7,13 @@ import { PositionPerformancePanel } from "./position-performance-panel";
 export function PositionPerformancePanelFallback() {
   return (
     <section
-      className="rounded-[20px] border border-neutral-800/80 bg-[#0a0a0a] p-5 sm:p-7"
+      className="rounded-[28px] border border-white/12 bg-char p-5 sm:p-7 lg:col-span-5"
       aria-hidden
     >
-      <div className="h-5 w-48 rounded bg-neutral-800/80" />
+      <div className="h-5 w-48 rounded bg-white/10" />
       <div className="mt-4 space-y-3">
-        <div className="h-10 rounded-xl bg-neutral-900" />
-        <div className="h-10 rounded-xl bg-neutral-900" />
+        <div className="h-10 rounded-2xl bg-white/[0.06]" />
+        <div className="h-10 rounded-2xl bg-white/[0.06]" />
       </div>
     </section>
   );

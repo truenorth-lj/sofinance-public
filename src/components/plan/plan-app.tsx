@@ -6,9 +6,10 @@ import { useSearchParams } from "next/navigation";
 import Decimal from "decimal.js";
 import { evaluateIntent, paceToTarget, parseDays, parseUsdc, type Intent, type IntentGoal } from "@/lib/lp-intent";
 import { APP_ROUTES } from "@/lib/public-urls";
+import { InkNav } from "@/components/ink";
+import { useWalletConnection } from "@/components/wallet-connection";
 import { IntentSentence, type IntentField } from "./intent-sentence";
 import { RealityCheck, ScenarioCards } from "./outlook";
-import { PlanNav } from "./plan-nav";
 
 const DEFAULT_INTENT: Intent = {
   days: 30,
@@ -46,6 +47,7 @@ function intentFromParams(params: URLSearchParams): Intent {
 
 export function PlanApp() {
   const params = useSearchParams();
+  const wallet = useWalletConnection();
   const position = params.get("position");
   const positionId = position && ADDRESS.test(position) ? position : undefined;
   const pair = params.get("pair")?.slice(0, 24);
@@ -78,7 +80,7 @@ export function PlanApp() {
   return (
     <div className="min-h-screen bg-canvas text-cream">
       <div className="mx-auto max-w-[1280px] px-3 pb-16 pt-3 sm:px-5 sm:pt-5">
-        <PlanNav />
+        <InkNav wallet={wallet.address} connected={wallet.connected} onConnect={wallet.connect} onDisconnect={wallet.disconnect} />
 
         <main className="mt-3 grid gap-3 lg:grid-cols-12">
           <section

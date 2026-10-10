@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
-import { Geist } from "next/font/google";
+import { Geist_Mono, Host_Grotesk } from "next/font/google";
 import "./globals.css";
 
-const geist = Geist({ subsets: ["latin"] });
+const display = Host_Grotesk({ subsets: ["latin"], variable: "--font-grotesk" });
+const data = Geist_Mono({ subsets: ["latin"], variable: "--font-mono-data" });
 
 export const metadata: Metadata = {
   title: "SoFinance",
@@ -12,8 +13,8 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="zh-Hant" className={`h-full antialiased ${geist.className}`}>
-      <body className="min-h-full flex flex-col bg-[#050505] text-neutral-100">{children}</body>
+    <html lang="en" className={`h-full antialiased ${display.variable} ${data.variable} font-display`}>
+      <body className="min-h-full flex flex-col bg-canvas text-cream">{children}</body>
     </html>
   );
 }

@@ -1,5 +1,4 @@
 import type { ButtonHTMLAttributes, ReactNode } from "react";
-import { INK_COLORS } from "./ink-tokens";
 
 interface InkButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   children: ReactNode;
@@ -7,22 +6,22 @@ interface InkButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   size?: "sm" | "md";
 }
 
-export function InkButton({ 
-  children, 
-  className = "", 
+export function InkButton({
+  children,
+  className = "",
   variant = "ghost",
   size = "md",
-  ...props 
+  ...props
 }: InkButtonProps) {
-  const sizeClass = size === "sm" ? "px-3 py-2 text-xs" : "px-4 py-3 text-sm";
-  
-  const variantClass = variant === "primary" 
-    ? `bg-${INK_COLORS.textPrimary} text-[${INK_COLORS.canvas}] hover:bg-${INK_COLORS.textSecondary}`
-    : `border border-${INK_COLORS.buttonBorder} bg-transparent text-${INK_COLORS.textSecondary} hover:border-${INK_COLORS.buttonBorderHover} hover:bg-${INK_COLORS.buttonBgHover}`;
-  
+  const sizeClass = size === "sm" ? "h-9 px-4 text-xs" : "h-11 px-5 text-sm";
+  const variantClass =
+    variant === "primary"
+      ? "bg-lemon text-ink hover:bg-[#fff27f]"
+      : "border border-white/25 text-cream/85 hover:border-white/70";
+
   return (
     <button
-      className={`inline-flex items-center justify-center gap-2 rounded-xl font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${sizeClass} ${variantClass} ${className}`}
+      className={`inline-flex items-center justify-center gap-2 rounded-full font-semibold outline-none transition-colors focus-visible:shadow-[0_0_0_2px_var(--color-lemon)] disabled:cursor-not-allowed disabled:opacity-40 ${sizeClass} ${variantClass} ${className}`}
       {...props}
     >
       {children}

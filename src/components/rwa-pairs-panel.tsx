@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { LoaderCircle, RefreshCw } from "lucide-react";
 import { PoolAprSparkline } from "./pool-daily-apr-panel";
-import { LpDecisionBuilder } from "./lp-decision-builder";
+import Link from "next/link";
+import { APP_ROUTES } from "@/lib/public-urls";
 import { OpenPositionModal } from "./open-position-modal";
 import type { OpenPositionPair } from "./use-open-position-controller";
 
@@ -63,7 +64,6 @@ export function RwaPairsPanel() {
   const [data, setData] = useState<RwaPairsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [decisionPair, setDecisionPair] = useState<RwaPair | null>(null);
   const [openPair, setOpenPair] = useState<OpenPositionPair | null>(null);
 
   const load = useCallback(async (signal?: AbortSignal) => {
@@ -129,22 +129,21 @@ export function RwaPairsPanel() {
 
   return (
     <section 
-      className="rounded-[20px] border border-neutral-800/80 bg-[#0a0a0a] p-6 sm:p-8" 
+      className="mt-3 rounded-[28px] border border-white/12 bg-char p-6 sm:p-8" 
       aria-labelledby="rwa-pairs-heading"
     >
-      <LpDecisionBuilder poolId={decisionPair?.poolAddress} contextLabel={decisionPair ? `RWA 池 ${decisionPair.symbolA}/${decisionPair.symbolB}` : undefined} />
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-neutral-800/50 pb-5">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-white/10 pb-5">
         <div>
-          <h2 id="rwa-pairs-heading" className="text-base font-semibold text-neutral-100">
+          <h2 id="rwa-pairs-heading" className="text-base font-semibold text-cream">
             Same-asset RWA CLMM pairs
           </h2>
-          <p className="mt-2 max-w-2xl text-xs leading-5 text-neutral-500">
+          <p className="mt-2 max-w-2xl text-xs leading-5 text-smoke">
             Raydium concentrated pools where both sides are the same underlying (e.g. MSTRx/MSTR, NVDAx/NVDA),
             filtered by Jupiter tags (stocks|rwa) and the Backed xStocks whitelist. Add liquidity opens a new CLMM position in SoFinance.
           </p>
         </div>
         <button 
-          className="inline-flex items-center justify-center gap-2 rounded-xl border border-neutral-700 bg-transparent px-3 py-2 text-xs font-semibold text-neutral-300 transition-colors hover:border-neutral-600 hover:bg-neutral-900/50 disabled:opacity-40 disabled:cursor-not-allowed"
+          className="inline-flex items-center justify-center gap-2 rounded-full border border-white/20 bg-transparent px-3 py-2 text-xs font-semibold text-cream/80 transition-colors hover:border-white/40 hover:bg-white/[0.04] disabled:opacity-40 disabled:cursor-not-allowed"
           disabled={loading} 
           onClick={refresh}
         >
@@ -154,7 +153,7 @@ export function RwaPairsPanel() {
       </div>
 
       {data && (
-        <p className="mt-4 text-[11px] leading-5 text-neutral-600">
+        <p className="mt-4 text-[11px] leading-5 text-smoke/70">
           {data.pairingRuleSummary} Yield: {data.estimatedFeeAprLabel} Daily APR sparklines (top 8 rows) use
           GeckoTerminal volume × Raydium feeRate ÷ Raydium daily TVL, cached 1h — not Raydium-published daily
           feeApr. Scanned {data.scannedPools} pools ({data.pagesFetched} pages). Sorted by estimated fee APR.
@@ -162,72 +161,72 @@ export function RwaPairsPanel() {
       )}
 
       {error && (
-        <div role="alert" className="mt-6 rounded-xl border border-neutral-700 bg-neutral-900/50 p-4 text-sm text-neutral-300">
+        <div role="alert" className="mt-6 rounded-2xl border border-white/20 bg-white/[0.04] p-4 text-sm text-cream/80">
           {error}
         </div>
       )}
 
       {loading && !data && (
-        <p role="status" className="mt-8 inline-flex items-center gap-2 text-sm text-neutral-400">
+        <p role="status" className="mt-8 inline-flex items-center gap-2 text-sm text-smoke">
           <LoaderCircle className="h-4 w-4 animate-spin" /> Scanning Raydium CLMM pools…
         </p>
       )}
 
       {data && data.pairs.length === 0 && !loading && (
-        <p className="mt-8 text-sm text-neutral-500">No same-asset RWA pairs found in the scanned range.</p>
+        <p className="mt-8 text-sm text-smoke">No same-asset RWA pairs found in the scanned range.</p>
       )}
 
       {data && data.pairs.length > 0 && (
         <div className="mt-6 overflow-x-auto">
           <table className="w-full min-w-[720px] border-collapse text-left text-xs">
             <thead>
-              <tr className="border-b border-neutral-800/60">
-                <th className="pb-3 pr-4 font-semibold text-neutral-400">Pair</th>
-                <th className="pb-3 pr-4 font-semibold text-neutral-400">Est. fee APR</th>
-                <th className="pb-3 pr-4 font-semibold text-neutral-400">Daily APR</th>
-                <th className="pb-3 pr-4 font-semibold text-neutral-400">Raydium APR</th>
-                <th className="pb-3 pr-4 font-semibold text-neutral-400">TVL</th>
-                <th className="pb-3 pr-4 font-semibold text-neutral-400">24h vol</th>
-                <th className="pb-3 pr-4 font-semibold text-neutral-400">Fee</th>
-                <th className="pb-3 pr-4 font-semibold text-neutral-400">Flags</th>
-                <th className="pb-3 font-semibold text-neutral-400">Liquidity</th>
+              <tr className="border-b border-white/10">
+                <th className="pb-3 pr-4 font-semibold text-smoke">Pair</th>
+                <th className="pb-3 pr-4 font-semibold text-smoke">Est. fee APR</th>
+                <th className="pb-3 pr-4 font-semibold text-smoke">Daily APR</th>
+                <th className="pb-3 pr-4 font-semibold text-smoke">Raydium APR</th>
+                <th className="pb-3 pr-4 font-semibold text-smoke">TVL</th>
+                <th className="pb-3 pr-4 font-semibold text-smoke">24h vol</th>
+                <th className="pb-3 pr-4 font-semibold text-smoke">Fee</th>
+                <th className="pb-3 pr-4 font-semibold text-smoke">Flags</th>
+                <th className="pb-3 font-semibold text-smoke">Liquidity</th>
               </tr>
             </thead>
             <tbody>
               {data.pairs.map((pair, index) => (
-                <tr key={pair.poolAddress} className="border-b border-neutral-800/30 align-top">
+                <tr key={pair.poolAddress} className="border-b border-white/[0.07] align-top">
                   <td className="py-4 pr-4">
-                    <div className="font-semibold text-neutral-100">
+                    <div className="font-semibold text-cream">
                       {pair.wrappedSymbol}/{pair.plainSymbol}
                     </div>
-                    <div className="mt-0.5 max-w-[220px] truncate text-[11px] text-neutral-600" title={`${pair.nameA} / ${pair.nameB}`}>
+                    <div className="mt-0.5 max-w-[220px] truncate text-[11px] text-smoke/70" title={`${pair.nameA} / ${pair.nameB}`}>
                       {pair.nameA} / {pair.nameB}
                     </div>
                   </td>
-                  <td className="py-4 pr-4 font-semibold tabular-nums text-neutral-100">{pct(pair.estimatedFeeAprPct)}</td>
+                  <td className="py-4 pr-4 font-semibold tabular-nums text-cream">{pct(pair.estimatedFeeAprPct)}</td>
                   <td className="py-4 pr-4">
-                    {index < 8 ? <PoolAprSparkline poolId={pair.poolAddress} /> : <span className="text-neutral-600">—</span>}
+                    {index < 8 ? <PoolAprSparkline poolId={pair.poolAddress} /> : <span className="text-smoke/70">—</span>}
                   </td>
-                  <td className="py-4 pr-4 tabular-nums text-neutral-300">{pct(pair.raydiumFeeApr24h)}</td>
-                  <td className="py-4 pr-4 tabular-nums text-neutral-300">{money(pair.tvlUsd)}</td>
-                  <td className="py-4 pr-4 tabular-nums text-neutral-300">{money(pair.volume24hUsd)}</td>
-                  <td className="py-4 pr-4 tabular-nums text-neutral-300">
+                  <td className="py-4 pr-4 tabular-nums text-cream/80">{pct(pair.raydiumFeeApr24h)}</td>
+                  <td className="py-4 pr-4 tabular-nums text-cream/80">{money(pair.tvlUsd)}</td>
+                  <td className="py-4 pr-4 tabular-nums text-cream/80">{money(pair.volume24hUsd)}</td>
+                  <td className="py-4 pr-4 tabular-nums text-cream/80">
                     {pair.feeTierBps === null ? "—" : `${pair.feeTierBps} bps`}
                   </td>
                   <td className="py-4 pr-4">
                     <div className="flex flex-wrap gap-1">
                       {(pair.token2022A || pair.token2022B) && (
-                        <span className="rounded-full border border-neutral-700 bg-neutral-800/50 px-2 py-0.5 text-[10px] text-neutral-400">Token-2022</span>
+                        <span className="rounded-full border border-white/20 bg-white/[0.07] px-2 py-0.5 text-[10px] text-smoke">Token-2022</span>
                       )}
                       {pair.freezeRisk && (
-                        <span className="rounded-full border border-neutral-700 bg-neutral-800/50 px-2 py-0.5 text-[10px] text-neutral-400">Freeze risk</span>
+                        <span className="rounded-full border border-white/20 bg-white/[0.07] px-2 py-0.5 text-[10px] text-smoke">Freeze risk</span>
                       )}
                     </div>
                   </td>
                   <td className="py-4">
                     <button
                       type="button"
-                      className="rounded-lg border border-neutral-700 px-2.5 py-1 text-[11px] font-semibold text-neutral-200 hover:border-neutral-500"
+                      className="whitespace-nowrap rounded-full bg-lemon px-3 py-1.5 text-[11px] font-semibold text-ink transition-colors hover:bg-[#fff27f]"
                       onClick={() => setOpenPair({
                         poolAddress: pair.poolAddress,
                         mintA: pair.mintA,
@@ -244,8 +243,13 @@ export function RwaPairsPanel() {
                     >
                       Add liquidity
                     </button>
-                    <button type="button" className="mt-2 block text-xs text-sky-300" onClick={() => { setDecisionPair(pair); document.getElementById("lp-decision")?.scrollIntoView({ behavior: "smooth" }); }}>唯讀情境試算</button>
-                    <div className="mt-1 font-mono text-[10px] text-neutral-600">{short(pair.poolAddress)}</div>
+                    <Link
+                      href={`${APP_ROUTES.plan}?pair=${encodeURIComponent(`${pair.wrappedSymbol}/${pair.plainSymbol}`)}`}
+                      className="mt-2 block text-[11px] font-medium text-lilac underline-offset-2 hover:underline"
+                    >
+                      Plan this pool
+                    </Link>
+                    <div className="mt-1 font-mono text-[10px] text-smoke/70">{short(pair.poolAddress)}</div>
                   </td>
                 </tr>
               ))}
