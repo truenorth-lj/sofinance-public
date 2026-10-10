@@ -14,6 +14,11 @@ it("shows actual vector, included costs and SOL risk, suppresses duplicate click
  await act(async()=>{click("Preview exit");click("Preview exit");});expect(fetcher).toHaveBeenCalledTimes(1);expect(node.textContent).toContain("1.000000 USDC + 0.008580200 SOL");expect(node.textContent).toContain("not deducted again");expect(node.textContent).toContain("SOL keeps its price exposure");
  await act(async()=>vi.advanceTimersByTime(16000));expect(node.textContent).toContain("Exit preview expired");
 });
+it("explains when a combined exit exceeds the 1232-byte packet limit",async()=>{
+ const fetcher=vi.fn().mockResolvedValue(Response.json({status:"unavailable",reason:"Full atomic exit exceeds 1232 bytes: 1480",bytes:1480,executable:false,sent:false,received:[{mint:"So11111111111111111111111111111111111111112",amountAtomic:"1000"}]}));
+ vi.stubGlobal("fetch",fetcher);await act(async()=>click("Preview exit"));
+ expect(node.textContent).toContain("cannot fit in one Solana transaction");expect(node.textContent).toContain("1480");expect(node.textContent).toContain("separate vectors");
+});
 it("cancels transports ignoring abort and clears stale result, permits retry",async()=>{
  let resolve!:(value:Response)=>void;const fetcher=vi.fn((url:string,options:RequestInit)=>{void url;void options;return new Promise<Response>(r=>resolve=r);});vi.stubGlobal("fetch",fetcher);
  await act(async()=>click("Preview exit"));await act(async()=>click("Cancel"));expect(fetcher.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);

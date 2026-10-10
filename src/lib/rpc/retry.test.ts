@@ -3,7 +3,7 @@ import { RpcHttpError, RpcUnavailableError } from "./errors";
 import { invokeWithPolicy } from "./connection";
 import { resetRpcCache } from "./cache";
 import { setRpcLogger } from "./logger";
-import { computeBackoffMs, invokeWithRetries, parseRetryAfter, setRpcRetryConfig } from "./retry";
+import { computeBackoffMs, invokeWithRetries, parseRetryAfter, PREVIEW_RETRY, setRpcRetryConfig } from "./retry";
 
 afterEach(() => {
   resetRpcCache();
@@ -78,6 +78,49 @@ describe("429 backoff and failover", () => {
     await vi.advanceTimersByTimeAsync(1);
     await expect(promise).resolves.toEqual({ value: { owner: "retried" }, retries: 1 });
     expect(primary).toHaveBeenCalledTimes(2);
+  });
+
+  it("uses the longer preview budget before failing over a cacheable read", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, "random").mockReturnValue(0.5);
+    const primary = vi.fn(async () => {
+      throw new Error("429 Too Many Requests");
+    });
+    const fallback = vi.fn(async () => ({ owner: "fallback" }));
+    const promise = invokeWithPolicy({
+      method: "getAccountInfo",
+      primary,
+      fallback,
+      primaryId: "solami",
+      fallbackId: "default",
+      retry: PREVIEW_RETRY,
+    });
+    await vi.runAllTimersAsync();
+    await expect(promise).resolves.toMatchObject({ servedBy: "default", fallback: true });
+    expect(primary).toHaveBeenCalledTimes(PREVIEW_RETRY.maxAttempts);
+    expect(fallback).toHaveBeenCalledOnce();
+  });
+
+  it("keeps simulateTransaction 429s on the primary even after the preview budget", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, "random").mockReturnValue(0.5);
+    const primary = vi.fn(async () => {
+      throw new Error("429 Too Many Requests");
+    });
+    const fallback = vi.fn(async () => ({ value: { err: null } }));
+    const promise = invokeWithPolicy({
+      method: "simulateTransaction",
+      primary,
+      fallback,
+      primaryId: "solami",
+      fallbackId: "default",
+      retry: PREVIEW_RETRY,
+    });
+    const rejected = expect(promise).rejects.toBeInstanceOf(RpcUnavailableError);
+    await vi.runAllTimersAsync();
+    await rejected;
+    expect(primary).toHaveBeenCalledTimes(PREVIEW_RETRY.maxAttempts);
+    expect(fallback).not.toHaveBeenCalled();
   });
 
   it("surfaces a user-facing error when every provider is exhausted", async () => {

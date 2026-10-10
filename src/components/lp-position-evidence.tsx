@@ -44,7 +44,12 @@ type Exit = {
   bytes?: number;
   executable?: boolean;
   sent?: boolean;
+  received?: { mint: string; amountAtomic: string }[];
 };
+
+function oversizedExit(exit: Exit): boolean {
+  return /exceeds 1232 bytes/i.test(exit.reason ?? exit.error ?? "");
+}
 
 const number = (value: string) => new Decimal(value).toFixed(4);
 const eyebrow = "font-data text-[10px] uppercase tracking-[0.14em] text-smoke";
@@ -282,12 +287,14 @@ export function LpPositionEvidence({ positionId, className = "" }: { positionId:
           {exit && (
             <div aria-label="Split-asset exit result">
               <p className={eyebrow}>Exit preview</p>
-              <p className={`mt-2 text-sm font-medium ${expired ? "text-lemon" : "text-cream"}`}>
+              <p className={`mt-2 text-sm font-medium ${expired || oversizedExit(exit) ? "text-lemon" : "text-cream"}`}>
                 {expired
                   ? "Exit preview expired. Read it again."
-                  : exit.status === "verified-preview"
-                    ? "USDC + SOL exit simulation verified"
-                    : "Exit data incomplete or partial"}
+                  : oversizedExit(exit)
+                    ? `This exit cannot fit in one Solana transaction (${exit.bytes ?? "unknown"} bytes; limit 1232). Withdraw-to-wallet USDC and SOL legs still work as separate vectors.`
+                    : exit.status === "verified-preview"
+                      ? "USDC + SOL exit simulation verified"
+                      : "Exit data incomplete or partial"}
               </p>
               {exit.recoveryUSDCAtomic && exit.recoverySOLLamports && (
                 <>
