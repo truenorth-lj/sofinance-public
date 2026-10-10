@@ -122,13 +122,13 @@ describe("open-position signing and quote refresh", () => {
   it("enables signing with a fresh quote and explains why Sign is disabled when it is not", async () => {
     await mount();
     expect(signButton().disabled).toBe(false);
-    expect(container.textContent).toContain("Ready to sign");
+    expect(container.textContent).not.toContain("Ready to sign");
     expect(container.textContent).not.toContain("Complete the form to sign");
     await act(async () => { signButton().click(); });
     expect(container.textContent).toContain("Preparing latest transaction");
   });
 
-  it("warns about immediate-resale loss without disabling Sign", async () => {
+  it("shows round-trip total cost in the summary and tooltip without disabling Sign", async () => {
     vi.stubGlobal("fetch", vi.fn(async (url: string) => {
       if (url.startsWith("/api/wallet")) return { ok: true, json: async () => ({ assets: [{
         kind: "native", mint: NATIVE_SOL_MINT, decimals: 9, balance: "216474000", eligible: true,
@@ -139,6 +139,8 @@ describe("open-position signing and quote refresh", () => {
           ...quote(),
           passesFloor: false,
           achievedResaleBps: 9000,
+          resaleInput: "108000000",
+          roundtripCostInput: "12000000",
           warning: "Conservative immediate resale is 90.00% of input, below the 99.00% floor.",
           warnings: ["Conservative immediate resale is 90.00% of input, below the 99.00% floor."],
         }) };
@@ -147,9 +149,21 @@ describe("open-position signing and quote refresh", () => {
     }));
     await mount();
     expect(signButton().disabled).toBe(false);
-    expect(container.textContent).toContain("Immediate resale of this position would recover about 90.00%");
-    expect(container.textContent).toContain("about 10.00% round-trip loss");
-    expect(container.textContent).toContain("Ready to sign");
+    expect(container.textContent).toContain("Total cost");
+    expect(container.textContent).toContain("~10.00%");
+    expect(container.textContent).not.toContain("Price impact cap");
+    expect(container.textContent).not.toContain("Immediate resale of this position");
+    const info = container.querySelector<HTMLButtonElement>('button[aria-label="About Total cost"]')!;
+    await act(async () => { info.dispatchEvent(new MouseEvent("mouseover", { bubbles: true })); });
+    expect(container.querySelector('[role="tooltip"]')?.textContent).toBe("Estimated round-trip cost: about 10.00% (assuming you open the position, immediately withdraw, and swap back to SOL). This conservative estimate includes swap fees, price impact, and slippage tolerance. It does not block signing.");
+    expect(container.querySelector('[role="tooltip"]')?.classList.contains("bg-char")).toBe(true);
+    await act(async () => {
+      info.click();
+      info.focus();
+      info.dispatchEvent(new MouseEvent("mouseout", { bubbles: true }));
+    });
+    expect(container.querySelector('[role="tooltip"]')).toBeNull();
+    expect(container.textContent).not.toContain("Ready to sign");
   });
 
   it("fetches a new quote every three seconds without waiting for expiry", async () => {
@@ -201,10 +215,12 @@ describe("open-position signing and quote refresh", () => {
     deferredQuote = new Promise((resolve) => { resolveQuote = resolve; });
     await mount();
     expect(mocks.controller!.quoteLoading).toBe(true);
+    expect(container.textContent).toContain("Fetching the best price on Jupiter");
     await act(async () => { mocks.controller!.changeAmount(""); });
     await act(async () => { resolveQuote({ ok: true, json: async () => quote() }); });
     expect(mocks.controller!.quote).toBeNull();
     expect(mocks.controller!.quoteLoading).toBe(false);
+    expect(container.textContent).not.toContain("Fetching the best price on Jupiter");
     expect(signButton().disabled).toBe(true);
     await advance(QUOTE_TTL_MS + 1000);
     expect(quoteCalls).toBe(1);
