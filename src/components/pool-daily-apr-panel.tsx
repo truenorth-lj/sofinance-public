@@ -106,7 +106,7 @@ export function PoolDailyAprChart({
   return (
     <div className="space-y-2">
       {error && (
-        <p className="rounded-xl border border-neutral-800/60 bg-neutral-900/30 px-3 py-2 text-xs text-neutral-400" role="status">
+        <p className="rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-smoke" role="status">
           {error}
         </p>
       )}
@@ -149,7 +149,7 @@ export function PoolAprSparkline({ poolId }: { poolId: string }) {
   }, [poolId]);
 
   if (!data) {
-    return <span className="text-[11px] text-neutral-600">…</span>;
+    return <span className="text-[11px] text-smoke/70">…</span>;
   }
   return (
     <AprSparkline

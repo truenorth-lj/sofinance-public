@@ -79,11 +79,11 @@ export function AprLineChart({
   const hoverPoint = hover ? axis[hover.index] : null;
 
   return (
-    <div className="rounded-xl border border-neutral-800/60 bg-neutral-900/30 p-3">
+    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h3 className="text-sm font-semibold text-neutral-100">{title}</h3>
-          <p className="mt-1 max-w-2xl text-[11px] leading-5 text-neutral-500">{subtitle}</p>
+          <h3 className="text-sm font-semibold text-cream">{title}</h3>
+          <p className="mt-1 max-w-2xl text-[11px] leading-5 text-smoke">{subtitle}</p>
         </div>
         <div className="flex shrink-0 gap-1" role="group" aria-label="APR range">
           {RANGES.map((days) => (
@@ -96,8 +96,8 @@ export function AprLineChart({
               }}
               className={`rounded-lg border px-2 py-1 text-[11px] font-semibold ${
                 range === days
-                  ? "border-neutral-500 bg-neutral-800 text-neutral-100"
-                  : "border-neutral-800 bg-transparent text-neutral-400 hover:border-neutral-700 hover:text-neutral-200"
+                  ? "border-white/55 bg-white/10 text-cream"
+                  : "border-white/12 bg-transparent text-smoke hover:border-white/20 hover:text-cream/90"
               }`}
             >
               {days}D
@@ -107,7 +107,7 @@ export function AprLineChart({
       </div>
 
       {!hasData ? (
-        <p className="mt-6 text-xs text-neutral-500">{emptyLabel}</p>
+        <p className="mt-6 text-xs text-smoke">{emptyLabel}</p>
       ) : (
         <div className="relative mt-3">
           <svg
@@ -220,19 +220,19 @@ export function AprLineChart({
           </svg>
           {hover && hoverPoint && (
             <div
-              className="pointer-events-none absolute z-10 min-w-[140px] rounded-lg border border-neutral-700 bg-[#0a0a0a] px-2 py-1.5 text-[11px] text-neutral-200 shadow-lg"
+              className="pointer-events-none absolute z-10 min-w-[140px] rounded-lg border border-white/20 bg-char px-2 py-1.5 text-[11px] text-cream/90 shadow-lg"
               style={{
                 left: Math.min(hover.x + 12, 280),
                 top: Math.max(8, hover.y - 48),
               }}
             >
-              <div className="font-semibold text-neutral-100">{hoverPoint.date}</div>
+              <div className="font-semibold text-cream">{hoverPoint.date}</div>
               {ranged.map((item) => {
                 const point = item.values[hover.index];
                 return (
-                  <div key={item.id} className="mt-0.5 text-neutral-400">
+                  <div key={item.id} className="mt-0.5 text-smoke">
                     {item.label}:{" "}
-                    <span className="text-neutral-200">
+                    <span className="text-cream/90">
                       {point?.value === null || point?.value === undefined ? "—" : formatAprPct(point.value)}
                     </span>
                   </div>
@@ -243,7 +243,7 @@ export function AprLineChart({
         </div>
       )}
 
-      <div className="mt-3 flex flex-wrap gap-3 text-[10px] text-neutral-500">
+      <div className="mt-3 flex flex-wrap gap-3 text-[10px] text-smoke">
         {ranged.map((item) => (
           <span key={item.id} className="inline-flex items-center gap-1.5">
             <span className="inline-block h-1.5 w-4 rounded-full" style={{ background: item.stroke }} />
@@ -282,7 +282,7 @@ export function AprSparkline({
 
   if (segments.length === 0) {
     return (
-      <span className="text-[11px] text-neutral-600" title={label}>
+      <span className="text-[11px] text-smoke/70" title={label}>
         —
       </span>
     );
@@ -308,7 +308,7 @@ export function AprSparkline({
           return <path key={segIndex} d={d} fill="none" stroke="#e5e5e5" strokeWidth="1.25" />;
         })}
       </svg>
-      <span className="tabular-nums text-[11px] text-neutral-300">
+      <span className="tabular-nums text-[11px] text-cream/80">
         {lastCopy?.label ?? "—"}
       </span>
     </span>

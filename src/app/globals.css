@@ -25,14 +25,14 @@
   }
 }
 
-/* Font variables are set by the route layout that loads them, so resolve them in place. */
+/* The font variables are set on <html> by the root layout; resolve them where they are used. */
 @theme inline {
-  --font-display: var(--font-plan-display), ui-sans-serif, system-ui, sans-serif;
-  --font-data: var(--font-plan-mono), ui-monospace, SFMono-Regular, monospace;
+  --font-display: var(--font-grotesk), ui-sans-serif, system-ui, sans-serif;
+  --font-data: var(--font-mono-data), ui-monospace, SFMono-Regular, monospace;
 }
 
 :root { color-scheme: dark; }
-html { background: #050505; }
+html { background: #0b0b0b; }
 body { margin: 0; }
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; }

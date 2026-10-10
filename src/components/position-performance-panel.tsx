@@ -12,7 +12,7 @@ import {
 import { PositionSelect } from "./position-select";
 import { useTokenMetadata } from "./use-token-metadata";
 import { DecisionSession } from "@/lib/lp-decision-session";
-import { LpDecisionBuilder } from "./lp-decision-builder";
+import { LpPositionEvidence } from "./lp-position-evidence";
 import { PoolDailyAprChart } from "./pool-daily-apr-panel";
 import { PoolActivityPanel } from "./pool-activity-panel";
 
@@ -268,17 +268,17 @@ export function PositionPerformancePanel({
   const preferTe = Boolean(te);
 
   return (
-    <section className="rounded-[20px] border border-neutral-800/80 bg-[#0a0a0a] p-5 sm:p-7" aria-labelledby="perf-heading">
-      <h2 id="perf-heading" className="text-base font-semibold text-neutral-100">
+    <>
+    <section className="rounded-[28px] border border-white/12 bg-char p-5 sm:p-7 lg:col-span-5" aria-labelledby="perf-heading">
+      <h2 id="perf-heading" className="text-base font-semibold text-cream">
         Lookup by position NFT mint
       </h2>
 
-      <LpDecisionBuilder positionId={data?.positionMint ?? decisionMint} poolId={data?.poolId} wallet={wallet} contextLabel={data ? "已查詢持倉績效；既有 pnlUsd 為當前價格重估，未完整扣成本" : decisionMint ? "輸入的公開 NFT mint；由唯讀分析核實身份，未聲稱錢包所有權" : undefined} />
       <div className="mt-4 space-y-3">
-        <label className="block text-xs text-neutral-400">
+        <label className="block text-xs text-smoke">
           Position mint
           <input
-            className="mt-1 w-full rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 focus:border-neutral-600 focus:outline-none"
+            className="mt-1 w-full rounded-2xl border border-white/20 bg-white/[0.06] px-3 py-2 text-sm text-cream focus:border-white/40 focus:outline-none"
             value={positionMint}
             onChange={(event) => changePositionMint(event.target.value)}
             placeholder="Position NFT mint (base58)"
@@ -286,7 +286,7 @@ export function PositionPerformancePanel({
             autoComplete="off"
           />
         </label>
-        <p className="text-[11px] leading-4 text-neutral-600">
+        <p className="text-[11px] leading-4 text-smoke/70">
           Paste any position NFT mint
           {connectedAddress ? ", or pick one from the connected wallet." : "."}
         </p>
@@ -314,7 +314,7 @@ export function PositionPerformancePanel({
         )}
         <div>
           <div className="flex items-center justify-between gap-3">
-            <label htmlFor="perf-wallet" className="text-xs text-neutral-400">
+            <label htmlFor="perf-wallet" className="text-xs text-smoke">
               Wallet (optional ownership check)
             </label>
             {showUseConnectedWallet(wallet, connectedAddress) && connectedAddress && (
@@ -324,7 +324,7 @@ export function PositionPerformancePanel({
                   setManualWallet(null);
                   setIgnoreUrlWallet(true);
                 }}
-                className="text-[11px] font-medium text-neutral-500 transition-colors hover:text-neutral-300"
+                className="text-[11px] font-medium text-smoke transition-colors hover:text-cream/80"
               >
                 Use connected wallet
               </button>
@@ -332,14 +332,14 @@ export function PositionPerformancePanel({
           </div>
           <input
             id="perf-wallet"
-            className="mt-1 w-full rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 focus:border-neutral-600 focus:outline-none"
+            className="mt-1 w-full rounded-2xl border border-white/20 bg-white/[0.06] px-3 py-2 text-sm text-cream focus:border-white/40 focus:outline-none"
             value={wallet}
             onChange={(event) => setManualWallet(event.target.value)}
             placeholder="Defaults to the connected wallet"
             spellCheck={false}
             autoComplete="off"
           />
-          <p className="mt-1 text-[11px] leading-4 text-neutral-600">
+          <p className="mt-1 text-[11px] leading-4 text-smoke/70">
             Optional ownership check. Pre-filled from the connected wallet; clear or paste another
             pubkey to override.
           </p>
@@ -348,7 +348,7 @@ export function PositionPerformancePanel({
           type="button"
           onClick={() => void load()}
           disabled={loading}
-          className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-neutral-700 bg-transparent px-4 py-3 text-sm font-semibold text-neutral-100 transition-colors hover:border-neutral-600 hover:bg-neutral-900/50 disabled:cursor-not-allowed disabled:opacity-40"
+          className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-lemon px-5 py-3 text-sm font-semibold text-ink transition-colors hover:bg-[#fff27f] disabled:cursor-not-allowed disabled:opacity-40"
         >
           {loading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
           Compute performance
@@ -356,13 +356,16 @@ export function PositionPerformancePanel({
       </div>
 
       {error && (
-        <p className="mt-4 rounded-xl border border-neutral-700 bg-neutral-900/50 px-3 py-2 text-sm text-neutral-300" role="alert">
+        <p className="mt-4 rounded-2xl border border-white/20 bg-white/[0.04] px-3 py-2 text-sm text-cream/80" role="alert">
           {error}
         </p>
       )}
+    </section>
 
+    {(data || previewPoolId) && (
+    <section aria-label="Performance results" className="rounded-[28px] border border-white/12 bg-char p-5 sm:p-7 lg:col-span-12">
       {data && (
-        <div className="mt-6 space-y-5 text-sm">
+        <div className="space-y-5 text-sm">
           <div className="grid gap-3 sm:grid-cols-2">
             <Stat label="Holding days" value={data.metrics.holdingDays?.toFixed(2) ?? "—"} />
             <Stat label="Range" value={data.rangeSide} />
@@ -415,32 +418,32 @@ export function PositionPerformancePanel({
           </div>
 
           {tn && (
-            <div className="rounded-xl border border-neutral-800/60 bg-neutral-900/30 p-3">
-              <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400">
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-smoke">
                 Inventory (raw A / B){tn.sameAssetWrap ? " · same-asset wrap" : ""}
               </div>
-              <div className="mt-2 grid gap-2 sm:grid-cols-2 text-xs text-neutral-200">
+              <div className="mt-2 grid gap-2 sm:grid-cols-2 text-xs text-cream/90">
                 <div>
-                  <div className="text-neutral-500">{symA} deposited → equity</div>
-                  <div className="font-semibold text-neutral-100">
+                  <div className="text-smoke">{symA} deposited → equity</div>
+                  <div className="font-semibold text-cream">
                     {tok(tn.amounts.deposited.a)} → {tok(tn.amounts.currentEquity.a)}
                   </div>
-                  <div className="text-neutral-400">
+                  <div className="text-smoke">
                     fees {tok(tn.amounts.feesEarned.a)} · side fee APR {pct(tn.perSideFeeAprPct.a)}
                   </div>
                 </div>
                 <div>
-                  <div className="text-neutral-500">{symB} deposited → equity</div>
-                  <div className="font-semibold text-neutral-100">
+                  <div className="text-smoke">{symB} deposited → equity</div>
+                  <div className="font-semibold text-cream">
                     {tok(tn.amounts.deposited.b)} → {tok(tn.amounts.currentEquity.b)}
                   </div>
-                  <div className="text-neutral-400">
+                  <div className="text-smoke">
                     fees {tok(tn.amounts.feesEarned.b)} · side fee APR {pct(tn.perSideFeeAprPct.b)}
                   </div>
                 </div>
               </div>
               {te && (
-                <div className="mt-3 text-[11px] leading-5 text-neutral-500">
+                <div className="mt-3 text-[11px] leading-5 text-smoke">
                   {te.basis}. Tick {te.tickUsed}; UI mid {te.uiPriceBPerA.toPrecision(8)} {symB}/{symA}.{" "}
                   {te.note}
                 </div>
@@ -456,8 +459,8 @@ export function PositionPerformancePanel({
           )}
 
           {preferTe && (
-            <details className="rounded-xl border border-neutral-800/40 bg-neutral-900/20 p-3 text-xs text-neutral-300">
-              <summary className="cursor-pointer text-neutral-400">USD (secondary · current prices)</summary>
+            <details className="rounded-2xl border border-white/10 bg-white/[0.03] p-3 text-xs text-cream/80">
+              <summary className="cursor-pointer text-smoke">USD (secondary · current prices)</summary>
               <div className="mt-3 grid gap-2 sm:grid-cols-2">
                 <Stat label="HPR (USD)" value={pct(data.metrics.holdingPeriodReturnPct)} />
                 <Stat label="Annualized (USD)" value={pct(data.metrics.annualizedReturnPct)} />
@@ -470,7 +473,7 @@ export function PositionPerformancePanel({
             </details>
           )}
 
-          <div className="rounded-xl border border-neutral-800/40 bg-neutral-900/20 p-3 text-xs text-neutral-300">
+          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3 text-xs text-cream/80">
             <div>
               Position {short(data.positionMint)} · pool {short(data.poolId)} · pair {symA}/{symB}
             </div>
@@ -497,18 +500,18 @@ export function PositionPerformancePanel({
               </div>
             )}
             {data.truncated && (
-              <div className="font-medium text-neutral-300">History truncated at signature cap — earlier txs may be missing.</div>
+              <div className="font-medium text-cream/80">History truncated at signature cap — earlier txs may be missing.</div>
             )}
-            <div className="mt-2 text-neutral-500">{data.pricing.label}</div>
-            <div className="mt-1 text-neutral-600">{data.assumptions}</div>
+            <div className="mt-2 text-smoke">{data.pricing.label}</div>
+            <div className="mt-1 text-smoke/70">{data.assumptions}</div>
             {usedSolami(data.historyFetch?.provider) && (
-              <p className="mt-3 text-[10px] uppercase tracking-wide text-neutral-600">
+              <p className="mt-3 text-[10px] uppercase tracking-wide text-smoke/70">
                 Powered by{" "}
                 <a
                   href="https://solami.dev"
                   target="_blank"
                   rel="noreferrer"
-                  className="text-neutral-400 underline decoration-neutral-700 underline-offset-2 hover:text-neutral-200"
+                  className="text-smoke underline decoration-white/30 underline-offset-2 hover:text-cream/90"
                 >
                   Solami
                 </a>
@@ -519,7 +522,7 @@ export function PositionPerformancePanel({
       )}
 
       {(data?.poolId || previewPoolId) && (
-        <div className="mt-6">
+        <div className={data ? "mt-6" : undefined}>
           <PoolActivityPanel
             poolId={data?.poolId || previewPoolId}
             tickLower={data?.tickLower}
@@ -558,6 +561,9 @@ export function PositionPerformancePanel({
         </div>
       )}
     </section>
+    )}
+    {decisionMint && <LpPositionEvidence key={decisionMint} positionId={decisionMint} className="lg:col-span-12" />}
+    </>
   );
 }
 
@@ -580,7 +586,7 @@ function InventoryBar({
   const shareB = 100 - shareA;
   return (
     <div className="mt-3">
-      <div className="mb-1 flex justify-between text-[11px] text-neutral-400">
+      <div className="mb-1 flex justify-between text-[11px] text-smoke">
         <span>
           {labelA} {tok(amountA, 5)}
         </span>
@@ -588,11 +594,11 @@ function InventoryBar({
           {labelB} {tok(amountB, 5)}
         </span>
       </div>
-      <div className="flex h-2 overflow-hidden rounded-full bg-neutral-800" aria-hidden>
-        <div className="bg-neutral-500" style={{ width: `${shareA}%` }} />
-        <div className="bg-neutral-600" style={{ width: `${shareB}%` }} />
+      <div className="flex h-2 overflow-hidden rounded-full bg-white/10" aria-hidden>
+        <div className="bg-white/50" style={{ width: `${shareA}%` }} />
+        <div className="bg-white/40" style={{ width: `${shareB}%` }} />
       </div>
-      <div className="mt-1 text-[10px] text-neutral-600">
+      <div className="mt-1 text-[10px] text-smoke/70">
         Equity mix (TE-weighted when tick mid available)
       </div>
     </div>
@@ -602,12 +608,12 @@ function InventoryBar({
 function Stat({ label, value, emphasize }: { label: string; value: string; emphasize?: boolean }) {
   return (
     <div
-      className={`rounded-xl border px-3 py-2 ${
-        emphasize ? "border-neutral-700 bg-neutral-800/50" : "border-neutral-800/40 bg-neutral-900/20"
+      className={`rounded-2xl border px-3 py-2 ${
+        emphasize ? "border-white/20 bg-white/[0.07]" : "border-white/10 bg-white/[0.03]"
       }`}
     >
-      <div className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">{label}</div>
-      <div className={`mt-1 font-semibold ${emphasize ? "text-neutral-100" : "text-neutral-200"}`}>{value}</div>
+      <div className="text-[11px] font-medium uppercase tracking-wide text-smoke">{label}</div>
+      <div className={`mt-1 font-semibold ${emphasize ? "text-cream" : "text-cream/90"}`}>{value}</div>
     </div>
   );
 }

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { BrandMark } from "@/components/brand-mark";
 import { Wallet } from "lucide-react";
-import { INK_COLORS } from "./ink-tokens";
+import { cn } from "@/lib/cn";
 import { APP_ROUTES } from "@/lib/public-urls";
 
 interface InkNavProps {
@@ -14,74 +14,70 @@ interface InkNavProps {
   onDisconnect?: () => void;
 }
 
-const short = (value: string) => `${value.slice(0, 5)}…${value.slice(-5)}`;
+const short = (value: string) => `${value.slice(0, 4)}…${value.slice(-4)}`;
 
 const NAV_LINKS = [
-  { href: APP_ROUTES.home, label: "Positions", shortLabel: "Positions" },
-  { href: APP_ROUTES.plan, label: "Plan", shortLabel: "Plan" },
-  { href: APP_ROUTES.positionPerformance, label: "Position performance", shortLabel: "Performance" },
-  { href: APP_ROUTES.rwaPairs, label: "RWA pairs", shortLabel: "RWA" },
-  { href: APP_ROUTES.ai, label: "Use AI", shortLabel: "AI" },
+  { href: APP_ROUTES.home, label: "Positions" },
+  { href: APP_ROUTES.plan, label: "Plan" },
+  { href: APP_ROUTES.positionPerformance, label: "Performance" },
+  { href: APP_ROUTES.rwaPairs, label: "RWA pairs" },
+  { href: APP_ROUTES.ai, label: "Use AI" },
 ] as const;
+
+const pill =
+  "flex h-10 items-center justify-center rounded-full border px-4 text-[13px] font-medium outline-none transition-colors";
 
 export function InkNav({ wallet, connected, onConnect, onDisconnect }: InkNavProps) {
   const pathname = usePathname();
 
   return (
-    <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-      <Link href={APP_ROUTES.home} className="flex items-center gap-3 transition-opacity hover:opacity-70">
-        <BrandMark className="h-10 w-10 flex-shrink-0 text-neutral-100" />
-        <div>
-          <div className={`text-sm font-bold tracking-wide text-${INK_COLORS.textPrimary}`}>
-            SoFinance
-          </div>
-          <div className={`text-xs text-${INK_COLORS.textTertiary}`}>
-            Solana · Raydium CLMM
-          </div>
-        </div>
+    // Below lg the brand and wallet share the first row and the links take the next one.
+    <header className="flex flex-wrap items-center justify-between gap-2">
+      <Link
+        href={APP_ROUTES.home}
+        className="order-1 flex h-10 items-center gap-2 rounded-full bg-lemon pl-1.5 pr-4 text-[13px] font-semibold text-ink outline-none focus-visible:shadow-[0_0_0_2px_var(--color-cream)]"
+      >
+        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-ink">
+          <BrandMark className="h-5 w-5 text-lemon" />
+        </span>
+        SoFinance
       </Link>
 
-      <div className="flex flex-wrap items-center gap-2">
+      <nav aria-label="App" className="order-3 flex w-full flex-wrap gap-2 lg:order-2 lg:w-auto lg:flex-1">
         {NAV_LINKS.map((link) => {
           const isActive = pathname === link.href;
           return (
             <Link
               key={link.href}
               href={link.href}
-              className={`rounded-xl border px-3 py-2 text-xs font-semibold transition-colors ${
+              aria-current={isActive ? "page" : undefined}
+              className={cn(
+                pill,
+                "min-w-fit flex-1",
                 isActive
-                  ? `border-${INK_COLORS.textPrimary} bg-${INK_COLORS.cardBg} text-${INK_COLORS.textPrimary}`
-                  : `border-${INK_COLORS.cardBorder} bg-transparent text-${INK_COLORS.textSecondary} hover:border-${INK_COLORS.buttonBorderHover} hover:bg-${INK_COLORS.buttonBgHover}`
-              }`}
+                  ? "border-cream bg-cream text-ink"
+                  : "border-white/25 text-cream/85 hover:border-white/70 focus-visible:border-lemon",
+              )}
             >
-              <span className="sm:hidden">{link.shortLabel}</span>
-              <span className="hidden sm:inline">{link.label}</span>
+              {link.label}
             </Link>
           );
         })}
+      </nav>
 
-        {onConnect && onDisconnect && (
-          <>
-            {connected && wallet ? (
-              <button
-                onClick={onDisconnect}
-                className={`max-w-[160px] inline-flex items-center justify-center gap-2 rounded-xl border border-${INK_COLORS.buttonBorder} bg-transparent px-3 py-2 text-xs font-semibold text-${INK_COLORS.textSecondary} transition-colors hover:border-${INK_COLORS.buttonBorderHover} hover:bg-${INK_COLORS.buttonBgHover}`}
-              >
-                <Wallet className="h-4 w-4" />
-                {short(wallet)}
-              </button>
-            ) : (
-              <button
-                onClick={onConnect}
-                className={`inline-flex items-center justify-center gap-2 rounded-xl border border-${INK_COLORS.buttonBorder} bg-transparent px-3 py-2 text-xs font-semibold text-${INK_COLORS.textSecondary} transition-colors hover:border-${INK_COLORS.buttonBorderHover} hover:bg-${INK_COLORS.buttonBgHover}`}
-              >
-                <Wallet className="h-4 w-4" />
-                Connect wallet
-              </button>
-            )}
-          </>
-        )}
-      </div>
+      {onConnect && onDisconnect && (
+        <button
+          type="button"
+          onClick={connected && wallet ? onDisconnect : onConnect}
+          className={cn(
+            pill,
+            "order-2 gap-2 border-white/25 text-cream/85 hover:border-white/70 focus-visible:border-lemon lg:order-3",
+          )}
+        >
+          <Wallet className="h-4 w-4" aria-hidden="true" />
+          {connected && wallet ? short(wallet) : "Connect wallet"}
+        </button>
+      )}
     </header>
   );
 }

@@ -3,7 +3,7 @@
 import { formatPositionLabel, type PositionLabelInput, type PositionLabelMetadata } from "../lib/position-label";
 
 const DEFAULT_SELECT_CLASS =
-  "w-full rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-neutral-600 disabled:opacity-50";
+  "w-full rounded-2xl border border-white/20 bg-white/[0.06] px-3 py-2 text-sm text-cream outline-none focus:border-white/40 disabled:opacity-50";
 
 export function PositionSelect({
   id,
@@ -30,7 +30,7 @@ export function PositionSelect({
 }) {
   return (
     <div>
-      <label htmlFor={id} className={labelSrOnly ? "sr-only" : "block text-xs text-neutral-400"}>
+      <label htmlFor={id} className={labelSrOnly ? "sr-only" : "block text-xs text-smoke"}>
         {label}
       </label>
       <select

@@ -192,16 +192,16 @@ export function PoolActivityPanel({
 
   return (
     <section
-      className="rounded-[20px] border border-neutral-800/80 bg-[#0a0a0a] p-5 sm:p-7"
+      className="rounded-[28px] border border-white/12 bg-char p-5 sm:p-7"
       aria-labelledby="pool-activity-heading"
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 id="pool-activity-heading" className="text-base font-semibold text-neutral-100">
+        <h2 id="pool-activity-heading" className="text-base font-semibold text-cream">
           Live pool activity
         </h2>
-        <span className="text-[11px] text-neutral-500">{live ? "Live · Blur" : "Snapshot · Blur"}</span>
+        <span className="text-[11px] text-smoke">{live ? "Live · Blur" : "Snapshot · Blur"}</span>
       </div>
-      <p className="mt-1 text-xs leading-5 text-neutral-500">
+      <p className="mt-1 text-xs leading-5 text-smoke">
         {snapshot.pool?.symbol ?? snapshot.pool?.name ?? short(poolId)} · decoded swaps from Solami Blur
       </p>
 
@@ -216,8 +216,8 @@ export function PoolActivityPanel({
           <span
             className={`rounded-full border px-2.5 py-1 ${
               range.inRange
-                ? "border-neutral-600 bg-neutral-800/50 text-neutral-200"
-                : "border-neutral-700 bg-neutral-800/30 text-neutral-400"
+                ? "border-white/40 bg-white/[0.07] text-cream/90"
+                : "border-white/20 bg-white/[0.05] text-smoke"
             }`}
           >
             {range.inRange
@@ -227,30 +227,30 @@ export function PoolActivityPanel({
                 : "Out of range · above"}
           </span>
           {range.nearEdge && range.inRange && (
-            <span className="rounded-full border border-neutral-600 px-2.5 py-1 text-neutral-300">
+            <span className="rounded-full border border-white/40 px-2.5 py-1 text-cream/80">
               Approaching {range.edge} edge
             </span>
           )}
-          <span className="text-neutral-600">
+          <span className="text-smoke/70">
             Band {range.priceLower.toPrecision(6)}–{range.priceUpper.toPrecision(6)}
           </span>
         </div>
       )}
 
       <ol className="mt-4 space-y-2" aria-label="Recent swaps">
-        {trades.length === 0 && <li className="text-xs text-neutral-600">No recent swaps for this pool in the Blur window.</li>}
+        {trades.length === 0 && <li className="text-xs text-smoke/70">No recent swaps for this pool in the Blur window.</li>}
         {trades.slice(0, 12).map((trade) => (
           <li
             key={tradeKey(trade)}
-            className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-neutral-800/50 bg-neutral-900/30 px-3 py-2 text-xs text-neutral-300"
+            className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-cream/80"
           >
-            <span className="font-medium uppercase tracking-wide text-neutral-400">{trade.side ?? "swap"}</span>
+            <span className="font-medium uppercase tracking-wide text-smoke">{trade.side ?? "swap"}</span>
             <span>{trade.volumeUsd !== null ? money(trade.volumeUsd) : trade.price !== null ? trade.price.toPrecision(6) : "—"}</span>
             <a
               href={`https://solscan.io/tx/${trade.signature}`}
               target="_blank"
               rel="noreferrer"
-              className="text-neutral-400 underline decoration-neutral-700 underline-offset-2 hover:text-neutral-200"
+              className="text-smoke underline decoration-white/30 underline-offset-2 hover:text-cream/90"
             >
               {short(trade.signature)}
             </a>
@@ -264,9 +264,9 @@ export function PoolActivityPanel({
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl border border-neutral-800/40 bg-neutral-900/20 px-3 py-2">
-      <div className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">{label}</div>
-      <div className="mt-1 font-semibold text-neutral-200">{value}</div>
+    <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-2">
+      <div className="text-[11px] font-medium uppercase tracking-wide text-smoke">{label}</div>
+      <div className="mt-1 font-semibold text-cream/90">{value}</div>
     </div>
   );
 }
