@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { PositionPerformancePanel } from "./position-performance-panel";
+import { formatHistoryFetch, PositionPerformancePanel } from "./position-performance-panel";
 import { WalletConnectionContext, type WalletConnection } from "./wallet-connection";
 
 const connectedWallet = "11111111111111111111111111111111";
@@ -53,6 +53,20 @@ describe("PositionPerformancePanel wallet defaults", () => {
     expect(markup).toContain(`value="${urlMint}"`);
     expect(markup).toContain(`value="${urlWallet}"`);
     expect(markup).toContain("Use connected wallet");
+  });
+
+  it("formats the history-fetch metric for the performance UI", () => {
+    expect(
+      formatHistoryFetch({
+        txCount: 47,
+        elapsedMs: 812,
+        provider: "solami",
+        source: "getTransactionsForAddress",
+      }),
+    ).toBe("47 txs · 812 ms · solami · getTransactionsForAddress");
+    expect(formatHistoryFetch({ txCount: 3, elapsedMs: 40, provider: "default" })).toBe(
+      "3 txs · 40 ms · default · batched",
+    );
   });
 
   it("stays empty when disconnected and no URL wallet is provided", () => {

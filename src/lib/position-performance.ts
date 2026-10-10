@@ -17,7 +17,13 @@ import { Connection, PublicKey } from "@solana/web3.js";
 import { createHash } from "node:crypto";
 import { accruedFee } from "./compound-math";
 import { positionSide } from "./quote-math";
-import { rpcConnection } from "./rpc";
+import { rpcConnection, rpcProvider, type RpcProvider } from "./rpc";
+import {
+  fetchPositionHistoryTransactions,
+  toChronological,
+  type CustomRpcCall,
+  type HistoryFetchMetric,
+} from "./position-performance-history";
 import {
   aggregateCashflowsForPosition,
   parseRaydiumEventsFromLogs,
@@ -105,6 +111,8 @@ export type PositionPerformanceResult = {
   assumptions: string;
   /** Sparse cumulative realized fee APR from already-parsed events. Not a daily fill. */
   realizedFeeAprSeries: RealizedFeeAprSeries;
+  /** How position history was loaded (batched; Solami getTransactionsForAddress when available). */
+  historyFetch: HistoryFetchMetric;
 };
 
 export type GetPositionPerformanceOptions = {
@@ -117,6 +125,10 @@ export type GetPositionPerformanceOptions = {
   jupiterApiKey?: string;
   /** Injected now (unix seconds) for tests. */
   nowSeconds?: number;
+  /** Override RPC provider label (tests). Defaults to `rpcProvider()`. */
+  provider?: RpcProvider;
+  /** Override Solami custom RPC (tests). */
+  customRpc?: CustomRpcCall;
 };
 
 async function fetchJupiterPricesUsd(
@@ -278,20 +290,22 @@ export async function getPositionPerformance(
     ownsNft = await walletOwnsNft(connection, new PublicKey(options.wallet), mint);
   }
 
-  const sigInfos = await connection.getSignaturesForAddress(positionPda, { limit: maxSignatures }, "confirmed");
-  const truncated = sigInfos.length >= maxSignatures;
-  // RPC returns newest-first; reverse for chronological processing / open time.
-  const chronological = [...sigInfos].reverse();
+  const provider = options.provider ?? rpcProvider();
+  const fetched = await fetchPositionHistoryTransactions({
+    address: positionPda,
+    maxSignatures,
+    connection,
+    provider,
+    customRpc: options.customRpc,
+  });
+  const truncated = fetched.truncated;
+  const chronological = toChronological(fetched.items);
 
   const history: PositionHistoryEvent[] = [];
   for (const info of chronological) {
     if (info.err) continue;
-    const tx = await connection.getParsedTransaction(info.signature, {
-      commitment: "confirmed",
-      maxSupportedTransactionVersion: 0,
-    });
-    if (!tx?.meta || tx.meta.err) continue;
-    const events = parseRaydiumEventsFromLogs(tx.meta.logMessages);
+    if (!info.logMessages) continue;
+    const events = parseRaydiumEventsFromLogs(info.logMessages);
     const relevant = events.filter((event) => {
       if (event.kind === "open") return event.poolState === poolId.toBase58();
       return event.positionNftMint === positionMint;
@@ -299,7 +313,7 @@ export async function getPositionPerformance(
     if (!relevant.length) continue;
     history.push({
       signature: info.signature,
-      blockTime: info.blockTime ?? tx.blockTime ?? null,
+      blockTime: info.blockTime,
       slot: info.slot,
       events: relevant,
     });
@@ -464,7 +478,7 @@ export async function getPositionPerformance(
     openedAtIso: openedAt !== null ? new Date(openedAt * 1000).toISOString() : null,
     evaluatedAt: nowSeconds,
     evaluatedAtIso: new Date(nowSeconds * 1000).toISOString(),
-    signatureCount: chronological.length,
+    signatureCount: fetched.signatureCount,
     truncated,
     maxSignatures,
     history,
@@ -490,6 +504,7 @@ export async function getPositionPerformance(
     method: PERFORMANCE_METHOD,
     assumptions,
     realizedFeeAprSeries,
+    historyFetch: fetched.metric,
   };
 }
 
