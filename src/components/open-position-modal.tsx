@@ -12,27 +12,27 @@ const FIELD_HELP = {
   "Aligned range": "Your actual price range after alignment to the pool's supported ticks, expressed as token B per 1 token A.",
   "Status": "In range means the current pool price is within your selected range and the position can earn trading fees. It stops earning trading fees while the price is outside the range.",
   "Quote validity": "Time remaining before this quote expires. Quotes refresh every 3 seconds, and transaction preparation obtains a fresh quote. Expired quotes cannot be signed.",
-  "Price impact cap": "The maximum price impact allowed for the swaps. Preparation stops if it is exceeded. This differs from slippage tolerance and does not cap the position's overall loss.",
+  "Total cost": "",
   "Refundable rent (NFT)": "Estimated account deposits for the position NFT, its token account and your personal position account. You can recover the corresponding deposits when the position and accounts are closed.",
   "Non-refundable rent": "Estimated one-time cost to create shared protocol-position or tick-array accounts. These accounts remain after your position closes, so this cost is not returned to you.",
   "Network fee (est.)": "Estimated Solana transaction fee, confirmed during preparation. It is separate from your investment and account deposits.",
   "Wallet SOL": "Your wallet's total SOL balance. Keep enough SOL to cover account deposits and network fees in addition to your investment.",
 } as const;
 
-function FieldLabel({ label }: { label: keyof typeof FIELD_HELP }) {
+function FieldLabel({ label, help }: { label: keyof typeof FIELD_HELP; help?: string }) {
   const id = useId();
   const [open, setOpen] = useState(false);
   return (
-    <dt className="relative flex items-center gap-1.5 text-smoke" onMouseEnter={() => setOpen(true)} onMouseLeave={(event) => { if (!event.currentTarget.contains(document.activeElement)) setOpen(false); }}>
+    <dt className="relative flex items-center gap-1.5 text-smoke">
       {label}
       <button type="button" aria-label={`About ${label}`} aria-describedby={open ? id : undefined}
-        onFocus={() => setOpen(true)} onBlur={() => setOpen(false)} onClick={(event) => { event.currentTarget.focus(); setOpen(true); }}
+        onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}
         onKeyDown={(event) => { if (event.key === "Escape") setOpen(false); }}
         className="inline-flex shrink-0 rounded text-smoke hover:text-cream/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cream/70">
         <Info size={24} strokeWidth={2} className="preview-icon h-3.5 w-3.5" aria-hidden="true" />
       </button>
-      {open && <span id={id} role="tooltip" className="absolute left-0 top-full z-20 mt-1 w-64 max-w-[75vw] rounded-lg border border-white/20 bg-white/[0.06] px-3 py-2 text-left text-xs font-normal leading-5 text-cream/90 shadow-xl">
-        {FIELD_HELP[label]}
+      {open && <span id={id} role="tooltip" className="pointer-events-none absolute left-0 top-full z-20 mt-1 w-64 max-w-[75vw] rounded-lg border border-white/20 bg-char px-3 py-2 text-left text-xs font-normal leading-5 text-cream/90 shadow-xl">
+        {help ?? FIELD_HELP[label]}
       </span>}
     </dt>
   );
@@ -69,8 +69,14 @@ export function OpenPositionModal({
 }) {
   const c = useOpenPositionController(pair);
   const quote = c.quote;
+  const totalCostPercent = quote && BigInt(quote.requested) > 0n
+    ? (Number(quote.roundtripCostInput) / Number(quote.requested) * 100).toFixed(2)
+    : null;
+  const inputSymbol = quote?.inputKind === "native" ? "SOL" : quote
+    ? tokenSymbol(quote.inputMint, undefined, quote.inputMint === pair.mintA ? pair.symbolA : quote.inputMint === pair.mintB ? pair.symbolB : undefined)
+    : "SOL";
+  const totalCostHelp = `Estimated round-trip cost: about ${totalCostPercent ?? "—"}% (assuming you open the position, immediately withdraw, and swap back to ${inputSymbol}). This conservative estimate includes swap fees, price impact, and slippage tolerance. It does not block signing.`;
   const detailWarnings = quote?.warnings.filter(isDetailWarning) ?? [];
-  const visibleWarnings = quote?.warnings.filter(warning => !isDetailWarning(warning)) ?? [];
   const upfrontCost = quote ? BigInt(quote.rent.refundableLamports) + BigInt(quote.rent.nonRefundableLamports)
     + BigInt(quote.networkFeeLamportsEstimate) : 0n;
   const label = quote
@@ -111,32 +117,35 @@ export function OpenPositionModal({
         </div>
 
         <label className="block text-xs text-smoke" htmlFor="open-input-asset">Input asset</label>
-        <select
-          id="open-input-asset"
-          className="mt-1 w-full rounded-2xl border border-white/20 bg-white/[0.06] px-3 py-2 text-sm text-cream"
-          value={c.inputMint ? `${c.inputKind}:${c.inputMint}` : ""}
-          onChange={(event) => {
-            const [kind, mint] = event.target.value.split(":");
-            if ((kind === "native" || kind === "token") && mint) c.chooseAsset(kind, mint);
-          }}
-        >
-          <option value="">Select SOL, USDC, or a pool token</option>
-          {c.inputAssets.map((asset) => {
-            const label = asset.kind === "native"
-              ? "SOL"
-              : asset.mint === pair.mintA
-                ? tokenSymbol(asset.mint, undefined, pair.symbolA)
-                : asset.mint === pair.mintB
-                  ? tokenSymbol(asset.mint, undefined, pair.symbolB)
-                  : tokenSymbol(asset.mint);
-            return (
-              <option key={`${asset.kind}:${asset.mint}`} value={`${asset.kind}:${asset.mint}`}>
-                {label} · {formatAmount(asset.balance, asset.decimals)}
-                {asset.eligible ? "" : ` (${asset.reason || "ineligible"})`}
-              </option>
-            );
-          })}
-        </select>
+        <div className="relative mt-1">
+          <select
+            id="open-input-asset"
+            className="w-full appearance-none rounded-2xl border border-white/20 bg-white/[0.06] py-2 pl-3 pr-10 text-sm text-cream"
+            value={c.inputMint ? `${c.inputKind}:${c.inputMint}` : ""}
+            onChange={(event) => {
+              const [kind, mint] = event.target.value.split(":");
+              if ((kind === "native" || kind === "token") && mint) c.chooseAsset(kind, mint);
+            }}
+          >
+            <option value="">Select SOL, USDC, or a pool token</option>
+            {c.inputAssets.map((asset) => {
+              const label = asset.kind === "native"
+                ? "SOL"
+                : asset.mint === pair.mintA
+                  ? tokenSymbol(asset.mint, undefined, pair.symbolA)
+                  : asset.mint === pair.mintB
+                    ? tokenSymbol(asset.mint, undefined, pair.symbolB)
+                    : tokenSymbol(asset.mint);
+              return (
+                <option key={`${asset.kind}:${asset.mint}`} value={`${asset.kind}:${asset.mint}`}>
+                  {label} · {formatAmount(asset.balance, asset.decimals)}
+                  {asset.eligible ? "" : ` (${asset.reason || "ineligible"})`}
+                </option>
+              );
+            })}
+          </select>
+          <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-cream" aria-hidden="true" />
+        </div>
 
         <div className="mt-3 flex items-end gap-2">
           <div className="flex-1">
@@ -205,7 +214,7 @@ export function OpenPositionModal({
               <div className="flex justify-between gap-3"><FieldLabel label="Token B" /><dd>{formatAmount(quote.minOutB, quote.decimalsB)} {tokenSymbol(quote.mintB, undefined, quote.symbolB ?? pair.symbolB)}</dd></div>
               <div className="flex justify-between gap-3"><FieldLabel label="Aligned range" /><dd>{formatPositionPriceRange(quote)}</dd></div>
               <div className="flex justify-between gap-3"><FieldLabel label="Status" /><dd>{formatRangeStatus(quote.rangeSide) ?? "—"}</dd></div>
-              <div className="flex justify-between gap-3"><FieldLabel label="Price impact cap" /><dd>≤ {quote.maxImpactBps / 100}%</dd></div>
+              <div className="flex justify-between gap-3"><FieldLabel label="Total cost" help={totalCostHelp} /><dd>{totalCostPercent === null ? "—" : `~${totalCostPercent}%`}</dd></div>
             </dl>
             <details className="group mt-3 border-t border-white/12 pt-3">
               <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded text-smoke focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cream/70 [&::-webkit-details-marker]:hidden">
@@ -227,30 +236,20 @@ export function OpenPositionModal({
             </details>
           </div>
         )}
-        <div className="mt-2 flex min-h-5 items-center gap-2 text-xs leading-5 text-smoke">
-          {c.quoteLoading && <>
+        {c.quoteLoading && (
+          <div role="status" className="mt-2 flex items-center gap-2 text-xs leading-5 text-smoke">
             <RefreshCw size={24} strokeWidth={2} className="preview-icon h-3.5 w-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" />
             <span>Fetching the best price on Jupiter</span>
-          </>}
-        </div>
-
-        {quote && !quote.passesFloor && (
-          <p role="status" className="mt-3 rounded-2xl border border-lemon/25 bg-lemon/10 p-3 text-xs leading-5 text-lemon">
-            Immediate resale of this position would recover about {quote.achievedResaleBps === null ? "an unknown share" : `${(quote.achievedResaleBps / 100).toFixed(2)}%`} of your input
-            {quote.achievedResaleBps === null ? "." : ` (about ${(Math.max(0, 10_000 - quote.achievedResaleBps) / 100).toFixed(2)}% round-trip loss).`}
-            {" "}This does not block signing. Price impact, balances, quote expiry, and simulation still protect the transaction.
-          </p>
+          </div>
         )}
 
-        {(visibleWarnings.filter((warning) => warning !== quote?.warning).length > 0 || c.quoteError || c.error) && (
+        {(c.quoteError || c.error) && (
           <div className="mt-3 space-y-2 text-xs leading-5 text-smoke">
-            {visibleWarnings.filter((warning) => warning !== quote?.warning).map(warning => <p key={warning}>{explainTokenWarning(warning)}</p>)}
             {c.quoteError && <p role="alert" className="text-coral">{c.quoteError}</p>}
             {c.error && <p role="alert" className="text-coral">{c.error}</p>}
           </div>
         )}
 
-        <p className="mt-4 text-xs text-smoke" role="status">{status}</p>
         {c.canRefreshQuote && (c.quoteError || (quote && !c.fresh)) && (
           <button type="button" onClick={c.refreshQuote} disabled={c.quoteLoading}
             className="mt-2 rounded-full border border-white/20 px-3 py-2 text-xs text-cream/80 disabled:opacity-40">
