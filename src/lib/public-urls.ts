@@ -3,6 +3,7 @@ export const APP_PATH = "/app";
 
 export const APP_ROUTES = {
   home: APP_PATH,
+  plan: `${APP_PATH}/plan`,
   rwaPairs: `${APP_PATH}/rwa-pairs`,
   positionPerformance: `${APP_PATH}/position-performance`,
   ai: `${APP_PATH}/ai`,
