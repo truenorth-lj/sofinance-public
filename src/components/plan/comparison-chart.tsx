@@ -12,8 +12,8 @@ const labelPill =
 export type ChartStatus = "idle" | "loading" | "ready" | "unavailable";
 
 const WIDTH = 720;
-const HEIGHT = 300;
-const PAD = { l: 52, r: 88, t: 28, b: 36 };
+const HEIGHT = 280;
+const PAD = { l: 48, r: 16, t: 20, b: 36 };
 
 function ticksForDays(days: number): number[] {
   if (days <= 1) return [0, days];
@@ -139,8 +139,8 @@ function ReadyChart({ comparison, intent }: { comparison: PlanYieldComparison; i
           strokeDasharray="5 4"
         />
         <text
-          x={WIDTH - PAD.r + 6}
-          y={chart.yAt(chart.target) + 3}
+          x={PAD.l + 8}
+          y={chart.yAt(chart.target) - 6}
           fill="#0d0d0c"
           fillOpacity="0.55"
           fontSize="10"
@@ -170,9 +170,8 @@ function ReadyChart({ comparison, intent }: { comparison: PlanYieldComparison; i
               strokeDasharray="3 3"
             />
             <text
-              x={chart.xAt(chart.breakEven)}
-              y={PAD.t - 8}
-              textAnchor="middle"
+              x={Math.min(chart.xAt(chart.breakEven) + 4, WIDTH - PAD.r - 4)}
+              y={PAD.t + 12}
               fill="#0d0d0c"
               fontSize="10"
               fontFamily="ui-monospace, SFMono-Regular, monospace"
@@ -183,8 +182,8 @@ function ReadyChart({ comparison, intent }: { comparison: PlanYieldComparison; i
         )}
         <circle cx={chart.xAt(comparison.days)} cy={chart.yAt(chart.end)} r="4.5" fill="#84e9c5" stroke="#0d0d0c" strokeWidth="1.5" />
         <text
-          x={chart.xAt(comparison.days)}
-          y={chart.yAt(chart.end) - 12}
+          x={chart.xAt(comparison.days) - 8}
+          y={chart.yAt(chart.end) - 10}
           textAnchor="end"
           fill="#0d0d0c"
           fontSize="11"
@@ -192,18 +191,20 @@ function ReadyChart({ comparison, intent }: { comparison: PlanYieldComparison; i
         >
           {endLabel}
         </text>
-        <text
-          x={WIDTH - PAD.r + 6}
-          y={chart.yAt(chart.end) + 14}
-          fill="#0d0d0c"
-          fontSize="11"
-          fontFamily="ui-monospace, SFMono-Regular, monospace"
-        >
-          {`${vsHold} vs hold`}
-        </text>
       </svg>
 
-      <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 font-data text-[10px] uppercase tracking-[0.14em] text-ink/60">
+      <div className="mt-4 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
+        <p className="font-data text-[11px] uppercase tracking-[0.14em] text-ink">
+          {vsHold} USDC vs hold
+        </p>
+        <p className="font-data text-[10px] uppercase tracking-[0.14em] text-ink/60">
+          End {endLabel} · {comparison.days} {comparison.days === 1 ? "day" : "days"}
+          {comparison.breakEvenDay === null
+            ? ""
+            : ` · break-even day ${comparison.breakEvenDay}`}
+        </p>
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 font-data text-[10px] uppercase tracking-[0.14em] text-ink/60">
         <span className="inline-flex items-center gap-1.5">
           <span className="h-px w-5 bg-ink" />
           SoFinance
@@ -245,7 +246,7 @@ function layoutChart(comparison: PlanYieldComparison, intent: Intent) {
   const sofinancePath = comparison.points
     .map((point, index) => `${index === 0 ? "M" : "L"}${xAt(point.day)} ${yAt(new Decimal(point.sofinance).toNumber())}`)
     .join(" ");
-  const yTicks = uniqueFinite([yMin, 0, target, yMax]).sort((a, b) => a - b);
+  const yTicks = uniqueFinite([0, hi]).sort((a, b) => a - b);
   return {
     xAt,
     yAt,

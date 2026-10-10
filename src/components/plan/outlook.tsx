@@ -146,7 +146,7 @@ export function RealityCheck({
             <Row label="Estimated earn">{formatSigned(comparison.endSofinance)} USDC</Row>
             <Row label="vs hold">{formatSigned(comparison.vsHold)} USDC</Row>
             <Row label="Exit vs put in">
-              {`${formatAmount(comparison.exitValue)} back vs ${formatAmount(intent.amount)} in`}
+              {`${formatAmount(new Decimal(comparison.exitValue).toDecimalPlaces(2).toFixed())} back vs ${formatAmount(intent.amount)} in`}
             </Row>
             <Row label="Break-even">{breakEvenCopy(comparison)}</Row>
             <Row label="Pace to your aim">{paceCopy(intent, comparison)}</Row>

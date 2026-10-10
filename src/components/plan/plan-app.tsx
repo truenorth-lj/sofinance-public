@@ -48,12 +48,21 @@ function intentFromParams(params: URLSearchParams): Intent {
   };
 }
 
-function poolCaption(poolId?: string, pair?: string, positionId?: string): string {
-  if (pair && poolId) return `Pool ${pair}`;
-  if (poolId) return `Pool ${shortId(poolId)}`;
-  if (positionId) return `Position ${shortId(positionId)}`;
-  if (pair) return `Pair ${pair} — no pool id`;
-  return "No pool chosen yet";
+function PoolCaption({ poolId, pair, positionId }: { poolId?: string; pair?: string; positionId?: string }) {
+  const label = pair && poolId ? "Pool" : poolId ? "Pool" : positionId ? "Position" : pair ? "Pair" : null;
+  const value = pair && poolId ? pair : poolId ? shortId(poolId) : positionId ? shortId(positionId) : pair;
+  return (
+    <span className="font-data text-[10px] uppercase tracking-[0.14em] text-ink/60">
+      {label ? (
+        <>
+          {label} <span className="normal-case">{value}</span>
+          {pair && !poolId ? " — no pool id" : null}
+        </>
+      ) : (
+        "No pool chosen yet"
+      )}
+    </span>
+  );
 }
 
 export function PlanApp() {
@@ -112,9 +121,7 @@ export function PlanApp() {
               >
                 Plan a position
               </h1>
-              <span className="font-data text-[10px] uppercase tracking-[0.14em] text-ink/60">
-                {poolCaption(poolId, pair, positionId)}
-              </span>
+              <PoolCaption poolId={poolId} pair={pair} positionId={positionId} />
             </div>
             <IntentSentence intent={intent} now={now} active={active} onActiveChange={setActive} onChange={change} />
           </section>

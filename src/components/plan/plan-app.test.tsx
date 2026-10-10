@@ -108,7 +108,7 @@ describe("PlanApp", () => {
   it("loads the pool average once and plots SoFinance against a flat hold", async () => {
     await render(`pool=${POOL}&pair=SPCXx%2FSPCX`);
     await waitForText("Past average 36.5% a year");
-    expect(text()).toContain("Pool SPCXx/SPCX");
+    expect(text()).toMatch(/Pool\s+SPCXx\/SPCX/);
     expect(text()).toContain("SoFinance vs hold");
     expect(text()).toContain("vs hold");
     expect(text()).toContain("Break-even");
