@@ -202,7 +202,7 @@ describe("discoverRwaPairs", () => {
           { status: 200, headers: { "Content-Type": "application/json" } },
         );
       }
-      if (url.includes("api.jup.ag/tokens/v2/search")) {
+      if (url.includes("/tokens/v2/search")) {
         return new Response(
           JSON.stringify([
             { id: MINT_A, tags: ["stocks", "rwa", "xstocks"] },
@@ -263,7 +263,7 @@ describe("discoverRwaPairs", () => {
           { status: 200, headers: { "Content-Type": "application/json" } },
         );
       }
-      if (url.includes("api.jup.ag/tokens/v2/search")) {
+      if (url.includes("/tokens/v2/search")) {
         return new Response(
           JSON.stringify([
             { id: MINT_A, tags: ["stocks", "rwa", "xstocks"] },
@@ -314,7 +314,7 @@ describe("discoverRwaPairs", () => {
           { status: 200, headers: { "Content-Type": "application/json" } },
         );
       }
-      if (url.includes("api.jup.ag/tokens/v2/search")) {
+      if (url.includes("/tokens/v2/search")) {
         return new Response(
           JSON.stringify([
             { id: MINT_A, tags: ["stocks", "rwa", "xstocks"] },
@@ -372,7 +372,7 @@ describe("discoverRwaPairs", () => {
           { status: 200, headers: { "Content-Type": "application/json" } },
         );
       }
-      if (url.includes("api.jup.ag/tokens/v2/search")) {
+      if (url.includes("/tokens/v2/search")) {
         return new Response(
           JSON.stringify([
             { id: MINT_A, tags: ["stocks", "rwa", "xstocks"] },

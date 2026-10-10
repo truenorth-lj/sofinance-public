@@ -19,6 +19,13 @@ it("explains when a combined exit exceeds the 1232-byte packet limit",async()=>{
  vi.stubGlobal("fetch",fetcher);await act(async()=>click("Preview exit"));
  expect(node.textContent).toContain("cannot fit in one Solana transaction");expect(node.textContent).toContain("1480");expect(node.textContent).toContain("separate vectors");
 });
+it("shows a distinct Jupiter quote outage instead of a Solana RPC failure",async()=>{
+ const fetcher=vi.fn().mockResolvedValue(Response.json({status:"unavailable",error:"Jupiter swap quotes are temporarily unavailable. Please retry in a moment.",errorCode:"jupiter_unavailable",executable:false,sent:false},{status:503}));
+ vi.stubGlobal("fetch",fetcher);await act(async()=>click("Preview exit"));
+ expect(node.textContent).toContain("Jupiter quotes unavailable");
+ expect(node.textContent).toContain("Jupiter swap quotes are temporarily unavailable");
+ expect(node.textContent).not.toContain("Solana RPC");
+});
 it("cancels transports ignoring abort and clears stale result, permits retry",async()=>{
  let resolve!:(value:Response)=>void;const fetcher=vi.fn((url:string,options:RequestInit)=>{void url;void options;return new Promise<Response>(r=>resolve=r);});vi.stubGlobal("fetch",fetcher);
  await act(async()=>click("Preview exit"));await act(async()=>click("Cancel"));expect(fetcher.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
