@@ -7,7 +7,7 @@ import {
 } from "@solana/spl-token";
 import { PublicKey, SystemProgram, type Connection, type TransactionInstruction } from "@solana/web3.js";
 
-export const DEFAULT_SWAP_FEE_BPS = 20;
+export const DEFAULT_SWAP_FEE_BPS = 10;
 export const MAX_SWAP_FEE_BPS = 100;
 
 export type SwapFeeConfig = {
