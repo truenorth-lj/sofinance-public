@@ -7,6 +7,7 @@ import { PlanApp } from "./plan-app";
 
 const POOL = "DUzBLHZ5RZdftPuWVijsvjupndogRM1adGJpsR7YTJro";
 const OTHER = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
+const SPCX_B = "So11111111111111111111111111111111111111112";
 
 let search = "";
 vi.mock("next/navigation", () => ({
@@ -32,13 +33,16 @@ let node: HTMLDivElement;
 let root: Root;
 const fetcher = vi.fn();
 
-function aprPayload(aprPct: number | null = 36.5) {
+function aprPayload(aprPct: number | null = 36.5, days = 8) {
   return {
     poolId: POOL,
-    points: [
-      { time: 1_791_417_600, date: "2026-10-08", aprPct, volumeUsd: 1_000, tvlUsd: 10_000 },
-      { time: 1_791_504_000, date: "2026-10-09", aprPct, volumeUsd: 1_000, tvlUsd: 10_000 },
-    ],
+    points: Array.from({ length: days }, (_, i) => ({
+      time: 1_791_417_600 + i * 86_400,
+      date: `2026-10-${String(8 + i).padStart(2, "0")}`,
+      aprPct,
+      volumeUsd: 1_000,
+      tvlUsd: 10_000,
+    })),
     fetchedAt: "2026-10-10T00:00:00.000Z",
   };
 }
@@ -46,8 +50,27 @@ function aprPayload(aprPct: number | null = 36.5) {
 function pairsPayload() {
   return {
     pairs: [
-      { poolAddress: POOL, wrappedSymbol: "SPCXx", plainSymbol: "SPCX" },
-      { poolAddress: OTHER, wrappedSymbol: "MSTRx", plainSymbol: "MSTR" },
+      {
+        poolAddress: POOL,
+        wrappedSymbol: "SPCXx",
+        plainSymbol: "SPCX",
+        feeTierBps: 1,
+        tvlUsd: 1_200_000,
+      },
+      {
+        poolAddress: SPCX_B,
+        wrappedSymbol: "SPCXx",
+        plainSymbol: "SPCX",
+        feeTierBps: 5,
+        tvlUsd: 80_000,
+      },
+      {
+        poolAddress: OTHER,
+        wrappedSymbol: "MSTRx",
+        plainSymbol: "MSTR",
+        feeTierBps: 1,
+        tvlUsd: 400_000,
+      },
     ],
     scannedPools: 2,
     pagesFetched: 1,
@@ -129,6 +152,23 @@ describe("PlanApp", () => {
     expect(node.querySelector<HTMLSelectElement>('select[aria-label="Pool"]')?.value).toBe(POOL);
     expect(fetcher.mock.calls.some((call) => String(call[0]).includes("/api/rwa-pairs"))).toBe(true);
     expect(fetcher.mock.calls.some((call) => String(call[0]).includes(`/api/pool-daily-apr?poolId=${POOL}`))).toBe(true);
+    const options = [...node.querySelectorAll<HTMLOptionElement>("select[aria-label='Pool'] option")].map((o) => o.textContent);
+    expect(options.some((label) => label?.includes("0.01% fee") && label.includes("DUzB"))).toBe(true);
+    expect(options.some((label) => label?.includes("0.05% fee") && label.includes("So11"))).toBe(true);
+    expect(new Set(options).size).toBe(options.length);
+  });
+
+  it("warns instead of headlining a number when the sample is under 7 days", async () => {
+    fetcher.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/rwa-pairs")) return { ok: true, json: async () => pairsPayload() };
+      return { ok: true, json: async () => aprPayload(141.8, 3) };
+    });
+    await render(`pool=${POOL}`);
+    await waitForText("Only 3 complete days of data");
+    expect(text()).toContain("this estimate is unreliable");
+    expect(text()).toContain("too short to treat as a forecast");
+    expect(text()).not.toMatch(/^\s*\+[\d.]+ USDC estimated/m);
   });
 
   it("resolves a pair-only link from the cached RWA list", async () => {
