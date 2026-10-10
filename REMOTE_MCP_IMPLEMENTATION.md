@@ -38,7 +38,7 @@ Successfully converted SoFinance MCP from **local stdio requiring secrets** to *
 {
   "mcpServers": {
     "sofinance": {
-      "url": "https://sofinance-alpha.vercel.app/api/mcp",
+      "url": "https://sofinancelab.xyz/api/mcp",
       "headers": {
         "Authorization": "Bearer <signature-verified-token>"  // ✅ Wallet-signed, no local secrets
       }
@@ -56,7 +56,7 @@ Successfully converted SoFinance MCP from **local stdio requiring secrets** to *
       "args": ["tsx", "src/mcp/remote-shim.ts"],
       "cwd": "/absolute/path/to/sofinance-public",
       "env": {
-        "SOFINANCE_MCP_URL": "https://sofinance-alpha.vercel.app/api/mcp",
+        "SOFINANCE_MCP_URL": "https://sofinancelab.xyz/api/mcp",
         "SOFINANCE_MCP_TOKEN": "<signature-verified-token>"  // ✅ No RPC/Jupiter secrets
       }
     }
@@ -75,7 +75,7 @@ Successfully converted SoFinance MCP from **local stdio requiring secrets** to *
          │ Authorization: Bearer <token>
          ▼
 ┌─────────────────────────────────────┐
-│  Vercel (sofinance-alpha.vercel.app) │
+│  Vercel (sofinancelab.xyz)            │
 │                                     │
 │  ┌─────────────────────────────┐  │
 │  │ POST /api/mcp               │  │
@@ -250,7 +250,7 @@ NEXT_PUBLIC_REOWN_PROJECT_ID=<id>   # Existing wallet connect
 
 + **Recommended:** Use the remote MCP endpoint with zero local secrets.
 + 
-+ 1. Connect wallet on sofinance-alpha.vercel.app
++ 1. Connect wallet on https://sofinancelab.xyz/app
 + 2. Expand "MCP Connection (AI Agents)"
 + 3. Copy generated config
 + 4. Paste into Cursor/Claude settings
@@ -259,7 +259,7 @@ NEXT_PUBLIC_REOWN_PROJECT_ID=<id>   # Existing wallet connect
 + {
 +   "mcpServers": {
 +     "sofinance": {
-+       "url": "https://sofinance-alpha.vercel.app/api/mcp",
++       "url": "https://sofinancelab.xyz/api/mcp",
 +       "headers": { "Authorization": "Bearer <token>" }
 +     }
 +   }

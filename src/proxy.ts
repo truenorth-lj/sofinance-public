@@ -6,7 +6,7 @@ import { appSubdomainRewritePath, isAppSubdomainHost } from "@/lib/app-host";
  * Next.js 16 Proxy (formerly middleware). Host-based App rewrite only.
  *
  * On a future custom domain, `app.<domain>/<path>` → `/app/<path>`.
- * No effect on `*.vercel.app` (including sofinance-alpha.vercel.app).
+ * No effect on `*.vercel.app`.
  * `/api/*` is excluded by the matcher and by `appSubdomainRewritePath`.
  *
  * To enable: attach apex + `app.` hostnames in Vercel. See README.

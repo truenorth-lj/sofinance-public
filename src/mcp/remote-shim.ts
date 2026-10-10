@@ -6,7 +6,7 @@
  * 
  * This shim allows Cursor/Claude to use remote MCP when they only support stdio transport.
  * It requires ONLY:
- * - SOFINANCE_MCP_URL (e.g., https://sofinance-alpha.vercel.app/api/mcp)
+ * - SOFINANCE_MCP_URL (e.g., https://sofinancelab.xyz/api/mcp)
  * - SOFINANCE_MCP_TOKEN (Bearer token from web UI)
  * 
  * NO local SOLANA_RPC_URL or JUPITER_API_KEY needed.
@@ -22,7 +22,7 @@
  *       "args": ["tsx", "src/mcp/remote-shim.ts"],
  *       "cwd": "/path/to/sofinance-public",
  *       "env": {
- *         "SOFINANCE_MCP_URL": "https://sofinance-alpha.vercel.app/api/mcp",
+ *         "SOFINANCE_MCP_URL": "https://sofinancelab.xyz/api/mcp",
  *         "SOFINANCE_MCP_TOKEN": "your-token-from-web-ui"
  *       }
  *     }
@@ -47,7 +47,7 @@ if (!MCP_URL || !MCP_TOKEN) {
   );
   // eslint-disable-next-line no-console
   console.error(
-    "Get your token from: https://sofinance-alpha.vercel.app (connect wallet → MCP Connection)"
+    "Get your token from: https://sofinancelab.xyz/app (connect wallet → MCP Connection)"
   );
   process.exit(1);
 }

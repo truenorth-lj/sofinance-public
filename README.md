@@ -138,7 +138,7 @@ wallet / API / MCP
 
 ### Getting Started (Remote MCP)
 
-1. **Connect your wallet** on [sofinance-alpha.vercel.app/app](https://sofinance-alpha.vercel.app/app) (or `/app/ai`)
+1. **Connect your wallet** on [sofinancelab.xyz/app](https://sofinancelab.xyz/app) (or `/app/ai`)
 2. **Click "Sign to get MCP config"** — a WalletConnect session is not ownership proof. Each challenge nonce is single-use in-process (2-minute window). Vercel isolates do not share that store; a replay on a different isolate can still mint until the window expires.
 3. **Sign the challenge message** in your wallet (proves you control the key)
 4. **Copy the generated config** — includes a short-lived token bound to your wallet
@@ -158,7 +158,7 @@ If Cursor/Claude supports HTTP MCP with custom headers:
 {
   "mcpServers": {
     "sofinance": {
-      "url": "https://sofinance-alpha.vercel.app/api/mcp",
+      "url": "https://sofinancelab.xyz/api/mcp",
       "headers": {
         "Authorization": "Bearer <your-token-here>"
       }
@@ -179,7 +179,7 @@ If your agent only supports stdio, use this shim that requires ZERO RPC/Jupiter 
       "args": ["tsx", "src/mcp/remote-shim.ts"],
       "cwd": "/absolute/path/to/sofinance-public",
       "env": {
-        "SOFINANCE_MCP_URL": "https://sofinance-alpha.vercel.app/api/mcp",
+        "SOFINANCE_MCP_URL": "https://sofinancelab.xyz/api/mcp",
         "SOFINANCE_MCP_TOKEN": "<your-token-here>"
       }
     }
@@ -217,7 +217,7 @@ Cursor / Claude config for local stdio:
       "env": {
         "SOLANA_RPC_URL": "https://your-solana-rpc",
         "JUPITER_API_KEY": "your-jupiter-key",
-        "NEXT_PUBLIC_APP_URL": "https://sofinance-alpha.vercel.app"
+        "NEXT_PUBLIC_APP_URL": "https://sofinancelab.xyz"
       }
     }
   }
@@ -228,7 +228,7 @@ Or: `pnpm mcp:start` with env already exported.
 
 **Agent flow:** `list_positions` → `quote_add_liquidity` → `prepare_transaction` → wallet signs `unsignedTransaction` → `submit_signed_transaction` with `{ signedTransaction, ...submitArgs }`. Compound: `quote_compound` / `prepare_compound_transaction` → sign → `submit_compound_transaction` with the complete `summary`. Open position: `list_rwa_pairs` → `quote_open_position` → `prepare_open_position` → sign → `submit_open_position` with the complete `summary`.
 
-**Sign deep-link:** After `prepare_transaction`, `prepare_compound_transaction`, or `prepare_open_position`, the agent receives a `signUrl` (e.g. `https://sofinance-alpha.vercel.app/app/sign/<token>`) that can be opened in a browser. Legacy `/sign/<token>` URLs permanently redirect to `/app/sign/<token>`. The token is a self-contained, HMAC-signed, compressed payload containing the unsigned transaction, permit, and submit arguments. With the correct wallet connected via Reown AppKit, the user reviews the transaction summary and signs with one click. The signed transaction is automatically submitted via the existing re-verification and broadcast paths. This bridges the gap for agents that can prepare transactions but delegate signing to the user's wallet UI. Sign tokens expire after 60-120 seconds (matching permit/blockhash lifetime). The token is verified server-side using `JUPITER_API_KEY` as the HMAC secret, so MCP (local/remote) and Vercel (production) can share the same signing mechanism without shared memory.
+**Sign deep-link:** After `prepare_transaction`, `prepare_compound_transaction`, or `prepare_open_position`, the agent receives a `signUrl` (e.g. `https://sofinancelab.xyz/app/sign/<token>`) that can be opened in a browser. Legacy `/sign/<token>` URLs permanently redirect to `/app/sign/<token>`. The token is a self-contained, HMAC-signed, compressed payload containing the unsigned transaction, permit, and submit arguments. With the correct wallet connected via Reown AppKit, the user reviews the transaction summary and signs with one click. The signed transaction is automatically submitted via the existing re-verification and broadcast paths. This bridges the gap for agents that can prepare transactions but delegate signing to the user's wallet UI. Sign tokens expire after 60-120 seconds (matching permit/blockhash lifetime). The token is verified server-side using `JUPITER_API_KEY` as the HMAC secret, so MCP (local/remote) and Vercel (production) can share the same signing mechanism without shared memory.
 
 `JUPITER_API_KEY` is used for Jupiter swap quotes, permit HMACs, sign token HMACs, and MCP token HMACs. Quotes expire quickly; always re-prepare before signing.
 ## Architecture
@@ -338,7 +338,7 @@ This is **not** Raydium's pool `day.feeApr`. Read-only UI: `/app/position-perfor
 
 ## Custom domain / `app.` subdomain
 
-Hobby `*.vercel.app` hosts cannot use a real `app.` subdomain, so this does nothing on [sofinance-alpha.vercel.app](https://sofinance-alpha.vercel.app). After you attach a custom domain (e.g. `sofinance.xyz`), also add `app.sofinance.xyz` in Vercel. `src/proxy.ts` (Next.js 16 Proxy, formerly middleware) rewrites `app.<domain>/<path>` → `/app/<path>` so the App can be served on the subdomain while the apex stays the landing page. `/api/*` is not rewritten. Until then, use `https://sofinance-alpha.vercel.app/app`.
+The public app is available at [sofinancelab.xyz/app](https://sofinancelab.xyz/app). An optional `app.` subdomain can be enabled by adding `app.sofinancelab.xyz` in Vercel. `src/proxy.ts` (Next.js 16 Proxy, formerly middleware) rewrites `app.<domain>/<path>` → `/app/<path>` so the App can be served on the subdomain while the apex stays the landing page. `/api/*` is not rewritten. Hobby `*.vercel.app` hosts are ignored by this rewrite.
 
 ## License
 

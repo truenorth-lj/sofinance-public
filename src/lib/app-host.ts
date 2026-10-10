@@ -6,7 +6,7 @@
  * product UI can live on the subdomain while the apex stays the landing page.
  *
  * `*.vercel.app` hosts are ignored — Hobby deployments cannot use a real
- * `app.` subdomain, so sofinance-alpha.vercel.app is unaffected.
+ * `app.` subdomain, so these deployments are unaffected.
  *
  * `/api/*` is never rewritten. Enable by adding the `app.` hostname in Vercel;
  * no other config flag is required.

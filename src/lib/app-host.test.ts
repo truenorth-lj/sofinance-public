@@ -6,8 +6,8 @@ describe("app subdomain host", () => {
     expect(isAppSubdomainHost("app.sofinance.xyz")).toBe(true);
     expect(isAppSubdomainHost("app.sofinance.xyz:443")).toBe(true);
     expect(isAppSubdomainHost("sofinance.xyz")).toBe(false);
-    expect(isAppSubdomainHost("sofinance-alpha.vercel.app")).toBe(false);
-    expect(isAppSubdomainHost("app.sofinance-alpha.vercel.app")).toBe(false);
+    expect(isAppSubdomainHost("example.vercel.app")).toBe(false);
+    expect(isAppSubdomainHost("app.example.vercel.app")).toBe(false);
     expect(isAppSubdomainHost("localhost:3000")).toBe(false);
     expect(isAppSubdomainHost(null)).toBe(false);
   });
