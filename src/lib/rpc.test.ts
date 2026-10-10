@@ -7,6 +7,7 @@ import {
   SOLAMI_RPC_BASE_URL,
   redactRpcEndpoint,
   resolveDefaultRpcConfig,
+  resolveProviderPair,
   resolveRpcConfig,
   rpcProvider,
 } from "./rpc";
@@ -67,6 +68,26 @@ describe("resolveDefaultRpcConfig", () => {
       endpoint: PUBLIC_SOLANA_RPC_URL,
       provider: "default",
     });
+  });
+});
+
+describe("resolveProviderPair", () => {
+  it("selects Solami as primary and the dedicated URL as fallback", () => {
+    const pair = resolveProviderPair({
+      SOLAMI_API_KEY: "k",
+      SOLANA_RPC_URL: "https://helius.example/rpc",
+    });
+    expect(pair.primary.id).toBe("solami");
+    expect(pair.primary.customMethods).toContain("getTransactionsForAddress");
+    expect(pair.fallback?.id).toBe("generic");
+    expect(pair.fallback?.metricId).toBe("default");
+    expect(pair.fallback?.endpoint).toBe("https://helius.example/rpc");
+  });
+
+  it("uses public as fallback when only Solami is configured", () => {
+    const pair = resolveProviderPair({ SOLAMI_API_KEY: "k" });
+    expect(pair.primary.metricId).toBe("solami");
+    expect(pair.fallback?.id).toBe("public");
   });
 });
 
