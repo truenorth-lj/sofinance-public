@@ -7,6 +7,8 @@ type RwaPairRow = {
   poolAddress: string;
   wrappedSymbol: string;
   plainSymbol: string;
+  feeTierBps?: number | null;
+  tvlUsd?: number | null;
 };
 
 type RwaPairsResponse = {
@@ -34,6 +36,8 @@ async function loadRwaPairs(signal: AbortSignal): Promise<PlanPairOption[]> {
       poolAddress: row.poolAddress,
       wrappedSymbol: row.wrappedSymbol,
       plainSymbol: row.plainSymbol,
+      feeTierBps: row.feeTierBps ?? null,
+      tvlUsd: row.tvlUsd ?? null,
     }));
 }
 

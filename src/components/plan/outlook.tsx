@@ -7,8 +7,9 @@ import { ArrowUpRight } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { APP_ROUTES, buildOpenPositionPath } from "@/lib/public-urls";
 import type { Intent } from "@/lib/lp-intent";
+import { breakEvenInPeriod } from "@/lib/lp-plan-chart";
 import type { PlanYieldComparison } from "@/lib/lp-plan-yield";
-import { PLAN_PROTOCOL_FEE_BPS, PLAN_SWAP_SHARE } from "@/lib/lp-plan-yield";
+import { isThinPlanSample, PLAN_PROTOCOL_FEE_BPS, PLAN_SWAP_SHARE } from "@/lib/lp-plan-yield";
 import { daysWord, formatAmount, formatPct, formatSigned } from "./format";
 import type { ChartStatus } from "./comparison-chart";
 
@@ -26,11 +27,16 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 
 function breakEvenCopy(comparison: PlanYieldComparison): string {
   if (comparison.breakEvenDay === null) return "Not reached in a year";
-  if (comparison.breakEvenDay === 0) return "Day 0";
-  return `Day ${comparison.breakEvenDay}`;
+  const inPeriod = breakEvenInPeriod(comparison.breakEvenDay, comparison.days);
+  if (inPeriod === null) return "Not within this period";
+  if (inPeriod === 0) return "Day 0";
+  return `Day ${inPeriod}`;
 }
 
 function headline(intent: Intent, comparison: PlanYieldComparison): string {
+  if (isThinPlanSample(comparison.sampleDays)) {
+    return `Only ${comparison.sampleDays} ${comparison.sampleDays === 1 ? "complete day" : "complete days"} of data — this estimate is unreliable.`;
+  }
   const earned = formatSigned(comparison.endSofinance);
   if (comparison.reachesTarget) {
     return `${earned} USDC in ${intent.days} ${daysWord(intent.days)} — on your aim.`;
@@ -111,9 +117,9 @@ export function RealityCheck({
             {headline(intent, comparison)}
           </h2>
           <p className="mt-4 text-sm leading-relaxed text-smoke">
-            {`+${formatAmount(intent.target)} USDC is ${formatPct(pctOf(intent.target, intent.amount))} on ${formatAmount(intent.amount)} USDC in ${intent.days} ${daysWord(intent.days)}.`}{" "}
-            Past average yield is {formatPct(comparison.aprPct)} a year over {comparison.sampleDays}{" "}
-            {comparison.sampleDays === 1 ? "complete UTC day" : "complete UTC days"}.
+            {isThinPlanSample(comparison.sampleDays)
+              ? `The past average is ${formatPct(comparison.aprPct)} a year over only ${comparison.sampleDays} complete UTC days, which would be ${formatSigned(comparison.endSofinance)} USDC in ${intent.days} ${daysWord(intent.days)}. That sample is too short to treat as a forecast.`
+              : `+${formatAmount(intent.target)} USDC is ${formatPct(pctOf(intent.target, intent.amount))} on ${formatAmount(intent.amount)} USDC in ${intent.days} ${daysWord(intent.days)}. Past average yield is ${formatPct(comparison.aprPct)} a year over ${comparison.sampleDays} ${comparison.sampleDays === 1 ? "complete UTC day" : "complete UTC days"}.`}
           </p>
 
           {(affordable || (comparison.daysToTarget && comparison.daysToTarget > intent.days)) && (
