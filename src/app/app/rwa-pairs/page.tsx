@@ -17,7 +17,7 @@ export default function RwaPairsPage() {
           Find Raydium CLMM pools where both tokens represent the same underlying (wrapped vs unwrapped /
           Jupiter stocks/rwa tags + xStocks whitelist). Ranked by estimated fee APR from 24h fees and TVL.
           Daily APR sparklines are estimated (volume × feeRate ÷ TVL), not Raydium daily feeApr.
-          Add liquidity opens a new concentrated position without leaving SoFinance.
+          Create position swaps your chosen wallet asset into pool tokens as needed, then opens a new LP position and adds liquidity in one transaction.
         </p>
       </InkHero>
 
