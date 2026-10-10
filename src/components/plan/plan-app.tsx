@@ -1,15 +1,19 @@
 "use client";
 
-import { useDeferredValue, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import Decimal from "decimal.js";
-import { evaluateIntent, paceToTarget, parseDays, parseUsdc, type Intent, type IntentGoal } from "@/lib/lp-intent";
+import { parseDays, parseUsdc, type Intent, type IntentGoal } from "@/lib/lp-intent";
+import { parsePairLabel, parseSolanaAddress } from "@/lib/lp-plan-selection";
+import { buildPlanComparison } from "@/lib/lp-plan-yield";
 import { APP_ROUTES } from "@/lib/public-urls";
 import { InkNav } from "@/components/ink";
 import { useWalletConnection } from "@/components/wallet-connection";
+import { ComparisonChart } from "./comparison-chart";
 import { IntentSentence, type IntentField } from "./intent-sentence";
-import { RealityCheck, ScenarioCards } from "./outlook";
+import { RealityCheck } from "./outlook";
+import { usePoolYield } from "./use-pool-yield";
 
 const DEFAULT_INTENT: Intent = {
   days: 30,
@@ -20,7 +24,6 @@ const DEFAULT_INTENT: Intent = {
   exitAsset: "usdc",
 };
 
-const ADDRESS = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const FIELDS: readonly IntentField[] = ["days", "amount", "goal", "target", "lossAlert", "exitAsset"];
 const GOALS: readonly IntentGoal[] = ["net-by-date", "take-profit", "beat-holding"];
 const shortId = (value: string) => `${value.slice(0, 4)}…${value.slice(-4)}`;
@@ -45,18 +48,35 @@ function intentFromParams(params: URLSearchParams): Intent {
   };
 }
 
+function PoolCaption({ poolId, pair, positionId }: { poolId?: string; pair?: string; positionId?: string }) {
+  const label = pair && poolId ? "Pool" : poolId ? "Pool" : positionId ? "Position" : pair ? "Pair" : null;
+  const value = pair && poolId ? pair : poolId ? shortId(poolId) : positionId ? shortId(positionId) : pair;
+  return (
+    <span className="font-data text-[10px] uppercase tracking-[0.14em] text-ink/60">
+      {label ? (
+        <>
+          {label} <span className="normal-case">{value}</span>
+          {pair && !poolId ? " — no pool id" : null}
+        </>
+      ) : (
+        "No pool chosen yet"
+      )}
+    </span>
+  );
+}
+
 export function PlanApp() {
   const params = useSearchParams();
   const wallet = useWalletConnection();
-  const position = params.get("position");
-  const positionId = position && ADDRESS.test(position) ? position : undefined;
-  const pair = params.get("pair")?.slice(0, 24);
+  const positionId = parseSolanaAddress(params.get("position"));
+  const poolId = parseSolanaAddress(params.get("pool"));
+  const pair = parsePairLabel(params.get("pair"));
   const edit = params.get("edit") as IntentField | null;
 
   const [intent, setIntent] = useState(() => intentFromParams(params));
   const [active, setActive] = useState<IntentField>(edit && FIELDS.includes(edit) ? edit : "target");
-  const [sample, setSample] = useState(params.get("sample") === "1");
   const [now] = useState(() => Date.now());
+  const poolYield = usePoolYield(poolId);
 
   const change = (patch: Partial<Intent>) =>
     setIntent((current) => {
@@ -65,17 +85,24 @@ export function PlanApp() {
       return new Decimal(next.lossAlert).gt(next.amount) ? { ...next, lossAlert: next.amount } : next;
     });
 
-  // Dragging a ruler stays smooth; the sample engine catches up a frame later.
-  const settled = useDeferredValue(intent);
-  const outlook = useMemo(
-    () => (sample ? evaluateIntent(settled, now, positionId) : null),
-    [sample, settled, now, positionId],
-  );
-  const { amount, target, goal } = settled;
-  const pace = useMemo(
-    () => (sample ? paceToTarget({ ...DEFAULT_INTENT, amount, target, goal }, now, positionId) : null),
-    [sample, amount, target, goal, now, positionId],
-  );
+  const comparison = useMemo(() => {
+    if (poolYield.status !== "ready") return null;
+    return buildPlanComparison({
+      capital: intent.amount,
+      days: intent.days,
+      aprPct: poolYield.aprPct,
+      sampleDays: poolYield.sampleDays,
+      target: intent.target,
+    });
+  }, [intent.amount, intent.days, intent.target, poolYield]);
+
+  const status = poolYield.status === "idle" ? "idle" : poolYield.status;
+  const reason =
+    poolYield.status === "unavailable"
+      ? poolYield.reason
+      : !poolId && pair
+        ? "This link names a pair but has no pool id, so there is no yield series to average."
+        : undefined;
 
   return (
     <div className="min-h-screen bg-canvas text-cream">
@@ -94,32 +121,26 @@ export function PlanApp() {
               >
                 Plan a position
               </h1>
-              <span className="font-data text-[10px] uppercase tracking-[0.14em] text-ink/60">
-                {positionId
-                  ? `Position ${shortId(positionId)}`
-                  : pair
-                    ? `Pool ${pair}`
-                    : "No pool chosen yet"}
-              </span>
+              <PoolCaption poolId={poolId} pair={pair} positionId={positionId} />
             </div>
             <IntentSentence intent={intent} now={now} active={active} onActiveChange={setActive} onChange={change} />
           </section>
 
           <RealityCheck
-            intent={settled}
-            outlook={outlook}
-            pace={pace}
-            sample={sample}
-            onSampleChange={setSample}
+            intent={intent}
+            status={status}
+            reason={reason}
+            comparison={comparison}
+            poolId={poolId}
             onChange={change}
           />
 
-          <ScenarioCards intent={settled} outlook={outlook} />
+          <ComparisonChart status={status} reason={reason} comparison={comparison} intent={intent} />
         </main>
 
         <p className="mt-5 max-w-3xl px-2 text-xs leading-relaxed text-smoke">
-          Planning is read-only and priced in USDC. Fees depend on the path prices take and on trading volume, not only
-          on where the price ends, so a real estimate needs verified pool data.{" "}
+          Planning is read-only and priced in USDC. The chart uses this pool’s average complete-UTC-day
+          yield with daily auto-compounding. That is an estimate from the past, not a forecast.{" "}
           <Link href={APP_ROUTES.positionPerformance} className="text-cream/80 underline underline-offset-2 hover:text-cream">
             See what is verified for an existing position
           </Link>
