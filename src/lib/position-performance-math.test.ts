@@ -17,10 +17,26 @@ describe("position-performance-math", () => {
     expect(holdingDaysFromSeconds(-1)).toBeNull();
   });
 
-  it("annualizes with simple ×365/days", () => {
+  it("annualizes with simple ×365/days and omits positions younger than 24h", () => {
     expect(annualizeSimplePct(10, 36.5)).toBeCloseTo(100, 8);
     expect(annualizeSimplePct(null, 10)).toBeNull();
     expect(annualizeSimplePct(10, 0)).toBeNull();
+    expect(annualizeSimplePct(-2, 27 / 86_400)).toBeNull();
+    const young = computePositionPerformance({
+      deposited: { a: 0n, b: 100_000_000n },
+      withdrawnPrincipal: { a: 0n, b: 0n },
+      feesCollected: { a: 0n, b: 0n },
+      liquidityAmounts: { a: 0n, b: 90_000_000n },
+      uncollectedFees: { a: 0n, b: 0n },
+      holdingSeconds: 27,
+      priceUsdA: 1,
+      priceUsdB: 1,
+      decimalsA: 6,
+      decimalsB: 6,
+    });
+    expect(young.holdingDays).toBeCloseTo(27 / 86_400, 8);
+    expect(young.annualizedReturnPct).toBeNull();
+    expect(young.feeOnlyAprPct).toBeNull();
   });
 
   it("values both sides in USD", () => {

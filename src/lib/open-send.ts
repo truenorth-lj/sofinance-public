@@ -89,6 +89,7 @@ export async function sendSignedOpenPosition(
       positionAccount: summary.positionAccount,
       beam: beam.beam,
       beamLabel: beam.label,
+      beamLandingUrl: beam.beamLandingUrl,
     };
   } catch (error) {
     throw new CompoundSendError(error, false);

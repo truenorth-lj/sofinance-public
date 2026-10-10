@@ -21,6 +21,56 @@ export function meetsResaleFloor(spend: bigint, resale: bigint, floorBps: number
   return spend > 0n && resale * 10_000n >= spend * BigInt(floorBps);
 }
 
+/** Allow Jupiter/CLMM underspend of up to 0.1%; still reject overspend. */
+export const INPUT_UNDERSPEND_TOLERANCE_BPS = 10;
+
+export function simulatedInputSpendMatches(spent: bigint, requested: bigint): boolean {
+  if (spent <= 0n || spent > requested) return false;
+  const slack = (requested * BigInt(INPUT_UNDERSPEND_TOLERANCE_BPS)) / 10_000n;
+  const allowed = slack > 1n ? slack : 1n;
+  return requested - spent <= allowed;
+}
+
+export function achievedResaleBps(spend: bigint, resale: bigint): number | null {
+  if (spend <= 0n) return null;
+  return Number((resale * 10_000n) / spend);
+}
+
+/** Largest floor (0.1% steps, ≥ 95%) that the conservative resale would still pass. */
+export function suggestedResaleFloorBps(spend: bigint, resale: bigint): number {
+  const achieved = achievedResaleBps(spend, resale);
+  if (achieved === null) return LOWEST_RESALE_FLOOR_BPS;
+  const rounded = Math.floor(achieved / 10) * 10;
+  return Math.max(LOWEST_RESALE_FLOOR_BPS, Math.min(10_000, rounded));
+}
+
+export function maxSpendForResaleFloor(resale: bigint, floorBps: number): bigint {
+  if (floorBps <= 0) return resale;
+  return (resale * 10_000n) / BigInt(floorBps);
+}
+
+export function describeResaleFloorFailure(spend: bigint, resale: bigint, floorBps: number): {
+  suggestedResaleFloorBps: number;
+  maxAmountForFloor: string;
+  achievedResaleBps: number | null;
+  warning: string;
+} {
+  const suggested = suggestedResaleFloorBps(spend, resale);
+  const maxAmount = maxSpendForResaleFloor(resale, floorBps);
+  const achieved = achievedResaleBps(spend, resale);
+  const achievedPct = achieved === null ? "—" : (achieved / 100).toFixed(2);
+  const floorPct = (floorBps / 100).toFixed(2);
+  const suggestedPct = (suggested / 100).toFixed(2);
+  return {
+    suggestedResaleFloorBps: suggested,
+    maxAmountForFloor: maxAmount.toString(),
+    achievedResaleBps: achieved,
+    warning:
+      `Conservative immediate resale is ${achievedPct}% of input, below the ${floorPct}% floor. ` +
+      `Lower resaleFloorBps to ${suggested} (${suggestedPct}%) or reduce the amount to at most ${maxAmount.toString()} raw units.`,
+  };
+}
+
 export function resaleFloorFromMaxCostPercent(value: string): number {
   if (!/^(?:[0-4](?:\.\d)?|5(?:\.0)?)$/.test(value)) throw new Error("Estimated resale gap must be 0-5%, at most one decimal place");
   const [whole, decimal = "0"] = value.split(".");

@@ -19,7 +19,42 @@ import bs58 from "bs58";
 
 const TOKEN_VERSION = "v1";
 const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
-const CHALLENGE_SKEW_MS = 5 * 60 * 1000; // 5 minutes
+/**
+ * Challenge lifetime. Shortened from 5 minutes because nonce replay
+ * protection is best-effort in-memory (Vercel isolates do not share it).
+ */
+export const CHALLENGE_SKEW_MS = 2 * 60 * 1000;
+
+const usedChallengeNonces = new Map<string, number>();
+
+function pruneUsedNonces(now: number) {
+  for (const [key, expiresAt] of usedChallengeNonces) {
+    if (expiresAt <= now) usedChallengeNonces.delete(key);
+  }
+}
+
+export function parseChallengeNonce(message: string): string | null {
+  const line = message.split("\n").find((item) => item.startsWith("nonce:"));
+  const nonce = line?.slice(6).trim() ?? "";
+  return nonce.length > 0 ? nonce : null;
+}
+
+/**
+ * Best-effort single-use nonce. Returns false if this wallet+nonce was already
+ * consumed in this process. Does not survive Vercel isolate recycling.
+ */
+export function consumeChallengeNonce(wallet: string, nonce: string, now = Date.now()): boolean {
+  pruneUsedNonces(now);
+  const key = `${wallet}:${nonce}`;
+  if (usedChallengeNonces.has(key)) return false;
+  usedChallengeNonces.set(key, now + CHALLENGE_SKEW_MS);
+  return true;
+}
+
+/** Test helper. */
+export function clearUsedChallengeNonces() {
+  usedChallengeNonces.clear();
+}
 
 export interface McpTokenPayload {
   version: string;
@@ -142,7 +177,7 @@ export function verifyChallengeSignature(
       return false;
     }
 
-    // Check freshness (allow 5 minute skew)
+    // Check freshness (2 minute window; nonce is single-use in-process)
     const now = Date.now();
     if (Math.abs(now - issuedAt) > CHALLENGE_SKEW_MS) {
       return false;

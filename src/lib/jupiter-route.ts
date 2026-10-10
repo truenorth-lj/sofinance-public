@@ -2,6 +2,7 @@ import "server-only";
 
 import { MAX_PRICE_IMPACT_BPS, SLIPPAGE_BPS } from "./ids";
 import { acceptableReportedPriceImpact } from "./quote-guards";
+import type { JupiterRouteConstraints } from "./jupiter-route-retry";
 
 export type ApiInstruction = { programId: string; accounts: { pubkey: string; isSigner: boolean; isWritable: boolean }[]; data: string };
 export type BuildRoute = {
@@ -26,12 +27,27 @@ function pacedFetch(url: URL, key: string) {
   return result;
 }
 
-export async function buildRoute(wallet: string, inputMint: string, outputMint: string, amount: bigint, wrapAndUnwrapSol?: boolean): Promise<BuildRoute> {
+export async function buildRoute(
+  wallet: string,
+  inputMint: string,
+  outputMint: string,
+  amount: bigint,
+  wrapAndUnwrapSol?: boolean,
+  constraints: JupiterRouteConstraints = { maxAccounts: 48 },
+): Promise<BuildRoute> {
   const key = process.env.JUPITER_API_KEY;
   if (!key) throw new Error("Server-side JUPITER_API_KEY not set, cannot obtain real-time quotes");
   if (amount <= 0n) throw new Error("Route amount must be greater than zero");
   const url = new URL("https://api.jup.ag/swap/v2/build");
-  url.search = new URLSearchParams({ inputMint, outputMint, amount: amount.toString(), taker: wallet, slippageBps: String(SLIPPAGE_BPS), maxAccounts: "48" }).toString();
+  url.search = new URLSearchParams({
+    inputMint,
+    outputMint,
+    amount: amount.toString(),
+    taker: wallet,
+    slippageBps: String(SLIPPAGE_BPS),
+    maxAccounts: String(constraints.maxAccounts),
+  }).toString();
+  if (constraints.onlyDirectRoutes) url.searchParams.set("onlyDirectRoutes", "true");
   if (wrapAndUnwrapSol !== undefined) url.searchParams.set("wrapAndUnwrapSol", String(wrapAndUnwrapSol));
   const response = await pacedFetch(url, key);
   if (!response.ok) throw new Error(`Jupiter /build has no available routes (HTTP ${response.status})`);

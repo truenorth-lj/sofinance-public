@@ -156,12 +156,19 @@ export function OpenPositionModal({
             <div className="flex justify-between gap-3"><dt className="text-neutral-500">Non-refundable rent</dt><dd>{lamports(quote.rent.nonRefundableLamports)}</dd></div>
             <div className="flex justify-between gap-3"><dt className="text-neutral-500">Network fee (est.)</dt><dd>{lamports(quote.networkFeeLamportsEstimate)}</dd></div>
             <div className="flex justify-between gap-3"><dt className="text-neutral-500">Wallet SOL</dt><dd>{lamports(quote.solLamports)}</dd></div>
+            <div className="flex justify-between gap-3"><dt className="text-neutral-500">Resale floor</dt><dd>{quote.passesFloor ? `Meets ${(quote.floorBps / 100).toFixed(1)}%` : `Below ${(quote.floorBps / 100).toFixed(1)}%`}</dd></div>
           </dl>
+        )}
+
+        {quote && !quote.passesFloor && quote.warning && (
+          <p role="status" className="mt-3 rounded-xl border border-amber-800/70 bg-amber-950/40 p-3 text-xs leading-5 text-amber-100">
+            {quote.warning}
+          </p>
         )}
 
         {(quote?.warnings.length || c.quoteError || c.error) && (
           <div className="mt-3 space-y-2 text-xs leading-5 text-neutral-400">
-            {quote?.warnings.map((warning) => <p key={warning}>{warning}</p>)}
+            {quote?.warnings.filter((warning) => warning !== quote.warning).map((warning) => <p key={warning}>{warning}</p>)}
             {c.quoteError && <p role="alert" className="text-red-400">{c.quoteError}</p>}
             {c.error && <p role="alert" className="text-red-400">{c.error}</p>}
           </div>
