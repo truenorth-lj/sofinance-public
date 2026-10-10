@@ -3,20 +3,20 @@
 import { useId, useState } from "react";
 import { formatAmount } from "@/lib/amount";
 import { formatPositionPriceRange, formatRangeStatus, tokenSymbol } from "@/lib/position-label";
-import { Info, LoaderCircle, X } from "lucide-react";
+import { ChevronDown, Info, LoaderCircle, RefreshCw, X } from "lucide-react";
 import { useOpenPositionController, type OpenPositionPair } from "./use-open-position-controller";
 
 const FIELD_HELP = {
-  "Token A": "換幣後可用於建立 LP 的 A 代幣保守數量。實際投入量可能較少，剩餘代幣會留在錢包。",
-  "Token B": "換幣後可用於建立 LP 的 B 代幣保守數量。實際投入量可能較少，剩餘代幣會留在錢包。",
-  "Aligned range": "配合池子允許的價格刻度調整後的實際區間，單位是每 1 個 A 對應多少 B，不是美元價格。",
-  "Status": "In range 表示目前池子價格在所選區間內，部位可參與交易並分得手續費；離開區間後會暫停賺取交易手續費。",
-  "Quote validity": "目前這份報價的剩餘有效時間。每 3 秒觸發更新；過期報價不能簽署，準備交易時也會取得最新報價。",
-  "Price impact cap": "換幣造成的價格影響上限，超過就停止準備交易。它與交易滑價容忍度是不同的設定，也不是整筆 LP 的虧損上限。",
-  "Refundable rent (NFT)": "建立部位 NFT、相關代幣帳戶與個人部位帳戶所需的預估租金押金。關閉部位並回收這些帳戶時，可取回相應押金。",
-  "Non-refundable rent": "首次建立共用協議部位或價格刻度帳戶的預估一次性成本。這些共用帳戶不隨你的部位關閉，因此不退還給你。",
-  "Network fee (est.)": "預估支付給 Solana 網路的交易費，實際金額在交易準備時確認。它與投入金額、帳戶租金分開計算。",
-  "Wallet SOL": "錢包目前的 SOL 總餘額。除了投入金額，還需要保留 SOL 支付帳戶租金與網路費。",
+  "Token A": "The conservative amount of token A available to open your LP position. The position may use less; any remaining tokens stay in your wallet.",
+  "Token B": "The conservative amount of token B available to open your LP position. The position may use less; any remaining tokens stay in your wallet.",
+  "Aligned range": "Your actual price range after alignment to the pool's supported ticks, expressed as token B per 1 token A.",
+  "Status": "In range means the current pool price is within your selected range and the position can earn trading fees. It stops earning trading fees while the price is outside the range.",
+  "Quote validity": "Time remaining before this quote expires. Quotes refresh every 3 seconds, and transaction preparation obtains a fresh quote. Expired quotes cannot be signed.",
+  "Price impact cap": "The maximum price impact allowed for the swaps. Preparation stops if it is exceeded. This differs from slippage tolerance and does not cap the position's overall loss.",
+  "Refundable rent (NFT)": "Estimated account deposits for the position NFT, its token account and your personal position account. You can recover the corresponding deposits when the position and accounts are closed.",
+  "Non-refundable rent": "Estimated one-time cost to create shared protocol-position or tick-array accounts. These accounts remain after your position closes, so this cost is not returned to you.",
+  "Network fee (est.)": "Estimated Solana transaction fee, confirmed during preparation. It is separate from your investment and account deposits.",
+  "Wallet SOL": "Your wallet's total SOL balance. Keep enough SOL to cover account deposits and network fees in addition to your investment.",
 } as const;
 
 function FieldLabel({ label }: { label: keyof typeof FIELD_HELP }) {
@@ -25,7 +25,7 @@ function FieldLabel({ label }: { label: keyof typeof FIELD_HELP }) {
   return (
     <dt className="relative flex items-center gap-1.5 text-neutral-500" onMouseEnter={() => setOpen(true)} onMouseLeave={(event) => { if (!event.currentTarget.contains(document.activeElement)) setOpen(false); }}>
       {label}
-      <button type="button" aria-label={`${label} 說明`} aria-describedby={open ? id : undefined}
+      <button type="button" aria-label={`About ${label}`} aria-describedby={open ? id : undefined}
         onFocus={() => setOpen(true)} onBlur={() => setOpen(false)} onClick={(event) => { event.currentTarget.focus(); setOpen(true); }}
         onKeyDown={(event) => { if (event.key === "Escape") setOpen(false); }}
         className="inline-flex shrink-0 rounded text-neutral-500 hover:text-neutral-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-400">
@@ -40,12 +40,18 @@ function FieldLabel({ label }: { label: keyof typeof FIELD_HELP }) {
 
 function explainTokenWarning(warning: string) {
   if (warning.startsWith("One or both pool tokens use Token-2022.")) {
-    return "此池的一種或兩種代幣使用 Token-2022 標準，可提供額外代幣功能。系統會阻擋目前收取轉帳費、暫停或已凍結的資產；但發行方仍可能保留日後凍結帳戶的權限。";
+    return "One or both tokens use Token-2022, which supports additional token features. Assets with active transfer fees, paused transfers or frozen accounts are blocked. The issuer may still retain freeze authority.";
   }
   if (warning.startsWith("A pool mint has a freeze authority.")) {
-    return "發行方仍保有凍結權限：日後可以凍結持有此代幣的帳戶，使其無法轉出或交易。若池子的相關帳戶被凍結，也可能影響加入或退出 LP。這項提醒不表示帳戶目前已被凍結。";
+    return "The issuer can freeze token accounts in the future, which may block transfers or LP deposits and withdrawals. This does not mean the accounts are currently frozen.";
   }
   return warning;
+}
+
+function isDetailWarning(warning: string) {
+  return warning.startsWith("One or both pool tokens use Token-2022.") ||
+    warning.startsWith("This tick range has no protocol position yet") ||
+    warning.startsWith("This range initializes tick array(s)");
 }
 
 function lamports(value: string | number | bigint): string {
@@ -63,6 +69,10 @@ export function OpenPositionModal({
 }) {
   const c = useOpenPositionController(pair);
   const quote = c.quote;
+  const detailWarnings = quote?.warnings.filter(isDetailWarning) ?? [];
+  const visibleWarnings = quote?.warnings.filter(warning => !isDetailWarning(warning)) ?? [];
+  const upfrontCost = quote ? BigInt(quote.rent.refundableLamports) + BigInt(quote.rent.nonRefundableLamports)
+    + BigInt(quote.networkFeeLamportsEstimate) : 0n;
   const label = quote
     ? `${tokenSymbol(quote.mintA, undefined, pair.symbolA)}/${tokenSymbol(quote.mintB, undefined, pair.symbolB)} · range ${formatPositionPriceRange({
       tickLower: quote.tickLower, tickUpper: quote.tickUpper,
@@ -189,31 +199,52 @@ export function OpenPositionModal({
         )}
 
         {quote && (
-          <dl className="mt-4 space-y-2 rounded-xl border border-neutral-800/60 bg-neutral-900/40 p-3 text-xs text-neutral-300">
-            <div className="flex justify-between gap-3"><FieldLabel label="Token A" /><dd>{formatAmount(quote.minOutA, quote.decimalsA)} {tokenSymbol(quote.mintA, undefined, pair.symbolA)}</dd></div>
-            <div className="flex justify-between gap-3"><FieldLabel label="Token B" /><dd>{formatAmount(quote.minOutB, quote.decimalsB)} {tokenSymbol(quote.mintB, undefined, pair.symbolB)}</dd></div>
-            <div className="flex justify-between gap-3"><FieldLabel label="Aligned range" /><dd>{formatPositionPriceRange(quote)}</dd></div>
-            <div className="flex justify-between gap-3"><FieldLabel label="Status" /><dd>{formatRangeStatus(quote.rangeSide) ?? "—"}</dd></div>
-            <div className="flex justify-between gap-3"><FieldLabel label="Quote validity" /><dd>{c.fresh ? `${Math.max(0, Math.ceil((quote.expiresAt - c.now) / 1000))} seconds remaining` : "Expired"}</dd></div>
-            <div className="flex justify-between gap-3"><FieldLabel label="Price impact cap" /><dd>≤ {quote.maxImpactBps / 100}%</dd></div>
-            <div className="flex justify-between gap-3"><FieldLabel label="Refundable rent (NFT)" /><dd>{lamports(quote.rent.refundableLamports)}</dd></div>
-            <div className="flex justify-between gap-3"><FieldLabel label="Non-refundable rent" /><dd>{lamports(quote.rent.nonRefundableLamports)}</dd></div>
-            <div className="flex justify-between gap-3"><FieldLabel label="Network fee (est.)" /><dd>{lamports(quote.networkFeeLamportsEstimate)}</dd></div>
-            <div className="flex justify-between gap-3"><FieldLabel label="Wallet SOL" /><dd>{lamports(quote.solLamports)}</dd></div>
-            <div className="flex justify-between gap-3"><dt className="text-neutral-500">Resale floor</dt><dd>{quote.passesFloor ? `Meets ${(quote.floorBps / 100).toFixed(1)}%` : `Below ${(quote.floorBps / 100).toFixed(1)}%`}</dd></div>
-          </dl>
+          <div className="mt-4 rounded-xl border border-neutral-800/60 bg-neutral-900/40 p-3 text-xs text-neutral-300">
+            <dl className="space-y-2">
+              <div className="flex justify-between gap-3"><FieldLabel label="Token A" /><dd>{formatAmount(quote.minOutA, quote.decimalsA)} {tokenSymbol(quote.mintA, undefined, quote.symbolA ?? pair.symbolA)}</dd></div>
+              <div className="flex justify-between gap-3"><FieldLabel label="Token B" /><dd>{formatAmount(quote.minOutB, quote.decimalsB)} {tokenSymbol(quote.mintB, undefined, quote.symbolB ?? pair.symbolB)}</dd></div>
+              <div className="flex justify-between gap-3"><FieldLabel label="Aligned range" /><dd>{formatPositionPriceRange(quote)}</dd></div>
+              <div className="flex justify-between gap-3"><FieldLabel label="Status" /><dd>{formatRangeStatus(quote.rangeSide) ?? "—"}</dd></div>
+              <div className="flex justify-between gap-3"><FieldLabel label="Price impact cap" /><dd>≤ {quote.maxImpactBps / 100}%</dd></div>
+            </dl>
+            <details className="group mt-3 border-t border-neutral-800 pt-3">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded text-neutral-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-400 [&::-webkit-details-marker]:hidden">
+                <span>Fees &amp; details</span>
+                <span className="inline-flex items-center gap-2 text-neutral-300">
+                  <span>~{lamports(upfrontCost)} upfront</span>
+                  <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" aria-hidden="true" />
+                </span>
+              </summary>
+              <dl className="mt-3 space-y-2">
+                <div className="flex justify-between gap-3"><FieldLabel label="Quote validity" /><dd>{c.fresh ? `${Math.max(0, Math.ceil((quote.expiresAt - c.now) / 1000))} seconds remaining` : "Expired"}</dd></div>
+                <div className="flex justify-between gap-3"><FieldLabel label="Refundable rent (NFT)" /><dd>{lamports(quote.rent.refundableLamports)}</dd></div>
+                <div className="flex justify-between gap-3"><FieldLabel label="Non-refundable rent" /><dd>{lamports(quote.rent.nonRefundableLamports)}</dd></div>
+                <div className="flex justify-between gap-3"><FieldLabel label="Network fee (est.)" /><dd>{lamports(quote.networkFeeLamportsEstimate)}</dd></div>
+                <div className="flex justify-between gap-3"><FieldLabel label="Wallet SOL" /><dd>{lamports(quote.solLamports)}</dd></div>
+              </dl>
+              <p className="mt-3 text-xs leading-5 text-neutral-500">Upfront costs include refundable account deposits, one-time account setup and the estimated network fee. These are separate from your investment. Quotes refresh every 3 seconds.</p>
+              {detailWarnings.map(warning => <p key={warning} className="mt-2 text-xs leading-5 text-neutral-400">{explainTokenWarning(warning)}</p>)}
+            </details>
+          </div>
         )}
-        <p className="mt-2 text-xs leading-5 text-neutral-500">Quotes refresh every 3 seconds. {c.quoteLoading && quote ? "Updating quote…" : ""} SOL fees and rent are calculated separately.</p>
+        <div className="mt-2 flex min-h-5 items-center gap-2 text-xs leading-5 text-neutral-500">
+          {c.quoteLoading && <>
+            <RefreshCw size={24} strokeWidth={2} className="preview-icon h-3.5 w-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+            <span>Fetching the best price on Jupiter</span>
+          </>}
+        </div>
 
-        {quote && !quote.passesFloor && quote.warning && (
+        {quote && !quote.passesFloor && (
           <p role="status" className="mt-3 rounded-xl border border-amber-800/70 bg-amber-950/40 p-3 text-xs leading-5 text-amber-100">
-            {quote.warning}
+            Immediate resale of this position would recover about {quote.achievedResaleBps === null ? "an unknown share" : `${(quote.achievedResaleBps / 100).toFixed(2)}%`} of your input
+            {quote.achievedResaleBps === null ? "." : ` (about ${(Math.max(0, 10_000 - quote.achievedResaleBps) / 100).toFixed(2)}% round-trip loss).`}
+            {" "}This does not block signing. Price impact, balances, quote expiry, and simulation still protect the transaction.
           </p>
         )}
 
-        {(quote?.warnings.length || c.quoteError || c.error) && (
+        {(visibleWarnings.filter((warning) => warning !== quote?.warning).length > 0 || c.quoteError || c.error) && (
           <div className="mt-3 space-y-2 text-xs leading-5 text-neutral-400">
-            {quote?.warnings.filter((warning) => warning !== quote.warning).map((warning) => <p key={warning}>{explainTokenWarning(warning)}</p>)}
+            {visibleWarnings.filter((warning) => warning !== quote?.warning).map(warning => <p key={warning}>{explainTokenWarning(warning)}</p>)}
             {c.quoteError && <p role="alert" className="text-red-400">{c.quoteError}</p>}
             {c.error && <p role="alert" className="text-red-400">{c.error}</p>}
           </div>
