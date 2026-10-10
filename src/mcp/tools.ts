@@ -668,6 +668,7 @@ export async function getPositionPerformance(input: GetPositionPerformanceInput)
     method: result.method,
     assumptions: result.assumptions,
     realizedFeeAprSeries: result.realizedFeeAprSeries,
+    historyFetch: result.historyFetch,
   };
 }
 

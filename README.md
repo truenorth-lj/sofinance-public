@@ -70,7 +70,8 @@ Kept on both web API and MCP paths:
 ```bash
 pnpm install
 cp .env.example .env.local
-# Server-only: SOLANA_RPC_URL, JUPITER_API_KEY
+# Server-only: SOLANA_RPC_URL and/or SOLAMI_API_KEY, JUPITER_API_KEY
+# Optional: SOLAMI_DATA_API_KEY (Blur; unused until the pool-activity layer)
 # Public: NEXT_PUBLIC_REOWN_PROJECT_ID (and optional NEXT_PUBLIC_SOLANA_RPC_URL without secrets)
 pnpm dev --webpack --hostname 127.0.0.1
 ```
@@ -79,7 +80,38 @@ pnpm dev --webpack --hostname 127.0.0.1
 pnpm lint && pnpm typecheck && pnpm test && pnpm build
 ```
 
-Never commit `.env.local`, mnemonics, or API keys. Do not prefix `SOLANA_RPC_URL` / `JUPITER_API_KEY` with `NEXT_PUBLIC_`.
+Never commit `.env.local`, mnemonics, or API keys. Do not prefix `SOLANA_RPC_URL` / `SOLAMI_API_KEY` / `SOLAMI_DATA_API_KEY` / `JUPITER_API_KEY` with `NEXT_PUBLIC_`.
+
+## Powered by Solami
+
+[Solami](https://solami.dev) is optional Solana infrastructure. Bring your own keys — the app keeps working on `SOLANA_RPC_URL` or the public mainnet RPC when they are absent.
+
+| Surface | When | What it does |
+|---------|------|----------------|
+| **RPC** | `SOLAMI_API_KEY` set | All server `rpcConnection()` traffic goes to `https://rpc.solami.dev/sol?api_key=…` (one place: `src/lib/rpc.ts`). Position history prefers Solami `getTransactionsForAddress`, then falls back to `getSignaturesForAddress` + bounded-parallel `getParsedTransaction` batches. |
+| **Blur** | `SOLAMI_DATA_API_KEY` | Live pool activity (REST + WS). Ships in a follow-up PR. A Free key has REST but not WebSocket; [Solami](https://solami.dev) currently offers a 7-day Pro promo. |
+| **Beam** | `SOLAMI_API_KEY` | Stake-weighted send with an on-chain tip. Ships in a follow-up PR. |
+
+Create a key at [solami.dev](https://solami.dev). Paste `SOLAMI_API_KEY` (and later `SOLAMI_DATA_API_KEY`) into `.env.local` or Vercel — never `NEXT_PUBLIC_*`. Position performance reports `{ txCount, elapsedMs, provider: "solami" \| "default" }` so you can see the Solami path is actually used.
+
+```
+wallet / API / MCP
+        │
+        ▼
+ src/lib/rpc.ts ── SOLAMI_API_KEY? ──► rpc.solami.dev
+        │                    else ──► SOLANA_RPC_URL / public RPC
+        ▼
+ position-performance history
+   solami: getTransactionsForAddress (1 call, parsed txs)
+   default: signatures + batched getParsedTransaction (8-wide)
+```
+
+### Demo checklist (RPC layer)
+
+1. Set `SOLAMI_API_KEY` only (no `SOLANA_RPC_URL`) and open `/app/position-performance`.
+2. Compute performance for a real mainnet position NFT.
+3. Confirm the history line shows `provider: solami` and a tx count / elapsed ms (and the Solami credit).
+4. Unset the key, restart, and confirm the same page still works via `SOLANA_RPC_URL` / public RPC with `provider: default`.
 
 ## Quickstart — MCP for AI Agents (Remote, Zero Local Secrets)
 
@@ -199,7 +231,7 @@ flowchart LR
     Permit[HMAC permit]
   end
   subgraph external [External]
-    RPC[Solana RPC]
+    RPC[Solana RPC / Solami]
     Jup[Jupiter Swap V2]
     Ray[Raydium CLMM]
   end
@@ -237,7 +269,7 @@ Name heuristics are not used as the primary filter. Annotated with fee tier, TVL
 
 Computes a position NFT's **actual holding-period return** from on-chain facts (no database):
 
-1. `getSignaturesForAddress` on the Raydium `PersonalPositionState` PDA
+1. Load personal-position history: Solami `getTransactionsForAddress` when `SOLAMI_API_KEY` is set, otherwise `getSignaturesForAddress` plus bounded-parallel `getParsedTransaction` batches (not a sequential N+1 loop)
 2. Parse Anchor events from logs: `CreatePersonalPositionEvent`, `IncreaseLiquidityEvent`, `DecreaseLiquidityEvent` (exact deposit / principal-out / fee-out amounts)
 3. Current equity = liquidity token amounts (`LiquidityMath`) + uncollected fees (fee-growth accrual, same math as compound)
 4. Metrics: `holdingDays`, deposited / withdrawn / fees, PnL, `holdingPeriodReturnPct`, `annualizedReturnPct` (simple ×365/days), `feeOnlyAprPct`
