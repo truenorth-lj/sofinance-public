@@ -58,7 +58,7 @@ it("leaves balanced yields unchanged and bounds every quote by the harvested sou
 });
 it("sizes the rebalance using net output after the protocol fee is reserved from the swap input", () => {
   const price = q;
-  const bps = 20;
+  const bps = 10;
   const quote = (_direction: string, input: bigint) => {
     const { swapAmount } = netSwapInput(input, bps);
     return { output: swapAmount, sqrtPriceX64: price };

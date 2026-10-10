@@ -12,12 +12,13 @@ const source = Keypair.generate().publicKey;
 const payer = Keypair.generate().publicKey;
 
 describe("parseSwapFeeBps", () => {
-  it("defaults to 20 and caps at 100", () => {
+  it("defaults to 10 and caps at 100", () => {
     expect(parseSwapFeeBps(undefined)).toBe(DEFAULT_SWAP_FEE_BPS);
     expect(parseSwapFeeBps("")).toBe(DEFAULT_SWAP_FEE_BPS);
     expect(parseSwapFeeBps("  ")).toBe(DEFAULT_SWAP_FEE_BPS);
+    expect(DEFAULT_SWAP_FEE_BPS).toBe(10);
     expect(parseSwapFeeBps("0")).toBe(0);
-    expect(parseSwapFeeBps("20")).toBe(20);
+    expect(parseSwapFeeBps("10")).toBe(10);
     expect(parseSwapFeeBps("100")).toBe(MAX_SWAP_FEE_BPS);
     expect(parseSwapFeeBps("250")).toBe(MAX_SWAP_FEE_BPS);
   });
@@ -57,22 +58,22 @@ describe("readSwapFeeConfig", () => {
     expect(readSwapFeeConfig()).toEqual({ wallet: null, bps: 0 });
   });
 
-  it("uses default 20 bps when only the wallet is set", () => {
+  it("uses default 10 bps when only the wallet is set", () => {
     process.env.SOFINANCE_FEE_WALLET = wallet.toBase58();
     delete process.env.SOFINANCE_FEE_BPS;
     const config = readSwapFeeConfig();
     expect(config.wallet?.equals(wallet)).toBe(true);
-    expect(config.bps).toBe(20);
+    expect(config.bps).toBe(10);
   });
 });
 
 describe("computeSwapFee / netSwapInput", () => {
   it("floors the bps share and leaves the remainder for the swap", () => {
-    expect(computeSwapFee(1_000_000n, 20)).toBe(2_000n);
-    expect(computeSwapFee(99n, 20)).toBe(0n);
-    expect(computeSwapFee(100n, 20)).toBe(0n);
-    expect(computeSwapFee(500n, 20)).toBe(1n);
-    expect(netSwapInput(1_000_000n, 20)).toEqual({ feeAmount: 2_000n, swapAmount: 998_000n });
+    expect(computeSwapFee(1_000_000n, 10)).toBe(1_000n);
+    expect(computeSwapFee(999n, 10)).toBe(0n);
+    expect(computeSwapFee(1_000n, 10)).toBe(1n);
+    expect(netSwapInput(1_000_000n, 10)).toEqual({ feeAmount: 1_000n, swapAmount: 999_000n });
+    expect(netSwapInput(999n, 10)).toEqual({ feeAmount: 0n, swapAmount: 999n });
     expect(netSwapInput(10_000n, 0)).toEqual({ feeAmount: 0n, swapAmount: 10_000n });
   });
 
@@ -90,8 +91,14 @@ describe("swapFeeQuoteFields", () => {
   });
 
   it("reports the configured recipient and floored fee", () => {
-    expect(swapFeeQuoteFields(1_000_000n, { wallet, bps: 20 })).toEqual({
-      feeBps: 20, feeAmount: "2000", feeWallet: wallet.toBase58(),
+    expect(swapFeeQuoteFields(1_000_000n, { wallet, bps: 10 })).toEqual({
+      feeBps: 10, feeAmount: "1000", feeWallet: wallet.toBase58(),
+    });
+  });
+
+  it("keeps feeBps but reports amount 0 when the share floors to zero", () => {
+    expect(swapFeeQuoteFields(999n, { wallet, bps: 10 })).toEqual({
+      feeBps: 10, feeAmount: "0", feeWallet: wallet.toBase58(),
     });
   });
 });
@@ -130,9 +137,13 @@ describe("swapFeeTransferInstructions", () => {
     expect(ixs[1]?.programId.equals(TOKEN_2022_PROGRAM_ID)).toBe(true);
   });
 
-  it("omits instructions when the fee is zero", () => {
+  it("omits native and token instructions when the fee floors to zero", () => {
     expect(swapFeeTransferInstructions({
       payer, owner: payer, recipient: wallet, amount: 0n, kind: "native",
+    })).toEqual([]);
+    expect(swapFeeTransferInstructions({
+      payer, owner: payer, recipient: wallet, amount: 0n,
+      kind: "token", mint, source, decimals: 6, program: TOKEN_PROGRAM_ID,
     })).toEqual([]);
   });
 });
