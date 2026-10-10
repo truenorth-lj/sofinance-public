@@ -8,6 +8,7 @@ import { verifyOpenPositionPermit } from "./open-permit";
 import { readOpenPoolState } from "./open-state";
 import { simulateAndVerifyOpenTransaction } from "./open-simulation";
 import { rpcConnection } from "./rpc";
+import { lookupBeamAfterSend } from "./solami-beam";
 import type { OpenPositionSummary } from "./open-types";
 
 function isZeroSignature(signature: Uint8Array | undefined) {
@@ -81,7 +82,14 @@ export async function sendSignedOpenPosition(
       skipPreflight: false, preflightCommitment: "confirmed", maxRetries: 3,
     });
     if (signature !== expectedSignature) throw new Error("RPC returned transaction signature mismatch");
-    return { signature, positionMint: summary.nftMint, positionAccount: summary.positionAccount };
+    const beam = await lookupBeamAfterSend(signature);
+    return {
+      signature,
+      positionMint: summary.nftMint,
+      positionAccount: summary.positionAccount,
+      beam: beam.beam,
+      beamLabel: beam.label,
+    };
   } catch (error) {
     throw new CompoundSendError(error, false);
   }

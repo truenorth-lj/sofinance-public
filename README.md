@@ -93,7 +93,7 @@ Never commit `.env.local`, mnemonics, or API keys. Do not prefix `SOLANA_RPC_URL
 |---------|------|----------------|
 | **RPC** | `SOLAMI_API_KEY` set | All server `rpcConnection()` traffic goes to `https://rpc.solami.dev/sol?api_key=…` (one place: `src/lib/rpc.ts`). Position history prefers Solami `getTransactionsForAddress` with `{ limit, transactionDetails: "signatures" }` (rows under `result.data`, cursor `paginationToken`), then fills logs via bounded-parallel `getParsedTransaction`. Falls back to `getSignaturesForAddress` + the same batches. |
 | **Blur** | `SOLAMI_DATA_API_KEY` | Live pool activity. REST snapshot at `GET /api/pool-activity?poolId=` (`/data/pool` for mint + `GET /data/token/trades?chain=solana&address=<MINT>`, then client-filter by exact `pool`). SSE at `/api/pool-activity/stream` proxies Blur WS `type=swap,liquidity&pool=<POOL>` (never `address=` — that is a mint filter), forwards only parsed swap/liquidity events, and closes before Vercel `maxDuration` so the browser can reconnect. A Free key has REST but not WebSocket; [Solami](https://solami.dev) currently offers a 7-day Pro promo. Without the key the UI hides the panel. |
-| **Beam** | `SOLAMI_API_KEY` | Stake-weighted send with an on-chain tip. Ships in a follow-up PR. |
+| **Beam** | `SOLAMI_API_KEY` (off with `SOLAMI_BEAM=0`) | Prepare adds a ≥100,000-lamport SystemProgram tip to a live tip address **before** HMAC binding so the user signs it. If the v0 message would exceed 1,232 bytes the tip is omitted. Broadcast is the same `sendRawTransaction` through Solami RPC. After submit we query `GET /swqos/tx/{signature}` and show `Landed via Beam · region · tip` in the status dialog and MCP submit results. |
 
 Create a key at [solami.dev](https://solami.dev). Paste `SOLAMI_API_KEY` (and later `SOLAMI_DATA_API_KEY`) into `.env.local` or Vercel — never `NEXT_PUBLIC_*`. Position performance reports `{ txCount, elapsedMs, provider: "solami" \| "default" }` so you can see the Solami path is actually used.
 
@@ -118,6 +118,8 @@ wallet / API / MCP
 5. Set `SOLAMI_DATA_API_KEY`, open `/app` on a position, and confirm the Live pool activity panel (stats + Solscan ticker). A Free key fills the snapshot; Pro unlocks the SSE ticker. The demo Raydium CLMM SPCXx/SPCX pool `DUzBLHZ5RZdftPuWVijsvjupndogRM1adGJpsR7YTJro` (mint `Xs3oZwbHvqis4NYcf4YKWmEia2eC84wSiVrcYcTqpH8`) is often quiet — empty-state is expected; the global `dex=raydium_clmm` Blur stream is busy for sanity checks. Quiet pools still send SSE heartbeat comments.
 6. Confirm `/app/position-performance` shows the same panel plus in-range / approaching-edge from Blur price vs ticks.
 7. Unset the data key and confirm the panel disappears (no error banner).
+8. With `SOLAMI_API_KEY` set, prepare a zap/compound/open and confirm the unsigned message includes a tip transfer (or is omitted only because of the 1,232-byte cap). After broadcast, the status dialog / MCP submit result may show `Landed via Beam · region · tip`.
+9. Set `SOLAMI_BEAM=0` and confirm prepares still work with no tip.
 
 ## Quickstart — MCP for AI Agents (Remote, Zero Local Secrets)
 

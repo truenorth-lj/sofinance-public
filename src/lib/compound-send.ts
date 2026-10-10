@@ -6,6 +6,7 @@ import { readCompoundPositionState } from "./compound-state";
 import { simulateAndVerifyCompound } from "./compound-simulation";
 import { CompoundSendError, isPreflightOrUnsentFailure } from "./public-error";
 import { rpcConnection } from "./rpc";
+import { lookupBeamAfterSend } from "./solami-beam";
 import type { CompoundSummary } from "./compound-types";
 
 export { CompoundSendError };
@@ -53,7 +54,8 @@ export async function sendSignedCompoundTransaction(
       skipPreflight: false, preflightCommitment: "confirmed", maxRetries: 3,
     });
     if (signature !== expected) throw new Error("RPC returned compound signature mismatch, please verify on-chain status");
-    return { signature };
+    const beam = await lookupBeamAfterSend(signature);
+    return { signature, beam: beam.beam, beamLabel: beam.label };
   } catch (error) {
     if (error instanceof CompoundSendError) throw error;
     throw new CompoundSendError(error, isPreflightOrUnsentFailure(error) ? false : undefined);

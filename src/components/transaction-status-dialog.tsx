@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowUpRight, CheckCircle2, CircleAlert, Clock3, LoaderCircle, X } from "lucide-react";
 import type { AtomicStatus } from "@/lib/attempt-status";
 import type { SelectedAttempt } from "@/lib/selected-attempt";
@@ -22,12 +22,32 @@ export function TransactionStatusDialog({ attempt, status, error, open, onOpenCh
   open: boolean; onOpenChange: (open: boolean) => void; onRetry: () => void;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const [beamLabel, setBeamLabel] = useState<string | null>(null);
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
     if (open && !dialog.open) dialog.showModal();
     if (!open && dialog.open) dialog.close();
   }, [open]);
+  useEffect(() => {
+    if (!open || !attempt?.signature) return;
+    const aborter = new AbortController();
+    void (async () => {
+      try {
+        const response = await fetch(`/api/beam-landing?signature=${encodeURIComponent(attempt.signature)}`, {
+          headers: { Accept: "application/json" },
+          cache: "no-store",
+          signal: aborter.signal,
+        });
+        if (!response.ok) return;
+        const body = (await response.json()) as { beamLabel?: string | null };
+        if (!aborter.signal.aborted && body.beamLabel) setBeamLabel(body.beamLabel);
+      } catch {
+        /* landing proof is optional */
+      }
+    })();
+    return () => aborter.abort();
+  }, [open, attempt?.signature]);
   if (!attempt) return null;
 
   const phase = status ?? "pending";
@@ -56,6 +76,7 @@ export function TransactionStatusDialog({ attempt, status, error, open, onOpenCh
         <a href={`https://solscan.io/tx/${attempt.signature}`} target="_blank" rel="noreferrer"
           className="mt-2 block break-all font-mono text-sm leading-6 text-sky-300 underline underline-offset-4 hover:text-sky-200">{attempt.signature} <ArrowUpRight className="inline h-4 w-4" /></a>
         <p className="mt-3 text-xs text-slate-400">Destination NFT: {short(attempt.selection.positionMint)}</p>
+        {beamLabel && <p className="mt-3 text-xs text-slate-300">{beamLabel}</p>}
       </div>
       <div className="mt-6 flex flex-wrap gap-3">
         {(phase === "pending" || phase === "manual-review") && <button type="button" onClick={onRetry}
