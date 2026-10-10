@@ -112,7 +112,10 @@ describe("position performance workflow", () => {
     expect(container.textContent).toContain("No positive deposit amount");
     expect(container.textContent).toContain("No deposit history was found");
     expect(container.textContent).not.toContain(`${response.tokenNative.tokenEquivalent.metrics.pnl.toPrecision(6)} ${response.tokenNative.tokenEquivalent.baseSymbol}`);
-    expect(container.textContent).toContain("TE means token-equivalent");
+    expect(container.textContent).toContain("Amounts shown in");
+    expect(container.textContent).toContain("Position asset details");
+    const tickText = Array.from(container.querySelectorAll("div")).find((node) => node.childElementCount === 0 && node.textContent?.includes("Tick "));
+    expect(tickText?.closest("details")?.open).toBe(false);
     expect(container.textContent).toContain("Removed / collected");
   });
 

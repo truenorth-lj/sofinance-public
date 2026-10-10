@@ -71,7 +71,7 @@ export function evaluateScenario(s: Scenario, capital: string, mode: "existing" 
         }
       }
     }
-    return { strategy, net, rebalances, breakevenDay, breakevenReason: strategy === "exit" && mode === "new" ? "尚未投入，沒有回本期" : net.status === "unavailable" ? "資料或風險限制，無法可靠估計" : breakevenDay === null ? "期間內未估得損益兩平" : "僅在列示價格路徑、成交量、流動性與成本下首次覆蓋成本；不是保證回本日期", deltaVsHold: unavailable("Hold comparison pending") };
+    return { strategy, net, rebalances, breakevenDay, breakevenReason: strategy === "exit" && mode === "new" ? "No deposit has been made; there is no breakeven period." : net.status === "unavailable" ? "Data or risk limits prevent a reliable estimate." : breakevenDay === null ? "Breakeven was not reached within the estimated period." : "The first estimated point at which costs are covered under the specified price path, volume, liquidity and costs; this is not a guaranteed breakeven date.", deltaVsHold: unavailable("Hold comparison pending") };
   });
   for (const row of rows) row.deltaVsHold = excessNet(row.net,rows[0]!.net);
   return rows;
