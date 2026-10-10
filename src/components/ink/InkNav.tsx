@@ -18,6 +18,7 @@ const short = (value: string) => `${value.slice(0, 5)}…${value.slice(-5)}`;
 
 const NAV_LINKS = [
   { href: APP_ROUTES.home, label: "Positions", shortLabel: "Positions" },
+  { href: APP_ROUTES.plan, label: "Plan", shortLabel: "Plan" },
   { href: APP_ROUTES.positionPerformance, label: "Position performance", shortLabel: "Performance" },
   { href: APP_ROUTES.rwaPairs, label: "RWA pairs", shortLabel: "RWA" },
   { href: APP_ROUTES.ai, label: "Use AI", shortLabel: "AI" },

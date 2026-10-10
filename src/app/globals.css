@@ -1,5 +1,36 @@
 @import "tailwindcss";
 
+/* Bento palette: black canvas, cream / lemon / mint cards, ink type on light cards. */
+@theme {
+  --color-canvas: #0b0b0b;
+  --color-char: #151514;
+  --color-ink: #0d0d0c;
+  --color-cream: #f4f0e6;
+  --color-lemon: #f3e76b;
+  --color-mint: #84e9c5;
+  --color-lilac: #cdc6ff;
+  --color-coral: #ff9c85;
+  --color-smoke: #98948b;
+
+  --animate-rise: rise 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  --animate-settle: settle 0.35s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(16px); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes settle {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: none; }
+  }
+}
+
+/* Font variables are set by the route layout that loads them, so resolve them in place. */
+@theme inline {
+  --font-display: var(--font-plan-display), ui-sans-serif, system-ui, sans-serif;
+  --font-data: var(--font-plan-mono), ui-monospace, SFMono-Regular, monospace;
+}
+
 :root { color-scheme: dark; }
 html { background: #050505; }
 body { margin: 0; }
