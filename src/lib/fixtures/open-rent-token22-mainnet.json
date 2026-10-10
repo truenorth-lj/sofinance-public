@@ -1,0 +1,77 @@
+{
+  "signature": "4YhXSd5zJkszd7DAWuTcYxbrzm1LPLD21g3FLsDEucurZjtHeTFzB4VtwSviGjJSvTHB9g98wxhkKUDsWnHyy4W4",
+  "slot": 455120364,
+  "feeLamports": 10000,
+  "beamTipLamports": 100000,
+  "walletDeltaLamports": -5377960,
+  "instruction": "open_position_with_token22_nft",
+  "programId": "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK",
+  "poolId": "DUzBLHZ5RZdftPuWVijsvjupndogRM1adGJpsR7YTJro",
+  "tickSpacing": 1,
+  "tickLower": 45960,
+  "tickUpper": 46160,
+  "tickArrayStartLower": 45960,
+  "tickArrayStartUpper": 46140,
+  "clmmAccountIndexes": {
+    "protocolPosition": 5,
+    "tickArrayLower": 6,
+    "tickArrayUpper": 7,
+    "personalPosition": 8
+  },
+  "accounts": {
+    "wallet": {
+      "pubkey": "EweTgJ6vaQDZyH5nk5uaK5iD7n1qr7BXTaxewcjQNEjb",
+      "preLamports": 46124960,
+      "postLamports": 40747000
+    },
+    "nftMint": {
+      "pubkey": "FxJwEMQpmdqVcV3TUXkPycrUMHZvUFwFFjKtwhNP7j8v",
+      "owner": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+      "space": 202,
+      "preLamports": 0,
+      "postLamports": 1676400
+    },
+    "nftAta": {
+      "pubkey": "BvmFghtaeykotchTqQ2E6NmhoQpRXjPQGFdA6Xynx9MP",
+      "owner": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+      "space": 170,
+      "preLamports": 0,
+      "postLamports": 1513840
+    },
+    "protocolPosition": {
+      "pubkey": "7xg4wJ3YHsMpt4T52cDuVgyNtjCii3LtpY4Ram9fvk6C",
+      "exists": false,
+      "writable": false,
+      "preLamports": 0,
+      "postLamports": 0
+    },
+    "tickArrayLower": {
+      "pubkey": "HCmRL873wa3xapyEDsS2gRhs4qJDnm4qGrqyvWwN66zf",
+      "owner": "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK",
+      "space": 10240,
+      "preLamports": 72161280,
+      "postLamports": 72161280
+    },
+    "tickArrayUpper": {
+      "pubkey": "HsWtiAjTF3UCK7S5hP6pQ8jfkdoNxbY67sNeXtuXqSgp",
+      "owner": "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK",
+      "space": 10240,
+      "preLamports": 72161280,
+      "postLamports": 72161280
+    },
+    "personalPosition": {
+      "pubkey": "7YQkTAh58vcwDDL3c5jVsym1XGGvgG76tUCejXv3sgt6",
+      "owner": "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK",
+      "space": 281,
+      "preLamports": 0,
+      "postLamports": 2077720
+    }
+  },
+  "rentExemptionLamports": {
+    "202": 1676400,
+    "170": 1513840,
+    "225": 1793240,
+    "281": 2077720,
+    "10240": 72161280
+  }
+}
