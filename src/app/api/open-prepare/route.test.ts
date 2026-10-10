@@ -10,7 +10,7 @@ import { POST } from "./route";
 beforeEach(() => { vi.clearAllMocks(); });
 
 describe("open-position preparation API", () => {
-  it("prepares with price tolerance and no resale threshold, including legacy clients", async () => {
+  it("prepares with price tolerance and does not enforce the default resale floor", async () => {
     const wallet = "11111111111111111111111111111111";
     const poolId = "So11111111111111111111111111111111111111112";
     const inputMint = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
@@ -29,9 +29,9 @@ describe("open-position preparation API", () => {
     }));
     expect(response.status).toBe(200);
     expect(buildAndSimulateOpenPosition).toHaveBeenCalledWith(wallet,
-      { poolId, inputMint, inputKind: "token" }, "0.12", { preset: "standard" }, 100);
+      { poolId, inputMint, inputKind: "token" }, "0.12", { preset: "standard" }, 9900, 100,
+      { enforceResaleFloor: false });
     const body = await response.json();
-    expect(body.summary.quote).not.toHaveProperty("floorBps");
     expect(body.unsignedTransaction).toBe(Buffer.from("transaction").toString("base64"));
   });
 });
