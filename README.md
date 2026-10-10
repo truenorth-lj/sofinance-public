@@ -341,3 +341,7 @@ Built for the **Colosseum Crypto World's Fair** — entered in the **Solana trac
 Original private repository [`truenorth-lj/SoFinance`](https://github.com/truenorth-lj/SoFinance) first commit **2026-09-29** (`chore: scaffold USDC position zap project`, author date `2026-09-29T02:09:15Z`), within the Sep 14–Oct 12 PT hackathon window. This public repository (`truenorth-lj/sofinance-public`) was created **2026-10-06** with a fresh history so hardcoded personal wallet addresses could be removed and documentation published in English. Read access to the original private repo will be granted to `hackathon@colosseum.com` for verification.
 
 Development used the author’s own pre-built generic agent skill (a “research-pipeline” skill) and AI coding assistants as tooling—not pre-hackathon product code.
+
+## Local read-only LP decision analysis
+
+The date/USDC amount builder is integrated into `/app`, `/app/rwa-pairs` and position performance. The production path reads verified public pool/position snapshots, raw transactions, USD daily candles and principal-only Jupiter route quotes. Complete net metrics remain unavailable until event-time USDC prices, flow attribution, full reconciliation and execution costs are verified. Public real fixtures and scoped liquidity/token/reward checks are reproducible; independent quote legs are not executable net recovery. Explicit DEMO mode uses synthetic CLMM paths, has no calibrated probabilities and cannot prepare or submit trades. See [implementation, acceptance and local preview](specs/lp-decision/IMPLEMENTATION.md).

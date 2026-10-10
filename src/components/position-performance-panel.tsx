@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { LoaderCircle, Search } from "lucide-react";
 import { useWalletConnection } from "./wallet-connection";
 import {
@@ -11,6 +11,8 @@ import {
 } from "../lib/position-performance-form";
 import { PositionSelect } from "./position-select";
 import { useTokenMetadata } from "./use-token-metadata";
+import { DecisionSession } from "@/lib/lp-decision-session";
+import { LpDecisionBuilder } from "./lp-decision-builder";
 import { PoolDailyAprChart } from "./pool-daily-apr-panel";
 import { PoolActivityPanel } from "./pool-activity-panel";
 
@@ -173,9 +175,10 @@ export function PositionPerformancePanel({
     positions: ListedPosition[];
     status: "ready" | "error";
   } | null>(null);
-  const [data, setData] = useState<PerformanceResponse | null>(null);
+  const [loadedData, setLoadedData] = useState<{ body: PerformanceResponse; context: string } | null>(null);
+  const lookup = useRef(new DecisionSession());
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loadingContext, setLoadingContext] = useState<string | null>(null);
   const walletField = resolveWalletField({
     urlWallet: initialWallet,
     connectedAddress,
@@ -183,6 +186,12 @@ export function PositionPerformancePanel({
     ignoreUrl: ignoreUrlWallet,
   });
   const wallet = walletField.value;
+  const context = `${positionMint.trim()}:${wallet.trim()}`;
+  const loading = loadingContext === context;
+  const decisionMint = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(positionMint.trim()) ? positionMint.trim() : undefined;
+  const data = loadedData?.context === context ? loadedData.body : null;
+  useEffect(() => { const current = lookup.current; return () => current.cancel(); }, [context]);
+  const changePositionMint = (value: string) => { lookup.current.cancel(); setLoadedData(null); setLoadingContext(null); setError(null); setPositionMint(value); };
   const listedPositions =
     fetchedPositions && fetchedPositions.wallet === connectedAddress ? fetchedPositions.positions : [];
   const positionMetadata = useTokenMetadata(listedPositions.flatMap((item) => [item.mintA, item.mintB]));
@@ -230,24 +239,27 @@ export function PositionPerformancePanel({
       setError("Enter a position NFT mint");
       return;
     }
-    setLoading(true);
+    const attempt = lookup.current.begin(); if (!attempt) return;
+    setLoadingContext(context);
     setError(null);
     try {
       const params = new URLSearchParams({ positionMint: mint });
       if (wallet.trim()) params.set("wallet", wallet.trim());
       const response = await fetch(`/api/position-performance?${params}`, {
+        signal: attempt.signal,
         headers: { Accept: "application/json" },
       });
       const body = (await response.json()) as PerformanceResponse & { error?: string };
+      if (!attempt.current()) return;
       if (!response.ok) throw new Error(body.error || "Lookup failed");
-      setData(body);
+      if (body.positionMint !== mint) throw new Error("Position response mismatch");
+      setLoadedData({body, context});
     } catch (err) {
-      setData(null);
-      setError(err instanceof Error ? err.message : "Lookup failed");
+      if (attempt.current()) { setLoadedData(null); setError(err instanceof Error ? err.message : "Lookup failed"); }
     } finally {
-      setLoading(false);
+      if (attempt.current()) { attempt.finish(); setLoadingContext(null); }
     }
-  }, [positionMint, wallet]);
+  }, [context, positionMint, wallet]);
 
   const tn = data?.tokenNative;
   const te = tn?.tokenEquivalent ?? null;
@@ -261,13 +273,14 @@ export function PositionPerformancePanel({
         Lookup by position NFT mint
       </h2>
 
+      <LpDecisionBuilder positionId={data?.positionMint ?? decisionMint} poolId={data?.poolId} wallet={wallet} contextLabel={data ? "已查詢持倉績效；既有 pnlUsd 為當前價格重估，未完整扣成本" : decisionMint ? "輸入的公開 NFT mint；由唯讀分析核實身份，未聲稱錢包所有權" : undefined} />
       <div className="mt-4 space-y-3">
         <label className="block text-xs text-neutral-400">
           Position mint
           <input
             className="mt-1 w-full rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 focus:border-neutral-600 focus:outline-none"
             value={positionMint}
-            onChange={(event) => setPositionMint(event.target.value)}
+            onChange={(event) => changePositionMint(event.target.value)}
             placeholder="Position NFT mint (base58)"
             spellCheck={false}
             autoComplete="off"
@@ -284,7 +297,7 @@ export function PositionPerformancePanel({
             value={listedPositions.some((item) => item.positionMint === positionMint) ? positionMint : ""}
             disabled={positionsStatus !== "ready" || listedPositions.length === 0}
             onChange={(next) => {
-              if (next) setPositionMint(next);
+              if (next) changePositionMint(next);
             }}
             positions={listedPositions}
             metadata={positionMetadata}
