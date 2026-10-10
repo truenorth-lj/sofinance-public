@@ -432,7 +432,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             maxPrice: { type: "string", description: "Custom range max price (B per 1 A), required if rangePreset=custom" },
             resaleFloorBps: {
               type: "number",
-              description: "Minimum resale ratio in basis points (9500-10000, default 9900)",
+              description: "Minimum conservative immediate-resale ratio in basis points (9500-10000, default 9900). Agents must pass this explicitly to override the default floor.",
               default: 9900,
             },
             slippageToleranceBps: {

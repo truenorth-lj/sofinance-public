@@ -9,7 +9,6 @@ import {
 import { describeResaleFloorFailure, meetsResaleFloor, parseAddToleranceBps, parseResaleFloorBps, parseTokenAmount } from "./amount";
 import { allocateSpend, padAmountMax, positionSide, toleranceLiquidity } from "./quote-math";
 import { buildRoute, type BuildRoute } from "./jupiter-route";
-import type { JupiterRouteConstraints } from "./jupiter-route-retry";
 import { estimateOpenPositionRent } from "./open-rent";
 import { resolveOpenRange, type OpenRangeInput } from "./open-range";
 import { rpcConnection } from "./rpc";
@@ -30,6 +29,7 @@ export type OpenQuoteBundle = {
   legs: OpenSwapLeg[];
   state: OpenPoolState;
   range: ResolvedOpenRange;
+  strategy: "parallel" | "sequential";
 };
 
 function projectedSqrt(
@@ -63,13 +63,10 @@ function amountsAt(sqrt: BN, lowerSqrtX64: string, upperSqrtX64: string, liquidi
   return LiquidityMathUtil.getAmountsForLiquidity(sqrt, new BN(lowerSqrtX64), new BN(upperSqrtX64), liquidity, true);
 }
 
-async function leg(
-  wallet: string, inputMint: string, outputMint: string, spend: bigint, nativeSource = false,
-  jupiter?: JupiterRouteConstraints,
-): Promise<OpenSwapLeg> {
+async function leg(wallet: string, inputMint: string, outputMint: string, spend: bigint, maxAccounts = 48): Promise<OpenSwapLeg> {
   if (spend <= 0n) throw new Error("Swap amount must be greater than zero");
   if (inputMint === outputMint) return { inputMint, outputMint, spend, minOut: spend, route: null };
-  const route = await buildRoute(wallet, inputMint, outputMint, spend, nativeSource, jupiter);
+  const route = await buildRoute(wallet, inputMint, outputMint, spend, false, maxAccounts);
   return { inputMint, outputMint, spend, minOut: BigInt(route.otherAmountThreshold), route };
 }
 
@@ -86,11 +83,17 @@ export async function getOpenPositionQuoteBundle(
   range: OpenRangeInput,
   requestedFloorBps = DEFAULT_RESALE_FLOOR_BPS,
   requestedToleranceBps = DEFAULT_ADD_TOLERANCE_BPS,
-  jupiter?: JupiterRouteConstraints,
+  routeMaxAccounts = 48,
+  snapshot?: OpenPoolState,
+  strategy: "parallel" | "sequential" = "parallel",
 ): Promise<OpenQuoteBundle> {
   const floorBps = parseResaleFloorBps(requestedFloorBps);
   const toleranceBps = parseAddToleranceBps(requestedToleranceBps);
-  const state = await readOpenPoolState(wallet, selection);
+  const state = snapshot ?? await readOpenPoolState(wallet, selection);
+  if (state.wallet !== wallet || state.poolId !== selection.poolId || state.inputMint !== selection.inputMint || state.inputKind !== selection.inputKind) {
+    throw new Error("Open-position snapshot does not match request");
+  }
+  if (snapshot && Date.now() >= snapshot.fetchedAt + QUOTE_TTL_MS) throw new Error("Pool snapshot expired, please resimulate");
   if (state.paused || state.frozen || state.transferFee || state.unsupportedExtensions.length) {
     const extras = state.unsupportedExtensions.length ? `: ${state.unsupportedExtensions.join(", ")}` : "";
     throw new Error(`Pool asset currently paused, account frozen, transfer fee charged, or has unsupported settings${extras}`);
@@ -120,24 +123,60 @@ export async function getOpenPositionQuoteBundle(
   let projected = new BN(state.sqrtPriceX64);
   if (resolved.rangeSide !== "inside") {
     const outputMint = resolved.rangeSide === "below" ? state.mintA : state.mintB;
-    const sample = await leg(wallet, state.inputMint, outputMint, probe, state.inputKind === "native", jupiter);
-    const actual = await leg(wallet, state.inputMint, outputMint, requested, state.inputKind === "native", jupiter);
+    const sample = await leg(wallet, state.inputMint, outputMint, probe, routeMaxAccounts);
+    const actual = await leg(wallet, state.inputMint, outputMint, requested, routeMaxAccounts);
     priceImpactAgainstProbe(actual, sample, probe);
     legs = [actual];
     spendA = outputMint === state.mintA ? requested : 0n;
     projected = projectedSqrt(state, lowerSqrtX64, upperSqrtX64, resolved.rangeSide, actual.route ? [actual.route] : []);
+  } else if (strategy === "sequential" && ![state.mintA, state.mintB].includes(state.inputMint)) {
+    // Convert once to A, then swap only the A needed for B. Size LP using the
+    // first route's conservative minOut, never its optimistic quoted output.
+    const primaryProbe = await leg(wallet, state.inputMint, state.mintA, probe, routeMaxAccounts);
+    const primary = await leg(wallet, state.inputMint, state.mintA, requested, routeMaxAccounts);
+    priceImpactAgainstProbe(primary, primaryProbe, probe);
+    const availableA = primary.minOut;
+    const secondaryProbeAmount = availableA / 10n;
+    if (secondaryProbeAmount <= 0n) throw new Error("Input amount too small to obtain secondary probe route");
+    const secondaryProbe = await leg(wallet, state.mintA, state.mintB, secondaryProbeAmount, routeMaxAccounts);
+    const desired = amountsAt(projected, lowerSqrtX64, upperSqrtX64, new BN("1000000000000000000"));
+    let swapA = availableA - allocateSpend(availableA, BigInt(desired.amountA.toString()), BigInt(desired.amountB.toString()),
+      { spend: secondaryProbeAmount, out: secondaryProbeAmount }, { spend: secondaryProbeAmount, out: secondaryProbe.minOut }, 1n);
+    for (let index = 0; index < 5; index++) {
+      const secondary = await leg(wallet, state.mintA, state.mintB, swapA, routeMaxAccounts);
+      priceImpactAgainstProbe(secondary, secondaryProbe, secondaryProbeAmount);
+      // Both hops affect the B leg. Keep the combined impact within the same
+      // 5% cap rather than permitting 5% independently on each hop.
+      if (primary.minOut * secondary.minOut * probe * secondaryProbeAmount * 10_000n
+        < primaryProbe.minOut * secondaryProbe.minOut * requested * swapA * BigInt(10_000 - MAX_PRICE_IMPACT_BPS)) {
+        throw new Error("Combined sequential swap price impact exceeds 5% limit");
+      }
+      const reportedImpact = 1 - (1 - Number(primary.route?.priceImpactPct ?? 0)) * (1 - Number(secondary.route?.priceImpactPct ?? 0));
+      if (reportedImpact * 10_000 > MAX_PRICE_IMPACT_BPS) throw new Error("Combined sequential swap price impact exceeds 5% limit");
+      projected = projectedSqrt(state, lowerSqrtX64, upperSqrtX64, resolved.rangeSide,
+        [primary, secondary].flatMap(item => item.route ? [item.route] : []));
+      const needed = amountsAt(projected, lowerSqrtX64, upperSqrtX64, new BN("1000000000000000000"));
+      const next = availableA - allocateSpend(availableA, BigInt(needed.amountA.toString()), BigInt(needed.amountB.toString()),
+        { spend: swapA, out: swapA }, { spend: swapA, out: secondary.minOut }, 1n);
+      legs = [{ ...primary, minOut: availableA - swapA }, secondary];
+      spendA = requested * (availableA - swapA) / availableA;
+      const difference = next > swapA ? next - swapA : swapA - next;
+      if (difference * 1_000n <= availableA * 2n) break;
+      if (index === 4) throw new Error("Pool price and swap ratio did not converge, please retry later");
+      swapA = next;
+    }
   } else {
     const [probeA, probeB] = await Promise.all([
-      leg(wallet, state.inputMint, state.mintA, probe, state.inputKind === "native", jupiter),
-      leg(wallet, state.inputMint, state.mintB, probe, state.inputKind === "native", jupiter),
+      leg(wallet, state.inputMint, state.mintA, probe, routeMaxAccounts),
+      leg(wallet, state.inputMint, state.mintB, probe, routeMaxAccounts),
     ]);
     const base = amountsAt(projected, lowerSqrtX64, upperSqrtX64, new BN("1000000000000000000"));
     spendA = allocateSpend(requested, BigInt(base.amountA.toString()), BigInt(base.amountB.toString()),
       { spend: probe, out: probeA.minOut }, { spend: probe, out: probeB.minOut }, 1n);
     for (let index = 0; index < 5; index++) {
       const [actualA, actualB] = await Promise.all([
-        leg(wallet, state.inputMint, state.mintA, spendA, state.inputKind === "native", jupiter),
-        leg(wallet, state.inputMint, state.mintB, requested - spendA, state.inputKind === "native", jupiter),
+        leg(wallet, state.inputMint, state.mintA, spendA, routeMaxAccounts),
+        leg(wallet, state.inputMint, state.mintB, requested - spendA, routeMaxAccounts),
       ]);
       legs = [actualA, actualB];
       priceImpactAgainstProbe(actualA, probeA, probe);
@@ -167,10 +206,12 @@ export async function getOpenPositionQuoteBundle(
   const amountMaxA = padAmountMax(requiredA, outA, toleranceBps);
   const amountMaxB = padAmountMax(requiredB, outB, toleranceBps);
   const resaleLegs = await Promise.all([
-    outA > 0n ? leg(wallet, state.mintA, state.inputMint, outA, false, jupiter) : null,
-    outB > 0n ? leg(wallet, state.mintB, state.inputMint, outB, false, jupiter) : null,
+    outA > 0n ? leg(wallet, state.mintA, state.inputMint, outA, routeMaxAccounts) : null,
+    outB > 0n ? leg(wallet, state.mintB, state.inputMint, outB, routeMaxAccounts) : null,
   ]);
   const resale = resaleLegs.reduce((sum, item) => sum + (item?.minOut || 0n), 0n);
+  const floorAdvice = describeResaleFloorFailure(requested, resale, floorBps);
+  const passesFloor = meetsResaleFloor(requested, resale, floorBps);
   const rent = await estimateOpenPositionRent({
     connection: rpcConnection(),
     programId: state.programId,
@@ -185,8 +226,7 @@ export async function getOpenPositionQuoteBundle(
   const requiredSol = BigInt(MIN_SOL_LAMPORTS) + rentTotal + networkFeeLamportsEstimate + nativeSpend;
   const sufficientSol = BigInt(state.solLamports) >= requiredSol;
   const warnings: string[] = [];
-  const floorAdvice = describeResaleFloorFailure(requested, resale, floorBps);
-  if (!meetsResaleFloor(requested, resale, floorBps)) warnings.push(floorAdvice.warning);
+  if (!passesFloor) warnings.push(floorAdvice.warning);
   if (resolved.warning) warnings.push(resolved.warning);
   if (!resolved.inRange) {
     warnings.push("Selected range is out of the current pool price; the position will be single-sided and will not earn fees until price re-enters.");
@@ -231,9 +271,9 @@ export async function getOpenPositionQuoteBundle(
     resaleInput: resale.toString(),
     minimumResaleInput: ((requested * BigInt(floorBps) + 9_999n) / 10_000n).toString(),
     roundtripCostInput: (requested > resale ? requested - resale : 0n).toString(),
-    passesFloor: meetsResaleFloor(requested, resale, floorBps), floorBps,
+    passesFloor, floorBps,
     ...floorAdvice,
-    warning: meetsResaleFloor(requested, resale, floorBps) ? "" : floorAdvice.warning,
+    warning: passesFloor ? "" : floorAdvice.warning,
     maxImpactBps: MAX_PRICE_IMPACT_BPS, slippageBps: SLIPPAGE_BPS,
     routeTouchesTargetPool: legs.some((item) => item.route?.routePlan.some((hop) => hop.swapInfo.ammKey === state.poolId)),
     token2022A: state.token2022A, token2022B: state.token2022B,
@@ -256,7 +296,7 @@ export async function getOpenPositionQuoteBundle(
     requiredSolLamports: requiredSol.toString(),
     solLamports: state.solLamports.toString(),
     sufficientSol, sufficientInput: true,
-    warnings, slot: state.slot, fetchedAt: timestamp, expiresAt: timestamp + QUOTE_TTL_MS,
+    warnings, slot: state.slot, fetchedAt: timestamp, expiresAt: snapshot ? Math.min(timestamp + QUOTE_TTL_MS, snapshot.fetchedAt + QUOTE_TTL_MS) : timestamp + QUOTE_TTL_MS,
   };
-  return { quote, legs, state, range: resolved };
+  return { quote, legs, state, range: resolved, strategy };
 }
