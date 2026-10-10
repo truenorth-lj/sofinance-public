@@ -8,6 +8,8 @@ import {
   submitCompoundTransactionSchema,
   listRwaPairsSchema,
   getPositionPerformanceSchema,
+  getPoolActivitySchema,
+  getPositionRangeStatusSchema,
   quoteOpenPositionSchema,
   submitOpenPositionSchema,
 } from "./schemas";
@@ -324,6 +326,30 @@ describe("getPositionPerformanceSchema", () => {
 
   it("rejects invalid mint", () => {
     expect(getPositionPerformanceSchema.safeParse({ positionMint: "x" }).success).toBe(false);
+  });
+});
+
+describe("getPoolActivitySchema", () => {
+  it("requires poolId and defaults limit", () => {
+    const result = getPoolActivitySchema.parse({
+      poolId: "DUzBLHZ5RZdftPuWVijsvjupndogRM1adGJpsR7YTJro",
+    });
+    expect(result.limit).toBe(20);
+  });
+
+  it("rejects an invalid pool id", () => {
+    expect(getPoolActivitySchema.safeParse({ poolId: "x" }).success).toBe(false);
+  });
+});
+
+describe("getPositionRangeStatusSchema", () => {
+  it("requires positionMint and accepts optional wallet/poolId", () => {
+    const result = getPositionRangeStatusSchema.parse({
+      positionMint: "8BgBvyjrZX1YKz4oh9mjb8ZScatkkwb8DzFx7LoiVkM4",
+      wallet: "7BgBvyjrZX1YKz4oh9mjb8ZScatkkwb8DzFx7LoiVkM3",
+      poolId: "DUzBLHZ5RZdftPuWVijsvjupndogRM1adGJpsR7YTJro",
+    });
+    expect(result.wallet).toBe("7BgBvyjrZX1YKz4oh9mjb8ZScatkkwb8DzFx7LoiVkM3");
   });
 });
 

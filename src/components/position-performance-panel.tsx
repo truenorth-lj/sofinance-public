@@ -12,6 +12,7 @@ import {
 import { PositionSelect } from "./position-select";
 import { useTokenMetadata } from "./use-token-metadata";
 import { PoolDailyAprChart } from "./pool-daily-apr-panel";
+import { PoolActivityPanel } from "./pool-activity-panel";
 
 type UiSide = { a: number; b: number };
 
@@ -78,6 +79,8 @@ type PerformanceResponse = {
   mintB: string;
   decimalsA: number;
   decimalsB: number;
+  tickLower?: number;
+  tickUpper?: number;
   tickCurrent: number;
   rangeSide: string;
   liquidity: string;
@@ -491,6 +494,20 @@ export function PositionPerformancePanel({
               </p>
             )}
           </div>
+        </div>
+      )}
+
+      {(data?.poolId || previewPoolId) && (
+        <div className="mt-6">
+          <PoolActivityPanel
+            poolId={data?.poolId || previewPoolId}
+            tickLower={data?.tickLower}
+            tickUpper={data?.tickUpper}
+            decimalsA={data?.decimalsA}
+            decimalsB={data?.decimalsB}
+            mintA={data?.mintA}
+            mintB={data?.mintB}
+          />
         </div>
       )}
 
