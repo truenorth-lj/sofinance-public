@@ -6,6 +6,7 @@ import { verifySelectedPermit, type SelectedPermitInput } from "@/lib/selected-p
 import { simulateAndVerifySelectedTransaction } from "@/lib/selected-simulation";
 import { readSelectedPositionState } from "@/lib/selected-state";
 import { rpcConnection } from "@/lib/rpc";
+import { lookupBeamAfterSend } from "@/lib/solami-beam";
 
 function validRaw(value: unknown) {
   return typeof value === "string" && /^\d+$/.test(value);
@@ -76,7 +77,11 @@ export async function POST(request: Request) {
       skipPreflight: false, preflightCommitment: "confirmed", maxRetries: 3,
     });
     if (signature !== expectedSignature) throw new Error("Dedicated RPC returned transaction signature mismatch");
-    return Response.json({ signature }, { headers: { "Cache-Control": "no-store" } });
+    const beam = await lookupBeamAfterSend(signature);
+    return Response.json(
+      { signature, beam: beam.beam, beamLabel: beam.label },
+      { headers: { "Cache-Control": "no-store" } },
+    );
   } catch (error) {
     return apiError(error, "Transaction broadcast failed");
   }

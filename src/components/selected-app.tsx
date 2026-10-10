@@ -12,6 +12,7 @@ import { TransactionStatusDialog } from "./transaction-status-dialog";
 import { CompoundPanel } from "./compound-panel";
 import { useCompoundController } from "./use-compound-controller";
 import { InkNav } from "./ink";
+import { PoolActivityPanel } from "./pool-activity-panel";
 
 const short = (value: string) => `${value.slice(0, 5)}…${value.slice(-5)}`;
 const money = (value: string, decimals: number, digits = 6) => formatAmount(value, decimals, digits);
@@ -107,6 +108,20 @@ export function SelectedApp() {
           <span className="text-neutral-500">Position assets: {money(state.currentAmounts.a, state.decimalsA)} {poolLabel(state.mintA)}  +  {money(state.currentAmounts.b, state.decimalsB)} {poolLabel(state.mintB)}</span>
         </div>}
       </section>
+
+      {state?.poolId && (
+        <div className="mt-6">
+          <PoolActivityPanel
+            poolId={state.poolId}
+            tickLower={state.tickLower}
+            tickUpper={state.tickUpper}
+            decimalsA={state.decimalsA}
+            decimalsB={state.decimalsB}
+            mintA={state.mintA}
+            mintB={state.mintB}
+          />
+        </div>
+      )}
 
       <nav aria-label="Position operations" className="mt-6 flex gap-2 rounded-2xl border border-neutral-800/80 bg-neutral-900 p-1.5">
         <button type="button" aria-pressed={activeView === "compound"} aria-controls="compound-view" onClick={() => setActiveView("compound")} className={`flex flex-1 items-center justify-center gap-2 rounded-xl px-3 py-3 text-sm font-semibold transition-colors ${activeView === "compound" ? "bg-neutral-800 text-neutral-100" : "text-neutral-500 hover:text-neutral-300"}`}><Sprout className="h-4 w-4" />Yield Compound</button>

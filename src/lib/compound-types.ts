@@ -34,4 +34,10 @@ export type CompoundSummary = {
   simulatedSolDebitLamports: string; maxSolDebitLamports: string;
   feeLamports: number; rentLamports: number; sizeBytes: number; unitsConsumed?: number;
   blockhash: string; lastValidBlockHeight: number; simulatedAt: number; expiresAt: number;
+  beam?: {
+    included: boolean;
+    tipLamports: number;
+    tipAddress: string | null;
+    skippedReason: "disabled" | "no-tip-address" | "oversize" | null;
+  };
 };

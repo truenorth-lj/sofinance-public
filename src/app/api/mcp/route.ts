@@ -10,6 +10,8 @@ import {
   submitCompoundTransaction,
   listRwaPairs,
   getPositionPerformance,
+  getPoolActivity,
+  getPositionRangeStatus,
   quoteOpenPosition,
   prepareOpenPosition,
   submitOpenPosition,
@@ -23,6 +25,8 @@ import {
   submitCompoundTransactionSchema,
   listRwaPairsSchema,
   getPositionPerformanceSchema,
+  getPoolActivitySchema,
+  getPositionRangeStatusSchema,
   quoteOpenPositionSchema,
   prepareOpenPositionSchema,
   submitOpenPositionSchema,
@@ -107,6 +111,21 @@ async function handleToolCall(name: string, args: unknown, walletFromToken: stri
         );
       }
       return await getPositionPerformance(input);
+    }
+
+    case "get_pool_activity": {
+      const input = getPoolActivitySchema.parse(args ?? {});
+      return await getPoolActivity(input);
+    }
+
+    case "get_position_range_status": {
+      const input = getPositionRangeStatusSchema.parse(args ?? {});
+      if (input.wallet && input.wallet !== walletFromToken) {
+        throw new Error(
+          `Token wallet mismatch: token is for ${walletFromToken}, requested ${input.wallet}`
+        );
+      }
+      return await getPositionRangeStatus(input);
     }
 
     case "list_rwa_pairs": {
@@ -229,6 +248,49 @@ const TOOL_DEFINITIONS = [
           type: "boolean",
           description: "If true, skip Jupiter/Raydium USD pricing (token-native / TE metrics still computed)",
           default: false,
+        },
+      },
+      required: ["positionMint"],
+    },
+  },
+  {
+    name: "get_pool_activity",
+    description:
+      "Live Solami Blur snapshot for a Solana pool: decoded pool stats (price, TVL, 24h fees, LP flows) plus recent swaps. Read-only. Returns available=false when SOLAMI_DATA_API_KEY is unset so agents can fall back. Free Solami keys have REST but not WebSocket.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        poolId: {
+          type: "string",
+          description: "Pool address (Raydium CLMM id)",
+        },
+        limit: {
+          type: "number",
+          description: "Max recent swaps to return (1-200, default 20)",
+          default: 20,
+        },
+      },
+      required: ["poolId"],
+    },
+  },
+  {
+    name: "get_position_range_status",
+    description:
+      "Compute live in-range / out-of-range status for a Raydium CLMM position from the latest Solami Blur pool price versus tickLower/tickUpper (B per 1 A). Flags when price approaches a range edge. Falls back to the on-chain mid if Blur is unavailable. Read-only.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        positionMint: {
+          type: "string",
+          description: "Position NFT mint address",
+        },
+        wallet: {
+          type: "string",
+          description: "Optional wallet; when set it must match the Bearer token",
+        },
+        poolId: {
+          type: "string",
+          description: "Optional pool override (defaults to the position's pool)",
         },
       },
       required: ["positionMint"],
