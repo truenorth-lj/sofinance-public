@@ -246,7 +246,7 @@ export async function fetchParsedTransactionsBatched(
   const fallback = options.fallback ?? null;
   const fallbackFirst = options.parseOnFallbackFirst;
 
-  const fetched = await mapInBatches(signatures, options.batchSize, async (info) => {
+  const fetched = await mapInBatches(signatures, options.batchSize, async (info): Promise<ParsedHistoryTx | null> => {
     if (info.err) return null;
 
     const tryFallbackFirst = Boolean(fallback && fallbackFirst?.has(info.signature));
