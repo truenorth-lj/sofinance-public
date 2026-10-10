@@ -28,7 +28,7 @@ describe("ComparisonChart", () => {
     );
     expect(markup).toContain("SoFinance vs hold");
     expect(markup).toContain("Estimate from past average yield, not a forecast");
-    expect(markup).toContain("+2.00 vs hold");
+    expect(markup).toContain("+2.00 USDC vs hold");
     expect(markup).toContain("aim +3");
     expect(markup).toContain("<path");
     expect(markup).toContain("Past average");
