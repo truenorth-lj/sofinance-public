@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Keypair } from "@solana/web3.js";
 import { TickUtil } from "@raydium-io/raydium-sdk-v2";
 import { uiPriceBPerAFromTick } from "./position-performance-math";
@@ -103,6 +103,9 @@ describe("open-position quote validation", () => {
     expect(quote.symbolB).toBe("SOL");
     expect(quote.feeTierBps).toBe(4);
     expect(quote.sufficientSol).toBe(true);
+    expect(quote.feeBps).toBe(0);
+    expect(quote.feeAmount).toBe("0");
+    expect(quote.feeWallet).toBeNull();
     expect(legs[0]?.route).toBeNull();
     expect(uiPriceBPerAFromTick(quote.tickLower, 6, 9)).toBeGreaterThan(Number(quote.currentPrice));
   });
@@ -220,6 +223,63 @@ describe("open-position quote validation", () => {
     await expect(getOpenPositionQuoteBundle(wallet, { poolId, inputMint: mintA, inputKind: "token" },
       "0.1", { preset: "standard" }, 9900, 100, 24, snapshot)).rejects.toThrow("snapshot expired");
     expect(buildRoute).not.toHaveBeenCalled();
+  });
+
+  describe("protocol swap fee", () => {
+    const feeWallet = Keypair.generate().publicKey.toBase58();
+    const originalWallet = process.env.SOFINANCE_FEE_WALLET;
+    const originalBps = process.env.SOFINANCE_FEE_BPS;
+    afterEach(() => {
+      if (originalWallet === undefined) delete process.env.SOFINANCE_FEE_WALLET;
+      else process.env.SOFINANCE_FEE_WALLET = originalWallet;
+      if (originalBps === undefined) delete process.env.SOFINANCE_FEE_BPS;
+      else process.env.SOFINANCE_FEE_BPS = originalBps;
+    });
+
+    it("reduces executed Jupiter input by the fee and leaves resale probes uncharged", async () => {
+      process.env.SOFINANCE_FEE_WALLET = feeWallet;
+      process.env.SOFINANCE_FEE_BPS = "20";
+      vi.mocked(readOpenPoolState).mockResolvedValue(state({ inputMint: mintB, inputDecimals: 9, inputKind: "token" }));
+      vi.mocked(buildRoute).mockImplementation(async (_wallet, inputMint, outputMint, spend) => {
+        const out = inputMint === mintB && outputMint === mintA ? spend / 1000n : spend;
+        return {
+          inputMint, outputMint, inAmount: spend.toString(), outAmount: out.toString(),
+          otherAmountThreshold: out.toString(), swapMode: "ExactIn", slippageBps: 50,
+          priceImpactPct: "0", routePlan: [], setupInstructions: [], swapInstruction: {},
+          cleanupInstruction: null, otherInstructions: [], addressesByLookupTableAddress: {},
+        } as never;
+      });
+      const { quote, legs } = await getOpenPositionQuoteBundle(wallet,
+        { poolId, inputMint: mintB, inputKind: "token" }, "0.1",
+        { preset: "custom", minPrice: "1", maxPrice: "2" });
+      expect(legs[0]?.spend).toBe(100_000_000n);
+      expect(legs[0]?.feeAmount).toBe(200_000n);
+      expect(quote.feeBps).toBe(20);
+      expect(quote.feeAmount).toBe("200000");
+      expect(quote.feeWallet).toBe(feeWallet);
+      expect(quote.minOutA).toBe("99800");
+      const swapCalls = vi.mocked(buildRoute).mock.calls.filter((call) => call[1] === mintB && call[2] === mintA);
+      const resaleCalls = vi.mocked(buildRoute).mock.calls.filter((call) => call[1] === mintA && call[2] === mintB);
+      expect(swapCalls.map((call) => call[3])).toEqual([9_980_000n, 99_800_000n]);
+      expect(resaleCalls.map((call) => call[3])).toEqual([99_800n]);
+    });
+
+    it("does not charge a same-mint open that never swaps", async () => {
+      process.env.SOFINANCE_FEE_WALLET = feeWallet;
+      process.env.SOFINANCE_FEE_BPS = "20";
+      const { quote, legs } = await getOpenPositionQuoteBundle(
+        wallet,
+        { poolId, inputMint: mintA, inputKind: "token" },
+        "100",
+        { preset: "custom", minPrice: "1", maxPrice: "2" },
+      );
+      expect(legs[0]?.route).toBeNull();
+      expect(legs[0]?.feeAmount).toBe(0n);
+      expect(quote.feeBps).toBe(20);
+      expect(quote.feeAmount).toBe("0");
+      expect(quote.feeWallet).toBe(feeWallet);
+      expect(buildRoute).not.toHaveBeenCalled();
+    });
   });
 
 });
