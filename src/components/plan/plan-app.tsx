@@ -1,12 +1,26 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import Decimal from "decimal.js";
+import { usePathname, useSearchParams } from "next/navigation";
 import { parseDays, parseUsdc, type Intent, type IntentGoal } from "@/lib/lp-intent";
-import { parsePairLabel, parseSolanaAddress } from "@/lib/lp-plan-selection";
-import { buildPlanComparison } from "@/lib/lp-plan-yield";
+import {
+  applyIntentChange,
+  DEFAULT_PLAN_AMOUNT,
+  DEFAULT_PLAN_DAYS,
+  DEFAULT_PLAN_LOSS_ALERT,
+  DEFAULT_PLAN_LOSS_ALERT_PCT,
+  DEFAULT_PLAN_TARGET_PCT,
+  shareOfAmount,
+} from "@/lib/lp-plan-intent";
+import {
+  pairLabelFromSymbols,
+  parsePairLabel,
+  parseSolanaAddress,
+  resolvePlanSelection,
+  type PlanPairOption,
+} from "@/lib/lp-plan-selection";
+import { buildPlanComparison, planEntryCost } from "@/lib/lp-plan-yield";
 import { APP_ROUTES } from "@/lib/public-urls";
 import { InkNav } from "@/components/ink";
 import { useWalletConnection } from "@/components/wallet-connection";
@@ -14,13 +28,14 @@ import { ComparisonChart } from "./comparison-chart";
 import { IntentSentence, type IntentField } from "./intent-sentence";
 import { RealityCheck } from "./outlook";
 import { usePoolYield } from "./use-pool-yield";
+import { useRwaPairs } from "./use-rwa-pairs";
 
 const DEFAULT_INTENT: Intent = {
-  days: 30,
-  amount: "1000",
+  days: DEFAULT_PLAN_DAYS,
+  amount: DEFAULT_PLAN_AMOUNT,
   goal: "net-by-date",
-  target: "30",
-  lossAlert: "50",
+  target: shareOfAmount(DEFAULT_PLAN_AMOUNT, DEFAULT_PLAN_TARGET_PCT),
+  lossAlert: DEFAULT_PLAN_LOSS_ALERT,
   exitAsset: "usdc",
 };
 
@@ -28,13 +43,6 @@ const FIELDS: readonly IntentField[] = ["days", "amount", "goal", "target", "los
 const GOALS: readonly IntentGoal[] = ["net-by-date", "take-profit", "beat-holding"];
 const shortId = (value: string) => `${value.slice(0, 4)}…${value.slice(-4)}`;
 
-function shareOfAmount(amount: string, pct: number): string {
-  const share = new Decimal(amount).mul(pct).div(100).toDecimalPlaces(2);
-  return share.isZero() ? amount : share.toFixed();
-}
-
-// Other pages can link in with a plan already filled out, e.g. ?amount=2000&days=60.
-// Anything missing or malformed falls back to the default for that field.
 function intentFromParams(params: URLSearchParams): Intent {
   const amount = parseUsdc(params.get("amount") ?? "") ?? DEFAULT_INTENT.amount;
   const goal = params.get("goal") as IntentGoal | null;
@@ -42,48 +50,90 @@ function intentFromParams(params: URLSearchParams): Intent {
     days: parseDays(params.get("days") ?? "") ?? DEFAULT_INTENT.days,
     amount,
     goal: goal && GOALS.includes(goal) ? goal : DEFAULT_INTENT.goal,
-    target: parseUsdc(params.get("target") ?? "") ?? shareOfAmount(amount, 3),
-    lossAlert: parseUsdc(params.get("alert") ?? "", amount) ?? shareOfAmount(amount, 5),
+    target: parseUsdc(params.get("target") ?? "") ?? shareOfAmount(amount, DEFAULT_PLAN_TARGET_PCT),
+    lossAlert: parseUsdc(params.get("alert") ?? "", amount) ?? shareOfAmount(amount, DEFAULT_PLAN_LOSS_ALERT_PCT),
     exitAsset: params.get("exit") === "tokens" ? "tokens" : "usdc",
   };
 }
 
-function PoolCaption({ poolId, pair, positionId }: { poolId?: string; pair?: string; positionId?: string }) {
-  const label = pair && poolId ? "Pool" : poolId ? "Pool" : positionId ? "Position" : pair ? "Pair" : null;
-  const value = pair && poolId ? pair : poolId ? shortId(poolId) : positionId ? shortId(positionId) : pair;
+function syncPlanUrl(path: string, selection: { poolId?: string; pair?: string }) {
+  if (typeof window === "undefined") return;
+  const next = new URLSearchParams(window.location.search);
+  if (selection.poolId) next.set("pool", selection.poolId);
+  else next.delete("pool");
+  if (selection.pair) next.set("pair", selection.pair);
+  else next.delete("pair");
+  const qs = next.toString();
+  window.history.replaceState(null, "", qs ? `${path}?${qs}` : path);
+}
+
+function PoolSelect({
+  poolId,
+  pair,
+  options,
+  loading,
+  onChange,
+}: {
+  poolId?: string;
+  pair?: string;
+  options: readonly PlanPairOption[];
+  loading: boolean;
+  onChange: (poolId: string) => void;
+}) {
+  const currentLabel = pair ?? (poolId ? shortId(poolId) : "Choose a pool");
+  const known = options.some((row) => row.poolAddress === poolId);
   return (
-    <span className="font-data text-[10px] uppercase tracking-[0.14em] text-ink/60">
-      {label ? (
-        <>
-          {label} <span className="normal-case">{value}</span>
-          {pair && !poolId ? " — no pool id" : null}
-        </>
-      ) : (
-        "No pool chosen yet"
-      )}
-    </span>
+    <label className="inline-flex max-w-full items-center gap-2 font-data text-[10px] uppercase tracking-[0.14em] text-ink/60">
+      Pool
+      <select
+        aria-label="Pool"
+        value={poolId ?? ""}
+        disabled={loading && options.length === 0 && !poolId}
+        onChange={(event) => onChange(event.target.value)}
+        className="normal-case max-w-[16rem] truncate rounded-full border border-ink/20 bg-transparent px-2.5 py-1 font-data text-[10px] tracking-[0.08em] text-ink outline-none focus-visible:border-ink"
+      >
+        {!poolId ? <option value="">Choose a pool</option> : null}
+        {poolId && !known ? <option value={poolId}>{currentLabel}</option> : null}
+        {options.map((row) => (
+          <option key={row.poolAddress} value={row.poolAddress}>
+            {pairLabelFromSymbols(row.wrappedSymbol, row.plainSymbol)}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 
 export function PlanApp() {
   const params = useSearchParams();
+  const pathname = usePathname();
   const wallet = useWalletConnection();
   const positionId = parseSolanaAddress(params.get("position"));
-  const poolId = parseSolanaAddress(params.get("pool"));
-  const pair = parsePairLabel(params.get("pair"));
+  const urlPool = parseSolanaAddress(params.get("pool"));
+  const urlPair = parsePairLabel(params.get("pair"));
   const edit = params.get("edit") as IntentField | null;
-
+  const pairs = useRwaPairs();
+  const pairRows = pairs.status === "ready" ? pairs.rows : [];
+  const fromUrl = resolvePlanSelection({
+    poolId: urlPool,
+    pair: urlPair,
+    pairs: pairRows,
+  });
+  const [chosen, setChosen] = useState<{ poolId?: string; pair?: string } | null>(null);
+  const selection = chosen ?? fromUrl;
   const [intent, setIntent] = useState(() => intentFromParams(params));
   const [active, setActive] = useState<IntentField>(edit && FIELDS.includes(edit) ? edit : "target");
   const [now] = useState(() => Date.now());
+  const poolId = selection.poolId;
+  const pair = selection.pair;
   const poolYield = usePoolYield(poolId);
 
-  const change = (patch: Partial<Intent>) =>
-    setIntent((current) => {
-      const next = { ...current, ...patch };
-      // The alert can never sit below losing everything that was put in.
-      return new Decimal(next.lossAlert).gt(next.amount) ? { ...next, lossAlert: next.amount } : next;
-    });
+  useEffect(() => {
+    if (!poolId) return;
+    syncPlanUrl(pathname, { poolId, pair });
+  }, [pathname, poolId, pair]);
+
+  const change = (patch: Partial<Intent>) => setIntent((current) => applyIntentChange(current, patch));
 
   const comparison = useMemo(() => {
     if (poolYield.status !== "ready") return null;
@@ -93,16 +143,24 @@ export function PlanApp() {
       aprPct: poolYield.aprPct,
       sampleDays: poolYield.sampleDays,
       target: intent.target,
+      entryCost: planEntryCost(intent.amount),
     });
   }, [intent.amount, intent.days, intent.target, poolYield]);
 
-  const status = poolYield.status === "idle" ? "idle" : poolYield.status;
+  const resolvingPair = Boolean(!poolId && pair && pairs.status === "loading");
+  const status = resolvingPair ? "loading" : poolYield.status === "idle" ? "idle" : poolYield.status;
   const reason =
     poolYield.status === "unavailable"
       ? poolYield.reason
-      : !poolId && pair
+      : !poolId && pair && pairs.status !== "loading"
         ? "This link names a pair but has no pool id, so there is no yield series to average."
         : undefined;
+
+  const choosePool = (nextId: string) => {
+    const resolved = resolvePlanSelection({ poolId: nextId, pairs: pairRows });
+    setChosen(resolved);
+    syncPlanUrl(pathname, resolved);
+  };
 
   return (
     <div className="min-h-screen bg-canvas text-cream">
@@ -121,7 +179,19 @@ export function PlanApp() {
               >
                 Plan a position
               </h1>
-              <PoolCaption poolId={poolId} pair={pair} positionId={positionId} />
+              {positionId && !poolId ? (
+                <span className="font-data text-[10px] uppercase tracking-[0.14em] text-ink/60">
+                  Position <span className="normal-case">{shortId(positionId)}</span>
+                </span>
+              ) : (
+                <PoolSelect
+                  poolId={poolId}
+                  pair={pair}
+                  options={pairRows}
+                  loading={pairs.status === "loading"}
+                  onChange={choosePool}
+                />
+              )}
             </div>
             <IntentSentence intent={intent} now={now} active={active} onActiveChange={setActive} onChange={change} />
           </section>

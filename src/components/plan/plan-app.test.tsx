@@ -6,6 +6,7 @@ import { WalletConnectionContext, type WalletConnection } from "../wallet-connec
 import { PlanApp } from "./plan-app";
 
 const POOL = "DUzBLHZ5RZdftPuWVijsvjupndogRM1adGJpsR7YTJro";
+const OTHER = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
 
 let search = "";
 vi.mock("next/navigation", () => ({
@@ -42,6 +43,20 @@ function aprPayload(aprPct: number | null = 36.5) {
   };
 }
 
+function pairsPayload() {
+  return {
+    pairs: [
+      { poolAddress: POOL, wrappedSymbol: "SPCXx", plainSymbol: "SPCX" },
+      { poolAddress: OTHER, wrappedSymbol: "MSTRx", plainSymbol: "MSTR" },
+    ],
+    scannedPools: 2,
+    pagesFetched: 1,
+    fetchedAt: "2026-10-10T00:00:00.000Z",
+    pairingRuleSummary: "test",
+    estimatedFeeAprLabel: "test",
+  };
+}
+
 async function render(query = "") {
   search = query;
   await act(async () =>
@@ -56,13 +71,28 @@ async function click(label: string) {
 }
 
 async function waitForText(snippet: string) {
-  await act(async () => {
-    for (let i = 0; i < 40; i++) {
-      if (text().includes(snippet)) return;
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
-  });
+  for (let i = 0; i < 80; i++) {
+    if (text().includes(snippet)) return;
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 15));
+    });
+  }
   expect(text()).toContain(snippet);
+}
+
+async function setAmount(value: string) {
+  const amountPill = [...node.querySelectorAll("button")].find((button) =>
+    /^\s*[\d,.]+ USDC/.test(button.textContent ?? ""),
+  );
+  if (!amountPill) throw new Error("amount pill missing");
+  await act(async () => amountPill.click());
+  const input = node.querySelector<HTMLInputElement>('input[aria-label="Amount to put in, in USDC"]');
+  if (!input) throw new Error("amount input missing");
+  const assign = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+  await act(async () => {
+    assign?.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
 }
 
 beforeEach(() => {
@@ -71,6 +101,9 @@ beforeEach(() => {
   fetcher.mockReset();
   fetcher.mockImplementation(async (input: RequestInfo | URL) => {
     const url = String(input);
+    if (url.includes("/api/rwa-pairs")) {
+      return { ok: true, json: async () => pairsPayload() };
+    }
     if (url.includes("/api/pool-daily-apr")) {
       return { ok: true, json: async () => aprPayload() };
     }
@@ -87,41 +120,48 @@ afterEach(async () => {
 });
 
 describe("PlanApp", () => {
-  it("shows an unavailable chart and does not invent yield when no pool is chosen", async () => {
+  it("defaults to the SPCXx/SPCX pool and a +100 USDC aim when nothing is chosen", async () => {
     await render();
-    expect(text()).toContain("No pool chosen, so there is no estimate yet.");
-    expect(text()).toContain("Choose a pool to estimate SoFinance against simply holding");
-    expect(text()).toContain("Estimate from past average yield, not a forecast");
-    expect(text()).not.toContain("Sideways");
-    expect(text()).not.toContain("Gap down");
-    expect(text()).not.toContain("sample paths");
-    expect(fetcher).not.toHaveBeenCalled();
+    await waitForText("Past average 36.5% a year");
+    expect(text()).toContain("+100 USDC");
+    expect(text()).toContain("10%");
+    expect(text()).toContain("break-even day 1");
+    expect(node.querySelector<HTMLSelectElement>('select[aria-label="Pool"]')?.value).toBe(POOL);
+    expect(fetcher.mock.calls.some((call) => String(call[0]).includes("/api/rwa-pairs"))).toBe(true);
+    expect(fetcher.mock.calls.some((call) => String(call[0]).includes(`/api/pool-daily-apr?poolId=${POOL}`))).toBe(true);
   });
 
-  it("explains a pair-only link instead of fabricating a pool", async () => {
-    await render("pair=SPCXx%2FSPCX");
-    expect(text()).toContain("Pair SPCXx/SPCX");
-    expect(text()).toContain("This link names a pair but has no pool id");
-    expect(fetcher).not.toHaveBeenCalled();
+  it("resolves a pair-only link from the cached RWA list", async () => {
+    await render("pair=MSTRx%2FMSTR");
+    await waitForText("Past average 36.5% a year");
+    expect(node.querySelector<HTMLSelectElement>('select[aria-label="Pool"]')?.value).toBe(OTHER);
+    expect(
+      fetcher.mock.calls.some((call) => String(call[0]).includes(`/api/pool-daily-apr?poolId=${OTHER}`)),
+    ).toBe(true);
+  });
+
+  it("explains an unknown pair-only link instead of fabricating a pool", async () => {
+    await render("pair=NVDAx%2FNVDA");
+    await waitForText("This link names a pair but has no pool id");
+    expect(text()).not.toContain("Past average");
+    expect(fetcher.mock.calls.some((call) => String(call[0]).includes("/api/pool-daily-apr"))).toBe(false);
   });
 
   it("loads the pool average once and plots SoFinance against a flat hold", async () => {
     await render(`pool=${POOL}&pair=SPCXx%2FSPCX`);
     await waitForText("Past average 36.5% a year");
-    expect(text()).toMatch(/Pool\s+SPCXx\/SPCX/);
     expect(text()).toContain("SoFinance vs hold");
-    expect(text()).toContain("vs hold");
     expect(text()).toContain("Break-even");
-    expect(text()).toContain("Day 0 — no entry cost is counted");
+    expect(text()).toMatch(/Break-even\s*Day 1/);
+    expect(text()).toContain("Estimated earn");
     expect(text()).not.toContain("Sideways");
-    expect(fetcher).toHaveBeenCalledTimes(1);
-    expect(String(fetcher.mock.calls[0]![0])).toContain(`/api/pool-daily-apr?poolId=${POOL}`);
+    expect(fetcher.mock.calls.filter((call) => String(call[0]).includes("/api/pool-daily-apr"))).toHaveLength(1);
   });
 
   it("updates the chart from the slider without refetching", async () => {
     await render(`pool=${POOL}&target=100`);
     await waitForText("Past average 36.5% a year");
-    const before = fetcher.mock.calls.length;
+    const before = fetcher.mock.calls.filter((call) => String(call[0]).includes("/api/pool-daily-apr")).length;
     const slider = node.querySelector<HTMLElement>('[role="slider"]')!;
     expect(slider.getAttribute("aria-label")).toBe("Target gain as a share of the amount");
     await act(async () => {
@@ -129,16 +169,41 @@ describe("PlanApp", () => {
     });
     expect(text()).toContain("+75 USDC");
     expect(text()).toContain("aim +75");
-    expect(fetcher.mock.calls.length).toBe(before);
+    expect(fetcher.mock.calls.filter((call) => String(call[0]).includes("/api/pool-daily-apr")).length).toBe(before);
+  });
+
+  it("lets a click on the far right of the ruler reach the last stop", async () => {
+    await render(`pool=${POOL}&target=100`);
+    await waitForText("Past average 36.5% a year");
+    const slider = node.querySelector<HTMLElement>('[role="slider"]')!;
+    const wrapper = slider.parentElement!;
+    slider.getBoundingClientRect = () =>
+      ({ left: 0, width: 200, right: 200, top: 0, bottom: 24, height: 24, x: 0, y: 0, toJSON: () => ({}) });
+    await act(async () => {
+      wrapper.dispatchEvent(new PointerEvent("pointerdown", { clientX: 200, bubbles: true }));
+    });
+    expect(text()).toContain("+500 USDC");
   });
 
   it("offers a longer horizon from the yield math and applies it only when asked", async () => {
     await render(`pool=${POOL}&days=1&target=3`);
-    await waitForText("Give it 3 days");
+    await waitForText("Give it 4 days");
     expect(text()).toContain("In 1 day");
-    await click("Give it 3 days");
-    expect(text()).toContain("In 3 days");
+    expect(text()).not.toContain("In 1 days");
+    await click("Give it 4 days");
+    expect(text()).toContain("In 4 days");
     expect(text()).toContain("on your aim");
+  });
+
+  it("rescales the loss alert when the amount goes 1 → 10,000", async () => {
+    await render(`pool=${POOL}`);
+    await waitForText("Past average 36.5% a year");
+    expect(text()).toContain("50 USDC");
+    await setAmount("1");
+    expect(text()).toContain("0.05 USDC");
+    await setAmount("10000");
+    expect(text()).toContain("500 USDC");
+    expect(text()).not.toMatch(/Warn me if I'm down 1 USDC/);
   });
 
   it("opens with a plan carried in the link", async () => {
@@ -151,7 +216,11 @@ describe("PlanApp", () => {
   });
 
   it("stays unavailable when the series has no complete days", async () => {
-    fetcher.mockImplementation(async () => ({ ok: true, json: async () => aprPayload(null) }));
+    fetcher.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/rwa-pairs")) return { ok: true, json: async () => pairsPayload() };
+      return { ok: true, json: async () => aprPayload(null) };
+    });
     await render(`pool=${POOL}`);
     await waitForText("No complete UTC days");
     expect(text()).not.toContain("Past average");
