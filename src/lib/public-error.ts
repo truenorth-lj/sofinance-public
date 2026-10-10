@@ -1,3 +1,5 @@
+import { RPC_UNAVAILABLE_MESSAGE } from "./rpc/errors";
+
 const PUBLIC_ERROR_LIMIT = 220;
 const SECRET = /https?:\/\/\S+|\b(?:api[_-]?key|authorization|token)\s*[:=]\s*\S+/gi;
 
@@ -33,6 +35,7 @@ export function errorText(error: unknown): string {
 }
 
 export function mapKnownChainError(text: string): string | null {
+  if (/429|too many requests|rate[- ]?limit/i.test(text)) return RPC_UNAVAILABLE_MESSAGE;
   if (/6017|0x1781|price\s*slippage/i.test(text)) return "Pool price moved past the add-liquidity cap (Raydium 6017).";
   if (/insufficient funds|insufficient lamports|custom program error:\s*0x1\b/i.test(text)) {
     return "Insufficient tokens or SOL after swap slippage or fees.";
@@ -64,6 +67,7 @@ function truncate(text: string, limit = PUBLIC_ERROR_LIMIT) {
 export function sanitizePublicError(error: unknown, fallback: string): string {
   const raw = errorText(error);
   const mapped = mapKnownChainError(raw);
+  if (mapped === RPC_UNAVAILABLE_MESSAGE) return mapped;
   const detail = sanitizeDetail(raw);
   if (mapped && detail) {
     const combined = detail.toLowerCase().includes(mapped.toLowerCase().slice(0, 24)) ? mapped : `${mapped} ${detail}`;

@@ -4,12 +4,13 @@ import { WalletModalProvider, useWalletModal } from "@solana/wallet-adapter-reac
 import "@solana/wallet-adapter-react-ui/styles.css";
 import dynamic from "next/dynamic";
 import { useMemo } from "react";
+import { PUBLIC_SOLANA_RPC_URL } from "@/lib/rpc/urls";
 import { WalletConnectionContext } from "./wallet-connection";
 
 const MobileWalletProvider = dynamic(() => import("./mobile-wallet-provider").then((module) => module.MobileWalletProvider), { ssr: false });
 
 export function Providers({ children }: { children: React.ReactNode }) {
-  const endpoint = process.env.NEXT_PUBLIC_SOLANA_RPC_URL || "https://api.mainnet-beta.solana.com";
+  const endpoint = process.env.NEXT_PUBLIC_SOLANA_RPC_URL || PUBLIC_SOLANA_RPC_URL;
   const projectId = process.env.NEXT_PUBLIC_REOWN_PROJECT_ID?.trim();
 
   return <ConnectionProvider endpoint={endpoint}>

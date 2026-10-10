@@ -3,7 +3,8 @@ import { verifiedTokenAmount,cleanExitDeltas } from "./lp-exit-verification";
 import BN from "bn.js";
 import { createHash } from "node:crypto";
 import { CLMM_PROGRAM_ID, ClmmInstrument, PersonalPositionLayout, PoolInfoLayout, getPdaPersonalPositionAddress, getPdaProtocolPositionAddress, getPdaTickArrayAddress, getPdaExBitmapAccount, TickArrayUtil } from "@raydium-io/raydium-sdk-v2";
-import { Connection, PublicKey, TransactionMessage, VersionedTransaction, ComputeBudgetProgram, type AccountInfo } from "@solana/web3.js";
+import { PublicKey, TransactionMessage, VersionedTransaction, ComputeBudgetProgram, type AccountInfo } from "@solana/web3.js";
+import { rpcConnection, type RpcEnv } from "./rpc";
 import { unpackAccount, getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID, createAssociatedTokenAccountIdempotentInstruction } from "@solana/spl-token";
 import { compactAtaInstructions, compileCompactOpenTransaction, openLookupTableReader, versionedTransactionSize } from "./open-transaction";
 import { instruction } from "./transaction-helpers";
@@ -13,19 +14,23 @@ const USDC="EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",SOL="So111111111111111
 function checked(info:AccountInfo<Buffer>|null,name:string){if(!info||!info.owner.equals(CLMM_PROGRAM_ID)||!info.data.subarray(0,8).equals(createHash("sha256").update(`account:${name}`).digest().subarray(0,8)))throw new Error(`${name} account invalid`);return info.data;}
 export async function readFullExitPreview(positionId:string,nftAccount?:string,convertRent=true,fetcher:typeof fetch=fetch,signal?:AbortSignal){
  const budget=AbortSignal.any([AbortSignal.timeout(90000),...(signal?[signal]:[])]);
- const connection=new Connection("https://api.mainnet-beta.solana.com",{commitment:"confirmed",disableRetryOnRateLimit:true,fetch:(url,init)=>fetcher(url,{...init,signal:budget})});
+ const connection=rpcConnection(process.env as RpcEnv,{fetch:fetcher,signal:budget});
  const positionKey=getPdaPersonalPositionAddress(CLMM_PROGRAM_ID,new PublicKey(positionId)).publicKey;
  const position=PersonalPositionLayout.decode(checked(await connection.getAccountInfo(positionKey),"PersonalPositionState"));
  if(position.nftMint.toBase58()!==positionId)throw new Error("NFT context mismatch");
- const pool=PoolInfoLayout.decode(checked(await connection.getAccountInfo(position.poolId),"PoolState"));
- const nftKey=nftAccount?new PublicKey(nftAccount):new PublicKey((await connection.getTokenLargestAccounts(position.nftMint)).value.find(v=>v.amount==="1")?.address??"");
- const nftRaw=await connection.getAccountInfo(nftKey);
+ const [poolInfo,largest]=await Promise.all([
+  connection.getAccountInfo(position.poolId),
+  nftAccount?Promise.resolve(null):connection.getTokenLargestAccounts(position.nftMint),
+ ]);
+ const pool=PoolInfoLayout.decode(checked(poolInfo,"PoolState"));
+ const nftKey=nftAccount?new PublicKey(nftAccount):new PublicKey(largest?.value.find(v=>v.amount==="1")?.address??"");
+ const rewards=pool.rewardInfos.filter(r=>!r.mint.equals(PublicKey.default)),mints=[pool.mintA,pool.mintB,...rewards.map(r=>r.mint)];
+ if(mints.some(m=>m.toBase58()===USDC))throw new Error("Direct-USDC pool/reward accounting is not supported by this exit preview");
+ const [nftRaw,...mintInfos]=await connection.getMultipleAccountsInfo([nftKey,...mints]);
  if(!nftRaw||![TOKEN_PROGRAM_ID,TOKEN_2022_PROGRAM_ID].some(p=>p.equals(nftRaw.owner)))throw new Error("NFT account missing/token program invalid");
  const nft=unpackAccount(nftKey,nftRaw,nftRaw.owner);
  if(!nft.mint.equals(position.nftMint)||nft.amount!==1n||nft.isFrozen)throw new Error("NFT owner/mint/amount not usable");
- const owner=nft.owner,rewards=pool.rewardInfos.filter(r=>!r.mint.equals(PublicKey.default)),mints=[pool.mintA,pool.mintB,...rewards.map(r=>r.mint)];
- if(mints.some(m=>m.toBase58()===USDC))throw new Error("Direct-USDC pool/reward accounting is not supported by this exit preview");
- const mintInfos=await connection.getMultipleAccountsInfo(mints);
+ const owner=nft.owner;
  const programs=mintInfos.map(i=>{if(!i||![TOKEN_PROGRAM_ID,TOKEN_2022_PROGRAM_ID].some(p=>p.equals(i.owner)))throw new Error("Pool/reward mint program invalid");return i.owner;});
  const recipients=mints.map((m,i)=>getAssociatedTokenAddressSync(m,owner,false,programs[i]));
  const addresses=[owner,positionKey,nftKey,position.nftMint,...recipients],before=await connection.getMultipleAccountsInfoAndContext(addresses);
@@ -73,5 +78,5 @@ export async function readFullExitPreview(positionId:string,nftAccount?:string,c
  const clean=cleanExitDeltas(tokenDeltas,nativeDelta,[1,2,3].map(i=>actual[i]?.lamports),convertRent)&&usdc>=0n;
  const blockHeight=await connection.getBlockHeight("confirmed");
  const observedAt=new Date().toISOString(),expiresAt=Math.min(Date.now(),...quotes.map(q=>Date.parse(q.observedAt)))+15000,fresh=Date.now()<expiresAt&&blockHeight<=blockhash.lastValidBlockHeight;
- return {status:clean&&fresh?"verified-preview":"partial",source:"public RPC unsigned simulation + Jupiter routes",observedAt,localExpiresAt:new Date(expiresAt).toISOString(),expirySource:"local 15-second refresh policy, not provider guarantee",lastValidBlockHeight:blockhash.lastValidBlockHeight,slot:simulation.context.slot,bytes,convertRent,received,quotes,recoveryUSDCAtomic:usdc.toString(),recoverySOLLamports:nativeDelta.toString(),remainingTokenDeltas:tokenDeltas,networkAndPriorityLamports:fee===null?null:String(fee),priorityPolicy:"explicit zero CU price; landing not guaranteed",netRecoveryUSDC:clean&&fresh&&convertRent&&fee!==null?usdc.toString():null,executable:false,sent:false};
+ return {status:clean&&fresh?"verified-preview":"partial",source:"RPC unsigned simulation + Jupiter routes",observedAt,localExpiresAt:new Date(expiresAt).toISOString(),expirySource:"local 15-second refresh policy, not provider guarantee",lastValidBlockHeight:blockhash.lastValidBlockHeight,slot:simulation.context.slot,bytes,convertRent,received,quotes,recoveryUSDCAtomic:usdc.toString(),recoverySOLLamports:nativeDelta.toString(),remainingTokenDeltas:tokenDeltas,networkAndPriorityLamports:fee===null?null:String(fee),priorityPolicy:"explicit zero CU price; landing not guaranteed",netRecoveryUSDC:clean&&fresh&&convertRent&&fee!==null?usdc.toString():null,executable:false,sent:false};
 }

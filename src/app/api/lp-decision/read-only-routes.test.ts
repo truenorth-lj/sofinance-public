@@ -9,7 +9,7 @@ it("validates read-only exit input, forwards cancellation and preserves no-send 
  const bad=await exitGET(new Request("http://local?positionId=bad"));expect(bad.status).toBe(400);expect(exit).not.toHaveBeenCalled();
  exit.mockResolvedValueOnce({status:"unavailable",reason:"packet limit",netRecoveryUSDC:null,executable:false,sent:false});const request=new Request(`http://local?positionId=${nft}&convertRent=0`),response=await exitGET(request);
  expect(exit).toHaveBeenLastCalledWith(nft,undefined,false,fetch,request.signal);expect(response.headers.get("Cache-Control")).toBe("no-store");expect(await response.json()).toMatchObject({netRecoveryUSDC:null,sent:false});
- exit.mockRejectedValueOnce(new Error("source 429"));const failed=await exitGET(new Request(`http://local?positionId=${nft}`));expect(failed.status).toBe(503);expect(await failed.json()).toMatchObject({executable:false,sent:false,netRecoveryUSDC:null});
+ exit.mockRejectedValueOnce(new Error("429 Too Many Requests: Too many requests for a specific RPC call"));const failed=await exitGET(new Request(`http://local?positionId=${nft}`));expect(failed.status).toBe(503);expect(await failed.json()).toMatchObject({executable:false,sent:false,netRecoveryUSDC:null,error:"Solana RPC is temporarily unavailable. Please retry in a moment."});
 });
 it("refuses a malformed cursor and a position without captured evidence",async()=>{
  expect((await ledgerGET(new Request(`http://local?positionId=${nft}&before=bad`))).status).toBe(400);
