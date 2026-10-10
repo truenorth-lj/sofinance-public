@@ -8,12 +8,14 @@ import { Connection, PublicKey, type TransactionInstruction } from "@solana/web3
 import { readRecentBlockTime } from "./block-time";
 import { MAX_U64, sizeCompoundLiquidity } from "./compound-math";
 import { SLIPPAGE_BPS } from "./ids";
+import { netSwapInput, readSwapFeeConfig } from "./swap-fee";
 import type { CompoundAccount, CompoundPositionState } from "./compound-types";
 
 export type CompoundSwap = {
   inputMint: string; outputMint: string; inputAmount: string;
   quotedOutputAmount: string; minOutputAmount: string;
   inputDecimals: number; outputDecimals: number; poolId: string; sqrtPriceAfterX64: string;
+  feeBps: number; feeAmount: string;
 };
 export type CompoundSwapQuote = { output: bigint; sqrtPriceX64: bigint };
 type Direction = "a-to-b" | "b-to-a";
@@ -133,8 +135,9 @@ export async function buildCompoundSwapPlan(input: {
   // from the same chain snapshot, including the final minimal-account quote.
   const poolSnapshot = () => ({ ...computePoolInfo.accInfo, dynamicFeeInfo: { ...computePoolInfo.accInfo.dynamicFeeInfo,
     lastUpdateTimestamp: computePoolInfo.accInfo.dynamicFeeInfo.lastUpdateTimestamp.clone() } });
+  const feeConfig = readSwapFeeConfig();
   const quoteCache = new Map<string, ReturnType<typeof PoolUtils.computeAmountOut>>();
-  const quote = (direction: Direction, amount: bigint): CompoundSwapQuote => {
+  const quoteRaw = (direction: Direction, amount: bigint): CompoundSwapQuote => {
     const key = `${direction}:${amount}`;
     const result = PoolUtils.computeAmountOut({ poolInfo: { ...computePoolInfo, accInfo: poolSnapshot() }, tickarrayBitmapExtension: computePoolInfo.exBitmapInfo,
       tickArrayCache: tickData[state.poolId] ?? {}, baseMint: new PublicKey(direction === "a-to-b" ? state.mintA : state.mintB),
@@ -143,20 +146,28 @@ export async function buildCompoundSwapPlan(input: {
     quoteCache.set(key, result);
     return { output: BigInt(result.amountOut.amount.toString()), sqrtPriceX64: BigInt(result.executionPriceX64.toString()) };
   };
+  const quote = (direction: Direction, amount: bigint): CompoundSwapQuote => {
+    const { swapAmount } = netSwapInput(amount, feeConfig.bps);
+    return swapAmount === 0n
+      ? { output: 0n, sqrtPriceX64: BigInt(computePoolInfo.sqrtPriceX64.toString()) }
+      : quoteRaw(direction, swapAmount);
+  };
   const planned = optimizeCompoundSwap({ price: BigInt(computePoolInfo.sqrtPriceX64.toString()), lower: BigInt(state.lowerSqrtX64),
     upper: BigInt(state.upperSqrtX64), amountA, amountB, startingLiquidity: BigInt(state.liquidity), quote });
   if (!planned.direction) return { instruction: null, swap: null, quotedBalances: planned.balances, sqrtPriceAfterX64: planned.sqrtPriceX64 };
   if (state.status & 16) throw new Error("Pool has disabled yield swapping");
-  const result = quoteCache.get(`${planned.direction}:${planned.input}`)!;
+  const { feeAmount, swapAmount } = netSwapInput(planned.input, feeConfig.bps);
+  const result = quoteCache.get(`${planned.direction}:${swapAmount}`)!;
   const slippageMinimum = planned.output * BigInt(10_000 - SLIPPAGE_BPS) / 10_000n;
   // One raw output unit still has a usable strict minimum of one; zero must
   // never be accepted merely because flooring the bps allowance produced it.
   const minOutput = slippageMinimum > 0n ? slippageMinimum : 1n;
   const inputA = planned.direction === "a-to-b";
   const swap: CompoundSwap = { inputMint: inputA ? state.mintA : state.mintB, outputMint: inputA ? state.mintB : state.mintA,
-    inputAmount: planned.input.toString(), quotedOutputAmount: planned.output.toString(), minOutputAmount: minOutput.toString(),
+    inputAmount: swapAmount.toString(), quotedOutputAmount: planned.output.toString(), minOutputAmount: minOutput.toString(),
     inputDecimals: inputA ? state.decimalsA : state.decimalsB, outputDecimals: inputA ? state.decimalsB : state.decimalsA,
-    poolId: state.poolId, sqrtPriceAfterX64: planned.sqrtPriceX64.toString() };
+    poolId: state.poolId, sqrtPriceAfterX64: planned.sqrtPriceX64.toString(),
+    feeBps: feeConfig.bps, feeAmount: feeAmount.toString() };
   const currentStart = TickArrayUtil.getTickArrayStartIndex(computePoolInfo.tickCurrent, state.tickSpacing);
   const traversed = swapInternal({ programId: new PublicKey(state.programId), poolId: new PublicKey(state.poolId), poolInfo: poolSnapshot(),
     tickArrays: Object.values(tickData[state.poolId] ?? {}).filter((array) => inputA ? array.startTickIndex <= currentStart : array.startTickIndex >= currentStart)

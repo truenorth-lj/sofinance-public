@@ -14,6 +14,7 @@ import { simulateAndVerifyCompound } from "./compound-simulation";
 import { conservativeSwapBalances, sizeBufferedCompoundLiquidity } from "./compound-math";
 import { buildCompoundSwapPlan } from "./compound-swap";
 import { readCompoundPriorSources } from "./compound-prior-sources";
+import { readSwapFeeConfig, swapFeeTransferInstructions, unfundedSwapFeeAtaRent } from "./swap-fee";
 import type { CompoundAccount, CompoundPositionState, CompoundSummary } from "./compound-types";
 
 const discriminator = (name: string) => createHash("sha256").update(`global:${name}`).digest().subarray(0, 8);
@@ -140,8 +141,29 @@ export async function buildAndSimulateCompound(walletAddress: string, positionMi
   if (harvestResult.rewards.some((reward) => BigInt(reward.amount) > 0n)) throw new Error("This position has a third reward token; no verifiable isolated swap path available; cannot fully reinvest, transaction not sent");
   const plan = await buildCompoundSwapPlan({ connection, state, accounts, poolInfo, poolKeys, computePoolInfo, tickData,
     amountA: BigInt(harvestResult.endingA), amountB: BigInt(harvestResult.endingB) });
-  const swapInstructions = plan.instruction ? [plan.instruction] : [];
-  const swapped = plan.instruction ? await simulate(build([...harvest.instructions, ...swapInstructions]), 0n) : harvestResult;
+  const feeConfig = readSwapFeeConfig();
+  const protocolFee = plan.swap ? BigInt(plan.swap.feeAmount) : 0n;
+  if (plan.swap && (plan.swap.feeBps !== feeConfig.bps || (protocolFee > 0n && !feeConfig.wallet))) {
+    throw new Error("Compound swap protocol fee does not match configuration");
+  }
+  const feeSource = plan.swap?.inputMint === state.mintA ? accounts[0] : accounts[1];
+  const feeInstructions = feeConfig.wallet && protocolFee > 0n && plan.swap
+    ? swapFeeTransferInstructions({
+      payer: wallet, owner: wallet, recipient: feeConfig.wallet, amount: protocolFee, kind: "token",
+      mint: new PublicKey(plan.swap.inputMint), source: new PublicKey(feeSource.address),
+      decimals: plan.swap.inputDecimals, program: new PublicKey(feeSource.program),
+    })
+    : [];
+  const feeAtaRent = feeConfig.wallet && protocolFee > 0n && plan.swap
+    ? await unfundedSwapFeeAtaRent(connection, feeConfig.wallet, new PublicKey(plan.swap.inputMint), new PublicKey(feeSource.program))
+    : 0n;
+  const maxSolWithFee = maxSolDebitLamports + feeAtaRent;
+  const simulateWithFee = (transaction: VersionedTransaction, expectedLiquidity: bigint) =>
+    simulateAndVerifyCompound({ connection, transaction, state, compoundAccounts: accounts, priorSources: prior.sources,
+      expectedLiquidity, maxSolDebitLamports: maxSolWithFee, sigVerify: false });
+  const swapInstructions = [...feeInstructions, ...(plan.instruction ? [plan.instruction] : [])];
+  const swapped = plan.instruction || feeInstructions.length
+    ? await simulateWithFee(build([...harvest.instructions, ...swapInstructions]), 0n) : harvestResult;
   const simulatedOutputAmount = plan.swap
     ? (plan.swap.outputMint === state.mintA ? BigInt(swapped.endingA) - BigInt(harvestResult.endingA)
       : BigInt(swapped.endingB) - BigInt(harvestResult.endingB)).toString() : undefined;
@@ -163,7 +185,7 @@ export async function buildAndSimulateCompound(walletAddress: string, positionMi
   const chosen = chooseBeamTransaction(withoutTip, withTip);
   const simulated = chosen.transaction;
   const sizeBytes = transactionSize(simulated);
-  const verified = await simulate(simulated, sized.liquidity);
+  const verified = await simulateWithFee(simulated, sized.liquidity);
   if (verified.rewards.some((reward) => BigInt(reward.amount) > 0n)) throw new Error("Simulation found unswapped third reward yield, cannot fully reinvest; please reprepare");
   const creditedPrior = (mint: string) => prior.sources.filter((source) => source.mint === mint).reduce((sum, source) => sum + BigInt(source.amount), 0n);
   const swap = plan.swap ? { ...plan.swap, sqrtPriceAfterX64: swapped.sqrtPriceX64, simulatedOutputAmount } : null;
@@ -175,7 +197,8 @@ export async function buildAndSimulateCompound(walletAddress: string, positionMi
     swaps: swap ? [swap] : [], priorSources: prior.sources,
     simulatedHarvest: { a: (BigInt(harvestResult.endingA) - creditedPrior(state.mintA)).toString(), b: (BigInt(harvestResult.endingB) - creditedPrior(state.mintB)).toString() }, simulatedRewards: verified.rewards,
     simulatedEndingLiquidity: verified.endingLiquidity, simulatedDustA: verified.endingA, simulatedDustB: verified.endingB,
-    simulatedSolDebitLamports: verified.solDebitLamports, maxSolDebitLamports: maxSolDebitLamports.toString(),
+    simulatedSolDebitLamports: verified.solDebitLamports, maxSolDebitLamports: maxSolWithFee.toString(),
+    feeBps: feeConfig.bps, feeAmount: protocolFee.toString(), feeWallet: feeConfig.wallet?.toBase58() ?? null,
     feeLamports: fee.value, rentLamports, sizeBytes, unitsConsumed: verified.unitsConsumed,
     beam: {
       included: chosen.included,
