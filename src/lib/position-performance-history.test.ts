@@ -5,6 +5,7 @@ import {
   fetchParsedTransactionsBatched,
   fetchPositionHistoryTransactions,
   mapInBatches,
+  mergeHistorySignatures,
   parseHistoryTxCandidate,
   toChronological,
   unwrapTransactionsForAddressResult,
@@ -187,6 +188,34 @@ describe("fetchParsedTransactionsBatched", () => {
     expect(getParsedTransaction).toHaveBeenCalledTimes(2);
     expect(getParsedTransaction).not.toHaveBeenCalledWith(SIG_C, expect.anything());
   });
+
+  it("swallows web3.js validation errors and retries the tx on the fallback RPC", async () => {
+    const validation = new Error(
+      "At path: meta.innerInstructions.0.instructions.0 -- Expected the value to satisfy a union of type | type",
+    );
+    const primary = vi.fn(async () => {
+      throw validation;
+    });
+    const fallback = vi.fn(async () => ({
+      slot: 10,
+      blockTime: 11,
+      meta: { err: null, logMessages: ["fallback-logs"] },
+      transaction: { signatures: [SIG_A], message: {} },
+    }));
+    const items = await fetchParsedTransactionsBatched(
+      { getParsedTransaction: primary, getSignaturesForAddress: vi.fn() } as never,
+      [{ signature: SIG_A, slot: 1, blockTime: 2, err: null }],
+      {
+        primaryProvider: "solami",
+        fallback: { getParsedTransaction: fallback, getSignaturesForAddress: vi.fn() } as never,
+      },
+    );
+    expect(items).toEqual([
+      expect.objectContaining({ signature: SIG_A, logMessages: ["fallback-logs"], servedBy: "default" }),
+    ]);
+    expect(primary).toHaveBeenCalledOnce();
+    expect(fallback).toHaveBeenCalledOnce();
+  });
 });
 
 describe("fetchPositionHistoryTransactions", () => {
@@ -296,6 +325,117 @@ describe("fetchPositionHistoryTransactions", () => {
     expect(result.metric.txCount).toBe(0);
   });
 
+  it("falls back to the default RPC when Solami returns an empty signatures page", async () => {
+    const customRpc = vi.fn(async () => ({ result: { data: [], paginationToken: null } }));
+    const solamiParsed = vi.fn();
+    const fallbackParsed = vi.fn(async () => ({
+      slot: 428_056_506,
+      blockTime: 1_782_000_000,
+      meta: { err: null, logMessages: ["older"] },
+      transaction: { signatures: [SIG_A], message: {} },
+    }));
+    const fallbackSigs = vi.fn(async () => [
+      { signature: SIG_A, slot: 428_056_506, blockTime: 1_782_000_000, err: null },
+    ]);
+    const result = await fetchPositionHistoryTransactions({
+      address: ADDRESS,
+      maxSignatures: 20,
+      provider: "solami",
+      customRpc,
+      connection: { getSignaturesForAddress: vi.fn(async () => []), getParsedTransaction: solamiParsed } as never,
+      fallbackConnection: { getSignaturesForAddress: fallbackSigs, getParsedTransaction: fallbackParsed } as never,
+    });
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]?.signature).toBe(SIG_A);
+    expect(result.items[0]?.servedBy).toBe("default");
+    expect(solamiParsed).not.toHaveBeenCalled();
+    expect(result.metric).toMatchObject({
+      provider: "default",
+      source: "getParsedTransactionBatch",
+      solamiTxCount: 0,
+      defaultTxCount: 1,
+      fallbackReasons: ["solami-empty"],
+    });
+  });
+
+  it("falls back per tx when Solami getParsedTransaction fails web3.js validation", async () => {
+    const customRpc = vi.fn(async () => liveSignaturesEnvelope);
+    const solamiParsed = vi.fn(async () => {
+      throw new Error(
+        "At path: meta.innerInstructions.0.instructions.0 -- Expected the value to satisfy a union of type | type",
+      );
+    });
+    const fallbackParsed = vi.fn(async () => ({
+      slot: 381_234_567,
+      blockTime: 1_700_000_000,
+      meta: { err: null, logMessages: ["from-default"] },
+      transaction: { signatures: [SIG_A], message: {} },
+    }));
+    const result = await fetchPositionHistoryTransactions({
+      address: ADDRESS,
+      maxSignatures: 10,
+      provider: "solami",
+      customRpc,
+      connection: { getSignaturesForAddress: vi.fn(async () => []), getParsedTransaction: solamiParsed } as never,
+      fallbackConnection: {
+        getSignaturesForAddress: vi.fn(async () => []),
+        getParsedTransaction: fallbackParsed,
+      } as never,
+    });
+    expect(result.items[0]?.logMessages).toEqual(["from-default"]);
+    expect(result.items[0]?.servedBy).toBe("default");
+    expect(result.metric).toMatchObject({
+      provider: "default",
+      source: "getTransactionsForAddress",
+      solamiTxCount: 0,
+      defaultTxCount: 1,
+      fallbackReasons: ["solami-parse-error"],
+    });
+  });
+
+  it("merges recent Solami signatures with older default-RPC history", async () => {
+    const customRpc = vi.fn(async () => liveSignaturesEnvelope);
+    const solamiParsed = vi.fn(async (signature: string) => ({
+      slot: 381_234_567,
+      blockTime: 1_700_000_000,
+      meta: { err: null, logMessages: [`solami:${signature.slice(0, 1)}`] },
+      transaction: { signatures: [signature], message: {} },
+    }));
+    const fallbackParsed = vi.fn(async (signature: string) => ({
+      slot: 100,
+      blockTime: 1_650_000_000,
+      meta: { err: null, logMessages: [`default:${signature.slice(0, 1)}`] },
+      transaction: { signatures: [signature], message: {} },
+    }));
+    const result = await fetchPositionHistoryTransactions({
+      address: ADDRESS,
+      maxSignatures: 20,
+      provider: "solami",
+      customRpc,
+      connection: { getSignaturesForAddress: vi.fn(), getParsedTransaction: solamiParsed } as never,
+      fallbackConnection: {
+        getSignaturesForAddress: vi.fn(async () => [
+          { signature: SIG_A, slot: 381_234_567, blockTime: 1_700_000_000, err: null },
+          { signature: SIG_B, slot: 100, blockTime: 1_650_000_000, err: null },
+        ]),
+        getParsedTransaction: fallbackParsed,
+      } as never,
+    });
+    expect(result.items.map((item) => item.signature).sort()).toEqual([SIG_A, SIG_B].sort());
+    expect(result.items.find((item) => item.signature === SIG_A)?.servedBy).toBe("solami");
+    expect(result.items.find((item) => item.signature === SIG_B)?.servedBy).toBe("default");
+    expect(solamiParsed).toHaveBeenCalledWith(SIG_A, expect.anything());
+    expect(solamiParsed).not.toHaveBeenCalledWith(SIG_B, expect.anything());
+    expect(result.metric).toMatchObject({
+      provider: "solami+default",
+      source: "getTransactionsForAddress",
+      solamiTxCount: 1,
+      defaultTxCount: 1,
+      fallbackReasons: ["solami-limited-window"],
+      txCount: 2,
+    });
+  });
+
   it("marks truncated when the page is full", async () => {
     const getSignaturesForAddress = vi.fn(async () =>
       Array.from({ length: 3 }, (_, i) => ({
@@ -316,6 +456,21 @@ describe("fetchPositionHistoryTransactions", () => {
     });
     expect(result.truncated).toBe(true);
     expect(result.signatureCount).toBe(3);
+  });
+});
+
+describe("mergeHistorySignatures", () => {
+  it("unions by signature, newest first, and caps the page", () => {
+    const merged = mergeHistorySignatures(
+      [{ signature: SIG_A, slot: 9, blockTime: 9 }],
+      [
+        { signature: SIG_A, slot: 9, blockTime: 9 },
+        { signature: SIG_B, slot: 3, blockTime: 3 },
+        { signature: SIG_C, slot: 8, blockTime: 8 },
+      ],
+      2,
+    );
+    expect(merged.map((item) => item.signature)).toEqual([SIG_A, SIG_C]);
   });
 });
 
