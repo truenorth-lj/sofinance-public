@@ -26,10 +26,10 @@ export function atomicUnits(value: string, decimals: number) {
   return new D(value).div(new D(10).pow(decimals));
 }
 export function amountToAtomic(value: string): string {
-  if (!/^\d+(\.\d{1,6})?$/.test(value) || value.length > 60) throw new Error("請輸入正金額，最多六位小數");
+  if (!/^\d+(\.\d{1,6})?$/.test(value) || value.length > 60) throw new Error("Enter a positive amount with up to six decimal places.");
   const [whole, fraction = ""] = value.split(".");
   const result = BigInt(`${whole}${fraction.padEnd(6, "0")}`);
-  if (result <= 0n) throw new Error("投入金額須大於零");
+  if (result <= 0n) throw new Error("The deposit amount must be greater than zero.");
   return result.toString();
 }
 export type EventKind = "deposit" | "increase" | "decrease" | "withdrawal" | "fee" | "reward" | "compound" | "transfer" | "swap" | "network" | "priority" | "dex" | "platform" | "rent-paid" | "rent-refund";

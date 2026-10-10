@@ -1,6 +1,6 @@
 "use client";
 
-import { CircleAlert, LoaderCircle, RefreshCw, Sprout } from "lucide-react";
+import { ArrowUpRight, CircleAlert, LoaderCircle, RefreshCw, Sprout } from "lucide-react";
 import { useState } from "react";
 import { formatAmount } from "@/lib/amount";
 import type { CompoundController } from "./use-compound-controller";
@@ -28,8 +28,8 @@ const statusText = {
   "manual-review": "Transaction result requires manual verification, new transactions paused",
 } as const;
 
-export function CompoundPanel({ controller: c, tokenLabel = short }: {
-  controller: CompoundController; tokenLabel?: (mint: string) => string;
+export function CompoundPanel({ controller: c, tokenLabel = short, onConnect }: {
+  controller: CompoundController; tokenLabel?: (mint: string) => string; onConnect?: () => void;
 }) {
   const [importSignature, setImportSignature] = useState("");
   const state = c.state;
@@ -41,7 +41,7 @@ export function CompoundPanel({ controller: c, tokenLabel = short }: {
   const amount = (value: string, decimals: number) => formatAmount(value, decimals, Math.min(decimals, 9));
   const action = c.stage === "preparing" ? "Verifying yield and simulating transaction…" :
     c.stage === "wallet" ? "Confirming in wallet…" : c.stage === "broadcasting" ? "Sending and verifying…" : "One-click compound";
-  const blockedText = !c.wallet ? "Please connect wallet first" : !c.positionMint ? "Please select existing position first" :
+  const blockedText = !c.wallet ? null : !c.positionMint ? "Please select existing position first" :
     c.externalBlocked ? "Input transaction pending verification, compound paused" : c.walletBlocked && !c.busy ?
       "Verifying this wallet's previous transactions, do not resubmit" : state && !state.eligible ? state.reason :
         state && !c.hasFees ? "Currently no yield available to compound" : null;
@@ -87,9 +87,10 @@ export function CompoundPanel({ controller: c, tokenLabel = short }: {
     {preview && simulationDetails}
     {state?.rangeSide !== "inside" && state && <p className="mt-4 text-xs leading-5 text-smoke">Current price outside original range; yield compound still maintains original ticks, do not adjust price range, no trading fees earned for that range while outside.</p>}
     <div className="mt-5 flex flex-wrap items-center gap-4">
-      <button onClick={c.compound} disabled={!c.canCompound} className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-lemon px-5 py-3.5 text-sm font-semibold text-ink transition-colors hover:bg-[#fff27f] disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto sm:min-w-48">
+      <button type="button" onClick={() => { if (!c.wallet) { onConnect?.(); return; } c.compound(); }} disabled={Boolean(c.wallet) && !c.canCompound} className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-lemon px-5 py-3.5 text-sm font-semibold text-ink transition-colors hover:bg-[#fff27f] disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto sm:min-w-48">
         {c.busy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Sprout className="h-4 w-4" />}{action}
       </button>
+      <a href="/app/ai" className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-white/25 px-5 py-3.5 text-sm font-semibold text-cream transition-colors hover:border-white/50 hover:bg-white/[0.04] sm:w-auto">Auto Copilot <ArrowUpRight className="h-4 w-4" /></a>
       <span role="status" className="text-xs text-smoke">{c.loading ? "Loading latest yield…" : blockedText}</span>
     </div>
     {c.attempt && <div className="mt-5 rounded-2xl border border-white/10 p-4 text-xs leading-6">

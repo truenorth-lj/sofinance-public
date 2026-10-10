@@ -19,7 +19,6 @@ const short = (value: string) => `${value.slice(0, 4)}…${value.slice(-4)}`;
 const NAV_LINKS = [
   { href: APP_ROUTES.home, label: "Positions" },
   { href: APP_ROUTES.plan, label: "Plan" },
-  { href: APP_ROUTES.positionPerformance, label: "Performance" },
   { href: APP_ROUTES.rwaPairs, label: "RWA pairs" },
   { href: APP_ROUTES.ai, label: "Use AI" },
 ] as const;
