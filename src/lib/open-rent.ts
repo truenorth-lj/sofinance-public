@@ -1,13 +1,13 @@
 import "server-only";
 
 import {
-  getPdaProtocolPositionAddress, getPdaTickArrayAddress, PersonalPositionLayout,
-  ProtocolPositionLayout, TickArrayLayout, TickArrayUtil,
+  getPdaTickArrayAddress, PersonalPositionLayout, TickArrayLayout, TickArrayUtil,
 } from "@raydium-io/raydium-sdk-v2";
 import { PublicKey, type AccountInfo, type Connection } from "@solana/web3.js";
 
-// Token-2022 position NFT mints carry metadata extensions, larger than 82-byte legacy mints.
-const TOKEN_2022_NFT_MINT_SPACE = 698;
+// Token-2022 NFT from open_position_with_token22_nft + withMetadata "no-create":
+// mintCloseAuthority only. Live mint space is 202, not a 698-byte metadata mint.
+const TOKEN_2022_NFT_MINT_SPACE = 202;
 const TOKEN_2022_NFT_ATA_SPACE = 170;
 
 export type OpenPositionRent = {
@@ -39,42 +39,33 @@ export async function estimateOpenPositionRent(input: {
     TickArrayUtil.getTickArrayStartIndex(tickUpper, tickSpacing),
   ])];
   const tickArrayKeys = starts.map((start) => getPdaTickArrayAddress(program, pool, start).publicKey);
-  const protocolKey = getPdaProtocolPositionAddress(program, pool, tickLower, tickUpper).publicKey;
-  // Look up the protocol position on its own key so a missing/extra tick-array
-  // slot cannot be misread as "protocol init required" when the account exists.
-  const [tickInfos, protocolInfo] = await Promise.all([
-    connection.getMultipleAccountsInfo(tickArrayKeys, "confirmed"),
-    connection.getAccountInfo(protocolKey, "confirmed"),
-  ]);
+  const tickInfos = await connection.getMultipleAccountsInfo(tickArrayKeys, "confirmed");
   const missingTickArrays = tickArrayKeys.filter((_, index) => !isOwnedAccount(tickInfos[index], program));
-  const protocolMissing = !isOwnedAccount(protocolInfo, program);
   const [
     positionNftLamports,
     nftAtaLamports,
     personalPositionLamports,
     tickArrayRentEach,
-    protocolPositionLamports,
   ] = await Promise.all([
     connection.getMinimumBalanceForRentExemption(TOKEN_2022_NFT_MINT_SPACE, "confirmed"),
     connection.getMinimumBalanceForRentExemption(TOKEN_2022_NFT_ATA_SPACE, "confirmed"),
     connection.getMinimumBalanceForRentExemption(PersonalPositionLayout.span, "confirmed"),
     connection.getMinimumBalanceForRentExemption(TickArrayLayout.span, "confirmed"),
-    connection.getMinimumBalanceForRentExemption(ProtocolPositionLayout.span, "confirmed"),
   ]);
   const tickArrayLamports = BigInt(tickArrayRentEach) * BigInt(missingTickArrays.length);
-  const protocolLamports = protocolMissing ? BigInt(protocolPositionLamports) : 0n;
+  // open_position_with_token22_nft marks protocol_position read-only, so a
+  // missing protocol PDA is not created and is not a rent cost for this path.
   const refundable = BigInt(positionNftLamports) + BigInt(nftAtaLamports) + BigInt(personalPositionLamports);
-  const nonRefundable = tickArrayLamports + protocolLamports;
   return {
     refundableLamports: refundable,
-    nonRefundableLamports: nonRefundable,
+    nonRefundableLamports: tickArrayLamports,
     positionNftLamports: BigInt(positionNftLamports),
     nftAtaLamports: BigInt(nftAtaLamports),
     personalPositionLamports: BigInt(personalPositionLamports),
     tickArrayLamports,
-    protocolPositionLamports: protocolLamports,
+    protocolPositionLamports: 0n,
     tickArrayInitRequired: missingTickArrays.length > 0,
-    protocolPositionInitRequired: protocolMissing,
+    protocolPositionInitRequired: false,
     tickArrayAccounts: missingTickArrays.map((key) => key.toBase58()),
   };
 }
