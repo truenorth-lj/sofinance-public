@@ -13,6 +13,8 @@ export type RpcErrorKind =
   | "validation"
   | "http-4xx"
   | "http-5xx"
+  | "rate-limit"
+  | "timeout"
   | "empty"
   | "other";
 
@@ -29,6 +31,8 @@ export type RpcCallMetric = {
   servedBy: RpcMetricId;
   fallback: boolean;
   errorKind?: RpcErrorKind;
+  retries?: number;
+  cacheHit?: boolean;
 };
 
 export type ResolvedProvider = {
@@ -48,3 +52,15 @@ export type RpcConfig = {
   endpoint: string;
   provider: RpcMetricId;
 };
+
+export type RpcLogEvent = {
+  method: string;
+  provider: RpcMetricId;
+  outcome: "ok" | "retry" | "fallback" | "cache-hit" | "error";
+  attempt?: number;
+  retries?: number;
+  cacheHit?: boolean;
+  errorKind?: RpcErrorKind;
+};
+
+export type RpcLogger = (event: RpcLogEvent) => void;

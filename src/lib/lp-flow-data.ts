@@ -12,8 +12,8 @@ import { PublicKey } from "@solana/web3.js";
 import { createHash } from "node:crypto";
 import { auditPositionFlows, type FlowContext } from "./lp-flow-audit";
 import type { PublicTransaction } from "./lp-position-observations";
+import { rpcRequest } from "./rpc";
 const livePages=new Map<string,{at:number;transactions:Map<string,PublicTransaction>;expectedCursor:string|null;started:boolean;ended:boolean;head?:string;related?:Map<string,PublicTransaction>}>();
-const RPC="https://api.mainnet-beta.solana.com";
 async function readPositionFlowAuditUnlocked(positionId:string,source:"live"|"captured-public",before?:string,fetcher:typeof fetch=fetch,signal?:AbortSignal,analyze=false){
   if(source==="captured-public"){
     const dir=join(process.cwd(),"specs/lp-decision/fixtures");
@@ -36,14 +36,7 @@ async function readPositionFlowAuditUnlocked(positionId:string,source:"live"|"ca
     return {accounting,historicalMarks,relatedNftRent,source:{kind:source,asOf:selected.fetchedAt,fresh:false,synthetic:false},context,historyReachedEnd:true,nextCursor:null,...auditPositionFlows(transactions,context)};
   }
   const budget=AbortSignal.any([AbortSignal.timeout(25000),...(signal?[signal]:[])]);
-  let nextRpcAt=0;
-  const rpc=async(method:string,params:unknown[])=>{
-    const delay=Math.max(0,nextRpcAt-Date.now());if(delay)await new Promise<void>((resolve,reject)=>{const done=()=>{budget.removeEventListener("abort",abort);resolve();};const timer=setTimeout(done,delay);const abort=()=>{clearTimeout(timer);reject(new Error("Read budget/cancellation ended"));};budget.addEventListener("abort",abort,{once:true});});
-    if(budget.aborted)throw new Error("Read budget/cancellation ended");nextRpcAt=Date.now()+1200;
-    const response=await fetcher(RPC,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({jsonrpc:"2.0",id:1,method,params}),signal:AbortSignal.any([budget,AbortSignal.timeout(10000)])});
-    if(!response.ok)throw new Error(`Public RPC HTTP ${response.status}`);
-    const data=await response.json();if(data.error)throw new Error(`Public RPC ${data.error.code}: ${data.error.message}`);return data.result;
-  };
+  const rpc=async(method:string,params:unknown[])=>rpcRequest(method,params,{fetcher,signal:budget,timeoutMs:10000});
   const positionAccount=getPdaPersonalPositionAddress(CLMM_PROGRAM_ID,new PublicKey(positionId)).publicKey.toBase58();
   const decoded=async(address:string,name:string)=>{
     const response=await rpc("getAccountInfo",[address,{encoding:"base64",commitment:"confirmed"}]);

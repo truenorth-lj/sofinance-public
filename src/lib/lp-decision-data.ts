@@ -4,10 +4,12 @@ import { CLMM_PROGRAM_ID, getPdaPersonalPositionAddress, PersonalPositionLayout,
 import { createHash } from "node:crypto";
 import { observePositionTransaction, type TransactionEvidence, type PublicTransaction } from "./lp-position-observations";
 import type { DecisionRequest, LedgerEvent } from "./lp-accounting";
+import { asRpcUserError } from "./rpc/errors";
+import { rpcRequest } from "./rpc";
 export function validPrincipalQuote(q: Record<string, unknown>, mint: string, amount: string): boolean {
   return q.inputMint===mint && q.outputMint==="EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v" && q.inAmount===amount && q.swapMode==="ExactIn" && typeof q.outAmount==="string" && /^\d+$/.test(q.outAmount) && BigInt(q.outAmount)>0n && typeof q.otherAmountThreshold==="string" && /^\d+$/.test(q.otherAmountThreshold) && BigInt(q.otherAmountThreshold)<=BigInt(q.outAmount) && Array.isArray(q.routePlan) && q.routePlan.length>0;
 }
-export const PUBLIC_RPC = "https://api.mainnet-beta.solana.com";
+const RPC_SOURCE = "solana-rpc";
 export type DataAttempt = { source: string; status: "available" | "partial" | "error"; observedAt: string; detail: string };
 export type DecisionObservations = {
   pool: null | { id: string; mintA: string; mintB: string; decimalsA: number; decimalsB: number; priceBPerA: string; feeRate: string; fetchedAt: string };
@@ -23,21 +25,22 @@ export async function readDecisionObservations(req: DecisionRequest, fetcher: ty
   async function json(url: string, body?: unknown) {
     const response = await fetcher(url,{method:body?"POST":"GET",headers:{"Content-Type":"application/json"},body:body?JSON.stringify(body):undefined,signal:AbortSignal.any([AbortSignal.timeout(10000),budgetSignal])});
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const value = await response.json(); if(value.error) throw new Error(`RPC ${value.error.code}: ${value.error.message}`);return value;
+    const value = await response.json(); if(value.error) throw new Error(`HTTP ${value.error.code}: ${value.error.message}`);return value;
   }
+  const rpc = <T=unknown>(method: string, params: unknown[]) => rpcRequest<T>(method, params, { fetcher, signal: budgetSignal, timeoutMs: 10000 });
   let poolId = req.poolId;
   let account: string | undefined; let liquidityAtomic = ""; let positionState: ReturnType<typeof PersonalPositionLayout.decode> | undefined;
   if (req.positionId) {
     try {
       account=getPdaPersonalPositionAddress(CLMM_PROGRAM_ID,new PublicKey(req.positionId)).publicKey.toBase58();
-      const response=await json(PUBLIC_RPC,{jsonrpc:"2.0",id:1,method:"getAccountInfo",params:[account,{encoding:"base64",commitment:"confirmed"}]});
-      const value=response.result?.value; const bytes=value?.data ? Buffer.from(value.data[0],"base64") : null;
+      const response=await rpc<{value?:{data?:[string,string];owner:string}}>("getAccountInfo",[account,{encoding:"base64",commitment:"confirmed"}]);
+      const value=response?.value; const bytes=value?.data ? Buffer.from(value.data[0],"base64") : null;
       if (!bytes || value.owner !== CLMM_PROGRAM_ID.toBase58() || !bytes.subarray(0,8).equals(createHash("sha256").update("account:PersonalPositionState").digest().subarray(0,8))) throw new Error("Personal position missing or invalid owner/discriminator");
       const decoded=PersonalPositionLayout.decode(bytes);
       if(decoded.nftMint.toBase58()!==req.positionId || (poolId && decoded.poolId.toBase58()!==poolId)) throw new Error("Position/pool context mismatch");
       positionState=decoded;poolId=decoded.poolId.toBase58();liquidityAtomic=decoded.liquidity.toString();
-      result.attempts.push({source:PUBLIC_RPC,status:"available",observedAt:now(),detail:"Personal position account owner, discriminator, NFT mint and pool verified"});
-    } catch(e) {result.attempts.push({source:PUBLIC_RPC,status:"error",observedAt:now(),detail:e instanceof Error?e.message:"Position lookup failed"});return result;}
+      result.attempts.push({source:RPC_SOURCE,status:"available",observedAt:now(),detail:"Personal position account owner, discriminator, NFT mint and pool verified"});
+    } catch(e) {result.attempts.push({source:RPC_SOURCE,status:"error",observedAt:now(),detail:asRpcUserError(e).message});return result;}
   }
   if (!poolId) return result;
   try {
@@ -56,8 +59,8 @@ export async function readDecisionObservations(req: DecisionRequest, fetcher: ty
   } catch(e){result.attempts.push({source:"GeckoTerminal OHLCV",status:"error",observedAt:now(),detail:e instanceof Error?e.message:"Market unavailable"});}
   if(positionState && result.pool) {
     try {
-      const data=await json(PUBLIC_RPC,{jsonrpc:"2.0",id:4,method:"getAccountInfo",params:[poolId,{encoding:"base64",commitment:"confirmed"}]});
-      const accountValue=data.result?.value;const bytes=accountValue?.data?Buffer.from(accountValue.data[0],"base64"):null;
+      const data=await rpc<{value?:{data?:[string,string];owner:string}}>("getAccountInfo",[poolId,{encoding:"base64",commitment:"confirmed"}]);
+      const accountValue=data?.value;const bytes=accountValue?.data?Buffer.from(accountValue.data[0],"base64"):null;
       if(!bytes||accountValue.owner!==CLMM_PROGRAM_ID.toBase58()||!bytes.subarray(0,8).equals(createHash("sha256").update("account:PoolState").digest().subarray(0,8)))throw new Error("Pool account missing/invalid");
       const state=PoolInfoLayout.decode(bytes);
       if(state.mintA.toBase58()!==result.pool.mintA||state.mintB.toBase58()!==result.pool.mintB)throw new Error("Pool mint mismatch");
@@ -77,22 +80,22 @@ export async function readDecisionObservations(req: DecisionRequest, fetcher: ty
   }
   if (account && req.positionId && result.pool) {
     try {
-      const response=await json(PUBLIC_RPC,{jsonrpc:"2.0",id:2,method:"getSignaturesForAddress",params:[account,{limit:10,commitment:"confirmed"}]});
-      if(!Array.isArray(response.result))throw new Error("Signature result missing");
-      const signatures=response.result; let combinedFee=0n;let transactionsRead=0;
+      const signatures=await rpc<{signature:string}[]>("getSignaturesForAddress",[account,{limit:10,commitment:"confirmed"}]);
+      if(!Array.isArray(signatures))throw new Error("Signature result missing");
+      let combinedFee=0n;let transactionsRead=0;
       for(const item of [...signatures].reverse()) {
         if(budgetSignal.aborted)break;
         try {
-          const data=await json(PUBLIC_RPC,{jsonrpc:"2.0",id:3,method:"getTransaction",params:[item.signature,{encoding:"jsonParsed",commitment:"confirmed",maxSupportedTransactionVersion:0}]});
-          const tx=data.result as PublicTransaction | null;if(!tx)throw new Error("Transaction pruned/unavailable");
+          const tx=await rpc<PublicTransaction | null>("getTransaction",[item.signature,{encoding:"jsonParsed",commitment:"confirmed",maxSupportedTransactionVersion:0}]);
+          if(!tx)throw new Error("Transaction pruned/unavailable");
           const observed=observePositionTransaction(item.signature,tx,{poolId,positionId:req.positionId,...result.pool});
           result.ledger.push(...observed.ledger);result.transactionEvidence.push(observed.evidence);transactionsRead++;
           if(observed.networkAndPriorityLamports!==null)combinedFee+=BigInt(observed.networkAndPriorityLamports);
-        }catch(e){result.attempts.push({source:`RPC transaction ${item.signature}`,status:"error",observedAt:now(),detail:e instanceof Error?e.message:"Transaction unavailable"});if(budgetSignal.aborted || (e instanceof Error && e.message.includes("429")))break;}
+        }catch(e){result.attempts.push({source:`RPC transaction ${item.signature}`,status:"error",observedAt:now(),detail:asRpcUserError(e).message});if(budgetSignal.aborted || (e instanceof Error && /429|rate[- ]?limit|temporarily unavailable/i.test(e.message)))break;}
       }
       result.position={positionId:req.positionId,account,liquidityAtomic,signatureCount:signatures.length,signatureWindowComplete:signatures.length<10 && transactionsRead===signatures.length,transactionsRead,networkAndPriorityLamports:combinedFee.toString()};
-      result.attempts.push({source:PUBLIC_RPC,status:"partial",observedAt:now(),detail:"Bounded 10-signature raw history, no wallet discovery; historical USDC prices, reward/transfer attribution and full balance reconciliation unresolved. meta.fee includes network+priority, not split."});
-    }catch(e){result.attempts.push({source:PUBLIC_RPC,status:"error",observedAt:now(),detail:e instanceof Error?e.message:"History unavailable"});}
+      result.attempts.push({source:RPC_SOURCE,status:"partial",observedAt:now(),detail:"Bounded 10-signature raw history, no wallet discovery; historical USDC prices, reward/transfer attribution and full balance reconciliation unresolved. meta.fee includes network+priority, not split."});
+    }catch(e){result.attempts.push({source:RPC_SOURCE,status:"error",observedAt:now(),detail:asRpcUserError(e).message});}
   }
   return result;
 }
