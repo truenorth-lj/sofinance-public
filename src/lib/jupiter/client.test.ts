@@ -122,7 +122,7 @@ describe("quote cache and coalescing", () => {
   it("refetches after the quote TTL", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-10-10T17:00:00Z"));
-    const fetcher = vi.fn().mockResolvedValue(jsonResponse({ outAmount: "1" }));
+    const fetcher = vi.fn(async () => jsonResponse({ outAmount: "1" }));
     const params = { inputMint: "In", outputMint: "Out", amount: "10", slippageBps: 50, maxAccounts: 16, fetcher: fetcher as unknown as typeof fetch };
     await jupiterQuote(params);
     vi.advanceTimersByTime(JUPITER_QUOTE_TTL_MS - 1);
@@ -134,7 +134,8 @@ describe("quote cache and coalescing", () => {
   });
 
   it("does not cache POST swap-instructions", async () => {
-    const fetcher = vi.fn().mockResolvedValue(jsonResponse({ swapInstruction: {} }));
+    const fetcher = vi.fn();
+    fetcher.mockImplementation(async () => jsonResponse({ swapInstruction: {} }));
     const body = { userPublicKey: "Wallet", quoteResponse: { outAmount: "1" } };
     await jupiterSwapInstructions(body, { fetcher: fetcher as unknown as typeof fetch });
     await jupiterSwapInstructions(body, { fetcher: fetcher as unknown as typeof fetch });
