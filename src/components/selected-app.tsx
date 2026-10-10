@@ -11,6 +11,7 @@ import { useSelectedController } from "./use-selected-controller";
 import { TransactionStatusDialog } from "./transaction-status-dialog";
 import { CompoundPanel } from "./compound-panel";
 import { useCompoundController } from "./use-compound-controller";
+import { LpDecisionBuilder } from "./lp-decision-builder";
 import { InkNav } from "./ink";
 import { PoolActivityPanel } from "./pool-activity-panel";
 
@@ -86,6 +87,8 @@ export function SelectedApp() {
   return <div className="min-h-screen bg-[#050505] text-neutral-100">
     <div className="relative mx-auto max-w-5xl px-5 pb-32 pt-6 sm:px-8 sm:pt-10">
       <InkNav wallet={wallet} connected={connected} onConnect={connect} onDisconnect={disconnect} />
+
+      <LpDecisionBuilder positionId={selection?.positionMint} wallet={wallet || undefined} contextLabel={selection?.positionMint ? "已選持倉（位置識別碼，非部位估值）" : undefined} />
 
       <div className="mb-6 mt-8 sm:mt-10"><h1 className="text-2xl font-semibold tracking-tight text-neutral-100 sm:text-3xl">Manage my liquidity positions</h1><p className="mt-2 text-sm leading-relaxed text-neutral-500">Add yield back to original position, or invest new capital.</p></div>
 

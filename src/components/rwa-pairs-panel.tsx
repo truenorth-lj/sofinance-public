@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { LoaderCircle, RefreshCw } from "lucide-react";
 import { PoolAprSparkline } from "./pool-daily-apr-panel";
+import { LpDecisionBuilder } from "./lp-decision-builder";
 import { OpenPositionModal } from "./open-position-modal";
 import type { OpenPositionPair } from "./use-open-position-controller";
 
@@ -62,6 +63,7 @@ export function RwaPairsPanel() {
   const [data, setData] = useState<RwaPairsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [decisionPair, setDecisionPair] = useState<RwaPair | null>(null);
   const [openPair, setOpenPair] = useState<OpenPositionPair | null>(null);
 
   const load = useCallback(async (signal?: AbortSignal) => {
@@ -130,6 +132,7 @@ export function RwaPairsPanel() {
       className="rounded-[20px] border border-neutral-800/80 bg-[#0a0a0a] p-6 sm:p-8" 
       aria-labelledby="rwa-pairs-heading"
     >
+      <LpDecisionBuilder poolId={decisionPair?.poolAddress} contextLabel={decisionPair ? `RWA 池 ${decisionPair.symbolA}/${decisionPair.symbolB}` : undefined} />
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-neutral-800/50 pb-5">
         <div>
           <h2 id="rwa-pairs-heading" className="text-base font-semibold text-neutral-100">
@@ -241,6 +244,7 @@ export function RwaPairsPanel() {
                     >
                       Add liquidity
                     </button>
+                    <button type="button" className="mt-2 block text-xs text-sky-300" onClick={() => { setDecisionPair(pair); document.getElementById("lp-decision")?.scrollIntoView({ behavior: "smooth" }); }}>唯讀情境試算</button>
                     <div className="mt-1 font-mono text-[10px] text-neutral-600">{short(pair.poolAddress)}</div>
                   </td>
                 </tr>
