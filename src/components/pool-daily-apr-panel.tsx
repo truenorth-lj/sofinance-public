@@ -112,17 +112,21 @@ export function PoolDailyAprChart({
       )}
       <AprLineChart
         title="Daily fee APR"
-        subtitle={[
+        subtitle="Estimated pool trading-fee APR by day."
+        series={series}
+        nowSeconds={evaluatedAt}
+        emptyLabel={data ? "No daily volume/TVL pair in this range." : "Loading pool daily APR…"}
+      />
+      <details className="rounded-2xl border border-white/10 p-3 text-xs leading-5 text-smoke">
+        <summary className="cursor-pointer font-semibold">Details: daily APR data sources</summary>
+        <p className="mt-3">{[
           data?.assumptions ?? "Estimated pool fee APR from public daily volume and TVL. Missing days are gaps.",
           overlay?.assumptions,
           published ? `Vendor windows (not the daily series): ${published}.` : null,
         ]
           .filter(Boolean)
-          .join(" ")}
-        series={series}
-        nowSeconds={evaluatedAt}
-        emptyLabel={data ? "No daily volume/TVL pair in this range." : "Loading pool daily APR…"}
-      />
+          .join(" ")}</p>
+      </details>
     </div>
   );
 }

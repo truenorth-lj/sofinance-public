@@ -17,11 +17,11 @@ describe("JSX quote entities", () => {
     }
   });
 
-  it("uses wallet-agnostic connect copy instead of Jupiter-only QR hints", () => {
+  it("uses the shared wallet prompt without setup or extension warnings", () => {
     const src = readFileSync(resolve("src/components/selected-app.tsx"), "utf8");
-    expect(src).toContain("Connect your Solana wallet: browser extension or scan the QR code with a mobile wallet.");
-    expect(src.match(/Connect your Solana wallet: browser extension or scan the QR code with a mobile wallet\./g)?.length).toBe(2);
-    expect(src).not.toContain("mobile Jupiter Wallet");
+    expect(src).toContain("ConnectWalletPrompt");
+    expect(src).not.toContain("Reown Project ID");
+    expect(src).not.toContain("Wallet extensions not detected");
   });
 
   it("uses real quotes in the compound confirmation copy", () => {

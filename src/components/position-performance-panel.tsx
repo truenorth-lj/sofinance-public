@@ -1,5 +1,6 @@
 "use client";
 
+import { ConnectWalletPrompt } from "./connect-wallet-prompt";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowUpRight, LoaderCircle, Search } from "lucide-react";
 import { useWalletConnection } from "./wallet-connection";
@@ -161,14 +162,18 @@ export function PositionPerformancePanel({
   initialMint = "",
   initialWallet = "",
   previewPoolId = "",
+  embedded = false,
+  selectedMint,
 }: {
   initialMint?: string;
   initialWallet?: string;
   previewPoolId?: string;
+  embedded?: boolean;
+  selectedMint?: string;
 }) {
   const { address, connected, connect } = useWalletConnection();
   const connectedAddress = connected ? address : undefined;
-  const [positionChoice, setPositionChoice] = useState<{ value: string; wallet: string | null } | null>(
+  const [positionChoice, setPositionChoice] = useState<{ value: string; wallet: string | null; sharedMint?: string } | null>(
     initialMint ? { value: initialMint, wallet: null } : null,
   );
   const [manualWallet, setManualWallet] = useState<string | null>(null);
@@ -191,9 +196,9 @@ export function PositionPerformancePanel({
   const wallet = walletField.value;
   const listedPositions =
     fetchedPositions && fetchedPositions.wallet === connectedAddress ? fetchedPositions.positions : [];
-  const positionMint = positionChoice && (positionChoice.wallet === null || positionChoice.wallet === connectedAddress)
-    ? positionChoice.value
-    : listedPositions[0]?.positionMint ?? "";
+  const choiceIsCurrent = positionChoice && (positionChoice.wallet === null || positionChoice.wallet === connectedAddress)
+    && (!embedded || positionChoice.sharedMint === selectedMint);
+  const positionMint = choiceIsCurrent ? positionChoice.value : selectedMint ?? listedPositions[0]?.positionMint ?? "";
   const context = `${positionMint.trim()}:${wallet.trim()}`;
   const loading = loadingContext === context;
   const decisionMint = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(positionMint.trim()) ? positionMint.trim() : undefined;
@@ -204,7 +209,7 @@ export function PositionPerformancePanel({
     setLoadedData(null);
     setLoadingContext(null);
     setError(null);
-    setPositionChoice({ value, wallet: connectedAddress ?? null });
+    setPositionChoice({ value, wallet: connectedAddress ?? null, sharedMint: selectedMint });
   };
   const positionMetadata = useTokenMetadata(listedPositions.flatMap((item) => [item.mintA, item.mintB]));
   const positionsStatus: "idle" | "loading" | "ready" | "error" = !connectedAddress
@@ -214,7 +219,7 @@ export function PositionPerformancePanel({
       : "loading";
 
   useEffect(() => {
-    if (!connectedAddress) return;
+    if (!connectedAddress || embedded) return;
     const aborter = new AbortController();
     const timer = window.setTimeout(() => {
       void (async () => {
@@ -243,7 +248,7 @@ export function PositionPerformancePanel({
       window.clearTimeout(timer);
       aborter.abort();
     };
-  }, [connectedAddress]);
+  }, [connectedAddress, embedded]);
 
   const load = useCallback(async () => {
     const mint = positionMint.trim();
@@ -292,11 +297,11 @@ export function PositionPerformancePanel({
     <>
     <section className="rounded-[28px] border border-white/12 bg-char p-5 sm:p-7 lg:col-span-5" aria-labelledby="perf-heading">
       <h2 id="perf-heading" className="text-base font-semibold text-cream">
-        Step 1 · Select a position
+        {embedded ? "Performance" : "Step 1 · Select a position"}
       </h2>
 
       <div className="mt-4 space-y-3">
-        {connectedAddress && (
+        {!embedded && connectedAddress && (
           <PositionSelect
             id="perf-position"
             label="Connected wallet positions"
@@ -318,10 +323,7 @@ export function PositionPerformancePanel({
             }
           />
         )}
-        {!connectedAddress && <div className="rounded-2xl border border-white/12 bg-white/[0.03] p-4">
-          <p className="text-sm text-cream/80">Connect your wallet to find your liquidity positions.</p>
-          <button type="button" onClick={connect} className="mt-3 rounded-full border border-white/20 px-4 py-2 text-sm font-semibold text-cream hover:bg-white/10">Connect wallet</button>
-        </div>}
+        {!embedded && !connectedAddress && <ConnectWalletPrompt onConnect={connect} />}
         {positionsStatus === "ready" && listedPositions.length === 0 && <div role="status" className="rounded-2xl border border-white/12 bg-white/[0.03] p-4">
           <p className="font-medium text-cream/90">No positions found in this wallet</p>
           <p className="mt-1 text-xs leading-5 text-smoke">Explore RWA pairs and open a position to start tracking performance.</p>
@@ -380,12 +382,12 @@ export function PositionPerformancePanel({
           </div>
         </details>
         <div className="border-t border-white/10 pt-5">
-          <h3 className="text-base font-semibold text-cream">Step 2 · Compute performance</h3>
+          {!embedded && <h3 className="text-base font-semibold text-cream">Step 2 · Compute performance</h3>}
           <p className="mb-3 mt-1 text-xs leading-5 text-smoke">Calculate returns and fees for the selected position.</p>
           <button
             type="button"
-            onClick={() => void load()}
-            disabled={loading || !positionMint.trim()}
+            onClick={() => { if (!connectedAddress && embedded) { connect(); return; } void load(); }}
+            disabled={loading || (!(embedded && !connectedAddress) && !positionMint.trim())}
             className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-lemon px-5 py-3 text-sm font-semibold text-ink transition-colors hover:bg-[#fff27f] disabled:cursor-not-allowed disabled:opacity-40"
           >
             {loading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
@@ -407,46 +409,41 @@ export function PositionPerformancePanel({
         <div className="space-y-5 text-sm" aria-live="polite">
           <h3 className="text-base font-semibold text-cream">Performance results</h3>
           {!hasRecordedDeposits && <p role="status" className="rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-xs leading-5 text-cream/80">No deposit history was found. Current inventory is available, but returns and PnL need opening or deposit records. Recorded deposits of zero do not mean this position was opened without funds.</p>}
-          {te && <p className="text-xs leading-5 text-smoke">TE means token-equivalent: both pool assets are converted to {te.baseSymbol} using the current pool exchange rate. These amounts are measured in tokens, not dollars.</p>}
+          {te && <p className="text-xs leading-5 text-smoke">Amounts shown in {te.baseSymbol} equivalent.</p>}
           <div className="grid gap-3 sm:grid-cols-2">
             <Stat label={holdingTime.label} value={holdingTime.value} description="Time since the earliest recorded position event." />
             <Stat label="Range" value={data.rangeSide} />
             {preferTe ? (
               <>
                 <Stat
-                  label={`Fee-only APR (TE · ${te!.baseSymbol})`}
+                  label={`Trading-fee APR`}
                   value={pct(te!.metrics.feeOnlyAprPct)}
-                  description="Trading fees ÷ total deposited × 365 ÷ holding days × 100%."
+                  description="Annualized trading-fee income."
                   unavailableReason={missingReturn(true)}
                   emphasize
                 />
                 <Stat
-                  label={`Annualized return (TE · ${te!.baseSymbol})`}
+                  label={`Annualized return`}
                   value={pct(te!.metrics.annualizedReturnPct)}
-                  description="HPR × 365 ÷ holding days. Simple annualization without compounding."
+                  description="Holding-period return expressed as a yearly rate."
                   unavailableReason={missingReturn(true)}
                   emphasize
                 />
-                <Stat label={`HPR (TE · ${te!.baseSymbol})`} value={pct(te!.metrics.holdingPeriodReturnPct)} description="Holding-period return: PnL ÷ total deposited × 100%." unavailableReason={missingReturn(false)} />
-                <Stat label={`PnL (TE · ${te!.baseSymbol})`} value={hasRecordedDeposits ? `${tok(te!.metrics.pnl)} ${te!.baseSymbol}` : "—"} unavailableReason={missingReturn(false)} />
+                <Stat label={`Holding-period return`} value={pct(te!.metrics.holdingPeriodReturnPct)} description="Total return over the holding period." unavailableReason={missingReturn(false)} />
+                <Stat label={`Profit / loss`} value={hasRecordedDeposits ? `${tok(te!.metrics.pnl)} ${te!.baseSymbol}` : "—"} unavailableReason={missingReturn(false)} />
                 <Stat
-                  label={`Fees earned (TE · ${te!.baseSymbol})`}
+                  label={`Fees earned`}
                   value={`${tok(te!.metrics.feesEarned)} ${te!.baseSymbol}`}
                 />
                 <Stat
-                  label={`Inventory / equity (TE · ${te!.baseSymbol})`}
+                  label={`Current position value (${te!.baseSymbol} equivalent)`}
                   value={`${tok(te!.metrics.equity)} ${te!.baseSymbol}`}
                   description="Assets still in the position: liquidity plus uncollected trading fees."
                 />
                 <Stat
-                  label={`Deposited (TE · ${te!.baseSymbol})`}
+                  label={`Total deposited`}
                   value={`${tok(te!.metrics.deposited)} ${te!.baseSymbol}`}
                   description="Recorded assets added at opening and subsequent deposits; withdrawals are not subtracted."
-                />
-                <Stat
-                  label="Events"
-                  value={`Opened ${data.cashflows.openCount} · Added ${data.cashflows.increaseCount} · Removed / collected ${data.cashflows.decreaseCount}`}
-                  description="Recorded on-chain events. Removed / collected includes fee collection without removing liquidity."
                 />
               </>
             ) : (
@@ -458,17 +455,20 @@ export function PositionPerformancePanel({
                 <Stat label="Deposited (USD)" value={money(data.metrics.depositedUsd)} />
                 <Stat label="Current equity (USD)" value={money(data.metrics.currentEquityUsd)} />
                 <Stat label="Fees earned (USD)" value={money(data.metrics.feesEarnedUsd)} />
-                <Stat
-                  label="Events"
-                  value={`Opened ${data.cashflows.openCount} · Added ${data.cashflows.increaseCount} · Removed / collected ${data.cashflows.decreaseCount}`}
-                  description="Recorded on-chain events. Removed / collected includes fee collection without removing liquidity."
-                />
               </>
             )}
           </div>
 
           <details className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-xs text-smoke">
-            <summary className="cursor-pointer font-semibold text-cream/80">How performance is calculated</summary>
+            <summary className="cursor-pointer font-semibold text-cream/80">Details: conversion and performance calculations</summary>
+              {te && (
+                <div className="mt-3 text-[11px] leading-5 text-smoke">
+                  {te.basis}. Tick {te.tickUsed}; UI mid {te.uiPriceBPerA.toPrecision(8)} {symB}/{symA}.{" "}
+                  {te.note}
+                </div>
+              )}
+
+            {tn && <p className="mt-3">Per-token trading-fee APR: {symA} {pct(tn.perSideFeeAprPct.a)} · {symB} {pct(tn.perSideFeeAprPct.b)}</p>}
             <div className="mt-3 space-y-2 leading-5">
               <p><strong className="text-cream/80">PnL:</strong> current equity + withdrawn principal + collected fees − total deposits. Transaction costs are not deducted.</p>
               <p><strong className="text-cream/80">HPR:</strong> PnL ÷ total deposits × 100%.</p>
@@ -483,34 +483,28 @@ export function PositionPerformancePanel({
           {tn && (
             <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
               <div className="text-[11px] font-semibold uppercase tracking-wide text-smoke">
-                Inventory (raw A / B){tn.sameAssetWrap ? " · same-asset wrap" : ""}
+                Position asset details
               </div>
               <div className="mt-2 grid gap-2 sm:grid-cols-2 text-xs text-cream/90">
                 <div>
-                  <div className="text-smoke">{symA} deposited → equity</div>
+                  <div className="text-smoke">{symA} · Total deposited → Current holdings</div>
                   <div className="font-semibold text-cream">
-                    {tok(tn.amounts.deposited.a)} → {tok(tn.amounts.currentEquity.a)}
+                    {hasRecordedDeposits ? tok(tn.amounts.deposited.a) : "—"} → {tok(tn.amounts.currentEquity.a)}
                   </div>
                   <div className="text-smoke">
-                    fees {tok(tn.amounts.feesEarned.a)} · side fee APR {pct(tn.perSideFeeAprPct.a)}
+                    Total fees earned {tok(tn.amounts.feesEarned.a)}
                   </div>
                 </div>
                 <div>
-                  <div className="text-smoke">{symB} deposited → equity</div>
+                  <div className="text-smoke">{symB} · Total deposited → Current holdings</div>
                   <div className="font-semibold text-cream">
-                    {tok(tn.amounts.deposited.b)} → {tok(tn.amounts.currentEquity.b)}
+                    {hasRecordedDeposits ? tok(tn.amounts.deposited.b) : "—"} → {tok(tn.amounts.currentEquity.b)}
                   </div>
                   <div className="text-smoke">
-                    fees {tok(tn.amounts.feesEarned.b)} · side fee APR {pct(tn.perSideFeeAprPct.b)}
+                    Total fees earned {tok(tn.amounts.feesEarned.b)}
                   </div>
                 </div>
               </div>
-              {te && (
-                <div className="mt-3 text-[11px] leading-5 text-smoke">
-                  {te.basis}. Tick {te.tickUsed}; UI mid {te.uiPriceBPerA.toPrecision(8)} {symB}/{symA}.{" "}
-                  {te.note}
-                </div>
-              )}
               <InventoryBar
                 labelA={symA}
                 labelB={symB}
@@ -536,10 +530,12 @@ export function PositionPerformancePanel({
             </details>
           )}
 
-          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3 text-xs text-cream/80">
-            <div>
+          <details className="rounded-2xl border border-white/10 bg-white/[0.03] p-3 text-xs text-cream/80">
+            <summary className="cursor-pointer font-semibold">Details: data sources and query history</summary>
+            <div className="mt-3">
               Position {short(data.positionMint)} · pool {short(data.poolId)} · pair {symA}/{symB}
             </div>
+            <p className="mt-2">Recorded events: Opened {data.cashflows.openCount} · Added {data.cashflows.increaseCount} · Removed / collected {data.cashflows.decreaseCount}</p>
             <div>Opened {data.openedAtIso ?? "—"} · evaluated {data.evaluatedAtIso}</div>
             {!tn && (
               <>
@@ -580,7 +576,7 @@ export function PositionPerformancePanel({
                 </a>
               </p>
             )}
-          </div>
+          </details>
         </div>
       )}
 
@@ -626,7 +622,10 @@ export function PositionPerformancePanel({
       )}
     </section>
     )}
-    {decisionMint && <LpPositionEvidence key={decisionMint} positionId={decisionMint} className="lg:col-span-12" />}
+    {decisionMint && <details className="rounded-2xl border border-white/12 bg-char p-4 lg:col-span-12">
+      <summary className="cursor-pointer text-xs font-semibold text-smoke">Details: position ledger and exit estimates</summary>
+      <LpPositionEvidence key={decisionMint} positionId={decisionMint} className="mt-3" />
+    </details>}
     </>
   );
 }
@@ -663,7 +662,7 @@ function InventoryBar({
         <div className="bg-white/40" style={{ width: `${shareB}%` }} />
       </div>
       <div className="mt-1 text-[10px] text-smoke/70">
-        Equity mix (TE-weighted when tick mid available)
+        Current asset allocation
       </div>
     </div>
   );
