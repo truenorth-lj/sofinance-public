@@ -52,6 +52,7 @@ vi.mock("../lib/open-permit", () => ({
 
 vi.mock("../lib/rwa-pairs", () => ({
   discoverRwaPairs: vi.fn(),
+  getCachedRwaPairs: vi.fn(() => null),
 }));
 
 vi.mock("../lib/solami-blur", () => ({
@@ -204,6 +205,10 @@ describe("MCP Tools", () => {
         projectedPrice: "1.0",
         passesFloor: true,
         floorBps: 9900,
+        suggestedResaleFloorBps: 9900,
+        maxAmountForFloor: "1500000000",
+        achievedResaleBps: 9900,
+        warning: "",
         maxImpactBps: 500,
         slippageBps: 50,
         routeTouchesTargetPool: false,
@@ -278,6 +283,10 @@ describe("MCP Tools", () => {
           projectedPrice: "1.0",
           passesFloor: true,
           floorBps: 9900,
+          suggestedResaleFloorBps: 9900,
+          maxAmountForFloor: "1500000000",
+          achievedResaleBps: 9900,
+          warning: "",
           maxImpactBps: 500,
           slippageBps: 50,
           routeTouchesTargetPool: false,

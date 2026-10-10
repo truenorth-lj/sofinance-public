@@ -7,6 +7,9 @@ import {
   generateChallenge,
   createChallengeMessage,
   verifyChallengeSignature,
+  consumeChallengeNonce,
+  clearUsedChallengeNonces,
+  parseChallengeNonce,
 } from "./mcp-auth";
 import { Keypair } from "@solana/web3.js";
 import nacl from "tweetnacl";
@@ -218,6 +221,15 @@ describe("MCP Auth", () => {
       const tamperedMessage = challenge.message.replace(testWallet, "different-wallet");
       const valid = verifyChallengeSignature(testWallet, tamperedMessage, signatureBase58);
       expect(valid).toBe(false);
+    });
+
+    it("consumes a nonce only once", () => {
+      clearUsedChallengeNonces();
+      const challenge = generateChallenge(testWallet);
+      const nonce = parseChallengeNonce(challenge.message);
+      expect(nonce).toBeTruthy();
+      expect(consumeChallengeNonce(testWallet, nonce!)).toBe(true);
+      expect(consumeChallengeNonce(testWallet, nonce!)).toBe(false);
     });
 
     it("should handle malformed messages", () => {

@@ -12,8 +12,12 @@ export type PositionRangeStatus = {
   priceBPerA: number;
   priceLower: number;
   priceUpper: number;
+  /** Distance to each edge as a percent of the range width (not of price). */
   distanceToLowerPct: number | null;
   distanceToUpperPct: number | null;
+  /** True price distances: (price - lower) / lower and (upper - price) / upper. */
+  distanceToLowerPricePct: number | null;
+  distanceToUpperPricePct: number | null;
   priceSource: "solami-blur" | "on-chain" | "unknown";
 };
 
@@ -80,6 +84,8 @@ export function rangeStatusFromPrice(input: {
     priceUpper,
     distanceToLowerPct: width > 0 ? (distLower / width) * 100 : null,
     distanceToUpperPct: width > 0 ? (distUpper / width) * 100 : null,
+    distanceToLowerPricePct: priceLower > 0 ? (distLower / priceLower) * 100 : null,
+    distanceToUpperPricePct: priceUpper > 0 ? (distUpper / priceUpper) * 100 : null,
     priceSource: input.priceSource ?? "unknown",
   };
 }

@@ -15,7 +15,7 @@ import { lookupBeamAfterSend } from "../lib/solami-beam";
 import { sendSignedCompoundTransaction } from "../lib/compound-send";
 import { CompoundSendError, notSentRetryMessage, sanitizePublicError } from "../lib/public-error";
 import type { CompoundSummary } from "../lib/compound-types";
-import { discoverRwaPairs } from "../lib/rwa-pairs";
+import { discoverRwaPairs, getCachedRwaPairs } from "../lib/rwa-pairs";
 import { getPositionPerformance as readPositionPerformance } from "../lib/position-performance";
 import { createSignToken } from "../lib/pending-sign-token";
 import { buildOpenPositionUrl, buildSignUrl } from "../lib/public-urls";
@@ -139,6 +139,10 @@ export async function quoteAddLiquidity(input: QuoteAddLiquidityInput) {
     projectedPrice: quote.projectedPrice,
     passesFloor: quote.passesFloor,
     floorBps: quote.floorBps,
+    suggestedResaleFloorBps: quote.suggestedResaleFloorBps,
+    maxAmountForFloor: quote.maxAmountForFloor,
+    achievedResaleBps: quote.achievedResaleBps,
+    warning: quote.warning || undefined,
     maxImpactBps: quote.maxImpactBps,
     slippageBps: quote.slippageBps,
     routeTouchesTargetPool: quote.routeTouchesTargetPool,
@@ -476,7 +480,7 @@ export async function submitSignedTransaction(input: SubmitSignedTransactionInpu
   }
   
   const beam = await lookupBeamAfterSend(signature);
-  return { signature, beam: beam.beam, beamLabel: beam.label };
+  return { signature, beam: beam.beam, beamLabel: beam.label, beamLandingUrl: beam.beamLandingUrl };
 }
 
 /**
@@ -548,7 +552,8 @@ export async function submitCompoundTransaction(input: SubmitCompoundTransaction
  * Safety: Read-only; uses public Raydium / Jupiter / xStocks APIs. No wallet or private keys.
  */
 export async function listRwaPairs(input: ListRwaPairsInput) {
-  const result = await discoverRwaPairs({
+  const cached = getCachedRwaPairs(input.minTvl, input.maxPages, input.sortBy);
+  const result = cached ?? await discoverRwaPairs({
     minTvl: input.minTvl,
     maxPages: input.maxPages,
     sortBy: input.sortBy,
