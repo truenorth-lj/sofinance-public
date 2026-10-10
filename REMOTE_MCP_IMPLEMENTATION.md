@@ -184,7 +184,7 @@ Payload = {
 
 ## Tool Support
 
-All 12 MCP tools work remotely:
+All 14 MCP tools work remotely:
 
 | Tool | Auth Required | Notes |
 |------|--------------|-------|

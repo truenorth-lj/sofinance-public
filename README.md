@@ -30,6 +30,7 @@ Former page paths permanently redirect. MCP `prepare_*` tools now emit `/app/sig
 - **One-click compound**: harvest fees/rewards, swap to range ratio, reinvest (phase one rejects third reward mints without a verifiable path)
 - Web UI Advanced settings for resale gap and price tolerance; MCP exposes the same knobs
 - **Position performance / realized fee APR**: holding-period return from on-chain open/increase/decrease events + current equity (not Raydium pool 24h feeApr). Same-asset RWA pairs prefer **token-equivalent (TE)** in the plain/base ticker via current tick mid (raw A/B + TE; USD secondary) — MCP `get_position_performance`, `/api/position-performance`, `/app/position-performance` UI
+- **Live pool activity (Solami Blur)**: pool stats, swap ticker (Solscan links), and live in-range / near-edge status from the latest Blur price versus the position ticks — `/app` + `/app/position-performance`, MCP `get_pool_activity` / `get_position_range_status`
 - **Same-asset RWA pair discovery**: Raydium CLMM pools where both sides are the same underlying (e.g. `MSTRx`/`MSTR`, `NVDAx`/`NVDA`), filtered by Jupiter Tokens API tags (`stocks`|`rwa`) plus Backed xStocks whitelist, with fee tier, TVL, 24h volume/fees, estimated fee APR, Token-2022 / freeze flags — MCP `list_rwa_pairs` and `/app/rwa-pairs` UI
 - **Open CLMM position**: create a new Raydium concentrated position from `/app/rwa-pairs` (Add liquidity) or MCP `quote_open_position` / `prepare_open_position` / `submit_open_position`, with Jupiter swap-to-ratio, range presets, and the same quote → prepare → sign → re-sim gates. No need to open the NFT on raydium.io first. The position NFT mint is an ephemeral server-side Keypair: it partial-signs the v0 message after the fresh blockhash restamp, then the secret is zeroed in memory and never logged or persisted. The wallet signs as fee payer; `/app/sign/<token>` restores that extra signature if the wallet drops it. Dedicated `submit_open_position` (not `submit_signed_transaction`) because this message has two required signers.
 
@@ -48,11 +49,13 @@ Kept on both web API and MCP paths:
 | HMAC permit | Binds message, wallet, selection, amounts, floor, starting state |
 | Re-verify | On submit: permit, on-chain state, re-simulate, then broadcast |
 
-## MCP tools (12)
+## MCP tools (14)
 
 | Tool | Purpose | Key params |
 |------|---------|------------|
 | `get_position_performance` | Holding-period / fee APR from chain; TE for same-asset RWA wrap pairs | `positionMint`, `wallet?`, `maxSignatures?`, `skipPricing?` |
+| `get_pool_activity` | Live Solami Blur pool snapshot + recent swaps (`available: false` without a data key) | `poolId`, `limit?` |
+| `get_position_range_status` | In/out of range from Blur pool price vs position ticks; near-edge flag | `positionMint`, `wallet?`, `poolId?` |
 | `list_positions` | Positions + eligible assets | `wallet` |
 | `quote_add_liquidity` | Read-only zap quote | `wallet`, `positionMint`, `inputMint`, `inputKind` (`native`\|`token`), `amount`, `resaleFloorBps?` (9500–10000, default 9900), `slippageToleranceBps?` (0–500 step 10, default 100) |
 | `prepare_transaction` | Unsigned zap tx + permit + `submitArgs` + `signUrl` | same as quote |
@@ -89,7 +92,7 @@ Never commit `.env.local`, mnemonics, or API keys. Do not prefix `SOLANA_RPC_URL
 | Surface | When | What it does |
 |---------|------|----------------|
 | **RPC** | `SOLAMI_API_KEY` set | All server `rpcConnection()` traffic goes to `https://rpc.solami.dev/sol?api_key=…` (one place: `src/lib/rpc.ts`). Position history prefers Solami `getTransactionsForAddress` with `{ limit, transactionDetails: "signatures" }` (rows under `result.data`, cursor `paginationToken`), then fills logs via bounded-parallel `getParsedTransaction`. Falls back to `getSignaturesForAddress` + the same batches. |
-| **Blur** | `SOLAMI_DATA_API_KEY` | Live pool activity (REST + WS). Ships in a follow-up PR. A Free key has REST but not WebSocket; [Solami](https://solami.dev) currently offers a 7-day Pro promo. |
+| **Blur** | `SOLAMI_DATA_API_KEY` | Live pool activity. REST snapshot at `GET /api/pool-activity?poolId=` (`/data/pool` for mint + `GET /data/token/trades?chain=solana&address=<MINT>`, then client-filter by exact `pool`). SSE at `/api/pool-activity/stream` proxies Blur WS `type=swap,liquidity&pool=<POOL>` (never `address=` — that is a mint filter), forwards only parsed swap/liquidity events, and closes before Vercel `maxDuration` so the browser can reconnect. A Free key has REST but not WebSocket; [Solami](https://solami.dev) currently offers a 7-day Pro promo. Without the key the UI hides the panel. |
 | **Beam** | `SOLAMI_API_KEY` | Stake-weighted send with an on-chain tip. Ships in a follow-up PR. |
 
 Create a key at [solami.dev](https://solami.dev). Paste `SOLAMI_API_KEY` (and later `SOLAMI_DATA_API_KEY`) into `.env.local` or Vercel — never `NEXT_PUBLIC_*`. Position performance reports `{ txCount, elapsedMs, provider: "solami" \| "default" }` so you can see the Solami path is actually used.
@@ -112,6 +115,9 @@ wallet / API / MCP
 2. Compute performance for a real mainnet position NFT.
 3. Confirm the history line shows `provider: solami` and a tx count / elapsed ms (and the Solami credit).
 4. Unset the key, restart, and confirm the same page still works via `SOLANA_RPC_URL` / public RPC with `provider: default`.
+5. Set `SOLAMI_DATA_API_KEY`, open `/app` on a position, and confirm the Live pool activity panel (stats + Solscan ticker). A Free key fills the snapshot; Pro unlocks the SSE ticker. The demo Raydium CLMM SPCXx/SPCX pool `DUzBLHZ5RZdftPuWVijsvjupndogRM1adGJpsR7YTJro` (mint `Xs3oZwbHvqis4NYcf4YKWmEia2eC84wSiVrcYcTqpH8`) is often quiet — empty-state is expected; the global `dex=raydium_clmm` Blur stream is busy for sanity checks. Quiet pools still send SSE heartbeat comments.
+6. Confirm `/app/position-performance` shows the same panel plus in-range / approaching-edge from Blur price vs ticks.
+7. Unset the data key and confirm the panel disappears (no error banner).
 
 ## Quickstart — MCP for AI Agents (Remote, Zero Local Secrets)
 
@@ -232,6 +238,7 @@ flowchart LR
   end
   subgraph external [External]
     RPC[Solana RPC / Solami]
+    Blur[Solami Blur]
     Jup[Jupiter Swap V2]
     Ray[Raydium CLMM]
   end
@@ -241,6 +248,8 @@ flowchart LR
   MCP --> Quote
   Quote --> Jup
   Quote --> RPC
+  API --> Blur
+  MCP --> Blur
   Atomic --> Ray
   Atomic --> Sim
   Sim --> RPC
