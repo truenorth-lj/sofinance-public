@@ -15,6 +15,24 @@ const SIG_B = "4".repeat(88);
 const SIG_C = "3".repeat(88);
 const ADDRESS = new PublicKey("11111111111111111111111111111111");
 
+/** Live Solami getTransactionsForAddress envelope (transactionDetails: "signatures"). */
+const liveSignaturesEnvelope = {
+  result: {
+    data: [
+      {
+        blockTime: 1_700_000_000,
+        confirmationStatus: "finalized",
+        err: null,
+        memo: null,
+        signature: SIG_A,
+        slot: 381_234_567,
+        transactionIndex: 12,
+      },
+    ],
+    paginationToken: "381234567:12",
+  },
+};
+
 const fullParsedRow = {
   signature: SIG_A,
   slot: 42,
@@ -28,6 +46,21 @@ const fullParsedRow = {
 };
 
 describe("unwrapTransactionsForAddressResult", () => {
+  it("reads the live Solami { result: { data, paginationToken } } signatures envelope", () => {
+    const parsed = unwrapTransactionsForAddressResult(liveSignaturesEnvelope);
+    expect(parsed.paginationToken).toBe("381234567:12");
+    expect(parsed.rows).toEqual(liveSignaturesEnvelope.result.data);
+    expect(parsed.rows[0]).toEqual({
+      blockTime: 1_700_000_000,
+      confirmationStatus: "finalized",
+      err: null,
+      memo: null,
+      signature: SIG_A,
+      slot: 381_234_567,
+      transactionIndex: 12,
+    });
+  });
+
   it("reads a Triton/Solami { data, paginationToken } envelope", () => {
     const parsed = unwrapTransactionsForAddressResult({
       data: [fullParsedRow],
@@ -66,6 +99,16 @@ describe("unwrapTransactionsForAddressResult", () => {
 });
 
 describe("parseHistoryTxCandidate", () => {
+  it("reads a live signatures-only row (blockTime, confirmationStatus, err, memo, signature, slot, transactionIndex)", () => {
+    expect(parseHistoryTxCandidate(liveSignaturesEnvelope.result.data[0])).toEqual({
+      signature: SIG_A,
+      slot: 381_234_567,
+      blockTime: 1_700_000_000,
+      err: null,
+      logMessages: null,
+    });
+  });
+
   it("reads a full parsed transaction with top-level signature + meta.logs", () => {
     expect(parseHistoryTxCandidate(fullParsedRow)).toEqual({
       signature: SIG_A,
@@ -147,10 +190,15 @@ describe("fetchParsedTransactionsBatched", () => {
 });
 
 describe("fetchPositionHistoryTransactions", () => {
-  it("uses getTransactionsForAddress on Solami when the method returns full txs", async () => {
-    const customRpc = vi.fn(async () => ({ data: [fullParsedRow], paginationToken: null }));
+  it("uses getTransactionsForAddress on Solami with the live signatures params and envelope", async () => {
+    const customRpc = vi.fn(async () => liveSignaturesEnvelope);
     const getSignaturesForAddress = vi.fn();
-    const getParsedTransaction = vi.fn();
+    const getParsedTransaction = vi.fn(async () => ({
+      slot: 381_234_567,
+      blockTime: 1_700_000_000,
+      meta: { err: null, logMessages: ["Program log: Instruction: IncreaseLiquidity"] },
+      transaction: { signatures: [SIG_A], message: {} },
+    }));
     let t = 1_000;
     const result = await fetchPositionHistoryTransactions({
       address: ADDRESS,
@@ -165,16 +213,12 @@ describe("fetchPositionHistoryTransactions", () => {
     });
     expect(customRpc).toHaveBeenCalledWith("getTransactionsForAddress", [
       ADDRESS.toBase58(),
-      expect.objectContaining({
-        transactionDetails: "full",
-        encoding: "jsonParsed",
-        sortOrder: "desc",
-        limit: 100,
-      }),
+      { limit: 100, transactionDetails: "signatures" },
     ]);
     expect(getSignaturesForAddress).not.toHaveBeenCalled();
-    expect(getParsedTransaction).not.toHaveBeenCalled();
+    expect(getParsedTransaction).toHaveBeenCalledOnce();
     expect(result.items[0]?.signature).toBe(SIG_A);
+    expect(result.items[0]?.logMessages).toEqual(["Program log: Instruction: IncreaseLiquidity"]);
     expect(result.metric).toMatchObject({
       txCount: 1,
       provider: "solami",
