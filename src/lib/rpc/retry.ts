@@ -16,14 +16,22 @@ export const DEFAULT_RETRY: RetryConfig = {
   budgetMs: 8_000,
 };
 
+/** User-initiated exit preview (90s route). Stay on Solami longer before failing. */
+export const PREVIEW_RETRY: RetryConfig = {
+  maxAttempts: 6,
+  baseMs: 400,
+  maxDelayMs: 4_000,
+  budgetMs: 25_000,
+};
+
 let override: Partial<RetryConfig> | null = null;
 
 export function setRpcRetryConfig(config: Partial<RetryConfig> | null): void {
   override = config;
 }
 
-export function retryConfig(): RetryConfig {
-  return { ...DEFAULT_RETRY, ...override };
+export function retryConfig(perCall?: Partial<RetryConfig> | null): RetryConfig {
+  return { ...DEFAULT_RETRY, ...override, ...perCall };
 }
 
 /** `Retry-After` as milliseconds (delta-seconds or HTTP-date). */
@@ -79,10 +87,11 @@ export async function invokeWithRetries<T>(
     method: string;
     providerId: RpcMetricId;
     signal?: AbortSignal;
+    retry?: Partial<RetryConfig> | null;
     onRetry?: (info: { attempt: number; delayMs: number; errorKind: RpcErrorKind }) => void;
   },
 ): Promise<{ value: T; retries: number }> {
-  const config = retryConfig();
+  const config = retryConfig(options.retry);
   const started = Date.now();
   let retries = 0;
   let lastError: unknown;
