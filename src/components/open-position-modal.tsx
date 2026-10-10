@@ -95,12 +95,13 @@ export function OpenPositionModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center" role="dialog" aria-modal="true" aria-labelledby="open-position-title">
-      <button className="absolute inset-0 bg-black/70" aria-label="Close add liquidity" onClick={onClose} />
+      <button className="absolute inset-0 bg-black/70" aria-label="Close create position" onClick={onClose} />
       <div className="relative z-10 max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-[20px] border border-white/12 bg-char p-5 sm:rounded-[28px] sm:p-6">
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
-            <h2 id="open-position-title" className="text-base font-semibold text-cream">Add liquidity</h2>
+            <h2 id="open-position-title" className="text-base font-semibold text-cream">Create position</h2>
             <p className="mt-1 text-xs leading-5 text-smoke">{label}</p>
+            <p className="mt-2 text-xs leading-5 text-smoke">Choose a wallet asset and price range. We swap into the pool tokens as needed, then create a new LP position and add liquidity in one transaction.</p>
           </div>
           <button onClick={onClose} className="rounded-lg p-1 text-smoke hover:text-cream/90" aria-label="Close">
             <X className="h-4 w-4" />
@@ -287,7 +288,7 @@ export function OpenPositionModal({
                 <LoaderCircle className="h-4 w-4 animate-spin" />
                 {status}
               </span>
-            ) : "Sign"}
+            ) : "Create position"}
           </button>
         )}
       </div>

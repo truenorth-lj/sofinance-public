@@ -315,7 +315,7 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
   }, [amount, busy, fresh, inputKind, inputMint, maxPrice, minPrice, pair, quote, rangePreset, signTransaction, wallet]);
 
   const walletBlockedReason = !connected
-    ? "Connect a wallet to add liquidity"
+    ? "Connect a wallet to create a position"
     : !selectedAsset
       ? "No eligible SOL, USDC, or pool token in this wallet"
       : selectedAsset && !selectedAsset.eligible
