@@ -67,6 +67,14 @@ describe("PositionPerformancePanel wallet defaults", () => {
     expect(formatHistoryFetch({ txCount: 3, elapsedMs: 40, provider: "default" })).toBe(
       "3 txs · 40 ms · default · batched",
     );
+    expect(
+      formatHistoryFetch({
+        txCount: 12,
+        elapsedMs: 640,
+        provider: "solami+default",
+        source: "getTransactionsForAddress",
+      }),
+    ).toBe("12 txs · 640 ms · Solami for recent / fallback for older");
   });
 
   it("stays empty when disconnected and no URL wallet is provided", () => {

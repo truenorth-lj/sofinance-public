@@ -17,11 +17,12 @@ import { Connection, PublicKey } from "@solana/web3.js";
 import { createHash } from "node:crypto";
 import { accruedFee } from "./compound-math";
 import { positionSide } from "./quote-math";
-import { rpcConnection, rpcProvider, type RpcProvider } from "./rpc";
+import { defaultRpcConnection, rpcConnection, rpcProvider, type RpcProvider } from "./rpc";
 import {
   fetchPositionHistoryTransactions,
   toChronological,
   type CustomRpcCall,
+  type HistoryConnection,
   type HistoryFetchMetric,
 } from "./position-performance-history";
 import {
@@ -129,6 +130,8 @@ export type GetPositionPerformanceOptions = {
   provider?: RpcProvider;
   /** Override Solami custom RPC (tests). */
   customRpc?: CustomRpcCall;
+  /** Non-Solami RPC for history fallback (tests). Defaults to `defaultRpcConnection()`. */
+  fallbackConnection?: HistoryConnection;
 };
 
 async function fetchJupiterPricesUsd(
@@ -291,12 +294,16 @@ export async function getPositionPerformance(
   }
 
   const provider = options.provider ?? rpcProvider();
+  const fallbackConnection =
+    options.fallbackConnection ??
+    (provider === "solami" && !options.connection ? defaultRpcConnection() : undefined);
   const fetched = await fetchPositionHistoryTransactions({
     address: positionPda,
     maxSignatures,
     connection,
     provider,
     customRpc: options.customRpc,
+    fallbackConnection,
   });
   const truncated = fetched.truncated;
   const chronological = toChronological(fetched.items);

@@ -107,11 +107,16 @@ type PerformanceResponse = {
   historyFetch?: {
     txCount: number;
     elapsedMs: number;
-    provider: "solami" | "default";
+    provider: "solami" | "default" | "solami+default";
     source?: string;
+    solamiTxCount?: number;
+    defaultTxCount?: number;
+    fallbackReasons?: string[];
   };
   error?: string;
 };
+
+const usedSolami = (provider: string | undefined) => provider === "solami" || provider === "solami+default";
 
 export function formatHistoryFetch(metric: {
   txCount: number;
@@ -119,6 +124,9 @@ export function formatHistoryFetch(metric: {
   provider: string;
   source?: string;
 }): string {
+  if (metric.provider === "solami+default") {
+    return `${metric.txCount} txs · ${metric.elapsedMs} ms · Solami for recent / fallback for older`;
+  }
   const source = metric.source === "getTransactionsForAddress" ? "getTransactionsForAddress" : "batched";
   return `${metric.txCount} txs · ${metric.elapsedMs} ms · ${metric.provider} · ${source}`;
 }
@@ -472,7 +480,7 @@ export function PositionPerformancePanel({
             {data.historyFetch && (
               <div>
                 History scan {formatHistoryFetch(data.historyFetch)}
-                {data.historyFetch.provider === "solami" ? " · Powered by Solami" : ""}
+                {usedSolami(data.historyFetch.provider) ? " · Powered by Solami" : ""}
               </div>
             )}
             {data.truncated && (
@@ -480,7 +488,7 @@ export function PositionPerformancePanel({
             )}
             <div className="mt-2 text-neutral-500">{data.pricing.label}</div>
             <div className="mt-1 text-neutral-600">{data.assumptions}</div>
-            {data.historyFetch?.provider === "solami" && (
+            {usedSolami(data.historyFetch?.provider) && (
               <p className="mt-3 text-[10px] uppercase tracking-wide text-neutral-600">
                 Powered by{" "}
                 <a
