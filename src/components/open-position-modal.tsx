@@ -1,9 +1,52 @@
 "use client";
 
+import { useId, useState } from "react";
 import { formatAmount } from "@/lib/amount";
 import { formatPositionPriceRange, formatRangeStatus, tokenSymbol } from "@/lib/position-label";
-import { LoaderCircle, X } from "lucide-react";
+import { Info, LoaderCircle, X } from "lucide-react";
 import { useOpenPositionController, type OpenPositionPair } from "./use-open-position-controller";
+
+const FIELD_HELP = {
+  "Token A": "換幣後可用於建立 LP 的 A 代幣保守數量。實際投入量可能較少，剩餘代幣會留在錢包。",
+  "Token B": "換幣後可用於建立 LP 的 B 代幣保守數量。實際投入量可能較少，剩餘代幣會留在錢包。",
+  "Aligned range": "配合池子允許的價格刻度調整後的實際區間，單位是每 1 個 A 對應多少 B，不是美元價格。",
+  "Status": "In range 表示目前池子價格在所選區間內，部位可參與交易並分得手續費；離開區間後會暫停賺取交易手續費。",
+  "Quote validity": "目前這份報價的剩餘有效時間。每 3 秒觸發更新；過期報價不能簽署，準備交易時也會取得最新報價。",
+  "Price impact cap": "換幣造成的價格影響上限，超過就停止準備交易。它與交易滑價容忍度是不同的設定，也不是整筆 LP 的虧損上限。",
+  "Refundable rent (NFT)": "建立部位 NFT、相關代幣帳戶與個人部位帳戶所需的預估租金押金。關閉部位並回收這些帳戶時，可取回相應押金。",
+  "Non-refundable rent": "首次建立共用協議部位或價格刻度帳戶的預估一次性成本。這些共用帳戶不隨你的部位關閉，因此不退還給你。",
+  "Network fee (est.)": "預估支付給 Solana 網路的交易費，實際金額在交易準備時確認。它與投入金額、帳戶租金分開計算。",
+  "Wallet SOL": "錢包目前的 SOL 總餘額。除了投入金額，還需要保留 SOL 支付帳戶租金與網路費。",
+} as const;
+
+function FieldLabel({ label }: { label: keyof typeof FIELD_HELP }) {
+  const id = useId();
+  const [open, setOpen] = useState(false);
+  return (
+    <dt className="relative flex items-center gap-1.5 text-neutral-500" onMouseEnter={() => setOpen(true)} onMouseLeave={(event) => { if (!event.currentTarget.contains(document.activeElement)) setOpen(false); }}>
+      {label}
+      <button type="button" aria-label={`${label} 說明`} aria-describedby={open ? id : undefined}
+        onFocus={() => setOpen(true)} onBlur={() => setOpen(false)} onClick={(event) => { event.currentTarget.focus(); setOpen(true); }}
+        onKeyDown={(event) => { if (event.key === "Escape") setOpen(false); }}
+        className="inline-flex shrink-0 rounded text-neutral-500 hover:text-neutral-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-400">
+        <Info size={24} strokeWidth={2} className="preview-icon h-3.5 w-3.5" aria-hidden="true" />
+      </button>
+      {open && <span id={id} role="tooltip" className="absolute left-0 top-full z-20 mt-1 w-64 max-w-[75vw] rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-left text-xs font-normal leading-5 text-neutral-200 shadow-xl">
+        {FIELD_HELP[label]}
+      </span>}
+    </dt>
+  );
+}
+
+function explainTokenWarning(warning: string) {
+  if (warning.startsWith("One or both pool tokens use Token-2022.")) {
+    return "此池的一種或兩種代幣使用 Token-2022 標準，可提供額外代幣功能。系統會阻擋目前收取轉帳費、暫停或已凍結的資產；但發行方仍可能保留日後凍結帳戶的權限。";
+  }
+  if (warning.startsWith("A pool mint has a freeze authority.")) {
+    return "發行方仍保有凍結權限：日後可以凍結持有此代幣的帳戶，使其無法轉出或交易。若池子的相關帳戶被凍結，也可能影響加入或退出 LP。這項提醒不表示帳戶目前已被凍結。";
+  }
+  return warning;
+}
 
 function lamports(value: string | number | bigint): string {
   const n = Number(value) / 1e9;
@@ -147,16 +190,16 @@ export function OpenPositionModal({
 
         {quote && (
           <dl className="mt-4 space-y-2 rounded-xl border border-neutral-800/60 bg-neutral-900/40 p-3 text-xs text-neutral-300">
-            <div className="flex justify-between gap-3"><dt className="text-neutral-500">Token A</dt><dd>{formatAmount(quote.minOutA, quote.decimalsA)} {tokenSymbol(quote.mintA, undefined, pair.symbolA)}</dd></div>
-            <div className="flex justify-between gap-3"><dt className="text-neutral-500">Token B</dt><dd>{formatAmount(quote.minOutB, quote.decimalsB)} {tokenSymbol(quote.mintB, undefined, pair.symbolB)}</dd></div>
-            <div className="flex justify-between gap-3"><dt className="text-neutral-500">Aligned range</dt><dd>{formatPositionPriceRange(quote)}</dd></div>
-            <div className="flex justify-between gap-3"><dt className="text-neutral-500">Status</dt><dd>{formatRangeStatus(quote.rangeSide) ?? "—"}</dd></div>
-            <div className="flex justify-between gap-3"><dt className="text-neutral-500">Quote validity</dt><dd>{c.fresh ? `${Math.max(0, Math.ceil((quote.expiresAt - c.now) / 1000))} seconds remaining` : "Expired"}</dd></div>
-            <div className="flex justify-between gap-3"><dt className="text-neutral-500">Price impact cap</dt><dd>≤ {quote.maxImpactBps / 100}%</dd></div>
-            <div className="flex justify-between gap-3"><dt className="text-neutral-500">Refundable rent (NFT)</dt><dd>{lamports(quote.rent.refundableLamports)}</dd></div>
-            <div className="flex justify-between gap-3"><dt className="text-neutral-500">Non-refundable rent</dt><dd>{lamports(quote.rent.nonRefundableLamports)}</dd></div>
-            <div className="flex justify-between gap-3"><dt className="text-neutral-500">Network fee (est.)</dt><dd>{lamports(quote.networkFeeLamportsEstimate)}</dd></div>
-            <div className="flex justify-between gap-3"><dt className="text-neutral-500">Wallet SOL</dt><dd>{lamports(quote.solLamports)}</dd></div>
+            <div className="flex justify-between gap-3"><FieldLabel label="Token A" /><dd>{formatAmount(quote.minOutA, quote.decimalsA)} {tokenSymbol(quote.mintA, undefined, pair.symbolA)}</dd></div>
+            <div className="flex justify-between gap-3"><FieldLabel label="Token B" /><dd>{formatAmount(quote.minOutB, quote.decimalsB)} {tokenSymbol(quote.mintB, undefined, pair.symbolB)}</dd></div>
+            <div className="flex justify-between gap-3"><FieldLabel label="Aligned range" /><dd>{formatPositionPriceRange(quote)}</dd></div>
+            <div className="flex justify-between gap-3"><FieldLabel label="Status" /><dd>{formatRangeStatus(quote.rangeSide) ?? "—"}</dd></div>
+            <div className="flex justify-between gap-3"><FieldLabel label="Quote validity" /><dd>{c.fresh ? `${Math.max(0, Math.ceil((quote.expiresAt - c.now) / 1000))} seconds remaining` : "Expired"}</dd></div>
+            <div className="flex justify-between gap-3"><FieldLabel label="Price impact cap" /><dd>≤ {quote.maxImpactBps / 100}%</dd></div>
+            <div className="flex justify-between gap-3"><FieldLabel label="Refundable rent (NFT)" /><dd>{lamports(quote.rent.refundableLamports)}</dd></div>
+            <div className="flex justify-between gap-3"><FieldLabel label="Non-refundable rent" /><dd>{lamports(quote.rent.nonRefundableLamports)}</dd></div>
+            <div className="flex justify-between gap-3"><FieldLabel label="Network fee (est.)" /><dd>{lamports(quote.networkFeeLamportsEstimate)}</dd></div>
+            <div className="flex justify-between gap-3"><FieldLabel label="Wallet SOL" /><dd>{lamports(quote.solLamports)}</dd></div>
             <div className="flex justify-between gap-3"><dt className="text-neutral-500">Resale floor</dt><dd>{quote.passesFloor ? `Meets ${(quote.floorBps / 100).toFixed(1)}%` : `Below ${(quote.floorBps / 100).toFixed(1)}%`}</dd></div>
           </dl>
         )}
@@ -170,7 +213,7 @@ export function OpenPositionModal({
 
         {(quote?.warnings.length || c.quoteError || c.error) && (
           <div className="mt-3 space-y-2 text-xs leading-5 text-neutral-400">
-            {quote?.warnings.filter((warning) => warning !== quote.warning).map((warning) => <p key={warning}>{warning}</p>)}
+            {quote?.warnings.filter((warning) => warning !== quote.warning).map((warning) => <p key={warning}>{explainTokenWarning(warning)}</p>)}
             {c.quoteError && <p role="alert" className="text-red-400">{c.quoteError}</p>}
             {c.error && <p role="alert" className="text-red-400">{c.error}</p>}
           </div>
