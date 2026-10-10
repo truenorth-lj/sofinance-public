@@ -42,6 +42,9 @@ function quote(): OpenPositionQuote {
     spendA: "60000000", spendB: "60000000", liquidity: "1000",
     amountMaxA: "64636", amountMaxB: "56124", requiredA: "64000", requiredB: "55000",
     toleranceBps: 100, dustA: "636", dustB: "1124",
+    resaleInput: "119000000", minimumResaleInput: "118800000", roundtripCostInput: "1000000",
+    passesFloor: true, floorBps: 9900, suggestedResaleFloorBps: 9910, maxAmountForFloor: "120000000",
+    achievedResaleBps: 9916, warning: "",
     slippageBps: 50,
     routeTouchesTargetPool: false, token2022A: true, token2022B: false,
     freezeRiskA: true, freezeRiskB: false, freezeRisk: true,
@@ -115,14 +118,37 @@ afterEach(async () => {
 });
 
 describe("open-position signing and quote refresh", () => {
-  it("enables signing with a fresh quote that has no resale-floor fields", async () => {
+  it("enables signing with a fresh quote and explains why Sign is disabled when it is not", async () => {
     await mount();
     expect(signButton().disabled).toBe(false);
     expect(container.textContent).toContain("Ready to sign");
-    expect(container.textContent).not.toContain("Minimum resale");
     expect(container.textContent).not.toContain("Complete the form to sign");
     await act(async () => { signButton().click(); });
     expect(container.textContent).toContain("Preparing latest transaction");
+  });
+
+  it("warns about immediate-resale loss without disabling Sign", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (url.startsWith("/api/wallet")) return { ok: true, json: async () => ({ assets: [{
+        kind: "native", mint: NATIVE_SOL_MINT, decimals: 9, balance: "216474000", eligible: true,
+      }] }) };
+      if (url === "/api/open-quote") {
+        quoteCalls++;
+        return { ok: true, json: async () => ({
+          ...quote(),
+          passesFloor: false,
+          achievedResaleBps: 9000,
+          warning: "Conservative immediate resale is 90.00% of input, below the 99.00% floor.",
+          warnings: ["Conservative immediate resale is 90.00% of input, below the 99.00% floor."],
+        }) };
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    }));
+    await mount();
+    expect(signButton().disabled).toBe(false);
+    expect(container.textContent).toContain("Immediate resale of this position would recover about 90.00%");
+    expect(container.textContent).toContain("about 10.00% round-trip loss");
+    expect(container.textContent).toContain("Ready to sign");
   });
 
   it("fetches a new quote every three seconds without waiting for expiry", async () => {
