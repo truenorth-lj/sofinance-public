@@ -28,7 +28,7 @@ function account(owner: PublicKey, bytes: number) {
 describe("estimateOpenPositionRent", () => {
   const getMultipleAccountsInfo = vi.fn();
   const getAccountInfo = vi.fn();
-  const getMinimumBalanceForRentExemption = vi.fn(async () => 1_000_000);
+  const getMinimumBalanceForRentExemption = vi.fn(async (_space: number) => 1_000_000);
   const connection = {
     getMultipleAccountsInfo,
     getAccountInfo,
