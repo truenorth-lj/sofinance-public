@@ -39,9 +39,25 @@ export function rpcProvider(env: RpcEnv = process.env as RpcEnv): RpcProvider {
   return resolveRpcConfig(env).provider;
 }
 
+/**
+ * Non-Solami RPC for history fallback: `SOLANA_RPC_URL`, else public mainnet.
+ * Used when Solami's history window is empty or a parsed tx fails validation.
+ */
+export function resolveDefaultRpcConfig(env: RpcEnv = process.env as RpcEnv): RpcConfig {
+  const dedicated = env.SOLANA_RPC_URL?.trim();
+  if (dedicated) {
+    return { endpoint: dedicated, provider: "default" };
+  }
+  return { endpoint: PUBLIC_SOLANA_RPC_URL, provider: "default" };
+}
+
 export function rpcConnection(env: RpcEnv = process.env as RpcEnv) {
   const { endpoint } = resolveRpcConfig(env);
   return new Connection(endpoint, "confirmed");
+}
+
+export function defaultRpcConnection(env: RpcEnv = process.env as RpcEnv) {
+  return new Connection(resolveDefaultRpcConfig(env).endpoint, "confirmed");
 }
 
 /** Strip credential query params so an endpoint can be mentioned in errors. */
