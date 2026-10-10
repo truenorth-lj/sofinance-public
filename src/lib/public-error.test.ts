@@ -38,6 +38,15 @@ describe("compound failure mapping", () => {
       .toMatch(/Insufficient tokens|Token program/);
   });
 
+  it("maps RPC 429 provider JSON to a short retry message and drops the raw body", () => {
+    const message = sanitizePublicError(
+      new Error("429 Too Many Requests: Too many requests for a specific RPC call"),
+      "Exit source unavailable",
+    );
+    expect(message).toBe("Solana RPC is temporarily unavailable. Please retry in a moment.");
+    expect(message).not.toMatch(/Too many requests for a specific RPC|429/);
+  });
+
   it("treats simulation and known program errors as not-sent preflight failures", () => {
     expect(isPreflightOrUnsentFailure(new Error("Transaction simulation failed: custom program error: 0x1781"))).toBe(true);
     expect(isPreflightOrUnsentFailure(new Error("Compound simulation failed: no logs"))).toBe(true);
