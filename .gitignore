@@ -40,3 +40,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# evidence captured from a real position, and the checks that replay it, stay local
+/specs/lp-decision/fixtures/
+*.evidence.test.ts
+*.evidence.test.tsx

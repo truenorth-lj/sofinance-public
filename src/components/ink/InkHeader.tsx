@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { BrandMark } from "@/components/brand-mark";
-import { INK_COLORS } from "./ink-tokens";
 
 interface NavLink {
   href: string;
@@ -14,17 +13,16 @@ interface InkHeaderProps {
 
 export function InkHeader({ subtitle, navLinks = [] }: InkHeaderProps) {
   return (
-    <header className="flex items-center justify-between gap-4">
-      <Link href="/" className="flex items-center gap-3 transition-opacity hover:opacity-70">
-        <BrandMark className="h-10 w-10 flex-shrink-0 text-neutral-100" />
-        <div>
-          <div className={`text-sm font-bold tracking-wide text-${INK_COLORS.textPrimary}`}>
-            SoFinance
-          </div>
-          <div className={`text-xs text-${INK_COLORS.textTertiary}`}>
-            {subtitle}
-          </div>
-        </div>
+    <header className="flex flex-wrap items-center justify-between gap-2">
+      <Link
+        href="/"
+        className="flex h-10 items-center gap-2 rounded-full bg-lemon pl-1.5 pr-4 text-[13px] font-semibold text-ink outline-none focus-visible:shadow-[0_0_0_2px_var(--color-cream)]"
+      >
+        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-ink">
+          <BrandMark className="h-5 w-5 text-lemon" />
+        </span>
+        SoFinance
+        <span className="font-normal text-ink/60">{subtitle}</span>
       </Link>
       {navLinks.length > 0 && (
         <div className="flex gap-2">
@@ -32,7 +30,7 @@ export function InkHeader({ subtitle, navLinks = [] }: InkHeaderProps) {
             <Link
               key={link.href}
               href={link.href}
-              className={`rounded-xl border border-${INK_COLORS.cardBorder} bg-transparent px-3 py-2 text-xs font-semibold text-${INK_COLORS.textSecondary} transition-colors hover:border-${INK_COLORS.buttonBorderHover} hover:bg-${INK_COLORS.buttonBgHover}`}
+              className="flex h-10 items-center justify-center rounded-full border border-white/25 px-4 text-[13px] font-medium text-cream/85 outline-none transition-colors hover:border-white/70 focus-visible:border-lemon"
             >
               {link.label}
             </Link>
