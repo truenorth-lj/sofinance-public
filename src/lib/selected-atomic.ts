@@ -8,6 +8,7 @@ import { ComputeBudgetProgram, PublicKey, SystemProgram, TransactionMessage, Ver
 import { NATIVE_SOL_MINT, QUOTE_TTL_MS } from "./ids";
 import { instruction, readLookupTables, validateRouteTables } from "./transaction-helpers";
 import { rpcConnection } from "./rpc";
+import { beamTipInstruction, chooseBeamTransaction, fetchBeamTipAddress } from "./solami-beam";
 import { getSelectedQuoteBundle } from "./selected-quote";
 import { simulateAndVerifySelectedTransaction } from "./selected-simulation";
 import type { PositionSelection } from "./selected-state";
@@ -114,11 +115,16 @@ export async function buildAndSimulateSelectedZap(
   const tables = [...new Map([...routeTables, ...raydiumTables]
     .map((table) => [table.key.toBase58(), table])).values()];
   const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
-  const transaction = new VersionedTransaction(new TransactionMessage({
-    payerKey: wallet, recentBlockhash: blockhash,
-    instructions: [ComputeBudgetProgram.setComputeUnitLimit({ units: 1_400_000 }),
-      ...routeInstructions, ...wrapInstructions, ...createAtaInstructions, ...raydiumInstructions],
+  const baseInstructions = [ComputeBudgetProgram.setComputeUnitLimit({ units: 1_400_000 }),
+    ...routeInstructions, ...wrapInstructions, ...createAtaInstructions, ...raydiumInstructions];
+  const compile = (instructions: TransactionInstruction[]) => new VersionedTransaction(new TransactionMessage({
+    payerKey: wallet, recentBlockhash: blockhash, instructions,
   }).compileToV0Message(tables));
+  const tip = await fetchBeamTipAddress();
+  const withoutTip = compile(baseInstructions);
+  const withTip = tip ? compile([...baseInstructions, beamTipInstruction(wallet, tip.address, tip.lamports)]) : null;
+  const chosen = chooseBeamTransaction(withoutTip, withTip);
+  const transaction = chosen.transaction;
   // web3.js allocates a 1,232-byte buffer while serializing a v0 message.
   // Oversized messages throw before a later size comparison can run.
   let sizeBytes: number;
@@ -149,6 +155,12 @@ export async function buildAndSimulateSelectedZap(
     simulatedInputSpent: verified.spentInput, simulatedDustA: verified.dustA,
     simulatedDustB: verified.dustB, simulatedSolDebitLamports: verified.solDebitLamports,
     simulatedAt: timestamp, expiresAt: timestamp + QUOTE_TTL_MS,
+    beam: {
+      included: chosen.included,
+      tipLamports: chosen.included && tip ? tip.lamports : 0,
+      tipAddress: chosen.included && tip ? tip.address.toBase58() : null,
+      skippedReason: chosen.included ? null : chosen.skippedReason,
+    },
   };
   return { summary, transaction };
 }

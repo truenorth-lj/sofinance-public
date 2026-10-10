@@ -12,6 +12,7 @@ import {
 import { PositionSelect } from "./position-select";
 import { useTokenMetadata } from "./use-token-metadata";
 import { PoolDailyAprChart } from "./pool-daily-apr-panel";
+import { PoolActivityPanel } from "./pool-activity-panel";
 
 type UiSide = { a: number; b: number };
 
@@ -78,6 +79,8 @@ type PerformanceResponse = {
   mintB: string;
   decimalsA: number;
   decimalsB: number;
+  tickLower?: number;
+  tickUpper?: number;
   tickCurrent: number;
   rangeSide: string;
   liquidity: string;
@@ -101,8 +104,24 @@ type PerformanceResponse = {
     assumptions: string;
     points: Array<{ time: number; date: string; aprPct: number | null; kind: string }>;
   };
+  historyFetch?: {
+    txCount: number;
+    elapsedMs: number;
+    provider: "solami" | "default";
+    source?: string;
+  };
   error?: string;
 };
+
+export function formatHistoryFetch(metric: {
+  txCount: number;
+  elapsedMs: number;
+  provider: string;
+  source?: string;
+}): string {
+  const source = metric.source === "getTransactionsForAddress" ? "getTransactionsForAddress" : "batched";
+  return `${metric.txCount} txs · ${metric.elapsedMs} ms · ${metric.provider} · ${source}`;
+}
 
 const pct = (value: number | null | undefined) => {
   if (value === null || value === undefined || !Number.isFinite(value)) return "—";
@@ -450,12 +469,45 @@ export function PositionPerformancePanel({
               </>
             )}
             {data.ownsNft !== null && <div>Owns NFT: {data.ownsNft ? "yes" : "no"}</div>}
+            {data.historyFetch && (
+              <div>
+                History scan {formatHistoryFetch(data.historyFetch)}
+                {data.historyFetch.provider === "solami" ? " · Powered by Solami" : ""}
+              </div>
+            )}
             {data.truncated && (
               <div className="font-medium text-neutral-300">History truncated at signature cap — earlier txs may be missing.</div>
             )}
             <div className="mt-2 text-neutral-500">{data.pricing.label}</div>
             <div className="mt-1 text-neutral-600">{data.assumptions}</div>
+            {data.historyFetch?.provider === "solami" && (
+              <p className="mt-3 text-[10px] uppercase tracking-wide text-neutral-600">
+                Powered by{" "}
+                <a
+                  href="https://solami.dev"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-neutral-400 underline decoration-neutral-700 underline-offset-2 hover:text-neutral-200"
+                >
+                  Solami
+                </a>
+              </p>
+            )}
           </div>
+        </div>
+      )}
+
+      {(data?.poolId || previewPoolId) && (
+        <div className="mt-6">
+          <PoolActivityPanel
+            poolId={data?.poolId || previewPoolId}
+            tickLower={data?.tickLower}
+            tickUpper={data?.tickUpper}
+            decimalsA={data?.decimalsA}
+            decimalsB={data?.decimalsB}
+            mintA={data?.mintA}
+            mintB={data?.mintB}
+          />
         </div>
       )}
 

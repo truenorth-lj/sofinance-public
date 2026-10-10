@@ -6,6 +6,7 @@ import { ClmmInstrument, getPdaExBitmapAccount, getPdaProtocolPositionAddress, g
 import { createAssociatedTokenAccountIdempotentInstruction, createInitializeAccount3Instruction, getAccountLenForMint, TOKEN_2022_PROGRAM_ID, unpackMint } from "@solana/spl-token";
 import { ComputeBudgetProgram, PublicKey, SystemProgram, TransactionMessage, VersionedTransaction, type TransactionInstruction } from "@solana/web3.js";
 import { rpcConnection } from "./rpc";
+import { beamTipInstruction, chooseBeamTransaction, fetchBeamTipAddress } from "./solami-beam";
 import { readLookupTables } from "./transaction-helpers";
 import { restampVersionedTransaction, stampPreparedBlockhash } from "./fresh-blockhash";
 import { readCompoundPositionState } from "./compound-state";
@@ -127,11 +128,12 @@ export async function buildAndSimulateCompound(walletAddress: string, positionMi
   const simulationBlockhash = (await connection.getLatestBlockhash("confirmed")).blockhash;
   const build = (instructions: TransactionInstruction[]) => new VersionedTransaction(new TransactionMessage({ payerKey: wallet, recentBlockhash: simulationBlockhash,
     instructions: [ComputeBudgetProgram.setComputeUnitLimit({ units: 1_400_000 }), ...setup, ...instructions] }).compileToV0Message(tables));
+  const tip = await fetchBeamTipAddress();
   const baseline = build(harvest.instructions);
   transactionSize(baseline);
   const fee = await connection.getFeeForMessage(baseline.message, "confirmed");
   if (fee.value === null) throw new Error("Unable to estimate compound network fee");
-  const maxSolDebitLamports = BigInt(rentLamports + fee.value + 100_000);
+  const maxSolDebitLamports = BigInt(rentLamports + fee.value + 100_000 + (tip ? tip.lamports : 0));
   const simulate = (transaction: VersionedTransaction, expectedLiquidity: bigint) => simulateAndVerifyCompound({ connection, transaction, state,
     compoundAccounts: accounts, priorSources: prior.sources, expectedLiquidity, maxSolDebitLamports, sigVerify: false });
   const harvestResult = await simulate(baseline, 0n);
@@ -154,7 +156,12 @@ export async function buildAndSimulateCompound(walletAddress: string, positionMi
     amountMaxA: new BN(sized.amountMaxA.toString()), amountMaxB: new BN(sized.amountMaxB.toString()) });
   if (add.signers.length || add.instructions.length !== 1) throw new Error("Compound increase instruction mismatch");
   validateCompoundRaydiumInstructions([...harvest.instructions, ...add.instructions], state, accounts, sized.liquidity, sized.amountMaxA, sized.amountMaxB);
-  const simulated = build([...harvest.instructions, ...swapInstructions, ...add.instructions]);
+  const withoutTip = build([...harvest.instructions, ...swapInstructions, ...add.instructions]);
+  const withTip = tip
+    ? build([...harvest.instructions, ...swapInstructions, ...add.instructions, beamTipInstruction(wallet, tip.address, tip.lamports)])
+    : null;
+  const chosen = chooseBeamTransaction(withoutTip, withTip);
+  const simulated = chosen.transaction;
   const sizeBytes = transactionSize(simulated);
   const verified = await simulate(simulated, sized.liquidity);
   if (verified.rewards.some((reward) => BigInt(reward.amount) > 0n)) throw new Error("Simulation found unswapped third reward yield, cannot fully reinvest; please reprepare");
@@ -170,6 +177,12 @@ export async function buildAndSimulateCompound(walletAddress: string, positionMi
     simulatedEndingLiquidity: verified.endingLiquidity, simulatedDustA: verified.endingA, simulatedDustB: verified.endingB,
     simulatedSolDebitLamports: verified.solDebitLamports, maxSolDebitLamports: maxSolDebitLamports.toString(),
     feeLamports: fee.value, rentLamports, sizeBytes, unitsConsumed: verified.unitsConsumed,
+    beam: {
+      included: chosen.included,
+      tipLamports: chosen.included && tip ? tip.lamports : 0,
+      tipAddress: chosen.included && tip ? tip.address.toBase58() : null,
+      skippedReason: chosen.included ? null : chosen.skippedReason,
+    },
     ...stampPreparedBlockhash(latest) };
   return { summary, transaction };
 }

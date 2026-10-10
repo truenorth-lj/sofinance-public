@@ -11,6 +11,7 @@ import { verifyCompoundPermit } from "../lib/compound-permit";
 import { simulateAndVerifySelectedTransaction } from "../lib/selected-simulation";
 import { readSelectedPositionState } from "../lib/selected-state";
 import { rpcConnection } from "../lib/rpc";
+import { lookupBeamAfterSend } from "../lib/solami-beam";
 import { sendSignedCompoundTransaction } from "../lib/compound-send";
 import { CompoundSendError, notSentRetryMessage, sanitizePublicError } from "../lib/public-error";
 import type { CompoundSummary } from "../lib/compound-types";
@@ -25,6 +26,9 @@ import { buildAndSimulateOpenPosition } from "../lib/open-atomic";
 import { issueOpenPositionPermit } from "../lib/open-permit";
 import { submitOpenPositionFromParts } from "../lib/open-send";
 import type { OpenPositionSummary } from "../lib/open-types";
+import { getPoolActivitySnapshot } from "../lib/solami-blur";
+import { readPositionRangeFacts } from "../lib/position-range-onchain";
+import { blurPriceToBPerA, rangeStatusFromPrice } from "../lib/position-range-status";
 import type {
   ListPositionsInput,
   QuoteAddLiquidityInput,
@@ -34,6 +38,8 @@ import type {
   SubmitCompoundTransactionInput,
   ListRwaPairsInput,
   GetPositionPerformanceInput,
+  GetPoolActivityInput,
+  GetPositionRangeStatusInput,
   QuoteOpenPositionInput,
   PrepareOpenPositionInput,
   SubmitOpenPositionInput,
@@ -469,7 +475,8 @@ export async function submitSignedTransaction(input: SubmitSignedTransactionInpu
     throw new Error("RPC returned transaction signature mismatch");
   }
   
-  return { signature };
+  const beam = await lookupBeamAfterSend(signature);
+  return { signature, beam: beam.beam, beamLabel: beam.label };
 }
 
 /**
@@ -668,6 +675,49 @@ export async function getPositionPerformance(input: GetPositionPerformanceInput)
     method: result.method,
     assumptions: result.assumptions,
     realizedFeeAprSeries: result.realizedFeeAprSeries,
+    historyFetch: result.historyFetch,
+  };
+}
+
+/**
+ * Live Blur snapshot for a pool (stats + recent swaps). Read-only.
+ * Returns `available: false` when SOLAMI_DATA_API_KEY is unset.
+ */
+export async function getPoolActivity(input: GetPoolActivityInput) {
+  return getPoolActivitySnapshot(input.poolId, { limit: input.limit });
+}
+
+/**
+ * In/out-of-range status from the latest Blur pool price versus position ticks.
+ * Falls back to the on-chain mid when Blur is unavailable. Read-only.
+ */
+export async function getPositionRangeStatus(input: GetPositionRangeStatusInput) {
+  const facts = await readPositionRangeFacts(input.positionMint);
+  const poolId = input.poolId ?? facts.poolId;
+  const activity = await getPoolActivitySnapshot(poolId, { limit: 8 });
+  const blurOriented = blurPriceToBPerA(
+    activity.pool?.price ?? null,
+    activity.pool?.mint ?? null,
+    activity.pool?.quoteMint ?? null,
+    facts.mintA,
+    facts.mintB,
+  );
+  const priceBPerA = blurOriented ?? facts.onChainPriceBPerA;
+  const status = rangeStatusFromPrice({
+    priceBPerA,
+    tickLower: facts.tickLower,
+    tickUpper: facts.tickUpper,
+    decimalsA: facts.decimalsA,
+    decimalsB: facts.decimalsB,
+    priceSource: blurOriented !== null ? "solami-blur" : "on-chain",
+  });
+  return {
+    wallet: input.wallet ?? null,
+    ...facts,
+    poolId,
+    blurAvailable: activity.available,
+    latestTrades: activity.trades.slice(0, 5),
+    ...status,
   };
 }
 
