@@ -14,7 +14,7 @@ import {
   shareOfAmount,
 } from "@/lib/lp-plan-intent";
 import {
-  pairLabelFromSymbols,
+  formatPlanPoolOption,
   parsePairLabel,
   parseSolanaAddress,
   resolvePlanSelection,
@@ -90,13 +90,13 @@ function PoolSelect({
         value={poolId ?? ""}
         disabled={loading && options.length === 0 && !poolId}
         onChange={(event) => onChange(event.target.value)}
-        className="normal-case max-w-[16rem] truncate rounded-full border border-ink/20 bg-transparent px-2.5 py-1 font-data text-[10px] tracking-[0.08em] text-ink outline-none focus-visible:border-ink"
+        className="normal-case max-w-[min(100%,22rem)] truncate rounded-full border border-ink/20 bg-transparent px-2.5 py-1 font-data text-[10px] tracking-[0.08em] text-ink outline-none focus-visible:border-ink"
       >
         {!poolId ? <option value="">Choose a pool</option> : null}
         {poolId && !known ? <option value={poolId}>{currentLabel}</option> : null}
         {options.map((row) => (
           <option key={row.poolAddress} value={row.poolAddress}>
-            {pairLabelFromSymbols(row.wrappedSymbol, row.plainSymbol)}
+            {formatPlanPoolOption(row)}
           </option>
         ))}
       </select>

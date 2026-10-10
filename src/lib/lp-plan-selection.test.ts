@@ -4,6 +4,7 @@ import {
   DEFAULT_PLAN_POOL_ID,
   parsePairLabel,
   parseSolanaAddress,
+  formatPlanPoolOption,
   pairLabelFromSymbols,
   resolvePlanSelection,
 } from "./lp-plan-selection";
@@ -50,5 +51,25 @@ describe("plan pool selection", () => {
       pair: "MSTRx/MSTR",
     });
     expect(resolvePlanSelection({ pair: "NVDAx/NVDA" })).toEqual({ pair: "NVDAx/NVDA" });
+  });
+
+  it("disambiguates two SPCXx/SPCX pools with fee tier and short address", () => {
+    const a = formatPlanPoolOption({
+      poolAddress: POOL,
+      wrappedSymbol: "SPCXx",
+      plainSymbol: "SPCX",
+      feeTierBps: 1,
+      tvlUsd: 1_200_000,
+    });
+    const b = formatPlanPoolOption({
+      poolAddress: OTHER,
+      wrappedSymbol: "SPCXx",
+      plainSymbol: "SPCX",
+      feeTierBps: 5,
+      tvlUsd: 80_000,
+    });
+    expect(a).toBe("SPCXx/SPCX · 0.01% fee · $1.2M · DUzB…TJro");
+    expect(b).toBe("SPCXx/SPCX · 0.05% fee · $80k · Toke…Q5DA");
+    expect(a).not.toBe(b);
   });
 });
