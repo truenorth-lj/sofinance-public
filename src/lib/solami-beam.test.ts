@@ -4,14 +4,18 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 
 import {
+  BEAM_LOOKUP_ATTEMPTS,
+  BEAM_LOOKUP_GAP_MS,
   BEAM_MIN_TIP_LAMPORTS,
   BEAM_TIP_ADDRESSES_URL,
+  beamLandingUrl,
   beamTipInstruction,
   chooseBeamTransaction,
   fetchBeamLanding,
   fetchBeamTipAddress,
   formatBeamLanding,
   isBeamEnabled,
+  lookupBeamAfterSend,
   measureTxSize,
   parseBeamLanding,
   parseTipAddresses,
@@ -127,5 +131,21 @@ describe("fetchBeamTipAddress / fetchBeamLanding", () => {
   it("returns null on a 404 landing body", async () => {
     const fetcher = vi.fn(async () => new Response(JSON.stringify({ message: "not found!" }), { status: 404 }));
     await expect(fetchBeamLanding("sig", { fetcher })).resolves.toBeNull();
+  });
+
+  it("polls landing a bounded number of times and always returns beamLandingUrl", async () => {
+    const waits: number[] = [];
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ message: "not found!" }), { status: 404 }));
+    const result = await lookupBeamAfterSend("sig123", {
+      env: { SOLAMI_API_KEY: "k" },
+      fetcher,
+      nowWait: async (ms) => {
+        waits.push(ms);
+      },
+    });
+    expect(fetcher).toHaveBeenCalledTimes(BEAM_LOOKUP_ATTEMPTS);
+    expect(waits).toEqual(Array.from({ length: BEAM_LOOKUP_ATTEMPTS - 1 }, () => BEAM_LOOKUP_GAP_MS));
+    expect(result.beam).toBeNull();
+    expect(result.beamLandingUrl).toBe(beamLandingUrl("sig123"));
   });
 });

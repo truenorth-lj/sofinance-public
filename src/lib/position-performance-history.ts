@@ -1,5 +1,17 @@
 import type { Connection, ParsedTransactionWithMeta, PublicKey } from "@solana/web3.js";
-import type { RpcProvider } from "./rpc";
+import { invokeWithPolicy } from "./rpc/connection";
+import { policyFor } from "./rpc/methods";
+import type { RpcProvider } from "./rpc/types";
+import {
+  listSolamiAddressSignatures,
+  parseHistoryTxCandidate,
+  toHistorySignature,
+  unwrapTransactionsForAddressResult,
+  type CustomRpcCall,
+  type HistoryFallbackReason,
+  type HistorySignature,
+  type ParsedHistoryTx,
+} from "./solami/history";
 
 export const HISTORY_BATCH_SIZE = 8;
 
@@ -7,13 +19,12 @@ export type HistoryFetchSource = "getTransactionsForAddress" | "getParsedTransac
 
 export type HistoryProvider = "solami" | "default" | "solami+default";
 
-export type HistoryFallbackReason =
-  | "solami-empty"
-  | "solami-error"
-  | "solami-unparseable"
-  | "solami-parse-error"
-  | "solami-http-error"
-  | "solami-limited-window";
+export type {
+  CustomRpcCall,
+  HistoryFallbackReason,
+  HistorySignature,
+  ParsedHistoryTx,
+};
 
 export type HistoryFetchMetric = {
   txCount: number;
@@ -26,17 +37,6 @@ export type HistoryFetchMetric = {
 };
 
 export type HistoryServedBy = "solami" | "default";
-
-export type ParsedHistoryTx = {
-  signature: string;
-  blockTime: number | null;
-  slot: number;
-  err: unknown;
-  logMessages: string[] | null;
-  servedBy?: HistoryServedBy;
-};
-
-export type CustomRpcCall = (method: string, params: unknown[]) => Promise<unknown>;
 
 export type HistoryConnection = {
   getSignaturesForAddress: Connection["getSignaturesForAddress"];
@@ -62,6 +62,11 @@ export type PositionHistoryFetch = {
   metric: HistoryFetchMetric;
 };
 
+export {
+  parseHistoryTxCandidate,
+  unwrapTransactionsForAddressResult,
+};
+
 /**
  * Run `fn` over `items` in chunks of `batchSize` so we never open unbounded
  * parallel RPC calls (the previous sequential loop was N+1).
@@ -81,106 +86,6 @@ export async function mapInBatches<T, R>(
   return out;
 }
 
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
-
-function asString(value: unknown): string | null {
-  return typeof value === "string" && value.length > 0 ? value : null;
-}
-
-function asFiniteInt(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) return Math.trunc(value);
-  if (typeof value === "string" && value.trim() !== "") {
-    const n = Number(value);
-    if (Number.isFinite(n)) return Math.trunc(n);
-  }
-  return null;
-}
-
-function asLogMessages(value: unknown): string[] | null {
-  if (!Array.isArray(value)) return null;
-  const logs = value.filter((item): item is string => typeof item === "string");
-  return logs.length === value.length ? logs : null;
-}
-
-function unwrapRpcPayload(raw: unknown): unknown {
-  const record = asRecord(raw);
-  if (!record) return raw;
-  if (record.error) {
-    const err = asRecord(record.error);
-    throw new Error(asString(err?.message) ?? "RPC error");
-  }
-  if ("result" in record) return record.result;
-  return raw;
-}
-
-/**
- * Accept the live Solami `getTransactionsForAddress` envelope
- * `{ result: { data: SignatureRow[], paginationToken } }` plus a few
- * Triton-style aliases. Rows are signatures-only (`transactionDetails: "signatures"`).
- */
-export function unwrapTransactionsForAddressResult(raw: unknown): {
-  rows: unknown[];
-  paginationToken: string | null;
-} {
-  const payload = unwrapRpcPayload(raw);
-  if (Array.isArray(payload)) return { rows: payload, paginationToken: null };
-  const record = asRecord(payload);
-  if (!record) return { rows: [], paginationToken: null };
-
-  const nestedValue = asRecord(record.value);
-  const rows =
-    (Array.isArray(record.data) && record.data) ||
-    (Array.isArray(record.transactions) && record.transactions) ||
-    (Array.isArray(record.items) && record.items) ||
-    (nestedValue && Array.isArray(nestedValue.data) && nestedValue.data) ||
-    (nestedValue && Array.isArray(nestedValue.accounts) && nestedValue.accounts) ||
-    (Array.isArray(record.value) && record.value) ||
-    [];
-
-  const token =
-    asString(record.paginationToken) ??
-    asString(record.pagination_token) ??
-    (nestedValue ? asString(nestedValue.paginationToken) ?? asString(nestedValue.pagination_token) : null);
-
-  return { rows, paginationToken: token };
-}
-
-export function parseHistoryTxCandidate(raw: unknown): ParsedHistoryTx | null {
-  const record = asRecord(raw);
-  if (!record) return null;
-
-  const nestedTx = asRecord(record.transaction);
-  const nestedMeta = asRecord(record.meta) ?? asRecord(nestedTx?.meta);
-  const signatures = Array.isArray(nestedTx?.signatures) ? nestedTx.signatures : null;
-
-  const signature =
-    asString(record.signature) ??
-    (signatures && asString(signatures[0])) ??
-    asString(record.transactionId) ??
-    null;
-  if (!signature) return null;
-
-  const slot = asFiniteInt(record.slot) ?? asFiniteInt(nestedTx?.slot) ?? 0;
-  const blockTime = asFiniteInt(record.blockTime) ?? asFiniteInt(record.block_time) ?? asFiniteInt(nestedTx?.blockTime);
-  const err = record.err ?? nestedMeta?.err ?? null;
-  const logMessages =
-    asLogMessages(nestedMeta?.logMessages) ??
-    asLogMessages(record.logMessages) ??
-    asLogMessages(record.logs);
-
-  return {
-    signature,
-    slot,
-    blockTime: blockTime === null ? null : blockTime,
-    err,
-    logMessages,
-  };
-}
-
 function parsedMetaToHistory(
   signature: string,
   slot: number,
@@ -196,13 +101,6 @@ function parsedMetaToHistory(
     logMessages: tx.meta?.logMessages ?? null,
   };
 }
-
-export type HistorySignature = {
-  signature: string;
-  slot: number;
-  blockTime?: number | null;
-  err?: unknown;
-};
 
 export type FetchParsedOptions = {
   batchSize?: number;
@@ -221,19 +119,15 @@ function normalizeFetchParsedOptions(batchSizeOrOptions?: number | FetchParsedOp
   return { ...batchSizeOrOptions, batchSize: batchSizeOrOptions.batchSize ?? HISTORY_BATCH_SIZE };
 }
 
-async function tryParsedTransaction(
+async function parseOne(
   connection: HistoryConnection,
   info: HistorySignature,
-): Promise<ParsedHistoryTx | "error" | null> {
-  try {
-    const tx = await connection.getParsedTransaction(info.signature, {
-      commitment: "confirmed",
-      maxSupportedTransactionVersion: 0,
-    });
-    return parsedMetaToHistory(info.signature, info.slot, info.blockTime, tx);
-  } catch {
-    return "error";
-  }
+): Promise<ParsedHistoryTx | null> {
+  const tx = await connection.getParsedTransaction(info.signature, {
+    commitment: "confirmed",
+    maxSupportedTransactionVersion: 0,
+  });
+  return parsedMetaToHistory(info.signature, info.slot, info.blockTime, tx);
 }
 
 export async function fetchParsedTransactionsBatched(
@@ -245,6 +139,7 @@ export async function fetchParsedTransactionsBatched(
   const primaryProvider = options.primaryProvider ?? "default";
   const fallback = options.fallback ?? null;
   const fallbackFirst = options.parseOnFallbackFirst;
+  const policy = policyFor("getParsedTransaction");
 
   const fetched = await mapInBatches(signatures, options.batchSize, async (info): Promise<ParsedHistoryTx | null> => {
     if (info.err) return null;
@@ -252,55 +147,25 @@ export async function fetchParsedTransactionsBatched(
     const tryFallbackFirst = Boolean(fallback && fallbackFirst?.has(info.signature));
     const firstConn = tryFallbackFirst ? fallback! : connection;
     const firstLabel: HistoryServedBy = tryFallbackFirst ? "default" : primaryProvider;
-    const first = await tryParsedTransaction(firstConn, info);
-    if (first && first !== "error") return { ...first, servedBy: firstLabel };
-
     const secondConn = tryFallbackFirst ? connection : fallback;
-    if (!secondConn || secondConn === firstConn) return null;
     const secondLabel: HistoryServedBy = tryFallbackFirst ? primaryProvider : "default";
-    const second = await tryParsedTransaction(secondConn, info);
-    if (second && second !== "error") return { ...second, servedBy: secondLabel };
-    return null;
+
+    try {
+      const result = await invokeWithPolicy({
+        method: "getParsedTransaction",
+        primary: () => parseOne(firstConn, info),
+        fallback: secondConn && secondConn !== firstConn ? () => parseOne(secondConn, info) : undefined,
+        primaryId: firstLabel,
+        fallbackId: secondLabel,
+        policy,
+      });
+      if (!result.value) return null;
+      return { ...result.value, servedBy: result.servedBy };
+    } catch {
+      return null;
+    }
   });
   return fetched.filter((item): item is ParsedHistoryTx => item !== null);
-}
-
-function solamiHistoryParams(address: string, maxSignatures: number) {
-  return [
-    address,
-    {
-      limit: maxSignatures,
-      transactionDetails: "signatures",
-    },
-  ];
-}
-
-function classifySolamiFailure(error: unknown): HistoryFallbackReason {
-  const message = error instanceof Error ? error.message : String(error);
-  if (/\b(4\d\d|5\d\d)\b/.test(message)) return "solami-http-error";
-  return "solami-error";
-}
-
-type SolamiListResult =
-  | { ok: true; items: ParsedHistoryTx[] }
-  | { ok: false; reason: HistoryFallbackReason };
-
-async function tryGetTransactionsForAddress(
-  customRpc: CustomRpcCall,
-  address: string,
-  maxSignatures: number,
-): Promise<SolamiListResult> {
-  try {
-    const raw = await customRpc("getTransactionsForAddress", solamiHistoryParams(address, maxSignatures));
-    const { rows } = unwrapTransactionsForAddressResult(raw);
-    // Empty is a limited history window, not "this account has no txs".
-    if (!rows.length) return { ok: false, reason: "solami-empty" };
-    const parsed = rows.map(parseHistoryTxCandidate).filter((item): item is ParsedHistoryTx => item !== null);
-    if (parsed.length === 0) return { ok: false, reason: "solami-unparseable" };
-    return { ok: true, items: parsed };
-  } catch (error) {
-    return { ok: false, reason: classifySolamiFailure(error) };
-  }
 }
 
 async function defaultCustomRpc(connection: HistoryConnection): Promise<CustomRpcCall | null> {
@@ -344,15 +209,6 @@ export function mergeHistorySignatures(
     .slice(0, maxSignatures);
 }
 
-function toSignature(item: ParsedHistoryTx): HistorySignature {
-  return {
-    signature: item.signature,
-    slot: item.slot,
-    blockTime: item.blockTime,
-    err: item.err,
-  };
-}
-
 function uniqueReasons(reasons: readonly HistoryFallbackReason[]): HistoryFallbackReason[] {
   return [...new Set(reasons)];
 }
@@ -383,11 +239,9 @@ function buildMetric(input: {
 }
 
 /**
- * Load personal-position history. On Solami, try `getTransactionsForAddress`
- * first (`{ limit, transactionDetails: "signatures" }`). Empty pages, RPC
- * errors, and web3.js validation failures fall back to the default RPC
- * (`SOLANA_RPC_URL` then public) per listing-call / per parsed tx so older
- * history is never dropped.
+ * Load personal-position history. Solami listing (`getTransactionsForAddress`)
+ * and per-tx `getParsedTransaction` fallbacks go through the shared RPC
+ * policy layer — this file only merges windows and records metrics.
  */
 export async function fetchPositionHistoryTransactions(
   options: FetchPositionHistoryOptions,
@@ -402,9 +256,9 @@ export async function fetchPositionHistoryTransactions(
   let usedSolamiListing = false;
 
   if (options.provider === "solami" && customRpc) {
-    const listed = await tryGetTransactionsForAddress(customRpc, options.address.toBase58(), options.maxSignatures);
+    const listed = await listSolamiAddressSignatures(customRpc, options.address.toBase58(), options.maxSignatures);
     if (listed.ok) {
-      solamiListed = listed.items.map(toSignature);
+      solamiListed = listed.items.map(toHistorySignature);
       usedSolamiListing = true;
     } else {
       reasons.push(listed.reason);

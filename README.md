@@ -63,7 +63,7 @@ Kept on both web API and MCP paths:
 | `quote_compound` | Compound quote | `wallet`, `positionMint`, `sourceSignatures?` (≤3) |
 | `prepare_compound_transaction` | Unsigned compound tx + permit + `signUrl` | same as quote_compound |
 | `submit_compound_transaction` | Permit check → re-sim → broadcast | `signedTransaction`, `permit`, `wallet`, full `summary` unchanged |
-| `list_rwa_pairs` | Discover same-asset RWA pairs; includes `openPositionUrl` + `recommendedRanges` | `minTvl?`, `maxPages?`, `sortBy?` |
+| `list_rwa_pairs` | Discover same-asset RWA pairs; includes `openPositionUrl` + `recommendedRanges`. Defaults `maxPages=3`; uses the in-memory cache when warm | `minTvl?`, `maxPages?`, `sortBy?` |
 | `quote_open_position` | Quote a **new** CLMM position (no existing NFT) | `wallet`, `poolId`, `inputMint`, `inputKind`, `amount`, `rangePreset?` (`tight`\|`standard`\|`wide`\|`custom`), `minPrice?`/`maxPrice?` (B per 1 A) |
 | `prepare_open_position` | Unsigned open-position tx + permit + `signUrl` (NFT mint partial-signed) | same as quote_open_position |
 | `submit_open_position` | Permit check → re-sim → broadcast (two signers: wallet + NFT mint) | `signedTransaction`, `permit`, `wallet`, full `summary` unchanged |
@@ -91,9 +91,9 @@ Never commit `.env.local`, mnemonics, or API keys. Do not prefix `SOLANA_RPC_URL
 
 | Surface | When | What it does |
 |---------|------|----------------|
-| **RPC** | `SOLAMI_API_KEY` set | All server `rpcConnection()` traffic goes to `https://rpc.solami.dev/sol?api_key=…` (one place: `src/lib/rpc.ts`). Position history prefers Solami `getTransactionsForAddress` with `{ limit, transactionDetails: "signatures" }` (rows under `result.data`, cursor `paginationToken`), then fills logs via bounded-parallel `getParsedTransaction`. Solami's RPC history window is limited — empty pages, HTTP errors, and web3.js validation failures on `getParsedTransaction` automatically fall back to `SOLANA_RPC_URL` (then public mainnet) per listing-call / per parsed tx, and the UI reports `solami`, `default`, or `solami+default`. |
+| **RPC** | `SOLAMI_API_KEY` set | All server `rpcConnection()` traffic goes through `src/lib/rpc/` (Solami → `SOLANA_RPC_URL` / Helius → public). Account reads and sends stay on Solami. Methods Solami answers non-compliantly (`getEpochInfo.transactionCount=null`, `getParsedTransaction` jsonParsed unions) fall back per `METHOD_POLICIES`. Sends never retry. History listing uses Solami `getTransactionsForAddress`; empty / HTTP / parse failures use the same policy layer. |
 | **Blur** | `SOLAMI_DATA_API_KEY` | Live pool activity. REST snapshot at `GET /api/pool-activity?poolId=` (`/data/pool` for mint + `GET /data/token/trades?chain=solana&address=<MINT>`, then client-filter by exact `pool`). SSE at `/api/pool-activity/stream` proxies Blur WS `type=swap,liquidity&pool=<POOL>` (never `address=` — that is a mint filter), forwards only parsed swap/liquidity events, and closes before Vercel `maxDuration` so the browser can reconnect. A Free key has REST but not WebSocket; [Solami](https://solami.dev) currently offers a 7-day Pro promo. Without the key the UI hides the panel. |
-| **Beam** | `SOLAMI_API_KEY` (off with `SOLAMI_BEAM=0`) | Prepare adds a ≥100,000-lamport SystemProgram tip to a live tip address **before** HMAC binding so the user signs it. If the v0 message would exceed 1,232 bytes the tip is omitted. Broadcast is the same `sendRawTransaction` through Solami RPC. After submit we query `GET /swqos/tx/{signature}` and show `Landed via Beam · region · tip` in the status dialog and MCP submit results. |
+| **Beam** | `SOLAMI_API_KEY` (off with `SOLAMI_BEAM=0`) | Prepare adds a ≥100,000-lamport SystemProgram tip to a live tip address **before** HMAC binding so the user signs it. If the v0 message would exceed 1,232 bytes the tip is omitted. Broadcast is the same `sendRawTransaction` through Solami RPC. After submit we poll `GET /swqos/tx/{signature}` up to ~6s and always return `beamLandingUrl` so clients can refresh. |
 
 Create a key at [solami.dev](https://solami.dev). Paste `SOLAMI_API_KEY` (and later `SOLAMI_DATA_API_KEY`) into `.env.local` or Vercel — never `NEXT_PUBLIC_*`. Position performance reports `{ txCount, elapsedMs, provider, solamiTxCount, defaultTxCount, fallbackReasons }` so you can see when Solami served recent txs and the default RPC filled older or unparseable ones.
 
@@ -101,7 +101,7 @@ Create a key at [solami.dev](https://solami.dev). Paste `SOLAMI_API_KEY` (and la
 wallet / API / MCP
         │
         ▼
- src/lib/rpc.ts ── SOLAMI_API_KEY? ──► rpc.solami.dev
+ src/lib/rpc/ ── SOLAMI_API_KEY? ──► rpc.solami.dev
         │                    else ──► SOLANA_RPC_URL / public RPC
         ▼
  position-performance history
@@ -129,7 +129,7 @@ wallet / API / MCP
 ### Getting Started (Remote MCP)
 
 1. **Connect your wallet** on [sofinance-alpha.vercel.app/app](https://sofinance-alpha.vercel.app/app) (or `/app/ai`)
-2. **Click "Sign to get MCP config"** — a WalletConnect session is not ownership proof
+2. **Click "Sign to get MCP config"** — a WalletConnect session is not ownership proof. Each challenge nonce is single-use in-process (2-minute window). Vercel isolates do not share that store; a replay on a different isolate can still mint until the window expires.
 3. **Sign the challenge message** in your wallet (proves you control the key)
 4. **Copy the generated config** — includes a short-lived token bound to your wallet
 5. **Paste into your AI agent:**
@@ -240,8 +240,8 @@ flowchart LR
     Permit[HMAC permit]
   end
   subgraph external [External]
-    RPC[Solana RPC / Solami]
-    Blur[Solami Blur]
+    RPC[src/lib/rpc provider layer]
+    Blur[src/lib/solami Blur / Beam]
     Jup[Jupiter Swap V2]
     Ray[Raydium CLMM]
   end
@@ -265,6 +265,28 @@ flowchart LR
 
 Stack: Next.js 16 / React 19 / TypeScript / pnpm / Vitest; `@raydium-io/raydium-sdk-v2`, Jupiter `/swap/v2/build`, `@solana/web3.js`, Zod, MCP SDK.
 
+### RPC provider layer
+
+Callers use `rpcConnection()` only. Provider selection, method policies, and fallback live in `src/lib/rpc/`. Solami product HTTP (Blur, Beam, `getTransactionsForAddress` parsers) lives in `src/lib/solami/`.
+
+```mermaid
+flowchart TD
+  callers[open / compound / zap / MCP] --> rpcConnection
+  rpcConnection --> pair[resolveProviderPair]
+  pair --> solami[Solami adapter]
+  pair --> generic[SOLANA_RPC_URL / Helius]
+  pair --> pub[public mainnet]
+  rpcConnection --> proxy[resilient Connection]
+  proxy --> policies[METHOD_POLICIES]
+  policies --> send[sends: primary only]
+  policies --> epoch[getEpochInfo / jsonParsed: fallback on validation or 5xx]
+  policies --> reads[account reads: primary; fallback on validation]
+  history[position-performance-history] --> solamiHist[solami/history listing]
+  history --> proxy
+```
+
+To add another JSON-RPC provider: append an entry to `RPC_PROVIDERS` in `src/lib/rpc/providers.ts` (id, endpoint from env, optional `customMethods`). To change when a web3.js method may leave Solami: edit `METHOD_POLICIES` in `src/lib/rpc/methods.ts`. Do not add provider if-statements in quote/send/MCP code.
+
 
 ## RWA same-asset pairing
 
@@ -284,7 +306,7 @@ Computes a position NFT's **actual holding-period return** from on-chain facts (
 1. Load personal-position history: Solami `getTransactionsForAddress` when `SOLAMI_API_KEY` is set (Solami's RPC history window is limited — empty pages and parse/validation errors fall back automatically to `SOLANA_RPC_URL` / public), otherwise `getSignaturesForAddress` plus bounded-parallel `getParsedTransaction` batches (not a sequential N+1 loop)
 2. Parse Anchor events from logs: `CreatePersonalPositionEvent`, `IncreaseLiquidityEvent`, `DecreaseLiquidityEvent` (exact deposit / principal-out / fee-out amounts)
 3. Current equity = liquidity token amounts (`LiquidityMath`) + uncollected fees (fee-growth accrual, same math as compound)
-4. Metrics: `holdingDays`, deposited / withdrawn / fees, PnL, `holdingPeriodReturnPct`, `annualizedReturnPct` (simple ×365/days), `feeOnlyAprPct`
+4. Metrics: `holdingDays`, deposited / withdrawn / fees, PnL, `holdingPeriodReturnPct`, `annualizedReturnPct` (simple ×365/days; **null when the position is younger than 24h**), `feeOnlyAprPct`
 5. Optional USD via Jupiter Price API v3 **at evaluation time** (explicitly labeled — not historical tx-time prices)
 
 This is **not** Raydium's pool `day.feeApr`. Read-only UI: `/app/position-performance`.
