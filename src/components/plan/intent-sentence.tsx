@@ -91,13 +91,13 @@ function Pill({
       aria-controls="plan-editor"
       onClick={() => onSelect(field)}
       className={cn(
-        "mx-[0.06em] inline-flex items-center gap-[0.22em] whitespace-nowrap rounded-full px-[0.48em] py-[0.04em] align-baseline outline-none transition-[box-shadow,translate] duration-200",
+        "mx-[0.06em] inline-flex max-w-full items-center gap-[0.22em] whitespace-nowrap rounded-full py-[0.04em] pl-[0.48em] pr-4 align-baseline outline-none transition-[box-shadow,translate] duration-200",
         "focus-visible:shadow-[0_0_0_3px_var(--color-ink)]",
         TONES[tone],
         active ? "-translate-y-[0.04em] shadow-[0_0_0_2.5px_var(--color-ink)]" : "hover:shadow-[0_0_0_1.5px_rgb(13_13_12/0.4)]",
       )}
     >
-      {children}
+      <span className="min-w-0 truncate">{children}</span>
       <ChevronDown
         aria-hidden="true"
         strokeWidth={2.5}
