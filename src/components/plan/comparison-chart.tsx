@@ -13,8 +13,8 @@ const labelPill =
 export type ChartStatus = "idle" | "loading" | "ready" | "unavailable";
 
 const WIDTH = 720;
-const HEIGHT = 280;
-const PAD = { l: 52, r: 18, t: 28, b: 36 };
+const HEIGHT = 340;
+const PAD = { l: 54, r: 18, t: 34, b: 40 };
 const CORAL = "#ff9c85";
 const INK = "#0d0d0c";
 
@@ -43,7 +43,7 @@ export function ComparisonChart({
     <section
       aria-label="SoFinance versus hold"
       style={{ animationDelay: "160ms" }}
-      className="flex min-h-[19rem] animate-rise flex-col rounded-[28px] bg-cream p-5 text-ink motion-reduce:animate-none sm:p-6 lg:col-span-8"
+      className="flex min-h-[21rem] animate-rise flex-col rounded-[28px] bg-cream p-4 text-ink motion-reduce:animate-none sm:p-6 lg:col-span-8"
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className={labelPill}>SoFinance vs hold</h2>
@@ -78,7 +78,7 @@ function ReadyChart({ comparison, intent }: { comparison: PlanYieldComparison; i
     <div className="mt-5 flex flex-1 flex-col">
       <svg
         viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-        className="h-auto w-full"
+        className="h-auto w-full min-h-[12.5rem] sm:min-h-0"
         role="img"
         aria-label={`SoFinance estimated ${endLabel} USDC versus hold after ${comparison.days} ${daysWord(comparison.days)}`}
       >
@@ -99,7 +99,7 @@ function ReadyChart({ comparison, intent }: { comparison: PlanYieldComparison; i
               y={chart.yAt(value) + 3}
               textAnchor="end"
               fill="#98948b"
-              fontSize="10"
+              fontSize="12"
               fontFamily="ui-monospace, SFMono-Regular, monospace"
             >
               {formatAxisUsdc(value)}
@@ -113,7 +113,7 @@ function ReadyChart({ comparison, intent }: { comparison: PlanYieldComparison; i
             y={HEIGHT - 10}
             textAnchor="middle"
             fill="#98948b"
-            fontSize="10"
+            fontSize="12"
             fontFamily="ui-monospace, SFMono-Regular, monospace"
           >
             {day === comparison.days ? `${day}d` : String(day)}
@@ -133,7 +133,7 @@ function ReadyChart({ comparison, intent }: { comparison: PlanYieldComparison; i
           y={chart.holdY - 6}
           fill={INK}
           fillOpacity="0.7"
-          fontSize="11"
+          fontSize="12"
           fontFamily="ui-monospace, SFMono-Regular, monospace"
         >
           hold
@@ -154,7 +154,7 @@ function ReadyChart({ comparison, intent }: { comparison: PlanYieldComparison; i
               y={PAD.t - 8}
               textAnchor="end"
               fill={CORAL}
-              fontSize="11"
+              fontSize="12"
               fontFamily="ui-monospace, SFMono-Regular, monospace"
             >
               {`aim +${formatAmount(intent.target)} above`}
@@ -175,7 +175,7 @@ function ReadyChart({ comparison, intent }: { comparison: PlanYieldComparison; i
               x={PAD.l + 8}
               y={chart.yAt(chart.aim.plotY) - 6}
               fill={CORAL}
-              fontSize="11"
+              fontSize="12"
               fontFamily="ui-monospace, SFMono-Regular, monospace"
             >
               {`aim +${formatAmount(intent.target)}`}
@@ -187,19 +187,21 @@ function ReadyChart({ comparison, intent }: { comparison: PlanYieldComparison; i
           x={chart.sofinanceLabel.x}
           y={chart.sofinanceLabel.y}
           fill={INK}
-          fontSize="11"
+          fontSize="12"
           fontFamily="ui-monospace, SFMono-Regular, monospace"
         >
           SoFinance
         </text>
         {chart.breakEven !== null && chart.breakEven > 0 && chart.breakEven <= comparison.days && (
           <g>
-            <circle cx={chart.xAt(chart.breakEven)} cy={chart.yAt(0)} r="4.5" fill={CORAL} stroke={INK} strokeWidth="1.25" />
+            {chart.breakEven < comparison.days ? (
+              <circle cx={chart.xAt(chart.breakEven)} cy={chart.yAt(0)} r="4.5" fill={CORAL} stroke={INK} strokeWidth="1.25" />
+            ) : null}
             <text
               x={Math.min(chart.xAt(chart.breakEven) + 10, WIDTH - PAD.r - 4)}
-              y={chart.yAt(0) + 16}
+              y={chart.yAt(0) + (chart.breakEven < comparison.days ? 16 : -10)}
               fill={INK}
-              fontSize="10"
+              fontSize="12"
               fontFamily="ui-monospace, SFMono-Regular, monospace"
             >
               {`break-even day ${chart.breakEven}`}
@@ -220,7 +222,7 @@ function ReadyChart({ comparison, intent }: { comparison: PlanYieldComparison; i
               x={Math.min(chart.xAt(chart.aimReached) + 10, WIDTH - PAD.r - 4)}
               y={chart.yAt(chart.aimReachedValue) - 10}
               fill={INK}
-              fontSize="10"
+              fontSize="12"
               fontFamily="ui-monospace, SFMono-Regular, monospace"
             >
               {`aim reached on day ${chart.aimReached}`}
@@ -233,7 +235,7 @@ function ReadyChart({ comparison, intent }: { comparison: PlanYieldComparison; i
           y={chart.yAt(chart.end) - 10}
           textAnchor="end"
           fill={INK}
-          fontSize="11"
+          fontSize="12"
           fontFamily="ui-monospace, SFMono-Regular, monospace"
         >
           {endLabel}

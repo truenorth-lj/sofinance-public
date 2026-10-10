@@ -27,7 +27,7 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 function breakEvenCopy(comparison: PlanYieldComparison): string {
   if (comparison.breakEvenDay === null) return "Not reached in a year";
   if (comparison.breakEvenDay === 0) return "Day 0";
-  return `Day ${comparison.breakEvenDay} — after the protocol swap fee`;
+  return `Day ${comparison.breakEvenDay}`;
 }
 
 function headline(intent: Intent, comparison: PlanYieldComparison): string {
