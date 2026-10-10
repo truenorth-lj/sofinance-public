@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
 import { LoaderCircle, CircleAlert, CheckCircle2 } from "lucide-react";
-import { InkShell, InkCard, InkNav } from "@/components/ink";
+import { InkHero, InkShell, InkCard, InkNav } from "@/components/ink";
 import { useWalletConnection } from "@/components/wallet-connection";
 import { notSentRetryMessage } from "@/lib/public-error";
 import { preserveExtraSignatures } from "@/lib/open-signatures";
@@ -193,58 +193,54 @@ export default function SignPage() {
   const isBusy = status === "signing" || status === "submitting";
 
   return (
-    <InkShell maxWidth="3xl">
+    <InkShell>
       <InkNav wallet={wallet} connected={connected} onConnect={connect} onDisconnect={disconnect} />
       
-      <div className="mb-6 mt-8 sm:mt-10">
-        <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-          Sign transaction
-        </h1>
-        <p className="mt-2 text-sm leading-relaxed text-neutral-500">
-          Review and sign the prepared transaction
-        </p>
-      </div>
+      <div className="mx-auto max-w-3xl">
+      <InkHero label="Sign" title="Sign transaction">
+        <p>Review and sign the prepared transaction</p>
+      </InkHero>
 
-      <InkCard>
+      <InkCard className="mt-3">
         <div className="space-y-6">
           <div className="flex items-start gap-3">
-            {status === "loading" && <LoaderCircle className="mt-1 h-5 w-5 animate-spin text-neutral-400" />}
-            {status === "expired" && <CircleAlert className="mt-1 h-5 w-5 text-amber-500" />}
-            {status === "error" && <CircleAlert className="mt-1 h-5 w-5 text-red-500" />}
-            {status === "success" && <CheckCircle2 className="mt-1 h-5 w-5 text-green-500" />}
+            {status === "loading" && <LoaderCircle className="mt-1 h-5 w-5 animate-spin text-smoke" />}
+            {status === "expired" && <CircleAlert className="mt-1 h-5 w-5 text-lemon" />}
+            {status === "error" && <CircleAlert className="mt-1 h-5 w-5 text-coral" />}
+            {status === "success" && <CheckCircle2 className="mt-1 h-5 w-5 text-mint" />}
             {["wallet-mismatch", "ready", "signing", "submitting"].includes(status) && (
-              <div className="mt-1 h-5 w-5 rounded-full border-2 border-neutral-600" />
+              <div className="mt-1 h-5 w-5 rounded-full border-2 border-white/40" />
             )}
             
             <div className="flex-1">
-              <p className="text-sm leading-6 text-neutral-300">{statusMessage}</p>
+              <p className="text-sm leading-6 text-cream/80">{statusMessage}</p>
             </div>
           </div>
 
           {payload && status !== "loading" && (
-            <div className="space-y-4 rounded-xl border border-neutral-800/60 bg-neutral-900/50 p-4">
+            <div className="space-y-4 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
               <div className="flex items-start justify-between gap-4 text-sm">
-                <span className="text-neutral-500">Transaction type</span>
-                <span className="font-medium text-neutral-100">{kindLabel}</span>
+                <span className="text-smoke">Transaction type</span>
+                <span className="font-medium text-cream">{kindLabel}</span>
               </div>
               
               <div className="flex items-start justify-between gap-4 text-sm">
-                <span className="text-neutral-500">Wallet</span>
-                <span className="font-mono text-xs text-neutral-300">{short(payload.wallet)}</span>
+                <span className="text-smoke">Wallet</span>
+                <span className="font-mono text-xs text-cream/80">{short(payload.wallet)}</span>
               </div>
               
               {payload.kind === "add-liquidity" && (
                 <>
                   <div className="flex items-start justify-between gap-4 text-sm">
-                    <span className="text-neutral-500">Position</span>
-                    <span className="font-mono text-xs text-neutral-300">
+                    <span className="text-smoke">Position</span>
+                    <span className="font-mono text-xs text-cream/80">
                       {short((payload.submitArgs.selection as { positionMint: string }).positionMint)}
                     </span>
                   </div>
                   
                   <div className="flex items-start justify-between gap-4 text-sm">
-                    <span className="text-neutral-500">Amount</span>
-                    <span className="font-medium text-neutral-100">
+                    <span className="text-smoke">Amount</span>
+                    <span className="font-medium text-cream">
                       {(payload.submitArgs.requested as string) || "—"}
                     </span>
                   </div>
@@ -253,8 +249,8 @@ export default function SignPage() {
               
               {payload.kind === "compound" && (
                 <div className="flex items-start justify-between gap-4 text-sm">
-                  <span className="text-neutral-500">Position</span>
-                  <span className="font-mono text-xs text-neutral-300">
+                  <span className="text-smoke">Position</span>
+                  <span className="font-mono text-xs text-cream/80">
                     {short((payload.submitArgs.summary as { positionMint: string }).positionMint)}
                   </span>
                 </div>
@@ -263,14 +259,14 @@ export default function SignPage() {
               {payload.kind === "open-position" && (
                 <>
                   <div className="flex items-start justify-between gap-4 text-sm">
-                    <span className="text-neutral-500">Pool</span>
-                    <span className="font-mono text-xs text-neutral-300">
+                    <span className="text-smoke">Pool</span>
+                    <span className="font-mono text-xs text-cream/80">
                       {short((payload.submitArgs.summary as { poolId: string }).poolId)}
                     </span>
                   </div>
                   <div className="flex items-start justify-between gap-4 text-sm">
-                    <span className="text-neutral-500">New position NFT</span>
-                    <span className="font-mono text-xs text-neutral-300">
+                    <span className="text-smoke">New position NFT</span>
+                    <span className="font-mono text-xs text-cream/80">
                       {short((payload.submitArgs.summary as { nftMint: string }).nftMint)}
                     </span>
                   </div>
@@ -278,8 +274,8 @@ export default function SignPage() {
               )}
               
               <div className="flex items-start justify-between gap-4 text-sm">
-                <span className="text-neutral-500">Expires</span>
-                <span className="text-xs text-neutral-400">
+                <span className="text-smoke">Expires</span>
+                <span className="text-xs text-smoke">
                   {new Date(payload.expiresAt).toLocaleString()}
                 </span>
               </div>
@@ -290,7 +286,7 @@ export default function SignPage() {
             {showConnect && (
               <button
                 onClick={connect}
-                className="flex-1 rounded-xl border border-neutral-700 bg-transparent px-4 py-3 text-sm font-semibold text-neutral-100 transition-colors hover:border-neutral-600 hover:bg-neutral-900/50"
+                className="flex-1 rounded-full bg-lemon px-5 py-3 text-sm font-semibold text-ink transition-colors hover:bg-[#fff27f]"
               >
                 Connect wallet
               </button>
@@ -300,7 +296,7 @@ export default function SignPage() {
               <button
                 onClick={handleSign}
                 disabled={isBusy}
-                className="flex-1 rounded-xl border border-neutral-700 bg-transparent px-4 py-3 text-sm font-semibold text-neutral-100 transition-colors hover:border-neutral-600 hover:bg-neutral-900/50 disabled:cursor-not-allowed disabled:opacity-40"
+                className="flex-1 rounded-full bg-lemon px-5 py-3 text-sm font-semibold text-ink transition-colors hover:bg-[#fff27f] disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {isBusy ? (
                   <span className="inline-flex items-center gap-2">
@@ -316,7 +312,7 @@ export default function SignPage() {
             {status === "wallet-mismatch" && (
               <button
                 onClick={disconnect}
-                className="flex-1 rounded-xl border border-neutral-700 bg-transparent px-4 py-3 text-sm font-semibold text-neutral-100 transition-colors hover:border-neutral-600 hover:bg-neutral-900/50"
+                className="flex-1 rounded-full border border-white/25 px-5 py-3 text-sm font-semibold text-cream/85 transition-colors hover:border-white/70"
               >
                 Disconnect wallet
               </button>
@@ -324,9 +320,9 @@ export default function SignPage() {
           </div>
 
           {signature && (
-            <div className="rounded-xl border border-green-900/50 bg-green-950/20 p-4">
-              <p className="text-sm font-medium text-green-400">Transaction submitted</p>
-              <p className="mt-2 text-xs text-green-300">
+            <div className="rounded-2xl border border-mint/30 bg-mint/10 p-4">
+              <p className="text-sm font-medium text-mint">Transaction submitted</p>
+              <p className="mt-2 text-xs text-mint">
                 <a
                   href={`https://solscan.io/tx/${signature}`}
                   target="_blank"
@@ -344,10 +340,11 @@ export default function SignPage() {
       <div className="mt-6 text-center">
         <button
           onClick={() => router.push("/app")}
-          className="text-sm text-neutral-400 underline hover:text-neutral-300"
+          className="text-sm text-smoke underline hover:text-cream/80"
         >
           Return to app
         </button>
+      </div>
       </div>
     </InkShell>
   );

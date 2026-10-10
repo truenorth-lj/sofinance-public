@@ -23,15 +23,15 @@ function FieldLabel({ label }: { label: keyof typeof FIELD_HELP }) {
   const id = useId();
   const [open, setOpen] = useState(false);
   return (
-    <dt className="relative flex items-center gap-1.5 text-neutral-500" onMouseEnter={() => setOpen(true)} onMouseLeave={(event) => { if (!event.currentTarget.contains(document.activeElement)) setOpen(false); }}>
+    <dt className="relative flex items-center gap-1.5 text-smoke" onMouseEnter={() => setOpen(true)} onMouseLeave={(event) => { if (!event.currentTarget.contains(document.activeElement)) setOpen(false); }}>
       {label}
       <button type="button" aria-label={`About ${label}`} aria-describedby={open ? id : undefined}
         onFocus={() => setOpen(true)} onBlur={() => setOpen(false)} onClick={(event) => { event.currentTarget.focus(); setOpen(true); }}
         onKeyDown={(event) => { if (event.key === "Escape") setOpen(false); }}
-        className="inline-flex shrink-0 rounded text-neutral-500 hover:text-neutral-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-400">
+        className="inline-flex shrink-0 rounded text-smoke hover:text-cream/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cream/70">
         <Info size={24} strokeWidth={2} className="preview-icon h-3.5 w-3.5" aria-hidden="true" />
       </button>
-      {open && <span id={id} role="tooltip" className="absolute left-0 top-full z-20 mt-1 w-64 max-w-[75vw] rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-left text-xs font-normal leading-5 text-neutral-200 shadow-xl">
+      {open && <span id={id} role="tooltip" className="absolute left-0 top-full z-20 mt-1 w-64 max-w-[75vw] rounded-lg border border-white/20 bg-white/[0.06] px-3 py-2 text-left text-xs font-normal leading-5 text-cream/90 shadow-xl">
         {FIELD_HELP[label]}
       </span>}
     </dt>
@@ -90,30 +90,30 @@ export function OpenPositionModal({
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center" role="dialog" aria-modal="true" aria-labelledby="open-position-title">
       <button className="absolute inset-0 bg-black/70" aria-label="Close add liquidity" onClick={onClose} />
-      <div className="relative z-10 max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-[20px] border border-neutral-800 bg-[#0a0a0a] p-5 sm:rounded-[20px] sm:p-6">
+      <div className="relative z-10 max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-[20px] border border-white/12 bg-char p-5 sm:rounded-[28px] sm:p-6">
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
-            <h2 id="open-position-title" className="text-base font-semibold text-neutral-100">Add liquidity</h2>
-            <p className="mt-1 text-xs leading-5 text-neutral-500">{label}</p>
+            <h2 id="open-position-title" className="text-base font-semibold text-cream">Add liquidity</h2>
+            <p className="mt-1 text-xs leading-5 text-smoke">{label}</p>
           </div>
-          <button onClick={onClose} className="rounded-lg p-1 text-neutral-500 hover:text-neutral-200" aria-label="Close">
+          <button onClick={onClose} className="rounded-lg p-1 text-smoke hover:text-cream/90" aria-label="Close">
             <X className="h-4 w-4" />
           </button>
         </div>
 
         <div className="mb-4 flex flex-wrap gap-1">
           {(pair.token2022A || pair.token2022B) && (
-            <span className="rounded-full border border-neutral-700 px-2 py-0.5 text-[10px] text-neutral-400">Token-2022</span>
+            <span className="rounded-full border border-white/20 px-2 py-0.5 text-[10px] text-smoke">Token-2022</span>
           )}
           {pair.freezeRisk && (
-            <span className="rounded-full border border-neutral-700 px-2 py-0.5 text-[10px] text-neutral-400">Freeze risk</span>
+            <span className="rounded-full border border-white/20 px-2 py-0.5 text-[10px] text-smoke">Freeze risk</span>
           )}
         </div>
 
-        <label className="block text-xs text-neutral-400" htmlFor="open-input-asset">Input asset</label>
+        <label className="block text-xs text-smoke" htmlFor="open-input-asset">Input asset</label>
         <select
           id="open-input-asset"
-          className="mt-1 w-full rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100"
+          className="mt-1 w-full rounded-2xl border border-white/20 bg-white/[0.06] px-3 py-2 text-sm text-cream"
           value={c.inputMint ? `${c.inputKind}:${c.inputMint}` : ""}
           onChange={(event) => {
             const [kind, mint] = event.target.value.split(":");
@@ -140,10 +140,10 @@ export function OpenPositionModal({
 
         <div className="mt-3 flex items-end gap-2">
           <div className="flex-1">
-            <label className="block text-xs text-neutral-400" htmlFor="open-amount">Amount</label>
+            <label className="block text-xs text-smoke" htmlFor="open-amount">Amount</label>
             <input
               id="open-amount"
-              className="mt-1 w-full rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100"
+              className="mt-1 w-full rounded-2xl border border-white/20 bg-white/[0.06] px-3 py-2 text-sm text-cream"
               value={c.amount}
               onChange={(event) => c.changeAmount(event.target.value)}
               inputMode="decimal"
@@ -151,7 +151,7 @@ export function OpenPositionModal({
             />
           </div>
           <button
-            className="rounded-xl border border-neutral-700 px-3 py-2 text-xs font-semibold text-neutral-300"
+            className="rounded-full border border-white/20 px-3 py-2 text-xs font-semibold text-cream/80"
             onClick={c.fillMax}
             type="button"
           >
@@ -159,14 +159,14 @@ export function OpenPositionModal({
           </button>
         </div>
 
-        <p className="mt-4 text-xs text-neutral-400">Price range (B per 1 A)</p>
+        <p className="mt-4 text-xs text-smoke">Price range (B per 1 A)</p>
         <div className="mt-2 flex flex-wrap gap-2">
           {c.presets.map((preset) => (
             <button
               key={preset.id}
               type="button"
               onClick={() => c.choosePreset(preset.id)}
-              className={`rounded-full border px-3 py-1 text-xs font-semibold ${c.rangePreset === preset.id ? "border-neutral-100 text-neutral-100" : "border-neutral-700 text-neutral-400"}`}
+              className={`rounded-full border px-3 py-1 text-xs font-semibold ${c.rangePreset === preset.id ? "border-cream text-cream" : "border-white/20 text-smoke"}`}
             >
               {preset.label}
             </button>
@@ -174,7 +174,7 @@ export function OpenPositionModal({
           <button
             type="button"
             onClick={() => c.choosePreset("custom")}
-            className={`rounded-full border px-3 py-1 text-xs font-semibold ${c.rangePreset === "custom" ? "border-neutral-100 text-neutral-100" : "border-neutral-700 text-neutral-400"}`}
+            className={`rounded-full border px-3 py-1 text-xs font-semibold ${c.rangePreset === "custom" ? "border-cream text-cream" : "border-white/20 text-smoke"}`}
           >
             Custom
           </button>
@@ -183,14 +183,14 @@ export function OpenPositionModal({
           <div className="mt-2 grid grid-cols-2 gap-2">
             <input
               aria-label="Minimum price"
-              className="rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100"
+              className="rounded-2xl border border-white/20 bg-white/[0.06] px-3 py-2 text-sm text-cream"
               value={c.minPrice}
               onChange={(event) => c.setMinPrice(event.target.value)}
               placeholder="Min"
             />
             <input
               aria-label="Maximum price"
-              className="rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100"
+              className="rounded-2xl border border-white/20 bg-white/[0.06] px-3 py-2 text-sm text-cream"
               value={c.maxPrice}
               onChange={(event) => c.setMaxPrice(event.target.value)}
               placeholder="Max"
@@ -199,7 +199,7 @@ export function OpenPositionModal({
         )}
 
         {quote && (
-          <div className="mt-4 rounded-xl border border-neutral-800/60 bg-neutral-900/40 p-3 text-xs text-neutral-300">
+          <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.04] p-3 text-xs text-cream/80">
             <dl className="space-y-2">
               <div className="flex justify-between gap-3"><FieldLabel label="Token A" /><dd>{formatAmount(quote.minOutA, quote.decimalsA)} {tokenSymbol(quote.mintA, undefined, quote.symbolA ?? pair.symbolA)}</dd></div>
               <div className="flex justify-between gap-3"><FieldLabel label="Token B" /><dd>{formatAmount(quote.minOutB, quote.decimalsB)} {tokenSymbol(quote.mintB, undefined, quote.symbolB ?? pair.symbolB)}</dd></div>
@@ -207,10 +207,10 @@ export function OpenPositionModal({
               <div className="flex justify-between gap-3"><FieldLabel label="Status" /><dd>{formatRangeStatus(quote.rangeSide) ?? "—"}</dd></div>
               <div className="flex justify-between gap-3"><FieldLabel label="Price impact cap" /><dd>≤ {quote.maxImpactBps / 100}%</dd></div>
             </dl>
-            <details className="group mt-3 border-t border-neutral-800 pt-3">
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded text-neutral-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-400 [&::-webkit-details-marker]:hidden">
+            <details className="group mt-3 border-t border-white/12 pt-3">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded text-smoke focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cream/70 [&::-webkit-details-marker]:hidden">
                 <span>Fees &amp; details</span>
-                <span className="inline-flex items-center gap-2 text-neutral-300">
+                <span className="inline-flex items-center gap-2 text-cream/80">
                   <span>~{lamports(upfrontCost)} upfront</span>
                   <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" aria-hidden="true" />
                 </span>
@@ -222,12 +222,12 @@ export function OpenPositionModal({
                 <div className="flex justify-between gap-3"><FieldLabel label="Network fee (est.)" /><dd>{lamports(quote.networkFeeLamportsEstimate)}</dd></div>
                 <div className="flex justify-between gap-3"><FieldLabel label="Wallet SOL" /><dd>{lamports(quote.solLamports)}</dd></div>
               </dl>
-              <p className="mt-3 text-xs leading-5 text-neutral-500">Upfront costs include refundable account deposits, one-time account setup and the estimated network fee. These are separate from your investment. Quotes refresh every 3 seconds.</p>
-              {detailWarnings.map(warning => <p key={warning} className="mt-2 text-xs leading-5 text-neutral-400">{explainTokenWarning(warning)}</p>)}
+              <p className="mt-3 text-xs leading-5 text-smoke">Upfront costs include refundable account deposits, one-time account setup and the estimated network fee. These are separate from your investment. Quotes refresh every 3 seconds.</p>
+              {detailWarnings.map(warning => <p key={warning} className="mt-2 text-xs leading-5 text-smoke">{explainTokenWarning(warning)}</p>)}
             </details>
           </div>
         )}
-        <div className="mt-2 flex min-h-5 items-center gap-2 text-xs leading-5 text-neutral-500">
+        <div className="mt-2 flex min-h-5 items-center gap-2 text-xs leading-5 text-smoke">
           {c.quoteLoading && <>
             <RefreshCw size={24} strokeWidth={2} className="preview-icon h-3.5 w-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" />
             <span>Fetching the best price on Jupiter</span>
@@ -235,7 +235,7 @@ export function OpenPositionModal({
         </div>
 
         {quote && !quote.passesFloor && (
-          <p role="status" className="mt-3 rounded-xl border border-amber-800/70 bg-amber-950/40 p-3 text-xs leading-5 text-amber-100">
+          <p role="status" className="mt-3 rounded-2xl border border-lemon/25 bg-lemon/10 p-3 text-xs leading-5 text-lemon">
             Immediate resale of this position would recover about {quote.achievedResaleBps === null ? "an unknown share" : `${(quote.achievedResaleBps / 100).toFixed(2)}%`} of your input
             {quote.achievedResaleBps === null ? "." : ` (about ${(Math.max(0, 10_000 - quote.achievedResaleBps) / 100).toFixed(2)}% round-trip loss).`}
             {" "}This does not block signing. Price impact, balances, quote expiry, and simulation still protect the transaction.
@@ -243,27 +243,27 @@ export function OpenPositionModal({
         )}
 
         {(visibleWarnings.filter((warning) => warning !== quote?.warning).length > 0 || c.quoteError || c.error) && (
-          <div className="mt-3 space-y-2 text-xs leading-5 text-neutral-400">
+          <div className="mt-3 space-y-2 text-xs leading-5 text-smoke">
             {visibleWarnings.filter((warning) => warning !== quote?.warning).map(warning => <p key={warning}>{explainTokenWarning(warning)}</p>)}
-            {c.quoteError && <p role="alert" className="text-red-400">{c.quoteError}</p>}
-            {c.error && <p role="alert" className="text-red-400">{c.error}</p>}
+            {c.quoteError && <p role="alert" className="text-coral">{c.quoteError}</p>}
+            {c.error && <p role="alert" className="text-coral">{c.error}</p>}
           </div>
         )}
 
-        <p className="mt-4 text-xs text-neutral-500" role="status">{status}</p>
+        <p className="mt-4 text-xs text-smoke" role="status">{status}</p>
         {c.canRefreshQuote && (c.quoteError || (quote && !c.fresh)) && (
           <button type="button" onClick={c.refreshQuote} disabled={c.quoteLoading}
-            className="mt-2 rounded-xl border border-neutral-700 px-3 py-2 text-xs text-neutral-300 disabled:opacity-40">
+            className="mt-2 rounded-full border border-white/20 px-3 py-2 text-xs text-cream/80 disabled:opacity-40">
             Refresh quote
           </button>
         )}
 
         {c.submitStage === "confirmed" ? (
           <div className="mt-3 space-y-2 text-sm">
-            <a className="block text-neutral-200 underline" href={`https://solscan.io/tx/${c.signature}`} target="_blank" rel="noreferrer">
+            <a className="block text-cream/90 underline" href={`https://solscan.io/tx/${c.signature}`} target="_blank" rel="noreferrer">
               View on Solscan
             </a>
-            <a className="block text-neutral-200 underline" href="/app">
+            <a className="block text-cream/90 underline" href="/app">
               Open in Positions{c.positionMint ? ` (${c.positionMint.slice(0, 4)}…${c.positionMint.slice(-4)})` : ""}
             </a>
           </div>
@@ -271,7 +271,7 @@ export function OpenPositionModal({
           <button
             type="button"
             onClick={c.connect}
-            className="mt-4 w-full rounded-xl border border-neutral-700 px-4 py-3 text-sm font-semibold text-neutral-100"
+            className="mt-4 w-full rounded-full bg-lemon px-5 py-3 text-sm font-semibold text-ink transition-colors hover:bg-[#fff27f]"
           >
             Connect wallet
           </button>
@@ -281,7 +281,7 @@ export function OpenPositionModal({
             disabled={c.actionDisabled}
             title={c.actionBlockedReason || undefined}
             onClick={() => void c.signAndSend()}
-            className="mt-4 w-full rounded-xl border border-neutral-700 px-4 py-3 text-sm font-semibold text-neutral-100 disabled:cursor-not-allowed disabled:opacity-40"
+            className="mt-4 w-full rounded-full bg-lemon px-5 py-3 text-sm font-semibold text-ink transition-colors hover:bg-[#fff27f] disabled:cursor-not-allowed disabled:opacity-40"
           >
             {c.busy ? (
               <span className="inline-flex items-center gap-2">

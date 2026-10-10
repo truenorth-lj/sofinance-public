@@ -1,0 +1,247 @@
+{
+  "wallet": null,
+  "ownsNft": null,
+  "positionMint": "DemoPosition1111111111111111111111111111111",
+  "positionAccount": "DemoPositionAccount111111111111111111111111",
+  "poolId": "DemoPooo111111111111111111111111111111111111",
+  "mintA": "SPCXxcqXj6e5dJDVNovHN8744zkbhM2bYudU45BimGb",
+  "mintB": "Xs3oZwbHvqis4NYcf4YKWmEia2eC84wSiVrcYcTqpH8",
+  "decimalsA": 6,
+  "decimalsB": 8,
+  "tickLower": -12,
+  "tickUpper": 10,
+  "tickCurrent": 1,
+  "rangeSide": "inside",
+  "liquidity": "325493348711",
+  "openedAt": 1767225600,
+  "openedAtIso": "2026-01-01T00:00:00.000Z",
+  "evaluatedAt": 1772085600,
+  "evaluatedAtIso": "2026-02-26T06:00:00.000Z",
+  "signatureCount": 2,
+  "truncated": true,
+  "maxSignatures": 10,
+  "history": [
+    {
+      "signature": "DemoSignature11111111111111111111111111111111111111111111111111111111111111111111111111A",
+      "blockTime": 1767225600,
+      "slot": 100000001,
+      "events": [
+        {
+          "kind": "increase",
+          "positionNftMint": "DemoPosition1111111111111111111111111111111",
+          "liquidity": "100000000",
+          "principalA": "8211635",
+          "principalB": "428541582",
+          "feeA": "0",
+          "feeB": "0"
+        }
+      ]
+    },
+    {
+      "signature": "DemoSignature11111111111111111111111111111111111111111111111111111111111111111111111111B",
+      "blockTime": 1769817600,
+      "slot": 100500001,
+      "events": [
+        {
+          "kind": "decrease",
+          "positionNftMint": "DemoPosition1111111111111111111111111111111",
+          "liquidity": "40000000",
+          "principalA": "7794390",
+          "principalB": "389238181",
+          "feeA": "0",
+          "feeB": "6363"
+        }
+      ]
+    }
+  ],
+  "cashflows": {
+    "depositedA": "8211635",
+    "depositedB": "428541582",
+    "withdrawnPrincipalA": "17706176",
+    "withdrawnPrincipalB": "574450987",
+    "feesCollectedA": "475502",
+    "feesCollectedB": "47037572",
+    "openCount": 0,
+    "increaseCount": 4,
+    "decreaseCount": 6
+  },
+  "metrics": {
+    "holdingDays": 56.25,
+    "depositedRaw": {
+      "a": "8211635",
+      "b": "428541582"
+    },
+    "withdrawnPrincipalRaw": {
+      "a": "17706176",
+      "b": "574450987"
+    },
+    "feesCollectedRaw": {
+      "a": "475502",
+      "b": "47037572"
+    },
+    "uncollectedFeesRaw": {
+      "a": "77223",
+      "b": "7692270"
+    },
+    "liquidityAmountsRaw": {
+      "a": "13883892",
+      "b": "2190843303"
+    },
+    "currentEquityRaw": {
+      "a": "13961116",
+      "b": "2198535574"
+    },
+    "feesEarnedRaw": {
+      "a": "552726",
+      "b": "54729843"
+    },
+    "pnlRaw": {
+      "a": "23931159",
+      "b": "2391482552"
+    },
+    "priceUsdA": null,
+    "priceUsdB": null,
+    "depositedUsd": null,
+    "withdrawnPrincipalUsd": null,
+    "feesCollectedUsd": null,
+    "uncollectedFeesUsd": null,
+    "feesEarnedUsd": null,
+    "liquidityUsd": null,
+    "currentEquityUsd": null,
+    "pnlUsd": null,
+    "holdingPeriodReturnPct": null,
+    "annualizedReturnPct": null,
+    "feeOnlyAprPct": null,
+    "method": "Discover txs via getSignaturesForAddress(personalPosition PDA). Parse Raydium Anchor events from tx logs: CreatePersonalPositionEvent, IncreaseLiquidityEvent, DecreaseLiquidityEvent (exact deposit/withdraw/fee amounts). Current equity = LiquidityMath amounts for position L + uncollected fees (feeGrowth inside \u2212 lastInside) \u00d7 L / Q64 + tokenFeesOwed (same as compound-state). USD optional via Jupiter Price API v3 (fallback: Raydium pool mid \u00d7 stable) at evaluation time (NOT historical).",
+    "assumptions": "Returns use on-chain token amounts; USD uses current prices (not tx-time prices) and is secondary. Same-asset RWA wrap pairs prefer token-equivalent (TE) in the plain/base ticker via current tick mid. holdingPeriodReturnPct = pnl / deposited \u00d7 100 (TE when available; else USD). annualizedReturnPct = holdingPeriodReturnPct \u00d7 365 / holdingDays (simple, not compounded). feeOnlyAprPct = feesEarned / deposited \u00d7 365 / holdingDays \u00d7 100 (TE when available; else USD). PnL includes IL, price drift, and fees \u2014 not Raydium pool 24h feeApr. History capped by maxSignatures; truncated=true means earlier txs may be missing."
+  },
+  "tokenNative": {
+    "symbolA": "SPCX",
+    "symbolB": "SPCXx",
+    "sameAssetWrap": true,
+    "wrapKind": "suffix-x",
+    "amounts": {
+      "deposited": {
+        "a": 8.21163557,
+        "b": 4.28541582
+      },
+      "withdrawnPrincipal": {
+        "a": 17.70617638,
+        "b": 5.74450987
+      },
+      "feesCollected": {
+        "a": 0.4755028,
+        "b": 0.47037573
+      },
+      "uncollectedFees": {
+        "a": 0.07722379,
+        "b": 0.07692271
+      },
+      "feesEarned": {
+        "a": 0.55272659,
+        "b": 0.54729843
+      },
+      "liquidityAmounts": {
+        "a": 13.8838925,
+        "b": 21.90843304
+      },
+      "currentEquity": {
+        "a": 13.96111629,
+        "b": 21.98535574
+      },
+      "pnl": {
+        "a": 23.9311599,
+        "b": 23.91482552
+      }
+    },
+    "perSideFeeAprPct": {
+      "a": 9.1,
+      "b": 9.7
+    },
+    "tokenEquivalent": {
+      "baseSymbol": "SPCX",
+      "baseSide": "A",
+      "wrappedSymbol": "SPCXx",
+      "tickUsed": 1,
+      "uiPriceBPerA": 1.0001,
+      "basis": "token-equivalent in SPCX using current tick mid (NOT historical)",
+      "note": "Sample data for tests; not a real position.",
+      "metrics": {
+        "deposited": 12.49705328,
+        "withdrawnPrincipal": 23.45068878,
+        "feesCollected": 0.94587874,
+        "uncollectedFees": 0.15414653,
+        "feesEarned": 1.10002527,
+        "liquidity": 35.79233519,
+        "equity": 35.94648172,
+        "pnl": 47.84599596,
+        "holdingPeriodReturnPct": 12.5,
+        "annualizedReturnPct": 81.11,
+        "feeOnlyAprPct": 9.4
+      }
+    }
+  },
+  "pricing": {
+    "source": "none",
+    "label": "USD pricing skipped; token-raw / token-native metrics only.",
+    "priceUsdA": null,
+    "priceUsdB": null
+  },
+  "method": "Discover txs via getSignaturesForAddress(personalPosition PDA). Parse Raydium Anchor events from tx logs: CreatePersonalPositionEvent, IncreaseLiquidityEvent, DecreaseLiquidityEvent (exact deposit/withdraw/fee amounts). Current equity = LiquidityMath amounts for position L + uncollected fees (feeGrowth inside \u2212 lastInside) \u00d7 L / Q64 + tokenFeesOwed (same as compound-state). USD optional via Jupiter Price API v3 (fallback: Raydium pool mid \u00d7 stable) at evaluation time (NOT historical).",
+  "assumptions": "Returns use on-chain token amounts; USD uses current prices (not tx-time prices) and is secondary. Same-asset RWA wrap pairs prefer token-equivalent (TE) in the plain/base ticker via current tick mid. holdingPeriodReturnPct = pnl / deposited \u00d7 100 (TE when available; else USD). annualizedReturnPct = holdingPeriodReturnPct \u00d7 365 / holdingDays (simple, not compounded). feeOnlyAprPct = feesEarned / deposited \u00d7 365 / holdingDays \u00d7 100 (TE when available; else USD). PnL includes IL, price drift, and fees \u2014 not Raydium pool 24h feeApr. History capped by maxSignatures; truncated=true means earlier txs may be missing. Token-native metrics use on-chain raw amounts converted to UI decimals. Same-asset wrap pairs: TE uses current tick mid (NOT historical): uiPriceBPerA = 1.0001^tickCurrent \u00d7 10^(decA\u2212decB). Prefer TE in the plain/base ticker (not the wrapped side); also expose raw A/B. holdingPeriodReturnPct_TE = pnl_TE / deposited_TE \u00d7 100. annualizedReturnPct_TE = holdingPeriodReturnPct_TE \u00d7 365 / holdingDays (simple). feeOnlyAprPct_TE = feesEarned_TE / deposited_TE \u00d7 365 / holdingDays \u00d7 100. perSideFeeAprPct = feesEarned_side / deposited_side \u00d7 365 / holdingDays \u00d7 100 (UI amounts). USD remains optional/secondary (current Jupiter/Raydium prices, not tx-time).",
+  "realizedFeeAprSeries": {
+    "label": "Position realized fee APR (cumulative, on-chain events)",
+    "assumptions": "Points exist only on event days (open / increase / decrease) and the evaluation day. APR = cumulative fees \u00f7 deposited \u00d7 365 \u00f7 holding days, using current USD prices (not tx-time prices). Uncollected fees are included only on the evaluation day. Earlier days use collected fees only. Days without an event are gaps \u2014 values are not interpolated.",
+    "points": [
+      {
+        "time": 1767225600,
+        "date": "2026-01-01",
+        "aprPct": null,
+        "kind": "event",
+        "includeUncollected": false
+      },
+      {
+        "time": 1767830400,
+        "date": "2026-01-08",
+        "aprPct": null,
+        "kind": "event",
+        "includeUncollected": false
+      },
+      {
+        "time": 1768435200,
+        "date": "2026-01-15",
+        "aprPct": null,
+        "kind": "event",
+        "includeUncollected": false
+      },
+      {
+        "time": 1769040000,
+        "date": "2026-01-22",
+        "aprPct": null,
+        "kind": "event",
+        "includeUncollected": false
+      },
+      {
+        "time": 1769644800,
+        "date": "2026-01-29",
+        "aprPct": null,
+        "kind": "event",
+        "includeUncollected": false
+      },
+      {
+        "time": 1770249600,
+        "date": "2026-02-05",
+        "aprPct": null,
+        "kind": "event",
+        "includeUncollected": false
+      },
+      {
+        "time": 1770854400,
+        "date": "2026-02-12",
+        "aprPct": null,
+        "kind": "evaluation",
+        "includeUncollected": true
+      }
+    ]
+  }
+}

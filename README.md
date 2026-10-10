@@ -9,7 +9,7 @@ One shared engine in `src/lib` powers:
 
 The server never holds private keys. Agents/users sign locally; broadcast re-verifies an HMAC permit and re-simulates before send.
 
-The marketing landing page lives at `/`. Product UI lives under `/app` (Positions, RWA pairs, position performance, Use AI, and sign deep-links). `/api/*` is unchanged.
+The marketing landing page lives at `/`. Product UI lives under `/app` (Positions, Plan, RWA pairs, position performance, Use AI, and sign deep-links). `/api/*` is unchanged.
 
 | Old path | New path |
 |----------|----------|
@@ -341,3 +341,9 @@ Built for the **Colosseum Crypto World's Fair** — entered in the **Solana trac
 Original private repository [`truenorth-lj/SoFinance`](https://github.com/truenorth-lj/SoFinance) first commit **2026-09-29** (`chore: scaffold USDC position zap project`, author date `2026-09-29T02:09:15Z`), within the Sep 14–Oct 12 PT hackathon window. This public repository (`truenorth-lj/sofinance-public`) was created **2026-10-06** with a fresh history so hardcoded personal wallet addresses could be removed and documentation published in English. Read access to the original private repo will be granted to `hackathon@colosseum.com` for verification.
 
 Development used the author’s own pre-built generic agent skill (a “research-pipeline” skill) and AI coding assistants as tooling—not pre-hackathon product code.
+
+## Local read-only LP decision analysis
+
+`/app/plan` states a goal as one sentence of pills (when to cash out, how much to put in, what outcome matters, a loss alert and the exit asset) and judges it against the three sample market paths of the deterministic scenario engine. Sample numbers stay off until switched on, show no probabilities, and the page never touches the network. If the goal is out of reach it says so and offers a longer horizon or a smaller target; it does not raise risk to make the numbers work.
+
+The verified ledger, same-cash-flow HODL comparison and unsigned USDC + SOL exit preview for a real position are on `/app/position-performance` once a position NFT mint is entered. That path reads verified public pool/position snapshots, raw transactions, USD daily candles and principal-only Jupiter route quotes. Complete net metrics remain unavailable until event-time USDC prices, flow attribution, full reconciliation and execution costs are verified. Public real fixtures and scoped liquidity/token/reward checks are reproducible; independent quote legs are not executable net recovery. Nothing in either page prepares or submits trades. See [implementation, acceptance and local preview](specs/lp-decision/IMPLEMENTATION.md); its notes on the earlier date/amount builder describe the UI that `/app/plan` replaced.
