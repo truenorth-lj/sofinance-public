@@ -2,7 +2,7 @@ import "server-only";
 
 import { getPdaPersonalPositionAddress, PersonalPositionLayout } from "@raydium-io/raydium-sdk-v2";
 import { getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID, unpackAccount } from "@solana/spl-token";
-import { Connection, PublicKey, VersionedTransaction, type AccountInfo } from "@solana/web3.js";
+import { Connection, PublicKey, SystemProgram, VersionedTransaction, type AccountInfo } from "@solana/web3.js";
 import { MIN_SOL_LAMPORTS, NATIVE_SOL_MINT } from "./ids";
 import { simulatedInputSpendMatches } from "./amount";
 import type { OpenPoolState } from "./open-state";
@@ -29,11 +29,14 @@ function decodeToken(info: AccountInfo<Buffer> | null, key: PublicKey, program: 
   return account.amount;
 }
 
-function simulatedAccount(
+export function simulatedAccount(
   account: { data: string[]; owner: string; lamports: number; executable: boolean; rentEpoch?: number } | null | undefined,
 ) {
   if (!account) return null;
   const data = account.data[0];
+  // RPC may represent a closed WSOL ATA as a zero-lamport system account
+  // with empty bytes instead of null. It has no remaining token balance.
+  if (data === "" && account.lamports === 0 && account.owner === SystemProgram.programId.toBase58() && !account.executable) return null;
   if (!data) throw new Error("Simulated account data missing");
   return {
     data: Buffer.from(data, "base64"),

@@ -84,6 +84,40 @@ describe("parseBeamLanding / formatBeamLanding", () => {
     expect(parseBeamLanding({ signature: "sig", is_landed: false })?.isLanded).toBe(false);
     expect(parseBeamLanding({ message: "not found!" })).toBeNull();
   });
+
+  it("reads the live swqos/tx payload that previously returned beam:null after poll", () => {
+    const live = {
+      signature: "5zAtB77MLq6FRhFdLSKKYMyPBtUE9cM2vPRM9R9rHnUycxkyxgtWaoQvveZNt42mXmLyMeoe6H5gfXaC9oDkkKvF",
+      is_landed: true,
+      landed_via_jito: false,
+      rebroadcasted: false,
+      region: "nyc",
+      tip_lamports: 100000,
+      tip_address: "2Ga87xvZwpP9WRsSdiPiWre21cQbDcFhGLmT5EMo1ami",
+      bundle_uuid: "",
+      first_seen_ms: 1791604452182,
+      forwarded_ms: 1791604452182,
+      landed_by_venue: "",
+      landed_by_signature: "",
+      landed_by_slot: 0,
+      landed_by_tip_lamports: 0,
+      attributed_at: 0,
+      timestamp: 1791604452,
+    };
+    const landing = parseBeamLanding(live);
+    expect(landing).toMatchObject({
+      isLanded: true,
+      region: "nyc",
+      tipLamports: 100_000,
+    });
+    expect(formatBeamLanding(landing!)).toBe("Landed via Beam · nyc · 100000 lamports");
+  });
+
+  it("accepts string/status aliases used while Beam is still indexing", () => {
+    expect(parseBeamLanding({ signature: "sig", is_landed: "true" })?.isLanded).toBe(true);
+    expect(parseBeamLanding({ signature: "sig", status: "landed" })?.isLanded).toBe(true);
+    expect(parseBeamLanding({ data: { signature: "sig", isLanded: true, region: "NYC" } })?.isLanded).toBe(true);
+  });
 });
 
 describe("chooseBeamTransaction / measureTxSize", () => {
@@ -147,5 +181,29 @@ describe("fetchBeamTipAddress / fetchBeamLanding", () => {
     expect(waits).toEqual(Array.from({ length: BEAM_LOOKUP_ATTEMPTS - 1 }, () => BEAM_LOOKUP_GAP_MS));
     expect(result.beam).toBeNull();
     expect(result.beamLandingUrl).toBe(beamLandingUrl("sig123"));
+  });
+
+  it("polls the public landing URL even without SOLAMI_API_KEY and reports a late land", async () => {
+    const live = {
+      signature: "5zAtB77MLq6FRhFdLSKKYMyPBtUE9cM2vPRM9R9rHnUycxkyxgtWaoQvveZNt42mXmLyMeoe6H5gfXaC9oDkkKvF",
+      is_landed: true,
+      region: "nyc",
+      tip_lamports: 100000,
+    };
+    let calls = 0;
+    const fetcher = vi.fn(async () => {
+      calls += 1;
+      if (calls < 5) return new Response(JSON.stringify({ message: "not found!" }), { status: 404 });
+      return new Response(JSON.stringify(live), { status: 200 });
+    });
+    const result = await lookupBeamAfterSend(live.signature, {
+      env: {},
+      fetcher,
+      nowWait: async () => undefined,
+    });
+    expect(fetcher).toHaveBeenCalledTimes(5);
+    expect(result.beam?.isLanded).toBe(true);
+    expect(result.label).toBe("Landed via Beam · nyc · 100000 lamports");
+    expect(result.beamLandingUrl).toBe(beamLandingUrl(live.signature));
   });
 });
