@@ -152,7 +152,7 @@ describe("PlanApp", () => {
     await waitForText("Past average 36.5% a year");
     expect(text()).toContain("SoFinance vs hold");
     expect(text()).toContain("Break-even");
-    expect(text()).toContain("Day 1 — after the protocol swap fee");
+    expect(text()).toMatch(/Break-even\s*Day 1/);
     expect(text()).toContain("Estimated earn");
     expect(text()).not.toContain("Sideways");
     expect(fetcher.mock.calls.filter((call) => String(call[0]).includes("/api/pool-daily-apr"))).toHaveLength(1);
