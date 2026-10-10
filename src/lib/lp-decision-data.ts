@@ -35,7 +35,7 @@ export async function readDecisionObservations(req: DecisionRequest, fetcher: ty
       account=getPdaPersonalPositionAddress(CLMM_PROGRAM_ID,new PublicKey(req.positionId)).publicKey.toBase58();
       const response=await rpc<{value?:{data?:[string,string];owner:string}}>("getAccountInfo",[account,{encoding:"base64",commitment:"confirmed"}]);
       const value=response?.value; const bytes=value?.data ? Buffer.from(value.data[0],"base64") : null;
-      if (!bytes || value.owner !== CLMM_PROGRAM_ID.toBase58() || !bytes.subarray(0,8).equals(createHash("sha256").update("account:PersonalPositionState").digest().subarray(0,8))) throw new Error("Personal position missing or invalid owner/discriminator");
+      if (!bytes || !value || value.owner !== CLMM_PROGRAM_ID.toBase58() || !bytes.subarray(0,8).equals(createHash("sha256").update("account:PersonalPositionState").digest().subarray(0,8))) throw new Error("Personal position missing or invalid owner/discriminator");
       const decoded=PersonalPositionLayout.decode(bytes);
       if(decoded.nftMint.toBase58()!==req.positionId || (poolId && decoded.poolId.toBase58()!==poolId)) throw new Error("Position/pool context mismatch");
       positionState=decoded;poolId=decoded.poolId.toBase58();liquidityAtomic=decoded.liquidity.toString();
@@ -61,7 +61,7 @@ export async function readDecisionObservations(req: DecisionRequest, fetcher: ty
     try {
       const data=await rpc<{value?:{data?:[string,string];owner:string}}>("getAccountInfo",[poolId,{encoding:"base64",commitment:"confirmed"}]);
       const accountValue=data?.value;const bytes=accountValue?.data?Buffer.from(accountValue.data[0],"base64"):null;
-      if(!bytes||accountValue.owner!==CLMM_PROGRAM_ID.toBase58()||!bytes.subarray(0,8).equals(createHash("sha256").update("account:PoolState").digest().subarray(0,8)))throw new Error("Pool account missing/invalid");
+      if(!bytes||!accountValue||accountValue.owner!==CLMM_PROGRAM_ID.toBase58()||!bytes.subarray(0,8).equals(createHash("sha256").update("account:PoolState").digest().subarray(0,8)))throw new Error("Pool account missing/invalid");
       const state=PoolInfoLayout.decode(bytes);
       if(state.mintA.toBase58()!==result.pool.mintA||state.mintB.toBase58()!==result.pool.mintB)throw new Error("Pool mint mismatch");
       const amounts=LiquidityMathUtil.getAmountsForLiquidity(state.sqrtPriceX64,TickUtil.getSqrtPriceAtTick(positionState.tickLower),TickUtil.getSqrtPriceAtTick(positionState.tickUpper),positionState.liquidity,false);

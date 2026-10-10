@@ -85,7 +85,7 @@ export async function withCacheAndInflight<T>(
   ttlMs: number | null,
   run: () => Promise<T>,
 ): Promise<{ value: T; cacheHit: boolean }> {
-  if (!key || ttlMs == null) {
+  if (!key || ttlMs === null || ttlMs === undefined) {
     return { value: await run(), cacheHit: false };
   }
   const cached = store.get(key);

@@ -36,12 +36,14 @@ async function readPositionFlowAuditUnlocked(positionId:string,source:"live"|"ca
     return {accounting,historicalMarks,relatedNftRent,source:{kind:source,asOf:selected.fetchedAt,fresh:false,synthetic:false},context,historyReachedEnd:true,nextCursor:null,...auditPositionFlows(transactions,context)};
   }
   const budget=AbortSignal.any([AbortSignal.timeout(25000),...(signal?[signal]:[])]);
-  const rpc=async(method:string,params:unknown[])=>rpcRequest(method,params,{fetcher,signal:budget,timeoutMs:10000});
+  const rpc=<T=unknown>(method:string,params:unknown[])=>rpcRequest<T>(method,params,{fetcher,signal:budget,timeoutMs:10000});
+  type AccountValue={value?:{data?:[string,string];owner:string;lamports:number;executable:boolean;rentEpoch:number}};
+  type SignatureRow={signature:string};
   const positionAccount=getPdaPersonalPositionAddress(CLMM_PROGRAM_ID,new PublicKey(positionId)).publicKey.toBase58();
   const decoded=async(address:string,name:string)=>{
-    const response=await rpc("getAccountInfo",[address,{encoding:"base64",commitment:"confirmed"}]);
+    const response=await rpc<AccountValue>("getAccountInfo",[address,{encoding:"base64",commitment:"confirmed"}]);
     const value=response?.value,bytes=value?.data?Buffer.from(value.data[0],"base64"):null;
-    if(!bytes||value.owner!==CLMM_PROGRAM_ID.toBase58()||!bytes.subarray(0,8).equals(createHash("sha256").update(`account:${name}`).digest().subarray(0,8)))throw new Error(`${name} account missing or invalid`);
+    if(!bytes||!value||value.owner!==CLMM_PROGRAM_ID.toBase58()||!bytes.subarray(0,8).equals(createHash("sha256").update(`account:${name}`).digest().subarray(0,8)))throw new Error(`${name} account missing or invalid`);
     return bytes;
   };
   for(const [key,value] of livePages)if(Date.now()-value.at>900000)livePages.delete(key);
@@ -52,14 +54,14 @@ async function readPositionFlowAuditUnlocked(positionId:string,source:"live"|"ca
   const poolId=position.poolId.toBase58(),pool=PoolInfoLayout.decode(await decoded(poolId,"PoolState"));
   const context:FlowContext={positionAccount,poolId,positionId,mintA:pool.mintA.toBase58(),mintB:pool.mintB.toBase58(),decimalsA:pool.mintDecimalsA,decimalsB:pool.mintDecimalsB};
   const contiguous=before? page.started&&page.expectedCursor===before:true;
-  const signatures=await rpc("getSignaturesForAddress",[positionAccount,{limit:10,commitment:"confirmed",...(before?{before}:{})}]);
+  const signatures=await rpc<SignatureRow[]>("getSignaturesForAddress",[positionAccount,{limit:10,commitment:"confirmed",...(before?{before}:{})}]);
   if(!Array.isArray(signatures))throw new Error("Signature page invalid");
   const reuseComplete=!before&&page.ended&&page.head===signatures[0]?.signature;
   if(!before&&!reuseComplete){if(page.head!==signatures[0]?.signature){page.transactions.clear();page.related?.clear();}page.started=true;page.expectedCursor=null;page.ended=false;page.head=signatures[0]?.signature;}
   const transactions:{signature:string;tx:PublicTransaction}[]=[],errors:{signature:string;detail:string}[]=[];
   for(const s of signatures){
     if(budget.aborted)break;
-    try{const tx=page.transactions.get(s.signature)??await rpc("getTransaction",[s.signature,{encoding:"jsonParsed",commitment:"confirmed",maxSupportedTransactionVersion:0}]);if(!tx)throw new Error("Transaction pruned/unavailable");transactions.push({signature:s.signature,tx});page.transactions.set(s.signature,tx);}
+    try{const tx=page.transactions.get(s.signature)??await rpc<PublicTransaction|null>("getTransaction",[s.signature,{encoding:"jsonParsed",commitment:"confirmed",maxSupportedTransactionVersion:0}]);if(!tx)throw new Error("Transaction pruned/unavailable");transactions.push({signature:s.signature,tx});page.transactions.set(s.signature,tx);}
     catch(e){errors.push({signature:s.signature,detail:e instanceof Error?e.message:"Transaction unavailable"});break;}
   }
   // Resume before the last successfully read signature, never skip a failed tx.
@@ -72,13 +74,13 @@ async function readPositionFlowAuditUnlocked(positionId:string,source:"live"|"ca
     try{const balances=all.flatMap(t=>t.tx.meta?.postTokenBalances?.filter(b=>b.mint===positionId&&b.uiTokenAmount.amount==="1").map(b=>({balance:b,key:t.tx.transaction?.message.accountKeys[b.accountIndex]}))??[]);
       const latest=balances[0],nftAddress=typeof latest?.key==="string"?latest.key:latest?.key?.pubkey;
       if(!nftAddress)throw new Error("Current NFT account candidate unavailable");
-      const value=(await rpc("getAccountInfo",[nftAddress,{encoding:"base64",commitment:"confirmed"}]))?.value;
-      if(!value||![TOKEN_PROGRAM_ID.toBase58(),TOKEN_2022_PROGRAM_ID.toBase58()].includes(value.owner))throw new Error("Current NFT token program invalid");
+      const value=(await rpc<AccountValue>("getAccountInfo",[nftAddress,{encoding:"base64",commitment:"confirmed"}]))?.value;
+      if(!value||!value.data||![TOKEN_PROGRAM_ID.toBase58(),TOKEN_2022_PROGRAM_ID.toBase58()].includes(value.owner))throw new Error("Current NFT token program invalid");
       const current=unpackAccount(new PublicKey(nftAddress),{...value,data:Buffer.from(value.data[0],"base64"),owner:new PublicKey(value.owner)},new PublicKey(value.owner));
       if(current.mint.toBase58()!==positionId||current.amount!==1n||current.owner.toBase58()!==latest?.balance.owner)throw new Error("NFT owner changed; scoped history needs ownership boundary");
       relatedAccountsComplete=true;
-      const relatedSignatures=new Set<string>();for(const address of [positionId,nftAddress]){const rows=await rpc("getSignaturesForAddress",[address,{limit:1000,commitment:"confirmed"}]);if(!Array.isArray(rows))throw new Error("NFT signature result invalid");if(rows.length===1000)relatedAccountsComplete=false;for(const r of rows)relatedSignatures.add(r.signature);}
-      for(const signature of relatedSignatures){if(page.transactions.has(signature))continue;page.related??=new Map();const tx=page.related.get(signature)??await rpc("getTransaction",[signature,{encoding:"jsonParsed",commitment:"confirmed",maxSupportedTransactionVersion:0}]) as PublicTransaction|null;if(!tx){relatedAccountsComplete=false;continue;}page.related.set(signature,tx);relatedTransactions.push({signature,tx});rentRefunds.push(observedNftRentRefund(signature,tx,nftAddress,positionId));}
+      const relatedSignatures=new Set<string>();for(const address of [positionId,nftAddress]){const rows=await rpc<SignatureRow[]>("getSignaturesForAddress",[address,{limit:1000,commitment:"confirmed"}]);if(!Array.isArray(rows))throw new Error("NFT signature result invalid");if(rows.length===1000)relatedAccountsComplete=false;for(const r of rows)relatedSignatures.add(r.signature);}
+      for(const signature of relatedSignatures){if(page.transactions.has(signature))continue;page.related??=new Map();const tx=page.related.get(signature)??await rpc<PublicTransaction|null>("getTransaction",[signature,{encoding:"jsonParsed",commitment:"confirmed",maxSupportedTransactionVersion:0}]);if(!tx){relatedAccountsComplete=false;continue;}page.related.set(signature,tx);relatedTransactions.push({signature,tx});rentRefunds.push(observedNftRentRefund(signature,tx,nftAddress,positionId));}
     }catch(e){relatedAccountsComplete=false;errors.push({signature:"NFT-related cost scope",detail:e instanceof Error?e.message:"NFT history unavailable"});}
   }
   const coverage={relatedAccountsComplete,historyReachedEnd:analyze?page.ended&&contiguous:reachedEnd,currentLiquidity:position.liquidity.toString()};
@@ -88,7 +90,7 @@ async function readPositionFlowAuditUnlocked(positionId:string,source:"live"|"ca
     const classified=classifyPositionJournal(all,context),now=Math.floor(Date.now()/1000);
     let snapshot:Awaited<ReturnType<typeof readCurrentEquity>>|undefined;
     try{snapshot=await readCurrentEquity(positionId,positionAccount,pool,position,rpc);coverage.currentLiquidity=snapshot.liquidity;}catch(e){errors.push({signature:"Current income snapshot",detail:e instanceof Error?e.message:"Snapshot unavailable"});}
-    try{const latest=await rpc("getSignaturesForAddress",[positionAccount,{limit:1,commitment:"confirmed",...(snapshot?{minContextSlot:snapshot.slot}:{})}]);
+    try{const latest=await rpc<SignatureRow[]>("getSignaturesForAddress",[positionAccount,{limit:1,commitment:"confirmed",...(snapshot?{minContextSlot:snapshot.slot}:{})}]);
       if(!historySnapshotMatches(page.head,latest))throw new Error("Position changed during read; restart at newest history head");
     }catch(e){page.ended=false;coverage.historyReachedEnd=false;errors.push({signature:"History/snapshot head",detail:e instanceof Error?e.message:"History/snapshot head unavailable"});}
     const requests=historicalPositionMarks(classified,all,[context.mintA,context.mintB]);
