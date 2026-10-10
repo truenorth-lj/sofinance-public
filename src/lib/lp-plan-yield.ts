@@ -14,6 +14,13 @@ export const PLAN_PROTOCOL_FEE_BPS = DEFAULT_SWAP_FEE_BPS;
 /** Assumed share of the deposit that must be swapped into the other side of a two-sided pair. */
 export const PLAN_SWAP_SHARE = "0.5";
 
+/** Complete UTC days needed before the average is shown as a normal headline. */
+export const PLAN_MIN_RELIABLE_SAMPLE_DAYS = 7;
+
+export function isThinPlanSample(sampleDays: number): boolean {
+  return sampleDays < PLAN_MIN_RELIABLE_SAMPLE_DAYS;
+}
+
 /**
  * Day-0 entry cost: protocol swap fee on the swapped half of `capital`.
  * Network / gas fees are ignored. `swapShare` is an assumption (default 50%).

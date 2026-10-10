@@ -7,7 +7,9 @@ import {
   compoundedProfit,
   dailyRateFromAprPct,
   daysToReachGain,
+  isThinPlanSample,
   planEntryCost,
+  PLAN_MIN_RELIABLE_SAMPLE_DAYS,
   PLAN_PROTOCOL_FEE_BPS,
   PLAN_SWAP_SHARE,
   PLAN_YIELD_DAYS_PER_YEAR,
@@ -102,6 +104,16 @@ describe("daysToReachGain", () => {
   it("returns null when a year is not enough, including zero yield", () => {
     expect(daysToReachGain("1000", dailyRateFromAprPct("0"), "1")).toBeNull();
     expect(daysToReachGain("1000", dailyRateFromAprPct("0.01"), "500")).toBeNull();
+  });
+});
+
+describe("isThinPlanSample", () => {
+  it("treats fewer than 7 complete days as too little history", () => {
+    expect(PLAN_MIN_RELIABLE_SAMPLE_DAYS).toBe(7);
+    expect(isThinPlanSample(3)).toBe(true);
+    expect(isThinPlanSample(6)).toBe(true);
+    expect(isThinPlanSample(7)).toBe(false);
+    expect(isThinPlanSample(29)).toBe(false);
   });
 });
 

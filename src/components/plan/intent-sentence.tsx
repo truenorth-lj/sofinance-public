@@ -130,13 +130,14 @@ function ValueField({
   const editing = draft !== null && draft.base === value;
   const text = editing ? draft.text : display;
   const invalid = editing && parse(draft.text) !== value;
+  const sizeText = (display || "0").length >= (text || "0").length ? display || "0" : text || "0";
   return (
     <label className="mt-1 flex items-baseline text-[clamp(3rem,7vw,5.25rem)] font-semibold leading-none tracking-[-0.045em]">
       {prefix && <span aria-hidden="true">{prefix}</span>}
-      {/* The hidden twin sizes the grid cell, so the input is exactly as wide as its text. */}
+      {/* Size to the formatted value so focus/blur does not shift the layout. */}
       <span className="inline-grid">
         <span aria-hidden="true" className="invisible col-start-1 row-start-1 whitespace-pre tabular-nums">
-          {text || "0"}
+          {sizeText}
         </span>
         <input
           aria-label={label}

@@ -105,6 +105,46 @@ describe("ComparisonChart", () => {
     expect(markup).not.toContain("after 1 days");
   });
 
+  it("warns when the sample is too short and does not treat it as normal", () => {
+    const comparison = buildPlanComparison({
+      capital: "10000",
+      days: 30,
+      aprPct: "141.8",
+      sampleDays: 3,
+      target: "1000",
+      entryCost: planEntryCost("10000"),
+    });
+    const markup = renderToStaticMarkup(
+      createElement(ComparisonChart, {
+        status: "ready",
+        comparison,
+        intent: { ...intent, days: 30, amount: "10000", target: "1000" },
+      }),
+    );
+    expect(markup).toContain("Only 3 complete UTC days of data");
+    expect(markup).toContain("this estimate is unreliable");
+  });
+
+  it("says break-even is not within the period when the curve stays negative", () => {
+    const comparison = buildPlanComparison({
+      capital: "1000",
+      days: 1,
+      aprPct: "0",
+      sampleDays: 8,
+      target: "10",
+      entryCost: planEntryCost("1000"),
+    });
+    const markup = renderToStaticMarkup(
+      createElement(ComparisonChart, {
+        status: "ready",
+        comparison,
+        intent: { ...intent, days: 1, target: "10" },
+      }),
+    );
+    expect(markup).toContain("break-even not within this period");
+    expect(markup).not.toContain("break-even day 1");
+  });
+
   it("shows a clear empty state when no pool is chosen", () => {
     const markup = renderToStaticMarkup(
       createElement(ComparisonChart, { status: "idle", comparison: null, intent }),
