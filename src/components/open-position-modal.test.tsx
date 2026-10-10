@@ -81,7 +81,7 @@ async function mount() {
 }
 
 function signButton() {
-  return [...container.querySelectorAll("button")].find((button) => button.textContent === "Sign")!;
+  return [...container.querySelectorAll("button")].find((button) => button.textContent === "Create position")!;
 }
 
 beforeEach(() => {
