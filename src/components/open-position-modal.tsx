@@ -120,7 +120,7 @@ export function OpenPositionModal({
         <div className="relative mt-1">
           <select
             id="open-input-asset"
-            className="w-full appearance-none rounded-2xl border border-white/20 bg-white/[0.06] py-2 pl-3 pr-10 text-sm text-cream"
+            className="w-full min-w-0 max-w-full appearance-none truncate rounded-2xl border border-white/20 bg-white/[0.06] py-2 pl-3 pr-12 text-sm text-cream"
             value={c.inputMint ? `${c.inputKind}:${c.inputMint}` : ""}
             onChange={(event) => {
               const [kind, mint] = event.target.value.split(":");
@@ -144,7 +144,7 @@ export function OpenPositionModal({
               );
             })}
           </select>
-          <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-cream" aria-hidden="true" />
+          <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-cream" aria-hidden="true" />
         </div>
 
         <div className="mt-3 flex items-end gap-2">

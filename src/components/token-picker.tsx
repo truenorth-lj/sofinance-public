@@ -109,7 +109,7 @@ export function TokenPicker({ assets, selectedAsset, metadata, disabled, onSelec
       {selectedAsset ? <><TokenIcon symbol={assetSymbol(selectedAsset, selectedItem)} icon={selectedItem?.icon || null} />
         <span className="min-w-0 flex-1"><span className="block truncate text-base font-semibold text-cream">{assetSymbol(selectedAsset, selectedItem)}</span><span className="block truncate text-xs text-smoke">{assetName(selectedAsset, selectedItem)} · {short(selectedAsset.mint)}</span></span>
         <span className="hidden shrink-0 text-right text-xs text-smoke sm:block" title={formatAmount(selectedAsset.balance, selectedAsset.decimals, selectedAsset.decimals)}>Balance<span className="mt-1 block text-sm font-semibold tabular-nums text-cream/90">{displayBalance(selectedAsset)}</span>{selectedBalanceUsd && <span className="mt-0.5 block text-xs tabular-nums text-smoke/70">{selectedBalanceUsd}</span>}</span>
-      </> : <span className="flex-1 text-sm text-smoke">{assets.length ? "Select wallet asset" : "No wallet assets found"}</span>}
+      </> : <span className="min-w-0 flex-1 truncate text-sm text-smoke">{assets.length ? "Select wallet asset" : "No wallet assets found"}</span>}
       <ChevronDown className="h-4 w-4 shrink-0 text-smoke" />
     </button>
     <dialog ref={dialogRef} aria-labelledby="asset-dialog-title" onClose={() => { setOpen(false); setQuery(""); triggerRef.current?.focus(); }}
