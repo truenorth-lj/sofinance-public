@@ -2,7 +2,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-import { PUBLIC_SOLANA_RPC_URL, SOLAMI_RPC_BASE_URL, redactRpcEndpoint, resolveRpcConfig, rpcProvider } from "./rpc";
+import {
+  PUBLIC_SOLANA_RPC_URL,
+  SOLAMI_RPC_BASE_URL,
+  redactRpcEndpoint,
+  resolveDefaultRpcConfig,
+  resolveRpcConfig,
+  rpcProvider,
+} from "./rpc";
 
 describe("resolveRpcConfig", () => {
   const originalSolami = process.env.SOLAMI_API_KEY;
@@ -39,6 +46,24 @@ describe("resolveRpcConfig", () => {
   it("falls back to the public mainnet RPC when nothing is configured", () => {
     const config = resolveRpcConfig({});
     expect(config).toEqual({
+      endpoint: PUBLIC_SOLANA_RPC_URL,
+      provider: "default",
+    });
+  });
+});
+
+describe("resolveDefaultRpcConfig", () => {
+  it("ignores SOLAMI_API_KEY and uses SOLANA_RPC_URL then public", () => {
+    expect(
+      resolveDefaultRpcConfig({
+        SOLAMI_API_KEY: "test-key",
+        SOLANA_RPC_URL: "https://dedicated.example/rpc",
+      }),
+    ).toEqual({
+      endpoint: "https://dedicated.example/rpc",
+      provider: "default",
+    });
+    expect(resolveDefaultRpcConfig({ SOLAMI_API_KEY: "test-key" })).toEqual({
       endpoint: PUBLIC_SOLANA_RPC_URL,
       provider: "default",
     });
