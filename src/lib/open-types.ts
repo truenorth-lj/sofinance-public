@@ -44,6 +44,10 @@ export type OpenPositionQuote = {
   roundtripCostInput: string;
   passesFloor: boolean;
   floorBps: number;
+  suggestedResaleFloorBps: number;
+  maxAmountForFloor: string;
+  achievedResaleBps: number | null;
+  warning: string;
   maxImpactBps: number;
   slippageBps: number;
   routeTouchesTargetPool: boolean;
