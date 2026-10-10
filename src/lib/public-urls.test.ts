@@ -22,16 +22,16 @@ describe("public app URLs", () => {
   });
 
   it("prefers NEXT_PUBLIC_APP_URL for absolute sign URLs", () => {
-    process.env.NEXT_PUBLIC_APP_URL = "https://sofinance-alpha.vercel.app/";
+    process.env.NEXT_PUBLIC_APP_URL = "https://sofinancelab.xyz/";
     process.env.VERCEL_URL = "ignored.vercel.app";
-    expect(getPublicBaseUrl()).toBe("https://sofinance-alpha.vercel.app");
-    expect(buildSignUrl("tok")).toBe("https://sofinance-alpha.vercel.app/app/sign/tok");
+    expect(getPublicBaseUrl()).toBe("https://sofinancelab.xyz");
+    expect(buildSignUrl("tok")).toBe("https://sofinancelab.xyz/app/sign/tok");
   });
 
   it("falls back to VERCEL_URL and root-relative paths", () => {
     delete process.env.NEXT_PUBLIC_APP_URL;
-    process.env.VERCEL_URL = "sofinance-alpha.vercel.app";
-    expect(buildSignUrl("tok")).toBe("https://sofinance-alpha.vercel.app/app/sign/tok");
+    process.env.VERCEL_URL = "sofinancelab.xyz";
+    expect(buildSignUrl("tok")).toBe("https://sofinancelab.xyz/app/sign/tok");
 
     delete process.env.VERCEL_URL;
     expect(buildSignUrl("tok")).toBe("/app/sign/tok");

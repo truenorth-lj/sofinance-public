@@ -51,7 +51,7 @@ import {
  * {
  *   "mcpServers": {
  *     "sofinance": {
- *       "url": "https://sofinance-alpha.vercel.app/api/mcp",
+ *       "url": "https://sofinancelab.xyz/api/mcp",
  *       "headers": { "Authorization": "Bearer <token>" }
  *     }
  *   }

@@ -73,7 +73,7 @@ export async function GET(request: NextRequest) {
  *   "mcpConfig": {
  *     "mcpServers": {
  *       "sofinance": {
- *         "url": "https://sofinance-alpha.vercel.app/api/mcp",
+ *         "url": "https://sofinancelab.xyz/api/mcp",
  *         "headers": {
  *           "Authorization": "Bearer <token>"
  *         }
@@ -148,7 +148,7 @@ export async function POST(request: NextRequest) {
     const appUrl =
       process.env.NEXT_PUBLIC_APP_URL ||
       process.env.VERCEL_URL ||
-      "https://sofinance-alpha.vercel.app";
+      "https://sofinancelab.xyz";
 
     const normalizedAppUrl = appUrl.startsWith("http")
       ? appUrl
