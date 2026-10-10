@@ -5,7 +5,7 @@ import { resetRpcCache, setRpcCache } from "./cache";
 import { createResilientConnection } from "./connection";
 import { setRpcLogger } from "./logger";
 import { resolveDefaultRpcConfig, resolveProviderPair, resolveRpcConfig } from "./providers";
-import { setRpcRetryConfig } from "./retry";
+import { setRpcRetryConfig, type RetryConfig } from "./retry";
 import type { RpcEnv } from "./types";
 
 export type { RpcConfig, RpcEnv, RpcMetricId, RpcProvider, RpcProviderId, RpcCallMetric, RpcErrorKind, RpcLogEvent, RpcLogger } from "./types";
@@ -28,13 +28,16 @@ export { createResilientConnection, invokeWithPolicy, lastRpcCallMetric } from "
 export { rpcRequest } from "./json-rpc";
 export { MemoryRpcCache, getRpcCache, setRpcCache, resetRpcCache, cacheKeyFor } from "./cache";
 export { setRpcLogger } from "./logger";
-export { setRpcRetryConfig, computeBackoffMs, parseRetryAfter, invokeWithRetries } from "./retry";
+export { setRpcRetryConfig, computeBackoffMs, parseRetryAfter, invokeWithRetries, DEFAULT_RETRY, PREVIEW_RETRY } from "./retry";
+export type { RetryConfig } from "./retry";
+export { rpcLogEnabled, formatRpcLog, defaultRpcLogger } from "./logger";
 
 export type RpcConnectionInit = {
   fetch?: typeof fetch;
   signal?: AbortSignal;
   commitment?: Commitment;
   env?: RpcEnv;
+  retry?: Partial<RetryConfig> | null;
 };
 
 function mergeSignals(left?: AbortSignal | null, right?: AbortSignal | null): AbortSignal | undefined {
@@ -62,8 +65,8 @@ function createEndpointConnection(endpoint: string, init: RpcConnectionInit = {}
  * Prefer Solami when `SOLAMI_API_KEY` is set, else `SOLANA_RPC_URL`, else
  * public mainnet. Keys stay server-side. When Solami is primary, web3.js
  * methods that it answers non-compliantly fall back per `METHOD_POLICIES`.
- * Sends never retry on another RPC. 429 / 5xx / timeout retry on the same
- * provider with jittered backoff before failover.
+ * Sends never fail over to another provider. Same-provider 429/5xx/timeout
+ * retry re-posts the same signed transaction (idempotent by signature).
  */
 export function rpcConnection(env: RpcEnv = process.env as RpcEnv, init: RpcConnectionInit = {}) {
   const resolved = init.env ?? env;
@@ -74,6 +77,7 @@ export function rpcConnection(env: RpcEnv = process.env as RpcEnv, init: RpcConn
     primaryId: pair.primary.metricId,
     fallbackId: pair.fallback?.metricId ?? "default",
     signal: init.signal,
+    retry: init.retry,
   });
 }
 
@@ -81,7 +85,7 @@ export function defaultRpcConnection(env: RpcEnv = process.env as RpcEnv, init: 
   return createResilientConnection(
     createEndpointConnection(resolveDefaultRpcConfig(init.env ?? env).endpoint, init),
     null,
-    { primaryId: "default", fallbackId: "default", signal: init.signal },
+    { primaryId: "default", fallbackId: "default", signal: init.signal, retry: init.retry },
   );
 }
 
