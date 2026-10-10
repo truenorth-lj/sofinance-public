@@ -8,7 +8,8 @@ import { cn } from "@/lib/cn";
 import { APP_ROUTES, buildOpenPositionPath } from "@/lib/public-urls";
 import type { Intent } from "@/lib/lp-intent";
 import type { PlanYieldComparison } from "@/lib/lp-plan-yield";
-import { formatAmount, formatPct, formatSigned } from "./format";
+import { PLAN_PROTOCOL_FEE_BPS, PLAN_SWAP_SHARE } from "@/lib/lp-plan-yield";
+import { daysWord, formatAmount, formatPct, formatSigned } from "./format";
 import type { ChartStatus } from "./comparison-chart";
 
 const labelPill =
@@ -25,20 +26,16 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 
 function breakEvenCopy(comparison: PlanYieldComparison): string {
   if (comparison.breakEvenDay === null) return "Not reached in a year";
-  if (comparison.breakEvenDay === 0) {
-    return new Decimal(comparison.entryCost).isZero()
-      ? "Day 0 — no entry cost is counted"
-      : "Day 0";
-  }
-  return `Day ${comparison.breakEvenDay}`;
+  if (comparison.breakEvenDay === 0) return "Day 0";
+  return `Day ${comparison.breakEvenDay} — after the protocol swap fee`;
 }
 
 function headline(intent: Intent, comparison: PlanYieldComparison): string {
   const earned = formatSigned(comparison.endSofinance);
   if (comparison.reachesTarget) {
-    return `${earned} USDC in ${intent.days} ${intent.days === 1 ? "day" : "days"} — on your aim.`;
+    return `${earned} USDC in ${intent.days} ${daysWord(intent.days)} — on your aim.`;
   }
-  return `${earned} USDC estimated in ${intent.days} ${intent.days === 1 ? "day" : "days"}.`;
+  return `${earned} USDC estimated in ${intent.days} ${daysWord(intent.days)}.`;
 }
 
 function paceCopy(intent: Intent, comparison: PlanYieldComparison): string {
@@ -114,7 +111,7 @@ export function RealityCheck({
             {headline(intent, comparison)}
           </h2>
           <p className="mt-4 text-sm leading-relaxed text-smoke">
-            {`+${formatAmount(intent.target)} USDC is ${formatPct(pctOf(intent.target, intent.amount))} on ${formatAmount(intent.amount)} USDC in ${intent.days} ${intent.days === 1 ? "day" : "days"}.`}{" "}
+            {`+${formatAmount(intent.target)} USDC is ${formatPct(pctOf(intent.target, intent.amount))} on ${formatAmount(intent.amount)} USDC in ${intent.days} ${daysWord(intent.days)}.`}{" "}
             Past average yield is {formatPct(comparison.aprPct)} a year over {comparison.sampleDays}{" "}
             {comparison.sampleDays === 1 ? "complete UTC day" : "complete UTC days"}.
           </p>
@@ -144,7 +141,6 @@ export function RealityCheck({
 
           <dl className="mt-6">
             <Row label="Estimated earn">{formatSigned(comparison.endSofinance)} USDC</Row>
-            <Row label="vs hold">{formatSigned(comparison.vsHold)} USDC</Row>
             <Row label="Exit vs put in">
               {`${formatAmount(new Decimal(comparison.exitValue).toDecimalPlaces(2).toFixed())} back vs ${formatAmount(intent.amount)} in`}
             </Row>
@@ -158,8 +154,10 @@ export function RealityCheck({
           <div className="mt-auto pt-6">
             <p className="mb-4 text-xs leading-relaxed text-smoke">
               Estimate from past average yield, not a forecast. Best case only: fee income with daily
-              compounding, no price-shock path. Read-only: nothing here prepares, signs or sends a
-              transaction.
+              compounding, no price-shock path. Break-even is the first day the estimate covers the
+              protocol swap fee ({PLAN_PROTOCOL_FEE_BPS} bps on an assumed{" "}
+              {new Decimal(PLAN_SWAP_SHARE).mul(100).toFixed(0)}% of the deposit). Network fees are
+              ignored. Read-only: nothing here prepares, signs or sends a transaction.
             </p>
             <Link
               href={poolId ? buildOpenPositionPath(poolId) : APP_ROUTES.rwaPairs}

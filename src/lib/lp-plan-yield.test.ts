@@ -7,6 +7,9 @@ import {
   compoundedProfit,
   dailyRateFromAprPct,
   daysToReachGain,
+  planEntryCost,
+  PLAN_PROTOCOL_FEE_BPS,
+  PLAN_SWAP_SHARE,
   PLAN_YIELD_DAYS_PER_YEAR,
 } from "./lp-plan-yield";
 
@@ -102,6 +105,16 @@ describe("daysToReachGain", () => {
   });
 });
 
+describe("planEntryCost", () => {
+  it("is 10 bps on the swapped half of the deposit", () => {
+    expect(PLAN_PROTOCOL_FEE_BPS).toBe(10);
+    expect(PLAN_SWAP_SHARE).toBe("0.5");
+    expect(planEntryCost("1000")).toBe("0.5");
+    expect(planEntryCost("10000")).toBe("5");
+    expect(planEntryCost("1")).toBe("0.0005");
+  });
+});
+
 describe("buildPlanComparison", () => {
   it("builds a best-case series against a flat hold line", () => {
     const plan = buildPlanComparison({
@@ -156,5 +169,22 @@ describe("buildPlanComparison", () => {
     expect(plan.exitValue).toBe("5000");
     expect(plan.reachesTarget).toBe(false);
     expect(plan.daysToTarget).toBeNull();
+  });
+
+  it("starts slightly negative after the protocol swap fee and breaks even on the first covering day", () => {
+    const entryCost = planEntryCost("1000");
+    const plan = buildPlanComparison({
+      capital: "1000",
+      days: 3,
+      aprPct: "36.5",
+      sampleDays: 29,
+      target: "100",
+      entryCost,
+    });
+    expect(entryCost).toBe("0.5");
+    expect(plan.points[0]).toEqual({ day: 0, sofinance: "-0.5", hold: "0" });
+    expect(Number(plan.points[1]!.sofinance)).toBeGreaterThan(0);
+    expect(plan.breakEvenDay).toBe(1);
+    expect(plan.exitValue).toBe(new D(1000).add(plan.endSofinance).toFixed());
   });
 });

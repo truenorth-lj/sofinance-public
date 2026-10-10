@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { buildPlanComparison } from "@/lib/lp-plan-yield";
+import { buildPlanComparison, planEntryCost } from "@/lib/lp-plan-yield";
 import { ComparisonChart } from "./comparison-chart";
 import type { Intent } from "@/lib/lp-intent";
 
@@ -22,18 +22,87 @@ describe("ComparisonChart", () => {
       aprPct: "36.5",
       sampleDays: 29,
       target: "3",
+      entryCost: planEntryCost("1000"),
     });
     const markup = renderToStaticMarkup(
       createElement(ComparisonChart, { status: "ready", comparison, intent }),
     );
     expect(markup).toContain("SoFinance vs hold");
     expect(markup).toContain("Estimate from past average yield, not a forecast");
-    expect(markup).toContain("+2.00 USDC vs hold");
+    expect(markup).toContain("vs hold");
     expect(markup).toContain("aim +3");
+    expect(markup).toContain("hold");
+    expect(markup).toContain("SoFinance");
+    expect(markup).toContain("break-even day 1");
+    expect(markup).toContain("#ff9c85");
     expect(markup).toContain("<path");
     expect(markup).toContain("Past average");
+    expect(markup).toContain("assumed 50%");
+    expect(markup).not.toContain("#f3e76b");
     expect(markup).not.toContain("Sideways");
     expect(markup).not.toContain("&quot;");
+  });
+
+  it("clamps an oversized aim and marks when the curve crosses it", () => {
+    const comparison = buildPlanComparison({
+      capital: "1000",
+      days: 90,
+      aprPct: "36.5",
+      sampleDays: 29,
+      target: "400",
+      entryCost: planEntryCost("1000"),
+    });
+    const markup = renderToStaticMarkup(
+      createElement(ComparisonChart, {
+        status: "ready",
+        comparison,
+        intent: { ...intent, days: 90, target: "400" },
+      }),
+    );
+    expect(markup).toContain("aim +400 above");
+    expect(markup).not.toContain("aim reached on day");
+  });
+
+  it("marks the day the curve reaches an in-range aim", () => {
+    const comparison = buildPlanComparison({
+      capital: "1000",
+      days: 10,
+      aprPct: "36.5",
+      sampleDays: 29,
+      target: "3",
+      entryCost: planEntryCost("1000"),
+    });
+    expect(comparison.daysToTarget).toBe(4);
+    const markup = renderToStaticMarkup(
+      createElement(ComparisonChart, {
+        status: "ready",
+        comparison,
+        intent: { ...intent, days: 10, target: "3" },
+      }),
+    );
+    expect(markup).toContain("aim reached on day 4");
+    expect(markup).toContain("aim +3");
+    expect(markup).not.toContain("above");
+  });
+
+  it("uses the singular in the accessible label after 1 day", () => {
+    const comparison = buildPlanComparison({
+      capital: "1000",
+      days: 1,
+      aprPct: "36.5",
+      sampleDays: 1,
+      target: "1",
+      entryCost: planEntryCost("1000"),
+    });
+    const markup = renderToStaticMarkup(
+      createElement(ComparisonChart, {
+        status: "ready",
+        comparison,
+        intent: { ...intent, days: 1, target: "1" },
+      }),
+    );
+    expect(markup).toContain("after 1 day");
+    expect(markup).not.toContain("after 1 days");
   });
 
   it("shows a clear empty state when no pool is chosen", () => {
