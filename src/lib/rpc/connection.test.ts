@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetRpcCache } from "./cache";
-import { classifyRpcError, isRpcStructValidationError, RpcUnavailableError } from "./errors";
+import { classifyRpcError, isRpcStructValidationError } from "./errors";
 import { setRpcLogger } from "./logger";
 import { METHOD_POLICIES, methodAllowsFallback, policyFor } from "./methods";
 import { createResilientConnection, invokeWithPolicy, lastRpcCallMetric } from "./connection";

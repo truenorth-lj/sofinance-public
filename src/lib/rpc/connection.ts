@@ -39,7 +39,7 @@ function record(target: object | null, metric: RpcCallMetric) {
 function cacheKeyOf(input: InvokeWithPolicyInput<unknown>): string | null {
   if (!input.args) return null;
   const ttl = cacheTtlFor(input.method, input.args);
-  return ttl == null ? null : cacheKeyFor(input.method, input.args);
+  return ttl === null || ttl === undefined ? null : cacheKeyFor(input.method, input.args);
 }
 
 /**

@@ -47,7 +47,7 @@ export function computeBackoffMs(
   options: { retryAfterMs?: number | null; random?: () => number; config?: RetryConfig } = {},
 ): number {
   const config = options.config ?? retryConfig();
-  if (options.retryAfterMs != null && options.retryAfterMs >= 0) {
+  if (options.retryAfterMs !== null && options.retryAfterMs !== undefined && options.retryAfterMs >= 0) {
     return Math.min(options.retryAfterMs, config.maxDelayMs);
   }
   const random = options.random ?? Math.random;

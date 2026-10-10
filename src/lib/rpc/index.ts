@@ -37,9 +37,11 @@ export type RpcConnectionInit = {
   env?: RpcEnv;
 };
 
-function mergeSignals(left?: AbortSignal, right?: AbortSignal): AbortSignal | undefined {
-  if (left && right) return AbortSignal.any([left, right]);
-  return left ?? right;
+function mergeSignals(left?: AbortSignal | null, right?: AbortSignal | null): AbortSignal | undefined {
+  const first = left ?? undefined;
+  const second = right ?? undefined;
+  if (first && second) return AbortSignal.any([first, second]);
+  return first ?? second;
 }
 
 function createEndpointConnection(endpoint: string, init: RpcConnectionInit = {}): Connection {
