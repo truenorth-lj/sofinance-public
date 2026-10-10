@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WalletConnectionContext, type WalletConnection } from "../wallet-connection";
 import { PlanApp } from "./plan-app";
 
+const POOL = "DUzBLHZ5RZdftPuWVijsvjupndogRM1adGJpsR7YTJro";
+
 let search = "";
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(search),
@@ -29,6 +31,17 @@ let node: HTMLDivElement;
 let root: Root;
 const fetcher = vi.fn();
 
+function aprPayload(aprPct: number | null = 36.5) {
+  return {
+    poolId: POOL,
+    points: [
+      { time: 1_791_417_600, date: "2026-10-08", aprPct, volumeUsd: 1_000, tvlUsd: 10_000 },
+      { time: 1_791_504_000, date: "2026-10-09", aprPct, volumeUsd: 1_000, tvlUsd: 10_000 },
+    ],
+    fetchedAt: "2026-10-10T00:00:00.000Z",
+  };
+}
+
 async function render(query = "") {
   search = query;
   await act(async () =>
@@ -42,10 +55,27 @@ async function click(label: string) {
   await act(async () => button.click());
 }
 
+async function waitForText(snippet: string) {
+  await act(async () => {
+    for (let i = 0; i < 40; i++) {
+      if (text().includes(snippet)) return;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  });
+  expect(text()).toContain(snippet);
+}
+
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal("fetch", fetcher);
   fetcher.mockReset();
+  fetcher.mockImplementation(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes("/api/pool-daily-apr")) {
+      return { ok: true, json: async () => aprPayload() };
+    }
+    throw new Error(`unexpected ${url}`);
+  });
   node = document.createElement("div");
   document.body.append(node);
   root = createRoot(node);
@@ -57,50 +87,74 @@ afterEach(async () => {
 });
 
 describe("PlanApp", () => {
-  it("shows no outcome numbers until sample paths are switched on", async () => {
+  it("shows an unavailable chart and does not invent yield when no pool is chosen", async () => {
     await render();
-    expect(text()).toContain("No verified forecast for this plan yet.");
-    expect(text()).not.toContain("USDC net of costs");
-    expect(text()).not.toContain("sample paths.");
-
-    await click("Preview on sample paths");
-    expect(text()).toContain("Out of reach in all 3 sample paths.");
-    expect(text()).toContain("+2.65");
-    expect(text()).toContain("Sample paths are synthetic and carry no probabilities.");
+    expect(text()).toContain("No pool chosen, so there is no estimate yet.");
+    expect(text()).toContain("Choose a pool to estimate SoFinance against simply holding");
+    expect(text()).toContain("Estimate from past average yield, not a forecast");
+    expect(text()).not.toContain("Sideways");
+    expect(text()).not.toContain("Gap down");
+    expect(text()).not.toContain("sample paths");
+    expect(fetcher).not.toHaveBeenCalled();
   });
 
-  it("offers a longer horizon instead of bending the plan, and applies it only when asked", async () => {
-    await render("sample=1");
-    expect(text()).toContain("In 30 days");
-    await click("Give it 207 days");
-    expect(text()).toContain("In 207 days");
-    expect(text()).toContain("On target in 1 of 3 sample paths.");
+  it("explains a pair-only link instead of fabricating a pool", async () => {
+    await render("pair=SPCXx%2FSPCX");
+    expect(text()).toContain("Pair SPCXx/SPCX");
+    expect(text()).toContain("This link names a pair but has no pool id");
+    expect(fetcher).not.toHaveBeenCalled();
   });
 
-  it("moves one condition at a time from the keyboard and re-judges the plan", async () => {
-    await render("sample=1");
+  it("loads the pool average once and plots SoFinance against a flat hold", async () => {
+    await render(`pool=${POOL}&pair=SPCXx%2FSPCX`);
+    await waitForText("Past average 36.5% a year");
+    expect(text()).toContain("Pool SPCXx/SPCX");
+    expect(text()).toContain("SoFinance vs hold");
+    expect(text()).toContain("vs hold");
+    expect(text()).toContain("Break-even");
+    expect(text()).toContain("Day 0 — no entry cost is counted");
+    expect(text()).not.toContain("Sideways");
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(String(fetcher.mock.calls[0]![0])).toContain(`/api/pool-daily-apr?poolId=${POOL}`);
+  });
+
+  it("updates the chart from the slider without refetching", async () => {
+    await render(`pool=${POOL}&target=100`);
+    await waitForText("Past average 36.5% a year");
+    const before = fetcher.mock.calls.length;
     const slider = node.querySelector<HTMLElement>('[role="slider"]')!;
     expect(slider.getAttribute("aria-label")).toBe("Target gain as a share of the amount");
     await act(async () => {
       slider.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
     });
-    expect(text()).toContain("+20 USDC");
-    expect(text()).toContain("17.35 USDC short of your target.");
+    expect(text()).toContain("+75 USDC");
+    expect(text()).toContain("aim +75");
+    expect(fetcher.mock.calls.length).toBe(before);
   });
 
-  it("opens with a plan carried in the link and judges beat-holding against the basket", async () => {
-    await render("sample=1&amount=5000&days=90&goal=beat-holding&edit=goal");
+  it("offers a longer horizon from the yield math and applies it only when asked", async () => {
+    await render(`pool=${POOL}&days=1&target=3`);
+    await waitForText("Give it 3 days");
+    expect(text()).toContain("In 1 day");
+    await click("Give it 3 days");
+    expect(text()).toContain("In 3 days");
+    expect(text()).toContain("on your aim");
+  });
+
+  it("opens with a plan carried in the link", async () => {
+    await render(`pool=${POOL}&amount=5000&days=90&goal=beat-holding&edit=goal`);
+    await waitForText("Past average 36.5% a year");
     expect(text()).toContain("In 90 days");
     expect(text()).toContain("5,000 USDC");
     expect(text()).toContain("beat holding by");
-    expect(text()).toContain("USDC vs holding");
     expect(node.querySelector('[role="radio"][aria-checked="true"]')?.textContent).toContain("Hold and collect fees");
   });
 
-  it("stays read-only: planning never touches the network", async () => {
-    await render("sample=1");
-    await click("Aim for +2.64 instead");
-    expect(text()).toContain("On target in 1 of 3 sample paths.");
-    expect(fetcher).not.toHaveBeenCalled();
+  it("stays unavailable when the series has no complete days", async () => {
+    fetcher.mockImplementation(async () => ({ ok: true, json: async () => aprPayload(null) }));
+    await render(`pool=${POOL}`);
+    await waitForText("No complete UTC days");
+    expect(text()).not.toContain("Past average");
+    expect(text()).toContain("No average yield for this pool.");
   });
 });

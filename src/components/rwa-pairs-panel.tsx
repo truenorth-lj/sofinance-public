@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { LoaderCircle, RefreshCw } from "lucide-react";
 import { PoolAprSparkline } from "./pool-daily-apr-panel";
 import Link from "next/link";
-import { APP_ROUTES } from "@/lib/public-urls";
+import { buildPlanPath } from "@/lib/public-urls";
 import { OpenPositionModal } from "./open-position-modal";
 import type { OpenPositionPair } from "./use-open-position-controller";
 
@@ -244,7 +244,10 @@ export function RwaPairsPanel() {
                       Create position
                     </button>
                     <Link
-                      href={`${APP_ROUTES.plan}?pair=${encodeURIComponent(`${pair.wrappedSymbol}/${pair.plainSymbol}`)}`}
+                      href={buildPlanPath({
+                        poolId: pair.poolAddress,
+                        pair: `${pair.wrappedSymbol}/${pair.plainSymbol}`,
+                      })}
                       className="mt-2 block text-[11px] font-medium text-lilac underline-offset-2 hover:underline"
                     >
                       Plan this pool
