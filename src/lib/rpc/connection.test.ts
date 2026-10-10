@@ -77,6 +77,9 @@ describe("METHOD_POLICIES", () => {
     expect(methodAllowsFallback("getAccountInfo", "validation")).toBe(true);
     expect(methodAllowsFallback("getAccountInfo", "rate-limit")).toBe(true);
     expect(methodAllowsFallback("getParsedTransaction", "empty")).toBe(true);
+    expect(methodAllowsFallback("simulateTransaction", "rate-limit")).toBe(false);
+    expect(methodAllowsFallback("simulateTransaction", "validation")).toBe(true);
+    expect(methodAllowsFallback("getLatestBlockhash", "rate-limit")).toBe(false);
     expect(METHOD_POLICIES.sendTransaction?.fallback).toBe(false);
   });
 });

@@ -20,6 +20,13 @@ const EPOCH: MethodPolicy = {
 };
 
 /**
+ * Simulate / blockhash / height / fee / slot-context reads. Stay on the
+ * primary (Solami) through 429s — dumping them onto public RPC is worse.
+ * Validation / 5xx still fail over (Solami non-compliance).
+ */
+const PRIMARY_STAY: MethodPolicy = { fallback: true, fallbackOn: ["validation", "http-5xx"] };
+
+/**
  * Per-method routing. Primary is always Solami when configured (account reads
  * and sends stay there). Fallback runs only for listed error kinds, after
  * same-provider retries for 429 / 5xx / timeout.
@@ -35,6 +42,12 @@ export const METHOD_POLICIES: Record<string, MethodPolicy> = {
   getParsedTransaction: PARSED,
   getParsedTransactions: PARSED,
   getTransaction: PARSED,
+  simulateTransaction: PRIMARY_STAY,
+  getLatestBlockhash: PRIMARY_STAY,
+  getBlockHeight: PRIMARY_STAY,
+  getFeeForMessage: PRIMARY_STAY,
+  getMultipleAccountsInfoAndContext: PRIMARY_STAY,
+  getSlot: PRIMARY_STAY,
 };
 
 export const DEFAULT_METHOD_POLICY: MethodPolicy = READ;

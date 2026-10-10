@@ -3,7 +3,7 @@ import { withCacheAndInflight, cacheKeyFor } from "./cache";
 import { asRpcUserError, classifyRpcError, isUserAbort, shouldFallback } from "./errors";
 import { emitRpcLog } from "./logger";
 import { cacheTtlFor, policyFor } from "./methods";
-import { invokeWithRetries } from "./retry";
+import { invokeWithRetries, type RetryConfig } from "./retry";
 import type { MethodPolicy, RpcCallMetric, RpcErrorKind, RpcMetricId } from "./types";
 
 export type InvokeWithPolicyInput<T> = {
@@ -15,6 +15,7 @@ export type InvokeWithPolicyInput<T> = {
   policy?: MethodPolicy;
   args?: readonly unknown[];
   signal?: AbortSignal;
+  retry?: Partial<RetryConfig> | null;
 };
 
 export type InvokeWithPolicyResult<T> = {
@@ -90,7 +91,7 @@ export async function invokeWithPolicy<T>(
   };
 
   const runProvider = (run: () => Promise<T>, id: RpcMetricId) =>
-    invokeWithRetries(run, { method: input.method, providerId: id, signal: input.signal });
+    invokeWithRetries(run, { method: input.method, providerId: id, signal: input.signal, retry: input.retry });
 
   const execute = async (): Promise<InvokeWithPolicyResult<T>> => {
     try {
@@ -156,6 +157,7 @@ export type ResilientConnectionOptions = {
   primaryId: RpcMetricId;
   fallbackId: RpcMetricId;
   signal?: AbortSignal;
+  retry?: Partial<RetryConfig> | null;
 };
 
 function managedConnectionMethod(name: string): boolean {
@@ -190,6 +192,7 @@ export function createResilientConnection(
           method: prop,
           args,
           signal: options.signal,
+          retry: options.retry,
           primary: () => Promise.resolve(value.apply(target, args)),
           fallback: fallbackFn,
           primaryId: options.primaryId,
