@@ -3,18 +3,21 @@ import "server-only";
 /**
  * Solami Blur REST client + defensive parsers.
  *
- * Verified live by the repo owner (not this agent runtime):
- *   GET /data/pool?chain=solana&address=<Raydium CLMM pool>
- *   GET /data/trades/recent?chain=solana&limit=N
- *   GET /data/pools?chain=solana&limit=N
- *
- * This environment has no SOLAMI_DATA_API_KEY, so live calls are not made
- * here. Parsers are fixture-tested against the documented / verified fields.
+ * Live-verified:
+ *   GET /data/pool?chain=solana&address=<Raydium CLMM pool>  → includes `mint`
+ *   GET /data/token/trades?chain=solana&address=<MINT>&limit=N
+ *     (rows from every pool/DEX for that token; filter client-side by `pool`)
+ *   WS  wss://ws.solami.dev/data/subscribe?chain=solana&type=swap,liquidity&pool=<POOL>&api_key=
+ *     first frame `{ type: "connected", filter: { pools: 1, mints: 0, ... } }`
+ *     `address=` is a MINT filter, not a pool filter
+ *   `/data/pool/trades` and `/data/trades` are 404
+ *   `/data/trades/recent` is a global firehose (does not honor address= or pool=)
  */
 
 export const SOLAMI_DATA_API_BASE = "https://api.solami.dev/data";
 export const SOLAMI_BLUR_WS_BASE = "wss://ws.solami.dev/data/subscribe";
 export const BLUR_EVENT_TYPES = "swap,liquidity" as const;
+export const TOKEN_TRADES_MAX_LIMIT = 200;
 
 export type BlurPoolSnapshot = {
   pool: string;
@@ -49,6 +52,13 @@ export type BlurTrade = {
   baseAmount: number | null;
   quoteAmount: number | null;
   type: string | null;
+  ixIndex: number | null;
+  innerIxIndex: number | null;
+};
+
+export type BlurLiveEvent = {
+  kind: "swap" | "liquidity";
+  trade: BlurTrade;
 };
 
 export type PoolActivitySnapshot = {
@@ -77,18 +87,18 @@ export function blurWsUrl(poolId: string, env: BlurEnv = process.env as BlurEnv)
   url.searchParams.set("chain", "solana");
   url.searchParams.set("api_key", key);
   url.searchParams.set("type", BLUR_EVENT_TYPES);
-  // Documented on https://solami.dev/docs/guide-stream-trades: `address=` narrows the socket.
-  url.searchParams.set("address", poolId);
+  // Live-verified: `pool=` is the pool filter (connected.filter.pools === 1).
+  // `address=` is a mint filter — never pass a pool id there.
+  url.searchParams.set("pool", poolId);
   return url.toString();
 }
 
-/** Filter payload sent after connect. `types` is documented; `pools`/`addresses` are extra narrowing. */
+/** Extra narrowing after connect. Do not put the pool id in `addresses` (that is a mint filter). */
 export function blurSubscribeFilter(poolId: string) {
   return {
     filter: {
       types: ["swap", "liquidity"],
       pools: [poolId],
-      addresses: [poolId],
     },
   };
 }
@@ -170,14 +180,18 @@ export function parseBlurTrade(raw: unknown): BlurTrade | null {
     baseAmount: parseDecimal(record.base_amount) ?? parseDecimal(record.baseAmount),
     quoteAmount: parseDecimal(record.quote_amount) ?? parseDecimal(record.quoteAmount),
     type: asString(record.type) ?? "swap",
+    ixIndex: parseInteger(record.ix_index) ?? parseInteger(record.ixIndex),
+    innerIxIndex: parseInteger(record.inner_ix_index) ?? parseInteger(record.innerIxIndex),
   };
 }
 
 export function parseBlurTradeList(raw: unknown): BlurTrade[] {
   const payload = unwrapDataPayload(raw);
-  const rows = Array.isArray(payload) ? payload : Array.isArray(asRecord(payload)?.trades)
-    ? (asRecord(payload)!.trades as unknown[])
-    : [];
+  const rows = Array.isArray(payload)
+    ? payload
+    : Array.isArray(asRecord(payload)?.trades)
+      ? (asRecord(payload)!.trades as unknown[])
+      : [];
   return rows.map(parseBlurTrade).filter((item): item is BlurTrade => item !== null);
 }
 
@@ -185,11 +199,79 @@ export function filterTradesForPool(trades: readonly BlurTrade[], poolId: string
   return trades.filter((trade) => trade.pool === poolId);
 }
 
+/**
+ * A swap emits two frames (base and quote sides, mint/quote_mint swapped)
+ * with the same signature + ix_index (+ inner_ix_index).
+ */
+export function blurEventDedupeKey(trade: Pick<BlurTrade, "signature" | "ixIndex" | "innerIxIndex">): string {
+  return `${trade.signature}:${trade.ixIndex ?? ""}:${trade.innerIxIndex ?? ""}`;
+}
+
+export function rememberBlurEvent(
+  seen: Set<string>,
+  trade: Pick<BlurTrade, "signature" | "ixIndex" | "innerIxIndex">,
+): boolean {
+  const key = blurEventDedupeKey(trade);
+  if (seen.has(key)) return false;
+  seen.add(key);
+  return true;
+}
+
+export function dedupeBlurTrades(trades: readonly BlurTrade[]): BlurTrade[] {
+  const seen = new Set<string>();
+  const out: BlurTrade[] = [];
+  for (const trade of trades) {
+    if (rememberBlurEvent(seen, trade)) out.push(trade);
+  }
+  return out;
+}
+
 export function eventMatchesPool(raw: unknown, poolId: string): boolean {
   const record = asRecord(raw);
   if (!record) return false;
-  const pool = asString(record.pool) ?? asString(record.address);
+  const pool = asString(record.pool);
+  if (!pool) return false;
   return pool === poolId;
+}
+
+const LIVE_EVENT_TYPES = new Set(["swap", "liquidity"]);
+
+/**
+ * Whitelist parsed swap/liquidity only. Drops `connected`, `metadata`
+ * (metadata.image_url embeds `?api_key=` of the server key), and anything else.
+ */
+export function parseBlurLiveEvent(raw: unknown, poolId?: string): BlurLiveEvent | null {
+  const record = asRecord(raw);
+  if (!record) return null;
+  const type = asString(record.type);
+  if (!type || !LIVE_EVENT_TYPES.has(type)) return null;
+  const trade = parseBlurTrade({ ...record, type });
+  if (!trade) return null;
+  if (poolId && trade.pool && trade.pool !== poolId) return null;
+  return { kind: type as BlurLiveEvent["kind"], trade };
+}
+
+export function formatSseEvent(event: string, data: unknown): string {
+  return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+}
+
+export function formatSseComment(text = "heartbeat"): string {
+  return `: ${text}\n\n`;
+}
+
+/** True when an SSE chunk would leak a Solami key (`api_key=` or `sk_…`). */
+export function sseChunkLeaksSecret(chunk: string): boolean {
+  return /api_key/i.test(chunk) || /sk_/.test(chunk);
+}
+
+export function encodeSseEvent(event: string, data: unknown): string | null {
+  const chunk = formatSseEvent(event, data);
+  return sseChunkLeaksSecret(chunk) ? null : chunk;
+}
+
+export function tokenTradesFetchLimit(requested: number): number {
+  const capped = Math.min(Math.max(1, requested), TOKEN_TRADES_MAX_LIMIT);
+  return Math.min(TOKEN_TRADES_MAX_LIMIT, Math.max(capped * 5, 80));
 }
 
 export type BlurFetcher = (url: string, init?: RequestInit) => Promise<Response>;
@@ -228,26 +310,27 @@ export async function fetchBlurPool(
   return parseBlurPoolSnapshot(raw, poolId);
 }
 
-export async function fetchBlurRecentTrades(
+/**
+ * Token-scoped trades (all pools/DEXes for `mint`), then keep rows whose
+ * `pool` equals the requested pool id. `/data/trades/recent` is a global
+ * feed and must not be used as a pool filter.
+ */
+export async function fetchBlurTokenTradesForPool(
   poolId: string,
+  mint: string,
   limit: number,
   options: { env?: BlurEnv; fetcher?: BlurFetcher } = {},
 ): Promise<BlurTrade[]> {
   const env = options.env ?? (process.env as BlurEnv);
   const fetcher = options.fetcher ?? fetch;
-  const capped = Math.min(Math.max(1, limit), 200);
-  // `/data/trades/recent` is a chain-wide firehose (documented). We request a
-  // page and filter to the pool. `address=` is tried first (WS uses it); a 400
-  // retries without it so an unknown query key cannot break the snapshot.
-  try {
-    const raw = await blurGet("/trades/recent", { limit: String(capped), address: poolId }, env, fetcher);
-    const filtered = filterTradesForPool(parseBlurTradeList(raw), poolId);
-    if (filtered.length) return filtered.slice(0, capped);
-  } catch {
-    /* retry without address — the firehose docs do not list a pool query param */
-  }
-  const raw = await blurGet("/trades/recent", { limit: String(Math.min(200, Math.max(capped, 100))) }, env, fetcher);
-  return filterTradesForPool(parseBlurTradeList(raw), poolId).slice(0, capped);
+  const capped = Math.min(Math.max(1, limit), TOKEN_TRADES_MAX_LIMIT);
+  const raw = await blurGet(
+    "/token/trades",
+    { address: mint, limit: String(tokenTradesFetchLimit(capped)) },
+    env,
+    fetcher,
+  );
+  return dedupeBlurTrades(filterTradesForPool(parseBlurTradeList(raw), poolId)).slice(0, capped);
 }
 
 export async function getPoolActivitySnapshot(
@@ -266,10 +349,10 @@ export async function getPoolActivitySnapshot(
     };
   }
   const limit = options.limit ?? 20;
-  const [pool, trades] = await Promise.all([
-    fetchBlurPool(poolId, options).catch(() => null),
-    fetchBlurRecentTrades(poolId, limit, options).catch(() => [] as BlurTrade[]),
-  ]);
+  const pool = await fetchBlurPool(poolId, options).catch(() => null);
+  const trades = pool?.mint
+    ? await fetchBlurTokenTradesForPool(poolId, pool.mint, limit, options).catch(() => [] as BlurTrade[])
+    : [];
   return {
     available: true,
     poolId,

@@ -18,7 +18,11 @@ type Trade = {
   baseAmount: number | null;
   quoteAmount: number | null;
   type: string | null;
+  ixIndex?: number | null;
+  innerIxIndex?: number | null;
 };
+
+const tradeKey = (trade: Trade) => `${trade.signature}:${trade.ixIndex ?? ""}:${trade.innerIxIndex ?? ""}`;
 
 type PoolSnap = {
   pool: string;
@@ -123,7 +127,7 @@ export function PoolActivityPanel({
         try {
           const trade = JSON.parse((event as MessageEvent).data) as Trade;
           setTrades((current) => {
-            if (current.some((item) => item.signature === trade.signature)) return current;
+            if (current.some((item) => tradeKey(item) === tradeKey(trade))) return current;
             return [trade, ...current].slice(0, 20);
           });
           const oriented = blurPriceToBPerA(
@@ -237,7 +241,7 @@ export function PoolActivityPanel({
         {trades.length === 0 && <li className="text-xs text-neutral-600">No recent swaps for this pool in the Blur window.</li>}
         {trades.slice(0, 12).map((trade) => (
           <li
-            key={trade.signature}
+            key={tradeKey(trade)}
             className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-neutral-800/50 bg-neutral-900/30 px-3 py-2 text-xs text-neutral-300"
           >
             <span className="font-medium uppercase tracking-wide text-neutral-400">{trade.side ?? "swap"}</span>
