@@ -34,6 +34,10 @@ export function formatPct(value: string | number, signed = false): string {
   return `${sign}${text}%`;
 }
 
+export function daysWord(days: number): string {
+  return days === 1 ? "day" : "days";
+}
+
 /** Compact ruler labels: 100, 1k, 10k. */
 export function formatCompact(value: number): string {
   return value >= 1000 ? `${Number((value / 1000).toFixed(1))}k` : String(value);

@@ -5,7 +5,7 @@ import Decimal from "decimal.js";
 import { Check, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { parseDays, parseUsdc, type ExitAsset, type Intent, type IntentGoal } from "@/lib/lp-intent";
-import { formatAmount, formatCompact, formatPct, formatUtcDate } from "./format";
+import { daysWord, formatAmount, formatCompact, formatPct, formatUtcDate } from "./format";
 import { Ruler } from "./ruler";
 
 export type IntentField = "days" | "amount" | "goal" | "target" | "lossAlert" | "exitAsset";
@@ -253,7 +253,7 @@ export function IntentSentence({
     <div>
       <p className="text-[clamp(1.8rem,3.7vw,3.05rem)] font-medium leading-[1.36] tracking-[-0.035em]">
         {intent.goal === "take-profit" ? "Within " : "In "}
-        {pill("days", "lilac", `${intent.days} ${intent.days === 1 ? "day" : "days"}`)}, I want{" "}
+        {pill("days", "lilac", `${intent.days} ${daysWord(intent.days)}`)}, I want{" "}
         {pill("amount", "lemon", `${formatAmount(intent.amount)} USDC`)} to {pill("goal", "plain", goal.verb)}{" "}
         {pill("target", "mint", `+${formatAmount(intent.target)} USDC`)} after costs.
       </p>
@@ -275,7 +275,7 @@ export function IntentSentence({
           >
             <ValueField
               label="Days until you cash out"
-              unit={intent.days === 1 ? "day" : "days"}
+              unit={daysWord(intent.days)}
               value={String(intent.days)}
               display={String(intent.days)}
               parse={(text) => {
@@ -289,7 +289,7 @@ export function IntentSentence({
               stops={DAY_STOPS}
               majors={[7, 30, 90, 180, 365]}
               value={intent.days}
-              valueText={`${intent.days} days`}
+              valueText={`${intent.days} ${daysWord(intent.days)}`}
               onChange={(days) => onChange({ days })}
               formatStop={(days) => `${days}d`}
               knobClassName="bg-lilac"
@@ -342,7 +342,7 @@ export function IntentSentence({
         {active === "target" && (
           <Editor
             eyebrow={goal.eyebrow}
-            note={`${formatPct(targetPct)} on ${formatAmount(intent.amount)} USDC in ${intent.days} ${intent.days === 1 ? "day" : "days"}. That pace is ${formatPct((targetPct * 365) / intent.days)} a year, before compounding.`}
+            note={`${formatPct(targetPct)} on ${formatAmount(intent.amount)} USDC in ${intent.days} ${daysWord(intent.days)}. That pace is ${formatPct((targetPct * 365) / intent.days)} a year, before compounding.`}
           >
             <ValueField
               label="Target gain after costs, in USDC"
