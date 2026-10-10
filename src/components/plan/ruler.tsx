@@ -29,6 +29,15 @@ export function rulerFraction(stops: readonly number[], value: number): number {
   return (index + (value - from) / (to - from)) / last;
 }
 
+/** Map a pointer X to a stop. Clicks at or past the track's right edge hit the last stop. */
+export function pickRulerStop(clientX: number, left: number, width: number, stops: readonly number[]): number {
+  const last = stops.length - 1;
+  if (last < 0) return 0;
+  if (width <= 0 || clientX <= left) return stops[0]!;
+  if (clientX >= left + width) return stops[last]!;
+  return stops[Math.round(((clientX - left) / width) * last)]!;
+}
+
 export function Ruler({ label, stops, majors, value, valueText, onChange, formatStop, knobClassName }: RulerProps) {
   const track = useRef<HTMLDivElement>(null);
   const last = stops.length - 1;
@@ -38,8 +47,7 @@ export function Ruler({ label, stops, majors, value, valueText, onChange, format
   const pick = (clientX: number) => {
     const rect = track.current?.getBoundingClientRect();
     if (!rect || rect.width === 0) return;
-    const at = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
-    onChange(stops[Math.round(at * last)]!);
+    onChange(pickRulerStop(clientX, rect.left, rect.width, stops));
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -58,7 +66,20 @@ export function Ruler({ label, stops, majors, value, valueText, onChange, format
   };
 
   return (
-    <div className="px-3 sm:px-4">
+    <div
+      className="cursor-ew-resize touch-none px-3 sm:px-4"
+      onPointerDown={(event) => {
+        try {
+          event.currentTarget.setPointerCapture(event.pointerId);
+        } catch {
+          /* jsdom / happy-dom may not implement pointer capture */
+        }
+        pick(event.clientX);
+      }}
+      onPointerMove={(event) => {
+        if (event.currentTarget.hasPointerCapture?.(event.pointerId)) pick(event.clientX);
+      }}
+    >
       <div
         ref={track}
         role="slider"
@@ -68,14 +89,7 @@ export function Ruler({ label, stops, majors, value, valueText, onChange, format
         aria-valuemax={stops[last]}
         aria-valuenow={value}
         aria-valuetext={valueText}
-        className="relative h-24 cursor-ew-resize touch-none select-none rounded-lg outline-none focus-visible:outline-2 focus-visible:outline-offset-8 focus-visible:outline-ink"
-        onPointerDown={(event) => {
-          event.currentTarget.setPointerCapture(event.pointerId);
-          pick(event.clientX);
-        }}
-        onPointerMove={(event) => {
-          if (event.currentTarget.hasPointerCapture(event.pointerId)) pick(event.clientX);
-        }}
+        className="relative h-24 select-none rounded-lg outline-none focus-visible:outline-2 focus-visible:outline-offset-8 focus-visible:outline-ink"
         onKeyDown={onKeyDown}
       >
         {Array.from({ length: tickCount }, (_, tick) => {
