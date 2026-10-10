@@ -79,7 +79,7 @@ export async function POST(request: Request) {
     if (signature !== expectedSignature) throw new Error("Dedicated RPC returned transaction signature mismatch");
     const beam = await lookupBeamAfterSend(signature);
     return Response.json(
-      { signature, beam: beam.beam, beamLabel: beam.label },
+      { signature, beam: beam.beam, beamLabel: beam.label, beamLandingUrl: beam.beamLandingUrl },
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (error) {

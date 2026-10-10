@@ -125,8 +125,11 @@ export function subSides(x: TokenSideAmounts, y: TokenSideAmounts): TokenSideAmo
  * Simple annualization: ratePct × 365 / days.
  * Returns null when days is not positive or rate is null.
  */
+/** Do not annualize positions younger than one day (27s → thousands of percent). */
+export const MIN_ANNUALIZE_HOLDING_DAYS = 1;
+
 export function annualizeSimplePct(ratePct: number | null, holdingDays: number | null): number | null {
-  if (ratePct === null || holdingDays === null || !(holdingDays > 0) || !Number.isFinite(ratePct)) {
+  if (ratePct === null || holdingDays === null || !(holdingDays >= MIN_ANNUALIZE_HOLDING_DAYS) || !Number.isFinite(ratePct)) {
     return null;
   }
   return (ratePct * 365) / holdingDays;
@@ -169,8 +172,8 @@ export function computePositionPerformance(input: PositionPerformanceInputs): Po
     depositedUsd !== null && depositedUsd > 0 && pnlUsd !== null ? (pnlUsd / depositedUsd) * 100 : null;
   const annualizedReturnPct = annualizeSimplePct(holdingPeriodReturnPct, holdingDays);
   const feeOnlyAprPct =
-    depositedUsd !== null && depositedUsd > 0 && feesEarnedUsd !== null && holdingDays !== null && holdingDays > 0
-      ? (feesEarnedUsd / depositedUsd) * (365 / holdingDays) * 100
+    depositedUsd !== null && depositedUsd > 0 && feesEarnedUsd !== null
+      ? feeAprFromRatio(feesEarnedUsd, depositedUsd, holdingDays)
       : null;
 
   const raw = (s: TokenSideAmounts) => ({ a: s.a.toString(), b: s.b.toString() });
@@ -318,7 +321,7 @@ export function toTokenEquivalentUi(
 }
 
 export function feeAprFromRatio(fees: number, deposited: number, holdingDays: number | null): number | null {
-  if (holdingDays === null || !(holdingDays > 0) || !(deposited > 0) || !Number.isFinite(fees) || !Number.isFinite(deposited)) {
+  if (holdingDays === null || !(holdingDays >= MIN_ANNUALIZE_HOLDING_DAYS) || !(deposited > 0) || !Number.isFinite(fees) || !Number.isFinite(deposited)) {
     return null;
   }
   return (fees / deposited) * (365 / holdingDays) * 100;

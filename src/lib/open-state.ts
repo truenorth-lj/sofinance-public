@@ -1,6 +1,6 @@
 import "server-only";
 
-import { CLMM_PROGRAM_ID, PoolInfoLayout, TickUtil } from "@raydium-io/raydium-sdk-v2";
+import { ClmmConfigLayout, CLMM_PROGRAM_ID, PoolInfoLayout, TickUtil } from "@raydium-io/raydium-sdk-v2";
 import {
   AccountState, ExtensionType, getAssociatedTokenAddressSync, getDefaultAccountState, getExtensionTypes,
   getPausableConfig, getScaledUiAmountConfig, getTransferFeeConfig, getTransferHook,
@@ -9,6 +9,7 @@ import {
 import { Connection, PublicKey, type AccountInfo } from "@solana/web3.js";
 import { MIN_SOL_LAMPORTS, NATIVE_SOL_MINT, USDC_MINT } from "./ids";
 import { rpcConnection } from "./rpc";
+import { resolveMintSymbols } from "./mint-symbols";
 import { discoverWallet } from "./wallet-discovery";
 
 const tokenPrograms = [TOKEN_PROGRAM_ID.toBase58(), TOKEN_2022_PROGRAM_ID.toBase58()];
@@ -120,9 +121,35 @@ export async function readOpenPoolState(
   const inputBalance = selection.inputKind === "native"
     ? Math.max(0, solLamports - MIN_SOL_LAMPORTS).toString() : inputAsset.balance;
   if (pool.status & 1) throw new Error("This pool has disabled opening or adding liquidity");
+  let feeTierBps: number | null = null;
+  try {
+    const configId = pool.configId;
+    if (configId) {
+      const configInfo = await connection.getAccountInfo(configId, "confirmed");
+      if (configInfo && configInfo.owner.equals(CLMM_PROGRAM_ID)) {
+        const rate = Number(ClmmConfigLayout.decode(configInfo.data).tradeFeeRate);
+        if (Number.isFinite(rate) && rate >= 0) feeTierBps = rate / 100;
+      }
+    }
+  } catch {
+    feeTierBps = null;
+  }
+  const fromWallet = discovered.positions.find((item) => item.poolId === poolId.toBase58());
+  let symbolA = fromWallet?.symbolA ?? null;
+  let symbolB = fromWallet?.symbolB ?? null;
+  if (!symbolA || !symbolB) {
+    try {
+      const symbols = await resolveMintSymbols([pool.mintA.toBase58(), pool.mintB.toBase58()]);
+      symbolA = symbolA ?? symbols[pool.mintA.toBase58()] ?? null;
+      symbolB = symbolB ?? symbols[pool.mintB.toBase58()] ?? null;
+    } catch {
+      /* shortened mints in the UI */
+    }
+  }
   return {
     wallet: walletAddress, slot: discovered.slot, fetchedAt: Date.now(),
     poolId: poolId.toBase58(), programId: CLMM_PROGRAM_ID.toBase58(),
+    symbolA, symbolB, feeTierBps,
     inputKind: selection.inputKind, inputMint: selection.inputMint,
     inputDecimals: inputAsset.decimals, inputTokenProgram: inputAsset.tokenProgram,
     inputAccount: inputAsset.account, inputBalance,

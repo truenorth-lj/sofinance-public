@@ -9,6 +9,7 @@ import { NATIVE_SOL_MINT, QUOTE_TTL_MS } from "./ids";
 import { instruction, readLookupTables, validateRouteTables } from "./transaction-helpers";
 import { rpcConnection } from "./rpc";
 import { beamTipInstruction, chooseBeamTransaction, fetchBeamTipAddress } from "./solami-beam";
+import { withJupiterRouteRetries, type JupiterRouteConstraints } from "./jupiter-route-retry";
 import { getSelectedQuoteBundle } from "./selected-quote";
 import { simulateAndVerifySelectedTransaction } from "./selected-simulation";
 import type { PositionSelection } from "./selected-state";
@@ -35,10 +36,19 @@ export async function buildAndSimulateSelectedZap(
   walletAddress: string, selection: PositionSelection, amount: string, floorBps: number,
   toleranceBps?: number,
 ) {
+  return withJupiterRouteRetries((jupiter) =>
+    buildAndSimulateSelectedZapOnce(walletAddress, selection, amount, floorBps, toleranceBps, jupiter));
+}
+
+async function buildAndSimulateSelectedZapOnce(
+  walletAddress: string, selection: PositionSelection, amount: string, floorBps: number,
+  toleranceBps: number | undefined,
+  jupiter: JupiterRouteConstraints,
+) {
   const connection = rpcConnection();
   const wallet = new PublicKey(walletAddress);
-  const { quote, legs, state } = await getSelectedQuoteBundle(walletAddress, selection, amount, floorBps, toleranceBps);
-  if (!quote.passesFloor) throw new Error("Conservative immediate resale ratio below selected threshold");
+  const { quote, legs, state } = await getSelectedQuoteBundle(walletAddress, selection, amount, floorBps, toleranceBps, jupiter);
+  if (!quote.passesFloor) throw new Error(quote.warning || "Conservative immediate resale ratio below selected threshold");
   if (Date.now() >= quote.expiresAt) throw new Error("Quote expired, please resimulate");
   const routes = legs.flatMap((item) => item.route ? [item.route] : []);
   if (legs.length !== (state.rangeSide === "inside" ? 2 : 1) || legs.some((item) =>

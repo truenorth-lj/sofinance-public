@@ -4,6 +4,8 @@ import {
   generateMcpToken,
   generateChallenge,
   verifyChallengeSignature,
+  parseChallengeNonce,
+  consumeChallengeNonce,
 } from "@/lib/mcp-auth";
 
 /**
@@ -119,6 +121,14 @@ export async function POST(request: NextRequest) {
     if (!verifyChallengeSignature(wallet, message, signature)) {
       return NextResponse.json(
         { error: "Invalid signature or expired challenge" },
+        { status: 401 }
+      );
+    }
+
+    const nonce = parseChallengeNonce(message);
+    if (!nonce || !consumeChallengeNonce(wallet, nonce)) {
+      return NextResponse.json(
+        { error: "Challenge nonce already used" },
         { status: 401 }
       );
     }

@@ -6,9 +6,10 @@ import {
   DEFAULT_ADD_TOLERANCE_BPS, DEFAULT_RESALE_FLOOR_BPS, MAX_PRICE_IMPACT_BPS, MIN_SOL_LAMPORTS,
   QUOTE_TTL_MS, SLIPPAGE_BPS,
 } from "./ids";
-import { meetsResaleFloor, parseAddToleranceBps, parseResaleFloorBps, parseTokenAmount } from "./amount";
+import { describeResaleFloorFailure, meetsResaleFloor, parseAddToleranceBps, parseResaleFloorBps, parseTokenAmount } from "./amount";
 import { allocateSpend, padAmountMax, positionSide, toleranceLiquidity } from "./quote-math";
 import { buildRoute, type BuildRoute } from "./jupiter-route";
+import type { JupiterRouteConstraints } from "./jupiter-route-retry";
 import { estimateOpenPositionRent } from "./open-rent";
 import { resolveOpenRange, type OpenRangeInput } from "./open-range";
 import { rpcConnection } from "./rpc";
@@ -62,10 +63,13 @@ function amountsAt(sqrt: BN, lowerSqrtX64: string, upperSqrtX64: string, liquidi
   return LiquidityMathUtil.getAmountsForLiquidity(sqrt, new BN(lowerSqrtX64), new BN(upperSqrtX64), liquidity, true);
 }
 
-async function leg(wallet: string, inputMint: string, outputMint: string, spend: bigint, nativeSource = false): Promise<OpenSwapLeg> {
+async function leg(
+  wallet: string, inputMint: string, outputMint: string, spend: bigint, nativeSource = false,
+  jupiter?: JupiterRouteConstraints,
+): Promise<OpenSwapLeg> {
   if (spend <= 0n) throw new Error("Swap amount must be greater than zero");
   if (inputMint === outputMint) return { inputMint, outputMint, spend, minOut: spend, route: null };
-  const route = await buildRoute(wallet, inputMint, outputMint, spend, nativeSource);
+  const route = await buildRoute(wallet, inputMint, outputMint, spend, nativeSource, jupiter);
   return { inputMint, outputMint, spend, minOut: BigInt(route.otherAmountThreshold), route };
 }
 
@@ -82,6 +86,7 @@ export async function getOpenPositionQuoteBundle(
   range: OpenRangeInput,
   requestedFloorBps = DEFAULT_RESALE_FLOOR_BPS,
   requestedToleranceBps = DEFAULT_ADD_TOLERANCE_BPS,
+  jupiter?: JupiterRouteConstraints,
 ): Promise<OpenQuoteBundle> {
   const floorBps = parseResaleFloorBps(requestedFloorBps);
   const toleranceBps = parseAddToleranceBps(requestedToleranceBps);
@@ -115,24 +120,24 @@ export async function getOpenPositionQuoteBundle(
   let projected = new BN(state.sqrtPriceX64);
   if (resolved.rangeSide !== "inside") {
     const outputMint = resolved.rangeSide === "below" ? state.mintA : state.mintB;
-    const sample = await leg(wallet, state.inputMint, outputMint, probe, state.inputKind === "native");
-    const actual = await leg(wallet, state.inputMint, outputMint, requested, state.inputKind === "native");
+    const sample = await leg(wallet, state.inputMint, outputMint, probe, state.inputKind === "native", jupiter);
+    const actual = await leg(wallet, state.inputMint, outputMint, requested, state.inputKind === "native", jupiter);
     priceImpactAgainstProbe(actual, sample, probe);
     legs = [actual];
     spendA = outputMint === state.mintA ? requested : 0n;
     projected = projectedSqrt(state, lowerSqrtX64, upperSqrtX64, resolved.rangeSide, actual.route ? [actual.route] : []);
   } else {
     const [probeA, probeB] = await Promise.all([
-      leg(wallet, state.inputMint, state.mintA, probe, state.inputKind === "native"),
-      leg(wallet, state.inputMint, state.mintB, probe, state.inputKind === "native"),
+      leg(wallet, state.inputMint, state.mintA, probe, state.inputKind === "native", jupiter),
+      leg(wallet, state.inputMint, state.mintB, probe, state.inputKind === "native", jupiter),
     ]);
     const base = amountsAt(projected, lowerSqrtX64, upperSqrtX64, new BN("1000000000000000000"));
     spendA = allocateSpend(requested, BigInt(base.amountA.toString()), BigInt(base.amountB.toString()),
       { spend: probe, out: probeA.minOut }, { spend: probe, out: probeB.minOut }, 1n);
     for (let index = 0; index < 5; index++) {
       const [actualA, actualB] = await Promise.all([
-        leg(wallet, state.inputMint, state.mintA, spendA, state.inputKind === "native"),
-        leg(wallet, state.inputMint, state.mintB, requested - spendA, state.inputKind === "native"),
+        leg(wallet, state.inputMint, state.mintA, spendA, state.inputKind === "native", jupiter),
+        leg(wallet, state.inputMint, state.mintB, requested - spendA, state.inputKind === "native", jupiter),
       ]);
       legs = [actualA, actualB];
       priceImpactAgainstProbe(actualA, probeA, probe);
@@ -162,8 +167,8 @@ export async function getOpenPositionQuoteBundle(
   const amountMaxA = padAmountMax(requiredA, outA, toleranceBps);
   const amountMaxB = padAmountMax(requiredB, outB, toleranceBps);
   const resaleLegs = await Promise.all([
-    outA > 0n ? leg(wallet, state.mintA, state.inputMint, outA) : null,
-    outB > 0n ? leg(wallet, state.mintB, state.inputMint, outB) : null,
+    outA > 0n ? leg(wallet, state.mintA, state.inputMint, outA, false, jupiter) : null,
+    outB > 0n ? leg(wallet, state.mintB, state.inputMint, outB, false, jupiter) : null,
   ]);
   const resale = resaleLegs.reduce((sum, item) => sum + (item?.minOut || 0n), 0n);
   const rent = await estimateOpenPositionRent({
@@ -180,6 +185,8 @@ export async function getOpenPositionQuoteBundle(
   const requiredSol = BigInt(MIN_SOL_LAMPORTS) + rentTotal + networkFeeLamportsEstimate + nativeSpend;
   const sufficientSol = BigInt(state.solLamports) >= requiredSol;
   const warnings: string[] = [];
+  const floorAdvice = describeResaleFloorFailure(requested, resale, floorBps);
+  if (!meetsResaleFloor(requested, resale, floorBps)) warnings.push(floorAdvice.warning);
   if (resolved.warning) warnings.push(resolved.warning);
   if (!resolved.inRange) {
     warnings.push("Selected range is out of the current pool price; the position will be single-sided and will not earn fees until price re-enters.");
@@ -208,8 +215,8 @@ export async function getOpenPositionQuoteBundle(
   const quote: OpenPositionQuote = {
     wallet, poolId: state.poolId, inputMint: state.inputMint, inputKind: state.inputKind,
     inputDecimals: state.inputDecimals, mintA: state.mintA, mintB: state.mintB,
-    symbolA: null, symbolB: null, decimalsA: state.decimalsA, decimalsB: state.decimalsB,
-    feeTierBps: null, tickSpacing: state.tickSpacing, tickCurrent: state.tickCurrent,
+    symbolA: state.symbolA, symbolB: state.symbolB, decimalsA: state.decimalsA, decimalsB: state.decimalsB,
+    feeTierBps: state.feeTierBps, tickSpacing: state.tickSpacing, tickCurrent: state.tickCurrent,
     tickLower: resolved.tickLower, tickUpper: resolved.tickUpper,
     priceLower: resolved.priceLower, priceUpper: resolved.priceUpper,
     currentPrice: state.price,
@@ -225,6 +232,8 @@ export async function getOpenPositionQuoteBundle(
     minimumResaleInput: ((requested * BigInt(floorBps) + 9_999n) / 10_000n).toString(),
     roundtripCostInput: (requested > resale ? requested - resale : 0n).toString(),
     passesFloor: meetsResaleFloor(requested, resale, floorBps), floorBps,
+    ...floorAdvice,
+    warning: meetsResaleFloor(requested, resale, floorBps) ? "" : floorAdvice.warning,
     maxImpactBps: MAX_PRICE_IMPACT_BPS, slippageBps: SLIPPAGE_BPS,
     routeTouchesTargetPool: legs.some((item) => item.route?.routePlan.some((hop) => hop.swapInfo.ammKey === state.poolId)),
     token2022A: state.token2022A, token2022B: state.token2022B,

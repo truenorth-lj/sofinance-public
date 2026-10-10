@@ -3,9 +3,10 @@ import "server-only";
 import BN from "bn.js";
 import { LiquidityMathUtil, SqrtPriceMath, TickUtil } from "@raydium-io/raydium-sdk-v2";
 import { DEFAULT_ADD_TOLERANCE_BPS, DEFAULT_RESALE_FLOOR_BPS, MAX_PRICE_IMPACT_BPS, QUOTE_TTL_MS, SLIPPAGE_BPS } from "./ids";
-import { meetsResaleFloor, parseAddToleranceBps, parseResaleFloorBps, parseTokenAmount } from "./amount";
+import { describeResaleFloorFailure, meetsResaleFloor, parseAddToleranceBps, parseResaleFloorBps, parseTokenAmount } from "./amount";
 import { allocateSpend, padAmountMax, positionSide, toleranceLiquidity } from "./quote-math";
 import { buildRoute, type BuildRoute } from "./jupiter-route";
+import type { JupiterRouteConstraints } from "./jupiter-route-retry";
 import { readSelectedPositionState, type PositionSelection, type SelectedPositionState } from "./selected-state";
 
 type SwapLeg = { inputMint: string; outputMint: string; spend: bigint; minOut: bigint; route: BuildRoute | null };
@@ -34,10 +35,13 @@ function amountsAt(state: SelectedPositionState, sqrt: BN, liquidity: BN) {
   return LiquidityMathUtil.getAmountsForLiquidity(sqrt, new BN(state.lowerSqrtX64), new BN(state.upperSqrtX64), liquidity, true);
 }
 
-async function leg(wallet: string, inputMint: string, outputMint: string, spend: bigint, nativeSource = false): Promise<SwapLeg> {
+async function leg(
+  wallet: string, inputMint: string, outputMint: string, spend: bigint, nativeSource = false,
+  jupiter?: JupiterRouteConstraints,
+): Promise<SwapLeg> {
   if (spend <= 0n) throw new Error("Swap amount must be greater than zero");
   if (inputMint === outputMint) return { inputMint, outputMint, spend, minOut: spend, route: null };
-  const route = await buildRoute(wallet, inputMint, outputMint, spend, nativeSource);
+  const route = await buildRoute(wallet, inputMint, outputMint, spend, nativeSource, jupiter);
   return { inputMint, outputMint, spend, minOut: BigInt(route.otherAmountThreshold), route };
 }
 
@@ -50,6 +54,7 @@ function priceImpactAgainstProbe(actual: SwapLeg, sample: SwapLeg, probe: bigint
 export async function getSelectedQuoteBundle(
   wallet: string, selection: PositionSelection, amount: string,
   requestedFloorBps = DEFAULT_RESALE_FLOOR_BPS, requestedToleranceBps = DEFAULT_ADD_TOLERANCE_BPS,
+  jupiter?: JupiterRouteConstraints,
 ) {
   const floorBps = parseResaleFloorBps(requestedFloorBps);
   const toleranceBps = parseAddToleranceBps(requestedToleranceBps);
@@ -68,24 +73,24 @@ export async function getSelectedQuoteBundle(
   let projected = new BN(state.sqrtPriceX64);
   if (state.rangeSide !== "inside") {
     const outputMint = state.rangeSide === "below" ? state.mintA : state.mintB;
-    const sample = await leg(wallet, state.inputMint, outputMint, probe, state.inputKind === "native");
-    const actual = await leg(wallet, state.inputMint, outputMint, requested, state.inputKind === "native");
+    const sample = await leg(wallet, state.inputMint, outputMint, probe, state.inputKind === "native", jupiter);
+    const actual = await leg(wallet, state.inputMint, outputMint, requested, state.inputKind === "native", jupiter);
     priceImpactAgainstProbe(actual, sample, probe);
     legs = [actual];
     spendA = outputMint === state.mintA ? requested : 0n;
     projected = projectedSqrt(state, actual.route ? [actual.route] : []);
   } else {
     const [probeA, probeB] = await Promise.all([
-      leg(wallet, state.inputMint, state.mintA, probe, state.inputKind === "native"),
-      leg(wallet, state.inputMint, state.mintB, probe, state.inputKind === "native"),
+      leg(wallet, state.inputMint, state.mintA, probe, state.inputKind === "native", jupiter),
+      leg(wallet, state.inputMint, state.mintB, probe, state.inputKind === "native", jupiter),
     ]);
     const base = amountsAt(state, projected, new BN("1000000000000000000"));
     spendA = allocateSpend(requested, BigInt(base.amountA.toString()), BigInt(base.amountB.toString()),
       { spend: probe, out: probeA.minOut }, { spend: probe, out: probeB.minOut }, 1n);
     for (let index = 0; index < 5; index++) {
       const [actualA, actualB] = await Promise.all([
-        leg(wallet, state.inputMint, state.mintA, spendA, state.inputKind === "native"),
-        leg(wallet, state.inputMint, state.mintB, requested - spendA, state.inputKind === "native"),
+        leg(wallet, state.inputMint, state.mintA, spendA, state.inputKind === "native", jupiter),
+        leg(wallet, state.inputMint, state.mintB, requested - spendA, state.inputKind === "native", jupiter),
       ]);
       legs = [actualA, actualB];
       priceImpactAgainstProbe(actualA, probeA, probe);
@@ -118,11 +123,13 @@ export async function getSelectedQuoteBundle(
   // not lost, so it must not count against the resale floor; the floor still
   // gates swap round-trip cost and price impact on the full swap output.
   const resaleLegs = await Promise.all([
-    outA > 0n ? leg(wallet, state.mintA, state.inputMint, outA) : null,
-    outB > 0n ? leg(wallet, state.mintB, state.inputMint, outB) : null,
+    outA > 0n ? leg(wallet, state.mintA, state.inputMint, outA, false, jupiter) : null,
+    outB > 0n ? leg(wallet, state.mintB, state.inputMint, outB, false, jupiter) : null,
   ]);
   const resale = resaleLegs.reduce((sum, item) => sum + (item?.minOut || 0n), 0n);
   const timestamp = Date.now();
+  const floorAdvice = describeResaleFloorFailure(requested, resale, floorBps);
+  const passesFloor = meetsResaleFloor(requested, resale, floorBps);
   const quote = {
     wallet, inputMint: state.inputMint, inputKind: state.inputKind, inputDecimals: state.inputDecimals,
     positionMint: state.positionMint, positionAccount: state.positionAccount, poolId: state.poolId,
@@ -136,7 +143,9 @@ export async function getSelectedQuoteBundle(
     roundtripCostInput: (requested > resale ? requested - resale : 0n).toString(),
     projectedPrice: TickUtil.sqrtPriceX64ToPrice(projected, state.decimalsA, state.decimalsB).toString(),
     slot: state.slot, fetchedAt: timestamp, expiresAt: timestamp + QUOTE_TTL_MS,
-    passesFloor: meetsResaleFloor(requested, resale, floorBps), floorBps,
+    passesFloor, floorBps,
+    ...floorAdvice,
+    warning: passesFloor ? "" : floorAdvice.warning,
     maxImpactBps: MAX_PRICE_IMPACT_BPS, slippageBps: SLIPPAGE_BPS,
     routeTouchesTargetPool: legs.some((item) => item.route?.routePlan.some((hop) => hop.swapInfo.ammKey === state.poolId)),
   };

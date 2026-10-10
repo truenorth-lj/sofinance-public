@@ -78,7 +78,7 @@ export type SubmitCompoundTransactionInput = z.infer<typeof submitCompoundTransa
 // List RWA same-asset CLMM pairs (read-only discovery)
 export const listRwaPairsSchema = z.object({
   minTvl: z.number().min(0).default(0),
-  maxPages: z.number().int().min(1).max(30).default(10),
+  maxPages: z.number().int().min(1).max(30).default(3),
   sortBy: z.enum(["estimatedFeeApr", "tvl", "volume24h"]).default("estimatedFeeApr"),
 });
 export type ListRwaPairsInput = z.infer<typeof listRwaPairsSchema>;

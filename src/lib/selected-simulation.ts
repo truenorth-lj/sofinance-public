@@ -4,6 +4,7 @@ import { PersonalPositionLayout } from "@raydium-io/raydium-sdk-v2";
 import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID, unpackAccount } from "@solana/spl-token";
 import { Connection, PublicKey, VersionedTransaction, type AccountInfo } from "@solana/web3.js";
 import { MIN_SOL_LAMPORTS, NATIVE_SOL_MINT } from "./ids";
+import { simulatedInputSpendMatches } from "./amount";
 import type { SelectedPositionState } from "./selected-state";
 
 type VerifyInput = {
@@ -90,7 +91,7 @@ export async function simulateAndVerifySelectedTransaction(input: VerifyInput) {
   if (inputBefore !== null && inputAfter !== null) {
     spentInput = inputBefore - inputAfter;
     const directInput = state.inputMint === state.mintA || state.inputMint === state.mintB;
-    if (spentInput <= 0n || spentInput > requested || (!directInput && requested - spentInput > 1n)) {
+    if (spentInput <= 0n || spentInput > requested || (!directInput && !simulatedInputSpendMatches(spentInput, requested))) {
       throw new Error(`Simulated input asset expenditure does not match limit (spent ${spentInput} of ${requested}, direct=${directInput})`);
     }
   } else if (solDebit < requested - 1n) {

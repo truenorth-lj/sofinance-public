@@ -47,7 +47,8 @@ function state(overrides: Partial<OpenPoolState> = {}): OpenPoolState {
     price: TickUtil.sqrtPriceX64ToPrice(TickUtil.getSqrtPriceAtTick(tickCurrent), 6, 9).toString(),
     paused: false, transferFee: false, frozen: false, freezeRiskA: false, freezeRiskB: false,
     freezeRisk: false, token2022A: false, token2022B: false, unsupportedExtensions: [],
-    solLamports: 50_000_000, sufficientSol: true, ...overrides,
+    solLamports: 50_000_000, sufficientSol: true,
+    symbolA: "USDC", symbolB: "SOL", feeTierBps: 4, ...overrides,
   } as OpenPoolState;
 }
 
@@ -98,6 +99,9 @@ describe("open-position quote validation", () => {
     expect(quote.rangeSide).toBe("below");
     expect(quote.tickLower).toBeLessThan(quote.tickUpper);
     expect(quote.passesFloor).toBe(true);
+    expect(quote.symbolA).toBe("USDC");
+    expect(quote.symbolB).toBe("SOL");
+    expect(quote.feeTierBps).toBe(4);
     expect(quote.sufficientSol).toBe(true);
     expect(legs[0]?.route).toBeNull();
     expect(uiPriceBPerAFromTick(quote.tickLower, 6, 9)).toBeGreaterThan(Number(quote.currentPrice));

@@ -55,7 +55,7 @@ export async function sendSignedCompoundTransaction(
     });
     if (signature !== expected) throw new Error("RPC returned compound signature mismatch, please verify on-chain status");
     const beam = await lookupBeamAfterSend(signature);
-    return { signature, beam: beam.beam, beamLabel: beam.label };
+    return { signature, beam: beam.beam, beamLabel: beam.label, beamLandingUrl: beam.beamLandingUrl };
   } catch (error) {
     if (error instanceof CompoundSendError) throw error;
     throw new CompoundSendError(error, isPreflightOrUnsentFailure(error) ? false : undefined);

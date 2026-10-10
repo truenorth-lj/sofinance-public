@@ -13,6 +13,7 @@ import { restampVersionedTransaction, stampPreparedBlockhash } from "./fresh-blo
 import { instruction, readLookupTables, validateRouteTables } from "./transaction-helpers";
 import { rpcConnection } from "./rpc";
 import { BEAM_MIN_TIP_LAMPORTS, beamTipInstruction, chooseBeamTransaction, fetchBeamTipAddress } from "./solami-beam";
+import { withJupiterRouteRetries, type JupiterRouteConstraints } from "./jupiter-route-retry";
 import { getOpenPositionQuoteBundle } from "./open-quote";
 import { simulateAndVerifyOpenTransaction } from "./open-simulation";
 import type { OpenRangeInput } from "./open-range";
@@ -62,12 +63,25 @@ export async function buildAndSimulateOpenPosition(
   floorBps: number,
   toleranceBps?: number,
 ) {
+  return withJupiterRouteRetries((jupiter) =>
+    buildAndSimulateOpenPositionOnce(walletAddress, selection, amount, range, floorBps, toleranceBps, jupiter));
+}
+
+async function buildAndSimulateOpenPositionOnce(
+  walletAddress: string,
+  selection: OpenPositionSelection,
+  amount: string,
+  range: OpenRangeInput,
+  floorBps: number,
+  toleranceBps: number | undefined,
+  jupiter: JupiterRouteConstraints,
+) {
   const connection = rpcConnection();
   const wallet = new PublicKey(walletAddress);
   const { quote, legs, state } = await getOpenPositionQuoteBundle(
-    walletAddress, selection, amount, range, floorBps, toleranceBps,
+    walletAddress, selection, amount, range, floorBps, toleranceBps, jupiter,
   );
-  if (!quote.passesFloor) throw new Error("Conservative immediate resale ratio below selected threshold");
+  if (!quote.passesFloor) throw new Error(quote.warning || "Conservative immediate resale ratio below selected threshold");
   if (Date.now() >= quote.expiresAt) throw new Error("Quote expired, please resimulate");
   const routes = legs.flatMap((item) => item.route ? [item.route] : []);
   if (legs.length !== (quote.rangeSide === "inside" ? 2 : 1) || legs.some((item) =>

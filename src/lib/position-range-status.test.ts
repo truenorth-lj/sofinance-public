@@ -41,6 +41,10 @@ describe("rangeStatusFromPrice", () => {
     expect(status.rangeSide).toBe("inside");
     expect(status.nearEdge).toBe(false);
     expect(status.priceSource).toBe("solami-blur");
+    expect(status.distanceToLowerPct).toBeCloseTo(((mid - lower) / (upper - lower)) * 100, 8);
+    expect(status.distanceToLowerPricePct).toBeCloseTo(((mid - lower) / lower) * 100, 8);
+    expect(status.distanceToUpperPricePct).toBeCloseTo(((upper - mid) / upper) * 100, 8);
+    expect(status.distanceToLowerPricePct).not.toBe(status.distanceToLowerPct);
   });
 
   it("flags a near-edge approach on the lower bound", () => {
