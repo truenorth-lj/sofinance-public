@@ -6,7 +6,7 @@
  */
 
 export const PERFORMANCE_METHOD = [
-  "Discover txs via Solami getTransactionsForAddress when SOLAMI_API_KEY is set,",
+  "Discover txs via Solami getTransactionsForAddress (signatures pages) when SOLAMI_API_KEY is set,",
   "else getSignaturesForAddress + bounded-parallel getParsedTransaction batches.",
   "Parse Raydium Anchor events from tx logs: CreatePersonalPositionEvent,",
   "IncreaseLiquidityEvent, DecreaseLiquidityEvent (exact deposit/withdraw/fee amounts).",

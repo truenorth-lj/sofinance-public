@@ -100,9 +100,9 @@ function unwrapRpcPayload(raw: unknown): unknown {
 }
 
 /**
- * Accept several envelopes seen in Solami / Triton-style address-history RPCs.
- * Live Solami `getTransactionsForAddress` was not called from this environment
- * (no API key); parsers are fixture-tested against documented shapes.
+ * Accept the live Solami `getTransactionsForAddress` envelope
+ * `{ result: { data: SignatureRow[], paginationToken } }` plus a few
+ * Triton-style aliases. Rows are signatures-only (`transactionDetails: "signatures"`).
  */
 export function unwrapTransactionsForAddressResult(raw: unknown): {
   rows: unknown[];
@@ -206,13 +206,8 @@ function solamiHistoryParams(address: string, maxSignatures: number) {
   return [
     address,
     {
-      transactionDetails: "full",
-      encoding: "jsonParsed",
-      sortOrder: "desc",
       limit: maxSignatures,
-      maxSupportedTransactionVersion: 0,
-      commitment: "confirmed",
-      filters: { status: "succeeded" },
+      transactionDetails: "signatures",
     },
   ];
 }
@@ -246,7 +241,8 @@ async function defaultCustomRpc(connection: HistoryConnection): Promise<CustomRp
 
 /**
  * Load personal-position history. On Solami, try the custom
- * `getTransactionsForAddress` method (one round-trip for signatures + txs).
+ * `getTransactionsForAddress` method with `{ limit, transactionDetails: "signatures" }`
+ * (one listing round-trip; logs are filled via batched `getParsedTransaction`).
  * Always fall back to `getSignaturesForAddress` + bounded-parallel
  * `getParsedTransaction` so public / third-party RPCs keep working.
  */

@@ -88,7 +88,7 @@ Never commit `.env.local`, mnemonics, or API keys. Do not prefix `SOLANA_RPC_URL
 
 | Surface | When | What it does |
 |---------|------|----------------|
-| **RPC** | `SOLAMI_API_KEY` set | All server `rpcConnection()` traffic goes to `https://rpc.solami.dev/sol?api_key=…` (one place: `src/lib/rpc.ts`). Position history prefers Solami `getTransactionsForAddress`, then falls back to `getSignaturesForAddress` + bounded-parallel `getParsedTransaction` batches. |
+| **RPC** | `SOLAMI_API_KEY` set | All server `rpcConnection()` traffic goes to `https://rpc.solami.dev/sol?api_key=…` (one place: `src/lib/rpc.ts`). Position history prefers Solami `getTransactionsForAddress` with `{ limit, transactionDetails: "signatures" }` (rows under `result.data`, cursor `paginationToken`), then fills logs via bounded-parallel `getParsedTransaction`. Falls back to `getSignaturesForAddress` + the same batches. |
 | **Blur** | `SOLAMI_DATA_API_KEY` | Live pool activity (REST + WS). Ships in a follow-up PR. A Free key has REST but not WebSocket; [Solami](https://solami.dev) currently offers a 7-day Pro promo. |
 | **Beam** | `SOLAMI_API_KEY` | Stake-weighted send with an on-chain tip. Ships in a follow-up PR. |
 
@@ -102,8 +102,8 @@ wallet / API / MCP
         │                    else ──► SOLANA_RPC_URL / public RPC
         ▼
  position-performance history
-   solami: getTransactionsForAddress (1 call, parsed txs)
-   default: signatures + batched getParsedTransaction (8-wide)
+   solami: getTransactionsForAddress (signatures page) + batched getParsedTransaction
+   default: getSignaturesForAddress + batched getParsedTransaction (8-wide)
 ```
 
 ### Demo checklist (RPC layer)
