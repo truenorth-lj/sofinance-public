@@ -1,26 +1,23 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import PositionPerformancePage from "./page";
 
-describe("position-performance page shell", () => {
-  it("uses the default 5xl InkShell so InkNav matches Positions / RWA pairs / Use AI", () => {
-    const src = readFileSync(resolve("src/app/app/position-performance/page.tsx"), "utf8");
-    expect(src).toContain("<InkShell>");
-    expect(src).not.toMatch(/maxWidth=["']3xl["']/);
+const { redirect } = vi.hoisted(() => ({ redirect: vi.fn((url: string) => { throw new Error(`redirect: ${url}`); }) }));
+vi.mock("next/navigation", () => ({ redirect }));
+
+beforeEach(() => { redirect.mockClear(); });
+describe("legacy performance route", () => {
+  it("redirects to the Performance tab inside Positions", async () => {
+    await expect(PositionPerformancePage({ searchParams: Promise.resolve({}) })).rejects.toThrow("redirect");
+    expect(redirect).toHaveBeenCalledWith("/app?view=performance");
   });
-
-  it("reads ?mint= and ?wallet= from the browser URL, not prerendered page searchParams", () => {
-    const page = readFileSync(resolve("src/app/app/position-performance/page.tsx"), "utf8");
-    const queryPanel = readFileSync(resolve("src/components/position-performance-query-panel.tsx"), "utf8");
-    expect(page).toContain("Suspense");
-    expect(page).toContain("PositionPerformanceQueryPanel");
-    expect(page).not.toContain("use(searchParams)");
-    expect(page).not.toMatch(/searchParams:\s*Promise/);
-    expect(queryPanel).toContain("useSearchParams");
-    expect(queryPanel).toContain("queryFromSearchParams");
-    expect(queryPanel).toContain("initialMint={query.mint}");
-    expect(queryPanel).toContain("initialWallet={query.wallet}");
-    expect(queryPanel).toContain("previewPoolId");
-    expect(queryPanel).toContain('searchParams.get("pool")');
+  it("preserves mint, wallet and pool query parameters", async () => {
+    await expect(PositionPerformancePage({ searchParams: Promise.resolve({ mint: "position-mint", wallet: "owner-wallet", pool: "pool-id", view: "deposit" }) })).rejects.toThrow("redirect");
+    const destination = new URL(redirect.mock.calls[0]![0]!, "https://example.com");
+    expect(destination.pathname).toBe("/app");
+    expect(Object.fromEntries(destination.searchParams)).toEqual({ mint: "position-mint", wallet: "owner-wallet", pool: "pool-id", view: "performance" });
+  });
+  it("preserves repeated query parameters", async () => {
+    await expect(PositionPerformancePage({ searchParams: Promise.resolve({ mint: ["first-mint", "second-mint"] }) })).rejects.toThrow("redirect");
+    expect(new URL(redirect.mock.calls[0]![0]!, "https://example.com").searchParams.getAll("mint")).toEqual(["first-mint", "second-mint"]);
   });
 });

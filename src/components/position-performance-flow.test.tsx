@@ -21,13 +21,13 @@ let fetchMock: ReturnType<typeof vi.fn>;
 let positions: ReturnType<typeof position>[];
 let response: typeof fixture;
 
-function render(wallet = walletA, initialMint = "") {
+function render(wallet = walletA, initialMint = "", sharedMint?: string) {
   const connection: WalletConnection = {
     address: wallet, connected: true, connect: vi.fn(), disconnect: vi.fn(), isMobile: false,
     walletsCount: 1, connectionError: "", signTransaction: async (tx) => tx,
   };
   root.render(createElement(WalletConnectionContext.Provider, { value: connection },
-    createElement(PositionPerformancePanel, { initialMint })));
+    createElement(PositionPerformancePanel, { initialMint, embedded: sharedMint !== undefined, selectedMint: sharedMint })));
 }
 async function scan(wallet = walletA, initialMint = "") {
   await act(async () => { render(wallet, initialMint); });
@@ -112,7 +112,10 @@ describe("position performance workflow", () => {
     expect(container.textContent).toContain("No positive deposit amount");
     expect(container.textContent).toContain("No deposit history was found");
     expect(container.textContent).not.toContain(`${response.tokenNative.tokenEquivalent.metrics.pnl.toPrecision(6)} ${response.tokenNative.tokenEquivalent.baseSymbol}`);
-    expect(container.textContent).toContain("TE means token-equivalent");
+    expect(container.textContent).toContain("Amounts shown in");
+    expect(container.textContent).toContain("Position asset details");
+    const tickText = Array.from(container.querySelectorAll("div")).find((node) => node.childElementCount === 0 && node.textContent?.includes("Tick "));
+    expect(tickText?.closest("details")?.open).toBe(false);
     expect(container.textContent).toContain("Removed / collected");
   });
 
@@ -128,4 +131,19 @@ describe("position performance workflow", () => {
     expect(container.textContent).toContain("0.00%");
     expect(container.textContent).not.toContain("No positive deposit amount");
   });
+  it("uses the shared position in embedded mode without rescanning the wallet", async () => {
+    await act(async () => { render(walletA, "", firstMint); });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(container.querySelector("#perf-position")).toBeNull();
+    await compute();
+    expect(fetchMock.mock.calls[0]?.[0]).toContain(`positionMint=${firstMint}`);
+    expect(container.querySelector('[aria-label="Performance results"]')).not.toBeNull();
+    await act(async () => { render(walletA, "", secondMint); });
+    expect(container.querySelector('[aria-label="Performance results"]')).toBeNull();
+    response.positionMint = secondMint;
+    await compute();
+    expect(fetchMock.mock.calls.at(-1)?.[0]).toContain(`positionMint=${secondMint}`);
+  });
+
 });
