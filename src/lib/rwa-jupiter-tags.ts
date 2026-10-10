@@ -2,11 +2,15 @@ import "server-only";
 
 /**
  * Jupiter Tokens API v2 mint → tags cache for RWA discovery.
- * Uses GET https://api.jup.ag/tokens/v2/search?query={mint[,mint...]}
+ * GET /tokens/v2/search?query={mint[,mint...]} through the shared Jupiter client.
  * Sends x-api-key from JUPITER_API_KEY when present; never logs the key.
  */
 
-export const JUPITER_TOKENS_SEARCH = "https://api.jup.ag/tokens/v2/search";
+import { jupiterRequest } from "./jupiter";
+import { JUPITER_TOKENS_SEARCH, JUPITER_TOKENS_SEARCH_PATH } from "./jupiter/urls";
+
+export { JUPITER_TOKENS_SEARCH };
+
 const BATCH_SIZE = 100;
 const CACHE_TTL_MS = 10 * 60_000;
 
@@ -19,15 +23,6 @@ export type FetchJupiterTagsOptions = {
   /** Skip module cache (tests). */
   bypassCache?: boolean;
 };
-
-function jupiterHeaders(apiKey: string | undefined): HeadersInit {
-  const headers: Record<string, string> = {
-    Accept: "application/json",
-    "User-Agent": "SoFinance/0.1 (RWA pair discovery; +https://github.com/truenorth-lj/sofinance-public)",
-  };
-  if (apiKey) headers["x-api-key"] = apiKey;
-  return headers;
-}
 
 function parseTags(raw: unknown): string[] {
   if (!Array.isArray(raw)) return [];
@@ -64,16 +59,18 @@ export async function fetchJupiterTagsByMint(
 
   for (let i = 0; i < pending.length; i += BATCH_SIZE) {
     const batch = pending.slice(i, i + BATCH_SIZE);
-    const url = new URL(JUPITER_TOKENS_SEARCH);
-    url.searchParams.set("query", batch.join(","));
-    const response = await fetcher(url, {
-      headers: jupiterHeaders(apiKey),
+    const body: unknown = await jupiterRequest({
+      path: JUPITER_TOKENS_SEARCH_PATH,
+      query: { query: batch.join(",") },
+      fetcher,
+      apiKey,
+      headers: {
+        "User-Agent": "SoFinance/0.1 (RWA pair discovery; +https://github.com/truenorth-lj/sofinance-public)",
+      },
+      cacheKey: `tokens:${batch.join(",")}`,
+      cacheTtlMs: CACHE_TTL_MS,
       signal: AbortSignal.timeout(20_000),
     });
-    if (!response.ok) {
-      throw new Error(`Jupiter tokens search failed (${response.status})`);
-    }
-    const body: unknown = await response.json();
     if (!Array.isArray(body)) {
       throw new Error("Jupiter tokens search returned unexpected payload");
     }

@@ -11,6 +11,7 @@ import { unpackAccount, getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID, TOKEN_2
 import { compactAtaInstructions, compileCompactOpenTransaction, openLookupTableReader, versionedTransactionSize } from "./open-transaction";
 import { instruction } from "./transaction-helpers";
 import { validPrincipalQuote } from "./lp-decision-data";
+import { EXIT_JUPITER_CONCURRENCY, jupiterQuotePreferCompact, jupiterSwapInstructions, mapPool } from "./jupiter";
 import type { ApiInstruction } from "./jupiter-route";
 const USDC="EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",SOL="So11111111111111111111111111111111111111112";
 export const EXIT_PREVIEW_TTL_MS=8_000;
@@ -62,16 +63,14 @@ async function readFullExitPreviewUnlocked(positionId:string,nftAccount?:string,
  const ownerBefore=before.value[0];if(!ownerBefore)throw new Error("Owner SOL account missing");
  const netSOL=BigInt(withdrawSimulation.value.accounts[0]!.lamports)-BigInt(ownerBefore.lamports);
  const legs=[...received,...(convertRent&&netSOL>0n?[{mint:SOL,amountAtomic:netSOL.toString()}]:[])].filter(v=>BigInt(v.amountAtomic)>0n);
- async function jupiter(url:string,body?:unknown){const apiKey=process.env.JUPITER_API_KEY;const r=await fetcher(url,{method:body?"POST":"GET",headers:{"Content-Type":"application/json",...(apiKey?{"x-api-key":apiKey}:{})},body:body?JSON.stringify(body):undefined,signal:budget});if(!r.ok)throw new Error(`Jupiter HTTP ${r.status}`);return r.json();}
- for(const leg of legs){
-  let quote;
-  try{quote=await jupiter(`https://api.jup.ag/swap/v1/quote?inputMint=${leg.mint}&outputMint=${USDC}&amount=${leg.amountAtomic}&slippageBps=50&maxAccounts=16&onlyDirectRoutes=true`);}
-  catch(e){if(!(e instanceof Error)||e.message!=="Jupiter HTTP 400")throw e;quote=await jupiter(`https://api.jup.ag/swap/v1/quote?inputMint=${leg.mint}&outputMint=${USDC}&amount=${leg.amountAtomic}&slippageBps=50&maxAccounts=20&onlyDirectRoutes=true`);}
+ const quoted=await mapPool(legs,EXIT_JUPITER_CONCURRENCY,async(leg)=>{
+  const quote=await jupiterQuotePreferCompact({inputMint:leg.mint,outputMint:USDC,amount:leg.amountAtomic,slippageBps:50,signal:budget,fetcher});
   if(!validPrincipalQuote(quote,leg.mint,leg.amountAtomic))throw new Error("Exit quote context/amount invalid");
-  const route=await jupiter("https://api.jup.ag/swap/v1/swap-instructions",{userPublicKey:owner.toBase58(),quoteResponse:quote,wrapAndUnwrapSol:true,dynamicComputeUnitLimit:false,prioritizationFeeLamports:0}) as Route;
+  const route=await jupiterSwapInstructions({userPublicKey:owner.toBase58(),quoteResponse:quote,wrapAndUnwrapSol:true,dynamicComputeUnitLimit:false,prioritizationFeeLamports:0},{signal:budget,fetcher}) as Route;
   if(!route.swapInstruction||!Array.isArray(route.addressLookupTableAddresses))throw new Error("Exit route instructions missing");
-  routes.push(route);quotes.push({mint:leg.mint,inputAtomic:leg.amountAtomic,outputUSDCAtomic:quote.outAmount,thresholdUSDCAtomic:quote.otherAmountThreshold,observedAt:new Date().toISOString()});
- }
+  return {route,quote:{mint:leg.mint,inputAtomic:leg.amountAtomic,outputUSDCAtomic:quote.outAmount as string,thresholdUSDCAtomic:quote.otherAmountThreshold as string,observedAt:new Date().toISOString()}};
+ });
+ for(const item of quoted){routes.push(item.route);quotes.push(item.quote);}
  const tableKeys=[...new Set(["AcL1Vo8oy1ULiavEcjSUcwfBSForXMudcZvDZy5nzJkU",...routes.flatMap(r=>r.addressLookupTableAddresses)])];
  const tables=await openLookupTableReader(connection)(tableKeys.map(k=>new PublicKey(k)));
  const instructions=await compactAtaInstructions(connection,[...prefix,...routes.flatMap(r=>[...(r.setupInstructions??[]),...(r.otherInstructions??[]),r.swapInstruction,...(r.cleanupInstruction?[r.cleanupInstruction]:[])].map(v=>instruction(v,owner)))]);

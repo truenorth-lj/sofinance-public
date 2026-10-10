@@ -1,6 +1,8 @@
 import "server-only";
 
-const JUPITER_PRICE_V3 = "https://api.jup.ag/price/v3";
+import { JUPITER_PRICE_TTL_MS, JUPITER_SOFT_RETRY, jupiterRequest } from "./jupiter";
+import { JUPITER_PRICE_V3_PATH } from "./jupiter/urls";
+
 const STABLE_USD_MINTS = new Set([
   "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", // USDC
   "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", // USDT
@@ -14,14 +16,17 @@ export async function fetchJupiterPricesUsd(
   const unique = [...new Set(mints.filter(Boolean))];
   const prices = new Map<string, number>();
   if (!unique.length) return prices;
-  const url = new URL(JUPITER_PRICE_V3);
-  url.searchParams.set("ids", unique.join(","));
-  const headers: Record<string, string> = { Accept: "application/json" };
-  if (apiKey) headers["x-api-key"] = apiKey;
   try {
-    const response = await fetcher(url.toString(), { headers, signal: AbortSignal.timeout(5_000) });
-    if (!response.ok) return prices;
-    const body = (await response.json()) as Record<string, { usdPrice?: number | string } | null>;
+    const body = await jupiterRequest<Record<string, { usdPrice?: number | string } | null>>({
+      path: JUPITER_PRICE_V3_PATH,
+      query: { ids: unique.join(",") },
+      fetcher,
+      apiKey,
+      cacheKey: `price:${[...unique].sort().join(",")}`,
+      cacheTtlMs: JUPITER_PRICE_TTL_MS,
+      retry: JUPITER_SOFT_RETRY,
+      signal: AbortSignal.timeout(5_000),
+    });
     for (const mint of unique) {
       const raw = body[mint]?.usdPrice;
       const value = typeof raw === "number" ? raw : raw !== null && raw !== undefined ? Number(raw) : NaN;
