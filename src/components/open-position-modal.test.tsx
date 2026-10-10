@@ -57,7 +57,8 @@ function quote(): OpenPositionQuote {
       tickArrayLamports: "0", protocolPositionLamports: "1800000",
       tickArrayInitRequired: false, protocolPositionInitRequired: true, tickArrayAccounts: [],
     },
-    requiredSolLamports: "139650000", sufficientSol: true, sufficientInput: true, slot: 1,
+    requiredSolLamports: "139650000", sufficientSol: true, sufficientInput: true,
+    feeBps: 0, feeAmount: "0", feeWallet: null, slot: 1,
     fetchedAt: Date.now(), expiresAt: Date.now() + QUOTE_TTL_MS,
   };
 }

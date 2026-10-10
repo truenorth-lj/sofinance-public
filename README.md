@@ -75,6 +75,7 @@ pnpm install
 cp .env.example .env.local
 # Server-only: SOLANA_RPC_URL and/or SOLAMI_API_KEY, JUPITER_API_KEY
 # Optional: SOLAMI_DATA_API_KEY (Blur; unused until the pool-activity layer)
+# Optional protocol fee: SOFINANCE_FEE_WALLET + SOFINANCE_FEE_BPS (default 20, max 100). Unset wallet = fee 0.
 # Public: NEXT_PUBLIC_REOWN_PROJECT_ID (and optional NEXT_PUBLIC_SOLANA_RPC_URL without secrets)
 pnpm dev --webpack --hostname 127.0.0.1
 ```
@@ -83,7 +84,16 @@ pnpm dev --webpack --hostname 127.0.0.1
 pnpm lint && pnpm typecheck && pnpm test && pnpm build
 ```
 
-Never commit `.env.local`, mnemonics, or API keys. Do not prefix `SOLANA_RPC_URL` / `SOLAMI_API_KEY` / `SOLAMI_DATA_API_KEY` / `JUPITER_API_KEY` with `NEXT_PUBLIC_`.
+Never commit `.env.local`, mnemonics, or API keys. Do not prefix `SOLANA_RPC_URL` / `SOLAMI_API_KEY` / `SOLAMI_DATA_API_KEY` / `JUPITER_API_KEY` / `SOFINANCE_FEE_WALLET` / `SOFINANCE_FEE_BPS` with `NEXT_PUBLIC_`.
+
+### Protocol swap fee
+
+When `SOFINANCE_FEE_WALLET` is set (Vercel env, server-only), each executed user swap takes `SOFINANCE_FEE_BPS` (default 20, max 100) of that swap’s input inside the same atomic v0 transaction the wallet signs. Unset wallet keeps fee 0.
+
+- Open position (Jupiter): fee is an SPL/SOL transfer of the input asset; the Jupiter `/build` amount is the net after the fee. Resale-floor probes are not charged.
+- One-click compound (Raydium): fee is an SPL transfer from the isolated swap-input account after harvest, before the in-pool SPCXx↔SPCX rebalance.
+
+Quote/prepare JSON includes `feeBps` / `feeAmount` / `feeWallet`. Rent estimates are unchanged; ATA rent for a new recipient token account is allowed in the simulated SOL debit cap only.
 
 ## Powered by Solami
 
