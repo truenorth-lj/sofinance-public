@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 import { apiError } from "./api-response";
+import { JupiterHttpError, JUPITER_UNAVAILABLE_CODE, JUPITER_UNAVAILABLE_MESSAGE } from "./jupiter/errors";
 import {
   CompoundSendError, isPreflightOrUnsentFailure, mapKnownChainError, notSentRetryMessage,
-  resolveCompoundBroadcastFailure, sanitizePublicError,
+  publicErrorCode, resolveCompoundBroadcastFailure, sanitizePublicError,
 } from "./public-error";
 
 afterEach(() => vi.restoreAllMocks());
@@ -45,6 +46,15 @@ describe("compound failure mapping", () => {
     );
     expect(message).toBe("Solana RPC is temporarily unavailable. Please retry in a moment.");
     expect(message).not.toMatch(/Too many requests for a specific RPC|429/);
+    expect(publicErrorCode(new Error("429 Too Many Requests: Too many requests for a specific RPC call"))).toBe("rpc_unavailable");
+  });
+
+  it("keeps Jupiter 429/5xx distinct from the Solana RPC message", () => {
+    const jupiter = new JupiterHttpError(429, "/swap/v1/quote");
+    expect(sanitizePublicError(jupiter, "Exit source unavailable")).toBe(JUPITER_UNAVAILABLE_MESSAGE);
+    expect(publicErrorCode(jupiter)).toBe(JUPITER_UNAVAILABLE_CODE);
+    expect(sanitizePublicError(new Error("Jupiter HTTP 503"), "fallback")).toBe(JUPITER_UNAVAILABLE_MESSAGE);
+    expect(sanitizePublicError(jupiter, "fallback")).not.toMatch(/Solana RPC/);
   });
 
   it("treats simulation and known program errors as not-sent preflight failures", () => {

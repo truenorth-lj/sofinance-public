@@ -1,3 +1,10 @@
+import {
+  isJupiterUpstreamError,
+  JUPITER_UNAVAILABLE_CODE,
+  JUPITER_UNAVAILABLE_MESSAGE,
+  JupiterUnavailableError,
+  RPC_UNAVAILABLE_CODE,
+} from "./jupiter/errors";
 import { RPC_UNAVAILABLE_MESSAGE } from "./rpc/errors";
 
 const PUBLIC_ERROR_LIMIT = 220;
@@ -35,6 +42,7 @@ export function errorText(error: unknown): string {
 }
 
 export function mapKnownChainError(text: string): string | null {
+  if (looksLikeJupiterPublicError(text)) return JUPITER_UNAVAILABLE_MESSAGE;
   if (/429|too many requests|rate[- ]?limit/i.test(text)) return RPC_UNAVAILABLE_MESSAGE;
   if (/6017|0x1781|price\s*slippage/i.test(text)) return "Pool price moved past the add-liquidity cap (Raydium 6017).";
   if (/insufficient funds|insufficient lamports|custom program error:\s*0x1\b/i.test(text)) {
@@ -51,8 +59,10 @@ export function mapKnownChainError(text: string): string | null {
 
 export function isPreflightOrUnsentFailure(error: unknown): boolean {
   const text = errorText(error);
-  return /simulation failed|preflight|not sent|blockhash not found|blockhash expired/i.test(text)
-    || mapKnownChainError(text) !== null;
+  if (/simulation failed|preflight|not sent|blockhash not found|blockhash expired/i.test(text)) return true;
+  const mapped = mapKnownChainError(text);
+  if (mapped === null || mapped === JUPITER_UNAVAILABLE_MESSAGE) return false;
+  return true;
 }
 
 function sanitizeDetail(text: string) {
@@ -63,11 +73,28 @@ function truncate(text: string, limit = PUBLIC_ERROR_LIMIT) {
   return text.length <= limit ? text : `${text.slice(0, limit - 3)}...`;
 }
 
+function looksLikeJupiterPublicError(text: string): boolean {
+  return isJupiterUpstreamError(new Error(text));
+}
+
+export function publicErrorCode(error: unknown): string | undefined {
+  if (error instanceof JupiterUnavailableError || isJupiterUpstreamError(error)) {
+    return JUPITER_UNAVAILABLE_CODE;
+  }
+  const mapped = mapKnownChainError(errorText(error));
+  if (mapped === JUPITER_UNAVAILABLE_MESSAGE) return JUPITER_UNAVAILABLE_CODE;
+  if (mapped === RPC_UNAVAILABLE_MESSAGE) return RPC_UNAVAILABLE_CODE;
+  return undefined;
+}
+
 /** Short, client-safe reason. Never includes RPC URLs or API keys. */
 export function sanitizePublicError(error: unknown, fallback: string): string {
+  if (error instanceof JupiterUnavailableError || isJupiterUpstreamError(error)) {
+    return JUPITER_UNAVAILABLE_MESSAGE;
+  }
   const raw = errorText(error);
   const mapped = mapKnownChainError(raw);
-  if (mapped === RPC_UNAVAILABLE_MESSAGE) return mapped;
+  if (mapped === RPC_UNAVAILABLE_MESSAGE || mapped === JUPITER_UNAVAILABLE_MESSAGE) return mapped;
   const detail = sanitizeDetail(raw);
   if (mapped && detail) {
     const combined = detail.toLowerCase().includes(mapped.toLowerCase().slice(0, 24)) ? mapped : `${mapped} ${detail}`;
