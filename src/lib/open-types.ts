@@ -77,6 +77,9 @@ export type OpenPositionQuote = {
   solLamports: string;
   sufficientSol: boolean;
   sufficientInput: boolean;
+  feeBps: number;
+  feeAmount: string;
+  feeWallet: string | null;
   warnings: string[];
   slot: number;
   fetchedAt: number;

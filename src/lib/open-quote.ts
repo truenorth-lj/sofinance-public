@@ -11,6 +11,7 @@ import { allocateSpend, padAmountMax, positionSide, toleranceLiquidity } from ".
 import { buildRoute, type BuildRoute } from "./jupiter-route";
 import { estimateOpenPositionRent } from "./open-rent";
 import { resolveOpenRange, type OpenRangeInput } from "./open-range";
+import { netSwapInput, readSwapFeeConfig, type SwapFeeConfig } from "./swap-fee";
 import { rpcConnection } from "./rpc";
 import { readOpenPoolState, type OpenPoolState, type OpenPositionSelection } from "./open-state";
 import type { OpenPositionQuote } from "./open-types";
@@ -20,6 +21,7 @@ export type OpenSwapLeg = {
   inputMint: string;
   outputMint: string;
   spend: bigint;
+  feeAmount: bigint;
   minOut: bigint;
   route: BuildRoute | null;
 };
@@ -63,11 +65,14 @@ function amountsAt(sqrt: BN, lowerSqrtX64: string, upperSqrtX64: string, liquidi
   return LiquidityMathUtil.getAmountsForLiquidity(sqrt, new BN(lowerSqrtX64), new BN(upperSqrtX64), liquidity, true);
 }
 
-async function leg(wallet: string, inputMint: string, outputMint: string, spend: bigint, maxAccounts = 48): Promise<OpenSwapLeg> {
+async function leg(
+  wallet: string, inputMint: string, outputMint: string, spend: bigint, maxAccounts = 48, feeBps = 0,
+): Promise<OpenSwapLeg> {
   if (spend <= 0n) throw new Error("Swap amount must be greater than zero");
-  if (inputMint === outputMint) return { inputMint, outputMint, spend, minOut: spend, route: null };
-  const route = await buildRoute(wallet, inputMint, outputMint, spend, false, maxAccounts);
-  return { inputMint, outputMint, spend, minOut: BigInt(route.otherAmountThreshold), route };
+  if (inputMint === outputMint) return { inputMint, outputMint, spend, feeAmount: 0n, minOut: spend, route: null };
+  const { feeAmount, swapAmount } = netSwapInput(spend, feeBps);
+  const route = await buildRoute(wallet, inputMint, outputMint, swapAmount, false, maxAccounts);
+  return { inputMint, outputMint, spend, feeAmount, minOut: BigInt(route.otherAmountThreshold), route };
 }
 
 function priceImpactAgainstProbe(actual: OpenSwapLeg, sample: OpenSwapLeg, probe: bigint) {
@@ -89,6 +94,8 @@ export async function getOpenPositionQuoteBundle(
 ): Promise<OpenQuoteBundle> {
   const floorBps = parseResaleFloorBps(requestedFloorBps);
   const toleranceBps = parseAddToleranceBps(requestedToleranceBps);
+  const feeConfig: SwapFeeConfig = readSwapFeeConfig();
+  const swapFeeBps = feeConfig.bps;
   const state = snapshot ?? await readOpenPoolState(wallet, selection);
   if (state.wallet !== wallet || state.poolId !== selection.poolId || state.inputMint !== selection.inputMint || state.inputKind !== selection.inputKind) {
     throw new Error("Open-position snapshot does not match request");
@@ -123,8 +130,8 @@ export async function getOpenPositionQuoteBundle(
   let projected = new BN(state.sqrtPriceX64);
   if (resolved.rangeSide !== "inside") {
     const outputMint = resolved.rangeSide === "below" ? state.mintA : state.mintB;
-    const sample = await leg(wallet, state.inputMint, outputMint, probe, routeMaxAccounts);
-    const actual = await leg(wallet, state.inputMint, outputMint, requested, routeMaxAccounts);
+    const sample = await leg(wallet, state.inputMint, outputMint, probe, routeMaxAccounts, swapFeeBps);
+    const actual = await leg(wallet, state.inputMint, outputMint, requested, routeMaxAccounts, swapFeeBps);
     priceImpactAgainstProbe(actual, sample, probe);
     legs = [actual];
     spendA = outputMint === state.mintA ? requested : 0n;
@@ -132,8 +139,8 @@ export async function getOpenPositionQuoteBundle(
   } else if (strategy === "sequential" && ![state.mintA, state.mintB].includes(state.inputMint)) {
     // Convert once to A, then swap only the A needed for B. Size LP using the
     // first route's conservative minOut, never its optimistic quoted output.
-    const primaryProbe = await leg(wallet, state.inputMint, state.mintA, probe, routeMaxAccounts);
-    const primary = await leg(wallet, state.inputMint, state.mintA, requested, routeMaxAccounts);
+    const primaryProbe = await leg(wallet, state.inputMint, state.mintA, probe, routeMaxAccounts, swapFeeBps);
+    const primary = await leg(wallet, state.inputMint, state.mintA, requested, routeMaxAccounts, swapFeeBps);
     priceImpactAgainstProbe(primary, primaryProbe, probe);
     const availableA = primary.minOut;
     const secondaryProbeAmount = availableA / 10n;
@@ -167,16 +174,16 @@ export async function getOpenPositionQuoteBundle(
     }
   } else {
     const [probeA, probeB] = await Promise.all([
-      leg(wallet, state.inputMint, state.mintA, probe, routeMaxAccounts),
-      leg(wallet, state.inputMint, state.mintB, probe, routeMaxAccounts),
+      leg(wallet, state.inputMint, state.mintA, probe, routeMaxAccounts, swapFeeBps),
+      leg(wallet, state.inputMint, state.mintB, probe, routeMaxAccounts, swapFeeBps),
     ]);
     const base = amountsAt(projected, lowerSqrtX64, upperSqrtX64, new BN("1000000000000000000"));
     spendA = allocateSpend(requested, BigInt(base.amountA.toString()), BigInt(base.amountB.toString()),
       { spend: probe, out: probeA.minOut }, { spend: probe, out: probeB.minOut }, 1n);
     for (let index = 0; index < 5; index++) {
       const [actualA, actualB] = await Promise.all([
-        leg(wallet, state.inputMint, state.mintA, spendA, routeMaxAccounts),
-        leg(wallet, state.inputMint, state.mintB, requested - spendA, routeMaxAccounts),
+        leg(wallet, state.inputMint, state.mintA, spendA, routeMaxAccounts, swapFeeBps),
+        leg(wallet, state.inputMint, state.mintB, requested - spendA, routeMaxAccounts, swapFeeBps),
       ]);
       legs = [actualA, actualB];
       priceImpactAgainstProbe(actualA, probeA, probe);
@@ -296,6 +303,9 @@ export async function getOpenPositionQuoteBundle(
     requiredSolLamports: requiredSol.toString(),
     solLamports: state.solLamports.toString(),
     sufficientSol, sufficientInput: true,
+    feeBps: feeConfig.bps,
+    feeAmount: legs.reduce((sum, item) => sum + item.feeAmount, 0n).toString(),
+    feeWallet: feeConfig.wallet?.toBase58() ?? null,
     warnings, slot: state.slot, fetchedAt: timestamp, expiresAt: snapshot ? Math.min(timestamp + QUOTE_TTL_MS, snapshot.fetchedAt + QUOTE_TTL_MS) : timestamp + QUOTE_TTL_MS,
   };
   return { quote, legs, state, range: resolved, strategy };

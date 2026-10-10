@@ -17,6 +17,7 @@ export type CompoundSwap = {
   inputMint: string; outputMint: string; inputAmount: string;
   quotedOutputAmount: string; minOutputAmount: string; simulatedOutputAmount?: string;
   inputDecimals: number; outputDecimals: number; poolId: string; sqrtPriceAfterX64: string;
+  feeBps?: number; feeAmount?: string;
 };
 export type CompoundPriorSource = {
   sourceSignature: string; address: string; mint: string; program: string;
@@ -32,6 +33,7 @@ export type CompoundSummary = {
   simulatedRewards: { mint: string; amount: string; compounded: boolean }[];
   simulatedEndingLiquidity: string; simulatedDustA: string; simulatedDustB: string;
   simulatedSolDebitLamports: string; maxSolDebitLamports: string;
+  feeBps: number; feeAmount: string; feeWallet: string | null;
   feeLamports: number; rentLamports: number; sizeBytes: number; unitsConsumed?: number;
   blockhash: string; lastValidBlockHeight: number; simulatedAt: number; expiresAt: number;
   beam?: {

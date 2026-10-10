@@ -106,8 +106,22 @@ export function confirmedCompoundReceipt(transaction: ParsedTransactionWithMeta,
     const swapInput = swapLedger.filter((swap) => swap?.input === account.address).reduce((sum, swap) => sum + swap!.spent, 0n);
     const swapOutput = swapLedger.filter((swap) => swap?.output === account.address).reduce((sum, swap) => sum + swap!.received, 0n);
     const remaining = BigInt(after.uiTokenAmount.amount);
+    const protocolFee = (summary.swaps ?? [])
+      .filter((item) => item.inputMint === account.mint)
+      .reduce((sum, item) => sum + BigInt(item.feeAmount ?? "0"), 0n);
+    if (protocolFee > 0n) {
+      const paid = message.instructions.some((instruction) => {
+        if (!("parsed" in instruction) || instruction.programId.toBase58() !== account.program) return false;
+        const parsed = instruction.parsed as { type?: string; info?: { source?: string; destination?: string; authority?: string; tokenAmount?: { amount?: string } } };
+        const destination = parsed.info?.destination;
+        return parsed.type === "transferChecked" && parsed.info?.source === account.address && parsed.info.authority === wallet
+          && parsed.info.tokenAmount?.amount === protocolFee.toString()
+          && destination !== summary.compoundAccounts[0].address && destination !== summary.compoundAccounts[1].address;
+      });
+      if (!paid) return null;
+    }
     if (invested > BigInt(index === 0 ? summary.amountMaxA : summary.amountMaxB) ||
-      harvestedFees + harvestedRewards + priorYield + swapOutput - swapInput - invested !== remaining) return null;
+      harvestedFees + harvestedRewards + priorYield + swapOutput - swapInput - invested - protocolFee !== remaining) return null;
     return { harvested: (harvestedFees + harvestedRewards).toString(), fees: harvestedFees.toString(),
       rewards: harvestedRewards.toString(), priorYield: priorYield.toString(), swapInput: swapInput.toString(), swapOutput: swapOutput.toString(),
       invested: invested.toString(), remaining: remaining.toString() };

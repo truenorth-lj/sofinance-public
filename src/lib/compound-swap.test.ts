@@ -6,6 +6,7 @@ import { expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 import { optimizeCompoundSwap, validateCompoundSwapInstruction, type CompoundSwap, type CompoundSwapShape } from "./compound-swap";
 import { sizeCompoundLiquidity } from "./compound-math";
+import { computeSwapFee, netSwapInput } from "./swap-fee";
 import type { CompoundAccount, CompoundPositionState } from "./compound-types";
 
 const q = 1n << 64n;
@@ -55,6 +56,19 @@ it("leaves balanced yields unchanged and bounds every quote by the harvested sou
   const result = optimizeCompoundSwap({ price: q, lower: q / 2n, upper: q * 2n, amountA: 101n, amountB: 0n, quote: bounded });
   expect(result.sized.a <= result.balances.a && result.sized.b <= result.balances.b).toBe(true);
 });
+it("sizes the rebalance using net output after the protocol fee is reserved from the swap input", () => {
+  const price = q;
+  const bps = 10;
+  const quote = (_direction: string, input: bigint) => {
+    const { swapAmount } = netSwapInput(input, bps);
+    return { output: swapAmount, sqrtPriceX64: price };
+  };
+  const result = optimizeCompoundSwap({ price, lower: q / 2n, upper: q * 2n, amountA: 10_000n, amountB: 0n, quote });
+  expect(result.direction).toBe("a-to-b");
+  expect(result.input).toBeGreaterThan(0n);
+  expect(result.output).toBe(result.input - computeSwapFee(result.input, bps));
+  expect(result.balances.a + result.balances.b).toBe(10_000n - computeSwapFee(result.input, bps));
+});
 it("fails when the opposite-side yield cannot produce protected output, without a profitability gate", () => {
   expect(() => optimizeCompoundSwap({ price: q / 3n, lower: q / 2n, upper: q * 2n, amountA: 0n, amountB: 1n,
     quote: () => ({ output: 0n, sqrtPriceX64: q / 3n }) })).toThrow("cannot form");
@@ -74,7 +88,8 @@ function fixture() {
   const observation = getPdaObservationAccount(program, pool).publicKey.toBase58();
   const tickArrays = [getPdaTickArrayAddress(program, pool, 0).publicKey.toBase58()];
   const swap: CompoundSwap = { inputMint: state.mintB, outputMint: state.mintA, inputAmount: "100", quotedOutputAmount: "90",
-    minOutputAmount: "89", inputDecimals: 6, outputDecimals: 6, poolId: state.poolId, sqrtPriceAfterX64: q.toString() };
+    minOutputAmount: "89", inputDecimals: 6, outputDecimals: 6, poolId: state.poolId, sqrtPriceAfterX64: q.toString(),
+    feeBps: 0, feeAmount: "0" };
   const ix = ClmmInstrument.swapV2Instruction(program, pub(state.wallet), pool, pub(config), pub(accounts[1].address), pub(accounts[0].address),
     pub(state.vaultB), pub(state.vaultA), pub(state.mintB), pub(state.mintA), tickArrays.map(pub), pub(observation), new BN(100), new BN(89), new BN(0), true,
     getPdaExBitmapAccount(program, pool).publicKey);
