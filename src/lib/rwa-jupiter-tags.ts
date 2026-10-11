@@ -8,6 +8,7 @@ import "server-only";
 
 import { jupiterRequest } from "./jupiter";
 import { JUPITER_TOKENS_SEARCH, JUPITER_TOKENS_SEARCH_PATH } from "./jupiter/urls";
+import { getJupiterApiKey } from "./config/server-env";
 
 export { JUPITER_TOKENS_SEARCH };
 
@@ -54,7 +55,7 @@ export async function fetchJupiterTagsByMint(
   if (pending.length === 0) return result;
 
   const fetcher = options.fetcher ?? fetch;
-  const apiKey = options.apiKey ?? process.env.JUPITER_API_KEY;
+  const apiKey = options.apiKey ?? getJupiterApiKey();
   const fetched = new Map<string, string[]>();
 
   for (let i = 0; i < pending.length; i += BATCH_SIZE) {

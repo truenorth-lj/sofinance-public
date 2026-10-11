@@ -2,6 +2,7 @@ import "server-only";
 
 import { JUPITER_SOFT_RETRY, jupiterRequest } from "./jupiter";
 import { JUPITER_TOKENS_SEARCH_PATH } from "./jupiter/urls";
+import { getJupiterApiKey } from "./config/server-env";
 
 export type TokenMetadata = {
   mint: string;
@@ -33,7 +34,7 @@ function trustedIcon(value: unknown): string | null {
 }
 
 export async function getTokenMetadata(
-  mints: string[], fetcher: typeof fetch = fetch, apiKey = process.env.JUPITER_API_KEY,
+  mints: string[], fetcher: typeof fetch = fetch, apiKey = getJupiterApiKey(),
 ): Promise<Record<string, TokenMetadata>> {
   if (!mints.length) return {};
   const requested = new Set(mints);

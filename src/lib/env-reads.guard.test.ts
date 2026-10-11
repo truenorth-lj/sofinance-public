@@ -25,15 +25,6 @@ const ALLOWED_SECRET_READS: Record<string, Reads> = {
   JUPITER_API_KEY: {
     // the single reader (lib/config/server-env.ts)
     "lib/config/server-env.ts": 1,
-    // lib (to be funnelled through lib/config/server-env.ts)
-    "lib/compound-api.ts": 1,
-    "lib/jupiter-route.ts": 1,
-    "lib/mint-symbols.ts": 1,
-    "lib/open-send.ts": 1,
-    "lib/position-performance.ts": 2,
-    "lib/rwa-jupiter-tags.ts": 1,
-    "lib/selected-state.ts": 1,
-    "lib/token-metadata.ts": 1,
     // MCP tools
     "mcp/tools.ts": 5,
     // allowed long-term: the Jupiter client's own env fallback (env param, injectable in tests)
@@ -148,7 +139,7 @@ describe("secret env var read ratchet", () => {
 
   it("documents the headline number: raw JUPITER_API_KEY reads outside lib/jupiter and lib/config (the review counted 23-24 by grep; one hit was a doc comment)", () => {
     const outside = Object.entries(secretReads.JUPITER_API_KEY!).filter(([file]) => !file.startsWith("lib/jupiter/") && !file.startsWith("lib/config/"));
-    expect(outside.reduce((sum, [, count]) => sum + count, 0)).toBe(14);
+    expect(outside.reduce((sum, [, count]) => sum + count, 0)).toBe(5);
   });
 });
 
