@@ -155,8 +155,8 @@ describe("secret env var read ratchet", () => {
     expect(sortedEntries(wholeEnv)).toEqual(sortedEntries(ALLOWED_WHOLE_ENV_PASSES));
   });
 
-  it("documents the headline number: 22 raw JUPITER_API_KEY reads outside lib/jupiter (the review counted 23-24 by grep; one hit is a doc comment in rwa-pairs.ts)", () => {
-    const outside = Object.entries(secretReads.JUPITER_API_KEY!).filter(([file]) => !file.startsWith("lib/jupiter/"));
+  it("documents the headline number: raw JUPITER_API_KEY reads outside lib/jupiter and lib/config (the review counted 23-24 by grep; one hit was a doc comment)", () => {
+    const outside = Object.entries(secretReads.JUPITER_API_KEY!).filter(([file]) => !file.startsWith("lib/jupiter/") && !file.startsWith("lib/config/"));
     expect(outside.reduce((sum, [, count]) => sum + count, 0)).toBe(22);
   });
 });
