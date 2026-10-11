@@ -71,6 +71,7 @@ export type OpenPositionQuote = {
     tickArrayInitRequired: boolean;
     protocolPositionInitRequired: boolean;
     tickArrayAccounts: string[];
+    walletTokenAccountLamports?: string;
   };
   networkFeeLamportsEstimate: string;
   requiredSolLamports: string;
