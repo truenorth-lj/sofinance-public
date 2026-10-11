@@ -11,6 +11,7 @@ export const PERFORMANCE_METHOD = [
   "else getSignaturesForAddress + bounded-parallel getParsedTransaction batches.",
   "Parse Raydium Anchor events from tx logs: CreatePersonalPositionEvent,",
   "IncreaseLiquidityEvent, DecreaseLiquidityEvent (exact deposit/withdraw/fee amounts).",
+  "If opening logs are truncated, recover v2/Token-2022 opening deposits from the matched position instruction's actual inner token transfers.",
   "Current equity = LiquidityMath amounts for position L + uncollected fees",
   "(feeGrowth inside − lastInside) × L / Q64 + tokenFeesOwed (same as compound-state).",
   "USD optional via Jupiter Price API v3 (fallback: Raydium pool mid × stable) at evaluation time (NOT historical).",

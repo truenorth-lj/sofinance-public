@@ -27,7 +27,7 @@ import {
 } from "./position-performance-history";
 import {
   aggregateCashflowsForPosition,
-  parseRaydiumEventsFromLogs,
+  parsePositionCashflowEvents,
   type PositionCashflowEvent,
 } from "./position-performance-events";
 import {
@@ -290,8 +290,15 @@ export async function getPositionPerformance(
   const history: PositionHistoryEvent[] = [];
   for (const info of chronological) {
     if (info.err) continue;
-    if (!info.logMessages) continue;
-    const events = parseRaydiumEventsFromLogs(info.logMessages);
+    const events = parsePositionCashflowEvents(info.logMessages, info.parsedTransaction, {
+      positionMint,
+      positionAccount: positionPda.toBase58(),
+      poolId: poolId.toBase58(),
+      mintA: pool.mintA.toBase58(),
+      mintB: pool.mintB.toBase58(),
+      vaultA: pool.vaultA.toBase58(),
+      vaultB: pool.vaultB.toBase58(),
+    });
     const relevant = events.filter((event) => {
       if (event.kind === "open") return event.poolState === poolId.toBase58();
       return event.positionNftMint === positionMint;
