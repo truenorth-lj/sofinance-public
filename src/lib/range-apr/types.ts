@@ -1,4 +1,4 @@
-/** Wire types shared by `/api/pool-range-apr`, the modal and the pairs table (client-safe). */
+/** Wire types shared by `/api/pool-range-apr`, the modal and the pair cards (client-safe). */
 import type { AprBin, RangeAprEstimate } from "./range-apr";
 
 export type RangeAprPresetId = "micro" | "tight" | "standard" | "wide";

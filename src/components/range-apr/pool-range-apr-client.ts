@@ -3,9 +3,9 @@ import { createConcurrencyLimit } from "@/lib/concurrency-limit";
 import type { PoolRangeAprPayload } from "@/lib/range-apr/types";
 
 /**
- * Browser fetcher for `/api/pool-range-apr`. Every consumer (pairs table rows and the Create position
+ * Browser fetcher for `/api/pool-range-apr`. Every consumer (pair cards and the Create position
  * modal) goes through here, so a pool is requested once per minute no matter how many components ask, and
- * the table never opens more than two requests at a time.
+ * the page never opens more than two requests at a time.
  */
 const limit = createConcurrencyLimit(2);
 const cache = new AsyncCache<PoolRangeAprPayload>({ ttlMs: 60_000, failureTtlMs: 10_000 });
