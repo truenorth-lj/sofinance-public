@@ -3,31 +3,46 @@ import { verifiedTokenAmount,cleanExitDeltas } from "./lp-exit-verification";
 import BN from "bn.js";
 import { createHash } from "node:crypto";
 import { CLMM_PROGRAM_ID, ClmmInstrument, PersonalPositionLayout, PoolInfoLayout, getPdaPersonalPositionAddress, getPdaProtocolPositionAddress, getPdaTickArrayAddress, getPdaExBitmapAccount, TickArrayUtil } from "@raydium-io/raydium-sdk-v2";
-import { Connection, PublicKey, TransactionMessage, VersionedTransaction, ComputeBudgetProgram, type AccountInfo } from "@solana/web3.js";
+import { PublicKey, TransactionMessage, VersionedTransaction, ComputeBudgetProgram, type AccountInfo } from "@solana/web3.js";
+import { withCacheAndInflight } from "./rpc/cache";
+import { PREVIEW_RETRY } from "./rpc/retry";
+import { rpcConnection, type RpcEnv } from "./rpc";
 import { unpackAccount, getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID, createAssociatedTokenAccountIdempotentInstruction } from "@solana/spl-token";
 import { compactAtaInstructions, compileCompactOpenTransaction, openLookupTableReader, versionedTransactionSize } from "./open-transaction";
 import { instruction } from "./transaction-helpers";
 import { validPrincipalQuote } from "./lp-decision-data";
+import { EXIT_JUPITER_CONCURRENCY, jupiterQuotePreferCompact, jupiterSwapInstructions, mapPool } from "./jupiter";
 import type { ApiInstruction } from "./jupiter-route";
-import { resolveDefaultRpcConfig } from "./rpc/providers";
-import { exitRpcFetch } from "./lp-exit-rpc";
 const USDC="EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",SOL="So11111111111111111111111111111111111111112";
+export const EXIT_PREVIEW_TTL_MS=8_000;
+export function exitPreviewCacheKey(positionId:string,nftAccount?:string,convertRent=true){return `exit-preview:${positionId}:${nftAccount??""}:${convertRent?"1":"0"}`;}
 function checked(info:AccountInfo<Buffer>|null,name:string){if(!info||!info.owner.equals(CLMM_PROGRAM_ID)||!info.data.subarray(0,8).equals(createHash("sha256").update(`account:${name}`).digest().subarray(0,8)))throw new Error(`${name} account invalid`);return info.data;}
+export async function coalesceExitPreview<T>(positionId:string,nftAccount:string|undefined,convertRent:boolean,run:()=>Promise<T>){
+ const {value}=await withCacheAndInflight(exitPreviewCacheKey(positionId,nftAccount,convertRent),EXIT_PREVIEW_TTL_MS,run);
+ return value;
+}
 export async function readFullExitPreview(positionId:string,nftAccount?:string,convertRent=true,fetcher:typeof fetch=fetch,signal?:AbortSignal){
+ return coalesceExitPreview(positionId,nftAccount,convertRent,()=>readFullExitPreviewUnlocked(positionId,nftAccount,convertRent,fetcher,signal));
+}
+async function readFullExitPreviewUnlocked(positionId:string,nftAccount?:string,convertRent=true,fetcher:typeof fetch=fetch,signal?:AbortSignal){
  const budget=AbortSignal.any([AbortSignal.timeout(90000),...(signal?[signal]:[])]);
- const connection=new Connection(resolveDefaultRpcConfig().endpoint,{commitment:"confirmed",disableRetryOnRateLimit:true,fetch:exitRpcFetch(fetcher,budget)});
+ const connection=rpcConnection(process.env as RpcEnv,{fetch:fetcher,signal:budget,retry:PREVIEW_RETRY});
  const positionKey=getPdaPersonalPositionAddress(CLMM_PROGRAM_ID,new PublicKey(positionId)).publicKey;
  const position=PersonalPositionLayout.decode(checked(await connection.getAccountInfo(positionKey),"PersonalPositionState"));
  if(position.nftMint.toBase58()!==positionId)throw new Error("NFT context mismatch");
- const pool=PoolInfoLayout.decode(checked(await connection.getAccountInfo(position.poolId),"PoolState"));
- const nftKey=nftAccount?new PublicKey(nftAccount):new PublicKey((await connection.getTokenLargestAccounts(position.nftMint)).value.find(v=>v.amount==="1")?.address??"");
- const nftRaw=await connection.getAccountInfo(nftKey);
+ const [poolInfo,largest]=await Promise.all([
+  connection.getAccountInfo(position.poolId),
+  nftAccount?Promise.resolve(null):connection.getTokenLargestAccounts(position.nftMint),
+ ]);
+ const pool=PoolInfoLayout.decode(checked(poolInfo,"PoolState"));
+ const nftKey=nftAccount?new PublicKey(nftAccount):new PublicKey(largest?.value.find(v=>v.amount==="1")?.address??"");
+ const rewards=pool.rewardInfos.filter(r=>!r.mint.equals(PublicKey.default)),mints=[pool.mintA,pool.mintB,...rewards.map(r=>r.mint)];
+ if(mints.some(m=>m.toBase58()===USDC))throw new Error("Direct-USDC pool/reward accounting is not supported by this exit preview");
+ const [nftRaw,...mintInfos]=await connection.getMultipleAccountsInfo([nftKey,...mints]);
  if(!nftRaw||![TOKEN_PROGRAM_ID,TOKEN_2022_PROGRAM_ID].some(p=>p.equals(nftRaw.owner)))throw new Error("NFT account missing/token program invalid");
  const nft=unpackAccount(nftKey,nftRaw,nftRaw.owner);
  if(!nft.mint.equals(position.nftMint)||nft.amount!==1n||nft.isFrozen)throw new Error("NFT owner/mint/amount not usable");
- const owner=nft.owner,rewards=pool.rewardInfos.filter(r=>!r.mint.equals(PublicKey.default)),mints=[pool.mintA,pool.mintB,...rewards.map(r=>r.mint)];
- if(mints.some(m=>m.toBase58()===USDC))throw new Error("Direct-USDC pool/reward accounting is not supported by this exit preview");
- const mintInfos=await connection.getMultipleAccountsInfo(mints);
+ const owner=nft.owner;
  const programs=mintInfos.map(i=>{if(!i||![TOKEN_PROGRAM_ID,TOKEN_2022_PROGRAM_ID].some(p=>p.equals(i.owner)))throw new Error("Pool/reward mint program invalid");return i.owner;});
  const recipients=mints.map((m,i)=>getAssociatedTokenAddressSync(m,owner,false,programs[i]));
  const addresses=[owner,positionKey,nftKey,position.nftMint,...recipients],before=await connection.getMultipleAccountsInfoAndContext(addresses);
@@ -48,24 +63,24 @@ export async function readFullExitPreview(positionId:string,nftAccount?:string,c
  const ownerBefore=before.value[0];if(!ownerBefore)throw new Error("Owner SOL account missing");
  const netSOL=BigInt(withdrawSimulation.value.accounts[0]!.lamports)-BigInt(ownerBefore.lamports);
  const legs=[...received,...(convertRent&&netSOL>0n?[{mint:SOL,amountAtomic:netSOL.toString()}]:[])].filter(v=>BigInt(v.amountAtomic)>0n);
- async function jupiter(url:string,body?:unknown){const apiKey=process.env.JUPITER_API_KEY;const r=await fetcher(url,{method:body?"POST":"GET",headers:{"Content-Type":"application/json",...(apiKey?{"x-api-key":apiKey}:{})},body:body?JSON.stringify(body):undefined,signal:budget});if(!r.ok)throw new Error(`Jupiter HTTP ${r.status}`);return r.json();}
- for(const leg of legs){
-  let quote;
-  try{quote=await jupiter(`https://api.jup.ag/swap/v1/quote?inputMint=${leg.mint}&outputMint=${USDC}&amount=${leg.amountAtomic}&slippageBps=50&maxAccounts=16&onlyDirectRoutes=true`);}
-  catch(e){if(!(e instanceof Error)||e.message!=="Jupiter HTTP 400")throw e;quote=await jupiter(`https://api.jup.ag/swap/v1/quote?inputMint=${leg.mint}&outputMint=${USDC}&amount=${leg.amountAtomic}&slippageBps=50&maxAccounts=20&onlyDirectRoutes=true`);}
+ const quoted=await mapPool(legs,EXIT_JUPITER_CONCURRENCY,async(leg)=>{
+  const quote=await jupiterQuotePreferCompact({inputMint:leg.mint,outputMint:USDC,amount:leg.amountAtomic,slippageBps:50,signal:budget,fetcher});
   if(!validPrincipalQuote(quote,leg.mint,leg.amountAtomic))throw new Error("Exit quote context/amount invalid");
-  const route=await jupiter("https://api.jup.ag/swap/v1/swap-instructions",{userPublicKey:owner.toBase58(),quoteResponse:quote,wrapAndUnwrapSol:true,dynamicComputeUnitLimit:false,prioritizationFeeLamports:0}) as Route;
+  const route=await jupiterSwapInstructions({userPublicKey:owner.toBase58(),quoteResponse:quote,wrapAndUnwrapSol:true,dynamicComputeUnitLimit:false,prioritizationFeeLamports:0},{signal:budget,fetcher}) as Route;
   if(!route.swapInstruction||!Array.isArray(route.addressLookupTableAddresses))throw new Error("Exit route instructions missing");
-  routes.push(route);quotes.push({mint:leg.mint,inputAtomic:leg.amountAtomic,outputUSDCAtomic:quote.outAmount,thresholdUSDCAtomic:quote.otherAmountThreshold,observedAt:new Date().toISOString()});
- }
+  return {route,quote:{mint:leg.mint,inputAtomic:leg.amountAtomic,outputUSDCAtomic:quote.outAmount as string,thresholdUSDCAtomic:quote.otherAmountThreshold as string,observedAt:new Date().toISOString()}};
+ });
+ for(const item of quoted){routes.push(item.route);quotes.push(item.quote);}
  const tableKeys=[...new Set(["AcL1Vo8oy1ULiavEcjSUcwfBSForXMudcZvDZy5nzJkU",...routes.flatMap(r=>r.addressLookupTableAddresses)])];
  const tables=await openLookupTableReader(connection)(tableKeys.map(k=>new PublicKey(k)));
  const instructions=await compactAtaInstructions(connection,[...prefix,...routes.flatMap(r=>[...(r.setupInstructions??[]),...(r.otherInstructions??[]),r.swapInstruction,...(r.cleanupInstruction?[r.cleanupInstruction]:[])].map(v=>instruction(v,owner)))]);
  const compiled=compileCompactOpenTransaction({payerKey:owner,recentBlockhash:blockhash.blockhash,instructions},tables),bytes=versionedTransactionSize(compiled.transaction);
  if(bytes>1232)return {status:"unavailable",reason:`Full atomic exit exceeds 1232 bytes: ${bytes}`,bytes,convertRent,received,quotes,netRecoveryUSDC:null,executable:false,sent:false};
  const usdcAta=getAssociatedTokenAddressSync(new PublicKey(USDC),owner),finalAddresses=[...addresses,usdcAta];
- const finalBefore=await connection.getMultipleAccountsInfoAndContext(finalAddresses),fee=(await connection.getFeeForMessage(compiled.transaction.message)).value;
- const simulation=await connection.simulateTransaction(compiled.transaction,{sigVerify:false,replaceRecentBlockhash:true,minContextSlot:finalBefore.context.slot,accounts:{encoding:"base64",addresses:finalAddresses.map(a=>a.toBase58())}});
+ const usdcInfo=await connection.getAccountInfo(usdcAta);
+ const finalBefore={context:before.context,value:[...before.value,usdcInfo]};
+ const fee=(await connection.getFeeForMessage(compiled.transaction.message)).value;
+ const simulation=await connection.simulateTransaction(compiled.transaction,{sigVerify:false,replaceRecentBlockhash:true,minContextSlot:before.context.slot,accounts:{encoding:"base64",addresses:finalAddresses.map(a=>a.toBase58())}});
  if(simulation.value.err||!simulation.value.accounts)throw new Error(`Combined exit simulation failed: ${JSON.stringify(simulation.value.err)}`);
  const actual=simulation.value.accounts;
  const tokenDeltas=recipients.map((_,i)=>{const prior=finalBefore.value[i+4];if(!actual[i+4])throw new Error("Final recipient missing");return (verifiedTokenAmount(actual[i+4]!.data[0],owner,mints[i]!,actual[i+4]!.owner)-(prior?prior.data.readBigUInt64LE(64):0n)).toString();});
@@ -73,7 +88,6 @@ export async function readFullExitPreview(positionId:string,nftAccount?:string,c
  const usdc=verifiedTokenAmount(usdcAfter.data[0],owner,new PublicKey(USDC),usdcAfter.owner)-(usdcBefore?usdcBefore.data.readBigUInt64LE(64):0n);
  const nativeDelta=BigInt(actual[0]!.lamports)-BigInt(finalBefore.value[0]!.lamports);
  const clean=cleanExitDeltas(tokenDeltas,nativeDelta,[1,2,3].map(i=>actual[i]?.lamports),convertRent)&&usdc>=0n;
- const blockHeight=await connection.getBlockHeight("confirmed");
- const observedAt=new Date().toISOString(),expiresAt=Math.min(Date.now(),...quotes.map(q=>Date.parse(q.observedAt)))+15000,fresh=Date.now()<expiresAt&&blockHeight<=blockhash.lastValidBlockHeight;
- return {status:clean&&fresh?"verified-preview":"partial",source:"public RPC unsigned simulation + Jupiter routes",observedAt,localExpiresAt:new Date(expiresAt).toISOString(),expirySource:"local 15-second refresh policy, not provider guarantee",lastValidBlockHeight:blockhash.lastValidBlockHeight,slot:simulation.context.slot,bytes,convertRent,received,quotes,recoveryUSDCAtomic:usdc.toString(),recoverySOLLamports:nativeDelta.toString(),remainingTokenDeltas:tokenDeltas,networkAndPriorityLamports:fee===null?null:String(fee),priorityPolicy:"explicit zero CU price; landing not guaranteed",netRecoveryUSDC:clean&&fresh&&convertRent&&fee!==null?usdc.toString():null,executable:false,sent:false};
+ const observedAt=new Date().toISOString(),expiresAt=Math.min(Date.now(),...quotes.map(q=>Date.parse(q.observedAt)))+15000,fresh=Date.now()<expiresAt;
+ return {status:clean&&fresh?"verified-preview":"partial",source:"RPC unsigned simulation + Jupiter routes",observedAt,localExpiresAt:new Date(expiresAt).toISOString(),expirySource:"local 15-second refresh policy, not provider guarantee",lastValidBlockHeight:blockhash.lastValidBlockHeight,slot:simulation.context.slot,bytes,convertRent,received,quotes,recoveryUSDCAtomic:usdc.toString(),recoverySOLLamports:nativeDelta.toString(),remainingTokenDeltas:tokenDeltas,networkAndPriorityLamports:fee===null?null:String(fee),priorityPolicy:"explicit zero CU price; landing not guaranteed",netRecoveryUSDC:clean&&fresh&&convertRent&&fee!==null?usdc.toString():null,executable:false,sent:false};
 }

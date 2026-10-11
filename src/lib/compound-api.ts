@@ -5,6 +5,7 @@ import { parseWallet } from "./api-input";
 import { verifyCompoundPermit } from "./compound-permit";
 import type { CompoundSummary } from "./compound-types";
 import type { CompoundRecoverySummary } from "./compound-recovery-types";
+import { getSigningSecret } from "./config/server-env";
 
 export async function readCompoundBody(request: Request) {
   const text = await request.text();
@@ -39,7 +40,7 @@ export async function parseCompoundBroadcast(request: Request, operation: "compo
     !transaction.signatures[0] || transaction.signatures[0].every((byte) => byte === 0)) {
     throw new Error("Compound payer, signature, or transaction size mismatch");
   }
-  if (!verifyCompoundPermit(process.env.JUPITER_API_KEY || "", {
+  if (!verifyCompoundPermit(getSigningSecret(), {
     wallet, message: Buffer.from(transaction.message.serialize()).toString("base64"), summary: body.summary,
   }, body.permit)) throw new Error("Transaction does not match simulated compound authorization");
   // Summary fields become trusted only after the complete HMAC is verified.

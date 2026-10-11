@@ -1,33 +1,57 @@
-import { afterEach, expect, it, vi } from "vitest";
-
+import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
-import { readFullExitPreview } from "./lp-exit-data";
+import { resetRpcCache } from "./rpc/cache";
+import { coalesceExitPreview, EXIT_PREVIEW_TTL_MS, exitPreviewCacheKey } from "./lp-exit-data";
 
-const position = "So11111111111111111111111111111111111111112";
-afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); });
-
-it("uses the configured RPC and retries a limited RPC call before continuing", async () => {
-  vi.useFakeTimers();
-  vi.stubEnv("SOLANA_RPC_URL", "https://dedicated.example/rpc");
-  const fetcher = vi.fn<typeof fetch>()
-    .mockResolvedValueOnce(Response.json({ error: { code: 429 } }, { status: 429 }))
-    .mockImplementation(async (_url, init) => {
-      const request = JSON.parse(String(init?.body));
-      return Response.json({ jsonrpc: "2.0", id: request.id, result: { context: { slot: 1 }, value: null } });
-    });
-  const result = readFullExitPreview(position, undefined, false, fetcher).catch(e => e);
-  await vi.runAllTimersAsync();
-  expect((await result).message).toBe("PersonalPositionState account invalid");
-  expect(fetcher).toHaveBeenCalledTimes(2);
-  expect(fetcher.mock.calls.every(([url]) => String(url) === "https://dedicated.example/rpc")).toBe(true);
+afterEach(() => {
+  resetRpcCache();
+  vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
-it("stops after three attempts when the RPC keeps returning 429", async () => {
-  vi.useFakeTimers();
-  const fetcher = vi.fn<typeof fetch>().mockImplementation(async () =>
-    Response.json({ error: { code: 429, message: "Too many requests for a specific RPC call" } }, { status: 429 }));
-  const result = readFullExitPreview(position, undefined, false, fetcher).catch(e => e);
-  await vi.runAllTimersAsync();
-  expect((await result).message).toMatch(/429/);
-  expect(fetcher).toHaveBeenCalledTimes(3);
+describe("exit-preview coalescing", () => {
+  it("shares one in-flight run and then serves TTL hits", async () => {
+    let resolveFirst: (value: { status: string }) => void = () => undefined;
+    const run = vi.fn(() => new Promise<{ status: string }>((resolve) => {
+      resolveFirst = resolve;
+    }));
+    const first = coalesceExitPreview("pos1", undefined, true, run);
+    const second = coalesceExitPreview("pos1", undefined, true, run);
+    expect(run).toHaveBeenCalledOnce();
+    resolveFirst({ status: "ok" });
+    await expect(Promise.all([first, second])).resolves.toEqual([{ status: "ok" }, { status: "ok" }]);
+    await expect(coalesceExitPreview("pos1", undefined, true, run)).resolves.toEqual({ status: "ok" });
+    expect(run).toHaveBeenCalledOnce();
+  });
+
+  it("does not share across position or convertRent keys", async () => {
+    const run = vi.fn(async () => ({ n: run.mock.calls.length }));
+    await coalesceExitPreview("a", undefined, true, run);
+    await coalesceExitPreview("b", undefined, true, run);
+    await coalesceExitPreview("a", undefined, false, run);
+    expect(run).toHaveBeenCalledTimes(3);
+    expect(exitPreviewCacheKey("a", undefined, true)).not.toBe(exitPreviewCacheKey("a", undefined, false));
+  });
+
+  it("refetches after the preview TTL", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-10T16:00:00Z"));
+    const run = vi.fn(async () => ({ at: Date.now() }));
+    await coalesceExitPreview("pos", undefined, true, run);
+    vi.advanceTimersByTime(EXIT_PREVIEW_TTL_MS - 1);
+    await coalesceExitPreview("pos", undefined, true, run);
+    expect(run).toHaveBeenCalledOnce();
+    vi.advanceTimersByTime(2);
+    await coalesceExitPreview("pos", undefined, true, run);
+    expect(run).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not cache a thrown preview", async () => {
+    const run = vi.fn()
+      .mockRejectedValueOnce(new Error("429 Too Many Requests"))
+      .mockResolvedValueOnce({ status: "ok" });
+    await expect(coalesceExitPreview("pos", undefined, true, run)).rejects.toThrow(/429/);
+    await expect(coalesceExitPreview("pos", undefined, true, run)).resolves.toEqual({ status: "ok" });
+    expect(run).toHaveBeenCalledTimes(2);
+  });
 });

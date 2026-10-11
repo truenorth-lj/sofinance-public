@@ -9,15 +9,16 @@ describe("BrandMark", () => {
   const svg = readFileSync(resolve("src/brand/sofinance-mark.svg"), "utf8");
   const icon = readFileSync(resolve("src/app/icon.svg"), "utf8");
 
-  it("matches the C3 satellite geometry (no eyes, no rounded-square plate)", () => {
+  it("matches the orbit geometry (core, open ring, satellite dot; no hard-coded colours)", () => {
     const markup = renderToStaticMarkup(createElement(BrandMark, { className: "h-10 w-10" }));
     expect(markup).toContain('viewBox="0 0 64 64"');
-    expect(markup).toContain("rotate(-45 32 32)");
     expect(markup).toContain("currentColor");
-    expect(markup).toContain('width="26"');
-    expect(markup).toContain('height="26"');
+    expect(markup).toContain('<circle cx="32" cy="32" r="8"');
+    expect(markup).toContain("A23 23 0 1 1");
+    expect(markup).toContain('<circle cx="48.26" cy="15.74" r="6"');
+    expect(markup).not.toContain("<rect");
     expect(markup).not.toContain("ellipse");
-    expect(markup).not.toContain("circle");
+    expect(markup).not.toContain("#000");
     expect(markup).not.toContain("#ff6b35");
   });
 
@@ -31,7 +32,7 @@ describe("BrandMark", () => {
   it("renders favicon/app icons as the white mark on the dark canvas", () => {
     expect(icon).toContain('fill="#0a0a0a"');
     expect(icon).toContain('fill="#fff"');
-    expect(icon).toContain("rotate(-45 32 32)");
+    expect(icon).toContain("A23 23 0 1 1");
     expect(icon).not.toContain("ellipse");
   });
 });

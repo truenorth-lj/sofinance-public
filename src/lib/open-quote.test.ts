@@ -54,7 +54,15 @@ function state(overrides: Partial<OpenPoolState> = {}): OpenPoolState {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Hermetic: ambient fee/key env must not change quote math.
+  vi.stubEnv("SOFINANCE_FEE_WALLET", undefined);
+  vi.stubEnv("SOFINANCE_FEE_BPS", undefined);
+  vi.stubEnv("JUPITER_API_KEY", undefined);
   vi.mocked(readOpenPoolState).mockResolvedValue(state());
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
 });
 
 describe("open-position quote validation", () => {
@@ -227,18 +235,9 @@ describe("open-position quote validation", () => {
 
   describe("protocol swap fee", () => {
     const feeWallet = Keypair.generate().publicKey.toBase58();
-    const originalWallet = process.env.SOFINANCE_FEE_WALLET;
-    const originalBps = process.env.SOFINANCE_FEE_BPS;
-    afterEach(() => {
-      if (originalWallet === undefined) delete process.env.SOFINANCE_FEE_WALLET;
-      else process.env.SOFINANCE_FEE_WALLET = originalWallet;
-      if (originalBps === undefined) delete process.env.SOFINANCE_FEE_BPS;
-      else process.env.SOFINANCE_FEE_BPS = originalBps;
-    });
-
     it("reduces executed Jupiter input by the default 10 bps fee and leaves resale probes uncharged", async () => {
-      process.env.SOFINANCE_FEE_WALLET = feeWallet;
-      delete process.env.SOFINANCE_FEE_BPS;
+      vi.stubEnv("SOFINANCE_FEE_WALLET", feeWallet);
+      vi.stubEnv("SOFINANCE_FEE_BPS", undefined);
       vi.mocked(readOpenPoolState).mockResolvedValue(state({ inputMint: mintB, inputDecimals: 9, inputKind: "token" }));
       vi.mocked(buildRoute).mockImplementation(async (_wallet, inputMint, outputMint, spend) => {
         const out = inputMint === mintB && outputMint === mintA ? spend / 1000n : spend;
@@ -265,8 +264,8 @@ describe("open-position quote validation", () => {
     });
 
     it("does not charge a same-mint open that never swaps", async () => {
-      process.env.SOFINANCE_FEE_WALLET = feeWallet;
-      delete process.env.SOFINANCE_FEE_BPS;
+      vi.stubEnv("SOFINANCE_FEE_WALLET", feeWallet);
+      vi.stubEnv("SOFINANCE_FEE_BPS", undefined);
       const { quote, legs } = await getOpenPositionQuoteBundle(
         wallet,
         { poolId, inputMint: mintA, inputKind: "token" },
@@ -282,8 +281,8 @@ describe("open-position quote validation", () => {
     });
 
     it("floors a tiny swap to fee 0 and still quotes the full Jupiter amount", async () => {
-      process.env.SOFINANCE_FEE_WALLET = feeWallet;
-      delete process.env.SOFINANCE_FEE_BPS;
+      vi.stubEnv("SOFINANCE_FEE_WALLET", feeWallet);
+      vi.stubEnv("SOFINANCE_FEE_BPS", undefined);
       vi.mocked(readOpenPoolState).mockResolvedValue(state({ inputMint: mintB, inputDecimals: 9, inputKind: "token" }));
       vi.mocked(buildRoute).mockImplementation(async (_wallet, inputMint, outputMint, spend) => ({
         inputMint, outputMint, inAmount: spend.toString(), outAmount: spend.toString(),
