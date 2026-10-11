@@ -6,7 +6,7 @@ import bs58 from "bs58";
 import { formatAmount, parseTokenAmount } from "@/lib/amount";
 import { NATIVE_SOL_MINT, USDC_MINT } from "@/lib/ids";
 import { quoteIsFresh } from "@/lib/quote-math";
-import { OPEN_RANGE_PRESETS, type OpenRangePreset } from "@/lib/open-range-presets";
+import { OPEN_RANGE_UI_PRESETS, type OpenRangePreset } from "@/lib/open-range-presets";
 import { preserveExtraSignatures } from "@/lib/open-signatures";
 import { notSentRetryMessage } from "@/lib/public-error";
 import type { OpenPositionQuote } from "@/lib/open-types";
@@ -334,7 +334,7 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
   return {
     wallet, connected, connect, inputAssets, selectedAsset, inputMint, inputKind,
     amount, rangePreset, minPrice, maxPrice, quote, quoteLoading, quoteError: formError || quoteError, error,
-    submitStage, signature, positionMint, presets: OPEN_RANGE_PRESETS, fresh, busy,
+    submitStage, signature, positionMint, presets: OPEN_RANGE_UI_PRESETS, fresh, busy,
     actionDisabled, actionBlockedReason, walletBlockedReason, changeAmount, chooseAsset, choosePreset,
     setMinPrice: changeMinPrice, setMaxPrice: changeMaxPrice, fillMax, signAndSend,
     now, refreshQuote, canRefreshQuote,
