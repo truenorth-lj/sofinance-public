@@ -6,11 +6,11 @@ import { parseWallet } from "./api-input";
 import { DEFAULT_OPEN_RANGE_PRESET, type OpenRangeInput, type OpenRangePreset } from "./open-range";
 import type { OpenPositionSelection } from "./open-state";
 
-const PRESETS = new Set<OpenRangePreset>(["tight", "standard", "wide", "custom"]);
+const PRESETS = new Set<OpenRangePreset>(["micro", "tight", "standard", "wide", "custom"]);
 
 export function parseOpenRange(fields: Record<string, unknown>): OpenRangeInput {
   const preset = (typeof fields.rangePreset === "string" ? fields.rangePreset : DEFAULT_OPEN_RANGE_PRESET) as OpenRangePreset;
-  if (!PRESETS.has(preset)) throw new Error("Range preset must be tight, standard, wide, or custom");
+  if (!PRESETS.has(preset)) throw new Error("Range preset must be micro, tight, standard, wide, or custom");
   if (preset === "custom") {
     if (typeof fields.minPrice !== "string" || typeof fields.maxPrice !== "string") {
       throw new Error("Custom range requires minPrice and maxPrice (B per 1 A)");

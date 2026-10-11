@@ -5,6 +5,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NATIVE_SOL_MINT, QUOTE_TTL_MS } from "../lib/ids";
 import type { OpenPositionQuote } from "../lib/open-types";
+import { payloadFixture, payloadWithAprs } from "../lib/range-apr/payload.fixture";
+import { clearPoolRangeAprClientCache } from "./range-apr/pool-range-apr-client";
 import { OpenPositionModal } from "./open-position-modal";
 import type { OpenPositionPair, useOpenPositionController } from "./use-open-position-controller";
 
@@ -68,6 +70,7 @@ let container: HTMLDivElement;
 let failQuote: boolean;
 let quoteCalls: number;
 let deferredQuote: Promise<unknown> | null;
+let quoteBodies: Array<Record<string, unknown>>;
 
 async function advance(ms: number) {
   await act(async () => { await vi.advanceTimersByTimeAsync(ms); });
@@ -93,13 +96,17 @@ beforeEach(() => {
   failQuote = false;
   quoteCalls = 0;
   deferredQuote = null;
-  vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+  quoteBodies = [];
+  clearPoolRangeAprClientCache();
+  vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+    if (url.startsWith("/api/pool-range-apr")) return { ok: true, json: async () => payloadFixture() };
     if (url === "/api/sol-usdc-price") return { ok: true, json: async () => ({ rate: 150 }) };
     if (url.startsWith("/api/wallet")) return { ok: true, json: async () => ({ assets: [{
       kind: "native", mint: NATIVE_SOL_MINT, decimals: 9, balance: "216474000", eligible: true,
     }] }) };
     if (url === "/api/open-quote") {
       quoteCalls++;
+      if (typeof init?.body === "string") quoteBodies.push(JSON.parse(init.body));
       if (deferredQuote) return deferredQuote;
       return { ok: !failQuote, json: async () => failQuote ? { error: "Quote service unavailable" } : quote() };
     }
@@ -117,6 +124,65 @@ afterEach(async () => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   vi.useRealTimers();
+});
+
+describe("range presets and estimated APR", () => {
+  const presetButton = (label: string) =>
+    [...container.querySelectorAll<HTMLButtonElement>("[aria-label='Price range presets'] button")]
+      .find((button) => button.querySelector("span")?.textContent === label)!;
+
+  const stubApr = (data: ReturnType<typeof payloadFixture>) => {
+    const original = fetch as unknown as (url: string, init?: RequestInit) => Promise<unknown>;
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) =>
+      url.startsWith("/api/pool-range-apr") ? { ok: true, json: async () => data } : original(url, init)));
+  };
+  const rowLabels = () => [...container.querySelectorAll("[aria-label='Price range presets'] button")].map((b) => b.querySelector("span")?.textContent);
+
+  it("lists AI best leftmost, then the remaining candidates narrow to wide, then Custom; Standard stays selected", async () => {
+    stubApr(payloadWithAprs({ micro: 10, tight: 38, standard: 20, wide: 5 }));
+    await mount();
+    expect(rowLabels()).toEqual(["AI best", "Micro", "Standard (±0.3%)", "Wide (±1%)", "Custom"]);
+    expect(container.querySelector("[data-testid='ai-best-resolved']")!.textContent).toBe("Tight");
+    expect(container.querySelector("[data-testid='apr-ai-best']")!.textContent).toBe("~38%");
+    expect(presetButton("Standard (±0.3%)").getAttribute("aria-pressed")).toBe("true");
+    expect(container.querySelector("[data-testid='preset-ai-best']")!.getAttribute("aria-pressed")).toBe("false");
+    expect(container.querySelector("[data-testid='range-apr-headline']")!.textContent)
+      .toBe(container.querySelector("[data-testid='apr-standard']")!.textContent);
+  });
+
+  it("clicking AI best requests the resolved candidate's own preset ('tight'), so what is signed is what was priced", async () => {
+    stubApr(payloadWithAprs({ micro: 10, tight: 38, standard: 20, wide: 5 }));
+    await mount();
+    await act(async () => { container.querySelector<HTMLButtonElement>("[data-testid='preset-ai-best']")!.click(); });
+    await advance(450);
+    expect(container.querySelector("[data-testid='preset-ai-best']")!.getAttribute("aria-pressed")).toBe("true");
+    expect(container.querySelector("[data-testid='range-apr-headline']")!.textContent).toBe("~38%");
+    expect(quoteBodies.at(-1)).toMatchObject({ rangePreset: "tight" });
+    expect(container.textContent).toContain("AI best for this pool is Tight");
+  });
+
+  it("when Standard is the AI best pick, the default selection is AI best and Standard is not listed twice", async () => {
+    stubApr(payloadWithAprs({ micro: 1, tight: 2, standard: 40, wide: 3 }));
+    await mount();
+    expect(rowLabels()).toEqual(["AI best", "Micro", "Tight (±0.05%)", "Wide (±1%)", "Custom"]);
+    expect(container.querySelector("[data-testid='preset-ai-best']")!.getAttribute("aria-pressed")).toBe("true");
+    expect(quoteBodies.at(-1)).toMatchObject({ rangePreset: "standard" });
+  });
+
+  it("still lets the user create a position when the estimate is unavailable", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (url.startsWith("/api/pool-range-apr")) return { ok: false, json: async () => ({ error: "down" }) };
+      if (url === "/api/sol-usdc-price") return { ok: true, json: async () => ({ rate: 150 }) };
+      if (url.startsWith("/api/wallet")) return { ok: true, json: async () => ({ assets: [{ kind: "native", mint: NATIVE_SOL_MINT, decimals: 9, balance: "216474000", eligible: true }] }) };
+      if (url === "/api/open-quote") return { ok: true, json: async () => quote() };
+      throw new Error(`Unexpected request: ${url}`);
+    }));
+    await mount();
+    expect(container.textContent).toContain("Estimate unavailable right now");
+    expect(rowLabels()).toEqual(["Micro", "Tight (±0.05%)", "Standard (±0.3%)", "Wide (±1%)", "Custom"]);
+    expect(container.querySelector("[data-testid='preset-ai-best']")).toBeNull();
+    expect(signButton().disabled).toBe(false);
+  });
 });
 
 describe("open-position signing and quote refresh", () => {
