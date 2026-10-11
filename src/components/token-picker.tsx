@@ -6,6 +6,7 @@ import { TOKEN_2022_PROGRAM_ID } from "@solana/spl-token";
 import { formatAmount } from "@/lib/amount";
 import type { TokenMetadata } from "@/lib/token-metadata";
 import type { WalletAsset } from "@/lib/wallet-discovery";
+import { TokenIcon } from "./token-icon";
 
 const token2022Program = TOKEN_2022_PROGRAM_ID.toBase58();
 const short = (mint: string) => `${mint.slice(0, 5)}…${mint.slice(-5)}`;
@@ -39,17 +40,6 @@ export function assetSymbol(asset: WalletAsset, item: TokenMetadata | null) {
 
 function assetName(asset: WalletAsset, item: TokenMetadata | null) {
   return asset.kind === "native" ? "Solana" : item?.name || "Name not indexed";
-}
-
-function TokenIcon({ symbol, icon }: { symbol: string; icon: string | null }) {
-  const [failedIcon, setFailedIcon] = useState<string | null>(null);
-  return <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/12 bg-white/[0.06] text-sm font-bold text-cream">
-    {icon && failedIcon !== icon ? <>
-      {/* Icons come from a bounded list of HTTPS hosts validated by the server. */}
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={icon} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setFailedIcon(icon)} className="h-full w-full object-cover" />
-    </> : symbol.slice(0, 2).toUpperCase()}
-  </span>;
 }
 
 function AssetRow({ asset, item, selected, onSelect }: {

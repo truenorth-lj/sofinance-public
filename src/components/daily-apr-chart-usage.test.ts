@@ -11,12 +11,10 @@ describe("daily APR chart wiring", () => {
     expect(src).toContain("data?.poolId || previewPoolId");
   });
 
-  it("shows per-pool daily APR sparklines on the RWA pairs table", () => {
+  it("keeps daily APR off the RWA pair cards (no per-card sparkline requests)", () => {
     const src = readFileSync(resolve("src/components/rwa-pairs-panel.tsx"), "utf8");
-    expect(src).toContain("PoolAprSparkline");
-    expect(src).toContain("Daily APR");
-    expect(src).toContain("index < 8");
-    expect(src).toMatch(/not Raydium-published daily/);
+    expect(src).not.toContain("PoolAprSparkline");
+    expect(src).not.toContain("Daily APR");
   });
 
   it("plans a pool from its daily APR series instead of synthetic sample paths", () => {
