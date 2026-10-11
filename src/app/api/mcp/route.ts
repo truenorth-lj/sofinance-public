@@ -47,6 +47,7 @@ import { getJupiterApiKey } from "@/lib/config/server-env";
  * - tools/list - List available tools
  * - tools/call - Execute a tool
  * - initialize - Initialize MCP session
+ * - notifications/initialized - Acknowledge completed initialization
  * - ping - Health check
  * 
  * This is a STATELESS implementation - each request is independent.
@@ -691,6 +692,12 @@ export async function POST(request: NextRequest) {
     }
 
     const { id, method, params } = rpcRequest;
+
+    // The stateless server has no session to update. Accept the lifecycle
+    // notification without a JSON-RPC response, as Streamable HTTP requires.
+    if (method === "notifications/initialized" && id === undefined) {
+      return new NextResponse(null, { status: 202 });
+    }
 
     // Handle public methods (no auth required)
     if (method === "initialize") {
