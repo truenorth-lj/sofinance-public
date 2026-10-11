@@ -17,6 +17,7 @@ const REASONS: Record<RangeAprUnavailableReason, string> = {
   "range-outside-window": "Range extends beyond the analysed price window",
   "no-price": "Pool price unavailable",
   "no-capital": "Pool value unavailable",
+  "degraded-data": "Recent price history is temporarily unavailable, so no estimate is shown. Try again shortly",
 };
 
 export function unavailableReasonText(reason: RangeAprUnavailableReason): string {

@@ -8,7 +8,11 @@ import type { PoolRangeAprPayload } from "@/lib/range-apr/types";
  * the table never opens more than two requests at a time.
  */
 const limit = createConcurrencyLimit(2);
-const cache = new AsyncCache<PoolRangeAprPayload>({ ttlMs: 60_000, failureTtlMs: 10_000 });
+/** A degraded payload (no estimates) is kept only briefly so the next ask hits the server again. */
+const DEGRADED_TTL_MS = 8_000;
+const cache = new AsyncCache<PoolRangeAprPayload>({
+  ttlMs: 60_000, failureTtlMs: 10_000, ttlFor: (payload) => (payload.sample.degraded ? DEGRADED_TTL_MS : 60_000),
+});
 
 async function request(poolId: string): Promise<PoolRangeAprPayload> {
   const response = await fetch(`/api/pool-range-apr?poolId=${encodeURIComponent(poolId)}`, {

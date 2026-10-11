@@ -16,7 +16,7 @@ afterEach(() => {
 
 describe("GET /api/pool-range-apr", () => {
   it("returns the payload with short CDN caching", async () => {
-    const payload = { poolId: POOL, label: "Est. fee APR", presets: [] };
+    const payload = { poolId: POOL, label: "Est. fee APR", presets: [], sample: { degraded: false } };
     fetchPoolRangeApr.mockResolvedValue(payload);
     const response = await call(`?poolId=${POOL}`);
     expect(response.status).toBe(200);
@@ -24,6 +24,15 @@ describe("GET /api/pool-range-apr", () => {
     expect(fetchPoolRangeApr).toHaveBeenCalledWith(POOL);
     expect(response.headers.get("CDN-Cache-Control")).toMatch(/s-maxage=30/);
     expect(response.headers.get("Cache-Control")).not.toMatch(/no-store/);
+  });
+
+  it("does not pin a degraded payload (no estimates) at the CDN: 5 s, no stale-while-revalidate", async () => {
+    fetchPoolRangeApr.mockResolvedValue({ poolId: POOL, presets: [], sample: { degraded: true } });
+    const response = await call(`?poolId=${POOL}`);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("CDN-Cache-Control")).toBe("public, s-maxage=5");
+    expect(response.headers.get("Vercel-CDN-Cache-Control")).toBe("public, s-maxage=5");
+    expect(response.headers.get("CDN-Cache-Control")).not.toMatch(/stale-while-revalidate/);
   });
 
   it("rejects a missing or malformed pool id without touching upstreams", async () => {

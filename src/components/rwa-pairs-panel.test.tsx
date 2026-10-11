@@ -3,7 +3,7 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { payloadFixture, payloadWithAprs } from "../lib/range-apr/payload.fixture";
+import { degradedPayloadFixture, payloadFixture, payloadWithAprs } from "../lib/range-apr/payload.fixture";
 import { RwaPairsPanel } from "./rwa-pairs-panel";
 import type { PoolRangeAprState } from "./range-apr/use-pool-range-apr";
 
@@ -60,18 +60,18 @@ describe("RwaPairsPanel Highest range column", () => {
     expect(rows[0]!.querySelectorAll("td")[1]!.textContent).toBe("12.34%");
     expect(cellOf(0).textContent).toBe("Tight · ~38% APR");
     expect(cellOf(1).textContent).toBe("…");
-    expect(container.textContent).not.toMatch(/APY|AI-pick/);
+    expect(container.textContent).not.toMatch(/APY|Best/);
     expect(container.querySelector("tbody svg.recharts-surface, tbody canvas")).toBeNull();
   });
 
-  it("shows the same range and number as the modal's AI best for the same pool payload", async () => {
+  it("shows the same range and number as the modal's Best for the same pool payload", async () => {
     const data = payloadWithAprs({ micro: 3, tight: 4, standard: 61, wide: 5 });
     mocks.aprFor.mockImplementation(() => ({ status: "ready", data }));
     await mount();
     const { buildPresetList } = await import("../lib/range-apr/preset-list");
     const { OPEN_RANGE_UI_PRESETS } = await import("../lib/open-range-presets");
     const { formatEstimate } = await import("../lib/range-apr/format");
-    const best = buildPresetList(OPEN_RANGE_UI_PRESETS, data).aiBest!;
+    const best = buildPresetList(OPEN_RANGE_UI_PRESETS, data).best!;
     expect(container.querySelector("[data-testid='highest-range']")!.textContent)
       .toBe(`${best.resolvedLabel} · ${formatEstimate(best.estimate)} APR`);
   });
@@ -91,5 +91,13 @@ describe("RwaPairsPanel Highest range column", () => {
     await mount();
     expect(container.querySelector("table")!.parentElement!.className).toContain("overflow-x-auto");
     expect(cellOf(0).firstElementChild!.className).toContain("whitespace-nowrap");
+  });
+
+  it("shows a dash (no range, no number) for a degraded payload", async () => {
+    mocks.aprFor.mockImplementation(() => ({ status: "ready", data: degradedPayloadFixture() }));
+    await mount();
+    expect(cellOf(0).textContent).toBe("—");
+    expect(cellOf(1).textContent).toBe("—");
+    expect(container.querySelector("[data-testid='highest-range']")!.textContent).not.toMatch(/APR/);
   });
 });

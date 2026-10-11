@@ -138,34 +138,34 @@ describe("range presets and estimated APR", () => {
   };
   const rowLabels = () => [...container.querySelectorAll("[aria-label='Price range presets'] button")].map((b) => b.querySelector("span")?.textContent);
 
-  it("lists AI best leftmost, then the remaining candidates narrow to wide, then Custom; Standard stays selected", async () => {
+  it("lists Best leftmost, then the remaining candidates narrow to wide, then Custom; Standard stays selected", async () => {
     stubApr(payloadWithAprs({ micro: 10, tight: 38, standard: 20, wide: 5 }));
     await mount();
-    expect(rowLabels()).toEqual(["AI best", "Micro", "Standard (±0.3%)", "Wide (±1%)", "Custom"]);
-    expect(container.querySelector("[data-testid='ai-best-resolved']")!.textContent).toBe("Tight");
-    expect(container.querySelector("[data-testid='apr-ai-best']")!.textContent).toBe("~38%");
+    expect(rowLabels()).toEqual(["Best", "Micro", "Standard (±0.3%)", "Wide (±1%)", "Custom"]);
+    expect(container.querySelector("[data-testid='best-resolved']")!.textContent).toBe("Tight");
+    expect(container.querySelector("[data-testid='apr-best']")!.textContent).toBe("~38%");
     expect(presetButton("Standard (±0.3%)").getAttribute("aria-pressed")).toBe("true");
-    expect(container.querySelector("[data-testid='preset-ai-best']")!.getAttribute("aria-pressed")).toBe("false");
+    expect(container.querySelector("[data-testid='preset-best']")!.getAttribute("aria-pressed")).toBe("false");
     expect(container.querySelector("[data-testid='range-apr-headline']")!.textContent)
       .toBe(container.querySelector("[data-testid='apr-standard']")!.textContent);
   });
 
-  it("clicking AI best requests the resolved candidate's own preset ('tight'), so what is signed is what was priced", async () => {
+  it("clicking Best requests the resolved candidate's own preset ('tight'), so what is signed is what was priced", async () => {
     stubApr(payloadWithAprs({ micro: 10, tight: 38, standard: 20, wide: 5 }));
     await mount();
-    await act(async () => { container.querySelector<HTMLButtonElement>("[data-testid='preset-ai-best']")!.click(); });
+    await act(async () => { container.querySelector<HTMLButtonElement>("[data-testid='preset-best']")!.click(); });
     await advance(450);
-    expect(container.querySelector("[data-testid='preset-ai-best']")!.getAttribute("aria-pressed")).toBe("true");
+    expect(container.querySelector("[data-testid='preset-best']")!.getAttribute("aria-pressed")).toBe("true");
     expect(container.querySelector("[data-testid='range-apr-headline']")!.textContent).toBe("~38%");
     expect(quoteBodies.at(-1)).toMatchObject({ rangePreset: "tight" });
-    expect(container.textContent).toContain("AI best for this pool is Tight");
+    expect(container.textContent).toContain("Best for this pool is Tight");
   });
 
-  it("when Standard is the AI best pick, the default selection is AI best and Standard is not listed twice", async () => {
+  it("when Standard is the Best pick, the default selection is Best and Standard is not listed twice", async () => {
     stubApr(payloadWithAprs({ micro: 1, tight: 2, standard: 40, wide: 3 }));
     await mount();
-    expect(rowLabels()).toEqual(["AI best", "Micro", "Tight (±0.05%)", "Wide (±1%)", "Custom"]);
-    expect(container.querySelector("[data-testid='preset-ai-best']")!.getAttribute("aria-pressed")).toBe("true");
+    expect(rowLabels()).toEqual(["Best", "Micro", "Tight (±0.05%)", "Wide (±1%)", "Custom"]);
+    expect(container.querySelector("[data-testid='preset-best']")!.getAttribute("aria-pressed")).toBe("true");
     expect(quoteBodies.at(-1)).toMatchObject({ rangePreset: "standard" });
   });
 
@@ -180,7 +180,7 @@ describe("range presets and estimated APR", () => {
     await mount();
     expect(container.textContent).toContain("Estimate unavailable right now");
     expect(rowLabels()).toEqual(["Micro", "Tight (±0.05%)", "Standard (±0.3%)", "Wide (±1%)", "Custom"]);
-    expect(container.querySelector("[data-testid='preset-ai-best']")).toBeNull();
+    expect(container.querySelector("[data-testid='preset-best']")).toBeNull();
     expect(signButton().disabled).toBe(false);
   });
 });
