@@ -7,6 +7,7 @@ import { simulateAndVerifySelectedTransaction } from "@/lib/selected-simulation"
 import { readSelectedPositionState } from "@/lib/selected-state";
 import { rpcConnection } from "@/lib/rpc";
 import { lookupBeamAfterSend } from "@/lib/solami-beam";
+import { getSigningSecret } from "@/lib/config/server-env";
 
 function validRaw(value: unknown) {
   return typeof value === "string" && /^\d+$/.test(value);
@@ -47,7 +48,7 @@ export async function POST(request: Request) {
       startingLiquidity: body.startingLiquidity, expectedLiquidity: body.expectedLiquidity,
       rangeSide: body.rangeSide, startingBalances: body.startingBalances,
     };
-    if (!verifySelectedPermit(process.env.JUPITER_API_KEY || "", permitInput, body.permit)) {
+    if (!verifySelectedPermit(getSigningSecret(), permitInput, body.permit)) {
       throw new Error("Transaction content does not match server's complete simulation version");
     }
     const connection = rpcConnection();

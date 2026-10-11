@@ -33,6 +33,7 @@ import {
   prepareOpenPositionSchema,
   submitOpenPositionSchema,
 } from "@/mcp/schemas";
+import { getJupiterApiKey } from "@/lib/config/server-env";
 
 /**
  * POST /api/mcp
@@ -730,7 +731,7 @@ export async function POST(request: NextRequest) {
     }
 
     const token = authHeader.slice(7);
-    const secret = process.env.JUPITER_API_KEY;
+    const secret = getJupiterApiKey();
     if (!secret) {
       return NextResponse.json(
         createJsonRpcError(id ?? null, -32002, "Server configuration error"),
