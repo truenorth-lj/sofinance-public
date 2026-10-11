@@ -25,15 +25,6 @@ const ALLOWED_SECRET_READS: Record<string, Reads> = {
   JUPITER_API_KEY: {
     // the single reader (lib/config/server-env.ts)
     "lib/config/server-env.ts": 1,
-    // app routes
-    "app/api/compound-prepare/route.ts": 1,
-    "app/api/compound-recover-prepare/route.ts": 1,
-    "app/api/mcp-token/route.ts": 1,
-    "app/api/mcp/route.ts": 1,
-    "app/api/open-prepare/route.ts": 1,
-    "app/api/selected-broadcast/route.ts": 1,
-    "app/api/selected-prepare/route.ts": 1,
-    "app/api/verify-sign-token/route.ts": 1,
     // lib (to be funnelled through lib/config/server-env.ts)
     "lib/compound-api.ts": 1,
     "lib/jupiter-route.ts": 1,
@@ -157,7 +148,7 @@ describe("secret env var read ratchet", () => {
 
   it("documents the headline number: raw JUPITER_API_KEY reads outside lib/jupiter and lib/config (the review counted 23-24 by grep; one hit was a doc comment)", () => {
     const outside = Object.entries(secretReads.JUPITER_API_KEY!).filter(([file]) => !file.startsWith("lib/jupiter/") && !file.startsWith("lib/config/"));
-    expect(outside.reduce((sum, [, count]) => sum + count, 0)).toBe(22);
+    expect(outside.reduce((sum, [, count]) => sum + count, 0)).toBe(14);
   });
 });
 
