@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SelectedApp } from "./selected-app";
 
 const mocks = vi.hoisted(() => ({ connect: vi.fn(), deposit: vi.fn(), compound: vi.fn(), depositQuote: false }));
+vi.mock("./use-sol-usdc-price", () => ({ useSolUsdcPrices: () => ({ rate: null, usdcUsd: null }) }));
 vi.mock("next/navigation", () => ({ usePathname: () => "/app" }));
 vi.mock("./use-token-metadata", () => ({ useTokenMetadata: () => ({}) }));
 vi.mock("./wallet-connection", () => ({ useWalletConnection: () => ({ connected: false, connect: mocks.connect }) }));
