@@ -42,7 +42,7 @@ export type RangeAprInputs = {
 };
 
 export type RangeAprUnavailableReason =
-  | "invalid-range" | "range-outside-window" | "no-price" | "no-capital";
+  | "invalid-range" | "range-outside-window" | "no-price" | "no-capital" | "degraded-data";
 
 export type RangeAprEstimate =
   | {

@@ -3,7 +3,7 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { payloadFixture, payloadWithAprs } from "../lib/range-apr/payload.fixture";
+import { degradedPayloadFixture, payloadFixture, payloadWithAprs } from "../lib/range-apr/payload.fixture";
 import { RwaPairsPanel } from "./rwa-pairs-panel";
 import type { PoolRangeAprState } from "./range-apr/use-pool-range-apr";
 
@@ -72,7 +72,7 @@ describe("RwaPairsPanel pair cards", () => {
     expect(field(1, "highest-range").textContent).toBe("…");
     expect(field(1, "highest-range-apr").textContent).toBe("…");
     expect(field(1, "highest-range-apr").parentElement!.textContent).toBe("…");
-    expect(container.textContent).not.toMatch(/APY|AI-pick/);
+    expect(container.textContent).not.toMatch(/APY|Best/);
     expect(container.querySelector("li svg.recharts-surface, li canvas")).toBeNull();
   });
 
@@ -84,14 +84,14 @@ describe("RwaPairsPanel pair cards", () => {
     expect(field(0, "highest-range-apr").textContent).toBe("148%");
   });
 
-  it("shows the same range and number as the modal's AI best for the same pool payload", async () => {
+  it("shows the same range and number as the modal's Best for the same pool payload", async () => {
     const data = payloadWithAprs({ micro: 3, tight: 4, standard: 61, wide: 5 });
     mocks.aprFor.mockImplementation(() => ({ status: "ready", data }));
     await mount();
     const { buildPresetList } = await import("../lib/range-apr/preset-list");
     const { OPEN_RANGE_UI_PRESETS } = await import("../lib/open-range-presets");
     const { formatEstimate } = await import("../lib/range-apr/format");
-    const best = buildPresetList(OPEN_RANGE_UI_PRESETS, data).aiBest!;
+    const best = buildPresetList(OPEN_RANGE_UI_PRESETS, data).best!;
     expect(field(0, "highest-range").textContent).toBe(OPEN_RANGE_UI_PRESETS.find((preset) => preset.id === best.id)!.label);
     expect(field(0, "highest-range").textContent).toContain(best.resolvedLabel);
     expect(`~${field(0, "highest-range-apr").textContent}`).toBe(formatEstimate(best.estimate));
@@ -139,5 +139,16 @@ describe("RwaPairsPanel pair cards", () => {
     expect(list.className).toContain("grid");
     expect(list.className).toContain("lg:grid-cols-2");
     expect(container.querySelector(".overflow-x-auto")).toBeNull();
+  });
+
+  it("shows a dash (no range, no number) for a degraded payload, with the reason on the pill's tooltip", async () => {
+    mocks.aprFor.mockImplementation(() => ({ status: "ready", data: degradedPayloadFixture() }));
+    await mount();
+    for (const card of [0, 1]) {
+      expect(field(card, "highest-range").textContent).toBe("—");
+      expect(field(card, "highest-range-apr").textContent).toBe("—");
+      expect(field(card, "highest-range-apr").parentElement!.textContent).not.toMatch(/APR|%/);
+      expect(cards()[card]!.querySelector("button[aria-label='About Highest range APR']")).not.toBeNull();
+    }
   });
 });

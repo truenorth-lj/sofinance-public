@@ -43,7 +43,7 @@ export type OpenRangeUiPreset = {
   id: Exclude<OpenRangePreset, "custom">;
   /** Full button label, e.g. "Tight (±0.05%)". */
   label: string;
-  /** Label without the percentage, used where space is tight (e.g. "AI best" resolved-range text). */
+  /** Label without the percentage, used where space is tight (e.g. "Best" resolved-range text). */
   shortLabel: string;
   /** Tooltip copy for presets whose rule is not obvious from the label. */
   help: string | null;
@@ -51,7 +51,7 @@ export type OpenRangeUiPreset = {
 
 /**
  * The candidate ranges, narrow to wide. This is the canonical order used for the fallback preset row, for
- * tie-breaking and for the remaining buttons next to "AI best" (Custom is appended by the picker).
+ * tie-breaking and for the remaining buttons next to "Best" (Custom is appended by the picker).
  */
 export const OPEN_RANGE_UI_PRESETS: readonly OpenRangeUiPreset[] = [
   { id: MICRO_PRESET_ID, label: MICRO_LABEL, shortLabel: MICRO_LABEL, help: MICRO_HELP },

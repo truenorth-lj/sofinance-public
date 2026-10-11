@@ -1,6 +1,6 @@
 /** User-facing strings for the range APR estimate (shared by the modal and the pair cards). */
 export const APR_ESTIMATE_LABEL = "Est. fee APR";
-export const AI_BEST_LABEL = "AI best";
+export const BEST_LABEL = "Best";
 export const HIGHEST_RANGE_COLUMN_LABEL = "Highest range";
 export const HIGHEST_RANGE_APR_LABEL = "Highest range APR";
 
@@ -11,10 +11,10 @@ export const APR_ESTIMATE_CAVEAT =
   "ignores impermanent loss and costs. Shown for a ~$100 deposit; larger deposits earn a lower rate. " +
   "Narrower ranges earn more per dollar but go out of range sooner.";
 
-/** Honest description of "AI best": an automatic pick by a fixed rule, not a model and not a prediction. */
-export const AI_BEST_HELP =
-  "Picked automatically as the range with the highest estimated fee APR for this pool from the last 7 days of data " +
-  "(Micro, Tight, Standard or Wide; ties go to the wider range). It is not a prediction and not an AI model. " +
+/** "Best": the candidate with the highest estimated fee APR; a ranking of an estimate, not a prediction. */
+export const BEST_HELP =
+  "The range with the highest estimated fee APR over the last 7 days for this pool " +
+  "(Micro, Tight, Standard or Wide; ties go to the wider range). Not a prediction. " +
   "A higher APR usually means a narrower range and a higher risk of leaving range.";
 
 export const HIGHEST_RANGE_HELP =
