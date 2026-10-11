@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
@@ -16,7 +16,14 @@ import {
 import { JupiterHttpError, retryAfterFromJupiterHeaders } from "./errors";
 import { resetJupiterRuntime } from "./index";
 
+beforeEach(() => {
+  // Hermetic: the client falls back to process.env.JUPITER_API_KEY when no explicit key is passed.
+  vi.stubEnv("JUPITER_API_KEY", undefined);
+  vi.stubEnv("E2E_KEYLESS_JUPITER", undefined);
+});
+
 afterEach(() => {
+  vi.unstubAllEnvs();
   resetJupiterRuntime();
   vi.useRealTimers();
   vi.restoreAllMocks();

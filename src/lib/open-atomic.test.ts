@@ -1,5 +1,5 @@
 import { AddressLookupTableAccount, Keypair, PublicKey, TransactionInstruction } from "@solana/web3.js";
-import { beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import oldFixture from "./fixtures/open-size-route.json";
 import compactFixture from "./fixtures/open-size-compact-route.json";
 vi.mock("server-only", () => ({}));
@@ -41,7 +41,10 @@ const state = { wallet, poolId, programId: compact.ixs[8]!.programId.toBase58(),
   programA: compact.ixs[4]!.keys[5]!.pubkey.toBase58(), programB: compact.ixs[5]!.keys[5]!.pubkey.toBase58(),
   inputMint, inputKind: "native", tickSpacing: 1, solLamports: 1000000000, balances: { a: "0", b: "0", input: "0" } };
 
+afterEach(() => { vi.unstubAllEnvs(); });
 beforeEach(() => {
+  // Hermetic: ambient fee/key env must not change prepared-transaction contents.
+  vi.stubEnv("SOFINANCE_FEE_WALLET", undefined); vi.stubEnv("SOFINANCE_FEE_BPS", undefined); vi.stubEnv("JUPITER_API_KEY", undefined);
   vi.clearAllMocks(); strategy = "parallel";
   vi.mocked(rpcConnection).mockReturnValue({
     getTokenAccountsByOwner: vi.fn(async () => ({ value: [] })),

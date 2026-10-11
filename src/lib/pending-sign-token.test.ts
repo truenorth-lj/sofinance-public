@@ -1,7 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Keypair } from "@solana/web3.js";
 import { createSignToken, verifySignToken } from "./pending-sign-token";
 import { buildOpenPositionUrl, buildSignUrl } from "./public-urls";
+
+// Hermetic: link building reads the deployment host from the environment.
+beforeEach(() => {
+  vi.stubEnv("NEXT_PUBLIC_APP_URL", undefined);
+  vi.stubEnv("VERCEL_URL", undefined);
+});
+afterEach(() => { vi.unstubAllEnvs(); });
 
 describe("open-position signUrl token", () => {
   it("round-trips an open-position pending sign payload", async () => {
