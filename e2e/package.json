@@ -1,0 +1,26 @@
+{
+  "name": "sofinance-e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Isolated browser E2E harness (Playwright + in-house Wallet Standard fake wallet). Not part of the app build; has its own lockfile.",
+  "scripts": {
+    "build:app": "node scripts/build-app.mjs",
+    "test": "npm run test:hermetic",
+    "test:hermetic": "playwright test --project=hermetic",
+    "test:adapter": "E2E_PROVIDER=adapter playwright test --project=hermetic tests/hermetic/j1-connect.e2e.ts tests/hermetic/j2-sign-happy.e2e.ts",
+    "test:prod": "E2E_NO_SERVER=1 playwright test --project=prod-readonly",
+    "typecheck": "tsc --noEmit",
+    "repeat": "node scripts/repeat.mjs",
+    "mutation": "node scripts/mutation-check.mjs",
+    "scan-traces": "node scripts/trace-secret-scan.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.0",
+    "@solana/web3.js": "1.99.0",
+    "@types/node": "22.20.5",
+    "bs58": "6.0.0",
+    "tweetnacl": "1.0.3",
+    "typescript": "5.9.3"
+  }
+}
