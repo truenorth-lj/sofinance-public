@@ -352,7 +352,7 @@ The public app is available at [sofinancelab.xyz/app](https://sofinancelab.xyz/a
 
 ## Hackathon disclosure
 
-Built for the **Colosseum Crypto World's Fair** — entered in the **Solana track**, also eligible for the Public Goods Award and University Award.
+Built for the **Colosseum Crypto World's Fair** — entered in the **Solana track**; also applying for the Public Goods Award and University Award.
 
 Original private repository [`truenorth-lj/SoFinance`](https://github.com/truenorth-lj/SoFinance) first commit **2026-09-29** (`chore: scaffold USDC position zap project`, author date `2026-09-29T02:09:15Z`), within the Sep 14–Oct 12 PT hackathon window. This public repository (`truenorth-lj/sofinance-public`) was created **2026-10-06** with a fresh history so hardcoded personal wallet addresses could be removed and documentation published in English. Read access to the original private repo will be granted to `hackathon@colosseum.com` for verification.
 
