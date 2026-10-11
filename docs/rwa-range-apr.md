@@ -18,16 +18,19 @@ Each pool is priced for four candidates (narrow to wide, the canonical order eve
 
 Spacing 1 → Micro ≈ ±0.02%; spacing 10 → ±0.2%; spacing 60 → ±1.2%, which on a 60-spaced pool is the same tick range as Wide.
 
-## Best (the leftmost preset)
+## Best (the first preset)
 
 Not a prediction. It is **the candidate with the highest estimated fee APR** for this pool (from the last 7 complete days
 of volume, see below), resolved by the pure functions in `range-apr/preset-list.ts` that the modal and the pair cards both call:
 
 * `pickHighestAprPreset` — highest `aprPct` among candidates with an estimate; ties (equal within float noise) go to the **wider** range
   (by tick width; between identical tick ranges, the later of Micro/Tight/Standard/Wide). Unavailable candidates are ignored.
-* `buildPresetList` — the modal's row: `Best` (APR + small text with the range it resolved to, e.g. "Tight"), then the **other** candidates
-  narrow→wide **without the resolved one**, then Custom. A candidate covering exactly the same ticks as the resolved one is also dropped, so no
-  two buttons select the same range.
+* `buildPresetList` — the modal's presets: `Best` on a row of its own (brand mark, glow, and the range it resolved to, e.g. "Tight"), then
+  an equal-width row of the **other** candidates narrow→wide **without the resolved one**, then Custom. A candidate covering exactly the same
+  ticks as the resolved one is also dropped, so no two buttons select the same range.
+* The buttons carry the range only (name + half-width; Micro's is `microBandLabel`, its ±2 steps as a percent for this pool's spacing, e.g.
+  `±0.02%`, and `±2 steps` only until the payload is loaded). Every estimate is in the **Est. fee APR** card below them: the selection as the
+  headline figure, the candidates that are not selected under it as "Other ranges".
 * Clicking Best selects the resolved candidate's own preset id, so `quote_open_position` / `prepare_open_position` receive e.g. `tight`
   and sign exactly the ticks that were priced. (Best itself is never sent to the API.)
 * Default selection stays **Standard**. If Standard *is* what Best resolved to, Standard has no button of its own, so the default

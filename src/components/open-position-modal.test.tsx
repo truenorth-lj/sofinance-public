@@ -141,13 +141,12 @@ describe("range presets and estimated APR", () => {
   it("lists Best leftmost, then the remaining candidates narrow to wide, then Custom; Standard stays selected", async () => {
     stubApr(payloadWithAprs({ micro: 10, tight: 38, standard: 20, wide: 5 }));
     await mount();
-    expect(rowLabels()).toEqual(["Best", "Micro", "Standard (±0.3%)", "Wide (±1%)", "Custom"]);
+    expect(rowLabels()).toEqual(["Best", "Micro", "Standard", "Wide", "Custom"]);
     expect(container.querySelector("[data-testid='best-resolved']")!.textContent).toBe("Tight");
-    expect(container.querySelector("[data-testid='apr-best']")!.textContent).toBe("~38%");
-    expect(presetButton("Standard (±0.3%)").getAttribute("aria-pressed")).toBe("true");
+    expect(container.querySelector("[data-testid='apr-tight']")!.textContent).toBe("~38%");
+    expect(presetButton("Standard").getAttribute("aria-pressed")).toBe("true");
     expect(container.querySelector("[data-testid='preset-best']")!.getAttribute("aria-pressed")).toBe("false");
-    expect(container.querySelector("[data-testid='range-apr-headline']")!.textContent)
-      .toBe(container.querySelector("[data-testid='apr-standard']")!.textContent);
+    expect(container.querySelector("[data-testid='range-apr-headline']")!.textContent).toBe("~20%");
   });
 
   it("clicking Best requests the resolved candidate's own preset ('tight'), so what is signed is what was priced", async () => {
@@ -164,7 +163,7 @@ describe("range presets and estimated APR", () => {
   it("when Standard is the Best pick, the default selection is Best and Standard is not listed twice", async () => {
     stubApr(payloadWithAprs({ micro: 1, tight: 2, standard: 40, wide: 3 }));
     await mount();
-    expect(rowLabels()).toEqual(["Best", "Micro", "Tight (±0.05%)", "Wide (±1%)", "Custom"]);
+    expect(rowLabels()).toEqual(["Best", "Micro", "Tight", "Wide", "Custom"]);
     expect(container.querySelector("[data-testid='preset-best']")!.getAttribute("aria-pressed")).toBe("true");
     expect(quoteBodies.at(-1)).toMatchObject({ rangePreset: "standard" });
   });
@@ -179,7 +178,7 @@ describe("range presets and estimated APR", () => {
     }));
     await mount();
     expect(container.textContent).toContain("Estimate unavailable right now");
-    expect(rowLabels()).toEqual(["Micro", "Tight (±0.05%)", "Standard (±0.3%)", "Wide (±1%)", "Custom"]);
+    expect(rowLabels()).toEqual(["Micro", "Tight", "Standard", "Wide", "Custom"]);
     expect(container.querySelector("[data-testid='preset-best']")).toBeNull();
     expect(signButton().disabled).toBe(false);
   });

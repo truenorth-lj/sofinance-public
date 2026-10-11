@@ -9,6 +9,7 @@ describe("open range presets", () => {
     expect(OPEN_RANGE_UI_PRESETS[0]!.label).toBe("Micro");
     expect(OPEN_RANGE_UI_PRESETS.slice(1).map((preset) => preset.label)).toEqual(OPEN_RANGE_PRESETS.map((preset) => preset.label));
     expect(OPEN_RANGE_UI_PRESETS.map((preset) => preset.shortLabel)).toEqual(["Micro", "Tight", "Standard", "Wide"]);
+    expect(OPEN_RANGE_UI_PRESETS.map((preset) => preset.band)).toEqual(["±2 steps", "±0.05%", "±0.3%", "±1%"]);
   });
 
   it("explains Micro as a fixed centred +-2 step band", () => {

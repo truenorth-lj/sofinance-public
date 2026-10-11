@@ -1,7 +1,7 @@
 import { TickUtil } from "@raydium-io/raydium-sdk-v2";
 import { describe, expect, it } from "vitest";
 import {
-  MICRO_HALF_WIDTH_SPACINGS, microRange, microRangeFromExactTick, nearestBoundary,
+  MICRO_HALF_WIDTH_SPACINGS, microBandLabel, microRange, microRangeFromExactTick, nearestBoundary,
 } from "./micro-range";
 import { usableTickBounds } from "./tick-math";
 
@@ -15,6 +15,14 @@ describe("nearestBoundary", () => {
     expect(nearestBoundary(-46_050, 60)).toBe(-46_080); // exact tie -> lower
     expect(nearestBoundary(30.1, 60)).toBe(60);
     expect(nearestBoundary(30, 60)).toBe(0);
+  });
+});
+
+describe("microBandLabel", () => {
+  it("states the half-width as a percent of price for the pool's spacing", () => {
+    expect(microBandLabel(1)).toBe("±0.02%");
+    expect(microBandLabel(10)).toBe("±0.2%");
+    expect(microBandLabel(60)).toBe("±1.2%");
   });
 });
 
