@@ -14,6 +14,7 @@ import { useCompoundController } from "./use-compound-controller";
 import { InkHero, InkNav } from "./ink";
 import { PositionPerformancePanel } from "./position-performance-panel";
 import { ConnectWalletPrompt } from "./connect-wallet-prompt";
+import { AssetRisksDialog } from "./asset-risks-dialog";
 
 const short = (value: string) => `${value.slice(0, 5)}…${value.slice(-5)}`;
 const money = (value: string, decimals: number, digits = 6) => formatAmount(value, decimals, digits);
@@ -61,6 +62,7 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
   ];
   const metadata = useTokenMetadata(metadataMints);
   const [statusDialogOpen, setStatusDialogOpen] = useState(false);
+  const [assetRisksOpen, setAssetRisksOpen] = useState(false);
   const [activeView, setActiveView] = useState<"compound" | "performance" | "deposit">(initialView);
   const linkedPositionApplied = useRef(false);
   useEffect(() => {
@@ -105,9 +107,10 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
       <InkNav wallet={wallet} connected={connected} onConnect={connect} onDisconnect={disconnect} />
 
       <div className="mt-3 grid gap-3 lg:grid-cols-12">
-      <InkHero stacked className="mt-0 lg:col-span-7" label="Positions" title="Manage my liquidity positions">Add yield back to original position, or invest new capital.</InkHero>
+      <InkHero stacked className="mt-0 border border-transparent lg:col-span-7" label="Positions" title="Manage my liquidity positions">Add yield back to original position, or invest new capital.</InkHero>
 
-      <section aria-labelledby="position-heading" className="flex flex-col justify-center rounded-[28px] border border-white/12 bg-char p-5 sm:p-7 lg:col-span-5">
+      <section aria-labelledby="position-heading" className="flex flex-col rounded-[28px] border border-white/12 bg-char p-6 sm:p-9 lg:col-span-5">
+        <div className="flex flex-1 flex-col justify-center">
         <div className="flex items-center justify-between gap-3"><h2 id="position-heading" className="text-base font-semibold text-cream">My positions</h2><button type="button" disabled={!wallet || busy} onClick={() => void refreshDiscovery()} className="text-xs font-semibold text-cream/80 transition-opacity hover:opacity-70 disabled:opacity-40">Rescan wallet</button></div>
         {connected ? <PositionSelect
           id="position"
@@ -126,7 +129,13 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
           <span className={`rounded-full border px-2.5 py-1 ${state.inRange ? "border-white/40 bg-white/[0.07] text-cream/80" : "border-white/20 bg-white/[0.05] text-smoke"}`}>{state.rangeSide === "above" ? "Above range · single-sided" : state.rangeSide === "below" ? "Below range · single-sided" : "Price within range"}</span>
           <span className="text-smoke">Position assets: {money(state.currentAmounts.a, state.decimalsA)} {poolLabel(state.mintA)}  +  {money(state.currentAmounts.b, state.decimalsB)} {poolLabel(state.mintB)}</span>
         </div>}
-        {connected && <details className="mt-5 border-t border-white/10 pt-4 text-xs text-smoke"><summary className="cursor-pointer font-semibold text-cream/80">Detailed information and asset risks</summary><div className="mt-4 space-y-2 break-all leading-5">{state && <><p>Real-time pool price: {Number(state.price).toPrecision(8)} · ticks {state.tickLower}–{state.tickUpper} · slot {state.slot}</p><p>Wallet pool asset balance: {money(state.balances.a, state.decimalsA)} {poolLabel(state.mintA)}  +  {money(state.balances.b, state.decimalsB)} {poolLabel(state.mintB)} · SOL {money(String(state.solLamports), 9)}</p><button type="button" onClick={() => void refreshState()} disabled={busy} className="text-cream/80 underline disabled:opacity-40">Reload on-chain</button><p>Pool: <a className="text-cream/80 underline" href={`https://solscan.io/account/${state.poolId}`} target="_blank" rel="noreferrer">{state.poolId} <ArrowUpRight className="inline h-3 w-3" /></a></p><p>Position NFT: {state.positionMint}</p><p>Pool A mint: {state.mintA}</p><p>Pool B mint: {state.mintB}</p><p>Input mint: {selection?.inputMint}</p></>}<p>Different tokens may have issuer, transfer restrictions, or routing liquidity risks. APR does not represent this position&apos;s realizable returns; no trading fees earned for this range while outside.</p></div></details>}
+        </div>
+        {connected && <div className="mt-6 border-t border-white/10 pt-5 text-sm leading-relaxed">
+          <button type="button" aria-haspopup="dialog" onClick={() => setAssetRisksOpen(true)}
+            className="text-xs font-semibold text-cream/80 transition-opacity hover:opacity-70 disabled:opacity-40">
+            Learn more details
+          </button>
+        </div>}
       </section>
       </div>
 
@@ -182,6 +191,9 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
       {connectionError && activeView === "compound" && <div role="alert" className="mt-4 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80">{connectionError}</div>}
       {error && !quoteError && activeView === "compound" && <div role="alert" className="mt-4 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80">{error}</div>}
     </div>
+    <AssetRisksDialog open={connected && assetRisksOpen} onOpenChange={setAssetRisksOpen}>
+      {state && <><p>Real-time pool price: {Number(state.price).toPrecision(8)} · ticks {state.tickLower}–{state.tickUpper} · slot {state.slot}</p><p>Wallet pool asset balance: {money(state.balances.a, state.decimalsA)} {poolLabel(state.mintA)}  +  {money(state.balances.b, state.decimalsB)} {poolLabel(state.mintB)} · SOL {money(String(state.solLamports), 9)}</p><button type="button" onClick={() => void refreshState()} disabled={busy} className="text-cream/80 underline disabled:opacity-40">Reload on-chain</button><p>Pool: <a className="text-cream/80 underline" href={`https://solscan.io/account/${state.poolId}`} target="_blank" rel="noreferrer">{state.poolId} <ArrowUpRight className="inline h-3 w-3" /></a></p><p>Position NFT: {state.positionMint}</p><p>Pool A mint: {state.mintA}</p><p>Pool B mint: {state.mintB}</p><p>Input mint: {selection?.inputMint}</p></>}<p>Different tokens may have issuer, transfer restrictions, or routing liquidity risks. APR does not represent this position&apos;s realizable returns; no trading fees earned for this range while outside.</p>
+    </AssetRisksDialog>
     <TransactionStatusDialog attempt={visibleAttempt} status={attemptStatus} error={error} open={statusDialogOpen}
       onOpenChange={setStatusDialogOpen} onRetry={retryReconcile} />
     {activeView === "deposit" && <div className="fixed inset-x-0 bottom-0 z-10 border-t border-white/12 bg-canvas/95 p-4 backdrop-blur sm:hidden"><button className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-lemon px-5 py-4 text-sm font-semibold text-ink transition-colors hover:bg-[#fff27f] disabled:cursor-not-allowed disabled:opacity-40" disabled={actionDisabled} onClick={primaryAction}>{busy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ArrowDown className="h-4 w-4" />}{connected ? actionLabel : "Connect wallet"}</button></div>}
