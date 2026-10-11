@@ -2,10 +2,12 @@
  * Small per-instance async cache: TTL, in-flight de-duplication and a short negative cache so a
  * failing upstream is not hammered by every caller. Safe for module-level singletons.
  */
-export type AsyncCacheOptions = {
+export type AsyncCacheOptions<T = unknown> = {
   ttlMs: number;
   /** How long a failure is remembered and re-thrown without calling the loader again. Default 0 (off). */
   failureTtlMs?: number;
+  /** Per-value TTL override, e.g. a short TTL for a degraded result so a good one replaces it quickly. */
+  ttlFor?: (value: T) => number;
   maxEntries?: number;
   now?: () => number;
 };
@@ -19,12 +21,14 @@ export class AsyncCache<T> {
   private readonly failureTtlMs: number;
   private readonly maxEntries: number;
   private readonly now: () => number;
+  private readonly ttlFor: ((value: T) => number) | undefined;
 
-  constructor(options: AsyncCacheOptions) {
+  constructor(options: AsyncCacheOptions<T>) {
     this.ttlMs = options.ttlMs;
     this.failureTtlMs = options.failureTtlMs ?? 0;
     this.maxEntries = options.maxEntries ?? 64;
     this.now = options.now ?? (() => Date.now());
+    this.ttlFor = options.ttlFor;
   }
 
   /** Cached value, or the in-flight promise, or a fresh `load()`; concurrent callers share one load. */
@@ -38,7 +42,7 @@ export class AsyncCache<T> {
     const work = (async () => {
       try {
         const value = await load();
-        this.remember(key, { at: this.now(), ttl: this.ttlMs, value });
+        this.remember(key, { at: this.now(), ttl: this.ttlFor ? this.ttlFor(value) : this.ttlMs, value });
         return value;
       } catch (error) {
         if (this.failureTtlMs > 0) this.remember(key, { at: this.now(), ttl: this.failureTtlMs, error });

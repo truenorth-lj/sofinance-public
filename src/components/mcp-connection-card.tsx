@@ -93,7 +93,7 @@ export function McpConnectionCard({ wallet }: McpConnectionCardProps) {
     () =>
       typeof window !== "undefined"
         ? window.location.origin
-        : "https://www.sofinancelab.xyz",
+        : "https://sofinancelab.xyz",
     []
   );
 

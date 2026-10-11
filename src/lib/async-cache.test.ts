@@ -59,4 +59,21 @@ describe("AsyncCache", () => {
     await cache.get("a", load);
     expect(load).toHaveBeenCalledTimes(5);
   });
+
+  it("lets a value choose its own TTL (a degraded result is retried sooner than a good one)", async () => {
+    const time = clock();
+    const cache = new AsyncCache<{ good: boolean }>({ ttlMs: 10_000, ttlFor: (value) => (value.good ? 10_000 : 100), now: time.now });
+    const load = vi.fn<() => Promise<{ good: boolean }>>()
+      .mockResolvedValueOnce({ good: false })
+      .mockResolvedValueOnce({ good: true });
+    expect(await cache.get("k", load)).toEqual({ good: false });
+    time.advance(50);
+    await cache.get("k", load);
+    expect(load).toHaveBeenCalledTimes(1);
+    time.advance(60);
+    expect(await cache.get("k", load)).toEqual({ good: true });
+    time.advance(5000);
+    await cache.get("k", load);
+    expect(load).toHaveBeenCalledTimes(2);
+  });
 });

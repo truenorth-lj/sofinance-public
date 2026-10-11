@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { estimateRangeApr } from "./range-apr";
-import { payloadFixture as payload } from "./payload.fixture";
+import { degradedPayloadFixture, payloadFixture as payload } from "./payload.fixture";
 import { customTicks, estimateForSelection, toRangeAprInputs } from "./selection";
 import { uiPriceFromTick } from "./tick-math";
 
@@ -52,5 +52,23 @@ describe("estimateForSelection", () => {
   it("customTicks needs two valid prices", () => {
     expect(customTicks(payload(), "0.999", "1.001")).not.toBeNull();
     expect(customTicks(payload(), "", "1.001")).toBeNull();
+  });
+});
+
+describe("estimateForSelection on a degraded payload", () => {
+  const unavailable = { status: "unavailable", reason: "degraded-data" };
+  const data = () => degradedPayloadFixture();
+
+  it("gives no number for presets, a custom band or a quoted range, whatever the maths would say", () => {
+    const min = String(uiPriceFromTick(-2.5, 6, 6));
+    const max = String(uiPriceFromTick(2.5, 6, 6));
+    expect(estimateForSelection(data(), { preset: "tight", minPrice: "", maxPrice: "" })).toMatchObject({ status: "ready", estimate: unavailable });
+    expect(estimateForSelection(data(), { preset: "custom", minPrice: min, maxPrice: max })).toMatchObject({ status: "ready", estimate: unavailable });
+    expect(estimateForSelection(data(), { preset: "tight", minPrice: "", maxPrice: "" }, { tickLower: -3, tickUpper: 3 })).toMatchObject({ status: "ready", estimate: unavailable });
+  });
+
+  it("still reports an incomplete or invalid custom band as such", () => {
+    expect(estimateForSelection(data(), { preset: "custom", minPrice: "", maxPrice: "" })).toEqual({ status: "incomplete" });
+    expect(estimateForSelection(data(), { preset: "custom", minPrice: "1.2", maxPrice: "0.8" })).toEqual({ status: "invalid" });
   });
 });
