@@ -49,6 +49,14 @@ export type PoolRangeAprPayload = {
     unplacedVolumePct: number;
     /** `low` when the sample is thin or much of the volume could not be placed; shown as a caveat in the UI. */
     confidence: SampleConfidence;
+    /**
+     * True when the price history needed to place volume on bins was unavailable (hourly candles missing). A
+     * degraded payload carries NO estimates: every candidate is `unavailable` ("degraded-data") and the
+     * client never ranks, headlines or highlights it.
+     */
+    degraded: boolean;
+    /** Why upstream data was missing (for diagnosis), e.g. "GeckoTerminal hourly candles: Upstream request failed (429)". */
+    issues: string[];
   };
   referenceCapitalUsd: number;
   presets: RangeAprPresetEstimate[];

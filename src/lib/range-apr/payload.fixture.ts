@@ -13,7 +13,7 @@ export function payloadFixture(overrides: Partial<PoolRangeAprPayload> = {}): Po
   });
   return {
     poolId: "pool", fetchedAt: "2026-10-11T00:00:00.000Z", label: "Est. fee APR", assumptions: "", pool, model,
-    sample: { days: 7, volumeSource: "geckoterminal-daily", occupancySource: "hourly-candles", candleCount: 100, unplacedVolumePct: 0, confidence: "ok" },
+    sample: { days: 7, volumeSource: "geckoterminal-daily", occupancySource: "hourly-candles", candleCount: 100, unplacedVolumePct: 0, confidence: "ok", degraded: false, issues: [] },
     referenceCapitalUsd: 100,
     presets: [preset("micro", -2, 2), preset("tight", -3, 3), preset("standard", -6, 6), preset("wide", -9, 9)],
     sources: [], published: { dayFeeApr: null, weekFeeApr: null },
@@ -42,5 +42,18 @@ export function payloadWithAprs(
           : { status: "ok" as const, aprPct: apr, inRangeVolumePct: 100, feesPerDayUsd: 1 };
       return { ...preset, tickLower, tickUpper, estimate };
     }),
+  };
+}
+
+/** A payload as the server ships it when price history was unavailable: ranges resolved, no estimates. */
+export function degradedPayloadFixture(): PoolRangeAprPayload {
+  const base = payloadFixture();
+  return {
+    ...base,
+    sample: {
+      ...base.sample, occupancySource: "current-price", volumeSource: "raydium-7d", candleCount: 0, confidence: "low",
+      degraded: true, issues: ["GeckoTerminal hourly candles: Upstream request failed (429)"],
+    },
+    presets: base.presets.map((preset) => ({ ...preset, estimate: { status: "unavailable", reason: "degraded-data" } })),
   };
 }

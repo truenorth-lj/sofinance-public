@@ -57,6 +57,17 @@ function estimateLocally(payload: PoolRangeAprPayload, selection: RangeSelection
 export function estimateForSelection(
   payload: PoolRangeAprPayload, selection: RangeSelection, quotedRange?: TickRange | null,
 ): SelectionEstimate {
+  const result = estimateUngated(payload, selection, quotedRange);
+  // A degraded payload (no price history) never yields a number, whatever the range: custom and quoted
+  // ranges are priced in the browser, so they are gated here as well as on the server.
+  return payload.sample.degraded && result.status === "ready"
+    ? { ...result, estimate: { status: "unavailable", reason: "degraded-data" } }
+    : result;
+}
+
+function estimateUngated(
+  payload: PoolRangeAprPayload, selection: RangeSelection, quotedRange?: TickRange | null,
+): SelectionEstimate {
   if (quotedRange) {
     const estimate = estimateRangeApr(toRangeAprInputs(payload), quotedRange);
     if (estimate.status === "ok") return { status: "ready", range: quotedRange, estimate };
