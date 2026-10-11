@@ -408,7 +408,7 @@ export function PositionPerformancePanel({
       {data && (
         <div className="space-y-5 text-sm" aria-live="polite">
           <h3 className="text-base font-semibold text-cream">Performance results</h3>
-          {!hasRecordedDeposits && <p role="status" className="rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-xs leading-5 text-cream/80">No deposit history was found. Current inventory is available, but returns and PnL need opening or deposit records. Recorded deposits of zero do not mean this position was opened without funds.</p>}
+          {!hasRecordedDeposits && <p role="status" className="rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-xs leading-5 text-cream/80">No deposit history was found. Current inventory is available, but trading-fee APR needs opening or deposit records.</p>}
           {te && <p className="text-xs leading-5 text-smoke">Amounts shown in {te.baseSymbol} equivalent.</p>}
           <div className="grid gap-3 sm:grid-cols-2">
             <Stat label={holdingTime.label} value={holdingTime.value} description="Time since the earliest recorded position event." />
@@ -421,16 +421,8 @@ export function PositionPerformancePanel({
                   description="Annualized trading-fee income."
                   unavailableReason={missingReturn(true)}
                   emphasize
+                  wide
                 />
-                <Stat
-                  label={`Annualized return`}
-                  value={pct(te!.metrics.annualizedReturnPct)}
-                  description="Holding-period return expressed as a yearly rate."
-                  unavailableReason={missingReturn(true)}
-                  emphasize
-                />
-                <Stat label={`Holding-period return`} value={pct(te!.metrics.holdingPeriodReturnPct)} description="Total return over the holding period." unavailableReason={missingReturn(false)} />
-                <Stat label={`Profit / loss`} value={hasRecordedDeposits ? `${tok(te!.metrics.pnl)} ${te!.baseSymbol}` : "—"} unavailableReason={missingReturn(false)} />
                 <Stat
                   label={`Fees earned`}
                   value={`${tok(te!.metrics.feesEarned)} ${te!.baseSymbol}`}
@@ -440,19 +432,10 @@ export function PositionPerformancePanel({
                   value={`${tok(te!.metrics.equity)} ${te!.baseSymbol}`}
                   description="Assets still in the position: liquidity plus uncollected trading fees."
                 />
-                <Stat
-                  label={`Total deposited`}
-                  value={`${tok(te!.metrics.deposited)} ${te!.baseSymbol}`}
-                  description="Recorded assets added at opening and subsequent deposits; withdrawals are not subtracted."
-                />
               </>
             ) : (
               <>
-                <Stat label="HPR (USD)" value={pct(data.metrics.holdingPeriodReturnPct)} unavailableReason={missingReturn(false)} />
-                <Stat label="Annualized return (USD)" value={pct(data.metrics.annualizedReturnPct)} unavailableReason={missingReturn(true)} />
-                <Stat label="Fee-only APR (USD)" value={pct(data.metrics.feeOnlyAprPct)} unavailableReason={missingReturn(true)} emphasize />
-                <Stat label="PnL (USD)" value={hasRecordedDeposits ? money(data.metrics.pnlUsd) : "—"} unavailableReason={missingReturn(false)} />
-                <Stat label="Deposited (USD)" value={money(data.metrics.depositedUsd)} />
+                <Stat label="Fee-only APR (USD)" value={pct(data.metrics.feeOnlyAprPct)} unavailableReason={missingReturn(true)} emphasize wide />
                 <Stat label="Current equity (USD)" value={money(data.metrics.currentEquityUsd)} />
                 <Stat label="Fees earned (USD)" value={money(data.metrics.feesEarnedUsd)} />
               </>
@@ -470,13 +453,10 @@ export function PositionPerformancePanel({
 
             {tn && <p className="mt-3">Per-token trading-fee APR: {symA} {pct(tn.perSideFeeAprPct.a)} · {symB} {pct(tn.perSideFeeAprPct.b)}</p>}
             <div className="mt-3 space-y-2 leading-5">
-              <p><strong className="text-cream/80">PnL:</strong> current equity + withdrawn principal + collected fees − total deposits. Transaction costs are not deducted.</p>
-              <p><strong className="text-cream/80">HPR:</strong> PnL ÷ total deposits × 100%.</p>
-              <p><strong className="text-cream/80">Annualized return:</strong> HPR × 365 ÷ holding days.</p>
               <p><strong className="text-cream/80">Fee-only APR:</strong> (collected + uncollected trading fees) ÷ total deposits × 365 ÷ holding days × 100%.</p>
               <p>Annualization uses the exact elapsed time, including fractions of a day. Additional deposits are not time-weighted. TE uses the current pool exchange rate; USD uses current prices, rather than prices at each transaction.</p>
-              <p>A dash means required data is unavailable. A known zero return is shown as 0.00%.</p>
-              {data.truncated && <p>Earlier transactions may be missing, so recorded deposits, events and returns may be incomplete.</p>}
+              <p>A dash means required data is unavailable. A known zero APR is shown as 0.00%.</p>
+              {data.truncated && <p>Earlier transactions may be missing, so recorded deposits, events and fee APR may be incomplete.</p>}
             </div>
           </details>
 
@@ -487,18 +467,18 @@ export function PositionPerformancePanel({
               </div>
               <div className="mt-2 grid gap-2 sm:grid-cols-2 text-xs text-cream/90">
                 <div>
-                  <div className="text-smoke">{symA} · Total deposited → Current holdings</div>
+                  <div className="text-smoke">{symA} · Current holdings</div>
                   <div className="font-semibold text-cream">
-                    {hasRecordedDeposits ? tok(tn.amounts.deposited.a) : "—"} → {tok(tn.amounts.currentEquity.a)}
+                    {tok(tn.amounts.currentEquity.a)}
                   </div>
                   <div className="text-smoke">
                     Total fees earned {tok(tn.amounts.feesEarned.a)}
                   </div>
                 </div>
                 <div>
-                  <div className="text-smoke">{symB} · Total deposited → Current holdings</div>
+                  <div className="text-smoke">{symB} · Current holdings</div>
                   <div className="font-semibold text-cream">
-                    {hasRecordedDeposits ? tok(tn.amounts.deposited.b) : "—"} → {tok(tn.amounts.currentEquity.b)}
+                    {tok(tn.amounts.currentEquity.b)}
                   </div>
                   <div className="text-smoke">
                     Total fees earned {tok(tn.amounts.feesEarned.b)}
@@ -519,11 +499,7 @@ export function PositionPerformancePanel({
             <details className="rounded-2xl border border-white/10 bg-white/[0.03] p-3 text-xs text-cream/80">
               <summary className="cursor-pointer text-smoke">USD (secondary · current prices)</summary>
               <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                <Stat label="HPR (USD)" value={pct(data.metrics.holdingPeriodReturnPct)} description="USD metrics require prices for both assets." />
-                <Stat label="Annualized (USD)" value={pct(data.metrics.annualizedReturnPct)} description="USD metrics require prices for both assets and a known holding time." />
-                <Stat label="Fee-only APR (USD)" value={pct(data.metrics.feeOnlyAprPct)} />
-                <Stat label="PnL (USD)" value={hasRecordedDeposits ? money(data.metrics.pnlUsd) : "—"} />
-                <Stat label="Deposited (USD)" value={money(data.metrics.depositedUsd)} />
+                <Stat label="Fee-only APR (USD)" value={pct(data.metrics.feeOnlyAprPct)} description="USD metrics require prices for both assets and a known holding time." wide />
                 <Stat label="Equity (USD)" value={money(data.metrics.currentEquityUsd)} />
                 <Stat label="Fees (USD)" value={money(data.metrics.feesEarnedUsd)} />
               </div>
@@ -562,7 +538,6 @@ export function PositionPerformancePanel({
               <div className="font-medium text-cream/80">History truncated at signature cap — earlier txs may be missing.</div>
             )}
             <div className="mt-2 text-smoke">{data.pricing.label}</div>
-            <div className="mt-1 text-smoke/70">{data.assumptions}</div>
             {usedSolami(data.historyFetch?.provider) && (
               <p className="mt-3 text-[10px] uppercase tracking-wide text-smoke/70">
                 Powered by{" "}
@@ -668,16 +643,18 @@ function InventoryBar({
   );
 }
 
-function Stat({ label, value, emphasize, description, unavailableReason }: {
+function Stat({ label, value, emphasize, wide, description, unavailableReason }: {
   label: string;
   value: string;
   emphasize?: boolean;
+  /** Span both columns of the two-column grid so an odd card count leaves no hole. */
+  wide?: boolean;
   description?: string;
   unavailableReason?: string;
 }) {
   return (
     <div
-      className={`rounded-2xl border px-3 py-2 ${
+      className={`rounded-2xl border px-3 py-2 ${wide ? "sm:col-span-2" : ""} ${
         emphasize ? "border-white/20 bg-white/[0.07]" : "border-white/10 bg-white/[0.03]"
       }`}
     >
