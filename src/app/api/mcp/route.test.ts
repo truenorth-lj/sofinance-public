@@ -110,6 +110,16 @@ describe("tools/list wire contract", () => {
 
 // -------------------------------------------------------------------- JSON-RPC envelope + auth
 describe("JSON-RPC envelope", () => {
+  it.each([false, true])("accepts the initialized notification with an empty 202 response (authenticated: %s)", async (authenticated) => {
+    const response = await POST(rpc(
+      { jsonrpc: "2.0", method: "notifications/initialized" },
+      authenticated ? bearer(goodToken()) : {},
+    ));
+    expect(response.status).toBe(202);
+    expect(await response.text()).toBe("");
+    expect(toolFns.listPositions).not.toHaveBeenCalled();
+  });
+
   it("initialize and ping are public", async () => {
     const init = await send({ jsonrpc: "2.0", id: 1, method: "initialize" });
     expect(init.json.result).toMatchObject({ protocolVersion: "2024-11-05", capabilities: { tools: {} }, serverInfo: { name: "sofinance-mcp-server", version: "0.1.0" } });
