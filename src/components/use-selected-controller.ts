@@ -406,5 +406,5 @@ export function useSelectedController() {
     attemptStatus, obsoletePending, error: error || quoteError, quoteError, busy, calculating, now, floorBps, quote, fresh, status,
     actionLabel, actionDisabled, walletBlocked, primaryAction, changeAmount, changeTolerance, fillMax,
     choosePosition, chooseAsset, refreshDiscovery, refreshState, retryCalculation, retryReconcile, retryObsoleteReconcile, clearObsoleteRecords,
-    clearInvalidAttempt };
+    clearInvalidAttempt, loadingDiscovery, loadingState, stateError };
 }

@@ -17,6 +17,19 @@ export function formatAmount(raw: bigint | string, decimals: number, digits = 6)
   return `${amount / scale}${fraction ? `.${fraction}` : ""}`;
 }
 
+/**
+ * Display form of an atomic amount for read-only UI rows: `formatAmount` for valid integers, "—" for anything that is not
+ * an atomic integer (never throws, never prints NaN or exponent notation), and "<0.000001" instead of a misleading "0"
+ * for a non-zero amount below the displayed precision.
+ */
+export function formatAmountDisplay(raw: bigint | string | null | undefined, decimals: number, digits = 6): string {
+  if (raw === null || raw === undefined) return "—";
+  if (typeof raw === "string" && !/^\d+$/.test(raw)) return "—";
+  const amount = BigInt(raw);
+  const text = formatAmount(amount, decimals, digits);
+  return amount > 0n && text === "0" ? `<0.${"0".repeat(Math.max(digits - 1, 0))}1` : text;
+}
+
 export function meetsResaleFloor(spend: bigint, resale: bigint, floorBps: number): boolean {
   return spend > 0n && resale * 10_000n >= spend * BigInt(floorBps);
 }
