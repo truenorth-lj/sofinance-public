@@ -5,7 +5,7 @@
  * Full end-to-end testing requires a live Solana RPC connection and real on-chain data.
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // Mock server-only module
 vi.mock("server-only", () => ({}));
@@ -89,6 +89,9 @@ import {
   getPositionRangeStatus,
 } from "./tools";
 import { discoverWallet } from "../lib/wallet-discovery";
+import { issueSelectedPermit } from "../lib/selected-permit";
+import { issueCompoundPermit } from "../lib/compound-permit";
+import { issueOpenPositionPermit } from "../lib/open-permit";
 import { getSelectedQuoteBundle } from "../lib/selected-quote";
 import { buildAndSimulateSelectedZap } from "../lib/selected-atomic";
 import { buildAndSimulateCompound } from "../lib/compound-atomic";
@@ -101,6 +104,11 @@ import { readPositionRangeFacts } from "../lib/position-range-onchain";
 describe("MCP Tools", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // The permit secret is read through lib/config/server-env: pin it so the tests prove it reaches the issuers.
+    vi.stubEnv("JUPITER_API_KEY", "tools-secret");
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
   describe("listPositions", () => {
@@ -346,6 +354,7 @@ describe("MCP Tools", () => {
 
       expect(result.unsignedTransaction).toBeDefined();
       expect(result.permit).toBe("mock-permit");
+      expect(vi.mocked(issueSelectedPermit).mock.calls[0]?.[0]).toBe("tools-secret");
       expect(result.summary.simulated).toBe(true);
       expect(result.instructions).toBeDefined();
       // submitArgs must carry every permit-bound field submit_signed_transaction needs
@@ -458,6 +467,7 @@ describe("MCP Tools", () => {
 
       expect(result.unsignedTransaction).toBeDefined();
       expect(result.permit).toBe("mock-compound-permit");
+      expect(vi.mocked(issueCompoundPermit).mock.calls[0]?.[0]).toBe("tools-secret");
       expect(result.summary.operation).toBe("compound");
       // The permit covers the complete summary, so it must be returned unchanged
       expect(result.summary).toEqual(mockSummary);
@@ -558,7 +568,6 @@ describe("MCP Tools", () => {
 
   describe("prepareOpenPosition", () => {
     it("returns signUrl, permit, and summary for the new tx kind", async () => {
-      process.env.JUPITER_API_KEY = "test-secret";
       const mockSummary = {
         operation: "open-position",
         simulated: true,
@@ -602,6 +611,7 @@ describe("MCP Tools", () => {
       );
 
       expect(result.permit).toBe("mock-open-permit");
+      expect(vi.mocked(issueOpenPositionPermit).mock.calls[0]?.[0]).toBe("tools-secret");
       expect(result.signUrl).toContain("/app/sign/");
       expect(result.summary).toEqual(mockSummary);
       expect(result.unsignedTransaction).toBeDefined();

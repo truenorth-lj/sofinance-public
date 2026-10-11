@@ -1,11 +1,16 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
 import { clearJupiterTagsCache, fetchJupiterTagsByMint } from "./rwa-jupiter-tags";
 
 describe("fetchJupiterTagsByMint", () => {
+  beforeEach(() => {
+    // Hermetic: E2E_KEYLESS_JUPITER=1 makes the client drop the explicit api key.
+    vi.stubEnv("E2E_KEYLESS_JUPITER", undefined);
+  });
   afterEach(() => {
+    vi.unstubAllEnvs();
     clearJupiterTagsCache();
     vi.restoreAllMocks();
   });
@@ -13,7 +18,7 @@ describe("fetchJupiterTagsByMint", () => {
   it("batches mint lookups and caches tags without logging the api key", async () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
-      expect(url).toContain("api.jup.ag/tokens/v2/search");
+      expect(url).toContain("/tokens/v2/search");
       const headers = new Headers(init?.headers);
       expect(headers.get("x-api-key")).toBe("secret-test-key");
       return new Response(

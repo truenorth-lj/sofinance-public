@@ -9,6 +9,7 @@
     "lint": "eslint --max-warnings=0",
     "typecheck": "tsc --noEmit --incremental false",
     "test": "vitest run",
+    "test:env-matrix": "bash scripts/test-env-matrix.sh",
     "brand:assets": "node scripts/generate-brand-assets.mjs",
     "mcp:start": "tsx src/mcp/server.ts",
     "mcp:dev": "tsx watch src/mcp/server.ts"

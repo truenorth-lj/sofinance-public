@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { APP_ROUTES, SIGN_PATH, buildOpenPositionUrl, buildSignPath, buildSignUrl, getPublicBaseUrl } from "./public-urls";
+import { APP_ROUTES, SIGN_PATH, buildOpenPositionUrl, buildPlanPath, buildSignPath, buildSignUrl, getPublicBaseUrl } from "./public-urls";
 
 describe("public app URLs", () => {
   const originalAppUrl = process.env.NEXT_PUBLIC_APP_URL;
@@ -14,6 +14,7 @@ describe("public app URLs", () => {
 
   it("keeps product pages under /app", () => {
     expect(APP_ROUTES.home).toBe("/app");
+    expect(APP_ROUTES.plan).toBe("/app/plan");
     expect(APP_ROUTES.rwaPairs).toBe("/app/rwa-pairs");
     expect(APP_ROUTES.positionPerformance).toBe("/app/position-performance");
     expect(APP_ROUTES.ai).toBe("/app/ai");
@@ -43,5 +44,14 @@ describe("public app URLs", () => {
     expect(buildOpenPositionUrl("Pool1111111111111111111111111111111111111")).toBe(
       "/app/rwa-pairs?pool=Pool1111111111111111111111111111111111111&open=1",
     );
+  });
+
+  it("builds a plan deep link with the pool id and optional pair label", () => {
+    expect(buildPlanPath({ poolId: "Pool1111111111111111111111111111111111111" })).toBe(
+      "/app/plan?pool=Pool1111111111111111111111111111111111111",
+    );
+    expect(
+      buildPlanPath({ poolId: "Pool1111111111111111111111111111111111111", pair: "SPCXx/SPCX" }),
+    ).toBe("/app/plan?pool=Pool1111111111111111111111111111111111111&pair=SPCXx%2FSPCX");
   });
 });

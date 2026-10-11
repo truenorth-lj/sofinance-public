@@ -1,91 +1,112 @@
 "use client";
 
-import { useDeferredValue, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import Decimal from "decimal.js";
-import { evaluateIntent, paceToTarget, parseDays, parseUsdc, type Intent, type IntentGoal } from "@/lib/lp-intent";
+import { usePathname, useSearchParams } from "next/navigation";
+import {
+  applyPlanChange,
+  parsePlanSetup,
+  type PlanSetup,
+} from "@/lib/lp-plan-intent";
+import { parsePairLabel, parseSolanaAddress, resolvePlanSelection } from "@/lib/lp-plan-selection";
+import { buildPlanComparison, planEntryCost } from "@/lib/lp-plan-yield";
 import { APP_ROUTES } from "@/lib/public-urls";
 import { InkNav } from "@/components/ink";
 import { useWalletConnection } from "@/components/wallet-connection";
+import { ComparisonChart } from "./comparison-chart";
 import { IntentSentence, type IntentField } from "./intent-sentence";
-import { RealityCheck, ScenarioCards } from "./outlook";
+import { OutcomePanel } from "./outcome-panel";
+import { PoolSelect } from "./pool-select";
+import { usePoolYield } from "./use-pool-yield";
+import { useRwaPairs } from "./use-rwa-pairs";
 
-const DEFAULT_INTENT: Intent = {
-  days: 30,
-  amount: "1000",
-  goal: "net-by-date",
-  target: "30",
-  lossAlert: "50",
-  exitAsset: "usdc",
-};
-
-const ADDRESS = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
-const FIELDS: readonly IntentField[] = ["days", "amount", "goal", "target", "lossAlert", "exitAsset"];
-const GOALS: readonly IntentGoal[] = ["net-by-date", "take-profit", "beat-holding"];
+const FIELDS: readonly IntentField[] = ["amount", "days", "lossAlert", "exitAsset"];
+const DEFAULT_FIELD: IntentField = "amount";
 const shortId = (value: string) => `${value.slice(0, 4)}…${value.slice(-4)}`;
 
-function shareOfAmount(amount: string, pct: number): string {
-  const share = new Decimal(amount).mul(pct).div(100).toDecimalPlaces(2);
-  return share.isZero() ? amount : share.toFixed();
+/** `?edit=` picks the open editor. Retired values from the goal-first layout fall back to the default. */
+function fieldFromParam(raw: string | null): IntentField {
+  return FIELDS.find((field) => field === raw) ?? DEFAULT_FIELD;
 }
 
-// Other pages can link in with a plan already filled out, e.g. ?amount=2000&days=60.
-// Anything missing or malformed falls back to the default for that field.
-function intentFromParams(params: URLSearchParams): Intent {
-  const amount = parseUsdc(params.get("amount") ?? "") ?? DEFAULT_INTENT.amount;
-  const goal = params.get("goal") as IntentGoal | null;
-  return {
-    days: parseDays(params.get("days") ?? "") ?? DEFAULT_INTENT.days,
-    amount,
-    goal: goal && GOALS.includes(goal) ? goal : DEFAULT_INTENT.goal,
-    target: parseUsdc(params.get("target") ?? "") ?? shareOfAmount(amount, 3),
-    lossAlert: parseUsdc(params.get("alert") ?? "", amount) ?? shareOfAmount(amount, 5),
-    exitAsset: params.get("exit") === "tokens" ? "tokens" : "usdc",
-  };
+function syncPlanUrl(path: string, selection: { poolId?: string; pair?: string }) {
+  if (typeof window === "undefined") return;
+  const next = new URLSearchParams(window.location.search);
+  if (selection.poolId) next.set("pool", selection.poolId);
+  else next.delete("pool");
+  if (selection.pair) next.set("pair", selection.pair);
+  else next.delete("pair");
+  const qs = next.toString();
+  window.history.replaceState(null, "", qs ? `${path}?${qs}` : path);
 }
 
 export function PlanApp() {
   const params = useSearchParams();
+  const pathname = usePathname();
   const wallet = useWalletConnection();
-  const position = params.get("position");
-  const positionId = position && ADDRESS.test(position) ? position : undefined;
-  const pair = params.get("pair")?.slice(0, 24);
-  const edit = params.get("edit") as IntentField | null;
-
-  const [intent, setIntent] = useState(() => intentFromParams(params));
-  const [active, setActive] = useState<IntentField>(edit && FIELDS.includes(edit) ? edit : "target");
-  const [sample, setSample] = useState(params.get("sample") === "1");
+  const positionId = parseSolanaAddress(params.get("position"));
+  const urlPool = parseSolanaAddress(params.get("pool"));
+  const urlPair = parsePairLabel(params.get("pair"));
+  const pairs = useRwaPairs();
+  const pairRows = pairs.status === "ready" ? pairs.rows : [];
+  const fromUrl = resolvePlanSelection({
+    poolId: urlPool,
+    pair: urlPair,
+    pairs: pairRows,
+  });
+  const [chosen, setChosen] = useState<{ poolId?: string; pair?: string } | null>(null);
+  const selection = chosen ?? fromUrl;
+  const [setup, setSetup] = useState(() => parsePlanSetup(params));
+  const [active, setActive] = useState<IntentField>(() => fieldFromParam(params.get("edit")));
   const [now] = useState(() => Date.now());
+  const poolId = selection.poolId;
+  const pair = selection.pair;
+  const poolYield = usePoolYield(poolId);
+  const best = poolYield.status === "ready" ? poolYield.best : null;
 
-  const change = (patch: Partial<Intent>) =>
-    setIntent((current) => {
-      const next = { ...current, ...patch };
-      // The alert can never sit below losing everything that was put in.
-      return new Decimal(next.lossAlert).gt(next.amount) ? { ...next, lossAlert: next.amount } : next;
+  useEffect(() => {
+    if (!poolId) return;
+    syncPlanUrl(pathname, { poolId, pair });
+  }, [pathname, poolId, pair]);
+
+  const change = (patch: Partial<PlanSetup>) => setSetup((current) => applyPlanChange(current, patch));
+
+  const comparison = useMemo(() => {
+    if (!best) return null;
+    return buildPlanComparison({
+      capital: setup.amount,
+      days: setup.days,
+      aprPct: best.aprPct,
+      sampleDays: best.sampleDays,
+      aprWindowDays: best.windowDays,
+      entryCost: planEntryCost(setup.amount),
     });
+  }, [setup.amount, setup.days, best]);
 
-  // Dragging a ruler stays smooth; the sample engine catches up a frame later.
-  const settled = useDeferredValue(intent);
-  const outlook = useMemo(
-    () => (sample ? evaluateIntent(settled, now, positionId) : null),
-    [sample, settled, now, positionId],
-  );
-  const { amount, target, goal } = settled;
-  const pace = useMemo(
-    () => (sample ? paceToTarget({ ...DEFAULT_INTENT, amount, target, goal }, now, positionId) : null),
-    [sample, amount, target, goal, now, positionId],
-  );
+  const resolvingPair = Boolean(!poolId && pair && pairs.status === "loading");
+  const status = resolvingPair ? "loading" : poolYield.status === "idle" ? "idle" : poolYield.status;
+  const reason =
+    poolYield.status === "unavailable"
+      ? poolYield.reason
+      : !poolId && pair && pairs.status !== "loading"
+        ? "This link names a pair but has no pool id, so there is no yield series to average."
+        : undefined;
+
+  const choosePool = (nextId: string) => {
+    const resolved = resolvePlanSelection({ poolId: nextId, pairs: pairRows });
+    setChosen(resolved);
+    syncPlanUrl(pathname, resolved);
+  };
 
   return (
     <div className="min-h-screen bg-canvas text-cream">
       <div className="mx-auto max-w-[1280px] px-3 pb-16 pt-3 sm:px-5 sm:pt-5">
         <InkNav wallet={wallet.address} connected={wallet.connected} onConnect={wallet.connect} onDisconnect={wallet.disconnect} />
 
-        <main className="mt-3 grid gap-3 lg:grid-cols-12">
+        <main className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-12">
           <section
             aria-labelledby="plan-heading"
-            className="animate-rise rounded-[28px] bg-cream p-6 text-ink motion-reduce:animate-none sm:p-9 lg:col-span-8"
+            className="animate-rise rounded-[28px] bg-cream p-6 text-ink motion-reduce:animate-none sm:p-9 lg:col-span-12"
           >
             <div className="mb-7 flex flex-wrap items-center justify-between gap-2">
               <h1
@@ -94,32 +115,39 @@ export function PlanApp() {
               >
                 Plan a position
               </h1>
-              <span className="font-data text-[10px] uppercase tracking-[0.14em] text-ink/60">
-                {positionId
-                  ? `Position ${shortId(positionId)}`
-                  : pair
-                    ? `Pool ${pair}`
-                    : "No pool chosen yet"}
-              </span>
+              {positionId && !poolId ? (
+                <span className="font-data text-[10px] uppercase tracking-[0.14em] text-ink/60">
+                  Position <span className="normal-case">{shortId(positionId)}</span>
+                </span>
+              ) : (
+                <PoolSelect
+                  poolId={poolId}
+                  pair={pair}
+                  options={pairRows}
+                  loading={pairs.status === "loading"}
+                  onChange={choosePool}
+                />
+              )}
             </div>
-            <IntentSentence intent={intent} now={now} active={active} onActiveChange={setActive} onChange={change} />
+            <IntentSentence setup={setup} now={now} active={active} onActiveChange={setActive} onChange={change} />
           </section>
 
-          <RealityCheck
-            intent={settled}
-            outlook={outlook}
-            pace={pace}
-            sample={sample}
-            onSampleChange={setSample}
-            onChange={change}
+          <OutcomePanel
+            setup={setup}
+            status={status}
+            reason={reason}
+            comparison={comparison}
+            best={best}
+            poolId={poolId}
           />
 
-          <ScenarioCards intent={settled} outlook={outlook} />
+          <ComparisonChart status={status} reason={reason} comparison={comparison} />
         </main>
 
         <p className="mt-5 max-w-3xl px-2 text-xs leading-relaxed text-smoke">
-          Planning is read-only and priced in USDC. Fees depend on the path prices take and on trading volume, not only
-          on where the price ends, so a real estimate needs verified pool data.{" "}
+          Planning is read-only and priced in USDC. The projection uses the best of this pool’s 7, 30 and 90-day
+          average complete-UTC-day yields with daily auto-compounding. That is the optimistic end of recent
+          history, not a forecast.{" "}
           <Link href={APP_ROUTES.positionPerformance} className="text-cream/80 underline underline-offset-2 hover:text-cream">
             See what is verified for an existing position
           </Link>

@@ -34,6 +34,7 @@ type Ledger = {
 type Exit = {
   status: string;
   error?: string;
+  errorCode?: string;
   reason?: string;
   recoveryUSDCAtomic?: string;
   recoverySOLLamports?: string;
@@ -44,7 +45,16 @@ type Exit = {
   bytes?: number;
   executable?: boolean;
   sent?: boolean;
+  received?: { mint: string; amountAtomic: string }[];
 };
+
+function oversizedExit(exit: Exit): boolean {
+  return /exceeds 1232 bytes/i.test(exit.reason ?? exit.error ?? "");
+}
+
+function jupiterQuoteError(message: string, code?: string): boolean {
+  return code === "jupiter_unavailable" || /jupiter swap quotes are temporarily unavailable/i.test(message);
+}
 
 const number = (value: string) => new Decimal(value).toFixed(4);
 const eyebrow = "font-data text-[10px] uppercase tracking-[0.14em] text-smoke";
@@ -126,7 +136,12 @@ export function LpPositionEvidence({ positionId, className = "" }: { positionId:
         const response = await fetch(url, { signal: job.signal });
         const body = await response.json();
         if (!job.current()) return;
-        if (!response.ok) throw new Error(body.error ?? "Public source is unavailable right now");
+        if (!response.ok) {
+          const message = typeof body.error === "string" && body.error ? body.error : "Public source is unavailable right now";
+          const failure = new Error(message);
+          if (typeof body.errorCode === "string") failure.name = body.errorCode;
+          throw failure;
+        }
         if (kind === "exit") {
           if (body.sent !== false || body.executable !== false) throw new Error("Read-only exit contract mismatch");
           if (
@@ -214,6 +229,7 @@ export function LpPositionEvidence({ positionId, className = "" }: { positionId:
 
       {error && (
         <p role="alert" className="mt-5 rounded-2xl border border-lemon/25 bg-lemon/10 px-4 py-3 text-sm text-lemon">
+          {jupiterQuoteError(error) ? <span className="block font-semibold">Jupiter quotes unavailable</span> : null}
           {error}
         </p>
       )}
@@ -282,12 +298,14 @@ export function LpPositionEvidence({ positionId, className = "" }: { positionId:
           {exit && (
             <div aria-label="Split-asset exit result">
               <p className={eyebrow}>Exit preview</p>
-              <p className={`mt-2 text-sm font-medium ${expired ? "text-lemon" : "text-cream"}`}>
+              <p className={`mt-2 text-sm font-medium ${expired || oversizedExit(exit) ? "text-lemon" : "text-cream"}`}>
                 {expired
                   ? "Exit preview expired. Read it again."
-                  : exit.status === "verified-preview"
-                    ? "USDC + SOL exit simulation verified"
-                    : "Exit data incomplete or partial"}
+                  : oversizedExit(exit)
+                    ? `This exit cannot fit in one Solana transaction (${exit.bytes ?? "unknown"} bytes; limit 1232). Withdraw-to-wallet USDC and SOL legs still work as separate vectors.`
+                    : exit.status === "verified-preview"
+                      ? "USDC + SOL exit simulation verified"
+                      : "Exit data incomplete or partial"}
               </p>
               {exit.recoveryUSDCAtomic && exit.recoverySOLLamports && (
                 <>

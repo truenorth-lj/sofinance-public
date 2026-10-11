@@ -96,7 +96,7 @@ async function main() {
   fs.writeFileSync(path.join(appDir, "favicon.ico"), ico);
   fs.writeFileSync(path.join(publicDir, "favicon.ico"), ico);
 
-  console.log("Generated C3 brand assets (white mark on #0a0a0a).");
+  console.log("Generated brand assets (white mark on #0a0a0a).");
 }
 
 main().catch((error) => {

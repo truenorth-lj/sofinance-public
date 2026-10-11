@@ -1,0 +1,210 @@
+import Decimal from "decimal.js";
+import { describe, expect, it } from "vitest";
+import {
+  aprToApyPct,
+  averageCompleteDayAprPct,
+  breakEvenDay,
+  buildPlanComparison,
+  compoundedProfit,
+  dailyRateFromAprPct,
+  isThinPlanSample,
+  planEntryCost,
+  PLAN_MIN_RELIABLE_SAMPLE_DAYS,
+  PLAN_OPEN_COST_BPS,
+  planOpenCostPctLabel,
+  PLAN_YIELD_DAYS_PER_YEAR,
+} from "./lp-plan-yield";
+
+const D = Decimal.clone({ precision: 60 });
+
+describe("averageCompleteDayAprPct", () => {
+  it("averages only finite complete-day points and skips gaps", () => {
+    expect(
+      averageCompleteDayAprPct([
+        { aprPct: 10 },
+        { aprPct: null },
+        { aprPct: 20 },
+        { aprPct: Number.NaN },
+        { aprPct: Number.POSITIVE_INFINITY },
+      ]),
+    ).toBe("15");
+  });
+
+  it("returns null when every day is a gap", () => {
+    expect(averageCompleteDayAprPct([])).toBeNull();
+    expect(averageCompleteDayAprPct([{ aprPct: null }, { aprPct: Number.NaN }])).toBeNull();
+  });
+});
+
+describe("daily compounding", () => {
+  it("turns a 36.5% APR into a 0.1% daily rate", () => {
+    expect(dailyRateFromAprPct("36.5").toFixed()).toBe("0.001");
+    expect(PLAN_YIELD_DAYS_PER_YEAR).toBe(365);
+  });
+
+  it("compounds once on a 1-day horizon", () => {
+    const rate = dailyRateFromAprPct("36.5");
+    expect(compoundedProfit("1000", rate, 0).toFixed()).toBe("0");
+    expect(compoundedProfit("1000", rate, 1).toFixed()).toBe("1");
+  });
+
+  it("matches (1+r)^n − 1 on a 365-day horizon", () => {
+    const rate = dailyRateFromAprPct("36.5");
+    const expected = new D(1000).mul(rate.add(1).pow(365)).sub(1000);
+    expect(compoundedProfit("1000", rate, 365).toFixed()).toBe(expected.toFixed());
+  });
+
+  it("stays flat when the average yield is zero", () => {
+    const rate = dailyRateFromAprPct("0");
+    expect(compoundedProfit("1000", rate, 1).toFixed()).toBe("0");
+    expect(compoundedProfit("1000", rate, 365).toFixed()).toBe("0");
+  });
+
+  it("subtracts a day-0 entry cost without compounding it", () => {
+    const rate = dailyRateFromAprPct("36.5");
+    expect(compoundedProfit("1000", rate, 0, "2").toFixed()).toBe("-2");
+    expect(compoundedProfit("1000", rate, 1, "2").toFixed()).toBe("-1");
+  });
+});
+
+describe("breakEvenDay", () => {
+  it("is day 0 when there is no entry cost and the rate is not negative", () => {
+    expect(breakEvenDay("1000", dailyRateFromAprPct("10"))).toBe(0);
+    expect(breakEvenDay("1000", dailyRateFromAprPct("0"))).toBe(0);
+  });
+
+  it("returns null when yield is zero and an entry cost remains", () => {
+    expect(breakEvenDay("1000", dailyRateFromAprPct("0"), "2")).toBeNull();
+  });
+
+  it("finds the first day a positive rate covers the entry cost", () => {
+    const rate = dailyRateFromAprPct("36.5");
+    expect(breakEvenDay("1000", rate, "2")).toBe(2);
+    expect(compoundedProfit("1000", rate, 1, "2").lt(0)).toBe(true);
+    expect(compoundedProfit("1000", rate, 2, "2").gte(0)).toBe(true);
+  });
+
+  it("returns null when a negative rate never recovers", () => {
+    expect(breakEvenDay("1000", dailyRateFromAprPct("-10"), "1")).toBeNull();
+    expect(breakEvenDay("1000", dailyRateFromAprPct("-10"))).toBeNull();
+  });
+});
+
+describe("aprToApyPct", () => {
+  it("compounds the APR daily over 365 days", () => {
+    expect(aprToApyPct("0")).toBe("0");
+    const apy = Number(aprToApyPct("36.5"));
+    expect(apy).toBeCloseTo((Math.pow(1 + 0.365 / 365, 365) - 1) * 100, 8);
+    expect(apy).toBeGreaterThan(36.5);
+    expect(Number(aprToApyPct("19.21"))).toBeCloseTo(21.18, 1);
+  });
+});
+
+describe("isThinPlanSample", () => {
+  it("treats fewer than 7 complete days as too little history", () => {
+    expect(PLAN_MIN_RELIABLE_SAMPLE_DAYS).toBe(7);
+    expect(isThinPlanSample(3)).toBe(true);
+    expect(isThinPlanSample(6)).toBe(true);
+    expect(isThinPlanSample(7)).toBe(false);
+    expect(isThinPlanSample(29)).toBe(false);
+  });
+});
+
+describe("planEntryCost", () => {
+  it("is about 1% (100 bps) of the deposit", () => {
+    expect(PLAN_OPEN_COST_BPS).toBe(100);
+    expect(planOpenCostPctLabel()).toBe("1");
+    expect(planEntryCost("1000")).toBe("10");
+    expect(planEntryCost("10000")).toBe("100");
+    expect(planEntryCost("1")).toBe("0.01");
+  });
+
+  it("accepts an explicit cost and rejects invalid input", () => {
+    expect(planEntryCost("1000", 0)).toBe("0");
+    expect(planEntryCost("1000", 250)).toBe("25");
+    expect(() => planEntryCost("1000", 1.5)).toThrow(/costBps/);
+    expect(() => planEntryCost("1000", -1)).toThrow(/costBps/);
+    expect(() => planEntryCost("0")).toThrow(/capital/);
+  });
+});
+
+describe("buildPlanComparison", () => {
+  it("builds a best-case series against a flat hold line", () => {
+    const plan = buildPlanComparison({
+      capital: "1000",
+      days: 2,
+      aprPct: "36.5",
+      sampleDays: 29,
+      aprWindowDays: 30,
+    });
+    expect(plan.points).toEqual([
+      { day: 0, sofinance: "0", hold: "0" },
+      { day: 1, sofinance: "1", hold: "0" },
+      { day: 2, sofinance: "2.001", hold: "0" },
+    ]);
+    expect(plan.endSofinance).toBe("2.001");
+    expect(plan.endHold).toBe("0");
+    expect(plan.vsHold).toBe("2.001");
+    expect(plan.exitValue).toBe("1002.001");
+    expect(plan.breakEvenDay).toBe(0);
+    expect(plan.endGainPct).toBe("0.2001");
+    expect(plan.sampleDays).toBe(29);
+    expect(plan.aprWindowDays).toBe(30);
+    expect(plan.aprPct).toBe("36.5");
+    expect(Number(plan.apyPct)).toBeGreaterThan(36.5);
+  });
+
+  it("keeps hold at zero on a 1-day plan", () => {
+    const plan = buildPlanComparison({
+      capital: "1000",
+      days: 1,
+      aprPct: "36.5",
+      sampleDays: 1,
+      aprWindowDays: 7,
+    });
+    expect(plan.points).toHaveLength(2);
+    expect(plan.points.every((point) => point.hold === "0")).toBe(true);
+    expect(plan.endSofinance).toBe("1");
+  });
+
+  it("does not invent yield when the average is zero over a long horizon", () => {
+    const plan = buildPlanComparison({
+      capital: "5000",
+      days: 365,
+      aprPct: "0",
+      sampleDays: 30,
+      aprWindowDays: 30,
+      entryCost: "0",
+    });
+    expect(plan.points).toHaveLength(366);
+    expect(plan.points.every((point) => point.sofinance === "0" && point.hold === "0")).toBe(true);
+    expect(plan.vsHold).toBe("0");
+    expect(plan.exitValue).toBe("5000");
+    expect(plan.endGainPct).toBe("0");
+  });
+
+  it("starts slightly negative after the ~1% open cost and breaks even on the first covering day", () => {
+    const entryCost = planEntryCost("1000");
+    const plan = buildPlanComparison({
+      capital: "1000",
+      days: 12,
+      aprPct: "36.5",
+      sampleDays: 29,
+      aprWindowDays: 30,
+      entryCost,
+    });
+    expect(entryCost).toBe("10");
+    expect(plan.points[0]).toEqual({ day: 0, sofinance: "-10", hold: "0" });
+    expect(Number(plan.points[1]!.sofinance)).toBeLessThan(0);
+    expect(Number(plan.points[9]!.sofinance)).toBeLessThan(0);
+    expect(Number(plan.points[10]!.sofinance)).toBeGreaterThan(0);
+    expect(plan.breakEvenDay).toBe(10);
+    expect(plan.exitValue).toBe(new D(1000).add(plan.endSofinance).toFixed());
+  });
+
+  it("rejects a missing or invalid APR window", () => {
+    const base = { capital: "1000", days: 5, aprPct: "10", sampleDays: 7 };
+    expect(() => buildPlanComparison({ ...base, aprWindowDays: 0 })).toThrow(/aprWindowDays/);
+    expect(() => buildPlanComparison({ ...base, aprWindowDays: 7.5 })).toThrow(/aprWindowDays/);
+  });
+});

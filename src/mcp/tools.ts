@@ -14,6 +14,7 @@ import { rpcConnection } from "../lib/rpc";
 import { lookupBeamAfterSend } from "../lib/solami-beam";
 import { sendSignedCompoundTransaction } from "../lib/compound-send";
 import { CompoundSendError, notSentRetryMessage, sanitizePublicError } from "../lib/public-error";
+import { getSigningSecret } from "../lib/config/server-env";
 import type { CompoundSummary } from "../lib/compound-types";
 import { discoverRwaPairs, getCachedRwaPairs } from "../lib/rwa-pairs";
 import { getPositionPerformance as readPositionPerformance } from "../lib/position-performance";
@@ -174,7 +175,7 @@ export async function prepareTransaction(input: PrepareTransactionInput) {
     input.slippageToleranceBps,
   );
   
-  const jupiterApiKey = process.env.JUPITER_API_KEY || "";
+  const jupiterApiKey = getSigningSecret();
   const permit = issueSelectedPermit(jupiterApiKey, {
     message: Buffer.from(transaction.message.serialize()).toString("base64"),
     wallet: input.wallet,
@@ -322,7 +323,7 @@ export async function prepareCompoundTransaction(input: QuoteCompoundInput) {
     input.sourceSignatures || [],
   );
   
-  const jupiterApiKey = process.env.JUPITER_API_KEY || "";
+  const jupiterApiKey = getSigningSecret();
   const permit = issueCompoundPermit(jupiterApiKey, {
     wallet: input.wallet,
     summary,
@@ -388,7 +389,7 @@ export async function submitSignedTransaction(input: SubmitSignedTransactionInpu
   );
   
   // Verify permit
-  const jupiterApiKey = process.env.JUPITER_API_KEY || "";
+  const jupiterApiKey = getSigningSecret();
   const permitInput = {
     message: Buffer.from(transaction.message.serialize()).toString("base64"),
     wallet: walletAddress,
@@ -498,7 +499,7 @@ export async function submitCompoundTransaction(input: SubmitCompoundTransaction
       Buffer.from(input.signedTransaction, "base64")
     );
 
-    const jupiterApiKey = process.env.JUPITER_API_KEY || "";
+    const jupiterApiKey = getSigningSecret();
     if (
       !verifyCompoundPermit(
         jupiterApiKey,
@@ -765,7 +766,7 @@ export async function prepareOpenPosition(input: PrepareOpenPositionInput) {
     input.wallet, selection, input.amount, openRangeFromInput(input),
     input.resaleFloorBps, input.slippageToleranceBps,
   );
-  const jupiterApiKey = process.env.JUPITER_API_KEY || "";
+  const jupiterApiKey = getSigningSecret();
   const permit = issueOpenPositionPermit(jupiterApiKey, {
     wallet: input.wallet,
     summary,

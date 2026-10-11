@@ -1,5 +1,6 @@
 import { verifySignToken } from "@/lib/pending-sign-token";
 import { apiError } from "@/lib/api-response";
+import { getSigningSecret } from "@/lib/config/server-env";
 
 export async function POST(request: Request) {
   try {
@@ -10,7 +11,7 @@ export async function POST(request: Request) {
       return apiError(new Error("Invalid token"), "Invalid token");
     }
     
-    const secret = process.env.JUPITER_API_KEY || "";
+    const secret = getSigningSecret();
     if (!secret) {
       return apiError(new Error("Sign token secret not configured"), "Server configuration error");
     }

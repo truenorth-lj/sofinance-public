@@ -101,7 +101,8 @@ Quote/prepare JSON includes `feeBps` / `feeAmount` / `feeWallet`. Rent estimates
 
 | Surface | When | What it does |
 |---------|------|----------------|
-| **RPC** | `SOLAMI_API_KEY` set | All server `rpcConnection()` traffic goes through `src/lib/rpc/` (Solami → `SOLANA_RPC_URL` / Helius → public). Account reads and sends stay on Solami. Methods Solami answers non-compliantly (`getEpochInfo.transactionCount=null`, `getParsedTransaction` jsonParsed unions) fall back per `METHOD_POLICIES`. Sends never retry. History listing uses Solami `getTransactionsForAddress`; empty / HTTP / parse failures use the same policy layer. |
+| **RPC** | `SOLAMI_API_KEY` set | All server RPC (`rpcConnection()` / `rpcRequest()`) goes through `src/lib/rpc/` (Solami → `SOLANA_RPC_URL` / Helius → public). Account reads and sends stay on Solami. 429 / 5xx / timeouts retry on the same provider with exponential backoff + jitter (honors `Retry-After`, bounded budget, `AbortSignal`), then fail over for ordinary reads. Simulate / blockhash / height / fee stay on the primary through 429s (public RPC is worse for those). Exit-preview uses a longer 25s per-call budget and coalesces identical position reads for 8s. Safe reads (`getAccountInfo`, `getMultipleAccounts*`, `getTokenLargestAccounts`, finalized/confirmed `getParsedTransaction`) use a small in-process TTL cache with in-flight de-dupe — never sends, simulates, or blockhash/height calls. Methods Solami answers non-compliantly (`getEpochInfo.transactionCount=null`, `getParsedTransaction` jsonParsed unions) still fall back per `METHOD_POLICIES`. Sends never fail over to another provider; same-provider retry re-posts the same signed transaction (idempotent by signature). History listing uses Solami `getTransactionsForAddress`; empty / HTTP / parse failures use the same policy layer. Set `SOFINANCE_RPC_LOG=1` for key-free JSON lines in Vercel logs. |
+| **Jupiter** | `JUPITER_API_KEY` (Portal) | All Jupiter HTTP goes through `src/lib/jupiter/` to `https://api.jup.ag` with `x-api-key` (`lite-api.jup.ag` is retired). 429 / 5xx / timeouts retry with jitter + `Retry-After` / `x-ratelimit-reset`, bounded budget, `AbortSignal`. Read-only quotes cache 8s (key: input/output mint, amount, slippage, maxAccounts) with in-flight de-dupe; POST `/swap-instructions` is not cached. Exit-preview quotes legs in parallel (cap 2) and logs the real error class/message on failure (always-on, key-free). Upstream Jupiter 429/5xx return `errorCode: "jupiter_unavailable"` — not the Solana RPC text. `SOFINANCE_JUPITER_LOG=1` or `SOFINANCE_RPC_LOG=1` logs per-call Jupiter lines. |
 | **Blur** | `SOLAMI_DATA_API_KEY` | Live pool activity. REST snapshot at `GET /api/pool-activity?poolId=` (`/data/pool` for mint + `GET /data/token/trades?chain=solana&address=<MINT>`, then client-filter by exact `pool`). SSE at `/api/pool-activity/stream` proxies Blur WS `type=swap,liquidity&pool=<POOL>` (never `address=` — that is a mint filter), forwards only parsed swap/liquidity events, and closes before Vercel `maxDuration` so the browser can reconnect. A Free key has REST but not WebSocket; [Solami](https://solami.dev) currently offers a 7-day Pro promo. Without the key the UI hides the panel. |
 | **Beam** | `SOLAMI_API_KEY` (off with `SOLAMI_BEAM=0`) | Prepare adds a ≥100,000-lamport SystemProgram tip to a live tip address **before** HMAC binding so the user signs it. If the v0 message would exceed 1,232 bytes the tip is omitted. Broadcast is the same `sendRawTransaction` through Solami RPC. After submit we poll `GET /swqos/tx/{signature}` up to ~6s and always return `beamLandingUrl` so clients can refresh. |
 
@@ -113,10 +114,12 @@ wallet / API / MCP
         ▼
  src/lib/rpc/ ── SOLAMI_API_KEY? ──► rpc.solami.dev
         │                    else ──► SOLANA_RPC_URL / public RPC
+        │         retry 429/5xx/timeout → then next provider
+        │         cache safe reads (per-instance, best effort)
         ▼
- position-performance history
+ position-performance / ledger / exit-preview / MCP
    solami: getTransactionsForAddress (signatures page) + batched getParsedTransaction
-   fallback: SOLANA_RPC_URL / public (empty window, parse errors, HTTP 4xx/5xx)
+   fallback: SOLANA_RPC_URL / public (empty window, parse errors, HTTP 5xx/429 after retry)
    default: getSignaturesForAddress + batched getParsedTransaction (8-wide)
 ```
 
@@ -277,7 +280,7 @@ Stack: Next.js 16 / React 19 / TypeScript / pnpm / Vitest; `@raydium-io/raydium-
 
 ### RPC provider layer
 
-Callers use `rpcConnection()` only. Provider selection, method policies, and fallback live in `src/lib/rpc/`. Solami product HTTP (Blur, Beam, `getTransactionsForAddress` parsers) lives in `src/lib/solami/`.
+Callers use `rpcConnection()` or `rpcRequest()` only. Provider selection, retries, cache, method policies, and fallback live in `src/lib/rpc/`. Solami product HTTP (Blur, Beam, `getTransactionsForAddress` parsers) lives in `src/lib/solami/` and is unchanged. The in-memory cache is per serverless instance; `RpcCacheStore` is the swap point for a shared store later.
 
 ```mermaid
 flowchart TD
@@ -287,10 +290,13 @@ flowchart TD
   pair --> generic[SOLANA_RPC_URL / Helius]
   pair --> pub[public mainnet]
   rpcConnection --> proxy[resilient Connection]
+  rpcRequest --> proxy
+  proxy --> retry[429 / 5xx / timeout backoff]
+  proxy --> cache[safe-read TTL + inflight]
   proxy --> policies[METHOD_POLICIES]
-  policies --> send[sends: primary only]
-  policies --> epoch[getEpochInfo / jsonParsed: fallback on validation or 5xx]
-  policies --> reads[account reads: primary; fallback on validation]
+  policies --> send[sends: same provider retry, no failover]
+  policies --> epoch[getEpochInfo / jsonParsed: fallback on validation, 5xx, 429]
+  policies --> reads[account reads: primary; fallback on validation / 5xx / 429]
   history[position-performance-history] --> solamiHist[solami/history listing]
   history --> proxy
 ```
@@ -346,7 +352,7 @@ The canonical production app URL is [sofinancelab.xyz/app](https://sofinancelab.
 
 ## Hackathon disclosure
 
-Built for the **Colosseum Crypto World's Fair** — entered in the **Solana track**, also eligible for the Public Goods Award and University Award.
+Built for the **Colosseum Crypto World's Fair** — entered in the **Solana track**; also applying for the Public Goods Award and University Award.
 
 Original private repository [`truenorth-lj/SoFinance`](https://github.com/truenorth-lj/SoFinance) first commit **2026-09-29** (`chore: scaffold USDC position zap project`, author date `2026-09-29T02:09:15Z`), within the Sep 14–Oct 12 PT hackathon window. This public repository (`truenorth-lj/sofinance-public`) was created **2026-10-06** with a fresh history so hardcoded personal wallet addresses could be removed and documentation published in English. Read access to the original private repo will be granted to `hackathon@colosseum.com` for verification.
 
