@@ -77,6 +77,15 @@ export function swapFeeQuoteFields(amount: bigint, config: SwapFeeConfig): SwapF
   };
 }
 
+export async function assertNativeSwapFeeRecipient(connection: Connection, recipient: PublicKey, fee: bigint) {
+  if (fee <= 0n) return;
+  const account = await connection.getAccountInfo(recipient, "confirmed");
+  const minimum = BigInt(await connection.getMinimumBalanceForRentExemption(account?.data.length ?? 0, "confirmed"));
+  if (BigInt(account?.lamports ?? 0) + fee < minimum) {
+    throw new Error(`Protocol fee wallet is not funded for account rent. The site operator must fund the fee wallet with at least ${Number(minimum) / 1e9} SOL; no transaction was sent`);
+  }
+}
+
 export function swapFeeRecipientAta(recipient: PublicKey, mint: PublicKey, program: PublicKey): PublicKey {
   return getAssociatedTokenAddressSync(mint, recipient, true, program);
 }

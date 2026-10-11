@@ -21,6 +21,7 @@ import { readOpenPoolState } from "./open-state";
 import { getOpenPositionQuoteBundle } from "./open-quote";
 import { simulateAndVerifyOpenTransaction } from "./open-simulation";
 import { openLookupTableReader } from "./open-transaction";
+import { fetchBeamTipAddress } from "./solami-beam";
 import { buildAndSimulateOpenPosition } from "./open-atomic";
 
 const decode = (f: typeof oldFixture) => ({
@@ -65,8 +66,10 @@ beforeEach(() => {
     signers: [Keypair.fromSeed(new Uint8Array(32).fill(8))],
   } as never));
   vi.mocked(getOpenPositionQuoteBundle).mockImplementation(async (_wallet, _selection, _amount, _range, _floor, _tolerance, _budget, _snapshot, mode) => {
-    strategy = mode!;
-    const sequential = mode === "sequential";
+    strategy = mode === "parallel" ? "parallel" : "sequential";
+    const sequential = mode !== "parallel";
+    const primaryMint = mode === "sequential-b" ? mintB : mintA;
+    const secondaryMint = mode === "sequential-b" ? mintA : mintB;
     const captured = sequential ? compact : old;
     const route = (ix: TransactionInstruction, input: string, output: string, spend: bigint, minOut: bigint, setup: TransactionInstruction[] = []) => ({
       inputMint: input, outputMint: output, spend, minOut,
@@ -79,7 +82,7 @@ beforeEach(() => {
       liquidity: "10000", amountMaxA: "10000", amountMaxB: "10000", passesFloor: true, warning: "",
       rent: { refundableLamports: "0", nonRefundableLamports: "0" } },
       legs: sequential
-        ? [route(compact.ixs[6]!, inputMint, mintA, 30000000n, 1500000n), route(compact.ixs[7]!, mintA, mintB, 1500000n, 10000n)]
+        ? [route(compact.ixs[6]!, inputMint, primaryMint, 30000000n, 1500000n), route(compact.ixs[7]!, primaryMint, secondaryMint, 1500000n, 10000n)]
         : [route(old.ixs[6]!, inputMint, mintA, 15000000n, 10000n, old.ixs.slice(4, 6)), route(old.ixs[13]!, inputMint, mintB, 15000000n, 10000n, old.ixs.slice(11, 13))],
     } as never;
   });
@@ -92,11 +95,18 @@ function apiInstruction(ix: TransactionInstruction) {
 }
 const prepare = () => buildAndSimulateOpenPosition(wallet, { poolId, inputMint, inputKind: "native" }, "0.03", { preset: "standard" }, 9900, 100);
 
-it("re-quotes oversized captured routes before simulating a fitting sequential transaction", async () => {
+function oversized(bundle: Awaited<ReturnType<typeof getOpenPositionQuoteBundle>>) {
+  for (const leg of bundle.legs) if (leg.route) {
+    leg.route.swapInstruction.data = Buffer.concat([Buffer.from(leg.route.swapInstruction.data, "base64"), Buffer.alloc(300)]).toString("base64");
+  }
+  return bundle;
+}
+
+it("prepares the compact captured sequential transaction first", async () => {
   const { summary, transaction } = await prepare();
-  expect(getOpenPositionQuoteBundle).toHaveBeenCalledTimes(5);
+  expect(getOpenPositionQuoteBundle).toHaveBeenCalledTimes(1);
   expect(vi.mocked(getOpenPositionQuoteBundle).mock.calls.map(call => [call[6], call[8]])).toEqual([
-    [48, "parallel"], [40, "parallel"], [32, "parallel"], [24, "parallel"], [32, "sequential"],
+    [{ maxAccounts: 20 }, "sequential-b"],
   ]);
   expect(readOpenPoolState).toHaveBeenCalledTimes(1);
   expect(Raydium.load).toHaveBeenCalledTimes(1);
@@ -129,4 +139,38 @@ it("does not return a prepared transaction after simulation fails", async () => 
   vi.mocked(simulateAndVerifyOpenTransaction).mockRejectedValue(new Error("Simulated input asset expenditure exceeds limit"));
   await expect(prepare()).rejects.toThrow("expenditure");
   expect(simulateAndVerifyOpenTransaction).toHaveBeenCalledTimes(1);
+});
+
+it("tries the other swap direction when the first swap + open route exceeds the packet limit", async () => {
+  const quoteBundle = vi.mocked(getOpenPositionQuoteBundle).getMockImplementation()!;
+  vi.mocked(getOpenPositionQuoteBundle).mockImplementation(async (...args) => {
+    const constraints = args[6] as { maxAccounts: number };
+    const bundle = await quoteBundle(...args);
+    return constraints.maxAccounts <= 20 && args[8] === "sequential" ? bundle : oversized(bundle);
+  });
+  const { summary } = await prepare();
+  expect(summary.sizeBytes).toBeLessThanOrEqual(1232);
+  expect(simulateAndVerifyOpenTransaction).toHaveBeenCalledTimes(1);
+});
+
+it("rejects oversized candidates before looking up optional Beam tips", async () => {
+  const quoteBundle = vi.mocked(getOpenPositionQuoteBundle).getMockImplementation()!;
+  vi.mocked(getOpenPositionQuoteBundle).mockImplementation(async (...args) => {
+    return oversized(await quoteBundle(...args));
+  });
+  await expect(prepare()).rejects.toThrow(/exceeds 1,232 byte limit/);
+  expect(fetchBeamTipAddress).not.toHaveBeenCalled();
+  expect(simulateAndVerifyOpenTransaction).not.toHaveBeenCalled();
+});
+
+it("budgets newly created pool token accounts in the simulation SOL limit", async () => {
+  const quoteBundle = vi.mocked(getOpenPositionQuoteBundle).getMockImplementation()!;
+  vi.mocked(getOpenPositionQuoteBundle).mockImplementation(async (...args) => {
+    const bundle = await quoteBundle(...args);
+    bundle.quote.rent.walletTokenAccountLamports = "4155120";
+    return bundle;
+  });
+  const { summary } = await prepare();
+  expect(summary.maxSolDebitLamports).toBe("34265120");
+  expect(summary.rentLamports).toBe(4155120);
 });

@@ -140,7 +140,9 @@ export async function fetchBeamTipAddress(
   if (!isBeamEnabled(env)) return null;
   const fetcher = options.fetcher ?? fetch;
   try {
-    const response = await fetcher(BEAM_TIP_ADDRESSES_URL, { headers: { Accept: "application/json" }, cache: "no-store" });
+    const response = await fetcher(BEAM_TIP_ADDRESSES_URL, {
+      headers: { Accept: "application/json" }, cache: "no-store", signal: AbortSignal.timeout(2_000),
+    });
     if (!response.ok) return null;
     const addresses = parseTipAddresses(await response.json());
     if (!addresses.length) return null;
