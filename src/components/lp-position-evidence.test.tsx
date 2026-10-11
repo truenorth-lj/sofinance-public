@@ -42,3 +42,44 @@ it("preserves priced partial ledger and resumes its cursor without treating wall
  const fetcher=vi.fn().mockResolvedValue(Response.json(data));vi.stubGlobal("fetch",fetcher);await act(async()=>click("Read ledger"));expect(node.textContent).toContain("-2.0000 to -1.0000");expect(node.textContent).toContain("Not a complete net result");expect(node.textContent).toContain("whole wallet not-collected (does not block position metrics)");expect(node.textContent).toContain("[0, 20000]");
  await act(async()=>click("Read ledger"));expect(fetcher.mock.calls[1]?.[0]).toContain("before=last-ok");
 });
+
+it("ends a stalled exit request and allows retry even when fetch ignores abort", async () => {
+ vi.useFakeTimers();
+ let resolveFirst!:(value:Response)=>void;
+ const fetcher=vi.fn().mockImplementationOnce(()=>new Promise<Response>(resolve=>{resolveFirst=resolve;})).mockResolvedValue(Response.json(vector()));
+ vi.stubGlobal("fetch",fetcher);
+ await act(async()=>click("Preview exit"));
+ await act(async()=>vi.advanceTimersByTime(45000));
+ expect(node.querySelector('[role="alert"]')?.textContent).toContain("Exit estimate timed out");
+ expect(node.textContent).not.toContain("Simulating exit…");
+ expect(fetcher.mock.calls[0]?.[1]?.signal.aborted).toBe(true);
+ await act(async()=>click("Preview exit"));
+ expect(node.textContent).toContain("1.000000 USDC");
+ await act(async()=>resolveFirst(Response.json({...vector(),recoveryUSDCAtomic:"999000000"})));
+ expect(node.textContent).not.toContain("999.000000 USDC");
+});
+
+it("uses the selected NFT token account for exit without rediscovering the owner", async () => {
+ const nftAccount="22222222222222222222222222222222";
+ await act(async()=>root.render(createElement(LpPositionEvidence,{positionId:nft,nftAccount})));
+ const fetcher=vi.fn().mockResolvedValue(Response.json(vector()));vi.stubGlobal("fetch",fetcher);
+ await act(async()=>click("Preview exit"));
+ expect(new URL(fetcher.mock.calls[0]?.[0],"http://localhost").searchParams.get("nftAccount")).toBe(nftAccount);
+ expect(node.textContent).toContain("1.000000 USDC");
+});
+it("automatically displays exit amounts once the selected NFT account is ready", async () => {
+ vi.useFakeTimers();
+ const fetcher=vi.fn().mockResolvedValue(Response.json(vector()));vi.stubGlobal("fetch",fetcher);
+ await act(async()=>root.render(createElement(LpPositionEvidence,{positionId:nft,autoExit:true,requireNftAccount:true,showLedger:false})));
+ await act(async()=>vi.advanceTimersByTimeAsync(1));
+ expect(fetcher).not.toHaveBeenCalled();
+ expect(node.textContent).toContain("Waiting for position accounts…");
+ await act(async()=>root.render(createElement(LpPositionEvidence,{positionId:nft,nftAccount:"22222222222222222222222222222222",autoExit:true,requireNftAccount:true,showLedger:false})));
+ await act(async()=>vi.advanceTimersByTimeAsync(1));
+ expect(fetcher).toHaveBeenCalledOnce();
+ expect(node.textContent).toContain("1.000000 USDC + 0.008580200 SOL");
+ expect(node.textContent).not.toContain("Preview exit: USDC + SOL");
+ await act(async()=>vi.advanceTimersByTimeAsync(16000));
+ expect(node.textContent).toContain("Recalculate estimate");
+ expect(fetcher).toHaveBeenCalledOnce();
+});

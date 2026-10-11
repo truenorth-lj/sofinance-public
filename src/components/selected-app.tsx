@@ -6,6 +6,7 @@ import { assetMetadata, assetSymbol, TokenPicker } from "./token-picker";
 import { formatAmount } from "@/lib/amount";
 import { NATIVE_SOL_MINT, USDC_MINT } from "@/lib/ids";
 import { PositionSelect } from "./position-select";
+import { PositionAssetRow } from "./position-asset-row";
 import { useTokenMetadata } from "./use-token-metadata";
 import { useSelectedController } from "./use-selected-controller";
 import { TransactionStatusDialog } from "./transaction-status-dialog";
@@ -59,6 +60,7 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
   const metadataMints = [
     ...(discovery?.assets.map((asset) => asset.mint) || []),
     ...(discovery?.positions.flatMap((item) => [item.mintA, item.mintB]) || []),
+    ...(state ? [state.mintA, state.mintB] : []),
   ];
   const metadata = useTokenMetadata(metadataMints);
   const [statusDialogOpen, setStatusDialogOpen] = useState(false);
@@ -100,7 +102,7 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
   const assetOptions = discovery?.assets || [];
   const poolLabel = (mint: string) => {
     const asset = assetOptions.find((item) => item.mint === mint);
-    return asset ? assetSymbol(asset, assetMetadata(asset, metadata)) : tokenLabel(mint);
+    return asset ? assetSymbol(asset, assetMetadata(asset, metadata)) : metadata[mint]?.symbol || tokenLabel(mint);
   };
   return <div className="min-h-screen bg-canvas text-cream">
     <div className="relative mx-auto max-w-[1280px] px-3 pb-32 pt-3 sm:px-5 sm:pt-5">
@@ -127,7 +129,13 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
         {connected && discovery && positionOptions.length === 0 && <a href="/app/rwa-pairs" className="mt-3 text-sm font-semibold text-cream underline underline-offset-4">Explore RWA Pairs to open a position</a>}
         {state && <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs">
           <span className={`rounded-full border px-2.5 py-1 ${state.inRange ? "border-white/40 bg-white/[0.07] text-cream/80" : "border-white/20 bg-white/[0.05] text-smoke"}`}>{state.rangeSide === "above" ? "Above range · single-sided" : state.rangeSide === "below" ? "Below range · single-sided" : "Price within range"}</span>
-          <span className="text-smoke">Position assets: {money(state.currentAmounts.a, state.decimalsA)} {poolLabel(state.mintA)}  +  {money(state.currentAmounts.b, state.decimalsB)} {poolLabel(state.mintB)}</span>
+
+        </div>}
+        {state && <div aria-label="Position assets" className="mt-5 divide-y divide-white/10">
+          <PositionAssetRow symbol={poolLabel(state.mintA)} icon={metadata[state.mintA]?.icon ?? null}
+            amount={Number(state.currentAmounts.a) / 10 ** state.decimalsA} priceUsd={state.pricing?.priceUsdA ?? null} />
+          <PositionAssetRow symbol={poolLabel(state.mintB)} icon={metadata[state.mintB]?.icon ?? null}
+            amount={Number(state.currentAmounts.b) / 10 ** state.decimalsB} priceUsd={state.pricing?.priceUsdB ?? null} />
         </div>}
         </div>
         {connected && <div className="mt-6 border-t border-white/10 pt-5 text-sm leading-relaxed">
@@ -151,7 +159,7 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
           <CompoundPanel controller={compound} tokenLabel={poolLabel} onConnect={connect} />
         </div>
         <div id="performance-view" hidden={activeView !== "performance"} className="mt-3 space-y-3">
-          {activeView === "performance" && <PositionPerformancePanel embedded selectedMint={selection?.positionMint || initialMint} initialWallet={initialWallet} previewPoolId={previewPoolId} />}
+          {activeView === "performance" && <PositionPerformancePanel embedded selectedMint={selection?.positionMint || initialMint} selectedNftAccount={state?.positionMint === selection?.positionMint ? state?.nftAta : undefined} initialWallet={initialWallet} previewPoolId={previewPoolId} />}
         </div>
         <div id="deposit-view" hidden={activeView !== "deposit"}>
         <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,0.75fr)]">
