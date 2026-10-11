@@ -227,11 +227,14 @@ describe("PlanApp", () => {
 
   it("offers a longer horizon from the yield math and applies it only when asked", async () => {
     await render(`pool=${POOL}&days=1&target=3`);
-    await waitForText("Give it 4 days");
+    await waitForText("Give it 13 days");
     expect(text()).toContain("In 1 day");
     expect(text()).not.toContain("In 1 days");
-    await click("Give it 4 days");
-    expect(text()).toContain("In 4 days");
+    expect(text()).toContain("typically costs around 1%");
+    expect(text()).toContain("(around 1% of the deposit)");
+    expect(text()).not.toMatch(/bps|swap fee/i);
+    await click("Give it 13 days");
+    expect(text()).toContain("In 13 days");
     expect(text()).toContain("on your aim");
   });
 

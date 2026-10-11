@@ -10,8 +10,8 @@ import {
   isThinPlanSample,
   planEntryCost,
   PLAN_MIN_RELIABLE_SAMPLE_DAYS,
-  PLAN_PROTOCOL_FEE_BPS,
-  PLAN_SWAP_SHARE,
+  PLAN_OPEN_COST_BPS,
+  planOpenCostPctLabel,
   PLAN_YIELD_DAYS_PER_YEAR,
 } from "./lp-plan-yield";
 
@@ -118,12 +118,20 @@ describe("isThinPlanSample", () => {
 });
 
 describe("planEntryCost", () => {
-  it("is 10 bps on the swapped half of the deposit", () => {
-    expect(PLAN_PROTOCOL_FEE_BPS).toBe(10);
-    expect(PLAN_SWAP_SHARE).toBe("0.5");
-    expect(planEntryCost("1000")).toBe("0.5");
-    expect(planEntryCost("10000")).toBe("5");
-    expect(planEntryCost("1")).toBe("0.0005");
+  it("is about 1% (100 bps) of the deposit", () => {
+    expect(PLAN_OPEN_COST_BPS).toBe(100);
+    expect(planOpenCostPctLabel()).toBe("1");
+    expect(planEntryCost("1000")).toBe("10");
+    expect(planEntryCost("10000")).toBe("100");
+    expect(planEntryCost("1")).toBe("0.01");
+  });
+
+  it("accepts an explicit cost and rejects invalid input", () => {
+    expect(planEntryCost("1000", 0)).toBe("0");
+    expect(planEntryCost("1000", 250)).toBe("25");
+    expect(() => planEntryCost("1000", 1.5)).toThrow(/costBps/);
+    expect(() => planEntryCost("1000", -1)).toThrow(/costBps/);
+    expect(() => planEntryCost("0")).toThrow(/capital/);
   });
 });
 
@@ -183,20 +191,22 @@ describe("buildPlanComparison", () => {
     expect(plan.daysToTarget).toBeNull();
   });
 
-  it("starts slightly negative after the protocol swap fee and breaks even on the first covering day", () => {
+  it("starts slightly negative after the ~1% open cost and breaks even on the first covering day", () => {
     const entryCost = planEntryCost("1000");
     const plan = buildPlanComparison({
       capital: "1000",
-      days: 3,
+      days: 12,
       aprPct: "36.5",
       sampleDays: 29,
       target: "100",
       entryCost,
     });
-    expect(entryCost).toBe("0.5");
-    expect(plan.points[0]).toEqual({ day: 0, sofinance: "-0.5", hold: "0" });
-    expect(Number(plan.points[1]!.sofinance)).toBeGreaterThan(0);
-    expect(plan.breakEvenDay).toBe(1);
+    expect(entryCost).toBe("10");
+    expect(plan.points[0]).toEqual({ day: 0, sofinance: "-10", hold: "0" });
+    expect(Number(plan.points[1]!.sofinance)).toBeLessThan(0);
+    expect(Number(plan.points[9]!.sofinance)).toBeLessThan(0);
+    expect(Number(plan.points[10]!.sofinance)).toBeGreaterThan(0);
+    expect(plan.breakEvenDay).toBe(10);
     expect(plan.exitValue).toBe(new D(1000).add(plan.endSofinance).toFixed());
   });
 });

@@ -9,7 +9,7 @@ import { APP_ROUTES, buildOpenPositionPath } from "@/lib/public-urls";
 import type { Intent } from "@/lib/lp-intent";
 import { breakEvenInPeriod } from "@/lib/lp-plan-chart";
 import type { PlanYieldComparison } from "@/lib/lp-plan-yield";
-import { isThinPlanSample, PLAN_PROTOCOL_FEE_BPS, PLAN_SWAP_SHARE } from "@/lib/lp-plan-yield";
+import { isThinPlanSample, planOpenCostPctLabel } from "@/lib/lp-plan-yield";
 import { daysWord, formatAmount, formatPct, formatSigned } from "./format";
 import type { ChartStatus } from "./comparison-chart";
 
@@ -159,11 +159,7 @@ export function RealityCheck({
 
           <div className="mt-auto pt-6">
             <p className="mb-4 text-xs leading-relaxed text-smoke">
-              Estimate from past average yield, not a forecast. Best case only: fee income with daily
-              compounding, no price-shock path. Break-even is the first day the estimate covers the
-              protocol swap fee ({PLAN_PROTOCOL_FEE_BPS} bps on an assumed{" "}
-              {new Decimal(PLAN_SWAP_SHARE).mul(100).toFixed(0)}% of the deposit). Network fees are
-              ignored. Read-only: nothing here prepares, signs or sends a transaction.
+              {`Estimate from past average yield, not a forecast. Best case only: fee income with daily compounding, no price-shock path. Break-even is the first day the estimate covers the typical cost of creating the position and adding liquidity (around ${planOpenCostPctLabel()}% of the deposit). Network fees are ignored. Read-only: nothing here prepares, signs or sends a transaction.`}
             </p>
             <Link
               href={poolId ? buildOpenPositionPath(poolId) : APP_ROUTES.rwaPairs}
