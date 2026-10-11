@@ -11,6 +11,7 @@ import {
   type ListedPosition,
 } from "../lib/position-performance-form";
 import { PositionSelect } from "./position-select";
+import { PositionAssetRow } from "./position-asset-row";
 import { useTokenMetadata } from "./use-token-metadata";
 import { DecisionSession } from "@/lib/lp-decision-session";
 import { LpPositionEvidence } from "./lp-position-evidence";
@@ -120,8 +121,6 @@ type PerformanceResponse = {
   error?: string;
 };
 
-const usedSolami = (provider: string | undefined) => provider === "solami" || provider === "solami+default";
-
 export function formatHistoryFetch(metric: {
   txCount: number;
   elapsedMs: number;
@@ -150,26 +149,20 @@ const tok = (value: number | null | undefined, digits = 6) => {
   return value.toPrecision(digits);
 };
 
-const short = (value: string) => `${value.slice(0, 4)}…${value.slice(-4)}`;
-
-const uiAmount = (raw: string, decimals: number) => {
-  const value = Number(raw) / 10 ** decimals;
-  if (!Number.isFinite(value)) return raw;
-  return value.toPrecision(6);
-};
-
 export function PositionPerformancePanel({
   initialMint = "",
   initialWallet = "",
   previewPoolId = "",
   embedded = false,
   selectedMint,
+  selectedNftAccount,
 }: {
   initialMint?: string;
   initialWallet?: string;
   previewPoolId?: string;
   embedded?: boolean;
   selectedMint?: string;
+  selectedNftAccount?: string;
 }) {
   const { address, connected, connect } = useWalletConnection();
   const connectedAddress = connected ? address : undefined;
@@ -212,7 +205,7 @@ export function PositionPerformancePanel({
     setError(null);
     setPositionChoice({ value, wallet: connectedAddress ?? null, sharedMint: selectedMint });
   };
-  const positionMetadata = useTokenMetadata(listedPositions.flatMap((item) => [item.mintA, item.mintB]));
+  const positionMetadata = useTokenMetadata([...listedPositions.flatMap((item) => [item.mintA, item.mintB]), ...(data ? [data.mintA, data.mintB] : [])]);
   const positionsStatus: "idle" | "loading" | "ready" | "error" = !connectedAddress
     ? "idle"
     : fetchedPositions && fetchedPositions.wallet === connectedAddress
@@ -302,7 +295,7 @@ export function PositionPerformancePanel({
 
   return (
     <>
-    <section className="rounded-[28px] border border-white/12 bg-char p-5 sm:p-7 lg:col-span-5" aria-labelledby="perf-heading">
+    {!embedded && <section className="rounded-[28px] border border-white/12 bg-char p-5 sm:p-7 lg:col-span-5" aria-labelledby="perf-heading">
       <h2 id="perf-heading" className="text-base font-semibold text-cream">
         {embedded ? "Performance" : "Step 1 · Select a position"}
       </h2>
@@ -336,7 +329,7 @@ export function PositionPerformancePanel({
           <p className="mt-1 text-xs leading-5 text-smoke">Explore RWA pairs and open a position to start tracking performance.</p>
           <a href="/app/rwa-pairs" className="mt-3 inline-flex items-center gap-2 rounded-full border border-white/20 px-4 py-2 text-sm font-semibold text-cream hover:bg-white/10">Explore RWA Pairs <ArrowUpRight className="h-4 w-4" /></a>
         </div>}
-        <details className="rounded-2xl border border-white/10 p-3">
+        {!embedded && <details className="rounded-2xl border border-white/10 p-3">
           <summary className="cursor-pointer text-xs font-medium text-smoke">Look up another position by NFT mint</summary>
           <div className="mt-3 space-y-3">
             <label className="block text-xs text-smoke">
@@ -387,7 +380,7 @@ export function PositionPerformancePanel({
               </p>
             </div>
           </div>
-        </details>
+        </details>}
         {autoLoadSharedPosition && !error ? (
           (!data || loading) && <div role="status" className="flex items-center gap-2 border-t border-white/10 pt-5 text-sm text-smoke">
             <LoaderCircle className="h-4 w-4 animate-spin" />
@@ -413,18 +406,31 @@ export function PositionPerformancePanel({
           {error}
         </p>
       )}
-    </section>
+    </section>}
 
-    {(data || previewPoolId) && (
+    {(embedded || data || previewPoolId) && (
     <section aria-label="Performance results" className="rounded-[28px] border border-white/12 bg-char p-5 sm:p-7 lg:col-span-12">
+      <h3 className="mb-5 text-base font-semibold text-cream">Performance results</h3>
+      {embedded && !data && !error && (
+        autoLoadSharedPosition ? <div role="status" className="flex items-center gap-2 text-sm text-smoke">
+          <LoaderCircle className="h-4 w-4 animate-spin" />Loading performance…
+        </div> : <p className="text-sm text-smoke">{connectedAddress ? "Select a position above to view performance." : "Connect your wallet above to view performance."}</p>
+      )}
+      {embedded && error && <div className="space-y-3">
+        <p role="alert" className="rounded-2xl border border-white/20 bg-white/[0.04] px-3 py-2 text-sm text-cream/80">{error}</p>
+        <button type="button" onClick={() => void load()} disabled={loading}
+          className="inline-flex items-center gap-2 rounded-full bg-lemon px-5 py-3 text-sm font-semibold text-ink disabled:opacity-40">
+          {loading && <LoaderCircle className="h-4 w-4 animate-spin" />}Retry performance
+        </button>
+      </div>}
+
       {data && (
         <div className="space-y-5 text-sm" aria-live="polite">
-          <h3 className="text-base font-semibold text-cream">Performance results</h3>
           {!hasRecordedDeposits && <p role="status" className="rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-xs leading-5 text-cream/80">No deposit history was found. Current inventory is available, but trading-fee APR needs opening or deposit records.</p>}
           {te && <p className="text-xs leading-5 text-smoke">Amounts shown in {te.baseSymbol} equivalent.</p>}
           <div className="grid gap-3 sm:grid-cols-2">
             <Stat label={holdingTime.label} value={holdingTime.value} description="Time since the earliest recorded position event." />
-            <Stat label="Range" value={data.rangeSide} />
+            <Stat label="Range" value={data.rangeSide === "inside" ? "In range" : data.rangeSide === "above" ? "Above range" : data.rangeSide === "below" ? "Below range" : data.rangeSide} />
             {preferTe ? (
               <>
                 <Stat
@@ -438,11 +444,12 @@ export function PositionPerformancePanel({
                 <Stat
                   label={`Fees earned`}
                   value={`${tok(te!.metrics.feesEarned)} ${te!.baseSymbol}`}
+                  description={data.metrics.feesEarnedUsd !== null ? `${money(data.metrics.feesEarnedUsd)} USD at current prices` : undefined}
                 />
                 <Stat
                   label={`Current position value (${te!.baseSymbol} equivalent)`}
                   value={`${tok(te!.metrics.equity)} ${te!.baseSymbol}`}
-                  description="Assets still in the position: liquidity plus uncollected trading fees."
+                  description={`${data.metrics.currentEquityUsd !== null ? `${money(data.metrics.currentEquityUsd)} USD · ` : ""}Liquidity plus uncollected trading fees.`}
                 />
               </>
             ) : (
@@ -454,119 +461,26 @@ export function PositionPerformancePanel({
             )}
           </div>
 
-          <details className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-xs text-smoke">
-            <summary className="cursor-pointer font-semibold text-cream/80">Details: conversion and performance calculations</summary>
-              {te && (
-                <div className="mt-3 text-[11px] leading-5 text-smoke">
-                  {te.basis}. Tick {te.tickUsed}; UI mid {te.uiPriceBPerA.toPrecision(8)} {symB}/{symA}.{" "}
-                  {te.note}
-                </div>
-              )}
+          <p className="text-xs leading-5 text-smoke">
+            APR annualizes earned trading fees over recorded deposits and holding time. It uses current prices; additional deposits are not time-weighted.
+            {data.truncated && " Earlier transactions may be missing, so fee APR may be incomplete."}
+          </p>
 
-            {tn && <p className="mt-3">Per-token trading-fee APR: {symA} {pct(tn.perSideFeeAprPct.a)} · {symB} {pct(tn.perSideFeeAprPct.b)}</p>}
-            <div className="mt-3 space-y-2 leading-5">
-              <p><strong className="text-cream/80">Fee-only APR:</strong> (collected + uncollected trading fees) ÷ total deposits × 365 ÷ holding days × 100%.</p>
-              <p>Annualization uses the exact elapsed time, including fractions of a day. Additional deposits are not time-weighted. TE uses the current pool exchange rate; USD uses current prices, rather than prices at each transaction.</p>
-              <p>A dash means required data is unavailable. A known zero APR is shown as 0.00%.</p>
-              {data.truncated && <p>Earlier transactions may be missing, so recorded deposits, events and fee APR may be incomplete.</p>}
-            </div>
-          </details>
-
-          {tn && (
-            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
-              <div className="text-[11px] font-semibold uppercase tracking-wide text-smoke">
-                Position asset details
+          {!embedded && tn && (
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 sm:p-5">
+              <h4 className="text-[11px] font-semibold uppercase tracking-wide text-smoke">Position assets</h4>
+              <div className="mt-4 divide-y divide-white/10">
+                <PositionAssetRow symbol={symA} icon={positionMetadata[data.mintA]?.icon ?? null} amount={tn.amounts.currentEquity.a} fees={tn.amounts.feesEarned.a} priceUsd={data.pricing.priceUsdA} />
+                <PositionAssetRow symbol={symB} icon={positionMetadata[data.mintB]?.icon ?? null} amount={tn.amounts.currentEquity.b} fees={tn.amounts.feesEarned.b} priceUsd={data.pricing.priceUsdB} />
               </div>
-              <div className="mt-2 grid gap-2 sm:grid-cols-2 text-xs text-cream/90">
-                <div>
-                  <div className="text-smoke">{symA} · Current holdings</div>
-                  <div className="font-semibold text-cream">
-                    {tok(tn.amounts.currentEquity.a)}
-                  </div>
-                  <div className="text-smoke">
-                    Total fees earned {tok(tn.amounts.feesEarned.a)}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-smoke">{symB} · Current holdings</div>
-                  <div className="font-semibold text-cream">
-                    {tok(tn.amounts.currentEquity.b)}
-                  </div>
-                  <div className="text-smoke">
-                    Total fees earned {tok(tn.amounts.feesEarned.b)}
-                  </div>
-                </div>
-              </div>
-              <InventoryBar
-                labelA={symA}
-                labelB={symB}
-                amountA={tn.amounts.currentEquity.a}
-                amountB={tn.amounts.currentEquity.b}
-                priceBPerA={te?.uiPriceBPerA ?? null}
-              />
             </div>
           )}
 
-          {preferTe && (
-            <details className="rounded-2xl border border-white/10 bg-white/[0.03] p-3 text-xs text-cream/80">
-              <summary className="cursor-pointer text-smoke">USD (secondary · current prices)</summary>
-              <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                <Stat label="Fee-only APR (USD)" value={pct(data.metrics.feeOnlyAprPct)} description="USD metrics require prices for both assets and a known holding time." wide />
-                <Stat label="Equity (USD)" value={money(data.metrics.currentEquityUsd)} />
-                <Stat label="Fees (USD)" value={money(data.metrics.feesEarnedUsd)} />
-              </div>
-            </details>
-          )}
-
-          <details className="rounded-2xl border border-white/10 bg-white/[0.03] p-3 text-xs text-cream/80">
-            <summary className="cursor-pointer font-semibold">Details: data sources and query history</summary>
-            <div className="mt-3">
-              Position {short(data.positionMint)} · pool {short(data.poolId)} · pair {symA}/{symB}
-            </div>
-            <p className="mt-2">Recorded events: Opened {data.cashflows.openCount} · Added {data.cashflows.increaseCount} · Removed / collected {data.cashflows.decreaseCount}</p>
-            <div>Opened {data.openedAtIso ?? "—"} · evaluated {data.evaluatedAtIso}</div>
-            {!tn && (
-              <>
-                <div>
-                  Tokens A {uiAmount(data.metrics.depositedRaw.a, data.decimalsA)} deposited → equity{" "}
-                  {uiAmount(data.metrics.currentEquityRaw.a, data.decimalsA)} (fees earned{" "}
-                  {uiAmount(data.metrics.feesEarnedRaw.a, data.decimalsA)})
-                </div>
-                <div>
-                  Tokens B {uiAmount(data.metrics.depositedRaw.b, data.decimalsB)} deposited → equity{" "}
-                  {uiAmount(data.metrics.currentEquityRaw.b, data.decimalsB)} (fees earned{" "}
-                  {uiAmount(data.metrics.feesEarnedRaw.b, data.decimalsB)})
-                </div>
-              </>
-            )}
-            {data.ownsNft !== null && <div>Owns NFT: {data.ownsNft ? "yes" : "no"}</div>}
-            {data.historyFetch && (
-              <div>
-                History scan {formatHistoryFetch(data.historyFetch)}
-                {usedSolami(data.historyFetch.provider) ? " · Powered by Solami" : ""}
-              </div>
-            )}
-            {data.truncated && (
-              <div className="font-medium text-cream/80">History truncated at signature cap — earlier txs may be missing.</div>
-            )}
-            <div className="mt-2 text-smoke">{data.pricing.label}</div>
-            {usedSolami(data.historyFetch?.provider) && (
-              <p className="mt-3 text-[10px] uppercase tracking-wide text-smoke/70">
-                Powered by{" "}
-                <a
-                  href="https://solami.dev"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-smoke underline decoration-white/30 underline-offset-2 hover:text-cream/90"
-                >
-                  Solami
-                </a>
-              </p>
-            )}
-          </details>
         </div>
       )}
 
+
+      {data && decisionMint && <LpPositionEvidence key={decisionMint} positionId={decisionMint} nftAccount={decisionMint === selectedMint ? selectedNftAccount : undefined} showLedger={false} embedded autoExit={embedded} requireNftAccount={embedded} className="mt-5" />}
 
       {(data?.poolId || previewPoolId) && (
         <div className={data ? "mt-6" : undefined}>
@@ -609,49 +523,7 @@ export function PositionPerformancePanel({
       )}
     </section>
     )}
-    {decisionMint && <details className="rounded-2xl border border-white/12 bg-char p-4 lg:col-span-12">
-      <summary className="cursor-pointer text-xs font-semibold text-smoke">Details: position ledger and exit estimates</summary>
-      <LpPositionEvidence key={decisionMint} positionId={decisionMint} className="mt-3" />
-    </details>}
     </>
-  );
-}
-
-function InventoryBar({
-  labelA,
-  labelB,
-  amountA,
-  amountB,
-  priceBPerA,
-}: {
-  labelA: string;
-  labelB: string;
-  amountA: number;
-  amountB: number;
-  priceBPerA: number | null;
-}) {
-  const teA = priceBPerA && priceBPerA > 0 ? amountA + amountB / priceBPerA : null;
-  const shareA =
-    teA && teA > 0 && priceBPerA && priceBPerA > 0 ? Math.min(100, Math.max(0, (amountA / teA) * 100)) : 50;
-  const shareB = 100 - shareA;
-  return (
-    <div className="mt-3">
-      <div className="mb-1 flex justify-between text-[11px] text-smoke">
-        <span>
-          {labelA} {tok(amountA, 5)}
-        </span>
-        <span>
-          {labelB} {tok(amountB, 5)}
-        </span>
-      </div>
-      <div className="flex h-2 overflow-hidden rounded-full bg-white/10" aria-hidden>
-        <div className="bg-white/50" style={{ width: `${shareA}%` }} />
-        <div className="bg-white/40" style={{ width: `${shareB}%` }} />
-      </div>
-      <div className="mt-1 text-[10px] text-smoke/70">
-        Current asset allocation
-      </div>
-    </div>
   );
 }
 

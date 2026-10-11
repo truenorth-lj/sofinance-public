@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import Decimal from "decimal.js";
 import { DecisionSession } from "@/lib/lp-decision-session";
 import type { BoundedMetric } from "@/lib/lp-ledger-analysis";
@@ -90,7 +90,15 @@ function Disclosure({ summary, children }: { summary: string; children: ReactNod
   );
 }
 
-export function LpPositionEvidence({ positionId, className = "" }: { positionId: string; className?: string }) {
+export function LpPositionEvidence({ positionId, nftAccount, className = "", showLedger = true, embedded = false, requireNftAccount = false, autoExit = false }: {
+  positionId: string;
+  nftAccount?: string;
+  className?: string;
+  showLedger?: boolean;
+  embedded?: boolean;
+  requireNftAccount?: boolean;
+  autoExit?: boolean;
+}) {
   const [ledger, setLedger] = useState<Ledger | null>(null);
   const [exit, setExit] = useState<Exit | null>(null);
   const [busy, setBusy] = useState<"ledger" | "exit" | null>(null);
@@ -98,20 +106,25 @@ export function LpPositionEvidence({ positionId, className = "" }: { positionId:
   const [now, setNow] = useState(() => Date.now());
   const session = useRef(new DecisionSession());
   const resume = useRef<string | null>(null);
+  const exitTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const cancel = () => {
     session.current.cancel();
+    if (exitTimeout.current) clearTimeout(exitTimeout.current);
     setBusy(null);
     setLedger(null);
     setExit(null);
-    setError(null);
+    setError(autoExit ? "Exit estimate cancelled. You can retry." : null);
     resume.current = null;
   };
 
   useEffect(() => {
     const value = session.current;
-    return () => value.cancel();
-  }, [positionId]);
+    return () => {
+      value.cancel();
+      if (exitTimeout.current) clearTimeout(exitTimeout.current);
+    };
+  }, [positionId, nftAccount]);
 
   useEffect(() => {
     if (!exit?.localExpiresAt && !ledger?.source.asOf) return;
@@ -119,19 +132,27 @@ export function LpPositionEvidence({ positionId, className = "" }: { positionId:
     return () => clearInterval(timer);
   }, [exit?.localExpiresAt, ledger?.source.asOf]);
 
-  async function run(kind: "ledger" | "exit") {
+  const run = useCallback(async (kind: "ledger" | "exit") => {
     const job = session.current.begin();
     if (!job) return;
     setBusy(kind);
     setError(null);
-    if (kind === "exit") setExit(null);
+    if (kind === "exit") {
+      setExit(null);
+      exitTimeout.current = setTimeout(() => {
+        if (!job.current()) return;
+        session.current.cancel();
+        setBusy(null);
+        setError("Exit estimate timed out. Please retry in a moment.");
+      }, 45000);
+    }
     try {
       let before: string | null = kind === "ledger" ? resume.current : null;
       const cursors = new Set<string>();
       for (let page = 0; page < (kind === "ledger" ? 30 : 1); page++) {
         const url =
           kind === "exit"
-            ? `/api/lp-decision/exit-preview?positionId=${encodeURIComponent(positionId)}&convertRent=0`
+            ? `/api/lp-decision/exit-preview?positionId=${encodeURIComponent(positionId)}&convertRent=0${nftAccount ? `&nftAccount=${encodeURIComponent(nftAccount)}` : ""}`
             : `/api/lp-decision/ledger?positionId=${encodeURIComponent(positionId)}&source=live&analyze=1${before ? `&before=${encodeURIComponent(before)}` : ""}`;
         const response = await fetch(url, { signal: job.signal });
         const body = await response.json();
@@ -175,10 +196,24 @@ export function LpPositionEvidence({ positionId, className = "" }: { positionId:
     } catch (e) {
       if (job.current()) setError(e instanceof Error ? e.message : "Could not read the source");
     } finally {
-      if (job.current()) setBusy(null);
+      if (job.current()) {
+        if (exitTimeout.current) clearTimeout(exitTimeout.current);
+        setBusy(null);
+      }
       job.finish();
     }
-  }
+  }, [positionId, nftAccount]);
+
+  useEffect(() => {
+    if (!autoExit || (requireNftAccount && !nftAccount)) return;
+    const timer = setTimeout(() => {
+      setExit(null);
+      setError(null);
+      setBusy(null);
+      void run("exit");
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [autoExit, requireNftAccount, nftAccount, run]);
 
   const expired = !!exit?.localExpiresAt && now >= Date.parse(exit.localExpiresAt);
   const stale = !!ledger?.source.asOf && now - Date.parse(ledger.source.asOf) > 60000;
@@ -186,46 +221,47 @@ export function LpPositionEvidence({ positionId, className = "" }: { positionId:
 
   return (
     <section
-      aria-label="Verified ledger and exit preview"
-      className={`rounded-[28px] border border-white/12 bg-char p-6 sm:p-7 ${className}`}
+      aria-label="Position ledger and exit estimates"
+      className={`${embedded ? "border-t border-white/10 pt-5" : "rounded-[28px] border border-white/12 bg-char p-6 sm:p-7"} ${className}`}
     >
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="max-w-xl">
-          <span className="inline-flex h-6 items-center whitespace-nowrap rounded-full border border-white/30 px-2.5 font-data text-[10px] uppercase tracking-[0.14em] text-cream/80">
-            Verified, read-only
-          </span>
-          <h2 className="mt-4 text-2xl font-medium tracking-[-0.03em] text-cream">Ledger and exit preview</h2>
-          <p className="mt-2 text-sm leading-relaxed text-smoke">
-            Reads this position&apos;s public accounts fresh each time. Replays are never shown as current values, and
-            the simulation cannot be signed or sent.
+          <h3 className="text-base font-semibold text-cream">Exit estimates</h3>
+          <p className="mt-2 text-xs leading-relaxed text-smoke">
+            Estimate USDC and SOL received if you exit now.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <button
+          {showLedger && <button
             type="button"
             disabled={!!busy}
             onClick={() => void run("ledger")}
             className={`${pillButton} border border-white/25 text-cream hover:border-white/70`}
           >
             {busy === "ledger" ? "Reading ledger…" : "Read ledger, history and HODL"}
-          </button>
-          <button
+          </button>}
+          {(!autoExit || (!busy && (error || expired || (exit && exit.status !== "verified-preview")))) && <button
             type="button"
-            disabled={!!busy}
+            disabled={!!busy || (requireNftAccount && !nftAccount)}
             onClick={() => void run("exit")}
             className={`${pillButton} bg-lemon text-ink hover:bg-[#fff27f]`}
           >
-            {busy === "exit" ? "Simulating exit…" : "Preview exit: USDC + SOL"}
-          </button>
-          <button
+            {busy === "exit" ? "Simulating exit…" : requireNftAccount && !nftAccount ? "Waiting for position accounts…" : autoExit ? "Recalculate estimate" : "Preview exit: USDC + SOL"}
+          </button>}
+          {busy && <button
             type="button"
             onClick={cancel}
             className="h-10 rounded-full px-3 text-[13px] text-smoke outline-none transition-colors hover:text-cream focus-visible:text-cream"
           >
             Cancel
-          </button>
+          </button>}
         </div>
       </div>
+
+      {autoExit && !exit && !error && <p role="status" className="mt-4 flex items-center gap-2 text-sm text-smoke">
+        <span className="h-3 w-3 animate-pulse rounded-full bg-lemon/70" aria-hidden />
+        {requireNftAccount && !nftAccount ? "Waiting for position accounts…" : "Calculating USDC + SOL estimate…"}
+      </p>}
 
       {error && (
         <p role="alert" className="mt-5 rounded-2xl border border-lemon/25 bg-lemon/10 px-4 py-3 text-sm text-lemon">
@@ -297,16 +333,13 @@ export function LpPositionEvidence({ positionId, className = "" }: { positionId:
 
           {exit && (
             <div aria-label="Split-asset exit result">
-              <p className={eyebrow}>Exit preview</p>
-              <p className={`mt-2 text-sm font-medium ${expired || oversizedExit(exit) ? "text-lemon" : "text-cream"}`}>
+              {(expired || exit.status !== "verified-preview") && <p className={`mt-2 text-sm font-medium ${expired || oversizedExit(exit) ? "text-lemon" : "text-cream"}`}>
                 {expired
                   ? "Exit preview expired. Read it again."
                   : oversizedExit(exit)
                     ? `This exit cannot fit in one Solana transaction (${exit.bytes ?? "unknown"} bytes; limit 1232). Withdraw-to-wallet USDC and SOL legs still work as separate vectors.`
-                    : exit.status === "verified-preview"
-                      ? "USDC + SOL exit simulation verified"
-                      : "Exit data incomplete or partial"}
-              </p>
+                    : "Exit data incomplete or partial"}
+              </p>}
               {exit.recoveryUSDCAtomic && exit.recoverySOLLamports && (
                 <>
                   <p className={`mt-4 ${eyebrow}`}>
