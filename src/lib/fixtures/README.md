@@ -19,3 +19,12 @@ unrelated instructions are removed. Wallets, mints, pools, token accounts and
 the signature are replaced with deterministic test values. It verifies that
 deposits come from the opening receipt rather than swap transfers or instruction
 amount limits.
+
+`position-liquidity-history-replay.json` contains 50 minimized successful RPC
+receipts for additions, withdrawals and fee collection. Position, pool, mint,
+wallet and token-account identifiers are replaced with deterministic test keys;
+signatures, blockhashes and account balances are omitted. Runtime invocation
+lines, scoped calculation events, final liquidity events and transfer receipts
+are retained. The differential replay removes each final event and verifies
+that recovered cashflows exactly match the original event, including zero-fee
+collection and reward-vault transfers.
