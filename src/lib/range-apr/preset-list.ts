@@ -1,8 +1,8 @@
 /**
- * Which range is "AI best", and which buttons sit next to it (pure; shared by the Create position modal
+ * Which range is "Best", and which buttons sit next to it (pure; shared by the Create position modal
  * and the pair cards so both always agree).
  *
- * "AI best" is not a model: it is the candidate with the highest estimated fee APR, ties going to the wider
+ * "Best" is the candidate with the highest estimated fee APR, ties going to the wider
  * range. It resolves to that candidate's exact ticks, so quote/prepare use the ordinary preset path and what
  * is signed is what was priced.
  */
@@ -28,26 +28,26 @@ export function pickHighestAprPreset(
   candidates: readonly RangeAprPresetEstimate[],
   order: readonly RangeAprPresetId[] = ["micro", "tight", "standard", "wide"],
 ): RangeAprPresetEstimate | null {
-  let best: OkPreset | null = null;
+  let winner: OkPreset | null = null;
   const rank = (preset: RangeAprPresetEstimate) => order.indexOf(preset.id);
   for (const candidate of candidates.filter(isOk)) {
-    if (!best) {
-      best = candidate;
+    if (!winner) {
+      winner = candidate;
       continue;
     }
     const a = candidate.estimate.aprPct;
-    const b = best.estimate.aprPct;
+    const b = winner.estimate.aprPct;
     const tied = Math.abs(a - b) <= TIE_RELATIVE_EPSILON * Math.max(1, Math.abs(a), Math.abs(b));
     if (tied
-      ? width(candidate) > width(best) || (width(candidate) === width(best) && rank(candidate) > rank(best))
+      ? width(candidate) > width(winner) || (width(candidate) === width(winner) && rank(candidate) > rank(winner))
       : a > b) {
-      best = candidate;
+      winner = candidate;
     }
   }
-  return best;
+  return winner;
 }
 
-export type AiBestButton = {
+export type BestButton = {
   /** The preset the button selects (what the quote API receives). */
   id: RangeAprPresetId;
   /** Short name of the range it resolved to, e.g. "Tight". */
@@ -59,33 +59,37 @@ export type PresetButton = { id: OpenRangeUiPreset["id"]; label: string; estimat
 
 export type PresetList = {
   /** Leftmost button; null while loading, on error, or when no candidate has an estimate. */
-  aiBest: AiBestButton | null;
+  best: BestButton | null;
   /** The remaining candidates, narrow to wide, without the resolved one. "Custom" is appended by the UI. */
   buttons: PresetButton[];
 };
 
 /**
  * Preset row for the modal. Without usable data it is the plain row (Micro, Tight, Standard, Wide) and no
- * "AI best". With data, the resolved candidate is moved into "AI best" and removed from the rest, along with
+ * "Best". With data, the resolved candidate is moved into "Best" and removed from the rest, along with
  * any candidate that covers exactly the same ticks (so no two buttons ever select the same range).
  */
 export function buildPresetList(
   uiPresets: readonly OpenRangeUiPreset[], payload: PoolRangeAprPayload | null,
 ): PresetList {
-  const estimateOf = (id: OpenRangeUiPreset["id"]) =>
-    payload?.presets.find((preset) => preset.id === id)?.estimate ?? null;
-  const best = payload ? pickHighestAprPreset(payload.presets, uiPresets.map((preset) => preset.id) as RangeAprPresetId[]) : null;
-  if (!payload || !best) {
-    return { aiBest: null, buttons: uiPresets.map((preset) => ({ id: preset.id, label: preset.label, estimate: estimateOf(preset.id) })) };
+  const degraded = payload?.sample.degraded === true;
+  const estimateOf = (id: OpenRangeUiPreset["id"]): RangeAprEstimate | null =>
+    degraded ? { status: "unavailable", reason: "degraded-data" }
+      : payload?.presets.find((preset) => preset.id === id)?.estimate ?? null;
+  // A degraded payload (no price history) is never ranked or shown with numbers, even if a caller hands over estimates.
+  const order = uiPresets.map((preset) => preset.id) as RangeAprPresetId[];
+  const winner = payload && !degraded ? pickHighestAprPreset(payload.presets, order) : null;
+  if (!payload || !winner) {
+    return { best: null, buttons: uiPresets.map((preset) => ({ id: preset.id, label: preset.label, estimate: estimateOf(preset.id) })) };
   }
-  const resolved = uiPresets.find((preset) => preset.id === best.id);
+  const resolved = uiPresets.find((preset) => preset.id === winner.id);
   return {
-    aiBest: { id: best.id, resolvedLabel: resolved?.shortLabel ?? best.id, estimate: best.estimate },
+    best: { id: winner.id, resolvedLabel: resolved?.shortLabel ?? winner.id, estimate: winner.estimate },
     buttons: uiPresets
       .filter((preset) => {
-        if (preset.id === best.id) return false;
+        if (preset.id === winner.id) return false;
         const candidate = payload.presets.find((item) => item.id === preset.id);
-        return !candidate || !sameRange(candidate, best);
+        return !candidate || !sameRange(candidate, winner);
       })
       .map((preset) => ({ id: preset.id, label: preset.label, estimate: estimateOf(preset.id) })),
   };
@@ -95,8 +99,8 @@ export function buildPresetList(
 export function highestRangeSummary(
   uiPresets: readonly OpenRangeUiPreset[], payload: PoolRangeAprPayload,
 ): { id: RangeAprPresetId; label: string; aprPct: number } | null {
-  const { aiBest } = buildPresetList(uiPresets, payload);
-  return aiBest && aiBest.estimate.status === "ok"
-    ? { id: aiBest.id, label: aiBest.resolvedLabel, aprPct: aiBest.estimate.aprPct }
+  const { best } = buildPresetList(uiPresets, payload);
+  return best && best.estimate.status === "ok"
+    ? { id: best.id, label: best.resolvedLabel, aprPct: best.estimate.aprPct }
     : null;
 }

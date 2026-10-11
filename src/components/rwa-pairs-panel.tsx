@@ -10,7 +10,7 @@ import { OPEN_RANGE_UI_PRESETS } from "@/lib/open-range-presets";
 import {
   APR_ESTIMATE_CAVEAT, HIGHEST_RANGE_APR_LABEL, HIGHEST_RANGE_COLUMN_LABEL, HIGHEST_RANGE_HELP,
 } from "@/lib/range-apr/copy";
-import { formatAprPct } from "@/lib/range-apr/format";
+import { formatAprPct, unavailableReasonText } from "@/lib/range-apr/format";
 import { highestRangeSummary } from "@/lib/range-apr/preset-list";
 import { pairIssuerLabel } from "@/lib/rwa-pair-names";
 import type { TokenMetadata } from "@/lib/token-metadata";
@@ -105,7 +105,8 @@ function Stat({ label, children }: { label: ReactNode; children: ReactNode }) {
  * One pair as a cream card. The headline pill is the estimated fee APR of the highest-APR candidate range
  * (a bare figure: the "estimate" and low-confidence notes live in its tooltip); the range itself is a
  * separate field with no APR figure in it. Both read the same cached payload and the same pure resolver the
- * Create position modal uses for its "AI best" button, so the two always agree.
+ * Create position modal uses for its "Best" button, so the two always agree. A degraded payload (no price
+ * history) has no estimate: both show a dash and the pill's tooltip says why.
  */
 function PairCard({
   pair, tokens, poolFeeAprHelp, onOpen,
@@ -117,6 +118,7 @@ function PairCard({
 }) {
   const apr = usePoolRangeApr(pair.poolAddress);
   const summary = apr.status === "ready" ? highestRangeSummary(OPEN_RANGE_UI_PRESETS, apr.data) : null;
+  const degraded = apr.status === "ready" && apr.data.sample.degraded;
   const low = apr.status === "ready" && apr.data.sample.confidence === "low";
   const placeholder = apr.status === "loading" ? "…" : "—";
   const rangeLabel = summary
@@ -160,6 +162,9 @@ function PairCard({
           </p>
           <p className={`mt-2.5 flex items-center gap-1 sm:justify-end ${eyebrow}`}>
             {HIGHEST_RANGE_APR_LABEL}
+            {degraded && (
+              <InfoTip label="About Highest range APR" tone="light">{unavailableReasonText("degraded-data")}.</InfoTip>
+            )}
             {summary && (
               <InfoTip label="About Highest range APR" tone="light">
                 {APR_ESTIMATE_CAVEAT}{low ? " Low confidence for this pool: thin or patchy recent trading." : ""}

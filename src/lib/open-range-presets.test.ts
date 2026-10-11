@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { OPEN_RANGE_PRESETS, OPEN_RANGE_UI_PRESETS, DEFAULT_OPEN_RANGE_PRESET } from "./open-range-presets";
-import { AI_BEST_HELP } from "./range-apr/copy";
+import { BEST_HELP } from "./range-apr/copy";
 import { quoteOpenPositionSchema } from "../mcp/schemas";
 
 describe("open range presets", () => {
@@ -18,11 +18,12 @@ describe("open range presets", () => {
     expect(help).not.toMatch(/AI/);
   });
 
-  it("describes AI best honestly: automatic highest estimated APR, not a model or a prediction", () => {
-    expect(AI_BEST_HELP).toMatch(/highest estimated fee APR/);
-    expect(AI_BEST_HELP).toMatch(/last 7 days/);
-    expect(AI_BEST_HELP).toMatch(/not a prediction and not an AI model/);
-    expect(AI_BEST_HELP).toMatch(/risk of leaving range/);
+  it("describes Best honestly: highest estimated APR over the last 7 days, not a prediction", () => {
+    expect(BEST_HELP).toMatch(/highest estimated fee APR/);
+    expect(BEST_HELP).toMatch(/last 7 days/);
+    expect(BEST_HELP).toMatch(/Not a prediction/);
+    expect(BEST_HELP).toMatch(/risk of leaving range/);
+    expect(BEST_HELP).not.toMatch(/\bAI\b/);
   });
 
   it("keeps Standard as the default preset", () => {

@@ -192,7 +192,7 @@ describe("open-position quote validation", () => {
     expect(quote.achievedResaleBps).toBe(10);
     expect(buildRoute).toHaveBeenCalledTimes(3);
   });
-  it("sizes sequential LP from conservative primary output and applies the same account budget to both probes and swaps", async () => {
+  it.each(["sequential", "sequential-b"] as const)("sizes %s LP from conservative primary output and applies the same account budget to both probes and swaps", async strategy => {
     const firstMint = Keypair.generate().publicKey.toBase58(), secondMint = Keypair.generate().publicKey.toBase58();
     const snapshot = state({ mintA: firstMint, mintB: secondMint, decimalsA: 6, decimalsB: 6,
       inputMint: mintA, inputDecimals: 6, fetchedAt: Date.now(), price: "1" });
@@ -203,13 +203,15 @@ describe("open-position quote validation", () => {
       cleanupInstruction: null, otherInstructions: [], addressesByLookupTableAddress: {},
     } as never));
     const { quote, legs } = await getOpenPositionQuoteBundle(wallet,
-      { poolId, inputMint: mintA, inputKind: "token" }, "0.1", { preset: "standard" }, 9900, 100, 24, snapshot, "sequential");
+      { poolId, inputMint: mintA, inputKind: "token" }, "0.1", { preset: "standard" }, 9900, 100, 24, snapshot, strategy);
+    const primaryMint = strategy === "sequential" ? firstMint : secondMint;
+    const secondaryMint = strategy === "sequential" ? secondMint : firstMint;
     expect(legs[0]!.spend).toBe(100000n);
-    expect(legs[1]!.inputMint).toBe(firstMint);
+    expect(legs[1]!.inputMint).toBe(primaryMint);
     expect(legs[0]!.minOut + legs[1]!.spend).toBe(99000n);
-    expect(BigInt(quote.amountMaxA)).toBeLessThanOrEqual(legs[0]!.minOut);
-    expect(BigInt(quote.amountMaxB)).toBeLessThanOrEqual(legs[1]!.minOut);
-    expect(buildRoute).toHaveBeenCalledWith(wallet, firstMint, secondMint, expect.any(BigInt), false, 24);
+    expect(BigInt(quote.amountMaxA)).toBeLessThanOrEqual(legs.find(leg => leg.outputMint === firstMint)!.minOut);
+    expect(BigInt(quote.amountMaxB)).toBeLessThanOrEqual(legs.find(leg => leg.outputMint === secondMint)!.minOut);
+    expect(buildRoute).toHaveBeenCalledWith(wallet, primaryMint, secondaryMint, expect.any(BigInt), false, 24);
     expect(vi.mocked(buildRoute).mock.calls.every(call => call[5] === 24 && call[4] === false)).toBe(true);
     expect(readOpenPoolState).not.toHaveBeenCalled();
   });

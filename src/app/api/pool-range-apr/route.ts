@@ -14,6 +14,13 @@ const CDN_HEADERS = {
   "Vercel-CDN-Cache-Control": "public, s-maxage=30, stale-while-revalidate=300",
 };
 
+/** A degraded payload (no estimates) must not be pinned at the CDN for minutes. */
+const DEGRADED_CDN_HEADERS = {
+  "Cache-Control": "public, max-age=0, must-revalidate",
+  "CDN-Cache-Control": "public, s-maxage=5",
+  "Vercel-CDN-Cache-Control": "public, s-maxage=5",
+};
+
 const POOL_ID = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 
 export async function GET(request: Request) {
@@ -22,7 +29,8 @@ export async function GET(request: Request) {
     return apiError(new Error("A valid poolId is required"), "Invalid pool id", 400);
   }
   try {
-    return Response.json(await fetchPoolRangeApr(poolId), { headers: CDN_HEADERS });
+    const payload = await fetchPoolRangeApr(poolId);
+    return Response.json(payload, { headers: payload.sample.degraded ? DEGRADED_CDN_HEADERS : CDN_HEADERS });
   } catch (error) {
     return apiError(error, "Range APR estimate unavailable", 503);
   }

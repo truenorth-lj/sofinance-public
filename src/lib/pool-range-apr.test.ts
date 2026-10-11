@@ -7,6 +7,7 @@ vi.mock("./range-apr/onchain-liquidity", () => ({ readOnchainPoolLiquidity: read
 
 import { clearPoolRangeAprCache, fetchPoolRangeApr, RANGE_APR_ASSUMPTIONS } from "./pool-range-apr";
 
+const NO_WAIT = { sleep: async (ms: number) => { void ms; } };
 const POOL = "5MBpNcWTqiWy3pZX17pYfgP2ZxrSkok4naQWLj3XLDLY";
 const MINT_A = "XsvNBAYkrDRNhA7wPHQfX3ZUXZyZLdnCQDfHZ56bzpg";
 const MINT_B = "HooDYv5RewLRiMLnEVq3VJqdqxhuE6c5eYvqejMC3e9A";
@@ -68,14 +69,14 @@ afterEach(() => {
 describe("fetchPoolRangeApr", () => {
   it("returns every preset priced, Micro first, with the chosen method described", async () => {
     const { impl } = fetcher();
-    const payload = await fetchPoolRangeApr(POOL, { fetcher: impl, nowSeconds: NOW, bypassCache: true });
+    const payload = await fetchPoolRangeApr(POOL, { fetcher: impl, nowSeconds: NOW, retry: NO_WAIT, bypassCache: true });
     expect(payload.poolId).toBe(POOL);
     expect(payload.label).toBe("Est. fee APR");
     expect(payload.assumptions).toBe(RANGE_APR_ASSUMPTIONS);
     expect(payload.presets.map((preset) => preset.id)).toEqual(["micro", "tight", "standard", "wide"]);
-    const ai = payload.presets[0]!;
-    expect([ai.tickLower, ai.tickUpper]).toEqual([-46_200, -45_960]);
-    expect(ai.priceLower).toBeLessThan(payload.pool.currentPrice * 1.05);
+    const micro = payload.presets[0]!;
+    expect([micro.tickLower, micro.tickUpper]).toEqual([-46_200, -45_960]);
+    expect(micro.priceLower).toBeLessThan(payload.pool.currentPrice * 1.05);
     for (const preset of payload.presets) expect(preset.estimate.status).toBe("ok");
     expect(payload.pool).toMatchObject({ tickSpacing: 60, tickCurrent: TICK, feeRate: 0.0025, tvlUsd: 6000 });
     expect(payload.pool.lpFeeFraction).toBeCloseTo(0.84, 12);
@@ -88,56 +89,132 @@ describe("fetchPoolRangeApr", () => {
   });
 
   it("is JSON serialisable (it is the API response)", async () => {
-    const payload = await fetchPoolRangeApr(POOL, { fetcher: fetcher().impl, nowSeconds: NOW, bypassCache: true });
+    const payload = await fetchPoolRangeApr(POOL, { fetcher: fetcher().impl, nowSeconds: NOW, retry: NO_WAIT, bypassCache: true });
     expect(JSON.parse(JSON.stringify(payload))).toEqual(payload);
   });
 
   it("gives volume only to bins with liquidity and conserves it", async () => {
-    const payload = await fetchPoolRangeApr(POOL, { fetcher: fetcher().impl, nowSeconds: NOW, bypassCache: true });
+    const payload = await fetchPoolRangeApr(POOL, { fetcher: fetcher().impl, nowSeconds: NOW, retry: NO_WAIT, bypassCache: true });
     const placed = payload.model.bins.reduce((sum, bin) => sum + bin.volumeUsd, 0);
     expect(placed).toBeCloseTo(1000 * (1 - payload.sample.unplacedVolumePct / 100), 6);
     for (const bin of payload.model.bins) if (bin.liquidity === 0) expect(bin.volumeUsd).toBe(0);
   });
 
-  it("falls back to Raydium 7d volume and the current price when GeckoTerminal fails, and says so", async () => {
+  it("is degraded, with NO estimates, when price history is missing (never a number from the current price alone)", async () => {
     const { impl } = fetcher({ daily: null, hourlyOk: false });
-    const payload = await fetchPoolRangeApr(POOL, { fetcher: impl, nowSeconds: NOW, bypassCache: true });
-    expect(payload.sample).toMatchObject({ volumeSource: "raydium-7d", occupancySource: "current-price", candleCount: 0, confidence: "low" });
+    const payload = await fetchPoolRangeApr(POOL, { fetcher: impl, nowSeconds: NOW, retry: NO_WAIT, bypassCache: true });
+    expect(payload.sample).toMatchObject({ volumeSource: "raydium-7d", occupancySource: "current-price", candleCount: 0, confidence: "low", degraded: true });
+    expect(payload.sample.issues).toEqual([
+      "GeckoTerminal daily candles: Upstream request failed (429)",
+      "GeckoTerminal hourly candles: Upstream request failed (429)",
+    ]);
     expect(payload.model.avgDailyVolumeUsd).toBeCloseTo(1000, 9); // 7000 / 7
-    expect(payload.presets[0]!.estimate.status).toBe("ok");
+    expect(payload.presets).toHaveLength(4);
+    for (const preset of payload.presets) {
+      expect(preset.estimate).toEqual({ status: "unavailable", reason: "degraded-data" });
+      expect(preset.tickUpper).toBeGreaterThan(preset.tickLower); // ranges are still resolved
+    }
+  });
+
+  it("is degraded when only the hourly candles fail, even though daily volume is fine", async () => {
+    const payload = await fetchPoolRangeApr(POOL, { fetcher: fetcher({ hourlyOk: false }).impl, nowSeconds: NOW, retry: NO_WAIT, bypassCache: true });
+    expect(payload.sample).toMatchObject({ volumeSource: "geckoterminal-daily", occupancySource: "current-price", degraded: true });
+    expect(payload.presets.every((preset) => preset.estimate.status === "unavailable")).toBe(true);
+  });
+
+  it("a healthy fetch is not degraded and reports no issues", async () => {
+    const payload = await fetchPoolRangeApr(POOL, { fetcher: fetcher().impl, nowSeconds: NOW, retry: NO_WAIT, bypassCache: true });
+    expect(payload.sample).toMatchObject({ degraded: false, issues: [] });
+  });
+
+  it("retries a rate-limited GeckoTerminal call and recovers full data", async () => {
+    let hourCalls = 0;
+    const healthy = fetcher().impl;
+    const impl: typeof fetch = async (input, init) => {
+      if (String(input).includes("/ohlcv/hour") && ++hourCalls <= 2) return new Response("{}", { status: 429 });
+      return healthy(input, init);
+    };
+    const payload = await fetchPoolRangeApr(POOL, { fetcher: impl, nowSeconds: NOW, retry: NO_WAIT, bypassCache: true });
+    expect(hourCalls).toBe(3);
+    expect(payload.sample).toMatchObject({ occupancySource: "hourly-candles", degraded: false });
+    expect(payload.presets.every((preset) => preset.estimate.status === "ok")).toBe(true);
+  });
+
+  it("does not retry a 404 (pool not indexed)", async () => {
+    let hourCalls = 0;
+    const healthy = fetcher().impl;
+    const impl: typeof fetch = async (input, init) => {
+      if (String(input).includes("/ohlcv/hour")) { hourCalls++; return new Response("{}", { status: 404 }); }
+      return healthy(input, init);
+    };
+    const payload = await fetchPoolRangeApr(POOL, { fetcher: impl, nowSeconds: NOW, retry: NO_WAIT, bypassCache: true });
+    expect(hourCalls).toBe(1);
+    expect(payload.sample.degraded).toBe(true);
+  });
+
+  it("keeps earlier good price history when a later fetch fails (stale-if-error), but not forever", async () => {
+    const good = await fetchPoolRangeApr(POOL, { fetcher: fetcher().impl, nowSeconds: NOW, retry: NO_WAIT, bypassCache: true });
+    const broken = fetcher({ hourlyOk: false }).impl;
+    const soon = await fetchPoolRangeApr(POOL, { fetcher: broken, nowSeconds: NOW + 3_600, retry: NO_WAIT, bypassCache: true });
+    expect(soon.sample).toMatchObject({ degraded: false, occupancySource: "hourly-candles" });
+    expect(soon.sample.issues.some((issue) => /using price history cached 60 min ago/.test(issue))).toBe(true);
+    expect(soon.presets.map((preset) => preset.estimate.status)).toEqual(good.presets.map((preset) => preset.estimate.status));
+    const later = await fetchPoolRangeApr(POOL, { fetcher: broken, nowSeconds: NOW + 7 * 3_600, retry: NO_WAIT, bypassCache: true });
+    expect(later.sample.degraded).toBe(true);
+  });
+
+  it("re-checks a degraded profile within seconds instead of serving it for the 30 minute TTL", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date(NOW * 1000));
+      const first = await fetchPoolRangeApr(POOL, { fetcher: fetcher({ hourlyOk: false }).impl, nowSeconds: NOW, retry: NO_WAIT });
+      expect(first.sample.degraded).toBe(true);
+      vi.setSystemTime(new Date((NOW + 5) * 1000));
+      const stillDegraded = await fetchPoolRangeApr(POOL, { fetcher: fetcher().impl, nowSeconds: NOW + 5, retry: NO_WAIT });
+      expect(stillDegraded.sample.degraded).toBe(true); // inside the short degraded TTL
+      vi.setSystemTime(new Date((NOW + 20) * 1000));
+      const recovered = await fetchPoolRangeApr(POOL, { fetcher: fetcher().impl, nowSeconds: NOW + 20, retry: NO_WAIT });
+      expect(recovered.sample).toMatchObject({ degraded: false, occupancySource: "hourly-candles" });
+      vi.setSystemTime(new Date((NOW + 20 * 60) * 1000));
+      const { impl, calls } = fetcher();
+      await fetchPoolRangeApr(POOL, { fetcher: impl, nowSeconds: NOW + 20 * 60, retry: NO_WAIT });
+      expect(calls).toHaveLength(0); // a good profile is still cached for 30 minutes
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("fails clearly when Raydium pool economics are unavailable", async () => {
-    await expect(fetchPoolRangeApr(POOL, { fetcher: fetcher({ ids: null }).impl, nowSeconds: NOW, bypassCache: true }))
+    await expect(fetchPoolRangeApr(POOL, { fetcher: fetcher({ ids: null }).impl, nowSeconds: NOW, retry: NO_WAIT, bypassCache: true }))
       .rejects.toThrow(/economics unavailable/i);
   });
 
   it("fails clearly when no volume source exists or TVL is zero", async () => {
     const noWeek = { ...ids, data: [{ ...ids.data[0], week: {} }] };
-    await expect(fetchPoolRangeApr(POOL, { fetcher: fetcher({ ids: noWeek, daily: null }).impl, nowSeconds: NOW, bypassCache: true }))
+    await expect(fetchPoolRangeApr(POOL, { fetcher: fetcher({ ids: noWeek, daily: null }).impl, nowSeconds: NOW, retry: NO_WAIT, bypassCache: true }))
       .rejects.toThrow(/volume unavailable/i);
     const noTvl = { ...ids, data: [{ ...ids.data[0], tvl: 0 }] };
-    await expect(fetchPoolRangeApr(POOL, { fetcher: fetcher({ ids: noTvl }).impl, nowSeconds: NOW, bypassCache: true }))
+    await expect(fetchPoolRangeApr(POOL, { fetcher: fetcher({ ids: noTvl }).impl, nowSeconds: NOW, retry: NO_WAIT, bypassCache: true }))
       .rejects.toThrow(/TVL unavailable/i);
   });
 
   it("caches per pool and de-duplicates concurrent callers (one upstream round trip)", async () => {
     const { impl, calls } = fetcher();
     const [first, second] = await Promise.all([
-      fetchPoolRangeApr(POOL, { fetcher: impl, nowSeconds: NOW }),
-      fetchPoolRangeApr(POOL, { fetcher: impl, nowSeconds: NOW }),
+      fetchPoolRangeApr(POOL, { fetcher: impl, nowSeconds: NOW, retry: NO_WAIT }),
+      fetchPoolRangeApr(POOL, { fetcher: impl, nowSeconds: NOW, retry: NO_WAIT }),
     ]);
     expect(first).toEqual(second);
-    await fetchPoolRangeApr(POOL, { fetcher: impl, nowSeconds: NOW });
+    await fetchPoolRangeApr(POOL, { fetcher: impl, nowSeconds: NOW, retry: NO_WAIT });
     expect(calls).toHaveLength(3); // ids + day + hour, once
     expect(readChain).toHaveBeenCalledTimes(1);
   });
 
   it("does not retry a failing upstream on every call (short negative cache)", async () => {
     const { impl, calls } = fetcher({ ids: null });
-    await expect(fetchPoolRangeApr(POOL, { fetcher: impl, nowSeconds: NOW })).rejects.toThrow();
+    await expect(fetchPoolRangeApr(POOL, { fetcher: impl, nowSeconds: NOW, retry: NO_WAIT })).rejects.toThrow();
     const before = calls.length;
-    await expect(fetchPoolRangeApr(POOL, { fetcher: impl, nowSeconds: NOW })).rejects.toThrow();
+    await expect(fetchPoolRangeApr(POOL, { fetcher: impl, nowSeconds: NOW, retry: NO_WAIT })).rejects.toThrow();
     expect(calls.length).toBe(before);
   });
 });

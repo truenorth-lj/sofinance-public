@@ -54,7 +54,7 @@ import { getJupiterApiKey } from "@/lib/config/server-env";
  * {
  *   "mcpServers": {
  *     "sofinance": {
- *       "url": "https://www.sofinancelab.xyz/api/mcp",
+ *       "url": "https://sofinancelab.xyz/api/mcp",
  *       "headers": { "Authorization": "Bearer <token>" }
  *     }
  *   }
