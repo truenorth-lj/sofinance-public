@@ -19,7 +19,7 @@ export function returnUnavailableReason(input: {
   if (input.deposited === null || !Number.isFinite(input.deposited) || input.deposited <= 0) {
     return input.truncated
       ? "No positive deposit amount was found in the available history. Earlier transactions may be missing."
-      : "No positive deposit amount was found in the recorded transactions; a return cannot be calculated.";
+      : "No positive deposit amount was found in the recorded transactions; fee APR cannot be calculated.";
   }
   if (input.needsHoldingTime && (input.holdingDays === null || !Number.isFinite(input.holdingDays) || input.holdingDays <= 0)) {
     return "A positive holding time is required; the first event time is unavailable or no time has elapsed.";

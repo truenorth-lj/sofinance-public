@@ -55,6 +55,16 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
+const REMOVED_LABELS = [
+  /annualized return/i, /holding-period return/i, /profit \/ loss/i, /total deposited/i,
+  /\bHPR\b/, /annualized \(usd\)/i, /\bPnL\b/, /deposited \(usd\)/i,
+];
+const cardLabels = () => Array.from(container.querySelectorAll('[aria-label="Performance results"] .uppercase')).map((n) => n.textContent ?? "");
+function expectReturnCardsRemoved() {
+  const text = container.textContent ?? "";
+  for (const re of REMOVED_LABELS) expect(text).not.toMatch(re);
+}
+
 describe("position performance workflow", () => {
   it("selects the first wallet position, keeps an explicit choice and computes that selection", async () => {
     await scan();
@@ -131,6 +141,40 @@ describe("position performance workflow", () => {
     expect(container.textContent).toContain("0.00%");
     expect(container.textContent).not.toContain("No positive deposit amount");
   });
+  it("hides the return / PnL / deposited cards in token-equivalent mode and keeps the other cards", async () => {
+    await scan();
+    await compute();
+    expectReturnCardsRemoved();
+    const labels = cardLabels().join("|");
+    for (const kept of ["Holding days", "Range", "Trading-fee APR", "Fees earned", "Current position value"]) expect(labels).toContain(kept);
+    // 5 top-level cards: the emphasised APR card spans both columns so the 2-col grid has no hole.
+    const grid = container.querySelector('[aria-label="Performance results"] .grid.sm\\:grid-cols-2')!;
+    expect(grid.children).toHaveLength(5);
+    expect(grid.querySelectorAll(":scope > .sm\\:col-span-2")).toHaveLength(1);
+  });
+
+  it("hides the USD return / PnL / deposited cards when no token-equivalent view exists", async () => {
+    (response.tokenNative as unknown) = null;
+    await scan();
+    await compute();
+    expectReturnCardsRemoved();
+    const labels = cardLabels().join("|");
+    for (const kept of ["Holding days", "Range", "Fee-only APR (USD)", "Current equity (USD)", "Fees earned (USD)"]) expect(labels).toContain(kept);
+    const grid = container.querySelector('[aria-label="Performance results"] .grid.sm\\:grid-cols-2')!;
+    expect(grid.children).toHaveLength(5);
+  });
+
+  it("does not render the USD secondary section's removed cards", async () => {
+    await scan();
+    await compute();
+    const usd = Array.from(container.querySelectorAll("details")).find((d) => d.textContent?.includes("USD (secondary"))!;
+    usd.open = true;
+    expect(usd.textContent).toContain("Fee-only APR (USD)");
+    expect(usd.textContent).toContain("Equity (USD)");
+    expect(usd.textContent).toContain("Fees (USD)");
+    expect(usd.textContent).not.toMatch(/HPR|Annualized|PnL|Deposited/);
+  });
+
   it("uses the shared position in embedded mode without rescanning the wallet", async () => {
     await act(async () => { render(walletA, "", firstMint); });
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
