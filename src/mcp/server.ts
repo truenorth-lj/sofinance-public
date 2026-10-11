@@ -23,6 +23,7 @@ import {
   prepareOpenPositionSchema,
   submitOpenPositionSchema,
 } from "./schemas.js";
+import { publicToolError } from "./public-tool-error.js";
 import {
   listPositions,
   quoteAddLiquidity,
@@ -712,7 +713,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         throw new Error(`Unknown tool: ${name}`);
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = publicToolError(error);
     return {
       content: [
         {

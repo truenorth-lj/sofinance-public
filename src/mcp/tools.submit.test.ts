@@ -189,7 +189,7 @@ describe("submitSignedTransaction (MCP add-liquidity submit)", () => {
     await expect(submitSignedTransaction(selectedInput())).rejects.toThrow(/^RPC returned transaction signature mismatch$/);
   });
 
-  it("QUIRK: errors are NOT sanitized here; a URL/api key in an RPC error reaches the MCP client verbatim", async () => {
+  it("QUIRK: the tool function itself does not sanitize (compound/open submit do); redaction happens at the MCP boundary (route.ts / server.ts catch, see api/mcp/route.test.ts)", async () => {
     connection.sendRawTransaction.mockRejectedValue(new Error("failed https://rpc.example/x?api-key=SECRET123"));
     await expect(submitSignedTransaction(selectedInput())).rejects.toThrow("https://rpc.example/x?api-key=SECRET123");
   });
