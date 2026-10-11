@@ -23,6 +23,8 @@ const SECRET_ENV_NAMES = [
 type Reads = Record<string, number>;
 const ALLOWED_SECRET_READS: Record<string, Reads> = {
   JUPITER_API_KEY: {
+    // the single reader (lib/config/server-env.ts)
+    "lib/config/server-env.ts": 1,
     // app routes
     "app/api/compound-prepare/route.ts": 1,
     "app/api/compound-recover-prepare/route.ts": 1,
