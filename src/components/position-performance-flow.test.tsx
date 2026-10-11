@@ -27,7 +27,12 @@ function render(wallet = walletA, initialMint = "", sharedMint?: string) {
     walletsCount: 1, connectionError: "", signTransaction: async (tx) => tx,
   };
   root.render(createElement(WalletConnectionContext.Provider, { value: connection },
-    createElement(PositionPerformancePanel, { initialMint, embedded: sharedMint !== undefined, selectedMint: sharedMint })));
+    createElement(PositionPerformancePanel, { initialMint, embedded: sharedMint !== undefined, selectedMint: sharedMint, selectedNftAccount: sharedMint ? secondMint : undefined })));
+}
+/** Polls (real timers) until the condition holds, so timing on a slow CI box does not decide the test. */
+async function until(condition: () => boolean, timeoutMs = 2000) {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition() && Date.now() < deadline) await act(async () => { await new Promise((resolve) => setTimeout(resolve, 5)); });
 }
 async function scan(wallet = walletA, initialMint = "") {
   await act(async () => { render(wallet, initialMint); });
@@ -43,7 +48,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   positions = [position(firstMint), position(secondMint)];
   response = structuredClone(fixture);
-  fetchMock = vi.fn(async (url: string) => ({ ok: true, json: async () => url.startsWith("/api/wallet?") ? { positions } : response }));
+  fetchMock = vi.fn(async (url: string) => ({ ok: true, json: async () => url.startsWith("/api/wallet?") ? { positions } : url.startsWith("/api/lp-decision/exit-preview?") ? { status: "verified-preview", executable: false, sent: false, recoveryUSDCAtomic: "1000000", recoverySOLLamports: "8580200", localExpiresAt: new Date(Date.now() + 15000).toISOString() } : response }));
   vi.stubGlobal("fetch", fetchMock);
   container = document.createElement("div");
   document.body.append(container);
@@ -123,10 +128,8 @@ describe("position performance workflow", () => {
     expect(container.textContent).toContain("No deposit history was found");
     expect(container.textContent).not.toContain(`${response.tokenNative.tokenEquivalent.metrics.pnl.toPrecision(6)} ${response.tokenNative.tokenEquivalent.baseSymbol}`);
     expect(container.textContent).toContain("Amounts shown in");
-    expect(container.textContent).toContain("Position asset details");
-    const tickText = Array.from(container.querySelectorAll("div")).find((node) => node.childElementCount === 0 && node.textContent?.includes("Tick "));
-    expect(tickText?.closest("details")?.open).toBe(false);
-    expect(container.textContent).toContain("Removed / collected");
+    expect(container.textContent).toContain("Position assets");
+
   });
 
   it("shows days at 24 hours and displays known zero returns as zero", async () => {
@@ -146,7 +149,7 @@ describe("position performance workflow", () => {
     await compute();
     expectReturnCardsRemoved();
     const labels = cardLabels().join("|");
-    for (const kept of ["Holding days", "Range", "Trading-fee APR", "Fees earned", "Current position value"]) expect(labels).toContain(kept);
+    for (const kept of ["Holding days", "Range", "Estimated trading-fee APR", "Fees earned", "Current position value"]) expect(labels).toContain(kept);
     // 5 top-level cards: the emphasised APR card spans both columns so the 2-col grid has no hole.
     const grid = container.querySelector('[aria-label="Performance results"] .grid.sm\\:grid-cols-2')!;
     expect(grid.children).toHaveLength(5);
@@ -159,35 +162,64 @@ describe("position performance workflow", () => {
     await compute();
     expectReturnCardsRemoved();
     const labels = cardLabels().join("|");
-    for (const kept of ["Holding days", "Range", "Fee-only APR (USD)", "Current equity (USD)", "Fees earned (USD)"]) expect(labels).toContain(kept);
+    for (const kept of ["Holding days", "Range", "Estimated fee-only APR (USD)", "Current equity (USD)", "Fees earned (USD)"]) expect(labels).toContain(kept);
     const grid = container.querySelector('[aria-label="Performance results"] .grid.sm\\:grid-cols-2')!;
     expect(grid.children).toHaveLength(5);
   });
 
-  it("does not render the USD secondary section's removed cards", async () => {
+  it("keeps one APR and shows exit estimates alongside the key metrics", async () => {
+    Object.assign(response.metrics, { feesEarnedUsd: 0.125 });
     await scan();
     await compute();
-    const usd = Array.from(container.querySelectorAll("details")).find((d) => d.textContent?.includes("USD (secondary"))!;
-    usd.open = true;
-    expect(usd.textContent).toContain("Fee-only APR (USD)");
-    expect(usd.textContent).toContain("Equity (USD)");
-    expect(usd.textContent).toContain("Fees (USD)");
-    expect(usd.textContent).not.toMatch(/HPR|Annualized|PnL|Deposited/);
+    const results = container.querySelector('[aria-label="Performance results"]')!;
+    expect(cardLabels().filter((label) => label.includes("APR"))).toEqual(["Estimated trading-fee APR"]);
+    expect(results.textContent).toContain("$0.1250 USD");
+    expect(results.textContent).toContain("In range");
+    const exit = results.querySelector('[aria-label="Exit estimates"]')!;
+    expect(exit.closest("details")).toBeNull();
+    expect(exit.textContent).toContain("Preview exit: USDC + SOL");
+    expect(results.textContent).not.toMatch(/Read ledger, history and HODL|Verified, read-only|Details: position ledger|USD \(secondary|Details: data sources/);
+  });
+
+  it("labels the APR as an estimate and shows how the position value splits into liquidity and unclaimed fees", async () => {
+    await scan();
+    await compute();
+    const results = container.querySelector('[aria-label="Performance results"]')!;
+    expect(results.textContent).toContain("Not a forecast or a promised return");
+    expect(results.textContent).toContain("it is not a promised return");
+    const te = response.tokenNative!.tokenEquivalent!;
+    expect(results.textContent).toContain(`Liquidity ${te.metrics.liquidity.toPrecision(6)} + unclaimed fees ${te.metrics.uncollectedFees.toPrecision(6)} ${te.baseSymbol}`);
+    expect(te.metrics.liquidity + te.metrics.uncollectedFees).toBeCloseTo(te.metrics.equity, 6);
+  });
+
+  it("labels the USD view the same way: equity = liquidity + unclaimed fees", async () => {
+    (response.tokenNative as unknown) = null;
+    Object.assign(response.metrics, { currentEquityUsd: 1080, liquidityUsd: 1020, uncollectedFeesUsd: 60, feesEarnedUsd: 80 });
+    await scan();
+    await compute();
+    const text = container.querySelector('[aria-label="Performance results"]')!.textContent!;
+    expect(text).toContain("Liquidity $1020.0000 + unclaimed fees $60.0000");
+    expect(text).toContain("Collected plus unclaimed fees");
   });
 
   it("uses the shared position in embedded mode without rescanning the wallet", async () => {
     await act(async () => { render(walletA, "", firstMint); });
-    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
-    expect(fetchMock).toHaveBeenCalledOnce();
+    await until(() => fetchMock.mock.calls.length >= 2 && Boolean(container.textContent?.includes("1.000000 USDC")));
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(fetchMock.mock.calls.some(([url]) => url.startsWith("/api/wallet?"))).toBe(false);
     expect(container.querySelector("#perf-position")).toBeNull();
+    expect(container.textContent).not.toContain("Look up another position by NFT mint");
     expect(container.textContent).not.toContain("Compute performance");
     expect(fetchMock.mock.calls[0]?.[0]).toContain(`positionMint=${firstMint}`);
     expect(container.querySelector('[aria-label="Performance results"]')).not.toBeNull();
+    expect(container.textContent).not.toContain("Preview exit: USDC + SOL");
+    expect(container.textContent).toContain("1.000000 USDC + 0.008580200 SOL");
+    expect(fetchMock.mock.calls.at(-1)?.[0]).toContain(`nftAccount=${secondMint}`);
     response = { ...response, positionMint: secondMint };
     await act(async () => { render(walletA, "", secondMint); });
-    expect(container.querySelector('[aria-label="Performance results"]')).toBeNull();
-    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
+    expect(container.querySelector("#perf-heading")).toBeNull();
+    expect(container.textContent).not.toContain("Position assets");
+    await until(() => String(fetchMock.mock.calls.at(-1)?.[0]).includes(`positionMint=${secondMint}`));
     expect(fetchMock.mock.calls.at(-1)?.[0]).toContain(`positionMint=${secondMint}`);
     expect(container.querySelector('[aria-label="Performance results"]')).not.toBeNull();
   });
@@ -201,7 +233,8 @@ describe("position performance workflow", () => {
     expect(retry).toBeDefined();
     await act(async () => { retry!.click(); });
     expect(container.querySelector('[aria-label="Performance results"]')).not.toBeNull();
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
   it("ignores the previous position response when selection changes during loading", async () => {
@@ -216,10 +249,10 @@ describe("position performance workflow", () => {
     await act(async () => { render(walletA, "", secondMint); });
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
     expect(firstSignal.aborted).toBe(true);
-    const currentResults = container.querySelector('[aria-label="Performance results"]')?.textContent;
+    const currentResults = container.querySelector('[aria-label="Performance results"] .grid')?.textContent;
     expect(currentResults).toBeTruthy();
     await act(async () => { resolveFirst({ ok: true, json: async () => ({ ...fixture, rangeSide: "stale position range" }) }); });
-    expect(container.querySelector('[aria-label="Performance results"]')?.textContent).toBe(currentResults);
+    expect(container.querySelector('[aria-label="Performance results"] .grid')?.textContent).toBe(currentResults);
     expect(container.textContent).not.toContain("stale position range");
   });
 

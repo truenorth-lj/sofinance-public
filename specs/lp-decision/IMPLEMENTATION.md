@@ -7,6 +7,8 @@
 - 已讀主規格全文、AGENTS.md、CLAUDE.md、README、相關 Next 安裝版文件。沒有相關 `.agents/skills`／可讀本地 memories。
 - 本工作沒有 reset、刪除修改、commit、push、PR、部署、購買、配置新憑證或簽署／廣播金融交易。退出端點只構造 unsigned simulation，不回傳可簽交易，永遠 `executable=false, sent=false`。
 
+> **Removed (PR #81):** the live ledger / history / same-cash-flow HODL view, `/api/lp-decision/ledger`, `lp-flow-data.ts`, `lp-ledger-analysis.ts`, `lp-flow-audit.ts`, `lp-current-equity.ts`, `lp-live-marks.ts`, `lp-network-cost.ts`, `lp-historical-marks.ts`, `lp-price-evidence.ts` and the offline replay scripts `scripts/reconcile-lp-*.ts` are no longer in the codebase (nothing else consumed them). The sections below describe them as historical design context; the Performance tab keeps only the exit estimate (`position-exit-estimate.tsx`, `/api/lp-decision/exit-preview`), `lp-position-observations.ts`, `lp-accounting.ts` and `lp-decision-data.ts`.
+
 ## 實作結果
 
 首屏在 `/app`、`/app/rwa-pairs`、`/app/position-performance` 提供時間／USDC 金額句型、圓角卡片及上下文帶入；原錢包／開倉流程保留，`/app/ai` 仍為 MCP 設定。日期為 UTC 00:00，按實際剩餘時間計算，不上取整為整天。持倉金額仍手動輸入。
@@ -27,7 +29,7 @@
 | `lp-flow-data.ts` | 25s 總預算／10s 單來源，RPC 間隔；保留最後成功 cursor，失敗不跳交易。同 position 序列化，head 變化清舊 cache；位置 cache 15min／最多20個。讀完整 position 後才查 NFT mint／token-account 相關成本窗口（最多1000 signatures，達上限即 partial）。 |
 | `lp-scenario.ts` | 維持／重掛同初始 range；outside-range／價格條件、cooldown／max count／每次成本；扣增量成本、不重扣沉沒成本。沒有可核實套利回流，不編造收入。條件式 breakeven 限取樣點，不稱精確交點。 |
 | 模型 gate | probability 一律 null；資料、样本外、洩漏、校準未通過不顯示百分比或概率排序。 |
-| `lp-position-evidence.tsx` | 正式 UI「讀取實際台帳與歷史／HODL」「預覽退出：USDC＋SOL」，部分區間／成本／歸屬細節、續讀、來源錯誤、60s估值過期、15s退出期限及 SOL 曝險。拒絕 replay／demo 作當前值；取消／輸入切換／unmount 令舊回應失效，防重複請求。 |
+| `lp-position-evidence.tsx`（已改名 `position-exit-estimate.tsx`，台帳／HODL 部分已移除） | 正式 UI「讀取實際台帳與歷史／HODL」「預覽退出：USDC＋SOL」，部分區間／成本／歸屬細節、續讀、來源錯誤、60s估值過期、15s退出期限及 SOL 曝險。拒絕 replay／demo 作當前值；取消／輸入切換／unmount 令舊回應失效，防重複請求。 |
 
 主 `/api/lp-decision` 的既有單值歷史欄位仍 unavailable；正式區間計算由新增 live ledger adapter 與同頁持倉證據卡提供，未把區間硬填入 exact scalar 欄位。
 
