@@ -4,7 +4,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { OPEN_RANGE_UI_PRESETS, type OpenRangePreset } from "@/lib/open-range-presets";
-import { payloadFixture } from "@/lib/range-apr/payload.fixture";
+import { payloadFixture, payloadWithAprs } from "@/lib/range-apr/payload.fixture";
 import { uiPriceFromTick } from "@/lib/range-apr/tick-math";
 import { RangePresetPicker } from "./range-preset-picker";
 import type { PoolRangeAprState } from "./use-pool-range-apr";
@@ -36,19 +36,50 @@ function render(apr: PoolRangeAprState, props: Props = {}) {
 const text = (selector: string) => container.querySelector(selector)?.textContent ?? null;
 const ready = (): PoolRangeAprState => ({ status: "ready", data: payloadFixture() });
 
+const labels = () => [...container.querySelectorAll("[aria-label='Price range presets'] button")].map((button) => button.querySelector("span")?.textContent);
+const readyWith = (aprs: Parameters<typeof payloadWithAprs>[0]): PoolRangeAprState => ({ status: "ready", data: payloadWithAprs(aprs) });
+
 describe("RangePresetPicker", () => {
-  it("puts AI pick left of Tight and shows an APR under every preset button", () => {
-    render(ready());
-    const labels = [...container.querySelectorAll("[aria-label='Price range presets'] button")].map((button) => button.querySelector("span")?.textContent);
-    expect(labels).toEqual(["AI pick", "Tight (±0.05%)", "Standard (±0.3%)", "Wide (±1%)", "Custom"]);
-    const ai = text("[data-testid='apr-ai']");
-    const tight = text("[data-testid='apr-tight']");
-    const wide = text("[data-testid='apr-wide']");
-    expect(ai).toMatch(/^~\d/);
-    expect(tight).toMatch(/^~\d/);
-    expect(wide).toMatch(/^~\d/);
-    expect(Number.parseFloat(ai!.slice(1))).toBeGreaterThan(Number.parseFloat(wide!.slice(1)));
+  it("puts AI best leftmost, resolved to the highest-APR candidate, then the rest narrow to wide, then Custom", () => {
+    render(readyWith({ micro: 10, tight: 38, standard: 20, wide: 5 }));
+    expect(labels()).toEqual(["AI best", "Micro", "Standard (±0.3%)", "Wide (±1%)", "Custom"]);
+    expect(text("[data-testid='apr-ai-best']")).toBe("~38%");
+    expect(text("[data-testid='ai-best-resolved']")).toBe("Tight");
+    expect(text("[data-testid='apr-micro']")).toBe("~10%");
+    expect(text("[data-testid='apr-standard']")).toBe("~20%");
+    expect(text("[data-testid='apr-wide']")).toBe("~5.0%");
     expect(text("[data-testid='apr-custom']")).toBe("—");
+    expect(container.querySelector("[data-testid='apr-tight']")).toBeNull();
+  });
+
+  it("with the default fixture AI best resolves to the narrowest (Micro) and is not duplicated", () => {
+    render(ready());
+    expect(labels()).toEqual(["AI best", "Tight (±0.05%)", "Standard (±0.3%)", "Wide (±1%)", "Custom"]);
+    expect(text("[data-testid='ai-best-resolved']")).toBe("Micro");
+  });
+
+  it("falls back to the plain row with no AI best and no highlight on it while loading, on error and when nothing is priced", () => {
+    const plain = ["Micro", "Tight (±0.05%)", "Standard (±0.3%)", "Wide (±1%)", "Custom"];
+    for (const state of [
+      { status: "loading" } as PoolRangeAprState,
+      { status: "error", message: "boom" } as PoolRangeAprState,
+      readyWith({ micro: null, tight: null, standard: null, wide: null }),
+    ]) {
+      render(state);
+      expect(labels()).toEqual(plain);
+      expect(container.querySelector("[data-testid='preset-ai-best']")).toBeNull();
+      expect(container.querySelector("button[aria-label='About AI best']")).toBeNull();
+      const pressed = [...container.querySelectorAll("[aria-label='Price range presets'] button[aria-pressed='true']")];
+      expect(pressed.map((b) => b.querySelector("span")?.textContent)).toEqual(["Standard (±0.3%)"]);
+    }
+  });
+
+  it("when Standard is the AI best pick, Standard is selected by default and shown as AI best", () => {
+    render(readyWith({ micro: 1, tight: 2, standard: 40, wide: 3 }), { selected: "standard" });
+    expect(labels()).toEqual(["AI best", "Micro", "Tight (±0.05%)", "Wide (±1%)", "Custom"]);
+    const pressed = [...container.querySelectorAll("[aria-label='Price range presets'] button[aria-pressed='true']")];
+    expect(pressed.map((b) => b.querySelector("span")?.textContent)).toEqual(["AI best"]);
+    expect(text("[data-testid='ai-best-resolved']")).toBe("Standard");
   });
 
   it("headlines the selected preset's estimate with its in-range share and the estimate caveat", () => {
@@ -62,27 +93,37 @@ describe("RangePresetPicker", () => {
     expect(container.textContent).toContain("~$100 deposit");
   });
 
-  it("tells the truth about the AI pick (fixed rule, not a model) in the visible note and the tooltip", () => {
-    render(ready(), { selected: "ai" });
-    expect(container.textContent).toMatch(/AI pick is a fixed rule \(centred ±2 tick-spacing steps\), not an AI model/);
-    const info = container.querySelector<HTMLButtonElement>("button[aria-label='About AI pick']")!;
+  it("tells the truth about AI best (automatic highest estimated APR, not a model) in the tooltip and the note", () => {
+    render(readyWith({ micro: 1, tight: 38, standard: 2, wide: 3 }), { selected: "tight" });
+    expect(container.textContent).toMatch(/AI best for this pool is Tight: the highest estimated fee APR of the candidate ranges over the last 7 days\. Not a prediction/);
+    const info = container.querySelector<HTMLButtonElement>("button[aria-label='About AI best']")!;
     vi.spyOn(info, "getBoundingClientRect").mockReturnValue({ left: 10, right: 20, top: 10, bottom: 20, width: 10, height: 10, x: 10, y: 10, toJSON: () => ({}) });
     act(() => { info.dispatchEvent(new MouseEvent("mouseover", { bubbles: true })); });
     const tooltip = document.querySelector("[role='tooltip']")!;
-    expect(tooltip.textContent).toMatch(/fixed rule, not an AI model/);
-    expect(tooltip.textContent).toMatch(/2 tick-spacing steps below and 2 above/);
+    expect(tooltip.textContent).toMatch(/highest estimated fee APR/);
+    expect(tooltip.textContent).toMatch(/last 7 days/);
+    expect(tooltip.textContent).toMatch(/not an AI model/);
+    expect(tooltip.textContent).toMatch(/risk of leaving range/);
   });
 
-  it("selects presets on click", () => {
+  it("AI best selects the resolved candidate's own preset (so quote/prepare use the ordinary path)", () => {
+    const { onSelect } = render(readyWith({ micro: 1, tight: 38, standard: 2, wide: 3 }));
+    act(() => { container.querySelector<HTMLButtonElement>("[data-testid='preset-ai-best']")!.click(); });
+    expect(onSelect).toHaveBeenCalledWith("tight");
+  });
+
+  it("selects the other presets on click", () => {
     const { onSelect } = render(ready());
-    act(() => { container.querySelector<HTMLButtonElement>("[data-testid='apr-ai']")!.closest("button")!.click(); });
-    expect(onSelect).toHaveBeenCalledWith("ai");
+    act(() => { container.querySelector<HTMLButtonElement>("[data-testid='apr-wide']")!.closest("button")!.click(); });
+    expect(onSelect).toHaveBeenCalledWith("wide");
   });
 
-  it("marks only the selected preset as pressed", () => {
-    render(ready(), { selected: "ai" });
-    const pressed = [...container.querySelectorAll("[aria-label='Price range presets'] button[aria-pressed='true']")].map((b) => b.querySelector("span")?.textContent);
-    expect(pressed).toEqual(["AI pick"]);
+  it("highlights AI best only while its resolved preset is the selected one", () => {
+    render(readyWith({ micro: 1, tight: 38, standard: 2, wide: 3 }), { selected: "tight" });
+    const pressed = () => [...container.querySelectorAll("[aria-label='Price range presets'] button[aria-pressed='true']")].map((b) => b.querySelector("span")?.textContent);
+    expect(pressed()).toEqual(["AI best"]);
+    render(readyWith({ micro: 1, tight: 38, standard: 2, wide: 3 }), { selected: "wide" });
+    expect(pressed()).toEqual(["Wide (±1%)"]);
   });
 
   it("estimates a custom range live from the typed prices", () => {
@@ -105,16 +146,16 @@ describe("RangePresetPicker", () => {
 
   it("prices the live quote's aligned ticks when present", () => {
     const data = payloadFixture();
-    render({ status: "ready", data }, { selected: "ai", quotedRange: { tickLower: -9, tickUpper: 9 } });
+    render({ status: "ready", data }, { selected: "standard", quotedRange: { tickLower: -9, tickUpper: 9 } });
     expect(text("[data-testid='range-apr-headline']")).toBe(text("[data-testid='apr-wide']"));
   });
 
   it("shows loading and unavailable states without blocking anything", () => {
     render({ status: "loading" });
-    expect(text("[data-testid='apr-ai']")).toBe("…");
+    expect(text("[data-testid='apr-micro']")).toBe("…");
     expect(text("[data-testid='range-apr-headline']")).toContain("Estimating…");
     render({ status: "error", message: "boom" });
-    expect(text("[data-testid='apr-ai']")).toBe("—");
+    expect(text("[data-testid='apr-micro']")).toBe("—");
     expect(container.textContent).toMatch(/Estimate unavailable right now\. Creating a position is not affected/);
     expect(container.textContent).not.toContain("boom");
   });

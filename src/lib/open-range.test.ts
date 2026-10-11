@@ -85,13 +85,13 @@ describe("open-position range / tick math", () => {
     expect(resolved.rangeSide).toBe("below");
   });
 
-  describe("ai preset (centred +-2 tick-spacing units)", () => {
+  describe("micro preset (centred +-2 tick-spacing units)", () => {
     const resolveAi = (tickCurrent: number, tickSpacing: number, fraction = 0, decimals: [number, number] = [6, 6]) => {
       const sqrt = TickUtil.getSqrtPriceAtTick(tickCurrent);
       // nudge the price a fraction of a tick above the boundary
       const nudged = fraction ? sqrt.muln(1_000_000_000 + Math.round(fraction * 0.5 * 1e5)).divn(1_000_000_000) : sqrt;
       return resolveOpenRange({
-        range: { preset: "ai" },
+        range: { preset: "micro" },
         currentPrice: uiPriceBPerAFromTick(tickCurrent, decimals[0], decimals[1]),
         tickCurrent,
         sqrtPriceX64: nudged.toString(),
@@ -118,7 +118,7 @@ describe("open-position range / tick math", () => {
       // tickCurrent -46068 is 12 above boundary -46080 and 48 below -46020
       const resolved = resolveAi(-46_068, 60);
       expect([resolved.tickLower, resolved.tickUpper]).toEqual([-46_200, -45_960]);
-      expect(resolved.preset).toBe("ai");
+      expect(resolved.preset).toBe("micro");
     });
 
     it("flags only genuinely narrow bands (<= 10 raw ticks) with the narrow warning", () => {
@@ -144,7 +144,7 @@ describe("open-position range / tick math", () => {
     });
 
     it("is accepted by rangeInputFromFields", () => {
-      expect(rangeInputFromFields("ai")).toEqual({ preset: "ai" });
+      expect(rangeInputFromFields("micro")).toEqual({ preset: "micro" });
     });
   });
 });

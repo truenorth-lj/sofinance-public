@@ -5,8 +5,8 @@ import { TickUtil } from "@raydium-io/raydium-sdk-v2";
 import { resolveOpenRange } from "../open-range";
 import type { RangeAprPresetId } from "./types";
 
-/** Display order: the AI pick first, then the percent presets from narrow to wide. */
-export const RANGE_APR_PRESET_ORDER: readonly RangeAprPresetId[] = ["ai", "tight", "standard", "wide"];
+/** Display order: Micro first, then the percent presets, narrow to wide (the canonical candidate order). */
+export const RANGE_APR_PRESET_ORDER: readonly RangeAprPresetId[] = ["micro", "tight", "standard", "wide"];
 
 export type PresetTickRange = {
   id: RangeAprPresetId; tickLower: number; tickUpper: number; priceLower: number; priceUpper: number;

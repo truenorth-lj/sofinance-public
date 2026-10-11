@@ -5,8 +5,8 @@ vi.mock("server-only", () => ({}));
 import { parseOpenRange } from "./open-api";
 
 describe("parseOpenRange (web quote API)", () => {
-  it("accepts the ai preset", () => {
-    expect(parseOpenRange({ rangePreset: "ai" })).toEqual({ preset: "ai" });
+  it("accepts the micro preset", () => {
+    expect(parseOpenRange({ rangePreset: "micro" })).toEqual({ preset: "micro" });
   });
 
   it("still defaults to standard and parses custom bands", () => {
@@ -16,7 +16,7 @@ describe("parseOpenRange (web quote API)", () => {
   });
 
   it("rejects unknown presets and incomplete custom ranges", () => {
-    expect(() => parseOpenRange({ rangePreset: "yolo" })).toThrow(/ai, tight, standard, wide, or custom/);
+    expect(() => parseOpenRange({ rangePreset: "yolo" })).toThrow(/micro, tight, standard, wide, or custom/);
     expect(() => parseOpenRange({ rangePreset: "custom", minPrice: "1" })).toThrow(/minPrice and maxPrice/);
   });
 });

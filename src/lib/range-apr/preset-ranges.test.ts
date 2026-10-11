@@ -10,9 +10,9 @@ const pool = (tickCurrent: number, tickSpacing: number, decimalsA = 6, decimalsB
 });
 
 describe("resolvePresetRanges", () => {
-  it("returns AI pick first, then tight, standard, wide", () => {
-    expect(RANGE_APR_PRESET_ORDER).toEqual(["ai", "tight", "standard", "wide"]);
-    expect(resolvePresetRanges(pool(0, 1)).map((range) => range.id)).toEqual(["ai", "tight", "standard", "wide"]);
+  it("returns Micro first, then tight, standard, wide", () => {
+    expect(RANGE_APR_PRESET_ORDER).toEqual(["micro", "tight", "standard", "wide"]);
+    expect(resolvePresetRanges(pool(0, 1)).map((range) => range.id)).toEqual(["micro", "tight", "standard", "wide"]);
   });
 
   it("uses the same tick resolution as the quote path, aligned to the pool's spacing", () => {
@@ -26,7 +26,7 @@ describe("resolvePresetRanges", () => {
     }
   });
 
-  it("gives the AI pick the documented +-2 spacing band", () => {
+  it("gives Micro the documented +-2 spacing band", () => {
     const [ai] = resolvePresetRanges(pool(-46_068, 60));
     expect([ai!.tickLower, ai!.tickUpper]).toEqual([-46_200, -45_960]);
     const [ai1] = resolvePresetRanges(pool(46_080, 1, 6, 8));

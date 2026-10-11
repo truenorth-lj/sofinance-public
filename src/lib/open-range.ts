@@ -2,7 +2,7 @@ import Decimal from "decimal.js";
 import { TickUtil } from "@raydium-io/raydium-sdk-v2";
 import { positionSide } from "./quote-math";
 import { uiPriceBPerAFromTick } from "./position-performance-math";
-import { aiPickRange } from "./range-apr/ai-pick";
+import { microRange } from "./range-apr/micro-range";
 import {
   DEFAULT_OPEN_RANGE_PRESET,
   OPEN_RANGE_PRESETS,
@@ -132,9 +132,9 @@ export function resolveOpenRange(input: {
   let warning: string | null = null;
   let tickLower: number;
   let tickUpper: number;
-  if (input.range.preset === "ai") {
+  if (input.range.preset === "micro") {
     // Tick-based rule (centred +-2 tick-spacing units), so it bypasses the price-band conversion.
-    ({ tickLower, tickUpper } = aiPickRange(sqrtPriceX64, tickSpacing));
+    ({ tickLower, tickUpper } = microRange(sqrtPriceX64, tickSpacing));
     requestedMinPrice = uiPriceBPerAFromTick(tickLower, decimalsA, decimalsB);
     requestedMaxPrice = uiPriceBPerAFromTick(tickUpper, decimalsA, decimalsB);
     narrow = tickUpper - tickLower <= NARROW_RANGE_MAX_TICKS;

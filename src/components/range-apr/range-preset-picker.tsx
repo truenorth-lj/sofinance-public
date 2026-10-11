@@ -2,9 +2,9 @@
 
 import { LoaderCircle } from "lucide-react";
 import type { OpenRangePreset, OpenRangeUiPreset } from "@/lib/open-range-presets";
-import { AI_PICK_PRESET_ID } from "@/lib/range-apr/ai-pick";
-import { APR_ESTIMATE_CAVEAT, APR_ESTIMATE_LABEL } from "@/lib/range-apr/copy";
+import { AI_BEST_HELP, AI_BEST_LABEL, APR_ESTIMATE_CAVEAT, APR_ESTIMATE_LABEL } from "@/lib/range-apr/copy";
 import { formatEstimate, unavailableReasonText } from "@/lib/range-apr/format";
+import { buildPresetList, type AiBestButton } from "@/lib/range-apr/preset-list";
 import { estimateForSelection, type SelectionEstimate, type TickRange } from "@/lib/range-apr/selection";
 import { InfoTip } from "../info-tip";
 import type { PoolRangeAprState } from "./use-pool-range-apr";
@@ -16,8 +16,8 @@ function aprLine(apr: PoolRangeAprState, text: string): string {
   return apr.status === "loading" ? "…" : text;
 }
 
-function Headline({ apr, selection, preset }: {
-  apr: PoolRangeAprState; selection: SelectionEstimate | null; preset: OpenRangePreset;
+function Headline({ apr, selection, aiBest }: {
+  apr: PoolRangeAprState; selection: SelectionEstimate | null; aiBest: AiBestButton | null;
 }) {
   const label = (
     <span className="inline-flex items-center gap-1.5 text-smoke">
@@ -53,8 +53,10 @@ function Headline({ apr, selection, preset }: {
       {apr.status === "ready" && apr.data.sample.confidence === "low" && (
         <p className="mt-1 text-[11px] leading-5 text-smoke">Low confidence: thin or patchy recent trading, so treat this as a rough guide.</p>
       )}
-      {preset === AI_PICK_PRESET_ID && (
-        <p className="mt-1 text-[11px] leading-5 text-smoke">AI pick is a fixed rule (centred ±2 tick-spacing steps), not an AI model.</p>
+      {aiBest && (
+        <p className="mt-1 text-[11px] leading-5 text-smoke">
+          {AI_BEST_LABEL} for this pool is {aiBest.resolvedLabel}: the highest estimated fee APR of the candidate ranges over the last 7 days. Not a prediction.
+        </p>
       )}
     </div>
   );
@@ -76,21 +78,35 @@ export function RangePresetPicker({
 }) {
   const data = apr.status === "ready" ? apr.data : null;
   const selection = data ? estimateForSelection(data, { preset: selected, minPrice, maxPrice }, quotedRange) : null;
-  const presetText = (id: OpenRangeUiPreset["id"]) => {
-    const estimate = data?.presets.find((item) => item.id === id)?.estimate;
-    return aprLine(apr, formatEstimate(estimate));
-  };
+  // While loading / on error `data` is null, so this is the plain row without "AI best" (and no highlight on it).
+  const list = buildPresetList(presets, data);
   const customText = selected === "custom" && selection?.status === "ready" ? formatEstimate(selection.estimate) : "—";
-  const aiHelp = presets.find((preset) => preset.id === AI_PICK_PRESET_ID)?.help;
+  const tips = [
+    ...(list.aiBest ? [{ key: "ai-best", label: `About ${AI_BEST_LABEL}`, text: AI_BEST_HELP }] : []),
+    ...presets.filter((preset) => preset.help).map((preset) => ({ key: preset.id, label: `About ${preset.shortLabel}`, text: preset.help })),
+  ];
 
   return (
     <>
       <div className="mt-4 flex items-center gap-1.5 text-xs text-smoke">
         <span>Price range (B per 1 A)</span>
-        {aiHelp && <InfoTip label="About AI pick">{aiHelp}</InfoTip>}
+        {tips.map((tip) => <InfoTip key={tip.key} label={tip.label}>{tip.text}</InfoTip>)}
       </div>
       <div className="mt-2 flex flex-wrap gap-2" role="group" aria-label="Price range presets">
-        {presets.map((preset) => (
+        {list.aiBest && (
+          <button
+            type="button"
+            aria-pressed={selected === list.aiBest.id}
+            onClick={() => onSelect(list.aiBest!.id)}
+            className={`${PILL} ${pillTone(selected === list.aiBest.id)}`}
+            data-testid="preset-ai-best"
+          >
+            <span className="block text-xs font-semibold">{AI_BEST_LABEL}</span>
+            <span className="block text-[10px] tabular-nums text-smoke" data-testid="apr-ai-best">{formatEstimate(list.aiBest.estimate)}</span>
+            <span className="block text-[10px] text-smoke" data-testid="ai-best-resolved">{list.aiBest.resolvedLabel}</span>
+          </button>
+        )}
+        {list.buttons.map((preset) => (
           <button
             key={preset.id}
             type="button"
@@ -99,7 +115,7 @@ export function RangePresetPicker({
             className={`${PILL} ${pillTone(selected === preset.id)}`}
           >
             <span className="block text-xs font-semibold">{preset.label}</span>
-            <span className="block text-[10px] tabular-nums text-smoke" data-testid={`apr-${preset.id}`}>{presetText(preset.id)}</span>
+            <span className="block text-[10px] tabular-nums text-smoke" data-testid={`apr-${preset.id}`}>{aprLine(apr, formatEstimate(preset.estimate))}</span>
           </button>
         ))}
         <button
@@ -130,7 +146,7 @@ export function RangePresetPicker({
           />
         </div>
       )}
-      <Headline apr={apr} selection={selection} preset={selected} />
+      <Headline apr={apr} selection={selection} aiBest={selected === list.aiBest?.id ? list.aiBest : null} />
     </>
   );
 }
