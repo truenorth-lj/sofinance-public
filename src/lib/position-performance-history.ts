@@ -99,6 +99,7 @@ function parsedMetaToHistory(
     blockTime: tx.blockTime ?? fallbackBlockTime ?? null,
     err: tx.meta?.err ?? null,
     logMessages: tx.meta?.logMessages ?? null,
+    parsedTransaction: tx,
   };
 }
 

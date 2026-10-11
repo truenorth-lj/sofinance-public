@@ -8,7 +8,83 @@
  */
 
 import { createHash } from "node:crypto";
-import { PublicKey } from "@solana/web3.js";
+import { PublicKey, type ParsedTransactionWithMeta } from "@solana/web3.js";
+import bs58 from "bs58";
+import { CLMM_PROGRAM_ID } from "@raydium-io/raydium-sdk-v2";
+import { TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID } from "@solana/spl-token";
+
+const instructionDisc = (name: string) => createHash("sha256").update(`global:${name}`).digest().subarray(0, 8);
+const OPEN_TOKEN22_DISC = instructionDisc("open_position_with_token22_nft");
+const OPEN_V2_DISC = instructionDisc("open_position_v2");
+
+export type PositionEventContext = {
+  positionMint: string;
+  positionAccount: string;
+  poolId: string;
+  mintA: string;
+  mintB: string;
+  vaultA: string;
+  vaultB: string;
+};
+
+export function parsePositionCashflowEvents(
+  logs: readonly string[] | null | undefined,
+  transaction: ParsedTransactionWithMeta | undefined,
+  context: PositionEventContext,
+): PositionCashflowEvent[] {
+  if (transaction?.meta?.err) return [];
+  const events = parseRaydiumEventsFromLogs(logs).filter(event => event.kind === "open"
+    ? event.poolState === context.poolId : event.positionNftMint === context.positionMint);
+  if (!transaction?.meta || !logs?.includes("Log truncated") || events.some(event => event.kind === "open")) return events;
+
+  // A zap can exhaust Solana's log budget before CreatePersonalPositionEvent.
+  // The receipt still contains the opening instruction and its actual transfers.
+  // Never use amountMax or whole-wallet balance deltas as deposited amounts.
+  for (const [index, instruction] of transaction.transaction.message.instructions.entries()) {
+    if (instruction.programId.toBase58() !== CLMM_PROGRAM_ID.toBase58() || !("accounts" in instruction)) continue;
+    let data: Buffer;
+    try { data = Buffer.from(bs58.decode(instruction.data)); } catch { continue; }
+    if (data.length < 58) continue;
+    const disc = data.subarray(0, 8);
+    const token22 = disc.equals(OPEN_TOKEN22_DISC);
+    const v2 = disc.equals(OPEN_V2_DISC);
+    if (!token22 && !v2) continue;
+    const shift = token22 ? 0 : 1; // v2 adds a metadata account before the pool.
+    const account = (offset: number) => instruction.accounts[offset]?.toBase58();
+    if (account(2) !== context.positionMint || account(4 + shift) !== context.poolId ||
+        account(8 + shift) !== context.positionAccount || account(11 + shift) !== context.vaultA ||
+        account(12 + shift) !== context.vaultB || account(token22 ? 18 : 20) !== context.mintA ||
+        account(token22 ? 19 : 21) !== context.mintB) continue;
+    const inner = transaction.meta.innerInstructions?.find(group => group.index === index)?.instructions;
+    if (!inner) continue;
+    const deposited = (source: string | undefined, destination: string, mint: string, maxOffset: number): bigint | null => {
+      let total = 0n;
+      let found = false;
+      for (const transfer of inner) {
+        if (!("parsed" in transfer) || ![TOKEN_PROGRAM_ID.toBase58(), TOKEN_2022_PROGRAM_ID.toBase58()].includes(transfer.programId.toBase58())) continue;
+        const { type, info } = transfer.parsed;
+        if (type !== "transferChecked" && type !== "transfer") continue;
+        if (!source || info?.source !== source || info?.destination !== destination || info?.authority !== account(0)) continue;
+        if (type === "transferChecked" && info.mint !== mint) return null;
+        const amount = type === "transferChecked" ? info.tokenAmount?.amount : info.amount;
+        if (typeof amount !== "string" || !/^\d+$/.test(amount)) return null;
+        total += BigInt(amount);
+        found = true;
+      }
+      // A one-sided opening legitimately has no transfer on the zero side.
+      return found || data.readBigUInt64LE(maxOffset) === 0n ? total : null;
+    };
+    const amountA = deposited(account(9 + shift), context.vaultA, context.mintA, 40);
+    const amountB = deposited(account(10 + shift), context.vaultB, context.mintB, 48);
+    if (amountA === null || amountB === null) continue;
+    events.push({
+      kind: "open", poolState: context.poolId, nftOwner: account(1)!,
+      tickLower: data.readInt32LE(8), tickUpper: data.readInt32LE(12),
+      liquidity: readU128(data, 24).toString(), amountA: amountA.toString(), amountB: amountB.toString(),
+    });
+  }
+  return events;
+}
 
 const REWARD_NUM = 3;
 
