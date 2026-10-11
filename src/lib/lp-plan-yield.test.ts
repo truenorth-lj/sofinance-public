@@ -1,12 +1,12 @@
 import Decimal from "decimal.js";
 import { describe, expect, it } from "vitest";
 import {
+  aprToApyPct,
   averageCompleteDayAprPct,
   breakEvenDay,
   buildPlanComparison,
   compoundedProfit,
   dailyRateFromAprPct,
-  daysToReachGain,
   isThinPlanSample,
   planEntryCost,
   PLAN_MIN_RELIABLE_SAMPLE_DAYS,
@@ -90,20 +90,13 @@ describe("breakEvenDay", () => {
   });
 });
 
-describe("daysToReachGain", () => {
-  it("returns 0 when the target is already met", () => {
-    expect(daysToReachGain("1000", dailyRateFromAprPct("10"), "0")).toBe(0);
-  });
-
-  it("finds the first day the compounded gain covers the target", () => {
-    const rate = dailyRateFromAprPct("36.5");
-    expect(daysToReachGain("1000", rate, "1")).toBe(1);
-    expect(daysToReachGain("1000", rate, "2")).toBe(2);
-  });
-
-  it("returns null when a year is not enough, including zero yield", () => {
-    expect(daysToReachGain("1000", dailyRateFromAprPct("0"), "1")).toBeNull();
-    expect(daysToReachGain("1000", dailyRateFromAprPct("0.01"), "500")).toBeNull();
+describe("aprToApyPct", () => {
+  it("compounds the APR daily over 365 days", () => {
+    expect(aprToApyPct("0")).toBe("0");
+    const apy = Number(aprToApyPct("36.5"));
+    expect(apy).toBeCloseTo((Math.pow(1 + 0.365 / 365, 365) - 1) * 100, 8);
+    expect(apy).toBeGreaterThan(36.5);
+    expect(Number(aprToApyPct("19.21"))).toBeCloseTo(21.18, 1);
   });
 });
 
@@ -142,7 +135,7 @@ describe("buildPlanComparison", () => {
       days: 2,
       aprPct: "36.5",
       sampleDays: 29,
-      target: "3",
+      aprWindowDays: 30,
     });
     expect(plan.points).toEqual([
       { day: 0, sofinance: "0", hold: "0" },
@@ -154,24 +147,24 @@ describe("buildPlanComparison", () => {
     expect(plan.vsHold).toBe("2.001");
     expect(plan.exitValue).toBe("1002.001");
     expect(plan.breakEvenDay).toBe(0);
-    expect(plan.reachesTarget).toBe(false);
-    expect(plan.shortfall).toBe("0.999");
-    expect(plan.daysToTarget).toBe(3);
+    expect(plan.endGainPct).toBe("0.2001");
     expect(plan.sampleDays).toBe(29);
+    expect(plan.aprWindowDays).toBe(30);
+    expect(plan.aprPct).toBe("36.5");
+    expect(Number(plan.apyPct)).toBeGreaterThan(36.5);
   });
 
-  it("marks the target reached and keeps hold at zero on a 1-day plan", () => {
+  it("keeps hold at zero on a 1-day plan", () => {
     const plan = buildPlanComparison({
       capital: "1000",
       days: 1,
       aprPct: "36.5",
       sampleDays: 1,
-      target: "1",
+      aprWindowDays: 7,
     });
     expect(plan.points).toHaveLength(2);
-    expect(plan.reachesTarget).toBe(true);
-    expect(plan.shortfall).toBeNull();
-    expect(plan.daysToTarget).toBe(1);
+    expect(plan.points.every((point) => point.hold === "0")).toBe(true);
+    expect(plan.endSofinance).toBe("1");
   });
 
   it("does not invent yield when the average is zero over a long horizon", () => {
@@ -180,15 +173,14 @@ describe("buildPlanComparison", () => {
       days: 365,
       aprPct: "0",
       sampleDays: 30,
-      target: "10",
+      aprWindowDays: 30,
       entryCost: "0",
     });
     expect(plan.points).toHaveLength(366);
     expect(plan.points.every((point) => point.sofinance === "0" && point.hold === "0")).toBe(true);
     expect(plan.vsHold).toBe("0");
     expect(plan.exitValue).toBe("5000");
-    expect(plan.reachesTarget).toBe(false);
-    expect(plan.daysToTarget).toBeNull();
+    expect(plan.endGainPct).toBe("0");
   });
 
   it("starts slightly negative after the ~1% open cost and breaks even on the first covering day", () => {
@@ -198,7 +190,7 @@ describe("buildPlanComparison", () => {
       days: 12,
       aprPct: "36.5",
       sampleDays: 29,
-      target: "100",
+      aprWindowDays: 30,
       entryCost,
     });
     expect(entryCost).toBe("10");
@@ -208,5 +200,11 @@ describe("buildPlanComparison", () => {
     expect(Number(plan.points[10]!.sofinance)).toBeGreaterThan(0);
     expect(plan.breakEvenDay).toBe(10);
     expect(plan.exitValue).toBe(new D(1000).add(plan.endSofinance).toFixed());
+  });
+
+  it("rejects a missing or invalid APR window", () => {
+    const base = { capital: "1000", days: 5, aprPct: "10", sampleDays: 7 };
+    expect(() => buildPlanComparison({ ...base, aprWindowDays: 0 })).toThrow(/aprWindowDays/);
+    expect(() => buildPlanComparison({ ...base, aprWindowDays: 7.5 })).toThrow(/aprWindowDays/);
   });
 });

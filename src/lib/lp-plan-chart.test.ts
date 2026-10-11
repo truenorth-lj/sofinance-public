@@ -4,26 +4,19 @@ import {
   formatAxisUsdc,
   holdPlotY,
   placeChartLabels,
-  planAimPlacement,
   planChartScale,
   xTicksForDays,
   yTicksForScale,
 } from "./lp-plan-chart";
 
 describe("planChartScale", () => {
-  it("fits the SoFinance series and ignores an oversized aim", () => {
+  it("fits the SoFinance series with room above it and always includes zero", () => {
     const scale = planChartScale([-0.5, 4, 16]);
     expect(scale.yMin).toBeLessThan(-2);
     expect(scale.yMax).toBeGreaterThan(16);
     expect(scale.yMax).toBeLessThan(40);
-    expect(planAimPlacement(400, scale.yMax).kind).toBe("above");
-    expect(planAimPlacement(400, scale.yMax).plotY).toBe(scale.yMax);
-  });
-
-  it("keeps an in-range aim on the plot", () => {
-    const scale = planChartScale([-0.5, 16]);
-    expect(planAimPlacement(10, scale.yMax).kind).toBe("in-plot");
-    expect(planAimPlacement(10, scale.yMax).plotY).toBe(10);
+    expect(planChartScale([2, 5]).yMin).toBe(0);
+    expect(planChartScale([])).toEqual({ yMin: 0, yMax: 1 });
   });
 });
 
@@ -71,7 +64,7 @@ describe("placeChartLabels", () => {
   it("stacks colliding labels and marks a leader on the moved one", () => {
     const placed = placeChartLabels(
       [
-        { id: "aim", text: "aim +100", ax: 40, ay: 40, w: 80, h: 14, prefer: "above" },
+        { id: "sofinance", text: "SoFinance", ax: 40, ay: 40, w: 80, h: 14, prefer: "above" },
         { id: "hold", text: "hold", ax: 40, ay: 42, w: 36, h: 14, prefer: "above" },
         { id: "be", text: "break-even day 1", ax: 48, ay: 44, w: 110, h: 14, prefer: "below" },
       ],
@@ -88,6 +81,16 @@ describe("placeChartLabels", () => {
       }
     }
     expect(placed.some((label) => label.leader)).toBe(true);
+  });
+
+  it("seats an above-left label over a rising line, left of its anchor", () => {
+    const [label] = placeChartLabels(
+      [{ id: "sofinance", text: "SoFinance", ax: 200, ay: 100, w: 60, h: 14, prefer: "above-left" }],
+      bounds,
+    );
+    expect(label!.x + label!.w).toBeLessThanOrEqual(200);
+    expect(label!.y + label!.h).toBeLessThan(100);
+    expect(label!.leader).toBe(false);
   });
 
   it("keeps labels inside the plot bounds", () => {

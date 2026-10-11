@@ -27,7 +27,7 @@ describe("daily APR chart wiring", () => {
     expect(app).toContain("buildPlanComparison");
     expect(app).not.toContain("evaluateIntent");
     expect(app).not.toContain("ScenarioCards");
-    expect(chart).toContain("Estimate from past average yield, not a forecast");
+    expect(chart).toContain("Best case from past yield, not a forecast");
     expect(pairs).toContain("buildPlanPath");
     expect(pairs).toContain("poolId: pair.poolAddress");
   });
