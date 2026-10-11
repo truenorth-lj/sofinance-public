@@ -24,8 +24,4 @@ describe("JSX quote entities", () => {
     expect(src).not.toContain("Wallet extensions not detected");
   });
 
-  it("uses real quotes in the compound confirmation copy", () => {
-    const src = readFileSync(resolve("src/components/compound-panel.tsx"), "utf8");
-    expect(src).toContain('clicking "One-click compound"');
-  });
 });

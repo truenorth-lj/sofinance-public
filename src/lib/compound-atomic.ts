@@ -200,6 +200,7 @@ export async function buildAndSimulateCompound(walletAddress: string, positionMi
     simulatedSolDebitLamports: verified.solDebitLamports, maxSolDebitLamports: maxSolWithFee.toString(),
     feeBps: feeConfig.bps, feeAmount: protocolFee.toString(), feeWallet: feeConfig.wallet?.toBase58() ?? null,
     feeLamports: fee.value, rentLamports, sizeBytes, unitsConsumed: verified.unitsConsumed,
+    nonRefundableRentLamports: feeAtaRent.toString(),
     beam: {
       included: chosen.included,
       tipLamports: chosen.included && tip ? tip.lamports : 0,

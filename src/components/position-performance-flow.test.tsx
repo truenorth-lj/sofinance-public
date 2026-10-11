@@ -134,16 +134,49 @@ describe("position performance workflow", () => {
   it("uses the shared position in embedded mode without rescanning the wallet", async () => {
     await act(async () => { render(walletA, "", firstMint); });
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fetchMock.mock.calls.some(([url]) => url.startsWith("/api/wallet?"))).toBe(false);
     expect(container.querySelector("#perf-position")).toBeNull();
-    await compute();
+    expect(container.textContent).not.toContain("Compute performance");
     expect(fetchMock.mock.calls[0]?.[0]).toContain(`positionMint=${firstMint}`);
     expect(container.querySelector('[aria-label="Performance results"]')).not.toBeNull();
+    response = { ...response, positionMint: secondMint };
     await act(async () => { render(walletA, "", secondMint); });
     expect(container.querySelector('[aria-label="Performance results"]')).toBeNull();
-    response.positionMint = secondMint;
-    await compute();
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
     expect(fetchMock.mock.calls.at(-1)?.[0]).toContain(`positionMint=${secondMint}`);
+    expect(container.querySelector('[aria-label="Performance results"]')).not.toBeNull();
+  });
+
+  it("allows retry after an automatic performance lookup fails", async () => {
+    fetchMock.mockRejectedValueOnce(new Error("RPC unavailable"));
+    await act(async () => { render(walletA, "", firstMint); });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("RPC unavailable");
+    const retry = Array.from(container.querySelectorAll("button")).find((item) => item.textContent === "Retry performance");
+    expect(retry).toBeDefined();
+    await act(async () => { retry!.click(); });
+    expect(container.querySelector('[aria-label="Performance results"]')).not.toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("ignores the previous position response when selection changes during loading", async () => {
+    let resolveFirst!: (value: { ok: boolean; json: () => Promise<typeof fixture> }) => void;
+    fetchMock.mockImplementationOnce(() => new Promise((resolve) => { resolveFirst = resolve; }));
+    await act(async () => { render(walletA, "", firstMint); });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
+    expect(container.textContent).toContain("Loading performance…");
+    const firstSignal = (fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].signal!;
+
+    response = { ...response, positionMint: secondMint };
+    await act(async () => { render(walletA, "", secondMint); });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
+    expect(firstSignal.aborted).toBe(true);
+    const currentResults = container.querySelector('[aria-label="Performance results"]')?.textContent;
+    expect(currentResults).toBeTruthy();
+    await act(async () => { resolveFirst({ ok: true, json: async () => ({ ...fixture, rangeSide: "stale position range" }) }); });
+    expect(container.querySelector('[aria-label="Performance results"]')?.textContent).toBe(currentResults);
+    expect(container.textContent).not.toContain("stale position range");
   });
 
 });

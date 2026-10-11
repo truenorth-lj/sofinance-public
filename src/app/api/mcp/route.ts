@@ -51,7 +51,7 @@ import {
  * {
  *   "mcpServers": {
  *     "sofinance": {
- *       "url": "https://sofinancelab.xyz/api/mcp",
+ *       "url": "https://www.sofinancelab.xyz/api/mcp",
  *       "headers": { "Authorization": "Bearer <token>" }
  *     }
  *   }

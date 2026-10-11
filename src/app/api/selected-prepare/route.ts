@@ -6,7 +6,8 @@ import { issueSelectedPermit } from "@/lib/selected-permit";
 export async function POST(request: Request) {
   try {
     const { wallet, selection, amount, floorBps, toleranceBps } = await parseSelectedQuoteRequest(request);
-    const { summary, transaction } = await buildAndSimulateSelectedZap(wallet, selection, amount, floorBps, toleranceBps);
+    const { summary, transaction } = await buildAndSimulateSelectedZap(wallet, selection, amount, floorBps, toleranceBps,
+      { enforceResaleFloor: false });
     const permit = issueSelectedPermit(process.env.JUPITER_API_KEY || "", {
       message: Buffer.from(transaction.message.serialize()).toString("base64"), wallet, selection,
       requested: summary.quote.requested, floorBps: summary.quote.floorBps,

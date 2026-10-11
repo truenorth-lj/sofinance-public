@@ -16,6 +16,7 @@ export type CompoundSwap = {
   quotedOutputAmount: string; minOutputAmount: string;
   inputDecimals: number; outputDecimals: number; poolId: string; sqrtPriceAfterX64: string;
   feeBps: number; feeAmount: string;
+  poolFeeAmount?: string;
 };
 export type CompoundSwapQuote = { output: bigint; sqrtPriceX64: bigint };
 type Direction = "a-to-b" | "b-to-a";
@@ -167,7 +168,7 @@ export async function buildCompoundSwapPlan(input: {
     inputAmount: swapAmount.toString(), quotedOutputAmount: planned.output.toString(), minOutputAmount: minOutput.toString(),
     inputDecimals: inputA ? state.decimalsA : state.decimalsB, outputDecimals: inputA ? state.decimalsB : state.decimalsA,
     poolId: state.poolId, sqrtPriceAfterX64: planned.sqrtPriceX64.toString(),
-    feeBps: feeConfig.bps, feeAmount: feeAmount.toString() };
+    feeBps: feeConfig.bps, feeAmount: feeAmount.toString(), poolFeeAmount: result.fee.toString() };
   const currentStart = TickArrayUtil.getTickArrayStartIndex(computePoolInfo.tickCurrent, state.tickSpacing);
   const traversed = swapInternal({ programId: new PublicKey(state.programId), poolId: new PublicKey(state.poolId), poolInfo: poolSnapshot(),
     tickArrays: Object.values(tickData[state.poolId] ?? {}).filter((array) => inputA ? array.startTickIndex <= currentStart : array.startTickIndex >= currentStart)
