@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { DailyAprPoint } from "@/lib/apr-series";
-import { averageCompleteDayAprPct } from "@/lib/lp-plan-yield";
+import { selectBestPlanApr, type BestPlanApr } from "@/lib/lp-plan-best-apr";
 
 export type PoolDailyAprPayload = {
   poolId: string;
@@ -14,7 +14,7 @@ export type PoolDailyAprPayload = {
 export type PoolYieldState =
   | { status: "idle" }
   | { status: "loading"; poolId: string }
-  | { status: "ready"; poolId: string; aprPct: string; sampleDays: number; fetchedAt: string }
+  | { status: "ready"; poolId: string; best: BestPlanApr; fetchedAt: string }
   | { status: "unavailable"; poolId: string; reason: string };
 
 type LoadedYield = Extract<PoolYieldState, { status: "ready" | "unavailable" }>;
@@ -29,7 +29,11 @@ async function loadPoolDailyApr(poolId: string, signal: AbortSignal): Promise<Po
   return body;
 }
 
-/** Fetches the pool's daily APR once per pool id. Slider/day edits must not retrigger this. */
+/**
+ * Fetches the pool's daily APR once per pool id and picks the best trailing-window average
+ * (see `selectBestPlanApr`). Slider/day edits must not
+ * retrigger this.
+ */
 export function usePoolYield(poolId: string | undefined): PoolYieldState {
   const [loaded, setLoaded] = useState<LoadedYield | null>(null);
 
@@ -41,11 +45,12 @@ export function usePoolYield(poolId: string | undefined): PoolYieldState {
         try {
           const payload = await loadPoolDailyApr(poolId, aborter.signal);
           if (aborter.signal.aborted) return;
-          const complete = payload.points.filter(
-            (point) => point.aprPct !== null && Number.isFinite(point.aprPct),
+          const fetchedAtSeconds = Date.parse(payload.fetchedAt) / 1000;
+          const best = selectBestPlanApr(
+            payload.points,
+            Number.isFinite(fetchedAtSeconds) ? fetchedAtSeconds : undefined,
           );
-          const aprPct = averageCompleteDayAprPct(payload.points);
-          if (aprPct === null) {
+          if (best === null) {
             setLoaded({
               status: "unavailable",
               poolId,
@@ -56,8 +61,7 @@ export function usePoolYield(poolId: string | undefined): PoolYieldState {
           setLoaded({
             status: "ready",
             poolId,
-            aprPct,
-            sampleDays: complete.length,
+            best,
             fetchedAt: payload.fetchedAt,
           });
         } catch (error) {

@@ -48,6 +48,10 @@ export type PlanYieldComparison = {
   days: number;
   capital: string;
   aprPct: string;
+  /** `aprPct` compounded daily over a 365-day year, as a percent. */
+  apyPct: string;
+  /** Trailing window (in UTC days) whose average produced `aprPct`. */
+  aprWindowDays: number;
   dailyRate: string;
   entryCost: string;
   sampleDays: number;
@@ -56,10 +60,10 @@ export type PlanYieldComparison = {
   endSofinance: string;
   endHold: string;
   vsHold: string;
+  /** Capital plus `endSofinance`: what the position is worth at the end, after the day-0 entry cost. */
   exitValue: string;
-  reachesTarget: boolean;
-  shortfall: string | null;
-  daysToTarget: number | null;
+  /** `endSofinance` as a percent of `capital`. */
+  endGainPct: string;
 };
 
 export type PlanYieldInput = {
@@ -68,7 +72,8 @@ export type PlanYieldInput = {
   aprPct: string;
   /** Complete UTC days that produced `aprPct`. Informational; not used in the math. */
   sampleDays: number;
-  target?: string;
+  /** Trailing window (in UTC days) that `aprPct` averages. Informational; not used in the math. */
+  aprWindowDays: number;
   /** Paid at day 0 and not compounded. Defaults to 0 (network fees ignored). */
   entryCost?: string;
 };
@@ -91,6 +96,16 @@ export function averageCompleteDayAprPct(points: readonly AprSample[]): string |
 /** Simple daily rate implied by an annualized percent: apr% / 100 / 365. */
 export function dailyRateFromAprPct(aprPct: string): Decimal {
   return requireDecimal(aprPct, "aprPct").div(100).div(PLAN_YIELD_DAYS_PER_YEAR);
+}
+
+/** Effective annual yield of an APR that compounds daily: ((1 + apr/365)^365 − 1) as a percent. */
+export function aprToApyPct(aprPct: string): string {
+  return dailyRateFromAprPct(aprPct)
+    .add(1)
+    .pow(PLAN_YIELD_DAYS_PER_YEAR)
+    .sub(1)
+    .mul(100)
+    .toFixed();
 }
 
 /**
@@ -118,23 +133,14 @@ export function breakEvenDay(capital: string, dailyRate: Decimal, entryCost = "0
   return firstDayAtLeast(capital, dailyRate, "0", entryCost, maxDays);
 }
 
-/** Fewest whole days for compounded profit to cover `target`, or null within maxDays. */
-export function daysToReachGain(
-  capital: string,
-  dailyRate: Decimal,
-  target: string,
-  entryCost = "0",
-  maxDays = MAX_PLAN_DAYS,
-): number | null {
-  requireDayCount(maxDays, "maxDays", 1);
-  return firstDayAtLeast(capital, dailyRate, target, entryCost, maxDays);
-}
-
 export function buildPlanComparison(input: PlanYieldInput): PlanYieldComparison {
   const days = input.days;
   requireDayCount(days, "days", 1);
   if (!Number.isInteger(input.sampleDays) || input.sampleDays < 0) {
     throw new Error("sampleDays must be a non-negative integer");
+  }
+  if (!Number.isInteger(input.aprWindowDays) || input.aprWindowDays < 1) {
+    throw new Error("aprWindowDays must be a positive integer");
   }
   const rate = dailyRateFromAprPct(input.aprPct);
   const entryCost = input.entryCost ?? "0";
@@ -150,12 +156,13 @@ export function buildPlanComparison(input: PlanYieldInput): PlanYieldComparison 
   const endHold = "0";
   const vsHold = new D(endSofinance).sub(endHold).toFixed();
   const exitValue = new D(input.capital).add(endSofinance).toFixed();
-  const target = input.target;
-  const reachesTarget = target !== undefined && new D(endSofinance).gte(target);
+  const capital = requireDecimal(input.capital, "capital", "0");
   return {
     days,
-    capital: requireDecimal(input.capital, "capital", "0").toFixed(),
+    capital: capital.toFixed(),
     aprPct: requireDecimal(input.aprPct, "aprPct").toFixed(),
+    apyPct: aprToApyPct(input.aprPct),
+    aprWindowDays: input.aprWindowDays,
     dailyRate: rate.toFixed(),
     entryCost: requireDecimal(entryCost, "entryCost", "0").toFixed(),
     sampleDays: input.sampleDays,
@@ -165,9 +172,7 @@ export function buildPlanComparison(input: PlanYieldInput): PlanYieldComparison 
     endHold,
     vsHold,
     exitValue,
-    reachesTarget,
-    shortfall: target === undefined || reachesTarget ? null : new D(target).sub(endSofinance).toFixed(),
-    daysToTarget: target === undefined ? null : daysToReachGain(input.capital, rate, target, entryCost),
+    endGainPct: new D(endSofinance).div(capital).mul(100).toFixed(),
   };
 }
 

@@ -1,4 +1,4 @@
-/** Y-domain from the SoFinance series only — an oversized aim must not squash the curve. */
+/** Y-domain from the SoFinance series, always including the zero line. */
 export function planChartScale(values: readonly number[]): { yMin: number; yMax: number } {
   if (values.length === 0) return { yMin: 0, yMax: 1 };
   const lo = Math.min(0, ...values);
@@ -8,14 +8,6 @@ export function planChartScale(values: readonly number[]): { yMin: number; yMax:
   if (lo >= 0) return { yMin: 0, yMax };
   const visible = Math.max(Math.abs(lo) + pad, hi * 0.2, 0.75);
   return { yMin: -visible, yMax };
-}
-
-export type PlanAimPlacement = { kind: "in-plot" | "above"; plotY: number };
-
-/** Clamp an aim that sits above the SoFinance domain to the top of the plot. */
-export function planAimPlacement(target: number, yMax: number): PlanAimPlacement {
-  if (target > yMax) return { kind: "above", plotY: yMax };
-  return { kind: "in-plot", plotY: target };
 }
 
 /** Nudge a hold/zero line off the x-axis so it cannot be read as the baseline. */
@@ -87,7 +79,8 @@ export type ChartLabelInput = {
   ay: number;
   w: number;
   h: number;
-  prefer: "above" | "below" | "left" | "right";
+  /** `above-left` suits a rising curve: the text sits over the line instead of across it. */
+  prefer: "above" | "above-left" | "below" | "left" | "right";
 };
 
 export type PlacedChartLabel = {
@@ -155,14 +148,17 @@ function candidateSeats(item: ChartLabelInput, bounds: ChartBounds): Array<{ x: 
   const below = { x: item.ax + pad, y: item.ay + 8 };
   const left = { x: item.ax - item.w - pad, y: item.ay - item.h / 2 };
   const right = { x: item.ax + pad, y: item.ay - item.h / 2 };
+  const aboveLeft = { x: item.ax - item.w - pad, y: item.ay - item.h - 4 };
   const order =
-    item.prefer === "above"
-      ? [above, below, right, left]
-      : item.prefer === "below"
-        ? [below, above, right, left]
-        : item.prefer === "left"
-          ? [left, right, above, below]
-          : [right, left, above, below];
+    item.prefer === "above-left"
+      ? [aboveLeft, above, below, left, right]
+      : item.prefer === "above"
+        ? [above, below, right, left]
+        : item.prefer === "below"
+          ? [below, above, right, left]
+          : item.prefer === "left"
+            ? [left, right, above, below]
+            : [right, left, above, below];
   for (const seat of order) raw.push(clampSeat(seat, item.w, item.h, bounds));
   return raw;
 }
