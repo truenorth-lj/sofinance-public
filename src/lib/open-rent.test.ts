@@ -7,13 +7,38 @@ import {
 
 vi.mock("server-only", () => ({}));
 
-import { estimateOpenPositionRent } from "./open-rent";
+import { estimateOpenPositionRent, estimateWalletTokenAccountRent } from "./open-rent";
+import { ExtensionType, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import fixture from "./fixtures/open-rent-token22-mainnet.json";
 
 const programId = Keypair.generate().publicKey;
 const poolId = Keypair.generate().publicKey;
 const tickLower = -60;
 const tickUpper = 60;
+
+it("budgets missing legacy and Token-2022 wallet ATAs, including ImmutableOwner, only once", async () => {
+  const legacy = { ata: Keypair.generate().publicKey.toBase58(), mint: Keypair.generate().publicKey.toBase58(), program: TOKEN_PROGRAM_ID.toBase58() };
+  const token22 = { ata: Keypair.generate().publicKey.toBase58(), mint: Keypair.generate().publicKey.toBase58(), program: TOKEN_2022_PROGRAM_ID.toBase58() };
+  const mintData = Buffer.alloc(82); mintData[45] = 1;
+  const token22Data = Buffer.alloc(166 + 4 + 65 + 4 + 64);
+  mintData.copy(token22Data); token22Data[165] = 1;
+  token22Data.writeUInt16LE(ExtensionType.ConfidentialTransferMint, 166);
+  token22Data.writeUInt16LE(65, 168);
+  token22Data.writeUInt16LE(ExtensionType.MetadataPointer, 235);
+  token22Data.writeUInt16LE(64, 237);
+  const getMultipleAccountsInfo = vi.fn(async (keys: PublicKey[]) => keys.map(key => {
+    const descriptor = [legacy, token22].find(item => item.mint === key.toBase58());
+    return descriptor ? { ...account(new PublicKey(descriptor.program), 82), data: descriptor === token22 ? token22Data : mintData } : null;
+  }));
+  const rent = vi.fn(async (space: number) => space === 170 ? 2077440 : 2039280);
+  const connection = { getMultipleAccountsInfo, getMinimumBalanceForRentExemption: rent };
+  expect(await estimateWalletTokenAccountRent(connection as never, [legacy, token22, token22])).toBe(4116720n);
+  expect(rent.mock.calls.map(call => call[0])).toEqual([165, 170]);
+  getMultipleAccountsInfo.mockImplementation(async keys => keys.map(() => account(TOKEN_PROGRAM_ID, 165)));
+  rent.mockClear();
+  expect(await estimateWalletTokenAccountRent(connection as never, [legacy])).toBe(0n);
+  expect(rent).not.toHaveBeenCalled();
+});
 
 function account(owner: PublicKey, bytes: number) {
   return {

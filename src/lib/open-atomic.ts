@@ -15,12 +15,14 @@ import { assertOpenTransactionSize, compactAtaInstructions, compileCompactOpenTr
 import { rpcConnection } from "./rpc";
 import { JupiterNoRouteError } from "./jupiter-route";
 import { BEAM_MIN_TIP_LAMPORTS, beamTipInstruction, chooseBeamTransaction, fetchBeamTipAddress } from "./solami-beam";
-import { getOpenPositionQuoteBundle } from "./open-quote";
+import { getOpenPositionQuoteBundle, type OpenSwapStrategy } from "./open-quote";
 import { simulateAndVerifyOpenTransaction } from "./open-simulation";
-import { readSwapFeeConfig, swapFeeTransferInstructions, unfundedSwapFeeAtaRent } from "./swap-fee";
+import { assertNativeSwapFeeRecipient, computeSwapFee, readSwapFeeConfig, swapFeeTransferInstructions, unfundedSwapFeeAtaRent } from "./swap-fee";
+import { parseTokenAmount } from "./amount";
 import type { OpenRangeInput } from "./open-range";
 import { readOpenPoolState, type OpenPoolState, type OpenPositionSelection } from "./open-state";
 import type { OpenPositionSummary } from "./open-types";
+import type { JupiterRouteConstraints } from "./jupiter-route-retry";
 
 async function rejectUnselectedWalletTokenWrites(
   connection: Connection, wallet: PublicKey, instructions: TransactionInstruction[],
@@ -55,9 +57,9 @@ async function buildOpenPositionAttempt(
   range: OpenRangeInput,
   floorBps: number,
   toleranceBps: number | undefined,
-  routeMaxAccounts: number,
+  routeMaxAccounts: number | JupiterRouteConstraints,
   resources: OpenResources,
-  strategy: "parallel" | "sequential",
+  strategy: OpenSwapStrategy,
   enforceResaleFloor: boolean,
 ) {
   const { connection } = resources;
@@ -82,10 +84,12 @@ async function buildOpenPositionAttempt(
       BigInt(item.route.inAmount) !== item.spend - (item.feeAmount ?? 0n)))) {
     throw new Error("Swap route does not match selected assets or pool");
   }
-  if (strategy === "sequential" && quote.rangeSide === "inside" && ![state.mintA, state.mintB].includes(state.inputMint)) {
+  if (strategy !== "parallel" && quote.rangeSide === "inside" && ![state.mintA, state.mintB].includes(state.inputMint)) {
     const [primary, secondary] = legs;
-    if (!primary?.route || !secondary?.route || primary.inputMint !== state.inputMint || primary.outputMint !== state.mintA ||
-      secondary.inputMint !== state.mintA || secondary.outputMint !== state.mintB || primary.spend !== BigInt(quote.requested) ||
+    const primaryMint = strategy === "sequential" ? state.mintA : state.mintB;
+    const secondaryMint = strategy === "sequential" ? state.mintB : state.mintA;
+    if (!primary?.route || !secondary?.route || primary.inputMint !== state.inputMint || primary.outputMint !== primaryMint ||
+      secondary.inputMint !== primaryMint || secondary.outputMint !== secondaryMint || primary.spend !== BigInt(quote.requested) ||
       secondary.spend >= BigInt(primary.route.otherAmountThreshold) ||
       primary.minOut !== BigInt(primary.route.otherAmountThreshold) - secondary.spend) {
       throw new Error("Sequential swap amounts do not match conservative output limits");
@@ -184,6 +188,7 @@ async function buildOpenPositionAttempt(
     ]);
     const messageInput = { payerKey: wallet, recentBlockhash: simulationBlockhash, instructions };
     const withoutTip = compileCompactOpenTransaction(messageInput, availableTables);
+    assertOpenTransactionSize(withoutTip.transaction);
     const tip = await fetchBeamTipAddress();
     const withTip = tip
       ? compileCompactOpenTransaction({
@@ -199,7 +204,8 @@ async function buildOpenPositionAttempt(
     }
     assertOpenTransactionSize(simulated);
     if (Date.now() >= quote.expiresAt) throw new Error("Quote expired while constructing transaction, please resimulate");
-    const rentLamports = BigInt(quote.rent.refundableLamports) + BigInt(quote.rent.nonRefundableLamports);
+    const rentLamports = BigInt(quote.rent.refundableLamports) + BigInt(quote.rent.nonRefundableLamports)
+      + BigInt(quote.rent.walletTokenAccountLamports ?? "0");
     const feeEstimate = await connection.getFeeForMessage(simulated.message, "confirmed");
     if (feeEstimate.value === null) throw new Error("Unable to estimate complete transaction network fee");
     const feeAtaRent = feeConfig.wallet && protocolFee > 0n && state.inputKind === "token"
@@ -263,6 +269,12 @@ export async function buildAndSimulateOpenPosition(
   // outputs and price-impact guards match the route we actually simulate.
   const connection = rpcConnection();
   const state = await readOpenPoolState(walletAddress, selection, connection);
+  const feeConfig = readSwapFeeConfig();
+  if (state.inputKind === "native" && feeConfig.wallet) {
+    // Parallel legs round fees separately; use the lower bound before quotes.
+    const fee = computeSwapFee(parseTokenAmount(amount, state.inputDecimals), feeConfig.bps);
+    if (fee > 1n) await assertNativeSwapFeeRecipient(connection, feeConfig.wallet, fee - 1n);
+  }
   let raydium: ReturnType<typeof Raydium.load> | undefined;
   const sdk = () => raydium ??= Raydium.load({ connection, owner: new PublicKey(walletAddress), disableLoadToken: true });
   let pool: ReturnType<OpenResources["pool"]> | undefined;
@@ -276,15 +288,21 @@ export async function buildAndSimulateOpenPosition(
     }),
   };
   let lastSizeError: OpenTransactionSizeError | undefined;
+  const strategies = ![state.mintA, state.mintB].includes(state.inputMint)
+    ? ["parallel", "sequential-b", "sequential"] as const : ["parallel"] as const;
+  // Try a materially smaller budget and the shared first swap early, rather
+  // than rebuilding several similar large two-swap routes first. Either pool
+  // token can be the primary: the two directions may have different route sizes.
   const attempts = [
-    ...[48, 40, 32, 24].map(maxAccounts => ({ maxAccounts, strategy: "parallel" as const })),
-    ...(![state.mintA, state.mintB].includes(state.inputMint)
-      ? [32, 28, 24, 23].map(maxAccounts => ({ maxAccounts, strategy: "sequential" as const })) : []),
+    ...strategies.filter(strategy => strategy !== "parallel").map(strategy => ({ constraints: { maxAccounts: 20 }, strategy })),
+    { constraints: { maxAccounts: 48 }, strategy: "parallel" as const },
+    ...strategies.map(strategy => ({ constraints: { maxAccounts: 24 }, strategy })),
+    ...strategies.map(strategy => ({ constraints: { maxAccounts: 32 }, strategy })),
   ];
-  for (const { maxAccounts, strategy } of attempts) {
+  for (const { constraints, strategy } of attempts) {
     try {
       return await buildOpenPositionAttempt(
-        walletAddress, selection, amount, range, floorBps, toleranceBps, maxAccounts, resources, strategy,
+        walletAddress, selection, amount, range, floorBps, toleranceBps, constraints, resources, strategy,
         options?.enforceResaleFloor !== false,
       );
     } catch (error) {
