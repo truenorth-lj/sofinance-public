@@ -17,8 +17,7 @@ import {
 } from "@/lib/lp-plan-chart";
 import {
   isThinPlanSample,
-  PLAN_PROTOCOL_FEE_BPS,
-  PLAN_SWAP_SHARE,
+  planOpenCostPctLabel,
   type PlanYieldComparison,
 } from "@/lib/lp-plan-yield";
 import { daysWord, formatAmount, formatPct, formatSigned } from "./format";
@@ -78,7 +77,7 @@ function ReadyChart({ comparison, intent }: { comparison: PlanYieldComparison; i
   const chart = useMemo(() => layoutChart(comparison, intent, box), [comparison, intent, box]);
   const vsHold = formatSigned(comparison.vsHold);
   const endLabel = formatSigned(comparison.endSofinance);
-  const swapPct = new Decimal(PLAN_SWAP_SHARE).mul(100).toFixed(0);
+  const openCostPct = planOpenCostPctLabel();
   const thin = isThinPlanSample(comparison.sampleDays);
   const beInPeriod = breakEvenInPeriod(comparison.breakEvenDay, comparison.days);
 
@@ -254,9 +253,7 @@ function ReadyChart({ comparison, intent }: { comparison: PlanYieldComparison; i
         </span>
       </div>
       <p className="mt-3 text-[13px] leading-snug text-ink/65">
-        Best case from fee income only, with daily auto-compounding and a flat hold for a two-sided same-asset
-        pair. Day 0 subtracts the protocol swap fee ({PLAN_PROTOCOL_FEE_BPS} bps) on an assumed {swapPct}% of the
-        deposit that must be swapped; network fees are ignored. This is not a probability and not a promise.
+        {`Best case from fee income only, with daily auto-compounding and a flat hold for a two-sided same-asset pair. Creating the position and adding liquidity typically costs around ${openCostPct}%, and Day 0 subtracts that from the deposit; network fees are ignored. This is not a probability and not a promise.`}
       </p>
     </div>
   );

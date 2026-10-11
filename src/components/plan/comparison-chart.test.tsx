@@ -18,7 +18,7 @@ describe("ComparisonChart", () => {
   it("renders both curves, the honesty label, and the vs-hold annotation", () => {
     const comparison = buildPlanComparison({
       capital: "1000",
-      days: 2,
+      days: 12,
       aprPct: "36.5",
       sampleDays: 29,
       target: "3",
@@ -33,11 +33,14 @@ describe("ComparisonChart", () => {
     expect(markup).toContain("aim +3");
     expect(markup).toContain("hold");
     expect(markup).toContain("SoFinance");
-    expect(markup).toContain("break-even day 1");
+    expect(markup).toContain("break-even day 10");
     expect(markup).toContain("#ff9c85");
     expect(markup).toContain("<path");
     expect(markup).toContain("Past average");
-    expect(markup).toContain("assumed 50%");
+    expect(markup).toContain(
+      "Best case from fee income only, with daily auto-compounding and a flat hold for a two-sided same-asset pair. Creating the position and adding liquidity typically costs around 1%, and Day 0 subtracts that from the deposit; network fees are ignored. This is not a probability and not a promise.",
+    );
+    expect(markup).not.toMatch(/bps|swap fee|assumed 50%/i);
     expect(markup).not.toContain("#f3e76b");
     expect(markup).not.toContain("Sideways");
     expect(markup).not.toContain("&quot;");
@@ -66,21 +69,21 @@ describe("ComparisonChart", () => {
   it("marks the day the curve reaches an in-range aim", () => {
     const comparison = buildPlanComparison({
       capital: "1000",
-      days: 10,
+      days: 20,
       aprPct: "36.5",
       sampleDays: 29,
       target: "3",
       entryCost: planEntryCost("1000"),
     });
-    expect(comparison.daysToTarget).toBe(4);
+    expect(comparison.daysToTarget).toBe(13);
     const markup = renderToStaticMarkup(
       createElement(ComparisonChart, {
         status: "ready",
         comparison,
-        intent: { ...intent, days: 10, target: "3" },
+        intent: { ...intent, days: 20, target: "3" },
       }),
     );
-    expect(markup).toContain("aim reached on day 4");
+    expect(markup).toContain("aim reached on day 13");
     expect(markup).toContain("aim +3");
     expect(markup).not.toContain("above");
   });
@@ -142,7 +145,7 @@ describe("ComparisonChart", () => {
       }),
     );
     expect(markup).toContain("break-even not within this period");
-    expect(markup).not.toContain("break-even day 1");
+    expect(markup).not.toContain("break-even day 10");
   });
 
   it("shows a clear empty state when no pool is chosen", () => {
