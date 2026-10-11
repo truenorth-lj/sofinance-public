@@ -6,7 +6,8 @@ import { LoaderCircle, RefreshCw } from "lucide-react";
 import { PoolAprSparkline } from "./pool-daily-apr-panel";
 import Link from "next/link";
 import { buildPlanPath } from "@/lib/public-urls";
-import { AiPickAprLine } from "./range-apr/ai-pick-apr-line";
+import { HighestRangeCell } from "./range-apr/highest-range-cell";
+import { HIGHEST_RANGE_COLUMN_LABEL } from "@/lib/range-apr/copy";
 import { OpenPositionModal } from "./open-position-modal";
 import type { OpenPositionPair } from "./use-open-position-controller";
 
@@ -179,11 +180,12 @@ export function RwaPairsPanel() {
 
       {data && data.pairs.length > 0 && (
         <div className="mt-6 overflow-x-auto">
-          <table className="w-full min-w-[720px] border-collapse text-left text-xs">
+          <table className="w-full min-w-[840px] border-collapse text-left text-xs">
             <thead>
               <tr className="border-b border-white/10">
                 <th className="pb-3 pr-4 font-semibold text-smoke">Pair</th>
                 <th className="pb-3 pr-4 font-semibold text-smoke">Est. fee APR</th>
+                <th className="pb-3 pr-4 font-semibold text-smoke">{HIGHEST_RANGE_COLUMN_LABEL}</th>
                 <th className="pb-3 pr-4 font-semibold text-smoke">Daily APR</th>
                 <th className="pb-3 pr-4 font-semibold text-smoke">Raydium APR</th>
                 <th className="pb-3 pr-4 font-semibold text-smoke">TVL</th>
@@ -206,7 +208,9 @@ export function RwaPairsPanel() {
                   </td>
                   <td className="py-4 pr-4">
                     <div className="font-semibold tabular-nums text-cream">{pct(pair.estimatedFeeAprPct)}</div>
-                    <AiPickAprLine poolId={pair.poolAddress} />
+                  </td>
+                  <td className="py-4 pr-4 tabular-nums text-cream/80">
+                    <HighestRangeCell poolId={pair.poolAddress} />
                   </td>
                   <td className="py-4 pr-4">
                     {index < 8 ? <PoolAprSparkline poolId={pair.poolAddress} /> : <span className="text-smoke/70">—</span>}

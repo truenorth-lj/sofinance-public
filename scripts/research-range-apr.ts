@@ -53,13 +53,13 @@ async function main() {
         `C0(absolute history)=${aE.status === "ok" ? `${pct(aE.aprPct)} in=${aE.inRangeVolumePct.toFixed(0)}%` : aE.reason}  C(rebased)=${cE.status === "ok" ? `${pct(cE.aprPct)} inRange=${cE.inRangeVolumePct.toFixed(0)}%` : cE.reason}  ` +
         `D(naive multiplier)=${pct(naive)}`);
     }
-    // dilution check: capital sensitivity for the AI pick
-    const ai = c.presets.find((p) => p.id === "ai")!;
+    // dilution check: capital sensitivity for the Micro band
+    const ai = c.presets.find((p) => p.id === "micro")!;
     for (const capital of [10, 100, 1000, 10000]) {
       const r = estimateRangeApr({ tickSpacing: c.pool.tickSpacing, bins: c.model.bins, currentSqrt: c.model.currentSqrt,
         usdPerRawB: c.model.usdPerRawB, feeRate: c.pool.feeRate, lpFeeFraction: c.pool.lpFeeFraction,
         avgDailyVolumeUsd: c.model.avgDailyVolumeUsd, capitalUsd: capital }, ai);
-      console.log(`   AI pick @ $${capital}: ${r.status === "ok" ? pct(r.aprPct) : r.reason}`);
+      console.log(`   Micro @ $${capital}: ${r.status === "ok" ? pct(r.aprPct) : r.reason}`);
     }
   }
 }

@@ -1,5 +1,5 @@
 /**
- * "AI pick" range rule. It is a FIXED rule, not a model: a four-bin band centred on the current price.
+ * "Micro" range: the narrowest candidate. A FIXED rule: a four-bin band centred on the current price.
  *
  * Definition (the single source of truth for the server resolver and the UI):
  *  - one "tick" in this rule = ONE `tickSpacing` UNIT of the pool, i.e. the distance between two adjacent
@@ -13,16 +13,16 @@
  */
 import { exactTickFromSqrtPriceX64, floorToSpacing, usableTickBounds } from "./tick-math";
 
-/** Half-width of the AI-pick band, in tick-spacing units. Total width is `2 * AI_PICK_HALF_WIDTH_SPACINGS`. */
-export const AI_PICK_HALF_WIDTH_SPACINGS = 2;
+/** Half-width of the Micro band, in tick-spacing units. Total width is `2 * MICRO_HALF_WIDTH_SPACINGS`. */
+export const MICRO_HALF_WIDTH_SPACINGS = 2;
 
-export const AI_PICK_PRESET_ID = "ai" as const;
-export const AI_PICK_LABEL = "AI pick";
-export const AI_PICK_HELP =
-  "A fixed rule, not an AI model: a band centred on the current price, 2 tick-spacing steps below and 2 above (4 steps wide). " +
-  "Steps are the pool's tick spacing, so the band is very narrow on fine-spaced pools and wider on coarse ones.";
+export const MICRO_PRESET_ID = "micro" as const;
+export const MICRO_LABEL = "Micro";
+export const MICRO_HELP =
+  "The narrowest candidate: a fixed band centred on the current price, 2 tick-spacing steps below and 2 above (4 steps wide). " +
+  "Steps are the pool's tick spacing, so it is extremely narrow on fine-spaced pools and wider on coarse ones.";
 
-export type AiPickRange = { tickLower: number; tickUpper: number; centerTick: number };
+export type MicroRange = { tickLower: number; tickUpper: number; centerTick: number };
 
 /** Nearest valid boundary to a fractional tick (ties go to the lower one). */
 export function nearestBoundary(exactTick: number, tickSpacing: number): number {
@@ -30,16 +30,16 @@ export function nearestBoundary(exactTick: number, tickSpacing: number): number 
   return exactTick - down > tickSpacing / 2 ? down + tickSpacing : down;
 }
 
-/** AI-pick ticks from the pool's fractional current tick. Pure; see the module comment for the definition. */
-export function aiPickRangeFromExactTick(exactTick: number, tickSpacing: number): AiPickRange {
+/** Micro-band ticks from the pool's fractional current tick. Pure; see the module comment for the definition. */
+export function microRangeFromExactTick(exactTick: number, tickSpacing: number): MicroRange {
   if (!Number.isFinite(exactTick)) throw new Error("Current tick must be finite");
   const { min, max } = usableTickBounds(tickSpacing);
-  const width = AI_PICK_HALF_WIDTH_SPACINGS * tickSpacing;
+  const width = MICRO_HALF_WIDTH_SPACINGS * tickSpacing;
   // Keep the whole band inside the usable tick range (only matters at the extreme ends of the curve).
   const centerTick = Math.min(Math.max(nearestBoundary(exactTick, tickSpacing), min + width), max - width);
   return { tickLower: centerTick - width, tickUpper: centerTick + width, centerTick };
 }
 
-export function aiPickRange(sqrtPriceX64: string | bigint, tickSpacing: number): AiPickRange {
-  return aiPickRangeFromExactTick(exactTickFromSqrtPriceX64(sqrtPriceX64), tickSpacing);
+export function microRange(sqrtPriceX64: string | bigint, tickSpacing: number): MicroRange {
+  return microRangeFromExactTick(exactTickFromSqrtPriceX64(sqrtPriceX64), tickSpacing);
 }

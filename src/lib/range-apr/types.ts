@@ -1,7 +1,7 @@
 /** Wire types shared by `/api/pool-range-apr`, the modal and the pairs table (client-safe). */
 import type { AprBin, RangeAprEstimate } from "./range-apr";
 
-export type RangeAprPresetId = "ai" | "tight" | "standard" | "wide";
+export type RangeAprPresetId = "micro" | "tight" | "standard" | "wide";
 
 export type RangeAprPresetEstimate = {
   id: RangeAprPresetId;

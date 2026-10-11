@@ -7,7 +7,7 @@ import { uiPriceFromTick } from "./tick-math";
 describe("estimateForSelection", () => {
   it("returns the server-priced estimate for a preset", () => {
     const data = payload();
-    const result = estimateForSelection(data, { preset: "ai", minPrice: "", maxPrice: "" });
+    const result = estimateForSelection(data, { preset: "micro", minPrice: "", maxPrice: "" });
     expect(result).toEqual({ status: "ready", range: data.presets[0], estimate: data.presets[0]!.estimate });
   });
 
@@ -38,14 +38,14 @@ describe("estimateForSelection", () => {
 
   it("prefers the live quote's aligned ticks over the preset ticks", () => {
     const data = payload();
-    const result = estimateForSelection(data, { preset: "ai", minPrice: "", maxPrice: "" }, { tickLower: -3, tickUpper: 3 });
+    const result = estimateForSelection(data, { preset: "micro", minPrice: "", maxPrice: "" }, { tickLower: -3, tickUpper: 3 });
     expect(result).toMatchObject({ status: "ready", range: { tickLower: -3, tickUpper: 3 } });
     expect(result.status === "ready" && result.estimate).toEqual(data.presets[1]!.estimate);
   });
 
   it("falls back to the preset when the quoted ticks are outside the analysed window", () => {
     const data = payload();
-    const result = estimateForSelection(data, { preset: "ai", minPrice: "", maxPrice: "" }, { tickLower: -500, tickUpper: 500 });
+    const result = estimateForSelection(data, { preset: "micro", minPrice: "", maxPrice: "" }, { tickLower: -500, tickUpper: 500 });
     expect(result).toEqual({ status: "ready", range: data.presets[0], estimate: data.presets[0]!.estimate });
   });
 

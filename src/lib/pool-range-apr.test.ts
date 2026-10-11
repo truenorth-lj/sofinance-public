@@ -66,13 +66,13 @@ afterEach(() => {
 });
 
 describe("fetchPoolRangeApr", () => {
-  it("returns every preset priced, the AI pick first, with the chosen method described", async () => {
+  it("returns every preset priced, Micro first, with the chosen method described", async () => {
     const { impl } = fetcher();
     const payload = await fetchPoolRangeApr(POOL, { fetcher: impl, nowSeconds: NOW, bypassCache: true });
     expect(payload.poolId).toBe(POOL);
     expect(payload.label).toBe("Est. fee APR");
     expect(payload.assumptions).toBe(RANGE_APR_ASSUMPTIONS);
-    expect(payload.presets.map((preset) => preset.id)).toEqual(["ai", "tight", "standard", "wide"]);
+    expect(payload.presets.map((preset) => preset.id)).toEqual(["micro", "tight", "standard", "wide"]);
     const ai = payload.presets[0]!;
     expect([ai.tickLower, ai.tickUpper]).toEqual([-46_200, -45_960]);
     expect(ai.priceLower).toBeLessThan(payload.pool.currentPrice * 1.05);
