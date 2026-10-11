@@ -1,11 +1,15 @@
 import type { RangeAprEstimate, RangeAprUnavailableReason } from "./range-apr";
 
-/** "~12.3%", "~154%", "1,000%+"; one decimal below 10, none above, capped so absurd values stay readable. */
-export function formatAprPct(aprPct: number): string {
+/**
+ * "~12.3%", "~154%", "1,000%+"; one decimal below 10, none above, capped so absurd values stay readable.
+ * `approx: false` drops the "~" for headline figures whose label already says they are estimates.
+ */
+export function formatAprPct(aprPct: number, approx = true): string {
   if (!Number.isFinite(aprPct) || aprPct < 0) return "—";
   if (aprPct >= 1000) return "1,000%+";
-  if (aprPct < 0.05) return "~0%";
-  return `~${aprPct < 10 ? aprPct.toFixed(1) : aprPct.toFixed(0)}%`;
+  const mark = approx ? "~" : "";
+  if (aprPct < 0.05) return `${mark}0%`;
+  return `${mark}${aprPct < 10 ? aprPct.toFixed(1) : aprPct.toFixed(0)}%`;
 }
 
 export function formatEstimate(estimate: RangeAprEstimate | null | undefined): string {

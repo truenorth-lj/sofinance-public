@@ -17,6 +17,14 @@ describe("formatAprPct", () => {
     expect(formatAprPct(Number.NaN)).toBe("—");
     expect(formatAprPct(-1)).toBe("—");
   });
+
+  it("drops the ~ when asked, keeping the same rounding", () => {
+    expect(formatAprPct(7.66, false)).toBe("7.7%");
+    expect(formatAprPct(154.06, false)).toBe("154%");
+    expect(formatAprPct(0.04, false)).toBe("0%");
+    expect(formatAprPct(1000, false)).toBe("1,000%+");
+    expect(formatAprPct(Number.NaN, false)).toBe("—");
+  });
 });
 
 describe("formatEstimate / unavailableReasonText", () => {

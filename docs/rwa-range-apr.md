@@ -1,7 +1,7 @@
 # Range APR estimate, Micro, and "Best"
 
 Design note for the **Est. fee APR** shown in the Create position modal (`/app/rwa-pairs`), the **Best** preset, and the
-**Highest range** column of the pairs table. Code: `src/lib/range-apr/`, `src/lib/pool-range-apr.ts`,
+**Highest range** fields of the pair cards. Code: `src/lib/range-apr/`, `src/lib/pool-range-apr.ts`,
 `src/app/api/pool-range-apr/route.ts`, UI in `src/components/range-apr/`. Web-only: the MCP `rangePreset` enum and
 `recommendedRanges` are unchanged.
 
@@ -21,7 +21,7 @@ Spacing 1 → Micro ≈ ±0.02%; spacing 10 → ±0.2%; spacing 60 → ±1.2%, w
 ## Best (the leftmost preset)
 
 Not a prediction. It is **the candidate with the highest estimated fee APR** for this pool (from the last 7 complete days
-of volume, see below), resolved by the pure functions in `range-apr/preset-list.ts` that the modal and the table both call:
+of volume, see below), resolved by the pure functions in `range-apr/preset-list.ts` that the modal and the pair cards both call:
 
 * `pickHighestAprPreset` — highest `aprPct` among candidates with an estimate; ties (equal within float noise) go to the **wider** range
   (by tick width; between identical tick ranges, the later of Micro/Tight/Standard/Wide). Unavailable candidates are ignored.
@@ -37,13 +37,22 @@ of volume, see below), resolved by the pure functions in `range-apr/preset-list.
 * Tooltip copy: "The range with the highest estimated fee APR over the last 7 days for this pool … Not a prediction. A higher APR usually means a
   narrower range and a higher risk of leaving range."
 
-## Highest range (pairs table column)
+## Highest range (pair cards)
 
-A new column after *Est. fee APR* showing, per pair, the candidate with the highest estimate and its APR, e.g. `Tight · ~38% APR`
-(`*` = low-confidence sample; `…` while loading; `—` when nothing could be priced). It reads the same cached `/api/pool-range-apr` payload and
-`highestRangeSummary` → `buildPresetList`, so it always equals the modal's Best. Labelled APR (not APY), same caveat tooltip. The table's
-other columns are not sortable (rows are pre-ranked by the pool-level estimate), so this column is not either. On narrow screens the table
-scrolls horizontally inside its wrapper; the cell never wraps.
+`/app/rwa-pairs` lists pairs as cream cards (one column on narrow screens, two from `lg`), still pre-ranked by the pool-level 24h estimate
+(shown on each card as *Pool fee APR*). The range estimate appears exactly once per card, split from the range it belongs to:
+
+* **Highest range APR** — the headline pill: the highest candidate estimate as a bare figure, e.g. `38% APR`. The `~` and the
+  low-confidence `*` the modal uses are left off the pill; the estimate caveat and the low-confidence note are in its tooltip.
+* **Highest range** — its own field: the candidate that estimate belongs to, by name only, e.g. `Tight (±0.05%)` or `Micro`. No APR figure.
+
+Both show `…` while loading and `—` when nothing could be priced; a degraded payload (no price history) also shows `—`, with the
+reason in the pill's tooltip. They read the same cached `/api/pool-range-apr` payload and
+`highestRangeSummary` → `buildPresetList`, so they always equal the modal's Best. Labelled APR (not APY); the pill's tooltip carries the
+estimate caveat, the range field's tooltip explains how the range is picked. Raydium's published 24h feeApr is not shown on the cards.
+Token icons are Jupiter's (`/api/token-metadata`, host allowlist in `token-metadata.ts`), falling back to Raydium's icon host
+(`img-v1.raydium.io/icon/<mint>.png`) and then to initials. The line under the pair is `pairIssuerLabel` (company + issuers, full names
+in the tooltip), and the pool address links to the pool on Raydium (`raydium.io/clmm/create-position/?pool_id=<pool>`).
 
 ## APR method (chosen: "liquidity profile × volume occupancy")
 
@@ -57,7 +66,7 @@ APR = Σ fees_b/day × 365 / capital
   shared RPC layer. Validation: valuing the whole rebuilt profile at the current price reproduces Raydium's TVL to 99–100% on
   all five listed pools, so units, decimals and `liquidityNet` signs are right.
 * `L_me`: the liquidity `capital` buys in the range (CLMM maths, `clmm-liquidity.ts`). Capital is a fixed **$100** reference so the
-  table and the modal always agree; larger deposits dilute themselves (shown in the tooltip).
+  cards and the modal always agree; larger deposits dilute themselves (shown in the tooltip).
 * `volume_b`: average daily USD volume of the last **7 complete UTC days** (GeckoTerminal daily candles, the open day excluded
   like `/api/pool-daily-apr`; a pool younger than 7 days averages over its age; Raydium's 7d volume is the fallback) distributed over
   bins using hourly price candles. Hourly candles only supply the *shape*; USD volume comes from the daily series.

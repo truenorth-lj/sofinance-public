@@ -1,6 +1,6 @@
 /**
  * Which range is "Best", and which buttons sit next to it (pure; shared by the Create position modal
- * and the pairs table so both always agree).
+ * and the pair cards so both always agree).
  *
  * "Best" is the candidate with the highest estimated fee APR, ties going to the wider
  * range. It resolves to that candidate's exact ticks, so quote/prepare use the ordinary preset path and what
@@ -95,7 +95,7 @@ export function buildPresetList(
   };
 }
 
-/** What the pairs table shows for a pool: the highest-APR candidate and its estimate, or null. */
+/** What a pair card shows for its pool: the highest-APR candidate and its estimate, or null. */
 export function highestRangeSummary(
   uiPresets: readonly OpenRangeUiPreset[], payload: PoolRangeAprPayload,
 ): { id: RangeAprPresetId; label: string; aprPct: number } | null {
