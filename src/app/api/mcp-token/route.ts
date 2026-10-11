@@ -7,6 +7,7 @@ import {
   parseChallengeNonce,
   consumeChallengeNonce,
 } from "@/lib/mcp-auth";
+import { getJupiterApiKey } from "@/lib/config/server-env";
 
 /**
  * GET /api/mcp-token?wallet=<address>
@@ -133,7 +134,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const secret = process.env.JUPITER_API_KEY;
+    const secret = getJupiterApiKey();
     if (!secret) {
       return NextResponse.json(
         { error: "Server configuration error: JUPITER_API_KEY not set" },

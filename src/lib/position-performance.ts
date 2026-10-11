@@ -47,6 +47,7 @@ import {
   buildRealizedFeeAprSeries,
   type RealizedFeeAprSeries,
 } from "./realized-fee-apr-series";
+import { getJupiterApiKey } from "./config/server-env";
 
 const POSITION_DISCRIMINATOR = createHash("sha256").update("account:PersonalPositionState").digest().subarray(0, 8);
 const POOL_DISCRIMINATOR = createHash("sha256").update("account:PoolState").digest().subarray(0, 8);
@@ -341,7 +342,7 @@ export async function getPositionPerformance(
       const prices = await fetchJupiterPricesUsd(
         [mintA, mintB],
         fetcher,
-        options.jupiterApiKey ?? process.env.JUPITER_API_KEY,
+        options.jupiterApiKey ?? getJupiterApiKey(),
       );
       priceUsdA = prices.get(mintA) ?? null;
       priceUsdB = prices.get(mintB) ?? null;
@@ -396,7 +397,7 @@ export async function getPositionPerformance(
       const meta = await getTokenMetadata(
         [mintA, mintB],
         fetcher,
-        options.jupiterApiKey ?? process.env.JUPITER_API_KEY,
+        options.jupiterApiKey ?? getJupiterApiKey(),
       );
       symbolA = symbolA ?? meta[mintA]?.symbol ?? null;
       symbolB = symbolB ?? meta[mintB]?.symbol ?? null;

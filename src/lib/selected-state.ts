@@ -12,6 +12,7 @@ import { positionSide } from "./quote-math";
 import { rpcConnection } from "./rpc";
 import { discoverWallet } from "./wallet-discovery";
 import { fetchJupiterPricesUsd, fetchRaydiumPoolUsdPrices } from "./token-prices";
+import { getJupiterApiKey } from "./config/server-env";
 
 export type PositionSelection = { positionMint: string; inputMint: string; inputKind: "native" | "token" };
 const tokenPrograms = [TOKEN_PROGRAM_ID.toBase58(), TOKEN_2022_PROGRAM_ID.toBase58()];
@@ -126,7 +127,7 @@ export async function readSelectedPositionState(
   let priceUsdA: number | null = null;
   let priceUsdB: number | null = null;
   try {
-    const apiKey = process.env.JUPITER_API_KEY;
+    const apiKey = getJupiterApiKey();
     const mints = [selection.inputMint, pool.mintA.toBase58(), pool.mintB.toBase58()];
     const prices = await fetchJupiterPricesUsd(mints, fetch, apiKey);
     priceUsdInput = prices.get(selection.inputMint) ?? null;

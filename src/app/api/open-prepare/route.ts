@@ -2,6 +2,7 @@ import { parseOpenQuoteRequest } from "@/lib/open-api";
 import { apiError } from "@/lib/api-response";
 import { buildAndSimulateOpenPosition } from "@/lib/open-atomic";
 import { issueOpenPositionPermit } from "@/lib/open-permit";
+import { getSigningSecret } from "@/lib/config/server-env";
 
 export async function POST(request: Request) {
   try {
@@ -9,7 +10,7 @@ export async function POST(request: Request) {
     const { summary, transaction } = await buildAndSimulateOpenPosition(
       wallet, selection, amount, range, floorBps, toleranceBps, { enforceResaleFloor: false },
     );
-    const permit = issueOpenPositionPermit(process.env.JUPITER_API_KEY || "", {
+    const permit = issueOpenPositionPermit(getSigningSecret(), {
       wallet,
       message: Buffer.from(transaction.message.serialize()).toString("base64"),
       summary,

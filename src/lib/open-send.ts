@@ -10,6 +10,7 @@ import { simulateAndVerifyOpenTransaction } from "./open-simulation";
 import { rpcConnection } from "./rpc";
 import { lookupBeamAfterSend } from "./solami-beam";
 import type { OpenPositionSummary } from "./open-types";
+import { getSigningSecret } from "./config/server-env";
 
 function isZeroSignature(signature: Uint8Array | undefined) {
   return !signature || signature.every((byte) => byte === 0);
@@ -103,7 +104,7 @@ export async function submitOpenPositionFromParts(input: {
   summary: OpenPositionSummary;
 }) {
   const transaction = VersionedTransaction.deserialize(Buffer.from(input.signedTransaction, "base64"));
-  if (!verifyOpenPositionPermit(process.env.JUPITER_API_KEY || "", {
+  if (!verifyOpenPositionPermit(getSigningSecret(), {
     wallet: input.wallet,
     message: Buffer.from(transaction.message.serialize()).toString("base64"),
     summary: input.summary,

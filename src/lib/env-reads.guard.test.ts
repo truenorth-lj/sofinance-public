@@ -23,26 +23,8 @@ const SECRET_ENV_NAMES = [
 type Reads = Record<string, number>;
 const ALLOWED_SECRET_READS: Record<string, Reads> = {
   JUPITER_API_KEY: {
-    // app routes
-    "app/api/compound-prepare/route.ts": 1,
-    "app/api/compound-recover-prepare/route.ts": 1,
-    "app/api/mcp-token/route.ts": 1,
-    "app/api/mcp/route.ts": 1,
-    "app/api/open-prepare/route.ts": 1,
-    "app/api/selected-broadcast/route.ts": 1,
-    "app/api/selected-prepare/route.ts": 1,
-    "app/api/verify-sign-token/route.ts": 1,
-    // lib (to be funnelled through lib/config/server-env.ts)
-    "lib/compound-api.ts": 1,
-    "lib/jupiter-route.ts": 1,
-    "lib/mint-symbols.ts": 1,
-    "lib/open-send.ts": 1,
-    "lib/position-performance.ts": 2,
-    "lib/rwa-jupiter-tags.ts": 1,
-    "lib/selected-state.ts": 1,
-    "lib/token-metadata.ts": 1,
-    // MCP tools
-    "mcp/tools.ts": 5,
+    // the single reader (lib/config/server-env.ts)
+    "lib/config/server-env.ts": 1,
     // allowed long-term: the Jupiter client's own env fallback (env param, injectable in tests)
     "lib/jupiter/urls.ts": 1,
   },
@@ -153,9 +135,9 @@ describe("secret env var read ratchet", () => {
     expect(sortedEntries(wholeEnv)).toEqual(sortedEntries(ALLOWED_WHOLE_ENV_PASSES));
   });
 
-  it("documents the headline number: 22 raw JUPITER_API_KEY reads outside lib/jupiter (the review counted 23-24 by grep; one hit is a doc comment in rwa-pairs.ts)", () => {
-    const outside = Object.entries(secretReads.JUPITER_API_KEY!).filter(([file]) => !file.startsWith("lib/jupiter/"));
-    expect(outside.reduce((sum, [, count]) => sum + count, 0)).toBe(22);
+  it("documents the end state: no raw JUPITER_API_KEY reads outside lib/jupiter and lib/config (the review counted 23-24 by grep; one hit was a doc comment)", () => {
+    const outside = Object.entries(secretReads.JUPITER_API_KEY!).filter(([file]) => !file.startsWith("lib/jupiter/") && !file.startsWith("lib/config/"));
+    expect(outside.reduce((sum, [, count]) => sum + count, 0)).toBe(0);
   });
 });
 

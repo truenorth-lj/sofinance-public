@@ -3,6 +3,7 @@ import "server-only";
 import { ExtensionType, getExtensionData, unpackMint } from "@solana/spl-token";
 import { PublicKey, type AccountInfo } from "@solana/web3.js";
 import { getTokenMetadata } from "./token-metadata";
+import { getJupiterApiKey } from "./config/server-env";
 
 export const RAYDIUM_MINT_IDS = "https://api-v3.raydium.io/mint/ids";
 const CACHE_TTL_MS = 60 * 60_000;
@@ -91,7 +92,7 @@ export async function resolveMintSymbols(
       const jupiter = await getTokenMetadata(
         stillMissing,
         fetcher,
-        options.jupiterApiKey ?? process.env.JUPITER_API_KEY,
+        options.jupiterApiKey ?? getJupiterApiKey(),
       );
       for (const mint of stillMissing) {
         const symbol = jupiter[mint]?.symbol?.trim();

@@ -4,6 +4,7 @@ import { jupiterRequest, JupiterHttpError, JUPITER_BUILD_PATH } from "./jupiter"
 import { MAX_PRICE_IMPACT_BPS, SLIPPAGE_BPS } from "./ids";
 import { acceptableReportedPriceImpact } from "./quote-guards";
 import type { JupiterRouteConstraints } from "./jupiter-route-retry";
+import { getJupiterApiKey } from "./config/server-env";
 
 export type ApiInstruction = { programId: string; accounts: { pubkey: string; isSigner: boolean; isWritable: boolean }[]; data: string };
 export type BuildRoute = {
@@ -32,7 +33,7 @@ export async function buildRoute(
   wrapAndUnwrapSol?: boolean,
   constraints: JupiterRouteConstraints | number = { maxAccounts: 48 },
 ): Promise<BuildRoute> {
-  const key = process.env.JUPITER_API_KEY;
+  const key = getJupiterApiKey();
   if (!key && process.env.E2E_KEYLESS_JUPITER !== "1") throw new Error("Server-side JUPITER_API_KEY not set, cannot obtain real-time quotes");
   if (amount <= 0n) throw new Error("Route amount must be greater than zero");
   const resolved = resolveConstraints(constraints);
