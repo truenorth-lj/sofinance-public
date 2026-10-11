@@ -11,3 +11,11 @@ Lookup table entries unused by these instructions are omitted; tests reconstruct
 them as the default public key while preserving the original indexes and length.
 Fixtures lock down size, account roles, instruction order and retry behavior;
 live simulation separately verifies the actual routes and resulting balances.
+
+`position-open-truncated.json` replays a minimized successful Token-2022
+opening receipt with truncated logs. It retains the preceding swap and opening
+instructions with their token transfers; parent indexes are remapped after
+unrelated instructions are removed. Wallets, mints, pools, token accounts and
+the signature are replaced with deterministic test values. It verifies that
+deposits come from the opening receipt rather than swap transfers or instruction
+amount limits.
