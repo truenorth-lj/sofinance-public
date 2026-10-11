@@ -1,18 +1,22 @@
 import Decimal from "decimal.js";
 import { validNumber } from "./lp-accounting";
 import { MAX_PLAN_DAYS } from "./lp-intent";
-import { DEFAULT_SWAP_FEE_BPS } from "./swap-fee";
 
 const D = Decimal.clone({ precision: 60 });
 
 /** Fee APR points are already annualized with a 365-day year. */
 export const PLAN_YIELD_DAYS_PER_YEAR = 365;
 
-/** Same default as `DEFAULT_SWAP_FEE_BPS` — protocol fee on the swapped half of a two-sided deposit. */
-export const PLAN_PROTOCOL_FEE_BPS = DEFAULT_SWAP_FEE_BPS;
+/**
+ * Assumed all-in cost of creating a position and adding liquidity, in basis points of the deposit
+ * (100 bps = 1%). It is a planning assumption, not a quote and not the on-chain protocol fee.
+ */
+export const PLAN_OPEN_COST_BPS = 100;
 
-/** Assumed share of the deposit that must be swapped into the other side of a two-sided pair. */
-export const PLAN_SWAP_SHARE = "0.5";
+/** `PLAN_OPEN_COST_BPS` as a percent string for display, e.g. "1". */
+export function planOpenCostPctLabel(bps: number = PLAN_OPEN_COST_BPS): string {
+  return new D(bps).div(100).toFixed();
+}
 
 /** Complete UTC days needed before the average is shown as a normal headline. */
 export const PLAN_MIN_RELIABLE_SAMPLE_DAYS = 7;
@@ -22,20 +26,14 @@ export function isThinPlanSample(sampleDays: number): boolean {
 }
 
 /**
- * Day-0 entry cost: protocol swap fee on the swapped half of `capital`.
- * Network / gas fees are ignored. `swapShare` is an assumption (default 50%).
+ * Day-0 entry cost: `PLAN_OPEN_COST_BPS` (about 1%) of `capital` for creating the position and adding
+ * liquidity. Network / gas fees are ignored.
  */
-export function planEntryCost(
-  capital: string,
-  feeBps: number = PLAN_PROTOCOL_FEE_BPS,
-  swapShare: string = PLAN_SWAP_SHARE,
-): string {
+export function planEntryCost(capital: string, costBps: number = PLAN_OPEN_COST_BPS): string {
   const cap = requireDecimal(capital, "capital", "0");
   if (cap.lte(0)) throw new Error("capital must be greater than zero");
-  if (!Number.isInteger(feeBps) || feeBps < 0 || feeBps > 100) throw new Error("feeBps is invalid");
-  const share = requireDecimal(swapShare, "swapShare", "0");
-  if (share.gt(1)) throw new Error("swapShare must be at most 1");
-  return cap.mul(share).mul(feeBps).div(10_000).toFixed();
+  if (!Number.isInteger(costBps) || costBps < 0 || costBps > 10_000) throw new Error("costBps is invalid");
+  return cap.mul(costBps).div(10_000).toFixed();
 }
 
 export type AprSample = { aprPct: number | null };
