@@ -16,6 +16,7 @@ const FIELD_HELP = {
   "Quote validity": "Time remaining before this quote expires. Quotes refresh every 3 seconds, and transaction preparation obtains a fresh quote. Expired quotes cannot be signed.",
   "Total cost": "",
   "Refundable rent (NFT)": "Estimated account deposits for the position NFT, its token account and your personal position account. You can recover the corresponding deposits when the position and accounts are closed.",
+  "Wallet token account rent": "Deposits to create missing wallet accounts for the two pool tokens. These accounts remain in your wallet after closing the position; their deposits can be recovered by closing them once empty.",
   "Non-refundable rent": "Estimated one-time cost to create shared protocol-position or tick-array accounts. These accounts remain after your position closes, so this cost is not returned to you.",
   "Network fee (est.)": "Estimated Solana transaction fee, confirmed during preparation. It is separate from your investment and account deposits.",
   "Wallet SOL": "Your wallet's total SOL balance. Keep enough SOL to cover account deposits and network fees in addition to your investment.",
@@ -76,7 +77,7 @@ export function OpenPositionModal({
   const totalCostHelp = `Estimated round-trip cost: about ${totalCostPercent ?? "—"}% (assuming you open the position, immediately withdraw, and swap back to ${inputSymbol}). This conservative estimate includes swap fees, price impact, and slippage tolerance. It does not block signing.`;
   const detailWarnings = quote?.warnings.filter(isDetailWarning) ?? [];
   const upfrontCost = quote ? BigInt(quote.rent.refundableLamports) + BigInt(quote.rent.nonRefundableLamports)
-    + BigInt(quote.networkFeeLamportsEstimate) : 0n;
+    + BigInt(quote.rent.walletTokenAccountLamports ?? "0") + BigInt(quote.networkFeeLamportsEstimate) : 0n;
   const label = quote
     ? `${tokenSymbol(quote.mintA, undefined, pair.symbolA)}/${tokenSymbol(quote.mintB, undefined, pair.symbolB)} · range ${formatPositionPriceRange({
       tickLower: quote.tickLower, tickUpper: quote.tickUpper,
@@ -226,6 +227,7 @@ export function OpenPositionModal({
               <dl className="mt-3 space-y-2">
                 <div className="flex justify-between gap-3"><FieldLabel label="Quote validity" /><dd>{c.fresh ? `${Math.max(0, Math.ceil((quote.expiresAt - c.now) / 1000))} seconds remaining` : "Expired"}</dd></div>
                 <div className="flex justify-between gap-3"><FieldLabel label="Refundable rent (NFT)" /><dd>{lamports(quote.rent.refundableLamports)}</dd></div>
+                {BigInt(quote.rent.walletTokenAccountLamports ?? "0") > 0n && <div className="flex justify-between gap-3"><FieldLabel label="Wallet token account rent" /><dd>{lamports(quote.rent.walletTokenAccountLamports!)}</dd></div>}
                 <div className="flex justify-between gap-3"><FieldLabel label="Non-refundable rent" /><dd>{lamports(quote.rent.nonRefundableLamports)}</dd></div>
                 <div className="flex justify-between gap-3"><FieldLabel label="Network fee (est.)" /><dd>{lamports(quote.networkFeeLamportsEstimate)}</dd></div>
                 <div className="flex justify-between gap-3"><FieldLabel label="Wallet SOL" /><dd>{lamports(quote.solLamports)}</dd></div>

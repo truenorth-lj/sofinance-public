@@ -1,15 +1,28 @@
 import { ASSOCIATED_TOKEN_PROGRAM_ID, createAssociatedTokenAccountIdempotentInstruction, createTransferCheckedInstruction, getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { Keypair, PublicKey, SystemProgram } from "@solana/web3.js";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   computeSwapFee, DEFAULT_SWAP_FEE_BPS, MAX_SWAP_FEE_BPS, netSwapInput, parseSwapFeeBps, parseSwapFeeWallet,
-  readSwapFeeConfig, swapFeeQuoteFields, swapFeeRecipientAta, swapFeeTransferInstructions, unfundedSwapFeeAtaRent,
+  assertNativeSwapFeeRecipient, readSwapFeeConfig, swapFeeQuoteFields, swapFeeRecipientAta, swapFeeTransferInstructions, unfundedSwapFeeAtaRent,
 } from "./swap-fee";
 
 const wallet = Keypair.generate().publicKey;
 const mint = Keypair.generate().publicKey;
 const source = Keypair.generate().publicKey;
 const payer = Keypair.generate().publicKey;
+
+it("rejects a small native fee to an uninitialized recipient and accepts a funded recipient", async () => {
+  const connection = {
+    getAccountInfo: vi.fn(async () => null as { lamports: number; data: Buffer } | null),
+    getMinimumBalanceForRentExemption: vi.fn(async () => 890880),
+  };
+  await expect(assertNativeSwapFeeRecipient(connection as never, wallet, 100000n)).rejects.toThrow(/site operator must fund.*0.00089088 SOL/);
+  connection.getAccountInfo.mockResolvedValue({ lamports: 890880, data: Buffer.alloc(0) });
+  await expect(assertNativeSwapFeeRecipient(connection as never, wallet, 100000n)).resolves.toBeUndefined();
+  connection.getAccountInfo.mockClear();
+  await assertNativeSwapFeeRecipient(connection as never, wallet, 0n);
+  expect(connection.getAccountInfo).not.toHaveBeenCalled();
+});
 
 describe("parseSwapFeeBps", () => {
   it("defaults to 10 and caps at 100", () => {
