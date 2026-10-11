@@ -94,6 +94,7 @@ beforeEach(() => {
   quoteCalls = 0;
   deferredQuote = null;
   vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+    if (url === "/api/sol-usdc-price") return { ok: true, json: async () => ({ rate: 150 }) };
     if (url.startsWith("/api/wallet")) return { ok: true, json: async () => ({ assets: [{
       kind: "native", mint: NATIVE_SOL_MINT, decimals: 9, balance: "216474000", eligible: true,
     }] }) };
@@ -119,6 +120,12 @@ afterEach(async () => {
 });
 
 describe("open-position signing and quote refresh", () => {
+  it("shows USDC equivalents for upfront fees and refundable deposits", async () => {
+    await mount();
+    expect(container.textContent).toContain("0.00965 SOL (≈ 1.4475 USDC)");
+    expect(container.textContent).toContain("0.0078 SOL (≈ 1.17 USDC)");
+    expect(container.textContent).toContain("0.00005 SOL (≈ 0.0075 USDC)");
+  });
   it("enables signing with a fresh quote and explains why Sign is disabled when it is not", async () => {
     await mount();
     expect(signButton().disabled).toBe(false);
