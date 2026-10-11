@@ -80,7 +80,7 @@ describe("stdio MCP server", () => {
     ]);
   });
 
-  it("an unknown tool is an isError result with the raw message", async () => {
+  it("an unknown tool is an isError result with the (sanitized, unchanged) message", async () => {
     const result = await client.callTool({ name: "nope", arguments: {} });
     expect(result.isError).toBe(true);
     expect(JSON.parse((result.content as { text: string }[])[0]!.text)).toEqual({ error: "Unknown tool: nope" });
@@ -89,6 +89,7 @@ describe("stdio MCP server", () => {
   it("QUIRK: the stdio server has NO wallet binding; argument validation (zod) is the only gate", async () => {
     const result = await client.callTool({ name: "list_positions", arguments: { wallet: "not-a-wallet" } });
     expect(result.isError).toBe(true);
-    expect((result.content as { text: string }[])[0]!.text).toContain("Invalid Solana public key");
+    // STEP 2a: the stdio catch uses the same sanitizer as the HTTP route (flattened zod error).
+    expect(JSON.parse((result.content as { text: string }[])[0]!.text)).toEqual({ error: "Invalid arguments: wallet: Invalid Solana public key" });
   }, 30_000);
 });
