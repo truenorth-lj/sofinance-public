@@ -306,11 +306,74 @@ describe("tools/call dispatch and wallet binding", () => {
     expect(JSON.parse(json.result.content[0].text)).toEqual({ error: "Unknown tool: does_not_exist" });
   });
 
-  it("QUIRK: tool errors are returned RAW (not sanitized): upstream URLs and api keys reach the agent", async () => {
+  it("STEP 2a: tool errors are sanitized like the web routes: URLs and api keys never reach the agent", async () => {
     toolFns.quoteCompound!.mockRejectedValue(new Error("upstream failed https://api.example/quote?api_key=SECRET123"));
     const { json } = await callTool("quote_compound", VALID_ARGS.quote_compound);
     expect(json.result.isError).toBe(true);
-    expect(json.result.content[0].text).toContain("https://api.example/quote?api_key=SECRET123");
+    const text = json.result.content[0].text as string;
+    expect(text).not.toContain("SECRET123");
+    expect(text).not.toContain("api.example");
+    expect(JSON.parse(text)).toEqual({ error: "upstream failed [redacted]" });
+  });
+
+  it.each([
+    ["key=value pair", "bad request api_key=SECRET123 end", "bad request [redacted] end"],
+    ["api-key header style", "rejected api-key: SECRET123", "rejected [redacted]"],
+    ["authorization", "authorization=Bearer SECRET123", "[redacted] SECRET123"],
+    ["token", "token: SECRET123", "[redacted]"],
+  ])("STEP 2a: redacts a %s", async (_label, raw, expected) => {
+    toolFns.listRwaPairs!.mockRejectedValue(new Error(raw));
+    const { json } = await callTool("list_rwa_pairs", {});
+    const error = JSON.parse(json.result.content[0].text).error as string;
+    expect(error).toBe(expected);
+  });
+
+  it("STEP 2a: known chain errors get the same public wording as the web routes; rate limits hide the upstream", async () => {
+    toolFns.listRwaPairs!.mockRejectedValue(new Error("Transaction simulation failed: Blockhash not found"));
+    expect(JSON.parse((await callTool("list_rwa_pairs", {})).json.result.content[0].text).error).toContain("Transaction blockhash expired.");
+    toolFns.listRwaPairs!.mockRejectedValue(new Error("429 Too Many Requests from https://rpc.example/?api-key=SECRET123"));
+    const text = (await callTool("list_rwa_pairs", {})).json.result.content[0].text as string;
+    expect(text).not.toContain("SECRET123");
+    expect(text).not.toContain("rpc.example");
+  });
+
+  it("STEP 2a: a long error is truncated to 220 characters", async () => {
+    toolFns.listRwaPairs!.mockRejectedValue(new Error("x".repeat(500)));
+    const error = JSON.parse((await callTool("list_rwa_pairs", {})).json.result.content[0].text).error as string;
+    expect(error).toHaveLength(220);
+    expect(error.endsWith("...")).toBe(true);
+  });
+
+  it("STEP 2a: an error with no message falls back to a generic text", async () => {
+    toolFns.listRwaPairs!.mockRejectedValue(new Error(""));
+    expect(JSON.parse((await callTool("list_rwa_pairs", {})).json.result.content[0].text)).toEqual({ error: "Tool call failed" });
+  });
+
+  it("STEP 2a: zod errors stay readable (field paths + messages), not cut to the first 220 chars of JSON", async () => {
+    const { json } = await callTool("prepare_transaction", {});
+    const error = JSON.parse(json.result.content[0].text).error as string;
+    expect(error.startsWith("Invalid arguments: ")).toBe(true);
+    for (const field of ["wallet", "positionMint", "inputMint", "amount"]) expect(error).toContain(field);
+    expect(error).not.toContain("\n");
+  });
+
+  it("STEP 2a: wallet-binding and unknown-tool messages are unchanged by sanitizing", async () => {
+    const mismatch = await callTool("list_positions", { wallet: otherWallet });
+    expect(JSON.parse(mismatch.json.result.content[0].text).error).toBe(
+      `Token wallet mismatch: token is for ${wallet}, requested ${otherWallet}`,
+    );
+  });
+
+  it("STEP 2a: the outer 'Internal error' catch is sanitized too", async () => {
+    const hostile = {
+      headers: new Headers(),
+      json: async () => ({ jsonrpc: "2.0", id: 1, get method(): string { throw new Error("boom https://rpc.example/?api_key=SECRET123"); } }),
+    };
+    const response = await POST(hostile as unknown as NextRequest);
+    const text = await response.text();
+    expect(response.status).toBe(500);
+    expect(text).not.toContain("SECRET123");
+    expect(JSON.parse(text).error).toEqual({ code: -32603, message: "Internal error: boom [redacted]" });
   });
 
   it("QUIRK: a non-Error throw is stringified", async () => {
