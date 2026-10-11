@@ -1,6 +1,8 @@
 "use client";
 
 import { useId, useState } from "react";
+import { formatSolCost } from "@/lib/sol-cost";
+import { useSolUsdcPrice } from "./use-sol-usdc-price";
 import { formatAmount } from "@/lib/amount";
 import { formatPositionPriceRange, formatRangeStatus, tokenSymbol } from "@/lib/position-label";
 import { ChevronDown, Info, LoaderCircle, RefreshCw, X } from "lucide-react";
@@ -54,12 +56,6 @@ function isDetailWarning(warning: string) {
     warning.startsWith("This range initializes tick array(s)");
 }
 
-function lamports(value: string | number | bigint): string {
-  const n = Number(value) / 1e9;
-  if (!Number.isFinite(n)) return "—";
-  return `${n.toFixed(4)} SOL`;
-}
-
 export function OpenPositionModal({
   pair,
   onClose,
@@ -68,6 +64,8 @@ export function OpenPositionModal({
   onClose: () => void;
 }) {
   const c = useOpenPositionController(pair);
+  const solUsdcRate = useSolUsdcPrice();
+  const lamports = (value: string | number | bigint) => formatSolCost(value, solUsdcRate);
   const quote = c.quote;
   const totalCostPercent = quote && BigInt(quote.requested) > 0n
     ? (Number(quote.roundtripCostInput) / Number(quote.requested) * 100).toFixed(2)
@@ -232,7 +230,7 @@ export function OpenPositionModal({
                 <div className="flex justify-between gap-3"><FieldLabel label="Network fee (est.)" /><dd>{lamports(quote.networkFeeLamportsEstimate)}</dd></div>
                 <div className="flex justify-between gap-3"><FieldLabel label="Wallet SOL" /><dd>{lamports(quote.solLamports)}</dd></div>
               </dl>
-              <p className="mt-3 text-xs leading-5 text-smoke">Upfront costs include refundable account deposits, one-time account setup and the estimated network fee. These are separate from your investment. Quotes refresh every 3 seconds.</p>
+              <p className="mt-3 text-xs leading-5 text-smoke">Upfront costs include refundable account deposits, one-time account setup and the estimated network fee. These are separate from your investment. Quotes refresh every 3 seconds. USDC values use the current Jupiter SOL/USDC reference price, refreshed every minute; fees are paid in SOL.</p>
               {detailWarnings.map(warning => <p key={warning} className="mt-2 text-xs leading-5 text-smoke">{explainTokenWarning(warning)}</p>)}
             </details>
           </div>
