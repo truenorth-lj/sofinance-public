@@ -14,6 +14,7 @@
 
   --animate-rise: rise 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
   --animate-settle: settle 0.35s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  --animate-halo: halo 3.2s ease-in-out infinite;
 
   @keyframes rise {
     from { opacity: 0; transform: translateY(16px); }
@@ -22,6 +23,11 @@
   @keyframes settle {
     from { opacity: 0; transform: translateY(6px); }
     to { opacity: 1; transform: none; }
+  }
+  /* Breathing glow behind the Best range; `--halo` is its peak opacity. */
+  @keyframes halo {
+    0%, 100% { opacity: calc(var(--halo, 0.4) * 0.55); }
+    50% { opacity: var(--halo, 0.4); }
   }
 }
 

@@ -1,4 +1,4 @@
-import { MICRO_HELP, MICRO_LABEL, MICRO_PRESET_ID } from "./range-apr/micro-range";
+import { MICRO_HALF_WIDTH_SPACINGS, MICRO_HELP, MICRO_LABEL, MICRO_PRESET_ID } from "./range-apr/micro-range";
 
 /** Half-width of the band around the current B-per-A price, in basis points of that price. */
 export const OPEN_RANGE_PRESETS = [
@@ -45,6 +45,11 @@ export type OpenRangeUiPreset = {
   label: string;
   /** Label without the percentage, used where space is tight (e.g. "Best" resolved-range text). */
   shortLabel: string;
+  /**
+   * Half-width around the current price, shown under the name in the range picker, e.g. "±0.05%". Micro's is in
+   * steps here; the picker shows `microBandLabel` (a percent) once it knows the pool's tick spacing.
+   */
+  band: string;
   /** Tooltip copy for presets whose rule is not obvious from the label. */
   help: string | null;
 };
@@ -54,8 +59,9 @@ export type OpenRangeUiPreset = {
  * tie-breaking and for the remaining buttons next to "Best" (Custom is appended by the picker).
  */
 export const OPEN_RANGE_UI_PRESETS: readonly OpenRangeUiPreset[] = [
-  { id: MICRO_PRESET_ID, label: MICRO_LABEL, shortLabel: MICRO_LABEL, help: MICRO_HELP },
+  { id: MICRO_PRESET_ID, label: MICRO_LABEL, shortLabel: MICRO_LABEL, band: `±${MICRO_HALF_WIDTH_SPACINGS} steps`, help: MICRO_HELP },
   ...OPEN_RANGE_PRESETS.map((preset) => ({
-    id: preset.id, label: preset.label, shortLabel: preset.label.replace(/\s*\(.*\)$/, ""), help: null,
+    id: preset.id, label: preset.label, shortLabel: preset.label.replace(/\s*\(.*\)$/, ""),
+    band: `±${preset.percentBps / 100}%`, help: null,
   })),
 ];

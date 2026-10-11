@@ -40,6 +40,15 @@ export function microRangeFromExactTick(exactTick: number, tickSpacing: number):
   return { tickLower: centerTick - width, tickUpper: centerTick + width, centerTick };
 }
 
+/**
+ * Micro's half-width as a share of price on a pool with this spacing, e.g. "±0.02%" at spacing 1 (a tick is
+ * 0.01%), so it reads like the percent presets next to it.
+ */
+export function microBandLabel(tickSpacing: number): string {
+  const percent = (Math.pow(1.0001, MICRO_HALF_WIDTH_SPACINGS * tickSpacing) - 1) * 100;
+  return `±${Number(percent.toPrecision(2))}%`;
+}
+
 export function microRange(sqrtPriceX64: string | bigint, tickSpacing: number): MicroRange {
   return microRangeFromExactTick(exactTickFromSqrtPriceX64(sqrtPriceX64), tickSpacing);
 }
