@@ -17,7 +17,7 @@ export type TokenMetadata = {
 const ICON_HOSTS = new Set([
   "static.jup.ag", "raw.githubusercontent.com", "ipfs.io", "upload.wikimedia.org",
   "storage.googleapis.com", "s3-symbol-logo.tradingview.com", "xstocks-metadata.backed.fi",
-  "arweave.net", "gateway.pinata.cloud",
+  "arweave.net", "gateway.pinata.cloud", "backpack.exchange",
 ]);
 
 function textField(value: unknown, maxLength: number) {

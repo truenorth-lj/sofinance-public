@@ -21,6 +21,15 @@ describe("getTokenMetadata", () => {
     expect(String(vi.mocked(fetcher).mock.calls[0]?.[0])).toContain(`${mintA}%2C${mintB}`);
   });
 
+  it("keeps the Backpack stock logos Jupiter lists for Backpack Securities tokens", async () => {
+    const mint = "HooDYv5RewLRiMLnEVq3VJqdqxhuE6c5eYvqejMC3e9A";
+    const icon = "https://backpack.exchange/api/stock-logo/HOOD";
+    const fetcher = vi.fn(async () => new Response(JSON.stringify([
+      { id: mint, name: "Robinhood Markets - Backpack Securities", symbol: "HOOD", decimals: 8, icon },
+    ]))) as unknown as typeof fetch;
+    expect((await getTokenMetadata([mint], fetcher, "test-key"))[mint]).toMatchObject({ icon });
+  });
+
   it("falls back cleanly when Jupiter metadata is unavailable", async () => {
     const fetcher = vi.fn(async () => new Response("unavailable", { status: 503 })) as unknown as typeof fetch;
     expect(await getTokenMetadata(["mint"], fetcher, "test-key")).toEqual({});
