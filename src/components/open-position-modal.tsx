@@ -7,6 +7,8 @@ import { formatAmount } from "@/lib/amount";
 import { formatPositionPriceRange, formatRangeStatus, tokenSymbol } from "@/lib/position-label";
 import { ChevronDown, Info, LoaderCircle, RefreshCw, X } from "lucide-react";
 import { useOpenPositionController, type OpenPositionPair } from "./use-open-position-controller";
+import { RangePresetPicker } from "./range-apr/range-preset-picker";
+import { usePoolRangeApr } from "./range-apr/use-pool-range-apr";
 
 const FIELD_HELP = {
   "Token A": "The conservative amount of token A available to open your LP position. The position may use less; any remaining tokens stay in your wallet.",
@@ -65,8 +67,12 @@ export function OpenPositionModal({
 }) {
   const c = useOpenPositionController(pair);
   const solUsdcRate = useSolUsdcPrice();
+  const rangeApr = usePoolRangeApr(pair.poolAddress);
   const lamports = (value: string | number | bigint) => formatSolCost(value, solUsdcRate);
   const quote = c.quote;
+  // Price the exact ticks a live quote for the current selection would sign; otherwise the preset / typed band.
+  const quotedRange = quote && quote.rangePreset === c.rangePreset
+    ? { tickLower: quote.tickLower, tickUpper: quote.tickUpper } : null;
   const totalCostPercent = quote && BigInt(quote.requested) > 0n
     ? (Number(quote.roundtripCostInput) / Number(quote.requested) * 100).toFixed(2)
     : null;
@@ -167,44 +173,17 @@ export function OpenPositionModal({
           </button>
         </div>
 
-        <p className="mt-4 text-xs text-smoke">Price range (B per 1 A)</p>
-        <div className="mt-2 flex flex-wrap gap-2">
-          {c.presets.map((preset) => (
-            <button
-              key={preset.id}
-              type="button"
-              onClick={() => c.choosePreset(preset.id)}
-              className={`rounded-full border px-3 py-1 text-xs font-semibold ${c.rangePreset === preset.id ? "border-cream text-cream" : "border-white/20 text-smoke"}`}
-            >
-              {preset.label}
-            </button>
-          ))}
-          <button
-            type="button"
-            onClick={() => c.choosePreset("custom")}
-            className={`rounded-full border px-3 py-1 text-xs font-semibold ${c.rangePreset === "custom" ? "border-cream text-cream" : "border-white/20 text-smoke"}`}
-          >
-            Custom
-          </button>
-        </div>
-        {c.rangePreset === "custom" && (
-          <div className="mt-2 grid grid-cols-2 gap-2">
-            <input
-              aria-label="Minimum price"
-              className="rounded-2xl border border-white/20 bg-white/[0.06] px-3 py-2 text-sm text-cream"
-              value={c.minPrice}
-              onChange={(event) => c.setMinPrice(event.target.value)}
-              placeholder="Min"
-            />
-            <input
-              aria-label="Maximum price"
-              className="rounded-2xl border border-white/20 bg-white/[0.06] px-3 py-2 text-sm text-cream"
-              value={c.maxPrice}
-              onChange={(event) => c.setMaxPrice(event.target.value)}
-              placeholder="Max"
-            />
-          </div>
-        )}
+        <RangePresetPicker
+          presets={c.presets}
+          selected={c.rangePreset}
+          onSelect={c.choosePreset}
+          minPrice={c.minPrice}
+          maxPrice={c.maxPrice}
+          onMinPrice={c.setMinPrice}
+          onMaxPrice={c.setMaxPrice}
+          apr={rangeApr}
+          quotedRange={quotedRange}
+        />
 
         {quote && (
           <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.04] p-3 text-xs text-cream/80">

@@ -1,0 +1,29 @@
+import { apiError } from "@/lib/api-response";
+import { fetchPoolRangeApr } from "@/lib/pool-range-apr";
+
+/**
+ * One request per pool returns everything needed to price any range: the per-bin liquidity/volume model, the
+ * four presets already priced, and the sample description. Upstream calls are cached per instance with
+ * in-flight de-duplication (see `pool-range-apr.ts`); the CDN header keeps repeat browsers off the server.
+ */
+export const revalidate = 30;
+
+const CDN_HEADERS = {
+  "Cache-Control": "public, max-age=0, must-revalidate",
+  "CDN-Cache-Control": "public, s-maxage=30, stale-while-revalidate=300",
+  "Vercel-CDN-Cache-Control": "public, s-maxage=30, stale-while-revalidate=300",
+};
+
+const POOL_ID = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+
+export async function GET(request: Request) {
+  const poolId = new URL(request.url).searchParams.get("poolId");
+  if (!poolId || !POOL_ID.test(poolId)) {
+    return apiError(new Error("A valid poolId is required"), "Invalid pool id", 400);
+  }
+  try {
+    return Response.json(await fetchPoolRangeApr(poolId), { headers: CDN_HEADERS });
+  } catch (error) {
+    return apiError(error, "Range APR estimate unavailable", 503);
+  }
+}

@@ -5,6 +5,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NATIVE_SOL_MINT, QUOTE_TTL_MS } from "../lib/ids";
 import type { OpenPositionQuote } from "../lib/open-types";
+import { payloadFixture } from "../lib/range-apr/payload.fixture";
+import { clearPoolRangeAprClientCache } from "./range-apr/pool-range-apr-client";
 import { OpenPositionModal } from "./open-position-modal";
 import type { OpenPositionPair, useOpenPositionController } from "./use-open-position-controller";
 
@@ -68,6 +70,7 @@ let container: HTMLDivElement;
 let failQuote: boolean;
 let quoteCalls: number;
 let deferredQuote: Promise<unknown> | null;
+let quoteBodies: Array<Record<string, unknown>>;
 
 async function advance(ms: number) {
   await act(async () => { await vi.advanceTimersByTimeAsync(ms); });
@@ -93,13 +96,17 @@ beforeEach(() => {
   failQuote = false;
   quoteCalls = 0;
   deferredQuote = null;
-  vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+  quoteBodies = [];
+  clearPoolRangeAprClientCache();
+  vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+    if (url.startsWith("/api/pool-range-apr")) return { ok: true, json: async () => payloadFixture() };
     if (url === "/api/sol-usdc-price") return { ok: true, json: async () => ({ rate: 150 }) };
     if (url.startsWith("/api/wallet")) return { ok: true, json: async () => ({ assets: [{
       kind: "native", mint: NATIVE_SOL_MINT, decimals: 9, balance: "216474000", eligible: true,
     }] }) };
     if (url === "/api/open-quote") {
       quoteCalls++;
+      if (typeof init?.body === "string") quoteBodies.push(JSON.parse(init.body));
       if (deferredQuote) return deferredQuote;
       return { ok: !failQuote, json: async () => failQuote ? { error: "Quote service unavailable" } : quote() };
     }
@@ -117,6 +124,49 @@ afterEach(async () => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   vi.useRealTimers();
+});
+
+describe("range presets and estimated APR", () => {
+  const presetButton = (label: string) =>
+    [...container.querySelectorAll<HTMLButtonElement>("[aria-label='Price range presets'] button")]
+      .find((button) => button.querySelector("span")?.textContent === label)!;
+
+  it("lists AI pick left of Tight, keeps Standard selected by default and shows an APR under each preset", async () => {
+    await mount();
+    const labels = [...container.querySelectorAll("[aria-label='Price range presets'] button")].map((b) => b.querySelector("span")?.textContent);
+    expect(labels).toEqual(["AI pick", "Tight (±0.05%)", "Standard (±0.3%)", "Wide (±1%)", "Custom"]);
+    expect(presetButton("Standard (±0.3%)").getAttribute("aria-pressed")).toBe("true");
+    expect(presetButton("AI pick").getAttribute("aria-pressed")).toBe("false");
+    for (const id of ["ai", "tight", "standard", "wide"]) {
+      expect(container.querySelector(`[data-testid='apr-${id}']`)!.textContent).toMatch(/^~\d/);
+    }
+    expect(container.querySelector("[data-testid='range-apr-headline']")!.textContent)
+      .toBe(container.querySelector("[data-testid='apr-standard']")!.textContent);
+  });
+
+  it("clicking AI pick selects it, moves the headline to its estimate and requests an 'ai' quote", async () => {
+    await mount();
+    await act(async () => { presetButton("AI pick").click(); });
+    await advance(450);
+    expect(presetButton("AI pick").getAttribute("aria-pressed")).toBe("true");
+    expect(container.querySelector("[data-testid='range-apr-headline']")!.textContent)
+      .toBe(container.querySelector("[data-testid='apr-ai']")!.textContent);
+    expect(quoteBodies.at(-1)).toMatchObject({ rangePreset: "ai" });
+    expect(container.textContent).toContain("AI pick is a fixed rule");
+  });
+
+  it("still lets the user create a position when the estimate is unavailable", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (url.startsWith("/api/pool-range-apr")) return { ok: false, json: async () => ({ error: "down" }) };
+      if (url === "/api/sol-usdc-price") return { ok: true, json: async () => ({ rate: 150 }) };
+      if (url.startsWith("/api/wallet")) return { ok: true, json: async () => ({ assets: [{ kind: "native", mint: NATIVE_SOL_MINT, decimals: 9, balance: "216474000", eligible: true }] }) };
+      if (url === "/api/open-quote") return { ok: true, json: async () => quote() };
+      throw new Error(`Unexpected request: ${url}`);
+    }));
+    await mount();
+    expect(container.textContent).toContain("Estimate unavailable right now");
+    expect(signButton().disabled).toBe(false);
+  });
 });
 
 describe("open-position signing and quote refresh", () => {

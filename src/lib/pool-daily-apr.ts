@@ -78,7 +78,7 @@ async function fetchJson(fetcher: typeof fetch, url: string, timeoutMs: number):
   return response.json();
 }
 
-async function safeJson(
+export async function safeJson(
   fetcher: typeof fetch,
   url: string,
   timeoutMs: number,

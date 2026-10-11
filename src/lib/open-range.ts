@@ -2,6 +2,7 @@ import Decimal from "decimal.js";
 import { TickUtil } from "@raydium-io/raydium-sdk-v2";
 import { positionSide } from "./quote-math";
 import { uiPriceBPerAFromTick } from "./position-performance-math";
+import { aiPickRange } from "./range-apr/ai-pick";
 import {
   DEFAULT_OPEN_RANGE_PRESET,
   OPEN_RANGE_PRESETS,
@@ -15,6 +16,9 @@ export {
   openRangePresetById,
 };
 export type { OpenRangePreset, OpenRangePresetId } from "./open-range-presets";
+
+/** A band this narrow in raw ticks (~0.1% of price, the width of the Tight preset) gets the narrow-range warning. */
+const NARROW_RANGE_MAX_TICKS = 10;
 
 const MIN_TICK = -443636;
 const MAX_TICK = 443636;
@@ -126,21 +130,31 @@ export function resolveOpenRange(input: {
   let requestedMaxPrice: number;
   let narrow = false;
   let warning: string | null = null;
-  if (input.range.preset === "custom") {
-    requestedMinPrice = parsePositivePrice(input.range.minPrice, "Minimum price");
-    requestedMaxPrice = parsePositivePrice(input.range.maxPrice, "Maximum price");
+  let tickLower: number;
+  let tickUpper: number;
+  if (input.range.preset === "ai") {
+    // Tick-based rule (centred +-2 tick-spacing units), so it bypasses the price-band conversion.
+    ({ tickLower, tickUpper } = aiPickRange(sqrtPriceX64, tickSpacing));
+    requestedMinPrice = uiPriceBPerAFromTick(tickLower, decimalsA, decimalsB);
+    requestedMaxPrice = uiPriceBPerAFromTick(tickUpper, decimalsA, decimalsB);
+    narrow = tickUpper - tickLower <= NARROW_RANGE_MAX_TICKS;
   } else {
-    const spec = openRangePresetById(preset);
-    if (!spec) throw new Error("Unknown range preset");
-    const fraction = spec.percentBps / 10_000;
-    requestedMinPrice = currentPrice * (1 - fraction);
-    requestedMaxPrice = currentPrice * (1 + fraction);
-    narrow = spec.narrow;
-    warning = spec.warning;
+    if (input.range.preset === "custom") {
+      requestedMinPrice = parsePositivePrice(input.range.minPrice, "Minimum price");
+      requestedMaxPrice = parsePositivePrice(input.range.maxPrice, "Maximum price");
+    } else {
+      const spec = openRangePresetById(preset);
+      if (!spec) throw new Error("Unknown range preset");
+      const fraction = spec.percentBps / 10_000;
+      requestedMinPrice = currentPrice * (1 - fraction);
+      requestedMaxPrice = currentPrice * (1 + fraction);
+      narrow = spec.narrow;
+      warning = spec.warning;
+    }
+    ({ tickLower, tickUpper } = ticksFromUiPriceBand(
+      requestedMinPrice, requestedMaxPrice, decimalsA, decimalsB, tickSpacing,
+    ));
   }
-  const { tickLower, tickUpper } = ticksFromUiPriceBand(
-    requestedMinPrice, requestedMaxPrice, decimalsA, decimalsB, tickSpacing,
-  );
   const priceLower = uiPriceBPerAFromTick(tickLower, decimalsA, decimalsB);
   const priceUpper = uiPriceBPerAFromTick(tickUpper, decimalsA, decimalsB);
   const lowerSqrt = TickUtil.getSqrtPriceAtTick(tickLower);

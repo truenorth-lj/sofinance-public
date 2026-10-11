@@ -6,6 +6,7 @@ import { LoaderCircle, RefreshCw } from "lucide-react";
 import { PoolAprSparkline } from "./pool-daily-apr-panel";
 import Link from "next/link";
 import { buildPlanPath } from "@/lib/public-urls";
+import { AiPickAprLine } from "./range-apr/ai-pick-apr-line";
 import { OpenPositionModal } from "./open-position-modal";
 import type { OpenPositionPair } from "./use-open-position-controller";
 
@@ -203,7 +204,10 @@ export function RwaPairsPanel() {
                       {pair.nameA} / {pair.nameB}
                     </div>
                   </td>
-                  <td className="py-4 pr-4 font-semibold tabular-nums text-cream">{pct(pair.estimatedFeeAprPct)}</td>
+                  <td className="py-4 pr-4">
+                    <div className="font-semibold tabular-nums text-cream">{pct(pair.estimatedFeeAprPct)}</div>
+                    <AiPickAprLine poolId={pair.poolAddress} />
+                  </td>
                   <td className="py-4 pr-4">
                     {index < 8 ? <PoolAprSparkline poolId={pair.poolAddress} /> : <span className="text-smoke/70">—</span>}
                   </td>
