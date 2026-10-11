@@ -1,4 +1,5 @@
 import { classifyRpcError } from "../rpc/errors";
+import type { ParsedTransactionWithMeta } from "@solana/web3.js";
 
 export type HistoryFallbackReason =
   | "solami-empty"
@@ -24,6 +25,8 @@ export type ParsedHistoryTx = {
   err: unknown;
   logMessages: string[] | null;
   servedBy?: "solami" | "default";
+  /** Preserve instruction receipts when event logs were truncated. */
+  parsedTransaction?: ParsedTransactionWithMeta;
 };
 
 function asRecord(value: unknown): Record<string, unknown> | null {

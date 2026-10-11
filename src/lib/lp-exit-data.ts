@@ -9,11 +9,13 @@ import { compactAtaInstructions, compileCompactOpenTransaction, openLookupTableR
 import { instruction } from "./transaction-helpers";
 import { validPrincipalQuote } from "./lp-decision-data";
 import type { ApiInstruction } from "./jupiter-route";
+import { resolveDefaultRpcConfig } from "./rpc/providers";
+import { exitRpcFetch } from "./lp-exit-rpc";
 const USDC="EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",SOL="So11111111111111111111111111111111111111112";
 function checked(info:AccountInfo<Buffer>|null,name:string){if(!info||!info.owner.equals(CLMM_PROGRAM_ID)||!info.data.subarray(0,8).equals(createHash("sha256").update(`account:${name}`).digest().subarray(0,8)))throw new Error(`${name} account invalid`);return info.data;}
 export async function readFullExitPreview(positionId:string,nftAccount?:string,convertRent=true,fetcher:typeof fetch=fetch,signal?:AbortSignal){
  const budget=AbortSignal.any([AbortSignal.timeout(90000),...(signal?[signal]:[])]);
- const connection=new Connection("https://api.mainnet-beta.solana.com",{commitment:"confirmed",disableRetryOnRateLimit:true,fetch:(url,init)=>fetcher(url,{...init,signal:budget})});
+ const connection=new Connection(resolveDefaultRpcConfig().endpoint,{commitment:"confirmed",disableRetryOnRateLimit:true,fetch:exitRpcFetch(fetcher,budget)});
  const positionKey=getPdaPersonalPositionAddress(CLMM_PROGRAM_ID,new PublicKey(positionId)).publicKey;
  const position=PersonalPositionLayout.decode(checked(await connection.getAccountInfo(positionKey),"PersonalPositionState"));
  if(position.nftMint.toBase58()!==positionId)throw new Error("NFT context mismatch");

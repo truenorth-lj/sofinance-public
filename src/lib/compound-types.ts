@@ -18,6 +18,7 @@ export type CompoundSwap = {
   quotedOutputAmount: string; minOutputAmount: string; simulatedOutputAmount?: string;
   inputDecimals: number; outputDecimals: number; poolId: string; sqrtPriceAfterX64: string;
   feeBps?: number; feeAmount?: string;
+  poolFeeAmount?: string;
 };
 export type CompoundPriorSource = {
   sourceSignature: string; address: string; mint: string; program: string;
@@ -35,6 +36,7 @@ export type CompoundSummary = {
   simulatedSolDebitLamports: string; maxSolDebitLamports: string;
   feeBps: number; feeAmount: string; feeWallet: string | null;
   feeLamports: number; rentLamports: number; sizeBytes: number; unitsConsumed?: number;
+  nonRefundableRentLamports?: string;
   blockhash: string; lastValidBlockHeight: number; simulatedAt: number; expiresAt: number;
   beam?: {
     included: boolean;

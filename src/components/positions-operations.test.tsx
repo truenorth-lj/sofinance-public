@@ -4,14 +4,18 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SelectedApp } from "./selected-app";
 
-const mocks = vi.hoisted(() => ({ connect: vi.fn(), deposit: vi.fn(), compound: vi.fn() }));
+const mocks = vi.hoisted(() => ({ connect: vi.fn(), deposit: vi.fn(), compound: vi.fn(), depositQuote: false }));
 vi.mock("next/navigation", () => ({ usePathname: () => "/app" }));
 vi.mock("./use-token-metadata", () => ({ useTokenMetadata: () => ({}) }));
 vi.mock("./wallet-connection", () => ({ useWalletConnection: () => ({ connected: false, connect: mocks.connect }) }));
 vi.mock("./use-selected-controller", () => ({ useSelectedController: () => ({
   connected: false, wallet: "", connect: mocks.connect, disconnect: vi.fn(), discovery: null, state: null,
-  amount: "", maxCostPercent: "1", tolerancePercent: "1", busy: false, calculating: false,
-  status: "Please connect wallet first", actionLabel: "Deposit funds", actionDisabled: true,
+  quote: mocks.depositQuote ? { requested: "10000000", roundtripCostInput: "137000",
+    resaleInput: "9863000", passesFloor: false, inputDecimals: 9, spendA: "0", spendB: "0",
+    minOutA: "0", minOutB: "0", expiresAt: Date.now() + 30000 } : null,
+  fresh: true, now: Date.now(),
+  amount: "", tolerancePercent: "1", busy: false, calculating: false,
+  status: "Please connect wallet first", actionLabel: "Add liquidity", actionDisabled: true,
   primaryAction: mocks.deposit, choosePosition: vi.fn(), error: "", connectionError: "",
 }) }));
 vi.mock("./use-compound-controller", () => ({ useCompoundController: () => ({
@@ -31,7 +35,7 @@ function button(label: string, scope: Element = container) {
 }
 beforeEach(async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  vi.clearAllMocks();
+  vi.clearAllMocks(); mocks.depositQuote = false;
   container = document.createElement("div"); document.body.append(container); root = createRoot(container);
   await act(async () => root.render(createElement(SelectedApp)));
 });
@@ -40,7 +44,7 @@ afterEach(async () => { await act(async () => root.unmount()); container.remove(
 describe("Positions operations while disconnected", () => {
   it("orders the operations and keeps Performance inside Positions", async () => {
     expect(Array.from(container.querySelectorAll('nav[aria-label="Position operations"] button')).map((b) => b.textContent?.trim()))
-      .toEqual(["Yield Compound", "Performance", "Deposit funds"]);
+      .toEqual(["Yield Compound", "Performance", "Add to position"]);
     expect(Array.from(container.querySelectorAll('nav[aria-label="App"] a')).map((a) => a.textContent)).not.toContain("Performance");
     await act(async () => button("Performance").click());
     expect(container.querySelector<HTMLElement>("#performance-view")?.hidden).toBe(false);
@@ -60,7 +64,7 @@ describe("Positions operations while disconnected", () => {
     expect(container.textContent).not.toContain("Reown Project ID");
   });
   it("connects on deposit and shows the shared wallet prompt", async () => {
-    await act(async () => button("Deposit funds", container.querySelector('nav[aria-label="Position operations"]')!).click());
+    await act(async () => button("Add to position", container.querySelector('nav[aria-label="Position operations"]')!).click());
     const deposit = button("Connect wallet", container.querySelector("#deposit-view")!);
     expect(deposit.disabled).toBe(false);
     await act(async () => deposit.click());
@@ -68,4 +72,15 @@ describe("Positions operations while disconnected", () => {
     expect(container.textContent).toContain("Connect your wallet to find your liquidity positions.");
     expect(container.textContent).not.toContain("Please connect wallet first");
   });
+});
+
+it("shows Total cost as a reminder without a resale threshold setting", async () => {
+  mocks.depositQuote = true;
+  await act(async () => root.render(createElement(SelectedApp)));
+  const deposit = container.querySelector("#deposit-view")!;
+  expect(deposit.textContent).toContain("Total cost");
+  expect(deposit.textContent).toContain("~1.37%");
+  expect(deposit.textContent).toContain("It does not block signing.");
+  expect(deposit.textContent).not.toContain("Your minimum resale setting");
+  expect(deposit.querySelector("#max-cost")).toBeNull();
 });
