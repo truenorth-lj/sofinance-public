@@ -14,7 +14,7 @@ import { PositionSelect } from "./position-select";
 import { PositionAssetRow } from "./position-asset-row";
 import { useTokenMetadata } from "./use-token-metadata";
 import { DecisionSession } from "@/lib/lp-decision-session";
-import { LpPositionEvidence } from "./lp-position-evidence";
+import { PositionExitEstimate } from "./position-exit-estimate";
 import { PoolDailyAprChart } from "./pool-daily-apr-panel";
 import { PoolActivityPanel } from "./pool-activity-panel";
 import { formatHoldingTime, returnUnavailableReason } from "../lib/position-performance-display";
@@ -33,6 +33,7 @@ type TokenEquivalent = {
     deposited: number;
     equity: number;
     liquidity: number;
+    uncollectedFees: number;
     feesEarned: number;
     withdrawnPrincipal: number;
     pnl: number;
@@ -65,6 +66,8 @@ type Metrics = {
   holdingDays: number | null;
   depositedUsd: number | null;
   currentEquityUsd: number | null;
+  liquidityUsd: number | null;
+  uncollectedFeesUsd: number | null;
   feesEarnedUsd: number | null;
   pnlUsd: number | null;
   holdingPeriodReturnPct: number | null;
@@ -72,6 +75,7 @@ type Metrics = {
   feeOnlyAprPct: number | null;
   depositedRaw: { a: string; b: string };
   currentEquityRaw: { a: string; b: string };
+  liquidityAmountsRaw: { a: string; b: string };
   feesEarnedRaw: { a: string; b: string };
   uncollectedFeesRaw: { a: string; b: string };
   feesCollectedRaw: { a: string; b: string };
@@ -156,6 +160,7 @@ export function PositionPerformancePanel({
   embedded = false,
   selectedMint,
   selectedNftAccount,
+  nftAccountPending = false,
 }: {
   initialMint?: string;
   initialWallet?: string;
@@ -163,6 +168,8 @@ export function PositionPerformancePanel({
   embedded?: boolean;
   selectedMint?: string;
   selectedNftAccount?: string;
+  /** The parent is still resolving the holder's NFT token account (see resolveNftAccountLookup). */
+  nftAccountPending?: boolean;
 }) {
   const { address, connected, connect } = useWalletConnection();
   const connectedAddress = connected ? address : undefined;
@@ -297,7 +304,7 @@ export function PositionPerformancePanel({
     <>
     {!embedded && <section className="rounded-[28px] border border-white/12 bg-char p-5 sm:p-7 lg:col-span-5" aria-labelledby="perf-heading">
       <h2 id="perf-heading" className="text-base font-semibold text-cream">
-        {embedded ? "Performance" : "Step 1 · Select a position"}
+        Step 1 · Select a position
       </h2>
 
       <div className="mt-4 space-y-3">
@@ -434,9 +441,9 @@ export function PositionPerformancePanel({
             {preferTe ? (
               <>
                 <Stat
-                  label={`Trading-fee APR`}
+                  label="Estimated trading-fee APR"
                   value={pct(te!.metrics.feeOnlyAprPct)}
-                  description="Annualized trading-fee income."
+                  description="Estimate: fees earned so far, annualized. Not a forecast or a promised return."
                   unavailableReason={missingReturn(true)}
                   emphasize
                   wide
@@ -444,34 +451,37 @@ export function PositionPerformancePanel({
                 <Stat
                   label={`Fees earned`}
                   value={`${tok(te!.metrics.feesEarned)} ${te!.baseSymbol}`}
-                  description={data.metrics.feesEarnedUsd !== null ? `${money(data.metrics.feesEarnedUsd)} USD at current prices` : undefined}
+                  description={`${data.metrics.feesEarnedUsd !== null ? `${money(data.metrics.feesEarnedUsd)} USD at current prices · ` : ""}Collected plus unclaimed fees.`}
                 />
                 <Stat
                   label={`Current position value (${te!.baseSymbol} equivalent)`}
                   value={`${tok(te!.metrics.equity)} ${te!.baseSymbol}`}
-                  description={`${data.metrics.currentEquityUsd !== null ? `${money(data.metrics.currentEquityUsd)} USD · ` : ""}Liquidity plus uncollected trading fees.`}
+                  description={`${data.metrics.currentEquityUsd !== null ? `${money(data.metrics.currentEquityUsd)} USD · ` : ""}Liquidity ${tok(te!.metrics.liquidity)} + unclaimed fees ${tok(te!.metrics.uncollectedFees)} ${te!.baseSymbol}.`}
                 />
               </>
             ) : (
               <>
-                <Stat label="Fee-only APR (USD)" value={pct(data.metrics.feeOnlyAprPct)} unavailableReason={missingReturn(true)} emphasize wide />
-                <Stat label="Current equity (USD)" value={money(data.metrics.currentEquityUsd)} />
-                <Stat label="Fees earned (USD)" value={money(data.metrics.feesEarnedUsd)} />
+                <Stat label="Estimated fee-only APR (USD)" value={pct(data.metrics.feeOnlyAprPct)} description="Estimate: fees earned so far, annualized. Not a forecast or a promised return." unavailableReason={missingReturn(true)} emphasize wide />
+                <Stat label="Current equity (USD)" value={money(data.metrics.currentEquityUsd)}
+                  description={data.metrics.liquidityUsd !== null && data.metrics.uncollectedFeesUsd !== null ? `Liquidity ${money(data.metrics.liquidityUsd)} + unclaimed fees ${money(data.metrics.uncollectedFeesUsd)}.` : "Liquidity plus unclaimed fees."} />
+                <Stat label="Fees earned (USD)" value={money(data.metrics.feesEarnedUsd)} description="Collected plus unclaimed fees." />
               </>
             )}
           </div>
 
           <p className="text-xs leading-5 text-smoke">
-            APR annualizes earned trading fees over recorded deposits and holding time. It uses current prices; additional deposits are not time-weighted.
-            {data.truncated && " Earlier transactions may be missing, so fee APR may be incomplete."}
+            Estimated APR annualizes the trading fees earned so far (collected plus unclaimed) over recorded deposits and holding time, at current prices. Additional deposits are not time-weighted, and future fees can be higher or lower: it is not a promised return.
+            {data.truncated && " Earlier transactions may be missing, so the estimate may be incomplete."}
           </p>
 
           {!embedded && tn && (
             <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 sm:p-5">
               <h4 className="text-[11px] font-semibold uppercase tracking-wide text-smoke">Position assets</h4>
               <div className="mt-4 divide-y divide-white/10">
-                <PositionAssetRow symbol={symA} icon={positionMetadata[data.mintA]?.icon ?? null} amount={tn.amounts.currentEquity.a} fees={tn.amounts.feesEarned.a} priceUsd={data.pricing.priceUsdA} />
-                <PositionAssetRow symbol={symB} icon={positionMetadata[data.mintB]?.icon ?? null} amount={tn.amounts.currentEquity.b} fees={tn.amounts.feesEarned.b} priceUsd={data.pricing.priceUsdB} />
+                <PositionAssetRow symbol={symA} icon={positionMetadata[data.mintA]?.icon ?? null} decimals={data.decimalsA}
+                  liquidityRaw={data.metrics.liquidityAmountsRaw.a} unclaimedFeesRaw={data.metrics.uncollectedFeesRaw.a} priceUsd={data.pricing.priceUsdA} />
+                <PositionAssetRow symbol={symB} icon={positionMetadata[data.mintB]?.icon ?? null} decimals={data.decimalsB}
+                  liquidityRaw={data.metrics.liquidityAmountsRaw.b} unclaimedFeesRaw={data.metrics.uncollectedFeesRaw.b} priceUsd={data.pricing.priceUsdB} />
               </div>
             </div>
           )}
@@ -480,7 +490,8 @@ export function PositionPerformancePanel({
       )}
 
 
-      {data && decisionMint && <LpPositionEvidence key={decisionMint} positionId={decisionMint} nftAccount={decisionMint === selectedMint ? selectedNftAccount : undefined} showLedger={false} embedded autoExit={embedded} requireNftAccount={embedded} className="mt-5" />}
+      {data && decisionMint && <PositionExitEstimate key={decisionMint} positionId={decisionMint} nftAccount={decisionMint === selectedMint ? selectedNftAccount : undefined}
+        nftAccountPending={decisionMint === selectedMint && nftAccountPending} autoExit={embedded} className="mt-5" />}
 
       {(data?.poolId || previewPoolId) && (
         <div className={data ? "mt-6" : undefined}>

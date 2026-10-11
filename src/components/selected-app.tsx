@@ -7,6 +7,7 @@ import { formatAmount } from "@/lib/amount";
 import { NATIVE_SOL_MINT, USDC_MINT } from "@/lib/ids";
 import { PositionSelect } from "./position-select";
 import { PositionAssetRow } from "./position-asset-row";
+import { resolveNftAccountLookup } from "@/lib/exit-account-lookup";
 import { useTokenMetadata } from "./use-token-metadata";
 import { useSelectedController } from "./use-selected-controller";
 import { TransactionStatusDialog } from "./transaction-status-dialog";
@@ -47,13 +48,17 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
     obsoletePending, error, quoteError, busy: addBusy, calculating, now, quote, fresh, status,
     actionLabel, actionDisabled: addDisabled, primaryAction: addAction, changeAmount, changeTolerance, fillMax,
     choosePosition, chooseAsset, refreshDiscovery, refreshState, retryCalculation, retryReconcile, retryObsoleteReconcile, clearObsoleteRecords,
-    clearInvalidAttempt } = controller;
+    clearInvalidAttempt, loadingDiscovery, loadingState, stateError } = controller;
   const totalCostPercent = quote && BigInt(quote.requested) > 0n
     ? (Number(quote.roundtripCostInput) / Number(quote.requested) * 100).toFixed(2)
     : null;
   const compound = useCompoundController({ wallet: wallet || undefined, positionMint: selection?.positionMint,
     externalBlocked: controller.walletBlocked,
     onConfirmed: () => { void refreshState(); } });
+  // Unclaimed fees come from the compound reader (same accrual formula as the Performance card); its snapshot also carries the
+  // liquidity amounts, so rows show liquidity and unclaimed fees from one consistent read when it is available.
+  const feeState = state && compound.state?.positionMint === state.positionMint ? compound.state : null;
+  const assets = feeState ?? state;
   const busy = addBusy || compound.busy;
   const actionDisabled = connected && (addDisabled || compound.walletBlocked);
   const primaryAction = () => { if (!connected) { connect(); return; } if (!compound.walletBlocked) addAction(); };
@@ -66,14 +71,24 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
   const [statusDialogOpen, setStatusDialogOpen] = useState(false);
   const [assetRisksOpen, setAssetRisksOpen] = useState(false);
   const [activeView, setActiveView] = useState<"compound" | "performance" | "deposit">(initialView);
-  const linkedPositionApplied = useRef(false);
+  // A deep link (?mint=) wins over the wallet's default selection until the user picks a position themselves. It is applied
+  // once per wallet (the controller resets the selection whenever the wallet changes).
+  const linkedPositionWallet = useRef("");
+  const [pickedPosition, setPickedPosition] = useState(false);
   useEffect(() => {
-    if (linkedPositionApplied.current || !initialMint || !discovery) return;
+    if (!wallet || linkedPositionWallet.current === wallet || !initialMint || !discovery) return;
     if (discovery.positions.some((position) => position.positionMint === initialMint)) {
-      linkedPositionApplied.current = true;
+      linkedPositionWallet.current = wallet;
       choosePosition(initialMint);
     }
-  }, [initialMint, discovery, choosePosition]);
+  }, [initialMint, discovery, wallet, choosePosition]);
+  const pickPosition = (positionMint: string) => { setPickedPosition(true); choosePosition(positionMint); };
+  const linkActive = Boolean(initialMint) && !pickedPosition;
+  const performanceMint = linkActive ? initialMint : selection?.positionMint || initialMint;
+  const nftAccountLookup = resolveNftAccountLookup({ connected, targetMint: performanceMint, discovery, state,
+    loadingDiscovery, loadingState, hasError: Boolean(stateError) });
+  const linkedForeignPosition = linkActive && connected && discovery !== null && !loadingDiscovery
+    && !discovery.positions.some((position) => position.positionMint === initialMint);
   const shownSignatureRef = useRef<string | null>(null);
   const visibleAttempt = attempt?.wallet === wallet ? attempt : null;
   useEffect(() => {
@@ -120,7 +135,7 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
           labelSrOnly
           value={selection?.positionMint || ""}
           disabled={!positionOptions.length || busy}
-          onChange={choosePosition}
+          onChange={pickPosition}
           positions={positionOptions}
           metadata={metadata}
           placeholder={!positionOptions.length ? (connected ? "No identifiable position found" : "Connect wallet to view positions") : undefined}
@@ -131,11 +146,11 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
           <span className={`rounded-full border px-2.5 py-1 ${state.inRange ? "border-white/40 bg-white/[0.07] text-cream/80" : "border-white/20 bg-white/[0.05] text-smoke"}`}>{state.rangeSide === "above" ? "Above range · single-sided" : state.rangeSide === "below" ? "Below range · single-sided" : "Price within range"}</span>
 
         </div>}
-        {state && <div aria-label="Position assets" className="mt-5 divide-y divide-white/10">
-          <PositionAssetRow symbol={poolLabel(state.mintA)} icon={metadata[state.mintA]?.icon ?? null}
-            amount={Number(state.currentAmounts.a) / 10 ** state.decimalsA} priceUsd={state.pricing?.priceUsdA ?? null} />
-          <PositionAssetRow symbol={poolLabel(state.mintB)} icon={metadata[state.mintB]?.icon ?? null}
-            amount={Number(state.currentAmounts.b) / 10 ** state.decimalsB} priceUsd={state.pricing?.priceUsdB ?? null} />
+        {assets && <div aria-label="Position assets" className="mt-5 divide-y divide-white/10">
+          <PositionAssetRow symbol={poolLabel(assets.mintA)} icon={metadata[assets.mintA]?.icon ?? null} decimals={assets.decimalsA}
+            liquidityRaw={assets.currentAmounts.a} unclaimedFeesRaw={feeState?.fees.a ?? null} priceUsd={assets.pricing?.priceUsdA ?? null} />
+          <PositionAssetRow symbol={poolLabel(assets.mintB)} icon={metadata[assets.mintB]?.icon ?? null} decimals={assets.decimalsB}
+            liquidityRaw={assets.currentAmounts.b} unclaimedFeesRaw={feeState?.fees.b ?? null} priceUsd={assets.pricing?.priceUsdB ?? null} />
         </div>}
         </div>
         {connected && <div className="mt-6 border-t border-white/10 pt-5 text-sm leading-relaxed">
@@ -159,7 +174,11 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
           <CompoundPanel controller={compound} tokenLabel={poolLabel} onConnect={connect} />
         </div>
         <div id="performance-view" hidden={activeView !== "performance"} className="mt-3 space-y-3">
-          {activeView === "performance" && <PositionPerformancePanel embedded selectedMint={selection?.positionMint || initialMint} selectedNftAccount={state?.positionMint === selection?.positionMint ? state?.nftAta : undefined} initialWallet={initialWallet} previewPoolId={previewPoolId} />}
+          {activeView === "performance" && linkedForeignPosition && <p role="status" className="rounded-2xl border border-white/15 bg-white/[0.04] px-4 py-3 text-xs leading-5 text-smoke">
+            Showing the linked position {initialMint.slice(0, 4)}…{initialMint.slice(-4)}. It is not held by the connected wallet, so only public data is shown.
+          </p>}
+          {activeView === "performance" && <PositionPerformancePanel embedded selectedMint={performanceMint} selectedNftAccount={nftAccountLookup.account}
+            nftAccountPending={nftAccountLookup.pending} initialWallet={initialWallet} previewPoolId={previewPoolId} />}
         </div>
         <div id="deposit-view" hidden={activeView !== "deposit"}>
         <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,0.75fr)]">

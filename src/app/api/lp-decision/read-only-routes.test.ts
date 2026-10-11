@@ -4,7 +4,6 @@ const exit=vi.hoisted(()=>vi.fn());
 vi.mock("@/lib/lp-exit-data",()=>({readFullExitPreview:exit}));
 import { JupiterHttpError, JUPITER_UNAVAILABLE_CODE, JUPITER_UNAVAILABLE_MESSAGE } from "@/lib/jupiter/errors";
 import { GET as exitGET } from "./exit-preview/route";
-import { GET as ledgerGET } from "./ledger/route";
 const nft="DemoPosition1111111111111111111111111111111";
 it("validates read-only exit input, forwards cancellation and preserves no-send failure",async()=>{
  const logged=vi.spyOn(console,"info").mockImplementation(()=>undefined);
@@ -26,8 +25,4 @@ it("returns a distinct Jupiter error code instead of the Solana RPC text",async(
  expect(line).toContain("JupiterHttpError");
  expect(line).toContain("Jupiter HTTP 429");
  expect(line).not.toMatch(/secret|api[_-]?key/i);
-});
-it("refuses a malformed cursor and a position without captured evidence",async()=>{
- expect((await ledgerGET(new Request(`http://local?positionId=${nft}&before=bad`))).status).toBe(400);
- expect((await ledgerGET(new Request("http://local?positionId=11111111111111111111111111111111&source=captured-public"))).status).toBe(503);
 });
