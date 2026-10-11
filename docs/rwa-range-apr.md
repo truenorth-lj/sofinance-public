@@ -1,6 +1,6 @@
-# Range APR estimate, Micro, and "AI best"
+# Range APR estimate, Micro, and "Best"
 
-Design note for the **Est. fee APR** shown in the Create position modal (`/app/rwa-pairs`), the **AI best** preset, and the
+Design note for the **Est. fee APR** shown in the Create position modal (`/app/rwa-pairs`), the **Best** preset, and the
 **Highest range** column of the pairs table. Code: `src/lib/range-apr/`, `src/lib/pool-range-apr.ts`,
 `src/app/api/pool-range-apr/route.ts`, UI in `src/components/range-apr/`. Web-only: the MCP `rangePreset` enum and
 `recommendedRanges` are unchanged.
@@ -18,30 +18,30 @@ Each pool is priced for four candidates (narrow to wide, the canonical order eve
 
 Spacing 1 → Micro ≈ ±0.02%; spacing 10 → ±0.2%; spacing 60 → ±1.2%, which on a 60-spaced pool is the same tick range as Wide.
 
-## AI best (the leftmost preset)
+## Best (the leftmost preset)
 
-Not a model and not a prediction. It is **the candidate with the highest estimated fee APR** for this pool (from the last 7 complete days
+Not a prediction. It is **the candidate with the highest estimated fee APR** for this pool (from the last 7 complete days
 of volume, see below), resolved by the pure functions in `range-apr/preset-list.ts` that the modal and the table both call:
 
 * `pickHighestAprPreset` — highest `aprPct` among candidates with an estimate; ties (equal within float noise) go to the **wider** range
   (by tick width; between identical tick ranges, the later of Micro/Tight/Standard/Wide). Unavailable candidates are ignored.
-* `buildPresetList` — the modal's row: `AI best` (APR + small text with the range it resolved to, e.g. "Tight"), then the **other** candidates
+* `buildPresetList` — the modal's row: `Best` (APR + small text with the range it resolved to, e.g. "Tight"), then the **other** candidates
   narrow→wide **without the resolved one**, then Custom. A candidate covering exactly the same ticks as the resolved one is also dropped, so no
   two buttons select the same range.
-* Clicking AI best selects the resolved candidate's own preset id, so `quote_open_position` / `prepare_open_position` receive e.g. `tight`
-  and sign exactly the ticks that were priced. (AI best itself is never sent to the API.)
-* Default selection stays **Standard**. If Standard *is* what AI best resolved to, Standard has no button of its own, so the default
-  selection shows as the highlighted **AI best** button (same ticks).
-* While the estimate is loading, errored, or no candidate could be priced: the plain row `Micro, Tight, Standard, Wide, Custom`, no AI best,
-  no AI-best highlight (Standard remains the selected default).
-* Tooltip copy: "Picked automatically as the range with the highest estimated fee APR for this pool from the last 7 days of data … It is not a
-  prediction and not an AI model. A higher APR usually means a narrower range and a higher risk of leaving range."
+* Clicking Best selects the resolved candidate's own preset id, so `quote_open_position` / `prepare_open_position` receive e.g. `tight`
+  and sign exactly the ticks that were priced. (Best itself is never sent to the API.)
+* Default selection stays **Standard**. If Standard *is* what Best resolved to, Standard has no button of its own, so the default
+  selection shows as the highlighted **Best** button (same ticks).
+* While the estimate is loading, errored, or no candidate could be priced: the plain row `Micro, Tight, Standard, Wide, Custom`, no Best,
+  no Best highlight (Standard remains the selected default).
+* Tooltip copy: "The range with the highest estimated fee APR over the last 7 days for this pool … Not a prediction. A higher APR usually means a
+  narrower range and a higher risk of leaving range."
 
 ## Highest range (pairs table column)
 
 A new column after *Est. fee APR* showing, per pair, the candidate with the highest estimate and its APR, e.g. `Tight · ~38% APR`
 (`*` = low-confidence sample; `…` while loading; `—` when nothing could be priced). It reads the same cached `/api/pool-range-apr` payload and
-`highestRangeSummary` → `buildPresetList`, so it always equals the modal's AI best. Labelled APR (not APY), same caveat tooltip. The table's
+`highestRangeSummary` → `buildPresetList`, so it always equals the modal's Best. Labelled APR (not APY), same caveat tooltip. The table's
 other columns are not sortable (rows are pre-ranked by the pool-level estimate), so this column is not either. On narrow screens the table
 scrolls horizontally inside its wrapper; the cell never wraps.
 
@@ -80,7 +80,7 @@ Fee noise: executed trade prices carry the swap fee, so candle ranges are shrunk
 ### Candidates compared (live data, 2026-10-11, $100 deposit)
 
 A = pool-level Raydium-style `volume × fee × 365 / TVL` (not range aware). B = active-tick liquidity share, assuming 100% in range.
-C0 = method C without rebasing. **C = chosen.** D = "naive concentration multiplier" on A. **Bold in the last column = AI best.**
+C0 = method C without rebasing. **C = chosen.** D = "naive concentration multiplier" on A. **Bold in the last column = Best.**
 
 | Pool (spacing, fee) | Raydium 24h / 7d APR | A (7d avg, LP-net) | Candidate | B | C0 | **C** | in range | D |
 |---|---|---|---|---|---|---|---|---|
@@ -111,6 +111,25 @@ Why C:
   2026-06-22) realised **14.2%** over 111 days, mostly out of range and at a different volume level; it is not comparable to a
   forward estimate for a freshly centred band, but is the same order as C for Standard/Wide on that pool (23% / 7%).
 
+## Degraded data: no price history means no estimate
+
+Volume is placed on price bins from GeckoTerminal's hourly candles. If those are missing (rate limit, timeout, pool not indexed) the only
+fallback left is "all volume at the current price", which hands the whole volume to the current bin and over-states narrow ranges badly
+(live example: SPCXx/SPCX 5 bps showed Micro ~50% while the same pool with candles gives ~9%). A figure that changes 5x with which upstream
+answered is worse than none, so:
+
+* The server marks the payload `sample.degraded = true`, lists the cause in `sample.issues` (e.g. `GeckoTerminal hourly candles: Upstream
+  request failed (429)`), and returns **every candidate as `unavailable` with reason `degraded-data`** (ranges are still resolved). No
+  conservative bound is shown: any bound would still be a guess.
+* The browser gates custom and quoted ranges the same way (`estimateForSelection`), so typing a custom price on a degraded pool shows no number.
+* **Degraded estimates never take part in selection.** `buildPresetList` / `pickHighestAprPreset` ignore a degraded payload, so the modal shows the
+  plain row (`Micro, Tight, Standard, Wide, Custom`, all `—`, no Best, no highlight) with "Recent price history is temporarily unavailable, so no
+  estimate is shown", and the table's *Highest range* cell shows `—`.
+* Missing *daily* volume alone (hourly candles fine) is not degraded: volume falls back to Raydium's 7-day figure and the estimate is flagged low confidence (`*`).
+* Recovery: the server keeps a degraded profile for 10 s only (a good one for 30 min), retries rate-limited/5xx GeckoTerminal calls (3 attempts, 0.3-1.5 s
+  backoff, never 404), limits GeckoTerminal to 2 concurrent calls per instance, and falls back to the last good price history of the same pool for up to
+  6 h (stale-if-error). A degraded response is cached at the CDN for 5 s only, the browser keeps it 8 s and re-asks up to 3 times (10 s apart).
+
 ## Assumptions and limits (also in the tooltip)
 
 * Back-test, not a forecast: recent volume and today's liquidity repeat; other LPs do not move; one-day horizon after opening
@@ -120,19 +139,19 @@ Why C:
   could not be placed on a bin with liquidity). The UI marks those with a caveat / asterisk.
 * Window: ±max(300 raw ticks, 6 bins) around the price (≈ ±3–3.6%); ranges beyond it show "unavailable" rather than a guess.
 * Micro bands on spacing-1 pools are *very* narrow (≈ ±0.02%): the model puts only ~10–40% of volume inside, so they win on some pools
-  (SPCXx/SPCX, INTCx/INTC) and lose on others (MSTRx/MSTR, HOODx/HOOD resolve to Tight). That is why AI best is computed per pool instead of fixed.
+  (SPCXx/SPCX, INTCx/INTC) and lose on others (MSTRx/MSTR, HOODx/HOOD resolve to Tight). That is why Best is computed per pool instead of fixed.
 * "Highest APR" is not "best": it ranks only by the estimate, which favours narrow ranges that leave range sooner. It is a ranking of an
   estimate, with the same low-confidence caveat on thin pools (e.g. the $5.8k SPCXx/SPCX pool).
-* On pools where two candidates have identical ticks (HOODx/HOOD: Micro = Wide), both buttons can appear in the row when neither is AI best.
+* On pools where two candidates have identical ticks (HOODx/HOOD: Micro = Wide), both buttons can appear in the row when neither is Best.
 
 ## API
 
-`GET /api/pool-range-apr?poolId=<clmm pool>` returns, per pool (cached 30 s at the CDN; per-instance upstream caches: Raydium+GeckoTerminal
-30 min, on-chain state 30 s; in-flight de-duplication; 15 s negative cache; the browser fetches each pool once per minute and at most 2 at a time):
+`GET /api/pool-range-apr?poolId=<clmm pool>` returns, per pool (cached 30 s at the CDN, 5 s when degraded; per-instance upstream caches: Raydium+GeckoTerminal
+30 min (10 s when degraded), on-chain state 30 s; in-flight de-duplication; 15 s negative cache; the browser fetches each pool once per minute (8 s when degraded) and at most 2 at a time):
 
 * `presets[]` (`micro`, `tight`, `standard`, `wide`): resolved ticks/prices and the priced estimate (`aprPct`, `inRangeVolumePct`);
 * `model` (per-bin liquidity + daily volume, current sqrt price, USD per raw B): the input of the **pure** `estimateRangeApr`, which the
   browser runs for custom ranges so typing a price updates instantly with no request;
-* `sample` (days, sources, unplaced volume, confidence), `published` (Raydium's own APR), `assumptions`, `sources`.
+* `sample` (days, sources, unplaced volume, confidence, `degraded`, `issues`), `published` (Raydium's own APR), `assumptions`, `sources`.
 
 Reproduce the comparison: `npx tsx scripts/research-range-apr.ts [poolId …]` (read-only).
