@@ -203,6 +203,7 @@ export function PositionPerformancePanel({
   const loading = loadingContext === context;
   const decisionMint = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(positionMint.trim()) ? positionMint.trim() : undefined;
   const data = loadedData?.context === context ? loadedData.body : null;
+  const autoLoadSharedPosition = embedded && !choiceIsCurrent && Boolean(decisionMint) && positionMint === selectedMint;
   useEffect(() => { const current = lookup.current; return () => current.cancel(); }, [context]);
   const changePositionMint = (value: string) => {
     lookup.current.cancel();
@@ -277,6 +278,12 @@ export function PositionPerformancePanel({
       if (attempt.current()) { attempt.finish(); setLoadingContext(null); }
     }
   }, [context, positionMint, wallet]);
+
+  useEffect(() => {
+    if (!autoLoadSharedPosition) return;
+    const timer = window.setTimeout(() => { void load(); }, 0);
+    return () => window.clearTimeout(timer);
+  }, [autoLoadSharedPosition, load]);
 
   const tn = data?.tokenNative;
   const te = tn?.tokenEquivalent ?? null;
@@ -381,7 +388,12 @@ export function PositionPerformancePanel({
             </div>
           </div>
         </details>
-        <div className="border-t border-white/10 pt-5">
+        {autoLoadSharedPosition && !error ? (
+          (!data || loading) && <div role="status" className="flex items-center gap-2 border-t border-white/10 pt-5 text-sm text-smoke">
+            <LoaderCircle className="h-4 w-4 animate-spin" />
+            Loading performance…
+          </div>
+        ) : <div className="border-t border-white/10 pt-5">
           {!embedded && <h3 className="text-base font-semibold text-cream">Step 2 · Compute performance</h3>}
           <p className="mb-3 mt-1 text-xs leading-5 text-smoke">Calculate returns and fees for the selected position.</p>
           <button
@@ -391,9 +403,9 @@ export function PositionPerformancePanel({
             className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-lemon px-5 py-3 text-sm font-semibold text-ink transition-colors hover:bg-[#fff27f] disabled:cursor-not-allowed disabled:opacity-40"
           >
             {loading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-            Compute performance
+            {autoLoadSharedPosition ? "Retry performance" : "Compute performance"}
           </button>
-        </div>
+        </div>}
       </div>
 
       {error && (
