@@ -1,12 +1,13 @@
+import { simulateAndVerifySelectedTransaction } from "@/lib/selected-simulation";
 import { PublicKey, VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
 import { parseWallet } from "@/lib/api-input";
 import { apiError } from "@/lib/api-response";
 import { verifySelectedPermit, type SelectedPermitInput } from "@/lib/selected-permit";
-import { simulateAndVerifySelectedTransaction } from "@/lib/selected-simulation";
 import { readSelectedPositionState } from "@/lib/selected-state";
 import { rpcConnection } from "@/lib/rpc";
-import { lookupBeamAfterSend } from "@/lib/solami-beam";
+import { beamLandingUrl } from "@/lib/solami-beam";
+import nacl from "tweetnacl";
 import { getSigningSecret } from "@/lib/config/server-env";
 
 function validRaw(value: unknown) {
@@ -51,12 +52,16 @@ export async function POST(request: Request) {
     if (!verifySelectedPermit(getSigningSecret(), permitInput, body.permit)) {
       throw new Error("Transaction content does not match server's complete simulation version");
     }
+    if (!nacl.sign.detached.verify(transaction.message.serialize(), walletSignature, wallet.toBytes())) {
+      throw new Error("Wallet signature does not match the prepared transaction");
+    }
     const connection = rpcConnection();
     const [height, state] = await Promise.all([
       connection.getBlockHeight("confirmed"),
-      readSelectedPositionState(walletAddress, body.selection, connection),
+      readSelectedPositionState(walletAddress, body.selection, connection, false, { displayPrices: false }),
     ]);
     if (height > body.lastValidBlockHeight) throw new Error("Transaction blockhash expired");
+    if (state.inputKind === "native" && state.wsolBalance !== "0") throw new Error("Native SOL input already has WSOL ATA balance, please handle separately to avoid using existing WSOL");
     if (!state.ownsNft || state.paused || state.frozen || state.transferFee ||
       state.unsupportedExtensions.length || !state.sufficientSol ||
       state.positionMint !== body.selection.positionMint ||
@@ -66,9 +71,11 @@ export async function POST(request: Request) {
       state.balances.a !== body.startingBalances.a || state.balances.b !== body.startingBalances.b) {
       throw new Error("Selected NFT, range, liquidity, or wallet balance has changed");
     }
+    // The exact signed message is simulated against the fresh snapshot to
+    // preserve debit/reserve guarantees even when rent/refunds changed.
     await simulateAndVerifySelectedTransaction({
       connection, transaction, wallet, state, requested: BigInt(body.requested),
-      expectedLiquidity: BigInt(body.expectedLiquidity), sigVerify: true,
+      expectedLiquidity: BigInt(body.expectedLiquidity), sigVerify: true, useStateSnapshot: true,
     });
     if (Date.now() >= body.expiresAt || await connection.getBlockHeight("confirmed") > body.lastValidBlockHeight) {
       throw new Error("Signed transaction expired before broadcast");
@@ -78,9 +85,8 @@ export async function POST(request: Request) {
       skipPreflight: false, preflightCommitment: "confirmed", maxRetries: 3,
     });
     if (signature !== expectedSignature) throw new Error("Dedicated RPC returned transaction signature mismatch");
-    const beam = await lookupBeamAfterSend(signature);
     return Response.json(
-      { signature, beam: beam.beam, beamLabel: beam.label, beamLandingUrl: beam.beamLandingUrl },
+      { signature, beam: null, beamLabel: null, beamLandingUrl: beamLandingUrl(signature) },
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (error) {

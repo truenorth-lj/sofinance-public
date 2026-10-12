@@ -3,10 +3,10 @@ import { TickUtil } from "@raydium-io/raydium-sdk-v2";
 
 vi.mock("server-only", () => ({}));
 vi.mock("./selected-state", () => ({ readSelectedPositionState: vi.fn() }));
-vi.mock("./jupiter-route", () => ({ buildRoute: vi.fn() }));
+vi.mock("./jupiter-route", () => ({ buildRoute: vi.fn(), quoteRoute: vi.fn() }));
 
 import { readSelectedPositionState, type SelectedPositionState } from "./selected-state";
-import { buildRoute } from "./jupiter-route";
+import { buildRoute, quoteRoute } from "./jupiter-route";
 import { getSelectedQuoteBundle } from "./selected-quote";
 
 const wallet = "FakeWa11etAddressForTestingPurposes1111111111";
@@ -69,5 +69,51 @@ describe("selected quote", () => {
   it("rejects a tolerance above 5%", async () => {
     const selection = { positionMint, inputMint: mintA, inputKind: "token" as const };
     await expect(getSelectedQuoteBundle(wallet, selection, "100", 9_900, 600)).rejects.toThrow(/tolerance/i);
+  });
+});
+
+
+describe("bounded selected allocation", () => {
+  const source = "InputMintForTwoSwapTest";
+  const route = (inputMint: string, outputMint: string, amount: bigint) => ({ inputMint, outputMint,
+    inAmount: amount.toString(), outAmount: amount.toString(), otherAmountThreshold: amount.toString(),
+    swapMode: "ExactIn", slippageBps: 50, priceImpactPct: "0", routePlan: [{ percent: 100, bps: 10000,
+      swapInfo: { ammKey: "other-pool", inputMint, outputMint, inAmount: amount.toString(), outAmount: amount.toString() } }],
+  });
+  function insideState() {
+    vi.mocked(readSelectedPositionState).mockResolvedValue({
+      wallet, positionMint, positionAccount: "position", poolId: "pool", inputMint: source,
+      inputKind: "token", inputDecimals: 6, inputBalance: "1000000000", mintA, mintB,
+      decimalsA: 6, decimalsB: 6, rangeSide: "inside", sqrtPriceX64: TickUtil.getSqrtPriceAtTick(0).toString(),
+      lowerSqrtX64: TickUtil.getSqrtPriceAtTick(-100).toString(), upperSqrtX64: TickUtil.getSqrtPriceAtTick(100).toString(),
+      tickCurrent: 0, poolLiquidity: "100000000000000000000", slot: 1,
+      ownsNft: true, paused: false, frozen: false, transferFee: false, unsupportedExtensions: [], sufficientSol: true,
+    } as unknown as SelectedPositionState);
+    vi.mocked(quoteRoute).mockImplementation(async (input, output, amount) => route(input, output, amount));
+    vi.mocked(buildRoute).mockImplementation(async (_wallet, input, output, amount) => route(input, output, amount) as never);
+  }
+  it("preview uses exactly four lightweight quotes, no transaction builds or reverse resale", async () => {
+    insideState();
+    const { quote } = await getSelectedQuoteBundle(wallet, { positionMint, inputMint: source, inputKind: "token" }, "100",
+      9900, 100, { maxAccounts: 24 }, { buildTransactions: false, includeResale: false });
+    expect(quoteRoute).toHaveBeenCalledTimes(4); expect(buildRoute).not.toHaveBeenCalled();
+    expect(quote.resaleInput).toBeNull(); expect(quote.roundtripCostInput).toBeNull();
+    expect(BigInt(quote.spendA) + BigInt(quote.spendB)).toBe(100000000n);
+    expect(BigInt(quote.requiredA)).toBeLessThanOrEqual(BigInt(quote.amountMaxA));
+    expect(BigInt(quote.amountMaxA)).toBeLessThanOrEqual(BigInt(quote.minOutA));
+  });
+  it("prepare uses two probes and exactly two actual builds; preserves floor by default", async () => {
+    insideState();
+    const result = await getSelectedQuoteBundle(wallet, { positionMint, inputMint: source, inputKind: "token" }, "100", 9900, 100);
+    expect(buildRoute).toHaveBeenCalledTimes(2); expect(quoteRoute).toHaveBeenCalledTimes(4);
+    expect(result.quote.resaleInput).not.toBeNull(); expect(result.quote.passesFloor).toBe(true);
+  });
+  it("still rejects degradation relative to the small probe", async () => {
+    insideState();
+    vi.mocked(buildRoute).mockImplementation(async (_wallet, input, output, amount) => ({
+      ...route(input, output, amount), otherAmountThreshold: (amount / 2n).toString(),
+    }) as never);
+    await expect(getSelectedQuoteBundle(wallet, { positionMint, inputMint: source, inputKind: "token" }, "100", 9900, 100,
+      { maxAccounts: 24 }, { includeResale: false })).rejects.toThrow("Price impact relative to probe route");
   });
 });

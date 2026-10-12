@@ -21,6 +21,6 @@ it.each([["preflight", preflight], ["prepare", prepare]])("%s treats resale cost
   const response = await handler(new Request("http://localhost/api/selected", { method: "POST" }));
   expect(response.status).toBe(200);
   expect(buildAndSimulateSelectedZap).toHaveBeenCalledWith("wallet", selection, "0.01", 9900, 100,
-    { enforceResaleFloor: false });
+    expect.objectContaining({ enforceResaleFloor: false, signal: expect.any(AbortSignal) }));
   const body = await response.json(); expect(body.simulated).toBe(true); expect(body.quote.passesFloor).toBe(false);
 });
