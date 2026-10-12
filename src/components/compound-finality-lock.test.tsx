@@ -161,4 +161,21 @@ describe("compound execution lock in the real SelectedApp", () => {
     expect(controller.error).toBe("");
     expect(mocks.sign).not.toHaveBeenCalled();
   });
+  it("shows a failed other-NFT recovery beside its receipt and keeps its evidence", async () => {
+    reply = { status: "success", chainStatus: "success", state: null };
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url === "/api/compound-state") return Response.json({ ...fixture.state, wallet: activeWallet, positionMint: selectedMint });
+      if (url === "/api/compound-confirm") return Response.json({ signature: fixture.attempt.signature, ...reply });
+      if (url === "/api/compound-recover-prepare") return Response.json({ error: "Recovery simulation failed" }, { status: 400 });
+      throw new Error(`Unexpected request ${url}`);
+    });
+    await render("compound");
+    await act(async () => controller.recover(controller.receipts[0]!));
+    expect(controller.error).toBe("");
+    expect(controller.recoveryError).toEqual({ sourceSignature: fixture.attempt.signature, message: "Recovery simulation failed" });
+    const alert = container.querySelector('#compound-view [role="alert"]')!;
+    expect(alert.textContent).toBe("Recovery simulation failed");
+    expect(alert.closest("details")!.querySelector("summary")!.textContent).toBe("Other positions (1 records)");
+    expect(controller.receipts).toHaveLength(1); expect(mocks.sign).not.toHaveBeenCalled();
+  });
 });

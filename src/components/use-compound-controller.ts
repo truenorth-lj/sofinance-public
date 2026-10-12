@@ -18,6 +18,8 @@ export type CompoundConfirmation = { status: AtomicStatus; signature: string; st
     remainingA: string; remainingB: string; rewards: { mint: string; amount: string; compounded: boolean }[] };
   transactionError?: unknown };
 type Options = { wallet?: string; positionMint?: string; externalBlocked: boolean; onConfirmed?: () => void };
+type CompoundErrorState = { message: string; identity: string | null; signature: string | null; receiptSignature: string | null };
+const emptyError: CompoundErrorState = { message: "", identity: null, signature: null, receiptSignature: null };
 const statusValues: AtomicStatus[] = ["pending", "expired", "failed", "success", "manual-review"];
 const chainStatusValues: CompoundChainStatus[] = ["pending", "expired", "failed", "success", "unknown"];
 const slowConfirmationMs = 30_000;
@@ -47,11 +49,11 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
   const [storageInvalid, setStorageInvalid] = useState(false);
   const [importing, setImporting] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [errorState, setErrorState] = useState<{ message: string; identity: string | null; signature: string | null }>({ message: "", identity: null, signature: null });
-  const setError = useCallback((message: string, identity: string | null = null, signature: string | null = null) =>
-    setErrorState({ message, identity, signature }), []);
+  const [errorState, setErrorState] = useState<CompoundErrorState>(emptyError);
+  const setError = useCallback((message: string, identity: string | null = null, signature: string | null = null, receiptSignature: string | null = null) =>
+    setErrorState({ message, identity, signature, receiptSignature }), []);
   const clearError = useCallback((identity: string, signature: string | null = null) => setErrorState(previous =>
-    previous.identity === identity && previous.signature === signature ? { message: "", identity: null, signature: null } : previous), []);
+    previous.identity === identity && previous.signature === signature ? emptyError : previous), []);
   const [stage, setStage] = useState<"preparing" | "wallet" | "broadcasting" | null>(null);
   const identity = `${wallet || ""}:${positionMint || ""}`;
   const identityRef = useRef(identity);
@@ -271,13 +273,13 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
           setAttempt(null); setAttemptStatus(null); setConfirmation(null); setChainStatus(null); setConfirmationSlow(false);
           setReceipts(loadCompoundReceipts(window.localStorage, submittedWallet).receipts);
           keepSubmitErrorRef.current = true;
-          setError(outcome.error, `${submittedWallet}:${submittedMint}`, next.signature);
+          setError(outcome.error, `${submittedWallet}:${submittedMint}`, next.signature, receipt?.sourceSignature ?? null);
         } else if (outcome.keepPending) {
           keepSubmitErrorRef.current = false;
           setError("");
         } else {
           keepSubmitErrorRef.current = persisted;
-          setError(outcome.error, `${submittedWallet}:${submittedMint}`, next?.signature ?? null);
+          setError(outcome.error, `${submittedWallet}:${submittedMint}`, next?.signature ?? null, receipt?.sourceSignature ?? null);
         }
       }
     } finally { submitting.current = false; setStage(null); }
@@ -312,7 +314,9 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
   return { wallet, positionMint, state: visibleState, preview: visiblePreview, attempt: visibleAttempt, attemptStatus,
     confirmation: visibleAttempt && confirmation?.signature === visibleAttempt.signature ? confirmation : null,
     receipts: loadedWallet === wallet ? receipts : [],
-    error: errorState.identity === null || errorState.identity === identity ? errorState.message : "",
+    error: !errorState.receiptSignature && (errorState.identity === null || errorState.identity === identity) ? errorState.message : "",
+    recoveryError: wallet && errorState.receiptSignature && errorState.identity?.startsWith(`${wallet}:`)
+      ? { sourceSignature: errorState.receiptSignature, message: errorState.message } : null,
     attemptError: visibleAttempt && errorState.identity === `${visibleAttempt.wallet}:${visibleAttempt.positionMint}` &&
       errorState.signature === visibleAttempt.signature ? errorState.message : "",
     loading, busy, stage, walletBlocked, externalBlocked,

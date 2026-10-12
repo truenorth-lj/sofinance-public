@@ -76,6 +76,24 @@ async function setup(page: Page, wallet: FakeWallet, reply: Reply, otherWalletRe
 }
 
 for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
+  test(`other-position recovery failures remain visible beside their receipt at ${viewport.width}px`, async ({ page, wallet, guards }) => {
+    await page.setViewportSize(viewport);
+    guards.allowConsole(/^Failed to load resource: the server responded with a status of 400/);
+    const flow = await setup(page, wallet, { status: "success", chainStatus: "success" });
+    await page.route("**/api/compound-recover-prepare", route => route.fulfill({ status: 400, contentType: "application/json",
+      body: JSON.stringify({ error: "Recovery simulation failed" }) }));
+    await page.getByRole("button", { name: "Yield Compound", exact: true }).click();
+    await page.locator("summary").filter({ hasText: "Yield account management" }).click();
+    await page.locator("summary").filter({ hasText: "Other positions (1 records)" }).click();
+    await page.getByRole("button", { name: "Retrieve this balance", exact: true }).click();
+    const alert = page.getByRole("region", { name: "Yield Compound", exact: true }).getByRole("alert");
+    await expect(alert).toBeVisible(); await expect(alert).toHaveText("Recovery simulation failed");
+    expect(await alert.evaluate(node => node.closest("details")?.querySelector("summary")?.textContent)).toBe("Other positions (1 records)");
+    expect(JSON.parse((await page.evaluate(key => localStorage.getItem(key), flow.receiptsKey))!)).toHaveLength(1);
+    expect(wallet.ledger).toEqual([]);
+    expect(flow.calls.some(path => /broadcast$/.test(path))).toBe(false);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  });
   test(`compound history and recovery records stay scoped to the selected NFT at ${viewport.width}px`, async ({ page, wallet, guards }) => {
     await page.setViewportSize(viewport);
     guards.allowConsole(/^Failed to load resource: the server responded with a status of 400/);
