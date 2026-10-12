@@ -20,6 +20,7 @@ async function mockPerformanceApis(page: Page) {
     const json = (body: unknown) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
     if (url.pathname === "/api/position-performance") return json({ ...sample, positionMint: url.searchParams.get("positionMint") });
     if (url.pathname === "/api/lp-decision/exit-preview") { exitRequests.push(url); return json(exitBody); }
+    if (url.pathname === "/api/pool-activity/stream") return route.fulfill({ status: 200, contentType: "text/event-stream", body: ": hermetic stream\n\n" });
     if (url.pathname === "/api/pool-activity") return json({ available: false });                       // panel hides itself
     if (url.pathname === "/api/pool-daily-apr") {
       return json({ poolId: url.searchParams.get("poolId"), label: "Pool", assumptions: "", feeRate: null,

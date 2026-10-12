@@ -43,7 +43,7 @@ async function accountsInBatches(connection: Connection, keys: PublicKey[]) {
   return results;
 }
 
-function inputMintReason(mint: ReturnType<typeof unpackMint>) {
+export function inputMintReason(mint: ReturnType<typeof unpackMint>) {
   const extensions = getExtensionTypes(mint.tlvData);
   const unknown = extensions.find((extension) => !SAFE_INPUT_EXTENSIONS.has(extension));
   if (unknown !== undefined) return `Unsupported Token-2022 extension: ${ExtensionType[unknown] || unknown}`;

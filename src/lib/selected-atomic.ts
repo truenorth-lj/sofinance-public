@@ -1,92 +1,77 @@
 import "server-only";
 
 import { createHash } from "node:crypto";
-import BN from "bn.js";
-import { ClmmInstrument, PersonalPositionLayout, Raydium } from "@raydium-io/raydium-sdk-v2";
+import { buildSelectedAddInstruction } from "./selected-add-instruction";
 import { createAssociatedTokenAccountIdempotentInstruction, createSyncNativeInstruction, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID, unpackAccount } from "@solana/spl-token";
 import { ComputeBudgetProgram, PublicKey, SystemProgram, TransactionMessage, VersionedTransaction, type Connection, type TransactionInstruction } from "@solana/web3.js";
 import { NATIVE_SOL_MINT, QUOTE_TTL_MS } from "./ids";
 import { instruction, readLookupTables, validateRouteTables } from "./transaction-helpers";
 import { rpcConnection } from "./rpc";
 import { beamTipInstruction, chooseBeamTransaction, fetchBeamTipAddress } from "./solami-beam";
-import { withJupiterRouteRetries, type JupiterRouteConstraints } from "./jupiter-route-retry";
+import { isTxOversizeError, type JupiterRouteConstraints } from "./jupiter-route-retry";
+import type { BuildRoute } from "./jupiter-route";
 import { getSelectedQuoteBundle } from "./selected-quote";
 import { simulateAndVerifySelectedTransaction } from "./selected-simulation";
-import type { PositionSelection } from "./selected-state";
+import { readSelectedPositionState, type PositionSelection, type SelectedPositionState } from "./selected-state";
 
 async function rejectUnselectedWalletTokenWrites(
   connection: Connection, wallet: PublicKey, instructions: TransactionInstruction[],
   allowedAccounts: string[],
 ) {
-  const [legacy, token2022] = await Promise.all([
-    connection.getTokenAccountsByOwner(wallet, { programId: TOKEN_PROGRAM_ID }, "confirmed"),
-    connection.getTokenAccountsByOwner(wallet, { programId: TOKEN_2022_PROGRAM_ID }, "confirmed"),
-  ]);
-  const writable = new Set(instructions.flatMap((ix) => ix.keys.filter((key) => key.isWritable)
-    .map((key) => key.pubkey.toBase58())));
+  const writable = [...new Map(instructions.flatMap((ix) => ix.keys.filter((key) => key.isWritable))
+    .map((key) => [key.pubkey.toBase58(), key.pubkey])).values()];
   const allowed = new Set(allowedAccounts);
-  for (const { pubkey, account } of [...legacy.value, ...token2022.value]) {
-    if (!writable.has(pubkey.toBase58()) || allowed.has(pubkey.toBase58())) continue;
-    const decoded = unpackAccount(pubkey, account, account.owner);
-    if (decoded.amount > 0n) throw new Error("Jupiter route may modify unselected wallet assets, transaction stopped");
-  }
+  const unselected = writable.filter((key) => !allowed.has(key.toBase58()));
+  if (!unselected.length) return;
+  const { value } = await connection.getMultipleAccountsInfoAndContext(unselected, "confirmed");
+  value.forEach((info, index) => {
+    if (!info || ![TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID].some((program) => info.owner.equals(program))) return;
+    // A writable mint is not a wallet token account.
+    if (info.data.length < 165 || info.data.length > 165 && info.data[165] !== 2) return;
+    const decoded = unpackAccount(unselected[index]!, info, info.owner);
+    if (decoded.owner.equals(wallet) && decoded.amount > 0n) throw new Error("Jupiter route may modify unselected wallet assets, transaction stopped");
+  });
 }
 
 export async function buildAndSimulateSelectedZap(
   walletAddress: string, selection: PositionSelection, amount: string, floorBps: number,
-  toleranceBps?: number, options?: { enforceResaleFloor?: boolean },
+  toleranceBps?: number, options?: { enforceResaleFloor?: boolean; signal?: AbortSignal },
 ) {
-  return withJupiterRouteRetries((jupiter) =>
-    buildAndSimulateSelectedZapOnce(walletAddress, selection, amount, floorBps, toleranceBps, jupiter, options?.enforceResaleFloor !== false));
+  const connection = rpcConnection(undefined, { signal: options?.signal });
+  const state = await readSelectedPositionState(walletAddress, selection, connection, false, { displayPrices: false });
+  const attempts: JupiterRouteConstraints[] = [{ maxAccounts: 24 }, { maxAccounts: 20, onlyDirectRoutes: true }];
+  for (const [index, jupiter] of attempts.entries()) {
+    options?.signal?.throwIfAborted();
+    try {
+      return await buildAndSimulateSelectedZapOnce(walletAddress, selection, amount, floorBps, toleranceBps,
+        jupiter, options?.enforceResaleFloor !== false, connection, state, options?.signal);
+    } catch (error) {
+      if (index === attempts.length - 1 || !isTxOversizeError(error)) throw error;
+    }
+  }
+  throw new Error("No compact add-liquidity route available");
 }
 
 async function buildAndSimulateSelectedZapOnce(
   walletAddress: string, selection: PositionSelection, amount: string, floorBps: number,
   toleranceBps: number | undefined,
-  jupiter: JupiterRouteConstraints, enforceResaleFloor: boolean,
+  jupiter: JupiterRouteConstraints, enforceResaleFloor: boolean, connection: Connection, state: SelectedPositionState, signal?: AbortSignal,
 ) {
-  const connection = rpcConnection();
   const wallet = new PublicKey(walletAddress);
-  const { quote, legs, state } = await getSelectedQuoteBundle(walletAddress, selection, amount, floorBps, toleranceBps, jupiter);
+  const { quote, legs } = await getSelectedQuoteBundle(walletAddress, selection, amount, floorBps, toleranceBps, jupiter,
+    { state, connection, signal, buildTransactions: true, includeResale: enforceResaleFloor });
   if (enforceResaleFloor && !quote.passesFloor) throw new Error(quote.warning || "Conservative immediate resale ratio below selected threshold");
   if (Date.now() >= quote.expiresAt) throw new Error("Quote expired, please resimulate");
-  const routes = legs.flatMap((item) => item.route ? [item.route] : []);
+  const routes = legs.flatMap((item) => {
+    if (!item.route) return [];
+    if (!("swapInstruction" in item.route)) throw new Error("Swap route lacks transaction instructions");
+    return [item.route as BuildRoute];
+  });
   if (legs.length !== (state.rangeSide === "inside" ? 2 : 1) || legs.some((item) =>
     item.inputMint !== state.inputMint || ![state.mintA, state.mintB].includes(item.outputMint) ||
     item.route && (item.route.inputMint !== state.inputMint || item.route.outputMint !== item.outputMint ||
       BigInt(item.route.inAmount) !== item.spend))) throw new Error("Swap route does not match selected assets or position");
-  const positionInfo = await connection.getAccountInfo(new PublicKey(state.positionAccount), "confirmed");
-  if (!positionInfo || positionInfo.owner.toBase58() !== state.programId) throw new Error("Selected position account has changed");
-  const ownerPosition = PersonalPositionLayout.decode(positionInfo.data);
-  if (ownerPosition.nftMint.toBase58() !== state.positionMint || ownerPosition.poolId.toBase58() !== state.poolId ||
-    ownerPosition.tickLower !== state.tickLower || ownerPosition.tickUpper !== state.tickUpper ||
-    ownerPosition.liquidity.toString() !== state.liquidity) throw new Error("Selected position identity or liquidity has changed");
-  const raydium = await Raydium.load({ connection, owner: wallet, disableLoadToken: true });
-  const { poolInfo, poolKeys } = await raydium.clmm.getPoolInfoFromRpc(state.poolId);
-  if (poolInfo.programId !== state.programId || poolInfo.mintA.address !== state.mintA ||
-    poolInfo.mintB.address !== state.mintB) throw new Error("Raydium pool program or mint mismatch");
-  // Build increase_liquidity_v2 directly against the wallet's derived ATAs.
-  // The SDK helper returns no token account (and then crashes) when an ATA
-  // does not exist yet, e.g. a wallet that has never held WSOL. Missing ATAs
-  // are created idempotently below, after the swap legs have run.
-  const built = ClmmInstrument.increasePositionFromLiquidityInstructions({
-    poolInfo, poolKeys, ownerPosition,
-    ownerInfo: { wallet, tokenAccountA: new PublicKey(state.ataA), tokenAccountB: new PublicKey(state.ataB) },
-    liquidity: new BN(quote.liquidity), amountMaxA: new BN(quote.amountMaxA),
-    amountMaxB: new BN(quote.amountMaxB), nft2022: state.nftProgram === TOKEN_2022_PROGRAM_ID.toBase58(),
-  });
-  if (built.signers.length) throw new Error("Raydium liquidity addition requires additional signers, atomic transaction stopped");
-  // Raydium's mainnet common ALT plus the pool's own ALT (same sources as the
-  // compound builder), freshly resolved through RPC. Compilation only
-  // compresses exact instruction keys; no API data controls writes.
-  const [apiPoolKeys] = await raydium.api.fetchPoolKeysById({ idList: [state.poolId] }).catch(() => []);
-  const poolTable = apiPoolKeys?.id === state.poolId ? apiPoolKeys.lookupTableAccount : undefined;
-  const raydiumTables = (await readLookupTables(connection, [new PublicKey("AcL1Vo8oy1ULiavEcjSUcwfBSForXMudcZvDZy5nzJkU"),
-    ...(poolTable && poolTable !== PublicKey.default.toBase58() ? [new PublicKey(poolTable)] : []),
-    ...built.lookupTableAddress.map((address) => new PublicKey(address))])).filter((table) => table.isActive());
-  const [ataAInfo, ataBInfo] = await connection.getMultipleAccountsInfo(
-    [new PublicKey(state.ataA), new PublicKey(state.ataB)], "confirmed");
-  const raydiumInstructions = built.instructions;
+  const raydiumInstructions = [buildSelectedAddInstruction(state, quote, wallet)];
   const addInstructions = raydiumInstructions.filter((ix) => ix.programId.toBase58() === state.programId);
   const addDiscriminator = createHash("sha256").update("global:increase_liquidity_v2").digest().subarray(0, 8);
   const add = addInstructions[0];
@@ -103,8 +88,12 @@ async function buildAndSimulateSelectedZapOnce(
   ]);
   await rejectUnselectedWalletTokenWrites(connection, wallet, routeInstructions,
     [state.inputAccount, state.ataA, state.ataB].filter((item): item is string => Boolean(item)));
-  const routeTables = await readLookupTables(connection, routes.flatMap((route) =>
-    Object.keys(route.addressesByLookupTableAddress || {}).map((key) => new PublicKey(key))));
+  const routeKeys = routes.flatMap((route) => Object.keys(route.addressesByLookupTableAddress || {}).map((key) => new PublicKey(key)));
+  const [routeTables, raydiumTable] = await Promise.all([
+    readLookupTables(connection, routeKeys),
+    connection.getAddressLookupTable(new PublicKey("AcL1Vo8oy1ULiavEcjSUcwfBSForXMudcZvDZy5nzJkU"), { commitment: "confirmed" }),
+  ]);
+  const raydiumTables = raydiumTable.value?.isActive() ? [raydiumTable.value] : [];
   validateRouteTables(routes, routeTables);
   const directSol = state.inputKind === "native" ? legs.find((item) => !item.route && item.outputMint === NATIVE_SOL_MINT) : null;
   const wrapInstructions = directSol ? [
@@ -117,9 +106,9 @@ async function buildAndSimulateSelectedZapOnce(
   // The direct SOL wrap above already creates its ATA idempotently.
   const wrappedAta = directSol ? (state.mintA === NATIVE_SOL_MINT ? state.ataA : state.ataB) : null;
   const createAtaInstructions = [
-    ...(ataAInfo || wrappedAta === state.ataA ? [] : [createAssociatedTokenAccountIdempotentInstruction(wallet, new PublicKey(state.ataA), wallet,
+    ...(state.ataAExists || wrappedAta === state.ataA ? [] : [createAssociatedTokenAccountIdempotentInstruction(wallet, new PublicKey(state.ataA), wallet,
       new PublicKey(state.mintA), new PublicKey(state.programA))]),
-    ...(ataBInfo || wrappedAta === state.ataB ? [] : [createAssociatedTokenAccountIdempotentInstruction(wallet, new PublicKey(state.ataB), wallet,
+    ...(state.ataBExists || wrappedAta === state.ataB ? [] : [createAssociatedTokenAccountIdempotentInstruction(wallet, new PublicKey(state.ataB), wallet,
       new PublicKey(state.mintB), new PublicKey(state.programB))]),
   ];
   const tables = [...new Map([...routeTables, ...raydiumTables]
@@ -130,8 +119,17 @@ async function buildAndSimulateSelectedZapOnce(
   const compile = (instructions: TransactionInstruction[]) => new VersionedTransaction(new TransactionMessage({
     payerKey: wallet, recentBlockhash: blockhash, instructions,
   }).compileToV0Message(tables));
-  const tip = await fetchBeamTipAddress();
   const withoutTip = compile(baseInstructions);
+  try {
+    if (withoutTip.serialize().length > 1_232) throw new RangeError("encoding overruns Uint8Array");
+  } catch (error) {
+    if (error instanceof RangeError || error instanceof Error && error.message.includes("encoding overruns Uint8Array")) {
+      throw new Error("Complete swap + add transaction exceeds 1,232 byte limit, please select simpler route or other asset");
+    }
+    throw error;
+  }
+  const tip = await fetchBeamTipAddress({ signal, timeoutMs: 300 });
+  signal?.throwIfAborted();
   const withTip = tip ? compile([...baseInstructions, beamTipInstruction(wallet, tip.address, tip.lamports)]) : null;
   const chosen = chooseBeamTransaction(withoutTip, withTip);
   const transaction = chosen.transaction;
@@ -149,11 +147,10 @@ async function buildAndSimulateSelectedZapOnce(
   }
   if (sizeBytes > 1_232) throw new Error(`Complete swap + add transaction ${sizeBytes} bytes, exceeds 1,232 byte limit`);
   if (Date.now() >= quote.expiresAt) throw new Error("Quote expired while constructing transaction, please resimulate");
-  const verified = await simulateAndVerifySelectedTransaction({
+  const [verified, fee] = await Promise.all([simulateAndVerifySelectedTransaction({
     connection, transaction, wallet, state, requested: BigInt(quote.requested),
-    expectedLiquidity: BigInt(quote.liquidity), sigVerify: false,
-  });
-  const fee = await connection.getFeeForMessage(transaction.message, "confirmed");
+    expectedLiquidity: BigInt(quote.liquidity), sigVerify: false, useStateSnapshot: true,
+  }), connection.getFeeForMessage(transaction.message, "confirmed")]);
   if (fee.value === null) throw new Error("Unable to estimate complete transaction network fee");
   const timestamp = Date.now();
   const summary = {

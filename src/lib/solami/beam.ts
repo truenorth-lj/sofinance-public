@@ -134,14 +134,14 @@ export function chooseBeamTransaction<T extends VersionedTransaction>(
 }
 
 export async function fetchBeamTipAddress(
-  options: { fetcher?: typeof fetch; env?: BeamEnv } = {},
+  options: { fetcher?: typeof fetch; env?: BeamEnv; signal?: AbortSignal; timeoutMs?: number } = {},
 ): Promise<{ address: PublicKey; lamports: number } | null> {
   const env = options.env ?? (process.env as BeamEnv);
   if (!isBeamEnabled(env)) return null;
   const fetcher = options.fetcher ?? fetch;
   try {
     const response = await fetcher(BEAM_TIP_ADDRESSES_URL, {
-      headers: { Accept: "application/json" }, cache: "no-store", signal: AbortSignal.timeout(2_000),
+      headers: { Accept: "application/json" }, cache: "no-store", signal: AbortSignal.any([AbortSignal.timeout(options.timeoutMs ?? 2_000), ...(options.signal ? [options.signal] : [])]),
     });
     if (!response.ok) return null;
     const addresses = parseTipAddresses(await response.json());
