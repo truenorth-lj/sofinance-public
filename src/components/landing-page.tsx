@@ -13,6 +13,8 @@ import {
   ArrowUpRight,
 } from "lucide-react";
 import { APP_ROUTES } from "@/lib/public-urls";
+import { EXTERNAL_LINK_PROPS, SOCIAL_LINKS } from "@/lib/social-links";
+import { XIcon } from "@/components/x-icon";
 
 const GITHUB_URL = "https://github.com/truenorth-lj/sofinance-public";
 
@@ -414,6 +416,15 @@ export function LandingPage() {
             </Link>
             <a href={GITHUB_URL} target="_blank" rel="noreferrer" className="transition-colors hover:text-cream">
               GitHub
+            </a>
+            <a
+              href={SOCIAL_LINKS.x.href}
+              {...EXTERNAL_LINK_PROPS}
+              aria-label={SOCIAL_LINKS.x.ariaLabel}
+              className="inline-flex items-center gap-1.5 transition-colors hover:text-cream"
+            >
+              <XIcon className="h-3 w-3" />
+              {SOCIAL_LINKS.x.label}
             </a>
           </div>
         </footer>
