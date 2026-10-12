@@ -1,5 +1,6 @@
 import "server-only";
 
+import { createHash } from "node:crypto";
 import { CLMM_PROGRAM_ID, getPdaPersonalPositionAddress, LiquidityMathUtil, PersonalPositionLayout, PoolInfoLayout, TickUtil } from "@raydium-io/raydium-sdk-v2";
 import {
   AccountState, ExtensionType, getAssociatedTokenAddressSync, getDefaultAccountState, getExtensionTypes,
@@ -10,7 +11,7 @@ import { Connection, PublicKey, type AccountInfo } from "@solana/web3.js";
 import { MIN_SOL_LAMPORTS, NATIVE_SOL_MINT } from "./ids";
 import { positionSide } from "./quote-math";
 import { rpcConnection } from "./rpc";
-import { discoverWallet } from "./wallet-discovery";
+import { inputMintReason } from "./wallet-discovery";
 import { fetchJupiterPricesUsd, fetchRaydiumPoolUsdPrices } from "./token-prices";
 import { getJupiterApiKey } from "./config/server-env";
 
@@ -51,46 +52,39 @@ function tokenAmount(info: AccountInfo<Buffer> | null, key: PublicKey, program: 
 
 export async function readSelectedPositionState(
   walletAddress: string, selection: PositionSelection, connection: Connection = rpcConnection(),
-  allowEmptyInput = false,
+  allowEmptyInput = false, options: { displayPrices?: boolean } = {},
 ) {
   const wallet = new PublicKey(walletAddress);
   const nftMint = new PublicKey(selection.positionMint);
   if (selection.inputKind === "native" && selection.inputMint !== NATIVE_SOL_MINT) throw new Error("Native SOL mint mismatch");
-  const discovered = await discoverWallet(walletAddress, connection);
-  const selectedPosition = discovered.positions.find((item) => item.positionMint === selection.positionMint);
-  let inputAsset = discovered.assets.find((item) => item.kind === selection.inputKind && item.mint === selection.inputMint);
-  if (!selectedPosition) throw new Error("Wallet does not currently hold this Raydium CLMM position NFT");
-  if ((!inputAsset || !inputAsset.eligible) && !allowEmptyInput) throw new Error(inputAsset?.reason || "Wallet does not have the selected investable asset");
-  if (!inputAsset && allowEmptyInput) {
-    if (selection.inputKind === "native") {
-      inputAsset = { kind: "native", mint: NATIVE_SOL_MINT, tokenProgram: null, decimals: 9,
-        balance: "0", totalBalance: "0", account: null, eligible: false, reason: "Balance exhausted" };
-    } else {
-      const inputInfo = await connection.getAccountInfo(new PublicKey(selection.inputMint), "confirmed");
-      const decoded = checkedMint(new PublicKey(selection.inputMint), inputInfo);
-      inputAsset = { kind: "token", mint: selection.inputMint, tokenProgram: decoded.program.toBase58(),
-        decimals: decoded.mint.decimals, balance: "0", totalBalance: "0", account: null,
-        eligible: false, reason: "Balance exhausted" };
-    }
-  }
-  if (!inputAsset) throw new Error("Input asset mint does not exist");
+  // Slot-context reads bypass the general account cache on execution paths.
+  let slot = 0;
+  const read = async (keys: PublicKey[]) => {
+    const snapshot = await connection.getMultipleAccountsInfoAndContext(keys, { commitment: "confirmed", minContextSlot: slot });
+    slot = Math.max(slot, snapshot.context.slot);
+    return snapshot;
+  };
   const positionKey = getPdaPersonalPositionAddress(CLMM_PROGRAM_ID, nftMint).publicKey;
-  if (positionKey.toBase58() !== selectedPosition.positionAccount) throw new Error("Position PDA does not match selection");
-  const [positionInfo, poolInfo, nftMintInfo] = await connection.getMultipleAccountsInfo([
-    positionKey, new PublicKey(selectedPosition.poolId), nftMint,
-  ], "confirmed");
-  if (!positionInfo || !poolInfo || !positionInfo.owner.equals(CLMM_PROGRAM_ID) || !poolInfo.owner.equals(CLMM_PROGRAM_ID)) {
-    throw new Error("Position or pool account has changed");
+  const inputMint = new PublicKey(selection.inputMint);
+  const initial = await read([positionKey, nftMint, inputMint, wallet]);
+  const [positionInfo, nftMintInfo, inputMintInfo, walletInfo] = initial.value;
+  const positionDiscriminator = createHash("sha256").update("account:PersonalPositionState").digest().subarray(0, 8);
+  if (!positionInfo || !positionInfo.owner.equals(CLMM_PROGRAM_ID) ||
+    !positionInfo.data.subarray(0, 8).equals(positionDiscriminator)) {
+    throw new Error("Wallet does not currently hold this Raydium CLMM position NFT");
   }
   const position = PersonalPositionLayout.decode(positionInfo.data);
+  if (!position.nftMint.equals(nftMint) || position.tickLower >= position.tickUpper) throw new Error("Position NFT, pool, or ticks mismatch");
+  const poolId = position.poolId.toBase58();
+  const poolSnapshot = await read([position.poolId]);
+  const poolInfo = poolSnapshot.value[0];
+  const poolDiscriminator = createHash("sha256").update("account:PoolState").digest().subarray(0, 8);
+  if (!poolInfo || !poolInfo.owner.equals(CLMM_PROGRAM_ID) || !poolInfo.data.subarray(0, 8).equals(poolDiscriminator)) throw new Error("Position or pool account has changed");
   const pool = PoolInfoLayout.decode(poolInfo.data);
-  if (!position.nftMint.equals(nftMint) || position.poolId.toBase58() !== selectedPosition.poolId ||
-    position.tickLower >= position.tickUpper) throw new Error("Position NFT, pool, or ticks mismatch");
   const nft = checkedMint(nftMint, nftMintInfo ?? null);
   if (nft.mint.decimals !== 0 || nft.mint.supply !== 1n) throw new Error("Position NFT mint has changed");
-  const [mintAInfo, mintBInfo, vaultAInfo, vaultBInfo] = await connection.getMultipleAccountsInfo([
-    pool.mintA, pool.mintB, pool.vaultA, pool.vaultB,
-  ], "confirmed");
+  const poolAssets = await read([pool.mintA, pool.mintB, pool.vaultA, pool.vaultB]);
+  const [mintAInfo, mintBInfo, vaultAInfo, vaultBInfo] = poolAssets.value;
   const mintA = checkedMint(pool.mintA, mintAInfo ?? null);
   const mintB = checkedMint(pool.mintB, mintBInfo ?? null);
   if (pool.mintA.equals(pool.mintB) || mintA.mint.decimals !== pool.mintDecimalsA ||
@@ -103,11 +97,24 @@ export async function readSelectedPositionState(
   const nftAta = getAssociatedTokenAddressSync(nftMint, wallet, false, nft.program);
   const ataA = getAssociatedTokenAddressSync(pool.mintA, wallet, false, mintA.program);
   const ataB = getAssociatedTokenAddressSync(pool.mintB, wallet, false, mintB.program);
-  const [nftAtaInfo, ataAInfo, ataBInfo] = await connection.getMultipleAccountsInfo([nftAta, ataA, ataB], "confirmed");
+  const input = checkedMint(inputMint, inputMintInfo ?? null);
+  const inputAta = getAssociatedTokenAddressSync(inputMint, wallet, false, input.program);
+  const wsolAta = getAssociatedTokenAddressSync(new PublicKey(NATIVE_SOL_MINT), wallet, false, TOKEN_PROGRAM_ID);
+  const accounts = await read([nftAta, ataA, ataB, inputAta, wsolAta]);
+  const [nftAtaInfo, ataAInfo, ataBInfo, inputAtaInfo, wsolAtaInfo] = accounts.value;
+  const inputToken = tokenAmount(inputAtaInfo ?? null, inputAta, input.program, wallet, inputMint);
+  const wsol = tokenAmount(wsolAtaInfo ?? null, wsolAta, TOKEN_PROGRAM_ID, wallet, new PublicKey(NATIVE_SOL_MINT));
+  const inputReason = input.mint.decimals === 0 && input.mint.supply === 1n
+    ? "NFT cannot be used as input asset" : inputMintReason(input.mint);
+  if (!allowEmptyInput && selection.inputKind === "token" &&
+    (inputReason || inputToken.frozen || inputToken.amount === 0n)) {
+    throw new Error(inputReason || (inputToken.frozen ? "Input asset ATA is frozen" : "Wallet does not have the selected investable asset"));
+  }
   const nftBalance = tokenAmount(nftAtaInfo ?? null, nftAta, nft.program, wallet, nftMint);
   const balanceA = tokenAmount(ataAInfo ?? null, ataA, mintA.program, wallet, pool.mintA);
   const balanceB = tokenAmount(ataBInfo ?? null, ataB, mintB.program, wallet, pool.mintB);
   const ownsNft = nftBalance.amount === 1n && !nftBalance.frozen;
+  if (!ownsNft) throw new Error("Wallet does not currently hold this Raydium CLMM position NFT");
   const paused = [mintA.mint, mintB.mint].some((mint) => getPausableConfig(mint)?.paused);
   const transferFee = [mintA.mint, mintB.mint].some((mint) => {
     const config = getTransferFeeConfig(mint);
@@ -119,13 +126,14 @@ export async function readSelectedPositionState(
   const upper = TickUtil.getSqrtPriceAtTick(position.tickUpper);
   const rangeSide = positionSide(BigInt(pool.sqrtPriceX64.toString()), BigInt(lower.toString()), BigInt(upper.toString()));
   const currentAmounts = LiquidityMathUtil.getAmountsForLiquidity(pool.sqrtPriceX64, lower, upper, position.liquidity, true);
-  const solLamports = await connection.getBalance(wallet, "confirmed");
+  const solLamports = walletInfo?.lamports ?? 0;
   const inputBalance = selection.inputKind === "native"
-    ? Math.max(0, solLamports - MIN_SOL_LAMPORTS).toString() : inputAsset.balance;
+    ? Math.max(0, solLamports - MIN_SOL_LAMPORTS).toString() : inputToken.amount.toString();
   
   let priceUsdInput: number | null = null;
   let priceUsdA: number | null = null;
   let priceUsdB: number | null = null;
+  if (options.displayPrices !== false) {
   try {
     const apiKey = getJupiterApiKey();
     const mints = [selection.inputMint, pool.mintA.toBase58(), pool.mintB.toBase58()];
@@ -134,20 +142,24 @@ export async function readSelectedPositionState(
     priceUsdA = prices.get(pool.mintA.toBase58()) ?? null;
     priceUsdB = prices.get(pool.mintB.toBase58()) ?? null;
     if (priceUsdA === null || priceUsdB === null) {
-      const fallback = await fetchRaydiumPoolUsdPrices(selectedPosition.poolId, pool.mintA.toBase58(), pool.mintB.toBase58(), fetch);
+      const fallback = await fetchRaydiumPoolUsdPrices(poolId, pool.mintA.toBase58(), pool.mintB.toBase58(), fetch);
       priceUsdA = fallback.get(pool.mintA.toBase58()) ?? priceUsdA;
       priceUsdB = fallback.get(pool.mintB.toBase58()) ?? priceUsdB;
     }
   } catch {
     // Price fetch failed, continue without prices
   }
+  }
 
   return {
-    wallet: walletAddress, slot: discovered.slot, fetchedAt: Date.now(),
-    positionMint: selection.positionMint, positionAccount: positionKey.toBase58(), poolId: selectedPosition.poolId,
+    wallet: walletAddress, slot: accounts.context.slot, fetchedAt: Date.now(),
+    positionMint: selection.positionMint, positionAccount: positionKey.toBase58(), poolId: poolId,
     programId: CLMM_PROGRAM_ID.toBase58(), inputKind: selection.inputKind, inputMint: selection.inputMint,
-    inputDecimals: inputAsset.decimals, inputTokenProgram: inputAsset.tokenProgram,
-    inputAccount: inputAsset.account, inputBalance,
+    inputDecimals: selection.inputKind === "native" ? 9 : input.mint.decimals,
+    inputTokenProgram: selection.inputKind === "native" ? null : input.program.toBase58(),
+    inputAccount: selection.inputKind === "native" ? null : inputAta.toBase58(), inputBalance,
+    wsolBalance: wsol.amount.toString(), ataAExists: Boolean(ataAInfo), ataBExists: Boolean(ataBInfo),
+    vaultA: pool.vaultA.toBase58(), vaultB: pool.vaultB.toBase58(), tickSpacing: pool.tickSpacing,
     mintA: pool.mintA.toBase58(), mintB: pool.mintB.toBase58(),
     decimalsA: mintA.mint.decimals, decimalsB: mintB.mint.decimals,
     programA: mintA.program.toBase58(), programB: mintB.program.toBase58(), nftProgram: nft.program.toBase58(),

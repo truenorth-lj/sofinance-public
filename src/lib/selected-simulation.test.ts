@@ -27,7 +27,7 @@ function simulatedToken(mint: PublicKey, wallet: PublicKey, amount: bigint) {
     lamports: 2_039_280, executable: false, rentEpoch: 0 };
 }
 
-it("checks the chosen token debit, other pool balances, NFT and exact liquidity increase", async () => {
+it.each([false, true])("checks debit, original assets and liquidity using state snapshot=%s", async (useStateSnapshot) => {
   const wallet = Keypair.generate().publicKey;
   const nftMint = Keypair.generate().publicKey;
   const pool = Keypair.generate().publicKey;
@@ -60,7 +60,7 @@ it("checks the chosen token debit, other pool balances, NFT and exact liquidity 
       executable: false, rentEpoch: 0 },
   ];
   const connection = {
-    getMultipleAccountsInfo: vi.fn().mockImplementation(async (keys: PublicKey[]) => keys.map((key) => before.get(key.toBase58()) || null)),
+    getMultipleAccountsInfoAndContext: vi.fn().mockImplementation(async (keys: PublicKey[]) => ({ context: { slot: 1 }, value: keys.map((key) => before.get(key.toBase58()) || null) })),
     getBalance: vi.fn().mockResolvedValue(100_000_000),
     simulateTransaction: vi.fn().mockResolvedValue({ value: { err: null, accounts: accountResults(10n), unitsConsumed: 100_000 } }),
   } as unknown as Connection;
@@ -71,15 +71,37 @@ it("checks the chosen token debit, other pool balances, NFT and exact liquidity 
     programA: TOKEN_PROGRAM_ID.toBase58(), programB: TOKEN_PROGRAM_ID.toBase58(),
     inputMint: inputMint.toBase58(), inputKind: "token", inputAccount: inputAta.toBase58(),
     inputTokenProgram: TOKEN_PROGRAM_ID.toBase58(), tickLower: -100, tickUpper: 100,
-    liquidity: "10",
+    liquidity: "10", slot: 42, ownsNft: true, wsolBalance: "0", solLamports: 100_000_000,
+    balances: { input: "1000", a: "10", b: "5" },
   } as SelectedPositionState;
   const transaction = new VersionedTransaction(new TransactionMessage({
     payerKey: wallet, recentBlockhash: Keypair.generate().publicKey.toBase58(), instructions: [],
   }).compileToV0Message());
-  const input = { connection, transaction, wallet, state, requested: 1_000n, expectedLiquidity: 5n, sigVerify: false };
+  const input = { connection, transaction, wallet, state, requested: 1_000n, expectedLiquidity: 5n, sigVerify: false, useStateSnapshot };
   const success = await simulateAndVerifySelectedTransaction(input);
   expect(success.spentInput).toBe("1000");
   expect(success.endingLiquidity).toBe("15");
+  expect(connection.simulateTransaction).toHaveBeenCalledWith(transaction, expect.objectContaining({ minContextSlot: 42 }));
+  if (useStateSnapshot) {
+    expect(connection.getMultipleAccountsInfoAndContext).not.toHaveBeenCalled();
+    expect(connection.getBalance).not.toHaveBeenCalled();
+  }
+
   vi.mocked(connection.simulateTransaction).mockResolvedValueOnce({ value: { err: null, accounts: accountResults(9n), unitsConsumed: 100_000 } } as never);
   await expect(simulateAndVerifySelectedTransaction(input)).rejects.toThrow(/original pool asset/i);
+  // These synthetic simulation readbacks are independent of the SDK builder.
+  // They must be rejected on both the direct snapshot and account-read paths.
+  const excessiveDebit = accountResults(10n); excessiveDebit.at(-1)!.lamports = 89_999_999;
+  vi.mocked(connection.simulateTransaction).mockResolvedValueOnce({ value: { err: null, accounts: excessiveDebit } } as never);
+  await expect(simulateAndVerifySelectedTransaction(input)).rejects.toThrow(/SOL expenditure/);
+  const lowReserve = accountResults(10n); lowReserve.at(-1)!.lamports = 9_999_999;
+  state.solLamports = 10_500_000; vi.mocked(connection.getBalance).mockResolvedValueOnce(10_500_000);
+  vi.mocked(connection.simulateTransaction).mockResolvedValueOnce({ value: { err: null, accounts: lowReserve } } as never);
+  await expect(simulateAndVerifySelectedTransaction(input)).rejects.toThrow(/remaining balance/);
+  state.solLamports = 100_000_000;
+  const nftMissing = accountResults(10n); nftMissing[1] = simulatedToken(nftMint, wallet, 0n);
+  vi.mocked(connection.simulateTransaction).mockResolvedValueOnce({ value: { err: null, accounts: nftMissing } } as never);
+  await expect(simulateAndVerifySelectedTransaction(input)).rejects.toThrow(/NFT left wallet/);
+  await expect(simulateAndVerifySelectedTransaction({ ...input, expectedLiquidity: 6n })).rejects.toThrow(/liquidity increment mismatch/);
+
 });

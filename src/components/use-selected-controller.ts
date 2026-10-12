@@ -242,8 +242,11 @@ export function useSelectedController() {
     if (rawAmount <= 0n) return "Please enter input amount matching asset precision";
     if (!affordable) return "Selected asset balance insufficient";
     if (quoteError) return quoteError;
-    if (calculating) return "Automatically calculating quote and checking transaction";
-    if (result?.simulated && fresh) return "Estimation complete, ready to send to wallet for signing";
+    if (submitStage === "preparing") return "Preparing and checking your transaction…";
+    if (submitStage === "wallet") return "Confirm in your wallet";
+    if (submitStage === "broadcasting") return "Sending and checking confirmation…";
+    if (calculating) return "Estimating liquidity…";
+    if (quote && fresh) return "Preview ready. Final checks run when you add liquidity.";
     if (visibleState.rangeSide === "above") return "Above upper bound: will add single-sided position; no trading fees earned outside range";
     if (visibleState.rangeSide === "below") return "Below lower bound: will add single-sided position; no trading fees earned outside range";
     return "Getting latest quote";
@@ -253,24 +256,27 @@ export function useSelectedController() {
     if (!ready || !wallet || !selection || toleranceBps === null || busy) return;
     const requestId = ++quoteRequestRef.current;
     const aborter = new AbortController();
+    let cancelled = false;
     const key = selectionKey(selection);
     const requested = rawAmount.toString();
     let expiryTimer: number | undefined;
+    let deadline: number | undefined;
     const scheduleRefresh = (expiresAt: number) => {
       expiryTimer = window.setTimeout(() => setQuoteRevision((current) => current + 1),
         Math.max(1_000, expiresAt - Date.now()));
     };
-    const current = () => !aborter.signal.aborted && requestId === quoteRequestRef.current &&
+    const current = () => !cancelled && requestId === quoteRequestRef.current &&
       walletRef.current === wallet && selectionRef.current === key;
     const timer = window.setTimeout(() => {
       const load = async () => {
         setQuoteLoading(true); setPreview({ kind: "idle" }); setQuoteError("");
+        deadline = window.setTimeout(() => aborter.abort(new Error("Preview took too long. Please retry.")), 8_000);
         try {
           const body = JSON.stringify({ wallet, ...selection, amount, floorBps, toleranceBps });
           const response = await fetch("/api/selected-quote", { method: "POST",
             headers: { "Content-Type": "application/json" }, body, cache: "no-store", signal: aborter.signal });
           const data = await response.json() as SelectedQuote | ApiError;
-          if (!current()) return;
+          if (!current() || aborter.signal.aborted) return;
           if (!response.ok) throw new Error((data as ApiError).error);
           const currentQuote = data as SelectedQuote;
           if (currentQuote.wallet !== wallet || selectionKey(currentQuote) !== key ||
@@ -280,46 +286,41 @@ export function useSelectedController() {
           }
           setPreview({ kind: "quoted", result: { quote: currentQuote, simulated: false } });
           setNow(Date.now());
-          const complete = await fetch("/api/selected-preflight", { method: "POST",
-            headers: { "Content-Type": "application/json" }, body, cache: "no-store", signal: aborter.signal });
-          const full = await complete.json() as Preflight | ApiError;
-          if (!current()) return;
-          if (!complete.ok) throw new Error((full as ApiError).error);
-          const checked = full as Preflight;
-          if (!checked.simulated || checked.quote.wallet !== wallet ||
-            selectionKey(checked.quote) !== key || checked.quote.requested !== requested ||
-            checked.quote.floorBps !== floorBps || checked.quote.toleranceBps !== toleranceBps) throw new Error("Complete check and current input mismatch");
-          setPreview({ kind: "quoted", result: checked }); setNow(Date.now());
-          scheduleRefresh(checked.expiresAt ?? checked.quote.expiresAt);
-          void refreshState();
+          scheduleRefresh(currentQuote.expiresAt);
         } catch (caught) {
-          if (current()) setQuoteError(caught instanceof Error ? caught.message : "Automatic calculation failed");
+          if (current()) setQuoteError(aborter.signal.aborted ? "Preview took too long. Please retry." :
+            caught instanceof Error ? caught.message : "Preview failed");
         } finally {
+          window.clearTimeout(deadline);
           if (current()) setQuoteLoading(false);
         }
       };
       void load();
     }, 450);
     return () => {
-      aborter.abort(); window.clearTimeout(timer);
+      cancelled = true; aborter.abort(); window.clearTimeout(timer); window.clearTimeout(deadline);
       if (expiryTimer !== undefined) window.clearTimeout(expiryTimer);
     };
-  }, [amount, busy, floorBps, toleranceBps, quoteRevision, rawAmount, ready, refreshState, selection, wallet]);
+  }, [amount, busy, floorBps, toleranceBps, quoteRevision, rawAmount, ready, selection, wallet]);
 
   async function signAndSend() {
-    if (!ready || busy || submittingRef.current || quoteLoading || !result?.simulated || !fresh ||
+    if (!ready || busy || submittingRef.current || quoteLoading || !quote || !fresh ||
       !wallet || !selection || !visibleState || toleranceBps === null) return;
     submittingRef.current = true;
     const key = selectionKey(selection);
     const inputRevision = inputRevisionRef.current;
     setSubmitStage("preparing"); setError("");
+    const aborter = new AbortController();
+    const deadline = window.setTimeout(() => aborter.abort(new Error("Preparation took too long. Please retry.")), 8_000);
     try {
       if (attempt && mayStartAnotherAttempt(attemptStatus)) {
         window.localStorage.removeItem(selectedAttemptKey(wallet)); setAttempt(null); setAttemptStatus(null);
       }
       const response = await fetch("/api/selected-prepare", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ wallet, ...selection, amount, floorBps, toleranceBps }), cache: "no-store" });
+        body: JSON.stringify({ wallet, ...selection, amount, floorBps, toleranceBps }), cache: "no-store", signal: aborter.signal });
       const data = await response.json() as Prepared | ApiError;
+      window.clearTimeout(deadline);
+      if (aborter.signal.aborted) throw aborter.signal.reason;
       if (!response.ok) throw new Error((data as ApiError).error);
       const prepared = data as Prepared;
       if (walletRef.current !== wallet || selectionRef.current !== key || inputRevisionRef.current !== inputRevision ||
@@ -333,9 +334,10 @@ export function useSelectedController() {
       const unsigned = VersionedTransaction.deserialize(bytes);
       if (unsigned.message.recentBlockhash !== prepared.blockhash ||
         unsigned.message.staticAccountKeys[0]?.toBase58() !== wallet) throw new Error("Transaction payer or blockhash mismatch");
+      setPreview({ kind: "quoted", result: prepared }); setNow(Date.now());
       setSubmitStage("wallet");
-      const signed = await signTransaction(unsigned);
       const originalMessage = unsigned.message.serialize();
+      const signed = await signTransaction(unsigned);
       const signedMessage = signed.message.serialize();
       if (signedMessage.length !== originalMessage.length || signedMessage.some((byte, index) => byte !== originalMessage[index])) {
         throw new Error("Wallet modified transaction content, stopped submission");
@@ -365,12 +367,12 @@ export function useSelectedController() {
       if (broadcast.signature !== signature) throw new Error("Dedicated RPC returned inconsistent transaction signature, check on-chain status");
       await reconcileAttempt(current);
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Transaction not confirmed; check on-chain status before proceeding"); }
-    finally { submittingRef.current = false; setSubmitStage(null); }
+    finally { window.clearTimeout(deadline); submittingRef.current = false; setSubmitStage(null); }
   }
 
   const actionLabel = submitStage === "preparing" ? "Preparing latest transaction…" : submitStage === "wallet" ?
     "Confirming in wallet…" : submitStage === "broadcasting" ? "Sending and verifying…" : "Add liquidity";
-  const actionDisabled = busy || !ready || quoteLoading || !result?.simulated || !fresh;
+  const actionDisabled = busy || !ready || quoteLoading || !quote || !fresh;
   const walletBlocked = Boolean(wallet && (busy || attemptLoadedWallet !== wallet || obsoletePending ||
     !mayStartAnotherAttempt(attemptStatus)));
   const primaryAction = () => { void signAndSend(); };

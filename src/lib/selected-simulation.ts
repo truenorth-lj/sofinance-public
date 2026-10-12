@@ -9,7 +9,7 @@ import type { SelectedPositionState } from "./selected-state";
 
 type VerifyInput = {
   connection: Connection; transaction: VersionedTransaction; wallet: PublicKey;
-  state: SelectedPositionState; requested: bigint; expectedLiquidity: bigint; sigVerify: boolean;
+  state: SelectedPositionState; requested: bigint; expectedLiquidity: bigint; sigVerify: boolean; useStateSnapshot?: boolean;
 };
 
 function decodeToken(info: AccountInfo<Buffer> | null, key: PublicKey, program: PublicKey, wallet: PublicKey, mint: PublicKey) {
@@ -30,26 +30,26 @@ export async function simulateAndVerifySelectedTransaction(input: VerifyInput) {
     ? getAssociatedTokenAddressSync(new PublicKey(NATIVE_SOL_MINT), wallet, false, TOKEN_PROGRAM_ID) : null;
   const keys = [...new Map([nftAta, ataA, ataB, ...(inputAta ? [inputAta] : []), ...(wsolAta ? [wsolAta] : [])]
     .map((key) => [key.toBase58(), key])).values()];
-  const beforeInfos = await connection.getMultipleAccountsInfo(keys, "confirmed");
+  const beforeInfos = input.useStateSnapshot ? [] : (await connection.getMultipleAccountsInfoAndContext(keys, "confirmed")).value;
   const before = new Map(keys.map((key, index) => [key.toBase58(), beforeInfos[index] ?? null] as const));
   const tokenBefore = (key: PublicKey, program: string, mint: string) =>
     decodeToken(before.get(key.toBase58()) ?? null, key, new PublicKey(program), wallet, new PublicKey(mint));
-  const nftBefore = tokenBefore(nftAta, state.nftProgram, state.positionMint);
+  const nftBefore = input.useStateSnapshot ? (state.ownsNft ? 1n : 0n) : tokenBefore(nftAta, state.nftProgram, state.positionMint);
   if (nftBefore !== 1n) throw new Error("Selected position NFT ATA no longer held by wallet");
-  const amountA = tokenBefore(ataA, state.programA, state.mintA);
-  const amountB = tokenBefore(ataB, state.programB, state.mintB);
-  const inputBefore = inputAta ? tokenBefore(inputAta, state.inputTokenProgram!, state.inputMint) : null;
+  const amountA = input.useStateSnapshot ? BigInt(state.balances.a) : tokenBefore(ataA, state.programA, state.mintA);
+  const amountB = input.useStateSnapshot ? BigInt(state.balances.b) : tokenBefore(ataB, state.programB, state.mintB);
+  const inputBefore = inputAta ? (input.useStateSnapshot ? BigInt(state.balances.input) : tokenBefore(inputAta, state.inputTokenProgram!, state.inputMint)) : null;
   if (inputBefore !== null && inputBefore < requested) throw new Error("Input asset ATA balance insufficient");
-  if (wsolAta && tokenBefore(wsolAta, TOKEN_PROGRAM_ID.toBase58(), NATIVE_SOL_MINT) !== 0n) {
+  if (wsolAta && (input.useStateSnapshot ? BigInt(state.wsolBalance) : tokenBefore(wsolAta, TOKEN_PROGRAM_ID.toBase58(), NATIVE_SOL_MINT)) !== 0n) {
     throw new Error("Native SOL input already has WSOL ATA balance, please handle separately to avoid using existing WSOL");
   }
-  const solBefore = await connection.getBalance(wallet, "confirmed");
+  const solBefore = input.useStateSnapshot ? state.solLamports : await connection.getBalance(wallet, "confirmed");
   if (state.inputKind === "native" && BigInt(solBefore) < requested + BigInt(MIN_SOL_LAMPORTS)) {
     throw new Error("Native SOL insufficient to pay input and reserved fees");
   }
   const addresses = [state.positionAccount, ...keys.map((key) => key.toBase58()), wallet.toBase58()];
   const simulation = await connection.simulateTransaction(transaction, {
-    sigVerify, commitment: "confirmed", accounts: { encoding: "base64", addresses },
+    sigVerify, commitment: "confirmed", minContextSlot: state.slot, accounts: { encoding: "base64", addresses },
   });
   if (simulation.value.err) {
     throw new Error(`Complete swap + add simulation failed: ${JSON.stringify(simulation.value.err)}; ${simulation.value.logs?.slice(-5).join(" | ") || "no logs"}`);

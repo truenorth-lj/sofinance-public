@@ -10,7 +10,7 @@ vi.mock("server-only", () => ({}));
 vi.mock("@/lib/rpc", () => ({ rpcConnection: vi.fn() }));
 vi.mock("@/lib/selected-state", () => ({ readSelectedPositionState: vi.fn() }));
 vi.mock("@/lib/selected-simulation", () => ({ simulateAndVerifySelectedTransaction: vi.fn() }));
-vi.mock("@/lib/solami-beam", () => ({ lookupBeamAfterSend: vi.fn() }));
+vi.mock("@/lib/solami-beam", () => ({ lookupBeamAfterSend: vi.fn(), beamLandingUrl: (signature: string) => `https://api.solami.dev/swqos/tx/${signature}` }));
 
 import { rpcConnection } from "@/lib/rpc";
 import { readSelectedPositionState } from "@/lib/selected-state";
@@ -32,7 +32,7 @@ const startingBalances = { input: "5000000000", a: "10", b: "20" };
 
 function chainState(overrides: Record<string, unknown> = {}) {
   return {
-    ownsNft: true, paused: false, frozen: false, transferFee: false, unsupportedExtensions: [], sufficientSol: true,
+    ownsNft: true, paused: false, frozen: false, transferFee: false, unsupportedExtensions: [], sufficientSol: true, wsolBalance: "0",
     positionMint, inputMint, inputKind: "native", liquidity: "1000", rangeSide: "inside",
     balances: { ...startingBalances }, poolId: "pool", positionAccount: "position", programId: "program", ...overrides,
   };
@@ -81,27 +81,22 @@ afterEach(() => {
 });
 
 describe("POST /api/selected-broadcast: happy path", () => {
-  it("verifies, simulates with sigVerify, broadcasts with fixed options and returns the beam fields", async () => {
+  it("verifies the prepared message and fresh state, uses RPC preflight, and returns before Beam", async () => {
+    vi.mocked(lookupBeamAfterSend).mockImplementation(() => new Promise(() => {}));
     const { response, json } = await call(validBody(transaction));
     expect(response.status).toBe(200);
     expect(response.headers.get("Cache-Control")).toBe("no-store");
-    expect(json).toEqual({
-      signature: signatureOf(transaction), beam: BEAM_RESULT.beam, beamLabel: "Beam landed", beamLandingUrl: BEAM_RESULT.beamLandingUrl,
-    });
+    expect(json).toEqual({ signature: signatureOf(transaction), beam: null, beamLabel: null,
+      beamLandingUrl: `https://api.solami.dev/swqos/tx/${signatureOf(transaction)}` });
     expect(connection.sendRawTransaction).toHaveBeenCalledWith(expect.any(Uint8Array), {
       skipPreflight: false, preflightCommitment: "confirmed", maxRetries: 3,
     });
-    expect(readSelectedPositionState).toHaveBeenCalledWith(wallet, selection, connection);
+    expect(readSelectedPositionState).toHaveBeenCalledWith(wallet, selection, connection, false, { displayPrices: false });
+    expect(simulateAndVerifySelectedTransaction).toHaveBeenCalledOnce();
     expect(simulateAndVerifySelectedTransaction).toHaveBeenCalledWith(expect.objectContaining({
-      connection, wallet: expect.objectContaining({}), requested: 1_000_000n, expectedLiquidity: 500n, sigVerify: true,
+      sigVerify: true, useStateSnapshot: true, requested: 1_000_000n, expectedLiquidity: 500n,
     }));
-    expect(lookupBeamAfterSend).toHaveBeenCalledWith(signatureOf(transaction));
-    // order: simulation strictly before broadcast, broadcast before the beam lookup
-    const simOrder = vi.mocked(simulateAndVerifySelectedTransaction).mock.invocationCallOrder[0]!;
-    const sendOrder = connection.sendRawTransaction.mock.invocationCallOrder[0]!;
-    const beamOrder = vi.mocked(lookupBeamAfterSend).mock.invocationCallOrder[0]!;
-    expect(simOrder).toBeLessThan(sendOrder);
-    expect(sendOrder).toBeLessThan(beamOrder);
+    expect(lookupBeamAfterSend).not.toHaveBeenCalled();
   });
 
   it("does not require any fee-related or extra fields: a resale floor of exactly 9500 and 10000 are accepted", async () => {
@@ -294,22 +289,41 @@ describe("POST /api/selected-broadcast: re-verification against chain state", ()
     expect(connection.sendRawTransaction).not.toHaveBeenCalled();
   });
 
-  it("propagates a simulation failure and never broadcasts", async () => {
-    vi.mocked(simulateAndVerifySelectedTransaction).mockRejectedValue(new Error("Complete swap + add simulation failed: {}"));
+  it("rejects a signed simulation that no longer preserves the SOL reserve", async () => {
+    vi.mocked(simulateAndVerifySelectedTransaction).mockRejectedValue(new Error("Simulated SOL expenditure or remaining balance exceeds limit"));
     const { response, json } = await call(validBody(transaction));
-    expect(response.status).toBe(400);
-    expect(String(json.error)).toContain("simulation failed");
+    expect(response.status).toBe(400); expect(String(json.error)).toContain("SOL expenditure");
     expect(connection.sendRawTransaction).not.toHaveBeenCalled();
-    expect(lookupBeamAfterSend).not.toHaveBeenCalled();
   });
 
-  it("rejects when the permit expiry passes during simulation (checked again right before broadcast)", async () => {
+  it("rejects native input when WSOL appeared after prepare, even outside the pool pair", async () => {
+    vi.mocked(readSelectedPositionState).mockResolvedValue(chainState({ wsolBalance: "1" }) as never);
+    const { response, json } = await call(validBody(transaction));
+    expect(response.status).toBe(400);
+    expect(String(json.error)).toContain("WSOL ATA balance");
+    expect(connection.sendRawTransaction).not.toHaveBeenCalled();
+  });
+
+  it("rejects a nonzero but invalid wallet signature before reading or sending", async () => {
+    const corrupted = buildTransaction({ payer: walletKey });
+    corrupted.signatures[0]![0] = corrupted.signatures[0]![0]! ^ 1;
+    const { response, json } = await call(validBody(corrupted));
+    expect(response.status).toBe(400);
+    expect(json.error).toBe("Wallet signature does not match the prepared transaction");
+    expect(readSelectedPositionState).not.toHaveBeenCalled();
+    expect(connection.sendRawTransaction).not.toHaveBeenCalled();
+  });
+
+  it("rejects when permit expiry passes during fresh state reads", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-10-11T00:00:00Z"));
     const body = validBody(transaction, { expiresAt: Date.now() + 1_000 });
-    vi.mocked(simulateAndVerifySelectedTransaction).mockImplementation((async () => { vi.setSystemTime(Date.now() + 2_000); }) as never);
+    vi.mocked(readSelectedPositionState).mockImplementation(async () => {
+      vi.setSystemTime(Date.now() + 2_000);
+      return chainState() as never;
+    });
     const { json } = await call(body);
-    expect(json).toEqual({ error: "Signed transaction expired before broadcast" });
+    expect(json.error).toBe("Signed transaction expired before broadcast");
     expect(connection.sendRawTransaction).not.toHaveBeenCalled();
   });
 
@@ -331,7 +345,7 @@ describe("POST /api/selected-broadcast: broadcast result handling", () => {
   });
 
   it("QUIRK: errors never carry sent:false, even when nothing was broadcast (open/compound routes do)", async () => {
-    vi.mocked(simulateAndVerifySelectedTransaction).mockRejectedValue(new Error("boom"));
+    connection.getBlockHeight.mockRejectedValue(new Error("boom"));
     const { json } = await call(validBody(transaction));
     expect(json).not.toHaveProperty("sent");
   });
@@ -351,11 +365,12 @@ describe("POST /api/selected-broadcast: broadcast result handling", () => {
     expect(String(json.error)).toContain("Transaction blockhash expired.");
   });
 
-  it("QUIRK: a throwing Beam lookup AFTER a successful send turns the response into a 400 error (tx is already on-chain)", async () => {
+  it("a Beam outage cannot turn a successful send into an error", async () => {
     vi.mocked(lookupBeamAfterSend).mockRejectedValue(new Error("beam down"));
     const { response, json } = await call(validBody(transaction));
     expect(connection.sendRawTransaction).toHaveBeenCalledOnce();
-    expect(response.status).toBe(400);
-    expect(json).toEqual({ error: "beam down" });
+    expect(response.status).toBe(200);
+    expect(json.signature).toBe(signatureOf(transaction));
+    expect(lookupBeamAfterSend).not.toHaveBeenCalled();
   });
 });
