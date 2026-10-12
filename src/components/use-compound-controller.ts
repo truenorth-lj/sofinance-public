@@ -8,16 +8,19 @@ import { ApiRequestError, resolveCompoundBroadcastFailure } from "@/lib/public-e
 import { abandonUnsentCompoundAttempt, compoundAttemptKey, loadCompoundAttempt, loadCompoundReceipts, persistCompoundAttempt, persistCompoundReceipt,
   removeConsumedCompoundReceipts, removeRecoveredReceipt, removeUnconfirmedCompoundReceipt, signedCompoundTransaction,
   type CompoundAttempt, type CompoundPrepared, type CompoundReceipt, type RecoveryPrepared } from "@/lib/compound-attempt";
-import type { CompoundPositionState, CompoundSummary } from "@/lib/compound-types";
+import type { CompoundChainStatus, CompoundPositionState, CompoundSummary } from "@/lib/compound-types";
 import type { CompoundRecoverySummary } from "@/lib/compound-recovery-types";
 import { useWalletConnection } from "./wallet-connection";
 
 export type CompoundConfirmation = { status: AtomicStatus; signature: string; state: CompoundPositionState | null;
+  chainStatus?: CompoundChainStatus;
   receipt?: { harvestedA: string; harvestedB: string; investedA: string; investedB: string;
     remainingA: string; remainingB: string; rewards: { mint: string; amount: string; compounded: boolean }[] };
   transactionError?: unknown };
 type Options = { wallet?: string; positionMint?: string; externalBlocked: boolean; onConfirmed?: () => void };
 const statusValues: AtomicStatus[] = ["pending", "expired", "failed", "success", "manual-review"];
+const chainStatusValues: CompoundChainStatus[] = ["pending", "expired", "failed", "success", "unknown"];
+const slowConfirmationMs = 30_000;
 
 async function post<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
   const response = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" },
@@ -36,6 +39,8 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
   const [preview, setPreview] = useState<CompoundSummary | null>(null);
   const [attempt, setAttempt] = useState<CompoundAttempt | null>(null);
   const [attemptStatus, setAttemptStatus] = useState<AtomicStatus | null>(null);
+  const [chainStatus, setChainStatus] = useState<CompoundChainStatus | null>(null);
+  const [confirmationSlow, setConfirmationSlow] = useState(false);
   const [confirmation, setConfirmation] = useState<CompoundConfirmation | null>(null);
   const [receipts, setReceipts] = useState<CompoundReceipt[]>([]);
   const [loadedWallet, setLoadedWallet] = useState<string | null>(null);
@@ -65,7 +70,7 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
   useEffect(() => {
     let cancelled = false;
     const timer = window.setTimeout(() => {
-      setPreview(null); setConfirmation(null); setError(""); keepSubmitErrorRef.current = false;
+      setPreview(null); setConfirmation(null); setChainStatus(null); setConfirmationSlow(false); setError(""); keepSubmitErrorRef.current = false;
       if (!wallet) { setAttempt(null); setAttemptStatus(null); setReceipts([]); setLoadedWallet(null); setStorageInvalid(false); attemptSignatureRef.current = null; return; }
       try {
         const saved = loadCompoundAttempt(window.localStorage, wallet);
@@ -121,9 +126,11 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
     const requestId = ++confirmationRequest.current;
     const checked = await post<CompoundConfirmation>("/api/compound-confirm", { wallet: current.wallet, attempt: current });
     if (walletRef.current !== current.wallet || attemptSignatureRef.current !== current.signature || requestId !== confirmationRequest.current) return;
-    if (checked.signature !== current.signature || !statusValues.includes(checked.status)) throw new Error("Transaction verification returned signature or status mismatch");
+    if (checked.signature !== current.signature || !statusValues.includes(checked.status) ||
+      checked.chainStatus !== undefined && !chainStatusValues.includes(checked.chainStatus)) throw new Error("Transaction verification returned signature or status mismatch");
     // The chain result belongs to the stored attempt, regardless of the currently selected NFT.
     setAttemptStatus(checked.status); setConfirmation(checked);
+    setChainStatus(checked.chainStatus ?? null);
     if (checked.status === "success" || checked.status === "failed" || checked.status === "expired") {
       if (clearsSubmitError(checked.status)) {
         keepSubmitErrorRef.current = false;
@@ -141,15 +148,20 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
         removeConsumedCompoundReceipts(window.localStorage, current);
         setReceipts(loadCompoundReceipts(window.localStorage, current.wallet).receipts);
       }
-      const terminal = `${current.signature}:${checked.status}`;
+    }
+    const executed = checked.chainStatus === "success" || checked.status === "success";
+    if (executed || checked.status === "failed" || checked.status === "expired") {
+      const terminal = `${current.signature}:${checked.chainStatus ?? checked.status}`;
       if (previousTerminal.current !== terminal) {
         previousTerminal.current = terminal;
         void refreshState(); onConfirmedRef.current?.();
       }
     }
   }, [refreshState]);
+  const chainSettled = chainStatus === "success" || chainStatus === "failed" || chainStatus === "expired";
+  const transactionUnresolved = !!attempt && attempt.wallet === wallet && !chainSettled && !mayStartAnotherAttempt(attemptStatus);
   useEffect(() => {
-    if (!attempt || attempt.wallet !== wallet || attemptStatus !== "pending") return;
+    if (!attempt || !transactionUnresolved) return;
     let cancelled = false;
     let checking = false;
     const run = () => {
@@ -161,14 +173,19 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
     };
     const initial = window.setTimeout(run, 0);
     const poll = window.setInterval(run, 4_000);
-    return () => { cancelled = true; window.clearTimeout(initial); window.clearInterval(poll); };
-  }, [attempt, attemptStatus, wallet, reconcile]);
+    // Thirty seconds changes the feedback and triggers a recheck; it never grants permission to resubmit.
+    const slow = window.setTimeout(() => { setConfirmationSlow(true); run(); },
+      Math.max(0, slowConfirmationMs - (Date.now() - attempt.createdAt)));
+    return () => { cancelled = true; window.clearTimeout(initial); window.clearInterval(poll); window.clearTimeout(slow); };
+  }, [attempt, transactionUnresolved, wallet, reconcile]);
 
   const visibleState = state && state.wallet === wallet && state.positionMint === positionMint ? state : null;
   const visiblePreview = preview && preview.state.wallet === wallet && preview.positionMint === positionMint ? preview : null;
   const visibleAttempt = attempt?.wallet === wallet ? attempt : null;
   const busy = stage !== null;
-  const walletBlocked = Boolean(wallet && (loadedWallet !== wallet || storageInvalid || busy || !mayStartAnotherAttempt(attemptStatus)));
+  const walletBlocked = Boolean(wallet && (loadedWallet !== wallet || storageInvalid || busy ||
+    !chainSettled && !mayStartAnotherAttempt(attemptStatus)));
+  const receiptReviewRequired = chainStatus === "success" && attemptStatus !== "success";
   const priorReceipts = loadedWallet === wallet ? receipts.filter((receipt) => receipt.positionMint === positionMint) : [];
   const skipOrphanSignature = visibleAttempt && (attemptStatus === "expired" || attemptStatus === "failed")
     ? visibleAttempt.signature : undefined;
@@ -177,10 +194,10 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
   const hasFees = (visibleState ? BigInt(visibleState.fees.a) > 0n || BigInt(visibleState.fees.b) > 0n ||
     visibleState.rewards.some((reward) => BigInt(reward.estimatedAmount) > 0n) : false) || sourceSignatures.length > 0;
   const canCompound = !!wallet && !!positionMint && connection.connected && loadedWallet === wallet &&
-    !!visibleState?.eligible && hasFees && !externalBlocked && !walletBlocked;
+    !!visibleState?.eligible && hasFees && !externalBlocked && !walletBlocked && !receiptReviewRequired;
 
   async function submit(receipt?: CompoundReceipt) {
-    if (!wallet || (!receipt && !positionMint) || !connection.connected || submitting.current || externalBlockedRef.current || walletBlocked ||
+    if (!wallet || (!receipt && !positionMint) || !connection.connected || submitting.current || externalBlockedRef.current || walletBlocked || receiptReviewRequired ||
       (!receipt && !canCompound) || (receipt && receipt.wallet !== wallet)) return;
     submitting.current = true;
     const submittedWallet = wallet;
@@ -229,7 +246,7 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
       persisted = true;
       confirmationRequest.current++;
       attemptSignatureRef.current = created.signature;
-      setAttempt(created); setAttemptStatus("pending");
+      setAttempt(created); setAttemptStatus("pending"); setChainStatus("pending"); setConfirmationSlow(false);
       setReceipts(loadCompoundReceipts(window.localStorage, submittedWallet).receipts);
       setStage("broadcasting");
       const response = await post<{ signature: string }>(receipt ? "/api/compound-recover-broadcast" : "/api/compound-broadcast", {
@@ -247,7 +264,7 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
           confirmationRequest.current++;
           attemptSignatureRef.current = null;
           abandonUnsentCompoundAttempt(window.localStorage, next);
-          setAttempt(null); setAttemptStatus(null); setConfirmation(null);
+          setAttempt(null); setAttemptStatus(null); setConfirmation(null); setChainStatus(null); setConfirmationSlow(false);
           setReceipts(loadCompoundReceipts(window.localStorage, submittedWallet).receipts);
           keepSubmitErrorRef.current = true;
           setError(outcome.error);
@@ -290,8 +307,9 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
   return { wallet, positionMint, state: visibleState, preview: visiblePreview, attempt: visibleAttempt, attemptStatus,
     confirmation: visibleAttempt && confirmation?.signature === visibleAttempt.signature ? confirmation : null,
     receipts: loadedWallet === wallet ? receipts : [], error, loading, busy, stage, walletBlocked, externalBlocked,
+    receiptReviewRequired, confirmationSlow: confirmationSlow && transactionUnresolved,
     canCompound, hasFees, priorReceipts, importing, canImport, importReceipt,
-    ready: !!wallet && connection.connected && loadedWallet === wallet && !walletBlocked && !externalBlocked,
+    ready: !!wallet && connection.connected && loadedWallet === wallet && !walletBlocked && !externalBlocked && !receiptReviewRequired,
     refreshState, compound: () => { void submit(); }, recover: (receipt: CompoundReceipt) => { void submit(receipt); }, retryReconcile,
     storageKey: wallet ? compoundAttemptKey(wallet) : null };
 }

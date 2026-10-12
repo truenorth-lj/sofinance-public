@@ -1,5 +1,8 @@
 import type { SelectedPositionState } from "./selected-state";
 
+// Execution certainty is separate from whether the yield ledger can be reconstructed.
+export type CompoundChainStatus = "pending" | "success" | "failed" | "expired" | "unknown";
+
 export type CompoundReward = {
   index: number; mint: string; vault: string; program: string; decimals: number;
   account: string; estimatedAmount: string; compounded: boolean;
