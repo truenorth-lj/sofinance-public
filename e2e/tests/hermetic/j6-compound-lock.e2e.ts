@@ -1,0 +1,135 @@
+import bs58 from "bs58";
+import type { Page } from "@playwright/test";
+import { expect, test } from "../fixtures";
+import { ConnectModal } from "../../pages/connect-modal";
+import { randomAddress, buildSingleSignerTx } from "../../support/tx";
+import type { FakeWallet } from "../../fake-wallet/node-signer";
+
+type Reply = { status: "pending" | "success" | "failed" | "expired" | "manual-review";
+  chainStatus?: "pending" | "success" | "failed" | "expired" | "unknown"; signature?: string };
+
+/** API answers and keys are synthetic. No funded wallet or mainnet send enters this lane. */
+async function setup(page: Page, wallet: FakeWallet, reply: Reply, otherWalletRecord = false) {
+  const positionMint = randomAddress(), oldMint = randomAddress(), mintA = randomAddress(), mintB = randomAddress();
+  const inputMint = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+  const poolId = randomAddress(), positionAccount = randomAddress();
+  const selection = { positionMint, inputMint, inputKind: "token" };
+  const state = { wallet: wallet.address, ...selection, poolId, positionAccount, programId: "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK",
+    slot: 42, solLamports: 1_000_000_000, inputDecimals: 6, inputBalance: "200000311", inputAccount: randomAddress(), nftAta: randomAddress(),
+    mintA, mintB, decimalsA: 6, decimalsB: 6, ownsNft: true, sufficientSol: true, unsupportedExtensions: [],
+    paused: false, frozen: false, transferFee: false, rangeSide: "inside", inRange: true,
+    price: "1", tickLower: -10, tickUpper: 10, liquidity: "100", currentAmounts: { a: "1000000", b: "1000000" },
+    balances: { input: "200000311", a: "0", b: "0" }, fees: { a: "10", b: "20" }, rewards: [], eligible: true,
+    vaultA: randomAddress(), vaultB: randomAddress() };
+  const recordWallet = otherWalletRecord ? randomAddress() : wallet.address;
+  const accounts = [mintA, mintB].map((mint, index) => ({ mint, seed: String(index).repeat(22), address: randomAddress(),
+    program: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", space: 165, rentLamports: 2039280 }));
+  const createdAt = Date.now();
+  const attempt = { version: 1, kind: "compound", wallet: recordWallet, positionMint: oldMint, signature: bs58.encode(new Uint8Array(64).fill(42)), createdAt,
+    summary: { operation: "compound", simulated: true, state: { ...state, wallet: recordWallet, positionMint: oldMint }, positionMint: oldMint, positionAccount, poolId,
+      compoundAccounts: accounts, blockhash: randomAddress(), lastValidBlockHeight: 150, expiresAt: createdAt + 75000,
+      liquidity: "100", startingLiquidity: "100", amountMaxA: "10", amountMaxB: "20", simulatedEndingLiquidity: "200",
+      simulatedDustA: "0", simulatedDustB: "0", simulatedSolDebitLamports: "5000", maxSolDebitLamports: "5000000",
+      simulatedHarvest: { a: "10", b: "20" }, simulatedRewards: [], feeLamports: 5000, rentLamports: 4078560, swaps: [], priorSources: [] } };
+  const attemptKey = `sofinance:compound:v1:${recordWallet}`, receiptsKey = `sofinance:compound-receipts:v1:${recordWallet}`;
+  await page.addInitScript(({ attemptKey, receiptsKey, attempt }) => {
+    if (localStorage.getItem(attemptKey) === null) {
+      localStorage.setItem(attemptKey, JSON.stringify(attempt));
+      localStorage.setItem(receiptsKey, JSON.stringify([{ wallet: attempt.wallet, positionMint: attempt.positionMint,
+        sourceSignature: attempt.signature, compoundAccounts: attempt.summary.compoundAccounts }]));
+    }
+  }, { attemptKey, receiptsKey, attempt });
+  const calls: string[] = [];
+  await page.route("**/api/**", async (route) => {
+    const url = new URL(route.request().url()), path = url.pathname;
+    calls.push(path);
+    const body = route.request().method() === "POST" ? route.request().postDataJSON() : {};
+    const currentMint = body.positionMint ?? url.searchParams.get("positionMint") ?? positionMint;
+    const quote = { wallet: wallet.address, ...selection, positionMint: currentMint, poolId, positionAccount, inputDecimals: 6,
+      requested: String(Math.round(Number(body.amount ?? "1") * 1e6)), floorBps: body.floorBps ?? 9900,
+      toleranceBps: body.toleranceBps ?? 100, expiresAt: Date.now() + 75000, passesFloor: false,
+      spendA: "500000", spendB: "500000", minOutA: "495000", minOutB: "495000", decimalsA: 6, decimalsB: 6,
+      mintA, mintB, liquidity: "100", roundtripCostInput: null };
+    let value: unknown = {};
+    if (path === "/api/wallet") value = { wallet: wallet.address, slot: 1, fetchedAt: Date.now(),
+      positions: [positionMint, oldMint].map((mint) => ({ ...state, positionMint: mint, symbolA: "AAA", symbolB: "BBB", feeTierBps: 1, tickCurrent: 0 })),
+      assets: [{ kind: "token", mint: inputMint, eligible: true, decimals: 6, balance: "200000311", totalBalance: "200000311", reason: null }] };
+    if (path === "/api/selected-state" || path === "/api/compound-state") value = { ...state, positionMint: currentMint };
+    if (path === "/api/selected-quote") value = quote;
+    if (path === "/api/compound-confirm") value = { signature: attempt.signature, state: null, ...reply };
+    if (path === "/api/selected-preflight") throw new Error("Automatic preflight must not run");
+    if (path === "/api/selected-prepare") {
+      const built = buildSingleSignerTx(wallet.address);
+      value = { quote, simulated: true, expiresAt: quote.expiresAt, permit: "test-permit", unsignedTransaction: built.b64,
+        blockhash: built.tx.message.recentBlockhash, lastValidBlockHeight: 1000, startingLiquidity: state.liquidity, startingBalances: state.balances };
+    }
+    if (/broadcast$/.test(path)) throw new Error("This journey must never broadcast");
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(value) });
+  });
+  await page.goto("/app?view=deposit");
+  const modal = new ConnectModal(page, wallet);
+  await modal.connect(); await expect(modal.navAddress).toBeVisible();
+  await page.getByRole("textbox", { name: "Input limit" }).fill("1");
+  await expect(page.getByText("Estimated liquidity added", { exact: true })).toBeVisible();
+  return { calls, oldMint, attemptKey, receiptsKey, attempt,
+    add: page.getByRole("button", { name: "Add liquidity", exact: true }), setReply: (next: Reply) => { reply = next; } };
+}
+
+for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
+  test(`finalized receipt warning permits add and final prepare at ${viewport.width}px`, async ({ page, wallet }) => {
+    await page.setViewportSize(viewport); wallet.mode = "reject";
+    const flow = await setup(page, wallet, { status: "manual-review", chainStatus: "success" });
+    await expect(flow.add).toBeEnabled();
+    const warning = page.getByText("Previous transaction finalized successfully; yield details need verification. You can add liquidity.", { exact: true });
+    await expect(warning).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({ path: test.info().outputPath(`compound-unlocked-${viewport.width}.png`) });
+    await flow.add.click();
+    await expect(page.getByRole("alert").filter({ hasText: "User rejected" })).toBeVisible();
+    expect(flow.calls.filter((p) => p === "/api/selected-prepare")).toHaveLength(1);
+    expect(wallet.ledger).toMatchObject([{ outcome: "rejected" }]);
+    expect(flow.calls.some((p) => /broadcast$/.test(p))).toBe(false);
+    expect(await page.evaluate((key) => localStorage.getItem(key), flow.attemptKey)).toBe(JSON.stringify(flow.attempt));
+    expect(JSON.parse((await page.evaluate((key) => localStorage.getItem(key), flow.receiptsKey))!)).toHaveLength(1);
+    await page.reload(); await expect(warning).toBeVisible();
+    await page.getByRole("textbox", { name: "Input limit" }).fill("1"); await expect(flow.add).toBeEnabled();
+  });
+}
+
+test("30 seconds and NFT switching never unlock unknown execution; automatic finality recheck does", async ({ page, wallet }) => {
+  await page.clock.install();
+  const flow = await setup(page, wallet, { status: "pending", chainStatus: "pending" });
+  await expect(flow.add).toBeDisabled();
+  await page.clock.fastForward(31000);
+  await expect(page.getByText("Confirmation is taking longer than 30 seconds. Rechecking the previous transaction; add liquidity is paused.")).toBeVisible();
+  flow.setReply({ status: "manual-review", chainStatus: "unknown" });
+  await page.getByRole("combobox", { name: "Select Raydium position" }).selectOption(flow.oldMint);
+  // Selecting another NFT intentionally clears its amount and preview.
+  await expect(page.getByRole("textbox", { name: "Input limit" })).toHaveValue("");
+  await page.getByRole("textbox", { name: "Input limit" }).fill("1");
+  await expect(flow.add).toBeDisabled();
+  const checks = flow.calls.filter((p) => p === "/api/compound-confirm").length;
+  await page.clock.runFor(4000);
+  await expect.poll(() => flow.calls.filter((p) => p === "/api/compound-confirm").length).toBeGreaterThan(checks);
+  await expect(flow.add).toBeDisabled();
+  flow.setReply({ status: "manual-review", chainStatus: "success" });
+  await page.clock.runFor(4000); await expect(flow.add).toBeEnabled();
+  expect(wallet.ledger).toEqual([]); expect(flow.calls).not.toContain("/api/selected-prepare");
+});
+
+for (const status of ["failed", "expired"] as const) {
+  test(`confirmed ${status} releases add and removes the unconfirmed receipt`, async ({ page, wallet }) => {
+    const flow = await setup(page, wallet, { status, chainStatus: status });
+    await expect(flow.add).toBeEnabled();
+    expect(JSON.parse((await page.evaluate((key) => localStorage.getItem(key), flow.receiptsKey))!)).toEqual([]);
+    expect(await page.evaluate((key) => localStorage.getItem(key), flow.attemptKey)).not.toBeNull();
+    expect(wallet.ledger).toEqual([]);
+  });
+}
+
+test("a different wallet's unresolved record cannot lock the connected wallet", async ({ page, wallet }) => {
+  const flow = await setup(page, wallet, { status: "pending", chainStatus: "pending" }, true);
+  await expect(flow.add).toBeEnabled(); expect(flow.calls).not.toContain("/api/compound-confirm");
+  expect(await page.evaluate((key) => localStorage.getItem(key), flow.attemptKey)).not.toBeNull();
+  expect(wallet.ledger).toEqual([]);
+});

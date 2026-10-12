@@ -35,7 +35,7 @@ beforeEach(() => {
   vi.spyOn(console, "error").mockImplementation(() => {});
   connection = fakeConnection({
     getSignatureStatuses: vi.fn(async () => ({ value: [{ confirmationStatus: "finalized", err: null }] })),
-    getParsedTransaction: vi.fn(async () => ({ meta: { err: null } })),
+    getParsedTransaction: vi.fn(async () => ({ transaction: { signatures: [signature] }, meta: { err: null } })),
   });
   vi.mocked(rpcConnection).mockReturnValue(connection as never);
   vi.mocked(parseCompoundAttempt).mockReturnValue(attemptFor("compound") as never);
@@ -69,10 +69,13 @@ describe("POST /api/compound-confirm", () => {
   });
 
   describe("signature not found", () => {
-    beforeEach(() => connection.getSignatureStatuses.mockResolvedValue({ value: [null] }));
+    beforeEach(() => {
+      connection.getSignatureStatuses.mockResolvedValue({ value: [null] });
+      connection.getParsedTransaction.mockResolvedValue(null);
+    });
     it("is pending until the FINALIZED height passes lastValidBlockHeight", async () => {
       connection.getBlockHeight.mockResolvedValue(150);
-      expect((await call()).json).toEqual({ signature, state: null, status: "pending" });
+      expect((await call()).json).toEqual({ signature, state: null, status: "pending", chainStatus: "pending" });
       expect(connection.getBlockHeight).toHaveBeenCalledWith("finalized");
     });
     it("compound: expired when every isolated yield account is still absent", async () => {
@@ -83,7 +86,23 @@ describe("POST /api/compound-confirm", () => {
     it("compound: manual-review when an isolated yield account exists without transaction evidence", async () => {
       connection.getBlockHeight.mockResolvedValue(151);
       connection.getMultipleAccountsInfo.mockResolvedValue([null, { lamports: 1 }]);
-      expect((await call()).json).toMatchObject({ status: "manual-review" });
+      expect((await call()).json).toMatchObject({ status: "manual-review", chainStatus: "unknown" });
+    });
+    it("finds a successful older compound in finalized history despite a missing signature status", async () => {
+      connection.getParsedTransaction.mockResolvedValue({ transaction: { signatures: [signature] }, meta: { err: null } });
+      expect((await call()).json).toMatchObject({ status: "success", chainStatus: "success", receipt: { receipt: true } });
+      expect(connection.getParsedTransaction).toHaveBeenCalledWith(signature, { commitment: "finalized", maxSupportedTransactionVersion: 0 });
+      expect(connection.getBlockHeight).not.toHaveBeenCalled();
+      expect(connection.getMultipleAccountsInfo).not.toHaveBeenCalled();
+    });
+    it("finds an old finalized failure without dropping into account-based manual review", async () => {
+      connection.getParsedTransaction.mockResolvedValue({ transaction: { signatures: [signature] }, meta: { err: { X: 1 } } });
+      expect((await call()).json).toMatchObject({ status: "failed", chainStatus: "failed", transactionError: { X: 1 } });
+    });
+    it("does not unlock when history returns a different transaction signature", async () => {
+      connection.getParsedTransaction.mockResolvedValue({ transaction: { signatures: ["different"] }, meta: { err: null } });
+      expect((await call()).json).toMatchObject({ status: "manual-review", chainStatus: "unknown" });
+      expect(confirmedCompoundReceipt).not.toHaveBeenCalled();
     });
     it("recovery: expired only when every yield account is STILL present (inverse of compound)", async () => {
       vi.mocked(parseCompoundAttempt).mockReturnValue(attemptFor("recovery") as never);
@@ -97,7 +116,7 @@ describe("POST /api/compound-confirm", () => {
 
   it("QUIRK: 'confirmed' is NOT enough here, only 'finalized' proceeds (selected-status accepts confirmed)", async () => {
     connection.getSignatureStatuses.mockResolvedValue({ value: [{ confirmationStatus: "confirmed", err: null }] });
-    expect((await call()).json).toEqual({ signature, state: null, status: "pending" });
+    expect((await call()).json).toEqual({ signature, state: null, status: "pending", chainStatus: "pending" });
     expect(connection.getParsedTransaction).not.toHaveBeenCalled();
   });
 
@@ -111,12 +130,12 @@ describe("POST /api/compound-confirm", () => {
     expect((await call()).json).toMatchObject({ status: "failed", transactionError: { X: 1 } });
   });
 
-  it("missing parsed transaction or meta => pending; meta.err => failed", async () => {
+  it("finalized execution stays settled when parsed transaction or metadata is unavailable", async () => {
     connection.getParsedTransaction.mockResolvedValue(null);
-    expect((await call()).json).toMatchObject({ status: "pending" });
-    connection.getParsedTransaction.mockResolvedValue({ meta: null });
-    expect((await call()).json).toMatchObject({ status: "pending" });
-    connection.getParsedTransaction.mockResolvedValue({ meta: { err: { Y: 2 } } });
+    expect((await call()).json).toMatchObject({ status: "manual-review", chainStatus: "success" });
+    connection.getParsedTransaction.mockResolvedValue({ transaction: { signatures: [signature] }, meta: null });
+    expect((await call()).json).toMatchObject({ status: "manual-review", chainStatus: "success" });
+    connection.getParsedTransaction.mockResolvedValue({ transaction: { signatures: [signature] }, meta: { err: { Y: 2 } } });
     expect((await call()).json).toMatchObject({ status: "failed", transactionError: { Y: 2 } });
   });
 
@@ -130,18 +149,31 @@ describe("POST /api/compound-confirm", () => {
   it("compound: success with receipt and fresh state", async () => {
     const { response, json } = await call();
     expect(response.status).toBe(200);
-    expect(json).toEqual({ signature, state: { liquidity: "1" }, receipt: { receipt: true }, status: "success" });
+    expect(json).toEqual({ signature, state: { liquidity: "1" }, receipt: { receipt: true }, status: "success", chainStatus: "success" });
   });
 
   it("compound: a state-read failure keeps the receipt (state null) and still succeeds", async () => {
     vi.mocked(readCompoundPositionState).mockRejectedValue(new Error("position gone"));
-    expect((await call()).json).toEqual({ signature, state: null, receipt: { receipt: true }, status: "success" });
+    expect((await call()).json).toEqual({ signature, state: null, receipt: { receipt: true }, status: "success", chainStatus: "success" });
   });
 
   it("compound: no receipt => manual-review and state is NOT read", async () => {
     vi.mocked(confirmedCompoundReceipt).mockReturnValue(null as never);
     const { json } = await call();
-    expect(json).toMatchObject({ status: "manual-review", state: null });
+    expect(json).toMatchObject({ status: "manual-review", chainStatus: "success", state: null });
     expect(readCompoundPositionState).not.toHaveBeenCalled();
+  });
+  it("keeps finalized success independent of a receipt parser or history RPC error", async () => {
+    vi.mocked(confirmedCompoundReceipt).mockImplementation(() => { throw new Error("invalid ledger amount"); });
+    expect((await call()).json).toMatchObject({ status: "manual-review", chainStatus: "success", receipt: null });
+    connection.getParsedTransaction.mockRejectedValue(new Error("history RPC unavailable"));
+    expect((await call()).json).toMatchObject({ status: "manual-review", chainStatus: "success" });
+  });
+  it("also finds old recovery transactions in finalized history", async () => {
+    connection.getSignatureStatuses.mockResolvedValue({ value: [null] });
+    vi.mocked(parseCompoundAttempt).mockReturnValue(attemptFor("recovery") as never);
+    expect((await call()).json).toMatchObject({ status: "success", chainStatus: "success" });
+    vi.mocked(confirmedRecovery).mockReturnValue(false);
+    expect((await call()).json).toMatchObject({ status: "manual-review", chainStatus: "success" });
   });
 });

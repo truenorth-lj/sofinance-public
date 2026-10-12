@@ -30,7 +30,9 @@ export function CompoundPanel({ controller: c, tokenLabel = short, onConnect }: 
   const action = c.stage === "preparing" ? "Verifying yield and simulating transaction…" :
     c.stage === "wallet" ? "Confirming in wallet…" : c.stage === "broadcasting" ? "Sending and verifying…" : "One-click compound";
   const blockedText = !c.wallet ? null : !c.positionMint ? "Please select existing position first" :
-    c.externalBlocked ? "Input transaction pending verification, compound paused" : c.walletBlocked && !c.busy ?
+    c.externalBlocked ? "Input transaction pending verification, compound paused" : c.receiptReviewRequired ?
+      "Previous transaction finalized successfully; verify yield details before another compound or recovery. You can add liquidity." : c.walletBlocked && !c.busy ?
+      c.confirmationSlow ? "Confirmation is taking longer than 30 seconds. Rechecking on-chain result; do not resubmit." :
       "Verifying this wallet's previous transactions, do not resubmit" : state && !state.eligible ? state.reason :
         state && !c.hasFees ? "Currently no yield available to compound" : null;
   return <section aria-labelledby="compound-heading" className="mt-6 rounded-[28px] border border-white/12 bg-char p-5 sm:p-8">
@@ -61,7 +63,8 @@ export function CompoundPanel({ controller: c, tokenLabel = short, onConnect }: 
     </div>
     {c.attempt && <div className="mt-5 rounded-2xl border border-white/10 p-4 text-xs leading-6">
       <div className="flex flex-wrap items-center justify-between gap-2"><p role="status" className="text-cream/90">
-        {c.attempt.kind === "recovery" && c.attemptStatus === "success" ? "Balance and account rent recovered"
+        {c.receiptReviewRequired ? "Transaction finalized successfully; yield details require verification. Add liquidity is available."
+          : c.attempt.kind === "recovery" && c.attemptStatus === "success" ? "Balance and account rent recovered"
           : c.attemptStatus === "pending" && c.error ? "Last attempt did not confirm; see the error below"
           : c.attemptStatus ? statusText[c.attemptStatus] : "Loading records"}
       </p><a className="text-cream/80 underline" href={`https://solscan.io/tx/${c.attempt.signature}`} target="_blank" rel="noreferrer">View transaction {short(c.attempt.signature)}</a></div>
