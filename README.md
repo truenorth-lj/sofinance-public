@@ -21,6 +21,48 @@ The marketing landing page lives at `/`. Product UI lives under `/app` (Position
 
 Former page paths permanently redirect. MCP `prepare_*` tools now emit `/app/sign/<token>`.
 
+## Quick start for judges
+
+- **Live app:** https://sofinancelab.xyz
+- **Demo video:** https://www.youtube.com/watch?v=vVW_z4Iiw8Y
+- **Official X:** https://x.com/SoFinancelab
+- **Colosseum project:** https://colosseum.com/arena/projects/16410
+
+### How Solami is used
+
+- **Solami RPC** (`src/lib/rpc/providers.ts`, `src/lib/rpc/urls.ts`): when `SOLAMI_API_KEY` is set, all server JSON-RPC (wallet balances, CLMM positions, simulation, broadcast) goes through `https://rpc.solami.dev/sol`. Position performance discovers history via Solami `getTransactionsForAddress` (`src/lib/solami/history.ts`, `src/lib/position-performance-math.ts`).
+- **Data API / Blur** (`src/lib/solami/blur.ts`, `src/app/api/pool-activity/`, `src/components/pool-activity-panel.tsx`): `SOLAMI_DATA_API_KEY` powers the live pool-trades panel (REST snapshot + WebSocket stream of decoded swaps) and the Blur-priced in-range status (`src/lib/position-range-status.ts`). Also exposed to agents as an MCP tool (`src/mcp/tools.ts`).
+- **Beam** (`src/lib/solami/beam.ts`, `src/lib/open-atomic.ts`): the single atomic open-position tx gets a 100k-lamport Beam tip when it fits. The tip is skipped (`skippedReason: "oversize"`) if adding it would push the tx over 1232 bytes, e.g. SOL input or MSTR pools. Landing info is read back via `/api/beam-landing`. Compound and selected flows use the same logic.
+
+### Run locally
+
+Requires Node 22 (matches `@types/node`; no `engines`/`.nvmrc` is pinned) and pnpm 10.18.2 (`packageManager` in `package.json`).
+
+```bash
+corepack enable
+pnpm install
+cp .env.example .env.local   # fill in your own keys
+pnpm dev                     # http://localhost:3000
+```
+
+Solami env vars (server-only, never prefix with `NEXT_PUBLIC_`):
+
+| Variable | Purpose |
+|----------|---------|
+| `SOLAMI_API_KEY` | Solami RPC + Beam. Unset = `SOLANA_RPC_URL`, else public mainnet RPC. |
+| `SOLAMI_BEAM` | Set to `0` to keep Solami RPC but skip Beam tips. |
+| `SOLAMI_DATA_API_KEY` | Blur REST/WS for the pool-trades panel. Free keys have REST only; WebSocket needs Pro. |
+
+To use your own key, create one at Solami and put it in `.env.local`. Other variables (`JUPITER_API_KEY`, `NEXT_PUBLIC_REOWN_PROJECT_ID`, `NEXT_PUBLIC_APP_URL`, …) are documented in `.env.example`.
+
+### If the Solami trial key has expired
+
+The deployed app uses a Solami Pro trial key that may expire. What the code does then:
+
+- **Blur panel:** shows as unavailable / snapshot-only instead of live trades; the rest of the app keeps working.
+- **RPC:** reads fall back to `SOLANA_RPC_URL`/public RPC only on validation, 5xx, 429 or timeout errors (`src/lib/rpc/methods.ts`). A 401/403 from an expired key is not a fallback trigger, so Solami-backed reads and sends fail until `SOLAMI_API_KEY` is replaced or removed. Removing it switches everything to `SOLANA_RPC_URL` or public RPC (no Beam tip).
+- **Beam:** the tip is optional; if no tip address is available the tx is built without it.
+
 ## Features
 
 - Discover Raydium CLMM position NFTs and eligible ATA / native SOL balances
