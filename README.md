@@ -358,6 +358,8 @@ Original private repository [`truenorth-lj/SoFinance`](https://github.com/trueno
 
 Development used the author’s own pre-built generic agent skill (a “research-pipeline” skill) and AI coding assistants as tooling—not pre-hackathon product code.
 
+History sanitized for privacy on 2026-10-12 (author dates preserved; personal email and test-wallet identifiers removed).
+
 ## Local read-only LP decision analysis
 
 `/app/plan` states a goal as one sentence of pills (when to cash out, how much to put in, what outcome matters, a loss alert and the exit asset) and judges it against the three sample market paths of the deterministic scenario engine. Sample numbers stay off until switched on, show no probabilities, and the page never touches the network. If the goal is out of reach it says so and offers a longer horizon or a smaller target; it does not raise risk to make the numbers work.
