@@ -1,6 +1,21 @@
 import "server-only";
 
 import { CompoundSendError, sanitizePublicError } from "./public-error";
+import { JupiterHttpError, JupiterUnavailableError, JUPITER_UNAVAILABLE_MESSAGE } from "./jupiter/errors";
+
+/** Selected upstream failures are availability errors, not invalid user input. */
+export function selectedApiError(error: unknown, fallback: string) {
+  if (!(error instanceof JupiterHttpError && (error.status === 429 || error.status >= 500)) &&
+    !(error instanceof JupiterUnavailableError)) return apiError(error, fallback);
+  const limited = error instanceof JupiterHttpError && error.status === 429;
+  const retryAfterMs = error instanceof JupiterHttpError ? error.retryAfterMs : null;
+  return Response.json({ error: limited ? "Jupiter rate limit reached. Please retry later." : JUPITER_UNAVAILABLE_MESSAGE,
+    code: limited ? "jupiter_rate_limited" : "jupiter_unavailable",
+    ...(retryAfterMs !== null ? { retryAfterMs } : {}),
+  }, { status: 503, headers: { "Cache-Control": "no-store",
+    ...(retryAfterMs !== null ? { "Retry-After": String(Math.ceil(retryAfterMs / 1000)) } : {}),
+  } });
+}
 
 export function apiError(error: unknown, fallback: string, status = 400, extra?: { sent?: boolean }) {
   // eslint-disable-next-line no-console

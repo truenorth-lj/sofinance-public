@@ -45,6 +45,15 @@ describe("formatJupiterLog", () => {
 });
 
 describe("defaultJupiterLogger", () => {
+  it("logs selected HTTP diagnostics even without opt-in flags", () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    defaultJupiterLogger({ path: "/swap/v2/build", method: "GET", selected: true,
+      outcome: "error", status: 429, durationMs: 12, rateLimitRemaining: -1 });
+    expect(info).toHaveBeenCalledOnce();
+    expect(JSON.parse(String(info.mock.calls[0]?.[0]))).toMatchObject({
+      selected: true, status: 429, durationMs: 12, rateLimitRemaining: -1,
+    });
+  });
   it("stays quiet unless a log flag is set", () => {
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
     defaultJupiterLogger({ path: "/price/v3", method: "GET", outcome: "ok" });

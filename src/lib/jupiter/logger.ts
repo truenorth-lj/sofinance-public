@@ -12,6 +12,12 @@ export type JupiterLogEvent = {
   retries?: number;
   cacheHit?: boolean;
   errorKind?: JupiterErrorKind;
+  selected?: boolean;
+  durationMs?: number;
+  delayMs?: number;
+  rateLimitCurrent?: number;
+  rateLimitRemaining?: number;
+  rateLimitReset?: number;
 };
 
 export type JupiterLogger = (event: JupiterLogEvent) => void;
@@ -31,12 +37,18 @@ export function formatJupiterLog(event: JupiterLogEvent): string {
     retries: event.retries ?? 0,
     cacheHit: event.cacheHit === true,
     ...(event.attempt !== undefined ? { attempt: event.attempt } : {}),
+    ...(event.selected ? { selected: true } : {}),
+    ...(event.durationMs !== undefined ? { durationMs: event.durationMs } : {}),
+    ...(event.delayMs !== undefined ? { delayMs: event.delayMs } : {}),
+    ...(event.rateLimitCurrent !== undefined ? { rateLimitCurrent: event.rateLimitCurrent } : {}),
+    ...(event.rateLimitRemaining !== undefined ? { rateLimitRemaining: event.rateLimitRemaining } : {}),
+    ...(event.rateLimitReset !== undefined ? { rateLimitReset: event.rateLimitReset } : {}),
   });
 }
 
 export function defaultJupiterLogger(event: JupiterLogEvent): void {
-  if (!jupiterLogEnabled()) return;
-  // eslint-disable-next-line no-console -- opt-in via SOFINANCE_JUPITER_LOG / SOFINANCE_RPC_LOG
+  if (!event.selected && !jupiterLogEnabled()) return;
+  // eslint-disable-next-line no-console -- selected diagnostics contain only path/status/timing/quota
   console.info(formatJupiterLog(event));
 }
 
