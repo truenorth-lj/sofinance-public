@@ -20,3 +20,11 @@ describe("InkNav app routes", () => {
     expect(src).not.toContain('href="/"');
   });
 });
+
+describe("InkNav social link", () => {
+  it("links the official X account via the shared SOCIAL_LINKS config", () => {
+    const src = readFileSync(resolve("src/components/ink/InkNav.tsx"), "utf8");
+    expect(src).toContain("SOCIAL_LINKS.x.href");
+    expect(src).toContain("EXTERNAL_LINK_PROPS");
+  });
+});

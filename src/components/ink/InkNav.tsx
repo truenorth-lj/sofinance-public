@@ -6,6 +6,8 @@ import { BrandMark } from "@/components/brand-mark";
 import { Wallet } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { APP_ROUTES } from "@/lib/public-urls";
+import { EXTERNAL_LINK_PROPS, SOCIAL_LINKS } from "@/lib/social-links";
+import { XIcon } from "@/components/x-icon";
 
 interface InkNavProps {
   wallet?: string | null;
@@ -64,19 +66,34 @@ export function InkNav({ wallet, connected, onConnect, onDisconnect }: InkNavPro
         })}
       </nav>
 
-      {onConnect && onDisconnect && (
-        <button
-          type="button"
-          onClick={connected && wallet ? onDisconnect : onConnect}
+      <div className="order-2 flex items-center gap-2 lg:order-3">
+        <a
+          href={SOCIAL_LINKS.x.href}
+          {...EXTERNAL_LINK_PROPS}
+          aria-label={SOCIAL_LINKS.x.ariaLabel}
+          title={SOCIAL_LINKS.x.ariaLabel}
           className={cn(
             pill,
-            "order-2 gap-2 border-white/25 text-cream/85 hover:border-white/70 focus-visible:border-lemon lg:order-3",
+            "w-10 border-white/25 px-0 text-cream/85 hover:border-white/70 focus-visible:border-lemon",
           )}
         >
-          <Wallet className="h-4 w-4" aria-hidden="true" />
-          {connected && wallet ? short(wallet) : "Connect wallet"}
-        </button>
-      )}
+          <XIcon className="h-3.5 w-3.5" />
+        </a>
+
+        {onConnect && onDisconnect && (
+          <button
+            type="button"
+            onClick={connected && wallet ? onDisconnect : onConnect}
+            className={cn(
+              pill,
+              "gap-2 border-white/25 text-cream/85 hover:border-white/70 focus-visible:border-lemon",
+            )}
+          >
+            <Wallet className="h-4 w-4" aria-hidden="true" />
+            {connected && wallet ? short(wallet) : "Connect wallet"}
+          </button>
+        )}
+      </div>
     </header>
   );
 }
