@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { AccountLayout, MintLayout, NATIVE_MINT, TOKEN_PROGRAM_ID } from "@solana/spl-token";
-import { Keypair, PublicKey, TransactionMessage, VersionedTransaction, type AccountInfo, type Connection } from "@solana/web3.js";
+import { Keypair, PublicKey, SystemProgram, TransactionMessage, VersionedTransaction, type AccountInfo, type Connection } from "@solana/web3.js";
 import type { CompoundAccount } from "./compound-types";
 import type { CompoundRecoverySummary } from "./compound-recovery-types";
 vi.mock("server-only", () => ({}));
@@ -58,6 +58,26 @@ describe("owner-controlled leftover recovery", () => {
     const { connection, transaction, summary, simulateTransaction } = await fixture(0n);
     await simulateAndVerifyRecovery({ connection, transaction, summary, sigVerify: false });
     expect(simulateTransaction.mock.calls[0]![1].accounts.addresses).toEqual([summary.compoundAccounts[0]!.address, summary.wallet]);
+  });
+  it.each([false, true])("accepts RPC's emptied system-account representation (zero yield: %s)", async zeroYield => {
+    const f = await fixture(zeroYield ? 0n : 20_000_000n);
+    const addresses = [f.descriptor.address, ...(!zeroYield ? [f.summary.compoundAccounts[0]!.destination] : []), f.summary.wallet];
+    const result = await f.simulateTransaction(f.transaction, { accounts: { addresses } });
+    result.value.accounts[0] = { owner: SystemProgram.programId.toBase58(), lamports: 0, data: ["", "base64"], executable: false, rentEpoch: 0 };
+    f.simulateTransaction.mockResolvedValueOnce(result);
+    await expect(simulateAndVerifyRecovery({ ...f, sigVerify: false })).resolves.toEqual({ unitsConsumed: 2000 });
+  });
+  it.each(["funded", "data", "token-owned", "executable"])("rejects an account that remains %s after simulated recovery", async field => {
+    const f = await fixture();
+    const result = await f.simulateTransaction(f.transaction, { accounts: { addresses: [f.descriptor.address, f.summary.compoundAccounts[0]!.destination, f.summary.wallet] } });
+    result.value.accounts[0] = { owner: SystemProgram.programId.toBase58(), lamports: 0, data: ["", "base64"], executable: false, rentEpoch: 0 };
+    const account = result.value.accounts[0]!;
+    if (field === "funded") account.lamports = 1;
+    if (field === "data") account.data = ["AQ==", "base64"];
+    if (field === "token-owned") account.owner = TOKEN_PROGRAM_ID.toBase58();
+    if (field === "executable") account.executable = true;
+    f.simulateTransaction.mockResolvedValueOnce(result);
+    await expect(simulateAndVerifyRecovery({ ...f, sigVerify: false })).rejects.toThrow("did not close");
   });
   it("rejects owner/seed tampering and stale recovery balances", async () => {
     const { connection, transaction, summary, descriptor, owner, source } = await fixture();

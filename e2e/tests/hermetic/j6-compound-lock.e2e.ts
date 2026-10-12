@@ -76,6 +76,43 @@ async function setup(page: Page, wallet: FakeWallet, reply: Reply, otherWalletRe
 }
 
 for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
+  test(`compound history and recovery records stay scoped to the selected NFT at ${viewport.width}px`, async ({ page, wallet, guards }) => {
+    await page.setViewportSize(viewport);
+    guards.allowConsole(/^Failed to load resource: the server responded with a status of 400/);
+    const flow = await setup(page, wallet, { status: "success", chainStatus: "success" });
+    await page.route("**/api/compound-prepare", route => route.fulfill({ status: 400, contentType: "application/json",
+      body: JSON.stringify({ error: "Complete compound transaction 1268 bytes, exceeds 1,232 byte limit; no transaction was sent" }) }));
+    await page.getByRole("button", { name: "Yield Compound", exact: true }).click();
+    const compoundPanel = page.getByRole("region", { name: "Yield Compound", exact: true });
+    const management = page.locator("summary").filter({ hasText: "Yield account management" });
+    const success = page.getByText("Compound confirmed on-chain", { exact: true });
+    await expect(management).toContainText("0 records for this position");
+    await expect(success).toBeHidden();
+    await page.getByRole("button", { name: "One-click compound", exact: true }).click();
+    await expect(compoundPanel.getByRole("alert")).toContainText("1268 bytes");
+    await expect(success).toBeHidden();
+    expect(wallet.ledger).toEqual([]);
+    expect(flow.calls.some(path => /broadcast$/.test(path))).toBe(false);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({ path: test.info().outputPath(`compound-error-scoped-${viewport.width}.png`), fullPage: true });
+    await management.click();
+    await page.locator("summary").filter({ hasText: "Previous transaction for another position" }).click();
+    await expect(success).toBeVisible();
+    await page.locator("summary").filter({ hasText: "Other positions (1 records)" }).click();
+    await expect(page.getByRole("button", { name: "Retrieve this balance" })).toBeVisible();
+    await page.getByRole("combobox", { name: "Select Raydium position" }).selectOption(flow.oldMint);
+    await expect(management).toContainText("1 records for this position");
+    await expect(compoundPanel.getByRole("alert")).toBeHidden();
+    await expect(success).toBeVisible();
+    await expect(page.locator("summary").filter({ hasText: "Other positions (1 records)" })).toHaveCount(0);
+    await page.getByRole("button", { name: "One-click compound", exact: true }).click();
+    await expect(compoundPanel.getByRole("alert")).toContainText("1268 bytes");
+    await expect(success).toBeHidden();
+    await page.locator("summary").filter({ hasText: "Previous on-chain transaction" }).click();
+    await page.getByRole("button", { name: "Requery on-chain result" }).click();
+    await expect(compoundPanel.getByRole("alert")).toContainText("1268 bytes");
+    expect(wallet.ledger).toEqual([]);
+  });
   test(`finalized receipt warning permits add and final prepare at ${viewport.width}px`, async ({ page, wallet }) => {
     await page.setViewportSize(viewport); wallet.mode = "reject";
     const flow = await setup(page, wallet, { status: "manual-review", chainStatus: "success" });

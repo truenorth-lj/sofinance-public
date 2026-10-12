@@ -1,6 +1,6 @@
 import "server-only";
 
-import { PublicKey, TransactionMessage, VersionedTransaction, type Connection, type AccountInfo } from "@solana/web3.js";
+import { PublicKey, SystemProgram, TransactionMessage, VersionedTransaction, type Connection, type AccountInfo } from "@solana/web3.js";
 import {
   createAssociatedTokenAccountIdempotentInstruction, createCloseAccountInstruction, createTransferCheckedInstruction,
   getAssociatedTokenAddressSync, getTransferFeeConfig, getTransferHook, getPausableConfig,
@@ -85,7 +85,13 @@ export async function simulateAndVerifyRecovery(input: {
   const after = result.value.accounts;
   if (!after || after.length !== addresses.length) throw new Error("Recovery simulation missing account readback");
   for (let index = 0; index < accounts.length; index++) {
-    if (after[index] !== null) throw new Error("Simulation did not close yield account");
+    const account = after[index];
+    // RPC can return the emptied system account before the bank purges it.
+    // Accept only that exact closed representation, or an explicit null.
+    if (account !== null && (!account || account.lamports !== 0 || account.data[0] !== "" ||
+      account.owner !== SystemProgram.programId.toBase58() || account.executable)) {
+      throw new Error("Simulation did not close yield account");
+    }
   }
   for (let index = 0; index < destinations.length; index++) {
     const account = accounts.find((item) => item.destination === destinations[index])!;

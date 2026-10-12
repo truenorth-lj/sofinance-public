@@ -47,7 +47,11 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
   const [storageInvalid, setStorageInvalid] = useState(false);
   const [importing, setImporting] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [errorState, setErrorState] = useState<{ message: string; identity: string | null; signature: string | null }>({ message: "", identity: null, signature: null });
+  const setError = useCallback((message: string, identity: string | null = null, signature: string | null = null) =>
+    setErrorState({ message, identity, signature }), []);
+  const clearError = useCallback((identity: string, signature: string | null = null) => setErrorState(previous =>
+    previous.identity === identity && previous.signature === signature ? { message: "", identity: null, signature: null } : previous), []);
   const [stage, setStage] = useState<"preparing" | "wallet" | "broadcasting" | null>(null);
   const identity = `${wallet || ""}:${positionMint || ""}`;
   const identityRef = useRef(identity);
@@ -90,7 +94,7 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
       }
     }, 0);
     return () => { cancelled = true; window.clearTimeout(timer); };
-  }, [wallet]);
+  }, [wallet, setError]);
 
   const refreshState = useCallback(async () => {
     const requestedWallet = wallet;
@@ -104,18 +108,18 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
       if (identityRef.current !== requestedIdentity || requestId !== stateRequest.current) return;
       if (next.wallet !== requestedWallet || next.positionMint !== requestedMint) throw new Error("Yield reading does not match selected position");
       setState(next);
-      if (!keepSubmitErrorRef.current) setError("");
+      if (!keepSubmitErrorRef.current) clearError(requestedIdentity);
     } catch (caught) {
       if (identityRef.current === requestedIdentity && requestId === stateRequest.current) {
         // Keep the last yield snapshot so a transient RPC failure (skipped slot,
         // getBlockTime) cannot grey out One-click compound. Do not overwrite a
         // broadcast/prepare error that expired confirm must still show.
-        if (!keepSubmitErrorRef.current) setError(caught instanceof Error ? caught.message : "Yield reading failed");
+        if (!keepSubmitErrorRef.current) setError(caught instanceof Error ? caught.message : "Yield reading failed", requestedIdentity);
       }
     } finally {
       if (identityRef.current === requestedIdentity && requestId === stateRequest.current) setLoading(false);
     }
-  }, [wallet, positionMint]);
+  }, [wallet, positionMint, clearError, setError]);
   useEffect(() => {
     stateRequest.current++;
     const timer = window.setTimeout(() => { setState(null); setPreview(null); void refreshState(); }, 0);
@@ -134,7 +138,7 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
     if (checked.status === "success" || checked.status === "failed" || checked.status === "expired") {
       if (clearsSubmitError(checked.status)) {
         keepSubmitErrorRef.current = false;
-        setError("");
+        clearError(`${current.wallet}:${current.positionMint}`, current.signature);
       }
       if ((checked.status === "failed" || checked.status === "expired") && current.kind === "compound") {
         removeUnconfirmedCompoundReceipt(window.localStorage, current);
@@ -157,7 +161,7 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
         void refreshState(); onConfirmedRef.current?.();
       }
     }
-  }, [refreshState]);
+  }, [refreshState, clearError]);
   const chainSettled = chainStatus === "success" || chainStatus === "failed" || chainStatus === "expired";
   const transactionUnresolved = !!attempt && attempt.wallet === wallet && !chainSettled && !mayStartAnotherAttempt(attemptStatus);
   useEffect(() => {
@@ -168,7 +172,7 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
       if (checking || cancelled) return;
       checking = true;
       void reconcile(attempt).catch((caught) => {
-      if (!cancelled && walletRef.current === attempt.wallet) setError(caught instanceof Error ? caught.message : "Transaction verification failed, please retain signature");
+      if (!cancelled && walletRef.current === attempt.wallet) setError(caught instanceof Error ? caught.message : "Transaction verification failed, please retain signature", `${attempt.wallet}:${attempt.positionMint}`, attempt.signature);
       }).finally(() => { checking = false; });
     };
     const initial = window.setTimeout(run, 0);
@@ -177,7 +181,7 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
     const slow = window.setTimeout(() => { setConfirmationSlow(true); run(); },
       Math.max(0, slowConfirmationMs - (Date.now() - attempt.createdAt)));
     return () => { cancelled = true; window.clearTimeout(initial); window.clearInterval(poll); window.clearTimeout(slow); };
-  }, [attempt, transactionUnresolved, wallet, reconcile]);
+  }, [attempt, transactionUnresolved, wallet, reconcile, setError]);
 
   const visibleState = state && state.wallet === wallet && state.positionMint === positionMint ? state : null;
   const visiblePreview = preview && preview.state.wallet === wallet && preview.positionMint === positionMint ? preview : null;
@@ -267,13 +271,13 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
           setAttempt(null); setAttemptStatus(null); setConfirmation(null); setChainStatus(null); setConfirmationSlow(false);
           setReceipts(loadCompoundReceipts(window.localStorage, submittedWallet).receipts);
           keepSubmitErrorRef.current = true;
-          setError(outcome.error);
+          setError(outcome.error, `${submittedWallet}:${submittedMint}`, next.signature);
         } else if (outcome.keepPending) {
           keepSubmitErrorRef.current = false;
           setError("");
         } else {
           keepSubmitErrorRef.current = persisted;
-          setError(outcome.error);
+          setError(outcome.error, `${submittedWallet}:${submittedMint}`, next?.signature ?? null);
         }
       }
     } finally { submitting.current = false; setStage(null); }
@@ -281,7 +285,7 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
 
   const retryReconcile = () => {
     if (visibleAttempt) void reconcile(visibleAttempt).catch((caught) => {
-      if (walletRef.current === visibleAttempt.wallet) setError(caught instanceof Error ? caught.message : "Verification failed, original signature retained");
+      if (walletRef.current === visibleAttempt.wallet) setError(caught instanceof Error ? caught.message : "Verification failed, original signature retained", `${visibleAttempt.wallet}:${visibleAttempt.positionMint}`, visibleAttempt.signature);
     });
   };
   const canImport = !!wallet && loadedWallet === wallet && !storageInvalid && !busy && !importing;
@@ -289,6 +293,7 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
     if (!wallet || !canImport) return;
     const requestedWallet = wallet;
     const requestedSignature = signature.trim();
+    const requestedIdentity = identity;
     setImporting(true); setError("");
     try {
       const response = await post<{ receipt: CompoundReceipt }>("/api/compound-recover-import", {
@@ -301,12 +306,16 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
       persistCompoundReceipt(window.localStorage, response.receipt);
       setReceipts(loadCompoundReceipts(window.localStorage, requestedWallet).receipts);
     } catch (caught) {
-      if (walletRef.current === requestedWallet) setError(caught instanceof Error ? caught.message : "Yield account query failed");
+      if (walletRef.current === requestedWallet) setError(caught instanceof Error ? caught.message : "Yield account query failed", requestedIdentity);
     } finally { setImporting(false); }
   }
   return { wallet, positionMint, state: visibleState, preview: visiblePreview, attempt: visibleAttempt, attemptStatus,
     confirmation: visibleAttempt && confirmation?.signature === visibleAttempt.signature ? confirmation : null,
-    receipts: loadedWallet === wallet ? receipts : [], error, loading, busy, stage, walletBlocked, externalBlocked,
+    receipts: loadedWallet === wallet ? receipts : [],
+    error: errorState.identity === null || errorState.identity === identity ? errorState.message : "",
+    attemptError: visibleAttempt && errorState.identity === `${visibleAttempt.wallet}:${visibleAttempt.positionMint}` &&
+      errorState.signature === visibleAttempt.signature ? errorState.message : "",
+    loading, busy, stage, walletBlocked, externalBlocked,
     receiptReviewRequired, confirmationSlow: confirmationSlow && transactionUnresolved,
     canCompound, hasFees, priorReceipts, importing, canImport, importReceipt,
     ready: !!wallet && connection.connected && loadedWallet === wallet && !walletBlocked && !externalBlocked && !receiptReviewRequired,

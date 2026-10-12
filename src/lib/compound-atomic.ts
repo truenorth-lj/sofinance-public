@@ -3,7 +3,7 @@ import "server-only";
 import { createHash, randomBytes } from "node:crypto";
 import BN from "bn.js";
 import { ClmmInstrument, getPdaExBitmapAccount, getPdaProtocolPositionAddress, getPdaTickArrayAddress, PersonalPositionLayout, Raydium, TickArrayUtil } from "@raydium-io/raydium-sdk-v2";
-import { createAssociatedTokenAccountIdempotentInstruction, createInitializeAccount3Instruction, getAccountLenForMint, TOKEN_2022_PROGRAM_ID, unpackMint } from "@solana/spl-token";
+import { createAssociatedTokenAccountIdempotentInstruction, createInitializeAccountInstruction, getAccountLenForMint, TOKEN_2022_PROGRAM_ID, unpackMint } from "@solana/spl-token";
 import { ComputeBudgetProgram, PublicKey, SystemProgram, TransactionMessage, VersionedTransaction, type TransactionInstruction } from "@solana/web3.js";
 import { rpcConnection } from "./rpc";
 import { beamTipInstruction, chooseBeamTransaction, fetchBeamTipAddress } from "./solami-beam";
@@ -15,18 +15,25 @@ import { conservativeSwapBalances, sizeBufferedCompoundLiquidity } from "./compo
 import { buildCompoundSwapPlan } from "./compound-swap";
 import { readCompoundPriorSources } from "./compound-prior-sources";
 import { readSwapFeeConfig, swapFeeTransferInstructions, unfundedSwapFeeAtaRent } from "./swap-fee";
+import { versionedTransactionSize } from "./open-transaction";
 import type { CompoundAccount, CompoundPositionState, CompoundSummary } from "./compound-types";
 
 const discriminator = (name: string) => createHash("sha256").update(`global:${name}`).digest().subarray(0, 8);
 const readU128 = (data: Buffer, offset: number) => data.readBigUInt64LE(offset) + (data.readBigUInt64LE(offset + 8) << 64n);
-function transactionSize(transaction: VersionedTransaction) {
-  let size: number;
-  try { size = transaction.serialize().length; } catch (error) {
-    if (error instanceof RangeError || error instanceof Error && error.message.includes("encoding overruns Uint8Array")) throw new Error("Complete compound transaction exceeds 1,232 byte limit, this position not supported in phase one");
-    throw error;
-  }
-  if (size > 1_232) throw new Error("Complete compound transaction exceeds 1,232 byte limit");
+export function assertCompoundTransactionSize(transaction: VersionedTransaction) {
+  const size = versionedTransactionSize(transaction);
+  if (size > 1_232) throw new Error(`Complete compound transaction ${size} bytes, exceeds 1,232 byte limit; no transaction was sent`);
   return size;
+}
+
+export function createCompoundAccountInstructions(wallet: PublicKey, account: CompoundAccount) {
+  const address = new PublicKey(account.address), program = new PublicKey(account.program);
+  // NON-idempotent creation rejects any pre-funded source. InitializeAccount
+  // references the payer/owner by index rather than repeating its 32 bytes.
+  // Both initializations share the rent sysvar in Raydium's common ALT.
+  return [SystemProgram.createAccountWithSeed({ fromPubkey: wallet, basePubkey: wallet, seed: account.seed,
+    newAccountPubkey: address, lamports: account.rentLamports, space: account.space, programId: program }),
+  createInitializeAccountInstruction(address, new PublicKey(account.mint), wallet, program)];
 }
 
 /** Independent protocol-shape checks: harvest never removes principal; add never reads ordinary ATAs. */
@@ -79,11 +86,9 @@ export async function buildAndSimulateCompound(walletAddress: string, positionMi
     const rentLamports = await connection.getMinimumBalanceForRentExemption(space, "confirmed");
     const seed = randomBytes(16).toString("base64url");
     const address = await PublicKey.createWithSeed(wallet, seed, program);
-    // Intentionally NON-idempotent: an account funded before execution must fail,
-    // not silently become a source of someone else's previous wallet principal.
-    setup.push(SystemProgram.createAccountWithSeed({ fromPubkey: wallet, basePubkey: wallet, seed, newAccountPubkey: address, lamports: rentLamports, space, programId: program }),
-      createInitializeAccount3Instruction(address, mint, wallet, program));
-    compoundAccounts.push({ seed, address: address.toBase58(), mint: mintAddress!, program: programAddress!, space, rentLamports });
+    const account = { seed, address: address.toBase58(), mint: mintAddress!, program: programAddress!, space, rentLamports };
+    setup.push(...createCompoundAccountInstructions(wallet, account));
+    compoundAccounts.push(account);
   }
   const accounts = compoundAccounts as [CompoundAccount, CompoundAccount];
   let rentLamports = accounts.reduce((sum, account) => sum + account.rentLamports, 0);
@@ -131,7 +136,7 @@ export async function buildAndSimulateCompound(walletAddress: string, positionMi
     instructions: [ComputeBudgetProgram.setComputeUnitLimit({ units: 1_400_000 }), ...setup, ...instructions] }).compileToV0Message(tables));
   const tip = await fetchBeamTipAddress();
   const baseline = build(harvest.instructions);
-  transactionSize(baseline);
+  assertCompoundTransactionSize(baseline);
   const fee = await connection.getFeeForMessage(baseline.message, "confirmed");
   if (fee.value === null) throw new Error("Unable to estimate compound network fee");
   const maxSolDebitLamports = BigInt(rentLamports + fee.value + 100_000 + (tip ? tip.lamports : 0));
@@ -184,7 +189,7 @@ export async function buildAndSimulateCompound(walletAddress: string, positionMi
     : null;
   const chosen = chooseBeamTransaction(withoutTip, withTip);
   const simulated = chosen.transaction;
-  const sizeBytes = transactionSize(simulated);
+  const sizeBytes = assertCompoundTransactionSize(simulated);
   const verified = await simulateWithFee(simulated, sized.liquidity);
   if (verified.rewards.some((reward) => BigInt(reward.amount) > 0n)) throw new Error("Simulation found unswapped third reward yield, cannot fully reinvest; please reprepare");
   const creditedPrior = (mint: string) => prior.sources.filter((source) => source.mint === mint).reduce((sum, source) => sum + BigInt(source.amount), 0n);
