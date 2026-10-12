@@ -10,6 +10,7 @@ import { rpcConnection } from "./rpc";
 import { beamTipInstruction, chooseBeamTransaction, fetchBeamTipAddress } from "./solami-beam";
 import { isTxOversizeError, type JupiterRouteConstraints } from "./jupiter-route-retry";
 import type { BuildRoute } from "./jupiter-route";
+import type { JupiterRetryBudget } from "./jupiter/client";
 import { getSelectedQuoteBundle } from "./selected-quote";
 import { simulateAndVerifySelectedTransaction } from "./selected-simulation";
 import { readSelectedPositionState, type PositionSelection, type SelectedPositionState } from "./selected-state";
@@ -35,7 +36,7 @@ async function rejectUnselectedWalletTokenWrites(
 
 export async function buildAndSimulateSelectedZap(
   walletAddress: string, selection: PositionSelection, amount: string, floorBps: number,
-  toleranceBps?: number, options?: { enforceResaleFloor?: boolean; signal?: AbortSignal },
+  toleranceBps?: number, options?: { enforceResaleFloor?: boolean; signal?: AbortSignal; budget?: JupiterRetryBudget },
 ) {
   const connection = rpcConnection(undefined, { signal: options?.signal });
   const state = await readSelectedPositionState(walletAddress, selection, connection, false, { displayPrices: false });
@@ -44,7 +45,7 @@ export async function buildAndSimulateSelectedZap(
     options?.signal?.throwIfAborted();
     try {
       return await buildAndSimulateSelectedZapOnce(walletAddress, selection, amount, floorBps, toleranceBps,
-        jupiter, options?.enforceResaleFloor !== false, connection, state, options?.signal);
+        jupiter, options?.enforceResaleFloor !== false, connection, state, options?.signal, options?.budget);
     } catch (error) {
       if (index === attempts.length - 1 || !isTxOversizeError(error)) throw error;
     }
@@ -56,10 +57,11 @@ async function buildAndSimulateSelectedZapOnce(
   walletAddress: string, selection: PositionSelection, amount: string, floorBps: number,
   toleranceBps: number | undefined,
   jupiter: JupiterRouteConstraints, enforceResaleFloor: boolean, connection: Connection, state: SelectedPositionState, signal?: AbortSignal,
+  budget?: JupiterRetryBudget,
 ) {
   const wallet = new PublicKey(walletAddress);
   const { quote, legs } = await getSelectedQuoteBundle(walletAddress, selection, amount, floorBps, toleranceBps, jupiter,
-    { state, connection, signal, buildTransactions: true, includeResale: enforceResaleFloor });
+    { state, connection, signal, budget, buildTransactions: true, includeResale: enforceResaleFloor });
   if (enforceResaleFloor && !quote.passesFloor) throw new Error(quote.warning || "Conservative immediate resale ratio below selected threshold");
   if (Date.now() >= quote.expiresAt) throw new Error("Quote expired, please resimulate");
   const routes = legs.flatMap((item) => {

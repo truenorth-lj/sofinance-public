@@ -1,19 +1,24 @@
+import type { JupiterRetryBudget } from "./jupiter/client";
+
 // The read-only quote/prepare budget never applies to broadcasting a signed transaction.
 export const SELECTED_DEADLINE_MS = 8_000;
 
-export async function withSelectedDeadline(request: Request, run: (signal: AbortSignal) => Promise<Response>) {
+export async function withSelectedDeadline(request: Request,
+  run: (signal: AbortSignal, budget: JupiterRetryBudget) => Promise<Response>) {
   const started = performance.now();
   const controller = new AbortController();
+  const budget = { deadlineAt: Date.now() + SELECTED_DEADLINE_MS, retriesLeft: 1 };
   const timer = setTimeout(() => controller.abort(new DOMException("Preparation took too long; please retry", "TimeoutError")), SELECTED_DEADLINE_MS);
   const signal = AbortSignal.any([request.signal, controller.signal]);
   let abort: (() => void) | undefined;
   try {
+    signal.throwIfAborted();
     const cancelled = new Promise<never>((_, reject) => {
       abort = () => reject(signal.reason);
       signal.addEventListener("abort", abort, { once: true });
       if (signal.aborted) abort();
     });
-    const response = await Promise.race([run(signal), cancelled]);
+    const response = await Promise.race([run(signal, budget), cancelled]);
     signal.throwIfAborted();
     response.headers.set("Server-Timing", `total;dur=${(performance.now() - started).toFixed(1)}`);
     return response;
@@ -27,5 +32,7 @@ export async function withSelectedDeadline(request: Request, run: (signal: Abort
   } finally {
     clearTimeout(timer);
     if (abort) signal.removeEventListener("abort", abort);
+    // Promise.all rejection does not cancel its siblings. Stop them after choosing the response.
+    controller.abort();
   }
 }

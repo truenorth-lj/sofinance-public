@@ -35,12 +35,11 @@ export class JupiterUnavailableError extends Error {
 
 export function retryAfterFromJupiterHeaders(headers: Headers, now = Date.now()): number | null {
   const retryAfter = parseRetryAfter(headers.get("retry-after"), now);
-  if (retryAfter !== null) return retryAfter;
-  const reset = headers.get("x-ratelimit-reset");
-  if (!reset) return null;
-  const unix = Number(reset);
-  if (!Number.isFinite(unix)) return null;
-  return Math.max(0, Math.ceil(unix * 1000 - now));
+  const reset = headers.get("x-ratelimit-reset")?.trim();
+  const unix = reset ? Number(reset) : NaN;
+  const resetWait = Number.isFinite(unix) && unix >= 0 ? Math.max(0, Math.ceil(unix * 1000 - now)) : null;
+  const wait = retryAfter === null ? resetWait : Math.max(retryAfter, resetWait ?? 0);
+  return wait === null ? null : Math.min(wait, Number.MAX_SAFE_INTEGER);
 }
 
 export function classifyJupiterError(error: unknown): JupiterErrorKind {

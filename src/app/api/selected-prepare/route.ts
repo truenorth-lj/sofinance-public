@@ -1,16 +1,16 @@
 import { withSelectedDeadline } from "@/lib/selected-deadline";
 import { parseSelectedQuoteRequest } from "@/lib/api-input";
-import { apiError } from "@/lib/api-response";
+import { selectedApiError } from "@/lib/api-response";
 import { buildAndSimulateSelectedZap } from "@/lib/selected-atomic";
 import { issueSelectedPermit } from "@/lib/selected-permit";
 import { getSigningSecret } from "@/lib/config/server-env";
 
 export async function POST(request: Request) {
-  return withSelectedDeadline(request, async (signal) => {
+  return withSelectedDeadline(request, async (signal, budget) => {
   try {
     const { wallet, selection, amount, floorBps, toleranceBps } = await parseSelectedQuoteRequest(request);
     const { summary, transaction } = await buildAndSimulateSelectedZap(wallet, selection, amount, floorBps, toleranceBps,
-      { enforceResaleFloor: false, signal });
+      { enforceResaleFloor: false, signal, budget });
     signal.throwIfAborted();
     const permit = issueSelectedPermit(getSigningSecret(), {
       message: Buffer.from(transaction.message.serialize()).toString("base64"), wallet, selection,
@@ -25,7 +25,7 @@ export async function POST(request: Request) {
       headers: { "Cache-Control": "no-store" },
     });
   } catch (error) {
-    return apiError(error, "Transaction preparation failed");
+    return selectedApiError(error, "Transaction preparation failed");
   }
   });
 }

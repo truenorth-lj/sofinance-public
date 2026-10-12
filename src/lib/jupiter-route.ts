@@ -5,6 +5,7 @@ import { MAX_PRICE_IMPACT_BPS, SLIPPAGE_BPS } from "./ids";
 import { acceptableReportedPriceImpact } from "./quote-guards";
 import type { JupiterRouteConstraints } from "./jupiter-route-retry";
 import { getJupiterApiKey } from "./config/server-env";
+import type { JupiterRetryBudget } from "./jupiter/client";
 
 export type ApiInstruction = { programId: string; accounts: { pubkey: string; isSigner: boolean; isWritable: boolean }[]; data: string };
 export type BuildRoute = {
@@ -33,6 +34,7 @@ export async function buildRoute(
   wrapAndUnwrapSol?: boolean,
   constraints: JupiterRouteConstraints | number = { maxAccounts: 48 },
   signal?: AbortSignal,
+  budget?: JupiterRetryBudget,
 ): Promise<BuildRoute> {
   const key = getJupiterApiKey();
   if (!key && process.env.E2E_KEYLESS_JUPITER !== "1") throw new Error("Server-side JUPITER_API_KEY not set, cannot obtain real-time quotes");
@@ -54,6 +56,7 @@ export async function buildRoute(
       query,
       apiKey: key,
       cacheKey: null,
+      budget,
       signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(12_000)]) : AbortSignal.timeout(12_000),
     });
   } catch (error) {
@@ -61,8 +64,7 @@ export async function buildRoute(
     if (error instanceof JupiterHttpError && error.status === 400 && /^no routes found$/i.test(error.bodyError ?? "")) {
       throw new JupiterNoRouteError();
     }
-    const status = error instanceof JupiterHttpError ? error.status : "error";
-    throw new Error(`Jupiter /build has no available routes (HTTP ${status})`);
+    throw error;
   }
   if (route.inputMint !== inputMint || route.outputMint !== outputMint || BigInt(route.inAmount) !== amount || route.swapMode !== "ExactIn" || route.slippageBps !== SLIPPAGE_BPS || BigInt(route.otherAmountThreshold) <= 0n || BigInt(route.otherAmountThreshold) > BigInt(route.outAmount) || !route.swapInstruction || !Array.isArray(route.routePlan) || route.routePlan.length === 0) throw new Error("Jupiter route content does not match request");
   if (!acceptableReportedPriceImpact(route.priceImpactPct, MAX_PRICE_IMPACT_BPS)) throw new Error(`Swap price impact invalid or exceeds ${MAX_PRICE_IMPACT_BPS / 100}% limit`);
@@ -74,13 +76,14 @@ export type QuoteRoute = Pick<BuildRoute, "inputMint" | "outputMint" | "inAmount
 
 /** Lightweight, uncached execution estimate; no transaction instructions. */
 export async function quoteRoute(inputMint: string, outputMint: string, amount: bigint,
-  constraints: JupiterRouteConstraints = { maxAccounts: 24 }, signal?: AbortSignal): Promise<QuoteRoute> {
+  constraints: JupiterRouteConstraints = { maxAccounts: 24 }, signal?: AbortSignal,
+  budget?: JupiterRetryBudget): Promise<QuoteRoute> {
   const key = getJupiterApiKey();
   if (!key && process.env.E2E_KEYLESS_JUPITER !== "1") throw new Error("Server-side JUPITER_API_KEY not set, cannot obtain real-time quotes");
   const route = await jupiterRequest<QuoteRoute>({ path: "/swap/v1/quote",
     query: { inputMint, outputMint, amount: amount.toString(), slippageBps: SLIPPAGE_BPS,
       maxAccounts: constraints.maxAccounts, ...(constraints.onlyDirectRoutes ? { onlyDirectRoutes: true } : {}) },
-    apiKey: key, cacheKey: null, signal,
+    apiKey: key, cacheKey: null, signal, budget,
   });
   if (route.inputMint !== inputMint || route.outputMint !== outputMint || BigInt(route.inAmount) !== amount ||
     route.swapMode !== "ExactIn" || route.slippageBps !== SLIPPAGE_BPS ||

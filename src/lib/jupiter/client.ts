@@ -29,6 +29,11 @@ export const JUPITER_QUOTE_TTL_MS = 8_000;
 export const JUPITER_PRICE_TTL_MS = 10_000;
 export const EXIT_JUPITER_CONCURRENCY = 2;
 
+/** Shared by all Jupiter legs in one selected request, including compact rebuilds. */
+export type JupiterRetryBudget = { deadlineAt: number; retriesLeft: number };
+// Admission headroom for a retry and downstream work; the parent signal is the hard deadline.
+const RETRY_HEADROOM_MS = 1_000;
+
 let override: Partial<RetryConfig> | null = null;
 
 export function setJupiterRetryConfig(config: Partial<RetryConfig> | null): void {
@@ -52,6 +57,7 @@ export type JupiterRequestOptions = {
   retry?: Partial<RetryConfig> | null;
   headers?: Record<string, string>;
   next?: { revalidate?: number };
+  budget?: JupiterRetryBudget;
 };
 
 export type JupiterQuoteParams = {
@@ -78,6 +84,7 @@ async function readBodyError(response: Response): Promise<string | null> {
 }
 
 async function fetchJupiterOnce<T>(options: JupiterRequestOptions): Promise<T> {
+  const started = performance.now();
   const method = options.method ?? (options.body !== undefined ? "POST" : "GET");
   const url = jupiterUrl(options.path, options.query);
   const headers = jupiterHeaders(options.apiKey, {
@@ -92,6 +99,20 @@ async function fetchJupiterOnce<T>(options: JupiterRequestOptions): Promise<T> {
     signal: options.signal,
     ...(options.next ? { next: options.next } : {}),
   } as RequestInit);
+  if (options.budget) {
+    const numberHeader = (name: string) => {
+      const text = response.headers.get(name)?.trim();
+      const value = text ? Number(text) : NaN;
+      return Number.isFinite(value) ? value : undefined;
+    };
+    emitJupiterLog({ path: options.path, method, selected: true,
+      outcome: response.ok ? "ok" : "error", status: response.status,
+      durationMs: Math.round(performance.now() - started),
+      rateLimitCurrent: numberHeader("x-ratelimit-current"),
+      rateLimitRemaining: numberHeader("x-ratelimit-remaining"),
+      rateLimitReset: numberHeader("x-ratelimit-reset"),
+    });
+  }
   if (!response.ok) {
     const bodyError = await readBodyError(response);
     throw new JupiterHttpError(
@@ -118,13 +139,17 @@ async function invokeJupiter<T>(options: JupiterRequestOptions): Promise<{ value
       if (isUserAbort(error, options.signal)) throw error;
       const kind = classifyJupiterError(error);
       const elapsed = Date.now() - started;
-      const canRetry = isRetryableJupiterKind(kind) && attempt < config.maxAttempts && elapsed < config.budgetMs;
+      const budget = options.budget;
+      // Shared quota cannot recover by retrying both legs within this short request.
+      const canRetry = isRetryableJupiterKind(kind) && attempt < config.maxAttempts && elapsed < config.budgetMs &&
+        (!budget || kind !== "rate-limit" && budget.retriesLeft > 0);
       if (!canRetry) throw error;
-      const delayMs = computeBackoffMs(attempt, {
-        retryAfterMs: error instanceof JupiterHttpError ? error.retryAfterMs : null,
-        config,
-      });
-      if (elapsed + delayMs > config.budgetMs) throw error;
+      // Server-directed waits are minimums, not exponential-backoff caps.
+      const delayMs = (error instanceof JupiterHttpError ? error.retryAfterMs : null) ??
+        computeBackoffMs(attempt, { config });
+      if (elapsed + delayMs >= config.budgetMs ||
+        budget && Date.now() + delayMs + RETRY_HEADROOM_MS >= budget.deadlineAt) throw error;
+      if (budget) budget.retriesLeft -= 1; // Reserve before await; parallel legs share this allowance.
       emitJupiterLog({
         path: options.path,
         method: options.method ?? (options.body !== undefined ? "POST" : "GET"),
@@ -132,8 +157,10 @@ async function invokeJupiter<T>(options: JupiterRequestOptions): Promise<{ value
         attempt,
         errorKind: kind,
         status: error instanceof JupiterHttpError ? error.status : undefined,
+        selected: Boolean(budget), delayMs,
       });
       await sleep(delayMs, options.signal);
+      if (budget && Date.now() + RETRY_HEADROOM_MS >= budget.deadlineAt) throw error;
       retries += 1;
     }
   }
@@ -148,7 +175,7 @@ export async function jupiterRequest<T>(options: JupiterRequestOptions): Promise
     cacheable ? options.cacheTtlMs! : null,
     async () => {
       const result = await invokeJupiter<T>(options);
-      emitJupiterLog({
+      if (!options.budget) emitJupiterLog({
         path: options.path,
         method,
         outcome: "ok",

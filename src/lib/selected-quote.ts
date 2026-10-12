@@ -8,6 +8,7 @@ import { allocateSpend, padAmountMax, positionSide, toleranceLiquidity } from ".
 import { buildRoute, quoteRoute, type QuoteRoute } from "./jupiter-route";
 import type { Connection } from "@solana/web3.js";
 import type { JupiterRouteConstraints } from "./jupiter-route-retry";
+import type { JupiterRetryBudget } from "./jupiter/client";
 import { readSelectedPositionState, type PositionSelection, type SelectedPositionState } from "./selected-state";
 
 type SwapLeg = { inputMint: string; outputMint: string; spend: bigint; minOut: bigint; route: QuoteRoute | null };
@@ -38,13 +39,13 @@ function amountsAt(state: SelectedPositionState, sqrt: BN, liquidity: BN) {
 
 async function leg(
   wallet: string, inputMint: string, outputMint: string, spend: bigint, nativeSource = false,
-  jupiter?: JupiterRouteConstraints, build = false, signal?: AbortSignal,
+  jupiter?: JupiterRouteConstraints, build = false, signal?: AbortSignal, budget?: JupiterRetryBudget,
 ): Promise<SwapLeg> {
   if (spend <= 0n) throw new Error("Swap amount must be greater than zero");
   if (inputMint === outputMint) return { inputMint, outputMint, spend, minOut: spend, route: null };
   const route = build
-    ? await buildRoute(wallet, inputMint, outputMint, spend, nativeSource, jupiter, signal)
-    : await quoteRoute(inputMint, outputMint, spend, jupiter, signal);
+    ? await buildRoute(wallet, inputMint, outputMint, spend, nativeSource, jupiter, signal, budget)
+    : await quoteRoute(inputMint, outputMint, spend, jupiter, signal, budget);
   return { inputMint, outputMint, spend, minOut: BigInt(route.otherAmountThreshold), route };
 }
 
@@ -59,16 +60,16 @@ export async function getSelectedQuoteBundle(
   requestedFloorBps = DEFAULT_RESALE_FLOOR_BPS, requestedToleranceBps = DEFAULT_ADD_TOLERANCE_BPS,
   jupiter?: JupiterRouteConstraints,
   options: { buildTransactions?: boolean; includeResale?: boolean; signal?: AbortSignal;
-    connection?: Connection; state?: SelectedPositionState } = {},
+    budget?: JupiterRetryBudget; connection?: Connection; state?: SelectedPositionState } = {},
 ) {
   const floorBps = parseResaleFloorBps(requestedFloorBps);
   const toleranceBps = parseAddToleranceBps(requestedToleranceBps);
   const state = options.state ?? await readSelectedPositionState(wallet, selection, options.connection, false, { displayPrices: false });
   if (state.inputKind === "native" && state.wsolBalance !== "0") throw new Error("Native SOL input already has WSOL ATA balance, please handle separately to avoid using existing WSOL");
   const actualLeg = (outputMint: string, spend: bigint) => leg(wallet, state.inputMint, outputMint, spend,
-    state.inputKind === "native", jupiter, options.buildTransactions !== false, options.signal);
+    state.inputKind === "native", jupiter, options.buildTransactions !== false, options.signal, options.budget);
   const probeLeg = (outputMint: string) => leg(wallet, state.inputMint, outputMint, probe,
-    state.inputKind === "native", jupiter, false, options.signal);
+    state.inputKind === "native", jupiter, false, options.signal, options.budget);
   if (!state.ownsNft) throw new Error("Wallet does not have an available position NFT ATA for the selected position");
   if (state.paused || state.frozen || state.transferFee || state.unsupportedExtensions.length) {
     throw new Error(`Pool asset currently paused, account frozen, transfer fee charged, or has unsupported settings${state.unsupportedExtensions.length ? `: ${state.unsupportedExtensions.join(", ")}` : ""}`);
@@ -124,8 +125,8 @@ export async function getSelectedQuoteBundle(
   // gates swap round-trip cost and price impact on the full swap output.
   const includeResale = options.includeResale !== false;
   const resaleLegs = includeResale ? await Promise.all([
-    outA > 0n ? leg(wallet, state.mintA, state.inputMint, outA, false, jupiter, false, options.signal) : null,
-    outB > 0n ? leg(wallet, state.mintB, state.inputMint, outB, false, jupiter, false, options.signal) : null,
+    outA > 0n ? leg(wallet, state.mintA, state.inputMint, outA, false, jupiter, false, options.signal, options.budget) : null,
+    outB > 0n ? leg(wallet, state.mintB, state.inputMint, outB, false, jupiter, false, options.signal, options.budget) : null,
   ]) : [];
   const resale = resaleLegs.reduce((sum, item) => sum + (item?.minOut || 0n), 0n);
   const timestamp = Date.now();
