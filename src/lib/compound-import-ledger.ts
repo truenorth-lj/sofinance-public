@@ -1,7 +1,8 @@
 import { TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID } from "@solana/spl-token";
-import { type ParsedInstruction, type ParsedTransactionWithMeta, type PartiallyDecodedInstruction } from "@solana/web3.js";
+import { PublicKey, type ParsedInstruction, type ParsedTransactionWithMeta, type PartiallyDecodedInstruction } from "@solana/web3.js";
 import bs58 from "bs58";
 import type { CompoundReceipt } from "./compound-attempt";
+import { computeSwapFee, MAX_SWAP_FEE_BPS, readSwapFeeConfig, swapFeeRecipientAta } from "./swap-fee";
 
 export type ImportedPriorCredit = { address: string; mint: string; program: string; amount: bigint; preAmount: bigint; positionMint: string; poolId: string; positionAccount: string };
 export type CompoundImportOptions = { verifyYield?: boolean; verifyPriorCredit?: (credit: ImportedPriorCredit) => Promise<void> };
@@ -44,6 +45,7 @@ export async function verifyImportedYieldLedger(transaction: ParsedTransactionWi
     ...transaction.transaction.message.instructions.map((instruction, parent) => ({ instruction, parent, topLevel: true })),
     ...(transaction.meta!.innerInstructions ?? []).flatMap((group) => group.instructions.map((instruction) => ({ instruction, parent: group.index, topLevel: false }))),
   ];
+  let protocolFeePaid = false;
   for (const { instruction, parent, topLevel } of transfers) {
     if (!("parsed" in instruction) || ![TOKEN_PROGRAM_ID.toBase58(), TOKEN_2022_PROGRAM_ID.toBase58()].includes(instruction.programId.toBase58()) || !["transfer", "transferChecked"].includes(instruction.parsed.type)) continue;
     const info = instruction.parsed.info as Record<string, unknown>;
@@ -64,6 +66,20 @@ export async function verifyImportedYieldLedger(transaction: ParsedTransactionWi
       proven = info.destination === add.instruction.accounts[9 + index]!.toBase58() && info.authority === receipt.wallet;
     } else if (!topLevel && swap && parent === swap.index) {
       proven = from >= 0 ? info.destination === swap.instruction.accounts[5]?.toBase58() && info.authority === receipt.wallet : info.source === swap.instruction.accounts[6]?.toBase58();
+    } else if (topLevel && swap && parent > harvest.index && parent < swap.index && from >= 0 &&
+      instruction.parsed.type === "transferChecked" && info.authority === receipt.wallet) {
+      const { wallet: feeWallet } = readSwapFeeConfig();
+      const inputAmount = Buffer.from(bs58.decode(swap.instruction.data)).readBigUInt64LE(8);
+      // Historic bps can differ from today's setting. Only recognize one
+      // bounded debit to the configured recipient's exact mint/program ATA.
+      const destination = feeWallet && swapFeeRecipientAta(feeWallet, new PublicKey(account.mint), new PublicKey(account.program));
+      const recordIndex = transaction.transaction.message.accountKeys.findIndex(key => key.pubkey.toBase58() === account.address);
+      const decimals = records!.find(record => record.accountIndex === recordIndex)!.uiTokenAmount.decimals;
+      proven = !protocolFeePaid && account.address === swap.instruction.accounts[3]?.toBase58() &&
+        info.destination === destination?.toBase58() && typeof info.tokenAmount === "object" && info.tokenAmount !== null &&
+        (info.tokenAmount as { decimals?: unknown }).decimals === decimals &&
+        amount > 0n && amount <= computeSwapFee(inputAmount + amount, MAX_SWAP_FEE_BPS);
+      if (proven) protocolFeePaid = true;
     } else if (topLevel && parent < harvest.index && to >= 0 && instruction.parsed.type === "transferChecked" && info.authority === receipt.wallet) {
       if (!options.verifyPriorCredit || typeof info.source !== "string") throw new Error("Original yield import lacks provable historical source");
       const sourceIndex = transaction.transaction.message.accountKeys.findIndex((key) => key.pubkey.toBase58() === info.source);

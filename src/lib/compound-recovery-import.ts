@@ -51,7 +51,7 @@ export async function importCompoundReceipt(transaction: ParsedTransactionWithMe
       throw new Error("Yield account seed, creator, or token program mismatch");
     }
     const initialized = message.instructions.some((instruction) => "parsed" in instruction && instruction.programId.toBase58() === info.owner &&
-      instruction.parsed.type === "initializeAccount3" && instruction.parsed.info?.account === address &&
+      ["initializeAccount", "initializeAccount3"].includes(instruction.parsed.type) && instruction.parsed.info?.account === address &&
       instruction.parsed.info?.mint === mint && instruction.parsed.info?.owner === wallet);
     if (!initialized) throw new Error("Yield account initialization owner mismatch");
     accounts.push({ seed: info.seed, address, mint, program: info.owner,

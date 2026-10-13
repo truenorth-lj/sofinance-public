@@ -39,8 +39,8 @@ let fetchMock: ReturnType<typeof vi.fn>;
 const advance = async (ms: number) => { await act(async () => { await vi.advanceTimersByTimeAsync(ms); }); };
 const addButton = () => [...container.querySelectorAll<HTMLButtonElement>("#deposit-view button")].find((b) => b.textContent === "Add liquidity")!;
 const confirmCalls = () => fetchMock.mock.calls.filter(([url]) => url === "/api/compound-confirm").length;
-async function render() {
-  await act(async () => root.render(createElement(SelectedApp as FunctionComponent<{ initialView: "deposit" }>, { initialView: "deposit" })));
+async function render(initialView: "compound" | "deposit" = "deposit") {
+  await act(async () => root.render(createElement(SelectedApp as FunctionComponent<{ initialView: "compound" | "deposit" }>, { initialView })));
   await advance(1); await advance(1);
 }
 beforeEach(() => {
@@ -103,7 +103,8 @@ describe("compound execution lock in the real SelectedApp", () => {
     await render(); expect(controller.walletBlocked).toBe(true);
     reply = { signature: "different", status: "manual-review", chainStatus: "success", state: null };
     await advance(4_000); expect(controller.walletBlocked).toBe(true);
-    expect(controller.error).toContain("signature or status mismatch");
+    expect(controller.error).toBe("");
+    expect(controller.attemptError).toContain("signature or status mismatch");
   });
   it("reloads and rechecks an old successful attempt instead of persisting its previous manual-review lock", async () => {
     reply = { status: "manual-review", chainStatus: "success", state: null };
@@ -122,5 +123,59 @@ describe("compound execution lock in the real SelectedApp", () => {
     persistCompoundAttempt(window.localStorage, next.attempt);
     reply = { status: "pending", chainStatus: "pending", state: null };
     await render(); expect(controller.walletBlocked).toBe(true); expect(addButton().disabled).toBe(true);
+  });
+  it("keeps another NFT's successful transaction and receipts in explicitly labelled collapsed history", async () => {
+    reply = { status: "success", chainStatus: "success", state: null };
+    await render("compound");
+    const view = container.querySelector("#compound-view")!;
+    const success = [...view.querySelectorAll('[role="status"]')].find(node => node.textContent === "Compound confirmed on-chain")!;
+    expect(success.closest("details")!.open).toBe(false);
+    expect(success.closest("details")!.querySelector("summary")!.textContent).toContain("Previous transaction for another position");
+    expect(view.textContent).toContain("0 records for this position");
+    expect(view.textContent).toContain("Other positions (1 records)");
+    expect(controller.canCompound).toBe(true);
+    selectedMint = fixture.attempt.positionMint;
+    await render("compound");
+    const selectedSuccess = [...view.querySelectorAll('[role="status"]')].find(node => node.textContent === "Compound confirmed on-chain")!;
+    expect(selectedSuccess.closest("details")).toBeNull();
+    expect(view.textContent).toContain("1 records for this position");
+    expect(view.textContent).not.toContain("Other positions (1 records)");
+  });
+  it.each([false, true])("scopes failed preparation and retains it when old success is requeried (same NFT: %s)", async sameNft => {
+    if (sameNft) selectedMint = fixture.attempt.positionMint;
+    reply = { status: "success", chainStatus: "success", state: null };
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url === "/api/compound-state") return Response.json({ ...fixture.state, wallet: activeWallet, positionMint: selectedMint });
+      if (url === "/api/compound-confirm") return Response.json({ signature: fixture.attempt.signature, ...reply });
+      if (url === "/api/compound-prepare") return Response.json({ error: "Complete compound transaction 1268 bytes, exceeds 1,232 byte limit" }, { status: 400 });
+      throw new Error(`Unexpected request ${url}`);
+    });
+    await render("compound");
+    await act(async () => controller.compound());
+    expect(controller.error).toContain("1268 bytes");
+    expect(controller.attempt?.signature).toBe(fixture.attempt.signature);
+    await act(async () => controller.retryReconcile());
+    expect(controller.error).toContain("1268 bytes");
+    selectedMint = sameNft ? testKeypair(80).publicKey.toBase58() : fixture.attempt.positionMint;
+    await render("compound");
+    expect(controller.error).toBe("");
+    expect(mocks.sign).not.toHaveBeenCalled();
+  });
+  it("shows a failed other-NFT recovery beside its receipt and keeps its evidence", async () => {
+    reply = { status: "success", chainStatus: "success", state: null };
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url === "/api/compound-state") return Response.json({ ...fixture.state, wallet: activeWallet, positionMint: selectedMint });
+      if (url === "/api/compound-confirm") return Response.json({ signature: fixture.attempt.signature, ...reply });
+      if (url === "/api/compound-recover-prepare") return Response.json({ error: "Recovery simulation failed" }, { status: 400 });
+      throw new Error(`Unexpected request ${url}`);
+    });
+    await render("compound");
+    await act(async () => controller.recover(controller.receipts[0]!));
+    expect(controller.error).toBe("");
+    expect(controller.recoveryError).toEqual({ sourceSignature: fixture.attempt.signature, message: "Recovery simulation failed" });
+    const alert = container.querySelector('#compound-view [role="alert"]')!;
+    expect(alert.textContent).toBe("Recovery simulation failed");
+    expect(alert.closest("details")!.querySelector("summary")!.textContent).toBe("Other positions (1 records)");
+    expect(controller.receipts).toHaveLength(1); expect(mocks.sign).not.toHaveBeenCalled();
   });
 });

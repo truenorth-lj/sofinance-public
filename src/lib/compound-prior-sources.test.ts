@@ -125,6 +125,16 @@ describe("verified previous yield sources", () => {
 });
 
 describe("imported receipts prove yield rather than account ownership alone", () => {
+  it.each(["initializeAccount", "initializeAccount3"])("imports wallet-owned isolated accounts initialized with %s", async initialization => {
+    const { transaction, wallet } = await fixture();
+    for (const instruction of transaction.transaction.message.instructions) {
+      if ("parsed" in instruction && instruction.parsed.type === "initializeAccount3") instruction.parsed.type = initialization;
+    }
+    await expect(importCompoundReceipt(transaction, wallet.toBase58(), signature)).resolves.toMatchObject({ wallet: wallet.toBase58() });
+    const initialize = transaction.transaction.message.instructions[1]!;
+    if ("parsed" in initialize) initialize.parsed.info.owner = key().toBase58();
+    await expect(importCompoundReceipt(transaction, wallet.toBase58(), signature)).rejects.toThrow(/initialization owner/i);
+  });
   it("accepts a single same-pool swap with a complete harvest/swap/add transfer ledger", async () => {
     const { transaction, wallet, old, vaults } = await fixture();
     const instructions = transaction.transaction.message.instructions;
