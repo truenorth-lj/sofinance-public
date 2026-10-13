@@ -1,3 +1,4 @@
+import { transactionIntermediateAccounts, verifyIntermediateAccounts } from "./swap/instructions";
 import "server-only";
 
 import { PersonalPositionLayout } from "@raydium-io/raydium-sdk-v2";
@@ -47,14 +48,16 @@ export async function simulateAndVerifySelectedTransaction(input: VerifyInput) {
   if (state.inputKind === "native" && BigInt(solBefore) < requested + BigInt(MIN_SOL_LAMPORTS)) {
     throw new Error("Native SOL insufficient to pay input and reserved fees");
   }
-  const addresses = [state.positionAccount, ...keys.map((key) => key.toBase58()), wallet.toBase58()];
+  const intermediate = await transactionIntermediateAccounts(connection, transaction, wallet, keys.map(key => key.toBase58()));
+  const addresses = [state.positionAccount, ...keys.map((key) => key.toBase58()), ...intermediate.accounts.map(account => account.address), wallet.toBase58()];
   const simulation = await connection.simulateTransaction(transaction, {
-    sigVerify, commitment: "confirmed", minContextSlot: state.slot, accounts: { encoding: "base64", addresses },
+    sigVerify, commitment: "confirmed", minContextSlot: Math.max(state.slot, intermediate.slot), accounts: { encoding: "base64", addresses },
   });
   if (simulation.value.err) {
     throw new Error(`Complete swap + add simulation failed: ${JSON.stringify(simulation.value.err)}; ${simulation.value.logs?.slice(-5).join(" | ") || "no logs"}`);
   }
   const simulated = simulation.value.accounts;
+  verifyIntermediateAccounts(intermediate.accounts, addresses, simulated, wallet);
   const positionResult = simulated?.[0];
   const positionData = positionResult?.data[0];
   if (!positionResult || positionResult.owner !== state.programId || !positionData) throw new Error("Simulation did not read back selected position account");

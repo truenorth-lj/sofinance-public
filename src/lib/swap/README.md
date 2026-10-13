@@ -111,3 +111,35 @@ not a clearly simpler safe fee-only change, so no routing behavior was changed.
 All scripts/tests here are offline. No mainnet transactions were sent. Live
 unsigned simulation remains needed to establish upstream instruction compatibility;
 synthetic envelopes cannot establish it.
+
+## Live mainnet verification (2026-10-13, test wallet EweTgJ6v…)
+
+Local `next dev` with the production env (`SOFINANCE_FEE_WALLET=CS5CWY…`, 10 bps)
+using keyless Jupiter and no `SOLAMI_API_KEY`. **The Beam tip was therefore never
+included**; add roughly 45–50 bytes for a tip instruction with a non-ALT tip
+account. If a transaction plus tip would go over 1,232 bytes,
+`chooseBeamTransaction` sends it without the tip. Sizes are real signed wire
+bytes. Harness: `scripts/live-fee-test.ts`.
+
+| Flow | Signed bytes (no tip) | Fee collected |
+|---|---:|---|
+| Open SPCX/SPCXx, USDC deposit (two legs) | 1153 | 1000 raw USDC, upfront transfer |
+| Open SPCX/SPCXx, SOL deposit | 1190 | 4999 lamports SOL (fell back: USDC conversion did not fit) |
+| Open SPCX/SPCXx, SPCX deposit (Token-2022) | 1107 | 313 raw USDC via fee-only Jupiter conversion |
+| Selected add, USDC | 1052–1187 (route-dependent) | 1000 raw USDC |
+| Selected add, SPCX | 975–1042 | 156 raw USDC via conversion |
+| Compound (tiny yield) | 1089 | 0 (fee rounds to zero) |
+
+Exit conversion only has a preview (`/api/lp-decision/exit-preview`, `executable:false`),
+so it cannot be sent live.
+
+Bugs fixed during live testing:
+- Non-shared-accounts Jupiter routes (`useSharedAccounts:false`) mark the user's
+  intermediate-hop ATA (e.g. USDC for SOL→USDC→SPCX) and the fee route's
+  `userDestinationTokenAccount` as writable. The unselected-asset guard then
+  rejected every SOL deposit from a wallet holding USDC. Funded intermediate
+  accounts touched only by Jupiter instructions are now allowed. Simulation must
+  show their post-balance is at least the pre-balance (fails closed).
+- Compound's binary search probed dust amounts. Jupiter answered `No routes found`
+  or `Cannot compute other amount threshold` (HTTP 400), which aborted the whole
+  compound. Those probe sizes are now treated as "no swap at this size".

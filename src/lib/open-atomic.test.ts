@@ -48,7 +48,7 @@ beforeEach(() => {
   vi.stubEnv("SOFINANCE_FEE_WALLET", undefined); vi.stubEnv("SOFINANCE_FEE_BPS", undefined); vi.stubEnv("JUPITER_API_KEY", undefined);
   vi.clearAllMocks(); strategy = "parallel";
   vi.mocked(rpcConnection).mockReturnValue({
-    getTokenAccountsByOwner: vi.fn(async () => ({ value: [] })),
+    getMultipleAccountsInfoAndContext: vi.fn(async (keys: PublicKey[]) => ({ context: { slot: 1 }, value: keys.map(() => null) })),
     getMultipleAccountsInfo: vi.fn(async (keys: PublicKey[]) => keys.map(() => null)),
     getLatestBlockhash: vi.fn(async () => ({ blockhash: oldFixture.blockhash, lastValidBlockHeight: 100 })),
     getFeeForMessage: vi.fn(async () => ({ value: 10000 })),

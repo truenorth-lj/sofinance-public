@@ -1,5 +1,5 @@
 import "server-only";
-import { ASSOCIATED_TOKEN_PROGRAM_ID, createAssociatedTokenAccountIdempotentInstruction, TOKEN_PROGRAM_ID, unpackAccount } from "@solana/spl-token";
+import { ASSOCIATED_TOKEN_PROGRAM_ID, createAssociatedTokenAccountIdempotentInstruction, getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID, unpackAccount } from "@solana/spl-token";
 import { PublicKey, type VersionedTransaction, type Connection, type TransactionInstruction } from "@solana/web3.js";
 import { versionedTransactionSize } from "../open-transaction";
 import { USDC_MINT } from "../ids";
@@ -23,7 +23,11 @@ export async function feeAccountSetup(connection: Connection, payer: PublicKey, 
 /** Reserve the fee in the input asset, deliver its entire ExactIn output as USDC.
  * No separate signature/submission: callers include these instructions and ALTs
  * in their existing atomic transaction. Compound's audited fallback is explicit. */
-export type FeeCollection = { instructions: TransactionInstruction[]; routes: BuildRoute[]; input?: SwapFeeTransferInput };
+/** `receiveOnlyAccounts`: Jupiter's non-shared `route` instruction always marks
+ * the user's output-mint ATA writable (userDestinationTokenAccount) even when
+ * destinationTokenAccount redirects the output to the fee wallet. It is never
+ * debited, so callers may exempt it from the unselected-asset write guard. */
+export type FeeCollection = { instructions: TransactionInstruction[]; routes: BuildRoute[]; input?: SwapFeeTransferInput; receiveOnlyAccounts?: string[] };
 
 export async function collectSwapFee(connection: Connection, input: SwapFeeTransferInput,
   inputTokenFallback = false): Promise<FeeCollection> {
@@ -41,7 +45,8 @@ export async function collectSwapFee(connection: Connection, input: SwapFeeTrans
   const mint = input.kind === "native" ? "So11111111111111111111111111111111111111112" : input.mint.toBase58();
   const route = await buildRoute(input.owner.toBase58(), mint, USDC_MINT, input.amount,
     input.kind === "native", { maxAccounts: 16, onlyDirectRoutes: true }, undefined, undefined, setup.address.toBase58());
-  return { instructions: [...setup.instructions, ...swapRouteInstructions([route], input.owner)], routes: [route], input };
+  const userUsdc = getAssociatedTokenAddressSync(usdc, input.owner, true, TOKEN_PROGRAM_ID).toBase58();
+  return { instructions: [...setup.instructions, ...swapRouteInstructions([route], input.owner)], routes: [route], input, receiveOnlyAccounts: [userUsdc] };
 }
 
 /** Prefer USDC, then measured input-asset fallback. Includes the Beam tip in

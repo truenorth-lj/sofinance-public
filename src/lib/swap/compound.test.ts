@@ -6,11 +6,58 @@ vi.mock("server-only", () => ({}));
 vi.mock("./jupiter", () => ({ quoteRoute: vi.fn(), buildRoute: vi.fn() }));
 import { buildRoute, quoteRoute } from "./jupiter";
 import { buildCompoundSwapPlan } from "./compound";
+import { JupiterHttpError } from "../jupiter";
 const wallet = Keypair.generate().publicKey, recipient = Keypair.generate().publicKey;
 const mints = [Keypair.generate().publicKey, Keypair.generate().publicKey];
 const accounts = mints.map(mint => ({ address: Keypair.generate().publicKey.toBase58(), mint: mint.toBase58(), program: TOKEN_PROGRAM_ID.toBase58() }));
 const q = 1n << 64n;
+const dustProbeInput = () => ({
+  connection: { getMultipleAccountsInfoAndContext: vi.fn(async () => ({ value: [], context: { slot: 1 } })) },
+  state: { wallet: wallet.toBase58(), mintA: mints[0]!.toBase58(), mintB: mints[1]!.toBase58(), poolId: "pool",
+    decimalsA: 6, decimalsB: 6, lowerSqrtX64: (q / 2n).toString(), upperSqrtX64: (q * 2n).toString(), liquidity: "0" },
+  accounts, computePoolInfo: { sqrtPriceX64: new BN(q.toString()), liquidity: new BN("1000000000000000000") },
+  amountA: 0n, amountB: 3n,
+});
 afterEach(() => { vi.unstubAllEnvs(); vi.clearAllMocks(); });
+it.each(["No routes found", "Cannot compute other amount threshold"])("compound continues after a dust probe returns HTTP 400: %s", async bodyError => {
+  vi.stubEnv("SOFINANCE_FEE_WALLET", "");
+  const quote = (inputMint: string, outputMint: string, amount: bigint) => ({
+    inputMint, outputMint, inAmount: amount.toString(), outAmount: amount.toString(),
+    otherAmountThreshold: amount.toString(), priceImpactPct: "0",
+    routePlan: [{ bps: 10000, percent: 100, swapInfo: { ammKey: "pool", inputMint, outputMint,
+      inAmount: amount.toString(), outAmount: amount.toString() } }],
+  });
+  vi.mocked(quoteRoute).mockImplementation(async (input, output, amount) => {
+    if (amount === 1n) throw new JupiterHttpError(400, "/swap/v1/quote", null, bodyError);
+    return quote(input, output, amount) as never;
+  });
+  vi.mocked(buildRoute).mockImplementation(async (_wallet, input, output, amount) => ({
+    ...quote(input, output, amount), setupInstructions: [], otherInstructions: [], cleanupInstruction: null,
+    addressesByLookupTableAddress: {}, swapInstruction: {
+      programId: Keypair.generate().publicKey.toBase58(), data: "AA==", accounts: [
+        { pubkey: getAssociatedTokenAddressSync(mints[1]!, wallet).toBase58(), isWritable: true, isSigner: false },
+        { pubkey: accounts[0]!.address, isWritable: true, isSigner: false },
+      ],
+    },
+  }) as never);
+  const result = await buildCompoundSwapPlan(dustProbeInput() as never);
+  expect(quoteRoute).toHaveBeenCalledWith(accounts[1]!.mint, accounts[0]!.mint, 1n, expect.any(Object));
+  expect(result.swap?.inputAmount).toBe("2");
+  expect(result.instructions).toHaveLength(1);
+  expect(buildRoute).toHaveBeenCalledTimes(1);
+});
+it.each([
+  [400, "Invalid input mint"],
+  [429, "No routes found"],
+  [500, "Cannot compute other amount threshold"],
+  [400, null],
+] as const)("compound propagates other Jupiter errors (HTTP %s, %s)", async (status, bodyError) => {
+  vi.stubEnv("SOFINANCE_FEE_WALLET", "");
+  const error = new JupiterHttpError(status, "/swap/v1/quote", null, bodyError);
+  vi.mocked(quoteRoute).mockRejectedValue(error);
+  await expect(buildCompoundSwapPlan(dustProbeInput() as never)).rejects.toBe(error);
+  expect(buildRoute).not.toHaveBeenCalled();
+});
 it.each([true, false])("compound uses Jupiter with fee ATA existing=%s and isolated accounts", async existing => {
   vi.stubEnv("SOFINANCE_FEE_WALLET", recipient.toBase58()); vi.stubEnv("SOFINANCE_FEE_BPS", "10");
   const data = Buffer.alloc(165);

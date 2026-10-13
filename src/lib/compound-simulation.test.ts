@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
 import { PersonalPositionLayout, PoolInfoLayout } from "@raydium-io/raydium-sdk-v2";
 import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
-import { Connection, Keypair, PublicKey, SystemProgram, TransactionMessage, VersionedTransaction, type AccountInfo } from "@solana/web3.js";
+import { Connection, Keypair, PublicKey, SystemProgram, TransactionInstruction, TransactionMessage, VersionedTransaction, type AccountInfo } from "@solana/web3.js";
 import { expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
+import { JUPITER_PROGRAM_ID } from "./swap/instructions";
 import { simulateAndVerifyCompound } from "./compound-simulation";
 import type { CompoundAccount, CompoundPositionState, CompoundPriorSource } from "./compound-types";
 
@@ -119,4 +120,19 @@ it("allows only the proven prior-account rent refund when SOL debit is negative"
   expect(await simulateAndVerifyCompound({ ...input, priorSources: [source] })).toMatchObject({ solDebitLamports: "-2000000" });
   after.set(input.state.wallet, info(Buffer.alloc(0), SystemProgram.programId, 103_000_000));
   await expect(simulateAndVerifyCompound({ ...input, priorSources: [source] })).rejects.toThrow("SOL");
+});
+
+it("requests and preserves Jupiter intermediate wallet balances in compound simulation", async () => {
+  const { input, before, after } = await fixture();
+  const address = key(), mint = key();
+  before.set(address, info(tokenData(mint, input.state.wallet, 9_000_000n), TOKEN_PROGRAM_ID));
+  after.set(address, before.get(address)!);
+  input.connection.getMultipleAccountsInfoAndContext = vi.fn(async (keys: PublicKey[]) => ({ context: { slot: 123 }, value: keys.map(key => before.get(key.toBase58()) ?? null) }));
+  input.transaction = new VersionedTransaction(new TransactionMessage({ payerKey: new PublicKey(input.state.wallet), recentBlockhash: key(), instructions: [new TransactionInstruction({ programId: JUPITER_PROGRAM_ID, keys: [{ pubkey: new PublicKey(address), isWritable: true, isSigner: false }] })] }).compileToV0Message());
+  await expect(simulateAndVerifyCompound(input)).resolves.toMatchObject({ endingLiquidity: "105" });
+  expect(input.connection.simulateTransaction).toHaveBeenCalledWith(input.transaction, expect.objectContaining({ minContextSlot: 123, accounts: { encoding: "base64", addresses: expect.arrayContaining([address]) } }));
+  after.set(address, info(tokenData(mint, input.state.wallet, 8_999_999n), TOKEN_PROGRAM_ID));
+  await expect(simulateAndVerifyCompound(input)).rejects.toThrow(address);
+  after.delete(address);
+  await expect(simulateAndVerifyCompound(input)).rejects.toThrow(address);
 });

@@ -1,4 +1,4 @@
-import { swapRouteInstructions, rejectUnselectedWalletTokenWrites, readSwapFeeConfig, collectSwapFee, fitFeeCollections } from "./swap";
+import { swapRouteInstructions, rejectUnselectedWalletTokenWrites, readSwapFeeConfig, collectSwapFee, fitFeeCollections, type FeeCollection } from "./swap";
 import "server-only";
 
 import { createHash } from "node:crypto";
@@ -77,7 +77,7 @@ async function buildAndSimulateSelectedZapOnce(
   }
   const routeInstructions = swapRouteInstructions(routes, wallet);
   await rejectUnselectedWalletTokenWrites(connection, wallet, [...feeInstructions.instructions, ...routeInstructions],
-    [state.inputAccount, state.ataA, state.ataB].filter((item): item is string => Boolean(item)));
+    [state.inputAccount, state.ataA, state.ataB, ...((feeInstructions as FeeCollection).receiveOnlyAccounts ?? [])].filter((item): item is string => Boolean(item)));
   const routeKeys = [...routes, ...feeInstructions.routes].flatMap((route) => Object.keys(route.addressesByLookupTableAddress || {}).map((key) => new PublicKey(key)));
   const [routeTables, raydiumTable] = await Promise.all([
     readLookupTables(connection, routeKeys),

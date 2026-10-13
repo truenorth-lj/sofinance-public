@@ -27,7 +27,7 @@ const state = { positionMint: key().toBase58(), positionAccount: position.toBase
 };
 const selection = { positionMint: state.positionMint, inputMint: state.inputMint, inputKind: "token" as const };
 const connection = { getAccountInfo: vi.fn(async () => null), getAddressLookupTable: vi.fn(async () => ({ value: null })),
-  getMultipleAccountsInfoAndContext: vi.fn(async () => ({ value: [], context: { slot: 1 } })),
+  getMultipleAccountsInfoAndContext: vi.fn(async (keys: PublicKey[]) => ({ value: keys.map(() => null), context: { slot: 1 } })),
   getLatestBlockhash: vi.fn(async () => ({ blockhash: key().toBase58(), lastValidBlockHeight: 200 })),
   getFeeForMessage: vi.fn(async () => ({ value: 5000 })),
 };
@@ -45,7 +45,7 @@ const initialKeyIndex = keyIndex;
 beforeEach(() => {
   vi.stubEnv("SOFINANCE_FEE_WALLET", undefined);
   keyIndex = initialKeyIndex;
-  vi.clearAllMocks(); connection.getMultipleAccountsInfoAndContext.mockResolvedValue({ value: [], context: { slot: 1 } }); vi.mocked(rpcConnection).mockReturnValue(connection as never);
+  vi.clearAllMocks(); connection.getMultipleAccountsInfoAndContext.mockImplementation(async (keys: PublicKey[]) => ({ value: keys.map(() => null), context: { slot: 1 } })); vi.mocked(rpcConnection).mockReturnValue(connection as never);
   vi.mocked(readSelectedPositionState).mockResolvedValue(state as never);
   const data = createHash("sha256").update("global:increase_liquidity_v2").digest().subarray(0, 8);
   vi.mocked(buildSelectedAddInstruction).mockReturnValue(new TransactionInstruction({ programId: program, data,
@@ -87,7 +87,7 @@ function rawTokenAccount(owner: PublicKey, token2022 = false) {
   data.writeBigUInt64LE(1n, 64); data[108] = 1; if (token2022) data[165] = 2;
   return { data, owner: token2022 ? TOKEN_2022_PROGRAM_ID : TOKEN_PROGRAM_ID, executable: false, lamports: 2039280, rentEpoch: 0 };
 }
-it.each([false, true])("rejects Jupiter writes to a positive unselected wallet account (Token-2022: %s)", async (token2022) => {
+it.each([false, true])("rejects non-Jupiter writes to a positive unselected wallet account (Token-2022: %s)", async (token2022) => {
   const address = key(); vi.mocked(getSelectedQuoteBundle).mockResolvedValue(writableBundle(address));
   connection.getMultipleAccountsInfoAndContext.mockResolvedValueOnce({ context: { slot: 1 }, value: [rawTokenAccount(wallet, token2022)] } as never);
   await expect(buildAndSimulateSelectedZap(wallet.toBase58(), selection, "1", 9900)).rejects.toThrow("unselected wallet assets");

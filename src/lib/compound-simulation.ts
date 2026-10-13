@@ -1,3 +1,4 @@
+import { transactionIntermediateAccounts, verifyIntermediateAccounts } from "./swap/instructions";
 import "server-only";
 
 import { PersonalPositionLayout, PoolInfoLayout } from "@raydium-io/raydium-sdk-v2";
@@ -40,7 +41,8 @@ export async function simulateAndVerifyCompound(input: CompoundSimulationInput) 
     ...state.rewards.filter((reward) => !reward.compounded).map((reward) => ({ ...reward, address: reward.account })),
   ];
   const unique = [...new Map(tokens.map((token) => [token.address, token])).values()];
-  const addresses = [state.positionAccount, state.poolId, ...unique.map((token) => token.address), state.wallet];
+  const intermediate = await transactionIntermediateAccounts(connection, transaction, wallet, unique.map(token => token.address));
+  const addresses = [state.positionAccount, state.poolId, ...unique.map((token) => token.address), ...intermediate.accounts.map(account => account.address), state.wallet];
   const infos = await connection.getMultipleAccountsInfo(addresses.map((address) => new PublicKey(address)), "confirmed");
   const before = new Map(addresses.map((address, index) => [address, infos[index] ?? null]));
   const startPositionInfo = before.get(state.positionAccount);
@@ -60,8 +62,9 @@ export async function simulateAndVerifyCompound(input: CompoundSimulationInput) 
     }
   }
   const solBefore = BigInt(before.get(state.wallet)?.lamports ?? 0);
-  const result = await connection.simulateTransaction(transaction, { sigVerify, commitment: "confirmed", accounts: { encoding: "base64", addresses } });
+  const result = await connection.simulateTransaction(transaction, { sigVerify, commitment: "confirmed", minContextSlot: intermediate.slot, accounts: { encoding: "base64", addresses } });
   if (result.value.err) throw new Error(`Compound simulation failed: ${JSON.stringify(result.value.err)}; ${result.value.logs?.slice(-5).join(" | ") || "no logs"}`);
+  verifyIntermediateAccounts(intermediate.accounts, addresses, result.value.accounts, wallet);
   const after = new Map(addresses.map((address, index) => {
     const account = result.value.accounts?.[index];
     if (account && typeof account.data[0] !== "string") throw new Error("Simulation account data missing");

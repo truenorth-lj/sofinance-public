@@ -2,10 +2,11 @@ import { createHash } from "node:crypto";
 import { expect, it, vi } from "vitest";
 import { PersonalPositionLayout } from "@raydium-io/raydium-sdk-v2";
 import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from "@solana/spl-token";
-import { Connection, Keypair, PublicKey, SystemProgram, TransactionMessage, VersionedTransaction,
+import { Connection, Keypair, PublicKey, SystemProgram, TransactionInstruction, TransactionMessage, VersionedTransaction,
   type AccountInfo } from "@solana/web3.js";
 
 vi.mock("server-only", () => ({}));
+import { JUPITER_PROGRAM_ID } from "./swap/instructions";
 import { simulateAndVerifySelectedTransaction } from "./selected-simulation";
 import type { SelectedPositionState } from "./selected-state";
 
@@ -27,7 +28,7 @@ function simulatedToken(mint: PublicKey, wallet: PublicKey, amount: bigint) {
     lamports: 2_039_280, executable: false, rentEpoch: 0 };
 }
 
-it.each([false, true])("checks debit, original assets and liquidity using state snapshot=%s", async (useStateSnapshot) => {
+it.each([[false, false], [true, false], [false, true], [true, true]])("checks debit, assets and intermediates with snapshot=%s, intermediate=%s", async (useStateSnapshot, withIntermediate) => {
   const wallet = Keypair.generate().publicKey;
   const nftMint = Keypair.generate().publicKey;
   const pool = Keypair.generate().publicKey;
@@ -39,12 +40,15 @@ it.each([false, true])("checks debit, original assets and liquidity using state 
   const ataA = getAssociatedTokenAddressSync(mintA, wallet);
   const ataB = getAssociatedTokenAddressSync(mintB, wallet);
   const inputAta = getAssociatedTokenAddressSync(inputMint, wallet);
+  const intermediateAta = Keypair.generate().publicKey;
+  const intermediateMint = Keypair.generate().publicKey;
   const before = new Map([
     [nftAta.toBase58(), info(tokenData(nftMint, wallet, 1n))],
     [ataA.toBase58(), info(tokenData(mintA, wallet, 10n))],
     [ataB.toBase58(), info(tokenData(mintB, wallet, 5n))],
     [inputAta.toBase58(), info(tokenData(inputMint, wallet, 1_000n))],
   ]);
+  if (withIntermediate) before.set(intermediateAta.toBase58(), info(tokenData(intermediateMint, wallet, 9_000_000n)));
   const positionData = Buffer.alloc(PersonalPositionLayout.span);
   createHash("sha256").update("account:PersonalPositionState").digest().copy(positionData, 0, 0, 8);
   nftMint.toBuffer().copy(positionData, PersonalPositionLayout.offsetOf("nftMint"));
@@ -56,6 +60,7 @@ it.each([false, true])("checks debit, original assets and liquidity using state 
     { owner: "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK", data: [positionData.toString("base64"), "base64"], lamports: 0, executable: false, rentEpoch: 0 },
     simulatedToken(nftMint, wallet, 1n), simulatedToken(mintA, wallet, afterA),
     simulatedToken(mintB, wallet, 5n), simulatedToken(inputMint, wallet, 0n),
+    ...(withIntermediate ? [simulatedToken(intermediateMint, wallet, 9_000_000n)] : []),
     { owner: SystemProgram.programId.toBase58(), data: ["", "base64"], lamports: 99_000_000,
       executable: false, rentEpoch: 0 },
   ];
@@ -75,7 +80,7 @@ it.each([false, true])("checks debit, original assets and liquidity using state 
     balances: { input: "1000", a: "10", b: "5" },
   } as SelectedPositionState;
   const transaction = new VersionedTransaction(new TransactionMessage({
-    payerKey: wallet, recentBlockhash: Keypair.generate().publicKey.toBase58(), instructions: [],
+    payerKey: wallet, recentBlockhash: Keypair.generate().publicKey.toBase58(), instructions: withIntermediate ? [new TransactionInstruction({ programId: JUPITER_PROGRAM_ID, keys: [{ pubkey: intermediateAta, isWritable: true, isSigner: false }] })] : [],
   }).compileToV0Message());
   const input = { connection, transaction, wallet, state, requested: 1_000n, expectedLiquidity: 5n, sigVerify: false, useStateSnapshot };
   const success = await simulateAndVerifySelectedTransaction(input);
@@ -83,10 +88,19 @@ it.each([false, true])("checks debit, original assets and liquidity using state 
   expect(success.endingLiquidity).toBe("15");
   expect(connection.simulateTransaction).toHaveBeenCalledWith(transaction, expect.objectContaining({ minContextSlot: 42 }));
   if (useStateSnapshot) {
-    expect(connection.getMultipleAccountsInfoAndContext).not.toHaveBeenCalled();
+    if (!withIntermediate) expect(connection.getMultipleAccountsInfoAndContext).not.toHaveBeenCalled();
     expect(connection.getBalance).not.toHaveBeenCalled();
   }
 
+  if (withIntermediate) {
+    expect(connection.simulateTransaction).toHaveBeenCalledWith(transaction, expect.objectContaining({ accounts: { encoding: "base64", addresses: expect.arrayContaining([intermediateAta.toBase58()]) } }));
+    for (const amount of [8_999_999n, null]) {
+      const results = accountResults(10n);
+      results[results.length - 2] = amount === null ? null as never : simulatedToken(intermediateMint, wallet, amount);
+      vi.mocked(connection.simulateTransaction).mockResolvedValueOnce({ value: { err: null, accounts: results } } as never);
+      await expect(simulateAndVerifySelectedTransaction(input)).rejects.toThrow(intermediateAta.toBase58());
+    }
+  }
   vi.mocked(connection.simulateTransaction).mockResolvedValueOnce({ value: { err: null, accounts: accountResults(9n), unitsConsumed: 100_000 } } as never);
   await expect(simulateAndVerifySelectedTransaction(input)).rejects.toThrow(/original pool asset/i);
   // These synthetic simulation readbacks are independent of the SDK builder.

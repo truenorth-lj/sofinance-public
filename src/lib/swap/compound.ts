@@ -6,6 +6,7 @@ import { Connection, PublicKey } from "@solana/web3.js";
 import { sizeCompoundLiquidity } from "../compound-math";
 import type { CompoundSwap } from "../compound-swap";
 import type { CompoundAccount, CompoundPositionState } from "../compound-types";
+import { JupiterHttpError } from "../jupiter";
 import { buildRoute, quoteRoute, type QuoteRoute } from "./jupiter";
 import { netSwapInput, resolveSwapFeeConfig } from "./fee";
 import { rejectUnselectedWalletTokenWrites, swapRouteInstructions } from "./instructions";
@@ -37,7 +38,11 @@ export async function buildCompoundSwapPlan(input: {
   };
   const evaluate = async (gross: bigint) => {
     const { swapAmount, feeAmount } = netSwapInput(gross, config.bps);
-    const route = swapAmount > 0n ? await quoteRoute(source.mint, destination.mint, swapAmount, constraints) : null;
+    // Dust-sized probes (e.g. 1 raw unit) legitimately have no route; treat as "no swap at this size".
+    const route = swapAmount > 0n ? await quoteRoute(source.mint, destination.mint, swapAmount, constraints).catch((error: unknown) => {
+      if (error instanceof JupiterHttpError && error.status === 400 && /^no routes found$|^cannot compute other amount threshold/i.test(error.bodyError ?? "")) return null;
+      throw error;
+    }) : null;
     if (route) validate(route);
     const output = route ? BigInt(route.otherAmountThreshold) : 0n;
     const sqrt = route ? BigInt(SqrtPriceMath.getNextSqrtPriceFromInput(new BN(price.toString()),

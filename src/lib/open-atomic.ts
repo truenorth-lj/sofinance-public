@@ -1,13 +1,13 @@
-import { swapRouteInstructions } from "./swap";
+import { swapRouteInstructions, rejectUnselectedWalletTokenWrites } from "./swap";
 import "server-only";
 
 import { createHash } from "node:crypto";
 import BN from "bn.js";
 import { ClmmInstrument, Raydium } from "@raydium-io/raydium-sdk-v2";
-import { createAssociatedTokenAccountIdempotentInstruction, createCloseAccountInstruction, createSyncNativeInstruction, getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID, unpackAccount } from "@solana/spl-token";
+import { createAssociatedTokenAccountIdempotentInstruction, createCloseAccountInstruction, createSyncNativeInstruction, getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import {
   ComputeBudgetProgram, PublicKey, SystemProgram,
-  type Connection, type TransactionInstruction,
+  type Connection,
 } from "@solana/web3.js";
 import { DEFAULT_RESALE_FLOOR_BPS, MIN_SOL_LAMPORTS, NATIVE_SOL_MINT } from "./ids";
 import { restampVersionedTransaction, stampPreparedBlockhash } from "./fresh-blockhash";
@@ -23,24 +23,6 @@ import type { OpenRangeInput } from "./open-range";
 import { readOpenPoolState, type OpenPoolState, type OpenPositionSelection } from "./open-state";
 import type { OpenPositionSummary } from "./open-types";
 import type { JupiterRouteConstraints } from "./jupiter-route-retry";
-
-async function rejectUnselectedWalletTokenWrites(
-  connection: Connection, wallet: PublicKey, instructions: TransactionInstruction[],
-  allowedAccounts: string[],
-) {
-  const [legacy, token2022] = await Promise.all([
-    connection.getTokenAccountsByOwner(wallet, { programId: TOKEN_PROGRAM_ID }, "confirmed"),
-    connection.getTokenAccountsByOwner(wallet, { programId: TOKEN_2022_PROGRAM_ID }, "confirmed"),
-  ]);
-  const writable = new Set(instructions.flatMap((ix) => ix.keys.filter((key) => key.isWritable)
-    .map((key) => key.pubkey.toBase58())));
-  const allowed = new Set(allowedAccounts);
-  for (const { pubkey, account } of [...legacy.value, ...token2022.value]) {
-    if (!writable.has(pubkey.toBase58()) || allowed.has(pubkey.toBase58())) continue;
-    const decoded = unpackAccount(pubkey, account, account.owner);
-    if (decoded.amount > 0n) throw new Error("Jupiter route may modify unselected wallet assets, transaction stopped");
-  }
-}
 
 type OpenResources = {
   connection: Connection;
@@ -152,7 +134,7 @@ async function buildOpenPositionAttempt(
       return [...secondaryFee.instructions, ...swapRouteInstructions([item.route], wallet)];
     }))).flat();
     await rejectUnselectedWalletTokenWrites(connection, wallet, routeInstructions,
-      [state.inputAccount, state.ataA, state.ataB].filter((item): item is string => Boolean(item)));
+      [state.inputAccount, state.ataA, state.ataB, ...collections.flatMap(c => c.receiveOnlyAccounts ?? [])].filter((item): item is string => Boolean(item)));
     const routeTables = await resources.readTables(routes.flatMap((route) =>
       Object.keys(route.addressesByLookupTableAddress || {}).map((key) => new PublicKey(key))));
     validateRouteTables(routes, routeTables);
@@ -183,7 +165,7 @@ async function buildOpenPositionAttempt(
     const feeTables = await resources.readTables(feeRoutes.flatMap(route => Object.keys(route.addressesByLookupTableAddress || {}).map(key => new PublicKey(key))));
     validateRouteTables(feeRoutes, feeTables);
     await rejectUnselectedWalletTokenWrites(connection, wallet, [...feeInstructions.instructions, ...routeInstructions],
-      [state.inputAccount, state.ataA, state.ataB].filter((item): item is string => Boolean(item)));
+      [state.inputAccount, state.ataA, state.ataB, ...collections.flatMap(c => c.receiveOnlyAccounts ?? [])].filter((item): item is string => Boolean(item)));
     const wrappedAta = nativeAta?.toBase58() ?? null;
     const cleanupInstructions = nativeAta && ![state.mintA, state.mintB].includes(NATIVE_SOL_MINT)
       ? [createCloseAccountInstruction(nativeAta, wallet, wallet)] : [];
