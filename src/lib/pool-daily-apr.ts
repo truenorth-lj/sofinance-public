@@ -64,13 +64,13 @@ export function clearPoolDailyAprCache() {
   cache = null;
 }
 
-async function fetchJson(fetcher: typeof fetch, url: string, timeoutMs: number): Promise<unknown> {
+async function fetchJson(fetcher: typeof fetch, url: string, timeoutMs: number, signal?: AbortSignal): Promise<unknown> {
   const response = await fetcher(url, {
     headers: {
       Accept: "application/json",
       "User-Agent": USER_AGENT,
     },
-    signal: AbortSignal.timeout(timeoutMs),
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs),
   });
   if (!response.ok) {
     throw new Error(`Upstream request failed (${response.status})`);
@@ -82,9 +82,10 @@ export async function safeJson(
   fetcher: typeof fetch,
   url: string,
   timeoutMs: number,
+  signal?: AbortSignal,
 ): Promise<{ ok: true; body: unknown } | { ok: false; reason: string }> {
   try {
-    const body = await fetchJson(fetcher, url, timeoutMs);
+    const body = await fetchJson(fetcher, url, timeoutMs, signal);
     return { ok: true, body };
   } catch (error) {
     return { ok: false, reason: error instanceof Error ? error.message : "request failed" };

@@ -11,11 +11,12 @@ const PAGE_LIMIT = 100;
 const MAX_PAGES = 40;
 const CACHE_TTL_MS = 30 * 60_000;
 
-type CacheEntry = { expiresAt: number; mints: Set<string> };
+type CacheEntry = { observedAt: string; expiresAt: number; mints: Set<string> };
 let cache: CacheEntry | null = null;
 
 export type FetchXstocksWhitelistOptions = {
   fetcher?: typeof fetch;
+  signal?: AbortSignal;
   bypassCache?: boolean;
 };
 
@@ -43,7 +44,7 @@ export async function fetchXstocksSolanaMintSet(
         Accept: "application/json",
         "User-Agent": "SoFinance/0.1 (RWA pair discovery; +https://github.com/truenorth-lj/sofinance-public)",
       },
-      signal: AbortSignal.timeout(45_000),
+      signal: options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(45_000)]) : AbortSignal.timeout(45_000),
     });
     if (!response.ok) {
       throw new Error(`xStocks assets list failed (${response.status})`);
@@ -70,7 +71,7 @@ export async function fetchXstocksSolanaMintSet(
     if (envelope.page?.hasNextPage !== true || nodes.length === 0) break;
   }
 
-  cache = { expiresAt: now + CACHE_TTL_MS, mints };
+  cache = { observedAt: new Date().toISOString(), expiresAt: now + CACHE_TTL_MS, mints };
   return mints;
 }
 
@@ -78,3 +79,5 @@ export async function fetchXstocksSolanaMintSet(
 export function clearXstocksWhitelistCache() {
   cache = null;
 }
+
+export const getXstocksObservedAt = () => cache?.observedAt ?? null;

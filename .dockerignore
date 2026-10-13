@@ -1,0 +1,9 @@
+.git
+node_modules
+.next
+.env*
+artifacts
+specs
+e2e
+.tmp
+dist

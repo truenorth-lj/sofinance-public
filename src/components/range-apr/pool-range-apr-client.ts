@@ -8,6 +8,7 @@ import type { PoolRangeAprPayload } from "@/lib/range-apr/types";
  * the page never opens more than two requests at a time.
  */
 const limit = createConcurrencyLimit(2);
+let cacheEpoch = 0;
 /** A degraded payload (no estimates) is kept only briefly so the next ask hits the server again. */
 const DEGRADED_TTL_MS = 8_000;
 const cache = new AsyncCache<PoolRangeAprPayload>({
@@ -24,9 +25,10 @@ async function request(poolId: string): Promise<PoolRangeAprPayload> {
 }
 
 export function loadPoolRangeApr(poolId: string): Promise<PoolRangeAprPayload> {
-  return cache.get(poolId, () => limit(() => request(poolId)));
+  return cache.get(`${cacheEpoch}:${poolId}`, () => limit(() => request(poolId)));
 }
 
 export function clearPoolRangeAprClientCache() {
+  cacheEpoch += 1; // Late responses from the previous generation cannot refill the new key.
   cache.clear();
 }

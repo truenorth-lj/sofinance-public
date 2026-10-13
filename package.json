@@ -12,7 +12,8 @@
     "test:env-matrix": "bash scripts/test-env-matrix.sh",
     "brand:assets": "node scripts/generate-brand-assets.mjs",
     "mcp:start": "tsx src/mcp/server.ts",
-    "mcp:dev": "tsx watch src/mcp/server.ts"
+    "mcp:dev": "tsx watch src/mcp/server.ts",
+    "build:rwa-service": "esbuild scripts/rwa-data-service.ts --bundle --platform=node --format=cjs --outfile=dist/rwa-data-service.cjs --alias:server-only=./src/mcp/server-only-mock-impl.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",
@@ -32,6 +33,7 @@
     "decimal.js": "^10.6.0",
     "lucide-react": "^1.48.0",
     "next": "16.3.6",
+    "postgres": "3.4.7",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "server-only": "^0.0.1",
@@ -47,6 +49,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "babel-plugin-react-compiler": "1.0.0",
+    "esbuild": "0.28.2",
     "eslint": "^9",
     "eslint-config-next": "16.3.6",
     "happy-dom": "^20.14.6",

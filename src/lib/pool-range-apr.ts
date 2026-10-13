@@ -41,6 +41,7 @@ const UPSTREAM_TIMEOUT_MS = 5_000;
 const geckoLimit = createConcurrencyLimit(2);
 
 export type VolumeProfile = {
+  observedAt?: { economics: string; daily: string | null; hourly: string | null };
   economics: RaydiumPoolEconomics;
   daily: { avgDailyVolumeUsd: number; days: number } | null;
   candles: RawCandle[] | null;
@@ -82,7 +83,7 @@ export async function loadVolumeProfile(
   poolId: string, fetcher: typeof fetch, nowSeconds: number, retry: RetryOptions = {},
 ): Promise<VolumeProfile> {
   const id = encodeURIComponent(poolId);
-  const get = (url: string) => retryJson(() => safeJson(fetcher, url, UPSTREAM_TIMEOUT_MS), { attempts: 3, baseDelayMs: 300, maxDelayMs: 1_500, ...retry });
+  const get = async (url: string) => { const result = await retryJson(() => safeJson(fetcher, url, UPSTREAM_TIMEOUT_MS, retry.signal), { attempts: 3, baseDelayMs: 300, maxDelayMs: 1_500, ...retry }); return { ...result, observedAt: new Date().toISOString() }; };
   const getGecko = (url: string) => geckoLimit(() => get(url));
   const [ids, daily, hourly] = await Promise.all([
     get(`${RAYDIUM_POOL_IDS}?ids=${id}`),
@@ -104,7 +105,7 @@ export async function loadVolumeProfile(
   } else {
     issues.push(`GeckoTerminal hourly candles: ${hourly.reason}`);
   }
-  return { economics, daily: dailySample, candles, sources, issues };
+  return { economics, daily: dailySample, candles, sources, issues, observedAt: { economics: ids.observedAt, daily: dailySample ? daily.observedAt : null, hourly: candles?.length ? hourly.observedAt : null } };
 }
 
 /**

@@ -15,11 +15,12 @@ export { JUPITER_TOKENS_SEARCH };
 const BATCH_SIZE = 100;
 const CACHE_TTL_MS = 10 * 60_000;
 
-type CacheEntry = { expiresAt: number; tagsByMint: Map<string, string[]> };
+type CacheEntry = { observed: Map<string, string>; expiresAt: number; tagsByMint: Map<string, string[]> };
 let cache: CacheEntry | null = null;
 
 export type FetchJupiterTagsOptions = {
   fetcher?: typeof fetch;
+  signal?: AbortSignal;
   apiKey?: string | undefined;
   /** Skip module cache (tests). */
   bypassCache?: boolean;
@@ -68,9 +69,9 @@ export async function fetchJupiterTagsByMint(
       headers: {
         "User-Agent": "SoFinance/0.1 (RWA pair discovery; +https://github.com/truenorth-lj/sofinance-public)",
       },
-      cacheKey: `tokens:${batch.join(",")}`,
+      cacheKey: null, // This module owns the cache and its source timestamps.
       cacheTtlMs: CACHE_TTL_MS,
-      signal: AbortSignal.timeout(20_000),
+      signal: options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(20_000)]) : AbortSignal.timeout(20_000),
     });
     if (!Array.isArray(body)) {
       throw new Error("Jupiter tokens search returned unexpected payload");
@@ -96,11 +97,18 @@ export async function fetchJupiterTagsByMint(
       result.set(mint, []);
     }
   }
-  cache = { expiresAt: now + CACHE_TTL_MS, tagsByMint: nextMap };
+  const observed = useCache ? new Map(cache!.observed) : new Map<string,string>();
+  for (const mint of pending) observed.set(mint, new Date().toISOString());
+  cache = { observed, expiresAt: now + CACHE_TTL_MS, tagsByMint: nextMap };
   return result;
 }
 
 /** Test helper to clear the module cache. */
 export function clearJupiterTagsCache() {
   cache = null;
+}
+
+export function getJupiterTagsObservedAt(mints: string[]): string | null {
+  const dates = mints.map(mint=>cache?.observed.get(mint)).filter((date): date is string=>!!date);
+  return dates.sort()[0] ?? null;
 }

@@ -7,6 +7,7 @@ export type JsonResult = { ok: true; body: unknown } | { ok: false; reason: stri
 export type RetryOptions = {
   /** Total attempts including the first one. */
   attempts?: number;
+  signal?: AbortSignal;
   baseDelayMs?: number;
   maxDelayMs?: number;
   sleep?: (ms: number) => Promise<void>;
@@ -30,7 +31,9 @@ export async function retryJson(fetchOnce: () => Promise<JsonResult>, options: R
   const random = options.random ?? Math.random;
   let last: JsonResult = { ok: false, reason: "request failed" };
   for (let attempt = 0; attempt < attempts; attempt++) {
+    options.signal?.throwIfAborted();
     last = await fetchOnce();
+    options.signal?.throwIfAborted();
     if (last.ok || !isRetryableFailure(last.reason)) return last;
     if (attempt < attempts - 1) await sleep(Math.min(max, base * 2 ** attempt) * (0.75 + random() * 0.5));
   }

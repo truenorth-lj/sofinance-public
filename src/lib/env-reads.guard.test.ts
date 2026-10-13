@@ -16,12 +16,15 @@ const SRC = join(import.meta.dirname, "..");
 
 /** Names whose values are credentials (or embed credentials, like an RPC URL with an api key). */
 const SECRET_ENV_NAMES = [
+  "DATABASE_URL", "CRON_SECRET",
   "JUPITER_API_KEY", "SOLAMI_API_KEY", "SOLAMI_DATA_API_KEY", "SOLANA_RPC_URL", "SOFINANCE_MCP_TOKEN",
 ] as const;
 
 /** `*` = the whole `process.env` object handed on to a function (can reach any secret). */
 type Reads = Record<string, number>;
 const ALLOWED_SECRET_READS: Record<string, Reads> = {
+  DATABASE_URL: { "lib/config/rwa-env.ts": 1 },
+  CRON_SECRET: { "lib/config/rwa-env.ts": 1 },
   JUPITER_API_KEY: {
     // the single reader (lib/config/server-env.ts)
     "lib/config/server-env.ts": 1,

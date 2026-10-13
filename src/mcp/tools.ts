@@ -16,7 +16,7 @@ import { sendSignedCompoundTransaction } from "../lib/compound-send";
 import { CompoundSendError, notSentRetryMessage, sanitizePublicError } from "../lib/public-error";
 import { getSigningSecret } from "../lib/config/server-env";
 import type { CompoundSummary } from "../lib/compound-types";
-import { discoverRwaPairs, getCachedRwaPairs } from "../lib/rwa-pairs";
+import { getRwaPairs } from "../lib/rwa-store";
 import { getPositionPerformance as readPositionPerformance } from "../lib/position-performance";
 import { createSignToken } from "../lib/pending-sign-token";
 import { buildOpenPositionUrl, buildSignUrl } from "../lib/public-urls";
@@ -556,12 +556,7 @@ export async function submitCompoundTransaction(input: SubmitCompoundTransaction
  * Safety: Read-only; uses public Raydium / Jupiter / xStocks APIs. No wallet or private keys.
  */
 export async function listRwaPairs(input: ListRwaPairsInput) {
-  const cached = getCachedRwaPairs(input.minTvl, input.maxPages, input.sortBy);
-  const result = cached ?? await discoverRwaPairs({
-    minTvl: input.minTvl,
-    maxPages: input.maxPages,
-    sortBy: input.sortBy,
-  });
+  const result = await getRwaPairs({ minTvl: input.minTvl, maxPages: input.maxPages, sortBy: input.sortBy });
 
   return {
     pairingRule: result.pairingRuleSummary,

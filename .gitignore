@@ -45,3 +45,6 @@ next-env.d.ts
 /specs/lp-decision/fixtures/
 *.evidence.test.ts
 *.evidence.test.tsx
+
+# Bundled standalone RWA gateway
+/dist/
