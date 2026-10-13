@@ -16,6 +16,7 @@ import { pairIssuerLabel } from "@/lib/rwa-pair-names";
 import type { TokenMetadata } from "@/lib/token-metadata";
 import { InfoTip } from "./info-tip";
 import { OpenPositionModal } from "./open-position-modal";
+import { clearPoolRangeAprClientCache } from "./range-apr/pool-range-apr-client";
 import { usePoolRangeApr } from "./range-apr/use-pool-range-apr";
 import { TokenIcon } from "./token-icon";
 import type { OpenPositionPair } from "./use-open-position-controller";
@@ -54,6 +55,7 @@ type RwaPairsResponse = {
   fetchedAt: string;
   pairingRuleSummary: string;
   estimatedFeeAprLabel: string;
+  freshness?: { snapshotAt: string; stale: boolean };
   error?: string;
 };
 
@@ -109,14 +111,15 @@ function Stat({ label, children }: { label: ReactNode; children: ReactNode }) {
  * history) has no estimate: both show a dash and the pill's tooltip says why.
  */
 function PairCard({
-  pair, tokens, poolFeeAprHelp, onOpen,
+  pair, tokens, poolFeeAprHelp, onOpen, refreshKey,
 }: {
   pair: RwaPair;
+  refreshKey: number;
   tokens: Record<string, TokenMetadata>;
   poolFeeAprHelp: string;
   onOpen: () => void;
 }) {
-  const apr = usePoolRangeApr(pair.poolAddress);
+  const apr = usePoolRangeApr(pair.poolAddress, refreshKey);
   const summary = apr.status === "ready" ? highestRangeSummary(OPEN_RANGE_UI_PRESETS, apr.data) : null;
   const degraded = apr.status === "ready" && apr.data.sample.degraded;
   const low = apr.status === "ready" && apr.data.sample.confidence === "low";
@@ -173,6 +176,12 @@ function PairCard({
           </p>
         </div>
       </div>
+
+      {apr.status === "ready" && apr.data.freshness && <p className="mt-3 text-xs text-ink/60">
+        Updated {new Date(apr.data.freshness.snapshotAt).toLocaleString()}
+        {(apr.data.freshness.stale || apr.data.freshness.lastAttemptStatus === "error") && " · Data delayed"}
+      </p>}
+      {apr.status === "error" && <p className="mt-3 text-xs text-ink/60">APR data is temporarily unavailable.</p>}
 
       <dl className="mt-6 grid grid-cols-2 gap-x-4 gap-y-5 border-t border-ink/20 pt-5 sm:grid-cols-3">
         <Stat label={<>
@@ -250,6 +259,8 @@ export function RwaPairsPanel() {
   const [data, setData] = useState<RwaPairsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [now, setNow] = useState(Date.now);
   const [openPair, setOpenPair] = useState<OpenPositionPair | null>(null);
   const tokens = useTokenMetadata(data?.pairs.flatMap((pair) => [pair.mintA, pair.mintB]) ?? []);
 
@@ -294,7 +305,23 @@ export function RwaPairsPanel() {
     return () => window.clearTimeout(timer);
   }, [data, searchParams]);
 
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const saved = !!data?.freshness;
+  useEffect(() => {
+    if (!saved) return;
+    const aborter = new AbortController();
+    const timer = window.setInterval(() => {
+      if (!document.hidden) { setRefreshKey((key) => key + 1); void load(aborter.signal); }
+    }, 60_000);
+    return () => { window.clearInterval(timer); aborter.abort(); };
+  }, [saved, load]);
+
   const refresh = () => {
+    clearPoolRangeAprClientCache();
+    setRefreshKey((key) => key + 1);
     setLoading(true);
     setError(null);
     void load();
@@ -330,6 +357,12 @@ export function RwaPairsPanel() {
           </p>
         )}
 
+        {data?.freshness && <p className="mt-2 text-xs text-smoke">
+          Updated {new Date(data.freshness.snapshotAt).toLocaleString()}
+          {now - Date.parse(data.freshness.snapshotAt) > 86_400_000 ? " · Updates interrupted"
+            : now - Date.parse(data.freshness.snapshotAt) > 1_800_000 ? " · Data delayed" : ""}
+        </p>}
+
         {error && (
           <div role="alert" className="mt-6 rounded-2xl border border-white/20 bg-white/[0.04] p-4 text-sm text-cream/80">
             {error}
@@ -338,7 +371,7 @@ export function RwaPairsPanel() {
 
         {loading && !data && (
           <p role="status" className="mt-8 inline-flex items-center gap-2 text-sm text-smoke">
-            <LoaderCircle className="h-4 w-4 animate-spin" /> Scanning Raydium CLMM pools…
+            <LoaderCircle className="h-4 w-4 animate-spin" /> Loading saved pool data…
           </p>
         )}
 
@@ -353,6 +386,7 @@ export function RwaPairsPanel() {
             <PairCard
               key={pair.poolAddress}
               pair={pair}
+              refreshKey={refreshKey}
               tokens={tokens}
               poolFeeAprHelp={data.estimatedFeeAprLabel}
               onOpen={() => setOpenPair(toOpenPair(pair))}

@@ -12,8 +12,8 @@ import {
   type Relatedness,
   type RwaQualificationSource,
 } from "./rwa-pairing";
-import { fetchJupiterTagsByMint } from "./rwa-jupiter-tags";
-import { fetchXstocksSolanaMintSet } from "./rwa-xstocks-whitelist";
+import { fetchJupiterTagsByMint, getJupiterTagsObservedAt } from "./rwa-jupiter-tags";
+import { fetchXstocksSolanaMintSet, getXstocksObservedAt } from "./rwa-xstocks-whitelist";
 
 export const RAYDIUM_API_V3 = "https://api-v3.raydium.io";
 const DEFAULT_PAGE_SIZE = 1000;
@@ -30,6 +30,7 @@ export type DiscoverRwaPairsOptions = {
   sortBy?: RwaPairSortBy;
   /** Injected fetch for tests. */
   fetcher?: typeof fetch;
+  signal?: AbortSignal;
   /** Skip in-memory caches (tests). */
   bypassCache?: boolean;
   /** Override Jupiter API key (tests). Defaults to process.env.JUPITER_API_KEY. */
@@ -88,6 +89,7 @@ export type DiscoverRwaPairsResult = {
   stale?: boolean;
   /** Age of the cached result in seconds. */
   ageSeconds?: number;
+  discovery?: { sourcePages: Record<string, number>; poolObservedAt: Record<string, string>; pageCounts: number[]; qualificationObservedAt: Record<string, string | null> };
 };
 
 type RaydiumMint = {
@@ -279,6 +281,7 @@ async function fetchClmmPage(
   page: number,
   pageSize: number,
   fetcher: typeof fetch,
+  signal?: AbortSignal,
 ): Promise<{ rows: unknown[]; hasNextPage: boolean }> {
   const url = new URL(`${RAYDIUM_API_V3}/pools/info/list`);
   url.searchParams.set("poolType", "concentrated");
@@ -292,7 +295,7 @@ async function fetchClmmPage(
       Accept: "application/json",
       "User-Agent": "SoFinance/0.1 (RWA pair discovery; +https://github.com/truenorth-lj/sofinance-public)",
     },
-    signal: AbortSignal.timeout(45_000),
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(45_000)]) : AbortSignal.timeout(45_000),
   });
   if (!response.ok) {
     throw new Error(`Raydium pool list failed (${response.status})`);
@@ -314,7 +317,7 @@ async function fetchClmmPage(
   return { rows, hasNextPage: pageData.hasNextPage === true };
 }
 
-function sortPairs(pairs: RwaPairRow[], sortBy: RwaPairSortBy): RwaPairRow[] {
+export function sortPairs(pairs: RwaPairRow[], sortBy: RwaPairSortBy): RwaPairRow[] {
   const score = (row: RwaPairRow) => {
     if (sortBy === "tvl") return row.tvlUsd ?? -1;
     if (sortBy === "volume24h") return row.volume24hUsd ?? -1;
@@ -386,15 +389,21 @@ export async function discoverRwaPairs(
   const refreshPromise = (async () => {
     try {
       const structuralRows: unknown[] = [];
+      const sourcePages: Record<string,number> = {}, poolObservedAt: Record<string,string> = {};
+      const pageCounts: number[] = [];
       let scannedPools = 0;
       let pagesFetched = 0;
 
       for (let page = 1; page <= maxPages; page += 1) {
-        const { rows, hasNextPage } = await fetchClmmPage(page, DEFAULT_PAGE_SIZE, fetcher);
+        const { rows, hasNextPage } = await fetchClmmPage(page, DEFAULT_PAGE_SIZE, fetcher, options.signal);
+        options.signal?.throwIfAborted();
+        const observedAt = new Date().toISOString();
+        pageCounts.push(rows.length);
         pagesFetched += 1;
         scannedPools += rows.length;
         for (const row of rows) {
-          if (isStructuralWrapPairCandidate(row)) structuralRows.push(row);
+          const candidate = isStructuralWrapPairCandidate(row);
+          if (candidate) { structuralRows.push(row); sourcePages[candidate.poolAddress] = page; poolObservedAt[candidate.poolAddress] = observedAt; }
         }
         if (!hasNextPage || rows.length === 0) break;
       }
@@ -412,9 +421,10 @@ export async function discoverRwaPairs(
         fetchJupiterTagsByMint(mints, {
           fetcher,
           apiKey: options.jupiterApiKey,
+          signal: options.signal,
           bypassCache: options.bypassCache,
         }),
-        fetchXstocksSolanaMintSet({ fetcher, bypassCache: options.bypassCache }),
+        fetchXstocksSolanaMintSet({ fetcher, bypassCache: options.bypassCache, signal: options.signal }),
       ]);
 
       const qualifiers: MintQualifierLookup = { jupiterTagsByMint, xstocksMints };
@@ -428,6 +438,7 @@ export async function discoverRwaPairs(
 
       const result: DiscoverRwaPairsResult = {
         pairs: sortPairs(pairs, sortBy),
+        discovery: { sourcePages, poolObservedAt, pageCounts, qualificationObservedAt: { jupiter: getJupiterTagsObservedAt(mints), xstocks: getXstocksObservedAt() } },
         scannedPools,
         pagesFetched,
         fetchedAt: new Date().toISOString(),

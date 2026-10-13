@@ -1,3 +1,5 @@
+import { getRwaConfig } from "@/lib/config/rwa-env";
+import { getRwaPairs, snapshotError } from "@/lib/rwa-store";
 import { after } from "next/server";
 import { unstable_cache } from "next/cache";
 import { apiError } from "@/lib/api-response";
@@ -41,6 +43,13 @@ export async function GET(request: Request) {
       throw new Error("sortBy must be estimatedFeeApr, tvl, or volume24h");
     }
     const sortBy = sortRaw as RwaPairSortBy;
+    if (getRwaConfig().enabled) {
+      return Response.json(await getRwaPairs({ minTvl, maxPages, sortBy }), { headers: {
+        "Cache-Control": "public, max-age=0, must-revalidate",
+        "CDN-Cache-Control": "public, s-maxage=60, stale-while-revalidate=300",
+        "Vercel-CDN-Cache-Control": "public, s-maxage=60, stale-while-revalidate=300",
+      } });
+    }
 
     // Check in-memory cache first (fast path for same instance)
     const inMemoryCached = getCachedRwaPairs(minTvl, maxPages, sortBy);
@@ -110,6 +119,7 @@ export async function GET(request: Request) {
       },
     });
   } catch (error) {
+    if (getRwaConfig().enabled) return snapshotError(error);
     return apiError(error, "RWA pair discovery failed", 503);
   }
 }

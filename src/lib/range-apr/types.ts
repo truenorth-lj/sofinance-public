@@ -40,7 +40,10 @@ export type PoolRangeAprPayload = {
     usdPerRawB: number;
     avgDailyVolumeUsd: number;
   };
+  freshness?: { snapshotAt: string; chainObservedAt?: string; economicsObservedAt?: string; volumeObservedAt?: string; stale: boolean; lastAttemptStatus?: string };
   sample: {
+    windowStartUtc?: string;
+    windowEndUtc?: string;
     days: number;
     volumeSource: VolumeSource;
     occupancySource: OccupancySource;

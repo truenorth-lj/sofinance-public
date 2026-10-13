@@ -51,6 +51,7 @@ vi.mock("../lib/open-permit", () => ({
 }));
 
 vi.mock("../lib/rwa-pairs", () => ({
+  RAYDIUM_API_V3: "https://api-v3.raydium.io",
   discoverRwaPairs: vi.fn(),
   getCachedRwaPairs: vi.fn(() => null),
 }));

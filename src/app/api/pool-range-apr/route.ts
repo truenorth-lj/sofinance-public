@@ -1,5 +1,6 @@
 import { apiError } from "@/lib/api-response";
-import { fetchPoolRangeApr } from "@/lib/pool-range-apr";
+import { getPoolAprSnapshot, snapshotError } from "@/lib/rwa-store";
+import { getRwaConfig } from "@/lib/config/rwa-env";
 
 /**
  * One request per pool returns everything needed to price any range: the per-bin liquidity/volume model, the
@@ -29,9 +30,10 @@ export async function GET(request: Request) {
     return apiError(new Error("A valid poolId is required"), "Invalid pool id", 400);
   }
   try {
-    const payload = await fetchPoolRangeApr(poolId);
+    const payload = await getPoolAprSnapshot(poolId);
     return Response.json(payload, { headers: payload.sample.degraded ? DEGRADED_CDN_HEADERS : CDN_HEADERS });
   } catch (error) {
+    if (getRwaConfig().enabled) return snapshotError(error);
     return apiError(error, "Range APR estimate unavailable", 503);
   }
 }
