@@ -135,7 +135,7 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 
     await page.setViewportSize(viewport); wallet.mode = "reject";
     const flow = await setup(page, wallet, { status: "manual-review", chainStatus: "success" });
     await expect(flow.add).toBeEnabled();
-    const warning = page.getByText("Previous transaction finalized successfully; yield details need verification. You can add liquidity.", { exact: true });
+    const warning = page.getByText(/yield details need verification/);
     await expect(warning).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.screenshot({ path: test.info().outputPath(`compound-unlocked-${viewport.width}.png`) });
@@ -151,22 +151,22 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 
   });
 }
 
-test("30 seconds and NFT switching never unlock unknown execution; automatic finality recheck does", async ({ page, wallet }) => {
+test("unknown compound history stays a warning across 30 seconds and NFT changes without automatic submission", async ({ page, wallet }) => {
   await page.clock.install();
   const flow = await setup(page, wallet, { status: "pending", chainStatus: "pending" });
-  await expect(flow.add).toBeDisabled();
+  await expect(flow.add).toBeEnabled();
   await page.clock.fastForward(31000);
-  await expect(page.getByText("Confirmation is taking longer than 30 seconds. Rechecking the previous transaction; add liquidity is paused.")).toBeVisible();
+  await expect(page.getByText(/previous compound transaction is unresolved/i)).toBeVisible();
   flow.setReply({ status: "manual-review", chainStatus: "unknown" });
   await page.getByRole("combobox", { name: "Select Raydium position" }).selectOption(flow.oldMint);
   // Selecting another NFT intentionally clears its amount and preview.
   await expect(page.getByRole("textbox", { name: "Input limit" })).toHaveValue("");
   await page.getByRole("textbox", { name: "Input limit" }).fill("1");
-  await expect(flow.add).toBeDisabled();
+  await expect(flow.add).toBeEnabled();
   const checks = flow.calls.filter((p) => p === "/api/compound-confirm").length;
   await page.clock.runFor(4000);
   await expect.poll(() => flow.calls.filter((p) => p === "/api/compound-confirm").length).toBeGreaterThan(checks);
-  await expect(flow.add).toBeDisabled();
+  await expect(flow.add).toBeEnabled();
   flow.setReply({ status: "manual-review", chainStatus: "success" });
   await page.clock.runFor(4000); await expect(flow.add).toBeEnabled();
   expect(wallet.ledger).toEqual([]); expect(flow.calls).not.toContain("/api/selected-prepare");

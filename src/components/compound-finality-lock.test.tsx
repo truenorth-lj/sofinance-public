@@ -6,6 +6,8 @@ import { SelectedApp } from "./selected-app";
 import { useCompoundController, type CompoundConfirmation } from "./use-compound-controller";
 import { compoundAttemptKey, compoundReceiptsKey, persistCompoundAttempt } from "@/lib/compound-attempt";
 import { compoundHistoryFixture } from "@/lib/test-support/compound-history-fixture";
+import { TransactionMessage, VersionedTransaction } from "@solana/web3.js";
+import bs58 from "bs58";
 import { testKeypair } from "@/lib/test-support/send-fixtures";
 import { USDC_MINT } from "@/lib/ids";
 
@@ -62,7 +64,7 @@ afterEach(async () => {
   await act(async () => root.unmount()); container.remove(); vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks();
 });
 
-describe("compound execution lock in the real SelectedApp", () => {
+describe("compound history warnings in the real SelectedApp", () => {
   it("allows adding to another NFT after finalized success with an incomplete receipt, retaining evidence and warning", async () => {
     reply = { status: "manual-review", chainStatus: "success", state: null };
     await render();
@@ -70,26 +72,26 @@ describe("compound execution lock in the real SelectedApp", () => {
     expect(controller.receiptReviewRequired).toBe(true);
     expect(addButton().disabled).toBe(false);
     expect(container.querySelector("#deposit-view")!.textContent).toContain("Estimation complete, ready to send to wallet for signing");
-    expect(container.textContent).toContain("Previous transaction finalized successfully; yield details need verification. You can add liquidity.");
-    expect(controller.canCompound).toBe(false); expect(controller.ready).toBe(false);
+    expect(container.textContent).toContain("A previous compound transaction finalized, but its yield details need verification. New transactions are available.");
+    expect(controller.canCompound).toBe(true); expect(controller.ready).toBe(true);
     expect(window.localStorage.getItem(compoundAttemptKey(fixture.wallet))).toBe(JSON.stringify(fixture.attempt));
     expect(JSON.parse(window.localStorage.getItem(compoundReceiptsKey(fixture.wallet))!)).toHaveLength(1);
     await act(async () => addButton().click()); expect(mocks.add).toHaveBeenCalledOnce(); expect(mocks.sign).not.toHaveBeenCalled();
   });
-  it("keeps pending transactions locked after 30 seconds, rechecks and replaces the misleading ready text", async () => {
-    await render(); expect(addButton().disabled).toBe(true);
-    expect(container.querySelector("#deposit-view")!.textContent).not.toContain("ready to send to wallet");
+  it("warns about old pending transactions without blocking after 30 seconds or sending automatically", async () => {
+    await render(); expect(addButton().disabled).toBe(false);
+    expect(controller.historyWarning).toContain("unresolved"); expect(controller.canCompound).toBe(true);
     await advance(29_997); expect(controller.confirmationSlow).toBe(false);
     const before = confirmCalls(); await advance(1);
     expect(controller.confirmationSlow).toBe(true); expect(confirmCalls()).toBe(before + 1);
-    expect(addButton().disabled).toBe(true);
-    expect(container.querySelector("#deposit-view")!.textContent).toContain("Confirmation is taking longer than 30 seconds");
-    await act(async () => addButton().click()); expect(mocks.add).not.toHaveBeenCalled();
-    await advance(60_000); expect(controller.walletBlocked).toBe(true);
+    expect(addButton().disabled).toBe(false); expect(controller.walletBlocked).toBe(false);
+    await advance(60_000); expect(controller.walletBlocked).toBe(false);
+    expect(mocks.sign).not.toHaveBeenCalled(); expect(mocks.add).not.toHaveBeenCalled();
+    expect(fetchMock.mock.calls.some(([url]) => /broadcast$/.test(url))).toBe(false);
   });
-  it("continues automatic reconciliation for unknown manual-review and unlocks when history later proves success", async () => {
+  it("continues automatic reconciliation for unknown history while fresh operations stay enabled", async () => {
     reply = { status: "manual-review", chainStatus: "unknown", state: null };
-    await render(); expect(controller.walletBlocked).toBe(true);
+    await render(); expect(controller.walletBlocked).toBe(false);
     const before = confirmCalls(); await advance(4_000); expect(confirmCalls()).toBeGreaterThan(before);
     reply = { status: "success", chainStatus: "success", state: null };
     await advance(4_000); expect(addButton().disabled).toBe(false); expect(controller.receiptReviewRequired).toBe(false);
@@ -98,11 +100,11 @@ describe("compound execution lock in the real SelectedApp", () => {
     reply = { status, state: null };
     await render(); expect(controller.walletBlocked).toBe(false); expect(addButton().disabled).toBe(false);
   });
-  it("does not infer finality from a legacy manual-review response or a mismatched signature", async () => {
+  it("keeps unknown or mismatched historical results as warnings without inferring finality", async () => {
     reply = { status: "manual-review", state: null };
-    await render(); expect(controller.walletBlocked).toBe(true);
+    await render(); expect(controller.walletBlocked).toBe(false);
     reply = { signature: "different", status: "manual-review", chainStatus: "success", state: null };
-    await advance(4_000); expect(controller.walletBlocked).toBe(true);
+    await advance(4_000); expect(controller.walletBlocked).toBe(false);
     expect(controller.error).toBe("");
     expect(controller.attemptError).toContain("signature or status mismatch");
   });
@@ -122,7 +124,7 @@ describe("compound execution lock in the real SelectedApp", () => {
     next.attempt.wallet = activeWallet; next.attempt.summary.state.wallet = activeWallet;
     persistCompoundAttempt(window.localStorage, next.attempt);
     reply = { status: "pending", chainStatus: "pending", state: null };
-    await render(); expect(controller.walletBlocked).toBe(true); expect(addButton().disabled).toBe(true);
+    await render(); expect(controller.walletBlocked).toBe(false); expect(addButton().disabled).toBe(false);
   });
   it("keeps another NFT's successful transaction and receipts in explicitly labelled collapsed history", async () => {
     reply = { status: "success", chainStatus: "success", state: null };
@@ -178,4 +180,167 @@ describe("compound execution lock in the real SelectedApp", () => {
     expect(alert.closest("details")!.querySelector("summary")!.textContent).toBe("Other positions (1 records)");
     expect(controller.receipts).toHaveLength(1); expect(mocks.sign).not.toHaveBeenCalled();
   });
+});
+
+
+function deferred<T>() {
+  let resolve!: (value: T) => void; let reject!: (reason: Error) => void;
+  const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail; });
+  return { promise, resolve, reject };
+}
+function freshPrepared() {
+  const summary = { ...fixture.attempt.summary, positionMint: selectedMint,
+    state: { ...fixture.state, positionMint: selectedMint }, simulatedAt: Date.now(), expiresAt: Date.now() + 60_000 };
+  const tx = new VersionedTransaction(new TransactionMessage({ payerKey: testKeypair(1).publicKey,
+    recentBlockhash: summary.blockhash, instructions: [] }).compileToV0Message());
+  return { summary, permit: "synthetic", unsignedTransaction: Buffer.from(tx.serialize()).toString("base64") };
+}
+
+describe("fresh compound ownership and historical evidence", () => {
+  it.each(["pending", "manual-review", "failed", "expired"] as const)("does not reuse an old %s receipt while preparing fresh fees", async status => {
+    selectedMint = fixture.attempt.positionMint; reply = { status, state: null };
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url === "/api/compound-state") return Response.json({ ...fixture.state, positionMint: selectedMint });
+      if (url === "/api/compound-confirm") return Response.json({ signature: fixture.attempt.signature, ...reply });
+      if (url === "/api/compound-prepare") {
+        expect(JSON.parse(String(init?.body)).sourceSignatures).toEqual([]);
+        return Response.json({ error: "fresh preparation failed" }, { status: 400 });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    });
+    await render("compound"); expect(controller.canCompound).toBe(true);
+    await act(async () => controller.compound());
+    expect(controller.error).toBe("fresh preparation failed");
+    expect(window.localStorage.getItem(compoundAttemptKey(fixture.wallet))).toBe(JSON.stringify(fixture.attempt));
+    expect(mocks.sign).not.toHaveBeenCalled();
+  });
+  it.each(["attempt", "receipts"] as const)("invalid historical %s does not disable fresh compound or request a signature automatically", async kind => {
+    window.localStorage.setItem(kind === "attempt" ? compoundAttemptKey(fixture.wallet) : compoundReceiptsKey(fixture.wallet), "{invalid");
+    await render("compound");
+    expect(controller.canCompound).toBe(true); expect(controller.ready).toBe(true); expect(controller.walletBlocked).toBe(false);
+    expect(controller.historyWarning).toContain("cannot be verified");
+    expect(mocks.sign).not.toHaveBeenCalled(); expect(fetchMock.mock.calls.some(([url]) => /prepare|broadcast$/.test(url))).toBe(false);
+  });
+  it.each([false, true])("a late old confirmation %s cannot replace a new preparation error", async rejected => {
+    const old = deferred<Response>();
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url === "/api/compound-state") return Response.json({ ...fixture.state, positionMint: selectedMint });
+      if (url === "/api/compound-confirm") return old.promise;
+      if (url === "/api/compound-prepare") return Response.json({ error: "fresh size check failed" }, { status: 400 });
+      throw new Error(`Unexpected request ${url}`);
+    });
+    await render("compound"); await act(async () => controller.compound());
+    await act(async () => {
+      if (rejected) old.reject(new Error("old RPC failed"));
+      else old.resolve(Response.json({ signature: fixture.attempt.signature, status: "success", chainStatus: "success", state: null }));
+    });
+    expect(controller.error).toBe("fresh size check failed"); expect(controller.attemptStatus).toBe("pending");
+    expect(controller.confirmation).toBeNull(); expect(controller.busy).toBe(false);
+    expect(window.localStorage.getItem(compoundAttemptKey(fixture.wallet))).toBe(JSON.stringify(fixture.attempt));
+  });
+  it("blocks concurrent clicks only while the new operation is running and releases on broadcast response without waiting for confirmation", async () => {
+    const prepare = deferred<Response>(); const confirm = deferred<Response>();
+    let newSignature = "";
+    mocks.sign.mockImplementation(async (tx: VersionedTransaction) => { tx.sign([testKeypair(1)]); newSignature = bs58.encode(tx.signatures[0]!); return tx; });
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url === "/api/compound-state") return Response.json({ ...fixture.state, positionMint: selectedMint });
+      if (url === "/api/compound-confirm") return confirm.promise;
+      if (url === "/api/compound-prepare") return prepare.promise;
+      if (url === "/api/compound-broadcast") {
+        expect(JSON.parse(String(init?.body)).positionMint).toBe(selectedMint);
+        return Response.json({ signature: newSignature });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    });
+    await render("compound");
+    await act(async () => { controller.compound(); controller.compound(); });
+    expect(controller.busy).toBe(true); expect(controller.walletBlocked).toBe(true);
+    expect(fetchMock.mock.calls.filter(([url]) => url === "/api/compound-prepare")).toHaveLength(1);
+    await act(async () => prepare.resolve(Response.json(freshPrepared())));
+    expect(controller.busy).toBe(false); expect(controller.walletBlocked).toBe(false); expect(controller.attempt?.signature).toBe(newSignature);
+    expect(window.localStorage.getItem(`${compoundAttemptKey(fixture.wallet)}:history:${fixture.attempt.signature}`)).toBe(JSON.stringify(fixture.attempt));
+    expect(mocks.sign).toHaveBeenCalledOnce();
+    await act(async () => confirm.resolve(Response.json({ signature: newSignature, status: "pending", state: null })));
+  });
+});
+
+
+it("automatically uses only the currently verified successful source and leaves older receipts for explicit recovery", async () => {
+  selectedMint = fixture.attempt.positionMint;
+  const older = { ...fixture.attempt, signature: bs58.encode(new Uint8Array(64).fill(8)) };
+  window.localStorage.setItem(compoundReceiptsKey(fixture.wallet), JSON.stringify([older, fixture.attempt].map(item => ({
+    wallet: item.wallet, positionMint: item.positionMint, sourceSignature: item.signature, compoundAccounts: item.summary.compoundAccounts,
+  }))));
+  reply = { status: "success", chainStatus: "success", state: null };
+  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+    if (url === "/api/compound-state") return Response.json(fixture.state);
+    if (url === "/api/compound-confirm") return Response.json({ signature: fixture.attempt.signature, ...reply });
+    if (url === "/api/compound-prepare") {
+      expect(JSON.parse(String(init?.body)).sourceSignatures).toEqual([fixture.attempt.signature]);
+      return Response.json({ error: "prepare stopped for test" }, { status: 400 });
+    }
+    throw new Error(`Unexpected request ${url}`);
+  });
+  await render("compound"); await act(async () => controller.compound());
+  expect(controller.receipts).toHaveLength(2); expect(mocks.sign).not.toHaveBeenCalled();
+});
+
+it("a broadcast timeout unlocks fresh operations while preserving the signature and never resends automatically", async () => {
+  const prepare = deferred<Response>(); const confirm = deferred<Response>();
+  vi.spyOn(AbortSignal, "timeout").mockImplementation(ms => {
+    const timeout = new AbortController(); setTimeout(() => timeout.abort(new DOMException("Timed out", "TimeoutError")), ms); return timeout.signal;
+  });
+  mocks.sign.mockImplementation(async (tx: VersionedTransaction) => { tx.sign([testKeypair(1)]); return tx; });
+  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+    if (url === "/api/compound-state") return Response.json({ ...fixture.state, positionMint: selectedMint });
+    if (url === "/api/compound-confirm") return confirm.promise;
+    if (url === "/api/compound-prepare") return prepare.promise;
+    if (url === "/api/compound-broadcast") return new Promise<Response>((_, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+    });
+    throw new Error(`Unexpected request ${url}`);
+  });
+  await render("compound"); await act(async () => controller.compound());
+  await act(async () => prepare.resolve(Response.json(freshPrepared())));
+  const signature = controller.attempt!.signature;
+  expect(controller.busy).toBe(true); expect(AbortSignal.timeout).toHaveBeenCalledWith(15_000);
+  await advance(15_000); expect(controller.busy).toBe(false); expect(controller.walletBlocked).toBe(false);
+  expect(controller.attempt?.signature).toBe(signature); expect(controller.historyWarning).toContain("unresolved");
+  expect(JSON.parse(window.localStorage.getItem(compoundAttemptKey(fixture.wallet))!).signature).toBe(signature);
+  await advance(60_000);
+  expect(fetchMock.mock.calls.filter(([url]) => url === "/api/compound-broadcast")).toHaveLength(1);
+  expect(mocks.sign).toHaveBeenCalledOnce();
+  await act(async () => confirm.resolve(Response.json({ signature, status: "pending", state: null })));
+});
+
+
+it("a late historical import error cannot erase a newer preparation error", async () => {
+  const imported = deferred<Response>();
+  fetchMock.mockImplementation(async (url: string) => {
+    if (url === "/api/compound-state") return Response.json({ ...fixture.state, positionMint: selectedMint });
+    if (url === "/api/compound-confirm") return Response.json({ signature: fixture.attempt.signature, status: "pending", state: null });
+    if (url === "/api/compound-recover-import") return imported.promise;
+    if (url === "/api/compound-prepare") return Response.json({ error: "new prepare failed" }, { status: 400 });
+    throw new Error(`Unexpected request ${url}`);
+  });
+  await render("compound");
+  let importWork!: Promise<void>;
+  await act(async () => { importWork = controller.importReceipt(fixture.attempt.signature); });
+  await act(async () => controller.compound());
+  await act(async () => { imported.reject(new Error("old import failed")); await importWork; });
+  expect(controller.error).toBe("new prepare failed"); expect(controller.busy).toBe(false);
+});
+
+it("continues checking retained old history after a new prepare fails", async () => {
+  const handler = fetchMock.getMockImplementation() as (url: string) => Promise<Response>;
+  fetchMock.mockImplementation(async (url: string) => url === "/api/compound-prepare"
+    ? Response.json({ error: "Fresh preparation failed" }, { status: 400 }) : handler(url));
+  await render("compound");
+  await act(async () => controller.compound());
+  const before = confirmCalls();
+  await advance(4_000);
+  expect(confirmCalls()).toBeGreaterThan(before);
+  expect(controller.error).toBe("Fresh preparation failed");
+  expect(controller.walletBlocked).toBe(false);
+  expect(mocks.sign).not.toHaveBeenCalled();
 });

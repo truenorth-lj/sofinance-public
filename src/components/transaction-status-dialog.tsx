@@ -12,8 +12,8 @@ export function transactionStatusCopy(status: AtomicStatus) {
     case "success": return { title: "Position increased successfully", detail: "Transaction confirmed on-chain and selected NFT liquidity increment verified." };
     case "failed": return { title: "On-chain transaction failed", detail: "Transaction submitted on-chain but execution failed. Please check transaction history; verify wallet balance before retrying." };
     case "expired": return { title: "Transaction not on-chain and expired", detail: "Transaction not found and valid block height has passed. Check transaction history before deciding to retry." };
-    case "manual-review": return { title: "Transaction result requires manual verification", detail: "On-chain state does not match expectations, further deposits paused. Please verify transaction and position first." };
-    case "pending": return { title: "Transaction confirming", detail: "Wallet signature obtained, verifying on-chain results. Do not resubmit before verification completes." };
+    case "manual-review": return { title: "Transaction result requires manual verification", detail: "Verify this transaction and position before starting again. New operations are available; an unconfirmed transaction may still succeed." };
+    case "pending": return { title: "Transaction confirming", detail: "This transaction may still succeed. Starting again may add liquidity twice. It will not be automatically resent." };
   }
 }
 

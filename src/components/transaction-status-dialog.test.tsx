@@ -32,7 +32,8 @@ describe("transaction status dialog", () => {
 
   it("keeps an uncertain broadcast result pending and offers a fresh lookup", () => {
     const markup = render("pending", "RPC temporarily unavailable");
-    expect(markup).toContain("Do not resubmit");
+    expect(markup).toContain("Starting again may add liquidity twice");
+    expect(markup).toContain("will not be automatically resent");
     expect(markup).toContain("RPC temporarily unavailable");
     expect(markup).toContain("Requery on-chain status");
     expect(markup).not.toContain("Position increased successfully");

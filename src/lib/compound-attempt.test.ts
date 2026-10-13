@@ -58,7 +58,7 @@ describe("compound signature and recovery persistence", () => {
     persistCompoundAttempt(storage, first);
     const second = attempt(first.wallet);
     const unavailable = { getItem: storage.getItem, setItem: () => undefined };
-    expect(() => persistCompoundAttempt(unavailable, second)).toThrow("Unable to save yield account record");
+    expect(() => persistCompoundAttempt(unavailable, second)).toThrow("Unable to preserve previous transaction record");
     expect(loadCompoundAttempt(storage, first.wallet).attempt?.signature).toBe(first.signature);
     expect(loadCompoundReceipts(storage, first.wallet).receipts).toHaveLength(1);
   });
@@ -252,4 +252,22 @@ describe("compound signature and recovery persistence", () => {
     transaction.message.recentBlockhash = key();
     expect(() => signedCompoundTransaction(transaction, original, owner.publicKey.toBase58())).toThrow("modified transaction content");
   });
+});
+
+
+it("archives previous raw attempts by signature before replacing the current record", () => {
+  const storage = memoryStorage(), first = attempt(), next = attempt(first.wallet);
+  persistCompoundAttempt(storage, first); persistCompoundAttempt(storage, next);
+  expect(storage.getItem(`${compoundAttemptKey(first.wallet)}:history:${first.signature}`)).toBe(JSON.stringify(first));
+  expect(loadCompoundAttempt(storage, first.wallet).attempt?.signature).toBe(next.signature);
+});
+it("archives corrupt raw attempt and receipt records so a fresh signed operation can be persisted", () => {
+  const storage = memoryStorage(), fresh = attempt();
+  storage.setItem(compoundAttemptKey(fresh.wallet), "{truncated-attempt");
+  storage.setItem(compoundReceiptsKey(fresh.wallet), "{truncated-receipts");
+  persistCompoundAttempt(storage, fresh);
+  const archives = [...storage.values.entries()].filter(([key]) => key.includes(":history:"));
+  expect(archives.map(([, raw]) => raw).sort()).toEqual(["{truncated-attempt", "{truncated-receipts"]);
+  expect(loadCompoundAttempt(storage, fresh.wallet).attempt).toEqual(fresh);
+  expect(loadCompoundReceipts(storage, fresh.wallet).receipts[0]?.sourceSignature).toBe(fresh.signature);
 });

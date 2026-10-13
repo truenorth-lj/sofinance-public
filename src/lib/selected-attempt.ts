@@ -47,3 +47,35 @@ export function loadSelectedAttempt(storage: Pick<Storage, "getItem">, wallet: s
     return { attempt, invalid: attempt === null };
   } catch { return { attempt: null, invalid: true }; }
 }
+
+/** Preserve the previous receipt before replacing the current signed attempt. */
+export function persistSelectedAttempt(storage: Pick<Storage, "getItem" | "setItem" | "length">, attempt: SelectedAttempt) {
+  const key = selectedAttemptKey(attempt.wallet);
+  const previous = storage.getItem(key);
+  const serialized = JSON.stringify(attempt);
+  if (previous !== null && previous !== serialized) {
+    const saved = loadSelectedAttempt(storage, attempt.wallet);
+    const prefix = `${key}:history:${saved.attempt?.signature ?? `${Date.now()}:${storage.length}`}`;
+    let historyKey = prefix;
+    for (let index = 1; storage.getItem(historyKey) !== null && storage.getItem(historyKey) !== previous; index++) {
+      historyKey = `${prefix}:${index}`;
+    }
+    storage.setItem(historyKey, previous);
+    if (storage.getItem(historyKey) !== previous) throw new Error("Unable to preserve previous transaction record; transaction not broadcast");
+  }
+  storage.setItem(key, serialized);
+  if (storage.getItem(key) !== serialized) throw new Error("Unable to save transaction record; transaction not broadcast");
+}
+
+export function readSelectedHistory(storage: Pick<Storage, "getItem" | "key" | "length">, wallet: string) {
+  const history: SelectedAttempt[] = [];
+  for (let index = 0; index < storage.length; index++) {
+    const key = storage.key(index);
+    if (!key?.startsWith(`${selectedAttemptKey(wallet)}:history:`)) continue;
+    try {
+      const record = parseSelectedAttempt(JSON.parse(storage.getItem(key) || "null"), wallet);
+      if (record) history.push(record);
+    } catch { /* Invalid receipts are retained in storage, never used as transaction input. */ }
+  }
+  return history;
+}

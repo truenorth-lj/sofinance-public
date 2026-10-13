@@ -4,7 +4,7 @@ import { randomAddress, buildSingleSignerTx } from "../../support/tx";
 import type { Page } from "@playwright/test";
 import type { FakeWallet } from "../../fake-wallet/node-signer";
 
-async function setup(page: Page, wallet: FakeWallet, options: { prepareFails?: boolean; uncertainSend?: boolean } = {}) {
+async function setup(page: Page, wallet: FakeWallet, options: { prepareFails?: boolean; uncertainSend?: boolean; historyStatus?: "pending" | "manual-review" | "invalid" | "legacy" } = {}) {
   const positionMint = randomAddress(), mintA = randomAddress(), mintB = randomAddress();
   const inputMint = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
   const poolId = randomAddress(), positionAccount = randomAddress();
@@ -47,10 +47,20 @@ async function setup(page: Page, wallet: FakeWallet, options: { prepareFails?: b
       const bs58 = (await import("bs58")).default;
       value = { signature: bs58.encode(tx.signatures[0]!) };
     }
-    if (pathname === "/api/selected-status") value = { status: "pending", state: null, signature: body.signature };
+    if (pathname === "/api/selected-status") value = { status: options.historyStatus === "manual-review" ? "manual-review" : "pending", state: null, signature: body.signature };
+    if (pathname === "/api/transaction-finality") value = { status: "pending" };
     if (pathname === "/api/beam-status") value = { beam: null };
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(value) });
   });
+  if (options.historyStatus) {
+    const prior = { version: 2, wallet: wallet.address, selection: { ...selection, positionMint: randomAddress() },
+      poolId, positionAccount, signature: "1".repeat(64), createdAt: Date.now(), requested: "1000000", floorBps: 9900,
+      startingBalances: state.balances, startingLiquidity: "1", expectedLiquidity: "2", blockhash: randomAddress(), lastValidBlockHeight: 100 };
+    await page.addInitScript(({ prior, kind }) => {
+      const key = kind === "legacy" ? `sofinance:atomic:${prior.wallet}` : `sofinance:selected-atomic:v2:${prior.wallet}`;
+      if (localStorage.getItem(key) === null) localStorage.setItem(key, kind === "invalid" ? "invalid old record" : JSON.stringify(prior));
+    }, { prior, kind: options.historyStatus });
+  }
   await page.goto("/app?view=deposit");
   await new ConnectModal(page, wallet).connect();
   await page.getByRole("textbox", { name: "Input limit" }).fill("1");
@@ -75,7 +85,7 @@ test("one Add prepares once, signs the same message, broadcasts once and persist
   await expect.poll(() => calls.filter((p) => p === "/api/selected-broadcast").length).toBe(1);
   expect(calls.filter((p) => p === "/api/selected-prepare")).toHaveLength(1);
   expect(wallet.ledger).toHaveLength(1);
-  await expect(page.getByRole("dialog")).toBeVisible();
+  await expect(page.getByText("Transaction status: pending", { exact: true })).toBeVisible();
   await page.screenshot({ path: test.info().outputPath("add-pending.png") });
 });
 
@@ -93,13 +103,16 @@ test("wallet message mutation blocks broadcast", async ({ page, wallet }) => {
   expect(calls).not.toContain("/api/selected-broadcast");
 });
 
-test("ambiguous send remains locked through reload and never auto-retries", async ({ page, wallet }) => {
+test("ambiguous send warns after reload without locking or automatically resending", async ({ page, wallet }) => {
   const { calls, add } = await setup(page, wallet, { uncertainSend: true });
   await add.click();
   await expect.poll(() => calls.filter((p) => p === "/api/selected-broadcast").length).toBe(1);
-  await expect(page.getByRole("dialog")).toBeVisible();
+  await expect(page.getByText("Transaction status: pending", { exact: true })).toBeVisible();
   await page.reload();
-  await expect(page.getByText("Signature exists, verifying on-chain status; do not resubmit").first()).toBeVisible();
+  await expect(page.getByText(/Previous transaction is unconfirmed or needs verification/).first()).toBeVisible();
+  await page.getByRole("textbox", { name: "Input limit" }).fill("1");
+  await expect(add).toBeEnabled();
+  expect(wallet.ledger).toHaveLength(1);
   expect(calls.filter((p) => p === "/api/selected-broadcast")).toHaveLength(1);
 });
 
@@ -111,3 +124,18 @@ test("mobile shows the same ready preview without overflow or signing", async ({
   expect(wallet.ledger).toEqual([]);
   await page.screenshot({ path: test.info().outputPath("add-preview-mobile.png") });
 });
+
+for (const historyStatus of ["pending", "manual-review", "invalid", "legacy"] as const) {
+  test(`old ${historyStatus} history allows Add and survives reload without signing`, async ({ page, wallet }) => {
+    const { calls, add } = await setup(page, wallet, { historyStatus });
+    if (historyStatus !== "legacy") await expect(page.getByText(/Previous transaction is unconfirmed or needs verification/).first()).toBeVisible();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await page.reload();
+    await page.getByRole("textbox", { name: "Input limit" }).fill("1");
+    await expect(add).toBeEnabled();
+    expect(calls).not.toContain("/api/selected-prepare");
+    expect(calls).not.toContain("/api/selected-broadcast");
+    expect(wallet.ledger).toEqual([]);
+    await page.screenshot({ path: test.info().outputPath(`history-${historyStatus}.png`) });
+  });
+}
