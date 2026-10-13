@@ -113,6 +113,7 @@ it("prepares the compact captured sequential transaction first", async () => {
   expect(simulateAndVerifyOpenTransaction).toHaveBeenCalledTimes(1);
   expect(summary.sizeBytes).toBeLessThanOrEqual(1232);
   expect(summary.sizeBytes).toBe(transaction.serialize().length);
+  expect(Buffer.from(transaction.serialize()).toString("base64")).toMatchSnapshot();
   expect(transaction.signatures[0]!.every(byte => byte === 0)).toBe(true);
   expect(transaction.signatures[1]!.some(byte => byte !== 0)).toBe(true);
 });

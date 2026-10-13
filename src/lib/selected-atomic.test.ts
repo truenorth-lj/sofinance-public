@@ -17,7 +17,8 @@ import { buildSelectedAddInstruction } from "./selected-add-instruction";
 import { simulateAndVerifySelectedTransaction } from "./selected-simulation";
 import { fetchBeamTipAddress } from "./solami-beam";
 import { buildAndSimulateSelectedZap } from "./selected-atomic";
-const key = () => Keypair.generate().publicKey;
+let keyIndex = 1;
+const key = () => Keypair.fromSeed(new Uint8Array(32).fill(keyIndex++)).publicKey;
 const wallet = key(), pool = key(), position = key(), program = key(), mintA = key(), mintB = key();
 const state = { positionMint: key().toBase58(), positionAccount: position.toBase58(), poolId: pool.toBase58(), programId: program.toBase58(),
   mintA: mintA.toBase58(), mintB: mintB.toBase58(), inputMint: mintA.toBase58(), inputKind: "token", inputAccount: key().toBase58(),
@@ -40,7 +41,9 @@ function bundle(oversize = false) {
     }],
   } as never;
 }
+const initialKeyIndex = keyIndex;
 beforeEach(() => {
+  keyIndex = initialKeyIndex;
   vi.clearAllMocks(); connection.getMultipleAccountsInfoAndContext.mockResolvedValue({ value: [], context: { slot: 1 } }); vi.mocked(rpcConnection).mockReturnValue(connection as never);
   vi.mocked(readSelectedPositionState).mockResolvedValue(state as never);
   const data = createHash("sha256").update("global:increase_liquidity_v2").digest().subarray(0, 8);
@@ -99,4 +102,10 @@ it.each(["Token-2022 mint", "external pool vault"])("accepts a writable %s witho
   connection.getMultipleAccountsInfoAndContext.mockResolvedValueOnce({ context: { slot: 1 }, value: [account] } as never);
   const result = await buildAndSimulateSelectedZap(wallet.toBase58(), selection, "1", 9900);
   expect(result.summary.simulated).toBe(true); expect(simulateAndVerifySelectedTransaction).toHaveBeenCalledOnce();
+});
+
+it("snapshots the selected transaction wire bytes", async () => {
+  vi.mocked(getSelectedQuoteBundle).mockResolvedValue(bundle());
+  const { transaction } = await buildAndSimulateSelectedZap(wallet.toBase58(), selection, "0.001", 9900);
+  expect(Buffer.from(transaction.serialize()).toString("base64")).toMatchSnapshot();
 });

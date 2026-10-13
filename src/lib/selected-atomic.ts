@@ -1,3 +1,4 @@
+import { swapRouteInstructions } from "./swap";
 import "server-only";
 
 import { createHash } from "node:crypto";
@@ -5,7 +6,7 @@ import { buildSelectedAddInstruction } from "./selected-add-instruction";
 import { createAssociatedTokenAccountIdempotentInstruction, createSyncNativeInstruction, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID, unpackAccount } from "@solana/spl-token";
 import { ComputeBudgetProgram, PublicKey, SystemProgram, TransactionMessage, VersionedTransaction, type Connection, type TransactionInstruction } from "@solana/web3.js";
 import { NATIVE_SOL_MINT, QUOTE_TTL_MS } from "./ids";
-import { instruction, readLookupTables, validateRouteTables } from "./transaction-helpers";
+import { readLookupTables, validateRouteTables } from "./transaction-helpers";
 import { rpcConnection } from "./rpc";
 import { beamTipInstruction, chooseBeamTransaction, fetchBeamTipAddress } from "./solami-beam";
 import { isTxOversizeError, type JupiterRouteConstraints } from "./jupiter-route-retry";
@@ -82,12 +83,7 @@ async function buildAndSimulateSelectedZapOnce(
     add.keys[4]?.pubkey.toBase58() !== state.positionAccount) {
     throw new Error("Raydium instruction is not increase_liquidity_v2 on selected position");
   }
-  const routeInstructions = routes.flatMap((route) => [
-    ...route.setupInstructions.map((ix) => instruction(ix, wallet)),
-    instruction(route.swapInstruction, wallet),
-    ...(route.cleanupInstruction ? [instruction(route.cleanupInstruction, wallet)] : []),
-    ...route.otherInstructions.map((ix) => instruction(ix, wallet)),
-  ]);
+  const routeInstructions = swapRouteInstructions(routes, wallet);
   await rejectUnselectedWalletTokenWrites(connection, wallet, routeInstructions,
     [state.inputAccount, state.ataA, state.ataB].filter((item): item is string => Boolean(item)));
   const routeKeys = routes.flatMap((route) => Object.keys(route.addressesByLookupTableAddress || {}).map((key) => new PublicKey(key)));

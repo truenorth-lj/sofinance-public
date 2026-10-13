@@ -11,7 +11,7 @@ import { allocateSpend, padAmountMax, positionSide, toleranceLiquidity } from ".
 import { buildRoute, type BuildRoute } from "./jupiter-route";
 import { estimateOpenPositionRent } from "./open-rent";
 import { resolveOpenRange, type OpenRangeInput } from "./open-range";
-import { netSwapInput, readSwapFeeConfig, type SwapFeeConfig } from "./swap-fee";
+import { netSwapInput, readSwapFeeConfig, type SwapFeeConfig } from "./swap";
 import { rpcConnection } from "./rpc";
 import { readOpenPoolState, type OpenPoolState, type OpenPositionSelection } from "./open-state";
 import type { OpenPositionQuote } from "./open-types";

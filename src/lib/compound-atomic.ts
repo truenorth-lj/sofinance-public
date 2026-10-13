@@ -14,7 +14,7 @@ import { simulateAndVerifyCompound } from "./compound-simulation";
 import { conservativeSwapBalances, sizeBufferedCompoundLiquidity } from "./compound-math";
 import { buildCompoundSwapPlan } from "./compound-swap";
 import { readCompoundPriorSources } from "./compound-prior-sources";
-import { readSwapFeeConfig, swapFeeTransferInstructions, unfundedSwapFeeAtaRent } from "./swap-fee";
+import { readSwapFeeConfig, swapFeeTransferInstructions, unfundedSwapFeeAtaRent } from "./swap";
 import { versionedTransactionSize } from "./open-transaction";
 import type { CompoundAccount, CompoundPositionState, CompoundSummary } from "./compound-types";
 

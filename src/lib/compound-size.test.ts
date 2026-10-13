@@ -46,6 +46,7 @@ describe("atomic compound packet limit", () => {
     const tx = compile(compact);
     expect(assertCompoundTransactionSize(tx)).toBe(1209);
     expect(tx.serialize().length).toBe(1209);
+    expect(Buffer.from(tx.serialize()).toString("base64")).toMatchSnapshot();
     expect(tx.message.header.numRequiredSignatures).toBe(1);
     // Harvest, fee, swap and add retain their exact data, accounts and flags.
     expect(compact.slice(5)).toEqual(original.slice(5));

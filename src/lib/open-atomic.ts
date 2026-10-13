@@ -1,3 +1,4 @@
+import { swapRouteInstructions } from "./swap";
 import "server-only";
 
 import { createHash } from "node:crypto";
@@ -10,14 +11,14 @@ import {
 } from "@solana/web3.js";
 import { DEFAULT_RESALE_FLOOR_BPS, MIN_SOL_LAMPORTS, NATIVE_SOL_MINT } from "./ids";
 import { restampVersionedTransaction, stampPreparedBlockhash } from "./fresh-blockhash";
-import { instruction, validateRouteTables } from "./transaction-helpers";
+import { validateRouteTables } from "./transaction-helpers";
 import { assertOpenTransactionSize, compactAtaInstructions, compileCompactOpenTransaction, OpenTransactionSizeError, openLookupTableReader } from "./open-transaction";
 import { rpcConnection } from "./rpc";
 import { JupiterNoRouteError } from "./jupiter-route";
 import { BEAM_MIN_TIP_LAMPORTS, beamTipInstruction, chooseBeamTransaction, fetchBeamTipAddress } from "./solami-beam";
 import { getOpenPositionQuoteBundle, type OpenSwapStrategy } from "./open-quote";
 import { simulateAndVerifyOpenTransaction } from "./open-simulation";
-import { assertNativeSwapFeeRecipient, computeSwapFee, readSwapFeeConfig, swapFeeTransferInstructions, unfundedSwapFeeAtaRent } from "./swap-fee";
+import { assertNativeSwapFeeRecipient, computeSwapFee, readSwapFeeConfig, swapFeeTransferInstructions, unfundedSwapFeeAtaRent } from "./swap";
 import { parseTokenAmount } from "./amount";
 import type { OpenRangeInput } from "./open-range";
 import { readOpenPoolState, type OpenPoolState, type OpenPositionSelection } from "./open-state";
@@ -137,12 +138,7 @@ async function buildOpenPositionAttempt(
       open.keys[1]?.pubkey.toBase58() !== walletAddress) {
       throw new Error("Raydium instruction is not open_position_with_token22_nft for this wallet");
     }
-    const routeInstructions = routes.flatMap((route) => [
-      ...route.setupInstructions.map((ix) => instruction(ix, wallet)),
-      instruction(route.swapInstruction, wallet),
-      ...(route.cleanupInstruction ? [instruction(route.cleanupInstruction, wallet)] : []),
-      ...route.otherInstructions.map((ix) => instruction(ix, wallet)),
-    ]);
+    const routeInstructions = swapRouteInstructions(routes, wallet);
     await rejectUnselectedWalletTokenWrites(connection, wallet, routeInstructions,
       [state.inputAccount, state.ataA, state.ataB].filter((item): item is string => Boolean(item)));
     const routeTables = await resources.readTables(routes.flatMap((route) =>

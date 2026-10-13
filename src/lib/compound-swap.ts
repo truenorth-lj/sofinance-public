@@ -8,7 +8,7 @@ import { Connection, PublicKey, type TransactionInstruction } from "@solana/web3
 import { readRecentBlockTime } from "./block-time";
 import { MAX_U64, sizeCompoundLiquidity } from "./compound-math";
 import { SLIPPAGE_BPS } from "./ids";
-import { netSwapInput, readSwapFeeConfig } from "./swap-fee";
+import { netSwapInput, readSwapFeeConfig } from "./swap";
 import type { CompoundAccount, CompoundPositionState } from "./compound-types";
 
 export type CompoundSwap = {
