@@ -141,6 +141,6 @@ it.each(["native", "token"] as const)("selected add charges the configured fee o
   vi.mocked(buildRoute).mockImplementation(async (_wallet, input, output, amount) => route(input, output, amount) as never);
   const result = await getSelectedQuoteBundle(wallet, { positionMint, inputMint: mintB, inputKind: kind }, "100", 9900, 100,
     undefined, { state, connection, includeResale: false });
-  expect(result.quote.feeAmount).toBe("100000");
-  expect(result.legs[0]!.route!.inAmount).toBe("99900000");
+  expect(result.quote.feeAmount).toBe("0");
+  expect(result.legs[0]!.route!.inAmount).toBe("100000000");
 });

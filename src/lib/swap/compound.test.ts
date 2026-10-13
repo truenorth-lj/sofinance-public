@@ -32,12 +32,12 @@ it.each([true, false])("compound uses Jupiter with fee ATA existing=%s and isola
       decimalsA: 6, decimalsB: 6, lowerSqrtX64: (q/2n).toString(), upperSqrtX64: (q*2n).toString(), liquidity: "0" },
     accounts, computePoolInfo: { sqrtPriceX64: new BN((q/3n).toString()), liquidity: new BN("1000000000000000000") }, amountA: 0n, amountB: 1000000n };
   const result = await buildCompoundSwapPlan(input as never);
-  expect(result.swap!.feeAmount).toBe(existing ? "1000" : "0");
-  expect(result.swap!.inputAmount).toBe(existing ? "999000" : "1000000");
+  expect(result.swap!.feeAmount).toBe("1000");
+  expect(result.swap!.inputAmount).toBe("999000");
   expect(result.instructions[0]!.keys[0]!.pubkey.toBase58()).toBe(accounts[1]!.address);
   expect(result.instructions[0]!.keys[1]!.pubkey.toBase58()).toBe(accounts[0]!.address);
   expect(buildRoute).toHaveBeenCalledWith(wallet.toBase58(), accounts[1]!.mint, accounts[0]!.mint,
-    existing ? 999000n : 1000000n, false, expect.objectContaining({ onlyDirectRoutes: true }), undefined, undefined, accounts[0]!.address);
+    999000n, false, expect.objectContaining({ onlyDirectRoutes: true }), undefined, undefined, accounts[0]!.address);
   vi.mocked(quoteRoute).mockImplementation(async (input, output, amount) => ({ ...quote(input, output, amount),
     routePlan: [{ ...quote(input, output, amount).routePlan[0], swapInfo: { ...quote(input, output, amount).routePlan[0]!.swapInfo, ammKey: "unrelated" } }] }) as never);
   await expect(buildCompoundSwapPlan(input as never)).rejects.toThrow("only the original pool");

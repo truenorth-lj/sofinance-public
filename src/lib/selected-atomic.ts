@@ -1,4 +1,4 @@
-import { swapRouteInstructions, rejectUnselectedWalletTokenWrites, assertNativeSwapFeeRecipient, readSwapFeeConfig, swapFeeTransferInstructions } from "./swap";
+import { swapRouteInstructions, rejectUnselectedWalletTokenWrites, readSwapFeeConfig, collectSwapFee, fitFeeCollections } from "./swap";
 import "server-only";
 
 import { createHash } from "node:crypto";
@@ -60,13 +60,12 @@ async function buildAndSimulateSelectedZapOnce(
   if ((quote.feeAmount ?? "0") !== protocolFee.toString() || (quote.feeBps ?? 0) !== feeConfig.bps ||
     (quote.feeWallet ?? null) !== (feeConfig.wallet?.toBase58() ?? null))
     throw new Error("Quote protocol fee does not match configuration");
-  if (state.inputKind === "native" && feeConfig.wallet) await assertNativeSwapFeeRecipient(connection, feeConfig.wallet, protocolFee);
   const feeInstructions = feeConfig.wallet && protocolFee > 0n
-    ? swapFeeTransferInstructions(state.inputKind === "native"
+    ? await collectSwapFee(connection, state.inputKind === "native"
       ? { payer: wallet, owner: wallet, recipient: feeConfig.wallet, amount: protocolFee, kind: "native" }
       : { payer: wallet, owner: wallet, recipient: feeConfig.wallet, amount: protocolFee, kind: "token",
         mint: new PublicKey(state.inputMint), source: new PublicKey(state.inputAccount!),
-        decimals: state.inputDecimals, program: new PublicKey(state.inputTokenProgram!) }) : [];
+        decimals: state.inputDecimals, program: new PublicKey(state.inputTokenProgram!) }) : { instructions: [], routes: [] };
   const raydiumInstructions = [buildSelectedAddInstruction(state, quote, wallet)];
   const addInstructions = raydiumInstructions.filter((ix) => ix.programId.toBase58() === state.programId);
   const addDiscriminator = createHash("sha256").update("global:increase_liquidity_v2").digest().subarray(0, 8);
@@ -77,15 +76,15 @@ async function buildAndSimulateSelectedZapOnce(
     throw new Error("Raydium instruction is not increase_liquidity_v2 on selected position");
   }
   const routeInstructions = swapRouteInstructions(routes, wallet);
-  await rejectUnselectedWalletTokenWrites(connection, wallet, routeInstructions,
+  await rejectUnselectedWalletTokenWrites(connection, wallet, [...feeInstructions.instructions, ...routeInstructions],
     [state.inputAccount, state.ataA, state.ataB].filter((item): item is string => Boolean(item)));
-  const routeKeys = routes.flatMap((route) => Object.keys(route.addressesByLookupTableAddress || {}).map((key) => new PublicKey(key)));
+  const routeKeys = [...routes, ...feeInstructions.routes].flatMap((route) => Object.keys(route.addressesByLookupTableAddress || {}).map((key) => new PublicKey(key)));
   const [routeTables, raydiumTable] = await Promise.all([
     readLookupTables(connection, routeKeys),
     connection.getAddressLookupTable(new PublicKey("AcL1Vo8oy1ULiavEcjSUcwfBSForXMudcZvDZy5nzJkU"), { commitment: "confirmed" }),
   ]);
   const raydiumTables = raydiumTable.value?.isActive() ? [raydiumTable.value] : [];
-  validateRouteTables(routes, routeTables);
+  validateRouteTables([...routes, ...feeInstructions.routes], routeTables);
   const directSol = state.inputKind === "native" ? legs.find((item) => !item.route && item.outputMint === NATIVE_SOL_MINT) : null;
   const wrapInstructions = directSol ? [
     createAssociatedTokenAccountIdempotentInstruction(wallet, new PublicKey(state.mintA === NATIVE_SOL_MINT ? state.ataA : state.ataB),
@@ -105,11 +104,20 @@ async function buildAndSimulateSelectedZapOnce(
   const tables = [...new Map([...routeTables, ...raydiumTables]
     .map((table) => [table.key.toBase58(), table])).values()];
   const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
-  const baseInstructions = [ComputeBudgetProgram.setComputeUnitLimit({ units: 1_400_000 }),
-    ...feeInstructions, ...routeInstructions, ...wrapInstructions, ...createAtaInstructions, ...raydiumInstructions];
+  let baseInstructions = [ComputeBudgetProgram.setComputeUnitLimit({ units: 1_400_000 }),
+    ...feeInstructions.instructions, ...routeInstructions, ...wrapInstructions, ...createAtaInstructions, ...raydiumInstructions];
   const compile = (instructions: TransactionInstruction[]) => new VersionedTransaction(new TransactionMessage({
     payerKey: wallet, recentBlockhash: blockhash, instructions,
   }).compileToV0Message(tables));
+  if (!feeInstructions.routes.length) {
+    try { if (compile(baseInstructions).serialize().length > 1232) throw new RangeError(); }
+    catch { throw new Error("Complete swap + add transaction exceeds 1,232 byte limit, please select simpler route or other asset"); }
+  }
+  const tip = await fetchBeamTipAddress({ signal, timeoutMs: 300 });
+  signal?.throwIfAborted();
+  const feeFit = await fitFeeCollections(connection, [feeInstructions], baseInstructions, compile,
+    tip ? beamTipInstruction(wallet, tip.address, tip.lamports) : undefined);
+  baseInstructions = feeFit.instructions;
   const withoutTip = compile(baseInstructions);
   try {
     if (withoutTip.serialize().length > 1_232) throw new RangeError("encoding overruns Uint8Array");
@@ -119,8 +127,6 @@ async function buildAndSimulateSelectedZapOnce(
     }
     throw error;
   }
-  const tip = await fetchBeamTipAddress({ signal, timeoutMs: 300 });
-  signal?.throwIfAborted();
   const withTip = tip ? compile([...baseInstructions, beamTipInstruction(wallet, tip.address, tip.lamports)]) : null;
   const chosen = chooseBeamTransaction(withoutTip, withTip);
   const transaction = chosen.transaction;

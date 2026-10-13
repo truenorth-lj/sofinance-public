@@ -14,12 +14,11 @@ import { restampVersionedTransaction, stampPreparedBlockhash } from "./fresh-blo
 import { validateRouteTables } from "./transaction-helpers";
 import { assertOpenTransactionSize, compactAtaInstructions, compileCompactOpenTransaction, OpenTransactionSizeError, openLookupTableReader } from "./open-transaction";
 import { rpcConnection } from "./rpc";
-import { JupiterNoRouteError } from "./swap/jupiter";
+import { JupiterNoRouteError, type BuildRoute } from "./swap/jupiter";
 import { BEAM_MIN_TIP_LAMPORTS, beamTipInstruction, chooseBeamTransaction, fetchBeamTipAddress } from "./solami-beam";
 import { getOpenPositionQuoteBundle, type OpenSwapStrategy } from "./open-quote";
 import { simulateAndVerifyOpenTransaction } from "./open-simulation";
-import { assertNativeSwapFeeRecipient, computeSwapFee, readSwapFeeConfig, swapFeeTransferInstructions, unfundedSwapFeeAtaRent } from "./swap";
-import { parseTokenAmount } from "./amount";
+import { readSwapFeeConfig, collectSwapFee, fitFeeCollections, type FeeCollection, feeRecipientRent } from "./swap";
 import type { OpenRangeInput } from "./open-range";
 import { readOpenPoolState, type OpenPoolState, type OpenPositionSelection } from "./open-state";
 import type { OpenPositionSummary } from "./open-types";
@@ -138,16 +137,20 @@ async function buildOpenPositionAttempt(
       open.keys[1]?.pubkey.toBase58() !== walletAddress) {
       throw new Error("Raydium instruction is not open_position_with_token22_nft for this wallet");
     }
-    const routeInstructions = legs.flatMap(item => {
+    const feeRoutes: BuildRoute[] = [];
+    const collections: FeeCollection[] = [];
+    const routeInstructions = (await Promise.all(legs.map(async item => {
       if (!item.route) return [];
       const secondaryFee = item.inputMint !== state.inputMint && feeConfig.wallet && item.feeAmount > 0n
-        ? swapFeeTransferInstructions({ payer: wallet, owner: wallet, recipient: feeConfig.wallet,
+        ? await collectSwapFee(connection, { payer: wallet, owner: wallet, recipient: feeConfig.wallet,
           amount: item.feeAmount, kind: "token", mint: new PublicKey(item.inputMint),
           source: new PublicKey(item.inputMint === state.mintA ? state.ataA : state.ataB),
           decimals: item.inputMint === state.mintA ? state.decimalsA : state.decimalsB,
-          program: new PublicKey(item.inputMint === state.mintA ? state.programA : state.programB) }) : [];
-      return [...secondaryFee, ...swapRouteInstructions([item.route], wallet)];
-    });
+          program: new PublicKey(item.inputMint === state.mintA ? state.programA : state.programB) }) : { instructions: [], routes: [] };
+      collections.push(secondaryFee);
+      feeRoutes.push(...secondaryFee.routes);
+      return [...secondaryFee.instructions, ...swapRouteInstructions([item.route], wallet)];
+    }))).flat();
     await rejectUnselectedWalletTokenWrites(connection, wallet, routeInstructions,
       [state.inputAccount, state.ataA, state.ataB].filter((item): item is string => Boolean(item)));
     const routeTables = await resources.readTables(routes.flatMap((route) =>
@@ -167,14 +170,20 @@ async function buildOpenPositionAttempt(
       throw new Error("Protocol fee requires the selected input token account");
     }
     const feeInstructions = feeConfig.wallet && protocolFee > 0n
-      ? swapFeeTransferInstructions(state.inputKind === "native"
+      ? await collectSwapFee(connection, state.inputKind === "native"
         ? { payer: wallet, owner: wallet, recipient: feeConfig.wallet, amount: protocolFee, kind: "native" }
         : {
           payer: wallet, owner: wallet, recipient: feeConfig.wallet, amount: protocolFee, kind: "token",
           mint: new PublicKey(state.inputMint), source: new PublicKey(state.inputAccount!),
           decimals: state.inputDecimals, program: new PublicKey(state.inputTokenProgram!),
         })
-      : [];
+      : { instructions: [], routes: [] };
+    collections.push(feeInstructions);
+    feeRoutes.push(...feeInstructions.routes);
+    const feeTables = await resources.readTables(feeRoutes.flatMap(route => Object.keys(route.addressesByLookupTableAddress || {}).map(key => new PublicKey(key))));
+    validateRouteTables(feeRoutes, feeTables);
+    await rejectUnselectedWalletTokenWrites(connection, wallet, [...feeInstructions.instructions, ...routeInstructions],
+      [state.inputAccount, state.ataA, state.ataB].filter((item): item is string => Boolean(item)));
     const wrappedAta = nativeAta?.toBase58() ?? null;
     const cleanupInstructions = nativeAta && ![state.mintA, state.mintB].includes(NATIVE_SOL_MINT)
       ? [createCloseAccountInstruction(nativeAta, wallet, wallet)] : [];
@@ -184,17 +193,24 @@ async function buildOpenPositionAttempt(
       ...(ataBInfo || wrappedAta === state.ataB ? [] : [createAssociatedTokenAccountIdempotentInstruction(wallet, new PublicKey(state.ataB), wallet,
         new PublicKey(state.mintB), new PublicKey(state.programB))]),
     ];
-    const availableTables = [...new Map([...routeTables, ...raydiumTables]
+    const availableTables = [...new Map([...routeTables, ...feeTables, ...raydiumTables]
       .map((table) => [table.key.toBase58(), table])).values()];
     const simulationBlockhash = (await connection.getLatestBlockhash("confirmed")).blockhash;
-    const instructions = await compactAtaInstructions(connection, [
+    let instructions = await compactAtaInstructions(connection, [
       ComputeBudgetProgram.setComputeUnitLimit({ units: 1_400_000 }),
-      ...feeInstructions, ...wrapInstructions, ...createAtaInstructions, ...routeInstructions, ...raydiumInstructions, ...cleanupInstructions,
+      ...feeInstructions.instructions, ...wrapInstructions, ...createAtaInstructions, ...routeInstructions, ...raydiumInstructions, ...cleanupInstructions,
     ]);
+    if (!collections.some(collection => collection.input)) {
+      assertOpenTransactionSize(compileCompactOpenTransaction({ payerKey: wallet, recentBlockhash: simulationBlockhash, instructions }, availableTables).transaction);
+    }
+    const tip = await fetchBeamTipAddress();
+    const feeFit = await fitFeeCollections(connection, collections, instructions,
+      ixs => compileCompactOpenTransaction({ payerKey: wallet, recentBlockhash: simulationBlockhash, instructions: ixs }, availableTables).transaction,
+      tip ? beamTipInstruction(wallet, tip.address, tip.lamports) : undefined);
+    instructions = feeFit.instructions;
     const messageInput = { payerKey: wallet, recentBlockhash: simulationBlockhash, instructions };
     const withoutTip = compileCompactOpenTransaction(messageInput, availableTables);
     assertOpenTransactionSize(withoutTip.transaction);
-    const tip = await fetchBeamTipAddress();
     const withTip = tip
       ? compileCompactOpenTransaction({
         ...messageInput,
@@ -213,9 +229,8 @@ async function buildOpenPositionAttempt(
       + BigInt(quote.rent.walletTokenAccountLamports ?? "0");
     const feeEstimate = await connection.getFeeForMessage(simulated.message, "confirmed");
     if (feeEstimate.value === null) throw new Error("Unable to estimate complete transaction network fee");
-    const feeAtaRent = feeConfig.wallet && protocolFee > 0n && state.inputKind === "token"
-      ? await unfundedSwapFeeAtaRent(connection, feeConfig.wallet, new PublicKey(state.inputMint), new PublicKey(state.inputTokenProgram!))
-      : 0n;
+    const feeAtaRent = feeConfig.wallet
+      ? await feeRecipientRent(connection, feeConfig.wallet, instructions) : 0n;
     const maxSolDebitLamports = (state.inputKind === "native" ? BigInt(quote.requested) : 0n)
       + rentLamports + feeAtaRent + BigInt(feeEstimate.value) + 100_000n
       + (chosen.included ? BigInt(BEAM_MIN_TIP_LAMPORTS) : 0n);
@@ -274,12 +289,6 @@ export async function buildAndSimulateOpenPosition(
   // outputs and price-impact guards match the route we actually simulate.
   const connection = rpcConnection();
   const state = await readOpenPoolState(walletAddress, selection, connection);
-  const feeConfig = readSwapFeeConfig();
-  if (state.inputKind === "native" && feeConfig.wallet) {
-    // Parallel legs round fees separately; use the lower bound before quotes.
-    const fee = computeSwapFee(parseTokenAmount(amount, state.inputDecimals), feeConfig.bps);
-    if (fee > 1n) await assertNativeSwapFeeRecipient(connection, feeConfig.wallet, fee - 1n);
-  }
   let raydium: ReturnType<typeof Raydium.load> | undefined;
   const sdk = () => raydium ??= Raydium.load({ connection, owner: new PublicKey(walletAddress), disableLoadToken: true });
   let pool: ReturnType<OpenResources["pool"]> | undefined;

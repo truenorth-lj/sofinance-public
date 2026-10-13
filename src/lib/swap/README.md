@@ -1,61 +1,113 @@
 # Shared swaps
 
-All swaps use `client.ts` for Jupiter v1 quote/swap-instructions. `jupiter.ts`
-validates executable routes and normalizes lookup tables. `compound.ts` builds
-isolated yield routes; `instructions.ts` converts and orders instructions.
-`fee.ts` owns the only rate config: `SOFINANCE_FEE_BPS`, default **10 bps**,
-max 100. `SOFINANCE_FEE_WALLET` enables collection.
+`fee.ts`, `leg.ts`, and `collection.ts` own fee policy. Callers consume the shared
+plans, instructions and route ALTs in their existing atomic transactions.
+`SOFINANCE_FEE_WALLET` enables collection; `SOFINANCE_FEE_BPS` defaults to **10**
+(maximum 100). An unset wallet disables fees. USDC is
+`EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v`.
 
-Open (single-sided, parallel, both sequential directions), selected add, compound,
-and unsigned full-exit previews all charge each converted leg in its input asset.
-Same-mint legs, no-rebalance compound, and floored-zero amounts have no transfer.
-Quotes/probes never send anything; resale and principal valuations are read-only.
-Open's `swapFees` records each fee mint; its legacy `feeAmount` remains denominated
-in the original input mint, so secondary-token amounts are never added to it.
+## Collection by flow
 
-Token collection requires the operator's existing, initialized, unfrozen ATA for
-that mint and token program. Missing ATA means a full-input route with zero fee;
-we do not create operator accounts or charge users operator rent. Invalid ATAs
-fail closed. Native collection remains a SOL transfer to a funded operator wallet.
-An ATA disappearing after preparation fails the atomic transaction, without fees
-being collected separately. Deployment environment overrides were not audited.
+| Flow | Mechanism |
+| --- | --- |
+| Open / selected add, USDC deposit | Reserve 10 bps from the entire deposit once; explicit checked USDC transfer before swaps/add. Both parallel legs and sequential secondary legs use zero additional fee bps. Includes the same-mint portion. |
+| Open / selected add, leg output USDC | Jupiter v1 `platformFeeBps` and operator USDC `feeAccount`; output/threshold already include the fee. |
+| Open / selected add, non-USDC input/output | Reserve the input fee portion; compact direct ExactIn fee route delivers its entire USDC output directly to the operator ATA. Aggregate fees in the original deposit mint into one route; sequential secondary input fees have their own route. |
+| Non-USDC open / selected packet too large | Shared `fitFeeCollections` measures the actual complete candidate with the available Beam tip. Only conversion collections can be replaced by explicit input-asset transfers; USDC upfront/platform fees are never replaced. Final builder size checks still reject packets that cannot fit. |
+| Compound SPCX/SPCXx rebalance | Explicit checked input-token fee from isolated harvested yield. The measured USDC conversion envelope exceeds the packet limit; original pool route and receipt proof remain intact. |
+| Exit conversion | Jupiter ExactIn output USDC platform fee on each converted withdrawal asset, without reducing its input. |
 
-[Jupiter's v1 fee API](https://developers.jup.ag/docs/swap/v1/add-fees-to-swap)
-uses `platformFeeBps` on quote and `feeAccount` on swap-instructions. It supports
-plain token accounts (no referral setup), input/output fees for ExactIn, input
-fees for ExactOut, and Token-2022 with `instructionVersion=V2`. Native fees become
-WSOL receipts and need a WSOL fee account. We retain explicit transfers for
-native receipt continuity and isolated compound debit/receipt proof. Both methods
-add recipient keys; neither guarantees a packet below 1232 bytes. Complete packet
-checks and Beam tip fallback remain in the atomic builders. v1 is superseded by
-v2 in Jupiter's docs; monitor availability of this composable API.
+No swap means no converted-leg fee (except a USDC deposit, which pays upfront).
+Integer fees floor to atomic units; zero needs no instruction. The fee route pays
+USDC worth the reserved input portion, subject to its own market spread and route
+slippage, rather than promising an exact USDC valuation. It uses direct routing
+and maxAccounts=16 to avoid another intermediate hop/setup. Missing routes fail
+preparation; they never waive a fee or send collection separately. This is a
+compact candidate, not a proof of globally optimal economic routing.
 
-Compound accepts only a direct Jupiter route through the original Raydium CLMM
-pool. Jupiter v1 exposes a destination token account but no custom source token
-account. We retarget its exact writable user source ATA to the freshly created
-isolated account, omit only the source ATA setup, and reject other setup/cleanup.
-Simulation verifies isolated balances; receipt/import proof checks the inner
-Raydium swap's accounts, amounts, original pool vaults, and every yield transfer.
-This is deliberately restrictive: unrelated pools, extra setup and larger routes
-fail instead of accessing existing wallet assets. Search is bounded to 12 quotes
-plus a final quote/build; final liquidity is sized from simulated balances.
+Before USDC collection, `feeAccountSetup` reads the operator USDC ATA. Only a
+missing ATA gets `createAssociatedTokenAccountIdempotent` with **user as payer**;
+existing invalid, uninitialized or frozen accounts fail closed. Fallback token
+fees similarly create their own missing recipient ATA. Native fallback requires
+a rent-funded operator wallet. Nothing silently skips collection. Upstream
+platform fee quotes must report the requested rate and a valid amount.
 
-## Intended snapshot diffs
+[Jupiter v1 fee documentation](https://developers.jup.ag/docs/swap/v1/add-fees-to-swap)
+permits ExactIn fees in either mint of the pair. We use output USDC, avoiding
+WSOL fee accounts. Requests use instructionVersion V2 for Token-2022 support.
+The API is superseded by v2; this module deliberately retains composable v1
+swap-instructions. No deployment environment overrides were changed.
 
-- `open-token` and `open-token2022`: remove operator ATA creation; keep the checked
-  fee transfer and opaque swap instruction bytes.
-- `selected`: add the same 10-bps checked transfer; remove the previous zero-rate
-  assumption.
-- `compound`: remove operator ATA creation and replace the old stand-in system
-  transfer with the shared Jupiter instruction envelope. This is an envelope
-  snapshot; live route bytes depend on Jupiter.
-- `open-native` and `floored-zero`: unchanged.
-- Actual open/selected atomic builder snapshots remain unchanged with fees off.
-  Historical direct-Raydium receipt fixtures remain to test backwards reading.
+## Offline packet measurements
 
-Manual mainnet checks before release: small SOL/SPL/Token-2022 open, selected add,
-both sequential directions, compound with/without rebalance, and full-exit unsigned
-simulation. Verify existing/missing operator ATAs, per-mint fee deltas, isolated
-compound accounts and imported receipts, and near-limit packets with/without Beam
-tip. In particular, verify live Jupiter source-account retargeting and rejection
-of unsupported routes; mocks cannot establish upstream/on-chain compatibility.
+Run `node_modules/.bin/tsx scripts/measure-swap-fees.ts` or
+`npm test -- src/lib/swap/size.test.ts`. The snapshot checks byte accounting
+against serialization wherever web3.js permits serialization. Oversized messages
+can exceed its internal buffer; the structural size includes all signature slots,
+short-vector lengths, instructions, ALT lookups and a **100,000-lamport Beam tip**.
+Limit: **1,232 bytes**.
+
+| Representative envelope | ATA exists | ATA missing |
+| --- | ---: | ---: |
+| Open, USDC upfront, two legs | 1283 | 1325 |
+| Open, SOL sequential + USDC conversion | 1400 | 1474 |
+| Open, single leg + USDC conversion | 1328 | 1402 |
+| Open, pool-token + USDC conversion | 1258 | 1332 |
+| Selected add, SOL + USDC conversion | 1283 | 1357 |
+| Selected add, pool-token + USDC conversion | 1141 | 1215 |
+| Compound + USDC conversion | 1390 | 1464 |
+| Compound input-token fallback | 1216 | 1258 |
+| Exit conversion, USDC platform fee | 480 | 621 |
+
+Open SOL sequential with native input fallback measures **1258 bytes** with tip.
+These are captured instruction shapes from the repo's open/compound fixtures,
+with synthetic fee-route keys and ALTs. Selected uses an increase-liquidity
+shape without the NFT signer; exit uses the conversion envelope without the
+separately prepared withdrawal. Fee-route shape deliberately models an independent
+compact Jupiter pool. They are offline size envelopes, not executable routes or
+live quotes, and do not prove every route for a flow is infeasible. Pool-token
+fee conversions remove native wrap/close and the same-mint swap, and use the same independent route envelope; actual token programs,
+setup, pool accounts, and route overlap alter size. A simpler production route
+may fit and open/selected will retain USDC collection when it does.
+
+The large captured two-leg USDC open itself exceeds the limit and must retry a
+smaller route or fail; it never changes to a non-USDC deposit fee. Compound's
+existing-ATA fallback fits with tip. A missing compound fee ATA exceeds the limit
+with tip in this fixture: existing Beam selection may omit the tip if the complete
+untipped packet fits, otherwise preparation fails. Fee ATA creation is never
+omitted to squeeze in a transaction. Open/selected likewise retain final packet
+checks after fallback. Thus **not every fee is USDC**: non-USDC compound and
+oversized non-USDC open/selected conversions are the explicit exceptions.
+
+## Compound routing assessment (report only)
+
+Keep the current original-pool/direct-route restriction for now. It lets the
+bounded search estimate post-swap sqrt price and independently prove the original
+vaults in imported receipts. This estimate is only a search heuristic: the atomic
+builder already simulates harvest+swap, reads the pool's actual sqrt price and
+isolated balances, clamps output to `otherAmountThreshold`, adds a liquidity
+buffer, then simulates the complete fixed-liquidity transaction again.
+
+Free routing could improve output and avoid moving the position's own pool when
+that pool is untouched. In that case size liquidity against that pool's observed
+price, not a sqrt price extrapolated from the external swap. If a free route touches
+the original pool, simulation must account for the resulting price; routes with
+multiple touches cannot use the current one-swap prediction. Actual simulated
+output helps size a candidate, but is not an execution guarantee. The threshold
+protects only the swap output; pool price movement before execution can still make
+fixed-liquidity token maxima insufficient and trigger Raydium 6017
+([`PriceSlippageCheck`](https://github.com/raydium-io/raydium-clmm/blob/master/programs/amm/src/error.rs)). Buffers/conservative balances reduce this risk without
+eliminating it and leave dust. Spending quoted output rather than threshold would
+increase failure risk.
+
+Free routing also adds route/setup/account-size variability. Jupiter v1 exposes a
+custom destination but no custom source: compound retargets precisely the wallet
+source ATA to a fresh isolated yield account and rejects other setup/cleanup.
+Receipt/import verification currently requires the original pool vaults. Opening
+routing would require updating both isolation and independent receipt proof,
+measuring full packets, and testing external-pool and original-pool routes. It is
+not a clearly simpler safe fee-only change, so no routing behavior was changed.
+
+All scripts/tests here are offline. No mainnet transactions were sent. Live
+unsigned simulation remains needed to establish upstream instruction compatibility;
+synthetic envelopes cannot establish it.

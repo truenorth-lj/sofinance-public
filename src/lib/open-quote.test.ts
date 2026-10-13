@@ -221,7 +221,7 @@ describe("open-position quote validation", () => {
     expect(legs[0]!.minOut + legs[1]!.spend).toBe(99000n);
     expect(BigInt(quote.amountMaxA)).toBeLessThanOrEqual(legs.find(leg => leg.outputMint === firstMint)!.minOut);
     expect(BigInt(quote.amountMaxB)).toBeLessThanOrEqual(legs.find(leg => leg.outputMint === secondMint)!.minOut);
-    expect(buildRoute).toHaveBeenCalledWith(wallet, primaryMint, secondaryMint, expect.any(BigInt), false, 24);
+    expect(buildRoute).toHaveBeenCalledWith(wallet, primaryMint, secondaryMint, expect.any(BigInt), false, 24, undefined, undefined, undefined, 0);
     expect(vi.mocked(buildRoute).mock.calls.every(call => call[5] === 24 && call[4] === false)).toBe(true);
     expect(readOpenPoolState).not.toHaveBeenCalled();
   });
@@ -247,8 +247,7 @@ describe("open-position quote validation", () => {
       9900, 100, 24, snapshot, strategy);
     expect(legs).toHaveLength(2);
     for (const leg of legs) {
-      expect(leg.feeAmount).toBe(leg.spend * 10n / 10000n);
-      expect(leg.feeAmount).toBeGreaterThan(0n);
+      expect(leg.feeAmount).toBe(leg.outputMint === mintA ? 0n : leg.spend * 10n / 10000n);
       expect(BigInt(leg.route!.inAmount)).toBe(leg.spend - leg.feeAmount);
     }
     expect(quote.swapFees!.map(fee => fee.mint)).toEqual(legs.map(leg => leg.inputMint));
@@ -276,7 +275,7 @@ describe("open-position quote validation", () => {
 
   describe("protocol swap fee", () => {
     const feeWallet = Keypair.generate().publicKey.toBase58();
-    it("reduces executed Jupiter input by the default 10 bps fee and leaves resale probes uncharged", async () => {
+    it("uses output USDC platform fees and leaves resale probes uncharged", async () => {
       vi.stubEnv("SOFINANCE_FEE_WALLET", feeWallet);
       vi.stubEnv("SOFINANCE_FEE_BPS", undefined);
       vi.mocked(readOpenPoolState).mockResolvedValue(state({ inputMint: mintB, inputDecimals: 9, inputKind: "token" }));
@@ -293,18 +292,18 @@ describe("open-position quote validation", () => {
         { poolId, inputMint: mintB, inputKind: "token" }, "0.1",
         { preset: "custom", minPrice: "1", maxPrice: "2" });
       expect(legs[0]?.spend).toBe(100_000_000n);
-      expect(legs[0]?.feeAmount).toBe(100_000n);
+      expect(legs[0]?.feeAmount).toBe(0n);
       expect(quote.feeBps).toBe(10);
-      expect(quote.feeAmount).toBe("100000");
+      expect(quote.feeAmount).toBe("0");
       expect(quote.feeWallet).toBe(feeWallet);
-      expect(quote.minOutA).toBe("99900");
+      expect(quote.minOutA).toBe("100000");
       const swapCalls = vi.mocked(buildRoute).mock.calls.filter((call) => call[1] === mintB && call[2] === mintA);
       const resaleCalls = vi.mocked(buildRoute).mock.calls.filter((call) => call[1] === mintA && call[2] === mintB);
-      expect(swapCalls.map((call) => call[3])).toEqual([9_990_000n, 99_900_000n]);
-      expect(resaleCalls.map((call) => call[3])).toEqual([99_900n]);
+      expect(swapCalls.map((call) => call[3])).toEqual([10_000_000n, 100_000_000n]);
+      expect(resaleCalls.map((call) => call[3])).toEqual([100_000n]);
     });
 
-    it("does not charge a same-mint open that never swaps", async () => {
+    it("takes the USDC deposit fee even for a same-mint open", async () => {
       vi.stubEnv("SOFINANCE_FEE_WALLET", feeWallet);
       vi.stubEnv("SOFINANCE_FEE_BPS", undefined);
       const { quote, legs } = await getOpenPositionQuoteBundle(
@@ -314,9 +313,9 @@ describe("open-position quote validation", () => {
         { preset: "custom", minPrice: "1", maxPrice: "2" },
       );
       expect(legs[0]?.route).toBeNull();
-      expect(legs[0]?.feeAmount).toBe(0n);
+      expect(legs[0]?.feeAmount).toBe(100000n);
       expect(quote.feeBps).toBe(10);
-      expect(quote.feeAmount).toBe("0");
+      expect(quote.feeAmount).toBe("100000");
       expect(quote.feeWallet).toBe(feeWallet);
       expect(buildRoute).not.toHaveBeenCalled();
     });

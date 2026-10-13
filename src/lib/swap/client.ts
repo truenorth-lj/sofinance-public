@@ -2,7 +2,7 @@ import { jupiterRequest, JUPITER_QUOTE_TTL_MS, type JupiterQuoteParams, type Jup
 import { quoteCacheKey } from "../jupiter/cache";
 import { JupiterHttpError } from "../jupiter/errors";
 
-export async function jupiterQuote<T = Record<string, unknown>>(params: JupiterQuoteParams): Promise<T> {
+export async function jupiterQuote<T = Record<string, unknown>>(params: JupiterQuoteParams & { platformFeeBps?: number }): Promise<T> {
   const slippageBps = params.slippageBps ?? 50;
   const query = {
     inputMint: params.inputMint,
@@ -10,6 +10,7 @@ export async function jupiterQuote<T = Record<string, unknown>>(params: JupiterQ
     amount: params.amount,
     slippageBps,
     instructionVersion: "V2",
+    ...(params.platformFeeBps ? { platformFeeBps: params.platformFeeBps } : {}),
     ...(params.dexes ? { dexes: params.dexes } : {}),
     ...(params.maxAccounts !== undefined ? { maxAccounts: params.maxAccounts } : {}),
     ...(params.onlyDirectRoutes ? { onlyDirectRoutes: true } : {}),
@@ -21,7 +22,7 @@ export async function jupiterQuote<T = Record<string, unknown>>(params: JupiterQ
     fetcher: params.fetcher,
     apiKey: params.apiKey,
     budget: params.budget,
-    cacheKey: params.cacheKey === null || params.dexes ? null : quoteCacheKey({
+    cacheKey: params.cacheKey === null || params.dexes || params.platformFeeBps ? null : quoteCacheKey({
       inputMint: params.inputMint,
       outputMint: params.outputMint,
       amount: params.amount,
@@ -34,7 +35,7 @@ export async function jupiterQuote<T = Record<string, unknown>>(params: JupiterQ
 }
 
 export async function jupiterQuotePreferCompact<T = Record<string, unknown>>(
-  params: Omit<JupiterQuoteParams, "maxAccounts" | "onlyDirectRoutes"> & { maxAccounts?: number },
+  params: Omit<JupiterQuoteParams, "maxAccounts" | "onlyDirectRoutes"> & { maxAccounts?: number; platformFeeBps?: number },
 ): Promise<T> {
   try {
     return await jupiterQuote<T>({ ...params, maxAccounts: params.maxAccounts ?? 16, onlyDirectRoutes: true });

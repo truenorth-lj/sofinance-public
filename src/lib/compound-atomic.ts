@@ -14,7 +14,7 @@ import { simulateAndVerifyCompound } from "./compound-simulation";
 import { conservativeSwapBalances, sizeBufferedCompoundLiquidity } from "./compound-math";
 import { buildCompoundSwapPlan } from "./compound-swap";
 import { readCompoundPriorSources } from "./compound-prior-sources";
-import { readSwapFeeConfig, swapFeeTransferInstructions, unfundedSwapFeeAtaRent } from "./swap";
+import { readSwapFeeConfig, collectCompoundSwapFee, unfundedSwapFeeAtaRent } from "./swap";
 import { versionedTransactionSize } from "./open-transaction";
 import type { CompoundAccount, CompoundPositionState, CompoundSummary } from "./compound-types";
 
@@ -153,11 +153,11 @@ export async function buildAndSimulateCompound(walletAddress: string, positionMi
   }
   const feeSource = plan.swap?.inputMint === state.mintA ? accounts[0] : accounts[1];
   const feeInstructions = feeConfig.wallet && protocolFee > 0n && plan.swap
-    ? swapFeeTransferInstructions({
+    ? (await collectCompoundSwapFee(connection, {
       payer: wallet, owner: wallet, recipient: feeConfig.wallet, amount: protocolFee, kind: "token",
       mint: new PublicKey(plan.swap.inputMint), source: new PublicKey(feeSource.address),
       decimals: plan.swap.inputDecimals, program: new PublicKey(feeSource.program),
-    })
+    })).instructions
     : [];
   const feeAtaRent = feeConfig.wallet && protocolFee > 0n && plan.swap
     ? await unfundedSwapFeeAtaRent(connection, feeConfig.wallet, new PublicKey(plan.swap.inputMint), new PublicKey(feeSource.program))

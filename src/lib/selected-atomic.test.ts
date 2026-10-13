@@ -26,7 +26,7 @@ const state = { positionMint: key().toBase58(), positionAccount: position.toBase
   rangeSide: "below", liquidity: "1", balances: { input: "1000", a: "0", b: "0" },
 };
 const selection = { positionMint: state.positionMint, inputMint: state.inputMint, inputKind: "token" as const };
-const connection = { getAddressLookupTable: vi.fn(async () => ({ value: null })),
+const connection = { getAccountInfo: vi.fn(async () => null), getAddressLookupTable: vi.fn(async () => ({ value: null })),
   getMultipleAccountsInfoAndContext: vi.fn(async () => ({ value: [], context: { slot: 1 } })),
   getLatestBlockhash: vi.fn(async () => ({ blockhash: key().toBase58(), lastValidBlockHeight: 200 })),
   getFeeForMessage: vi.fn(async () => ({ value: 5000 })),
@@ -117,13 +117,15 @@ it("includes the selected-add protocol transfer before the swap", async () => {
   vi.stubEnv("SOFINANCE_FEE_WALLET", recipient.toBase58()); vi.stubEnv("SOFINANCE_FEE_BPS", "10");
   const value = writableBundle(new PublicKey(state.ataA));
   value.quote.feeBps = 10; value.quote.feeAmount = "1"; value.quote.feeWallet = recipient.toBase58();
-  value.state = { ...value.state, inputTokenProgram: TOKEN_PROGRAM_ID.toBase58(), inputDecimals: 6 };
+  value.state = { ...value.state, inputMint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", inputTokenProgram: TOKEN_PROGRAM_ID.toBase58(), inputDecimals: 6 };
+  value.legs[0]!.inputMint = value.state.inputMint;
+  (value.legs[0]!.route! as { inputMint: string }).inputMint = value.state.inputMint;
   vi.mocked(readSelectedPositionState).mockResolvedValue(value.state);
   value.legs[0]!.feeAmount = 1n;
   (value.legs[0]!.route! as { inAmount: string }).inAmount = "999";
   vi.mocked(getSelectedQuoteBundle).mockResolvedValue(value);
   const { transaction } = await buildAndSimulateSelectedZap(wallet.toBase58(), selection, "0.001", 9900);
-  const fee = transaction.message.compiledInstructions[1]!;
+  const fee = transaction.message.compiledInstructions[2]!;
   expect(transaction.message.staticAccountKeys[fee.programIdIndex]!.equals(TOKEN_PROGRAM_ID)).toBe(true);
   expect(fee.data[0]).toBe(12); // TransferChecked
   expect(Buffer.from(fee.data).readBigUInt64LE(1)).toBe(1n);

@@ -1,8 +1,8 @@
-// Atomic input-asset transfers preserve native SOL receipts and Raydium swaps.
-// Jupiter platform fees are supported, but require token accounts (including WSOL).
+// Shared rate configuration and explicit transfer primitives. Collection policy
+// lives in collection.ts; callers must not silently waive missing recipient ATAs.
 import {
   createTransferCheckedInstruction,
-  getAccountLenForMint, getAssociatedTokenAddressSync, unpackMint, unpackAccount,
+  getAccountLenForMint, getAssociatedTokenAddressSync, unpackMint,
 } from "@solana/spl-token";
 import { PublicKey, SystemProgram, type Connection, type TransactionInstruction } from "@solana/web3.js";
 
@@ -116,16 +116,17 @@ export async function unfundedSwapFeeAtaRent(
   return BigInt(await connection.getMinimumBalanceForRentExemption(space, "confirmed"));
 }
 
-/** Missing operator token accounts disable collection; users never pay operator rent. */
-export async function resolveSwapFeeConfig(connection: Connection, mint: PublicKey, program: PublicKey,
-  native = false): Promise<SwapFeeConfig> {
-  const config = readSwapFeeConfig();
-  if (!config.wallet || config.bps === 0 || native) return config;
-  const address = swapFeeRecipientAta(config.wallet, mint, program);
-  const info = await connection.getAccountInfo(address, "confirmed");
-  if (!info) return { ...config, bps: 0 };
-  const account = unpackAccount(address, info, program);
-  if (!account.mint.equals(mint) || !account.owner.equals(config.wallet) || account.isFrozen)
-    throw new Error("Protocol fee ATA is invalid or frozen");
-  return config;
+/** Resolve rate without waiving collection when recipient setup is needed. */
+export async function resolveSwapFeeConfig(_connection: Connection, _mint: PublicKey, _program: PublicKey,
+  _native = false): Promise<SwapFeeConfig> {
+  void _native;
+  return readSwapFeeConfig();
+}
+
+/** Do not accept an upstream quote that silently omitted the requested fee. */
+export function assertPlatformFeeQuote(quote: { platformFee?: unknown }, bps: number) {
+  if (!bps) return;
+  const fee = quote.platformFee as { feeBps?: number; amount?: string } | null;
+  if (!fee || fee.feeBps !== bps || typeof fee.amount !== "string" || !/^\d+$/.test(fee.amount))
+    throw new Error("Jupiter quote protocol fee does not match configuration");
 }
