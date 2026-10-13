@@ -1,3 +1,4 @@
+import { compoundProtocolInstructions } from "./swap/receipt";
 import { createHash } from "node:crypto";
 import bs58 from "bs58";
 import { CLMM_PROGRAM_ID } from "@raydium-io/raydium-sdk-v2";
@@ -35,9 +36,7 @@ export function confirmedCompoundReceipt(transaction: ParsedTransactionWithMeta,
   const message = transaction.transaction.message;
   if (summary.state.programId !== CLMM_PROGRAM_ID.toBase58() || !transaction.meta || transaction.meta.err || !message.accountKeys[0]?.signer ||
     message.accountKeys[0].pubkey.toBase58() !== wallet) return null;
-  const protocol = message.instructions.flatMap((instruction, index) =>
-    instruction.programId.toBase58() === summary.state.programId && "accounts" in instruction
-      ? [{ instruction: instruction as PartiallyDecodedInstruction, index }] : []);
+  const protocol = compoundProtocolInstructions(transaction);
   const harvest = protocol[0], add = protocol.at(-1);
   const swaps = protocol.slice(1, -1);
   if (protocol.length !== 2 + (summary.swaps?.length ?? 0) || !harvest || !add || harvest.index >= add.index) return null;

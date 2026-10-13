@@ -1,60 +1,61 @@
-# Shared swap implementation
+# Shared swaps
 
-`jupiter.ts` owns Jupiter quote/build request validation; `instructions.ts` converts
-and orders route instructions; `fee.ts` owns the single fee configuration, input
-fee arithmetic, native/token transfers, recipient ATA creation and rent checks.
-Existing `jupiter-route.ts` and `swap-fee.ts` entry points re-export the implementation
-so existing imports and provider mocks continue to work. Atomic flows still own
-Raydium instructions, simulation, lookup tables, Beam tips and packet limits.
+All swaps use `client.ts` for Jupiter v1 quote/swap-instructions. `jupiter.ts`
+validates executable routes and normalizes lookup tables. `compound.ts` builds
+isolated yield routes; `instructions.ts` converts and orders instructions.
+`fee.ts` owns the only rate config: `SOFINANCE_FEE_BPS`, default **10 bps**,
+max 100. `SOFINANCE_FEE_WALLET` enables collection.
 
-## Fee audit before this refactor
+Open (single-sided, parallel, both sequential directions), selected add, compound,
+and unsigned full-exit previews all charge each converted leg in its input asset.
+Same-mint legs, no-rebalance compound, and floored-zero amounts have no transfer.
+Quotes/probes never send anything; resale and principal valuations are read-only.
+Open's `swapFees` records each fee mint; its legacy `feeAmount` remains denominated
+in the original input mint, so secondary-token amounts are never added to it.
 
-| Flow | Protocol bps | Collection | Fee asset |
-| --- | --- | --- | --- |
-| Open position | configured rate; default 10, 0 without wallet | explicit SOL or checked SPL transfer; `/swap/v2/build` receives net input, no platform fee | original deposit input |
-| Compound | configured rate on gross rebalance input; default 10, 0 without wallet | checked SPL transfer from isolated harvested input account before Raydium in-pool swap | rebalance input pool token |
-| Selected position add | 0 regardless of fee environment | no protocol collection; Jupiter receives full input | none |
-| Pool creation | no implementation found | none | none |
+Token collection requires the operator's existing, initialized, unfrozen ATA for
+that mint and token program. Missing ATA means a full-input route with zero fee;
+we do not create operator accounts or charge users operator rent. Invalid ATAs
+fail closed. Native collection remains a SOL transfer to a funded operator wallet.
+An ATA disappearing after preparation fails the atomic transaction, without fees
+being collected separately. Deployment environment overrides were not audited.
 
-Open parallel swaps charge each converted leg, flooring separately. A same-mint
-leg has no fee. Sequential open charges only the primary deposit-input conversion;
-the secondary pool-token conversion has no fee. Probes may quote net fee amounts
-but never execute transfers; resale estimates have no fee. Compound without a
-rebalance has no collected fee. Pool trade fees and Beam tips are separate charges.
+[Jupiter's v1 fee API](https://developers.jup.ag/docs/swap/v1/add-fees-to-swap)
+uses `platformFeeBps` on quote and `feeAccount` on swap-instructions. It supports
+plain token accounts (no referral setup), input/output fees for ExactIn, input
+fees for ExactOut, and Token-2022 with `instructionVersion=V2`. Native fees become
+WSOL receipts and need a WSOL fee account. We retain explicit transfers for
+native receipt continuity and isolated compound debit/receipt proof. Both methods
+add recipient keys; neither guarantees a packet below 1232 bytes. Complete packet
+checks and Beam tip fallback remain in the atomic builders. v1 is superseded by
+v2 in Jupiter's docs; monitor availability of this composable API.
 
-`SOFINANCE_FEE_WALLET` enables collection. `SOFINANCE_FEE_BPS` is the sole rate
-override (integer, capped at 100). `DEFAULT_SWAP_FEE_BPS` in `fee.ts` is 10;
-changing that one line to 20 raises the default for fee-enabled flows. There is
-no hardcoded 20-bps production fee; a ledger regression test sets 20 as a historical
-receipt scenario. Deployed environment values were not accessible during this
-audit, so 10 is the verified repository default, not a verified deployment override.
+Compound accepts only a direct Jupiter route through the original Raydium CLMM
+pool. Jupiter v1 exposes a destination token account but no custom source token
+account. We retarget its exact writable user source ATA to the freshly created
+isolated account, omit only the source ATA setup, and reject other setup/cleanup.
+Simulation verifies isolated balances; receipt/import proof checks the inner
+Raydium swap's accounts, amounts, original pool vaults, and every yield transfer.
+This is deliberately restrictive: unrelated pools, extra setup and larger routes
+fail instead of accessing existing wallet assets. Search is bounded to 12 quotes
+plus a final quote/build; final liquidity is sized from simulated balances.
 
-## Jupiter platform fee assessment
+## Intended snapshot diffs
 
-Current Jupiter [build documentation](https://developers.jup.ag/docs/swap/build)
-supports `platformFeeBps` plus `feeAccount` (ordinary SPL accounts, no referral
-requirement). The old referral-only comment was incorrect and has been removed.
-Platform collection is technically possible for token inputs but this phase retains
-manual collection to preserve transaction bytes, exact input deduction and receipt
-verification. Native collection would credit WSOL instead of native SOL, require
-recipient token-account funding and change wrapping and rent accounting. Compound
-executes a Raydium swap and cannot use Jupiter's collection mechanism. The selected
-flow must retain its existing zero rate. No fee mechanism differences are introduced.
+- `open-token` and `open-token2022`: remove operator ATA creation; keep the checked
+  fee transfer and opaque swap instruction bytes.
+- `selected`: add the same 10-bps checked transfer; remove the previous zero-rate
+  assumption.
+- `compound`: remove operator ATA creation and replace the old stand-in system
+  transfer with the shared Jupiter instruction envelope. This is an envelope
+  snapshot; live route bytes depend on Jupiter.
+- `open-native` and `floored-zero`: unchanged.
+- Actual open/selected atomic builder snapshots remain unchanged with fees off.
+  Historical direct-Raydium receipt fixtures remain to test backwards reading.
 
-Recipient token ATAs are still created idempotently in the atomic transaction;
-missing-ATA rent is checked against the simulated SOL debit cap. Native recipients
-must already satisfy account rent. Floored-zero fees create no ATA or transfer.
-The existing 1,232-byte checks and Beam tip fallback remain in their original flows.
-
-## Verification and manual test
-
-Wire snapshots captured before extraction cover the actual open/selected builders
-and compact compound fixture; additional swap-envelope snapshots cover native,
-SPL, Token-2022, selected zero rate and floored-zero fees. These are deterministic
-mock/fixture checks, not proof of live Jupiter route execution.
-
-Before production use, sign small mainnet open and compound transactions with
-fees enabled, verify recipient balance deltas and fee rounding, repeat with absent
-and existing recipient ATAs, and verify selected add has zero protocol fee. Include
-native SOL and Token-2022 input, sequential open, and a compact route that omits a
-Beam tip near the packet limit. This work does not implement withdrawal.
+Manual mainnet checks before release: small SOL/SPL/Token-2022 open, selected add,
+both sequential directions, compound with/without rebalance, and full-exit unsigned
+simulation. Verify existing/missing operator ATAs, per-mint fee deltas, isolated
+compound accounts and imported receipts, and near-limit packets with/without Beam
+tip. In particular, verify live Jupiter source-account retargeting and rejection
+of unsupported routes; mocks cannot establish upstream/on-chain compatibility.

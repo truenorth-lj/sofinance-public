@@ -1,5 +1,6 @@
 import "server-only";
 
+import { PublicKey } from "@solana/web3.js";
 import BN from "bn.js";
 import { LiquidityMathUtil, SqrtPriceMath, TickUtil } from "@raydium-io/raydium-sdk-v2";
 import {
@@ -8,10 +9,10 @@ import {
 } from "./ids";
 import { describeResaleFloorFailure, meetsResaleFloor, parseAddToleranceBps, parseResaleFloorBps, parseTokenAmount } from "./amount";
 import { allocateSpend, padAmountMax, positionSide, toleranceLiquidity } from "./quote-math";
-import { buildRoute, type BuildRoute } from "./jupiter-route";
+import { buildRoute, type BuildRoute } from "./swap/jupiter";
 import { estimateOpenPositionRent } from "./open-rent";
 import { resolveOpenRange, type OpenRangeInput } from "./open-range";
-import { netSwapInput, readSwapFeeConfig, type SwapFeeConfig } from "./swap";
+import { netSwapInput, readSwapFeeConfig, resolveSwapFeeConfig, type SwapFeeConfig } from "./swap";
 import { rpcConnection } from "./rpc";
 import { readOpenPoolState, type OpenPoolState, type OpenPositionSelection } from "./open-state";
 import type { OpenPositionQuote } from "./open-types";
@@ -98,7 +99,7 @@ export async function getOpenPositionQuoteBundle(
   const floorBps = parseResaleFloorBps(requestedFloorBps);
   const toleranceBps = parseAddToleranceBps(requestedToleranceBps);
   const feeConfig: SwapFeeConfig = readSwapFeeConfig();
-  const swapFeeBps = feeConfig.bps;
+
   const state = snapshot ?? await readOpenPoolState(wallet, selection);
   if (state.wallet !== wallet || state.poolId !== selection.poolId || state.inputMint !== selection.inputMint || state.inputKind !== selection.inputKind) {
     throw new Error("Open-position snapshot does not match request");
@@ -120,6 +121,12 @@ export async function getOpenPositionQuoteBundle(
     decimalsB: state.decimalsB,
     tickSpacing: state.tickSpacing,
   });
+  const feeConnection = rpcConnection();
+  const inputFee = feeConfig.bps === 0 || resolved.rangeSide !== "inside" && state.inputMint === (resolved.rangeSide === "below" ? state.mintA : state.mintB) ? feeConfig : await resolveSwapFeeConfig(feeConnection, new PublicKey(state.inputMint),
+    new PublicKey(state.inputTokenProgram || "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"), state.inputKind === "native");
+  const swapFeeBps = inputFee.bps;
+  const secondaryFeeBps = async (mint: string) => feeConfig.bps === 0 ? 0 : (await resolveSwapFeeConfig(feeConnection, new PublicKey(mint),
+    new PublicKey(mint === state.mintA ? state.programA : state.programB))).bps;
   const lowerSqrtX64 = TickUtil.getSqrtPriceAtTick(resolved.tickLower).toString();
   const upperSqrtX64 = TickUtil.getSqrtPriceAtTick(resolved.tickUpper).toString();
   const requested = parseTokenAmount(amount, state.inputDecimals);
@@ -154,12 +161,13 @@ export async function getOpenPositionQuoteBundle(
     const availablePrimary = primary.minOut;
     const secondaryProbeAmount = availablePrimary / 10n;
     if (secondaryProbeAmount <= 0n) throw new Error("Input amount too small to obtain secondary probe route");
-    const secondaryProbe = await leg(wallet, primaryMint, secondaryMint, secondaryProbeAmount, routeMaxAccounts);
+    const secondaryBps = await secondaryFeeBps(primaryMint);
+    const secondaryProbe = await leg(wallet, primaryMint, secondaryMint, secondaryProbeAmount, routeMaxAccounts, secondaryBps);
     const desired = amountsAt(projected, lowerSqrtX64, upperSqrtX64, new BN("1000000000000000000"));
     let swapPrimary = availablePrimary - allocateSpend(availablePrimary, primaryAmount(desired), secondaryAmount(desired),
       { spend: secondaryProbeAmount, out: secondaryProbeAmount }, { spend: secondaryProbeAmount, out: secondaryProbe.minOut }, 1n);
     for (let index = 0; index < 5; index++) {
-      const secondary = await leg(wallet, primaryMint, secondaryMint, swapPrimary, routeMaxAccounts);
+      const secondary = await leg(wallet, primaryMint, secondaryMint, swapPrimary, routeMaxAccounts, secondaryBps);
       priceImpactAgainstProbe(secondary, secondaryProbe, secondaryProbeAmount);
       // Both hops affect the secondary leg. Keep combined impact within the same
       // 5% cap rather than permitting 5% independently on each hop.
@@ -318,7 +326,8 @@ export async function getOpenPositionQuoteBundle(
     solLamports: state.solLamports.toString(),
     sufficientSol, sufficientInput: true,
     feeBps: feeConfig.bps,
-    feeAmount: legs.reduce((sum, item) => sum + item.feeAmount, 0n).toString(),
+    feeAmount: legs.filter(item => item.inputMint === state.inputMint).reduce((sum, item) => sum + item.feeAmount, 0n).toString(),
+    swapFees: legs.filter(item => item.route).map(item => ({ mint: item.inputMint, amount: item.feeAmount.toString() })),
     feeWallet: feeConfig.wallet?.toBase58() ?? null,
     warnings, slot: state.slot, fetchedAt: timestamp, expiresAt: snapshot ? Math.min(timestamp + QUOTE_TTL_MS, snapshot.fetchedAt + QUOTE_TTL_MS) : timestamp + QUOTE_TTL_MS,
   };

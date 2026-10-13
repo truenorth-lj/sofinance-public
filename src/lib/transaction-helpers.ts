@@ -1,7 +1,7 @@
 import "server-only";
 
 import { AddressLookupTableAccount, Connection, PublicKey } from "@solana/web3.js";
-import type { BuildRoute } from "./jupiter-route";
+import type { BuildRoute } from "./swap/jupiter";
 
 export { instruction } from "./swap/instructions";
 

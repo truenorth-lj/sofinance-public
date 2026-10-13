@@ -1,6 +1,7 @@
+import { TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID, unpackAccount } from "@solana/spl-token";
 import "server-only";
 
-import { PublicKey, TransactionInstruction } from "@solana/web3.js";
+import { PublicKey, TransactionInstruction, type Connection } from "@solana/web3.js";
 import type { ApiInstruction, BuildRoute } from "./jupiter";
 
 export function instruction(value: ApiInstruction, wallet: PublicKey) {
@@ -25,4 +26,23 @@ export function swapRouteInstructions(routes: Pick<BuildRoute, "setupInstruction
     ...(route.cleanupInstruction ? [instruction(route.cleanupInstruction, wallet)] : []),
     ...route.otherInstructions.map((ix) => instruction(ix, wallet)),
   ]);
+}
+
+export async function rejectUnselectedWalletTokenWrites(
+  connection: Connection, wallet: PublicKey, instructions: TransactionInstruction[],
+  allowedAccounts: string[],
+) {
+  const writable = [...new Map(instructions.flatMap((ix) => ix.keys.filter((key) => key.isWritable))
+    .map((key) => [key.pubkey.toBase58(), key.pubkey])).values()];
+  const allowed = new Set(allowedAccounts);
+  const unselected = writable.filter((key) => !allowed.has(key.toBase58()));
+  if (!unselected.length) return;
+  const { value } = await connection.getMultipleAccountsInfoAndContext(unselected, "confirmed");
+  value.forEach((info, index) => {
+    if (!info || ![TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID].some((program) => info.owner.equals(program))) return;
+    // A writable mint is not a wallet token account.
+    if (info.data.length < 165 || info.data.length > 165 && info.data[165] !== 2) return;
+    const decoded = unpackAccount(unselected[index]!, info, info.owner);
+    if (decoded.owner.equals(wallet) && decoded.amount > 0n) throw new Error("Jupiter route may modify unselected wallet assets, transaction stopped");
+  });
 }

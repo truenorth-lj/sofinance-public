@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { Keypair } from "@solana/web3.js";
 vi.mock("server-only", () => ({}));
 import { rpcConnection, resetRpcRuntime } from "./rpc";
-import { quoteRoute, buildRoute } from "./jupiter-route";
+import { quoteRoute, buildRoute } from "./swap/jupiter";
 
 afterEach(() => { resetRpcRuntime(); vi.unstubAllEnvs(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 it("cancels actual RPC, lightweight quote and build fetches with the same request signal", async () => {
@@ -26,6 +26,6 @@ it("cancels actual RPC, lightweight quote and build fetches with the same reques
   controller.abort(new DOMException("cancelled", "AbortError"));
   const results = await Promise.allSettled(work);
   expect(results.every((result) => result.status === "rejected")).toBe(true);
-  expect(cancelled.sort()).toEqual(["build", "quote", "rpc"]);
+  expect(cancelled.sort()).toEqual(["quote", "quote", "rpc"]);
   expect(fetcher).toHaveBeenCalledTimes(3); // cancellation cannot start provider fallback/retries
 });

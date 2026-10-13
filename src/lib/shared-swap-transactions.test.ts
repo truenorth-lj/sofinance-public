@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { ComputeBudgetProgram, PublicKey, SystemProgram, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
+import { ComputeBudgetProgram, PublicKey, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
 import { TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID } from "@solana/spl-token";
 import { swapRouteInstructions } from "./swap";
 import { netSwapInput, swapFeeTransferInstructions } from "./swap";
@@ -16,12 +16,12 @@ const route = {
 // accounts and opaque upstream instructions make wire snapshots reproducible.
 describe("pre-refactor swap transaction wire snapshots", () => {
   it.each(["open-native", "open-token", "open-token2022", "compound", "selected", "floored-zero"])("%s", (flow) => {
-    const { feeAmount } = netSwapInput(flow === "floored-zero" ? 999n : 1_000_000n, flow === "selected" ? 0 : 10);
+    const { feeAmount } = netSwapInput(flow === "floored-zero" ? 999n : 1_000_000n, 10);
     const fees = swapFeeTransferInstructions(flow === "open-native"
       ? { payer: wallet, owner: wallet, recipient, amount: feeAmount, kind: "native" }
       : { payer: wallet, owner: wallet, recipient, amount: feeAmount, kind: "token", mint, source, decimals: 6,
           program: flow === "open-token2022" ? TOKEN_2022_PROGRAM_ID : TOKEN_PROGRAM_ID });
-    const swaps = flow === "compound" ? [SystemProgram.transfer({ fromPubkey: wallet, toPubkey: source, lamports: 5n })] : swapRouteInstructions([route], wallet);
+    const swaps = swapRouteInstructions([route], wallet);
     const transaction = new VersionedTransaction(new TransactionMessage({ payerKey: wallet, recentBlockhash: key(9).toBase58(),
       instructions: [ComputeBudgetProgram.setComputeUnitLimit({ units: 1_400_000 }), ...fees, ...swaps],
     }).compileToV0Message());

@@ -32,7 +32,7 @@ import { issueOpenPositionPermit } from "@/lib/open-permit";
 import { issueCompoundPermit } from "@/lib/compound-permit";
 import { createSignToken } from "@/lib/pending-sign-token";
 import { clearUsedChallengeNonces, verifyMcpToken } from "@/lib/mcp-auth";
-import { buildRoute } from "@/lib/jupiter-route";
+import { buildRoute } from "@/lib/swap/jupiter";
 import { fetchJupiterTagsByMint } from "@/lib/rwa-jupiter-tags";
 import { getTokenMetadata } from "@/lib/token-metadata";
 import { resolveMintSymbols } from "@/lib/mint-symbols";

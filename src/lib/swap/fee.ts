@@ -1,8 +1,8 @@
 // Atomic input-asset transfers preserve native SOL receipts and Raydium swaps.
 // Jupiter platform fees are supported, but require token accounts (including WSOL).
 import {
-  createAssociatedTokenAccountIdempotentInstruction, createTransferCheckedInstruction,
-  getAccountLenForMint, getAssociatedTokenAddressSync, unpackMint,
+  createTransferCheckedInstruction,
+  getAccountLenForMint, getAssociatedTokenAddressSync, unpackMint, unpackAccount,
 } from "@solana/spl-token";
 import { PublicKey, SystemProgram, type Connection, type TransactionInstruction } from "@solana/web3.js";
 
@@ -96,7 +96,6 @@ export function swapFeeTransferInstructions(input: SwapFeeTransferInput): Transa
   }
   const ata = swapFeeRecipientAta(input.recipient, input.mint, input.program);
   return [
-    createAssociatedTokenAccountIdempotentInstruction(input.payer, ata, input.recipient, input.mint, input.program),
     createTransferCheckedInstruction(
       input.source, input.mint, ata, input.owner, input.amount, input.decimals, [], input.program,
     ),
@@ -115,4 +114,18 @@ export async function unfundedSwapFeeAtaRent(
   if (!mintInfo || !mintInfo.owner.equals(program)) throw new Error("Fee mint program mismatch");
   const space = getAccountLenForMint(unpackMint(mint, mintInfo, program));
   return BigInt(await connection.getMinimumBalanceForRentExemption(space, "confirmed"));
+}
+
+/** Missing operator token accounts disable collection; users never pay operator rent. */
+export async function resolveSwapFeeConfig(connection: Connection, mint: PublicKey, program: PublicKey,
+  native = false): Promise<SwapFeeConfig> {
+  const config = readSwapFeeConfig();
+  if (!config.wallet || config.bps === 0 || native) return config;
+  const address = swapFeeRecipientAta(config.wallet, mint, program);
+  const info = await connection.getAccountInfo(address, "confirmed");
+  if (!info) return { ...config, bps: 0 };
+  const account = unpackAccount(address, info, program);
+  if (!account.mint.equals(mint) || !account.owner.equals(config.wallet) || account.isFrozen)
+    throw new Error("Protocol fee ATA is invalid or frozen");
+  return config;
 }

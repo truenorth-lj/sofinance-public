@@ -7,12 +7,11 @@ import { PublicKey, TransactionMessage, VersionedTransaction, ComputeBudgetProgr
 import { withCacheAndInflight } from "./rpc/cache";
 import { PREVIEW_RETRY } from "./rpc/retry";
 import { rpcConnection, type RpcEnv } from "./rpc";
-import { unpackAccount, getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID, createAssociatedTokenAccountIdempotentInstruction } from "@solana/spl-token";
+import { unpackMint, unpackAccount, getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID, createAssociatedTokenAccountIdempotentInstruction } from "@solana/spl-token";
 import { compactAtaInstructions, compileCompactOpenTransaction, openLookupTableReader, versionedTransactionSize } from "./open-transaction";
 import { instruction } from "./transaction-helpers";
-import { validPrincipalQuote } from "./lp-decision-data";
-import { EXIT_JUPITER_CONCURRENCY, jupiterQuotePreferCompact, jupiterSwapInstructions, mapPool } from "./jupiter";
-import type { ApiInstruction } from "./jupiter-route";
+import { EXIT_JUPITER_CONCURRENCY, mapPool } from "./jupiter";
+import { buildExitSwapLeg, type ExitSwapRoute } from "./swap/exit";
 const USDC="EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",SOL="So11111111111111111111111111111111111111112";
 export const EXIT_PREVIEW_TTL_MS=8_000;
 export function exitPreviewCacheKey(positionId:string,nftAccount?:string,convertRent=true){return `exit-preview:${positionId}:${nftAccount??""}:${convertRent?"1":"0"}`;}
@@ -58,22 +57,22 @@ async function readFullExitPreviewUnlocked(positionId:string,nftAccount?:string,
  if(withdrawSimulation.value.err||!withdrawSimulation.value.accounts)throw new Error(`Withdrawal simulation failed: ${JSON.stringify(withdrawSimulation.value.err)}`);
 
  const received=mints.map((mint,i)=>{const after=withdrawSimulation.value.accounts![i+4],prior=before.value[i+4];if(!after)throw new Error("Simulation recipient missing");const amount=verifiedTokenAmount(after.data[0],owner,mint,after.owner)-(prior?prior.data.readBigUInt64LE(64):0n);if(amount<0n)throw new Error("Withdrawal consumed wallet inventory");return {mint:mint.toBase58(),amountAtomic:amount.toString()};});
- type Route={setupInstructions:ApiInstruction[];otherInstructions:ApiInstruction[];swapInstruction:ApiInstruction;cleanupInstruction?:ApiInstruction|null;addressLookupTableAddresses:string[]};
- const routes:Route[]=[],quotes:{mint:string;inputAtomic:string;outputUSDCAtomic:string;thresholdUSDCAtomic:string;observedAt:string}[]=[];
+ const routes:ExitSwapRoute[]=[],quotes:{mint:string;inputAtomic:string;feeAmount:string;outputUSDCAtomic:string;thresholdUSDCAtomic:string;observedAt:string}[]=[];
  const ownerBefore=before.value[0];if(!ownerBefore)throw new Error("Owner SOL account missing");
  const netSOL=BigInt(withdrawSimulation.value.accounts[0]!.lamports)-BigInt(ownerBefore.lamports);
- const legs=[...received,...(convertRent&&netSOL>0n?[{mint:SOL,amountAtomic:netSOL.toString()}]:[])].filter(v=>BigInt(v.amountAtomic)>0n);
+ const legs=[...received.map(leg=>({...leg,native:false})),...(convertRent&&netSOL>0n?[{mint:SOL,amountAtomic:netSOL.toString(),native:true}]:[])].filter(v=>BigInt(v.amountAtomic)>0n);
+ const feeInstructions: import("@solana/web3.js").TransactionInstruction[]=[];
  const quoted=await mapPool(legs,EXIT_JUPITER_CONCURRENCY,async(leg)=>{
-  const quote=await jupiterQuotePreferCompact({inputMint:leg.mint,outputMint:USDC,amount:leg.amountAtomic,slippageBps:50,signal:budget,fetcher});
-  if(!validPrincipalQuote(quote,leg.mint,leg.amountAtomic))throw new Error("Exit quote context/amount invalid");
-  const route=await jupiterSwapInstructions({userPublicKey:owner.toBase58(),quoteResponse:quote,wrapAndUnwrapSol:true,dynamicComputeUnitLimit:false,prioritizationFeeLamports:0},{signal:budget,fetcher}) as Route;
-  if(!route.swapInstruction||!Array.isArray(route.addressLookupTableAddresses))throw new Error("Exit route instructions missing");
-  return {route,quote:{mint:leg.mint,inputAtomic:leg.amountAtomic,outputUSDCAtomic:quote.outAmount as string,thresholdUSDCAtomic:quote.otherAmountThreshold as string,observedAt:new Date().toISOString()}};
+  const index=mints.findIndex(m=>m.toBase58()===leg.mint),program=index>=0?programs[index]!:TOKEN_PROGRAM_ID;
+  return buildExitSwapLeg({connection,owner,mint:new PublicKey(leg.mint),program,
+    source:index>=0?recipients[index]:undefined,
+    decimals:index>=0?unpackMint(new PublicKey(leg.mint),mintInfos[index]!,program).decimals:9,
+    amount:BigInt(leg.amountAtomic),native:leg.native,signal:budget,fetcher});
  });
- for(const item of quoted){routes.push(item.route);quotes.push(item.quote);}
+ for(const item of quoted){routes.push(item.route);feeInstructions.push(...item.fee);quotes.push(item.quote);}
  const tableKeys=[...new Set(["AcL1Vo8oy1ULiavEcjSUcwfBSForXMudcZvDZy5nzJkU",...routes.flatMap(r=>r.addressLookupTableAddresses)])];
  const tables=await openLookupTableReader(connection)(tableKeys.map(k=>new PublicKey(k)));
- const instructions=await compactAtaInstructions(connection,[...prefix,...routes.flatMap(r=>[...(r.setupInstructions??[]),...(r.otherInstructions??[]),r.swapInstruction,...(r.cleanupInstruction?[r.cleanupInstruction]:[])].map(v=>instruction(v,owner)))]);
+ const instructions=await compactAtaInstructions(connection,[...prefix,...feeInstructions,...routes.flatMap(r=>[...(r.setupInstructions??[]),...(r.otherInstructions??[]),r.swapInstruction,...(r.cleanupInstruction?[r.cleanupInstruction]:[])].map(v=>instruction(v,owner)))]);
  const compiled=compileCompactOpenTransaction({payerKey:owner,recentBlockhash:blockhash.blockhash,instructions},tables),bytes=versionedTransactionSize(compiled.transaction);
  if(bytes>1232)return {status:"unavailable",reason:`Full atomic exit exceeds 1232 bytes: ${bytes}`,bytes,convertRent,received,quotes,netRecoveryUSDC:null,executable:false,sent:false};
  const usdcAta=getAssociatedTokenAddressSync(new PublicKey(USDC),owner),finalAddresses=[...addresses,usdcAta];

@@ -1,17 +1,20 @@
 import "server-only";
 
+import { PublicKey } from "@solana/web3.js";
+import { rpcConnection } from "./rpc";
+import { netSwapInput, readSwapFeeConfig, resolveSwapFeeConfig } from "./swap/fee";
 import BN from "bn.js";
 import { LiquidityMathUtil, SqrtPriceMath, TickUtil } from "@raydium-io/raydium-sdk-v2";
 import { DEFAULT_ADD_TOLERANCE_BPS, DEFAULT_RESALE_FLOOR_BPS, MAX_PRICE_IMPACT_BPS, QUOTE_TTL_MS, SLIPPAGE_BPS } from "./ids";
 import { describeResaleFloorFailure, meetsResaleFloor, parseAddToleranceBps, parseResaleFloorBps, parseTokenAmount } from "./amount";
 import { allocateSpend, padAmountMax, positionSide, toleranceLiquidity } from "./quote-math";
-import { buildRoute, quoteRoute, type QuoteRoute } from "./jupiter-route";
+import { buildRoute, quoteRoute, type QuoteRoute } from "./swap/jupiter";
 import type { Connection } from "@solana/web3.js";
 import type { JupiterRouteConstraints } from "./jupiter-route-retry";
 import type { JupiterRetryBudget } from "./jupiter/client";
 import { readSelectedPositionState, type PositionSelection, type SelectedPositionState } from "./selected-state";
 
-type SwapLeg = { inputMint: string; outputMint: string; spend: bigint; minOut: bigint; route: QuoteRoute | null };
+type SwapLeg = { inputMint: string; outputMint: string; spend: bigint; feeAmount: bigint; minOut: bigint; route: QuoteRoute | null };
 
 function projectedSqrt(state: SelectedPositionState, routes: QuoteRoute[]): BN {
   let price = new BN(state.sqrtPriceX64);
@@ -39,14 +42,15 @@ function amountsAt(state: SelectedPositionState, sqrt: BN, liquidity: BN) {
 
 async function leg(
   wallet: string, inputMint: string, outputMint: string, spend: bigint, nativeSource = false,
-  jupiter?: JupiterRouteConstraints, build = false, signal?: AbortSignal, budget?: JupiterRetryBudget,
+  jupiter?: JupiterRouteConstraints, build = false, signal?: AbortSignal, budget?: JupiterRetryBudget, feeBps = 0,
 ): Promise<SwapLeg> {
   if (spend <= 0n) throw new Error("Swap amount must be greater than zero");
-  if (inputMint === outputMint) return { inputMint, outputMint, spend, minOut: spend, route: null };
+  if (inputMint === outputMint) return { inputMint, outputMint, spend, feeAmount: 0n, minOut: spend, route: null };
+  const { feeAmount, swapAmount } = netSwapInput(spend, feeBps);
   const route = build
-    ? await buildRoute(wallet, inputMint, outputMint, spend, nativeSource, jupiter, signal, budget)
-    : await quoteRoute(inputMint, outputMint, spend, jupiter, signal, budget);
-  return { inputMint, outputMint, spend, minOut: BigInt(route.otherAmountThreshold), route };
+    ? await buildRoute(wallet, inputMint, outputMint, swapAmount, nativeSource, jupiter, signal, budget)
+    : await quoteRoute(inputMint, outputMint, swapAmount, jupiter, signal, budget);
+  return { inputMint, outputMint, spend, feeAmount, minOut: BigInt(route.otherAmountThreshold), route };
 }
 
 function priceImpactAgainstProbe(actual: SwapLeg, sample: SwapLeg, probe: bigint) {
@@ -66,10 +70,13 @@ export async function getSelectedQuoteBundle(
   const toleranceBps = parseAddToleranceBps(requestedToleranceBps);
   const state = options.state ?? await readSelectedPositionState(wallet, selection, options.connection, false, { displayPrices: false });
   if (state.inputKind === "native" && state.wsolBalance !== "0") throw new Error("Native SOL input already has WSOL ATA balance, please handle separately to avoid using existing WSOL");
+  const feeConfig = readSwapFeeConfig();
+  const effectiveFee = feeConfig.bps === 0 || state.rangeSide !== "inside" && state.inputMint === (state.rangeSide === "below" ? state.mintA : state.mintB) ? feeConfig : await resolveSwapFeeConfig(options.connection ?? rpcConnection(), new PublicKey(state.inputMint),
+    new PublicKey(state.inputTokenProgram || "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"), state.inputKind === "native");
   const actualLeg = (outputMint: string, spend: bigint) => leg(wallet, state.inputMint, outputMint, spend,
-    state.inputKind === "native", jupiter, options.buildTransactions !== false, options.signal, options.budget);
+    state.inputKind === "native", jupiter, options.buildTransactions !== false, options.signal, options.budget, effectiveFee.bps);
   const probeLeg = (outputMint: string) => leg(wallet, state.inputMint, outputMint, probe,
-    state.inputKind === "native", jupiter, false, options.signal, options.budget);
+    state.inputKind === "native", jupiter, false, options.signal, options.budget, effectiveFee.bps);
   if (!state.ownsNft) throw new Error("Wallet does not have an available position NFT ATA for the selected position");
   if (state.paused || state.frozen || state.transferFee || state.unsupportedExtensions.length) {
     throw new Error(`Pool asset currently paused, account frozen, transfer fee charged, or has unsupported settings${state.unsupportedExtensions.length ? `: ${state.unsupportedExtensions.join(", ")}` : ""}`);
@@ -133,6 +140,8 @@ export async function getSelectedQuoteBundle(
   const floorAdvice = describeResaleFloorFailure(requested, resale, floorBps);
   const passesFloor = includeResale && meetsResaleFloor(requested, resale, floorBps);
   const quote = {
+    feeBps: feeConfig.bps, feeWallet: feeConfig.wallet?.toBase58() ?? null,
+    feeAmount: legs.reduce((sum, item) => sum + item.feeAmount, 0n).toString(),
     wallet, inputMint: state.inputMint, inputKind: state.inputKind, inputDecimals: state.inputDecimals,
     positionMint: state.positionMint, positionAccount: state.positionAccount, poolId: state.poolId,
     mintA: state.mintA, mintB: state.mintB, decimalsA: state.decimalsA, decimalsB: state.decimalsB,

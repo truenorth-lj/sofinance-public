@@ -1,39 +1,20 @@
-import { swapRouteInstructions } from "./swap";
+import { swapRouteInstructions, rejectUnselectedWalletTokenWrites, assertNativeSwapFeeRecipient, readSwapFeeConfig, swapFeeTransferInstructions } from "./swap";
 import "server-only";
 
 import { createHash } from "node:crypto";
 import { buildSelectedAddInstruction } from "./selected-add-instruction";
-import { createAssociatedTokenAccountIdempotentInstruction, createSyncNativeInstruction, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID, unpackAccount } from "@solana/spl-token";
+import { createAssociatedTokenAccountIdempotentInstruction, createSyncNativeInstruction, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { ComputeBudgetProgram, PublicKey, SystemProgram, TransactionMessage, VersionedTransaction, type Connection, type TransactionInstruction } from "@solana/web3.js";
 import { NATIVE_SOL_MINT, QUOTE_TTL_MS } from "./ids";
 import { readLookupTables, validateRouteTables } from "./transaction-helpers";
 import { rpcConnection } from "./rpc";
 import { beamTipInstruction, chooseBeamTransaction, fetchBeamTipAddress } from "./solami-beam";
 import { isTxOversizeError, type JupiterRouteConstraints } from "./jupiter-route-retry";
-import type { BuildRoute } from "./jupiter-route";
+import type { BuildRoute } from "./swap/jupiter";
 import type { JupiterRetryBudget } from "./jupiter/client";
 import { getSelectedQuoteBundle } from "./selected-quote";
 import { simulateAndVerifySelectedTransaction } from "./selected-simulation";
 import { readSelectedPositionState, type PositionSelection, type SelectedPositionState } from "./selected-state";
-
-async function rejectUnselectedWalletTokenWrites(
-  connection: Connection, wallet: PublicKey, instructions: TransactionInstruction[],
-  allowedAccounts: string[],
-) {
-  const writable = [...new Map(instructions.flatMap((ix) => ix.keys.filter((key) => key.isWritable))
-    .map((key) => [key.pubkey.toBase58(), key.pubkey])).values()];
-  const allowed = new Set(allowedAccounts);
-  const unselected = writable.filter((key) => !allowed.has(key.toBase58()));
-  if (!unselected.length) return;
-  const { value } = await connection.getMultipleAccountsInfoAndContext(unselected, "confirmed");
-  value.forEach((info, index) => {
-    if (!info || ![TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID].some((program) => info.owner.equals(program))) return;
-    // A writable mint is not a wallet token account.
-    if (info.data.length < 165 || info.data.length > 165 && info.data[165] !== 2) return;
-    const decoded = unpackAccount(unselected[index]!, info, info.owner);
-    if (decoded.owner.equals(wallet) && decoded.amount > 0n) throw new Error("Jupiter route may modify unselected wallet assets, transaction stopped");
-  });
-}
 
 export async function buildAndSimulateSelectedZap(
   walletAddress: string, selection: PositionSelection, amount: string, floorBps: number,
@@ -73,7 +54,19 @@ async function buildAndSimulateSelectedZapOnce(
   if (legs.length !== (state.rangeSide === "inside" ? 2 : 1) || legs.some((item) =>
     item.inputMint !== state.inputMint || ![state.mintA, state.mintB].includes(item.outputMint) ||
     item.route && (item.route.inputMint !== state.inputMint || item.route.outputMint !== item.outputMint ||
-      BigInt(item.route.inAmount) !== item.spend))) throw new Error("Swap route does not match selected assets or position");
+      BigInt(item.route.inAmount) !== item.spend - (item.feeAmount ?? 0n)))) throw new Error("Swap route does not match selected assets or position");
+  const feeConfig = readSwapFeeConfig();
+  const protocolFee = legs.reduce((sum, item) => sum + (item.feeAmount ?? 0n), 0n);
+  if ((quote.feeAmount ?? "0") !== protocolFee.toString() || (quote.feeBps ?? 0) !== feeConfig.bps ||
+    (quote.feeWallet ?? null) !== (feeConfig.wallet?.toBase58() ?? null))
+    throw new Error("Quote protocol fee does not match configuration");
+  if (state.inputKind === "native" && feeConfig.wallet) await assertNativeSwapFeeRecipient(connection, feeConfig.wallet, protocolFee);
+  const feeInstructions = feeConfig.wallet && protocolFee > 0n
+    ? swapFeeTransferInstructions(state.inputKind === "native"
+      ? { payer: wallet, owner: wallet, recipient: feeConfig.wallet, amount: protocolFee, kind: "native" }
+      : { payer: wallet, owner: wallet, recipient: feeConfig.wallet, amount: protocolFee, kind: "token",
+        mint: new PublicKey(state.inputMint), source: new PublicKey(state.inputAccount!),
+        decimals: state.inputDecimals, program: new PublicKey(state.inputTokenProgram!) }) : [];
   const raydiumInstructions = [buildSelectedAddInstruction(state, quote, wallet)];
   const addInstructions = raydiumInstructions.filter((ix) => ix.programId.toBase58() === state.programId);
   const addDiscriminator = createHash("sha256").update("global:increase_liquidity_v2").digest().subarray(0, 8);
@@ -113,7 +106,7 @@ async function buildAndSimulateSelectedZapOnce(
     .map((table) => [table.key.toBase58(), table])).values()];
   const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
   const baseInstructions = [ComputeBudgetProgram.setComputeUnitLimit({ units: 1_400_000 }),
-    ...routeInstructions, ...wrapInstructions, ...createAtaInstructions, ...raydiumInstructions];
+    ...feeInstructions, ...routeInstructions, ...wrapInstructions, ...createAtaInstructions, ...raydiumInstructions];
   const compile = (instructions: TransactionInstruction[]) => new VersionedTransaction(new TransactionMessage({
     payerKey: wallet, recentBlockhash: blockhash, instructions,
   }).compileToV0Message(tables));

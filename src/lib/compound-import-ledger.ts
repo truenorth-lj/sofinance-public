@@ -2,7 +2,7 @@ import { TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID } from "@solana/spl-token";
 import { PublicKey, type ParsedInstruction, type ParsedTransactionWithMeta, type PartiallyDecodedInstruction } from "@solana/web3.js";
 import bs58 from "bs58";
 import type { CompoundReceipt } from "./compound-attempt";
-import { computeSwapFee, MAX_SWAP_FEE_BPS, readSwapFeeConfig, swapFeeRecipientAta } from "./swap-fee";
+import { computeSwapFee, MAX_SWAP_FEE_BPS, readSwapFeeConfig, swapFeeRecipientAta } from "./swap/fee";
 
 export type ImportedPriorCredit = { address: string; mint: string; program: string; amount: bigint; preAmount: bigint; positionMint: string; poolId: string; positionAccount: string };
 export type CompoundImportOptions = { verifyYield?: boolean; verifyPriorCredit?: (credit: ImportedPriorCredit) => Promise<void> };

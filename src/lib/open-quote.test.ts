@@ -1,11 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { AccountLayout, getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { PublicKey } from "@solana/web3.js";
+import { rpcConnection } from "./rpc";
 import { Keypair } from "@solana/web3.js";
 import { TickUtil } from "@raydium-io/raydium-sdk-v2";
 import { uiPriceBPerAFromTick } from "./position-performance-math";
 
 vi.mock("server-only", () => ({}));
 vi.mock("./open-state", () => ({ readOpenPoolState: vi.fn() }));
-vi.mock("./jupiter-route", () => ({ buildRoute: vi.fn() }));
+vi.mock("./swap/jupiter", () => ({ buildRoute: vi.fn() }));
 vi.mock("./open-rent", () => ({
   estimateOpenPositionRent: vi.fn(async () => ({
     refundableLamports: 5_000_000n,
@@ -23,7 +26,7 @@ vi.mock("./open-rent", () => ({
 vi.mock("./rpc", () => ({ rpcConnection: vi.fn() }));
 
 import { readOpenPoolState, type OpenPoolState } from "./open-state";
-import { buildRoute } from "./jupiter-route";
+import { buildRoute } from "./swap/jupiter";
 import { estimateOpenPositionRent } from "./open-rent";
 import { getOpenPositionQuoteBundle } from "./open-quote";
 
@@ -36,9 +39,9 @@ function state(overrides: Partial<OpenPoolState> = {}): OpenPoolState {
   const tickCurrent = 0;
   return {
     wallet, slot: 1, fetchedAt: Date.now(), poolId, programId: "prog",
-    inputKind: "token", inputMint: mintA, inputDecimals: 6, inputTokenProgram: "Tokenkeg",
+    inputKind: "token", inputMint: mintA, inputDecimals: 6, inputTokenProgram: TOKEN_PROGRAM_ID.toBase58(),
     inputAccount: Keypair.generate().publicKey.toBase58(), inputBalance: "1000000000",
-    mintA, mintB, decimalsA: 6, decimalsB: 9, programA: "Tokenkeg", programB: "Tokenkeg",
+    mintA, mintB, decimalsA: 6, decimalsB: 9, programA: TOKEN_PROGRAM_ID.toBase58(), programB: TOKEN_PROGRAM_ID.toBase58(),
     ataA: Keypair.generate().publicKey.toBase58(), ataB: Keypair.generate().publicKey.toBase58(),
     vaultA: Keypair.generate().publicKey.toBase58(), vaultB: Keypair.generate().publicKey.toBase58(),
     balances: { a: "0", b: "0", input: "1000000000" },
@@ -58,6 +61,13 @@ beforeEach(() => {
   vi.stubEnv("SOFINANCE_FEE_WALLET", undefined);
   vi.stubEnv("SOFINANCE_FEE_BPS", undefined);
   vi.stubEnv("JUPITER_API_KEY", undefined);
+  vi.mocked(rpcConnection).mockReturnValue({ getAccountInfo: vi.fn(async (address: PublicKey) => {
+    const data = Buffer.alloc(165);
+    AccountLayout.encode({ mint: [mintA, mintB].map(m => new PublicKey(m)).find(m => getAssociatedTokenAddressSync(m, new PublicKey(process.env.SOFINANCE_FEE_WALLET!), true).equals(address))!, owner: new PublicKey(process.env.SOFINANCE_FEE_WALLET!),
+      amount: 0n, delegateOption: 0, delegate: PublicKey.default, state: 1, isNativeOption: 0,
+      isNative: 0n, delegatedAmount: 0n, closeAuthorityOption: 0, closeAuthority: PublicKey.default }, data);
+    return { data, owner: TOKEN_PROGRAM_ID, lamports: 2039280, executable: false, rentEpoch: 0 };
+  }) } as never);
   vi.mocked(readOpenPoolState).mockResolvedValue(state());
 });
 
@@ -214,6 +224,35 @@ describe("open-position quote validation", () => {
     expect(buildRoute).toHaveBeenCalledWith(wallet, primaryMint, secondaryMint, expect.any(BigInt), false, 24);
     expect(vi.mocked(buildRoute).mock.calls.every(call => call[5] === 24 && call[4] === false)).toBe(true);
     expect(readOpenPoolState).not.toHaveBeenCalled();
+  });
+
+  it.each(["sequential", "sequential-b"] as const)("charges both %s swap legs in their own input mint", async strategy => {
+    const feeWallet = Keypair.generate().publicKey;
+    vi.stubEnv("SOFINANCE_FEE_WALLET", feeWallet.toBase58());
+    const snapshot = state({ inputMint: Keypair.generate().publicKey.toBase58(), price: "1", decimalsB: 6 });
+    vi.mocked(rpcConnection).mockReturnValue({ getAccountInfo: vi.fn(async (address: PublicKey) => {
+      const mint = [snapshot.inputMint, snapshot.mintA, snapshot.mintB].map(m => new PublicKey(m)).find(m =>
+        getAssociatedTokenAddressSync(m, feeWallet, true).equals(address))!;
+      const data = Buffer.alloc(165);
+      AccountLayout.encode({ mint, owner: feeWallet, amount: 0n, delegateOption: 0, delegate: PublicKey.default,
+        state: 1, isNativeOption: 0, isNative: 0n, delegatedAmount: 0n, closeAuthorityOption: 0, closeAuthority: PublicKey.default }, data);
+      return { data, owner: TOKEN_PROGRAM_ID };
+    }) } as never);
+    vi.mocked(buildRoute).mockImplementation(async (_wallet, inputMint, outputMint, amount) => ({
+      inputMint, outputMint, inAmount: amount.toString(), outAmount: amount.toString(),
+      otherAmountThreshold: amount.toString(), priceImpactPct: "0", routePlan: [],
+    }) as never);
+    const { quote, legs } = await getOpenPositionQuoteBundle(wallet,
+      { poolId, inputMint: snapshot.inputMint, inputKind: "token" }, "1", { preset: "standard" },
+      9900, 100, 24, snapshot, strategy);
+    expect(legs).toHaveLength(2);
+    for (const leg of legs) {
+      expect(leg.feeAmount).toBe(leg.spend * 10n / 10000n);
+      expect(leg.feeAmount).toBeGreaterThan(0n);
+      expect(BigInt(leg.route!.inAmount)).toBe(leg.spend - leg.feeAmount);
+    }
+    expect(quote.swapFees!.map(fee => fee.mint)).toEqual(legs.map(leg => leg.inputMint));
+    expect(quote.feeAmount).toBe(legs[0]!.feeAmount.toString());
   });
 
   it("rejects combined impact above 5% even when each sequential route reports less than 5%", async () => {

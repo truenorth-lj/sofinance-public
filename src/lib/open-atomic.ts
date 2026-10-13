@@ -14,7 +14,7 @@ import { restampVersionedTransaction, stampPreparedBlockhash } from "./fresh-blo
 import { validateRouteTables } from "./transaction-helpers";
 import { assertOpenTransactionSize, compactAtaInstructions, compileCompactOpenTransaction, OpenTransactionSizeError, openLookupTableReader } from "./open-transaction";
 import { rpcConnection } from "./rpc";
-import { JupiterNoRouteError } from "./jupiter-route";
+import { JupiterNoRouteError } from "./swap/jupiter";
 import { BEAM_MIN_TIP_LAMPORTS, beamTipInstruction, chooseBeamTransaction, fetchBeamTipAddress } from "./solami-beam";
 import { getOpenPositionQuoteBundle, type OpenSwapStrategy } from "./open-quote";
 import { simulateAndVerifyOpenTransaction } from "./open-simulation";
@@ -74,7 +74,7 @@ async function buildOpenPositionAttempt(
   if (Date.now() >= quote.expiresAt) throw new Error("Quote expired, please resimulate");
   const routes = legs.flatMap((item) => item.route ? [item.route] : []);
   const feeConfig = readSwapFeeConfig();
-  const protocolFee = legs.reduce((sum, item) => sum + (item.feeAmount ?? 0n), 0n);
+  const protocolFee = legs.filter(item => item.inputMint === state.inputMint).reduce((sum, item) => sum + (item.feeAmount ?? 0n), 0n);
   if ((quote.feeBps ?? 0) !== feeConfig.bps || BigInt(quote.feeAmount ?? "0") !== protocolFee ||
     (quote.feeWallet ?? null) !== (feeConfig.wallet?.toBase58() ?? null)) {
     throw new Error("Quote protocol fee does not match configuration");
@@ -138,7 +138,16 @@ async function buildOpenPositionAttempt(
       open.keys[1]?.pubkey.toBase58() !== walletAddress) {
       throw new Error("Raydium instruction is not open_position_with_token22_nft for this wallet");
     }
-    const routeInstructions = swapRouteInstructions(routes, wallet);
+    const routeInstructions = legs.flatMap(item => {
+      if (!item.route) return [];
+      const secondaryFee = item.inputMint !== state.inputMint && feeConfig.wallet && item.feeAmount > 0n
+        ? swapFeeTransferInstructions({ payer: wallet, owner: wallet, recipient: feeConfig.wallet,
+          amount: item.feeAmount, kind: "token", mint: new PublicKey(item.inputMint),
+          source: new PublicKey(item.inputMint === state.mintA ? state.ataA : state.ataB),
+          decimals: item.inputMint === state.mintA ? state.decimalsA : state.decimalsB,
+          program: new PublicKey(item.inputMint === state.mintA ? state.programA : state.programB) }) : [];
+      return [...secondaryFee, ...swapRouteInstructions([item.route], wallet)];
+    });
     await rejectUnselectedWalletTokenWrites(connection, wallet, routeInstructions,
       [state.inputAccount, state.ataA, state.ataB].filter((item): item is string => Boolean(item)));
     const routeTables = await resources.readTables(routes.flatMap((route) =>

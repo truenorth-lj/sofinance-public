@@ -1,12 +1,14 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { AccountLayout, TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { Keypair, PublicKey } from "@solana/web3.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TickUtil } from "@raydium-io/raydium-sdk-v2";
 
 vi.mock("server-only", () => ({}));
 vi.mock("./selected-state", () => ({ readSelectedPositionState: vi.fn() }));
-vi.mock("./jupiter-route", () => ({ buildRoute: vi.fn(), quoteRoute: vi.fn() }));
+vi.mock("./swap/jupiter", () => ({ buildRoute: vi.fn(), quoteRoute: vi.fn() }));
 
 import { readSelectedPositionState, type SelectedPositionState } from "./selected-state";
-import { buildRoute, quoteRoute } from "./jupiter-route";
+import { buildRoute, quoteRoute } from "./swap/jupiter";
 import { getSelectedQuoteBundle } from "./selected-quote";
 
 const wallet = "FakeWa11etAddressForTestingPurposes1111111111";
@@ -16,6 +18,7 @@ const positionMint = "FakePositionMintForTestsOnly111111111111111";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.stubEnv("SOFINANCE_FEE_WALLET", undefined);
   vi.mocked(readSelectedPositionState).mockResolvedValue({
     wallet, positionMint, positionAccount: "position", poolId: "pool", inputMint: mintA,
     inputKind: "token", inputDecimals: 6, inputBalance: "1000000000",
@@ -28,6 +31,8 @@ beforeEach(() => {
     unsupportedExtensions: [], sufficientSol: true,
   } as unknown as SelectedPositionState);
 });
+
+afterEach(() => vi.unstubAllEnvs());
 
 describe("selected quote", () => {
   it("uses a pool asset directly and values it back in the same asset", async () => {
@@ -116,4 +121,26 @@ describe("bounded selected allocation", () => {
     await expect(getSelectedQuoteBundle(wallet, { positionMint, inputMint: source, inputKind: "token" }, "100", 9900, 100,
       { maxAccounts: 24 }, { includeResale: false })).rejects.toThrow("Price impact relative to probe route");
   });
+});
+
+it.each(["native", "token"] as const)("selected add charges the configured fee on %s swaps", async kind => {
+  const feeWallet = Keypair.generate().publicKey;
+  vi.stubEnv("SOFINANCE_FEE_WALLET", feeWallet.toBase58());
+  vi.stubEnv("SOFINANCE_FEE_BPS", "10");
+  const original = await readSelectedPositionState(wallet, { positionMint, inputMint: mintB, inputKind: kind });
+  const state = { ...original, inputMint: mintB, inputKind: kind, inputDecimals: 6,
+    programA: TOKEN_PROGRAM_ID.toBase58(), inputTokenProgram: TOKEN_PROGRAM_ID.toBase58(), wsolBalance: "0" };
+  const data = Buffer.alloc(165);
+  AccountLayout.encode({ mint: new PublicKey(mintB), owner: feeWallet, amount: 0n, delegateOption: 0, delegate: PublicKey.default,
+    state: 1, isNativeOption: 0, isNative: 0n, delegatedAmount: 0n, closeAuthorityOption: 0, closeAuthority: PublicKey.default }, data);
+  const connection = { getAccountInfo: vi.fn(async () => ({ data, owner: TOKEN_PROGRAM_ID })) } as never;
+  const route = (inputMint: string, outputMint: string, amount: bigint) => ({ inputMint, outputMint,
+    inAmount: amount.toString(), outAmount: amount.toString(), otherAmountThreshold: amount.toString(),
+    routePlan: [], priceImpactPct: "0" });
+  vi.mocked(quoteRoute).mockImplementation(async (input, output, amount) => route(input, output, amount) as never);
+  vi.mocked(buildRoute).mockImplementation(async (_wallet, input, output, amount) => route(input, output, amount) as never);
+  const result = await getSelectedQuoteBundle(wallet, { positionMint, inputMint: mintB, inputKind: kind }, "100", 9900, 100,
+    undefined, { state, connection, includeResale: false });
+  expect(result.quote.feeAmount).toBe("100000");
+  expect(result.legs[0]!.route!.inAmount).toBe("99900000");
 });

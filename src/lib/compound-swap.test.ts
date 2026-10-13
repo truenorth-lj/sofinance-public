@@ -6,7 +6,7 @@ import { expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 import { optimizeCompoundSwap, validateCompoundSwapInstruction, type CompoundSwap, type CompoundSwapShape } from "./compound-swap";
 import { sizeCompoundLiquidity } from "./compound-math";
-import { computeSwapFee, netSwapInput } from "./swap-fee";
+import { computeSwapFee, netSwapInput } from "./swap/fee";
 import type { CompoundAccount, CompoundPositionState } from "./compound-types";
 
 const q = 1n << 64n;

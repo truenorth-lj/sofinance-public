@@ -9,7 +9,6 @@ export const JUPITER_LITE_HOST = "lite-api.jup.ag";
 
 export const JUPITER_QUOTE_PATH = "/swap/v1/quote";
 export const JUPITER_SWAP_INSTRUCTIONS_PATH = "/swap/v1/swap-instructions";
-export const JUPITER_BUILD_PATH = "/swap/v2/build";
 export const JUPITER_PRICE_V3_PATH = "/price/v3";
 export const JUPITER_TOKENS_SEARCH_PATH = "/tokens/v2/search";
 

@@ -1,6 +1,6 @@
 import { TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { createHash } from "node:crypto";
-import { beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Keypair, PublicKey, TransactionInstruction } from "@solana/web3.js";
 vi.mock("server-only", () => ({}));
 vi.mock("./rpc", () => ({ rpcConnection: vi.fn() }));
@@ -43,6 +43,7 @@ function bundle(oversize = false) {
 }
 const initialKeyIndex = keyIndex;
 beforeEach(() => {
+  vi.stubEnv("SOFINANCE_FEE_WALLET", undefined);
   keyIndex = initialKeyIndex;
   vi.clearAllMocks(); connection.getMultipleAccountsInfoAndContext.mockResolvedValue({ value: [], context: { slot: 1 } }); vi.mocked(rpcConnection).mockReturnValue(connection as never);
   vi.mocked(readSelectedPositionState).mockResolvedValue(state as never);
@@ -108,4 +109,22 @@ it("snapshots the selected transaction wire bytes", async () => {
   vi.mocked(getSelectedQuoteBundle).mockResolvedValue(bundle());
   const { transaction } = await buildAndSimulateSelectedZap(wallet.toBase58(), selection, "0.001", 9900);
   expect(Buffer.from(transaction.serialize()).toString("base64")).toMatchSnapshot();
+});
+
+afterEach(() => vi.unstubAllEnvs());
+it("includes the selected-add protocol transfer before the swap", async () => {
+  const recipient = key();
+  vi.stubEnv("SOFINANCE_FEE_WALLET", recipient.toBase58()); vi.stubEnv("SOFINANCE_FEE_BPS", "10");
+  const value = writableBundle(new PublicKey(state.ataA));
+  value.quote.feeBps = 10; value.quote.feeAmount = "1"; value.quote.feeWallet = recipient.toBase58();
+  value.state = { ...value.state, inputTokenProgram: TOKEN_PROGRAM_ID.toBase58(), inputDecimals: 6 };
+  vi.mocked(readSelectedPositionState).mockResolvedValue(value.state);
+  value.legs[0]!.feeAmount = 1n;
+  (value.legs[0]!.route! as { inAmount: string }).inAmount = "999";
+  vi.mocked(getSelectedQuoteBundle).mockResolvedValue(value);
+  const { transaction } = await buildAndSimulateSelectedZap(wallet.toBase58(), selection, "0.001", 9900);
+  const fee = transaction.message.compiledInstructions[1]!;
+  expect(transaction.message.staticAccountKeys[fee.programIdIndex]!.equals(TOKEN_PROGRAM_ID)).toBe(true);
+  expect(fee.data[0]).toBe(12); // TransferChecked
+  expect(Buffer.from(fee.data).readBigUInt64LE(1)).toBe(1n);
 });
