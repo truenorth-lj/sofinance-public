@@ -16,8 +16,6 @@ import { APP_ROUTES } from "@/lib/public-urls";
 import { EXTERNAL_LINK_PROPS, SOCIAL_LINKS } from "@/lib/social-links";
 import { XIcon } from "@/components/x-icon";
 
-const GITHUB_URL = "https://github.com/truenorth-lj/sofinance-public";
-
 const navPill =
   "flex h-10 items-center justify-center rounded-full border border-white/25 px-4 text-[13px] font-medium text-cream/85 outline-none transition-colors hover:border-white/70 focus-visible:border-lemon";
 const labelPill =
@@ -126,14 +124,6 @@ export function LandingPage() {
                   <ArrowCta href={APP_ROUTES.ai} tone="outline-ink">
                     Use with AI
                   </ArrowCta>
-                  <a
-                    href={GITHUB_URL}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="px-2 text-sm text-ink/60 underline underline-offset-4 transition-colors hover:text-ink"
-                  >
-                    Source on GitHub
-                  </a>
                 </div>
               </div>
             </div>
@@ -414,9 +404,6 @@ export function LandingPage() {
             <Link href={APP_ROUTES.ai} className="transition-colors hover:text-cream">
               Use with AI
             </Link>
-            <a href={GITHUB_URL} target="_blank" rel="noreferrer" className="transition-colors hover:text-cream">
-              GitHub
-            </a>
             <a
               href={SOCIAL_LINKS.x.href}
               {...EXTERNAL_LINK_PROPS}
