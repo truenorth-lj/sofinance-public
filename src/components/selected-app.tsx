@@ -61,6 +61,10 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
   const assets = feeState ?? state;
   const busy = addBusy || compound.busy;
   const actionDisabled = connected && (addDisabled || compound.busy);
+  const actionLoading = connected && (busy || calculating);
+  const buttonLabel = !connected ? "Connect wallet" : compound.busy ? "Another operation in progress…" :
+    calculating ? "Estimating liquidity…" : actionLabel;
+  const buttonClass = `inline-flex w-full items-center justify-center gap-2 rounded-full bg-lemon px-5 py-4 text-sm font-semibold text-ink transition-colors hover:bg-[#fff27f] ${actionLoading ? "cursor-wait disabled:opacity-100" : "disabled:cursor-not-allowed disabled:opacity-40"}`;
   const addStatus = compound.busy ? "A compound or recovery operation is in progress." : status;
   const primaryAction = () => { if (!connected) { connect(); return; } if (!compound.busy) addAction(); };
   const metadataMints = [
@@ -182,7 +186,7 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
           <div className="mt-3 flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-white/[0.06] px-4 py-3"><div><label htmlFor="tolerance" className="text-sm font-medium text-cream/80">Add-liquidity price tolerance</label><p className="mt-1 text-xs leading-5 text-smoke">Room for the pool price to move before execution; 0–5%, by 0.1%. The unused reserve stays in your wallet as pool assets.</p></div><div className="flex shrink-0 items-center gap-1"><input id="tolerance" disabled={busy} type="number" inputMode="decimal" min="0" max="5" step="0.1" value={tolerancePercent} onChange={(event) => changeTolerance(event.target.value)} className="w-16 rounded-lg border border-white/20 bg-white/10 px-2 py-1.5 text-right text-sm font-semibold text-cream outline-none focus:border-white/40" /><span className="text-sm text-cream/80">%</span></div></div>
           </details>
           <p className="mt-5 text-xs leading-5 text-smoke">Preview updates after entering an amount. Add liquidity runs the final checks before wallet confirmation.</p>
-          <div className="mt-6 hidden sm:block"><button className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-lemon px-5 py-4 text-sm font-semibold text-ink transition-colors hover:bg-[#fff27f] disabled:cursor-not-allowed disabled:opacity-40" disabled={actionDisabled} onClick={primaryAction}>{busy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ArrowDown className="h-4 w-4" />}{connected ? actionLabel : "Connect wallet"}</button></div>
+          <div className="mt-6 hidden sm:block"><button className={buttonClass} disabled={actionDisabled} aria-busy={actionLoading} onClick={primaryAction}>{actionLoading ? <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin motion-reduce:animate-none" /> : <ArrowDown aria-hidden="true" className="h-4 w-4" />}{buttonLabel}</button></div>
           {connected && <div role="status" className="mt-3 min-h-5 text-xs text-smoke">{addStatus}</div>}
           {obsoletePending && <button type="button" className="mt-2 text-xs text-cream/80 underline" onClick={retryObsoleteReconcile}>Re-verify previous version transaction</button>}
           {connectionError && <div role="alert" className="mt-4 flex gap-2 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80"><CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />{connectionError}</div>}
@@ -206,7 +210,7 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
     </AssetRisksDialog>
     <TransactionStatusDialog attempt={visibleAttempt} status={attemptStatus} error={verificationError || error} open={statusDialogOpen}
       onOpenChange={setStatusDialogOpen} onRetry={retryReconcile} />
-    {activeView === "deposit" && <div className="fixed inset-x-0 bottom-0 z-10 border-t border-white/12 bg-canvas/95 p-4 backdrop-blur sm:hidden"><button className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-lemon px-5 py-4 text-sm font-semibold text-ink transition-colors hover:bg-[#fff27f] disabled:cursor-not-allowed disabled:opacity-40" disabled={actionDisabled} onClick={primaryAction}>{busy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ArrowDown className="h-4 w-4" />}{connected ? actionLabel : "Connect wallet"}</button></div>}
+    {activeView === "deposit" && <div className="fixed inset-x-0 bottom-0 z-10 border-t border-white/12 bg-canvas/95 p-4 backdrop-blur sm:hidden"><button className={buttonClass} disabled={actionDisabled} aria-busy={actionLoading} onClick={primaryAction}>{actionLoading ? <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin motion-reduce:animate-none" /> : <ArrowDown aria-hidden="true" className="h-4 w-4" />}{buttonLabel}</button></div>}
   </div>;
 }
 

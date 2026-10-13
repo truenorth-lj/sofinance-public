@@ -4,7 +4,7 @@ import { randomAddress, buildSingleSignerTx } from "../../support/tx";
 import type { Page } from "@playwright/test";
 import type { FakeWallet } from "../../fake-wallet/node-signer";
 
-async function setup(page: Page, wallet: FakeWallet, options: { prepareFails?: boolean; uncertainSend?: boolean; historyStatus?: "pending" | "manual-review" | "invalid" | "legacy" } = {}) {
+async function setup(page: Page, wallet: FakeWallet, options: { prepareFails?: boolean; uncertainSend?: boolean; previewGate?: Promise<void>; previewFails?: boolean; skipPreviewWait?: boolean; historyStatus?: "pending" | "manual-review" | "invalid" | "legacy" } = {}) {
   const positionMint = randomAddress(), mintA = randomAddress(), mintB = randomAddress();
   const inputMint = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
   const poolId = randomAddress(), positionAccount = randomAddress();
@@ -30,7 +30,11 @@ async function setup(page: Page, wallet: FakeWallet, options: { prepareFails?: b
       positions: [{ ...state, symbolA: "AAA", symbolB: "BBB", feeTierBps: 1, tickCurrent: 0 }],
       assets: [{ kind: "token", mint: inputMint, eligible: true, decimals: 6, balance: "200000311", totalBalance: "200000311", reason: null }] };
     if (pathname === "/api/selected-state" || pathname === "/api/compound-state") value = state;
-    if (pathname === "/api/selected-quote") value = preview;
+    if (pathname === "/api/selected-quote") {
+      await options.previewGate;
+      if (options.previewFails) return route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "Quote unavailable" }) });
+      value = preview;
+    }
     if (pathname === "/api/selected-preflight") throw new Error("Automatic full preflight must not run");
     if (pathname === "/api/selected-prepare") {
       if (options.prepareFails) return route.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ error: "Simulation failed" }) });
@@ -65,7 +69,7 @@ async function setup(page: Page, wallet: FakeWallet, options: { prepareFails?: b
   await new ConnectModal(page, wallet).connect();
   await page.getByRole("textbox", { name: "Input limit" }).fill("1");
   const add = page.getByRole("button", { name: "Add liquidity", exact: true });
-  await expect(add).toBeEnabled();
+  if (!options.skipPreviewWait) await expect(add).toBeEnabled();
   return { calls, add };
 }
 
@@ -139,3 +143,39 @@ for (const historyStatus of ["pending", "manual-review", "invalid", "legacy"] as
     await page.screenshot({ path: test.info().outputPath(`history-${historyStatus}.png`) });
   });
 }
+
+for (const width of [1280, 390]) {
+  test(`loading preview has a bright spinner button, then enables Add at ${width}px`, async ({ page, wallet }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+    let release!: () => void;
+    const previewGate = new Promise<void>(resolve => { release = resolve; });
+    const { calls, add } = await setup(page, wallet, { previewGate, skipPreviewWait: true });
+    const loading = page.getByRole("button", { name: "Estimating liquidity…", exact: true });
+    await expect(loading).toBeVisible(); await expect(loading).toBeDisabled();
+    await expect(loading).toHaveAttribute("aria-busy", "true");
+    await expect(loading.locator("svg")).toHaveClass(/animate-spin/);
+    expect(await loading.evaluate(button => getComputedStyle(button).opacity)).toBe("1");
+    await expect(loading.locator("svg")).toHaveCSS("animation-name", "spin");
+    await loading.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: test.info().outputPath(`preview-loading-${width}.png`) });
+    expect(wallet.ledger).toEqual([]); expect(calls).not.toContain("/api/selected-prepare");
+    release(); await expect(add).toBeEnabled();
+    await expect(add).toHaveAttribute("aria-busy", "false");
+    await expect(add.locator("svg")).not.toHaveClass(/animate-spin/);
+    expect(wallet.ledger).toEqual([]);
+  });
+}
+
+test("failed preview stops the spinner and offers explicit recalculation", async ({ page, wallet, guards }) => {
+  guards.allowConsole(/^Failed to load resource: the server responded with a status of 503/);
+  let release!: () => void;
+  const previewGate = new Promise<void>(resolve => { release = resolve; });
+  const { add } = await setup(page, wallet, { previewGate, previewFails: true, skipPreviewWait: true });
+  await expect(page.getByRole("button", { name: "Estimating liquidity…", exact: true })).toBeVisible();
+  release();
+  await expect(page.getByRole("alert").filter({ hasText: "Quote unavailable" })).toBeVisible();
+  await expect(add).toBeDisabled(); await expect(add).toHaveAttribute("aria-busy", "false");
+  await expect(page.getByRole("button", { name: "Recalculate" })).toBeVisible();
+  expect(wallet.ledger).toEqual([]);
+});
