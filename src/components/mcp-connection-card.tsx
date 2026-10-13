@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useMemo } from "react";
-import { Copy, Check, Code, ExternalLink, ShieldCheck } from "lucide-react";
+import { Copy, Check, Code, ShieldCheck } from "lucide-react";
 import { useWalletConnection } from "./wallet-connection";
 import bs58 from "bs58";
 
@@ -325,15 +325,6 @@ export function McpConnectionCard({ wallet }: McpConnectionCardProps) {
           <span className="text-smoke">
             Server never holds your private keys. Signing happens locally.
           </span>
-          <a
-            href="https://github.com/truenorth-lj/sofinance-public#mcp-tools-12"
-            target="_blank"
-            rel="noreferrer"
-            className="flex items-center gap-1 font-semibold text-smoke transition-colors hover:text-cream/90"
-          >
-            Docs
-            <ExternalLink className="h-3 w-3" />
-          </a>
         </div>
       </div>
     </details>
