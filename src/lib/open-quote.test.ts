@@ -1,9 +1,10 @@
+import BN from "bn.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AccountLayout, getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { PublicKey } from "@solana/web3.js";
 import { rpcConnection } from "./rpc";
 import { Keypair } from "@solana/web3.js";
-import { TickUtil } from "@raydium-io/raydium-sdk-v2";
+import { TickUtil, SqrtPriceMath } from "@raydium-io/raydium-sdk-v2";
 import { uiPriceBPerAFromTick } from "./position-performance-math";
 
 vi.mock("server-only", () => ({}));
@@ -200,16 +201,18 @@ describe("open-position quote validation", () => {
     expect(quote.floorBps).toBe(9900);
     expect(quote.passesFloor).toBe(false);
     expect(quote.achievedResaleBps).toBe(10);
-    expect(buildRoute).toHaveBeenCalledTimes(3);
+    expect(buildRoute).toHaveBeenCalledTimes(5);
   });
-  it.each(["sequential", "sequential-b"] as const)("sizes %s LP from conservative primary output and applies the same account budget to both probes and swaps", async strategy => {
+  it.each(["sequential", "sequential-b"] as const)("sizes %s LP from conservative primary output and tries compact own-pool routes for secondary probes and swaps", async strategy => {
     const firstMint = Keypair.generate().publicKey.toBase58(), secondMint = Keypair.generate().publicKey.toBase58();
     const snapshot = state({ mintA: firstMint, mintB: secondMint, decimalsA: 6, decimalsB: 6,
-      inputMint: mintA, inputDecimals: 6, fetchedAt: Date.now(), price: "1" });
+      inputMint: mintA, inputDecimals: 6, fetchedAt: Date.now(), price: "1", tickCurrent: 10,
+      sqrtPriceX64: TickUtil.getSqrtPriceAtTick(10).add(TickUtil.getSqrtPriceAtTick(11)).divn(2).toString() });
     vi.mocked(buildRoute).mockImplementation(async (_wallet, inputMint, outputMint, spend) => ({
       inputMint, outputMint, inAmount: spend.toString(), outAmount: spend.toString(),
       otherAmountThreshold: (spend * 99n / 100n).toString(), swapMode: "ExactIn", slippageBps: 50,
-      priceImpactPct: "0.001", routePlan: [], setupInstructions: [], swapInstruction: {},
+      priceImpactPct: "0.001", routePlan: inputMint === mintA || outputMint === mintA ? [] : [{ percent: 100, bps: 10000,
+        swapInfo: { ammKey: poolId, inputMint, outputMint, inAmount: spend.toString(), outAmount: spend.toString() } }], setupInstructions: [], swapInstruction: {},
       cleanupInstruction: null, otherInstructions: [], addressesByLookupTableAddress: {},
     } as never));
     const { quote, legs } = await getOpenPositionQuoteBundle(wallet,
@@ -221,8 +224,12 @@ describe("open-position quote validation", () => {
     expect(legs[0]!.minOut + legs[1]!.spend).toBe(99000n);
     expect(BigInt(quote.amountMaxA)).toBeLessThanOrEqual(legs.find(leg => leg.outputMint === firstMint)!.minOut);
     expect(BigInt(quote.amountMaxB)).toBeLessThanOrEqual(legs.find(leg => leg.outputMint === secondMint)!.minOut);
-    expect(buildRoute).toHaveBeenCalledWith(wallet, primaryMint, secondaryMint, expect.any(BigInt), false, 24, undefined, undefined, undefined, 0);
-    expect(vi.mocked(buildRoute).mock.calls.every(call => call[5] === 24 && call[4] === false)).toBe(true);
+    expect(buildRoute).toHaveBeenCalledWith(wallet, primaryMint, secondaryMint, expect.any(BigInt), false, { maxAccounts: 20, onlyDirectRoutes: true, dexes: "Raydium CLMM" }, undefined, undefined, undefined, 0);
+    expect(vi.mocked(buildRoute).mock.calls.every(call => typeof call[5] === "object" && [20, 24].includes(call[5].maxAccounts) && call[4] === false)).toBe(true);
+    const sqrt = SqrtPriceMath.getNextSqrtPriceFromInput(new BN(snapshot.sqrtPriceX64),
+      new BN(snapshot.poolLiquidity), new BN(legs[1]!.route!.inAmount), strategy === "sequential");
+    expect(quote.routeTouchesTargetPool).toBe(true);
+    expect(quote.projectedPrice).toBe(TickUtil.sqrtPriceX64ToPrice(sqrt, 6, 6).toString());
     expect(readOpenPoolState).not.toHaveBeenCalled();
   });
 
@@ -299,7 +306,7 @@ describe("open-position quote validation", () => {
       expect(quote.minOutA).toBe("100000");
       const swapCalls = vi.mocked(buildRoute).mock.calls.filter((call) => call[1] === mintB && call[2] === mintA);
       const resaleCalls = vi.mocked(buildRoute).mock.calls.filter((call) => call[1] === mintA && call[2] === mintB);
-      expect(swapCalls.map((call) => call[3])).toEqual([10_000_000n, 100_000_000n]);
+      expect(swapCalls.map((call) => call[3])).toEqual([10_000_000n, 10_000_000n, 100_000_000n, 100_000_000n]);
       expect(resaleCalls.map((call) => call[3])).toEqual([100_000n]);
     });
 
@@ -339,7 +346,7 @@ describe("open-position quote validation", () => {
       expect(quote.feeAmount).toBe("0");
       expect(quote.feeWallet).toBe(feeWallet);
       expect(vi.mocked(buildRoute).mock.calls.filter((call) => call[1] === mintB).map((call) => call[3]))
-        .toEqual([99n, 999n]);
+        .toEqual([99n, 99n, 999n, 999n]);
     });
   });
 

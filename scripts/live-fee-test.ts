@@ -175,8 +175,18 @@ async function execute(encoded: string, validity: { expiresAt?: number; lastVali
   try {
     const sent = await broadcast(Buffer.from(measured.wire).toString("base64"));
     if (sent.signature !== measured.signature) throw new Error("Broadcast signature mismatch");
+    // Without Beam or priority fees the app's single RPC send may be dropped. Rebroadcast the
+    // identical signed bytes (same signature, cannot double-execute) until confirmed or expired.
+    let landed = false;
+    const rebroadcast = (async () => {
+      while (!landed && await rpc.getBlockHeight("confirmed").catch(() => 0) <= validity.lastValidBlockHeight) {
+        await rpc.sendRawTransaction(measured.wire, { skipPreflight: true, maxRetries: 0 }).catch(() => undefined);
+        await wait(2000);
+      }
+    })();
     const result = await rpc.confirmTransaction({ signature: measured.signature, blockhash: measured.tx.message.recentBlockhash,
-      lastValidBlockHeight: validity.lastValidBlockHeight }, "finalized");
+      lastValidBlockHeight: validity.lastValidBlockHeight }, "finalized").finally(() => { landed = true; });
+    await rebroadcast;
     if (result.value.err) throw new Error(`Transaction failed: ${JSON.stringify(result.value.err)}`);
     console.log(`Finalized: ${sent.signature}\nhttps://solscan.io/tx/${sent.signature}`);
     if (confirm) await confirm(sent.signature);

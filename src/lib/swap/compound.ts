@@ -7,7 +7,8 @@ import { sizeCompoundLiquidity } from "../compound-math";
 import type { CompoundSwap } from "../compound-swap";
 import type { CompoundAccount, CompoundPositionState } from "../compound-types";
 import { JupiterHttpError } from "../jupiter";
-import { buildRoute, quoteRoute, type QuoteRoute } from "./jupiter";
+import { buildRoute, quoteRoute } from "./jupiter";
+import { assertOwnPoolRoute, ownPoolConstraints } from "./own-pool";
 import { netSwapInput, resolveSwapFeeConfig } from "./fee";
 import { rejectUnselectedWalletTokenWrites, swapRouteInstructions } from "./instructions";
 
@@ -31,11 +32,8 @@ export async function buildCompoundSwapPlan(input: {
   const budget = inputA ? amountA : amountB;
   if (budget === 0n) return empty;
   const config = await resolveSwapFeeConfig(connection, new PublicKey(source.mint), new PublicKey(source.program));
-  const constraints = { maxAccounts: 20, onlyDirectRoutes: true, dexes: "Raydium CLMM" };
-  const validate = (route: QuoteRoute) => {
-    if (route.routePlan.length !== 1 || route.routePlan[0]?.bps !== 10_000 || route.routePlan[0].swapInfo.ammKey !== state.poolId)
-      throw new Error("Compound Jupiter route must use only the original pool");
-  };
+  const constraints = ownPoolConstraints();
+  const validate = (route: Parameters<typeof assertOwnPoolRoute>[0]) => assertOwnPoolRoute(route, state.poolId);
   const evaluate = async (gross: bigint) => {
     const { swapAmount, feeAmount } = netSwapInput(gross, config.bps);
     // Dust-sized probes (e.g. 1 raw unit) legitimately have no route; treat as "no swap at this size".

@@ -41,10 +41,10 @@ function amountsAt(state: SelectedPositionState, sqrt: BN, liquidity: BN) {
 
 async function leg(
   wallet: string, inputMint: string, outputMint: string, spend: bigint, nativeSource = false,
-  jupiter?: JupiterRouteConstraints, build = false, signal?: AbortSignal, budget?: JupiterRetryBudget, feeBps = 0,
+  jupiter?: JupiterRouteConstraints, build = false, signal?: AbortSignal, budget?: JupiterRetryBudget, feeBps = 0, ownPool?: { poolId: string; mintA: string; mintB: string },
 ): Promise<SwapLeg> {
   return feeSwapLeg({ wallet, inputMint, outputMint, spend, feeBps, native: nativeSource,
-    constraints: jupiter, build, signal, budget });
+    constraints: jupiter, build, signal, budget, ownPool });
 }
 
 function priceImpactAgainstProbe(actual: SwapLeg, sample: SwapLeg, probe: bigint) {
@@ -66,9 +66,9 @@ export async function getSelectedQuoteBundle(
   if (state.inputKind === "native" && state.wsolBalance !== "0") throw new Error("Native SOL input already has WSOL ATA balance, please handle separately to avoid using existing WSOL");
   const feeConfig = readSwapFeeConfig();
   const actualLeg = (outputMint: string, spend: bigint) => leg(wallet, state.inputMint, outputMint, spend,
-    state.inputKind === "native", jupiter, options.buildTransactions !== false, options.signal, options.budget, deposit.legBps);
+    state.inputKind === "native", jupiter, options.buildTransactions !== false, options.signal, options.budget, deposit.legBps, state);
   const probeLeg = (outputMint: string) => leg(wallet, state.inputMint, outputMint, probe,
-    state.inputKind === "native", jupiter, false, options.signal, options.budget, deposit.legBps);
+    state.inputKind === "native", jupiter, false, options.signal, options.budget, deposit.legBps, state);
   if (!state.ownsNft) throw new Error("Wallet does not have an available position NFT ATA for the selected position");
   if (state.paused || state.frozen || state.transferFee || state.unsupportedExtensions.length) {
     throw new Error(`Pool asset currently paused, account frozen, transfer fee charged, or has unsupported settings${state.unsupportedExtensions.length ? `: ${state.unsupportedExtensions.join(", ")}` : ""}`);
@@ -99,13 +99,22 @@ export async function getSelectedQuoteBundle(
     const base = amountsAt(state, projected, new BN("1000000000000000000"));
     spendA = allocateSpend(requested, BigInt(base.amountA.toString()), BigInt(base.amountB.toString()),
       { spend: probe, out: probeA.minOut }, { spend: probe, out: probeB.minOut }, 1n);
-    const [actualA, actualB] = await Promise.all([
-      actualLeg(state.mintA, spendA), actualLeg(state.mintB, requested - spendA),
-    ]);
-    legs = [actualA, actualB];
-    priceImpactAgainstProbe(actualA, probeA, probe);
-    priceImpactAgainstProbe(actualB, probeB, probe);
-    projected = projectedSqrt(state, legs.flatMap((item) => item.route ? [item.route] : []));
+    for (let index = 0; index < 5; index++) {
+      const [actualA, actualB] = await Promise.all([
+        actualLeg(state.mintA, spendA), actualLeg(state.mintB, requested - spendA),
+      ]);
+      legs = [actualA, actualB];
+      priceImpactAgainstProbe(actualA, probeA, probe);
+      priceImpactAgainstProbe(actualB, probeB, probe);
+      projected = projectedSqrt(state, legs.flatMap((item) => item.route ? [item.route] : []));
+      const desired = amountsAt(state, projected, new BN("1000000000000000000"));
+      const next = allocateSpend(requested, BigInt(desired.amountA.toString()), BigInt(desired.amountB.toString()),
+        { spend: spendA, out: actualA.minOut }, { spend: requested - spendA, out: actualB.minOut }, 1n);
+      const difference = next > spendA ? next - spendA : spendA - next;
+      if (difference * 1_000n <= requested * 2n) break;
+      if (index === 4) throw new Error("Pool price and swap ratio did not converge, please retry later");
+      spendA = next;
+    }
   }
   if (deposit.feeAmount > 0n) {
     legs[0]!.spend += deposit.feeAmount;

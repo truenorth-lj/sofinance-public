@@ -143,3 +143,40 @@ Bugs fixed during live testing:
 - Compound's binary search probed dust amounts. Jupiter answered `No routes found`
   or `Cannot compute other amount threshold` (HTTP 400), which aborted the whole
   compound. Those probe sizes are now treated as "no swap at this size".
+
+## Live overflow rates (2026-10-14, real prepare code, dry-run signed, no Beam tip)
+
+~20 live `open-prepare` / `selected-prepare` builds per flow with varied amounts
+on SPCX/SPCXx `DUzBLHZ5…` and MSTR/MSTRx `CxEUkLtu…` (pool `3ofY6ksv…` rejects
+opens: unfunded tick arrays). The builders never emit >1,232 bytes; "over" is
+whether the **USDC-fee candidate** exceeded the limit (temporary size probe).
+Errors are upstream (RPC context slot, quote/pool snapshot expiry, Jupiter
+timeouts), not size.
+
+| Flow | Before (ff02bcd) built / USDC candidate over | Final bytes before | After own-pool routing | Final bytes after |
+|---|---|---:|---|---:|
+| Open, USDC two-swap | 19/20, **0%** over | 1136–1167 | 5/5, 0% | 1136 |
+| Open, SOL deposit | 2/15, **100%** over (candidates 1268–1723) → SOL fee | 1186 | 4/11, 100% over (1331–1799) → SOL fee | 1178–1223 |
+| Open, pool token | 20/20, 0% | 862–1178 | 8/8, 0% | 862–1040 |
+| Selected add, USDC | 18/20, 0% | 1025–1151 | 5/5, 0% | 1025–1119 |
+| Selected add, pool token | 17/20, 0% | 819–1075 | 7/8, 0% | 819–1007 |
+| Compound | not measurable: test positions had no harvestable yield | – | – | – |
+
+The offline envelopes above were pessimistic for USDC/pool-token flows. Only a
+SOL deposit structurally cannot carry the extra SOL→USDC fee route (+145–600 B
+over the ~1186 B base), so it keeps the explicit SOL fee. Own-pool routing
+(`own-pool.ts`: `onlyDirectRoutes`, `dexes=Raydium CLMM`, `ammKey == poolId`,
+falling back to normal routing otherwise) now applies to every pool-token↔pool-token
+leg (open sequential secondary, pool-token deposits, selected add), shrinking
+those packets and raising SOL-open success. Compound stays on the input-token fee:
+without live yield its USDC envelope (offline 1390 B) is unverified.
+
+Live sends 2026-10-14 (after changes; RPC broadcast, Beam disabled):
+
+| Flow | Tx | Bytes | Fee | Fee wallet delta |
+|---|---|---:|---|---|
+| Open USDC 1.0 | 3HTsf7Yy… | 988 | 1000 raw USDC | +1000 USDC raw |
+| Open SOL 0.002 | 21C6ykRS… | 1223 | 2000 lamports SOL | +2000 lamports |
+| Open SPCX 0.006 | 3dEwCVMZ… | 974 | USDC conversion | +471 USDC raw |
+| Selected add USDC 0.5 | 3Zpf7MMK… | 1120 | 500 raw USDC | +500 USDC raw |
+| Selected add SPCX 0.003 | 5GpMHoRs… | 975 | USDC conversion | +157 USDC raw |

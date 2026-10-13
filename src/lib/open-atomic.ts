@@ -286,6 +286,7 @@ export async function buildAndSimulateOpenPosition(
   let lastSizeError: OpenTransactionSizeError | undefined;
   const strategies = ![state.mintA, state.mintB].includes(state.inputMint)
     ? ["parallel", "sequential-b", "sequential"] as const : ["parallel"] as const;
+  // Pool-token secondary legs prefer the shared own-pool direct route.
   // Try a materially smaller budget and the shared first swap early, rather
   // than rebuilding several similar large two-swap routes first. Either pool
   // token can be the primary: the two directions may have different route sizes.

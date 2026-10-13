@@ -4,6 +4,7 @@ import type { JupiterRouteConstraints } from "../jupiter-route-retry";
 import type { JupiterRetryBudget } from "../jupiter/client";
 import { netSwapInput, type SwapFeeConfig } from "./fee";
 import { buildRoute, quoteRoute } from "./jupiter";
+import { isPoolTokenPair, preferOwnPoolRoute, type OwnPool } from "./own-pool";
 
 /** A USDC deposit pays once, including the same-mint portion and secondary leg. */
 export function depositFeePlan(mint: string, amount: bigint, config: SwapFeeConfig) {
@@ -14,7 +15,7 @@ export function depositFeePlan(mint: string, amount: bigint, config: SwapFeeConf
 export async function feeSwapLeg(input: {
   wallet: string; inputMint: string; outputMint: string; spend: bigint; feeBps: number;
   native?: boolean; constraints?: JupiterRouteConstraints | number; build?: boolean;
-  signal?: AbortSignal; budget?: JupiterRetryBudget;
+  signal?: AbortSignal; budget?: JupiterRetryBudget; ownPool?: OwnPool;
 }) {
   const { wallet, inputMint, outputMint, spend, feeBps } = input;
   if (spend <= 0n) throw new Error("Swap amount must be greater than zero");
@@ -23,9 +24,12 @@ export async function feeSwapLeg(input: {
   const platformFeeBps = outputMint === USDC_MINT ? feeBps : 0;
   const { feeAmount, swapAmount } = netSwapInput(spend, platformFeeBps ? 0 : feeBps);
   const constraints = typeof input.constraints === "number" ? { maxAccounts: input.constraints } : input.constraints;
-  const route = input.build !== false
-    ? await buildRoute(wallet, inputMint, outputMint, swapAmount, input.native ?? false, input.constraints,
+  const request = (routeConstraints = constraints) => input.build !== false
+    ? buildRoute(wallet, inputMint, outputMint, swapAmount, input.native ?? false, routeConstraints,
       input.signal, input.budget, undefined, platformFeeBps)
-    : await quoteRoute(inputMint, outputMint, swapAmount, constraints, input.signal, input.budget, platformFeeBps);
+    : quoteRoute(inputMint, outputMint, swapAmount, routeConstraints, input.signal, input.budget, platformFeeBps);
+  const route = input.ownPool && isPoolTokenPair(input.ownPool, inputMint, outputMint)
+    ? await preferOwnPoolRoute(input.ownPool.poolId, request, constraints)
+    : await request();
   return { inputMint, outputMint, spend, feeAmount, minOut: BigInt(route.otherAmountThreshold), route };
 }

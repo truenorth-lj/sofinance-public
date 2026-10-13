@@ -1,7 +1,8 @@
+import BN from "bn.js";
 import { AccountLayout, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { Keypair, PublicKey } from "@solana/web3.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { TickUtil } from "@raydium-io/raydium-sdk-v2";
+import { TickUtil, SqrtPriceMath, LiquidityMathUtil } from "@raydium-io/raydium-sdk-v2";
 
 vi.mock("server-only", () => ({}));
 vi.mock("./selected-state", () => ({ readSelectedPositionState: vi.fn() }));
@@ -97,6 +98,30 @@ describe("bounded selected allocation", () => {
     vi.mocked(quoteRoute).mockImplementation(async (input, output, amount) => route(input, output, amount));
     vi.mocked(buildRoute).mockImplementation(async (_wallet, input, output, amount) => route(input, output, amount) as never);
   }
+  it("sizes pool-token deposits at the own-pool post-swap price", async () => {
+    insideState();
+    const snapshot = await readSelectedPositionState(wallet, { positionMint, inputMint: mintB, inputKind: "token" });
+    snapshot.inputMint = mintB;
+    snapshot.sqrtPriceX64 = TickUtil.getSqrtPriceAtTick(10).toString();
+    snapshot.tickCurrent = 10;
+    snapshot.poolLiquidity = "1000000000000";
+    vi.mocked(quoteRoute).mockImplementation(async (input, output, amount) => ({ ...route(input, output, amount),
+      routePlan: [{ percent: 100, bps: 10000, swapInfo: { ammKey: "pool", inputMint: input,
+        outputMint: output, inAmount: amount.toString(), outAmount: amount.toString() } }] }));
+    const { quote, legs } = await getSelectedQuoteBundle(wallet,
+      { positionMint, inputMint: mintB, inputKind: "token" }, "100", 9900, 100, { maxAccounts: 48 },
+      { state: snapshot, buildTransactions: false, includeResale: false });
+    const swap = legs.find(leg => leg.route)!;
+    const sqrt = SqrtPriceMath.getNextSqrtPriceFromInput(new BN(snapshot.sqrtPriceX64),
+      new BN(snapshot.poolLiquidity), new BN(swap.route!.inAmount), false);
+    expect(quote.routeTouchesTargetPool).toBe(true);
+    expect(quote.projectedPrice).toBe(TickUtil.sqrtPriceX64ToPrice(sqrt, 6, 6).toString());
+    const amounts = LiquidityMathUtil.getAmountsForLiquidity(sqrt, new BN(snapshot.lowerSqrtX64),
+      new BN(snapshot.upperSqrtX64), new BN(quote.liquidity), true);
+    expect(quote.requiredA).toBe(amounts.amountA.toString());
+    expect(quote.requiredB).toBe(amounts.amountB.toString());
+    expect(vi.mocked(quoteRoute).mock.calls.every(call => call[3]?.onlyDirectRoutes === true)).toBe(true);
+  });
   it("preview uses exactly four lightweight quotes, no transaction builds or reverse resale", async () => {
     insideState();
     const { quote } = await getSelectedQuoteBundle(wallet, { positionMint, inputMint: source, inputKind: "token" }, "100",

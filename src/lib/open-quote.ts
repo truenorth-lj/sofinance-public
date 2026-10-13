@@ -116,6 +116,8 @@ export async function getOpenPositionQuoteBundle(
     decimalsB: state.decimalsB,
     tickSpacing: state.tickSpacing,
   });
+  const depositLeg: typeof leg = (wallet, inputMint, outputMint, spend, constraints, feeBps = 0) =>
+    feeSwapLeg({ wallet, inputMint, outputMint, spend, constraints, feeBps, ownPool: state }) as Promise<OpenSwapLeg>;
   const lowerSqrtX64 = TickUtil.getSqrtPriceAtTick(resolved.tickLower).toString();
   const upperSqrtX64 = TickUtil.getSqrtPriceAtTick(resolved.tickUpper).toString();
   const grossRequested = parseTokenAmount(amount, state.inputDecimals);
@@ -132,8 +134,8 @@ export async function getOpenPositionQuoteBundle(
   let projected = new BN(state.sqrtPriceX64);
   if (resolved.rangeSide !== "inside") {
     const outputMint = resolved.rangeSide === "below" ? state.mintA : state.mintB;
-    const sample = await leg(wallet, state.inputMint, outputMint, probe, routeMaxAccounts, swapFeeBps);
-    const actual = await leg(wallet, state.inputMint, outputMint, requested, routeMaxAccounts, swapFeeBps);
+    const sample = await depositLeg(wallet, state.inputMint, outputMint, probe, routeMaxAccounts, swapFeeBps);
+    const actual = await depositLeg(wallet, state.inputMint, outputMint, requested, routeMaxAccounts, swapFeeBps);
     priceImpactAgainstProbe(actual, sample, probe);
     legs = [actual];
     spendA = outputMint === state.mintA ? requested : 0n;
@@ -147,19 +149,19 @@ export async function getOpenPositionQuoteBundle(
     const secondaryMint = primaryIsA ? state.mintB : state.mintA;
     const primaryAmount = (amounts: ReturnType<typeof amountsAt>) => BigInt((primaryIsA ? amounts.amountA : amounts.amountB).toString());
     const secondaryAmount = (amounts: ReturnType<typeof amountsAt>) => BigInt((primaryIsA ? amounts.amountB : amounts.amountA).toString());
-    const primaryProbe = await leg(wallet, state.inputMint, primaryMint, probe, routeMaxAccounts, swapFeeBps);
-    const primary = await leg(wallet, state.inputMint, primaryMint, requested, routeMaxAccounts, swapFeeBps);
+    const primaryProbe = await depositLeg(wallet, state.inputMint, primaryMint, probe, routeMaxAccounts, swapFeeBps);
+    const primary = await depositLeg(wallet, state.inputMint, primaryMint, requested, routeMaxAccounts, swapFeeBps);
     priceImpactAgainstProbe(primary, primaryProbe, probe);
     const availablePrimary = primary.minOut;
     const secondaryProbeAmount = availablePrimary / 10n;
     if (secondaryProbeAmount <= 0n) throw new Error("Input amount too small to obtain secondary probe route");
     const secondaryBps = deposit.secondaryBps;
-    const secondaryProbe = await leg(wallet, primaryMint, secondaryMint, secondaryProbeAmount, routeMaxAccounts, secondaryBps);
+    const secondaryProbe = await depositLeg(wallet, primaryMint, secondaryMint, secondaryProbeAmount, routeMaxAccounts, secondaryBps);
     const desired = amountsAt(projected, lowerSqrtX64, upperSqrtX64, new BN("1000000000000000000"));
     let swapPrimary = availablePrimary - allocateSpend(availablePrimary, primaryAmount(desired), secondaryAmount(desired),
       { spend: secondaryProbeAmount, out: secondaryProbeAmount }, { spend: secondaryProbeAmount, out: secondaryProbe.minOut }, 1n);
     for (let index = 0; index < 5; index++) {
-      const secondary = await leg(wallet, primaryMint, secondaryMint, swapPrimary, routeMaxAccounts, secondaryBps);
+      const secondary = await depositLeg(wallet, primaryMint, secondaryMint, swapPrimary, routeMaxAccounts, secondaryBps);
       priceImpactAgainstProbe(secondary, secondaryProbe, secondaryProbeAmount);
       // Both hops affect the secondary leg. Keep combined impact within the same
       // 5% cap rather than permitting 5% independently on each hop.
@@ -183,16 +185,16 @@ export async function getOpenPositionQuoteBundle(
     }
   } else {
     const [probeA, probeB] = await Promise.all([
-      leg(wallet, state.inputMint, state.mintA, probe, routeMaxAccounts, swapFeeBps),
-      leg(wallet, state.inputMint, state.mintB, probe, routeMaxAccounts, swapFeeBps),
+      depositLeg(wallet, state.inputMint, state.mintA, probe, routeMaxAccounts, swapFeeBps),
+      depositLeg(wallet, state.inputMint, state.mintB, probe, routeMaxAccounts, swapFeeBps),
     ]);
     const base = amountsAt(projected, lowerSqrtX64, upperSqrtX64, new BN("1000000000000000000"));
     spendA = allocateSpend(requested, BigInt(base.amountA.toString()), BigInt(base.amountB.toString()),
       { spend: probe, out: probeA.minOut }, { spend: probe, out: probeB.minOut }, 1n);
     for (let index = 0; index < 5; index++) {
       const [actualA, actualB] = await Promise.all([
-        leg(wallet, state.inputMint, state.mintA, spendA, routeMaxAccounts, swapFeeBps),
-        leg(wallet, state.inputMint, state.mintB, requested - spendA, routeMaxAccounts, swapFeeBps),
+        depositLeg(wallet, state.inputMint, state.mintA, spendA, routeMaxAccounts, swapFeeBps),
+        depositLeg(wallet, state.inputMint, state.mintB, requested - spendA, routeMaxAccounts, swapFeeBps),
       ]);
       legs = [actualA, actualB];
       priceImpactAgainstProbe(actualA, probeA, probe);
