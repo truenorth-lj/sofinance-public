@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, it, vi, type Mock } from "vitest";
 import { Keypair, PublicKey, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
 import { useSelectedController } from "./use-selected-controller";
-import { selectedAttemptKey } from "@/lib/selected-attempt";
+import { persistSelectedAttempt, selectedAttemptKey, type SelectedAttempt } from "@/lib/selected-attempt";
 
 const mocks = vi.hoisted(() => ({ sign: vi.fn(), address: "11111111111111111111111111111111" }));
 const wallet = "11111111111111111111111111111111";
@@ -205,5 +205,88 @@ it("keeps an uncertain broadcast pending and never automatically resends", async
   await act(async () => controller.primaryAction()); await advance(10000);
   expect(calls("/api/selected-broadcast")).toHaveLength(1);
   expect(window.localStorage.getItem(selectedAttemptKey(wallet))).not.toBeNull();
-  expect(controller.attemptStatus).toBe("pending"); expect(controller.actionDisabled).toBe(true);
+  expect(controller.attemptStatus).toBe("pending"); expect(controller.actionDisabled).toBe(false);
+  expect(controller.walletBlocked).toBe(false); expect(controller.historyWarning).toContain("may add liquidity twice");
+});
+
+const oldAttempt = (): SelectedAttempt => ({ version: 2, wallet, selection: { ...selection, positionMint: key() },
+  poolId, positionAccount, signature: bs58.encode(new Uint8Array(64).fill(2)), createdAt: Date.now(), requested: "100",
+  floorBps: 9900, startingBalances: { input: "1000", a: "0", b: "0" }, startingLiquidity: "1",
+  expectedLiquidity: "2", blockhash: wallet, lastValidBlockHeight: 100 });
+async function reload() {
+  await act(async () => root.unmount()); root = createRoot(document.createElement("div"));
+  await act(async () => root.render(createElement(Harness))); await advance(100); await advance(100);
+}
+it.each(["pending", "manual-review"])("old %s on another NFT warns but allows a new preview after reload", async status => {
+  const prior = oldAttempt(); persistSelectedAttempt(window.localStorage, prior);
+  const handler = fetchMock.getMockImplementation()!;
+  fetchMock.mockImplementation(async (url, init) => url === "/api/selected-status"
+    ? Response.json({ status, signature: prior.signature, state: null }) : handler(url, init));
+  await reload(); await ready();
+  expect(controller.attempt?.signature).toBe(prior.signature);
+  expect(controller.attemptStatus).toBe(status);
+  expect(controller.walletBlocked).toBe(false); expect(controller.historyWarning).toContain("starting again");
+  expect(calls("/api/selected-broadcast")).toHaveLength(0); expect(mocks.sign).not.toHaveBeenCalled();
+});
+it("invalid local records never block fresh input and are retained", async () => {
+  const raw = "invalid old record"; window.localStorage.setItem(selectedAttemptKey(wallet), raw);
+  await reload(); await ready();
+  expect(controller.historyWarning).toBeTruthy();
+  expect(window.localStorage.getItem(selectedAttemptKey(wallet))).toBe(raw);
+  expect(mocks.sign).not.toHaveBeenCalled();
+});
+it("a hanging legacy lookup does not delay preview or require deleting its receipt", async () => {
+  const raw = JSON.stringify({ wallet, signature: oldAttempt().signature, lastValidBlockHeight: 100 });
+  window.localStorage.setItem(`sofinance:atomic:${wallet}`, raw);
+  const handler = fetchMock.getMockImplementation()!;
+  fetchMock.mockImplementation((url, init) => url === "/api/transaction-finality" ? new Promise(() => {}) : handler(url, init));
+  await reload(); await ready();
+  expect(controller.walletBlocked).toBe(false);
+  expect(window.localStorage.getItem(`sofinance:atomic:${wallet}`)).toBe(raw);
+});
+it("old lookup errors cannot overwrite a newer failed preparation", async () => {
+  const prior = oldAttempt(); persistSelectedAttempt(window.localStorage, prior);
+  let resolve!: (value: Response) => void;
+  const handler = fetchMock.getMockImplementation()!;
+  fetchMock.mockImplementation((url, init) => url === "/api/selected-status"
+    ? new Promise<Response>(done => { resolve = done; }) : handler(url, init));
+  await reload(); await ready(); prepareError = true;
+  await act(async () => controller.primaryAction());
+  await act(async () => resolve(Response.json({ error: "Old lookup failed" }, { status: 503 })));
+  expect(controller.error).toBe("Simulation failed");
+  expect(controller.verificationError).toBe(""); expect(controller.walletBlocked).toBe(false);
+  expect(window.localStorage.getItem(selectedAttemptKey(wallet))).toBe(JSON.stringify(prior));
+});
+it("new signed attempts archive the old receipt; no old signature is broadcast", async () => {
+  const prior = oldAttempt(); persistSelectedAttempt(window.localStorage, prior);
+  await reload(); await ready(); signNormally();
+  await act(async () => controller.primaryAction()); await advance(600);
+  expect(controller.history.map(item => item.signature)).toContain(prior.signature);
+  expect(window.localStorage.getItem(`${selectedAttemptKey(wallet)}:history:${prior.signature}`)).toBe(JSON.stringify(prior));
+  expect(calls("/api/selected-broadcast")).toHaveLength(1);
+  expect(controller.attempt?.signature).not.toBe(prior.signature);
+  expect(controller.actionDisabled).toBe(false);
+});
+
+it("an old wallet's late signing failure cannot overwrite the new wallet's error", async () => {
+  await ready();
+  let reject!: (reason: Error) => void;
+  mocks.sign.mockImplementation(() => new Promise((_, fail) => { reject = fail; }));
+  await act(async () => controller.primaryAction());
+  mocks.address = key();
+  await act(async () => root.render(createElement(Harness))); await advance(50);
+  await act(async () => reject(new Error("old wallet failure")));
+  expect(controller.error).not.toContain("old wallet failure");
+  expect(calls("/api/selected-broadcast")).toHaveLength(0);
+});
+
+it("a dropped persistence write prevents broadcast without losing the prior receipt", async () => {
+  const prior = oldAttempt(); persistSelectedAttempt(window.localStorage, prior);
+  await reload(); await ready(); signNormally();
+  const write = vi.spyOn(window.localStorage, "setItem").mockImplementation(() => {});
+  await act(async () => controller.primaryAction());
+  expect(calls("/api/selected-broadcast")).toHaveLength(0);
+  expect(controller.error).toContain("Unable to preserve previous transaction record");
+  write.mockRestore();
+  expect(window.localStorage.getItem(selectedAttemptKey(wallet))).toBe(JSON.stringify(prior));
 });

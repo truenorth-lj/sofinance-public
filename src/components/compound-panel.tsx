@@ -10,11 +10,11 @@ import type { CompoundController } from "./use-compound-controller";
 const short = (value: string) => `${value.slice(0, 5)}…${value.slice(-5)}`;
 
 const statusText = {
-  pending: "Transaction confirming, do not resubmit",
+  pending: "Transaction confirming. It may still succeed; starting again may repeat the operation.",
   success: "Compound confirmed on-chain",
   failed: "On-chain transaction failed",
   expired: "Transaction not on-chain and expired",
-  "manual-review": "Transaction result requires manual verification, new transactions paused",
+  "manual-review": "Transaction result requires verification. New operations are available.",
 } as const;
 
 export function CompoundPanel({ controller: c, tokenLabel = short, onConnect }: {
@@ -30,10 +30,7 @@ export function CompoundPanel({ controller: c, tokenLabel = short, onConnect }: 
   const action = c.stage === "preparing" ? "Verifying yield and simulating transaction…" :
     c.stage === "wallet" ? "Confirming in wallet…" : c.stage === "broadcasting" ? "Sending and verifying…" : "One-click compound";
   const blockedText = !c.wallet ? null : !c.positionMint ? "Please select existing position first" :
-    c.externalBlocked ? "Input transaction pending verification, compound paused" : c.receiptReviewRequired ?
-      "Previous transaction finalized successfully; verify yield details before another compound or recovery. You can add liquidity." : c.walletBlocked && !c.busy ?
-      c.confirmationSlow ? "Confirmation is taking longer than 30 seconds. Rechecking on-chain result; do not resubmit." :
-      "Verifying this wallet's previous transactions, do not resubmit" : state && !state.eligible ? state.reason :
+    c.externalBlocked ? "Another operation is in progress." : state && !state.eligible ? state.reason :
         state && !c.hasFees ? "Currently no yield available to compound" : null;
   const positionReceipts = c.receipts.filter(receipt => receipt.positionMint === c.positionMint);
   const otherReceipts = c.receipts.filter(receipt => receipt.positionMint !== c.positionMint);
@@ -65,7 +62,7 @@ export function CompoundPanel({ controller: c, tokenLabel = short, onConnect }: 
     </div>
     {state && <>
       <CompoundOverview state={state} summary={preview} tokenLabel={tokenLabel} prices={prices} />
-      {c.priorReceipts.length > 0 && <p className="mt-3 text-xs leading-5 text-cream/80">Will verify this NFT&apos;s {c.priorReceipts.length} prior yield account records, and swap and reinvest yield still in accounts together; actual available amount subject to on-chain query.</p>}
+      {c.priorReceipts.length > 0 && <p className="mt-3 text-xs leading-5 text-cream/80">Previous yield accounts remain available below for verification and recovery.</p>}
       {state.rewards.some((reward) => reward.estimatedAmount !== "0") && <div className="mt-4 space-y-2 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
         <h3 className="text-xs font-medium text-smoke">Additional rewards</h3>
         {state.rewards.map((reward) => <div key={reward.index} className="flex justify-between gap-3 text-xs text-cream/80">
@@ -87,7 +84,7 @@ export function CompoundPanel({ controller: c, tokenLabel = short, onConnect }: 
     {!preview && displaySummary && <details className="mt-5 text-xs text-smoke"><summary className="cursor-pointer font-semibold">Previous transaction simulation record</summary><p className="mt-3">Previous transaction estimate; a new compound will re-read yield and simulate. USDC values use current reference prices.</p><CompoundOverview state={displaySummary.state} summary={displaySummary} tokenLabel={tokenLabel} prices={prices} /></details>}
     <details className="mt-5 border-t border-white/10 pt-4 text-xs text-smoke"><summary className="cursor-pointer font-semibold">Yield account management · Recover records and retrieve balances{c.wallet ? ` (${positionReceipts.length} records for this position)` : ""}</summary>
     <details className="mt-5 text-xs text-smoke"><summary className="cursor-pointer font-semibold">Recover yield accounts from transaction signature</summary>
-      <p className="mt-2 leading-5">When switching devices or local records are lost, enter original compound transaction signature, recovered yield can be included in next compound or retrieved. Query only reads on-chain records, moving assets still requires wallet signature.</p>
+      <p className="mt-2 leading-5">When switching devices or local records are lost, enter the original compound transaction signature to find and retrieve remaining yield balances. Query only reads on-chain records, moving assets still requires wallet signature.</p>
       <label htmlFor="compound-import-signature" className="mt-3 block">Original compound transaction signature</label>
       <input id="compound-import-signature" value={importSignature} onChange={(event) => setImportSignature(event.target.value)}
         className="mt-2 w-full rounded-lg border border-white/20 bg-white/[0.06] px-3 py-2 text-xs text-cream focus:border-white/40 focus:outline-none" autoComplete="off" />
@@ -96,7 +93,7 @@ export function CompoundPanel({ controller: c, tokenLabel = short, onConnect }: 
     </details>
     {positionReceipts.length > 0 && <div className="mt-6 border-t border-white/10 pt-5">
       <h3 className="text-sm font-semibold text-cream">Retrieve yield balances</h3>
-      <p className="mt-2 text-xs leading-5 text-smoke">Selected NFT&apos;s prior yield will be verified and used together in next compound. Can also retrieve remaining pool assets and close these wallet-controlled accounts, refunding rent.</p>
+      <p className="mt-2 text-xs leading-5 text-smoke">Verify the original transactions before retrieving remaining pool assets and closing these wallet-controlled accounts to refund rent.</p>
       <div className="mt-3 space-y-3">{positionReceipts.map(renderReceipt)}</div>
     </div>}
     {c.attempt && !showCurrentAttempt && <details className="mt-4">
@@ -106,7 +103,7 @@ export function CompoundPanel({ controller: c, tokenLabel = short, onConnect }: 
     </details>}
     {otherReceipts.length > 0 && <details className="mt-4 border-t border-white/10 pt-4">
       <summary className="cursor-pointer font-semibold">Other positions ({otherReceipts.length} records)</summary>
-      <p className="mt-2 leading-5">These accounts belong to other NFTs. Their balances are only included when compounding that original position, or can be retrieved separately.</p>
+      <p className="mt-2 leading-5">These accounts belong to other NFTs. Verify the original transactions before retrieving their balances separately.</p>
       <div className="mt-3 space-y-3">{otherReceipts.map(renderReceipt)}</div>
     </details>}
     </details>

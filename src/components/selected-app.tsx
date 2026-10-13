@@ -45,27 +45,24 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
   const controller = useSelectedController();
   const { wallet, connected, connect, disconnect, connectionError,
     discovery, selection, state, amount, tolerancePercent, result, attempt, attemptStatus,
-    obsoletePending, error, quoteError, busy: addBusy, calculating, now, quote, fresh, status,
+    obsoletePending, history, historyWarning, verificationError, error, quoteError, busy: addBusy, calculating, now, quote, fresh, status,
     actionLabel, actionDisabled: addDisabled, primaryAction: addAction, changeAmount, changeTolerance, fillMax,
-    choosePosition, chooseAsset, refreshDiscovery, refreshState, retryCalculation, retryReconcile, retryObsoleteReconcile, clearObsoleteRecords,
-    clearInvalidAttempt, loadingDiscovery, loadingState, stateError } = controller;
+    choosePosition, chooseAsset, refreshDiscovery, refreshState, retryCalculation, retryReconcile, retryObsoleteReconcile,
+    loadingDiscovery, loadingState, stateError } = controller;
   const totalCostPercent = quote && typeof quote.roundtripCostInput === "string" && BigInt(quote.requested) > 0n
     ? (Number(quote.roundtripCostInput) / Number(quote.requested) * 100).toFixed(2)
     : null;
   const compound = useCompoundController({ wallet: wallet || undefined, positionMint: selection?.positionMint,
-    externalBlocked: controller.walletBlocked,
+    externalBlocked: addBusy,
     onConfirmed: () => { void refreshState(); } });
   // Unclaimed fees come from the compound reader (same accrual formula as the Performance card); its snapshot also carries the
   // liquidity amounts, so rows show liquidity and unclaimed fees from one consistent read when it is available.
   const feeState = state && compound.state?.positionMint === state.positionMint ? compound.state : null;
   const assets = feeState ?? state;
   const busy = addBusy || compound.busy;
-  const actionDisabled = connected && (addDisabled || compound.walletBlocked);
-  const addStatus = compound.walletBlocked
-    ? compound.confirmationSlow ? "Confirmation is taking longer than 30 seconds. Rechecking the previous transaction; add liquidity is paused."
-      : "Verifying the previous compound or recovery transaction; add liquidity is paused."
-    : status;
-  const primaryAction = () => { if (!connected) { connect(); return; } if (!compound.walletBlocked) addAction(); };
+  const actionDisabled = connected && (addDisabled || compound.busy);
+  const addStatus = compound.busy ? "A compound or recovery operation is in progress." : status;
+  const primaryAction = () => { if (!connected) { connect(); return; } if (!compound.busy) addAction(); };
   const metadataMints = [
     ...(discovery?.assets.map((asset) => asset.mint) || []),
     ...(discovery?.positions.flatMap((item) => [item.mintA, item.mintB]) || []),
@@ -93,28 +90,11 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
     loadingDiscovery, loadingState, hasError: Boolean(stateError) });
   const linkedForeignPosition = linkActive && connected && discovery !== null && !loadingDiscovery
     && !discovery.positions.some((position) => position.positionMint === initialMint);
-  const shownSignatureRef = useRef<string | null>(null);
   const visibleAttempt = attempt?.wallet === wallet ? attempt : null;
   useEffect(() => {
-    const timer = window.setTimeout(() => { shownSignatureRef.current = null; setStatusDialogOpen(false); }, 0);
+    const timer = window.setTimeout(() => setStatusDialogOpen(false), 0);
     return () => window.clearTimeout(timer);
   }, [wallet]);
-  useEffect(() => {
-    if (!visibleAttempt || shownSignatureRef.current === visibleAttempt.signature) return;
-    const signature = visibleAttempt.signature;
-    const terminalKey = `sofinance:status-dialog-terminal:${visibleAttempt.wallet}`;
-    const alreadyTerminal = window.localStorage.getItem(terminalKey) === signature;
-    const timer = window.setTimeout(() => {
-      shownSignatureRef.current = signature;
-      if (!alreadyTerminal) setStatusDialogOpen(true);
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [visibleAttempt]);
-  useEffect(() => {
-    if (visibleAttempt && ["success", "failed", "expired"].includes(attemptStatus || "")) {
-      window.localStorage.setItem(`sofinance:status-dialog-terminal:${visibleAttempt.wallet}`, visibleAttempt.signature);
-    }
-  }, [visibleAttempt, attemptStatus]);
   const selectedAsset = discovery?.assets.find((asset) => asset.kind === selection?.inputKind && asset.mint === selection?.inputMint);
   const inputLabel = selectedAsset ? assetSymbol(selectedAsset, assetMetadata(selectedAsset, metadata)) : "Input asset";
   const positionOptions = discovery?.positions || [];
@@ -171,9 +151,8 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
         <button type="button" aria-pressed={activeView === "performance"} aria-controls="performance-view" onClick={() => setActiveView("performance")} className={`flex flex-1 items-center justify-center gap-2 rounded-full px-3 py-3 text-sm font-semibold transition-colors ${activeView === "performance" ? "bg-lemon text-ink" : "text-smoke hover:text-cream/80"}`}><ChartNoAxesCombined className="h-4 w-4" />Performance</button>
         <button type="button" aria-pressed={activeView === "deposit"} aria-controls="deposit-view" onClick={() => setActiveView("deposit")} className={`flex flex-1 items-center justify-center gap-2 rounded-full px-3 py-3 text-sm font-semibold transition-colors ${activeView === "deposit" ? "bg-lemon text-ink" : "text-smoke hover:text-cream/80"}`}><ArrowDown className="h-4 w-4" />Add to position</button>
       </nav>
-      {controller.walletBlocked && activeView === "compound" && <div role="status" className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-xs text-cream/80"><span>Add liquidity transaction pending verification, new transactions paused.</span><button type="button" className="font-semibold underline" onClick={() => { setActiveView("deposit"); if (visibleAttempt) setStatusDialogOpen(true); }}>View add liquidity transaction</button></div>}
-      {compound.walletBlocked && activeView === "deposit" && <div role="status" className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-xs text-cream/80"><span>Compound or yield recovery transaction pending verification, new transactions paused.</span><button type="button" className="font-semibold underline" onClick={() => setActiveView("compound")}>View compound status</button></div>}
-      {compound.receiptReviewRequired && activeView === "deposit" && <div role="status" className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-xs text-cream/80"><span>Previous transaction finalized successfully; yield details need verification. You can add liquidity.</span><button type="button" className="font-semibold underline" onClick={() => setActiveView("compound")}>View compound status</button></div>}
+      {historyWarning && <div role="status" className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-xs text-cream/80"><span>{historyWarning}</span><button type="button" className="font-semibold underline" onClick={() => { setActiveView("deposit"); if (visibleAttempt) setStatusDialogOpen(true); }}>View add liquidity transaction</button></div>}
+      {compound.historyWarning && <div role="status" className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-xs text-cream/80"><span>{compound.historyWarning}</span><button type="button" className="font-semibold underline" onClick={() => setActiveView("compound")}>View compound status</button></div>}
       <main>
         <div id="compound-view" hidden={activeView !== "compound"}>
           <CompoundPanel controller={compound} tokenLabel={poolLabel} onConnect={connect} />
@@ -205,15 +184,14 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
           <p className="mt-5 text-xs leading-5 text-smoke">Preview updates after entering an amount. Add liquidity runs the final checks before wallet confirmation.</p>
           <div className="mt-6 hidden sm:block"><button className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-lemon px-5 py-4 text-sm font-semibold text-ink transition-colors hover:bg-[#fff27f] disabled:cursor-not-allowed disabled:opacity-40" disabled={actionDisabled} onClick={primaryAction}>{busy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ArrowDown className="h-4 w-4" />}{connected ? actionLabel : "Connect wallet"}</button></div>
           {connected && <div role="status" className="mt-3 min-h-5 text-xs text-smoke">{addStatus}</div>}
-          {attemptStatus === "manual-review" && !attempt && <button type="button" className="mt-2 text-xs text-cream/80 underline" onClick={clearInvalidAttempt}>Clear invalid new version records after self-verification on-chain</button>}
           {obsoletePending && <button type="button" className="mt-2 text-xs text-cream/80 underline" onClick={retryObsoleteReconcile}>Re-verify previous version transaction</button>}
-          {obsoletePending && <button type="button" className="ml-4 mt-2 text-xs text-smoke underline" onClick={clearObsoleteRecords}>Clear previous version records after self-verification on-chain</button>}
           {connectionError && <div role="alert" className="mt-4 flex gap-2 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80"><CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />{connectionError}</div>}
           {error && <div role="alert" className="mt-4 flex gap-2 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80"><CircleAlert className="mt-0.5 h-4 w-4 shrink-0" /><span className="flex-1">{error}</span>{quoteError && <button type="button" onClick={retryCalculation} className="shrink-0 font-semibold underline">Recalculate</button>}</div>}
         </section>
 
         <aside className="min-w-0 space-y-3"><section className="rounded-[28px] border border-white/12 bg-char p-5 sm:p-7"><h2 className="text-lg font-semibold text-cream">Add liquidity preview</h2><p className="mt-2 text-xs leading-5 text-smoke">{calculating ? <span role="status" className="inline-flex items-center gap-2 text-cream/80"><LoaderCircle className="h-3.5 w-3.5 animate-spin" />Estimating liquidity…</span> : quote ? fresh ? `Preview valid for approximately ${Math.max(0, Math.ceil(((result?.expiresAt ?? quote.expiresAt) - now) / 1000))} seconds` : "Preview expired, updating" : "Auto-calculate after selecting position and asset, entering amount"}</p>{quote && <>{totalCostPercent !== null && <p className="mt-2 text-xs leading-5 text-smoke/70">Total cost uses the conservative swap outputs (liquidity added plus the price-tolerance reserve left in your wallet), estimates immediate swap back to original input asset; not actual sale, also does not represent dollar value.</p>}<div className="mt-7 space-y-4 text-sm"><Row title="Input limit" value={quote ? `${money(quote.requested, quote.inputDecimals)} ${inputLabel}` : "—"} /><div className="border-t border-white/10" /><Row title={`Swap to ${state ? poolLabel(state.mintA) : "Pool A"} · minOut`} value={quote ? quote.spendA === "0" ? "no swap needed" : money(quote.minOutA, quote.decimalsA) : "—"} /><Row title={`Swap to ${state ? poolLabel(state.mintB) : "Pool B"} · minOut`} value={quote ? quote.spendB === "0" ? "no swap needed" : money(quote.minOutB, quote.decimalsB) : "—"} /><Row title="Estimated liquidity added" value={quote?.liquidity || "—"} /><div className="border-t border-white/10" />{totalCostPercent !== null && <Row title="Total cost" value={`~${totalCostPercent}%`} emphasize />}<Row title="Jupiter transaction slippage" value="0.5%(fixed)" /><Row title="Simulated SOL total debit" value={result?.simulatedSolDebitLamports ? `${money(result.simulatedSolDebitLamports, 9, 9)} SOL(including input and possible rent)` : "Checked when you add liquidity"} /></div>{totalCostPercent !== null && <p className="mt-6 rounded-2xl border border-white/10 bg-white/[0.03] p-3 text-xs leading-5 text-smoke">Estimated round-trip cost: about {totalCostPercent ?? "—"}% (assuming you add liquidity, immediately withdraw, and swap back to {inputLabel}). This conservative estimate includes swap fees, price impact, and slippage tolerance. It does not block signing. Network fees and account rent are separate. This value is not a guarantee of execution or future value.</p>}</>}</section>
-          {(attempt || result?.simulated || attemptStatus === "manual-review") && <section className="rounded-[28px] border border-white/12 bg-char p-5"><h2 className="font-semibold text-cream">Add liquidity transaction</h2><p role="status" className="mt-2 text-xs leading-5 text-smoke">{addStatus}</p>{attempt && <p className="mt-3 text-xs text-cream/80"><a href={`https://solscan.io/tx/${attempt.signature}`} target="_blank" rel="noreferrer" className="underline">View transaction {short(attempt.signature)}</a> · NFT {short(attempt.selection.positionMint)}</p>}{attemptStatus === "manual-review" && attempt && <button type="button" className="mt-3 text-xs text-cream/80 underline" onClick={retryReconcile}>Re-verify new version transaction</button>}</section>}
+          {(attempt || result?.simulated || attemptStatus === "manual-review") && <section className="rounded-[28px] border border-white/12 bg-char p-5"><h2 className="font-semibold text-cream">Add liquidity transaction</h2><p role="status" className="mt-2 text-xs leading-5 text-smoke">{attemptStatus ? `Transaction status: ${attemptStatus}` : addStatus}</p>{verificationError && <p className="mt-2 text-xs text-lemon">{verificationError}</p>}{attempt && <p className="mt-3 text-xs text-cream/80"><a href={`https://solscan.io/tx/${attempt.signature}`} target="_blank" rel="noreferrer" className="underline">View transaction {short(attempt.signature)}</a> · NFT {short(attempt.selection.positionMint)}</p>}{attemptStatus === "manual-review" && attempt && <button type="button" className="mt-3 text-xs text-cream/80 underline" onClick={retryReconcile}>Requery transaction status</button>}</section>}
+          {!!history?.length && <details className="rounded-[28px] border border-white/12 bg-char p-5 text-xs text-smoke"><summary>Previous add liquidity transactions</summary><p className="mt-2">Check previous transactions before starting again; an unconfirmed transaction may still succeed.</p>{history.map(item => <a key={item.signature} className="mt-2 block underline" href={`https://solscan.io/tx/${item.signature}`} target="_blank" rel="noreferrer">{short(item.signature)} · NFT {short(item.selection.positionMint)}</a>)}</details>}
           {visibleAttempt && <button type="button" onClick={() => setStatusDialogOpen(true)}
             className="w-full rounded-full bg-lemon px-5 py-3 text-sm font-semibold text-ink transition-colors hover:bg-[#fff27f]/80 transition-colors hover:bg-white/[0.04]">View transaction status and tx hash</button>}
         </aside>
@@ -226,7 +204,7 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
     <AssetRisksDialog open={connected && assetRisksOpen} onOpenChange={setAssetRisksOpen}>
       {state && <><p>Real-time pool price: {Number(state.price).toPrecision(8)} · ticks {state.tickLower}–{state.tickUpper} · slot {state.slot}</p><p>Wallet pool asset balance: {money(state.balances.a, state.decimalsA)} {poolLabel(state.mintA)}  +  {money(state.balances.b, state.decimalsB)} {poolLabel(state.mintB)} · SOL {money(String(state.solLamports), 9)}</p><button type="button" onClick={() => void refreshState()} disabled={busy} className="text-cream/80 underline disabled:opacity-40">Reload on-chain</button><p>Pool: <a className="text-cream/80 underline" href={`https://solscan.io/account/${state.poolId}`} target="_blank" rel="noreferrer">{state.poolId} <ArrowUpRight className="inline h-3 w-3" /></a></p><p>Position NFT: {state.positionMint}</p><p>Pool A mint: {state.mintA}</p><p>Pool B mint: {state.mintB}</p><p>Input mint: {selection?.inputMint}</p></>}<p>Different tokens may have issuer, transfer restrictions, or routing liquidity risks. APR does not represent this position&apos;s realizable returns; no trading fees earned for this range while outside.</p>
     </AssetRisksDialog>
-    <TransactionStatusDialog attempt={visibleAttempt} status={attemptStatus} error={error} open={statusDialogOpen}
+    <TransactionStatusDialog attempt={visibleAttempt} status={attemptStatus} error={verificationError || error} open={statusDialogOpen}
       onOpenChange={setStatusDialogOpen} onRetry={retryReconcile} />
     {activeView === "deposit" && <div className="fixed inset-x-0 bottom-0 z-10 border-t border-white/12 bg-canvas/95 p-4 backdrop-blur sm:hidden"><button className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-lemon px-5 py-4 text-sm font-semibold text-ink transition-colors hover:bg-[#fff27f] disabled:cursor-not-allowed disabled:opacity-40" disabled={actionDisabled} onClick={primaryAction}>{busy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ArrowDown className="h-4 w-4" />}{connected ? actionLabel : "Connect wallet"}</button></div>}
   </div>;

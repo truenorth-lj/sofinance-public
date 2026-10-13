@@ -102,13 +102,27 @@ export function loadCompoundReceipts(storage: StorageRead, wallet: string) {
   } catch { return { receipts: [] as CompoundReceipt[], invalid: true }; }
 }
 
-export function persistCompoundReceipt(storage: StorageWrite, receipt: CompoundReceipt) {
+function archiveRaw(storage: StorageWrite, key: string, suffix: string) {
+  const value = storage.getItem(key);
+  if (value === null) return;
+  let archiveKey = `${key}:history:${suffix}`;
+  for (let index = 1; storage.getItem(archiveKey) !== null && storage.getItem(archiveKey) !== value; index++) {
+    archiveKey = `${key}:history:${suffix}:${index}`;
+  }
+  storage.setItem(archiveKey, value);
+  if (storage.getItem(archiveKey) !== value) throw new Error("Unable to preserve previous transaction record; transaction not broadcast");
+}
+
+export function persistCompoundReceipt(storage: StorageWrite, receipt: CompoundReceipt, archiveInvalid = false) {
   if (!publicKey(receipt.wallet) || !publicKey(receipt.positionMint) || !signature(receipt.sourceSignature) ||
     !accounts(receipt.compoundAccounts) || receipt.compoundAccounts.length !== 2) {
     throw new Error("Yield account record cannot be verified");
   }
   const previous = loadCompoundReceipts(storage, receipt.wallet);
-  if (previous.invalid) throw new Error("Compound balance record cannot be read; please verify records, transaction not broadcast");
+  if (previous.invalid) {
+    if (!archiveInvalid) throw new Error("Compound balance record cannot be read; please verify records, transaction not broadcast");
+    archiveRaw(storage, compoundReceiptsKey(receipt.wallet), String(Date.now()));
+  }
   const serialized = JSON.stringify([...previous.receipts.filter((item) => receiptId(item) !== receiptId(receipt)), receipt]);
   storage.setItem(compoundReceiptsKey(receipt.wallet), serialized);
   if (storage.getItem(compoundReceiptsKey(receipt.wallet)) !== serialized) {
@@ -118,10 +132,14 @@ export function persistCompoundReceipt(storage: StorageWrite, receipt: CompoundR
 
 // Persist recovery addresses first. A storage failure must prevent broadcast; prior unresolved receipts survive.
 export function persistCompoundAttempt(storage: StorageWrite, attempt: CompoundAttempt) {
+  const previous = loadCompoundAttempt(storage, attempt.wallet);
+  if (storage.getItem(compoundAttemptKey(attempt.wallet)) !== null) {
+    archiveRaw(storage, compoundAttemptKey(attempt.wallet), previous.attempt?.signature ?? String(Date.now()));
+  }
   if (attempt.kind === "compound") {
     const receipt: CompoundReceipt = { wallet: attempt.wallet, positionMint: attempt.positionMint,
       sourceSignature: attempt.signature, compoundAccounts: attempt.summary.compoundAccounts };
-    persistCompoundReceipt(storage, receipt);
+    persistCompoundReceipt(storage, receipt, true);
   }
   storage.setItem(compoundAttemptKey(attempt.wallet), JSON.stringify(attempt));
   if (storage.getItem(compoundAttemptKey(attempt.wallet)) !== JSON.stringify(attempt)) {

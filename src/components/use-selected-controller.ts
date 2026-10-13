@@ -4,8 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
 import { formatAmount, parseTokenAmount, toleranceFromPercent } from "@/lib/amount";
-import { mayStartAnotherAttempt, type AtomicStatus } from "@/lib/attempt-status";
-import { loadSelectedAttempt, selectedAttemptKey, type SelectedAttempt } from "@/lib/selected-attempt";
+import { type AtomicStatus } from "@/lib/attempt-status";
+import { loadSelectedAttempt, persistSelectedAttempt, readSelectedHistory, type SelectedAttempt } from "@/lib/selected-attempt";
 import { readObsoleteAttempts } from "@/lib/obsolete-attempt";
 import type { SelectedQuote } from "@/lib/selected-quote";
 import type { PositionSelection, SelectedPositionState } from "@/lib/selected-state";
@@ -41,6 +41,8 @@ export function useSelectedController() {
   const [preview, setPreview] = useState<Preview>({ kind: "idle" });
   const [attempt, setAttempt] = useState<SelectedAttempt | null>(null);
   const [attemptStatus, setAttemptStatus] = useState<AtomicStatus | null>(null);
+  const [history, setHistory] = useState<SelectedAttempt[]>([]);
+  const [verificationError, setVerificationError] = useState("");
   const [obsoletePending, setObsoletePending] = useState(false);
   const [attemptLoadedWallet, setAttemptLoadedWallet] = useState<string | null>(null);
   const [error, setError] = useState("");
@@ -61,6 +63,7 @@ export function useSelectedController() {
   const inputRevisionRef = useRef(0);
   const submittingRef = useRef(false);
   const reconcileRequestRef = useRef(0);
+  const attemptSignatureRef = useRef<string | null>(null);
   const previewResult = preview.kind === "idle" ? null : preview.result;
   const result = previewResult && previewResult.quote.wallet === wallet &&
     selectionKey(previewResult.quote) === selectionKey(selection) ? previewResult : null;
@@ -145,12 +148,11 @@ export function useSelectedController() {
     let pending = invalid;
     for (const old of attempts) {
       const response = await fetch("/api/transaction-finality", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ signature: old.signature, lastValidBlockHeight: old.lastValidBlockHeight }), cache: "no-store" });
-      if (!response.ok) throw new Error("Previous transaction on-chain state cannot be verified, new liquidity additions paused");
+        body: JSON.stringify({ signature: old.signature, lastValidBlockHeight: old.lastValidBlockHeight }), cache: "no-store",
+        signal: AbortSignal.timeout(8_000) });
+      if (!response.ok) throw new Error("Previous transaction could not be verified. Check its status before starting again.");
       const data = await response.json() as { status: "finalized" | "failed" | "expired" | "pending" };
-      if (data.status === "finalized" || data.status === "failed" || data.status === "expired") {
-        window.localStorage.removeItem(old.key);
-      } else pending = true;
+      if (!["finalized", "failed", "expired"].includes(data.status)) pending = true;
     }
     return pending;
   }, []);
@@ -158,19 +160,26 @@ export function useSelectedController() {
   useEffect(() => {
     let cancelled = false;
     const timer = window.setTimeout(() => {
-      if (!wallet) { setAttempt(null); setAttemptStatus(null); setObsoletePending(false); setAttemptLoadedWallet(null); return; }
-      const load = async () => {
+      reconcileRequestRef.current++;
+      setVerificationError("");
+      setHistory([]);
+      if (!wallet) { setAttempt(null); attemptSignatureRef.current = null; setHistory([]); setAttemptStatus(null); setObsoletePending(false); setAttemptLoadedWallet(null); return; }
+      try {
         const saved = loadSelectedAttempt(window.localStorage, wallet);
-        const pending = await reconcileObsolete(wallet).catch(() => true);
-        if (cancelled || walletRef.current !== wallet) return;
         setAttempt(saved.attempt);
+        attemptSignatureRef.current = saved.attempt?.signature ?? null;
+        setHistory(readSelectedHistory(window.localStorage, wallet));
         setAttemptStatus(saved.invalid ? "manual-review" : saved.attempt ? "pending" : null);
-        setObsoletePending(pending);
+        const legacy = readObsoleteAttempts(window.localStorage, wallet);
+        setObsoletePending(legacy.invalid || legacy.attempts.length > 0);
         setAttemptLoadedWallet(wallet);
-      };
-      void load().catch(() => {
-        if (cancelled || walletRef.current !== wallet) return;
+      } catch {
+        attemptSignatureRef.current = null;
         setAttempt(null); setAttemptStatus("manual-review"); setObsoletePending(true); setAttemptLoadedWallet(wallet);
+      }
+      // Old network lookups are independent of preview readiness.
+      void reconcileObsolete(wallet).catch(() => true).then((pending) => {
+        if (!cancelled && walletRef.current === wallet) setObsoletePending(pending);
       });
     }, 0);
     return () => { cancelled = true; window.clearTimeout(timer); };
@@ -178,29 +187,41 @@ export function useSelectedController() {
 
   const reconcileAttempt = useCallback(async (current: SelectedAttempt) => {
     const requestId = ++reconcileRequestRef.current;
+    const ownsResult = () => walletRef.current === current.wallet && attemptSignatureRef.current === current.signature &&
+      requestId === reconcileRequestRef.current;
+    try {
     const response = await fetch("/api/selected-status", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ wallet: current.wallet, selection: current.selection, poolId: current.poolId,
         positionAccount: current.positionAccount, signature: current.signature,
         startingLiquidity: current.startingLiquidity, expectedLiquidity: current.expectedLiquidity,
-        startingBalances: current.startingBalances, lastValidBlockHeight: current.lastValidBlockHeight }), cache: "no-store" });
+        startingBalances: current.startingBalances, lastValidBlockHeight: current.lastValidBlockHeight }), cache: "no-store",
+      signal: AbortSignal.timeout(8_000) });
     const data = await response.json() as StatusResponse | ApiError;
+    if (!ownsResult()) return;
     if (!response.ok) throw new Error((data as ApiError).error);
-    if (walletRef.current !== current.wallet || requestId !== reconcileRequestRef.current) return;
     const checked = data as StatusResponse;
+    if (checked.signature !== current.signature || !["pending", "expired", "failed", "success", "manual-review"].includes(checked.status)) {
+      throw new Error("Transaction verification returned a different signature or invalid status");
+    }
     setAttemptStatus(checked.status);
-    if (["success", "failed", "expired"].includes(checked.status)) setError("");
-    if (checked.state && selectionRef.current === selectionKey(current.selection)) {
-      stateRequestRef.current++;
-      setSelectedState(checked.state);
+    setVerificationError("");
+    } catch (caught) {
+      if (ownsResult()) setVerificationError(caught instanceof Error ? caught.message : "Transaction status verification failed");
     }
   }, []);
 
   useEffect(() => {
-    if (!attempt || attempt.wallet !== wallet || ["success", "expired", "failed", "manual-review"].includes(attemptStatus || "")) return;
-    const timer = window.setTimeout(() => { void reconcileAttempt(attempt).catch((caught) => setError(caught instanceof Error ? caught.message : "Transaction status verification failed")); }, 0);
-    const poll = window.setInterval(() => { void reconcileAttempt(attempt).catch(() => undefined); }, 4_000);
+    if (busy || !attempt || attempt.wallet !== wallet || ["success", "expired", "failed", "manual-review"].includes(attemptStatus || "")) return;
+    let checking = false;
+    const check = () => {
+      if (checking) return;
+      checking = true;
+      void reconcileAttempt(attempt).finally(() => { checking = false; });
+    };
+    const timer = window.setTimeout(check, 0);
+    const poll = window.setInterval(check, 4_000);
     return () => { window.clearTimeout(timer); window.clearInterval(poll); };
-  }, [attempt, attemptStatus, wallet, reconcileAttempt]);
+  }, [attempt, attemptStatus, busy, wallet, reconcileAttempt]);
 
   const visibleState = selectedState?.wallet === wallet && selectionKey(selectedState) === selectionKey(selection)
     ? selectedState : null;
@@ -212,10 +233,10 @@ export function useSelectedController() {
   try { toleranceBps = toleranceFromPercent(tolerancePercent); }
   catch { /* The status text gives setting guidance. */ }
   const affordable = visibleState && rawAmount <= BigInt(visibleState.inputBalance);
-  const ready = connected && attemptLoadedWallet === wallet && !!visibleState && visibleState.ownsNft &&
+  const ready = connected && !!visibleState && visibleState.ownsNft &&
     !visibleState.paused && !visibleState.frozen && !visibleState.transferFee &&
     !visibleState.unsupportedExtensions.length && visibleState.sufficientSol && rawAmount > 0n &&
-    affordable && toleranceBps !== null && mayStartAnotherAttempt(attemptStatus) && !obsoletePending;
+    affordable && toleranceBps !== null;
   const quote = result && result.quote.wallet === wallet && selectionKey(result.quote) === selectionKey(selection) &&
     BigInt(result.quote.requested) === rawAmount && result.quote.floorBps === floorBps &&
     result.quote.toleranceBps === toleranceBps ? result.quote : null;
@@ -229,10 +250,6 @@ export function useSelectedController() {
     if (!discovery?.positions.length) return "Wallet has no identifiable Raydium CLMM position NFT";
     if (!discovery.assets.some((item) => item.eligible)) return "Wallet has no available for input assets";
     if (!selection) return "Please select position and input asset";
-    if (attemptLoadedWallet !== wallet) return "Loading transaction records";
-    if (obsoletePending) return "Previous transaction pending on-chain verification, new input paused";
-    if (attemptStatus === "pending") return "Signature exists, verifying on-chain status; do not resubmit";
-    if (attemptStatus === "manual-review") return "Transaction status requires manual verification, new input paused";
     if (loadingState || !visibleState) return "Verifying selected position";
     if (!visibleState.ownsNft) return "Selected NFT not available in this wallet ATA";
     if (visibleState.paused || visibleState.frozen || visibleState.transferFee ||
@@ -307,15 +324,14 @@ export function useSelectedController() {
     if (!ready || busy || submittingRef.current || quoteLoading || !quote || !fresh ||
       !wallet || !selection || !visibleState || toleranceBps === null) return;
     submittingRef.current = true;
+    reconcileRequestRef.current++;
+    attemptSignatureRef.current = null;
     const key = selectionKey(selection);
     const inputRevision = inputRevisionRef.current;
     setSubmitStage("preparing"); setError("");
     const aborter = new AbortController();
     const deadline = window.setTimeout(() => aborter.abort(new Error("Preparation took too long. Please retry.")), 8_000);
     try {
-      if (attempt && mayStartAnotherAttempt(attemptStatus)) {
-        window.localStorage.removeItem(selectedAttemptKey(wallet)); setAttempt(null); setAttemptStatus(null);
-      }
       const response = await fetch("/api/selected-prepare", { method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ wallet, ...selection, amount, floorBps, toleranceBps }), cache: "no-store", signal: aborter.signal });
       const data = await response.json() as Prepared | ApiError;
@@ -354,27 +370,39 @@ export function useSelectedController() {
         expectedLiquidity: prepared.quote.liquidity, blockhash: prepared.blockhash,
         lastValidBlockHeight: prepared.lastValidBlockHeight };
       const signedTransaction = btoa(String.fromCharCode(...signed.serialize()));
-      window.localStorage.setItem(selectedAttemptKey(wallet), JSON.stringify(current));
+      persistSelectedAttempt(window.localStorage, current);
+      setHistory(readSelectedHistory(window.localStorage, wallet));
+      attemptSignatureRef.current = signature;
       setAttempt(current); setAttemptStatus("pending"); setPreview({ kind: "idle" }); setSubmitStage("broadcasting");
       const sent = await fetch("/api/selected-broadcast", { method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ wallet, selection, signedTransaction, permit: prepared.permit,
           requested: prepared.quote.requested, floorBps: prepared.quote.floorBps,
           expiresAt: prepared.expiresAt, lastValidBlockHeight: prepared.lastValidBlockHeight,
           startingLiquidity: prepared.startingLiquidity, expectedLiquidity: prepared.quote.liquidity,
-          rangeSide: prepared.quote.rangeSide, startingBalances: prepared.startingBalances }), cache: "no-store" });
+          rangeSide: prepared.quote.rangeSide, startingBalances: prepared.startingBalances }), cache: "no-store",
+        signal: AbortSignal.timeout(15_000) });
       const broadcast = await sent.json() as { signature?: string; error?: string };
       if (!sent.ok) throw new Error(broadcast.error || "Dedicated RPC rejected transaction; verify on-chain status");
       if (broadcast.signature !== signature) throw new Error("Dedicated RPC returned inconsistent transaction signature, check on-chain status");
-      await reconcileAttempt(current);
-    } catch (caught) { setError(caught instanceof Error ? caught.message : "Transaction not confirmed; check on-chain status before proceeding"); }
-    finally { window.clearTimeout(deadline); submittingRef.current = false; setSubmitStage(null); }
+      void reconcileAttempt(current);
+      void refreshState();
+    } catch (caught) {
+      if (walletRef.current === wallet) setError(caught instanceof Error ? caught.message : "Transaction not confirmed; check on-chain status before proceeding");
+    }
+    finally {
+      window.clearTimeout(deadline); submittingRef.current = false;
+      if (walletRef.current === wallet && attemptSignatureRef.current === null) attemptSignatureRef.current = attempt?.signature ?? null;
+      setSubmitStage(null);
+    }
   }
 
   const actionLabel = submitStage === "preparing" ? "Preparing latest transaction…" : submitStage === "wallet" ?
     "Confirming in wallet…" : submitStage === "broadcasting" ? "Sending and verifying…" : "Add liquidity";
   const actionDisabled = busy || !ready || quoteLoading || !quote || !fresh;
-  const walletBlocked = Boolean(wallet && (busy || attemptLoadedWallet !== wallet || obsoletePending ||
-    !mayStartAnotherAttempt(attemptStatus)));
+  const walletBlocked = busy;
+  const historyWarning = wallet && attemptLoadedWallet === wallet && (verificationError || obsoletePending ||
+    attemptStatus === "pending" || attemptStatus === "manual-review")
+    ? "Previous transaction is unconfirmed or needs verification. It may still succeed; starting again may add liquidity twice." : "";
   const primaryAction = () => { void signAndSend(); };
   const changeAmount = (value: string) => {
     inputRevisionRef.current++; quoteRequestRef.current++; setAmount(value); setPreview({ kind: "idle" });
@@ -388,25 +416,17 @@ export function useSelectedController() {
   const fillMax = () => changeAmount(visibleState ? formatAmount(visibleState.inputBalance, visibleState.inputDecimals, visibleState.inputDecimals) : "");
   const choosePosition = (positionMint: string) => setSelection((current) => current ? { ...current, positionMint } : null);
   const chooseAsset = (kind: "native" | "token", mint: string) => setSelection((current) => current ? { ...current, inputKind: kind, inputMint: mint } : null);
-  const retryReconcile = () => { if (attempt) void reconcileAttempt(attempt).catch((caught) => setError(caught instanceof Error ? caught.message : "Re-verification failed")); };
+  const retryReconcile = () => { if (attempt && !busy) void reconcileAttempt(attempt); };
   const retryObsoleteReconcile = () => {
     if (!wallet) return;
     void reconcileObsolete(wallet).then((pending) => { if (walletRef.current === wallet) setObsoletePending(pending); })
-      .catch(() => setError("Previous transaction on-chain status cannot be verified"));
-  };
-  const clearObsoleteRecords = () => {
-    if (!wallet || !obsoletePending) return;
-    for (const key of readObsoleteAttempts(window.localStorage, wallet).keys) window.localStorage.removeItem(key);
-    setObsoletePending(false);
-  };
-  const clearInvalidAttempt = () => {
-    if (!wallet || attempt || attemptStatus !== "manual-review") return;
-    window.localStorage.removeItem(selectedAttemptKey(wallet)); setAttemptStatus(null);
+      .catch(() => setObsoletePending(true));
   };
   return { wallet, connected, connect, disconnect, isMobile, walletsCount, connectionError,
     discovery, selection, state: visibleState, amount, tolerancePercent, result: displayedResult, attempt,
-    attemptStatus, obsoletePending, error: error || quoteError, quoteError, busy, calculating, now, floorBps, quote, fresh, status,
+    attemptStatus, obsoletePending, history: history.filter(item => item.wallet === wallet), historyWarning, verificationError,
+    error: error || quoteError, quoteError, busy, calculating, now, floorBps, quote, fresh, status,
     actionLabel, actionDisabled, walletBlocked, primaryAction, changeAmount, changeTolerance, fillMax,
-    choosePosition, chooseAsset, refreshDiscovery, refreshState, retryCalculation, retryReconcile, retryObsoleteReconcile, clearObsoleteRecords,
-    clearInvalidAttempt, loadingDiscovery, loadingState, stateError };
+    choosePosition, chooseAsset, refreshDiscovery, refreshState, retryCalculation, retryReconcile, retryObsoleteReconcile,
+    loadingDiscovery, loadingState, stateError };
 }
