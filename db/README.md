@@ -38,6 +38,10 @@ and parsed event arrays. Apply the committed migration and deploy the gateway
 before setting `SOFINANCE_POSITION_HISTORY_DB_ENABLED=true` on Vercel. Position
 history updates only when queried; the existing RWA scheduler does not scan it.
 Current prices, liquidity and unclaimed fees are still read on every lookup.
+Each lookup fetches at most `maxSignatures` transaction details (1–500, default
+100). The reader resumes incomplete history on subsequent views. A position is
+bounded to 10,000 stored signatures and 3.5 MB per snapshot; oversized metadata
+fails closed, and raw receipts are replayed within a byte budget.
 
 Opt-in integration tests create and remove only disposable schemas in the
 dedicated database:

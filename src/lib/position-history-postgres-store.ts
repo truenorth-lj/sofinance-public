@@ -40,7 +40,24 @@ export class PostgresPositionHistoryStore implements PositionHistoryStore {
 
   private async snapshot(tx: Transaction, row: typeof state.$inferSelect, parserVersion: number,
     lease: PositionHistoryLease | null): Promise<PositionHistorySnapshot> {
-    // Bound metadata before requesting receipts: no oversized response may acquire a lease.
+    const result: PositionHistorySnapshot = { lease, state: {
+      headSignature: row.headSignature, backfillBefore: row.backfillBefore,
+      deltaBefore: row.deltaBefore, deltaHead: row.deltaHead,
+      complete: row.complete, revision: row.revision, parserVersion: row.parserVersion }, transactions: [] };
+    // Preflight only a bounded count and byte total across PostgreSQL, never oversized event arrays.
+    // PostgreSQL's JSON spacing makes this a conservative upper bound for JSON.stringify.
+    const [size] = await tx.execute<{ count: number; bytes: string }>(sql`
+      SELECT count(*)::integer AS count,COALESCE(SUM(octet_length(jsonb_build_object(
+        'signature',signature,'slot',slot,'blockTime',block_time,'status',status,
+        'events',events,'parserVersion',parser_version,'receipt',NULL)::text)),0)::bigint AS bytes
+      FROM (SELECT signature,slot,block_time,status,events,parser_version FROM ${history}
+        WHERE position_mint=${row.positionMint} ORDER BY slot,signature
+        LIMIT ${MAX_POSITION_HISTORY_TRANSACTIONS + 1}) bounded`);
+    if (size!.count > MAX_POSITION_HISTORY_TRANSACTIONS)
+      throw new PositionHistoryStoreError("POSITION_HISTORY_TOO_LARGE");
+    const projectedBytes = Buffer.byteLength(JSON.stringify(result)) + Number(size!.bytes) + Math.max(0, size!.count - 1);
+    if (projectedBytes > MAX_POSITION_HISTORY_RESPONSE_BYTES)
+      throw new PositionHistoryStoreError("POSITION_HISTORY_RESPONSE_TOO_LARGE");
     const rows = await tx.select({ signature: history.signature, slot: history.slot,
       blockTime: history.blockTime, status: history.status, events: history.events,
       parserVersion: history.parserVersion, receipt: sql<Record<string, unknown> | null>`NULL`,
@@ -48,10 +65,7 @@ export class PostgresPositionHistoryStore implements PositionHistoryStore {
       .orderBy(asc(history.slot), asc(history.signature)).limit(MAX_POSITION_HISTORY_TRANSACTIONS + 1);
     if (rows.length > MAX_POSITION_HISTORY_TRANSACTIONS)
       throw new PositionHistoryStoreError("POSITION_HISTORY_TOO_LARGE");
-    const result: PositionHistorySnapshot = { lease, state: {
-      headSignature: row.headSignature, backfillBefore: row.backfillBefore,
-      deltaBefore: row.deltaBefore, deltaHead: row.deltaHead,
-      complete: row.complete, revision: row.revision, parserVersion: row.parserVersion }, transactions: rows };
+    result.transactions = rows;
     const metadataBytes = Buffer.byteLength(JSON.stringify(result));
     if (metadataBytes > MAX_POSITION_HISTORY_RESPONSE_BYTES)
       throw new PositionHistoryStoreError("POSITION_HISTORY_RESPONSE_TOO_LARGE");
