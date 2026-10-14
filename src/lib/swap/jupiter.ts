@@ -3,7 +3,7 @@ import "server-only";
 import { JupiterHttpError } from "../jupiter";
 import { MAX_PRICE_IMPACT_BPS, SLIPPAGE_BPS } from "../ids";
 import { acceptableReportedPriceImpact } from "../quote-guards";
-import type { JupiterRouteConstraints } from "../jupiter-route-retry";
+import { JUPITER_MAX_ACCOUNTS, type JupiterRouteConstraints } from "../jupiter-route-retry";
 import { getJupiterApiKey } from "../config/server-env";
 import { PublicKey } from "@solana/web3.js";
 import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
@@ -31,7 +31,7 @@ export class JupiterNoRouteError extends Error {
 
 function resolveConstraints(constraints?: JupiterRouteConstraints | number): JupiterRouteConstraints {
   if (typeof constraints === "number") return { maxAccounts: constraints };
-  return constraints ?? { maxAccounts: 48 };
+  return constraints ?? { maxAccounts: JUPITER_MAX_ACCOUNTS.wide };
 }
 
 export async function buildRoute(
@@ -40,7 +40,7 @@ export async function buildRoute(
   outputMint: string,
   amount: bigint,
   wrapAndUnwrapSol?: boolean,
-  constraints: JupiterRouteConstraints | number = { maxAccounts: 48 },
+  constraints: JupiterRouteConstraints | number = { maxAccounts: JUPITER_MAX_ACCOUNTS.wide },
   signal?: AbortSignal,
   budget?: JupiterRetryBudget,
   destinationTokenAccount?: string,
@@ -89,7 +89,7 @@ export type QuoteRoute = Pick<BuildRoute, "platformFee" | "inputMint" | "outputM
 
 /** Lightweight, uncached execution estimate; no transaction instructions. */
 export async function quoteRoute(inputMint: string, outputMint: string, amount: bigint,
-  constraints: JupiterRouteConstraints = { maxAccounts: 24 }, signal?: AbortSignal,
+  constraints: JupiterRouteConstraints = { maxAccounts: JUPITER_MAX_ACCOUNTS.compact }, signal?: AbortSignal,
   budget?: JupiterRetryBudget, platformFeeBps = 0): Promise<QuoteRoute> {
   const key = getJupiterApiKey();
   if (!key && process.env.E2E_KEYLESS_JUPITER !== "1") throw new Error("Server-side JUPITER_API_KEY not set, cannot obtain real-time quotes");

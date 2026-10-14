@@ -1,8 +1,6 @@
 import { VersionedTransaction } from "@solana/web3.js";
+import { isZeroSignature } from "./transaction-limits";
 
-function isZeroSignature(signature: Uint8Array | undefined): boolean {
-  return !signature || signature.every((byte) => byte === 0);
-}
 
 /**
  * Wallets sometimes rebuild a VersionedTransaction from the message and only

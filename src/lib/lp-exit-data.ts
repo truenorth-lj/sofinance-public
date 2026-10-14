@@ -3,7 +3,7 @@ import { verifiedTokenAmount,cleanExitDeltas } from "./lp-exit-verification";
 import BN from "bn.js";
 import { createHash } from "node:crypto";
 import { CLMM_PROGRAM_ID, ClmmInstrument, PersonalPositionLayout, PoolInfoLayout, getPdaPersonalPositionAddress, getPdaProtocolPositionAddress, getPdaTickArrayAddress, getPdaExBitmapAccount, TickArrayUtil } from "@raydium-io/raydium-sdk-v2";
-import { PublicKey, TransactionMessage, VersionedTransaction, ComputeBudgetProgram, type AccountInfo } from "@solana/web3.js";
+import { PublicKey, TransactionMessage, VersionedTransaction, type AccountInfo } from "@solana/web3.js";
 import { withCacheAndInflight } from "./rpc/cache";
 import { PREVIEW_RETRY } from "./rpc/retry";
 import { rpcConnection, type RpcEnv } from "./rpc";
@@ -12,6 +12,7 @@ import { compactAtaInstructions, compileCompactOpenTransaction, openLookupTableR
 import { instruction } from "./transaction-helpers";
 import { EXIT_JUPITER_CONCURRENCY, mapPool } from "./jupiter";
 import { buildExitSwapLeg, type ExitSwapRoute } from "./swap/exit";
+import { atomicComputeUnitLimitInstruction, exceedsTxSizeLimit } from "./transaction-limits";
 const USDC="EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",SOL="So11111111111111111111111111111111111111112";
 export const EXIT_PREVIEW_TTL_MS=8_000;
 export function exitPreviewCacheKey(positionId:string,nftAccount?:string,convertRent=true){return `exit-preview:${positionId}:${nftAccount??""}:${convertRent?"1":"0"}`;}
@@ -50,9 +51,9 @@ async function readFullExitPreviewUnlocked(positionId:string,nftAccount?:string,
  const withdraw=ClmmInstrument.decreaseLiquidityV2Instruction(CLMM_PROGRAM_ID,owner,nftKey,positionKey,position.poolId,getPdaProtocolPositionAddress(CLMM_PROGRAM_ID,position.poolId,position.tickLower,position.tickUpper).publicKey,tick(position.tickLower),tick(position.tickUpper),recipients[0]!,recipients[1]!,pool.vaultA,pool.vaultB,pool.mintA,pool.mintB,rewards.map((r,i)=>({poolRewardVault:r.vault,ownerRewardVault:recipients[i+2]!,rewardMint:r.mint})),position.liquidity,new BN(0),new BN(0),getPdaExBitmapAccount(CLMM_PROGRAM_ID,position.poolId).publicKey);
  const close=ClmmInstrument.closePositionInstruction(CLMM_PROGRAM_ID,owner,position.nftMint,nftKey,positionKey,nftRaw.owner.equals(TOKEN_2022_PROGRAM_ID),position.poolId);
  const blockhash=await connection.getLatestBlockhash();
- const prefix=[ComputeBudgetProgram.setComputeUnitLimit({units:1400000}),...setup,withdraw,close];
+ const prefix=[atomicComputeUnitLimitInstruction(),...setup,withdraw,close];
  const baseline=new VersionedTransaction(new TransactionMessage({payerKey:owner,recentBlockhash:blockhash.blockhash,instructions:prefix}).compileToV0Message());
- if(versionedTransactionSize(baseline)>1232)throw new Error("Withdrawal/close packet size exceeded");
+ if(exceedsTxSizeLimit(versionedTransactionSize(baseline)))throw new Error("Withdrawal/close packet size exceeded");
  const withdrawSimulation=await connection.simulateTransaction(baseline,{sigVerify:false,replaceRecentBlockhash:true,minContextSlot:before.context.slot,accounts:{encoding:"base64",addresses:addresses.map(a=>a.toBase58())}});
  if(withdrawSimulation.value.err||!withdrawSimulation.value.accounts)throw new Error(`Withdrawal simulation failed: ${JSON.stringify(withdrawSimulation.value.err)}`);
 
@@ -74,7 +75,7 @@ async function readFullExitPreviewUnlocked(positionId:string,nftAccount?:string,
  const tables=await openLookupTableReader(connection)(tableKeys.map(k=>new PublicKey(k)));
  const instructions=await compactAtaInstructions(connection,[...prefix,...feeInstructions,...routes.flatMap(r=>[...(r.setupInstructions??[]),...(r.otherInstructions??[]),r.swapInstruction,...(r.cleanupInstruction?[r.cleanupInstruction]:[])].map(v=>instruction(v,owner)))]);
  const compiled=compileCompactOpenTransaction({payerKey:owner,recentBlockhash:blockhash.blockhash,instructions},tables),bytes=versionedTransactionSize(compiled.transaction);
- if(bytes>1232)return {status:"unavailable",reason:`Full atomic exit exceeds 1232 bytes: ${bytes}`,bytes,convertRent,received,quotes,netRecoveryUSDC:null,executable:false,sent:false};
+ if(exceedsTxSizeLimit(bytes))return {status:"unavailable",reason:`Full atomic exit exceeds 1232 bytes: ${bytes}`,bytes,convertRent,received,quotes,netRecoveryUSDC:null,executable:false,sent:false};
  const usdcAta=getAssociatedTokenAddressSync(new PublicKey(USDC),owner),finalAddresses=[...addresses,usdcAta];
  const usdcInfo=await connection.getAccountInfo(usdcAta);
  const finalBefore={context:before.context,value:[...before.value,usdcInfo]};

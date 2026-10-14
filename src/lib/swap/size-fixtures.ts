@@ -5,6 +5,7 @@ import openFixture from "../fixtures/open-size-compact-route.json";
 import compoundFixture from "../fixtures/compound-size-route.json";
 import { versionedTransactionSize } from "../open-transaction";
 import { USDC_MINT } from "../ids";
+import { exceedsTxSizeLimit } from "../transaction-limits";
 const key = (n: number) => new PublicKey(new Uint8Array(32).fill(n));
 function decode(f: typeof openFixture) {
   return { payer: new PublicKey(f.payer), blockhash: f.blockhash,
@@ -23,8 +24,8 @@ export function feeSizeFixtures() {
       instructions: [...instructions, tip] }).compileToV0Message([...f.tables, ...extra]));
     const bytes = versionedTransactionSize(tx);
     let serialized = false;
-    try { if (tx.serialize().length !== bytes) throw new Error("Size calculation mismatch"); serialized = true; } catch (e) { if (bytes <= 1232) throw e; }
-    rows.push({ flow, bytes, fits: bytes <= 1232, serialized });
+    try { if (tx.serialize().length !== bytes) throw new Error("Size calculation mismatch"); serialized = true; } catch (e) { if (!exceedsTxSizeLimit(bytes)) throw e; }
+    rows.push({ flow, bytes, fits: !exceedsTxSizeLimit(bytes), serialized });
   }
   function fee(f: typeof open) {
     const mint = new PublicKey(USDC_MINT), recipient = key(239), ata = getAssociatedTokenAddressSync(mint, recipient, true);

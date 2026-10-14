@@ -11,10 +11,8 @@ import { rpcConnection } from "./rpc";
 import { lookupBeamAfterSend } from "./solami-beam";
 import type { OpenPositionSummary } from "./open-types";
 import { getSigningSecret } from "./config/server-env";
+import { exceedsTxSizeLimit, isZeroSignature } from "./transaction-limits";
 
-function isZeroSignature(signature: Uint8Array | undefined) {
-  return !signature || signature.every((byte) => byte === 0);
-}
 
 export async function sendSignedOpenPosition(
   walletAddress: string,
@@ -34,7 +32,7 @@ export async function sendSignedOpenPosition(
     const walletSignature = transaction.signatures[0];
     const nftSignature = transaction.signatures[1];
     if (
-      transaction.serialize().length > 1_232 ||
+      exceedsTxSizeLimit(transaction.serialize().length) ||
       transaction.message.staticAccountKeys[0]?.toBase58() !== walletAddress ||
       transaction.message.staticAccountKeys[1]?.toBase58() !== summary.nftMint ||
       transaction.message.header.numRequiredSignatures !== 2 ||

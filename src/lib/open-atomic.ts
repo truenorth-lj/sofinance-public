@@ -6,7 +6,7 @@ import BN from "bn.js";
 import { ClmmInstrument, Raydium } from "@raydium-io/raydium-sdk-v2";
 import { createAssociatedTokenAccountIdempotentInstruction, createCloseAccountInstruction, createSyncNativeInstruction, getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import {
-  ComputeBudgetProgram, PublicKey, SystemProgram,
+  PublicKey, SystemProgram,
   type Connection,
 } from "@solana/web3.js";
 import { DEFAULT_RESALE_FLOOR_BPS, MIN_SOL_LAMPORTS, NATIVE_SOL_MINT } from "./ids";
@@ -22,7 +22,8 @@ import { readSwapFeeConfig, collectSwapFee, fitFeeCollections, type FeeCollectio
 import type { OpenRangeInput } from "./open-range";
 import { readOpenPoolState, type OpenPoolState, type OpenPositionSelection } from "./open-state";
 import type { OpenPositionSummary } from "./open-types";
-import type { JupiterRouteConstraints } from "./jupiter-route-retry";
+import { JUPITER_MAX_ACCOUNTS, type JupiterRouteConstraints } from "./jupiter-route-retry";
+import { atomicComputeUnitLimitInstruction } from "./transaction-limits";
 
 type OpenResources = {
   connection: Connection;
@@ -179,7 +180,7 @@ async function buildOpenPositionAttempt(
       .map((table) => [table.key.toBase58(), table])).values()];
     const simulationBlockhash = (await connection.getLatestBlockhash("confirmed")).blockhash;
     let instructions = await compactAtaInstructions(connection, [
-      ComputeBudgetProgram.setComputeUnitLimit({ units: 1_400_000 }),
+      atomicComputeUnitLimitInstruction(),
       ...feeInstructions.instructions, ...wrapInstructions, ...createAtaInstructions, ...routeInstructions, ...raydiumInstructions, ...cleanupInstructions,
     ]);
     if (!collections.some(collection => collection.input)) {
@@ -291,10 +292,10 @@ export async function buildAndSimulateOpenPosition(
   // than rebuilding several similar large two-swap routes first. Either pool
   // token can be the primary: the two directions may have different route sizes.
   const attempts = [
-    ...strategies.filter(strategy => strategy !== "parallel").map(strategy => ({ constraints: { maxAccounts: 20 }, strategy })),
-    { constraints: { maxAccounts: 48 }, strategy: "parallel" as const },
-    ...strategies.map(strategy => ({ constraints: { maxAccounts: 24 }, strategy })),
-    ...strategies.map(strategy => ({ constraints: { maxAccounts: 32 }, strategy })),
+    ...strategies.filter(strategy => strategy !== "parallel").map(strategy => ({ constraints: { maxAccounts: JUPITER_MAX_ACCOUNTS.direct }, strategy })),
+    { constraints: { maxAccounts: JUPITER_MAX_ACCOUNTS.wide }, strategy: "parallel" as const },
+    ...strategies.map(strategy => ({ constraints: { maxAccounts: JUPITER_MAX_ACCOUNTS.compact }, strategy })),
+    ...strategies.map(strategy => ({ constraints: { maxAccounts: JUPITER_MAX_ACCOUNTS.medium }, strategy })),
   ];
   for (const { constraints, strategy } of attempts) {
     try {

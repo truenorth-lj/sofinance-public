@@ -6,6 +6,7 @@ import { verifyCompoundPermit } from "./compound-permit";
 import type { CompoundSummary } from "./compound-types";
 import type { CompoundRecoverySummary } from "./compound-recovery-types";
 import { getSigningSecret } from "./config/server-env";
+import { isSingleWalletSignedTransaction } from "./transaction-limits";
 
 export async function readCompoundBody(request: Request) {
   const text = await request.text();
@@ -35,9 +36,7 @@ export async function parseCompoundBroadcast(request: Request, operation: "compo
     throw new Error("Invalid signed transaction input");
   }
   const transaction = VersionedTransaction.deserialize(Buffer.from(body.signedTransaction, "base64"));
-  if (transaction.serialize().length > 1_232 || transaction.message.staticAccountKeys[0]?.toBase58() !== wallet ||
-    transaction.message.header.numRequiredSignatures !== 1 || transaction.signatures.length !== 1 ||
-    !transaction.signatures[0] || transaction.signatures[0].every((byte) => byte === 0)) {
+  if (!isSingleWalletSignedTransaction(transaction, wallet)) {
     throw new Error("Compound payer, signature, or transaction size mismatch");
   }
   if (!verifyCompoundPermit(getSigningSecret(), {

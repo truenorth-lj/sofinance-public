@@ -1,10 +1,11 @@
 import { PublicKey, SystemProgram, type TransactionInstruction, type VersionedTransaction } from "@solana/web3.js";
 import { rpcProvider, type RpcProvider } from "../rpc";
+import { SOLANA_TX_SIZE_LIMIT } from "../transaction-limits";
 
 /** Documented Beam floor. Live-verified 2026-10-10: GET /onchain/tip-addresses needs no auth. */
 export const BEAM_MIN_TIP_LAMPORTS = 100_000;
 export const BEAM_TIP_ADDRESSES_URL = "https://api.solami.dev/onchain/tip-addresses";
-export const BEAM_TX_SIZE_LIMIT = 1_232;
+export const BEAM_TX_SIZE_LIMIT = SOLANA_TX_SIZE_LIMIT;
 
 export type BeamEnv = Record<string, string | undefined>;
 
