@@ -117,7 +117,7 @@ type PerformanceResponse = {
   historyFetch?: {
     txCount: number;
     elapsedMs: number;
-    provider: "solami" | "default" | "solami+default";
+    provider: "solami" | "default" | "solami+default" | "unknown";
     source?: string;
     solamiTxCount?: number;
     defaultTxCount?: number;

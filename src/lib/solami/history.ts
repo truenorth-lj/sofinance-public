@@ -7,7 +7,10 @@ export type HistoryFallbackReason =
   | "solami-unparseable"
   | "solami-parse-error"
   | "solami-http-error"
-  | "solami-limited-window";
+  | "solami-limited-window"
+  | "history-primary-empty"
+  | "history-primary-invalid-receipt"
+  | "history-primary-error";
 
 export type CustomRpcCall = (method: string, params: unknown[]) => Promise<unknown>;
 

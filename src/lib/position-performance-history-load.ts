@@ -4,14 +4,16 @@ import { parsePositionCashflowEvents } from "./position-performance-events";
 import { fetchPositionHistoryTransactions, toChronological, type FetchPositionHistoryOptions,
   type HistoryConnection } from "./position-performance-history";
 import type { PositionHistoryStore } from "./position-history-store-types";
-import { syncPositionHistory, type SyncedPositionHistory } from "./position-history-sync";
+import { syncPositionHistory, type SyncPositionHistoryOptions, type SyncedPositionHistory } from "./position-history-sync";
 import { cachedSyncPositionHistory } from "./position-history-cache";
 
 /** Durable and legacy readers produce the same event ledger for valuation. */
 export async function loadPerformanceHistory(options: FetchPositionHistoryOptions & {
   context: PositionEventContext; store?: PositionHistoryStore | null; signal?: AbortSignal;
+  maxDetailRequests?: number;
   bypassCache?: boolean; stateFingerprint?: string; afterSignatures?: string[];
-  connectionsForSignal?: (signal: AbortSignal) => { connection: HistoryConnection; fallbackConnection?: HistoryConnection };
+  connectionsForSignal?: (signal: AbortSignal) => Pick<SyncPositionHistoryOptions,
+    "connection" | "fallbackConnection" | "receiptProvider" | "rpcMetrics">;
 }) {
   const checkRefresh = async (result: SyncedPositionHistory, historyConnection: HistoryConnection) => {
     if (options.afterSignatures?.length) {
@@ -36,12 +38,17 @@ export async function loadPerformanceHistory(options: FetchPositionHistoryOption
     context: options.context, store: options.store, connection: options.connection,
     fallbackConnection: options.fallbackConnection, provider: options.provider,
     maxSignatures: options.maxSignatures, signal: options.signal,
+    maxDetailRequests: options.maxDetailRequests,
     bypassCache: options.bypassCache || Boolean(options.afterSignatures?.length), stateFingerprint: options.stateFingerprint,
   }, async (syncOptions) => {
     // Shared history work must not inherit the first viewer's cancellation.
     const connections = options.connectionsForSignal?.(syncOptions.signal!) ?? {
       connection: syncOptions.connection, fallbackConnection: syncOptions.fallbackConnection };
-    return checkRefresh(await syncPositionHistory({ ...syncOptions, ...connections }), connections.connection);
+    const result = await checkRefresh(await syncPositionHistory({ ...syncOptions, ...connections }), connections.connection);
+    // A transaction refresh can issue a final status read after synchronization.
+    // Snapshot after that check so physical-attempt totals include it as well.
+    if (connections.rpcMetrics) result.metric.rpc = connections.rpcMetrics();
+    return result;
   });
   const fetched = await fetchPositionHistoryTransactions(options);
   const history = toChronological(fetched.items).flatMap((info) => {
