@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { LoaderCircle } from "lucide-react";
 import { VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
 import { useWalletConnection } from "./wallet-connection";
@@ -8,10 +9,13 @@ import { formatAmount } from "@/lib/amount";
 import { notifyPositionHistoryChange } from "@/lib/position-history-refresh";
 import type { WithdrawPrepared, WithdrawSummary, WithdrawRequest } from "@/lib/withdraw/types";
 
+const REQUEST_TIMEOUT_MS=45_000;
 type Checkpoint = { prepared: WithdrawPrepared; signature: string; request: WithdrawRequest; confirmHighImpact: boolean; root?: {prepared:WithdrawPrepared;signature:string} };
 async function post<T>(path: string, body: unknown): Promise<T> {
- const response=await fetch(`/api/${path}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body),cache:"no-store"});
- const value=await response.json();
+ let response:Response;
+ try{response=await fetch(`/api/${path}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body),cache:"no-store",signal:AbortSignal.timeout(REQUEST_TIMEOUT_MS)});}
+ catch(caught){throw new Error(caught instanceof DOMException && caught.name==="TimeoutError"?"The server took too long to respond. Check your connection and try again.":"Network error. Check your connection and try again.");}
+ const value=await response.json().catch(()=>({error:`Server error (${response.status}). Try again in a moment.`}));
  if(!response.ok)throw new Error(value.error || "Unable to complete withdrawal");
  return value as T;
 }
@@ -19,7 +23,7 @@ export function WithdrawPanel({wallet,positionMint,mintA,mintB,label,onClose,onB
  const connection=useWalletConnection();
  const [percent,setPercent]=useState(100),[target,setTarget]=useState(""),[receive,setReceive]=useState("usdc");
  const [preview,setPreview]=useState<WithdrawSummary|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(""),[progress,setProgress]=useState("");
- const [confirmation,setConfirmation]=useState(false);
+ const [confirmation,setConfirmation]=useState(false),[previewing,setPreviewing]=useState(false);
  const key=`sofinance:withdraw:${wallet}:${positionMint}`;
  const [checkpoint,setCheckpoint]=useState<Checkpoint|null>(()=>{
   if(typeof window==="undefined")return null;
@@ -35,11 +39,14 @@ export function WithdrawPanel({wallet,positionMint,mintA,mintB,label,onClose,onB
  useEffect(()=>{onBusyChange(busy || !!checkpoint);return()=>onBusyChange(false);},[busy,checkpoint,onBusyChange]);
  const request:WithdrawRequest={wallet,positionMint,...(target?{targetUSDC:Number(target)}:{percent}),receive:receive==="usdc"?"usdc":receive==="original"?"original":"token",...(receive!=="usdc" && receive!=="original"?{outputMint:receive}:{})};
  function invalidate(){setPreview(null);setError("");setConfirmation(false);}
+ const targetInvalid=target!=="" && !(Number.isFinite(Number(target)) && Number(target)>0);
  async function showPreview(){
-  if(locked.current)return;locked.current=true;setBusy(true);setError("");
-  try{const result=await post<WithdrawSummary>("withdraw-quote",request);setPreview(result);setPercent(result.percentBps/100);}
-  catch(caught){setError(caught instanceof Error?caught.message:"Preview failed");}
-  finally{setBusy(false);locked.current=false;}
+  if(locked.current)return;
+  if(targetInvalid){setError("Enter a USDC amount above 0, or clear it to use the slider.");return;}
+  locked.current=true;setBusy(true);setPreviewing(true);setError("");setProgress("Calculating preview…");
+  try{const result=await post<WithdrawSummary>("withdraw-quote",request);setPreview(result);setPercent(result.percentBps/100);setProgress("Review the preview, then tap Withdraw.");}
+  catch(caught){setProgress("");setError(caught instanceof Error?caught.message:"Preview failed");}
+  finally{setBusy(false);setPreviewing(false);locked.current=false;}
  }
  function save(value:Checkpoint|null){if(value)localStorage.setItem(key,JSON.stringify(value));else localStorage.removeItem(key);setCheckpoint(value);}
  async function waitFor(saved:Checkpoint){
@@ -86,7 +93,7 @@ export function WithdrawPanel({wallet,positionMint,mintA,mintB,label,onClose,onB
     await waitFor(saved);
    }
    save(null);setProgress("Withdrawal complete");setPreview(null);onConfirmed();
-  }catch(caught){setError(caught instanceof Error?caught.message:"Withdrawal failed");}
+  }catch(caught){setProgress("");setError(caught instanceof Error?caught.message:"Withdrawal failed");}
   finally{setBusy(false);locked.current=false;}
  }
  const disabled=busy || !!checkpoint;
@@ -113,11 +120,12 @@ export function WithdrawPanel({wallet,positionMint,mintA,mintB,label,onClose,onB
    <p>{preview.transactions===2?"Two steps: withdraw tokens, then convert after confirmation.":"One transaction"}</p>
    {preview.warning && <p role="alert" className="mt-2 text-lemon">This conversion may reduce what you receive by more than 2%.</p>}
   </div>}
-  {error && <p role="alert" className="mt-3">{error}</p>}
-  <p role="status" className="mt-3">{progress}</p>
+  {error && <p role="alert" className="mt-3 rounded-2xl border border-lemon/60 bg-lemon/10 p-3 text-sm text-lemon">{error}</p>}
+  <p role="status" aria-live="polite" className="mt-3 text-sm text-smoke">{busy && <LoaderCircle aria-hidden className="mr-2 inline h-4 w-4 animate-spin" />}{progress}</p>
   {checkpoint ? <button disabled={busy} onClick={()=>{if(checkpoint.prepared.summary.requiresSecondConfirmation)setConfirmation(true);else void run();}} className="mt-3 rounded-full bg-lemon px-5 py-3 text-ink">Resume withdrawal</button> : <>
-   <button disabled={busy} onClick={()=>void showPreview()} className="mt-3 rounded-full border px-5 py-3">Preview</button>
-   <button disabled={busy || !preview} onClick={()=>{if(preview?.requiresSecondConfirmation)setConfirmation(true);else void run();}} className="ml-3 rounded-full bg-lemon px-5 py-3 text-ink">Withdraw</button>
+   <button type="button" disabled={busy} aria-busy={previewing} onClick={()=>void showPreview()} className="mt-3 rounded-full border px-5 py-3 disabled:opacity-50">{previewing?"Calculating…":"Preview"}</button>
+   {/* Without a preview, Withdraw fetches one first so the tap is never silent; a second tap confirms. */}
+   <button type="button" disabled={busy} aria-busy={busy && !previewing} onClick={()=>{if(!preview)void showPreview();else if(preview.requiresSecondConfirmation)setConfirmation(true);else void run();}} className="ml-3 rounded-full bg-lemon px-5 py-3 text-ink disabled:opacity-50">{busy && !previewing?"Withdrawing…":"Withdraw"}</button>
   </>}
   <dialog ref={confirmationRef} role="alertdialog" aria-label="Confirm high price impact" onCancel={event=>{event.preventDefault();setConfirmation(false);}} onClose={()=>setConfirmation(false)} className="fixed left-1/2 top-1/2 m-0 w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-lemon bg-char p-5 text-cream backdrop:bg-black/70"><p>Price impact exceeds 5%. You may receive substantially less. Continue with this conversion?</p><button onClick={()=>void run(true)} className="mt-3 rounded bg-lemon p-2 text-ink">Confirm high price impact</button><button onClick={()=>setConfirmation(false)} className="ml-3">Cancel</button></dialog>
  </section>;
