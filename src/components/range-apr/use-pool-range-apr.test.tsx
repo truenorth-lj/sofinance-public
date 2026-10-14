@@ -39,9 +39,9 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-/** One retry cycle: the 10 s timer fires (act flushes the re-render), then the deferred load runs. */
+/** One retry cycle: the 20 s timer fires (act flushes the re-render), then the deferred load runs. */
 async function retryCycle() {
-  await advance(10_001);
+  await advance(20_001);
   await advance(1);
   await advance(1);
 }
@@ -58,11 +58,11 @@ describe("usePoolRangeApr", () => {
   });
 
   it("gives up after a few degraded answers instead of polling forever", async () => {
-    payloads = Array.from({ length: 10 }, () => degradedPayloadFixture());
+    payloads = Array.from({ length: 12 }, () => degradedPayloadFixture());
     await act(async () => { root.render(createElement(Probe)); });
     await advance(1);
-    for (let i = 0; i < 6; i++) await retryCycle();
+    for (let i = 0; i < 7; i++) await retryCycle();
     expect(container.textContent).toBe("degraded");
-    expect(fetchMock).toHaveBeenCalledTimes(4); // first load + 3 retries
+    expect(fetchMock).toHaveBeenCalledTimes(5); // first load + 4 retries
   });
 });

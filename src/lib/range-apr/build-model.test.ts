@@ -50,4 +50,9 @@ describe("sampleConfidence", () => {
     expect(sampleConfidence({ ...good, occupancySource: "current-price" })).toBe("low");
     expect(sampleConfidence({ ...good, unplacedVolumePct: 31 })).toBe("low");
   });
+  it("is low when very few hourly candles were observed (thin pool), ok at the threshold, unchecked when omitted", () => {
+    expect(sampleConfidence({ ...good, candleCount: 11 })).toBe("low");
+    expect(sampleConfidence({ ...good, candleCount: 12 })).toBe("ok");
+    expect(sampleConfidence({ ...good, candleCount: 0, occupancySource: "current-price" })).toBe("low");
+  });
 });

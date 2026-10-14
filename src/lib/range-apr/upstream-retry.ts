@@ -1,8 +1,10 @@
 /**
- * Bounded retry for flaky public upstreams (GeckoTerminal answers 429 / 5xx under bursts from shared egress IPs).
- * Pure apart from the injected `fetchOnce` and `sleep`, so it is unit tested without timers.
+ * Bounded retry for flaky public upstreams. Pure apart from the injected `fetchOnce` and `sleep`, so it is
+ * unit tested without timers.
  */
-export type JsonResult = { ok: true; body: unknown } | { ok: false; reason: string };
+export type JsonResult =
+  | { ok: true; body: unknown }
+  | { ok: false; reason: string; status?: number; retryAfterMs?: number };
 
 export type RetryOptions = {
   /** Total attempts including the first one. */
@@ -13,6 +15,8 @@ export type RetryOptions = {
   sleep?: (ms: number) => Promise<void>;
   /** Jitter source in [0, 1); injectable for tests. */
   random?: () => number;
+  /** Overrides which failures are retried (default: `isRetryableFailure`). */
+  shouldRetry?: (failure: Extract<JsonResult, { ok: false }>) => boolean;
 };
 
 const RETRYABLE = /\((429|5\d\d)\)|timed? ?out|abort|fetch failed|network|ECONN|ETIMEDOUT|EAI_AGAIN/i;
@@ -29,12 +33,13 @@ export async function retryJson(fetchOnce: () => Promise<JsonResult>, options: R
   const max = options.maxDelayMs ?? 2_500;
   const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   const random = options.random ?? Math.random;
+  const shouldRetry = options.shouldRetry ?? ((failure) => isRetryableFailure(failure.reason));
   let last: JsonResult = { ok: false, reason: "request failed" };
   for (let attempt = 0; attempt < attempts; attempt++) {
     options.signal?.throwIfAborted();
     last = await fetchOnce();
     options.signal?.throwIfAborted();
-    if (last.ok || !isRetryableFailure(last.reason)) return last;
+    if (last.ok || !shouldRetry(last)) return last;
     if (attempt < attempts - 1) await sleep(Math.min(max, base * 2 ** attempt) * (0.75 + random() * 0.5));
   }
   return last;

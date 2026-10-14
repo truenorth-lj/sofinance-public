@@ -44,10 +44,19 @@ export function lpFeeFraction(protocolFeeRate: number | null, fundFeeRate: numbe
 export const LOW_CONFIDENCE_MIN_DAYS = 3;
 export const LOW_CONFIDENCE_MAX_UNPLACED_PCT = 30;
 
+/**
+ * Fewer hourly candles than this inside the window (thin pools trade in few hours; missing hours are zero
+ * volume, which is correct) means the price path is thinly observed: flagged low confidence.
+ */
+export const LOW_CONFIDENCE_MIN_CANDLES = 12;
+
 export function sampleConfidence(sample: {
   days: number; volumeSource: VolumeSource; occupancySource: OccupancySource; unplacedVolumePct: number;
+  /** Hourly candles in the window; omitted = not checked. */
+  candleCount?: number;
 }): SampleConfidence {
-  return sample.days < LOW_CONFIDENCE_MIN_DAYS || sample.volumeSource !== "geckoterminal-daily" ||
+  return sample.days < LOW_CONFIDENCE_MIN_DAYS ||
+    (sample.candleCount !== undefined && sample.occupancySource === "hourly-candles" && sample.candleCount < LOW_CONFIDENCE_MIN_CANDLES) || sample.volumeSource !== "geckoterminal-daily" ||
     sample.occupancySource !== "hourly-candles" || sample.unplacedVolumePct > LOW_CONFIDENCE_MAX_UNPLACED_PCT
     ? "low" : "ok";
 }

@@ -51,4 +51,11 @@ describe("retryJson", () => {
     await retryJson(async () => fail("Upstream request failed (503)"), { ...options, sleep, attempts: 6, baseDelayMs: 1000, maxDelayMs: 2000 });
     expect(Math.max(...sleep.mock.calls.map(([ms]) => ms as number))).toBeLessThanOrEqual(2000 * 1.25);
   });
+
+  it("honours a custom shouldRetry (a 429 is not retried when the caller opts out)", async () => {
+    const once = vi.fn(async (): Promise<JsonResult> => ({ ok: false, reason: "Upstream request failed (429)", status: 429 }));
+    const result = await retryJson(once, { ...options, shouldRetry: (failure) => failure.status !== 429 });
+    expect(result).toMatchObject({ ok: false, status: 429 });
+    expect(once).toHaveBeenCalledTimes(1);
+  });
 });
