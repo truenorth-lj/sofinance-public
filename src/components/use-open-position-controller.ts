@@ -11,6 +11,7 @@ import { preserveExtraSignatures } from "@/lib/open-signatures";
 import { notSentRetryMessage } from "@/lib/public-error";
 import type { OpenPositionQuote, OpenPositionSummary } from "@/lib/open-types";
 import { openAttemptFromSummary, type OpenAttempt } from "@/lib/open-attempt";
+import { NO_BEAM_STATUS, openBeamStatus, type OpenBeamStatus } from "@/lib/open-beam-status";
 import type { WalletAsset, WalletDiscovery } from "@/lib/wallet-discovery";
 import { useWalletConnection } from "./wallet-connection";
 import { notifyPositionHistoryChange } from "@/lib/position-history-refresh";
@@ -69,6 +70,8 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
   const [quoteRevision, setQuoteRevision] = useState(0);
   const [operationStage, setSubmitStage] = useState<OpenSubmitStage>(null);
   const [error, setError] = useState("");
+  // Beam metadata from prepare/broadcast, keyed to the attempt signature; shown only once that attempt is verified.
+  const [beamResult, setBeamResult] = useState<{ signature: string; status: OpenBeamStatus } | null>(null);
   const [now, setNow] = useState(0);
   const walletRef = useRef(wallet);
   const quoteRequestRef = useRef(0);
@@ -316,7 +319,7 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
         }),
         cache: "no-store", signal: AbortSignal.timeout(15_000),
       });
-      const broadcast = await sent.json() as { signature?: string; positionMint?: string; error?: string; sent?: boolean };
+      const broadcast = await sent.json() as { signature?: string; positionMint?: string; beamLabel?: string | null; error?: string; sent?: boolean };
       if (!sent.ok) {
         const reason = broadcast.error || "Open-position submission failed";
         if (broadcast.sent === false) {
@@ -327,6 +330,7 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
       }
       if (broadcast.signature !== txSignature) throw new Error("RPC returned transaction signature mismatch");
       // Signature acceptance is pending; useOpenAttempt checks finality and position facts.
+      setBeamResult({ signature: txSignature, status: openBeamStatus(prepared.summary.beam, broadcast.beamLabel) });
     } catch (caught) {
       if (walletRef.current === wallet) setError(persisted
         ? "Submission result is unconfirmed. Tracking the original signature; do not open again until it is verified."
@@ -359,7 +363,8 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
     wallet, connected, connect, inputAssets, selectedAsset, inputMint, inputKind,
     amount, rangePreset, minPrice, maxPrice, quote, quoteLoading, quoteError: formError || quoteError,
     error: open.error || (open.status === "confirmed" ? "" : error),
-    submitStage, signature, positionMint, presets: OPEN_RANGE_UI_PRESETS, fresh, busy,
+    submitStage, signature, positionMint,
+    beamStatus: open.status === "confirmed" && beamResult?.signature === signature ? beamResult.status : NO_BEAM_STATUS, presets: OPEN_RANGE_UI_PRESETS, fresh, busy,
     actionDisabled, actionBlockedReason, walletBlockedReason, changeAmount, chooseAsset, choosePreset,
     setMinPrice: changeMinPrice, setMaxPrice: changeMaxPrice, fillMax, signAndSend,
     now, refreshQuote, canRefreshQuote, retryConfirmation: open.retry,
