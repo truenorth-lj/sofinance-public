@@ -23,5 +23,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm typecheck
+      - name: Verify committed Drizzle migrations
+        run: |
+          pnpm db:generate
+          test -z "$(git status --porcelain -- drizzle)"
       - run: pnpm test
       - run: pnpm build:rwa-service

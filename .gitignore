@@ -48,3 +48,6 @@ next-env.d.ts
 
 # Bundled standalone RWA gateway
 /dist/
+
+# Local schema inspection
+/.tmp/

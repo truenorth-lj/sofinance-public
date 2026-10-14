@@ -1,5 +1,6 @@
 /** Opt-in real SQL checks, confined to a disposable schema in the dedicated DB. */
-import { readFileSync } from "node:fs";
+import { readMigrationFiles } from "drizzle-orm/migrator";
+import { resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
@@ -93,31 +94,9 @@ describe.skipIf(!url)("RWA PostgreSQL snapshots and fencing", () => {
   }
   beforeAll(async () => {
     await db!.unsafe(`CREATE SCHEMA ${schema}`);
-    // LIKE includes all scalar/JSON checks and indexes. Copy foreign keys explicitly.
-    for (const table of [
-      "rwa_feed_state",
-      "rwa_pool_latest",
-      "rwa_apr_latest",
-      "rwa_apr_daily",
-      "background_job_state",
-    ])
-      await db!.unsafe(
-        `CREATE TABLE ${schema}.${table} (LIKE public.${table} INCLUDING ALL)`,
-      );
-    const ddl = readFileSync(
-      new URL("../../db/001-rwa.sql", import.meta.url),
-      "utf8",
-    );
-    for (const [table, target, column] of [
-      ["rwa_pool_latest", "rwa_feed_state", "feed_key"],
-      ["rwa_apr_latest", "rwa_pool_latest", "pool_address"],
-      ["rwa_apr_daily", "rwa_pool_latest", "pool_address"],
-    ]) {
-      expect(ddl).toContain(`REFERENCES public.${target}`);
-      await db!.unsafe(
-        `ALTER TABLE ${schema}.${table} ADD FOREIGN KEY (${column}) REFERENCES ${schema}.${target}(${column}) ON DELETE RESTRICT`,
-      );
-    }
+    for (const migration of readMigrationFiles({ migrationsFolder: resolve("drizzle") }))
+      for (const statement of migration.sql)
+        await db!.unsafe(statement.replaceAll('"public".', `"${schema}".`));
   }, 20_000);
   afterAll(async () => {
     if (db) {
