@@ -12,6 +12,7 @@ import { notSentRetryMessage } from "@/lib/public-error";
 import type { OpenPositionQuote } from "@/lib/open-types";
 import type { WalletAsset, WalletDiscovery } from "@/lib/wallet-discovery";
 import { useWalletConnection } from "./wallet-connection";
+import { notifyPositionHistoryChange } from "@/lib/position-history-refresh";
 
 export type OpenPositionPair = {
   poolAddress: string;
@@ -305,6 +306,7 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
       if (broadcast.signature !== txSignature) throw new Error("RPC returned transaction signature mismatch");
       setSignature(txSignature);
       setPositionMint(broadcast.positionMint || prepared.summary.nftMint);
+      notifyPositionHistoryChange(broadcast.positionMint || prepared.summary.nftMint);
       setSubmitStage("confirmed");
     } catch (caught) {
       setSubmitStage(null);

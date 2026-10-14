@@ -1,6 +1,7 @@
 import { apiError } from "@/lib/api-response";
 import { getPositionPerformance } from "@/lib/position-performance";
 import { PositionHistoryStoreError } from "@/lib/position-history-store-types";
+import bs58 from "bs58";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -23,12 +24,23 @@ export async function GET(request: Request) {
       throw new Error("maxSignatures must be an integer 1–500");
     }
     const skipPricing = url.searchParams.get("skipPricing") === "1" || url.searchParams.get("skipPricing") === "true";
+    const refreshRaw = url.searchParams.get("refreshHistory");
+    if (refreshRaw !== null && refreshRaw !== "0" && refreshRaw !== "1") throw new Error("Invalid history refresh");
+    const afterRaw = url.searchParams.get("historyAfterSignatures");
+    if (afterRaw && afterRaw.length > 8 * 89) throw new Error("Invalid history signatures");
+    const historyAfterSignatures = afterRaw ? [...new Set(afterRaw.split(","))] : undefined;
+    if (historyAfterSignatures && (historyAfterSignatures.length > 8 || historyAfterSignatures.some(signature =>
+      !/^[1-9A-HJ-NP-Za-km-z]{64,88}$/.test(signature) || bs58.decode(signature).length !== 64))) {
+      throw new Error("Invalid history signatures");
+    }
 
     const result = await getPositionPerformance(positionMint, {
       wallet,
       maxSignatures,
       skipPricing,
       signal: request.signal,
+      refreshHistory: refreshRaw === "1",
+      historyAfterSignatures,
     });
 
     return Response.json(result, {

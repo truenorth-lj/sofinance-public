@@ -39,6 +39,10 @@ export type HistoryFetchMetric = {
   listingCount?: number;
   historyComplete?: boolean;
   canContinue?: boolean;
+  memoryCacheHit?: boolean;
+  memoryCacheAgeMs?: number;
+  historySyncedAt?: string;
+  refreshSignaturesResolved?: boolean;
 };
 
 export type HistoryServedBy = "solami" | "default";

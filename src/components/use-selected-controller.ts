@@ -12,6 +12,7 @@ import type { PositionSelection, SelectedPositionState } from "@/lib/selected-st
 import type { WalletDiscovery } from "@/lib/wallet-discovery";
 import { DEFAULT_RESALE_FLOOR_BPS, USDC_MINT } from "@/lib/ids";
 import { useWalletConnection } from "./wallet-connection";
+import { notifyPositionHistoryChange } from "@/lib/position-history-refresh";
 
 type Preflight = { quote: SelectedQuote; simulated: boolean; sizeBytes?: number; unitsConsumed?: number;
   feeLamports?: number; startingLiquidity?: string; simulatedEndingLiquidity?: string;
@@ -204,6 +205,7 @@ export function useSelectedController() {
       throw new Error("Transaction verification returned a different signature or invalid status");
     }
     setAttemptStatus(checked.status);
+    if (checked.status === "success") notifyPositionHistoryChange(current.selection.positionMint, current.signature);
     setVerificationError("");
     } catch (caught) {
       if (ownsResult()) setVerificationError(caught instanceof Error ? caught.message : "Transaction status verification failed");

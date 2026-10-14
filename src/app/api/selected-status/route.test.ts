@@ -8,6 +8,8 @@ import bs58 from "bs58";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
+vi.mock("@/lib/position-history-cache", () => ({ invalidatePositionHistoryCache: vi.fn() }));
+import { invalidatePositionHistoryCache } from "@/lib/position-history-cache";
 vi.mock("@/lib/rpc", () => ({ rpcConnection: vi.fn() }));
 vi.mock("@/lib/selected-state", () => ({ readSelectedPositionState: vi.fn() }));
 
@@ -211,11 +213,13 @@ describe("POST /api/selected-status: signature observed", () => {
     expect((await call(baseBody)).json).toMatchObject({ status: "failed" });
     connection.getSignatureStatuses.mockResolvedValue({ value: [{ confirmationStatus: "processed", err: null }] });
     expect((await call(baseBody)).json).toMatchObject({ status: "pending" });
+    expect(invalidatePositionHistoryCache).not.toHaveBeenCalled();
   });
 
   it("is pending when the parsed transaction is not available yet", async () => {
     connection.getParsedTransaction.mockResolvedValue(null);
     expect((await call(baseBody)).json).toMatchObject({ status: "pending" });
+    expect(invalidatePositionHistoryCache).not.toHaveBeenCalled();
   });
 
   it("reports failed when the parsed transaction meta carries err", async () => {
@@ -226,6 +230,7 @@ describe("POST /api/selected-status: signature observed", () => {
   it("QUIRK: 'confirmed' commitment is enough for success here (compound-confirm waits for 'finalized')", async () => {
     const { json } = await call(baseBody);
     expect(json).toMatchObject({ status: "success", signedByWallet: true, addedToExactPosition: true });
+    expect(invalidatePositionHistoryCache).toHaveBeenCalledWith(positionMint);
     expect(connection.getParsedTransaction).toHaveBeenCalledWith(signature, { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
   });
 

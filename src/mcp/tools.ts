@@ -18,6 +18,7 @@ import { getSigningSecret } from "../lib/config/server-env";
 import type { CompoundSummary } from "../lib/compound-types";
 import { getRwaPairs } from "../lib/rwa-store";
 import { getPositionPerformance as readPositionPerformance } from "../lib/position-performance";
+import { invalidatePositionHistoryCache } from "../lib/position-history-cache";
 import { createSignToken } from "../lib/pending-sign-token";
 import { buildOpenPositionUrl, buildSignUrl } from "../lib/public-urls";
 import { OPEN_RANGE_PRESETS } from "../lib/open-range-presets";
@@ -479,6 +480,7 @@ export async function submitSignedTransaction(input: SubmitSignedTransactionInpu
   if (signature !== expectedSignature) {
     throw new Error("RPC returned transaction signature mismatch");
   }
+  invalidatePositionHistoryCache(input.selection.positionMint);
   
   const beam = await lookupBeamAfterSend(signature);
   return { signature, beam: beam.beam, beamLabel: beam.label, beamLandingUrl: beam.beamLandingUrl };
@@ -611,6 +613,8 @@ export async function getPositionPerformance(input: GetPositionPerformanceInput)
     wallet: input.wallet,
     maxSignatures: input.maxSignatures,
     skipPricing: input.skipPricing,
+    refreshHistory: input.refreshHistory,
+    historyAfterSignatures: input.historyAfterSignatures,
   });
 
   return {

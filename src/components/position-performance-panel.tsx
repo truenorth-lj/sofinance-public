@@ -14,6 +14,7 @@ import { PositionSelect } from "./position-select";
 import { PositionAssetRow } from "./position-asset-row";
 import { useTokenMetadata } from "./use-token-metadata";
 import { DecisionSession } from "@/lib/lp-decision-session";
+import { clearPositionHistoryRefresh, readPositionHistoryRefresh, subscribePositionHistoryRefresh } from "@/lib/position-history-refresh";
 import { PositionExitEstimate } from "./position-exit-estimate";
 import { PoolDailyAprChart } from "./pool-daily-apr-panel";
 import { PoolActivityPanel } from "./pool-activity-panel";
@@ -122,6 +123,7 @@ type PerformanceResponse = {
     defaultTxCount?: number;
     fallbackReasons?: string[];
     canContinue?: boolean;
+    refreshSignaturesResolved?: boolean;
   };
   error?: string;
 };
@@ -266,6 +268,12 @@ export function PositionPerformancePanel({
       if (wallet.trim()) params.set("wallet", wallet.trim());
       // Continue bounded initial history loading as part of this view, without a scheduler.
       for (let step = 0; step < 5; step++) {
+        const refresh = readPositionHistoryRefresh(mint);
+        if (refresh) {
+          params.set("refreshHistory", "1");
+          if (refresh.signatures.length) params.set("historyAfterSignatures", refresh.signatures.join(","));
+          else params.delete("historyAfterSignatures");
+        } else { params.delete("refreshHistory"); params.delete("historyAfterSignatures"); }
         const response = await fetch(`/api/position-performance?${params}`, {
           signal: attempt.signal,
           headers: { Accept: "application/json" },
@@ -274,6 +282,9 @@ export function PositionPerformancePanel({
         if (!attempt.current()) return;
         if (!response.ok) throw new Error(body.error || "Lookup failed");
         if (body.positionMint !== mint) throw new Error("Position response mismatch");
+        if (refresh && (refresh.signatures.length ? body.historyFetch?.refreshSignaturesResolved === true : !body.truncated)) {
+          clearPositionHistoryRefresh(mint, refresh.version);
+        }
         setLoadedData({body, context});
         if (!body.truncated || !body.historyFetch?.canContinue) break;
       }
@@ -283,6 +294,12 @@ export function PositionPerformancePanel({
       if (attempt.current()) { attempt.finish(); setLoadingContext(null); }
     }
   }, [context, positionMint, wallet]);
+
+  useEffect(() => subscribePositionHistoryRefresh(positionMint.trim(), () => {
+    lookup.current.cancel();
+    setLoadedData(null);
+    void load();
+  }), [positionMint, load]);
 
   useEffect(() => {
     if (!autoLoadSharedPosition) return;

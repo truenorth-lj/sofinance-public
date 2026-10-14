@@ -21,6 +21,10 @@ describe("position history HTTPS transport", () => {
     vi.stubGlobal("fetch", fetcher);
     expect(await getPositionHistoryStore().request({ op: "claim", context, parserVersion: 1 })).toEqual({ stored: true });
     expect(String(fetcher.mock.calls[0]?.[0])).toBe("https://rwa.example.com/v1/position-history");
+    expect(getPositionHistoryStore()).toBe(getPositionHistoryStore());
+    const first = getPositionHistoryStore();
+    vi.stubEnv("CRON_SECRET", "rotated-test-".repeat(8));
+    expect(getPositionHistoryStore()).not.toBe(first);
   });
   it("rejects insecure production transport and direct production PostgreSQL", () => {
     configure();

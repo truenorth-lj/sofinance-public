@@ -49,6 +49,7 @@ import { getRwaConfig } from "./config/rwa-env";
 import { getPositionHistoryStore } from "./position-history-store";
 import type { PositionHistoryStore } from "./position-history-store-types";
 import { loadPerformanceHistory } from "./position-performance-history-load";
+import { resetRpcCache } from "./rpc/cache";
 
 const POSITION_DISCRIMINATOR = createHash("sha256").update("account:PersonalPositionState").digest().subarray(0, 8);
 const POOL_DISCRIMINATOR = createHash("sha256").update("account:PoolState").digest().subarray(0, 8);
@@ -139,6 +140,10 @@ export type GetPositionPerformanceOptions = {
   fallbackConnection?: HistoryConnection;
   /** Explicit null selects the legacy reader for controlled comparisons. */
   historyStore?: PositionHistoryStore | null;
+  refreshHistory?: boolean;
+  historyAfterSignatures?: string[];
+  /** Disable only the short history cache for controlled same-provider measurements. */
+  historyMemoryCache?: boolean;
   signal?: AbortSignal;
 };
 
@@ -244,6 +249,8 @@ export async function getPositionPerformance(
   options: GetPositionPerformanceOptions = {},
 ): Promise<PositionPerformanceResult> {
   const started = Date.now();
+  // A browser refresh after a trade can land on another serverless instance.
+  if (options.refreshHistory || options.historyAfterSignatures?.length) resetRpcCache();
   const signal = options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(50_000)]) : AbortSignal.timeout(50_000);
   const connection = options.connection ?? rpcConnection(undefined, { signal });
   const maxSignatures = Math.min(Math.max(1, options.maxSignatures ?? DEFAULT_MAX_SIGNATURES), 500);
@@ -292,6 +299,14 @@ export async function getPositionPerformance(
       mintA: pool.mintA.toBase58(), mintB: pool.mintB.toBase58(),
       vaultA: pool.vaultA.toBase58(), vaultB: pool.vaultB.toBase58() },
     store: historyStore, signal,
+    bypassCache: options.historyMemoryCache === false || options.refreshHistory || Boolean(options.historyAfterSignatures?.length),
+    afterSignatures: options.historyAfterSignatures,
+    stateFingerprint: createHash("sha256").update(positionInfo.data).digest("hex"),
+    connectionsForSignal: !options.connection ? sharedSignal => ({
+      connection: rpcConnection(undefined, { signal: sharedSignal }),
+      fallbackConnection: options.fallbackConnection ?? (provider === "solami"
+        ? defaultRpcConnection(undefined, { signal: sharedSignal }) : undefined),
+    }) : undefined,
   }), readUncollectedFees(connection, CLMM_PROGRAM_ID, poolId, position, pool),
   options.wallet ? walletOwnsNft(connection, new PublicKey(options.wallet), mint) : Promise.resolve(null)]);
   const truncated = fetched.truncated;
@@ -424,7 +439,7 @@ export async function getPositionPerformance(
     wrappedSymbol: sameAssetWrap ? wrap.wrappedSymbol : null,
   });
 
-  const incomplete = Boolean(historyStore && truncated);
+  const incomplete = Boolean(historyStore && truncated) || fetched.metric.refreshSignaturesResolved === false;
   if (incomplete) {
     metrics.pnlUsd = null;
     metrics.holdingPeriodReturnPct = null;

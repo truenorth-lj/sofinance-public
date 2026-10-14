@@ -5,6 +5,7 @@ import { PostgresPositionHistoryStore } from "./position-history-postgres-store"
 import { PositionHistoryStoreError, positionStoreRequestSchema, type PositionHistoryStore } from "./position-history-store-types";
 
 let direct: { url: string; store: PositionHistoryStore } | undefined;
+let gateway: { url: string; secret: string; store: PositionHistoryStore } | undefined;
 
 /** The existing HTTPS gateway keeps database credentials on its private network. */
 export function getPositionHistoryStore(): PositionHistoryStore {
@@ -17,7 +18,8 @@ export function getPositionHistoryStore(): PositionHistoryStore {
       throw new PositionHistoryStoreError("INVALID_GATEWAY_URL");
     }
     if (!config.secret || config.secret.length < 32) throw new PositionHistoryStoreError("POSITION_STORE_UNAVAILABLE");
-    return {
+    if (gateway?.url === base.href && gateway.secret === config.secret) return gateway.store;
+    const store: PositionHistoryStore = {
       async request(input) {
         const body = JSON.stringify(positionStoreRequestSchema.parse(input));
         if (Buffer.byteLength(body) > 16_000_000) throw new PositionHistoryStoreError("POSITION_HISTORY_BATCH_TOO_LARGE");
@@ -36,6 +38,8 @@ export function getPositionHistoryStore(): PositionHistoryStore {
         }
       },
     };
+    gateway = { url: base.href, secret: config.secret, store };
+    return store;
   }
   if (config.isVercel || !config.databaseUrl) throw new PositionHistoryStoreError("POSITION_STORE_UNAVAILABLE");
   if (!direct || direct.url !== config.databaseUrl) {

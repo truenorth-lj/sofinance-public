@@ -42,6 +42,13 @@ Each lookup fetches at most `maxSignatures` transaction details (1–500, defaul
 100). The reader resumes incomplete history on subsequent views. A position is
 bounded to 10,000 stored signatures and 3.5 MB per snapshot; oversized metadata
 fails closed, and raw receipts are replayed within a byte budget.
+Complete history also has an eight-second process cache (64 entries, 8 MiB).
+It caches neither ownership nor current valuation. A changed position-account
+fingerprint misses the cache; successful transaction verification invalidates
+it. Browser dirty markers send `refreshHistory=1` across server instances and
+retain required signatures until finalized history includes them (or finalized
+failure is verified). Pending history and errors are never cached. MCP callers
+can use `refreshHistory` and `historyAfterSignatures` for the same guarantee.
 
 Opt-in integration tests create and remove only disposable schemas in the
 dedicated database:

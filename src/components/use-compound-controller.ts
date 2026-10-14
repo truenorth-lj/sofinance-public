@@ -11,6 +11,7 @@ import { abandonUnsentCompoundAttempt, compoundAttemptKey, loadCompoundAttempt, 
 import type { CompoundChainStatus, CompoundPositionState, CompoundSummary } from "@/lib/compound-types";
 import type { CompoundRecoverySummary } from "@/lib/compound-recovery-types";
 import { useWalletConnection } from "./wallet-connection";
+import { notifyPositionHistoryChange } from "@/lib/position-history-refresh";
 
 export type CompoundConfirmation = { status: AtomicStatus; signature: string; state: CompoundPositionState | null;
   chainStatus?: CompoundChainStatus;
@@ -161,6 +162,7 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
       const terminal = `${current.signature}:${checked.chainStatus ?? checked.status}`;
       if (previousTerminal.current !== terminal) {
         previousTerminal.current = terminal;
+        if (executed) notifyPositionHistoryChange(current.positionMint, current.kind === "compound" ? current.signature : undefined);
         void refreshState(); onConfirmedRef.current?.();
       }
     }

@@ -85,4 +85,14 @@ describe("performance with persisted history", () => {
     await lookup(null);
     expect(ledger.mock.calls[0]?.[0].store).toBeNull();
   });
+  it("suppresses legacy returns too while a successful transaction is not in finalized history", async () => {
+    const baseline = await ledger();
+    ledger.mockResolvedValue({ ...baseline, truncated: true,
+      metric: { ...baseline.metric, refreshSignaturesResolved: false, historyComplete: false } });
+    const result = await lookup(null);
+    expect(result.metrics.pnlUsd).toBeNull();
+    expect(result.metrics.holdingPeriodReturnPct).toBeNull();
+    expect(result.tokenNative.perSideFeeAprPct).toEqual({ a: null, b: null });
+    expect(result.realizedFeeAprSeries.points).toEqual([]);
+  });
 });

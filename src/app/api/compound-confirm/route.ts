@@ -8,6 +8,8 @@ import { confirmedCompoundReceipt, confirmedRecovery } from "@/lib/compound-rece
 import { rpcConnection } from "@/lib/rpc";
 import { apiError } from "@/lib/api-response";
 import type { CompoundChainStatus } from "@/lib/compound-types";
+import { invalidatePositionHistoryCache } from "@/lib/position-history-cache";
+import { resetRpcCache } from "@/lib/rpc/cache";
 
 export async function POST(request: Request) {
   try {
@@ -18,8 +20,13 @@ export async function POST(request: Request) {
     const connection = rpcConnection();
     const observed = (await connection.getSignatureStatuses([attempt.signature], { searchTransactionHistory: true })).value[0];
     const base = { signature: attempt.signature, state: null };
-    const respond = (value: object, chainStatus: CompoundChainStatus) => Response.json({ ...base, ...value, chainStatus },
-      { headers: { "Cache-Control": "no-store" } });
+    const respond = (value: object, chainStatus: CompoundChainStatus) => {
+      if (chainStatus === "success") {
+        invalidatePositionHistoryCache(attempt.positionMint);
+        resetRpcCache();
+      }
+      return Response.json({ ...base, ...value, chainStatus }, { headers: { "Cache-Control": "no-store" } });
+    };
     // Some providers cannot find older signatures even with searchTransactionHistory.
     // A finalized historical transaction is stronger evidence than today's account balances.
     let transaction: ParsedTransactionWithMeta | null = null;

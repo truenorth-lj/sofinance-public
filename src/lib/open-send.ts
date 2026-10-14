@@ -1,4 +1,5 @@
 import "server-only";
+import { invalidatePositionHistoryCache } from "./position-history-cache";
 
 import { PublicKey, VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
@@ -81,6 +82,8 @@ export async function sendSignedOpenPosition(
       skipPreflight: false, preflightCommitment: "confirmed", maxRetries: 3,
     });
     if (signature !== expectedSignature) throw new Error("RPC returned transaction signature mismatch");
+    // Conservatively evict on accepted broadcast; this is not finality proof.
+    invalidatePositionHistoryCache(summary.nftMint);
     const beam = await lookupBeamAfterSend(signature);
     return {
       signature,
