@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
 import { formatAmount, parseTokenAmount } from "@/lib/amount";
@@ -9,10 +9,12 @@ import { quoteIsFresh } from "@/lib/quote-math";
 import { OPEN_RANGE_UI_PRESETS, type OpenRangePreset } from "@/lib/open-range-presets";
 import { preserveExtraSignatures } from "@/lib/open-signatures";
 import { notSentRetryMessage } from "@/lib/public-error";
-import type { OpenPositionQuote } from "@/lib/open-types";
+import type { OpenPositionQuote, OpenPositionSummary } from "@/lib/open-types";
+import { openAttemptFromSummary, type OpenAttempt } from "@/lib/open-attempt";
 import type { WalletAsset, WalletDiscovery } from "@/lib/wallet-discovery";
 import { useWalletConnection } from "./wallet-connection";
 import { notifyPositionHistoryChange } from "@/lib/position-history-refresh";
+import { useOpenAttempt } from "./use-open-attempt";
 
 export type OpenPositionPair = {
   poolAddress: string;
@@ -32,15 +34,10 @@ type ApiError = { error: string };
 type Prepared = {
   unsignedTransaction: string;
   permit: string;
-  summary: {
-    operation: "open-position";
-    expiresAt: number;
-    nftMint: string;
-    quote: OpenPositionQuote;
-  };
+  summary: OpenPositionSummary;
 };
 
-export type OpenSubmitStage = "preparing" | "wallet" | "broadcasting" | "confirmed" | null;
+export type OpenSubmitStage = "preparing" | "wallet" | "broadcasting" | "pending" | "confirmed" | "failed" | "expired" | "manual-review" | null;
 
 function pickInput(assets: WalletAsset[], mintA: string, mintB: string): WalletAsset | null {
   const eligible = assets.filter((item) => item.eligible);
@@ -54,6 +51,11 @@ function pickInput(assets: WalletAsset[], mintA: string, mintB: string): WalletA
 
 export function useOpenPositionController(pair: OpenPositionPair | null) {
   const { address: wallet, connected, connect, signTransaction } = useWalletConnection();
+  const open = useOpenAttempt(wallet);
+  const confirmedMint = open.status === "confirmed" ? open.attempt?.nftMint ?? null : null;
+  useEffect(() => {
+    if (confirmedMint) notifyPositionHistoryChange(confirmedMint);
+  }, [confirmedMint]);
   const [discovery, setDiscovery] = useState<WalletDiscovery | null>(null);
   const [inputMint, setInputMint] = useState<string | null>(null);
   const [inputKind, setInputKind] = useState<"native" | "token">("token");
@@ -65,14 +67,22 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [quoteError, setQuoteError] = useState("");
   const [quoteRevision, setQuoteRevision] = useState(0);
-  const [submitStage, setSubmitStage] = useState<OpenSubmitStage>(null);
+  const [operationStage, setSubmitStage] = useState<OpenSubmitStage>(null);
   const [error, setError] = useState("");
-  const [signature, setSignature] = useState("");
-  const [positionMint, setPositionMint] = useState("");
   const [now, setNow] = useState(0);
   const walletRef = useRef(wallet);
   const quoteRequestRef = useRef(0);
   const submittingRef = useRef(false);
+  const activeRef = useRef(false);
+  useLayoutEffect(() => { activeRef.current = true; return () => { activeRef.current = false; }; }, []);
+  const identity = JSON.stringify([wallet, pair?.poolAddress, inputMint, inputKind, amount, rangePreset, minPrice, maxPrice]);
+  const identityRef = useRef(identity);
+  useLayoutEffect(() => { walletRef.current = wallet; identityRef.current = identity; }, [wallet, identity]);
+  const samePool = open.attempt?.poolId === pair?.poolAddress;
+  const submitStage: OpenSubmitStage = operationStage ?? (open.pending && open.loaded ? "pending"
+    : samePool && open.status !== "unsent" ? open.status : null);
+  const signature = open.status ? open.attempt?.signature ?? "" : "";
+  const positionMint = samePool ? open.attempt?.nftMint ?? "" : "";
 
   const inputAssets = useMemo(() => {
     if (!discovery || !pair) return [];
@@ -82,7 +92,7 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
 
   const selectedAsset = inputAssets.find((item) => item.mint === inputMint && item.kind === inputKind) ?? null;
   const fresh = quote ? quoteIsFresh(quote.expiresAt, now) : false;
-  const busy = submitStage === "preparing" || submitStage === "wallet" || submitStage === "broadcasting";
+  const busy = operationStage === "preparing" || operationStage === "wallet" || operationStage === "broadcasting" || open.pending;
   let parsedAmount: bigint | null = null;
   if (selectedAsset?.eligible && amount) {
     try {
@@ -96,10 +106,6 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
     : rangePreset === "custom" && (!minPrice || !maxPrice)
       ? "Enter a custom min and max price (B per 1 A)"
       : "";
-
-  useEffect(() => {
-    walletRef.current = wallet;
-  }, [wallet]);
 
   useEffect(() => {
     const clock = window.setInterval(() => setNow(Date.now()), 1_000);
@@ -239,8 +245,11 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
   };
 
   const signAndSend = useCallback(async () => {
-    if (!pair || !wallet || !inputMint || !quote || !fresh || Date.now() >= quote.expiresAt || busy || submittingRef.current) return;
+    if (!pair || !wallet || !inputMint || !quote || !fresh || Date.now() >= quote.expiresAt || busy || !open.loaded || submittingRef.current) return;
     submittingRef.current = true;
+    const requestedIdentity = identity;
+    const current = () => activeRef.current && walletRef.current === wallet && identityRef.current === requestedIdentity;
+    let persisted: OpenAttempt | null = null;
     setQuoteLoading(false);
     setSubmitStage("preparing");
     setError("");
@@ -257,20 +266,25 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
       const data = await response.json() as Prepared | ApiError;
       if (!response.ok) throw new Error((data as ApiError).error);
       const prepared = data as Prepared;
-      if (!prepared.unsignedTransaction || !prepared.permit || !prepared.summary ||
+      if (!current() || !prepared.unsignedTransaction || !prepared.permit || !prepared.summary ||
+        prepared.summary.wallet !== wallet || prepared.summary.poolId !== pair.poolAddress ||
+        prepared.summary.quote.requested !== parsedAmount?.toString() ||
+        prepared.summary.quote.inputMint !== inputMint || prepared.summary.quote.inputKind !== inputKind ||
         Date.now() >= prepared.summary.expiresAt) {
         throw new Error("Prepared open-position transaction expired or incomplete");
       }
       const bytes = Uint8Array.from(atob(prepared.unsignedTransaction), (character) => character.charCodeAt(0));
       const unsigned = VersionedTransaction.deserialize(bytes);
-      if (unsigned.message.staticAccountKeys[0]?.toBase58() !== wallet) {
+      if (unsigned.message.staticAccountKeys[0]?.toBase58() !== wallet ||
+        unsigned.message.staticAccountKeys[1]?.toBase58() !== prepared.summary.nftMint ||
+        unsigned.message.recentBlockhash !== prepared.summary.blockhash) {
         throw new Error("Transaction payer mismatch");
       }
       setQuote(prepared.summary.quote);
       setNow(Date.now());
       setSubmitStage("wallet");
-      const signedByWallet = await signTransaction(unsigned);
       const originalMessage = unsigned.message.serialize();
+      const signedByWallet = await signTransaction(unsigned);
       const signedMessage = signedByWallet.message.serialize();
       if (signedMessage.length !== originalMessage.length ||
         signedMessage.some((byte, index) => byte !== originalMessage[index])) {
@@ -286,6 +300,10 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
       }
       const txSignature = bs58.encode(signatureBytes);
       const signedTransaction = btoa(String.fromCharCode(...signed.serialize()));
+      if (!current() || Date.now() >= prepared.summary.expiresAt) throw new Error("Wallet, input or quote changed during signing; transaction not sent");
+      const attempt = openAttemptFromSummary(txSignature, prepared.summary);
+      open.track(attempt);
+      persisted = attempt;
       setSubmitStage("broadcasting");
       const sent = await fetch("/api/open-broadcast", {
         method: "POST",
@@ -296,25 +314,28 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
           wallet,
           summary: prepared.summary,
         }),
-        cache: "no-store",
+        cache: "no-store", signal: AbortSignal.timeout(15_000),
       });
       const broadcast = await sent.json() as { signature?: string; positionMint?: string; error?: string; sent?: boolean };
       if (!sent.ok) {
         const reason = broadcast.error || "Open-position submission failed";
+        if (broadcast.sent === false) {
+          open.markUnsent(attempt);
+          persisted = null;
+        }
         throw new Error(broadcast.sent === false ? notSentRetryMessage(reason) : reason);
       }
       if (broadcast.signature !== txSignature) throw new Error("RPC returned transaction signature mismatch");
-      setSignature(txSignature);
-      setPositionMint(broadcast.positionMint || prepared.summary.nftMint);
-      notifyPositionHistoryChange(broadcast.positionMint || prepared.summary.nftMint);
-      setSubmitStage("confirmed");
+      // Signature acceptance is pending; useOpenAttempt checks finality and position facts.
     } catch (caught) {
-      setSubmitStage(null);
-      setError(caught instanceof Error ? caught.message : "Open-position transaction failed");
+      if (walletRef.current === wallet) setError(persisted
+        ? "Submission result is unconfirmed. Tracking the original signature; do not open again until it is verified."
+        : caught instanceof Error ? caught.message : "Open-position transaction failed");
     } finally {
       submittingRef.current = false;
+      setSubmitStage(null);
     }
-  }, [amount, busy, fresh, inputKind, inputMint, maxPrice, minPrice, pair, quote, rangePreset, signTransaction, wallet]);
+  }, [amount, busy, fresh, identity, inputKind, inputMint, maxPrice, minPrice, open, pair, parsedAmount, quote, rangePreset, signTransaction, wallet]);
 
   const walletBlockedReason = !connected
     ? "Connect a wallet to create a position"
@@ -324,7 +345,8 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
         ? (selectedAsset.reason || "Selected asset is not eligible")
         : null;
 
-  const actionBlockedReason = walletBlockedReason || formError ||
+  const actionBlockedReason = open.pending ? "Checking the original open-position transaction before opening again"
+    : walletBlockedReason || formError ||
     (quoteLoading && (!quote || !fresh) ? "Fetching quote…"
       : quoteError ? quoteError
         : parsedAmount === null ? "Enter an amount to get a quote"
@@ -335,10 +357,12 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
 
   return {
     wallet, connected, connect, inputAssets, selectedAsset, inputMint, inputKind,
-    amount, rangePreset, minPrice, maxPrice, quote, quoteLoading, quoteError: formError || quoteError, error,
+    amount, rangePreset, minPrice, maxPrice, quote, quoteLoading, quoteError: formError || quoteError,
+    error: open.error || (open.status === "confirmed" ? "" : error),
     submitStage, signature, positionMint, presets: OPEN_RANGE_UI_PRESETS, fresh, busy,
     actionDisabled, actionBlockedReason, walletBlockedReason, changeAmount, chooseAsset, choosePreset,
     setMinPrice: changeMinPrice, setMaxPrice: changeMaxPrice, fillMax, signAndSend,
-    now, refreshQuote, canRefreshQuote,
+    now, refreshQuote, canRefreshQuote, retryConfirmation: open.retry,
+    createAnother: () => { if (!busy) { open.dismissTerminal(); clearQuote(); setQuoteRevision(revision => revision + 1); } },
   };
 }

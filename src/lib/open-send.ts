@@ -1,7 +1,7 @@
 import "server-only";
 import { invalidatePositionHistoryCache } from "./position-history-cache";
 
-import { PublicKey, VersionedTransaction } from "@solana/web3.js";
+import { PublicKey, SendTransactionError, VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
 import nacl from "tweetnacl";
 import { CompoundSendError } from "./public-error";
@@ -9,7 +9,7 @@ import { verifyOpenPositionPermit } from "./open-permit";
 import { readOpenPoolState } from "./open-state";
 import { simulateAndVerifyOpenTransaction } from "./open-simulation";
 import { rpcConnection } from "./rpc";
-import { lookupBeamAfterSend } from "./solami-beam";
+import { beamLandingUrl, lookupBeamAfterSend } from "./solami-beam";
 import type { OpenPositionSummary } from "./open-types";
 import { getSigningSecret } from "./config/server-env";
 import { exceedsTxSizeLimit, isZeroSignature } from "./transaction-limits";
@@ -20,6 +20,7 @@ export async function sendSignedOpenPosition(
   transaction: VersionedTransaction,
   summary: OpenPositionSummary,
 ) {
+  let connection: ReturnType<typeof rpcConnection>;
   try {
     if (summary.operation !== "open-position" || !Number.isSafeInteger(summary.expiresAt) ||
       summary.expiresAt <= Date.now() || !Number.isSafeInteger(summary.lastValidBlockHeight) ||
@@ -48,7 +49,7 @@ export async function sendSignedOpenPosition(
     if (!nacl.sign.detached.verify(message, walletSignature!, wallet.toBytes())) {
       throw new Error("Wallet signature is invalid");
     }
-    const connection = rpcConnection();
+    connection = rpcConnection();
     const [height, state] = await Promise.all([
       connection.getBlockHeight("confirmed"),
       readOpenPoolState(walletAddress, {
@@ -77,25 +78,32 @@ export async function sendSignedOpenPosition(
     if (Date.now() >= summary.expiresAt || await connection.getBlockHeight("confirmed") > summary.lastValidBlockHeight) {
       throw new Error("Signed transaction expired before broadcast");
     }
-    const expectedSignature = bs58.encode(walletSignature!);
-    const signature = await connection.sendRawTransaction(transaction.serialize(), {
-      skipPreflight: false, preflightCommitment: "confirmed", maxRetries: 3,
-    });
-    if (signature !== expectedSignature) throw new Error("RPC returned transaction signature mismatch");
-    // Conservatively evict on accepted broadcast; this is not finality proof.
-    invalidatePositionHistoryCache(summary.nftMint);
-    const beam = await lookupBeamAfterSend(signature);
-    return {
-      signature,
-      positionMint: summary.nftMint,
-      positionAccount: summary.positionAccount,
-      beam: beam.beam,
-      beamLabel: beam.label,
-      beamLandingUrl: beam.beamLandingUrl,
-    };
   } catch (error) {
     throw new CompoundSendError(error, false);
   }
+  const expectedSignature = bs58.encode(transaction.signatures[0]!);
+  let signature: string;
+  try {
+    signature = await connection.sendRawTransaction(transaction.serialize(), {
+      skipPreflight: false, preflightCommitment: "confirmed", maxRetries: 3,
+    });
+    if (signature !== expectedSignature) throw new Error("RPC returned transaction signature mismatch");
+  } catch (error) {
+    // web3 wraps other RPC errors as SendTransactionError too. Only the
+    // explicit simulation rejection proves that this submission was not sent.
+    const rejected = error instanceof SendTransactionError &&
+      /^Transaction simulation failed(?:\s*:|$)/i.test(error.transactionError.message);
+    throw new CompoundSendError(error, rejected ? false : undefined);
+  }
+  // Conservatively evict on accepted broadcast; this is not finality proof.
+  invalidatePositionHistoryCache(summary.nftMint);
+  // Landing metadata is optional: it cannot overturn an accepted submission.
+  const beam = await lookupBeamAfterSend(signature).catch(() => null);
+  return {
+    signature, positionMint: summary.nftMint, positionAccount: summary.positionAccount,
+    beam: beam?.beam ?? null, beamLabel: beam?.label ?? null,
+    beamLandingUrl: beam?.beamLandingUrl ?? beamLandingUrl(signature),
+  };
 }
 
 export async function submitOpenPositionFromParts(input: {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
@@ -10,6 +10,9 @@ import { useWalletConnection } from "@/components/wallet-connection";
 import { notSentRetryMessage } from "@/lib/public-error";
 import { preserveExtraSignatures } from "@/lib/open-signatures";
 import type { PendingSignPayload } from "@/lib/pending-sign-token";
+import { openAttemptFromSummary, type OpenAttempt } from "@/lib/open-attempt";
+import type { OpenPositionSummary } from "@/lib/open-types";
+import { useOpenAttempt } from "@/components/use-open-attempt";
 
 type Status = "loading" | "expired" | "wallet-mismatch" | "ready" | "signing" | "submitting" | "success" | "error";
 
@@ -21,12 +24,16 @@ export default function SignPage() {
   const { address: wallet, connected, connect, disconnect, signTransaction } = useWalletConnection();
   
   const [payload, setPayload] = useState<PendingSignPayload | null>(null);
+  const open = useOpenAttempt(payload?.kind === "open-position" ? wallet : undefined);
   const [loadStatus, setLoadStatus] = useState<"loading" | "expired" | "error" | "loaded">("loading");
   const [signStatus, setSignStatus] = useState<"idle" | "signing" | "submitting" | "success">("idle");
   const [error, setError] = useState("");
   const [signature, setSignature] = useState("");
 
   const signToken = params.token;
+  const identity = `${wallet ?? ""}:${signToken}`;
+  const identityRef = useRef(identity);
+  useLayoutEffect(() => { identityRef.current = identity; }, [identity]);
   
   const status: Status = (() => {
     if (loadStatus === "loading") return "loading";
@@ -73,6 +80,8 @@ export default function SignPage() {
 
   const handleSign = async () => {
     if (!payload || !wallet || wallet !== payload.wallet) return;
+    if (payload.kind === "open-position" && (!open.loaded || open.pending)) return;
+    let openAttempt: OpenAttempt | null = null;
     
     setSignStatus("signing");
     setError("");
@@ -85,9 +94,8 @@ export default function SignPage() {
         throw new Error("Transaction payer mismatch");
       }
       
-      const signedByWallet = await signTransaction(unsigned);
-      
       const originalMessage = unsigned.message.serialize();
+      const signedByWallet = await signTransaction(unsigned);
       const signedMessage = signedByWallet.message.serialize();
       if (
         signedMessage.length !== originalMessage.length ||
@@ -111,6 +119,15 @@ export default function SignPage() {
       
       const txSignature = bs58.encode(signatureBytes);
       const signedTransaction = btoa(String.fromCharCode(...signed.serialize()));
+      if (payload.kind === "open-position") {
+        if (identityRef.current !== identity || Date.now() >= payload.expiresAt) throw new Error("Wallet or signing authorization changed; transaction not sent");
+        const summary = payload.submitArgs.summary as OpenPositionSummary;
+        if (summary.wallet !== wallet || summary.blockhash !== signed.message.recentBlockhash ||
+          signed.message.staticAccountKeys[1]?.toBase58() !== summary.nftMint) throw new Error("Open-position authorization mismatch");
+        openAttempt = openAttemptFromSummary(txSignature, summary);
+        open.track(openAttempt);
+        setSignature(txSignature);
+      }
       
       setSignStatus("submitting");
       
@@ -142,6 +159,7 @@ export default function SignPage() {
       
       if (!response.ok) {
         const reason = result.error || "Transaction submission failed";
+        if (openAttempt && result.sent === false) open.markUnsent(openAttempt);
         throw new Error(result.sent === false ? notSentRetryMessage(reason) : reason);
       }
       
@@ -191,7 +209,8 @@ export default function SignPage() {
     : payload?.kind === "open-position"
       ? "Open position"
       : "Compound";
-  const showSign = status === "ready" && connected && wallet === payload?.wallet;
+  const showSign = status === "ready" && connected && wallet === payload?.wallet &&
+    (payload?.kind !== "open-position" || open.loaded && !open.pending);
   const showConnect = status === "ready" && !connected;
   const isBusy = status === "signing" || status === "submitting";
 
@@ -322,17 +341,20 @@ export default function SignPage() {
             )}
           </div>
 
-          {signature && (
+          {payload?.kind === "open-position" && open.pending && <p role="status" className="text-sm text-smoke">
+            Checking the original open-position transaction before opening again.{open.error ? ` ${open.error}` : ""}
+          </p>}
+          {(signature || open.attempt?.signature) && (
             <div className="rounded-2xl border border-mint/30 bg-mint/10 p-4">
-              <p className="text-sm font-medium text-mint">Transaction submitted</p>
+              <p className="text-sm font-medium text-mint">{payload?.kind === "open-position" ? "Original open-position transaction" : "Transaction submitted"}</p>
               <p className="mt-2 text-xs text-mint">
                 <a
-                  href={`https://solscan.io/tx/${signature}`}
+                  href={`https://solscan.io/tx/${signature || open.attempt?.signature}`}
                   target="_blank"
                   rel="noreferrer"
                   className="underline"
                 >
-                  View on Solscan: {short(signature)}
+                  View on Solscan: {short(signature || open.attempt?.signature || "")}
                 </a>
               </p>
             </div>

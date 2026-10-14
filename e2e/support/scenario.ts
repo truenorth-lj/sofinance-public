@@ -16,7 +16,9 @@ export function makeScenario(kind: SignKind, wallet: string, options: {
           floorBps: 9900, expiresAt: Date.now() + 120_000, lastValidBlockHeight: 1, startingLiquidity: "1", expectedLiquidity: "2",
           rangeSide: "inside", startingBalances: { input: "1", a: "1", b: "1" } }
       : kind === "open-position"
-        ? { permit, wallet, summary: { operation: "open-position", poolId, nftMint: (built as { nftMint: string }).nftMint } }
+        ? { permit, wallet, summary: { operation: "open-position", poolId, nftMint: (built as { nftMint: string }).nftMint,
+            wallet, positionAccount: randomAddress(), tickLower: -60, tickUpper: 60, quote: { liquidity: "100" },
+            blockhash: built.tx.message.recentBlockhash, lastValidBlockHeight: 1000 } }
         : { permit, wallet, summary: { operation: "compound", positionMint } };
   const payload: SignPayload = {
     kind, wallet, unsignedTransaction: built.b64, permit, submitArgs,
