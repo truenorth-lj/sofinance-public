@@ -10,7 +10,7 @@ import { JupiterHttpError } from "../jupiter";
 import { buildRoute, quoteRoute } from "./jupiter";
 import { assertOwnPoolRoute, ownPoolConstraints } from "./own-pool";
 import { netSwapInput, resolveSwapFeeConfig } from "./fee";
-import { rejectUnselectedWalletTokenWrites, swapRouteInstructions } from "./instructions";
+import { rejectUnselectedWalletTokenWrites, retargetSwapSource, swapRouteInstructions } from "./instructions";
 
 /** Only direct routes through the original pool are accepted, so independent
  * receipt/import proof can still identify the exact pool vaults. No wallet ATA
@@ -69,7 +69,7 @@ export async function buildCompoundSwapPlan(input: {
     if (baseline.liquidity === 0n) throw new Error("No protected Jupiter yield swap can form liquidity");
     return empty;
   }
-  const route = await buildRoute(state.wallet, source.mint, destination.mint, best.swapAmount, false,
+  let route = await buildRoute(state.wallet, source.mint, destination.mint, best.swapAmount, false,
     constraints, undefined, undefined, destination.address);
   validate(route);
   const wallet = new PublicKey(state.wallet);
@@ -83,9 +83,7 @@ export async function buildCompoundSwapPlan(input: {
   if (!route.swapInstruction.accounts.some(key => key.pubkey === sourceAta && key.isWritable) ||
     !route.swapInstruction.accounts.some(key => key.pubkey === destination.address && key.isWritable))
     throw new Error("Compound Jupiter route does not identify isolated swap recipients");
-  route.setupInstructions = [];
-  route.swapInstruction = { ...route.swapInstruction, accounts: route.swapInstruction.accounts.map(key =>
-    key.pubkey === sourceAta ? { ...key, pubkey: source.address } : key) };
+  route = retargetSwapSource(route, sourceAta, source.address);
   const swap: CompoundSwap = { inputMint: source.mint, outputMint: destination.mint,
     inputAmount: best.swapAmount.toString(), quotedOutputAmount: route.outAmount, minOutputAmount: route.otherAmountThreshold,
     inputDecimals: inputA ? state.decimalsA : state.decimalsB, outputDecimals: inputA ? state.decimalsB : state.decimalsA,

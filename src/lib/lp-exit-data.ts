@@ -1,8 +1,8 @@
 import "server-only";
 import { verifiedTokenAmount,cleanExitDeltas } from "./lp-exit-verification";
-import BN from "bn.js";
+import { buildPositionExitInstructions } from "./lp-exit-instructions";
 import { createHash } from "node:crypto";
-import { CLMM_PROGRAM_ID, ClmmInstrument, PersonalPositionLayout, PoolInfoLayout, getPdaPersonalPositionAddress, getPdaProtocolPositionAddress, getPdaTickArrayAddress, getPdaExBitmapAccount, TickArrayUtil } from "@raydium-io/raydium-sdk-v2";
+import { CLMM_PROGRAM_ID, PersonalPositionLayout, PoolInfoLayout, getPdaPersonalPositionAddress } from "@raydium-io/raydium-sdk-v2";
 import { PublicKey, TransactionMessage, VersionedTransaction, type AccountInfo } from "@solana/web3.js";
 import { withCacheAndInflight } from "./rpc/cache";
 import { PREVIEW_RETRY } from "./rpc/retry";
@@ -47,11 +47,9 @@ async function readFullExitPreviewUnlocked(positionId:string,nftAccount?:string,
  const recipients=mints.map((m,i)=>getAssociatedTokenAddressSync(m,owner,false,programs[i]));
  const addresses=[owner,positionKey,nftKey,position.nftMint,...recipients],before=await connection.getMultipleAccountsInfoAndContext(addresses);
  const setup=recipients.flatMap((a,i)=>before.value[i+4]?[]:[createAssociatedTokenAccountIdempotentInstruction(owner,a,owner,mints[i]!,programs[i])]);
- const tick=(value:number)=>getPdaTickArrayAddress(CLMM_PROGRAM_ID,position.poolId,TickArrayUtil.getTickArrayStartIndex(value,pool.tickSpacing)).publicKey;
- const withdraw=ClmmInstrument.decreaseLiquidityV2Instruction(CLMM_PROGRAM_ID,owner,nftKey,positionKey,position.poolId,getPdaProtocolPositionAddress(CLMM_PROGRAM_ID,position.poolId,position.tickLower,position.tickUpper).publicKey,tick(position.tickLower),tick(position.tickUpper),recipients[0]!,recipients[1]!,pool.vaultA,pool.vaultB,pool.mintA,pool.mintB,rewards.map((r,i)=>({poolRewardVault:r.vault,ownerRewardVault:recipients[i+2]!,rewardMint:r.mint})),position.liquidity,new BN(0),new BN(0),getPdaExBitmapAccount(CLMM_PROGRAM_ID,position.poolId).publicKey);
- const close=ClmmInstrument.closePositionInstruction(CLMM_PROGRAM_ID,owner,position.nftMint,nftKey,positionKey,nftRaw.owner.equals(TOKEN_2022_PROGRAM_ID),position.poolId);
+ const exitInstructions=buildPositionExitInstructions({owner,nftKey,positionKey,nftProgram:nftRaw.owner,position,pool,recipients,amount:position.liquidity,closePosition:true});
  const blockhash=await connection.getLatestBlockhash();
- const prefix=[atomicComputeUnitLimitInstruction(),...setup,withdraw,close];
+ const prefix=[atomicComputeUnitLimitInstruction(),...setup,...exitInstructions];
  const baseline=new VersionedTransaction(new TransactionMessage({payerKey:owner,recentBlockhash:blockhash.blockhash,instructions:prefix}).compileToV0Message());
  if(exceedsTxSizeLimit(versionedTransactionSize(baseline)))throw new Error("Withdrawal/close packet size exceeded");
  const withdrawSimulation=await connection.simulateTransaction(baseline,{sigVerify:false,replaceRecentBlockhash:true,minContextSlot:before.context.slot,accounts:{encoding:"base64",addresses:addresses.map(a=>a.toBase58())}});

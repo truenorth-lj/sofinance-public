@@ -4,6 +4,101 @@ exports[`tools/list wire contract > matches the golden snapshot (names, descript
 {
   "tools": [
     {
+      "description": "Prepare a fully simulated position withdrawal with a sign link. Default receive USDC; original keeps position tokens. Supply percent (1–100) OR targetUSDC. Impact above 5% requires confirmHighImpact. For two transactions, finalize the first then call again with stage=swap, tx1Signature and previous (the complete first result).",
+      "inputSchema": {
+        "oneOf": [
+          {
+            "required": [
+              "percent",
+            ],
+          },
+          {
+            "required": [
+              "targetUSDC",
+            ],
+          },
+        ],
+        "properties": {
+          "confirmHighImpact": {
+            "type": "boolean",
+          },
+          "outputMint": {
+            "type": "string",
+          },
+          "percent": {
+            "maximum": 100,
+            "minimum": 1,
+            "type": "number",
+          },
+          "positionMint": {
+            "type": "string",
+          },
+          "previous": {
+            "type": "object",
+          },
+          "receive": {
+            "enum": [
+              "usdc",
+              "token",
+              "original",
+            ],
+            "type": "string",
+          },
+          "stage": {
+            "enum": [
+              "swap",
+            ],
+            "type": "string",
+          },
+          "targetUSDC": {
+            "type": "number",
+          },
+          "tx1Signature": {
+            "type": "string",
+          },
+          "wallet": {
+            "type": "string",
+          },
+        },
+        "required": [
+          "wallet",
+          "positionMint",
+        ],
+        "type": "object",
+      },
+      "name": "prepare_withdraw",
+    },
+    {
+      "description": "Submit a wallet signed withdrawal. Verifies its HMAC permit and signature, checks expiry, and re-simulates before broadcast. Supply the unchanged summary and permit from prepare_withdraw. High impact requires confirmHighImpact=true.",
+      "inputSchema": {
+        "properties": {
+          "confirmHighImpact": {
+            "type": "boolean",
+          },
+          "permit": {
+            "type": "string",
+          },
+          "signedTransaction": {
+            "type": "string",
+          },
+          "summary": {
+            "type": "object",
+          },
+          "wallet": {
+            "type": "string",
+          },
+        },
+        "required": [
+          "wallet",
+          "signedTransaction",
+          "permit",
+          "summary",
+        ],
+        "type": "object",
+      },
+      "name": "submit_withdraw",
+    },
+    {
       "description": "Compute holding-period return and realized fee APR for a Raydium CLMM position NFT from finalized history and current on-chain state (not Raydium pool 24h feeApr). Prefer token-native metrics: for same-asset RWA wrap pairs (e.g. SPCXx/SPCX) report TE in the plain/base ticker using current tick mid (1.0001^tick×10^(decA−decB)), plus raw A/B inventory, holdingDays, feeOnlyAprPct and annualizedReturnPct (HPR×365/days; feesEarned/deposited×365/days). USD is optional/secondary (Jupiter Price v3 / Raydium stable-leg, labeled current — not historical). Discovers open/increase/decrease txs via personal-position signatures + Anchor events + current equity. After submitting a position transaction, use refreshHistory=true and historyAfterSignatures to require its finalized history. Read-only.",
       "inputSchema": {
         "properties": {
