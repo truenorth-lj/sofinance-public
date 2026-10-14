@@ -65,6 +65,8 @@ it("successfully switches to a compact candidate without rereading state or simu
   expect(result.summary.simulated).toBe(true); expect(result.summary.sizeBytes).toBeLessThanOrEqual(1232);
   expect(readSelectedPositionState).toHaveBeenCalledTimes(1); expect(simulateAndVerifySelectedTransaction).toHaveBeenCalledTimes(1);
   expect(fetchBeamTipAddress).toHaveBeenCalledTimes(1);
+  // Same tip-address fetch as open: no per-flow short timeout.
+  expect(vi.mocked(fetchBeamTipAddress).mock.calls[0]?.[0]).not.toHaveProperty("timeoutMs");
   expect(getSelectedQuoteBundle).toHaveBeenLastCalledWith(wallet.toBase58(), selection, "1", 9900, 100,
     { maxAccounts: 20, onlyDirectRoutes: true }, expect.objectContaining({ state, includeResale: false, buildTransactions: true }));
 });
