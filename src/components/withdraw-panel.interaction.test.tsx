@@ -40,6 +40,29 @@ it.each(["manual-review","failed","expired"])("does not notify history for withd
  await render();await click("Resume withdrawal");
  expect(mocks.historyChange).not.toHaveBeenCalled();expect(container.textContent).toContain(status);
 });
+it("Withdraw without a preview fetches one and shows loading, then a visible error",async()=>{
+ let resolve:(r:Response)=>void=()=>{};
+ const fetcher=vi.fn(()=>new Promise<Response>(r=>{resolve=r;}));vi.stubGlobal("fetch",fetcher);
+ await render();await click("Withdraw");
+ expect(fetcher).toHaveBeenCalledWith("/api/withdraw-quote",expect.anything());
+ expect(container.textContent).toContain("Calculating preview");
+ expect(Array.from(container.querySelectorAll("button")).some(b=>b.textContent==="Calculating…"&&b.disabled)).toBe(true);
+ await act(async()=>resolve(Response.json({error:"Withdrawal preview failed"},{status:400})));
+ expect(container.querySelector('[role="alert"]')?.textContent).toBe("Withdrawal preview failed");
+ expect(mocks.sign).not.toHaveBeenCalled();
+});
+it("shows a readable error when the server returns a non-JSON page",async()=>{
+ vi.stubGlobal("fetch",vi.fn(async()=>new Response("<html>504</html>",{status:504})));
+ await render();await click("Preview");
+ expect(container.querySelector('[role="alert"]')?.textContent).toContain("Server error (504)");
+});
+it("rejects an invalid target amount with a message instead of a silent request",async()=>{
+ const fetcher=vi.fn();vi.stubGlobal("fetch",fetcher);await render();
+ const input=container.querySelector<HTMLInputElement>('input[aria-label="Target USDC estimate"]')!;
+ await act(async()=>{const set=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value")!.set!;set.call(input,"0");input.dispatchEvent(new Event("input",{bubbles:true}));});
+ await click("Preview");
+ expect(fetcher).not.toHaveBeenCalled();expect(container.textContent).toContain("Enter a USDC amount above 0");
+});
 afterEach(async()=>{await act(async()=>root.unmount());container.remove();vi.restoreAllMocks();vi.unstubAllGlobals();});
 async function render(){await act(async()=>root.render(createElement(WithdrawPanel,{wallet:"wallet",positionMint:"position",mintA:"mint-a",mintB:"mint-b",label:(mint:string)=>mint===USDC_MINT?"USDC":mint,onClose:vi.fn(),onConfirmed:vi.fn(),onBusyChange:vi.fn()})));}
 async function click(text:string){const button=Array.from(container.querySelectorAll("button")).find(b=>b.textContent===text)!;await act(async()=>button.click());}

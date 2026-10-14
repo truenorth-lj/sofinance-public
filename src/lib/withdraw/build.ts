@@ -231,3 +231,4 @@ async function solDebitBudget(connection: Connection, transaction: VersionedTran
     const rent = await connection.getMinimumBalanceForRentExemption(512, "confirmed");
     return (BigInt(network) + BigInt(ataCreates) * BigInt(rent) + BigInt(BEAM_MIN_TIP_LAMPORTS)).toString();
 }
+
