@@ -11,8 +11,8 @@ export type PoolRangeAprState =
   | { status: "ready"; data: PoolRangeAprPayload }
   | { status: "error"; message: string };
 
-const DEGRADED_RETRY_MS = 10_000;
-const MAX_DEGRADED_RETRIES = 3;
+const DEGRADED_RETRY_MS = 20_000;
+const MAX_DEGRADED_RETRIES = 4;
 
 type Settled = { poolId: string; result: { data: PoolRangeAprPayload } | { message: string } };
 

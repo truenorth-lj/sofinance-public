@@ -64,13 +64,16 @@ export function clearPoolDailyAprCache() {
   cache = null;
 }
 
-async function fetchJson(fetcher: typeof fetch, url: string, timeoutMs: number, signal?: AbortSignal): Promise<unknown> {
+async function fetchJson(
+  fetcher: typeof fetch, url: string, timeoutMs: number, init: RequestInit = {},
+): Promise<unknown> {
   const response = await fetcher(url, {
+    ...init,
     headers: {
       Accept: "application/json",
       "User-Agent": USER_AGENT,
     },
-    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs),
+    signal: init.signal ? AbortSignal.any([init.signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs),
   });
   if (!response.ok) {
     throw new Error(`Upstream request failed (${response.status})`);
@@ -82,10 +85,10 @@ export async function safeJson(
   fetcher: typeof fetch,
   url: string,
   timeoutMs: number,
-  signal?: AbortSignal,
+  init?: RequestInit,
 ): Promise<{ ok: true; body: unknown } | { ok: false; reason: string }> {
   try {
-    const body = await fetchJson(fetcher, url, timeoutMs, signal);
+    const body = await fetchJson(fetcher, url, timeoutMs, init);
     return { ok: true, body };
   } catch (error) {
     return { ok: false, reason: error instanceof Error ? error.message : "request failed" };
@@ -112,7 +115,7 @@ export async function fetchPoolDailyApr(
       const [ids, line, gecko] = await Promise.all([
         safeJson(fetcher, idsUrl, 20_000),
         safeJson(fetcher, lineUrl, 20_000),
-        safeJson(fetcher, geckoUrl, 20_000),
+        safeJson(fetcher, geckoUrl, 20_000, { next: { revalidate: 3_600 } }),
       ]);
 
       const sources: string[] = [];

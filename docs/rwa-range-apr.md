@@ -138,9 +138,38 @@ answered is worse than none, so:
   plain row (`Micro, Tight, Standard, Wide, Custom`, all `—`, no Best, no highlight) with "Recent price history is temporarily unavailable, so no
   estimate is shown", and the table's *Highest range* cell shows `—`.
 * Missing *daily* volume alone (hourly candles fine) is not degraded: volume falls back to Raydium's 7-day figure and the estimate is flagged low confidence (`*`).
-* Recovery: the server keeps a degraded profile for 10 s only (a good one for 30 min), retries rate-limited/5xx GeckoTerminal calls (3 attempts, 0.3-1.5 s
-  backoff, never 404), limits GeckoTerminal to 2 concurrent calls per instance, and falls back to the last good price history of the same pool for up to
-  6 h (stale-if-error). A degraded response is cached at the CDN for 5 s only, the browser keeps it 8 s and re-asks up to 3 times (10 s apart).
+* Recovery: see "Why MSTR/INTC went blank" below.
+
+## Why MSTR/INTC went blank, and what changed
+
+Live diagnosis (production, cache-busted calls every ~25 s for every pool): MSTRx/MSTR and INTCx/INTC were **not** special. GeckoTerminal
+indexes both pools and returns full hourly history (INTC 200 rows, MSTR 200 rows; 24 / 47 missing hours inside it, which is just "no trades
+that hour"). The only failure ever seen was `GeckoTerminal daily/hourly candles: Upstream request failed (429)`: GeckoTerminal rate limits per
+egress IP (~30 calls/min) and Vercel's IPs are shared. Each serverless instance fired 2 calls per pool at once and retried 429s, which deepens
+the throttle; whichever pools happened to be loaded in that window lost, and since #79 a lost price history means "no estimate". There is no
+minimum-candle threshold in the code: `degraded` is set only when there are zero usable hourly candles in the window.
+
+What changed:
+
+* **Shared Data Cache.** Every upstream call passes `next: { revalidate }` (hourly candles 30 min, daily 60 min, Raydium economics 5 min). On Vercel
+  the response is stored in the Data Cache, shared by all instances and surviving cold starts, and an expired entry is served stale while it
+  revalidates, so a 429 on revalidation costs nothing. Only successful (2xx) responses are stored. A pool's history is fetched about once per
+  30 min for the whole fleet instead of once per instance.
+* **No retry of a 429.** 429s are not retried (retries only deepen the throttle). The first 429 opens a per-instance cooldown (`ThrottleGate`,
+  the upstream's `Retry-After` when sent, else 20 s, clamped to 5-60 s); during it no GeckoTerminal request is sent and the payload says
+  `throttled (429); cooling down Ns`. 5xx/timeouts still get one retry; 404 never.
+* **Serialised, spaced cold start.** GeckoTerminal calls run one at a time per instance, starts ≥ 250 ms apart (was 2 concurrent), so ten pools no
+  longer fire 20 calls at once.
+* **Self-healing, but gentle.** A degraded profile is kept 45 s on the server (was 10 s: it would have re-hit a throttled upstream six times a
+  minute), 10 s at the CDN, 8 s in the browser; the browser re-asks 4 times, 20 s apart. The last good price history of the pool (< 6 h) still stands in
+  for a failed fetch (stale-if-error, flagged in `sample.issues`).
+* **Gaps are handled as zero volume.** Volume per hour comes from the daily totals, hourly candles only place it on price bins, so absent hours
+  are no-trade hours. Few candles are fine; fewer than 12 in the window just flags the estimate low confidence (`*`). Only a pool with no
+  usable candles *and* real volume is degraded. A pool with no candles and **zero** volume in the window is an honest 0%, not "unavailable".
+* **No second price source.** Considered and rejected: Raydium API v3 has no price-history endpoint (`/pools/line/price` does not exist;
+  `/pools/line/position` is liquidity per price, not time), and decoding swap logs (Solami/Blur) is a heavy, separate pipeline. A guess from
+  anything cruder is what #79 removed. If GeckoTerminal is unavailable and nothing is cached, the answer stays "no estimate".
+* `/api/pool-daily-apr` (sparklines) also uses the shared cache for its GeckoTerminal call, which reduces the burst on the same IP.
 
 ## Assumptions and limits (also in the tooltip)
 
@@ -158,8 +187,8 @@ answered is worse than none, so:
 
 ## API
 
-`GET /api/pool-range-apr?poolId=<clmm pool>` returns, per pool (cached 30 s at the CDN, 5 s when degraded; per-instance upstream caches: Raydium+GeckoTerminal
-30 min (10 s when degraded), on-chain state 30 s; in-flight de-duplication; 15 s negative cache; the browser fetches each pool once per minute (8 s when degraded) and at most 2 at a time):
+`GET /api/pool-range-apr?poolId=<clmm pool>` returns, per pool (cached 30 s at the CDN, 10 s when degraded; per-instance profile cache 30 min, 45 s when degraded; upstream responses in the shared Data Cache for 5-60 min;
+on-chain state 30 s; in-flight de-duplication; 15 s negative cache; the browser fetches each pool once per minute (8 s when degraded) and at most 2 at a time):
 
 * `presets[]` (`micro`, `tight`, `standard`, `wide`): resolved ticks/prices and the priced estimate (`aprPct`, `inRangeVolumePct`);
 * `model` (per-bin liquidity + daily volume, current sqrt price, USD per raw B): the input of the **pure** `estimateRangeApr`, which the

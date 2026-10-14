@@ -62,7 +62,7 @@ export async function refreshProfile(
     pool.pair.poolAddress,
     fetcher,
     Math.floor(now / 1000),
-    { signal },
+    { retry: { signal } },
   );
   if (!sameMints(fresh)) throw new Error("Pool profile mint identity mismatch");
   const timestamps = [

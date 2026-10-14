@@ -26,12 +26,12 @@ describe("GET /api/pool-range-apr", () => {
     expect(response.headers.get("Cache-Control")).not.toMatch(/no-store/);
   });
 
-  it("does not pin a degraded payload (no estimates) at the CDN: 5 s, no stale-while-revalidate", async () => {
+  it("does not pin a degraded payload (no estimates) at the CDN: 10 s, no stale-while-revalidate", async () => {
     fetchPoolRangeApr.mockResolvedValue({ poolId: POOL, presets: [], sample: { degraded: true } });
     const response = await call(`?poolId=${POOL}`);
     expect(response.status).toBe(200);
-    expect(response.headers.get("CDN-Cache-Control")).toBe("public, s-maxage=5");
-    expect(response.headers.get("Vercel-CDN-Cache-Control")).toBe("public, s-maxage=5");
+    expect(response.headers.get("CDN-Cache-Control")).toBe("public, s-maxage=10");
+    expect(response.headers.get("Vercel-CDN-Cache-Control")).toBe("public, s-maxage=10");
     expect(response.headers.get("CDN-Cache-Control")).not.toMatch(/stale-while-revalidate/);
   });
 

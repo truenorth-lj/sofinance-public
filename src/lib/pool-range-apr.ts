@@ -1,8 +1,7 @@
 import "server-only";
 
 import { AsyncCache } from "./async-cache";
-import { createConcurrencyLimit } from "./concurrency-limit";
-import { GECKO_TERMINAL_OHLCV, RAYDIUM_POOL_IDS, safeJson } from "./pool-daily-apr";
+import { GECKO_TERMINAL_OHLCV, RAYDIUM_POOL_IDS } from "./pool-daily-apr";
 import { parseGeckoDailyVolumes } from "./pool-daily-apr-math";
 import { buildAprBins, lpFeeFraction, sampleConfidence, usdPerRawTokenB } from "./range-apr/build-model";
 import { candlesInWindow, averageDailyVolume, VOLUME_WINDOW_DAYS } from "./range-apr/daily-volume";
@@ -13,7 +12,9 @@ import { resolvePresetRanges } from "./range-apr/preset-ranges";
 import { estimateRangeApr, RANGE_APR_REFERENCE_CAPITAL_USD, type RangeAprInputs } from "./range-apr/range-apr";
 import { parseRaydiumPoolEconomics, type RaydiumPoolEconomics } from "./range-apr/raydium-economics";
 import { exactTickFromSqrtPriceX64, sqrtPriceX64ToNumber } from "./range-apr/tick-math";
-import { retryJson, type RetryOptions } from "./range-apr/upstream-retry";
+import { ThrottleGate } from "./range-apr/throttle-gate";
+import { fetchJsonOnce } from "./range-apr/upstream-http";
+import { isRetryableFailure, retryJson, type JsonResult, type RetryOptions } from "./range-apr/upstream-retry";
 import type { OccupancySource, PoolRangeAprPayload, VolumeSource } from "./range-apr/types";
 import type { Connection } from "@solana/web3.js";
 
@@ -30,15 +31,29 @@ export const RANGE_APR_ASSUMPTIONS = [
 const ECONOMICS_TTL_MS = 30 * 60_000;
 const CHAIN_TTL_MS = 30_000;
 const FAILURE_TTL_MS = 15_000;
-/** A profile without price history is retried quickly instead of being served for 30 minutes. */
-const DEGRADED_TTL_MS = 10_000;
+/**
+ * A profile without price history is re-checked after this long: long enough that a throttled upstream is not
+ * hammered (and GeckoTerminal's cooldown can pass), short enough to self-heal within a minute.
+ */
+const DEGRADED_TTL_MS = 45_000;
 /** A profile rebuilt from an older good one (upstream failed just now) is re-checked after a minute. */
 const STALE_TTL_MS = 60_000;
 /** Price history from an earlier good fetch may stand in for a failed one for this long. */
 const STALE_GOOD_MAX_MS = 6 * 3_600_000;
 const UPSTREAM_TIMEOUT_MS = 5_000;
-/** GeckoTerminal is rate limited per egress IP (shared on serverless): never run more than 2 calls at once per instance. */
-const geckoLimit = createConcurrencyLimit(2);
+/**
+ * Shared Data Cache (Vercel): successful upstream responses are stored for all instances and survive cold
+ * starts, and an expired entry is served stale while it revalidates, so a 429 on revalidation costs nothing.
+ * Candles of past hours never change, so a long window is safe; the current partial hour is the only drift.
+ */
+const HOURLY_REVALIDATE_S = 30 * 60;
+const DAILY_REVALIDATE_S = 60 * 60;
+const ECONOMICS_REVALIDATE_S = 5 * 60;
+/**
+ * GeckoTerminal is rate limited per egress IP (~30/min) and serverless IPs are shared with other tenants: one
+ * call at a time per instance, spaced apart, and a cooldown after a 429 (see `throttle-gate.ts`).
+ */
+export const geckoGate = new ThrottleGate({ minSpacingMs: 250, defaultCooldownMs: 20_000 });
 
 export type VolumeProfile = {
   observedAt?: { economics: string; daily: string | null; hourly: string | null };
@@ -52,9 +67,14 @@ export type VolumeProfile = {
   stale?: boolean;
 };
 
-/** Hourly price history is what places volume on bins; without it no estimate is trustworthy. */
-export function hasPriceHistory(profile: Pick<VolumeProfile, "candles">): boolean {
-  return profile.candles !== null && profile.candles.length > 0;
+/**
+ * Hourly price history is what places volume on bins; without it no estimate is trustworthy. A pool that
+ * traded nothing in the window (daily volume known and zero) legitimately has no candles: that is "no
+ * history needed" rather than "history missing", and its estimate is an honest 0%.
+ */
+export function hasPriceHistory(profile: Pick<VolumeProfile, "candles" | "daily">): boolean {
+  if (profile.candles === null) return false;
+  return profile.candles.length > 0 || profile.daily?.avgDailyVolumeUsd === 0;
 }
 
 const profileTtl = (profile: VolumeProfile) =>
@@ -77,18 +97,47 @@ export type FetchPoolRangeAprOptions = {
   bypassCache?: boolean;
   /** Retry tuning for upstream calls (tests pass a no-op `sleep`). */
   retry?: RetryOptions;
+  /** GeckoTerminal throttle gate (tests pass their own so cooldown state does not leak). */
+  gate?: ThrottleGate;
 };
 
+type UpstreamOptions = Pick<FetchPoolRangeAprOptions, "retry" | "gate">;
+
+/** Next's Data Cache hint; ignored by injected test fetchers. */
+const cached = (revalidateSeconds: number, signal?: AbortSignal): RequestInit => ({ next: { revalidate: revalidateSeconds }, ...(signal ? { signal } : {}) });
+
+/** A 429 is never retried (it only deepens the throttle): the gate's cooldown and the caches take over. */
+const notThrottled = (failure: Extract<JsonResult, { ok: false }>) =>
+  failure.status !== 429 && isRetryableFailure(failure.reason);
+
 export async function loadVolumeProfile(
-  poolId: string, fetcher: typeof fetch, nowSeconds: number, retry: RetryOptions = {},
+  poolId: string, fetcher: typeof fetch, nowSeconds: number, upstream: UpstreamOptions = {},
 ): Promise<VolumeProfile> {
   const id = encodeURIComponent(poolId);
-  const get = async (url: string) => { const result = await retryJson(() => safeJson(fetcher, url, UPSTREAM_TIMEOUT_MS, retry.signal), { attempts: 3, baseDelayMs: 300, maxDelayMs: 1_500, ...retry }); return { ...result, observedAt: new Date().toISOString() }; };
-  const getGecko = (url: string) => geckoLimit(() => get(url));
+  const gate = upstream.gate ?? geckoGate;
+  const retryOptions = { attempts: 3, baseDelayMs: 300, maxDelayMs: 1_500, ...upstream.retry };
+  const signal = upstream.retry?.signal;
+  const observed = async (result: Promise<JsonResult>) => ({ ...(await result), observedAt: new Date().toISOString() });
+  const getRaydium = (url: string) => observed(
+    retryJson(() => fetchJsonOnce(fetcher, url, UPSTREAM_TIMEOUT_MS, cached(ECONOMICS_REVALIDATE_S, signal)), retryOptions));
+  const getGecko = (url: string, revalidateSeconds: number) => observed(getGeckoRaw(url, revalidateSeconds));
+  const getGeckoRaw = async (url: string, revalidateSeconds: number): Promise<JsonResult> => {
+    const run = await gate.run(() => retryJson(
+      async () => {
+        const result = await fetchJsonOnce(fetcher, url, UPSTREAM_TIMEOUT_MS, cached(revalidateSeconds, signal));
+        if (!result.ok && result.status === 429) gate.block(result.retryAfterMs);
+        return result;
+      },
+      { ...retryOptions, attempts: Math.min(retryOptions.attempts, 2), shouldRetry: notThrottled },
+    ));
+    return "value" in run
+      ? run.value
+      : { ok: false, reason: `throttled (429); cooling down ${Math.ceil(run.blocked / 1000)}s` };
+  };
   const [ids, daily, hourly] = await Promise.all([
-    get(`${RAYDIUM_POOL_IDS}?ids=${id}`),
-    getGecko(`${GECKO_TERMINAL_OHLCV}/${id}/ohlcv/day?aggregate=1&limit=30&currency=usd`),
-    getGecko(`${GECKO_TERMINAL_OHLCV}/${id}/ohlcv/hour?aggregate=1&limit=200&currency=token`),
+    getRaydium(`${RAYDIUM_POOL_IDS}?ids=${id}`),
+    getGecko(`${GECKO_TERMINAL_OHLCV}/${id}/ohlcv/day?aggregate=1&limit=30&currency=usd`, DAILY_REVALIDATE_S),
+    getGecko(`${GECKO_TERMINAL_OHLCV}/${id}/ohlcv/hour?aggregate=1&limit=200&currency=token`, HOURLY_REVALIDATE_S),
   ]);
   const economics = ids.ok ? parseRaydiumPoolEconomics(ids.body) : null;
   if (!economics) throw new Error("Pool economics unavailable from Raydium");
@@ -113,9 +162,9 @@ export async function loadVolumeProfile(
  * same pool (< 6 h) had it, keep the old history/volume with fresh economics instead of degrading.
  */
 export async function loadVolumeProfileResilient(
-  poolId: string, fetcher: typeof fetch, nowSeconds: number, retry: RetryOptions = {},
+  poolId: string, fetcher: typeof fetch, nowSeconds: number, upstream: UpstreamOptions = {},
 ): Promise<VolumeProfile> {
-  const fresh = await loadVolumeProfile(poolId, fetcher, nowSeconds, retry);
+  const fresh = await loadVolumeProfile(poolId, fetcher, nowSeconds, upstream);
   const nowMs = nowSeconds * 1000;
   if (hasPriceHistory(fresh)) {
     lastGoodProfiles.set(poolId, { atMs: nowMs, profile: fresh });
@@ -180,7 +229,9 @@ export function assemblePoolRangeApr(
   // Without price history there is nothing to place volume on, so the number would be a guess that depends on
   // which upstream happened to answer. Ship the ranges but no estimate ("degraded-data"): the client never
   // ranks, headlines or highlights them (see `docs/rwa-range-apr.md`).
-  const degraded = occupancy === null;
+  // The exception is a pool that traded nothing in the window: no volume to place, an honest 0%.
+  const idle = occupancy === null && hasPriceHistory(profile);
+  const degraded = occupancy === null && !idle;
   const presets = resolvePresetRanges(chain).map((range) => ({
     ...range,
     estimate: degraded
@@ -202,9 +253,11 @@ export function assemblePoolRangeApr(
       days: volume.days, volumeSource: volume.source, occupancySource,
       candleCount: windowCandles.length,
       unplacedVolumePct,
-      confidence: sampleConfidence({ days: volume.days, volumeSource: volume.source, occupancySource, unplacedVolumePct }),
+      confidence: sampleConfidence({
+        days: volume.days, volumeSource: volume.source, occupancySource, unplacedVolumePct, candleCount: windowCandles.length,
+      }),
       degraded,
-      issues: profile.issues,
+      issues: idle ? [...profile.issues, "no trades in the sample window"] : profile.issues,
     },
     referenceCapitalUsd: RANGE_APR_REFERENCE_CAPITAL_USD,
     presets,
@@ -218,7 +271,7 @@ export async function fetchPoolRangeApr(
 ): Promise<PoolRangeAprPayload> {
   const fetcher = options.fetcher ?? fetch;
   const nowSeconds = options.nowSeconds ?? Math.floor(Date.now() / 1000);
-  const loadProfile = () => loadVolumeProfileResilient(poolId, fetcher, nowSeconds, options.retry);
+  const loadProfile = () => loadVolumeProfileResilient(poolId, fetcher, nowSeconds, { retry: options.retry, gate: options.gate });
   const loadChain = () => readOnchainPoolLiquidity(poolId, options.connection);
   const [profile, chain] = options.bypassCache
     ? await Promise.all([loadProfile(), loadChain()])

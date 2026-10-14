@@ -18,8 +18,8 @@ const CDN_HEADERS = {
 /** A degraded payload (no estimates) must not be pinned at the CDN for minutes. */
 const DEGRADED_CDN_HEADERS = {
   "Cache-Control": "public, max-age=0, must-revalidate",
-  "CDN-Cache-Control": "public, s-maxage=5",
-  "Vercel-CDN-Cache-Control": "public, s-maxage=5",
+  "CDN-Cache-Control": "public, s-maxage=10",
+  "Vercel-CDN-Cache-Control": "public, s-maxage=10",
 };
 
 const POOL_ID = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
