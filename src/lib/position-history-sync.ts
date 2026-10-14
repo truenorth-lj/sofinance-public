@@ -3,8 +3,9 @@ import { createHash } from "node:crypto";
 import bs58 from "bs58";
 import { CLMM_PROGRAM_ID } from "@raydium-io/raydium-sdk-v2";
 import { parsePositionCashflowEvents, type PositionCashflowEvent, type PositionEventContext } from "./position-performance-events";
-import { HISTORY_BATCH_SIZE, mapInBatches, type HistoryConnection, type HistoryFetchMetric,
+import { type HistoryConnection, type HistoryFetchMetric, type HistoryFallbackReason,
   type HistorySignature } from "./position-performance-history";
+import { mapPositionHistoryWorkers } from "./position-history-workers";
 import { MAX_POSITION_HISTORY_TRANSACTIONS, POSITION_HISTORY_PARSER_VERSION, type PositionHistorySnapshot, type PositionHistoryStore,
   type StoredPositionTransaction } from "./position-history-store-types";
 import type { RpcProvider } from "./rpc/types";
@@ -13,6 +14,10 @@ export type SyncPositionHistoryOptions = {
   context: PositionEventContext; store: PositionHistoryStore; connection: HistoryConnection;
   fallbackConnection?: HistoryConnection; maxSignatures: number; signal?: AbortSignal;
   provider?: RpcProvider;
+  /** Paced transports bound foreground detail work independently of the API history limit. */
+  maxDetailRequests?: number;
+  receiptProvider?: (signature: string) => RpcProvider | undefined;
+  rpcMetrics?: () => import("./position-history-rpc").HistoryRpcMetric;
 };
 export type SyncedPositionHistory = {
   history: { signature: string; slot: number; blockTime: number | null; events: PositionCashflowEvent[] }[];
@@ -73,13 +78,31 @@ export function rehydratePositionReceipt(receipt: Record<string, unknown>): Pars
 /** A bounded request resumes backfill and only fetches details absent from DB. */
 export async function syncPositionHistory(options: SyncPositionHistoryOptions): Promise<SyncedPositionHistory> {
   const started = Date.now();
-  const budget = Math.min(500, Math.max(1, Math.floor(options.maxSignatures) || 100));
-  const snapshot = await options.store.request({ op: "claim", context: options.context,
-    parserVersion: POSITION_HISTORY_PARSER_VERSION }) as PositionHistorySnapshot;
+  const stages: NonNullable<HistoryFetchMetric["stages"]> = {
+    claimMs: 0, listingMs: 0, detailsMs: 0, parseMs: 0, commitMs: 0, releaseMs: 0,
+  };
+  const measure = async <T>(stage: keyof typeof stages, work: () => Promise<T>): Promise<T> => {
+    const before = Date.now();
+    try { return await work(); } finally { stages[stage] += Math.max(0, Date.now() - before); }
+  };
+  const parseWork = <T>(work: () => T): T => {
+    const before = Date.now();
+    try { return work(); } finally { stages.parseMs += Math.max(0, Date.now() - before); }
+  };
+  const requestedBudget = Math.min(500, Math.max(1, Math.floor(options.maxSignatures) || 100));
+  const transportBudget = options.maxDetailRequests === undefined ? 500
+    : Math.min(500, Math.max(1, Math.floor(options.maxDetailRequests) || 1));
+  const budget = Math.min(requestedBudget, transportBudget);
+  const snapshot = await measure("claimMs", () => options.store.request({ op: "claim", context: options.context,
+    parserVersion: POSITION_HISTORY_PARSER_VERSION })) as PositionHistorySnapshot;
   let fetchedTxCount = 0;
   let listingCount = 0;
   let primaryCount = 0;
   let fallbackCount = 0;
+  let unattributedCount = 0;
+  const fallbackReasons = new Set<HistoryFallbackReason>();
+  let detailWindow: { started?: number; ended?: number } | undefined;
+  let outcome: SyncedPositionHistory | undefined;
   const rows = new Map(snapshot.transactions.map(row => [row.signature, row]));
   const updates = new Map<string, StoredPositionTransaction>();
   const oldState = snapshot.state;
@@ -98,11 +121,14 @@ export async function syncPositionHistory(options: SyncPositionHistoryOptions): 
       .sort((a, b) => a.slot - b.slot || (a.blockTime ?? 0) - (b.blockTime ?? 0));
     const metric: HistoryFetchMetric = { txCount: transactions.filter(row => row.status === "parsed").length,
       elapsedMs: Date.now() - started,
-      provider: primaryCount && fallbackCount ? "solami+default" : primaryCount ? "solami" : "default",
+      provider: primaryCount && fallbackCount ? "solami+default" : primaryCount ? "solami" : fallbackCount ? "default"
+        : unattributedCount ? "unknown" : "default",
       source: "databaseIncremental", solamiTxCount: primaryCount, defaultTxCount: fallbackCount,
-      fallbackReasons: [], cachedTxCount: snapshot.transactions.filter(row => !needsParse(row)).length,
-      fetchedTxCount, listingCount, historyComplete: !incomplete, canContinue: incomplete && moreWork };
-    return { history, signatureCount: transactions.length, truncated: incomplete, metric };
+      fallbackReasons: [...fallbackReasons], cachedTxCount: snapshot.transactions.filter(row => !needsParse(row)).length,
+      fetchedTxCount, listingCount, detailBudget: budget, historyComplete: !incomplete, canContinue: incomplete && moreWork,
+      unattributedTxCount: unattributedCount, stages: { ...stages }, rpc: options.rpcMetrics?.() };
+    outcome = { history, signatureCount: transactions.length, truncated: incomplete, metric };
+    return outcome;
   };
   if (!snapshot.lease) return result(oldState, snapshot.transactions);
 
@@ -116,7 +142,7 @@ export async function syncPositionHistory(options: SyncPositionHistoryOptions): 
       let receipt = existing?.receipt ?? null;
       if (receipt) {
         try {
-          tx = rehydratePositionReceipt(receipt);
+          tx = parseWork(() => rehydratePositionReceipt(receipt!));
           if (!receiptMatches(tx, info)) { tx = null; receipt = null; }
         } catch { tx = null; receipt = null; }
       }
@@ -127,20 +153,30 @@ export async function syncPositionHistory(options: SyncPositionHistoryOptions): 
         fetchedTxCount++;
         const connections = [options.connection, ...(options.fallbackConnection && options.fallbackConnection !== options.connection
           ? [options.fallbackConnection] : [])];
-        for (const connection of connections) {
-          checkAbort();
-          try {
-            const candidate = await connection.getParsedTransaction(info.signature, {
-              commitment: "finalized", maxSupportedTransactionVersion: 0 });
-            if (candidate && receiptMatches(candidate, info)) {
-              tx = candidate;
-              if (connection === options.fallbackConnection || options.provider !== "solami") fallbackCount++;
-              else primaryCount++;
-              break;
+        if (detailWindow && detailWindow.started === undefined) detailWindow.started = Date.now();
+        try {
+          for (const [index, connection] of connections.entries()) {
+            checkAbort();
+            try {
+              const candidate = await connection.getParsedTransaction(info.signature, {
+                commitment: "finalized", maxSupportedTransactionVersion: 0 });
+              if (candidate && receiptMatches(candidate, info)) {
+                tx = candidate;
+                const servedBy = options.receiptProvider ? options.receiptProvider(info.signature)
+                  : connection === options.fallbackConnection || options.provider !== "solami" ? "default" : "solami";
+                if (servedBy === "solami") primaryCount++;
+                else if (servedBy === "default") fallbackCount++;
+                else unattributedCount++;
+                break;
+              }
+              if (index === 0 && connections.length > 1) fallbackReasons.add(candidate ? "history-primary-invalid-receipt" : "history-primary-empty");
+            } catch {
+              checkAbort();
+              if (index === 0 && connections.length > 1) fallbackReasons.add("history-primary-error");
             }
-          } catch { checkAbort(); }
-        }
-        if (tx) receipt = serializeReceipt(tx);
+          }
+        } finally { if (detailWindow) detailWindow.ended = Date.now(); }
+        if (tx) receipt = parseWork(() => serializeReceipt(tx!));
       }
       const row: StoredPositionTransaction = { signature: info.signature, slot: info.slot,
         blockTime: tx?.blockTime ?? info.blockTime ?? null, receipt, events: [],
@@ -148,7 +184,7 @@ export async function syncPositionHistory(options: SyncPositionHistoryOptions): 
       if (info.err || tx?.meta?.err) row.status = "failed";
       else if (tx?.meta && Array.isArray(tx.meta.logMessages)) {
         try {
-          row.events = bindOpeningEvents(parsePositionCashflowEvents(tx.meta.logMessages, tx, options.context), tx, options.context);
+          row.events = parseWork(() => bindOpeningEvents(parsePositionCashflowEvents(tx!.meta!.logMessages, tx!, options.context), tx!, options.context));
           row.status = "parsed";
         } catch { /* Keep receipts pending for a future parser version. */ }
       }
@@ -158,11 +194,20 @@ export async function syncPositionHistory(options: SyncPositionHistoryOptions): 
       updates.set(row.signature, row);
       return row;
     };
+    const runReceipts = async (infos: readonly HistorySignature[]) => {
+      const window: { started?: number; ended?: number } = {};
+      detailWindow = window;
+      try { return await mapPositionHistoryWorkers(infos, process, { signal: options.signal }); }
+      finally {
+        if (window.started !== undefined && window.ended !== undefined) stages.detailsMs += Math.max(0, window.ended - window.started);
+        detailWindow = undefined;
+      }
+    };
 
     // Repair missing receipts and reparse retained receipts before advancing any cursor.
     const repair = snapshot.transactions.filter(needsParse)
       .sort((a, b) => Number(Boolean(b.receipt)) - Number(Boolean(a.receipt)) || b.slot - a.slot).slice(0, budget);
-    await mapInBatches(repair, HISTORY_BATCH_SIZE, row => process({ ...row, err: row.status === "failed" ? {} : null }));
+    await runReceipts(repair.map(row => ({ ...row, err: row.status === "failed" ? {} : null })));
 
     let newest: string | null = oldState.deltaHead ?? null;
     let topSafe = true;
@@ -185,8 +230,8 @@ export async function syncPositionHistory(options: SyncPositionHistoryOptions): 
       normalizationProgress = true;
     };
     if (oldState.deltaBefore && oldState.deltaHead) {
-      const latest = await (options.fallbackConnection ?? options.connection).getSignaturesForAddress(
-        new PublicKey(options.context.positionAccount), { limit: 1 }, "finalized");
+      const latest = await measure("listingMs", () => (options.fallbackConnection ?? options.connection).getSignaturesForAddress(
+        new PublicKey(options.context.positionAccount), { limit: 1 }, "finalized"));
       listingCount++;
       newerSinceDeltaStarted = latest[0]?.signature !== oldState.deltaHead;
     }
@@ -199,8 +244,8 @@ export async function syncPositionHistory(options: SyncPositionHistoryOptions): 
       for (let page = 0; page < 4; page++) {
         checkAbort();
         const listingConnection = options.fallbackConnection ?? options.connection;
-        const infos = await listingConnection.getSignaturesForAddress(new PublicKey(options.context.positionAccount),
-          { before, limit: 500 }, "finalized");
+        const infos = await measure("listingMs", () => listingConnection.getSignaturesForAddress(new PublicKey(options.context.positionAccount),
+          { before, limit: 500 }, "finalized"));
         listingCount++;
         if (!infos.length) return false;
         if (!initialBefore && !newest) newest = infos[0]!.signature;
@@ -221,7 +266,7 @@ export async function syncPositionHistory(options: SyncPositionHistoryOptions): 
           if (changesRow && !updates.has(info.signature)) reservedUpdates++;
           selected.push(info);
         }
-        const processed = await mapInBatches(selected, HISTORY_BATCH_SIZE, process);
+        const processed = await runReceipts(selected);
         for (const [index, row] of processed.entries()) {
           if (needsParse(row)) contiguous = false;
           if (contiguous) {
@@ -286,12 +331,17 @@ export async function syncPositionHistory(options: SyncPositionHistoryOptions): 
       state.deltaBefore === (oldState.deltaBefore ?? null) && state.deltaHead === (oldState.deltaHead ?? null);
     // A no-change lookup needs only release; avoid republishing the identical full ledger.
     if (!updates.size && unchangedState) return result(oldState, snapshot.transactions);
-    const committed = await options.store.request({ op: "commit", lease: snapshot.lease,
-      state, transactions: [...updates.values()] }) as PositionHistorySnapshot;
+    const committed = await measure("commitMs", () => options.store.request({ op: "commit", lease: snapshot.lease!,
+      state, transactions: [...updates.values()] })) as PositionHistorySnapshot;
     return result(committed.state, committed.transactions);
   } finally {
     // The lease expires even if an upstream/storage failure prevents release.
     // A release failure must not mask a successful commit or the original error.
-    await options.store.request({ op: "release", lease: snapshot.lease }).catch(() => undefined);
+    await measure("releaseMs", () => options.store.request({ op: "release", lease: snapshot.lease! })).catch(() => undefined);
+    if (outcome) {
+      outcome.metric.elapsedMs = Date.now() - started;
+      outcome.metric.stages = { ...stages };
+      outcome.metric.rpc = options.rpcMetrics?.();
+    }
   }
 }

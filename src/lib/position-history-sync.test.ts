@@ -83,6 +83,190 @@ function rpc(ids: number[], txs = new Map(ids.map(id => [id, receipt(id, id === 
 }
 
 describe("incremental position history", () => {
+  it("starts opening work past a slow newest receipt but never advances its checkpoint over a pending result", async () => {
+    const store = new MemoryStore();
+    const upstream = rpc(Array.from({ length: 9 }, (_, index) => 9 - index));
+    let resolveNewest!: (value: ParsedTransactionWithMeta | null) => void;
+    const newest = new Promise<ParsedTransactionWithMeta | null>(resolve => { resolveNewest = resolve; });
+    const base = upstream.parsed.getMockImplementation()!;
+    upstream.parsed.mockImplementation(async (sig, options) => sig === signature(9) ? newest : base(sig, options));
+    const pending = syncPositionHistory({ context, store, connection: upstream.connection, maxSignatures: 100 });
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+    expect(upstream.parsed.mock.calls.some(([sig]) => sig === signature(1))).toBe(true);
+    expect(store.commitSizes).toEqual([]);
+    resolveNewest(null);
+    const result = await pending;
+    expect(result.truncated).toBe(true);
+    expect(result.history).toHaveLength(8);
+    expect(store.snapshot.state).toMatchObject({ headSignature: null, backfillBefore: null, complete: false });
+    expect(store.snapshot.transactions.find(row => row.signature === signature(9))?.status).toBe("pending");
+  });
+
+  it("saves a paced cold 500-transaction backfill in five capped foreground requests before declaring completeness", async () => {
+    const store = new MemoryStore();
+    const upstream = rpc(Array.from({ length: 500 }, (_, index) => 500 - index));
+    const run = () => syncPositionHistory({ context, store, connection: upstream.connection,
+      maxSignatures: 500, maxDetailRequests: 100 });
+    let totalDetailCalls = 0;
+    for (let request = 1; request <= 5; request++) {
+      const result = await run();
+      expect(result.metric.detailBudget).toBe(100);
+      expect(result.metric.fetchedTxCount).toBe(100);
+      totalDetailCalls += 100;
+      expect(upstream.parsed).toHaveBeenCalledTimes(totalDetailCalls);
+      expect(result.signatureCount).toBe(request * 100);
+      expect(result.history).toHaveLength(request * 100);
+      expect(store.snapshot.state.headSignature).toBe(signature(500));
+      expect(store.snapshot.state.backfillBefore).toBe(signature(501 - request * 100));
+      if (request < 5) {
+        expect(result.truncated).toBe(true);
+        expect(result.metric.historyComplete).toBe(false);
+        expect(result.metric.canContinue).toBe(true);
+        expect(store.snapshot.state.complete).toBe(false);
+      } else {
+        expect(result.truncated).toBe(false);
+        expect(result.metric.historyComplete).toBe(true);
+        expect(store.snapshot.state.complete).toBe(true);
+        const cash = aggregateCashflowsForPosition(result.history.flatMap(row => row.events), context.positionMint, context.poolId);
+        expect(cash.depositedA).toBe(125250n);
+        expect(cash.openCount).toBe(1);
+      }
+    }
+    expect(store.commitSizes).toEqual([100, 100, 100, 100, 100]);
+    const warm = await run();
+    expect(warm.metric.fetchedTxCount).toBe(0);
+    expect(upstream.parsed).toHaveBeenCalledTimes(500);
+    upstream.ids.unshift(502, 501);
+    upstream.txs.set(501, receipt(501)); upstream.txs.set(502, receipt(502));
+    const delta = await run();
+    expect(delta.truncated).toBe(false);
+    expect(delta.metric.fetchedTxCount).toBe(2);
+    expect(store.snapshot.state.headSignature).toBe(signature(502));
+    expect(delta.history).toHaveLength(502);
+  });
+
+  it("clamps the transport detail allowance and never increases a caller's smaller requested budget", async () => {
+    const upstream = rpc([3, 2, 1]);
+    const small = await syncPositionHistory({ context, store: new MemoryStore(), connection: upstream.connection,
+      maxSignatures: 1, maxDetailRequests: 100 });
+    expect(small.metric).toMatchObject({ detailBudget: 1, fetchedTxCount: 1 });
+    const invalid = await syncPositionHistory({ context, store: new MemoryStore(), connection: upstream.connection,
+      maxSignatures: 100, maxDetailRequests: 0 });
+    expect(invalid.metric).toMatchObject({ detailBudget: 1, fetchedTxCount: 1 });
+    const high = await syncPositionHistory({ context, store: new MemoryStore(), connection: upstream.connection,
+      maxSignatures: 100, maxDetailRequests: 1000 });
+    expect(high.metric).toMatchObject({ detailBudget: 100, fetchedTxCount: 3 });
+  });
+
+  it("drains all started receipt work before releasing its lease after abort and never commits partial aborted work", async () => {
+    const store = new MemoryStore();
+    const upstream = rpc(Array.from({ length: 9 }, (_, index) => 9 - index));
+    const resolvers = new Map<string, (value: ParsedTransactionWithMeta) => void>();
+    upstream.parsed.mockImplementation(async sig => new Promise(resolve => { resolvers.set(sig, resolve); }));
+    const controller = new AbortController();
+    const pending = syncPositionHistory({ context, store, connection: upstream.connection,
+      maxSignatures: 100, signal: controller.signal });
+    let settled = false;
+    const rejected = pending.catch(error => { settled = true; return error; });
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+    expect(resolvers.size).toBe(8);
+    const error = new Error("viewer cancelled");
+    controller.abort(error);
+    const [firstSig, firstResolve] = [...resolvers][0]!;
+    firstResolve(upstream.txs.get(upstream.ids.find(id => signature(id) === firstSig)!)!);
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    expect(settled).toBe(false); expect(store.released).toBe(0);
+    for (const [sig, resolve] of [...resolvers].slice(1)) resolve(upstream.txs.get(upstream.ids.find(id => signature(id) === sig)!)!);
+    expect(await rejected).toBe(error);
+    expect(store.released).toBe(1); expect(store.commitSizes).toEqual([]);
+    expect(upstream.parsed).toHaveBeenCalledTimes(8);
+  });
+
+  it("includes claim, listing, logical detail wall time, commit and final release in completed metrics", async () => {
+    vi.useFakeTimers();
+    try {
+      const store = new MemoryStore();
+      const request = store.request.bind(store);
+      const wait = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+      store.request = async input => {
+        const result = await request(input);
+        await wait(input.op === "claim" ? 7 : input.op === "commit" ? 13 : 17);
+        return result;
+      };
+      const upstream = rpc([1]);
+      const list = upstream.signatures.getMockImplementation()!;
+      upstream.signatures.mockImplementation(async (...args) => { await wait(11); return list(...args); });
+      const parsed = upstream.parsed.getMockImplementation()!;
+      upstream.parsed.mockImplementation(async (...args) => { await wait(23); return parsed(...args); });
+      const run = () => syncPositionHistory({ context, store, connection: upstream.connection, maxSignatures: 100,
+        rpcMetrics: () => ({ attemptCount: store.released, rateLimitCount: 0, queuedMs: 0, requestMs: 0,
+          maxActive: 0, primaryAttempts: 0, defaultAttempts: 0, responseBytes: 0 }) });
+      const cold = run();
+      await vi.runAllTimersAsync();
+      expect((await cold).metric).toMatchObject({ elapsedMs: 71, rpc: { attemptCount: 1 }, stages: {
+        claimMs: 7, listingMs: 11, detailsMs: 23, parseMs: 0, commitMs: 13, releaseMs: 17 } });
+      const warm = run();
+      await vi.runAllTimersAsync();
+      expect((await warm).metric).toMatchObject({ elapsedMs: 35, stages: {
+        claimMs: 7, listingMs: 11, detailsMs: 0, parseMs: 0, commitMs: 0, releaseMs: 17 } });
+      expect(store.commitSizes).toEqual([1]);
+      store.locked = true;
+      const locked = run();
+      await vi.runAllTimersAsync();
+      expect((await locked).metric).toMatchObject({ elapsedMs: 7, stages: {
+        claimMs: 7, listingMs: 0, detailsMs: 0, parseMs: 0, commitMs: 0, releaseMs: 0 } });
+      expect(store.released).toBe(2);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("attributes observer-backed receipts to actual leaf providers and exposes unknown receipts without inventing Solami", async () => {
+    const upstream = rpc([1]);
+    const known = await syncPositionHistory({ context, store: new MemoryStore(), connection: upstream.connection,
+      maxSignatures: 100, provider: "solami", receiptProvider: () => "default" });
+    expect(known.metric).toMatchObject({ provider: "default", solamiTxCount: 0, defaultTxCount: 1, unattributedTxCount: 0 });
+    const unknown = await syncPositionHistory({ context, store: new MemoryStore(), connection: upstream.connection,
+      maxSignatures: 100, provider: "solami", receiptProvider: () => undefined });
+    expect(unknown.metric).toMatchObject({ provider: "unknown", solamiTxCount: 0, defaultTxCount: 0, unattributedTxCount: 1 });
+  });
+
+  it("measures synchronous receipt parsing and replay without counting replay as new detail work", async () => {
+    let ticks = 0;
+    const clock = vi.spyOn(Date, "now").mockImplementation(() => ++ticks);
+    try {
+      const store = new MemoryStore();
+      const upstream = rpc([1]);
+      const run = () => syncPositionHistory({ context, store, connection: upstream.connection, maxSignatures: 100 });
+      expect((await run()).metric.stages?.parseMs).toBe(2);
+      store.snapshot.transactions[0]!.parserVersion = 0;
+      const replayed = await run();
+      expect(replayed.metric.stages?.parseMs).toBe(2);
+      expect(replayed.metric.stages?.detailsMs).toBe(0);
+      expect(replayed.metric.fetchedTxCount).toBe(0);
+      expect(upstream.parsed).toHaveBeenCalledTimes(1);
+    } finally { clock.mockRestore(); }
+  });
+
+  it("drains active work and releases without committing when receipt serialization fails fatally", async () => {
+    const store = new MemoryStore();
+    const upstream = rpc(Array.from({ length: 9 }, (_, index) => 9 - index));
+    const resolvers = new Map<string, (value: ParsedTransactionWithMeta) => void>();
+    upstream.parsed.mockImplementation(async sig => new Promise(resolve => { resolvers.set(sig, resolve); }));
+    const pending = syncPositionHistory({ context, store, connection: upstream.connection, maxSignatures: 100 });
+    let settled = false;
+    const rejected = pending.catch(error => { settled = true; return error; });
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+    const invalid = receipt(9);
+    Object.assign(invalid, { circular: invalid });
+    resolvers.get(signature(9))!(invalid);
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+    expect(settled).toBe(false); expect(store.released).toBe(0);
+    expect(upstream.parsed).toHaveBeenCalledTimes(8);
+    for (const [sig, resolve] of [...resolvers].slice(1)) resolve(upstream.txs.get(upstream.ids.find(id => signature(id) === sig)!)!);
+    expect(await rejected).toBeInstanceOf(TypeError);
+    expect(store.released).toBe(1); expect(store.commitSizes).toEqual([]);
+    expect(upstream.parsed).toHaveBeenCalledTimes(8);
+  });
+
   it("fills cold history, fetches zero details warm, and fetches only live additions", async () => {
     const store = new MemoryStore();
     const upstream = rpc([3, 2, 1]);

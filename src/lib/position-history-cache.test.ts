@@ -26,6 +26,23 @@ function complete(): SyncedPositionHistory {
 afterEach(() => { resetPositionHistoryCache(); vi.useRealTimers(); });
 
 describe("position history short cache", () => {
+  it("reports zero current stage and physical RPC work on memory hits", async () => {
+    const cache = new PositionHistoryCache(), input = options();
+    const load = vi.fn(async () => ({ ...complete(), metric: { ...complete().metric,
+      stages: { claimMs: 3, listingMs: 4, detailsMs: 20, parseMs: 1, commitMs: 5, releaseMs: 2 },
+      rpc: { attemptCount: 4, rateLimitCount: 1, queuedMs: 12, requestMs: 20, maxActive: 3,
+        primaryAttempts: 2, defaultAttempts: 2, responseBytes: 1000 }, unattributedTxCount: 1 } }));
+    const first = await cache.get(input, load);
+    expect(first.metric.stages?.releaseMs).toBe(2);
+    expect(first.metric.rpc?.attemptCount).toBe(4);
+    const hit = await cache.get(input, load);
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(hit.metric.stages).toEqual({ claimMs: 0, listingMs: 0, detailsMs: 0,
+      parseMs: 0, commitMs: 0, releaseMs: 0 });
+    expect(hit.metric.rpc).toEqual({ attemptCount: 0, rateLimitCount: 0, queuedMs: 0,
+      requestMs: 0, maxActive: 0, primaryAttempts: 0, defaultAttempts: 0, responseBytes: 0 });
+    expect(hit.metric.unattributedTxCount).toBe(0);
+  });
   it("caches only history for eight seconds, reports age/zero work and clones every result", async () => {
     let now = 1000;
     const cache = new PositionHistoryCache({ clock: () => now }), input = options();
@@ -56,9 +73,12 @@ describe("position history short cache", () => {
     await cache.get({ ...input, maxSignatures: 101 }, load);
     await cache.get({ ...input, stateFingerprint: "changed" }, load);
     await cache.get({ ...input, store: { request: vi.fn(async () => null) } }, load);
-    expect(load).toHaveBeenCalledTimes(12);
+    await cache.get({ ...input, maxDetailRequests: 10 }, load);
+    await cache.get({ ...input, maxDetailRequests: 0 }, load);
+    await cache.get({ ...input, maxDetailRequests: 1 }, load);
+    expect(load).toHaveBeenCalledTimes(14);
     await cache.get({ ...input, context: { ...input.context } }, load);
-    expect(load).toHaveBeenCalledTimes(12);
+    expect(load).toHaveBeenCalledTimes(14);
   });
 
   it("does not cache partial histories, unknown completeness or loader failures", async () => {

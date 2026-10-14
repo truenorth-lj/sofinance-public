@@ -5,7 +5,10 @@ import { CLMM_PROGRAM_ID, getPdaPersonalPositionAddress, PersonalPositionLayout,
 import { Keypair, PublicKey, type AccountInfo, type Connection } from "@solana/web3.js";
 vi.mock("server-only", () => ({}));
 const ledger = vi.hoisted(() => vi.fn());
+const transports = vi.hoisted(() => ({ valuation: vi.fn(), history: vi.fn() }));
 vi.mock("./position-performance-history-load", () => ({ loadPerformanceHistory: ledger }));
+vi.mock("./rpc", async original => ({ ...(await original<typeof import("./rpc")>()), rpcConnection: transports.valuation }));
+vi.mock("./position-history-rpc", () => ({ createHistoryRpcConnections: transports.history }));
 import { getPositionPerformance } from "./position-performance";
 import type { PositionHistoryStore } from "./position-history-store-types";
 const key = () => Keypair.generate().publicKey;
@@ -59,6 +62,26 @@ const lookup = (historyStore: PositionHistoryStore | null = store) => getPositio
   connection, historyStore, skipPricing: true, fetcher, nowSeconds: 1700000000 + 3 * 86400,
 });
 describe("performance with persisted history", () => {
+  it("uses the shared paced history transport without changing current valuation reads", async () => {
+    const historyConnection = { getParsedTransaction: vi.fn(), getSignaturesForAddress: vi.fn() };
+    const metric = { attemptCount: 2, rateLimitCount: 0, queuedMs: 1, requestMs: 2,
+      maxActive: 1, primaryAttempts: 0, defaultAttempts: 2, responseBytes: 100 };
+    const observer = { snapshot: vi.fn(() => metric), receiptProvider: vi.fn(() => "default" as const) };
+    transports.valuation.mockReturnValue(connection);
+    transports.history.mockReturnValue({ connection: historyConnection, observer });
+    await getPositionPerformance(nft.toBase58(), { historyStore: store, skipPricing: true, fetcher });
+    expect(transports.valuation).toHaveBeenCalledTimes(1);
+    expect(accountRead).toHaveBeenCalledTimes(2);
+    expect(tickRead).toHaveBeenCalledTimes(1);
+    expect(transports.history).not.toHaveBeenCalled();
+    expect(ledger.mock.calls[0]![0].maxDetailRequests).toBe(100);
+    const sharedSignal = new AbortController().signal;
+    const paced = ledger.mock.calls[0]![0].connectionsForSignal(sharedSignal);
+    expect(transports.history).toHaveBeenCalledWith(sharedSignal);
+    expect(paced.connection).toBe(historyConnection);
+    expect(paced.rpcMetrics()).toEqual(metric);
+    expect(paced.receiptProvider("receipt")).toBe("default");
+  });
   it("reuses historical cashflows while reading changing current fees on every lookup", async () => {
     const first = await lookup();
     accounts.get(position.toBase58())!.data.writeBigUInt64LE(31n, PersonalPositionLayout.offsetOf("tokenFeesOwedA"));
@@ -69,6 +92,7 @@ describe("performance with persisted history", () => {
     expect(accountRead).toHaveBeenCalledTimes(4);
     expect(tickRead).toHaveBeenCalledTimes(2);
     expect(ledger.mock.calls[0]?.[0].store).toBe(store);
+    expect(ledger.mock.calls[0]?.[0].maxDetailRequests).toBeUndefined();
     expect(second.timings?.totalMs).toBeGreaterThanOrEqual(0);
   });
   it("hides estimated returns and the personal APR curve while history is incomplete", async () => {

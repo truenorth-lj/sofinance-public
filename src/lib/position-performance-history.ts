@@ -17,7 +17,7 @@ export const HISTORY_BATCH_SIZE = 8;
 
 export type HistoryFetchSource = "getTransactionsForAddress" | "getParsedTransactionBatch" | "databaseIncremental";
 
-export type HistoryProvider = "solami" | "default" | "solami+default";
+export type HistoryProvider = "solami" | "default" | "solami+default" | "unknown";
 
 export type {
   CustomRpcCall,
@@ -36,6 +36,7 @@ export type HistoryFetchMetric = {
   fallbackReasons: HistoryFallbackReason[];
   cachedTxCount?: number;
   fetchedTxCount?: number;
+  detailBudget?: number;
   listingCount?: number;
   historyComplete?: boolean;
   canContinue?: boolean;
@@ -43,6 +44,10 @@ export type HistoryFetchMetric = {
   memoryCacheAgeMs?: number;
   historySyncedAt?: string;
   refreshSignaturesResolved?: boolean;
+  unattributedTxCount?: number;
+  /** detailsMs is wall span per worker phase; accumulated parseMs can overlap it. */
+  stages?: { claimMs: number; listingMs: number; detailsMs: number; parseMs: number; commitMs: number; releaseMs: number };
+  rpc?: import("./position-history-rpc").HistoryRpcMetric;
 };
 
 export type HistoryServedBy = "solami" | "default";

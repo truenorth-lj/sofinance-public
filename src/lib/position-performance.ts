@@ -50,11 +50,15 @@ import { getPositionHistoryStore } from "./position-history-store";
 import type { PositionHistoryStore } from "./position-history-store-types";
 import { loadPerformanceHistory } from "./position-performance-history-load";
 import { resetRpcCache } from "./rpc/cache";
+import { createHistoryRpcConnections } from "./position-history-rpc";
 
 const POSITION_DISCRIMINATOR = createHash("sha256").update("account:PersonalPositionState").digest().subarray(0, 8);
 const POOL_DISCRIMINATOR = createHash("sha256").update("account:PoolState").digest().subarray(0, 8);
 
 export const DEFAULT_MAX_SIGNATURES = 100;
+// At four public-RPC starts/second, 500 details cannot finish within the shared
+// fifty-second deadline. Durable reads checkpoint in bounded chunks instead.
+const MAX_PACED_HISTORY_DETAILS = 100;
 export { JUPITER_PRICE_V3 };
 export const RAYDIUM_POOL_IDS = "https://api-v3.raydium.io/pools/info/ids";
 
@@ -291,6 +295,7 @@ export async function getPositionPerformance(
   const [fetched, uncollected, ownsNft] = await Promise.all([loadPerformanceHistory({
     address: positionPda,
     maxSignatures,
+    maxDetailRequests: options.connection ? undefined : MAX_PACED_HISTORY_DETAILS,
     connection,
     provider,
     customRpc: options.customRpc,
@@ -302,11 +307,14 @@ export async function getPositionPerformance(
     bypassCache: options.historyMemoryCache === false || options.refreshHistory || Boolean(options.historyAfterSignatures?.length),
     afterSignatures: options.historyAfterSignatures,
     stateFingerprint: createHash("sha256").update(positionInfo.data).digest("hex"),
-    connectionsForSignal: !options.connection ? sharedSignal => ({
-      connection: rpcConnection(undefined, { signal: sharedSignal }),
-      fallbackConnection: options.fallbackConnection ?? (provider === "solami"
-        ? defaultRpcConnection(undefined, { signal: sharedSignal }) : undefined),
-    }) : undefined,
+    connectionsForSignal: !options.connection ? sharedSignal => {
+      // Only durable history uses pacing; valuation and transaction RPC keep their own paths.
+      const connections = createHistoryRpcConnections(sharedSignal);
+      return { connection: connections.connection,
+        fallbackConnection: options.fallbackConnection ?? connections.fallbackConnection,
+        rpcMetrics: () => connections.observer.snapshot(),
+        receiptProvider: (signature: string) => connections.observer.receiptProvider(signature) };
+    } : undefined,
   }), readUncollectedFees(connection, CLMM_PROGRAM_ID, poolId, position, pool),
   options.wallet ? walletOwnsNft(connection, new PublicKey(options.wallet), mint) : Promise.resolve(null)]);
   const truncated = fetched.truncated;
