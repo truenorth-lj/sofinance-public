@@ -20,7 +20,7 @@ import type { BuildRoute } from "../swap/jupiter";
 import { beamTipInstruction, chooseBeamTransaction, emptyBeamPlan, fetchBeamTipAddress, BEAM_MIN_TIP_LAMPORTS } from "../solami-beam";
 import { rpcConnection } from "../rpc";
 import { getSigningSecret } from "../config/server-env";
-import { simulateWithdraw } from "./simulation";
+import { simulateAtContextSlot, simulateWithdraw } from "./simulation";
 import { withdrawPermit } from "./permit";
 import { assertImpactConfirmed, impactFlags, percentToBps, principalMinimum, capReceivedAmount, shouldSwap, targetUSDCToBps, transactionCount } from "./quote";
 import { withdrawPrepareSchema } from "./input";
@@ -135,7 +135,7 @@ export async function buildWithdraw(raw: WithdrawPrepareRequest, preview = false
     const first = compile(prefix);
     if (exceedsTxSizeLimit(versionedTransactionSize(first)))
         throw new Error("Position withdrawal exceeds transaction size limit");
-    const simulated = await connection.simulateTransaction(first, { sigVerify: false, replaceRecentBlockhash: true, minContextSlot: before.context.slot, accounts: { encoding: "base64", addresses: [wallet, new PublicKey(state.positionAccount), new PublicKey(state.nftAta), new PublicKey(state.positionMint), ...recipients].map(a => a.toBase58()) } });
+    const simulated = await simulateAtContextSlot(() => connection.simulateTransaction(first, { sigVerify: false, replaceRecentBlockhash: true, minContextSlot: before.context.slot, accounts: { encoding: "base64", addresses: [wallet, new PublicKey(state.positionAccount), new PublicKey(state.nftAta), new PublicKey(state.positionMint), ...recipients].map(a => a.toBase58()) } }));
     if (simulated.value.err || !simulated.value.accounts)
         throw new Error(`Withdrawal simulation failed: ${JSON.stringify(simulated.value.err)}`);
     assets.forEach((a, i) => { const after = simulated.value.accounts![i + 4]; if (!after)

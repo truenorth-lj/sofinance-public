@@ -17,7 +17,8 @@
  * Frontend open/add/compound use prepare permits, not /verify-sign-token (the
  * latter belongs to the separate MCP signing flow). Exit preview cannot execute.
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { loadEnvFile } from "node:process";
 import { Connection, Keypair, PublicKey, SystemProgram, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
@@ -243,7 +244,13 @@ async function main() {
         break;
       }
       if (current.summary.stage !== "withdraw") break;
-      prepared = await api<WithdrawPrepared>("withdraw-prepare", {...input, stage:"swap", tx1Signature:finalizedSignature, previous:current});
+      // Step 1 has landed: keep a checkpoint and retry the conversion prepare so a transient RPC error
+      // does not strand the withdrawn tokens without a step-2 attempt.
+      writeFileSync(`${tmpdir()}/withdraw-checkpoint-${finalizedSignature.slice(0, 8)}.json`, JSON.stringify({input, tx1Signature:finalizedSignature, previous:current}));
+      for (let attempt = 1; ; attempt++) {
+        try { prepared = await api<WithdrawPrepared>("withdraw-prepare", {...input, stage:"swap", tx1Signature:finalizedSignature, previous:current}); break; }
+        catch (error) { if (attempt >= 4) throw error; console.log(`Conversion prepare failed (${(error as Error).message}); retrying`); await wait(3000 * attempt); }
+      }
     }
     const finalSol = await rpc.getBalance(new PublicKey(wallet), "finalized");
     console.log(JSON.stringify({wallet, walletSOLLamportsDelta:String(finalSol-initialSol), rentRefundLamports:prepared.summary.rentRefundLamports}));

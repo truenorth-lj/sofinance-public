@@ -1,7 +1,7 @@
 import "server-only";
 import { PublicKey, type Connection, type VersionedTransaction } from "@solana/web3.js";
 import { PersonalPositionLayout } from "@raydium-io/raydium-sdk-v2";
-import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { NATIVE_SOL_MINT } from "../ids";
 import { verifiedTokenAmount } from "../lp-exit-verification";
 import { transactionIntermediateAccounts, verifyIntermediateAccounts } from "../swap/instructions";
@@ -9,12 +9,16 @@ import type { WithdrawSummary } from "./types";
 export async function simulateWithdraw(connection: Connection, transaction: VersionedTransaction, summary: WithdrawSummary, sigVerify = false) {
     const wallet = new PublicKey(summary.wallet);
     const outputKeys = summary.outputs.map(o => getAssociatedTokenAddressSync(new PublicKey(o.mint), wallet, false, new PublicKey(summary.assets.find(a => a.mint === o.mint)?.program ?? TOKEN_PROGRAM_ID.toBase58())).toBase58());
-    const allowed = [...summary.assets.map(a => a.account), ...outputKeys, ...(summary.isolatedSources ?? []).map(a => a.address)];
+    // A full withdrawal burns the position NFT and closes its account in the Raydium instruction.
+    const positionNftAccounts = summary.closesPosition
+        ? [TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID].map(program => getAssociatedTokenAddressSync(new PublicKey(summary.positionMint), wallet, false, program).toBase58())
+        : [];
+    const allowed = [...summary.assets.map(a => a.account), ...outputKeys, ...(summary.isolatedSources ?? []).map(a => a.address), ...positionNftAccounts];
     const intermediate = await transactionIntermediateAccounts(connection, transaction, wallet, allowed);
     const addresses = [...new Set([wallet.toBase58(), summary.positionAccount, ...allowed, ...intermediate.accounts.map(a => a.address)])];
     const before = await connection.getMultipleAccountsInfoAndContext(addresses.map(a => new PublicKey(a)), "confirmed");
-    const simulation = await connection.simulateTransaction(transaction, { sigVerify, replaceRecentBlockhash: !sigVerify,
-        minContextSlot: Math.max(before.context.slot, intermediate.slot), accounts: { encoding: "base64", addresses } });
+    const simulation = await simulateAtContextSlot(() => connection.simulateTransaction(transaction, { sigVerify, replaceRecentBlockhash: !sigVerify,
+        minContextSlot: Math.max(before.context.slot, intermediate.slot), accounts: { encoding: "base64", addresses } }));
     if (simulation.value.err || !simulation.value.accounts)
         throw new Error(`Withdrawal simulation failed: ${JSON.stringify(simulation.value.err)}`);
     const after = simulation.value.accounts;
@@ -76,4 +80,18 @@ export async function simulateWithdraw(connection: Connection, transaction: Vers
             throw new Error("Remaining position amount mismatch");
     }
     return { simulation, before, addresses };
+}
+
+/** A load-balanced RPC node can lag the slot we just read from; wait briefly instead of failing the user. */
+export async function simulateAtContextSlot<T>(simulate: () => Promise<T>, attempts = 5, delayMs = 400): Promise<T> {
+    for (let attempt = 1; ; attempt++) {
+        try {
+            return await simulate();
+        }
+        catch (error) {
+            if (attempt >= attempts || !/Minimum context slot has not been reached/i.test(String((error as Error)?.message ?? error)))
+                throw error;
+            await new Promise(resolve => setTimeout(resolve, delayMs * attempt));
+        }
+    }
 }
