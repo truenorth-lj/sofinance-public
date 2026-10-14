@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PositionPerformancePanel } from "./position-performance-panel";
 import { WalletConnectionContext, type WalletConnection } from "./wallet-connection";
 import fixture from "./__fixtures__/position-performance-sample.json";
+import bs58 from "bs58";
+import { notifyPositionHistoryChange, readPositionHistoryRefresh } from "@/lib/position-history-refresh";
 
 vi.mock("./pool-activity-panel", () => ({ PoolActivityPanel: () => null }));
 vi.mock("./pool-daily-apr-panel", () => ({ PoolDailyAprChart: () => null }));
@@ -45,6 +47,7 @@ async function compute() {
 }
 
 beforeEach(() => {
+  window.localStorage.clear();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   positions = [position(firstMint), position(secondMint)];
   response = structuredClone(fixture);
@@ -71,6 +74,78 @@ function expectReturnCardsRemoved() {
 }
 
 describe("position performance workflow", () => {
+  it("forces a cross-instance history read after broadcast and clears the force-only marker after a complete result", async () => {
+    response.truncated = false;
+    notifyPositionHistoryChange(firstMint);
+    await scan();
+    await compute();
+    const call = fetchMock.mock.calls.find(([url]) => url.startsWith("/api/position-performance?"))!;
+    const params = new URL(call[0], "https://app.test").searchParams;
+    expect(params.get("refreshHistory")).toBe("1");
+    expect(params.has("historyAfterSignatures")).toBe(false);
+    expect(readPositionHistoryRefresh(firstMint)).toBeNull();
+  });
+
+  it("retains all required signatures across remounts until the server resolves finalized history", async () => {
+    const signatures = [bs58.encode(Buffer.alloc(64, 1)), bs58.encode(Buffer.alloc(64, 2))];
+    for (const signature of signatures) notifyPositionHistoryChange(firstMint, signature);
+    let resolved = false;
+    const original = fetchMock.getMockImplementation() as (url: string) => Promise<unknown>;
+    fetchMock.mockImplementation(async (url: string) => url.startsWith("/api/position-performance?")
+      ? { ok: true, json: async () => ({ ...response, truncated: !resolved,
+        historyFetch: { refreshSignaturesResolved: resolved, canContinue: false } }) } : original(url));
+    await scan();
+    await compute();
+    expect(readPositionHistoryRefresh(firstMint)?.signatures).toEqual(signatures);
+    const first = fetchMock.mock.calls.find(([url]) => url.startsWith("/api/position-performance?"))!;
+    expect(new URL(first[0], "https://app.test").searchParams.get("historyAfterSignatures")).toBe(signatures.join(","));
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    resolved = true;
+    await scan();
+    await compute();
+    expect(readPositionHistoryRefresh(firstMint)).toBeNull();
+  });
+
+  it("cancels an older lookup on trade notification and prevents its response from acknowledging newer signatures", async () => {
+    const firstSignature = bs58.encode(Buffer.alloc(64, 1));
+    const secondSignature = bs58.encode(Buffer.alloc(64, 2));
+    notifyPositionHistoryChange(firstMint, firstSignature);
+    let resolveFirst: (value: unknown) => void = () => undefined;
+    let firstSignal: AbortSignal | undefined;
+    let calls = 0;
+    const original = fetchMock.getMockImplementation() as (url: string) => Promise<unknown>;
+    fetchMock.mockImplementation(async (url: string, options?: RequestInit) => {
+      if (!url.startsWith("/api/position-performance?")) return original(url);
+      calls++;
+      if (calls === 1) {
+        firstSignal = options?.signal as AbortSignal;
+        return new Promise(resolve => { resolveFirst = resolve; });
+      }
+      return { ok: true, json: async () => ({ ...response, truncated: true,
+        historyFetch: { refreshSignaturesResolved: false, canContinue: false } }) };
+    });
+    await scan();
+    await compute();
+    expect(calls).toBe(1);
+    await act(async () => notifyPositionHistoryChange(firstMint, secondSignature));
+    await until(() => calls === 2);
+    expect(firstSignal?.aborted).toBe(true);
+    await act(async () => resolveFirst({ ok: true, json: async () => ({ ...response,
+      historyFetch: { refreshSignaturesResolved: true } }) }));
+    expect(readPositionHistoryRefresh(firstMint)?.signatures).toEqual([firstSignature, secondSignature]);
+    const newest = fetchMock.mock.calls.filter(([url]) => url.startsWith("/api/position-performance?")).at(-1)!;
+    expect(new URL(newest[0], "https://app.test").searchParams.get("historyAfterSignatures"))
+      .toBe([firstSignature, secondSignature].join(","));
+  });
+
+  it("does not reload a different selected position when another position changes", async () => {
+    await scan();
+    await compute();
+    const count = fetchMock.mock.calls.filter(([url]) => url.startsWith("/api/position-performance?")).length;
+    await act(async () => notifyPositionHistoryChange(secondMint, bs58.encode(Buffer.alloc(64, 3))));
+    expect(fetchMock.mock.calls.filter(([url]) => url.startsWith("/api/position-performance?")).length).toBe(count);
+  });
   it("selects the first wallet position, keeps an explicit choice and computes that selection", async () => {
     await scan();
     const select = container.querySelector<HTMLSelectElement>("#perf-position")!;
@@ -83,6 +158,37 @@ describe("position performance workflow", () => {
     await compute();
     expect(fetchMock.mock.calls.some(([url]) => url.includes(`/api/position-performance?positionMint=${secondMint}`))).toBe(true);
     expect(container.textContent).toContain("Performance results");
+  });
+
+  it("continues bounded history loading during a view and stops once complete", async () => {
+    let calls = 0;
+    const original = fetchMock.getMockImplementation() as (url: string) => Promise<unknown>;
+    fetchMock.mockImplementation(async (url: string) => {
+      if (!url.startsWith("/api/position-performance?")) return original(url);
+      calls++;
+      return { ok: true, json: async () => ({ ...response, truncated: calls === 1,
+        historyFetch: { txCount: 1, elapsedMs: 1, provider: "default", source: "databaseIncremental", canContinue: calls === 1 } }) };
+    });
+    await scan();
+    await compute();
+    expect(calls).toBe(2);
+    expect(container.textContent).toContain("Performance results");
+  });
+
+  it("bounds automatic loading to five requests and does not retry missing data without progress", async () => {
+    for (const canContinue of [true, false]) {
+      let calls = 0;
+      const original = fetchMock.getMockImplementation() as (url: string) => Promise<unknown>;
+      fetchMock.mockImplementation(async (url: string) => {
+        if (!url.startsWith("/api/position-performance?")) return original(url);
+        calls++;
+        return { ok: true, json: async () => ({ ...response, truncated: true,
+          historyFetch: { txCount: 1, elapsedMs: 1, provider: "default", source: "databaseIncremental", canContinue } }) };
+      });
+      await scan();
+      await compute();
+      expect(calls).toBe(canContinue ? 5 : 1);
+    }
   });
 
   it("preserves a URL mint and resets wallet-bound choices when the wallet changes", async () => {

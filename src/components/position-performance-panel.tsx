@@ -14,6 +14,7 @@ import { PositionSelect } from "./position-select";
 import { PositionAssetRow } from "./position-asset-row";
 import { useTokenMetadata } from "./use-token-metadata";
 import { DecisionSession } from "@/lib/lp-decision-session";
+import { clearPositionHistoryRefresh, readPositionHistoryRefresh, subscribePositionHistoryRefresh } from "@/lib/position-history-refresh";
 import { PositionExitEstimate } from "./position-exit-estimate";
 import { PoolDailyAprChart } from "./pool-daily-apr-panel";
 import { PoolActivityPanel } from "./pool-activity-panel";
@@ -121,6 +122,8 @@ type PerformanceResponse = {
     solamiTxCount?: number;
     defaultTxCount?: number;
     fallbackReasons?: string[];
+    canContinue?: boolean;
+    refreshSignaturesResolved?: boolean;
   };
   error?: string;
 };
@@ -263,21 +266,40 @@ export function PositionPerformancePanel({
     try {
       const params = new URLSearchParams({ positionMint: mint });
       if (wallet.trim()) params.set("wallet", wallet.trim());
-      const response = await fetch(`/api/position-performance?${params}`, {
-        signal: attempt.signal,
-        headers: { Accept: "application/json" },
-      });
-      const body = (await response.json()) as PerformanceResponse & { error?: string };
-      if (!attempt.current()) return;
-      if (!response.ok) throw new Error(body.error || "Lookup failed");
-      if (body.positionMint !== mint) throw new Error("Position response mismatch");
-      setLoadedData({body, context});
+      // Continue bounded initial history loading as part of this view, without a scheduler.
+      for (let step = 0; step < 5; step++) {
+        const refresh = readPositionHistoryRefresh(mint);
+        if (refresh) {
+          params.set("refreshHistory", "1");
+          if (refresh.signatures.length) params.set("historyAfterSignatures", refresh.signatures.join(","));
+          else params.delete("historyAfterSignatures");
+        } else { params.delete("refreshHistory"); params.delete("historyAfterSignatures"); }
+        const response = await fetch(`/api/position-performance?${params}`, {
+          signal: attempt.signal,
+          headers: { Accept: "application/json" },
+        });
+        const body = (await response.json()) as PerformanceResponse & { error?: string };
+        if (!attempt.current()) return;
+        if (!response.ok) throw new Error(body.error || "Lookup failed");
+        if (body.positionMint !== mint) throw new Error("Position response mismatch");
+        if (refresh && (refresh.signatures.length ? body.historyFetch?.refreshSignaturesResolved === true : !body.truncated)) {
+          clearPositionHistoryRefresh(mint, refresh.version);
+        }
+        setLoadedData({body, context});
+        if (!body.truncated || !body.historyFetch?.canContinue) break;
+      }
     } catch (err) {
       if (attempt.current()) { setLoadedData(null); setError(err instanceof Error ? err.message : "Lookup failed"); }
     } finally {
       if (attempt.current()) { attempt.finish(); setLoadingContext(null); }
     }
   }, [context, positionMint, wallet]);
+
+  useEffect(() => subscribePositionHistoryRefresh(positionMint.trim(), () => {
+    lookup.current.cancel();
+    setLoadedData(null);
+    void load();
+  }), [positionMint, load]);
 
   useEffect(() => {
     if (!autoLoadSharedPosition) return;
@@ -473,6 +495,12 @@ export function PositionPerformancePanel({
             Estimated APR annualizes the trading fees earned so far (collected plus unclaimed) over recorded deposits and holding time, at current prices. Additional deposits are not time-weighted, and future fees can be higher or lower: it is not a promised return.
             {data.truncated && " Earlier transactions may be missing, so the estimate may be incomplete."}
           </p>
+          {data.truncated && data.historyFetch?.canContinue && (
+            <button type="button" disabled={Boolean(loadingContext)} onClick={() => void load()}
+              className="rounded-xl border border-white/20 px-3 py-2 text-xs text-cream disabled:opacity-50">
+              {loadingContext ? "Loading history…" : "Load remaining history"}
+            </button>
+          )}
 
           {!embedded && tn && (
             <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 sm:p-5">

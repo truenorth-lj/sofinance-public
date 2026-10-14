@@ -25,6 +25,7 @@ it.each([TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID])("never waives fees for missin
 });
 it("native collection needs no fee ATA", async () => {
   vi.stubEnv("SOFINANCE_FEE_WALLET", wallet.toBase58());
+  vi.stubEnv("SOFINANCE_FEE_BPS", "10");
   const getAccountInfo = vi.fn();
   expect((await resolveSwapFeeConfig({ getAccountInfo } as unknown as Connection, mint, TOKEN_PROGRAM_ID, true)).bps).toBe(10);
   expect(getAccountInfo).not.toHaveBeenCalled();

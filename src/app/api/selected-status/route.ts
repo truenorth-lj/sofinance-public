@@ -6,6 +6,8 @@ import { confirmedAtomicSuccess, instructionLiquidity } from "@/lib/attempt-stat
 import { apiError } from "@/lib/api-response";
 import { readSelectedPositionState, type PositionSelection } from "@/lib/selected-state";
 import { rpcConnection } from "@/lib/rpc";
+import { invalidatePositionHistoryCache } from "@/lib/position-history-cache";
+import { resetRpcCache } from "@/lib/rpc/cache";
 
 function validRaw(value: unknown) {
   return typeof value === "string" && /^\d+$/.test(value);
@@ -80,6 +82,10 @@ export async function POST(request: Request) {
     const success = confirmedAtomicSuccess({ signedByWallet, addedToExactPosition: Boolean(add), ownsNft: state.ownsNft,
       startingLiquidity: body.startingLiquidity, expectedLiquidity: body.expectedLiquidity,
       currentLiquidity: state.liquidity, transactionLiquidity });
+    if (success) {
+      invalidatePositionHistoryCache(body.selection.positionMint);
+      resetRpcCache();
+    }
     return Response.json({ ...base, status: success ? "success" : "manual-review",
       signedByWallet, addedToExactPosition: Boolean(add) }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {

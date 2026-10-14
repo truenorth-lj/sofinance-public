@@ -15,7 +15,7 @@ import {
 
 export const HISTORY_BATCH_SIZE = 8;
 
-export type HistoryFetchSource = "getTransactionsForAddress" | "getParsedTransactionBatch";
+export type HistoryFetchSource = "getTransactionsForAddress" | "getParsedTransactionBatch" | "databaseIncremental";
 
 export type HistoryProvider = "solami" | "default" | "solami+default";
 
@@ -34,6 +34,15 @@ export type HistoryFetchMetric = {
   solamiTxCount: number;
   defaultTxCount: number;
   fallbackReasons: HistoryFallbackReason[];
+  cachedTxCount?: number;
+  fetchedTxCount?: number;
+  listingCount?: number;
+  historyComplete?: boolean;
+  canContinue?: boolean;
+  memoryCacheHit?: boolean;
+  memoryCacheAgeMs?: number;
+  historySyncedAt?: string;
+  refreshSignaturesResolved?: boolean;
 };
 
 export type HistoryServedBy = "solami" | "default";

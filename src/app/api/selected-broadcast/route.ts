@@ -1,3 +1,4 @@
+import { invalidatePositionHistoryCache } from "@/lib/position-history-cache";
 import { simulateAndVerifySelectedTransaction } from "@/lib/selected-simulation";
 import { PublicKey, VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
@@ -83,6 +84,7 @@ export async function POST(request: Request) {
       skipPreflight: false, preflightCommitment: "confirmed", maxRetries: 3,
     });
     if (signature !== expectedSignature) throw new Error("Dedicated RPC returned transaction signature mismatch");
+    invalidatePositionHistoryCache(body.selection.positionMint);
     return Response.json(
       { signature, beam: null, beamLabel: null, beamLandingUrl: beamLandingUrl(signature) },
       { headers: { "Cache-Control": "no-store" } },

@@ -110,11 +110,13 @@ export const submitOpenPositionSchema = z.object({
 export type SubmitOpenPositionInput = z.infer<typeof submitOpenPositionSchema>;
 
 
-// Position holding-period / realized fee APR (read-only, no DB)
+// Position holding-period / realized fee APR (read-only)
 export const getPositionPerformanceSchema = z.object({
   positionMint: publicKeySchema,
   wallet: publicKeySchema.optional(),
   maxSignatures: z.number().int().min(1).max(500).default(100),
+  refreshHistory: z.boolean().optional().describe("Force a fresh history read after a transaction"),
+  historyAfterSignatures: z.array(z.string().regex(/^[1-9A-HJ-NP-Za-km-z]{64,88}$/)).max(8).optional(),
   skipPricing: z.boolean().default(false),
 });
 export type GetPositionPerformanceInput = z.infer<typeof getPositionPerformanceSchema>;

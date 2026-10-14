@@ -3,7 +3,8 @@ import { PersonalPositionLayout } from "@raydium-io/raydium-sdk-v2";
 import { verifiedTokenAmount } from "../lp-exit-verification";
 import { PublicKey, VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
-import { rpcConnection } from "../rpc";
+import { rpcConnection, resetRpcCache } from "../rpc";
+import { invalidatePositionHistoryCache } from "../position-history-cache";
 import { getSigningSecret } from "../config/server-env";
 import { withdrawPermit } from "./permit";
 import type { WithdrawPrepared } from "./types";
@@ -15,6 +16,11 @@ export async function withdrawStatus(input: {
     if (bs58.decode(input.signature).length !== 64)
         throw new Error("Invalid signature");
     const { summary, permit, unsignedTransaction } = input.prepared;
+    const successful = () => {
+        invalidatePositionHistoryCache(summary.positionMint);
+        resetRpcCache();
+        return { status: "success", signature: input.signature, stage: summary.stage };
+    };
     const expected = VersionedTransaction.deserialize(Buffer.from(unsignedTransaction, "base64"));
     if (!withdrawPermit.verify(getSigningSecret(), { wallet: summary.wallet, message: Buffer.from(expected.message.serialize()).toString("base64"), summary }, permit))
         throw new Error("Invalid withdrawal authorization");
@@ -27,7 +33,7 @@ export async function withdrawStatus(input: {
             return { status: "pending", signature: input.signature };
         const historical = await connection.getTransaction(input.signature, { commitment: "finalized", maxSupportedTransactionVersion: 0 });
         if (historical?.meta && !historical.meta.err && Buffer.from(historical.transaction.message.serialize()).equals(Buffer.from(expected.message.serialize())))
-            return { status: "success", signature: input.signature, stage: summary.stage };
+            return successful();
         // An absent signature is not enough to declare an attempted withdrawal safe to retry.
         const keys = [...summary.assets.map(a => new PublicKey(a.account)), new PublicKey(summary.positionAccount)];
         const balances = await connection.getMultipleAccountsInfo(keys, "finalized");
@@ -44,5 +50,6 @@ export async function withdrawStatus(input: {
         return { status: "manual-review", signature: input.signature };
     if (receipt.meta.err)
         return { status: "failed", signature: input.signature };
-    return { status: Buffer.from(receipt.transaction.message.serialize()).equals(Buffer.from(expected.message.serialize())) ? "success" : "manual-review", signature: input.signature, stage: summary.stage };
+    if (Buffer.from(receipt.transaction.message.serialize()).equals(Buffer.from(expected.message.serialize()))) return successful();
+    return { status: "manual-review", signature: input.signature, stage: summary.stage };
 }

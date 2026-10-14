@@ -4,6 +4,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
+vi.mock("@/lib/position-history-cache", () => ({ invalidatePositionHistoryCache: vi.fn() }));
+import { invalidatePositionHistoryCache } from "@/lib/position-history-cache";
 vi.mock("@/lib/rpc", () => ({ rpcConnection: vi.fn() }));
 vi.mock("@/lib/compound-attempt", () => ({ parseCompoundAttempt: vi.fn() }));
 vi.mock("@/lib/compound-state", () => ({ readCompoundPositionState: vi.fn() }));
@@ -103,6 +105,7 @@ describe("POST /api/compound-confirm", () => {
       connection.getParsedTransaction.mockResolvedValue({ transaction: { signatures: ["different"] }, meta: { err: null } });
       expect((await call()).json).toMatchObject({ status: "manual-review", chainStatus: "unknown" });
       expect(confirmedCompoundReceipt).not.toHaveBeenCalled();
+      expect(invalidatePositionHistoryCache).not.toHaveBeenCalled();
     });
     it("recovery: expired only when every yield account is STILL present (inverse of compound)", async () => {
       vi.mocked(parseCompoundAttempt).mockReturnValue(attemptFor("recovery") as never);

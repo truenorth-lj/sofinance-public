@@ -248,7 +248,7 @@ const TOOL_DEFINITIONS = [
   {
     name: "get_position_performance",
     description:
-      "Compute holding-period return and realized fee APR for a Raydium CLMM position NFT from on-chain facts (no database, not Raydium pool 24h feeApr). Prefer token-native metrics: for same-asset RWA wrap pairs (e.g. SPCXx/SPCX) report TE in the plain/base ticker using current tick mid (1.0001^tick×10^(decA−decB)), plus raw A/B inventory, holdingDays, feeOnlyAprPct and annualizedReturnPct (HPR×365/days; feesEarned/deposited×365/days). USD is optional/secondary (Jupiter Price v3 / Raydium stable-leg, labeled current — not historical). Discovers open/increase/decrease txs via personal-position signatures + Anchor events + current equity. Read-only.",
+      "Compute holding-period return and realized fee APR for a Raydium CLMM position NFT from finalized history and current on-chain state (not Raydium pool 24h feeApr). Prefer token-native metrics: for same-asset RWA wrap pairs (e.g. SPCXx/SPCX) report TE in the plain/base ticker using current tick mid (1.0001^tick×10^(decA−decB)), plus raw A/B inventory, holdingDays, feeOnlyAprPct and annualizedReturnPct (HPR×365/days; feesEarned/deposited×365/days). USD is optional/secondary (Jupiter Price v3 / Raydium stable-leg, labeled current — not historical). Discovers open/increase/decrease txs via personal-position signatures + Anchor events + current equity. After submitting a position transaction, use refreshHistory=true and historyAfterSignatures to require its finalized history. Read-only.",
     inputSchema: {
       type: "object",
       properties: {
@@ -265,6 +265,8 @@ const TOOL_DEFINITIONS = [
           description: "Max personal-position signatures to scan (1-500, default 100)",
           default: 100,
         },
+        refreshHistory: { type: "boolean", description: "Force a fresh history read after a transaction" },
+        historyAfterSignatures: { type: "array", maxItems: 8, items: { type: "string", pattern: "^[1-9A-HJ-NP-Za-km-z]{64,88}$" } },
         skipPricing: {
           type: "boolean",
           description: "If true, skip Jupiter/Raydium USD pricing (token-native / TE metrics still computed)",

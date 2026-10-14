@@ -50,12 +50,21 @@ export function buildRealizedFeeAprSeries(input: {
 }): RealizedFeeAprSeries {
   const byDay = new Map<number, RealizedFeeAprPoint>();
   const chronological = [...input.history];
+  const cash = aggregateCashflowsForPosition([], input.positionMint, input.poolId);
 
   for (let index = 0; index < chronological.length; index += 1) {
     const item = chronological[index]!;
+    const delta = aggregateCashflowsForPosition(item.events, input.positionMint, input.poolId);
+    cash.depositedA += delta.depositedA;
+    cash.depositedB += delta.depositedB;
+    cash.withdrawnPrincipalA += delta.withdrawnPrincipalA;
+    cash.withdrawnPrincipalB += delta.withdrawnPrincipalB;
+    cash.feesCollectedA += delta.feesCollectedA;
+    cash.feesCollectedB += delta.feesCollectedB;
+    cash.openCount += delta.openCount;
+    cash.increaseCount += delta.increaseCount;
+    cash.decreaseCount += delta.decreaseCount;
     if (item.blockTime === null || item.blockTime <= 0) continue;
-    const events = chronological.slice(0, index + 1).flatMap((row) => row.events);
-    const cash = aggregateCashflowsForPosition(events, input.positionMint, input.poolId);
     const point = pointFromCash({
       cash,
       asOf: item.blockTime,
@@ -71,10 +80,8 @@ export function buildRealizedFeeAprSeries(input: {
     if (point) byDay.set(point.time, point);
   }
 
-  const allEvents = chronological.flatMap((row) => row.events);
-  const latest = aggregateCashflowsForPosition(allEvents, input.positionMint, input.poolId);
   const evaluation = pointFromCash({
-    cash: latest,
+    cash,
     asOf: input.evaluatedAt,
     openedAt: input.openedAt,
     uncollected: input.uncollectedFees,

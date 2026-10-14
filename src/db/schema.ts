@@ -2,7 +2,7 @@
 import type { RwaPairRow } from "../lib/rwa-pairs";
 import type { PoolRangeAprPayload } from "../lib/range-apr/types";
 import type { StoredProfile } from "../lib/rwa-store-types";
-import { pgTable, check, text, uuid, integer, jsonb, timestamp, index, foreignKey, numeric, bigint, primaryKey, date } from "drizzle-orm/pg-core"
+import { pgTable, check, text, uuid, integer, jsonb, timestamp, index, foreignKey, numeric, bigint, primaryKey, date, boolean } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 
 
@@ -197,4 +197,51 @@ export const rwaAprDaily = pgTable("rwa_apr_daily", {
 	check("rwa_apr_daily_symbol_b_check", sql`length(btrim(symbol_b)) > 0`),
 	check("rwa_apr_daily_tvl_usd_check", sql`(tvl_usd >= (0)::numeric) AND (tvl_usd < 'Infinity'::numeric)`),
 	check("rwa_apr_daily_volume_24h_usd_check", sql`(volume_24h_usd >= (0)::numeric) AND (volume_24h_usd < 'Infinity'::numeric)`),
+]);
+
+// This app observes only mainnet Raydium CLMM; fixed fields prevent accidental reuse
+// of a position mint's checkpoint with a different chain or program.
+export const positionHistoryState = pgTable("position_history_state", {
+  positionMint: text("position_mint").primaryKey().notNull(),
+  network: text("network").default("mainnet-beta").notNull(),
+  programId: text("program_id").default("CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK").notNull(),
+  context: jsonb("context").$type<import("../lib/position-history-store-types").PositionContext>().notNull(),
+  headSignature: text("head_signature"),
+  backfillBefore: text("backfill_before"),
+  deltaBefore: text("delta_before"),
+  deltaHead: text("delta_head"),
+  complete: boolean("complete").default(false).notNull(),
+  parserVersion: integer("parser_version").notNull(),
+  revision: bigint("revision", { mode: "number" }).default(0).notNull(),
+  leaseOwner: uuid("lease_owner"),
+  leaseEpoch: bigint("lease_epoch", { mode: "number" }).default(0).notNull(),
+  leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true, mode: "string" }),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+}, () => [
+  check("position_history_state_identity_check", sql`network = 'mainnet-beta' AND program_id = 'CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK' AND position_mint ~ '^[1-9A-HJ-NP-Za-km-z]{32,44}$'`),
+  check("position_history_state_context_check", sql`jsonb_typeof(context) = 'object' AND context->>'positionMint' = position_mint`),
+  check("position_history_state_cursor_check", sql`(head_signature IS NULL OR head_signature ~ '^[1-9A-HJ-NP-Za-km-z]{64,88}$') AND (backfill_before IS NULL OR backfill_before ~ '^[1-9A-HJ-NP-Za-km-z]{64,88}$') AND (delta_before IS NULL OR delta_before ~ '^[1-9A-HJ-NP-Za-km-z]{64,88}$') AND (delta_head IS NULL OR delta_head ~ '^[1-9A-HJ-NP-Za-km-z]{64,88}$')`),
+  check("position_history_state_versions_check", sql`parser_version > 0 AND revision BETWEEN 0 AND 9007199254740991 AND lease_epoch BETWEEN 0 AND 9007199254740991`),
+  check("position_history_state_lease_check", sql`(lease_owner IS NULL) = (lease_expires_at IS NULL)`),
+]);
+
+export const positionHistoryTransactions = pgTable("position_history_transactions", {
+  positionMint: text("position_mint").notNull(),
+  signature: text("signature").notNull(),
+  slot: bigint("slot", { mode: "number" }).notNull(),
+  blockTime: bigint("block_time", { mode: "number" }),
+  status: text("status").$type<"parsed" | "pending" | "failed" | "ignored">().notNull(),
+  receipt: jsonb("receipt").$type<Record<string, unknown>>(),
+  events: jsonb("events").$type<import("../lib/position-performance-events").PositionCashflowEvent[]>().default([]).notNull(),
+  parserVersion: integer("parser_version").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.positionMint, table.signature], name: "position_history_transactions_pkey" }),
+  foreignKey({ columns: [table.positionMint], foreignColumns: [positionHistoryState.positionMint], name: "position_history_transactions_position_fkey" }).onDelete("restrict"),
+  index("position_history_transactions_position_slot_idx").on(table.positionMint, table.slot),
+  check("position_history_transactions_signature_check", sql`signature ~ '^[1-9A-HJ-NP-Za-km-z]{64,88}$'`),
+  check("position_history_transactions_slot_check", sql`slot BETWEEN 0 AND 9007199254740991 AND (block_time IS NULL OR block_time >= 0)`),
+  check("position_history_transactions_status_check", sql`status IN ('parsed', 'pending', 'failed', 'ignored') AND parser_version > 0`),
+  check("position_history_transactions_receipt_check", sql`receipt IS NULL OR jsonb_typeof(receipt) = 'object'`),
+  check("position_history_transactions_events_check", sql`jsonb_typeof(events) = 'array' AND (status <> 'ignored' OR events = '[]'::jsonb)`),
 ]);

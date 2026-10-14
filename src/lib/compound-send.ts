@@ -1,4 +1,5 @@
 import "server-only";
+import { invalidatePositionHistoryCache } from "./position-history-cache";
 
 import { PublicKey, VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
@@ -54,6 +55,7 @@ export async function sendSignedCompoundTransaction(
       skipPreflight: false, preflightCommitment: "confirmed", maxRetries: 3,
     });
     if (signature !== expected) throw new Error("RPC returned compound signature mismatch, please verify on-chain status");
+    invalidatePositionHistoryCache(summary.positionMint);
     const beam = await lookupBeamAfterSend(signature);
     return { signature, beam: beam.beam, beamLabel: beam.label, beamLandingUrl: beam.beamLandingUrl };
   } catch (error) {

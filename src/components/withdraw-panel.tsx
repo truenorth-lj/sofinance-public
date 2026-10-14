@@ -5,6 +5,7 @@ import bs58 from "bs58";
 import { useWalletConnection } from "./wallet-connection";
 import { NATIVE_SOL_MINT } from "@/lib/ids";
 import { formatAmount } from "@/lib/amount";
+import { notifyPositionHistoryChange } from "@/lib/position-history-refresh";
 import type { WithdrawPrepared, WithdrawSummary, WithdrawRequest } from "@/lib/withdraw/types";
 
 type Checkpoint = { prepared: WithdrawPrepared; signature: string; request: WithdrawRequest; confirmHighImpact: boolean; root?: {prepared:WithdrawPrepared;signature:string} };
@@ -44,7 +45,10 @@ export function WithdrawPanel({wallet,positionMint,mintA,mintB,label,onClose,onB
  async function waitFor(saved:Checkpoint){
   for(let i=0;i<60;i++){
    const result=await post<{status:string}>("withdraw-status",{signature:saved.signature,prepared:saved.prepared});
-   if(result.status==="success")return;
+   if(result.status==="success"){
+    notifyPositionHistoryChange(saved.prepared.summary.positionMint,saved.prepared.summary.stage==="swap"?undefined:saved.signature);
+    return;
+   }
    if(result.status==="failed" || result.status==="expired")save(saved.root?{...saved,prepared:saved.root.prepared,signature:saved.root.signature,root:undefined}:null);
    if(result.status!=="pending")throw new Error(`Transaction status: ${result.status}. Review it before starting another withdrawal.`);
    setProgress("Waiting for transaction to finalize…");await new Promise(resolve=>setTimeout(resolve,2000));

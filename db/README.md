@@ -32,6 +32,24 @@ migration and local verification: that service runs the ORM against private
 PostgreSQL. Vercel continues to read its authenticated HTTPS endpoint. Discovery
 runs every 15 minutes, APR every 5 minutes, and the daily history rule is unchanged.
 
+Position performance uses two additional tables: `position_history_state` for
+fenced synchronization progress and `position_history_transactions` for receipts
+and parsed event arrays. Apply the committed migration and deploy the gateway
+before setting `SOFINANCE_POSITION_HISTORY_DB_ENABLED=true` on Vercel. Position
+history updates only when queried; the existing RWA scheduler does not scan it.
+Current prices, liquidity and unclaimed fees are still read on every lookup.
+Each lookup fetches at most `maxSignatures` transaction details (1–500, default
+100). The reader resumes incomplete history on subsequent views. A position is
+bounded to 10,000 stored signatures and 3.5 MB per snapshot; oversized metadata
+fails closed, and raw receipts are replayed within a byte budget.
+Complete history also has an eight-second process cache (64 entries, 8 MiB).
+It caches neither ownership nor current valuation. A changed position-account
+fingerprint misses the cache; successful transaction verification invalidates
+it. Browser dirty markers send `refreshHistory=1` across server instances and
+retain required signatures until finalized history includes them (or finalized
+failure is verified). Pending history and errors are never cached. MCP callers
+can use `refreshHistory` and `historyAfterSignatures` for the same guarantee.
+
 Opt-in integration tests create and remove only disposable schemas in the
 dedicated database:
 

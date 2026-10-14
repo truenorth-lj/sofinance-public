@@ -29,7 +29,7 @@ describe.skipIf(!url)("Drizzle adoption preserves existing snapshots", () => {
     await migrate(drizzle(db!), { migrationsFolder: temporary, migrationsSchema: `${schema}_fresh` });
     await migrate(drizzle(db!), { migrationsFolder: temporary, migrationsSchema: `${schema}_fresh` });
     const fresh = await db!.unsafe(`SELECT hash FROM "${schema}_fresh".__drizzle_migrations`);
-    expect(fresh).toHaveLength(1);
+    expect(fresh).toHaveLength(readMigrationFiles({ migrationsFolder: folder }).length);
     await db!`INSERT INTO rwa_feed_state(feed_key,pairing_rule_version,summary) VALUES('retained','v1','{"retained":true}'::jsonb)`;
   }, 30_000);
   afterAll(async () => {
@@ -59,5 +59,43 @@ describe.skipIf(!url)("Drizzle adoption preserves existing snapshots", () => {
     await db!.unsafe(`ALTER TABLE "${schema}".rwa_feed_state DROP COLUMN drift`);
     await db!.unsafe(`UPDATE "${schema}_drizzle".__drizzle_migrations SET hash='edited'`);
     await expect(runRwaMigrations(db!, "baseline", folder, schema)).rejects.toThrow("MIGRATION_LEDGER_MISMATCH");
+  }, 30_000);
+});
+
+describe.skipIf(!url)("Additive position migration on the adopted five-table schema", () => {
+  const schema = `rwa_add_it_${randomUUID().replaceAll("-", "")}`;
+  const folder = resolve("drizzle");
+  const temporary = mkdtempSync(resolve(tmpdir(), "rwa-additive-test-"));
+  const db = url ? (validateRwaTarget(url), postgres(url, { max: 2, prepare: false, onnotice: () => {},
+    connection: { options: `-c search_path=${schema} -c statement_timeout=30000 -c lock_timeout=5000` } })) : null;
+  beforeAll(async () => {
+    await db!.unsafe(`CREATE SCHEMA "${schema}"`);
+    const baseline = readMigrationFiles({ migrationsFolder: folder })[0]!;
+    for (const statement of baseline.sql) await db!.unsafe(statement.replaceAll('"public".', `"${schema}".`));
+    await db!`INSERT INTO rwa_feed_state(feed_key,pairing_rule_version,summary) VALUES('retained','v1','{"retained":true}'::jsonb)`;
+    mkdirSync(resolve(temporary, "meta"));
+    const journal = JSON.parse(readFileSync(resolve(folder, "meta/_journal.json"), "utf8"));
+    writeFileSync(resolve(temporary, "meta/_journal.json"), JSON.stringify(journal));
+    for (const entry of journal.entries) writeFileSync(resolve(temporary, `${entry.tag}.sql`),
+      readFileSync(resolve(folder, `${entry.tag}.sql`), "utf8").replaceAll('"public".', `"${schema}".`));
+  }, 30_000);
+  afterAll(async () => {
+    if (db) {
+      await db.unsafe(`DROP SCHEMA IF EXISTS "${schema}_drizzle" CASCADE`);
+      await db.unsafe(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
+      await db.end();
+    }
+    rmSync(temporary, { recursive: true });
+  }, 30_000);
+  it("applies and repeats the new migration while preserving prior business rows", async () => {
+    const before = await db!`SELECT * FROM rwa_feed_state`;
+    await runRwaMigrations(db!, "baseline", folder, schema);
+    await migrate(drizzle(db!), { migrationsFolder: temporary, migrationsSchema: `${schema}_drizzle` });
+    await migrate(drizzle(db!), { migrationsFolder: temporary, migrationsSchema: `${schema}_drizzle` });
+    expect(await db!`SELECT * FROM rwa_feed_state`).toEqual(before);
+    const ledger = await db!.unsafe(`SELECT hash FROM "${schema}_drizzle".__drizzle_migrations`);
+    expect(ledger).toHaveLength(readMigrationFiles({ migrationsFolder: folder }).length);
+    const tables = await db!`SELECT tablename FROM pg_tables WHERE schemaname=${schema} AND tablename LIKE 'position_history_%' ORDER BY tablename`;
+    expect(tables.map((row) => row.tablename)).toEqual(["position_history_state", "position_history_transactions"]);
   }, 30_000);
 });

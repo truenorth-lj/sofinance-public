@@ -35,6 +35,7 @@ export function getRwaConfig() {
     gatewayUrl,
     secret,
     enabled: process.env.SOFINANCE_RWA_DB_ENABLED === "true",
+    positionHistoryEnabled: process.env.SOFINANCE_POSITION_HISTORY_DB_ENABLED === "true",
     refreshEnabled: process.env.SOFINANCE_RWA_REFRESH_ENABLED === "true",
     isVercel: !!process.env.VERCEL,
     isPreview:
