@@ -7,9 +7,9 @@ vi.mock("server-only", () => ({}));
 vi.mock("./rpc", () => ({ rpcConnection: vi.fn() }));
 vi.mock("./open-state", () => ({ readOpenPoolState: vi.fn() }));
 vi.mock("./open-simulation", () => ({ simulateAndVerifyOpenTransaction: vi.fn() }));
-vi.mock("./solami-beam", () => ({ lookupBeamAfterSend: vi.fn() }));
+vi.mock("./solami-beam", () => ({ lookupBeamAfterSend: vi.fn(), beamLandingUrl: (signature: string) => `/api/beam-landing?signature=${signature}` }));
 
-import { VersionedTransaction } from "@solana/web3.js";
+import { SendTransactionError, VersionedTransaction } from "@solana/web3.js";
 import { CompoundSendError } from "./public-error";
 import { issueOpenPositionPermit } from "./open-permit";
 import { readOpenPoolState } from "./open-state";
@@ -182,21 +182,31 @@ describe("sendSignedOpenPosition", () => {
     expect(connection.sendRawTransaction).not.toHaveBeenCalled();
   });
 
-  it("QUIRK: every failure, even after sendRawTransaction ran, is wrapped with sent:false ('safe to retry')", async () => {
+  it("keeps signature mismatch and network failures unknown after submission", async () => {
     connection.sendRawTransaction.mockResolvedValue("1".repeat(64));
     const mismatch = await failure(sendSignedOpenPosition(wallet, transaction, summaryFor()));
     expect(connection.sendRawTransaction).toHaveBeenCalledOnce();
     expect(mismatch.cause).toEqual(new Error("RPC returned transaction signature mismatch"));
-    expect(mismatch.sent).toBe(false);
+    expect(mismatch.sent).toBeUndefined();
 
     connection.sendRawTransaction.mockRejectedValue(new Error("socket hang up"));
     const network = await failure(sendSignedOpenPosition(wallet, transaction, summaryFor()));
-    expect(network.sent).toBe(false);
-
+    expect(network.sent).toBeUndefined();
+  });
+  it("does not let optional Beam lookup failure overturn submission", async () => {
     connection.sendRawTransaction.mockResolvedValue(signatureOf(transaction));
     vi.mocked(lookupBeamAfterSend).mockRejectedValue(new Error("beam down"));
-    const beam = await failure(sendSignedOpenPosition(wallet, transaction, summaryFor()));
-    expect(beam.sent).toBe(false);
+    await expect(sendSignedOpenPosition(wallet, transaction, summaryFor())).resolves.toMatchObject({
+      signature: signatureOf(transaction), beam: null, beamLandingUrl: `/api/beam-landing?signature=${signatureOf(transaction)}`,
+    });
+  });
+  it("marks only explicit RPC simulation rejection as unsent, not other RPC failures", async () => {
+    connection.sendRawTransaction.mockRejectedValue(new SendTransactionError({ action: "simulate", signature: "",
+      transactionMessage: "Transaction simulation failed: Error processing Instruction 0" }));
+    expect((await failure(sendSignedOpenPosition(wallet, transaction, summaryFor()))).sent).toBe(false);
+    connection.sendRawTransaction.mockRejectedValue(new SendTransactionError({ action: "simulate", signature: "",
+      transactionMessage: "Too many requests (429)" }));
+    expect((await failure(sendSignedOpenPosition(wallet, transaction, summaryFor()))).sent).toBeUndefined();
   });
 });
 

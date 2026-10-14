@@ -98,11 +98,16 @@ describe("POST /api/open-broadcast", () => {
     expect(json).toEqual({ error: "Pool, wallet balance, or asset flags have changed since preparation", sent: false });
   });
 
-  it("QUIRK: even a signature-mismatch AFTER sendRawTransaction ran returns sent:false", async () => {
+  it("does not declare signature mismatch after send safe to retry", async () => {
     connection.sendRawTransaction.mockResolvedValue("1".repeat(64));
     const { json } = await call(body());
     expect(connection.sendRawTransaction).toHaveBeenCalledOnce();
-    expect(json).toEqual({ error: "RPC returned transaction signature mismatch", sent: false });
+    expect(json).toEqual({ error: "RPC returned transaction signature mismatch" });
+  });
+  it("leaves a lost send response unknown", async () => {
+    connection.sendRawTransaction.mockRejectedValue(new Error("socket hang up"));
+    const { json } = await call(body());
+    expect(json).not.toHaveProperty("sent");
   });
 
   it("QUIRK: a garbage signedTransaction leaks the raw web3.js deserialize message", async () => {

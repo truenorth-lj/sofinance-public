@@ -93,7 +93,10 @@ export function OpenPositionModal({
 
   const status = c.submitStage === "preparing" ? "Preparing latest transaction…"
     : c.submitStage === "wallet" ? "Waiting for wallet signature…"
-      : c.submitStage === "broadcasting" ? "Confirming on-chain…"
+      : c.submitStage === "broadcasting" ? "Sending transaction…"
+        : c.submitStage === "pending" ? "Waiting for on-chain confirmation…"
+          : c.submitStage === "failed" ? "Transaction failed on-chain"
+            : c.submitStage === "expired" ? "Transaction expired"
         : c.submitStage === "confirmed" ? "Position opened"
           : c.quoteLoading && !quote ? "Fetching quote…"
             : c.actionBlockedReason || "Ready to sign";
@@ -237,14 +240,21 @@ export function OpenPositionModal({
           </button>
         )}
 
+        {c.signature && c.submitStage !== "confirmed" && <div className="mt-3 space-y-2 text-sm" role="status">
+          <p>{status}</p>
+          <a className="block text-cream/90 underline" href={`https://solscan.io/tx/${c.signature}`} target="_blank" rel="noreferrer">View original transaction on Solscan</a>
+          <button type="button" onClick={c.retryConfirmation} className="text-cream/90 underline">Check transaction status</button>
+        </div>}
         {c.submitStage === "confirmed" ? (
           <div className="mt-3 space-y-2 text-sm">
+            <p role="status" className="text-mint">Position opened</p>
             <a className="block text-cream/90 underline" href={`https://solscan.io/tx/${c.signature}`} target="_blank" rel="noreferrer">
               View on Solscan
             </a>
             <a className="block text-cream/90 underline" href="/app">
               Open in Positions{c.positionMint ? ` (${c.positionMint.slice(0, 4)}…${c.positionMint.slice(-4)})` : ""}
             </a>
+            <button type="button" onClick={c.createAnother} className="text-cream/90 underline">Create another position</button>
           </div>
         ) : !c.connected ? (
           <button

@@ -276,9 +276,11 @@ describe("submitOpenPosition (MCP open-position submit)", () => {
       .rejects.toThrow("Transaction does not match simulated open-position authorization Transaction was not sent, safe to retry.");
   });
 
-  it("QUIRK: a signature mismatch AFTER the send is still reported 'not sent, safe to retry' (open-send marks everything sent:false)", async () => {
+  it("keeps a signature mismatch after send unknown without a retry hint", async () => {
     connection.sendRawTransaction.mockResolvedValue("1".repeat(64));
-    await expect(submitOpenPosition(input(transaction))).rejects.toThrow("RPC returned transaction signature mismatch Transaction was not sent, safe to retry.");
+    const error = await submitOpenPosition(input(transaction)).catch((caught: unknown) => caught as Error);
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toBe("RPC returned transaction signature mismatch");
     expect(connection.sendRawTransaction).toHaveBeenCalledOnce();
   });
 });
