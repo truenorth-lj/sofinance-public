@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ArrowDown, ArrowUpRight, ChartNoAxesCombined, CircleAlert, LoaderCircle, Sprout } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpRight, ChartNoAxesCombined, CircleAlert, LoaderCircle, Sprout } from "lucide-react";
 import { assetMetadata, assetSymbol, TokenPicker } from "./token-picker";
 import { formatAmount } from "@/lib/amount";
 import { NATIVE_SOL_MINT, USDC_MINT } from "@/lib/ids";
@@ -17,6 +17,7 @@ import { InkHero, InkNav } from "./ink";
 import { PositionPerformancePanel } from "./position-performance-panel";
 import { ConnectWalletPrompt } from "./connect-wallet-prompt";
 import { WithdrawPanel } from "./withdraw-panel";
+import { ActionSelector } from "./action-selector";
 import { AssetRisksDialog } from "./asset-risks-dialog";
 
 const short = (value: string) => `${value.slice(0, 5)}…${value.slice(-5)}`;
@@ -38,12 +39,11 @@ function calculateInputUsd(amount: string, priceUsd: number | null): string | nu
 }
 
 export function SelectedApp({ initialView = "compound", initialMint = "", initialWallet = "", previewPoolId = "" }: {
-  initialView?: "compound" | "performance" | "deposit";
+  initialView?: "compound" | "performance" | "deposit" | "withdraw";
   initialMint?: string;
   initialWallet?: string;
   previewPoolId?: string;
 } = {}) {
-  const [withdrawOpen,setWithdrawOpen]=useState(false);
   const [withdrawBusy,setWithdrawBusy]=useState(false);
   const controller = useSelectedController();
   const { wallet, connected, connect, disconnect, connectionError,
@@ -78,7 +78,7 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
   const metadata = useTokenMetadata(metadataMints);
   const [statusDialogOpen, setStatusDialogOpen] = useState(false);
   const [assetRisksOpen, setAssetRisksOpen] = useState(false);
-  const [activeView, setActiveView] = useState<"compound" | "performance" | "deposit">(initialView);
+  const [activeView, setActiveView] = useState<"compound" | "performance" | "deposit" | "withdraw">(initialView);
   // A deep link (?mint=) wins over the wallet's default selection until the user picks a position themselves. It is applied
   // once per wallet (the controller resets the selection whenever the wallet changes).
   const linkedPositionWallet = useRef("");
@@ -153,13 +153,13 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
       </section>
       </div>
 
-      <nav aria-label="Position operations" className="mt-3 flex gap-1.5 rounded-full border border-white/12 bg-char p-1.5">
-        <button type="button" aria-pressed={activeView === "compound"} aria-controls="compound-view" onClick={() => setActiveView("compound")} className={`flex flex-1 items-center justify-center gap-2 rounded-full px-3 py-3 text-sm font-semibold transition-colors ${activeView === "compound" ? "bg-lemon text-ink" : "text-smoke hover:text-cream/80"}`}><Sprout className="h-4 w-4" />Yield Compound</button>
-        <button type="button" aria-pressed={activeView === "performance"} aria-controls="performance-view" onClick={() => setActiveView("performance")} className={`flex flex-1 items-center justify-center gap-2 rounded-full px-3 py-3 text-sm font-semibold transition-colors ${activeView === "performance" ? "bg-lemon text-ink" : "text-smoke hover:text-cream/80"}`}><ChartNoAxesCombined className="h-4 w-4" />Performance</button>
-        <button type="button" aria-pressed={activeView === "deposit"} aria-controls="deposit-view" onClick={() => setActiveView("deposit")} className={`flex flex-1 items-center justify-center gap-2 rounded-full px-3 py-3 text-sm font-semibold transition-colors ${activeView === "deposit" ? "bg-lemon text-ink" : "text-smoke hover:text-cream/80"}`}><ArrowDown className="h-4 w-4" />Add to position</button>
-      </nav>
-      {state && <button type="button" disabled={busy} onClick={()=>setWithdrawOpen(true)} className="mt-4 rounded-full border border-white/20 px-5 py-3 text-sm text-cream">Withdraw</button>}
-      {withdrawOpen && state && wallet && <WithdrawPanel key={`${wallet}:${state.positionMint}`} wallet={wallet} positionMint={state.positionMint} mintA={state.mintA} mintB={state.mintB} label={poolLabel} onClose={()=>setWithdrawOpen(false)} onBusyChange={setWithdrawBusy} onConfirmed={()=>{void refreshState();void refreshDiscovery();}} />}
+      <ActionSelector value={activeView} onChange={setActiveView} options={[
+        { value: "compound", label: "Yield Compound", icon: Sprout, controls: "compound-view" },
+        { value: "performance", label: "Performance", icon: ChartNoAxesCombined, controls: "performance-view" },
+        { value: "deposit", label: "Add to position", icon: ArrowDown, controls: "deposit-view" },
+        { value: "withdraw", label: "Withdraw", icon: ArrowUp, controls: "withdraw-view", disabled: !state || !wallet || (busy && activeView !== "withdraw") },
+      ]} />
+      {activeView === "withdraw" && <div id="withdraw-view">{state && wallet ? <WithdrawPanel key={`${wallet}:${state.positionMint}`} wallet={wallet} positionMint={state.positionMint} mintA={state.mintA} mintB={state.mintB} label={poolLabel} onClose={()=>setActiveView("compound")} onBusyChange={setWithdrawBusy} onConfirmed={()=>{void refreshState();void refreshDiscovery();}} /> : <p className="mt-4 text-sm text-smoke">Connect your wallet and choose a position to withdraw.</p>}</div>}
       {historyWarning && <div role="status" className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-xs text-cream/80"><span>{historyWarning}</span><button type="button" className="font-semibold underline" onClick={() => { setActiveView("deposit"); if (visibleAttempt) setStatusDialogOpen(true); }}>View add liquidity transaction</button></div>}
       {compound.historyWarning && <div role="status" className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-xs text-cream/80"><span>{compound.historyWarning}</span><button type="button" className="font-semibold underline" onClick={() => setActiveView("compound")}>View compound status</button></div>}
       <main>

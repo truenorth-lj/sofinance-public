@@ -269,3 +269,32 @@ describe("POST /api/selected-status: signature observed", () => {
     expect(json.state).toMatchObject({ programId, ownsNft: true });
   });
 });
+
+describe("POST /api/selected-status: terminal resolution so the unconfirmed warning cannot stick", () => {
+  const gone = () => vi.mocked(readSelectedPositionState).mockRejectedValue(new Error("Wallet does not currently hold this Raydium CLMM position NFT"));
+  it("is expired well past the blockhash even when the wallet changed since", async () => {
+    connection.getSignatureStatuses.mockResolvedValue({ value: [null] });
+    connection.getBlockHeight.mockResolvedValue(150 + 151);
+    vi.mocked(readSelectedPositionState).mockResolvedValue(chainState({ liquidity: "1" }) as never);
+    expect((await call(baseBody)).json).toMatchObject({ status: "expired" });
+  });
+  it("is expired when the NFT is gone and the signature never landed", async () => {
+    gone(); connection.getSignatureStatuses.mockResolvedValue({ value: [null] });
+    connection.getBlockHeight.mockResolvedValue(150 + 151);
+    expect((await call(baseBody)).json).toMatchObject({ status: "expired", state: null });
+  });
+  it("is failed when the NFT is gone and the signature failed", async () => {
+    gone(); connection.getSignatureStatuses.mockResolvedValue({ value: [{ confirmationStatus: "finalized", err: { Custom: 1 } }] });
+    expect((await call(baseBody)).json).toMatchObject({ status: "failed" });
+  });
+  it("is success when the NFT is gone but the finalized transaction added the expected amount", async () => {
+    gone(); connection.getSignatureStatuses.mockResolvedValue({ value: [{ confirmationStatus: "finalized", err: null }] });
+    connection.getParsedTransaction.mockResolvedValue({ ...parsedTx({ program: "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK" }) } as never);
+    expect((await call(baseBody)).json).toMatchObject({ status: "success" });
+  });
+  it("is success for a finalized add even after a later withdrawal reduced the position", async () => {
+    connection.getSignatureStatuses.mockResolvedValue({ value: [{ confirmationStatus: "finalized", err: null }] });
+    vi.mocked(readSelectedPositionState).mockResolvedValue(chainState({ liquidity: "10" }) as never);
+    expect((await call(baseBody)).json).toMatchObject({ status: "success" });
+  });
+});

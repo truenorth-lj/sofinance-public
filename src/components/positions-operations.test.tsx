@@ -45,7 +45,10 @@ afterEach(async () => { await act(async () => root.unmount()); container.remove(
 describe("Positions operations while disconnected", () => {
   it("orders the operations and keeps Performance inside Positions", async () => {
     expect(Array.from(container.querySelectorAll('nav[aria-label="Position operations"] button')).map((b) => b.textContent?.trim()))
-      .toEqual(["Yield Compound", "Performance", "Add to position"]);
+      .toEqual(["Yield Compound", "Performance", "Add to position", "Withdraw"]);
+    // Mobile uses the same action list as a dropdown, including Withdraw.
+    expect(Array.from(container.querySelectorAll<HTMLOptionElement>("select#position-action option")).map((o) => [o.textContent, o.disabled]))
+      .toEqual([["Yield Compound", false], ["Performance", false], ["Add to position", false], ["Withdraw", true]]);
     expect(Array.from(container.querySelectorAll('nav[aria-label="App"] a')).map((a) => a.textContent)).not.toContain("Performance");
     await act(async () => button("Performance").click());
     expect(container.querySelector<HTMLElement>("#performance-view")?.hidden).toBe(false);
