@@ -4,7 +4,7 @@
  * Dry-run signs locally for exact wire measurement; only --send permits broadcasting.
  * Examples: pairs; open --pair SPCX --deposit usdc --amount 1;
  * add --position NFT --deposit token --amount 0.001; compound --position NFT;
- * swap --from usdc --to MINT --amount 1; exit --position NFT.
+ * swap --from usdc --to MINT --amount 1; withdraw --position NFT --percent 100 --receive usdc.
  * Options: --url URL, --keypair FILE, --mint MINT (choose pool token), --send.
  * Loads .env.local without overriding existing environment. Server env is separate.
  * Beam caveat: this branch's isBeamEnabled requires SOLAMI_API_KEY even with
@@ -30,6 +30,7 @@ import type { WalletDiscovery } from "../src/lib/wallet-discovery";
 import type { DiscoverRwaPairsResult, RwaPairRow } from "../src/lib/rwa-pairs";
 import type { OpenPositionSummary } from "../src/lib/open-types";
 import type { CompoundSummary } from "../src/lib/compound-types";
+import type { WithdrawPrepared, WithdrawRequest } from "../src/lib/withdraw/types";
 import type { SelectedQuote } from "../src/lib/selected-quote";
 
 if (existsSync(".env.local")) loadEnvFile(".env.local");
@@ -40,7 +41,7 @@ let send = false;
 for (let i = 0; i < args.length; i++) {
   const arg = args[i]!;
   if (arg === "--send") { send = true; continue; }
-  if (!/^--(?:pair|position|deposit|amount|from|to|url|keypair|mint)$/.test(arg) || !args[i + 1] || args[i + 1]!.startsWith("--")) {
+  if (!/^--(?:pair|position|deposit|amount|from|to|url|keypair|mint|percent|receive)$/.test(arg) || !args[i + 1] || args[i + 1]!.startsWith("--")) {
     throw new Error(`Unknown option or missing value: ${arg}`);
   }
   options.set(arg.slice(2), args[++i]!);
@@ -51,7 +52,7 @@ function required(name: string) {
   return value;
 }
 const base = options.get("url") ?? "http://localhost:3999";
-const feeWallet = new PublicKey("CS5CWYhPUrovyRwk4wfyWHdtQHChKUFd65RAZAVkN1AK");
+const feeWallet = new PublicKey(process.env.SOFINANCE_FEE_WALLET ?? "CS5CWYhPUrovyRwk4wfyWHdtQHChKUFd65RAZAVkN1AK");
 const keypairPath = resolve(options.get("keypair") ?? "/home/box/sofinance-test-wallet-keypair.json");
 const keypair = existsSync(keypairPath)
   ? Keypair.fromSecretKey(Uint8Array.from(JSON.parse(readFileSync(keypairPath, "utf8")) as number[])) : null;
@@ -119,6 +120,8 @@ async function inspect(encoded: string, beam?: Beam) {
       systemTransfers.push(transfer);
       if (transfer.destination === feeWallet.toBase58()) fees.push({ mint: "SOL", ...transfer });
     }
+    const feeAta=getAssociatedTokenAddressSync(new PublicKey(USDC_MINT),feeWallet,true);
+    if(ix.programId.toBase58()==="JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4" && ix.keys.some(key=>key.pubkey.equals(feeAta) && key.isWritable))fees.push({mint:USDC_MINT,amount:"Jupiter platform fee (see prepared summary)",destination:feeAta.toBase58()});
     if (![TOKEN_PROGRAM_ID.toBase58(), TOKEN_2022_PROGRAM_ID.toBase58()].includes(ix.programId.toBase58())) continue;
     if (data[0] === 12 && data.length === 10) {
       const mint = ix.keys[1]!.pubkey;
@@ -220,6 +223,32 @@ function tokenMint(pair: Pick<RwaPairRow, "mintA" | "mintB" | "symbolA" | "symbo
 }
 async function main() {
   console.log(`Wallet: ${wallet}; mode: ${send ? "SEND" : "DRY-RUN"}; app: ${base}`);
+  if (command === "withdraw") {
+    const receive = options.get("receive") ?? "usdc";
+    if (!["usdc", "original", "token"].includes(receive)) throw new Error("--receive must be usdc, original, or token");
+    const input: WithdrawRequest = { wallet, positionMint: required("position"), percent: Number(required("percent")),
+      receive: receive as WithdrawRequest["receive"], ...(receive === "token" ? {outputMint: required("mint")} : {}) };
+    let prepared = await api<WithdrawPrepared>("withdraw-prepare", input);
+    console.log(JSON.stringify(prepared.summary, null, 2));
+    const initialSol = await rpc.getBalance(new PublicKey(wallet), "finalized");
+    for (let step = 1; step <= 2; step++) {
+      console.log(`Withdrawal step ${step} of ${prepared.summary.transactions}`);
+      let finalizedSignature = "";
+      const current = prepared;
+      await execute(current.unsignedTransaction, current.summary, current.summary.assets.map(a => a.mint),
+        signedTransaction => api("withdraw-broadcast", {wallet, signedTransaction, permit:current.permit, summary:current.summary}, true),
+        async signature => { finalizedSignature = signature; await poll("withdraw-status", {signature,prepared:current}); }, current.summary.beam);
+      if (!send) {
+        if (current.summary.stage === "withdraw") console.log("Dry-run: step 2 requires an actual finalized step 1; no conversion transaction prepared.");
+        break;
+      }
+      if (current.summary.stage !== "withdraw") break;
+      prepared = await api<WithdrawPrepared>("withdraw-prepare", {...input, stage:"swap", tx1Signature:finalizedSignature, previous:current});
+    }
+    const finalSol = await rpc.getBalance(new PublicKey(wallet), "finalized");
+    console.log(JSON.stringify({wallet, walletSOLLamportsDelta:String(finalSol-initialSol), rentRefundLamports:prepared.summary.rentRefundLamports}));
+    return;
+  }
   if (command === "exit") { required("position"); console.log("Exit conversion not implemented: only /api/lp-decision/exit-preview exists."); return; }
   if (command === "pairs" || command === "open") {
     const discovered = await api<DiscoverRwaPairsResult>("rwa-pairs");

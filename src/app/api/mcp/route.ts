@@ -1,3 +1,4 @@
+import { WITHDRAW_TOOL_DEFINITIONS } from "@/mcp/withdraw-tools";
 import { NextRequest, NextResponse } from "next/server";
 import { verifyMcpToken } from "@/lib/mcp-auth";
 import { publicToolError } from "@/mcp/public-tool-error";
@@ -16,6 +17,8 @@ import {
   getPositionRangeStatus,
   quoteOpenPosition,
   prepareOpenPosition,
+  prepareWithdraw,
+  submitWithdrawTransaction,
   submitOpenPosition,
 } from "@/mcp/tools";
 import {
@@ -31,6 +34,8 @@ import {
   getPositionRangeStatusSchema,
   quoteOpenPositionSchema,
   prepareOpenPositionSchema,
+  prepareWithdrawSchema,
+  submitWithdrawSchema,
   submitOpenPositionSchema,
 } from "@/mcp/schemas";
 import { getJupiterApiKey } from "@/lib/config/server-env";
@@ -206,6 +211,17 @@ async function handleToolCall(name: string, args: unknown, walletFromToken: stri
       return await quoteOpenPosition(input);
     }
 
+    case "prepare_withdraw": {
+      const input = prepareWithdrawSchema.parse(args);
+      if (input.wallet !== walletFromToken) throw new Error(`Token wallet mismatch: token is for ${walletFromToken}, requested ${input.wallet}`);
+      return prepareWithdraw(input);
+    }
+    case "submit_withdraw": {
+      const input = submitWithdrawSchema.parse(args) as Parameters<typeof submitWithdrawTransaction>[0];
+      if (input.wallet !== walletFromToken) throw new Error(`Token wallet mismatch: token is for ${walletFromToken}, requested ${input.wallet}`);
+      return submitWithdrawTransaction(input);
+    }
+
     case "prepare_open_position": {
       const input = prepareOpenPositionSchema.parse(args);
       if (input.wallet !== walletFromToken) {
@@ -228,6 +244,7 @@ async function handleToolCall(name: string, args: unknown, walletFromToken: stri
 }
 
 const TOOL_DEFINITIONS = [
+  ...WITHDRAW_TOOL_DEFINITIONS,
   {
     name: "get_position_performance",
     description:

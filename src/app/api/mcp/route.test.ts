@@ -1,13 +1,13 @@
 // Characterization tests for the remote MCP endpoint (POST /api/mcp): JSON-RPC envelope, bearer
 // auth, the tools/list wire contract (golden snapshot) and per-tool wallet binding.
-// Real: route, mcp-auth token verification, zod schemas. Mocked: the 14 tool implementations.
+// Real: route, mcp-auth token verification, zod schemas. Mocked: the 16 tool implementations.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 vi.mock("@/mcp/tools", () => Object.fromEntries([
   "listPositions", "quoteAddLiquidity", "prepareTransaction", "quoteCompound", "prepareCompoundTransaction",
   "submitSignedTransaction", "submitCompoundTransaction", "listRwaPairs", "getPositionPerformance", "getPoolActivity",
-  "getPositionRangeStatus", "quoteOpenPosition", "prepareOpenPosition", "submitOpenPosition",
+  "getPositionRangeStatus", "quoteOpenPosition", "prepareOpenPosition", "submitOpenPosition", "prepareWithdraw", "submitWithdrawTransaction",
 ].map((name) => [name, vi.fn()])));
 
 import { NextRequest } from "next/server";
@@ -53,13 +53,14 @@ afterEach(() => {
 
 // -------------------------------------------------------------------- tools/list contract
 const EXPECTED_TOOL_NAMES = [
+  "prepare_withdraw", "submit_withdraw",
   "get_position_performance", "get_pool_activity", "get_position_range_status", "list_rwa_pairs", "list_positions",
   "quote_add_liquidity", "prepare_transaction", "quote_compound", "prepare_compound_transaction",
   "submit_signed_transaction", "submit_compound_transaction", "quote_open_position", "prepare_open_position", "submit_open_position",
 ];
 
 describe("tools/list wire contract", () => {
-  it("lists exactly the 14 tools in the current order, without authentication", async () => {
+  it("lists exactly the 16 tools in the current order, without authentication", async () => {
     const { response, json } = await send({ jsonrpc: "2.0", id: 1, method: "tools/list" });
     expect(response.status).toBe(200);
     expect(json).toMatchObject({ jsonrpc: "2.0", id: 1 });
@@ -80,6 +81,7 @@ describe("tools/list wire contract", () => {
   });
 
   const zodFor: Record<string, keyof typeof schemas> = {
+    prepare_withdraw:"prepareWithdrawSchema",submit_withdraw:"submitWithdrawSchema",
     get_position_performance: "getPositionPerformanceSchema", get_pool_activity: "getPoolActivitySchema",
     get_position_range_status: "getPositionRangeStatusSchema", list_rwa_pairs: "listRwaPairsSchema",
     list_positions: "listPositionsSchema", quote_add_liquidity: "quoteAddLiquiditySchema",
@@ -99,6 +101,8 @@ describe("tools/list wire contract", () => {
       const valid = VALID_ARGS[tool.name] as Record<string, unknown>;
       expect(schema.safeParse(valid).success, tool.name).toBe(true);
       const required = Object.keys(valid).filter((key) => {
+        // Percent/target are conditionally required through oneOf, not top-level required.
+        if (tool.name === "prepare_withdraw" && ["percent","targetUSDC"].includes(key)) return false;
         const { [key]: _omitted, ...rest } = valid;
         void _omitted;
         return !schema.safeParse(rest).success;
@@ -216,6 +220,8 @@ describe("authentication", () => {
 
 // -------------------------------------------------------------------- wallet binding
 const VALID_ARGS: Record<string, unknown> = {
+  prepare_withdraw:{wallet,positionMint:mint,percent:100},
+  submit_withdraw:{wallet,signedTransaction:"AA",permit:"p",summary:{}},
   list_positions: { wallet },
   quote_add_liquidity: { wallet, positionMint: mint, inputMint: mint, inputKind: "token", amount: "1" },
   prepare_transaction: { wallet, positionMint: mint, inputMint: mint, inputKind: "token", amount: "1" },
@@ -236,6 +242,7 @@ const VALID_ARGS: Record<string, unknown> = {
   list_rwa_pairs: {},
 };
 const IMPLEMENTATION: Record<string, string> = {
+  prepare_withdraw:"prepareWithdraw",submit_withdraw:"submitWithdrawTransaction",
   list_positions: "listPositions", quote_add_liquidity: "quoteAddLiquidity", prepare_transaction: "prepareTransaction",
   quote_compound: "quoteCompound", prepare_compound_transaction: "prepareCompoundTransaction",
   submit_signed_transaction: "submitSignedTransaction", submit_compound_transaction: "submitCompoundTransaction",
@@ -246,7 +253,7 @@ const IMPLEMENTATION: Record<string, string> = {
 const WALLET_REQUIRED = EXPECTED_TOOL_NAMES.filter((name) => !["get_position_performance", "get_position_range_status", "get_pool_activity", "list_rwa_pairs"].includes(name));
 
 describe("tools/call dispatch and wallet binding", () => {
-  it("covers all 14 tools", () => {
+  it("covers all 16 tools", () => {
     expect(Object.keys(VALID_ARGS).sort()).toEqual([...EXPECTED_TOOL_NAMES].sort());
     expect(Object.keys(IMPLEMENTATION).sort()).toEqual([...EXPECTED_TOOL_NAMES].sort());
   });

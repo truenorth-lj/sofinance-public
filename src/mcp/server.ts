@@ -2,6 +2,7 @@
 // Must stay the first import: lets the Next.js "server-only" guard load in a
 // plain Node process, so `npx tsx src/mcp/server.ts` works without NODE_OPTIONS.
 import "./server-only-mock.js";
+import { WITHDRAW_TOOL_DEFINITIONS } from "./withdraw-tools.js";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
@@ -21,6 +22,8 @@ import {
   getPositionRangeStatusSchema,
   quoteOpenPositionSchema,
   prepareOpenPositionSchema,
+  prepareWithdrawSchema,
+  submitWithdrawSchema,
   submitOpenPositionSchema,
 } from "./schemas.js";
 import { publicToolError } from "./public-tool-error.js";
@@ -38,6 +41,8 @@ import {
   getPositionRangeStatus,
   quoteOpenPosition,
   prepareOpenPosition,
+  prepareWithdraw,
+  submitWithdrawTransaction,
   submitOpenPosition,
 } from "./tools.js";
 
@@ -73,6 +78,7 @@ const server = new Server(
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
     tools: [
+      ...WITHDRAW_TOOL_DEFINITIONS,
 
 
       {
@@ -681,6 +687,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             },
           ],
         };
+      }
+
+      case "prepare_withdraw": {
+        const result = await prepareWithdraw(prepareWithdrawSchema.parse(args));
+        return {content:[{type:"text",text:JSON.stringify(result,null,2)}]};
+      }
+      case "submit_withdraw": {
+        const result = await submitWithdrawTransaction(submitWithdrawSchema.parse(args) as Parameters<typeof submitWithdrawTransaction>[0]);
+        return {content:[{type:"text",text:JSON.stringify(result,null,2)}]};
       }
 
       case "prepare_open_position": {

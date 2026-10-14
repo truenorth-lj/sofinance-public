@@ -116,6 +116,7 @@ export default function SignPage() {
       
       const submitPath = payload.kind === "add-liquidity"
         ? "/api/selected-broadcast"
+        : payload.kind === "withdraw" ? "/api/withdraw-broadcast"
         : payload.kind === "open-position"
           ? "/api/open-broadcast"
           : "/api/compound-broadcast";
@@ -124,6 +125,7 @@ export default function SignPage() {
         ? { signedTransaction, ...payload.submitArgs }
         : { 
             signedTransaction, 
+            confirmHighImpact: payload.submitArgs.confirmHighImpact,
             permit: payload.submitArgs.permit,
             wallet: payload.submitArgs.wallet,
             summary: payload.submitArgs.summary,
@@ -185,6 +187,7 @@ export default function SignPage() {
 
   const kindLabel = payload?.kind === "add-liquidity"
     ? "Add Liquidity"
+    : payload?.kind === "withdraw" ? "Withdraw"
     : payload?.kind === "open-position"
       ? "Open position"
       : "Compound";
