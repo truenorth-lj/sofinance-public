@@ -7,6 +7,7 @@ import {
   BEAM_LOOKUP_ATTEMPTS,
   BEAM_LOOKUP_GAP_MS,
   BEAM_MIN_TIP_LAMPORTS,
+  BEAM_TIP_FETCH_TIMEOUT_MS,
   BEAM_TIP_ADDRESSES_URL,
   beamLandingUrl,
   beamTipInstruction,
@@ -160,6 +161,16 @@ describe("fetchBeamTipAddress / fetchBeamLanding", () => {
     expect(tip?.lamports).toBe(BEAM_MIN_TIP_LAMPORTS);
     expect(LIVE_TIPS).toContain(tip?.address.toBase58());
     expect(fetcher).toHaveBeenCalledWith(BEAM_TIP_ADDRESSES_URL, expect.any(Object));
+  });
+
+  it("waits for a slow tip-address response within the shared timeout", async () => {
+    const fetcher = vi.fn(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      return new Response(JSON.stringify(LIVE_TIPS), { status: 200 });
+    });
+    const tip = await fetchBeamTipAddress({ env: { SOLAMI_API_KEY: "k" }, fetcher });
+    expect(BEAM_TIP_FETCH_TIMEOUT_MS).toBeGreaterThan(600);
+    expect(LIVE_TIPS).toContain(tip?.address.toBase58());
   });
 
   it("returns null on a 404 landing body", async () => {

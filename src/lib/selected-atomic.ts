@@ -113,7 +113,7 @@ async function buildAndSimulateSelectedZapOnce(
     try { if (compile(baseInstructions).serialize().length > 1232) throw new RangeError(); }
     catch { throw new Error("Complete swap + add transaction exceeds 1,232 byte limit, please select simpler route or other asset"); }
   }
-  const tip = await fetchBeamTipAddress({ signal, timeoutMs: 300 });
+  const tip = await fetchBeamTipAddress({ signal });
   signal?.throwIfAborted();
   const feeFit = await fitFeeCollections(connection, [feeInstructions], baseInstructions, compile,
     tip ? beamTipInstruction(wallet, tip.address, tip.lamports) : undefined);

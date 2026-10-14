@@ -133,15 +133,18 @@ export function chooseBeamTransaction<T extends VersionedTransaction>(
   return { transaction: withTip, included: true, skippedReason: null };
 }
 
+/** One tip-address timeout for every flow (open, selected add, compound). */
+export const BEAM_TIP_FETCH_TIMEOUT_MS = 2_000;
+
 export async function fetchBeamTipAddress(
-  options: { fetcher?: typeof fetch; env?: BeamEnv; signal?: AbortSignal; timeoutMs?: number } = {},
+  options: { fetcher?: typeof fetch; env?: BeamEnv; signal?: AbortSignal } = {},
 ): Promise<{ address: PublicKey; lamports: number } | null> {
   const env = options.env ?? (process.env as BeamEnv);
   if (!isBeamEnabled(env)) return null;
   const fetcher = options.fetcher ?? fetch;
   try {
     const response = await fetcher(BEAM_TIP_ADDRESSES_URL, {
-      headers: { Accept: "application/json" }, cache: "no-store", signal: AbortSignal.any([AbortSignal.timeout(options.timeoutMs ?? 2_000), ...(options.signal ? [options.signal] : [])]),
+      headers: { Accept: "application/json" }, cache: "no-store", signal: AbortSignal.any([AbortSignal.timeout(BEAM_TIP_FETCH_TIMEOUT_MS), ...(options.signal ? [options.signal] : [])]),
     });
     if (!response.ok) return null;
     const addresses = parseTipAddresses(await response.json());
