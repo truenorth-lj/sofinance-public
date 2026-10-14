@@ -1,0 +1,120 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`measures complete offline packets with Beam tips and snapshots fee overhead 1`] = `
+[
+  {
+    "bytes": 1283,
+    "fits": false,
+    "flow": "open USDC upfront / ATA exists",
+    "serialized": true,
+  },
+  {
+    "bytes": 1325,
+    "fits": false,
+    "flow": "open USDC upfront / ATA missing",
+    "serialized": true,
+  },
+  {
+    "bytes": 1400,
+    "fits": false,
+    "flow": "open SOL sequential + USDC fee route / ATA exists",
+    "serialized": false,
+  },
+  {
+    "bytes": 1474,
+    "fits": false,
+    "flow": "open SOL sequential + USDC fee route / ATA missing",
+    "serialized": false,
+  },
+  {
+    "bytes": 1328,
+    "fits": false,
+    "flow": "open single leg + USDC fee route / ATA exists",
+    "serialized": true,
+  },
+  {
+    "bytes": 1402,
+    "fits": false,
+    "flow": "open single leg + USDC fee route / ATA missing",
+    "serialized": false,
+  },
+  {
+    "bytes": 1258,
+    "fits": false,
+    "flow": "open SOL sequential input fallback",
+    "serialized": true,
+  },
+  {
+    "bytes": 1258,
+    "fits": false,
+    "flow": "open pool-token + USDC fee route / ATA exists",
+    "serialized": true,
+  },
+  {
+    "bytes": 1332,
+    "fits": false,
+    "flow": "open pool-token + USDC fee route / ATA missing",
+    "serialized": true,
+  },
+  {
+    "bytes": 1283,
+    "fits": false,
+    "flow": "selected SOL + USDC fee route / ATA exists",
+    "serialized": true,
+  },
+  {
+    "bytes": 1357,
+    "fits": false,
+    "flow": "selected SOL + USDC fee route / ATA missing",
+    "serialized": false,
+  },
+  {
+    "bytes": 1141,
+    "fits": true,
+    "flow": "selected pool-token + USDC fee route / ATA exists",
+    "serialized": true,
+  },
+  {
+    "bytes": 1215,
+    "fits": true,
+    "flow": "selected pool-token + USDC fee route / ATA missing",
+    "serialized": true,
+  },
+  {
+    "bytes": 1216,
+    "fits": true,
+    "flow": "compound input-token fallback / ATA exists",
+    "serialized": true,
+  },
+  {
+    "bytes": 1258,
+    "fits": false,
+    "flow": "compound input-token fallback / ATA missing",
+    "serialized": true,
+  },
+  {
+    "bytes": 1390,
+    "fits": false,
+    "flow": "compound + USDC fee route / ATA exists",
+    "serialized": false,
+  },
+  {
+    "bytes": 1464,
+    "fits": false,
+    "flow": "compound + USDC fee route / ATA missing",
+    "serialized": false,
+  },
+  {
+    "bytes": 480,
+    "fits": true,
+    "flow": "exit USDC platform fee / ATA exists",
+    "serialized": true,
+  },
+  {
+    "bytes": 621,
+    "fits": true,
+    "flow": "exit USDC platform fee / ATA missing",
+    "serialized": true,
+  },
+]
+`;

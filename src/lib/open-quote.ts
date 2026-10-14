@@ -8,10 +8,10 @@ import {
 } from "./ids";
 import { describeResaleFloorFailure, meetsResaleFloor, parseAddToleranceBps, parseResaleFloorBps, parseTokenAmount } from "./amount";
 import { allocateSpend, padAmountMax, positionSide, toleranceLiquidity } from "./quote-math";
-import { buildRoute, type BuildRoute } from "./jupiter-route";
+import { type BuildRoute } from "./swap/jupiter";
 import { estimateOpenPositionRent } from "./open-rent";
 import { resolveOpenRange, type OpenRangeInput } from "./open-range";
-import { netSwapInput, readSwapFeeConfig, type SwapFeeConfig } from "./swap-fee";
+import { depositFeePlan, feeSwapLeg, readSwapFeeConfig, type SwapFeeConfig } from "./swap";
 import { rpcConnection } from "./rpc";
 import { readOpenPoolState, type OpenPoolState, type OpenPositionSelection } from "./open-state";
 import type { OpenPositionQuote } from "./open-types";
@@ -71,11 +71,7 @@ function amountsAt(sqrt: BN, lowerSqrtX64: string, upperSqrtX64: string, liquidi
 async function leg(
   wallet: string, inputMint: string, outputMint: string, spend: bigint, maxAccounts: number | JupiterRouteConstraints = 48, feeBps = 0,
 ): Promise<OpenSwapLeg> {
-  if (spend <= 0n) throw new Error("Swap amount must be greater than zero");
-  if (inputMint === outputMint) return { inputMint, outputMint, spend, feeAmount: 0n, minOut: spend, route: null };
-  const { feeAmount, swapAmount } = netSwapInput(spend, feeBps);
-  const route = await buildRoute(wallet, inputMint, outputMint, swapAmount, false, maxAccounts);
-  return { inputMint, outputMint, spend, feeAmount, minOut: BigInt(route.otherAmountThreshold), route };
+  return await feeSwapLeg({ wallet, inputMint, outputMint, spend, feeBps, constraints: maxAccounts }) as OpenSwapLeg;
 }
 
 function priceImpactAgainstProbe(actual: OpenSwapLeg, sample: OpenSwapLeg, probe: bigint) {
@@ -98,7 +94,7 @@ export async function getOpenPositionQuoteBundle(
   const floorBps = parseResaleFloorBps(requestedFloorBps);
   const toleranceBps = parseAddToleranceBps(requestedToleranceBps);
   const feeConfig: SwapFeeConfig = readSwapFeeConfig();
-  const swapFeeBps = feeConfig.bps;
+
   const state = snapshot ?? await readOpenPoolState(wallet, selection);
   if (state.wallet !== wallet || state.poolId !== selection.poolId || state.inputMint !== selection.inputMint || state.inputKind !== selection.inputKind) {
     throw new Error("Open-position snapshot does not match request");
@@ -120,10 +116,15 @@ export async function getOpenPositionQuoteBundle(
     decimalsB: state.decimalsB,
     tickSpacing: state.tickSpacing,
   });
+  const depositLeg: typeof leg = (wallet, inputMint, outputMint, spend, constraints, feeBps = 0) =>
+    feeSwapLeg({ wallet, inputMint, outputMint, spend, constraints, feeBps, ownPool: state }) as Promise<OpenSwapLeg>;
   const lowerSqrtX64 = TickUtil.getSqrtPriceAtTick(resolved.tickLower).toString();
   const upperSqrtX64 = TickUtil.getSqrtPriceAtTick(resolved.tickUpper).toString();
-  const requested = parseTokenAmount(amount, state.inputDecimals);
-  if (BigInt(state.inputBalance) < requested) {
+  const grossRequested = parseTokenAmount(amount, state.inputDecimals);
+  const deposit = depositFeePlan(state.inputMint, grossRequested, feeConfig);
+  const requested = deposit.swapAmount;
+  const swapFeeBps = deposit.legBps;
+  if (BigInt(state.inputBalance) < grossRequested) {
     throw new Error("Insufficient input asset balance or SOL reserve");
   }
   const probe = requested / 10n;
@@ -133,8 +134,8 @@ export async function getOpenPositionQuoteBundle(
   let projected = new BN(state.sqrtPriceX64);
   if (resolved.rangeSide !== "inside") {
     const outputMint = resolved.rangeSide === "below" ? state.mintA : state.mintB;
-    const sample = await leg(wallet, state.inputMint, outputMint, probe, routeMaxAccounts, swapFeeBps);
-    const actual = await leg(wallet, state.inputMint, outputMint, requested, routeMaxAccounts, swapFeeBps);
+    const sample = await depositLeg(wallet, state.inputMint, outputMint, probe, routeMaxAccounts, swapFeeBps);
+    const actual = await depositLeg(wallet, state.inputMint, outputMint, requested, routeMaxAccounts, swapFeeBps);
     priceImpactAgainstProbe(actual, sample, probe);
     legs = [actual];
     spendA = outputMint === state.mintA ? requested : 0n;
@@ -148,18 +149,19 @@ export async function getOpenPositionQuoteBundle(
     const secondaryMint = primaryIsA ? state.mintB : state.mintA;
     const primaryAmount = (amounts: ReturnType<typeof amountsAt>) => BigInt((primaryIsA ? amounts.amountA : amounts.amountB).toString());
     const secondaryAmount = (amounts: ReturnType<typeof amountsAt>) => BigInt((primaryIsA ? amounts.amountB : amounts.amountA).toString());
-    const primaryProbe = await leg(wallet, state.inputMint, primaryMint, probe, routeMaxAccounts, swapFeeBps);
-    const primary = await leg(wallet, state.inputMint, primaryMint, requested, routeMaxAccounts, swapFeeBps);
+    const primaryProbe = await depositLeg(wallet, state.inputMint, primaryMint, probe, routeMaxAccounts, swapFeeBps);
+    const primary = await depositLeg(wallet, state.inputMint, primaryMint, requested, routeMaxAccounts, swapFeeBps);
     priceImpactAgainstProbe(primary, primaryProbe, probe);
     const availablePrimary = primary.minOut;
     const secondaryProbeAmount = availablePrimary / 10n;
     if (secondaryProbeAmount <= 0n) throw new Error("Input amount too small to obtain secondary probe route");
-    const secondaryProbe = await leg(wallet, primaryMint, secondaryMint, secondaryProbeAmount, routeMaxAccounts);
+    const secondaryBps = deposit.secondaryBps;
+    const secondaryProbe = await depositLeg(wallet, primaryMint, secondaryMint, secondaryProbeAmount, routeMaxAccounts, secondaryBps);
     const desired = amountsAt(projected, lowerSqrtX64, upperSqrtX64, new BN("1000000000000000000"));
     let swapPrimary = availablePrimary - allocateSpend(availablePrimary, primaryAmount(desired), secondaryAmount(desired),
       { spend: secondaryProbeAmount, out: secondaryProbeAmount }, { spend: secondaryProbeAmount, out: secondaryProbe.minOut }, 1n);
     for (let index = 0; index < 5; index++) {
-      const secondary = await leg(wallet, primaryMint, secondaryMint, swapPrimary, routeMaxAccounts);
+      const secondary = await depositLeg(wallet, primaryMint, secondaryMint, swapPrimary, routeMaxAccounts, secondaryBps);
       priceImpactAgainstProbe(secondary, secondaryProbe, secondaryProbeAmount);
       // Both hops affect the secondary leg. Keep combined impact within the same
       // 5% cap rather than permitting 5% independently on each hop.
@@ -183,16 +185,16 @@ export async function getOpenPositionQuoteBundle(
     }
   } else {
     const [probeA, probeB] = await Promise.all([
-      leg(wallet, state.inputMint, state.mintA, probe, routeMaxAccounts, swapFeeBps),
-      leg(wallet, state.inputMint, state.mintB, probe, routeMaxAccounts, swapFeeBps),
+      depositLeg(wallet, state.inputMint, state.mintA, probe, routeMaxAccounts, swapFeeBps),
+      depositLeg(wallet, state.inputMint, state.mintB, probe, routeMaxAccounts, swapFeeBps),
     ]);
     const base = amountsAt(projected, lowerSqrtX64, upperSqrtX64, new BN("1000000000000000000"));
     spendA = allocateSpend(requested, BigInt(base.amountA.toString()), BigInt(base.amountB.toString()),
       { spend: probe, out: probeA.minOut }, { spend: probe, out: probeB.minOut }, 1n);
     for (let index = 0; index < 5; index++) {
       const [actualA, actualB] = await Promise.all([
-        leg(wallet, state.inputMint, state.mintA, spendA, routeMaxAccounts, swapFeeBps),
-        leg(wallet, state.inputMint, state.mintB, requested - spendA, routeMaxAccounts, swapFeeBps),
+        depositLeg(wallet, state.inputMint, state.mintA, spendA, routeMaxAccounts, swapFeeBps),
+        depositLeg(wallet, state.inputMint, state.mintB, requested - spendA, routeMaxAccounts, swapFeeBps),
       ]);
       legs = [actualA, actualB];
       priceImpactAgainstProbe(actualA, probeA, probe);
@@ -207,6 +209,10 @@ export async function getOpenPositionQuoteBundle(
       if (index === 4) throw new Error("Pool price and swap ratio did not converge, please retry later");
       spendA = next;
     }
+  }
+  if (deposit.feeAmount > 0n) {
+    legs[0]!.spend += deposit.feeAmount;
+    legs[0]!.feeAmount += deposit.feeAmount;
   }
   const outA = legs.find((item) => item.outputMint === state.mintA)?.minOut || 0n;
   const outB = legs.find((item) => item.outputMint === state.mintB)?.minOut || 0n;
@@ -226,8 +232,8 @@ export async function getOpenPositionQuoteBundle(
     outB > 0n ? leg(wallet, state.mintB, state.inputMint, outB, routeMaxAccounts) : null,
   ]);
   const resale = resaleLegs.reduce((sum, item) => sum + (item?.minOut || 0n), 0n);
-  const floorAdvice = describeResaleFloorFailure(requested, resale, floorBps);
-  const passesFloor = meetsResaleFloor(requested, resale, floorBps);
+  const floorAdvice = describeResaleFloorFailure(grossRequested, resale, floorBps);
+  const passesFloor = meetsResaleFloor(grossRequested, resale, floorBps);
   const rent = await estimateOpenPositionRent({
     connection: rpcConnection(),
     programId: state.programId,
@@ -283,14 +289,14 @@ export async function getOpenPositionQuoteBundle(
     projectedPrice: TickUtil.sqrtPriceX64ToPrice(projected, state.decimalsA, state.decimalsB).toString(),
     rangePreset: resolved.preset, rangeSide: resolved.rangeSide, inRange: resolved.inRange,
     narrowRange: resolved.narrow, rangeWarning: resolved.warning,
-    requested: requested.toString(), spendA: spendA.toString(),
-    spendB: (requested - spendA).toString(), minOutA: outA.toString(), minOutB: outB.toString(),
+    requested: grossRequested.toString(), spendA: (spendA + (legs[0]?.outputMint === state.mintA ? deposit.feeAmount : 0n)).toString(),
+    spendB: (grossRequested - spendA - (legs[0]?.outputMint === state.mintA ? deposit.feeAmount : 0n)).toString(), minOutA: outA.toString(), minOutB: outB.toString(),
     liquidity: liquidity.toString(), amountMaxA: amountMaxA.toString(), amountMaxB: amountMaxB.toString(),
     requiredA: requiredA.toString(), requiredB: requiredB.toString(), toleranceBps,
     dustA: (outA - requiredA).toString(), dustB: (outB - requiredB).toString(),
     resaleInput: resale.toString(),
-    minimumResaleInput: ((requested * BigInt(floorBps) + 9_999n) / 10_000n).toString(),
-    roundtripCostInput: (requested > resale ? requested - resale : 0n).toString(),
+    minimumResaleInput: ((grossRequested * BigInt(floorBps) + 9_999n) / 10_000n).toString(),
+    roundtripCostInput: (grossRequested > resale ? grossRequested - resale : 0n).toString(),
     passesFloor, floorBps,
     ...floorAdvice,
     warning: passesFloor ? "" : floorAdvice.warning,
@@ -318,7 +324,8 @@ export async function getOpenPositionQuoteBundle(
     solLamports: state.solLamports.toString(),
     sufficientSol, sufficientInput: true,
     feeBps: feeConfig.bps,
-    feeAmount: legs.reduce((sum, item) => sum + item.feeAmount, 0n).toString(),
+    feeAmount: legs.filter(item => item.inputMint === state.inputMint).reduce((sum, item) => sum + item.feeAmount, 0n).toString(),
+    swapFees: legs.filter(item => item.route).map(item => ({ mint: item.inputMint, amount: item.feeAmount.toString() })),
     feeWallet: feeConfig.wallet?.toBase58() ?? null,
     warnings, slot: state.slot, fetchedAt: timestamp, expiresAt: snapshot ? Math.min(timestamp + QUOTE_TTL_MS, snapshot.fetchedAt + QUOTE_TTL_MS) : timestamp + QUOTE_TTL_MS,
   };

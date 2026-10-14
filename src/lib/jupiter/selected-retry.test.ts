@@ -39,7 +39,7 @@ it("never waits or retries selected 429, including a 30s reset", async () => {
 
 it("rejects a wait which cannot fit the selected request plus retry headroom", async () => {
   const fetcher = vi.fn().mockResolvedValue(response(503, { "Retry-After": "8" }));
-  await expect(jupiterRequest({ path: "/swap/v2/build", fetcher, budget: budget() }))
+  await expect(jupiterRequest({ path: "/swap/v1/swap-instructions", fetcher, budget: budget() }))
     .rejects.toMatchObject({ status: 503, retryAfterMs: 8_000 });
   expect(fetcher).toHaveBeenCalledOnce();
   expect(vi.getTimerCount()).toBe(0);
@@ -49,7 +49,7 @@ it("respects a full 5xx wait that fits, then completes within the original deadl
   const fetcher = vi.fn().mockResolvedValueOnce(response(503, { "Retry-After": "6" }))
     .mockResolvedValueOnce(response(200));
   const shared = budget();
-  const pending = jupiterRequest({ path: "/swap/v2/build", fetcher, budget: shared });
+  const pending = jupiterRequest({ path: "/swap/v1/swap-instructions", fetcher, budget: shared });
   await vi.advanceTimersByTimeAsync(5_999);
   expect(fetcher).toHaveBeenCalledOnce();
   await vi.advanceTimersByTimeAsync(1);
@@ -61,7 +61,7 @@ it("parallel legs reserve only one shared retry before sleeping", async () => {
   const shared = budget();
   const fetcher = vi.fn().mockImplementation(() => Promise.resolve(response(503, { "Retry-After": "1" })));
   const results = Promise.allSettled([1, 2].map(() =>
-    jupiterRequest({ path: "/swap/v2/build", fetcher, budget: shared })));
+    jupiterRequest({ path: "/swap/v1/swap-instructions", fetcher, budget: shared })));
   await vi.advanceTimersByTimeAsync(1_000);
   const settled = await results;
   expect(settled.every((item) => item.status === "rejected")).toBe(true);
@@ -76,7 +76,7 @@ it("a late first failure is returned without consuming the remaining second", as
     await new Promise((resolve) => setTimeout(resolve, 7_000));
     return response(503);
   });
-  const pending = jupiterRequest({ path: "/swap/v2/build", fetcher, budget: shared });
+  const pending = jupiterRequest({ path: "/swap/v1/swap-instructions", fetcher, budget: shared });
   const rejected = expect(pending).rejects.toMatchObject({ status: 503 });
   await vi.advanceTimersByTimeAsync(7_000);
   await rejected;
@@ -87,7 +87,7 @@ it("a late first failure is returned without consuming the remaining second", as
 it("checks remaining time again after delayed timer delivery", async () => {
   const shared = budget();
   const fetcher = vi.fn().mockResolvedValue(response(503, { "Retry-After": "1" }));
-  const pending = jupiterRequest({ path: "/swap/v2/build", fetcher, budget: shared });
+  const pending = jupiterRequest({ path: "/swap/v1/swap-instructions", fetcher, budget: shared });
   const rejected = expect(pending).rejects.toMatchObject({ status: 503 });
   await vi.advanceTimersByTimeAsync(1);
   vi.setSystemTime(shared.deadlineAt);
@@ -99,7 +99,7 @@ it("checks remaining time again after delayed timer delivery", async () => {
 it("cancels a retry sleep when its caller leaves", async () => {
   const client = new AbortController();
   const fetcher = vi.fn().mockResolvedValue(response(503, { "Retry-After": "1" }));
-  const pending = jupiterRequest({ path: "/swap/v2/build", fetcher, budget: budget(), signal: client.signal });
+  const pending = jupiterRequest({ path: "/swap/v1/swap-instructions", fetcher, budget: budget(), signal: client.signal });
   const rejected = expect(pending).rejects.toMatchObject({ name: "AbortError" });
   await vi.advanceTimersByTimeAsync(1);
   client.abort();
@@ -161,6 +161,6 @@ it("uses the later server wait and rejects invalid or unbounded timer values saf
 
 it.each([400, 401, 403])("does not retry invalid or unauthorized HTTP %s", async (status) => {
   const fetcher = vi.fn().mockResolvedValue(response(status));
-  await expect(jupiterRequest({ path: "/swap/v2/build", fetcher, budget: budget() })).rejects.toBeInstanceOf(JupiterHttpError);
+  await expect(jupiterRequest({ path: "/swap/v1/swap-instructions", fetcher, budget: budget() })).rejects.toBeInstanceOf(JupiterHttpError);
   expect(fetcher).toHaveBeenCalledOnce();
 });

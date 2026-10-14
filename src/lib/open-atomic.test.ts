@@ -48,7 +48,7 @@ beforeEach(() => {
   vi.stubEnv("SOFINANCE_FEE_WALLET", undefined); vi.stubEnv("SOFINANCE_FEE_BPS", undefined); vi.stubEnv("JUPITER_API_KEY", undefined);
   vi.clearAllMocks(); strategy = "parallel";
   vi.mocked(rpcConnection).mockReturnValue({
-    getTokenAccountsByOwner: vi.fn(async () => ({ value: [] })),
+    getMultipleAccountsInfoAndContext: vi.fn(async (keys: PublicKey[]) => ({ context: { slot: 1 }, value: keys.map(() => null) })),
     getMultipleAccountsInfo: vi.fn(async (keys: PublicKey[]) => keys.map(() => null)),
     getLatestBlockhash: vi.fn(async () => ({ blockhash: oldFixture.blockhash, lastValidBlockHeight: 100 })),
     getFeeForMessage: vi.fn(async () => ({ value: 10000 })),
@@ -113,6 +113,7 @@ it("prepares the compact captured sequential transaction first", async () => {
   expect(simulateAndVerifyOpenTransaction).toHaveBeenCalledTimes(1);
   expect(summary.sizeBytes).toBeLessThanOrEqual(1232);
   expect(summary.sizeBytes).toBe(transaction.serialize().length);
+  expect(Buffer.from(transaction.serialize()).toString("base64")).toMatchSnapshot();
   expect(transaction.signatures[0]!.every(byte => byte === 0)).toBe(true);
   expect(transaction.signatures[1]!.some(byte => byte !== 0)).toBe(true);
 });

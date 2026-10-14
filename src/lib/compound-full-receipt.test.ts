@@ -147,3 +147,14 @@ describe("full compound historical ledger", () => {
     expect(confirmedCompoundReceipt(transaction, wallet, summary)).toBeNull();
   });
 });
+
+it("proves a Jupiter-invoked pool swap and rejects an altered inner source", async () => {
+  const { transaction, summary, wallet } = await fixture();
+  const swap = transaction.transaction.message.instructions[8]!;
+  const inner = transaction.meta!.innerInstructions!.find(group => group.index === 8)!;
+  transaction.transaction.message.instructions[8] = { programId: key(), accounts: [], data: "1" };
+  inner.instructions.unshift(swap);
+  expect(confirmedCompoundReceipt(transaction, wallet, summary)).not.toBeNull();
+  if ("accounts" in swap) swap.accounts[3] = key();
+  expect(confirmedCompoundReceipt(transaction, wallet, summary)).toBeNull();
+});

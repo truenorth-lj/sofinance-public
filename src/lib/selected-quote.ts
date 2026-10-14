@@ -1,17 +1,19 @@
 import "server-only";
 
+import { readSwapFeeConfig } from "./swap/fee";
+import { depositFeePlan, feeSwapLeg } from "./swap/leg";
 import BN from "bn.js";
 import { LiquidityMathUtil, SqrtPriceMath, TickUtil } from "@raydium-io/raydium-sdk-v2";
 import { DEFAULT_ADD_TOLERANCE_BPS, DEFAULT_RESALE_FLOOR_BPS, MAX_PRICE_IMPACT_BPS, QUOTE_TTL_MS, SLIPPAGE_BPS } from "./ids";
 import { describeResaleFloorFailure, meetsResaleFloor, parseAddToleranceBps, parseResaleFloorBps, parseTokenAmount } from "./amount";
 import { allocateSpend, padAmountMax, positionSide, toleranceLiquidity } from "./quote-math";
-import { buildRoute, quoteRoute, type QuoteRoute } from "./jupiter-route";
+import { type QuoteRoute } from "./swap/jupiter";
 import type { Connection } from "@solana/web3.js";
 import type { JupiterRouteConstraints } from "./jupiter-route-retry";
 import type { JupiterRetryBudget } from "./jupiter/client";
 import { readSelectedPositionState, type PositionSelection, type SelectedPositionState } from "./selected-state";
 
-type SwapLeg = { inputMint: string; outputMint: string; spend: bigint; minOut: bigint; route: QuoteRoute | null };
+type SwapLeg = { inputMint: string; outputMint: string; spend: bigint; feeAmount: bigint; minOut: bigint; route: QuoteRoute | null };
 
 function projectedSqrt(state: SelectedPositionState, routes: QuoteRoute[]): BN {
   let price = new BN(state.sqrtPriceX64);
@@ -39,14 +41,10 @@ function amountsAt(state: SelectedPositionState, sqrt: BN, liquidity: BN) {
 
 async function leg(
   wallet: string, inputMint: string, outputMint: string, spend: bigint, nativeSource = false,
-  jupiter?: JupiterRouteConstraints, build = false, signal?: AbortSignal, budget?: JupiterRetryBudget,
+  jupiter?: JupiterRouteConstraints, build = false, signal?: AbortSignal, budget?: JupiterRetryBudget, feeBps = 0, ownPool?: { poolId: string; mintA: string; mintB: string },
 ): Promise<SwapLeg> {
-  if (spend <= 0n) throw new Error("Swap amount must be greater than zero");
-  if (inputMint === outputMint) return { inputMint, outputMint, spend, minOut: spend, route: null };
-  const route = build
-    ? await buildRoute(wallet, inputMint, outputMint, spend, nativeSource, jupiter, signal, budget)
-    : await quoteRoute(inputMint, outputMint, spend, jupiter, signal, budget);
-  return { inputMint, outputMint, spend, minOut: BigInt(route.otherAmountThreshold), route };
+  return feeSwapLeg({ wallet, inputMint, outputMint, spend, feeBps, native: nativeSource,
+    constraints: jupiter, build, signal, budget, ownPool });
 }
 
 function priceImpactAgainstProbe(actual: SwapLeg, sample: SwapLeg, probe: bigint) {
@@ -66,17 +64,20 @@ export async function getSelectedQuoteBundle(
   const toleranceBps = parseAddToleranceBps(requestedToleranceBps);
   const state = options.state ?? await readSelectedPositionState(wallet, selection, options.connection, false, { displayPrices: false });
   if (state.inputKind === "native" && state.wsolBalance !== "0") throw new Error("Native SOL input already has WSOL ATA balance, please handle separately to avoid using existing WSOL");
+  const feeConfig = readSwapFeeConfig();
   const actualLeg = (outputMint: string, spend: bigint) => leg(wallet, state.inputMint, outputMint, spend,
-    state.inputKind === "native", jupiter, options.buildTransactions !== false, options.signal, options.budget);
+    state.inputKind === "native", jupiter, options.buildTransactions !== false, options.signal, options.budget, deposit.legBps, state);
   const probeLeg = (outputMint: string) => leg(wallet, state.inputMint, outputMint, probe,
-    state.inputKind === "native", jupiter, false, options.signal, options.budget);
+    state.inputKind === "native", jupiter, false, options.signal, options.budget, deposit.legBps, state);
   if (!state.ownsNft) throw new Error("Wallet does not have an available position NFT ATA for the selected position");
   if (state.paused || state.frozen || state.transferFee || state.unsupportedExtensions.length) {
     throw new Error(`Pool asset currently paused, account frozen, transfer fee charged, or has unsupported settings${state.unsupportedExtensions.length ? `: ${state.unsupportedExtensions.join(", ")}` : ""}`);
   }
   if (!state.sufficientSol) throw new Error("Insufficient SOL, reserve at least 0.01 SOL to pay network fees and possible ATA rent");
-  const requested = parseTokenAmount(amount, state.inputDecimals);
-  if (BigInt(state.inputBalance) < requested) throw new Error("Insufficient input asset balance or SOL reserve");
+  const grossRequested = parseTokenAmount(amount, state.inputDecimals);
+  const deposit = depositFeePlan(state.inputMint, grossRequested, feeConfig);
+  const requested = deposit.swapAmount;
+  if (BigInt(state.inputBalance) < grossRequested) throw new Error("Insufficient input asset balance or SOL reserve");
   const probe = requested / 10n;
   if (probe <= 0n) throw new Error("Input amount too small to obtain probe route");
   let spendA = 0n;
@@ -98,13 +99,26 @@ export async function getSelectedQuoteBundle(
     const base = amountsAt(state, projected, new BN("1000000000000000000"));
     spendA = allocateSpend(requested, BigInt(base.amountA.toString()), BigInt(base.amountB.toString()),
       { spend: probe, out: probeA.minOut }, { spend: probe, out: probeB.minOut }, 1n);
-    const [actualA, actualB] = await Promise.all([
-      actualLeg(state.mintA, spendA), actualLeg(state.mintB, requested - spendA),
-    ]);
-    legs = [actualA, actualB];
-    priceImpactAgainstProbe(actualA, probeA, probe);
-    priceImpactAgainstProbe(actualB, probeB, probe);
-    projected = projectedSqrt(state, legs.flatMap((item) => item.route ? [item.route] : []));
+    for (let index = 0; index < 5; index++) {
+      const [actualA, actualB] = await Promise.all([
+        actualLeg(state.mintA, spendA), actualLeg(state.mintB, requested - spendA),
+      ]);
+      legs = [actualA, actualB];
+      priceImpactAgainstProbe(actualA, probeA, probe);
+      priceImpactAgainstProbe(actualB, probeB, probe);
+      projected = projectedSqrt(state, legs.flatMap((item) => item.route ? [item.route] : []));
+      const desired = amountsAt(state, projected, new BN("1000000000000000000"));
+      const next = allocateSpend(requested, BigInt(desired.amountA.toString()), BigInt(desired.amountB.toString()),
+        { spend: spendA, out: actualA.minOut }, { spend: requested - spendA, out: actualB.minOut }, 1n);
+      const difference = next > spendA ? next - spendA : spendA - next;
+      if (difference * 1_000n <= requested * 2n) break;
+      if (index === 4) throw new Error("Pool price and swap ratio did not converge, please retry later");
+      spendA = next;
+    }
+  }
+  if (deposit.feeAmount > 0n) {
+    legs[0]!.spend += deposit.feeAmount;
+    legs[0]!.feeAmount += deposit.feeAmount;
   }
   const outA = legs.find((item) => item.outputMint === state.mintA)?.minOut || 0n;
   const outB = legs.find((item) => item.outputMint === state.mintB)?.minOut || 0n;
@@ -130,19 +144,21 @@ export async function getSelectedQuoteBundle(
   ]) : [];
   const resale = resaleLegs.reduce((sum, item) => sum + (item?.minOut || 0n), 0n);
   const timestamp = Date.now();
-  const floorAdvice = describeResaleFloorFailure(requested, resale, floorBps);
-  const passesFloor = includeResale && meetsResaleFloor(requested, resale, floorBps);
+  const floorAdvice = describeResaleFloorFailure(grossRequested, resale, floorBps);
+  const passesFloor = includeResale && meetsResaleFloor(grossRequested, resale, floorBps);
   const quote = {
+    feeBps: feeConfig.bps, feeWallet: feeConfig.wallet?.toBase58() ?? null,
+    feeAmount: legs.reduce((sum, item) => sum + item.feeAmount, 0n).toString(),
     wallet, inputMint: state.inputMint, inputKind: state.inputKind, inputDecimals: state.inputDecimals,
     positionMint: state.positionMint, positionAccount: state.positionAccount, poolId: state.poolId,
     mintA: state.mintA, mintB: state.mintB, decimalsA: state.decimalsA, decimalsB: state.decimalsB,
-    rangeSide: state.rangeSide, requested: requested.toString(), spendA: spendA.toString(),
-    spendB: (requested - spendA).toString(), minOutA: outA.toString(), minOutB: outB.toString(),
+    rangeSide: state.rangeSide, requested: grossRequested.toString(), spendA: (spendA + (legs[0]?.outputMint === state.mintA ? deposit.feeAmount : 0n)).toString(),
+    spendB: (grossRequested - spendA - (legs[0]?.outputMint === state.mintA ? deposit.feeAmount : 0n)).toString(), minOutA: outA.toString(), minOutB: outB.toString(),
     liquidity: liquidity.toString(), amountMaxA: amountMaxA.toString(), amountMaxB: amountMaxB.toString(),
     requiredA: requiredA.toString(), requiredB: requiredB.toString(), toleranceBps,
     dustA: (outA - requiredA).toString(), dustB: (outB - requiredB).toString(),
-    resaleInput: includeResale ? resale.toString() : null, minimumResaleInput: includeResale ? ((requested * BigInt(floorBps) + 9_999n) / 10_000n).toString() : null,
-    roundtripCostInput: includeResale ? (requested > resale ? requested - resale : 0n).toString() : null,
+    resaleInput: includeResale ? resale.toString() : null, minimumResaleInput: includeResale ? ((grossRequested * BigInt(floorBps) + 9_999n) / 10_000n).toString() : null,
+    roundtripCostInput: includeResale ? (grossRequested > resale ? grossRequested - resale : 0n).toString() : null,
     projectedPrice: TickUtil.sqrtPriceX64ToPrice(projected, state.decimalsA, state.decimalsB).toString(),
     slot: state.slot, fetchedAt: timestamp, expiresAt: timestamp + QUOTE_TTL_MS,
     passesFloor, floorBps,

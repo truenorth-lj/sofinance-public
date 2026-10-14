@@ -14,7 +14,7 @@ import { simulateAndVerifyCompound } from "./compound-simulation";
 import { conservativeSwapBalances, sizeBufferedCompoundLiquidity } from "./compound-math";
 import { buildCompoundSwapPlan } from "./compound-swap";
 import { readCompoundPriorSources } from "./compound-prior-sources";
-import { readSwapFeeConfig, swapFeeTransferInstructions, unfundedSwapFeeAtaRent } from "./swap-fee";
+import { readSwapFeeConfig, collectCompoundSwapFee, unfundedSwapFeeAtaRent } from "./swap";
 import { versionedTransactionSize } from "./open-transaction";
 import type { CompoundAccount, CompoundPositionState, CompoundSummary } from "./compound-types";
 
@@ -148,16 +148,16 @@ export async function buildAndSimulateCompound(walletAddress: string, positionMi
     amountA: BigInt(harvestResult.endingA), amountB: BigInt(harvestResult.endingB) });
   const feeConfig = readSwapFeeConfig();
   const protocolFee = plan.swap ? BigInt(plan.swap.feeAmount) : 0n;
-  if (plan.swap && (plan.swap.feeBps !== feeConfig.bps || (protocolFee > 0n && !feeConfig.wallet))) {
+  if (plan.swap && (plan.swap.feeBps !== 0 && plan.swap.feeBps !== feeConfig.bps || (protocolFee > 0n && !feeConfig.wallet))) {
     throw new Error("Compound swap protocol fee does not match configuration");
   }
   const feeSource = plan.swap?.inputMint === state.mintA ? accounts[0] : accounts[1];
   const feeInstructions = feeConfig.wallet && protocolFee > 0n && plan.swap
-    ? swapFeeTransferInstructions({
+    ? (await collectCompoundSwapFee(connection, {
       payer: wallet, owner: wallet, recipient: feeConfig.wallet, amount: protocolFee, kind: "token",
       mint: new PublicKey(plan.swap.inputMint), source: new PublicKey(feeSource.address),
       decimals: plan.swap.inputDecimals, program: new PublicKey(feeSource.program),
-    })
+    })).instructions
     : [];
   const feeAtaRent = feeConfig.wallet && protocolFee > 0n && plan.swap
     ? await unfundedSwapFeeAtaRent(connection, feeConfig.wallet, new PublicKey(plan.swap.inputMint), new PublicKey(feeSource.program))
@@ -166,8 +166,15 @@ export async function buildAndSimulateCompound(walletAddress: string, positionMi
   const simulateWithFee = (transaction: VersionedTransaction, expectedLiquidity: bigint) =>
     simulateAndVerifyCompound({ connection, transaction, state, compoundAccounts: accounts, priorSources: prior.sources,
       expectedLiquidity, maxSolDebitLamports: maxSolWithFee, sigVerify: false });
-  const swapInstructions = [...feeInstructions, ...(plan.instruction ? [plan.instruction] : [])];
-  const swapped = plan.instruction || feeInstructions.length
+  if (plan.route) {
+    const routeTables = await readLookupTables(connection,
+      Object.keys(plan.route.addressesByLookupTableAddress || {}).map(key => new PublicKey(key)));
+    if (routeTables.some(table => !table.isActive())) throw new Error("Compound address lookup table is disabled");
+    const existing = new Set(tables.map(table => table.key.toBase58()));
+    tables.push(...routeTables.filter(table => !existing.has(table.key.toBase58())));
+  }
+  const swapInstructions = [...feeInstructions, ...plan.instructions];
+  const swapped = plan.instructions.length || feeInstructions.length
     ? await simulateWithFee(build([...harvest.instructions, ...swapInstructions]), 0n) : harvestResult;
   const simulatedOutputAmount = plan.swap
     ? (plan.swap.outputMint === state.mintA ? BigInt(swapped.endingA) - BigInt(harvestResult.endingA)

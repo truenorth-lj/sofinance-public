@@ -1,3 +1,4 @@
+import { compoundProtocolInstructions } from "./swap/receipt";
 import { CLMM_PROGRAM_ID } from "@raydium-io/raydium-sdk-v2";
 import { TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID } from "@solana/spl-token";
 import { PublicKey, SystemProgram, type Connection, type ParsedTransactionWithMeta, type PartiallyDecodedInstruction } from "@solana/web3.js";
@@ -16,8 +17,7 @@ export async function importCompoundReceipt(transaction: ParsedTransactionWithMe
   if (!transaction.meta || transaction.meta.err || message.accountKeys[0]?.pubkey.toBase58() !== wallet || !message.accountKeys[0]?.signer) {
     throw new Error("This transaction is not a successful compound execution from the current wallet");
   }
-  const indexed = message.instructions.flatMap((instruction, index) => instruction.programId.equals(CLMM_PROGRAM_ID) && "accounts" in instruction
-    ? [{ instruction: instruction as PartiallyDecodedInstruction, index }] : []);
+  const indexed = compoundProtocolInstructions(transaction);
   const protocol = indexed.map((entry) => entry.instruction);
   const harvest = protocol[0], add = protocol[protocol.length - 1];
   if (![2, 3].includes(protocol.length) || !harvest || !add || protocol.length === 3 &&

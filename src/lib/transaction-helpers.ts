@@ -1,20 +1,9 @@
 import "server-only";
 
-import { AddressLookupTableAccount, Connection, PublicKey, TransactionInstruction } from "@solana/web3.js";
-import type { ApiInstruction, BuildRoute } from "./jupiter-route";
+import { AddressLookupTableAccount, Connection, PublicKey } from "@solana/web3.js";
+import type { BuildRoute } from "./swap/jupiter";
 
-export function instruction(value: ApiInstruction, wallet: PublicKey) {
-  if (value.accounts.some((account) => account.isSigner && account.pubkey !== wallet.toBase58())) {
-    throw new Error("Route contains non-wallet signer");
-  }
-  return new TransactionInstruction({
-    programId: new PublicKey(value.programId),
-    keys: value.accounts.map((account) => ({
-      pubkey: new PublicKey(account.pubkey), isSigner: account.isSigner, isWritable: account.isWritable,
-    })),
-    data: Buffer.from(value.data, "base64"),
-  });
-}
+export { instruction } from "./swap/instructions";
 
 export async function readLookupTables(connection: Connection, keys: PublicKey[]) {
   const unique = [...new Map(keys.map((key) => [key.toBase58(), key])).values()];

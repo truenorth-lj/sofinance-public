@@ -183,6 +183,7 @@ describe("MCP Tools", () => {
   describe("quoteAddLiquidity", () => {
     it("calls getSelectedQuoteBundle and returns formatted quote", async () => {
       const mockQuote = {
+        feeBps: 0, feeAmount: "0", feeWallet: null,
         wallet: "7BgBvyjrZX1YKz4oh9mjb8ZScatkkwb8DzFx7LoiVkM3",
         inputMint: "So11111111111111111111111111111111111111112",
         inputKind: "native" as const,
@@ -262,6 +263,7 @@ describe("MCP Tools", () => {
       const mockSummary = {
         simulated: true,
         quote: {
+          feeBps: 0, feeAmount: "0", feeWallet: null,
           wallet: "7BgBvyjrZX1YKz4oh9mjb8ZScatkkwb8DzFx7LoiVkM3",
           inputMint: "So11111111111111111111111111111111111111112",
           inputKind: "native" as const,

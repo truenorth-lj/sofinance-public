@@ -4,7 +4,7 @@ import { CLMM_PROGRAM_ID, getPdaPersonalPositionAddress, PersonalPositionLayout,
 import { createHash } from "node:crypto";
 import { observePositionTransaction, type TransactionEvidence, type PublicTransaction } from "./lp-position-observations";
 import type { DecisionRequest, LedgerEvent } from "./lp-accounting";
-import { jupiterQuote } from "./jupiter";
+import { jupiterQuote } from "./swap/client";
 import { asRpcUserError } from "./rpc/errors";
 import { rpcRequest } from "./rpc";
 export function validPrincipalQuote(q: Record<string, unknown>, mint: string, amount: string): boolean {

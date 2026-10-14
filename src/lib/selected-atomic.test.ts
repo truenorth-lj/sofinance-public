@@ -1,6 +1,6 @@
 import { TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { createHash } from "node:crypto";
-import { beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Keypair, PublicKey, TransactionInstruction } from "@solana/web3.js";
 vi.mock("server-only", () => ({}));
 vi.mock("./rpc", () => ({ rpcConnection: vi.fn() }));
@@ -17,7 +17,8 @@ import { buildSelectedAddInstruction } from "./selected-add-instruction";
 import { simulateAndVerifySelectedTransaction } from "./selected-simulation";
 import { fetchBeamTipAddress } from "./solami-beam";
 import { buildAndSimulateSelectedZap } from "./selected-atomic";
-const key = () => Keypair.generate().publicKey;
+let keyIndex = 1;
+const key = () => Keypair.fromSeed(new Uint8Array(32).fill(keyIndex++)).publicKey;
 const wallet = key(), pool = key(), position = key(), program = key(), mintA = key(), mintB = key();
 const state = { positionMint: key().toBase58(), positionAccount: position.toBase58(), poolId: pool.toBase58(), programId: program.toBase58(),
   mintA: mintA.toBase58(), mintB: mintB.toBase58(), inputMint: mintA.toBase58(), inputKind: "token", inputAccount: key().toBase58(),
@@ -25,8 +26,8 @@ const state = { positionMint: key().toBase58(), positionAccount: position.toBase
   rangeSide: "below", liquidity: "1", balances: { input: "1000", a: "0", b: "0" },
 };
 const selection = { positionMint: state.positionMint, inputMint: state.inputMint, inputKind: "token" as const };
-const connection = { getAddressLookupTable: vi.fn(async () => ({ value: null })),
-  getMultipleAccountsInfoAndContext: vi.fn(async () => ({ value: [], context: { slot: 1 } })),
+const connection = { getAccountInfo: vi.fn(async () => null), getAddressLookupTable: vi.fn(async () => ({ value: null })),
+  getMultipleAccountsInfoAndContext: vi.fn(async (keys: PublicKey[]) => ({ value: keys.map(() => null), context: { slot: 1 } })),
   getLatestBlockhash: vi.fn(async () => ({ blockhash: key().toBase58(), lastValidBlockHeight: 200 })),
   getFeeForMessage: vi.fn(async () => ({ value: 5000 })),
 };
@@ -40,8 +41,11 @@ function bundle(oversize = false) {
     }],
   } as never;
 }
+const initialKeyIndex = keyIndex;
 beforeEach(() => {
-  vi.clearAllMocks(); connection.getMultipleAccountsInfoAndContext.mockResolvedValue({ value: [], context: { slot: 1 } }); vi.mocked(rpcConnection).mockReturnValue(connection as never);
+  vi.stubEnv("SOFINANCE_FEE_WALLET", undefined);
+  keyIndex = initialKeyIndex;
+  vi.clearAllMocks(); connection.getMultipleAccountsInfoAndContext.mockImplementation(async (keys: PublicKey[]) => ({ value: keys.map(() => null), context: { slot: 1 } })); vi.mocked(rpcConnection).mockReturnValue(connection as never);
   vi.mocked(readSelectedPositionState).mockResolvedValue(state as never);
   const data = createHash("sha256").update("global:increase_liquidity_v2").digest().subarray(0, 8);
   vi.mocked(buildSelectedAddInstruction).mockReturnValue(new TransactionInstruction({ programId: program, data,
@@ -83,7 +87,7 @@ function rawTokenAccount(owner: PublicKey, token2022 = false) {
   data.writeBigUInt64LE(1n, 64); data[108] = 1; if (token2022) data[165] = 2;
   return { data, owner: token2022 ? TOKEN_2022_PROGRAM_ID : TOKEN_PROGRAM_ID, executable: false, lamports: 2039280, rentEpoch: 0 };
 }
-it.each([false, true])("rejects Jupiter writes to a positive unselected wallet account (Token-2022: %s)", async (token2022) => {
+it.each([false, true])("rejects non-Jupiter writes to a positive unselected wallet account (Token-2022: %s)", async (token2022) => {
   const address = key(); vi.mocked(getSelectedQuoteBundle).mockResolvedValue(writableBundle(address));
   connection.getMultipleAccountsInfoAndContext.mockResolvedValueOnce({ context: { slot: 1 }, value: [rawTokenAccount(wallet, token2022)] } as never);
   await expect(buildAndSimulateSelectedZap(wallet.toBase58(), selection, "1", 9900)).rejects.toThrow("unselected wallet assets");
@@ -99,4 +103,30 @@ it.each(["Token-2022 mint", "external pool vault"])("accepts a writable %s witho
   connection.getMultipleAccountsInfoAndContext.mockResolvedValueOnce({ context: { slot: 1 }, value: [account] } as never);
   const result = await buildAndSimulateSelectedZap(wallet.toBase58(), selection, "1", 9900);
   expect(result.summary.simulated).toBe(true); expect(simulateAndVerifySelectedTransaction).toHaveBeenCalledOnce();
+});
+
+it("snapshots the selected transaction wire bytes", async () => {
+  vi.mocked(getSelectedQuoteBundle).mockResolvedValue(bundle());
+  const { transaction } = await buildAndSimulateSelectedZap(wallet.toBase58(), selection, "0.001", 9900);
+  expect(Buffer.from(transaction.serialize()).toString("base64")).toMatchSnapshot();
+});
+
+afterEach(() => vi.unstubAllEnvs());
+it("includes the selected-add protocol transfer before the swap", async () => {
+  const recipient = key();
+  vi.stubEnv("SOFINANCE_FEE_WALLET", recipient.toBase58()); vi.stubEnv("SOFINANCE_FEE_BPS", "10");
+  const value = writableBundle(new PublicKey(state.ataA));
+  value.quote.feeBps = 10; value.quote.feeAmount = "1"; value.quote.feeWallet = recipient.toBase58();
+  value.state = { ...value.state, inputMint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", inputTokenProgram: TOKEN_PROGRAM_ID.toBase58(), inputDecimals: 6 };
+  value.legs[0]!.inputMint = value.state.inputMint;
+  (value.legs[0]!.route! as { inputMint: string }).inputMint = value.state.inputMint;
+  vi.mocked(readSelectedPositionState).mockResolvedValue(value.state);
+  value.legs[0]!.feeAmount = 1n;
+  (value.legs[0]!.route! as { inAmount: string }).inAmount = "999";
+  vi.mocked(getSelectedQuoteBundle).mockResolvedValue(value);
+  const { transaction } = await buildAndSimulateSelectedZap(wallet.toBase58(), selection, "0.001", 9900);
+  const fee = transaction.message.compiledInstructions[2]!;
+  expect(transaction.message.staticAccountKeys[fee.programIdIndex]!.equals(TOKEN_PROGRAM_ID)).toBe(true);
+  expect(fee.data[0]).toBe(12); // TransferChecked
+  expect(Buffer.from(fee.data).readBigUInt64LE(1)).toBe(1n);
 });

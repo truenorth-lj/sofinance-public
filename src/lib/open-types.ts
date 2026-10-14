@@ -78,6 +78,7 @@ export type OpenPositionQuote = {
   solLamports: string;
   sufficientSol: boolean;
   sufficientInput: boolean;
+  swapFees?: { mint: string; amount: string }[];
   feeBps: number;
   feeAmount: string;
   feeWallet: string | null;

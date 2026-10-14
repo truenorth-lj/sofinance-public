@@ -1,10 +1,10 @@
-import { ASSOCIATED_TOKEN_PROGRAM_ID, createAssociatedTokenAccountIdempotentInstruction, createTransferCheckedInstruction, getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { createTransferCheckedInstruction, getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { Keypair, PublicKey, SystemProgram } from "@solana/web3.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   computeSwapFee, DEFAULT_SWAP_FEE_BPS, MAX_SWAP_FEE_BPS, netSwapInput, parseSwapFeeBps, parseSwapFeeWallet,
   assertNativeSwapFeeRecipient, readSwapFeeConfig, swapFeeQuoteFields, swapFeeRecipientAta, swapFeeTransferInstructions, unfundedSwapFeeAtaRent,
-} from "./swap-fee";
+} from "./swap/fee";
 
 const wallet = Keypair.generate().publicKey;
 const mint = Keypair.generate().publicKey;
@@ -127,19 +127,17 @@ describe("swapFeeTransferInstructions", () => {
     expect(ix?.data.readBigUInt64LE(4)).toBe(1_000n);
   });
 
-  it("creates the recipient ATA idempotently and transfer-checks the token", () => {
+  it("transfer-checks the token without creating operator accounts", () => {
     const ixs = swapFeeTransferInstructions({
       payer, owner: payer, recipient: wallet, amount: 2_000n,
       kind: "token", mint, source, decimals: 6, program: TOKEN_PROGRAM_ID,
     });
     const ata = getAssociatedTokenAddressSync(mint, wallet, true, TOKEN_PROGRAM_ID);
     expect(swapFeeRecipientAta(wallet, mint, TOKEN_PROGRAM_ID).equals(ata)).toBe(true);
-    expect(ixs[0]?.programId.equals(ASSOCIATED_TOKEN_PROGRAM_ID)).toBe(true);
-    const expectedCreate = createAssociatedTokenAccountIdempotentInstruction(payer, ata, wallet, mint, TOKEN_PROGRAM_ID);
     const expectedTransfer = createTransferCheckedInstruction(source, mint, ata, payer, 2_000n, 6, [], TOKEN_PROGRAM_ID);
-    expect(ixs[0]?.data.equals(expectedCreate.data)).toBe(true);
-    expect(ixs[1]?.data.equals(expectedTransfer.data)).toBe(true);
-    expect(ixs[1]?.programId.equals(TOKEN_PROGRAM_ID)).toBe(true);
+    expect(ixs).toHaveLength(1);
+    expect(ixs[0]?.data.equals(expectedTransfer.data)).toBe(true);
+    expect(ixs[0]?.programId.equals(TOKEN_PROGRAM_ID)).toBe(true);
   });
 
   it("uses the Token-2022 program when the mint requires it", () => {
@@ -147,7 +145,7 @@ describe("swapFeeTransferInstructions", () => {
       payer, owner: payer, recipient: wallet, amount: 5n,
       kind: "token", mint, source, decimals: 8, program: TOKEN_2022_PROGRAM_ID,
     });
-    expect(ixs[1]?.programId.equals(TOKEN_2022_PROGRAM_ID)).toBe(true);
+    expect(ixs[0]?.programId.equals(TOKEN_2022_PROGRAM_ID)).toBe(true);
   });
 
   it("omits native and token instructions when the fee floors to zero", () => {

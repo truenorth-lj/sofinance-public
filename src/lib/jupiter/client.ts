@@ -1,6 +1,6 @@
 import { abortError, isUserAbort } from "../rpc/errors";
 import { computeBackoffMs, sleep, type RetryConfig } from "../rpc/retry";
-import { quoteCacheKey, withJupiterCache } from "./cache";
+import { withJupiterCache } from "./cache";
 import {
   classifyJupiterError,
   isRetryableJupiterKind,
@@ -61,6 +61,9 @@ export type JupiterRequestOptions = {
 };
 
 export type JupiterQuoteParams = {
+  dexes?: string;
+  budget?: JupiterRetryBudget;
+  cacheKey?: null;
   inputMint: string;
   outputMint: string;
   amount: string;
@@ -191,60 +194,7 @@ export async function jupiterRequest<T>(options: JupiterRequestOptions): Promise
   return value;
 }
 
-export async function jupiterQuote<T = Record<string, unknown>>(params: JupiterQuoteParams): Promise<T> {
-  const slippageBps = params.slippageBps ?? 50;
-  const query = {
-    inputMint: params.inputMint,
-    outputMint: params.outputMint,
-    amount: params.amount,
-    slippageBps,
-    ...(params.maxAccounts !== undefined ? { maxAccounts: params.maxAccounts } : {}),
-    ...(params.onlyDirectRoutes ? { onlyDirectRoutes: true } : {}),
-  };
-  return jupiterRequest<T>({
-    path: "/swap/v1/quote",
-    query,
-    signal: params.signal,
-    fetcher: params.fetcher,
-    apiKey: params.apiKey,
-    cacheKey: quoteCacheKey({
-      inputMint: params.inputMint,
-      outputMint: params.outputMint,
-      amount: params.amount,
-      slippageBps,
-      maxAccounts: params.maxAccounts,
-      onlyDirectRoutes: params.onlyDirectRoutes,
-    }),
-    cacheTtlMs: JUPITER_QUOTE_TTL_MS,
-  });
-}
-
-export async function jupiterQuotePreferCompact<T = Record<string, unknown>>(
-  params: Omit<JupiterQuoteParams, "maxAccounts" | "onlyDirectRoutes"> & { maxAccounts?: number },
-): Promise<T> {
-  try {
-    return await jupiterQuote<T>({ ...params, maxAccounts: params.maxAccounts ?? 16, onlyDirectRoutes: true });
-  } catch (error) {
-    if (!(error instanceof JupiterHttpError) || error.status !== 400) throw error;
-    return jupiterQuote<T>({ ...params, maxAccounts: 20, onlyDirectRoutes: true });
-  }
-}
-
-export async function jupiterSwapInstructions<T = Record<string, unknown>>(
-  body: unknown,
-  options: Pick<JupiterRequestOptions, "signal" | "fetcher" | "apiKey"> = {},
-): Promise<T> {
-  return jupiterRequest<T>({
-    path: "/swap/v1/swap-instructions",
-    method: "POST",
-    body,
-    signal: options.signal,
-    fetcher: options.fetcher,
-    apiKey: options.apiKey,
-    cacheKey: null,
-    cacheTtlMs: null,
-  });
-}
+export { jupiterQuote, jupiterQuotePreferCompact, jupiterSwapInstructions } from "../swap/client";
 
 export async function mapPool<T, R>(
   items: readonly T[],

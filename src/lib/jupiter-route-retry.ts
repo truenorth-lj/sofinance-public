@@ -1,5 +1,6 @@
 export type JupiterRouteConstraints = {
   maxAccounts: number;
+  dexes?: string;
   onlyDirectRoutes?: boolean;
 };
 
