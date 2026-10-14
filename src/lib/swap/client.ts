@@ -1,6 +1,7 @@
 import { jupiterRequest, JUPITER_QUOTE_TTL_MS, type JupiterQuoteParams, type JupiterRequestOptions } from "../jupiter/client";
 import { quoteCacheKey } from "../jupiter/cache";
 import { JupiterHttpError } from "../jupiter/errors";
+import { directRouteConstraints } from "../jupiter-route-retry";
 
 export async function jupiterQuote<T = Record<string, unknown>>(params: JupiterQuoteParams & { platformFeeBps?: number }): Promise<T> {
   const slippageBps = params.slippageBps ?? 50;
@@ -41,7 +42,7 @@ export async function jupiterQuotePreferCompact<T = Record<string, unknown>>(
     return await jupiterQuote<T>({ ...params, maxAccounts: params.maxAccounts ?? 16, onlyDirectRoutes: true });
   } catch (error) {
     if (!(error instanceof JupiterHttpError) || error.status !== 400) throw error;
-    return jupiterQuote<T>({ ...params, maxAccounts: 20, onlyDirectRoutes: true });
+    return jupiterQuote<T>({ ...params, ...directRouteConstraints() });
   }
 }
 

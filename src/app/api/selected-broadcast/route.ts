@@ -9,6 +9,7 @@ import { rpcConnection } from "@/lib/rpc";
 import { beamLandingUrl } from "@/lib/solami-beam";
 import nacl from "tweetnacl";
 import { getSigningSecret } from "@/lib/config/server-env";
+import { isSingleWalletSignedTransaction } from "@/lib/transaction-limits";
 
 function validRaw(value: unknown) {
   return typeof value === "string" && /^\d+$/.test(value);
@@ -36,10 +37,7 @@ export async function POST(request: Request) {
     const wallet = new PublicKey(walletAddress);
     const transaction = VersionedTransaction.deserialize(Buffer.from(body.signedTransaction, "base64"));
     const walletSignature = transaction.signatures[0];
-    if (transaction.serialize().length > 1_232 ||
-      transaction.message.staticAccountKeys[0]?.toBase58() !== walletAddress ||
-      transaction.message.header.numRequiredSignatures !== 1 || transaction.signatures.length !== 1 ||
-      !walletSignature || walletSignature.every((byte) => byte === 0)) {
+    if (!isSingleWalletSignedTransaction(transaction, walletAddress) || !walletSignature) {
       throw new Error("Payer, signature count, or transaction size mismatch");
     }
     const permitInput: SelectedPermitInput = {

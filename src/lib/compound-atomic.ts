@@ -4,7 +4,7 @@ import { createHash, randomBytes } from "node:crypto";
 import BN from "bn.js";
 import { ClmmInstrument, getPdaExBitmapAccount, getPdaProtocolPositionAddress, getPdaTickArrayAddress, PersonalPositionLayout, Raydium, TickArrayUtil } from "@raydium-io/raydium-sdk-v2";
 import { createAssociatedTokenAccountIdempotentInstruction, createInitializeAccountInstruction, getAccountLenForMint, TOKEN_2022_PROGRAM_ID, unpackMint } from "@solana/spl-token";
-import { ComputeBudgetProgram, PublicKey, SystemProgram, TransactionMessage, VersionedTransaction, type TransactionInstruction } from "@solana/web3.js";
+import { PublicKey, SystemProgram, TransactionMessage, VersionedTransaction, type TransactionInstruction } from "@solana/web3.js";
 import { rpcConnection } from "./rpc";
 import { beamTipInstruction, chooseBeamTransaction, fetchBeamTipAddress } from "./solami-beam";
 import { readLookupTables } from "./transaction-helpers";
@@ -17,12 +17,13 @@ import { readCompoundPriorSources } from "./compound-prior-sources";
 import { readSwapFeeConfig, collectCompoundSwapFee, unfundedSwapFeeAtaRent } from "./swap";
 import { versionedTransactionSize } from "./open-transaction";
 import type { CompoundAccount, CompoundPositionState, CompoundSummary } from "./compound-types";
+import { atomicComputeUnitLimitInstruction, exceedsTxSizeLimit } from "./transaction-limits";
 
 const discriminator = (name: string) => createHash("sha256").update(`global:${name}`).digest().subarray(0, 8);
 const readU128 = (data: Buffer, offset: number) => data.readBigUInt64LE(offset) + (data.readBigUInt64LE(offset + 8) << 64n);
 export function assertCompoundTransactionSize(transaction: VersionedTransaction) {
   const size = versionedTransactionSize(transaction);
-  if (size > 1_232) throw new Error(`Complete compound transaction ${size} bytes, exceeds 1,232 byte limit; no transaction was sent`);
+  if (exceedsTxSizeLimit(size)) throw new Error(`Complete compound transaction ${size} bytes, exceeds 1,232 byte limit; no transaction was sent`);
   return size;
 }
 
@@ -133,7 +134,7 @@ export async function buildAndSimulateCompound(walletAddress: string, positionMi
   if (tables.some((table) => !table.isActive())) throw new Error("Compound address lookup table is disabled");
   const simulationBlockhash = (await connection.getLatestBlockhash("confirmed")).blockhash;
   const build = (instructions: TransactionInstruction[]) => new VersionedTransaction(new TransactionMessage({ payerKey: wallet, recentBlockhash: simulationBlockhash,
-    instructions: [ComputeBudgetProgram.setComputeUnitLimit({ units: 1_400_000 }), ...setup, ...instructions] }).compileToV0Message(tables));
+    instructions: [atomicComputeUnitLimitInstruction(), ...setup, ...instructions] }).compileToV0Message(tables));
   const tip = await fetchBeamTipAddress();
   const baseline = build(harvest.instructions);
   assertCompoundTransactionSize(baseline);

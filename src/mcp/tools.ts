@@ -45,6 +45,7 @@ import type {
   PrepareOpenPositionInput,
   SubmitOpenPositionInput,
 } from "./schemas";
+import { isSingleWalletSignedTransaction } from "../lib/transaction-limits";
 
 /**
  * List all Raydium CLMM positions and assets for a wallet.
@@ -412,12 +413,8 @@ export async function submitSignedTransaction(input: SubmitSignedTransactionInpu
   const wallet = new PublicKey(walletAddress);
   const walletSignature = transaction.signatures[0];
   if (
-    transaction.serialize().length > 1_232 ||
-    transaction.message.staticAccountKeys[0]?.toBase58() !== walletAddress ||
-    transaction.message.header.numRequiredSignatures !== 1 ||
-    transaction.signatures.length !== 1 ||
-    !walletSignature ||
-    walletSignature.every((byte) => byte === 0)
+    !isSingleWalletSignedTransaction(transaction, walletAddress) ||
+    !walletSignature
   ) {
     throw new Error("Payer, signature count, or transaction size mismatch");
   }
@@ -515,12 +512,7 @@ export async function submitCompoundTransaction(input: SubmitCompoundTransaction
     }
 
     if (
-      transaction.serialize().length > 1_232 ||
-      transaction.message.staticAccountKeys[0]?.toBase58() !== input.wallet ||
-      transaction.message.header.numRequiredSignatures !== 1 ||
-      transaction.signatures.length !== 1 ||
-      !transaction.signatures[0] ||
-      transaction.signatures[0].every((byte) => byte === 0)
+      !isSingleWalletSignedTransaction(transaction, input.wallet)
     ) {
       throw new Error("Compound payer, signature, or transaction size mismatch");
     }

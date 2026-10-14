@@ -6,6 +6,8 @@ import { USDC_MINT } from "../ids";
 import { buildRoute, type BuildRoute } from "./jupiter";
 import { swapRouteInstructions } from "./instructions";
 import { assertNativeSwapFeeRecipient, swapFeeRecipientAta, swapFeeTransferInstructions, unfundedSwapFeeAtaRent, type SwapFeeTransferInput } from "./fee";
+import { exceedsTxSizeLimit } from "../transaction-limits";
+import { JUPITER_MAX_ACCOUNTS } from "../jupiter-route-retry";
 
 /** Creates only a missing recipient ATA. Invalid/frozen accounts fail closed. */
 export async function feeAccountSetup(connection: Connection, payer: PublicKey, recipient: PublicKey,
@@ -44,7 +46,7 @@ export async function collectSwapFee(connection: Connection, input: SwapFeeTrans
   const setup = await feeAccountSetup(connection, input.payer, input.recipient);
   const mint = input.kind === "native" ? "So11111111111111111111111111111111111111112" : input.mint.toBase58();
   const route = await buildRoute(input.owner.toBase58(), mint, USDC_MINT, input.amount,
-    input.kind === "native", { maxAccounts: 16, onlyDirectRoutes: true }, undefined, undefined, setup.address.toBase58());
+    input.kind === "native", { maxAccounts: JUPITER_MAX_ACCOUNTS.feeRoute, onlyDirectRoutes: true }, undefined, undefined, setup.address.toBase58());
   const userUsdc = getAssociatedTokenAddressSync(usdc, input.owner, true, TOKEN_PROGRAM_ID).toBase58();
   return { instructions: [...setup.instructions, ...swapRouteInstructions([route], input.owner)], routes: [route], input, receiveOnlyAccounts: [userUsdc] };
 }
@@ -55,7 +57,7 @@ export async function fitFeeCollections(connection: Connection, collections: Fee
   instructions: TransactionInstruction[], compile: (ixs: TransactionInstruction[]) => VersionedTransaction,
   tip?: TransactionInstruction) {
   const measured = versionedTransactionSize(compile([...instructions, ...(tip ? [tip] : [])]));
-  if (measured <= 1232 || !collections.some(c => c.input)) return { instructions, usdcCandidateBytes: measured, fallback: false };
+  if (!exceedsTxSizeLimit(measured) || !collections.some(c => c.input)) return { instructions, usdcCandidateBytes: measured, fallback: false };
   let result = instructions;
   for (const collection of collections) {
     if (!collection.input) continue;

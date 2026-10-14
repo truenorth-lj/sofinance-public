@@ -1,7 +1,10 @@
 import "server-only";
 import { JupiterHttpError } from "../jupiter";
-import type { JupiterRouteConstraints } from "../jupiter-route-retry";
+import { JUPITER_MAX_ACCOUNTS, type JupiterRouteConstraints } from "../jupiter-route-retry";
 import { JupiterNoRouteError, type QuoteRoute } from "./jupiter";
+
+/** Jupiter DEX label for Raydium concentrated-liquidity pools. */
+export const RAYDIUM_CLMM_DEX = "Raydium CLMM";
 
 export type OwnPool = { poolId: string; mintA: string; mintB: string };
 
@@ -11,7 +14,7 @@ export function isPoolTokenPair(pool: OwnPool, inputMint: string, outputMint: st
 }
 
 export function ownPoolConstraints(constraints?: JupiterRouteConstraints): JupiterRouteConstraints {
-  return { maxAccounts: Math.min(constraints?.maxAccounts ?? 20, 20), onlyDirectRoutes: true, dexes: "Raydium CLMM" };
+  return { maxAccounts: Math.min(constraints?.maxAccounts ?? JUPITER_MAX_ACCOUNTS.direct, JUPITER_MAX_ACCOUNTS.direct), onlyDirectRoutes: true, dexes: RAYDIUM_CLMM_DEX };
 }
 
 export function assertOwnPoolRoute(route: QuoteRoute, poolId: string) {

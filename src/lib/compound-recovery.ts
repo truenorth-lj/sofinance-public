@@ -10,6 +10,7 @@ import type { CompoundAccount } from "./compound-types";
 import type { CompoundRecoveryAccount, CompoundRecoverySummary } from "./compound-recovery-types";
 import { rpcConnection } from "./rpc";
 import { restampVersionedTransaction, stampPreparedBlockhash } from "./fresh-blockhash";
+import { exceedsTxSizeLimit } from "./transaction-limits";
 
 function tokenBalance(info: AccountInfo<Buffer> | null, address: PublicKey, program: PublicKey, wallet: PublicKey, mint: PublicKey) {
   if (!info) return 0n;
@@ -135,7 +136,7 @@ export async function buildAndSimulateCompoundRecovery(walletAddress: string, de
     recentBlockhash: simulation.blockhash, instructions }).compileToV0Message());
   let sizeBytes: number;
   try { sizeBytes = simulated.serialize().length; } catch { throw new Error("Recovery transaction exceeds size limit"); }
-  if (sizeBytes > 1_232) throw new Error("Recovery transaction exceeds size limit");
+  if (exceedsTxSizeLimit(sizeBytes)) throw new Error("Recovery transaction exceeds size limit");
   const fee = await connection.getFeeForMessage(simulated.message, "confirmed");
   if (fee.value === null) throw new Error("Unable to estimate recovery transaction fee");
   const summary: CompoundRecoverySummary = { operation: "recovery", simulated: true, wallet: walletAddress,

@@ -1,8 +1,9 @@
 import { ASSOCIATED_TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID, unpackAccount } from "@solana/spl-token";
 import { AddressLookupTableAccount, AddressLookupTableProgram, TransactionMessage, VersionedTransaction, type Connection, type TransactionInstruction } from "@solana/web3.js";
+import { SOLANA_TX_SIZE_LIMIT } from "./transaction-limits";
 
 const shortVectorSize = (value: number) => value < 128 ? 1 : value < 16_384 ? 2 : 3;
-export const MAX_OPEN_TRANSACTION_BYTES = 1_232;
+export const MAX_OPEN_TRANSACTION_BYTES = SOLANA_TX_SIZE_LIMIT;
 
 // Measure before serializing: web3.js's fixed buffer throws before it can report
 // the length of an oversized message. Includes both wallet and NFT signatures.
