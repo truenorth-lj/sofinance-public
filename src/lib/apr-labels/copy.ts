@@ -1,0 +1,14 @@
+/** Labels and tooltips for the APR figures on the /app/rwa-pairs cards. Copy only; no APR math here. */
+export const POOL_FEE_APR_24H_LABEL = "Pool fee APR · 24h";
+export const POOL_FEE_APR_24H_HELP =
+  "Based on the last 24h of fees ÷ TVL, annualized. Gross fee (before Raydium's 16% protocol cut).";
+
+export const HIGHEST_RANGE_APR_7D_LABEL = "Highest range APR · 7d avg";
+export const HIGHEST_RANGE_APR_7D_HELP =
+  "Estimated from the past 7 days' average volume, LP net fees, for a $100 position in this range. Not guaranteed.";
+
+/** Today's volume vs the 7-day daily average: a ratio above this (or below its inverse) gets a note. */
+export const VOLUME_DIVERGENCE_THRESHOLD = 2;
+
+export const volumeDivergenceSentence = (ratioText: string, direction: "hot" | "cold") =>
+  `Today's volume is ${ratioText}× the 7-day average, so the 24h number runs ${direction}.`;

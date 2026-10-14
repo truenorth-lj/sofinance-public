@@ -8,8 +8,12 @@ import { buildPlanPath } from "@/lib/public-urls";
 import { cn } from "@/lib/cn";
 import { OPEN_RANGE_UI_PRESETS } from "@/lib/open-range-presets";
 import {
-  APR_ESTIMATE_CAVEAT, HIGHEST_RANGE_APR_LABEL, HIGHEST_RANGE_COLUMN_LABEL, HIGHEST_RANGE_HELP,
+  HIGHEST_RANGE_COLUMN_LABEL, HIGHEST_RANGE_HELP,
 } from "@/lib/range-apr/copy";
+import {
+  HIGHEST_RANGE_APR_7D_HELP, HIGHEST_RANGE_APR_7D_LABEL, POOL_FEE_APR_24H_HELP, POOL_FEE_APR_24H_LABEL,
+} from "@/lib/apr-labels/copy";
+import { volumeDivergenceNote } from "@/lib/apr-labels/volume-divergence";
 import { formatAprPct, unavailableReasonText } from "@/lib/range-apr/format";
 import { highestRangeSummary } from "@/lib/range-apr/preset-list";
 import { pairIssuerLabel } from "@/lib/rwa-pair-names";
@@ -111,18 +115,19 @@ function Stat({ label, children }: { label: ReactNode; children: ReactNode }) {
  * history) has no estimate: both show a dash and the pill's tooltip says why.
  */
 function PairCard({
-  pair, tokens, poolFeeAprHelp, onOpen, refreshKey,
+  pair, tokens, onOpen, refreshKey,
 }: {
   pair: RwaPair;
   refreshKey: number;
   tokens: Record<string, TokenMetadata>;
-  poolFeeAprHelp: string;
   onOpen: () => void;
 }) {
   const apr = usePoolRangeApr(pair.poolAddress, refreshKey);
   const summary = apr.status === "ready" ? highestRangeSummary(OPEN_RANGE_UI_PRESETS, apr.data) : null;
   const degraded = apr.status === "ready" && apr.data.sample.degraded;
   const low = apr.status === "ready" && apr.data.sample.confidence === "low";
+  const volumeNote = apr.status === "ready" ? volumeDivergenceNote(pair.volume24hUsd, apr.data.model.avgDailyVolumeUsd) : null;
+  const withVolumeNote = (text: string) => (volumeNote ? `${text} ${volumeNote}` : text);
   const placeholder = apr.status === "loading" ? "…" : "—";
   const rangeLabel = summary
     ? OPEN_RANGE_UI_PRESETS.find((preset) => preset.id === summary.id)?.label ?? summary.label
@@ -164,13 +169,13 @@ function PairCard({
             {summary && <span className="text-[0.5em] tracking-normal">APR</span>}
           </p>
           <p className={`mt-2.5 flex items-center gap-1 sm:justify-end ${eyebrow}`}>
-            {HIGHEST_RANGE_APR_LABEL}
+            {HIGHEST_RANGE_APR_7D_LABEL}
             {degraded && (
               <InfoTip label="About Highest range APR" tone="light">{unavailableReasonText("degraded-data")}.</InfoTip>
             )}
             {summary && (
               <InfoTip label="About Highest range APR" tone="light">
-                {APR_ESTIMATE_CAVEAT}{low ? " Low confidence for this pool: thin or patchy recent trading." : ""}
+                {withVolumeNote(HIGHEST_RANGE_APR_7D_HELP)}{low ? " Low confidence for this pool: thin or patchy recent trading." : ""}
               </InfoTip>
             )}
           </p>
@@ -202,8 +207,8 @@ function PairCard({
         <Stat label="24h vol">{money(pair.volume24hUsd)}</Stat>
         <Stat label="Fee">{pair.feeTierBps === null ? "—" : `${pair.feeTierBps} bps`}</Stat>
         <Stat label={<>
-          Pool fee APR
-          <InfoTip label="About Pool fee APR" placement="above" tone="light">{poolFeeAprHelp}</InfoTip>
+          {POOL_FEE_APR_24H_LABEL}
+          <InfoTip label="About Pool fee APR" placement="above" tone="light">{withVolumeNote(POOL_FEE_APR_24H_HELP)}</InfoTip>
         </>}>
           <span data-testid="pool-fee-apr">{pct(pair.estimatedFeeAprPct)}</span>
         </Stat>
@@ -388,7 +393,6 @@ export function RwaPairsPanel() {
               pair={pair}
               refreshKey={refreshKey}
               tokens={tokens}
-              poolFeeAprHelp={data.estimatedFeeAprLabel}
               onOpen={() => setOpenPair(toOpenPair(pair))}
             />
           ))}
