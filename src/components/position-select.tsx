@@ -5,6 +5,16 @@ import { formatPositionLabel, type PositionLabelInput, type PositionLabelMetadat
 const DEFAULT_SELECT_CLASS =
   "w-full rounded-2xl border border-white/20 bg-white/[0.06] px-3 py-2 text-sm text-cream outline-none focus:border-white/40 disabled:opacity-50";
 
+/** Native select styling with the Ink-theme chevron; shared by every themed dropdown. */
+export const SELECT_CHEVRON_STYLE = {
+  appearance: "none",
+  paddingRight: "3rem",
+  backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23eeeae0' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")",
+  backgroundRepeat: "no-repeat",
+  backgroundPosition: "right 1rem center",
+  backgroundSize: "1rem",
+} as const;
+
 export function PositionSelect({
   id,
   label,
@@ -39,14 +49,7 @@ export function PositionSelect({
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
         className={`${className ?? `${DEFAULT_SELECT_CLASS}${labelSrOnly ? "" : " mt-1"}`} min-w-0 max-w-full truncate`}
-        style={{
-          appearance: "none",
-          paddingRight: "3rem",
-          backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23eeeae0' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")",
-          backgroundRepeat: "no-repeat",
-          backgroundPosition: "right 1rem center",
-          backgroundSize: "1rem",
-        }}
+        style={SELECT_CHEVRON_STYLE}
       >
         {placeholder !== undefined && <option value="">{placeholder}</option>}
         {positions.map((item) => (
