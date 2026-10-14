@@ -13,7 +13,10 @@
     "brand:assets": "node scripts/generate-brand-assets.mjs",
     "mcp:start": "tsx src/mcp/server.ts",
     "mcp:dev": "tsx watch src/mcp/server.ts",
-    "build:rwa-service": "esbuild scripts/rwa-data-service.ts --bundle --platform=node --format=cjs --outfile=dist/rwa-data-service.cjs --alias:server-only=./src/mcp/server-only-mock-impl.js"
+    "build:rwa-service": "esbuild scripts/rwa-data-service.ts --bundle --platform=node --format=cjs --outfile=dist/rwa-data-service.cjs --alias:server-only=./src/mcp/server-only-mock-impl.js",
+    "db:generate": "drizzle-kit generate",
+    "db:baseline": "node --env-file-if-exists=.env.local --import tsx scripts/rwa-migrate.ts baseline",
+    "db:migrate": "node --env-file-if-exists=.env.local --import tsx scripts/rwa-migrate.ts migrate"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",
@@ -31,6 +34,7 @@
     "bs58": "6.0.0",
     "clsx": "^2.1.1",
     "decimal.js": "^10.6.0",
+    "drizzle-orm": "0.45.4",
     "lucide-react": "^1.48.0",
     "next": "16.3.6",
     "postgres": "3.4.7",
@@ -49,6 +53,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "babel-plugin-react-compiler": "1.0.0",
+    "drizzle-kit": "0.31.11",
     "esbuild": "0.28.2",
     "eslint": "^9",
     "eslint-config-next": "16.3.6",

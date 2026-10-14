@@ -1,0 +1,991 @@
+{
+  "id": "0dc93873-5647-4aab-9554-620d3c5bfc9b",
+  "prevId": "00000000-0000-0000-0000-000000000000",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.background_job_state": {
+      "name": "background_job_state",
+      "schema": "",
+      "columns": {
+        "job_key": {
+          "name": "job_key",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "lease_owner": {
+          "name": "lease_owner",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lease_epoch": {
+          "name": "lease_epoch",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "lease_expires_at": {
+          "name": "lease_expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "next_due_at": {
+          "name": "next_due_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_started_at": {
+          "name": "last_started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_completed_at": {
+          "name": "last_completed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_success_at": {
+          "name": "last_success_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_status": {
+          "name": "last_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'idle'"
+        },
+        "consecutive_failures": {
+          "name": "consecutive_failures",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "last_duration_ms": {
+          "name": "last_duration_ms",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_error": {
+          "name": "last_error",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_summary": {
+          "name": "last_summary",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "progress": {
+          "name": "progress",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "background_job_state_check": {
+          "name": "background_job_state_check",
+          "value": "(lease_owner IS NULL) = (lease_expires_at IS NULL)"
+        },
+        "background_job_state_check1": {
+          "name": "background_job_state_check1",
+          "value": "(last_status <> 'running'::text) OR (lease_owner IS NOT NULL)"
+        },
+        "background_job_state_consecutive_failures_check": {
+          "name": "background_job_state_consecutive_failures_check",
+          "value": "consecutive_failures >= 0"
+        },
+        "background_job_state_job_key_check": {
+          "name": "background_job_state_job_key_check",
+          "value": "length(btrim(job_key)) > 0"
+        },
+        "background_job_state_last_duration_ms_check": {
+          "name": "background_job_state_last_duration_ms_check",
+          "value": "last_duration_ms >= 0"
+        },
+        "background_job_state_last_error_check": {
+          "name": "background_job_state_last_error_check",
+          "value": "(last_error IS NULL) OR (jsonb_typeof(last_error) = 'object'::text)"
+        },
+        "background_job_state_last_status_check": {
+          "name": "background_job_state_last_status_check",
+          "value": "last_status = ANY (ARRAY['idle'::text, 'running'::text, 'ok'::text, 'partial'::text, 'error'::text])"
+        },
+        "background_job_state_last_summary_check": {
+          "name": "background_job_state_last_summary_check",
+          "value": "(last_summary IS NULL) OR (jsonb_typeof(last_summary) = 'object'::text)"
+        },
+        "background_job_state_lease_epoch_check": {
+          "name": "background_job_state_lease_epoch_check",
+          "value": "lease_epoch >= 0"
+        },
+        "background_job_state_progress_check": {
+          "name": "background_job_state_progress_check",
+          "value": "(progress IS NULL) OR (jsonb_typeof(progress) = 'object'::text)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.rwa_apr_daily": {
+      "name": "rwa_apr_daily",
+      "schema": "",
+      "columns": {
+        "pool_address": {
+          "name": "pool_address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "snapshot_date": {
+          "name": "snapshot_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "scheduled_for": {
+          "name": "scheduled_for",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "captured_at": {
+          "name": "captured_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "mint_a": {
+          "name": "mint_a",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "mint_b": {
+          "name": "mint_b",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "symbol_a": {
+          "name": "symbol_a",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "symbol_b": {
+          "name": "symbol_b",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tvl_usd": {
+          "name": "tvl_usd",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "volume_24h_usd": {
+          "name": "volume_24h_usd",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fees_24h_usd": {
+          "name": "fees_24h_usd",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pool_fee_apr_pct": {
+          "name": "pool_fee_apr_pct",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pool_metrics_observed_at": {
+          "name": "pool_metrics_observed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "highest_range_apr_pct": {
+          "name": "highest_range_apr_pct",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "highest_range_id": {
+          "name": "highest_range_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "tick_lower": {
+          "name": "tick_lower",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "tick_upper": {
+          "name": "tick_upper",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "price_lower": {
+          "name": "price_lower",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "price_upper": {
+          "name": "price_upper",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "presets": {
+          "name": "presets",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "reference_capital_usd": {
+          "name": "reference_capital_usd",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 100
+        },
+        "algorithm_version": {
+          "name": "algorithm_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "payload_schema_version": {
+          "name": "payload_schema_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "chain_observed_at": {
+          "name": "chain_observed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "economics_observed_at": {
+          "name": "economics_observed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "volume_observed_at": {
+          "name": "volume_observed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sample": {
+          "name": "sample",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "failure_reason": {
+          "name": "failure_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "finalized_at": {
+          "name": "finalized_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "rwa_apr_daily_date_pool_idx": {
+          "name": "rwa_apr_daily_date_pool_idx",
+          "columns": [
+            {
+              "expression": "snapshot_date",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "pool_address",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "rwa_apr_daily_pool_address_fkey": {
+          "name": "rwa_apr_daily_pool_address_fkey",
+          "tableFrom": "rwa_apr_daily",
+          "tableTo": "rwa_pool_latest",
+          "columnsFrom": [
+            "pool_address"
+          ],
+          "columnsTo": [
+            "pool_address"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "rwa_apr_daily_pkey": {
+          "name": "rwa_apr_daily_pkey",
+          "columns": [
+            "pool_address",
+            "snapshot_date"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "rwa_apr_daily_algorithm_version_check": {
+          "name": "rwa_apr_daily_algorithm_version_check",
+          "value": "length(btrim(algorithm_version)) > 0"
+        },
+        "rwa_apr_daily_check": {
+          "name": "rwa_apr_daily_check",
+          "value": "snapshot_date = ((scheduled_for AT TIME ZONE 'Asia/Taipei'::text))::date"
+        },
+        "rwa_apr_daily_check1": {
+          "name": "rwa_apr_daily_check1",
+          "value": "(tick_lower IS NULL) = (tick_upper IS NULL)"
+        },
+        "rwa_apr_daily_check2": {
+          "name": "rwa_apr_daily_check2",
+          "value": "(tick_lower IS NULL) OR (tick_lower < tick_upper)"
+        },
+        "rwa_apr_daily_check3": {
+          "name": "rwa_apr_daily_check3",
+          "value": "(price_lower IS NULL) = (price_upper IS NULL)"
+        },
+        "rwa_apr_daily_check4": {
+          "name": "rwa_apr_daily_check4",
+          "value": "(price_lower IS NULL) OR (price_lower < price_upper)"
+        },
+        "rwa_apr_daily_check5": {
+          "name": "rwa_apr_daily_check5",
+          "value": "(captured_at IS NULL) OR (captured_at >= scheduled_for)"
+        },
+        "rwa_apr_daily_check6": {
+          "name": "rwa_apr_daily_check6",
+          "value": "(status <> 'pending'::text) OR (finalized_at IS NULL)"
+        },
+        "rwa_apr_daily_check7": {
+          "name": "rwa_apr_daily_check7",
+          "value": "(status = 'pending'::text) OR (finalized_at IS NOT NULL)"
+        },
+        "rwa_apr_daily_check8": {
+          "name": "rwa_apr_daily_check8",
+          "value": "(status <> 'ok'::text) OR ((highest_range_apr_pct IS NOT NULL) AND (highest_range_id IS NOT NULL) AND (tick_lower IS NOT NULL) AND (price_lower IS NOT NULL) AND (captured_at IS NOT NULL))"
+        },
+        "rwa_apr_daily_check9": {
+          "name": "rwa_apr_daily_check9",
+          "value": "(status = 'ok'::text) OR ((highest_range_apr_pct IS NULL) AND (highest_range_id IS NULL) AND (tick_lower IS NULL) AND (tick_upper IS NULL) AND (price_lower IS NULL) AND (price_upper IS NULL))"
+        },
+        "rwa_apr_daily_fees_24h_usd_check": {
+          "name": "rwa_apr_daily_fees_24h_usd_check",
+          "value": "(fees_24h_usd >= (0)::numeric) AND (fees_24h_usd < 'Infinity'::numeric)"
+        },
+        "rwa_apr_daily_highest_range_apr_pct_check": {
+          "name": "rwa_apr_daily_highest_range_apr_pct_check",
+          "value": "(highest_range_apr_pct >= (0)::numeric) AND (highest_range_apr_pct < 'Infinity'::numeric)"
+        },
+        "rwa_apr_daily_highest_range_id_check": {
+          "name": "rwa_apr_daily_highest_range_id_check",
+          "value": "highest_range_id = ANY (ARRAY['micro'::text, 'tight'::text, 'standard'::text, 'wide'::text])"
+        },
+        "rwa_apr_daily_mint_a_check": {
+          "name": "rwa_apr_daily_mint_a_check",
+          "value": "mint_a ~ '^[1-9A-HJ-NP-Za-km-z]{32,44}$'::text"
+        },
+        "rwa_apr_daily_mint_b_check": {
+          "name": "rwa_apr_daily_mint_b_check",
+          "value": "mint_b ~ '^[1-9A-HJ-NP-Za-km-z]{32,44}$'::text"
+        },
+        "rwa_apr_daily_payload_schema_version_check": {
+          "name": "rwa_apr_daily_payload_schema_version_check",
+          "value": "payload_schema_version >= 1"
+        },
+        "rwa_apr_daily_pool_fee_apr_pct_check": {
+          "name": "rwa_apr_daily_pool_fee_apr_pct_check",
+          "value": "(pool_fee_apr_pct >= (0)::numeric) AND (pool_fee_apr_pct < 'Infinity'::numeric)"
+        },
+        "rwa_apr_daily_presets_check": {
+          "name": "rwa_apr_daily_presets_check",
+          "value": "jsonb_typeof(presets) = 'array'::text"
+        },
+        "rwa_apr_daily_price_lower_check": {
+          "name": "rwa_apr_daily_price_lower_check",
+          "value": "(price_lower > (0)::numeric) AND (price_lower < 'Infinity'::numeric)"
+        },
+        "rwa_apr_daily_price_upper_check": {
+          "name": "rwa_apr_daily_price_upper_check",
+          "value": "(price_upper > (0)::numeric) AND (price_upper < 'Infinity'::numeric)"
+        },
+        "rwa_apr_daily_reference_capital_usd_check": {
+          "name": "rwa_apr_daily_reference_capital_usd_check",
+          "value": "(reference_capital_usd > (0)::numeric) AND (reference_capital_usd < 'Infinity'::numeric)"
+        },
+        "rwa_apr_daily_sample_check": {
+          "name": "rwa_apr_daily_sample_check",
+          "value": "jsonb_typeof(sample) = 'object'::text"
+        },
+        "rwa_apr_daily_status_check": {
+          "name": "rwa_apr_daily_status_check",
+          "value": "status = ANY (ARRAY['pending'::text, 'ok'::text, 'degraded'::text, 'failed'::text, 'missing'::text])"
+        },
+        "rwa_apr_daily_symbol_a_check": {
+          "name": "rwa_apr_daily_symbol_a_check",
+          "value": "length(btrim(symbol_a)) > 0"
+        },
+        "rwa_apr_daily_symbol_b_check": {
+          "name": "rwa_apr_daily_symbol_b_check",
+          "value": "length(btrim(symbol_b)) > 0"
+        },
+        "rwa_apr_daily_tvl_usd_check": {
+          "name": "rwa_apr_daily_tvl_usd_check",
+          "value": "(tvl_usd >= (0)::numeric) AND (tvl_usd < 'Infinity'::numeric)"
+        },
+        "rwa_apr_daily_volume_24h_usd_check": {
+          "name": "rwa_apr_daily_volume_24h_usd_check",
+          "value": "(volume_24h_usd >= (0)::numeric) AND (volume_24h_usd < 'Infinity'::numeric)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.rwa_apr_latest": {
+      "name": "rwa_apr_latest",
+      "schema": "",
+      "columns": {
+        "pool_address": {
+          "name": "pool_address",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "payload": {
+          "name": "payload",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "payload_snapshot_at": {
+          "name": "payload_snapshot_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "chain_observed_at": {
+          "name": "chain_observed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "economics_observed_at": {
+          "name": "economics_observed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "volume_observed_at": {
+          "name": "volume_observed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "payload_schema_version": {
+          "name": "payload_schema_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "algorithm_version": {
+          "name": "algorithm_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reference_capital_usd": {
+          "name": "reference_capital_usd",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 100
+        },
+        "profile_cache": {
+          "name": "profile_cache",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_attempt_at": {
+          "name": "last_attempt_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        "last_attempt_status": {
+          "name": "last_attempt_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "last_attempt_issues": {
+          "name": "last_attempt_issues",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "rwa_apr_latest_pool_address_fkey": {
+          "name": "rwa_apr_latest_pool_address_fkey",
+          "tableFrom": "rwa_apr_latest",
+          "tableTo": "rwa_pool_latest",
+          "columnsFrom": [
+            "pool_address"
+          ],
+          "columnsTo": [
+            "pool_address"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "rwa_apr_latest_algorithm_version_check": {
+          "name": "rwa_apr_latest_algorithm_version_check",
+          "value": "length(btrim(algorithm_version)) > 0"
+        },
+        "rwa_apr_latest_check": {
+          "name": "rwa_apr_latest_check",
+          "value": "(payload IS NULL) = (payload_snapshot_at IS NULL)"
+        },
+        "rwa_apr_latest_check1": {
+          "name": "rwa_apr_latest_check1",
+          "value": "(payload IS NULL) OR ((payload ? 'poolId'::text) AND ((payload ->> 'poolId'::text) = pool_address))"
+        },
+        "rwa_apr_latest_last_attempt_issues_check": {
+          "name": "rwa_apr_latest_last_attempt_issues_check",
+          "value": "jsonb_typeof(last_attempt_issues) = 'array'::text"
+        },
+        "rwa_apr_latest_last_attempt_status_check": {
+          "name": "rwa_apr_latest_last_attempt_status_check",
+          "value": "last_attempt_status = ANY (ARRAY['ok'::text, 'degraded'::text, 'error'::text])"
+        },
+        "rwa_apr_latest_payload_check": {
+          "name": "rwa_apr_latest_payload_check",
+          "value": "(payload IS NULL) OR (jsonb_typeof(payload) = 'object'::text)"
+        },
+        "rwa_apr_latest_payload_schema_version_check": {
+          "name": "rwa_apr_latest_payload_schema_version_check",
+          "value": "payload_schema_version >= 1"
+        },
+        "rwa_apr_latest_profile_cache_check": {
+          "name": "rwa_apr_latest_profile_cache_check",
+          "value": "(profile_cache IS NULL) OR (jsonb_typeof(profile_cache) = 'object'::text)"
+        },
+        "rwa_apr_latest_reference_capital_usd_check": {
+          "name": "rwa_apr_latest_reference_capital_usd_check",
+          "value": "(reference_capital_usd > (0)::numeric) AND (reference_capital_usd < 'Infinity'::numeric)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.rwa_feed_state": {
+      "name": "rwa_feed_state",
+      "schema": "",
+      "columns": {
+        "feed_key": {
+          "name": "feed_key",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "generation_id": {
+          "name": "generation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "scan_max_pages": {
+          "name": "scan_max_pages",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 10
+        },
+        "pages_fetched": {
+          "name": "pages_fetched",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "scanned_pools": {
+          "name": "scanned_pools",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "page_pool_counts": {
+          "name": "page_pool_counts",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "published_at": {
+          "name": "published_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "qualification_observed_at": {
+          "name": "qualification_observed_at",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "pairing_rule_version": {
+          "name": "pairing_rule_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "summary": {
+          "name": "summary",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "rwa_feed_state_check": {
+          "name": "rwa_feed_state_check",
+          "value": "(pages_fetched >= 0) AND (pages_fetched <= scan_max_pages)"
+        },
+        "rwa_feed_state_check1": {
+          "name": "rwa_feed_state_check1",
+          "value": "(generation_id IS NULL) = (published_at IS NULL)"
+        },
+        "rwa_feed_state_feed_key_check": {
+          "name": "rwa_feed_state_feed_key_check",
+          "value": "length(btrim(feed_key)) > 0"
+        },
+        "rwa_feed_state_page_pool_counts_check": {
+          "name": "rwa_feed_state_page_pool_counts_check",
+          "value": "jsonb_typeof(page_pool_counts) = 'array'::text"
+        },
+        "rwa_feed_state_pairing_rule_version_check": {
+          "name": "rwa_feed_state_pairing_rule_version_check",
+          "value": "length(btrim(pairing_rule_version)) > 0"
+        },
+        "rwa_feed_state_qualification_observed_at_check": {
+          "name": "rwa_feed_state_qualification_observed_at_check",
+          "value": "jsonb_typeof(qualification_observed_at) = 'object'::text"
+        },
+        "rwa_feed_state_scan_max_pages_check": {
+          "name": "rwa_feed_state_scan_max_pages_check",
+          "value": "(scan_max_pages >= 1) AND (scan_max_pages <= 30)"
+        },
+        "rwa_feed_state_scanned_pools_check": {
+          "name": "rwa_feed_state_scanned_pools_check",
+          "value": "scanned_pools >= 0"
+        },
+        "rwa_feed_state_summary_check": {
+          "name": "rwa_feed_state_summary_check",
+          "value": "jsonb_typeof(summary) = 'object'::text"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.rwa_pool_latest": {
+      "name": "rwa_pool_latest",
+      "schema": "",
+      "columns": {
+        "pool_address": {
+          "name": "pool_address",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "feed_key": {
+          "name": "feed_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "mint_a": {
+          "name": "mint_a",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "mint_b": {
+          "name": "mint_b",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "symbol_a": {
+          "name": "symbol_a",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "symbol_b": {
+          "name": "symbol_b",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tvl_usd": {
+          "name": "tvl_usd",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "volume_24h_usd": {
+          "name": "volume_24h_usd",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fees_24h_usd": {
+          "name": "fees_24h_usd",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fee_rate": {
+          "name": "fee_rate",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pool_fee_apr_pct": {
+          "name": "pool_fee_apr_pct",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "details": {
+          "name": "details",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "source_page": {
+          "name": "source_page",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "last_seen_generation": {
+          "name": "last_seen_generation",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "first_seen_at": {
+          "name": "first_seen_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        "last_seen_at": {
+          "name": "last_seen_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        "metrics_observed_at": {
+          "name": "metrics_observed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "CURRENT_TIMESTAMP"
+        }
+      },
+      "indexes": {
+        "rwa_pool_latest_feed_generation_page_idx": {
+          "name": "rwa_pool_latest_feed_generation_page_idx",
+          "columns": [
+            {
+              "expression": "feed_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "last_seen_generation",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "source_page",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "rwa_pool_latest_feed_key_fkey": {
+          "name": "rwa_pool_latest_feed_key_fkey",
+          "tableFrom": "rwa_pool_latest",
+          "tableTo": "rwa_feed_state",
+          "columnsFrom": [
+            "feed_key"
+          ],
+          "columnsTo": [
+            "feed_key"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "rwa_pool_latest_check": {
+          "name": "rwa_pool_latest_check",
+          "value": "last_seen_at >= first_seen_at"
+        },
+        "rwa_pool_latest_details_check": {
+          "name": "rwa_pool_latest_details_check",
+          "value": "jsonb_typeof(details) = 'object'::text"
+        },
+        "rwa_pool_latest_fee_rate_check": {
+          "name": "rwa_pool_latest_fee_rate_check",
+          "value": "(fee_rate >= (0)::numeric) AND (fee_rate <= (1)::numeric)"
+        },
+        "rwa_pool_latest_fees_24h_usd_check": {
+          "name": "rwa_pool_latest_fees_24h_usd_check",
+          "value": "(fees_24h_usd >= (0)::numeric) AND (fees_24h_usd < 'Infinity'::numeric)"
+        },
+        "rwa_pool_latest_mint_a_check": {
+          "name": "rwa_pool_latest_mint_a_check",
+          "value": "mint_a ~ '^[1-9A-HJ-NP-Za-km-z]{32,44}$'::text"
+        },
+        "rwa_pool_latest_mint_b_check": {
+          "name": "rwa_pool_latest_mint_b_check",
+          "value": "mint_b ~ '^[1-9A-HJ-NP-Za-km-z]{32,44}$'::text"
+        },
+        "rwa_pool_latest_pool_address_check": {
+          "name": "rwa_pool_latest_pool_address_check",
+          "value": "pool_address ~ '^[1-9A-HJ-NP-Za-km-z]{32,44}$'::text"
+        },
+        "rwa_pool_latest_pool_fee_apr_pct_check": {
+          "name": "rwa_pool_latest_pool_fee_apr_pct_check",
+          "value": "(pool_fee_apr_pct >= (0)::numeric) AND (pool_fee_apr_pct < 'Infinity'::numeric)"
+        },
+        "rwa_pool_latest_source_page_check": {
+          "name": "rwa_pool_latest_source_page_check",
+          "value": "(source_page >= 1) AND (source_page <= 30)"
+        },
+        "rwa_pool_latest_symbol_a_check": {
+          "name": "rwa_pool_latest_symbol_a_check",
+          "value": "length(btrim(symbol_a)) > 0"
+        },
+        "rwa_pool_latest_symbol_b_check": {
+          "name": "rwa_pool_latest_symbol_b_check",
+          "value": "length(btrim(symbol_b)) > 0"
+        },
+        "rwa_pool_latest_tvl_usd_check": {
+          "name": "rwa_pool_latest_tvl_usd_check",
+          "value": "(tvl_usd >= (0)::numeric) AND (tvl_usd < 'Infinity'::numeric)"
+        },
+        "rwa_pool_latest_volume_24h_usd_check": {
+          "name": "rwa_pool_latest_volume_24h_usd_check",
+          "value": "(volume_24h_usd >= (0)::numeric) AND (volume_24h_usd < 'Infinity'::numeric)"
+        }
+      },
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}
