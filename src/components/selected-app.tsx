@@ -16,6 +16,7 @@ import { useCompoundController } from "./use-compound-controller";
 import { InkHero, InkNav } from "./ink";
 import { PositionPerformancePanel } from "./position-performance-panel";
 import { ConnectWalletPrompt } from "./connect-wallet-prompt";
+import { WithdrawPanel } from "./withdraw-panel";
 import { AssetRisksDialog } from "./asset-risks-dialog";
 
 const short = (value: string) => `${value.slice(0, 5)}…${value.slice(-5)}`;
@@ -42,6 +43,8 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
   initialWallet?: string;
   previewPoolId?: string;
 } = {}) {
+  const [withdrawOpen,setWithdrawOpen]=useState(false);
+  const [withdrawBusy,setWithdrawBusy]=useState(false);
   const controller = useSelectedController();
   const { wallet, connected, connect, disconnect, connectionError,
     discovery, selection, state, amount, tolerancePercent, result, attempt, attemptStatus,
@@ -53,14 +56,14 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
     ? (Number(quote.roundtripCostInput) / Number(quote.requested) * 100).toFixed(2)
     : null;
   const compound = useCompoundController({ wallet: wallet || undefined, positionMint: selection?.positionMint,
-    externalBlocked: addBusy,
+    externalBlocked: addBusy || withdrawBusy,
     onConfirmed: () => { void refreshState(); } });
   // Unclaimed fees come from the compound reader (same accrual formula as the Performance card); its snapshot also carries the
   // liquidity amounts, so rows show liquidity and unclaimed fees from one consistent read when it is available.
   const feeState = state && compound.state?.positionMint === state.positionMint ? compound.state : null;
   const assets = feeState ?? state;
-  const busy = addBusy || compound.busy;
-  const actionDisabled = connected && (addDisabled || compound.busy);
+  const busy = addBusy || compound.busy || withdrawBusy;
+  const actionDisabled = connected && (addDisabled || compound.busy || withdrawBusy);
   const actionLoading = connected && (busy || calculating);
   const buttonLabel = !connected ? "Connect wallet" : compound.busy ? "Another operation in progress…" :
     calculating ? "Estimating liquidity…" : actionLabel;
@@ -155,6 +158,8 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
         <button type="button" aria-pressed={activeView === "performance"} aria-controls="performance-view" onClick={() => setActiveView("performance")} className={`flex flex-1 items-center justify-center gap-2 rounded-full px-3 py-3 text-sm font-semibold transition-colors ${activeView === "performance" ? "bg-lemon text-ink" : "text-smoke hover:text-cream/80"}`}><ChartNoAxesCombined className="h-4 w-4" />Performance</button>
         <button type="button" aria-pressed={activeView === "deposit"} aria-controls="deposit-view" onClick={() => setActiveView("deposit")} className={`flex flex-1 items-center justify-center gap-2 rounded-full px-3 py-3 text-sm font-semibold transition-colors ${activeView === "deposit" ? "bg-lemon text-ink" : "text-smoke hover:text-cream/80"}`}><ArrowDown className="h-4 w-4" />Add to position</button>
       </nav>
+      {state && <button type="button" disabled={busy} onClick={()=>setWithdrawOpen(true)} className="mt-4 rounded-full border border-white/20 px-5 py-3 text-sm text-cream">Withdraw</button>}
+      {withdrawOpen && state && wallet && <WithdrawPanel key={`${wallet}:${state.positionMint}`} wallet={wallet} positionMint={state.positionMint} mintA={state.mintA} mintB={state.mintB} label={poolLabel} onClose={()=>setWithdrawOpen(false)} onBusyChange={setWithdrawBusy} onConfirmed={()=>{void refreshState();void refreshDiscovery();}} />}
       {historyWarning && <div role="status" className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-xs text-cream/80"><span>{historyWarning}</span><button type="button" className="font-semibold underline" onClick={() => { setActiveView("deposit"); if (visibleAttempt) setStatusDialogOpen(true); }}>View add liquidity transaction</button></div>}
       {compound.historyWarning && <div role="status" className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-xs text-cream/80"><span>{compound.historyWarning}</span><button type="button" className="font-semibold underline" onClick={() => setActiveView("compound")}>View compound status</button></div>}
       <main>

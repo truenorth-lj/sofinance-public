@@ -804,3 +804,15 @@ export async function submitOpenPosition(input: SubmitOpenPositionInput) {
     throw new Error(notSentRetryMessage(sanitizePublicError(error, "Open-position transaction broadcast failed")));
   }
 }
+
+export async function prepareWithdraw(input: import("../lib/withdraw/types").WithdrawPrepareRequest) {
+ const {buildWithdraw}=await import("../lib/withdraw/build");
+ const prepared=await buildWithdraw(input);
+ const submitArgs={wallet:input.wallet,permit:prepared.permit,summary:prepared.summary,confirmHighImpact:input.confirmHighImpact===true};
+ const signToken=await createSignToken({kind:"withdraw",wallet:input.wallet,unsignedTransaction:prepared.unsignedTransaction,permit:prepared.permit,submitArgs,expiresAt:prepared.summary.expiresAt},getSigningSecret());
+ return {...prepared,submitArgs,signToken,signUrl:buildSignUrl(signToken)};
+}
+export async function submitWithdrawTransaction(input: Parameters<typeof import("../lib/withdraw/send").submitWithdraw>[0]) {
+ const {submitWithdraw}=await import("../lib/withdraw/send");
+ return submitWithdraw(input);
+}

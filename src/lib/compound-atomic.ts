@@ -1,10 +1,11 @@
 import "server-only";
 
+import { createIsolatedTokenAccountInstructions as createCompoundAccountInstructions } from "./swap/isolated-account";
 import { createHash, randomBytes } from "node:crypto";
 import BN from "bn.js";
 import { ClmmInstrument, getPdaExBitmapAccount, getPdaProtocolPositionAddress, getPdaTickArrayAddress, PersonalPositionLayout, Raydium, TickArrayUtil } from "@raydium-io/raydium-sdk-v2";
-import { createAssociatedTokenAccountIdempotentInstruction, createInitializeAccountInstruction, getAccountLenForMint, TOKEN_2022_PROGRAM_ID, unpackMint } from "@solana/spl-token";
-import { PublicKey, SystemProgram, TransactionMessage, VersionedTransaction, type TransactionInstruction } from "@solana/web3.js";
+import { createAssociatedTokenAccountIdempotentInstruction, getAccountLenForMint, TOKEN_2022_PROGRAM_ID, unpackMint } from "@solana/spl-token";
+import { PublicKey, TransactionMessage, VersionedTransaction, type TransactionInstruction } from "@solana/web3.js";
 import { rpcConnection } from "./rpc";
 import { beamTipInstruction, chooseBeamTransaction, fetchBeamTipAddress } from "./solami-beam";
 import { readLookupTables } from "./transaction-helpers";
@@ -27,15 +28,7 @@ export function assertCompoundTransactionSize(transaction: VersionedTransaction)
   return size;
 }
 
-export function createCompoundAccountInstructions(wallet: PublicKey, account: CompoundAccount) {
-  const address = new PublicKey(account.address), program = new PublicKey(account.program);
-  // NON-idempotent creation rejects any pre-funded source. InitializeAccount
-  // references the payer/owner by index rather than repeating its 32 bytes.
-  // Both initializations share the rent sysvar in Raydium's common ALT.
-  return [SystemProgram.createAccountWithSeed({ fromPubkey: wallet, basePubkey: wallet, seed: account.seed,
-    newAccountPubkey: address, lamports: account.rentLamports, space: account.space, programId: program }),
-  createInitializeAccountInstruction(address, new PublicKey(account.mint), wallet, program)];
-}
+export { createIsolatedTokenAccountInstructions as createCompoundAccountInstructions } from "./swap/isolated-account";
 
 /** Independent protocol-shape checks: harvest never removes principal; add never reads ordinary ATAs. */
 export function validateCompoundRaydiumInstructions(instructions: TransactionInstruction[], state: CompoundPositionState, accounts: [CompoundAccount, CompoundAccount], liquidity: bigint, amountMaxA: bigint, amountMaxB: bigint) {

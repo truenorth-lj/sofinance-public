@@ -45,6 +45,7 @@ export async function buildRoute(
   budget?: JupiterRetryBudget,
   destinationTokenAccount?: string,
   platformFeeBps = 0,
+  maxPriceImpactBps = MAX_PRICE_IMPACT_BPS,
 ): Promise<BuildRoute> {
   const key = getJupiterApiKey();
   if (!key && process.env.E2E_KEYLESS_JUPITER !== "1") throw new Error("Server-side JUPITER_API_KEY not set, cannot obtain real-time quotes");
@@ -55,7 +56,7 @@ export async function buildRoute(
   }
   let route: BuildRoute;
   try {
-    const quote = await quoteRoute(inputMint, outputMint, amount, resolved, signal, budget, platformFeeBps);
+    const quote = await quoteRoute(inputMint, outputMint, amount, resolved, signal, budget, platformFeeBps, maxPriceImpactBps);
     const instructions = await jupiterSwapInstructions<BuildRoute & { addressLookupTableAddresses: string[] }>({
       ...(platformFeeBps ? { feeAccount: swapFeeRecipientAta(readSwapFeeConfig().wallet!, new PublicKey(USDC_MINT), TOKEN_PROGRAM_ID).toBase58() } : {}),
       destinationTokenAccount, userPublicKey: wallet, quoteResponse: quote, wrapAndUnwrapSol: wrapAndUnwrapSol ?? false,
@@ -75,7 +76,7 @@ export async function buildRoute(
   }
   assertPlatformFeeQuote(route, platformFeeBps);
   if (route.inputMint !== inputMint || route.outputMint !== outputMint || BigInt(route.inAmount) !== amount || route.swapMode !== "ExactIn" || route.slippageBps !== SLIPPAGE_BPS || BigInt(route.otherAmountThreshold) <= 0n || BigInt(route.otherAmountThreshold) > BigInt(route.outAmount) || !route.swapInstruction || !Array.isArray(route.routePlan) || route.routePlan.length === 0) throw new Error("Jupiter route content does not match request");
-  if (!acceptableReportedPriceImpact(route.priceImpactPct, MAX_PRICE_IMPACT_BPS)) throw new Error(`Swap price impact invalid or exceeds ${MAX_PRICE_IMPACT_BPS / 100}% limit`);
+  if (!acceptableReportedPriceImpact(route.priceImpactPct, maxPriceImpactBps)) throw new Error(`Swap price impact invalid or exceeds ${MAX_PRICE_IMPACT_BPS / 100}% limit`);
   if (route.tipInstruction) throw new Error("Route contains unexpected SOL tip");
   if (platformFeeBps) {
     const setup = await feeAccountSetup(rpcConnection(), new PublicKey(wallet), readSwapFeeConfig().wallet!);
@@ -90,7 +91,7 @@ export type QuoteRoute = Pick<BuildRoute, "platformFee" | "inputMint" | "outputM
 /** Lightweight, uncached execution estimate; no transaction instructions. */
 export async function quoteRoute(inputMint: string, outputMint: string, amount: bigint,
   constraints: JupiterRouteConstraints = { maxAccounts: JUPITER_MAX_ACCOUNTS.compact }, signal?: AbortSignal,
-  budget?: JupiterRetryBudget, platformFeeBps = 0): Promise<QuoteRoute> {
+  budget?: JupiterRetryBudget, platformFeeBps = 0, maxPriceImpactBps = MAX_PRICE_IMPACT_BPS): Promise<QuoteRoute> {
   const key = getJupiterApiKey();
   if (!key && process.env.E2E_KEYLESS_JUPITER !== "1") throw new Error("Server-side JUPITER_API_KEY not set, cannot obtain real-time quotes");
   const route = await jupiterQuote<QuoteRoute>({ inputMint, outputMint, amount: amount.toString(),
@@ -101,6 +102,6 @@ export async function quoteRoute(inputMint: string, outputMint: string, amount: 
     route.swapMode !== "ExactIn" || route.slippageBps !== SLIPPAGE_BPS ||
     BigInt(route.otherAmountThreshold) <= 0n || BigInt(route.otherAmountThreshold) > BigInt(route.outAmount) ||
     !Array.isArray(route.routePlan) || route.routePlan.length === 0) throw new Error("Jupiter route content does not match request");
-  if (!acceptableReportedPriceImpact(route.priceImpactPct, MAX_PRICE_IMPACT_BPS)) throw new Error(`Swap price impact invalid or exceeds ${MAX_PRICE_IMPACT_BPS / 100}% limit`);
+  if (!acceptableReportedPriceImpact(route.priceImpactPct, maxPriceImpactBps)) throw new Error(`Swap price impact invalid or exceeds ${MAX_PRICE_IMPACT_BPS / 100}% limit`);
   return { ...route, routePlan: route.routePlan.map((hop) => ({ ...hop, bps: hop.bps ?? hop.percent * 100 })) };
 }

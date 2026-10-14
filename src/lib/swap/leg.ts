@@ -15,7 +15,7 @@ export function depositFeePlan(mint: string, amount: bigint, config: SwapFeeConf
 export async function feeSwapLeg(input: {
   wallet: string; inputMint: string; outputMint: string; spend: bigint; feeBps: number;
   native?: boolean; constraints?: JupiterRouteConstraints | number; build?: boolean;
-  signal?: AbortSignal; budget?: JupiterRetryBudget; ownPool?: OwnPool;
+  signal?: AbortSignal; budget?: JupiterRetryBudget; ownPool?: OwnPool; maxPriceImpactBps?: number;
 }) {
   const { wallet, inputMint, outputMint, spend, feeBps } = input;
   if (spend <= 0n) throw new Error("Swap amount must be greater than zero");
@@ -26,8 +26,8 @@ export async function feeSwapLeg(input: {
   const constraints = typeof input.constraints === "number" ? { maxAccounts: input.constraints } : input.constraints;
   const request = (routeConstraints = constraints) => input.build !== false
     ? buildRoute(wallet, inputMint, outputMint, swapAmount, input.native ?? false, routeConstraints,
-      input.signal, input.budget, undefined, platformFeeBps)
-    : quoteRoute(inputMint, outputMint, swapAmount, routeConstraints, input.signal, input.budget, platformFeeBps);
+      input.signal, input.budget, undefined, platformFeeBps, ...(input.maxPriceImpactBps === undefined ? [] : [input.maxPriceImpactBps]))
+    : quoteRoute(inputMint, outputMint, swapAmount, routeConstraints, input.signal, input.budget, platformFeeBps, ...(input.maxPriceImpactBps === undefined ? [] : [input.maxPriceImpactBps]));
   const route = input.ownPool && isPoolTokenPair(input.ownPool, inputMint, outputMint)
     ? await preferOwnPoolRoute(input.ownPool.poolId, request, constraints)
     : await request();

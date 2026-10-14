@@ -83,3 +83,18 @@ export function verifyIntermediateAccounts(accounts: IntermediateAccount[], addr
     } catch { throw fail(); }
   }
 }
+
+/** Jupiter ExactIn user sources may be replaced only at their exact writable key.
+ * Source ATA setup is omitted; its fresh isolated account is initialized by the caller.
+ * Other setup/cleanup must not touch that source. Used by compound and withdraw. */
+export function retargetSwapSource(route: BuildRoute, sourceAta: string, source: string): BuildRoute {
+ if (!route.swapInstruction.accounts.some(key=>key.pubkey===sourceAta && key.isWritable)) throw new Error("Jupiter route does not identify isolated swap source");
+ const touchesSource=(ix:ApiInstruction)=>ix.accounts.some(key=>key.pubkey===sourceAta);
+ const setupInstructions=route.setupInstructions.filter(ix=>{
+  if(!touchesSource(ix))return true;
+  if(ix.programId!=="ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL" || ix.accounts[1]?.pubkey!==sourceAta)throw new Error("Unsupported isolated source setup");
+  return false;
+ });
+ if(route.cleanupInstruction && touchesSource(route.cleanupInstruction) || route.otherInstructions.some(touchesSource))throw new Error("Unsupported isolated source cleanup");
+ return {...route,setupInstructions,swapInstruction:{...route.swapInstruction,accounts:route.swapInstruction.accounts.map(key=>key.pubkey===sourceAta?{...key,pubkey:source}:key)}};
+}
