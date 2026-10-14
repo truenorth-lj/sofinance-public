@@ -85,6 +85,37 @@ describe("position performance workflow", () => {
     expect(container.textContent).toContain("Performance results");
   });
 
+  it("continues bounded history loading during a view and stops once complete", async () => {
+    let calls = 0;
+    const original = fetchMock.getMockImplementation() as (url: string) => Promise<unknown>;
+    fetchMock.mockImplementation(async (url: string) => {
+      if (!url.startsWith("/api/position-performance?")) return original(url);
+      calls++;
+      return { ok: true, json: async () => ({ ...response, truncated: calls === 1,
+        historyFetch: { txCount: 1, elapsedMs: 1, provider: "default", source: "databaseIncremental", canContinue: calls === 1 } }) };
+    });
+    await scan();
+    await compute();
+    expect(calls).toBe(2);
+    expect(container.textContent).toContain("Performance results");
+  });
+
+  it("bounds automatic loading to five requests and does not retry missing data without progress", async () => {
+    for (const canContinue of [true, false]) {
+      let calls = 0;
+      const original = fetchMock.getMockImplementation() as (url: string) => Promise<unknown>;
+      fetchMock.mockImplementation(async (url: string) => {
+        if (!url.startsWith("/api/position-performance?")) return original(url);
+        calls++;
+        return { ok: true, json: async () => ({ ...response, truncated: true,
+          historyFetch: { txCount: 1, elapsedMs: 1, provider: "default", source: "databaseIncremental", canContinue } }) };
+      });
+      await scan();
+      await compute();
+      expect(calls).toBe(canContinue ? 5 : 1);
+    }
+  });
+
   it("preserves a URL mint and resets wallet-bound choices when the wallet changes", async () => {
     await scan(walletA, secondMint);
     expect(container.querySelector<HTMLSelectElement>("#perf-position")!.value).toBe(secondMint);

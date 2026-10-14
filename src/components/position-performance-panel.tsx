@@ -121,6 +121,7 @@ type PerformanceResponse = {
     solamiTxCount?: number;
     defaultTxCount?: number;
     fallbackReasons?: string[];
+    canContinue?: boolean;
   };
   error?: string;
 };
@@ -263,15 +264,19 @@ export function PositionPerformancePanel({
     try {
       const params = new URLSearchParams({ positionMint: mint });
       if (wallet.trim()) params.set("wallet", wallet.trim());
-      const response = await fetch(`/api/position-performance?${params}`, {
-        signal: attempt.signal,
-        headers: { Accept: "application/json" },
-      });
-      const body = (await response.json()) as PerformanceResponse & { error?: string };
-      if (!attempt.current()) return;
-      if (!response.ok) throw new Error(body.error || "Lookup failed");
-      if (body.positionMint !== mint) throw new Error("Position response mismatch");
-      setLoadedData({body, context});
+      // Continue bounded initial history loading as part of this view, without a scheduler.
+      for (let step = 0; step < 5; step++) {
+        const response = await fetch(`/api/position-performance?${params}`, {
+          signal: attempt.signal,
+          headers: { Accept: "application/json" },
+        });
+        const body = (await response.json()) as PerformanceResponse & { error?: string };
+        if (!attempt.current()) return;
+        if (!response.ok) throw new Error(body.error || "Lookup failed");
+        if (body.positionMint !== mint) throw new Error("Position response mismatch");
+        setLoadedData({body, context});
+        if (!body.truncated || !body.historyFetch?.canContinue) break;
+      }
     } catch (err) {
       if (attempt.current()) { setLoadedData(null); setError(err instanceof Error ? err.message : "Lookup failed"); }
     } finally {
@@ -473,6 +478,12 @@ export function PositionPerformancePanel({
             Estimated APR annualizes the trading fees earned so far (collected plus unclaimed) over recorded deposits and holding time, at current prices. Additional deposits are not time-weighted, and future fees can be higher or lower: it is not a promised return.
             {data.truncated && " Earlier transactions may be missing, so the estimate may be incomplete."}
           </p>
+          {data.truncated && data.historyFetch?.canContinue && (
+            <button type="button" disabled={Boolean(loadingContext)} onClick={() => void load()}
+              className="rounded-xl border border-white/20 px-3 py-2 text-xs text-cream disabled:opacity-50">
+              {loadingContext ? "Loading history…" : "Load remaining history"}
+            </button>
+          )}
 
           {!embedded && tn && (
             <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 sm:p-5">

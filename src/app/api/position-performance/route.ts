@@ -1,7 +1,9 @@
 import { apiError } from "@/lib/api-response";
 import { getPositionPerformance } from "@/lib/position-performance";
+import { PositionHistoryStoreError } from "@/lib/position-history-store-types";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 function parsePubkey(raw: string | null, label: string) {
   if (!raw) throw new Error(`${label} is required`);
@@ -26,12 +28,16 @@ export async function GET(request: Request) {
       wallet,
       maxSignatures,
       skipPricing,
+      signal: request.signal,
     });
 
     return Response.json(result, {
       headers: { "Cache-Control": "no-store" },
     });
   } catch (error) {
+    if (error instanceof PositionHistoryStoreError) return Response.json({
+      error: "Position history is temporarily unavailable. Please try again shortly.", code: error.code,
+    }, { status: 503, headers: { "Cache-Control": "no-store", "Retry-After": "5" } });
     return apiError(error, "Position performance lookup failed", 400);
   }
 }

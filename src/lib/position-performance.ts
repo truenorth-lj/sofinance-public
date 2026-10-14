@@ -19,15 +19,12 @@ import { accruedFee } from "./compound-math";
 import { positionSide } from "./quote-math";
 import { defaultRpcConnection, rpcConnection, rpcProvider, type RpcProvider } from "./rpc";
 import {
-  fetchPositionHistoryTransactions,
-  toChronological,
   type CustomRpcCall,
   type HistoryConnection,
   type HistoryFetchMetric,
 } from "./position-performance-history";
 import {
   aggregateCashflowsForPosition,
-  parsePositionCashflowEvents,
   type PositionCashflowEvent,
 } from "./position-performance-events";
 import {
@@ -48,6 +45,10 @@ import {
   type RealizedFeeAprSeries,
 } from "./realized-fee-apr-series";
 import { getJupiterApiKey } from "./config/server-env";
+import { getRwaConfig } from "./config/rwa-env";
+import { getPositionHistoryStore } from "./position-history-store";
+import type { PositionHistoryStore } from "./position-history-store-types";
+import { loadPerformanceHistory } from "./position-performance-history-load";
 
 const POSITION_DISCRIMINATOR = createHash("sha256").update("account:PersonalPositionState").digest().subarray(0, 8);
 const POOL_DISCRIMINATOR = createHash("sha256").update("account:PoolState").digest().subarray(0, 8);
@@ -117,6 +118,7 @@ export type PositionPerformanceResult = {
   realizedFeeAprSeries: RealizedFeeAprSeries;
   /** How position history was loaded (batched; Solami getTransactionsForAddress when available). */
   historyFetch: HistoryFetchMetric;
+  timings?: { totalMs: number; accountsMs: number; historyMs: number; pricingMs: number; metadataMs: number };
 };
 
 export type GetPositionPerformanceOptions = {
@@ -135,6 +137,9 @@ export type GetPositionPerformanceOptions = {
   customRpc?: CustomRpcCall;
   /** Non-Solami RPC for history fallback (tests). Defaults to `defaultRpcConnection()`. */
   fallbackConnection?: HistoryConnection;
+  /** Explicit null selects the legacy reader for controlled comparisons. */
+  historyStore?: PositionHistoryStore | null;
+  signal?: AbortSignal;
 };
 
 /** Fallback: Raydium pool mid price + $1 stable for USDC/USDT legs. */
@@ -146,7 +151,7 @@ async function fetchRaydiumPoolUsdPrices(
 ): Promise<Map<string, number>> {
   const prices = new Map<string, number>();
   const url = `${RAYDIUM_POOL_IDS}?ids=${encodeURIComponent(poolId)}`;
-  const response = await fetcher(url, { headers: { Accept: "application/json" } });
+  const response = await fetcher(url, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(5_000) });
   if (!response.ok) return prices;
   const body = (await response.json()) as { data?: Array<{ price?: number | string } | null> };
   const pool = body.data?.[0];
@@ -170,7 +175,7 @@ async function fetchRaydiumPoolSymbols(
 ): Promise<{ symbolA: string | null; symbolB: string | null }> {
   const url = `${RAYDIUM_POOL_IDS}?ids=${encodeURIComponent(poolId)}`;
   try {
-    const response = await fetcher(url, { headers: { Accept: "application/json" } });
+    const response = await fetcher(url, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(5_000) });
     if (!response.ok) return { symbolA: null, symbolB: null };
     const body = (await response.json()) as {
       data?: Array<{ mintA?: { symbol?: string }; mintB?: { symbol?: string } } | null>;
@@ -232,13 +237,15 @@ async function walletOwnsNft(connection: Connection, wallet: PublicKey, mint: Pu
 
 /**
  * Compute holding-period / realized fee APR for a Raydium CLMM position NFT
- * from on-chain facts only (no database).
+ * from finalized cached history when enabled, plus fresh on-chain valuation.
  */
 export async function getPositionPerformance(
   positionMint: string,
   options: GetPositionPerformanceOptions = {},
 ): Promise<PositionPerformanceResult> {
-  const connection = options.connection ?? rpcConnection();
+  const started = Date.now();
+  const signal = options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(50_000)]) : AbortSignal.timeout(50_000);
+  const connection = options.connection ?? rpcConnection(undefined, { signal });
   const maxSignatures = Math.min(Math.max(1, options.maxSignatures ?? DEFAULT_MAX_SIGNATURES), 500);
   const fetcher = options.fetcher ?? fetch;
   const nowSeconds = options.nowSeconds ?? Math.floor(Date.now() / 1000);
@@ -267,50 +274,28 @@ export async function getPositionPerformance(
   }
   const pool = PoolInfoLayout.decode(poolInfo.data);
 
-  let ownsNft: boolean | null = null;
-  if (options.wallet) {
-    ownsNft = await walletOwnsNft(connection, new PublicKey(options.wallet), mint);
-  }
-
+  const accountsMs = Date.now() - started;
   const provider = options.provider ?? rpcProvider();
   const fallbackConnection =
     options.fallbackConnection ??
-    (provider === "solami" && !options.connection ? defaultRpcConnection() : undefined);
-  const fetched = await fetchPositionHistoryTransactions({
+    (provider === "solami" && !options.connection ? defaultRpcConnection(undefined, { signal }) : undefined);
+  const historyStore = options.historyStore !== undefined ? options.historyStore
+    : !options.connection && getRwaConfig().positionHistoryEnabled ? getPositionHistoryStore() : null;
+  const [fetched, uncollected, ownsNft] = await Promise.all([loadPerformanceHistory({
     address: positionPda,
     maxSignatures,
     connection,
     provider,
     customRpc: options.customRpc,
     fallbackConnection,
-  });
+    context: { positionMint, positionAccount: positionPda.toBase58(), poolId: poolId.toBase58(),
+      mintA: pool.mintA.toBase58(), mintB: pool.mintB.toBase58(),
+      vaultA: pool.vaultA.toBase58(), vaultB: pool.vaultB.toBase58() },
+    store: historyStore, signal,
+  }), readUncollectedFees(connection, CLMM_PROGRAM_ID, poolId, position, pool),
+  options.wallet ? walletOwnsNft(connection, new PublicKey(options.wallet), mint) : Promise.resolve(null)]);
   const truncated = fetched.truncated;
-  const chronological = toChronological(fetched.items);
-
-  const history: PositionHistoryEvent[] = [];
-  for (const info of chronological) {
-    if (info.err) continue;
-    const events = parsePositionCashflowEvents(info.logMessages, info.parsedTransaction, {
-      positionMint,
-      positionAccount: positionPda.toBase58(),
-      poolId: poolId.toBase58(),
-      mintA: pool.mintA.toBase58(),
-      mintB: pool.mintB.toBase58(),
-      vaultA: pool.vaultA.toBase58(),
-      vaultB: pool.vaultB.toBase58(),
-    });
-    const relevant = events.filter((event) => {
-      if (event.kind === "open") return event.poolState === poolId.toBase58();
-      return event.positionNftMint === positionMint;
-    });
-    if (!relevant.length) continue;
-    history.push({
-      signature: info.signature,
-      blockTime: info.blockTime,
-      slot: info.slot,
-      events: relevant,
-    });
-  }
+  const history: PositionHistoryEvent[] = fetched.history;
 
   const allEvents = history.flatMap((item) => item.events);
   const cashflows = aggregateCashflowsForPosition(allEvents, positionMint, poolId.toBase58());
@@ -330,7 +315,6 @@ export async function getPositionPerformance(
     position.liquidity,
     false,
   );
-  const uncollected = await readUncollectedFees(connection, CLMM_PROGRAM_ID, poolId, position, pool);
   const rangeSide = positionSide(
     BigInt(pool.sqrtPriceX64.toString()),
     BigInt(lower.toString()),
@@ -344,6 +328,7 @@ export async function getPositionPerformance(
   let priceUsdB: number | null = null;
   let pricingSource: "jupiter-price-v3" | "raydium-pool-stable" | "none" = "none";
   let pricingLabel = "USD pricing skipped; token-raw / token-native metrics only.";
+  const pricingStarted = Date.now();
   if (!options.skipPricing) {
     try {
       const prices = await fetchJupiterPricesUsd(
@@ -374,6 +359,7 @@ export async function getPositionPerformance(
     }
   }
 
+  const pricingMs = Date.now() - pricingStarted;
   const metrics = computePositionPerformance({
     deposited: { a: cashflows.depositedA, b: cashflows.depositedB },
     withdrawnPrincipal: { a: cashflows.withdrawnPrincipalA, b: cashflows.withdrawnPrincipalB },
@@ -392,6 +378,7 @@ export async function getPositionPerformance(
 
   let symbolA: string | null = null;
   let symbolB: string | null = null;
+  const metadataStarted = Date.now();
   try {
     const raySymbols = await fetchRaydiumPoolSymbols(poolId.toBase58(), fetcher);
     symbolA = raySymbols.symbolA;
@@ -437,7 +424,21 @@ export async function getPositionPerformance(
     wrappedSymbol: sameAssetWrap ? wrap.wrappedSymbol : null,
   });
 
-  const assumptions = [ASSUMPTIONS_LABEL, TOKEN_NATIVE_ASSUMPTIONS].join(" ");
+  const incomplete = Boolean(historyStore && truncated);
+  if (incomplete) {
+    metrics.pnlUsd = null;
+    metrics.holdingPeriodReturnPct = null;
+    metrics.annualizedReturnPct = null;
+    metrics.feeOnlyAprPct = null;
+    tokenNative.perSideFeeAprPct = { a: null, b: null };
+    if (tokenNative.tokenEquivalent) {
+      tokenNative.tokenEquivalent.metrics.holdingPeriodReturnPct = null;
+      tokenNative.tokenEquivalent.metrics.annualizedReturnPct = null;
+      tokenNative.tokenEquivalent.metrics.feeOnlyAprPct = null;
+    }
+  }
+  const assumptions = [ASSUMPTIONS_LABEL, TOKEN_NATIVE_ASSUMPTIONS,
+    ...(incomplete ? ["Position history is incomplete; return percentages are unavailable until backfill and missing transactions are resolved."] : [])].join(" ");
 
   const realizedFeeAprSeries = buildRealizedFeeAprSeries({
     history,
@@ -451,6 +452,7 @@ export async function getPositionPerformance(
     decimalsB: pool.mintDecimalsB,
     openedAt,
   });
+  if (incomplete) realizedFeeAprSeries.points = [];
 
   return {
     wallet: options.wallet ?? null,
@@ -498,6 +500,8 @@ export async function getPositionPerformance(
     assumptions,
     realizedFeeAprSeries,
     historyFetch: fetched.metric,
+    timings: { totalMs: Date.now() - started, accountsMs, historyMs: fetched.metric.elapsedMs,
+      pricingMs, metadataMs: Date.now() - metadataStarted },
   };
 }
 

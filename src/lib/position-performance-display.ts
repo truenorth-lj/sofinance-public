@@ -15,6 +15,9 @@ export function returnUnavailableReason(input: {
   missingUsdPrice: boolean;
   truncated: boolean;
 }): string {
+  if (input.truncated && input.deposited !== null && input.deposited > 0) {
+    return "Position history is incomplete. Returns will be available after the remaining transactions are loaded.";
+  }
   if (input.missingUsdPrice) return "USD prices are unavailable for one or both assets.";
   if (input.deposited === null || !Number.isFinite(input.deposited) || input.deposited <= 0) {
     return input.truncated

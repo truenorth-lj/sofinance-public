@@ -32,6 +32,13 @@ migration and local verification: that service runs the ORM against private
 PostgreSQL. Vercel continues to read its authenticated HTTPS endpoint. Discovery
 runs every 15 minutes, APR every 5 minutes, and the daily history rule is unchanged.
 
+Position performance uses two additional tables: `position_history_state` for
+fenced synchronization progress and `position_history_transactions` for receipts
+and parsed event arrays. Apply the committed migration and deploy the gateway
+before setting `SOFINANCE_POSITION_HISTORY_DB_ENABLED=true` on Vercel. Position
+history updates only when queried; the existing RWA scheduler does not scan it.
+Current prices, liquidity and unclaimed fees are still read on every lookup.
+
 Opt-in integration tests create and remove only disposable schemas in the
 dedicated database:
 

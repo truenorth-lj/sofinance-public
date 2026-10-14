@@ -8,6 +8,13 @@
       "when": 1791939344312,
       "tag": "0000_rwa-baseline",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1791943513459,
+      "tag": "0001_position-history-cache",
+      "breakpoints": true
     }
   ]
 }

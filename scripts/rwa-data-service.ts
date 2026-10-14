@@ -7,6 +7,8 @@ import {
   PostgresRwaStore,
 } from "../src/lib/rwa-postgres-store";
 import { RwaStoreError, storeRequestSchema } from "../src/lib/rwa-store-types";
+import { PostgresPositionHistoryStore } from "../src/lib/position-history-postgres-store";
+import { PositionHistoryStoreError, positionStoreRequestSchema } from "../src/lib/position-history-store-types";
 
 const config = getRwaConfig(),
   service = getRwaServiceConfig();
@@ -14,12 +16,20 @@ if (!config.databaseUrl || !config.secret || config.secret.length < 32)
   throw new Error("RWA service configuration is incomplete");
 const db = createRwaDatabase(config.databaseUrl),
   store = new PostgresRwaStore(db);
+const positionStore = new PostgresPositionHistoryStore(db);
 const server = createServer(async (req, res) => {
+  const isPositionHistory = req.url === "/v1/position-history";
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("Content-Type", "application/json");
   const reply = (status: number, body: unknown) => {
+    const payload = JSON.stringify(body);
+    if (isPositionHistory && Buffer.byteLength(payload) > 4_000_000) {
+      res.statusCode = 503;
+      res.end(JSON.stringify({ code: "POSITION_HISTORY_RESPONSE_TOO_LARGE" }));
+      return;
+    }
     res.statusCode = status;
-    res.end(JSON.stringify(body));
+    res.end(payload);
   };
   if (req.url === "/health" && req.method === "GET") {
     try {
@@ -30,7 +40,7 @@ const server = createServer(async (req, res) => {
     }
     return;
   }
-  if (req.url !== "/v1/rwa" || req.method !== "POST") {
+  if ((req.url !== "/v1/rwa" && !isPositionHistory) || req.method !== "POST") {
     reply(404, { code: "NOT_FOUND" });
     return;
   }
@@ -44,24 +54,25 @@ const server = createServer(async (req, res) => {
     for await (const chunk of req) {
       const part = Buffer.from(chunk);
       bytes += part.length;
-      if (bytes > 2_000_000) {
+      if (bytes > (isPositionHistory ? 16_000_000 : 2_000_000)) {
         reply(413, { code: "BODY_TOO_LARGE" });
         return;
       }
       chunks.push(part);
     }
-    const parsed = storeRequestSchema.safeParse(
-      JSON.parse(Buffer.concat(chunks).toString()),
-    );
+    const body: unknown = JSON.parse(Buffer.concat(chunks).toString());
+    const parsed = isPositionHistory ? positionStoreRequestSchema.safeParse(body) : storeRequestSchema.safeParse(body);
     if (!parsed.success) {
       reply(400, { code: "INVALID_REQUEST" });
       return;
     }
-    const result = await store.request(parsed.data);
+    const result = isPositionHistory
+      ? await positionStore.request(positionStoreRequestSchema.parse(parsed.data))
+      : await store.request(storeRequestSchema.parse(parsed.data));
     reply(200, result);
   } catch (error) {
     const code =
-      error instanceof RwaStoreError ? error.code : "RWA_STORE_UNAVAILABLE";
+      error instanceof RwaStoreError || error instanceof PositionHistoryStoreError ? error.code : "RWA_STORE_UNAVAILABLE";
     // Only stable codes: never log the request, Authorization header, URL or database error detail.
     console.error("rwa-data-service", code);
     reply(code === "LEASE_LOST" ? 409 : 503, { code });
