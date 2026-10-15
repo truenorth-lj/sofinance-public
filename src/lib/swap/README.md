@@ -180,3 +180,23 @@ Live sends 2026-10-14 (after changes; RPC broadcast, Beam disabled):
 | Open SPCX 0.006 | 3dEwCVMZ… | 974 | USDC conversion | +471 USDC raw |
 | Selected add USDC 0.5 | 3Zpf7MMK… | 1120 | 500 raw USDC | +500 USDC raw |
 | Selected add SPCX 0.003 | 5GpMHoRs… | 975 | USDC conversion | +157 USDC raw |
+
+## Compound yield swap is native Raydium `swap_v2` (2026-10-15)
+
+#95 moved the compound rebalance leg to a Jupiter own-pool `route`. That leg
+(Jupiter program id + ~29 accounts, ~half outside the ALTs) never fit next to
+harvest + add: live builds for SPCX/SPCXx `DUzBLHZ5…` measured 1,209–1,283 B
+for harvest + fee + swap **before** the 61 B add (prod: "VersionedTransaction
+too large: 1684 bytes (max: encoded/raw 1644/1232)"). The intermediate
+simulation had no size check, so the failure surfaced as an RPC error.
+
+Compound now builds the own-pool `swap_v2` directly (the pre-#95 builder,
+`swap/compound.ts`, still validated by `validateCompoundSwapInstruction`). It
+reuses the harvest/add pool, vault, mint and token-program keys and adds no
+program. Live real-code builds (no Beam tip): 1,189 B with an existing fee
+ATA, 1,223 B when the fee wallet's input-token ATA must be created.
+`compileCompoundTransaction` drops the optional 1.4M CU limit (−40 B) only
+when the packet would otherwise overflow; the runtime default (200k per
+non-builtin instruction) covers a compound. Every intermediate packet is now
+size-checked before simulation. Receipt/import proof already accepts direct
+`swap_v2`. Pre-creating the fee wallet's SPCX/SPCXx ATAs restores ~74 B margin.

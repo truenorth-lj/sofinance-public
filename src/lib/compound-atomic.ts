@@ -27,6 +27,15 @@ export function assertCompoundTransactionSize(transaction: VersionedTransaction)
   if (exceedsTxSizeLimit(size)) throw new Error(`Complete compound transaction ${size} bytes, exceeds 1,232 byte limit; no transaction was sent`);
   return size;
 }
+const withinPacket = (transaction: VersionedTransaction) => { assertCompoundTransactionSize(transaction); return transaction; };
+
+/** Request the 1.4M CU limit when it fits. Without it the runtime default
+ * (200k per non-builtin instruction: harvest, swap, add, token init/transfer)
+ * still covers a compound; it only spends 32+ bytes of the packet. */
+export function compileCompoundTransaction(compile: (instructions: TransactionInstruction[]) => VersionedTransaction, instructions: TransactionInstruction[]) {
+  const limited = compile([atomicComputeUnitLimitInstruction(), ...instructions]);
+  return exceedsTxSizeLimit(versionedTransactionSize(limited)) ? compile(instructions) : limited;
+}
 
 export { createIsolatedTokenAccountInstructions as createCompoundAccountInstructions } from "./swap/isolated-account";
 
@@ -126,8 +135,9 @@ export async function buildAndSimulateCompound(walletAddress: string, positionMi
     ...harvest.lookupTableAddress.map((address) => new PublicKey(address))]);
   if (tables.some((table) => !table.isActive())) throw new Error("Compound address lookup table is disabled");
   const simulationBlockhash = (await connection.getLatestBlockhash("confirmed")).blockhash;
-  const build = (instructions: TransactionInstruction[]) => new VersionedTransaction(new TransactionMessage({ payerKey: wallet, recentBlockhash: simulationBlockhash,
-    instructions: [atomicComputeUnitLimitInstruction(), ...setup, ...instructions] }).compileToV0Message(tables));
+  const compile = (instructions: TransactionInstruction[]) => new VersionedTransaction(new TransactionMessage({ payerKey: wallet, recentBlockhash: simulationBlockhash,
+    instructions }).compileToV0Message(tables));
+  const build = (instructions: TransactionInstruction[]) => compileCompoundTransaction(compile, [...setup, ...instructions]);
   const tip = await fetchBeamTipAddress();
   const baseline = build(harvest.instructions);
   assertCompoundTransactionSize(baseline);
@@ -160,16 +170,9 @@ export async function buildAndSimulateCompound(walletAddress: string, positionMi
   const simulateWithFee = (transaction: VersionedTransaction, expectedLiquidity: bigint) =>
     simulateAndVerifyCompound({ connection, transaction, state, compoundAccounts: accounts, priorSources: prior.sources,
       expectedLiquidity, maxSolDebitLamports: maxSolWithFee, sigVerify: false });
-  if (plan.route) {
-    const routeTables = await readLookupTables(connection,
-      Object.keys(plan.route.addressesByLookupTableAddress || {}).map(key => new PublicKey(key)));
-    if (routeTables.some(table => !table.isActive())) throw new Error("Compound address lookup table is disabled");
-    const existing = new Set(tables.map(table => table.key.toBase58()));
-    tables.push(...routeTables.filter(table => !existing.has(table.key.toBase58())));
-  }
   const swapInstructions = [...feeInstructions, ...plan.instructions];
   const swapped = plan.instructions.length || feeInstructions.length
-    ? await simulateWithFee(build([...harvest.instructions, ...swapInstructions]), 0n) : harvestResult;
+    ? await simulateWithFee(withinPacket(build([...harvest.instructions, ...swapInstructions])), 0n) : harvestResult;
   const simulatedOutputAmount = plan.swap
     ? (plan.swap.outputMint === state.mintA ? BigInt(swapped.endingA) - BigInt(harvestResult.endingA)
       : BigInt(swapped.endingB) - BigInt(harvestResult.endingB)).toString() : undefined;
