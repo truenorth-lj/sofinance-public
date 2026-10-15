@@ -11,7 +11,10 @@ it("keeps every swap API request in the one shared client and forbids direct SDK
   const violations: string[] = [];
   for (const file of files(root)) {
     const path = relative(root, file), source = readFileSync(file, "utf8");
-    if (/makeSwapBaseInInstructions|PoolUtils\.computeAmountOut|swapInternal\(/.test(source)) violations.push(path);
+    // Sole exception: the compound yield swap. A Jupiter `route` leg (own program
+    // id + ~29 accounts) cannot fit harvest + swap + add in one 1,232-byte packet;
+    // the native own-pool swap_v2 reuses the harvest/add keys (see compound-size.test.ts).
+    if (/makeSwapBaseInInstructions|PoolUtils\.computeAmountOut|swapInternal\(/.test(source) && path !== "lib/swap/compound.ts") violations.push(path);
     if (/path:\s*["']\/swap\//.test(source) && path !== "lib/swap/client.ts") violations.push(path);
     if (/jupiterSwapInstructions\s*[<(]/.test(source) && !["lib/swap/client.ts", "lib/swap/jupiter.ts", "lib/swap/exit.ts"].includes(path)) violations.push(path);
   }

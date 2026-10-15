@@ -1,95 +1,101 @@
 import "server-only";
 import BN from "bn.js";
-import { SqrtPriceMath, type ClmmKeys, type ComputeClmmPoolInfo, type ReturnTypeFetchMultiplePoolTickArrays, type SimpleClmmPoolInfo } from "@raydium-io/raydium-sdk-v2";
-import { getAssociatedTokenAddressSync } from "@solana/spl-token";
+import { ClmmConfigLayout, ClmmInstrument, getPdaTickArrayAddress, PoolUtils, swapInternal, TickArrayLayout, TickArrayUtil, type ClmmKeys, type ComputeClmmPoolInfo, type ReturnTypeFetchMultiplePoolTickArrays, type SimpleClmmPoolInfo } from "@raydium-io/raydium-sdk-v2";
 import { Connection, PublicKey } from "@solana/web3.js";
-import { sizeCompoundLiquidity } from "../compound-math";
-import type { CompoundSwap } from "../compound-swap";
+import { readRecentBlockTime } from "../block-time";
+import { SLIPPAGE_BPS } from "../ids";
+import { optimizeCompoundSwap, validateCompoundSwapInstruction, type CompoundSwap, type CompoundSwapQuote } from "../compound-swap";
 import type { CompoundAccount, CompoundPositionState } from "../compound-types";
-import { JupiterHttpError } from "../jupiter";
-import { buildRoute, quoteRoute } from "./jupiter";
-import { assertOwnPoolRoute, ownPoolConstraints } from "./own-pool";
-import { netSwapInput, resolveSwapFeeConfig } from "./fee";
-import { rejectUnselectedWalletTokenWrites, retargetSwapSource, swapRouteInstructions } from "./instructions";
+import { netSwapInput, readSwapFeeConfig } from "./fee";
 
-/** Only direct routes through the original pool are accepted, so independent
- * receipt/import proof can still identify the exact pool vaults. No wallet ATA
- * is used as a staging account for harvested yield. */
+type Direction = "a-to-b" | "b-to-a";
+
+/** Native Raydium `swap_v2` through the position's own pool, signed by the
+ * wallet against the isolated yield accounts. Unlike a Jupiter `route`, it adds
+ * no program id and reuses the harvest/add pool, vault, mint and token-program
+ * keys, so harvest + swap + add fits one 1,232-byte packet. Every account and
+ * privilege is independently checked by validateCompoundSwapInstruction. */
 export async function buildCompoundSwapPlan(input: {
   connection: Connection; state: CompoundPositionState; accounts: [CompoundAccount, CompoundAccount];
   poolInfo: SimpleClmmPoolInfo; poolKeys: ClmmKeys; computePoolInfo: ComputeClmmPoolInfo;
   tickData: ReturnTypeFetchMultiplePoolTickArrays; amountA: bigint; amountB: bigint;
 }) {
-  const { connection, state, accounts, computePoolInfo, amountA, amountB } = input;
-  const price = BigInt(computePoolInfo.sqrtPriceX64.toString());
-  const lower = BigInt(state.lowerSqrtX64), upper = BigInt(state.upperSqrtX64);
-  const baseline = sizeCompoundLiquidity(price, lower, upper, amountA, amountB, BigInt(state.liquidity));
-  const p = price < lower ? lower : price > upper ? upper : price;
-  const difference = amountA * (p - lower) * upper * p - amountB * (1n << 128n) * (upper - p);
-  const empty = { instructions: [], route: null, swap: null, quotedBalances: { a: amountA, b: amountB }, sqrtPriceAfterX64: price };
-  if (difference === 0n) return empty;
-  const inputA = difference > 0n, source = accounts[inputA ? 0 : 1], destination = accounts[inputA ? 1 : 0];
-  const budget = inputA ? amountA : amountB;
-  if (budget === 0n) return empty;
-  const config = await resolveSwapFeeConfig(connection, new PublicKey(source.mint), new PublicKey(source.program));
-  const constraints = ownPoolConstraints();
-  const validate = (route: Parameters<typeof assertOwnPoolRoute>[0]) => assertOwnPoolRoute(route, state.poolId);
-  const evaluate = async (gross: bigint) => {
-    const { swapAmount, feeAmount } = netSwapInput(gross, config.bps);
-    // Dust-sized probes (e.g. 1 raw unit) legitimately have no route; treat as "no swap at this size".
-    const route = swapAmount > 0n ? await quoteRoute(source.mint, destination.mint, swapAmount, constraints).catch((error: unknown) => {
-      if (error instanceof JupiterHttpError && error.status === 400 && /^no routes found$|^cannot compute other amount threshold/i.test(error.bodyError ?? "")) return null;
-      throw error;
-    }) : null;
-    if (route) validate(route);
-    const output = route ? BigInt(route.otherAmountThreshold) : 0n;
-    const sqrt = route ? BigInt(SqrtPriceMath.getNextSqrtPriceFromInput(new BN(price.toString()),
-      computePoolInfo.liquidity, new BN(swapAmount.toString()), inputA).toString()) : price;
-    const a = inputA ? amountA - gross : amountA + output;
-    const b = inputA ? amountB + output : amountB - gross;
-    const clamped = sqrt < lower ? lower : sqrt > upper ? upper : sqrt;
-    return { gross, swapAmount, feeAmount, route, a, b, sqrt,
-      difference: a * (clamped - lower) * upper * clamped - b * (1n << 128n) * (upper - clamped),
-      sized: sizeCompoundLiquidity(sqrt, lower, upper, a, b, BigInt(state.liquidity)) };
+  const { connection, state, accounts, poolInfo, poolKeys, computePoolInfo, tickData, amountA, amountB } = input;
+  if (computePoolInfo.id.toBase58() !== state.poolId || computePoolInfo.programId.toBase58() !== state.programId ||
+    computePoolInfo.mintA.address !== state.mintA || computePoolInfo.mintB.address !== state.mintB ||
+    computePoolInfo.vaultA.toBase58() !== state.vaultA || computePoolInfo.vaultB.toBase58() !== state.vaultB ||
+    poolInfo.id !== state.poolId || poolInfo.programId !== state.programId ||
+    poolInfo.config.id !== computePoolInfo.ammConfig.id.toBase58() ||
+    poolKeys.observationId !== computePoolInfo.observationId.toBase58()) throw new Error("Compound swap pool snapshot mismatch");
+  const [epochInfo, slot, configAccount] = await Promise.all([connection.getEpochInfo("confirmed"), connection.getSlot("confirmed"),
+    connection.getAccountInfo(computePoolInfo.ammConfig.id, "confirmed")]);
+  if (!configAccount || configAccount.owner.toBase58() !== state.programId) throw new Error("Compound swap config program mismatch");
+  const configInfo = ClmmConfigLayout.decode(configAccount.data);
+  if (configInfo.tradeFeeRate !== computePoolInfo.ammConfig.tradeFeeRate || configInfo.tickSpacing !== state.tickSpacing) throw new Error("Compound swap config has changed");
+  const blockTimestamp = await readRecentBlockTime(connection, slot);
+  if (blockTimestamp === null) throw new Error("Unable to get on-chain time for yield swap");
+  // The SDK mutates dynamicFeeInfo while quoting. Every candidate must start
+  // from the same chain snapshot, including the final minimal-account quote.
+  const poolSnapshot = () => ({ ...computePoolInfo.accInfo, dynamicFeeInfo: { ...computePoolInfo.accInfo.dynamicFeeInfo,
+    lastUpdateTimestamp: computePoolInfo.accInfo.dynamicFeeInfo.lastUpdateTimestamp.clone() } });
+  const feeConfig = readSwapFeeConfig();
+  const quoteCache = new Map<string, ReturnType<typeof PoolUtils.computeAmountOut>>();
+  const quoteRaw = (direction: Direction, amount: bigint): CompoundSwapQuote => {
+    const key = `${direction}:${amount}`;
+    const result = PoolUtils.computeAmountOut({ poolInfo: { ...computePoolInfo, accInfo: poolSnapshot() }, tickarrayBitmapExtension: computePoolInfo.exBitmapInfo,
+      tickArrayCache: tickData[state.poolId] ?? {}, baseMint: new PublicKey(direction === "a-to-b" ? state.mintA : state.mintB),
+      epochInfo, amountIn: new BN(amount.toString()), slippage: 0, catchLiquidityInsufficient: false, blockTimestamp });
+    if (!result.allTrade || result.realAmountIn.fee?.gt(new BN(0)) || result.amountOut.fee?.gt(new BN(0))) throw new Error("Yield swap cannot fully execute or contains unsupported transfer fee");
+    quoteCache.set(key, result);
+    return { output: BigInt(result.amountOut.amount.toString()), sqrtPriceX64: BigInt(result.executionPriceX64.toString()) };
   };
-  let low = 0n, high = budget;
-  let best = await evaluate(0n);
-  // Bound upstream calls; final simulation sizes liquidity from actual balances.
-  for (let i = 0; i < 10 && low <= high; i++) {
-    const mid = (low + high) / 2n;
-    const result = await evaluate(mid);
-    if (result.sized.liquidity > best.sized.liquidity) best = result;
-    const excess = inputA ? result.difference >= 0n : result.difference <= 0n;
-    if (excess) low = mid + 1n;
-    else high = mid - 1n;
-  }
-  const full = await evaluate(budget);
-  if (full.sized.liquidity > best.sized.liquidity) best = full;
-  if (!best.route) {
-    if (baseline.liquidity === 0n) throw new Error("No protected Jupiter yield swap can form liquidity");
-    return empty;
-  }
-  let route = await buildRoute(state.wallet, source.mint, destination.mint, best.swapAmount, false,
-    constraints, undefined, undefined, destination.address);
-  validate(route);
-  const wallet = new PublicKey(state.wallet);
-  const sourceAta = getAssociatedTokenAddressSync(new PublicKey(source.mint), wallet, false, new PublicKey(source.program)).toBase58();
-  // Jupiter v1 has no sourceTokenAccount parameter. Retarget the exact user
-  // source ATA in its instructions, never fund or drain an existing wallet ATA.
-  // Reject unexpected setup/cleanup instead of guessing their side effects.
-  if (route.cleanupInstruction || route.otherInstructions.length || route.setupInstructions.some(ix =>
-    ix.programId !== "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL" || ix.accounts[1]?.pubkey !== sourceAta))
-    throw new Error("Compound Jupiter route contains unsupported setup or cleanup");
-  if (!route.swapInstruction.accounts.some(key => key.pubkey === sourceAta && key.isWritable) ||
-    !route.swapInstruction.accounts.some(key => key.pubkey === destination.address && key.isWritable))
-    throw new Error("Compound Jupiter route does not identify isolated swap recipients");
-  route = retargetSwapSource(route, sourceAta, source.address);
-  const swap: CompoundSwap = { inputMint: source.mint, outputMint: destination.mint,
-    inputAmount: best.swapAmount.toString(), quotedOutputAmount: route.outAmount, minOutputAmount: route.otherAmountThreshold,
+  const quote = (direction: Direction, amount: bigint): CompoundSwapQuote => {
+    const { swapAmount } = netSwapInput(amount, feeConfig.bps);
+    return swapAmount === 0n
+      ? { output: 0n, sqrtPriceX64: BigInt(computePoolInfo.sqrtPriceX64.toString()) }
+      : quoteRaw(direction, swapAmount);
+  };
+  const planned = optimizeCompoundSwap({ price: BigInt(computePoolInfo.sqrtPriceX64.toString()), lower: BigInt(state.lowerSqrtX64),
+    upper: BigInt(state.upperSqrtX64), amountA, amountB, startingLiquidity: BigInt(state.liquidity), quote });
+  if (!planned.direction) return { instructions: [], route: null, swap: null, quotedBalances: planned.balances, sqrtPriceAfterX64: planned.sqrtPriceX64 };
+  if (state.status & 16) throw new Error("Pool has disabled yield swapping");
+  const { feeAmount, swapAmount } = netSwapInput(planned.input, feeConfig.bps);
+  const result = quoteCache.get(`${planned.direction}:${swapAmount}`)!;
+  const slippageMinimum = planned.output * BigInt(10_000 - SLIPPAGE_BPS) / 10_000n;
+  // One raw output unit still has a usable strict minimum of one; zero must
+  // never be accepted merely because flooring the bps allowance produced it.
+  const minOutput = slippageMinimum > 0n ? slippageMinimum : 1n;
+  const inputA = planned.direction === "a-to-b";
+  const swap: CompoundSwap = { inputMint: inputA ? state.mintA : state.mintB, outputMint: inputA ? state.mintB : state.mintA,
+    inputAmount: swapAmount.toString(), quotedOutputAmount: planned.output.toString(), minOutputAmount: minOutput.toString(),
     inputDecimals: inputA ? state.decimalsA : state.decimalsB, outputDecimals: inputA ? state.decimalsB : state.decimalsA,
-    poolId: state.poolId, sqrtPriceAfterX64: best.sqrt.toString(), feeBps: config.bps, feeAmount: best.feeAmount.toString() };
-  const instructions = swapRouteInstructions([route], wallet);
-  await rejectUnselectedWalletTokenWrites(connection, wallet, instructions, accounts.map(account => account.address));
-  return { instructions, route, swap,
-    quotedBalances: { a: best.a, b: best.b }, sqrtPriceAfterX64: best.sqrt };
+    poolId: state.poolId, sqrtPriceAfterX64: planned.sqrtPriceX64.toString(),
+    feeBps: feeConfig.bps, feeAmount: feeAmount.toString(), poolFeeAmount: result.fee.toString() };
+  const currentStart = TickArrayUtil.getTickArrayStartIndex(computePoolInfo.tickCurrent, state.tickSpacing);
+  const traversed = swapInternal({ programId: new PublicKey(state.programId), poolId: new PublicKey(state.poolId), poolInfo: poolSnapshot(),
+    tickArrays: Object.values(tickData[state.poolId] ?? {}).filter((array) => inputA ? array.startTickIndex <= currentStart : array.startTickIndex >= currentStart)
+      .sort((a, b) => inputA ? b.startTickIndex - a.startTickIndex : a.startTickIndex - b.startTickIndex)
+      .map((array) => ({ address: array.address, value: array })),
+    configInfo,
+    tickarrayBitmapExtension: computePoolInfo.exBitmapInfo, amountSpecified: new BN(swap.inputAmount), sqrtPriceLimitX64: new BN(0),
+    zeroForOne: inputA, isBaseInput: true, blockTimestamp, includeExtraTickArrays: false });
+  if (!traversed.allTrade || traversed.amountCalculated.toString() !== result.amountOut.amount.toString() ||
+    traversed.sqrtPriceX64.toString() !== swap.sqrtPriceAfterX64) throw new Error("Compound swap minimal tick accounts quote mismatch");
+  const arrays = [...new Map(traversed.accounts.map((address) => [address.toBase58(), address])).values()];
+  const infos = await connection.getMultipleAccountsInfo(arrays, "confirmed");
+  infos.forEach((info, index) => {
+    if (!info || info.owner.toBase58() !== state.programId) throw new Error("Compound swap tick array program mismatch");
+    const decoded = TickArrayLayout.decode(info.data);
+    if (decoded.poolId.toBase58() !== state.poolId || decoded.startTickIndex % (state.tickSpacing * 60) !== 0 ||
+      !arrays[index]!.equals(getPdaTickArrayAddress(new PublicKey(state.programId), new PublicKey(state.poolId), decoded.startTickIndex).publicKey)) throw new Error("Compound swap tick array pool or PDA mismatch");
+  });
+  const built = ClmmInstrument.makeSwapBaseInInstructions({ poolInfo, poolKeys, observationId: computePoolInfo.observationId,
+    ownerInfo: { wallet: new PublicKey(state.wallet), tokenAccountA: new PublicKey(accounts[0].address), tokenAccountB: new PublicKey(accounts[1].address) },
+    inputMint: new PublicKey(swap.inputMint), amountIn: new BN(swap.inputAmount), amountOutMin: new BN(swap.minOutputAmount),
+    sqrtPriceLimitX64: new BN(0), remainingAccounts: arrays });
+  if (built.instructions.length !== 1 || built.signers.length) throw new Error("Compound swap cannot add other signatures or instructions");
+  const instruction = built.instructions[0]!;
+  validateCompoundSwapInstruction(instruction, { state, accounts, swap, config: computePoolInfo.ammConfig.id.toBase58(),
+    observation: computePoolInfo.observationId.toBase58(), tickArrays: arrays.map((address) => address.toBase58()) });
+  return { instructions: [instruction], route: null, swap, quotedBalances: planned.balances, sqrtPriceAfterX64: planned.sqrtPriceX64 };
 }
