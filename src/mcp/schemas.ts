@@ -1,3 +1,4 @@
+import "@/lib/engine-host";
 import { z } from "zod";
 
 // Solana public key validation (base58, 32-44 chars typically)
@@ -134,4 +135,4 @@ export const getPositionRangeStatusSchema = z.object({
 });
 export type GetPositionRangeStatusInput = z.infer<typeof getPositionRangeStatusSchema>;
 
-export { withdrawPrepareSchema as prepareWithdrawSchema, withdrawSubmitSchema as submitWithdrawSchema } from "../lib/withdraw/input";
+export { withdrawPrepareSchema as prepareWithdrawSchema, withdrawSubmitSchema as submitWithdrawSchema } from "@sofinance/engine/withdraw/input";

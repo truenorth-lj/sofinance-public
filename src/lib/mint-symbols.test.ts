@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
-import { clearMintSymbolsCache, RAYDIUM_MINT_IDS, resolveMintSymbols } from "./mint-symbols";
+import { clearMintSymbolsCache, RAYDIUM_MINT_IDS, resolveMintSymbols } from "@sofinance/engine/mint-symbols";
 
 /** Public Token-2022 xStock / RWA mint ids (not wallets). */
 const HOODX = "XsvNBAYkrDRNhA7wPHQfX3ZUXZyZLdnCQDfHZ56bzpg";

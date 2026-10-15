@@ -1,3 +1,4 @@
+import "@/lib/engine-host";
 import { PublicKey, type ParsedTransactionWithMeta } from "@solana/web3.js";
 import { createHash } from "node:crypto";
 import bs58 from "bs58";
@@ -8,7 +9,7 @@ import { type HistoryConnection, type HistoryFetchMetric, type HistoryFallbackRe
 import { mapPositionHistoryWorkers } from "./position-history-workers";
 import { MAX_POSITION_HISTORY_TRANSACTIONS, POSITION_HISTORY_PARSER_VERSION, type PositionHistorySnapshot, type PositionHistoryStore,
   type StoredPositionTransaction } from "./position-history-store-types";
-import type { RpcProvider } from "./rpc/types";
+import type { RpcProvider } from "@sofinance/engine/rpc/types";
 
 export type SyncPositionHistoryOptions = {
   context: PositionEventContext; store: PositionHistoryStore; connection: HistoryConnection;

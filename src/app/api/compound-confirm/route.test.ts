@@ -6,15 +6,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/position-history-cache", () => ({ invalidatePositionHistoryCache: vi.fn() }));
 import { invalidatePositionHistoryCache } from "@/lib/position-history-cache";
-vi.mock("@/lib/rpc", () => ({ rpcConnection: vi.fn() }));
-vi.mock("@/lib/compound-attempt", () => ({ parseCompoundAttempt: vi.fn() }));
-vi.mock("@/lib/compound-state", () => ({ readCompoundPositionState: vi.fn() }));
+vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: vi.fn() }));
+vi.mock("@sofinance/engine/compound-attempt", () => ({ parseCompoundAttempt: vi.fn() }));
+vi.mock("@sofinance/engine/compound-state", () => ({ readCompoundPositionState: vi.fn() }));
 vi.mock("@/lib/compound-receipt", () => ({ confirmedCompoundReceipt: vi.fn(), confirmedRecovery: vi.fn() }));
 
-import { parseCompoundAttempt } from "@/lib/compound-attempt";
+import { parseCompoundAttempt } from "@sofinance/engine/compound-attempt";
 import { confirmedCompoundReceipt, confirmedRecovery } from "@/lib/compound-receipt";
-import { readCompoundPositionState } from "@/lib/compound-state";
-import { rpcConnection } from "@/lib/rpc";
+import { readCompoundPositionState } from "@sofinance/engine/compound-state";
+import { rpcConnection } from "@sofinance/engine/rpc";
 import { fakeConnection, type FakeConnection, jsonRequest, testKeypair } from "@/lib/test-support/send-fixtures";
 import { POST } from "./route";
 

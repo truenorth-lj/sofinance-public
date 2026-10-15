@@ -5,11 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TickUtil, SqrtPriceMath, LiquidityMathUtil } from "@raydium-io/raydium-sdk-v2";
 
 vi.mock("server-only", () => ({}));
-vi.mock("./selected-state", () => ({ readSelectedPositionState: vi.fn() }));
-vi.mock("./swap/jupiter", () => ({ buildRoute: vi.fn(), quoteRoute: vi.fn() }));
+vi.mock("@sofinance/engine/selected-state", () => ({ readSelectedPositionState: vi.fn() }));
+vi.mock("@sofinance/engine/swap/jupiter", () => ({ buildRoute: vi.fn(), quoteRoute: vi.fn() }));
 
-import { readSelectedPositionState, type SelectedPositionState } from "./selected-state";
-import { buildRoute, quoteRoute } from "./swap/jupiter";
+import { readSelectedPositionState, type SelectedPositionState } from "@sofinance/engine/selected-state";
+import { buildRoute, quoteRoute } from "@sofinance/engine/swap/jupiter";
 import { getSelectedQuoteBundle } from "./selected-quote";
 
 const wallet = "FakeWa11etAddressForTestingPurposes1111111111";

@@ -1,3 +1,4 @@
+import "@/lib/engine-host";
 /**
  * Where did recent volume trade? Turns hourly price candles into a share of volume per bin (pure).
  *
@@ -15,7 +16,7 @@
  */
 import { SECONDS_PER_DAY } from "../apr-series";
 import type { LiquidityBin } from "./liquidity-bins";
-import { exactTickFromUiPrice, sqrtPriceAtTick } from "./tick-math";
+import { exactTickFromUiPrice, sqrtPriceAtTick } from "@sofinance/engine/range-apr/tick-math";
 import type { RawCandle } from "./gecko-candles";
 
 /** One raw tick = 0.01% of price, so a fee of `rate` is about `rate * 10_000` ticks. */

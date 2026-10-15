@@ -3,8 +3,8 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { NATIVE_SOL_MINT, QUOTE_TTL_MS } from "../lib/ids";
-import type { OpenPositionQuote } from "../lib/open-types";
+import { NATIVE_SOL_MINT, QUOTE_TTL_MS } from "@sofinance/engine/ids";
+import type { OpenPositionQuote } from "@sofinance/engine/open-types";
 import { payloadFixture, payloadWithAprs } from "../lib/range-apr/payload.fixture";
 import { clearPoolRangeAprClientCache } from "./range-apr/pool-range-apr-client";
 import { OpenPositionModal } from "./open-position-modal";

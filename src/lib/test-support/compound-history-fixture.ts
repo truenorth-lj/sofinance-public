@@ -1,10 +1,11 @@
+import "@/lib/engine-host";
 import BN from "bn.js";
 import bs58 from "bs58";
 import { CLMM_PROGRAM_ID, ClmmInstrument } from "@raydium-io/raydium-sdk-v2";
 import { TOKEN_2022_PROGRAM_ID } from "@solana/spl-token";
 import { type ParsedTransactionWithMeta, type TransactionInstruction, PublicKey, SystemProgram } from "@solana/web3.js";
-import type { CompoundAttempt } from "../compound-attempt";
-import type { CompoundAccount, CompoundPositionState, CompoundSummary } from "../compound-types";
+import type { CompoundAttempt } from "@sofinance/engine/compound-attempt";
+import type { CompoundAccount, CompoundPositionState, CompoundSummary } from "@sofinance/engine/compound-types";
 import { BLOCKHASH, testKeypair } from "./send-fixtures";
 
 /** Replays the observed harvest/swap/fee/add amounts with synthetic identities, without live wallet data. */

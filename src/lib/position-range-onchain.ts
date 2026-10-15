@@ -1,3 +1,4 @@
+import "@/lib/engine-host";
 import "server-only";
 
 import {
@@ -9,7 +10,7 @@ import {
 } from "@raydium-io/raydium-sdk-v2";
 import { Connection, PublicKey } from "@solana/web3.js";
 import { createHash } from "node:crypto";
-import { rpcConnection } from "./rpc";
+import { rpcConnection } from "@sofinance/engine/rpc";
 
 const POSITION_DISCRIMINATOR = createHash("sha256").update("account:PersonalPositionState").digest().subarray(0, 8);
 const POOL_DISCRIMINATOR = createHash("sha256").update("account:PoolState").digest().subarray(0, 8);

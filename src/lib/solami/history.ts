@@ -1,4 +1,5 @@
-import { classifyRpcError } from "../rpc/errors";
+import "@/lib/engine-host";
+import { classifyRpcError } from "@sofinance/engine/rpc/errors";
 import type { ParsedTransactionWithMeta } from "@solana/web3.js";
 
 export type HistoryFallbackReason =

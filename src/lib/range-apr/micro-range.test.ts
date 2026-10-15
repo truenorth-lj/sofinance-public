@@ -2,8 +2,8 @@ import { TickUtil } from "@raydium-io/raydium-sdk-v2";
 import { describe, expect, it } from "vitest";
 import {
   MICRO_HALF_WIDTH_SPACINGS, microBandLabel, microRange, microRangeFromExactTick, nearestBoundary,
-} from "./micro-range";
-import { usableTickBounds } from "./tick-math";
+} from "@sofinance/engine/range-apr/micro-range";
+import { usableTickBounds } from "@sofinance/engine/range-apr/tick-math";
 
 describe("nearestBoundary", () => {
   it("rounds to the closest valid boundary, ties to the lower one", () => {

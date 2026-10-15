@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { NATIVE_SOL_MINT, USDC_MINT } from "./ids";
+import { NATIVE_SOL_MINT, USDC_MINT } from "@sofinance/engine/ids";
 import {
   formatFeeTier,
   formatPositionLabel,

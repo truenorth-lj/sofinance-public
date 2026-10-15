@@ -7,7 +7,7 @@ import {
 
 vi.mock("server-only", () => ({}));
 
-import { estimateOpenPositionRent, estimateWalletTokenAccountRent } from "./open-rent";
+import { estimateOpenPositionRent, estimateWalletTokenAccountRent } from "@sofinance/engine/open-rent";
 import { ExtensionType, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import fixture from "./fixtures/open-rent-token22-mainnet.json";
 

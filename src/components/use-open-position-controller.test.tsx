@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
 import { useOpenPositionController, type OpenPositionPair } from "./use-open-position-controller";
-import { NATIVE_SOL_MINT } from "@/lib/ids";
+import { NATIVE_SOL_MINT } from "@sofinance/engine/ids";
 import { openAttemptKey, persistOpenAttempt } from "@/lib/open-attempt";
 import { buildTransaction, openSummaryFixture, testKeypair, toBase64 } from "@/lib/test-support/send-fixtures";
 const mocks = vi.hoisted(() => ({ address: "", sign: vi.fn() }));

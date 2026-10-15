@@ -1,8 +1,9 @@
+import "@/lib/engine-host";
 import { parseCompoundSelection } from "@/lib/compound-api";
-import { buildAndSimulateCompound } from "@/lib/compound-atomic";
+import { buildAndSimulateCompound } from "@sofinance/engine/compound-atomic";
 import { issueCompoundPermit } from "@/lib/compound-permit";
 import { apiError } from "@/lib/api-response";
-import { getSigningSecret } from "@/lib/config/server-env";
+import { getSigningSecret } from "@sofinance/engine/config/server-env";
 
 export async function POST(request: Request) {
   try {

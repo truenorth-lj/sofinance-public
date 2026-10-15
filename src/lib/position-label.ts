@@ -1,5 +1,6 @@
-import { NATIVE_SOL_MINT, USDC_MINT } from "./ids";
-import { uiPriceBPerAFromTick } from "./position-performance-math";
+import "@/lib/engine-host";
+import { NATIVE_SOL_MINT, USDC_MINT } from "@sofinance/engine/ids";
+import { uiPriceBPerAFromTick } from "@sofinance/engine/position-performance-math";
 
 export type PositionLabelInput = {
   positionMint: string;

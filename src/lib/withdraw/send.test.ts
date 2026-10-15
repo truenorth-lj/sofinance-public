@@ -1,12 +1,12 @@
 import { beforeEach, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 const mocks = vi.hoisted(() => ({ simulate: vi.fn(), height: vi.fn(), send: vi.fn(), beam: vi.fn() }));
-vi.mock("./build", () => ({ simulateWithdraw: mocks.simulate }));
-vi.mock("../rpc", () => ({ rpcConnection: () => ({ getBlockHeight: mocks.height, sendRawTransaction: mocks.send }) }));
-vi.mock("../solami-beam", () => ({ lookupBeamAfterSend: mocks.beam }));
+vi.mock("@sofinance/engine/withdraw/build", () => ({ simulateWithdraw: mocks.simulate }));
+vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: () => ({ getBlockHeight: mocks.height, sendRawTransaction: mocks.send }) }));
+vi.mock("@sofinance/engine/solami-beam", () => ({ lookupBeamAfterSend: mocks.beam }));
 import { submitWithdraw } from "./send";
-import { withdrawPermit } from "./permit";
-import type { WithdrawSummary } from "./types";
+import { withdrawPermit } from "@sofinance/engine/withdraw/permit";
+import type { WithdrawSummary } from "@sofinance/engine/withdraw/types";
 import { BLOCKHASH, SIGNING_SECRET, buildTransaction, messageBase64, signatureOf, testKeypair, toBase64 } from "../test-support/send-fixtures";
 const payer = testKeypair(1), wallet = payer.publicKey.toBase58();
 const transaction = buildTransaction({ payer });

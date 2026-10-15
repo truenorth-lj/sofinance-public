@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { assertImpactConfirmed, capReceivedAmount, principalMinimum, estimateUSDC, impactFlags, percentToBps, shouldSwap, targetUSDCToBps, transactionCount } from "./quote";
-import { withdrawPermit } from "./permit";
-import { createPermit } from "../auth/permit";
+import { assertImpactConfirmed, capReceivedAmount, principalMinimum, estimateUSDC, impactFlags, percentToBps, shouldSwap, targetUSDCToBps, transactionCount } from "@sofinance/engine/withdraw/quote";
+import { withdrawPermit } from "@sofinance/engine/withdraw/permit";
+import { createPermit } from "@sofinance/engine/auth/permit";
 describe("withdraw quote math", () => {
     it("converts percent and rounds target estimates up", () => {
         expect(percentToBps(1.1)).toBe(110);

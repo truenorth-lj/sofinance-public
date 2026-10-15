@@ -1,3 +1,4 @@
+import "@/lib/engine-host";
 /**
  * Which range is "Best", and which buttons sit next to it (pure; shared by the Create position modal
  * and the pair cards so both always agree).
@@ -6,7 +7,7 @@
  * range. It resolves to that candidate's exact ticks, so quote/prepare use the ordinary preset path and what
  * is signed is what was priced.
  */
-import type { OpenRangeUiPreset } from "../open-range-presets";
+import type { OpenRangeUiPreset } from "@sofinance/engine/open-range-presets";
 import type { RangeAprEstimate } from "./range-apr";
 import type { PoolRangeAprPayload, RangeAprPresetEstimate, RangeAprPresetId } from "./types";
 

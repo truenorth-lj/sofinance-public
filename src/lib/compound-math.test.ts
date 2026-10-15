@@ -2,8 +2,8 @@ import BN from "bn.js";
 import { LiquidityMathUtil, TickUtil } from "@raydium-io/raydium-sdk-v2";
 import { expect, it } from "vitest";
 import { accruedFee, amountsForCompoundLiquidity, conservativeSwapBalances, MAX_U64, MAX_U128,
-  sizeBufferedCompoundLiquidity, sizeCompoundLiquidity } from "./compound-math";
-import { DEFAULT_COMPOUND_ADD_TOLERANCE_BPS } from "./ids";
+  sizeBufferedCompoundLiquidity, sizeCompoundLiquidity } from "@sofinance/engine/compound-math";
+import { DEFAULT_COMPOUND_ADD_TOLERANCE_BPS } from "@sofinance/engine/ids";
 
 it("includes growth since the checkpoint and uses both boundary ticks", () => {
   const q = 1n << 64n;

@@ -1,3 +1,4 @@
+import "@/lib/engine-host";
 import "server-only";
 import { getRwaConfig } from "./config/rwa-env";
 import { discoverRwaPairs } from "./rwa-pairs";
@@ -8,8 +9,8 @@ import {
   type VolumeProfile,
 } from "./pool-range-apr";
 import { readOnchainPoolLiquidity } from "./range-apr/onchain-liquidity";
-import { rpcConnection } from "./rpc";
-import { mapPool } from "./jupiter";
+import { rpcConnection } from "@sofinance/engine/rpc";
+import { mapPool } from "@sofinance/engine/jupiter";
 import { volumeWindowEnd } from "./rwa-daily";
 import { sanitizePublicError } from "./public-error";
 import { getRwaStore, storeCall } from "./rwa-store";

@@ -1,6 +1,7 @@
-import { parseWallet } from "@/lib/api-input";
+import "@/lib/engine-host";
+import { parseWallet } from "@sofinance/engine/api-input";
 import { apiError } from "@/lib/api-response";
-import { readSelectedPositionState, type PositionSelection } from "@/lib/selected-state";
+import { readSelectedPositionState, type PositionSelection } from "@sofinance/engine/selected-state";
 import { PublicKey } from "@solana/web3.js";
 
 export async function GET(request: Request) {

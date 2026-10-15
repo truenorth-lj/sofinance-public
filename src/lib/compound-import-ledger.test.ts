@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { PublicKey, type PartiallyDecodedInstruction } from "@solana/web3.js";
 import { compoundHistoryFixture } from "./test-support/compound-history-fixture";
-import { verifyImportedYieldLedger } from "./compound-import-ledger";
+import { verifyImportedYieldLedger } from "@sofinance/engine/compound-import-ledger";
 
 afterEach(() => vi.unstubAllEnvs());
 

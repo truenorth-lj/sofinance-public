@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 import { createHistoryRpcFetch, createHistoryRpcConnections, resetHistoryRpcPacingForTests } from "./position-history-rpc";
-import { PUBLIC_SOLANA_RPC_URL, resolveProviderPair, resetRpcRuntime } from "./rpc";
+import { PUBLIC_SOLANA_RPC_URL, resolveProviderPair, resetRpcRuntime } from "@sofinance/engine/rpc";
 
 const env = { SOLANA_RPC_URL: "https://history-test.example/rpc/private-key" };
 const signature = "a".repeat(64);

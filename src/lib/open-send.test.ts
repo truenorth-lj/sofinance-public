@@ -4,19 +4,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
-vi.mock("./rpc", () => ({ rpcConnection: vi.fn() }));
-vi.mock("./open-state", () => ({ readOpenPoolState: vi.fn() }));
-vi.mock("./open-simulation", () => ({ simulateAndVerifyOpenTransaction: vi.fn() }));
-vi.mock("./solami-beam", () => ({ lookupBeamAfterSend: vi.fn(), beamLandingUrl: (signature: string) => `/api/beam-landing?signature=${signature}` }));
+vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: vi.fn() }));
+vi.mock("@sofinance/engine/open-state", () => ({ readOpenPoolState: vi.fn() }));
+vi.mock("@sofinance/engine/open-simulation", () => ({ simulateAndVerifyOpenTransaction: vi.fn() }));
+vi.mock("@sofinance/engine/solami-beam", () => ({ lookupBeamAfterSend: vi.fn(), beamLandingUrl: (signature: string) => `/api/beam-landing?signature=${signature}` }));
 
 import { SendTransactionError, VersionedTransaction } from "@solana/web3.js";
 import { CompoundSendError } from "./public-error";
 import { issueOpenPositionPermit } from "./open-permit";
-import { readOpenPoolState } from "./open-state";
-import { simulateAndVerifyOpenTransaction } from "./open-simulation";
-import { rpcConnection } from "./rpc";
-import { lookupBeamAfterSend } from "./solami-beam";
-import type { OpenPositionSummary } from "./open-types";
+import { readOpenPoolState } from "@sofinance/engine/open-state";
+import { simulateAndVerifyOpenTransaction } from "@sofinance/engine/open-simulation";
+import { rpcConnection } from "@sofinance/engine/rpc";
+import { lookupBeamAfterSend } from "@sofinance/engine/solami-beam";
+import type { OpenPositionSummary } from "@sofinance/engine/open-types";
 import { sendSignedOpenPosition, submitOpenPositionFromParts } from "./open-send";
 import {
   BEAM_RESULT, BLOCKHASH, SIGNING_SECRET, buildTransaction, fakeConnection, type FakeConnection, messageBase64, openSummaryFixture, signatureOf,

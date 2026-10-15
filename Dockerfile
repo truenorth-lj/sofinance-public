@@ -2,6 +2,8 @@ FROM node:24-bookworm-slim AS build
 WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@10.18.2 --activate
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+# @sofinance/engine is a vendored release tarball (file: dependency), needed before install.
+COPY vendor ./vendor
 RUN pnpm install --frozen-lockfile
 COPY src ./src
 COPY scripts ./scripts

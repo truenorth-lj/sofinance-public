@@ -1,3 +1,4 @@
+import "@/lib/engine-host";
 import { WITHDRAW_TOOL_DEFINITIONS } from "@/mcp/withdraw-tools";
 import { NextRequest, NextResponse } from "next/server";
 import { verifyMcpToken } from "@/lib/mcp-auth";
@@ -38,7 +39,7 @@ import {
   submitWithdrawSchema,
   submitOpenPositionSchema,
 } from "@/mcp/schemas";
-import { getJupiterApiKey } from "@/lib/config/server-env";
+import { getJupiterApiKey } from "@sofinance/engine/config/server-env";
 
 /**
  * POST /api/mcp

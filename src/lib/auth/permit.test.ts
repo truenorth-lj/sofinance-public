@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createPermit } from "./permit";
+import { createPermit } from "@sofinance/engine/auth/permit";
 
 describe("createPermit(domain)", () => {
   const input = { wallet: "W", message: "m", summary: { a: 1, b: [2, { c: undefined, d: null }] } };

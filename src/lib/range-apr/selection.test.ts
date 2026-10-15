@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { estimateRangeApr } from "./range-apr";
 import { degradedPayloadFixture, payloadFixture as payload } from "./payload.fixture";
 import { customTicks, estimateForSelection, toRangeAprInputs } from "./selection";
-import { uiPriceFromTick } from "./tick-math";
+import { uiPriceFromTick } from "@sofinance/engine/range-apr/tick-math";
 
 describe("estimateForSelection", () => {
   it("returns the server-priced estimate for a preset", () => {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { amountsPerLiquidity, liquidityForCapital, usdPerLiquidity } from "./clmm-liquidity";
 import { estimateRangeApr, type AprBin, type RangeAprInputs } from "./range-apr";
-import { sqrtPriceAtTick } from "./tick-math";
+import { sqrtPriceAtTick } from "@sofinance/engine/range-apr/tick-math";
 
 const FEE = 0.0005;
 const LP = 0.84;

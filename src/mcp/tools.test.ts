@@ -11,7 +11,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 vi.mock("server-only", () => ({}));
 
 // Mock modules before importing tools
-vi.mock("../lib/wallet-discovery", () => ({
+vi.mock("@sofinance/engine/wallet-discovery", () => ({
   discoverWallet: vi.fn(),
 }));
 
@@ -23,7 +23,7 @@ vi.mock("../lib/selected-atomic", () => ({
   buildAndSimulateSelectedZap: vi.fn(),
 }));
 
-vi.mock("../lib/compound-atomic", () => ({
+vi.mock("@sofinance/engine/compound-atomic", () => ({
   buildAndSimulateCompound: vi.fn(),
 }));
 
@@ -37,11 +37,11 @@ vi.mock("../lib/compound-permit", () => ({
   verifyCompoundPermit: vi.fn(() => true),
 }));
 
-vi.mock("../lib/open-quote", () => ({
+vi.mock("@sofinance/engine/open-quote", () => ({
   getOpenPositionQuoteBundle: vi.fn(),
 }));
 
-vi.mock("../lib/open-atomic", () => ({
+vi.mock("@sofinance/engine/open-atomic", () => ({
   buildAndSimulateOpenPosition: vi.fn(),
 }));
 
@@ -64,7 +64,7 @@ vi.mock("../lib/position-range-onchain", () => ({
   readPositionRangeFacts: vi.fn(),
 }));
 
-vi.mock("../lib/rpc", () => ({
+vi.mock("@sofinance/engine/rpc", () => ({
   rpcConnection: vi.fn(() => ({
     getBlockHeight: vi.fn(() => Promise.resolve(1000)),
     getBalance: vi.fn(() => Promise.resolve(1000000000)),
@@ -89,15 +89,15 @@ import {
   getPoolActivity,
   getPositionRangeStatus,
 } from "./tools";
-import { discoverWallet } from "../lib/wallet-discovery";
+import { discoverWallet } from "@sofinance/engine/wallet-discovery";
 import { issueSelectedPermit } from "../lib/selected-permit";
 import { issueCompoundPermit } from "../lib/compound-permit";
 import { issueOpenPositionPermit } from "../lib/open-permit";
 import { getSelectedQuoteBundle } from "../lib/selected-quote";
 import { buildAndSimulateSelectedZap } from "../lib/selected-atomic";
-import { buildAndSimulateCompound } from "../lib/compound-atomic";
-import { getOpenPositionQuoteBundle } from "../lib/open-quote";
-import { buildAndSimulateOpenPosition } from "../lib/open-atomic";
+import { buildAndSimulateCompound } from "@sofinance/engine/compound-atomic";
+import { getOpenPositionQuoteBundle } from "@sofinance/engine/open-quote";
+import { buildAndSimulateOpenPosition } from "@sofinance/engine/open-atomic";
 import { discoverRwaPairs } from "../lib/rwa-pairs";
 import { getPoolActivitySnapshot } from "../lib/solami-blur";
 import { readPositionRangeFacts } from "../lib/position-range-onchain";

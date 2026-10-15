@@ -1,18 +1,19 @@
 "use client";
+import "@/lib/engine-host";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
-import { formatAmount, parseTokenAmount } from "@/lib/amount";
-import { NATIVE_SOL_MINT, USDC_MINT } from "@/lib/ids";
-import { quoteIsFresh } from "@/lib/quote-math";
-import { OPEN_RANGE_UI_PRESETS, type OpenRangePreset } from "@/lib/open-range-presets";
+import { formatAmount, parseTokenAmount } from "@sofinance/engine/amount";
+import { NATIVE_SOL_MINT, USDC_MINT } from "@sofinance/engine/ids";
+import { quoteIsFresh } from "@sofinance/engine/quote-math";
+import { OPEN_RANGE_UI_PRESETS, type OpenRangePreset } from "@sofinance/engine/open-range-presets";
 import { preserveExtraSignatures } from "@/lib/open-signatures";
 import { notSentRetryMessage } from "@/lib/public-error";
-import type { OpenPositionQuote, OpenPositionSummary } from "@/lib/open-types";
+import type { OpenPositionQuote, OpenPositionSummary } from "@sofinance/engine/open-types";
 import { openAttemptFromSummary, type OpenAttempt } from "@/lib/open-attempt";
 import { NO_BEAM_STATUS, openBeamStatus, type OpenBeamStatus } from "@/lib/open-beam-status";
-import type { WalletAsset, WalletDiscovery } from "@/lib/wallet-discovery";
+import type { WalletAsset, WalletDiscovery } from "@sofinance/engine/wallet-discovery";
 import { useWalletConnection } from "./wallet-connection";
 import { notifyPositionHistoryChange } from "@/lib/position-history-refresh";
 import { useOpenAttempt } from "./use-open-attempt";

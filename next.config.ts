@@ -2,6 +2,8 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   reactCompiler: true,
+  // @sofinance/engine ships TypeScript source (vendored release of the prototype repo package).
+  transpilePackages: ["@sofinance/engine"],
   async redirects() {
     return [
       { source: "/rwa-pairs", destination: "/app/rwa-pairs", permanent: true },

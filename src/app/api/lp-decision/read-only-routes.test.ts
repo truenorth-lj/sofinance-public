@@ -1,8 +1,8 @@
 import { expect,it,vi } from "vitest";
 vi.mock("server-only",()=>({}));
 const exit=vi.hoisted(()=>vi.fn());
-vi.mock("@/lib/lp-exit-data",()=>({readFullExitPreview:exit}));
-import { JupiterHttpError, JUPITER_UNAVAILABLE_CODE, JUPITER_UNAVAILABLE_MESSAGE } from "@/lib/jupiter/errors";
+vi.mock("@sofinance/engine/lp-exit-data",()=>({readFullExitPreview:exit}));
+import { JupiterHttpError, JUPITER_UNAVAILABLE_CODE, JUPITER_UNAVAILABLE_MESSAGE } from "@sofinance/engine/jupiter/errors";
 import { GET as exitGET } from "./exit-preview/route";
 const nft="DemoPosition1111111111111111111111111111111";
 it("validates read-only exit input, forwards cancellation and preserves no-send failure",async()=>{

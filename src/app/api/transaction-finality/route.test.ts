@@ -3,9 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import bs58 from "bs58";
 
 vi.mock("server-only", () => ({}));
-vi.mock("@/lib/rpc", () => ({ rpcConnection: vi.fn() }));
+vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: vi.fn() }));
 
-import { rpcConnection } from "@/lib/rpc";
+import { rpcConnection } from "@sofinance/engine/rpc";
 import { fakeConnection, type FakeConnection, jsonRequest } from "@/lib/test-support/send-fixtures";
 import { POST } from "./route";
 

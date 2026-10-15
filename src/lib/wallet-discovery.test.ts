@@ -5,12 +5,12 @@ import { AccountType, ExtensionType, getAssociatedTokenAddressSync, getMintLen, 
 import { Keypair, type AccountInfo, type Connection, type PublicKey } from "@solana/web3.js";
 
 vi.mock("server-only", () => ({}));
-vi.mock("./mint-symbols", () => ({
+vi.mock("@sofinance/engine/mint-symbols", () => ({
   resolveMintSymbols: vi.fn(async () => ({})),
   symbolFromMintAccount: () => null,
 }));
-import { discoverWallet } from "./wallet-discovery";
-import { resolveMintSymbols } from "./mint-symbols";
+import { discoverWallet } from "@sofinance/engine/wallet-discovery";
+import { resolveMintSymbols } from "@sofinance/engine/mint-symbols";
 
 function info(data: Buffer, owner: PublicKey): AccountInfo<Buffer> {
   return { data, owner, executable: false, lamports: 2_039_280, rentEpoch: 0 };

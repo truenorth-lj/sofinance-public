@@ -1,3 +1,4 @@
+import "@/lib/engine-host";
 /**
  * Rebuilds the pool's per-bin liquidity profile from the pool's active liquidity and the
  * `liquidityNet` of initialised ticks (pure; the on-chain reads live in `pool-range-apr.ts`).
@@ -5,7 +6,7 @@
  * Uniswap-v3 style bookkeeping: crossing an initialised tick upward adds its `liquidityNet`,
  * crossing it downward subtracts it. The bin that contains `tickCurrent` has exactly `poolLiquidity`.
  */
-import { binIndexOfTick } from "./tick-math";
+import { binIndexOfTick } from "@sofinance/engine/range-apr/tick-math";
 
 /** Ticks per Raydium tick array account: it holds 60 ticks, `tickSpacing` apart. */
 export const TICK_ARRAY_SIZE = 60;

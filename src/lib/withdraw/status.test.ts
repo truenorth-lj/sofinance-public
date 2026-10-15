@@ -1,11 +1,11 @@
 import {beforeEach,expect,it,vi} from "vitest";
 vi.mock("server-only",()=>({}));
 const mocks=vi.hoisted(()=>({status:vi.fn(),height:vi.fn(),receipt:vi.fn(),balances:vi.fn(),invalidate:vi.fn(),reset:vi.fn()}));
-vi.mock("../rpc",()=>({resetRpcCache:mocks.reset,rpcConnection:()=>({getSignatureStatuses:mocks.status,getBlockHeight:mocks.height,getTransaction:mocks.receipt,getMultipleAccountsInfo:mocks.balances})}));
+vi.mock("@sofinance/engine/rpc",()=>({resetRpcCache:mocks.reset,rpcConnection:()=>({getSignatureStatuses:mocks.status,getBlockHeight:mocks.height,getTransaction:mocks.receipt,getMultipleAccountsInfo:mocks.balances})}));
 vi.mock("../position-history-cache",()=>({invalidatePositionHistoryCache:mocks.invalidate}));
 import {withdrawStatus} from "./status";
-import {withdrawPermit} from "./permit";
-import type {WithdrawPrepared,WithdrawSummary} from "./types";
+import {withdrawPermit} from "@sofinance/engine/withdraw/permit";
+import type {WithdrawPrepared,WithdrawSummary} from "@sofinance/engine/withdraw/types";
 import {SIGNING_SECRET,buildTransaction,messageBase64,signatureOf,testKeypair,toBase64} from "../test-support/send-fixtures";
 const payer=testKeypair(1),transaction=buildTransaction({payer});
 function input(){

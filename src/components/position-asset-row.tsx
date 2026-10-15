@@ -1,6 +1,7 @@
 "use client";
+import "@/lib/engine-host";
 
-import { formatAmountDisplay } from "@/lib/amount";
+import { formatAmountDisplay } from "@sofinance/engine/amount";
 import { TokenIcon } from "./token-icon";
 
 const usd = (raw: string | null | undefined, decimals: number, priceUsd: number | null) => {

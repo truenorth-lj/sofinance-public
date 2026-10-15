@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { JupiterHttpError } from "./errors";
-import { defaultJupiterLogger, formatJupiterLog, jupiterLogEnabled, logExitPreviewFailure, setJupiterLogger } from "./logger";
+import { JupiterHttpError } from "@sofinance/engine/jupiter/errors";
+import { defaultJupiterLogger, formatJupiterLog, jupiterLogEnabled, logExitPreviewFailure, setJupiterLogger } from "@sofinance/engine/jupiter/logger";
 
 afterEach(() => {
   delete process.env.SOFINANCE_RPC_LOG;

@@ -26,6 +26,9 @@ importers:
       '@reown/appkit-wallet-button':
         specifier: 1.8.24
         version: 1.8.24(@react-native-async-storage/async-storage@1.24.0(react-native@0.87.1(@babel/core@7.29.7)(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.2.8)(utf-8-validate@6.0.6)))(@types/react@19.3.0)(bufferutil@4.1.0)(fastestsmallesttextencoderdecoder@1.0.22)(react@19.2.8)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@4.6.5)
+      '@sofinance/engine':
+        specifier: file:vendor/sofinance-engine-0.1.0.tgz
+        version: file:vendor/sofinance-engine-0.1.0.tgz(@raydium-io/raydium-sdk-v2@0.2.73-alpha(bufferutil@4.1.0)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.9.3)(utf-8-validate@6.0.6))(@solana/spl-token@0.4.15(@solana/web3.js@1.99.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6))(bufferutil@4.1.0)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.9.3)(utf-8-validate@6.0.6))(@solana/web3.js@1.99.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6))(bn.js@5.2.5)(bs58@6.0.0)(decimal.js@10.6.0)(zod@4.6.5)
       '@solana/spl-token':
         specifier: 0.4.15
         version: 0.4.15(@solana/web3.js@1.99.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6))(bufferutil@4.1.0)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.9.3)(utf-8-validate@6.0.6)
@@ -1325,6 +1328,18 @@ packages:
 
   '@sinclair/typebox@0.27.12':
     resolution: {integrity: sha512-hhyNJ+nbR6ZR7pToHvllEFun9TL0sbL+tk/ON75lo+Xas054uez98qRbsuNt7MBCyZKK4+8Yli/OAGZhmfBZ/g==}
+
+  '@sofinance/engine@file:vendor/sofinance-engine-0.1.0.tgz':
+    resolution: {integrity: sha512-eZuM0n21ux2y1FE0LTBf+gPRM4hF7RRDF0rUd/s7w3q23unnfdYH01VByoxvrP1Py4uqaXpc+mlOOB/szLrYwg==, tarball: file:vendor/sofinance-engine-0.1.0.tgz}
+    version: 0.1.0
+    peerDependencies:
+      '@raydium-io/raydium-sdk-v2': 0.2.73-alpha
+      '@solana/spl-token': 0.4.15
+      '@solana/web3.js': 1.99.0
+      bn.js: ^5.2.5
+      bs58: 6.0.0
+      decimal.js: ^10.6.0
+      zod: ^4.6.5
 
   '@solana-mobile/mobile-wallet-adapter-protocol-web3js@2.3.0':
     resolution: {integrity: sha512-zeSNc8CcyYlVIF6xOq1ff9tLn+rCkf99eDw9sVg0k5Vrl2YGQj7UsSqhHm7dl7XfVTXj0ca0AnDAiMugwIM/rA==}
@@ -7073,6 +7088,16 @@ snapshots:
       '@scure/base': 1.2.6
 
   '@sinclair/typebox@0.27.12': {}
+
+  '@sofinance/engine@file:vendor/sofinance-engine-0.1.0.tgz(@raydium-io/raydium-sdk-v2@0.2.73-alpha(bufferutil@4.1.0)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.9.3)(utf-8-validate@6.0.6))(@solana/spl-token@0.4.15(@solana/web3.js@1.99.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6))(bufferutil@4.1.0)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.9.3)(utf-8-validate@6.0.6))(@solana/web3.js@1.99.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6))(bn.js@5.2.5)(bs58@6.0.0)(decimal.js@10.6.0)(zod@4.6.5)':
+    dependencies:
+      '@raydium-io/raydium-sdk-v2': 0.2.73-alpha(bufferutil@4.1.0)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.9.3)(utf-8-validate@6.0.6)
+      '@solana/spl-token': 0.4.15(@solana/web3.js@1.99.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6))(bufferutil@4.1.0)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.9.3)(utf-8-validate@6.0.6)
+      '@solana/web3.js': 1.99.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)
+      bn.js: 5.2.5
+      bs58: 6.0.0
+      decimal.js: 10.6.0
+      zod: 4.6.5
 
   '@solana-mobile/mobile-wallet-adapter-protocol-web3js@2.3.0(@solana/web3.js@1.99.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6))(bufferutil@4.1.0)(fastestsmallesttextencoderdecoder@1.0.22)(react-native@0.87.1(@babel/core@7.29.7)(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.2.8)(utf-8-validate@6.0.6))(typescript@5.9.3)(utf-8-validate@6.0.6)':
     dependencies:

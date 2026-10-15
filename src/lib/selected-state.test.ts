@@ -4,10 +4,10 @@ import { CLMM_PROGRAM_ID, getPdaPersonalPositionAddress, PersonalPositionLayout,
 import { ExtensionType, getAssociatedTokenAddressSync, getTypeLen, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { Keypair, PublicKey, SystemProgram, type AccountInfo, type Connection } from "@solana/web3.js";
 vi.mock("server-only", () => ({}));
-vi.mock("./token-prices", () => ({ fetchJupiterPricesUsd: vi.fn(), fetchRaydiumPoolUsdPrices: vi.fn() }));
-import { fetchJupiterPricesUsd } from "./token-prices";
-import { readSelectedPositionState } from "./selected-state";
-import { MIN_SOL_LAMPORTS, NATIVE_SOL_MINT } from "./ids";
+vi.mock("@sofinance/engine/token-prices", () => ({ fetchJupiterPricesUsd: vi.fn(), fetchRaydiumPoolUsdPrices: vi.fn() }));
+import { fetchJupiterPricesUsd } from "@sofinance/engine/token-prices";
+import { readSelectedPositionState } from "@sofinance/engine/selected-state";
+import { MIN_SOL_LAMPORTS, NATIVE_SOL_MINT } from "@sofinance/engine/ids";
 
 const key = () => Keypair.generate().publicKey;
 const wallet = key(), nft = key(), input = key(), pool = key(), mintA = key(), mintB = key(), vaultA = key(), vaultB = key();

@@ -1,10 +1,11 @@
 "use client";
+import "@/lib/engine-host";
 
 import { ArrowUpRight, CircleAlert, LoaderCircle, RefreshCw, Sprout } from "lucide-react";
 import { useState } from "react";
 import { CompoundOverview } from "./compound-overview";
 import { useSolUsdcPrices } from "./use-sol-usdc-price";
-import { formatAmount } from "@/lib/amount";
+import { formatAmount } from "@sofinance/engine/amount";
 import type { CompoundController } from "./use-compound-controller";
 
 const short = (value: string) => `${value.slice(0, 5)}…${value.slice(-5)}`;

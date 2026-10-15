@@ -1,3 +1,4 @@
+import "@/lib/engine-host";
 /**
  * Read-only research harness for docs/rwa-range-apr.md: compares candidate APR methods on live pools.
  *   npx tsx scripts/research-range-apr.ts [poolId ...]
@@ -7,7 +8,7 @@ import "../src/mcp/server-only-mock.js";
 import { assemblePoolRangeApr, loadVolumeProfile } from "../src/lib/pool-range-apr";
 import { readOnchainPoolLiquidity } from "../src/lib/range-apr/onchain-liquidity";
 import { usdPerLiquidity } from "../src/lib/range-apr/clmm-liquidity";
-import { sqrtPriceAtTick } from "../src/lib/range-apr/tick-math";
+import { sqrtPriceAtTick } from "@sofinance/engine/range-apr/tick-math";
 import { estimateRangeApr } from "../src/lib/range-apr/range-apr";
 
 const DEFAULT_POOLS = [

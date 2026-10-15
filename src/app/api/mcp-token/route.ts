@@ -1,3 +1,4 @@
+import "@/lib/engine-host";
 import { NextRequest, NextResponse } from "next/server";
 import { PublicKey } from "@solana/web3.js";
 import {
@@ -7,7 +8,7 @@ import {
   parseChallengeNonce,
   consumeChallengeNonce,
 } from "@/lib/mcp-auth";
-import { getJupiterApiKey } from "@/lib/config/server-env";
+import { getJupiterApiKey } from "@sofinance/engine/config/server-env";
 
 /**
  * GET /api/mcp-token?wallet=<address>

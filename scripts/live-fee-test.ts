@@ -1,3 +1,4 @@
+import "@/lib/engine-host";
 /* eslint-disable no-console -- CLI transaction reports are the intended output. */
 /**
  * Mainnet harness: node_modules/.bin/tsx scripts/live-fee-test.ts <command> [options]
@@ -24,14 +25,14 @@ import { loadEnvFile } from "node:process";
 import { Connection, Keypair, PublicKey, SystemProgram, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
 import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID, unpackAccount } from "@solana/spl-token";
 import bs58 from "bs58";
-import { parseTokenAmount } from "../src/lib/amount";
-import { USDC_MINT, NATIVE_SOL_MINT } from "../src/lib/ids";
-import { jupiterHeaders, jupiterUrl } from "../src/lib/jupiter/urls";
-import type { WalletDiscovery } from "../src/lib/wallet-discovery";
+import { parseTokenAmount } from "@sofinance/engine/amount";
+import { USDC_MINT, NATIVE_SOL_MINT } from "@sofinance/engine/ids";
+import { jupiterHeaders, jupiterUrl } from "@sofinance/engine/jupiter/urls";
+import type { WalletDiscovery } from "@sofinance/engine/wallet-discovery";
 import type { DiscoverRwaPairsResult, RwaPairRow } from "../src/lib/rwa-pairs";
-import type { OpenPositionSummary } from "../src/lib/open-types";
-import type { CompoundSummary } from "../src/lib/compound-types";
-import type { WithdrawPrepared, WithdrawRequest } from "../src/lib/withdraw/types";
+import type { OpenPositionSummary } from "@sofinance/engine/open-types";
+import type { CompoundSummary } from "@sofinance/engine/compound-types";
+import type { WithdrawPrepared, WithdrawRequest } from "@sofinance/engine/withdraw/types";
 import type { SelectedQuote } from "../src/lib/selected-quote";
 
 if (existsSync(".env.local")) loadEnvFile(".env.local");

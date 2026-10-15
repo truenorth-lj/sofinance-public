@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { formatAmount, meetsResaleFloor, parseResaleFloorBps, parseTokenAmount, resaleFloorFromMaxCostPercent } from "./amount";
+import { formatAmount, meetsResaleFloor, parseResaleFloorBps, parseTokenAmount, resaleFloorFromMaxCostPercent } from "@sofinance/engine/amount";
 import BN from "bn.js";
 import { LiquidityMathUtil, TickUtil } from "@raydium-io/raydium-sdk-v2";
-import { allocateSpend, positionSide, quoteIsFresh } from "./quote-math";
+import { allocateSpend, positionSide, quoteIsFresh } from "@sofinance/engine/quote-math";
 
 describe("token amount bounds", () => {
   it("parses token precision exactly without floating point", () => {

@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   binIndexOfTick, ceilToSpacing, exactTickFromSqrtPriceX64, exactTickFromUiPrice, floorToSpacing,
   sqrtPriceAtTick, sqrtPriceX64ToNumber, uiPriceFromTick, usableTickBounds,
-} from "./tick-math";
+} from "@sofinance/engine/range-apr/tick-math";
 
 describe("spacing alignment", () => {
   it("floors and ceils correctly for negative and positive ticks", () => {

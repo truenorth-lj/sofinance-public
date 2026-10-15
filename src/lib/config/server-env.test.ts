@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getJupiterApiKey, getSigningSecret } from "./server-env";
+import { getJupiterApiKey, getSigningSecret } from "@sofinance/engine/config/server-env";
 
 // The reference expressions are what every call site contained before the refactor.
 const legacyRaw = () => process.env.JUPITER_API_KEY;

@@ -1,7 +1,8 @@
 "use client";
+import "@/lib/engine-host";
 
 import { useEffect, useState } from "react";
-import type { TokenMetadata } from "@/lib/token-metadata";
+import type { TokenMetadata } from "@sofinance/engine/token-metadata";
 
 /** Jupiter token metadata for the given mints; empty until the request finishes. */
 export function useTokenMetadata(mints: readonly string[]): Record<string, TokenMetadata> {

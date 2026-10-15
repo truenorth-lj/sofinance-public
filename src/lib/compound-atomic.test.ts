@@ -4,8 +4,8 @@ import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { Keypair, PublicKey, TransactionInstruction } from "@solana/web3.js";
 import { expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
-import { validateCompoundRaydiumInstructions } from "./compound-atomic";
-import type { CompoundAccount, CompoundPositionState } from "./compound-types";
+import { validateCompoundRaydiumInstructions } from "@sofinance/engine/compound-atomic";
+import type { CompoundAccount, CompoundPositionState } from "@sofinance/engine/compound-types";
 const key = () => Keypair.generate().publicKey.toBase58();
 function fixture() {
   const state = { wallet: key(), positionMint: key(), nftAta: key(), positionAccount: key(), poolId: key(), programId: key(),

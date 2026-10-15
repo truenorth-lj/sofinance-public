@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
-import { jupiterRequest, type JupiterRetryBudget } from "./client";
-import { JupiterHttpError, retryAfterFromJupiterHeaders } from "./errors";
-import { resetJupiterRuntime, setJupiterLogger } from "./index";
+import { jupiterRequest, type JupiterRetryBudget } from "@sofinance/engine/jupiter/client";
+import { JupiterHttpError, retryAfterFromJupiterHeaders } from "@sofinance/engine/jupiter/errors";
+import { resetJupiterRuntime, setJupiterLogger } from "@sofinance/engine/jupiter";
 import { withSelectedDeadline } from "../selected-deadline";
 import { selectedApiError } from "../api-response";
 

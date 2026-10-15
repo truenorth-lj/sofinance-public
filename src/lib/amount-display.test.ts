@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatAmount, formatAmountDisplay } from "./amount";
+import { formatAmount, formatAmountDisplay } from "@sofinance/engine/amount";
 
 describe("formatAmountDisplay", () => {
   it("matches formatAmount for ordinary amounts, with no exponent notation at the edges", () => {

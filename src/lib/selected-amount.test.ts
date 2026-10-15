@@ -4,8 +4,8 @@ import {
   parseTokenAmount,
   simulatedInputSpendMatches,
   suggestedResaleFloorBps,
-} from "./amount";
-import { allocateSpend } from "./quote-math";
+} from "@sofinance/engine/amount";
+import { allocateSpend } from "@sofinance/engine/quote-math";
 
 describe("selected asset amounts", () => {
   it("parses token precision without converting through a JS number", () => {

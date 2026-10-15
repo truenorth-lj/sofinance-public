@@ -1,13 +1,14 @@
 "use client";
+import "@/lib/engine-host";
 import { useEffect, useRef, useState } from "react";
 import { LoaderCircle } from "lucide-react";
 import { VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
 import { useWalletConnection } from "./wallet-connection";
-import { NATIVE_SOL_MINT } from "@/lib/ids";
-import { formatAmount } from "@/lib/amount";
+import { NATIVE_SOL_MINT } from "@sofinance/engine/ids";
+import { formatAmount } from "@sofinance/engine/amount";
 import { notifyPositionHistoryChange } from "@/lib/position-history-refresh";
-import type { WithdrawPrepared, WithdrawSummary, WithdrawRequest } from "@/lib/withdraw/types";
+import type { WithdrawPrepared, WithdrawSummary, WithdrawRequest } from "@sofinance/engine/withdraw/types";
 
 const REQUEST_TIMEOUT_MS=45_000;
 type Checkpoint = { prepared: WithdrawPrepared; signature: string; request: WithdrawRequest; confirmHighImpact: boolean; root?: {prepared:WithdrawPrepared;signature:string} };

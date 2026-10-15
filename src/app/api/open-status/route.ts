@@ -1,11 +1,12 @@
+import "@/lib/engine-host";
 import { createHash } from "node:crypto";
 import { CLMM_PROGRAM_ID, getPdaPersonalPositionAddress, PersonalPositionLayout } from "@raydium-io/raydium-sdk-v2";
 import { PublicKey } from "@solana/web3.js";
 import bs58 from "bs58";
 import { apiError } from "@/lib/api-response";
-import { parseWallet } from "@/lib/api-input";
+import { parseWallet } from "@sofinance/engine/api-input";
 import { parseOpenAttempt, type OpenAttemptStatus } from "@/lib/open-attempt";
-import { rpcConnection } from "@/lib/rpc";
+import { rpcConnection } from "@sofinance/engine/rpc";
 
 export async function POST(request: Request) {
   try {

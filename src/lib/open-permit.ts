@@ -1,4 +1,5 @@
-import { createPermit } from "./auth/permit";
+import "@/lib/engine-host";
+import { createPermit } from "@sofinance/engine/auth/permit";
 
 // Canonical JSON of { wallet, message, summary } so a recovery/add/compound
 // approval cannot be replayed as an open-position approval.

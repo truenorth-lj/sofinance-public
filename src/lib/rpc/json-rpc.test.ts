@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { resetRpcCache } from "./cache";
-import { RpcHttpError, RpcUnavailableError } from "./errors";
-import { rpcRequest } from "./json-rpc";
-import { setRpcLogger } from "./logger";
-import { SOLAMI_RPC_BASE_URL } from "./providers";
-import { setRpcRetryConfig } from "./retry";
-import type { RpcLogEvent } from "./types";
+import { resetRpcCache } from "@sofinance/engine/rpc/cache";
+import { RpcHttpError, RpcUnavailableError } from "@sofinance/engine/rpc/errors";
+import { rpcRequest } from "@sofinance/engine/rpc/json-rpc";
+import { setRpcLogger } from "@sofinance/engine/rpc/logger";
+import { SOLAMI_RPC_BASE_URL } from "@sofinance/engine/rpc/providers";
+import { setRpcRetryConfig } from "@sofinance/engine/rpc/retry";
+import type { RpcLogEvent } from "@sofinance/engine/rpc/types";
 
 afterEach(() => {
   resetRpcCache();

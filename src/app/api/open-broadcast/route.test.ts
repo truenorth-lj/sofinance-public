@@ -3,16 +3,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
-vi.mock("@/lib/rpc", () => ({ rpcConnection: vi.fn() }));
-vi.mock("@/lib/open-state", () => ({ readOpenPoolState: vi.fn() }));
-vi.mock("@/lib/open-simulation", () => ({ simulateAndVerifyOpenTransaction: vi.fn() }));
-vi.mock("@/lib/solami-beam", () => ({ lookupBeamAfterSend: vi.fn() }));
+vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: vi.fn() }));
+vi.mock("@sofinance/engine/open-state", () => ({ readOpenPoolState: vi.fn() }));
+vi.mock("@sofinance/engine/open-simulation", () => ({ simulateAndVerifyOpenTransaction: vi.fn() }));
+vi.mock("@sofinance/engine/solami-beam", () => ({ lookupBeamAfterSend: vi.fn() }));
 
 import { issueOpenPositionPermit } from "@/lib/open-permit";
-import { readOpenPoolState } from "@/lib/open-state";
-import { simulateAndVerifyOpenTransaction } from "@/lib/open-simulation";
-import { rpcConnection } from "@/lib/rpc";
-import { lookupBeamAfterSend } from "@/lib/solami-beam";
+import { readOpenPoolState } from "@sofinance/engine/open-state";
+import { simulateAndVerifyOpenTransaction } from "@sofinance/engine/open-simulation";
+import { rpcConnection } from "@sofinance/engine/rpc";
+import { lookupBeamAfterSend } from "@sofinance/engine/solami-beam";
 import {
   BEAM_RESULT, BLOCKHASH, SIGNING_SECRET, buildTransaction, fakeConnection, type FakeConnection, jsonRequest, messageBase64, openSummaryFixture,
   signatureOf, testKeypair, toBase64,

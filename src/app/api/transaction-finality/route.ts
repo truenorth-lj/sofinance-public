@@ -1,6 +1,7 @@
+import "@/lib/engine-host";
 import bs58 from "bs58";
 import { apiError } from "@/lib/api-response";
-import { rpcConnection } from "@/lib/rpc";
+import { rpcConnection } from "@sofinance/engine/rpc";
 
 export async function POST(request: Request) {
   try {

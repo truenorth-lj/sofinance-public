@@ -1,11 +1,12 @@
+import "@/lib/engine-host";
 import {
   isJupiterUpstreamError,
   JUPITER_UNAVAILABLE_CODE,
   JUPITER_UNAVAILABLE_MESSAGE,
   JupiterUnavailableError,
   RPC_UNAVAILABLE_CODE,
-} from "./jupiter/errors";
-import { RPC_UNAVAILABLE_MESSAGE } from "./rpc/errors";
+} from "@sofinance/engine/jupiter/errors";
+import { RPC_UNAVAILABLE_MESSAGE } from "@sofinance/engine/rpc/errors";
 
 const PUBLIC_ERROR_LIMIT = 220;
 const SECRET = /https?:\/\/\S+|\b(?:api[_-]?key|authorization|token)\s*[:=]\s*\S+/gi;

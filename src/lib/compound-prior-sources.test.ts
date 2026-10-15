@@ -4,10 +4,10 @@ import bs58 from "bs58";
 import { CLMM_PROGRAM_ID } from "@raydium-io/raydium-sdk-v2";
 import { AccountLayout, MintLayout, TOKEN_PROGRAM_ID, decodeCloseAccountInstruction, decodeTransferCheckedInstruction } from "@solana/spl-token";
 import { Keypair, PublicKey, SystemProgram, type AccountInfo, type Connection, type ParsedTransactionWithMeta } from "@solana/web3.js";
-import type { CompoundAccount, CompoundPositionState } from "./compound-types";
+import type { CompoundAccount, CompoundPositionState } from "@sofinance/engine/compound-types";
 vi.mock("server-only", () => ({}));
-import { readCompoundPriorSources } from "./compound-prior-sources";
-import { importCompoundReceipt, importVerifiedCompoundReceipt } from "./compound-recovery-import";
+import { readCompoundPriorSources } from "@sofinance/engine/compound-prior-sources";
+import { importCompoundReceipt, importVerifiedCompoundReceipt } from "@sofinance/engine/compound-recovery-import";
 
 const rent = 2_039_280;
 const signature = bs58.encode(new Uint8Array(64).fill(3));

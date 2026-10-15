@@ -1,9 +1,10 @@
 "use client";
+import "@/lib/engine-host";
 
 import { useId, useState } from "react";
 import { formatSolCost } from "@/lib/sol-cost";
 import { useSolUsdcPrice } from "./use-sol-usdc-price";
-import { formatAmount } from "@/lib/amount";
+import { formatAmount } from "@sofinance/engine/amount";
 import { formatPositionPriceRange, formatRangeStatus, tokenSymbol } from "@/lib/position-label";
 import { ChevronDown, Info, LoaderCircle, RefreshCw, X } from "lucide-react";
 import { useOpenPositionController, type OpenPositionPair } from "./use-open-position-controller";

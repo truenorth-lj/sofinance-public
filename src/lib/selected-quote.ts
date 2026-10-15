@@ -1,17 +1,18 @@
+import "@/lib/engine-host";
 import "server-only";
 
-import { readSwapFeeConfig } from "./swap/fee";
-import { depositFeePlan, feeSwapLeg } from "./swap/leg";
+import { readSwapFeeConfig } from "@sofinance/engine/swap/fee";
+import { depositFeePlan, feeSwapLeg } from "@sofinance/engine/swap/leg";
 import BN from "bn.js";
 import { LiquidityMathUtil, SqrtPriceMath, TickUtil } from "@raydium-io/raydium-sdk-v2";
-import { DEFAULT_ADD_TOLERANCE_BPS, DEFAULT_RESALE_FLOOR_BPS, MAX_PRICE_IMPACT_BPS, QUOTE_TTL_MS, SLIPPAGE_BPS } from "./ids";
-import { describeResaleFloorFailure, meetsResaleFloor, parseAddToleranceBps, parseResaleFloorBps, parseTokenAmount } from "./amount";
-import { allocateSpend, padAmountMax, positionSide, toleranceLiquidity } from "./quote-math";
-import { type QuoteRoute } from "./swap/jupiter";
+import { DEFAULT_ADD_TOLERANCE_BPS, DEFAULT_RESALE_FLOOR_BPS, MAX_PRICE_IMPACT_BPS, QUOTE_TTL_MS, SLIPPAGE_BPS } from "@sofinance/engine/ids";
+import { describeResaleFloorFailure, meetsResaleFloor, parseAddToleranceBps, parseResaleFloorBps, parseTokenAmount } from "@sofinance/engine/amount";
+import { allocateSpend, padAmountMax, positionSide, toleranceLiquidity } from "@sofinance/engine/quote-math";
+import { type QuoteRoute } from "@sofinance/engine/swap/jupiter";
 import type { Connection } from "@solana/web3.js";
-import type { JupiterRouteConstraints } from "./jupiter-route-retry";
-import type { JupiterRetryBudget } from "./jupiter/client";
-import { readSelectedPositionState, type PositionSelection, type SelectedPositionState } from "./selected-state";
+import type { JupiterRouteConstraints } from "@sofinance/engine/jupiter-route-retry";
+import type { JupiterRetryBudget } from "@sofinance/engine/jupiter/client";
+import { readSelectedPositionState, type PositionSelection, type SelectedPositionState } from "@sofinance/engine/selected-state";
 
 type SwapLeg = { inputMint: string; outputMint: string; spend: bigint; feeAmount: bigint; minOut: bigint; route: QuoteRoute | null };
 

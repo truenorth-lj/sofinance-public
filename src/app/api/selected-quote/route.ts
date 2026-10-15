@@ -1,9 +1,10 @@
-import { rpcConnection } from "@/lib/rpc";
+import "@/lib/engine-host";
+import { rpcConnection } from "@sofinance/engine/rpc";
 import { withSelectedDeadline } from "@/lib/selected-deadline";
-import { parseSelectedQuoteRequest } from "@/lib/api-input";
+import { parseSelectedQuoteRequest } from "@sofinance/engine/api-input";
 import { selectedApiError } from "@/lib/api-response";
 import { getSelectedQuoteBundle } from "@/lib/selected-quote";
-import { JUPITER_MAX_ACCOUNTS } from "@/lib/jupiter-route-retry";
+import { JUPITER_MAX_ACCOUNTS } from "@sofinance/engine/jupiter-route-retry";
 
 export async function POST(request: Request) {
   return withSelectedDeadline(request, async (signal, budget) => {

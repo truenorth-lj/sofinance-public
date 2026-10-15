@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   computeSwapFee, DEFAULT_SWAP_FEE_BPS, MAX_SWAP_FEE_BPS, netSwapInput, parseSwapFeeBps, parseSwapFeeWallet,
   assertNativeSwapFeeRecipient, readSwapFeeConfig, swapFeeQuoteFields, swapFeeRecipientAta, swapFeeTransferInstructions, unfundedSwapFeeAtaRent,
-} from "./swap/fee";
+} from "@sofinance/engine/swap/fee";
 
 const wallet = Keypair.generate().publicKey;
 const mint = Keypair.generate().publicKey;

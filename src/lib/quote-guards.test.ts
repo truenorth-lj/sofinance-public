@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { acceptableReportedPriceImpact } from "./quote-guards";
+import { acceptableReportedPriceImpact } from "@sofinance/engine/quote-guards";
 
 describe("Jupiter price-impact estimate", () => {
   it("accepts a finite value at the configured cap", () => {

@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
-import { assertOwnPoolRoute, isPoolTokenPair, ownPoolConstraints, preferOwnPoolRoute } from "./own-pool";
-import { JupiterNoRouteError, type QuoteRoute } from "./jupiter";
-import { JupiterHttpError } from "../jupiter";
+import { assertOwnPoolRoute, isPoolTokenPair, ownPoolConstraints, preferOwnPoolRoute } from "@sofinance/engine/swap/own-pool";
+import { JupiterNoRouteError, type QuoteRoute } from "@sofinance/engine/swap/jupiter";
+import { JupiterHttpError } from "@sofinance/engine/jupiter";
 
 const pool = { poolId: "pool", mintA: "a", mintB: "b" };
 const route = (ammKey = "pool", bps = 10000) => ({ routePlan: [{ bps, swapInfo: { ammKey } }] }) as QuoteRoute;

@@ -1,8 +1,9 @@
+import "@/lib/engine-host";
 import bs58 from "bs58";
-import { parseWallet } from "@/lib/api-input";
+import { parseWallet } from "@sofinance/engine/api-input";
 import { readCompoundBody } from "@/lib/compound-api";
-import { importVerifiedCompoundReceipt } from "@/lib/compound-recovery-import";
-import { rpcConnection } from "@/lib/rpc";
+import { importVerifiedCompoundReceipt } from "@sofinance/engine/compound-recovery-import";
+import { rpcConnection } from "@sofinance/engine/rpc";
 import { apiError } from "@/lib/api-response";
 
 export async function POST(request: Request) {

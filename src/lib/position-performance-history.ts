@@ -1,7 +1,8 @@
+import "@/lib/engine-host";
 import type { Connection, ParsedTransactionWithMeta, PublicKey } from "@solana/web3.js";
-import { invokeWithPolicy } from "./rpc/connection";
-import { policyFor } from "./rpc/methods";
-import type { RpcProvider } from "./rpc/types";
+import { invokeWithPolicy } from "@sofinance/engine/rpc/connection";
+import { policyFor } from "@sofinance/engine/rpc/methods";
+import type { RpcProvider } from "@sofinance/engine/rpc/types";
 import {
   listSolamiAddressSignatures,
   parseHistoryTxCandidate,

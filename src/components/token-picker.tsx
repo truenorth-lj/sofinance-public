@@ -1,11 +1,12 @@
 "use client";
+import "@/lib/engine-host";
 
 import { useEffect, useRef, useState } from "react";
 import { Check, ChevronDown, Search, ShieldCheck, X } from "lucide-react";
 import { TOKEN_2022_PROGRAM_ID } from "@solana/spl-token";
-import { formatAmount } from "@/lib/amount";
-import type { TokenMetadata } from "@/lib/token-metadata";
-import type { WalletAsset } from "@/lib/wallet-discovery";
+import { formatAmount } from "@sofinance/engine/amount";
+import type { TokenMetadata } from "@sofinance/engine/token-metadata";
+import type { WalletAsset } from "@sofinance/engine/wallet-discovery";
 import { TokenIcon } from "./token-icon";
 
 const token2022Program = TOKEN_2022_PROGRAM_ID.toBase58();

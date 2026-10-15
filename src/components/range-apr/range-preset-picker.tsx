@@ -1,10 +1,11 @@
 "use client";
+import "@/lib/engine-host";
 
 import { LoaderCircle } from "lucide-react";
-import type { OpenRangePreset, OpenRangeUiPreset } from "@/lib/open-range-presets";
+import type { OpenRangePreset, OpenRangeUiPreset } from "@sofinance/engine/open-range-presets";
 import { BEST_HELP, BEST_LABEL, APR_ESTIMATE_CAVEAT, APR_ESTIMATE_LABEL } from "@/lib/range-apr/copy";
 import { formatEstimate, unavailableReasonText } from "@/lib/range-apr/format";
-import { MICRO_PRESET_ID, microBandLabel } from "@/lib/range-apr/micro-range";
+import { MICRO_PRESET_ID, microBandLabel } from "@sofinance/engine/range-apr/micro-range";
 import { buildPresetList, type BestButton } from "@/lib/range-apr/preset-list";
 import { estimateForSelection, type SelectionEstimate, type TickRange } from "@/lib/range-apr/selection";
 import { BrandMark } from "../brand-mark";

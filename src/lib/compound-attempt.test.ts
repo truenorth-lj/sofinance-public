@@ -3,8 +3,8 @@ import { Keypair, SystemProgram, TransactionMessage, VersionedTransaction } from
 import bs58 from "bs58";
 import { abandonUnsentCompoundAttempt, compoundAttemptKey, compoundReceiptsKey, loadCompoundAttempt, loadCompoundReceipts,
   parseCompoundAttempt, persistCompoundAttempt, persistCompoundReceipt, removeConsumedCompoundReceipts, removeRecoveredReceipt,
-  removeUnconfirmedCompoundReceipt, signedCompoundTransaction, type CompoundAttempt } from "./compound-attempt";
-import type { CompoundSummary } from "./compound-types";
+  removeUnconfirmedCompoundReceipt, signedCompoundTransaction, type CompoundAttempt } from "@sofinance/engine/compound-attempt";
+import type { CompoundSummary } from "@sofinance/engine/compound-types";
 import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
 
 const key = () => Keypair.generate().publicKey.toBase58();

@@ -1,14 +1,15 @@
+import "@/lib/engine-host";
 import { createHash } from "node:crypto";
 import { PublicKey, type Connection } from "@solana/web3.js";
 import { CLMM_PROGRAM_ID } from "@raydium-io/raydium-sdk-v2";
 import bs58 from "bs58";
-import { parseWallet } from "@/lib/api-input";
+import { parseWallet } from "@sofinance/engine/api-input";
 import { confirmedAtomicSuccess, instructionLiquidity } from "@/lib/attempt-status";
 import { apiError } from "@/lib/api-response";
-import { readSelectedPositionState, type PositionSelection } from "@/lib/selected-state";
-import { rpcConnection } from "@/lib/rpc";
+import { readSelectedPositionState, type PositionSelection } from "@sofinance/engine/selected-state";
+import { rpcConnection } from "@sofinance/engine/rpc";
 import { invalidatePositionHistoryCache } from "@/lib/position-history-cache";
-import { resetRpcCache } from "@/lib/rpc/cache";
+import { resetRpcCache } from "@sofinance/engine/rpc/cache";
 
 /** Blocks past lastValidBlockHeight after which an unseen signature is treated as expired regardless of wallet changes. */
 const EXPIRY_GRACE_BLOCKS = 150;

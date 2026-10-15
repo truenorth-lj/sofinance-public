@@ -1,4 +1,5 @@
 "use client";
+import "@/lib/engine-host";
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
@@ -6,7 +7,7 @@ import { ArrowUpRight, LoaderCircle, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { buildPlanPath } from "@/lib/public-urls";
 import { cn } from "@/lib/cn";
-import { OPEN_RANGE_UI_PRESETS } from "@/lib/open-range-presets";
+import { OPEN_RANGE_UI_PRESETS } from "@sofinance/engine/open-range-presets";
 import {
   HIGHEST_RANGE_COLUMN_LABEL, HIGHEST_RANGE_HELP,
 } from "@/lib/range-apr/copy";
@@ -17,7 +18,7 @@ import { volumeDivergenceNote } from "@/lib/apr-labels/volume-divergence";
 import { formatAprPct, unavailableReasonText } from "@/lib/range-apr/format";
 import { highestRangeSummary } from "@/lib/range-apr/preset-list";
 import { pairIssuerLabel } from "@/lib/rwa-pair-names";
-import type { TokenMetadata } from "@/lib/token-metadata";
+import type { TokenMetadata } from "@sofinance/engine/token-metadata";
 import { InfoTip } from "./info-tip";
 import { OpenPositionModal } from "./open-position-modal";
 import { clearPoolRangeAprClientCache } from "./range-apr/pool-range-apr-client";

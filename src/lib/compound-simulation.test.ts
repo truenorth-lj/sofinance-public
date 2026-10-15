@@ -4,9 +4,9 @@ import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { Connection, Keypair, PublicKey, SystemProgram, TransactionInstruction, TransactionMessage, VersionedTransaction, type AccountInfo } from "@solana/web3.js";
 import { expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
-import { JUPITER_PROGRAM_ID } from "./swap/instructions";
-import { simulateAndVerifyCompound } from "./compound-simulation";
-import type { CompoundAccount, CompoundPositionState, CompoundPriorSource } from "./compound-types";
+import { JUPITER_PROGRAM_ID } from "@sofinance/engine/swap/instructions";
+import { simulateAndVerifyCompound } from "@sofinance/engine/compound-simulation";
+import type { CompoundAccount, CompoundPositionState, CompoundPriorSource } from "@sofinance/engine/compound-types";
 
 const key = () => Keypair.generate().publicKey.toBase58();
 function info(data: Buffer, owner: PublicKey, lamports = 2_039_280): AccountInfo<Buffer> { return { data, owner, lamports, executable: false, rentEpoch: 0 }; }

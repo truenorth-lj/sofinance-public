@@ -1,9 +1,10 @@
+import "@/lib/engine-host";
 import { VersionedTransaction } from "@solana/web3.js";
-import { parseWallet } from "@/lib/api-input";
+import { parseWallet } from "@sofinance/engine/api-input";
 import { apiError } from "@/lib/api-response";
 import { CompoundSendError } from "@/lib/public-error";
 import { submitOpenPositionFromParts } from "@/lib/open-send";
-import type { OpenPositionSummary } from "@/lib/open-types";
+import type { OpenPositionSummary } from "@sofinance/engine/open-types";
 
 export async function POST(request: Request) {
   try {

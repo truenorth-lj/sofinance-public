@@ -1,33 +1,34 @@
+import "@/lib/engine-host";
 import { PublicKey, VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
-import { discoverWallet } from "../lib/wallet-discovery";
+import { discoverWallet } from "@sofinance/engine/wallet-discovery";
 import { getSelectedQuoteBundle } from "../lib/selected-quote";
 import { buildAndSimulateSelectedZap } from "../lib/selected-atomic";
-import { buildAndSimulateCompound } from "../lib/compound-atomic";
+import { buildAndSimulateCompound } from "@sofinance/engine/compound-atomic";
 import { issueSelectedPermit } from "../lib/selected-permit";
 import { issueCompoundPermit } from "../lib/compound-permit";
 import { verifySelectedPermit } from "../lib/selected-permit";
 import { verifyCompoundPermit } from "../lib/compound-permit";
 import { simulateAndVerifySelectedTransaction } from "../lib/selected-simulation";
-import { readSelectedPositionState } from "../lib/selected-state";
-import { rpcConnection } from "../lib/rpc";
-import { lookupBeamAfterSend } from "../lib/solami-beam";
+import { readSelectedPositionState } from "@sofinance/engine/selected-state";
+import { rpcConnection } from "@sofinance/engine/rpc";
+import { lookupBeamAfterSend } from "@sofinance/engine/solami-beam";
 import { sendSignedCompoundTransaction } from "../lib/compound-send";
 import { CompoundSendError, notSentRetryMessage, sanitizePublicError } from "../lib/public-error";
-import { getSigningSecret } from "../lib/config/server-env";
-import type { CompoundSummary } from "../lib/compound-types";
+import { getSigningSecret } from "@sofinance/engine/config/server-env";
+import type { CompoundSummary } from "@sofinance/engine/compound-types";
 import { getRwaPairs } from "../lib/rwa-store";
 import { getPositionPerformance as readPositionPerformance } from "../lib/position-performance";
 import { invalidatePositionHistoryCache } from "../lib/position-history-cache";
 import { createSignToken } from "../lib/pending-sign-token";
 import { buildOpenPositionUrl, buildSignUrl } from "../lib/public-urls";
-import { OPEN_RANGE_PRESETS } from "../lib/open-range-presets";
-import { rangeInputFromFields } from "../lib/open-range";
-import { getOpenPositionQuoteBundle } from "../lib/open-quote";
-import { buildAndSimulateOpenPosition } from "../lib/open-atomic";
+import { OPEN_RANGE_PRESETS } from "@sofinance/engine/open-range-presets";
+import { rangeInputFromFields } from "@sofinance/engine/open-range";
+import { getOpenPositionQuoteBundle } from "@sofinance/engine/open-quote";
+import { buildAndSimulateOpenPosition } from "@sofinance/engine/open-atomic";
 import { issueOpenPositionPermit } from "../lib/open-permit";
 import { submitOpenPositionFromParts } from "../lib/open-send";
-import type { OpenPositionSummary } from "../lib/open-types";
+import type { OpenPositionSummary } from "@sofinance/engine/open-types";
 import { getPoolActivitySnapshot } from "../lib/solami-blur";
 import { readPositionRangeFacts } from "../lib/position-range-onchain";
 import { blurPriceToBPerA, rangeStatusFromPrice } from "../lib/position-range-status";
@@ -46,7 +47,7 @@ import type {
   PrepareOpenPositionInput,
   SubmitOpenPositionInput,
 } from "./schemas";
-import { isSingleWalletSignedTransaction } from "../lib/transaction-limits";
+import { isSingleWalletSignedTransaction } from "@sofinance/engine/transaction-limits";
 
 /**
  * List all Raydium CLMM positions and assets for a wallet.
@@ -810,8 +811,8 @@ export async function submitOpenPosition(input: SubmitOpenPositionInput) {
   }
 }
 
-export async function prepareWithdraw(input: import("../lib/withdraw/types").WithdrawPrepareRequest) {
- const {buildWithdraw}=await import("../lib/withdraw/build");
+export async function prepareWithdraw(input: import("@sofinance/engine/withdraw/types").WithdrawPrepareRequest) {
+ const {buildWithdraw}=await import("@sofinance/engine/withdraw/build");
  const prepared=await buildWithdraw(input);
  const submitArgs={wallet:input.wallet,permit:prepared.permit,summary:prepared.summary,confirmHighImpact:input.confirmHighImpact===true};
  const signToken=await createSignToken({kind:"withdraw",wallet:input.wallet,unsignedTransaction:prepared.unsignedTransaction,permit:prepared.permit,submitArgs,expiresAt:prepared.summary.expiresAt},getSigningSecret());

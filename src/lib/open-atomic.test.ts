@@ -3,12 +3,12 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import oldFixture from "./fixtures/open-size-route.json";
 import compactFixture from "./fixtures/open-size-compact-route.json";
 vi.mock("server-only", () => ({}));
-vi.mock("./rpc", () => ({ rpcConnection: vi.fn() }));
-vi.mock("./open-state", () => ({ readOpenPoolState: vi.fn() }));
-vi.mock("./open-quote", () => ({ getOpenPositionQuoteBundle: vi.fn() }));
-vi.mock("./open-simulation", () => ({ simulateAndVerifyOpenTransaction: vi.fn() }));
-vi.mock("./open-transaction", async importOriginal => ({ ...await importOriginal<object>(), openLookupTableReader: vi.fn() }));
-vi.mock("./solami-beam", async importOriginal => ({
+vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: vi.fn() }));
+vi.mock("@sofinance/engine/open-state", () => ({ readOpenPoolState: vi.fn() }));
+vi.mock("@sofinance/engine/open-quote", () => ({ getOpenPositionQuoteBundle: vi.fn() }));
+vi.mock("@sofinance/engine/open-simulation", () => ({ simulateAndVerifyOpenTransaction: vi.fn() }));
+vi.mock("@sofinance/engine/open-transaction", async importOriginal => ({ ...await importOriginal<object>(), openLookupTableReader: vi.fn() }));
+vi.mock("@sofinance/engine/solami-beam", async importOriginal => ({
   ...await importOriginal<object>(),
   fetchBeamTipAddress: vi.fn(async () => null),
 }));
@@ -16,13 +16,13 @@ vi.mock("@raydium-io/raydium-sdk-v2", async importOriginal => ({ ...await import
   Raydium: { load: vi.fn() }, ClmmInstrument: { openPositionFromLiquidityInstructions: vi.fn() },
 }));
 import { Raydium, ClmmInstrument } from "@raydium-io/raydium-sdk-v2";
-import { rpcConnection } from "./rpc";
-import { readOpenPoolState } from "./open-state";
-import { getOpenPositionQuoteBundle } from "./open-quote";
-import { simulateAndVerifyOpenTransaction } from "./open-simulation";
-import { openLookupTableReader } from "./open-transaction";
-import { fetchBeamTipAddress } from "./solami-beam";
-import { buildAndSimulateOpenPosition } from "./open-atomic";
+import { rpcConnection } from "@sofinance/engine/rpc";
+import { readOpenPoolState } from "@sofinance/engine/open-state";
+import { getOpenPositionQuoteBundle } from "@sofinance/engine/open-quote";
+import { simulateAndVerifyOpenTransaction } from "@sofinance/engine/open-simulation";
+import { openLookupTableReader } from "@sofinance/engine/open-transaction";
+import { fetchBeamTipAddress } from "@sofinance/engine/solami-beam";
+import { buildAndSimulateOpenPosition } from "@sofinance/engine/open-atomic";
 
 const decode = (f: typeof oldFixture) => ({
   ixs: f.instructions.map(ix => new TransactionInstruction({ programId: new PublicKey(ix.program), data: Buffer.from(ix.data, "base64"),

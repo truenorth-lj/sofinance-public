@@ -26,23 +26,15 @@ const ALLOWED_SECRET_READS: Record<string, Reads> = {
   SOFINANCE_RWA_MIGRATION_DATABASE_URL: { "lib/config/rwa-migration-env.ts": 1 },
   DATABASE_URL: { "lib/config/rwa-env.ts": 1 },
   CRON_SECRET: { "lib/config/rwa-env.ts": 1 },
-  JUPITER_API_KEY: {
-    // the single reader (lib/config/server-env.ts)
-    "lib/config/server-env.ts": 1,
-    // allowed long-term: the Jupiter client's own env fallback (env param, injectable in tests)
-    "lib/jupiter/urls.ts": 1,
-  },
-  SOLAMI_API_KEY: {
-    // allowed long-term: encapsulated provider/Beam readers that take an `env` argument
-    "lib/rpc/providers.ts": 1,
-    "lib/solami/beam.ts": 2,
-  },
+  // JUPITER_API_KEY, SOLAMI_API_KEY and SOLANA_RPC_URL readers (config/server-env, jupiter/urls,
+  // rpc/providers, solami/beam) moved into @sofinance/engine, which reads only the configuration the
+  // host injects (lib/engine-host.ts hands it process.env, listed in ALLOWED_WHOLE_ENV_PASSES).
+  JUPITER_API_KEY: {},
+  SOLAMI_API_KEY: {},
   SOLAMI_DATA_API_KEY: {
     "lib/solami/blur.ts": 1,
   },
-  SOLANA_RPC_URL: {
-    "lib/rpc/providers.ts": 1,
-  },
+  SOLANA_RPC_URL: {},
   SOFINANCE_MCP_TOKEN: {
     // local stdio-to-remote shim: reads the user's own token from its own process env
     "mcp/remote-shim.ts": 1,
@@ -51,14 +43,8 @@ const ALLOWED_SECRET_READS: Record<string, Reads> = {
 
 /** Files that pass the whole `process.env` object to a callee (callee then reads secrets by name). */
 const ALLOWED_WHOLE_ENV_PASSES: Reads = {
-  "lib/jupiter/logger.ts": 1,
-  "lib/jupiter/urls.ts": 1,
-  "lib/lp-exit-data.ts": 1,
-  "lib/rpc/index.ts": 3,
-  "lib/rpc/json-rpc.ts": 1,
-  "lib/rpc/logger.ts": 1,
-  "lib/rpc/providers.ts": 5,
-  "lib/solami/beam.ts": 4,
+  // the single host injection point for @sofinance/engine (replaces the engine modules' own env defaults)
+  "lib/engine-host.ts": 1,
   "lib/solami/blur.ts": 6,
 };
 

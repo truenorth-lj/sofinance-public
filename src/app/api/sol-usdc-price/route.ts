@@ -1,6 +1,7 @@
-import { getJupiterApiKey } from "@/lib/config/server-env";
-import { NATIVE_SOL_MINT, USDC_MINT } from "@/lib/ids";
-import { fetchJupiterPricesUsd } from "@/lib/token-prices";
+import "@/lib/engine-host";
+import { getJupiterApiKey } from "@sofinance/engine/config/server-env";
+import { NATIVE_SOL_MINT, USDC_MINT } from "@sofinance/engine/ids";
+import { fetchJupiterPricesUsd } from "@sofinance/engine/token-prices";
 
 export async function GET() {
   const prices = await fetchJupiterPricesUsd([NATIVE_SOL_MINT, USDC_MINT], fetch, getJupiterApiKey());

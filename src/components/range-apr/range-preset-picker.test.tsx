@@ -3,10 +3,10 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { OPEN_RANGE_UI_PRESETS, type OpenRangePreset } from "@/lib/open-range-presets";
+import { OPEN_RANGE_UI_PRESETS, type OpenRangePreset } from "@sofinance/engine/open-range-presets";
 import { formatEstimate } from "@/lib/range-apr/format";
 import { degradedPayloadFixture, payloadFixture, payloadWithAprs } from "@/lib/range-apr/payload.fixture";
-import { uiPriceFromTick } from "@/lib/range-apr/tick-math";
+import { uiPriceFromTick } from "@sofinance/engine/range-apr/tick-math";
 import { RangePresetPicker } from "./range-preset-picker";
 import type { PoolRangeAprState } from "./use-pool-range-apr";
 

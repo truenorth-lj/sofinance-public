@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MemoryRpcCache, cacheKeyFor, resetRpcCache } from "./cache";
-import { invokeWithPolicy } from "./connection";
-import { setRpcLogger } from "./logger";
-import { cacheTtlFor, UNCACHEABLE_METHODS } from "./methods";
-import { setRpcRetryConfig } from "./retry";
+import { MemoryRpcCache, cacheKeyFor, resetRpcCache } from "@sofinance/engine/rpc/cache";
+import { invokeWithPolicy } from "@sofinance/engine/rpc/connection";
+import { setRpcLogger } from "@sofinance/engine/rpc/logger";
+import { cacheTtlFor, UNCACHEABLE_METHODS } from "@sofinance/engine/rpc/methods";
+import { setRpcRetryConfig } from "@sofinance/engine/rpc/retry";
 
 afterEach(() => {
   resetRpcCache();

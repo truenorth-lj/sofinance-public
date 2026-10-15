@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
-vi.mock("@/lib/open-atomic", () => ({ buildAndSimulateOpenPosition: vi.fn() }));
+vi.mock("@sofinance/engine/open-atomic", () => ({ buildAndSimulateOpenPosition: vi.fn() }));
 vi.mock("@/lib/open-permit", () => ({ issueOpenPositionPermit: vi.fn(() => "permit") }));
 
-import { buildAndSimulateOpenPosition } from "@/lib/open-atomic";
+import { buildAndSimulateOpenPosition } from "@sofinance/engine/open-atomic";
 import { POST } from "./route";
 
 beforeEach(() => { vi.clearAllMocks(); });

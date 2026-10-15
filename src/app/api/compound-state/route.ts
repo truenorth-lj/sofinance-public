@@ -1,5 +1,6 @@
+import "@/lib/engine-host";
 import { parseCompoundSelection } from "@/lib/compound-api";
-import { readCompoundPositionState } from "@/lib/compound-state";
+import { readCompoundPositionState } from "@sofinance/engine/compound-state";
 import { apiError } from "@/lib/api-response";
 
 export async function POST(request: Request) {

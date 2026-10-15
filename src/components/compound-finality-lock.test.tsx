@@ -4,12 +4,12 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SelectedApp } from "./selected-app";
 import { useCompoundController, type CompoundConfirmation } from "./use-compound-controller";
-import { compoundAttemptKey, compoundReceiptsKey, persistCompoundAttempt } from "@/lib/compound-attempt";
+import { compoundAttemptKey, compoundReceiptsKey, persistCompoundAttempt } from "@sofinance/engine/compound-attempt";
 import { compoundHistoryFixture } from "@/lib/test-support/compound-history-fixture";
 import { TransactionMessage, VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
 import { testKeypair } from "@/lib/test-support/send-fixtures";
-import { USDC_MINT } from "@/lib/ids";
+import { USDC_MINT } from "@sofinance/engine/ids";
 
 const mocks = vi.hoisted(() => ({ add: vi.fn(), sign: vi.fn(), refresh: vi.fn() }));
 vi.mock("next/navigation", () => ({ usePathname: () => "/app" }));

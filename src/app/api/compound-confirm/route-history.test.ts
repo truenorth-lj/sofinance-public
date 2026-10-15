@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
-vi.mock("@/lib/rpc", () => ({ rpcConnection: vi.fn() }));
-vi.mock("@/lib/compound-state", () => ({ readCompoundPositionState: vi.fn() }));
-import { rpcConnection } from "@/lib/rpc";
-import { readCompoundPositionState } from "@/lib/compound-state";
+vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: vi.fn() }));
+vi.mock("@sofinance/engine/compound-state", () => ({ readCompoundPositionState: vi.fn() }));
+import { rpcConnection } from "@sofinance/engine/rpc";
+import { readCompoundPositionState } from "@sofinance/engine/compound-state";
 import { compoundHistoryFixture } from "@/lib/test-support/compound-history-fixture";
 import { fakeConnection, jsonRequest } from "@/lib/test-support/send-fixtures";
 import { POST } from "./route";

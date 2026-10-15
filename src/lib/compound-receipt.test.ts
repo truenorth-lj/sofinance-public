@@ -5,8 +5,8 @@ import { CLMM_PROGRAM_ID, ClmmInstrument } from "@raydium-io/raydium-sdk-v2";
 import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { Keypair, PublicKey, SystemProgram, type ParsedTransactionWithMeta, type TransactionInstruction } from "@solana/web3.js";
 import { confirmedCompoundReceipt } from "./compound-receipt";
-import { importCompoundReceipt } from "./compound-recovery-import";
-import type { CompoundAccount, CompoundSummary } from "./compound-types";
+import { importCompoundReceipt } from "@sofinance/engine/compound-recovery-import";
+import type { CompoundAccount, CompoundSummary } from "@sofinance/engine/compound-types";
 
 const key = () => Keypair.generate().publicKey;
 async function fixture() {

@@ -3,7 +3,7 @@ import { createAssociatedTokenAccountIdempotentInstruction, createCloseAccountIn
 import { describe, expect, it, vi } from "vitest";
 import compactFixture from "./fixtures/open-size-compact-route.json";
 import fixture from "./fixtures/open-size-route.json";
-import { assertOpenTransactionSize, compactAtaInstructions, compileCompactOpenTransaction, versionedTransactionSize } from "./open-transaction";
+import { assertOpenTransactionSize, compactAtaInstructions, compileCompactOpenTransaction, versionedTransactionSize } from "@sofinance/engine/open-transaction";
 
 const instructions = fixture.instructions.map(ix => new TransactionInstruction({
   programId: new PublicKey(ix.program), data: Buffer.from(ix.data, "base64"),

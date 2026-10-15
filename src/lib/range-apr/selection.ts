@@ -1,9 +1,10 @@
+import "@/lib/engine-host";
 /**
  * Browser-side evaluation of a range selection against the cached per-pool payload (pure).
  * Presets use the ticks the server resolved; a custom band is converted here, so typing a price updates the
  * estimate instantly with no request.
  */
-import type { OpenRangePreset } from "../open-range-presets";
+import type { OpenRangePreset } from "@sofinance/engine/open-range-presets";
 import { parsePriceInput, ticksFromPriceBand } from "./price-band";
 import { estimateRangeApr, type RangeAprEstimate, type RangeAprInputs } from "./range-apr";
 import type { PoolRangeAprPayload } from "./types";

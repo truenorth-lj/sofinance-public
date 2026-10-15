@@ -1,5 +1,6 @@
+import "@/lib/engine-host";
 import { PublicKey } from "@solana/web3.js";
-import { getTokenMetadata } from "@/lib/token-metadata";
+import { getTokenMetadata } from "@sofinance/engine/token-metadata";
 
 export async function POST(request: Request) {
   let mints: string[];

@@ -3,10 +3,10 @@ import { getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID 
 import { expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 import { getPdaPersonalPositionAddress, PersonalPositionLayout } from "@raydium-io/raydium-sdk-v2";
-import type { OpenPoolState } from "./open-state";
-import { JUPITER_PROGRAM_ID } from "./swap/instructions";
-import { NATIVE_SOL_MINT } from "./ids";
-import { simulatedAccount, simulateAndVerifyOpenTransaction } from "./open-simulation";
+import type { OpenPoolState } from "@sofinance/engine/open-state";
+import { JUPITER_PROGRAM_ID } from "@sofinance/engine/swap/instructions";
+import { NATIVE_SOL_MINT } from "@sofinance/engine/ids";
+import { simulatedAccount, simulateAndVerifyOpenTransaction } from "@sofinance/engine/open-simulation";
 
 it("treats a closed zero-lamport WSOL account returned by simulation as absent", () => {
   expect(simulatedAccount({ data: ["", "base64"], owner: SystemProgram.programId.toBase58(), lamports: 0, executable: false })).toBeNull();

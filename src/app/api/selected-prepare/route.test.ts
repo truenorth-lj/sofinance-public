@@ -1,11 +1,11 @@
 import { beforeEach, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
-vi.mock("@/lib/api-input", () => ({ parseSelectedQuoteRequest: vi.fn() }));
+vi.mock("@sofinance/engine/api-input", () => ({ parseSelectedQuoteRequest: vi.fn() }));
 vi.mock("@/lib/selected-atomic", () => ({ buildAndSimulateSelectedZap: vi.fn() }));
 vi.mock("@/lib/selected-permit", () => ({ issueSelectedPermit: vi.fn(() => "permit") }));
-import { parseSelectedQuoteRequest } from "@/lib/api-input";
+import { parseSelectedQuoteRequest } from "@sofinance/engine/api-input";
 import { buildAndSimulateSelectedZap } from "@/lib/selected-atomic";
-import { JupiterHttpError } from "@/lib/jupiter/errors";
+import { JupiterHttpError } from "@sofinance/engine/jupiter/errors";
 import { POST as prepare } from "./route";
 import { POST as preflight } from "../selected-preflight/route";
 const selection = { positionMint: "position", inputMint: "mint", inputKind: "token" as const };

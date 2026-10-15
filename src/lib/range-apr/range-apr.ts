@@ -1,3 +1,4 @@
+import "@/lib/engine-host";
 /**
  * Estimated fee APR of a concentrated range (pure, I/O free, safe to run in the browser).
  *
@@ -12,7 +13,7 @@
  * It is a back-test of recent traffic against today's liquidity, not a forecast.
  */
 import { liquidityForCapital } from "./clmm-liquidity";
-import { sqrtPriceAtTick } from "./tick-math";
+import { sqrtPriceAtTick } from "@sofinance/engine/range-apr/tick-math";
 
 export const RANGE_APR_REFERENCE_CAPITAL_USD = 100;
 

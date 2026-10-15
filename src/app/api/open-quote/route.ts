@@ -1,6 +1,7 @@
+import "@/lib/engine-host";
 import { parseOpenQuoteRequest } from "@/lib/open-api";
 import { apiError } from "@/lib/api-response";
-import { getOpenPositionQuoteBundle } from "@/lib/open-quote";
+import { getOpenPositionQuoteBundle } from "@sofinance/engine/open-quote";
 
 export async function POST(request: Request) {
   try {

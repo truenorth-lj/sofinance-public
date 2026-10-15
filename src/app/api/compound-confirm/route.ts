@@ -1,15 +1,16 @@
+import "@/lib/engine-host";
 import { PublicKey } from "@solana/web3.js";
 import type { ParsedTransactionWithMeta } from "@solana/web3.js";
 import { readCompoundBody } from "@/lib/compound-api";
-import { parseWallet } from "@/lib/api-input";
-import { parseCompoundAttempt } from "@/lib/compound-attempt";
-import { readCompoundPositionState } from "@/lib/compound-state";
+import { parseWallet } from "@sofinance/engine/api-input";
+import { parseCompoundAttempt } from "@sofinance/engine/compound-attempt";
+import { readCompoundPositionState } from "@sofinance/engine/compound-state";
 import { confirmedCompoundReceipt, confirmedRecovery } from "@/lib/compound-receipt";
-import { rpcConnection } from "@/lib/rpc";
+import { rpcConnection } from "@sofinance/engine/rpc";
 import { apiError } from "@/lib/api-response";
-import type { CompoundChainStatus } from "@/lib/compound-types";
+import type { CompoundChainStatus } from "@sofinance/engine/compound-types";
 import { invalidatePositionHistoryCache } from "@/lib/position-history-cache";
-import { resetRpcCache } from "@/lib/rpc/cache";
+import { resetRpcCache } from "@sofinance/engine/rpc/cache";
 
 export async function POST(request: Request) {
   try {

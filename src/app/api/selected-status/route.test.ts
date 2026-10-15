@@ -10,11 +10,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/position-history-cache", () => ({ invalidatePositionHistoryCache: vi.fn() }));
 import { invalidatePositionHistoryCache } from "@/lib/position-history-cache";
-vi.mock("@/lib/rpc", () => ({ rpcConnection: vi.fn() }));
-vi.mock("@/lib/selected-state", () => ({ readSelectedPositionState: vi.fn() }));
+vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: vi.fn() }));
+vi.mock("@sofinance/engine/selected-state", () => ({ readSelectedPositionState: vi.fn() }));
 
-import { rpcConnection } from "@/lib/rpc";
-import { readSelectedPositionState } from "@/lib/selected-state";
+import { rpcConnection } from "@sofinance/engine/rpc";
+import { readSelectedPositionState } from "@sofinance/engine/selected-state";
 import { fakeConnection, type FakeConnection, jsonRequest, testKeypair } from "@/lib/test-support/send-fixtures";
 import { POST } from "./route";
 
