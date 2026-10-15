@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { ComputeBudgetProgram, PublicKey, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
 import { TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID } from "@solana/spl-token";
-import { swapRouteInstructions } from "./swap";
-import { netSwapInput, swapFeeTransferInstructions } from "./swap";
+import { swapRouteInstructions } from "@sofinance/engine/swap";
+import { netSwapInput, swapFeeTransferInstructions } from "@sofinance/engine/swap";
 vi.mock("server-only", () => ({}));
 const key = (value: number) => new PublicKey(new Uint8Array(32).fill(value));
 const wallet = key(1), recipient = key(2), mint = key(3), source = key(4);

@@ -3,7 +3,7 @@ import {act,createElement} from "react";
 import {createRoot,type Root} from "react-dom/client";
 import {afterEach,beforeEach,expect,it,vi} from "vitest";
 import {WithdrawPanel} from "./withdraw-panel";
-import {USDC_MINT} from "../lib/ids";
+import {USDC_MINT} from "@sofinance/engine/ids";
 const mocks=vi.hoisted(()=>({sign:vi.fn(),historyChange:vi.fn()}));
 vi.mock("./wallet-connection",()=>({useWalletConnection:()=>({address:"wallet",signTransaction:mocks.sign})}));
 vi.mock("@/lib/position-history-refresh",()=>({notifyPositionHistoryChange:mocks.historyChange}));

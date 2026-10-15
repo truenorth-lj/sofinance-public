@@ -1,12 +1,13 @@
+import "@/lib/engine-host";
 import "server-only";
 import { PublicKey } from "@solana/web3.js";
 import { CLMM_PROGRAM_ID, getPdaPersonalPositionAddress, PersonalPositionLayout, PoolInfoLayout, LiquidityMathUtil, TickUtil } from "@raydium-io/raydium-sdk-v2";
 import { createHash } from "node:crypto";
 import { observePositionTransaction, type TransactionEvidence, type PublicTransaction } from "./lp-position-observations";
 import type { DecisionRequest, LedgerEvent } from "./lp-accounting";
-import { jupiterQuote } from "./swap/client";
-import { asRpcUserError } from "./rpc/errors";
-import { rpcRequest } from "./rpc";
+import { jupiterQuote } from "@sofinance/engine/swap/client";
+import { asRpcUserError } from "@sofinance/engine/rpc/errors";
+import { rpcRequest } from "@sofinance/engine/rpc";
 export function validPrincipalQuote(q: Record<string, unknown>, mint: string, amount: string): boolean {
   return q.inputMint===mint && q.outputMint==="EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v" && q.inAmount===amount && q.swapMode==="ExactIn" && typeof q.outAmount==="string" && /^\d+$/.test(q.outAmount) && BigInt(q.outAmount)>0n && typeof q.otherAmountThreshold==="string" && /^\d+$/.test(q.otherAmountThreshold) && BigInt(q.otherAmountThreshold)<=BigInt(q.outAmount) && Array.isArray(q.routePlan) && q.routePlan.length>0;
 }

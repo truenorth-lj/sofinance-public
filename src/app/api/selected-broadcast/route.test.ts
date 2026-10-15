@@ -7,15 +7,15 @@ import { PublicKey } from "@solana/web3.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
-vi.mock("@/lib/rpc", () => ({ rpcConnection: vi.fn() }));
-vi.mock("@/lib/selected-state", () => ({ readSelectedPositionState: vi.fn() }));
+vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: vi.fn() }));
+vi.mock("@sofinance/engine/selected-state", () => ({ readSelectedPositionState: vi.fn() }));
 vi.mock("@/lib/selected-simulation", () => ({ simulateAndVerifySelectedTransaction: vi.fn() }));
-vi.mock("@/lib/solami-beam", () => ({ lookupBeamAfterSend: vi.fn(), beamLandingUrl: (signature: string) => `https://api.solami.dev/swqos/tx/${signature}` }));
+vi.mock("@sofinance/engine/solami-beam", () => ({ lookupBeamAfterSend: vi.fn(), beamLandingUrl: (signature: string) => `https://api.solami.dev/swqos/tx/${signature}` }));
 
-import { rpcConnection } from "@/lib/rpc";
-import { readSelectedPositionState } from "@/lib/selected-state";
+import { rpcConnection } from "@sofinance/engine/rpc";
+import { readSelectedPositionState } from "@sofinance/engine/selected-state";
 import { simulateAndVerifySelectedTransaction } from "@/lib/selected-simulation";
-import { lookupBeamAfterSend } from "@/lib/solami-beam";
+import { lookupBeamAfterSend } from "@sofinance/engine/solami-beam";
 import { issueSelectedPermit, type SelectedPermitInput } from "@/lib/selected-permit";
 import {
   BEAM_RESULT, SIGNING_SECRET, buildTransaction, fakeConnection, type FakeConnection, jsonRequest, messageBase64, oversizedSignedBase64, signatureOf,

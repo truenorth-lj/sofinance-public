@@ -4,10 +4,10 @@ import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { Keypair, PublicKey } from "@solana/web3.js";
 import { expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
-import { optimizeCompoundSwap, validateCompoundSwapInstruction, type CompoundSwap, type CompoundSwapShape } from "./compound-swap";
-import { sizeCompoundLiquidity } from "./compound-math";
-import { computeSwapFee, netSwapInput } from "./swap/fee";
-import type { CompoundAccount, CompoundPositionState } from "./compound-types";
+import { optimizeCompoundSwap, validateCompoundSwapInstruction, type CompoundSwap, type CompoundSwapShape } from "@sofinance/engine/compound-swap";
+import { sizeCompoundLiquidity } from "@sofinance/engine/compound-math";
+import { computeSwapFee, netSwapInput } from "@sofinance/engine/swap/fee";
+import type { CompoundAccount, CompoundPositionState } from "@sofinance/engine/compound-types";
 
 const q = 1n << 64n;
 const quoteAt = (price: bigint) => (_direction: string, input: bigint) => ({ output: input, sqrtPriceX64: price });

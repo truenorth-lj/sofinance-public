@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
-import { resetRpcCache } from "./rpc/cache";
-import { coalesceExitPreview, EXIT_PREVIEW_TTL_MS, exitPreviewCacheKey } from "./lp-exit-data";
+import { resetRpcCache } from "@sofinance/engine/rpc/cache";
+import { coalesceExitPreview, EXIT_PREVIEW_TTL_MS, exitPreviewCacheKey } from "@sofinance/engine/lp-exit-data";
 
 afterEach(() => {
   resetRpcCache();

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 import { apiError } from "./api-response";
-import { JupiterHttpError, JUPITER_UNAVAILABLE_CODE, JUPITER_UNAVAILABLE_MESSAGE } from "./jupiter/errors";
+import { JupiterHttpError, JUPITER_UNAVAILABLE_CODE, JUPITER_UNAVAILABLE_MESSAGE } from "@sofinance/engine/jupiter/errors";
 import {
   CompoundSendError, isPreflightOrUnsentFailure, mapKnownChainError, notSentRetryMessage,
   publicErrorCode, resolveCompoundBroadcastFailure, sanitizePublicError,

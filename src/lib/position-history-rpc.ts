@@ -1,8 +1,9 @@
+import "@/lib/engine-host";
 import "server-only";
 import { createHash } from "node:crypto";
 import type { Connection } from "@solana/web3.js";
 import { rpcConnection, defaultRpcConnection, resolveProviderPair, PUBLIC_SOLANA_RPC_URL,
-  parseRetryAfter, RpcUnavailableError, type RpcEnv, type RpcProvider, type RetryConfig } from "./rpc";
+  parseRetryAfter, RpcUnavailableError, type RpcEnv, type RpcProvider, type RetryConfig } from "@sofinance/engine/rpc";
 
 const ACTIVE_LIMIT = 8;
 const ENDPOINT_LIMIT = 16;

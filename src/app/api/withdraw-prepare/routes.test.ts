@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 const mocks = vi.hoisted(() => ({ build: vi.fn(), send: vi.fn(), status: vi.fn() }));
-vi.mock("@/lib/withdraw/build", () => ({ buildWithdraw: mocks.build }));
+vi.mock("@sofinance/engine/withdraw/build", () => ({ buildWithdraw: mocks.build }));
 vi.mock("@/lib/withdraw/send", () => ({ submitWithdraw: mocks.send }));
 vi.mock("@/lib/withdraw/status", () => ({ withdrawStatus: mocks.status }));
 import { POST as quote } from "../withdraw-quote/route";

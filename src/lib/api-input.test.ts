@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseSelectedQuoteRequest, parseWallet } from "./api-input";
+import { parseSelectedQuoteRequest, parseWallet } from "@sofinance/engine/api-input";
 
 const wallet = "11111111111111111111111111111111"; // Fake but valid base58 test wallet
 

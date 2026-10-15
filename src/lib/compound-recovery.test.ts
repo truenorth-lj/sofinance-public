@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { AccountLayout, MintLayout, NATIVE_MINT, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { Keypair, PublicKey, SystemProgram, TransactionMessage, VersionedTransaction, type AccountInfo, type Connection } from "@solana/web3.js";
-import type { CompoundAccount } from "./compound-types";
-import type { CompoundRecoverySummary } from "./compound-recovery-types";
+import type { CompoundAccount } from "@sofinance/engine/compound-types";
+import type { CompoundRecoverySummary } from "@sofinance/engine/compound-recovery-types";
 vi.mock("server-only", () => ({}));
-import { readRecoveryAccounts, simulateAndVerifyRecovery } from "./compound-recovery";
+import { readRecoveryAccounts, simulateAndVerifyRecovery } from "@sofinance/engine/compound-recovery";
 
 const rent = 2_039_280;
 function tokenInfo(owner: PublicKey, amount: bigint): AccountInfo<Buffer> {

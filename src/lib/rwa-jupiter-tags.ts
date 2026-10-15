@@ -1,3 +1,4 @@
+import "@/lib/engine-host";
 import "server-only";
 
 /**
@@ -6,9 +7,9 @@ import "server-only";
  * Sends x-api-key from JUPITER_API_KEY when present; never logs the key.
  */
 
-import { jupiterRequest } from "./jupiter";
-import { JUPITER_TOKENS_SEARCH, JUPITER_TOKENS_SEARCH_PATH } from "./jupiter/urls";
-import { getJupiterApiKey } from "./config/server-env";
+import { jupiterRequest } from "@sofinance/engine/jupiter";
+import { JUPITER_TOKENS_SEARCH, JUPITER_TOKENS_SEARCH_PATH } from "@sofinance/engine/jupiter/urls";
+import { getJupiterApiKey } from "@sofinance/engine/config/server-env";
 
 export { JUPITER_TOKENS_SEARCH };
 

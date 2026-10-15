@@ -1,5 +1,6 @@
+import "@/lib/engine-host";
 import { apiError } from "@/lib/api-response";
-import { fetchBeamLanding, formatBeamLanding } from "@/lib/solami-beam";
+import { fetchBeamLanding, formatBeamLanding } from "@sofinance/engine/solami-beam";
 
 export const dynamic = "force-dynamic";
 

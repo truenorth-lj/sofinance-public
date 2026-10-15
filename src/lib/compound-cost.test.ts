@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { compoundCost, formatUsdcValue } from "./compound-cost";
-import type { CompoundSummary } from "./compound-types";
+import type { CompoundSummary } from "@sofinance/engine/compound-types";
 
 const summary = (patch: Partial<CompoundSummary> = {}) => ({
   feeLamports: 5000, rentLamports: 6156960, swaps: [],

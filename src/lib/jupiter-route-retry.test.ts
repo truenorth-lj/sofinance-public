@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { JUPITER_ROUTE_ATTEMPTS, isTxOversizeError, withJupiterRouteRetries } from "./jupiter-route-retry";
+import { JUPITER_ROUTE_ATTEMPTS, isTxOversizeError, withJupiterRouteRetries } from "@sofinance/engine/jupiter-route-retry";
 
 describe("jupiter-route-retry", () => {
   it("tightens maxAccounts then onlyDirectRoutes", () => {

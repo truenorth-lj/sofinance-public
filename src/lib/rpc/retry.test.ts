@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { RpcHttpError, RpcUnavailableError } from "./errors";
-import { invokeWithPolicy } from "./connection";
-import { resetRpcCache } from "./cache";
-import { setRpcLogger } from "./logger";
-import { computeBackoffMs, invokeWithRetries, parseRetryAfter, PREVIEW_RETRY, setRpcRetryConfig } from "./retry";
+import { RpcHttpError, RpcUnavailableError } from "@sofinance/engine/rpc/errors";
+import { invokeWithPolicy } from "@sofinance/engine/rpc/connection";
+import { resetRpcCache } from "@sofinance/engine/rpc/cache";
+import { setRpcLogger } from "@sofinance/engine/rpc/logger";
+import { computeBackoffMs, invokeWithRetries, parseRetryAfter, PREVIEW_RETRY, setRpcRetryConfig } from "@sofinance/engine/rpc/retry";
 
 afterEach(() => {
   resetRpcCache();

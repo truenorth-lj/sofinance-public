@@ -1,6 +1,7 @@
+import "@/lib/engine-host";
 import bs58 from "bs58";
 import { PublicKey } from "@solana/web3.js";
-import type { PositionSelection } from "./selected-state";
+import type { PositionSelection } from "@sofinance/engine/selected-state";
 
 export type SelectedAttempt = {
   version: 2; wallet: string; selection: PositionSelection; poolId: string; positionAccount: string;

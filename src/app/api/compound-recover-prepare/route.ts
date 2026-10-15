@@ -1,9 +1,10 @@
-import { parseWallet } from "@/lib/api-input";
+import "@/lib/engine-host";
+import { parseWallet } from "@sofinance/engine/api-input";
 import { readCompoundBody } from "@/lib/compound-api";
-import { buildAndSimulateCompoundRecovery } from "@/lib/compound-recovery";
+import { buildAndSimulateCompoundRecovery } from "@sofinance/engine/compound-recovery";
 import { issueCompoundPermit } from "@/lib/compound-permit";
 import { apiError } from "@/lib/api-response";
-import { getSigningSecret } from "@/lib/config/server-env";
+import { getSigningSecret } from "@sofinance/engine/config/server-env";
 
 export async function POST(request: Request) {
   try {

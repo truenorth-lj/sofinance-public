@@ -1,4 +1,5 @@
-import { createPermit } from "./auth/permit";
+import "@/lib/engine-host";
+import { createPermit } from "@sofinance/engine/auth/permit";
 
 // Include the operation and every account/budget in the permit, so a recovery
 // approval cannot be replayed as a compound approval or with another source.

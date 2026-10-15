@@ -4,16 +4,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
-vi.mock("@/lib/rpc", () => ({ rpcConnection: vi.fn() }));
-vi.mock("@/lib/compound-state", () => ({ readCompoundPositionState: vi.fn() }));
-vi.mock("@/lib/compound-simulation", () => ({ simulateAndVerifyCompound: vi.fn() }));
-vi.mock("@/lib/solami-beam", () => ({ lookupBeamAfterSend: vi.fn() }));
+vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: vi.fn() }));
+vi.mock("@sofinance/engine/compound-state", () => ({ readCompoundPositionState: vi.fn() }));
+vi.mock("@sofinance/engine/compound-simulation", () => ({ simulateAndVerifyCompound: vi.fn() }));
+vi.mock("@sofinance/engine/solami-beam", () => ({ lookupBeamAfterSend: vi.fn() }));
 
 import { issueCompoundPermit } from "@/lib/compound-permit";
-import { simulateAndVerifyCompound } from "@/lib/compound-simulation";
-import { readCompoundPositionState } from "@/lib/compound-state";
-import { rpcConnection } from "@/lib/rpc";
-import { lookupBeamAfterSend } from "@/lib/solami-beam";
+import { simulateAndVerifyCompound } from "@sofinance/engine/compound-simulation";
+import { readCompoundPositionState } from "@sofinance/engine/compound-state";
+import { rpcConnection } from "@sofinance/engine/rpc";
+import { lookupBeamAfterSend } from "@sofinance/engine/solami-beam";
 import {
   BEAM_RESULT, BLOCKHASH, SIGNING_SECRET, buildTransaction, compoundSummaryFixture, fakeConnection, type FakeConnection, jsonRequest, messageBase64,
   oversizedSignedBase64, signatureOf, testKeypair, toBase64,

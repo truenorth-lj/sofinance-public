@@ -10,7 +10,7 @@ import {
   resolveProviderPair,
   resolveRpcConfig,
   rpcProvider,
-} from "./rpc";
+} from "@sofinance/engine/rpc";
 
 describe("resolveRpcConfig", () => {
   const originalSolami = process.env.SOLAMI_API_KEY;

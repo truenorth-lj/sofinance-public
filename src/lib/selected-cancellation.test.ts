@@ -1,8 +1,8 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { Keypair } from "@solana/web3.js";
 vi.mock("server-only", () => ({}));
-import { rpcConnection, resetRpcRuntime } from "./rpc";
-import { quoteRoute, buildRoute } from "./swap/jupiter";
+import { rpcConnection, resetRpcRuntime } from "@sofinance/engine/rpc";
+import { quoteRoute, buildRoute } from "@sofinance/engine/swap/jupiter";
 
 afterEach(() => { resetRpcRuntime(); vi.unstubAllEnvs(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 it("cancels actual RPC, lightweight quote and build fetches with the same request signal", async () => {

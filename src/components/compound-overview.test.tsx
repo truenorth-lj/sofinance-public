@@ -3,7 +3,7 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { CompoundOverview } from "./compound-overview";
-import type { CompoundSummary } from "@/lib/compound-types";
+import type { CompoundSummary } from "@sofinance/engine/compound-types";
 
 it("shows the combined USDC harvest above token amounts without other sections", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);

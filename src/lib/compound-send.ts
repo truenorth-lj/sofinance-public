@@ -1,14 +1,15 @@
+import "@/lib/engine-host";
 import "server-only";
 import { invalidatePositionHistoryCache } from "./position-history-cache";
 
 import { PublicKey, VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
-import { readCompoundPositionState } from "./compound-state";
-import { simulateAndVerifyCompound } from "./compound-simulation";
+import { readCompoundPositionState } from "@sofinance/engine/compound-state";
+import { simulateAndVerifyCompound } from "@sofinance/engine/compound-simulation";
 import { CompoundSendError, isPreflightOrUnsentFailure } from "./public-error";
-import { rpcConnection } from "./rpc";
-import { lookupBeamAfterSend } from "./solami-beam";
-import type { CompoundSummary } from "./compound-types";
+import { rpcConnection } from "@sofinance/engine/rpc";
+import { lookupBeamAfterSend } from "@sofinance/engine/solami-beam";
+import type { CompoundSummary } from "@sofinance/engine/compound-types";
 
 export { CompoundSendError };
 

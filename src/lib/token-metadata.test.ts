@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
-import { getTokenMetadata } from "./token-metadata";
+import { getTokenMetadata } from "@sofinance/engine/token-metadata";
 
 describe("getTokenMetadata", () => {
   it("keeps only exact requested mints and trusted icon URLs", async () => {

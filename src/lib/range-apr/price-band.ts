@@ -1,9 +1,10 @@
+import "@/lib/engine-host";
 /**
  * Client-safe port of the server's price-band to tick conversion (`ticksFromUiPriceBand` in
  * `open-range.ts`): lower = floor(tick(min)) aligned DOWN, upper = floor(tick(max)) aligned UP, at least
  * one spacing apart, clamped to the usable tick range. A parity test keeps the two in step.
  */
-import { exactTickFromUiPrice, usableTickBounds, ceilToSpacing, floorToSpacing } from "./tick-math";
+import { exactTickFromUiPrice, usableTickBounds, ceilToSpacing, floorToSpacing } from "@sofinance/engine/range-apr/tick-math";
 
 function clampUsable(tick: number, tickSpacing: number): number {
   const { min, max } = usableTickBounds(tickSpacing);

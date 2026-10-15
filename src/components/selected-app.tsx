@@ -1,10 +1,11 @@
 "use client";
+import "@/lib/engine-host";
 
 import { useEffect, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, ArrowUpRight, ChartNoAxesCombined, CircleAlert, LoaderCircle, Sprout } from "lucide-react";
 import { assetMetadata, assetSymbol, TokenPicker } from "./token-picker";
-import { formatAmount } from "@/lib/amount";
-import { NATIVE_SOL_MINT, USDC_MINT } from "@/lib/ids";
+import { formatAmount } from "@sofinance/engine/amount";
+import { NATIVE_SOL_MINT, USDC_MINT } from "@sofinance/engine/ids";
 import { PositionSelect } from "./position-select";
 import { PositionAssetRow } from "./position-asset-row";
 import { resolveNftAccountLookup } from "@/lib/exit-account-lookup";

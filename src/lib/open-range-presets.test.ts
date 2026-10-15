@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { OPEN_RANGE_PRESETS, OPEN_RANGE_UI_PRESETS, DEFAULT_OPEN_RANGE_PRESET } from "./open-range-presets";
+import { OPEN_RANGE_PRESETS, OPEN_RANGE_UI_PRESETS, DEFAULT_OPEN_RANGE_PRESET } from "@sofinance/engine/open-range-presets";
 import { BEST_HELP } from "./range-apr/copy";
 import { quoteOpenPositionSchema } from "../mcp/schemas";
 

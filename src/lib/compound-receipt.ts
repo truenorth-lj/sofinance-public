@@ -1,11 +1,12 @@
-import { compoundProtocolInstructions } from "./swap/receipt";
+import "@/lib/engine-host";
+import { compoundProtocolInstructions } from "@sofinance/engine/swap/receipt";
 import { createHash } from "node:crypto";
 import bs58 from "bs58";
 import { CLMM_PROGRAM_ID } from "@raydium-io/raydium-sdk-v2";
 import { TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID } from "@solana/spl-token";
 import type { ParsedTransactionWithMeta, PartiallyDecodedInstruction, TokenBalance } from "@solana/web3.js";
-import type { CompoundSummary } from "./compound-types";
-import type { CompoundRecoverySummary } from "./compound-recovery-types";
+import type { CompoundSummary } from "@sofinance/engine/compound-types";
+import type { CompoundRecoverySummary } from "@sofinance/engine/compound-recovery-types";
 
 const discriminator = (name: string) => createHash("sha256").update(`global:${name}`).digest().subarray(0, 8);
 function u128(data: Buffer, offset: number) { return data.readBigUInt64LE(offset) + (data.readBigUInt64LE(offset + 8) << 64n); }

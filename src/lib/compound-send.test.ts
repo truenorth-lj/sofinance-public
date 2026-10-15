@@ -4,18 +4,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
-vi.mock("./rpc", () => ({ rpcConnection: vi.fn() }));
-vi.mock("./compound-state", () => ({ readCompoundPositionState: vi.fn() }));
-vi.mock("./compound-simulation", () => ({ simulateAndVerifyCompound: vi.fn() }));
-vi.mock("./solami-beam", () => ({ lookupBeamAfterSend: vi.fn() }));
+vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: vi.fn() }));
+vi.mock("@sofinance/engine/compound-state", () => ({ readCompoundPositionState: vi.fn() }));
+vi.mock("@sofinance/engine/compound-simulation", () => ({ simulateAndVerifyCompound: vi.fn() }));
+vi.mock("@sofinance/engine/solami-beam", () => ({ lookupBeamAfterSend: vi.fn() }));
 
 import type { VersionedTransaction } from "@solana/web3.js";
-import { readCompoundPositionState } from "./compound-state";
-import { simulateAndVerifyCompound } from "./compound-simulation";
-import type { CompoundSummary } from "./compound-types";
+import { readCompoundPositionState } from "@sofinance/engine/compound-state";
+import { simulateAndVerifyCompound } from "@sofinance/engine/compound-simulation";
+import type { CompoundSummary } from "@sofinance/engine/compound-types";
 import { CompoundSendError, reverifySignedCompound, sendSignedCompoundTransaction } from "./compound-send";
-import { rpcConnection } from "./rpc";
-import { lookupBeamAfterSend } from "./solami-beam";
+import { rpcConnection } from "@sofinance/engine/rpc";
+import { lookupBeamAfterSend } from "@sofinance/engine/solami-beam";
 import {
   BEAM_RESULT, BLOCKHASH, buildTransaction, compoundSummaryFixture, fakeConnection, type FakeConnection, signatureOf, testKeypair,
 } from "./test-support/send-fixtures";

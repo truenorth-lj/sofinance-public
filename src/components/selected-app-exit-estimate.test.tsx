@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SelectedApp } from "./selected-app";
 import { WalletConnectionContext, type WalletConnection } from "./wallet-connection";
 import fixture from "./__fixtures__/position-performance-sample.json";
-import { USDC_MINT } from "@/lib/ids";
+import { USDC_MINT } from "@sofinance/engine/ids";
 
 vi.mock("./use-sol-usdc-price", () => ({ useSolUsdcPrices: () => ({ rate: null, usdcUsd: null }) }));
 vi.mock("next/navigation", () => ({ usePathname: () => "/app" }));

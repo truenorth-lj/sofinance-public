@@ -1,4 +1,5 @@
-import type { CompoundSummary } from "./compound-types";
+import "@/lib/engine-host";
+import type { CompoundSummary } from "@sofinance/engine/compound-types";
 
 export function tokenUsdValue(raw: string, decimals: number, price: number | null | undefined): number | null {
   if (BigInt(raw) === 0n) return 0;

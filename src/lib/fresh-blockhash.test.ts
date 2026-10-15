@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Keypair, SystemProgram, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
-import { PREPARE_STALE_MS, QUOTE_TTL_MS } from "./ids";
-import { prepareIsStale, preparedAtMs, quoteWindow, restampVersionedTransaction, stampPreparedBlockhash } from "./fresh-blockhash";
+import { PREPARE_STALE_MS, QUOTE_TTL_MS } from "@sofinance/engine/ids";
+import { prepareIsStale, preparedAtMs, quoteWindow, restampVersionedTransaction, stampPreparedBlockhash } from "@sofinance/engine/fresh-blockhash";
 
 describe("prepared quote window", () => {
   it("stamps simulatedAt and expiresAt from the shared client TTL", () => {

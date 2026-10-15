@@ -1,9 +1,10 @@
+import "@/lib/engine-host";
 import { withSelectedDeadline } from "@/lib/selected-deadline";
-import { parseSelectedQuoteRequest } from "@/lib/api-input";
+import { parseSelectedQuoteRequest } from "@sofinance/engine/api-input";
 import { selectedApiError } from "@/lib/api-response";
 import { buildAndSimulateSelectedZap } from "@/lib/selected-atomic";
 import { issueSelectedPermit } from "@/lib/selected-permit";
-import { getSigningSecret } from "@/lib/config/server-env";
+import { getSigningSecret } from "@sofinance/engine/config/server-env";
 
 export async function POST(request: Request) {
   return withSelectedDeadline(request, async (signal, budget) => {

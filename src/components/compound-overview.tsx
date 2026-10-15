@@ -1,8 +1,9 @@
 "use client";
+import "@/lib/engine-host";
 
-import { formatAmount } from "@/lib/amount";
+import { formatAmount } from "@sofinance/engine/amount";
 import { formatUsdcValue, tokenUsdValue } from "@/lib/compound-cost";
-import type { CompoundPositionState, CompoundSummary } from "@/lib/compound-types";
+import type { CompoundPositionState, CompoundSummary } from "@sofinance/engine/compound-types";
 
 const amount = (raw: string, decimals: number) => formatAmount(raw, decimals, Math.min(decimals, 9));
 

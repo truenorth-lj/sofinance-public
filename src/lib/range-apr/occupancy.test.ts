@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { RawCandle } from "./gecko-candles";
 import { binVolumeShares, candlesToTickCandles, type TickCandle } from "./occupancy";
-import { exactTickFromUiPrice, uiPriceFromTick } from "./tick-math";
+import { exactTickFromUiPrice, uiPriceFromTick } from "@sofinance/engine/range-apr/tick-math";
 
 const flat = (count: number, liquidity = 100, firstTick = 0, spacing = 1) =>
   Array.from({ length: count }, (_, index) => ({ tick: firstTick + index * spacing, liquidity }));

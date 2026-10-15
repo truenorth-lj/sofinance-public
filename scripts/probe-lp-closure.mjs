@@ -1,4 +1,5 @@
 // Public task-scoped read/simulation probes. No signer, keys or sendTransaction.
+import "@/lib/engine-host";
 import { readFile, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import BN from 'bn.js';
@@ -90,7 +91,7 @@ if(process.argv.includes('--related-history')){
    routes.push(route);
  }
  if(process.argv.includes('--combined')) {
-   const {compileCompactOpenTransaction,versionedTransactionSize}=await import('../src/lib/open-transaction.ts');
+   const {compileCompactOpenTransaction,versionedTransactionSize}=await import('@sofinance/engine/open-transaction');
    const {AddressLookupTableAccount,AddressLookupTableProgram}=await import('@solana/web3.js');
    const tableKeys=[...new Set(['AcL1Vo8oy1ULiavEcjSUcwfBSForXMudcZvDZy5nzJkU',...routes.flatMap(r=>r.addressLookupTableAddresses)])];
    const infos=await rpcCall('exit-combined-alts','getMultipleAccounts',[tableKeys,{encoding:'base64',commitment:'confirmed'}]);

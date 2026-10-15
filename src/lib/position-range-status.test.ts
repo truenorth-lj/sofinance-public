@@ -1,7 +1,7 @@
 import { TickUtil } from "@raydium-io/raydium-sdk-v2";
 import { describe, expect, it } from "vitest";
 import { blurPriceToBPerA, rangeStatusFromPrice } from "./position-range-status";
-import { uiPriceBPerAFromTick } from "./position-performance-math";
+import { uiPriceBPerAFromTick } from "@sofinance/engine/position-performance-math";
 
 const mintA = "MintA1111111111111111111111111111111111111";
 const mintB = "MintB1111111111111111111111111111111111111";

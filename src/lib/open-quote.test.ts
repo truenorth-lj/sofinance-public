@@ -2,15 +2,15 @@ import BN from "bn.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AccountLayout, getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { PublicKey } from "@solana/web3.js";
-import { rpcConnection } from "./rpc";
+import { rpcConnection } from "@sofinance/engine/rpc";
 import { Keypair } from "@solana/web3.js";
 import { TickUtil, SqrtPriceMath } from "@raydium-io/raydium-sdk-v2";
-import { uiPriceBPerAFromTick } from "./position-performance-math";
+import { uiPriceBPerAFromTick } from "@sofinance/engine/position-performance-math";
 
 vi.mock("server-only", () => ({}));
-vi.mock("./open-state", () => ({ readOpenPoolState: vi.fn() }));
-vi.mock("./swap/jupiter", () => ({ buildRoute: vi.fn() }));
-vi.mock("./open-rent", () => ({
+vi.mock("@sofinance/engine/open-state", () => ({ readOpenPoolState: vi.fn() }));
+vi.mock("@sofinance/engine/swap/jupiter", () => ({ buildRoute: vi.fn() }));
+vi.mock("@sofinance/engine/open-rent", () => ({
   estimateOpenPositionRent: vi.fn(async () => ({
     refundableLamports: 5_000_000n,
     nonRefundableLamports: 0n,
@@ -24,12 +24,12 @@ vi.mock("./open-rent", () => ({
     tickArrayAccounts: [],
   })),
 }));
-vi.mock("./rpc", () => ({ rpcConnection: vi.fn() }));
+vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: vi.fn() }));
 
-import { readOpenPoolState, type OpenPoolState } from "./open-state";
-import { buildRoute } from "./swap/jupiter";
-import { estimateOpenPositionRent } from "./open-rent";
-import { getOpenPositionQuoteBundle } from "./open-quote";
+import { readOpenPoolState, type OpenPoolState } from "@sofinance/engine/open-state";
+import { buildRoute } from "@sofinance/engine/swap/jupiter";
+import { estimateOpenPositionRent } from "@sofinance/engine/open-rent";
+import { getOpenPositionQuoteBundle } from "@sofinance/engine/open-quote";
 
 const wallet = Keypair.generate().publicKey.toBase58();
 const mintA = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";

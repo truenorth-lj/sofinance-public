@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { resetRpcCache } from "./cache";
-import { classifyRpcError, isRpcStructValidationError } from "./errors";
-import { setRpcLogger } from "./logger";
-import { METHOD_POLICIES, methodAllowsFallback, policyFor } from "./methods";
-import { createResilientConnection, invokeWithPolicy, lastRpcCallMetric } from "./connection";
-import { setRpcRetryConfig } from "./retry";
+import { resetRpcCache } from "@sofinance/engine/rpc/cache";
+import { classifyRpcError, isRpcStructValidationError } from "@sofinance/engine/rpc/errors";
+import { setRpcLogger } from "@sofinance/engine/rpc/logger";
+import { METHOD_POLICIES, methodAllowsFallback, policyFor } from "@sofinance/engine/rpc/methods";
+import { createResilientConnection, invokeWithPolicy, lastRpcCallMetric } from "@sofinance/engine/rpc/connection";
+import { setRpcRetryConfig } from "@sofinance/engine/rpc/retry";
 
 const EPOCH_ERROR = new Error("At path: transactionCount -- Expected a number, but received: null");
 const PARSED_TX_ERROR = new Error(

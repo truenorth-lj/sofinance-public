@@ -1,15 +1,16 @@
 "use client";
+import "@/lib/engine-host";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { VersionedTransaction } from "@solana/web3.js";
 import { clearsSubmitError, mayStartAnotherAttempt, type AtomicStatus } from "@/lib/attempt-status";
-import { prepareIsStale } from "@/lib/fresh-blockhash";
+import { prepareIsStale } from "@sofinance/engine/fresh-blockhash";
 import { ApiRequestError, resolveCompoundBroadcastFailure } from "@/lib/public-error";
 import { abandonUnsentCompoundAttempt, compoundAttemptKey, loadCompoundAttempt, loadCompoundReceipts, persistCompoundAttempt, persistCompoundReceipt,
   removeConsumedCompoundReceipts, removeRecoveredReceipt, removeUnconfirmedCompoundReceipt, signedCompoundTransaction,
-  type CompoundAttempt, type CompoundPrepared, type CompoundReceipt, type RecoveryPrepared } from "@/lib/compound-attempt";
-import type { CompoundChainStatus, CompoundPositionState, CompoundSummary } from "@/lib/compound-types";
-import type { CompoundRecoverySummary } from "@/lib/compound-recovery-types";
+  type CompoundAttempt, type CompoundPrepared, type CompoundReceipt, type RecoveryPrepared } from "@sofinance/engine/compound-attempt";
+import type { CompoundChainStatus, CompoundPositionState, CompoundSummary } from "@sofinance/engine/compound-types";
+import type { CompoundRecoverySummary } from "@sofinance/engine/compound-recovery-types";
 import { useWalletConnection } from "./wallet-connection";
 import { notifyPositionHistoryChange } from "@/lib/position-history-refresh";
 

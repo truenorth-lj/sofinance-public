@@ -5,7 +5,7 @@ import { TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { Keypair, PublicKey, SystemProgram, type ParsedTransactionWithMeta, type TransactionInstruction } from "@solana/web3.js";
 import { describe, expect, it } from "vitest";
 import { confirmedCompoundReceipt } from "./compound-receipt";
-import type { CompoundAccount, CompoundSummary } from "./compound-types";
+import type { CompoundAccount, CompoundSummary } from "@sofinance/engine/compound-types";
 
 const key = () => Keypair.generate().publicKey;
 const pub = (value: string) => new PublicKey(value);

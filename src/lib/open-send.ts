@@ -1,3 +1,4 @@
+import "@/lib/engine-host";
 import "server-only";
 import { invalidatePositionHistoryCache } from "./position-history-cache";
 
@@ -6,13 +7,13 @@ import bs58 from "bs58";
 import nacl from "tweetnacl";
 import { CompoundSendError } from "./public-error";
 import { verifyOpenPositionPermit } from "./open-permit";
-import { readOpenPoolState } from "./open-state";
-import { simulateAndVerifyOpenTransaction } from "./open-simulation";
-import { rpcConnection } from "./rpc";
-import { beamLandingUrl, lookupBeamAfterSend } from "./solami-beam";
-import type { OpenPositionSummary } from "./open-types";
-import { getSigningSecret } from "./config/server-env";
-import { exceedsTxSizeLimit, isZeroSignature } from "./transaction-limits";
+import { readOpenPoolState } from "@sofinance/engine/open-state";
+import { simulateAndVerifyOpenTransaction } from "@sofinance/engine/open-simulation";
+import { rpcConnection } from "@sofinance/engine/rpc";
+import { beamLandingUrl, lookupBeamAfterSend } from "@sofinance/engine/solami-beam";
+import type { OpenPositionSummary } from "@sofinance/engine/open-types";
+import { getSigningSecret } from "@sofinance/engine/config/server-env";
+import { exceedsTxSizeLimit, isZeroSignature } from "@sofinance/engine/transaction-limits";
 
 
 export async function sendSignedOpenPosition(

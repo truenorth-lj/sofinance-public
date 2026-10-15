@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { TickUtil } from "@raydium-io/raydium-sdk-v2";
-import { uiPriceBPerAFromTick } from "./position-performance-math";
+import { uiPriceBPerAFromTick } from "@sofinance/engine/position-performance-math";
 import {
   alignTickDown, alignTickUp, rangeInputFromFields, resolveOpenRange, ticksFromUiPriceBand,
-} from "./open-range";
+} from "@sofinance/engine/open-range";
 
 describe("open-position range / tick math", () => {
   it("aligns ticks down and up to spacing", () => {

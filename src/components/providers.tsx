@@ -1,10 +1,11 @@
 "use client";
+import "@/lib/engine-host";
 import { ConnectionProvider, WalletProvider, useWallet } from "@solana/wallet-adapter-react";
 import { WalletModalProvider, useWalletModal } from "@solana/wallet-adapter-react-ui";
 import "@solana/wallet-adapter-react-ui/styles.css";
 import dynamic from "next/dynamic";
 import { useMemo } from "react";
-import { PUBLIC_SOLANA_RPC_URL } from "@/lib/rpc/urls";
+import { PUBLIC_SOLANA_RPC_URL } from "@sofinance/engine/rpc/urls";
 import { WalletConnectionContext } from "./wallet-connection";
 
 const MobileWalletProvider = dynamic(() => import("./mobile-wallet-provider").then((module) => module.MobileWalletProvider), { ssr: false });

@@ -1,8 +1,9 @@
+import "@/lib/engine-host";
 import { parseOpenQuoteRequest } from "@/lib/open-api";
 import { apiError } from "@/lib/api-response";
-import { buildAndSimulateOpenPosition } from "@/lib/open-atomic";
+import { buildAndSimulateOpenPosition } from "@sofinance/engine/open-atomic";
 import { issueOpenPositionPermit } from "@/lib/open-permit";
-import { getSigningSecret } from "@/lib/config/server-env";
+import { getSigningSecret } from "@sofinance/engine/config/server-env";
 
 export async function POST(request: Request) {
   try {

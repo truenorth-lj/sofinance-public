@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { ticksFromUiPriceBand } from "../open-range";
+import { ticksFromUiPriceBand } from "@sofinance/engine/open-range";
 import { parsePriceInput, ticksFromPriceBand } from "./price-band";
-import { uiPriceFromTick } from "./tick-math";
+import { uiPriceFromTick } from "@sofinance/engine/range-apr/tick-math";
 
 describe("ticksFromPriceBand parity with the server's ticksFromUiPriceBand", () => {
   it("returns the same ticks for percent bands around prices at several tick spacings and decimals", () => {

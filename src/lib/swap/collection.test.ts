@@ -2,12 +2,12 @@ import { AccountLayout, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { Keypair, PublicKey, SystemProgram } from "@solana/web3.js";
 import { expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
-vi.mock("./jupiter", () => ({ buildRoute: vi.fn() }));
-vi.mock("../open-transaction", () => ({ versionedTransactionSize: vi.fn() }));
-import { versionedTransactionSize } from "../open-transaction";
-import { collectSwapFee, feeAccountSetup, fitFeeCollections } from "./collection";
-import { depositFeePlan } from "./leg";
-import { USDC_MINT } from "../ids";
+vi.mock("@sofinance/engine/swap/jupiter", () => ({ buildRoute: vi.fn() }));
+vi.mock("@sofinance/engine/open-transaction", () => ({ versionedTransactionSize: vi.fn() }));
+import { versionedTransactionSize } from "@sofinance/engine/open-transaction";
+import { collectSwapFee, feeAccountSetup, fitFeeCollections } from "@sofinance/engine/swap/collection";
+import { depositFeePlan } from "@sofinance/engine/swap/leg";
+import { USDC_MINT } from "@sofinance/engine/ids";
 const owner = Keypair.generate().publicKey, recipient = Keypair.generate().publicKey;
 const mint = new PublicKey(USDC_MINT);
 it("USDC deposits pay once, including same-mint allocation and sequential secondary swaps", () => {

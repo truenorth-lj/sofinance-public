@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { defaultRpcLogger, formatRpcLog, rpcLogEnabled, setRpcLogger } from "./logger";
+import { defaultRpcLogger, formatRpcLog, rpcLogEnabled, setRpcLogger } from "@sofinance/engine/rpc/logger";
 
 afterEach(() => {
   delete process.env.SOFINANCE_RPC_LOG;

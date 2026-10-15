@@ -1,12 +1,13 @@
+import "@/lib/engine-host";
 import "server-only";
 
 import { PublicKey, VersionedTransaction } from "@solana/web3.js";
-import { parseWallet } from "./api-input";
+import { parseWallet } from "@sofinance/engine/api-input";
 import { verifyCompoundPermit } from "./compound-permit";
-import type { CompoundSummary } from "./compound-types";
-import type { CompoundRecoverySummary } from "./compound-recovery-types";
-import { getSigningSecret } from "./config/server-env";
-import { isSingleWalletSignedTransaction } from "./transaction-limits";
+import type { CompoundSummary } from "@sofinance/engine/compound-types";
+import type { CompoundRecoverySummary } from "@sofinance/engine/compound-recovery-types";
+import { getSigningSecret } from "@sofinance/engine/config/server-env";
+import { isSingleWalletSignedTransaction } from "@sofinance/engine/transaction-limits";
 
 export async function readCompoundBody(request: Request) {
   const text = await request.text();

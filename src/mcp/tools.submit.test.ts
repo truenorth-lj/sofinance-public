@@ -6,26 +6,26 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
-vi.mock("../lib/rpc", () => ({ rpcConnection: vi.fn() }));
-vi.mock("../lib/selected-state", () => ({ readSelectedPositionState: vi.fn() }));
+vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: vi.fn() }));
+vi.mock("@sofinance/engine/selected-state", () => ({ readSelectedPositionState: vi.fn() }));
 vi.mock("../lib/selected-simulation", () => ({ simulateAndVerifySelectedTransaction: vi.fn() }));
-vi.mock("../lib/open-state", () => ({ readOpenPoolState: vi.fn() }));
-vi.mock("../lib/open-simulation", () => ({ simulateAndVerifyOpenTransaction: vi.fn() }));
-vi.mock("../lib/compound-state", () => ({ readCompoundPositionState: vi.fn() }));
-vi.mock("../lib/compound-simulation", () => ({ simulateAndVerifyCompound: vi.fn() }));
-vi.mock("../lib/solami-beam", () => ({ lookupBeamAfterSend: vi.fn() }));
+vi.mock("@sofinance/engine/open-state", () => ({ readOpenPoolState: vi.fn() }));
+vi.mock("@sofinance/engine/open-simulation", () => ({ simulateAndVerifyOpenTransaction: vi.fn() }));
+vi.mock("@sofinance/engine/compound-state", () => ({ readCompoundPositionState: vi.fn() }));
+vi.mock("@sofinance/engine/compound-simulation", () => ({ simulateAndVerifyCompound: vi.fn() }));
+vi.mock("@sofinance/engine/solami-beam", () => ({ lookupBeamAfterSend: vi.fn() }));
 
 import { issueCompoundPermit } from "../lib/compound-permit";
-import { simulateAndVerifyCompound } from "../lib/compound-simulation";
-import { readCompoundPositionState } from "../lib/compound-state";
+import { simulateAndVerifyCompound } from "@sofinance/engine/compound-simulation";
+import { readCompoundPositionState } from "@sofinance/engine/compound-state";
 import { issueOpenPositionPermit } from "../lib/open-permit";
-import { simulateAndVerifyOpenTransaction } from "../lib/open-simulation";
-import { readOpenPoolState } from "../lib/open-state";
-import { rpcConnection } from "../lib/rpc";
+import { simulateAndVerifyOpenTransaction } from "@sofinance/engine/open-simulation";
+import { readOpenPoolState } from "@sofinance/engine/open-state";
+import { rpcConnection } from "@sofinance/engine/rpc";
 import { issueSelectedPermit, type SelectedPermitInput } from "../lib/selected-permit";
 import { simulateAndVerifySelectedTransaction } from "../lib/selected-simulation";
-import { readSelectedPositionState } from "../lib/selected-state";
-import { lookupBeamAfterSend } from "../lib/solami-beam";
+import { readSelectedPositionState } from "@sofinance/engine/selected-state";
+import { lookupBeamAfterSend } from "@sofinance/engine/solami-beam";
 import {
   BEAM_RESULT, BLOCKHASH, SIGNING_SECRET, buildTransaction, compoundSummaryFixture, fakeConnection, type FakeConnection, messageBase64,
   openSummaryFixture, signatureOf, testKeypair, toBase64,

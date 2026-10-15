@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { OPEN_RANGE_UI_PRESETS } from "../open-range-presets";
+import { OPEN_RANGE_UI_PRESETS } from "@sofinance/engine/open-range-presets";
 import { degradedPayloadFixture, payloadWithAprs } from "./payload.fixture";
 import { buildPresetList, highestRangeSummary, pickHighestAprPreset } from "./preset-list";
 

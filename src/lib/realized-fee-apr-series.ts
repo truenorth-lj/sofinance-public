@@ -1,6 +1,7 @@
+import "@/lib/engine-host";
 import { aggregateCashflowsForPosition, type PositionCashflowEvent } from "./position-performance-events";
 import { utcDate, utcDayStart } from "./apr-series";
-import { feeAprFromRatio, holdingDaysFromSeconds, sideUsd } from "./position-performance-math";
+import { feeAprFromRatio, holdingDaysFromSeconds, sideUsd } from "@sofinance/engine/position-performance-math";
 
 export const REALIZED_FEE_APR_SERIES_LABEL = "Position realized fee APR (cumulative, on-chain events)";
 

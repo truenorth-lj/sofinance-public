@@ -1,3 +1,4 @@
+import "@/lib/engine-host";
 import "server-only";
 
 import BN from "bn.js";
@@ -15,9 +16,9 @@ import {
 import { getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { Connection, PublicKey } from "@solana/web3.js";
 import { createHash } from "node:crypto";
-import { accruedFee } from "./compound-math";
-import { positionSide } from "./quote-math";
-import { defaultRpcConnection, rpcConnection, rpcProvider, type RpcProvider } from "./rpc";
+import { accruedFee } from "@sofinance/engine/compound-math";
+import { positionSide } from "@sofinance/engine/quote-math";
+import { defaultRpcConnection, rpcConnection, rpcProvider, type RpcProvider } from "@sofinance/engine/rpc";
 import {
   type CustomRpcCall,
   type HistoryConnection,
@@ -35,21 +36,21 @@ import {
   TOKEN_NATIVE_ASSUMPTIONS,
   type PositionPerformanceMetrics,
   type TokenNativeMetrics,
-} from "./position-performance-math";
+} from "@sofinance/engine/position-performance-math";
 import { matchWrapPairShape } from "./rwa-pairing";
-import { JUPITER_PRICE_V3 } from "./jupiter/urls";
-import { fetchJupiterPricesUsd } from "./token-prices";
-import { getTokenMetadata } from "./token-metadata";
+import { JUPITER_PRICE_V3 } from "@sofinance/engine/jupiter/urls";
+import { fetchJupiterPricesUsd } from "@sofinance/engine/token-prices";
+import { getTokenMetadata } from "@sofinance/engine/token-metadata";
 import {
   buildRealizedFeeAprSeries,
   type RealizedFeeAprSeries,
 } from "./realized-fee-apr-series";
-import { getJupiterApiKey } from "./config/server-env";
+import { getJupiterApiKey } from "@sofinance/engine/config/server-env";
 import { getRwaConfig } from "./config/rwa-env";
 import { getPositionHistoryStore } from "./position-history-store";
 import type { PositionHistoryStore } from "./position-history-store-types";
 import { loadPerformanceHistory } from "./position-performance-history-load";
-import { resetRpcCache } from "./rpc/cache";
+import { resetRpcCache } from "@sofinance/engine/rpc/cache";
 import { createHistoryRpcConnections } from "./position-history-rpc";
 
 const POSITION_DISCRIMINATOR = createHash("sha256").update("account:PersonalPositionState").digest().subarray(0, 8);

@@ -1,10 +1,11 @@
+import "@/lib/engine-host";
 import "server-only";
 
 import BN from "bn.js";
 import { ClmmInstrument, getPdaExBitmapAccount, getPdaProtocolPositionAddress, getPdaTickArrayAddress, PoolUtil, TickArrayUtil } from "@raydium-io/raydium-sdk-v2";
 import { PublicKey } from "@solana/web3.js";
 import type { SelectedQuote } from "./selected-quote";
-import type { SelectedPositionState } from "./selected-state";
+import type { SelectedPositionState } from "@sofinance/engine/selected-state";
 
 type AddState = Pick<SelectedPositionState, "programId" | "poolId" | "nftAta" | "positionAccount" |
   "ataA" | "ataB" | "mintA" | "mintB" | "tickLower" | "tickUpper"> & {

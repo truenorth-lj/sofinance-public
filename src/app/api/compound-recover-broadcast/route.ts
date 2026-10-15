@@ -1,9 +1,10 @@
+import "@/lib/engine-host";
 import bs58 from "bs58";
 import { parseCompoundBroadcast } from "@/lib/compound-api";
-import { simulateAndVerifyRecovery } from "@/lib/compound-recovery";
-import type { CompoundRecoverySummary } from "@/lib/compound-recovery-types";
+import { simulateAndVerifyRecovery } from "@sofinance/engine/compound-recovery";
+import type { CompoundRecoverySummary } from "@sofinance/engine/compound-recovery-types";
 import { isPreflightOrUnsentFailure } from "@/lib/public-error";
-import { rpcConnection } from "@/lib/rpc";
+import { rpcConnection } from "@sofinance/engine/rpc";
 import { apiError } from "@/lib/api-response";
 
 export async function POST(request: Request) {

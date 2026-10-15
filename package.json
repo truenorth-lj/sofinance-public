@@ -25,6 +25,7 @@
     "@reown/appkit": "1.8.24",
     "@reown/appkit-adapter-solana": "1.8.24",
     "@reown/appkit-wallet-button": "1.8.24",
+    "@sofinance/engine": "file:vendor/sofinance-engine-0.1.0.tgz",
     "@solana/spl-token": "0.4.15",
     "@solana/wallet-adapter-base": "^0.9.28",
     "@solana/wallet-adapter-react": "0.15.40",

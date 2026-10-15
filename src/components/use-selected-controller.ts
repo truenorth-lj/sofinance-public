@@ -1,16 +1,17 @@
 "use client";
+import "@/lib/engine-host";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
-import { formatAmount, parseTokenAmount, toleranceFromPercent } from "@/lib/amount";
+import { formatAmount, parseTokenAmount, toleranceFromPercent } from "@sofinance/engine/amount";
 import { type AtomicStatus } from "@/lib/attempt-status";
 import { loadSelectedAttempt, persistSelectedAttempt, readSelectedHistory, type SelectedAttempt } from "@/lib/selected-attempt";
 import { readObsoleteAttempts } from "@/lib/obsolete-attempt";
 import type { SelectedQuote } from "@/lib/selected-quote";
-import type { PositionSelection, SelectedPositionState } from "@/lib/selected-state";
-import type { WalletDiscovery } from "@/lib/wallet-discovery";
-import { DEFAULT_RESALE_FLOOR_BPS, USDC_MINT } from "@/lib/ids";
+import type { PositionSelection, SelectedPositionState } from "@sofinance/engine/selected-state";
+import type { WalletDiscovery } from "@sofinance/engine/wallet-discovery";
+import { DEFAULT_RESALE_FLOOR_BPS, USDC_MINT } from "@sofinance/engine/ids";
 import { useWalletConnection } from "./wallet-connection";
 import { notifyPositionHistoryChange } from "@/lib/position-history-refresh";
 

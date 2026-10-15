@@ -1,8 +1,9 @@
+import "@/lib/engine-host";
 import "server-only";
 
 import { CLMM_PROGRAM_ID, PoolInfoLayout, TickArrayLayout, getPdaTickArrayAddress } from "@raydium-io/raydium-sdk-v2";
 import { PublicKey, type Connection } from "@solana/web3.js";
-import { rpcConnection } from "../rpc";
+import { rpcConnection } from "@sofinance/engine/rpc";
 import { buildLiquidityBins, tickArrayStartsForWindow, windowBounds, type LiquidityBin } from "./liquidity-bins";
 
 /** Analysed price window: at least +-300 raw ticks (~3%) and at least +-6 bins on coarse pools. */

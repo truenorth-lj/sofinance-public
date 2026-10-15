@@ -8,7 +8,7 @@ import {
   JUPITER_UNAVAILABLE_CODE,
   JUPITER_UNAVAILABLE_MESSAGE,
   looksLikeJupiterUpstream,
-} from "./errors";
+} from "@sofinance/engine/jupiter/errors";
 
 describe("jupiter error mapping", () => {
   it("treats Jupiter 429/5xx as upstream, not a generic 400", () => {

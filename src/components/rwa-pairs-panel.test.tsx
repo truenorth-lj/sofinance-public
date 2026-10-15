@@ -89,7 +89,7 @@ describe("RwaPairsPanel pair cards", () => {
     mocks.aprFor.mockImplementation(() => ({ status: "ready", data }));
     await mount();
     const { buildPresetList } = await import("../lib/range-apr/preset-list");
-    const { OPEN_RANGE_UI_PRESETS } = await import("../lib/open-range-presets");
+    const { OPEN_RANGE_UI_PRESETS } = await import("@sofinance/engine/open-range-presets");
     const { formatEstimate } = await import("../lib/range-apr/format");
     const best = buildPresetList(OPEN_RANGE_UI_PRESETS, data).best!;
     expect(field(0, "highest-range").textContent).toBe(OPEN_RANGE_UI_PRESETS.find((preset) => preset.id === best.id)!.label);

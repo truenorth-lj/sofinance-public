@@ -1,7 +1,7 @@
 import { AccountLayout, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { Keypair, PublicKey, type Connection } from "@solana/web3.js";
 import { afterEach, expect, it, vi } from "vitest";
-import { assertPlatformFeeQuote, netSwapInput, resolveSwapFeeConfig, swapFeeTransferInstructions } from "./fee";
+import { assertPlatformFeeQuote, netSwapInput, resolveSwapFeeConfig, swapFeeTransferInstructions } from "@sofinance/engine/swap/fee";
 const wallet = Keypair.generate().publicKey, mint = Keypair.generate().publicKey;
 afterEach(() => vi.unstubAllEnvs());
 it.each([TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID])("never waives fees for missing operator ATA with program %s and charges existing ATA", async program => {

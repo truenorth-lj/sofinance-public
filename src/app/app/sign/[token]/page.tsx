@@ -1,4 +1,5 @@
 "use client";
+import "@/lib/engine-host";
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
@@ -11,7 +12,7 @@ import { notSentRetryMessage } from "@/lib/public-error";
 import { preserveExtraSignatures } from "@/lib/open-signatures";
 import type { PendingSignPayload } from "@/lib/pending-sign-token";
 import { openAttemptFromSummary, type OpenAttempt } from "@/lib/open-attempt";
-import type { OpenPositionSummary } from "@/lib/open-types";
+import type { OpenPositionSummary } from "@sofinance/engine/open-types";
 import { useOpenAttempt } from "@/components/use-open-attempt";
 
 type Status = "loading" | "expired" | "wallet-mismatch" | "ready" | "signing" | "submitting" | "success" | "error";

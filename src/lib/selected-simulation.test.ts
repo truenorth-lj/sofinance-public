@@ -6,9 +6,9 @@ import { Connection, Keypair, PublicKey, SystemProgram, TransactionInstruction, 
   type AccountInfo } from "@solana/web3.js";
 
 vi.mock("server-only", () => ({}));
-import { JUPITER_PROGRAM_ID } from "./swap/instructions";
+import { JUPITER_PROGRAM_ID } from "@sofinance/engine/swap/instructions";
 import { simulateAndVerifySelectedTransaction } from "./selected-simulation";
-import type { SelectedPositionState } from "./selected-state";
+import type { SelectedPositionState } from "@sofinance/engine/selected-state";
 
 function info(data: Buffer, owner = TOKEN_PROGRAM_ID): AccountInfo<Buffer> {
   return { data, owner, executable: false, lamports: 2_039_280, rentEpoch: 0 };

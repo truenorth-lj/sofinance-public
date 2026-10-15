@@ -1,4 +1,5 @@
-import type { OpenPositionSummary } from "./open-types";
+import "@/lib/engine-host";
+import type { OpenPositionSummary } from "@sofinance/engine/open-types";
 
 export type OpenBeamStatus = { landedLabel: string | null; tipNote: string | null };
 

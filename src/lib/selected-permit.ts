@@ -1,5 +1,6 @@
+import "@/lib/engine-host";
 import { createHmac, timingSafeEqual } from "node:crypto";
-import type { PositionSelection } from "./selected-state";
+import type { PositionSelection } from "@sofinance/engine/selected-state";
 
 export type SelectedPermitInput = {
   message: string; wallet: string; selection: PositionSelection; requested: string; floorBps: number;

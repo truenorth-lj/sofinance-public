@@ -2,10 +2,10 @@ import { AccountLayout, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { Keypair, PublicKey } from "@solana/web3.js";
 import { afterEach, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
-vi.mock("./client", () => ({ jupiterQuotePreferCompact: vi.fn(), jupiterSwapInstructions: vi.fn() }));
-import { jupiterQuotePreferCompact, jupiterSwapInstructions } from "./client";
-import { buildExitSwapLeg } from "./exit";
-import { USDC_MINT } from "../ids";
+vi.mock("@sofinance/engine/swap/client", () => ({ jupiterQuotePreferCompact: vi.fn(), jupiterSwapInstructions: vi.fn() }));
+import { jupiterQuotePreferCompact, jupiterSwapInstructions } from "@sofinance/engine/swap/client";
+import { buildExitSwapLeg } from "@sofinance/engine/swap/exit";
+import { USDC_MINT } from "@sofinance/engine/ids";
 afterEach(() => { vi.unstubAllEnvs(); vi.clearAllMocks(); });
 it.each([true, false])("exit conversion charges output USDC and creates only missing operator ATA=%s", async existing => {
   const owner = Keypair.generate().publicKey, mint = Keypair.generate().publicKey, wallet = Keypair.generate().publicKey;

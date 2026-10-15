@@ -7,7 +7,7 @@ vi.mock("server-only", () => ({}));
 const ledger = vi.hoisted(() => vi.fn());
 const transports = vi.hoisted(() => ({ valuation: vi.fn(), history: vi.fn() }));
 vi.mock("./position-performance-history-load", () => ({ loadPerformanceHistory: ledger }));
-vi.mock("./rpc", async original => ({ ...(await original<typeof import("./rpc")>()), rpcConnection: transports.valuation }));
+vi.mock("@sofinance/engine/rpc", async original => ({ ...(await original<typeof import("@sofinance/engine/rpc")>()), rpcConnection: transports.valuation }));
 vi.mock("./position-history-rpc", () => ({ createHistoryRpcConnections: transports.history }));
 import { getPositionPerformance } from "./position-performance";
 import type { PositionHistoryStore } from "./position-history-store-types";

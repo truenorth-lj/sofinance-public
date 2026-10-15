@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-import { quoteCacheKey, resetJupiterCache } from "./cache";
+import { quoteCacheKey, resetJupiterCache } from "@sofinance/engine/jupiter/cache";
 import {
   EXIT_JUPITER_CONCURRENCY,
   JUPITER_QUOTE_TTL_MS,
@@ -12,9 +12,9 @@ import {
   jupiterSwapInstructions,
   mapPool,
   setJupiterRetryConfig,
-} from "./client";
-import { JupiterHttpError, retryAfterFromJupiterHeaders } from "./errors";
-import { resetJupiterRuntime } from "./index";
+} from "@sofinance/engine/jupiter/client";
+import { JupiterHttpError, retryAfterFromJupiterHeaders } from "@sofinance/engine/jupiter/errors";
+import { resetJupiterRuntime } from "@sofinance/engine/jupiter";
 
 beforeEach(() => {
   // Hermetic: the client falls back to process.env.JUPITER_API_KEY when no explicit key is passed.

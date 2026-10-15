@@ -20,7 +20,7 @@ import {
   measureTxSize,
   parseBeamLanding,
   parseTipAddresses,
-} from "./solami-beam";
+} from "@sofinance/engine/solami-beam";
 
 const LIVE_TIPS = [
   "15qWd4huAkoxvhDsHMfpUn27TW1YBYMMJJ2jkAkbeam",

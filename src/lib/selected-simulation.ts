@@ -1,12 +1,13 @@
-import { transactionIntermediateAccounts, verifyIntermediateAccounts } from "./swap/instructions";
+import "@/lib/engine-host";
+import { transactionIntermediateAccounts, verifyIntermediateAccounts } from "@sofinance/engine/swap/instructions";
 import "server-only";
 
 import { PersonalPositionLayout } from "@raydium-io/raydium-sdk-v2";
 import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID, unpackAccount } from "@solana/spl-token";
 import { Connection, PublicKey, VersionedTransaction, type AccountInfo } from "@solana/web3.js";
-import { MIN_SOL_LAMPORTS, NATIVE_SOL_MINT } from "./ids";
-import { simulatedInputSpendMatches } from "./amount";
-import type { SelectedPositionState } from "./selected-state";
+import { MIN_SOL_LAMPORTS, NATIVE_SOL_MINT } from "@sofinance/engine/ids";
+import { simulatedInputSpendMatches } from "@sofinance/engine/amount";
+import type { SelectedPositionState } from "@sofinance/engine/selected-state";
 
 type VerifyInput = {
   connection: Connection; transaction: VersionedTransaction; wallet: PublicKey;

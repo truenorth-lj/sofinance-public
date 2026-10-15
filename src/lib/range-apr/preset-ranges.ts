@@ -1,8 +1,9 @@
+import "@/lib/engine-host";
 import "server-only";
 
 import BN from "bn.js";
 import { TickUtil } from "@raydium-io/raydium-sdk-v2";
-import { resolveOpenRange } from "../open-range";
+import { resolveOpenRange } from "@sofinance/engine/open-range";
 import type { RangeAprPresetId } from "./types";
 
 /** Display order: Micro first, then the percent presets, narrow to wide (the canonical candidate order). */

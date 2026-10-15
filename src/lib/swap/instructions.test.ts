@@ -2,7 +2,7 @@ import { TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID } from "@solana/spl-token";
 import { AddressLookupTableAccount, Connection, Keypair, PublicKey, SystemProgram, TransactionInstruction, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
 import { expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
-import { JUPITER_PROGRAM_ID, rejectUnselectedWalletTokenWrites, transactionIntermediateAccounts, verifyIntermediateAccounts } from "./instructions";
+import { JUPITER_PROGRAM_ID, rejectUnselectedWalletTokenWrites, transactionIntermediateAccounts, verifyIntermediateAccounts } from "@sofinance/engine/swap/instructions";
 const key = () => Keypair.generate().publicKey;
 function fixture(program = TOKEN_PROGRAM_ID) {
   const wallet = key(), address = key(), mint = key();

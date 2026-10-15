@@ -1,4 +1,5 @@
-import { formatAmount } from "./amount";
+import "@/lib/engine-host";
+import { formatAmount } from "@sofinance/engine/amount";
 
 export function formatSolCost(lamports: string | number | bigint, rate: number | null): string {
   const sol = formatAmount(String(lamports), 9, 9);

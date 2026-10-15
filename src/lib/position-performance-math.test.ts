@@ -8,7 +8,7 @@ import {
   sideUsd,
   toTokenEquivalentUi,
   uiPriceBPerAFromTick,
-} from "./position-performance-math";
+} from "@sofinance/engine/position-performance-math";
 
 describe("position-performance-math", () => {
   it("converts holding seconds to days", () => {

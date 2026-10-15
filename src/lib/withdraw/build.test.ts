@@ -1,13 +1,13 @@
 import { beforeEach, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 const mocks = vi.hoisted(() => ({ state: vi.fn(), rpc: vi.fn(), leg: vi.fn(), fee: vi.fn(), padding: 0, impact: "0.01", swapStage: false, receivedA: 200n, receivedB: 300n }));
-vi.mock("../selected-state", () => ({ readSelectedPositionState: mocks.state }));
-vi.mock("../rpc", () => ({ rpcConnection: mocks.rpc }));
-vi.mock("../swap/leg", () => ({ feeSwapLeg: mocks.leg }));
-vi.mock("../swap/collection", () => ({ collectSwapFee: mocks.fee, fitFeeCollections: async (_connection: unknown, _collections: unknown, instructions: unknown) => ({ instructions }) }));
-vi.mock("../solami-beam", async () => ({ ...await vi.importActual("../solami-beam"), fetchBeamTipAddress: async () => null }));
-vi.mock("../open-transaction", async () => ({ ...await vi.importActual("../open-transaction"), openLookupTableReader: () => async () => [] }));
-vi.mock("../lp-exit-instructions", async () => {
+vi.mock("@sofinance/engine/selected-state", () => ({ readSelectedPositionState: mocks.state }));
+vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: mocks.rpc }));
+vi.mock("@sofinance/engine/swap/leg", () => ({ feeSwapLeg: mocks.leg }));
+vi.mock("@sofinance/engine/swap/collection", () => ({ collectSwapFee: mocks.fee, fitFeeCollections: async (_connection: unknown, _collections: unknown, instructions: unknown) => ({ instructions }) }));
+vi.mock("@sofinance/engine/solami-beam", async () => ({ ...await vi.importActual("@sofinance/engine/solami-beam"), fetchBeamTipAddress: async () => null }));
+vi.mock("@sofinance/engine/open-transaction", async () => ({ ...await vi.importActual("@sofinance/engine/open-transaction"), openLookupTableReader: () => async () => [] }));
+vi.mock("@sofinance/engine/lp-exit-instructions", async () => {
     const { TransactionInstruction } = await import("@solana/web3.js");
     return { buildPositionExitInstructions: (input: {
             recipients: PublicKey[];
@@ -17,9 +17,9 @@ vi.mock("../lp-exit-instructions", async () => {
 import { PublicKey, SystemProgram, VersionedTransaction, type Connection } from "@solana/web3.js";
 import { TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { PersonalPositionLayout, PoolInfoLayout } from "@raydium-io/raydium-sdk-v2";
-import { buildWithdraw } from "./build";
+import { buildWithdraw } from "@sofinance/engine/withdraw/build";
 import { BLOCKHASH, SIGNING_SECRET, testKeypair } from "../test-support/send-fixtures";
-import { USDC_MINT } from "../ids";
+import { USDC_MINT } from "@sofinance/engine/ids";
 const key = (n: number) => testKeypair(n).publicKey;
 const wallet = key(1), mintA = key(2), mintB = key(3), positionMint = key(4), positionKey = key(5), poolKey = key(6), nft = key(7);
 const ata = (mint: PublicKey) => getAssociatedTokenAddressSync(mint, wallet);

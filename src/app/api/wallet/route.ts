@@ -1,6 +1,7 @@
-import { parseWallet } from "@/lib/api-input";
+import "@/lib/engine-host";
+import { parseWallet } from "@sofinance/engine/api-input";
 import { apiError } from "@/lib/api-response";
-import { discoverWallet } from "@/lib/wallet-discovery";
+import { discoverWallet } from "@sofinance/engine/wallet-discovery";
 
 export async function GET(request: Request) {
   let wallet: string;

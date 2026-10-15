@@ -1,11 +1,12 @@
 // Offline envelopes: captured instruction shapes, dummy recipient/route keys and ALTs.
+import "@/lib/engine-host";
 import { AddressLookupTableAccount, PublicKey, SystemProgram, TransactionInstruction, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
 import { createAssociatedTokenAccountIdempotentInstruction, createInitializeAccountInstruction, createTransferCheckedInstruction, getAssociatedTokenAddressSync } from "@solana/spl-token";
 import openFixture from "../fixtures/open-size-compact-route.json";
 import compoundFixture from "../fixtures/compound-size-route.json";
-import { versionedTransactionSize } from "../open-transaction";
-import { USDC_MINT } from "../ids";
-import { exceedsTxSizeLimit } from "../transaction-limits";
+import { versionedTransactionSize } from "@sofinance/engine/open-transaction";
+import { USDC_MINT } from "@sofinance/engine/ids";
+import { exceedsTxSizeLimit } from "@sofinance/engine/transaction-limits";
 const key = (n: number) => new PublicKey(new Uint8Array(32).fill(n));
 function decode(f: typeof openFixture) {
   return { payer: new PublicKey(f.payer), blockhash: f.blockhash,

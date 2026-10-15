@@ -3,8 +3,8 @@ import { decodeInitializeAccountInstruction, TOKEN_2022_PROGRAM_ID } from "@sola
 import { describe, expect, it, vi } from "vitest";
 import fixture from "./fixtures/compound-size-route.json";
 vi.mock("server-only", () => ({}));
-import { assertCompoundTransactionSize, compileCompoundTransaction, createCompoundAccountInstructions } from "./compound-atomic";
-import { versionedTransactionSize } from "./open-transaction";
+import { assertCompoundTransactionSize, compileCompoundTransaction, createCompoundAccountInstructions } from "@sofinance/engine/compound-atomic";
+import { versionedTransactionSize } from "@sofinance/engine/open-transaction";
 
 // Captured SPCX instruction/ALT shape with synthetic wallet, pool and mints.
 const original = fixture.instructions.map(ix => new TransactionInstruction({

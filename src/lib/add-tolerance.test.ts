@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { parseAddToleranceBps, toleranceFromPercent } from "./amount";
-import { padAmountMax, toleranceLiquidity } from "./quote-math";
+import { parseAddToleranceBps, toleranceFromPercent } from "@sofinance/engine/amount";
+import { padAmountMax, toleranceLiquidity } from "@sofinance/engine/quote-math";
 
 describe("add-liquidity price tolerance", () => {
   it("parses the tolerance with a 1% default and a 5% cap", () => {

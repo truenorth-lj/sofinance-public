@@ -1,7 +1,8 @@
+import "@/lib/engine-host";
 import { parseCompoundBroadcast } from "@/lib/compound-api";
 import { CompoundSendError, sendSignedCompoundTransaction } from "@/lib/compound-send";
 import { apiError } from "@/lib/api-response";
-import type { CompoundSummary } from "@/lib/compound-types";
+import type { CompoundSummary } from "@sofinance/engine/compound-types";
 
 export async function POST(request: Request) {
   try {

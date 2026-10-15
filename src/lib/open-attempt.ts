@@ -1,6 +1,7 @@
+import "@/lib/engine-host";
 import bs58 from "bs58";
 import { PublicKey } from "@solana/web3.js";
-import type { OpenPositionSummary } from "./open-types";
+import type { OpenPositionSummary } from "@sofinance/engine/open-types";
 
 export type OpenAttempt = {
   version: 1; wallet: string; signature: string; nftMint: string; positionAccount: string;

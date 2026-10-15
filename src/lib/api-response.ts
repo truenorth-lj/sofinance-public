@@ -1,7 +1,8 @@
+import "@/lib/engine-host";
 import "server-only";
 
 import { CompoundSendError, sanitizePublicError } from "./public-error";
-import { JupiterHttpError, JupiterUnavailableError, JUPITER_UNAVAILABLE_MESSAGE } from "./jupiter/errors";
+import { JupiterHttpError, JupiterUnavailableError, JUPITER_UNAVAILABLE_MESSAGE } from "@sofinance/engine/jupiter/errors";
 
 /** Selected upstream failures are availability errors, not invalid user input. */
 export function selectedApiError(error: unknown, fallback: string) {

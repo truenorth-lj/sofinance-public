@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Connection } from "@solana/web3.js";
-import { readRecentBlockTime } from "./block-time";
+import { readRecentBlockTime } from "@sofinance/engine/block-time";
 
 function connection(times: Record<number, number | null | Error>, confirmedSlot = 100) {
   return {

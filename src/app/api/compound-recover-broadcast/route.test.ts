@@ -3,12 +3,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
-vi.mock("@/lib/rpc", () => ({ rpcConnection: vi.fn() }));
-vi.mock("@/lib/compound-recovery", () => ({ simulateAndVerifyRecovery: vi.fn() }));
+vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: vi.fn() }));
+vi.mock("@sofinance/engine/compound-recovery", () => ({ simulateAndVerifyRecovery: vi.fn() }));
 
 import { issueCompoundPermit } from "@/lib/compound-permit";
-import { simulateAndVerifyRecovery } from "@/lib/compound-recovery";
-import { rpcConnection } from "@/lib/rpc";
+import { simulateAndVerifyRecovery } from "@sofinance/engine/compound-recovery";
+import { rpcConnection } from "@sofinance/engine/rpc";
 import {
   BLOCKHASH, SIGNING_SECRET, buildTransaction, compoundSummaryFixture, fakeConnection, type FakeConnection, jsonRequest, messageBase64, signatureOf,
   testKeypair, toBase64,

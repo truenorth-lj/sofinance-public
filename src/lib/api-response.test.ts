@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 import { selectedApiError } from "./api-response";
-import { JupiterHttpError } from "./jupiter/errors";
+import { JupiterHttpError } from "@sofinance/engine/jupiter/errors";
 
 beforeEach(() => { vi.spyOn(console, "error").mockImplementation(() => {}); });
 afterEach(() => vi.restoreAllMocks());

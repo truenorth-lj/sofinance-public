@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
-import { buildRoute, JupiterNoRouteError } from "./swap/jupiter";
-import { JupiterHttpError, resetJupiterRuntime, setJupiterLogger, setJupiterRetryConfig } from "./jupiter";
+import { buildRoute, JupiterNoRouteError } from "@sofinance/engine/swap/jupiter";
+import { JupiterHttpError, resetJupiterRuntime, setJupiterLogger, setJupiterRetryConfig } from "@sofinance/engine/jupiter";
 
 beforeEach(() => {
   vi.stubEnv("JUPITER_API_KEY", "test-only");

@@ -1,3 +1,4 @@
+import "@/lib/engine-host";
 import "server-only";
 
 import { AsyncCache } from "./async-cache";
@@ -11,7 +12,7 @@ import { readOnchainPoolLiquidity, type OnchainPoolLiquidity } from "./range-apr
 import { resolvePresetRanges } from "./range-apr/preset-ranges";
 import { estimateRangeApr, RANGE_APR_REFERENCE_CAPITAL_USD, type RangeAprInputs } from "./range-apr/range-apr";
 import { parseRaydiumPoolEconomics, type RaydiumPoolEconomics } from "./range-apr/raydium-economics";
-import { exactTickFromSqrtPriceX64, sqrtPriceX64ToNumber } from "./range-apr/tick-math";
+import { exactTickFromSqrtPriceX64, sqrtPriceX64ToNumber } from "@sofinance/engine/range-apr/tick-math";
 import { ThrottleGate } from "./range-apr/throttle-gate";
 import { fetchJsonOnce } from "./range-apr/upstream-http";
 import { isRetryableFailure, retryJson, type JsonResult, type RetryOptions } from "./range-apr/upstream-retry";

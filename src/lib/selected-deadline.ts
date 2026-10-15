@@ -1,4 +1,5 @@
-import type { JupiterRetryBudget } from "./jupiter/client";
+import "@/lib/engine-host";
+import type { JupiterRetryBudget } from "@sofinance/engine/jupiter/client";
 
 // The read-only quote/prepare budget never applies to broadcasting a signed transaction.
 export const SELECTED_DEADLINE_MS = 8_000;

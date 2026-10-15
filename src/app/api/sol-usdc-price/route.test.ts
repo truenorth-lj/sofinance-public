@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { NATIVE_SOL_MINT, USDC_MINT } from "@/lib/ids";
+import { NATIVE_SOL_MINT, USDC_MINT } from "@sofinance/engine/ids";
 
-vi.mock("@/lib/token-prices", () => ({ fetchJupiterPricesUsd: vi.fn() }));
-import { fetchJupiterPricesUsd } from "@/lib/token-prices";
+vi.mock("@sofinance/engine/token-prices", () => ({ fetchJupiterPricesUsd: vi.fn() }));
+import { fetchJupiterPricesUsd } from "@sofinance/engine/token-prices";
 import { GET } from "./route";
 
 afterEach(() => vi.resetAllMocks());
