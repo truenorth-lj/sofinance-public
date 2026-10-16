@@ -16,6 +16,7 @@ describe("InkNav app routes", () => {
     expect(src).not.toContain("APP_ROUTES.positionPerformance");
     expect(src).toContain("APP_ROUTES.rwaPairs");
     expect(src).toContain("APP_ROUTES.ai");
+    expect(src).toContain("DOCS_ROUTES.home");
     expect(src).not.toContain('href: "/"');
     expect(src).not.toContain('href="/"');
   });

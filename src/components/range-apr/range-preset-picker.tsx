@@ -3,7 +3,9 @@ import "@/lib/engine-host";
 
 import { LoaderCircle } from "lucide-react";
 import type { OpenRangePreset, OpenRangeUiPreset } from "@sofinance/engine/open-range-presets";
+import Link from "next/link";
 import { BEST_HELP, BEST_LABEL, APR_ESTIMATE_CAVEAT, APR_ESTIMATE_LABEL } from "@/lib/range-apr/copy";
+import { DOCS_ROUTES } from "@/lib/public-urls";
 import { formatEstimate, unavailableReasonText } from "@/lib/range-apr/format";
 import { MICRO_PRESET_ID, microBandLabel } from "@sofinance/engine/range-apr/micro-range";
 import { buildPresetList, type BestButton } from "@/lib/range-apr/preset-list";
@@ -45,9 +47,12 @@ function Headline({ apr, selection, best, others }: {
   }
   return (
     <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.04] p-3 text-xs" aria-live="polite">
-      <p className="flex items-center gap-1.5 text-smoke">
+      <p className="flex flex-wrap items-center gap-1.5 text-smoke">
         {APR_ESTIMATE_LABEL}
         <InfoTip label={`About ${APR_ESTIMATE_LABEL}`}>{APR_ESTIMATE_CAVEAT}</InfoTip>
+        <Link href={DOCS_ROUTES.yieldAndApr} className="text-[11px] text-lemon underline underline-offset-2 hover:text-[#fff27f]">
+          Yield &amp; APR
+        </Link>
       </p>
       <p
         className={`mt-2 flex h-7 items-center gap-2 tabular-nums ${apr.status === "loading"

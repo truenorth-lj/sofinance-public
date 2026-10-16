@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { BrandMark } from "@/components/brand-mark";
 import { Wallet } from "lucide-react";
 import { cn } from "@/lib/cn";
-import { APP_ROUTES } from "@/lib/public-urls";
+import { APP_ROUTES, DOCS_ROUTES } from "@/lib/public-urls";
 import { EXTERNAL_LINK_PROPS, SOCIAL_LINKS } from "@/lib/social-links";
 import { XIcon } from "@/components/x-icon";
 
@@ -23,6 +23,7 @@ const NAV_LINKS = [
   { href: APP_ROUTES.plan, label: "Plan" },
   { href: APP_ROUTES.rwaPairs, label: "RWA pairs" },
   { href: APP_ROUTES.ai, label: "Use AI" },
+  { href: DOCS_ROUTES.home, label: "Docs" },
 ] as const;
 
 const pill =
@@ -46,7 +47,10 @@ export function InkNav({ wallet, connected, onConnect, onDisconnect }: InkNavPro
 
       <nav aria-label="App" className="order-3 flex w-full flex-wrap gap-2 lg:order-2 lg:w-auto lg:flex-1">
         {NAV_LINKS.map((link) => {
-          const isActive = pathname === link.href;
+          const isActive =
+            link.href === DOCS_ROUTES.home
+              ? pathname === DOCS_ROUTES.home || pathname.startsWith(`${DOCS_ROUTES.home}/`)
+              : pathname === link.href;
           return (
             <Link
               key={link.href}

@@ -1,6 +1,8 @@
 "use client";
 import "@/lib/engine-host";
 
+import Link from "next/link";
+
 import { useId, useState } from "react";
 import { formatSolCost } from "@/lib/sol-cost";
 import { useSolUsdcPrice } from "./use-sol-usdc-price";
@@ -10,6 +12,7 @@ import { ChevronDown, Info, LoaderCircle, RefreshCw, X } from "lucide-react";
 import { useOpenPositionController, type OpenPositionPair } from "./use-open-position-controller";
 import { RangePresetPicker } from "./range-apr/range-preset-picker";
 import { usePoolRangeApr } from "./range-apr/use-pool-range-apr";
+import { DOCS_ROUTES } from "@/lib/public-urls";
 
 const FIELD_HELP = {
   "Token A": "The conservative amount of token A available to open your LP position. The position may use less; any remaining tokens stay in your wallet.",
@@ -117,13 +120,16 @@ export function OpenPositionModal({
           </button>
         </div>
 
-        <div className="mb-4 flex flex-wrap gap-1">
+        <div className="mb-4 flex flex-wrap items-center gap-1">
           {(pair.token2022A || pair.token2022B) && (
             <span className="rounded-full border border-white/20 px-2 py-0.5 text-[10px] text-smoke">Token-2022</span>
           )}
           {pair.freezeRisk && (
             <span className="rounded-full border border-white/20 px-2 py-0.5 text-[10px] text-smoke">Freeze risk</span>
           )}
+          <Link href={DOCS_ROUTES.risks} className="ml-1 text-[11px] text-lemon underline underline-offset-2 hover:text-[#fff27f]">
+            Read risks before you confirm
+          </Link>
         </div>
 
         <label className="block text-xs text-smoke" htmlFor="open-input-asset">Input asset</label>

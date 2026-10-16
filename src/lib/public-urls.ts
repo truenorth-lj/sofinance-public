@@ -52,3 +52,16 @@ export function buildPlanPath(input: { poolId: string; pair?: string }): string 
   if (input.pair) params.set("pair", input.pair);
   return `${APP_ROUTES.plan}?${params}`;
 }
+
+/** User-facing documentation (public site, English). */
+export const DOCS_PATH = "/docs";
+
+export const DOCS_ROUTES = {
+  home: DOCS_PATH,
+  gettingStarted: DOCS_PATH,
+  yieldAndApr: `${DOCS_PATH}/yield-and-apr`,
+  risks: `${DOCS_PATH}/risks`,
+  fees: `${DOCS_PATH}/fees`,
+  withdraw: `${DOCS_PATH}/withdraw`,
+  security: `${DOCS_PATH}/security`,
+} as const;
