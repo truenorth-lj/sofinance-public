@@ -12,16 +12,14 @@ export default function DocsSecurityPage() {
     <DocsArticle page={DOCS_PAGES[5]!}>
       <h2>Non-custodial by design</h2>
       <p>
-        SoFinance does not hold your private keys and does not take custody of your tokens. Agents
-        and the server can prepare an unsigned transaction and a sign link; only your wallet can
-        approve spending.
+        SoFinance does not hold your private keys and does not take custody of your tokens. An AI
+        assistant or our server can prepare a transaction for you, but only your wallet can approve it.
       </p>
       <ul>
         <li>Funds and the position NFT remain in your wallet.</li>
         <li>Every mutating flow requires your signature.</li>
         <li>
-          After you sign, broadcast re-checks an HMAC permit and re-simulates before send when the
-          App path is used.
+          Before sending, we simulate the transaction again to make sure the result matches what you saw.
         </li>
       </ul>
 
@@ -40,7 +38,7 @@ export default function DocsSecurityPage() {
 
       <h2>Position NFT portability</h2>
       <p>
-        Opening a position mints a Raydium CLMM personal-position NFT to you. If this site went
+        Opening a position puts a Raydium position NFT in your wallet. If this site went
         offline, you could still withdraw or manage that NFT through Raydium. Details:{" "}
         <Link href={DOCS_ROUTES.withdraw}>Withdraw anytime</Link>.
       </p>
@@ -54,8 +52,8 @@ export default function DocsSecurityPage() {
       <h2>Shipping in public</h2>
       <p>
         SoFinance is a hackathon-born toolkit with a public product repository and a live deployment.
-        Use the <Link href={APP_ROUTES.home}>App</Link> for human flows or{" "}
-        <Link href={APP_ROUTES.ai}>Use AI</Link> for wallet-bound MCP preparation. Start from{" "}
+        Use the <Link href={APP_ROUTES.home}>App</Link> yourself, or{" "}
+        <Link href={APP_ROUTES.ai}>Use AI</Link> to let an assistant prepare transactions you approve. Start from{" "}
         <Link href={DOCS_ROUTES.gettingStarted}>Getting started</Link> if you are new.
       </p>
     </DocsArticle>

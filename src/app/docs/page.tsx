@@ -19,7 +19,7 @@ export default function DocsGettingStartedPage() {
         wallet.
       </p>
       <p>
-        A Raydium CLMM position is represented by a standard position NFT that lands in your wallet.
+        A Raydium liquidity position is represented by a standard position NFT that lands in your wallet.
         SoFinance builds and simulates the transaction; your wallet approves it. See{" "}
         <Link href={DOCS_ROUTES.security}>Security &amp; non-custodial</Link> for the full model.
       </p>
@@ -56,7 +56,7 @@ export default function DocsGettingStartedPage() {
           Review the quote, estimated fees, and range. Read{" "}
           <Link href={DOCS_ROUTES.risks}>Risks</Link> before you confirm.
         </li>
-        <li>Sign once in your wallet. The server re-simulates, then broadcasts if the gates still pass.</li>
+        <li>Approve once in your wallet. Before sending, we simulate the transaction again to make sure the result matches what you saw.</li>
       </ol>
       <p>
         Yield figures in the App are estimates — see{" "}
@@ -68,8 +68,8 @@ export default function DocsGettingStartedPage() {
       <h2>Who we are</h2>
       <p>
         SoFinance is a non-custodial Solana LP toolkit built for the Colosseum hackathon track and
-        shipping in public. The product UI and MCP surface share the same safety gates: quote,
-        simulate, wallet signature, re-simulate, then broadcast.
+        shipping in public. Whether you use the App or an AI assistant, the same checks apply: preview,
+        your signature, a final check, then send.
       </p>
       <ul>
         <li>
@@ -88,6 +88,12 @@ export default function DocsGettingStartedPage() {
           Colosseum project:{" "}
           <a href="https://colosseum.com/arena/projects/16410" {...EXTERNAL_LINK_PROPS}>
             project 16410
+          </a>
+        </li>
+        <li>
+          Follow us on X:{" "}
+          <a href="https://x.com/SoFinancelab" {...EXTERNAL_LINK_PROPS}>
+            @SoFinancelab
           </a>
         </li>
       </ul>

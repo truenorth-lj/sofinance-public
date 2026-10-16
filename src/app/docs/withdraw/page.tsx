@@ -32,15 +32,13 @@ export default function DocsWithdrawPage() {
         </li>
       </ul>
       <p>
-        Closing 100% also closes the Raydium position and returns recoverable position account
-        deposits in SOL when those accounts close.
+        Withdrawing 100% closes the position and returns its SOL account deposit to you.
       </p>
 
       <h2>One transaction or two?</h2>
       <p>
-        When exit + conversion fit in a single v0 transaction, withdraw runs as{" "}
-        <strong className="font-medium text-cream">one atomic transaction</strong>. If the combined
-        message would exceed Solana&apos;s size limit, the App splits into{" "}
+        When withdrawing and swapping fit in a single transaction, withdraw runs as{" "}
+        <strong className="font-medium text-cream">one atomic transaction</strong>. If it is too large for one Solana transaction, the App splits into{" "}
         <strong className="font-medium text-cream">two steps</strong>: first withdraw the tokens to
         your wallet, then a second signed transaction to convert. The preview tells you which path
         applies before you sign.
@@ -53,9 +51,7 @@ export default function DocsWithdrawPage() {
 
       <h2>If SoFinance disappears</h2>
       <p>
-        Your position is a <strong className="font-medium text-cream">standard Raydium CLMM
-        position NFT</strong> in your wallet. You can manage or withdraw liquidity on Raydium (or
-        any compatible tool) without SoFinance. The site is a builder and broadcast helper, not a
+        Your position is a <strong className="font-medium text-cream">standard Raydium position NFT</strong> in your wallet. You can manage or withdraw liquidity on Raydium  without SoFinance. The site is a builder and broadcast helper, not a
         custodian.
       </p>
       <p>

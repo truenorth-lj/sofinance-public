@@ -8,14 +8,14 @@ export default function DocsYieldAndAprPage() {
     <DocsArticle page={DOCS_PAGES[1]!}>
       <h2>Where does yield come from?</h2>
       <p>
-        SoFinance helps you provide concentrated liquidity on Raydium CLMM pools — especially
+        SoFinance helps you provide liquidity on Raydium pools in a price range you choose — especially
         same-asset xStock-style pairs (wrapped vs unwrapped). When traders swap that pair, the pool
         collects <strong className="font-medium text-cream">trading fees</strong>. Your in-range
         position earns a share of those fees.
       </p>
       <p>
         This is not staking rewards from SoFinance and not interest paid by the site. If the market
-        price moves outside your chosen tick range, your position stops earning trading fees until
+        price moves outside your chosen range, your position stops earning trading fees until
         price returns (or you re-range). See <Link href={DOCS_ROUTES.risks}>Risks</Link>.
       </p>
 
@@ -29,13 +29,12 @@ export default function DocsYieldAndAprPage() {
         </li>
         <li>
           <strong className="font-medium text-cream">Highest range APR · 7d avg</strong> — estimated
-          from recent volume and LP net fees for a reference deposit (about $100) in a candidate
+          from recent trading volume and fees, for a sample deposit (about $100) in a candidate
           range (Micro / Tight / Standard / Wide). Not guaranteed.
         </li>
         <li>
           <strong className="font-medium text-cream">Est. fee APR</strong> on the create-position
-          flow uses the last 7 complete days of pool volume and today&apos;s liquidity in each price
-          bin. It assumes recent volume/price behavior continues, counts fees only while price is
+          flow uses the last 7 full days of trading volume and how much liquidity sits near each price today. It assumes recent volume/price behavior continues, counts fees only while price is
           inside the range, and ignores impermanent loss and your trading costs.
         </li>
       </ul>
@@ -51,7 +50,7 @@ export default function DocsYieldAndAprPage() {
       <ul>
         <li>It is an estimate from recent data, not a promise.</li>
         <li>Narrower ranges often show higher estimated APR and leave range sooner.</li>
-        <li>Larger deposits in the same ticks typically earn a lower rate than the $100 reference.</li>
+        <li>Larger deposits in the same range typically earn a lower rate than the $100 reference.</li>
         <li>Your realized result also depends on price path, swaps, and fees — see{" "}
           <Link href={DOCS_ROUTES.fees}>Fees</Link>.</li>
       </ul>

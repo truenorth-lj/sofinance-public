@@ -8,43 +8,40 @@ export default function DocsFeesPage() {
     <DocsArticle page={DOCS_PAGES[3]!}>
       <h2>SoFinance protocol fee</h2>
       <p>
-        When a flow converts tokens through a swap (open, withdraw-to-USDC/SOL/other mint, or
-        compound rebalance), SoFinance may charge a{" "}
+        When a flow swaps one token into another (opening a position, withdrawing to USDC, SOL
+        or another token, or compounding), SoFinance charges a{" "}
         <strong className="font-medium text-cream">10 basis point (0.10%)</strong> protocol fee on
-        the converted amount. The same default rate applies on compound when a swap leg is required.
+        the amount being swapped. This also applies when compounding requires a swap.
       </p>
       <ul>
-        <li>Default: <code className="rounded-md bg-white/10 px-1.5 py-0.5 font-data text-xs">10 bps</code> (configurable up to 100 bps by the operator).</li>
+        <li>Currently a fixed 10 bps; any change will be announced in advance.</li>
         <li>
-          Charged <strong className="font-medium text-cream">on converted tokens only</strong> — the
-          withdraw preview labels this as a conversion fee.
+          Charged <strong className="font-medium text-cream">only on the tokens that get swapped</strong>{" "}
+          — the withdraw preview shows it as a conversion fee.
         </li>
         <li>
           If you withdraw as <strong className="font-medium text-cream">original tokens</strong>{" "}
-          (both pool mints, no conversion), the protocol conversion fee is{" "}
+          (the two pool tokens, no swap), the fee is{" "}
           <strong className="font-medium text-cream">0</strong>.
         </li>
         <li>
-          The fee is collected inside the same user-signed transaction to the configured fee wallet.
-          If no fee wallet is configured, the protocol fee is 0.
+          The fee is taken inside the same transaction you sign, so you can see it on Solscan.
         </li>
       </ul>
 
       <h2>Solana network fees</h2>
       <p>
-        Your wallet pays ordinary Solana network fees in SOL for each transaction you sign (base fee
-        plus any priority / tip the flow includes). Keep enough SOL for fees and account rent in
-        addition to the assets you invest.
+        Your wallet pays the normal Solana network fee in SOL for each transaction you sign. Keep a
+        little SOL for fees and account deposits on top of what you invest.
       </p>
 
       <h2>Other costs in the preview</h2>
       <ul>
-        <li>Jupiter route / pool swap fees and price impact when zapping or converting.</li>
-        <li>Fixed Jupiter slippage tolerance used by the engine (0.5% on those routes).</li>
+        <li>Swap costs: the trading fee of the swap route, plus a small price difference on larger swaps.</li>
+        <li>A 0.5% price-protection limit on swaps: if the price moves more than that, the swap fails instead of filling worse.</li>
         <li>
-          Account rent for new token accounts or position accounts — some of it is refundable when
-          you close empty accounts / the position; some shared setup may be non-refundable. The open
-          preview breaks these out.
+          Small SOL deposits Solana requires to create new accounts. Most come back when you close the
+          position; a small one-time setup cost may not. The preview lists each one.
         </li>
       </ul>
       <p>

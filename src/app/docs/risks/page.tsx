@@ -11,12 +11,11 @@ export default function DocsRisksPage() {
       <ul>
         <li>
           <strong className="font-medium text-cream">Price moves against the pair</strong> — even on
-          same-asset wraps, the two tokens can trade at a temporary premium or discount. Your
-          inventory mix changes as the pool rebalances.
+          same-asset wraps, the two tokens can trade at a temporary premium or discount. The mix of the two tokens in your position shifts as the price moves.
         </li>
         <li>
           <strong className="font-medium text-cream">Out of range stops earning</strong> — while the
-          pool price is outside your ticks, you earn no trading fees from that position until price
+          pool price is outside your range, you earn no trading fees from that position until price
           returns or you change range.
         </li>
         <li>
@@ -26,8 +25,7 @@ export default function DocsRisksPage() {
         </li>
         <li>
           <strong className="font-medium text-cream">Conversion / exit costs</strong> — swapping into
-          or out of the pool (including withdrawing to USDC) incurs Jupiter route costs, price
-          impact, slippage tolerance, and the SoFinance protocol fee on conversions. See{" "}
+          or out of the pool (including withdrawing to USDC) costs swap fees, some price difference on larger amounts, and the SoFinance 10 bps fee. See{" "}
           <Link href={DOCS_ROUTES.fees}>Fees</Link>.
         </li>
       </ul>
@@ -40,8 +38,7 @@ export default function DocsRisksPage() {
       <h2>Risks we cannot control</h2>
       <ul>
         <li>
-          <strong className="font-medium text-cream">Smart contract risk</strong> — Raydium CLMM,
-          Jupiter routing, token programs, and related on-chain programs can have bugs or unexpected
+          <strong className="font-medium text-cream">Smart contract risk</strong> — Raydium, the Jupiter swap router, token programs, and related on-chain programs can have bugs or unexpected
           behavior.
         </li>
         <li>
@@ -55,9 +52,8 @@ export default function DocsRisksPage() {
           That is outside SoFinance&apos;s control.
         </li>
         <li>
-          <strong className="font-medium text-cream">Network and oracle/routing conditions</strong> —
-          Solana congestion, failed transactions, or poor swap routes can change outcomes versus the
-          preview.
+          <strong className="font-medium text-cream">Network conditions</strong> —
+          A busy Solana network or poor swap prices can make the result differ from the preview.
         </li>
       </ul>
       <p>
