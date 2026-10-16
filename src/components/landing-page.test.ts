@@ -24,6 +24,7 @@ describe("landing page copy and routes", () => {
   it("links Launch App and the live RWA Yield scenario into /app", () => {
     expect(src).toContain("APP_ROUTES.home");
     expect(src).toContain("APP_ROUTES.ai");
+    expect(src).toContain("DOCS_ROUTES.home");
     expect(src).toContain("APP_ROUTES.rwaPairs");
     expect(src).toContain("RWA Yield");
     expect(src).toContain("Coming soon");

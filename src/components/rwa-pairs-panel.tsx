@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import { ArrowUpRight, LoaderCircle, RefreshCw } from "lucide-react";
 import Link from "next/link";
-import { buildPlanPath } from "@/lib/public-urls";
+import { buildPlanPath, DOCS_ROUTES } from "@/lib/public-urls";
 import { cn } from "@/lib/cn";
 import { OPEN_RANGE_UI_PRESETS } from "@sofinance/engine/open-range-presets";
 import {
@@ -192,7 +192,14 @@ function PairCard({
       <dl className="mt-6 grid grid-cols-2 gap-x-4 gap-y-5 border-t border-ink/20 pt-5 sm:grid-cols-3">
         <Stat label={<>
           {HIGHEST_RANGE_COLUMN_LABEL}
-          {summary && <InfoTip label="About Highest range" placement="above" tone="light">{HIGHEST_RANGE_HELP}</InfoTip>}
+          {summary && (
+            <span className="inline-flex items-center gap-1">
+              <InfoTip label="About Highest range" placement="above" tone="light">{HIGHEST_RANGE_HELP}</InfoTip>
+              <Link href={DOCS_ROUTES.yieldAndApr} className="text-[11px] font-normal normal-case tracking-normal text-ink/60 underline underline-offset-2 hover:text-ink">
+                Yield &amp; APR
+              </Link>
+            </span>
+          )}
         </>}>
           <span
             className={cn(
@@ -209,7 +216,12 @@ function PairCard({
         <Stat label="Fee">{pair.feeTierBps === null ? "—" : `${pair.feeTierBps} bps`}</Stat>
         <Stat label={<>
           {POOL_FEE_APR_24H_LABEL}
-          <InfoTip label="About Pool fee APR" placement="above" tone="light">{withVolumeNote(POOL_FEE_APR_24H_HELP)}</InfoTip>
+          <span className="inline-flex items-center gap-1">
+            <InfoTip label="About Pool fee APR" placement="above" tone="light">{withVolumeNote(POOL_FEE_APR_24H_HELP)}</InfoTip>
+            <Link href={DOCS_ROUTES.yieldAndApr} className="text-[11px] font-normal normal-case tracking-normal text-ink/60 underline underline-offset-2 hover:text-ink">
+              Yield &amp; APR
+            </Link>
+          </span>
         </>}>
           <span data-testid="pool-fee-apr">{pct(pair.estimatedFeeAprPct)}</span>
         </Stat>

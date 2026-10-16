@@ -12,7 +12,7 @@ import {
   Coins,
   ArrowUpRight,
 } from "lucide-react";
-import { APP_ROUTES } from "@/lib/public-urls";
+import { APP_ROUTES, DOCS_ROUTES } from "@/lib/public-urls";
 import { EXTERNAL_LINK_PROPS, SOCIAL_LINKS } from "@/lib/social-links";
 import { XIcon } from "@/components/x-icon";
 
@@ -93,6 +93,9 @@ export function LandingPage() {
             <a href="#scenarios" className={`${navPill} flex-1`}>
               Scenarios
             </a>
+            <Link href={DOCS_ROUTES.home} className={`${navPill} flex-1`}>
+              Docs
+            </Link>
             <Link href={APP_ROUTES.ai} className={`${navPill} flex-1`}>
               Use with AI
             </Link>
@@ -400,6 +403,9 @@ export function LandingPage() {
           <div className="flex flex-wrap items-center gap-5">
             <Link href={APP_ROUTES.home} className="transition-colors hover:text-cream">
               App
+            </Link>
+            <Link href={DOCS_ROUTES.home} className="transition-colors hover:text-cream">
+              Docs
             </Link>
             <Link href={APP_ROUTES.ai} className="transition-colors hover:text-cream">
               Use with AI
