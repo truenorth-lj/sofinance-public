@@ -50,14 +50,14 @@ export function CompoundPanel({ controller: c, tokenLabel = short, onConnect }: 
     </div>;
   const renderReceipt = (receipt: CompoundController["receipts"][number]) => <div key={receipt.sourceSignature} className="rounded-2xl border border-white/10 p-3">
         <div className="flex flex-wrap items-center justify-between gap-3"><span className="text-xs text-smoke">{receipt.compoundAccounts.map(account => tokenLabel(account.mint)).join(" / ")} · NFT {short(receipt.positionMint)} · original transaction <a href={`https://solscan.io/tx/${receipt.sourceSignature}`} target="_blank" rel="noreferrer" className="text-cream/80 underline">{short(receipt.sourceSignature)}</a></span>
-          <button onClick={() => c.recover(receipt)} disabled={!c.ready || c.busy} className="inline-flex items-center justify-center gap-2 rounded-full border border-white/20 bg-transparent px-3 py-2 text-xs font-semibold text-cream/80 transition-colors hover:border-white/40 hover:bg-white/[0.04] disabled:cursor-not-allowed disabled:opacity-40">Retrieve this balance</button></div>
+          <button onClick={() => c.recover(receipt)} disabled={!c.canCleanup || c.busy} className="inline-flex items-center justify-center gap-2 rounded-full border border-white/20 bg-transparent px-3 py-2 text-xs font-semibold text-cream/80 transition-colors hover:border-white/40 hover:bg-white/[0.04] disabled:cursor-not-allowed disabled:opacity-40">Retrieve this balance</button></div>
         {c.recoveryError?.sourceSignature === receipt.sourceSignature && <p role="alert" className="mt-2 text-cream/80">{c.recoveryError.message}</p>}
         <details className="mt-2 text-[11px] leading-5 text-smoke/70"><summary className="cursor-pointer">View wallet-controlled yield accounts</summary>{receipt.compoundAccounts.map((account) => <p key={account.address} className="break-all"><a href={`https://solscan.io/account/${account.address}`} target="_blank" rel="noreferrer" className="text-cream/80 underline">{account.address}</a> · {tokenLabel(account.mint)}</p>)}</details>
       </div>;
   return <section aria-labelledby="compound-heading" className="mt-6 rounded-[28px] border border-white/12 bg-char p-5 sm:p-8">
     <div className="flex items-center justify-between gap-4">
       <div><h2 id="compound-heading" className="flex items-center gap-2 text-lg font-semibold text-cream"><Sprout className="h-5 w-5 text-cream/80" />Yield Compound</h2>
-        <p className="mt-2 text-xs leading-5 text-smoke">Harvest this position&apos;s yield, swap to ratio needed for original range, then add back to original NFT. Signed by your wallet each time.</p></div>
+        <p className="mt-2 text-xs leading-5 text-smoke">Harvest this position&apos;s yield, swap to ratio needed for original range, then add back to original NFT. After confirmation, approve a cleanup transaction to merge leftover yield and return account rent.</p></div>
       <button type="button" onClick={() => void c.refreshState()} disabled={!c.wallet || !c.positionMint || c.loading || c.busy}
         className="shrink-0 text-xs font-semibold text-cream/80 transition-opacity hover:opacity-70 disabled:opacity-40"><RefreshCw className={`mb-1 inline h-3.5 w-3.5 ${c.loading ? "animate-spin" : ""}`} /> Reload yield</button>
     </div>
@@ -83,6 +83,24 @@ export function CompoundPanel({ controller: c, tokenLabel = short, onConnect }: 
     {showCurrentAttempt && attemptCard}
     {c.error && <div role="alert" className="mt-4 flex gap-2 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80"><CircleAlert className="mt-0.5 h-4 w-4 shrink-0" /><span>{c.error}</span></div>}
     {!preview && displaySummary && <details className="mt-5 text-xs text-smoke"><summary className="cursor-pointer font-semibold">Previous transaction simulation record</summary><p className="mt-3">Previous transaction estimate; a new compound will re-read yield and simulate. USDC values use current reference prices.</p><CompoundOverview state={displaySummary.state} summary={displaySummary} tokenLabel={tokenLabel} prices={prices} /></details>}
+    {c.cleanup && <div role="status" className="mt-5 rounded-2xl border border-white/15 p-4 text-xs leading-6 text-cream/80">
+      {c.cleanup.compoundSignature && <p>Compound confirmed. <a className="underline" href={`https://solscan.io/tx/${c.cleanup.compoundSignature}`} target="_blank" rel="noreferrer">View compound transaction</a></p>}
+      <p>{c.cleanup.message}</p><p>{c.cleanup.completed} of {c.cleanup.total} yield account groups cleaned.</p>
+    </div>}
+    {c.wallet && <div className="mt-5 rounded-2xl border border-white/15 p-4 text-xs leading-6 text-smoke">
+      <h3 className="text-sm font-semibold text-cream">Clean up leftover yield</h3>
+      <p className="mt-2">Find yield accounts from all your past compounds, including positions you no longer hold. Merge their balances into your wallet and close the accounts to return SOL rent.</p>
+      <p>Each cleanup transaction needs wallet approval. Already confirmed cleanups stay completed if you stop.</p>
+      <div className="mt-3 flex flex-wrap gap-3">
+        <button type="button" disabled={c.busy || c.scan.scanning} onClick={() => void c.scanWallet(c.scan.started && !c.scan.cursor && !c.scan.incomplete)} className="rounded-full border border-white/20 px-3 py-2 font-semibold text-cream/80 disabled:opacity-40">
+          {c.scan.scanning ? "Scanning wallet…" : c.scan.incomplete ? "Retry wallet scan" : c.scan.cursor ? "Continue wallet scan" : c.scan.started ? "Scan wallet again" : "Find leftover yield"}
+        </button>
+        <button type="button" disabled={!c.canCleanup || c.scan.scanning} onClick={() => void c.cleanupAll()} className="rounded-full bg-lemon px-3 py-2 font-semibold text-ink disabled:opacity-40">Clean up all balances ({c.receipts.length})</button>
+      </div>
+      {c.scan.started && <p role="status" className="mt-3">{c.scan.scanned} of {c.scan.total} candidate accounts checked. {c.scan.scanning ? "Scan in progress." : c.scan.incomplete || c.scan.cursor ? "Scan incomplete; more accounts may remain." : "Wallet scan complete."} {c.receipts.length} yield account groups available for cleanup.</p>}
+      {c.scan.error && <p role="alert" className="mt-2 text-cream/80">{c.scan.error}</p>}
+      {!c.canCleanup && c.receipts.length > 0 && !c.busy && <p className="mt-2">Verify the previous transaction before starting cleanup.</p>}
+    </div>}
     <details className="mt-5 border-t border-white/10 pt-4 text-xs text-smoke"><summary className="cursor-pointer font-semibold">Yield account management · Recover records and retrieve balances{c.wallet ? ` (${positionReceipts.length} records for this position)` : ""}</summary>
     <details className="mt-5 text-xs text-smoke"><summary className="cursor-pointer font-semibold">Recover yield accounts from transaction signature</summary>
       <p className="mt-2 leading-5">When switching devices or local records are lost, enter the original compound transaction signature to find and retrieve remaining yield balances. Query only reads on-chain records, moving assets still requires wallet signature.</p>
