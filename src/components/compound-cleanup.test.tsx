@@ -7,6 +7,7 @@ import bs58 from "bs58";
 import { useCompoundController } from "./use-compound-controller";
 import { CompoundPanel } from "./compound-panel";
 import { compoundAttemptKey, compoundReceiptsKey, persistCompoundAttempt, persistCompoundReceipt, type CompoundReceipt } from "@sofinance/engine/compound-attempt";
+import { persistCleanupBatch } from "@/lib/compound-cleanup-batch-attempt";
 import { compoundHistoryFixture } from "@/lib/test-support/compound-history-fixture";
 import { testKeypair } from "@/lib/test-support/send-fixtures";
 
@@ -76,7 +77,7 @@ describe("wallet-wide leftover yield cleanup", () => {
     expect(controller.receipts).toHaveLength(1); expect(controller.scan.scanned).toBe(2);
     expect(container.textContent).toContain("Wallet scan complete");
     expect(fetchMock.mock.calls.some(([url]) => url === "/api/compound-state")).toBe(false);
-    await act(async () => { await controller.cleanupAll(); });
+    await act(async () => { await controller.recover(controller.receipts[0]!); });
     expect(mocks.sign).toHaveBeenCalledOnce(); expect(broadcastCount).toBe(1);
     expect(controller.receipts).toHaveLength(0); expect(controller.cleanup?.completed).toBe(1);
   });
@@ -113,72 +114,32 @@ describe("wallet-wide leftover yield cleanup", () => {
   it.each(["manual-review", "failed"] as const)("stops the batch after %s and never submits the next pair", async status => {
     persistCompoundReceipt(window.localStorage, receipt()); persistCompoundReceipt(window.localStorage, receipt(1));
     confirmationStatus = status; await render();
-    await act(async () => { await controller.cleanupAll(); });
+    await act(async () => { await controller.recover(controller.receipts[0]!); });
     expect(broadcastCount).toBe(1); expect(controller.receipts).toHaveLength(2); expect(controller.cleanup?.completed).toBe(0);
     expect(controller.cleanup?.running).toBe(false);
-    await act(async () => { await controller.cleanupAll(); });
+    await act(async () => { await controller.recover(controller.receipts[0]!); });
     expect(broadcastCount).toBe(status === "failed" ? 2 : 1);
-  });
-  it("waits through pending confirmation then continues to the next pair exactly once", async () => {
-    persistCompoundReceipt(window.localStorage, receipt()); persistCompoundReceipt(window.localStorage, receipt(1));
-    confirmationStatus = "pending"; await render(); let work!: Promise<void>;
-    await act(async () => { work = controller.cleanupAll(); });
-    expect(broadcastCount).toBe(1); expect(controller.cleanup?.running).toBe(true);
-    expect(mocks.sign).toHaveBeenCalledOnce();
-    await act(async () => { await vi.advanceTimersByTimeAsync(4_000); });
-    expect(broadcastCount).toBe(1); expect(controller.cleanup?.running).toBe(true);
-    confirmationStatus = "success";
-    await act(async () => { await vi.advanceTimersByTimeAsync(4_000); await work; });
-    expect(broadcastCount).toBe(2); expect(controller.cleanup?.completed).toBe(2); expect(controller.receipts).toHaveLength(0);
-    const firstSignature = broadcastSignatures[0];
-    const firstConfirmations = fetchMock.mock.calls.filter(([url, init]) => url === "/api/compound-confirm" &&
-      JSON.parse(String((init as RequestInit).body)).attempt.signature === firstSignature);
-    expect(firstConfirmations).toHaveLength(3);
   });
   it("stops pending confirmation only after its bounded wait and retains the signed attempt", async () => {
     persistCompoundReceipt(window.localStorage, receipt()); persistCompoundReceipt(window.localStorage, receipt(1));
     confirmationStatus = "pending"; await render(); let work!: Promise<void>;
-    await act(async () => { work = controller.cleanupAll(); });
+    await act(async () => { work = controller.recover(controller.receipts[0]!); });
     await act(async () => { await vi.advanceTimersByTimeAsync(89_999); });
     expect(controller.cleanup?.running).toBe(true); expect(broadcastCount).toBe(1);
     await act(async () => { await vi.advanceTimersByTimeAsync(1); await work; });
     expect(controller.cleanup?.running).toBe(false); expect(controller.receipts).toHaveLength(2);
     expect(JSON.parse(window.localStorage.getItem(compoundAttemptKey(fixture.wallet))!).signature).toBe(broadcastSignatures[0]);
-    await act(async () => { await controller.cleanupAll(); }); expect(broadcastCount).toBe(1);
-  });
-  it("skips a verified fully closed stale receipt and cleans the next live pair", async () => {
-    persistCompoundReceipt(window.localStorage, receipt()); persistCompoundReceipt(window.localStorage, receipt(1));
-    const handler = fetchMock.getMockImplementation() as (url: string, init?: RequestInit) => Promise<Response>;
-    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
-      const body = JSON.parse(String(init?.body || "{}"));
-      if (url === "/api/compound-recover-prepare" && body.compoundAccounts[0].address === receipt().compoundAccounts[0].address) {
-        return Response.json({ alreadyClosed: true, wallet, accounts: receipt().compoundAccounts.map(account => account.address) });
-      }
-      return handler(url, init);
-    });
-    await render(); await act(async () => { await controller.cleanupAll(); });
-    expect(controller.receipts).toHaveLength(0); expect(controller.cleanup?.completed).toBe(2);
-    expect(mocks.sign).toHaveBeenCalledOnce(); expect(broadcastCount).toBe(1);
+    await act(async () => { await controller.recover(controller.receipts[0]!); }); expect(broadcastCount).toBe(1);
   });
   it("does not prune a stale receipt unless closed-account proof matches its exact addresses", async () => {
     persistCompoundReceipt(window.localStorage, receipt());
     fetchMock.mockResolvedValue(Response.json({ alreadyClosed: true, wallet, accounts: receipt(1).compoundAccounts.map(account => account.address) }));
-    await render(); await act(async () => { await controller.cleanupAll(); });
+    await render(); await act(async () => { await controller.recover(controller.receipts[0]!); });
     expect(controller.receipts).toHaveLength(1); expect(mocks.sign).not.toHaveBeenCalled();
-  });
-  it("retains completed work after wallet rejection and resumes with only remaining receipts", async () => {
-    persistCompoundReceipt(window.localStorage, receipt()); persistCompoundReceipt(window.localStorage, receipt(1));
-    mocks.sign.mockImplementationOnce(async (tx: VersionedTransaction) => { tx.sign([testKeypair(1)]); return tx; })
-      .mockRejectedValueOnce(new Error("User rejected the request"));
-    await render(); await act(async () => { await controller.cleanupAll(); });
-    expect(controller.cleanup?.completed).toBe(1); expect(controller.receipts).toHaveLength(1); expect(broadcastCount).toBe(1);
-    await act(async () => { await controller.cleanupAll(); });
-    expect(controller.receipts).toHaveLength(0); expect(broadcastCount).toBe(2);
-    expect(new Set(broadcastSignatures).size).toBe(2);
   });
   it("does not sign or overwrite an unresolved saved compound attempt during cleanup", async () => {
     persistCompoundAttempt(window.localStorage, fixture.attempt); confirmationStatus = "pending";
-    await render(); await act(async () => { await controller.cleanupAll(); });
+    await render(); await act(async () => { await controller.recover(controller.receipts[0]!); });
     expect(mocks.sign).not.toHaveBeenCalled();
     expect(window.localStorage.getItem(compoundAttemptKey(fixture.wallet))).toBe(JSON.stringify(fixture.attempt));
   });
@@ -201,7 +162,7 @@ describe("wallet-wide leftover yield cleanup", () => {
     expect(controller.attemptStatus).toBe("success");
     const originalReceipt = controller.receipts[0]!;
     let recovering!: Promise<void>;
-    await act(async () => { recovering = controller.cleanupAll(); });
+    await act(async () => { recovering = controller.recover(controller.receipts[0]!); });
     const otherAttempt = { ...fixture.attempt, signature: bs58.encode(new Uint8Array(64).fill(77)) };
     const otherRecord = stored === "pending" ? JSON.stringify(otherAttempt) : "{invalid-other-tab-record";
     window.localStorage.setItem(compoundAttemptKey(fixture.wallet), otherRecord);
@@ -227,7 +188,7 @@ describe("wallet-wide leftover yield cleanup", () => {
     expect(controller.attemptStatus).toBe("success");
     const originalReceipt = controller.receipts[0]!;
     let recovering!: Promise<void>;
-    await act(async () => { recovering = controller.cleanupAll(); });
+    await act(async () => { recovering = controller.recover(controller.receipts[0]!); });
     await act(async () => { resolvePrepare(Response.json(prepared(originalReceipt))); await recovering; });
     expect(mocks.sign).toHaveBeenCalledOnce(); expect(broadcastCount).toBe(1);
     expect(controller.receipts).toHaveLength(0); expect(controller.cleanup?.completed).toBe(1);
@@ -242,17 +203,12 @@ describe("wallet-wide leftover yield cleanup", () => {
       scanned: 2, totalCandidates: 2, incomplete: false, errors: 0 })); await scanning; });
     expect(controller.receipts).toHaveLength(0); expect(window.localStorage.getItem(compoundReceiptsKey(fixture.wallet))).toBeNull();
   });
-  it("allows only one cleanup queue when clicked twice before a render", async () => {
-    persistCompoundReceipt(window.localStorage, receipt()); await render();
-    await act(async () => { await Promise.all([controller.cleanupAll(), controller.cleanupAll()]); });
-    expect(mocks.sign).toHaveBeenCalledOnce(); expect(broadcastCount).toBe(1);
-  });
   it("never broadcasts a signature approved after the panel unmounts", async () => {
     persistCompoundReceipt(window.localStorage, receipt());
     let resolve!: (tx: VersionedTransaction) => void; let signed!: VersionedTransaction;
     mocks.sign.mockImplementation((tx: VersionedTransaction) => { signed = tx; return new Promise(done => { resolve = done; }); });
     await render(); let recovering!: Promise<void>;
-    await act(async () => { recovering = controller.cleanupAll(); });
+    await act(async () => { recovering = controller.recover(controller.receipts[0]!); });
     await act(async () => root.unmount()); root = createRoot(container);
     await act(async () => { signed.sign([testKeypair(1)]); resolve(signed); await recovering; });
     expect(broadcastCount).toBe(0); expect(window.localStorage.getItem(compoundAttemptKey(fixture.wallet))).toBeNull();
@@ -268,7 +224,7 @@ describe("wallet-wide leftover yield cleanup", () => {
         ? new Promise<Response>(done => { resolvePrepare = done; }) : handler(url, init));
     } else mocks.sign.mockImplementation((tx: VersionedTransaction) => { signed = tx; return new Promise(done => { resolveSign = done; }); });
     await render(); let work!: Promise<void>;
-    await act(async () => { work = controller.cleanupAll(); });
+    await act(async () => { work = controller.recover(controller.receipts[0]!); });
     expect(controller.busy).toBe(true);
     positionMint = testKeypair(80).publicKey.toBase58(); await render();
     expect(controller.stage).toBeNull(); expect(controller.cleanup).toBeNull(); expect(controller.busy).toBe(false);
@@ -284,7 +240,7 @@ describe("wallet-wide leftover yield cleanup", () => {
     positionMint = fixture.state.positionMint;
     persistCompoundReceipt(window.localStorage, receipt()); persistCompoundReceipt(window.localStorage, receipt(1));
     confirmationStatus = "pending"; await render(); let work!: Promise<void>;
-    await act(async () => { work = controller.cleanupAll(); });
+    await act(async () => { work = controller.recover(controller.receipts[0]!); });
     expect(controller.cleanup?.running).toBe(true); expect(broadcastCount).toBe(1);
     positionMint = testKeypair(80).publicKey.toBase58(); await render();
     await act(async () => { await work; });
@@ -300,7 +256,7 @@ describe("wallet-wide leftover yield cleanup", () => {
     let resolve!: (tx: VersionedTransaction) => void; let signed!: VersionedTransaction;
     mocks.sign.mockImplementation((tx: VersionedTransaction) => { signed = tx; return new Promise(done => { resolve = done; }); });
     await render(); let recovering!: Promise<void>;
-    await act(async () => { recovering = controller.cleanupAll(); });
+    await act(async () => { recovering = controller.recover(controller.receipts[0]!); });
     wallet = testKeypair(90).publicKey.toBase58(); await render();
     await act(async () => { signed.sign([testKeypair(1)]); resolve(signed); await recovering; });
     expect(broadcastCount).toBe(0); expect(controller.wallet).toBe(wallet); expect(controller.cleanup).toBeNull();
@@ -363,6 +319,60 @@ describe("automatic cleanup after a new compound", () => {
     expect(container.textContent).toContain("Compound confirmed.");
     await act(async () => { await vi.advanceTimersByTimeAsync(8_000); });
     expect(mocks.sign).toHaveBeenCalledTimes(2);
+  });
+  it("retries an aborted single-recovery confirmation without stopping the cleanup", async () => {
+    persistCompoundReceipt(window.localStorage, receipt());
+    const handler = fetchMock.getMockImplementation() as (url: string, init?: RequestInit) => Promise<Response>; let failures = 1;
+    fetchMock.mockImplementation(async (url, init) => {
+      if (url === "/api/compound-confirm" && failures-- > 0) throw new DOMException("Fetch is aborted", "AbortError");
+      return handler(url, init);
+    });
+    await render(); let work!: Promise<void>;
+    await act(async () => { work = controller.recover(controller.receipts[0]!); });
+    expect(controller.cleanup?.running).toBe(true); expect(controller.attemptError).toBe("");
+    await act(async () => { await vi.advanceTimersByTimeAsync(4_000); await work; });
+    expect(controller.cleanup?.completed).toBe(1); expect(controller.receipts).toHaveLength(0); expect(mocks.sign).toHaveBeenCalledOnce();
+  });
+  it("keeps polling finalized compound metadata until success and clears prior confirmation failures", async () => {
+    persistCompoundAttempt(window.localStorage, fixture.attempt);
+    const handler = fetchMock.getMockImplementation() as (url: string, init?: RequestInit) => Promise<Response>; let missing = true;
+    fetchMock.mockImplementation(async (url, init) => {
+      if (url === "/api/compound-confirm" && missing) {
+        const body = JSON.parse(String(init?.body));
+        return Response.json({ signature: body.attempt.signature, status: "pending", chainStatus: "success", state: null });
+      }
+      return handler(url, init);
+    });
+    await render(); await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(controller.attemptStatus).toBe("pending"); missing = false;
+    await act(async () => { await vi.advanceTimersByTimeAsync(4_001); });
+    expect(controller.attemptStatus).toBe("success"); expect(controller.attemptError).toBe(""); expect(mocks.sign).not.toHaveBeenCalled();
+  });
+  it("updates paused recovery counters when finalized history becomes verifiable after the wait budget", async () => {
+    persistCompoundReceipt(window.localStorage, receipt());
+    const handler = fetchMock.getMockImplementation() as (url: string, init?: RequestInit) => Promise<Response>; let missing = true;
+    fetchMock.mockImplementation(async (url, init) => {
+      if (url === "/api/compound-confirm" && missing) {
+        const body = JSON.parse(String(init?.body));
+        return Response.json({ signature: body.attempt.signature, status: "pending", chainStatus: "success", state: null });
+      }
+      return handler(url, init);
+    });
+    await render(); let work!: Promise<void>;
+    await act(async () => { work = controller.recover(controller.receipts[0]!); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(90_001); await work; });
+    expect(controller.cleanup?.running).toBe(false); expect(controller.cleanup?.completed).toBe(0);
+    missing = false;
+    await act(async () => { await vi.advanceTimersByTimeAsync(4_001); });
+    expect(controller.cleanup?.completed).toBe(1); expect(controller.receipts).toHaveLength(0); expect(controller.attemptStatus).toBe("success");
+  });
+  it("shows new automatic cleanup progress above a previous completed historical batch", async () => {
+    const old = receipt(3);
+    persistCleanupBatch(window.localStorage, { version: 1, wallet: fixture.wallet, createdAt: Date.now(), receipts: [old],
+      alreadyClosed: old.compoundAccounts.map(account => account.address), transactions: [] });
+    enableCompound(); await render();
+    await act(async () => { controller.compound(); }); await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(controller.cleanup?.compoundSignature).toBeTruthy(); expect(container.textContent).toContain("Compound confirmed.");
   });
   it("does not prompt cleanup on reload even when a historical compound verifies successfully", async () => {
     persistCompoundAttempt(window.localStorage, fixture.attempt);

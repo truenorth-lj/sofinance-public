@@ -50,11 +50,14 @@ export async function POST(request: Request) {
     if (observed?.err) return respond({ status: "failed", transactionError: observed.err }, "failed");
     if (!transaction) {
       try { transaction = await connection.getParsedTransaction(attempt.signature, { commitment: "finalized", maxSupportedTransactionVersion: 0 }); }
-      catch { return respond({ status: "manual-review" }, "success"); }
+      // Finality is known, but history providers can lag or time out. Keep
+      // checking the original signature until its receipt can be verified.
+      catch { return respond({ status: "pending" }, "success"); }
     }
-    if (!transaction?.meta || transaction.transaction.signatures[0] !== attempt.signature) {
+    if (transaction && transaction.transaction.signatures[0] !== attempt.signature) {
       return respond({ status: "manual-review" }, "success");
     }
+    if (!transaction?.meta) return respond({ status: "pending" }, "success");
     if (transaction.meta.err) return respond({ status: "failed", transactionError: transaction.meta.err }, "failed");
     if (attempt.kind === "recovery") {
       let verified = false;

@@ -1,0 +1,9 @@
+# Server preparation and verification
+
+`compound-cleanup-prepare` validates the wallet and every descriptor through the existing engine recovery reader, in slices of at most two. This retains seed derivation, token-program, mint extension, owner and close-authority validation. The application groups those independently checked sources into versioned transactions of at most 1,232 serialized bytes and deduplicates ATA creation instructions per transaction. All prepared transactions receive the same freshly fetched blockhash after simulations complete.
+
+Each transaction is simulated independently. Readback must show all sources closed, the exact summed raw token credit in each wallet ATA, and wallet SOL equal to its prior SOL plus refundable source rent minus new ATA rent and the estimated transaction fee. WSOL backing travels with the token amount. Simulation uses a context slot at least as recent as the recipient/wallet snapshot. A concurrent balance change may safely reject preparation or broadcast.
+
+A separate `sofinance:cleanup-batch:v1` HMAC binds the entire summary and exact message. Broadcast verifies a real single-wallet Ed25519 signature, packet length, permit, validity window and freshly revalidated source identities/amounts, then repeats simulation. Once RPC submission starts, every transport or rate-limit error leaves the signed signature available for on-chain reconciliation.
+
+`compound-cleanup-confirm` accepts a bounded, validated summary and signature. It queries finalized transaction history and verifies source pre-balances, each transfer and close, and exact transaction-local recipient credits. Missing RPC metadata remains pending. Current source disappearance alone never establishes success. A missing signature can expire only beyond its finalized validity height when all original source accounts remain present.

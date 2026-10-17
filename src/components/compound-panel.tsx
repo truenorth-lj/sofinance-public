@@ -87,10 +87,14 @@ export function CompoundPanel({ controller: c, tokenLabel = short, onConnect }: 
       {c.cleanup.compoundSignature && <p>Compound confirmed. <a className="underline" href={`https://solscan.io/tx/${c.cleanup.compoundSignature}`} target="_blank" rel="noreferrer">View compound transaction</a></p>}
       <p>{c.cleanup.message}</p><p>{c.cleanup.completed} of {c.cleanup.total} yield account groups cleaned.</p>
     </div>}
+    {c.cleanupBatch && <div className="mt-3 text-xs leading-6 text-smoke">
+      {c.cleanupBatch.transactions.map(tx => <p key={tx.signature}><a className="underline" href={`https://solscan.io/tx/${tx.signature}`} target="_blank" rel="noreferrer">Cleanup transaction {short(tx.signature)}</a> · {tx.unsent ? "Not sent" : tx.status === "success" ? "Confirmed" : tx.status === "pending" ? "Confirming; automatically retrying verification" : tx.status}</p>)}
+      <button type="button" onClick={c.retryReconcile} disabled={c.busy} className="underline disabled:opacity-40">Requery cleanup results</button>
+    </div>}
     {c.wallet && <div className="mt-5 rounded-2xl border border-white/15 p-4 text-xs leading-6 text-smoke">
       <h3 className="text-sm font-semibold text-cream">Clean up leftover yield</h3>
       <p className="mt-2">Find yield accounts from all your past compounds, including positions you no longer hold. Merge their balances into your wallet and close the accounts to return SOL rent.</p>
-      <p>Each cleanup transaction needs wallet approval. Already confirmed cleanups stay completed if you stop.</p>
+      <p>Approve the cleanup batch once in your wallet. Larger batches may contain multiple transactions. Confirmed cleanups stay completed if you close this page.</p>
       <div className="mt-3 flex flex-wrap gap-3">
         <button type="button" disabled={c.busy || c.scan.scanning} onClick={() => void c.scanWallet(c.scan.started && !c.scan.cursor && !c.scan.incomplete)} className="rounded-full border border-white/20 px-3 py-2 font-semibold text-cream/80 disabled:opacity-40">
           {c.scan.scanning ? "Scanning wallet…" : c.scan.incomplete ? "Retry wallet scan" : c.scan.cursor ? "Continue wallet scan" : c.scan.started ? "Scan wallet again" : "Find leftover yield"}

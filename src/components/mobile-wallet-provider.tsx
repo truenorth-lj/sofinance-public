@@ -9,6 +9,7 @@ import {
   APPKIT_THEME_MODE,
   APPKIT_THEME_VARIABLES,
   FEATURED_SOLANA_WALLET_IDS,
+  appKitSignAllTransactions,
   appKitSignMessage,
   signAppKitTransaction,
   type AppKitSolanaWalletProvider,
@@ -68,6 +69,7 @@ export function MobileWalletProvider({ children }: { children: React.ReactNode }
     walletsCount: FEATURED_SOLANA_WALLET_IDS.length,
     connectionError,
     signTransaction: (transaction) => signAppKitTransaction(walletProvider, transaction),
+    signAllTransactions: appKitSignAllTransactions(walletProvider),
     signMessage: appKitSignMessage(walletProvider),
   }}>{children}</WalletConnectionContext.Provider>;
 }

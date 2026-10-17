@@ -35,6 +35,8 @@ export const APPKIT_THEME_VARIABLES = {
  */
 export type AppKitSolanaWalletProvider = {
   signTransaction?: (transaction: VersionedTransaction) => Promise<VersionedTransaction>;
+  signAllTransactions?: (transactions: VersionedTransaction[]) => Promise<VersionedTransaction[]>;
+  session?: { namespaces?: { solana?: { methods?: string[] } } };
   signMessage?: (message: Uint8Array) => Promise<Uint8Array>;
 };
 
@@ -55,5 +57,25 @@ export function appKitSignMessage(
   return async (message) => {
     if (!walletProvider.signMessage) throw new Error("Connected wallet does not support message signing");
     return walletProvider.signMessage(message);
+  };
+}
+
+/** Expose only one-request signing, including WalletConnect's negotiated capability. */
+export function appKitSignAllTransactions(
+  walletProvider: AppKitSolanaWalletProvider | undefined,
+): ((transactions: VersionedTransaction[]) => Promise<VersionedTransaction[]>) | undefined {
+  function supportsBatch(): boolean {
+    if (!walletProvider?.signAllTransactions) return false;
+    // AppKit silently loops signTransaction for unsupported WalletConnect sessions.
+    // Check before calling it so this action always remains one approval request.
+    return !("session" in walletProvider)
+      || walletProvider.session?.namespaces?.solana?.methods?.includes("solana_signAllTransactions") === true;
+  }
+  if (!supportsBatch()) return undefined;
+  return async (transactions) => {
+    if (!supportsBatch() || !walletProvider?.signAllTransactions) {
+      throw new Error("Connected wallet does not support one-request batch signing");
+    }
+    return walletProvider.signAllTransactions(transactions);
   };
 }

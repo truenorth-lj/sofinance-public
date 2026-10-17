@@ -133,11 +133,11 @@ describe("POST /api/compound-confirm", () => {
     expect((await call()).json).toMatchObject({ status: "failed", transactionError: { X: 1 } });
   });
 
-  it("finalized execution stays settled when parsed transaction or metadata is unavailable", async () => {
+  it("retains finality and keeps retrying when parsed transaction or metadata is unavailable", async () => {
     connection.getParsedTransaction.mockResolvedValue(null);
-    expect((await call()).json).toMatchObject({ status: "manual-review", chainStatus: "success" });
+    expect((await call()).json).toMatchObject({ status: "pending", chainStatus: "success" });
     connection.getParsedTransaction.mockResolvedValue({ transaction: { signatures: [signature] }, meta: null });
-    expect((await call()).json).toMatchObject({ status: "manual-review", chainStatus: "success" });
+    expect((await call()).json).toMatchObject({ status: "pending", chainStatus: "success" });
     connection.getParsedTransaction.mockResolvedValue({ transaction: { signatures: [signature] }, meta: { err: { Y: 2 } } });
     expect((await call()).json).toMatchObject({ status: "failed", transactionError: { Y: 2 } });
   });
@@ -170,7 +170,14 @@ describe("POST /api/compound-confirm", () => {
     vi.mocked(confirmedCompoundReceipt).mockImplementation(() => { throw new Error("invalid ledger amount"); });
     expect((await call()).json).toMatchObject({ status: "manual-review", chainStatus: "success", receipt: null });
     connection.getParsedTransaction.mockRejectedValue(new Error("history RPC unavailable"));
-    expect((await call()).json).toMatchObject({ status: "manual-review", chainStatus: "success" });
+    expect((await call()).json).toMatchObject({ status: "pending", chainStatus: "success" });
+  });
+  it("recovery succeeds after a transient finalized-history timeout without a new attempt", async () => {
+    vi.mocked(parseCompoundAttempt).mockReturnValue(attemptFor("recovery") as never);
+    connection.getParsedTransaction.mockRejectedValueOnce(new DOMException("Fetch is aborted", "AbortError"));
+    expect((await call()).json).toMatchObject({ signature, status: "pending", chainStatus: "success" });
+    expect((await call()).json).toMatchObject({ signature, status: "success", chainStatus: "success" });
+    expect(confirmedRecovery).toHaveBeenCalledTimes(1);
   });
   it("also finds old recovery transactions in finalized history", async () => {
     connection.getSignatureStatuses.mockResolvedValue({ value: [null] });

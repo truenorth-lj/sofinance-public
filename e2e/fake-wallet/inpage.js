@@ -30,11 +30,14 @@
       'solana:signTransaction': {
         version: '1.0.0',
         supportedTransactionVersions: ['legacy', 0],
-        signTransaction: async (...inputs) => Promise.all(inputs.map(async ({ transaction, account: a, chain }) => {
+        signTransaction: async (...inputs) => {
+          (window.__E2E_SIGN_REQUESTS__ ||= []).push(inputs.length);
+          return Promise.all(inputs.map(async ({ transaction, account: a, chain }) => {
           if (a.address !== cfg.address) throw new Error('E2E wallet: wrong account');
           const out = await window.__e2eSignTransaction(b64(transaction), chain || null);
           return { signedTransaction: unb64(out) };
-        })),
+          }));
+        },
       },
       'solana:signMessage': {
         version: '1.0.0',

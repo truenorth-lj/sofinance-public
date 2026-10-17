@@ -5,6 +5,7 @@ import {
   APPKIT_THEME_MODE,
   APPKIT_THEME_VARIABLES,
   FEATURED_SOLANA_WALLET_IDS,
+  appKitSignAllTransactions,
   appKitSignMessage,
   signAppKitTransaction,
   type AppKitSolanaWalletProvider,
@@ -101,5 +102,54 @@ describe("appKitSignMessage", () => {
     expect(appKitSignMessage(undefined)).toBeUndefined();
     expect(appKitSignMessage({})).toBeUndefined();
     expect(appKitSignMessage({ signTransaction: async (transaction) => transaction })).toBeUndefined();
+  });
+});
+
+describe("appKitSignAllTransactions", () => {
+  it("makes one extension provider request and preserves provider binding", async () => {
+    const transactions = [fakeTx("a"), fakeTx("b")];
+    const provider: AppKitSolanaWalletProvider = {
+      signTransaction: vi.fn(async (transaction) => transaction),
+      signAllTransactions: vi.fn(async function (this: AppKitSolanaWalletProvider, batch) {
+        expect(this).toBe(provider);
+        return batch;
+      }),
+    };
+    await expect(appKitSignAllTransactions(provider)!(transactions)).resolves.toBe(transactions);
+    expect(provider.signAllTransactions).toHaveBeenCalledExactlyOnceWith(transactions);
+    expect(provider.signTransaction).not.toHaveBeenCalled();
+  });
+
+  it("exposes batch signing only for negotiated WalletConnect batch support", async () => {
+    const provider: AppKitSolanaWalletProvider = {
+      session: { namespaces: { solana: { methods: ["solana_signAllTransactions"] } } },
+      signAllTransactions: vi.fn(async (transactions) => transactions),
+    };
+    const transactions = [fakeTx("wc-a"), fakeTx("wc-b")];
+    await expect(appKitSignAllTransactions(provider)!(transactions)).resolves.toBe(transactions);
+    expect(provider.signAllTransactions).toHaveBeenCalledExactlyOnceWith(transactions);
+  });
+
+  it("never exposes AppKit's repeated-signature fallback for unsupported sessions", () => {
+    const signAllTransactions = vi.fn(async (transactions: VersionedTransaction[]) => transactions);
+    expect(appKitSignAllTransactions(undefined)).toBeUndefined();
+    expect(appKitSignAllTransactions({})).toBeUndefined();
+    expect(appKitSignAllTransactions({ signAllTransactions, session: undefined })).toBeUndefined();
+    expect(appKitSignAllTransactions({ signAllTransactions, session: { namespaces: {} } })).toBeUndefined();
+    expect(appKitSignAllTransactions({ signAllTransactions, session: {
+      namespaces: { solana: { methods: ["solana_signTransaction"] } },
+    } })).toBeUndefined();
+    expect(signAllTransactions).not.toHaveBeenCalled();
+  });
+
+  it("rechecks session capability immediately before signing", async () => {
+    const provider: AppKitSolanaWalletProvider = {
+      session: { namespaces: { solana: { methods: ["solana_signAllTransactions"] } } },
+      signAllTransactions: vi.fn(async (transactions) => transactions),
+    };
+    const sign = appKitSignAllTransactions(provider)!;
+    provider.session = undefined;
+    await expect(sign([fakeTx("a")])).rejects.toThrow("one-request batch signing");
+    expect(provider.signAllTransactions).not.toHaveBeenCalled();
   });
 });
