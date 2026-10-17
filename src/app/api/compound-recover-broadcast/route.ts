@@ -3,7 +3,6 @@ import bs58 from "bs58";
 import { parseCompoundBroadcast } from "@/lib/compound-api";
 import { simulateAndVerifyRecovery } from "@sofinance/engine/compound-recovery";
 import type { CompoundRecoverySummary } from "@sofinance/engine/compound-recovery-types";
-import { isPreflightOrUnsentFailure } from "@/lib/public-error";
 import { rpcConnection } from "@sofinance/engine/rpc";
 import { apiError } from "@/lib/api-response";
 
@@ -28,7 +27,9 @@ export async function POST(request: Request) {
     if (signature !== expected) throw new Error("RPC returned recovery signature mismatch, please verify on-chain status");
     return Response.json({ signature }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
-    const sent = !submitted || isPreflightOrUnsentFailure(error) ? false : undefined;
+    // Once submission starts, transport/retry errors cannot prove the RPC did
+    // not accept this signature. Preserve it for on-chain reconciliation.
+    const sent = !submitted ? false : undefined;
     return apiError(error, "Recovery broadcast failed", 400, sent === false ? { sent: false } : undefined);
   }
 }

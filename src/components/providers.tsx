@@ -27,7 +27,7 @@ function BrowserWalletProvider({ children }: { children: React.ReactNode }) {
 }
 
 function BrowserWalletConnection({ children }: { children: React.ReactNode }) {
-  const { publicKey, connected, disconnect, wallets, signTransaction, signMessage } = useWallet();
+  const { publicKey, connected, disconnect, wallets, signTransaction, signAllTransactions, signMessage } = useWallet();
   const { setVisible } = useWalletModal();
   return <WalletConnectionContext.Provider value={{
     address: publicKey?.toBase58(), connected, connect: () => setVisible(true),
@@ -36,6 +36,7 @@ function BrowserWalletConnection({ children }: { children: React.ReactNode }) {
       if (!signTransaction) throw new Error("This wallet does not support transaction signing");
       return signTransaction(transaction);
     },
+    signAllTransactions: signAllTransactions ? (transactions) => signAllTransactions(transactions) : undefined,
     signMessage: signMessage ? async (message) => {
       const signature = await signMessage(message);
       return signature;

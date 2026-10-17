@@ -81,11 +81,9 @@ describe("POST /api/compound-recover-broadcast", () => {
     expect(json).toEqual({ error: "RPC returned recovery signature mismatch, please verify on-chain status" });
   });
 
-  it("an unknown send failure after submit has no sent flag, a preflight failure has sent:false", async () => {
-    connection.sendRawTransaction.mockRejectedValue(new Error("socket hang up"));
-    expect((await call(body())).json).toEqual({ error: "socket hang up" });
-    connection.sendRawTransaction.mockRejectedValue(new Error("Transaction simulation failed: Blockhash not found"));
-    expect((await call(body())).json).toMatchObject({ sent: false });
+  it.each(["socket hang up", "429 Too many requests", "Fetch is aborted", "Transaction simulation failed: Blockhash not found"])("preserves submission uncertainty after send starts: %s", async message => {
+    connection.sendRawTransaction.mockRejectedValue(new Error(message));
+    expect((await call(body())).json).not.toHaveProperty("sent");
   });
 
   it("QUIRK: no Beam lookup on the recovery path", async () => {

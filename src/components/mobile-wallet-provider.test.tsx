@@ -102,6 +102,24 @@ describe("MobileWalletProvider", () => {
     expect(connection.signMessage).toBeUndefined();
   });
 
+  it("exposes one-request batch signing through the context", async () => {
+    const transactions = [fakeTx(), fakeTx()];
+    mocks.walletProvider = { signAllTransactions: vi.fn(async (batch) => batch) };
+    const connection = capture();
+    await expect(connection.signAllTransactions!(transactions)).resolves.toBe(transactions);
+    expect(mocks.walletProvider.signAllTransactions).toHaveBeenCalledExactlyOnceWith(transactions);
+  });
+
+  it("omits unsupported batch signing instead of requesting multiple approvals", () => {
+    mocks.walletProvider = {
+      signTransaction: vi.fn(async (transaction) => transaction),
+      signAllTransactions: vi.fn(async (batch) => batch),
+      session: { namespaces: { solana: { methods: ["solana_signTransaction"] } } },
+    };
+    expect(capture().signAllTransactions).toBeUndefined();
+    expect(mocks.walletProvider.signAllTransactions).not.toHaveBeenCalled();
+  });
+
   it("enables the wallet list instead of connecting Jupiter only", () => {
     const src = readFileSync(resolve("src/components/mobile-wallet-provider.tsx"), "utf8");
     expect(src).toContain("enableWallets: true");
