@@ -265,6 +265,7 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
     if (cleanupRunning.current && !batch) return "stopped";
     if (!wallet || (!receipt && !positionMint) || !connection.connected || submitting.current || externalBlockedRef.current || (walletBlocked && !batch) ||
       (!receipt && !canCompound) || (receipt && receipt.wallet !== wallet)) return "stopped";
+    const recoveryAttemptRecord = receipt ? window.localStorage.getItem(compoundAttemptKey(wallet)) : null;
     if (receipt) {
       const saved = loadCompoundAttempt(window.localStorage, wallet);
       if (saved.invalid || saved.attempt && (resolvedAttempt.current?.signature !== saved.attempt.signature ||
@@ -274,6 +275,14 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
         return "stopped";
       }
     }
+    const verifyRecoveryAttempt = () => {
+      if (!receipt) return;
+      const saved = loadCompoundAttempt(window.localStorage, wallet);
+      if (window.localStorage.getItem(compoundAttemptKey(wallet)) !== recoveryAttemptRecord || saved.invalid ||
+        saved.attempt && (resolvedAttempt.current?.signature !== saved.attempt.signature || !recoveryMayProceed(resolvedAttempt.current))) {
+        throw new Error("Cleanup paused because another tab changed the transaction record. Reload and verify the other tab's transaction before continuing.");
+      }
+    };
     submitting.current = true; operationLifecycle.current = lifecycle.current; operationRequest.current++;
     confirmationRequest.current++; attemptSignatureRef.current = null;
     const submittedLifecycle = lifecycle.current;
@@ -291,6 +300,7 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
         : post<CompoundPrepared>("/api/compound-prepare", { wallet: submittedWallet, positionMint: submittedMint, sourceSignatures });
       const acceptPrepared = (prepared: CompoundPrepared | RecoveryPrepared) => {
         if (!current() || externalBlockedRef.current) throw new Error("Wallet or position changed; transaction not yet signed");
+        verifyRecoveryAttempt();
         const summary = prepared.summary;
         if (!prepared.permit || !summary.simulated || Date.now() >= summary.expiresAt ||
           (receipt ? summary.operation !== "recovery" || (summary as CompoundRecoverySummary).wallet !== wallet :
@@ -304,6 +314,7 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
       };
       const acceptClosed = (response: CompoundPrepared | RecoveryPrepared | AlreadyClosedRecovery) => {
         if (!("alreadyClosed" in response)) return false;
+        verifyRecoveryAttempt();
         if (!receipt || response.alreadyClosed !== true || response.wallet !== submittedWallet || !current() ||
           !Array.isArray(response.accounts) || response.accounts.length !== receipt.compoundAccounts.length ||
           [...response.accounts].sort().join(":") !== receipt.compoundAccounts.map(account => account.address).sort().join(":")) {
@@ -336,6 +347,7 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
       if (!current() || Date.now() >= summary.expiresAt || externalBlockedRef.current) {
         throw new Error("Wallet, position, or authorization changed during signing; transaction not broadcast");
       }
+      verifyRecoveryAttempt();
       const base = { version: 1 as const, wallet: submittedWallet, positionMint: receipt?.positionMint || submittedMint,
         signature: signedResult.signature, createdAt: Date.now() };
       const created: CompoundAttempt = receipt

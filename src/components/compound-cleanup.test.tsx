@@ -182,6 +182,56 @@ describe("wallet-wide leftover yield cleanup", () => {
     expect(mocks.sign).not.toHaveBeenCalled();
     expect(window.localStorage.getItem(compoundAttemptKey(fixture.wallet))).toBe(JSON.stringify(fixture.attempt));
   });
+  it.each([
+    ["prepare", "pending"], ["sign", "pending"], ["prepare", "invalid"], ["sign", "invalid"],
+  ] as const)("preserves another tab's %s-time %s record without broadcasting cleanup", async (pauseAt, stored) => {
+    persistCompoundAttempt(window.localStorage, fixture.attempt);
+    let resolvePrepare!: (response: Response) => void;
+    let resolveSign!: (tx: VersionedTransaction) => void; let signed!: VersionedTransaction;
+    const handler = fetchMock.getMockImplementation() as (url: string, init?: RequestInit) => Promise<Response>;
+    if (pauseAt === "prepare") {
+      fetchMock.mockImplementation((url: string, init?: RequestInit) => url === "/api/compound-recover-prepare"
+        ? new Promise<Response>(done => { resolvePrepare = done; }) : handler(url, init));
+    } else {
+      mocks.sign.mockImplementation((tx: VersionedTransaction) => {
+        signed = tx; return new Promise(done => { resolveSign = done; });
+      });
+    }
+    await render(); await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(controller.attemptStatus).toBe("success");
+    const originalReceipt = controller.receipts[0]!;
+    let recovering!: Promise<void>;
+    await act(async () => { recovering = controller.cleanupAll(); });
+    const otherAttempt = { ...fixture.attempt, signature: bs58.encode(new Uint8Array(64).fill(77)) };
+    const otherRecord = stored === "pending" ? JSON.stringify(otherAttempt) : "{invalid-other-tab-record";
+    window.localStorage.setItem(compoundAttemptKey(fixture.wallet), otherRecord);
+    await act(async () => {
+      if (pauseAt === "prepare") resolvePrepare(Response.json(prepared(originalReceipt)));
+      else { signed.sign([testKeypair(1)]); resolveSign(signed); }
+      await recovering;
+    });
+    expect(mocks.sign).toHaveBeenCalledTimes(pauseAt === "prepare" ? 0 : 1);
+    expect(broadcastCount).toBe(0);
+    expect(window.localStorage.getItem(compoundAttemptKey(fixture.wallet))).toBe(otherRecord);
+    expect(controller.receipts).toHaveLength(1);
+    expect(controller.recoveryError?.message).toContain("another tab");
+    expect(controller.recoveryError?.message).toContain("Reload and verify");
+  });
+  it("allows cleanup when the same verified prior attempt remains stored through preparation", async () => {
+    persistCompoundAttempt(window.localStorage, fixture.attempt);
+    let resolvePrepare!: (response: Response) => void;
+    const handler = fetchMock.getMockImplementation() as (url: string, init?: RequestInit) => Promise<Response>;
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => url === "/api/compound-recover-prepare"
+      ? new Promise<Response>(done => { resolvePrepare = done; }) : handler(url, init));
+    await render(); await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(controller.attemptStatus).toBe("success");
+    const originalReceipt = controller.receipts[0]!;
+    let recovering!: Promise<void>;
+    await act(async () => { recovering = controller.cleanupAll(); });
+    await act(async () => { resolvePrepare(Response.json(prepared(originalReceipt))); await recovering; });
+    expect(mocks.sign).toHaveBeenCalledOnce(); expect(broadcastCount).toBe(1);
+    expect(controller.receipts).toHaveLength(0); expect(controller.cleanup?.completed).toBe(1);
+  });
   it("ignores late discovery after wallet switch, including switching back", async () => {
     let resolve!: (response: Response) => void;
     fetchMock.mockImplementation(() => new Promise<Response>(done => { resolve = done; }));
