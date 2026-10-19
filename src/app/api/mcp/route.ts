@@ -41,6 +41,8 @@ import {
   submitOpenPositionSchema,
 } from "@/mcp/schemas";
 import { getJupiterApiKey } from "@sofinance/engine/config/server-env";
+import { evaluateRegion, MCP_RESTRICTED_REGIONS_NOTE, readGeo, regionRestrictedBody, RESTRICTED_REGIONS_SENTENCE } from "@/lib/restricted-regions";
+import { isRegionBlockedMcpTool } from "@/lib/region-routes";
 
 /**
  * POST /api/mcp
@@ -245,7 +247,7 @@ async function handleToolCall(name: string, args: unknown, walletFromToken: stri
   }
 }
 
-const TOOL_DEFINITIONS = [
+const BASE_TOOL_DEFINITIONS = [
   ...WITHDRAW_TOOL_DEFINITIONS,
   {
     name: "get_position_performance",
@@ -692,6 +694,11 @@ const TOOL_DEFINITIONS = [
   },
 ];
 
+/** Transaction-building tools carry the restricted-regions statement in their description. */
+const TOOL_DEFINITIONS = BASE_TOOL_DEFINITIONS.map((tool) => isRegionBlockedMcpTool(tool.name)
+  ? { ...tool, description: `${tool.description}${MCP_RESTRICTED_REGIONS_NOTE}` }
+  : tool);
+
 export async function POST(request: NextRequest) {
   try {
     // Parse JSON-RPC request
@@ -732,7 +739,7 @@ export async function POST(request: NextRequest) {
             name: "sofinance-mcp-server",
             version: "0.1.0",
           },
-          instructions: "Remote MCP server for SoFinance. Authenticate with Bearer token from /api/mcp-token.",
+          instructions: `Remote MCP server for SoFinance. Authenticate with Bearer token from /api/mcp-token. ${RESTRICTED_REGIONS_SENTENCE} Transaction-building tools are refused from those regions; withdrawal tools stay available.`,
         })
       );
     }
@@ -790,6 +797,17 @@ export async function POST(request: NextRequest) {
           createJsonRpcError(id ?? null, -32602, "Invalid params: tool name must be a string"),
           { status: 400 }
         );
+      }
+
+      // Same restricted-region gate as the web APIs; withdraw and read-only tools are never refused.
+      if (isRegionBlockedMcpTool(toolParams.name)) {
+        const decision = evaluateRegion(readGeo(request.headers, { cookies: request.cookies }));
+        if (decision.blocked) {
+          return NextResponse.json(
+            createJsonRpcError(id ?? null, -32003, regionRestrictedBody(decision).error, regionRestrictedBody(decision)),
+            { status: 403, headers: { "Cache-Control": "no-store" } }
+          );
+        }
       }
 
       try {
