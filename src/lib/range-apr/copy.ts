@@ -1,8 +1,8 @@
 /** User-facing strings for the range APR estimate (shared by the modal and the pair cards). */
-export const APR_ESTIMATE_LABEL = "Est. fee APR";
+export const APR_ESTIMATE_LABEL = "Est. fee APR · not guaranteed";
 export const BEST_LABEL = "Best";
 export const HIGHEST_RANGE_COLUMN_LABEL = "Highest range";
-export const HIGHEST_RANGE_APR_LABEL = "Highest range APR";
+export const HIGHEST_RANGE_APR_LABEL = "Est. highest range APR";
 
 /** Short caveat shown in tooltips; the long form is `assumptions` in the API payload. */
 export const APR_ESTIMATE_CAVEAT =

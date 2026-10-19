@@ -121,8 +121,8 @@ export function OutcomePanel({
             <Row label="Opening cost, day 0">
               {`−${formatCents(comparison.entryCost)} USDC (about ${planOpenCostPctLabel()}%)`}
             </Row>
-            <Row label="Best APY used">
-              <span className="block">{formatPct(comparison.apyPct)} APY</span>
+            <Row label="Est. best APY used · not guaranteed">
+              <span className="block">{formatPct(comparison.apyPct)} est. APY</span>
               <span className="block text-xs text-smoke">
                 {bestAprCopy(best)} compounded daily, over {completeDaysCopy(best.sampleDays)}
               </span>
