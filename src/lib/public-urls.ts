@@ -86,3 +86,8 @@ export const BLOG_ROUTES = {
 export function blogArticlePath(slug: string): string {
   return `${BLOG_PATH}/${slug}`;
 }
+
+/** Legal pages (public site, English). */
+export const LEGAL_ROUTES = {
+  terms: "/terms",
+} as const;
