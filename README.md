@@ -104,6 +104,8 @@ Copy `.env.example` → `.env.local`. Comments in that file are the source of tr
 | `NEXT_PUBLIC_SOLANA_RPC_URL` | Browser wallet RPC only; must be a public endpoint, never a key |
 | `SOFINANCE_FEE_WALLET` / `SOFINANCE_FEE_BPS` | Optional protocol fee; **server-only, never `NEXT_PUBLIC_`**. Default 10 bps, max 100. Unset wallet = fee 0, no transfer added. Details: [Protocol swap fee](#protocol-swap-fee). |
 | RWA / history DB vars | Optional snapshot gateway; see `.env.example` and `db/README.md` |
+| `NEXT_PUBLIC_SENTRY_DSN` / `SENTRY_DSN` | Optional Sentry error monitoring (US, `ingest.us.sentry.io`). Unset both = complete no-op. |
+| `SENTRY_AUTH_TOKEN` / `SENTRY_ORG` / `SENTRY_PROJECT` | Source-map upload on `next build`. All three required to upload; build succeeds if any is missing. Never `NEXT_PUBLIC_`. See [Error monitoring](#error-monitoring-sentry). |
 
 ### Run
 
@@ -125,6 +127,21 @@ docker run --env-file .env.local -p 3000:3000 sofinance-rwa-service
 ```
 
 The web UI and MCP HTTP endpoint are the Next.js app (`pnpm dev` / `pnpm build && pnpm start`, or Vercel).
+
+### Error monitoring (Sentry)
+
+Optional `@sentry/nextjs` client, server, and edge setup. The production/preview project is **sofinance / sofinance-public** in the US region (`ingest.us.sentry.io`).
+
+| Variable | Role |
+|----------|------|
+| `NEXT_PUBLIC_SENTRY_DSN` | Browser + bundled client DSN. Unset with `SENTRY_DSN` = SDK is disabled. |
+| `SENTRY_DSN` | Server/edge DSN fallback if the public var is unset. |
+| `NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE` / `SENTRY_TRACES_SAMPLE_RATE` | Trace sample rate 0–1 (default `0.1`). |
+| `SENTRY_AUTH_TOKEN` | Source-map upload token. Server-only; never `NEXT_PUBLIC_`. |
+| `SENTRY_ORG` | Sentry org slug (`sofinance`). |
+| `SENTRY_PROJECT` | Sentry project slug (`sofinance-public`). |
+
+Session Replay is off. `sendDefaultPii` is false. Events scrub wallet addresses, signatures, RPC URLs, API keys, `x-vercel-*` / IP / `Authorization` / `Cookie` headers, and drop `user.ip_address`. API captures are 5xx and Jupiter/RPC upstream only (not validation 4xx or user-rejected). The `route` tag comes from the request path / Next transaction, not a bundled stack.
 
 ### Point an MCP client at your instance
 

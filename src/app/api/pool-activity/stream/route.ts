@@ -9,6 +9,7 @@ import {
   parseBlurLiveEvent,
   rememberBlurEvent,
 } from "@/lib/solami-blur";
+import { captureApiRouteError } from "@/lib/sentry/capture";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -186,6 +187,7 @@ export async function GET(request: Request) {
       },
     });
   } catch (error) {
+    captureApiRouteError(error, { request, route: "/api/pool-activity/stream", fallback: "Pool activity stream failed", status: 400 });
     const message = error instanceof Error ? error.message : "Pool activity stream failed";
     return Response.json({ error: message }, { status: 400, headers: { "Cache-Control": "no-store" } });
   }
