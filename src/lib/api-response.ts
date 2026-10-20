@@ -1,8 +1,9 @@
 import "@/lib/engine-host";
 import "server-only";
 
-import { CompoundSendError, sanitizePublicError } from "./public-error";
-import { JupiterHttpError, JupiterUnavailableError, JUPITER_UNAVAILABLE_MESSAGE } from "@sofinance/engine/jupiter/errors";
+import { CompoundSendError, publicErrorCode, sanitizePublicError } from "./public-error";
+import { JupiterHttpError, JupiterUnavailableError, JUPITER_UNAVAILABLE_CODE, JUPITER_UNAVAILABLE_MESSAGE, RPC_UNAVAILABLE_CODE } from "@sofinance/engine/jupiter/errors";
+import { SelectedNoRouteError } from "./selected-no-route";
 import { captureApiRouteError, shouldCaptureApiError } from "./sentry/capture";
 
 /** Selected upstream failures are availability errors, not invalid user input. */
@@ -35,7 +36,15 @@ export function apiError(error: unknown, fallback: string, status = 400, extra?:
     console.error(fallback, error.cause);
   }
   const source = error instanceof CompoundSendError && error.cause !== undefined ? error.cause : error;
-  const body: { error: string; sent?: boolean } = { error: sanitizePublicError(source, fallback) };
+  const body: { error: string; sent?: boolean; code?: string; inputMint?: string; outputMint?: string } = {
+    error: sanitizePublicError(source, fallback),
+  };
+  const code = publicErrorCode(source);
+  if (code && code !== JUPITER_UNAVAILABLE_CODE && code !== RPC_UNAVAILABLE_CODE) body.code = code;
+  if (source instanceof SelectedNoRouteError) {
+    body.inputMint = source.inputMint;
+    body.outputMint = source.outputMint;
+  }
   const sent = extra?.sent === false || error instanceof CompoundSendError && error.sent === false ? false : extra?.sent;
   if (sent === false) body.sent = false;
   return Response.json(body, {

@@ -17,10 +17,14 @@ vi.mock("@sentry/nextjs", () => ({
 }));
 
 import { JupiterHttpError, JupiterUnavailableError } from "@sofinance/engine/jupiter/errors";
+import { JupiterNoRouteError } from "@sofinance/engine/swap/jupiter";
 import { RpcUnavailableError } from "@sofinance/engine/rpc/errors";
 import { CompoundSendError } from "../public-error";
+import { AmountTooSmallError } from "../selected-amount-error";
+import { SelectedNoRouteError } from "../selected-no-route";
 import {
   captureApiRouteError,
+  isUserFacingSelectedError,
   isUserRejectedError,
   resolveApiRoute,
   sentryErrorClass,
@@ -57,6 +61,26 @@ describe("shouldCaptureApiError", () => {
     expect(shouldCaptureApiError(new JupiterHttpError(429, "/swap/v1/quote"), 503)).toBe(true);
     expect(shouldCaptureApiError(new JupiterHttpError(400, "/swap/v1/quote"), 400)).toBe(false);
     expect(shouldCaptureApiError(new RpcUnavailableError(), 400)).toBe(true);
+  });
+
+  it("does not report user-facing selected 4xx even if status is 5xx", () => {
+    const noRoute = new SelectedNoRouteError("SPCX", "INTC", "spcx", "intc");
+    const dust = new AmountTooSmallError();
+    const client = new JupiterHttpError(400, "/swap/v1/quote", null, "Token not tradable");
+    expect(isUserFacingSelectedError(noRoute)).toBe(true);
+    expect(isUserFacingSelectedError(new JupiterNoRouteError())).toBe(true);
+    expect(isUserFacingSelectedError(dust)).toBe(true);
+    expect(isUserFacingSelectedError(client)).toBe(true);
+    expect(isUserFacingSelectedError(new JupiterHttpError(429, "/swap/v1/quote"))).toBe(false);
+    expect(shouldCaptureApiError(noRoute, 400)).toBe(false);
+    expect(shouldCaptureApiError(noRoute, 503)).toBe(false);
+    expect(shouldCaptureApiError(new JupiterNoRouteError(), 400)).toBe(false);
+    expect(shouldCaptureApiError(dust, 400)).toBe(false);
+    expect(shouldCaptureApiError(dust, 503)).toBe(false);
+    expect(shouldCaptureApiError(client, 400)).toBe(false);
+    expect(shouldCaptureApiError(client, 500)).toBe(false);
+    expect(shouldCaptureApiError(new JupiterHttpError(429, "/swap/v1/quote"), 503)).toBe(true);
+    expect(shouldCaptureApiError(new JupiterHttpError(503, "/swap/v1/quote"), 503)).toBe(true);
   });
 });
 

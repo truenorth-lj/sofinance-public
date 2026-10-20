@@ -7,6 +7,9 @@ vi.mock("./sentry/capture", async (importOriginal) => {
 });
 import { apiError, selectedApiError } from "./api-response";
 import { JupiterHttpError } from "@sofinance/engine/jupiter/errors";
+import { JupiterNoRouteError } from "@sofinance/engine/swap/jupiter";
+import { SelectedNoRouteError } from "./selected-no-route";
+import { AmountTooSmallError } from "./selected-amount-error";
 
 beforeEach(() => {
   captureApiRouteError.mockReset();
@@ -38,12 +41,68 @@ it("keeps validation and genuine no-route failures at 400", async () => {
   expect(await response.json()).toEqual({ error: "Insufficient input asset balance" });
 });
 
-it("captures Jupiter and 5xx API failures, not validation 4xx", async () => {
-  const jupiter = new JupiterHttpError(503, "/swap/v2/build");
-  selectedApiError(jupiter, "failed");
-  expect(captureApiRouteError).toHaveBeenCalledWith(jupiter, { fallback: "failed", status: 503 });
+it("returns a coded user-facing body for add-liquidity no-route", async () => {
+  const response = selectedApiError(new SelectedNoRouteError("SPCX", "INTC", "spcx", "intc"), "Quote failed");
+  expect(response.status).toBe(400);
+  expect(await response.json()).toEqual({
+    error: "No route from SPCX to INTC within the transaction size limit. Try USDC, SOL, or one of the pool's tokens.",
+    code: "jupiter_no_route",
+    inputMint: "spcx",
+    outputMint: "intc",
+  });
+});
+
+it("does not leak Jupiter HTTP 400 when quoteRoute mapped to no-route", async () => {
+  const response = selectedApiError(new JupiterNoRouteError(), "Quote failed");
+  expect(response.status).toBe(400);
+  const body = await response.json() as { error: string; code?: string };
+  expect(body.code).toBe("jupiter_no_route");
+  expect(body.error).not.toMatch(/HTTP 400/);
+  expect(body.error).toMatch(/transaction size limit/);
+});
+
+it("returns a coded amount-too-small body for dust Jupiter 400s", async () => {
+  const response = selectedApiError(new AmountTooSmallError(), "Quote failed");
+  expect(response.status).toBe(400);
+  expect(await response.json()).toEqual({
+    error: "Amount too small to swap into this position — try a larger amount",
+    code: "amount_too_small",
+  });
+});
+
+it("returns Jupiter's 400 body instead of bare HTTP 400", async () => {
+  const response = selectedApiError(
+    new JupiterHttpError(400, "/swap/v1/quote", null, "Token not tradable"), "Quote failed");
+  expect(response.status).toBe(400);
+  expect(await response.json()).toEqual({
+    error: "Token not tradable",
+    code: "jupiter_client_error",
+  });
+});
+
+it("captures Jupiter 429/5xx and generic 5xx, not user-facing selected 4xx", async () => {
+  const rateLimited = new JupiterHttpError(429, "/swap/v2/build", 3_001);
+  selectedApiError(rateLimited, "failed");
+  expect(captureApiRouteError).toHaveBeenCalledWith(rateLimited, { fallback: "failed", status: 503 });
 
   captureApiRouteError.mockClear();
+  const unavailable = new JupiterHttpError(503, "/swap/v2/build");
+  selectedApiError(unavailable, "failed");
+  expect(captureApiRouteError).toHaveBeenCalledWith(unavailable, { fallback: "failed", status: 503 });
+
+  captureApiRouteError.mockClear();
+  selectedApiError(new SelectedNoRouteError("SPCX", "INTC", "spcx", "intc"), "Quote failed");
+  expect(captureApiRouteError).not.toHaveBeenCalled();
+
+  selectedApiError(new JupiterNoRouteError(), "Quote failed");
+  expect(captureApiRouteError).not.toHaveBeenCalled();
+
+  selectedApiError(new AmountTooSmallError(), "Quote failed");
+  expect(captureApiRouteError).not.toHaveBeenCalled();
+
+  selectedApiError(new JupiterHttpError(400, "/swap/v1/quote", null, "Token not tradable"), "Quote failed");
+  expect(captureApiRouteError).not.toHaveBeenCalled();
+
   selectedApiError(new Error("Insufficient input asset balance"), "failed");
   expect(captureApiRouteError).not.toHaveBeenCalled();
 

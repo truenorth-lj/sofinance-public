@@ -1,7 +1,8 @@
 import * as Sentry from "@sentry/nextjs";
-import { isJupiterUpstreamError, JupiterHttpError, JupiterUnavailableError } from "@sofinance/engine/jupiter/errors";
+import { isJupiterUpstreamError, JupiterHttpError, JupiterUnavailableError, JUPITER_NO_ROUTE_CODE } from "@sofinance/engine/jupiter/errors";
 import { RpcHttpError, RpcUnavailableError } from "@sofinance/engine/rpc/errors";
 import { publicErrorCode, CompoundSendError, sanitizePublicError } from "../public-error";
+import { AMOUNT_TOO_SMALL_CODE, JUPITER_CLIENT_ERROR_CODE } from "../selected-amount-error";
 import { isSentryEnabled } from "./runtime";
 import { pathnameFromUrl, routeFromRequest, routeFromTransaction } from "./route";
 
@@ -22,20 +23,37 @@ export function isUserRejectedError(error: unknown): boolean {
   return /user rejected|rejected the request|wallet.*reject|cancelled by user|user cancel/i.test(text);
 }
 
+const USER_FACING_SELECTED_CODES = new Set([
+  JUPITER_NO_ROUTE_CODE,
+  AMOUNT_TOO_SMALL_CODE,
+  JUPITER_CLIENT_ERROR_CODE,
+]);
+
+/** Coded 4xx user-facing selected errors — never report these. */
+export function isUserFacingSelectedError(error: unknown): boolean {
+  if (error instanceof CompoundSendError && error.cause !== undefined) {
+    return isUserFacingSelectedError(error.cause);
+  }
+  const code = publicErrorCode(error);
+  return code !== undefined && USER_FACING_SELECTED_CODES.has(code);
+}
+
 export function isUpstreamAvailabilityError(error: unknown): boolean {
   if (error instanceof CompoundSendError && error.cause !== undefined) {
     return isUpstreamAvailabilityError(error.cause);
   }
+  if (isUserFacingSelectedError(error)) return false;
   if (error instanceof JupiterUnavailableError || isJupiterUpstreamError(error)) return true;
   if (error instanceof RpcUnavailableError) return true;
   if (error instanceof RpcHttpError) return error.status === 429 || error.status >= 500;
   const code = publicErrorCode(error);
-  return code === "jupiter_unavailable" || code === "rpc_unavailable";
+  return code === "jupiter_unavailable" || code === "rpc_unavailable" || code === "jupiter_rate_limited";
 }
 
 /** 5xx / Jupiter+RPC upstream only. Never validation 4xx or user-rejected. */
 export function shouldCaptureApiError(error: unknown, status = 500): boolean {
   if (isUserRejectedError(error)) return false;
+  if (isUserFacingSelectedError(error)) return false;
   if (isUpstreamAvailabilityError(error)) return true;
   return status >= 500;
 }

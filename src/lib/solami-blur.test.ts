@@ -6,6 +6,7 @@ import {
   blurEventDedupeKey,
   blurSubscribeFilter,
   blurWsUrl,
+  classifyBlurStreamClose,
   dedupeBlurTrades,
   encodeSseEvent,
   eventMatchesPool,
@@ -13,6 +14,8 @@ import {
   formatSseComment,
   getPoolActivitySnapshot,
   isBlurConfigured,
+  isBlurConnectedFrame,
+  isBlurPlanHttpStatus,
   parseBlurLiveEvent,
   parseBlurPoolSnapshot,
   parseBlurTrade,
@@ -169,6 +172,8 @@ describe("parseBlurLiveEvent / dual-side dedupe", () => {
     expect(parseBlurLiveEvent(connectedFrame, POOL)).toBeNull();
     expect(parseBlurLiveEvent(metadataFrame, POOL)).toBeNull();
     expect(parseBlurLiveEvent({ type: "ping" }, POOL)).toBeNull();
+    expect(isBlurConnectedFrame(connectedFrame)).toBe(true);
+    expect(isBlurConnectedFrame({ type: "swap" })).toBe(false);
   });
 
   it("accepts a swap and a liquidity event with a signature", () => {
@@ -304,6 +309,57 @@ describe("getPoolActivitySnapshot", () => {
     });
     expect(snapshot.available).toBe(true);
     expect(snapshot.trades).toEqual([]);
+  });
+
+  it("hides the panel when the data plan returns 401/403/429", async () => {
+    expect(isBlurPlanHttpStatus(401)).toBe(true);
+    expect(isBlurPlanHttpStatus(402)).toBe(true);
+    expect(isBlurPlanHttpStatus(429)).toBe(true);
+    expect(isBlurPlanHttpStatus(500)).toBe(false);
+    const fetcher = vi.fn(async () => new Response("payment required", { status: 402 }));
+    const snapshot = await getPoolActivitySnapshot(POOL, {
+      env: { SOLAMI_DATA_API_KEY: "test-data-key" },
+      fetcher,
+    });
+    expect(snapshot.available).toBe(false);
+    expect(snapshot.source).toBe("unavailable");
+    expect(snapshot.pool).toBeNull();
+    expect(snapshot.trades).toEqual([]);
+  });
+
+  it("hides the panel when pool stats cannot be parsed", async () => {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ empty: true }), { status: 200 }));
+    const snapshot = await getPoolActivitySnapshot(POOL, {
+      env: { SOLAMI_DATA_API_KEY: "test-data-key" },
+      fetcher,
+    });
+    expect(snapshot.available).toBe(false);
+  });
+});
+
+describe("classifyBlurStreamClose", () => {
+  it("treats an immediate upstream close as unavailable", () => {
+    expect(classifyBlurStreamClose({
+      socketOpened: true,
+      receivedConnected: false,
+      receivedLiveEvent: false,
+      cause: "close",
+    })).toEqual({ event: "unavailable", reason: "upstream-close" });
+    expect(classifyBlurStreamClose({
+      socketOpened: false,
+      receivedConnected: false,
+      receivedLiveEvent: false,
+      cause: "error",
+    })).toEqual({ event: "unavailable", reason: "websocket-unavailable" });
+  });
+
+  it("reconnects only after a successful connected or live frame", () => {
+    expect(classifyBlurStreamClose({
+      socketOpened: true,
+      receivedConnected: true,
+      receivedLiveEvent: false,
+      cause: "close",
+    })).toEqual({ event: "end", reason: "upstream-close" });
   });
 });
 
