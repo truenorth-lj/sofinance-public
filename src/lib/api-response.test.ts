@@ -2,6 +2,8 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 import { selectedApiError } from "./api-response";
 import { JupiterHttpError } from "@sofinance/engine/jupiter/errors";
+import { JupiterNoRouteError } from "@sofinance/engine/swap/jupiter";
+import { SelectedNoRouteError } from "./selected-no-route";
 
 beforeEach(() => { vi.spyOn(console, "error").mockImplementation(() => {}); });
 afterEach(() => vi.restoreAllMocks());
@@ -28,4 +30,24 @@ it("keeps validation and genuine no-route failures at 400", async () => {
   const response = selectedApiError(new Error("Insufficient input asset balance"), "failed");
   expect(response.status).toBe(400);
   expect(await response.json()).toEqual({ error: "Insufficient input asset balance" });
+});
+
+it("returns a coded user-facing body for add-liquidity no-route", async () => {
+  const response = selectedApiError(new SelectedNoRouteError("SPCX", "INTC", "spcx", "intc"), "Quote failed");
+  expect(response.status).toBe(400);
+  expect(await response.json()).toEqual({
+    error: "No route from SPCX to INTC within the transaction size limit. Try USDC, SOL, or one of the pool's tokens.",
+    code: "jupiter_no_route",
+    inputMint: "spcx",
+    outputMint: "intc",
+  });
+});
+
+it("does not leak Jupiter HTTP 400 when quoteRoute mapped to no-route", async () => {
+  const response = selectedApiError(new JupiterNoRouteError(), "Quote failed");
+  expect(response.status).toBe(400);
+  const body = await response.json() as { error: string; code?: string };
+  expect(body.code).toBe("jupiter_no_route");
+  expect(body.error).not.toMatch(/HTTP 400/);
+  expect(body.error).toMatch(/transaction size limit/);
 });

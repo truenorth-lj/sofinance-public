@@ -12,7 +12,10 @@ import { type QuoteRoute } from "@sofinance/engine/swap/jupiter";
 import type { Connection } from "@solana/web3.js";
 import type { JupiterRouteConstraints } from "@sofinance/engine/jupiter-route-retry";
 import type { JupiterRetryBudget } from "@sofinance/engine/jupiter/client";
+import { isJupiterNoRouteError } from "@sofinance/engine/swap/jupiter";
 import { readSelectedPositionState, type PositionSelection, type SelectedPositionState } from "@sofinance/engine/selected-state";
+import { selectedNoRouteError } from "./selected-no-route";
+import { withSelectedRouteRetries } from "./selected-route-retry";
 
 type SwapLeg = { inputMint: string; outputMint: string; spend: bigint; feeAmount: bigint; minOut: bigint; route: QuoteRoute | null };
 
@@ -171,6 +174,23 @@ export async function getSelectedQuoteBundle(
     routeTouchesTargetPool: legs.some((item) => item.route?.routePlan.some((hop) => hop.swapInfo.ammKey === state.poolId)),
   };
   return { quote, legs, state };
+}
+
+/** Compact-first quote with wider Jupiter budgets when the compact hop has no route. */
+export async function searchSelectedQuoteBundle(
+  wallet: string, selection: PositionSelection, amount: string,
+  requestedFloorBps = DEFAULT_RESALE_FLOOR_BPS, requestedToleranceBps = DEFAULT_ADD_TOLERANCE_BPS,
+  options: { buildTransactions?: boolean; includeResale?: boolean; signal?: AbortSignal;
+    budget?: JupiterRetryBudget; connection?: Connection; state?: SelectedPositionState } = {},
+) {
+  const state = options.state ?? await readSelectedPositionState(wallet, selection, options.connection, false, { displayPrices: false });
+  try {
+    return await withSelectedRouteRetries((jupiter) => getSelectedQuoteBundle(
+      wallet, selection, amount, requestedFloorBps, requestedToleranceBps, jupiter, { ...options, state }));
+  } catch (error) {
+    if (isJupiterNoRouteError(error)) throw selectedNoRouteError(state);
+    throw error;
+  }
 }
 
 export type SelectedQuote = Awaited<ReturnType<typeof getSelectedQuoteBundle>>["quote"];

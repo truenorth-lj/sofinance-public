@@ -6,11 +6,16 @@ import { TickUtil, SqrtPriceMath, LiquidityMathUtil } from "@raydium-io/raydium-
 
 vi.mock("server-only", () => ({}));
 vi.mock("@sofinance/engine/selected-state", () => ({ readSelectedPositionState: vi.fn() }));
-vi.mock("@sofinance/engine/swap/jupiter", () => ({ buildRoute: vi.fn(), quoteRoute: vi.fn() }));
+vi.mock("@sofinance/engine/swap/jupiter", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@sofinance/engine/swap/jupiter")>(),
+  buildRoute: vi.fn(), quoteRoute: vi.fn(),
+}));
 
 import { readSelectedPositionState, type SelectedPositionState } from "@sofinance/engine/selected-state";
 import { buildRoute, quoteRoute } from "@sofinance/engine/swap/jupiter";
-import { getSelectedQuoteBundle } from "./selected-quote";
+import { JupiterNoRouteError } from "@sofinance/engine/swap/jupiter";
+import { getSelectedQuoteBundle, searchSelectedQuoteBundle } from "./selected-quote";
+import { JUPITER_NO_ROUTE_CODE } from "./selected-no-route";
 
 const wallet = "FakeWa11etAddressForTestingPurposes1111111111";
 const mintA = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
@@ -36,6 +41,15 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("selected quote", () => {
+  it("keeps a same-pool input on the compact budget without Jupiter quotes", async () => {
+    const selection = { positionMint, inputMint: mintA, inputKind: "token" as const };
+    const { quote, legs } = await searchSelectedQuoteBundle(wallet, selection, "100", 9_900, 100,
+      { buildTransactions: false, includeResale: false });
+    expect(quote.minOutA).toBe("100000000");
+    expect(legs[0]?.route).toBeNull();
+    expect(quoteRoute).not.toHaveBeenCalled();
+    expect(buildRoute).not.toHaveBeenCalled();
+  });
   it("uses a pool asset directly and values it back in the same asset", async () => {
     const selection = { positionMint, inputMint: mintA, inputKind: "token" as const };
     const { quote, legs } = await getSelectedQuoteBundle(wallet, selection, "100", 9_900);
@@ -137,6 +151,27 @@ describe("bounded selected allocation", () => {
     const result = await getSelectedQuoteBundle(wallet, { positionMint, inputMint: source, inputKind: "token" }, "100", 9900, 100);
     expect(buildRoute).toHaveBeenCalledTimes(2); expect(quoteRoute).toHaveBeenCalledTimes(4);
     expect(result.quote.resaleInput).not.toBeNull(); expect(result.quote.passesFloor).toBe(true);
+  });
+  it("retries compact no-route with a wider account budget for a cross-asset input", async () => {
+    insideState();
+    vi.mocked(quoteRoute).mockImplementation(async (input, output, amount, constraints) => {
+      if ((constraints?.maxAccounts ?? 24) < 32) throw new JupiterNoRouteError();
+      return route(input, output, amount);
+    });
+    const { quote } = await searchSelectedQuoteBundle(wallet, { positionMint, inputMint: source, inputKind: "token" }, "100",
+      9900, 100, { buildTransactions: false, includeResale: false });
+    expect(BigInt(quote.spendA) + BigInt(quote.spendB)).toBe(100000000n);
+    expect(vi.mocked(quoteRoute).mock.calls.some((call) => call[3]?.maxAccounts === 24)).toBe(true);
+    expect(vi.mocked(quoteRoute).mock.calls.some((call) => call[3]?.maxAccounts === 32)).toBe(true);
+    expect(vi.mocked(quoteRoute).mock.calls.every((call) => (call[3]?.maxAccounts ?? 0) <= 32)).toBe(true);
+  });
+  it("maps exhausted cross-asset no-route to a coded user-facing error", async () => {
+    insideState();
+    vi.mocked(quoteRoute).mockRejectedValue(new JupiterNoRouteError());
+    await expect(searchSelectedQuoteBundle(wallet, { positionMint, inputMint: source, inputKind: "token" }, "100",
+      9900, 100, { buildTransactions: false, includeResale: false })).rejects.toMatchObject({
+      name: "SelectedNoRouteError", code: JUPITER_NO_ROUTE_CODE,
+    });
   });
   it("still rejects degradation relative to the small probe", async () => {
     insideState();

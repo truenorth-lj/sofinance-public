@@ -21,6 +21,7 @@ import { WithdrawPanel } from "./withdraw-panel";
 import { ActionSelector } from "./action-selector";
 import { AssetRisksDialog } from "./asset-risks-dialog";
 import { DOCS_ROUTES } from "@/lib/public-urls";
+import { formatSelectedNoRouteMessage, JUPITER_NO_ROUTE_CODE } from "@/lib/selected-no-route";
 import Link from "next/link";
 
 const short = (value: string) => `${value.slice(0, 5)}…${value.slice(-5)}`;
@@ -51,7 +52,8 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
   const controller = useSelectedController();
   const { wallet, connected, connect, disconnect, connectionError,
     discovery, selection, state, amount, tolerancePercent, result, attempt, attemptStatus,
-    obsoletePending, history, historyWarning, verificationError, error, quoteError, busy: addBusy, calculating, now, quote, fresh, status,
+    obsoletePending, history, historyWarning, verificationError, error, quoteError, quoteErrorCode, quoteErrorOutputMint, showQuoteRecalculate,
+    busy: addBusy, calculating, now, quote, fresh, status,
     actionLabel, actionDisabled: addDisabled, primaryAction: addAction, changeAmount, changeTolerance, fillMax,
     choosePosition, chooseAsset, refreshDiscovery, refreshState, retryCalculation, retryReconcile, retryObsoleteReconcile,
     loadingDiscovery, loadingState, stateError } = controller;
@@ -113,6 +115,10 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
     const asset = assetOptions.find((item) => item.mint === mint);
     return asset ? assetSymbol(asset, assetMetadata(asset, metadata)) : metadata[mint]?.symbol || tokenLabel(mint);
   };
+  const noRouteOutput = quoteErrorOutputMint || state?.mintA || "";
+  const displayError = quoteErrorCode === JUPITER_NO_ROUTE_CODE && noRouteOutput
+    ? formatSelectedNoRouteMessage(inputLabel, poolLabel(noRouteOutput))
+    : error;
   return <div className="min-h-screen bg-canvas text-cream">
     <div className="relative mx-auto max-w-[1280px] px-3 pb-32 pt-3 sm:px-5 sm:pt-5">
       <InkNav wallet={wallet} connected={connected} onConnect={connect} onDisconnect={disconnect} />
@@ -198,7 +204,7 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
           {connected && <div role="status" className="mt-3 min-h-5 text-xs text-smoke">{addStatus}</div>}
           {obsoletePending && <button type="button" className="mt-2 text-xs text-cream/80 underline" onClick={retryObsoleteReconcile}>Re-verify previous version transaction</button>}
           {connectionError && <div role="alert" className="mt-4 flex gap-2 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80"><CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />{connectionError}</div>}
-          {error && <div role="alert" className="mt-4 flex gap-2 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80"><CircleAlert className="mt-0.5 h-4 w-4 shrink-0" /><span className="flex-1">{error}</span>{quoteError && <button type="button" onClick={retryCalculation} className="shrink-0 font-semibold underline">Recalculate</button>}</div>}
+          {displayError && <div role="alert" className="mt-4 flex gap-2 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80"><CircleAlert className="mt-0.5 h-4 w-4 shrink-0" /><span className="flex-1">{displayError}</span>{showQuoteRecalculate && <button type="button" onClick={retryCalculation} className="shrink-0 font-semibold underline">Recalculate</button>}</div>}
         </section>
 
         <aside className="min-w-0 space-y-3"><section className="rounded-[28px] border border-white/12 bg-char p-5 sm:p-7"><h2 className="text-lg font-semibold text-cream">Add liquidity preview</h2><p className="mt-2 text-xs leading-5 text-smoke">{calculating ? <span role="status" className="inline-flex items-center gap-2 text-cream/80"><LoaderCircle className="h-3.5 w-3.5 animate-spin" />Estimating liquidity…</span> : quote ? fresh ? `Preview valid for approximately ${Math.max(0, Math.ceil(((result?.expiresAt ?? quote.expiresAt) - now) / 1000))} seconds` : "Preview expired, updating" : "Auto-calculate after selecting position and asset, entering amount"}</p>{quote && <>{totalCostPercent !== null && <p className="mt-2 text-xs leading-5 text-smoke/70">Total cost uses the conservative swap outputs (liquidity added plus the price-tolerance reserve left in your wallet), estimates immediate swap back to original input asset; not actual sale, also does not represent dollar value.</p>}<div className="mt-7 space-y-4 text-sm"><Row title="Input limit" value={quote ? `${money(quote.requested, quote.inputDecimals)} ${inputLabel}` : "—"} /><div className="border-t border-white/10" /><Row title={`Swap to ${state ? poolLabel(state.mintA) : "Pool A"} · minOut`} value={quote ? quote.spendA === "0" ? "no swap needed" : money(quote.minOutA, quote.decimalsA) : "—"} /><Row title={`Swap to ${state ? poolLabel(state.mintB) : "Pool B"} · minOut`} value={quote ? quote.spendB === "0" ? "no swap needed" : money(quote.minOutB, quote.decimalsB) : "—"} /><Row title="Estimated liquidity added" value={quote?.liquidity || "—"} /><div className="border-t border-white/10" />{totalCostPercent !== null && <Row title="Total cost" value={`~${totalCostPercent}%`} emphasize />}<Row title="Jupiter transaction slippage" value="0.5%(fixed)" /><Row title="Simulated SOL total debit" value={result?.simulatedSolDebitLamports ? `${money(result.simulatedSolDebitLamports, 9, 9)} SOL(including input and possible rent)` : "Checked when you add liquidity"} /></div>{totalCostPercent !== null && <p className="mt-6 rounded-2xl border border-white/10 bg-white/[0.03] p-3 text-xs leading-5 text-smoke">Estimated round-trip cost: about {totalCostPercent ?? "—"}% (assuming you add liquidity, immediately withdraw, and swap back to {inputLabel}). This conservative estimate includes swap fees, price impact, and slippage tolerance. It does not block signing. Network fees and account rent are separate. This value is not a guarantee of execution or future value.</p>}</>}</section>

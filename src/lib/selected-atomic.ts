@@ -10,10 +10,12 @@ import { NATIVE_SOL_MINT, QUOTE_TTL_MS } from "@sofinance/engine/ids";
 import { readLookupTables, validateRouteTables } from "@sofinance/engine/transaction-helpers";
 import { rpcConnection } from "@sofinance/engine/rpc";
 import { beamTipInstruction, chooseBeamTransaction, fetchBeamTipAddress } from "@sofinance/engine/solami-beam";
-import { JUPITER_MAX_ACCOUNTS, directRouteConstraints, isTxOversizeError, type JupiterRouteConstraints } from "@sofinance/engine/jupiter-route-retry";
-import type { BuildRoute } from "@sofinance/engine/swap/jupiter";
+import { type JupiterRouteConstraints } from "@sofinance/engine/jupiter-route-retry";
+import { isJupiterNoRouteError, type BuildRoute } from "@sofinance/engine/swap/jupiter";
 import type { JupiterRetryBudget } from "@sofinance/engine/jupiter/client";
 import { getSelectedQuoteBundle } from "./selected-quote";
+import { selectedNoRouteError } from "./selected-no-route";
+import { withSelectedRouteRetries } from "./selected-route-retry";
 import { simulateAndVerifySelectedTransaction } from "./selected-simulation";
 import { readSelectedPositionState, type PositionSelection, type SelectedPositionState } from "@sofinance/engine/selected-state";
 import { atomicComputeUnitLimitInstruction, exceedsTxSizeLimit } from "@sofinance/engine/transaction-limits";
@@ -24,17 +26,16 @@ export async function buildAndSimulateSelectedZap(
 ) {
   const connection = rpcConnection(undefined, { signal: options?.signal });
   const state = await readSelectedPositionState(walletAddress, selection, connection, false, { displayPrices: false });
-  const attempts: JupiterRouteConstraints[] = [{ maxAccounts: JUPITER_MAX_ACCOUNTS.compact }, directRouteConstraints()];
-  for (const [index, jupiter] of attempts.entries()) {
-    options?.signal?.throwIfAborted();
-    try {
-      return await buildAndSimulateSelectedZapOnce(walletAddress, selection, amount, floorBps, toleranceBps,
+  try {
+    return await withSelectedRouteRetries((jupiter) => {
+      options?.signal?.throwIfAborted();
+      return buildAndSimulateSelectedZapOnce(walletAddress, selection, amount, floorBps, toleranceBps,
         jupiter, options?.enforceResaleFloor !== false, connection, state, options?.signal, options?.budget);
-    } catch (error) {
-      if (index === attempts.length - 1 || !isTxOversizeError(error)) throw error;
-    }
+    });
+  } catch (error) {
+    if (isJupiterNoRouteError(error)) throw selectedNoRouteError(state);
+    throw error;
   }
-  throw new Error("No compact add-liquidity route available");
 }
 
 async function buildAndSimulateSelectedZapOnce(

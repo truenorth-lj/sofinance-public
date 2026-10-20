@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
-import { buildRoute, JupiterNoRouteError } from "@sofinance/engine/swap/jupiter";
+import { buildRoute, quoteRoute, JupiterNoRouteError } from "@sofinance/engine/swap/jupiter";
 import { JupiterHttpError, resetJupiterRuntime, setJupiterLogger, setJupiterRetryConfig } from "@sofinance/engine/jupiter";
 
 beforeEach(() => {
@@ -21,6 +21,13 @@ it.each([429, 502, 503])("preserves the typed /build upstream error HTTP %s", as
 it("keeps genuine no-route distinct", async () => {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ error: "no routes found" }, { status: 400 })));
   await expect(buildRoute("wallet", "A", "B", 10n)).rejects.toBeInstanceOf(JupiterNoRouteError);
+});
+
+it("maps quoteRoute HTTP 400 NO_ROUTES_FOUND to JupiterNoRouteError", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockImplementation(() => Response.json(
+    { error: "No routes found", errorCode: "NO_ROUTES_FOUND" }, { status: 400 })));
+  await expect(quoteRoute("A", "B", 10n)).rejects.toBeInstanceOf(JupiterNoRouteError);
+  await expect(quoteRoute("A", "B", 10n)).rejects.toMatchObject({ code: "jupiter_no_route" });
 });
 
 it("does not replace a transport or parent cancellation cause with no-route", async () => {

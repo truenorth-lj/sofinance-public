@@ -16,7 +16,9 @@ import { getSelectedQuoteBundle } from "./selected-quote";
 import { buildSelectedAddInstruction } from "./selected-add-instruction";
 import { simulateAndVerifySelectedTransaction } from "./selected-simulation";
 import { fetchBeamTipAddress } from "@sofinance/engine/solami-beam";
+import { JupiterNoRouteError } from "@sofinance/engine/swap/jupiter";
 import { buildAndSimulateSelectedZap } from "./selected-atomic";
+import { JUPITER_NO_ROUTE_CODE } from "./selected-no-route";
 let keyIndex = 1;
 const key = () => Keypair.fromSeed(new Uint8Array(32).fill(keyIndex++)).publicKey;
 const wallet = key(), pool = key(), position = key(), program = key(), mintA = key(), mintB = key();
@@ -69,6 +71,24 @@ it("successfully switches to a compact candidate without rereading state or simu
   expect(vi.mocked(fetchBeamTipAddress).mock.calls[0]?.[0]).not.toHaveProperty("timeoutMs");
   expect(getSelectedQuoteBundle).toHaveBeenLastCalledWith(wallet.toBase58(), selection, "1", 9900, 100,
     { maxAccounts: 20, onlyDirectRoutes: true }, expect.objectContaining({ state, includeResale: false, buildTransactions: true }));
+});
+it("widens maxAccounts when compact has no Jupiter route", async () => {
+  vi.mocked(getSelectedQuoteBundle).mockImplementation(async (_wallet, _selection, _amount, _floor, _tolerance, jupiter) => {
+    if ((jupiter?.maxAccounts ?? 0) < 32) throw new JupiterNoRouteError();
+    return bundle();
+  });
+  const result = await buildAndSimulateSelectedZap(wallet.toBase58(), selection, "1", 9900, 100, { enforceResaleFloor: false });
+  expect(result.summary.simulated).toBe(true);
+  expect(result.summary.sizeBytes).toBeLessThanOrEqual(1232);
+  expect(vi.mocked(getSelectedQuoteBundle).mock.calls.map((call) => call[5])).toEqual([{ maxAccounts: 24 }, { maxAccounts: 32 }]);
+});
+it("maps exhausted no-route to a user-facing add-liquidity error", async () => {
+  vi.mocked(getSelectedQuoteBundle).mockRejectedValue(new JupiterNoRouteError());
+  await expect(buildAndSimulateSelectedZap(wallet.toBase58(), selection, "1", 9900)).rejects.toMatchObject({
+    name: "SelectedNoRouteError", code: JUPITER_NO_ROUTE_CODE,
+  });
+  expect(getSelectedQuoteBundle).toHaveBeenCalledTimes(3);
+  expect(vi.mocked(getSelectedQuoteBundle).mock.calls.map((call) => call[5]?.maxAccounts)).toEqual([24, 32, 48]);
 });
 it("never issues transaction work after cancellation", async () => {
   const controller = new AbortController(); controller.abort(new Error("cancelled"));

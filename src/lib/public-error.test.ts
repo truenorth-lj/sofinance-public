@@ -49,6 +49,13 @@ describe("compound failure mapping", () => {
     expect(publicErrorCode(new Error("429 Too Many Requests: Too many requests for a specific RPC call"))).toBe("rpc_unavailable");
   });
 
+  it("maps Jupiter no-route to a coded user-facing add-liquidity message", () => {
+    const noRoute = new JupiterHttpError(400, "/swap/v1/quote", null, "No routes found");
+    expect(sanitizePublicError(noRoute, "Quote failed")).toMatch(/transaction size limit/);
+    expect(sanitizePublicError(noRoute, "Quote failed")).not.toMatch(/HTTP 400/);
+    expect(publicErrorCode(noRoute)).toBe("jupiter_no_route");
+  });
+
   it("keeps Jupiter 429/5xx distinct from the Solana RPC message", () => {
     const jupiter = new JupiterHttpError(429, "/swap/v1/quote");
     expect(sanitizePublicError(jupiter, "Exit source unavailable")).toBe(JUPITER_UNAVAILABLE_MESSAGE);
