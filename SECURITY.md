@@ -36,4 +36,6 @@ Out of scope: third-party programs and APIs (Raydium, Jupiter, wallets, RPC prov
 
 The server never holds user private keys. Users (or their agent, locally) sign every transaction. Broadcast re-checks an HMAC permit and re-simulates before send.
 
-The open-position NFT mint is an ephemeral server-side keypair: it partial-signs the v0 message after the fresh blockhash restamp, then the secret is zeroed in memory and is not logged or persisted. The wallet remains the fee payer. See the README open-position notes and `src/lib` / `@sofinance/engine` `open-atomic` for the implementation.
+The open-position NFT mint is an ephemeral server-side keypair: it partial-signs the v0 message after the fresh blockhash restamp, then the secret is zeroed in memory and is not logged or persisted. The wallet remains the fee payer. See the README open-position notes.
+
+The transaction engine ships as a bundled package (`@sofinance/engine`, `vendor/sofinance-engine-0.1.0.tgz`) and is not covered by this repository's MIT license. The flow stays non-custodial and verifiable on Solscan: every transaction is signed by the user's wallet and can be inspected on-chain.

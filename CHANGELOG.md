@@ -13,7 +13,7 @@ Summarized from git history on `main` and the README feature list. Not an audit 
 
 ### Added
 
-- Shared engine in `src/lib` (also consumed as `@sofinance/engine`) powering both the web API and MCP
+- Shared engine in `src/lib` plus the bundled `@sofinance/engine` package (not MIT-licensed) powering both the web API and MCP
 - Next.js web app: marketing landing at `/`, product UI under `/app` (Positions, Plan, RWA pairs, position performance, Use AI, sign deep-links)
 - MCP server (`src/mcp/`): tools that return **unsigned v0 transactions**; remote HTTP at `/api/mcp` (wallet-bound short-lived tokens, zero local secrets) and local stdio (`pnpm mcp:start`)
 - Add-liquidity zap: Jupiter Swap V2 + Raydium `increase_liquidity_v2` in one simulated v0 transaction, with add-liquidity price tolerance and a resale-ratio floor
@@ -30,4 +30,4 @@ Summarized from git history on `main` and the README feature list. Not an audit 
 
 ### Security
 
-- Non-custodial model: the server never holds user keys; users sign every transaction. See [SECURITY.md](SECURITY.md).
+- Non-custodial model: the server never holds user keys; users sign every transaction, verifiable on Solscan. See [SECURITY.md](SECURITY.md).
