@@ -2,11 +2,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { RpcHttpError, RpcUnavailableError } from "@sofinance/engine/rpc/errors";
 import { invokeWithPolicy } from "@sofinance/engine/rpc/connection";
 import { resetRpcCache } from "@sofinance/engine/rpc/cache";
+import { resetRpcCircuit } from "@sofinance/engine/rpc/circuit";
 import { setRpcLogger } from "@sofinance/engine/rpc/logger";
 import { computeBackoffMs, invokeWithRetries, parseRetryAfter, PREVIEW_RETRY, setRpcRetryConfig } from "@sofinance/engine/rpc/retry";
 
 afterEach(() => {
   resetRpcCache();
+  resetRpcCircuit();
   setRpcLogger(null);
   setRpcRetryConfig(null);
   vi.useRealTimers();
@@ -101,7 +103,7 @@ describe("429 backoff and failover", () => {
     expect(fallback).toHaveBeenCalledOnce();
   });
 
-  it("keeps simulateTransaction 429s on the primary even after the preview budget", async () => {
+  it("falls back simulateTransaction 429s after the primary retry budget", async () => {
     vi.useFakeTimers();
     vi.spyOn(Math, "random").mockReturnValue(0.5);
     const primary = vi.fn(async () => {
@@ -116,11 +118,15 @@ describe("429 backoff and failover", () => {
       fallbackId: "default",
       retry: PREVIEW_RETRY,
     });
-    const rejected = expect(promise).rejects.toBeInstanceOf(RpcUnavailableError);
     await vi.runAllTimersAsync();
-    await rejected;
+    await expect(promise).resolves.toMatchObject({
+      value: { value: { err: null } },
+      servedBy: "default",
+      fallback: true,
+      errorKind: "rate-limit",
+    });
     expect(primary).toHaveBeenCalledTimes(PREVIEW_RETRY.maxAttempts);
-    expect(fallback).not.toHaveBeenCalled();
+    expect(fallback).toHaveBeenCalledOnce();
   });
 
   it("surfaces a user-facing error when every provider is exhausted", async () => {

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRpcCache, cacheKeyFor, resetRpcCache } from "@sofinance/engine/rpc/cache";
+import { resetRpcCircuit } from "@sofinance/engine/rpc/circuit";
 import { invokeWithPolicy } from "@sofinance/engine/rpc/connection";
 import { setRpcLogger } from "@sofinance/engine/rpc/logger";
 import { cacheTtlFor, UNCACHEABLE_METHODS } from "@sofinance/engine/rpc/methods";
@@ -7,6 +8,7 @@ import { setRpcRetryConfig } from "@sofinance/engine/rpc/retry";
 
 afterEach(() => {
   resetRpcCache();
+  resetRpcCircuit();
   setRpcLogger(null);
   setRpcRetryConfig(null);
   vi.useRealTimers();

@@ -53,4 +53,25 @@ describe("defaultRpcLogger", () => {
     expect(String(info.mock.calls[0]![0])).toContain("\"cacheHit\":true");
     expect(String(info.mock.calls[0]![0])).not.toMatch(/api_key/);
   });
+
+  it("always warns on fallback without keys or URLs", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    defaultRpcLogger({
+      method: "sendRawTransaction",
+      provider: "default",
+      outcome: "fallback",
+      errorKind: "auth",
+      reason: "circuit-open",
+    });
+    expect(warn).toHaveBeenCalledOnce();
+    const line = String(warn.mock.calls[0]![0]);
+    expect(JSON.parse(line)).toMatchObject({
+      rpc: true,
+      method: "sendRawTransaction",
+      outcome: "fallback",
+      status: "auth",
+      reason: "circuit-open",
+    });
+    expect(line).not.toMatch(/api_key|https?:\/\//);
+  });
 });

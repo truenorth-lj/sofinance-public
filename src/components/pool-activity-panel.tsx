@@ -77,6 +77,8 @@ export function PoolActivityPanel({
   const [livePrice, setLivePrice] = useState<number | null>(null);
   const [live, setLive] = useState(false);
   const [hidden, setHidden] = useState(false);
+  const [streamBlockedFor, setStreamBlockedFor] = useState<string | null>(null);
+  const streamUnavailable = Boolean(poolId) && streamBlockedFor === poolId;
 
   useEffect(() => {
     if (!poolId) return;
@@ -117,10 +119,11 @@ export function PoolActivityPanel({
   }, [poolId, mintA, mintB]);
 
   useEffect(() => {
-    if (!poolId || hidden) return;
+    if (!poolId || hidden || streamUnavailable || !snapshot) return;
     let source: EventSource | null = null;
     let retry: number | undefined;
     const connect = () => {
+      if (streamUnavailable) return;
       source = new EventSource(`/api/pool-activity/stream?poolId=${encodeURIComponent(poolId)}`);
       source.addEventListener("ready", () => setLive(true));
       source.addEventListener("swap", (event) => {
@@ -144,17 +147,18 @@ export function PoolActivityPanel({
       });
       source.addEventListener("unavailable", () => {
         setLive(false);
+        setStreamBlockedFor(poolId);
         source?.close();
       });
       source.addEventListener("end", () => {
         setLive(false);
         source?.close();
-        retry = window.setTimeout(connect, 1_200);
+        if (!streamUnavailable) retry = window.setTimeout(connect, 1_200);
       });
       source.onerror = () => {
         setLive(false);
         source?.close();
-        retry = window.setTimeout(connect, 2_500);
+        if (!streamUnavailable) retry = window.setTimeout(connect, 2_500);
       };
     };
     connect();
@@ -162,7 +166,7 @@ export function PoolActivityPanel({
       source?.close();
       if (retry) window.clearTimeout(retry);
     };
-  }, [poolId, hidden, mintA, mintB, snapshot?.pool?.mint, snapshot?.pool?.quoteMint]);
+  }, [poolId, hidden, streamUnavailable, snapshot, mintA, mintB]);
 
   const range: PositionRangeStatus | null = useMemo(() => {
     if (
@@ -199,7 +203,7 @@ export function PoolActivityPanel({
         <h2 id="pool-activity-heading" className="text-base font-semibold text-cream">
           Live pool activity
         </h2>
-        <span className="text-[11px] text-smoke">{live ? "Live · Blur" : "Snapshot · Blur"}</span>
+        <span className="text-[11px] text-smoke">{live && !streamUnavailable ? "Live · Blur" : "Snapshot · Blur"}</span>
       </div>
       <p className="mt-1 text-xs leading-5 text-smoke">
         {snapshot.pool?.symbol ?? snapshot.pool?.name ?? short(poolId)} · decoded swaps from Solami Blur
@@ -237,26 +241,30 @@ export function PoolActivityPanel({
         </div>
       )}
 
-      <ol className="mt-4 space-y-2" aria-label="Recent swaps">
-        {trades.length === 0 && <li className="text-xs text-smoke/70">No recent swaps for this pool in the Blur window.</li>}
-        {trades.slice(0, 12).map((trade) => (
-          <li
-            key={tradeKey(trade)}
-            className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-cream/80"
-          >
-            <span className="font-medium uppercase tracking-wide text-smoke">{trade.side ?? "swap"}</span>
-            <span>{trade.volumeUsd !== null ? money(trade.volumeUsd) : trade.price !== null ? trade.price.toPrecision(6) : "—"}</span>
-            <a
-              href={`https://solscan.io/tx/${trade.signature}`}
-              target="_blank"
-              rel="noreferrer"
-              className="text-smoke underline decoration-white/30 underline-offset-2 hover:text-cream/90"
+      {(trades.length > 0 || (live && !streamUnavailable)) && (
+        <ol className="mt-4 space-y-2" aria-label="Recent swaps">
+          {trades.length === 0 && (
+            <li className="text-xs text-smoke/70">No recent swaps for this pool in the Blur window.</li>
+          )}
+          {trades.slice(0, 12).map((trade) => (
+            <li
+              key={tradeKey(trade)}
+              className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-cream/80"
             >
-              {short(trade.signature)}
-            </a>
-          </li>
-        ))}
-      </ol>
+              <span className="font-medium uppercase tracking-wide text-smoke">{trade.side ?? "swap"}</span>
+              <span>{trade.volumeUsd !== null ? money(trade.volumeUsd) : trade.price !== null ? trade.price.toPrecision(6) : "—"}</span>
+              <a
+                href={`https://solscan.io/tx/${trade.signature}`}
+                target="_blank"
+                rel="noreferrer"
+                className="text-smoke underline decoration-white/30 underline-offset-2 hover:text-cream/90"
+              >
+                {short(trade.signature)}
+              </a>
+            </li>
+          ))}
+        </ol>
+      )}
       <SolamiCredit className="mt-4" />
     </section>
   );

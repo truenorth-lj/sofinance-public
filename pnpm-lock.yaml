@@ -1330,7 +1330,7 @@ packages:
     resolution: {integrity: sha512-hhyNJ+nbR6ZR7pToHvllEFun9TL0sbL+tk/ON75lo+Xas054uez98qRbsuNt7MBCyZKK4+8Yli/OAGZhmfBZ/g==}
 
   '@sofinance/engine@file:vendor/sofinance-engine-0.1.0.tgz':
-    resolution: {integrity: sha512-OOORghqI5cfLRxpL7RDg2VUsJzehD92tXH1JNsT8N8UptJE5F3Wd4qp+6SIk+9jlcVrk9TMzmyG7332JisG0Zg==, tarball: file:vendor/sofinance-engine-0.1.0.tgz}
+    resolution: {integrity: sha512-qS+glfC+DZxTiC+iDBeZPI6+aPslkhY6EPRkeYBRw0bci51hQn0CddbBRmRBwkgvyIRdZlu6NKydu/bTvuvb1w==, tarball: file:vendor/sofinance-engine-0.1.0.tgz}
     version: 0.1.0
     peerDependencies:
       '@raydium-io/raydium-sdk-v2': 0.2.73-alpha
