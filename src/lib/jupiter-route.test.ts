@@ -48,11 +48,15 @@ it("builds only with the shared v1 quote and swap-instructions client", async ()
     swapInstruction: { programId: "program", data: "AQ==", accounts: [] }, addressLookupTableAddresses: ["table"],
   }));
   vi.stubGlobal("fetch", fetcher);
-  const route = await buildRoute("wallet", "A", "B", 100n, false, { maxAccounts: 20, onlyDirectRoutes: true });
+  const route = await buildRoute("wallet", "A", "B", 100n, false, {
+    maxAccounts: 20, onlyDirectRoutes: true, excludeDexes: "OpenBook,Phoenix",
+  });
   expect(fetcher).toHaveBeenCalledTimes(2);
   const quoteUrl = new URL(String(fetcher.mock.calls[0]![0]));
   expect(quoteUrl.pathname).toBe("/swap/v1/quote");
   expect(quoteUrl.searchParams.get("instructionVersion")).toBe("V2");
+  expect(quoteUrl.searchParams.get("excludeDexes")).toBe("OpenBook,Phoenix");
+  expect(quoteUrl.searchParams.get("onlyDirectRoutes")).toBe("true");
   expect(new URL(String(fetcher.mock.calls[1]![0])).pathname).toBe("/swap/v1/swap-instructions");
   expect(JSON.parse(fetcher.mock.calls[1]![1].body)).toMatchObject({ userPublicKey: "wallet", quoteResponse: {
     inputMint: "A", outputMint: "B", inAmount: "100" }, wrapAndUnwrapSol: false, prioritizationFeeLamports: 0 });

@@ -27,14 +27,27 @@ it("does not shorten a server wait longer than the 4s exponential cap", async ()
   expect(fetcher).toHaveBeenCalledTimes(2);
 });
 
-it("never waits or retries selected 429, including a 30s reset", async () => {
-  const fetcher = vi.fn().mockResolvedValue(response(429, {
-    "x-ratelimit-reset": String(Date.now() / 1000 + 30),
-  }));
-  await expect(jupiterRequest({ path: "/swap/v1/quote", fetcher, budget: budget() }))
-    .rejects.toMatchObject({ status: 429, retryAfterMs: 30_000 });
+it("retries selected 429 once after a short cap, not the 30s reset", async () => {
+  const fetcher = vi.fn()
+    .mockResolvedValueOnce(response(429, {
+      "x-ratelimit-reset": String(Date.now() / 1000 + 30),
+    }))
+    .mockResolvedValueOnce(response(200));
+  const pending = jupiterRequest({ path: "/swap/v1/quote", fetcher, budget: budget() });
+  await vi.advanceTimersByTimeAsync(399);
   expect(fetcher).toHaveBeenCalledOnce();
-  expect(vi.getTimerCount()).toBe(0);
+  await vi.advanceTimersByTimeAsync(1);
+  await expect(pending).resolves.toEqual({ outAmount: "9" });
+  expect(fetcher).toHaveBeenCalledTimes(2);
+});
+
+it("surfaces selected 429 after the short retry still fails", async () => {
+  const fetcher = vi.fn().mockResolvedValue(response(429, { "Retry-After": "30" }));
+  const pending = jupiterRequest({ path: "/swap/v1/quote", fetcher, budget: budget() });
+  const rejected = expect(pending).rejects.toMatchObject({ status: 429, retryAfterMs: 30_000 });
+  await vi.advanceTimersByTimeAsync(400);
+  await rejected;
+  expect(fetcher).toHaveBeenCalledTimes(2);
 });
 
 it("rejects a wait which cannot fit the selected request plus retry headroom", async () => {
@@ -115,20 +128,22 @@ it("429 ends the selected response and cancels its still-running sibling", async
   const slow = vi.fn((_url: unknown, options?: RequestInit) => new Promise<Response>((_, reject) => {
     options?.signal?.addEventListener("abort", () => { aborted(); reject(options.signal?.reason); }, { once: true });
   }));
-  const result = await withSelectedDeadline(new Request("http://localhost/quote"), async (signal, shared) => {
+  const pending = withSelectedDeadline(new Request("http://localhost/quote"), async (signal, shared) => {
     try {
       await Promise.all([jupiterRequest({ path: "/swap/v1/quote", fetcher: fast, signal, budget: shared }),
         jupiterRequest({ path: "/swap/v1/quote", fetcher: slow, signal, budget: shared })]);
       return Response.json({ unreachable: true });
     } catch (error) { return selectedApiError(error, "Quote failed"); }
   });
+  await vi.advanceTimersByTimeAsync(400);
+  const result = await pending;
   expect(result.status).toBe(503);
   expect(await result.json()).toMatchObject({ code: "jupiter_rate_limited", retryAfterMs: 30_000 });
   expect(aborted).toHaveBeenCalledOnce();
-  expect(fast).toHaveBeenCalledOnce();
+  expect(fast).toHaveBeenCalledTimes(2);
   expect(slow).toHaveBeenCalledOnce();
   await vi.advanceTimersByTimeAsync(16_000);
-  expect(fast).toHaveBeenCalledOnce();
+  expect(fast).toHaveBeenCalledTimes(2);
   expect(vi.getTimerCount()).toBe(0);
 });
 

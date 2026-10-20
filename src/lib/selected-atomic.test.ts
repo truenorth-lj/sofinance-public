@@ -19,6 +19,7 @@ import { fetchBeamTipAddress } from "@sofinance/engine/solami-beam";
 import { JupiterNoRouteError } from "@sofinance/engine/swap/jupiter";
 import { buildAndSimulateSelectedZap } from "./selected-atomic";
 import { JUPITER_NO_ROUTE_CODE } from "./selected-no-route";
+import { HIGH_ACCOUNT_DEXES } from "./selected-route-retry";
 let keyIndex = 1;
 const key = () => Keypair.fromSeed(new Uint8Array(32).fill(keyIndex++)).publicKey;
 const wallet = key(), pool = key(), position = key(), program = key(), mintA = key(), mintB = key();
@@ -29,6 +30,7 @@ const state = { positionMint: key().toBase58(), positionAccount: position.toBase
 };
 const selection = { positionMint: state.positionMint, inputMint: state.inputMint, inputKind: "token" as const };
 const connection = { getAccountInfo: vi.fn(async () => null), getAddressLookupTable: vi.fn(async () => ({ value: null })),
+  getMultipleAccountsInfo: vi.fn(async (keys: PublicKey[]) => keys.map(() => null)),
   getMultipleAccountsInfoAndContext: vi.fn(async (keys: PublicKey[]) => ({ value: keys.map(() => null), context: { slot: 1 } })),
   getLatestBlockhash: vi.fn(async () => ({ blockhash: key().toBase58(), lastValidBlockHeight: 200 })),
   getFeeForMessage: vi.fn(async () => ({ value: 5000 })),
@@ -54,11 +56,19 @@ beforeEach(() => {
     keys: [wallet, key(), pool, key(), position].map((pubkey, index) => ({ pubkey, isSigner: index === 0, isWritable: index === 2 || index === 4 })) }));
   vi.mocked(simulateAndVerifySelectedTransaction).mockResolvedValue({ endingLiquidity: "11", spentInput: "1000", dustA: "0", dustB: "0", unitsConsumed: 1000, solDebitLamports: "5000" });
 });
-it("rejects oversized candidates before Beam or simulation, caps retries at two, and reads selected state once", async () => {
+it("rejects oversized candidates before Beam or simulation, tries compact followups, and reads selected state once", async () => {
   vi.mocked(getSelectedQuoteBundle).mockResolvedValue(bundle(true));
   await expect(buildAndSimulateSelectedZap(wallet.toBase58(), selection, "1", 9900)).rejects.toThrow("1,232 byte");
-  expect(readSelectedPositionState).toHaveBeenCalledTimes(1); expect(getSelectedQuoteBundle).toHaveBeenCalledTimes(2);
-  expect(vi.mocked(getSelectedQuoteBundle).mock.calls.map((call) => call[5])).toEqual([{ maxAccounts: 24 }, { maxAccounts: 20, onlyDirectRoutes: true }]);
+  expect(readSelectedPositionState).toHaveBeenCalledTimes(1);
+  expect(vi.mocked(getSelectedQuoteBundle).mock.calls.map((call) => call[5])).toEqual([
+    { maxAccounts: 24 },
+    { maxAccounts: 24 },
+    { maxAccounts: 24, onlyDirectRoutes: true },
+    { maxAccounts: 24, excludeDexes: HIGH_ACCOUNT_DEXES },
+    { maxAccounts: 24, onlyDirectRoutes: true, excludeDexes: HIGH_ACCOUNT_DEXES },
+    { maxAccounts: 20, onlyDirectRoutes: true },
+    { maxAccounts: 20, onlyDirectRoutes: true, excludeDexes: HIGH_ACCOUNT_DEXES },
+  ]);
   expect(fetchBeamTipAddress).not.toHaveBeenCalled(); expect(simulateAndVerifySelectedTransaction).not.toHaveBeenCalled();
 });
 it("successfully switches to a compact candidate without rereading state or simulating the oversized one", async () => {
@@ -70,7 +80,7 @@ it("successfully switches to a compact candidate without rereading state or simu
   // Same tip-address fetch as open: no per-flow short timeout.
   expect(vi.mocked(fetchBeamTipAddress).mock.calls[0]?.[0]).not.toHaveProperty("timeoutMs");
   expect(getSelectedQuoteBundle).toHaveBeenLastCalledWith(wallet.toBase58(), selection, "1", 9900, 100,
-    { maxAccounts: 20, onlyDirectRoutes: true }, expect.objectContaining({ state, includeResale: false, buildTransactions: true }));
+    { maxAccounts: 24 }, expect.objectContaining({ state, includeResale: false, buildTransactions: true }));
 });
 it("widens maxAccounts when compact has no Jupiter route", async () => {
   vi.mocked(getSelectedQuoteBundle).mockImplementation(async (_wallet, _selection, _amount, _floor, _tolerance, jupiter) => {
