@@ -21,6 +21,8 @@ The marketing landing page lives at `/`. Product UI lives under `/app` (Position
 
 Former page paths permanently redirect. MCP `prepare_*` tools now emit `/app/sign/<token>`.
 
+**Docs:** [Self-hosting](#self-hosting) · [Security policy](SECURITY.md) · [Changelog](CHANGELOG.md)
+
 ## Quick start for judges
 
 - **Live app:** https://sofinancelab.xyz
@@ -62,6 +64,88 @@ The deployed app uses a Solami Pro trial key that may expire. What the code does
 - **Blur panel:** shows as unavailable / snapshot-only instead of live trades; the rest of the app keeps working.
 - **RPC:** reads fall back to `SOLANA_RPC_URL`/public RPC only on validation, 5xx, 429 or timeout errors (`src/lib/rpc/methods.ts`). A 401/403 from an expired key is not a fallback trigger, so Solami-backed reads and sends fail until `SOLAMI_API_KEY` is replaced or removed. Removing it switches everything to `SOLANA_RPC_URL` or public RPC (no Beam tip).
 - **Beam:** the tip is optional; if no tip address is available the tx is built without it.
+
+## Self-hosting
+
+Run your own instance of the Next.js app (web UI + `/api/*` + remote MCP). This is the same flow as [Run locally](#run-locally) with env, build, Docker, and MCP client notes spelled out.
+
+### Clone and install
+
+Requires Node 22 and pnpm 10.18.2 (`packageManager` in `package.json`).
+
+```bash
+git clone https://github.com/truenorth-lj/sofinance-public.git
+cd sofinance-public
+corepack enable
+pnpm install
+cp .env.example .env.local   # fill in your own keys; never commit this file
+```
+
+### Environment
+
+Copy `.env.example` → `.env.local`. Comments in that file are the source of truth. Do not prefix server secrets with `NEXT_PUBLIC_`.
+
+**Typically required for a useful instance**
+
+| Variable | Role |
+|----------|------|
+| `JUPITER_API_KEY` | Jupiter quotes plus HMAC secret for permits, sign tokens, and MCP tokens |
+| `NEXT_PUBLIC_REOWN_PROJECT_ID` | Wallet connect in the web UI ([Reown dashboard](https://dashboard.reown.com/)) |
+| `NEXT_PUBLIC_APP_URL` | Absolute MCP and sign-link URLs (local: `http://localhost:3000`; production auto-detects `VERCEL_URL`) |
+
+**RPC (pick a path)** — `SOLAMI_API_KEY` (optional, preferred) and/or `SOLANA_RPC_URL`. If both are unset, server RPC uses public mainnet.
+
+**Optional**
+
+| Variable | Role |
+|----------|------|
+| `SOLAMI_BEAM` | `0` keeps Solami RPC but skips Beam tips |
+| `SOLAMI_DATA_API_KEY` | Blur live pool-trades panel |
+| `NEXT_PUBLIC_SOLANA_RPC_URL` | Browser wallet RPC only; must be a public endpoint, never a key |
+| `SOFINANCE_FEE_WALLET` / `SOFINANCE_FEE_BPS` | Optional protocol fee; **server-only, never `NEXT_PUBLIC_`**. Default 10 bps, max 100. Unset wallet = fee 0, no transfer added. Details: [Protocol swap fee](#protocol-swap-fee). |
+| RWA / history DB vars | Optional snapshot gateway; see `.env.example` and `db/README.md` |
+
+### Run
+
+```bash
+pnpm dev                     # http://localhost:3000
+pnpm lint && pnpm typecheck && pnpm test && pnpm build
+pnpm start                   # after build
+```
+
+`pnpm mcp:start` runs the local stdio MCP server (needs `SOLANA_RPC_URL` and `JUPITER_API_KEY` in the environment).
+
+### Docker
+
+The `Dockerfile` builds the **optional RWA snapshot data service** (`scripts/rwa-data-service.ts`), not the Next.js web app. It needs `DATABASE_URL` and a `CRON_SECRET` of at least 32 characters.
+
+```bash
+docker build -t sofinance-rwa-service .
+docker run --env-file .env.local -p 3000:3000 sofinance-rwa-service
+```
+
+The web UI and MCP HTTP endpoint are the Next.js app (`pnpm dev` / `pnpm build && pnpm start`, or Vercel).
+
+### Point an MCP client at your instance
+
+1. Set `NEXT_PUBLIC_APP_URL` to the origin you will expose (for example `http://localhost:3000` or `https://your-host.example`).
+2. Start the Next.js app. On `/app/ai`, use **Sign to get MCP config**.
+3. In the generated config, use your origin instead of production:
+
+```json
+{
+  "mcpServers": {
+    "sofinance": {
+      "url": "https://your-host.example/api/mcp",
+      "headers": {
+        "Authorization": "Bearer <your-token-here>"
+      }
+    }
+  }
+}
+```
+
+Local stdio against this checkout: see [Quickstart — MCP for AI Agents](#quickstart-mcp-for-ai-agents-remote-zero-local-secrets) (Option B shim with `SOFINANCE_MCP_URL`, or Alternative: Local MCP with `pnpm mcp:start`).
 
 ## Features
 
@@ -393,7 +477,7 @@ The canonical production app URL is [sofinancelab.xyz/app](https://sofinancelab.
 
 ## License
 
-[MIT](./LICENSE)
+[MIT](./LICENSE). Vulnerability reporting: [SECURITY.md](SECURITY.md).
 
 ## Hackathon disclosure
 
