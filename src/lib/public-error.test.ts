@@ -56,6 +56,24 @@ describe("compound failure mapping", () => {
     expect(publicErrorCode(noRoute)).toBe("jupiter_no_route");
   });
 
+  it("maps Jupiter dust-threshold 400 to a coded amount-too-small message", () => {
+    const dust = new JupiterHttpError(400, "/swap/v1/quote", null,
+      "Cannot compute other amount threshold, with amount 1 and slippageBps 50");
+    expect(sanitizePublicError(dust, "Quote failed")).toBe(
+      "Amount too small to swap into this position — try a larger amount");
+    expect(sanitizePublicError(dust, "Quote failed")).not.toMatch(/HTTP 400/);
+    expect(publicErrorCode(dust)).toBe("amount_too_small");
+  });
+
+  it("surfaces Jupiter's 400 body instead of bare HTTP 400", () => {
+    const rejected = new JupiterHttpError(400, "/swap/v1/quote", null, "Token not tradable");
+    expect(sanitizePublicError(rejected, "Quote failed")).toBe("Token not tradable");
+    expect(sanitizePublicError(rejected, "Quote failed")).not.toMatch(/HTTP 400/);
+    expect(publicErrorCode(rejected)).toBe("jupiter_client_error");
+    expect(sanitizePublicError(new JupiterHttpError(400, "/swap/v1/quote"), "Quote failed"))
+      .toBe("Jupiter rejected this quote.");
+  });
+
   it("keeps Jupiter 429/5xx distinct from the Solana RPC message", () => {
     const jupiter = new JupiterHttpError(429, "/swap/v1/quote");
     expect(sanitizePublicError(jupiter, "Exit source unavailable")).toBe(JUPITER_UNAVAILABLE_MESSAGE);

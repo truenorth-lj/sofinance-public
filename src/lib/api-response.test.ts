@@ -4,6 +4,7 @@ import { selectedApiError } from "./api-response";
 import { JupiterHttpError } from "@sofinance/engine/jupiter/errors";
 import { JupiterNoRouteError } from "@sofinance/engine/swap/jupiter";
 import { SelectedNoRouteError } from "./selected-no-route";
+import { AmountTooSmallError } from "./selected-amount-error";
 
 beforeEach(() => { vi.spyOn(console, "error").mockImplementation(() => {}); });
 afterEach(() => vi.restoreAllMocks());
@@ -50,4 +51,23 @@ it("does not leak Jupiter HTTP 400 when quoteRoute mapped to no-route", async ()
   expect(body.code).toBe("jupiter_no_route");
   expect(body.error).not.toMatch(/HTTP 400/);
   expect(body.error).toMatch(/transaction size limit/);
+});
+
+it("returns a coded amount-too-small body for dust Jupiter 400s", async () => {
+  const response = selectedApiError(new AmountTooSmallError(), "Quote failed");
+  expect(response.status).toBe(400);
+  expect(await response.json()).toEqual({
+    error: "Amount too small to swap into this position — try a larger amount",
+    code: "amount_too_small",
+  });
+});
+
+it("returns Jupiter's 400 body instead of bare HTTP 400", async () => {
+  const response = selectedApiError(
+    new JupiterHttpError(400, "/swap/v1/quote", null, "Token not tradable"), "Quote failed");
+  expect(response.status).toBe(400);
+  expect(await response.json()).toEqual({
+    error: "Token not tradable",
+    code: "jupiter_client_error",
+  });
 });

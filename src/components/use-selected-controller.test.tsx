@@ -143,6 +143,20 @@ it("does not offer Recalculate when Jupiter has no fitting route", async () => {
   expect(controller.showQuoteRecalculate).toBe(false);
   expect(controller.calculating).toBe(false);
 });
+it("does not offer Recalculate when the amount is too small to swap", async () => {
+  const handler = fetchMock.getMockImplementation()!;
+  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => url === "/api/selected-quote"
+    ? Response.json({
+      error: "Amount too small to swap into this position — try a larger amount",
+      code: "amount_too_small",
+    }, { status: 400 })
+    : handler(url, init));
+  await act(async () => controller.changeAmount("0.0011")); await advance(500);
+  expect(controller.quoteError).toMatch(/Amount too small/);
+  expect(controller.quoteErrorCode).toBe("amount_too_small");
+  expect(controller.showQuoteRecalculate).toBe(false);
+  expect(controller.calculating).toBe(false);
+});
 it("ends a stalled prepare before signing and unlocks for retry", async () => {
   await ready();
   fetchMock.mockImplementationOnce((_url: string, init: RequestInit = {}) => stallUntilAbort(init.signal as AbortSignal));

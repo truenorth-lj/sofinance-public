@@ -15,7 +15,10 @@ import type { JupiterRetryBudget } from "@sofinance/engine/jupiter/client";
 import { isJupiterNoRouteError } from "@sofinance/engine/swap/jupiter";
 import { readSelectedPositionState, type PositionSelection, type SelectedPositionState } from "@sofinance/engine/selected-state";
 import { selectedNoRouteError } from "./selected-no-route";
+import { AmountTooSmallError, isJupiterAmountTooSmallHttp, minJupiterSwapAmount } from "./selected-amount-error";
 import { withSelectedRouteRetries } from "./selected-route-retry";
+
+const MIN_JUPITER_SWAP = minJupiterSwapAmount(SLIPPAGE_BPS);
 
 type SwapLeg = { inputMint: string; outputMint: string; spend: bigint; feeAmount: bigint; minOut: bigint; route: QuoteRoute | null };
 
@@ -43,15 +46,38 @@ function amountsAt(state: SelectedPositionState, sqrt: BN, liquidity: BN) {
   return LiquidityMathUtil.getAmountsForLiquidity(sqrt, new BN(state.lowerSqrtX64), new BN(state.upperSqrtX64), liquidity, true);
 }
 
+function dummyLeg(inputMint: string, outputMint: string, spend: bigint, minOut = 0n): SwapLeg {
+  return { inputMint, outputMint, spend, feeAmount: 0n, minOut, route: null };
+}
+
+function requiresJupiterQuote(inputMint: string, outputMint: string, spend: bigint) {
+  return spend > 0n && inputMint !== outputMint;
+}
+
+function isUnquoteableJupiterSpend(inputMint: string, outputMint: string, spend: bigint) {
+  return requiresJupiterQuote(inputMint, outputMint, spend) && spend < MIN_JUPITER_SWAP;
+}
+
+function remapAmountTooSmall(error: unknown): never {
+  if (isJupiterAmountTooSmallHttp(error)) throw new AmountTooSmallError();
+  if (error instanceof Error && /too small|below/i.test(error.message) && /single-side amount|probe route/i.test(error.message)) {
+    throw new AmountTooSmallError();
+  }
+  throw error;
+}
+
 async function leg(
   wallet: string, inputMint: string, outputMint: string, spend: bigint, nativeSource = false,
   jupiter?: JupiterRouteConstraints, build = false, signal?: AbortSignal, budget?: JupiterRetryBudget, feeBps = 0, ownPool?: { poolId: string; mintA: string; mintB: string },
 ): Promise<SwapLeg> {
+  if (spend <= 0n) return dummyLeg(inputMint, outputMint, spend);
+  if (isUnquoteableJupiterSpend(inputMint, outputMint, spend)) throw new AmountTooSmallError();
   return feeSwapLeg({ wallet, inputMint, outputMint, spend, feeBps, native: nativeSource,
     constraints: jupiter, build, signal, budget, ownPool });
 }
 
 function priceImpactAgainstProbe(actual: SwapLeg, sample: SwapLeg, probe: bigint) {
+  if (sample.route === null && sample.inputMint !== sample.outputMint) return;
   if (actual.minOut * probe * 10_000n < sample.minOut * actual.spend * BigInt(10_000 - MAX_PRICE_IMPACT_BPS)) {
     throw new Error(`Price impact relative to probe route exceeds ${MAX_PRICE_IMPACT_BPS / 100}% limit`);
   }
@@ -64,6 +90,21 @@ export async function getSelectedQuoteBundle(
   options: { buildTransactions?: boolean; includeResale?: boolean; signal?: AbortSignal;
     budget?: JupiterRetryBudget; connection?: Connection; state?: SelectedPositionState } = {},
 ) {
+  try {
+    return await getSelectedQuoteBundleOnce(
+      wallet, selection, amount, requestedFloorBps, requestedToleranceBps, jupiter, options);
+  } catch (error) {
+    remapAmountTooSmall(error);
+  }
+}
+
+async function getSelectedQuoteBundleOnce(
+  wallet: string, selection: PositionSelection, amount: string,
+  requestedFloorBps: number, requestedToleranceBps: number,
+  jupiter: JupiterRouteConstraints | undefined,
+  options: { buildTransactions?: boolean; includeResale?: boolean; signal?: AbortSignal;
+    budget?: JupiterRetryBudget; connection?: Connection; state?: SelectedPositionState },
+) {
   const floorBps = parseResaleFloorBps(requestedFloorBps);
   const toleranceBps = parseAddToleranceBps(requestedToleranceBps);
   const state = options.state ?? await readSelectedPositionState(wallet, selection, options.connection, false, { displayPrices: false });
@@ -71,8 +112,10 @@ export async function getSelectedQuoteBundle(
   const feeConfig = readSwapFeeConfig();
   const actualLeg = (outputMint: string, spend: bigint) => leg(wallet, state.inputMint, outputMint, spend,
     state.inputKind === "native", jupiter, options.buildTransactions !== false, options.signal, options.budget, deposit.legBps, state);
-  const probeLeg = (outputMint: string) => leg(wallet, state.inputMint, outputMint, probe,
-    state.inputKind === "native", jupiter, false, options.signal, options.budget, deposit.legBps, state);
+  const probeLeg = (outputMint: string) => isUnquoteableJupiterSpend(state.inputMint, outputMint, probe)
+    ? Promise.resolve(dummyLeg(state.inputMint, outputMint, probe, probe))
+    : leg(wallet, state.inputMint, outputMint, probe,
+      state.inputKind === "native", jupiter, false, options.signal, options.budget, deposit.legBps, state);
   if (!state.ownsNft) throw new Error("Wallet does not have an available position NFT ATA for the selected position");
   if (state.paused || state.frozen || state.transferFee || state.unsupportedExtensions.length) {
     throw new Error(`Pool asset currently paused, account frozen, transfer fee charged, or has unsupported settings${state.unsupportedExtensions.length ? `: ${state.unsupportedExtensions.join(", ")}` : ""}`);
@@ -83,7 +126,7 @@ export async function getSelectedQuoteBundle(
   const requested = deposit.swapAmount;
   if (BigInt(state.inputBalance) < grossRequested) throw new Error("Insufficient input asset balance or SOL reserve");
   const probe = requested / 10n;
-  if (probe <= 0n) throw new Error("Input amount too small to obtain probe route");
+  if (probe <= 0n) throw new AmountTooSmallError();
   let spendA = 0n;
   let legs: SwapLeg[] = [];
   let projected = new BN(state.sqrtPriceX64);
@@ -130,7 +173,7 @@ export async function getSelectedQuoteBundle(
     new BN(state.lowerSqrtX64), new BN(state.upperSqrtX64), new BN(outA.toString()), new BN(outB.toString()));
   fullLiquidity.isubn(1);
   const liquidity = new BN(toleranceLiquidity(BigInt(fullLiquidity.toString()), toleranceBps).toString());
-  if (liquidity.lten(0)) throw new Error("Conservative minimum output insufficient to add valid liquidity");
+  if (liquidity.lten(0)) throw new AmountTooSmallError();
   const amounts = amountsAt(state, projected, liquidity);
   const requiredA = BigInt(amounts.amountA.toString());
   const requiredB = BigInt(amounts.amountB.toString());
@@ -143,8 +186,10 @@ export async function getSelectedQuoteBundle(
   // gates swap round-trip cost and price impact on the full swap output.
   const includeResale = options.includeResale !== false;
   const resaleLegs = includeResale ? await Promise.all([
-    outA > 0n ? leg(wallet, state.mintA, state.inputMint, outA, false, jupiter, false, options.signal, options.budget) : null,
-    outB > 0n ? leg(wallet, state.mintB, state.inputMint, outB, false, jupiter, false, options.signal, options.budget) : null,
+    outA > 0n && !isUnquoteableJupiterSpend(state.mintA, state.inputMint, outA)
+      ? leg(wallet, state.mintA, state.inputMint, outA, false, jupiter, false, options.signal, options.budget) : null,
+    outB > 0n && !isUnquoteableJupiterSpend(state.mintB, state.inputMint, outB)
+      ? leg(wallet, state.mintB, state.inputMint, outB, false, jupiter, false, options.signal, options.budget) : null,
   ]) : [];
   const resale = resaleLegs.reduce((sum, item) => sum + (item?.minOut || 0n), 0n);
   const timestamp = Date.now();

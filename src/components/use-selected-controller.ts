@@ -12,7 +12,7 @@ import type { SelectedQuote } from "@/lib/selected-quote";
 import type { PositionSelection, SelectedPositionState } from "@sofinance/engine/selected-state";
 import type { WalletDiscovery } from "@sofinance/engine/wallet-discovery";
 import { DEFAULT_RESALE_FLOOR_BPS, USDC_MINT } from "@sofinance/engine/ids";
-import { JUPITER_NO_ROUTE_CODE } from "@/lib/selected-no-route";
+import { quoteErrorHidesRecalculate } from "@/lib/selected-amount-error";
 import { useWalletConnection } from "./wallet-connection";
 import { notifyPositionHistoryChange } from "@/lib/position-history-refresh";
 
@@ -434,7 +434,7 @@ export function useSelectedController() {
     setQuoteError(""); setQuoteErrorCode(""); setQuoteErrorOutputMint(""); setPreview({ kind: "idle" });
     setQuoteRevision((current) => current + 1);
   };
-  const showQuoteRecalculate = Boolean(quoteError) && quoteErrorCode !== JUPITER_NO_ROUTE_CODE;
+  const showQuoteRecalculate = Boolean(quoteError) && !quoteErrorHidesRecalculate(quoteErrorCode);
   const fillMax = () => changeAmount(visibleState ? formatAmount(visibleState.inputBalance, visibleState.inputDecimals, visibleState.inputDecimals) : "");
   const choosePosition = (positionMint: string) => setSelection((current) => current ? { ...current, positionMint } : null);
   const chooseAsset = (kind: "native" | "token", mint: string) => setSelection((current) => current ? { ...current, inputKind: kind, inputMint: mint } : null);

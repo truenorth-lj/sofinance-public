@@ -4,12 +4,20 @@ import {
   JUPITER_NO_ROUTE_CODE,
   JUPITER_UNAVAILABLE_CODE,
   JUPITER_UNAVAILABLE_MESSAGE,
+  JupiterHttpError,
   JupiterUnavailableError,
   RPC_UNAVAILABLE_CODE,
 } from "@sofinance/engine/jupiter/errors";
 import { isJupiterNoRouteError, JupiterNoRouteError } from "@sofinance/engine/swap/jupiter";
 import { RPC_UNAVAILABLE_MESSAGE } from "@sofinance/engine/rpc/errors";
 import { formatSelectedNoRouteMessage, SelectedNoRouteError } from "./selected-no-route";
+import {
+  AMOUNT_TOO_SMALL_CODE,
+  AMOUNT_TOO_SMALL_MESSAGE,
+  isAmountTooSmallError,
+  JUPITER_CLIENT_ERROR_CODE,
+  jupiterClientErrorMessage,
+} from "./selected-amount-error";
 
 const PUBLIC_ERROR_LIMIT = 220;
 const SECRET = /https?:\/\/\S+|\b(?:api[_-]?key|authorization|token)\s*[:=]\s*\S+/gi;
@@ -85,6 +93,8 @@ export function publicErrorCode(error: unknown): string | undefined {
   if (error instanceof SelectedNoRouteError || error instanceof JupiterNoRouteError || isJupiterNoRouteError(error)) {
     return JUPITER_NO_ROUTE_CODE;
   }
+  if (isAmountTooSmallError(error)) return AMOUNT_TOO_SMALL_CODE;
+  if (error instanceof JupiterHttpError && error.status === 400) return JUPITER_CLIENT_ERROR_CODE;
   if (error instanceof JupiterUnavailableError || isJupiterUpstreamError(error)) {
     return JUPITER_UNAVAILABLE_CODE;
   }
@@ -99,6 +109,10 @@ export function sanitizePublicError(error: unknown, fallback: string): string {
   if (error instanceof SelectedNoRouteError) return error.message;
   if (error instanceof JupiterNoRouteError || isJupiterNoRouteError(error)) {
     return formatSelectedNoRouteMessage("this input asset", "the pool tokens");
+  }
+  if (isAmountTooSmallError(error)) return AMOUNT_TOO_SMALL_MESSAGE;
+  if (error instanceof JupiterHttpError && error.status === 400) {
+    return truncate(sanitizeDetail(jupiterClientErrorMessage(error)));
   }
   if (error instanceof JupiterUnavailableError || isJupiterUpstreamError(error)) {
     return JUPITER_UNAVAILABLE_MESSAGE;
