@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { sentryInitOptions } from "./options";
 import type { ErrorEvent } from "@sentry/nextjs";
+import { sentryInitOptions } from "./options";
+import * as scrub from "./scrub";
 
 afterEach(() => {
   vi.unstubAllEnvs();
+  vi.restoreAllMocks();
 });
 
 describe("sentryInitOptions", () => {
@@ -43,5 +45,50 @@ describe("sentryInitOptions", () => {
     expect(event?.user).toBeUndefined();
     expect(JSON.stringify(event)).not.toContain("bypass-secret");
     expect(JSON.stringify(event)).not.toContain("198.51.100.10");
+  });
+
+  it("returns a stripped event when beforeSend internals throw", () => {
+    vi.stubEnv("SENTRY_DSN", "https://key@o1.ingest.us.sentry.io/1");
+    vi.spyOn(scrub, "scrubSentryEvent").mockImplementation(() => {
+      throw new Error("non-string replace");
+    });
+    const options = sentryInitOptions();
+    const explodingHeaders = new Proxy({} as Record<string, unknown>, {
+      ownKeys() {
+        throw new Error("headers.ownKeys");
+      },
+      get() {
+        throw new Error("headers.get");
+      },
+      getOwnPropertyDescriptor() {
+        return { enumerable: true, configurable: true, value: undefined };
+      },
+    });
+    const event = options.beforeSend({
+      message: "Raydium CLMM pool account does not exist",
+      exception: { values: [{ type: "Error", value: "Raydium CLMM pool account does not exist" }] },
+      tags: { route: "/api/pool-range-apr", error_class: "Error" },
+      request: {
+        url: "https://sofinancelab.xyz/api/pool-range-apr?poolId=11111111111111111111111111111112",
+        method: "GET",
+        headers: explodingHeaders,
+        env: { REMOTE_ADDR: "198.51.100.10" },
+        query_string: "poolId=11111111111111111111111111111112",
+        cookies: { session: "abc" },
+      },
+      user: { ip_address: "198.51.100.10" },
+    } as unknown as ErrorEvent);
+
+    expect(event).toBeTruthy();
+    expect(event?.exception?.values?.[0]?.type).toBe("Error");
+    expect(event?.exception?.values?.[0]?.value).toBe("Raydium CLMM pool account does not exist");
+    expect(event?.tags?.route).toBe("/api/pool-range-apr");
+    expect(event?.request?.headers).toBeUndefined();
+    expect(event?.request?.env).toBeUndefined();
+    expect(event?.request?.query_string).toBeUndefined();
+    expect(event?.request?.cookies).toBeUndefined();
+    expect(event?.user).toBeUndefined();
+    expect(event?.request?.url).not.toContain("poolId=");
+    expect(event?.request?.method).toBe("GET");
   });
 });

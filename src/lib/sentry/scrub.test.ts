@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { isSensitiveHeaderName, scrubSensitiveText, scrubSentryEvent } from "./scrub";
+import {
+  isSensitiveHeaderName,
+  minimalSentryEvent,
+  scrubSensitiveText,
+  scrubSentryEvent,
+  scrubUnknown,
+} from "./scrub";
 
 const wallet = "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU";
 const signature = "1".repeat(88);
@@ -16,6 +22,34 @@ describe("scrubSensitiveText", () => {
     expect(scrubbed).toContain("[redacted-address]");
     expect(scrubbed).toContain("[redacted-signature]");
   });
+
+  it("passes non-strings through and recurses into arrays/objects", () => {
+    expect(scrubSensitiveText(undefined)).toBeUndefined();
+    expect(scrubSensitiveText(null)).toBeNull();
+    expect(scrubSensitiveText(42)).toBe(42);
+    expect(scrubSensitiveText(true)).toBe(true);
+    const leftover = { keep: true };
+    expect(scrubSensitiveText(leftover)).not.toBe(leftover);
+    expect(scrubSensitiveText(["https://rpc.example/sol", 7, { token: "abc" }])).toEqual([
+      "[redacted-url]",
+      7,
+      { token: "[redacted]" },
+    ]);
+    expect(scrubSensitiveText({ rpc: "https://rpc.example/sol", count: 3 })).toEqual({
+      rpc: "[redacted-url]",
+      count: 3,
+    });
+  });
+
+  it("redacts URL-encoded RPC URLs and secrets in query strings", () => {
+    const encoded = "rpc=https%3A%2F%2Frpc.example.com%2Fsol%3Fapi_key%3Dsecret123";
+    const scrubbed = scrubSensitiveText(encoded);
+    expect(scrubbed).not.toContain("rpc.example.com");
+    expect(scrubbed).not.toContain("secret123");
+    expect(scrubbed).not.toMatch(/https?:\/\//i);
+    expect(scrubbed).not.toMatch(/https?%3A%2F%2F/i);
+    expect(scrubbed).toContain("[redacted-url]");
+  });
 });
 
 describe("sensitive request headers", () => {
@@ -28,6 +62,9 @@ describe("sensitive request headers", () => {
     expect(isSensitiveHeaderName("Authorization")).toBe(true);
     expect(isSensitiveHeaderName("Cookie")).toBe(true);
     expect(isSensitiveHeaderName("content-type")).toBe(false);
+    expect(isSensitiveHeaderName(undefined)).toBe(false);
+    expect(isSensitiveHeaderName(12)).toBe(false);
+    expect(isSensitiveHeaderName(["authorization"])).toBe(false);
   });
 });
 
@@ -99,5 +136,98 @@ describe("scrubSentryEvent", () => {
     });
     expect(event.request?.env?.REMOTE_ADDR).toBe("[redacted]");
     expect(event.request?.env?.HTTP_X_FORWARDED_FOR).toBe("[redacted]");
+  });
+
+  it("handles non-string header values, array headers, and env objects without throwing", () => {
+    const event = scrubSentryEvent({
+      request: {
+        url: "https://sofinancelab.xyz/api/pool-range-apr?rpc=https%3A%2F%2Frpc.example.com",
+        headers: {
+          "content-type": "application/json",
+          "x-request-id": 42,
+          "x-flag": true,
+          "x-empty": null,
+          "x-forwarded-for": ["198.51.100.10", "10.0.0.1"],
+          "accept": ["application/json", "text/plain"],
+          "x-rpc": ["https://rpc.example.com", 9],
+        },
+        query_string: "rpc=https%3A%2F%2Frpc.example.com%2Fsol%3Fapi_key%3Dsecret123",
+        env: {
+          NODE_ENV: "production",
+          REMOTE_ADDR: "198.51.100.10",
+          RPC_URL: "https://rpc.example.com",
+          WORKER_ID: 7,
+          NESTED: { authorization: "Bearer tok", count: 1 },
+        },
+      },
+    });
+
+    expect(event.request?.headers).toMatchObject({
+      "content-type": "application/json",
+      "x-request-id": 42,
+      "x-flag": true,
+      "x-empty": null,
+      "x-forwarded-for": ["[redacted]", "[redacted]"],
+      accept: ["application/json", "text/plain"],
+      "x-rpc": ["[redacted-url]", 9],
+    });
+    expect(event.request?.query_string).not.toContain("rpc.example.com");
+    expect(event.request?.query_string).not.toContain("secret123");
+    expect(event.request?.query_string).not.toMatch(/https?%3A%2F%2F/i);
+    expect(event.request?.env).toMatchObject({
+      NODE_ENV: "production",
+      REMOTE_ADDR: "[redacted]",
+      RPC_URL: "[redacted-url]",
+      WORKER_ID: 7,
+      NESTED: { authorization: "[redacted]", count: 1 },
+    });
+    expect(JSON.stringify(event)).not.toContain("198.51.100.10");
+  });
+});
+
+describe("scrubUnknown", () => {
+  it("passes primitives through and redacts env-like objects", () => {
+    expect(scrubUnknown(undefined)).toBeUndefined();
+    expect(scrubUnknown(null)).toBeNull();
+    expect(scrubUnknown(0)).toBe(0);
+    expect(scrubUnknown({ HTTP_X_FORWARDED_FOR: "198.51.100.10", keep: "ok" })).toEqual({
+      HTTP_X_FORWARDED_FOR: "[redacted]",
+      keep: "ok",
+    });
+  });
+});
+
+describe("minimalSentryEvent", () => {
+  it("keeps exception type/message and route, and strips request PII", () => {
+    const event = minimalSentryEvent({
+      message: `failed wallet=${wallet}`,
+      exception: { values: [{ type: "Error", value: "Raydium CLMM pool account does not exist" }] },
+      tags: { route: "/api/pool-range-apr", extra: "drop-me" },
+      extra: { token: "abc" },
+      user: { ip_address: "198.51.100.10" },
+      breadcrumbs: { values: [{ message: "x" }] },
+      request: {
+        url: "https://sofinancelab.xyz/api/pool-range-apr?poolId=11111111111111111111111111111112",
+        method: "GET",
+        headers: { "x-forwarded-for": ["198.51.100.10"] },
+        env: { REMOTE_ADDR: "198.51.100.10" },
+        query_string: "poolId=111",
+        cookies: { session: "abc" },
+      },
+    });
+
+    expect(event.exception?.values?.[0]).toEqual({
+      type: "Error",
+      value: "Raydium CLMM pool account does not exist",
+    });
+    expect(event.message).toContain("[redacted-address]");
+    expect(event.tags).toEqual({ route: "/api/pool-range-apr" });
+    expect(event.user).toBeUndefined();
+    expect(event.extra).toBeUndefined();
+    expect(event.breadcrumbs).toBeUndefined();
+    expect(event.request).toEqual({
+      url: "https://sofinancelab.xyz/api/pool-range-apr",
+      method: "GET",
+    });
   });
 });

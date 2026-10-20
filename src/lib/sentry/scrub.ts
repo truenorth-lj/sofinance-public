@@ -1,4 +1,5 @@
 const URL_RE = /https?:\/\/[^\s"'\\]+/gi;
+const ENCODED_URL_RE = /https?%3A%2F%2F[^\s"'\\&]*/gi;
 const SECRET_ASSIGN_RE =
   /(?:api[_-]?key|authorization|bearer|token|secret|x-api-key|sig)\s*[:=]\s*\S+/gi;
 const SIGNATURE_RE = /\b[1-9A-HJ-NP-Za-km-z]{86,88}\b/g;
@@ -7,111 +8,196 @@ const SECRET_KEY_RE =
   /(?:^|[_-])(?:api[_-]?key|authorization|cookie|secret|token|password|bearer)(?:$|[_-])/i;
 const NAMED_SENSITIVE_HEADER_RE =
   /^(authorization|cookie|set-cookie|proxy-authorization|x-api-key|x-cron-secret|x-forwarded-for|x-real-ip|forwarded)$/i;
+const ENV_IP_RE = /ip|forwarded|remote_addr/i;
 
-export function isSensitiveHeaderName(name: string): boolean {
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+export function isSensitiveHeaderName(name: unknown): boolean {
+  if (typeof name !== "string") return false;
   const key = name.toLowerCase();
   return key.startsWith("x-vercel-") || NAMED_SENSITIVE_HEADER_RE.test(key) || SECRET_KEY_RE.test(key);
 }
 
-export function scrubSensitiveText(text: string): string {
+function decodeUriComponentSafe(text: string): string {
+  let current = text;
+  for (let i = 0; i < 3; i += 1) {
+    try {
+      const next = decodeURIComponent(current.replace(/\+/g, " "));
+      if (next === current) break;
+      current = next;
+    } catch {
+      break;
+    }
+  }
+  return current;
+}
+
+function applyTextScrubbers(text: string): string {
   return text
     .replace(URL_RE, "[redacted-url]")
+    .replace(ENCODED_URL_RE, "[redacted-url]")
     .replace(SECRET_ASSIGN_RE, "[redacted-secret]")
     .replace(SIGNATURE_RE, "[redacted-signature]")
     .replace(ADDRESS_RE, "[redacted-address]");
 }
 
-function scrubHeaders(headers: Record<string, string>): Record<string, string> {
-  const next: Record<string, string> = {};
-  for (const [key, value] of Object.entries(headers)) {
-    next[key] = isSensitiveHeaderName(key) ? "[redacted]" : scrubSensitiveText(value);
+/** Strings only. Arrays/objects recurse; every other type is returned unchanged. */
+export function scrubSensitiveText<T>(text: T): T {
+  if (typeof text === "string") {
+    return applyTextScrubbers(decodeUriComponentSafe(text)) as T;
   }
-  return next;
+  if (text !== null && typeof text === "object") {
+    return scrubUnknown(text);
+  }
+  return text;
 }
 
-function scrubValue(value: unknown, seen: WeakSet<object>): unknown {
-  if (typeof value === "string") return scrubSensitiveText(value);
+export function scrubUnknown<T>(value: T, seen = new WeakSet<object>()): T {
+  if (typeof value === "string") return applyTextScrubbers(decodeUriComponentSafe(value)) as T;
   if (value === null || value === undefined || typeof value !== "object") return value;
-  if (seen.has(value)) return "[redacted]";
+  if (seen.has(value)) return "[redacted]" as T;
   seen.add(value);
-  if (Array.isArray(value)) return value.map((item) => scrubValue(item, seen));
+  if (Array.isArray(value)) return value.map((item) => scrubUnknown(item, seen)) as T;
+  if (!isPlainObject(value)) return value;
   const next: Record<string, unknown> = {};
-  for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
-    next[key] = isSensitiveHeaderName(key) ? "[redacted]" : scrubValue(nested, seen);
+  for (const [key, nested] of Object.entries(value)) {
+    next[key] = typeof key === "string" && (isSensitiveHeaderName(key) || ENV_IP_RE.test(key))
+      ? "[redacted]"
+      : scrubUnknown(nested, seen);
+  }
+  return next as T;
+}
+
+function scrubHeaderValue(key: string, value: unknown): unknown {
+  if (isSensitiveHeaderName(key)) {
+    return Array.isArray(value) ? value.map(() => "[redacted]") : "[redacted]";
+  }
+  return scrubUnknown(value);
+}
+
+function scrubHeaders(headers: unknown): unknown {
+  if (typeof headers === "string") return scrubSensitiveText(headers);
+  if (Array.isArray(headers)) return scrubUnknown(headers);
+  if (!isPlainObject(headers)) return headers;
+  const next: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    next[key] = scrubHeaderValue(key, value);
   }
   return next;
 }
 
 export type ScrubableSentryEvent = {
-  message?: string;
-  extra?: Record<string, unknown>;
-  contexts?: Record<string, unknown>;
+  message?: unknown;
+  extra?: unknown;
+  contexts?: unknown;
   tags?: Record<string, unknown>;
-  user?: { ip_address?: string } | unknown;
-  exception?: { values?: Array<{ value?: string; type?: string }> };
-  breadcrumbs?: { values?: Array<{ message?: string; data?: Record<string, unknown> }> };
+  user?: unknown;
+  exception?: { values?: Array<{ value?: unknown; type?: unknown }> };
+  breadcrumbs?: { values?: Array<{ message?: unknown; data?: unknown }> };
   request?: {
-    url?: string;
-    headers?: Record<string, string> | string;
-    query_string?: string | Record<string, string> | Array<[string, string]>;
+    url?: unknown;
+    method?: unknown;
+    headers?: unknown;
+    query_string?: unknown;
     cookies?: unknown;
     data?: unknown;
-    env?: Record<string, string>;
+    env?: unknown;
   };
 };
 
-function dropUserIp(event: ScrubableSentryEvent) {
-  delete event.user;
+function asString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
 }
 
 /** Drop request bodies / auth / IPs / Vercel bypass and redact wallets, signatures, RPC URLs, and keys. */
 export function scrubSentryEvent<T>(event: T): T {
   const target = event as T & ScrubableSentryEvent;
-  if (target.message) target.message = scrubSensitiveText(target.message);
-  if (target.exception?.values) {
+  const message = asString(target.message);
+  if (message !== undefined) target.message = scrubSensitiveText(message) as string;
+  if (Array.isArray(target.exception?.values)) {
     for (const value of target.exception.values) {
-      if (value.value) value.value = scrubSensitiveText(value.value);
+      if (!value || typeof value !== "object") continue;
+      const text = asString(value.value);
+      if (text !== undefined) value.value = scrubSensitiveText(text);
     }
   }
-  if (target.tags) {
+  if (isPlainObject(target.tags)) {
     for (const [key, value] of Object.entries(target.tags)) {
       if (key === "route" || key === "error_class") continue;
       if (typeof value === "string") target.tags[key] = scrubSensitiveText(value);
     }
   }
-  if (target.extra) target.extra = scrubValue(target.extra, new WeakSet()) as Record<string, unknown>;
-  if (target.contexts) target.contexts = scrubValue(target.contexts, new WeakSet()) as Record<string, unknown>;
-  if (target.breadcrumbs?.values) {
+  if (target.extra !== undefined) target.extra = scrubUnknown(target.extra) as ScrubableSentryEvent["extra"];
+  if (target.contexts !== undefined) target.contexts = scrubUnknown(target.contexts) as ScrubableSentryEvent["contexts"];
+  if (Array.isArray(target.breadcrumbs?.values)) {
     for (const crumb of target.breadcrumbs.values) {
-      if (crumb.message) crumb.message = scrubSensitiveText(crumb.message);
-      if (crumb.data) crumb.data = scrubValue(crumb.data, new WeakSet()) as Record<string, unknown>;
+      if (!crumb || typeof crumb !== "object") continue;
+      if (typeof crumb.message === "string") crumb.message = scrubSensitiveText(crumb.message);
+      if (crumb.data !== undefined) crumb.data = scrubUnknown(crumb.data);
     }
   }
-  if (target.request) {
-    if (target.request.url) target.request.url = scrubSensitiveText(target.request.url);
-    if (typeof target.request.headers === "string") {
-      target.request.headers = scrubSensitiveText(target.request.headers);
-    } else if (target.request.headers) {
-      target.request.headers = scrubHeaders(target.request.headers);
+  if (isPlainObject(target.request)) {
+    if (typeof target.request.url === "string") {
+      target.request.url = scrubSensitiveText(target.request.url) as string;
     }
-    if (typeof target.request.query_string === "string") {
-      target.request.query_string = scrubSensitiveText(target.request.query_string);
-    } else if (target.request.query_string) {
-      target.request.query_string = scrubValue(target.request.query_string, new WeakSet()) as
-        typeof target.request.query_string;
+    if (target.request.headers !== undefined) target.request.headers = scrubHeaders(target.request.headers);
+    if (target.request.query_string !== undefined) {
+      target.request.query_string = scrubUnknown(target.request.query_string);
     }
-    if (target.request.env) {
-      const env: Record<string, string> = {};
-      for (const [key, value] of Object.entries(target.request.env)) {
-        env[key] = isSensitiveHeaderName(key) || /ip|forwarded|remote_addr/i.test(key)
-          ? "[redacted]"
-          : scrubSensitiveText(value);
-      }
-      target.request.env = env;
-    }
+    if (target.request.env !== undefined) target.request.env = scrubUnknown(target.request.env);
     delete target.request.cookies;
     delete target.request.data;
   }
-  dropUserIp(target);
+  delete target.user;
   return event;
+}
+
+/** Last-resort event if beforeSend throws: keep exception + route, strip request PII. */
+export function minimalSentryEvent<T>(event: T): T {
+  const next = event as T & ScrubableSentryEvent;
+  next.user = undefined;
+  next.extra = undefined;
+  next.breadcrumbs = undefined;
+  try {
+    const message = asString(next.message);
+    next.message = message !== undefined ? scrubSensitiveText(message) : undefined;
+  } catch {
+    next.message = undefined;
+  }
+  try {
+    const values = next.exception?.values;
+    next.exception = Array.isArray(values)
+      ? {
+          values: values
+            .filter((value): value is { value?: unknown; type?: unknown } => Boolean(value) && typeof value === "object")
+            .map((value) => ({
+              type: asString(value.type),
+              value: typeof value.value === "string" ? scrubSensitiveText(value.value) : undefined,
+            })),
+        }
+      : undefined;
+  } catch {
+    next.exception = undefined;
+  }
+  try {
+    const route = typeof next.tags?.route === "string" ? next.tags.route : undefined;
+    next.tags = route ? { route } : {};
+  } catch {
+    next.tags = {};
+  }
+  try {
+    const req = next.request && isPlainObject(next.request) ? next.request : undefined;
+    const method = asString(req?.method);
+    const url = asString(req?.url);
+    next.request = url || method
+      ? { url: url ? url.split("?")[0] : undefined, method }
+      : undefined;
+  } catch {
+    next.request = undefined;
+  }
+  return next;
 }

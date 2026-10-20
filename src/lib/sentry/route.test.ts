@@ -20,4 +20,11 @@ describe("request/Next route derivation", () => {
     });
     expect(event.tags?.route).toBe("/api/wallet");
   });
+
+  it("ignores non-string urls and transactions", () => {
+    expect(pathnameFromUrl(undefined)).toBeUndefined();
+    expect(pathnameFromUrl(["/api/wallet"])).toBeUndefined();
+    expect(routeFromTransaction(undefined)).toBeUndefined();
+    expect(routeFromTransaction({ name: "GET /api/wallet" })).toBeUndefined();
+  });
 });

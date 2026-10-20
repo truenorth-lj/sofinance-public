@@ -1,6 +1,6 @@
 /** Pathname only — never query string (wallets/signatures live there). */
-export function pathnameFromUrl(url: string | undefined): string | undefined {
-  if (!url) return undefined;
+export function pathnameFromUrl(url: unknown): string | undefined {
+  if (typeof url !== "string" || !url) return undefined;
   try {
     const path = new URL(url, "http://local.invalid").pathname;
     if (!path || path === "/") return path || undefined;
@@ -14,15 +14,15 @@ export function pathnameFromUrl(url: string | undefined): string | undefined {
 }
 
 /** `GET /api/wallet` or `/api/wallet` → `/api/wallet`. */
-export function routeFromTransaction(transaction: string | undefined): string | undefined {
-  if (!transaction) return undefined;
+export function routeFromTransaction(transaction: unknown): string | undefined {
+  if (typeof transaction !== "string" || !transaction) return undefined;
   const match = transaction.match(/^(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+(\/\S*)/i);
   const raw = match?.[1] ?? (transaction.startsWith("/") ? transaction : undefined);
   if (!raw) return undefined;
   return raw.split("?")[0]?.replace(/\/+$/, "") || "/";
 }
 
-export function routeFromRequest(request: { url: string } | undefined): string | undefined {
+export function routeFromRequest(request: { url?: unknown } | undefined): string | undefined {
   return request ? pathnameFromUrl(request.url) : undefined;
 }
 
