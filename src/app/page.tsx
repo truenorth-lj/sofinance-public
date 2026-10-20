@@ -3,7 +3,7 @@ import { LandingPage } from "@/components/landing-page";
 export const metadata = {
   title: "SoFinance",
   description:
-    "A self-custodial tool to manage your Raydium CLMM positions: one-signature opening, one-click compounding and one-click exit. You sign every transaction, from the web app or through an AI agent via MCP.",
+    "LP tokenized stocks on Raydium — in one signature. Pick an xStock pool, set your range, and open the position with a single wallet signature.",
 };
 
 export default function Home() {

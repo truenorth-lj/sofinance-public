@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { PlanPairOption } from "@/lib/lp-plan-selection";
+import { fetchRwaPairsList } from "@/lib/rwa-pairs-list";
 
 type RwaPairRow = {
   poolAddress: string;
@@ -24,12 +25,7 @@ export type RwaPairsState =
 type LoadedPairs = Extract<RwaPairsState, { status: "ready" | "unavailable" }>;
 
 async function loadRwaPairs(signal: AbortSignal): Promise<PlanPairOption[]> {
-  const response = await fetch("/api/rwa-pairs?minTvl=0&maxPages=10&sortBy=estimatedFeeApr", {
-    signal,
-    headers: { Accept: "application/json" },
-  });
-  const body = (await response.json()) as RwaPairsResponse;
-  if (!response.ok) throw new Error(body.error || "Failed to load RWA pairs");
+  const body = await fetchRwaPairsList<RwaPairsResponse>(signal);
   return (body.pairs ?? [])
     .filter((row) => row.poolAddress && row.wrappedSymbol && row.plainSymbol)
     .map((row) => ({
