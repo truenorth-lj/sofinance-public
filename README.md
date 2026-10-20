@@ -104,6 +104,11 @@ Copy `.env.example` → `.env.local`. Comments in that file are the source of tr
 | `NEXT_PUBLIC_SOLANA_RPC_URL` | Browser wallet RPC only; must be a public endpoint, never a key |
 | `SOFINANCE_FEE_WALLET` / `SOFINANCE_FEE_BPS` | Optional protocol fee; **server-only, never `NEXT_PUBLIC_`**. Default 10 bps, max 100. Unset wallet = fee 0, no transfer added. Details: [Protocol swap fee](#protocol-swap-fee). |
 | RWA / history DB vars | Optional snapshot gateway; see `.env.example` and `db/README.md` |
+| `NEXT_PUBLIC_POSTHOG_KEY` / `NEXT_PUBLIC_POSTHOG_HOST` | Optional PostHog product analytics. Unset key = complete client no-op. Host defaults to `https://us.i.posthog.com`. |
+| `SOFINANCE_OPENS_DATABASE_URL` | Optional Postgres URL (Neon / Vercel Postgres) for north-star open logs. Unset = log nothing. Not the Zeabur RWA `DATABASE_URL`. |
+| `SOFINANCE_OPENS_READ_TOKEN` | Bearer token (≥32 chars) for `GET /api/internal/opens-daily`. Unset = route 404s. |
+
+See [Growth analytics](#growth-analytics) for event names and the internal read endpoint.
 
 ### Run
 
@@ -363,6 +368,35 @@ Or: `pnpm mcp:start` with env already exported.
 **Sign deep-link:** After `prepare_transaction`, `prepare_compound_transaction`, or `prepare_open_position`, the agent receives a `signUrl` (e.g. `https://sofinancelab.xyz/app/sign/<token>`) that can be opened in a browser. Legacy `/sign/<token>` URLs permanently redirect to `/app/sign/<token>`. The token is a self-contained, HMAC-signed, compressed payload containing the unsigned transaction, permit, and submit arguments. With the correct wallet connected via Reown AppKit, the user reviews the transaction summary and signs with one click. The signed transaction is automatically submitted via the existing re-verification and broadcast paths. This bridges the gap for agents that can prepare transactions but delegate signing to the user's wallet UI. Sign tokens expire after 60-120 seconds (matching permit/blockhash lifetime). The token is verified server-side using `JUPITER_API_KEY` as the HMAC secret, so MCP (local/remote) and Vercel (production) can share the same signing mechanism without shared memory.
 
 `JUPITER_API_KEY` is used for Jupiter swap quotes, permit HMACs, sign token HMACs, and MCP token HMACs. Quotes expire quickly; always re-prepare before signing.
+
+## Growth analytics
+
+Optional. Local dev, forks, and tests stay a no-op until the PostHog key and/or opens database URL are set.
+
+**PostHog (browser, `posthog-js`)** — init only when `NEXT_PUBLIC_POSTHOG_KEY` is set. Autocapture off, session recording off, Do Not Track respected. First-touch `ref` (`?ref=x-<slug>`) and `utm_*` are stored in localStorage and registered as PostHog super/person properties so later events keep attribution.
+
+| Event | When | Properties |
+|-------|------|------------|
+| `$pageview` | App Router route changes (including `/` and `/app/rwa-pairs`) | `$pathname`, `$current_url` |
+| `rwa_pairs_view` | Landing on `/app/rwa-pairs` | `ref` if present on that URL |
+| `wallet_connected` | Wallet connects | none (identify uses `wallet:<sha256>`, not the address) |
+| `open_position_started` | User starts an open (prepare/sign) | `pool`, `pair` when known |
+| `open_position_success` | Open confirmed on-chain via `/api/open-status` | `pool`, `pair` |
+| `open_position_failed` | Open failed before send, or on-chain failed/expired | `error_class` only (never raw error text) |
+
+**North-star opens log (server)** — after a successful open broadcast (`/api/open-broadcast` and MCP `submit_open_position`), best-effort insert into Postgres: UTC time, wallet, pool, pair symbols, USDC notional when the input is USDC, tx signature (unique), `sourceRef` if the client sends the first-touch `ref`. Failures never delay or fail the broadcast. Idempotent DDL: `src/lib/opens-log/schema.sql` (also applied on first write).
+
+Read path (GTM):
+
+```bash
+curl -sS -H "Authorization: Bearer $SOFINANCE_OPENS_READ_TOKEN" \
+  "https://sofinancelab.xyz/api/internal/opens-daily?days=90"
+curl -sS -H "Authorization: Bearer $SOFINANCE_OPENS_READ_TOKEN" \
+  "https://sofinancelab.xyz/api/internal/opens-daily?days=90&format=csv"
+```
+
+JSON fields per UTC day: `opens`, `uniqueWallets`, `newUniqueWallets`, `notionalUsd`, `byRef[]`. The fee wallet is not included.
+
 ## Architecture
 
 ```mermaid

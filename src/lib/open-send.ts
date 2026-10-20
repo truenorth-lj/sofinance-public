@@ -14,12 +14,14 @@ import { beamLandingUrl, lookupBeamAfterSend } from "@sofinance/engine/solami-be
 import type { OpenPositionSummary } from "@sofinance/engine/open-types";
 import { getSigningSecret } from "@sofinance/engine/config/server-env";
 import { exceedsTxSizeLimit, isZeroSignature } from "@sofinance/engine/transaction-limits";
+import { logPositionOpenBestEffort, positionOpenRowFromSummary } from "@/lib/opens-log";
 
 
 export async function sendSignedOpenPosition(
   walletAddress: string,
   transaction: VersionedTransaction,
   summary: OpenPositionSummary,
+  sourceRef?: unknown,
 ) {
   let connection: ReturnType<typeof rpcConnection>;
   try {
@@ -100,6 +102,9 @@ export async function sendSignedOpenPosition(
   invalidatePositionHistoryCache(summary.nftMint);
   // Landing metadata is optional: it cannot overturn an accepted submission.
   const beam = await lookupBeamAfterSend(signature).catch(() => null);
+  logPositionOpenBestEffort(positionOpenRowFromSummary({
+    signature, wallet: walletAddress, summary, sourceRef,
+  }));
   return {
     signature, positionMint: summary.nftMint, positionAccount: summary.positionAccount,
     beam: beam?.beam ?? null, beamLabel: beam?.label ?? null,
@@ -112,6 +117,7 @@ export async function submitOpenPositionFromParts(input: {
   permit: string;
   wallet: string;
   summary: OpenPositionSummary;
+  sourceRef?: unknown;
 }) {
   const transaction = VersionedTransaction.deserialize(Buffer.from(input.signedTransaction, "base64"));
   if (!verifyOpenPositionPermit(getSigningSecret(), {
@@ -121,5 +127,5 @@ export async function submitOpenPositionFromParts(input: {
   }, input.permit)) {
     throw new Error("Transaction does not match simulated open-position authorization");
   }
-  return sendSignedOpenPosition(input.wallet, transaction, input.summary);
+  return sendSignedOpenPosition(input.wallet, transaction, input.summary, input.sourceRef);
 }

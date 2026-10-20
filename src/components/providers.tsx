@@ -6,6 +6,7 @@ import "@solana/wallet-adapter-react-ui/styles.css";
 import dynamic from "next/dynamic";
 import { useMemo } from "react";
 import { PUBLIC_SOLANA_RPC_URL } from "@sofinance/engine/rpc/urls";
+import { WalletGrowthAnalytics } from "./wallet-growth-analytics";
 import { WalletConnectionContext } from "./wallet-connection";
 
 const MobileWalletProvider = dynamic(() => import("./mobile-wallet-provider").then((module) => module.MobileWalletProvider), { ssr: false });
@@ -41,5 +42,5 @@ function BrowserWalletConnection({ children }: { children: React.ReactNode }) {
       const signature = await signMessage(message);
       return signature;
     } : undefined,
-  }}>{children}</WalletConnectionContext.Provider>;
+  }}><WalletGrowthAnalytics />{children}</WalletConnectionContext.Provider>;
 }

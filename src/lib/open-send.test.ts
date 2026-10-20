@@ -8,6 +8,11 @@ vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: vi.fn() }));
 vi.mock("@sofinance/engine/open-state", () => ({ readOpenPoolState: vi.fn() }));
 vi.mock("@sofinance/engine/open-simulation", () => ({ simulateAndVerifyOpenTransaction: vi.fn() }));
 vi.mock("@sofinance/engine/solami-beam", () => ({ lookupBeamAfterSend: vi.fn(), beamLandingUrl: (signature: string) => `/api/beam-landing?signature=${signature}` }));
+const opensLog = vi.hoisted(() => ({ logPositionOpenBestEffort: vi.fn() }));
+vi.mock("@/lib/opens-log", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@/lib/opens-log")>();
+  return { ...original, logPositionOpenBestEffort: opensLog.logPositionOpenBestEffort };
+});
 
 import { SendTransactionError, VersionedTransaction } from "@solana/web3.js";
 import { CompoundSendError } from "./public-error";
@@ -85,6 +90,7 @@ describe("sendSignedOpenPosition", () => {
     }));
     expect(vi.mocked(simulateAndVerifyOpenTransaction).mock.invocationCallOrder[0]!)
       .toBeLessThan(connection.sendRawTransaction.mock.invocationCallOrder[0]!);
+    expect(opensLog.logPositionOpenBestEffort).toHaveBeenCalledOnce();
   });
 
   const authorization = "Open-position authorization type, wallet, or expiry mismatch";

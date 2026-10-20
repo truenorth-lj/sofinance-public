@@ -18,6 +18,7 @@ const SRC = join(import.meta.dirname, "..");
 const SECRET_ENV_NAMES = [
   "DATABASE_URL", "CRON_SECRET", "SOFINANCE_RWA_MIGRATION_DATABASE_URL",
   "JUPITER_API_KEY", "SOLAMI_API_KEY", "SOLAMI_DATA_API_KEY", "SOLANA_RPC_URL", "SOFINANCE_MCP_TOKEN",
+  "SOFINANCE_OPENS_DATABASE_URL", "SOFINANCE_OPENS_READ_TOKEN",
 ] as const;
 
 /** `*` = the whole `process.env` object handed on to a function (can reach any secret). */
@@ -39,6 +40,8 @@ const ALLOWED_SECRET_READS: Record<string, Reads> = {
     // local stdio-to-remote shim: reads the user's own token from its own process env
     "mcp/remote-shim.ts": 1,
   },
+  SOFINANCE_OPENS_DATABASE_URL: { "lib/config/opens-env.ts": 1 },
+  SOFINANCE_OPENS_READ_TOKEN: { "lib/config/opens-env.ts": 1 },
 };
 
 /** Files that pass the whole `process.env` object to a callee (callee then reads secrets by name). */

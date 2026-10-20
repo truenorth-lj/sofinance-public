@@ -14,6 +14,7 @@ import {
   signAppKitTransaction,
   type AppKitSolanaWalletProvider,
 } from "../lib/appkit-wallet";
+import { WalletGrowthAnalytics } from "./wallet-growth-analytics";
 import { WalletConnectionContext } from "./wallet-connection";
 
 const projectId = process.env.NEXT_PUBLIC_REOWN_PROJECT_ID?.trim();
@@ -71,5 +72,5 @@ export function MobileWalletProvider({ children }: { children: React.ReactNode }
     signTransaction: (transaction) => signAppKitTransaction(walletProvider, transaction),
     signAllTransactions: appKitSignAllTransactions(walletProvider),
     signMessage: appKitSignMessage(walletProvider),
-  }}>{children}</WalletConnectionContext.Provider>;
+  }}><WalletGrowthAnalytics />{children}</WalletConnectionContext.Provider>;
 }

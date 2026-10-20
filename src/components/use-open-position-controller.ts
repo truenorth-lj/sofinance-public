@@ -17,6 +17,10 @@ import type { WalletAsset, WalletDiscovery } from "@sofinance/engine/wallet-disc
 import { useWalletConnection } from "./wallet-connection";
 import { notifyPositionHistoryChange } from "@/lib/position-history-refresh";
 import { useOpenAttempt } from "./use-open-attempt";
+import { getStoredAttribution } from "@/lib/analytics/attribution";
+import { captureGrowthEvent, captureGrowthEventOnce } from "@/lib/analytics/client";
+import { classifyOpenError } from "@/lib/analytics/errors";
+import { GROWTH_EVENTS, openEventProperties } from "@/lib/analytics/events";
 
 export type OpenPositionPair = {
   poolAddress: string;
@@ -58,6 +62,19 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
   useEffect(() => {
     if (confirmedMint) notifyPositionHistoryChange(confirmedMint);
   }, [confirmedMint]);
+  useEffect(() => {
+    const attempt = open.attempt;
+    if (!attempt) return;
+    const properties = openEventProperties(pair);
+    if (open.status === "confirmed") {
+      captureGrowthEventOnce(`open-ok:${attempt.signature}`, GROWTH_EVENTS.openSuccess, properties);
+    } else if (open.status === "failed" || open.status === "expired") {
+      captureGrowthEventOnce(`open-fail:${attempt.signature}`, GROWTH_EVENTS.openFailed, {
+        ...properties,
+        error_class: open.status === "expired" ? "expired" : "onchain_failed",
+      });
+    }
+  }, [open.attempt, open.status, pair]);
   const [discovery, setDiscovery] = useState<WalletDiscovery | null>(null);
   const [inputMint, setInputMint] = useState<string | null>(null);
   const [inputKind, setInputKind] = useState<"native" | "token">("token");
@@ -257,6 +274,7 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
     setQuoteLoading(false);
     setSubmitStage("preparing");
     setError("");
+    captureGrowthEvent(GROWTH_EVENTS.openStarted, openEventProperties(pair));
     try {
       const response = await fetch("/api/open-prepare", {
         method: "POST",
@@ -317,6 +335,7 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
           permit: prepared.permit,
           wallet,
           summary: prepared.summary,
+          sourceRef: getStoredAttribution()?.ref,
         }),
         cache: "no-store", signal: AbortSignal.timeout(15_000),
       });
@@ -333,6 +352,12 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
       // Signature acceptance is pending; useOpenAttempt checks finality and position facts.
       setBeamResult({ signature: txSignature, status: openBeamStatus(prepared.summary.beam, broadcast.beamLabel) });
     } catch (caught) {
+      if (!persisted) {
+        captureGrowthEvent(GROWTH_EVENTS.openFailed, {
+          ...openEventProperties(pair),
+          error_class: classifyOpenError(caught),
+        });
+      }
       if (walletRef.current === wallet) setError(persisted
         ? "Submission result is unconfirmed. Tracking the original signature; do not open again until it is verified."
         : caught instanceof Error ? caught.message : "Open-position transaction failed");
