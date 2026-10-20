@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyMcpToken } from "@/lib/mcp-auth";
 import { publicToolError } from "@/mcp/public-tool-error";
 import { sanitizePublicError } from "@/lib/public-error";
+import { captureApiRouteError } from "@/lib/sentry/capture";
 import {
   listPositions,
   quoteAddLiquidity,
@@ -804,6 +805,7 @@ export async function POST(request: NextRequest) {
           })
         );
       } catch (error) {
+        captureApiRouteError(error, { route: "/api/mcp", fallback: "MCP tool call failed" });
         const message = publicToolError(error);
         return NextResponse.json(
           createJsonRpcSuccess(id ?? null, {
@@ -824,6 +826,7 @@ export async function POST(request: NextRequest) {
       { status: 404 }
     );
   } catch (error) {
+    captureApiRouteError(error, { route: "/api/mcp", fallback: "unexpected failure" });
     const message = sanitizePublicError(error, "unexpected failure");
     return NextResponse.json(
       createJsonRpcError(null, -32603, `Internal error: ${message}`),

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { getRwaConfig } from "@/lib/config/rwa-env";
 import { validRwaAuthorization } from "@/lib/rwa-auth";
 import { refreshRwaSnapshots } from "@/lib/rwa-refresh";
+import { captureApiRouteError } from "@/lib/sentry/capture";
 
 export const maxDuration = 300;
 export async function POST(request: Request) {
@@ -33,7 +34,8 @@ export async function POST(request: Request) {
           : 200,
       headers: { "Cache-Control": "no-store" },
     });
-  } catch {
+  } catch (error) {
+    captureApiRouteError(error, { route: "/api/internal/rwa-refresh", fallback: "RWA refresh temporarily unavailable" });
     return Response.json(
       { error: "RWA refresh temporarily unavailable" },
       { status: 503, headers: { "Cache-Control": "no-store" } },

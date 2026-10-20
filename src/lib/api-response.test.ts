@@ -1,9 +1,14 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
-import { selectedApiError } from "./api-response";
+const captureApiRouteError = vi.hoisted(() => vi.fn());
+vi.mock("./sentry/capture", () => ({ captureApiRouteError }));
+import { apiError, selectedApiError } from "./api-response";
 import { JupiterHttpError } from "@sofinance/engine/jupiter/errors";
 
-beforeEach(() => { vi.spyOn(console, "error").mockImplementation(() => {}); });
+beforeEach(() => {
+  captureApiRouteError.mockReset();
+  vi.spyOn(console, "error").mockImplementation(() => {});
+});
 afterEach(() => vi.restoreAllMocks());
 
 it("returns safe 503 and exact retry metadata for upstream quota failure", async () => {
@@ -28,4 +33,14 @@ it("keeps validation and genuine no-route failures at 400", async () => {
   const response = selectedApiError(new Error("Insufficient input asset balance"), "failed");
   expect(response.status).toBe(400);
   expect(await response.json()).toEqual({ error: "Insufficient input asset balance" });
+});
+
+it("captures Jupiter and generic API failures with the public fallback", async () => {
+  const jupiter = new JupiterHttpError(503, "/swap/v2/build");
+  selectedApiError(jupiter, "failed");
+  expect(captureApiRouteError).toHaveBeenCalledWith(jupiter, { fallback: "failed" });
+
+  const generic = new Error("Wallet scan failed");
+  await apiError(generic, "Wallet scan failed", 503, { route: "/api/wallet" });
+  expect(captureApiRouteError).toHaveBeenCalledWith(generic, { fallback: "Wallet scan failed", route: "/api/wallet" });
 });

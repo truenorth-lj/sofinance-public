@@ -3,11 +3,13 @@ import "server-only";
 
 import { CompoundSendError, sanitizePublicError } from "./public-error";
 import { JupiterHttpError, JupiterUnavailableError, JUPITER_UNAVAILABLE_MESSAGE } from "@sofinance/engine/jupiter/errors";
+import { captureApiRouteError } from "./sentry/capture";
 
 /** Selected upstream failures are availability errors, not invalid user input. */
 export function selectedApiError(error: unknown, fallback: string) {
   if (!(error instanceof JupiterHttpError && (error.status === 429 || error.status >= 500)) &&
     !(error instanceof JupiterUnavailableError)) return apiError(error, fallback);
+  captureApiRouteError(error, { fallback });
   const limited = error instanceof JupiterHttpError && error.status === 429;
   const retryAfterMs = error instanceof JupiterHttpError ? error.retryAfterMs : null;
   return Response.json({ error: limited ? "Jupiter rate limit reached. Please retry later." : JUPITER_UNAVAILABLE_MESSAGE,
@@ -18,7 +20,8 @@ export function selectedApiError(error: unknown, fallback: string) {
   } });
 }
 
-export function apiError(error: unknown, fallback: string, status = 400, extra?: { sent?: boolean }) {
+export function apiError(error: unknown, fallback: string, status = 400, extra?: { sent?: boolean; route?: string }) {
+  captureApiRouteError(error, { fallback, route: extra?.route });
   // eslint-disable-next-line no-console
   console.error(fallback, error);
   if (error instanceof Error && error.cause !== undefined) {

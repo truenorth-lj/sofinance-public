@@ -9,6 +9,7 @@ import {
   consumeChallengeNonce,
 } from "@/lib/mcp-auth";
 import { getJupiterApiKey } from "@sofinance/engine/config/server-env";
+import { captureApiRouteError } from "@/lib/sentry/capture";
 
 /**
  * GET /api/mcp-token?wallet=<address>
@@ -47,6 +48,7 @@ export async function GET(request: NextRequest) {
     const challenge = generateChallenge(wallet);
     return NextResponse.json(challenge);
   } catch (error) {
+    captureApiRouteError(error, { route: "/api/mcp-token", fallback: "Failed to generate challenge" });
     const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json(
       { error: "Failed to generate challenge", details: message },
@@ -183,6 +185,7 @@ export async function POST(request: NextRequest) {
       verified: true,
     });
   } catch (error) {
+    captureApiRouteError(error, { route: "/api/mcp-token", fallback: "Failed to generate MCP token" });
     const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json(
       { error: "Failed to generate MCP token", details: message },
