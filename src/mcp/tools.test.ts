@@ -16,7 +16,7 @@ vi.mock("@sofinance/engine/wallet-discovery", () => ({
 }));
 
 vi.mock("../lib/selected-quote", () => ({
-  getSelectedQuoteBundle: vi.fn(),
+  searchSelectedQuoteBundle: vi.fn(),
 }));
 
 vi.mock("../lib/selected-atomic", () => ({
@@ -93,7 +93,7 @@ import { discoverWallet } from "@sofinance/engine/wallet-discovery";
 import { issueSelectedPermit } from "../lib/selected-permit";
 import { issueCompoundPermit } from "../lib/compound-permit";
 import { issueOpenPositionPermit } from "../lib/open-permit";
-import { getSelectedQuoteBundle } from "../lib/selected-quote";
+import { searchSelectedQuoteBundle } from "../lib/selected-quote";
 import { buildAndSimulateSelectedZap } from "../lib/selected-atomic";
 import { buildAndSimulateCompound } from "@sofinance/engine/compound-atomic";
 import { getOpenPositionQuoteBundle } from "@sofinance/engine/open-quote";
@@ -181,7 +181,7 @@ describe("MCP Tools", () => {
   });
 
   describe("quoteAddLiquidity", () => {
-    it("calls getSelectedQuoteBundle and returns formatted quote", async () => {
+    it("calls searchSelectedQuoteBundle and returns formatted quote", async () => {
       const mockQuote = {
         feeBps: 0, feeAmount: "0", feeWallet: null,
         wallet: "7BgBvyjrZX1YKz4oh9mjb8ZScatkkwb8DzFx7LoiVkM3",
@@ -227,7 +227,7 @@ describe("MCP Tools", () => {
         slot: 12345,
       };
 
-      vi.mocked(getSelectedQuoteBundle).mockResolvedValue({
+      vi.mocked(searchSelectedQuoteBundle).mockResolvedValue({
         quote: mockQuote,
         legs: [],
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -244,12 +244,13 @@ describe("MCP Tools", () => {
         slippageToleranceBps: 200,
       });
 
-      expect(getSelectedQuoteBundle).toHaveBeenCalledWith(
+      expect(searchSelectedQuoteBundle).toHaveBeenCalledWith(
         "7BgBvyjrZX1YKz4oh9mjb8ZScatkkwb8DzFx7LoiVkM3",
         expect.objectContaining({ inputKind: "native" }),
         "1.5",
         9900,
         200,
+        { buildTransactions: false, includeResale: false },
       );
       expect(result.slippageToleranceBps).toBe(100);
       expect(result.wallet).toBe(mockQuote.wallet);

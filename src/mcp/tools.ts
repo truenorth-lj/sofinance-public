@@ -2,7 +2,7 @@ import "@/lib/engine-host";
 import { PublicKey, VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
 import { discoverWallet } from "@sofinance/engine/wallet-discovery";
-import { getSelectedQuoteBundle } from "../lib/selected-quote";
+import { searchSelectedQuoteBundle } from "../lib/selected-quote";
 import { buildAndSimulateSelectedZap } from "../lib/selected-atomic";
 import { buildAndSimulateCompound } from "@sofinance/engine/compound-atomic";
 import { issueSelectedPermit } from "../lib/selected-permit";
@@ -102,12 +102,13 @@ export async function quoteAddLiquidity(input: QuoteAddLiquidityInput) {
     inputKind: input.inputKind,
   };
   
-  const { quote } = await getSelectedQuoteBundle(
+  const { quote } = await searchSelectedQuoteBundle(
     input.wallet,
     selection,
     input.amount,
     input.resaleFloorBps,
     input.slippageToleranceBps,
+    { buildTransactions: false, includeResale: false },
   );
   
   // Return only essential quote data, omit internal state

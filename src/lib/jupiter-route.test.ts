@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
-import { buildRoute, JupiterNoRouteError } from "@sofinance/engine/swap/jupiter";
+import { buildRoute, quoteRoute, JupiterNoRouteError } from "@sofinance/engine/swap/jupiter";
 import { JupiterHttpError, resetJupiterRuntime, setJupiterLogger, setJupiterRetryConfig } from "@sofinance/engine/jupiter";
 
 beforeEach(() => {
@@ -23,6 +23,13 @@ it("keeps genuine no-route distinct", async () => {
   await expect(buildRoute("wallet", "A", "B", 10n)).rejects.toBeInstanceOf(JupiterNoRouteError);
 });
 
+it("maps quoteRoute HTTP 400 NO_ROUTES_FOUND to JupiterNoRouteError", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockImplementation(() => Response.json(
+    { error: "No routes found", errorCode: "NO_ROUTES_FOUND" }, { status: 400 })));
+  await expect(quoteRoute("A", "B", 10n)).rejects.toBeInstanceOf(JupiterNoRouteError);
+  await expect(quoteRoute("A", "B", 10n)).rejects.toMatchObject({ code: "jupiter_no_route" });
+});
+
 it("does not replace a transport or parent cancellation cause with no-route", async () => {
   const failure = new TypeError("fetch failed");
   vi.stubGlobal("fetch", vi.fn().mockRejectedValue(failure));
@@ -41,11 +48,15 @@ it("builds only with the shared v1 quote and swap-instructions client", async ()
     swapInstruction: { programId: "program", data: "AQ==", accounts: [] }, addressLookupTableAddresses: ["table"],
   }));
   vi.stubGlobal("fetch", fetcher);
-  const route = await buildRoute("wallet", "A", "B", 100n, false, { maxAccounts: 20, onlyDirectRoutes: true });
+  const route = await buildRoute("wallet", "A", "B", 100n, false, {
+    maxAccounts: 20, onlyDirectRoutes: true, excludeDexes: "OpenBook,Phoenix",
+  });
   expect(fetcher).toHaveBeenCalledTimes(2);
   const quoteUrl = new URL(String(fetcher.mock.calls[0]![0]));
   expect(quoteUrl.pathname).toBe("/swap/v1/quote");
   expect(quoteUrl.searchParams.get("instructionVersion")).toBe("V2");
+  expect(quoteUrl.searchParams.get("excludeDexes")).toBe("OpenBook,Phoenix");
+  expect(quoteUrl.searchParams.get("onlyDirectRoutes")).toBe("true");
   expect(new URL(String(fetcher.mock.calls[1]![0])).pathname).toBe("/swap/v1/swap-instructions");
   expect(JSON.parse(fetcher.mock.calls[1]![1].body)).toMatchObject({ userPublicKey: "wallet", quoteResponse: {
     inputMint: "A", outputMint: "B", inAmount: "100" }, wrapAndUnwrapSol: false, prioritizationFeeLamports: 0 });
