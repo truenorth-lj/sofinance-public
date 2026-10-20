@@ -11,7 +11,7 @@ export async function GET(request:Request){
  try{return Response.json(await readFullExitPreview(positionId,nftAccount,convertRent,fetch,request.signal),{headers:{"Cache-Control":"no-store"}});}
  catch(e){
   logExitPreviewFailure(e);
-  captureApiRouteError(e,{route:"/api/lp-decision/exit-preview",fallback:RPC_UNAVAILABLE_MESSAGE});
+  captureApiRouteError(e,{request,status:503,fallback:RPC_UNAVAILABLE_MESSAGE});
   const error=sanitizePublicError(e,RPC_UNAVAILABLE_MESSAGE);
   const errorCode=publicErrorCode(e);
   return Response.json({status:"unavailable",netRecoveryUSDC:null,executable:false,sent:false,error,...(errorCode?{errorCode}:{})},{status:503,headers:{"Cache-Control":"no-store"}});

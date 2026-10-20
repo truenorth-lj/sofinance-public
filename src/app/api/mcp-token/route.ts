@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
     const challenge = generateChallenge(wallet);
     return NextResponse.json(challenge);
   } catch (error) {
-    captureApiRouteError(error, { route: "/api/mcp-token", fallback: "Failed to generate challenge" });
+    captureApiRouteError(error, { request, route: "/api/mcp-token", fallback: "Failed to generate challenge", status: 500 });
     const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json(
       { error: "Failed to generate challenge", details: message },
@@ -185,7 +185,7 @@ export async function POST(request: NextRequest) {
       verified: true,
     });
   } catch (error) {
-    captureApiRouteError(error, { route: "/api/mcp-token", fallback: "Failed to generate MCP token" });
+    captureApiRouteError(error, { request, route: "/api/mcp-token", fallback: "Failed to generate MCP token", status: 500 });
     const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json(
       { error: "Failed to generate MCP token", details: message },

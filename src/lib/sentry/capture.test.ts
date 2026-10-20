@@ -11,12 +11,21 @@ vi.mock("@sentry/nextjs", () => ({
   withScope: (callback: (scope: { setTag: typeof setTag; setExtra: typeof setExtra }) => void) => {
     callback({ setTag, setExtra });
   },
+  getCurrentScope: () => ({ getScopeData: () => ({}) }),
+  getActiveSpan: () => undefined,
+  spanToJSON: () => ({})
 }));
 
 import { JupiterHttpError, JupiterUnavailableError } from "@sofinance/engine/jupiter/errors";
 import { RpcUnavailableError } from "@sofinance/engine/rpc/errors";
 import { CompoundSendError } from "../public-error";
-import { captureApiRouteError, routeFromCallerStack, sentryErrorClass } from "./capture";
+import {
+  captureApiRouteError,
+  isUserRejectedError,
+  resolveApiRoute,
+  sentryErrorClass,
+  shouldCaptureApiError,
+} from "./capture";
 
 beforeEach(() => {
   captureException.mockReset();
@@ -39,17 +48,27 @@ describe("sentryErrorClass", () => {
   });
 });
 
-describe("routeFromCallerStack", () => {
-  it("extracts the App Router API path from a stack frame", () => {
-    const stack = [
-      "Error",
-      "    at captureApiRouteError (/workspace/src/lib/sentry/capture.ts:30:11)",
-      "    at apiError (/workspace/src/lib/api-response.ts:24:3)",
-      "    at POST (/workspace/src/app/api/selected-quote/route.ts:18:12)",
-    ].join("\n");
-    expect(routeFromCallerStack(stack)).toBe("/api/selected-quote");
-    expect(routeFromCallerStack("Error\n    at POST (src/app/api/lp-decision/exit-preview/route.ts:12:3)"))
-      .toBe("/api/lp-decision/exit-preview");
+describe("shouldCaptureApiError", () => {
+  it("reports 5xx and Jupiter/RPC upstream, not validation 4xx or user-rejected", () => {
+    expect(shouldCaptureApiError(new Error("Invalid wallet address"), 400)).toBe(false);
+    expect(shouldCaptureApiError(new Error("User rejected the request."), 400)).toBe(false);
+    expect(isUserRejectedError(new Error("User rejected the request."))).toBe(true);
+    expect(shouldCaptureApiError(new Error("Wallet scan failed"), 503)).toBe(true);
+    expect(shouldCaptureApiError(new JupiterHttpError(429, "/swap/v1/quote"), 503)).toBe(true);
+    expect(shouldCaptureApiError(new JupiterHttpError(400, "/swap/v1/quote"), 400)).toBe(false);
+    expect(shouldCaptureApiError(new RpcUnavailableError(), 400)).toBe(true);
+  });
+});
+
+describe("resolveApiRoute", () => {
+  it("derives /api/wallet from the request URL, not a stale stack path", () => {
+    const request = new Request("https://sofinancelab.xyz/api/wallet?wallet=abc");
+    expect(resolveApiRoute({ request })).toBe("/api/wallet");
+    expect(resolveApiRoute({
+      route: "/api/rwa-pairs",
+      request,
+    })).toBe("/api/rwa-pairs");
+    expect(resolveApiRoute({ request: { url: "https://example.com/api/wallet" } })).toBe("/api/wallet");
   });
 });
 
@@ -57,14 +76,30 @@ describe("captureApiRouteError", () => {
   it("is a no-op when both DSN env vars are unset", () => {
     vi.stubEnv("NEXT_PUBLIC_SENTRY_DSN", "");
     vi.stubEnv("SENTRY_DSN", "");
-    captureApiRouteError(new JupiterHttpError(503, "/swap/v1/quote"), { route: "/api/selected-quote" });
+    captureApiRouteError(new JupiterHttpError(503, "/swap/v1/quote"), {
+      request: new Request("https://example.com/api/selected-quote"),
+      status: 503,
+    });
     expect(captureException).not.toHaveBeenCalled();
   });
 
-  it("captures with route and error_class tags and a sanitized public message", () => {
+  it("does not report validation 4xx even when a DSN is set", () => {
+    vi.stubEnv("SENTRY_DSN", "https://key@o1.ingest.us.sentry.io/1");
+    captureApiRouteError(new Error("Invalid wallet address"), {
+      request: new Request("https://example.com/api/wallet"),
+      status: 400,
+    });
+    expect(captureException).not.toHaveBeenCalled();
+  });
+
+  it("captures 5xx with a request-derived route and error_class", () => {
     vi.stubEnv("SENTRY_DSN", "https://key@o1.ingest.us.sentry.io/1");
     const error = new JupiterHttpError(429, "/swap/v1/quote");
-    captureApiRouteError(error, { route: "/api/selected-quote", fallback: "Quote failed" });
+    captureApiRouteError(error, {
+      request: new Request("https://example.com/api/selected-quote"),
+      fallback: "Quote failed",
+      status: 503,
+    });
     expect(captureException).toHaveBeenCalledWith(error);
     expect(setTag).toHaveBeenCalledWith("route", "/api/selected-quote");
     expect(setTag).toHaveBeenCalledWith("error_class", "JupiterHttpError");

@@ -1,6 +1,5 @@
-import * as Sentry from "@sentry/nextjs";
-import { sentryInitOptions } from "@/lib/sentry/options";
+import { initSentryClient } from "@/lib/sentry/client";
 
-Sentry.init(sentryInitOptions());
+initSentryClient();
 
-export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;
+export { onRouterTransitionStart } from "@/lib/sentry/client";

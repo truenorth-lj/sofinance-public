@@ -805,7 +805,7 @@ export async function POST(request: NextRequest) {
           })
         );
       } catch (error) {
-        captureApiRouteError(error, { route: "/api/mcp", fallback: "MCP tool call failed" });
+        captureApiRouteError(error, { request, route: "/api/mcp", fallback: "MCP tool call failed", status: 400 });
         const message = publicToolError(error);
         return NextResponse.json(
           createJsonRpcSuccess(id ?? null, {
@@ -826,7 +826,7 @@ export async function POST(request: NextRequest) {
       { status: 404 }
     );
   } catch (error) {
-    captureApiRouteError(error, { route: "/api/mcp", fallback: "unexpected failure" });
+    captureApiRouteError(error, { request, route: "/api/mcp", fallback: "unexpected failure", status: 500 });
     const message = sanitizePublicError(error, "unexpected failure");
     return NextResponse.json(
       createJsonRpcError(null, -32603, `Internal error: ${message}`),

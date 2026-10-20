@@ -35,7 +35,7 @@ export async function POST(request: Request) {
       headers: { "Cache-Control": "no-store" },
     });
   } catch (error) {
-    captureApiRouteError(error, { route: "/api/internal/rwa-refresh", fallback: "RWA refresh temporarily unavailable" });
+    captureApiRouteError(error, { request, route: "/api/internal/rwa-refresh", fallback: "RWA refresh temporarily unavailable", status: 503 });
     return Response.json(
       { error: "RWA refresh temporarily unavailable" },
       { status: 503, headers: { "Cache-Control": "no-store" } },

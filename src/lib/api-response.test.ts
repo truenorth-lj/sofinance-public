@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 const captureApiRouteError = vi.hoisted(() => vi.fn());
-vi.mock("./sentry/capture", () => ({ captureApiRouteError }));
+vi.mock("./sentry/capture", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./sentry/capture")>();
+  return { ...actual, captureApiRouteError };
+});
 import { apiError, selectedApiError } from "./api-response";
 import { JupiterHttpError } from "@sofinance/engine/jupiter/errors";
 
@@ -35,12 +38,26 @@ it("keeps validation and genuine no-route failures at 400", async () => {
   expect(await response.json()).toEqual({ error: "Insufficient input asset balance" });
 });
 
-it("captures Jupiter and generic API failures with the public fallback", async () => {
+it("captures Jupiter and 5xx API failures, not validation 4xx", async () => {
   const jupiter = new JupiterHttpError(503, "/swap/v2/build");
   selectedApiError(jupiter, "failed");
-  expect(captureApiRouteError).toHaveBeenCalledWith(jupiter, { fallback: "failed" });
+  expect(captureApiRouteError).toHaveBeenCalledWith(jupiter, { fallback: "failed", status: 503 });
 
+  captureApiRouteError.mockClear();
+  selectedApiError(new Error("Insufficient input asset balance"), "failed");
+  expect(captureApiRouteError).not.toHaveBeenCalled();
+
+  const request = new Request("https://sofinancelab.xyz/api/wallet?wallet=abc");
   const generic = new Error("Wallet scan failed");
-  await apiError(generic, "Wallet scan failed", 503, { route: "/api/wallet" });
-  expect(captureApiRouteError).toHaveBeenCalledWith(generic, { fallback: "Wallet scan failed", route: "/api/wallet" });
+  apiError(generic, "Wallet scan failed", 503, { request });
+  expect(captureApiRouteError).toHaveBeenCalledWith(generic, {
+    fallback: "Wallet scan failed",
+    route: undefined,
+    request,
+    status: 503,
+  });
+
+  captureApiRouteError.mockClear();
+  apiError(new Error("Invalid wallet address"), "Invalid wallet address");
+  expect(captureApiRouteError).not.toHaveBeenCalled();
 });

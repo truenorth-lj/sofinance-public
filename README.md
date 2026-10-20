@@ -141,7 +141,7 @@ Optional `@sentry/nextjs` client, server, and edge setup. The production/preview
 | `SENTRY_ORG` | Sentry org slug (`sofinance`). |
 | `SENTRY_PROJECT` | Sentry project slug (`sofinance-public`). |
 
-Session Replay is off. `sendDefaultPii` is false. Events scrub wallet addresses, signatures, RPC URLs, and API keys where practical. API route failures (including Jupiter and RPC) are tagged with `route` and `error_class`.
+Session Replay is off. `sendDefaultPii` is false. Events scrub wallet addresses, signatures, RPC URLs, API keys, `x-vercel-*` / IP / `Authorization` / `Cookie` headers, and drop `user.ip_address`. API captures are 5xx and Jupiter/RPC upstream only (not validation 4xx or user-rejected). The `route` tag comes from the request path / Next transaction, not a bundled stack.
 
 ### Point an MCP client at your instance
 

@@ -27,8 +27,21 @@ describe("sentryInitOptions", () => {
     const wallet = "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU";
     const event = options.beforeSend({
       message: `failed for ${wallet}`,
-    } as ErrorEvent);
+      tags: { route: "/api/rwa-pairs" },
+      request: {
+        url: "https://sofinancelab.xyz/api/wallet?wallet=abc",
+        headers: {
+          "X-Vercel-Protection-Bypass": "bypass-secret",
+          "X-Forwarded-For": "198.51.100.10",
+        },
+      },
+      user: { ip_address: "198.51.100.10" },
+    } as unknown as ErrorEvent);
     expect(event?.message).toContain("[redacted-address]");
     expect(event?.message).not.toContain(wallet);
+    expect(event?.tags?.route).toBe("/api/wallet");
+    expect(event?.user).toBeUndefined();
+    expect(JSON.stringify(event)).not.toContain("bypass-secret");
+    expect(JSON.stringify(event)).not.toContain("198.51.100.10");
   });
 });
