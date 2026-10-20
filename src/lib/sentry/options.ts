@@ -1,11 +1,26 @@
-import type { ErrorEvent } from "@sentry/nextjs";
+import type { Breadcrumb, ErrorEvent } from "@sentry/nextjs";
 import { applyRouteFromEvent } from "./route";
 import { resolveSentryDsn, sentryTracesSampleRate } from "./runtime";
-import { minimalSentryEvent, scrubSentryEvent } from "./scrub";
+import { minimalSentryEvent, scrubBreadcrumb, scrubSentryEvent } from "./scrub";
+
+export const LAST_RESORT_SENTRY_MESSAGE = "Application error";
 
 function prepareSentryEvent<T extends ErrorEvent>(event: T): T {
   applyRouteFromEvent(event);
   return scrubSentryEvent(event);
+}
+
+function lastResortSentryEvent(event: ErrorEvent): ErrorEvent {
+  let route: string | undefined;
+  try {
+    route = typeof event.tags?.route === "string" ? event.tags.route : undefined;
+  } catch {
+    route = undefined;
+  }
+  return {
+    message: LAST_RESORT_SENTRY_MESSAGE,
+    tags: route ? { route } : {},
+  } as ErrorEvent;
 }
 
 function safeBeforeSend(event: ErrorEvent): ErrorEvent {
@@ -15,11 +30,16 @@ function safeBeforeSend(event: ErrorEvent): ErrorEvent {
     try {
       return minimalSentryEvent(event);
     } catch {
-      return {
-        exception: event.exception,
-        tags: typeof event.tags?.route === "string" ? { route: event.tags.route } : {},
-      } as ErrorEvent;
+      return lastResortSentryEvent(event);
     }
+  }
+}
+
+function safeBeforeBreadcrumb(breadcrumb: Breadcrumb): Breadcrumb | null {
+  try {
+    return scrubBreadcrumb(breadcrumb);
+  } catch {
+    return null;
   }
 }
 
@@ -56,6 +76,9 @@ export function sentryInitOptions() {
     },
     beforeSend(event: ErrorEvent) {
       return safeBeforeSend(event);
+    },
+    beforeBreadcrumb(breadcrumb: Breadcrumb) {
+      return safeBeforeBreadcrumb(breadcrumb);
     },
   };
 }

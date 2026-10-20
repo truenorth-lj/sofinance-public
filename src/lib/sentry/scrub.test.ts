@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   isSensitiveHeaderName,
+  isSensitiveIpEnvKey,
   minimalSentryEvent,
+  scrubBreadcrumb,
   scrubSensitiveText,
   scrubSentryEvent,
   scrubUnknown,
@@ -65,6 +67,25 @@ describe("sensitive request headers", () => {
     expect(isSensitiveHeaderName(undefined)).toBe(false);
     expect(isSensitiveHeaderName(12)).toBe(false);
     expect(isSensitiveHeaderName(["authorization"])).toBe(false);
+  });
+});
+
+describe("isSensitiveIpEnvKey", () => {
+  it("matches whole IP/forwarded key segments, not description or zip", () => {
+    expect(isSensitiveIpEnvKey("ip")).toBe(true);
+    expect(isSensitiveIpEnvKey("IP")).toBe(true);
+    expect(isSensitiveIpEnvKey("client_ip")).toBe(true);
+    expect(isSensitiveIpEnvKey("ip_address")).toBe(true);
+    expect(isSensitiveIpEnvKey("x-real-ip")).toBe(true);
+    expect(isSensitiveIpEnvKey("remote_addr")).toBe(true);
+    expect(isSensitiveIpEnvKey("REMOTE_ADDR")).toBe(true);
+    expect(isSensitiveIpEnvKey("x-forwarded-for")).toBe(true);
+    expect(isSensitiveIpEnvKey("HTTP_X_FORWARDED_FOR")).toBe(true);
+    expect(isSensitiveIpEnvKey("forwarded")).toBe(true);
+    expect(isSensitiveIpEnvKey("description")).toBe(false);
+    expect(isSensitiveIpEnvKey("zip")).toBe(false);
+    expect(isSensitiveIpEnvKey("public_message")).toBe(false);
+    expect(isSensitiveIpEnvKey(undefined)).toBe(false);
   });
 });
 
@@ -183,6 +204,60 @@ describe("scrubSentryEvent", () => {
     });
     expect(JSON.stringify(event)).not.toContain("198.51.100.10");
   });
+
+  it("scrubs breadcrumbs as a plain SDK array, including data.url and RPC hosts", () => {
+    const rpc = "https://mainnet.helius-rpc.com/example-key";
+    const event = scrubSentryEvent({
+      user: { geo: { city: "San Francisco", country_code: "US" }, ip_address: "198.51.100.10" },
+      extra: {
+        description: "Raydium CLMM pool account does not exist",
+        zip: "94107",
+        client_ip: "198.51.100.10",
+      },
+      breadcrumbs: [
+        {
+          category: "http",
+          message: `POST ${rpc}`,
+          data: {
+            url: rpc,
+            method: "POST",
+            "url.query": "api-key=secret123",
+            status_code: 200,
+          },
+        },
+      ],
+    });
+
+    expect(event.user).toBeUndefined();
+    expect(JSON.stringify(event)).not.toContain("San Francisco");
+    expect(event.extra).toMatchObject({
+      description: "Raydium CLMM pool account does not exist",
+      zip: "94107",
+      client_ip: "[redacted]",
+    });
+    const crumb = event.breadcrumbs?.[0];
+    expect(crumb?.message).toContain("[redacted-url]");
+    expect(crumb?.message).not.toContain("helius-rpc");
+    expect(crumb?.data?.url).toBe("[redacted-url]");
+    expect(crumb?.data?.["url.query"]).not.toContain("secret123");
+    expect(crumb?.data?.method).toBe("POST");
+    expect(JSON.stringify(event)).not.toContain("helius");
+    expect(JSON.stringify(event)).not.toContain("example-key");
+  });
+});
+
+describe("scrubBreadcrumb", () => {
+  it("redacts RPC hostnames and paths in message and data.url", () => {
+    const crumb = scrubBreadcrumb({
+      category: "http",
+      message: "GET https://mainnet.helius-rpc.com/example-key",
+      data: { url: "https://mainnet.helius-rpc.com/example-key", method: "GET" },
+    });
+    expect(crumb.message).toBe("GET [redacted-url]");
+    expect(crumb.data?.url).toBe("[redacted-url]");
+    expect(crumb.data?.method).toBe("GET");
+    expect(JSON.stringify(crumb)).not.toContain("helius");
+  });
 });
 
 describe("scrubUnknown", () => {
@@ -193,6 +268,17 @@ describe("scrubUnknown", () => {
     expect(scrubUnknown({ HTTP_X_FORWARDED_FOR: "198.51.100.10", keep: "ok" })).toEqual({
       HTTP_X_FORWARDED_FOR: "[redacted]",
       keep: "ok",
+    });
+    expect(scrubUnknown({
+      description: "pool missing",
+      zip: "94107",
+      client_ip: "198.51.100.10",
+      ip_address: "198.51.100.10",
+    })).toEqual({
+      description: "pool missing",
+      zip: "94107",
+      client_ip: "[redacted]",
+      ip_address: "[redacted]",
     });
   });
 });

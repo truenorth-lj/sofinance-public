@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ErrorEvent } from "@sentry/nextjs";
-import { sentryInitOptions } from "./options";
+import type { Breadcrumb, ErrorEvent } from "@sentry/nextjs";
+import { LAST_RESORT_SENTRY_MESSAGE, sentryInitOptions } from "./options";
 import * as scrub from "./scrub";
 
 afterEach(() => {
@@ -16,6 +16,7 @@ describe("sentryInitOptions", () => {
     expect(options.enabled).toBe(false);
     expect(options.dsn).toBeUndefined();
     expect(options.sendDefaultPii).toBe(false);
+    expect(options.dataCollection.userInfo).toBe(false);
     expect(options.replaysSessionSampleRate).toBe(0);
     expect(options.replaysOnErrorSampleRate).toBe(0);
     expect(options.tracesSampleRate).toBe(0.1);
@@ -90,5 +91,54 @@ describe("sentryInitOptions", () => {
     expect(event?.user).toBeUndefined();
     expect(event?.request?.url).not.toContain("poolId=");
     expect(event?.request?.method).toBe("GET");
+  });
+
+  it("returns only a generic message and route when prepare and minimal both throw", () => {
+    vi.stubEnv("SENTRY_DSN", "https://key@o1.ingest.us.sentry.io/1");
+    vi.spyOn(scrub, "scrubSentryEvent").mockImplementation(() => {
+      throw new Error("prepare boom");
+    });
+    vi.spyOn(scrub, "minimalSentryEvent").mockImplementation(() => {
+      throw new Error("minimal boom");
+    });
+    const options = sentryInitOptions();
+    const event = options.beforeSend({
+      message: "Raydium CLMM pool account does not exist",
+      exception: {
+        values: [{ type: "Error", value: "leak https://mainnet.helius-rpc.com/example-key" }],
+      },
+      tags: { route: "/api/pool-range-apr" },
+      user: { geo: { city: "San Francisco" }, ip_address: "198.51.100.10" },
+    } as unknown as ErrorEvent);
+
+    expect(event).toBeTruthy();
+    expect(event?.message).toBe(LAST_RESORT_SENTRY_MESSAGE);
+    expect(event?.tags).toEqual({ route: "/api/pool-range-apr" });
+    expect(event?.exception).toBeUndefined();
+    expect(event?.user).toBeUndefined();
+    expect(event?.request).toBeUndefined();
+    expect(JSON.stringify(event)).not.toContain("helius");
+    expect(JSON.stringify(event)).not.toContain("Raydium");
+    expect(JSON.stringify(event)).not.toContain("San Francisco");
+  });
+
+  it("scrubs HTTP breadcrumbs at capture time via beforeBreadcrumb", () => {
+    vi.stubEnv("SENTRY_DSN", "https://key@o1.ingest.us.sentry.io/1");
+    const options = sentryInitOptions();
+    const crumb = options.beforeBreadcrumb({
+      category: "http",
+      message: "POST https://mainnet.helius-rpc.com/example-key",
+      data: {
+        url: "https://mainnet.helius-rpc.com/example-key",
+        method: "POST",
+        "url.query": "api-key=secret123",
+      },
+    } as Breadcrumb);
+
+    expect(crumb).toBeTruthy();
+    expect(crumb?.message).toContain("[redacted-url]");
+    expect(crumb?.data?.url).toBe("[redacted-url]");
+    expect(JSON.stringify(crumb)).not.toContain("helius");
+    expect(JSON.stringify(crumb)).not.toContain("secret123");
   });
 });

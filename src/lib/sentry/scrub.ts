@@ -8,7 +8,8 @@ const SECRET_KEY_RE =
   /(?:^|[_-])(?:api[_-]?key|authorization|cookie|secret|token|password|bearer)(?:$|[_-])/i;
 const NAMED_SENSITIVE_HEADER_RE =
   /^(authorization|cookie|set-cookie|proxy-authorization|x-api-key|x-cron-secret|x-forwarded-for|x-real-ip|forwarded)$/i;
-const ENV_IP_RE = /ip|forwarded|remote_addr/i;
+/** Whole segments only — must not match "description" or "zip". */
+const IP_ENV_SEGMENT_RE = /(?:^|[_\-])(?:ip|forwarded|remote[_-]?addr)(?:$|[_\-])/i;
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
@@ -20,6 +21,14 @@ export function isSensitiveHeaderName(name: unknown): boolean {
   if (typeof name !== "string") return false;
   const key = name.toLowerCase();
   return key.startsWith("x-vercel-") || NAMED_SENSITIVE_HEADER_RE.test(key) || SECRET_KEY_RE.test(key);
+}
+
+export function isSensitiveIpEnvKey(name: unknown): boolean {
+  return typeof name === "string" && IP_ENV_SEGMENT_RE.test(name);
+}
+
+export function isSensitiveObjectKey(name: unknown): boolean {
+  return isSensitiveHeaderName(name) || isSensitiveIpEnvKey(name);
 }
 
 function decodeUriComponentSafe(text: string): string {
@@ -65,9 +74,7 @@ export function scrubUnknown<T>(value: T, seen = new WeakSet<object>()): T {
   if (!isPlainObject(value)) return value;
   const next: Record<string, unknown> = {};
   for (const [key, nested] of Object.entries(value)) {
-    next[key] = typeof key === "string" && (isSensitiveHeaderName(key) || ENV_IP_RE.test(key))
-      ? "[redacted]"
-      : scrubUnknown(nested, seen);
+    next[key] = isSensitiveObjectKey(key) ? "[redacted]" : scrubUnknown(nested, seen);
   }
   return next as T;
 }
@@ -97,7 +104,7 @@ export type ScrubableSentryEvent = {
   tags?: Record<string, unknown>;
   user?: unknown;
   exception?: { values?: Array<{ value?: unknown; type?: unknown }> };
-  breadcrumbs?: { values?: Array<{ message?: unknown; data?: unknown }> };
+  breadcrumbs?: unknown;
   request?: {
     url?: unknown;
     method?: unknown;
@@ -111,6 +118,24 @@ export type ScrubableSentryEvent = {
 
 function asString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
+}
+
+/** Scrub breadcrumb message + data (including data.url / url.query). */
+export function scrubBreadcrumb<T>(breadcrumb: T): T {
+  if (!breadcrumb || typeof breadcrumb !== "object") return breadcrumb;
+  const crumb = breadcrumb as T & { message?: unknown; data?: unknown };
+  if (typeof crumb.message === "string") crumb.message = scrubSensitiveText(crumb.message);
+  if (crumb.data !== undefined) crumb.data = scrubUnknown(crumb.data);
+  return breadcrumb;
+}
+
+function scrubBreadcrumbs(breadcrumbs: unknown): unknown {
+  if (Array.isArray(breadcrumbs)) return breadcrumbs.map((crumb) => scrubBreadcrumb(crumb));
+  if (isPlainObject(breadcrumbs) && Array.isArray(breadcrumbs.values)) {
+    breadcrumbs.values = breadcrumbs.values.map((crumb) => scrubBreadcrumb(crumb));
+    return breadcrumbs;
+  }
+  return breadcrumbs;
 }
 
 /** Drop request bodies / auth / IPs / Vercel bypass and redact wallets, signatures, RPC URLs, and keys. */
@@ -133,13 +158,7 @@ export function scrubSentryEvent<T>(event: T): T {
   }
   if (target.extra !== undefined) target.extra = scrubUnknown(target.extra) as ScrubableSentryEvent["extra"];
   if (target.contexts !== undefined) target.contexts = scrubUnknown(target.contexts) as ScrubableSentryEvent["contexts"];
-  if (Array.isArray(target.breadcrumbs?.values)) {
-    for (const crumb of target.breadcrumbs.values) {
-      if (!crumb || typeof crumb !== "object") continue;
-      if (typeof crumb.message === "string") crumb.message = scrubSensitiveText(crumb.message);
-      if (crumb.data !== undefined) crumb.data = scrubUnknown(crumb.data);
-    }
-  }
+  if (target.breadcrumbs !== undefined) target.breadcrumbs = scrubBreadcrumbs(target.breadcrumbs);
   if (isPlainObject(target.request)) {
     if (typeof target.request.url === "string") {
       target.request.url = scrubSensitiveText(target.request.url) as string;
