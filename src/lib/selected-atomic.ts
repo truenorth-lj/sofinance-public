@@ -5,9 +5,9 @@ import "server-only";
 import { createHash } from "node:crypto";
 import { buildSelectedAddInstruction } from "./selected-add-instruction";
 import { createAssociatedTokenAccountIdempotentInstruction, createSyncNativeInstruction, TOKEN_PROGRAM_ID } from "@solana/spl-token";
-import { ComputeBudgetProgram, PublicKey, SystemProgram, TransactionMessage, VersionedTransaction, type Connection, type TransactionInstruction } from "@solana/web3.js";
+import { ComputeBudgetProgram, PublicKey, SystemProgram, type AddressLookupTableAccount, type Connection, type TransactionInstruction } from "@solana/web3.js";
 import { NATIVE_SOL_MINT, QUOTE_TTL_MS } from "@sofinance/engine/ids";
-import { compactAtaInstructions } from "@sofinance/engine/open-transaction";
+import { compactAtaInstructions, compileCompactOpenTransaction, versionedTransactionSize } from "@sofinance/engine/open-transaction";
 import { readLookupTables, validateRouteTables } from "@sofinance/engine/transaction-helpers";
 import { rpcConnection } from "@sofinance/engine/rpc";
 import { beamTipInstruction, chooseBeamTransaction, fetchBeamTipAddress } from "@sofinance/engine/solami-beam";
@@ -28,10 +28,11 @@ export async function buildAndSimulateSelectedZap(
   const connection = rpcConnection(undefined, { signal: options?.signal });
   const state = await readSelectedPositionState(walletAddress, selection, connection, false, { displayPrices: false });
   try {
-    return await withSelectedRouteRetries((jupiter) => {
+    return await withSelectedRouteRetries((jupiter, attempt) => {
       options?.signal?.throwIfAborted();
       return buildAndSimulateSelectedZapOnce(walletAddress, selection, amount, floorBps, toleranceBps,
-        jupiter, options?.enforceResaleFloor !== false, connection, state, options?.signal, options?.budget);
+        jupiter, options?.enforceResaleFloor !== false, connection, state, options?.signal, options?.budget,
+        attempt.skipProbe);
     });
   } catch (error) {
     if (isJupiterNoRouteError(error)) throw selectedNoRouteError(state);
@@ -39,15 +40,25 @@ export async function buildAndSimulateSelectedZap(
   }
 }
 
+function selectedOversizeError(bytes: number) {
+  return new Error(`Complete swap + add transaction ${bytes} bytes, exceeds 1,232 byte limit, please select simpler route or other asset`);
+}
+
+function compileSelectedTransaction(
+  wallet: PublicKey, blockhash: string, instructions: TransactionInstruction[], tables: AddressLookupTableAccount[],
+) {
+  return compileCompactOpenTransaction({ payerKey: wallet, recentBlockhash: blockhash, instructions }, tables).transaction;
+}
+
 async function buildAndSimulateSelectedZapOnce(
   walletAddress: string, selection: PositionSelection, amount: string, floorBps: number,
   toleranceBps: number | undefined,
   jupiter: JupiterRouteConstraints, enforceResaleFloor: boolean, connection: Connection, state: SelectedPositionState, signal?: AbortSignal,
-  budget?: JupiterRetryBudget,
+  budget?: JupiterRetryBudget, skipProbe = false,
 ) {
   const wallet = new PublicKey(walletAddress);
   const { quote, legs } = await getSelectedQuoteBundle(walletAddress, selection, amount, floorBps, toleranceBps, jupiter,
-    { state, connection, signal, budget, buildTransactions: true, includeResale: enforceResaleFloor });
+    { state, connection, signal, budget, buildTransactions: true, includeResale: enforceResaleFloor, skipProbe });
   if (enforceResaleFloor && !quote.passesFloor) throw new Error(quote.warning || "Conservative immediate resale ratio below selected threshold");
   if (Date.now() >= quote.expiresAt) throw new Error("Quote expired, please resimulate");
   const routes = legs.flatMap((item) => {
@@ -64,12 +75,14 @@ async function buildAndSimulateSelectedZapOnce(
   if ((quote.feeAmount ?? "0") !== protocolFee.toString() || (quote.feeBps ?? 0) !== feeConfig.bps ||
     (quote.feeWallet ?? null) !== (feeConfig.wallet?.toBase58() ?? null))
     throw new Error("Quote protocol fee does not match configuration");
+  // Input-asset transfer (no extra Jupiter USDC hop). Same bps and fee wallet;
+  // selected add is already near the 1,232-byte cap, so a second route does not fit.
   const feeInstructions = feeConfig.wallet && protocolFee > 0n
     ? await collectSwapFee(connection, state.inputKind === "native"
       ? { payer: wallet, owner: wallet, recipient: feeConfig.wallet, amount: protocolFee, kind: "native" }
       : { payer: wallet, owner: wallet, recipient: feeConfig.wallet, amount: protocolFee, kind: "token",
         mint: new PublicKey(state.inputMint), source: new PublicKey(state.inputAccount!),
-        decimals: state.inputDecimals, program: new PublicKey(state.inputTokenProgram!) }) : { instructions: [], routes: [] };
+        decimals: state.inputDecimals, program: new PublicKey(state.inputTokenProgram!) }, true) : { instructions: [], routes: [] };
   const raydiumInstructions = [buildSelectedAddInstruction(state, quote, wallet)];
   const addInstructions = raydiumInstructions.filter((ix) => ix.programId.toBase58() === state.programId);
   const addDiscriminator = createHash("sha256").update("global:increase_liquidity_v2").digest().subarray(0, 8);
@@ -111,43 +124,26 @@ async function buildAndSimulateSelectedZapOnce(
   const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
   let baseInstructions = await compactAtaInstructions(connection, [atomicComputeUnitLimitInstruction(),
     ...feeInstructions.instructions, ...routeInstructions, ...wrapInstructions, ...createAtaInstructions, ...raydiumInstructions]);
-  const compile = (instructions: TransactionInstruction[]) => new VersionedTransaction(new TransactionMessage({
-    payerKey: wallet, recentBlockhash: blockhash, instructions,
-  }).compileToV0Message(tables));
-  if (!feeInstructions.routes.length) {
-    try { if (exceedsTxSizeLimit(compile(baseInstructions).serialize().length)) throw new RangeError(); }
-    catch { throw new Error("Complete swap + add transaction exceeds 1,232 byte limit, please select simpler route or other asset"); }
+  const compile = (instructions: TransactionInstruction[]) =>
+    compileSelectedTransaction(wallet, blockhash, instructions, tables);
+  const withoutFeeRoutes = compile(baseInstructions);
+  const withoutFeeRouteBytes = versionedTransactionSize(withoutFeeRoutes);
+  if (!feeInstructions.routes.length && exceedsTxSizeLimit(withoutFeeRouteBytes)) {
+    throw selectedOversizeError(withoutFeeRouteBytes);
   }
-  const tip = await fetchBeamTipAddress({ signal });
+  const tip = exceedsTxSizeLimit(withoutFeeRouteBytes) ? null : await fetchBeamTipAddress({ signal });
   signal?.throwIfAborted();
   const feeFit = await fitFeeCollections(connection, [feeInstructions], baseInstructions, compile,
     tip ? beamTipInstruction(wallet, tip.address, tip.lamports) : undefined);
   baseInstructions = feeFit.instructions;
   const withoutTip = compile(baseInstructions);
-  try {
-    if (exceedsTxSizeLimit(withoutTip.serialize().length)) throw new RangeError("encoding overruns Uint8Array");
-  } catch (error) {
-    if (error instanceof RangeError || error instanceof Error && error.message.includes("encoding overruns Uint8Array")) {
-      throw new Error("Complete swap + add transaction exceeds 1,232 byte limit, please select simpler route or other asset");
-    }
-    throw error;
-  }
+  const withoutTipBytes = versionedTransactionSize(withoutTip);
+  if (exceedsTxSizeLimit(withoutTipBytes)) throw selectedOversizeError(withoutTipBytes);
   const withTip = tip ? compile([...baseInstructions, beamTipInstruction(wallet, tip.address, tip.lamports)]) : null;
   const chosen = chooseBeamTransaction(withoutTip, withTip);
   const transaction = chosen.transaction;
-  // web3.js allocates a 1,232-byte buffer while serializing a v0 message.
-  // Oversized messages throw before a later size comparison can run.
-  let sizeBytes: number;
-  try {
-    sizeBytes = transaction.serialize().length;
-  } catch (error) {
-    if (error instanceof RangeError ||
-      error instanceof Error && error.message.includes("encoding overruns Uint8Array")) {
-      throw new Error("Complete swap + add transaction exceeds 1,232 byte limit, please select simpler route or other asset");
-    }
-    throw error;
-  }
-  if (exceedsTxSizeLimit(sizeBytes)) throw new Error(`Complete swap + add transaction ${sizeBytes} bytes, exceeds 1,232 byte limit`);
+  const sizeBytes = versionedTransactionSize(transaction);
+  if (exceedsTxSizeLimit(sizeBytes)) throw selectedOversizeError(sizeBytes);
   if (Date.now() >= quote.expiresAt) throw new Error("Quote expired while constructing transaction, please resimulate");
   const [verified, fee] = await Promise.all([simulateAndVerifySelectedTransaction({
     connection, transaction, wallet, state, requested: BigInt(quote.requested),

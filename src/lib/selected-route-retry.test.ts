@@ -3,7 +3,10 @@ vi.mock("server-only", () => ({}));
 import { JupiterHttpError } from "@sofinance/engine/jupiter/errors";
 import { SELECTED_RATE_LIMIT_RETRY_MS } from "@sofinance/engine/jupiter/client";
 import { JupiterNoRouteError } from "@sofinance/engine/swap/jupiter";
-import { HIGH_ACCOUNT_DEXES, selectedOversizeFollowups, withSelectedRouteRetries } from "./selected-route-retry";
+import {
+  HIGH_ACCOUNT_DEXES, SELECTED_PREFLIGHT_STRATEGY_BUDGET, selectedOversizeFollowups,
+  txOversizeBytes, withSelectedRouteRetries,
+} from "./selected-route-retry";
 
 describe("withSelectedRouteRetries", () => {
   afterEach(() => { vi.useRealTimers(); });
@@ -34,8 +37,12 @@ describe("withSelectedRouteRetries", () => {
     await expect(withSelectedRouteRetries(fn)).resolves.toBe(32);
   });
 
-  it("requotes then tries direct and DEX-filtered compact routes after oversize", async () => {
-    const fn = vi.fn(async (constraints: { maxAccounts: number; onlyDirectRoutes?: boolean; excludeDexes?: string }) => {
+  it("does not requote the same budget after oversize; tries DEX-filtered compact first for fee+tip overshoot", async () => {
+    const fn = vi.fn(async (
+      constraints: { maxAccounts: number; onlyDirectRoutes?: boolean; excludeDexes?: string },
+      attempt: { skipProbe: boolean },
+    ) => {
+      void attempt;
       if (constraints.excludeDexes === HIGH_ACCOUNT_DEXES && constraints.maxAccounts === 24 && !constraints.onlyDirectRoutes) {
         return constraints;
       }
@@ -48,10 +55,9 @@ describe("withSelectedRouteRetries", () => {
       call[0]?.maxAccounts, call[0]?.onlyDirectRoutes ?? false, call[0]?.excludeDexes ?? "",
     ])).toEqual([
       [24, false, ""],
-      [24, false, ""],
-      [24, true, ""],
       [24, false, HIGH_ACCOUNT_DEXES],
     ]);
+    expect(fn.mock.calls[1]?.[1]).toEqual({ skipProbe: true });
   });
 
   it("falls through to 20-account direct when compact followups stay oversize", async () => {
@@ -68,13 +74,22 @@ describe("withSelectedRouteRetries", () => {
     const fn = vi.fn(async (constraints: { maxAccounts: number; onlyDirectRoutes?: boolean; excludeDexes?: string }) => {
       if (constraints.maxAccounts === 24) throw new JupiterNoRouteError();
       if (constraints.maxAccounts >= 32 && !constraints.onlyDirectRoutes && !constraints.excludeDexes) {
-        throw new Error("Complete swap + add transaction exceeds 1,232 byte limit");
+        throw new Error("Complete swap + add transaction 1284 bytes, exceeds 1,232 byte limit");
       }
       return constraints.maxAccounts;
     });
-    await expect(withSelectedRouteRetries(fn)).resolves.toBe(32);
-    expect(fn.mock.calls.map((call) => call[0]?.maxAccounts)).toEqual([24, 32, 32, 32]);
-    expect(fn.mock.calls[3]?.[0]).toMatchObject({ maxAccounts: 32, excludeDexes: HIGH_ACCOUNT_DEXES });
+    await expect(withSelectedRouteRetries(fn)).resolves.toBe(20);
+    expect(fn.mock.calls.map((call) => call[0]?.maxAccounts)).toEqual([24, 32, 24, 20]);
+    expect(fn.mock.calls[2]?.[0]).toMatchObject({ maxAccounts: 24, excludeDexes: HIGH_ACCOUNT_DEXES });
+    expect(fn.mock.calls.some((call) => call[0]?.maxAccounts === 48)).toBe(false);
+  });
+
+  it("caps oversize followups at the preflight strategy budget and returns no-route", async () => {
+    const fn = vi.fn(async () => {
+      throw new Error("Complete swap + add transaction 1400 bytes, exceeds 1,232 byte limit");
+    });
+    await expect(withSelectedRouteRetries(fn)).rejects.toBeInstanceOf(JupiterNoRouteError);
+    expect(fn).toHaveBeenCalledTimes(SELECTED_PREFLIGHT_STRATEGY_BUDGET);
   });
 
   it("retries a selected 429 once with a short backoff, then succeeds", async () => {
@@ -126,17 +141,21 @@ describe("withSelectedRouteRetries", () => {
 });
 
 describe("selectedOversizeFollowups", () => {
-  it("keeps followups at or below the oversize budget and includes DEX filters", () => {
-    const keys = selectedOversizeFollowups(24).map((item) =>
+  it("orders fee+tip overshoot toward compact DEX filters before 20-account direct", () => {
+    const keys = selectedOversizeFollowups(24, 1284).map((item) =>
       `${item.maxAccounts}:${item.onlyDirectRoutes === true}:${item.excludeDexes ?? ""}`);
     expect(keys).toEqual([
-      "24:true:",
       `24:false:${HIGH_ACCOUNT_DEXES}`,
-      `24:true:${HIGH_ACCOUNT_DEXES}`,
       "20:true:",
       `20:true:${HIGH_ACCOUNT_DEXES}`,
     ]);
-    expect(selectedOversizeFollowups(32).every((item) => item.maxAccounts <= 32)).toBe(true);
-    expect(selectedOversizeFollowups(32).some((item) => item.maxAccounts === 48)).toBe(false);
+    expect(selectedOversizeFollowups(32, 1400).every((item) => item.maxAccounts <= 32)).toBe(true);
+    expect(selectedOversizeFollowups(32, 1400).some((item) => item.maxAccounts === 48)).toBe(false);
+    expect(selectedOversizeFollowups(32, 1400)[0]).toEqual({ maxAccounts: 20, onlyDirectRoutes: true });
+  });
+
+  it("reads the reported oversize byte count", () => {
+    expect(txOversizeBytes(new Error("Complete swap + add transaction 1284 bytes, exceeds 1,232 byte limit"))).toBe(1284);
+    expect(txOversizeBytes(new Error("other"))).toBeNull();
   });
 });
