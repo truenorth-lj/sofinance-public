@@ -18,7 +18,12 @@ import { toRangeAprInputs } from "./selection";
 import type { PoolRangeAprPayload, SizeFit } from "./types";
 
 export const MAX_OWN_LIQUIDITY_SHARE = 0.5;
-export const EDGE_TO_IMPACT_MIN_MULTIPLE = 2;
+/**
+ * 3x, not 2x: live on TSLA/TSLAx (spacing 60, ~$2k TVL) a 1000 USDC deposit estimated ~25 bps of impact and
+ * Standard's nearer edge sat ~50 bps away (2.0x); it passed a 2x guard yet prepare failed to converge
+ * (the rebalancing swap plus own liquidity shift the ratio too far). Wide (~110 bps, 4.4x) prepared fine.
+ */
+export const EDGE_TO_IMPACT_MIN_MULTIPLE = 3;
 /** Fraction of the deposit assumed to be swapped through the pool when estimating price impact. */
 export const SWAP_SHARE_OF_DEPOSIT = 0.5;
 

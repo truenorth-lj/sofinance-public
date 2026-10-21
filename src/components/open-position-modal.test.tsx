@@ -175,7 +175,7 @@ describe("range presets and estimated APR", () => {
   it("re-ranks Best for the typed amount after a debounce, skipping ranges the deposit does not fit", async () => {
     // Flat fixture pool: 1e9 liquidity per 1-tick bin. At 0.12 SOL (~$18) every range fits and the narrowest
     // (Micro) has the highest estimate; at 1,500 SOL (~$225k) Micro would be over half the active liquidity
-    // and Tight's edge is within 2x the estimated impact, so Best moves to Standard.
+    // and the narrower ranges' edges are within 3x the estimated impact, so Best moves to Wide.
     stubApr(payloadFixture(), { solPrice: true });
     await mount();
     await advance(400);
@@ -185,7 +185,7 @@ describe("range presets and estimated APR", () => {
     await advance(100);
     expect(container.querySelector("[data-testid='best-resolved']")!.textContent).toBe("Micro");
     await advance(400);
-    expect(container.querySelector("[data-testid='best-resolved']")!.textContent).toBe("Standard");
+    expect(container.querySelector("[data-testid='best-resolved']")!.textContent).toBe("Wide");
     expect(container.querySelector("[data-testid='apr-micro']")!.textContent).toContain("large vs pool liquidity");
     expect(container.querySelector("[data-testid='apr-tight']")!.textContent).toContain("edge near est. price impact");
     expect(vi.mocked(fetch).mock.calls.filter(([url]) => String(url).startsWith("/api/pool-range-apr"))).toHaveLength(1);

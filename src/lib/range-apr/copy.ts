@@ -15,7 +15,7 @@ export const APR_ESTIMATE_CAVEAT =
 export const BEST_HELP =
   "The range with the highest estimated fee APR over the last 7 days for this pool " +
   "(Micro, Tight, Standard or Wide; ties go to the wider range), for the amount you enter. Ranges are skipped when " +
-  "your deposit would be over half of the pool's active liquidity or the nearer edge is within about twice the " +
+  "your deposit would be over half of the pool's active liquidity or the nearer edge is within about three times the " +
   "estimated price impact; if none fit, the widest range is suggested. Not a prediction. " +
   "A higher APR usually means a narrower range and a higher risk of leaving range.";
 

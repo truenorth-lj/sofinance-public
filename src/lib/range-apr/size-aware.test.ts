@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { degradedPayloadFixture, payloadFixture } from "./payload.fixture";
 import {
-  activeLiquidity, depositUsd, estimatedPoolImpactBps, nearerEdgeBps, payloadForCapital, sizeFitFor,
+  activeLiquidity, depositUsd, EDGE_TO_IMPACT_MIN_MULTIPLE, estimatedPoolImpactBps, nearerEdgeBps, payloadForCapital, sizeFitFor,
 } from "./size-aware";
+import { buildPresetList } from "./preset-list";
+import { OPEN_RANGE_UI_PRESETS } from "@sofinance/engine/open-range-presets";
+import { tslaPayload } from "./tsla-payload.fixture";
 
 // Fixture: spacing 1, current sqrt 1 (tick 0), 1e9 liquidity per bin, usdPerRawB 1.
 describe("size checks", () => {
@@ -29,11 +32,42 @@ describe("size checks", () => {
     expect(sizeFitFor(payload, { tickLower: -2, tickUpper: 2 }, 100).status).toBe("ok");
     const near = sizeFitFor(payload, { tickLower: -2, tickUpper: 2 }, 150_000);
     expect(near).toMatchObject({ status: "excluded", reason: "near-edge" });
-    expect(near.impactBps).toBeGreaterThan(near.edgeBps / 2);
+    expect(near.impactBps).toBeGreaterThan(near.edgeBps / EDGE_TO_IMPACT_MIN_MULTIPLE);
     const thin = payloadFixture({ model: { ...payload.model, bins: payload.model.bins.map((bin) => ({ ...bin, liquidity: 1e3 })) } });
     // Tiny pool liquidity: own share dominates even where the edge has room.
     expect(sizeFitFor(thin, { tickLower: -9, tickUpper: 9 }, 1)).toMatchObject({ status: "excluded", reason: "crowded" });
     expect(sizeFitFor(thin, { tickLower: -9, tickUpper: 9 }, 1).ownSharePct).toBeGreaterThan(50);
+  });
+});
+
+describe("edge vs impact margin", () => {
+  const payload = payloadFixture();
+  // ~1.2 bp of impact; a +/-3 tick range has its nearer edge ~3 bp away (2.5x): enough under the old 2x guard,
+  // not under 3x. Regression for TSLA/TSLAx at 1000 USDC (edge 2.0x impact) where prepare did not converge.
+  it("requires the nearer edge to be at least 3x the estimated impact", () => {
+    expect(EDGE_TO_IMPACT_MIN_MULTIPLE).toBe(3);
+    const fit = sizeFitFor(payload, { tickLower: -3, tickUpper: 3 }, 120_000);
+    expect(fit.edgeBps / fit.impactBps).toBeGreaterThan(2);
+    expect(fit.edgeBps / fit.impactBps).toBeLessThan(3);
+    expect(fit).toMatchObject({ status: "excluded", reason: "near-edge" });
+    expect(sizeFitFor(payload, { tickLower: -4, tickUpper: 4 }, 120_000).status).toBe("ok");
+  });
+});
+
+describe("Best on TSLA/TSLAx (live payload, 2026-10-21)", () => {
+  // Prepare results on prod that day: 100 USDC tight/standard/wide and 300 USDC all ranges prepared;
+  // 1000 USDC only Wide prepared (Tight and Standard: "did not converge").
+  const bestAt = (capitalUsd: number) => buildPresetList(OPEN_RANGE_UI_PRESETS, payloadForCapital(tslaPayload, capitalUsd)).best;
+  it("picks Tight at 100 USDC, Standard at 300 and Wide at 1000", () => {
+    expect(bestAt(100)?.id).toBe("tight");
+    expect(bestAt(300)?.id).toBe("standard");
+    expect(bestAt(1000)?.id).toBe("wide");
+    expect(bestAt(1000)?.fallback).toBeUndefined();
+  });
+  it("excludes Standard at 1000 USDC (edge ~2.0x the impact)", () => {
+    const standard = payloadForCapital(tslaPayload, 1000).presets.find((preset) => preset.id === "standard")!;
+    expect(standard.sizeFit).toMatchObject({ status: "excluded", reason: "near-edge" });
+    expect(standard.sizeFit!.edgeBps / standard.sizeFit!.impactBps).toBeGreaterThan(2);
   });
 });
 
