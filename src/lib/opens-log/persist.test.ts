@@ -39,7 +39,7 @@ describe("opens persist", () => {
 
   it("applies idempotent DDL then inserts ON CONFLICT DO NOTHING by tx signature", async () => {
     vi.stubEnv("SOFINANCE_OPENS_DATABASE_URL", "postgres://opens@localhost/opens");
-    const sql = { unsafe: vi.fn(async (_query: string, _params?: unknown[]) => undefined) };
+    const sql = { unsafe: vi.fn<(query: string, params?: unknown[]) => Promise<undefined>>(async () => undefined) };
     const first = row();
     await persistPositionOpen(first, sql);
     await persistPositionOpen(first, sql);
