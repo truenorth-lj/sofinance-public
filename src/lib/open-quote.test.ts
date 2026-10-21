@@ -1,4 +1,5 @@
 import BN from "bn.js";
+import Decimal from "decimal.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AccountLayout, getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { PublicKey } from "@solana/web3.js";
@@ -9,7 +10,7 @@ import { uiPriceBPerAFromTick } from "@sofinance/engine/position-performance-mat
 
 vi.mock("server-only", () => ({}));
 vi.mock("@sofinance/engine/open-state", () => ({ readOpenPoolState: vi.fn() }));
-vi.mock("@sofinance/engine/swap/jupiter", () => ({ buildRoute: vi.fn() }));
+vi.mock("@sofinance/engine/swap/jupiter", () => ({ buildRoute: vi.fn(), quoteRoute: vi.fn() }));
 vi.mock("@sofinance/engine/open-rent", () => ({
   estimateOpenPositionRent: vi.fn(async () => ({
     refundableLamports: 5_000_000n,
@@ -27,9 +28,10 @@ vi.mock("@sofinance/engine/open-rent", () => ({
 vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: vi.fn() }));
 
 import { readOpenPoolState, type OpenPoolState } from "@sofinance/engine/open-state";
-import { buildRoute } from "@sofinance/engine/swap/jupiter";
+import { buildRoute, quoteRoute } from "@sofinance/engine/swap/jupiter";
 import { estimateOpenPositionRent } from "@sofinance/engine/open-rent";
 import { getOpenPositionQuoteBundle } from "@sofinance/engine/open-quote";
+import { runWithJupiterRelay } from "@sofinance/engine/jupiter/relay";
 
 const wallet = Keypair.generate().publicKey.toBase58();
 const mintA = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
@@ -70,7 +72,15 @@ beforeEach(() => {
     return { data, owner: TOKEN_PROGRAM_ID, lamports: 2039280, executable: false, rentEpoch: 0 };
   }) } as never);
   vi.mocked(readOpenPoolState).mockResolvedValue(state());
+  // Sizing and resale are quote-only; each test's route fixture lives on the buildRoute mock.
+  vi.mocked(quoteRoute).mockImplementation(async (inputMint, outputMint, amount, constraints, _signal, _budget, platformFeeBps) =>
+    await vi.mocked(buildRoute).getMockImplementation()!(wallet, inputMint, outputMint, amount, false, constraints, undefined, undefined, undefined, platformFeeBps) as never);
 });
+
+const quotedAmounts = (inputMint: string, outputMint: string) =>
+  vi.mocked(quoteRoute).mock.calls.filter(call => call[0] === inputMint && call[1] === outputMint).map(call => call[2]);
+const builtAmounts = (inputMint: string, outputMint: string) =>
+  vi.mocked(buildRoute).mock.calls.filter(call => call[1] === inputMint && call[2] === outputMint).map(call => call[3]);
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -161,25 +171,53 @@ describe("open-position quote validation", () => {
     )).rejects.toThrow(/tick array/i);
   });
 
-  it("rejects probe-relative price impact above 5%", async () => {
+  it("sizes from the pool price without probe quotes and builds the final leg from its own quote", async () => {
     vi.mocked(readOpenPoolState).mockResolvedValue(state({ inputMint: mintB, inputDecimals: 9, inputKind: "token" }));
-    vi.mocked(buildRoute).mockImplementation(async (_wallet, _in, _out, spend) => {
-      const inAmount = spend.toString();
-      const outAmount = spend === 10_000_000n ? "9000000" : "1000";
-      return {
-        inputMint: mintB, outputMint: mintA, inAmount, outAmount,
-        otherAmountThreshold: outAmount, swapMode: "ExactIn", slippageBps: 50,
-        priceImpactPct: "0", routePlan: [],
-        setupInstructions: [], swapInstruction: {}, cleanupInstruction: null, otherInstructions: [],
-        addressesByLookupTableAddress: {},
-      } as never;
-    });
-    await expect(getOpenPositionQuoteBundle(
-      wallet,
-      { poolId, inputMint: mintB, inputKind: "token" },
-      "0.1",
-      { preset: "custom", minPrice: "1", maxPrice: "2" },
-    )).rejects.toThrow(/Price impact/);
+    vi.mocked(buildRoute).mockImplementation(async (_wallet, inputMint, outputMint, spend) => ({
+      inputMint, outputMint, inAmount: spend.toString(), outAmount: (spend / 1000n).toString(),
+      otherAmountThreshold: (spend / 1000n).toString(), swapMode: "ExactIn", slippageBps: 50,
+      priceImpactPct: "0", routePlan: [], setupInstructions: [], swapInstruction: {},
+      cleanupInstruction: null, otherInstructions: [], addressesByLookupTableAddress: {},
+    }) as never);
+    const { legs } = await getOpenPositionQuoteBundle(wallet,
+      { poolId, inputMint: mintB, inputKind: "token" }, "0.1", { preset: "custom", minPrice: "1", maxPrice: "2" });
+    // Own-pool attempt (fixture is not an own-pool route) then the free route; no 1/10 probes.
+    expect(quotedAmounts(mintB, mintA)).toEqual([100_000_000n, 100_000_000n]);
+    expect(builtAmounts(mintB, mintA)).toEqual([100_000_000n]);
+    const quoted = await vi.mocked(quoteRoute).mock.results[1]!.value;
+    expect(vi.mocked(buildRoute).mock.calls[0]![11]).toBe(quoted);
+    expect(legs[0]!.minOut).toBe(100_000n);
+  });
+
+  it("restarts sizing from the relay hint so pool drift between relay rounds reuses fetched quotes", async () => {
+    const twoLeg = state({ inputMint: Keypair.generate().publicKey.toBase58(), decimalsB: 6, price: "1" });
+    vi.mocked(buildRoute).mockImplementation(async (_wallet, inputMint, outputMint, spend) => ({
+      inputMint, outputMint, inAmount: spend.toString(), outAmount: spend.toString(),
+      otherAmountThreshold: spend.toString(), swapMode: "ExactIn", slippageBps: 50, priceImpactPct: "0", routePlan: [],
+    }) as never);
+    const run = (hints?: Map<string, string>) => runWithJupiterRelay(new Map(), () => getOpenPositionQuoteBundle(wallet,
+      { poolId, inputMint: twoLeg.inputMint, inputKind: "token" }, "1", { preset: "standard" },
+      9900, 100, 48, twoLeg, "parallel", { build: false }), hints);
+    const first = await run();
+    const [key, converged] = Object.entries(first.hints)[0]!;
+    expect(key).toMatch(/^open:parallel:/);
+    vi.mocked(quoteRoute).mockClear();
+    await run(new Map([[key, "400000"]]));
+    expect(vi.mocked(quoteRoute).mock.calls[0]![2]).toBe(400000n);
+    expect(BigInt(converged)).toBeGreaterThan(0n);
+  });
+
+  it("skips swap-instructions entirely for a preview (build: false)", async () => {
+    vi.mocked(readOpenPoolState).mockResolvedValue(state({ inputMint: mintB, inputDecimals: 9, inputKind: "token" }));
+    vi.mocked(buildRoute).mockImplementation(async (_wallet, inputMint, outputMint, spend) => ({
+      inputMint, outputMint, inAmount: spend.toString(), outAmount: spend.toString(),
+      otherAmountThreshold: spend.toString(), swapMode: "ExactIn", slippageBps: 50,
+      priceImpactPct: "0", routePlan: [],
+    }) as never);
+    await getOpenPositionQuoteBundle(wallet, { poolId, inputMint: mintB, inputKind: "token" }, "0.1",
+      { preset: "custom", minPrice: "1", maxPrice: "2" }, undefined, undefined, 48, undefined, "parallel", { build: false });
+    expect(buildRoute).not.toHaveBeenCalled();
+    expect(quoteRoute).toHaveBeenCalledTimes(3);
   });
 
   it("quotes reverse resale so the floor fields stay populated without blocking the quote", async () => {
@@ -201,7 +239,9 @@ describe("open-position quote validation", () => {
     expect(quote.floorBps).toBe(9900);
     expect(quote.passesFloor).toBe(false);
     expect(quote.achievedResaleBps).toBe(10);
-    expect(buildRoute).toHaveBeenCalledTimes(5);
+    // Sizing (own-pool attempt + free route) and one resale quote; only the deposit leg is built.
+    expect(quoteRoute).toHaveBeenCalledTimes(3);
+    expect(buildRoute).toHaveBeenCalledTimes(1);
   });
   it.each(["sequential", "sequential-b"] as const)("sizes %s LP from conservative primary output and tries compact own-pool routes for secondary probes and swaps", async strategy => {
     const firstMint = Keypair.generate().publicKey.toBase58(), secondMint = Keypair.generate().publicKey.toBase58();
@@ -224,13 +264,49 @@ describe("open-position quote validation", () => {
     expect(legs[0]!.minOut + legs[1]!.spend).toBe(99000n);
     expect(BigInt(quote.amountMaxA)).toBeLessThanOrEqual(legs.find(leg => leg.outputMint === firstMint)!.minOut);
     expect(BigInt(quote.amountMaxB)).toBeLessThanOrEqual(legs.find(leg => leg.outputMint === secondMint)!.minOut);
-    expect(buildRoute).toHaveBeenCalledWith(wallet, primaryMint, secondaryMint, expect.any(BigInt), false, { maxAccounts: 20, onlyDirectRoutes: true, dexes: "Raydium CLMM" }, undefined, undefined, undefined, 0);
-    expect(vi.mocked(buildRoute).mock.calls.every(call => typeof call[5] === "object" && [20, 24].includes(call[5].maxAccounts) && call[4] === false)).toBe(true);
+    expect(quoteRoute).toHaveBeenCalledWith(primaryMint, secondaryMint, expect.any(BigInt), { maxAccounts: 20, onlyDirectRoutes: true, dexes: "Raydium CLMM" }, undefined, undefined, 0);
+    expect(vi.mocked(quoteRoute).mock.calls.every(call => [20, 24].includes(call[3]!.maxAccounts))).toBe(true);
+    // Exactly the two converged legs are built, each from its own sizing quote.
+    expect(buildRoute).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(buildRoute).mock.calls.every(call => call[4] === false && call[11] !== undefined)).toBe(true);
     const sqrt = SqrtPriceMath.getNextSqrtPriceFromInput(new BN(snapshot.sqrtPriceX64),
       new BN(snapshot.poolLiquidity), new BN(legs[1]!.route!.inAmount), strategy === "sequential");
     expect(quote.routeTouchesTargetPool).toBe(true);
     expect(quote.projectedPrice).toBe(TickUtil.sqrtPriceX64ToPrice(sqrt, 6, 6).toString());
     expect(readOpenPoolState).not.toHaveBeenCalled();
+  });
+
+  describe("target-pool projection on a wide tick spacing", () => {
+    const firstMint = Keypair.generate().publicKey.toBase58(), secondMint = Keypair.generate().publicKey.toBase58();
+    const snapshot = (poolLiquidity: string) => state({ mintA: firstMint, mintB: secondMint, decimalsA: 6, decimalsB: 6,
+      inputMint: mintA, inputDecimals: 6, fetchedAt: Date.now(), price: "1", tickCurrent: 10, tickSpacing: 60, poolLiquidity,
+      sqrtPriceX64: TickUtil.getSqrtPriceAtTick(10).add(TickUtil.getSqrtPriceAtTick(11)).divn(2).toString() });
+    beforeEach(() => {
+      vi.mocked(buildRoute).mockImplementation(async (_wallet, inputMint, outputMint, spend) => ({
+        inputMint, outputMint, inAmount: spend.toString(), outAmount: spend.toString(),
+        otherAmountThreshold: (spend * 99n / 100n).toString(), swapMode: "ExactIn", slippageBps: 50,
+        priceImpactPct: "0.001", routePlan: inputMint === mintA || outputMint === mintA ? [] : [{ percent: 100, bps: 10000,
+          swapInfo: { ammKey: poolId, inputMint, outputMint, inAmount: spend.toString(), outAmount: spend.toString() } }], setupInstructions: [], swapInstruction: {},
+        cleanupInstruction: null, otherInstructions: [], addressesByLookupTableAddress: {},
+      } as never));
+    });
+
+    it.each(["sequential", "sequential-b"] as const)("accepts a %s own-pool hop that moves several raw ticks but stays in the spacing band", async strategy => {
+      const pool = snapshot("200000000");
+      const { quote } = await getOpenPositionQuoteBundle(wallet,
+        { poolId, inputMint: mintA, inputKind: "token" }, "0.1", { preset: "standard" }, 9900, 100, 24, pool, strategy);
+      const projectedTick = TickUtil.getTickAtSqrtPrice(TickUtil.priceToSqrtPriceX64(new Decimal(quote.projectedPrice), 6, 6));
+      expect(quote.routeTouchesTargetPool).toBe(true);
+      expect(projectedTick).not.toBe(10);
+      expect(projectedTick).toBeGreaterThanOrEqual(0);
+      expect(projectedTick).toBeLessThan(60);
+    });
+
+    it("rejects a hop that leaves the spacing band while still inside the selected range", async () => {
+      await expect(getOpenPositionQuoteBundle(wallet,
+        { poolId, inputMint: mintA, inputKind: "token" }, "0.1", { preset: "standard" }, 9900, 100, 24, snapshot("20000000"), "sequential"))
+        .rejects.toThrow(/tick-spacing boundary/);
+    });
   });
 
   it.each(["sequential", "sequential-b"] as const)("charges both %s swap legs in their own input mint", async strategy => {
@@ -304,10 +380,13 @@ describe("open-position quote validation", () => {
       expect(quote.feeAmount).toBe("0");
       expect(quote.feeWallet).toBe(feeWallet);
       expect(quote.minOutA).toBe("100000");
-      const swapCalls = vi.mocked(buildRoute).mock.calls.filter((call) => call[1] === mintB && call[2] === mintA);
-      const resaleCalls = vi.mocked(buildRoute).mock.calls.filter((call) => call[1] === mintA && call[2] === mintB);
-      expect(swapCalls.map((call) => call[3])).toEqual([10_000_000n, 10_000_000n, 100_000_000n, 100_000_000n]);
-      expect(resaleCalls.map((call) => call[3])).toEqual([100_000n]);
+      expect(quotedAmounts(mintB, mintA)).toEqual([100_000_000n, 100_000_000n]);
+      expect(builtAmounts(mintB, mintA)).toEqual([100_000_000n]);
+      expect(quotedAmounts(mintA, mintB)).toEqual([100_000n]);
+      expect(builtAmounts(mintA, mintB)).toEqual([]);
+      // Output-USDC platform fee on the deposit leg; resale quotes stay uncharged.
+      expect(vi.mocked(quoteRoute).mock.calls.find(call => call[0] === mintB)![6]).toBe(10);
+      expect(vi.mocked(quoteRoute).mock.calls.find(call => call[0] === mintA)![6]).toBe(0);
     });
 
     it("takes the USDC deposit fee even for a same-mint open", async () => {
@@ -345,8 +424,8 @@ describe("open-position quote validation", () => {
       expect(quote.feeBps).toBe(10);
       expect(quote.feeAmount).toBe("0");
       expect(quote.feeWallet).toBe(feeWallet);
-      expect(vi.mocked(buildRoute).mock.calls.filter((call) => call[1] === mintB).map((call) => call[3]))
-        .toEqual([99n, 99n, 999n, 999n]);
+      expect(quotedAmounts(mintB, mintA)).toEqual([999n, 999n]);
+      expect(builtAmounts(mintB, mintA)).toEqual([999n]);
     });
   });
 

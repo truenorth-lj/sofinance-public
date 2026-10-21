@@ -15,6 +15,14 @@ import { DEFAULT_RESALE_FLOOR_BPS, USDC_MINT } from "@sofinance/engine/ids";
 import { quoteErrorHidesRecalculate } from "@/lib/selected-amount-error";
 import { useWalletConnection } from "./wallet-connection";
 import { notifyPositionHistoryChange } from "@/lib/position-history-refresh";
+import { createJupiterRelayStore, postWithJupiterRelay } from "@/lib/jupiter/browser-relay";
+
+/**
+ * Client deadline for a preview/prepare. Each server round keeps its own 8 s
+ * deadline; the browser-fetched Jupiter rounds in between are paced to the
+ * keyless per-IP quota, so the whole exchange gets more room.
+ */
+export const RELAY_DEADLINE_MS = 20_000;
 
 type Preflight = { quote: SelectedQuote; simulated: boolean; sizeBytes?: number; unitsConsumed?: number;
   feeLamports?: number; startingLiquidity?: string; simulatedEndingLiquidity?: string;
@@ -65,6 +73,8 @@ export function useSelectedController() {
   const discoveryRequestRef = useRef(0);
   const stateRequestRef = useRef(0);
   const quoteRequestRef = useRef(0);
+  // Browser-fetched Jupiter responses, shared by preview and prepare of this panel.
+  const jupiterStoreRef = useRef(createJupiterRelayStore());
   const inputRevisionRef = useRef(0);
   const submittingRef = useRef(false);
   const reconcileRequestRef = useRef(0);
@@ -298,11 +308,10 @@ export function useSelectedController() {
     const timer = window.setTimeout(() => {
       const load = async () => {
         setQuoteLoading(true); setPreview({ kind: "idle" }); setQuoteError(""); setQuoteErrorCode(""); setQuoteErrorOutputMint("");
-        deadline = window.setTimeout(() => aborter.abort(new Error("Preview took too long. Please retry.")), 8_000);
+        deadline = window.setTimeout(() => aborter.abort(new Error("Preview took too long. Please retry.")), RELAY_DEADLINE_MS);
         try {
-          const body = JSON.stringify({ wallet, ...selection, amount, floorBps, toleranceBps });
-          const response = await fetch("/api/selected-quote", { method: "POST",
-            headers: { "Content-Type": "application/json" }, body, cache: "no-store", signal: aborter.signal });
+          const response = await postWithJupiterRelay("/api/selected-quote", { wallet, ...selection, amount, floorBps, toleranceBps },
+            { store: jupiterStoreRef.current, signal: aborter.signal });
           const data = await response.json() as SelectedQuote | ApiError;
           if (!current() || aborter.signal.aborted) return;
           if (!response.ok) {
@@ -354,10 +363,10 @@ export function useSelectedController() {
     const inputRevision = inputRevisionRef.current;
     setSubmitStage("preparing"); setError("");
     const aborter = new AbortController();
-    const deadline = window.setTimeout(() => aborter.abort(new Error("Preparation took too long. Please retry.")), 8_000);
+    const deadline = window.setTimeout(() => aborter.abort(new Error("Preparation took too long. Please retry.")), RELAY_DEADLINE_MS);
     try {
-      const response = await fetch("/api/selected-prepare", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ wallet, ...selection, amount, floorBps, toleranceBps }), cache: "no-store", signal: aborter.signal });
+      const response = await postWithJupiterRelay("/api/selected-prepare", { wallet, ...selection, amount, floorBps, toleranceBps },
+        { store: jupiterStoreRef.current, signal: aborter.signal });
       const data = await response.json() as Prepared | ApiError;
       window.clearTimeout(deadline);
       if (aborter.signal.aborted) throw aborter.signal.reason;

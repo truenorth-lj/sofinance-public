@@ -161,20 +161,23 @@ describe("bounded selected allocation", () => {
       await expect(quoteWithLiquidity("14000000000")).rejects.toThrow(/tick-spacing boundary/);
     });
   });
-  it("preview uses exactly four lightweight quotes, no transaction builds or reverse resale", async () => {
+  it("preview sizes from the pool price: one quote per leg, no probes, builds or reverse resale", async () => {
     insideState();
     const { quote } = await getSelectedQuoteBundle(wallet, { positionMint, inputMint: source, inputKind: "token" }, "100",
       9900, 100, { maxAccounts: 24 }, { buildTransactions: false, includeResale: false });
-    expect(quoteRoute).toHaveBeenCalledTimes(4); expect(buildRoute).not.toHaveBeenCalled();
+    expect(quoteRoute).toHaveBeenCalledTimes(2); expect(buildRoute).not.toHaveBeenCalled();
     expect(quote.resaleInput).toBeNull(); expect(quote.roundtripCostInput).toBeNull();
     expect(BigInt(quote.spendA) + BigInt(quote.spendB)).toBe(100000000n);
     expect(BigInt(quote.requiredA)).toBeLessThanOrEqual(BigInt(quote.amountMaxA));
     expect(BigInt(quote.amountMaxA)).toBeLessThanOrEqual(BigInt(quote.minOutA));
   });
-  it("prepare uses two probes and exactly two actual builds; preserves floor by default", async () => {
+  it("prepare builds each converged leg once from the quote that sized it; preserves floor by default", async () => {
     insideState();
     const result = await getSelectedQuoteBundle(wallet, { positionMint, inputMint: source, inputKind: "token" }, "100", 9900, 100);
+    // Two sizing quotes + two resale quotes; swap-instructions only for the two final legs.
     expect(buildRoute).toHaveBeenCalledTimes(2); expect(quoteRoute).toHaveBeenCalledTimes(4);
+    const sizing = await Promise.all(vi.mocked(quoteRoute).mock.results.slice(0, 2).map(result => result.value));
+    expect(vi.mocked(buildRoute).mock.calls.map(call => call[11])).toEqual(sizing);
     expect(result.quote.resaleInput).not.toBeNull(); expect(result.quote.passesFloor).toBe(true);
   });
   it("retries compact no-route with a wider account budget for a cross-asset input", async () => {
@@ -228,14 +231,6 @@ describe("bounded selected allocation", () => {
       "0.000001", 9900, 100, { maxAccounts: 24 }, { buildTransactions: false, includeResale: false }))
       .rejects.toMatchObject({ name: "AmountTooSmallError", code: AMOUNT_TOO_SMALL_CODE });
     expect(quoteRoute).not.toHaveBeenCalled();
-  });
-  it("still rejects degradation relative to the small probe", async () => {
-    insideState();
-    vi.mocked(buildRoute).mockImplementation(async (_wallet, input, output, amount) => ({
-      ...route(input, output, amount), otherAmountThreshold: (amount / 2n).toString(),
-    }) as never);
-    await expect(getSelectedQuoteBundle(wallet, { positionMint, inputMint: source, inputKind: "token" }, "100", 9900, 100,
-      { maxAccounts: 24 }, { includeResale: false })).rejects.toThrow("Price impact relative to probe route");
   });
 });
 

@@ -1,4 +1,5 @@
 import "@/lib/engine-host";
+import { withJupiterRelay } from "@/lib/jupiter-relay-route";
 import { rpcConnection } from "@sofinance/engine/rpc";
 import { withSelectedDeadline } from "@/lib/selected-deadline";
 import { parseSelectedQuoteRequest } from "@sofinance/engine/api-input";
@@ -6,7 +7,7 @@ import { selectedApiError } from "@/lib/api-response";
 import { searchSelectedQuoteBundle } from "@/lib/selected-quote";
 
 export async function POST(request: Request) {
-  return withSelectedDeadline(request, async (signal, budget) => {
+  return withJupiterRelay(request, () => withSelectedDeadline(request, async (signal, budget) => {
   try {
     const { wallet, selection, amount, floorBps, toleranceBps } = await parseSelectedQuoteRequest(request);
     const { quote } = await searchSelectedQuoteBundle(wallet, selection, amount, floorBps, toleranceBps,
@@ -16,5 +17,5 @@ export async function POST(request: Request) {
   } catch (error) {
     return selectedApiError(error, "Quote failed");
   }
-  });
+  }));
 }

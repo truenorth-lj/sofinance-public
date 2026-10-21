@@ -7,11 +7,11 @@ import BN from "bn.js";
 import { LiquidityMathUtil, SqrtPriceMath, TickUtil } from "@raydium-io/raydium-sdk-v2";
 import { DEFAULT_ADD_TOLERANCE_BPS, DEFAULT_RESALE_FLOOR_BPS, MAX_PRICE_IMPACT_BPS, QUOTE_TTL_MS, SLIPPAGE_BPS } from "@sofinance/engine/ids";
 import { describeResaleFloorFailure, meetsResaleFloor, parseAddToleranceBps, parseResaleFloorBps, parseTokenAmount } from "@sofinance/engine/amount";
-import { allocateSpend, padAmountMax, positionSide, toleranceLiquidity } from "@sofinance/engine/quote-math";
+import { allocateSpend, padAmountMax, poolPriceRates, positionSide, toleranceLiquidity } from "@sofinance/engine/quote-math";
 import { type QuoteRoute } from "@sofinance/engine/swap/jupiter";
 import type { Connection } from "@solana/web3.js";
 import type { JupiterRouteConstraints } from "@sofinance/engine/jupiter-route-retry";
-import type { JupiterRetryBudget } from "@sofinance/engine/jupiter/client";
+import { jupiterRelayHint, setJupiterRelayHint, type JupiterRetryBudget } from "@sofinance/engine/jupiter/client";
 import { isJupiterNoRouteError } from "@sofinance/engine/swap/jupiter";
 import { readSelectedPositionState, type PositionSelection, type SelectedPositionState } from "@sofinance/engine/selected-state";
 import { selectedNoRouteError } from "./selected-no-route";
@@ -70,19 +70,13 @@ function remapAmountTooSmall(error: unknown): never {
 
 async function leg(
   wallet: string, inputMint: string, outputMint: string, spend: bigint, nativeSource = false,
-  jupiter?: JupiterRouteConstraints, build = false, signal?: AbortSignal, budget?: JupiterRetryBudget, feeBps = 0, ownPool?: { poolId: string; mintA: string; mintB: string },
+  jupiter?: JupiterRouteConstraints, build = false, signal?: AbortSignal, budget?: JupiterRetryBudget, feeBps = 0,
+  ownPool?: { poolId: string; mintA: string; mintB: string }, quote?: QuoteRoute | null,
 ): Promise<SwapLeg> {
   if (spend <= 0n) return dummyLeg(inputMint, outputMint, spend);
   if (isUnquoteableJupiterSpend(inputMint, outputMint, spend)) throw new AmountTooSmallError();
   return feeSwapLeg({ wallet, inputMint, outputMint, spend, feeBps, native: nativeSource,
-    constraints: jupiter, build, signal, budget, ownPool });
-}
-
-function priceImpactAgainstProbe(actual: SwapLeg, sample: SwapLeg, probe: bigint) {
-  if (sample.route === null && sample.inputMint !== sample.outputMint) return;
-  if (actual.minOut * probe * 10_000n < sample.minOut * actual.spend * BigInt(10_000 - MAX_PRICE_IMPACT_BPS)) {
-    throw new Error(`Price impact relative to probe route exceeds ${MAX_PRICE_IMPACT_BPS / 100}% limit`);
-  }
+    constraints: jupiter, build, signal, budget, ownPool, quote });
 }
 
 export async function getSelectedQuoteBundle(
@@ -112,12 +106,13 @@ async function getSelectedQuoteBundleOnce(
   const state = options.state ?? await readSelectedPositionState(wallet, selection, options.connection, false, { displayPrices: false });
   if (state.inputKind === "native" && state.wsolBalance !== "0") throw new Error("Native SOL input already has WSOL ATA balance, please handle separately to avoid using existing WSOL");
   const feeConfig = readSwapFeeConfig();
+  // Sizing rounds are quote-only. Once converged, the final legs are built from
+  // the very quotes that sized them (swap-instructions only, no re-quote).
   const actualLeg = (outputMint: string, spend: bigint) => leg(wallet, state.inputMint, outputMint, spend,
-    state.inputKind === "native", jupiter, options.buildTransactions !== false, options.signal, options.budget, deposit.legBps, state);
-  const probeLeg = (outputMint: string) => isUnquoteableJupiterSpend(state.inputMint, outputMint, probe)
-    ? Promise.resolve(dummyLeg(state.inputMint, outputMint, probe, probe))
-    : leg(wallet, state.inputMint, outputMint, probe,
-      state.inputKind === "native", jupiter, false, options.signal, options.budget, deposit.legBps, state);
+    state.inputKind === "native", jupiter, false, options.signal, options.budget, deposit.legBps, state);
+  const buildLeg = async (sized: SwapLeg) => options.buildTransactions === false || !sized.route ? sized
+    : await leg(wallet, sized.inputMint, sized.outputMint, sized.spend, state.inputKind === "native", jupiter, true,
+      options.signal, options.budget, deposit.legBps, state, sized.route);
   if (!state.ownsNft) throw new Error("Wallet does not have an available position NFT ATA for the selected position");
   if (state.paused || state.frozen || state.transferFee || state.unsupportedExtensions.length) {
     throw new Error(`Pool asset currently paused, account frozen, transfer fee charged, or has unsupported settings${state.unsupportedExtensions.length ? `: ${state.unsupportedExtensions.join(", ")}` : ""}`);
@@ -127,34 +122,33 @@ async function getSelectedQuoteBundleOnce(
   const deposit = depositFeePlan(state.inputMint, grossRequested, feeConfig);
   const requested = deposit.swapAmount;
   if (BigInt(state.inputBalance) < grossRequested) throw new Error("Insufficient input asset balance or SOL reserve");
-  const probe = requested / 10n;
-  if (probe <= 0n) throw new AmountTooSmallError();
+  if (requested <= 0n) throw new AmountTooSmallError();
   let spendA = 0n;
   let legs: SwapLeg[] = [];
   let projected = new BN(state.sqrtPriceX64);
   if (state.rangeSide !== "inside") {
     const outputMint = state.rangeSide === "below" ? state.mintA : state.mintB;
-    const sample = await probeLeg(outputMint);
+    // Price impact is capped on Jupiter's own priceImpactPct (quote guards); no probe quote.
     const actual = await actualLeg(outputMint, requested);
-    priceImpactAgainstProbe(actual, sample, probe);
-    legs = [actual];
+    legs = [await buildLeg(actual)];
     spendA = outputMint === state.mintA ? requested : 0n;
     projected = projectedSqrt(state, actual.route ? [actual.route] : []);
   } else {
-    const [probeA, probeB] = await Promise.all([
-      probeLeg(state.mintA),
-      probeLeg(state.mintB),
-    ]);
+    // First allocation at the pool price instead of 1/10-size probe quotes.
     const base = amountsAt(state, projected, new BN("1000000000000000000"));
-    spendA = allocateSpend(requested, BigInt(base.amountA.toString()), BigInt(base.amountB.toString()),
-      { spend: probe, out: probeA.minOut }, { spend: probe, out: probeB.minOut }, 1n);
+    const rates = poolPriceRates(state.sqrtPriceX64);
+    // With browser-relayed Jupiter, restart from the last allocation tried (its quotes are already
+    // in the browser) so pool-price drift between rounds does not force fresh quotes every round.
+    const hintKey = `selected:${state.positionMint}:${state.inputMint}:${requested}:${JSON.stringify(jupiter ?? null)}`;
+    const hinted = jupiterRelayHint(hintKey);
+    spendA = hinted !== undefined && hinted > 0n && hinted < requested ? hinted
+      : allocateSpend(requested, BigInt(base.amountA.toString()), BigInt(base.amountB.toString()), rates.rateA, rates.rateB, 1n);
     for (let index = 0; index < 5; index++) {
+      setJupiterRelayHint(hintKey, spendA);
       const [actualA, actualB] = await Promise.all([
         actualLeg(state.mintA, spendA), actualLeg(state.mintB, requested - spendA),
       ]);
       legs = [actualA, actualB];
-      priceImpactAgainstProbe(actualA, probeA, probe);
-      priceImpactAgainstProbe(actualB, probeB, probe);
       projected = projectedSqrt(state, legs.flatMap((item) => item.route ? [item.route] : []));
       const desired = amountsAt(state, projected, new BN("1000000000000000000"));
       const next = allocateSpend(requested, BigInt(desired.amountA.toString()), BigInt(desired.amountB.toString()),
@@ -164,6 +158,7 @@ async function getSelectedQuoteBundleOnce(
       if (index === 4) throw new Error("Pool price and swap ratio did not converge, please retry later");
       spendA = next;
     }
+    legs = await Promise.all(legs.map(buildLeg));
   }
   if (deposit.feeAmount > 0n) {
     legs[0]!.spend += deposit.feeAmount;

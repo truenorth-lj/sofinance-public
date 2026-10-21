@@ -9,6 +9,7 @@ import { NATIVE_SOL_MINT, USDC_MINT } from "@sofinance/engine/ids";
 import { quoteIsFresh } from "@sofinance/engine/quote-math";
 import { OPEN_RANGE_UI_PRESETS, type OpenRangePreset } from "@sofinance/engine/open-range-presets";
 import { preserveExtraSignatures } from "@/lib/open-signatures";
+import { createJupiterRelayStore, jupiterRelayEnabled, postWithJupiterRelay } from "@/lib/jupiter/browser-relay";
 import { notSentRetryMessage } from "@/lib/public-error";
 import type { OpenPositionQuote, OpenPositionSummary } from "@sofinance/engine/open-types";
 import { openAttemptFromSummary, type OpenAttempt } from "@/lib/open-attempt";
@@ -56,7 +57,14 @@ function pickInput(assets: WalletAsset[], mintA: string, mintB: string): WalletA
 }
 
 /** Background quote polling pauses this long after a failed refresh. */
-export const QUOTE_ERROR_POLL_PAUSE_MS = 15_000;
+export const QUOTE_ERROR_POLL_PAUSE_MS = 30_000;
+/** Server-keyed polling interval (relay disabled). */
+export const QUOTE_POLL_MS = 3_000;
+/**
+ * Browser-quoted polling interval. Jupiter's keyless quota is ~5 requests / 10 s
+ * per IP and an open preview costs 2-4 quotes, so poll well under that.
+ */
+export const RELAY_QUOTE_POLL_MS = 15_000;
 
 export function useOpenPositionController(pair: OpenPositionPair | null) {
   const { address: wallet, connected, connect, signTransaction } = useWalletConnection();
@@ -96,6 +104,7 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
   const [now, setNow] = useState(0);
   const walletRef = useRef(wallet);
   const quoteRequestRef = useRef(0);
+  const jupiterStoreRef = useRef(createJupiterRelayStore());
   const submittingRef = useRef(false);
   const activeRef = useRef(false);
   useLayoutEffect(() => { activeRef.current = true; return () => { activeRef.current = false; }; }, []);
@@ -196,16 +205,10 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
         setQuoteLoading(true);
         setQuoteError("");
         try {
-          const response = await fetch("/api/open-quote", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              wallet, poolId: pair.poolAddress, inputMint, inputKind, amount,
-              rangePreset, minPrice, maxPrice,
-            }),
-            cache: "no-store",
-            signal: aborter.signal,
-          });
+          const response = await postWithJupiterRelay("/api/open-quote", {
+            wallet, poolId: pair.poolAddress, inputMint, inputKind, amount,
+            rangePreset, minPrice, maxPrice,
+          }, { store: jupiterStoreRef.current, signal: aborter.signal });
           const data = await response.json() as OpenPositionQuote | ApiError;
           if (!currentRequest()) return;
           if (!response.ok) throw new Error((data as ApiError).error);
@@ -228,7 +231,7 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
         if (document.hidden || Date.now() < pausedUntil) return;
         void load();
       };
-      pollTimer = window.setInterval(poll, 3_000);
+      pollTimer = window.setInterval(poll, jupiterRelayEnabled() ? RELAY_QUOTE_POLL_MS : QUOTE_POLL_MS);
       onVisible = () => { if (!document.hidden) poll(); };
       document.addEventListener("visibilitychange", onVisible);
       void load();
@@ -291,15 +294,12 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
     setError("");
     captureGrowthEvent(GROWTH_EVENTS.openStarted, openEventProperties(pair));
     try {
-      const response = await fetch("/api/open-prepare", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          wallet, poolId: pair.poolAddress, inputMint, inputKind, amount,
-          rangePreset, minPrice, maxPrice,
-        }),
-        cache: "no-store",
-      });
+      // Same per-modal store as the preview: prepare replays the preview's fresh
+      // Jupiter quotes and only fetches swap-instructions.
+      const response = await postWithJupiterRelay("/api/open-prepare", {
+        wallet, poolId: pair.poolAddress, inputMint, inputKind, amount,
+        rangePreset, minPrice, maxPrice,
+      }, { store: jupiterStoreRef.current });
       const data = await response.json() as Prepared | ApiError;
       if (!response.ok) throw new Error((data as ApiError).error);
       const prepared = data as Prepared;
