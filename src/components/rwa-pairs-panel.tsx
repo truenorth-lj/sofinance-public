@@ -24,7 +24,7 @@ import { InfoTip } from "./info-tip";
 import { OpenPositionModal } from "./open-position-modal";
 import { clearPoolRangeAprClientCache } from "./range-apr/pool-range-apr-client";
 import { usePoolRangeApr } from "./range-apr/use-pool-range-apr";
-import { TokenIcon } from "./token-icon";
+import { PairTokenIcons } from "./pair-token-icons";
 import type { OpenPositionPair } from "./use-open-position-controller";
 import { useTokenMetadata } from "./use-token-metadata";
 
@@ -93,8 +93,6 @@ const toOpenPair = (pair: RwaPair): OpenPositionPair => ({
   freezeRisk: pair.freezeRisk,
 });
 
-/** Fallback icon when Jupiter lists none: Raydium serves every listed mint's icon at this path. */
-const raydiumIcon = (mint: string) => `https://img-v1.raydium.io/icon/${mint}.png`;
 const raydiumPoolUrl = (poolId: string) => `https://raydium.io/clmm/create-position/?pool_id=${poolId}`;
 
 const eyebrow = "font-data text-[10px] uppercase tracking-[0.14em] text-ink/60";
@@ -134,21 +132,12 @@ function PairCard({
   const rangeLabel = summary
     ? OPEN_RANGE_UI_PRESETS.find((preset) => preset.id === summary.id)?.label ?? summary.label
     : placeholder;
-  const wrappedIsA = pair.symbolA === pair.wrappedSymbol;
-  const mints = wrappedIsA ? [pair.mintA, pair.mintB] : [pair.mintB, pair.mintA];
-  const symbols = [pair.wrappedSymbol, pair.plainSymbol];
 
   return (
     <li className="flex min-w-0 flex-col rounded-[28px] bg-cream p-6 text-ink sm:p-7">
       <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex min-w-0 items-center gap-3">
-          <span className="flex shrink-0 -space-x-3">
-            {mints.map((mint, index) => (
-              <span key={mint} className="rounded-full bg-ink ring-2 ring-cream">
-                <TokenIcon symbol={symbols[index]!} icon={tokens[mint]?.icon ?? raydiumIcon(mint)} />
-              </span>
-            ))}
-          </span>
+          <PairTokenIcons pair={pair} tokens={tokens} />
           <div className="min-w-0">
             <h3 className="text-xl font-medium tracking-[-0.02em]">
               {pair.wrappedSymbol}/{pair.plainSymbol}

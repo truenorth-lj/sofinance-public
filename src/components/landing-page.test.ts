@@ -1,7 +1,11 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { HOMEPAGE_POOL_APR_LABEL } from "@/lib/apr-labels/copy";
+import {
+  HIGHEST_RANGE_APR_7D_HELP,
+  HOMEPAGE_APR_DOCS_LINK_LABEL,
+  HOMEPAGE_POOL_APR_LABEL,
+} from "@/lib/apr-labels/copy";
 
 describe("landing page copy and routes", () => {
   const src = readFileSync(resolve("src/components/landing-page.tsx"), "utf8");
@@ -78,9 +82,16 @@ describe("landing page copy and routes", () => {
     expect(table).not.toMatch(/HMAC|v0 tx|signUrl|permit/i);
   });
 
-  it("labels homepage APR with the shared Est. / not guaranteed copy", () => {
-    expect(HOMEPAGE_POOL_APR_LABEL).toBe("Est. APR · not guaranteed");
+  it("labels homepage APR with the cards' Est. highest range APR / not guaranteed copy", () => {
+    expect(HOMEPAGE_POOL_APR_LABEL).toBe("Est. highest range APR · 7d avg · not guaranteed");
+    expect(HOMEPAGE_APR_DOCS_LINK_LABEL).toBe("APR details");
+    expect(`${HOMEPAGE_POOL_APR_LABEL} ${HIGHEST_RANGE_APR_7D_HELP} ${HOMEPAGE_APR_DOCS_LINK_LABEL}`).not.toMatch(
+      /\byield\b|\bearn\b|make your money|strateg|recipe|open[- ]source|\bMIT\b/i,
+    );
     expect(table).toContain("HOMEPAGE_POOL_APR_LABEL");
-    expect(table).toContain("POOL_FEE_APR_24H_HELP");
+    expect(table).toContain("HIGHEST_RANGE_APR_7D_HELP");
+    expect(table).toContain("DOCS_ROUTES.yieldAndApr");
+    expect(table).toContain("usePoolRangeApr");
+    expect(table).not.toContain("POOL_FEE_APR_24H_HELP");
   });
 });
