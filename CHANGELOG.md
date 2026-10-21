@@ -27,6 +27,7 @@ Summarized from git history on `main` and the README feature list. Not an audit 
 - Safety gates on web and MCP: price-impact cap, 1,232-byte limit, full simulation, HMAC permit, re-verify before broadcast
 - Public `/docs` user guide, Plan page (read-only LP decision analysis), official X link
 - Optional RWA snapshot service (Drizzle/PostgreSQL) with a `Dockerfile` for that gateway, not the Next.js app
+- Optional PostHog product analytics (`NEXT_PUBLIC_POSTHOG_KEY`) and a best-effort Postgres log of confirmed open broadcasts (`SOFINANCE_OPENS_DATABASE_URL`) with an authenticated `GET /api/internal/opens-daily` read path
 
 ### Security
 

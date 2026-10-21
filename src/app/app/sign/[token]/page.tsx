@@ -14,6 +14,10 @@ import type { PendingSignPayload } from "@/lib/pending-sign-token";
 import { openAttemptFromSummary, type OpenAttempt } from "@/lib/open-attempt";
 import type { OpenPositionSummary } from "@sofinance/engine/open-types";
 import { useOpenAttempt } from "@/components/use-open-attempt";
+import { getStoredAttribution } from "@/lib/analytics/attribution";
+import { captureGrowthEvent, captureGrowthEventOnce } from "@/lib/analytics/client";
+import { classifyOpenError } from "@/lib/analytics/errors";
+import { GROWTH_EVENTS, openEventProperties } from "@/lib/analytics/events";
 
 type Status = "loading" | "expired" | "wallet-mismatch" | "ready" | "signing" | "submitting" | "success" | "error";
 
@@ -26,6 +30,25 @@ export default function SignPage() {
   
   const [payload, setPayload] = useState<PendingSignPayload | null>(null);
   const open = useOpenAttempt(payload?.kind === "open-position" ? wallet : undefined);
+
+  useEffect(() => {
+    const attempt = open.attempt;
+    if (payload?.kind !== "open-position" || !attempt) return;
+    const summary = payload.submitArgs.summary as OpenPositionSummary;
+    const properties = openEventProperties({
+      poolAddress: summary.poolId,
+      symbolA: summary.quote.symbolA ?? "",
+      symbolB: summary.quote.symbolB ?? "",
+    });
+    if (open.status === "confirmed") {
+      captureGrowthEventOnce(`open-ok:${attempt.signature}`, GROWTH_EVENTS.openSuccess, properties);
+    } else if (open.status === "failed" || open.status === "expired") {
+      captureGrowthEventOnce(`open-fail:${attempt.signature}`, GROWTH_EVENTS.openFailed, {
+        ...properties,
+        error_class: open.status === "expired" ? "expired" : "onchain_failed",
+      });
+    }
+  }, [open.attempt, open.status, payload]);
   const [loadStatus, setLoadStatus] = useState<"loading" | "expired" | "error" | "loaded">("loading");
   const [signStatus, setSignStatus] = useState<"idle" | "signing" | "submitting" | "success">("idle");
   const [error, setError] = useState("");
@@ -83,9 +106,18 @@ export default function SignPage() {
     if (!payload || !wallet || wallet !== payload.wallet) return;
     if (payload.kind === "open-position" && (!open.loaded || open.pending)) return;
     let openAttempt: OpenAttempt | null = null;
+    let unsent = false;
     
     setSignStatus("signing");
     setError("");
+    const openProperties = payload.kind === "open-position"
+      ? openEventProperties({
+        poolAddress: (payload.submitArgs.summary as OpenPositionSummary).poolId,
+        symbolA: (payload.submitArgs.summary as OpenPositionSummary).quote.symbolA ?? "",
+        symbolB: (payload.submitArgs.summary as OpenPositionSummary).quote.symbolB ?? "",
+      })
+      : {};
+    if (payload.kind === "open-position") captureGrowthEvent(GROWTH_EVENTS.openStarted, openProperties);
     
     try {
       const bytes = Uint8Array.from(atob(payload.unsignedTransaction), (c) => c.charCodeAt(0));
@@ -141,12 +173,13 @@ export default function SignPage() {
       
       const submitBody = payload.kind === "add-liquidity"
         ? { signedTransaction, ...payload.submitArgs }
-        : { 
-            signedTransaction, 
+        : {
+            signedTransaction,
             confirmHighImpact: payload.submitArgs.confirmHighImpact,
             permit: payload.submitArgs.permit,
             wallet: payload.submitArgs.wallet,
             summary: payload.submitArgs.summary,
+            ...(payload.kind === "open-position" ? { sourceRef: getStoredAttribution()?.ref } : {}),
           };
       
       const response = await fetch(submitPath, {
@@ -160,7 +193,10 @@ export default function SignPage() {
       
       if (!response.ok) {
         const reason = result.error || "Transaction submission failed";
-        if (openAttempt && result.sent === false) open.markUnsent(openAttempt);
+        if (openAttempt && result.sent === false) {
+          open.markUnsent(openAttempt);
+          unsent = true;
+        }
         throw new Error(result.sent === false ? notSentRetryMessage(reason) : reason);
       }
       
@@ -175,6 +211,12 @@ export default function SignPage() {
         router.push("/app");
       }, 5000);
     } catch (caught) {
+      if (payload.kind === "open-position" && (!openAttempt || unsent)) {
+        captureGrowthEvent(GROWTH_EVENTS.openFailed, {
+          ...openProperties,
+          error_class: classifyOpenError(caught),
+        });
+      }
       setSignStatus("idle");
       setLoadStatus("error");
       setError(caught instanceof Error ? caught.message : "Signing failed");
