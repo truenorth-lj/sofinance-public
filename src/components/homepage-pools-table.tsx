@@ -4,16 +4,27 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { ArrowUpRight, LoaderCircle } from "lucide-react";
-import { HOMEPAGE_POOL_APR_LABEL, POOL_FEE_APR_24H_HELP } from "@/lib/apr-labels/copy";
+import { OPEN_RANGE_UI_PRESETS } from "@sofinance/engine/open-range-presets";
 import {
-  formatAprPct,
+  HIGHEST_RANGE_APR_7D_HELP,
+  HOMEPAGE_APR_DOCS_LINK_LABEL,
+  HOMEPAGE_POOL_APR_LABEL,
+} from "@/lib/apr-labels/copy";
+import { cn } from "@/lib/cn";
+import {
   formatUsd,
   freshnessLabel,
   selectHomepagePools,
   type HomepagePool,
 } from "@/lib/homepage-pools";
 import { fetchRwaPairsList } from "@/lib/rwa-pairs-list";
-import { APP_ROUTES, buildOpenPositionPath } from "@/lib/public-urls";
+import { APP_ROUTES, DOCS_ROUTES, buildOpenPositionPath } from "@/lib/public-urls";
+import { formatAprPct as formatRangeAprPct } from "@/lib/range-apr/format";
+import { highestRangeSummary } from "@/lib/range-apr/preset-list";
+import { InfoTip } from "./info-tip";
+import { PairTokenIcons } from "./pair-token-icons";
+import { usePoolRangeApr } from "./range-apr/use-pool-range-apr";
+import { useTokenMetadata } from "./use-token-metadata";
 
 type PairsResponse = {
   pairs?: HomepagePool[];
@@ -27,6 +38,65 @@ const chip =
 
 function pairLabel(pool: HomepagePool) {
   return `${pool.wrappedSymbol}/${pool.plainSymbol}`;
+}
+
+/**
+ * The pool's headline APR: the estimated fee APR of its highest-APR candidate range (7-day average), read from
+ * the same cached `/api/pool-range-apr` payload and pure resolver as the /app/rwa-pairs card badge, so both
+ * always show the same number. "…" while loading; "—" when there is no estimate (error or degraded data).
+ */
+function RangeAprValue({ poolId }: { poolId: string }) {
+  const apr = usePoolRangeApr(poolId);
+  const summary = apr.status === "ready" ? highestRangeSummary(OPEN_RANGE_UI_PRESETS, apr.data) : null;
+  const text = summary ? formatRangeAprPct(summary.aprPct, false) : apr.status === "loading" ? "…" : "—";
+  return (
+    <span
+      data-testid="homepage-apr"
+      data-apr-status={summary ? "ready" : apr.status === "loading" ? "loading" : "missing"}
+      className={cn(
+        "inline-flex h-8 min-w-[3.5rem] items-center justify-center whitespace-nowrap rounded-full px-3 text-base font-semibold tabular-nums",
+        summary ? "bg-lemon text-ink" : "bg-white/[0.06] text-cream/70",
+      )}
+    >
+      {text}
+    </span>
+  );
+}
+
+function AprLabel({ docsLink }: { docsLink?: boolean }) {
+  return (
+    <span>
+      {HOMEPAGE_POOL_APR_LABEL}
+      <span className="ml-1.5 inline-block align-[-2px]">
+        <InfoTip label="About Est. highest range APR">{HIGHEST_RANGE_APR_7D_HELP}</InfoTip>
+      </span>
+      {docsLink && (
+        <Link
+          href={DOCS_ROUTES.yieldAndApr}
+          className="ml-1.5 whitespace-nowrap font-display text-[11px] font-normal normal-case tracking-normal text-cream/70 underline underline-offset-2 hover:text-cream"
+        >
+          {HOMEPAGE_APR_DOCS_LINK_LABEL}
+        </Link>
+      )}
+    </span>
+  );
+}
+
+function PoolName({ pool, tokens }: { pool: HomepagePool; tokens: ReturnType<typeof useTokenMetadata> }) {
+  return (
+    <div className="flex min-w-0 items-start gap-3">
+      <PairTokenIcons pair={pool} tokens={tokens} ringClassName="ring-char" iconClassName="h-9 w-9 text-xs" />
+      <div className="min-w-0">
+        <p className="text-base font-medium tracking-[-0.02em]">{pairLabel(pool)}</p>
+        {pool.feeTierBps !== null && (
+          <p className="mt-0.5 font-data text-[10px] uppercase tracking-[0.12em] text-smoke">
+            {pool.feeTierBps} bps
+          </p>
+        )}
+        <RiskChips pool={pool} />
+      </div>
+    </div>
+  );
 }
 
 function OpenPositionLink({ poolId, compact }: { poolId: string; compact?: boolean }) {
@@ -95,6 +165,7 @@ export function HomepagePoolsTable() {
   }, []);
 
   const rows = pairs ? selectHomepagePools(pairs, highlightPool) : [];
+  const tokens = useTokenMetadata(rows.flatMap((pool) => [pool.mintA, pool.mintB]));
 
   return (
     <section id="pools" className="scroll-mt-6" aria-labelledby="homepage-pools-heading">
@@ -157,29 +228,19 @@ export function HomepagePoolsTable() {
                     className={`rounded-2xl border p-4 ${highlighted ? "border-lemon bg-white/[0.04]" : "border-white/10"}`}
                   >
                     <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-base font-medium tracking-[-0.02em]">{pairLabel(pool)}</p>
-                        {pool.feeTierBps !== null && (
-                          <p className="mt-0.5 font-data text-[10px] uppercase tracking-[0.12em] text-smoke">
-                            {pool.feeTierBps} bps
-                          </p>
-                        )}
-                        <RiskChips pool={pool} />
-                      </div>
-                      <div className="text-right">
+                      <PoolName pool={pool} tokens={tokens} />
+                      <div className="shrink-0 text-right">
                         <p className="font-data text-[10px] uppercase tracking-[0.12em] text-smoke">TVL</p>
                         <p className="mt-1 text-lg font-semibold tabular-nums">{formatUsd(pool.tvlUsd)}</p>
                       </div>
                     </div>
-                    <div className="mt-4 flex items-end justify-between gap-3 border-t border-white/10 pt-3">
-                      <div>
-                        <p className="font-data text-[10px] uppercase tracking-[0.12em] text-smoke">
-                          {HOMEPAGE_POOL_APR_LABEL}
-                        </p>
-                        <p className="mt-1 text-lg font-semibold tabular-nums" data-testid="homepage-apr">
-                          {formatAprPct(pool.estimatedFeeAprPct)}
-                        </p>
-                      </div>
+                    <div className="mt-4 flex items-center justify-between gap-3 border-t border-white/10 pt-3">
+                      <p className="min-w-0 font-data text-[10px] uppercase leading-4 tracking-[0.12em] text-smoke">
+                        <AprLabel />
+                      </p>
+                      <RangeAprValue poolId={pool.poolAddress} />
+                    </div>
+                    <div className="mt-3">
                       <OpenPositionLink poolId={pool.poolAddress} compact />
                     </div>
                   </li>
@@ -193,7 +254,9 @@ export function HomepagePoolsTable() {
                   <tr className="border-b border-white/10 font-data text-[10px] uppercase tracking-[0.14em] text-smoke">
                     <th className="px-3 py-3 font-medium">Pool</th>
                     <th className="px-3 py-3 font-medium">TVL</th>
-                    <th className="px-3 py-3 font-medium">{HOMEPAGE_POOL_APR_LABEL}</th>
+                    <th className="px-3 py-3 font-medium">
+                      <AprLabel docsLink />
+                    </th>
                     <th className="px-3 py-3 font-medium">
                       <span className="sr-only">Open</span>
                     </th>
@@ -210,17 +273,11 @@ export function HomepagePoolsTable() {
                         className={`border-b border-white/10 ${highlighted ? "bg-white/[0.04]" : ""}`}
                       >
                         <td className="px-3 py-4">
-                          <p className="text-base font-medium tracking-[-0.02em]">{pairLabel(pool)}</p>
-                          {pool.feeTierBps !== null && (
-                            <p className="mt-0.5 font-data text-[10px] uppercase tracking-[0.12em] text-smoke">
-                              {pool.feeTierBps} bps
-                            </p>
-                          )}
-                          <RiskChips pool={pool} />
+                          <PoolName pool={pool} tokens={tokens} />
                         </td>
                         <td className="px-3 py-4 text-base font-semibold tabular-nums">{formatUsd(pool.tvlUsd)}</td>
-                        <td className="px-3 py-4 text-base font-semibold tabular-nums" data-testid="homepage-apr">
-                          {formatAprPct(pool.estimatedFeeAprPct)}
+                        <td className="px-3 py-4">
+                          <RangeAprValue poolId={pool.poolAddress} />
                         </td>
                         <td className="px-3 py-4 text-right">
                           <OpenPositionLink poolId={pool.poolAddress} />
@@ -237,15 +294,23 @@ export function HomepagePoolsTable() {
         {(pairs || error) && (
           <div className="mt-5 flex flex-col gap-3 border-t border-white/10 px-2 pt-4 sm:flex-row sm:items-end sm:justify-between">
             <p className="max-w-2xl text-xs leading-5 text-smoke">
-              {POOL_FEE_APR_24H_HELP} Not LP return; ignores IL, range and rewards. Data: Raydium API
+              {HIGHEST_RANGE_APR_7D_HELP} Not LP return; ignores IL and rewards. Data: Raydium API
               {freshness ? ` · ${freshnessLabel(freshness.snapshotAt, now)}` : ""}.
             </p>
-            <Link
-              href={APP_ROUTES.rwaPairs}
-              className="shrink-0 text-sm font-semibold text-cream underline-offset-2 hover:underline"
-            >
-              See all pools →
-            </Link>
+            <div className="flex shrink-0 items-center gap-4">
+              <Link
+                href={DOCS_ROUTES.yieldAndApr}
+                className="text-sm text-cream/70 underline underline-offset-2 hover:text-cream"
+              >
+                {HOMEPAGE_APR_DOCS_LINK_LABEL}
+              </Link>
+              <Link
+                href={APP_ROUTES.rwaPairs}
+                className="text-sm font-semibold text-cream underline-offset-2 hover:underline"
+              >
+                See all pools →
+              </Link>
+            </div>
           </div>
         )}
       </div>

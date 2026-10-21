@@ -4,6 +4,10 @@ export const HOMEPAGE_TVL_FLOOR_USD = 10_000;
 
 export type HomepagePool = {
   poolAddress: string;
+  mintA: string;
+  mintB: string;
+  symbolA: string;
+  symbolB: string;
   wrappedSymbol: string;
   plainSymbol: string;
   feeTierBps: number | null;
