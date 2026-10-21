@@ -9,6 +9,7 @@ import { payloadFixture, payloadWithAprs } from "../lib/range-apr/payload.fixtur
 import { clearPoolRangeAprClientCache } from "./range-apr/pool-range-apr-client";
 import { OpenPositionModal } from "./open-position-modal";
 import type { OpenPositionPair, useOpenPositionController } from "./use-open-position-controller";
+import { QUOTE_ERROR_POLL_PAUSE_MS } from "./use-open-position-controller";
 
 const mocks = vi.hoisted(() => ({
   wallet: "wallet",
@@ -269,6 +270,29 @@ describe("open-position signing and quote refresh", () => {
     await advance(1);
     expect(quoteCalls).toBe(2);
     expect(signButton().disabled).toBe(false);
+    await advance(3000);
+    expect(quoteCalls).toBe(3);
+  });
+
+  it("does not poll quotes while the tab is hidden and refreshes once it is visible again", async () => {
+    await mount();
+    const hidden = vi.spyOn(document, "hidden", "get").mockReturnValue(true);
+    await advance(9000);
+    expect(quoteCalls).toBe(1);
+    hidden.mockReturnValue(false);
+    await act(async () => { document.dispatchEvent(new Event("visibilitychange")); });
+    expect(quoteCalls).toBe(2);
+    hidden.mockRestore();
+  });
+
+  it("pauses background polling for a while after a failed refresh", async () => {
+    await mount();
+    failQuote = true;
+    await advance(3000);
+    expect(quoteCalls).toBe(2);
+    await advance(QUOTE_ERROR_POLL_PAUSE_MS - 3000);
+    expect(quoteCalls).toBe(2);
+    failQuote = false;
     await advance(3000);
     expect(quoteCalls).toBe(3);
   });
