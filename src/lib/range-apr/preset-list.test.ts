@@ -132,3 +132,33 @@ describe("degraded payloads (no price history)", () => {
     expect(highestRangeSummary(OPEN_RANGE_UI_PRESETS, degradedPayloadFixture())).toBeNull();
   });
 });
+
+describe("size-aware Best", () => {
+  const fit = (status: "ok" | "excluded") => ({ status, ownSharePct: 1, edgeBps: 10, impactBps: status === "ok" ? 1 : 9 });
+  const withFits = (fits: Record<string, "ok" | "excluded">) => {
+    const payload = payloadWithAprs({ micro: 10, tight: 38, standard: 20, wide: 5 });
+    return { ...payload, presets: payload.presets.map((preset) => ({ ...preset, sizeFit: fit(fits[preset.id] ?? "ok") })) };
+  };
+
+  it("skips candidates the deposit does not fit", () => {
+    const list = buildPresetList(OPEN_RANGE_UI_PRESETS, withFits({ tight: "excluded" }));
+    expect(list.best).toMatchObject({ id: "standard" });
+    expect(list.best?.fallback).toBeUndefined();
+    expect(ids(list)).toEqual(["micro", "tight", "wide"]);
+  });
+
+  it("falls back to Wide, then Standard, when no candidate fits", () => {
+    const all = buildPresetList(OPEN_RANGE_UI_PRESETS, withFits({ micro: "excluded", tight: "excluded", standard: "excluded", wide: "excluded" }));
+    expect(all.best).toMatchObject({ id: "wide", fallback: true });
+    const noWide = withFits({ micro: "excluded", tight: "excluded", standard: "excluded", wide: "excluded" });
+    noWide.presets = noWide.presets.map((preset) => preset.id === "wide"
+      ? { ...preset, estimate: { status: "unavailable", reason: "range-outside-window" } } : preset);
+    expect(buildPresetList(OPEN_RANGE_UI_PRESETS, noWide).best).toMatchObject({ id: "standard", fallback: true });
+  });
+
+  it("ranks exactly as before when the payload was not sized (no sizeFit)", () => {
+    expect(buildPresetList(OPEN_RANGE_UI_PRESETS, payloadWithAprs({ micro: 10, tight: 38, standard: 20, wide: 5 })).best)
+      .toMatchObject({ id: "tight" });
+  });
+});
+

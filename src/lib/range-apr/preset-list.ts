@@ -4,7 +4,9 @@ import "@/lib/engine-host";
  * and the pair cards so both always agree).
  *
  * "Best" is the candidate with the highest estimated fee APR, ties going to the wider
- * range. It resolves to that candidate's exact ticks, so quote/prepare use the ordinary preset path and what
+ * range. When the payload was re-priced for the typed amount (`payloadForCapital`), candidates the deposit
+ * does not fit (`sizeFit.status === "excluded"`) are skipped; if none fits, Best falls back to Wide, then
+ * Standard. It resolves to that candidate's exact ticks, so quote/prepare use the ordinary preset path and what
  * is signed is what was priced.
  */
 import type { OpenRangeUiPreset } from "@sofinance/engine/open-range-presets";
@@ -16,6 +18,9 @@ const TIE_RELATIVE_EPSILON = 1e-9;
 type OkPreset = RangeAprPresetEstimate & { estimate: Extract<RangeAprEstimate, { status: "ok" }> };
 
 const isOk = (preset: RangeAprPresetEstimate): preset is OkPreset => preset.estimate.status === "ok";
+const fits = (preset: RangeAprPresetEstimate) => preset.sizeFit?.status !== "excluded";
+/** Order tried when the deposit fits no candidate: the most room around the price first. */
+const SIZE_FALLBACK_ORDER: readonly RangeAprPresetId[] = ["wide", "standard"];
 const width = (preset: RangeAprPresetEstimate) => preset.tickUpper - preset.tickLower;
 const sameRange = (left: RangeAprPresetEstimate, right: RangeAprPresetEstimate) =>
   left.tickLower === right.tickLower && left.tickUpper === right.tickUpper;
@@ -31,7 +36,7 @@ export function pickHighestAprPreset(
 ): RangeAprPresetEstimate | null {
   let winner: OkPreset | null = null;
   const rank = (preset: RangeAprPresetEstimate) => order.indexOf(preset.id);
-  for (const candidate of candidates.filter(isOk)) {
+  for (const candidate of candidates.filter((preset): preset is OkPreset => isOk(preset) && fits(preset))) {
     if (!winner) {
       winner = candidate;
       continue;
@@ -54,6 +59,8 @@ export type BestButton = {
   /** Short name of the range it resolved to, e.g. "Tight". */
   resolvedLabel: string;
   estimate: RangeAprEstimate;
+  /** True when the typed deposit fits no candidate and Best fell back to the widest available range. */
+  fallback?: boolean;
 };
 
 export type PresetButton = { id: OpenRangeUiPreset["id"]; label: string; estimate: RangeAprEstimate | null };
@@ -79,13 +86,18 @@ export function buildPresetList(
       : payload?.presets.find((preset) => preset.id === id)?.estimate ?? null;
   // A degraded payload (no price history) is never ranked or shown with numbers, even if a caller hands over estimates.
   const order = uiPresets.map((preset) => preset.id) as RangeAprPresetId[];
-  const winner = payload && !degraded ? pickHighestAprPreset(payload.presets, order) : null;
+  const ranked = payload && !degraded ? pickHighestAprPreset(payload.presets, order) : null;
+  const fallback = payload && !degraded && !ranked
+    ? SIZE_FALLBACK_ORDER.map((id) => payload.presets.find((preset) => preset.id === id))
+      .find((preset): preset is RangeAprPresetEstimate => !!preset && isOk(preset) && preset.sizeFit !== undefined) ?? null
+    : null;
+  const winner = ranked ?? fallback;
   if (!payload || !winner) {
     return { best: null, buttons: uiPresets.map((preset) => ({ id: preset.id, label: preset.label, estimate: estimateOf(preset.id) })) };
   }
   const resolved = uiPresets.find((preset) => preset.id === winner.id);
   return {
-    best: { id: winner.id, resolvedLabel: resolved?.shortLabel ?? winner.id, estimate: winner.estimate },
+    best: { id: winner.id, resolvedLabel: resolved?.shortLabel ?? winner.id, estimate: winner.estimate, ...(winner === fallback ? { fallback: true } : {}) },
     buttons: uiPresets
       .filter((preset) => {
         if (preset.id === winner.id) return false;

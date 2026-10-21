@@ -1,6 +1,7 @@
 "use client";
 import "@/lib/engine-host";
 
+import { useMemo } from "react";
 import { LoaderCircle } from "lucide-react";
 import type { OpenRangePreset, OpenRangeUiPreset } from "@sofinance/engine/open-range-presets";
 import Link from "next/link";
@@ -9,6 +10,8 @@ import { DOCS_ROUTES } from "@/lib/public-urls";
 import { formatEstimate, unavailableReasonText } from "@/lib/range-apr/format";
 import { MICRO_PRESET_ID, microBandLabel } from "@sofinance/engine/range-apr/micro-range";
 import { buildPresetList, type BestButton } from "@/lib/range-apr/preset-list";
+import { payloadForCapital } from "@/lib/range-apr/size-aware";
+import type { PoolRangeAprPayload, RangeAprPresetEstimate } from "@/lib/range-apr/types";
 import { estimateForSelection, type SelectionEstimate, type TickRange } from "@/lib/range-apr/selection";
 import { BrandMark } from "../brand-mark";
 import { InfoTip } from "../info-tip";
@@ -25,8 +28,18 @@ const cellTone = (active: boolean) => (active
 /** A candidate range the user has not selected, with its estimate (compared inside the APR card). */
 type OtherRange = { id: string; name: string; text: string };
 
-function Headline({ apr, selection, best, others }: {
-  apr: PoolRangeAprState; selection: SelectionEstimate | null; best: BestButton | null; others: readonly OtherRange[];
+/** "$1,000" style deposit label; cents only below $10. */
+export function formatDepositUsd(value: number): string {
+  return `$${value.toLocaleString("en-US", { maximumFractionDigits: value < 10 ? 2 : 0 })}`;
+}
+
+function sizeNote(preset: RangeAprPresetEstimate | undefined): string {
+  if (preset?.sizeFit?.status !== "excluded") return "";
+  return preset.sizeFit.reason === "crowded" ? " · large vs pool liquidity" : " · edge near est. price impact";
+}
+
+function Headline({ apr, sized, selection, best, others }: {
+  apr: PoolRangeAprState; sized: PoolRangeAprPayload | null; selection: SelectionEstimate | null; best: BestButton | null; others: readonly OtherRange[];
 }) {
   let value = "—";
   let estimated = false;
@@ -42,7 +55,7 @@ function Headline({ apr, selection, best, others }: {
     else {
       value = formatEstimate(selection.estimate);
       estimated = true;
-      detail = `About ${selection.estimate.inRangeVolumePct.toFixed(0)}% of recent volume traded inside this range. For a ~$${apr.data.referenceCapitalUsd} deposit; assumes price stays in range.`;
+      detail = `About ${selection.estimate.inRangeVolumePct.toFixed(0)}% of recent volume traded inside this range. For a ~${formatDepositUsd(sized?.referenceCapitalUsd ?? apr.data.referenceCapitalUsd)} deposit; assumes price stays in range.`;
     }
   }
   return (
@@ -68,8 +81,10 @@ function Headline({ apr, selection, best, others }: {
         <p className="mt-1 text-[11px] leading-5 text-smoke">Low confidence: thin or patchy recent trading, so treat this as a rough guide.</p>
       )}
       {best && (
-        <p className="mt-1 text-[11px] leading-5 text-smoke">
-          {BEST_LABEL} for this pool is {best.resolvedLabel}: the highest estimated fee APR of the candidate ranges over the last 7 days. Not a prediction.
+        <p className="mt-1 text-[11px] leading-5 text-smoke" data-testid="best-explainer">
+          {best.fallback
+            ? `${BEST_LABEL} for this pool is ${best.resolvedLabel}: this amount is large for the pool's current liquidity, so the widest range is suggested. Not a prediction.`
+            : `${BEST_LABEL} for this pool is ${best.resolvedLabel}: the highest estimated fee APR of the candidate ranges over the last 7 days${sized ? ` for a ~${formatDepositUsd(sized.referenceCapitalUsd)} deposit` : ""}. Not a prediction.`}
         </p>
       )}
       {others.length > 0 && (
@@ -90,7 +105,7 @@ function Headline({ apr, selection, best, others }: {
 }
 
 export function RangePresetPicker({
-  presets, selected, onSelect, minPrice, maxPrice, onMinPrice, onMaxPrice, apr, quotedRange,
+  presets, selected, onSelect, minPrice, maxPrice, onMinPrice, onMaxPrice, apr, quotedRange, capitalUsd,
 }: {
   presets: readonly OpenRangeUiPreset[];
   selected: OpenRangePreset;
@@ -102,8 +117,13 @@ export function RangePresetPicker({
   apr: PoolRangeAprState;
   /** Aligned ticks of the live quote for the current selection, when one exists. */
   quotedRange: TickRange | null;
+  /** USD value of the typed deposit (debounced); null keeps the server's reference capital. */
+  capitalUsd?: number | null;
 }) {
-  const data = apr.status === "ready" ? apr.data : null;
+  const served = apr.status === "ready" ? apr.data : null;
+  // Re-priced locally for the typed amount; ranges the deposit does not fit drop out of Best.
+  const data = useMemo(() => (served ? payloadForCapital(served, capitalUsd) : null), [served, capitalUsd]);
+  const sized = data && data !== served ? data : null;
   const selection = data ? estimateForSelection(data, { preset: selected, minPrice, maxPrice }, quotedRange) : null;
   // While loading / on error `data` is null, so this is the plain row without "Best" (and no highlight on it).
   const list = buildPresetList(presets, data);
@@ -119,7 +139,8 @@ export function RangePresetPicker({
   ];
   const others: OtherRange[] = candidates.some((candidate) => candidate.estimate?.status === "ok")
     ? candidates.filter((candidate) => candidate.id !== selected)
-      .map((candidate) => ({ id: candidate.id, name: candidate.name, text: formatEstimate(candidate.estimate) }))
+      .map((candidate) => ({ id: candidate.id, name: candidate.name,
+        text: `${formatEstimate(candidate.estimate)}${sizeNote(data?.presets.find((item) => item.id === candidate.id))}` }))
     : [];
   const tips = [
     ...(best ? [{ key: "best", label: `About ${BEST_LABEL}`, text: BEST_HELP }] : []),
@@ -207,7 +228,7 @@ export function RangePresetPicker({
           />
         </div>
       )}
-      <Headline apr={apr} selection={selection} best={bestActive ? best : null} others={others} />
+      <Headline apr={apr} sized={sized} selection={selection} best={bestActive ? best : null} others={others} />
     </>
   );
 }

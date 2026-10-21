@@ -1,4 +1,5 @@
 import BN from "bn.js";
+import Decimal from "decimal.js";
 import { AccountLayout, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { Keypair, PublicKey } from "@solana/web3.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -34,7 +35,7 @@ beforeEach(() => {
     rangeSide: "below", sqrtPriceX64: TickUtil.getSqrtPriceAtTick(-200).toString(),
     lowerSqrtX64: TickUtil.getSqrtPriceAtTick(-100).toString(),
     upperSqrtX64: TickUtil.getSqrtPriceAtTick(100).toString(),
-    tickCurrent: -200, poolLiquidity: "100000000000000000000", slot: 1,
+    tickCurrent: -200, tickSpacing: 1, poolLiquidity: "100000000000000000000", slot: 1,
     ownsNft: true, paused: false, frozen: false, transferFee: false,
     unsupportedExtensions: [], sufficientSol: true,
   } as unknown as SelectedPositionState);
@@ -108,7 +109,7 @@ describe("bounded selected allocation", () => {
       inputKind: "token", inputDecimals: 6, inputBalance: "1000000000", mintA, mintB,
       decimalsA: 6, decimalsB: 6, rangeSide: "inside", sqrtPriceX64: TickUtil.getSqrtPriceAtTick(0).toString(),
       lowerSqrtX64: TickUtil.getSqrtPriceAtTick(-100).toString(), upperSqrtX64: TickUtil.getSqrtPriceAtTick(100).toString(),
-      tickCurrent: 0, poolLiquidity: "100000000000000000000", slot: 1,
+      tickCurrent: 0, tickSpacing: 1, poolLiquidity: "100000000000000000000", slot: 1,
       ownsNft: true, paused: false, frozen: false, transferFee: false, unsupportedExtensions: [], sufficientSol: true,
     } as unknown as SelectedPositionState);
     vi.mocked(quoteRoute).mockImplementation(async (input, output, amount) => route(input, output, amount));
@@ -137,6 +138,28 @@ describe("bounded selected allocation", () => {
     expect(quote.requiredA).toBe(amounts.amountA.toString());
     expect(quote.requiredB).toBe(amounts.amountB.toString());
     expect(vi.mocked(quoteRoute).mock.calls.every(call => call[3]?.onlyDirectRoutes === true)).toBe(true);
+  });
+  describe("own-pool projection on a wide tick spacing", () => {
+    async function quoteWithLiquidity(poolLiquidity: string) {
+      insideState();
+      const snapshot = await readSelectedPositionState(wallet, { positionMint, inputMint: mintB, inputKind: "token" });
+      Object.assign(snapshot, { inputMint: mintB, tickCurrent: 10, tickSpacing: 60, poolLiquidity,
+        sqrtPriceX64: TickUtil.getSqrtPriceAtTick(10).add(TickUtil.getSqrtPriceAtTick(11)).divn(2).toString() });
+      vi.mocked(quoteRoute).mockImplementation(async (input, output, amount) => ({ ...route(input, output, amount),
+        routePlan: [{ percent: 100, bps: 10000, swapInfo: { ammKey: "pool", inputMint: input,
+          outputMint: output, inAmount: amount.toString(), outAmount: amount.toString() } }] }));
+      return getSelectedQuoteBundle(wallet, { positionMint, inputMint: mintB, inputKind: "token" }, "100", 9900, 100,
+        { maxAccounts: 48 }, { state: snapshot, buildTransactions: false, includeResale: false });
+    }
+    it("accepts a swap that crosses raw ticks but stays inside the tick-spacing band", async () => {
+      const { quote } = await quoteWithLiquidity("200000000000");
+      const tick = TickUtil.getTickAtSqrtPrice(TickUtil.priceToSqrtPriceX64(new Decimal(quote.projectedPrice), 6, 6));
+      expect(tick).toBeGreaterThan(10);
+      expect(tick).toBeLessThan(60);
+    });
+    it("rejects a swap that leaves the tick-spacing band even inside the position range", async () => {
+      await expect(quoteWithLiquidity("14000000000")).rejects.toThrow(/tick-spacing boundary/);
+    });
   });
   it("preview uses exactly four lightweight quotes, no transaction builds or reverse resale", async () => {
     insideState();

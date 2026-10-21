@@ -17,6 +17,7 @@ import { readSelectedPositionState, type PositionSelection, type SelectedPositio
 import { selectedNoRouteError } from "./selected-no-route";
 import { AmountTooSmallError, isJupiterAmountTooSmallHttp, minJupiterSwapAmount } from "./selected-amount-error";
 import { withSelectedRouteRetries } from "./selected-route-retry";
+import { CROSS_LIQUIDITY_BAND_MESSAGE, staysInLiquidityBand } from "@sofinance/engine/liquidity-band";
 
 const MIN_JUPITER_SWAP = minJupiterSwapAmount(SLIPPAGE_BPS);
 
@@ -38,7 +39,8 @@ function projectedSqrt(state: SelectedPositionState, routes: QuoteRoute[]): BN {
   if (positionSide(BigInt(price.toString()), BigInt(state.lowerSqrtX64), BigInt(state.upperSqrtX64)) !== state.rangeSide) {
     throw new Error("Swap may cause target pool price to cross position boundary, please re-quote");
   }
-  if (TickUtil.getTickAtSqrtPrice(price) !== state.tickCurrent) throw new Error("Swap may cross active tick, cross-tick depth estimation not currently supported");
+  // Liquidity is constant only inside the current tick-spacing band (initialized ticks sit on its edges).
+  if (!staysInLiquidityBand(state.sqrtPriceX64, price, state.tickCurrent, state.tickSpacing)) throw new Error(CROSS_LIQUIDITY_BAND_MESSAGE);
   return price;
 }
 
