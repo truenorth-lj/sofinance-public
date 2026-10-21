@@ -1,12 +1,15 @@
 import {
   blurSubscribeFilter,
   blurWsUrl,
+  classifyBlurStreamClose,
   encodeSseEvent,
   formatSseComment,
   isBlurConfigured,
+  isBlurConnectedFrame,
   parseBlurLiveEvent,
   rememberBlurEvent,
 } from "@/lib/solami-blur";
+import { captureApiRouteError } from "@/lib/sentry/capture";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -55,6 +58,9 @@ export async function GET(request: Request) {
         const encoder = new TextEncoder();
         let closed = false;
         let socket: WebSocket | undefined;
+        let socketOpened = false;
+        let receivedConnected = false;
+        let receivedLiveEvent = false;
         const seen = new Set<string>();
         const timers: {
           heartbeat?: ReturnType<typeof setInterval>;
@@ -102,13 +108,29 @@ export async function GET(request: Request) {
           return;
         }
 
+        const finishUpstream = (cause: "error" | "close") => {
+          if (closed) return;
+          const classified = classifyBlurStreamClose({
+            socketOpened,
+            receivedConnected,
+            receivedLiveEvent,
+            cause,
+          });
+          if (classified.event === "unavailable") {
+            send("unavailable", { available: false, poolId, reason: classified.reason });
+          } else {
+            send("end", { reason: classified.reason, poolId });
+          }
+          cleanup();
+        };
+
         socket.addEventListener("open", () => {
+          socketOpened = true;
           try {
             socket?.send(JSON.stringify(blurSubscribeFilter(poolId)));
           } catch {
             /* filter is best-effort; query-string type=swap,liquidity&pool= still applies */
           }
-          send("ready", { poolId, types: ["swap", "liquidity"] });
         });
 
         socket.addEventListener("message", (message) => {
@@ -118,20 +140,28 @@ export async function GET(request: Request) {
           } catch {
             return;
           }
+          if (isBlurConnectedFrame(parsed)) {
+            receivedConnected = true;
+            send("ready", { poolId, types: ["swap", "liquidity"] });
+            return;
+          }
           const event = parseBlurLiveEvent(parsed, poolId);
           if (!event) return;
           if (!rememberBlurEvent(seen, event.trade)) return;
+          receivedLiveEvent = true;
+          if (!receivedConnected) {
+            receivedConnected = true;
+            send("ready", { poolId, types: ["swap", "liquidity"] });
+          }
           send(event.kind, event.trade);
         });
 
         socket.addEventListener("error", () => {
-          send("end", { reason: "upstream-error", poolId });
-          cleanup();
+          finishUpstream("error");
         });
 
         socket.addEventListener("close", () => {
-          send("end", { reason: "upstream-close", poolId });
-          cleanup();
+          finishUpstream("close");
         });
 
         timers.heartbeat = setInterval(() => {
@@ -157,6 +187,7 @@ export async function GET(request: Request) {
       },
     });
   } catch (error) {
+    captureApiRouteError(error, { request, route: "/api/pool-activity/stream", fallback: "Pool activity stream failed", status: 400 });
     const message = error instanceof Error ? error.message : "Pool activity stream failed";
     return Response.json({ error: message }, { status: 400, headers: { "Cache-Control": "no-store" } });
   }

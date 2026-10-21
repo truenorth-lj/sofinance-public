@@ -20,6 +20,8 @@ describe("app subdomain host", () => {
     expect(appSubdomainRewritePath("/app/ai")).toBe(null);
     expect(appSubdomainRewritePath("/api/mcp")).toBe(null);
     expect(appSubdomainRewritePath("/favicon.ico")).toBe(null);
+    expect(appSubdomainRewritePath("/sitemap.xml")).toBe(null);
+    expect(appSubdomainRewritePath("/robots.txt")).toBe(null);
     expect(appSubdomainRewritePath("/_next/static/chunk.js")).toBe(null);
   });
 });

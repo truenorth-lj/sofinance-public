@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   asJupiterUserError,
   classifyJupiterError,
+  isJupiterNoRouteHttp,
   isJupiterUpstreamError,
   JupiterHttpError,
   JupiterUnavailableError,
@@ -28,6 +29,14 @@ describe("jupiter error mapping", () => {
     const timeout = new Error("aborted due to timeout");
     timeout.name = "TimeoutError";
     expect(classifyJupiterError(timeout)).toBe("timeout");
+  });
+
+  it("does not treat NO_ROUTES_FOUND as an upstream outage", () => {
+    const noRoute = new JupiterHttpError(400, "/swap/v1/quote", null, "No routes found");
+    expect(isJupiterNoRouteHttp(noRoute)).toBe(true);
+    expect(isJupiterNoRouteHttp(new JupiterHttpError(400, "/swap/v1/quote", null, "NO_ROUTES_FOUND"))).toBe(true);
+    expect(isJupiterNoRouteHttp(new JupiterHttpError(400, "/swap/v1/quote", null, "bad request"))).toBe(false);
+    expect(isJupiterUpstreamError(noRoute)).toBe(false);
   });
 
   it("rewrites upstream failures to the Jupiter user message", () => {

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { APP_ROUTES, SIGN_PATH, buildOpenPositionUrl, buildPlanPath, buildSignPath, buildSignUrl, getPublicBaseUrl } from "./public-urls";
+import { APP_ROUTES, CANONICAL_SITE_URL, SIGN_PATH, buildOpenPositionUrl, buildPlanPath, buildSignPath, buildSignUrl, getCanonicalSiteUrl, getPublicBaseUrl } from "./public-urls";
 
 describe("public app URLs", () => {
   const originalAppUrl = process.env.NEXT_PUBLIC_APP_URL;
@@ -44,6 +44,16 @@ describe("public app URLs", () => {
     expect(buildOpenPositionUrl("Pool1111111111111111111111111111111111111")).toBe(
       "/app/rwa-pairs?pool=Pool1111111111111111111111111111111111111&open=1",
     );
+  });
+
+  it("uses NEXT_PUBLIC_APP_URL or the production origin for SEO URLs", () => {
+    process.env.NEXT_PUBLIC_APP_URL = "https://sofinancelab.xyz/";
+    process.env.VERCEL_URL = "ignored.vercel.app";
+    expect(getCanonicalSiteUrl()).toBe("https://sofinancelab.xyz");
+
+    delete process.env.NEXT_PUBLIC_APP_URL;
+    expect(getCanonicalSiteUrl()).toBe(CANONICAL_SITE_URL);
+    expect(CANONICAL_SITE_URL).toBe("https://sofinancelab.xyz");
   });
 
   it("builds a plan deep link with the pool id and optional pair label", () => {

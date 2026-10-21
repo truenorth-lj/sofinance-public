@@ -11,6 +11,9 @@ export const APP_ROUTES = {
 
 export const SIGN_PATH = `${APP_PATH}/sign`;
 
+/** Canonical production origin. Used by sitemap/robots when NEXT_PUBLIC_APP_URL is unset. */
+export const CANONICAL_SITE_URL = "https://sofinancelab.xyz";
+
 export function getPublicBaseUrl(): string {
   const fromEnv = process.env.NEXT_PUBLIC_APP_URL?.trim();
   if (fromEnv) return fromEnv.replace(/\/$/, "");
@@ -22,6 +25,13 @@ export function getPublicBaseUrl(): string {
   }
 
   return "";
+}
+
+/** Origin for SEO metadata. Prefers NEXT_PUBLIC_APP_URL; never VERCEL_URL (preview hosts). */
+export function getCanonicalSiteUrl(): string {
+  const fromEnv = process.env.NEXT_PUBLIC_APP_URL?.trim();
+  if (fromEnv) return fromEnv.replace(/\/$/, "");
+  return CANONICAL_SITE_URL;
 }
 
 export function buildSignPath(signToken: string): string {

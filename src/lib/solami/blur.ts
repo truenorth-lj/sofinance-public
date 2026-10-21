@@ -70,6 +70,52 @@ export type PoolActivitySnapshot = {
   source: "solami-blur" | "unavailable";
 };
 
+export function isBlurPlanHttpStatus(status: number): boolean {
+  return status === 401 || status === 402 || status === 403 || status === 429;
+}
+
+export function unavailablePoolActivitySnapshot(poolId: string): PoolActivitySnapshot {
+  return {
+    available: false,
+    poolId,
+    pool: null,
+    trades: [],
+    fetchedAt: new Date().toISOString(),
+    source: "unavailable",
+  };
+}
+
+function poolSnapshotIsUseful(pool: BlurPoolSnapshot): boolean {
+  return (
+    pool.price !== null
+    || pool.priceUsd !== null
+    || pool.tvlUsd !== null
+    || pool.liquidityUsd !== null
+    || pool.fees24hUsd !== null
+    || pool.mint !== null
+  );
+}
+
+/**
+ * Free-tier / lapsed Data API sockets often open then close immediately with
+ * no `connected` frame and no swaps. Treat that as unavailable so the UI can
+ * hide the live ticker instead of reconnecting into an empty stream.
+ */
+export function classifyBlurStreamClose(state: {
+  socketOpened: boolean;
+  receivedConnected: boolean;
+  receivedLiveEvent: boolean;
+  cause?: "error" | "close";
+}): { event: "unavailable" | "end"; reason: "websocket-unavailable" | "upstream-close" | "upstream-error" } {
+  if (!state.receivedConnected && !state.receivedLiveEvent) {
+    if (!state.socketOpened || state.cause === "error") {
+      return { event: "unavailable", reason: "websocket-unavailable" };
+    }
+    return { event: "unavailable", reason: "upstream-close" };
+  }
+  return { event: "end", reason: state.cause === "error" ? "upstream-error" : "upstream-close" };
+}
+
 export type BlurEnv = Record<string, string | undefined>;
 
 export function solamiDataApiKey(env: BlurEnv = process.env as BlurEnv): string {
@@ -236,6 +282,11 @@ export function eventMatchesPool(raw: unknown, poolId: string): boolean {
 
 const LIVE_EVENT_TYPES = new Set(["swap", "liquidity"]);
 
+export function isBlurConnectedFrame(raw: unknown): boolean {
+  const record = asRecord(raw);
+  return asString(record?.type) === "connected";
+}
+
 /**
  * Whitelist parsed swap/liquidity only. Drops `connected`, `metadata`
  * (metadata.image_url embeds `?api_key=` of the server key), and anything else.
@@ -295,7 +346,9 @@ async function blurGet(
     cache: "no-store",
   });
   if (!response.ok) {
-    throw new Error(`Solami Blur ${path} returned ${response.status}`);
+    const status = response.status;
+    const detail = isBlurPlanHttpStatus(status) ? "plan" : "http";
+    throw new Error(`Solami Blur ${path} returned ${status} (${detail})`);
   }
   return response.json();
 }
@@ -339,26 +392,24 @@ export async function getPoolActivitySnapshot(
 ): Promise<PoolActivitySnapshot> {
   const env = options.env ?? (process.env as BlurEnv);
   if (!isBlurConfigured(env)) {
-    return {
-      available: false,
-      poolId,
-      pool: null,
-      trades: [],
-      fetchedAt: new Date().toISOString(),
-      source: "unavailable",
-    };
+    return unavailablePoolActivitySnapshot(poolId);
   }
-  const limit = options.limit ?? 20;
-  const pool = await fetchBlurPool(poolId, options).catch(() => null);
-  const trades = pool?.mint
-    ? await fetchBlurTokenTradesForPool(poolId, pool.mint, limit, options).catch(() => [] as BlurTrade[])
-    : [];
-  return {
-    available: true,
-    poolId,
-    pool,
-    trades,
-    fetchedAt: new Date().toISOString(),
-    source: "solami-blur",
-  };
+  try {
+    const pool = await fetchBlurPool(poolId, options);
+    if (!pool || !poolSnapshotIsUseful(pool)) return unavailablePoolActivitySnapshot(poolId);
+    const limit = options.limit ?? 20;
+    const trades = pool.mint
+      ? await fetchBlurTokenTradesForPool(poolId, pool.mint, limit, options).catch(() => [] as BlurTrade[])
+      : [];
+    return {
+      available: true,
+      poolId,
+      pool,
+      trades,
+      fetchedAt: new Date().toISOString(),
+      source: "solami-blur",
+    };
+  } catch {
+    return unavailablePoolActivitySnapshot(poolId);
+  }
 }

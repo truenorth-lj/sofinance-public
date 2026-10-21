@@ -124,9 +124,38 @@ it("ends a stalled preview after eight seconds and offers explicit retry", async
   fetchMock.mockImplementationOnce((_url: string, init: RequestInit = {}) => stallUntilAbort(init.signal as AbortSignal));
   await act(async () => controller.changeAmount("0.01")); await advance(8500);
   expect(controller.quoteError).toBe("Preview took too long. Please retry.");
+  expect(controller.showQuoteRecalculate).toBe(true);
   expect(controller.calculating).toBe(false); expect(controller.actionDisabled).toBe(true);
   await act(async () => controller.retryCalculation()); await advance(500);
   expect(controller.quoteError).toBe(""); expect(controller.actionDisabled).toBe(false);
+});
+it("does not offer Recalculate when Jupiter has no fitting route", async () => {
+  const handler = fetchMock.getMockImplementation()!;
+  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => url === "/api/selected-quote"
+    ? Response.json({
+      error: "No route from SPCX to INTC within the transaction size limit. Try USDC, SOL, or one of the pool's tokens.",
+      code: "jupiter_no_route", inputMint: selection.inputMint, outputMint: selection.inputMint,
+    }, { status: 400 })
+    : handler(url, init));
+  await act(async () => controller.changeAmount("0.01")); await advance(500);
+  expect(controller.quoteError).toMatch(/No route from SPCX to INTC/);
+  expect(controller.quoteErrorCode).toBe("jupiter_no_route");
+  expect(controller.showQuoteRecalculate).toBe(false);
+  expect(controller.calculating).toBe(false);
+});
+it("does not offer Recalculate when the amount is too small to swap", async () => {
+  const handler = fetchMock.getMockImplementation()!;
+  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => url === "/api/selected-quote"
+    ? Response.json({
+      error: "Amount too small to swap into this position — try a larger amount",
+      code: "amount_too_small",
+    }, { status: 400 })
+    : handler(url, init));
+  await act(async () => controller.changeAmount("0.0011")); await advance(500);
+  expect(controller.quoteError).toMatch(/Amount too small/);
+  expect(controller.quoteErrorCode).toBe("amount_too_small");
+  expect(controller.showQuoteRecalculate).toBe(false);
+  expect(controller.calculating).toBe(false);
 });
 it("ends a stalled prepare before signing and unlocks for retry", async () => {
   await ready();

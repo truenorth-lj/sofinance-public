@@ -21,6 +21,8 @@ The marketing landing page lives at `/`. Product UI lives under `/app` (Position
 
 Former page paths permanently redirect. MCP `prepare_*` tools now emit `/app/sign/<token>`.
 
+**Docs:** [Self-hosting](#self-hosting) · [Security policy](SECURITY.md) · [Changelog](CHANGELOG.md)
+
 ## Quick start for judges
 
 - **Live app:** https://sofinancelab.xyz
@@ -60,8 +62,107 @@ To use your own key, create one at Solami and put it in `.env.local`. Other vari
 The deployed app uses a Solami Pro trial key that may expire. What the code does then:
 
 - **Blur panel:** shows as unavailable / snapshot-only instead of live trades; the rest of the app keeps working.
-- **RPC:** reads fall back to `SOLANA_RPC_URL`/public RPC only on validation, 5xx, 429 or timeout errors (`src/lib/rpc/methods.ts`). A 401/403 from an expired key is not a fallback trigger, so Solami-backed reads and sends fail until `SOLAMI_API_KEY` is replaced or removed. Removing it switches everything to `SOLANA_RPC_URL` or public RPC (no Beam tip).
+- **RPC:** reads and sends fall back to `SOLANA_RPC_URL`/public RPC on validation, 5xx, 429 / JSON-RPC `-32005`, timeout, and auth/plan errors (401/402/403). Re-broadcasting the same signed transaction is idempotent. A short circuit-breaker skips a dead primary so every subsequent call is not retried there first. Removing `SOLAMI_API_KEY` switches everything to `SOLANA_RPC_URL` or public RPC (no Beam tip).
 - **Beam:** the tip is optional; if no tip address is available the tx is built without it.
+
+## Self-hosting
+
+Run your own instance of the Next.js app (web UI + `/api/*` + remote MCP). This is the same flow as [Run locally](#run-locally) with env, build, Docker, and MCP client notes spelled out.
+
+### Clone and install
+
+Requires Node 22 and pnpm 10.18.2 (`packageManager` in `package.json`).
+
+```bash
+git clone https://github.com/truenorth-lj/sofinance-public.git
+cd sofinance-public
+corepack enable
+pnpm install
+cp .env.example .env.local   # fill in your own keys; never commit this file
+```
+
+### Environment
+
+Copy `.env.example` → `.env.local`. Comments in that file are the source of truth. Do not prefix server secrets with `NEXT_PUBLIC_`.
+
+**Typically required for a useful instance**
+
+| Variable | Role |
+|----------|------|
+| `JUPITER_API_KEY` | Jupiter quotes plus HMAC secret for permits, sign tokens, and MCP tokens |
+| `NEXT_PUBLIC_REOWN_PROJECT_ID` | Wallet connect in the web UI ([Reown dashboard](https://dashboard.reown.com/)) |
+| `NEXT_PUBLIC_APP_URL` | Absolute MCP and sign-link URLs (local: `http://localhost:3000`; production auto-detects `VERCEL_URL`) |
+
+**RPC (pick a path)** — `SOLAMI_API_KEY` (optional, preferred) and/or `SOLANA_RPC_URL`. If both are unset, server RPC uses public mainnet.
+
+**Optional**
+
+| Variable | Role |
+|----------|------|
+| `SOLAMI_BEAM` | `0` keeps Solami RPC but skips Beam tips |
+| `SOLAMI_DATA_API_KEY` | Blur live pool-trades panel |
+| `NEXT_PUBLIC_SOLANA_RPC_URL` | Browser wallet RPC only; must be a public endpoint, never a key |
+| `SOFINANCE_FEE_WALLET` / `SOFINANCE_FEE_BPS` | Optional protocol fee; **server-only, never `NEXT_PUBLIC_`**. Default 10 bps, max 100. Unset wallet = fee 0, no transfer added. Details: [Protocol swap fee](#protocol-swap-fee). |
+| RWA / history DB vars | Optional snapshot gateway; see `.env.example` and `db/README.md` |
+| `NEXT_PUBLIC_SENTRY_DSN` / `SENTRY_DSN` | Optional Sentry error monitoring (US, `ingest.us.sentry.io`). Unset both = complete no-op. |
+| `SENTRY_AUTH_TOKEN` / `SENTRY_ORG` / `SENTRY_PROJECT` | Source-map upload on `next build`. All three required to upload; build succeeds if any is missing. Never `NEXT_PUBLIC_`. See [Error monitoring](#error-monitoring-sentry). |
+
+### Run
+
+```bash
+pnpm dev                     # http://localhost:3000
+pnpm lint && pnpm typecheck && pnpm test && pnpm build
+pnpm start                   # after build
+```
+
+`pnpm mcp:start` runs the local stdio MCP server (needs `SOLANA_RPC_URL` and `JUPITER_API_KEY` in the environment).
+
+### Docker
+
+The `Dockerfile` builds the **optional RWA snapshot data service** (`scripts/rwa-data-service.ts`), not the Next.js web app. It needs `DATABASE_URL` and a `CRON_SECRET` of at least 32 characters.
+
+```bash
+docker build -t sofinance-rwa-service .
+docker run --env-file .env.local -p 3000:3000 sofinance-rwa-service
+```
+
+The web UI and MCP HTTP endpoint are the Next.js app (`pnpm dev` / `pnpm build && pnpm start`, or Vercel).
+
+### Error monitoring (Sentry)
+
+Optional `@sentry/nextjs` client, server, and edge setup. The production/preview project is **sofinance / sofinance-public** in the US region (`ingest.us.sentry.io`).
+
+| Variable | Role |
+|----------|------|
+| `NEXT_PUBLIC_SENTRY_DSN` | Browser + bundled client DSN. Unset with `SENTRY_DSN` = SDK is disabled. |
+| `SENTRY_DSN` | Server/edge DSN fallback if the public var is unset. |
+| `NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE` / `SENTRY_TRACES_SAMPLE_RATE` | Trace sample rate 0–1 (default `0.1`). |
+| `SENTRY_AUTH_TOKEN` | Source-map upload token. Server-only; never `NEXT_PUBLIC_`. |
+| `SENTRY_ORG` | Sentry org slug (`sofinance`). |
+| `SENTRY_PROJECT` | Sentry project slug (`sofinance-public`). |
+
+Session Replay is off. `sendDefaultPii` is false. Events scrub wallet addresses, signatures, RPC URLs, API keys, `x-vercel-*` / IP / `Authorization` / `Cookie` headers, and drop `user.ip_address`. API captures are 5xx and Jupiter/RPC upstream only (not validation 4xx or user-rejected). The `route` tag comes from the request path / Next transaction, not a bundled stack.
+
+### Point an MCP client at your instance
+
+1. Set `NEXT_PUBLIC_APP_URL` to the origin you will expose (for example `http://localhost:3000` or `https://your-host.example`).
+2. Start the Next.js app. On `/app/ai`, use **Sign to get MCP config**.
+3. In the generated config, use your origin instead of production:
+
+```json
+{
+  "mcpServers": {
+    "sofinance": {
+      "url": "https://your-host.example/api/mcp",
+      "headers": {
+        "Authorization": "Bearer <your-token-here>"
+      }
+    }
+  }
+}
+```
+
+Local stdio against this checkout: see [Quickstart — MCP for AI Agents](#quickstart-mcp-for-ai-agents-remote-zero-local-secrets) (Option B shim with `SOFINANCE_MCP_URL`, or Alternative: Local MCP with `pnpm mcp:start`).
 
 ## Features
 
@@ -146,9 +247,9 @@ Quote/prepare JSON includes `feeBps` / `feeAmount` / `feeWallet`. Rent estimates
 
 | Surface | When | What it does |
 |---------|------|----------------|
-| **RPC** | `SOLAMI_API_KEY` set | All server RPC (`rpcConnection()` / `rpcRequest()`) goes through `src/lib/rpc/` (Solami → `SOLANA_RPC_URL` / Helius → public). Account reads and sends stay on Solami. 429 / 5xx / timeouts retry on the same provider with exponential backoff + jitter (honors `Retry-After`, bounded budget, `AbortSignal`), then fail over for ordinary reads. Simulate / blockhash / height / fee stay on the primary through 429s (public RPC is worse for those). Exit-preview uses a longer 25s per-call budget and coalesces identical position reads for 8s. Safe reads (`getAccountInfo`, `getMultipleAccounts*`, `getTokenLargestAccounts`, finalized/confirmed `getParsedTransaction`) use a small in-process TTL cache with in-flight de-dupe — never sends, simulates, or blockhash/height calls. Methods Solami answers non-compliantly (`getEpochInfo.transactionCount=null`, `getParsedTransaction` jsonParsed unions) still fall back per `METHOD_POLICIES`. Sends never fail over to another provider; same-provider retry re-posts the same signed transaction (idempotent by signature). History listing uses Solami `getTransactionsForAddress`; empty / HTTP / parse failures use the same policy layer. Set `SOFINANCE_RPC_LOG=1` for key-free JSON lines in Vercel logs. |
+| **RPC** | `SOLAMI_API_KEY` set | All server RPC (`rpcConnection()` / `rpcRequest()`) goes through `@sofinance/engine/rpc` (Solami → `SOLANA_RPC_URL` / Helius → public). 429 / 5xx / timeouts retry on the same provider with exponential backoff + jitter (honors `Retry-After`, bounded budget, `AbortSignal`), then fail over. Auth/plan errors (401/402/403) and JSON-RPC `-32005` skip same-provider retry and fail over immediately, including simulate / blockhash / height / fee / send / confirm. Re-broadcasting the same signed transaction is idempotent by signature. A short circuit-breaker then skips the dead primary until a small cooldown elapses. Exit-preview uses a longer 25s per-call budget and coalesces identical position reads for 8s. Safe reads (`getAccountInfo`, `getMultipleAccounts*`, `getTokenLargestAccounts`, finalized/confirmed `getParsedTransaction`) use a small in-process TTL cache with in-flight de-dupe — never sends, simulates, or blockhash/height calls. Methods Solami answers non-compliantly (`getEpochInfo.transactionCount=null`, `getParsedTransaction` jsonParsed unions) still fall back per `METHOD_POLICIES`. History listing uses Solami `getTransactionsForAddress`; empty / HTTP / parse failures use the same policy layer. Fallback reasons are always logged as key-free JSON; set `SOFINANCE_RPC_LOG=1` for per-attempt lines. |
 | **Jupiter** | `JUPITER_API_KEY` (Portal) | All Jupiter HTTP goes through `src/lib/jupiter/` to `https://api.jup.ag` with `x-api-key` (`lite-api.jup.ag` is retired). 429 / 5xx / timeouts retry with jitter + `Retry-After` / `x-ratelimit-reset`, bounded budget, `AbortSignal`. Read-only quotes cache 8s (key: input/output mint, amount, slippage, maxAccounts) with in-flight de-dupe; POST `/swap-instructions` is not cached. Exit-preview quotes legs in parallel (cap 2) and logs the real error class/message on failure (always-on, key-free). Upstream Jupiter 429/5xx return `errorCode: "jupiter_unavailable"` — not the Solana RPC text. `SOFINANCE_JUPITER_LOG=1` or `SOFINANCE_RPC_LOG=1` logs per-call Jupiter lines. |
-| **Blur** | `SOLAMI_DATA_API_KEY` | Live pool activity. REST snapshot at `GET /api/pool-activity?poolId=` (`/data/pool` for mint + `GET /data/token/trades?chain=solana&address=<MINT>`, then client-filter by exact `pool`). SSE at `/api/pool-activity/stream` proxies Blur WS `type=swap,liquidity&pool=<POOL>` (never `address=` — that is a mint filter), forwards only parsed swap/liquidity events, and closes before Vercel `maxDuration` so the browser can reconnect. A Free key has REST but not WebSocket; [Solami](https://solami.dev) currently offers a 7-day Pro promo. Without the key the UI hides the panel. |
+| **Blur** | `SOLAMI_DATA_API_KEY` | Live pool activity. REST snapshot at `GET /api/pool-activity?poolId=` (`/data/pool` for mint + `GET /data/token/trades?chain=solana&address=<MINT>`, then client-filter by exact `pool`). SSE at `/api/pool-activity/stream` proxies Blur WS `type=swap,liquidity&pool=<POOL>` (never `address=` — that is a mint filter), forwards only parsed swap/liquidity events, and closes before Vercel `maxDuration` so the browser can reconnect. If the data plan is unavailable (401/402/403/429, empty pool payload, or a Free-tier socket that closes before `connected`) the UI hides the live ticker and, when there is no snapshot, the whole pool-activity section. Without the key the UI hides the panel. |
 | **Beam** | `SOLAMI_API_KEY` (off with `SOLAMI_BEAM=0`) | Prepare adds a ≥100,000-lamport SystemProgram tip to a live tip address **before** HMAC binding so the user signs it. If the v0 message would exceed 1,232 bytes the tip is omitted. Broadcast is the same `sendRawTransaction` through Solami RPC. After submit we poll `GET /swqos/tx/{signature}` up to ~6s and always return `beamLandingUrl` so clients can refresh. |
 
 Create a key at [solami.dev](https://solami.dev). Paste `SOLAMI_API_KEY` (and later `SOLAMI_DATA_API_KEY`) into `.env.local` or Vercel — never `NEXT_PUBLIC_*`. Position performance reports `{ txCount, elapsedMs, provider, solamiTxCount, defaultTxCount, fallbackReasons }` so you can see when Solami served recent txs and the default RPC filled older or unparseable ones.
@@ -164,7 +265,7 @@ wallet / API / MCP
         ▼
  position-performance / exit-preview / MCP
    solami: getTransactionsForAddress (signatures page) + batched getParsedTransaction
-   fallback: SOLANA_RPC_URL / public (empty window, parse errors, HTTP 5xx/429 after retry)
+   fallback: SOLANA_RPC_URL / public (empty window, parse errors, HTTP 5xx/429/-32005/401–403 after retry)
    default: getSignaturesForAddress + batched getParsedTransaction (8-wide)
 ```
 
@@ -393,7 +494,7 @@ The canonical production app URL is [sofinancelab.xyz/app](https://sofinancelab.
 
 ## License
 
-[MIT](./LICENSE)
+[MIT](./LICENSE). Vulnerability reporting: [SECURITY.md](SECURITY.md).
 
 ## Hackathon disclosure
 

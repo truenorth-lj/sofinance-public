@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
+import { withSentryConfig } from "@sentry/nextjs/config";
+import { sentryBuildOptions } from "./src/lib/sentry/build";
 
-const nextConfig: NextConfig = {
+export const nextConfig: NextConfig = {
   reactCompiler: true,
   // @sofinance/engine ships TypeScript source (vendored release of the prototype repo package).
   transpilePackages: ["@sofinance/engine"],
@@ -14,4 +16,9 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+export default withSentryConfig(nextConfig, sentryBuildOptions({
+  authToken: process.env.SENTRY_AUTH_TOKEN,
+  org: process.env.SENTRY_ORG,
+  project: process.env.SENTRY_PROJECT,
+  ci: process.env.CI,
+}));
