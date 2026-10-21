@@ -7,7 +7,7 @@ vi.mock("server-only", () => ({}));
 vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: vi.fn() }));
 vi.mock("@sofinance/engine/compound-state", () => ({ readCompoundPositionState: vi.fn() }));
 vi.mock("@sofinance/engine/compound-simulation", () => ({ simulateAndVerifyCompound: vi.fn() }));
-vi.mock("@sofinance/engine/solami-beam", () => ({ lookupBeamAfterSend: vi.fn() }));
+vi.mock("@/lib/beam-after-send", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/beam-after-send")>()), beamAfterSend: vi.fn() }));
 
 import type { VersionedTransaction } from "@solana/web3.js";
 import { readCompoundPositionState } from "@sofinance/engine/compound-state";
@@ -15,7 +15,7 @@ import { simulateAndVerifyCompound } from "@sofinance/engine/compound-simulation
 import type { CompoundSummary } from "@sofinance/engine/compound-types";
 import { CompoundSendError, reverifySignedCompound, sendSignedCompoundTransaction } from "./compound-send";
 import { rpcConnection } from "@sofinance/engine/rpc";
-import { lookupBeamAfterSend } from "@sofinance/engine/solami-beam";
+import { beamAfterSend } from "@/lib/beam-after-send";
 import {
   BEAM_RESULT, BLOCKHASH, buildTransaction, compoundSummaryFixture, fakeConnection, type FakeConnection, signatureOf, testKeypair,
 } from "./test-support/send-fixtures";
@@ -36,7 +36,7 @@ beforeEach(() => {
   vi.mocked(rpcConnection).mockReturnValue(connection as never);
   vi.mocked(readCompoundPositionState).mockImplementation(async () => stateMatching(summaryFor()) as never);
   vi.mocked(simulateAndVerifyCompound).mockResolvedValue({ rewards: [] } as never);
-  vi.mocked(lookupBeamAfterSend).mockResolvedValue(BEAM_RESULT as never);
+  vi.mocked(beamAfterSend).mockResolvedValue(BEAM_RESULT as never);
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -57,6 +57,7 @@ describe("sendSignedCompoundTransaction: happy path", () => {
       signature: signatureOf(transaction), beam: BEAM_RESULT.beam, beamLabel: "Beam landed", beamLandingUrl: BEAM_RESULT.beamLandingUrl,
     });
     expect(readCompoundPositionState).toHaveBeenCalledWith(wallet, summary.positionMint, connection);
+    expect(beamAfterSend).toHaveBeenCalledWith(signatureOf(transaction), summary.beam);
     expect(simulateAndVerifyCompound).toHaveBeenCalledWith(expect.objectContaining({
       connection, expectedLiquidity: 1200n, maxSolDebitLamports: 9_000_000n, sigVerify: true,
     }));
@@ -154,11 +155,12 @@ describe("sendSignedCompoundTransaction: broadcast failures", () => {
     expect((error.cause as Error).message).toBe(message);
   });
 
-  it("a Beam lookup failure after a successful send is reported as an error with unknown sent state", async () => {
-    vi.mocked(lookupBeamAfterSend).mockRejectedValue(new Error("beam down"));
-    const error = await failure(sendSignedCompoundTransaction(wallet, transaction, summaryFor()));
+  it("a Beam lookup failure after a successful send cannot overturn the accepted submission", async () => {
+    vi.mocked(beamAfterSend).mockRejectedValue(new Error("beam down"));
+    await expect(sendSignedCompoundTransaction(wallet, transaction, summaryFor())).resolves.toMatchObject({
+      signature: signatureOf(transaction), beam: null, beamLabel: null,
+    });
     expect(connection.sendRawTransaction).toHaveBeenCalledOnce();
-    expect(error.sent).toBeUndefined();
   });
 });
 
