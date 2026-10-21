@@ -111,14 +111,15 @@ export function LandingPage() {
         <main>
           <section className="mt-3 grid gap-3 lg:grid-cols-12">
             <div className="animate-rise rounded-[28px] bg-cream p-6 text-ink motion-reduce:animate-none sm:p-10 lg:col-span-8">
-              <span className={`${labelPill} border-ink/70`}>Solana · Raydium CLMM</span>
+              <span className={`${labelPill} border-ink/70`}>Self-custodial · Solana · Raydium CLMM</span>
               <h1 className="mt-8 max-w-[14ch] text-[clamp(2.6rem,7vw,5.6rem)] font-medium leading-[0.98] tracking-[-0.045em]">
-                Strategy recipes for AI agents and humans
+                A self-custodial tool to manage your Raydium CLMM positions
               </h1>
               <div className="mt-8 border-t border-ink/20 pt-6">
                 <p className="max-w-xl text-base leading-7 text-ink/70 sm:text-lg">
-                  SoFinance turns multi-step Solana LP strategies into simulated, one-signature recipes
-                  — any AI agent can propose them, only your wallet can approve them.
+                  Open a position with one signature, compound fees in one click, and exit in one click.
+                  You sign every transaction yourself — an AI agent can prepare one, only your wallet can approve it —
+                  and you can always manage the same position directly on Raydium.
                 </p>
                 <div className="mt-7 flex flex-wrap items-center gap-3">
                   <ArrowCta href={APP_ROUTES.home} tone="ink">
@@ -150,8 +151,8 @@ export function LandingPage() {
                   <span className="font-data text-xs text-smoke">v0 tx</span>
                 </div>
                 <p className="mt-4 text-sm leading-6 text-smoke">
-                  Each recipe is quoted, built and simulated as one unsigned transaction. The agent never holds a key
-                  and the server never takes custody.
+                  Each action is quoted, built and simulated as one unsigned transaction that you review and sign
+                  in your wallet. SoFinance never holds your keys or your funds, and every transaction is verifiable on Solscan.
                 </p>
                 <div className="mt-5 flex flex-wrap gap-1.5">
                   {["Quote", "Simulate", "Permit", "Re-simulate"].map((tag) => (
@@ -167,7 +168,7 @@ export function LandingPage() {
               style={{ animationDelay: "160ms" }}
               className="flex animate-rise flex-col rounded-[28px] bg-lemon p-6 text-ink motion-reduce:animate-none lg:col-span-4"
             >
-              <span className={`${labelPill} w-fit border-ink/70`}>Per recipe</span>
+              <span className={`${labelPill} w-fit border-ink/70`}>Per action</span>
               <p className="mt-10 text-[clamp(3.5rem,7vw,5.5rem)] font-semibold leading-none tracking-[-0.05em]">1</p>
               <p className="mt-3 border-t border-ink/25 pt-3 text-sm leading-snug">
                 Wallet signature, after a full simulation you can read first.
@@ -216,10 +217,10 @@ export function LandingPage() {
                 <span className="flex h-11 w-11 items-center justify-center rounded-full bg-ink text-cream">
                   <BookOpen className="h-5 w-5" aria-hidden="true" />
                 </span>
-                <h3 className="mt-10 text-2xl font-medium tracking-[-0.03em]">Recipes, not primitives</h3>
+                <h3 className="mt-10 text-2xl font-medium tracking-[-0.03em]">Tested position actions</h3>
                 <p className="mt-3 border-t border-ink/20 pt-3 text-sm leading-6 text-ink/70">
-                  Compound, zap, open a new CLMM position, position performance, and RWA pair
-                  discovery are tested, simulated multi-step flows. Agents call a recipe instead of
+                  Open a position, add to it, compound fees, withdraw, track performance and discover
+                  RWA pairs: each is a tested, simulated multi-step flow. Agents call one tool instead of
                   hand-assembling swap plus liquidity instructions.
                 </p>
               </article>
@@ -248,7 +249,7 @@ export function LandingPage() {
           </section>
 
           <section>
-            <SectionHeading label="Who it is for">Same recipes for agents and for people</SectionHeading>
+            <SectionHeading label="Who it is for">Same tools for agents and for people</SectionHeading>
             <div className="grid gap-3 md:grid-cols-2">
               <article className={darkCard}>
                 <h3 className="text-xl font-medium tracking-[-0.02em]">For AI agents</h3>
@@ -281,7 +282,7 @@ export function LandingPage() {
                 },
                 {
                   n: "02",
-                  title: "Prepare a recipe",
+                  title: "Prepare an action",
                   body: "The engine quotes and builds an unsigned v0 transaction, simulates it, and binds an HMAC permit.",
                 },
                 {
@@ -305,12 +306,12 @@ export function LandingPage() {
           </section>
 
           <section id="scenarios" className="scroll-mt-6">
-            <SectionHeading label="Automation scenarios">
-              Strategies included today — and more on the way
+            <SectionHeading label="What you can do">
+              Position tools available today — and more on the way
             </SectionHeading>
             <p className="mb-6 max-w-2xl px-2 text-sm leading-6 text-smoke">
-              Recipes shipping now sit on Raydium CLMM. Fee and return figures in the App are
-              estimates from on-chain data, not a promise of future yield.
+              Tools shipping now work with Raydium CLMM positions. APR figures in the App are
+              estimates from on-chain data and are not guaranteed.
             </p>
             <div className="grid gap-3 lg:grid-cols-12">
               <Link
@@ -324,12 +325,12 @@ export function LandingPage() {
                   <span className={`${labelPill} border-ink/70`}>Live</span>
                 </div>
                 <h3 className="mt-10 text-[clamp(2rem,3.6vw,3rem)] font-medium leading-none tracking-[-0.04em]">
-                  RWA Yield
+                  RWA CLMM positions
                 </h3>
                 <p className="mt-4 border-t border-ink/25 pt-4 text-sm leading-6 text-ink/75">
-                  Earn yield on same-asset RWA CLMM pools (wrapped vs unwrapped). Discover pairs,
-                  review coin-denominated position performance, and compound fees back into the
-                  position.
+                  Manage positions in same-asset RWA CLMM pools (wrapped vs unwrapped): open with one
+                  signature, compound fees in one click, track coin-denominated performance, and exit in
+                  one click — or manage the position directly on Raydium.
                 </p>
                 <p className="mt-auto flex items-center justify-between pt-8 text-sm font-semibold">
                   Open RWA pairs
@@ -358,7 +359,7 @@ export function LandingPage() {
                   },
                   {
                     icon: Coins,
-                    title: "Stablecoin yield rotation",
+                    title: "Stablecoin pool rotation",
                     body: "Move liquidity between stable pools as fees and conditions change.",
                   },
                 ].map((card) => (
@@ -383,8 +384,8 @@ export function LandingPage() {
             </h2>
             <div className="mt-8 flex flex-col gap-6 border-t border-ink/20 pt-6 md:flex-row md:items-center md:justify-between">
               <p className="max-w-xl text-sm leading-6 text-ink/70 sm:text-base">
-                Launch the App to run a recipe yourself, or connect MCP so an agent can prepare the
-                unsigned transaction you sign once.
+                Launch the App to manage a position yourself, or connect MCP so an agent can prepare the
+                unsigned transaction you sign.
               </p>
               <div className="flex flex-wrap gap-3">
                 <ArrowCta href={APP_ROUTES.home} tone="ink">
@@ -399,7 +400,7 @@ export function LandingPage() {
         </main>
 
         <footer className="mt-6 flex flex-col gap-4 px-2 py-6 font-data text-[11px] uppercase tracking-[0.12em] text-smoke sm:flex-row sm:items-center sm:justify-between">
-          <p>SoFinance · Non-custodial Solana LP toolkit · MIT</p>
+          <p>SoFinance · Self-custodial Raydium CLMM tool</p>
           <div className="flex flex-wrap items-center gap-5">
             <Link href={APP_ROUTES.home} className="transition-colors hover:text-cream">
               App

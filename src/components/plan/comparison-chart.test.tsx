@@ -42,7 +42,7 @@ describe("ComparisonChart", () => {
 
   it("names the best APY, its window and its sample in the legend", () => {
     const markup = render(plan({ days: 30, aprPct: "36.5", windowDays: 7, sampleDays: 7 }));
-    expect(markup).toContain("Best APY 44%");
+    expect(markup).toContain("Est. best APY 44% (not guaranteed)");
     expect(markup).toContain("7-day average fee APR of 36.5%");
     expect(markup).toContain("7 complete UTC days");
   });

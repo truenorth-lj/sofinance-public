@@ -64,7 +64,7 @@ describe("RwaPairsPanel pair cards", () => {
     expect(container.querySelector("table")).toBeNull();
     expect(cards()[0]!.querySelector("h3")!.textContent).toBe("HOODx/X");
     expect(field(0, "highest-range-apr").textContent).toBe("38%");
-    expect(field(0, "highest-range-apr").parentElement!.textContent).toBe("38%APR");
+    expect(field(0, "highest-range-apr").parentElement!.textContent).toBe("38%Est. APR");
     expect(field(0, "highest-range").textContent).toBe("Tight (±0.05%)");
     expect(field(0, "pool-fee-apr").textContent).toBe("12.34%");
     expect(cards()[0]!.querySelectorAll("[data-testid='highest-range-apr']")).toHaveLength(1);
@@ -148,7 +148,7 @@ describe("RwaPairsPanel pair cards", () => {
       expect(field(card, "highest-range").textContent).toBe("—");
       expect(field(card, "highest-range-apr").textContent).toBe("—");
       expect(field(card, "highest-range-apr").parentElement!.textContent).not.toMatch(/APR|%/);
-      expect(cards()[card]!.querySelector("button[aria-label='About Highest range APR']")).not.toBeNull();
+      expect(cards()[card]!.querySelector("button[aria-label='About Est. highest range APR']")).not.toBeNull();
     }
   });
 });
