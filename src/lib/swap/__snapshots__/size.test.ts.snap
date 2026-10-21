@@ -1,5 +1,58 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
+exports[`catches SPCX→HOOD production fee+tip oversize and measures ALT / skip-tip savings 1`] = `
+[
+  {
+    "bytes": 1069,
+    "fits": true,
+    "flow": "selected SPCX→HOOD preview (no fee, no tip)",
+    "serialized": true,
+  },
+  {
+    "bytes": 1293,
+    "fits": false,
+    "flow": "selected SPCX→HOOD production fee+tip naive",
+    "serialized": true,
+  },
+  {
+    "bytes": 1213,
+    "fits": true,
+    "flow": "selected SPCX→HOOD production fee only (skip tip)",
+    "serialized": true,
+  },
+  {
+    "bytes": 1231,
+    "fits": true,
+    "flow": "selected SPCX→HOOD production fee+tip compact ALT",
+    "serialized": true,
+  },
+  {
+    "bytes": 1166,
+    "fits": true,
+    "flow": "selected SPCX→HOOD-high preview (no fee, no tip)",
+    "serialized": true,
+  },
+  {
+    "bytes": 1390,
+    "fits": false,
+    "flow": "selected SPCX→HOOD-high production fee+tip naive",
+    "serialized": false,
+  },
+  {
+    "bytes": 1310,
+    "fits": false,
+    "flow": "selected SPCX→HOOD-high production fee only (skip tip)",
+    "serialized": false,
+  },
+  {
+    "bytes": 1328,
+    "fits": false,
+    "flow": "selected SPCX→HOOD-high production fee+tip compact ALT",
+    "serialized": false,
+  },
+]
+`;
+
 exports[`measures complete offline packets with Beam tips and snapshots fee overhead 1`] = `
 [
   {

@@ -87,7 +87,7 @@ export async function getSelectedQuoteBundle(
   wallet: string, selection: PositionSelection, amount: string,
   requestedFloorBps = DEFAULT_RESALE_FLOOR_BPS, requestedToleranceBps = DEFAULT_ADD_TOLERANCE_BPS,
   jupiter?: JupiterRouteConstraints,
-  options: { buildTransactions?: boolean; includeResale?: boolean; signal?: AbortSignal;
+  options: { buildTransactions?: boolean; includeResale?: boolean; skipProbe?: boolean; signal?: AbortSignal;
     budget?: JupiterRetryBudget; connection?: Connection; state?: SelectedPositionState } = {},
 ) {
   try {
@@ -102,7 +102,7 @@ async function getSelectedQuoteBundleOnce(
   wallet: string, selection: PositionSelection, amount: string,
   requestedFloorBps: number, requestedToleranceBps: number,
   jupiter: JupiterRouteConstraints | undefined,
-  options: { buildTransactions?: boolean; includeResale?: boolean; signal?: AbortSignal;
+  options: { buildTransactions?: boolean; includeResale?: boolean; skipProbe?: boolean; signal?: AbortSignal;
     budget?: JupiterRetryBudget; connection?: Connection; state?: SelectedPositionState },
 ) {
   const floorBps = parseResaleFloorBps(requestedFloorBps);
@@ -112,7 +112,9 @@ async function getSelectedQuoteBundleOnce(
   const feeConfig = readSwapFeeConfig();
   const actualLeg = (outputMint: string, spend: bigint) => leg(wallet, state.inputMint, outputMint, spend,
     state.inputKind === "native", jupiter, options.buildTransactions !== false, options.signal, options.budget, deposit.legBps, state);
-  const probeLeg = (outputMint: string) => isUnquoteableJupiterSpend(state.inputMint, outputMint, probe)
+  const probeLeg = (outputMint: string) => (
+    (options.skipProbe && state.rangeSide !== "inside") || isUnquoteableJupiterSpend(state.inputMint, outputMint, probe)
+  )
     ? Promise.resolve(dummyLeg(state.inputMint, outputMint, probe, probe))
     : leg(wallet, state.inputMint, outputMint, probe,
       state.inputKind === "native", jupiter, false, options.signal, options.budget, deposit.legBps, state);
@@ -134,7 +136,7 @@ async function getSelectedQuoteBundleOnce(
     const outputMint = state.rangeSide === "below" ? state.mintA : state.mintB;
     const sample = await probeLeg(outputMint);
     const actual = await actualLeg(outputMint, requested);
-    priceImpactAgainstProbe(actual, sample, probe);
+    if (!options.skipProbe) priceImpactAgainstProbe(actual, sample, probe);
     legs = [actual];
     spendA = outputMint === state.mintA ? requested : 0n;
     projected = projectedSqrt(state, actual.route ? [actual.route] : []);
@@ -151,8 +153,10 @@ async function getSelectedQuoteBundleOnce(
         actualLeg(state.mintA, spendA), actualLeg(state.mintB, requested - spendA),
       ]);
       legs = [actualA, actualB];
-      priceImpactAgainstProbe(actualA, probeA, probe);
-      priceImpactAgainstProbe(actualB, probeB, probe);
+      if (!options.skipProbe) {
+        priceImpactAgainstProbe(actualA, probeA, probe);
+        priceImpactAgainstProbe(actualB, probeB, probe);
+      }
       projected = projectedSqrt(state, legs.flatMap((item) => item.route ? [item.route] : []));
       const desired = amountsAt(state, projected, new BN("1000000000000000000"));
       const next = allocateSpend(requested, BigInt(desired.amountA.toString()), BigInt(desired.amountB.toString()),
@@ -230,8 +234,9 @@ export async function searchSelectedQuoteBundle(
 ) {
   const state = options.state ?? await readSelectedPositionState(wallet, selection, options.connection, false, { displayPrices: false });
   try {
-    return await withSelectedRouteRetries((jupiter) => getSelectedQuoteBundle(
-      wallet, selection, amount, requestedFloorBps, requestedToleranceBps, jupiter, { ...options, state }));
+    return await withSelectedRouteRetries((jupiter, attempt) => getSelectedQuoteBundle(
+      wallet, selection, amount, requestedFloorBps, requestedToleranceBps, jupiter,
+      { ...options, state, skipProbe: attempt.skipProbe }));
   } catch (error) {
     if (isJupiterNoRouteError(error)) throw selectedNoRouteError(state);
     throw error;

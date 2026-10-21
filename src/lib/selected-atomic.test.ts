@@ -19,7 +19,8 @@ import { fetchBeamTipAddress } from "@sofinance/engine/solami-beam";
 import { JupiterNoRouteError } from "@sofinance/engine/swap/jupiter";
 import { buildAndSimulateSelectedZap } from "./selected-atomic";
 import { JUPITER_NO_ROUTE_CODE } from "./selected-no-route";
-import { HIGH_ACCOUNT_DEXES } from "./selected-route-retry";
+import { HIGH_ACCOUNT_DEXES, SELECTED_PREFLIGHT_STRATEGY_BUDGET } from "./selected-route-retry";
+import { BEAM_MIN_TIP_LAMPORTS } from "@sofinance/engine/solami-beam";
 let keyIndex = 1;
 const key = () => Keypair.fromSeed(new Uint8Array(32).fill(keyIndex++)).publicKey;
 const wallet = key(), pool = key(), position = key(), program = key(), mintA = key(), mintB = key();
@@ -49,26 +50,28 @@ const initialKeyIndex = keyIndex;
 beforeEach(() => {
   vi.stubEnv("SOFINANCE_FEE_WALLET", undefined);
   keyIndex = initialKeyIndex;
-  vi.clearAllMocks(); connection.getMultipleAccountsInfoAndContext.mockImplementation(async (keys: PublicKey[]) => ({ value: keys.map(() => null), context: { slot: 1 } })); vi.mocked(rpcConnection).mockReturnValue(connection as never);
+  vi.clearAllMocks();
+  vi.mocked(fetchBeamTipAddress).mockResolvedValue(null);
+  connection.getMultipleAccountsInfoAndContext.mockImplementation(async (keys: PublicKey[]) => ({ value: keys.map(() => null), context: { slot: 1 } })); vi.mocked(rpcConnection).mockReturnValue(connection as never);
   vi.mocked(readSelectedPositionState).mockResolvedValue(state as never);
   const data = createHash("sha256").update("global:increase_liquidity_v2").digest().subarray(0, 8);
   vi.mocked(buildSelectedAddInstruction).mockReturnValue(new TransactionInstruction({ programId: program, data,
     keys: [wallet, key(), pool, key(), position].map((pubkey, index) => ({ pubkey, isSigner: index === 0, isWritable: index === 2 || index === 4 })) }));
   vi.mocked(simulateAndVerifySelectedTransaction).mockResolvedValue({ endingLiquidity: "11", spentInput: "1000", dustA: "0", dustB: "0", unitsConsumed: 1000, solDebitLamports: "5000" });
 });
-it("rejects oversized candidates before Beam or simulation, tries compact followups, and reads selected state once", async () => {
+it("rejects oversized candidates before Beam or simulation, caps followups, and reads selected state once", async () => {
   vi.mocked(getSelectedQuoteBundle).mockResolvedValue(bundle(true));
-  await expect(buildAndSimulateSelectedZap(wallet.toBase58(), selection, "1", 9900)).rejects.toThrow("1,232 byte");
+  await expect(buildAndSimulateSelectedZap(wallet.toBase58(), selection, "1", 9900)).rejects.toMatchObject({
+    name: "SelectedNoRouteError", code: JUPITER_NO_ROUTE_CODE,
+  });
   expect(readSelectedPositionState).toHaveBeenCalledTimes(1);
   expect(vi.mocked(getSelectedQuoteBundle).mock.calls.map((call) => call[5])).toEqual([
     { maxAccounts: 24 },
-    { maxAccounts: 24 },
-    { maxAccounts: 24, onlyDirectRoutes: true },
-    { maxAccounts: 24, excludeDexes: HIGH_ACCOUNT_DEXES },
-    { maxAccounts: 24, onlyDirectRoutes: true, excludeDexes: HIGH_ACCOUNT_DEXES },
     { maxAccounts: 20, onlyDirectRoutes: true },
+    { maxAccounts: 24, excludeDexes: HIGH_ACCOUNT_DEXES },
     { maxAccounts: 20, onlyDirectRoutes: true, excludeDexes: HIGH_ACCOUNT_DEXES },
   ]);
+  expect(getSelectedQuoteBundle).toHaveBeenCalledTimes(SELECTED_PREFLIGHT_STRATEGY_BUDGET);
   expect(fetchBeamTipAddress).not.toHaveBeenCalled(); expect(simulateAndVerifySelectedTransaction).not.toHaveBeenCalled();
 });
 it("successfully switches to a compact candidate without rereading state or simulating the oversized one", async () => {
@@ -80,7 +83,9 @@ it("successfully switches to a compact candidate without rereading state or simu
   // Same tip-address fetch as open: no per-flow short timeout.
   expect(vi.mocked(fetchBeamTipAddress).mock.calls[0]?.[0]).not.toHaveProperty("timeoutMs");
   expect(getSelectedQuoteBundle).toHaveBeenLastCalledWith(wallet.toBase58(), selection, "1", 9900, 100,
-    { maxAccounts: 24 }, expect.objectContaining({ state, includeResale: false, buildTransactions: true }));
+    { maxAccounts: 20, onlyDirectRoutes: true }, expect.objectContaining({
+      state, includeResale: false, buildTransactions: true, skipProbe: true,
+    }));
 });
 it("widens maxAccounts when compact has no Jupiter route", async () => {
   vi.mocked(getSelectedQuoteBundle).mockImplementation(async (_wallet, _selection, _amount, _floor, _tolerance, jupiter) => {
@@ -135,6 +140,44 @@ it.each(["Token-2022 mint", "external pool vault"])("accepts a writable %s witho
   connection.getMultipleAccountsInfoAndContext.mockResolvedValueOnce({ context: { slot: 1 }, value: [account] } as never);
   const result = await buildAndSimulateSelectedZap(wallet.toBase58(), selection, "1", 9900);
   expect(result.summary.simulated).toBe(true); expect(simulateAndVerifySelectedTransaction).toHaveBeenCalledOnce();
+});
+
+function paddedSwapBundle(dataBytes: number) {
+  const value = bundle(true) as unknown as Awaited<ReturnType<typeof getSelectedQuoteBundle>>;
+  const route = value.legs[0]!.route as unknown as { swapInstruction: { data: string } };
+  route.swapInstruction.data = Buffer.alloc(dataBytes).toString("base64");
+  return value;
+}
+
+it("skips the Beam tip when it would exceed 1,232 bytes and still simulates", async () => {
+  const tipAddress = key();
+  vi.mocked(fetchBeamTipAddress).mockResolvedValue({ address: tipAddress, lamports: BEAM_MIN_TIP_LAMPORTS });
+  let lo = 200;
+  let hi = 900;
+  let chosen = 700;
+  while (lo <= hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    vi.mocked(getSelectedQuoteBundle).mockResolvedValue(paddedSwapBundle(mid));
+    try {
+      const result = await buildAndSimulateSelectedZap(wallet.toBase58(), selection, "1", 9900, 100, { enforceResaleFloor: false });
+      if (result.summary.beam.included) {
+        lo = mid + 1;
+      } else {
+        chosen = mid;
+        hi = mid - 1;
+      }
+    } catch {
+      hi = mid - 1;
+    }
+  }
+  vi.mocked(getSelectedQuoteBundle).mockResolvedValue(paddedSwapBundle(chosen));
+  const result = await buildAndSimulateSelectedZap(wallet.toBase58(), selection, "1", 9900, 100, { enforceResaleFloor: false });
+  expect(result.summary.simulated).toBe(true);
+  expect(result.summary.sizeBytes).toBeLessThanOrEqual(1232);
+  expect(result.summary.beam.included).toBe(false);
+  expect(result.summary.beam.skippedReason).toBe("oversize");
+  expect(fetchBeamTipAddress).toHaveBeenCalled();
+  expect(simulateAndVerifySelectedTransaction).toHaveBeenCalled();
 });
 
 it("snapshots the selected transaction wire bytes", async () => {
