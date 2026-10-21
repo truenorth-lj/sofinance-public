@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { ArrowUpRight, LoaderCircle, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { buildPlanPath, DOCS_ROUTES } from "@/lib/public-urls";
+import { fetchRwaPairsList } from "@/lib/rwa-pairs-list";
 import { cn } from "@/lib/cn";
 import { OPEN_RANGE_UI_PRESETS } from "@sofinance/engine/open-range-presets";
 import {
@@ -284,12 +285,7 @@ export function RwaPairsPanel() {
 
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
-      const response = await fetch("/api/rwa-pairs?minTvl=0&maxPages=10&sortBy=estimatedFeeApr", {
-        signal,
-        headers: { Accept: "application/json" },
-      });
-      const body = (await response.json()) as RwaPairsResponse & { error?: string };
-      if (!response.ok) throw new Error(body.error || "Failed to load RWA pairs");
+      const body = await fetchRwaPairsList<RwaPairsResponse>(signal);
       if (!signal?.aborted) {
         setData(body);
         setError(null);

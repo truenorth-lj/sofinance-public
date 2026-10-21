@@ -1,17 +1,8 @@
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 import { BrandMark } from "@/components/brand-mark";
-import {
-  BookOpen,
-  Wallet,
-  Layers,
-  Sprout,
-  CalendarClock,
-  Scale,
-  MoveHorizontal,
-  Coins,
-  ArrowUpRight,
-} from "lucide-react";
+import { HomepagePoolsTable } from "@/components/homepage-pools-table";
+import { ArrowUpRight } from "lucide-react";
 import { APP_ROUTES, DOCS_ROUTES } from "@/lib/public-urls";
 import { EXTERNAL_LINK_PROPS, SOCIAL_LINKS } from "@/lib/social-links";
 import { XIcon } from "@/components/x-icon";
@@ -43,17 +34,27 @@ function ArrowCta({
     "outline-ink": "bg-ink text-cream",
     outline: "bg-cream text-ink",
   } as const;
-  return (
-    <Link
-      href={href}
-      className={`group inline-flex h-12 items-center justify-between gap-4 rounded-full pl-5 pr-1.5 text-sm font-semibold outline-none transition-[transform,border-color] hover:-translate-y-px focus-visible:shadow-[0_0_0_3px_var(--color-lilac)] ${tones[tone]}`}
-    >
+  const className = `group inline-flex h-12 items-center justify-between gap-4 rounded-full pl-5 pr-1.5 text-sm font-semibold outline-none transition-[transform,border-color] hover:-translate-y-px focus-visible:shadow-[0_0_0_3px_var(--color-lilac)] ${tones[tone]}`;
+  const inner = (
+    <>
       {children}
       <span
         className={`flex h-9 w-9 items-center justify-center rounded-full transition-transform group-hover:rotate-45 ${knobs[tone]}`}
       >
         <ArrowUpRight className="h-4 w-4" aria-hidden="true" />
       </span>
+    </>
+  );
+  if (href.startsWith("#")) {
+    return (
+      <a href={href} className={className}>
+        {inner}
+      </a>
+    );
+  }
+  return (
+    <Link href={href} className={className}>
+      {inner}
     </Link>
   );
 }
@@ -71,7 +72,7 @@ function SectionHeading({ label, children }: { label: string; children: string }
 
 export function LandingPage() {
   return (
-    <div className="min-h-screen bg-canvas text-cream">
+    <div className="min-h-screen overflow-x-clip bg-canvas text-cream">
       <div className="mx-auto max-w-[1280px] px-3 pb-10 pt-3 sm:px-5 sm:pt-5">
         <header className="flex flex-wrap items-center justify-between gap-2">
           <Link
@@ -83,217 +84,85 @@ export function LandingPage() {
             </span>
             SoFinance
           </Link>
-          <nav aria-label="Sections" className="hidden flex-1 gap-2 md:flex">
-            <a href="#toolkit" className={`${navPill} flex-1`}>
-              Toolkit
+          <nav aria-label="Sections" className="order-3 flex w-full flex-1 flex-wrap gap-2 md:order-none md:w-auto">
+            <a href="#pools" className={`${navPill} flex-1`}>
+              Pools
             </a>
             <a href="#how" className={`${navPill} flex-1`}>
               How it works
             </a>
-            <a href="#scenarios" className={`${navPill} flex-1`}>
-              Scenarios
+            <a href="#agents" className={`${navPill} hidden flex-1 sm:flex`}>
+              AI agents
             </a>
             <Link href={DOCS_ROUTES.home} className={`${navPill} flex-1`}>
               Docs
-            </Link>
-            <Link href={APP_ROUTES.ai} className={`${navPill} flex-1`}>
-              Use with AI
             </Link>
           </nav>
           <Link
             href={APP_ROUTES.home}
             className="flex h-10 items-center justify-center rounded-full bg-cream px-5 text-[13px] font-semibold text-ink outline-none transition-colors hover:bg-white focus-visible:shadow-[0_0_0_2px_var(--color-lemon)]"
           >
-            Launch App
+            Open app
           </Link>
         </header>
 
         <main>
-          <section className="mt-3 grid gap-3 lg:grid-cols-12">
-            <div className="animate-rise rounded-[28px] bg-cream p-6 text-ink motion-reduce:animate-none sm:p-10 lg:col-span-8">
-              <span className={`${labelPill} border-ink/70`}>Self-custodial · Solana · Raydium CLMM</span>
-              <h1 className="mt-8 max-w-[14ch] text-[clamp(2.6rem,7vw,5.6rem)] font-medium leading-[0.98] tracking-[-0.045em]">
-                A self-custodial tool to manage your Raydium CLMM positions
-              </h1>
-              <div className="mt-8 border-t border-ink/20 pt-6">
-                <p className="max-w-xl text-base leading-7 text-ink/70 sm:text-lg">
-                  Open a position with one signature, compound fees in one click, and exit in one click.
-                  You sign every transaction yourself — an AI agent can prepare one, only your wallet can approve it —
-                  and you can always manage the same position directly on Raydium.
-                </p>
-                <div className="mt-7 flex flex-wrap items-center gap-3">
-                  <ArrowCta href={APP_ROUTES.home} tone="ink">
-                    Launch App
-                  </ArrowCta>
-                  <ArrowCta href={APP_ROUTES.ai} tone="outline-ink">
-                    Use with AI
-                  </ArrowCta>
-                </div>
-              </div>
-            </div>
-
-            <div
-              style={{ animationDelay: "90ms" }}
-              className="relative flex min-h-[22rem] animate-rise flex-col overflow-hidden rounded-[28px] border border-white/12 bg-char p-6 motion-reduce:animate-none sm:p-7 lg:col-span-4 lg:row-span-2"
-            >
-              <span className={`${labelPill} w-fit border-white/30 text-cream/80`}>Non-custodial</span>
-              <div aria-hidden="true" className="relative mx-auto my-8 flex aspect-square w-full max-w-[17rem] items-center justify-center">
-                <span className="absolute inset-0 rounded-full border border-white/10" />
-                <span className="absolute inset-[13%] rounded-full border border-white/15" />
-                <span className="absolute inset-[27%] rounded-full border border-dashed border-lemon/50" />
-                <span className="absolute left-[6%] top-[22%] h-3 w-3 rounded-full bg-mint" />
-                <span className="absolute bottom-[12%] right-[16%] h-2.5 w-2.5 rounded-full bg-lilac" />
-                <BrandMark className="h-28 w-28 text-lemon" />
-              </div>
-              <div className="mt-auto">
-                <div className="flex items-baseline justify-between gap-3 border-b border-white/15 pb-3">
-                  <h2 className="text-2xl font-medium tracking-[-0.03em]">Sign once</h2>
-                  <span className="font-data text-xs text-smoke">v0 tx</span>
-                </div>
-                <p className="mt-4 text-sm leading-6 text-smoke">
-                  Each action is quoted, built and simulated as one unsigned transaction that you review and sign
-                  in your wallet. SoFinance never holds your keys or your funds, and every transaction is verifiable on Solscan.
-                </p>
-                <div className="mt-5 flex flex-wrap gap-1.5">
-                  {["Quote", "Simulate", "Permit", "Re-simulate"].map((tag) => (
-                    <span key={tag} className={`${labelPill} border-white/25 text-cream/70`}>
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div
-              style={{ animationDelay: "160ms" }}
-              className="flex animate-rise flex-col rounded-[28px] bg-lemon p-6 text-ink motion-reduce:animate-none lg:col-span-4"
-            >
-              <span className={`${labelPill} w-fit border-ink/70`}>Per action</span>
-              <p className="mt-10 text-[clamp(3.5rem,7vw,5.5rem)] font-semibold leading-none tracking-[-0.05em]">1</p>
-              <p className="mt-3 border-t border-ink/25 pt-3 text-sm leading-snug">
-                Wallet signature, after a full simulation you can read first.
+          <section className="mt-3 animate-rise rounded-[28px] bg-cream p-6 text-ink motion-reduce:animate-none sm:p-10">
+            <span className={`${labelPill} border-ink/70`}>Self-custodial · Raydium CLMM · Tokenized stocks</span>
+            <h1 className="mt-6 max-w-[18ch] text-[clamp(2.1rem,5.4vw,4.4rem)] font-medium leading-[1.02] tracking-[-0.045em]">
+              LP tokenized stocks on Raydium — in one signature.
+            </h1>
+            <div className="mt-6 border-t border-ink/20 pt-5">
+              <p className="max-w-2xl text-base leading-7 text-ink/70 sm:text-lg">
+                Pick an xStock pool, set your range, and open the position with a single wallet signature.
+                Compound fees or exit in one click. You sign every transaction, and it stays a normal
+                Raydium position you can manage anywhere.
               </p>
-            </div>
-            <div
-              style={{ animationDelay: "230ms" }}
-              className="flex animate-rise flex-col rounded-[28px] bg-mint p-6 text-ink motion-reduce:animate-none lg:col-span-4"
-            >
-              <span className={`${labelPill} w-fit border-ink/70`}>Your keys, server-side</span>
-              <p className="mt-10 text-[clamp(3.5rem,7vw,5.5rem)] font-semibold leading-none tracking-[-0.05em]">0</p>
-              <p className="mt-3 border-t border-ink/25 pt-3 text-sm leading-snug">
-                Agents get unsigned transactions and a sign link. Only your wallet signs for your funds.
+              <p className="mt-4 font-data text-[11px] uppercase tracking-[0.12em] text-ink/55">
+                1 signature · 0 keys on our servers · verifiable on Solscan
               </p>
+              <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-3">
+                <ArrowCta href="#pools" tone="ink">
+                  Browse pools
+                </ArrowCta>
+                <Link
+                  href={APP_ROUTES.home}
+                  className="text-sm font-semibold text-ink/70 underline-offset-2 hover:text-ink hover:underline"
+                >
+                  Already have a position? Manage it →
+                </Link>
+              </div>
             </div>
           </section>
 
-          <section>
-            <SectionHeading label="The problem">
-              Multi-step LP work is easy to get wrong when you assemble it by hand
-            </SectionHeading>
-            <div className="grid gap-3 md:grid-cols-2">
-              <article className={darkCard}>
-                <h3 className="text-xl font-medium tracking-[-0.02em]">Fragile, one-off transaction code</h3>
-                <p className="mt-3 text-sm leading-6 text-smoke">
-                  Agents and operators often rebuild Jupiter swaps, Raydium CLMM deposits, and
-                  harvest-and-reinvest flows as ad-hoc scripts. Those paths skip a shared simulation
-                  and the checks that belong with a real submit.
-                </p>
-              </article>
-              <article className={darkCard}>
-                <h3 className="text-xl font-medium tracking-[-0.02em]">Complex operations, many steps</h3>
-                <p className="mt-3 text-sm leading-6 text-smoke">
-                  A single compound or zap is several on-chain actions: quote, route, size to the
-                  range, simulate, then sign. Rewriting that each time is how unsigned messages
-                  drift and failed submits show up in the wallet.
-                </p>
-              </article>
-            </div>
-          </section>
-
-          <section id="toolkit" className="scroll-mt-6">
-            <SectionHeading label="The toolkit">Three pillars</SectionHeading>
-            <div className="grid gap-3 lg:grid-cols-3">
-              <article className="rounded-[28px] bg-cream p-6 text-ink sm:p-7">
-                <span className="flex h-11 w-11 items-center justify-center rounded-full bg-ink text-cream">
-                  <BookOpen className="h-5 w-5" aria-hidden="true" />
-                </span>
-                <h3 className="mt-10 text-2xl font-medium tracking-[-0.03em]">Tested position actions</h3>
-                <p className="mt-3 border-t border-ink/20 pt-3 text-sm leading-6 text-ink/70">
-                  Open a position, add to it, compound fees, withdraw, track performance and discover
-                  RWA pairs: each is a tested, simulated multi-step flow. Agents call one tool instead of
-                  hand-assembling swap plus liquidity instructions.
-                </p>
-              </article>
-              <article className="rounded-[28px] bg-lilac p-6 text-ink sm:p-7">
-                <span className="flex h-11 w-11 items-center justify-center rounded-full bg-ink text-lilac">
-                  <Wallet className="h-5 w-5" aria-hidden="true" />
-                </span>
-                <h3 className="mt-10 text-2xl font-medium tracking-[-0.03em]">Agent proposes, wallet approves</h3>
-                <p className="mt-3 border-t border-ink/20 pt-3 text-sm leading-6 text-ink/70">
-                  The agent never holds a key. The server never takes custody. Each action is an
-                  unsigned transaction you sign once in your wallet, then the server re-simulates
-                  before sending.
-                </p>
-              </article>
-              <article className={darkCard}>
-                <span className="flex h-11 w-11 items-center justify-center rounded-full bg-cream text-ink">
-                  <Layers className="h-5 w-5" aria-hidden="true" />
-                </span>
-                <h3 className="mt-10 text-2xl font-medium tracking-[-0.03em]">One engine, two surfaces</h3>
-                <p className="mt-3 border-t border-white/15 pt-3 text-sm leading-6 text-smoke">
-                  The web UI and the MCP server share the same logic and safety gates, so a human
-                  can open the App and verify the quote, permit, and simulation an agent prepared.
-                </p>
-              </article>
-            </div>
-          </section>
-
-          <section>
-            <SectionHeading label="Who it is for">Same tools for agents and for people</SectionHeading>
-            <div className="grid gap-3 md:grid-cols-2">
-              <article className={darkCard}>
-                <h3 className="text-xl font-medium tracking-[-0.02em]">For AI agents</h3>
-                <p className="mt-3 text-sm leading-6 text-smoke">
-                  Connect a remote MCP client with a short-lived, wallet-bound token. Tools can list
-                  positions, quote, and prepare unsigned transactions plus a{" "}
-                  <code className="rounded-md bg-white/10 px-1.5 py-0.5 font-data text-xs text-cream/90">signUrl</code>.
-                  The laptop does not need RPC or Jupiter secrets.
-                </p>
-              </article>
-              <article className={darkCard}>
-                <h3 className="text-xl font-medium tracking-[-0.02em]">For humans</h3>
-                <p className="mt-3 text-sm leading-6 text-smoke">
-                  Open the App, connect Phantom or WalletConnect, and run the same compound or zap
-                  path with a preview before you sign. Use the Use with AI page when you want an
-                  agent to prepare and you to approve.
-                </p>
-              </article>
-            </div>
-          </section>
+          <Suspense
+            fallback={
+              <section id="pools" className="scroll-mt-6" aria-busy="true">
+                <p className="px-2 py-10 text-sm text-smoke">Loading pool data…</p>
+              </section>
+            }
+          >
+            <HomepagePoolsTable />
+          </Suspense>
 
           <section id="how" className="scroll-mt-6">
-            <SectionHeading label="How it works">Prepare, sign once, then broadcast</SectionHeading>
-            <ol className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <SectionHeading label="How it works">Three steps. You sign once.</SectionHeading>
+            <ol className="grid gap-3 md:grid-cols-3">
               {[
                 {
                   n: "01",
-                  title: "Connect",
-                  body: "Connect a Solana wallet. Agents also sign a short challenge to mint a wallet-bound MCP token.",
+                  title: "Pick a pool and range",
+                  body: "Choose an xStock pair and a price range. The preview shows est. fee APR for that range — not guaranteed.",
                 },
                 {
                   n: "02",
-                  title: "Prepare an action",
-                  body: "The engine quotes and builds an unsigned v0 transaction, simulates it, and binds an HMAC permit.",
+                  title: "Review the preview",
+                  body: "See the swaps, the amounts, and the total round-trip cost before you sign.",
                 },
                 {
                   n: "03",
                   title: "Sign once",
-                  body: "Review the summary and approve in your wallet. Keys stay in the wallet; the server never holds them.",
-                },
-                {
-                  n: "04",
-                  title: "Re-simulate and send",
-                  body: "Submit re-checks the permit and on-chain state, re-simulates, then broadcasts if the gates still pass.",
+                  body: "One wallet signature opens the position. Later you can add, compound fees, or exit in one click.",
                 },
               ].map((step) => (
                 <li key={step.n} className={`${darkCard} flex flex-col`}>
@@ -305,94 +174,98 @@ export function LandingPage() {
             </ol>
           </section>
 
-          <section id="scenarios" className="scroll-mt-6">
-            <SectionHeading label="What you can do">
-              Position tools available today — and more on the way
+          <section>
+            <SectionHeading label="Your keys, your position">
+              Non-custodial. A normal Raydium position NFT.
             </SectionHeading>
-            <p className="mb-6 max-w-2xl px-2 text-sm leading-6 text-smoke">
-              Tools shipping now work with Raydium CLMM positions. APR figures in the App are
-              estimates from on-chain data and are not guaranteed.
-            </p>
-            <div className="grid gap-3 lg:grid-cols-12">
-              <Link
-                href={APP_ROUTES.rwaPairs}
-                className="group flex flex-col rounded-[28px] bg-lemon p-6 text-ink outline-none transition-transform hover:-translate-y-0.5 focus-visible:shadow-[0_0_0_3px_var(--color-cream)] sm:p-7 lg:col-span-5 lg:row-span-2"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <span className="flex h-11 w-11 items-center justify-center rounded-full bg-ink text-lemon">
-                    <Sprout className="h-5 w-5" aria-hidden="true" />
-                  </span>
-                  <span className={`${labelPill} border-ink/70`}>Live</span>
-                </div>
-                <h3 className="mt-10 text-[clamp(2rem,3.6vw,3rem)] font-medium leading-none tracking-[-0.04em]">
-                  RWA CLMM positions
-                </h3>
-                <p className="mt-4 border-t border-ink/25 pt-4 text-sm leading-6 text-ink/75">
-                  Manage positions in same-asset RWA CLMM pools (wrapped vs unwrapped): open with one
-                  signature, compound fees in one click, track coin-denominated performance, and exit in
-                  one click — or manage the position directly on Raydium.
+            <div className="grid gap-3 md:grid-cols-3">
+              <article className="rounded-[28px] bg-cream p-6 text-ink sm:p-7">
+                <h3 className="text-xl font-medium tracking-[-0.02em]">You hold the keys</h3>
+                <p className="mt-3 border-t border-ink/20 pt-3 text-sm leading-6 text-ink/70">
+                  SoFinance never holds your keys or your funds. You sign every transaction in your own
+                  wallet.
                 </p>
-                <p className="mt-auto flex items-center justify-between pt-8 text-sm font-semibold">
-                  Open RWA pairs
-                  <span className="flex h-9 w-9 items-center justify-center rounded-full bg-ink text-lemon transition-transform group-hover:rotate-45">
-                    <ArrowUpRight className="h-4 w-4" aria-hidden="true" />
-                  </span>
+              </article>
+              <article className="rounded-[28px] bg-mint p-6 text-ink sm:p-7">
+                <h3 className="text-xl font-medium tracking-[-0.02em]">Verifiable on Solscan</h3>
+                <p className="mt-3 border-t border-ink/25 pt-3 text-sm leading-6 text-ink/75">
+                  Every confirmed transaction is public. Open the signature on Solscan to inspect what
+                  moved.
                 </p>
-              </Link>
-
-              <div className="grid gap-3 sm:grid-cols-2 lg:col-span-7 lg:row-span-2">
-                {[
-                  {
-                    icon: CalendarClock,
-                    title: "Dollar-cost averaging",
-                    body: "Recurring deposits into a CLMM position from a chosen wallet asset.",
-                  },
-                  {
-                    icon: Scale,
-                    title: "Portfolio rebalancing",
-                    body: "Shift liquidity across positions as allocations drift from a target mix.",
-                  },
-                  {
-                    icon: MoveHorizontal,
-                    title: "LP range management",
-                    body: "Re-center concentrated ranges when price walks outside the current ticks.",
-                  },
-                  {
-                    icon: Coins,
-                    title: "Stablecoin pool rotation",
-                    body: "Move liquidity between stable pools as fees and conditions change.",
-                  },
-                ].map((card) => (
-                  <article key={card.title} className="rounded-[28px] border border-dashed border-white/20 p-6">
-                    <div className="flex items-start justify-between gap-3">
-                      <span className="flex h-11 w-11 items-center justify-center rounded-full border border-white/20 text-smoke">
-                        <card.icon className="h-5 w-5" aria-hidden="true" />
-                      </span>
-                      <span className={`${labelPill} border-white/20 text-smoke`}>Coming soon</span>
-                    </div>
-                    <h3 className="mt-8 text-lg font-medium tracking-[-0.02em] text-cream/80">{card.title}</h3>
-                    <p className="mt-2 text-sm leading-6 text-smoke">{card.body}</p>
-                  </article>
-                ))}
-              </div>
+              </article>
+              <article className={darkCard}>
+                <h3 className="text-xl font-medium tracking-[-0.02em]">Portable position</h3>
+                <p className="mt-3 border-t border-white/15 pt-3 text-sm leading-6 text-smoke">
+                  Opening a position puts a standard Raydium position NFT in your wallet. You can manage
+                  it here or directly on Raydium.
+                </p>
+              </article>
             </div>
           </section>
 
-          <section className="mt-14 rounded-[28px] bg-cream p-8 text-ink sm:mt-20 sm:p-12">
-            <h2 className="max-w-[18ch] text-[clamp(2rem,5vw,4rem)] font-medium leading-[1.02] tracking-[-0.04em]">
-              Propose in the agent. Approve in the wallet.
+          <section>
+            <SectionHeading label="Risks">What the numbers do not cover</SectionHeading>
+            <article className={`${darkCard} sm:p-8`}>
+              <ul className="grid gap-4 text-sm leading-6 text-smoke sm:grid-cols-2">
+                <li>
+                  <strong className="font-medium text-cream">Est. APR is not guaranteed.</strong> It is
+                  last-24h fees divided by TVL, annualized — not LP return.
+                </li>
+                <li>
+                  <strong className="font-medium text-cream">Out of range means no fees.</strong> If the
+                  pool price leaves your range, that position collects nothing until price returns or you
+                  change range.
+                </li>
+                <li>
+                  <strong className="font-medium text-cream">Impermanent loss.</strong> Versus holding the
+                  tokens, LP can underperform when the two sides move apart.
+                </li>
+                <li>
+                  <strong className="font-medium text-cream">Token-2022 freeze authority.</strong> xStock
+                  issuers may retain freeze or other controls that can block transfers.
+                </li>
+              </ul>
+              <p className="mt-6 border-t border-white/15 pt-4 text-sm text-smoke">
+                Read the full list in{" "}
+                <Link href={DOCS_ROUTES.risks} className="text-cream underline underline-offset-2">
+                  Risks
+                </Link>
+                .
+              </p>
+            </article>
+          </section>
+
+          <section id="agents" className="scroll-mt-6">
+            <SectionHeading label="AI agents">Your agent prepares. Your wallet approves.</SectionHeading>
+            <article className="rounded-[28px] bg-lilac p-6 text-ink sm:p-8">
+              <p className="max-w-2xl text-sm leading-6 text-ink/75 sm:text-base">
+                Connect an MCP client so an assistant can list pools, quote, and prepare an unsigned
+                transaction. Only your wallet can approve it. Technical details live in Docs.
+              </p>
+              <div className="mt-6">
+                <ArrowCta href={APP_ROUTES.ai} tone="ink">
+                  Connect an agent
+                </ArrowCta>
+              </div>
+            </article>
+          </section>
+
+          <p className="mt-10 px-2 text-sm text-smoke">Next: range re-centering, rebalancing.</p>
+
+          <section className="mt-8 rounded-[28px] bg-cream p-8 text-ink sm:mt-12 sm:p-12">
+            <h2 className="max-w-[16ch] text-[clamp(2rem,5vw,3.6rem)] font-medium leading-[1.02] tracking-[-0.04em]">
+              Pick a pool. Sign once.
             </h2>
             <div className="mt-8 flex flex-col gap-6 border-t border-ink/20 pt-6 md:flex-row md:items-center md:justify-between">
               <p className="max-w-xl text-sm leading-6 text-ink/70 sm:text-base">
-                Launch the App to manage a position yourself, or connect MCP so an agent can prepare the
-                unsigned transaction you sign.
+                Browse live xStock pools, or manage a position you already hold. Self-custodial throughout.
               </p>
-              <div className="flex flex-wrap gap-3">
-                <ArrowCta href={APP_ROUTES.home} tone="ink">
-                  Launch App
+              <div className="flex flex-wrap items-center gap-3">
+                <ArrowCta href="#pools" tone="ink">
+                  Browse pools
                 </ArrowCta>
-                <ArrowCta href={APP_ROUTES.ai} tone="outline-ink">
-                  Use with AI
+                <ArrowCta href={APP_ROUTES.home} tone="outline-ink">
+                  Manage a position
                 </ArrowCta>
               </div>
             </div>
@@ -408,8 +281,8 @@ export function LandingPage() {
             <Link href={DOCS_ROUTES.home} className="transition-colors hover:text-cream">
               Docs
             </Link>
-            <Link href={APP_ROUTES.ai} className="transition-colors hover:text-cream">
-              Use with AI
+            <Link href={DOCS_ROUTES.risks} className="transition-colors hover:text-cream">
+              Risks
             </Link>
             <a
               href={SOCIAL_LINKS.x.href}
