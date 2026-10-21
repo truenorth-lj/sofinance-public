@@ -8,13 +8,22 @@ import { useWalletConnection } from "./wallet-connection";
 import { NATIVE_SOL_MINT } from "@sofinance/engine/ids";
 import { formatAmount } from "@sofinance/engine/amount";
 import { notifyPositionHistoryChange } from "@/lib/position-history-refresh";
+import { createJupiterRelayStore, postWithJupiterRelay } from "@/lib/jupiter/browser-relay";
 import type { WithdrawPrepared, WithdrawSummary, WithdrawRequest } from "@sofinance/engine/withdraw/types";
 
 const REQUEST_TIMEOUT_MS=45_000;
+const RELAYED_PATHS=new Set(["withdraw-quote","withdraw-prepare"]);
+const withdrawJupiterStore=createJupiterRelayStore();
 type Checkpoint = { prepared: WithdrawPrepared; signature: string; request: WithdrawRequest; confirmHighImpact: boolean; root?: {prepared:WithdrawPrepared;signature:string} };
 async function post<T>(path: string, body: unknown): Promise<T> {
  let response:Response;
- try{response=await fetch(`/api/${path}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body),cache:"no-store",signal:AbortSignal.timeout(REQUEST_TIMEOUT_MS)});}
+ try{
+  const signal=AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+  // Withdraw preview/prepare may swap via Jupiter: those quotes come from this browser.
+  response=RELAYED_PATHS.has(path)&&body&&typeof body==="object"
+   ?await postWithJupiterRelay(`/api/${path}`,body as Record<string,unknown>,{store:withdrawJupiterStore,signal})
+   :await fetch(`/api/${path}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body),cache:"no-store",signal});
+ }
  catch(caught){throw new Error(caught instanceof DOMException && caught.name==="TimeoutError"?"The server took too long to respond. Check your connection and try again.":"Network error. Check your connection and try again.");}
  const value=await response.json().catch(()=>({error:`Server error (${response.status}). Try again in a moment.`}));
  if(!response.ok)throw new Error(value.error || "Unable to complete withdrawal");

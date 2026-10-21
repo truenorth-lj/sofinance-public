@@ -45,7 +45,7 @@ it("builds only with the shared v1 quote and swap-instructions client", async ()
       swapInfo: { ammKey: "pool", inputMint: "A", outputMint: "B", inAmount: "100", outAmount: "99" } }] };
   const fetcher = vi.fn().mockResolvedValueOnce(Response.json(quote)).mockResolvedValueOnce(Response.json({
     computeBudgetInstructions: [], setupInstructions: [], otherInstructions: [], cleanupInstruction: null,
-    swapInstruction: { programId: "program", data: "AQ==", accounts: [] }, addressLookupTableAddresses: ["table"],
+    swapInstruction: { programId: "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4", data: "AQ==", accounts: [] }, addressLookupTableAddresses: ["table"],
   }));
   vi.stubGlobal("fetch", fetcher);
   const route = await buildRoute("wallet", "A", "B", 100n, false, {

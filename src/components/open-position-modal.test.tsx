@@ -9,7 +9,10 @@ import { payloadFixture, payloadWithAprs } from "../lib/range-apr/payload.fixtur
 import { clearPoolRangeAprClientCache } from "./range-apr/pool-range-apr-client";
 import { OpenPositionModal } from "./open-position-modal";
 import type { OpenPositionPair, useOpenPositionController } from "./use-open-position-controller";
-import { QUOTE_ERROR_POLL_PAUSE_MS } from "./use-open-position-controller";
+import { QUOTE_ERROR_POLL_PAUSE_MS, RELAY_QUOTE_POLL_MS } from "./use-open-position-controller";
+
+// Browsers quote Jupiter themselves (keyless, per-IP quota), so the modal polls every RELAY_QUOTE_POLL_MS.
+const POLL = RELAY_QUOTE_POLL_MS;
 
 const mocks = vi.hoisted(() => ({
   wallet: "wallet",
@@ -262,15 +265,15 @@ describe("open-position signing and quote refresh", () => {
     expect(container.textContent).not.toContain("Ready to sign");
   });
 
-  it("fetches a new quote every three seconds without waiting for expiry", async () => {
+  it("fetches a new quote every poll interval without waiting for expiry", async () => {
     await mount();
     expect(signButton().disabled).toBe(false);
-    await advance(2999);
+    await advance(POLL - 1);
     expect(quoteCalls).toBe(1);
     await advance(1);
     expect(quoteCalls).toBe(2);
     expect(signButton().disabled).toBe(false);
-    await advance(3000);
+    await advance(POLL);
     expect(quoteCalls).toBe(3);
   });
 
@@ -288,19 +291,19 @@ describe("open-position signing and quote refresh", () => {
   it("pauses background polling for a while after a failed refresh", async () => {
     await mount();
     failQuote = true;
-    await advance(3000);
+    await advance(POLL);
     expect(quoteCalls).toBe(2);
-    await advance(QUOTE_ERROR_POLL_PAUSE_MS - 3000);
+    await advance(Math.max(0, QUOTE_ERROR_POLL_PAUSE_MS - POLL));
     expect(quoteCalls).toBe(2);
     failQuote = false;
-    await advance(3000);
+    await advance(POLL);
     expect(quoteCalls).toBe(3);
   });
 
   it("lets the user retry a failed refresh without editing a valid amount", async () => {
     await mount();
     failQuote = true;
-    await advance(3000);
+    await advance(POLL);
     expect(signButton().disabled).toBe(true);
     expect(container.textContent).toContain("Quote service unavailable");
     const retry = [...container.querySelectorAll("button")].find((button) => button.textContent === "Refresh quote");
@@ -356,7 +359,7 @@ describe("open-position signing and quote refresh", () => {
     await mount();
     let resolveQuote!: (value: unknown) => void;
     deferredQuote = new Promise((resolve) => { resolveQuote = resolve; });
-    await advance(3000);
+    await advance(POLL);
     expect(quoteCalls).toBe(2);
     expect(mocks.controller!.quoteLoading).toBe(true);
     expect(signButton().disabled).toBe(false);
@@ -370,7 +373,7 @@ describe("open-position signing and quote refresh", () => {
   it("disables signing if the last quote expires while a refresh is stalled", async () => {
     await mount();
     deferredQuote = new Promise(() => undefined);
-    await advance(3000);
+    await advance(POLL);
     await advance(QUOTE_TTL_MS + 1000);
     expect(signButton().disabled).toBe(true);
     expect(quoteCalls).toBe(2);
@@ -381,7 +384,7 @@ describe("open-position signing and quote refresh", () => {
     const previousQuote = mocks.controller!.quote;
     let resolveQuote!: (value: unknown) => void;
     deferredQuote = new Promise((resolve) => { resolveQuote = resolve; });
-    await advance(3000);
+    await advance(POLL);
     await act(async () => { signButton().click(); });
     expect(mocks.controller!.submitStage).toBe("preparing");
     expect(mocks.controller!.quoteLoading).toBe(false);

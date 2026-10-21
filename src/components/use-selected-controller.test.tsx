@@ -4,7 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi, type Mock } from "vitest";
 import { Keypair, PublicKey, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
-import { useSelectedController } from "./use-selected-controller";
+import { RELAY_DEADLINE_MS, useSelectedController } from "./use-selected-controller";
 import { persistSelectedAttempt, selectedAttemptKey, type SelectedAttempt } from "@/lib/selected-attempt";
 
 const mocks = vi.hoisted(() => ({ sign: vi.fn(), address: "11111111111111111111111111111111" }));
@@ -120,9 +120,9 @@ it("ignores a late preview after the amount changes", async () => {
   await act(async () => resolve(Response.json({})));
   expect(controller.quote?.requested).toBe("20000000");
 });
-it("ends a stalled preview after eight seconds and offers explicit retry", async () => {
+it("ends a stalled preview at the client deadline and offers explicit retry", async () => {
   fetchMock.mockImplementationOnce((_url: string, init: RequestInit = {}) => stallUntilAbort(init.signal as AbortSignal));
-  await act(async () => controller.changeAmount("0.01")); await advance(8500);
+  await act(async () => controller.changeAmount("0.01")); await advance(RELAY_DEADLINE_MS + 500);
   expect(controller.quoteError).toBe("Preview took too long. Please retry.");
   expect(controller.showQuoteRecalculate).toBe(true);
   expect(controller.calculating).toBe(false); expect(controller.actionDisabled).toBe(true);
@@ -160,7 +160,7 @@ it("does not offer Recalculate when the amount is too small to swap", async () =
 it("ends a stalled prepare before signing and unlocks for retry", async () => {
   await ready();
   fetchMock.mockImplementationOnce((_url: string, init: RequestInit = {}) => stallUntilAbort(init.signal as AbortSignal));
-  await act(async () => controller.primaryAction()); await advance(8000);
+  await act(async () => controller.primaryAction()); await advance(RELAY_DEADLINE_MS);
   expect(controller.error).toBe("Preparation took too long. Please retry.");
   expect(controller.busy).toBe(false); expect(mocks.sign).not.toHaveBeenCalled();
 });
