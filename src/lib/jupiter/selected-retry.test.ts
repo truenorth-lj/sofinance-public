@@ -27,27 +27,35 @@ it("does not shorten a server wait longer than the 4s exponential cap", async ()
   expect(fetcher).toHaveBeenCalledTimes(2);
 });
 
-it("retries selected 429 once after a short cap, not the 30s reset", async () => {
+it("fails a selected 429 at once when the quota reset does not fit the deadline (no doomed retry)", async () => {
   const fetcher = vi.fn()
     .mockResolvedValueOnce(response(429, {
       "x-ratelimit-reset": String(Date.now() / 1000 + 30),
     }))
     .mockResolvedValueOnce(response(200));
-  const pending = jupiterRequest({ path: "/swap/v1/quote", fetcher, budget: budget() });
-  await vi.advanceTimersByTimeAsync(399);
+  await expect(jupiterRequest({ path: "/swap/v1/quote", fetcher, budget: budget() }))
+    .rejects.toMatchObject({ status: 429, retryAfterMs: 30_000 });
   expect(fetcher).toHaveBeenCalledOnce();
-  await vi.advanceTimersByTimeAsync(1);
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it("waits for a selected 429's quota reset when it fits the deadline, then succeeds", async () => {
+  const fetcher = vi.fn()
+    .mockResolvedValueOnce(response(429, { "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(Date.now() / 1000 + 3) }))
+    .mockResolvedValueOnce(response(200));
+  const pending = jupiterRequest({ path: "/swap/v1/quote", fetcher, budget: budget() });
+  await vi.advanceTimersByTimeAsync(2_999);
+  expect(fetcher).toHaveBeenCalledOnce();
+  await vi.advanceTimersByTimeAsync(300);
   await expect(pending).resolves.toEqual({ outAmount: "9" });
   expect(fetcher).toHaveBeenCalledTimes(2);
 });
 
-it("surfaces selected 429 after the short retry still fails", async () => {
+it("surfaces a selected 429 whose Retry-After exceeds the deadline", async () => {
   const fetcher = vi.fn().mockResolvedValue(response(429, { "Retry-After": "30" }));
-  const pending = jupiterRequest({ path: "/swap/v1/quote", fetcher, budget: budget() });
-  const rejected = expect(pending).rejects.toMatchObject({ status: 429, retryAfterMs: 30_000 });
-  await vi.advanceTimersByTimeAsync(400);
-  await rejected;
-  expect(fetcher).toHaveBeenCalledTimes(2);
+  await expect(jupiterRequest({ path: "/swap/v1/quote", fetcher, budget: budget() }))
+    .rejects.toMatchObject({ status: 429, retryAfterMs: 30_000 });
+  expect(fetcher).toHaveBeenCalledOnce();
 });
 
 it("rejects a wait which cannot fit the selected request plus retry headroom", async () => {
@@ -135,15 +143,14 @@ it("429 ends the selected response and cancels its still-running sibling", async
       return Response.json({ unreachable: true });
     } catch (error) { return selectedApiError(error, "Quote failed"); }
   });
-  await vi.advanceTimersByTimeAsync(400);
   const result = await pending;
   expect(result.status).toBe(503);
   expect(await result.json()).toMatchObject({ code: "jupiter_rate_limited", retryAfterMs: 30_000 });
   expect(aborted).toHaveBeenCalledOnce();
-  expect(fast).toHaveBeenCalledTimes(2);
+  expect(fast).toHaveBeenCalledOnce();
   expect(slow).toHaveBeenCalledOnce();
   await vi.advanceTimersByTimeAsync(16_000);
-  expect(fast).toHaveBeenCalledTimes(2);
+  expect(fast).toHaveBeenCalledOnce();
   expect(vi.getTimerCount()).toBe(0);
 });
 
@@ -153,9 +160,14 @@ it("keeps quota metadata numeric and missing headers unknown", async () => {
     "x-ratelimit-current": "61", "x-ratelimit-remaining": "-1",
     "x-ratelimit-reset": "1791853201", authorization: "secret-upstream",
   })).mockResolvedValueOnce(response(200, { "x-ratelimit-current": "bad" }));
-  for (let index = 0; index < 2; index++) await jupiterRequest({
-    path: "/swap/v1/quote", query: { wallet: "private-wallet", amount: "200" }, fetcher, budget: budget(),
-  });
+  for (let index = 0; index < 2; index++) {
+    // The first response reports a spent window (remaining -1, reset in 1s): the second call waits it out.
+    const pending = jupiterRequest({
+      path: "/swap/v1/quote", query: { wallet: "private-wallet", amount: "200" }, fetcher, budget: budget(),
+    });
+    await vi.advanceTimersByTimeAsync(1_500);
+    await pending;
+  }
   expect(log.mock.calls[0]?.[0]).toMatchObject({ status: 200, selected: true,
     rateLimitCurrent: 61, rateLimitRemaining: -1, rateLimitReset: 1791853201, durationMs: expect.any(Number) });
   expect(log.mock.calls[1]?.[0].rateLimitCurrent).toBeUndefined();

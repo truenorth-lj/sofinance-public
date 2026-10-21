@@ -284,9 +284,14 @@ export function useSelectedController() {
     const requested = rawAmount.toString();
     let expiryTimer: number | undefined;
     let deadline: number | undefined;
+    let onVisible: (() => void) | undefined;
     const scheduleRefresh = (expiresAt: number) => {
-      expiryTimer = window.setTimeout(() => setQuoteRevision((current) => current + 1),
-        Math.max(1_000, expiresAt - Date.now()));
+      expiryTimer = window.setTimeout(() => {
+        // A hidden tab does not need a live preview (each one costs shared Jupiter quota): refresh on return.
+        if (!document.hidden) { setQuoteRevision((current) => current + 1); return; }
+        onVisible = () => { if (!document.hidden) setQuoteRevision((current) => current + 1); };
+        document.addEventListener("visibilitychange", onVisible);
+      }, Math.max(1_000, expiresAt - Date.now()));
     };
     const current = () => !cancelled && requestId === quoteRequestRef.current &&
       walletRef.current === wallet && selectionRef.current === key;
@@ -335,6 +340,7 @@ export function useSelectedController() {
     return () => {
       cancelled = true; aborter.abort(); window.clearTimeout(timer); window.clearTimeout(deadline);
       if (expiryTimer !== undefined) window.clearTimeout(expiryTimer);
+      if (onVisible) document.removeEventListener("visibilitychange", onVisible);
     };
   }, [amount, busy, floorBps, toleranceBps, quoteRevision, rawAmount, ready, selection, wallet]);
 

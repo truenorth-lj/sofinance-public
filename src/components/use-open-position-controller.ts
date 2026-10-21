@@ -55,6 +55,9 @@ function pickInput(assets: WalletAsset[], mintA: string, mintB: string): WalletA
   return eligible.find((item) => item.mint === mintA || item.mint === mintB || item.mint === NATIVE_SOL_MINT || item.mint === USDC_MINT) ?? null;
 }
 
+/** Background quote polling pauses this long after a failed refresh. */
+export const QUOTE_ERROR_POLL_PAUSE_MS = 15_000;
+
 export function useOpenPositionController(pair: OpenPositionPair | null) {
   const { address: wallet, connected, connect, signTransaction } = useWalletConnection();
   const open = useOpenAttempt(wallet);
@@ -180,6 +183,10 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
     const aborter = new AbortController();
     let pollTimer: number | undefined;
     let inFlight = false;
+    // Background refreshes skip hidden tabs and pause after a failure: every quote spends shared
+    // server-side Jupiter quota. The explicit "Refresh quote" action restarts this effect at once.
+    let pausedUntil = 0;
+    let onVisible: (() => void) | undefined;
     const currentRequest = () => requestId === quoteRequestRef.current &&
       !aborter.signal.aborted && walletRef.current === wallet;
     const timer = window.setTimeout(() => {
@@ -208,6 +215,7 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
           setNow(Date.now());
         } catch (caught) {
           if (currentRequest()) {
+            pausedUntil = Date.now() + QUOTE_ERROR_POLL_PAUSE_MS;
             setQuote(null);
             setQuoteError(caught instanceof Error ? caught.message : "Quote failed");
           }
@@ -216,13 +224,20 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
           if (currentRequest()) setQuoteLoading(false);
         }
       };
-      pollTimer = window.setInterval(() => void load(), 3_000);
+      const poll = () => {
+        if (document.hidden || Date.now() < pausedUntil) return;
+        void load();
+      };
+      pollTimer = window.setInterval(poll, 3_000);
+      onVisible = () => { if (!document.hidden) poll(); };
+      document.addEventListener("visibilitychange", onVisible);
       void load();
     }, 450);
     return () => {
       aborter.abort();
       window.clearTimeout(timer);
       if (pollTimer !== undefined) window.clearInterval(pollTimer);
+      if (onVisible) document.removeEventListener("visibilitychange", onVisible);
     };
   }, [amount, busy, formError, inputKind, inputMint, maxPrice, minPrice, pair, parsedAmount, quoteRevision, rangePreset, selectedAsset, submitStage, wallet]);
 
