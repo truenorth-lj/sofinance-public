@@ -12,7 +12,7 @@ import { verifyCompoundPermit } from "../lib/compound-permit";
 import { simulateAndVerifySelectedTransaction } from "../lib/selected-simulation";
 import { readSelectedPositionState } from "@sofinance/engine/selected-state";
 import { rpcConnection } from "@sofinance/engine/rpc";
-import { lookupBeamAfterSend } from "@sofinance/engine/solami-beam";
+import { beamAfterSend, noBeamAfterSend } from "@/lib/beam-after-send";
 import { sendSignedCompoundTransaction } from "../lib/compound-send";
 import { CompoundSendError, notSentRetryMessage, sanitizePublicError } from "../lib/public-error";
 import { getSigningSecret } from "@sofinance/engine/config/server-env";
@@ -484,7 +484,8 @@ export async function submitSignedTransaction(input: SubmitSignedTransactionInpu
   }
   invalidatePositionHistoryCache(input.selection.positionMint);
   
-  const beam = await lookupBeamAfterSend(signature);
+  // Same as /api/selected-broadcast: no inline Beam wait; landing is status-only via /api/beam-landing.
+  const beam = await beamAfterSend(signature, null).catch(() => noBeamAfterSend(signature));
   return { signature, beam: beam.beam, beamLabel: beam.label, beamLandingUrl: beam.beamLandingUrl };
 }
 
