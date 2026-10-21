@@ -46,10 +46,10 @@ describe("PostHog no-op when the public key is unset", () => {
     expect(posthog.capture).not.toHaveBeenCalled();
   });
 
-  it("defaults the host and still no-ops when the key is blank", () => {
+  it("uses the first-party relay and still no-ops when the key is blank", () => {
     vi.stubEnv("NEXT_PUBLIC_POSTHOG_KEY", undefined);
     vi.stubEnv("NEXT_PUBLIC_POSTHOG_HOST", undefined);
-    expect(posthogApiHost()).toBe("https://us.i.posthog.com");
+    expect(posthogApiHost()).toBe("/lumen");
     capturePageview("/", "https://sofinancelab.xyz/");
     expect(posthog.capture).not.toHaveBeenCalled();
   });
@@ -65,9 +65,12 @@ describe("event firing when the key is set", () => {
     window.history.replaceState({}, "", "/app/rwa-pairs?ref=x-launch&utm_source=twitter");
     expect(await initGrowthAnalytics(window.location.search)).toBe(true);
     expect(posthog.init).toHaveBeenCalledWith("phc_test", expect.objectContaining({
-      api_host: "https://us.i.posthog.com",
+      api_host: "/lumen",
+      ui_host: "https://us.posthog.com",
       autocapture: false,
       capture_pageview: false,
+      capture_heatmaps: false,
+      capture_performance: false,
       disable_session_recording: true,
       respect_dnt: true,
     }));

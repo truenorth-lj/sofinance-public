@@ -5,6 +5,7 @@ import {
 } from "./attribution";
 import { GROWTH_EVENTS } from "./events";
 import { hashWallet } from "./hash-wallet";
+import { POSTHOG_RELAY_PATH, posthogUpstream } from "./relay";
 
 export type GrowthClient = {
   init?: (key: string, options: Record<string, unknown>) => void;
@@ -26,8 +27,14 @@ export function posthogProjectKey(): string | undefined {
   return key || undefined;
 }
 
+/** Browser-facing ingest host: always the first-party relay, so ad blockers don't drop events. */
 export function posthogApiHost(): string {
-  return process.env.NEXT_PUBLIC_POSTHOG_HOST?.trim() || "https://us.i.posthog.com";
+  return POSTHOG_RELAY_PATH;
+}
+
+/** PostHog app host, for links the SDK builds (toolbar). The relay is not a UI host. */
+export function posthogUiHost(): string {
+  return posthogUpstream(process.env.NEXT_PUBLIC_POSTHOG_HOST).ui;
 }
 
 export function resetGrowthAnalyticsForTests() {
@@ -94,10 +101,16 @@ export async function initGrowthAnalytics(search?: string): Promise<boolean> {
     const { default: posthog } = await import("posthog-js");
     posthog.init(key, {
       api_host: posthogApiHost(),
+      ui_host: posthogUiHost(),
       autocapture: false,
+      // $pageview is sent manually by AnalyticsRoot on every App Router path/query change.
       capture_pageview: false,
       capture_pageleave: false,
       capture_dead_clicks: false,
+      // Project settings turn these on remotely; keep the client to the explicit event list.
+      capture_heatmaps: false,
+      capture_performance: false,
+      disable_surveys: true,
       disable_session_recording: true,
       respect_dnt: true,
       persistence: "localStorage+cookie",

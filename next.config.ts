@@ -1,11 +1,18 @@
 import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs/config";
 import { sentryBuildOptions } from "./src/lib/sentry/build";
+import { posthogRelayRewrites } from "./src/lib/analytics/relay";
 
 export const nextConfig: NextConfig = {
   reactCompiler: true,
   // @sofinance/engine ships TypeScript source (vendored release of the prototype repo package).
   transpilePackages: ["@sofinance/engine"],
+  // PostHog's ingest paths end in "/" (e.g. /i/v0/e/). Without this, Next would 308 them before the
+  // relay rewrite. Page trailing-slash redirects are kept in src/proxy.ts instead.
+  skipTrailingSlashRedirect: true,
+  async rewrites() {
+    return posthogRelayRewrites(process.env.NEXT_PUBLIC_POSTHOG_HOST);
+  },
   async redirects() {
     return [
       { source: "/rwa-pairs", destination: "/app/rwa-pairs", permanent: true },

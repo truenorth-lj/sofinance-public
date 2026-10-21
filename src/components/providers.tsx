@@ -6,6 +6,8 @@ import "@solana/wallet-adapter-react-ui/styles.css";
 import dynamic from "next/dynamic";
 import { useMemo } from "react";
 import { PUBLIC_SOLANA_RPC_URL } from "@sofinance/engine/rpc/urls";
+import { captureGrowthEvent } from "@/lib/analytics/client";
+import { GROWTH_EVENTS } from "@/lib/analytics/events";
 import { WalletGrowthAnalytics } from "./wallet-growth-analytics";
 import { WalletConnectionContext } from "./wallet-connection";
 
@@ -31,7 +33,7 @@ function BrowserWalletConnection({ children }: { children: React.ReactNode }) {
   const { publicKey, connected, disconnect, wallets, signTransaction, signAllTransactions, signMessage } = useWallet();
   const { setVisible } = useWalletModal();
   return <WalletConnectionContext.Provider value={{
-    address: publicKey?.toBase58(), connected, connect: () => setVisible(true),
+    address: publicKey?.toBase58(), connected, connect: () => { captureGrowthEvent(GROWTH_EVENTS.walletConnectClicked); setVisible(true); },
     disconnect: () => { void disconnect(); }, isMobile: false, walletsCount: wallets.length, connectionError: "",
     signTransaction: async (transaction) => {
       if (!signTransaction) throw new Error("This wallet does not support transaction signing");

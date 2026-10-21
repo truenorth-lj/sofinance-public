@@ -53,7 +53,7 @@ describe("SEO metadata routes", () => {
       rules: {
         userAgent: "*",
         allow: "/",
-        disallow: "/api/",
+        disallow: ["/api/", "/lumen/"],
       },
       sitemap: `${CANONICAL_SITE_URL}/sitemap.xml`,
       host: CANONICAL_SITE_URL,
