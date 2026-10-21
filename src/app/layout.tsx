@@ -10,7 +10,7 @@ const data = Geist_Mono({ subsets: ["latin"], variable: "--font-mono-data" });
 export const metadata: Metadata = {
   title: "SoFinance",
   description:
-    "Strategy recipes for AI agents and humans. Multi-step Solana LP flows, simulated and signed once in your wallet.",
+    "LP tokenized stocks on Raydium — in one signature. Self-custodial: you sign every transaction in your wallet.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

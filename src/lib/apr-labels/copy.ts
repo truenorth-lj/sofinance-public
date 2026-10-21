@@ -1,9 +1,12 @@
 /** Labels and tooltips for the APR figures on the /app/rwa-pairs cards. Copy only; no APR math here. */
-export const POOL_FEE_APR_24H_LABEL = "Pool fee APR · 24h";
+export const POOL_FEE_APR_24H_LABEL = "Est. pool fee APR · 24h · not guaranteed";
 export const POOL_FEE_APR_24H_HELP =
-  "Based on the last 24h of fees ÷ TVL, annualized. Gross fee (before Raydium's 16% protocol cut).";
+  "Estimate based on the last 24h of fees ÷ TVL, annualized. Gross fee (before Raydium's 16% protocol cut). Not guaranteed.";
 
-export const HIGHEST_RANGE_APR_7D_LABEL = "Highest range APR · 7d avg";
+/** Compact homepage-table variant of the same Est. / not-guaranteed APR label. */
+export const HOMEPAGE_POOL_APR_LABEL = "Est. APR · not guaranteed";
+
+export const HIGHEST_RANGE_APR_7D_LABEL = "Est. highest range APR · 7d avg · not guaranteed";
 export const HIGHEST_RANGE_APR_7D_HELP =
   "Estimated from the past 7 days' average volume, LP net fees, for a $100 position in this range. Not guaranteed.";
 

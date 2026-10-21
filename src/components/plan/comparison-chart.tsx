@@ -190,7 +190,7 @@ function ReadyChart({ comparison }: { comparison: PlanYieldComparison }) {
           Hold
         </span>
         <span>
-          Best APY {formatPct(comparison.apyPct)} · {bestAprCopy({ windowDays: comparison.aprWindowDays, aprPct: comparison.aprPct })} ·{" "}
+          Est. best APY {formatPct(comparison.apyPct)} (not guaranteed) · {bestAprCopy({ windowDays: comparison.aprWindowDays, aprPct: comparison.aprPct })} ·{" "}
           {completeDaysCopy(comparison.sampleDays)}
           {thin ? " · unreliable sample" : ""}
         </span>

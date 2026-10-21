@@ -463,7 +463,7 @@ export function PositionPerformancePanel({
             {preferTe ? (
               <>
                 <Stat
-                  label="Estimated trading-fee APR"
+                  label="Est. trading-fee APR · not guaranteed"
                   value={pct(te!.metrics.feeOnlyAprPct)}
                   description="Estimate: fees earned so far, annualized. Not a forecast or a promised return."
                   unavailableReason={missingReturn(true)}
@@ -483,7 +483,7 @@ export function PositionPerformancePanel({
               </>
             ) : (
               <>
-                <Stat label="Estimated fee-only APR (USD)" value={pct(data.metrics.feeOnlyAprPct)} description="Estimate: fees earned so far, annualized. Not a forecast or a promised return." unavailableReason={missingReturn(true)} emphasize wide />
+                <Stat label="Est. fee-only APR (USD) · not guaranteed" value={pct(data.metrics.feeOnlyAprPct)} description="Estimate: fees earned so far, annualized. Not a forecast or a promised return." unavailableReason={missingReturn(true)} emphasize wide />
                 <Stat label="Current equity (USD)" value={money(data.metrics.currentEquityUsd)}
                   description={data.metrics.liquidityUsd !== null && data.metrics.uncollectedFeesUsd !== null ? `Liquidity ${money(data.metrics.liquidityUsd)} + unclaimed fees ${money(data.metrics.uncollectedFeesUsd)}.` : "Liquidity plus unclaimed fees."} />
                 <Stat label="Fees earned (USD)" value={money(data.metrics.feesEarnedUsd)} description="Collected plus unclaimed fees." />

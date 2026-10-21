@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { ArrowUpRight, LoaderCircle, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { buildPlanPath, DOCS_ROUTES } from "@/lib/public-urls";
+import { fetchRwaPairsList } from "@/lib/rwa-pairs-list";
 import { cn } from "@/lib/cn";
 import { OPEN_RANGE_UI_PRESETS } from "@sofinance/engine/open-range-presets";
 import {
@@ -167,15 +168,15 @@ function PairCard({
             <span data-testid="highest-range-apr">
               {summary ? formatAprPct(summary.aprPct, false) : placeholder}
             </span>
-            {summary && <span className="text-[0.5em] tracking-normal">APR</span>}
+            {summary && <span className="text-[0.5em] tracking-normal">Est. APR</span>}
           </p>
           <p className={`mt-2.5 flex items-center gap-1 sm:justify-end ${eyebrow}`}>
             {HIGHEST_RANGE_APR_7D_LABEL}
             {degraded && (
-              <InfoTip label="About Highest range APR" tone="light">{unavailableReasonText("degraded-data")}.</InfoTip>
+              <InfoTip label="About Est. highest range APR" tone="light">{unavailableReasonText("degraded-data")}.</InfoTip>
             )}
             {summary && (
-              <InfoTip label="About Highest range APR" tone="light">
+              <InfoTip label="About Est. highest range APR" tone="light">
                 {withVolumeNote(HIGHEST_RANGE_APR_7D_HELP)}{low ? " Low confidence for this pool: thin or patchy recent trading." : ""}
               </InfoTip>
             )}
@@ -217,7 +218,7 @@ function PairCard({
         <Stat label={<>
           {POOL_FEE_APR_24H_LABEL}
           <span className="inline-flex items-center gap-1">
-            <InfoTip label="About Pool fee APR" placement="above" tone="light">{withVolumeNote(POOL_FEE_APR_24H_HELP)}</InfoTip>
+            <InfoTip label="About Est. pool fee APR" placement="above" tone="light">{withVolumeNote(POOL_FEE_APR_24H_HELP)}</InfoTip>
             <Link href={DOCS_ROUTES.yieldAndApr} className="text-[11px] font-normal normal-case tracking-normal text-ink/60 underline underline-offset-2 hover:text-ink">
               Yield &amp; APR
             </Link>
@@ -284,12 +285,7 @@ export function RwaPairsPanel() {
 
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
-      const response = await fetch("/api/rwa-pairs?minTvl=0&maxPages=10&sortBy=estimatedFeeApr", {
-        signal,
-        headers: { Accept: "application/json" },
-      });
-      const body = (await response.json()) as RwaPairsResponse & { error?: string };
-      if (!response.ok) throw new Error(body.error || "Failed to load RWA pairs");
+      const body = await fetchRwaPairsList<RwaPairsResponse>(signal);
       if (!signal?.aborted) {
         setData(body);
         setError(null);

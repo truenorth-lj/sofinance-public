@@ -23,12 +23,12 @@ export default function DocsYieldAndAprPage() {
       <p>The App shows several related estimates. None of them is a guaranteed return.</p>
       <ul>
         <li>
-          <strong className="font-medium text-cream">Pool fee APR · 24h</strong> — based on the last
+          <strong className="font-medium text-cream">Est. pool fee APR · 24h</strong> — based on the last
           24 hours of pool fees ÷ TVL, annualized. Labeled as a gross fee figure before Raydium&apos;s
           protocol cut on fees.
         </li>
         <li>
-          <strong className="font-medium text-cream">Highest range APR · 7d avg</strong> — estimated
+          <strong className="font-medium text-cream">Est. highest range APR · 7d avg</strong> — estimated
           from recent trading volume and fees, for a sample deposit (about $100) in a candidate
           range (Micro / Tight / Standard / Wide). Not guaranteed.
         </li>

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetRpcCache } from "@sofinance/engine/rpc/cache";
-import { classifyRpcError, isRpcStructValidationError } from "@sofinance/engine/rpc/errors";
+import { resetRpcCircuit } from "@sofinance/engine/rpc/circuit";
+import { classifyRpcError, isRpcStructValidationError, RpcHttpError } from "@sofinance/engine/rpc/errors";
 import { setRpcLogger } from "@sofinance/engine/rpc/logger";
 import { METHOD_POLICIES, methodAllowsFallback, policyFor } from "@sofinance/engine/rpc/methods";
 import { createResilientConnection, invokeWithPolicy, lastRpcCallMetric } from "@sofinance/engine/rpc/connection";
@@ -47,6 +48,7 @@ function pair() {
 
 afterEach(() => {
   resetRpcCache();
+  resetRpcCircuit();
   setRpcLogger(null);
   setRpcRetryConfig(null);
   vi.useRealTimers();
@@ -60,6 +62,12 @@ describe("classifyRpcError", () => {
     expect(isRpcStructValidationError(EPOCH_ERROR)).toBe(true);
     expect(classifyRpcError(new Error("429 rate limited"))).toBe("rate-limit");
     expect(classifyRpcError(new Error("Too many requests for a specific RPC call"))).toBe("rate-limit");
+    expect(classifyRpcError(new Error("RPC -32005: Rate limited"))).toBe("rate-limit");
+    expect(classifyRpcError(Object.assign(new Error("Rate limited"), { code: -32005 }))).toBe("rate-limit");
+    expect(classifyRpcError(new RpcHttpError(401, "RPC HTTP 401"))).toBe("auth");
+    expect(classifyRpcError(new RpcHttpError(402, "RPC HTTP 402"))).toBe("auth");
+    expect(classifyRpcError(new Error("403 forbidden"))).toBe("auth");
+    expect(classifyRpcError(new RpcHttpError(400, "RPC HTTP 400"))).toBe("http-4xx");
     expect(classifyRpcError(new Error("RPC 503 unavailable"))).toBe("http-5xx");
     expect(classifyRpcError(new Error("no transactions"))).toBe("empty");
     expect(classifyRpcError(new Error("Account not found"))).toBe("other");
@@ -70,17 +78,24 @@ describe("classifyRpcError", () => {
 });
 
 describe("METHOD_POLICIES", () => {
-  it("never falls back sends; reads fall back on validation, 5xx, 429, timeout", () => {
-    expect(policyFor("sendRawTransaction").fallback).toBe(false);
+  it("falls back reads and sends on auth, 429, 5xx, and timeout; not on generic 400", () => {
+    expect(policyFor("sendRawTransaction").fallback).toBe(true);
+    expect(methodAllowsFallback("sendRawTransaction", "auth")).toBe(true);
+    expect(methodAllowsFallback("sendRawTransaction", "rate-limit")).toBe(true);
+    expect(methodAllowsFallback("sendRawTransaction", "validation")).toBe(false);
     expect(methodAllowsFallback("getEpochInfo", "validation")).toBe(true);
+    expect(methodAllowsFallback("getEpochInfo", "auth")).toBe(true);
     expect(methodAllowsFallback("getEpochInfo", "http-4xx")).toBe(false);
     expect(methodAllowsFallback("getAccountInfo", "validation")).toBe(true);
     expect(methodAllowsFallback("getAccountInfo", "rate-limit")).toBe(true);
+    expect(methodAllowsFallback("getAccountInfo", "auth")).toBe(true);
     expect(methodAllowsFallback("getParsedTransaction", "empty")).toBe(true);
-    expect(methodAllowsFallback("simulateTransaction", "rate-limit")).toBe(false);
+    expect(methodAllowsFallback("simulateTransaction", "rate-limit")).toBe(true);
+    expect(methodAllowsFallback("simulateTransaction", "auth")).toBe(true);
     expect(methodAllowsFallback("simulateTransaction", "validation")).toBe(true);
-    expect(methodAllowsFallback("getLatestBlockhash", "rate-limit")).toBe(false);
-    expect(METHOD_POLICIES.sendTransaction?.fallback).toBe(false);
+    expect(methodAllowsFallback("getLatestBlockhash", "rate-limit")).toBe(true);
+    expect(methodAllowsFallback("confirmTransaction", "timeout")).toBe(true);
+    expect(METHOD_POLICIES.sendTransaction?.fallback).toBe(true);
   });
 });
 
@@ -127,16 +142,52 @@ describe("invokeWithPolicy", () => {
     expect(result).toMatchObject({ value: { owner: "default" }, servedBy: "default", fallback: true, errorKind: "rate-limit" });
   });
 
-  it("does not fall back a non-429 4xx onto the default RPC", async () => {
+  it("does not fall back a generic 400 onto the default RPC", async () => {
     await expect(invokeWithPolicy({
       method: "getSlot",
       primary: async () => {
-        throw new Error("403 forbidden");
+        throw new Error("400 bad request");
       },
       fallback: async () => 9,
       primaryId: "solami",
       fallbackId: "default",
-    })).rejects.toThrow(/403/);
+    })).rejects.toThrow(/400/);
+  });
+
+  it("falls back 401/403 auth errors onto the default RPC", async () => {
+    const result = await invokeWithPolicy({
+      method: "getAccountInfo",
+      primary: async () => {
+        throw new RpcHttpError(401, "RPC HTTP 401");
+      },
+      fallback: async () => ({ owner: "helius" }),
+      primaryId: "solami",
+      fallbackId: "default",
+    });
+    expect(result).toMatchObject({
+      value: { owner: "helius" },
+      servedBy: "default",
+      fallback: true,
+      errorKind: "auth",
+      reason: "primary-error",
+    });
+  });
+
+  it("falls back JSON-RPC -32005 rate limits", async () => {
+    const result = await invokeWithPolicy({
+      method: "getAccountInfo",
+      primary: async () => {
+        throw Object.assign(new Error("RPC -32005: Rate limited"), { code: -32005 });
+      },
+      fallback: async () => ({ owner: "helius" }),
+      primaryId: "solami",
+      fallbackId: "default",
+    });
+    expect(result).toMatchObject({
+      value: { owner: "helius" },
+      servedBy: "default",
+      errorKind: "rate-limit",
+    });
   });
 });
 
@@ -170,17 +221,29 @@ describe("createResilientConnection", () => {
     expect(lastRpcCallMetric(connection)?.servedBy).toBe("solami");
   });
 
-  it("does not retry sends on the fallback RPC", async () => {
+  it("does not fall back sends on validation errors", async () => {
     const { connection, fallback } = pair();
     await expect(connection.sendRawTransaction(new Uint8Array())).rejects.toThrow(/transactionCount/);
     expect(fallback.sendRawTransaction).not.toHaveBeenCalled();
   });
 
-  it("rethrows non-retryable 4xx from the primary", async () => {
-    const primary = { getSlot: vi.fn(async () => { throw new Error("403 forbidden"); }) };
+  it("re-broadcasts sendRawTransaction on the fallback after primary auth failure", async () => {
+    const primary = {
+      sendRawTransaction: vi.fn(async () => {
+        throw new RpcHttpError(403, "RPC HTTP 403");
+      }),
+    };
+    const fallback = { sendRawTransaction: vi.fn(async () => "fallback-sig") };
+    const connection = createResilientConnection(primary as never, fallback as never);
+    await expect(connection.sendRawTransaction(new Uint8Array())).resolves.toBe("fallback-sig");
+    expect(fallback.sendRawTransaction).toHaveBeenCalledOnce();
+  });
+
+  it("rethrows generic 400 from the primary without send failover", async () => {
+    const primary = { getSlot: vi.fn(async () => { throw new Error("400 bad request"); }) };
     const fallback = { getSlot: vi.fn(async () => 9) };
     const connection = createResilientConnection(primary as never, fallback as never);
-    await expect(connection.getSlot()).rejects.toThrow(/403/);
+    await expect(connection.getSlot()).rejects.toThrow(/400/);
     expect(fallback.getSlot).not.toHaveBeenCalled();
   });
 });

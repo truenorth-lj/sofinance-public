@@ -2,6 +2,7 @@ import "@/lib/engine-host";
 import { logExitPreviewFailure } from "@sofinance/engine/jupiter";
 import { readFullExitPreview } from "@sofinance/engine/lp-exit-data";
 import { publicErrorCode, sanitizePublicError } from "@/lib/public-error";
+import { captureApiRouteError } from "@/lib/sentry/capture";
 import { RPC_UNAVAILABLE_MESSAGE } from "@sofinance/engine/rpc/errors";
 export const dynamic="force-dynamic";
 export async function GET(request:Request){
@@ -10,6 +11,7 @@ export async function GET(request:Request){
  try{return Response.json(await readFullExitPreview(positionId,nftAccount,convertRent,fetch,request.signal),{headers:{"Cache-Control":"no-store"}});}
  catch(e){
   logExitPreviewFailure(e);
+  captureApiRouteError(e,{request,status:503,fallback:RPC_UNAVAILABLE_MESSAGE});
   const error=sanitizePublicError(e,RPC_UNAVAILABLE_MESSAGE);
   const errorCode=publicErrorCode(e);
   return Response.json({status:"unavailable",netRecoveryUSDC:null,executable:false,sent:false,error,...(errorCode?{errorCode}:{})},{status:503,headers:{"Cache-Control":"no-store"}});

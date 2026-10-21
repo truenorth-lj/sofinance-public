@@ -1,13 +1,16 @@
 import "@/lib/engine-host";
 import "server-only";
 
-import { CompoundSendError, sanitizePublicError } from "./public-error";
-import { JupiterHttpError, JupiterUnavailableError, JUPITER_UNAVAILABLE_MESSAGE } from "@sofinance/engine/jupiter/errors";
+import { CompoundSendError, publicErrorCode, sanitizePublicError } from "./public-error";
+import { JupiterHttpError, JupiterUnavailableError, JUPITER_UNAVAILABLE_CODE, JUPITER_UNAVAILABLE_MESSAGE, RPC_UNAVAILABLE_CODE } from "@sofinance/engine/jupiter/errors";
+import { SelectedNoRouteError } from "./selected-no-route";
+import { captureApiRouteError, shouldCaptureApiError } from "./sentry/capture";
 
 /** Selected upstream failures are availability errors, not invalid user input. */
 export function selectedApiError(error: unknown, fallback: string) {
   if (!(error instanceof JupiterHttpError && (error.status === 429 || error.status >= 500)) &&
     !(error instanceof JupiterUnavailableError)) return apiError(error, fallback);
+  if (shouldCaptureApiError(error, 503)) captureApiRouteError(error, { fallback, status: 503 });
   const limited = error instanceof JupiterHttpError && error.status === 429;
   const retryAfterMs = error instanceof JupiterHttpError ? error.retryAfterMs : null;
   return Response.json({ error: limited ? "Jupiter rate limit reached. Please retry later." : JUPITER_UNAVAILABLE_MESSAGE,
@@ -18,7 +21,14 @@ export function selectedApiError(error: unknown, fallback: string) {
   } });
 }
 
-export function apiError(error: unknown, fallback: string, status = 400, extra?: { sent?: boolean }) {
+export function apiError(error: unknown, fallback: string, status = 400, extra?: {
+  sent?: boolean;
+  route?: string;
+  request?: { url: string };
+}) {
+  if (shouldCaptureApiError(error, status)) {
+    captureApiRouteError(error, { fallback, route: extra?.route, request: extra?.request, status });
+  }
   // eslint-disable-next-line no-console
   console.error(fallback, error);
   if (error instanceof Error && error.cause !== undefined) {
@@ -26,7 +36,15 @@ export function apiError(error: unknown, fallback: string, status = 400, extra?:
     console.error(fallback, error.cause);
   }
   const source = error instanceof CompoundSendError && error.cause !== undefined ? error.cause : error;
-  const body: { error: string; sent?: boolean } = { error: sanitizePublicError(source, fallback) };
+  const body: { error: string; sent?: boolean; code?: string; inputMint?: string; outputMint?: string } = {
+    error: sanitizePublicError(source, fallback),
+  };
+  const code = publicErrorCode(source);
+  if (code && code !== JUPITER_UNAVAILABLE_CODE && code !== RPC_UNAVAILABLE_CODE) body.code = code;
+  if (source instanceof SelectedNoRouteError) {
+    body.inputMint = source.inputMint;
+    body.outputMint = source.outputMint;
+  }
   const sent = extra?.sent === false || error instanceof CompoundSendError && error.sent === false ? false : extra?.sent;
   if (sent === false) body.sent = false;
   return Response.json(body, {
