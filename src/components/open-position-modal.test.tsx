@@ -131,10 +131,14 @@ describe("range presets and estimated APR", () => {
     [...container.querySelectorAll<HTMLButtonElement>("[aria-label='Price range presets'] button")]
       .find((button) => button.querySelector("span")?.textContent === label)!;
 
-  const stubApr = (data: ReturnType<typeof payloadFixture>) => {
+  // `solPrice: false` leaves the typed SOL amount without a USD value, so ranking uses the payload's own
+  // (reference-capital) estimates; that isolates the row/Best layout from the size-aware re-pricing.
+  const stubApr = (data: ReturnType<typeof payloadFixture>, { solPrice = false } = {}) => {
     const original = fetch as unknown as (url: string, init?: RequestInit) => Promise<unknown>;
     vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) =>
-      url.startsWith("/api/pool-range-apr") ? { ok: true, json: async () => data } : original(url, init)));
+      url.startsWith("/api/pool-range-apr") ? { ok: true, json: async () => data }
+        : url === "/api/sol-usdc-price" && !solPrice ? { ok: false, json: async () => ({ error: "down" }) }
+          : original(url, init)));
   };
   const rowLabels = () => [...container.querySelectorAll("[aria-label='Price range presets'] button")].map((b) => b.querySelector("span")?.textContent);
 
@@ -166,6 +170,25 @@ describe("range presets and estimated APR", () => {
     expect(rowLabels()).toEqual(["Best", "Micro", "Tight", "Wide", "Custom"]);
     expect(container.querySelector("[data-testid='preset-best']")!.getAttribute("aria-pressed")).toBe("true");
     expect(quoteBodies.at(-1)).toMatchObject({ rangePreset: "standard" });
+  });
+
+  it("re-ranks Best for the typed amount after a debounce, skipping ranges the deposit does not fit", async () => {
+    // Flat fixture pool: 1e9 liquidity per 1-tick bin. At 0.12 SOL (~$18) every range fits and the narrowest
+    // (Micro) has the highest estimate; at 1,500 SOL (~$225k) Micro would be over half the active liquidity
+    // and Tight's edge is within 2x the estimated impact, so Best moves to Standard.
+    stubApr(payloadFixture(), { solPrice: true });
+    await mount();
+    await advance(400);
+    expect(container.querySelector("[data-testid='best-resolved']")!.textContent).toBe("Micro");
+    expect(container.textContent).toContain("For a ~$18 deposit");
+    await act(async () => { mocks.controller!.changeAmount("1500"); });
+    await advance(100);
+    expect(container.querySelector("[data-testid='best-resolved']")!.textContent).toBe("Micro");
+    await advance(400);
+    expect(container.querySelector("[data-testid='best-resolved']")!.textContent).toBe("Standard");
+    expect(container.querySelector("[data-testid='apr-micro']")!.textContent).toContain("large vs pool liquidity");
+    expect(container.querySelector("[data-testid='apr-tight']")!.textContent).toContain("edge near est. price impact");
+    expect(vi.mocked(fetch).mock.calls.filter(([url]) => String(url).startsWith("/api/pool-range-apr"))).toHaveLength(1);
   });
 
   it("still lets the user create a position when the estimate is unavailable", async () => {

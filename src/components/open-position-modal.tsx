@@ -13,6 +13,9 @@ import { useOpenPositionController, type OpenPositionPair } from "./use-open-pos
 import { RangePresetPicker } from "./range-apr/range-preset-picker";
 import { usePoolRangeApr } from "./range-apr/use-pool-range-apr";
 import { DOCS_ROUTES } from "@/lib/public-urls";
+import { NATIVE_SOL_MINT, USDC_MINT } from "@sofinance/engine/ids";
+import { depositUsd } from "@/lib/range-apr/size-aware";
+import { useDebouncedValue } from "./use-debounced-value";
 
 const FIELD_HELP = {
   "Token A": "The conservative amount of token A available to open your LP position. The position may use less; any remaining tokens stay in your wallet.",
@@ -73,6 +76,15 @@ export function OpenPositionModal({
   const c = useOpenPositionController(pair);
   const solUsdcRate = useSolUsdcPrice();
   const rangeApr = usePoolRangeApr(pair.poolAddress);
+  // Rank ranges for the amount being typed. Re-pricing is local (the payload carries the model), and the
+  // value is debounced so the Best button does not flicker on every keystroke.
+  const typedAmount = Number(c.amount);
+  const liveCapitalUsd = depositUsd({
+    amount: c.amount.trim() && Number.isFinite(typedAmount) ? typedAmount : null,
+    inputMint: c.inputMint, inputKind: c.inputKind, usdcMint: USDC_MINT, wsolMint: NATIVE_SOL_MINT, solUsd: solUsdcRate,
+    mintA: pair.mintA, mintB: pair.mintB, payload: rangeApr.status === "ready" ? rangeApr.data : null,
+  });
+  const capitalUsd = useDebouncedValue(liveCapitalUsd === null ? null : Math.round(liveCapitalUsd * 100) / 100, 400);
   const lamports = (value: string | number | bigint) => formatSolCost(value, solUsdcRate);
   const quote = c.quote;
   // Price the exact ticks a live quote for the current selection would sign; otherwise the preset / typed band.
@@ -194,6 +206,7 @@ export function OpenPositionModal({
           onMaxPrice={c.setMaxPrice}
           apr={rangeApr}
           quotedRange={quotedRange}
+          capitalUsd={capitalUsd}
         />
 
         {quote && (

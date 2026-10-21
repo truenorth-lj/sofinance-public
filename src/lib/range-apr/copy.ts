@@ -8,13 +8,15 @@ export const HIGHEST_RANGE_APR_LABEL = "Est. highest range APR";
 export const APR_ESTIMATE_CAVEAT =
   "Estimate, not a guarantee. Based on the last 7 complete days of pool volume and today's liquidity in each price bin. " +
   "Assumes volume and prices behave like the recent past and counts fees only while price is inside the range; " +
-  "ignores impermanent loss and costs. Shown for a ~$100 deposit; larger deposits earn a lower rate. " +
-  "Narrower ranges earn more per dollar but go out of range sooner.";
+  "ignores impermanent loss and costs. Sized to the amount you enter (~$100 until you enter one); larger deposits " +
+  "dilute their own share of fees, so the rate drops. Narrower ranges collect more fees per dollar but go out of range sooner.";
 
 /** "Best": the candidate with the highest estimated fee APR; a ranking of an estimate, not a prediction. */
 export const BEST_HELP =
   "The range with the highest estimated fee APR over the last 7 days for this pool " +
-  "(Micro, Tight, Standard or Wide; ties go to the wider range). Not a prediction. " +
+  "(Micro, Tight, Standard or Wide; ties go to the wider range), for the amount you enter. Ranges are skipped when " +
+  "your deposit would be over half of the pool's active liquidity or the nearer edge is within about twice the " +
+  "estimated price impact; if none fit, the widest range is suggested. Not a prediction. " +
   "A higher APR usually means a narrower range and a higher risk of leaving range.";
 
 export const HIGHEST_RANGE_HELP =
