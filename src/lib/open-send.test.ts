@@ -7,7 +7,10 @@ vi.mock("server-only", () => ({}));
 vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: vi.fn() }));
 vi.mock("@sofinance/engine/open-state", () => ({ readOpenPoolState: vi.fn() }));
 vi.mock("@sofinance/engine/open-simulation", () => ({ simulateAndVerifyOpenTransaction: vi.fn() }));
-vi.mock("@sofinance/engine/solami-beam", () => ({ lookupBeamAfterSend: vi.fn(), beamLandingUrl: (signature: string) => `/api/beam-landing?signature=${signature}` }));
+vi.mock("@/lib/beam-after-send", () => ({
+  beamAfterSend: vi.fn(),
+  noBeamAfterSend: (signature: string) => ({ beam: null, label: null, beamLandingUrl: `/api/beam-landing?signature=${signature}` }),
+}));
 const opensLog = vi.hoisted(() => ({ logPositionOpenBestEffort: vi.fn() }));
 vi.mock("@/lib/opens-log", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/lib/opens-log")>();
@@ -20,7 +23,7 @@ import { issueOpenPositionPermit } from "./open-permit";
 import { readOpenPoolState } from "@sofinance/engine/open-state";
 import { simulateAndVerifyOpenTransaction } from "@sofinance/engine/open-simulation";
 import { rpcConnection } from "@sofinance/engine/rpc";
-import { lookupBeamAfterSend } from "@sofinance/engine/solami-beam";
+import { beamAfterSend } from "@/lib/beam-after-send";
 import type { OpenPositionSummary } from "@sofinance/engine/open-types";
 import { sendSignedOpenPosition, submitOpenPositionFromParts } from "./open-send";
 import {
@@ -56,7 +59,7 @@ beforeEach(() => {
   vi.mocked(rpcConnection).mockReturnValue(connection as never);
   vi.mocked(readOpenPoolState).mockResolvedValue(poolState() as never);
   vi.mocked(simulateAndVerifyOpenTransaction).mockResolvedValue(undefined as never);
-  vi.mocked(lookupBeamAfterSend).mockResolvedValue(BEAM_RESULT as never);
+  vi.mocked(beamAfterSend).mockResolvedValue(BEAM_RESULT as never);
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -81,6 +84,7 @@ describe("sendSignedOpenPosition", () => {
     expect(connection.sendRawTransaction).toHaveBeenCalledWith(expect.any(Uint8Array), {
       skipPreflight: false, preflightCommitment: "confirmed", maxRetries: 3,
     });
+    expect(beamAfterSend).toHaveBeenCalledWith(signatureOf(transaction), summary.beam);
     expect(readOpenPoolState).toHaveBeenCalledWith(wallet, {
       poolId: summary.poolId, inputMint: summary.inputMint, inputKind: summary.inputKind,
     }, connection);
@@ -201,7 +205,7 @@ describe("sendSignedOpenPosition", () => {
   });
   it("does not let optional Beam lookup failure overturn submission", async () => {
     connection.sendRawTransaction.mockResolvedValue(signatureOf(transaction));
-    vi.mocked(lookupBeamAfterSend).mockRejectedValue(new Error("beam down"));
+    vi.mocked(beamAfterSend).mockRejectedValue(new Error("beam down"));
     await expect(sendSignedOpenPosition(wallet, transaction, summaryFor())).resolves.toMatchObject({
       signature: signatureOf(transaction), beam: null, beamLandingUrl: `/api/beam-landing?signature=${signatureOf(transaction)}`,
     });
@@ -254,5 +258,30 @@ describe("submitOpenPositionFromParts", () => {
 
   it("surfaces a raw deserialize error for a garbage transaction", async () => {
     await expect(submitOpenPositionFromParts({ ...parts(), signedTransaction: "AAAA" })).rejects.toThrow();
+  });
+});
+
+describe("sendSignedOpenPosition: Beam landing never blocks the broadcast response", () => {
+  it("with no tip, the real helper makes no Beam request; with a hanging Beam API and a tip, it returns within the cap", async () => {
+    const real = await vi.importActual<typeof import("@/lib/beam-after-send")>("@/lib/beam-after-send");
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((_input, init) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+    }));
+    try {
+      vi.mocked(beamAfterSend).mockImplementation(real.beamAfterSend);
+      const untipped = summaryFor();
+      untipped.beam = { included: false, tipLamports: 0, tipAddress: null, skippedReason: "no-tip-address" };
+      await expect(sendSignedOpenPosition(wallet, transaction, untipped)).resolves.toMatchObject({ beam: null, beamLabel: null });
+      expect(fetchSpy).not.toHaveBeenCalled();
+
+      const tipped = summaryFor();
+      tipped.beam = { included: true, tipLamports: 100_000, tipAddress: "tip", skippedReason: null };
+      const started = Date.now();
+      await expect(sendSignedOpenPosition(wallet, transaction, tipped)).resolves.toMatchObject({ beam: null, beamLabel: null });
+      expect(Date.now() - started).toBeLessThan(real.BEAM_INLINE_LOOKUP_TIMEOUT_MS + 1_000);
+      expect(fetchSpy).toHaveBeenCalledOnce();
+    } finally {
+      fetchSpy.mockRestore();
+    }
   });
 });

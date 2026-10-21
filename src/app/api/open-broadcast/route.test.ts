@@ -6,13 +6,13 @@ vi.mock("server-only", () => ({}));
 vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: vi.fn() }));
 vi.mock("@sofinance/engine/open-state", () => ({ readOpenPoolState: vi.fn() }));
 vi.mock("@sofinance/engine/open-simulation", () => ({ simulateAndVerifyOpenTransaction: vi.fn() }));
-vi.mock("@sofinance/engine/solami-beam", () => ({ lookupBeamAfterSend: vi.fn() }));
+vi.mock("@/lib/beam-after-send", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/beam-after-send")>()), beamAfterSend: vi.fn() }));
 
 import { issueOpenPositionPermit } from "@/lib/open-permit";
 import { readOpenPoolState } from "@sofinance/engine/open-state";
 import { simulateAndVerifyOpenTransaction } from "@sofinance/engine/open-simulation";
 import { rpcConnection } from "@sofinance/engine/rpc";
-import { lookupBeamAfterSend } from "@sofinance/engine/solami-beam";
+import { beamAfterSend } from "@/lib/beam-after-send";
 import {
   BEAM_RESULT, BLOCKHASH, SIGNING_SECRET, buildTransaction, fakeConnection, type FakeConnection, jsonRequest, messageBase64, openSummaryFixture,
   signatureOf, testKeypair, toBase64,
@@ -48,7 +48,7 @@ beforeEach(() => {
     poolId: summary.poolId, inputMint: summary.inputMint, inputKind: summary.inputKind, balances: { ...summary.startingBalances },
   } as never);
   vi.mocked(simulateAndVerifyOpenTransaction).mockResolvedValue(undefined as never);
-  vi.mocked(lookupBeamAfterSend).mockResolvedValue(BEAM_RESULT as never);
+  vi.mocked(beamAfterSend).mockResolvedValue(BEAM_RESULT as never);
 });
 afterEach(() => {
   vi.unstubAllEnvs();

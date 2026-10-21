@@ -8,7 +8,7 @@ import { readCompoundPositionState } from "@sofinance/engine/compound-state";
 import { simulateAndVerifyCompound } from "@sofinance/engine/compound-simulation";
 import { CompoundSendError, isPreflightOrUnsentFailure } from "./public-error";
 import { rpcConnection } from "@sofinance/engine/rpc";
-import { lookupBeamAfterSend } from "@sofinance/engine/solami-beam";
+import { beamAfterSend, noBeamAfterSend } from "@/lib/beam-after-send";
 import type { CompoundSummary } from "@sofinance/engine/compound-types";
 
 export { CompoundSendError };
@@ -57,7 +57,7 @@ export async function sendSignedCompoundTransaction(
     });
     if (signature !== expected) throw new Error("RPC returned compound signature mismatch, please verify on-chain status");
     invalidatePositionHistoryCache(summary.positionMint);
-    const beam = await lookupBeamAfterSend(signature);
+    const beam = await beamAfterSend(signature, summary.beam).catch(() => noBeamAfterSend(signature));
     return { signature, beam: beam.beam, beamLabel: beam.label, beamLandingUrl: beam.beamLandingUrl };
   } catch (error) {
     if (error instanceof CompoundSendError) throw error;

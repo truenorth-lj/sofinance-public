@@ -7,13 +7,13 @@ vi.mock("server-only", () => ({}));
 vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: vi.fn() }));
 vi.mock("@sofinance/engine/compound-state", () => ({ readCompoundPositionState: vi.fn() }));
 vi.mock("@sofinance/engine/compound-simulation", () => ({ simulateAndVerifyCompound: vi.fn() }));
-vi.mock("@sofinance/engine/solami-beam", () => ({ lookupBeamAfterSend: vi.fn() }));
+vi.mock("@/lib/beam-after-send", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/beam-after-send")>()), beamAfterSend: vi.fn() }));
 
 import { issueCompoundPermit } from "@/lib/compound-permit";
 import { simulateAndVerifyCompound } from "@sofinance/engine/compound-simulation";
 import { readCompoundPositionState } from "@sofinance/engine/compound-state";
 import { rpcConnection } from "@sofinance/engine/rpc";
-import { lookupBeamAfterSend } from "@sofinance/engine/solami-beam";
+import { beamAfterSend } from "@/lib/beam-after-send";
 import {
   BEAM_RESULT, BLOCKHASH, SIGNING_SECRET, buildTransaction, compoundSummaryFixture, fakeConnection, type FakeConnection, jsonRequest, messageBase64,
   oversizedSignedBase64, signatureOf, testKeypair, toBase64,
@@ -44,7 +44,7 @@ beforeEach(() => {
   vi.mocked(rpcConnection).mockReturnValue(connection as never);
   vi.mocked(readCompoundPositionState).mockResolvedValue({ ...summary.state } as never);
   vi.mocked(simulateAndVerifyCompound).mockResolvedValue({ rewards: [] } as never);
-  vi.mocked(lookupBeamAfterSend).mockResolvedValue(BEAM_RESULT as never);
+  vi.mocked(beamAfterSend).mockResolvedValue(BEAM_RESULT as never);
 });
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -58,7 +58,7 @@ describe("POST /api/compound-broadcast", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("Cache-Control")).toBe("no-store");
     expect(json).toEqual({ signature: signatureOf(transaction) });
-    expect(lookupBeamAfterSend).toHaveBeenCalledOnce();
+    expect(beamAfterSend).toHaveBeenCalledOnce();
   });
 
   it("rejects a request body over 30,000 chars, with sent:false", async () => {

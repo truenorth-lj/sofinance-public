@@ -3,7 +3,7 @@ vi.mock("server-only", () => ({}));
 const mocks = vi.hoisted(() => ({ simulate: vi.fn(), height: vi.fn(), send: vi.fn(), beam: vi.fn() }));
 vi.mock("@sofinance/engine/withdraw/build", () => ({ simulateWithdraw: mocks.simulate }));
 vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: () => ({ getBlockHeight: mocks.height, sendRawTransaction: mocks.send }) }));
-vi.mock("@sofinance/engine/solami-beam", () => ({ lookupBeamAfterSend: mocks.beam }));
+vi.mock("@/lib/beam-after-send", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/beam-after-send")>()), beamAfterSend: mocks.beam }));
 import { submitWithdraw } from "./send";
 import { withdrawPermit } from "@sofinance/engine/withdraw/permit";
 import type { WithdrawSummary } from "@sofinance/engine/withdraw/types";
@@ -23,9 +23,11 @@ beforeEach(() => {
     mocks.beam.mockResolvedValue({ beam: null, label: null, beamLandingUrl: "url" });
 });
 it("re-simulates the signed exact message before the single RPC submission", async () => {
-    expect(await submitWithdraw(input())).toHaveProperty("signature", signatureOf(transaction));
+    const body = input({ beam: { enabled: false, included: false, tipLamports: 0, tipAddress: null, skippedReason: "disabled" } });
+    expect(await submitWithdraw(body)).toHaveProperty("signature", signatureOf(transaction));
     expect(mocks.simulate).toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.objectContaining({ operation: "withdraw" }), true);
     expect(mocks.send).toHaveBeenCalledOnce();
+    expect(mocks.beam).toHaveBeenCalledWith(signatureOf(transaction), body.summary.beam);
     expect(mocks.simulate.mock.invocationCallOrder[0]).toBeLessThan(mocks.send.mock.invocationCallOrder[0]!);
 });
 it("rejects a forged permit or a changed summary before simulation or sending", async () => {

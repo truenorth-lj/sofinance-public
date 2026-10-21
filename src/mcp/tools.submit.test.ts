@@ -13,7 +13,7 @@ vi.mock("@sofinance/engine/open-state", () => ({ readOpenPoolState: vi.fn() }));
 vi.mock("@sofinance/engine/open-simulation", () => ({ simulateAndVerifyOpenTransaction: vi.fn() }));
 vi.mock("@sofinance/engine/compound-state", () => ({ readCompoundPositionState: vi.fn() }));
 vi.mock("@sofinance/engine/compound-simulation", () => ({ simulateAndVerifyCompound: vi.fn() }));
-vi.mock("@sofinance/engine/solami-beam", () => ({ lookupBeamAfterSend: vi.fn() }));
+vi.mock("@/lib/beam-after-send", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/beam-after-send")>()), beamAfterSend: vi.fn() }));
 
 import { issueCompoundPermit } from "../lib/compound-permit";
 import { simulateAndVerifyCompound } from "@sofinance/engine/compound-simulation";
@@ -25,7 +25,7 @@ import { rpcConnection } from "@sofinance/engine/rpc";
 import { issueSelectedPermit, type SelectedPermitInput } from "../lib/selected-permit";
 import { simulateAndVerifySelectedTransaction } from "../lib/selected-simulation";
 import { readSelectedPositionState } from "@sofinance/engine/selected-state";
-import { lookupBeamAfterSend } from "@sofinance/engine/solami-beam";
+import { beamAfterSend } from "@/lib/beam-after-send";
 import {
   BEAM_RESULT, BLOCKHASH, SIGNING_SECRET, buildTransaction, compoundSummaryFixture, fakeConnection, type FakeConnection, messageBase64,
   openSummaryFixture, signatureOf, testKeypair, toBase64,
@@ -49,7 +49,7 @@ beforeEach(() => {
   transaction = buildTransaction({ payer: walletKey });
   connection = fakeConnection({ sendRawTransaction: vi.fn(async () => signatureOf(transaction)) });
   vi.mocked(rpcConnection).mockReturnValue(connection as never);
-  vi.mocked(lookupBeamAfterSend).mockResolvedValue(BEAM_RESULT as never);
+  vi.mocked(beamAfterSend).mockResolvedValue(BEAM_RESULT as never);
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -194,10 +194,13 @@ describe("submitSignedTransaction (MCP add-liquidity submit)", () => {
     await expect(submitSignedTransaction(selectedInput())).rejects.toThrow("https://rpc.example/x?api-key=SECRET123");
   });
 
-  it("QUIRK: a throwing Beam lookup after a successful send rejects the whole tool call", async () => {
-    vi.mocked(lookupBeamAfterSend).mockRejectedValue(new Error("beam down"));
-    await expect(submitSignedTransaction(selectedInput())).rejects.toThrow("beam down");
+  it("never waits on Beam after send: no tip plan is passed, and a throwing lookup cannot reject the tool call", async () => {
+    vi.mocked(beamAfterSend).mockRejectedValue(new Error("beam down"));
+    await expect(submitSignedTransaction(selectedInput())).resolves.toMatchObject({
+      signature: signatureOf(transaction), beam: null, beamLabel: null,
+    });
     expect(connection.sendRawTransaction).toHaveBeenCalledOnce();
+    expect(beamAfterSend).toHaveBeenCalledWith(signatureOf(transaction), null);
   });
 });
 
