@@ -46,7 +46,9 @@ describe("docs routes and copy guards", () => {
     const nav = readFileSync(resolve("src/components/ink/InkNav.tsx"), "utf8");
     const landing = readFileSync(resolve("src/components/landing-page.tsx"), "utf8");
     expect(nav).toContain("DOCS_ROUTES.home");
+    expect(nav).toContain("BLOG_ROUTES.home");
     expect(landing).toContain("DOCS_ROUTES.home");
+    expect(landing).toContain("BLOG_ROUTES.home");
   });
 
   it("links APR explanations and open confirm to docs pages", () => {

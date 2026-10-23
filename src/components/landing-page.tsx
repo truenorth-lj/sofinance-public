@@ -3,7 +3,7 @@ import { Suspense, type ReactNode } from "react";
 import { BrandMark } from "@/components/brand-mark";
 import { HomepagePoolsTable } from "@/components/homepage-pools-table";
 import { ArrowUpRight } from "lucide-react";
-import { APP_ROUTES, DOCS_ROUTES } from "@/lib/public-urls";
+import { APP_ROUTES, BLOG_ROUTES, DOCS_ROUTES } from "@/lib/public-urls";
 import { EXTERNAL_LINK_PROPS, SOCIAL_LINKS } from "@/lib/social-links";
 import { XIcon } from "@/components/x-icon";
 
@@ -96,6 +96,9 @@ export function LandingPage() {
             </a>
             <Link href={DOCS_ROUTES.home} className={`${navPill} flex-1`}>
               Docs
+            </Link>
+            <Link href={BLOG_ROUTES.home} className={`${navPill} flex-1`}>
+              Blog
             </Link>
           </nav>
           <Link
@@ -277,6 +280,9 @@ export function LandingPage() {
           <div className="flex flex-wrap items-center gap-5">
             <Link href={APP_ROUTES.home} className="transition-colors hover:text-cream">
               App
+            </Link>
+            <Link href={BLOG_ROUTES.home} className="transition-colors hover:text-cream">
+              Blog
             </Link>
             <Link href={DOCS_ROUTES.home} className="transition-colors hover:text-cream">
               Docs

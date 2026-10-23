@@ -75,3 +75,14 @@ export const DOCS_ROUTES = {
   withdraw: `${DOCS_PATH}/withdraw`,
   security: `${DOCS_PATH}/security`,
 } as const;
+
+/** Long-form articles (public site, English). Add a file in `content/blog/` to publish. */
+export const BLOG_PATH = "/blog";
+
+export const BLOG_ROUTES = {
+  home: BLOG_PATH,
+} as const;
+
+export function blogArticlePath(slug: string): string {
+  return `${BLOG_PATH}/${slug}`;
+}
