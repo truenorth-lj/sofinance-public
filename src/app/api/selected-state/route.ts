@@ -3,6 +3,7 @@ import { parseWallet } from "@sofinance/engine/api-input";
 import { apiError } from "@/lib/api-response";
 import { readSelectedPositionState, type PositionSelection } from "@sofinance/engine/selected-state";
 import { PublicKey } from "@solana/web3.js";
+import { isPositionNotHeldError, POSITION_NOT_HELD_CODE, POSITION_NOT_HELD_MESSAGE } from "@/lib/selected-position-not-held";
 
 export async function GET(request: Request) {
   let wallet: string;
@@ -21,6 +22,10 @@ export async function GET(request: Request) {
   try {
     return Response.json(await readSelectedPositionState(wallet, selection), { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
+    if (isPositionNotHeldError(error)) {
+      return Response.json({ error: POSITION_NOT_HELD_MESSAGE, code: POSITION_NOT_HELD_CODE },
+        { status: 409, headers: { "Cache-Control": "no-store" } });
+    }
     return apiError(error, "Selected position state reading failed", 503);
   }
 }

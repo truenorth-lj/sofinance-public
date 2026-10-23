@@ -10,6 +10,7 @@ import { readSelectedPositionState, type PositionSelection } from "@sofinance/en
 import { rpcConnection } from "@sofinance/engine/rpc";
 import { invalidatePositionHistoryCache } from "@/lib/position-history-cache";
 import { resetRpcCache } from "@sofinance/engine/rpc/cache";
+import { isPositionNotHeldError } from "@/lib/selected-position-not-held";
 
 /** Blocks past lastValidBlockHeight after which an unseen signature is treated as expired regardless of wallet changes. */
 const EXPIRY_GRACE_BLOCKS = 150;
@@ -70,7 +71,7 @@ export async function POST(request: Request) {
     try {
       state = await readSelectedPositionState(wallet, body.selection, connection, true);
     } catch (error) {
-      if (error instanceof Error && error.message === "Wallet does not currently hold this Raydium CLMM position NFT") {
+      if (isPositionNotHeldError(error)) {
         // The position may have been withdrawn or moved after this attempt. Resolve from the
         // signature alone so the warning cannot stay stuck on a terminal transaction.
         const base = { state: null, signature: body.signature };
