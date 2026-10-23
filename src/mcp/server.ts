@@ -27,8 +27,6 @@ import {
   submitOpenPositionSchema,
 } from "./schemas.js";
 import { publicToolError } from "./public-tool-error.js";
-import { MCP_RESTRICTED_REGIONS_NOTE, RESTRICTED_REGIONS_SENTENCE } from "../lib/restricted-regions";
-import { isRegionBlockedMcpTool } from "../lib/region-routes";
 import {
   listPositions,
   quoteAddLiquidity,
@@ -73,21 +71,13 @@ const server = new Server(
     capabilities: {
       tools: {},
     },
-    instructions: `${RESTRICTED_REGIONS_SENTENCE} Do not use the transaction-building tools on behalf of people in those regions. Withdrawal tools stay available.`,
   }
 );
-
-/** Transaction-building tools carry the same restricted-regions statement as the hosted endpoint. */
-function withRestrictedRegionsNote<T extends { name: string; description?: string }>(tools: T[]): T[] {
-  return tools.map((tool) => isRegionBlockedMcpTool(tool.name)
-    ? { ...tool, description: `${tool.description ?? ""}${MCP_RESTRICTED_REGIONS_NOTE}` }
-    : tool);
-}
 
 // Tool definitions with comprehensive descriptions
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
-    tools: withRestrictedRegionsNote([
+    tools: [
       ...WITHDRAW_TOOL_DEFINITIONS,
 
 
@@ -534,7 +524,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           required: ["signedTransaction", "permit", "wallet", "summary"],
         },
       },
-    ]),
+    ],
   };
 });
 
