@@ -10,6 +10,7 @@ import { captureGrowthEvent } from "@/lib/analytics/client";
 import { GROWTH_EVENTS } from "@/lib/analytics/events";
 import { WalletGrowthAnalytics } from "./wallet-growth-analytics";
 import { WalletConnectionContext } from "./wallet-connection";
+import { TermsGate } from "./terms-gate";
 
 const MobileWalletProvider = dynamic(() => import("./mobile-wallet-provider").then((module) => module.MobileWalletProvider), { ssr: false });
 
@@ -18,7 +19,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
   const projectId = process.env.NEXT_PUBLIC_REOWN_PROJECT_ID?.trim();
 
   return <ConnectionProvider endpoint={endpoint}>
-    {projectId ? <MobileWalletProvider>{children}</MobileWalletProvider> : <BrowserWalletProvider>{children}</BrowserWalletProvider>}
+    {projectId ? <MobileWalletProvider><TermsGate>{children}</TermsGate></MobileWalletProvider> : <BrowserWalletProvider><TermsGate>{children}</TermsGate></BrowserWalletProvider>}
   </ConnectionProvider>;
 }
 

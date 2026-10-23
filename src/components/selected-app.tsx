@@ -44,8 +44,10 @@ function calculateInputUsd(amount: string, priceUsd: number | null): string | nu
   }
 }
 
-export function SelectedApp({ initialView = "compound", initialMint = "", initialWallet = "", previewPoolId = "" }: {
+export function SelectedApp({ initialView = "compound", initialMint = "", initialWallet = "", previewPoolId = "", exitOnly = false }: {
   initialView?: "compound" | "performance" | "deposit" | "withdraw";
+  /** Exit-only mode (/app/exit): only the withdraw flow is offered. Reachable from restricted regions. */
+  exitOnly?: boolean;
   initialMint?: string;
   initialWallet?: string;
   previewPoolId?: string;
@@ -130,7 +132,9 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
       <InkNav wallet={wallet} connected={connected} onConnect={connect} onDisconnect={disconnect} />
 
       <div className="mt-3 grid gap-3 lg:grid-cols-12">
-      <InkHero stacked className="mt-0 border border-transparent lg:col-span-7" label="Positions" title="Manage my liquidity positions">Add yield back to original position, or invest new capital.</InkHero>
+      {exitOnly
+        ? <InkHero stacked className="mt-0 border border-transparent lg:col-span-7" label="Withdraw" title="Withdraw a position">Exit-only view. Withdrawals are always available, including from regions where opening or adding to positions is restricted. You can also withdraw directly on Raydium.</InkHero>
+        : <InkHero stacked className="mt-0 border border-transparent lg:col-span-7" label="Positions" title="Manage my liquidity positions">Add yield back to original position, or invest new capital.</InkHero>}
 
       <section aria-labelledby="position-heading" className="flex flex-col rounded-[28px] border border-white/12 bg-char p-6 sm:p-9 lg:col-span-5">
         <div className="flex flex-1 flex-col justify-center">
@@ -147,7 +151,7 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
           placeholder={!positionOptions.length ? (connected ? "No identifiable position found" : "Connect wallet to view positions") : undefined}
           className="mt-3 w-full rounded-2xl border border-white/20 bg-white/[0.06] px-3 py-3 text-sm text-cream outline-none focus:border-white/40"
         /> : <div className="mt-3"><ConnectWalletPrompt onConnect={connect} /></div>}
-        {connected && discovery && positionOptions.length === 0 && <a href="/app/rwa-pairs" className="mt-3 text-sm font-semibold text-cream underline underline-offset-4">Explore RWA Pairs to open a position</a>}
+        {!exitOnly && connected && discovery && positionOptions.length === 0 && <a href="/app/rwa-pairs" className="mt-3 text-sm font-semibold text-cream underline underline-offset-4">Explore RWA Pairs to open a position</a>}
         {state && <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs">
           <span className={`rounded-full border px-2.5 py-1 ${state.inRange ? "border-white/40 bg-white/[0.07] text-cream/80" : "border-white/20 bg-white/[0.05] text-smoke"}`}>{state.rangeSide === "above" ? "Above range · single-sided" : state.rangeSide === "below" ? "Below range · single-sided" : "Price within range"}</span>
 
@@ -168,16 +172,16 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
       </section>
       </div>
 
-      <ActionSelector value={activeView} onChange={setActiveView} options={[
+      {!exitOnly && <ActionSelector value={activeView} onChange={setActiveView} options={[
         { value: "compound", label: "Yield Compound", icon: Sprout, controls: "compound-view" },
         { value: "performance", label: "Performance", icon: ChartNoAxesCombined, controls: "performance-view" },
         { value: "deposit", label: "Add to position", icon: ArrowDown, controls: "deposit-view" },
         { value: "withdraw", label: "Withdraw", icon: ArrowUp, controls: "withdraw-view", disabled: !state || !wallet || (busy && activeView !== "withdraw") },
-      ]} />
-      {activeView === "withdraw" && <div id="withdraw-view">{state && wallet ? <WithdrawPanel key={`${wallet}:${state.positionMint}`} wallet={wallet} positionMint={state.positionMint} mintA={state.mintA} mintB={state.mintB} label={poolLabel} onClose={()=>setActiveView("compound")} onBusyChange={setWithdrawBusy} onConfirmed={()=>{void refreshState();void refreshDiscovery();}} /> : <p className="mt-4 text-sm text-smoke">Connect your wallet and choose a position to withdraw.</p>}</div>}
-      {historyWarning && <div role="status" className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-xs text-cream/80"><span>{historyWarning}</span><button type="button" className="font-semibold underline" onClick={() => { setActiveView("deposit"); if (visibleAttempt) setStatusDialogOpen(true); }}>View add liquidity transaction</button></div>}
-      {compound.historyWarning && <div role="status" className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-xs text-cream/80"><span>{compound.historyWarning}</span><button type="button" className="font-semibold underline" onClick={() => setActiveView("compound")}>View compound status</button></div>}
-      <main>
+      ]} />}
+      {activeView === "withdraw" && <div id="withdraw-view">{state && wallet ? <WithdrawPanel key={`${wallet}:${state.positionMint}`} wallet={wallet} positionMint={state.positionMint} mintA={state.mintA} mintB={state.mintB} label={poolLabel} onClose={()=>setActiveView(exitOnly ? "withdraw" : "compound")} onBusyChange={setWithdrawBusy} onConfirmed={()=>{void refreshState();void refreshDiscovery();}} /> : <p className="mt-4 text-sm text-smoke">Connect your wallet and choose a position to withdraw.</p>}</div>}
+      {!exitOnly && historyWarning && <div role="status" className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-xs text-cream/80"><span>{historyWarning}</span><button type="button" className="font-semibold underline" onClick={() => { setActiveView("deposit"); if (visibleAttempt) setStatusDialogOpen(true); }}>View add liquidity transaction</button></div>}
+      {!exitOnly && compound.historyWarning && <div role="status" className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-xs text-cream/80"><span>{compound.historyWarning}</span><button type="button" className="font-semibold underline" onClick={() => setActiveView("compound")}>View compound status</button></div>}
+      {!exitOnly && <main>
         <div id="compound-view" hidden={activeView !== "compound"}>
           <CompoundPanel controller={compound} tokenLabel={poolLabel} onConnect={connect} />
         </div>
@@ -221,7 +225,7 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
         </aside>
         </div>
         </div>
-      </main>
+      </main>}
       {connectionError && activeView === "compound" && <div role="alert" className="mt-4 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80">{connectionError}</div>}
       {error && !quoteError && activeView === "compound" && <div role="alert" className="mt-4 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80">{error}</div>}
     </div>
