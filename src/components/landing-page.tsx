@@ -3,7 +3,7 @@ import { Suspense, type ReactNode } from "react";
 import { BrandMark } from "@/components/brand-mark";
 import { HomepagePoolsTable } from "@/components/homepage-pools-table";
 import { ArrowUpRight } from "lucide-react";
-import { APP_ROUTES, BLOG_ROUTES, DOCS_ROUTES } from "@/lib/public-urls";
+import { APP_ROUTES, BLOG_ROUTES, DOCS_ROUTES, LEGAL_ROUTES } from "@/lib/public-urls";
 import { EXTERNAL_LINK_PROPS, SOCIAL_LINKS } from "@/lib/social-links";
 import { XIcon } from "@/components/x-icon";
 
@@ -290,6 +290,9 @@ export function LandingPage() {
             </Link>
             <Link href={DOCS_ROUTES.risks} className="transition-colors hover:text-cream">
               Risks
+            </Link>
+            <Link href={LEGAL_ROUTES.terms} className="transition-colors hover:text-cream">
+              Terms
             </Link>
             <a
               href={SOCIAL_LINKS.x.href}

@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { InkNav, InkShell } from "@/components/ink";
 import { DOCS_PAGES } from "@/lib/docs-nav";
-import { DOCS_ROUTES } from "@/lib/public-urls";
+import { DOCS_ROUTES, LEGAL_ROUTES } from "@/lib/public-urls";
 import { cn } from "@/lib/cn";
 
 function isActive(pathname: string, href: string) {
@@ -51,6 +51,10 @@ export function DocsShell({ children }: { children: ReactNode }) {
         </nav>
         <div className="min-w-0 lg:col-span-9">{children}</div>
       </div>
+      <footer className="mt-6 flex flex-wrap items-center gap-5 px-2 py-4 font-data text-[11px] uppercase tracking-[0.12em] text-smoke">
+        <Link href="/" className="transition-colors hover:text-cream">Home</Link>
+        <Link href={LEGAL_ROUTES.terms} className="transition-colors hover:text-cream">Terms of Service</Link>
+      </footer>
     </InkShell>
   );
 }
