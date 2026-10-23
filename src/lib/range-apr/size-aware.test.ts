@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { sqrtPriceAtTick } from "@sofinance/engine/range-apr/tick-math";
 import { degradedPayloadFixture, payloadFixture } from "./payload.fixture";
 import {
-  activeLiquidity, depositUsd, EDGE_TO_IMPACT_MIN_MULTIPLE, estimatedPoolImpactBps, nearerEdgeBps, payloadForCapital, sizeFitFor,
+  activeLiquidity, bandEdgeBps, depositUsd, EDGE_TO_IMPACT_MIN_MULTIPLE, estimatedPoolImpactBps, nearerEdgeBps, payloadForCapital, sizeFitFor,
 } from "./size-aware";
 import { buildPresetList } from "./preset-list";
 import { OPEN_RANGE_UI_PRESETS } from "@sofinance/engine/open-range-presets";
@@ -62,12 +63,44 @@ describe("Best on TSLA/TSLAx (live payload, 2026-10-21)", () => {
     expect(bestAt(100)?.id).toBe("tight");
     expect(bestAt(300)?.id).toBe("standard");
     expect(bestAt(1000)?.id).toBe("wide");
-    expect(bestAt(1000)?.fallback).toBeUndefined();
+    // $1000's estimated own-pool move leaves the current spacing band, so Wide is the
+    // fallback suggestion rather than a highest-APR fit (prepare would reject the others).
+    expect(bestAt(1000)?.fallback).toBe(true);
   });
   it("excludes Standard at 1000 USDC (edge ~2.0x the impact)", () => {
     const standard = payloadForCapital(tslaPayload, 1000).presets.find((preset) => preset.id === "standard")!;
     expect(standard.sizeFit).toMatchObject({ status: "excluded", reason: "near-edge" });
     expect(standard.sizeFit!.edgeBps / standard.sizeFit!.impactBps).toBeGreaterThan(2);
+  });
+  it("excludes every candidate at 1000 USDC for leaving the tick-spacing band, including Wide", () => {
+    const sized = payloadForCapital(tslaPayload, 1000);
+    expect(sized.presets.every((preset) => preset.sizeFit?.status === "excluded")).toBe(true);
+    expect(sized.presets.find((preset) => preset.id === "wide")!.sizeFit).toMatchObject({ status: "excluded", reason: "cross-band" });
+    expect(sized.presets[0]!.sizeFit!.impactBps).toBeGreaterThan(sized.presets[0]!.sizeFit!.bandBps!);
+  });
+});
+
+describe("tick-spacing band vs range edge", () => {
+  it("excludes a wide-enough range when the estimated swap would leave the current spacing band", () => {
+    // Price sits just inside the upper edge of a 60-tick band. A wide range still has a far
+    // nearer edge, so the old near-edge guard would keep it — the same mismatch as Best
+    // recommending Standard then prepare throwing CROSS_LIQUIDITY_BAND.
+    const base = payloadFixture();
+    const upperSqrt = sqrtPriceAtTick(60);
+    const payload = payloadFixture({
+      pool: { ...base.pool, tickSpacing: 60, tickCurrent: 55 },
+      model: {
+        ...base.model,
+        currentSqrt: upperSqrt * 0.9997,
+        bins: base.model.bins.map((bin) => ({ ...bin, liquidity: 1e6 })),
+      },
+    });
+    const range = { tickLower: -240, tickUpper: 240 };
+    const capitalUsd = 2_000;
+    const impact = estimatedPoolImpactBps(payload, capitalUsd);
+    expect(nearerEdgeBps(payload.model.currentSqrt, range)).toBeGreaterThan(EDGE_TO_IMPACT_MIN_MULTIPLE * impact);
+    expect(bandEdgeBps(payload)).toBeLessThan(impact);
+    expect(sizeFitFor(payload, range, capitalUsd)).toMatchObject({ status: "excluded", reason: "cross-band" });
   });
 });
 

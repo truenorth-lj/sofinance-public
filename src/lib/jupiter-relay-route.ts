@@ -31,6 +31,9 @@ export async function withJupiterRelay(request: Request, run: () => Promise<Resp
   if (!relay) return run();
   const outcome = await runWithJupiterRelay(relay, run, hints);
   if (outcome.needs) {
+    // Expected continue: the browser fetches these and posts again. Not a server failure.
+    // eslint-disable-next-line no-console
+    console.info("jupiter_relay_needed", outcome.needs.length);
     return Response.json({ code: JUPITER_RELAY_NEEDED_CODE, error: "Jupiter quotes required", needs: outcome.needs, hints: outcome.hints },
       { status: 409, headers: { "Cache-Control": "no-store" } });
   }

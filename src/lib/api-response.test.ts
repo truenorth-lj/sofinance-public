@@ -6,6 +6,7 @@ vi.mock("./sentry/capture", async (importOriginal) => {
   return { ...actual, captureApiRouteError };
 });
 import { apiError, selectedApiError } from "./api-response";
+import { JupiterRelayMissingError } from "@sofinance/engine/jupiter/client";
 import { JupiterHttpError } from "@sofinance/engine/jupiter/errors";
 import { JupiterNoRouteError } from "@sofinance/engine/swap/jupiter";
 import { SelectedNoRouteError } from "./selected-no-route";
@@ -119,4 +120,11 @@ it("captures Jupiter 429/5xx and generic 5xx, not user-facing selected 4xx", asy
   captureApiRouteError.mockClear();
   apiError(new Error("Invalid wallet address"), "Invalid wallet address");
   expect(captureApiRouteError).not.toHaveBeenCalled();
+});
+
+it("rethrows the expected Jupiter relay miss so the 409 is not console.error'd", () => {
+  const errorLog = vi.spyOn(console, "error");
+  const missing = new JupiterRelayMissingError({ method: "GET", url: "/swap/v1/quote?amount=1" });
+  expect(() => apiError(missing, "Open-position quote failed")).toThrow(missing);
+  expect(errorLog).not.toHaveBeenCalled();
 });

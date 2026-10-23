@@ -22,6 +22,10 @@ import {
 const PUBLIC_ERROR_LIMIT = 220;
 const SECRET = /https?:\/\/\S+|\b(?:api[_-]?key|authorization|token)\s*[:=]\s*\S+/gi;
 
+/** Prepare/quote rejected a size that would walk the pool through a tick where liquidity changes. */
+export const CROSS_TICK_USER_MESSAGE =
+  "This amount is large for this pool's current depth. Try a smaller amount, a wider range, or refresh the quote.";
+
 export class ApiRequestError extends Error {
   readonly sent?: boolean;
   constructor(message: string, sent?: boolean) {
@@ -54,6 +58,9 @@ export function errorText(error: unknown): string {
 }
 
 export function mapKnownChainError(text: string): string | null {
+  if (/tick-spacing boundary|cross-tick depth|cross position boundary|cross the selected range/i.test(text)) {
+    return CROSS_TICK_USER_MESSAGE;
+  }
   if (looksLikeJupiterPublicError(text)) return JUPITER_UNAVAILABLE_MESSAGE;
   if (/429|too many requests|rate[- ]?limit/i.test(text)) return RPC_UNAVAILABLE_MESSAGE;
   if (/6017|0x1781|price\s*slippage/i.test(text)) return "Pool price moved past the add-liquidity cap (Raydium 6017).";
@@ -119,6 +126,12 @@ export function sanitizePublicError(error: unknown, fallback: string): string {
   }
   const raw = errorText(error);
   const mapped = mapKnownChainError(raw);
+  if (mapped === CROSS_TICK_USER_MESSAGE) {
+    // Technical engine text stays in logs; the client sees the short action.
+    // eslint-disable-next-line no-console
+    console.info("cross-tick", sanitizeDetail(raw).slice(0, 300));
+    return mapped;
+  }
   if (mapped === RPC_UNAVAILABLE_MESSAGE || mapped === JUPITER_UNAVAILABLE_MESSAGE) return mapped;
   const detail = sanitizeDetail(raw);
   if (mapped && detail) {

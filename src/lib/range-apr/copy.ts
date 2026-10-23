@@ -1,6 +1,8 @@
 /** User-facing strings for the range APR estimate (shared by the modal and the pair cards). */
 export const APR_ESTIMATE_LABEL = "Est. fee APR · not guaranteed";
 export const BEST_LABEL = "Best";
+/** Shown next to a candidate whose deposit does not fit, so a higher APR is not mistaken for a better pick. */
+export const DOES_NOT_FIT_SIZE_LABEL = "doesn't fit this size";
 export const HIGHEST_RANGE_COLUMN_LABEL = "Highest range";
 export const HIGHEST_RANGE_APR_LABEL = "Est. highest range APR";
 
@@ -15,8 +17,9 @@ export const APR_ESTIMATE_CAVEAT =
 export const BEST_HELP =
   "The range with the highest estimated fee APR over the last 7 days for this pool " +
   "(Micro, Tight, Standard or Wide; ties go to the wider range), for the amount you enter. Ranges are skipped when " +
-  "your deposit would be over half of the pool's active liquidity or the nearer edge is within about three times the " +
-  "estimated price impact; if none fit, the widest range is suggested. Not a prediction. " +
+  "your deposit would be over half of the pool's active liquidity, the nearer edge is within about three times the " +
+  "estimated price impact, or the estimated swap would leave the current tick-spacing band (prepare cannot size that); " +
+  "if none fit, the widest range is suggested. Not a prediction. " +
   "A higher APR usually means a narrower range and a higher risk of leaving range.";
 
 export const HIGHEST_RANGE_HELP =

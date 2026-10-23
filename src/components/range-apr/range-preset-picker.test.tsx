@@ -4,8 +4,10 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { OPEN_RANGE_UI_PRESETS, type OpenRangePreset } from "@sofinance/engine/open-range-presets";
+import { DOES_NOT_FIT_SIZE_LABEL } from "@/lib/range-apr/copy";
 import { formatEstimate } from "@/lib/range-apr/format";
 import { degradedPayloadFixture, payloadFixture, payloadWithAprs } from "@/lib/range-apr/payload.fixture";
+import { payloadForCapital } from "@/lib/range-apr/size-aware";
 import { uiPriceFromTick } from "@sofinance/engine/range-apr/tick-math";
 import { RangePresetPicker } from "./range-preset-picker";
 import type { PoolRangeAprState } from "./use-pool-range-apr";
@@ -203,6 +205,15 @@ describe("RangePresetPicker", () => {
     expect(text("[data-testid='range-apr-headline']")).toBe("—");
     expect(container.textContent).toMatch(/Recent price history is temporarily unavailable, so no estimate is shown/);
     expect(container.textContent).not.toMatch(/Best for this pool/);
+  });
+
+  it("marks ranges that do not fit this deposit so a higher APR is not the better-looking pick", () => {
+    const data = payloadForCapital(payloadFixture(), 150_000);
+    render({ status: "ready", data }, { selected: "wide", capitalUsd: 150_000 });
+    expect(container.querySelector("[data-testid='apr-micro']")!.className).toMatch(/line-through/);
+    expect(container.textContent).toContain(DOES_NOT_FIT_SIZE_LABEL);
+    expect(container.querySelector("[data-testid='preset-micro']")?.getAttribute("data-size-fit")).toBe("excluded");
+    expect(container.querySelector("[data-testid='preset-micro']")?.className).toMatch(/opacity-45/);
   });
 
   it("shows no number for a custom range on a degraded payload", () => {
