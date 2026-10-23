@@ -16,6 +16,18 @@ describe("legacy page redirects", () => {
   });
 });
 
+describe("PostHog first-party relay", () => {
+  it("rewrites /lumen to PostHog and skips the trailing-slash redirect its ingest paths need", async () => {
+    const rewrites = nextConfig.rewrites ? await nextConfig.rewrites() : [];
+    expect(rewrites).toEqual(expect.arrayContaining([
+      expect.objectContaining({ source: "/lumen/:path*", destination: expect.stringMatching(/^https:\/\/(us|eu)\.i\.posthog\.com\/:path\*$/) }),
+      expect.objectContaining({ source: "/lumen/static/:path*" }),
+      expect.objectContaining({ source: "/lumen/array/:path*" }),
+    ]));
+    expect(nextConfig.skipTrailingSlashRedirect).toBe(true);
+  });
+});
+
 describe("Sentry source-map upload gating", () => {
   it("disables upload unless auth token, org, and project are all set", () => {
     expect(sentrySourceMapsEnabled({})).toBe(false);

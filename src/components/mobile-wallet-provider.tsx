@@ -14,6 +14,8 @@ import {
   signAppKitTransaction,
   type AppKitSolanaWalletProvider,
 } from "../lib/appkit-wallet";
+import { captureGrowthEvent } from "@/lib/analytics/client";
+import { GROWTH_EVENTS } from "@/lib/analytics/events";
 import { WalletGrowthAnalytics } from "./wallet-growth-analytics";
 import { WalletConnectionContext } from "./wallet-connection";
 
@@ -49,6 +51,7 @@ export function MobileWalletProvider({ children }: { children: React.ReactNode }
   const [connectionError, setConnectionError] = useState("");
 
   function openWalletModal() {
+    captureGrowthEvent(GROWTH_EVENTS.walletConnectClicked);
     setConnectionError("");
     void Promise.resolve(open({ view: "Connect", namespace: "solana" })).catch(() => {
       setConnectionError("Wallet connection incomplete, please try again.");

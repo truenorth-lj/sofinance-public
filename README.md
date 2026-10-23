@@ -106,7 +106,7 @@ Copy `.env.example` → `.env.local`. Comments in that file are the source of tr
 | RWA / history DB vars | Optional snapshot gateway; see `.env.example` and `db/README.md` |
 | `NEXT_PUBLIC_SENTRY_DSN` / `SENTRY_DSN` | Optional Sentry error monitoring (US, `ingest.us.sentry.io`). Unset both = complete no-op. |
 | `SENTRY_AUTH_TOKEN` / `SENTRY_ORG` / `SENTRY_PROJECT` | Source-map upload on `next build`. All three required to upload; build succeeds if any is missing. Never `NEXT_PUBLIC_`. See [Error monitoring](#error-monitoring-sentry). |
-| `NEXT_PUBLIC_POSTHOG_KEY` / `NEXT_PUBLIC_POSTHOG_HOST` | Optional PostHog product analytics. Unset key = complete client no-op. Host defaults to `https://us.i.posthog.com`. |
+| `NEXT_PUBLIC_POSTHOG_KEY` / `NEXT_PUBLIC_POSTHOG_HOST` | Optional PostHog product analytics. Unset key = complete client no-op. The browser always sends to the first-party relay `/lumen` (Next.js rewrite); the host only picks the upstream region and defaults to `https://us.i.posthog.com`. |
 | `SOFINANCE_OPENS_DATABASE_URL` | Optional Postgres URL (Neon / Vercel Postgres) for north-star open logs. Unset = log nothing. Not the Zeabur RWA `DATABASE_URL`. |
 | `SOFINANCE_OPENS_READ_TOKEN` | Bearer token (≥32 chars) for `GET /api/internal/opens-daily`. Unset = route 404s. |
 
@@ -390,13 +390,15 @@ Or: `pnpm mcp:start` with env already exported.
 
 Optional. Local dev, forks, and tests stay a no-op until the PostHog key and/or opens database URL are set.
 
-**PostHog (browser, `posthog-js`)** — init only when `NEXT_PUBLIC_POSTHOG_KEY` is set. Autocapture off, session recording off, Do Not Track respected. First-touch `ref` (`?ref=x-<slug>`) and `utm_*` are stored in localStorage and registered as PostHog super/person properties so later events keep attribution.
+**PostHog (browser, `posthog-js`)** — init only when `NEXT_PUBLIC_POSTHOG_KEY` is set. Autocapture, heatmaps, web vitals, surveys, and session recording off; Do Not Track respected. Requests go to `/lumen/*` on our own domain, which `next.config.ts` rewrites to PostHog (`us.i.posthog.com` for events, `us-assets.i.posthog.com` for `/static` and `/array`), so ad blockers that block `*.posthog.com` don't drop events. `/lumen` is excluded from the Proxy matcher and disallowed in `robots.txt`. First-touch `ref` (`?ref=x-<slug>`) and `utm_*` are stored in localStorage and registered as PostHog super/person properties so later events keep attribution.
 
 | Event | When | Properties |
 |-------|------|------------|
 | `$pageview` | App Router route changes (including `/` and `/app/rwa-pairs`) | `$pathname`, `$current_url` |
 | `rwa_pairs_view` | Landing on `/app/rwa-pairs` | `ref` if present on that URL |
-| `wallet_connected` | Wallet connects | none (identify uses `wallet:<sha256>`, not the address) |
+| `wallet_connect_clicked` | User opens the wallet picker (any Connect wallet button) | none |
+| `wallet_connected` | Wallet connects (also on auto-reconnect after a hard load) | none (identify uses `wallet:<sha256>`, not the address) |
+| `performance_view` | Performance tab shown in `/app` (tab click or `?view=performance` deep link); the URL doesn't change, so `$pageview` can't see it | none |
 | `open_position_started` | User starts an open (prepare/sign) | `pool`, `pair` when known |
 | `open_position_success` | Open confirmed on-chain via `/api/open-status` | `pool`, `pair` |
 | `open_position_failed` | Open failed before send, or on-chain failed/expired | `error_class` only (never raw error text) |

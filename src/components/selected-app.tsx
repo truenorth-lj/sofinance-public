@@ -23,6 +23,8 @@ import { AssetRisksDialog } from "./asset-risks-dialog";
 import { DOCS_ROUTES } from "@/lib/public-urls";
 import { formatSelectedNoRouteMessage, JUPITER_NO_ROUTE_CODE } from "@/lib/selected-no-route";
 import Link from "next/link";
+import { captureGrowthEvent } from "@/lib/analytics/client";
+import { GROWTH_EVENTS } from "@/lib/analytics/events";
 
 const short = (value: string) => `${value.slice(0, 5)}…${value.slice(-5)}`;
 const money = (value: string, decimals: number, digits = 6) => formatAmount(value, decimals, digits);
@@ -84,6 +86,10 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
   const [statusDialogOpen, setStatusDialogOpen] = useState(false);
   const [assetRisksOpen, setAssetRisksOpen] = useState(false);
   const [activeView, setActiveView] = useState<"compound" | "performance" | "deposit" | "withdraw">(initialView);
+  // Performance is a tab inside /app (the URL does not change), so $pageview cannot see it.
+  useEffect(() => {
+    if (activeView === "performance") captureGrowthEvent(GROWTH_EVENTS.performanceView);
+  }, [activeView]);
   // A deep link (?mint=) wins over the wallet's default selection until the user picks a position themselves. It is applied
   // once per wallet (the controller resets the selection whenever the wallet changes).
   const linkedPositionWallet = useRef("");

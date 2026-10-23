@@ -1,3 +1,5 @@
+import { isPosthogRelayPath } from "./analytics/relay";
+
 /**
  * Host-based App subdomain rewrite.
  *
@@ -28,8 +30,15 @@ export function isAppSubdomainHost(host: string | null | undefined): boolean {
 export function appSubdomainRewritePath(pathname: string): string | null {
   if (pathname === "/api" || pathname.startsWith("/api/")) return null;
   if (pathname.startsWith("/_next/")) return null;
+  if (isPosthogRelayPath(pathname)) return null;
   if (pathname === "/app" || pathname.startsWith("/app/")) return null;
   if (/\.[a-zA-Z0-9]+$/.test(pathname)) return null;
   if (pathname === "/") return "/app";
   return `/app${pathname}`;
+}
+
+/** `/about/` → `/about` (Next's default, re-done in Proxy because the relay needs skipTrailingSlashRedirect). */
+export function trailingSlashRedirectPath(pathname: string): string | null {
+  if (pathname === "/" || !pathname.endsWith("/") || isPosthogRelayPath(pathname)) return null;
+  return pathname.replace(/\/+$/, "") || "/";
 }

@@ -1,5 +1,6 @@
 import type { MetadataRoute } from "next";
 import { getCanonicalSiteUrl } from "@/lib/public-urls";
+import { POSTHOG_RELAY_PATH } from "@/lib/analytics/relay";
 
 export default function robots(): MetadataRoute.Robots {
   const base = getCanonicalSiteUrl();
@@ -7,7 +8,7 @@ export default function robots(): MetadataRoute.Robots {
     rules: {
       userAgent: "*",
       allow: "/",
-      disallow: "/api/",
+      disallow: ["/api/", `${POSTHOG_RELAY_PATH}/`],
     },
     sitemap: `${base}/sitemap.xml`,
     host: base,

@@ -5,6 +5,14 @@ All notable changes to this project are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This project uses [Semantic Versioning](https://semver.org/). `package.json` is already `0.1.0`.
 
+## [Unreleased]
+
+### Fixed
+
+- PostHog events are sent through a first-party relay (`/lumen`, Next.js rewrites) instead of `us.i.posthog.com`, which ad blockers block
+- Track `wallet_connect_clicked` and `performance_view` (the Performance tab doesn't change the URL, so it had no pageview)
+- Heatmaps, web vitals, and surveys are turned off in the client so remote project settings can't add events beyond the documented list
+
 ## [0.1.0] - 2026-10-20
 
 First tagged public release of **SoFinance**: a non-custodial Next.js web app and MCP server for Raydium CLMM strategies on same-asset RWA pairs. Live app: https://sofinancelab.xyz.
