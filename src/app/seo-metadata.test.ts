@@ -1,8 +1,9 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { articleCanonicalPath, listBlogArticles } from "@/lib/blog";
 import { DOCS_PAGES } from "@/lib/docs-nav";
-import { APP_ROUTES, CANONICAL_SITE_URL } from "@/lib/public-urls";
+import { APP_ROUTES, BLOG_ROUTES, CANONICAL_SITE_URL } from "@/lib/public-urls";
 import { config as proxyConfig } from "@/proxy";
 import robots from "./robots";
 import sitemap, { publicSitemapPaths } from "./sitemap";
@@ -28,10 +29,18 @@ describe("SEO metadata routes", () => {
     else process.env.NEXT_PUBLIC_APP_URL = originalAppUrl;
   });
 
-  it("indexes the homepage, RWA pairs, and every docs page from the docs config", () => {
+  it("indexes the homepage, RWA pairs, every docs page, and every blog article", () => {
     delete process.env.NEXT_PUBLIC_APP_URL;
-    expect(publicSitemapPaths()).toEqual(["/", APP_ROUTES.rwaPairs, ...DOCS_PAGES.map((page) => page.href)]);
+    const blogPaths = [BLOG_ROUTES.home, ...listBlogArticles().map((article) => articleCanonicalPath(article.slug))];
+    expect(publicSitemapPaths()).toEqual([
+      "/",
+      APP_ROUTES.rwaPairs,
+      ...DOCS_PAGES.map((page) => page.href),
+      ...blogPaths,
+    ]);
     expect(docsHrefsFromAppDir()).toEqual([...DOCS_PAGES.map((page) => page.href)].sort());
+    expect(blogPaths).toContain("/blog");
+    expect(blogPaths).toContain("/blog/dex-evolution");
 
     const urls = sitemap().map((entry) => entry.url);
     expect(urls).toEqual([
@@ -43,6 +52,8 @@ describe("SEO metadata routes", () => {
       `${CANONICAL_SITE_URL}/docs/fees`,
       `${CANONICAL_SITE_URL}/docs/withdraw`,
       `${CANONICAL_SITE_URL}/docs/security`,
+      `${CANONICAL_SITE_URL}/blog`,
+      `${CANONICAL_SITE_URL}/blog/dex-evolution`,
     ]);
     expect(urls.join("\n")).not.toMatch(/\/terms|\/api\/|\/app\/sign|\/app\/plan|\/position-performance/);
   });
