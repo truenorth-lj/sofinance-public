@@ -5,7 +5,7 @@ import { useMemo } from "react";
 import { LoaderCircle } from "lucide-react";
 import type { OpenRangePreset, OpenRangeUiPreset } from "@sofinance/engine/open-range-presets";
 import Link from "next/link";
-import { BEST_HELP, BEST_LABEL, APR_ESTIMATE_CAVEAT, APR_ESTIMATE_LABEL } from "@/lib/range-apr/copy";
+import { BEST_HELP, BEST_LABEL, APR_ESTIMATE_CAVEAT, APR_ESTIMATE_LABEL, DOES_NOT_FIT_SIZE_LABEL } from "@/lib/range-apr/copy";
 import { DOCS_ROUTES } from "@/lib/public-urls";
 import { formatEstimate, unavailableReasonText } from "@/lib/range-apr/format";
 import { MICRO_PRESET_ID, microBandLabel } from "@sofinance/engine/range-apr/micro-range";
@@ -26,7 +26,7 @@ const cellTone = (active: boolean) => (active
   : "border-white/20 text-smoke hover:border-white/40 hover:text-cream/90");
 
 /** A candidate range the user has not selected, with its estimate (compared inside the APR card). */
-type OtherRange = { id: string; name: string; text: string };
+type OtherRange = { id: string; name: string; text: string; excluded: boolean };
 
 /** "$1,000" style deposit label; cents only below $10. */
 export function formatDepositUsd(value: number): string {
@@ -35,7 +35,13 @@ export function formatDepositUsd(value: number): string {
 
 function sizeNote(preset: RangeAprPresetEstimate | undefined): string {
   if (preset?.sizeFit?.status !== "excluded") return "";
-  return preset.sizeFit.reason === "crowded" ? " · large vs pool liquidity" : " · edge near est. price impact";
+  if (preset.sizeFit.reason === "crowded") return " · large vs pool liquidity";
+  if (preset.sizeFit.reason === "cross-band") return " · too large for pool depth";
+  return " · edge near est. price impact";
+}
+
+function isExcluded(preset: RangeAprPresetEstimate | undefined) {
+  return preset?.sizeFit?.status === "excluded";
 }
 
 function Headline({ apr, sized, selection, best, others }: {
@@ -92,9 +98,21 @@ function Headline({ apr, sized, selection, best, others }: {
           Other ranges
           <span className="flex flex-wrap gap-x-4 gap-y-1">
             {others.map((other) => (
-              <span key={other.id} className="inline-flex items-baseline gap-1.5">
+              <span
+                key={other.id}
+                className="inline-flex items-baseline gap-1.5"
+                data-size-fit={other.excluded ? "excluded" : "ok"}
+              >
                 {other.name}
-                <span className="tabular-nums text-cream/80" data-testid={`apr-${other.id}`}>{other.text}</span>
+                {other.excluded ? (
+                  <span className="text-smoke/75">
+                    <span className="text-[10px] font-medium uppercase tracking-wide">{DOES_NOT_FIT_SIZE_LABEL}</span>
+                    {" "}
+                    <span className="tabular-nums line-through decoration-smoke/50" data-testid={`apr-${other.id}`}>{other.text}</span>
+                  </span>
+                ) : (
+                  <span className="tabular-nums text-cream/80" data-testid={`apr-${other.id}`}>{other.text}</span>
+                )}
               </span>
             ))}
           </span>
@@ -139,8 +157,13 @@ export function RangePresetPicker({
   ];
   const others: OtherRange[] = candidates.some((candidate) => candidate.estimate?.status === "ok")
     ? candidates.filter((candidate) => candidate.id !== selected)
-      .map((candidate) => ({ id: candidate.id, name: candidate.name,
-        text: `${formatEstimate(candidate.estimate)}${sizeNote(data?.presets.find((item) => item.id === candidate.id))}` }))
+      .map((candidate) => {
+        const preset = data?.presets.find((item) => item.id === candidate.id);
+        return {
+          id: candidate.id, name: candidate.name, excluded: isExcluded(preset),
+          text: `${formatEstimate(candidate.estimate)}${sizeNote(preset)}`,
+        };
+      })
     : [];
   const tips = [
     ...(best ? [{ key: "best", label: `About ${BEST_LABEL}`, text: BEST_HELP }] : []),
@@ -185,19 +208,24 @@ export function RangePresetPicker({
           </div>
         ) : null}
         <div className="grid auto-cols-fr grid-flow-col gap-1.5 sm:gap-2">
-          {list.buttons.map((button) => (
+          {list.buttons.map((button) => {
+            const excluded = isExcluded(data?.presets.find((item) => item.id === button.id));
+            return (
             <button
               key={button.id}
               type="button"
               aria-pressed={selected === button.id}
               onClick={() => onSelect(button.id)}
-              className={`${CELL} ${cellTone(selected === button.id)}`}
+              title={excluded ? `${preset(button.id)?.shortLabel ?? button.label} ${DOES_NOT_FIT_SIZE_LABEL}` : undefined}
+              className={`${CELL} ${cellTone(selected === button.id)} ${excluded ? "opacity-45" : ""}`}
               data-testid={`preset-${button.id}`}
+              data-size-fit={excluded ? "excluded" : "ok"}
             >
               <span className="max-w-full truncate text-xs font-semibold leading-4">{preset(button.id)?.shortLabel ?? button.label}</span>
               <span className={`leading-3 ${BAND}`}>{band(button.id)}</span>
             </button>
-          ))}
+            );
+          })}
           <button
             type="button"
             aria-pressed={selected === "custom"}

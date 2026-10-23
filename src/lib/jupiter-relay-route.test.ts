@@ -20,8 +20,14 @@ describe("withJupiterRelay", () => {
   });
 
   it("answers 409 jupiter_relay_needed with the exact Jupiter requests", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const response = await run(post({ wallet: "w", jupiterRelay: { responses: {} } }));
     expect(response.status).toBe(409);
+    expect(info).toHaveBeenCalledWith("jupiter_relay_needed", 1);
+    expect(error).not.toHaveBeenCalled();
+    info.mockRestore();
+    error.mockRestore();
     expect(await response.json()).toEqual({ code: "jupiter_relay_needed", error: "Jupiter quotes required",
       needs: [{ id: jupiterRelayId({ method: "GET", url: quoteUrl }), method: "GET", url: quoteUrl }], hints: {} });
   });

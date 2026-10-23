@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 import { apiError } from "./api-response";
+import { CROSS_LIQUIDITY_BAND_MESSAGE } from "@sofinance/engine/liquidity-band";
 import { JupiterHttpError, JUPITER_UNAVAILABLE_CODE, JUPITER_UNAVAILABLE_MESSAGE } from "@sofinance/engine/jupiter/errors";
 import {
-  CompoundSendError, isPreflightOrUnsentFailure, mapKnownChainError, notSentRetryMessage,
+  CompoundSendError, CROSS_TICK_USER_MESSAGE, isPreflightOrUnsentFailure, mapKnownChainError, notSentRetryMessage,
   publicErrorCode, resolveCompoundBroadcastFailure, sanitizePublicError,
 } from "./public-error";
 
@@ -80,6 +81,19 @@ describe("compound failure mapping", () => {
     expect(publicErrorCode(jupiter)).toBe(JUPITER_UNAVAILABLE_CODE);
     expect(sanitizePublicError(new Error("Jupiter HTTP 503"), "fallback")).toBe(JUPITER_UNAVAILABLE_MESSAGE);
     expect(sanitizePublicError(jupiter, "fallback")).not.toMatch(/Solana RPC/);
+  });
+
+  it("maps cross-tick and cross-position-boundary engine errors to a short user action", () => {
+    const logged = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    expect(sanitizePublicError(new Error(CROSS_LIQUIDITY_BAND_MESSAGE), "Open-position quote failed"))
+      .toBe(CROSS_TICK_USER_MESSAGE);
+    expect(sanitizePublicError(new Error("Swap may cause target pool price to cross position boundary, please re-quote"), "failed"))
+      .toBe(CROSS_TICK_USER_MESSAGE);
+    expect(sanitizePublicError(new Error("Swap may cause target pool price to cross the selected range, please re-quote"), "failed"))
+      .toBe(CROSS_TICK_USER_MESSAGE);
+    expect(sanitizePublicError(new Error(CROSS_LIQUIDITY_BAND_MESSAGE), "failed")).not.toMatch(/tick-spacing|cross-tick depth/i);
+    expect(logged).toHaveBeenCalled();
+    expect(String(logged.mock.calls[0])).toMatch(/tick-spacing boundary|cross-tick depth/);
   });
 
   it("treats simulation and known program errors as not-sent preflight failures", () => {

@@ -2,6 +2,7 @@ import "@/lib/engine-host";
 import "server-only";
 
 import { CompoundSendError, publicErrorCode, sanitizePublicError } from "./public-error";
+import { JupiterRelayMissingError } from "@sofinance/engine/jupiter/client";
 import { JupiterHttpError, JupiterUnavailableError, JUPITER_UNAVAILABLE_CODE, JUPITER_UNAVAILABLE_MESSAGE, RPC_UNAVAILABLE_CODE } from "@sofinance/engine/jupiter/errors";
 import { SelectedNoRouteError } from "./selected-no-route";
 import { captureApiRouteError, shouldCaptureApiError } from "./sentry/capture";
@@ -26,6 +27,9 @@ export function apiError(error: unknown, fallback: string, status = 400, extra?:
   route?: string;
   request?: { url: string };
 }) {
+  // Expected 409 protocol step: the browser still needs to fetch Jupiter. Do not
+  // log it as a route failure — `withJupiterRelay` turns this into `jupiter_relay_needed`.
+  if (error instanceof JupiterRelayMissingError) throw error;
   if (shouldCaptureApiError(error, status)) {
     captureApiRouteError(error, { fallback, route: extra?.route, request: extra?.request, status });
   }

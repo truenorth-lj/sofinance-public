@@ -8,9 +8,13 @@ import "@/lib/engine-host";
  *    active at the current price (L_me / (L_active + L_me));
  *  - near-edge: the nearer range edge is closer than EDGE_TO_IMPACT_MIN_MULTIPLE x the price move the
  *    deposit's rebalancing swap could cause if it traded against this pool. The swap is taken as half the
- *    deposit, as token B into the active liquidity, a worst case since routes often avoid the pool.
+ *    deposit, as token B into the active liquidity, a worst case since routes often avoid the pool;
+ *  - cross-band: that same estimated move would leave the current tick-spacing band (where prepare's
+ *    constant-liquidity projection is valid). The range edge can still be far; the band is often one
+ *    spacing step. Best must not recommend a size that prepare will reject with CROSS_LIQUIDITY_BAND.
  * These are rough guides for ranking, not a forecast.
  */
+import { tickSpacingBand } from "@sofinance/engine/liquidity-band";
 import { sqrtPriceAtTick } from "@sofinance/engine/range-apr/tick-math";
 import { liquidityForCapital } from "./clmm-liquidity";
 import { estimateRangeApr } from "./range-apr";
@@ -56,6 +60,16 @@ export function nearerEdgeBps(currentSqrt: number, range: { tickLower: number; t
   return Math.min(toLower, toUpper) * 10_000;
 }
 
+/** Distance (bps) to the nearer edge of the current tick-spacing band (prepare's liquidity-band guard). */
+export function bandEdgeBps(payload: PoolRangeAprPayload): number {
+  try {
+    const band = tickSpacingBand(payload.pool.tickCurrent, payload.pool.tickSpacing);
+    return nearerEdgeBps(payload.model.currentSqrt, { tickLower: band.lower, tickUpper: band.upper });
+  } catch {
+    return 0;
+  }
+}
+
 export function sizeFitFor(
   payload: PoolRangeAprPayload, range: { tickLower: number; tickUpper: number }, capitalUsd: number,
 ): SizeFit {
@@ -65,9 +79,13 @@ export function sizeFitFor(
   const ownShare = own > 0 ? own / (active + own) : 0;
   const impactBps = estimatedPoolImpactBps(payload, capitalUsd);
   const edgeBps = nearerEdgeBps(currentSqrt, range);
-  const facts = { ownSharePct: ownShare * 100, edgeBps, impactBps };
+  const bandBps = bandEdgeBps(payload);
+  const facts = { ownSharePct: ownShare * 100, edgeBps, impactBps, bandBps };
   if (ownShare > MAX_OWN_LIQUIDITY_SHARE) return { status: "excluded", reason: "crowded", ...facts };
   if (edgeBps < EDGE_TO_IMPACT_MIN_MULTIPLE * impactBps) return { status: "excluded", reason: "near-edge", ...facts };
+  // bandBps is 0 when the price sits on a spacing boundary (nearerEdgeBps is exclusive).
+  // Skip then: the unsigned impact estimate would exclude every size.
+  if (bandBps > 0 && bandBps < impactBps) return { status: "excluded", reason: "cross-band", ...facts };
   return { status: "ok", ...facts };
 }
 
