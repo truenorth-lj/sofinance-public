@@ -50,7 +50,7 @@ export function BlogArticleView({ article }: { article: BlogArticle }) {
           </figcaption>
         </figure>
 
-        <div className="mx-auto mt-3 max-w-3xl rounded-[28px] border border-white/12 bg-char p-6 text-sm leading-7 text-cream/90 sm:p-10 [&_a]:text-lemon [&_a]:underline [&_a]:underline-offset-2 [&_a]:hover:text-[#fff27f]">
+        <div className="mt-3 w-full rounded-[28px] border border-white/12 bg-char p-6 text-sm leading-7 text-cream/90 sm:p-9 [&_a]:text-lemon [&_a]:underline [&_a]:underline-offset-2 [&_a]:hover:text-[#fff27f]">
           <BlogMarkdown body={article.body} />
         </div>
       </article>
