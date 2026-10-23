@@ -5,9 +5,10 @@ import "@/lib/engine-host";
  *
  * "Best" is the candidate with the highest estimated fee APR, ties going to the wider
  * range. When the payload was re-priced for the typed amount (`payloadForCapital`), candidates the deposit
- * does not fit (`sizeFit.status === "excluded"`) are skipped; if none fits, Best falls back to Wide, then
- * Standard. It resolves to that candidate's exact ticks, so quote/prepare use the ordinary preset path and what
- * is signed is what was priced.
+ * does not fit (`sizeFit.status === "excluded"`) are skipped and not offered as buttons either. If none fits
+ * and the only thing ruling out Wide (then Standard) is the cross-band estimate, Best falls back to it (prepare
+ * accepts that widest range in practice); otherwise nothing is offered and `tooLarge` is set. Best resolves to
+ * that candidate's exact ticks, so quote/prepare use the ordinary preset path and what is signed is what was priced.
  */
 import type { OpenRangeUiPreset } from "@sofinance/engine/open-range-presets";
 import type { RangeAprEstimate } from "./range-apr";
@@ -21,15 +22,11 @@ const isOk = (preset: RangeAprPresetEstimate): preset is OkPreset => preset.esti
 const fits = (preset: RangeAprPresetEstimate) => preset.sizeFit?.status !== "excluded";
 
 /**
- * Labels that follow Best: a candidate is "doesn't fit" only if Best skipped it.
- * Best's own pick (including a Wide fallback that prepare still accepts) is never labeled that way,
- * even when its raw `sizeFit` is excluded — otherwise selecting Tight would mark Wide as unfit.
+ * A fallback range may stand in for Best only when the cross-band estimate alone rules it out: a crowded or
+ * near-edge widest range means the amount is too large for this pool.
  */
-export function excludedByBest(
-  preset: { id: string; sizeFit?: { status: string } } | undefined, bestId: string | undefined,
-) {
-  return !!preset && !!bestId && preset.id !== bestId && preset.sizeFit?.status === "excluded";
-}
+const fallbackFits = (preset: RangeAprPresetEstimate) =>
+  preset.sizeFit?.status === "excluded" && preset.sizeFit.reason === "cross-band";
 /** Order tried when the deposit fits no candidate: the most room around the price first. */
 const SIZE_FALLBACK_ORDER: readonly RangeAprPresetId[] = ["wide", "standard"];
 const width = (preset: RangeAprPresetEstimate) => preset.tickUpper - preset.tickLower;
@@ -79,8 +76,13 @@ export type PresetButton = { id: OpenRangeUiPreset["id"]; label: string; estimat
 export type PresetList = {
   /** Leftmost button; null while loading, on error, or when no candidate has an estimate. */
   best: BestButton | null;
-  /** The remaining candidates, narrow to wide, without the resolved one. "Custom" is appended by the UI. */
+  /**
+   * The remaining candidates, narrow to wide, without the resolved one and without ranges the typed deposit
+   * does not fit. "Custom" is appended by the UI.
+   */
   buttons: PresetButton[];
+  /** True when the payload was sized for the typed amount and no range fits it, so none is offered. */
+  tooLarge?: boolean;
 };
 
 /**
@@ -98,13 +100,23 @@ export function buildPresetList(
   // A degraded payload (no price history) is never ranked or shown with numbers, even if a caller hands over estimates.
   const order = uiPresets.map((preset) => preset.id) as RangeAprPresetId[];
   const ranked = payload && !degraded ? pickHighestAprPreset(payload.presets, order) : null;
-  const fallback = payload && !degraded && !ranked
+  const widest = payload && !degraded && !ranked
     ? SIZE_FALLBACK_ORDER.map((id) => payload.presets.find((preset) => preset.id === id))
-      .find((preset): preset is RangeAprPresetEstimate => !!preset && isOk(preset) && preset.sizeFit !== undefined) ?? null
+      .find((preset): preset is RangeAprPresetEstimate => !!preset && isOk(preset)) ?? null
     : null;
+  // The widest priced range decides: if it is crowded or near its edge, a narrower one is no better.
+  const fallback = widest && fallbackFits(widest) ? widest : null;
   const winner = ranked ?? fallback;
+  if (payload && !degraded && !winner && payload.presets.length > 0 && payload.presets.every((preset) => !fits(preset))) {
+    return { best: null, buttons: [], tooLarge: true };
+  }
   if (!payload || !winner) {
-    return { best: null, buttons: uiPresets.map((preset) => ({ id: preset.id, label: preset.label, estimate: estimateOf(preset.id) })) };
+    return {
+      best: null,
+      buttons: uiPresets
+        .filter((preset) => { const candidate = payload?.presets.find((item) => item.id === preset.id); return !candidate || fits(candidate); })
+        .map((preset) => ({ id: preset.id, label: preset.label, estimate: estimateOf(preset.id) })),
+    };
   }
   const resolved = uiPresets.find((preset) => preset.id === winner.id);
   return {
@@ -113,7 +125,7 @@ export function buildPresetList(
       .filter((preset) => {
         if (preset.id === winner.id) return false;
         const candidate = payload.presets.find((item) => item.id === preset.id);
-        return !candidate || !sameRange(candidate, winner);
+        return !candidate || (fits(candidate) && !sameRange(candidate, winner));
       })
       .map((preset) => ({ id: preset.id, label: preset.label, estimate: estimateOf(preset.id) })),
   };
