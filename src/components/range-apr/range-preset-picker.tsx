@@ -9,7 +9,7 @@ import { BEST_HELP, BEST_LABEL, APR_ESTIMATE_CAVEAT, APR_ESTIMATE_LABEL, DOES_NO
 import { DOCS_ROUTES } from "@/lib/public-urls";
 import { formatEstimate, unavailableReasonText } from "@/lib/range-apr/format";
 import { MICRO_PRESET_ID, microBandLabel } from "@sofinance/engine/range-apr/micro-range";
-import { buildPresetList, type BestButton } from "@/lib/range-apr/preset-list";
+import { buildPresetList, excludedByBest, type BestButton } from "@/lib/range-apr/preset-list";
 import { payloadForCapital } from "@/lib/range-apr/size-aware";
 import type { PoolRangeAprPayload, RangeAprPresetEstimate } from "@/lib/range-apr/types";
 import { estimateForSelection, type SelectionEstimate, type TickRange } from "@/lib/range-apr/selection";
@@ -33,15 +33,11 @@ export function formatDepositUsd(value: number): string {
   return `$${value.toLocaleString("en-US", { maximumFractionDigits: value < 10 ? 2 : 0 })}`;
 }
 
-function sizeNote(preset: RangeAprPresetEstimate | undefined): string {
-  if (preset?.sizeFit?.status !== "excluded") return "";
+function sizeNote(preset: RangeAprPresetEstimate | undefined, bestId: string | undefined): string {
+  if (!excludedByBest(preset, bestId) || preset?.sizeFit?.status !== "excluded") return "";
   if (preset.sizeFit.reason === "crowded") return " · large vs pool liquidity";
   if (preset.sizeFit.reason === "cross-band") return " · too large for pool depth";
   return " · edge near est. price impact";
-}
-
-function isExcluded(preset: RangeAprPresetEstimate | undefined) {
-  return preset?.sizeFit?.status === "excluded";
 }
 
 function Headline({ apr, sized, selection, best, others }: {
@@ -160,8 +156,8 @@ export function RangePresetPicker({
       .map((candidate) => {
         const preset = data?.presets.find((item) => item.id === candidate.id);
         return {
-          id: candidate.id, name: candidate.name, excluded: isExcluded(preset),
-          text: `${formatEstimate(candidate.estimate)}${sizeNote(preset)}`,
+          id: candidate.id, name: candidate.name, excluded: excludedByBest(preset, best?.id),
+          text: `${formatEstimate(candidate.estimate)}${sizeNote(preset, best?.id)}`,
         };
       })
     : [];
@@ -209,7 +205,7 @@ export function RangePresetPicker({
         ) : null}
         <div className="grid auto-cols-fr grid-flow-col gap-1.5 sm:gap-2">
           {list.buttons.map((button) => {
-            const excluded = isExcluded(data?.presets.find((item) => item.id === button.id));
+            const excluded = excludedByBest(data?.presets.find((item) => item.id === button.id), best?.id);
             return (
             <button
               key={button.id}

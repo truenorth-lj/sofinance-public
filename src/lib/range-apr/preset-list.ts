@@ -19,6 +19,17 @@ type OkPreset = RangeAprPresetEstimate & { estimate: Extract<RangeAprEstimate, {
 
 const isOk = (preset: RangeAprPresetEstimate): preset is OkPreset => preset.estimate.status === "ok";
 const fits = (preset: RangeAprPresetEstimate) => preset.sizeFit?.status !== "excluded";
+
+/**
+ * Labels that follow Best: a candidate is "doesn't fit" only if Best skipped it.
+ * Best's own pick (including a Wide fallback that prepare still accepts) is never labeled that way,
+ * even when its raw `sizeFit` is excluded — otherwise selecting Tight would mark Wide as unfit.
+ */
+export function excludedByBest(
+  preset: { id: string; sizeFit?: { status: string } } | undefined, bestId: string | undefined,
+) {
+  return !!preset && !!bestId && preset.id !== bestId && preset.sizeFit?.status === "excluded";
+}
 /** Order tried when the deposit fits no candidate: the most room around the price first. */
 const SIZE_FALLBACK_ORDER: readonly RangeAprPresetId[] = ["wide", "standard"];
 const width = (preset: RangeAprPresetEstimate) => preset.tickUpper - preset.tickLower;

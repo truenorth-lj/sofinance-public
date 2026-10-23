@@ -12,4 +12,7 @@ it("does not retry other errors and gives up after the attempt limit", async () 
     const always = vi.fn().mockRejectedValue(new Error("Wallet token balance changed; prepare again"));
     await expect(withTransientRetry(always)).rejects.toThrow("balance changed");
     expect(always).toHaveBeenCalledTimes(3);
+    const fee = vi.fn().mockRejectedValueOnce(new Error("Cannot calculate transaction network cost")).mockResolvedValue("ok");
+    await expect(withTransientRetry(fee)).resolves.toBe("ok");
+    expect(fee).toHaveBeenCalledTimes(2);
 });

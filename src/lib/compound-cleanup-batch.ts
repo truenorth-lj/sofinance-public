@@ -9,6 +9,7 @@ import { restampVersionedTransaction, stampPreparedBlockhash } from "@sofinance/
 import { createPermit } from "@sofinance/engine/auth/permit";
 import { SOLANA_TX_SIZE_LIMIT, isSingleWalletSignedTransaction } from "@sofinance/engine/transaction-limits";
 import { confirmedRecovery } from "./compound-receipt";
+import { estimateFeeForMessage } from "./rpc-fee-estimate";
 import nacl from "tweetnacl";
 import { z } from "zod";
 
@@ -184,10 +185,12 @@ export async function buildCleanupBatch(connection: Connection, wallet: string, 
   const transactions: { summary: CompoundRecoverySummary; transaction: VersionedTransaction }[] = [];
   for (const group of groups) {
     const transaction = transactionFor(wallet, group, simulationBlockhash.blockhash);
-    const fee = await connection.getFeeForMessage(transaction.message, "confirmed");
-    if (fee.value === null || !Number.isSafeInteger(fee.value) || fee.value < 0 || fee.value > 10_000_000) throw new Error("Unable to estimate cleanup fee");
+    const fee = await estimateFeeForMessage(connection, transaction.message, "confirmed", {
+      emptyError: "Unable to estimate cleanup fee",
+    });
+    if (fee > 10_000_000) throw new Error("Unable to estimate cleanup fee");
     const summary: CompoundRecoverySummary = { operation: "recovery", simulated: true, wallet, compoundAccounts: group,
-      feeLamports: fee.value, sizeBytes: transaction.serialize().length, ...stampPreparedBlockhash(simulationBlockhash) };
+      feeLamports: fee, sizeBytes: transaction.serialize().length, ...stampPreparedBlockhash(simulationBlockhash) };
     const verified = await simulateAndVerifyCleanupBatch({ connection, transaction, summary, sigVerify: false });
     summary.unitsConsumed = verified.unitsConsumed;
     transactions.push({ transaction, summary });
