@@ -50,7 +50,7 @@ function MarkdownImage({ src, alt }: { src?: string | Blob; alt?: string }) {
         alt={caption}
         width={size.width}
         height={size.height}
-        sizes="(max-width: 800px) 100vw, 720px"
+        sizes="(max-width: 1280px) 100vw, 1100px"
         className="h-auto w-full rounded-2xl"
       />
       {caption ? (

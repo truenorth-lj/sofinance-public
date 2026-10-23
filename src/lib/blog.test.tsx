@@ -95,4 +95,12 @@ describe("blog content", () => {
     expect(formatBlogDate("2026-10-23")).toBe("October 23, 2026");
     expect(blogTimeProps("2026-10-23")).toEqual({ datetime: "2026-10-23" });
   });
+
+  it("keeps the article body on the same full-width column as the header and hero", () => {
+    const src = readFileSync(resolve("src/components/blog/blog-article-view.tsx"), "utf8");
+    expect(src).not.toMatch(/mx-auto\s+mt-3\s+max-w-3xl/);
+    expect(src).toContain('className="mt-3 w-full rounded-[28px]');
+    expect(src).toContain("<header className=\"mt-3 rounded-[28px]");
+    expect(src).toContain("<figure className=\"mt-3 overflow-hidden rounded-[28px]");
+  });
 });
