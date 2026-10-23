@@ -197,21 +197,6 @@ Kept on both web API and MCP paths:
 | HMAC permit | Binds message, wallet, selection, amounts, floor, starting state |
 | Re-verify | On submit: permit, on-chain state, re-simulate, then broadcast |
 
-## Restricted regions
-
-SoFinance is not available to residents of, or people located in, **Taiwan**, the **United States** (including Puerto Rico, Guam, the U.S. Virgin Islands, American Samoa, the Northern Mariana Islands and the U.S. Minor Outlying Islands), **Cuba**, **Iran**, **North Korea**, **Syria**, or the **Crimea, Sevastopol, Donetsk and Luhansk** regions of Ukraine. Using a VPN or other means to get around this is not permitted (see `/terms`).
-
-How it is enforced on the hosted deployment (Vercel), using the `x-vercel-ip-country` / `x-vercel-ip-country-region` request headers (list in `src/lib/restricted-regions.ts`, routes in `src/lib/region-routes.ts`):
-
-- `/app` pages render a "Not available in your region" page; the landing page, `/docs` and `/terms` stay readable.
-- APIs that quote, build or broadcast **new** exposure (open position, add liquidity, compound) answer `403 {"code":"region_restricted"}`.
-- **Withdrawals are never blocked**: `/app/exit` (exit-only UI), withdrawal sign links, `withdraw-*` APIs and `compound-recover-*` / `compound-cleanup-*` (return leftover balances to the wallet) stay open. Positions are standard Raydium NFTs, so they can also be withdrawn directly on Raydium.
-- Remote MCP (`POST /api/mcp`): `quote_*`, `prepare_transaction`, `prepare_compound_transaction`, `prepare_open_position` and `submit_*` (except `submit_withdraw`) are refused with HTTP 403 / JSON-RPC `-32003` from restricted regions. `prepare_withdraw`, `submit_withdraw` and read-only tools stay available. Tool descriptions carry the same statement.
-- The local stdio MCP server runs on your own machine and cannot see your IP region; it carries the same statement and its sign links open the hosted `/app/sign` page, which applies the same gate.
-- The first wallet connect asks you to confirm you are not a resident of the United States or Taiwan, are not located in a restricted region, and agree to the Terms (stored in `localStorage`).
-
-**Testing from anywhere (non-production only):** on Vercel *preview* deployments and under `next dev`, add `?__geo=US` (or `UA-43`, `JP`, …) to any URL to simulate a location (sticks via an `httpOnly` cookie; `?__geo=off` clears it), or send the header `x-sofinance-geo-override: TW`. The override is ignored when `VERCEL_ENV=production`.
-
 ## MCP tools (14)
 
 | Tool | Purpose | Key params |

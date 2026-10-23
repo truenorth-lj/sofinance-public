@@ -232,7 +232,7 @@ exports[`tools/list wire contract > matches the golden snapshot (names, descript
       "name": "list_positions",
     },
     {
-      "description": "Get a quote for adding liquidity to a position. Estimates swap routes (Jupiter), price impact, output amounts, and immediate resale gap. Verifies NFT ownership, pool state, and balance. Read-only. Quotes expire quickly (configured TTL). Failure modes: insufficient balance, high price impact (>5%), resale floor breach, quote expiration, pool state changes. Restricted regions: not available to residents of, or people located in, the United States (incl. territories), Taiwan, Cuba, Iran, North Korea, Syria, or Ukraine's Crimea, Sevastopol, Donetsk and Luhansk regions; the hosted endpoint refuses these calls from those regions (HTTP 403, code region_restricted). Withdrawal tools stay available everywhere. See /terms.",
+      "description": "Get a quote for adding liquidity to a position. Estimates swap routes (Jupiter), price impact, output amounts, and immediate resale gap. Verifies NFT ownership, pool state, and balance. Read-only. Quotes expire quickly (configured TTL). Failure modes: insufficient balance, high price impact (>5%), resale floor breach, quote expiration, pool state changes.",
       "inputSchema": {
         "properties": {
           "amount": {
@@ -282,7 +282,7 @@ exports[`tools/list wire contract > matches the golden snapshot (names, descript
       "name": "quote_add_liquidity",
     },
     {
-      "description": "Prepare an unsigned, fully-simulated transaction for adding liquidity. Returns base64-encoded transaction for signing, HMAC permit, and summary. The server NEVER holds private keys. Transaction must be signed by the user/agent wallet. Includes: full simulation, 1232-byte limit check, Jupiter swap + Raydium increase_liquidity_v2, short-lived permit. Failure modes: same as quote_add_liquidity, plus simulation failure, size limit, blockhash expiry. After signing, use submit_signed_transaction. Restricted regions: not available to residents of, or people located in, the United States (incl. territories), Taiwan, Cuba, Iran, North Korea, Syria, or Ukraine's Crimea, Sevastopol, Donetsk and Luhansk regions; the hosted endpoint refuses these calls from those regions (HTTP 403, code region_restricted). Withdrawal tools stay available everywhere. See /terms.",
+      "description": "Prepare an unsigned, fully-simulated transaction for adding liquidity. Returns base64-encoded transaction for signing, HMAC permit, and summary. The server NEVER holds private keys. Transaction must be signed by the user/agent wallet. Includes: full simulation, 1232-byte limit check, Jupiter swap + Raydium increase_liquidity_v2, short-lived permit. Failure modes: same as quote_add_liquidity, plus simulation failure, size limit, blockhash expiry. After signing, use submit_signed_transaction.",
       "inputSchema": {
         "properties": {
           "amount": {
@@ -332,7 +332,7 @@ exports[`tools/list wire contract > matches the golden snapshot (names, descript
       "name": "prepare_transaction",
     },
     {
-      "description": "Get a quote for compounding a position (harvest fees/rewards, swap to ratio, reinvest). Returns expected liquidity increase, swap plan, simulation results. Verifies position eligibility. Read-only. Phase one: rejects third reward tokens (no verifiable swap path). Failure modes: ineligible position, third reward token, insufficient yield for minimum liquidity unit, swap plan failure. Restricted regions: not available to residents of, or people located in, the United States (incl. territories), Taiwan, Cuba, Iran, North Korea, Syria, or Ukraine's Crimea, Sevastopol, Donetsk and Luhansk regions; the hosted endpoint refuses these calls from those regions (HTTP 403, code region_restricted). Withdrawal tools stay available everywhere. See /terms.",
+      "description": "Get a quote for compounding a position (harvest fees/rewards, swap to ratio, reinvest). Returns expected liquidity increase, swap plan, simulation results. Verifies position eligibility. Read-only. Phase one: rejects third reward tokens (no verifiable swap path). Failure modes: ineligible position, third reward token, insufficient yield for minimum liquidity unit, swap plan failure.",
       "inputSchema": {
         "properties": {
           "positionMint": {
@@ -361,7 +361,7 @@ exports[`tools/list wire contract > matches the golden snapshot (names, descript
       "name": "quote_compound",
     },
     {
-      "description": "Prepare an unsigned compound transaction. Returns base64 transaction, permit, and summary. Same safety as prepare_transaction: full simulation, HMAC permit, no private keys. After signing, use submit_compound_transaction. Restricted regions: not available to residents of, or people located in, the United States (incl. territories), Taiwan, Cuba, Iran, North Korea, Syria, or Ukraine's Crimea, Sevastopol, Donetsk and Luhansk regions; the hosted endpoint refuses these calls from those regions (HTTP 403, code region_restricted). Withdrawal tools stay available everywhere. See /terms.",
+      "description": "Prepare an unsigned compound transaction. Returns base64 transaction, permit, and summary. Same safety as prepare_transaction: full simulation, HMAC permit, no private keys. After signing, use submit_compound_transaction.",
       "inputSchema": {
         "properties": {
           "positionMint": {
@@ -390,7 +390,7 @@ exports[`tools/list wire contract > matches the golden snapshot (names, descript
       "name": "prepare_compound_transaction",
     },
     {
-      "description": "Submit a signed add-liquidity transaction. Re-verifies HMAC permit, re-reads on-chain state, re-simulates, then broadcasts. Pass signedTransaction plus every field of submitArgs from the prepare_transaction response, unchanged. Failure modes: permit mismatch, state changed (liquidity, balance, NFT), expired (time or blockhash), simulation failure. Returns transaction signature on success. Restricted regions: not available to residents of, or people located in, the United States (incl. territories), Taiwan, Cuba, Iran, North Korea, Syria, or Ukraine's Crimea, Sevastopol, Donetsk and Luhansk regions; the hosted endpoint refuses these calls from those regions (HTTP 403, code region_restricted). Withdrawal tools stay available everywhere. See /terms.",
+      "description": "Submit a signed add-liquidity transaction. Re-verifies HMAC permit, re-reads on-chain state, re-simulates, then broadcasts. Pass signedTransaction plus every field of submitArgs from the prepare_transaction response, unchanged. Failure modes: permit mismatch, state changed (liquidity, balance, NFT), expired (time or blockhash), simulation failure. Returns transaction signature on success.",
       "inputSchema": {
         "properties": {
           "expectedLiquidity": {
@@ -500,7 +500,7 @@ exports[`tools/list wire contract > matches the golden snapshot (names, descript
       "name": "submit_signed_transaction",
     },
     {
-      "description": "Submit a signed compound transaction. Re-verifies permit and summary, then broadcasts. Returns signature on success. Same safety as submit_signed_transaction. Restricted regions: not available to residents of, or people located in, the United States (incl. territories), Taiwan, Cuba, Iran, North Korea, Syria, or Ukraine's Crimea, Sevastopol, Donetsk and Luhansk regions; the hosted endpoint refuses these calls from those regions (HTTP 403, code region_restricted). Withdrawal tools stay available everywhere. See /terms.",
+      "description": "Submit a signed compound transaction. Re-verifies permit and summary, then broadcasts. Returns signature on success. Same safety as submit_signed_transaction.",
       "inputSchema": {
         "properties": {
           "permit": {
@@ -531,7 +531,7 @@ exports[`tools/list wire contract > matches the golden snapshot (names, descript
       "name": "submit_compound_transaction",
     },
     {
-      "description": "Quote opening a NEW Raydium CLMM position in a pool (no existing NFT). Input SOL/USDC/pool token, amount, and a price range (presets tight ±0.05% / standard ±0.3% / wide ±1%, or custom minPrice/maxPrice in B per 1 A). Returns expected A/B after Jupiter swap-to-ratio, tick-aligned range, in/out-of-range, price impact, refundable vs non-refundable SOL rent (NFT + tick arrays), and Token-2022/freeze flags. Fails clearly on insufficient balance, >5% impact, transfer-fee/freeze, or unfunded tick arrays the wallet cannot pay. Read-only. Restricted regions: not available to residents of, or people located in, the United States (incl. territories), Taiwan, Cuba, Iran, North Korea, Syria, or Ukraine's Crimea, Sevastopol, Donetsk and Luhansk regions; the hosted endpoint refuses these calls from those regions (HTTP 403, code region_restricted). Withdrawal tools stay available everywhere. See /terms.",
+      "description": "Quote opening a NEW Raydium CLMM position in a pool (no existing NFT). Input SOL/USDC/pool token, amount, and a price range (presets tight ±0.05% / standard ±0.3% / wide ±1%, or custom minPrice/maxPrice in B per 1 A). Returns expected A/B after Jupiter swap-to-ratio, tick-aligned range, in/out-of-range, price impact, refundable vs non-refundable SOL rent (NFT + tick arrays), and Token-2022/freeze flags. Fails clearly on insufficient balance, >5% impact, transfer-fee/freeze, or unfunded tick arrays the wallet cannot pay. Read-only.",
       "inputSchema": {
         "properties": {
           "amount": {
@@ -600,7 +600,7 @@ exports[`tools/list wire contract > matches the golden snapshot (names, descript
       "name": "quote_open_position",
     },
     {
-      "description": "Prepare an unsigned, fully-simulated transaction that opens a new CLMM position. Returns base64 tx (already partial-signed by the ephemeral NFT mint; wallet signs as fee payer), HMAC permit, summary, and signUrl. Server never holds keys after prepare; the mint secret is discarded. 1232-byte limit, fresh blockhash, full simulation. After signing, call submit_open_position (not submit_signed_transaction — this tx has two required signers). Restricted regions: not available to residents of, or people located in, the United States (incl. territories), Taiwan, Cuba, Iran, North Korea, Syria, or Ukraine's Crimea, Sevastopol, Donetsk and Luhansk regions; the hosted endpoint refuses these calls from those regions (HTTP 403, code region_restricted). Withdrawal tools stay available everywhere. See /terms.",
+      "description": "Prepare an unsigned, fully-simulated transaction that opens a new CLMM position. Returns base64 tx (already partial-signed by the ephemeral NFT mint; wallet signs as fee payer), HMAC permit, summary, and signUrl. Server never holds keys after prepare; the mint secret is discarded. 1232-byte limit, fresh blockhash, full simulation. After signing, call submit_open_position (not submit_signed_transaction — this tx has two required signers).",
       "inputSchema": {
         "properties": {
           "amount": {
@@ -663,7 +663,7 @@ exports[`tools/list wire contract > matches the golden snapshot (names, descript
       "name": "prepare_open_position",
     },
     {
-      "description": "Submit a signed open-position transaction. Re-verifies HMAC permit, re-reads pool/balances, re-simulates (sigVerify true, including the NFT-mint partial signature), then broadcasts. Pass signedTransaction plus permit, wallet, and the complete summary from prepare_open_position, unchanged. Returns signature and the new positionMint. Restricted regions: not available to residents of, or people located in, the United States (incl. territories), Taiwan, Cuba, Iran, North Korea, Syria, or Ukraine's Crimea, Sevastopol, Donetsk and Luhansk regions; the hosted endpoint refuses these calls from those regions (HTTP 403, code region_restricted). Withdrawal tools stay available everywhere. See /terms.",
+      "description": "Submit a signed open-position transaction. Re-verifies HMAC permit, re-reads pool/balances, re-simulates (sigVerify true, including the NFT-mint partial signature), then broadcasts. Pass signedTransaction plus permit, wallet, and the complete summary from prepare_open_position, unchanged. Returns signature and the new positionMint.",
       "inputSchema": {
         "properties": {
           "permit": {
