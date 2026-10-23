@@ -117,7 +117,8 @@ export function LandingPage() {
             </h1>
             <div className="mt-6 border-t border-ink/20 pt-5">
               <p className="max-w-2xl text-base leading-7 text-ink/70 sm:text-lg">
-                Pick an xStock pool, set your range, and open the position with a single wallet signature.
+                Pick an xStock pool. The app picks the best backtest range — you can override it.
+                Open the position with a single wallet signature.
                 Compound fees or exit in one click. You sign every transaction, and it stays a normal
                 Raydium position you can manage anywhere.
               </p>
@@ -154,8 +155,8 @@ export function LandingPage() {
               {[
                 {
                   n: "01",
-                  title: "Pick a pool and range",
-                  body: "Choose an xStock pair and a price range. The preview shows est. fee APR for that range — not guaranteed.",
+                  title: "Pick a pool",
+                  body: "Choose an xStock pair. The app picks the best backtest range — you can override it. The preview shows est. fee APR for that range — not guaranteed.",
                 },
                 {
                   n: "02",

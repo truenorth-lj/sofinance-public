@@ -21,7 +21,7 @@ describe("landing page copy and routes", () => {
 
   it("leads with tokenized-stock LP in one signature, not a yield product", () => {
     expect(src).toContain("LP tokenized stocks on Raydium — in one signature.");
-    expect(src).toContain("Pick an xStock pool, set your range, and open the position with a single wallet signature.");
+    expect(src).toContain("Pick an xStock pool. The app picks the best backtest range — you can override it.");
     expect(src).toContain("Compound fees or exit in one click.");
     expect(src).toContain("You sign every transaction");
     expect(src).toContain("normal Raydium position");
@@ -73,7 +73,8 @@ describe("landing page copy and routes", () => {
   });
 
   it("replaces the four-step technical flow with three user steps and drops engine jargon", () => {
-    expect(src).toContain("Pick a pool and range");
+    expect(src).toContain("Pick a pool");
+    expect(src).toContain("The app picks the best backtest range — you can override it.");
     expect(src).toContain("Review the preview");
     expect(src).toContain("Sign once");
     expect(src).not.toContain("The problem");
