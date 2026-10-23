@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { OPEN_RANGE_UI_PRESETS } from "@sofinance/engine/open-range-presets";
 import { degradedPayloadFixture, payloadWithAprs } from "./payload.fixture";
-import { buildPresetList, highestRangeSummary, pickHighestAprPreset } from "./preset-list";
+import { buildPresetList, excludedByBest, highestRangeSummary, pickHighestAprPreset } from "./preset-list";
 
 const ids = (list: ReturnType<typeof buildPresetList>) => list.buttons.map((button) => button.id);
 
@@ -145,6 +145,17 @@ describe("size-aware Best", () => {
     expect(list.best).toMatchObject({ id: "standard" });
     expect(list.best?.fallback).toBeUndefined();
     expect(ids(list)).toEqual(["micro", "tight", "wide"]);
+  });
+
+  it("never labels Best's pick as unfit, even when it is a size fallback", () => {
+    const payload = withFits({ micro: "excluded", tight: "excluded", standard: "excluded", wide: "excluded" });
+    const list = buildPresetList(OPEN_RANGE_UI_PRESETS, payload);
+    expect(list.best).toMatchObject({ id: "wide", fallback: true });
+    const wide = payload.presets.find((preset) => preset.id === "wide");
+    const tight = payload.presets.find((preset) => preset.id === "tight");
+    expect(excludedByBest(wide, list.best?.id)).toBe(false);
+    expect(excludedByBest(tight, list.best?.id)).toBe(true);
+    expect(excludedByBest(wide, "wide")).toBe(false);
   });
 
   it("falls back to Wide, then Standard, when no candidate fits", () => {

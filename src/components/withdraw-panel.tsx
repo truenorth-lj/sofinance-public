@@ -10,6 +10,9 @@ import { formatAmount } from "@sofinance/engine/amount";
 import { notifyPositionHistoryChange } from "@/lib/position-history-refresh";
 import { createJupiterRelayStore, postWithJupiterRelay } from "@/lib/jupiter/browser-relay";
 import type { WithdrawPrepared, WithdrawSummary, WithdrawRequest } from "@sofinance/engine/withdraw/types";
+import { prepareIsStale } from "@sofinance/engine/fresh-blockhash";
+
+export const WITHDRAW_EXPIRED_MESSAGE = "Transaction expired before it landed. Retry to prepare a fresh transaction — no funds moved.";
 
 const REQUEST_TIMEOUT_MS=45_000;
 const RELAYED_PATHS=new Set(["withdraw-quote","withdraw-prepare"]);
@@ -67,6 +70,7 @@ export function WithdrawPanel({wallet,positionMint,mintA,mintB,label,onClose,onB
     return;
    }
    if(result.status==="failed" || result.status==="expired")save(saved.root?{...saved,prepared:saved.root.prepared,signature:saved.root.signature,root:undefined}:null);
+   if(result.status==="expired")throw new Error(WITHDRAW_EXPIRED_MESSAGE);
    if(result.status!=="pending")throw new Error(`Transaction status: ${result.status}. Review it before starting another withdrawal.`);
    setProgress("Waiting for transaction to finalize…");await new Promise(resolve=>setTimeout(resolve,2000));
   }
@@ -74,7 +78,12 @@ export function WithdrawPanel({wallet,positionMint,mintA,mintB,label,onClose,onB
  }
  async function signAndSend(prepared:WithdrawPrepared,confirmed:boolean,originalRequest:WithdrawRequest,root?:Checkpoint["root"]){
   if(connection.address!==wallet)throw new Error("Connect the wallet that owns this position");
-  if(Date.now()>=prepared.summary.expiresAt)throw new Error("Preview expired. Prepare again.");
+  if(Date.now()>=prepared.summary.expiresAt || prepareIsStale(prepared.summary)){
+   setProgress("Refreshing transaction…");
+   prepared=await post<WithdrawPrepared>("withdraw-prepare",prepared.summary.stage==="swap"&&root
+    ?{...originalRequest,confirmHighImpact:confirmed,stage:"swap",previous:root.prepared,tx1Signature:root.signature}
+    :{...originalRequest,confirmHighImpact:confirmed});
+  }
   setProgress(prepared.summary.stage==="swap"?"Step 2 of 2: approve conversion in your wallet":"Approve withdrawal in your wallet");
   const unsigned=VersionedTransaction.deserialize(Uint8Array.from(atob(prepared.unsignedTransaction),c=>c.charCodeAt(0)));
   const message=unsigned.message.serialize().slice();
@@ -132,7 +141,7 @@ export function WithdrawPanel({wallet,positionMint,mintA,mintB,label,onClose,onB
   </div>}
   {error && <p role="alert" className="mt-3 rounded-2xl border border-lemon/60 bg-lemon/10 p-3 text-sm text-lemon">{error}</p>}
   <p role="status" aria-live="polite" className="mt-3 text-sm text-smoke">{busy && <LoaderCircle aria-hidden className="mr-2 inline h-4 w-4 animate-spin" />}{progress}</p>
-  {checkpoint ? <button disabled={busy} onClick={()=>{if(checkpoint.prepared.summary.requiresSecondConfirmation)setConfirmation(true);else void run();}} className="mt-3 rounded-full bg-lemon px-5 py-3 text-ink">Resume withdrawal</button> : <>
+  {checkpoint ? <button disabled={busy} onClick={()=>{if(checkpoint.prepared.summary.requiresSecondConfirmation)setConfirmation(true);else void run();}} className="mt-3 rounded-full bg-lemon px-5 py-3 text-ink">Resume withdrawal</button> : error===WITHDRAW_EXPIRED_MESSAGE ? <button disabled={busy} onClick={()=>void run()} className="mt-3 rounded-full bg-lemon px-5 py-3 text-ink">Retry withdrawal</button> : <>
    <button type="button" disabled={busy} aria-busy={previewing} onClick={()=>void showPreview()} className="mt-3 rounded-full border px-5 py-3 disabled:opacity-50">{previewing?"Calculating…":"Preview"}</button>
    {/* Without a preview, Withdraw fetches one first so the tap is never silent; a second tap confirms. */}
    <button type="button" disabled={busy} aria-busy={busy && !previewing} onClick={()=>{if(!preview)void showPreview();else if(preview.requiresSecondConfirmation)setConfirmation(true);else void run();}} className="ml-3 rounded-full bg-lemon px-5 py-3 text-ink disabled:opacity-50">{busy && !previewing?"Withdrawing…":"Withdraw"}</button>

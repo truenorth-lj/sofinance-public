@@ -20,6 +20,7 @@ import { withSelectedRouteRetries } from "./selected-route-retry";
 import { simulateAndVerifySelectedTransaction } from "./selected-simulation";
 import { readSelectedPositionState, type PositionSelection, type SelectedPositionState } from "@sofinance/engine/selected-state";
 import { atomicComputeUnitLimitInstruction, exceedsTxSizeLimit } from "@sofinance/engine/transaction-limits";
+import { estimateFeeForMessage } from "./rpc-fee-estimate";
 
 export async function buildAndSimulateSelectedZap(
   walletAddress: string, selection: PositionSelection, amount: string, floorBps: number,
@@ -152,12 +153,11 @@ async function buildAndSimulateSelectedZapOnce(
   const [verified, fee] = await Promise.all([simulateAndVerifySelectedTransaction({
     connection, transaction, wallet, state, requested: BigInt(quote.requested),
     expectedLiquidity: BigInt(quote.liquidity), sigVerify: false, useStateSnapshot: true,
-  }), connection.getFeeForMessage(transaction.message, "confirmed")]);
-  if (fee.value === null) throw new Error("Unable to estimate complete transaction network fee");
+  }), estimateFeeForMessage(connection, transaction.message)]);
   const timestamp = Date.now();
   const summary = {
     simulated: true, quote, sizeBytes, unitsConsumed: verified.unitsConsumed,
-    feeLamports: fee.value, lastValidBlockHeight, blockhash,
+    feeLamports: fee, lastValidBlockHeight, blockhash,
     positionMint: state.positionMint, positionAccount: state.positionAccount, poolId: state.poolId,
     inputMint: state.inputMint, inputKind: state.inputKind, startingLiquidity: state.liquidity,
     startingBalances: state.balances, simulatedEndingLiquidity: verified.endingLiquidity,

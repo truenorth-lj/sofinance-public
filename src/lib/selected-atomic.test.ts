@@ -71,6 +71,15 @@ it("rejects oversized candidates before Beam or simulation, tries compact follow
   ]);
   expect(fetchBeamTipAddress).not.toHaveBeenCalled(); expect(simulateAndVerifySelectedTransaction).not.toHaveBeenCalled();
 });
+it("retries an empty getFeeForMessage instead of failing prepare", async () => {
+  vi.mocked(getSelectedQuoteBundle).mockResolvedValue(bundle());
+  connection.getFeeForMessage
+    .mockResolvedValueOnce({ value: null } as never)
+    .mockResolvedValueOnce({ value: 5000 });
+  const result = await buildAndSimulateSelectedZap(wallet.toBase58(), selection, "1", 9900, 100, { enforceResaleFloor: false });
+  expect(result.summary.feeLamports).toBe(5000);
+  expect(connection.getFeeForMessage).toHaveBeenCalledTimes(2);
+});
 it("successfully switches to a compact candidate without rereading state or simulating the oversized one", async () => {
   vi.mocked(getSelectedQuoteBundle).mockResolvedValueOnce(bundle(true)).mockResolvedValueOnce(bundle());
   const result = await buildAndSimulateSelectedZap(wallet.toBase58(), selection, "1", 9900, 100, { enforceResaleFloor: false });

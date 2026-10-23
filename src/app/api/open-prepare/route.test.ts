@@ -34,4 +34,24 @@ describe("open-position preparation API", () => {
     const body = await response.json();
     expect(body.unsignedTransaction).toBe(Buffer.from("transaction").toString("base64"));
   });
+
+  it("retries once when the RPC fee estimate is empty", async () => {
+    vi.mocked(buildAndSimulateOpenPosition)
+      .mockRejectedValueOnce(new Error("Unable to estimate complete transaction network fee"))
+      .mockResolvedValue({
+        summary: { operation: "open-position", simulated: true, expiresAt: Date.now() + 75000, quote: {} },
+        transaction: { message: { serialize: () => Buffer.from("message") }, serialize: () => Buffer.from("transaction") },
+      } as never);
+    const response = await POST(new Request("http://localhost/api/open-prepare", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        wallet: "11111111111111111111111111111111",
+        poolId: "So11111111111111111111111111111111111111112",
+        inputMint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        inputKind: "token", amount: "0.12", rangePreset: "standard",
+      }),
+    }));
+    expect(response.status).toBe(200);
+    expect(buildAndSimulateOpenPosition).toHaveBeenCalledTimes(2);
+  });
 });

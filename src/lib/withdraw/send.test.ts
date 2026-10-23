@@ -1,8 +1,8 @@
 import { beforeEach, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
-const mocks = vi.hoisted(() => ({ simulate: vi.fn(), height: vi.fn(), send: vi.fn(), beam: vi.fn() }));
+const mocks = vi.hoisted(() => ({ simulate: vi.fn(), height: vi.fn(), send: vi.fn(), status: vi.fn(), beam: vi.fn() }));
 vi.mock("@sofinance/engine/withdraw/build", () => ({ simulateWithdraw: mocks.simulate }));
-vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: () => ({ getBlockHeight: mocks.height, sendRawTransaction: mocks.send }) }));
+vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: () => ({ getBlockHeight: mocks.height, sendRawTransaction: mocks.send, getSignatureStatuses: mocks.status }) }));
 vi.mock("@/lib/beam-after-send", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/beam-after-send")>()), beamAfterSend: mocks.beam }));
 import { submitWithdraw } from "./send";
 import { withdrawPermit } from "@sofinance/engine/withdraw/permit";
@@ -20,6 +20,7 @@ beforeEach(() => {
     mocks.height.mockResolvedValue(100);
     mocks.simulate.mockResolvedValue({});
     mocks.send.mockResolvedValue(signatureOf(transaction));
+    mocks.status.mockResolvedValue({ value: [{ confirmationStatus: "confirmed" }] });
     mocks.beam.mockResolvedValue({ beam: null, label: null, beamLandingUrl: "url" });
 });
 it("re-simulates the signed exact message before the single RPC submission", async () => {
@@ -57,6 +58,11 @@ it("rejects unsigned transactions and invalid wallet signatures", async () => {
     invalid.signatures[0]![0] = invalid.signatures[0]![0]! ^ 1;
     await expect(submitWithdraw({ ...body, signedTransaction: toBase64(invalid) })).rejects.toThrow("signature");
     expect(mocks.send).not.toHaveBeenCalled();
+});
+it("rebroadcasts the same signed bytes until the signature is observed", async () => {
+    mocks.status.mockResolvedValueOnce({ value: [null] }).mockResolvedValueOnce({ value: [{ confirmationStatus: "processed" }] });
+    expect(await submitWithdraw(input())).toHaveProperty("signature", signatureOf(transaction));
+    expect(mocks.send).toHaveBeenCalledTimes(2);
 });
 it("never sends when signed simulation fails", async () => {
     mocks.simulate.mockRejectedValue(new Error("Wallet token balance changed"));

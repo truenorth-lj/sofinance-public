@@ -207,6 +207,20 @@ describe("RangePresetPicker", () => {
     expect(container.textContent).not.toMatch(/Best for this pool/);
   });
 
+  it("keeps Best's pick unlabeled when the user selects an excluded range (SNDK $1000 Tight)", () => {
+    const fit = (status: "ok" | "excluded") => ({ status, reason: "cross-band" as const, ownSharePct: 1, edgeBps: 10, impactBps: 20, bandBps: 5 });
+    const data = payloadWithAprs({ micro: 40, tight: 35, standard: 32, wide: 29 });
+    data.presets = data.presets.map((preset) => ({ ...preset, sizeFit: fit("excluded") }));
+    render({ status: "ready", data }, { selected: "tight" });
+    expect(text("[data-testid='best-resolved']")).toBe("Wide");
+    expect(container.querySelector("[data-testid='apr-wide']")?.className ?? "").not.toMatch(/line-through/);
+    expect(container.querySelector("[data-testid='apr-wide']")?.closest("[data-size-fit]")?.getAttribute("data-size-fit")).toBe("ok");
+    expect(container.querySelector("[data-testid='apr-micro']")?.className).toMatch(/line-through/);
+    expect(container.querySelector("[data-testid='apr-standard']")?.className).toMatch(/line-through/);
+    expect(container.textContent).toContain(DOES_NOT_FIT_SIZE_LABEL);
+    expect(container.querySelector("[data-testid='apr-wide']")!.textContent).toMatch(/~29%/);
+  });
+
   it("marks ranges that do not fit this deposit so a higher APR is not the better-looking pick", () => {
     const data = payloadForCapital(payloadFixture(), 150_000);
     render({ status: "ready", data }, { selected: "wide", capitalUsd: 150_000 });

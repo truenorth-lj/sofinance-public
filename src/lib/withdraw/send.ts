@@ -7,6 +7,7 @@ import { getSigningSecret } from "@sofinance/engine/config/server-env";
 import { isSingleWalletSignedTransaction } from "@sofinance/engine/transaction-limits";
 import { rpcConnection } from "@sofinance/engine/rpc";
 import { beamAfterSend, noBeamAfterSend } from "@/lib/beam-after-send";
+import { sendUntilObserved } from "@/lib/send-until-valid";
 import { withdrawSubmitSchema } from "@sofinance/engine/withdraw/input";
 import { withdrawPermit } from "@sofinance/engine/withdraw/permit";
 import { simulateWithdraw } from "@sofinance/engine/withdraw/build";
@@ -35,8 +36,9 @@ export async function submitWithdraw(input: {
     await simulateWithdraw(connection, transaction, summary, true);
     if (Date.now() >= summary.expiresAt || await connection.getBlockHeight("confirmed") > summary.lastValidBlockHeight)
         throw new Error("Withdrawal expired before broadcast");
-    const signature = await connection.sendRawTransaction(transaction.serialize(), { skipPreflight: false, preflightCommitment: "confirmed", maxRetries: 3 });
-    if (signature !== bs58.encode(transaction.signatures[0]!))
+    const expected = bs58.encode(transaction.signatures[0]!);
+    const signature = await sendUntilObserved(connection, transaction.serialize(), summary.lastValidBlockHeight);
+    if (signature !== expected)
         throw new Error("RPC transaction signature mismatch");
     const beam = await beamAfterSend(signature, summary.beam).catch(() => noBeamAfterSend(signature));
     return { signature, beam: beam.beam, beamLabel: beam.label, beamLandingUrl: beam.beamLandingUrl };
