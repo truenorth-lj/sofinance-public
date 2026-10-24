@@ -109,8 +109,12 @@ async function tick() {
     busy = false;
   }
 }
-// Probe every 30 seconds. The DB enforces the 5/15-minute work cadence; a
-// five-minute-only probe could miss a due time by milliseconds and skip a cycle.
+// Probe on wall-clock boundaries of the scheduler interval (default 15 minutes,
+// SOFINANCE_RWA_SCHEDULER_INTERVAL_MS overrides). Every probe is a billed Vercel
+// function call; the DB still gates each job by its own cadence (the job's
+// nextDueAt is lastStartedAt + cadence, so a 15-minute probe never skips a
+// 5/15-minute job that is due).
+const intervalMs = service.schedulerIntervalMs;
 let timer: ReturnType<typeof setTimeout>;
 function schedule() {
   if (stopping) return;
@@ -118,7 +122,7 @@ function schedule() {
     () => {
       void tick().finally(schedule);
     },
-    30_000 - (Date.now() % 30_000),
+    intervalMs - (Date.now() % intervalMs),
   );
 }
 schedule();

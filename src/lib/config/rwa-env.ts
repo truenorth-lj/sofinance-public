@@ -78,10 +78,30 @@ export function getRwaConfig() {
   };
 }
 
+/**
+ * Default scheduler tick: 15 minutes. Each tick is one Vercel function
+ * invocation, so the tick (not the DB job cadence) bounds Fluid Active CPU.
+ * Keep it at or below ~20 minutes: the range-APR UI hides snapshots whose chain
+ * observation is older than 30 minutes (`aprSnapshotExpired`), and the daily
+ * 08:10–09:10 Taipei sample needs a refresh inside that window.
+ */
+export const DEFAULT_RWA_SCHEDULER_INTERVAL_MS = 900_000;
+
+export function rwaSchedulerIntervalMs(raw: string | undefined) {
+  if (!raw) return DEFAULT_RWA_SCHEDULER_INTERVAL_MS;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 30_000 || value > 3_600_000)
+    throw new Error("Invalid RWA configuration");
+  return value;
+}
+
 export function getRwaServiceConfig() {
   return {
     port: Number(process.env.PORT || 3000),
     refreshUrl: process.env.SOFINANCE_RWA_REFRESH_URL,
     schedulerEnabled: process.env.SOFINANCE_RWA_SCHEDULER_ENABLED === "true",
+    schedulerIntervalMs: rwaSchedulerIntervalMs(
+      process.env.SOFINANCE_RWA_SCHEDULER_INTERVAL_MS,
+    ),
   };
 }
