@@ -77,6 +77,12 @@ async function post<T>(path: string, body: unknown, signal?: AbortSignal): Promi
   return value;
 }
 
+/** The fresh position read a finalized compound confirmation carries, when it is for the selection on screen. */
+export function confirmedStateFor(confirmation: Pick<CompoundConfirmation, "state">, identity: string): CompoundPositionState | null {
+  const state = confirmation.state;
+  return state && `${state.wallet}:${state.positionMint}` === identity ? state : null;
+}
+
 export function useCompoundController({ wallet, positionMint, externalBlocked, onConfirmed }: Options) {
   const connection = useWalletConnection();
   const [state, setState] = useState<CompoundPositionState | null>(null);
@@ -122,6 +128,8 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
   const attemptSignatureRef = useRef<string | null>(null);
   const previousTerminal = useRef<string | null>(null);
   const keepSubmitErrorRef = useRef(false);
+  // Signature whose confirmation request is in flight; polling never overlaps two checks of one transaction.
+  const reconcileInFlight = useRef<string | null>(null);
   useLayoutEffect(() => {
     if (walletRef.current !== wallet) scanRequest.current++;
     if (identityRef.current !== identity) { lifecycle.current++; autoCleanup.current = null; recoveryWait.current?.controller.abort(); }
@@ -206,6 +214,17 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
       if (mounted.current && identityRef.current === requestedIdentity && requestId === stateRequest.current) setLoading(false);
     }
   }, [wallet, positionMint, clearError, setError]);
+  // A position read that arrived some other way (the confirmation of a finalized compound) replaces any read still in flight,
+  // so the tab does not read the same position twice.
+  const adoptState = useCallback((next: CompoundPositionState) => {
+    stateRequest.current++;
+    setState(next); setLoading(false);
+    if (!keepSubmitErrorRef.current) clearError(`${next.wallet}:${next.positionMint}`);
+  }, [clearError]);
+  // Confirmation polling reads the latest readers through refs, so selecting a position does not restart the poll.
+  const refreshStateRef = useRef(refreshState);
+  const adoptStateRef = useRef(adoptState);
+  useLayoutEffect(() => { refreshStateRef.current = refreshState; adoptStateRef.current = adoptState; });
   useEffect(() => {
     stateRequest.current++;
     const timer = window.setTimeout(() => { setState(null); setPreview(null); void refreshState(); }, 0);
@@ -252,7 +271,9 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
             message: "Balance merged and account rent recovered. The saved transaction is confirmed on-chain." } : previous);
         }
         if (executed) notifyPositionHistoryChange(current.positionMint, current.kind === "compound" ? current.signature : undefined);
-        void refreshState(); onConfirmedRef.current?.();
+        const fresh = confirmedStateFor(checked, identityRef.current);
+        if (fresh) adoptStateRef.current(fresh); else void refreshStateRef.current();
+        onConfirmedRef.current?.();
       }
     }
     return checked;
@@ -265,17 +286,17 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
         else setError("");
       }
     }
-  }, [refreshState, clearError, setError]);
+  }, [clearError, setError]);
   const chainSettled = chainStatus === "success" || chainStatus === "failed" || chainStatus === "expired";
   const transactionUnresolved = !!attempt && attempt.wallet === wallet && (!chainSettled || attemptStatus === "pending") && !mayStartAnotherAttempt(attemptStatus);
   useEffect(() => {
     if (!attempt || !transactionUnresolved) return;
     let cancelled = false;
-    let checking = false;
     const run = () => {
-      if (checking || cancelled || recoveryWait.current?.signature === attempt.signature || attemptSignatureRef.current !== attempt.signature) return;
-      checking = true;
-      void reconcile(attempt).finally(() => { checking = false; });
+      if (reconcileInFlight.current === attempt.signature || cancelled || recoveryWait.current?.signature === attempt.signature ||
+        attemptSignatureRef.current !== attempt.signature) return;
+      reconcileInFlight.current = attempt.signature;
+      void reconcile(attempt).finally(() => { if (reconcileInFlight.current === attempt.signature) reconcileInFlight.current = null; });
     };
     const initial = window.setTimeout(run, 0);
     const poll = window.setInterval(run, 4_000);
