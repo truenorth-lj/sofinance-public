@@ -48,13 +48,31 @@ function recoveryMayProceed(value: { status: AtomicStatus; chainStatus?: Compoun
 }
 const emptyScan = { started: false, scanning: false, cursor: null as string | null, scanned: 0, total: 0, incomplete: false, error: "" };
 
+/** A failed API call that also keeps the route's machine-readable code (e.g. `rpc_unavailable`). */
+class CompoundApiError extends ApiRequestError {
+  readonly code?: string;
+  constructor(message: string, sent?: boolean, code?: string) {
+    super(message, sent);
+    if (code) this.code = code;
+  }
+}
+/**
+ * Yield reads are safe to repeat. A provider rate-limit window is about a second, so wait it out a
+ * couple of times before showing "Solana RPC is temporarily unavailable" (one burst of page-load
+ * reads should not surface as an error).
+ */
+export const COMPOUND_STATE_RPC_RETRY_DELAYS_MS = [1_500, 3_000] as const;
+function isRpcUnavailable(error: unknown) {
+  return error instanceof CompoundApiError && error.code === "rpc_unavailable";
+}
+
 async function post<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
   const response = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body), cache: "no-store", signal });
-  const value = await response.json() as T & { error?: string; sent?: boolean };
+  const value = await response.json() as T & { error?: string; sent?: boolean; code?: string };
   if (!response.ok) {
-    throw new ApiRequestError(value.error || "Unable to complete on-chain query, please retry later",
-      value.sent === false ? false : undefined);
+    throw new CompoundApiError(value.error || "Unable to complete on-chain query, please retry later",
+      value.sent === false ? false : undefined, typeof value.code === "string" ? value.code : undefined);
   }
   return value;
 }
@@ -161,7 +179,18 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
     const requestedIdentity = `${requestedWallet}:${requestedMint}`;
     setLoading(true);
     try {
-      const next = await post<CompoundPositionState>("/api/compound-state", { wallet: requestedWallet, positionMint: requestedMint });
+      let next: CompoundPositionState;
+      for (let attempt = 0; ; attempt += 1) {
+        try {
+          next = await post<CompoundPositionState>("/api/compound-state", { wallet: requestedWallet, positionMint: requestedMint });
+          break;
+        } catch (caught) {
+          const delay = COMPOUND_STATE_RPC_RETRY_DELAYS_MS[attempt];
+          if (delay === undefined || !isRpcUnavailable(caught)) throw caught;
+          await new Promise<void>((resolve) => { window.setTimeout(resolve, delay); });
+          if (!mounted.current || identityRef.current !== requestedIdentity || requestId !== stateRequest.current) return;
+        }
+      }
       if (!mounted.current || identityRef.current !== requestedIdentity || requestId !== stateRequest.current) return;
       if (next.wallet !== requestedWallet || next.positionMint !== requestedMint) throw new Error("Yield reading does not match selected position");
       setState(next);
