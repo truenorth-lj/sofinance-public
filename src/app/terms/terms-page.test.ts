@@ -1,20 +1,18 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { TERMS_RESTRICTED_REGIONS } from "@/lib/terms-content";
+import { TERMS_JURISDICTION_EN } from "@/lib/terms-content";
 import { LEGAL_ROUTES } from "@/lib/public-urls";
 
 const page = readFileSync(resolve("src/app/terms/page.tsx"), "utf8");
 
 describe("/terms page", () => {
-  it("lists the restricted regions enforced by the app and prohibits circumvention", () => {
-    expect(TERMS_RESTRICTED_REGIONS.join(" | ")).toBe([
-      "Taiwan",
-      "the United States and its territories (Puerto Rico, Guam, the U.S. Virgin Islands, American Samoa, the Northern Mariana Islands and the U.S. Minor Outlying Islands)",
-      "Cuba", "Iran", "North Korea", "Syria",
-      "the Crimea, Sevastopol, Donetsk and Luhansk regions of Ukraine",
-    ].join(" | "));
-    expect(page).toContain("VPN, proxy or any other means to circumvent");
+  it("asks users to confirm their own local law, with no region list or IP blocking (Section 3)", () => {
+    expect(TERMS_JURISDICTION_EN).toBe("Users are responsible for confirming that use of the Service is permitted under the laws of their jurisdiction. The Service may not be used from sanctioned jurisdictions.");
+    expect(page).toContain("{TERMS_JURISDICTION_EN}");
+    expect(page).toContain("3. Eligibility and applicable law");
+    expect(page).not.toMatch(/restricted region|IP-based|VPN|Taiwan|TERMS_RESTRICTED_REGIONS/);
+    expect(readFileSync(resolve("src/lib/terms-content.ts"), "utf8")).not.toContain("restricted-regions.ts");
   });
 
   it("covers the required positioning, risks, fees and legal provisions", () => {

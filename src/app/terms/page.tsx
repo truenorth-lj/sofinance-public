@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { InkHero, InkNav, InkShell } from "@/components/ink";
 import { DOCS_ROUTES } from "@/lib/public-urls";
 import { SOCIAL_LINKS } from "@/lib/social-links";
-import { TERMS_LAST_UPDATED, TERMS_RESTRICTED_REGIONS } from "@/lib/terms-content";
+import { TERMS_JURISDICTION_EN, TERMS_LAST_UPDATED } from "@/lib/terms-content";
 
 export const metadata: Metadata = {
   title: "Terms of Service · SoFinance",
@@ -37,14 +37,10 @@ export default function TermsPage() {
         </ul>
       </Section>
 
-      <Section id="eligibility" title="3. Eligibility and restricted regions">
-        <p>You must be at least 18 years old and legally able to enter into these Terms. SoFinance is <strong>not available</strong> to residents of, or people located in, any of the following restricted regions:</p>
-        <ul>
-          {TERMS_RESTRICTED_REGIONS.map((region) => <li key={region}>{region}</li>)}
-        </ul>
+      <Section id="eligibility" title="3. Eligibility and applicable law">
+        <p>You must be at least 18 years old and legally able to enter into these Terms.</p>
+        <p>{TERMS_JURISDICTION_EN}</p>
         <p>You may not use SoFinance if you are, or act on behalf of, a person or entity that is subject to sanctions administered by the United Nations, the United States, the European Union, the United Kingdom or any other applicable authority.</p>
-        <p>You must not use a VPN, proxy or any other means to circumvent these restrictions or to hide your location. We may restrict access from restricted regions using IP-based location checks and may refuse to prepare or relay transactions at any time. If you already hold a position, withdrawals are not blocked: you can withdraw through the Interface or directly on Raydium.</p>
-        <p>You are responsible for complying with the laws that apply to you. Using SoFinance where it is not lawful for you to do so is prohibited.</p>
       </Section>
 
       <Section id="no-advice" title="4. No investment, legal or tax advice">
