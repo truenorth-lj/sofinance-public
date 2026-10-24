@@ -1,17 +1,17 @@
 "use client";
 import "@/lib/engine-host";
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { LoaderCircle } from "lucide-react";
 import type { OpenRangePreset, OpenRangeUiPreset } from "@sofinance/engine/open-range-presets";
 import Link from "next/link";
-import { BEST_HELP, BEST_LABEL, APR_ESTIMATE_CAVEAT, APR_ESTIMATE_LABEL, DOES_NOT_FIT_SIZE_LABEL } from "@/lib/range-apr/copy";
+import { LOWER_AMOUNT_TO_OPEN, BEST_HELP, BEST_LABEL, APR_ESTIMATE_CAVEAT, APR_ESTIMATE_LABEL } from "@/lib/range-apr/copy";
 import { DOCS_ROUTES } from "@/lib/public-urls";
 import { formatEstimate, unavailableReasonText } from "@/lib/range-apr/format";
 import { MICRO_PRESET_ID, microBandLabel } from "@sofinance/engine/range-apr/micro-range";
-import { buildPresetList, excludedByBest, type BestButton } from "@/lib/range-apr/preset-list";
+import { buildPresetList, type BestButton } from "@/lib/range-apr/preset-list";
 import { payloadForCapital } from "@/lib/range-apr/size-aware";
-import type { PoolRangeAprPayload, RangeAprPresetEstimate } from "@/lib/range-apr/types";
+import type { PoolRangeAprPayload } from "@/lib/range-apr/types";
 import { estimateForSelection, type SelectionEstimate, type TickRange } from "@/lib/range-apr/selection";
 import { BrandMark } from "../brand-mark";
 import { InfoTip } from "../info-tip";
@@ -26,18 +26,11 @@ const cellTone = (active: boolean) => (active
   : "border-white/20 text-smoke hover:border-white/40 hover:text-cream/90");
 
 /** A candidate range the user has not selected, with its estimate (compared inside the APR card). */
-type OtherRange = { id: string; name: string; text: string; excluded: boolean };
+type OtherRange = { id: string; name: string; text: string };
 
 /** "$1,000" style deposit label; cents only below $10. */
 export function formatDepositUsd(value: number): string {
   return `$${value.toLocaleString("en-US", { maximumFractionDigits: value < 10 ? 2 : 0 })}`;
-}
-
-function sizeNote(preset: RangeAprPresetEstimate | undefined, bestId: string | undefined): string {
-  if (!excludedByBest(preset, bestId) || preset?.sizeFit?.status !== "excluded") return "";
-  if (preset.sizeFit.reason === "crowded") return " · large vs pool liquidity";
-  if (preset.sizeFit.reason === "cross-band") return " · too large for pool depth";
-  return " · edge near est. price impact";
 }
 
 function Headline({ apr, sized, selection, best, others }: {
@@ -85,7 +78,7 @@ function Headline({ apr, sized, selection, best, others }: {
       {best && (
         <p className="mt-1 text-[11px] leading-5 text-smoke" data-testid="best-explainer">
           {best.fallback
-            ? `${BEST_LABEL} for this pool is ${best.resolvedLabel}: this amount is large for the pool's current liquidity, so the widest range is suggested. Not a prediction.`
+            ? `${BEST_LABEL} for this pool is ${best.resolvedLabel}: the range that fits${sized ? ` a ~${formatDepositUsd(sized.referenceCapitalUsd)} deposit` : " this amount"}. Not a prediction.`
             : `${BEST_LABEL} for this pool is ${best.resolvedLabel}: the highest estimated fee APR of the candidate ranges over the last 7 days${sized ? ` for a ~${formatDepositUsd(sized.referenceCapitalUsd)} deposit` : ""}. Not a prediction.`}
         </p>
       )}
@@ -94,21 +87,9 @@ function Headline({ apr, sized, selection, best, others }: {
           Other ranges
           <span className="flex flex-wrap gap-x-4 gap-y-1">
             {others.map((other) => (
-              <span
-                key={other.id}
-                className="inline-flex items-baseline gap-1.5"
-                data-size-fit={other.excluded ? "excluded" : "ok"}
-              >
+              <span key={other.id} className="inline-flex items-baseline gap-1.5">
                 {other.name}
-                {other.excluded ? (
-                  <span className="text-smoke/75">
-                    <span className="text-[10px] font-medium uppercase tracking-wide">{DOES_NOT_FIT_SIZE_LABEL}</span>
-                    {" "}
-                    <span className="tabular-nums line-through decoration-smoke/50" data-testid={`apr-${other.id}`}>{other.text}</span>
-                  </span>
-                ) : (
-                  <span className="tabular-nums text-cream/80" data-testid={`apr-${other.id}`}>{other.text}</span>
-                )}
+                <span className="tabular-nums text-cream/80" data-testid={`apr-${other.id}`}>{other.text}</span>
               </span>
             ))}
           </span>
@@ -143,6 +124,13 @@ export function RangePresetPicker({
   const list = buildPresetList(presets, data);
   const best = list.best;
   const bestActive = selected === best?.id;
+  // A preset the typed amount no longer fits is not offered, so a selection of it falls back to Best.
+  const hiddenSelection = !!best && selected !== "custom" && selected !== best.id
+    && !list.buttons.some((button) => button.id === selected);
+  const bestId = best?.id;
+  useEffect(() => {
+    if (hiddenSelection && bestId) onSelect(bestId);
+  }, [hiddenSelection, bestId, onSelect]);
   const preset = (id: OpenRangeUiPreset["id"]) => presets.find((item) => item.id === id);
   // Micro is defined in tick-spacing steps; with the pool known it is shown as a percent like the others.
   const band = (id: OpenRangeUiPreset["id"]) => (id === MICRO_PRESET_ID && data ? microBandLabel(data.pool.tickSpacing) : preset(id)?.band);
@@ -153,13 +141,7 @@ export function RangePresetPicker({
   ];
   const others: OtherRange[] = candidates.some((candidate) => candidate.estimate?.status === "ok")
     ? candidates.filter((candidate) => candidate.id !== selected)
-      .map((candidate) => {
-        const preset = data?.presets.find((item) => item.id === candidate.id);
-        return {
-          id: candidate.id, name: candidate.name, excluded: excludedByBest(preset, best?.id),
-          text: `${formatEstimate(candidate.estimate)}${sizeNote(preset, best?.id)}`,
-        };
-      })
+      .map((candidate) => ({ id: candidate.id, name: candidate.name, text: formatEstimate(candidate.estimate) }))
     : [];
   const tips = [
     ...(best ? [{ key: "best", label: `About ${BEST_LABEL}`, text: BEST_HELP }] : []),
@@ -204,24 +186,19 @@ export function RangePresetPicker({
           </div>
         ) : null}
         <div className="grid auto-cols-fr grid-flow-col gap-1.5 sm:gap-2">
-          {list.buttons.map((button) => {
-            const excluded = excludedByBest(data?.presets.find((item) => item.id === button.id), best?.id);
-            return (
+          {list.buttons.map((button) => (
             <button
               key={button.id}
               type="button"
               aria-pressed={selected === button.id}
               onClick={() => onSelect(button.id)}
-              title={excluded ? `${preset(button.id)?.shortLabel ?? button.label} ${DOES_NOT_FIT_SIZE_LABEL}` : undefined}
-              className={`${CELL} ${cellTone(selected === button.id)} ${excluded ? "opacity-45" : ""}`}
+              className={`${CELL} ${cellTone(selected === button.id)}`}
               data-testid={`preset-${button.id}`}
-              data-size-fit={excluded ? "excluded" : "ok"}
             >
               <span className="max-w-full truncate text-xs font-semibold leading-4">{preset(button.id)?.shortLabel ?? button.label}</span>
               <span className={`leading-3 ${BAND}`}>{band(button.id)}</span>
             </button>
-            );
-          })}
+          ))}
           <button
             type="button"
             aria-pressed={selected === "custom"}
@@ -252,7 +229,13 @@ export function RangePresetPicker({
           />
         </div>
       )}
-      <Headline apr={apr} sized={sized} selection={selection} best={bestActive ? best : null} others={others} />
+      {list.tooLarge ? (
+        <p className="mt-3 rounded-2xl border border-white/10 bg-white/[0.04] p-3 text-xs leading-5 text-cream/90" role="status" data-testid="lower-amount">
+          {LOWER_AMOUNT_TO_OPEN}
+        </p>
+      ) : (
+        <Headline apr={apr} sized={sized} selection={selection} best={bestActive ? best : null} others={others} />
+      )}
     </>
   );
 }
