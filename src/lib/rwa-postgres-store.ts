@@ -21,6 +21,10 @@ type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 const nowSql = sql`clock_timestamp()`;
 const iso = (value: string) => new Date(value).toISOString();
 const interval = (ms: number) => sql`(${ms}::integer * interval '1 millisecond')`;
+// The scheduler probes on wall-clock boundaries (default every 15 minutes) while a
+// job's next due time is lastStartedAt + cadence, a few ms after the boundary. A
+// small grace keeps a 15-minute job from slipping to every other probe.
+const DUE_GRACE = sql`interval '60 seconds'`;
 const leaseWhere = (lease: Lease) => and(eq(job.jobKey, lease.job),
   eq(job.leaseOwner, lease.owner), eq(job.leaseEpoch, lease.epoch));
 
@@ -93,7 +97,7 @@ export class PostgresRwaStore implements RwaStore {
             leaseExpiresAt: sql`${nowSql}+${interval(getRwaConfig().leaseMs)}`,
             lastStartedAt: nowSql, lastStatus: "running" })
             .where(and(eq(job.jobKey, input.job), or(isNull(job.leaseOwner), lte(job.leaseExpiresAt, nowSql)),
-              input.force ? sql`true` : or(isNull(job.nextDueAt), lte(job.nextDueAt, nowSql))))
+              input.force ? sql`true` : or(isNull(job.nextDueAt), lte(job.nextDueAt, sql`${nowSql}+${DUE_GRACE}`))))
             .returning({ epoch: job.leaseEpoch });
         });
         return rows.length ? { job: input.job, owner, epoch: rows[0]!.epoch } : null;
