@@ -84,6 +84,21 @@ beforeEach(async () => {
 afterEach(async () => {
   await act(async () => root.unmount()); vi.useRealTimers(); vi.unstubAllGlobals();
 });
+it("prompts to pick another asset when selected-state reports input_asset_not_held", async () => {
+  const handler = fetchMock.getMockImplementation()!;
+  fetchMock.mockImplementation(async (url, init) => url.startsWith("/api/selected-state?")
+    ? Response.json({
+      error: "Wallet does not have the selected investable asset",
+      code: "input_asset_not_held",
+    }, { status: 409 })
+    : handler(url, init));
+  await act(async () => { await controller.refreshState(); });
+  expect(controller.state).toBeNull();
+  expect(controller.stateError).toBe("Wallet does not have the selected input asset. Please pick another asset.");
+  expect(controller.status).toBe("Wallet does not have the selected input asset. Please pick another asset.");
+  expect(controller.actionDisabled).toBe(true);
+});
+
 it("shows a lightweight preview and only prepares after Add, regardless of resale advice", async () => {
   await ready();
   expect(calls("/api/selected-quote")).toHaveLength(1);
