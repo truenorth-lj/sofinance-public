@@ -13,6 +13,7 @@ import type { PositionSelection, SelectedPositionState } from "@sofinance/engine
 import type { WalletDiscovery } from "@sofinance/engine/wallet-discovery";
 import { DEFAULT_RESALE_FLOOR_BPS, USDC_MINT } from "@sofinance/engine/ids";
 import { quoteErrorHidesRecalculate } from "@/lib/selected-amount-error";
+import { INPUT_ASSET_NOT_HELD_CODE, INPUT_ASSET_NOT_HELD_MESSAGE } from "@/lib/selected-input-asset-not-held";
 import { useWalletConnection } from "./wallet-connection";
 import { notifyPositionHistoryChange } from "@/lib/position-history-refresh";
 import { createJupiterRelayStore, postWithJupiterRelay } from "@/lib/jupiter/browser-relay";
@@ -141,7 +142,10 @@ export function useSelectedController() {
       const params = new URLSearchParams({ wallet, ...selection });
       const response = await fetch(`/api/selected-state?${params}`, { cache: "no-store" });
       const data = await response.json() as SelectedPositionState | ApiError;
-      if (!response.ok) throw new Error((data as ApiError).error);
+      if (!response.ok) {
+        const failed = data as ApiError;
+        throw new Error(failed.code === INPUT_ASSET_NOT_HELD_CODE ? INPUT_ASSET_NOT_HELD_MESSAGE : failed.error);
+      }
       if (walletRef.current === wallet && selectionRef.current === key && requestId === stateRequestRef.current) {
         setSelectedState(data as SelectedPositionState);
       }

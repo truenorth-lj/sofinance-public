@@ -34,6 +34,18 @@ describe("GET /api/selected-state", () => {
     expect(captureApiRouteError).not.toHaveBeenCalled();
   });
 
+  it("answers 409 input_asset_not_held without reporting it when the wallet has no balance of the input token", async () => {
+    vi.mocked(readSelectedPositionState).mockRejectedValue(new Error("Wallet does not have the selected investable asset"));
+    const response = await GET(request());
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      error: "Wallet does not have the selected input asset. Please pick another asset.",
+      code: "input_asset_not_held",
+    });
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(captureApiRouteError).not.toHaveBeenCalled();
+  });
+
   it("still answers 503 and reports unexpected read failures", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     vi.mocked(readSelectedPositionState).mockRejectedValue(new Error("Pool vault does not exist"));
