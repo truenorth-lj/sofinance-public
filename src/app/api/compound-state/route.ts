@@ -2,6 +2,7 @@ import "@/lib/engine-host";
 import { parseCompoundSelection } from "@/lib/compound-api";
 import { readCompoundPositionState } from "@sofinance/engine/compound-state";
 import { RPC_UNAVAILABLE_CODE } from "@sofinance/engine/jupiter/errors";
+import { rpcReadConnection } from "@sofinance/engine/rpc";
 import { RpcUnavailableError } from "@sofinance/engine/rpc/errors";
 import { apiError } from "@/lib/api-response";
 import { publicErrorCode } from "@/lib/public-error";
@@ -12,7 +13,7 @@ const COMPOUND_STATE_RETRY_AFTER_SECONDS = 2;
 export async function POST(request: Request) {
   try {
     const { wallet, positionMint } = await parseCompoundSelection(request);
-    return Response.json(await readCompoundPositionState(wallet, positionMint), { headers: { "Cache-Control": "no-store" } });
+    return Response.json(await readCompoundPositionState(wallet, positionMint, rpcReadConnection()), { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     if (error instanceof RpcUnavailableError || publicErrorCode(error) === RPC_UNAVAILABLE_CODE) {
       // Transient provider limit on a read-only call: answer 503 + code so the browser can retry
