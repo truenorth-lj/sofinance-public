@@ -3,7 +3,7 @@ import { getRwaConfig } from "./config/rwa-env";
 import { discoverRwaPairs, getCachedRwaPairs } from "./rwa-pairs";
 import { fetchPoolRangeApr } from "./pool-range-apr";
 import { PostgresRwaStore } from "./rwa-postgres-store";
-import { getRwaDatabase } from "./rwa-database";
+import { getRwaDatabase, runRwaDatabaseRequest } from "./rwa-database";
 import {
   RwaStoreError,
   type PairOptions,
@@ -70,7 +70,12 @@ export function getRwaStore(): RwaStore {
     if (!direct || direct.db !== db) {
       const store = new PostgresRwaStore(db);
       direct = { db, store: { async request(input) {
-        try { return await store.request(input); }
+        try {
+          // A caller may retain this wrapper across pool retirement. Select a
+          // fresh pool before starting work; never retry a started operation.
+          if (getRwaDatabase() !== db) return await getRwaStore().request(input);
+          return await runRwaDatabaseRequest(db, () => store.request(input));
+        }
         catch (error) { throw error instanceof RwaStoreError ? error : new RwaStoreError("RWA_STORE_UNAVAILABLE"); }
       } } };
     }

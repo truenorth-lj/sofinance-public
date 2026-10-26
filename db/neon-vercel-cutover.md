@@ -35,6 +35,49 @@ Gateway production hostname is `sofinance-rwa.zeabur.app`; the older local
 The same mode controls both RWA and position history. Preview refresh and existing
 position write gates remain in force. Keep preview data/roles isolated as well.
 
+## Direct request deadline and unknown write outcomes (F2)
+
+Both direct store wrappers bound one complete request: initial shared SQL
+identity, TCP/TLS startup, pool acquisition/queue, business statements,
+transactions and the COMMIT acknowledgement. The budget in milliseconds is
+`min(max(10000, connectTimeoutMs + queryTimeoutMs), jobTimeoutMs - 1000)`:
+10 seconds with defaults, up to 30 seconds with the existing larger connect/query
+settings, always below the configured job timeout (90 seconds by default) and
+its longer lease (120 seconds by default). No extra environment setting is
+needed. This is a per-store-request deadline, not a replacement for the job's
+AbortSignal, lease renewal, final expiry/epoch checks or the route limit.
+Server statement/lock/8-second transaction limits remain in force independently.
+
+On expiry the process marks the affected shared pool retired, clears its
+identity gate and detaches it from the runtime cache **before** asynchronous
+cleanup or exposing failure. It ends postgres-js with `timeout: 0`, rejecting
+queued/future driver queries, and destroys its owned TCP transports (including
+the parent of TLS sockets). Driver `end()` alone is only graceful socket
+`end()` in postgres-js 3.4.7 and cannot ensure an unresponsive peer stops draining
+buffered writes. All current waiters fail after forced driver teardown on the
+next timer turn; their request timers are cleared. Both stores, including a
+previously retained wrapper, select a fresh shared pool on the next request.
+Delayed cleanup from an old pool cannot detach a newer one. The timed-out
+operation is never automatically replayed; no gateway or pooler fallback occurs.
+The legacy HTTPS gateway retains its existing 10-second fetch deadline and
+fixed private-service pool lifecycle.
+
+**A timeout or connection failure does not prove that a write was absent or
+rolled back.** Data or COMMIT may already have reached PostgreSQL before the
+transport was destroyed; in particular a lost COMMIT acknowledgement has an
+unknown outcome. The public stable unavailable code does not distinguish these
+cases. Reconnection alone establishes no write result. Read the authoritative
+destination with a fresh verified connection before recovery: inspect job
+owner/epoch/expiry and generation/daily unique samples, or position lease/revision,
+cursor/parser/delta and retained receipts, as applicable. Resume through the
+existing due/lease/revision/idempotency rules only after reconciling that state.
+Do not blindly replay a mutation, overwrite an immutable daily observation,
+reset an epoch/cursor/receipt, or switch to the stale source to clear the error.
+If outcome/state cannot be established, keep the affected writer fenced and
+follow the post-write recovery procedure below. A client transport deadline
+bounds waiting and stops further client sends; server-side completion remains
+subject to the unchanged PostgreSQL timeouts and fences.
+
 ## Inventory, scoped backup and restore drill
 
 1. Read actual source database/role/schema/catalog, extensions, table sizes,

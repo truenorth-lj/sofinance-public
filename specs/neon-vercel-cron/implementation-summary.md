@@ -1,5 +1,19 @@
 # Implementation summary: public Neon and native cron
 
+## Parent note: F2 strict-review fix
+
+The historical implementation/checks below predate F2 and are preserved as
+original evidence. The uncommitted F2 delta starts at
+`78c1f11918f8ac56eb07d5d89eb0a10f36fcc85a` on `dev/neon-vercel-cron` for
+https://github.com/truenorth-lj/sofinance-public/pull/145.
+Both direct wrappers now enforce an end-to-end request deadline, atomically
+retire a stalled shared pool/identity, forcibly end driver queues and destroy
+owned transports before failure, and select a fresh pool on the next request.
+Unknown COMMIT outcomes are never automatically retried. See
+[f2-implementation.md](./f2-implementation.md) for exact paths, final checks and
+remaining parent-owned validation, and the updated cutover runbook for recovery.
+This note does not change any prior review verdict or certify cloud acceptance.
+
 Date: 2026-10-26 Asia/Taipei. Checkout:
 `/Users/lj/Documents/projects/lj-agent-workspace/worktrees/dev/neon-vercel-cron/sofinance-public`.
 Branch: `dev/neon-vercel-cron`; unchanged HEAD/base:

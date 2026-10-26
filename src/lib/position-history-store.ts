@@ -1,6 +1,6 @@
 import "server-only";
 import { getRwaConfig } from "./config/rwa-env";
-import { getRwaDatabase } from "./rwa-database";
+import { getRwaDatabase, runRwaDatabaseRequest } from "./rwa-database";
 import { PostgresPositionHistoryStore } from "./position-history-postgres-store";
 import { PositionHistoryStoreError, positionStoreRequestSchema, type PositionHistoryStore } from "./position-history-store-types";
 
@@ -48,7 +48,10 @@ export function getPositionHistoryStore(): PositionHistoryStore {
     if (!direct || direct.db !== db) {
       const store = new PostgresPositionHistoryStore(db);
       direct = { db, store: { async request(input) {
-        try { return await store.request(input); }
+        try {
+          if (getRwaDatabase() !== db) return await getPositionHistoryStore().request(input);
+          return await runRwaDatabaseRequest(db, () => store.request(input));
+        }
         catch (error) { throw error instanceof PositionHistoryStoreError ? error : new PositionHistoryStoreError("POSITION_STORE_UNAVAILABLE"); }
       } } };
     }
