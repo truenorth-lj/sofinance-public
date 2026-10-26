@@ -2,7 +2,8 @@ import "server-only";
 import { getRwaConfig } from "./config/rwa-env";
 import { discoverRwaPairs, getCachedRwaPairs } from "./rwa-pairs";
 import { fetchPoolRangeApr } from "./pool-range-apr";
-import { createRwaDatabase, PostgresRwaStore } from "./rwa-postgres-store";
+import { PostgresRwaStore } from "./rwa-postgres-store";
+import { getRwaDatabase, runRwaDatabaseRequest } from "./rwa-database";
 import {
   RwaStoreError,
   type PairOptions,
@@ -12,10 +13,10 @@ import {
   type StoreRequest,
 } from "./rwa-store-types";
 
-let direct: { url: string; store: PostgresRwaStore } | undefined;
+let direct: { db: ReturnType<typeof getRwaDatabase>; store: RwaStore } | undefined;
 export function getRwaStore(): RwaStore {
   const config = getRwaConfig();
-  if (config.gatewayUrl) {
+  if (config.storeMode === "gateway" && config.gatewayUrl) {
     const base = new URL(config.gatewayUrl);
     if (
       base.username ||
@@ -61,14 +62,24 @@ export function getRwaStore(): RwaStore {
       },
     };
   }
-  // Production functions never send PostgreSQL credentials over the existing non-TLS public port.
-  if (config.isVercel || !config.databaseUrl)
+  // Gateway mode preserves the private-network service/local path, never Vercel plaintext PG.
+  if ((config.storeMode === "gateway" && config.isVercel) || !config.databaseUrl)
     throw new RwaStoreError("RWA_STORE_UNAVAILABLE");
-  if (!direct || direct.url !== config.databaseUrl)
-    direct = {
-      url: config.databaseUrl,
-      store: new PostgresRwaStore(createRwaDatabase(config.databaseUrl)),
-    };
+  try {
+    const db = getRwaDatabase();
+    if (!direct || direct.db !== db) {
+      const store = new PostgresRwaStore(db);
+      direct = { db, store: { async request(input) {
+        try {
+          // A caller may retain this wrapper across pool retirement. Select a
+          // fresh pool before starting work; never retry a started operation.
+          if (getRwaDatabase() !== db) return await getRwaStore().request(input);
+          return await runRwaDatabaseRequest(db, () => store.request(input));
+        }
+        catch (error) { throw error instanceof RwaStoreError ? error : new RwaStoreError("RWA_STORE_UNAVAILABLE"); }
+      } } };
+    }
+  } catch { throw new RwaStoreError("RWA_STORE_UNAVAILABLE"); }
   return direct.store;
 }
 

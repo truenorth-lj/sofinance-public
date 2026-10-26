@@ -23,6 +23,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 function config() {
+  vi.stubEnv("SOFINANCE_RWA_STORE_MODE", "gateway");
   vi.stubEnv("SOFINANCE_RWA_DB_ENABLED", "true");
   vi.stubEnv("SOFINANCE_RWA_GATEWAY_URL", "https://rwa.example.com");
   vi.stubEnv("CRON_SECRET", "test-only-".repeat(8));

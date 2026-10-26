@@ -1,16 +1,16 @@
 import "server-only";
 import { getRwaConfig } from "./config/rwa-env";
-import { createRwaDatabase } from "./rwa-postgres-store";
+import { getRwaDatabase, runRwaDatabaseRequest } from "./rwa-database";
 import { PostgresPositionHistoryStore } from "./position-history-postgres-store";
 import { PositionHistoryStoreError, positionStoreRequestSchema, type PositionHistoryStore } from "./position-history-store-types";
 
-let direct: { url: string; store: PositionHistoryStore } | undefined;
+let direct: { db: ReturnType<typeof getRwaDatabase>; store: PositionHistoryStore } | undefined;
 let gateway: { url: string; secret: string; store: PositionHistoryStore } | undefined;
 
 /** The existing HTTPS gateway keeps database credentials on its private network. */
 export function getPositionHistoryStore(): PositionHistoryStore {
   const config = getRwaConfig();
-  if (config.gatewayUrl) {
+  if (config.storeMode === "gateway" && config.gatewayUrl) {
     const base = new URL(config.gatewayUrl);
     if (base.username || base.password || base.hash ||
       (base.protocol !== "https:" && !(base.protocol === "http:" && !config.isVercel &&
@@ -41,9 +41,20 @@ export function getPositionHistoryStore(): PositionHistoryStore {
     gateway = { url: base.href, secret: config.secret, store };
     return store;
   }
-  if (config.isVercel || !config.databaseUrl) throw new PositionHistoryStoreError("POSITION_STORE_UNAVAILABLE");
-  if (!direct || direct.url !== config.databaseUrl) {
-    direct = { url: config.databaseUrl, store: new PostgresPositionHistoryStore(createRwaDatabase(config.databaseUrl)) };
-  }
+  if ((config.storeMode === "gateway" && config.isVercel) || !config.databaseUrl)
+    throw new PositionHistoryStoreError("POSITION_STORE_UNAVAILABLE");
+  try {
+    const db = getRwaDatabase();
+    if (!direct || direct.db !== db) {
+      const store = new PostgresPositionHistoryStore(db);
+      direct = { db, store: { async request(input) {
+        try {
+          if (getRwaDatabase() !== db) return await getPositionHistoryStore().request(input);
+          return await runRwaDatabaseRequest(db, () => store.request(input));
+        }
+        catch (error) { throw error instanceof PositionHistoryStoreError ? error : new PositionHistoryStoreError("POSITION_STORE_UNAVAILABLE"); }
+      } } };
+    }
+  } catch { throw new PositionHistoryStoreError("POSITION_STORE_UNAVAILABLE"); }
   return direct.store;
 }

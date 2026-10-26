@@ -13,8 +13,14 @@ pnpm db:migrate                  # apply pending committed migrations
 ```
 
 The CLI reads `SOFINANCE_RWA_MIGRATION_DATABASE_URL` from `.env.local` or its process
-environment. It must identify database `sofinance` and role `sofinance`, matching
-the current single-role setup. Runtime continues to use `DATABASE_URL`.
+environment. Database stays `sofinance`. `SOFINANCE_RWA_DB_EXPECTED_ROLE` defaults to
+`sofinance`; set it explicitly to `sofinance_owner` for the new public Neon target.
+Only these two role values are accepted. URL and SQL identity guards both compare
+against the selected role. Never create/reset the Neon owner password to satisfy
+the legacy default. Runtime uses `DATABASE_URL`; CLI never falls back to it.
+Neon migration URLs must use the direct endpoint with CA and hostname verification.
+The CLI still reserves a direct session for its advisory lock and uses `max: 2`.
+Never run session advisory locks through the pooler.
 
 Baseline first builds the initial migration in a disposable schema and compares
 columns, defaults, constraints and indexes with the existing tables. It refuses
@@ -27,15 +33,40 @@ calling the official Drizzle postgres-js migrator. Changing already applied SQL
 is refused; create a new migration instead.
 
 Migrations run explicitly as a deployment step, never during page requests,
-service startup or Next.js build. Deploy the Zeabur RWA gateway bundle after
-migration and local verification: that service runs the ORM against private
-PostgreSQL. Vercel continues to read its authenticated HTTPS endpoint. Discovery
-runs every 15 minutes, APR every 5 minutes, and the daily history rule is unchanged.
+service startup or Next.js build. Do not edit applied migration SQL or use destructive
+schema push. Existing gateway mode remains the default for compatible rollout.
+`SOFINANCE_RWA_STORE_MODE=neon` selects one shared server-only postgres-js pool for
+RWA and position on Vercel, ignoring any stale gateway URL. A connection failure
+fails closed; it cannot select the gateway implicitly. See
+[the cutover procedure](neon-vercel-cutover.md) before changing production writers.
+
+This implementation deliberately selects **direct runtime**, because transaction
+pooler startup settings are unproven. `-pooler` hosts are rejected, `prepare:false`
+remains set, and every direct session gets `search_path`, configured
+`statement_timeout`, `lock_timeout=3s`, `transaction_timeout=8s` at startup. The
+existing transaction-local eight-second fences remain. PG17+ is required (public
+target is PG18); URL options cannot override these settings. TLS uses trusted CA
+and Node hostname validation; no insecure fallback. The first store operation
+also verifies `current_database()`, `current_user` and PG version before business SQL.
+Only URL `sslmode=require|verify-ca|verify-full`, `sslrootcert=system`, and
+`channel_binding=require|prefer` hints are accepted and removed before postgres-js
+startup parsing. The TLS setting is independently enforced; this client does not
+claim SCRAM channel-binding support.
+
+`vercel.json` declares GET `/api/internal/rwa-refresh` at `*/15 * * * *` UTC. Native
+GET remains disabled unless `SOFINANCE_RWA_NATIVE_CRON_ENABLED=true`. Both methods
+require Bearer `CRON_SECRET`, refresh enablement and a non-preview deployment.
+GET ignores query parameters (including force) and takes no body; POST keeps its
+strict JSON contract and authorized force option. Tick cadence is 15 minutes;
+discovery/APR due cadences remain 15/5 minutes, so APR is not refreshed every five
+minutes by this cron. Daily observations remain 08:10–09:10 Asia/Taipei; missed
+windows remain missing, never fabricated.
 
 Position performance uses two additional tables: `position_history_state` for
 fenced synchronization progress and `position_history_transactions` for receipts
 and parsed event arrays. Apply the committed migration and deploy the gateway
-before setting `SOFINANCE_POSITION_HISTORY_DB_ENABLED=true` on Vercel. Position
+before setting `SOFINANCE_POSITION_HISTORY_DB_ENABLED=true` on Vercel (or verify the
+Neon store after migration and copy). Position
 history updates only when queried; the existing RWA scheduler does not scan it.
 Current prices, liquidity and unclaimed fees are still read on every lookup.
 Each lookup fetches at most `maxSignatures` transaction details (1–500, default
@@ -56,5 +87,7 @@ dedicated database:
 ```sh
 RWA_DB_TEST_URL='<test connection>' pnpm exec vitest run \
   src/db/migrations.integration.test.ts \
-  src/lib/rwa-postgres-store.integration.test.ts
+  src/lib/rwa-postgres-store.integration.test.ts \
+  src/lib/position-history-postgres-store.integration.test.ts \
+  src/lib/rwa-database.integration.test.ts
 ```

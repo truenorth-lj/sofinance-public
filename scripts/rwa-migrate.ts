@@ -1,12 +1,15 @@
 import postgres from "postgres";
 import { resolve } from "node:path";
 import { runRwaMigrations } from "../src/db/migrations";
+import { rwaConnectionTarget } from "../src/db/connection";
+import { getRwaExpectedRole } from "../src/lib/config/rwa-database-env";
 import { getRwaMigrationUrl } from "../src/lib/config/rwa-migration-env";
 
 async function main() {
   const mode = process.argv[2];
   if (mode !== "baseline" && mode !== "migrate") throw new Error("Choose baseline or migrate");
-  const db = postgres(getRwaMigrationUrl(), { max: 2, prepare: false, connect_timeout: 5,
+  const target = rwaConnectionTarget(getRwaMigrationUrl(), getRwaExpectedRole());
+  const db = postgres(target.url, { ssl: target.ssl, max: 2, prepare: false, connect_timeout: 5,
     connection: { options: "-c search_path=public -c statement_timeout=30000 -c lock_timeout=5000" }, onnotice: () => {} });
   try { console.log(JSON.stringify(await runRwaMigrations(db, mode, resolve("drizzle")))); }
   finally { await db.end(); }

@@ -1,8 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
 import {
+  getRwaConfig,
   DEFAULT_RWA_SCHEDULER_INTERVAL_MS,
   rwaSchedulerIntervalMs,
 } from "./rwa-env";
@@ -20,5 +21,25 @@ describe("rwaSchedulerIntervalMs", () => {
 
   it.each(["29999", "3600001", "1.5", "abc", "-1"])("rejects %s", (raw) => {
     expect(() => rwaSchedulerIntervalMs(raw)).toThrow("Invalid RWA configuration");
+  });
+});
+
+
+afterEach(() => vi.unstubAllEnvs());
+describe("store rollout configuration", () => {
+  it("defaults to gateway and keeps native GET disabled", () => {
+    vi.stubEnv("SOFINANCE_RWA_STORE_MODE", undefined);
+    vi.stubEnv("SOFINANCE_RWA_NATIVE_CRON_ENABLED", undefined);
+    expect(getRwaConfig()).toMatchObject({ storeMode: "gateway", nativeCronEnabled: false });
+  });
+  it("selects neon explicitly even while gateway env remains", () => {
+    vi.stubEnv("SOFINANCE_RWA_STORE_MODE", "neon");
+    vi.stubEnv("SOFINANCE_RWA_GATEWAY_URL", "https://old.invalid");
+    vi.stubEnv("SOFINANCE_RWA_NATIVE_CRON_ENABLED", "true");
+    expect(getRwaConfig()).toMatchObject({ storeMode: "neon", nativeCronEnabled: true });
+  });
+  it.each(["auto", "Neon", "direct", " "])("fails closed for mode %s", (mode) => {
+    vi.stubEnv("SOFINANCE_RWA_STORE_MODE", mode);
+    expect(() => getRwaConfig()).toThrow("Invalid RWA store mode");
   });
 });

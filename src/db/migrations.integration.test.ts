@@ -8,15 +8,17 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import postgres from "postgres";
 import { readMigrationFiles } from "drizzle-orm/migrator";
 import { runRwaMigrations } from "./migrations";
-import { validateRwaTarget } from "./target";
+import { rwaConnectionTarget } from "./connection";
+import { getRwaExpectedRole } from "../lib/config/rwa-database-env";
 
 const url = process.env.RWA_DB_TEST_URL;
+const target = url ? rwaConnectionTarget(url, getRwaExpectedRole()) : null;
 describe.skipIf(!url)("Drizzle adoption preserves existing snapshots", () => {
   const schema = `rwa_mig_it_${randomUUID().replaceAll("-", "")}`;
   const folder = resolve("drizzle");
   const temporary = mkdtempSync(resolve(tmpdir(), "rwa-drizzle-test-"));
-  const db = url ? (validateRwaTarget(url), postgres(url, { max: 2, prepare: false,
-    onnotice: () => {}, connection: { options: `-c search_path=${schema} -c statement_timeout=30000 -c lock_timeout=5000` } })) : null;
+  const db = target ? postgres(target.url, { ssl: target.ssl, max: 2, prepare: false,
+    onnotice: () => {}, connection: { options: `-c search_path=${schema} -c statement_timeout=30000 -c lock_timeout=5000` } }) : null;
   beforeAll(async () => {
     await db!.unsafe(`CREATE SCHEMA "${schema}"`);
     mkdirSync(resolve(temporary, "meta"));
@@ -41,6 +43,13 @@ describe.skipIf(!url)("Drizzle adoption preserves existing snapshots", () => {
       rmSync(temporary, { recursive: true });
     }
   }, 30_000);
+  it("holds the migration lock on its reserved direct session and refuses a competing runner", async () => {
+    const owner = await db!.reserve();
+    try {
+      await owner`SELECT pg_advisory_lock(763240911)`;
+      await expect(runRwaMigrations(db!, "baseline", folder, schema)).rejects.toThrow("Another RWA migration is running");
+    } finally { await owner`SELECT pg_advisory_unlock(763240911)`; owner.release(); }
+  });
   it("refuses migration over an unregistered existing schema", async () => {
     await expect(runRwaMigrations(db!, "migrate", folder, schema)).rejects.toThrow("db:baseline");
   });
@@ -66,8 +75,8 @@ describe.skipIf(!url)("Additive position migration on the adopted five-table sch
   const schema = `rwa_add_it_${randomUUID().replaceAll("-", "")}`;
   const folder = resolve("drizzle");
   const temporary = mkdtempSync(resolve(tmpdir(), "rwa-additive-test-"));
-  const db = url ? (validateRwaTarget(url), postgres(url, { max: 2, prepare: false, onnotice: () => {},
-    connection: { options: `-c search_path=${schema} -c statement_timeout=30000 -c lock_timeout=5000` } })) : null;
+  const db = target ? postgres(target.url, { ssl: target.ssl, max: 2, prepare: false, onnotice: () => {},
+    connection: { options: `-c search_path=${schema} -c statement_timeout=30000 -c lock_timeout=5000` } }) : null;
   beforeAll(async () => {
     await db!.unsafe(`CREATE SCHEMA "${schema}"`);
     const baseline = readMigrationFiles({ migrationsFolder: folder })[0]!;

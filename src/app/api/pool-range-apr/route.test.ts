@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 const fetchPoolRangeApr = vi.hoisted(() => vi.fn());
@@ -9,7 +9,9 @@ import { GET } from "./route";
 const POOL = "5MBpNcWTqiWy3pZX17pYfgP2ZxrSkok4naQWLj3XLDLY";
 const call = (query: string) => GET(new Request(`http://localhost/api/pool-range-apr${query}`));
 
+beforeEach(() => vi.stubEnv("SOFINANCE_RWA_DB_ENABLED", "false"));
 afterEach(() => {
+  vi.unstubAllEnvs();
   fetchPoolRangeApr.mockReset();
   vi.spyOn(console, "error").mockRestore();
 });
