@@ -103,7 +103,7 @@ Copy `.env.example` → `.env.local`. Comments in that file are the source of tr
 | `SOLAMI_DATA_API_KEY` | Blur live pool-trades panel |
 | `NEXT_PUBLIC_SOLANA_RPC_URL` | Browser wallet RPC only; must be a public endpoint, never a key |
 | `SOFINANCE_FEE_WALLET` / `SOFINANCE_FEE_BPS` | Optional protocol fee; **server-only, never `NEXT_PUBLIC_`**. Default 10 bps, max 100. Unset wallet = fee 0, no transfer added. Details: [Protocol swap fee](#protocol-swap-fee). |
-| RWA / history DB vars | Optional snapshot gateway; see `.env.example` and `db/README.md` |
+| RWA / history DB vars | Explicit `gateway` (default) or direct TLS `neon` mode; native cron defaults off. See `.env.example`, [DB docs](db/README.md) and [cutover runbook](db/neon-vercel-cutover.md) |
 | `NEXT_PUBLIC_SENTRY_DSN` / `SENTRY_DSN` | Optional Sentry error monitoring (US, `ingest.us.sentry.io`). Unset both = complete no-op. |
 | `SENTRY_AUTH_TOKEN` / `SENTRY_ORG` / `SENTRY_PROJECT` | Source-map upload on `next build`. All three required to upload; build succeeds if any is missing. Never `NEXT_PUBLIC_`. See [Error monitoring](#error-monitoring-sentry). |
 | `NEXT_PUBLIC_POSTHOG_KEY` / `NEXT_PUBLIC_POSTHOG_HOST` | Optional PostHog product analytics. Unset key = complete client no-op. The browser always sends to the first-party relay `/lumen` (Next.js rewrite); the host only picks the upstream region and defaults to `https://us.i.posthog.com`. |

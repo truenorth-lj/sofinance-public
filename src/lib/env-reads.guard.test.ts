@@ -17,6 +17,8 @@ const SRC = join(import.meta.dirname, "..");
 /** Names whose values are credentials (or embed credentials, like an RPC URL with an api key). */
 const SECRET_ENV_NAMES = [
   "DATABASE_URL", "CRON_SECRET", "SOFINANCE_RWA_MIGRATION_DATABASE_URL",
+  // Non-secret routing controls are also ratcheted: selection must stay in config helpers.
+  "SOFINANCE_RWA_STORE_MODE", "SOFINANCE_RWA_NATIVE_CRON_ENABLED", "SOFINANCE_RWA_DB_EXPECTED_ROLE",
   "JUPITER_API_KEY", "SOLAMI_API_KEY", "SOLAMI_DATA_API_KEY", "SOLANA_RPC_URL", "SOFINANCE_MCP_TOKEN",
   "SOFINANCE_OPENS_DATABASE_URL", "SOFINANCE_OPENS_READ_TOKEN",
 ] as const;
@@ -24,6 +26,9 @@ const SECRET_ENV_NAMES = [
 /** `*` = the whole `process.env` object handed on to a function (can reach any secret). */
 type Reads = Record<string, number>;
 const ALLOWED_SECRET_READS: Record<string, Reads> = {
+  SOFINANCE_RWA_STORE_MODE: { "lib/config/rwa-env.ts": 1 },
+  SOFINANCE_RWA_NATIVE_CRON_ENABLED: { "lib/config/rwa-env.ts": 1 },
+  SOFINANCE_RWA_DB_EXPECTED_ROLE: { "lib/config/rwa-database-env.ts": 1 },
   SOFINANCE_RWA_MIGRATION_DATABASE_URL: { "lib/config/rwa-migration-env.ts": 1 },
   DATABASE_URL: { "lib/config/rwa-env.ts": 1 },
   CRON_SECRET: { "lib/config/rwa-env.ts": 1 },

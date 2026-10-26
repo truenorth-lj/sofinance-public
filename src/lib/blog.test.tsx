@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BlogMarkdown } from "@/components/blog/blog-markdown";
 import {
   BLOG_ORGANIZATION,
@@ -13,6 +13,11 @@ import {
   getPublicPngSize,
   listBlogArticles,
 } from "./blog";
+
+beforeEach(() => {
+  vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://sofinancelab.xyz");
+});
+afterEach(() => vi.unstubAllEnvs());
 
 describe("blog content", () => {
   const articles = listBlogArticles();

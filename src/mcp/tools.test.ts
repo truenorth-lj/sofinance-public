@@ -104,6 +104,7 @@ import { readPositionRangeFacts } from "../lib/position-range-onchain";
 
 describe("MCP Tools", () => {
   beforeEach(() => {
+    vi.stubEnv("SOFINANCE_RWA_DB_ENABLED", "false");
     vi.clearAllMocks();
     // The permit secret is read through lib/config/server-env: pin it so the tests prove it reaches the issuers.
     vi.stubEnv("JUPITER_API_KEY", "tools-secret");

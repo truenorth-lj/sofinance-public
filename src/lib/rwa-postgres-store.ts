@@ -4,7 +4,8 @@ import postgres from "postgres";
 import { and, asc, between, eq, exists, gt, isNull, lte, or, sql } from "drizzle-orm";
 import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import * as schema from "../db/schema";
-import { validateRwaTarget } from "../db/target";
+import { assertRwaDatabaseIdentity } from "./rwa-database";
+export { createRwaDatabase } from "./rwa-database";
 import { getRwaConfig } from "./config/rwa-env";
 import { dailyWindow, validateHistoryRange, volumeWindowEnd } from "./rwa-daily";
 import { sortPairs, type DiscoverRwaPairsResult, type RwaPairRow } from "./rwa-pairs";
@@ -28,17 +29,6 @@ const DUE_GRACE = sql`interval '60 seconds'`;
 const leaseWhere = (lease: Lease) => and(eq(job.jobKey, lease.job),
   eq(job.leaseOwner, lease.owner), eq(job.leaseEpoch, lease.epoch));
 
-export function createRwaDatabase(url: string, schemaName = "public") {
-  if (!/^[a-z_][a-z0-9_]*$/.test(schemaName)) throw new Error("Invalid database schema");
-  validateRwaTarget(url);
-  const config = getRwaConfig();
-  return postgres(url, {
-    max: config.poolMax, connect_timeout: config.connectTimeoutMs / 1000,
-    idle_timeout: 20, max_lifetime: 600, prepare: false,
-    connection: { options: `-c search_path=${schemaName} -c statement_timeout=${config.queryTimeoutMs} -c lock_timeout=3000` },
-    onnotice: () => {},
-  });
-}
 
 function pair(row: typeof pool.$inferSelect): RwaPairRow {
   return { ...row.details, poolAddress: row.poolAddress, mintA: row.mintA, mintB: row.mintB,
@@ -68,6 +58,7 @@ export class PostgresRwaStore implements RwaStore {
 
   async request(raw: StoreRequest): Promise<unknown> {
     const input = storeRequestSchema.parse(raw);
+    await assertRwaDatabaseIdentity(this.db);
     switch (input.op) {
       case "pairs": return this.readPairs(input.minTvl, input.maxPages, input.sortBy);
       case "apr": return this.readApr(input.poolId);

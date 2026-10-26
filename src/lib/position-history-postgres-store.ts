@@ -1,5 +1,6 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
+import { assertRwaDatabaseIdentity } from "./rwa-database";
 import type postgres from "postgres";
 import { and, asc, eq, gt, sql } from "drizzle-orm";
 import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
@@ -27,6 +28,7 @@ export class PostgresPositionHistoryStore implements PositionHistoryStore {
 
   async request(raw: PositionStoreRequest): Promise<unknown> {
     const input = positionStoreRequestSchema.parse(raw);
+    await assertRwaDatabaseIdentity(this.db);
     if (input.op === "claim") return this.claim(input.context, input.parserVersion);
     if (input.op === "release") {
       // A stale owner must never release the replacement lease; release is idempotent.

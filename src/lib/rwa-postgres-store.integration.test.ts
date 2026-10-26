@@ -177,6 +177,18 @@ describe.skipIf(!url)("RWA PostgreSQL snapshots and fencing", () => {
     expect(Number(job!.interval)).toBe(900);
   });
 
+  it("admits within due grace, suppresses a duplicate, and recovers a missed tick without force", async () => {
+    await db!`UPDATE background_job_state SET next_due_at=clock_timestamp()+interval '30 seconds' WHERE job_key='rwa-discovery'`;
+    const lease = await store!.request({ op: "claim", job: "rwa-discovery" }) as Lease;
+    expect(lease).not.toBeNull();
+    expect(await store!.request({ op: "claim", job: "rwa-discovery" })).toBeNull();
+    await db!`UPDATE background_job_state SET lease_expires_at=clock_timestamp()-interval '1 second',next_due_at=clock_timestamp()-interval '30 minutes' WHERE job_key='rwa-discovery'`;
+    const recovered = await store!.request({ op: "claim", job: "rwa-discovery" }) as Lease;
+    expect(recovered.epoch).toBe(lease.epoch + 1);
+    await expect(store!.request({ op: "renew", lease })).rejects.toMatchObject({ code: "LEASE_LOST" });
+    await store!.request({ op: "finish", lease: recovered, outcome: "ok", processed: 0, issues: [] });
+  });
+
   it("keeps the last complete APR, persists the full model and caches profile across readers", async () => {
     apr = (await store!.request({
       op: "claim",

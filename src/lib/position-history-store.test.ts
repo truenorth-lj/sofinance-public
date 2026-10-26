@@ -6,6 +6,7 @@ const context = Object.fromEntries(["positionMint", "positionAccount", "poolId",
     mintA: string; mintB: string; vaultA: string; vaultB: string };
 afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
 function configure() {
+  vi.stubEnv("SOFINANCE_RWA_STORE_MODE", "gateway");
   vi.stubEnv("SOFINANCE_RWA_GATEWAY_URL", "https://rwa.example.com");
   vi.stubEnv("CRON_SECRET", "test-only-".repeat(8));
   vi.stubEnv("VERCEL", "1");

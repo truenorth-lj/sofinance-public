@@ -1,6 +1,9 @@
 import "server-only";
+import { getRwaExpectedRole } from "./rwa-database-env";
 /** Server-only RWA configuration. No credentials are returned to public APIs. */
 export function getRwaConfig() {
+  const storeMode = process.env.SOFINANCE_RWA_STORE_MODE || "gateway";
+  if (storeMode !== "gateway" && storeMode !== "neon") throw new Error("Invalid RWA store mode");
   const databaseUrl = process.env.DATABASE_URL;
   const gatewayUrl = process.env.SOFINANCE_RWA_GATEWAY_URL;
   const secret = process.env.CRON_SECRET;
@@ -32,6 +35,9 @@ export function getRwaConfig() {
     throw new Error("RWA lease must outlive the job deadline");
   return {
     databaseUrl,
+    storeMode,
+    expectedRole: getRwaExpectedRole(),
+    nativeCronEnabled: process.env.SOFINANCE_RWA_NATIVE_CRON_ENABLED === "true",
     gatewayUrl,
     secret,
     enabled: process.env.SOFINANCE_RWA_DB_ENABLED === "true",

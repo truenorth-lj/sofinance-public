@@ -1,3 +1,4 @@
+import { getRwaExpectedRole } from "../lib/config/rwa-database-env";
 import { randomUUID } from "node:crypto";
 import { readMigrationFiles } from "drizzle-orm/migrator";
 import { drizzle } from "drizzle-orm/postgres-js";
@@ -85,7 +86,7 @@ export async function runRwaMigrations(client: postgres.Sql, mode: "baseline" | 
   let locked = false;
   try {
     const [target] = await connection`SELECT current_database() AS database,current_user AS role`;
-    if (target!.database !== "sofinance" || target!.role !== "sofinance") throw new Error("Use the dedicated sofinance database and role");
+    if (target!.database !== "sofinance" || target!.role !== getRwaExpectedRole()) throw new Error("Use the dedicated sofinance database and role");
     const [lock] = await connection`SELECT pg_try_advisory_lock(${lockKey}) AS acquired`;
     if (!lock!.acquired) throw new Error("Another RWA migration is running");
     locked = true;
