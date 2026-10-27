@@ -231,11 +231,16 @@ function scrubStructured(value: unknown, seen: WeakSet<object>, depth: number, h
     // Reserve within selection, not object insertion order: integer-index keys
     // enumerate first even if a route was inserted before them. Nested objects
     // retain the ordinary budget; only the top-level tags reserve a route slot.
-    const keys = reservedKey && ownKeys.includes(reservedKey)
+    const hasReservedKey = reservedKey !== undefined && ownKeys.includes(reservedKey);
+    const keys = hasReservedKey
       ? [reservedKey, ...ownKeys.filter((key) => key !== reservedKey)] : ownKeys;
     for (const key of keys.slice(0, MAX_OBJECT_ENTRIES)) {
       const policy = classifyDiagnosticKey(key);
       const displayKey = "key" in policy ? scrubSensitiveText(policy.key) : REDACTED;
+      // The canonical own key wins even when its descriptor is an accessor.
+      // Aliases still consume selection slots; do not read them or backfill the
+      // budget. Without a reserved root key, ordinary collision order is unchanged.
+      if (hasReservedKey && key !== reservedKey && displayKey === reservedKey) continue;
       if (policy.status === "safe") {
         next[displayKey] = read(key);
       } else {

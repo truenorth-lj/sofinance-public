@@ -569,3 +569,24 @@ describe("bounded diagnostic key classification", () => {
     },
   );
 });
+
+describe("root-only canonical route reservation", () => {
+  it.each([false, true])("leaves nested decoded collision ordering unchanged: canonicalFirst=%s", (canonicalFirst) => {
+    const nested = canonicalFirst
+      ? { route: "/api/canonical", "%72oute": "/api/alias" }
+      : { "%72oute": "/api/alias", route: "/api/canonical" };
+    const event = scrubSentryEvent({ tags: { route: "/api/root", nested }, extra: nested });
+    const expected = canonicalFirst ? "/api/alias" : "/api/canonical";
+    expect(event.tags.nested.route).toBe(expected);
+    expect(event.extra.route).toBe(expected);
+    expect(event.tags.route).toBe("/api/root");
+  });
+
+  it("does not reserve a route slot inside nested objects", () => {
+    const nested = { ...Object.fromEntries(Array.from({ length: 50 }, (_, i) => [String(i), "retry"])), route: "/api/nested" };
+    const event = scrubSentryEvent({ tags: { route: "/api/root", nested } });
+    expect(event.tags.nested.route).toBeUndefined();
+    expect(Object.keys(event.tags.nested)).toHaveLength(51);
+    expect(event.tags.route).toBe("/api/root");
+  });
+});

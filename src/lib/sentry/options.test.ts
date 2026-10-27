@@ -390,3 +390,90 @@ describe("beforeSend transaction, URL and route budget", () => {
     });
   });
 });
+
+describe("canonical route collision policy", () => {
+  const marker = "COLLISION8_SECRET_9";
+  const modes = ["primary", "minimal", "last", "early-minimal", "early-last"] as const;
+  type Mode = typeof modes[number];
+  function send(tags: Record<string, unknown>, mode: Mode, source = "existing") {
+    const event: ErrorEvent = { type: undefined, message: "ordinary failure", tags: tags as ErrorEvent["tags"] };
+    if (source !== "existing") event.transaction = "POST /api/transaction";
+    if (source === "request") event.request = { url: "/api/request" };
+    if (mode === "minimal" || mode === "last") event.breadcrumbs = [Object.freeze({ data: { design: "retry" } })];
+    if (mode.startsWith("early")) {
+      event.request = Object.defineProperty({}, "url", { get() { throw new Error("inference failed"); } });
+    }
+    if (mode.endsWith("last")) Object.defineProperty(event, "user", { value: {}, writable: false });
+    const output = sentryInitOptions().beforeSend(event);
+    expect(output.message).toBe(mode.endsWith("last") ? LAST_RESORT_SENTRY_MESSAGE : "ordinary failure");
+    if (mode !== "primary") expect(output.breadcrumbs).toBeUndefined();
+    expect(JSON.stringify(output)).not.toContain(marker);
+    return output;
+  }
+
+  const collisions = ["%72oute", "%2572oute"].flatMap((alias) =>
+    [false, true].flatMap((canonicalFirst) => [false, true].flatMap((accessor) =>
+      ["existing", "transaction", "request"].flatMap((source) => [false, true].flatMap((encoded) =>
+        [0, 48, 49, 50, 70].flatMap((count) => modes.slice(0, 3).map((mode) =>
+          ({ alias, canonicalFirst, accessor, source, encoded, count, mode }))),
+      )),
+    )),
+  );
+  it.each(collisions)(
+    "preserves canonical route: $source/$mode alias=$alias first=$canonicalFirst getter=$accessor width=$count encoded=$encoded",
+    ({ alias, canonicalFirst, accessor, source, encoded, count, mode }) => {
+      const getter = vi.fn(() => { throw new Error("raw getter must not run"); });
+      const tags: Record<string, unknown> = Object.fromEntries(Array.from({ length: count }, (_, i) => [
+        encoded ? [...String(i)].map((c) => `%${c.charCodeAt(0).toString(16)}`).join("") : String(i), "retry",
+      ]));
+      for (const key of canonicalFirst ? ["route", alias] : [alias, "route"]) {
+        Object.defineProperty(tags, key, key === "route"
+          ? { enumerable: true, value: `/api/existing?api-key=${marker}` }
+          : accessor ? { enumerable: true, get: getter } : { enumerable: true, value: `/api/alias?token=${marker}` });
+      }
+      Object.freeze(tags);
+      const before = Object.getOwnPropertyDescriptors(tags);
+      const output = send(tags, mode, source);
+      expect(output.tags?.route).toBe(source === "existing" ? "/api/existing?[redacted-secret]" : `/api/${source}`);
+      expect(getter).not.toHaveBeenCalled();
+      expect(Object.getOwnPropertyDescriptors(tags)).toEqual(before);
+      expect(Object.keys(output.tags!).length).toBeLessThanOrEqual(51);
+      if (mode === "primary") {
+        expect(Object.getPrototypeOf(output.tags)).toBeNull();
+        expect(Object.keys(output.tags!).filter((key) => /^\d+$/.test(key))).toHaveLength(Math.min(count, 49));
+        if (count >= 49) expect(output.tags?.truncated).toBe(true);
+      } else expect(Object.keys(output.tags!)).toEqual(["route"]);
+    },
+  );
+
+  it.each(["early-minimal", "early-last"] as const)("keeps raw own route when inference fails: %s", (mode) => {
+    const getter = vi.fn(() => marker);
+    const tags = Object.freeze(Object.defineProperties({}, {
+      "%72oute": { enumerable: true, get: getter },
+      "%2572oute": { enumerable: true, value: `/api/alias?token=${marker}` },
+      route: { enumerable: true, value: `/api/existing?api-key=${marker}` },
+    }));
+    const before = Object.getOwnPropertyDescriptors(tags);
+    const output = send(tags, mode, "request");
+    expect(output.tags?.route).toBe("/api/existing?[redacted-secret]");
+    expect(getter).not.toHaveBeenCalled();
+    expect(Object.getOwnPropertyDescriptors(tags)).toEqual(before);
+  });
+
+  it.each(modes)("does not replace a canonical accessor with alias data: %s", (mode) => {
+    const getter = vi.fn(() => marker);
+    const tags = Object.freeze(Object.defineProperties({ "%72oute": "/api/alias" }, {
+      route: { enumerable: true, get: getter },
+    }));
+    const before = Object.getOwnPropertyDescriptors(tags);
+    const output = send(tags, mode);
+    expect(output.tags?.route).toBe(mode.startsWith("early") ? undefined : "[unavailable]");
+    expect(getter).not.toHaveBeenCalled();
+    expect(Object.getOwnPropertyDescriptors(tags)).toEqual(before);
+  });
+
+  it.each(["route", "%72oute", "%2572oute"])("keeps a sole route spelling %s", (key) => {
+    const output = send({ [key]: `/api/sole?api-key=${marker}` }, "primary");
+    expect(output.tags?.route).toBe("/api/sole?[redacted-secret]");
+  });
+});
