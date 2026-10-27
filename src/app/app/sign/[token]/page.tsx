@@ -137,6 +137,7 @@ export default function SignPage() {
         throw new Error("Wallet modified transaction content");
       }
 
+      // MCP signUrl fallback: prepared tx may already carry an NFT-mint signature.
       const signed = payload.kind === "open-position"
         ? preserveExtraSignatures(unsigned, signedByWallet)
         : signedByWallet;

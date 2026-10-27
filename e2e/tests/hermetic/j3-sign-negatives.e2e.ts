@@ -162,7 +162,7 @@ test.describe("J3 sign link, wallet / transaction guards", () => {
     });
   }
 
-  test("open-position without the server's NFT-mint partial signature is refused after the wallet signs", async ({ page, wallet }) => {
+  test("open-position without an NFT-mint signature is refused after the wallet signs (MCP signUrl)", async ({ page, wallet }) => {
     const scenario = makeScenario("open-position", wallet.address, { serverSigns: false });
     const sign = new SignPage(page);
     await sign.mockBroadcast("open-position");

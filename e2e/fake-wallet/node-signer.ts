@@ -99,7 +99,7 @@ export class FakeWallet {
       this.ledger.push({ ...base, outcome: "signed", signerIndex: index, programIds: programIdsOf(tx), messageBytes: tx.message.serialize().length });
       return Buffer.from(tx.serialize()).toString("base64");
     }
-    // Fill ONLY our slot: keeps any server-held partial signature (position NFT mint on open-position).
+    // Fill ONLY our slot: keeps any extra signature already on the tx (MCP open-position fallback).
     tx.signatures[index] = nacl.sign.detached(tx.message.serialize(), this.#secretKey);
     this.ledger.push({ ...base, outcome: "signed", signerIndex: index, programIds: programIdsOf(tx), messageBytes: tx.message.serialize().length });
     return Buffer.from(tx.serialize()).toString("base64");

@@ -387,7 +387,7 @@ const TOOL_DEFINITIONS = {
     },
     prepare_open_position: {
         name: "prepare_open_position",
-        description: "Prepare an unsigned, fully-simulated transaction that opens a new CLMM position. Returns base64 tx (already partial-signed by the ephemeral NFT mint; wallet signs as fee payer), HMAC permit, summary, and signUrl. Server never holds keys after prepare; the mint secret is discarded. 1232-byte limit, fresh blockhash, full simulation. After signing, call submit_open_position (not submit_signed_transaction — this tx has two required signers).",
+        description: "Prepare an unsigned, fully-simulated transaction that opens a new CLMM position. Prefer passing nftMint from an agent-held Keypair so the server never signs: wallet signs first, then add the mint signature on the wallet-returned tx and call submit_open_position. Omitting nftMint uses an MCP-ONLY server partial-sign so /app/sign can submit (Phantom may still warn). HMAC permit, summary, signUrl. 1232-byte limit, fresh blockhash, full simulation. Not submit_signed_transaction — this tx has two required signers.",
         inputSchema: {
             type: "object",
             properties: {
@@ -405,6 +405,10 @@ const TOOL_DEFINITIONS = {
                 maxPrice: { type: "string" },
                 resaleFloorBps: { type: "number", default: 9900 },
                 slippageToleranceBps: { type: "number", default: 100 },
+                nftMint: {
+                    type: "string",
+                    description: "Client-generated position NFT mint public key. Prefer this so the server never signs. Omit only for the MCP signUrl fallback.",
+                },
             },
             required: ["wallet", "poolId", "inputMint", "inputKind", "amount"],
         },

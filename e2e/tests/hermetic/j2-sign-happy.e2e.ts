@@ -63,7 +63,7 @@ test.describe("J2 sign link, happy path", () => {
     });
   }
 
-  test("open-position keeps the server's NFT-mint partial signature and fills only the wallet slot", async ({ page, wallet }) => {
+  test("open-position MCP signUrl keeps the fallback NFT-mint partial signature and fills only the wallet slot", async ({ page, wallet }) => {
     const scenario = makeScenario("open-position", wallet.address);
     const sign = new SignPage(page);
     await sign.mockBroadcast("open-position");
@@ -74,7 +74,7 @@ test.describe("J2 sign link, happy path", () => {
 
     const call = sign.broadcasts[0]!;
     expect(sign.signatureVerifies(call, wallet.address, 0)).toBe(true);
-    expect(sign.signatureVerifies(call, scenario.built.nftMint!, 1)).toBe(true);   // the server-held partial signature survived
+    expect(sign.signatureVerifies(call, scenario.built.nftMint!, 1)).toBe(true);   // MCP-ONLY server partial-sign fallback survived
     expect(wallet.ledger[0]!.programIds).toEqual(["11111111111111111111111111111111"]);
   });
 

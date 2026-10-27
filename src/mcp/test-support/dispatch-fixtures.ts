@@ -5,6 +5,7 @@ export const wallet = testKeypair(1).publicKey.toBase58();
 export const otherWallet = testKeypair(2).publicKey.toBase58();
 const mint = testKeypair(3).publicKey.toBase58();
 const pool = testKeypair(4).publicKey.toBase58();
+const nftMint = testKeypair(5).publicKey.toBase58();
 export const VALID_ARGS = {
   prepare_withdraw:{wallet,positionMint:mint,percent:100},
   submit_withdraw:{wallet,signedTransaction:"AA",permit:"p",summary:{}},
@@ -20,7 +21,7 @@ export const VALID_ARGS = {
   },
   submit_compound_transaction: { signedTransaction: "AA", permit: "p", wallet, summary: {} },
   quote_open_position: { wallet, poolId: pool, inputMint: mint, inputKind: "token", amount: "1" },
-  prepare_open_position: { wallet, poolId: pool, inputMint: mint, inputKind: "token", amount: "1" },
+  prepare_open_position: { wallet, poolId: pool, inputMint: mint, inputKind: "token", amount: "1", nftMint },
   submit_open_position: { signedTransaction: "AA", permit: "p", wallet, summary: {} },
   get_position_performance: { positionMint: mint, wallet },
   get_position_range_status: { positionMint: mint, wallet },

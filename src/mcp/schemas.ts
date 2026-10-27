@@ -99,8 +99,10 @@ export const quoteOpenPositionSchema = z.object({
   slippageToleranceBps: z.number().int().min(0).max(500).multipleOf(10).default(100),
 });
 export type QuoteOpenPositionInput = z.infer<typeof quoteOpenPositionSchema>;
-export const prepareOpenPositionSchema = quoteOpenPositionSchema;
-export type PrepareOpenPositionInput = QuoteOpenPositionInput;
+export const prepareOpenPositionSchema = quoteOpenPositionSchema.extend({
+  nftMint: publicKeySchema.optional().describe("Client-generated position NFT mint. Prefer this: wallet signs first, then the agent adds the mint signature. Omit only for the MCP signUrl fallback, which partial-signs server-side."),
+});
+export type PrepareOpenPositionInput = z.infer<typeof prepareOpenPositionSchema>;
 
 export const submitOpenPositionSchema = z.object({
   signedTransaction: z.string().max(2500, "Signed transaction too large"),

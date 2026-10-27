@@ -23,12 +23,13 @@ export function buildSingleSignerTx(payer: string): BuiltTx {
 }
 
 /**
- * 2-signer v0 transaction like open-position: wallet (payer) + a server-held NFT-mint keypair whose partial
- * signature is already present (slot 1). The wallet must fill slot 0 only and keep slot 1.
+ * 2-signer v0 transaction like open-position: wallet (payer) + NFT mint (slot 1).
+ * Default `serverSigns: true` matches the MCP signUrl fallback (server partial-sign).
+ * App opens use `serverSigns: false` plus the client-generated `nftMint`.
  */
-export function buildOpenPositionTx(payer: string, options: { serverSigns?: boolean } = {}): BuiltTx & { nftMint: string } {
+export function buildOpenPositionTx(payer: string, options: { serverSigns?: boolean; nftMint?: string } = {}): BuiltTx & { nftMint: string } {
   const nft = nacl.sign.keyPair();
-  const nftMint = bs58.encode(nft.publicKey);
+  const nftMint = options.nftMint ?? bs58.encode(nft.publicKey);
   const message = new TransactionMessage({
     payerKey: new PublicKey(payer),
     recentBlockhash: bs58.encode(randomBytes(32)),
@@ -41,6 +42,9 @@ export function buildOpenPositionTx(payer: string, options: { serverSigns?: bool
   message.header.numRequiredSignatures = 2;
   message.header.numReadonlySignedAccounts = 0;
   const tx = new VersionedTransaction(message);
-  if (options.serverSigns !== false) tx.signatures[1] = nacl.sign.detached(message.serialize(), nft.secretKey);
+  if (options.serverSigns !== false) {
+    if (options.nftMint) throw new Error("Cannot server-sign a client-supplied mint without its secret");
+    tx.signatures[1] = nacl.sign.detached(message.serialize(), nft.secretKey);
+  }
   return { b64: Buffer.from(tx.serialize()).toString("base64"), tx, payer, nftMint };
 }

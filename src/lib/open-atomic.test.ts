@@ -63,7 +63,7 @@ beforeEach(() => {
   });
   vi.mocked(ClmmInstrument.openPositionFromLiquidityInstructions).mockImplementation(async () => ({
     instructions: [strategy === "sequential" ? compact.ixs[8]! : old.ixs[17]!], lookupTableAddress: [],
-    signers: [Keypair.fromSeed(new Uint8Array(32).fill(8))],
+    signers: [],
   } as never));
   vi.mocked(getOpenPositionQuoteBundle).mockImplementation(async (_wallet, _selection, _amount, _range, _floor, _tolerance, _budget, _snapshot, mode) => {
     strategy = mode === "parallel" ? "parallel" : "sequential";
@@ -93,7 +93,9 @@ function apiInstruction(ix: TransactionInstruction) {
   return { programId: ix.programId.toBase58(), data: ix.data.toString("base64"),
     accounts: ix.keys.map(key => ({ pubkey: key.pubkey.toBase58(), isSigner: key.isSigner, isWritable: key.isWritable })) };
 }
-const prepare = () => buildAndSimulateOpenPosition(wallet, { poolId, inputMint, inputKind: "native" }, "0.03", { preset: "standard" }, 9900, 100);
+const nftMint = Keypair.fromSeed(new Uint8Array(32).fill(8)).publicKey.toBase58();
+const prepare = (options?: Parameters<typeof buildAndSimulateOpenPosition>[6]) =>
+  buildAndSimulateOpenPosition(wallet, { poolId, inputMint, inputKind: "native" }, "0.03", { preset: "standard" }, 9900, 100, { nftMint, ...options });
 
 function oversized(bundle: Awaited<ReturnType<typeof getOpenPositionQuoteBundle>>) {
   for (const leg of bundle.legs) if (leg.route) {
@@ -114,9 +116,30 @@ it("prepares the compact captured sequential transaction first", async () => {
   expect(summary.sizeBytes).toBeLessThanOrEqual(1232);
   expect(summary.sizeBytes).toBe(transaction.serialize().length);
   expect(Buffer.from(transaction.serialize()).toString("base64")).toMatchSnapshot();
-  expect(transaction.signatures[0]!.every(byte => byte === 0)).toBe(true);
-  expect(transaction.signatures[1]!.some(byte => byte !== 0)).toBe(true);
+  expect(transaction.signatures.every(signature => signature.every(byte => byte === 0))).toBe(true);
+  expect(summary.nftMint).toBe(nftMint);
 });
+
+it("rejects a missing, invalid, colliding, or already-used NFT mint before building", async () => {
+  await expect(buildAndSimulateOpenPosition(wallet, { poolId, inputMint, inputKind: "native" }, "0.03", { preset: "standard" }, 9900, 100))
+    .rejects.toThrow("Position NFT mint is required");
+  await expect(prepare({ nftMint: "not-a-pubkey" })).rejects.toThrow("Invalid position NFT mint");
+  await expect(prepare({ nftMint: wallet })).rejects.toThrow(/collides/i);
+  vi.mocked(rpcConnection).mockReturnValue({
+    ...vi.mocked(rpcConnection)(),
+    getMultipleAccountsInfo: vi.fn(async (keys: PublicKey[]) => keys.map(key =>
+      key.toBase58() === nftMint ? { lamports: 1, data: Buffer.alloc(0), owner: PublicKey.default, executable: false, rentEpoch: 0 } : null)),
+  } as never);
+  await expect(prepare()).rejects.toThrow("Position NFT mint already exists");
+});
+
+it("refuses Raydium extra signers instead of locally signing a client-supplied mint", async () => {
+  vi.mocked(ClmmInstrument.openPositionFromLiquidityInstructions).mockResolvedValue({
+    instructions: [compact.ixs[8]!], lookupTableAddress: [], signers: [Keypair.fromSeed(new Uint8Array(32).fill(8))],
+  } as never);
+  await expect(prepare()).rejects.toThrow(/must not return local signers/);
+});
+
 it("enforces the resale floor for agent/MCP prepares unless the caller disables it", async () => {
   vi.mocked(getOpenPositionQuoteBundle).mockResolvedValue({
     state, quote: { expiresAt: Date.now() + 75000, requested: "30000000", rangeSide: "inside",
@@ -125,8 +148,7 @@ it("enforces the resale floor for agent/MCP prepares unless the caller disables 
     legs: [],
   } as never);
   await expect(prepare()).rejects.toThrow(/resale/i);
-  await expect(buildAndSimulateOpenPosition(wallet, { poolId, inputMint, inputKind: "native" }, "0.03",
-    { preset: "standard" }, 9900, 100, { enforceResaleFloor: false }))
+  await expect(prepare({ enforceResaleFloor: false }))
     .rejects.toThrow(/Swap route does not match/);
 });
 

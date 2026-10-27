@@ -2,7 +2,7 @@
 import { act, createElement, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { VersionedTransaction } from "@solana/web3.js";
+import { PublicKey, VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
 import { useOpenPositionController, type OpenPositionPair } from "./use-open-position-controller";
 import { NATIVE_SOL_MINT } from "@sofinance/engine/ids";
@@ -22,9 +22,13 @@ let verificationError: boolean;
 let preparedOverride: ((value: ReturnType<typeof prepared>) => void) | null;
 let prepareWait: Promise<Response> | null;
 let fetchMock: ReturnType<typeof vi.fn>;
-function prepared() {
-  const tx = buildTransaction({ payer, extraSigners: [nft], signWith: [nft] });
-  const summary = openSummaryFixture({ wallet, nftMint: nft.publicKey.toBase58(), blockhash: tx.message.recentBlockhash });
+function prepared(nftMint = nft.publicKey) {
+  const tx = buildTransaction({
+    payer,
+    extraSigners: [{ publicKey: nftMint, secretKey: new Uint8Array(64) } as typeof nft],
+    signWith: [],
+  });
+  const summary = openSummaryFixture({ wallet, nftMint: nftMint.toBase58(), blockhash: tx.message.recentBlockhash });
   const quote = { ...summary.quote, poolId, inputMint: NATIVE_SOL_MINT, inputKind: "native", inputDecimals: 9 };
   return { unsignedTransaction: toBase64(tx), permit: "test-permit", summary: { ...summary, quote } };
 }
@@ -50,13 +54,20 @@ beforeEach(() => {
     const body = typeof init?.body === "string" ? JSON.parse(init.body) : {};
     if (url.startsWith("/api/wallet")) return Response.json({ assets: [{ kind: "native", mint: NATIVE_SOL_MINT, decimals: 9, balance: "1000000000", eligible: true }] });
     if (url === "/api/open-quote") return Response.json(prepared().summary.quote);
-    if (url === "/api/open-prepare") { if (prepareWait) return prepareWait; const value = prepared(); preparedOverride?.(value); return Response.json(value); }
+    if (url === "/api/open-prepare") {
+      if (prepareWait) return prepareWait;
+      expect(typeof body.nftMint).toBe("string");
+      const value = prepared(new PublicKey(body.nftMint));
+      preparedOverride?.(value); return Response.json(value);
+    }
     if (url === "/api/open-broadcast") {
       expect(window.localStorage.getItem(openAttemptKey(wallet))).toContain('"signature"');
       if (sendMode === "lost") throw new Error("socket hang up");
       if (sendMode === "unsent") return Response.json({ error: "preflight rejected", sent: false }, { status: 400 });
       const tx = VersionedTransaction.deserialize(Buffer.from(body.signedTransaction, "base64"));
-      return Response.json({ signature: bs58.encode(tx.signatures[0]!), positionMint: nft.publicKey.toBase58() });
+      expect(tx.signatures[0]?.some((byte: number) => byte !== 0)).toBe(true);
+      expect(tx.signatures[1]?.some((byte: number) => byte !== 0)).toBe(true);
+      return Response.json({ signature: bs58.encode(tx.signatures[0]!), positionMint: tx.message.staticAccountKeys[1]!.toBase58() });
     }
     if (url === "/api/open-status") {
       if (verificationError) throw new Error("RPC unavailable");
@@ -157,5 +168,16 @@ describe("open-position transaction lifecycle", () => {
     await act(async () => { release(signed); await sending; });
     expect(calls("/api/open-broadcast")).toHaveLength(0);
     expect(window.localStorage.getItem(openAttemptKey(wallet))).toBeNull();
+  });
+  it("aborts when the wallet modifies the message and never mint-signs or broadcasts", async () => {
+    await mount();
+    mocks.sign.mockImplementation(async (tx: VersionedTransaction) => {
+      tx.message.recentBlockhash = "11111111111111111111111111111111";
+      tx.sign([payer]);
+      return tx;
+    });
+    await act(async () => controller.signAndSend());
+    expect(calls("/api/open-broadcast")).toHaveLength(0);
+    expect(controller.error).toContain("Wallet modified transaction content");
   });
 });

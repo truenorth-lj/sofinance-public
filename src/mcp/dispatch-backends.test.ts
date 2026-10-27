@@ -15,7 +15,10 @@ vi.mock("@/lib/selected-quote", () => ({ searchSelectedQuoteBundle: backend.sele
 vi.mock("@/lib/selected-atomic", () => ({ buildAndSimulateSelectedZap: backend.selectedBuild }));
 vi.mock("@sofinance/engine/compound-atomic", () => ({ buildAndSimulateCompound: backend.compound }));
 vi.mock("@sofinance/engine/open-quote", () => ({ getOpenPositionQuoteBundle: backend.openQuote }));
-vi.mock("@sofinance/engine/open-atomic", () => ({ buildAndSimulateOpenPosition: backend.openBuild }));
+vi.mock("@sofinance/engine/open-atomic", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@sofinance/engine/open-atomic")>()),
+  buildAndSimulateOpenPosition: backend.openBuild,
+}));
 vi.mock("@sofinance/engine/withdraw/build", () => ({ buildWithdraw: backend.withdraw }));
 vi.mock("@/lib/rwa-store", () => ({ getRwaPairs: backend.pairs }));
 vi.mock("@/lib/position-performance", () => ({ getPositionPerformance: backend.performance }));

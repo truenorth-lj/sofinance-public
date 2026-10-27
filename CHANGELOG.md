@@ -7,6 +7,10 @@ This project uses [Semantic Versioning](https://semver.org/). `package.json` is 
 
 ## [Unreleased]
 
+### Changed
+
+- Open-position signing follows Phantom’s multi-signer recipe: the client generates the position NFT mint, `/api/open-prepare` returns a fully unsigned transaction, the wallet signs first, then the mint signature is added on the wallet-returned tx. MCP agents should pass `nftMint` and mint-sign after the wallet; omitting it keeps an MCP-only server partial-sign for `/app/sign`.
+
 ### Fixed
 
 - PostHog events are sent through a first-party relay (`/lumen`, Next.js rewrites) instead of `us.i.posthog.com`, which ad blockers block

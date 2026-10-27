@@ -2,13 +2,13 @@
 import "@/lib/engine-host";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { VersionedTransaction } from "@solana/web3.js";
+import { Keypair, VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
 import { formatAmount, parseTokenAmount } from "@sofinance/engine/amount";
 import { NATIVE_SOL_MINT, USDC_MINT } from "@sofinance/engine/ids";
 import { quoteIsFresh } from "@sofinance/engine/quote-math";
 import { OPEN_RANGE_UI_PRESETS, type OpenRangePreset } from "@sofinance/engine/open-range-presets";
-import { preserveExtraSignatures } from "@/lib/open-signatures";
+import { addMintSignature, assertUnmodifiedMessage, missingRequiredSignatures } from "@/lib/open-signatures";
 import { createJupiterRelayStore, jupiterRelayEnabled, postWithJupiterRelay } from "@/lib/jupiter/browser-relay";
 import { notSentRetryMessage } from "@/lib/public-error";
 import type { OpenPositionQuote, OpenPositionSummary } from "@sofinance/engine/open-types";
@@ -293,18 +293,20 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
     setSubmitStage("preparing");
     setError("");
     captureGrowthEvent(GROWTH_EVENTS.openStarted, openEventProperties(pair));
+    const mint = Keypair.generate();
     try {
       // Same per-modal store as the preview: prepare replays the preview's fresh
       // Jupiter quotes and only fetches swap-instructions.
       const response = await postWithJupiterRelay("/api/open-prepare", {
         wallet, poolId: pair.poolAddress, inputMint, inputKind, amount,
-        rangePreset, minPrice, maxPrice,
+        rangePreset, minPrice, maxPrice, nftMint: mint.publicKey.toBase58(),
       }, { store: jupiterStoreRef.current });
       const data = await response.json() as Prepared | ApiError;
       if (!response.ok) throw new Error((data as ApiError).error);
       const prepared = data as Prepared;
       if (!current() || !prepared.unsignedTransaction || !prepared.permit || !prepared.summary ||
         prepared.summary.wallet !== wallet || prepared.summary.poolId !== pair.poolAddress ||
+        prepared.summary.nftMint !== mint.publicKey.toBase58() ||
         prepared.summary.quote.requested !== parsedAmount?.toString() ||
         prepared.summary.quote.inputMint !== inputMint || prepared.summary.quote.inputKind !== inputKind ||
         Date.now() >= prepared.summary.expiresAt) {
@@ -322,19 +324,13 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
       setSubmitStage("wallet");
       const originalMessage = unsigned.message.serialize();
       const signedByWallet = await signTransaction(unsigned);
-      const signedMessage = signedByWallet.message.serialize();
-      if (signedMessage.length !== originalMessage.length ||
-        signedMessage.some((byte, index) => byte !== originalMessage[index])) {
-        throw new Error("Wallet modified transaction content, stopped submission");
+      assertUnmodifiedMessage(originalMessage, signedByWallet, "Wallet modified transaction content, stopped submission");
+      const signed = addMintSignature(signedByWallet, mint);
+      mint.secretKey.fill(0);
+      if (missingRequiredSignatures(signed).length) {
+        throw new Error("Open-position transaction is missing required signatures");
       }
-      const signed = preserveExtraSignatures(unsigned, signedByWallet);
-      const signatureBytes = signed.signatures[0];
-      if (!signatureBytes || signatureBytes.every((byte) => byte === 0)) {
-        throw new Error("Wallet did not return a valid signature");
-      }
-      if (!signed.signatures[1] || signed.signatures[1].every((byte) => byte === 0)) {
-        throw new Error("Position NFT mint partial signature missing after wallet sign");
-      }
+      const signatureBytes = signed.signatures[0]!;
       const txSignature = bs58.encode(signatureBytes);
       const signedTransaction = btoa(String.fromCharCode(...signed.serialize()));
       if (!current() || Date.now() >= prepared.summary.expiresAt) throw new Error("Wallet, input or quote changed during signing; transaction not sent");
@@ -377,6 +373,7 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
         ? "Submission result is unconfirmed. Tracking the original signature; do not open again until it is verified."
         : caught instanceof Error ? caught.message : "Open-position transaction failed");
     } finally {
+      mint.secretKey.fill(0);
       submittingRef.current = false;
       setSubmitStage(null);
     }

@@ -36,4 +36,4 @@ Out of scope: third-party programs and APIs (Raydium, Jupiter, wallets, RPC prov
 
 The server never holds user private keys. Users (or their agent, locally) sign every transaction. Broadcast re-checks an HMAC permit and re-simulates before send.
 
-The open-position NFT mint is an ephemeral server-side keypair: it partial-signs the v0 message after the fresh blockhash restamp, then the secret is zeroed in memory and is not logged or persisted. The wallet remains the fee payer. See the README open-position notes and `src/lib` / `@sofinance/engine` `open-atomic` for the implementation.
+The open-position NFT mint is an ephemeral **client** keypair. `/api/open-prepare` accepts the mint public key and returns a fully unsigned transaction; the wallet signs first, then the client adds the mint signature and zeroes the secret. The server does not generate or hold that secret on the HTTP path. MCP `prepare_open_position` prefers the same flow when the agent passes `nftMint`; omitting it is an MCP-only fallback that partial-signs so `/app/sign/<token>` can submit without a browser-held mint secret. See the README open-position notes and `@sofinance/engine` `open-atomic`.
