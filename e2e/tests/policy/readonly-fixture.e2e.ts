@@ -32,3 +32,15 @@ for (const releaseOnClose of [true, false]) {
     // Return to the unmodified fixture order; its own finally must pass.
   });
 }
+
+// Playwright Test merges context options into new API clients. Merely creating a
+// separate client is insufficient: the readonly fixture must explicitly unset proxy.
+test("real readonly fixture separates direct API requests from the browser proxy", async ({ context, request, loopback, readonlyTransport }) => {
+  const denied = await context.request.get(loopback.origin);
+  expect(denied.status()).toBe(502);
+  const direct = await request.get("/");
+  expect(direct.status()).toBe(200);
+  expect(await direct.text()).toContain("healthy");
+  // The associated API client tunnels even its HTTP request through CONNECT.
+  expect(readonlyTransport.audit().denied.connect).toBe(1);
+});

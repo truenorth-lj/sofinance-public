@@ -1,5 +1,6 @@
 import { createServer, type RequestListener } from "node:http";
 import { expect, test } from "@playwright/test";
+import { createReadonlyContext } from "../../support/readonly-transport";
 import { stubWalletApis } from "../../support/guards";
 import { installReadonlyPolicy } from "../../support/readonly-policy";
 
@@ -56,14 +57,17 @@ test("an ordinary transport failure remains an audit failure", async ({ browser 
   } finally { await policy.close(); await server.close(); }
 });
 
+for (const managed of [false, true]) {
 for (const iframe of [false, true]) {
-  test(`stub ${iframe ? "iframe" : "document"} cannot start worker sockets; unguarded control can`, async ({ browser }) => {
+  test(`stub ${iframe ? "iframe" : "document"} cannot start worker sockets; unguarded control can (proxy=${managed})`, async ({ browser }) => {
     const app = await serve((_req, res) => res.end("<!doctype html><title>Healthy</title>"));
     const sink = await serve((_req, res) => res.end("{}"));
     try {
       for (const guarded of [true, false]) {
         // Remove Chromium LNA as an independent reason for a zero loopback sink count.
-        const context = await browser.newContext({ serviceWorkers: "block", permissions: ["local-network-access"] });
+        const context = guarded && managed
+          ? await createReadonlyContext(browser, { permissions: ["local-network-access"] })
+          : await browser.newContext({ serviceWorkers: "block", permissions: ["local-network-access"] });
         const policy = guarded ? await installReadonlyPolicy(context, app.origin) : undefined;
         if (!guarded) await stubWalletApis(context);
         try {
@@ -92,4 +96,5 @@ for (const iframe of [false, true]) {
       }
     } finally { await Promise.all([app.close(), sink.close()]); }
   });
+}
 }

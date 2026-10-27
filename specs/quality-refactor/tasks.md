@@ -20,6 +20,8 @@
 
 - [ ] Close the PR167 production teardown failure and revalidate the corrected lane.
   The first homepage assertions completed but its teardown audit failed; eight journeys and metadata16 were not run.
-  [Local follow-up](readonly-teardown.md) narrows obsolete response delivery and adds real fixture/regression controls.
-  Unentered closing requests remain UNKNOWN and fail the audit; this is not a full closure or production pass.
+  [Local follow-up](readonly-teardown.md) adds a deny-only browser proxy with independently controlled allowed forwarding.
+  Rejected offline-before-close has preserved real keepalive sink failures. Skipped-request outcome remains UNKNOWN;
+  proxy containment is separate, and forbidden/active-run/lifecycle errors still fail. Local review is pending;
+  production remains NOT_REVALIDATED and financial flows NOT_EXERCISED.
   PR166's historical provider-read UNKNOWN and Selected L1/B1 remain unchanged.

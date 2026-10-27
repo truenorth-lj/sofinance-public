@@ -1,33 +1,39 @@
-# Readonly teardown follow-up
+# Readonly closure transport follow-up
 
-Scope: test harness only, based on merged PR167 (`da4ce5a63b20c2b0c17ba0d2406dfad1983b99b6`).
-No app, transaction engine, backend, dependency or prototype changes.
+Scope: test harness only, on local `46988757429b9e4b2e74f5055b1170ada1bbaa39`.
+No app, engine, backend, dependency, lockfile or prototype changes. No remote delivery.
 
-The first corrected-harness production run failed in the homepage teardown: a late
-`route.fulfill` failed after page close, and one forbidden-class request had no handler.
-The remaining eight journeys and metadata check were not run. This remains a historical
-failure, separate from PR166's provider-read attempt with completion UNKNOWN.
+The PR167 production homepage teardown failed; its remaining eight journeys and metadata
+were not run. PR166's getBalance completion remains UNKNOWN. No historical result is upgraded.
+The predecessor response-delivery fix did not cover handlers skipped by Playwright 1.64.
 
-The local correction starts ownership before page close, gives pages and context the same
-unique shutdown reason, and disposes allowed responses acquired across shutdown without
-attempting late delivery. Redirect violations, generic failures and foreign cancellation
-reasons remain failures. The shared production fixture is also exercised by loopback tests;
-ordinary hermetic fixtures and guards are unchanged.
+The offline-before-close candidate was rejected with a real transport counterexample:
+late same-origin keepalive telemetry and forbidden requests reached loopback after offline ACK
+when page close skipped their handlers. Sources, traces and failing assertions are preserved.
+The original event-observer closure controls against the exact partial HEAD also remain RED.
 
-**Incomplete closure coverage:** Playwright 1.64 can observe a request but skip its handler
-when page/context closing begins. Such requests still fail closed as UNKNOWN. Sanitized
-observations record scope, hostname, method, resource, a local ordinal and observation phase;
-no path, query, body, credentials or application identifiers are added. No `requestfailed`,
-status -1, `sendBeacon(true)` or zero sink result is used as proof of blocking.
+The replacement uses a deny-only HTTP proxy configured before creation of the browser context.
+It has no upstream connection/tunnel path. Pinned Chromium sends HTTP(S)/WS(S), including loopback,
+through it; tests with no routing verify denial and proxy-disabled controls reach the same sinks.
+Normal app runtime stays online. Allowed single-hop requests use an independent API client and
+are fulfilled into the browser, with cookie/header/body controls and no redirects/retries.
+The two fixed unauthenticated MCP actions retain their separately scoped unproxied client.
 
-Local real Chromium regressions distinguish response-delivery scheduling controls from
-natural transport and fixture tests, and include guard-disabled sink controls. A local
-pass is not evidence that the original production UNKNOWN was blocked or is now resolved.
-The original production trace has insufficient request correlation to identify its
-unhandled request conclusively; the late telemetry config remains a candidate only.
+The policy still records skipped requests as outcome UNKNOWN. Its independent transport
+containment is a separate classification, never inferred from close timing, request failure,
+status -1, sendBeacon acceptance or an empty sink. After successful owned close, contained
+external/telemetry observations need not fail; forbidden operations always fail. Active-run bypass,
+foreign close/disposal, crashes, and surfaced generic fulfill/dispose/close errors remain failures.
+Raw route-only contexts retain the original fail-closed UNKNOWN behavior. Wallet stub callbacks
+are now directly owned and drained; ordinary hermetic guards and callers remain unchanged.
 
-Full root handoff, baseline failures, commands, source/build identities and limitations:
-workspace `output/sofinance-prod-readonly-teardown-implementation-20261028-r1.md`.
-Production remains **NOT_REVALIDATED** and financial behavior **NOT_EXERCISED**. Root owns
-independent reviews, hosted CI, delivery and any subsequent production run. The skipped-handler
-case remains an explicit blocker to a complete teardown/isolation success claim.
+The actual readonly fixture attaches audit evidence even on close errors. Regression controls
+cover skipped fetch/keepalive/beacon, two pages/two owners, held allowed responses, redirects,
+already-entered fulfill, stubs, workers, WS, concurrent close, cookies and explicit API isolation.
+There is no universal OS/DNS/UDP/WebRTC/WebTransport or hostile-test-code claim. QA-L1 and SEC-L1
+observability limits remain. Original production exceptions require new root-owned verification.
+
+Detailed commands, retained failures, fresh/reused evidence and final local identity:
+workspace `output/sofinance-prod-readonly-closure-implementation-20261028-r2.md`.
+Production **NOT_REVALIDATED**; financial behavior **NOT_EXERCISED**. Root owns independent review,
+hosted delivery and any later production run. This local change is not release approval.
