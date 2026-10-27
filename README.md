@@ -429,15 +429,19 @@ flowchart LR
   HTTP --> Tools["MCP policy: src/mcp/tools.ts"]
   Stdio --> Tools
   Tools --> App
+  Tools --> Engine
   App --> Engine["packages/engine: builders, simulation, RPC, Jupiter"]
   App --> Store["App storage adapters: PostgreSQL / RWA gateway"]
   Engine --> Providers[RPC / Jupiter / Raydium]
 ```
 
-The app owns HTTP/MCP authorization, permits around app-specific flows, pending attempts,
-recovery, persistence and UI state. `packages/engine` owns reusable transaction builders and
-provider clients; `src/lib/engine-host.ts` supplies its host configuration. Some HTTP/MCP
-orchestration is still duplicated; consolidating those use cases is the next refactor stage.
+The app owns HTTP/MCP authorization, app-specific permit and transaction-flow policies,
+UI lifecycle and concrete storage adapters. `packages/engine` owns reusable transaction
+builders, provider clients and shared attempt, receipt and recovery primitives, including
+compound attempt parsing and persistence through storage interfaces. MCP tools currently
+call both app orchestration and engine functions directly. `src/lib/engine-host.ts` supplies
+engine host configuration. Some HTTP/MCP orchestration is still duplicated; consolidating
+those use cases is the next refactor stage.
 
 Stack: Next.js 16 / React 19 / TypeScript / pnpm / Vitest; `@raydium-io/raydium-sdk-v2`, Jupiter `/swap/v2/build`, `@solana/web3.js`, Zod, MCP SDK.
 
