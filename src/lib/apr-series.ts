@@ -49,15 +49,6 @@ export function formatAprPct(value: number): string {
   return `${value.toFixed(digits)}%`;
 }
 
-/** Visible label + tooltip copy for the last complete UTC day's APR. */
-export function lastCompleteDayAprCopy(date: string, aprPct: number): { label: string; title: string } {
-  const pct = formatAprPct(aprPct);
-  return {
-    label: `${pct} · ${date}`,
-    title: `last complete UTC day ${date}: ${pct}`,
-  };
-}
-
 export function calendarRange(endTime: number, days: AprRangeDays): number[] {
   const end = utcDayStart(endTime);
   const start = end - (days - 1) * SECONDS_PER_DAY;
@@ -79,24 +70,6 @@ export function calendarizeValues(
       date: utcDate(time),
       value: value !== null && Number.isFinite(value) ? value : null,
     };
-  });
-}
-
-export function calendarizeDailyApr(
-  points: readonly DailyAprPoint[],
-  endTime: number,
-  days: AprRangeDays,
-): DailyAprPoint[] {
-  const byDay = new Map<number, DailyAprPoint>();
-  for (const point of points) {
-    byDay.set(utcDayStart(point.time), point);
-  }
-  return calendarRange(endTime, days).map((time) => {
-    const hit = byDay.get(time);
-    if (hit) {
-      return { ...hit, time, date: utcDate(time) };
-    }
-    return { time, date: utcDate(time), aprPct: null, volumeUsd: null, tvlUsd: null };
   });
 }
 

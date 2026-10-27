@@ -128,19 +128,6 @@ type PerformanceResponse = {
   error?: string;
 };
 
-export function formatHistoryFetch(metric: {
-  txCount: number;
-  elapsedMs: number;
-  provider: string;
-  source?: string;
-}): string {
-  if (metric.provider === "solami+default") {
-    return `${metric.txCount} txs · ${metric.elapsedMs} ms · Solami for recent / fallback for older`;
-  }
-  const source = metric.source === "getTransactionsForAddress" ? "getTransactionsForAddress" : "batched";
-  return `${metric.txCount} txs · ${metric.elapsedMs} ms · ${metric.provider} · ${source}`;
-}
-
 const pct = (value: number | null | undefined) => {
   if (value === null || value === undefined || !Number.isFinite(value)) return "—";
   return `${value.toFixed(2)}%`;

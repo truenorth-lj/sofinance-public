@@ -32,9 +32,9 @@ Former page paths permanently redirect. MCP `prepare_*` tools now emit `/app/sig
 
 ### How Solami is used
 
-- **Solami RPC** (`src/lib/rpc/providers.ts`, `src/lib/rpc/urls.ts`): when `SOLAMI_API_KEY` is set, all server JSON-RPC (wallet balances, CLMM positions, simulation, broadcast) goes through `https://rpc.solami.dev/sol`. Position performance discovers history via Solami `getTransactionsForAddress` (`src/lib/solami/history.ts`, `src/lib/position-performance-math.ts`).
+- **Solami RPC** (`packages/engine/src/rpc/providers.ts`, `packages/engine/src/rpc/urls.ts`): with the default provider configuration, `SOLAMI_API_KEY` selects `https://rpc.solami.dev/sol` as primary; eligible failures fall back to another provider. `SOLANA_RPC_PROVIDERS` can override this with an explicit pool. Position performance discovers history via Solami `getTransactionsForAddress` (`src/lib/solami/history.ts`, `src/lib/position-performance-math.ts`).
 - **Data API / Blur** (`src/lib/solami/blur.ts`, `src/app/api/pool-activity/`, `src/components/pool-activity-panel.tsx`): `SOLAMI_DATA_API_KEY` powers the live pool-trades panel (REST snapshot + WebSocket stream of decoded swaps) and the Blur-priced in-range status (`src/lib/position-range-status.ts`). Also exposed to agents as an MCP tool (`src/mcp/tools.ts`).
-- **Beam** (`src/lib/solami/beam.ts`, `src/lib/open-atomic.ts`): the single atomic open-position tx gets a 100k-lamport Beam tip when it fits. The tip is skipped (`skippedReason: "oversize"`) if adding it would push the tx over 1232 bytes, e.g. SOL input or MSTR pools. Landing info is read back via `/api/beam-landing`. Compound and selected flows use the same logic.
+- **Beam** (`packages/engine/src/solami/beam.ts`, `packages/engine/src/open-atomic.ts`): the single atomic open-position tx gets a 100k-lamport Beam tip when it fits. The tip is skipped (`skippedReason: "oversize"`) if adding it would push the tx over 1232 bytes, e.g. SOL input or MSTR pools. Landing info is read back via `/api/beam-landing`. Compound and selected flows use the same logic.
 
 ### Run locally
 
@@ -197,7 +197,7 @@ Kept on both web API and MCP paths:
 | HMAC permit | Binds message, wallet, selection, amounts, floor, starting state |
 | Re-verify | On submit: permit, on-chain state, re-simulate, then broadcast |
 
-## MCP tools (14)
+## MCP tools (16)
 
 | Tool | Purpose | Key params |
 |------|---------|------------|
@@ -215,6 +215,8 @@ Kept on both web API and MCP paths:
 | `quote_open_position` | Quote a **new** CLMM position (no existing NFT) | `wallet`, `poolId`, `inputMint`, `inputKind`, `amount`, `rangePreset?` (`tight`\|`standard`\|`wide`\|`custom`), `minPrice?`/`maxPrice?` (B per 1 A) |
 | `prepare_open_position` | Unsigned open-position tx + permit + `signUrl` (NFT mint partial-signed) | same as quote_open_position |
 | `submit_open_position` | Permit check → re-sim → broadcast (two signers: wallet + NFT mint) | `signedTransaction`, `permit`, `wallet`, full `summary` unchanged |
+| `prepare_withdraw` | Simulated withdrawal + permit + sign link; supports two-stage withdrawal | `wallet`, `positionMint`, `percent` or `targetUSDC`, `receive?`, `outputMint?`, `confirmHighImpact?`; second stage: `stage=swap`, `tx1Signature`, complete `previous` result |
+| `submit_withdraw` | Permit/signature/expiry check → re-sim → broadcast | `wallet`, `signedTransaction`, `permit`, full `summary` unchanged, `confirmHighImpact?` |
 
 ## Quickstart — web
 
@@ -253,7 +255,7 @@ Quote/prepare JSON includes `feeBps` / `feeAmount` / `feeWallet`. Rent estimates
 | Surface | When | What it does |
 |---------|------|----------------|
 | **RPC** | `SOLAMI_API_KEY` set | All server RPC (`rpcConnection()` / `rpcRequest()`) goes through `@sofinance/engine/rpc` (Solami → `SOLANA_RPC_URL` / Helius → public). 429 / 5xx / timeouts retry on the same provider with exponential backoff + jitter (honors `Retry-After`, bounded budget, `AbortSignal`), then fail over. Auth/plan errors (401/402/403) and JSON-RPC `-32005` skip same-provider retry and fail over immediately, including simulate / blockhash / height / fee / send / confirm. Re-broadcasting the same signed transaction is idempotent by signature. A short circuit-breaker then skips the dead primary until a small cooldown elapses. Exit-preview uses a longer 25s per-call budget and coalesces identical position reads for 8s. Safe reads (`getAccountInfo`, `getMultipleAccounts*`, `getTokenLargestAccounts`, finalized/confirmed `getParsedTransaction`) use a small in-process TTL cache with in-flight de-dupe — never sends, simulates, or blockhash/height calls. Methods Solami answers non-compliantly (`getEpochInfo.transactionCount=null`, `getParsedTransaction` jsonParsed unions) still fall back per `METHOD_POLICIES`. History listing uses Solami `getTransactionsForAddress`; empty / HTTP / parse failures use the same policy layer. Fallback reasons are always logged as key-free JSON; set `SOFINANCE_RPC_LOG=1` for per-attempt lines. |
-| **Jupiter** | `JUPITER_API_KEY` (Portal) | All Jupiter HTTP goes through `src/lib/jupiter/` to `https://api.jup.ag` with `x-api-key` (`lite-api.jup.ag` is retired). 429 / 5xx / timeouts retry with jitter + `Retry-After` / `x-ratelimit-reset`, bounded budget, `AbortSignal`. Read-only quotes cache 8s (key: input/output mint, amount, slippage, maxAccounts) with in-flight de-dupe; POST `/swap-instructions` is not cached. Exit-preview quotes legs in parallel (cap 2) and logs the real error class/message on failure (always-on, key-free). Upstream Jupiter 429/5xx return `errorCode: "jupiter_unavailable"` — not the Solana RPC text. `SOFINANCE_JUPITER_LOG=1` or `SOFINANCE_RPC_LOG=1` logs per-call Jupiter lines. |
+| **Jupiter** | `JUPITER_API_KEY` (Portal) | All Jupiter HTTP goes through `packages/engine/src/jupiter/` to `https://api.jup.ag` with `x-api-key` (`lite-api.jup.ag` is retired). 429 / 5xx / timeouts retry with jitter + `Retry-After` / `x-ratelimit-reset`, bounded budget, `AbortSignal`. Read-only quotes cache 8s (key: input/output mint, amount, slippage, maxAccounts) with in-flight de-dupe; POST `/swap-instructions` is not cached. Exit-preview quotes legs in parallel (cap 2) and logs the real error class/message on failure (always-on, key-free). Upstream Jupiter 429/5xx return `errorCode: "jupiter_unavailable"` — not the Solana RPC text. `SOFINANCE_JUPITER_LOG=1` or `SOFINANCE_RPC_LOG=1` logs per-call Jupiter lines. |
 | **Blur** | `SOLAMI_DATA_API_KEY` | Live pool activity. REST snapshot at `GET /api/pool-activity?poolId=` (`/data/pool` for mint + `GET /data/token/trades?chain=solana&address=<MINT>`, then client-filter by exact `pool`). SSE at `/api/pool-activity/stream` proxies Blur WS `type=swap,liquidity&pool=<POOL>` (never `address=` — that is a mint filter), forwards only parsed swap/liquidity events, and closes before Vercel `maxDuration` so the browser can reconnect. If the data plan is unavailable (401/402/403/429, empty pool payload, or a Free-tier socket that closes before `connected`) the UI hides the live ticker and, when there is no snapshot, the whole pool-activity section. Without the key the UI hides the panel. |
 | **Beam** | `SOLAMI_API_KEY` (off with `SOLAMI_BEAM=0`) | Prepare adds a ≥100,000-lamport SystemProgram tip to a live tip address **before** HMAC binding so the user signs it. If the v0 message would exceed 1,232 bytes the tip is omitted. Broadcast is the same `sendRawTransaction` through Solami RPC. After submit we poll `GET /swqos/tx/{signature}` up to ~6s and always return `beamLandingUrl` so clients can refresh. |
 
@@ -263,7 +265,7 @@ Create a key at [solami.dev](https://solami.dev). Paste `SOLAMI_API_KEY` (and la
 wallet / API / MCP
         │
         ▼
- src/lib/rpc/ ── SOLAMI_API_KEY? ──► rpc.solami.dev
+ packages/engine/src/rpc/ ── SOLAMI_API_KEY? ──► rpc.solami.dev
         │                    else ──► SOLANA_RPC_URL / public RPC
         │         retry 429/5xx/timeout → then next provider
         │         cache safe reads (per-instance, best effort)
@@ -420,71 +422,42 @@ JSON fields per UTC day: `opens`, `uniqueWallets`, `newUniqueWallets`, `notional
 
 ```mermaid
 flowchart LR
-  subgraph clients [Clients]
-    Web[Next.js web UI]
-    Agent[MCP client / AI agent]
-  end
-  subgraph edge [Process boundary]
-    API[App Router API routes]
-    MCP[MCP stdio server]
-  end
-  subgraph engine ["Shared engine packages/engine"]
-    Quote[selected-quote / compound]
-    Atomic[selected-atomic / compound-atomic]
-    Sim[simulation + verify]
-    Permit[HMAC permit]
-  end
-  subgraph external [External]
-    RPC[src/lib/rpc provider layer]
-    Blur[src/lib/solami Blur / Beam]
-    Jup[Jupiter Swap V2]
-    Ray[Raydium CLMM]
-  end
-  Web --> API
-  Agent --> MCP
-  API --> Quote
-  MCP --> Quote
-  Quote --> Jup
-  Quote --> RPC
-  API --> Blur
-  MCP --> Blur
-  Atomic --> Ray
-  Atomic --> Sim
-  Sim --> RPC
-  Atomic --> Permit
-  Web -->|wallet signs| Web
-  Agent -->|wallet signs| Agent
-  API -->|broadcast after re-verify| RPC
-  MCP -->|broadcast after re-verify| RPC
+  Web[Next.js web UI] --> API[App Router HTTP API]
+  Agent[MCP client] --> HTTP[MCP HTTP route]
+  Agent --> Stdio[MCP stdio server]
+  API --> App["App policy and orchestration: src/lib"]
+  HTTP --> Tools["MCP policy: src/mcp/tools.ts"]
+  Stdio --> Tools
+  Tools --> App
+  App --> Engine["packages/engine: builders, simulation, RPC, Jupiter"]
+  App --> Store["App storage adapters: PostgreSQL / RWA gateway"]
+  Engine --> Providers[RPC / Jupiter / Raydium]
 ```
+
+The app owns HTTP/MCP authorization, permits around app-specific flows, pending attempts,
+recovery, persistence and UI state. `packages/engine` owns reusable transaction builders and
+provider clients; `src/lib/engine-host.ts` supplies its host configuration. Some HTTP/MCP
+orchestration is still duplicated; consolidating those use cases is the next refactor stage.
 
 Stack: Next.js 16 / React 19 / TypeScript / pnpm / Vitest; `@raydium-io/raydium-sdk-v2`, Jupiter `/swap/v2/build`, `@solana/web3.js`, Zod, MCP SDK.
 
 ### RPC provider layer
 
-Callers use `rpcConnection()` or `rpcRequest()` only. Provider selection, retries, cache, method policies, and fallback live in `src/lib/rpc/`. Solami product HTTP (Blur, Beam, `getTransactionsForAddress` parsers) lives in `src/lib/solami/` and is unchanged. The in-memory cache is per serverless instance; `RpcCacheStore` is the swap point for a shared store later.
+Callers import `rpcConnection()`, `rpcReadConnection()` or `rpcRequest()` from
+`@sofinance/engine/rpc`. Provider selection, retries, method policies, per-provider rate limits
+and safe-read caching live in `packages/engine/src/rpc/`. Reads may use weighted provider
+rotation; eligible failures can fall back across providers, including sends of the same signed
+transaction. A later retry rejection does not prove that an earlier send was never accepted;
+app attempt recovery retains the original signature until reconciliation.
 
-```mermaid
-flowchart TD
-  callers[open / compound / zap / MCP] --> rpcConnection
-  rpcConnection --> pair[resolveProviderPair]
-  pair --> solami[Solami adapter]
-  pair --> generic[SOLANA_RPC_URL / Helius]
-  pair --> pub[public mainnet]
-  rpcConnection --> proxy[resilient Connection]
-  rpcRequest --> proxy
-  proxy --> retry[429 / 5xx / timeout backoff]
-  proxy --> cache[safe-read TTL + inflight]
-  proxy --> policies[METHOD_POLICIES]
-  policies --> send[sends: same provider retry, no failover]
-  policies --> epoch[getEpochInfo / jsonParsed: fallback on validation, 5xx, 429]
-  policies --> reads[account reads: primary; fallback on validation / 5xx / 429]
-  history[position-performance-history] --> solamiHist[solami/history listing]
-  history --> proxy
-```
+Configure a provider pool with `SOLANA_RPC_PROVIDERS`; see the maintained
+[engine RPC provider documentation](packages/engine/README.md#rpc-provider-pool) for default
+routing, method capabilities, retry and cache policies. Add provider policy in that package,
+not in individual quote/send/MCP callers. The cache is per process; `RpcCacheStore` is the
+extension point for a shared store.
 
-To add another JSON-RPC provider: append an entry to `RPC_PROVIDERS` in `src/lib/rpc/providers.ts` (id, endpoint from env, optional `customMethods`). To change when a web3.js method may leave Solami: edit `METHOD_POLICIES` in `src/lib/rpc/methods.ts`. Do not add provider if-statements in quote/send/MCP code.
-
+App-specific Blur HTTP and history parsing remain in `src/lib/solami/`; Beam transaction
+helpers live in `packages/engine/src/solami/beam.ts`.
 
 ## RWA same-asset pairing
 
@@ -542,9 +515,15 @@ Development used the author’s own pre-built generic agent skill (a “research
 
 History sanitized for privacy on 2026-10-12 (author dates preserved; personal email and test-wallet identifiers removed).
 
-## Local read-only LP decision analysis
+## Read-only planning and position performance
 
-`/app/plan` states a goal as one sentence of pills (when to cash out, how much to put in, what outcome matters, a loss alert and the exit asset) and judges it against the three sample market paths of the deterministic scenario engine. Sample numbers stay off until switched on, show no probabilities, and the page never touches the network. If the goal is out of reach it says so and offers a longer horizon or a smaller target; it does not raise risk to make the numbers work.
+`/app/plan` takes an amount and duration, loads the RWA pair catalog and the selected pool's
+daily APR through read-only APIs, and projects daily compounding using the best available
+7-, 30- or 90-day average over complete UTC days. This shows the optimistic end of recent
+history, not a forecast. Loss-alert and exit-asset preferences do not change the projection.
+Retired goal-first query parameters (`goal`, `target`, `aim`) are ignored. The independent
+`/api/lp-decision` deterministic scenario endpoint remains available; it is not the Plan
+page's calculation path.
 
 The Performance tab for a real position (`/app?view=performance&mint=<position NFT mint>`, also reachable from `/app/position-performance`) shows holding time, an estimated trading-fee APR (fees earned so far, annualized; not a forecast or a promised return), the position value split into liquidity and unclaimed fees, and an unsigned, read-only USDC + SOL exit estimate. It reads public pool/position snapshots, raw transactions, USD daily candles and principal-only Jupiter route quotes. The exit estimate is a split-asset simulation, not all-USDC cash and not an executable quote; it runs by itself for a position held by the connected wallet, and otherwise says so and offers a manual preview. Nothing in either page prepares or submits trades. The earlier ledger / history / same-cash-flow HODL comparison (and its `/api/lp-decision/ledger` route) was removed from the product; see [implementation, acceptance and local preview](specs/lp-decision/IMPLEMENTATION.md), whose ledger notes are kept as historical design context. Its notes on the earlier date/amount builder describe the UI that `/app/plan` replaced.
 

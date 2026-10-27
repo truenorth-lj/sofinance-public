@@ -284,39 +284,3 @@ export function verifyMcpToken(
     return null;
   }
 }
-
-/**
- * Extract wallet address from a verified token.
- * 
- * @param token - Token string
- * @param secret - HMAC secret
- * @returns Wallet address if valid, null otherwise
- */
-export function extractWalletFromToken(
-  token: string,
-  secret: string
-): string | null {
-  const payload = verifyMcpToken(token, secret);
-  return payload?.wallet ?? null;
-}
-
-/**
- * Check if a token will expire soon.
- * 
- * @param token - Token string
- * @param secret - HMAC secret
- * @param thresholdMs - Threshold in milliseconds (default 1 hour)
- * @returns True if token expires within threshold
- */
-export function isTokenExpiringSoon(
-  token: string,
-  secret: string,
-  thresholdMs: number = 60 * 60 * 1000
-): boolean {
-  const payload = verifyMcpToken(token, secret);
-  if (!payload) {
-    return true;
-  }
-
-  return Date.now() + thresholdMs >= payload.expiresAt;
-}

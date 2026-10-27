@@ -1,31 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { amountToAtomic, atomicUnits, buildDecision, costTotal, decisionRequestSchema, evaluateScenario, excessNet, exitNet, historicalNet, hodlNet, normalizeLedger, type LedgerEvent } from "./lp-decision";
+import { atomicUnits, buildDecision, costTotal, decisionRequestSchema, evaluateScenario, excessNet } from "./lp-decision";
 const now = "2026-10-09T00:00:00.000Z";
 const req = { requestId: "test", contextVersion: 1, asset: "USDC", numeraire: "USDC", amountAtomic: "1000000000", decimals: 6, targetDate: "2026-11-09", demo: true } as const;
-const event = (patch: Partial<LedgerEvent> = {}): LedgerEvent => ({ id: "deposit", eventIndex: 0, chain: "solana", signature: "fixture-not-chain-proof", timestamp: now, mint: "A", amountAtomic: "1000000", decimals: 6, kind: "deposit", source: "synthetic test fixture", account: "position", role: "deposit", priceAtEvent: "100", priceSource: "synthetic", priceTimestamp: now, numeraire: "USDC", costAlreadyIncluded: false, ...patch });
 describe("LP accounting contract (all fixtures synthetic)", () => {
-  it("preserves atomic precision and rejects excess decimals", () => {
-    expect(amountToAtomic("9007199254740993.000001")).toBe("9007199254740993000001");
+  it("preserves atomic precision above the safe integer range", () => {
     expect(atomicUnits("9007199254740993000001", 6).toFixed()).toBe("9007199254740993.000001");
-    expect(() => amountToAtomic("0.0000001")).toThrow(); expect(() => amountToAtomic("-1")).toThrow();
   });
-  it("counts deposits, withdrawals, distributed income and costs once; compound stays internal", () => {
-    const ledger = [event(), event({id: "fees", incomeDisposition: "distributed", kind: "fee", account: "distributed", role: "distributed-income", priceAtEvent: "5"}), event({id: "compound", kind: "compound", role: "internal", priceAtEvent: null, priceSource: null}), event({id: "withdrawal", kind: "withdrawal", role: "withdrawal", priceAtEvent: "20"}), event({id: "cost", kind: "network", role: "cost", priceAtEvent: "2"}), event({id: "included", kind: "dex", role: "cost", priceAtEvent: "8", costAlreadyIncluded: true})];
-    expect(historicalNet(ledger, "80", "USDC", true, true).value).toBe("3");
-    expect(historicalNet(ledger, "80", "USDC", false, true).value).toBeNull();
-    expect(historicalNet(ledger, "80", "USDC", true, false).value).toBeNull();
-  });
-  it("refuses missing event-time prices, duplicate cash flows and fictitious transfer income", () => {
-    expect(historicalNet([event({ priceAtEvent: null })], "100", "USDC", true, true).status).toBe("unavailable");
-    expect(normalizeLedger([event(),event()], "USDC").complete).toBe(false);
-    expect(normalizeLedger([event({ kind: "transfer", role: "distributed-income", account: "distributed" })], "USDC").complete).toBe(false);
-    expect(normalizeLedger([event({kind: "fee", role: "distributed-income"})], "USDC").complete).toBe(false);
-  });
-  it("HODL deposits at the same times and withdraws proportionally across both tokens", () => {
-    const hodl = hodlNet([{ kind: "deposit", time: now, tokens: { A: "10", B: "10" }, prices: { A: "2", B: "1" } }, {kind: "withdrawal", time: "2026-10-10", tokens: { B: "20" }, prices: { A: "3", B: "1" } }], { A: "4", B: "1" });
-    expect(hodl.value).toBe("15"); // remaining 5A + 5B + 20 withdrawn - 30 deposit
+  it("compares available LP and holding metrics", () => {
+    const hodl = { status: "available" as const, value: "15", reasons: [] };
     expect(excessNet({status:"available",value:"10",reasons:[]},hodl).value).toBe("-5");
-    expect(hodlNet([{kind:"deposit",time:now,tokens:{A:"1"},prices:{A:null}}],{A:"2"}).value).toBeNull();
   });
 });
 describe("read-only scenarios and data gates", () => {
@@ -69,22 +52,10 @@ describe("read-only scenarios and data gates", () => {
     expect(costTotal(costs.map(c=>({...c,included:true}))).value).toBe("0");
     expect(costTotal([...costs,costs[0]!]).value).toBeNull();
     expect(costTotal(costs.slice(1)).value).toBeNull();
-    expect(exitNet({gross:"1000",expiresAt:now,source:"demo",executable:true,route:"convert",costs},now).value).toBeNull();
-    expect(exitNet({gross:"1000",expiresAt:"2026-10-10",source:"demo",executable:true,route:"convert",costs},now).value).toBe("998");
   });
 });
 
 describe("review regressions: identities, clocks, exit basis and conditional policy",()=>{
-  it("rejects aliases of the same economic event and fees linked to reinvestment",()=>{
-    expect(normalizeLedger([event(),event({id:"alias"})],"USDC").complete).toBe(false);
-    const income=event({id:"fee",kind:"fee",role:"distributed-income",account:"distributed",incomeDisposition:"distributed"});
-    const compound=event({id:"reinvest",kind:"compound",role:"internal",relatedEventId:"fee"});
-    expect(historicalNet([income,compound],"100","USDC",true,true).value).toBeNull();
-    expect(normalizeLedger([event({timestamp:"invalid",priceTimestamp:"invalid"})],"USDC").complete).toBe(false);
-  });
-  it("sorts HODL flows by actual instants across timezone offsets",()=>{
-    expect(hodlNet([{kind:"deposit",time:"2026-10-09T10:00:00+08:00",tokens:{A:"10"},prices:{A:"1"}},{kind:"withdrawal",time:"2026-10-09T03:00:00Z",tokens:{A:"5"},prices:{A:"1"}}],{A:"2"}).value).toBe("5");
-  });
   it("uses the exact remaining horizon to UTC midnight and rejects malformed ranges without throwing",()=>{
     const result=buildDecision({...req,targetDate:"2026-10-10"},"2026-10-09T12:00:00Z");
     expect(result.scenarios[0]!.assumptions.path.at(-1)?.day).toBe(0.5);

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AprLineChart, AprSparkline, type AprChartSeries } from "./apr-chart";
+import { AprLineChart, type AprChartSeries } from "./apr-chart";
 import type { DailyAprPoint } from "../lib/apr-series";
 
 export type PoolDailyAprResponse = {
@@ -128,38 +128,5 @@ export function PoolDailyAprChart({
           .join(" ")}</p>
       </details>
     </div>
-  );
-}
-
-export function PoolAprSparkline({ poolId }: { poolId: string }) {
-  const [data, setData] = useState<PoolDailyAprResponse | null>(null);
-
-  useEffect(() => {
-    const aborter = new AbortController();
-    const timer = window.setTimeout(() => {
-      void (async () => {
-        try {
-          const next = await loadPoolDailyApr(poolId, aborter.signal);
-          if (!aborter.signal.aborted) setData(next);
-        } catch {
-          if (!aborter.signal.aborted) setData(null);
-        }
-      })();
-    }, 0);
-    return () => {
-      window.clearTimeout(timer);
-      aborter.abort();
-    };
-  }, [poolId]);
-
-  if (!data) {
-    return <span className="text-[11px] text-smoke/70">…</span>;
-  }
-  return (
-    <AprSparkline
-      points={data.points.map((point) => ({ time: point.time, date: point.date, value: point.aprPct }))}
-      nowSeconds={Math.floor(new Date(data.fetchedAt).getTime() / 1000)}
-      label={data.label}
-    />
   );
 }
