@@ -10,6 +10,7 @@ import { formatAmount } from "@sofinance/engine/amount";
 import { notifyPositionHistoryChange } from "@/lib/position-history-refresh";
 import { createJupiterRelayStore, postWithJupiterRelay } from "@/lib/jupiter/browser-relay";
 import type { WithdrawPrepared, WithdrawSummary, WithdrawRequest } from "@sofinance/engine/withdraw/types";
+import { assertWithdrawHistory, readWithdrawHistory, writeWithdrawHistory, WithdrawHistoryError, WITHDRAW_HISTORY_ERROR, type WithdrawCheckpoint as Checkpoint } from "@/lib/withdraw-checkpoint";
 import { prepareIsStale } from "@sofinance/engine/fresh-blockhash";
 
 export const WITHDRAW_EXPIRED_MESSAGE = "Transaction expired before it landed. Retry to prepare a fresh transaction — no funds moved.";
@@ -17,7 +18,6 @@ export const WITHDRAW_EXPIRED_MESSAGE = "Transaction expired before it landed. R
 const REQUEST_TIMEOUT_MS=45_000;
 const RELAYED_PATHS=new Set(["withdraw-quote","withdraw-prepare"]);
 const withdrawJupiterStore=createJupiterRelayStore();
-type Checkpoint = { prepared: WithdrawPrepared; signature: string; request: WithdrawRequest; confirmHighImpact: boolean; root?: {prepared:WithdrawPrepared;signature:string} };
 async function post<T>(path: string, body: unknown): Promise<T> {
  let response:Response;
  try{
@@ -37,11 +37,19 @@ export function WithdrawPanel({wallet,positionMint,mintA,mintB,label,onClose,onB
  const [percent,setPercent]=useState(100),[target,setTarget]=useState(""),[receive,setReceive]=useState("usdc");
  const [preview,setPreview]=useState<WithdrawSummary|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(""),[progress,setProgress]=useState("");
  const [confirmation,setConfirmation]=useState(false),[previewing,setPreviewing]=useState(false);
- const key=`sofinance:withdraw:${wallet}:${positionMint}`;
- const [checkpoint,setCheckpoint]=useState<Checkpoint|null>(()=>{
-  if(typeof window==="undefined")return null;
-  try {return JSON.parse(localStorage.getItem(key) || "null") as Checkpoint|null;}catch{return null;}
- });
+ const [initialHistory]=useState(()=>readWithdrawHistory(wallet,positionMint));
+ const historyRef=useRef(initialHistory);
+ const [checkpoint,setCheckpoint]=useState<Checkpoint|null>(initialHistory.kind==="valid"?initialHistory.checkpoint:null);
+ const [historyError,setHistoryError]=useState(initialHistory.kind==="invalid" || initialHistory.kind==="unavailable"?WITHDRAW_HISTORY_ERROR:"");
+ // Latch uncertain storage mutations until reload; keep the last verified in-memory checkpoint.
+ function guardHistory(){
+  if(historyError)throw new WithdrawHistoryError();
+  assertWithdrawHistory(wallet,positionMint,historyRef.current);
+ }
+ function showError(caught:unknown,fallback:string){
+  if(caught instanceof WithdrawHistoryError)setHistoryError(caught.message);
+  setError(caught instanceof Error?caught.message:fallback);
+ }
  const confirmationRef=useRef<HTMLDialogElement>(null);
  useEffect(()=>{
   const dialog=confirmationRef.current;
@@ -49,7 +57,7 @@ export function WithdrawPanel({wallet,positionMint,mintA,mintB,label,onClose,onB
   if(!confirmation && dialog?.open)dialog.close();
  },[confirmation]);
  const locked=useRef(false);
- useEffect(()=>{onBusyChange(busy || !!checkpoint);return()=>onBusyChange(false);},[busy,checkpoint,onBusyChange]);
+ useEffect(()=>{onBusyChange(busy || !!checkpoint || !!historyError);return()=>onBusyChange(false);},[busy,checkpoint,historyError,onBusyChange]);
  const request:WithdrawRequest={wallet,positionMint,...(target?{targetUSDC:Number(target)}:{percent}),receive:receive==="usdc"?"usdc":receive==="original"?"original":"token",...(receive!=="usdc" && receive!=="original"?{outputMint:receive}:{})};
  function invalidate(){setPreview(null);setError("");setConfirmation(false);}
  const targetInvalid=target!=="" && !(Number.isFinite(Number(target)) && Number(target)>0);
@@ -57,14 +65,20 @@ export function WithdrawPanel({wallet,positionMint,mintA,mintB,label,onClose,onB
   if(locked.current)return;
   if(targetInvalid){setError("Enter a USDC amount above 0, or clear it to use the slider.");return;}
   locked.current=true;setBusy(true);setPreviewing(true);setError("");setProgress("Calculating preview…");
-  try{const result=await post<WithdrawSummary>("withdraw-quote",request);setPreview(result);setPercent(result.percentBps/100);setProgress("Review the preview, then tap Withdraw.");}
-  catch(caught){setProgress("");setError(caught instanceof Error?caught.message:"Preview failed");}
+  try{guardHistory();const result=await post<WithdrawSummary>("withdraw-quote",request);guardHistory();setPreview(result);setPercent(result.percentBps/100);setProgress("Review the preview, then tap Withdraw.");}
+  catch(caught){setProgress("");showError(caught,"Preview failed");}
   finally{setBusy(false);setPreviewing(false);locked.current=false;}
  }
- function save(value:Checkpoint|null){if(value)localStorage.setItem(key,JSON.stringify(value));else localStorage.removeItem(key);setCheckpoint(value);}
+ function save(value:Checkpoint|null){
+  guardHistory();
+  const verified=writeWithdrawHistory(wallet,positionMint,historyRef.current,value);
+  historyRef.current=verified;setCheckpoint(value);
+ }
  async function waitFor(saved:Checkpoint){
   for(let i=0;i<60;i++){
+   guardHistory();
    const result=await post<{status:string}>("withdraw-status",{signature:saved.signature,prepared:saved.prepared});
+   guardHistory();
    if(result.status==="success"){
     notifyPositionHistoryChange(saved.prepared.summary.positionMint,saved.prepared.summary.stage==="swap"?undefined:saved.signature);
     return;
@@ -77,6 +91,7 @@ export function WithdrawPanel({wallet,positionMint,mintA,mintB,label,onClose,onB
   throw new Error("Confirmation is taking longer. Resume to check the same transaction.");
  }
  async function signAndSend(prepared:WithdrawPrepared,confirmed:boolean,originalRequest:WithdrawRequest,root?:Checkpoint["root"]){
+  guardHistory();
   if(connection.address!==wallet)throw new Error("Connect the wallet that owns this position");
   if(Date.now()>=prepared.summary.expiresAt || prepareIsStale(prepared.summary)){
    setProgress("Refreshing transaction…");
@@ -84,6 +99,7 @@ export function WithdrawPanel({wallet,positionMint,mintA,mintB,label,onClose,onB
     ?{...originalRequest,confirmHighImpact:confirmed,stage:"swap",previous:root.prepared,tx1Signature:root.signature}
     :{...originalRequest,confirmHighImpact:confirmed});
   }
+  guardHistory();
   setProgress(prepared.summary.stage==="swap"?"Step 2 of 2: approve conversion in your wallet":"Approve withdrawal in your wallet");
   const unsigned=VersionedTransaction.deserialize(Uint8Array.from(atob(prepared.unsignedTransaction),c=>c.charCodeAt(0)));
   const message=unsigned.message.serialize().slice();
@@ -98,26 +114,28 @@ export function WithdrawPanel({wallet,positionMint,mintA,mintB,label,onClose,onB
  async function run(confirmed=false){
   if(locked.current)return;locked.current=true;setBusy(true);setError("");setConfirmation(false);
   try{
+   guardHistory();
    let saved=checkpoint;
    if(!saved){const prepared=await post<WithdrawPrepared>("withdraw-prepare",{...request,confirmHighImpact:confirmed});saved=await signAndSend(prepared,confirmed,request);}
    await waitFor(saved);
    if(saved.prepared.summary.stage==="withdraw"){
+    guardHistory();
     setProgress("Step 1 of 2 complete. Preparing conversion…");
     const nextRequest={...saved.request,stage:"swap",previous:saved.prepared,tx1Signature:saved.signature,confirmHighImpact:confirmed || saved.confirmHighImpact};
     const nextPreview=await post<WithdrawSummary>("withdraw-quote",nextRequest);
-    setPreview(nextPreview);
+    guardHistory();setPreview(nextPreview);
     if(nextPreview.requiresSecondConfirmation && !nextRequest.confirmHighImpact){setConfirmation(true);setProgress("Confirm the conversion price impact to continue");return;}
     const prepared=await post<WithdrawPrepared>("withdraw-prepare",nextRequest);
     saved=await signAndSend(prepared,confirmed || saved.confirmHighImpact,saved.request,{prepared:saved.prepared,signature:saved.signature});
     await waitFor(saved);
    }
    save(null);setProgress("Withdrawal complete");setPreview(null);onConfirmed();
-  }catch(caught){setProgress("");setError(caught instanceof Error?caught.message:"Withdrawal failed");}
+  }catch(caught){setProgress("");showError(caught,"Withdrawal failed");}
   finally{setBusy(false);locked.current=false;}
  }
- const disabled=busy || !!checkpoint;
+ const disabled=busy || !!checkpoint || !!historyError;
  return <section aria-label="Withdraw from position" className="mt-4 rounded-3xl border border-white/20 bg-char p-5 text-cream">
-  <div className="flex justify-between"><h2>Withdraw from position</h2><button disabled={busy || !!checkpoint} onClick={onClose}>Close</button></div>
+  <div className="flex justify-between"><h2>Withdraw from position</h2><button disabled={disabled} onClick={onClose}>Close</button></div>
   <label className="mt-4 block">Withdraw {percent}%<input type="range" min="1" max="100" step="1" value={percent} disabled={disabled} onChange={e=>{setPercent(Number(e.target.value));setTarget("");invalidate();}} className="block w-full" /></label>
   <label className="mt-3 block">Target USDC estimate<input aria-label="Target USDC estimate" type="number" min="0" value={target} disabled={disabled} onChange={e=>{setTarget(e.target.value);invalidate();}} className="ml-3 rounded bg-canvas p-2" /></label>
   <label className="mt-3 block">Receive<select value={receive} disabled={disabled} onChange={e=>{setReceive(e.target.value);invalidate();}} className="ml-3 rounded bg-canvas p-2">
@@ -139,13 +157,13 @@ export function WithdrawPanel({wallet,positionMint,mintA,mintB,label,onClose,onB
    <p>{preview.transactions===2?"Two steps: withdraw tokens, then convert after confirmation.":"One transaction"}</p>
    {preview.warning && <p role="alert" className="mt-2 text-lemon">This conversion may reduce what you receive by more than 2%.</p>}
   </div>}
-  {error && <p role="alert" className="mt-3 rounded-2xl border border-lemon/60 bg-lemon/10 p-3 text-sm text-lemon">{error}</p>}
+  {(historyError || error) && <p role="alert" className="mt-3 rounded-2xl border border-lemon/60 bg-lemon/10 p-3 text-sm text-lemon">{historyError || error}</p>}
   <p role="status" aria-live="polite" className="mt-3 text-sm text-smoke">{busy && <LoaderCircle aria-hidden className="mr-2 inline h-4 w-4 animate-spin" />}{progress}</p>
-  {checkpoint ? <button disabled={busy} onClick={()=>{if(checkpoint.prepared.summary.requiresSecondConfirmation)setConfirmation(true);else void run();}} className="mt-3 rounded-full bg-lemon px-5 py-3 text-ink">Resume withdrawal</button> : error===WITHDRAW_EXPIRED_MESSAGE ? <button disabled={busy} onClick={()=>void run()} className="mt-3 rounded-full bg-lemon px-5 py-3 text-ink">Retry withdrawal</button> : <>
-   <button type="button" disabled={busy} aria-busy={previewing} onClick={()=>void showPreview()} className="mt-3 rounded-full border px-5 py-3 disabled:opacity-50">{previewing?"Calculating…":"Preview"}</button>
+  {checkpoint ? <button disabled={busy || !!historyError} onClick={()=>{if(checkpoint.prepared.summary.requiresSecondConfirmation)setConfirmation(true);else void run();}} className="mt-3 rounded-full bg-lemon px-5 py-3 text-ink">Resume withdrawal</button> : error===WITHDRAW_EXPIRED_MESSAGE ? <button disabled={busy || !!historyError} onClick={()=>void run()} className="mt-3 rounded-full bg-lemon px-5 py-3 text-ink">Retry withdrawal</button> : <>
+   <button type="button" disabled={busy || !!historyError} aria-busy={previewing} onClick={()=>void showPreview()} className="mt-3 rounded-full border px-5 py-3 disabled:opacity-50">{previewing?"Calculating…":"Preview"}</button>
    {/* Without a preview, Withdraw fetches one first so the tap is never silent; a second tap confirms. */}
-   <button type="button" disabled={busy} aria-busy={busy && !previewing} onClick={()=>{if(!preview)void showPreview();else if(preview.requiresSecondConfirmation)setConfirmation(true);else void run();}} className="ml-3 rounded-full bg-lemon px-5 py-3 text-ink disabled:opacity-50">{busy && !previewing?"Withdrawing…":"Withdraw"}</button>
+   <button type="button" disabled={busy || !!historyError} aria-busy={busy && !previewing} onClick={()=>{if(!preview)void showPreview();else if(preview.requiresSecondConfirmation)setConfirmation(true);else void run();}} className="ml-3 rounded-full bg-lemon px-5 py-3 text-ink disabled:opacity-50">{busy && !previewing?"Withdrawing…":"Withdraw"}</button>
   </>}
-  <dialog ref={confirmationRef} role="alertdialog" aria-label="Confirm high price impact" onCancel={event=>{event.preventDefault();setConfirmation(false);}} onClose={()=>setConfirmation(false)} className="fixed left-1/2 top-1/2 m-0 w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-lemon bg-char p-5 text-cream backdrop:bg-black/70"><p>Price impact exceeds 5%. You may receive substantially less. Continue with this conversion?</p><button onClick={()=>void run(true)} className="mt-3 rounded bg-lemon p-2 text-ink">Confirm high price impact</button><button onClick={()=>setConfirmation(false)} className="ml-3">Cancel</button></dialog>
+  <dialog ref={confirmationRef} role="alertdialog" aria-label="Confirm high price impact" onCancel={event=>{event.preventDefault();setConfirmation(false);}} onClose={()=>setConfirmation(false)} className="fixed left-1/2 top-1/2 m-0 w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-lemon bg-char p-5 text-cream backdrop:bg-black/70"><p>Price impact exceeds 5%. You may receive substantially less. Continue with this conversion?</p><button disabled={busy || !!historyError} onClick={()=>void run(true)} className="mt-3 rounded bg-lemon p-2 text-ink">Confirm high price impact</button><button onClick={()=>setConfirmation(false)} className="ml-3">Cancel</button></dialog>
  </section>;
 }
