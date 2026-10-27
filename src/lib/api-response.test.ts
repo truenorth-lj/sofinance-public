@@ -327,3 +327,54 @@ it("scrubs raw transactionError serialization while the logger masks the origina
   expect(error.transactionError).toBe(r4Structured);
   expect(JSON.stringify(r4Structured)).toContain(r4Secret);
 });
+
+const keyPolicyKeys = ["api-key", "%61pi-key", "%2561pi-key", "%252561pi-key",
+  "%FF%61pi-key", "%2525252561pi-key", "%GGpi-key", "%6", String.raw`api\u002dkey`];
+const keyPolicyMarker = "KEY5_MARK_9";
+const keyPolicyShapes = { scalar: keyPolicyMarker, array: ["prefix", keyPolicyMarker],
+  object: { nested: [keyPolicyMarker] } };
+const keyPolicyLocations = ["transactionError", "cause", "headers", "compoundCause", "plainThrown", "crossTick", "serialized"];
+it.each(keyPolicyKeys.flatMap((key) => Object.entries(keyPolicyShapes).flatMap(([shape, value]) =>
+  keyPolicyLocations.map((location) => ({ key, shape, value, location })))))(
+  "key policy $key / $shape / $location protects actual API sinks", async ({ key, value, location }) => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    const headers = Object.freeze({ [key]: value, "content-type": "application/json" });
+    const payload = Object.freeze({ headers, code: "E_UPSTREAM", design: "retry" });
+    const inputBytes = JSON.stringify(payload);
+    let error: unknown = Object.assign(new TypeError("provider failed"), {
+      code: "E_UPSTREAM", stack: "TypeError: provider failed\n    at keyPolicy (/app/policy.ts:4:2)",
+    });
+    switch (location) {
+      case "transactionError": Object.assign(error as Error, { transactionError: payload }); break;
+      case "cause": (error as Error).cause = payload; break;
+      case "headers": Object.assign(error as Error, { headers }); break;
+      case "compoundCause": error = new CompoundSendError(Object.assign(error as Error, { transactionError: payload })); break;
+      case "plainThrown": error = payload; break;
+      case "crossTick": Object.assign(error as Error, { message: "cross-tick depth", transactionError: payload }); break;
+      case "serialized": (error as Error).message = inputBytes; break;
+    }
+    const response = apiError(error, "Request failed");
+    const body = await response.json();
+    const calls = vi.spyOn(console, "error").mock.calls;
+    const output = inspect([calls, info.mock.calls], { depth: null, customInspect: false });
+    expect(output).not.toContain(keyPolicyMarker);
+    expect(JSON.stringify(body)).not.toContain(keyPolicyMarker);
+    expect(response.status).toBe(400);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(body.sent).toBeUndefined();
+    expect(body.error.length).toBeLessThanOrEqual(220);
+    expect(calls).toHaveLength(1);
+    if (location !== "serialized") {
+      expect(output).toContain("application/json");
+      expect(Object.getPrototypeOf(calls[0]?.[1])).toBeNull();
+    }
+    expect(output).toContain("E_UPSTREAM");
+    if (location !== "plainThrown") {
+      expect(output).toContain("TypeError");
+      expect(output).toContain("/app/policy.ts:4:2");
+    }
+    if (location === "crossTick") expect(body.error).toBe(CROSS_TICK_USER_MESSAGE);
+    expect(JSON.stringify(payload)).toBe(inputBytes);
+    expect(headers[key]).toBe(value);
+  },
+);

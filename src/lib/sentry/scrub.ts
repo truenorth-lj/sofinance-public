@@ -2,7 +2,7 @@ const URL_RE = /https?:\/\/[^\s"'\\]+/gi;
 const ENCODED_URL_RE = /https?%3A%2F%2F[^\s"'\\&]*/gi;
 // Also consume non-key JSON strings as tokens: assignments/schemes inside them
 // must wait for string decoding, or escaped whitespace can split credentials.
-const DIAGNOSTIC_TOKEN_RE = /(?<![\w-])(?:"((?:\\.|[^"\\])*)"|'((?:\\.|[^'\\])*)'|([\w-]+))\s*[:=]\s*|(?<![\w-])(?:Basic|Bearer)\s+|"(?:\\[\s\S]|[^"\\])*"/gi;
+const DIAGNOSTIC_TOKEN_RE = /(?<![\w%\\-])(?:"((?:\\.|[^"\\])*)"|'((?:\\.|[^'\\])*)'|([\w%\\-]+))\s*[:=]\s*|(?<![\w-])(?:Basic|Bearer)\s+|"(?:\\[\s\S]|[^"\\])*"/gi;
 const JSON_STRING_RE = /"(?:\\[\s\S]|[^"\\])*"/g;
 const MAX_TEXT_LENGTH = 65_536;
 const MAX_JSON_STRING_DEPTH = 4;
@@ -23,18 +23,47 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return proto === Object.prototype || proto === null;
 }
 
+type KeyPolicy =
+  | { status: "safe" | "sensitive"; key: string }
+  | { status: "invalid" | "unsupported" };
+type KeyContext = "object" | "header" | "ip" | "text";
+
+/** Classify while the key still owns its value. Rendering a placeholder is not
+ * evidence that the associated subtree is safe. Percent decoding is bounded;
+ * raw backslash escapes are unsupported (JSON tokens decode them before here).
+ */
+export function classifyDiagnosticKey(name: string, context: KeyContext = "object"): KeyPolicy {
+  if (name.length > MAX_TEXT_LENGTH) return { status: "unsupported" };
+  let key = name;
+  for (let round = 0; round < 3 && /%[0-9a-f]{2}/i.test(key); round += 1) {
+    try {
+      key = key.replace(/(?:%[0-9a-f]{2})+/gi, (run) => decodeURIComponent(run));
+    } catch {
+      return { status: "invalid" };
+    }
+  }
+  if (/%[0-9a-f]{2}/i.test(key) || key.includes("\\")) return { status: "unsupported" };
+  if (key.includes("%")) return { status: "invalid" };
+  // Keys with diagnostic syntax cannot be safely treated as one label. Do not
+  // let later text rendering turn such a key into a label without its value.
+  if (/[\s"'=:{},\[\]\u0000-\u001f\u007f]/.test(key)) return { status: "unsupported" };
+  const header = key.toLowerCase().startsWith("x-vercel-") || NAMED_SENSITIVE_HEADER_RE.test(key) || SECRET_KEY_RE.test(key);
+  const ip = IP_ENV_SEGMENT_RE.test(key);
+  const sensitive = context === "ip" ? ip : header ||
+    (context === "object" && ip) || (context === "text" && key.toLowerCase() === "sig");
+  return { status: sensitive ? "sensitive" : "safe", key };
+}
+
 export function isSensitiveHeaderName(name: unknown): boolean {
-  if (typeof name !== "string") return false;
-  const key = name.toLowerCase();
-  return key.startsWith("x-vercel-") || NAMED_SENSITIVE_HEADER_RE.test(key) || SECRET_KEY_RE.test(key);
+  return typeof name === "string" && classifyDiagnosticKey(name, "header").status !== "safe";
 }
 
 export function isSensitiveIpEnvKey(name: unknown): boolean {
-  return typeof name === "string" && IP_ENV_SEGMENT_RE.test(name);
+  return typeof name === "string" && classifyDiagnosticKey(name, "ip").status !== "safe";
 }
 
 export function isSensitiveObjectKey(name: unknown): boolean {
-  return isSensitiveHeaderName(name) || isSensitiveIpEnvKey(name);
+  return typeof name === "string" && classifyDiagnosticKey(name).status !== "safe";
 }
 
 /** Strip credentials and provider URLs while preserving public account identifiers. */
@@ -140,19 +169,9 @@ function scrubAssignments(text: string): string {
     if (match[1]?.includes("\\")) {
       try { key = JSON.parse(`"${match[1]}"`); } catch { return REDACTED; }
     }
-    // Decode a key while it still owns its value. Replacing an unsupported
-    // encoded key with a placeholder first would orphan the sensitive subtree.
-    if (key && /%[0-9a-f]{2}/i.test(key)) {
-      for (let i = 0; i < 3; i += 1) {
-        try { key = key.replace(/(?:%[0-9a-f]{2})+/gi, (run) => decodeURIComponent(run)); }
-        catch { return REDACTED; }
-      }
-      if (/%[0-9a-f]{2}/i.test(key)) return REDACTED;
-    }
-    // Use the same complete-key segment policy as structured headers. `sig` is
-    // the existing text-only shorthand; ordinary design/mytoken stay readable.
-    if (key ? !isSensitiveHeaderName(key) && key.toLowerCase() !== "sig"
-      : !/^(?:Basic|Bearer)\s/i.test(match[0])) continue;
+    const policy = key !== undefined ? classifyDiagnosticKey(key, "text") : undefined;
+    if (policy?.status === "invalid" || policy?.status === "unsupported") return REDACTED;
+    if (policy ? policy.status === "safe" : !/^(?:Basic|Bearer)\s/i.test(match[0])) continue;
     const start = match.index + match[0].length;
     const end = credentialValueEnd(text, start);
     if (end === null) return REDACTED;
@@ -183,36 +202,62 @@ export function scrubSensitiveText<T>(text: T): T {
   return text;
 }
 
-export function scrubUnknown<T>(value: T, seen = new WeakSet<object>()): T {
+const MAX_OBJECT_DEPTH = 8;
+const MAX_OBJECT_ENTRIES = 50;
+
+/** Copy only descriptor values, never live hooks or accessors. Key policy runs
+ * before value access, including headers; sensitive subtrees are never visited.
+ */
+function scrubStructured(value: unknown, seen: WeakSet<object>, depth: number, headers = false): unknown {
   if (typeof value === "string") return scrubSensitiveText(value);
-  if (value === null || value === undefined || typeof value !== "object") return value;
-  if (seen.has(value)) return "[redacted]" as T;
+  if (typeof value === "function" || typeof value === "symbol") return "[redacted]";
+  if (value === null || typeof value !== "object") return value;
+  if (seen.has(value)) return "[redacted]";
+  if (depth >= MAX_OBJECT_DEPTH) return "[truncated]";
   seen.add(value);
-  if (Array.isArray(value)) return value.map((item) => scrubUnknown(item, seen)) as T;
-  if (!isPlainObject(value)) return value;
-  const next: Record<string, unknown> = {};
-  for (const [key, nested] of Object.entries(value)) {
-    next[key] = isSensitiveObjectKey(key) ? "[redacted]" : scrubUnknown(nested, seen);
+  try {
+    const read = (key: string): unknown => {
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (!descriptor) return undefined;
+      return "value" in descriptor ? scrubStructured(descriptor.value, seen, depth + 1) : "[unavailable]";
+    };
+    if (Array.isArray(value)) {
+      const items = Array.from({ length: Math.min(value.length, MAX_OBJECT_ENTRIES) }, (_, i) => read(String(i)));
+      if (value.length > MAX_OBJECT_ENTRIES) items.push("[truncated]");
+      return items;
+    }
+    const next: Record<string, unknown> = Object.create(null);
+    const keys = Object.keys(value);
+    for (const key of keys.slice(0, MAX_OBJECT_ENTRIES)) {
+      const policy = classifyDiagnosticKey(key);
+      const displayKey = "key" in policy ? scrubSensitiveText(policy.key) : REDACTED;
+      if (policy.status === "safe") {
+        next[displayKey] = read(key);
+      } else {
+        next[displayKey] = "[redacted]";
+        // Preserve the existing header-array shape without reading its elements
+        // or calling a user-supplied map/getter. Never traverse a hidden value.
+        if (headers && policy.status === "sensitive") {
+          const descriptor = Object.getOwnPropertyDescriptor(value, key);
+          if (descriptor && "value" in descriptor && Array.isArray(descriptor.value)) {
+            next[displayKey] = Array.from({ length: Math.min(descriptor.value.length, MAX_OBJECT_ENTRIES) }, () => "[redacted]");
+          }
+        }
+      }
+    }
+    if (keys.length > MAX_OBJECT_ENTRIES) next.truncated = true;
+    return next;
+  } catch {
+    return "[unavailable]";
   }
-  return next as T;
 }
 
-function scrubHeaderValue(key: string, value: unknown): unknown {
-  if (isSensitiveHeaderName(key)) {
-    return Array.isArray(value) ? value.map(() => "[redacted]") : "[redacted]";
-  }
-  return scrubUnknown(value);
+export function scrubUnknown<T>(value: T, seen = new WeakSet<object>()): T {
+  return scrubStructured(value, seen, 0) as T;
 }
 
 function scrubHeaders(headers: unknown): unknown {
-  if (typeof headers === "string") return scrubSensitiveText(headers);
-  if (Array.isArray(headers)) return scrubUnknown(headers);
-  if (!isPlainObject(headers)) return headers;
-  const next: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(headers)) {
-    next[key] = scrubHeaderValue(key, value);
-  }
-  return next;
+  return scrubStructured(headers, new WeakSet<object>(), 0, true);
 }
 
 export type ScrubableSentryEvent = {
@@ -268,12 +313,7 @@ export function scrubSentryEvent<T>(event: T): T {
       if (text !== undefined) value.value = scrubSensitiveText(text);
     }
   }
-  if (isPlainObject(target.tags)) {
-    for (const [key, value] of Object.entries(target.tags)) {
-      if (key === "route" || key === "error_class") continue;
-      if (typeof value === "string") target.tags[key] = scrubSensitiveText(value);
-    }
-  }
+  if (target.tags !== undefined) target.tags = scrubUnknown(target.tags);
   if (target.extra !== undefined) target.extra = scrubUnknown(target.extra) as ScrubableSentryEvent["extra"];
   if (target.contexts !== undefined) target.contexts = scrubUnknown(target.contexts) as ScrubableSentryEvent["contexts"];
   if (target.breadcrumbs !== undefined) target.breadcrumbs = scrubBreadcrumbs(target.breadcrumbs);
@@ -298,6 +338,7 @@ export function minimalSentryEvent<T>(event: T): T {
   const next = event as T & ScrubableSentryEvent;
   next.user = undefined;
   next.extra = undefined;
+  next.contexts = undefined;
   next.breadcrumbs = undefined;
   try {
     const message = asString(next.message);

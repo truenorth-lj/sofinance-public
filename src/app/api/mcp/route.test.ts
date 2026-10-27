@@ -459,3 +459,24 @@ describe("complete structured credentials at the HTTP tool boundary", () => {
     if ("transactionError" in error && !(error instanceof SendTransactionError)) expect(text).toContain("E_UPSTREAM");
   });
 });
+
+it.each(["api-key", "%61pi-key", "%2561pi-key", "%252561pi-key", "%FF%61pi-key",
+  "%2525252561pi-key", "%GGpi-key", "%6", String.raw`api\u002dkey`].flatMap((key) =>
+  ["KEY5_MARK_9", ["prefix", "KEY5_MARK_9"], { nested: ["KEY5_MARK_9"] }].map((value, shape) => ({ key, value, shape }))))(
+  "HTTP key policy $key / $shape: paired raw and serialized diagnostics", async ({ key, value }) => {
+    const data = { headers: { [key]: value }, code: "E_UPSTREAM" };
+    const before = JSON.stringify(data);
+    for (const error of [Object.assign(new Error("provider failed"), { transactionError: data }), new Error(before)]) {
+      toolFns.listRwaPairs!.mockRejectedValue(error);
+      const { response, json } = await callTool("list_rwa_pairs", {});
+      expect(response.status).toBe(200);
+      expect(json.result.isError).toBe(true);
+      const text = json.result.content[0].text as string;
+      expect(text).not.toContain("KEY5_MARK_9");
+      const body = JSON.parse(text);
+      expect(body.error.length).toBeLessThanOrEqual(220);
+      expect(body.sent).toBeUndefined();
+    }
+    expect(JSON.stringify(data)).toBe(before);
+  },
+);

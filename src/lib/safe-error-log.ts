@@ -1,5 +1,5 @@
 // These scrubbers are pure and do not import or initialize the Sentry SDK.
-import { isSensitiveObjectKey, scrubSensitiveText } from "./sentry/scrub";
+import { classifyDiagnosticKey, scrubSensitiveText } from "./sentry/scrub";
 
 type LogValue = string | number | boolean | null | undefined | LogValue[] | { [key: string]: LogValue };
 const MAX_DEPTH = 8;
@@ -43,7 +43,9 @@ function snapshot(value: unknown, seen = new WeakSet<object>(), depth = 0): LogV
     const keys = Object.keys(value);
     for (const key of keys.slice(0, MAX_ENTRIES)) {
       if (Object.hasOwn(result, key)) continue;
-      result[scrubSensitiveText(key)] = isSensitiveObjectKey(key) ? "[redacted]" : read(key);
+      const policy = classifyDiagnosticKey(key);
+      const displayKey = "key" in policy ? scrubSensitiveText(policy.key) : "[redacted-secret]";
+      result[displayKey] = policy.status === "safe" ? read(key) : "[redacted]";
     }
     if (keys.length > MAX_ENTRIES) result.truncated = true;
     return result;

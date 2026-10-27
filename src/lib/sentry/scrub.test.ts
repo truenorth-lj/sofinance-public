@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  classifyDiagnosticKey,
   isSensitiveHeaderName,
   isSensitiveIpEnvKey,
   minimalSentryEvent,
@@ -469,4 +470,102 @@ describe("complete sensitive diagnostic values", () => {
     expect(scrubCredentialText(raw)).toBe(raw);
     expect(scrubCredentialText("progress 50% — %E4%B8%AD%E6%96%87")).toBe("progress 50% — 中文");
   });
+});
+
+// Pair raw objects with text, since serialization used to change key safety.
+describe("raw encoded-key policy across Sentry structured paths", () => {
+  const marker = "KEY5_MARK_9";
+  const keys = ["api-key", "%61pi-key", "%2561pi-key", "%252561pi-key", "%FF%61pi-key",
+    "%2525252561pi-key", "%GGpi-key", "%6", String.raw`api\u002dkey`];
+  const shapes = { scalar: marker, array: [marker], object: { nested: [marker] }, number: 123, nil: null };
+  it.each(keys.flatMap((key) => Object.entries(shapes).map(([shape, value]) => ({ key, shape, value }))))(
+    "redacts the entire $key / $shape value in every structured data sink", ({ key, value }) => {
+      const data = Object.freeze({ [key]: value, design: "retry", "content-type": "application/json" });
+      const before = Object.getOwnPropertyDescriptors(data);
+      const event = scrubSentryEvent({ extra: data, contexts: data, tags: { ...data, route: "/api/test", error_class: "TypeError" },
+        request: { headers: data, query_string: data, env: data, data },
+        breadcrumbs: [{ message: "provider failed", data }] });
+      for (const output of [scrubUnknown(data), event.extra, event.contexts, event.tags,
+        event.request.headers, event.request.query_string, event.request.env, event.breadcrumbs[0]?.data]) {
+        expect(JSON.stringify(output)).not.toContain(marker);
+        expect(output).toMatchObject({ design: "retry", "content-type": "application/json" });
+        const protectedValues = Object.entries(output!).filter(([k]) => k !== "design" && k !== "content-type" && k !== "route" && k !== "error_class");
+        expect(protectedValues).toHaveLength(1);
+        expect(JSON.stringify(protectedValues[0]?.[1])).toMatch(/^"\[redacted\]"$|^\["\[redacted\]"\]$/);
+      }
+      expect(event.tags).toMatchObject({ route: "/api/test", error_class: "TypeError" });
+      expect(event.request.data).toBeUndefined();
+      expect(scrubCredentialText(JSON.stringify(data))).not.toContain(marker);
+      expect(Object.getOwnPropertyDescriptors(data)).toEqual(before);
+    },
+  );
+
+  it("keeps normal keys, including supported encoded keys, without conflating display masking with classification", () => {
+    const data = { "%64esign": "retry", description: "normal", zip: "94107", tokenizer: "ready", mytoken: "missing" };
+    const result = scrubUnknown(data);
+    expect(result).toMatchObject({ design: "retry", description: "normal", zip: "94107", tokenizer: "ready", mytoken: "missing" });
+    expect(scrubCredentialText("progress 50%; 2+2=4")).toBe("progress 50%; 2+2=4");
+  });
+
+  it("never reads sensitive or ordinary accessors, array getters, toJSON or prototype setters", () => {
+    let reads = 0;
+    const getter = () => { reads += 1; return marker; };
+    const array = Object.defineProperty([], "0", { get: getter, enumerable: true });
+    const data = Object.create(null);
+    Object.defineProperties(data, {
+      "%61pi-key": { get: getter, enumerable: true },
+      "%FF": { get: getter, enumerable: true },
+      safeAccessor: { get: getter, enumerable: true },
+      design: { value: "retry", enumerable: true },
+      array: { value: array, enumerable: true },
+      toJSON: { value: getter, enumerable: true },
+      ["__proto__"]: { value: { keep: "safe" }, enumerable: true },
+    });
+    const before = Object.getOwnPropertyDescriptors(data);
+    const result = scrubUnknown(data);
+    expect(Object.getPrototypeOf(result)).toBeNull();
+    expect(result.design).toBe("retry");
+    expect(result.safeAccessor).toBe("[unavailable]");
+    expect(result.array).toEqual(["[unavailable]"]);
+    expect(result["__proto__"]).toEqual({ keep: "safe" });
+    expect(JSON.stringify(result)).not.toContain(marker);
+    expect(reads).toBe(0);
+    expect(Object.getOwnPropertyDescriptors(data)).toEqual(before);
+  });
+
+  it("bounds cycles, depth and width in structured data and drops contexts in the fallback", () => {
+    const cyclic: Record<string, unknown> = { design: "retry" };
+    cyclic.self = cyclic;
+    expect(scrubUnknown(cyclic)).toEqual({ design: "retry", self: "[redacted]" });
+    let deep: unknown = { "%61pi-key": marker };
+    for (let i = 0; i < 100; i++) deep = { child: deep };
+    expect(JSON.stringify(scrubUnknown(deep))).toContain("[truncated]");
+    expect(scrubUnknown(Array.from({ length: 100 }, () => "safe"))).toHaveLength(51);
+    const event = minimalSentryEvent({ contexts: { "%61pi-key": marker }, message: "provider failed" });
+    expect(event.contexts).toBeUndefined();
+  });
+});
+
+
+describe("bounded diagnostic key classification", () => {
+  it.each([
+    ["api-key", "sensitive"], ["%61pi-key", "sensitive"], ["%2561pi-key", "sensitive"],
+    ["%252561pi-key", "sensitive"], ["%25252561pi-key", "unsupported"],
+    ["%FF%61pi-key", "invalid"], ["%GGpi-key", "invalid"], ["%6", "invalid"],
+    ["%20api-key", "unsupported"], ["api-key%00", "unsupported"], ["api-key%3Dlabel", "unsupported"],
+    ["%22api-key%22", "unsupported"], ["%5Cu0061pi-key", "unsupported"],
+    ["x".repeat(65_537), "unsupported"], ["%64esign", "safe"], ["description", "safe"], ["中文", "safe"],
+  ])("classifies key %# with explicit status %s", (key, status) => {
+    expect(classifyDiagnosticKey(key).status).toBe(status);
+    if (status !== "safe") {
+      const data = { [key]: { nested: ["KEY5_MARK_9"] }, design: "retry" };
+      expect(JSON.stringify(scrubUnknown(data))).not.toContain("KEY5_MARK_9");
+      expect(scrubCredentialText(JSON.stringify(data))).not.toContain("KEY5_MARK_9");
+    }
+  });
+  it.each(["%GGpi-key", "%6", "%61pi-key", "%FF%61pi-key", "%25252561pi-key"])(
+    "does not tokenize just the suffix of an unquoted encoded label %s", (key) => {
+      expect(scrubCredentialText(`${key}=["KEY5_MARK_9"]; code=E_UPSTREAM`)).not.toContain("KEY5_MARK_9");
+    },
+  );
 });

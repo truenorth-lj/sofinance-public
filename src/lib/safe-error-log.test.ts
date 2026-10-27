@@ -131,3 +131,33 @@ it("bounds deep cause chains and wide arrays", () => {
   expect(logged()).not.toContain(secret);
   expect(logged()).toContain("[truncated]");
 });
+
+it.each(["%61pi-key", "%FF%61pi-key", "%2525252561pi-key", "%GGpi-key"])(
+  "classifies %s before reading a value or invoking any diagnostic hook", (key) => {
+    const getter = vi.fn(() => secret);
+    const toJSON = vi.fn(() => secret);
+    const hook = vi.fn(() => secret);
+    const details = Object.create(null);
+    Object.defineProperties(details, {
+      [key]: { enumerable: true, get: getter },
+      design: { enumerable: true, value: "retry" },
+      status: { enumerable: true, get: getter },
+      toJSON: { enumerable: true, value: toJSON },
+      [inspect.custom]: { value: hook },
+      ["__proto__"]: { enumerable: true, value: { keep: "safe" } },
+    });
+    const descriptors = Object.getOwnPropertyDescriptors(details);
+    logSafeError("Failed", new Error("provider failed", { cause: details }));
+    const snapshot = vi.spyOn(console, "error").mock.calls[0]?.[1].cause;
+    expect(Object.getPrototypeOf(snapshot)).toBeNull();
+    expect(snapshot.design).toBe("retry");
+    expect(snapshot.status).toBe("[unavailable]");
+    expect(snapshot["__proto__"]).toEqual({ keep: "safe" });
+    expect(Object.values(snapshot)).toContain("[redacted]");
+    expect(logged()).not.toContain(secret);
+    expect(getter).not.toHaveBeenCalled();
+    expect(toJSON).not.toHaveBeenCalled();
+    expect(hook).not.toHaveBeenCalled();
+    expect(Object.getOwnPropertyDescriptors(details)).toEqual(descriptors);
+  },
+);
