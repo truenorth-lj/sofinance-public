@@ -4,6 +4,8 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import { NextRequest } from "next/server";
+import { createHmac } from "node:crypto";
+import { deflateSync } from "node:zlib";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const backend = vi.hoisted(() => ({ discover: vi.fn(), selectedQuote: vi.fn(), selectedBuild: vi.fn(), compound: vi.fn(),
   openQuote: vi.fn(), openBuild: vi.fn(), withdraw: vi.fn(), pairs: vi.fn(), performance: vi.fn(), activity: vi.fn(), range: vi.fn(), rpc: vi.fn() }));
@@ -78,12 +80,30 @@ function io() {
   return Object.entries(backend).flatMap(([name, fn]) => fn.mock.calls.map((args, i) => ({ name, args, order: fn.mock.invocationCallOrder[i]! })))
     .sort((a, b) => a.order - b.order).map(({ name, args }) => ({ name, args }));
 }
+async function snapshotResult(result: Awaited<ReturnType<typeof call>>) {
+  const first = result.content[0];
+  if (first?.type !== "text") return result;
+  const value = JSON.parse(first.text);
+  if (typeof value.signToken !== "string") return result;
+  const token: string = value.signToken;
+  const payload = await verifySignToken(token, SIGNING_SECRET);
+  expect(payload).not.toBeNull();
+  expect(value.signUrl).toBe(`https://app.invalid.example/app/sign/${token}`);
+  expect(await verifySignToken(token, `${SIGNING_SECRET}-wrong`)).toBeNull();
+  const tampered = `${token[0] === "A" ? "B" : "A"}${token.slice(1)}`;
+  expect(await verifySignToken(tampered, SIGNING_SECRET)).toBeNull();
+  // Deflate output varies between Node/zlib builds. Retain the entire authenticated
+  // payload and all surrounding response bytes, rather than snapshotting compression.
+  const normalized = `verified-payload:${Buffer.from(JSON.stringify(payload)).toString("base64url")}`;
+  return { ...result, content: [{ ...first, text: first.text.replaceAll(token, normalized) }, ...result.content.slice(1)] };
+}
 for (const surface of ["http", "stdio"] as const) describe(`${surface} real read/prepare handlers`, () => {
-  it.each(names)("%s preserves backend arguments, count/order and full response bytes", async name => {
+  it.each(names)("%s preserves backend arguments, count/order, response and authenticated sign payload", async name => {
     const result = await call(surface, name, { ...VALID_ARGS[name], ignored: "stripped" });
     expect(result.isError).toBeUndefined();
     expect(io().map(item => item.name)).toEqual(expectedIO[name]);
-    expect({ result, io: io() }).toMatchSnapshot();
+    const normalized = await snapshotResult(result);
+    expect({ result: normalized, io: io() }).toMatchSnapshot();
     const first = result.content[0];
     if (first?.type === "text") {
       const value = JSON.parse(first.text);
@@ -92,6 +112,12 @@ for (const surface of ["http", "stdio"] as const) describe(`${surface} real read
         expect(payload?.unsignedTransaction).toBe(toBase64(transaction));
         expect(payload?.wallet).toBe(wallet);
         if (name !== "prepare_transaction") expect(payload?.submitArgs.summary).toEqual(summary);
+        // A different valid compression stream must preserve the same contract.
+        const data = deflateSync(Buffer.from(JSON.stringify(payload)), { level: 0 }).toString("base64url");
+        const alternate = `${createHmac("sha256", SIGNING_SECRET).update(data).digest("base64url")}.${data}`;
+        expect(alternate).not.toBe(value.signToken);
+        const alternateResult = { ...result, content: [{ ...first, text: first.text.replaceAll(value.signToken, alternate) }, ...result.content.slice(1)] };
+        expect(await snapshotResult(alternateResult)).toEqual(normalized);
       }
     }
   });
