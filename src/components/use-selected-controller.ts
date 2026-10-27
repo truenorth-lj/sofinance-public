@@ -444,8 +444,9 @@ export function useSelectedController() {
       window.clearTimeout(deadline); submittingRef.current = false;
       if (ownsLifetime() && walletRef.current === wallet && attemptSignatureRef.current === null) attemptSignatureRef.current = attempt?.signature ?? null;
       // Keep the synchronous lock until this run settles, including effect replay.
-      // A reconnected lifetime can unlock here; no newer run can own the stage yet.
-      if (lifetimeRef.current) setSubmitStage(null);
+      // Clear retained state even while effects are disconnected; no newer run
+      // can own the stage yet. React ignores this after a true unmount.
+      setSubmitStage(null);
     }
   }
 

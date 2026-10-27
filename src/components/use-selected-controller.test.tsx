@@ -635,3 +635,79 @@ it("lifecycle: late status cannot notify after unmount; a new controller can con
   expect(calls("/api/selected-broadcast")).toHaveLength(0);
   expect(mocks.sign).not.toHaveBeenCalled();
 });
+
+async function activityMount() {
+  await act(async () => root.unmount());
+  root = createRoot(document.createElement("div"));
+  const render = (mode: "visible" | "hidden") => root.render(
+    <StrictMode><Activity mode={mode}><Harness /></Activity></StrictMode>);
+  await act(async () => render("visible"));
+  await advance(100); await advance(100); await ready();
+  return render;
+}
+
+it.each(["prepare-ok", "prepare-error", "sign-ok", "sign-error"])(
+  "lifecycle: settlement while hidden must allow a fresh explicit operation (%s)", async phase => {
+    const render = await activityMount();
+    const prep = deferred<Response>(); const sig = deferred<VersionedTransaction>();
+    const handler = fetchMock.getMockImplementation()!;
+    let response!: Response; let tx!: VersionedTransaction;
+    fetchMock.mockImplementation(async (url, init) => {
+      if (url === "/api/selected-prepare") {
+        response = await handler(url, init); return phase.startsWith("prepare") ? prep.promise : response;
+      }
+      return handler(url, init);
+    });
+    mocks.sign.mockImplementation((input: VersionedTransaction) => {
+      tx = input;
+      if (!phase.startsWith("prepare")) return sig.promise;
+      input.signatures[0] = new Uint8Array(64).fill(1);
+      return Promise.resolve(input);
+    });
+    await act(async () => controller.primaryAction());
+    expect(controller.busy).toBe(true);
+    await act(async () => render("hidden"));
+    await act(async () => {
+      if (phase === "prepare-ok") prep.resolve(response);
+      if (phase === "prepare-error") prep.reject(new Error("Old prepare failure"));
+      if (phase === "sign-ok") { tx.signatures[0] = new Uint8Array(64).fill(1); sig.resolve(tx); }
+      if (phase === "sign-error") sig.reject(new Error("Old wallet rejection"));
+    });
+    expect.soft(calls("/api/selected-broadcast")).toHaveLength(0);
+    expect.soft(storageContents()).toEqual({});
+    fetchMock.mockImplementation(handler); signNormally();
+    await act(async () => render("visible")); await advance(100); await advance(100);
+    expect.soft(controller.busy).toBe(false);
+    expect.soft(controller.error).toBe("");
+    await act(async () => controller.changeAmount("0.02")); await advance(500);
+    expect.soft(controller.actionDisabled).toBe(false);
+    await act(async () => controller.primaryAction());
+    expect.soft(calls("/api/selected-prepare")).toHaveLength(2);
+    expect.soft(calls("/api/selected-broadcast")).toHaveLength(1);
+  });
+
+it.each(["accepted", "rejected", "lost"])("lifecycle: durable %s settlement while hidden must resume status without resend", async result => {
+  const render = await activityMount(); const send = deferred<Response>();
+  const handler = fetchMock.getMockImplementation()!; signNormally();
+  fetchMock.mockImplementation((url,init) => url === "/api/selected-broadcast" ? send.promise : handler(url,init));
+  await act(async () => controller.primaryAction());
+  expect(calls("/api/selected-broadcast")).toHaveLength(1);
+  const before = storageContents(); const raw = window.localStorage.getItem(selectedAttemptKey(wallet));
+  await act(async () => render("hidden"));
+  await act(async () => {
+    if (result === "lost") send.reject(new Error("Synthetic lost reply"));
+    else send.resolve(result === "accepted" ? Response.json({signature:syntheticSignature}) : Response.json({error:"synthetic reject", sent:false},{status:503}));
+  });
+  expect(storageContents()).toEqual(before);
+  fetchMock.mockImplementation(handler);
+  const statusBefore = calls("/api/selected-status").length;
+  await act(async () => render("visible")); await advance(100); await advance(100); await advance(4000);
+  expect.soft(controller.busy).toBe(false);
+  expect.soft(calls("/api/selected-status").length).toBeGreaterThan(statusBefore);
+  expect(window.localStorage.getItem(selectedAttemptKey(wallet))).toBe(raw);
+  expect(calls("/api/selected-broadcast")).toHaveLength(1);
+  expect(mocks.sign).toHaveBeenCalledOnce();
+  expect(controller.attempt?.signature).toBe(syntheticSignature);
+  await act(async () => controller.changeAmount("0.02")); await advance(500);
+  expect.soft(controller.actionDisabled).toBe(false);
+});
