@@ -1,0 +1,14 @@
+{
+  "sourceRepository": "https://github.com/truenorth-lj/sofinance-app-prototype",
+  "sourceTag": "engine-v0.1.6",
+  "sourceCommit": "060aa926a2ee9c7ec7af2b82c38122a769c6d5aa",
+  "sourceSubtree": "packages/engine",
+  "sourceTree": "45e21cb4c00bce162446feb4536ab41d85d0fbf4",
+  "previousArtifact": "vendor/sofinance-engine-0.1.6.tgz",
+  "previousArtifactSha256": "f88b250160720d4711d4e3a4ab690efb3101daf1d1af9b30dbfed4b23b18eaed",
+  "runtimeFilesAtImport": 90,
+  "runtimeManifestSha256AtImport": "da5efcc2d29b793c09f83176638e4339fa82ceef79683844a0347667694f950a",
+  "manifestAlgorithm": "Sort runtime paths relative to package; SHA256 of UTF-8 concatenation of path + NUL + SHA256(file bytes) + LF. Exclude tests, snapshots, fixtures and test-support.",
+  "license": "UNLICENSED; unchanged from source package",
+  "ownership": "Active development is maintained in sofinance-public. The prototype is paused and unchanged."
+}

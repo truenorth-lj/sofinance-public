@@ -15,7 +15,7 @@ NAMES=(JUPITER_API_KEY SOLAMI_API_KEY SOLAMI_DATA_API_KEY SOLANA_RPC_URL NEXT_PU
   SOFINANCE_RWA_JOB_TIMEOUT_MS SOFINANCE_RWA_JOB_LEASE_MS RWA_DB_TEST_URL)
 
 echo "== all config/secret env vars unset"
-env $(printf -- '-u %s ' "${NAMES[@]}") pnpm exec vitest run
+env $(printf -- '-u %s ' "${NAMES[@]}") pnpm test
 
 echo "== all config/secret env vars set to dummy values"
 env -u RWA_DB_TEST_URL \
@@ -33,4 +33,4 @@ env -u RWA_DB_TEST_URL \
   SOFINANCE_MCP_TOKEN=dummy-mcp-token SOFINANCE_MCP_URL=https://mcp.invalid.example NEXT_PUBLIC_APP_URL=https://app.invalid.example \
   VERCEL_URL=app.invalid.example NEXT_PUBLIC_REOWN_PROJECT_ID=dummy-project SOFINANCE_RPC_LOG=1 SOFINANCE_JUPITER_LOG=1 \
   SOLAMI_BEAM=1 E2E_KEYLESS_JUPITER=1 SOFINANCE_POSITION_HISTORY_DB_ENABLED=true \
-  pnpm exec vitest run
+  pnpm test
