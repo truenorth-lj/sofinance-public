@@ -5,6 +5,8 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { SelectedApp } from "./selected-app";
 import { WalletConnectionContext, type WalletConnection } from "./wallet-connection";
 import { testKeypair } from "@/lib/test-support/send-fixtures";
+import { PublicKey, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
+import bs58 from "bs58";
 import { USDC_MINT } from "@sofinance/engine/ids";
 
 // Framework routing boundary only. SelectedApp and both controllers are real.
@@ -21,6 +23,7 @@ const state = { wallet, positionMint, inputMint: USDC_MINT, inputKind: "token", 
 let root: Root, container: HTMLDivElement, connection: WalletConnection;
 let calls: { path: string; body?: string; at: number }[], views: unknown[];
 let quoteError: string;
+let submissionCase = false;
 let pendingQuote: Promise<Response> | undefined;
 let release: (r: Response) => void;
 let prepare: Promise<Response>;
@@ -39,7 +42,7 @@ async function advance(ms: number) { await act(async () => vi.advanceTimersByTim
 async function ready() { await click("MAX"); await advance(450); expect(button("Add liquidity").disabled).toBe(false); snapshot("preview ready"); }
 beforeEach(async () => {
   vi.useFakeTimers(); vi.setSystemTime(1_800_000_000_000); vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  localStorage.clear(); calls = []; views = []; quoteError = ""; pendingQuote = undefined;
+  submissionCase = false; localStorage.clear(); calls = []; views = []; quoteError = ""; pendingQuote = undefined;
   writes = vi.spyOn(localStorage, "setItem");
   prepare = new Promise(resolve => { release = resolve; });
   connection = { address: wallet, connected: true, connect: vi.fn(), disconnect: vi.fn(), isMobile: false,
@@ -92,10 +95,12 @@ it.each(["success", "reject"])("C1: repeated MAX replaces a pending quote despit
 });
 afterEach(async context => {
   await act(async () => root.unmount());
-  expect(connection.signTransaction).not.toHaveBeenCalled(); expect(writes).not.toHaveBeenCalled();
-  expect(calls.filter(c => /broadcast/.test(c.path))).toHaveLength(0);
+  if (!submissionCase) {
+    expect(connection.signTransaction).not.toHaveBeenCalled(); expect(writes).not.toHaveBeenCalled();
+    expect(calls.filter(c => /broadcast/.test(c.path))).toHaveLength(0);
+  }
   // eslint-disable-next-line no-console -- Raw actual-caller preservation ledger.
-  console.log("SELECTED_CALLER_LEDGER " + JSON.stringify({ name: context.task.name, calls, views, writes: writes.mock.calls, sign: 0, send: 0 }));
+  console.log("SELECTED_CALLER_LEDGER " + JSON.stringify({ name: context.task.name, calls, views, writes: writes.mock.calls, sign: vi.mocked(connection.signTransaction).mock.calls.length, send: count("/api/selected-broadcast") }));
   container.remove(); vi.clearAllTimers(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals();
 });
 it("real Add busy blocks compound, then healthy preview resumes after HTTP failure", async () => {
@@ -141,4 +146,41 @@ it("attempt: invalid retained history warns in actual caller without locking fre
   await act(async () => release(Response.json({error:"Preparation rejected"},{status:400})));
   expect(localStorage.getItem(key)).toBe("invalid retained record");
   expect(button("Add liquidity").disabled).toBe(false); snapshot("history retained after prepare failure");
+});
+
+
+it("submission caller: wallet and broadcast stages lock compound and preserve an uncertain visible receipt", async () => {
+  submissionCase = true;
+  let finishSign!: (tx: VersionedTransaction) => void, finishSend!: (r: Response) => void;
+  let unsigned!: VersionedTransaction;
+  const sending = new Promise<Response>(resolve => { finishSend = resolve; });
+  vi.mocked(connection.signTransaction).mockImplementation(tx => { unsigned = tx; return new Promise(resolve => { finishSign = resolve; }); });
+  const handler = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation((input, init) => {
+    const path = String(input);
+    if (path === "/api/selected-broadcast" || path === "/api/selected-status") {
+      calls.push({path, body: init?.body as string, at: Date.now()});
+      return path.endsWith("broadcast") ? sending : Promise.resolve(Response.json({signature:bs58.encode(new Uint8Array(64).fill(1)),status:"manual-review"}));
+    }
+    return handler(input, init);
+  });
+  await ready(); await click("Add liquidity");
+  expect(button("Preparing latest transaction…").disabled).toBe(true);
+  const quoteBody = JSON.parse(calls.find(c => c.path === "/api/selected-quote")!.body!);
+  const tx = new VersionedTransaction(new TransactionMessage({payerKey:new PublicKey(wallet),recentBlockhash:wallet,instructions:[]}).compileToV0Message());
+  await act(async () => release(Response.json({quote:{...state,...quoteBody,spendA:"0",spendB:"0",roundtripCostInput:null,requested:"1000000",liquidity:"100",expiresAt:Date.now()+75000},
+    simulated:true, permit:"synthetic-permit",startingLiquidity:state.liquidity,startingBalances:{input:"1000000",a:"1000000",b:"1000000000"},
+    expiresAt:Date.now()+75000,blockhash:wallet,lastValidBlockHeight:100,unsignedTransaction:btoa(String.fromCharCode(...tx.serialize()))})));
+  expect(button("Confirming in wallet…").disabled).toBe(true); expect(button("One-click compound").disabled).toBe(true); snapshot("wallet waiting");
+  await act(async () => { unsigned.signatures[0]=new Uint8Array(64).fill(1); finishSign(unsigned); });
+  expect(button("Sending and verifying…").disabled).toBe(true); expect(button("One-click compound").disabled).toBe(true); snapshot("broadcast waiting");
+  const raw = localStorage.getItem(`sofinance:selected-atomic:v2:${wallet}`);
+  expect(JSON.parse(raw!).signature).toBe(bs58.encode(new Uint8Array(64).fill(1)));
+  await act(async () => finishSend(Response.json({error:"uncertain send",sent:false},{status:503})));
+  await advance(450); expect(button("Add liquidity").disabled).toBe(false); expect(button("One-click compound").disabled).toBe(false);
+  await click("View transaction status and tx hash"); snapshot("visible receipt");
+  expect(container.textContent).toContain("uncertain send");
+  expect(container.querySelector(`a[href*="${bs58.encode(new Uint8Array(64).fill(1))}"]`)).not.toBeNull();
+  expect(localStorage.getItem(`sofinance:selected-atomic:v2:${wallet}`)).toBe(raw);
+  expect(connection.signTransaction).toHaveBeenCalledOnce(); expect(count("/api/selected-broadcast")).toBe(1);
 });
