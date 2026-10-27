@@ -5,41 +5,7 @@ import { verifyMcpToken } from "@/lib/mcp-auth";
 import { publicToolError } from "@/mcp/public-tool-error";
 import { sanitizePublicError } from "@/lib/public-error";
 import { captureApiRouteError } from "@/lib/sentry/capture";
-import {
-  listPositions,
-  quoteAddLiquidity,
-  prepareTransaction,
-  quoteCompound,
-  prepareCompoundTransaction,
-  submitSignedTransaction,
-  submitCompoundTransaction,
-  listRwaPairs,
-  getPositionPerformance,
-  getPoolActivity,
-  getPositionRangeStatus,
-  quoteOpenPosition,
-  prepareOpenPosition,
-  prepareWithdraw,
-  submitWithdrawTransaction,
-  submitOpenPosition,
-} from "@/mcp/tools";
-import {
-  listPositionsSchema,
-  quoteAddLiquiditySchema,
-  prepareTransactionSchema,
-  quoteCompoundSchema,
-  submitSignedTransactionSchema,
-  submitCompoundTransactionSchema,
-  listRwaPairsSchema,
-  getPositionPerformanceSchema,
-  getPoolActivitySchema,
-  getPositionRangeStatusSchema,
-  quoteOpenPositionSchema,
-  prepareOpenPositionSchema,
-  prepareWithdrawSchema,
-  submitWithdrawSchema,
-  submitOpenPositionSchema,
-} from "@/mcp/schemas";
+import { dispatchTool } from "@/mcp/dispatch";
 import { getJupiterApiKey } from "@sofinance/engine/config/server-env";
 
 /**
@@ -109,140 +75,6 @@ function createJsonRpcSuccess(
     id,
     result,
   };
-}
-
-async function handleToolCall(name: string, args: unknown, walletFromToken: string) {
-  switch (name) {
-    case "get_position_performance": {
-      const input = getPositionPerformanceSchema.parse(args ?? {});
-      // Enforce wallet match when wallet is provided
-      if (input.wallet && input.wallet !== walletFromToken) {
-        throw new Error(
-          `Token wallet mismatch: token is for ${walletFromToken}, requested ${input.wallet}`
-        );
-      }
-      return await getPositionPerformance(input);
-    }
-
-    case "get_pool_activity": {
-      const input = getPoolActivitySchema.parse(args ?? {});
-      return await getPoolActivity(input);
-    }
-
-    case "get_position_range_status": {
-      const input = getPositionRangeStatusSchema.parse(args ?? {});
-      if (input.wallet && input.wallet !== walletFromToken) {
-        throw new Error(
-          `Token wallet mismatch: token is for ${walletFromToken}, requested ${input.wallet}`
-        );
-      }
-      return await getPositionRangeStatus(input);
-    }
-
-    case "list_rwa_pairs": {
-      const input = listRwaPairsSchema.parse(args ?? {});
-      // Note: This tool can be slow on Vercel Hobby (10s timeout).
-      // Recommend maxPages ≤ 5 or call with smaller minTvl filter.
-      return await listRwaPairs(input);
-    }
-
-    case "list_positions": {
-      const input = listPositionsSchema.parse(args);
-      // Enforce that the wallet matches the token
-      if (input.wallet !== walletFromToken) {
-        throw new Error(`Token wallet mismatch: token is for ${walletFromToken}, requested ${input.wallet}`);
-      }
-      return await listPositions(input);
-    }
-
-    case "quote_add_liquidity": {
-      const input = quoteAddLiquiditySchema.parse(args);
-      if (input.wallet !== walletFromToken) {
-        throw new Error(`Token wallet mismatch: token is for ${walletFromToken}, requested ${input.wallet}`);
-      }
-      return await quoteAddLiquidity(input);
-    }
-
-    case "prepare_transaction": {
-      const input = prepareTransactionSchema.parse(args);
-      if (input.wallet !== walletFromToken) {
-        throw new Error(`Token wallet mismatch: token is for ${walletFromToken}, requested ${input.wallet}`);
-      }
-      // Note: Can take 5-10s on complex swaps (Jupiter routing + simulation).
-      // Vercel Hobby timeout is 10s; most calls complete in time.
-      return await prepareTransaction(input);
-    }
-
-    case "quote_compound": {
-      const input = quoteCompoundSchema.parse(args);
-      if (input.wallet !== walletFromToken) {
-        throw new Error(`Token wallet mismatch: token is for ${walletFromToken}, requested ${input.wallet}`);
-      }
-      return await quoteCompound(input);
-    }
-
-    case "prepare_compound_transaction": {
-      const input = quoteCompoundSchema.parse(args);
-      if (input.wallet !== walletFromToken) {
-        throw new Error(`Token wallet mismatch: token is for ${walletFromToken}, requested ${input.wallet}`);
-      }
-      return await prepareCompoundTransaction(input);
-    }
-
-    case "submit_signed_transaction": {
-      const input = submitSignedTransactionSchema.parse(args);
-      if (input.wallet !== walletFromToken) {
-        throw new Error(`Token wallet mismatch: token is for ${walletFromToken}, requested ${input.wallet}`);
-      }
-      return await submitSignedTransaction(input);
-    }
-
-    case "submit_compound_transaction": {
-      const input = submitCompoundTransactionSchema.parse(args);
-      if (input.wallet !== walletFromToken) {
-        throw new Error(`Token wallet mismatch: token is for ${walletFromToken}, requested ${input.wallet}`);
-      }
-      return await submitCompoundTransaction(input);
-    }
-
-    case "quote_open_position": {
-      const input = quoteOpenPositionSchema.parse(args);
-      if (input.wallet !== walletFromToken) {
-        throw new Error(`Token wallet mismatch: token is for ${walletFromToken}, requested ${input.wallet}`);
-      }
-      return await quoteOpenPosition(input);
-    }
-
-    case "prepare_withdraw": {
-      const input = prepareWithdrawSchema.parse(args);
-      if (input.wallet !== walletFromToken) throw new Error(`Token wallet mismatch: token is for ${walletFromToken}, requested ${input.wallet}`);
-      return prepareWithdraw(input);
-    }
-    case "submit_withdraw": {
-      const input = submitWithdrawSchema.parse(args) as Parameters<typeof submitWithdrawTransaction>[0];
-      if (input.wallet !== walletFromToken) throw new Error(`Token wallet mismatch: token is for ${walletFromToken}, requested ${input.wallet}`);
-      return submitWithdrawTransaction(input);
-    }
-
-    case "prepare_open_position": {
-      const input = prepareOpenPositionSchema.parse(args);
-      if (input.wallet !== walletFromToken) {
-        throw new Error(`Token wallet mismatch: token is for ${walletFromToken}, requested ${input.wallet}`);
-      }
-      return await prepareOpenPosition(input);
-    }
-
-    case "submit_open_position": {
-      const input = submitOpenPositionSchema.parse(args);
-      if (input.wallet !== walletFromToken) {
-        throw new Error(`Token wallet mismatch: token is for ${walletFromToken}, requested ${input.wallet}`);
-      }
-      return await submitOpenPosition(input);
-    }
-
-    default:
-      throw new Error(`Unknown tool: ${name}`);
-  }
 }
 
 export async function POST(request: NextRequest) {
@@ -346,7 +178,7 @@ export async function POST(request: NextRequest) {
       }
 
       try {
-        const result = await handleToolCall(toolParams.name, toolParams.arguments, wallet);
+        const result = await dispatchTool(toolParams.name, toolParams.arguments, { surface: "mcp-http", tokenWallet: wallet });
         return NextResponse.json(
           createJsonRpcSuccess(id ?? null, {
             content: [

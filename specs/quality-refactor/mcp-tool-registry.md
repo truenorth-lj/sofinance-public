@@ -5,6 +5,14 @@ metadata into one app-owned module while preserving each transport's observable 
 Dispatch, runtime schemas, authorization, transaction builders and submit behavior stay with
 their existing owners for this change.
 
+## Delivery status
+
+Merged in PR [#152](https://github.com/truenorth-lj/sofinance-public/pull/152) as
+`5ab102a4cd626cd627af0326555b0dc0feec6be2`; production identity, nine read-only checks
+and complete discovery parity verified on 2026-10-27. The implementation notes below
+record the earlier local phase. Typed dispatch is tracked separately in [PR2](mcp-dispatch.md).
+The broader shared-usecases stage is not complete.
+
 ## Contracts
 
 `src/mcp/tool-definitions.ts` owns all 16 definitions. `listToolDefinitions(surface)` returns

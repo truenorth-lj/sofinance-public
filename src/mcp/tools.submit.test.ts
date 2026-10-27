@@ -380,6 +380,27 @@ for (const surface of ["http", "stdio"] as const) describe(`${surface} real subm
     expect(connection.sendRawTransaction).toHaveBeenCalledOnce();
     expect(Buffer.from(connection.sendRawTransaction.mock.calls[0]![0] as Uint8Array)).toEqual(Buffer.from(transaction.serialize()));
   });
+  it.each(submissions)("%s keeps timeout then retry-preflight failure unknown using the real engine wrapper", async name => {
+    const { createResilientConnection } = await import("@sofinance/engine/rpc/connection");
+    const { SendTransactionError } = await import("@solana/web3.js");
+    const args = input(name);
+    const originalSignature = signatureOf(transaction);
+    connection.sendRawTransaction.mockRejectedValueOnce(new Error("request timed out after remote acceptance"));
+    connection.sendRawTransaction.mockRejectedValue(new SendTransactionError({ action: "simulate", signature: "",
+      transactionMessage: "Transaction simulation failed: insufficient funds" }));
+    vi.mocked(rpcConnection).mockReturnValue(createResilientConnection(connection as never, null, {
+      primaryId: "solami", fallbackId: "default", retry: { maxAttempts: 2, baseMs: 0, maxDelayMs: 0, budgetMs: 2000 },
+    }));
+    const result = await call(name, args);
+    expect(result.isError).toBe(true);
+    expect(JSON.stringify(result)).not.toMatch(/safe to retry|not sent|sent.*false/);
+    expect(connection.sendRawTransaction).toHaveBeenCalledTimes(2);
+    for (const [bytes] of connection.sendRawTransaction.mock.calls) {
+      expect(Buffer.from(bytes as Uint8Array)).toEqual(Buffer.from(transaction.serialize()));
+    }
+    expect(signatureOf(transaction)).toBe(originalSignature);
+    expect(beamAfterSend).not.toHaveBeenCalled();
+  });
   it("withdraw's record summary remains accepted by the parser, then permit fails before backend", async () => {
     const result = await call("submit_withdraw", { wallet, summary: {}, permit: "forged", signedTransaction: toBase64(transaction) });
     expect(result.content).toEqual([{ type: "text", text: JSON.stringify({ error: "Withdrawal authorization does not match transaction" }, null, 2) }]);
