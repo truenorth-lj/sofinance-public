@@ -336,7 +336,7 @@ describe("tools/call dispatch and wallet binding", () => {
   it.each([
     ["key=value pair", "bad request api_key=SECRET123 end", "bad request [redacted] end"],
     ["api-key header style", "rejected api-key: SECRET123", "rejected [redacted]"],
-    ["authorization", "authorization=Bearer SECRET123", "[redacted] SECRET123"],
+    ["authorization", "authorization=Bearer SECRET123", "[redacted]"],
     ["token", "token: SECRET123", "[redacted]"],
   ])("STEP 2a: redacts a %s", async (_label, raw, expected) => {
     toolFns.listRwaPairs!.mockRejectedValue(new Error(raw));

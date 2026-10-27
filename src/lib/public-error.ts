@@ -11,7 +11,7 @@ import {
 import { isJupiterNoRouteError, JupiterNoRouteError } from "@sofinance/engine/swap/jupiter";
 import { RPC_UNAVAILABLE_MESSAGE } from "@sofinance/engine/rpc/errors";
 import { formatSelectedNoRouteMessage, SelectedNoRouteError } from "./selected-no-route";
-import { scrubSensitiveText } from "./sentry/scrub";
+import { scrubCredentialText } from "./sentry/scrub";
 import {
   AMOUNT_TOO_SMALL_CODE,
   AMOUNT_TOO_SMALL_MESSAGE,
@@ -85,8 +85,8 @@ export function isPreflightOrUnsentFailure(error: unknown): boolean {
 }
 
 function sanitizeDetail(text: string) {
-  // Share the logging/Sentry text policy; only the public placeholder differs.
-  return scrubSensitiveText(text).replace(/\[redacted-(?:url|secret|signature|address)\]/g, "[redacted]")
+  // Share credential rules with logging; user-facing wallet mismatch details keep public addresses.
+  return scrubCredentialText(text).replace(/\[redacted-(?:url|secret|signature|address)\]/g, "[redacted]")
     .replace(/\s+/g, " ").trim();
 }
 

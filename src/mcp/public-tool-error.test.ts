@@ -16,8 +16,8 @@ describe("publicToolError", () => {
     expect(publicToolError("", "fallback text")).toBe("fallback text");
   });
 
-  it("QUIRK (shared sanitizer, also on web routes): 'authorization: Bearer <token>' only redacts the word after the separator", () => {
-    expect(publicToolError(new Error("authorization: Bearer SECRET456"))).toBe("[redacted] SECRET456");
+  it("redacts both the authorization scheme and its credential", () => {
+    expect(publicToolError(new Error("authorization: Bearer SECRET456"))).toBe("[redacted]");
   });
 
   it("flattens zod errors into 'path: message' and marks missing fields as required", () => {

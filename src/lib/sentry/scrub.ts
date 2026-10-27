@@ -38,7 +38,8 @@ export function isSensitiveObjectKey(name: unknown): boolean {
   return isSensitiveHeaderName(name) || isSensitiveIpEnvKey(name);
 }
 
-function scrubText(text: string): string {
+/** Strip credentials and provider URLs while preserving public account identifiers. */
+export function scrubCredentialText(text: string): string {
   let current = text;
   for (let i = 0; i < 3; i += 1) {
     // Scrub before decoding so encoded whitespace inside a URL/value cannot
@@ -59,15 +60,14 @@ function applyTextScrubbers(text: string): string {
     .replace(URL_RE, "[redacted-url]")
     .replace(ENCODED_URL_RE, "[redacted-url]")
     .replace(AUTH_ASSIGN_RE, "[redacted-secret]")
-    .replace(SECRET_ASSIGN_RE, "[redacted-secret]")
-    .replace(SIGNATURE_RE, "[redacted-signature]")
-    .replace(ADDRESS_RE, "[redacted-address]");
+    .replace(SECRET_ASSIGN_RE, "[redacted-secret]");
 }
 
 /** Strings only. Arrays/objects recurse; every other type is returned unchanged. */
 export function scrubSensitiveText<T>(text: T): T {
   if (typeof text === "string") {
-    return scrubText(text) as T;
+    return scrubCredentialText(text).replace(SIGNATURE_RE, "[redacted-signature]")
+      .replace(ADDRESS_RE, "[redacted-address]") as T;
   }
   if (text !== null && typeof text === "object") {
     return scrubUnknown(text);
@@ -76,7 +76,7 @@ export function scrubSensitiveText<T>(text: T): T {
 }
 
 export function scrubUnknown<T>(value: T, seen = new WeakSet<object>()): T {
-  if (typeof value === "string") return scrubText(value) as T;
+  if (typeof value === "string") return scrubSensitiveText(value);
   if (value === null || value === undefined || typeof value !== "object") return value;
   if (seen.has(value)) return "[redacted]" as T;
   seen.add(value);
