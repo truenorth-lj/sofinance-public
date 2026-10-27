@@ -1,7 +1,7 @@
 // Characterization test for the local stdio MCP server (src/mcp/server.ts): it is started as a real
 // child process and spoken to over stdio JSON-RPC with the official SDK client. No network is used:
 // only tools/list and calls that fail before touching any backend are exercised.
-// The stdio list must stay identical to the HTTP route's list (the two are hand-copied today).
+// Full snapshots preserve each transport's discovery contract, including its known differences.
 import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
@@ -39,6 +39,18 @@ beforeAll(async () => {
 afterAll(async () => { await client?.close(); });
 
 describe("stdio MCP server", () => {
+  it("preserves the complete stdio discovery response", async () => {
+    expect((await client.listTools()).tools).toMatchSnapshot();
+  });
+
+  it("preserves the complete public HTTP discovery response", async () => {
+    const response = await POST(new NextRequest("http://localhost/api/mcp", {
+      method: "POST", body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+    }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchSnapshot();
+  });
+
   it("identifies itself", () => {
     expect(client.getServerVersion()).toMatchObject({ name: "sofinance-mcp-server", version: "0.1.0" });
     expect(client.getServerCapabilities()).toMatchObject({ tools: {} });
@@ -65,7 +77,7 @@ describe("stdio MCP server", () => {
     const b = flatten(index(http.result.tools));
     expect(Object.keys(a).sort()).toEqual(Object.keys(b).sort());
     const differing = Object.keys(a).filter((key) => a[key] !== b[key]).sort();
-    // DRIFT (pinned, not fixed): the two hand-copied definitions disagree on the wording of these fields.
+    // Preserve the existing surface-specific wording during metadata consolidation.
     expect(differing).toEqual([
       "quote_open_position.inputSchema.properties.resaleFloorBps.description",
     ]);
