@@ -98,7 +98,7 @@ it.each(["prepare","sign","status"])("live paired %s wait completes with exact o
  expect(mocks.notify).toHaveBeenCalledWith(withdrawPosition,saved.signature);
 });
 
-const boundaries=["quote", "quote-body", "prepare-body", "refresh", "refresh-body", "swap-quote", "swap-quote-body", "swap-prepare", "swap-prepare-body", "swap-refresh", "swap-refresh-body", "swap-sign", "broadcast", "broadcast-body"] as const;
+const boundaries=["quote", "quote-body", "prepare-body", "refresh", "refresh-body", "swap-quote", "swap-quote-body", "swap-prepare", "swap-prepare-body", "swap-refresh", "swap-refresh-body", "swap-sign", "swap-broadcast", "swap-broadcast-body", "broadcast", "broadcast-body"] as const;
 type Boundary=typeof boundaries[number];
 async function boundaryStart(boundary: Boundary) {
  if(boundary.startsWith("swap"))twoStage();
@@ -115,7 +115,7 @@ async function boundaryStart(boundary: Boundary) {
   gate=hold("prepare",()=>calls("prepare").length===ordinal,boundary.endsWith("body"));
   const normal=network; const stale=withdrawPrepared(isSwap?"swap":"atomic",{expiresAt:Date.now()-1,...(isSwap?{tx1Signature:signedWithdraw(first).signature}:{})});
   network=async (p,b)=>p==="prepare"&&calls("prepare").length===ordinal-1?Response.json(stale):normal(p,b);
- }else gate=hold(phase,b=>!boundary.startsWith("swap")||b.stage==="swap",boundary.endsWith("body"));
+ }else gate=hold(phase,b=>!boundary.startsWith("swap")||b.stage==="swap"||(b.summary as {stage?:string}|undefined)?.stage==="swap",boundary.endsWith("body"));
  if(boundary.startsWith("swap"))prepared=second;
  await start();
  return { release:()=>gate.release(phase==="quote"?prepared.summary:phase==="broadcast"?{accepted:true}:prepared) };
@@ -129,6 +129,7 @@ it.each(boundaries)("unmount at %s stops every later command; explicit remount r
  if(original)await click("Resume withdrawal");else {await click("Preview");await click("Withdraw");}
  expect(mocks.confirmed).toHaveBeenCalledOnce();expect(raw()).toBeNull();
  if(original)expect((calls("status").at(-1)!.value as {signature:string}).signature).toBe(boundary.startsWith("swap")?signedWithdraw(second).signature:JSON.parse(original).signature);
+ if(original && JSON.parse(original).prepared.summary.stage!=="withdraw"){expect(calls("sign")).toHaveLength(before.sign!);expect(calls("broadcast")).toHaveLength(before.broadcast!);expect(calls("prepare")).toHaveLength(before.prepare!);}
 });
 it.each(boundaries)("paired live %s still completes",async boundary=>{
  const gate=await boundaryStart(boundary);await gate.release();
