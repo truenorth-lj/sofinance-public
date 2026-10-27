@@ -3,9 +3,9 @@ import { PublicKey, VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
 import { discoverWallet } from "@sofinance/engine/wallet-discovery";
 import { searchSelectedQuoteBundle } from "../lib/selected-quote";
-import { buildAndSimulateSelectedZap } from "../lib/selected-atomic";
+import { prepareSelected } from "@/server/transactions/selected-prepare";
+import { MCP_SELECTED_PREPARE } from "@/server/transactions/surface-policy";
 import { buildAndSimulateCompound } from "@sofinance/engine/compound-atomic";
-import { issueSelectedPermit } from "../lib/selected-permit";
 import { prepareCompound } from "@/server/transactions/compound-prepare";
 import { verifySelectedPermit } from "../lib/selected-permit";
 import { verifyCompoundPermit } from "../lib/compound-permit";
@@ -171,29 +171,12 @@ export async function prepareTransaction(input: PrepareTransactionInput) {
     inputKind: input.inputKind,
   };
   
-  const { summary, transaction } = await buildAndSimulateSelectedZap(
-    input.wallet,
-    selection,
-    input.amount,
-    input.resaleFloorBps,
-    input.slippageToleranceBps,
-  );
-  
+  const { summary, permit, unsignedTransaction: unsignedTransactionBase64 } = await prepareSelected({
+    wallet: input.wallet, selection, amount: input.amount,
+    floorBps: input.resaleFloorBps, toleranceBps: input.slippageToleranceBps,
+  }, MCP_SELECTED_PREPARE);
   const jupiterApiKey = getSigningSecret();
-  const permit = issueSelectedPermit(jupiterApiKey, {
-    message: Buffer.from(transaction.message.serialize()).toString("base64"),
-    wallet: input.wallet,
-    selection,
-    requested: summary.quote.requested,
-    floorBps: summary.quote.floorBps,
-    expiresAt: summary.expiresAt,
-    lastValidBlockHeight: summary.lastValidBlockHeight,
-    startingLiquidity: summary.startingLiquidity,
-    expectedLiquidity: summary.quote.liquidity,
-    rangeSide: summary.quote.rangeSide,
-    startingBalances: summary.startingBalances,
-  });
-  
+
   // Every field submit_signed_transaction needs besides the signed transaction.
   // These values are bound by the permit, so they must be passed back unchanged.
   const submitArgs = {
@@ -209,8 +192,6 @@ export async function prepareTransaction(input: PrepareTransactionInput) {
     rangeSide: summary.quote.rangeSide,
     startingBalances: summary.startingBalances,
   };
-  
-  const unsignedTransactionBase64 = Buffer.from(transaction.serialize()).toString("base64");
   
   // Create self-contained signed token (no shared storage required)
   const signToken = await createSignToken(
