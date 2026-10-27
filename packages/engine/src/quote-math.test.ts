@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import { formatAmount, meetsResaleFloor, parseResaleFloorBps, parseTokenAmount, resaleFloorFromMaxCostPercent } from "./amount";
 import BN from "bn.js";
 import { LiquidityMathUtil, TickUtil } from "@raydium-io/raydium-sdk-v2";
-import { allocateSpend, positionSide, quoteIsFresh } from "./quote-math";
+import {
+  allocateSpend, conservativeSizingAmount, positionSide, quoteIsFresh, settleSizingSpend,
+  SIZING_BINARY_SEARCH_ROUNDS, SIZING_CONVERGE_BPS, SIZING_LOOP_ROUNDS, sizingAmountsConverged,
+} from "./quote-math";
 
 describe("token amount bounds", () => {
   it("parses token precision exactly without floating point", () => {
@@ -57,5 +60,56 @@ describe("narrow range allocation and quote gates", () => {
     expect(() => parseResaleFloorBps(9_899)).toThrow();
     expect(meetsResaleFloor(20_000_000n, 19_786_725n, 9_900)).toBe(false);
     expect(meetsResaleFloor(20_000_000n, 19_786_725n, 9_890)).toBe(true);
+  });
+});
+
+describe("open-position sizing convergence", () => {
+  const scale = 1_000_000n;
+
+  it("treats a sub-1% gap as converged and keeps the smaller amount", () => {
+    expect(SIZING_CONVERGE_BPS).toBe(100);
+    expect(sizingAmountsConverged(1_000_000n, 1_005_000n, scale)).toBe(true);
+    expect(sizingAmountsConverged(1_000_000n, 1_011_000n, scale)).toBe(false);
+    expect(conservativeSizingAmount(1_005_000n, 1_000_000n)).toBe(1_000_000n);
+  });
+
+  it("stops on a 0.5% move and does not overspend the already-quoted amount", async () => {
+    const quoted: bigint[] = [];
+    const spend = await settleSizingSpend(scale, scale, async (value) => {
+      quoted.push(value);
+      return value + 5_000n;
+    });
+    expect(spend).toBe(scale);
+    expect(quoted).toEqual([scale]);
+  });
+
+  it("re-quotes when the conservative amount is the next one", async () => {
+    const quoted: bigint[] = [];
+    const spend = await settleSizingSpend(scale, scale, async (value) => {
+      quoted.push(value);
+      return value - 5_000n;
+    });
+    expect(spend).toBe(995_000n);
+    expect(quoted).toEqual([scale, 995_000n]);
+  });
+
+  it("binary-searches after the inner loop when the gap stays above 1%", async () => {
+    const quoted: bigint[] = [];
+    const spend = await settleSizingSpend(10n, 100n, async (value) => {
+      quoted.push(value);
+      return 100n - value;
+    });
+    expect(spend).toBe(50n);
+    expect(quoted.length).toBeGreaterThan(SIZING_LOOP_ROUNDS);
+    expect(quoted.length).toBeLessThanOrEqual(SIZING_LOOP_ROUNDS + SIZING_BINARY_SEARCH_ROUNDS + 1);
+  });
+
+  it("propagates quote-round failures during binary search", async () => {
+    let calls = 0;
+    await expect(settleSizingSpend(10n, 100n, async (value) => {
+      calls += 1;
+      if (calls > SIZING_LOOP_ROUNDS) throw new Error("no route");
+      return 100n - value;
+    })).rejects.toThrow("no route");
   });
 });

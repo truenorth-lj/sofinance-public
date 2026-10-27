@@ -9,7 +9,7 @@
 import BN from "bn.js";
 import { LiquidityMathUtil, SqrtPriceMath } from "@raydium-io/raydium-sdk-v2";
 import { DEFAULT_ADD_TOLERANCE_BPS } from "@sofinance/engine/ids";
-import { allocateSpend, poolPriceRates, toleranceLiquidity } from "@sofinance/engine/quote-math";
+import { allocateSpend, poolPriceRates, sizingAmountsConverged, SIZING_CONVERGE_BPS, toleranceLiquidity } from "@sofinance/engine/quote-math";
 
 export const OPEN_ALLOCATE_MODES = ["loop", "single-shot", "single-shot-adjusted"] as const;
 export type OpenAllocateMode = (typeof OPEN_ALLOCATE_MODES)[number];
@@ -26,9 +26,9 @@ export const OPEN_POSITION_ALLOCATE_MODE: OpenAllocateMode = "loop";
 export const MATERIAL_LEFTOVER_PCT = 0.5;
 
 export const ALLOCATE_MAX_ROUNDS = 5;
-/** Engine: `difference * 1000 <= requested * 2` → 0.2%. */
-export const ALLOCATE_CONVERGE_NUM = 2n;
-export const ALLOCATE_CONVERGE_DEN = 1_000n;
+/** Engine: `SIZING_CONVERGE_BPS` → 1%. */
+export const ALLOCATE_CONVERGE_NUM = BigInt(SIZING_CONVERGE_BPS);
+export const ALLOCATE_CONVERGE_DEN = 10_000n;
 
 const UNIT_LIQUIDITY = new BN("1000000000000000000");
 
@@ -188,8 +188,7 @@ function sizeFromOutputs(
 }
 
 function converged(next: bigint, spendA: bigint, requested: bigint) {
-  const difference = next > spendA ? next - spendA : spendA - next;
-  return difference * ALLOCATE_CONVERGE_DEN <= requested * ALLOCATE_CONVERGE_NUM;
+  return sizingAmountsConverged(next, spendA, requested);
 }
 
 export async function allocateOpenPosition(input: {
@@ -198,7 +197,7 @@ export async function allocateOpenPosition(input: {
   mode?: OpenAllocateMode;
   quote: OpenAllocateQuoteFn;
   toleranceBps?: number;
-  /** When false, a loop that never hits 0.2% still sizes from the last quotes (for measurement). */
+  /** When false, a loop that never hits 1% still sizes from the last quotes (for measurement). */
   strict?: boolean;
   now?: () => number;
 }): Promise<OpenAllocateResult> {

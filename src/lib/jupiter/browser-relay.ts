@@ -1,3 +1,5 @@
+import { captureQuoteSettleFailure } from "../sentry/capture";
+
 /**
  * Browser-side Jupiter quoting. Quotes and swap-instructions are fetched keyless
  * from `api.jup.ag` by the user's browser (CORS allows our origin and exposes the
@@ -13,8 +15,9 @@
  * for the same pair/amount so the next round does not 409 again if own-pool has
  * no route. Quotes are indexed by URL as well as id so a prefetch is reused when
  * the server later names that request. If the same mint pair keeps coming back
- * with a new amount (sizing did not settle), we stop instead of burning the
- * remaining rounds.
+ * with a new amount (sizing did not settle), amounts within 1% are treated as
+ * converged (conservative/smaller spend). Larger jumps fall back to a bounded
+ * binary search before we stop.
  */
 export const JUPITER_BROWSER_ORIGIN = "https://api.jup.ag";
 export const JUPITER_RELAY_NEEDED_CODE = "jupiter_relay_needed";
@@ -23,6 +26,10 @@ export const RELAY_RESPONSE_MAX_AGE_MS = 30_000;
 export const MAX_RELAY_ROUNDS = 8;
 /** Consecutive 409s that only re-quote an already-seen pair at a new amount. */
 export const RELAY_AMOUNT_CHURN_LIMIT = 3;
+/** Consecutive quote amounts within this many bps of the larger amount have settled. */
+export const RELAY_AMOUNT_CONVERGE_BPS = 100;
+/** Extra rounds after churn/round limit, used to binary-search a conservative spend. */
+export const RELAY_BINARY_SEARCH_LIMIT = 8;
 export const RELAY_DID_NOT_SETTLE_MESSAGE =
   "Quote did not settle. Try a smaller amount, a wider range, or refresh the quote.";
 const MAX_STORED = 40;
@@ -55,7 +62,7 @@ function keepHints(store: JupiterRelayStore, hints: unknown) {
 
 /** Counters for diagnostics/verification (also exposed as `window.__sofiJupiter`). */
 export const jupiterBrowserStats = {
-  calls: 0, quotes: 0, swapInstructions: 0, rateLimited: 0, waitedMs: 0, reused: 0, rounds: 0, fallbacks: 0, churnStops: 0,
+  calls: 0, quotes: 0, swapInstructions: 0, rateLimited: 0, waitedMs: 0, reused: 0, rounds: 0, fallbacks: 0, churnStops: 0, binarySearches: 0,
 };
 
 const gate = { remaining: undefined as number | undefined, resetAtMs: 0, blockedUntil: 0 };
@@ -64,7 +71,7 @@ let queue: Promise<unknown> = Promise.resolve();
 export function resetJupiterBrowserGate() {
   gate.remaining = undefined; gate.resetAtMs = 0; gate.blockedUntil = 0; queue = Promise.resolve();
   Object.assign(jupiterBrowserStats, {
-    calls: 0, quotes: 0, swapInstructions: 0, rateLimited: 0, waitedMs: 0, reused: 0, rounds: 0, fallbacks: 0, churnStops: 0,
+    calls: 0, quotes: 0, swapInstructions: 0, rateLimited: 0, waitedMs: 0, reused: 0, rounds: 0, fallbacks: 0, churnStops: 0, binarySearches: 0,
   });
 }
 
@@ -198,6 +205,48 @@ export function quotePairKey(url: string): string | null {
   return [inputMint, outputMint, params.get("maxAccounts") ?? "", params.get("onlyDirectRoutes") ?? "", params.get("dexes") ?? ""].join(":");
 }
 
+export function quoteAmount(url: string): bigint | null {
+  if (!url.startsWith("/swap/v1/quote")) return null;
+  const amount = new URLSearchParams(url.split("?")[1] ?? "").get("amount");
+  if (!amount || !/^\d{1,40}$/.test(amount)) return null;
+  return BigInt(amount);
+}
+
+export function quoteAmountsWithinBps(a: bigint, b: bigint, bps = RELAY_AMOUNT_CONVERGE_BPS): boolean {
+  if (a === b) return true;
+  const hi = a > b ? a : b;
+  if (hi <= 0n) return false;
+  const difference = a > b ? a - b : b - a;
+  return difference * 10_000n <= hi * BigInt(bps);
+}
+
+export function conservativeQuoteAmount(a: bigint, b: bigint): bigint {
+  return a < b ? a : b;
+}
+
+/** 1% → smaller amount; otherwise the midpoint (integer, toward zero). */
+export function nextRelaySearchAmount(prev: bigint, asked: bigint): bigint {
+  if (quoteAmountsWithinBps(prev, asked)) return conservativeQuoteAmount(prev, asked);
+  return prev + (asked - prev) / 2n;
+}
+
+export function quoteSettleFailureExtras(
+  payload: Record<string, unknown>,
+  needs: readonly Pick<RelayNeed, "url">[],
+  rounds: number,
+): { pair?: string; amount?: string; rangeWidth?: string; rounds: number } {
+  const amount = typeof payload.amount === "string" ? payload.amount : undefined;
+  const rangeWidth = typeof payload.rangePreset === "string" ? payload.rangePreset : undefined;
+  let pair: string | undefined;
+  for (const need of needs) {
+    const key = quotePairKey(need.url);
+    if (!key) continue;
+    const [inputMint, outputMint] = key.split(":");
+    if (inputMint && outputMint) { pair = `${inputMint}/${outputMint}`; break; }
+  }
+  return { pair, amount, rangeWidth, rounds };
+}
+
 function isAmountChurn(need: RelayNeed, store: JupiterRelayStore) {
   const pair = quotePairKey(need.url);
   if (!pair || need.method !== "GET") return false;
@@ -206,6 +255,34 @@ function isAmountChurn(need: RelayNeed, store: JupiterRelayStore) {
     if (url !== need.url && quotePairKey(url) === pair) return true;
   }
   return false;
+}
+
+function previousAmountForPair(store: JupiterRelayStore, pair: string, currentUrl: string): bigint | null {
+  let previous: bigint | null = null;
+  for (const key of store.byUrl.keys()) {
+    const url = key.slice("GET:".length);
+    if (url === currentUrl || quotePairKey(url) !== pair) continue;
+    const amount = quoteAmount(url);
+    if (amount !== null) previous = amount;
+  }
+  return previous;
+}
+
+function retargetHints(store: JupiterRelayStore, from: readonly bigint[], to: bigint) {
+  if (from.length === 0) return;
+  const labels = new Set(from.map((value) => value.toString()));
+  for (const [key, value] of Object.entries(store.hints)) {
+    if (labels.has(value)) store.hints[key] = to.toString();
+  }
+}
+
+function nearbyStoredAmount(store: JupiterRelayStore, need: RelayNeed): { prev: bigint; amount: bigint } | null {
+  const pair = quotePairKey(need.url);
+  const amount = quoteAmount(need.url);
+  if (!pair || amount === null) return null;
+  const prev = previousAmountForPair(store, pair, need.url);
+  if (prev === null || !quoteAmountsWithinBps(prev, amount)) return null;
+  return { prev, amount };
 }
 
 /**
@@ -246,6 +323,13 @@ function relayPayload(store: JupiterRelayStore) {
   };
 }
 
+function throwDidNotSettle(payload: Record<string, unknown>, needs: readonly Pick<RelayNeed, "url">[]): never {
+  jupiterBrowserStats.churnStops++;
+  const error = new Error(RELAY_DID_NOT_SETTLE_MESSAGE);
+  captureQuoteSettleFailure(error, quoteSettleFailureExtras(payload, needs, jupiterBrowserStats.rounds));
+  throw error;
+}
+
 /**
  * POSTs `payload` to one of our quote/prepare routes, serving every Jupiter call
  * the server needs from this browser. Returns the route's final Response.
@@ -258,7 +342,10 @@ export async function postWithJupiterRelay(url: string, payload: Record<string, 
   if (!jupiterRelayEnabled()) return post(payload);
   const { store, signal } = options;
   let churnRounds = 0;
-  for (let round = 0; round < MAX_RELAY_ROUNDS; round++) {
+  let searchSteps = 0;
+  let lastNeeds: RelayNeed[] = [];
+  const maxRounds = MAX_RELAY_ROUNDS + RELAY_BINARY_SEARCH_LIMIT;
+  for (let round = 0; round < maxRounds; round++) {
     prune(store);
     jupiterBrowserStats.rounds++;
     const response = await post({ ...payload, jupiterRelay: relayPayload(store) });
@@ -272,15 +359,45 @@ export async function postWithJupiterRelay(url: string, payload: Record<string, 
     const listed = data.needs.filter((need): need is RelayNeed =>
       !!need && typeof need === "object" && typeof need.id === "string" && (need.method === "GET" || need.method === "POST") && typeof need.url === "string");
     if (listed.length === 0) return response;
+    lastNeeds = listed;
     const freshListed = listed.filter((need) => !storedFor(store, need));
-    const churning = freshListed.length > 0 && freshListed.every((need) => isAmountChurn(need, store));
+    const withinTolerance = freshListed.length > 0 && freshListed.every((need) => !quotePairKey(need.url) || nearbyStoredAmount(store, need) !== null);
+    const churning = freshListed.length > 0 && freshListed.every((need) => isAmountChurn(need, store)) && !withinTolerance;
     churnRounds = churning ? churnRounds + 1 : 0;
-    if (churnRounds >= RELAY_AMOUNT_CHURN_LIMIT) {
-      jupiterBrowserStats.churnStops++;
-      throw new Error(RELAY_DID_NOT_SETTLE_MESSAGE);
+    const wouldStop = churnRounds >= RELAY_AMOUNT_CHURN_LIMIT;
+    if (withinTolerance) {
+      for (const need of freshListed) {
+        const nearby = nearbyStoredAmount(store, need);
+        if (!nearby) continue;
+        retargetHints(store, [nearby.prev, nearby.amount], conservativeQuoteAmount(nearby.prev, nearby.amount));
+      }
     }
+    if (wouldStop && !withinTolerance) {
+      if (searchSteps < RELAY_BINARY_SEARCH_LIMIT) {
+        searchSteps++;
+        jupiterBrowserStats.binarySearches++;
+        churnRounds = 0;
+        for (const need of freshListed) {
+          const pair = quotePairKey(need.url);
+          const amount = quoteAmount(need.url);
+          if (!pair || amount === null) continue;
+          const prev = previousAmountForPair(store, pair, need.url);
+          if (prev === null) continue;
+          retargetHints(store, [prev, amount], nextRelaySearchAmount(prev, amount));
+        }
+        continue;
+      }
+      throwDidNotSettle(payload, listed);
+    }
+    const toFetch = withinTolerance
+      ? listed.filter((need) => {
+        const nearby = nearbyStoredAmount(store, need);
+        if (!nearby) return true;
+        return conservativeQuoteAmount(nearby.prev, nearby.amount) === nearby.amount;
+      })
+      : listed;
     try {
-      for (const need of expandRelayNeeds(listed)) {
+      for (const need of expandRelayNeeds(toFetch)) {
         if (storedFor(store, need)) { jupiterBrowserStats.reused++; continue; }
         remember(store, need, { ...await fetchNeed(need, signal), at: Date.now() });
       }
@@ -290,7 +407,7 @@ export async function postWithJupiterRelay(url: string, payload: Record<string, 
       return post(payload);
     }
   }
-  throw new Error(RELAY_DID_NOT_SETTLE_MESSAGE);
+  throwDidNotSettle(payload, lastNeeds);
 }
 
 if (typeof window !== "undefined") {

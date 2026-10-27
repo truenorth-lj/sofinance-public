@@ -60,3 +60,75 @@ export function padAmountMax(required: bigint, available: bigint, toleranceBps: 
   const padded = (required * (10_000n + BigInt(toleranceBps)) + 9_999n) / 10_000n;
   return padded < available ? padded : available;
 }
+
+/** Open-position sizing: consecutive amounts within this many bps of `scale` have converged. */
+export const SIZING_CONVERGE_BPS = 100;
+export const SIZING_LOOP_ROUNDS = 5;
+export const SIZING_BINARY_SEARCH_ROUNDS = 8;
+export const SIZING_DID_NOT_CONVERGE_MESSAGE = "Pool price and swap ratio did not converge, please retry later";
+
+export function sizingDifference(a: bigint, b: bigint): bigint {
+  return a > b ? a - b : b - a;
+}
+
+/** True when `|a - b| / scale` is at most `SIZING_CONVERGE_BPS` (1%). */
+export function sizingAmountsConverged(a: bigint, b: bigint, scale: bigint): boolean {
+  if (a === b) return true;
+  if (scale <= 0n) return false;
+  return sizingDifference(a, b) * 10_000n <= scale * BigInt(SIZING_CONVERGE_BPS);
+}
+
+/** Never overspend: leftover dust stays in the wallet. */
+export function conservativeSizingAmount(a: bigint, b: bigint): bigint {
+  return a < b ? a : b;
+}
+
+export function sizingMidpoint(lo: bigint, hi: bigint): bigint {
+  return lo + (hi - lo) / 2n;
+}
+
+/**
+ * Iterate `quoteRound(spend)` until consecutive spends are within 1% of `scale`, then keep the
+ * smaller (conservative) amount. If the inner loop does not settle, binary-search the last
+ * interval. `quoteRound` must quote at `spend` and return the allocator's next spend.
+ */
+export async function settleSizingSpend(
+  initial: bigint,
+  scale: bigint,
+  quoteRound: (spend: bigint) => Promise<bigint>,
+): Promise<bigint> {
+  let current = initial;
+  let next = initial;
+  for (let index = 0; index < SIZING_LOOP_ROUNDS; index++) {
+    next = await quoteRound(current);
+    if (sizingAmountsConverged(next, current, scale)) {
+      const chosen = conservativeSizingAmount(current, next);
+      if (chosen !== current) await quoteRound(chosen);
+      return chosen;
+    }
+    if (index < SIZING_LOOP_ROUNDS - 1) current = next;
+  }
+  let lo = conservativeSizingAmount(current, next);
+  let hi = current > next ? current : next;
+  for (let index = 0; index < SIZING_BINARY_SEARCH_ROUNDS; index++) {
+    if (hi <= lo || sizingAmountsConverged(lo, hi, scale)) {
+      if (current !== lo) await quoteRound(lo);
+      return lo;
+    }
+    const mid = sizingMidpoint(lo, hi);
+    if (mid === lo || mid === hi) {
+      if (current !== lo) await quoteRound(lo);
+      return lo;
+    }
+    next = await quoteRound(mid);
+    current = mid;
+    if (sizingAmountsConverged(next, mid, scale)) {
+      const chosen = conservativeSizingAmount(mid, next);
+      if (chosen !== mid) await quoteRound(chosen);
+      return chosen;
+    }
+    if (next < mid) hi = mid;
+    else lo = mid;
+  }
+  throw new Error(SIZING_DID_NOT_CONVERGE_MESSAGE);
+}

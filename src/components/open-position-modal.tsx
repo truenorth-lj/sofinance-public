@@ -11,6 +11,7 @@ import { formatPositionPriceRange, formatRangeStatus, tokenSymbol } from "@/lib/
 import { ChevronDown, Info, LoaderCircle, RefreshCw, X } from "lucide-react";
 import { useOpenPositionController, type OpenPositionPair } from "./use-open-position-controller";
 import { RangePresetPicker } from "./range-apr/range-preset-picker";
+import { smallAmountNarrowRangeHint } from "@/lib/open-range-hint";
 import { usePoolRangeApr } from "./range-apr/use-pool-range-apr";
 import { DOCS_ROUTES } from "@/lib/public-urls";
 import { NATIVE_SOL_MINT, USDC_MINT } from "@sofinance/engine/ids";
@@ -85,6 +86,7 @@ export function OpenPositionModal({
     mintA: pair.mintA, mintB: pair.mintB, payload: rangeApr.status === "ready" ? rangeApr.data : null,
   });
   const capitalUsd = useDebouncedValue(liveCapitalUsd === null ? null : Math.round(liveCapitalUsd * 100) / 100, 400);
+  const rangeHint = smallAmountNarrowRangeHint(liveCapitalUsd, c.rangePreset);
   const lamports = (value: string | number | bigint) => formatSolCost(value, solUsdcRate);
   const quote = c.quote;
   // Price the exact ticks a live quote for the current selection would sign; otherwise the preset / typed band.
@@ -208,6 +210,11 @@ export function OpenPositionModal({
           quotedRange={quotedRange}
           capitalUsd={capitalUsd}
         />
+        {rangeHint && (
+          <p data-testid="small-amount-narrow-range-hint" className="mt-2 text-xs leading-5 text-smoke">
+            {rangeHint}
+          </p>
+        )}
 
         {quote && (
           <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.04] p-3 text-xs text-cream/80">

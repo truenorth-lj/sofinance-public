@@ -5,7 +5,7 @@ import {
   QUOTE_TTL_MS, SLIPPAGE_BPS,
 } from "./ids";
 import { describeResaleFloorFailure, meetsResaleFloor, parseAddToleranceBps, parseResaleFloorBps, parseTokenAmount } from "./amount";
-import { allocateSpend, padAmountMax, poolPriceRates, positionSide, toleranceLiquidity } from "./quote-math";
+import { allocateSpend, padAmountMax, poolPriceRates, positionSide, settleSizingSpend, toleranceLiquidity } from "./quote-math";
 import { type BuildRoute } from "./swap/jupiter";
 import { jupiterRelayHint, setJupiterRelayHint } from "./jupiter/client";
 import { estimateOpenPositionRent } from "./open-rent";
@@ -166,9 +166,9 @@ export async function getOpenPositionQuoteBundle(
       : availablePrimary - allocateSpend(availablePrimary, primaryAmount(desired), secondaryAmount(desired),
         { spend: 1n, out: 1n }, primaryIsA ? rates.aToB : rates.bToA, 1n);
     let sized: OpenSwapLeg[] = [];
-    for (let index = 0; index < 5; index++) {
-      setJupiterRelayHint(sequentialHint, swapPrimary);
-      const secondary = await depositLeg(wallet, primaryMint, secondaryMint, swapPrimary, routeMaxAccounts, secondaryBps);
+    swapPrimary = await settleSizingSpend(swapPrimary, availablePrimary, async (value) => {
+      setJupiterRelayHint(sequentialHint, value);
+      const secondary = await depositLeg(wallet, primaryMint, secondaryMint, value, routeMaxAccounts, secondaryBps);
       // Both hops affect the secondary leg. Keep combined reported impact within
       // the same 5% cap rather than permitting 5% independently on each hop.
       const reportedImpact = 1 - (1 - Number(primary.route?.priceImpactPct ?? 0)) * (1 - Number(secondary.route?.priceImpactPct ?? 0));
@@ -177,15 +177,12 @@ export async function getOpenPositionQuoteBundle(
         [primary, secondary].flatMap(item => item.route ? [item.route] : []));
       const needed = amountsAt(projected, lowerSqrtX64, upperSqrtX64, new BN("1000000000000000000"));
       const next = availablePrimary - allocateSpend(availablePrimary, primaryAmount(needed), secondaryAmount(needed),
-        { spend: swapPrimary, out: swapPrimary }, { spend: swapPrimary, out: secondary.minOut }, 1n);
+        { spend: value, out: value }, { spend: value, out: secondary.minOut }, 1n);
       sized = [primary, secondary];
-      legs = [{ ...primary, minOut: availablePrimary - swapPrimary }, secondary];
-      spendA = requested * (primaryIsA ? availablePrimary - swapPrimary : swapPrimary) / availablePrimary;
-      const difference = next > swapPrimary ? next - swapPrimary : swapPrimary - next;
-      if (difference * 1_000n <= availablePrimary * 2n) break;
-      if (index === 4) throw new Error("Pool price and swap ratio did not converge, please retry later");
-      swapPrimary = next;
-    }
+      legs = [{ ...primary, minOut: availablePrimary - value }, secondary];
+      spendA = requested * (primaryIsA ? availablePrimary - value : value) / availablePrimary;
+      return next;
+    });
     // Built together: with browser-relayed Jupiter both swap-instructions are requested in one round.
     const [primaryBuilt, secondaryBuilt] = await Promise.all([builtLeg(sized[0]!, swapFeeBps), builtLeg(sized[1]!, secondaryBps)]);
     legs = [{ ...primaryBuilt, minOut: availablePrimary - swapPrimary }, secondaryBuilt];
@@ -195,23 +192,19 @@ export async function getOpenPositionQuoteBundle(
     const hinted = jupiterRelayHint(parallelHint);
     spendA = hinted !== undefined && hinted > 0n && hinted < requested ? hinted
       : allocateSpend(requested, BigInt(base.amountA.toString()), BigInt(base.amountB.toString()), rates.rateA, rates.rateB, 1n);
-    for (let index = 0; index < 5; index++) {
-      setJupiterRelayHint(parallelHint, spendA);
+    spendA = await settleSizingSpend(spendA, requested, async (value) => {
+      setJupiterRelayHint(parallelHint, value);
       const [actualA, actualB] = await Promise.all([
-        depositLeg(wallet, state.inputMint, state.mintA, spendA, routeMaxAccounts, swapFeeBps),
-        depositLeg(wallet, state.inputMint, state.mintB, requested - spendA, routeMaxAccounts, swapFeeBps),
+        depositLeg(wallet, state.inputMint, state.mintA, value, routeMaxAccounts, swapFeeBps),
+        depositLeg(wallet, state.inputMint, state.mintB, requested - value, routeMaxAccounts, swapFeeBps),
       ]);
       legs = [actualA, actualB];
       projected = projectedSqrt(state, lowerSqrtX64, upperSqrtX64, resolved.rangeSide,
         legs.flatMap((item) => item.route ? [item.route] : []));
       const desired = amountsAt(projected, lowerSqrtX64, upperSqrtX64, new BN("1000000000000000000"));
-      const next = allocateSpend(requested, BigInt(desired.amountA.toString()), BigInt(desired.amountB.toString()),
-        { spend: spendA, out: actualA.minOut }, { spend: requested - spendA, out: actualB.minOut }, 1n);
-      const difference = next > spendA ? next - spendA : spendA - next;
-      if (difference * 1_000n <= requested * 2n) break;
-      if (index === 4) throw new Error("Pool price and swap ratio did not converge, please retry later");
-      spendA = next;
-    }
+      return allocateSpend(requested, BigInt(desired.amountA.toString()), BigInt(desired.amountB.toString()),
+        { spend: value, out: actualA.minOut }, { spend: requested - value, out: actualB.minOut }, 1n);
+    });
     legs = await Promise.all([builtLeg(legs[0]!, swapFeeBps), builtLeg(legs[1]!, swapFeeBps)]);
   }
   if (deposit.feeAmount > 0n) {
