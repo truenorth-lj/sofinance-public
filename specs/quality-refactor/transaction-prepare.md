@@ -78,3 +78,8 @@ receipts require fresh dependency/closure identity; skipped PG tests are never p
 
 Handoff is clean local commits for independent root review. No push/PR/merge/deployment.
 STATIC and BEHAVIORAL claims are scoped local; FINANCIAL NOT_EXERCISED.
+
+PR154 subsequently merged as `5150cdf60d9be719c553b05b241df30dd8d932a6` after CI and strict review.
+Root's separate `output/sofinance-prepare-production-verification-20261027-r1.md` records
+deployment `dpl_HMvswA5Mguo11dq9qouEY4dRKv8w`, 9/9 read-only checks with zero retries/skips,
+and full 16-tool metadata parity. This is accepted-base evidence, not selected-submit proof.

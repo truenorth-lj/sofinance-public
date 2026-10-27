@@ -1,17 +1,14 @@
 import "@/lib/engine-host";
 import { PublicKey, VersionedTransaction } from "@solana/web3.js";
-import bs58 from "bs58";
 import { discoverWallet } from "@sofinance/engine/wallet-discovery";
 import { searchSelectedQuoteBundle } from "../lib/selected-quote";
+import { submitSelected } from "@/server/transactions/selected-submit";
 import { prepareSelected } from "@/server/transactions/selected-prepare";
-import { MCP_SELECTED_PREPARE, MCP_OPEN_PREPARE, MCP_WITHDRAW_PREPARE } from "@/server/transactions/surface-policy";
+import { MCP_SELECTED_PREPARE, MCP_OPEN_PREPARE, MCP_WITHDRAW_PREPARE, MCP_SELECTED_SUBMIT } from "@/server/transactions/surface-policy";
 import { buildAndSimulateCompound } from "@sofinance/engine/compound-atomic";
 import { prepareCompound } from "@/server/transactions/compound-prepare";
 import { verifySelectedPermit } from "../lib/selected-permit";
 import { verifyCompoundPermit } from "../lib/compound-permit";
-import { simulateAndVerifySelectedTransaction } from "../lib/selected-simulation";
-import { readSelectedPositionState } from "@sofinance/engine/selected-state";
-import { rpcConnection } from "@sofinance/engine/rpc";
 import { beamAfterSend, noBeamAfterSend } from "@/lib/beam-after-send";
 import { sendSignedCompoundTransaction } from "../lib/compound-send";
 import { CompoundSendError, notSentRetryMessage, sanitizePublicError } from "../lib/public-error";
@@ -19,7 +16,6 @@ import { getSigningSecret } from "@sofinance/engine/config/server-env";
 import type { CompoundSummary } from "@sofinance/engine/compound-types";
 import { getRwaPairs } from "../lib/rwa-store";
 import { getPositionPerformance as readPositionPerformance } from "../lib/position-performance";
-import { invalidatePositionHistoryCache } from "../lib/position-history-cache";
 import { createSignToken } from "../lib/pending-sign-token";
 import { buildOpenPositionUrl, buildSignUrl } from "../lib/public-urls";
 import { OPEN_RANGE_PRESETS } from "@sofinance/engine/open-range-presets";
@@ -401,68 +397,8 @@ export async function submitSignedTransaction(input: SubmitSignedTransactionInpu
     throw new Error("Payer, signature count, or transaction size mismatch");
   }
   
-  // Re-read state and verify
-  const connection = rpcConnection();
-  const [height, state] = await Promise.all([
-    connection.getBlockHeight("confirmed"),
-    readSelectedPositionState(walletAddress, input.selection, connection),
-  ]);
-  
-  if (height > input.lastValidBlockHeight) {
-    throw new Error("Transaction blockhash expired");
-  }
-  
-  if (
-    !state.ownsNft ||
-    state.paused ||
-    state.frozen ||
-    state.transferFee ||
-    state.unsupportedExtensions.length ||
-    !state.sufficientSol ||
-    state.positionMint !== input.selection.positionMint ||
-    state.inputMint !== input.selection.inputMint ||
-    state.inputKind !== input.selection.inputKind ||
-    state.liquidity !== input.startingLiquidity ||
-    state.rangeSide !== input.rangeSide ||
-    state.balances.input !== input.startingBalances.input ||
-    state.balances.a !== input.startingBalances.a ||
-    state.balances.b !== input.startingBalances.b
-  ) {
-    throw new Error("Position, liquidity, or wallet balance has changed since preparation");
-  }
-  
-  // Re-simulate
-  await simulateAndVerifySelectedTransaction({
-    connection,
-    transaction,
-    wallet,
-    state,
-    requested: BigInt(input.requested),
-    expectedLiquidity: BigInt(input.expectedLiquidity),
-    sigVerify: true,
-  });
-  
-  // Final expiry check
-  if (
-    Date.now() >= input.expiresAt ||
-    (await connection.getBlockHeight("confirmed")) > input.lastValidBlockHeight
-  ) {
-    throw new Error("Signed transaction expired before broadcast");
-  }
-  
-  // Broadcast
-  const expectedSignature = bs58.encode(walletSignature);
-  const signature = await connection.sendRawTransaction(transaction.serialize(), {
-    skipPreflight: false,
-    preflightCommitment: "confirmed",
-    maxRetries: 3,
-  });
-  
-  if (signature !== expectedSignature) {
-    throw new Error("RPC returned transaction signature mismatch");
-  }
-  invalidatePositionHistoryCache(input.selection.positionMint);
-  
+  const signature = await submitSelected({ transaction, wallet, walletSignature, permitInput }, MCP_SELECTED_SUBMIT);
+
   // Same as /api/selected-broadcast: no inline Beam wait; landing is status-only via /api/beam-landing.
   const beam = await beamAfterSend(signature, null).catch(() => noBeamAfterSend(signature));
   return { signature, beam: beam.beam, beamLabel: beam.label, beamLandingUrl: beam.beamLandingUrl };
