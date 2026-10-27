@@ -155,6 +155,13 @@ export async function quoteAddLiquidity(input: QuoteAddLiquidityInput) {
   };
 }
 
+// Preserve the original one-key lifetime across the async use-case boundary.
+// Capture lazily after build success; never return key material in prepared data.
+function capturePrepareSigningSecret() {
+  let secret: string | undefined;
+  return () => secret ??= getSigningSecret();
+}
+
 /**
  * Prepare an unsigned, simulated transaction for adding liquidity.
  * Returns base64-encoded transaction for the user/agent wallet to sign.
@@ -164,6 +171,7 @@ export async function quoteAddLiquidity(input: QuoteAddLiquidityInput) {
  * Failure modes: Simulation failure, size limit, blockhash expiry, state changes.
  */
 export async function prepareTransaction(input: PrepareTransactionInput) {
+  const signingSecret = capturePrepareSigningSecret();
   const selection = {
     positionMint: input.positionMint,
     inputMint: input.inputMint,
@@ -173,8 +181,8 @@ export async function prepareTransaction(input: PrepareTransactionInput) {
   const { summary, permit, unsignedTransaction: unsignedTransactionBase64 } = await prepareSelected({
     wallet: input.wallet, selection, amount: input.amount,
     floorBps: input.resaleFloorBps, toleranceBps: input.slippageToleranceBps,
-  }, MCP_SELECTED_PREPARE);
-  const jupiterApiKey = getSigningSecret();
+  }, signingSecret, MCP_SELECTED_PREPARE);
+  const jupiterApiKey = signingSecret();
 
   // Every field submit_signed_transaction needs besides the signed transaction.
   // These values are bound by the permit, so they must be passed back unchanged.
@@ -301,10 +309,11 @@ export async function quoteCompound(input: QuoteCompoundInput) {
  * Safety: Same as prepareTransaction, plus isolated yield accounts.
  */
 export async function prepareCompoundTransaction(input: QuoteCompoundInput) {
+  const signingSecret = capturePrepareSigningSecret();
   const { summary, permit, unsignedTransaction: unsignedTransactionBase64 } = await prepareCompound({
     wallet: input.wallet, positionMint: input.positionMint, sourceSignatures: input.sourceSignatures || [],
-  });
-  const jupiterApiKey = getSigningSecret();
+  }, signingSecret);
+  const jupiterApiKey = signingSecret();
 
   // submitArgs for compound includes signedTransaction, permit, wallet, and full summary
   const submitArgs = {
@@ -722,6 +731,7 @@ export async function quoteOpenPosition(input: QuoteOpenPositionInput) {
  * The wallet still signs as fee payer. After signing, call submit_open_position.
  */
 export async function prepareOpenPosition(input: PrepareOpenPositionInput) {
+  const signingSecret = capturePrepareSigningSecret();
   const selection = {
     poolId: input.poolId,
     inputMint: input.inputMint,
@@ -730,8 +740,8 @@ export async function prepareOpenPosition(input: PrepareOpenPositionInput) {
   const { summary, permit, unsignedTransaction: unsignedTransactionBase64 } = await prepareOpen({
     wallet: input.wallet, selection, amount: input.amount, range: openRangeFromInput(input),
     floorBps: input.resaleFloorBps, toleranceBps: input.slippageToleranceBps,
-  }, MCP_OPEN_PREPARE);
-  const jupiterApiKey = getSigningSecret();
+  }, signingSecret, MCP_OPEN_PREPARE);
+  const jupiterApiKey = signingSecret();
   const submitArgs = { permit, wallet: input.wallet, summary };
   const signToken = await createSignToken(
     {

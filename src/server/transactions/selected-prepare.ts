@@ -2,7 +2,6 @@ import "@/lib/engine-host";
 import "server-only";
 import { buildAndSimulateSelectedZap } from "@/lib/selected-atomic";
 import { issueSelectedPermit } from "@/lib/selected-permit";
-import { getSigningSecret } from "@sofinance/engine/config/server-env";
 import type { PositionSelection } from "@sofinance/engine/selected-state";
 import type { JupiterRetryBudget } from "@sofinance/engine/jupiter/client";
 import { APP_SELECTED_PREPARE, MCP_SELECTED_PREPARE } from "./surface-policy";
@@ -18,6 +17,7 @@ type SelectedPrepareContext = { signal: AbortSignal; budget: JupiterRetryBudget 
 
 export async function prepareSelected(
   command: SelectedPrepareCommand,
+  readSigningSecret: () => string,
   ...surface: [profile: typeof APP_SELECTED_PREPARE, context: SelectedPrepareContext]
     | [profile: typeof MCP_SELECTED_PREPARE]
 ) {
@@ -28,7 +28,7 @@ export async function prepareSelected(
       { enforceResaleFloor: false, signal: context.signal, budget: context.budget })
     : await buildAndSimulateSelectedZap(wallet, selection, amount, floorBps, toleranceBps);
   context?.signal.throwIfAborted();
-  const permit = issueSelectedPermit(getSigningSecret(), {
+  const permit = issueSelectedPermit(readSigningSecret(), {
     message: Buffer.from(transaction.message.serialize()).toString("base64"), wallet, selection,
     requested: summary.quote.requested, floorBps: summary.quote.floorBps,
     expiresAt: summary.expiresAt, lastValidBlockHeight: summary.lastValidBlockHeight,

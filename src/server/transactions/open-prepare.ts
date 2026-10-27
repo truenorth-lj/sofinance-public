@@ -1,7 +1,6 @@
 import "@/lib/engine-host";
 import "server-only";
 import { buildAndSimulateOpenPosition } from "@sofinance/engine/open-atomic";
-import { getSigningSecret } from "@sofinance/engine/config/server-env";
 import type { OpenPositionSelection } from "@sofinance/engine/open-state";
 import type { OpenRangeInput } from "@sofinance/engine/open-range";
 import { issueOpenPositionPermit } from "@/lib/open-permit";
@@ -17,7 +16,7 @@ export type OpenPrepareCommand = {
   toleranceBps?: number;
 };
 
-export async function prepareOpen(command: OpenPrepareCommand,
+export async function prepareOpen(command: OpenPrepareCommand, readSigningSecret: () => string,
   profile: typeof APP_OPEN_PREPARE | typeof MCP_OPEN_PREPARE) {
   const { wallet, selection, amount, range, floorBps, toleranceBps } = command;
   const { summary, transaction } = profile === APP_OPEN_PREPARE
@@ -25,7 +24,7 @@ export async function prepareOpen(command: OpenPrepareCommand,
       wallet, selection, amount, range, floorBps, toleranceBps, { enforceResaleFloor: false },
     ))
     : await buildAndSimulateOpenPosition(wallet, selection, amount, range, floorBps, toleranceBps);
-  const permit = issueOpenPositionPermit(getSigningSecret(), {
+  const permit = issueOpenPositionPermit(readSigningSecret(), {
     wallet, message: Buffer.from(transaction.message.serialize()).toString("base64"), summary,
   });
   // The engine already refreshed the blockhash and partial-signed with the NFT key.

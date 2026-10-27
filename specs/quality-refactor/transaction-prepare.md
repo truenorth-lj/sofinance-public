@@ -27,6 +27,14 @@ Withdraw HTTP still passes raw JSON to the engine parser, retries only the exist
 then refreshes/restamps/reissues the permit. MCP loads its use case lazily, builds once and
 never adds HTTP refresh. The existing WithdrawPrepared/previous object is not reconstructed.
 
+The three non-withdraw use cases accept a narrow signing-key reader supplied by their adapter.
+HTTP passes the existing getter. MCP lazily captures one key after builder success and reuses
+it for the permit and sign token, preserving the original lifetime across the new await seam.
+No key enters returned prepared data; builder failure still performs zero signing-key reads.
+Six additional characterization tests pass against accepted original tools.ts and detect the
+intermediate extraction's duplicate read before the correction. Withdraw retains its original
+engine-permit and later token reads unchanged.
+
 ## Characterization
 
 Before extraction, checkpoint `ee5e901c473cb60e3003baaf6a7769ed2aaf4a69` froze 84 new tests

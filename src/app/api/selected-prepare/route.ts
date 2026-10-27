@@ -1,4 +1,5 @@
 import "@/lib/engine-host";
+import { getSigningSecret } from "@sofinance/engine/config/server-env";
 import { withJupiterRelay } from "@/lib/jupiter-relay-route";
 import { withSelectedDeadline } from "@/lib/selected-deadline";
 import { parseSelectedQuoteRequest } from "@sofinance/engine/api-input";
@@ -11,7 +12,7 @@ export async function POST(request: Request) {
   try {
     const { wallet, selection, amount, floorBps, toleranceBps } = await parseSelectedQuoteRequest(request);
     const { summary, permit, unsignedTransaction } = await prepareSelected(
-      { wallet, selection, amount, floorBps, toleranceBps }, APP_SELECTED_PREPARE, { signal, budget },
+      { wallet, selection, amount, floorBps, toleranceBps }, getSigningSecret, APP_SELECTED_PREPARE, { signal, budget },
     );
     return Response.json({ ...summary, permit, unsignedTransaction }, {
       headers: { "Cache-Control": "no-store" },
