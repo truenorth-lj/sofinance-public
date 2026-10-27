@@ -80,9 +80,11 @@ page/context routes afterwards. The helper owns wallet-stub ordering. These are 
 not a security boundary against malicious test code or a browser-process firewall.
 
 The fixture calls `policy.close()` before the final audit: it closes pages while guards remain installed,
-closes the context with a unique cancellation reason, and waits for pending route callbacks. Only cancellation
-carrying that exact shutdown reason is expected; other route/transport errors fail the audit. Do not replace
-this with raw `context.close()` or `unrouteAll({ behavior: "ignoreErrors" })`.
+closes the context with a unique cancellation reason, and waits for the policy's own pending callbacks.
+This does not track arbitrary downstream handlers invoked through `fallback()`. Only cancellation carrying
+that exact shutdown reason is expected; other surfaced HTTP/WS callback errors fail the audit. Playwright
+itself suppresses some underlying WebSocket close rejections, so this is not a complete protocol-error log.
+Do not replace owning teardown with raw `context.close()` or `unrouteAll({ behavior: "ignoreErrors" })`.
 
 Each browser test attaches a sanitized decision ledger: action, scope, hostname, HTTP method and resource type;
 no URL paths, query strings, IDs, headers or bodies. `blocked` means the route was aborted before forwarding;
