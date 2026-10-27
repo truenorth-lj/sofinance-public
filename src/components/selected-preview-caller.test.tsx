@@ -127,3 +127,18 @@ it.each(["jupiter_no_route", "upstream"])("real caller preserves %s presentation
   await advance(450); expect(button("Add liquidity").disabled).toBe(false); snapshot("healthy");
   expect(count("/api/selected-prepare")).toBe(0);
 });
+
+it("attempt: invalid retained history warns in actual caller without locking fresh Add", async () => {
+  await act(async () => root.unmount());
+  const key = `sofinance:selected-atomic:v2:${wallet}`;
+  localStorage.setItem(key, "invalid retained record"); writes.mockClear();
+  root = createRoot(container);
+  await act(async () => root.render(<WalletConnectionContext.Provider value={connection}><SelectedApp initialView="deposit" /></WalletConnectionContext.Provider>));
+  await advance(30); await advance(30); await advance(30);
+  expect(container.textContent).toContain("starting again may add liquidity twice");
+  await ready(); await click("View add liquidity transaction");
+  await click("Add liquidity"); expect(count("/api/selected-prepare")).toBe(1);
+  await act(async () => release(Response.json({error:"Preparation rejected"},{status:400})));
+  expect(localStorage.getItem(key)).toBe("invalid retained record");
+  expect(button("Add liquidity").disabled).toBe(false); snapshot("history retained after prepare failure");
+});
