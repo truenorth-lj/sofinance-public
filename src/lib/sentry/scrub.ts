@@ -333,6 +333,16 @@ export function scrubSentryEvent<T>(event: T): T {
   return event;
 }
 
+/** Fallbacks can receive raw tags when preparation fails before the tag copy.
+ * Only keep an own route data value; never invoke a route accessor or retain
+ * unsanitized text. The fixed "route" key needs no dynamic key classification.
+ */
+export function scrubRouteTag(tags: Record<string, unknown> | undefined): string | undefined {
+  const descriptor = tags && Object.getOwnPropertyDescriptor(tags, "route");
+  return descriptor && "value" in descriptor && typeof descriptor.value === "string"
+    ? scrubSensitiveText(descriptor.value) : undefined;
+}
+
 /** Last-resort event if beforeSend throws: keep exception + route, strip request PII. */
 export function minimalSentryEvent<T>(event: T): T {
   const next = event as T & ScrubableSentryEvent;
@@ -362,7 +372,7 @@ export function minimalSentryEvent<T>(event: T): T {
     next.exception = undefined;
   }
   try {
-    const route = typeof next.tags?.route === "string" ? next.tags.route : undefined;
+    const route = scrubRouteTag(next.tags);
     next.tags = route ? { route } : {};
   } catch {
     next.tags = {};

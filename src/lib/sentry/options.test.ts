@@ -142,3 +142,146 @@ describe("sentryInitOptions", () => {
     expect(JSON.stringify(crumb)).not.toContain("secret123");
   });
 });
+
+describe("beforeSend route tag isolation", () => {
+  const marker = "R6_LABELLED_SECRET_9";
+  const sources = [
+    { name: "request", fields: { request: { url: "https://local.invalid/api/request?token=hidden" }, transaction: "POST /api/transaction" }, route: "/api/request" },
+    { name: "transaction", fields: { transaction: "POST /api/transaction?token=hidden" }, route: "/api/transaction" },
+    { name: "existing tag", fields: {}, route: "/api/existing" },
+  ];
+  const keys = ["api-key", "%61pi-key", "%FF%61pi-key", "%25252561pi-key"];
+
+  describe.each(sources)("$name", ({ fields, route }) => {
+    it.each(keys.flatMap((key) => [false, true].map((throws) => ({ key, throws }))))(
+      "classifies $key before reading its accessor (throws=$throws)",
+      ({ key, throws }) => {
+        const getter = vi.fn(() => {
+          if (throws) throw new Error("tag getter must not run");
+          return marker;
+        });
+        const tags = Object.assign(Object.create(null), { route: "/api/existing", design: "retry", error_class: "TypeError" });
+        Object.defineProperty(tags, key, { enumerable: true, get: getter });
+        const before = Object.getOwnPropertyDescriptors(tags);
+        const output = sentryInitOptions().beforeSend({ type: undefined, ...structuredClone(fields), tags, message: "provider failed" });
+
+        expect(getter).not.toHaveBeenCalled();
+        expect(output.tags).toMatchObject({ route, design: "retry", error_class: "TypeError" });
+        expect(output.tags?.[key === "api-key" || key === "%61pi-key" ? "api-key" : "[redacted-secret]"]).toBe("[redacted]");
+        expect(Object.getPrototypeOf(output.tags)).toBeNull();
+        // Compare identity as a boolean so the assertion library cannot inspect
+        // the raw accessor-bearing object while suggesting equality matchers.
+        expect(output.tags === tags).toBe(false);
+        expect(Object.getOwnPropertyDescriptors(tags)).toEqual(before);
+        expect(JSON.stringify(output)).not.toContain(marker);
+        expect(getter).not.toHaveBeenCalled();
+      },
+    );
+
+    it("does not materialize ordinary tag accessors", () => {
+      const getter = vi.fn(() => "do not materialize");
+      const tags = { route: "/api/existing", design: "retry" };
+      Object.defineProperty(tags, "safeGetter", { enumerable: true, get: getter });
+      const output = sentryInitOptions().beforeSend({ type: undefined, ...structuredClone(fields), tags });
+      expect(getter).not.toHaveBeenCalled();
+      expect(output.tags).toMatchObject({ route, design: "retry", safeGetter: "[unavailable]" });
+    });
+
+    it.each([false, true])("does not read an existing route accessor (throws=%s)", (throws) => {
+      const getter = vi.fn(() => {
+        if (throws) throw new Error("route getter must not run");
+        return "/api/accessor";
+      });
+      const tags = { design: "retry" };
+      Object.defineProperty(tags, "route", { enumerable: true, get: getter });
+      const before = Object.getOwnPropertyDescriptors(tags);
+      const output = sentryInitOptions().beforeSend({ type: undefined, ...structuredClone(fields), tags });
+      expect(getter).not.toHaveBeenCalled();
+      expect(output.tags?.route).toBe(route === "/api/existing" ? "[unavailable]" : route);
+      expect(Object.getOwnPropertyDescriptors(tags)).toEqual(before);
+    });
+  });
+
+  it("keeps inferred route precedence within the bounded tag copy", () => {
+    const getter = vi.fn(() => marker);
+    const tags: Record<string, string> = Object.fromEntries(Array.from({ length: 60 }, (_, i) => [`design${i}`, "retry"]));
+    Object.defineProperty(tags, "%61pi-key", { enumerable: true, get: getter });
+    tags.route = "/api/existing";
+    const before = Object.getOwnPropertyDescriptors(tags);
+    const output = sentryInitOptions().beforeSend({ type: undefined, tags, request: { url: "https://local.invalid/api/request" }, transaction: "POST /api/transaction" });
+    expect(output.tags?.route).toBe("/api/request");
+    expect(output.tags?.design0).toBe("retry");
+    expect(output.tags?.truncated).toBe(true);
+    expect(Object.keys(output.tags!)).toHaveLength(51);
+    expect(getter).not.toHaveBeenCalled();
+    expect(Object.getOwnPropertyDescriptors(tags)).toEqual(before);
+  });
+
+  it("handles absent routes and a tag enumeration failure without copying placeholder characters", () => {
+    expect(sentryInitOptions().beforeSend({ type: undefined, message: "ordinary" }).tags).toBeUndefined();
+    const tags = new Proxy({}, { ownKeys() { throw new Error("unavailable tags"); } });
+    const output = sentryInitOptions().beforeSend({ type: undefined, tags, request: { url: "https://local.invalid/api/request" } });
+    expect(output.tags).toEqual({ route: "/api/request" });
+  });
+
+  describe.each(["minimal", "last resort"])("%s fallback", (fallback) => {
+    it.each(["data", "accessor", "throwing accessor"])("isolates raw tags with a %s route", (kind) => {
+      const secretGetter = vi.fn(() => { throw new Error("secret getter must not run"); });
+      const routeGetter = vi.fn(() => {
+        if (kind === "throwing accessor") throw new Error("route getter must not run");
+        return `/api/test?api-key=${marker}`;
+      });
+      const tags = Object.create(null);
+      Object.defineProperty(tags, "%61pi-key", { enumerable: true, get: secretGetter });
+      Object.defineProperty(tags, "route", kind === "data"
+        ? { enumerable: true, value: `/api/test?api-key=${marker}` }
+        : { enumerable: true, get: routeGetter });
+      const before = Object.getOwnPropertyDescriptors(tags);
+      // A real primary failure before tag scrubbing, then optionally a real
+      // minimal failure before tag handling. No scrubber mocks hide the path.
+      const valueGetter = vi.fn(() => { throw new Error("exception value unavailable"); });
+      const value = Object.defineProperty({ type: "Error" }, "value", { get: valueGetter });
+      const event: ErrorEvent = { type: undefined, tags, exception: { values: [value] }, message: `Authorization: Bearer ${marker}`, contexts: { diagnostic: { design: "drop" } }, extra: { design: "drop" } };
+      if (fallback === "last resort") Object.defineProperty(event, "user", { value: {}, writable: false });
+      const output = sentryInitOptions().beforeSend(event);
+
+      expect(valueGetter).toHaveBeenCalled();
+      expect(secretGetter).not.toHaveBeenCalled();
+      expect(routeGetter).not.toHaveBeenCalled();
+      expect(Object.getOwnPropertyDescriptors(tags)).toEqual(before);
+      expect(output.tags).toEqual(kind === "data" ? { route: "/api/test?[redacted-secret]" } : {});
+      expect(output.message).toBe(fallback === "minimal" ? "[redacted-secret]" : LAST_RESORT_SENTRY_MESSAGE);
+      expect(output.contexts).toBeUndefined();
+      expect(output.extra).toBeUndefined();
+      expect(JSON.stringify(output)).not.toContain(marker);
+    });
+  });
+
+  it.each(sources.slice(0, 2))("keeps the $name route through a real primary scrub failure", ({ fields, route }) => {
+    const getter = vi.fn(() => { throw new Error("tag accessor must not run"); });
+    const tags = { design: "retry" };
+    Object.defineProperties(tags, {
+      "%61pi-key": { enumerable: true, get: getter },
+      route: { enumerable: true, get: getter },
+    });
+    const before = Object.getOwnPropertyDescriptors(tags);
+    const value = Object.defineProperty({ type: "Error" }, "value", { get() { throw new Error("exception value unavailable"); } });
+    const output = sentryInitOptions().beforeSend({ type: undefined, ...structuredClone(fields), tags, exception: { values: [value] }, contexts: { diagnostic: { design: "drop" } } });
+    expect(getter).not.toHaveBeenCalled();
+    expect(output.tags).toEqual({ route });
+    expect(output.contexts).toBeUndefined();
+    expect(output.exception).toBeUndefined();
+    expect(Object.getOwnPropertyDescriptors(tags)).toEqual(before);
+  });
+
+  it("keeps a safe existing route if request route inference throws", () => {
+    const getter = vi.fn(() => { throw new Error("request URL unavailable"); });
+    const tags = { route: "/api/existing", design: "retry" };
+    const request = Object.defineProperty({}, "url", { get: getter });
+    const output = sentryInitOptions().beforeSend({ type: undefined, request, tags, message: "ordinary", contexts: { diagnostic: { design: "drop" } } });
+    expect(getter).toHaveBeenCalled();
+    expect(output.tags).toEqual({ route: "/api/existing" });
+    expect(output.contexts).toBeUndefined();
+    expect(tags).toEqual({ route: "/api/existing", design: "retry" });
+  });
+});
