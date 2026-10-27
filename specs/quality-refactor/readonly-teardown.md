@@ -1,7 +1,7 @@
 # Readonly closure transport follow-up
 
-Scope: test harness only, on local `46988757429b9e4b2e74f5055b1170ada1bbaa39`.
-No app, engine, backend, dependency, lockfile or prototype changes. No remote delivery.
+Scope: test harness only. Delivered in PR [#168](https://github.com/truenorth-lj/sofinance-public/pull/168), merge `b96d55631a173a4c7fef0808c1744ca53c632b87`.
+No app, engine, backend, dependency, lockfile or prototype changes.
 
 Response processing and disposal errors are collected independently before classification.
 Any generic, foreign-owner or non-Error rejection keeps the callback failed even if cleanup
@@ -36,9 +36,12 @@ The actual readonly fixture attaches audit evidence even on close errors. Regres
 cover skipped fetch/keepalive/beacon, two pages/two owners, held allowed responses, redirects,
 already-entered fulfill, stubs, workers, WS, concurrent close, cookies and explicit API isolation.
 There is no universal OS/DNS/UDP/WebRTC/WebTransport or hostile-test-code claim. QA-L1 and SEC-L1
-observability limits remain. Original production exceptions require new root-owned verification.
+observability limits remain. Original production exceptions remain immutable; a separate root-verified production R2 is recorded below.
 
 Detailed commands, retained failures, fresh/reused evidence and final local identity:
 workspace `output/sofinance-prod-readonly-closure-implementation-20261028-r2.md`.
-Production **NOT_REVALIDATED**; financial behavior **NOT_EXERCISED**. Root owns independent review,
-hosted delivery and any later production run. This local change is not release approval.
+Production R2: **PASS_SCOPED_PRODUCTION_READONLY**, deployment `dpl_HCjUnHibD5TPjuBhXbc17BcNnDBf`, 9/9 single-result retry0, all 16 descriptors/key order equal and stable canonical identity. Root readback verified 103 hashes/seven audits. CI `40595912837` passed policy68, fresh hermetic66 retry0, PostgreSQL26, app4677/engine474 per environment lane and network-disabled container.
+
+Historical PR166 UNKNOWN, PR167 failure and PR168 R1 incomplete runner evidence stay unchanged. R2 retains one closing telemetry UNKNOWN with independent proxy containment; a genuine getBalance attempt was observed aborted and proxy-isolated, not zero attempts or universal provider isolation. Financial behavior **NOT_EXERCISED**. These are historical delivery receipts, not P3a release proof.
+
+Sources: workspace `output/sofinance-prod-readonly-closure-production-verification-20261028-r2.md` and `output/sofinance-pr168-production-root-readback-20261028.json`.
