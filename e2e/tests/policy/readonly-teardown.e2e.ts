@@ -65,7 +65,9 @@ for (const scope of ["telemetry", "external", "forbidden"] as const) {
     try {
       const page = await context.newPage(); await page.goto(server.origin);
       // Scheduling injection through a public event: close before the SDK dispatches
-      // this route. This reproduces the skipped-handler mechanism, not a transport escape.
+      // this route. This raw context has no proxy: the request may reach the server
+      // before closure on some platforms. The contract here is UNKNOWN + failed audit,
+      // not transport containment (covered separately by managed-context controls).
       context.on("request", request => {
         if (request.url() === target) { closing = policy.close(); started.resolve(); }
       });
@@ -76,9 +78,9 @@ for (const scope of ["telemetry", "external", "forbidden"] as const) {
       expect(policy.unhandledRequests()).toEqual([{
         ordinal: 1, scope, host: "127.0.0.1", method: "GET", resource: "fetch", observedDuring: "running", outcome: "unknown",
       }]);
-      expect(hits).toEqual(["/"]); expect(sinkHits).toEqual([]);
+      expect(hits).toContain("/");
       expect(() => expect(policy.failures()).toEqual([])).toThrow();
-      await info.attach("unknown-with-zero-sink", { body: JSON.stringify({ unhandled: policy.unhandledRequests(), failures: policy.failures(), hits, sinkHits }), contentType: "application/json" });
+      await info.attach("route-only-unknown", { body: JSON.stringify({ unhandled: policy.unhandledRequests(), failures: policy.failures(), hits, sinkHits }), contentType: "application/json" });
     } finally { await policy.close(); await Promise.all([server.close(), sink.close()]); }
   });
 }
