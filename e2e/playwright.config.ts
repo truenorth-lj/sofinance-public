@@ -25,7 +25,7 @@ export default defineConfig({
   },
   projects: [
     { name: "hermetic", testDir: "./tests/hermetic", use: { baseURL: base } },
-    { name: "prod-readonly", testDir: "./tests/prod", use: { baseURL: process.env.PROD_URL ?? "https://sofinancelab.xyz" }, retries: 1 },
+    { name: "prod-readonly", testDir: "./tests/prod", use: { baseURL: process.env.PROD_URL ?? "https://sofinancelab.xyz", serviceWorkers: "block" }, retries: 0 },
   ],
   webServer: externalBase || process.env.E2E_NO_SERVER ? undefined : {
     command: "node scripts/serve-app.mjs",
