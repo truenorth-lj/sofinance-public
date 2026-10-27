@@ -73,30 +73,69 @@ The same-origin scope is explicit, not a blanket permission:
   status/provider proxies and browser MCP requests, abort **and fail** the scope audit. The existing open-status
   stub is deliberately unreachable in this lane.
 
-Allowed requests use `route.fetch({ maxRedirects: 0, maxRetries: 0 })` and fulfill the single response.
-**All redirects fail closed**, even same-origin redirects: use canonical smoke URLs. This avoids `continue()`
-following an unchecked redirect chain. Install local route fixtures before the policy; do not add overriding
-page/context routes afterwards. The helper owns wallet-stub ordering. These are trusted test-harness rules,
-not a security boundary against malicious test code or a browser-process firewall.
+The production fixture establishes a **deny-only browser proxy before context creation** via
+Playwright's public `proxy` option. The local proxy responds to HTTP, CONNECT and upgrade requests
+without ever dialing, resolving or tunnelling to a destination. It has no forward/allow path.
+Pinned Chromium also proxies loopback (the installed SDK sets `<-loopback>`). The proxy remains
+configured through teardown; closure cannot turn it into a direct connection. HTTP(S) and WS(S)
+transport controls remove all route handlers to verify this independent boundary, and disable the
+proxy to prove the same sinks are reachable. Normal app execution stays online. Only Chromium
+is validated and accepted by this helper; this is not an OS, DNS, UDP, WebRTC or WebTransport sandbox.
 
-The fixture calls `policy.close()` before the final audit: it closes pages while guards remain installed,
-closes the context with a unique cancellation reason, and waits for the policy's own pending callbacks.
-This does not track arbitrary downstream handlers invoked through `fallback()`. Only cancellation carrying
-that exact shutdown reason is expected; other surfaced HTTP/WS callback errors fail the audit. Playwright
-itself suppresses some underlying WebSocket close rejections, so this is not a complete protocol-error log.
-Do not replace owning teardown with raw `context.close()` or `unrouteAll({ behavior: "ignoreErrors" })`.
+Allowed requests use a **separate APIRequestContext**, `fetch(request, { maxRedirects: 0,
+maxRetries: 0, headers })`, and fulfill the single response. The browser request's full headers,
+method and body are retained. An explicit Cookie header (empty when absent) prevents the API
+client's jar from injecting cookies absent from the browser; browser `Set-Cookie` behavior still
+comes from fulfillment. **All redirects fail closed**, even same-origin redirects. The forwarding
+client never uses the deny proxy; the browser context's own `context.request` does inherit it.
+The two fixed direct MCP tests use a separate unproxied request fixture. Neither client is covered
+by the browser transport guarantee. Public-read forwarding still permits server-side provider reads.
 
-Each browser test attaches a sanitized decision ledger: action, scope, hostname, HTTP method and resource type;
-no URL paths, query strings, IDs, headers or bodies. `blocked` means the route was aborted before forwarding;
-`forwarded` means the helper invoked one permitted same-origin transport hop, not proof of a successful response.
-`cancelled` means shutdown interrupted its callback, not that the server never received the earlier request.
-Forbidden responses and unhandled forbidden requests fail teardown; an unhandled request's transport outcome
-is unknown. Trace status `-1` alone is never blocked proof. CSP-blocked worker attempts and native browser
-background traffic are not represented as HTTP route events. During navigation or teardown, a pagehide beacon
-may be accepted by the browser yet disappear before Playwright emits a request or invokes the handler. Thus
-an empty ledger does not prove there was no attempt, and `sendBeacon(true)` does not prove transport completed.
-The loopback tests use actual server request and
-WebSocket-upgrade counts, plus intentional guard-disable/bypass controls, to verify prevention.
+The production tests and loopback fixture regressions share `support/readonly-fixture.ts`.
+`support/readonly-transport.ts` owns the proxy and forwarding client. Standalone policy controls
+use `createReadonlyContext`; installing only `installReadonlyPolicy` on a raw context retains
+legacy **route-only** behavior and cannot claim proxy containment. Registering a transport on a
+context without its actual proxy, overriding fixture wiring, or changing routes after installation
+violates the trusted harness contract. This is not a boundary against malicious test code.
+
+`policy.close()` starts cancellation before closing any page, gives pages/context a unique owner
+reason, closes the independent client with that same reason, and drains its callbacks. New public
+forwarding is refused once shutdown starts. Both readonly wallet stubs fulfill inside that tracked
+handler (no downstream `fallback`); ordinary hermetic stubs are unchanged. An allowed response
+acquired across shutdown is disposed without a late fulfill; a received redirect still fails.
+Generic fulfill/disposal failures and foreign cancellation reasons remain failures. An already
+entered fulfill is not retroactively erased. Double/concurrent close returns one shared promise;
+page crashes, early/foreign page or context close, and surfaced close/dispose errors fail the audit.
+The actual fixture attaches the ledger in a nested finally even when owning close rejects.
+
+Each browser test attaches sanitized decisions (action, scope, hostname, method, resource),
+`unhandled` observations (local ordinal, running/closing phase, outcome), and a transport audit
+(guarantee, denial counters, failures). No paths, queries, bodies, headers, credentials or app IDs
+are retained in this ledger. `blocked` records an abort decision, not guaranteed SDK completion;
+`forwarded` records an allowed single-hop invocation, not a successful response. `cancelled`
+records owned callback/delivery cancellation or refusal of new forwarding during shutdown, not
+proof that an earlier request never reached the server.
+
+Pinned Playwright 1.64 can skip a handler once page/context closing starts. **Such a request stays
+`outcome: unknown`**, including after close. A managed context additionally records
+`containment: deny-only-browser-proxy`: independently of exact request delivery/cancellation, the
+browser has no destination-forwarding path through that proxy. After successful owning closure,
+this independently established containment permits external/telemetry unknown observations without
+forging blocked decisions. Forbidden attempts still fail even if their handler was skipped.
+Active-run handler bypass responses/terminal events remain permanent failures, as do generic errors
+and unexpected lifecycle events. Raw route-only contexts still fail every unhandled unknown.
+
+An offline-before-close candidate was **rejected**: despite acknowledged `setOffline(true)`,
+late same-origin keepalive requests whose handlers were skipped reached loopback telemetry and
+forbidden sinks. Offline state, `requestfailed`, status -1, `sendBeacon(true)`, an empty sink or a
+timeout never upgrades unknown to blocked. Whole-test offline mode is not used. The earlier PR166
+getBalance UNKNOWN and PR167 production failure remain immutable historical results.
+
+Limits retained: a pagehide beacon may disappear before any SDK observation, so the ledger is not
+an exhaustive attempt list (QA-L1). Playwright suppresses some low-level WS close rejections;
+only surfaced errors can be audited (SEC-L1). Worker CSP, `serviceWorkers:block`, and page WS
+no-connect guards remain in force. Proxy containment covers browser HTTP(S)/WS(S) under the pinned
+trusted configuration, not every native/browser protocol or API/server transport.
 
 `APIRequestContext` does **not** pass browser routing. The two direct MCP actions remain explicitly public
 `tools/list` and unauthenticated `list_rwa_pairs` rejection (401 before dispatch), with redirects/retries disabled.
@@ -108,7 +147,8 @@ npm run test:policy       # own loopback origins/sinks, real Chromium; no app or
 ```
 
 CI runs this narrow policy lane before the existing hermetic flows; it never runs prod-readonly on production.
-For offline local nine-journey verification, use a fresh app build and disclosed loopback fixtures for the four
+For offline local nine-journey verification, use a fresh app build (or a precisely identified reused build
+whose application/build inputs are unchanged) and disclosed loopback fixtures for the four
 public data reads, retaining the real AppKit modal, malformed-token route, MCP routes and empty signing ledger.
 Local evidence does not resolve the PR166 production provider-read scope exception; corrected-harness production
 revalidation remains a separate root-owned step.
