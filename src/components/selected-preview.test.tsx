@@ -3,7 +3,7 @@ import { Activity, StrictMode, act, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi, type MockInstance } from "vitest";
 import { RELAY_DEADLINE_MS, useSelectedController } from "./use-selected-controller";
-import { resetJupiterBrowserGate } from "@/lib/jupiter/browser-relay";
+import { JUPITER_BROWSER_ORIGIN, resetJupiterBrowserGate } from "@/lib/jupiter/browser-relay";
 
 // Real facade/relay/storage. Only wallet and HTTP are replaced; keys and time are deterministic.
 const wallet = "11111111111111111111111111111111";
@@ -88,7 +88,7 @@ beforeEach(async () => {
     if (url.startsWith("/api/selected-state?")) return Response.json({ wallet: params.get("wallet"), positionMint: params.get("positionMint"),
       inputKind: params.get("inputKind"), inputMint: params.get("inputMint"), inputDecimals: 6, inputBalance: "10000000",
       ownsNft: true, sufficientSol: true, unsupportedExtensions: [], ...statePatch });
-    if (url === "/api/selected-quote" || url.startsWith("https://api.jup.ag/")) return quoteHandler(url, init);
+    if (url === "/api/selected-quote" || url.startsWith(JUPITER_BROWSER_ORIGIN + "/")) return quoteHandler(url, init);
     if (url === "/api/selected-prepare") return prepareHandler(url, init);
     throw new Error(`Unexpected HTTP boundary: ${url}`);
   }));
@@ -261,7 +261,7 @@ it.each([1000, 1005])("panel relay cache is shared by explicit prepare at near a
   const url = (n: number) => `/swap/v1/quote?inputMint=${inputMint}&outputMint=${otherMint}&amount=${n}`;
   const need = (n: number) => ({ id: `quote-${n}`, method: "GET", url: url(n) });
   quoteHandler = async (path, init) => {
-    if (path.startsWith("https://api.jup.ag/")) return Response.json({ inAmount: "1000", outAmount: "900" });
+    if (path.startsWith(JUPITER_BROWSER_ORIGIN + "/")) return Response.json({ inAmount: "1000", outAmount: "900" });
     const b = body(init); const relay = b.jupiterRelay as { responses: Body };
     if (!relay.responses["quote-1000"]) return Response.json({ code: "jupiter_relay_needed", needs: [need(1000)] }, { status: 409 });
     return Response.json(quote(b));
@@ -272,9 +272,9 @@ it.each([1000, 1005])("panel relay cache is shared by explicit prepare at near a
     if (amount !== 1000 && relay.hints.spend !== "1000") return Response.json({ code: "jupiter_relay_needed", needs: [need(amount)], hints: { spend: String(amount) } }, { status: 409 });
     return Response.json({ error: "Stopped at HTTP prepare boundary" }, { status: 400 });
   };
-  await fresh(); expect(requests.filter(r => r.url.startsWith("https://api.jup.ag/"))).toHaveLength(1);
+  await fresh(); expect(requests.filter(r => r.url.startsWith(JUPITER_BROWSER_ORIGIN + "/"))).toHaveLength(1);
   await act(async () => c.primaryAction()); expect(c.error).toBe("Stopped at HTTP prepare boundary");
-  expect(requests.filter(r => r.url.startsWith("https://api.jup.ag/"))).toHaveLength(1);
+  expect(requests.filter(r => r.url.startsWith(JUPITER_BROWSER_ORIGIN + "/"))).toHaveLength(1);
   expect(count("/api/selected-prepare")).toBe(amount === 1000 ? 1 : 2);
   expect(mocks.sign).not.toHaveBeenCalled(); expect(writes).not.toHaveBeenCalled(); expect(count("/api/selected-broadcast")).toBe(0);
 });
