@@ -14,6 +14,15 @@ const eslintConfig = defineConfig([
       eqeqeq: ["error", "always"],
     },
   },
+  {
+    files: ["src/server/transactions/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": ["error", {
+        patterns: [{ group: ["@/app/**", "@/mcp/**", "@/components/**", "next", "next/**", "react", "react/**", "react-dom", "react-dom/**", "@modelcontextprotocol/sdk", "@modelcontextprotocol/sdk/**"],
+          message: "Prepare use cases cannot depend on transport or UI adapters. The AST guard also checks relative paths and barrels." }],
+      }],
+    },
+  },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:
