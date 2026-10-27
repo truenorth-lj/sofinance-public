@@ -1,0 +1,19 @@
+# Compound position snapshot extraction (P1)
+
+Accepted parent: `20eacc1b11c20d4aaf231b41d25e1679f45e3e9c`, tree `31d1fac4d978df0b96fcb53a11bef1ebac9a7a40`. This is a local responsibility extraction; independent review and delivery remain pending. Prior D3 production verification does not establish P1 release readiness. Prototype remains paused and unchanged.
+
+`transactions/compound/use-compound-position-snapshot.ts` owns the raw snapshot, loading, request revision, explicit read, adoption, invalidation and clear actions. Only the `rpc_unavailable` read failure retries, at 1,500 and 3,000 ms, at most three requests. A current failed read preserves the previous snapshot; stale results cannot settle a newer request's loading or error. Adoption synchronously invalidates in-flight reads. Clear only clears the snapshot; invalidation only advances revision. The hook never fetches automatically.
+
+The controller facade owns mounted/committed identity, stable policy callbacks, submit-error precedence and visible matching. Its reset effect still invalidates synchronously, then uses the same zero-delay timer to clear snapshot/preview and refresh; cleanup still clears that timer. Refresh/adopt refs and their layout updates remain in the facade so selection or callback changes do not restart confirmation polling. Matching confirmation adopts without a redundant read; other-NFT confirmation refreshes the current selection. Existing exports and public return shape/predicates are preserved.
+
+`compound-client.ts` contains the original transport and machine-readable error classification. `sent === false`, `code`, request bodies, headers, signal and cache behavior are unchanged. It adds no prepare/broadcast retry. Attempt, receipt, storage, submission, confirmation, recovery, cleanup and all server policies remain in their existing owners.
+
+## Preservation evidence
+
+`compound-position-snapshot.test.tsx` mounts the real controller and `CompoundPanel`, mocking only wallet and HTTP boundaries. The same assertions pass on the exact accepted controller blob and extracted source: deferred R1/R2 success/error ordering, matching adoption, wrong wallet/NFT rejection plus correct reads, committed wallet and NFT A/B/ABA, invalid inputs, unmount/re-mount, StrictMode replay, callback churn, exact retry timing/exhaustion/recovery, retained prior snapshot, and prepare/explicit-unsent broadcast error priority. Pure reads assert no storage writes/removals, signing, transaction requests or notifications. Existing compound/finality/recovery/batch tests retain their transaction behavior coverage; full hermetic E2E covers actual application callers.
+
+Raw request bodies/order/timing, committed UI projections, storage calls and notify/onConfirmed/sign counts are retained in the implementation evidence. Before/after comparison excludes only randomly generated history-marker UUIDs, retaining original raw values. Negative controls remove revision fencing or add automatic fetching through an owned source overlay; both are rejected by the behavioral tests. No real checkout switch or temporary product mutation is needed for baseline or mutation replay.
+
+Backoff waits retain the baseline lifecycle semantics: a timer already scheduled is not aborted on unmount. When it wakes, the existing mounted/identity/revision check prevents another read; tests drain these owned waits after teardown. This extraction does not introduce a new cancellation policy or claim generalized lifecycle safety.
+
+Workspace receipt: `output/sofinance-compound-snapshot-implementation-20261027-r1.md` and its same-name evidence folder. Fresh checks, exact commit/build identities, reused unchanged-closure service receipts, PG skips and cleanup are recorded there. Financial behavior is **NOT_EXERCISED**; no push, PR, deployment or release approval is included.
