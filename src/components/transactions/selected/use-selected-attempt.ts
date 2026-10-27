@@ -12,13 +12,13 @@ type ApiError = { error: string };
 type SelectedAttemptOptions = {
   wallet?: string;
   busy: boolean;
-  // Stable identity ports read the facade's original refs, at their original effect times.
+  // Stable ports read submission lifetime/lock and facade wallet identity at the original effect times.
   getLifetime: () => object | null;
   isWalletCurrent: (wallet: string) => boolean;
   isSubmitting: () => boolean;
 };
 
-/** Selected history and reconciliation only; submission and persistence stay in the facade. */
+/** Selected history and reconciliation; the submission hook owns the command and persistence. */
 export function useSelectedAttempt({ wallet, busy, getLifetime, isWalletCurrent, isSubmitting }: SelectedAttemptOptions) {
   const [attempt, setAttempt] = useState<SelectedAttempt | null>(null);
   const [attemptStatus, setAttemptStatus] = useState<AtomicStatus | null>(null);
