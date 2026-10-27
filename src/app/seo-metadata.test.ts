@@ -41,19 +41,14 @@ describe("SEO metadata routes", () => {
     expect(docsHrefsFromAppDir()).toEqual([...DOCS_PAGES.map((page) => page.href)].sort());
     expect(blogPaths).toContain("/blog");
     expect(blogPaths).toContain("/blog/dex-evolution");
+    expect(blogPaths).toContain("/blog/xstocks-xpoints");
 
     const urls = sitemap().map((entry) => entry.url);
     expect(urls).toEqual([
       CANONICAL_SITE_URL,
       `${CANONICAL_SITE_URL}/app/rwa-pairs`,
-      `${CANONICAL_SITE_URL}/docs`,
-      `${CANONICAL_SITE_URL}/docs/yield-and-apr`,
-      `${CANONICAL_SITE_URL}/docs/risks`,
-      `${CANONICAL_SITE_URL}/docs/fees`,
-      `${CANONICAL_SITE_URL}/docs/withdraw`,
-      `${CANONICAL_SITE_URL}/docs/security`,
-      `${CANONICAL_SITE_URL}/blog`,
-      `${CANONICAL_SITE_URL}/blog/dex-evolution`,
+      ...DOCS_PAGES.map((page) => `${CANONICAL_SITE_URL}${page.href}`),
+      ...blogPaths.map((path) => `${CANONICAL_SITE_URL}${path}`),
     ]);
     expect(urls.join("\n")).not.toMatch(/\/terms|\/api\/|\/app\/sign|\/app\/plan|\/position-performance/);
   });
