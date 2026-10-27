@@ -285,3 +285,108 @@ describe("beforeSend route tag isolation", () => {
     expect(tags).toEqual({ route: "/api/existing", design: "retry" });
   });
 });
+
+describe("beforeSend transaction, URL and route budget", () => {
+  const marker = "R7_CREDENTIAL_9";
+  const modes = ["primary", "minimal", "last resort"] as const;
+  function send(event: ErrorEvent, mode: typeof modes[number]) {
+    // Immutable breadcrumb data fails before request sanitation. The minimal
+    // path must sanitize its own retained fields, not rely on partial progress.
+    if (mode !== "primary") event.breadcrumbs = [Object.freeze({ data: { design: "retry" } })];
+    if (mode === "last resort") Object.defineProperty(event, "user", { value: {}, writable: false });
+    const output = sentryInitOptions().beforeSend(event);
+    if (mode !== "primary") expect(output.breadcrumbs).toBeUndefined();
+    if (mode === "last resort") expect(output.message).toBe(LAST_RESORT_SENTRY_MESSAGE);
+    else expect(output.message).toBe("ordinary failure");
+    expect(JSON.stringify(output)).not.toContain(marker);
+    return output;
+  }
+
+  it.each(["minimal", "last resort"].flatMap((mode) => [false, true].map((credential) => ({ mode, credential }))))(
+    "sanitizes transaction independently after inference fails: $mode, credential=$credential",
+    ({ mode, credential }) => {
+      const transaction = credential ? `POST /api/test?api-key=${marker}` : "POST /api/test";
+      const event: ErrorEvent = { type: undefined, transaction, message: "ordinary failure", tags: { route: "/api/existing" },
+        request: Object.defineProperty({}, "url", { get() { throw new Error("route inference unavailable"); } }),
+      };
+      if (mode === "last resort") Object.defineProperty(event, "user", { value: {}, writable: false });
+      const output = sentryInitOptions().beforeSend(event);
+      expect(JSON.stringify(output)).not.toContain(marker);
+      expect(output.transaction).toBe(mode === "last resort" ? undefined
+        : credential ? "POST /api/test?[redacted-secret]" : transaction);
+      expect(output.tags?.route).toBe("/api/existing");
+      expect(output.request).toBeUndefined();
+      expect(output.message).toBe(mode === "last resort" ? LAST_RESORT_SENTRY_MESSAGE : "ordinary failure");
+    },
+  );
+
+  describe.each(modes)("%s", (mode) => {
+    it.each([false, true])("scrubs transaction with request precedence=%s", (withRequest) => {
+      const output = send({ type: undefined, message: "ordinary failure",
+        transaction: `POST /api/transaction?api-key=${marker}`,
+        ...(withRequest ? { request: { url: "/api/request" } } : {}),
+      }, mode);
+      expect(output.tags?.route).toBe(withRequest ? "/api/request" : "/api/transaction");
+      expect(output.transaction).toBe(mode === "last resort" ? undefined : "POST /api/transaction?[redacted-secret]");
+    });
+
+    it.each([
+      `https://rpc.invalid/api/test?api-key=${marker}`,
+      `https://rpc.invalid/api-key=${marker}`,
+      `https://user:${marker}@rpc.invalid/api/test`,
+      `/api/api-key=${marker}`,
+      `/api/test#api-key=${marker}`,
+      `/api/%61pi-key=${marker}`,
+    ])("scrubs the entire output for request URL %s", (url) => {
+      const output = send({ type: undefined, message: "ordinary failure", request: { url, method: "GET" } }, mode);
+      if (mode === "last resort") expect(output.request).toBeUndefined();
+      else {
+        expect(output.request?.method).toBe("GET");
+        expect(output.request?.url).toContain(url.startsWith("https:") ? "[redacted-url]" : "[redacted-secret]");
+      }
+    });
+
+    it.each(["POST /api/test", "/api/test"])("preserves ordinary transaction %s", (transaction) => {
+      const output = send({ type: undefined, message: "ordinary failure", transaction }, mode);
+      expect(output.transaction).toBe(mode === "last resort" ? undefined : transaction);
+      expect(output.tags?.route).toBe("/api/test");
+    });
+
+    it.each(["/api/test", "https://local.invalid/api/test"])("retains method and route for normal URL %s", (url) => {
+      const output = send({ type: undefined, message: "ordinary failure", request: { url, method: "POST" } }, mode);
+      expect(output.tags?.route).toBe("/api/test");
+      if (mode !== "last resort") {
+        expect(output.request?.method).toBe("POST");
+        expect(output.request?.url).toBe(url.startsWith("https:") ? "[redacted-url]" : url);
+      }
+    });
+
+    it.each(["request", "transaction"].flatMap((source) => [49, 50, 51, 70].flatMap((count) =>
+      [false, true].map((encoded) => ({ source, count, encoded })),
+    )))("reserves route: $source, $count numeric tags, encoded=$encoded", ({ source, count, encoded }) => {
+      const getter = vi.fn(() => marker);
+      const tags = Object.fromEntries(Array.from({ length: count }, (_, i) => [
+        encoded ? [...String(i)].map((digit) => `%${digit.charCodeAt(0).toString(16)}`).join("") : String(i), "retry",
+      ]));
+      Object.defineProperties(tags, {
+        route: { enumerable: true, get: getter },
+        "%61pi-key": { enumerable: true, get: getter },
+        ordinaryGetter: { enumerable: true, get: getter },
+      });
+      Object.freeze(tags);
+      const before = Object.getOwnPropertyDescriptors(tags);
+      const path = `/api/${source}/api-key=${marker}`;
+      const output = send({ type: undefined, message: "ordinary failure", tags,
+        ...(source === "request" ? { request: { url: path }, transaction: "POST /api/ignored" } : { transaction: `POST ${path}` }),
+      }, mode);
+      expect(output.tags?.route).toBe(`/api/${source}/[redacted-secret]`);
+      expect(Object.keys(output.tags!)).toHaveLength(mode === "primary" ? 51 : 1);
+      if (mode === "primary") {
+        expect(output.tags?.truncated).toBe(true);
+        expect(Object.getPrototypeOf(output.tags)).toBeNull();
+      }
+      expect(getter).not.toHaveBeenCalled();
+      expect(Object.getOwnPropertyDescriptors(tags)).toEqual(before);
+    });
+  });
+});

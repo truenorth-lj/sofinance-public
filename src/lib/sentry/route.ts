@@ -45,8 +45,8 @@ export function applyRouteFromEvent<T extends {
   if (!route) return event;
   // Classify/copy before merging: spreading raw tags would invoke accessors.
   const tags = scrubUnknown(event.tags);
-  // Reserve the route's position inside the subsequent scrubber entry budget.
-  event.tags = { route, ...(tags && typeof tags === "object" ? tags : {}) };
-  event.tags.route = route;
+  // The subsequent event scrub reserves a route slot explicitly, including
+  // when decoded numeric keys enumerate before it, and scrubs the route itself.
+  event.tags = { ...(tags && typeof tags === "object" ? tags : {}), route };
   return event;
 }

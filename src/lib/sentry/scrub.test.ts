@@ -408,7 +408,7 @@ describe("minimalSentryEvent", () => {
     expect(event.extra).toBeUndefined();
     expect(event.breadcrumbs).toBeUndefined();
     expect(event.request).toEqual({
-      url: "https://sofinancelab.xyz/api/pool-range-apr",
+      url: "[redacted-url]",
       method: "GET",
     });
   });

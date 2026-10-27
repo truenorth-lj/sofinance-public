@@ -208,7 +208,7 @@ const MAX_OBJECT_ENTRIES = 50;
 /** Copy only descriptor values, never live hooks or accessors. Key policy runs
  * before value access, including headers; sensitive subtrees are never visited.
  */
-function scrubStructured(value: unknown, seen: WeakSet<object>, depth: number, headers = false): unknown {
+function scrubStructured(value: unknown, seen: WeakSet<object>, depth: number, headers = false, reservedKey?: string): unknown {
   if (typeof value === "string") return scrubSensitiveText(value);
   if (typeof value === "function" || typeof value === "symbol") return "[redacted]";
   if (value === null || typeof value !== "object") return value;
@@ -227,7 +227,12 @@ function scrubStructured(value: unknown, seen: WeakSet<object>, depth: number, h
       return items;
     }
     const next: Record<string, unknown> = Object.create(null);
-    const keys = Object.keys(value);
+    const ownKeys = Object.keys(value);
+    // Reserve within selection, not object insertion order: integer-index keys
+    // enumerate first even if a route was inserted before them. Nested objects
+    // retain the ordinary budget; only the top-level tags reserve a route slot.
+    const keys = reservedKey && ownKeys.includes(reservedKey)
+      ? [reservedKey, ...ownKeys.filter((key) => key !== reservedKey)] : ownKeys;
     for (const key of keys.slice(0, MAX_OBJECT_ENTRIES)) {
       const policy = classifyDiagnosticKey(key);
       const displayKey = "key" in policy ? scrubSensitiveText(policy.key) : REDACTED;
@@ -262,6 +267,7 @@ function scrubHeaders(headers: unknown): unknown {
 
 export type ScrubableSentryEvent = {
   message?: unknown;
+  transaction?: unknown;
   extra?: unknown;
   contexts?: unknown;
   tags?: Record<string, unknown>;
@@ -306,6 +312,8 @@ export function scrubSentryEvent<T>(event: T): T {
   const target = event as T & ScrubableSentryEvent;
   const message = asString(target.message);
   if (message !== undefined) target.message = scrubSensitiveText(message) as string;
+  const transaction = asString(target.transaction);
+  if (transaction !== undefined) target.transaction = scrubSensitiveText(transaction);
   if (Array.isArray(target.exception?.values)) {
     for (const value of target.exception.values) {
       if (!value || typeof value !== "object") continue;
@@ -313,7 +321,9 @@ export function scrubSentryEvent<T>(event: T): T {
       if (text !== undefined) value.value = scrubSensitiveText(text);
     }
   }
-  if (target.tags !== undefined) target.tags = scrubUnknown(target.tags);
+  if (target.tags !== undefined) {
+    target.tags = scrubStructured(target.tags, new WeakSet<object>(), 0, false, "route") as ScrubableSentryEvent["tags"];
+  }
   if (target.extra !== undefined) target.extra = scrubUnknown(target.extra) as ScrubableSentryEvent["extra"];
   if (target.contexts !== undefined) target.contexts = scrubUnknown(target.contexts) as ScrubableSentryEvent["contexts"];
   if (target.breadcrumbs !== undefined) target.breadcrumbs = scrubBreadcrumbs(target.breadcrumbs);
@@ -357,6 +367,12 @@ export function minimalSentryEvent<T>(event: T): T {
     next.message = undefined;
   }
   try {
+    const transaction = asString(next.transaction);
+    next.transaction = transaction !== undefined ? scrubSensitiveText(transaction) : undefined;
+  } catch {
+    next.transaction = undefined;
+  }
+  try {
     const values = next.exception?.values;
     next.exception = Array.isArray(values)
       ? {
@@ -382,7 +398,7 @@ export function minimalSentryEvent<T>(event: T): T {
     const method = asString(req?.method);
     const url = asString(req?.url);
     next.request = url || method
-      ? { url: url ? url.split("?")[0] : undefined, method }
+      ? { url: url ? scrubSensitiveText(url.split("?")[0]) : undefined, method }
       : undefined;
   } catch {
     next.request = undefined;
