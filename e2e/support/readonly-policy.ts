@@ -56,6 +56,8 @@ export async function installReadonlyPolicy(context: BrowserContext, baseURL: st
   const closeReason = `Readonly policy shutdown ${randomUUID()}`;
   let cancelling = false;
   let closing: Promise<void> | undefined;
+  const isOwnedCancellation = (error: unknown) =>
+    cancelling && error instanceof Error && error.message.includes(closeReason);
   const track = (task: Promise<void>) => {
     pending.add(task);
     void task.then(() => pending.delete(task));
@@ -126,6 +128,7 @@ export async function installReadonlyPolicy(context: BrowserContext, baseURL: st
       record(request, "forwarded", scope);
       const response = transport ? await transport.fetch(request) : await route.fetch({ maxRedirects: 0, maxRetries: 0 });
       let deliveryCancelled = false;
+      const responseErrors: unknown[] = [];
       try {
         if (response.status() >= 300 && response.status() < 400) {
           record(request, "blocked", "redirect");
@@ -143,13 +146,22 @@ export async function installReadonlyPolicy(context: BrowserContext, baseURL: st
           headers["content-security-policy"] = [headers["content-security-policy"], "worker-src 'none'"].filter(Boolean).join(", ");
           await route.fulfill({ response, headers });
         }
-      } finally { await response.dispose(); }
+      } catch (error) { responseErrors.push(error); }
+      try { await response.dispose(); }
+      catch (error) { responseErrors.push(error); }
+      if (responseErrors.length) {
+        // A cleanup rejection must not replace a delivery/processing failure. Classify
+        // both, preferring any non-owned failure over cancellation; all-owned errors
+        // still produce exactly one cancellation. The index also preserves throw undefined.
+        const unexpected = responseErrors.findIndex(error => !isOwnedCancellation(error));
+        throw responseErrors[unexpected === -1 ? 0 : unexpected];
+      }
       if (deliveryCancelled) record(request, "cancelled", scope);
     }
   })().catch(async error => {
     // Only our explicit context-close reason identifies an intentional cancellation.
     // Generic disposed/timeout/socket errors remain failures, including during shutdown.
-    if (cancelling && error instanceof Error && error.message.includes(closeReason)) {
+    if (isOwnedCancellation(error)) {
       record(route.request(), "cancelled", scopeOf(route.request(), origin));
     } else {
       violations.push("Readonly route failed unexpectedly");

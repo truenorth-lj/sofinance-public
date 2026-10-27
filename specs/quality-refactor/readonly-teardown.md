@@ -3,6 +3,11 @@
 Scope: test harness only, on local `46988757429b9e4b2e74f5055b1170ada1bbaa39`.
 No app, engine, backend, dependency, lockfile or prototype changes. No remote delivery.
 
+Response processing and disposal errors are collected independently before classification.
+Any generic, foreign-owner or non-Error rejection keeps the callback failed even if cleanup
+also reports owned cancellation; multiple owned cancellations produce one cancellation event.
+The regression matrix and original reviewer fixture probe cover the former false-green case.
+
 The PR167 production homepage teardown failed; its remaining eight journeys and metadata
 were not run. PR166's getBalance completion remains UNKNOWN. No historical result is upgraded.
 The predecessor response-delivery fix did not cover handlers skipped by Playwright 1.64.
