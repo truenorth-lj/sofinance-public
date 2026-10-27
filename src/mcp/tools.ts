@@ -4,7 +4,7 @@ import bs58 from "bs58";
 import { discoverWallet } from "@sofinance/engine/wallet-discovery";
 import { searchSelectedQuoteBundle } from "../lib/selected-quote";
 import { prepareSelected } from "@/server/transactions/selected-prepare";
-import { MCP_SELECTED_PREPARE, MCP_OPEN_PREPARE } from "@/server/transactions/surface-policy";
+import { MCP_SELECTED_PREPARE, MCP_OPEN_PREPARE, MCP_WITHDRAW_PREPARE } from "@/server/transactions/surface-policy";
 import { buildAndSimulateCompound } from "@sofinance/engine/compound-atomic";
 import { prepareCompound } from "@/server/transactions/compound-prepare";
 import { verifySelectedPermit } from "../lib/selected-permit";
@@ -778,8 +778,8 @@ export async function submitOpenPosition(input: SubmitOpenPositionInput) {
 }
 
 export async function prepareWithdraw(input: import("@sofinance/engine/withdraw/types").WithdrawPrepareRequest) {
- const {buildWithdraw}=await import("@sofinance/engine/withdraw/build");
- const prepared=await buildWithdraw(input);
+ const {prepareWithdrawal}=await import("@/server/transactions/withdraw-prepare");
+ const prepared=await prepareWithdrawal(input, MCP_WITHDRAW_PREPARE);
  const submitArgs={wallet:input.wallet,permit:prepared.permit,summary:prepared.summary,confirmHighImpact:input.confirmHighImpact===true};
  const signToken=await createSignToken({kind:"withdraw",wallet:input.wallet,unsignedTransaction:prepared.unsignedTransaction,permit:prepared.permit,submitArgs,expiresAt:prepared.summary.expiresAt},getSigningSecret());
  return {...prepared,submitArgs,signToken,signUrl:buildSignUrl(signToken)};
