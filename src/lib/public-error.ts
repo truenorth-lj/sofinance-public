@@ -11,7 +11,7 @@ import {
 import { isJupiterNoRouteError, JupiterNoRouteError } from "@sofinance/engine/swap/jupiter";
 import { RPC_UNAVAILABLE_MESSAGE } from "@sofinance/engine/rpc/errors";
 import { formatSelectedNoRouteMessage, SelectedNoRouteError } from "./selected-no-route";
-import { scrubCredentialText } from "./sentry/scrub";
+import { scrubCredentialText, scrubSensitiveText } from "./sentry/scrub";
 import {
   AMOUNT_TOO_SMALL_CODE,
   AMOUNT_TOO_SMALL_MESSAGE,
@@ -131,7 +131,7 @@ export function sanitizePublicError(error: unknown, fallback: string): string {
   if (mapped === CROSS_TICK_USER_MESSAGE) {
     // Technical engine text stays in logs; the client sees the short action.
     // eslint-disable-next-line no-console
-    console.info("cross-tick", sanitizeDetail(raw).slice(0, 300));
+    console.info("cross-tick", sanitizeDetail(scrubSensitiveText(raw)).slice(0, 300));
     return mapped;
   }
   if (mapped === RPC_UNAVAILABLE_MESSAGE || mapped === JUPITER_UNAVAILABLE_MESSAGE) return mapped;

@@ -20,6 +20,29 @@ describe("publicToolError", () => {
     expect(publicToolError(new Error("authorization: Bearer SECRET456"))).toBe("[redacted]");
   });
 
+  it.each([
+    "Bearer R2_KEY_7", "Basic R2_KEY_7+TAIL==", "access_token=R2_KEY_7", "refresh_token=R2_KEY_7",
+    "client_secret=R2_KEY_7", "JUPITER_API_KEY=R2_KEY_7", "X-Auth-Token: R2_KEY_7",
+    JSON.stringify({ error: JSON.stringify({ "api-key": "R2_KEY_7" }) }),
+    JSON.stringify({ error: JSON.stringify({ authorization: "Bearer R2_KEY_7" }) }),
+  ])("scrubs R2 diagnostic %s, including transactionError", (diagnostic) => {
+    for (const error of [new Error(diagnostic), Object.assign(new Error("provider failed"), {
+      transactionError: { message: diagnostic },
+    })]) {
+      const result = publicToolError(error);
+      expect(result).not.toContain("R2_KEY_7");
+      expect(result).not.toContain("TAIL");
+      expect(result).toContain("[redacted]");
+    }
+    expect(publicToolError(new Error(""), diagnostic)).not.toContain("R2_KEY_7");
+  });
+
+  it("retains public wallet and ordinary diagnostic wording", () => {
+    const wallet = "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU";
+    const text = `Token program failed: design=retry; mytoken=missing; tokenizer=ready; wallet=${wallet}`;
+    expect(publicToolError(new Error(text))).toBe(text);
+  });
+
   it("flattens zod errors into 'path: message' and marks missing fields as required", () => {
     const schema = z.object({ wallet: z.string(), nested: z.object({ n: z.number().min(5) }) });
     const result = schema.safeParse({ nested: { n: 1 } });

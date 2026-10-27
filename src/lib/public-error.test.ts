@@ -7,9 +7,36 @@ import { JupiterHttpError, JUPITER_UNAVAILABLE_CODE, JUPITER_UNAVAILABLE_MESSAGE
 import {
   CompoundSendError, CROSS_TICK_USER_MESSAGE, isPreflightOrUnsentFailure, mapKnownChainError, notSentRetryMessage,
   publicErrorCode, resolveCompoundBroadcastFailure, sanitizePublicError,
+  errorText,
 } from "./public-error";
 
 afterEach(() => vi.restoreAllMocks());
+
+describe("serialized transaction diagnostics", () => {
+  it.each(["api-key", "authorization", "access_token", "refresh_token", "client_secret", "JUPITER_API_KEY", "X-Auth-Token"])(
+    "scrubs %s after errorText serializes transactionError", (key) => {
+      const secret = "R2_KEY_7";
+      const transactionError = { message: JSON.stringify({ [key]: secret }), code: "E_UPSTREAM" };
+      const error = Object.assign(new Error("provider failed"), { transactionError });
+      // This is the reviewer's real path, not a pre-scrubbed input to a helper.
+      expect(errorText(error)).toBe(`provider failed ${JSON.stringify(transactionError)}`);
+      const result = sanitizePublicError(error, "Request failed");
+      expect(result).not.toContain(secret);
+      expect(result).toContain("provider failed");
+      expect(result).toContain("E_UPSTREAM");
+      expect(transactionError.message).toContain(secret);
+    },
+  );
+
+  it("preserves serialized program errors and ordinary diagnostic keys", () => {
+    const error = Object.assign(new Error("provider failed"), {
+      transactionError: { InstructionError: [2, { Custom: 6021 }], design: "retry", mytoken: "missing", tokenizer: "ready" },
+    });
+    expect(sanitizePublicError(error, "fallback")).toContain("Raydium rejected the liquidity change.");
+    expect(sanitizePublicError(error, "fallback")).toContain('"Custom":6021');
+    expect(sanitizePublicError(error, "fallback")).toContain('"mytoken":"missing"');
+  });
+});
 
 describe("shared credential text policy", () => {
   const secret = "REVIEW_SYNTHETIC_ONLY_20261027";

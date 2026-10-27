@@ -338,11 +338,33 @@ describe("tools/call dispatch and wallet binding", () => {
     ["api-key header style", "rejected api-key: SECRET123", "rejected [redacted]"],
     ["authorization", "authorization=Bearer SECRET123", "[redacted]"],
     ["token", "token: SECRET123", "[redacted]"],
+    ["bare Bearer", "Bearer R2_KEY_7", "[redacted]"],
+    ["bare Basic", "Basic R2_KEY_7+TAIL==", "[redacted]"],
+    ["access token", "access_token=R2_KEY_7", "[redacted]"],
+    ["refresh token", "refresh_token=R2_KEY_7", "[redacted]"],
+    ["client secret", "client_secret=R2_KEY_7", "[redacted]"],
+    ["provider key", "JUPITER_API_KEY=R2_KEY_7", "[redacted]"],
+    ["X-Auth-Token", "X-Auth-Token: R2_KEY_7", "[redacted]"],
   ])("STEP 2a: redacts a %s", async (_label, raw, expected) => {
     toolFns.listRwaPairs!.mockRejectedValue(new Error(raw));
     const { json } = await callTool("list_rwa_pairs", {});
     const error = JSON.parse(json.result.content[0].text).error as string;
     expect(error).toBe(expected);
+  });
+
+  it.each(["api-key", "authorization"])("scrubs nested JSON %s in real tool transaction diagnostics", async (key) => {
+    const error = Object.assign(new Error("provider failed"), {
+      transactionError: { message: JSON.stringify({ [key]: "R2_KEY_7" }), code: "E_UPSTREAM" },
+    });
+    toolFns.listRwaPairs!.mockRejectedValue(error);
+    const result = await callTool("list_rwa_pairs", {});
+    expect(result.response.status).toBe(200);
+    expect(result.json.result.isError).toBe(true);
+    const text = result.json.result.content[0].text as string;
+    expect(text).not.toContain("R2_KEY_7");
+    expect(text).toContain("[redacted]");
+    expect(text).toContain("provider failed");
+    expect(text).toContain("E_UPSTREAM");
   });
 
   it("STEP 2a: known chain errors get the same public wording as the web routes; rate limits hide the upstream", async () => {

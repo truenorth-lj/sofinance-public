@@ -12,13 +12,89 @@ import { JupiterHttpError } from "@sofinance/engine/jupiter/errors";
 import { JupiterNoRouteError } from "@sofinance/engine/swap/jupiter";
 import { SelectedNoRouteError } from "./selected-no-route";
 import { AmountTooSmallError } from "./selected-amount-error";
-import { CompoundSendError } from "./public-error";
+import { CompoundSendError, CROSS_TICK_USER_MESSAGE } from "./public-error";
 
 beforeEach(() => {
   captureApiRouteError.mockReset();
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
 afterEach(() => vi.restoreAllMocks());
+
+const r2Secret = "R2_KEY_7";
+const r2Url = `https://rpc.invalid/?api-key=${r2Secret}`;
+const r2Credentials = [
+  ["bare Bearer", `Bearer ${r2Secret}`],
+  ["bare Basic", `Basic ${r2Secret}+TAIL==`],
+  ...["access_token", "refresh_token", "client_secret", "JUPITER_API_KEY", "X-Auth-Token"].flatMap((key) => [
+    [key, `${key}=${r2Secret}`], ["quoted " + key, JSON.stringify({ [key]: r2Secret })],
+  ]),
+  ["Authorization Bearer", `Authorization: Bearer ${r2Secret}`],
+  ["Proxy Authorization Basic", `Proxy-Authorization: Basic ${r2Secret}+TAIL==`],
+  ["quoted JSON", JSON.stringify({ "api-key": r2Secret })],
+  ["quoted headers", JSON.stringify({ headers: { "x-api-key": r2Secret, authorization: `Bearer ${r2Secret}` } })],
+  ["nested JSON", JSON.stringify({ error: JSON.stringify({ "api-key": r2Secret }) })],
+  ["nested authorization", JSON.stringify({ error: JSON.stringify({ authorization: `Bearer ${r2Secret}` }) })],
+  ["URL", r2Url],
+  ["encoded URL", encodeURIComponent(r2Url)],
+  ["double encoded URL", encodeURIComponent(encodeURIComponent(r2Url))],
+  ["malformed percent prose", `progress 50% ${encodeURIComponent(r2Url)}`],
+  ["encoded whitespace", `https://rpc.invalid/?api-key=prefix%20${r2Secret}`],
+  ["encoded nested JSON", encodeURIComponent(JSON.stringify({ error: JSON.stringify({ "api-key": r2Secret }) }))],
+];
+const r2Locations = ["message", "stack", "cause", "CompoundSendError", "fallback", "transactionError", "logs", "cross-tick"];
+it.each(r2Credentials.flatMap(([form, credential]) => r2Locations.map((location) => ({ form, credential: credential!, location }))))(
+  "R2 $form via $location: actual console arguments and API response are safe", async ({ credential, location }) => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    let error: Error = new Error("provider failed");
+    let fallback = "Request failed";
+    switch (location) {
+      case "message": error = new Error(`provider failed ${credential}`); break;
+      case "stack": error.stack = `Error: ${credential}\n    at run (/app/test.ts:1:2)`; break;
+      case "cause": error.cause = new TypeError(credential); break;
+      case "CompoundSendError": error = new CompoundSendError(new Error(`provider failed ${credential}`)); break;
+      case "fallback": error = new Error(""); fallback = `Request failed ${credential}`; break;
+      // Real errorText() serializes this object, adding another JSON escape layer.
+      case "transactionError": Object.assign(error, { transactionError: { message: credential, code: "E_UPSTREAM" } }); break;
+      case "logs": Object.assign(error, { logs: [`Program log: ${credential}`] }); break;
+      case "cross-tick": error = new Error(`cross-tick depth; ${credential}`); break;
+    }
+    const response = apiError(error, fallback);
+    const body = await response.json();
+    expect(response.status).toBe(400);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(body.sent).toBeUndefined();
+    expect(body.error.length).toBeLessThanOrEqual(220);
+    const errorLog = vi.spyOn(console, "error");
+    expect(errorLog).toHaveBeenCalledOnce();
+    const logged = inspect([...errorLog.mock.calls, ...info.mock.calls], { depth: null, customInspect: false });
+    for (const output of [JSON.stringify(body), logged]) {
+      expect(output).not.toContain(r2Secret);
+      expect(output).not.toContain("TAIL");
+      expect(output).not.toContain("rpc.invalid");
+    }
+    if (location === "cross-tick") {
+      expect(body.error).toBe(CROSS_TICK_USER_MESSAGE);
+      expect(info).toHaveBeenCalledOnce();
+      expect(inspect(info.mock.calls)).toContain("cross-tick depth");
+    } else {
+      expect(info).not.toHaveBeenCalled();
+      expect(body.error).toContain(location === "fallback" ? "Request failed" : "provider failed");
+    }
+    if (location === "transactionError") expect(body.error).toContain("E_UPSTREAM");
+    if (location === "stack") expect(logged).toContain("/app/test.ts:1:2");
+    if (location === "cause") expect(logged).toContain("TypeError");
+  },
+);
+
+it("keeps public wallet diagnostics while both console sinks redact identities", async () => {
+  const wallet = "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU";
+  const normal = `Token program failed: design=retry; mytoken=missing; tokenizer=ready; wallet=${wallet}`;
+  expect((await apiError(new Error(normal), "Failed").json()).error).toBe(normal);
+  const info = vi.spyOn(console, "info").mockImplementation(() => {});
+  expect((await apiError(new Error(`cross-tick depth; wallet=${wallet}`), "Failed").json()).error).toBe(CROSS_TICK_USER_MESSAGE);
+  expect(inspect(vi.spyOn(console, "error").mock.calls, { depth: null })).not.toContain(wallet);
+  expect(inspect(info.mock.calls, { depth: null })).not.toContain(wallet);
+});
 
 const reviewSecret = "REVIEW_SYNTHETIC_ONLY_20261027";
 it.each([

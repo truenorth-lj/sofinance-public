@@ -4,6 +4,7 @@ import {
   isSensitiveIpEnvKey,
   minimalSentryEvent,
   scrubBreadcrumb,
+  scrubCredentialText,
   scrubSensitiveText,
   scrubSentryEvent,
   scrubUnknown,
@@ -11,6 +12,66 @@ import {
 
 const wallet = "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU";
 const signature = "1".repeat(88);
+
+describe("credential boundaries and nested diagnostic strings", () => {
+  const secret = "R2_KEY_7";
+  it.each([
+    "access_token", "refresh_token", "client_secret", "JUPITER_API_KEY", "X-Auth-Token",
+    "apiKey", "x-api-key", "x-cron-secret", "HTTP_AUTHORIZATION", "proxy-authorization",
+    "password", "cookie", "set-cookie", "sig",
+  ])("uses the complete sensitive key %s in text and JSON", (key) => {
+    for (const raw of [
+      `${key}=${secret}`, `${key}: '${secret} with spaces'`,
+      JSON.stringify({ [key]: secret, code: "E_UPSTREAM" }),
+      JSON.stringify({ detail: JSON.stringify({ [key]: secret }), code: "E_UPSTREAM" }),
+    ]) {
+      expect(scrubCredentialText(raw)).not.toContain(secret);
+      expect(scrubSensitiveText(raw)).not.toContain(secret);
+      expect(scrubCredentialText(raw)).not.toContain("with spaces");
+      if (raw.includes("E_UPSTREAM")) expect(scrubCredentialText(raw)).toContain("E_UPSTREAM");
+    }
+  });
+
+  it.each([
+    `Bearer ${secret}`, `bAsIc ${secret}+TAIL/==`,
+    `detail=access_token=${secret}`, // a non-secret outer assignment must not hide the inner key
+    JSON.stringify({ error: JSON.stringify({ authorization: `Bearer ${secret}` }) }),
+    `provider failed ${JSON.stringify({ detail: JSON.stringify({ "api-key": `${secret} with \"quotes\" tail` }) })}`,
+    String.raw`{"api\u002dkey":"R2_KEY_7"}`,
+    encodeURIComponent(JSON.stringify({ detail: JSON.stringify({ "api-key": secret }) })),
+    JSON.stringify({ detail: encodeURIComponent(`Authorization: Bearer ${secret}`) }),
+  ])("scrubs schemes, embedded JSON and mixed encoding: %s", (raw) => {
+    const result = scrubCredentialText(raw);
+    expect(result).not.toContain(secret);
+    expect(result).not.toContain("TAIL");
+    expect(result).not.toContain("quotes");
+    expect(result).not.toContain(" tail");
+  });
+
+  it("bounds nested decoding and text size, and fails closed on malformed escaped strings", () => {
+    let nested = JSON.stringify({ "api-key": secret });
+    for (let i = 0; i < 12; i += 1) nested = JSON.stringify({ detail: nested });
+    for (const raw of [nested, `x`.repeat(65_537) + secret,
+      String.raw`{"detail":"{\"api-key\":\"R2_KEY_7\"`,
+      String.raw`{"detail":"bad\q R2_KEY_7"}`,
+      String.raw`api-key\":\"R2_KEY_7`,
+    ]) {
+      const result = scrubCredentialText(raw);
+      expect(result).not.toContain(secret);
+      expect(result).toContain("[redacted-secret]");
+      expect(result).not.toMatch(/SyntaxError|JSON at position/);
+    }
+  });
+
+  it("retains normal nested diagnostics and public addresses, with extra identity masking only for logs", () => {
+    const diagnostic = `Token program failed: design=retry; mytoken=missing; tokenizer=ready; code=E_UPSTREAM; wallet=${wallet}`;
+    expect(scrubCredentialText(diagnostic)).toBe(diagnostic);
+    expect(scrubSensitiveText(diagnostic)).toBe(diagnostic.replace(wallet, "[redacted-address]"));
+    const nested = JSON.stringify({ error: JSON.stringify({ message: diagnostic, InstructionError: [4, { Custom: 6021 }] }) });
+    expect(scrubCredentialText(nested)).toBe(nested);
+    expect(scrubSensitiveText(nested)).not.toContain(wallet);
+  });
+});
 
 describe("scrubSensitiveText", () => {
   const secret = "REVIEW_SYNTHETIC_ONLY_20261027";

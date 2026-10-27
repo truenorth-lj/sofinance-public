@@ -2,7 +2,7 @@ import { inspect } from "node:util";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { logSafeError } from "./safe-error-log";
 
-const secret = "LOG_SYNTHETIC_NOT_A_REAL_SECRET";
+const secret = "R2_KEY_7";
 const url = `https://rpc.invalid/?api-key=${secret}`;
 
 beforeEach(() => { vi.spyOn(console, "error").mockImplementation(() => {}); });
@@ -18,6 +18,11 @@ it.each([
   JSON.stringify({ "api-key": secret }),
   JSON.stringify({ Authorization: `Basic ${secret}` }),
   encodeURIComponent(url),
+  `Bearer ${secret}`,
+  `Basic ${secret}+TAIL==`,
+  ...["access_token", "refresh_token", "client_secret", "JUPITER_API_KEY", "X-Auth-Token"].map((key) => `${key}=${secret}`),
+  JSON.stringify({ error: JSON.stringify({ "api-key": secret }) }),
+  JSON.stringify({ error: JSON.stringify({ authorization: `Bearer ${secret}` }) }),
 ])("scrubs B1 credentials in all diagnostic fields: %s", (credential) => {
   const nested = Object.assign(new TypeError(`nested ${credential}`), { code: "E_UPSTREAM" });
   nested.stack = `TypeError: ${credential}\n    at fetchRpc (/app/rpc.ts:12:3)`;

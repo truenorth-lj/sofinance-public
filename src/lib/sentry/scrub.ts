@@ -1,14 +1,16 @@
 const URL_RE = /https?:\/\/[^\s"'\\]+/gi;
 const ENCODED_URL_RE = /https?%3A%2F%2F[^\s"'\\&]*/gi;
 // Consume a complete quoted value (including escaped quotes), or one unquoted
-// value up to a diagnostic/query delimiter. Do not match suffixes like design.
+// value up to a diagnostic/query delimiter.
 const SECRET_VALUE = String.raw`(?:"(?:\\.|[^"\\\r\n])*"?|'(?:\\.|[^'\\\r\n])*'?|[^\s"',;}&]+)`;
-const AUTH_ASSIGN_RE = new RegExp(
-  String.raw`(?<![\w-])(?:proxy-)?authorization["']?\s*[:=]\s*(?:(?:Basic|Bearer)[ \t]+)?${SECRET_VALUE}`, "gi",
+const KEY_ASSIGN_RE = /(?<![\w-])([\w-]+)["']?\s*[:=]\s*/g;
+const CREDENTIAL_VALUE_RE = new RegExp(String.raw`^(?:(?:Basic|Bearer)[ \t]+)?${SECRET_VALUE}`, "i");
+const AUTH_VALUE_RE = new RegExp(
+  String.raw`(?<![\w-])(?:Basic|Bearer)[ \t]+${SECRET_VALUE}`, "gi",
 );
-const SECRET_ASSIGN_RE = new RegExp(
-  String.raw`(?<![\w-])(?:api[_-]?key|bearer|token|secret|password|x-api-key|x-cron-secret|sig)["']?\s*[:=]\s*${SECRET_VALUE}`, "gi",
-);
+const JSON_STRING_RE = /"(?:\\[\s\S]|[^"\\])*"/g;
+const MAX_TEXT_LENGTH = 65_536;
+const MAX_JSON_STRING_DEPTH = 4;
 const SIGNATURE_RE = /\b[1-9A-HJ-NP-Za-km-z]{86,88}\b/g;
 const ADDRESS_RE = /\b[1-9A-HJ-NP-Za-km-z]{32,44}\b/g;
 const SECRET_KEY_RE =
@@ -40,11 +42,16 @@ export function isSensitiveObjectKey(name: unknown): boolean {
 
 /** Strip credentials and provider URLs while preserving public account identifiers. */
 export function scrubCredentialText(text: string): string {
+  return scrubCredentialLayer(text, 0);
+}
+
+function scrubCredentialLayer(text: string, depth: number): string {
+  if (text.length > MAX_TEXT_LENGTH || depth > MAX_JSON_STRING_DEPTH) return "[redacted-secret]";
   let current = text;
   for (let i = 0; i < 3; i += 1) {
     // Scrub before decoding so encoded whitespace inside a URL/value cannot
     // split off its tail. A stray '%' in prose must not block other escapes.
-    const scrubbed = applyTextScrubbers(current);
+    const scrubbed = applyTextScrubbers(scrubJsonStrings(current, depth));
     const next = scrubbed.replace(/(?:%[0-9a-f]{2})+/gi, (encoded) => {
       try { return decodeURIComponent(encoded); } catch { return encoded; }
     });
@@ -52,15 +59,57 @@ export function scrubCredentialText(text: string): string {
     if (next === scrubbed) return scrubbed;
     current = next;
   }
-  return applyTextScrubbers(current);
+  return applyTextScrubbers(scrubJsonStrings(current, depth));
+}
+
+/** Decode only complete JSON string tokens, including strings embedded in prose.
+ * Never expose JSON.parse errors (which can contain the original credential).
+ * Unterminated escaped fragments and excessive nesting fail closed.
+ */
+function scrubJsonStrings(text: string, depth: number): string {
+  let cursor = 0;
+  let unsafe = false;
+  const result = text.replace(JSON_STRING_RE, (token: string, offset: number) => {
+    const prefix = text.slice(cursor, offset);
+    if (/\\"|\\$/.test(prefix)) unsafe = true;
+    cursor = offset + token.length;
+    // Decode percent escapes inside the string boundary as well, so decoding
+    // quotes cannot turn a valid outer JSON string into an unsafe fragment.
+    if (!token.includes("\\") && !/%[0-9a-f]{2}/i.test(token)) return token;
+    try {
+      const decoded: string = JSON.parse(token);
+      return JSON.stringify(scrubCredentialLayer(decoded, depth + 1));
+    } catch {
+      return '"[redacted-secret]"';
+    }
+  });
+  if (/\\"/.test(text.slice(cursor))) unsafe = true;
+  return unsafe ? "[redacted-secret]" : result;
+}
+
+function scrubAssignments(text: string): string {
+  let result = "";
+  let cursor = 0;
+  for (const match of text.matchAll(KEY_ASSIGN_RE)) {
+    if (match.index < cursor) continue;
+    const key = match[1];
+    // Use the same complete-key segment policy as structured headers. `sig` is
+    // the existing text-only shorthand; ordinary design/mytoken stay readable.
+    if (!key || (!isSensitiveHeaderName(key) && key.toLowerCase() !== "sig")) continue;
+    const start = match.index + match[0].length;
+    const value = CREDENTIAL_VALUE_RE.exec(text.slice(start));
+    if (!value) continue;
+    result += text.slice(cursor, match.index) + "[redacted-secret]";
+    cursor = start + value[0].length;
+  }
+  return result + text.slice(cursor);
 }
 
 function applyTextScrubbers(text: string): string {
-  return text
+  return scrubAssignments(text
     .replace(URL_RE, "[redacted-url]")
-    .replace(ENCODED_URL_RE, "[redacted-url]")
-    .replace(AUTH_ASSIGN_RE, "[redacted-secret]")
-    .replace(SECRET_ASSIGN_RE, "[redacted-secret]");
+    .replace(ENCODED_URL_RE, "[redacted-url]"))
+    .replace(AUTH_VALUE_RE, "[redacted-secret]");
 }
 
 /** Strings only. Arrays/objects recurse; every other type is returned unchanged. */
