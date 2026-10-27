@@ -6,7 +6,7 @@ import { searchSelectedQuoteBundle } from "../lib/selected-quote";
 import { buildAndSimulateSelectedZap } from "../lib/selected-atomic";
 import { buildAndSimulateCompound } from "@sofinance/engine/compound-atomic";
 import { issueSelectedPermit } from "../lib/selected-permit";
-import { issueCompoundPermit } from "../lib/compound-permit";
+import { prepareCompound } from "@/server/transactions/compound-prepare";
 import { verifySelectedPermit } from "../lib/selected-permit";
 import { verifyCompoundPermit } from "../lib/compound-permit";
 import { simulateAndVerifySelectedTransaction } from "../lib/selected-simulation";
@@ -321,21 +321,11 @@ export async function quoteCompound(input: QuoteCompoundInput) {
  * Safety: Same as prepareTransaction, plus isolated yield accounts.
  */
 export async function prepareCompoundTransaction(input: QuoteCompoundInput) {
-  const { summary, transaction } = await buildAndSimulateCompound(
-    input.wallet,
-    input.positionMint,
-    input.sourceSignatures || [],
-  );
-  
-  const jupiterApiKey = getSigningSecret();
-  const permit = issueCompoundPermit(jupiterApiKey, {
-    wallet: input.wallet,
-    summary,
-    message: Buffer.from(transaction.message.serialize()).toString("base64"),
+  const { summary, permit, unsignedTransaction: unsignedTransactionBase64 } = await prepareCompound({
+    wallet: input.wallet, positionMint: input.positionMint, sourceSignatures: input.sourceSignatures || [],
   });
-  
-  const unsignedTransactionBase64 = Buffer.from(transaction.serialize()).toString("base64");
-  
+  const jupiterApiKey = getSigningSecret();
+
   // submitArgs for compound includes signedTransaction, permit, wallet, and full summary
   const submitArgs = {
     permit,
