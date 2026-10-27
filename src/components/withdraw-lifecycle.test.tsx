@@ -38,6 +38,47 @@ function hold(phase: string, match: (body: Record<string, unknown>) => boolean =
  return { ...d, release: async (value: unknown) => settle(d, bodyOnly ? value : Response.json(value)) };
 }
 function twoStage() { first=withdrawPrepared("withdraw"); second=withdrawPrepared("swap",{tx1Signature:signedWithdraw(first).signature}); }
+
+it.each(["position", "wallet"] as const)("keeps uncertainty across retained %s ABA while the other identity stays live", async identity=>{
+ const saved=withdrawCheckpoint("atomic");rawSet.call(localStorage,withdrawKey,JSON.stringify(saved));
+ let failRead=false;
+ vi.spyOn(localStorage,"getItem").mockImplementation(k=>{if(k===withdrawKey&&failRead){failRead=false;throw new Error("readback denied");}return rawGet.call(localStorage,k);});
+ vi.mocked(localStorage.removeItem).mockImplementation(k=>{record("remove",k);rawRemove.call(localStorage,k);if(k===withdrawKey)failRead=true;});
+ await render();await click("Resume withdrawal");
+ expect(raw()).toBeNull();expect(button("Resume withdrawal")!.disabled).toBe(true);expect(mocks.confirmed).not.toHaveBeenCalled();
+ vi.mocked(localStorage.removeItem).mockImplementation(k=>{record("remove",k);rawRemove.call(localStorage,k);});
+ const wallet=identity==="wallet"?withdrawPosition:withdrawWallet,position=identity==="position"?withdrawWallet:withdrawPosition;
+ const other=structuredClone(saved);other.request.wallet=wallet;other.request.positionMint=position;other.prepared.summary.wallet=wallet;other.prepared.summary.positionMint=position;
+ const key=`sofinance:withdraw:${wallet}:${position}`;rawSet.call(localStorage,key,JSON.stringify(other));address=wallet;
+ await render(<WithdrawPanel wallet={wallet} positionMint={position} mintA={withdrawPosition} mintB={withdrawWallet} label={m=>m} onClose={vi.fn()} onBusyChange={mocks.busy} onConfirmed={mocks.confirmed}/>);
+ expect(button("Resume withdrawal")!.disabled).toBe(false);await click("Resume withdrawal");
+ expect(rawGet.call(localStorage,key)).toBeNull();expect(mocks.confirmed).toHaveBeenCalledOnce();
+ address=withdrawWallet;await render();
+ expect(button("Resume withdrawal")?.disabled).toBe(true);
+ expect(container.textContent).toContain("reload to check the saved transaction");
+ const before=count();await click("Resume withdrawal");expect(count()).toEqual(before);expect(raw()).toBeNull();
+ expect(calls("prepare")).toHaveLength(0);expect(calls("broadcast")).toHaveLength(0);
+ // The latch belongs to this retained instance, not a global lock or a storage migration.
+ await remount();await click("Preview");await click("Withdraw");expect(mocks.confirmed).toHaveBeenCalledTimes(2);
+});
+
+it.each(["atomic", "swap"] as const)("expiry message describes only the expired %s stage",async stage=>{
+ if(stage==="swap")twoStage();
+ const normal=network;network=async(p,b)=>p==="status"&&(b.prepared as {summary:{stage:string}}).summary.stage===stage?Response.json({status:"expired"}):normal(p,b);
+ await start();
+ if(stage==="atomic"){
+  expect(raw()).toBeNull();expect(mocks.notify).not.toHaveBeenCalled();expect(button("Retry withdrawal")?.disabled).toBe(false);
+  expect(container.textContent).toContain("no funds moved");
+ }else{
+  expect(mocks.notify).toHaveBeenCalledWith(withdrawPosition,signedWithdraw(first).signature);
+  const saved=JSON.parse(raw()!);expect(saved.signature).toBe(signedWithdraw(first).signature);expect(saved.prepared).toEqual(first);
+  expect(container.textContent).not.toContain("no funds moved");expect(container.textContent).toContain("Conversion expired. Resume to verify the original withdrawal and retry conversion.");
+  expect(button("Resume withdrawal")?.disabled).toBe(false);expect(button("Retry withdrawal")).toBeUndefined();
+  network=normal;await click("Resume withdrawal");
+  expect(calls("prepare").map(e=>(e.value as {stage?:string}).stage)).toEqual([undefined,"swap","swap"]);
+  expect(mocks.confirmed).toHaveBeenCalledOnce();expect(raw()).toBeNull();
+ }
+});
 beforeEach(() => {
  vi.useFakeTimers(); vi.setSystemTime(new Date("2026-10-27T14:00:00Z"));
  localStorage.clear(); vi.resetAllMocks(); address=withdrawWallet; connected=true; events=[];cleanupDeferred=[];

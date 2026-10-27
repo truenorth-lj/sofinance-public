@@ -10,7 +10,7 @@ import { formatAmount } from "@sofinance/engine/amount";
 import { notifyPositionHistoryChange } from "@/lib/position-history-refresh";
 import { createJupiterRelayStore, postWithJupiterRelay } from "@/lib/jupiter/browser-relay";
 import type { WithdrawPrepared, WithdrawSummary, WithdrawRequest } from "@sofinance/engine/withdraw/types";
-import { assertWithdrawHistory, readWithdrawHistory, writeWithdrawHistory, WithdrawHistoryError, WITHDRAW_HISTORY_ERROR, type WithdrawCheckpoint as Checkpoint } from "@/lib/withdraw-checkpoint";
+import { assertWithdrawHistory, readWithdrawHistory, writeWithdrawHistory, withdrawCheckpointKey, WithdrawHistoryError, WITHDRAW_HISTORY_ERROR, type WithdrawHistory, type WithdrawCheckpoint as Checkpoint } from "@/lib/withdraw-checkpoint";
 import { prepareIsStale } from "@sofinance/engine/fresh-blockhash";
 
 export const WITHDRAW_EXPIRED_MESSAGE = "Transaction expired before it landed. Retry to prepare a fresh transaction — no funds moved.";
@@ -64,15 +64,21 @@ export function WithdrawPanel({wallet,positionMint,mintA,mintB,label,onClose,onB
  const [confirmation,setConfirmation]=useState(false),[previewing,setPreviewing]=useState(false);
  const [initialHistory]=useState(()=>readWithdrawHistory(wallet,positionMint));
  const historyRef=useRef(initialHistory);
+ const blockedHistories=useRef(new Map<string,{history:WithdrawHistory;error:string}>(
+  initialHistory.kind==="invalid" || initialHistory.kind==="unavailable"
+   ?[[withdrawCheckpointKey(wallet,positionMint),{history:initialHistory,error:WITHDRAW_HISTORY_ERROR}]]:[]));
  const [checkpoint,setCheckpoint]=useState<Checkpoint|null>(initialHistory.kind==="valid"?initialHistory.checkpoint:null);
  const [historyError,setHistoryError]=useState(initialHistory.kind==="invalid" || initialHistory.kind==="unavailable"?WITHDRAW_HISTORY_ERROR:"");
  // Latch uncertain storage mutations until reload; keep the last verified in-memory checkpoint.
  function guardHistory(){
-  if(historyError)throw new WithdrawHistoryError();
+  if(historyError || blockedHistories.current.has(withdrawCheckpointKey(wallet,positionMint)))throw new WithdrawHistoryError();
   assertWithdrawHistory(wallet,positionMint,historyRef.current);
  }
  function showError(caught:unknown,fallback:string){
-  if(caught instanceof WithdrawHistoryError)setHistoryError(caught.message);
+  if(caught instanceof WithdrawHistoryError){
+   blockedHistories.current.set(withdrawCheckpointKey(wallet,positionMint),{history:historyRef.current,error:caught.message});
+   setHistoryError(caught.message);
+  }
   setError(caught instanceof Error?caught.message:fallback);
  }
  const confirmationRef=useRef<HTMLDialogElement>(null);
@@ -95,10 +101,13 @@ export function WithdrawPanel({wallet,positionMint,mintA,mintB,label,onClose,onB
   // eslint-disable-next-line react-hooks/set-state-in-effect -- Reconcile retained UI before it becomes actionable again.
   setPreview(null);setConfirmation(false);setProgress("");
   if(historyIdentity.current.wallet!==wallet || historyIdentity.current.positionMint!==positionMint){
-   const history=readWithdrawHistory(wallet,positionMint);
+   // A different identity may proceed, but returning to this one is not a reload.
+   const key=withdrawCheckpointKey(wallet,positionMint),blocked=blockedHistories.current.get(key);
+   const history=blocked?.history ?? readWithdrawHistory(wallet,positionMint);
+   if(history.kind==="invalid" || history.kind==="unavailable")blockedHistories.current.set(key,{history,error:WITHDRAW_HISTORY_ERROR});
    historyIdentity.current={wallet,positionMint};historyRef.current=history;
    setCheckpoint(history.kind==="valid"?history.checkpoint:null);
-   setHistoryError(history.kind==="invalid" || history.kind==="unavailable"?WITHDRAW_HISTORY_ERROR:"");
+   setHistoryError(blocked?.error ?? (history.kind==="invalid" || history.kind==="unavailable"?WITHDRAW_HISTORY_ERROR:""));
    setError("");
   }
   return()=>{
@@ -152,7 +161,7 @@ export function WithdrawPanel({wallet,positionMint,mintA,mintB,label,onClose,onB
     return;
    }
    if(result.status==="failed" || result.status==="expired")save(run,saved.root?{...saved,prepared:saved.root.prepared,signature:saved.root.signature,root:undefined}:null);
-   if(result.status==="expired")throw new Error(WITHDRAW_EXPIRED_MESSAGE);
+   if(result.status==="expired")throw new Error(saved.root?"Conversion expired. Resume to verify the original withdrawal and retry conversion.":WITHDRAW_EXPIRED_MESSAGE);
    if(result.status!=="pending")throw new Error(`Transaction status: ${result.status}. Review it before starting another withdrawal.`);
    setProgress("Waiting for transaction to finalize…");await waitForNextStatus(run);
   }
