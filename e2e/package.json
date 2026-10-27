@@ -9,6 +9,7 @@
     "test": "npm run test:hermetic",
     "test:hermetic": "playwright test --project=hermetic",
     "test:adapter": "E2E_PROVIDER=adapter playwright test --project=hermetic tests/hermetic/j1-connect.e2e.ts tests/hermetic/j2-sign-happy.e2e.ts",
+    "test:policy": "playwright test -c playwright.policy.config.ts",
     "test:prod": "E2E_NO_SERVER=1 playwright test --project=prod-readonly",
     "typecheck": "tsc --noEmit",
     "repeat": "node scripts/repeat.mjs",

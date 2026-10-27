@@ -5,14 +5,19 @@ import { expect, test as base } from "@playwright/test";
 import { installFakeWallet } from "../../fake-wallet/install";
 import { FakeWallet } from "../../fake-wallet/node-signer";
 import { ConnectModal } from "../../pages/connect-modal";
-import { stubWalletApis } from "../../support/guards";
+import { installReadonlyPolicy } from "../../support/readonly-policy";
 
 const test = base.extend<{ wallet: FakeWallet }>({
   wallet: async ({}, use) => { await use(new FakeWallet()); },    // eslint-disable-line no-empty-pattern
-  context: async ({ context, wallet }, use) => {
+  context: async ({ context, wallet, baseURL }, use, testInfo) => {
+    const policy = await installReadonlyPolicy(context, baseURL!, wallet.address);
     await installFakeWallet(context, wallet);
-    await stubWalletApis(context, wallet.address);                // keep a random address off the real wallet-scan route
-    await use(context);
+    try { await use(context); } finally {
+      await context.close();
+      await testInfo.attach("readonly-browser-policy", { body: JSON.stringify({ events: policy.events, failures: policy.failures() }), contentType: "application/json" });
+      expect(policy.failures()).toEqual([]);
+      expect(policy.events.filter(event => event.action === "forwarded" && event.scope !== "public-read")).toEqual([]);
+    }
   },
 });
 
@@ -56,14 +61,14 @@ test.describe("production, read-only", () => {
   });
 
   test("MCP tools/list is public and returns the 16 tools in order", async ({ request }) => {
-    const response = await request.post("/api/mcp", { data: { jsonrpc: "2.0", id: 1, method: "tools/list" } });
+    const response = await request.post("/api/mcp", { maxRedirects: 0, maxRetries: 0, data: { jsonrpc: "2.0", id: 1, method: "tools/list" } });
     expect(response.status()).toBe(200);
     const body = await response.json() as { result: { tools: { name: string }[] } };
     expect(body.result.tools.map((tool) => tool.name)).toEqual(EXPECTED_TOOLS);
   });
 
   test("MCP tools/call without a token is refused", async ({ request }) => {
-    const response = await request.post("/api/mcp", { data: { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "list_rwa_pairs", arguments: {} } } });
+    const response = await request.post("/api/mcp", { maxRedirects: 0, maxRetries: 0, data: { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "list_rwa_pairs", arguments: {} } } });
     expect(response.status()).toBe(401);
   });
 });

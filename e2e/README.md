@@ -53,3 +53,51 @@ The wallet is called "E2E Test Wallet" on purpose (AppKit maps well-known wallet
 ## Selectors
 
 The app has no `data-testid`s; tests use roles and visible text. When the UI copy changes, update `pages/`.
+
+## Production readonly browser boundary
+
+`prod-readonly` has **zero retries** and installs `support/readonly-policy.ts` before any page/app script.
+It uses a fresh `serviceWorkers: "block"` context. All non-origin HTTP(S) attempts (including future provider
+hosts, beacons and popup navigation) are aborted, with no external static-resource exception. Every page
+WebSocket is closed without `connectToServer`. Because worker sockets are outside Playwright's page socket
+routing, fulfilled responses add an enforcing `worker-src 'none'` CSP: dedicated/shared workers, including
+blob workers, cannot start. This lane does not exercise workers or WalletConnect pairing.
+
+The same-origin scope is explicit, not a blanket permission:
+
+- GET the five smoke pages, their listed public navigation/prefetch destinations, `/_next/static/` assets and favicon.
+- GET `/api/rwa-pairs`, `/api/sol-usdc-price`, `/api/pool-range-apr`, `/api/pool-daily-apr`.
+- POST `/api/verify-sign-token` only with the two fixed malformed tokens (expected HTTP400).
+- Wallet scan GET and token-metadata POST retain their disclosed synthetic empty stubs; no balance/RPC success is fabricated.
+- `/lumen` telemetry is aborted. Other operations, including unknown APIs, prepare, quote, sign/broadcast,
+  status/provider proxies and browser MCP requests, abort **and fail** the scope audit. The existing open-status
+  stub is deliberately unreachable in this lane.
+
+Allowed requests use `route.fetch({ maxRedirects: 0, maxRetries: 0 })` and fulfill the single response.
+**All redirects fail closed**, even same-origin redirects: use canonical smoke URLs. This avoids `continue()`
+following an unchecked redirect chain. Install local route fixtures before the policy; do not add overriding
+page/context routes afterwards. The helper owns wallet-stub ordering. These are trusted test-harness rules,
+not a security boundary against malicious test code or a browser-process firewall.
+
+Each browser test attaches a sanitized decision ledger: action, scope, hostname, HTTP method and resource type;
+no URL paths, query strings, IDs, headers or bodies. `blocked` means the route was aborted before forwarding;
+`forwarded` means the helper invoked one permitted same-origin transport hop, not proof of a successful response.
+Forbidden responses and unhandled forbidden requests fail teardown; an unhandled request's transport outcome
+is unknown. Trace status `-1` alone is never blocked proof. CSP-blocked worker attempts and native browser
+background traffic are not represented as HTTP route events. The loopback tests use actual server request and
+WebSocket-upgrade counts, plus intentional guard-disable/bypass controls, to verify prevention.
+
+`APIRequestContext` does **not** pass browser routing. The two direct MCP actions remain explicitly public
+`tools/list` and unauthenticated `list_rwa_pairs` rejection (401 before dispatch), with redirects/retries disabled.
+They do not execute authenticated tools. Allowed public pages/APIs can perform server-side provider reads;
+this browser policy does not prove zero server-side provider activity or financial correctness.
+
+```bash
+npm run test:policy       # own loopback origins/sinks, real Chromium; no app or production webServer
+```
+
+CI runs this narrow policy lane before the existing hermetic flows; it never runs prod-readonly on production.
+For offline local nine-journey verification, use a fresh app build and disclosed loopback fixtures for the four
+public data reads, retaining the real AppKit modal, malformed-token route, MCP routes and empty signing ledger.
+Local evidence does not resolve the PR166 production provider-read scope exception; corrected-harness production
+revalidation remains a separate root-owned step.
