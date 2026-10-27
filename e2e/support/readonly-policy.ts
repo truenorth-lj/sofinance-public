@@ -12,6 +12,7 @@ const PUBLIC_READS = new Set([
 ]);
 type Scope = "external" | "telemetry" | "wallet-stub" | "public-read" | "forbidden";
 type Event = { action: "blocked" | "forwarded" | "stubbed" | "response" | "cancelled"; scope: Scope | "websocket" | "redirect"; host: string; method: string; resource: string };
+type Observation = { ordinal: number; scope: Scope; host: string; method: string; resource: string; observedDuring: "running" | "closing" };
 
 function scopeOf(request: Request, origin: string): Scope {
   const url = new URL(request.url());
@@ -44,6 +45,7 @@ export async function installReadonlyPolicy(context: BrowserContext, baseURL: st
   const events: Event[] = [];
   const violations: string[] = [];
   const unhandled = new Set<Request>();
+  const observations = new Map<Request, Observation>();
   const pending = new Set<Promise<void>>();
   const closeReason = `Readonly policy shutdown ${randomUUID()}`;
   let cancelling = false;
@@ -58,7 +60,14 @@ export async function installReadonlyPolicy(context: BrowserContext, baseURL: st
     events.push({ action, scope, host: new URL(request.url()).hostname, method: request.method(), resource: request.resourceType() });
   };
   context.on("request", request => {
-    if (["external", "forbidden", "telemetry"].includes(scopeOf(request, origin))) unhandled.add(request);
+    const scope = scopeOf(request, origin);
+    if (["external", "forbidden", "telemetry"].includes(scope)) {
+      unhandled.add(request);
+      observations.set(request, {
+        ordinal: observations.size + 1, scope, host: new URL(request.url()).hostname,
+        method: request.method(), resource: request.resourceType(), observedDuring: cancelling ? "closing" : "running",
+      });
+    }
   });
   context.on("response", response => {
     const request = response.request();
@@ -90,11 +99,17 @@ export async function installReadonlyPolicy(context: BrowserContext, baseURL: st
       // then refuse ALL redirects (including same-origin); smoke tests require canonical URLs.
       record(request, "forwarded", scope);
       const response = await route.fetch({ maxRedirects: 0, maxRetries: 0 });
+      let deliveryCancelled = false;
       try {
         if (response.status() >= 300 && response.status() < 400) {
           record(request, "blocked", "redirect");
           violations.push("Redirect refused by readonly policy");
           await route.abort("blockedbyclient");
+        } else if (cancelling) {
+          // The allowed transport may already have reached the server. We own shutdown
+          // and no longer need to deliver its response to a closing document. Do not
+          // call fulfill on the dead route, or turn a generic fulfill error into success.
+          deliveryCancelled = true;
         } else {
           // Playwright WebSocket routing does not cover worker sockets. This lane needs no
           // workers: prevent dedicated/shared worker creation, including blob workers, by CSP.
@@ -103,6 +118,7 @@ export async function installReadonlyPolicy(context: BrowserContext, baseURL: st
           await route.fulfill({ response, headers });
         }
       } finally { await response.dispose(); }
+      if (deliveryCancelled) record(request, "cancelled", scope);
     }
   })().catch(async error => {
     // Only our explicit context-close reason identifies an intentional cancellation.
@@ -124,14 +140,17 @@ export async function installReadonlyPolicy(context: BrowserContext, baseURL: st
     close: () => closing ??= (async () => {
       // Stop document scripts with guards still installed, then cancel held fetches.
       // BrowserContext.close disposes its request client before finishing route callbacks.
+      cancelling = true;
       try {
-        await Promise.all(context.pages().map(page => page.close()));
+        await Promise.all(context.pages().map(page => page.close({ reason: closeReason })));
       } finally {
-        cancelling = true;
         await context.close({ reason: closeReason });
         while (pending.size) await Promise.all([...pending]);
       }
     })(),
+    // Request-event evidence only: neither a failed request nor an empty sink proves
+    // that an unentered route was blocked. Keep these entries in failures(), even on close.
+    unhandledRequests: () => [...unhandled].map(request => ({ ...observations.get(request)!, outcome: "unknown" as const })),
     failures: () => [...violations, ...[...unhandled].map(() => "Forbidden request was not intercepted; transport outcome unknown")],
   };
 }

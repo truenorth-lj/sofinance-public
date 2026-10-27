@@ -79,22 +79,34 @@ following an unchecked redirect chain. Install local route fixtures before the p
 page/context routes afterwards. The helper owns wallet-stub ordering. These are trusted test-harness rules,
 not a security boundary against malicious test code or a browser-process firewall.
 
-The fixture calls `policy.close()` before the final audit: it closes pages while guards remain installed,
-closes the context with a unique cancellation reason, and waits for the policy's own pending callbacks.
-This does not track arbitrary downstream handlers invoked through `fallback()`. Only cancellation carrying
-that exact shutdown reason is expected; other surfaced HTTP/WS callback errors fail the audit. Playwright
+The production tests and loopback fixture regressions share `support/readonly-fixture.ts`.
+The fixture calls `policy.close()` before the final audit: it marks shutdown before closing pages,
+uses the same unique cancellation reason for pages and context, keeps guards installed, and waits
+for the policy's own pending callbacks. An allowed response acquired across shutdown is disposed
+without a late `fulfill`; redirects are still checked and reported first. Disposal failures still fail
+the audit unless they carry this owner's exact cancellation reason. A cancellation is recorded once.
+This does not track arbitrary downstream handlers invoked through `fallback()`. Only a surfaced error carrying
+that exact shutdown reason is classified as expected cancellation; other HTTP/WS callback errors fail the audit. Playwright
 itself suppresses some underlying WebSocket close rejections, so this is not a complete protocol-error log.
 Do not replace owning teardown with raw `context.close()` or `unrouteAll({ behavior: "ignoreErrors" })`.
 
 Each browser test attaches a sanitized decision ledger: action, scope, hostname, HTTP method and resource type;
-no URL paths, query strings, IDs, headers or bodies. `blocked` means the route was aborted before forwarding;
+no URL paths, query strings, application IDs, headers or bodies. The separate `unhandled` observations add
+only a local ordinal and whether the request event arrived during running or closing, with outcome `unknown`.
+`blocked` means the handler selected abort before forwarding (the SDK can suppress target-close errors);
 `forwarded` means the helper invoked one permitted same-origin transport hop, not proof of a successful response.
-`cancelled` means shutdown interrupted its callback, not that the server never received the earlier request.
+`cancelled` means this owner cancelled response delivery or interrupted its callback, not that the server
+never received the earlier request. A success response before shutdown still reaches the page normally.
 Forbidden responses and unhandled forbidden requests fail teardown; an unhandled request's transport outcome
 is unknown. Trace status `-1` alone is never blocked proof. CSP-blocked worker attempts and native browser
 background traffic are not represented as HTTP route events. During navigation or teardown, a pagehide beacon
 may be accepted by the browser yet disappear before Playwright emits a request or invokes the handler. Thus
 an empty ledger does not prove there was no attempt, and `sendBeacon(true)` does not prove transport completed.
+Pinned Playwright 1.64 skips HTTP route handlers once `page.close()` was called or context closing started.
+A request event can therefore have no matching handler even with these guards installed. Such an entry
+remains **UNKNOWN and fails the audit after owning close**; neither `requestfailed`, status -1 nor a zero
+loopback sink count upgrades it to `blocked`. The production PR167 failure is not declared fixed in full:
+late delivery is narrowed here, while the skipped-handler closure case remains a revalidation blocker.
 The loopback tests use actual server request and
 WebSocket-upgrade counts, plus intentional guard-disable/bypass controls, to verify prevention.
 
@@ -108,7 +120,8 @@ npm run test:policy       # own loopback origins/sinks, real Chromium; no app or
 ```
 
 CI runs this narrow policy lane before the existing hermetic flows; it never runs prod-readonly on production.
-For offline local nine-journey verification, use a fresh app build and disclosed loopback fixtures for the four
+For offline local nine-journey verification, use a fresh app build (or a precisely identified reused build
+whose application/build inputs are unchanged) and disclosed loopback fixtures for the four
 public data reads, retaining the real AppKit modal, malformed-token route, MCP routes and empty signing ledger.
 Local evidence does not resolve the PR166 production provider-read scope exception; corrected-harness production
 revalidation remains a separate root-owned step.
