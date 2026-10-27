@@ -287,3 +287,102 @@ describe("submitOpenPosition (MCP open-position submit)", () => {
     expect(connection.sendRawTransaction).toHaveBeenCalledOnce();
   });
 });
+
+// Exercise actual public entrypoints and real handlers/permits, mocking only backend I/O.
+// These assertions were run against the switches before introducing dispatch.ts.
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js";
+import { NextRequest } from "next/server";
+import { POST } from "@/app/api/mcp/route";
+import { generateMcpToken } from "@/lib/mcp-auth";
+import { createMcpServer } from "./create-server";
+import { withdrawPermit } from "@sofinance/engine/withdraw/permit";
+import { simulateWithdraw } from "@sofinance/engine/withdraw/build";
+vi.mock("@sofinance/engine/withdraw/build", () => ({ simulateWithdraw: vi.fn() }));
+
+for (const surface of ["http", "stdio"] as const) describe(`${surface} real submit pipelines`, () => {
+  async function call(name: string, args: unknown) {
+    if (surface === "http") {
+      const response = await POST(new NextRequest("http://localhost/api/mcp", {
+        method: "POST", headers: { Authorization: `Bearer ${generateMcpToken(wallet, SIGNING_SECRET)}` },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }),
+      }));
+      expect(response.status).toBe(200);
+      return CallToolResultSchema.parse((await response.json()).result);
+    }
+    const server = createMcpServer(), client = new Client({ name: "real-submit", version: "1" });
+    const [a, b] = InMemoryTransport.createLinkedPair();
+    try {
+      await server.connect(a); await client.connect(b);
+      return await client.request({ method: "tools/call", params: { name, arguments: args } }, CallToolResultSchema);
+    } finally { await client.close(); await server.close(); }
+  }
+  beforeEach(() => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(readSelectedPositionState).mockResolvedValue(selectedState() as never);
+    vi.mocked(simulateAndVerifySelectedTransaction).mockResolvedValue(undefined as never);
+    vi.mocked(simulateWithdraw).mockResolvedValue(undefined as never);
+    connection.getSignatureStatuses.mockResolvedValue({ value: [{ confirmationStatus: "confirmed" }] });
+  });
+  afterEach(() => { vi.restoreAllMocks(); });
+  function input(name: string) {
+    if (name === "submit_signed_transaction") return selectedInput();
+    if (name === "submit_compound_transaction") {
+      const summary = compoundSummaryFixture({ wallet, blockhash: BLOCKHASH });
+      vi.mocked(readCompoundPositionState).mockResolvedValue({ ...summary.state } as never);
+      vi.mocked(simulateAndVerifyCompound).mockResolvedValue({ rewards: [] } as never);
+      return { wallet, signedTransaction: toBase64(transaction), summary,
+        permit: issueCompoundPermit(SIGNING_SECRET, { wallet, summary, message: messageBase64(transaction) }) };
+    }
+    if (name === "submit_open_position") {
+      transaction = buildTransaction({ payer: walletKey, extraSigners: [nftKey] });
+      const summary = openSummaryFixture({ wallet, nftMint: nftKey.publicKey.toBase58(), blockhash: BLOCKHASH });
+      vi.mocked(readOpenPoolState).mockResolvedValue({ paused: false, frozen: false, transferFee: false, unsupportedExtensions: [], sufficientSol: true,
+        poolId: summary.poolId, inputMint: summary.inputMint, inputKind: summary.inputKind, balances: { ...summary.startingBalances } } as never);
+      vi.mocked(simulateAndVerifyOpenTransaction).mockResolvedValue(undefined as never);
+      return { wallet, signedTransaction: toBase64(transaction), summary,
+        permit: issueOpenPositionPermit(SIGNING_SECRET, { wallet, summary, message: messageBase64(transaction) }) };
+    }
+    const summary = { operation: "withdraw", wallet, stage: "atomic", expiresAt: Date.now() + 60_000,
+      lastValidBlockHeight: 150, blockhash: BLOCKHASH, requiresSecondConfirmation: false };
+    return { wallet, signedTransaction: toBase64(transaction), summary,
+      permit: withdrawPermit.issue(SIGNING_SECRET, { wallet, summary, message: messageBase64(transaction) }) };
+  }
+  const submissions = ["submit_signed_transaction", "submit_compound_transaction", "submit_open_position", "submit_withdraw"];
+  it.each(submissions)("%s preserves exact bytes, one send, simulation-before-send and accepted metadata failure", async name => {
+    const args = input(name);
+    vi.mocked(beamAfterSend).mockRejectedValue(new Error("metadata unavailable"));
+    const result = await call(name, args);
+    expect(result.isError).toBeUndefined();
+    expect(result.content).toEqual([{ type: "text", text: expect.stringContaining(signatureOf(transaction)) }]);
+    expect(connection.sendRawTransaction).toHaveBeenCalledOnce();
+    expect(Buffer.from(connection.sendRawTransaction.mock.calls[0]![0] as Uint8Array)).toEqual(Buffer.from(transaction.serialize()));
+    const simulations = [simulateAndVerifySelectedTransaction, simulateAndVerifyCompound, simulateAndVerifyOpenTransaction, simulateWithdraw];
+    const simulation = simulations[submissions.indexOf(name)]!;
+    expect(simulation).toHaveBeenCalledOnce();
+    expect(vi.mocked(simulation).mock.invocationCallOrder[0]).toBeLessThan(connection.sendRawTransaction.mock.invocationCallOrder[0]!);
+    expect(connection.getBlockHeight).toHaveBeenCalledTimes(2);
+  });
+  it.each(submissions)("%s refuses forged permit before backend I/O", async name => {
+    const result = await call(name, { ...input(name), permit: "forged" });
+    expect(result.isError).toBe(true);
+    expect(rpcConnection).not.toHaveBeenCalled();
+    expect(connection.sendRawTransaction).not.toHaveBeenCalled();
+  });
+  it.each(submissions)("%s never turns unknown send into safe-to-retry or definitely-unsent", async name => {
+    const args = input(name);
+    connection.sendRawTransaction.mockRejectedValue(new Error("socket hang up https://rpc.invalid/?api-key=SECRET"));
+    const result = await call(name, args);
+    expect(result.isError).toBe(true);
+    const text = JSON.stringify(result);
+    expect(text).not.toMatch(/safe to retry|not sent|SECRET|sent.*false/);
+    expect(connection.sendRawTransaction).toHaveBeenCalledOnce();
+    expect(Buffer.from(connection.sendRawTransaction.mock.calls[0]![0] as Uint8Array)).toEqual(Buffer.from(transaction.serialize()));
+  });
+  it("withdraw's record summary remains accepted by the parser, then permit fails before backend", async () => {
+    const result = await call("submit_withdraw", { wallet, summary: {}, permit: "forged", signedTransaction: toBase64(transaction) });
+    expect(result.content).toEqual([{ type: "text", text: JSON.stringify({ error: "Withdrawal authorization does not match transaction" }, null, 2) }]);
+    expect(rpcConnection).not.toHaveBeenCalled();
+  });
+});
