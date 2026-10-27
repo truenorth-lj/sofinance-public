@@ -412,3 +412,61 @@ describe("minimalSentryEvent", () => {
     });
   });
 });
+
+
+describe("complete sensitive diagnostic values", () => {
+  const secret = "R4_KEY_7";
+  const other = "R4_OTHER_8";
+  it.each([
+    [secret], [secret, other], [[secret], { value: other }],
+    { value: secret, nested: [{ value: other }] },
+    { value: `quoted ] } \\" ${secret}`, second: other },
+  ])("replaces an entire subtree and preserves safe siblings: %j", (value) => {
+    const raw = JSON.stringify({ headers: { "x-api-key": value }, code: "E_UPSTREAM" });
+    for (const text of [raw, `provider ${raw} end`, JSON.stringify({ detail: raw }), encodeURIComponent(raw)]) {
+      const result = scrubCredentialText(text);
+      expect(result).not.toContain(secret);
+      expect(result).not.toContain(other);
+      expect(result).toContain("E_UPSTREAM");
+      expect(result).toContain("[redacted-secret]");
+    }
+    expect(JSON.parse(scrubCredentialText(raw))).toEqual({ headers: { "x-api-key": "[redacted-secret]" }, code: "E_UPSTREAM" });
+  });
+
+  it.each([
+    `api-key:{value:["${secret}", {value: '${other}'}]}; code=E_UPSTREAM`,
+    String.raw`{"api\u002dkey":["R4_KEY_7","R4_OTHER_8"],"code":"E_UPSTREAM"}`,
+    `Authorization: Bearer\n\t${secret}+${other}==; code=E_UPSTREAM`,
+    `Basic\r\n ${secret}+${other}==; code=E_UPSTREAM`,
+  ])("handles diagnostic collections, escaped keys and folded schemes: %s", (raw) => {
+    const result = scrubCredentialText(raw);
+    expect(result).not.toContain(secret);
+    expect(result).not.toContain(other);
+    expect(result).toContain("E_UPSTREAM");
+  });
+
+  it.each([
+    `api-key:["${secret}", {value:"${other}"}`, // unterminated
+    `api-key:{value:["${secret}"]]; ${other}`, // mismatched
+    `api-key:"${secret}`, // unterminated quoted scalar
+    `api-key:${"[".repeat(33)}"${secret}"${"]".repeat(33)}`,
+    `%FF%61%70%69%2D%6B%65%79%3D${secret}`,
+    JSON.stringify({ "%FF%61%70%69%2D%6B%65%79": [secret, other] }),
+    JSON.stringify({ "%2525252561pi-key": [secret, other] }),
+    String.raw`api-key=Bearer\nR4_KEY_7`,
+    ...[4, 8].map((depth) => {
+      let raw = JSON.stringify({ "api-key": [secret, other] });
+      for (let i = 0; i < depth; i++) raw = encodeURIComponent(raw);
+      return raw;
+    }),
+  ])("fails closed on unsupported boundaries/encoding: %s", (raw) => {
+    expect(scrubCredentialText(raw)).toBe("[redacted-secret]");
+  });
+
+  it("keeps ordinary arrays, quoted delimiters, Unicode and percentage prose", () => {
+    const raw = JSON.stringify({ InstructionError: [2, { Custom: 6021 }], design: ["retry"],
+      mytoken: { value: "missing" }, tokenizer: "ready", message: "progress 50%; ] }", wallet });
+    expect(scrubCredentialText(raw)).toBe(raw);
+    expect(scrubCredentialText("progress 50% — %E4%B8%AD%E6%96%87")).toBe("progress 50% — 中文");
+  });
+});

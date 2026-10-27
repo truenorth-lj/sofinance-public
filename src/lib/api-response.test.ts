@@ -1,4 +1,5 @@
 import { inspect } from "node:util";
+import { SendTransactionError } from "@solana/web3.js";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 const captureApiRouteError = vi.hoisted(() => vi.fn());
@@ -267,4 +268,62 @@ it("redacts provider keys in console messages, stacks, and nested causes", async
   expect(logged).toContain("/app/rpc.ts:12:3");
   expect(logged).toContain("/app/quote.ts:24:5");
   expect(calls).toHaveLength(1);
+});
+
+
+const r4Secret = "R4_KEY_7";
+const r4Other = "R4_OTHER_8";
+const r4Structured = { headers: { "x-api-key": [[r4Secret], { value: r4Other }] }, code: "E_UPSTREAM" };
+const r4Json = JSON.stringify(r4Structured);
+const r4Forms = [r4Json, JSON.stringify({ detail: r4Json }), encodeURIComponent(r4Json),
+  `api-key:{value:["${r4Secret}", "${r4Other}"]}; code=E_UPSTREAM`,
+  `Bearer\n${r4Secret}+${r4Other}==`, `Authorization: Basic\r\n ${r4Secret}+${r4Other}==`,
+  `%FF%61%70%69%2D%6B%65%79%3D${r4Secret}`,
+  Array.from({ length: 4 }).reduce<string>((s) => encodeURIComponent(s), r4Json),
+];
+it.each(r4Forms.flatMap((credential, form) => r2Locations.map((location) => ({ credential, form, location }))))(
+  "R4 structured/unsupported form $form via $location", async ({ credential, location }) => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    let error: Error = new Error("provider failed");
+    let fallback = "Request failed";
+    switch (location) {
+      case "message": error.message += ` ${credential}`; break;
+      case "stack": error.stack = `Error: ${credential}\n    at run (/app/test.ts:1:2)`; break;
+      case "cause": error.cause = new TypeError(credential); break;
+      case "CompoundSendError": error = new CompoundSendError(new Error(credential)); break;
+      case "fallback": error.message = ""; fallback = credential; break;
+      case "transactionError": Object.assign(error, { transactionError: { detail: credential, code: "E_UPSTREAM" } }); break;
+      case "logs": error = new SendTransactionError({ action: "send", signature: "", transactionMessage: "provider failed", logs: [credential] }); break;
+      case "cross-tick": error.message = `cross-tick depth; ${credential}`; break;
+    }
+    const response = apiError(error, fallback);
+    const body = await response.json();
+    const calls = inspect([vi.spyOn(console, "error").mock.calls, info.mock.calls], { depth: null, customInspect: false });
+    for (const output of [JSON.stringify(body), calls]) {
+      expect(output).not.toContain(r4Secret);
+      expect(output).not.toContain(r4Other);
+    }
+    expect(response.status).toBe(400);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(body.sent).toBeUndefined();
+    expect(body.error.length).toBeLessThanOrEqual(220);
+    if (location === "cross-tick") {
+      expect(body.error).toBe(CROSS_TICK_USER_MESSAGE);
+      expect(info).toHaveBeenCalledOnce();
+    }
+  },
+);
+
+it("scrubs raw transactionError serialization while the logger masks the original subtree", async () => {
+  const error = Object.assign(new Error("provider failed"), { transactionError: r4Structured });
+  const response = await apiError(error, "Request failed").json();
+  expect(response.error).toContain("E_UPSTREAM");
+  expect(response.error).toContain("provider failed");
+  const log = inspect(vi.spyOn(console, "error").mock.calls, { depth: null, customInspect: false });
+  for (const output of [response.error, log]) {
+    expect(output).not.toContain(r4Secret);
+    expect(output).not.toContain(r4Other);
+  }
+  expect(error.transactionError).toBe(r4Structured);
+  expect(JSON.stringify(r4Structured)).toContain(r4Secret);
 });

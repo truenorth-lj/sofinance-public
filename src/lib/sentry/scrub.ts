@@ -1,16 +1,13 @@
 const URL_RE = /https?:\/\/[^\s"'\\]+/gi;
 const ENCODED_URL_RE = /https?%3A%2F%2F[^\s"'\\&]*/gi;
-// Consume a complete quoted value (including escaped quotes), or one unquoted
-// value up to a diagnostic/query delimiter.
-const SECRET_VALUE = String.raw`(?:"(?:\\.|[^"\\\r\n])*"?|'(?:\\.|[^'\\\r\n])*'?|[^\s"',;}&]+)`;
-const KEY_ASSIGN_RE = /(?<![\w-])([\w-]+)["']?\s*[:=]\s*/g;
-const CREDENTIAL_VALUE_RE = new RegExp(String.raw`^(?:(?:Basic|Bearer)[ \t]+)?${SECRET_VALUE}`, "i");
-const AUTH_VALUE_RE = new RegExp(
-  String.raw`(?<![\w-])(?:Basic|Bearer)[ \t]+${SECRET_VALUE}`, "gi",
-);
+// Also consume non-key JSON strings as tokens: assignments/schemes inside them
+// must wait for string decoding, or escaped whitespace can split credentials.
+const DIAGNOSTIC_TOKEN_RE = /(?<![\w-])(?:"((?:\\.|[^"\\])*)"|'((?:\\.|[^'\\])*)'|([\w-]+))\s*[:=]\s*|(?<![\w-])(?:Basic|Bearer)\s+|"(?:\\[\s\S]|[^"\\])*"/gi;
 const JSON_STRING_RE = /"(?:\\[\s\S]|[^"\\])*"/g;
 const MAX_TEXT_LENGTH = 65_536;
 const MAX_JSON_STRING_DEPTH = 4;
+const MAX_VALUE_DEPTH = 32;
+const REDACTED = "[redacted-secret]";
 const SIGNATURE_RE = /\b[1-9A-HJ-NP-Za-km-z]{86,88}\b/g;
 const ADDRESS_RE = /\b[1-9A-HJ-NP-Za-km-z]{32,44}\b/g;
 const SECRET_KEY_RE =
@@ -51,15 +48,22 @@ function scrubCredentialLayer(text: string, depth: number): string {
   for (let i = 0; i < 3; i += 1) {
     // Scrub before decoding so encoded whitespace inside a URL/value cannot
     // split off its tail. A stray '%' in prose must not block other escapes.
-    const scrubbed = applyTextScrubbers(scrubJsonStrings(current, depth));
+    // Remove entire sensitive values before decoding their strings. Otherwise
+    // an inner decode/replacement can destroy the enclosing value's boundary.
+    const scrubbed = applyTextScrubbers(scrubJsonStrings(applyTextScrubbers(current), depth));
+    let invalidEncoding = false;
     const next = scrubbed.replace(/(?:%[0-9a-f]{2})+/gi, (encoded) => {
-      try { return decodeURIComponent(encoded); } catch { return encoded; }
+      try { return decodeURIComponent(encoded); } catch { invalidEncoding = true; return ""; }
     });
+    if (invalidEncoding) return REDACTED;
     // '+' is a valid credential character, not form-data whitespace here.
     if (next === scrubbed) return scrubbed;
     current = next;
   }
-  return applyTextScrubbers(scrubJsonStrings(current, depth));
+  const final = applyTextScrubbers(scrubJsonStrings(applyTextScrubbers(current), depth));
+  // A bounded decoder must not return still-encoded labels or values as safe.
+  // Ordinary percent prose (e.g. 50%) has no byte escape and remains readable.
+  return /%[0-9a-f]{2}/i.test(final) ? REDACTED : final;
 }
 
 /** Decode only complete JSON string tokens, including strings embedded in prose.
@@ -75,7 +79,6 @@ function scrubJsonStrings(text: string, depth: number): string {
     cursor = offset + token.length;
     // Decode percent escapes inside the string boundary as well, so decoding
     // quotes cannot turn a valid outer JSON string into an unsafe fragment.
-    if (!token.includes("\\") && !/%[0-9a-f]{2}/i.test(token)) return token;
     try {
       const decoded: string = JSON.parse(token);
       return JSON.stringify(scrubCredentialLayer(decoded, depth + 1));
@@ -87,29 +90,85 @@ function scrubJsonStrings(text: string, depth: number): string {
   return unsafe ? "[redacted-secret]" : result;
 }
 
+/** End of a quoted scalar or balanced collection, including diagnostic objects
+ * with unquoted keys. This is a boundary scanner, never an evaluator. It does
+ * not descend into live objects or invoke getters/toJSON. Unknown/mismatched
+ * boundaries return null so the caller drops the diagnostic instead of a prefix.
+ */
+function credentialValueEnd(text: string, start: number): number | null {
+  const scheme = /^(?:Basic|Bearer)\s+/i.exec(text.slice(start));
+  if (scheme) start += scheme[0].length;
+  const first = text[start];
+  if (!first) return null;
+  const stack: string[] = [];
+  let quote = first === '"' || first === "'" ? first : "";
+  if (first === "[" || first === "{") stack.push(first === "[" ? "]" : "}");
+  if (!quote && !stack.length) {
+    const scalar = /^[^\s"',;}&\]\\]+/.exec(text.slice(start));
+    if (!scalar) return null;
+    const end = start + scalar[0].length;
+    return text[end] === "\\" ? null : end;
+  }
+  for (let i = start + 1; i < text.length; i += 1) {
+    const char = text[i];
+    if (quote) {
+      if (char === "\\") { i += 1; continue; }
+      if (char !== quote) continue;
+      quote = "";
+    } else if (char === '"' || char === "'") {
+      quote = char;
+    } else if (char === "[" || char === "{") {
+      if (stack.length >= MAX_VALUE_DEPTH) return null;
+      stack.push(char === "[" ? "]" : "}");
+    } else if (char === "]" || char === "}") {
+      if (stack.pop() !== char) return null;
+    }
+    if (!quote && stack.length === 0) {
+      const next = text[i + 1];
+      return !next || /[\s,;}&\])]/.test(next) ? i + 1 : null;
+    }
+  }
+  return null;
+}
+
 function scrubAssignments(text: string): string {
   let result = "";
   let cursor = 0;
-  for (const match of text.matchAll(KEY_ASSIGN_RE)) {
+  for (const match of text.matchAll(DIAGNOSTIC_TOKEN_RE)) {
     if (match.index < cursor) continue;
-    const key = match[1];
+    let key = match[1] ?? match[2] ?? match[3];
+    if (match[1]?.includes("\\")) {
+      try { key = JSON.parse(`"${match[1]}"`); } catch { return REDACTED; }
+    }
+    // Decode a key while it still owns its value. Replacing an unsupported
+    // encoded key with a placeholder first would orphan the sensitive subtree.
+    if (key && /%[0-9a-f]{2}/i.test(key)) {
+      for (let i = 0; i < 3; i += 1) {
+        try { key = key.replace(/(?:%[0-9a-f]{2})+/gi, (run) => decodeURIComponent(run)); }
+        catch { return REDACTED; }
+      }
+      if (/%[0-9a-f]{2}/i.test(key)) return REDACTED;
+    }
     // Use the same complete-key segment policy as structured headers. `sig` is
     // the existing text-only shorthand; ordinary design/mytoken stay readable.
-    if (!key || (!isSensitiveHeaderName(key) && key.toLowerCase() !== "sig")) continue;
+    if (key ? !isSensitiveHeaderName(key) && key.toLowerCase() !== "sig"
+      : !/^(?:Basic|Bearer)\s/i.test(match[0])) continue;
     const start = match.index + match[0].length;
-    const value = CREDENTIAL_VALUE_RE.exec(text.slice(start));
-    if (!value) continue;
-    result += text.slice(cursor, match.index) + "[redacted-secret]";
-    cursor = start + value[0].length;
+    const end = credentialValueEnd(text, start);
+    if (end === null) return REDACTED;
+    // Keep valid JSON valid; plain assignments retain their existing wording.
+    const replacement = match[1] !== undefined || match[2] !== undefined
+      ? `${match[0]}"${REDACTED}"` : REDACTED;
+    result += text.slice(cursor, match.index) + replacement;
+    cursor = end;
   }
   return result + text.slice(cursor);
 }
 
 function applyTextScrubbers(text: string): string {
-  return scrubAssignments(text
-    .replace(URL_RE, "[redacted-url]")
-    .replace(ENCODED_URL_RE, "[redacted-url]"))
-    .replace(AUTH_VALUE_RE, "[redacted-secret]");
+  // Scan values before URL replacement can eat a closing bracket/brace.
+  return scrubAssignments(text).replace(URL_RE, "[redacted-url]")
+    .replace(ENCODED_URL_RE, "[redacted-url]");
 }
 
 /** Strings only. Arrays/objects recurse; every other type is returned unchanged. */
