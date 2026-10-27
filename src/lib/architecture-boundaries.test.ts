@@ -32,6 +32,10 @@ function imports(file: string, source: string): { modules: string[]; computed: b
 }
 
 type GraphHost = { read(file: string): string; resolve(specifier: string, importer: string): string | undefined };
+const engineRoot = path.join(root, "packages/engine");
+const libraryRoot = path.join(root, "src/lib");
+const useCaseRoot = path.join(root, "src/server/transactions");
+const within = (file: string, directory: string) => file.startsWith(directory + path.sep);
 function audit(entries: string[], host: GraphHost, engineOnly = false) {
   const visited = new Set<string>();
   const errors: string[] = [];
@@ -48,8 +52,11 @@ function audit(entries: string[], host: GraphHost, engineOnly = false) {
         if (specifier.startsWith(".") || specifier.startsWith("@/") || specifier.startsWith("@sofinance/engine/")) errors.push(`${trace}: unresolved first-party dependency`);
         continue;
       }
-      if (restrictedSource.test(target) || engineOnly && target.includes("/src/") && !target.includes("/packages/engine/src/")) {
+      if (restrictedSource.test(target) || engineOnly && !within(target, engineRoot)) {
         errors.push(`${trace}: adapter or reverse engine dependency (${target})`); continue;
+      }
+      if (within(file, libraryRoot) && within(target, useCaseRoot)) {
+        errors.push(`${trace}: reverse application dependency (${target})`); continue;
       }
       walk(target, [...chain, file]);
     }
@@ -89,13 +96,16 @@ describe("prepare dependency direction", () => {
 // Use the real TypeScript resolver over an in-memory filesystem. Negative tests
 // must fail for paths, not just for spelling a forbidden package at the root.
 function fixture(source: string, barrel = 'export const safe = 1;', engineOnly = false) {
-  const base = path.join(root, "src/server/transactions/probe.ts");
+  const base = path.join(root, engineOnly ? "packages/engine/src/probe.ts" : "src/server/transactions/probe.ts");
   const files: Record<string, string> = {
     [base]: source,
     [path.join(root, "src/lib/barrel.ts")]: barrel,
     [path.join(root, "src/app/api/probe/route.ts")]: "export const bad = 1;",
     [path.join(root, "src/mcp/schemas.ts")]: "export type Bad = string;",
     [path.join(root, "src/components/probe.tsx")]: "export const bad = 1;",
+    [path.join(root, "src/server/transactions/sibling.ts")]: "export const safe = 1;",
+    [path.join(root, "packages/engine/src/sibling.ts")]: "export const safe = 1;",
+    [path.join(root, "scripts/app-operation.ts")]: "export const bad = 1;",
   };
   const resolver: ts.ModuleResolutionHost = { fileExists: file => file in files, readFile: file => files[file], directoryExists: dir => Object.keys(files).some(file => file.startsWith(dir + "/")) };
   return audit([base], {
@@ -128,5 +138,17 @@ describe("dependency guard negative controls", () => {
     });
   it("rejects engine reaching even an otherwise permitted public library", () => {
     expect(fixture('import "@/lib/barrel";', undefined, true).length).toBeGreaterThan(0);
+  });
+  it("rejects a public library importing back into its calling use case", () => {
+    expect(fixture('import "@/lib/barrel";', 'import "@/server/transactions/probe";'))
+      .toEqual([expect.stringContaining("reverse application dependency")]);
+  });
+  it("rejects engine dependencies outside its package even without a src directory", () => {
+    expect(fixture('import "../../../scripts/app-operation";', undefined, true))
+      .toEqual([expect.stringContaining("reverse engine dependency")]);
+  });
+  it("allows use-case siblings and engine dependencies inside the package", () => {
+    expect(fixture('import "./sibling";')).toEqual([]);
+    expect(fixture('import "./sibling";', undefined, true)).toEqual([]);
   });
 });
