@@ -87,7 +87,7 @@ Open **RWA pairs**. Scroll to **SPCXx/SPCX**. There are two cards — pick the *
 
 Click **Plan this pool** to see an estimate for your amount and days (based on historical data, not a guarantee). When ready, click **Create a position in this pool**.
 
-![Plan — amount, days, and chart](/blog/xstocks-xpoints/steps/step10_plan_amount_input_and_chart.png)
+![Plan — amount and days](/blog/xstocks-xpoints/steps/step10_plan_amount_input_and_chart.png)
 
 ## 6. Create position
 
@@ -99,7 +99,6 @@ Or click **Create position** on the pair card. Choose an input asset (**SOL**, *
 
 Approve the transaction in your wallet. SoFinance swaps as needed and **builds the Raydium LP position for you**; the position NFT lands in your wallet.
 
-<!-- TODO: wallet-approval screenshot — do not reuse create-position modal (LJ: no duplicate/continuation shots) -->
 
 ## 8. Track it in the app
 
@@ -109,13 +108,13 @@ Numbers below are **this one position’s figures only** (not a promise or forec
 
 ![My positions + Performance — this position: 30.47 holding days, est. trading-fee APR 20.29%, fees 0.598370 SPCX](/blog/xstocks-xpoints/steps/step14_positions_performance_full.png)
 
-![Performance detail — same position: results, exit estimate, 30D fee APR chart](/blog/xstocks-xpoints/steps/step14b_performance_detail.png)
+![Performance detail — same position: results and exit estimate](/blog/xstocks-xpoints/steps/step14b_performance_detail.png)
 
 ## 9. Check your xPoints
 
 Return to [https://defi.xstocks.fi/points](https://defi.xstocks.fi/points) and confirm your activity.
 
-<!-- TODO: xPoints dashboard balance / eligible-activity screenshot coming -->
+![Your xPoints dashboard shows points earned.](/blog/xstocks-xpoints/steps/step15_xpoints_balance.png)
 
 ---
 
