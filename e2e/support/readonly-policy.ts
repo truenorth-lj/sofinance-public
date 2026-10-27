@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { BrowserContext, Request } from "@playwright/test";
 import { stubWalletApis } from "./guards";
 
@@ -10,7 +11,7 @@ const PUBLIC_READS = new Set([
   "/api/rwa-pairs", "/api/sol-usdc-price", "/api/pool-range-apr", "/api/pool-daily-apr",
 ]);
 type Scope = "external" | "telemetry" | "wallet-stub" | "public-read" | "forbidden";
-type Event = { action: "blocked" | "forwarded" | "stubbed" | "response"; scope: Scope | "websocket" | "redirect"; host: string; method: string; resource: string };
+type Event = { action: "blocked" | "forwarded" | "stubbed" | "response" | "cancelled"; scope: Scope | "websocket" | "redirect"; host: string; method: string; resource: string };
 
 function scopeOf(request: Request, origin: string): Scope {
   const url = new URL(request.url());
@@ -32,6 +33,7 @@ function scopeOf(request: Request, origin: string): Scope {
 
 /** Install on a fresh serviceWorkers:block context, before pages, and AFTER any local fixture routes.
  * Do not add page routes or overriding context routes afterwards. APIRequestContext is outside this policy.
+ * Use the returned close() before the final audit so pending callbacks have settled.
  * Public reads may cause server-side provider activity; this is a browser boundary, not a server sandbox.
  */
 export async function installReadonlyPolicy(context: BrowserContext, baseURL: string, address?: string) {
@@ -42,6 +44,15 @@ export async function installReadonlyPolicy(context: BrowserContext, baseURL: st
   const events: Event[] = [];
   const violations: string[] = [];
   const unhandled = new Set<Request>();
+  const pending = new Set<Promise<void>>();
+  const closeReason = `Readonly policy shutdown ${randomUUID()}`;
+  let cancelling = false;
+  let closing: Promise<void> | undefined;
+  const track = (task: Promise<void>) => {
+    pending.add(task);
+    void task.then(() => pending.delete(task));
+    return task;
+  };
   const record = (request: Request, action: Event["action"], scope: Event["scope"]) => {
     // Never retain paths, queries, headers, bodies, wallet addresses or project IDs.
     events.push({ action, scope, host: new URL(request.url()).hostname, method: request.method(), resource: request.resourceType() });
@@ -59,9 +70,11 @@ export async function installReadonlyPolicy(context: BrowserContext, baseURL: st
   });
   context.on("serviceworker", () => violations.push("Service worker created: serviceWorkers:block is required"));
 
-  await stubWalletApis(context, address);
+  // A JSON stub can also be navigated to as a same-origin document. Its realm needs
+  // the same worker restriction as fetched HTML; JSON MIME alone is not isolation.
+  await stubWalletApis(context, address, { "content-security-policy": "worker-src 'none'" });
   // Last registered context route runs first. Only the two explicit wallet stubs fall through.
-  await context.route(/^https?:\/\//, async route => {
+  await context.route(/^https?:\/\//, route => track((async () => {
     const request = route.request();
     const scope = scopeOf(request, origin);
     unhandled.delete(request);
@@ -91,14 +104,34 @@ export async function installReadonlyPolicy(context: BrowserContext, baseURL: st
         }
       } finally { await response.dispose(); }
     }
-  });
-  await context.routeWebSocket(/.*/, async socket => {
+  })().catch(async error => {
+    // Only our explicit context-close reason identifies an intentional cancellation.
+    // Generic disposed/timeout/socket errors remain failures, including during shutdown.
+    if (cancelling && error instanceof Error && error.message.includes(closeReason)) {
+      record(route.request(), "cancelled", scopeOf(route.request(), origin));
+    } else {
+      violations.push("Readonly route failed unexpectedly");
+      try { await route.abort("failed"); } catch { violations.push("Failed route could not be aborted"); }
+    }
+  })));
+  await context.routeWebSocket(/.*/, socket => track((async () => {
     events.push({ action: "blocked", scope: "websocket", host: new URL(socket.url()).hostname, method: "CONNECT", resource: "websocket" });
     // No connectToServer: not even a handshake reaches the peer.
     await socket.close();
-  });
+  })().catch(() => { violations.push("Readonly WebSocket close failed unexpectedly"); })));
   return {
     events,
+    close: () => closing ??= (async () => {
+      // Stop document scripts with guards still installed, then cancel held fetches.
+      // BrowserContext.close disposes its request client before finishing route callbacks.
+      try {
+        await Promise.all(context.pages().map(page => page.close()));
+      } finally {
+        cancelling = true;
+        await context.close({ reason: closeReason });
+        while (pending.size) await Promise.all([...pending]);
+      }
+    })(),
     failures: () => [...violations, ...[...unhandled].map(() => "Forbidden request was not intercepted; transport outcome unknown")],
   };
 }

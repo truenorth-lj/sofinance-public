@@ -57,10 +57,10 @@ The app has no `data-testid`s; tests use roles and visible text. When the UI cop
 ## Production readonly browser boundary
 
 `prod-readonly` has **zero retries** and installs `support/readonly-policy.ts` before any page/app script.
-It uses a fresh `serviceWorkers: "block"` context. All non-origin HTTP(S) attempts (including future provider
-hosts, beacons and popup navigation) are aborted, with no external static-resource exception. Every page
+It uses a fresh `serviceWorkers: "block"` context. It aborts intercepted non-origin HTTP(S) requests (including
+future provider hosts, beacons and popup navigation), with no external static-resource exception. Every page
 WebSocket is closed without `connectToServer`. Because worker sockets are outside Playwright's page socket
-routing, fulfilled responses add an enforcing `worker-src 'none'` CSP: dedicated/shared workers, including
+routing, fetched responses and synthetic wallet/token stub responses add an enforcing `worker-src 'none'` CSP: dedicated/shared workers, including
 blob workers, cannot start. This lane does not exercise workers or WalletConnect pairing.
 
 The same-origin scope is explicit, not a blanket permission:
@@ -79,12 +79,21 @@ following an unchecked redirect chain. Install local route fixtures before the p
 page/context routes afterwards. The helper owns wallet-stub ordering. These are trusted test-harness rules,
 not a security boundary against malicious test code or a browser-process firewall.
 
+The fixture calls `policy.close()` before the final audit: it closes pages while guards remain installed,
+closes the context with a unique cancellation reason, and waits for pending route callbacks. Only cancellation
+carrying that exact shutdown reason is expected; other route/transport errors fail the audit. Do not replace
+this with raw `context.close()` or `unrouteAll({ behavior: "ignoreErrors" })`.
+
 Each browser test attaches a sanitized decision ledger: action, scope, hostname, HTTP method and resource type;
 no URL paths, query strings, IDs, headers or bodies. `blocked` means the route was aborted before forwarding;
 `forwarded` means the helper invoked one permitted same-origin transport hop, not proof of a successful response.
+`cancelled` means shutdown interrupted its callback, not that the server never received the earlier request.
 Forbidden responses and unhandled forbidden requests fail teardown; an unhandled request's transport outcome
 is unknown. Trace status `-1` alone is never blocked proof. CSP-blocked worker attempts and native browser
-background traffic are not represented as HTTP route events. The loopback tests use actual server request and
+background traffic are not represented as HTTP route events. During navigation or teardown, a pagehide beacon
+may be accepted by the browser yet disappear before Playwright emits a request or invokes the handler. Thus
+an empty ledger does not prove there was no attempt, and `sendBeacon(true)` does not prove transport completed.
+The loopback tests use actual server request and
 WebSocket-upgrade counts, plus intentional guard-disable/bypass controls, to verify prevention.
 
 `APIRequestContext` does **not** pass browser routing. The two direct MCP actions remain explicitly public

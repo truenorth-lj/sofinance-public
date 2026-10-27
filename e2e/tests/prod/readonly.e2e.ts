@@ -13,7 +13,7 @@ const test = base.extend<{ wallet: FakeWallet }>({
     const policy = await installReadonlyPolicy(context, baseURL!, wallet.address);
     await installFakeWallet(context, wallet);
     try { await use(context); } finally {
-      await context.close();
+      await policy.close();
       await testInfo.attach("readonly-browser-policy", { body: JSON.stringify({ events: policy.events, failures: policy.failures() }), contentType: "application/json" });
       expect(policy.failures()).toEqual([]);
       expect(policy.events.filter(event => event.action === "forwarded" && event.scope !== "public-read")).toEqual([]);
