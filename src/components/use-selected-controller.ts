@@ -1,26 +1,21 @@
 "use client";
 import "@/lib/engine-host";
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { VersionedTransaction } from "@solana/web3.js";
-import bs58 from "bs58";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { formatAmount, parseTokenAmount, toleranceFromPercent } from "@sofinance/engine/amount";
-import { persistSelectedAttempt, type SelectedAttempt } from "@/lib/selected-attempt";
 import type { PositionSelection, SelectedPositionState } from "@sofinance/engine/selected-state";
 import type { WalletDiscovery } from "@sofinance/engine/wallet-discovery";
 import { DEFAULT_RESALE_FLOOR_BPS, USDC_MINT } from "@sofinance/engine/ids";
 import { INPUT_ASSET_NOT_HELD_CODE, INPUT_ASSET_NOT_HELD_MESSAGE } from "@/lib/selected-input-asset-not-held";
 import { useWalletConnection } from "./wallet-connection";
-import { createJupiterRelayStore, postWithJupiterRelay } from "@/lib/jupiter/browser-relay";
+import { createJupiterRelayStore } from "@/lib/jupiter/browser-relay";
 import { useSelectedAttempt, useSelectedAttemptEffects } from "./transactions/selected/use-selected-attempt";
 import { useSelectedPreview, useSelectedPreviewEffect } from "./transactions/selected/use-selected-preview";
-import { RELAY_DEADLINE_MS, selectionKey, type Preflight } from "./transactions/selected/selected-preview-model";
+import { selectionKey } from "./transactions/selected/selected-preview-model";
+import { useSelectedSubmission } from "./transactions/selected/use-selected-submission";
 
 export { RELAY_DEADLINE_MS } from "./transactions/selected/selected-preview-model";
 
-type Prepared = Preflight & { unsignedTransaction: string; blockhash: string;
-  lastValidBlockHeight: number; startingLiquidity: string;
-  startingBalances: SelectedPositionState["balances"]; expiresAt: number; permit: string };
 type ApiError = { error: string; code?: string; inputMint?: string; outputMint?: string };
 
 export function useSelectedController() {
@@ -36,10 +31,8 @@ export function useSelectedController() {
     invalidate: invalidatePreview, invalidateForInput: invalidateInputPreview,
     clear: clearPreview, clearErrors: clearQuoteErrors,
     adopt: adoptPreview, retryCalculation, showQuoteRecalculate } = previewController;
-  const [error, setError] = useState("");
+  const { error, submitStage, busy, clearError, getLifetime, isSubmitting, submit } = useSelectedSubmission();
   const [stateError, setStateError] = useState("");
-  const [submitStage, setSubmitStage] = useState<"preparing" | "wallet" | "broadcasting" | null>(null);
-  const busy = submitStage !== null;
   const [loadingDiscovery, setLoadingDiscovery] = useState(false);
   const [loadingState, setLoadingState] = useState(false);
   const [now, setNow] = useState(0);
@@ -51,16 +44,9 @@ export function useSelectedController() {
   const jupiterStoreRef = useRef(createJupiterRelayStore());
   const getPreviewRelayStore = useCallback(() => jupiterStoreRef.current, []);
   const inputRevisionRef = useRef(0);
-  const submittingRef = useRef(false);
-  const lifetimeRef = useRef<object | null>(null);
-  useLayoutEffect(() => {
-    // A fresh token on every setup prevents effect replay from reviving old work.
-    lifetimeRef.current = {};
-    return () => { lifetimeRef.current = null; };
-  }, []);
-  const getLifetime = useCallback(() => lifetimeRef.current, []);
+  const getInputRevision = useCallback(() => inputRevisionRef.current, []);
+  const getSelectionKey = useCallback(() => selectionRef.current, []);
   const isWalletCurrent = useCallback((address: string) => walletRef.current === address, []);
-  const isSubmitting = useCallback(() => submittingRef.current, []);
   const attemptController = useSelectedAttempt({ wallet, busy, getLifetime, isWalletCurrent, isSubmitting });
   const { attempt, attemptStatus, history, verificationError, obsoletePending, historyWarning,
     beginSubmission, restoreSignature, publishPersisted, reconcileAttempt, retryReconcile, retryObsoleteReconcile } = attemptController;
@@ -77,10 +63,10 @@ export function useSelectedController() {
     invalidatePreview();
     const timer = window.setTimeout(() => {
       setDiscovery(null); setSelection(null); setSelectedState(null); clearPreview();
-      setAmount(""); setStateError(""); setError(""); clearQuoteErrors();
+      setAmount(""); setStateError(""); clearError(); clearQuoteErrors();
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [wallet, invalidatePreview, clearPreview, clearQuoteErrors]);
+  }, [wallet, invalidatePreview, clearPreview, clearQuoteErrors, clearError]);
 
   useEffect(() => {
     selectionRef.current = selectionKey(selection);
@@ -199,88 +185,11 @@ export function useSelectedController() {
   useSelectedPreviewEffect({ wallet, selection, amount, rawAmount, floorBps, toleranceBps, ready, busy,
     getRelayStore: getPreviewRelayStore, isCurrent: isPreviewCurrent, setNow }, previewController);
 
-  async function signAndSend() {
-    const lifetime = lifetimeRef.current;
-    if (!lifetime) return;
-    const ownsLifetime = () => lifetimeRef.current === lifetime;
-    if (!ready || busy || submittingRef.current || quoteLoading || !quote || !fresh ||
-      !wallet || !selection || !visibleState || toleranceBps === null) return;
-    submittingRef.current = true;
-    beginSubmission();
-    const key = selectionKey(selection);
-    const inputRevision = inputRevisionRef.current;
-    setSubmitStage("preparing"); setError("");
-    const aborter = new AbortController();
-    const deadline = window.setTimeout(() => aborter.abort(new Error("Preparation took too long. Please retry.")), RELAY_DEADLINE_MS);
-    try {
-      const response = await postWithJupiterRelay("/api/selected-prepare", { wallet, ...selection, amount, floorBps, toleranceBps },
-        { store: jupiterStoreRef.current, signal: aborter.signal });
-      const data = await response.json() as Prepared | ApiError;
-      window.clearTimeout(deadline);
-      if (!ownsLifetime()) return;
-      if (aborter.signal.aborted) throw aborter.signal.reason;
-      if (!response.ok) throw new Error((data as ApiError).error);
-      const prepared = data as Prepared;
-      if (walletRef.current !== wallet || selectionRef.current !== key || inputRevisionRef.current !== inputRevision ||
-        !prepared.simulated || !prepared.permit || !prepared.startingBalances ||
-        prepared.quote.wallet !== wallet ||
-        selectionKey(prepared.quote) !== key || prepared.quote.requested !== rawAmount.toString() ||
-        prepared.quote.floorBps !== floorBps || prepared.quote.toleranceBps !== toleranceBps || Date.now() >= prepared.expiresAt) {
-        throw new Error("Requote or transaction authorization and current selection mismatch");
-      }
-      const bytes = Uint8Array.from(atob(prepared.unsignedTransaction), (character) => character.charCodeAt(0));
-      const unsigned = VersionedTransaction.deserialize(bytes);
-      if (unsigned.message.recentBlockhash !== prepared.blockhash ||
-        unsigned.message.staticAccountKeys[0]?.toBase58() !== wallet) throw new Error("Transaction payer or blockhash mismatch");
-      adoptPreview(prepared); setNow(Date.now());
-      setSubmitStage("wallet");
-      const originalMessage = unsigned.message.serialize();
-      const signed = await signTransaction(unsigned);
-      if (!ownsLifetime()) return;
-      const signedMessage = signed.message.serialize();
-      if (signedMessage.length !== originalMessage.length || signedMessage.some((byte, index) => byte !== originalMessage[index])) {
-        throw new Error("Wallet modified transaction content, stopped submission");
-      }
-      const signatureBytes = signed.signatures[0];
-      if (!signatureBytes || signatureBytes.every((byte) => byte === 0)) throw new Error("Wallet did not return valid signature");
-      if (walletRef.current !== wallet || selectionRef.current !== key || inputRevisionRef.current !== inputRevision ||
-        Date.now() >= prepared.expiresAt) throw new Error("Wallet, selection, or quote changed during signing; transaction not sent");
-      const signature = bs58.encode(signatureBytes);
-      const current: SelectedAttempt = { version: 2, wallet, selection, poolId: prepared.quote.poolId,
-        positionAccount: prepared.quote.positionAccount, signature, createdAt: Date.now(),
-        requested: prepared.quote.requested, floorBps: prepared.quote.floorBps,
-        startingBalances: prepared.startingBalances, startingLiquidity: prepared.startingLiquidity,
-        expectedLiquidity: prepared.quote.liquidity, blockhash: prepared.blockhash,
-        lastValidBlockHeight: prepared.lastValidBlockHeight };
-      const signedTransaction = btoa(String.fromCharCode(...signed.serialize()));
-      persistSelectedAttempt(window.localStorage, current);
-      publishPersisted(current);
-      clearPreview(); setSubmitStage("broadcasting");
-      const sent = await fetch("/api/selected-broadcast", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ wallet, selection, signedTransaction, permit: prepared.permit,
-          requested: prepared.quote.requested, floorBps: prepared.quote.floorBps,
-          expiresAt: prepared.expiresAt, lastValidBlockHeight: prepared.lastValidBlockHeight,
-          startingLiquidity: prepared.startingLiquidity, expectedLiquidity: prepared.quote.liquidity,
-          rangeSide: prepared.quote.rangeSide, startingBalances: prepared.startingBalances }), cache: "no-store",
-        signal: AbortSignal.timeout(15_000) });
-      const broadcast = await sent.json() as { signature?: string; error?: string };
-      if (!ownsLifetime()) return;
-      if (!sent.ok) throw new Error(broadcast.error || "Dedicated RPC rejected transaction; verify on-chain status");
-      if (broadcast.signature !== signature) throw new Error("Dedicated RPC returned inconsistent transaction signature, check on-chain status");
-      void reconcileAttempt(current);
-      void refreshState();
-    } catch (caught) {
-      if (ownsLifetime() && walletRef.current === wallet) setError(caught instanceof Error ? caught.message : "Transaction not confirmed; check on-chain status before proceeding");
-    }
-    finally {
-      window.clearTimeout(deadline); submittingRef.current = false;
-      if (ownsLifetime() && walletRef.current === wallet) restoreSignature(attempt?.signature ?? null);
-      // Keep the synchronous lock until this run settles, including effect replay.
-      // Clear retained state even while effects are disconnected; no newer run
-      // can own the stage yet. React ignores this after a true unmount.
-      setSubmitStage(null);
-    }
-  }
+  const signAndSend = () => submit({ ready, quoteLoading, quote, fresh, wallet, selection, visibleState,
+    amount, rawAmount, floorBps, toleranceBps, attempt, signTransaction,
+    isWalletCurrent, getSelectionKey, getInputRevision, getRelayStore: getPreviewRelayStore,
+    beginSubmission, restoreSignature, publishPersisted, reconcileAttempt,
+    adoptPreview, clearPreview, setNow, refreshState });
 
   const actionLabel = submitStage === "preparing" ? "Preparing latest transaction…" : submitStage === "wallet" ?
     "Confirming in wallet…" : submitStage === "broadcasting" ? "Sending and verifying…" : "Add liquidity";
@@ -289,11 +198,11 @@ export function useSelectedController() {
   const primaryAction = () => { void signAndSend(); };
   const changeAmount = (value: string) => {
     inputRevisionRef.current++; invalidateInputPreview(); setAmount(value); clearPreview();
-    setError(""); clearQuoteErrors();
+    clearError(); clearQuoteErrors();
   };
   const changeTolerance = (value: string) => {
     inputRevisionRef.current++; invalidateInputPreview(); setTolerancePercent(value); clearPreview();
-    setError(""); clearQuoteErrors();
+    clearError(); clearQuoteErrors();
   };
   const fillMax = () => changeAmount(visibleState ? formatAmount(visibleState.inputBalance, visibleState.inputDecimals, visibleState.inputDecimals) : "");
   const choosePosition = (positionMint: string) => setSelection((current) => current ? { ...current, positionMint } : null);

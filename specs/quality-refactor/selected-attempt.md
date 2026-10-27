@@ -1,8 +1,10 @@
 # Selected history and reconciliation extraction (P2b)
 
-Accepted runtime: `6de6e303c127a1c94542fb468a78eff5fccd648e`, tree `fe962809e453f6fb05714946ebfa29b794de1de5`. Includes delivered D1, P2a and C1. Local preservation refactor only; independent Code/Security/QA review and delivery remain root-owned gates. P2c submission extraction is deferred.
+Accepted runtime: `6de6e303c127a1c94542fb468a78eff5fccd648e`, tree `fe962809e453f6fb05714946ebfa29b794de1de5`. Includes delivered D1, P2a and C1. P2b shipped with its two explicit recovery corrections in PR [#165](https://github.com/truenorth-lj/sofinance-public/pull/165), merge `8298ae20cb4370193d50941f5f797a739356f744`, tree `a9edf8751157b5fa999c341ea9d9720a58b9b88d`. Root verified production `dpl_4tzwTJgKmwGi68J9ZVaoXWD69w3a`, stable pre/post identity, 9 read-only tests retry0 and all 16 descriptors/key order equal on 2026-10-28 (workspace `output/sofinance-selected-attempt-production-verification-20261028-r1.md`). CI `40558815679` tested the equal merge tree: each lane 4,651 app/474 engine pass, 26 DB skips separately; actual PostgreSQL 18.6 job 26 pass, hermetic E2E66 and network-disabled container smoke pass. These are historical delivery facts, not real Selected transaction/quote validation or P2c release proof. P2c submission extraction is now implemented locally ([scope](selected-submission.md)); independent review and delivery remain root-owned.
 
-## Ownership and ordering
+## Ownership and ordering at P2b delivery
+
+P2c moves submission state/lifetime/command ownership to its own hook; the following describes the preserved P2b boundary before that extraction.
 
 `transactions/selected/use-selected-attempt.ts` owns current attempt/status, raw history projection, verification error, obsolete warning, loaded-wallet fencing, signature/request ownership, legacy lookups and status polling. No new storage schema, reducer, generic transaction controller or pure model is needed. Existing storage helpers remain byte-identical.
 
