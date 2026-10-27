@@ -45,11 +45,15 @@ export function useSelectedAttempt({ wallet, busy, getLifetime, isWalletCurrent,
     if (attemptSignatureRef.current === null) attemptSignatureRef.current = signature;
   }, []);
   // Called only after the unchanged archive/write/readback helper succeeds.
-  // History enumeration may throw: do not publish ownership or send before it finishes.
+  // Keep recovery pointed at the durable record even if history enumeration fails.
+  // The exception still propagates to the submission command and prevents sending.
   const publishPersisted = useCallback((current: SelectedAttempt) => {
-    setHistory(readSelectedHistory(window.localStorage, current.wallet));
-    attemptSignatureRef.current = current.signature;
-    setAttempt(current); setAttemptStatus("pending");
+    try {
+      setHistory(readSelectedHistory(window.localStorage, current.wallet));
+    } finally {
+      attemptSignatureRef.current = current.signature;
+      setAttempt(current); setAttemptStatus("pending");
+    }
   }, []);
 
   const reconcileObsolete = useCallback(async (address: string) => {
@@ -129,7 +133,7 @@ export function useSelectedAttempt({ wallet, busy, getLifetime, isWalletCurrent,
   const retryObsoleteReconcile = () => {
     if (!wallet) return;
     void reconcileObsolete(wallet).then((pending) => { if (isWalletCurrent(wallet)) setObsoletePending(pending); })
-      .catch(() => setObsoletePending(true));
+      .catch(() => { if (isWalletCurrent(wallet)) setObsoletePending(true); });
   };
   return { attempt, attemptStatus, history, verificationError, obsoletePending, historyWarning,
     beginSubmission, restoreSignature, publishPersisted, reconcileAttempt, retryReconcile, retryObsoleteReconcile,
