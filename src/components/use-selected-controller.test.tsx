@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act, Activity, createElement, StrictMode, useEffect } from "react";
+import { act, Activity, createElement, StrictMode, Suspense, useEffect, useLayoutEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi, type Mock } from "vitest";
 import { Keypair, PublicKey, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
@@ -7,14 +7,14 @@ import bs58 from "bs58";
 import { RELAY_DEADLINE_MS, useSelectedController } from "./use-selected-controller";
 import { persistSelectedAttempt, selectedAttemptKey, type SelectedAttempt } from "@/lib/selected-attempt";
 
-const mocks = vi.hoisted(() => ({ sign: vi.fn(), address: "11111111111111111111111111111111" }));
+const mocks = vi.hoisted(() => ({ sign: vi.fn(), address: "11111111111111111111111111111111" as string | undefined }));
 const wallet = "11111111111111111111111111111111";
 const key = () => Keypair.generate().publicKey.toBase58();
 const selection = { positionMint: key(), inputMint: key(), inputKind: "token" as const };
 const poolId = key();
 const positionAccount = key();
 vi.mock("./wallet-connection", () => ({ useWalletConnection: () => ({
-  address: mocks.address, connected: true, signTransaction: mocks.sign,
+  address: mocks.address, connected: Boolean(mocks.address), signTransaction: mocks.sign,
 }) }));
 let controller: ReturnType<typeof useSelectedController>;
 let root: Root;
@@ -710,4 +710,116 @@ it.each(["accepted", "rejected", "lost"])("lifecycle: durable %s settlement whil
   expect(controller.attempt?.signature).toBe(syntheticSignature);
   await act(async () => controller.changeAmount("0.02")); await advance(500);
   expect.soft(controller.actionDisabled).toBe(false);
+});
+
+// A Suspense sibling hides the hook's layout effects while retaining passive
+// effects; this deliberately differs from the already covered Activity fixture.
+async function suspenseMount() {
+  await act(async () => root.unmount());
+  root = createRoot(document.createElement('div'));
+  const wait = deferred<void>();
+  const effects = { layout: 0, cleanup: 0, passive: 0, passiveCleanup: 0 };
+  function Tracked() {
+    useLayoutEffect(() => { effects.layout++; return () => { effects.cleanup++; }; }, []);
+    useEffect(() => { effects.passive++; return () => { effects.passiveCleanup++; }; }, []);
+    return <Harness />;
+  }
+  function Suspend({ hide }: { hide: boolean }) { if (hide) throw wait.promise; return null; }
+  const render = (hide: boolean) => root.render(<Suspense fallback={<span>loading</span>}><Tracked /><Suspend hide={hide} /></Suspense>);
+  await act(async () => render(false)); await advance(100); await advance(100);
+  return { render, effects };
+}
+
+it("lifecycle: disconnected Suspense reconnect has no attempt to restore", async () => {
+  mocks.address = undefined;
+  const { render } = await suspenseMount();
+  await act(async () => render(true));
+  await act(async () => render(false)); await advance(100);
+  expect(controller.wallet).toBeUndefined();
+  expect(controller.attempt).toBeNull();
+  expect(controller.busy).toBe(false);
+  expect(calls("/api/selected-status")).toHaveLength(0);
+  expect(calls("/api/selected-broadcast")).toHaveLength(0);
+  mocks.address = wallet;
+  await act(async () => render(false)); await advance(100); await advance(100);
+  await ready(); signNormally();
+  await act(async () => controller.primaryAction());
+  expect(calls("/api/selected-broadcast")).toHaveLength(1);
+});
+
+it.each([
+  ["prepare", "resolve", "hidden"], ["prepare", "reject", "hidden"],
+  ["sign", "resolve", "hidden"], ["sign", "reject", "hidden"],
+  ["prepare", "resolve", "visible"], ["prepare", "reject", "visible"],
+  ["sign", "resolve", "visible"], ["sign", "reject", "visible"],
+] as const)("lifecycle: Suspense %s %s while %s restores prior signature reconciliation", async (phase, outcome, settlement) => {
+  const prior = oldAttempt(); persistSelectedAttempt(window.localStorage, prior);
+  const { render, effects } = await suspenseMount(); await ready();
+  expect(controller.attempt?.signature).toBe(prior.signature);
+  const old = deferred<Response>(); const signing = deferred<VersionedTransaction>();
+  const handler = fetchMock.getMockImplementation()!;
+  let preparedResponse!: Response; let original!: VersionedTransaction;
+  fetchMock.mockImplementation(async (url, init) => {
+    const response = await handler(url, init);
+    if (url !== "/api/selected-prepare") return response;
+    preparedResponse = response;
+    return phase === "prepare" ? old.promise : response;
+  });
+  mocks.sign.mockImplementation((tx: VersionedTransaction) => { original = tx; return signing.promise; });
+  await act(async () => controller.primaryAction()); expect(controller.busy).toBe(true);
+  await act(async () => render(true));
+  expect(effects).toEqual({ layout: 1, cleanup: 1, passive: 1, passiveCleanup: 0 });
+  const before = storageContents();
+  const signCount = mocks.sign.mock.calls.length;
+  if (settlement === "visible") {
+    await act(async () => render(false));
+    await act(async () => controller.primaryAction());
+    expect(calls("/api/selected-prepare")).toHaveLength(1);
+  }
+  await act(async () => {
+    if (phase === "prepare") {
+      if (outcome === "resolve") old.resolve(preparedResponse);
+      else old.reject(new Error("old prepare rejected"));
+    } else if (outcome === "resolve") {
+      original.signatures[0] = new Uint8Array(64).fill(2); signing.resolve(original);
+    } else signing.reject(new Error("old wallet rejected"));
+  });
+  expect(storageContents()).toEqual(before);
+  expect(mocks.sign).toHaveBeenCalledTimes(signCount);
+  fetchMock.mockImplementation((url, init) => url === '/api/selected-status'
+    ? Promise.resolve(Response.json({status:'success', signature:prior.signature, state:null})) : handler(url, init));
+  await act(async () => render(false)); await advance(100); await advance(8000);
+  expect(effects).toEqual({ layout: 2, cleanup: 1, passive: 1, passiveCleanup: 0 });
+  expect(controller.busy).toBe(false);
+  expect(calls('/api/selected-broadcast')).toHaveLength(0);
+  expect(window.localStorage.getItem(selectedAttemptKey(wallet))).toBe(before[selectedAttemptKey(wallet)]);
+  expect(controller.attemptStatus).toBe("success");
+  const statusCalls = calls("/api/selected-status");
+  expect(statusCalls.length).toBeGreaterThan(0);
+  expect(statusCalls.map(requestBody)).toEqual(expect.arrayContaining([expect.objectContaining({ signature: prior.signature })]));
+  await act(async () => controller.retryReconcile());
+  expect(controller.attemptStatus).toBe('success');
+  fetchMock.mockImplementation(handler); signNormally();
+  await act(async () => controller.changeAmount("0.02")); await advance(500);
+  expect(controller.actionDisabled).toBe(false);
+  await act(async () => controller.primaryAction());
+  expect(calls("/api/selected-broadcast")).toHaveLength(1);
+  expect(window.localStorage.getItem(selectedAttemptKey(wallet) + ":history:" + prior.signature)).toBe(before[selectedAttemptKey(wallet)]);
+});
+
+it('lifecycle: Suspense durable settlement recovers same signature without resend', async () => {
+  const { render, effects } = await suspenseMount(); await ready(); signNormally();
+  const send = deferred<Response>(); const handler = fetchMock.getMockImplementation()!;
+  fetchMock.mockImplementation((url, init) => url === '/api/selected-broadcast' ? send.promise : handler(url, init));
+  await act(async () => controller.primaryAction());
+  const raw = window.localStorage.getItem(selectedAttemptKey(wallet));
+  await act(async () => render(true));
+  await act(async () => send.reject(new Error('lost after send')));
+  fetchMock.mockImplementation((url, init) => url === '/api/selected-status'
+    ? Promise.resolve(Response.json({status:'success', signature:syntheticSignature, state:null})) : handler(url, init));
+  await act(async () => render(false)); await advance(100); await advance(8000);
+  expect(effects).toEqual({ layout: 2, cleanup: 1, passive: 1, passiveCleanup: 0 });
+  expect(controller.busy).toBe(false); expect(controller.attemptStatus).toBe('success');
+  expect(window.localStorage.getItem(selectedAttemptKey(wallet))).toBe(raw);
+  expect(calls('/api/selected-broadcast')).toHaveLength(1); expect(mocks.sign).toHaveBeenCalledOnce();
 });

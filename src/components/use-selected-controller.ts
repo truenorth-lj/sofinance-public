@@ -86,6 +86,13 @@ export function useSelectedController() {
   }, []);
   const reconcileRequestRef = useRef(0);
   const attemptSignatureRef = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    // Suspense reconnects layout effects without reloading passive storage effects.
+    // Restore the current record after submission settles, never an old run's record.
+    if (!submittingRef.current && attempt && attempt.wallet === wallet && attemptSignatureRef.current === null) {
+      attemptSignatureRef.current = attempt.signature;
+    }
+  }, [attempt, wallet, busy]);
   const previewResult = preview.kind === "idle" ? null : preview.result;
   const result = previewResult && previewResult.quote.wallet === wallet &&
     selectionKey(previewResult.quote) === selectionKey(selection) ? previewResult : null;
