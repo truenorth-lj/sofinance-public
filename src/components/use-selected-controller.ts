@@ -1,7 +1,7 @@
 "use client";
 import "@/lib/engine-host";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
 import { formatAmount, parseTokenAmount, toleranceFromPercent } from "@sofinance/engine/amount";
@@ -78,8 +78,21 @@ export function useSelectedController() {
   const jupiterStoreRef = useRef(createJupiterRelayStore());
   const inputRevisionRef = useRef(0);
   const submittingRef = useRef(false);
+  const lifetimeRef = useRef<object | null>(null);
+  useLayoutEffect(() => {
+    // A fresh token on every setup prevents effect replay from reviving old work.
+    lifetimeRef.current = {};
+    return () => { lifetimeRef.current = null; };
+  }, []);
   const reconcileRequestRef = useRef(0);
   const attemptSignatureRef = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    // Suspense reconnects layout effects without reloading passive storage effects.
+    // Restore the current record after submission settles, never an old run's record.
+    if (!submittingRef.current && attempt && attempt.wallet === wallet && attemptSignatureRef.current === null) {
+      attemptSignatureRef.current = attempt.signature;
+    }
+  }, [attempt, wallet, busy]);
   const previewResult = preview.kind === "idle" ? null : preview.result;
   const result = previewResult && previewResult.quote.wallet === wallet &&
     selectionKey(previewResult.quote) === selectionKey(selection) ? previewResult : null;
@@ -205,8 +218,10 @@ export function useSelectedController() {
   }, [wallet, reconcileObsolete]);
 
   const reconcileAttempt = useCallback(async (current: SelectedAttempt) => {
+    const lifetime = lifetimeRef.current;
+    if (!lifetime) return;
     const requestId = ++reconcileRequestRef.current;
-    const ownsResult = () => walletRef.current === current.wallet && attemptSignatureRef.current === current.signature &&
+    const ownsResult = () => lifetimeRef.current === lifetime && walletRef.current === current.wallet && attemptSignatureRef.current === current.signature &&
       requestId === reconcileRequestRef.current;
     try {
     const response = await fetch("/api/selected-status", { method: "POST", headers: { "Content-Type": "application/json" },
@@ -358,6 +373,9 @@ export function useSelectedController() {
   }, [amount, busy, floorBps, toleranceBps, quoteRevision, rawAmount, ready, selection, wallet]);
 
   async function signAndSend() {
+    const lifetime = lifetimeRef.current;
+    if (!lifetime) return;
+    const ownsLifetime = () => lifetimeRef.current === lifetime;
     if (!ready || busy || submittingRef.current || quoteLoading || !quote || !fresh ||
       !wallet || !selection || !visibleState || toleranceBps === null) return;
     submittingRef.current = true;
@@ -373,6 +391,7 @@ export function useSelectedController() {
         { store: jupiterStoreRef.current, signal: aborter.signal });
       const data = await response.json() as Prepared | ApiError;
       window.clearTimeout(deadline);
+      if (!ownsLifetime()) return;
       if (aborter.signal.aborted) throw aborter.signal.reason;
       if (!response.ok) throw new Error((data as ApiError).error);
       const prepared = data as Prepared;
@@ -391,6 +410,7 @@ export function useSelectedController() {
       setSubmitStage("wallet");
       const originalMessage = unsigned.message.serialize();
       const signed = await signTransaction(unsigned);
+      if (!ownsLifetime()) return;
       const signedMessage = signed.message.serialize();
       if (signedMessage.length !== originalMessage.length || signedMessage.some((byte, index) => byte !== originalMessage[index])) {
         throw new Error("Wallet modified transaction content, stopped submission");
@@ -419,16 +439,20 @@ export function useSelectedController() {
           rangeSide: prepared.quote.rangeSide, startingBalances: prepared.startingBalances }), cache: "no-store",
         signal: AbortSignal.timeout(15_000) });
       const broadcast = await sent.json() as { signature?: string; error?: string };
+      if (!ownsLifetime()) return;
       if (!sent.ok) throw new Error(broadcast.error || "Dedicated RPC rejected transaction; verify on-chain status");
       if (broadcast.signature !== signature) throw new Error("Dedicated RPC returned inconsistent transaction signature, check on-chain status");
       void reconcileAttempt(current);
       void refreshState();
     } catch (caught) {
-      if (walletRef.current === wallet) setError(caught instanceof Error ? caught.message : "Transaction not confirmed; check on-chain status before proceeding");
+      if (ownsLifetime() && walletRef.current === wallet) setError(caught instanceof Error ? caught.message : "Transaction not confirmed; check on-chain status before proceeding");
     }
     finally {
       window.clearTimeout(deadline); submittingRef.current = false;
-      if (walletRef.current === wallet && attemptSignatureRef.current === null) attemptSignatureRef.current = attempt?.signature ?? null;
+      if (ownsLifetime() && walletRef.current === wallet && attemptSignatureRef.current === null) attemptSignatureRef.current = attempt?.signature ?? null;
+      // Keep the synchronous lock until this run settles, including effect replay.
+      // Clear retained state even while effects are disconnected; no newer run
+      // can own the stage yet. React ignores this after a true unmount.
       setSubmitStage(null);
     }
   }
