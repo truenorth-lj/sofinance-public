@@ -4,8 +4,6 @@ import {
   editWalletField,
   initialWalletField,
   parseListedPositions,
-  parsePerformanceQuery,
-  queryFromSearchParams,
   resetWalletFieldToConnected,
   resolveWalletField,
   showUseConnectedWallet,
@@ -14,44 +12,6 @@ import {
 
 const connected = "11111111111111111111111111111111";
 const other = "22222222222222222222222222222222";
-
-describe("parsePerformanceQuery", () => {
-  it("reads mint and wallet, preferring mint over positionMint", () => {
-    expect(parsePerformanceQuery({ mint: " mintA ", wallet: " walletA " })).toEqual({
-      mint: "mintA",
-      wallet: "walletA",
-    });
-    expect(parsePerformanceQuery({ positionMint: "fromAlias", wallet: other })).toEqual({
-      mint: "fromAlias",
-      wallet: other,
-    });
-    expect(parsePerformanceQuery({ mint: "explicit", positionMint: "alias", wallet: connected })).toEqual({
-      mint: "explicit",
-      wallet: connected,
-    });
-  });
-
-  it("reads mint and wallet from a live URLSearchParams object", () => {
-    expect(
-      queryFromSearchParams(
-        new URLSearchParams("mint=33333333333333333333333333333333&wallet=22222222222222222222222222222222"),
-      ),
-    ).toEqual({
-      mint: "33333333333333333333333333333333",
-      wallet: "22222222222222222222222222222222",
-    });
-    expect(queryFromSearchParams(new URLSearchParams())).toEqual({ mint: "", wallet: "" });
-  });
-
-  it("treats missing or blank query values as empty", () => {
-    expect(parsePerformanceQuery({})).toEqual({ mint: "", wallet: "" });
-    expect(parsePerformanceQuery({ mint: "  ", wallet: "" })).toEqual({ mint: "", wallet: "" });
-    expect(parsePerformanceQuery({ mint: [" first ", "second"], wallet: [" w "] })).toEqual({
-      mint: "first",
-      wallet: "w",
-    });
-  });
-});
 
 describe("wallet field sync", () => {
   it("defaults to the connected wallet unless a URL wallet takes precedence", () => {

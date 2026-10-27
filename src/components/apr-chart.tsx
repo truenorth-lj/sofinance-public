@@ -4,12 +4,10 @@ import { useMemo, useState } from "react";
 import {
   calendarizeValues,
   formatAprPct,
-  lastCompleteDayAprCopy,
   lastCompleteUtcDayStart,
   lineSegments,
   maxFinite,
   type AprRangeDays,
-  type ChartValuePoint,
 } from "../lib/apr-series";
 
 export type AprChartSeries = {
@@ -255,62 +253,5 @@ export function AprLineChart({
         )}
       </div>
     </div>
-  );
-}
-
-export function AprSparkline({
-  points,
-  nowSeconds,
-  label,
-}: {
-  points: ChartValuePoint[];
-  nowSeconds: number;
-  label: string;
-}) {
-  const known = new Map<number, number | null>();
-  for (const point of points) known.set(point.time, point.value);
-  const values = calendarizeValues(known, lastCompleteUtcDayStart(nowSeconds), 30);
-  const segments = lineSegments(values);
-  const width = 88;
-  const height = 28;
-  const yMax = Math.max(maxFinite(values.map((p) => p.value)) * 1.05, 1);
-  const xAt = (index: number) => (values.length <= 1 ? width / 2 : (index / (values.length - 1)) * width);
-  const yAt = (value: number) => height - (value / yMax) * (height - 2) - 1;
-  const latest = [...values].reverse().find((p) => p.value !== null);
-  const lastCopy =
-    latest && latest.value !== null ? lastCompleteDayAprCopy(latest.date, latest.value) : null;
-
-  if (segments.length === 0) {
-    return (
-      <span className="text-[11px] text-smoke/70" title={label}>
-        —
-      </span>
-    );
-  }
-
-  return (
-    <span className="inline-flex items-center gap-2" title={`${label} · ${lastCopy?.title ?? ""}`.trim()}>
-      <svg viewBox={`0 0 ${width} ${height}`} className="h-7 w-[88px]" aria-hidden>
-        {segments.map((segment, segIndex) => {
-          if (segment.length === 1) {
-            const index = values.findIndex((row) => row.time === segment[0]!.time);
-            return (
-              <circle key={segIndex} cx={xAt(index)} cy={yAt(segment[0]!.value as number)} r="1.5" fill="#e5e5e5" />
-            );
-          }
-          const d = segment
-            .map((point, index) => {
-              const x = xAt(values.findIndex((row) => row.time === point.time));
-              const y = yAt(point.value as number);
-              return `${index === 0 ? "M" : "L"}${x} ${y}`;
-            })
-            .join(" ");
-          return <path key={segIndex} d={d} fill="none" stroke="#e5e5e5" strokeWidth="1.25" />;
-        })}
-      </svg>
-      <span className="tabular-nums text-[11px] text-cream/80">
-        {lastCopy?.label ?? "—"}
-      </span>
-    </span>
   );
 }

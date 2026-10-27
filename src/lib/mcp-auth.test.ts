@@ -2,8 +2,6 @@ import { describe, it, expect, beforeAll } from "vitest";
 import {
   generateMcpToken,
   verifyMcpToken,
-  extractWalletFromToken,
-  isTokenExpiringSoon,
   generateChallenge,
   createChallengeMessage,
   verifyChallengeSignature,
@@ -79,38 +77,6 @@ describe("MCP Auth", () => {
       expect(verifyMcpToken("invalid", testSecret)).toBeNull();
       expect(verifyMcpToken("", testSecret)).toBeNull();
       expect(verifyMcpToken("a.b.c", testSecret)).toBeNull();
-    });
-  });
-
-  describe("extractWalletFromToken", () => {
-    it("should extract wallet address from valid token", () => {
-      const token = generateMcpToken(testWallet, testSecret);
-      const wallet = extractWalletFromToken(token, testSecret);
-      expect(wallet).toBe(testWallet);
-    });
-
-    it("should return null for invalid token", () => {
-      const wallet = extractWalletFromToken("invalid", testSecret);
-      expect(wallet).toBeNull();
-    });
-  });
-
-  describe("isTokenExpiringSoon", () => {
-    it("should detect soon-to-expire tokens", () => {
-      const token = generateMcpToken(testWallet, testSecret, 30 * 60 * 1000); // 30 minutes
-      const expiringSoon = isTokenExpiringSoon(token, testSecret, 60 * 60 * 1000); // 1 hour threshold
-      expect(expiringSoon).toBe(true);
-    });
-
-    it("should not flag tokens with plenty of time", () => {
-      const token = generateMcpToken(testWallet, testSecret, 24 * 60 * 60 * 1000); // 24 hours
-      const expiringSoon = isTokenExpiringSoon(token, testSecret, 60 * 60 * 1000); // 1 hour threshold
-      expect(expiringSoon).toBe(false);
-    });
-
-    it("should treat invalid tokens as expiring", () => {
-      const expiringSoon = isTokenExpiringSoon("invalid", testSecret);
-      expect(expiringSoon).toBe(true);
     });
   });
 

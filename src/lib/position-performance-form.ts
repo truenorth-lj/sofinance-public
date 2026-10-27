@@ -19,34 +19,6 @@ export type ListedPosition = {
   symbolB?: string | null;
 };
 
-function firstQueryValue(value: string | string[] | null | undefined): string {
-  if (Array.isArray(value)) return (value[0] ?? "").trim();
-  return (value ?? "").trim();
-}
-
-/** Read `?mint=` / `?wallet=` (and `positionMint` as an alias). */
-export function parsePerformanceQuery(search: {
-  mint?: string | string[] | null;
-  wallet?: string | string[] | null;
-  positionMint?: string | string[] | null;
-}): { mint: string; wallet: string } {
-  return {
-    mint: firstQueryValue(search.mint) || firstQueryValue(search.positionMint),
-    wallet: firstQueryValue(search.wallet),
-  };
-}
-
-/** Client URL (`useSearchParams`) — not the prerendered page `searchParams` prop. */
-export function queryFromSearchParams(searchParams: {
-  get: (name: string) => string | null;
-}): { mint: string; wallet: string } {
-  return parsePerformanceQuery({
-    mint: searchParams.get("mint"),
-    wallet: searchParams.get("wallet"),
-    positionMint: searchParams.get("positionMint"),
-  });
-}
-
 export function createWalletField(urlWallet: string): WalletFieldState {
   const value = urlWallet.trim();
   return value ? { value, intent: "url" } : { value: "", intent: "auto" };
