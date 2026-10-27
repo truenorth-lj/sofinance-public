@@ -1,5 +1,5 @@
 import type { WithdrawSummary } from "@sofinance/engine/withdraw/types";
-import type { ToolName } from "./tool-definitions.js";
+import type { ToolName } from "./tool-definitions";
 import {
   listPositions,
   quoteAddLiquidity,
@@ -17,7 +17,7 @@ import {
   prepareWithdraw,
   submitWithdrawTransaction,
   submitOpenPosition,
-} from "./tools.js";
+} from "./tools";
 import {
   listPositionsSchema,
   quoteAddLiquiditySchema,
@@ -34,7 +34,7 @@ import {
   prepareWithdrawSchema,
   submitWithdrawSchema,
   submitOpenPositionSchema,
-} from "./schemas.js";
+} from "./schemas";
 
 export type McpDispatchContext =
   | { surface: "mcp-http"; tokenWallet: string }
