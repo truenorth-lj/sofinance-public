@@ -36,7 +36,8 @@ export function useSelectedController() {
   const [tolerancePercent, setTolerancePercent] = useState("1.0");
   const previewController = useSelectedPreview();
   const { preview, quoteError, quoteErrorCode, quoteErrorOutputMint, quoteLoading,
-    invalidate: invalidatePreview, clear: clearPreview, clearErrors: clearQuoteErrors,
+    invalidate: invalidatePreview, invalidateForInput: invalidateInputPreview,
+    clear: clearPreview, clearErrors: clearQuoteErrors,
     adopt: adoptPreview, retryCalculation, showQuoteRecalculate } = previewController;
   const [attempt, setAttempt] = useState<SelectedAttempt | null>(null);
   const [attemptStatus, setAttemptStatus] = useState<AtomicStatus | null>(null);
@@ -385,11 +386,11 @@ export function useSelectedController() {
     ? "Previous transaction is unconfirmed or needs verification. It may still succeed; starting again may add liquidity twice." : "";
   const primaryAction = () => { void signAndSend(); };
   const changeAmount = (value: string) => {
-    inputRevisionRef.current++; invalidatePreview(); setAmount(value); clearPreview();
+    inputRevisionRef.current++; invalidateInputPreview(); setAmount(value); clearPreview();
     setError(""); clearQuoteErrors();
   };
   const changeTolerance = (value: string) => {
-    inputRevisionRef.current++; invalidatePreview(); setTolerancePercent(value); clearPreview();
+    inputRevisionRef.current++; invalidateInputPreview(); setTolerancePercent(value); clearPreview();
     setError(""); clearQuoteErrors();
   };
   const fillMax = () => changeAmount(visibleState ? formatAmount(visibleState.inputBalance, visibleState.inputDecimals, visibleState.inputDecimals) : "");

@@ -36,6 +36,11 @@ export function useSelectedPreview() {
 
   // Invalidating ownership is synchronous and intentionally separate from clearing UI.
   const invalidate = useCallback(() => { quoteRequestRef.current++; }, []);
+  const invalidateForInput = useCallback(() => {
+    invalidate();
+    // Same-value commands and batched ABA still need a replacement quote.
+    setQuoteRevision((current) => current + 1);
+  }, [invalidate]);
   const clear = useCallback(() => { setPreview({ kind: "idle" }); }, []);
   const clearErrors = useCallback(() => {
     setQuoteError(""); setQuoteErrorCode(""); setQuoteErrorOutputMint("");
@@ -117,7 +122,7 @@ export function useSelectedPreview() {
 
   const showQuoteRecalculate = Boolean(quoteError) && !quoteErrorHidesRecalculate(quoteErrorCode);
   return { preview, quoteError, quoteErrorCode, quoteErrorOutputMint, quoteLoading,
-    invalidate, clear, clearErrors, adopt, retryCalculation, showQuoteRecalculate,
+    invalidate, invalidateForInput, clear, clearErrors, adopt, retryCalculation, showQuoteRecalculate,
     quoteRevision, start };
 }
 

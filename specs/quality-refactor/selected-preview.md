@@ -24,6 +24,14 @@ The reproducible local run record is workspace `output/sofinance-selected-previe
 
 ## Limits
 
+### Independent follow-up: repeated-input liveness (C1)
+
+After the preservation extraction, independent review reproduced an existing bug on both accepted base and extracted HEAD `4e794322`: clicking MAX again while a quote is pending invalidates the old response but leaves the amount unchanged, so no replacement effect runs. Same-render amount/tolerance A→B→A commands have the same failure.
+
+A separate fix commit adds `invalidateForInput`: synchronous request invalidation plus a refresh revision. Only amount/tolerance commands use it; wallet/selection resets, prepared-result adoption, submission input revision, busy/readiness gating and the 450ms debounce keep their previous behavior. This is an explicit behavior improvement, not a claim that the baseline already handled repeated inputs correctly. Four regression cases fail on the pre-fix runtime and pass after the fix: actual MAX late success/rejection and batched amount/tolerance ABA, with healthy replacement, exact debounce and no automatic prepare/sign/send/storage writes.
+
+The original 53-case preservation evidence remains frozen. New fix evidence is workspace `output/sofinance-selected-preview-c1-rework-20261028-r1.md`; it requires fresh independent review and final build/CI before delivery.
+
 HTTP/provider responses and wallets are synthetic. Pure preview cases assert zero prepare/sign/send/storage-write/history-notify effects. Explicit prepare cases stop at the mocked HTTP boundary. Existing browser suites use synthetic wallet signing, never real funded operations. STATIC and BEHAVIORAL evidence is scoped local; FINANCIAL is NOT_EXERCISED.
 
 PR163 hosted CI run `40534030872` tested synthetic merge tree `080e0fbfb68de36be7d90daa6acc1b63b39fa93a`, equal to the accepted merge. Its database lane passed 26 tests and its standalone container smoke ran network-disabled. These are reused hosted receipts for the unchanged engine/service closure, not fresh local services or P2a CI. Local database skips remain skips. Older `cef3154` engine pack/PostgreSQL/Docker proof is not reused; a current packed consumer is unverified in this client-only slice. P2b/P2c and all subsequent controller/storage/analytics work remain unfinished.

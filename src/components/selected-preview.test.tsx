@@ -129,6 +129,23 @@ it.each(["success", "error", "reject"] as const)("stale %s and finally cannot re
   expect(c.actionDisabled).toBe(false); expect(c.quote?.requested).toBe("1000000"); pure();
 });
 
+it.each(["amount", "tolerance"] as const)("C1: batched %s ABA schedules one fresh quote and fences the old response", async field => {
+  const old = deferred<Response>(); let oldBody!: Body;
+  quoteHandler = async (_url, init) => { oldBody = body(init); return old.promise; };
+  await input(); await advance(450);
+  await act(async () => {
+    if (field === "amount") { c.changeAmount("2"); c.changeAmount("1"); }
+    else { c.changeTolerance("0.5"); c.changeTolerance("1.0"); }
+  });
+  quoteHandler = good;
+  await act(async () => old.resolve(Response.json({ ...quote(oldBody), liquidity: "999" })));
+  expect(c.result).toBeNull(); expect(c.actionDisabled).toBe(true);
+  await advance(449); expect(count("/api/selected-quote")).toBe(1);
+  await advance(1); expect(count("/api/selected-quote")).toBe(2);
+  expect(c.quote?.liquidity).toBe("100"); expect(c.quoteError).toBe(""); expect(c.actionDisabled).toBe(false);
+  await advance(1000); expect(count("/api/selected-quote")).toBe(2); pure();
+});
+
 it.each(["wallet", "selection", "asset"] as const)("stale success/error is fenced across %s ABA and subsequent liveness", async identity => {
   const old = deferred<Response>(); let b!: Body;
   quoteHandler = async (_url, init) => { b = body(init); return old.promise; }; await input(); await advance(450);

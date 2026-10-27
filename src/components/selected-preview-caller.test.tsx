@@ -21,6 +21,7 @@ const state = { wallet, positionMint, inputMint: USDC_MINT, inputKind: "token", 
 let root: Root, container: HTMLDivElement, connection: WalletConnection;
 let calls: { path: string; body?: string; at: number }[], views: unknown[];
 let quoteError: string;
+let pendingQuote: Promise<Response> | undefined;
 let release: (r: Response) => void;
 let prepare: Promise<Response>;
 let writes: ReturnType<typeof vi.spyOn>;
@@ -38,7 +39,7 @@ async function advance(ms: number) { await act(async () => vi.advanceTimersByTim
 async function ready() { await click("MAX"); await advance(450); expect(button("Add liquidity").disabled).toBe(false); snapshot("preview ready"); }
 beforeEach(async () => {
   vi.useFakeTimers(); vi.setSystemTime(1_800_000_000_000); vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  localStorage.clear(); calls = []; views = []; quoteError = "";
+  localStorage.clear(); calls = []; views = []; quoteError = ""; pendingQuote = undefined;
   writes = vi.spyOn(localStorage, "setItem");
   prepare = new Promise(resolve => { release = resolve; });
   connection = { address: wallet, connected: true, connect: vi.fn(), disconnect: vi.fn(), isMobile: false,
@@ -54,6 +55,7 @@ beforeEach(async () => {
     if (path === "/api/token-metadata") return Response.json({ tokens: { [USDC_MINT]: { mint: USDC_MINT, symbol: "USDC", name: "USD Coin", decimals: 6 }, [mintB]: { mint: mintB, symbol: "POOL", name: "Pool token", decimals: 9 } } });
     if (path === "/api/sol-usdc-price") return Response.json({ rate: 100, usdcUsd: 1 });
     if (path === "/api/selected-quote") {
+      if (pendingQuote) return pendingQuote;
       if (quoteError) return Response.json({ error: "Original wire error", code: quoteError, outputMint: mintB }, { status: 400 });
       const body = JSON.parse(String(init?.body));
       return Response.json({ ...state, ...body, requested: "1000000", liquidity: "100", expiresAt: Date.now() + 75000,
@@ -65,6 +67,28 @@ beforeEach(async () => {
   container = document.createElement("div"); document.body.append(container); root = createRoot(container);
   await act(async () => root.render(<WalletConnectionContext.Provider value={connection}><SelectedApp initialView="deposit" /></WalletConnectionContext.Provider>));
   await advance(30); await advance(30); await advance(30);
+});
+it.each(["success", "reject"])("C1: repeated MAX replaces a pending quote despite stale %s", async outcome => {
+  let resolve!: (response: Response) => void;
+  let reject!: (error: Error) => void;
+  pendingQuote = new Promise((yes, no) => { resolve = yes; reject = no; });
+  await click("MAX"); await advance(450);
+  expect(count("/api/selected-quote")).toBe(1);
+  const originalBody = JSON.parse(calls.find(call => call.path === "/api/selected-quote")!.body!);
+  await click("MAX");
+  pendingQuote = undefined;
+  await act(async () => {
+    if (outcome === "reject") reject(new Error("Obsolete MAX quote"));
+    else resolve(Response.json({ ...state, ...originalBody, requested: "1000000", liquidity: "999", expiresAt: Date.now() + 75000 }));
+  });
+  await advance(449); expect(count("/api/selected-quote")).toBe(1);
+  await advance(1); expect(count("/api/selected-quote")).toBe(2);
+  expect(button("Add liquidity").disabled).toBe(false);
+  expect(container.querySelector<HTMLInputElement>("#amount")?.value).toBe("1");
+  expect(container.textContent).not.toContain("Obsolete MAX quote");
+  await advance(1000); expect(count("/api/selected-quote")).toBe(2);
+  expect(count("/api/selected-prepare")).toBe(0);
+  snapshot("repeated MAX recovered");
 });
 afterEach(async context => {
   await act(async () => root.unmount());
