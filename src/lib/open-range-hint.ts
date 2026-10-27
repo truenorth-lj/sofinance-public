@@ -14,7 +14,7 @@ export function smallAmountNarrowRangeHint(
   amountUsd: number | null | undefined,
   rangePreset: OpenRangePreset | string,
 ): string | null {
-  if (amountUsd == null || !Number.isFinite(amountUsd) || amountUsd <= 0 || amountUsd > SMALL_OPEN_AMOUNT_USDC) {
+  if (amountUsd === null || amountUsd === undefined || !Number.isFinite(amountUsd) || amountUsd <= 0 || amountUsd > SMALL_OPEN_AMOUNT_USDC) {
     return null;
   }
   if (!isNarrowOpenRangePreset(rangePreset)) return null;
