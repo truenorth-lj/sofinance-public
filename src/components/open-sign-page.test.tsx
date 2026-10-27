@@ -6,6 +6,7 @@ import bs58 from "bs58";
 import { VersionedTransaction } from "@solana/web3.js";
 import SignPage from "@/app/app/sign/[token]/page";
 import { openAttemptFromSummary, openAttemptKey } from "@/lib/open-attempt";
+import type { OpenPositionSummary } from "@sofinance/engine/open-types";
 import type { PendingSignPayload } from "@/lib/pending-sign-token";
 import { buildTransaction, openSummaryFixture, testKeypair, toBase64 } from "@/lib/test-support/send-fixtures";
 const mocks = vi.hoisted(() => ({ wallet: "", sign: vi.fn(), push: vi.fn() }));
@@ -42,7 +43,7 @@ beforeEach(() => {
     if (url === "/api/verify-sign-token") return Response.json(payload);
     if (url === "/api/open-status") return Response.json({ signature: body.attempt.signature, status: chainStatus });
     if (["/api/open-broadcast", "/api/selected-broadcast", "/api/compound-broadcast", "/api/withdraw-broadcast"].includes(url)) {
-      broadcasts++; const signed = VersionedTransaction.deserialize(Buffer.from(body.signedTransaction, "base64")); const sig = bs58.encode(signed.signatures[0]);
+      broadcasts++; const signed = VersionedTransaction.deserialize(Buffer.from(body.signedTransaction, "base64")); const sig = bs58.encode(signed.signatures[0]!);
       expect(Buffer.from(signed.message.serialize())).toEqual(Buffer.from(tx.message.serialize()));
       if (payload.kind === "open-position") {
         expect(signed.signatures[1]).toEqual(tx.signatures[1]); expect(storage.getItem(openAttemptKey(wallet))).toContain(sig);
@@ -61,6 +62,7 @@ afterEach(async context => {
   await advance(5000); record("redirect", mocks.push.mock.calls); await act(async () => root.unmount()); container.remove();
   record("storage", Object.fromEntries(Object.keys(storage).sort().map(k => [k, storage.getItem(k)])));
   record("counts", { signs: mocks.sign.mock.calls.length, broadcasts }); expect(vi.getTimerCount()).toBe(0);
+  // eslint-disable-next-line no-console -- Raw before/after characterization evidence.
   console.log("OPEN_SIGN_LEDGER " + JSON.stringify({ name: context.task.name, ledger }));
   vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers();
 });
@@ -82,7 +84,7 @@ describe("real SIGN page with real Open attempt boundary", () => {
   });
   it.each(["manual-review", "confirmed", "failed", "expired"])("projects loaded %s history without automatically signing", async status => {
     chainStatus = status;
-    const saved = openAttemptFromSummary(bs58.encode(new Uint8Array(64).fill(4)), payload.submitArgs.summary as ReturnType<typeof openSummaryFixture>);
+    const saved = openAttemptFromSummary(bs58.encode(new Uint8Array(64).fill(4)), payload.submitArgs.summary as OpenPositionSummary);
     storage.setItem(openAttemptKey(wallet), JSON.stringify(saved)); await mount(); await advance();
     expect(Boolean(signButton())).toBe(status !== "manual-review"); expect(mocks.sign).not.toHaveBeenCalled(); expect(broadcasts).toBe(0);
   });

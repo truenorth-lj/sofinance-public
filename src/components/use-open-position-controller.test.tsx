@@ -46,6 +46,7 @@ async function mount() {
 }
 beforeEach(() => {
   vi.useFakeTimers(); vi.setSystemTime(1700000000000); ledger = []; currentPair = pair; vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.spyOn(crypto, "randomUUID").mockReturnValue("00000000-0000-4000-8000-000000000001");
   window.localStorage.clear(); mocks.address = wallet;
   const storage = window.localStorage;
   const wrappedStorage = {
@@ -81,6 +82,7 @@ beforeEach(() => {
 });
 afterEach(async context => { await act(async () => root.unmount()); container.remove();
   ledger.push([Date.now(), "sign-count", mocks.sign.mock.calls.length]);
+  // eslint-disable-next-line no-console -- Raw before/after characterization evidence.
   console.log("OPEN_CONSUMER_LEDGER " + JSON.stringify({ name: context.task.name, ledger }));
   vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers(); });
 describe("open-position transaction lifecycle", () => {

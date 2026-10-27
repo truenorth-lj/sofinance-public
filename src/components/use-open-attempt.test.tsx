@@ -30,8 +30,7 @@ function Probe() {
   return null;
 }
 async function render() { await act(async () => root.render(createElement(strict ? StrictMode : "div", null,
-  createElement(Activity, { mode: hidden ? "hidden" : "visible" },
-    createElement(Suspense, { fallback: "loading" }, createElement(Probe)))))); }
+  <Activity mode={hidden ? "hidden" : "visible"}><Suspense fallback="loading"><Probe /></Suspense></Activity>))); }
 async function advance(ms = 1) { await act(async () => vi.advanceTimersByTimeAsync(ms)); }
 async function mount(saved?: OpenAttempt) { if (saved) storage.setItem(openAttemptKey(saved.wallet), JSON.stringify(saved)); await render(); await advance(); }
 async function settle(status: string, signature = api.attempt!.signature) {
@@ -58,6 +57,7 @@ afterEach(async context => {
   await act(async () => { hold.resolve(); root.unmount(); }); container.remove();
   record("storage", Object.fromEntries(Object.keys(storage).sort().map(k => [k, storage.getItem(k)])));
   record("timers", vi.getTimerCount()); expect(vi.getTimerCount()).toBe(0);
+  // eslint-disable-next-line no-console -- Raw before/after characterization evidence.
   console.log("OPEN_LEDGER " + JSON.stringify({ name: context.task.name, ledger }));
   vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers();
 });
@@ -92,7 +92,7 @@ describe("Open attempt accepted lifecycle", () => {
   it.each(["wrong-signature", "unknown-status", "unsent", "http", "parse", "non-error"])("rejects %s with original signature intact then recovers", async mode => {
     await mount(attempt()); respond = async () => {
       if (mode === "non-error") throw "transport";
-      if (mode === "parse") return { ok: false, json: async () => { throw new Error("bad json"); } } as Response;
+      if (mode === "parse") return { ok: false, json: async () => { throw new Error("bad json"); } } as unknown as Response;
       return Response.json({ signature: mode === "wrong-signature" ? attempt(8).signature : attempt().signature,
         status: mode === "unknown-status" ? "made-up" : mode === "unsent" ? "unsent" : "confirmed", error: "http error" }, { status: mode === "http" ? 503 : 200 });
     };
@@ -129,8 +129,36 @@ describe("Open attempt accepted lifecycle", () => {
     await settle("confirmed"); expect(api.status).toBe("confirmed");
   });
   it.each(["throw", "drop"] as const)("storage %s fails synchronously before publication", async fault => {
-    await mount(); failWrite = fault; expect(() => api.track(attempt())).toThrow(); expect(api.attempt).toBeNull();
+    await mount(); failWrite = fault; await act(async () => { expect(() => api.track(attempt())).toThrow(); }); expect(api.attempt).toBeNull();
     failWrite = null; await act(async () => { expect(api.track(attempt())).toBeUndefined(); }); expect(api.status).toBe("pending");
+  });
+  it.each(["throw", "drop"] as const)("unsent archive %s retains the current receipt and lock", async fault => {
+    await mount(attempt()); failWrite = fault;
+    await act(async () => { expect(() => api.markUnsent(attempt())).toThrow(); });
+    expect(api.status).toBe("pending"); expect(storage.getItem(openAttemptKey(walletA))).toBe(JSON.stringify(attempt()));
+    failWrite = null; await act(async () => api.markUnsent(attempt())); expect(api.status).toBe("unsent");
+  });
+  it.each(["throw", "drop"] as const)("unsent remove %s preserves archive and blocks publication", async fault => {
+    await mount(attempt()); const remove = vi.spyOn(window.localStorage, "removeItem").mockImplementation(() => {
+      if (fault === "throw") throw new Error("remove denied");
+    });
+    await act(async () => { expect(() => api.markUnsent(attempt())).toThrow(); });
+    expect(api.status).toBe("pending"); expect(storage.getItem(openAttemptKey(walletA))).toBe(JSON.stringify(attempt()));
+    expect(storage.getItem(openAttemptKey(walletA) + ":unsent:" + attempt().signature)).toBe(JSON.stringify(attempt()));
+    remove.mockRestore(); await act(async () => api.markUnsent(attempt())); expect(api.status).toBe("unsent");
+  });
+  it("archive collision retains exact earlier bytes and uses a suffix", async () => {
+    await mount(attempt()); const key = openAttemptKey(walletA) + ":history:" + attempt().signature;
+    storage.setItem(key, "earlier raw record"); await act(async () => api.track(attempt(8)));
+    expect(storage.getItem(key)).toBe("earlier raw record"); expect(storage.getItem(key + ":1")).toBe(JSON.stringify(attempt()));
+    expect(api.attempt).toEqual(attempt(8));
+  });
+  it("same-signature queued track keeps functional error on the latest state", async () => {
+    await mount(attempt()); const result = deferred<Response>(); respond = () => result.promise;
+    await act(async () => api.retry());
+    await act(async () => { api.track(attempt()); result.reject(new Error("late same-owner error")); });
+    expect(api).toMatchObject({ status: "pending", error: "late same-owner error" });
+    await settle("confirmed"); expect(api.status).toBe("confirmed");
   });
   it("track before load updates its synchronous owner before the load timer", async () => {
     await render(); await act(async () => { api.track(attempt()); api.track(attempt(8)); }); await advance();
