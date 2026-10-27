@@ -1,0 +1,50 @@
+{
+  "name": "@sofinance/engine",
+  "version": "0.1.6",
+  "private": true,
+  "description": "SoFinance transaction engine (Raydium CLMM open / compound / withdraw builders, quotes, RPC + Jupiter clients). Host-configured: no ambient env reads.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    "./rpc": "./src/rpc/index.ts",
+    "./jupiter": "./src/jupiter/index.ts",
+    "./swap": "./src/swap/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "files": [
+    "src",
+    "!src/**/*.test.ts",
+    "!src/__snapshots__",
+    "!src/fixtures",
+    "!src/test-support",
+    "README.md",
+    "provenance.json"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@raydium-io/raydium-sdk-v2": "0.2.73-alpha",
+    "@solana/spl-token": "0.4.15",
+    "@solana/web3.js": "1.99.0",
+    "@types/bn.js": "^5.2.0",
+    "@types/node": "^22.20.5",
+    "bn.js": "^5.2.5",
+    "bs58": "6.0.0",
+    "decimal.js": "^10.6.0",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.3",
+    "zod": "^4.6.5"
+  },
+  "peerDependencies": {
+    "@raydium-io/raydium-sdk-v2": "0.2.73-alpha",
+    "@solana/spl-token": "0.4.15",
+    "@solana/web3.js": "1.99.0",
+    "bn.js": "^5.2.5",
+    "bs58": "6.0.0",
+    "decimal.js": "^10.6.0",
+    "zod": "^4.6.5"
+  }
+}

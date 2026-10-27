@@ -5,7 +5,7 @@ import { posthogRelayRewrites } from "./src/lib/analytics/relay";
 
 export const nextConfig: NextConfig = {
   reactCompiler: true,
-  // @sofinance/engine ships TypeScript source (vendored release of the prototype repo package).
+  // @sofinance/engine is a workspace package shipping TypeScript source.
   transpilePackages: ["@sofinance/engine"],
   // PostHog's ingest paths end in "/" (e.g. /i/v0/e/). Without this, Next would 308 them before the
   // relay rewrite. Page trailing-slash redirects are kept in src/proxy.ts instead.

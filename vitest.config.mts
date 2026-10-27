@@ -3,7 +3,7 @@ import { configDefaults, defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
-    exclude: [...configDefaults.exclude, "e2e/**"],
+    exclude: [...configDefaults.exclude, "e2e/**", "packages/**"],
     // Tests that import engine modules directly get the same host configuration as the app.
     setupFiles: ["./src/lib/engine-host.ts"],
     // Inline the engine so vi.mock("@sofinance/engine/x") also replaces the engine's own internal imports

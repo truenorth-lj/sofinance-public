@@ -96,3 +96,16 @@ jobs:
             e2e/playwright-report
             e2e/test-results
           retention-days: 7
+
+  container:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - run: docker build --tag sofinance-rwa-ci .
+      - run: node scripts/smoke-rwa-container.mjs sofinance-rwa-ci

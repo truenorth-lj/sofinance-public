@@ -7,8 +7,8 @@
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint --max-warnings=0",
-    "typecheck": "tsc --noEmit --incremental false",
-    "test": "vitest run",
+    "typecheck": "pnpm typecheck:app && pnpm typecheck:engine",
+    "test": "pnpm test:app && pnpm test:engine",
     "test:env-matrix": "bash scripts/test-env-matrix.sh",
     "brand:assets": "node scripts/generate-brand-assets.mjs",
     "mcp:start": "tsx src/mcp/server.ts",
@@ -16,7 +16,11 @@
     "build:rwa-service": "esbuild scripts/rwa-data-service.ts --bundle --platform=node --format=cjs --outfile=dist/rwa-data-service.cjs --alias:server-only=./src/mcp/server-only-mock-impl.js",
     "db:generate": "drizzle-kit generate",
     "db:baseline": "node --env-file-if-exists=.env.local --import tsx scripts/rwa-migrate.ts baseline",
-    "db:migrate": "node --env-file-if-exists=.env.local --import tsx scripts/rwa-migrate.ts migrate"
+    "db:migrate": "node --env-file-if-exists=.env.local --import tsx scripts/rwa-migrate.ts migrate",
+    "test:app": "vitest run",
+    "test:engine": "pnpm --filter @sofinance/engine test",
+    "typecheck:app": "tsc --noEmit --incremental false",
+    "typecheck:engine": "pnpm --filter @sofinance/engine typecheck"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",
@@ -26,7 +30,7 @@
     "@reown/appkit-adapter-solana": "1.8.24",
     "@reown/appkit-wallet-button": "1.8.24",
     "@sentry/nextjs": "^11.8.0",
-    "@sofinance/engine": "file:vendor/sofinance-engine-0.1.6.tgz",
+    "@sofinance/engine": "workspace:*",
     "@solana/spl-token": "0.4.15",
     "@solana/wallet-adapter-base": "^0.9.28",
     "@solana/wallet-adapter-react": "0.15.40",

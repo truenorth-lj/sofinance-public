@@ -1,0 +1,215 @@
+import { engineEnv } from "../host";
+import { PublicKey, SystemProgram, type TransactionInstruction, type VersionedTransaction } from "@solana/web3.js";
+import { rpcProvider, type RpcProvider } from "../rpc";
+import { SOLANA_TX_SIZE_LIMIT } from "../transaction-limits";
+
+/** Documented Beam floor. Live-verified 2026-10-10: GET /onchain/tip-addresses needs no auth. */
+export const BEAM_MIN_TIP_LAMPORTS = 100_000;
+export const BEAM_TIP_ADDRESSES_URL = "https://api.solami.dev/onchain/tip-addresses";
+export const BEAM_TX_SIZE_LIMIT = SOLANA_TX_SIZE_LIMIT;
+
+export type BeamEnv = Record<string, string | undefined>;
+
+export type BeamTipPlan = {
+  enabled: boolean;
+  included: boolean;
+  tipLamports: number;
+  tipAddress: string | null;
+  skippedReason: "disabled" | "no-tip-address" | "oversize" | null;
+};
+
+export type BeamLanding = {
+  signature: string;
+  isLanded: boolean;
+  region: string | null;
+  tipLamports: number | null;
+  tipAddress: string | null;
+  landedViaJito: boolean | null;
+};
+
+export function isBeamEnabled(env: BeamEnv = engineEnv() as BeamEnv): boolean {
+  const flag = env.SOLAMI_BEAM?.trim().toLowerCase();
+  if (flag === "0" || flag === "false" || flag === "off") return false;
+  return Boolean(env.SOLAMI_API_KEY?.trim());
+}
+
+export function beamLandingUrl(signature: string): string {
+  return `https://api.solami.dev/swqos/tx/${encodeURIComponent(signature)}`;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function asString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() !== "" ? value.trim() : null;
+}
+
+function asFiniteNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() !== "") {
+    const n = Number(value);
+    if (Number.isFinite(n)) return n;
+  }
+  return null;
+}
+
+function asBoolean(value: unknown): boolean | null {
+  if (typeof value === "boolean") return value;
+  if (value === 1 || value === "1" || value === "true") return true;
+  if (value === 0 || value === "0" || value === "false") return false;
+  return null;
+}
+
+function landingRecord(raw: unknown): Record<string, unknown> | null {
+  const record = asRecord(raw);
+  if (!record) return null;
+  const nested = asRecord(record.data) ?? asRecord(record.result) ?? asRecord(record.tx);
+  return nested ? { ...nested, ...record } : record;
+}
+
+/** Live shape (verified): a JSON array of base58 tip addresses. Also accept `{ addresses }`. */
+export function parseTipAddresses(raw: unknown): string[] {
+  const rows = Array.isArray(raw) ? raw : Array.isArray(asRecord(raw)?.addresses) ? (asRecord(raw)!.addresses as unknown[]) : [];
+  const out: string[] = [];
+  for (const item of rows) {
+    if (typeof item !== "string") continue;
+    try {
+      const key = new PublicKey(item);
+      out.push(key.toBase58());
+    } catch {
+      /* skip */
+    }
+  }
+  return out;
+}
+
+export function parseBeamLanding(raw: unknown, fallbackSignature?: string): BeamLanding | null {
+  const record = landingRecord(raw);
+  if (!record) return null;
+  const signature = asString(record.signature) ?? fallbackSignature ?? null;
+  if (!signature) return null;
+  const status = asString(record.status)?.toLowerCase();
+  const isLanded = asBoolean(record.is_landed) ?? asBoolean(record.isLanded) ?? asBoolean(record.landed)
+    ?? (status === "landed" || status === "success" ? true : null)
+    ?? false;
+  return {
+    signature,
+    isLanded,
+    region: asString(record.region),
+    tipLamports: asFiniteNumber(record.tip_lamports) ?? asFiniteNumber(record.tipLamports),
+    tipAddress: asString(record.tip_address) ?? asString(record.tipAddress),
+    landedViaJito: asBoolean(record.landed_via_jito) ?? asBoolean(record.landedViaJito),
+  };
+}
+
+export function formatBeamLanding(landing: BeamLanding): string {
+  const region = landing.region ?? "unknown";
+  const tip = landing.tipLamports !== null ? `${landing.tipLamports} lamports` : "tip";
+  return `Landed via Beam · ${region} · ${tip}`;
+}
+
+export function measureTxSize(transaction: VersionedTransaction): number | null {
+  try {
+    const size = transaction.serialize().length;
+    return size > BEAM_TX_SIZE_LIMIT ? null : size;
+  } catch {
+    return null;
+  }
+}
+
+export function beamTipInstruction(from: PublicKey, tip: PublicKey, lamports = BEAM_MIN_TIP_LAMPORTS): TransactionInstruction {
+  return SystemProgram.transfer({ fromPubkey: from, toPubkey: tip, lamports });
+}
+
+export function chooseBeamTransaction<T extends VersionedTransaction>(
+  withoutTip: T,
+  withTip: T | null,
+): { transaction: T; included: boolean; skippedReason: BeamTipPlan["skippedReason"] } {
+  if (!withTip) return { transaction: withoutTip, included: false, skippedReason: "no-tip-address" };
+  if (measureTxSize(withTip) === null) {
+    return { transaction: withoutTip, included: false, skippedReason: "oversize" };
+  }
+  return { transaction: withTip, included: true, skippedReason: null };
+}
+
+/** One tip-address timeout for every flow (open, selected add, compound). */
+export const BEAM_TIP_FETCH_TIMEOUT_MS = 2_000;
+
+export async function fetchBeamTipAddress(
+  options: { fetcher?: typeof fetch; env?: BeamEnv; signal?: AbortSignal } = {},
+): Promise<{ address: PublicKey; lamports: number } | null> {
+  const env = options.env ?? (engineEnv() as BeamEnv);
+  if (!isBeamEnabled(env)) return null;
+  const fetcher = options.fetcher ?? fetch;
+  try {
+    const response = await fetcher(BEAM_TIP_ADDRESSES_URL, {
+      headers: { Accept: "application/json" }, cache: "no-store", signal: AbortSignal.any([AbortSignal.timeout(BEAM_TIP_FETCH_TIMEOUT_MS), ...(options.signal ? [options.signal] : [])]),
+    });
+    if (!response.ok) return null;
+    const addresses = parseTipAddresses(await response.json());
+    if (!addresses.length) return null;
+    const pick = addresses[Math.floor(Math.random() * addresses.length)]!;
+    return { address: new PublicKey(pick), lamports: BEAM_MIN_TIP_LAMPORTS };
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchBeamLanding(
+  signature: string,
+  options: { fetcher?: typeof fetch; env?: BeamEnv } = {},
+): Promise<BeamLanding | null> {
+  const fetcher = options.fetcher ?? fetch;
+  const env = options.env ?? (engineEnv() as BeamEnv);
+  const key = env.SOLAMI_API_KEY?.trim();
+  try {
+    const response = await fetcher(beamLandingUrl(signature), {
+      headers: {
+        Accept: "application/json",
+        ...(key ? { Authorization: `Bearer ${key}`, "x-api-key": key } : {}),
+      },
+      cache: "no-store",
+    });
+    if (!response.ok) return null;
+    return parseBeamLanding(await response.json(), signature);
+  } catch {
+    return null;
+  }
+}
+
+export const BEAM_LOOKUP_ATTEMPTS = 8;
+export const BEAM_LOOKUP_GAP_MS = 2_000;
+
+export async function lookupBeamAfterSend(
+  signature: string,
+  options: {
+    env?: BeamEnv;
+    fetcher?: typeof fetch;
+    provider?: RpcProvider;
+    nowWait?: (ms: number) => Promise<void>;
+  } = {},
+): Promise<{ beam: BeamLanding | null; label: string | null; provider: RpcProvider; beamLandingUrl: string }> {
+  const env = options.env ?? (engineEnv() as BeamEnv);
+  const provider = options.provider ?? rpcProvider(env);
+  const url = beamLandingUrl(signature);
+  const wait = options.nowWait ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
+  let landing: BeamLanding | null = null;
+  for (let attempt = 0; attempt < BEAM_LOOKUP_ATTEMPTS; attempt += 1) {
+    landing = await fetchBeamLanding(signature, { fetcher: options.fetcher, env });
+    if (landing?.isLanded) break;
+    if (attempt < BEAM_LOOKUP_ATTEMPTS - 1) await wait(BEAM_LOOKUP_GAP_MS);
+  }
+  return {
+    beam: landing,
+    label: landing?.isLanded ? formatBeamLanding(landing) : null,
+    provider,
+    beamLandingUrl: url,
+  };
+}
+
+export function emptyBeamPlan(): BeamTipPlan {
+  return { enabled: false, included: false, tipLamports: 0, tipAddress: null, skippedReason: "disabled" };
+}

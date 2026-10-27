@@ -2,7 +2,7 @@
 
 Non-custodial Solana tooling for **Raydium CLMM** liquidity: zap any eligible wallet asset into a position via Jupiter, and compound fees/rewards back in—with the same safety gates for humans and AI agents.
 
-One shared engine in `src/lib` powers:
+One shared workspace engine in `packages/engine`, with application policies in `src/lib`, powers:
 
 - a **Next.js web app** (wallet connect → quote → sign → broadcast)
 - an **MCP server** (`src/mcp/`) that returns **unsigned v0 transactions** for agents to sign
@@ -428,7 +428,7 @@ flowchart LR
     API[App Router API routes]
     MCP[MCP stdio server]
   end
-  subgraph engine ["Shared engine src/lib"]
+  subgraph engine ["Shared engine packages/engine"]
     Quote[selected-quote / compound]
     Atomic[selected-atomic / compound-atomic]
     Sim[simulation + verify]
@@ -547,3 +547,15 @@ History sanitized for privacy on 2026-10-12 (author dates preserved; personal em
 `/app/plan` states a goal as one sentence of pills (when to cash out, how much to put in, what outcome matters, a loss alert and the exit asset) and judges it against the three sample market paths of the deterministic scenario engine. Sample numbers stay off until switched on, show no probabilities, and the page never touches the network. If the goal is out of reach it says so and offers a longer horizon or a smaller target; it does not raise risk to make the numbers work.
 
 The Performance tab for a real position (`/app?view=performance&mint=<position NFT mint>`, also reachable from `/app/position-performance`) shows holding time, an estimated trading-fee APR (fees earned so far, annualized; not a forecast or a promised return), the position value split into liquidity and unclaimed fees, and an unsigned, read-only USDC + SOL exit estimate. It reads public pool/position snapshots, raw transactions, USD daily candles and principal-only Jupiter route quotes. The exit estimate is a split-asset simulation, not all-USDC cash and not an executable quote; it runs by itself for a position held by the connected wallet, and otherwise says so and offers a manual preview. Nothing in either page prepares or submits trades. The earlier ledger / history / same-cash-flow HODL comparison (and its `/api/lp-decision/ledger` route) was removed from the product; see [implementation, acceptance and local preview](specs/lp-decision/IMPLEMENTATION.md), whose ledger notes are kept as historical design context. Its notes on the earlier date/amount builder describe the UI that `/app/plan` replaced.
+
+## Engine workspace
+
+`packages/engine` owns transaction builders, quotes, RPC and Jupiter clients. Web/API/MCP
+adapters and application policies remain in `src/`. The root pnpm workspace links the engine;
+`pnpm test` and `pnpm typecheck` check both app and engine, with separate Vitest configurations.
+`e2e/` remains an independent npm package with its own lockfile. Use pnpm at the repository root.
+
+The engine migration preserves the exact 0.1.6 runtime and includes its original tests and
+snapshots. See [package documentation](packages/engine/README.md) and
+[import provenance](packages/engine/provenance.json). The paused prototype is unchanged.
+The engine retains its existing UNLICENSED metadata; the root MIT license does not relicense it.
