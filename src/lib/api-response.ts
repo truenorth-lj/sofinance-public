@@ -6,6 +6,7 @@ import { JupiterRelayMissingError } from "@sofinance/engine/jupiter/client";
 import { JupiterHttpError, JupiterUnavailableError, JUPITER_UNAVAILABLE_CODE, JUPITER_UNAVAILABLE_MESSAGE, RPC_UNAVAILABLE_CODE } from "@sofinance/engine/jupiter/errors";
 import { SelectedNoRouteError } from "./selected-no-route";
 import { captureApiRouteError, shouldCaptureApiError } from "./sentry/capture";
+import { logSafeError } from "./safe-error-log";
 
 /** Selected upstream failures are availability errors, not invalid user input. */
 export function selectedApiError(error: unknown, fallback: string) {
@@ -33,12 +34,7 @@ export function apiError(error: unknown, fallback: string, status = 400, extra?:
   if (shouldCaptureApiError(error, status)) {
     captureApiRouteError(error, { fallback, route: extra?.route, request: extra?.request, status });
   }
-  // eslint-disable-next-line no-console
-  console.error(fallback, error);
-  if (error instanceof Error && error.cause !== undefined) {
-    // eslint-disable-next-line no-console
-    console.error(fallback, error.cause);
-  }
+  logSafeError(fallback, error);
   const source = error instanceof CompoundSendError && error.cause !== undefined ? error.cause : error;
   const body: { error: string; sent?: boolean; code?: string; inputMint?: string; outputMint?: string } = {
     error: sanitizePublicError(source, fallback),

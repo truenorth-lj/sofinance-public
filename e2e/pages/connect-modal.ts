@@ -1,4 +1,4 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 import type { FakeWallet } from "../fake-wallet/node-signer";
 
 /** Works for both providers: Reown AppKit modal (production) and the wallet-adapter modal (no project id). */
@@ -11,8 +11,8 @@ export class ConnectModal {
   get shortAddress() { return `${this.wallet.address.slice(0, 4)}…${this.wallet.address.slice(-4)}`; }
   get navAddress() { return this.page.getByRole("button", { name: this.shortAddress, exact: true }).first(); }
 
-  async open() {
-    await this.connectButtons.first().click();
+  async open(trigger: Locator = this.connectButtons.first()) {
+    await trigger.click();
     const terms = this.page.getByRole("dialog", { name: "Before you connect", exact: true });
     await expect(terms.or(this.walletEntry.first())).toBeVisible();
     if (await terms.isVisible()) {
@@ -22,8 +22,8 @@ export class ConnectModal {
     await expect(this.walletEntry.first()).toBeVisible();
   }
 
-  async connect() {
-    await this.open();
+  async connect(trigger?: Locator) {
+    await this.open(trigger);
     await this.walletEntry.first().click();
   }
 }

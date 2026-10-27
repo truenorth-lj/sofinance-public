@@ -172,6 +172,7 @@ describe("sendSignedOpenPosition", () => {
     vi.mocked(simulateAndVerifyOpenTransaction).mockRejectedValue(new Error("Open-position simulation failed: {}"));
     const error = await failure(sendSignedOpenPosition(wallet, transaction, summaryFor()));
     expect(error.message).toContain("simulation failed");
+    expect(error.sent).toBe(false);
     expect(connection.sendRawTransaction).not.toHaveBeenCalled();
   });
 
@@ -210,10 +211,10 @@ describe("sendSignedOpenPosition", () => {
       signature: signatureOf(transaction), beam: null, beamLandingUrl: `/api/beam-landing?signature=${signatureOf(transaction)}`,
     });
   });
-  it("marks only explicit RPC simulation rejection as unsent, not other RPC failures", async () => {
+  it("keeps RPC simulation rejection and other RPC failures unknown", async () => {
     connection.sendRawTransaction.mockRejectedValue(new SendTransactionError({ action: "simulate", signature: "",
       transactionMessage: "Transaction simulation failed: Error processing Instruction 0" }));
-    expect((await failure(sendSignedOpenPosition(wallet, transaction, summaryFor()))).sent).toBe(false);
+    expect((await failure(sendSignedOpenPosition(wallet, transaction, summaryFor()))).sent).toBeUndefined();
     connection.sendRawTransaction.mockRejectedValue(new SendTransactionError({ action: "simulate", signature: "",
       transactionMessage: "Too many requests (429)" }));
     expect((await failure(sendSignedOpenPosition(wallet, transaction, summaryFor()))).sent).toBeUndefined();
@@ -283,5 +284,28 @@ describe("sendSignedOpenPosition: Beam landing never blocks the broadcast respon
     } finally {
       fetchSpy.mockRestore();
     }
+  });
+});
+
+describe("open resilient send safety", () => {
+  it.each([false, true])("keeps RPC preflight rejection unknown (earlier timeout: %s)", async (timeoutFirst) => {
+    const { createResilientConnection } = await import("@sofinance/engine/rpc/connection");
+    const rejection = new SendTransactionError({ action: "simulate", signature: "",
+      transactionMessage: "Transaction simulation failed: insufficient funds" });
+    if (timeoutFirst) connection.sendRawTransaction.mockRejectedValueOnce(new Error("request timed out after remote acceptance"));
+    connection.sendRawTransaction.mockRejectedValue(rejection);
+    vi.mocked(rpcConnection).mockReturnValue(createResilientConnection(connection as never, null, {
+      primaryId: "solami", fallbackId: "default",
+      retry: { maxAttempts: 2, baseMs: 0, maxDelayMs: 0, budgetMs: 2000 },
+    }));
+    const expectedSignature = signatureOf(transaction);
+    const error = await failure(sendSignedOpenPosition(wallet, transaction, summaryFor()));
+    expect(connection.sendRawTransaction).toHaveBeenCalledTimes(timeoutFirst ? 2 : 1);
+    for (const [bytes] of connection.sendRawTransaction.mock.calls) expect(bytes).toEqual(transaction.serialize());
+    expect(signatureOf(transaction)).toBe(expectedSignature);
+    expect(error.cause).toBe(rejection);
+    expect(error.sent).toBeUndefined();
+    expect(beamAfterSend).not.toHaveBeenCalled();
+    expect(opensLog.logPositionOpenBestEffort).not.toHaveBeenCalled();
   });
 });

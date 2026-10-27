@@ -9,8 +9,7 @@ import { FakeWallet } from "../../fake-wallet/node-signer";
 async function connectInModal(page: Page, wallet: FakeWallet) {
   const connect = page.getByRole("dialog", { name: "Create position" }).getByRole("button", { name: "Connect wallet", exact: true });
   if (await connect.count()) {
-    await connect.click();
-    await new ConnectModal(page, wallet).walletEntry.first().click();
+    await new ConnectModal(page, wallet).connect(connect);
   }
   await expect(new ConnectModal(page, wallet).navAddress).toBeVisible();
 }

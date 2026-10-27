@@ -6,7 +6,7 @@ import { PublicKey, VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
 import { readCompoundPositionState } from "@sofinance/engine/compound-state";
 import { simulateAndVerifyCompound } from "@sofinance/engine/compound-simulation";
-import { CompoundSendError, isPreflightOrUnsentFailure } from "./public-error";
+import { CompoundSendError } from "./public-error";
 import { rpcConnection } from "@sofinance/engine/rpc";
 import { beamAfterSend, noBeamAfterSend } from "@/lib/beam-after-send";
 import type { CompoundSummary } from "@sofinance/engine/compound-types";
@@ -60,7 +60,9 @@ export async function sendSignedCompoundTransaction(
     const beam = await beamAfterSend(signature, summary.beam).catch(() => noBeamAfterSend(signature));
     return { signature, beam: beam.beam, beamLabel: beam.label, beamLandingUrl: beam.beamLandingUrl };
   } catch (error) {
-    if (error instanceof CompoundSendError) throw error;
-    throw new CompoundSendError(error, isPreflightOrUnsentFailure(error) ? false : undefined);
+    // The retrying RPC exposes only its last error. Even a preflight rejection
+    // may follow an accepted send whose response was lost; keep the original
+    // signature pending until reconciliation establishes its outcome.
+    throw new CompoundSendError(error);
   }
 }

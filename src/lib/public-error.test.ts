@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 import { apiError } from "./api-response";
 import { CROSS_LIQUIDITY_BAND_MESSAGE } from "@sofinance/engine/liquidity-band";
+import { SelectedNoRouteError } from "./selected-no-route";
 import { JupiterHttpError, JUPITER_UNAVAILABLE_CODE, JUPITER_UNAVAILABLE_MESSAGE } from "@sofinance/engine/jupiter/errors";
 import {
   CompoundSendError, CROSS_TICK_USER_MESSAGE, isPreflightOrUnsentFailure, mapKnownChainError, notSentRetryMessage,
@@ -9,6 +10,41 @@ import {
 } from "./public-error";
 
 afterEach(() => vi.restoreAllMocks());
+
+describe("shared credential text policy", () => {
+  const secret = "REVIEW_SYNTHETIC_ONLY_20261027";
+  it.each([
+    `Authorization: Bearer ${secret}`,
+    `Authorization: Basic ${secret}+TAIL==`,
+    JSON.stringify({ "api-key": secret }),
+    JSON.stringify({ authorization: `Bearer ${secret}` }),
+    encodeURIComponent(`https://rpc.invalid/?api-key=${secret}`),
+  ])("scrubs public details and upstream bodies: %s", (credential) => {
+    for (const error of [
+      new Error(`provider failed ${credential}`),
+      new JupiterHttpError(400, "/swap/v1/quote", null, `provider failed ${credential}`),
+      Object.assign(new Error("provider failed"), { logs: [credential], transactionError: { "api-key": secret } }),
+      new SelectedNoRouteError(`provider failed ${credential}`, "SOL", "input", "output"),
+    ]) {
+      const result = sanitizePublicError(error, "fallback");
+      expect(result).not.toContain(secret);
+      expect(result).not.toContain("TAIL");
+      expect(result).not.toContain("rpc.invalid");
+      expect(result).toContain("provider failed");
+      expect(result.length).toBeLessThanOrEqual(220);
+    }
+    expect(sanitizePublicError(new Error(""), credential)).not.toContain(secret);
+  });
+
+  it("keeps ordinary diagnostics and scrubs the cross-tick console detail", () => {
+    const normal = "Token program failed: code=E_UPSTREAM; 2+2=4; progress 50%";
+    expect(sanitizePublicError(new Error(normal), "fallback")).toBe(normal);
+    const logged = vi.spyOn(console, "info").mockImplementation(() => {});
+    expect(sanitizePublicError(new Error(`cross-tick depth; Authorization: Bearer ${secret}`), "fallback"))
+      .toBe(CROSS_TICK_USER_MESSAGE);
+    expect(String(logged.mock.calls)).not.toContain(secret);
+  });
+});
 
 describe("compound failure mapping", () => {
   it("maps Raydium 6017, token funds, and expired blockhash to short reasons", () => {

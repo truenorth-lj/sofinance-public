@@ -9,16 +9,19 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
@@ -27,5 +30,69 @@ jobs:
         run: |
           pnpm db:generate
           test -z "$(git status --porcelain -- drizzle)"
-      - run: pnpm test
+      - run: pnpm test:env-matrix
       - run: pnpm build:rwa-service
+
+  database:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: sofinance
+          POSTGRES_DB: sofinance
+          POSTGRES_PASSWORD: ci-only-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sofinance -d sofinance"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: PostgreSQL integration tests
+        run: pnpm exec vitest run src/db/migrations.integration.test.ts src/lib/rwa-database.integration.test.ts src/lib/rwa-postgres-store.integration.test.ts src/lib/position-history-postgres-store.integration.test.ts --maxWorkers=4
+        env:
+          RWA_DB_TEST_URL: postgres://sofinance:ci-only-password@127.0.0.1:5432/sofinance
+
+  e2e-hermetic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+      - run: npm ci
+        working-directory: e2e
+      - run: npm run typecheck
+        working-directory: e2e
+      - run: npx playwright install --with-deps chromium
+        working-directory: e2e
+      - name: Production build and hermetic browser flows
+        run: npm run test:hermetic
+        working-directory: e2e
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-report
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+          retention-days: 7

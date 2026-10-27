@@ -1,7 +1,14 @@
 const URL_RE = /https?:\/\/[^\s"'\\]+/gi;
 const ENCODED_URL_RE = /https?%3A%2F%2F[^\s"'\\&]*/gi;
-const SECRET_ASSIGN_RE =
-  /(?:api[_-]?key|authorization|bearer|token|secret|x-api-key|sig)\s*[:=]\s*\S+/gi;
+// Consume a complete quoted value (including escaped quotes), or one unquoted
+// value up to a diagnostic/query delimiter. Do not match suffixes like design.
+const SECRET_VALUE = String.raw`(?:"(?:\\.|[^"\\\r\n])*"?|'(?:\\.|[^'\\\r\n])*'?|[^\s"',;}&]+)`;
+const AUTH_ASSIGN_RE = new RegExp(
+  String.raw`(?<![\w-])(?:proxy-)?authorization["']?\s*[:=]\s*(?:(?:Basic|Bearer)[ \t]+)?${SECRET_VALUE}`, "gi",
+);
+const SECRET_ASSIGN_RE = new RegExp(
+  String.raw`(?<![\w-])(?:api[_-]?key|bearer|token|secret|password|x-api-key|x-cron-secret|sig)["']?\s*[:=]\s*${SECRET_VALUE}`, "gi",
+);
 const SIGNATURE_RE = /\b[1-9A-HJ-NP-Za-km-z]{86,88}\b/g;
 const ADDRESS_RE = /\b[1-9A-HJ-NP-Za-km-z]{32,44}\b/g;
 const SECRET_KEY_RE =
@@ -31,24 +38,27 @@ export function isSensitiveObjectKey(name: unknown): boolean {
   return isSensitiveHeaderName(name) || isSensitiveIpEnvKey(name);
 }
 
-function decodeUriComponentSafe(text: string): string {
+function scrubText(text: string): string {
   let current = text;
   for (let i = 0; i < 3; i += 1) {
-    try {
-      const next = decodeURIComponent(current.replace(/\+/g, " "));
-      if (next === current) break;
-      current = next;
-    } catch {
-      break;
-    }
+    // Scrub before decoding so encoded whitespace inside a URL/value cannot
+    // split off its tail. A stray '%' in prose must not block other escapes.
+    const scrubbed = applyTextScrubbers(current);
+    const next = scrubbed.replace(/(?:%[0-9a-f]{2})+/gi, (encoded) => {
+      try { return decodeURIComponent(encoded); } catch { return encoded; }
+    });
+    // '+' is a valid credential character, not form-data whitespace here.
+    if (next === scrubbed) return scrubbed;
+    current = next;
   }
-  return current;
+  return applyTextScrubbers(current);
 }
 
 function applyTextScrubbers(text: string): string {
   return text
     .replace(URL_RE, "[redacted-url]")
     .replace(ENCODED_URL_RE, "[redacted-url]")
+    .replace(AUTH_ASSIGN_RE, "[redacted-secret]")
     .replace(SECRET_ASSIGN_RE, "[redacted-secret]")
     .replace(SIGNATURE_RE, "[redacted-signature]")
     .replace(ADDRESS_RE, "[redacted-address]");
@@ -57,7 +67,7 @@ function applyTextScrubbers(text: string): string {
 /** Strings only. Arrays/objects recurse; every other type is returned unchanged. */
 export function scrubSensitiveText<T>(text: T): T {
   if (typeof text === "string") {
-    return applyTextScrubbers(decodeUriComponentSafe(text)) as T;
+    return scrubText(text) as T;
   }
   if (text !== null && typeof text === "object") {
     return scrubUnknown(text);
@@ -66,7 +76,7 @@ export function scrubSensitiveText<T>(text: T): T {
 }
 
 export function scrubUnknown<T>(value: T, seen = new WeakSet<object>()): T {
-  if (typeof value === "string") return applyTextScrubbers(decodeUriComponentSafe(value)) as T;
+  if (typeof value === "string") return scrubText(value) as T;
   if (value === null || value === undefined || typeof value !== "object") return value;
   if (seen.has(value)) return "[redacted]" as T;
   seen.add(value);

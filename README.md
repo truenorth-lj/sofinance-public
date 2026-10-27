@@ -38,7 +38,7 @@ Former page paths permanently redirect. MCP `prepare_*` tools now emit `/app/sig
 
 ### Run locally
 
-Requires Node 22 (matches `@types/node`; no `engines`/`.nvmrc` is pinned) and pnpm 10.18.2 (`packageManager` in `package.json`).
+Requires Node 24 (`.node-version`, matching CI and the service Docker image) and pnpm 10.18.2 (`packageManager` in `package.json`).
 
 ```bash
 corepack enable
@@ -71,7 +71,7 @@ Run your own instance of the Next.js app (web UI + `/api/*` + remote MCP). This 
 
 ### Clone and install
 
-Requires Node 22 and pnpm 10.18.2 (`packageManager` in `package.json`).
+Requires Node 24 and pnpm 10.18.2 (`packageManager` in `package.json`).
 
 ```bash
 git clone https://github.com/truenorth-lj/sofinance-public.git

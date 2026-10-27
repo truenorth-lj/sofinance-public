@@ -1,5 +1,5 @@
 // Characterization tests for lib/compound-send.ts (re-verify + broadcast of a signed compound tx).
-// Real: CompoundSendError wrapping, isPreflightOrUnsentFailure classification. Mocked: RPC, state
+// Real: CompoundSendError wrapping and submission-stage classification. Mocked: RPC, state
 // reader, simulation, Beam lookup.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -9,11 +9,12 @@ vi.mock("@sofinance/engine/compound-state", () => ({ readCompoundPositionState: 
 vi.mock("@sofinance/engine/compound-simulation", () => ({ simulateAndVerifyCompound: vi.fn() }));
 vi.mock("@/lib/beam-after-send", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/beam-after-send")>()), beamAfterSend: vi.fn() }));
 
-import type { VersionedTransaction } from "@solana/web3.js";
+import { SendTransactionError, type VersionedTransaction } from "@solana/web3.js";
 import { readCompoundPositionState } from "@sofinance/engine/compound-state";
 import { simulateAndVerifyCompound } from "@sofinance/engine/compound-simulation";
 import type { CompoundSummary } from "@sofinance/engine/compound-types";
 import { CompoundSendError, reverifySignedCompound, sendSignedCompoundTransaction } from "./compound-send";
+import { resolveCompoundBroadcastFailure } from "./public-error";
 import { rpcConnection } from "@sofinance/engine/rpc";
 import { beamAfterSend } from "@/lib/beam-after-send";
 import {
@@ -143,15 +144,15 @@ describe("sendSignedCompoundTransaction: broadcast failures", () => {
     expect(error.sent).toBeUndefined();
   });
 
-  it.each<[string, string, boolean]>([
-    ["preflight simulation failure", "Transaction simulation failed: custom program error: 0x1781", true],
-    ["blockhash not found", "Blockhash not found", true],
-    ["an unknown network error", "socket hang up", false],
-    ["a Jupiter upstream message", "Jupiter HTTP 503", false],
-  ])("sendRawTransaction rejecting with %s => sent:false is %s", async (_name, message, notSent) => {
+  it.each<[string, string]>([
+    ["preflight simulation failure", "Transaction simulation failed: custom program error: 0x1781"],
+    ["blockhash not found", "Blockhash not found"],
+    ["an unknown network error", "socket hang up"],
+    ["a Jupiter upstream message", "Jupiter HTTP 503"],
+  ])("sendRawTransaction rejecting with %s keeps the outcome unknown", async (_name, message) => {
     connection.sendRawTransaction.mockRejectedValue(new Error(message));
     const error = await failure(sendSignedCompoundTransaction(wallet, transaction, summaryFor()));
-    expect(error.sent).toBe(notSent ? false : undefined);
+    expect(error.sent).toBeUndefined();
     expect((error.cause as Error).message).toBe(message);
   });
 
@@ -167,5 +168,45 @@ describe("sendSignedCompoundTransaction: broadcast failures", () => {
 describe("reverifySignedCompound", () => {
   it("returns the connection it used so the caller broadcasts on the same one", async () => {
     await expect(reverifySignedCompound(wallet, transaction, summaryFor())).resolves.toBe(connection);
+  });
+});
+
+// Exercise the real engine proxy/retry loop: only the final error survives it.
+describe("compound resilient send safety", () => {
+  it.each([false, true])("keeps pending on RPC preflight rejection (earlier timeout: %s)", async (timeoutFirst) => {
+    const { createResilientConnection } = await import("@sofinance/engine/rpc/connection");
+    const rejection = new SendTransactionError({ action: "simulate", signature: "",
+      transactionMessage: "Transaction simulation failed: insufficient funds" });
+    if (timeoutFirst) connection.sendRawTransaction.mockRejectedValueOnce(new Error("request timed out after remote acceptance"));
+    connection.sendRawTransaction.mockRejectedValue(rejection);
+    vi.mocked(rpcConnection).mockReturnValue(createResilientConnection(connection as never, null, {
+      primaryId: "solami", fallbackId: "default",
+      retry: { maxAttempts: 2, baseMs: 0, maxDelayMs: 0, budgetMs: 2000 },
+    }));
+    const expectedSignature = signatureOf(transaction);
+    const error = await failure(sendSignedCompoundTransaction(wallet, transaction, summaryFor()));
+    expect(connection.sendRawTransaction).toHaveBeenCalledTimes(timeoutFirst ? 2 : 1);
+    for (const [bytes] of connection.sendRawTransaction.mock.calls) expect(bytes).toEqual(transaction.serialize());
+    expect(signatureOf(transaction)).toBe(expectedSignature);
+    expect(error.cause).toBe(rejection);
+    expect(error.sent).toBeUndefined();
+    expect(resolveCompoundBroadcastFailure({ persisted: true, sent: error.sent, message: error.message }))
+      .toEqual({ abandon: false, keepPending: true, error: "" });
+    expect(beamAfterSend).not.toHaveBeenCalled();
+  });
+
+  it("does not trust an unsent flag thrown from inside the send boundary", async () => {
+    connection.sendRawTransaction.mockRejectedValue(new CompoundSendError(new Error("preflight rejection"), false));
+    const error = await failure(sendSignedCompoundTransaction(wallet, transaction, summaryFor()));
+    expect(error.sent).toBeUndefined();
+  });
+
+  it("local simulation rejection is definitely unsent and can release pending", async () => {
+    vi.mocked(simulateAndVerifyCompound).mockRejectedValue(new Error("Transaction simulation failed: insufficient funds"));
+    const error = await failure(sendSignedCompoundTransaction(wallet, transaction, summaryFor()));
+    expect(error.sent).toBe(false);
+    expect(connection.sendRawTransaction).not.toHaveBeenCalled();
+    expect(resolveCompoundBroadcastFailure({ persisted: true, sent: error.sent, message: error.message }))
+      .toMatchObject({ abandon: true, keepPending: false });
   });
 });

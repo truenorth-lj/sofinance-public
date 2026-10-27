@@ -13,6 +13,40 @@ const wallet = "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU";
 const signature = "1".repeat(88);
 
 describe("scrubSensitiveText", () => {
+  const secret = "REVIEW_SYNTHETIC_ONLY_20261027";
+  it.each([
+    `Authorization: Bearer ${secret}`,
+    `Authorization: Basic ${secret}+TAIL==`,
+    `proxy-authorization = bEaReR '${secret}'`,
+    JSON.stringify({ "api-key": secret, code: "E_UPSTREAM" }),
+    JSON.stringify({ Authorization: `Bearer ${secret}`, code: "E_UPSTREAM" }),
+    `{'x-api-key': '${secret} with spaces', 'code': 'E_UPSTREAM'}`,
+    `api_key="${secret} with \\"quoted\\" tail"; code=E_UPSTREAM`,
+    `password='${secret}'; secret=${secret}; token=${secret}; sig=${secret}`,
+    encodeURIComponent(`https://rpc.invalid/?api-key=${secret}`),
+    encodeURIComponent(encodeURIComponent(`https://rpc.invalid/?api-key=${secret}`)),
+    `https://rpc.invalid/?api-key=prefix%20${secret}`,
+    encodeURIComponent(`Authorization: Basic ${secret}+TAIL==`),
+    `progress 50% ${encodeURIComponent(`Authorization: Bearer ${secret}`)}`,
+  ])("scrubs credential text: %s", (raw) => {
+    const output = scrubSensitiveText(raw);
+    expect(output).not.toContain(secret);
+    expect(output).not.toContain("TAIL");
+    expect(output).not.toContain("with spaces");
+    expect(output).not.toContain("quoted");
+    expect(output).not.toContain("rpc.invalid");
+    expect(output).toContain("[redacted-");
+    if (raw.includes("E_UPSTREAM")) expect(output).toContain("E_UPSTREAM");
+  });
+
+  it("preserves normal diagnostics, plus signs, and non-secret key suffixes", () => {
+    const raw = 'Token program failed: code=E_UPSTREAM; status=503; 2+2=4; progress 50%; design=retry; tokenizer=ready; mytoken=missing; authorization failed';
+    expect(scrubSensitiveText(raw)).toBe(raw);
+    expect(scrubSensitiveText('Authorization: Bearer abc+TAIL/==; code=E_UPSTREAM'))
+      .toBe('[redacted-secret]; code=E_UPSTREAM');
+    expect(scrubSensitiveText('Authorization: Bearer SYNTH')).toBe('[redacted-secret]');
+  });
+
   it("redacts RPC URLs, API keys, wallet addresses, and signatures", () => {
     const raw = `RPC https://rpc.example/sol?api_key=secret123 failed wallet=${wallet} signature ${signature} authorization=Bearer-abc`;
     const scrubbed = scrubSensitiveText(raw);
