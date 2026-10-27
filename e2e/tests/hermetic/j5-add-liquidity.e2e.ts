@@ -4,7 +4,14 @@ import { randomAddress, buildSingleSignerTx } from "../../support/tx";
 import type { Page } from "@playwright/test";
 import type { FakeWallet } from "../../fake-wallet/node-signer";
 
-async function setup(page: Page, wallet: FakeWallet, options: { prepareFails?: boolean; uncertainSend?: boolean; previewGate?: Promise<void>; previewFails?: boolean; skipPreviewWait?: boolean; historyStatus?: "pending" | "manual-review" | "invalid" | "legacy" } = {}) {
+async function fillReadyInput(page: Page) {
+  await expect(page.getByRole("button", { name: "MAX", exact: true })).toBeEnabled();
+  const input = page.getByRole("textbox", { name: "Input limit" });
+  await input.fill("1");
+  await expect(input).toHaveValue("1");
+}
+
+async function setup(page: Page, wallet: FakeWallet, options: { selectedStateGate?: () => Promise<void>; connectOnly?: boolean; prepareFails?: boolean; uncertainSend?: boolean; previewGate?: Promise<void>; previewFails?: boolean; skipPreviewWait?: boolean; historyStatus?: "pending" | "manual-review" | "invalid" | "legacy" } = {}) {
   const positionMint = randomAddress(), mintA = randomAddress(), mintB = randomAddress();
   const inputMint = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
   const poolId = randomAddress(), positionAccount = randomAddress();
@@ -16,6 +23,7 @@ async function setup(page: Page, wallet: FakeWallet, options: { prepareFails?: b
     price: "1", tickLower: -10, tickUpper: 10, liquidity: "100", currentAmounts: { a: "1000000", b: "1000000" },
     balances: { input: "200000311", a: "0", b: "0" }, fees: { a: "0", b: "0" }, rewards: [], eligible: true };
   const calls: string[] = [];
+  const quoteRequests: Record<string, unknown>[] = [];
   await page.route("**/api/**", async (route) => {
     const pathname = new URL(route.request().url()).pathname;
     calls.push(pathname);
@@ -29,8 +37,10 @@ async function setup(page: Page, wallet: FakeWallet, options: { prepareFails?: b
     if (pathname === "/api/wallet") value = { wallet: wallet.address, slot: 1, fetchedAt: Date.now(),
       positions: [{ ...state, symbolA: "AAA", symbolB: "BBB", feeTierBps: 1, tickCurrent: 0 }],
       assets: [{ kind: "token", mint: inputMint, eligible: true, decimals: 6, balance: "200000311", totalBalance: "200000311", reason: null }] };
+    if (pathname === "/api/selected-state") await options.selectedStateGate?.();
     if (pathname === "/api/selected-state" || pathname === "/api/compound-state") value = state;
     if (pathname === "/api/selected-quote") {
+      quoteRequests.push(body);
       await options.previewGate;
       if (options.previewFails) return route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "Quote unavailable" }) });
       value = preview;
@@ -67,10 +77,55 @@ async function setup(page: Page, wallet: FakeWallet, options: { prepareFails?: b
   }
   await page.goto("/app?view=deposit");
   await new ConnectModal(page, wallet).connect();
-  await page.getByRole("textbox", { name: "Input limit" }).fill("1");
+  if (!options.connectOnly) await fillReadyInput(page);
   const add = page.getByRole("button", { name: "Add liquidity", exact: true });
-  if (!options.skipPreviewWait) await expect(add).toBeEnabled();
-  return { calls, add };
+  if (!options.connectOnly && !options.skipPreviewWait) await expect(add).toBeEnabled();
+  return { calls, add, quoteRequests, selection };
+}
+
+// Hold the actual selected-state response, without changing product timers. The
+// disabled assertion must run BEFORE the readiness wait used by ordinary setup.
+for (const historyStatus of [undefined, "legacy"] as const) {
+  for (const entry of ["connect", "reload"] as const) {
+    test(`input readiness waits for matching state on ${entry} with ${historyStatus ?? "no"} history`, async ({ page, wallet }) => {
+      let holdState = entry === "connect";
+      let heldRequests = 0;
+      let release!: () => void;
+      const stateGate = new Promise<void>(resolve => { release = resolve; });
+      const selectedStateGate = async () => {
+        if (holdState) { heldRequests++; await stateGate; }
+      };
+      try {
+        const { calls, add, quoteRequests, selection } = await setup(page, wallet, {
+          historyStatus, selectedStateGate, connectOnly: entry === "connect",
+        });
+        const previousQuotes = quoteRequests.length;
+        if (entry === "reload") { holdState = true; await page.reload(); }
+        await expect.poll(() => heldRequests).toBe(1);
+        const input = page.getByRole("textbox", { name: "Input limit" });
+        await expect(page.getByText("Verifying selected position", { exact: true })).toBeVisible();
+        await expect(page.getByRole("button", { name: "MAX", exact: true })).toBeDisabled();
+        await expect(input).toBeDisabled();
+        await expect(input).toHaveValue("");
+        await expect(add).toBeDisabled();
+        expect(quoteRequests).toHaveLength(previousQuotes);
+        release();
+        await fillReadyInput(page);
+        await expect(page.getByText("Preview ready. Final checks run when you add liquidity.")).toBeVisible();
+        await expect(add).toBeEnabled();
+        // Check again after the quote round-trip: an accepted keystroke alone
+        // would miss the delayed reset that originally erased this amount.
+        await expect(input).toHaveValue("1");
+        expect(quoteRequests.slice(previousQuotes)).toEqual([
+          expect.objectContaining({ wallet: wallet.address, ...selection, amount: "1" }),
+        ]);
+        expect(calls).not.toContain("/api/selected-preflight");
+        expect(calls).not.toContain("/api/selected-prepare");
+        expect(calls).not.toContain("/api/selected-broadcast");
+        expect(wallet.ledger).toEqual([]);
+      } finally { release(); }
+    });
+  }
 }
 
 test("input enables Add after a lightweight preview; no automatic simulation or prepare", async ({ page, wallet }) => {
@@ -114,7 +169,7 @@ test("ambiguous send warns after reload without locking or automatically resendi
   await expect(page.getByText("Transaction status: pending", { exact: true })).toBeVisible();
   await page.reload();
   await expect(page.getByText(/Previous transaction is unconfirmed or needs verification/).first()).toBeVisible();
-  await page.getByRole("textbox", { name: "Input limit" }).fill("1");
+  await fillReadyInput(page);
   await expect(add).toBeEnabled();
   expect(wallet.ledger).toHaveLength(1);
   expect(calls.filter((p) => p === "/api/selected-broadcast")).toHaveLength(1);
@@ -135,7 +190,7 @@ for (const historyStatus of ["pending", "manual-review", "invalid", "legacy"] as
     if (historyStatus !== "legacy") await expect(page.getByText(/Previous transaction is unconfirmed or needs verification/).first()).toBeVisible();
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await page.reload();
-    await page.getByRole("textbox", { name: "Input limit" }).fill("1");
+    await fillReadyInput(page);
     await expect(add).toBeEnabled();
     expect(calls).not.toContain("/api/selected-prepare");
     expect(calls).not.toContain("/api/selected-broadcast");
