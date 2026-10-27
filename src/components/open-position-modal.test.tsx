@@ -166,6 +166,17 @@ describe("range presets and estimated APR", () => {
     expect(container.querySelector("[data-testid='range-apr-headline']")!.textContent).toBe("~38%");
     expect(quoteBodies.at(-1)).toMatchObject({ rangePreset: "tight" });
     expect(container.textContent).toContain("Best for this pool is Tight");
+    expect(container.querySelector("[data-testid='small-amount-narrow-range-hint']")).toBeNull();
+  });
+
+  it("hints to try Standard or Wide when the amount is a few USDC and Tight is selected", async () => {
+    await mount();
+    expect(container.querySelector("[data-testid='small-amount-narrow-range-hint']")).toBeNull();
+    await act(async () => { mocks.controller!.changeAmount("0.02"); });
+    await act(async () => { mocks.controller!.choosePreset("tight"); });
+    await advance(1);
+    expect(container.querySelector("[data-testid='small-amount-narrow-range-hint']")!.textContent)
+      .toMatch(/Standard or Wide/);
   });
 
   it("when Standard is the Best pick, the default selection is Best and Standard is not listed twice", async () => {

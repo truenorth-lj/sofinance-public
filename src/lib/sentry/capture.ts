@@ -100,3 +100,28 @@ export function captureApiRouteError(
     // Monitoring must never fail the request.
   }
 }
+
+export type QuoteSettleFailureExtras = {
+  pair?: string;
+  amount?: string;
+  rangeWidth?: string;
+  rounds?: number;
+};
+
+/** Open-position quote sizing never settled. Pair/amount/range only — no wallet, no secrets. */
+export function captureQuoteSettleFailure(error: unknown, extras: QuoteSettleFailureExtras = {}): void {
+  try {
+    if (!isSentryEnabled()) return;
+    Sentry.withScope((scope) => {
+      scope.setTag("error_class", sentryErrorClass(error));
+      scope.setTag("quote_settle", "did_not_settle");
+      if (extras.pair) scope.setExtra("pair", extras.pair);
+      if (extras.amount) scope.setExtra("amount", extras.amount);
+      if (extras.rangeWidth) scope.setExtra("range_width", extras.rangeWidth);
+      if (extras.rounds !== undefined) scope.setExtra("rounds", extras.rounds);
+      Sentry.captureException(error);
+    });
+  } catch {
+    // Monitoring must never fail the request.
+  }
+}

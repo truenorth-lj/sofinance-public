@@ -1,8 +1,14 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const captureQuoteSettleFailure = vi.hoisted(() => vi.fn());
+vi.mock("../sentry/capture", () => ({ captureQuoteSettleFailure }));
+
 import {
-  companionQuoteNeeds, createJupiterRelayStore, expandRelayNeeds, jupiterBrowserStats,
-  postWithJupiterRelay, RELAY_DID_NOT_SETTLE_MESSAGE, resetJupiterBrowserGate,
+  companionQuoteNeeds, conservativeQuoteAmount, createJupiterRelayStore, expandRelayNeeds,
+  jupiterBrowserStats, nextRelaySearchAmount, postWithJupiterRelay, quoteAmount,
+  quoteAmountsWithinBps, quoteSettleFailureExtras, RELAY_DID_NOT_SETTLE_MESSAGE,
+  resetJupiterBrowserGate,
 } from "./browser-relay";
 
 const need = (id: string, url = `/swap/v1/quote?amount=${id}`) => ({ id: id.padStart(32, "0"), method: "GET" as const, url });
@@ -11,6 +17,7 @@ const json = (body: unknown, status = 200, headers: Record<string, string> = {})
 
 beforeEach(() => {
   resetJupiterBrowserGate();
+  captureQuoteSettleFailure.mockReset();
   window.localStorage.removeItem("sofiJupiterRelay");
 });
 afterEach(() => {
@@ -123,18 +130,68 @@ describe("browser Jupiter relay", () => {
     expect(sent).toEqual([{}, { k: "1" }, { k: "2" }]);
   });
 
-  it("fails fast when the same pair keeps coming back at a new amount (prepare cannot settle)", async () => {
+  it("fails after a bounded binary search when the same pair keeps coming back at a new amount", async () => {
     let amount = 0;
     vi.stubGlobal("fetch", vi.fn(async (url: string) => {
       if (String(url).startsWith("https://api.jup.ag/")) return json({ outAmount: "5" });
       amount += 1;
       return json({ code: "jupiter_relay_needed", needs: [need(String(amount), `/swap/v1/quote?inputMint=A&outputMint=B&amount=${amount}`)] }, 409);
     }));
-    await expect(postWithJupiterRelay("/api/open-prepare", {}, { store: createJupiterRelayStore() }))
+    await expect(postWithJupiterRelay("/api/open-prepare", { amount: "5", rangePreset: "tight" }, { store: createJupiterRelayStore() }))
       .rejects.toThrow(RELAY_DID_NOT_SETTLE_MESSAGE);
     expect(jupiterBrowserStats.churnStops).toBe(1);
-    expect(jupiterBrowserStats.rounds).toBeLessThan(8);
-    expect(amount).toBeLessThan(8);
+    expect(jupiterBrowserStats.binarySearches).toBeGreaterThan(0);
+    expect(captureQuoteSettleFailure).toHaveBeenCalledTimes(1);
+    expect(captureQuoteSettleFailure.mock.calls[0]?.[1]).toEqual(expect.objectContaining({
+      amount: "5", rangeWidth: "tight", pair: "A/B", rounds: expect.any(Number),
+    }));
+    expect(JSON.stringify(captureQuoteSettleFailure.mock.calls[0]?.[1])).not.toMatch(/wallet/i);
+  });
+
+  it("treats consecutive quote amounts within 1% as settled and keeps the smaller amount", async () => {
+    const store = createJupiterRelayStore();
+    const sent: unknown[] = [];
+    let step = 0;
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).startsWith("https://api.jup.ag/")) return json({ outAmount: "5" });
+      const relay = JSON.parse(String(init?.body)).jupiterRelay as { hints: Record<string, string>; responses: Record<string, unknown> };
+      sent.push(relay.hints);
+      if (step === 0) {
+        step = 1;
+        return json({ code: "jupiter_relay_needed", needs: [need("1000", "/swap/v1/quote?inputMint=A&outputMint=B&amount=1000")], hints: { k: "1000" } }, 409);
+      }
+      if (step === 1) {
+        step = 2;
+        return json({ code: "jupiter_relay_needed", needs: [need("1005", "/swap/v1/quote?inputMint=A&outputMint=B&amount=1005")], hints: { k: "1005" } }, 409);
+      }
+      return json({ ok: true, hints: relay.hints });
+    }));
+    expect(await (await postWithJupiterRelay("/api/open-quote", { amount: "2", rangePreset: "micro" }, { store })).json())
+      .toEqual({ ok: true, hints: { k: "1000" } });
+    expect(jupiterBrowserStats.churnStops).toBe(0);
+    expect(captureQuoteSettleFailure).not.toHaveBeenCalled();
+    expect(sent.at(-1)).toEqual({ k: "1000" });
+  });
+
+  it("binary-searches toward the midpoint after the churn limit, then settles", async () => {
+    const store = createJupiterRelayStore();
+    let amount = 100;
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).startsWith("https://api.jup.ag/")) return json({ outAmount: "5" });
+      const hints = JSON.parse(String(init?.body)).jupiterRelay.hints as Record<string, string>;
+      if (Object.values(hints).some((value) => value === "450")) return json({ ok: true });
+      amount += 100;
+      return json({
+        code: "jupiter_relay_needed",
+        needs: [need(String(amount), `/swap/v1/quote?inputMint=A&outputMint=B&amount=${amount}`)],
+        hints: { k: String(amount) },
+      }, 409);
+    }));
+    expect(await (await postWithJupiterRelay("/api/open-quote", { amount: "3", rangePreset: "standard" }, { store })).json())
+      .toEqual({ ok: true });
+    expect(jupiterBrowserStats.binarySearches).toBeGreaterThan(0);
+    expect(jupiterBrowserStats.churnStops).toBe(0);
+    expect(captureQuoteSettleFailure).not.toHaveBeenCalled();
   });
 
   it("does not treat resale (a new mint pair) as sizing churn", async () => {
@@ -155,6 +212,20 @@ describe("browser Jupiter relay", () => {
     }));
     expect(await (await postWithJupiterRelay("/api/open-quote", {}, { store })).json()).toEqual({ ok: true });
     expect(jupiterBrowserStats.churnStops).toBe(0);
+  });
+});
+
+describe("quote amount convergence helpers", () => {
+  it("detects a 1% gap and picks the conservative amount or midpoint", () => {
+    expect(quoteAmount("/swap/v1/quote?inputMint=A&outputMint=B&amount=1000")).toBe(1000n);
+    expect(quoteAmountsWithinBps(1000n, 1009n)).toBe(true);
+    expect(quoteAmountsWithinBps(1000n, 1011n)).toBe(false);
+    expect(conservativeQuoteAmount(1009n, 1000n)).toBe(1000n);
+    expect(nextRelaySearchAmount(1000n, 1009n)).toBe(1000n);
+    expect(nextRelaySearchAmount(200n, 400n)).toBe(300n);
+    expect(quoteSettleFailureExtras({ amount: "5", rangePreset: "tight", wallet: "secret" }, [
+      { url: "/swap/v1/quote?inputMint=MintA&outputMint=MintB&amount=1" },
+    ], 4)).toEqual({ pair: "MintA/MintB", amount: "5", rangeWidth: "tight", rounds: 4 });
   });
 });
 

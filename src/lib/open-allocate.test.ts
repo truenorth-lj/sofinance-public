@@ -33,7 +33,7 @@ describe("open-allocate modes", () => {
     expect(parseOpenAllocateMode("nope")).toBe("loop");
   });
 
-  it("single-shot quotes once; loop stops on the first 0.2% match", async () => {
+  it("single-shot quotes once; loop stops on the first 1% match", async () => {
     const quote = vi.fn(linear(1_000_000n, 1_000_000n));
     const requested = 100_000_000n;
     const ss = await allocateOpenPosition({ pool: pool(), requested, mode: "single-shot", quote });
