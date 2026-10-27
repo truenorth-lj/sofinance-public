@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act, createElement, useEffect } from "react";
+import { act, Activity, createElement, StrictMode, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi, type Mock } from "vitest";
 import { Keypair, PublicKey, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
@@ -82,7 +82,7 @@ beforeEach(async () => {
   await act(async () => root.render(createElement(Harness))); await advance(30); await advance(30); await advance(30);
 });
 afterEach(async () => {
-  await act(async () => root.unmount()); vi.useRealTimers(); vi.unstubAllGlobals();
+  await act(async () => root.unmount()); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals();
 });
 it("prompts to pick another asset when selected-state reports input_asset_not_held", async () => {
   const handler = fetchMock.getMockImplementation()!;
@@ -253,7 +253,7 @@ it("does not time out the user's wallet confirmation after prepare completes", a
   mocks.sign.mockImplementation((tx: VersionedTransaction) => {
     unsigned = tx; return new Promise<VersionedTransaction>((done) => { resolve = done; });
   });
-  await act(async () => controller.primaryAction()); await advance(10000);
+  await act(async () => controller.primaryAction()); await advance(RELAY_DEADLINE_MS + 1000);
   expect(controller.busy).toBe(true); expect(controller.error).toBe("");
   await act(async () => { unsigned.signatures[0] = new Uint8Array(64).fill(1); resolve(unsigned); });
   expect(calls("/api/selected-broadcast")).toHaveLength(1);
@@ -375,4 +375,263 @@ it("a dropped persistence write prevents broadcast without losing the prior rece
   expect(controller.error).toContain("Unable to preserve previous transaction record");
   write.mockRestore();
   expect(window.localStorage.getItem(selectedAttemptKey(wallet))).toBe(JSON.stringify(prior));
+});
+
+
+// These fixtures preserve the original message and use a nonzero synthetic signature.
+// They prove lifecycle/order/bytes ownership, not cryptographic wallet validity.
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: Error) => void;
+  const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail; });
+  return { promise, resolve, reject };
+}
+const syntheticSignature = bs58.encode(new Uint8Array(64).fill(1));
+const requestBody = (call: [string, RequestInit?]) => JSON.parse(String(call[1]?.body));
+function storageContents() {
+  return Object.fromEntries(Array.from({ length: window.localStorage.length }, (_, index) => {
+    const key = window.localStorage.key(index)!;
+    return [key, window.localStorage.getItem(key)];
+  }));
+}
+
+it.each(["prepare", "sign"] as const)("lifecycle: unmount during %s stops new wallet/persistence/broadcast work", async stage => {
+  const prior = oldAttempt(); persistSelectedAttempt(window.localStorage, prior);
+  await reload(); await ready();
+  const before = storageContents();
+  const writes = vi.spyOn(window.localStorage, "setItem");
+  const prepare = deferred<Response>();
+  const signing = deferred<VersionedTransaction>();
+  let original!: VersionedTransaction;
+  let response!: Response;
+  const order: string[] = [];
+  const handler = fetchMock.getMockImplementation()!;
+  fetchMock.mockImplementation(async (url, init) => {
+    if (url === "/api/selected-prepare") {
+      order.push("prepare"); response = await handler(url, init);
+      return stage === "prepare" ? prepare.promise : response;
+    }
+    if (url === "/api/selected-broadcast") order.push("broadcast");
+    return handler(url, init);
+  });
+  mocks.sign.mockImplementation((tx: VersionedTransaction) => {
+    order.push("sign"); original = tx;
+    if (stage === "sign") return signing.promise;
+    tx.signatures[0] = new Uint8Array(64).fill(1); return Promise.resolve(tx);
+  });
+  await act(async () => controller.primaryAction());
+  expect(calls("/api/selected-prepare")).toHaveLength(1);
+  expect(requestBody(calls("/api/selected-prepare")[0]!)).toEqual({ wallet, ...selection,
+    amount: "0.01", floorBps: 9900, toleranceBps: 100, jupiterRelay: { hints: {}, responses: {} } });
+  expect(mocks.sign).toHaveBeenCalledTimes(stage === "sign" ? 1 : 0);
+  expect(writes).not.toHaveBeenCalled();
+  await act(async () => root.unmount());
+  const message = original?.message.serialize();
+  await act(async () => {
+    if (stage === "prepare") prepare.resolve(response);
+    else { original.signatures[0] = new Uint8Array(64).fill(1); signing.resolve(original); }
+  });
+  if (message) {
+    expect(original.message.serialize()).toEqual(message);
+    expect(bs58.encode(original.signatures[0]!)).toBe(syntheticSignature);
+  }
+  expect.soft(order).toEqual(stage === "prepare" ? ["prepare"] : ["prepare", "sign"]);
+  expect.soft(mocks.sign).toHaveBeenCalledTimes(stage === "sign" ? 1 : 0);
+  expect.soft(writes).not.toHaveBeenCalled();
+  expect.soft(calls("/api/selected-broadcast")).toHaveLength(0);
+  expect.soft(storageContents()).toEqual(before);
+});
+
+it("lifecycle: a captured ready submit callback cannot start after unmount", async () => {
+  await ready(); signNormally();
+  const submit = controller.primaryAction;
+  await act(async () => root.unmount());
+  await act(async () => submit());
+  expect(calls("/api/selected-prepare")).toHaveLength(0);
+  expect(mocks.sign).not.toHaveBeenCalled();
+  expect(calls("/api/selected-broadcast")).toHaveLength(0);
+  expect(storageContents()).toEqual({});
+});
+
+it.each([false, true])("lifecycle: mounted submission succeeds once (StrictMode=%s)", async strict => {
+  if (strict) {
+    await act(async () => root.unmount()); root = createRoot(document.createElement("div"));
+    await act(async () => root.render(createElement(StrictMode, null, createElement(Harness))));
+    await advance(100); await advance(100);
+  }
+  await ready();
+  const order: string[] = [];
+  let originalMessage!: Uint8Array;
+  let signedBytes!: string;
+  const write = window.localStorage.setItem.bind(window.localStorage);
+  vi.spyOn(window.localStorage, "setItem").mockImplementation((key, value) => { order.push("persist"); write(key, value); });
+  const handler = fetchMock.getMockImplementation()!;
+  fetchMock.mockImplementation(async (url, init) => {
+    if (url === "/api/selected-prepare") order.push("prepare");
+    if (url === "/api/selected-broadcast") {
+      order.push("broadcast");
+      expect(JSON.parse(window.localStorage.getItem(selectedAttemptKey(wallet))!).signature).toBe(syntheticSignature);
+      const body = JSON.parse(String(init?.body));
+      expect(body).toMatchObject({ wallet, selection, signedTransaction: signedBytes, permit: "permit",
+        requested: "10000000", floorBps: 9900, lastValidBlockHeight: 100,
+        startingLiquidity: "1", expectedLiquidity: "100", startingBalances: { input: "1000000000", a: "0", b: "0" } });
+    }
+    return handler(url, init);
+  });
+  mocks.sign.mockImplementation(async (tx: VersionedTransaction) => {
+    order.push("sign"); originalMessage = tx.message.serialize();
+    tx.signatures[0] = new Uint8Array(64).fill(1);
+    signedBytes = btoa(String.fromCharCode(...tx.serialize())); return tx;
+  });
+  await act(async () => { controller.primaryAction(); controller.primaryAction(); });
+  expect(order).toEqual(["prepare", "sign", "persist", "broadcast"]);
+  expect(calls("/api/selected-prepare")).toHaveLength(1);
+  expect(mocks.sign).toHaveBeenCalledOnce();
+  const submitted = VersionedTransaction.deserialize(Uint8Array.from(atob(signedBytes), c => c.charCodeAt(0)));
+  expect(submitted.message.serialize()).toEqual(originalMessage);
+  expect(bs58.encode(submitted.signatures[0]!)).toBe(syntheticSignature);
+  expect(controller.busy).toBe(false);
+  expect(controller.attempt?.signature).toBe(syntheticSignature);
+  expect(calls("/api/selected-status").map(requestBody)).toContainEqual(expect.objectContaining({ signature: syntheticSignature }));
+});
+
+
+it.each(["accepted", "rejected", "lost"] as const)("lifecycle: %s broadcast after unmount retains the original attempt for a new controller", async outcome => {
+  await ready(); signNormally();
+  const send = deferred<Response>();
+  const handler = fetchMock.getMockImplementation()!;
+  fetchMock.mockImplementation((url, init) => url === "/api/selected-broadcast" ? send.promise : handler(url, init));
+  await act(async () => controller.primaryAction());
+  expect(controller.busy).toBe(true);
+  const before = storageContents();
+  const raw = window.localStorage.getItem(selectedAttemptKey(wallet))!;
+  expect(JSON.parse(raw).signature).toBe(syntheticSignature);
+  const sent = requestBody(calls("/api/selected-broadcast")[0]!);
+  const original = VersionedTransaction.deserialize(Uint8Array.from(atob(sent.signedTransaction), c => c.charCodeAt(0)));
+  expect(bs58.encode(original.signatures[0]!)).toBe(syntheticSignature);
+  expect(original.message.serialize()).toEqual(mocks.sign.mock.calls[0]![0].message.serialize());
+  await reload();
+  expect(controller.attempt?.signature).toBe(syntheticSignature);
+  expect(calls("/api/selected-status").map(requestBody)).toContainEqual(expect.objectContaining({ signature: syntheticSignature }));
+  // Start a valid new controller operation before the old continuation settles.
+  await ready();
+  const nextSign = deferred<VersionedTransaction>();
+  mocks.sign.mockImplementation(() => nextSign.promise);
+  await act(async () => controller.primaryAction());
+  expect(controller.actionLabel).toBe("Confirming in wallet…");
+  const readsBefore = fetchMock.mock.calls.length;
+  const writes = vi.spyOn(window.localStorage, "setItem");
+  await act(async () => {
+    if (outcome === "lost") send.reject(new Error("Response lost after send"));
+    else send.resolve(outcome === "accepted" ? Response.json({ signature: syntheticSignature })
+      : Response.json({ error: "Rejected response", sent: false }, { status: 503 }));
+  });
+  expect(fetchMock.mock.calls).toHaveLength(readsBefore);
+  expect(writes).not.toHaveBeenCalled();
+  expect(storageContents()).toEqual(before);
+  expect(controller.busy).toBe(true); expect(controller.error).toBe("");
+  await act(async () => nextSign.reject(new Error("New wallet cancellation")));
+  expect(controller.busy).toBe(false); expect(controller.error).toBe("New wallet cancellation");
+  await advance(10000);
+  expect(window.localStorage.getItem(selectedAttemptKey(wallet))).toBe(raw);
+  expect(calls("/api/selected-broadcast")).toHaveLength(1);
+  expect(calls("/api/selected-prepare")).toHaveLength(2);
+  expect(mocks.sign).toHaveBeenCalledTimes(2); // Explicit new click only; never automatic re-sign.
+});
+
+it("lifecycle: a new mount can submit while the old signature is still pending in the wallet", async () => {
+  await ready();
+  const oldSign = deferred<VersionedTransaction>();
+  let original!: VersionedTransaction;
+  mocks.sign.mockImplementation((tx: VersionedTransaction) => { original = tx; return oldSign.promise; });
+  await act(async () => controller.primaryAction());
+  await reload(); await ready(); signNormally();
+  await act(async () => controller.primaryAction());
+  const before = storageContents();
+  await act(async () => { original.signatures[0] = new Uint8Array(64).fill(2); oldSign.resolve(original); });
+  expect(storageContents()).toEqual(before);
+  expect(controller.attempt?.signature).toBe(syntheticSignature);
+  expect(controller.busy).toBe(false);
+  expect(calls("/api/selected-broadcast")).toHaveLength(1);
+});
+
+it.each(["prepare", "sign"] as const)("lifecycle: effect cleanup/setup cannot revive an old %s continuation", async stage => {
+  // Activity disconnects/reconnects effects while retaining the hook's refs and state.
+  // Unlike a fresh createRoot, this detects an active boolean resurrecting old work.
+  await act(async () => root.unmount()); root = createRoot(document.createElement("div"));
+  const render = (mode: "visible" | "hidden") => root.render(
+    <StrictMode><Activity mode={mode}><Harness /></Activity></StrictMode>);
+  await act(async () => render("visible")); await advance(100); await advance(100); await ready();
+  const prepare = deferred<Response>();
+  const signing = deferred<VersionedTransaction>();
+  let response!: Response;
+  let original!: VersionedTransaction;
+  const handler = fetchMock.getMockImplementation()!;
+  fetchMock.mockImplementation(async (url, init) => {
+    if (url === "/api/selected-prepare") {
+      response = await handler(url, init); return stage === "prepare" ? prepare.promise : response;
+    }
+    return handler(url, init);
+  });
+  mocks.sign.mockImplementation((tx: VersionedTransaction) => {
+    original = tx;
+    if (stage === "sign") return signing.promise;
+    tx.signatures[0] = new Uint8Array(64).fill(1); return Promise.resolve(tx);
+  });
+  await act(async () => controller.primaryAction());
+  await act(async () => render("hidden"));
+  await act(async () => render("visible"));
+  await act(async () => {
+    if (stage === "prepare") prepare.resolve(response);
+    else { original.signatures[0] = new Uint8Array(64).fill(1); signing.resolve(original); }
+  });
+  expect(mocks.sign).toHaveBeenCalledTimes(stage === "sign" ? 1 : 0);
+  expect(calls("/api/selected-broadcast")).toHaveLength(0);
+  expect(storageContents()).toEqual({});
+  expect(controller.busy).toBe(false);
+  fetchMock.mockImplementation(handler); signNormally();
+  await advance(100); await advance(100); await ready();
+  await act(async () => controller.primaryAction());
+  expect(calls("/api/selected-broadcast")).toHaveLength(1);
+  expect(controller.busy).toBe(false);
+});
+
+it("lifecycle: expiry during wallet wait still prevents persistence and send", async () => {
+  await ready();
+  const signing = deferred<VersionedTransaction>();
+  let original!: VersionedTransaction;
+  mocks.sign.mockImplementation((tx: VersionedTransaction) => { original = tx; return signing.promise; });
+  await act(async () => controller.primaryAction()); await advance(75000);
+  await act(async () => { original.signatures[0] = new Uint8Array(64).fill(1); signing.resolve(original); });
+  expect(controller.error).toContain("changed during signing");
+  expect(calls("/api/selected-broadcast")).toHaveLength(0);
+  expect(storageContents()).toEqual({});
+});
+
+
+it("lifecycle: late status cannot notify after unmount; a new controller can confirm the same signature", async () => {
+  const prior = oldAttempt(); persistSelectedAttempt(window.localStorage, prior);
+  const status = deferred<Response>();
+  const handler = fetchMock.getMockImplementation()!;
+  fetchMock.mockImplementation((url, init) => url === "/api/selected-status" ? status.promise.then(response => response.clone()) : handler(url, init));
+  await reload();
+  expect(calls("/api/selected-status")).toHaveLength(1);
+  const retry = controller.retryReconcile;
+  await act(async () => root.unmount());
+  const before = storageContents();
+  await act(async () => {
+    status.resolve(Response.json({ status: "success", signature: prior.signature, state: null }));
+    retry();
+  });
+  expect(storageContents()).toEqual(before);
+  expect(calls("/api/selected-status")).toHaveLength(1);
+  root = createRoot(document.createElement("div"));
+  await act(async () => root.render(createElement(Harness))); await advance(100); await advance(100);
+  expect(controller.attemptStatus).toBe("success");
+  expect(controller.attempt?.signature).toBe(prior.signature);
+  expect(calls("/api/selected-status")).toHaveLength(2);
+  expect(window.localStorage.getItem(selectedAttemptKey(wallet))).toBe(JSON.stringify(prior));
+  expect(storageContents()).not.toEqual(before); // The current controller emits the real history marker.
+  expect(calls("/api/selected-broadcast")).toHaveLength(0);
+  expect(mocks.sign).not.toHaveBeenCalled();
 });
