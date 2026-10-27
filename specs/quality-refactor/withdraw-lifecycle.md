@@ -1,0 +1,35 @@
+# Withdraw lifecycle safety (D3)
+
+Standalone authorized safety fix on D2/PR157 accepted base `3cdf47b73d6da5625a7a3355713f43ac4092ea82`, tree `c00598341ebc4587421ed332912bc9b26107198e`. Public app only; prototype untouched. This is local implementation evidence, pending independent review, CI and delivery. Broad controller decomposition and typed storage/analytics remain unfinished.
+
+## Ownership and cancellation
+
+`WithdrawPanel` assigns an object identity to each committed layout lifetime and captures it for each explicit Preview, Withdraw or Resume. A cleanup aborts the current operation; a setup creates a different identity. Wallet/position props, connected address and connected status define that lifetime. It changes for true unmount, committed A→B→A, Activity effect disconnection and Suspense layout-only disconnection. Callback and connection-object churn alone do not change it. The current committed connection supplies signing; completion uses the latest committed callback.
+
+Each async boundary checks ownership plus the unchanged D2 history fence before prompting, mutating storage, notifying, moving to conversion or completing. Fetch deadlines and polling delays belong to the run; abort clears their timers/listeners. The fetch deadline spans response body parsing. An aborted response cannot become success or failed/expired history mutation after reconnect. Abort after broadcast starts has **unknown** outcome and never deletes the original durable checkpoint.
+
+The synchronous run reference is held until its actual promise settles, including an unresolved wallet promise during hide/reveal. Cleanup does not unlock it. Its finalizer may clear only its own busy/previewing state, including while effects are disconnected, so a retained instance cannot remain permanently busy or run two wallet prompts simultaneously. Stale catch/finally cannot publish an error or touch history/newer runs. A true remount has independent state; this is not a global or cross-tab financial mutex. Parent `onBusyChange(false)` cleanup remains an interaction signal.
+
+Reconnect discards ephemeral preview/confirmation and progress, keeps durable history and its uncertainty latch, and never automatically prepares/signs/sends/polls. Explicit Resume queries the saved signature. Retained wallet/position prop changes load that identity's own history; the actual SelectedApp caller continues to use its existing wallet/position key.
+
+## Preserved financial and storage boundaries
+
+No storage key/version, permit, request, signature, unsigned transaction, engine, route, fee, amount, finality or server response validation changed. `withdraw-checkpoint.ts` is unchanged. Persist/readback remains before send; missing/invalid/unavailable/rootless records retain their D2 behavior. Changed raw bytes block the current run. Partial storage mutations keep evidence and latch a reload-required history error.
+
+Unknown send and pending/manual-review keep the exact original S1/S2. A swap checkpoint keeps the complete original first prepared transaction and S1 as its root. Active first finality still notifies immediately even if conversion subsequently fails. Swap failure/expiry restores S1 and a later explicit Resume rechecks S1 before retrying conversion only. Original target-only requests, including omitted `receive`, remain unchanged. High-impact confirmation and Cancel remain explicit.
+
+One intentional additional validity check: after the wallet returns, reject a now-expired prepared transaction **before a not-yet-started persistence/send**. It does not auto-refresh or prompt again and does not claim funds moved or did not move. An existing first-stage root remains resumable. The original pre-sign refresh policy is unchanged; a healthy 50-second wallet wait (longer than the completed HTTP request deadline) within preparation expiry still succeeds.
+
+## Behavioral proof
+
+Actual mounted WithdrawPanel on the accepted base: three new regression tests fail at the intended assertions, while three paired healthy waits pass. Deferred prepare after unmount reaches the wallet; deferred wallet result persists/sends; first success after unmount notifies and advances to conversion. Exact before/after API, wallet, storage, notification and completion ledgers, signed synthetic message bytes and full checkpoint payloads are preserved in workspace output.
+
+Dedicated tests use real React createRoot/act, disposable signed transaction fixtures and only HTTP/wallet/notification boundaries. They cover quote/prepare/refresh/broadcast body waits; first and swap signing; full previous/root propagation; success/failed/expired/manual status; pending delay cancellation; true remount recovery; connection ABA; retained position change; callback churn; StrictMode; real Activity and layout-only Suspense with effect counters, success/rejection settling before and after reconnect; durable atomic/S2 unknown sends; history uncertainty; wallet expiry; and high-impact consent reset with paired liveness. Test-owned deferreds settle and timer counts return to zero at teardown.
+
+The separate caller suite mounts actual SelectedApp, Selected/Compound controllers, ActionSelector, PositionSelect and WithdrawPanel. Only the Next router context, wallet and HTTP are substituted. It clicks actual action navigation and the position selector, and verifies fresh keyed-panel liveness plus same-signature recovery. It does not demonstrate a global lock or exercise real add/compound financial submission. Synthetic retained-prop and Activity/Suspense fixtures are adversarial coverage, not a claim these wrappers or races were observed in production.
+
+Existing D2 assertions and fixtures remain intact. Its two wallet-boundary mocks now include `connected: true`, matching the real WalletConnection contract required by the new connection check.
+
+Local checks and exact final source/build identities belong to workspace `output/sofinance-withdraw-lifecycle-implementation-20261027-r1.md` and its same-name evidence folder. Fresh focused regressions, lint, app/engine/E2E types, dual environment matrix, committed production build, full hermetic E2E retry0 and postbuild types are required there. PostgreSQL skips are not passes; any reused PG/container/package evidence must name an unchanged source/dependency closure.
+
+STATIC/BEHAVIORAL conclusions are scoped local only. FINANCIAL NOT_EXERCISED. No real wallet, provider, funded instruction, mainnet broadcast, product network, push, PR, merge or deploy is part of this implementation. Existing response-signature/financial validation policy, cross-tab atomic coordination and unrelated controllers remain outside this slice. PR157 production verification is prior delivery evidence only.

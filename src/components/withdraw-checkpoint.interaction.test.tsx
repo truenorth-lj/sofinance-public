@@ -8,7 +8,7 @@ import { WithdrawPanel } from "./withdraw-panel";
 import { withdrawCheckpoint, withdrawKey, withdrawPosition, withdrawPrepared, withdrawSigner, withdrawWallet, signedWithdraw } from "@/lib/test-support/withdraw-checkpoint-fixtures";
 
 const mocks = vi.hoisted(() => ({ sign: vi.fn(), history: vi.fn(), confirmed: vi.fn(), busy: vi.fn() }));
-vi.mock("./wallet-connection", () => ({ useWalletConnection: () => ({ address: withdrawWallet, signTransaction: mocks.sign }) }));
+vi.mock("./wallet-connection", () => ({ useWalletConnection: () => ({ address: withdrawWallet, connected: true, signTransaction: mocks.sign }) }));
 vi.mock("@/lib/position-history-refresh", () => ({ notifyPositionHistoryChange: mocks.history }));
 let root: Root, container: HTMLDivElement;
 let events: { event: string; value?: unknown }[];
