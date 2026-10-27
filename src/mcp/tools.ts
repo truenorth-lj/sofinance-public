@@ -4,7 +4,7 @@ import bs58 from "bs58";
 import { discoverWallet } from "@sofinance/engine/wallet-discovery";
 import { searchSelectedQuoteBundle } from "../lib/selected-quote";
 import { prepareSelected } from "@/server/transactions/selected-prepare";
-import { MCP_SELECTED_PREPARE } from "@/server/transactions/surface-policy";
+import { MCP_SELECTED_PREPARE, MCP_OPEN_PREPARE } from "@/server/transactions/surface-policy";
 import { buildAndSimulateCompound } from "@sofinance/engine/compound-atomic";
 import { prepareCompound } from "@/server/transactions/compound-prepare";
 import { verifySelectedPermit } from "../lib/selected-permit";
@@ -25,8 +25,7 @@ import { buildOpenPositionUrl, buildSignUrl } from "../lib/public-urls";
 import { OPEN_RANGE_PRESETS } from "@sofinance/engine/open-range-presets";
 import { rangeInputFromFields } from "@sofinance/engine/open-range";
 import { getOpenPositionQuoteBundle } from "@sofinance/engine/open-quote";
-import { buildAndSimulateOpenPosition } from "@sofinance/engine/open-atomic";
-import { issueOpenPositionPermit } from "../lib/open-permit";
+import { prepareOpen } from "@/server/transactions/open-prepare";
 import { submitOpenPositionFromParts } from "../lib/open-send";
 import type { OpenPositionSummary } from "@sofinance/engine/open-types";
 import { getPoolActivitySnapshot } from "../lib/solami-blur";
@@ -728,17 +727,11 @@ export async function prepareOpenPosition(input: PrepareOpenPositionInput) {
     inputMint: input.inputMint,
     inputKind: input.inputKind,
   };
-  const { summary, transaction } = await buildAndSimulateOpenPosition(
-    input.wallet, selection, input.amount, openRangeFromInput(input),
-    input.resaleFloorBps, input.slippageToleranceBps,
-  );
+  const { summary, permit, unsignedTransaction: unsignedTransactionBase64 } = await prepareOpen({
+    wallet: input.wallet, selection, amount: input.amount, range: openRangeFromInput(input),
+    floorBps: input.resaleFloorBps, toleranceBps: input.slippageToleranceBps,
+  }, MCP_OPEN_PREPARE);
   const jupiterApiKey = getSigningSecret();
-  const permit = issueOpenPositionPermit(jupiterApiKey, {
-    wallet: input.wallet,
-    summary,
-    message: Buffer.from(transaction.message.serialize()).toString("base64"),
-  });
-  const unsignedTransactionBase64 = Buffer.from(transaction.serialize()).toString("base64");
   const submitArgs = { permit, wallet: input.wallet, summary };
   const signToken = await createSignToken(
     {
