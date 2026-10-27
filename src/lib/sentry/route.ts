@@ -1,3 +1,5 @@
+import { scrubUnknown } from "./scrub";
+
 /** Pathname only — never query string (wallets/signatures live there). */
 export function pathnameFromUrl(url: unknown): string | undefined {
   if (typeof url !== "string" || !url) return undefined;
@@ -41,6 +43,10 @@ export function applyRouteFromEvent<T extends {
 }>(event: T): T {
   const route = routeFromSentryEvent(event);
   if (!route) return event;
-  event.tags = { ...event.tags, route };
+  // Classify/copy before merging: spreading raw tags would invoke accessors.
+  const tags = scrubUnknown(event.tags);
+  // The subsequent event scrub reserves a route slot explicitly, including
+  // when decoded numeric keys enumerate before it, and scrubs the route itself.
+  event.tags = { ...(tags && typeof tags === "object" ? tags : {}), route };
   return event;
 }

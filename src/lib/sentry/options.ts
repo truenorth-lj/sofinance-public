@@ -1,7 +1,7 @@
 import type { Breadcrumb, ErrorEvent } from "@sentry/nextjs";
 import { applyRouteFromEvent } from "./route";
 import { resolveSentryDsn, sentryTracesSampleRate } from "./runtime";
-import { minimalSentryEvent, scrubBreadcrumb, scrubSentryEvent } from "./scrub";
+import { minimalSentryEvent, scrubBreadcrumb, scrubRouteTag, scrubSentryEvent } from "./scrub";
 
 export const LAST_RESORT_SENTRY_MESSAGE = "Application error";
 
@@ -13,7 +13,7 @@ function prepareSentryEvent<T extends ErrorEvent>(event: T): T {
 function lastResortSentryEvent(event: ErrorEvent): ErrorEvent {
   let route: string | undefined;
   try {
-    route = typeof event.tags?.route === "string" ? event.tags.route : undefined;
+    route = scrubRouteTag(event.tags);
   } catch {
     route = undefined;
   }

@@ -99,6 +99,48 @@ it("prompts to pick another asset when selected-state reports input_asset_not_he
   expect(controller.actionDisabled).toBe(true);
 });
 
+it.each(["wallet", "positionMint", "inputMint", "inputKind"] as const)("hides selected-state with mismatched %s", async (field) => {
+  const handler = fetchMock.getMockImplementation()!;
+  fetchMock.mockImplementation(async (url, init) => {
+    const response = await handler(url, init);
+    if (!url.startsWith("/api/selected-state?")) return response;
+    return Response.json({ ...await response.json(), [field]: field === "inputKind" ? "native" : key() });
+  });
+  await act(async () => { await controller.refreshState(); });
+  expect(controller.state).toBeNull();
+  expect(controller.status).toBe("Verifying selected position");
+  expect(controller.actionDisabled).toBe(true);
+  expect(calls("/api/selected-quote")).toHaveLength(0);
+  expect(mocks.sign).not.toHaveBeenCalled();
+});
+
+it("hides the old state immediately on selection change and ignores its late response", async () => {
+  const handler = fetchMock.getMockImplementation()!;
+  let release!: (response: Response) => void;
+  const late = new Promise<Response>(resolve => { release = resolve; });
+  fetchMock.mockImplementationOnce(() => late);
+  let refresh!: Promise<void>;
+  await act(async () => { refresh = controller.refreshState(); });
+  const nextMint = key();
+  await act(async () => controller.choosePosition(nextMint));
+  expect(controller.state).toBeNull();
+  fetchMock.mockImplementation(async (url, init) => {
+    const response = await handler(url, init);
+    return url.startsWith("/api/selected-state?")
+      ? Response.json({ ...await response.json(), positionMint: nextMint }) : response;
+  });
+  await advance(30);
+  expect(controller.state?.positionMint).toBe(nextMint);
+  await act(async () => {
+    release(await handler("/api/selected-state?"));
+    await refresh;
+  });
+  expect(controller.state?.positionMint).toBe(nextMint);
+  expect(controller.amount).toBe("");
+  expect(calls("/api/selected-quote")).toHaveLength(0);
+  expect(mocks.sign).not.toHaveBeenCalled();
+});
+
 it("shows a lightweight preview and only prepares after Add, regardless of resale advice", async () => {
   await ready();
   expect(calls("/api/selected-quote")).toHaveLength(1);

@@ -2,13 +2,76 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 import { apiError } from "./api-response";
 import { CROSS_LIQUIDITY_BAND_MESSAGE } from "@sofinance/engine/liquidity-band";
+import { SelectedNoRouteError } from "./selected-no-route";
 import { JupiterHttpError, JUPITER_UNAVAILABLE_CODE, JUPITER_UNAVAILABLE_MESSAGE } from "@sofinance/engine/jupiter/errors";
 import {
   CompoundSendError, CROSS_TICK_USER_MESSAGE, isPreflightOrUnsentFailure, mapKnownChainError, notSentRetryMessage,
   publicErrorCode, resolveCompoundBroadcastFailure, sanitizePublicError,
+  errorText,
 } from "./public-error";
 
 afterEach(() => vi.restoreAllMocks());
+
+describe("serialized transaction diagnostics", () => {
+  it.each(["api-key", "authorization", "access_token", "refresh_token", "client_secret", "JUPITER_API_KEY", "X-Auth-Token"])(
+    "scrubs %s after errorText serializes transactionError", (key) => {
+      const secret = "R2_KEY_7";
+      const transactionError = { message: JSON.stringify({ [key]: secret }), code: "E_UPSTREAM" };
+      const error = Object.assign(new Error("provider failed"), { transactionError });
+      // This is the reviewer's real path, not a pre-scrubbed input to a helper.
+      expect(errorText(error)).toBe(`provider failed ${JSON.stringify(transactionError)}`);
+      const result = sanitizePublicError(error, "Request failed");
+      expect(result).not.toContain(secret);
+      expect(result).toContain("provider failed");
+      expect(result).toContain("E_UPSTREAM");
+      expect(transactionError.message).toContain(secret);
+    },
+  );
+
+  it("preserves serialized program errors and ordinary diagnostic keys", () => {
+    const error = Object.assign(new Error("provider failed"), {
+      transactionError: { InstructionError: [2, { Custom: 6021 }], design: "retry", mytoken: "missing", tokenizer: "ready" },
+    });
+    expect(sanitizePublicError(error, "fallback")).toContain("Raydium rejected the liquidity change.");
+    expect(sanitizePublicError(error, "fallback")).toContain('"Custom":6021');
+    expect(sanitizePublicError(error, "fallback")).toContain('"mytoken":"missing"');
+  });
+});
+
+describe("shared credential text policy", () => {
+  const secret = "REVIEW_SYNTHETIC_ONLY_20261027";
+  it.each([
+    `Authorization: Bearer ${secret}`,
+    `Authorization: Basic ${secret}+TAIL==`,
+    JSON.stringify({ "api-key": secret }),
+    JSON.stringify({ authorization: `Bearer ${secret}` }),
+    encodeURIComponent(`https://rpc.invalid/?api-key=${secret}`),
+  ])("scrubs public details and upstream bodies: %s", (credential) => {
+    for (const error of [
+      new Error(`provider failed ${credential}`),
+      new JupiterHttpError(400, "/swap/v1/quote", null, `provider failed ${credential}`),
+      Object.assign(new Error("provider failed"), { logs: [credential], transactionError: { "api-key": secret } }),
+      new SelectedNoRouteError(`provider failed ${credential}`, "SOL", "input", "output"),
+    ]) {
+      const result = sanitizePublicError(error, "fallback");
+      expect(result).not.toContain(secret);
+      expect(result).not.toContain("TAIL");
+      expect(result).not.toContain("rpc.invalid");
+      expect(result).toContain("provider failed");
+      expect(result.length).toBeLessThanOrEqual(220);
+    }
+    expect(sanitizePublicError(new Error(""), credential)).not.toContain(secret);
+  });
+
+  it("keeps ordinary diagnostics and scrubs the cross-tick console detail", () => {
+    const normal = "Token program failed: code=E_UPSTREAM; 2+2=4; progress 50%";
+    expect(sanitizePublicError(new Error(normal), "fallback")).toBe(normal);
+    const logged = vi.spyOn(console, "info").mockImplementation(() => {});
+    expect(sanitizePublicError(new Error(`cross-tick depth; Authorization: Bearer ${secret}`), "fallback"))
+      .toBe(CROSS_TICK_USER_MESSAGE);
+    expect(String(logged.mock.calls)).not.toContain(secret);
+  });
+});
 
 describe("compound failure mapping", () => {
   it("maps Raydium 6017, token funds, and expired blockhash to short reasons", () => {

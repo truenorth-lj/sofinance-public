@@ -11,6 +11,7 @@ import {
 import { isJupiterNoRouteError, JupiterNoRouteError } from "@sofinance/engine/swap/jupiter";
 import { RPC_UNAVAILABLE_MESSAGE } from "@sofinance/engine/rpc/errors";
 import { formatSelectedNoRouteMessage, SelectedNoRouteError } from "./selected-no-route";
+import { scrubCredentialText, scrubSensitiveText } from "./sentry/scrub";
 import {
   AMOUNT_TOO_SMALL_CODE,
   AMOUNT_TOO_SMALL_MESSAGE,
@@ -20,7 +21,6 @@ import {
 } from "./selected-amount-error";
 
 const PUBLIC_ERROR_LIMIT = 220;
-const SECRET = /https?:\/\/\S+|\b(?:api[_-]?key|authorization|token)\s*[:=]\s*\S+/gi;
 
 /** Prepare/quote rejected a size that would walk the pool through a tick where liquidity changes. */
 export const CROSS_TICK_USER_MESSAGE =
@@ -85,7 +85,9 @@ export function isPreflightOrUnsentFailure(error: unknown): boolean {
 }
 
 function sanitizeDetail(text: string) {
-  return text.replace(SECRET, "[redacted]").replace(/\s+/g, " ").trim();
+  // Share credential rules with logging; user-facing wallet mismatch details keep public addresses.
+  return scrubCredentialText(text).replace(/\[redacted-(?:url|secret|signature|address)\]/g, "[redacted]")
+    .replace(/\s+/g, " ").trim();
 }
 
 function truncate(text: string, limit = PUBLIC_ERROR_LIMIT) {
@@ -113,7 +115,7 @@ export function publicErrorCode(error: unknown): string | undefined {
 
 /** Short, client-safe reason. Never includes RPC URLs or API keys. */
 export function sanitizePublicError(error: unknown, fallback: string): string {
-  if (error instanceof SelectedNoRouteError) return error.message;
+  if (error instanceof SelectedNoRouteError) return truncate(sanitizeDetail(error.message));
   if (error instanceof JupiterNoRouteError || isJupiterNoRouteError(error)) {
     return formatSelectedNoRouteMessage("this input asset", "the pool tokens");
   }
@@ -129,7 +131,7 @@ export function sanitizePublicError(error: unknown, fallback: string): string {
   if (mapped === CROSS_TICK_USER_MESSAGE) {
     // Technical engine text stays in logs; the client sees the short action.
     // eslint-disable-next-line no-console
-    console.info("cross-tick", sanitizeDetail(raw).slice(0, 300));
+    console.info("cross-tick", sanitizeDetail(scrubSensitiveText(raw)).slice(0, 300));
     return mapped;
   }
   if (mapped === RPC_UNAVAILABLE_MESSAGE || mapped === JUPITER_UNAVAILABLE_MESSAGE) return mapped;
@@ -140,7 +142,7 @@ export function sanitizePublicError(error: unknown, fallback: string): string {
   }
   if (mapped) return mapped;
   if (detail) return truncate(detail);
-  return fallback;
+  return truncate(sanitizeDetail(fallback));
 }
 
 export function notSentRetryMessage(reason: string) {

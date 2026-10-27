@@ -17,6 +17,7 @@ const test = base.extend<{ wallet: FakeWallet }>({
 });
 
 const EXPECTED_TOOLS = [
+  "prepare_withdraw", "submit_withdraw",
   "get_position_performance", "get_pool_activity", "get_position_range_status", "list_rwa_pairs", "list_positions",
   "quote_add_liquidity", "prepare_transaction", "quote_compound", "prepare_compound_transaction",
   "submit_signed_transaction", "submit_compound_transaction", "quote_open_position", "prepare_open_position", "submit_open_position",
@@ -54,7 +55,7 @@ test.describe("production, read-only", () => {
     expect(wallet.ledger).toEqual([]);
   });
 
-  test("MCP tools/list is public and returns the 14 tools in order", async ({ request }) => {
+  test("MCP tools/list is public and returns the 16 tools in order", async ({ request }) => {
     const response = await request.post("/api/mcp", { data: { jsonrpc: "2.0", id: 1, method: "tools/list" } });
     expect(response.status()).toBe(200);
     const body = await response.json() as { result: { tools: { name: string }[] } };

@@ -1,7 +1,7 @@
 # SoFinance browser E2E (isolated package)
 
 Playwright + an in-house **Wallet Standard fake wallet**. This directory is its own package: own `package.json`, own
-`package-lock.json` (npm), own `tsconfig.json`. It adds nothing to the app's dependencies or the two root lockfiles and is
+`package-lock.json` (npm), own `tsconfig.json`. It adds nothing to the app's dependencies or the root pnpm lockfile and is
 excluded from the root `tsc`, ESLint and Vitest.
 
 ```
@@ -10,17 +10,18 @@ fake-wallet/node-signer.ts signing + adversarial modes + ledger, runs in the Nod
 fake-wallet/install.ts     installFakeWallet(context, wallet)
 pages/                     page objects (ConnectModal works for AppKit and wallet-adapter; SignPage mocks the broadcast routes)
 support/                   sign-token minting (same algorithm as src/lib/pending-sign-token.ts), synthetic transactions, guards
-tests/hermetic/            J1 connect, J2 sign-link happy path, J3 sign-link negatives   (PR lane, no network, no spend)
+tests/hermetic/            connect, signing, confirmation, recovery and cleanup flows (PR lane, no spend)
 tests/prod/                read-only smoke against a deployed site (no signing, no broadcast, no server-side prepare)
-scripts/                   serve-app (build + next start with dummy config), repeat (flake check), mutation-check
-ci-workflow.yml.example    non-blocking GitHub Actions job (copy to .github/workflows/e2e.yml)
+scripts/                   build-app + serve-app (production build + next start with dummy config), repeat (flake check), mutation-check
+../.github/workflows/ci.yml production build + hermetic E2E job
 ```
 
 ## Run
 
 ```bash
 cd e2e && npm ci && npx playwright install chromium
-npm run test:hermetic     # builds the app (dummy Reown id + dummy signing secret), `next start` on :3217, runs J1-J3
+npm run build:app         # production build with the same dummy configuration
+npm run test:hermetic     # builds the app (dummy Reown id + dummy signing secret), `next start` on :3217, runs every hermetic journey
 npm run test:adapter      # same, but the wallet-adapter provider (no Reown id): J1 + J2 smoke
 npm run test:prod         # read-only against https://sofinancelab.xyz (PROD_URL=... to override)
 npm run repeat -- 5       # flake check: N fresh runs, retries off

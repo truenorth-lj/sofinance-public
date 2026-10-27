@@ -143,10 +143,26 @@ describe("POST /api/compound-broadcast", () => {
     expect(json).toEqual({ error: "RPC returned compound signature mismatch, please verify on-chain status" });
   });
 
-  it("preflight failure from the RPC carries sent:false and a mapped public message", async () => {
+  it.each([false, true])("RPC preflight failure stays unknown with a mapped message (earlier timeout: %s)", async timeoutFirst => {
+    const { createResilientConnection } = await import("@sofinance/engine/rpc/connection");
+    if (timeoutFirst) connection.sendRawTransaction.mockRejectedValueOnce(new Error("request timed out after remote acceptance"));
     connection.sendRawTransaction.mockRejectedValue(new Error("Transaction simulation failed: custom program error: 0x1781"));
+    vi.mocked(rpcConnection).mockReturnValue(createResilientConnection(connection as never, null, {
+      primaryId: "solami", fallbackId: "default",
+      retry: { maxAttempts: 2, baseMs: 0, maxDelayMs: 0, budgetMs: 2000 },
+    }));
+    const { response, json } = await call(body());
+    expect(response.status).toBe(400);
+    expect(connection.sendRawTransaction).toHaveBeenCalledTimes(timeoutFirst ? 2 : 1);
+    expect(json).not.toHaveProperty("sent");
+    expect(String(json.error)).toContain("Pool price moved past the add-liquidity cap");
+  });
+
+  it("local simulation failure remains definitely unsent with the same mapped message", async () => {
+    vi.mocked(simulateAndVerifyCompound).mockRejectedValue(new Error("Transaction simulation failed: custom program error: 0x1781"));
     const { json } = await call(body());
     expect(json).toMatchObject({ sent: false });
+    expect(connection.sendRawTransaction).not.toHaveBeenCalled();
     expect(String(json.error)).toContain("Pool price moved past the add-liquidity cap");
   });
 });

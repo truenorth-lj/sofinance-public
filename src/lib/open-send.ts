@@ -2,7 +2,7 @@ import "@/lib/engine-host";
 import "server-only";
 import { invalidatePositionHistoryCache } from "./position-history-cache";
 
-import { PublicKey, SendTransactionError, VersionedTransaction } from "@solana/web3.js";
+import { PublicKey, VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
 import nacl from "tweetnacl";
 import { CompoundSendError } from "./public-error";
@@ -92,11 +92,10 @@ export async function sendSignedOpenPosition(
     });
     if (signature !== expectedSignature) throw new Error("RPC returned transaction signature mismatch");
   } catch (error) {
-    // web3 wraps other RPC errors as SendTransactionError too. Only the
-    // explicit simulation rejection proves that this submission was not sent.
-    const rejected = error instanceof SendTransactionError &&
-      /^Transaction simulation failed(?:\s*:|$)/i.test(error.transactionError.message);
-    throw new CompoundSendError(error, rejected ? false : undefined);
+    // The retrying RPC exposes only its last error. Even a preflight rejection
+    // may follow an accepted send whose response was lost; keep the original
+    // signature pending until reconciliation establishes its outcome.
+    throw new CompoundSendError(error);
   }
   // Conservatively evict on accepted broadcast; this is not finality proof.
   invalidatePositionHistoryCache(summary.nftMint);

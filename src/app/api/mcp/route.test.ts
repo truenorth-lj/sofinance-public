@@ -1,6 +1,9 @@
 // Characterization tests for the remote MCP endpoint (POST /api/mcp): JSON-RPC envelope, bearer
 // auth, the tools/list wire contract (golden snapshot) and per-tool wallet binding.
 // Real: route, mcp-auth token verification, zod schemas. Mocked: the 16 tool implementations.
+import { inspect } from "node:util";
+import { SendTransactionError } from "@solana/web3.js";
+import { CROSS_TICK_USER_MESSAGE } from "@/lib/public-error";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
@@ -336,13 +339,35 @@ describe("tools/call dispatch and wallet binding", () => {
   it.each([
     ["key=value pair", "bad request api_key=SECRET123 end", "bad request [redacted] end"],
     ["api-key header style", "rejected api-key: SECRET123", "rejected [redacted]"],
-    ["authorization", "authorization=Bearer SECRET123", "[redacted] SECRET123"],
+    ["authorization", "authorization=Bearer SECRET123", "[redacted]"],
     ["token", "token: SECRET123", "[redacted]"],
+    ["bare Bearer", "Bearer R2_KEY_7", "[redacted]"],
+    ["bare Basic", "Basic R2_KEY_7+TAIL==", "[redacted]"],
+    ["access token", "access_token=R2_KEY_7", "[redacted]"],
+    ["refresh token", "refresh_token=R2_KEY_7", "[redacted]"],
+    ["client secret", "client_secret=R2_KEY_7", "[redacted]"],
+    ["provider key", "JUPITER_API_KEY=R2_KEY_7", "[redacted]"],
+    ["X-Auth-Token", "X-Auth-Token: R2_KEY_7", "[redacted]"],
   ])("STEP 2a: redacts a %s", async (_label, raw, expected) => {
     toolFns.listRwaPairs!.mockRejectedValue(new Error(raw));
     const { json } = await callTool("list_rwa_pairs", {});
     const error = JSON.parse(json.result.content[0].text).error as string;
     expect(error).toBe(expected);
+  });
+
+  it.each(["api-key", "authorization"])("scrubs nested JSON %s in real tool transaction diagnostics", async (key) => {
+    const error = Object.assign(new Error("provider failed"), {
+      transactionError: { message: JSON.stringify({ [key]: "R2_KEY_7" }), code: "E_UPSTREAM" },
+    });
+    toolFns.listRwaPairs!.mockRejectedValue(error);
+    const result = await callTool("list_rwa_pairs", {});
+    expect(result.response.status).toBe(200);
+    expect(result.json.result.isError).toBe(true);
+    const text = result.json.result.content[0].text as string;
+    expect(text).not.toContain("R2_KEY_7");
+    expect(text).toContain("[redacted]");
+    expect(text).toContain("provider failed");
+    expect(text).toContain("E_UPSTREAM");
   });
 
   it("STEP 2a: known chain errors get the same public wording as the web routes; rate limits hide the upstream", async () => {
@@ -399,3 +424,59 @@ describe("tools/call dispatch and wallet binding", () => {
     expect(JSON.parse(json.result.content[0].text)).toEqual({ error: "plain string failure" });
   });
 });
+
+
+describe("complete structured credentials at the HTTP tool boundary", () => {
+  const secret = "R4_KEY_7";
+  const other = "R4_OTHER_8";
+  const structured = { headers: { "x-api-key": [[secret], { value: other }] }, code: "E_UPSTREAM" };
+  const raw = JSON.stringify(structured);
+  it.each([
+    new Error(`provider failed ${raw}`),
+    new Error(JSON.stringify({ detail: raw })),
+    new Error(encodeURIComponent(raw)),
+    Object.assign(new Error("provider failed"), { transactionError: structured }),
+    new SendTransactionError({ action: "send", signature: "", transactionMessage: "provider failed", logs: [raw] }),
+    new Error(`Bearer\n${secret}+${other}==`),
+    new Error(`%FF%61%70%69%2D%6B%65%79%3D${secret}`),
+    new Error(Array.from({ length: 4 }).reduce<string>((s) => encodeURIComponent(s), raw)),
+    new Error(`cross-tick depth; ${raw}`),
+  ])("scrubs real tool catches: %s", async (error) => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    toolFns.listRwaPairs!.mockRejectedValue(error);
+    const result = await callTool("list_rwa_pairs", {});
+    expect(result.response.status).toBe(200);
+    expect(result.json.result.isError).toBe(true);
+    const text = result.json.result.content[0].text as string;
+    for (const output of [text, inspect(info.mock.calls, { depth: null, customInspect: false })]) {
+      expect(output).not.toContain(secret);
+      expect(output).not.toContain(other);
+    }
+    if (error.message.startsWith("cross-tick")) {
+      expect(JSON.parse(text).error).toBe(CROSS_TICK_USER_MESSAGE);
+      expect(info).toHaveBeenCalledOnce();
+    }
+    if ("transactionError" in error && !(error instanceof SendTransactionError)) expect(text).toContain("E_UPSTREAM");
+  });
+});
+
+it.each(["api-key", "%61pi-key", "%2561pi-key", "%252561pi-key", "%FF%61pi-key",
+  "%2525252561pi-key", "%GGpi-key", "%6", String.raw`api\u002dkey`].flatMap((key) =>
+  ["KEY5_MARK_9", ["prefix", "KEY5_MARK_9"], { nested: ["KEY5_MARK_9"] }].map((value, shape) => ({ key, value, shape }))))(
+  "HTTP key policy $key / $shape: paired raw and serialized diagnostics", async ({ key, value }) => {
+    const data = { headers: { [key]: value }, code: "E_UPSTREAM" };
+    const before = JSON.stringify(data);
+    for (const error of [Object.assign(new Error("provider failed"), { transactionError: data }), new Error(before)]) {
+      toolFns.listRwaPairs!.mockRejectedValue(error);
+      const { response, json } = await callTool("list_rwa_pairs", {});
+      expect(response.status).toBe(200);
+      expect(json.result.isError).toBe(true);
+      const text = json.result.content[0].text as string;
+      expect(text).not.toContain("KEY5_MARK_9");
+      const body = JSON.parse(text);
+      expect(body.error.length).toBeLessThanOrEqual(220);
+      expect(body.sent).toBeUndefined();
+    }
+    expect(JSON.stringify(data)).toBe(before);
+  },
+);
