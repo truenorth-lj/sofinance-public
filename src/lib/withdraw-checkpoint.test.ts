@@ -53,3 +53,12 @@ it("does not authenticate a structurally valid permit or claim financial verific
  const value = withdrawCheckpoint(); value.prepared.permit = "opaque-not-authenticated-here";
  expect(isWithdrawCheckpoint(value, withdrawWallet, withdrawPosition)).toBe(true);
 });
+it("requires first-stage recovery evidence for swap without erasing incomplete history", () => {
+ const value = withdrawCheckpoint("swap");
+ delete value.root;
+ const raw = JSON.stringify(value); localStorage.setItem(withdrawKey, raw);
+ expect(isWithdrawCheckpoint(value, withdrawWallet, withdrawPosition)).toBe(false);
+ expect(readWithdrawHistory(withdrawWallet, withdrawPosition)).toEqual({ kind: "invalid", raw });
+ expect(() => writeWithdrawHistory(withdrawWallet, withdrawPosition, { kind: "valid", raw, checkpoint: value }, null)).toThrow(/history/);
+ expect(localStorage.getItem(withdrawKey)).toBe(raw);
+});

@@ -66,6 +66,8 @@ export function isWithdrawCheckpoint(value: unknown, wallet: string, positionMin
  if (!parsed.success) return false;
  const v = parsed.data;
  const matches = (s: { wallet: string; positionMint: string }) => s.wallet === wallet && s.positionMint === positionMint;
+ // A conversion cannot safely restore first-stage history without its original prepared object/signature.
+ if (v.prepared.summary.stage === "swap" && !v.root) return false;
  return matches(v.request) && matches(v.prepared.summary) && (!v.root || (
   matches(v.root.prepared.summary) && v.root.prepared.summary.stage === "withdraw" && v.prepared.summary.stage === "swap" &&
   (v.prepared.summary.tx1Signature === undefined || v.prepared.summary.tx1Signature === v.root.signature)

@@ -64,6 +64,20 @@ it("blocks unreadable history instead of signing a new transaction", async () =>
  expect(calls("prepare")).toHaveLength(0); expect(mocks.sign).not.toHaveBeenCalled(); expect(calls("broadcast")).toHaveLength(0); expect(calls("status")).toHaveLength(0);
  expect(container.textContent).toMatch(/withdrawal history|storage/i);
 });
+it.each(["failed", "expired"])("retains rootless swap history instead of clearing it on %s and allowing principal retry", async status => {
+ const saved = withdrawCheckpoint("swap"); delete saved.root;
+ const original = JSON.stringify(saved); rawSet.call(localStorage, withdrawKey, original);
+ fetcher.mockResolvedValueOnce(Response.json({ status }));
+ await render(); await click("Resume withdrawal");
+ await click("Retry withdrawal"); await click("Preview"); await click("Withdraw"); await click("Confirm high price impact");
+ expect(raw()).toBe(original); expect(container.textContent).toMatch(/withdrawal history|storage/i);
+ expect(fetcher).not.toHaveBeenCalled(); expect(mocks.sign).not.toHaveBeenCalled();
+ expect(mocks.confirmed).not.toHaveBeenCalled(); expect(mocks.history).not.toHaveBeenCalled();
+ expect(mocks.busy).toHaveBeenLastCalledWith(true);
+ expect(events.filter(e => e.event === "set" || e.event === "remove")).toEqual([]);
+ await remount(); await click("Resume withdrawal"); await click("Withdraw");
+ expect(raw()).toBe(original); expect(fetcher).not.toHaveBeenCalled(); expect(mocks.sign).not.toHaveBeenCalled();
+});
 it.each(["throw", "drop"])("does not broadcast when checkpoint setItem %s", async mode => {
  vi.mocked(localStorage.setItem).mockImplementation((key, value) => { record(`set-${mode}`, { key, raw: value }); if (mode === "throw") throw new Error("quota"); });
  await fresh();
