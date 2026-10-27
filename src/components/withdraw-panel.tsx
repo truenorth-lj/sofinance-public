@@ -1,6 +1,6 @@
 "use client";
 import "@/lib/engine-host";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { LoaderCircle } from "lucide-react";
 import { VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
@@ -10,7 +10,7 @@ import { formatAmount } from "@sofinance/engine/amount";
 import { notifyPositionHistoryChange } from "@/lib/position-history-refresh";
 import { createJupiterRelayStore, postWithJupiterRelay } from "@/lib/jupiter/browser-relay";
 import type { WithdrawPrepared, WithdrawSummary, WithdrawRequest } from "@sofinance/engine/withdraw/types";
-import { assertWithdrawHistory, readWithdrawHistory, writeWithdrawHistory, WithdrawHistoryError, WITHDRAW_HISTORY_ERROR, type WithdrawCheckpoint as Checkpoint } from "@/lib/withdraw-checkpoint";
+import { assertWithdrawHistory, readWithdrawHistory, writeWithdrawHistory, withdrawCheckpointKey, WithdrawHistoryError, WITHDRAW_HISTORY_ERROR, type WithdrawHistory, type WithdrawCheckpoint as Checkpoint } from "@/lib/withdraw-checkpoint";
 import { prepareIsStale } from "@sofinance/engine/fresh-blockhash";
 
 export const WITHDRAW_EXPIRED_MESSAGE = "Transaction expired before it landed. Retry to prepare a fresh transaction — no funds moved.";
@@ -18,19 +18,44 @@ export const WITHDRAW_EXPIRED_MESSAGE = "Transaction expired before it landed. R
 const REQUEST_TIMEOUT_MS=45_000;
 const RELAYED_PATHS=new Set(["withdraw-quote","withdraw-prepare"]);
 const withdrawJupiterStore=createJupiterRelayStore();
-async function post<T>(path: string, body: unknown): Promise<T> {
- let response:Response;
+type WithdrawRun = { lifetime: object; controller: AbortController };
+class WithdrawCancelled extends Error {}
+
+// The run owns both the fetch deadline and cancellation listener through body parsing.
+async function post<T>(run: WithdrawRun, path: string, body: unknown): Promise<T> {
+ const controller=new AbortController();
+ const timer=setTimeout(()=>controller.abort(new DOMException("Request timed out","TimeoutError")),REQUEST_TIMEOUT_MS);
+ const cancel=()=>{clearTimeout(timer);controller.abort(run.controller.signal.reason);};
+ run.controller.signal.addEventListener("abort",cancel,{once:true});
  try{
-  const signal=AbortSignal.timeout(REQUEST_TIMEOUT_MS);
-  // Withdraw preview/prepare may swap via Jupiter: those quotes come from this browser.
-  response=RELAYED_PATHS.has(path)&&body&&typeof body==="object"
-   ?await postWithJupiterRelay(`/api/${path}`,body as Record<string,unknown>,{store:withdrawJupiterStore,signal})
-   :await fetch(`/api/${path}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body),cache:"no-store",signal});
- }
- catch(caught){throw new Error(caught instanceof DOMException && caught.name==="TimeoutError"?"The server took too long to respond. Check your connection and try again.":"Network error. Check your connection and try again.");}
- const value=await response.json().catch(()=>({error:`Server error (${response.status}). Try again in a moment.`}));
- if(!response.ok)throw new Error(value.error || "Unable to complete withdrawal");
- return value as T;
+  if(run.controller.signal.aborted)cancel();
+  const signal=controller.signal;
+  let response:Response;
+  try{
+   signal.throwIfAborted();
+   // Withdraw preview/prepare may swap via Jupiter: those quotes come from this browser.
+   response=RELAYED_PATHS.has(path)&&body&&typeof body==="object"
+    ?await postWithJupiterRelay(`/api/${path}`,body as Record<string,unknown>,{store:withdrawJupiterStore,signal})
+    :await fetch(`/api/${path}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body),cache:"no-store",signal});
+  }catch{
+   if(run.controller.signal.aborted)throw new WithdrawCancelled();
+   throw new Error(signal.reason instanceof DOMException && signal.reason.name==="TimeoutError"?"The server took too long to respond. Check your connection and try again.":"Network error. Check your connection and try again.");
+  }
+  signal.throwIfAborted();
+  const value=await response.json().catch(()=>({error:`Server error (${response.status}). Try again in a moment.`}));
+  signal.throwIfAborted();
+  if(!response.ok)throw new Error(value.error || "Unable to complete withdrawal");
+  return value as T;
+ }finally{clearTimeout(timer);run.controller.signal.removeEventListener("abort",cancel);}
+}
+function waitForNextStatus(run:WithdrawRun){
+ return new Promise<void>((resolve,reject)=>{
+  const signal=run.controller.signal;
+  if(signal.aborted){reject(new WithdrawCancelled());return;}
+  const cancel=()=>{clearTimeout(timer);reject(new WithdrawCancelled());};
+  const timer=setTimeout(()=>{signal.removeEventListener("abort",cancel);resolve();},2000);
+  signal.addEventListener("abort",cancel,{once:true});
+ });
 }
 export function WithdrawPanel({wallet,positionMint,mintA,mintB,label,onClose,onBusyChange,onConfirmed}:{wallet:string;positionMint:string;mintA:string;mintB:string;label:(mint:string)=>string;onClose:()=>void;onBusyChange:(busy:boolean)=>void;onConfirmed:()=>void}) {
  const connection=useWalletConnection();
@@ -39,15 +64,21 @@ export function WithdrawPanel({wallet,positionMint,mintA,mintB,label,onClose,onB
  const [confirmation,setConfirmation]=useState(false),[previewing,setPreviewing]=useState(false);
  const [initialHistory]=useState(()=>readWithdrawHistory(wallet,positionMint));
  const historyRef=useRef(initialHistory);
+ const blockedHistories=useRef(new Map<string,{history:WithdrawHistory;error:string}>(
+  initialHistory.kind==="invalid" || initialHistory.kind==="unavailable"
+   ?[[withdrawCheckpointKey(wallet,positionMint),{history:initialHistory,error:WITHDRAW_HISTORY_ERROR}]]:[]));
  const [checkpoint,setCheckpoint]=useState<Checkpoint|null>(initialHistory.kind==="valid"?initialHistory.checkpoint:null);
  const [historyError,setHistoryError]=useState(initialHistory.kind==="invalid" || initialHistory.kind==="unavailable"?WITHDRAW_HISTORY_ERROR:"");
  // Latch uncertain storage mutations until reload; keep the last verified in-memory checkpoint.
  function guardHistory(){
-  if(historyError)throw new WithdrawHistoryError();
+  if(historyError || blockedHistories.current.has(withdrawCheckpointKey(wallet,positionMint)))throw new WithdrawHistoryError();
   assertWithdrawHistory(wallet,positionMint,historyRef.current);
  }
  function showError(caught:unknown,fallback:string){
-  if(caught instanceof WithdrawHistoryError)setHistoryError(caught.message);
+  if(caught instanceof WithdrawHistoryError){
+   blockedHistories.current.set(withdrawCheckpointKey(wallet,positionMint),{history:historyRef.current,error:caught.message});
+   setHistoryError(caught.message);
+  }
   setError(caught instanceof Error?caught.message:fallback);
  }
  const confirmationRef=useRef<HTMLDialogElement>(null);
@@ -56,82 +87,129 @@ export function WithdrawPanel({wallet,positionMint,mintA,mintB,label,onClose,onB
   if(confirmation && dialog && !dialog.open)dialog.showModal();
   if(!confirmation && dialog?.open)dialog.close();
  },[confirmation]);
- const locked=useRef(false);
+ const lifetimeRef=useRef<object|null>(null);
+ const runningRef=useRef<WithdrawRun|null>(null);
+ const currentConnection=useRef(connection);
+ const currentOnConfirmed=useRef(onConfirmed);
+ const historyIdentity=useRef({wallet,positionMint});
+ // Only committed identity changes invalidate a run. Callback/object churn does not.
+ useLayoutEffect(()=>{currentConnection.current=connection;currentOnConfirmed.current=onConfirmed;});
+ useLayoutEffect(()=>{
+  lifetimeRef.current={};
+  // Effects may reconnect with retained state (including layout-only Suspense).
+  // Reset ephemeral approval/preview, never the durable checkpoint or pending lock.
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- Reconcile retained UI before it becomes actionable again.
+  setPreview(null);setConfirmation(false);setProgress("");
+  if(historyIdentity.current.wallet!==wallet || historyIdentity.current.positionMint!==positionMint){
+   // A different identity may proceed, but returning to this one is not a reload.
+   const key=withdrawCheckpointKey(wallet,positionMint),blocked=blockedHistories.current.get(key);
+   const history=blocked?.history ?? readWithdrawHistory(wallet,positionMint);
+   if(history.kind==="invalid" || history.kind==="unavailable")blockedHistories.current.set(key,{history,error:WITHDRAW_HISTORY_ERROR});
+   historyIdentity.current={wallet,positionMint};historyRef.current=history;
+   setCheckpoint(history.kind==="valid"?history.checkpoint:null);
+   setHistoryError(blocked?.error ?? (history.kind==="invalid" || history.kind==="unavailable"?WITHDRAW_HISTORY_ERROR:""));
+   setError("");
+  }
+  return()=>{
+   lifetimeRef.current=null;
+   // Abort never means unsent: preserve any checkpoint written before broadcast.
+   runningRef.current?.controller.abort();
+  };
+ },[wallet,positionMint,connection.address,connection.connected]);
+ function begin():WithdrawRun|null{
+  if(runningRef.current || !lifetimeRef.current)return null;
+  const run={lifetime:lifetimeRef.current,controller:new AbortController()};
+  runningRef.current=run;return run;
+ }
+ function owns(run:WithdrawRun){return runningRef.current===run && lifetimeRef.current===run.lifetime && !run.controller.signal.aborted;}
+ function guardRun(run:WithdrawRun){
+  if(!owns(run))throw new WithdrawCancelled();
+  guardHistory();
+  if(!currentConnection.current.connected || currentConnection.current.address!==wallet)throw new Error("Connect the wallet that owns this position");
+ }
+ function finish(run:WithdrawRun){
+  if(runningRef.current!==run)return;
+  runningRef.current=null;
+  // Keep the synchronous lock until the real wallet promise settles. Clearing this
+  // run's UI even while hidden avoids a permanently busy retained instance.
+  setBusy(false);setPreviewing(false);
+ }
  useEffect(()=>{onBusyChange(busy || !!checkpoint || !!historyError);return()=>onBusyChange(false);},[busy,checkpoint,historyError,onBusyChange]);
  const request:WithdrawRequest={wallet,positionMint,...(target?{targetUSDC:Number(target)}:{percent}),receive:receive==="usdc"?"usdc":receive==="original"?"original":"token",...(receive!=="usdc" && receive!=="original"?{outputMint:receive}:{})};
  function invalidate(){setPreview(null);setError("");setConfirmation(false);}
  const targetInvalid=target!=="" && !(Number.isFinite(Number(target)) && Number(target)>0);
  async function showPreview(){
-  if(locked.current)return;
+  if(runningRef.current)return;
   if(targetInvalid){setError("Enter a USDC amount above 0, or clear it to use the slider.");return;}
-  locked.current=true;setBusy(true);setPreviewing(true);setError("");setProgress("Calculating preview…");
-  try{guardHistory();const result=await post<WithdrawSummary>("withdraw-quote",request);guardHistory();setPreview(result);setPercent(result.percentBps/100);setProgress("Review the preview, then tap Withdraw.");}
-  catch(caught){setProgress("");showError(caught,"Preview failed");}
-  finally{setBusy(false);setPreviewing(false);locked.current=false;}
+  const run=begin();if(!run)return;setBusy(true);setPreviewing(true);setError("");setProgress("Calculating preview…");
+  try{guardRun(run);const result=await post<WithdrawSummary>(run,"withdraw-quote",request);guardRun(run);setPreview(result);setPercent(result.percentBps/100);setProgress("Review the preview, then tap Withdraw.");}
+  catch(caught){if(owns(run)){setProgress("");showError(caught,"Preview failed");}}
+  finally{finish(run);}
  }
- function save(value:Checkpoint|null){
-  guardHistory();
+ function save(run:WithdrawRun,value:Checkpoint|null){
+  guardRun(run);
   const verified=writeWithdrawHistory(wallet,positionMint,historyRef.current,value);
   historyRef.current=verified;setCheckpoint(value);
  }
- async function waitFor(saved:Checkpoint){
+ async function waitFor(run:WithdrawRun,saved:Checkpoint){
   for(let i=0;i<60;i++){
-   guardHistory();
-   const result=await post<{status:string}>("withdraw-status",{signature:saved.signature,prepared:saved.prepared});
-   guardHistory();
+   guardRun(run);
+   const result=await post<{status:string}>(run,"withdraw-status",{signature:saved.signature,prepared:saved.prepared});
+   guardRun(run);
    if(result.status==="success"){
     notifyPositionHistoryChange(saved.prepared.summary.positionMint,saved.prepared.summary.stage==="swap"?undefined:saved.signature);
     return;
    }
-   if(result.status==="failed" || result.status==="expired")save(saved.root?{...saved,prepared:saved.root.prepared,signature:saved.root.signature,root:undefined}:null);
-   if(result.status==="expired")throw new Error(WITHDRAW_EXPIRED_MESSAGE);
+   if(result.status==="failed" || result.status==="expired")save(run,saved.root?{...saved,prepared:saved.root.prepared,signature:saved.root.signature,root:undefined}:null);
+   if(result.status==="expired")throw new Error(saved.root?"Conversion expired. Resume to verify the original withdrawal and retry conversion.":WITHDRAW_EXPIRED_MESSAGE);
    if(result.status!=="pending")throw new Error(`Transaction status: ${result.status}. Review it before starting another withdrawal.`);
-   setProgress("Waiting for transaction to finalize…");await new Promise(resolve=>setTimeout(resolve,2000));
+   setProgress("Waiting for transaction to finalize…");await waitForNextStatus(run);
   }
   throw new Error("Confirmation is taking longer. Resume to check the same transaction.");
  }
- async function signAndSend(prepared:WithdrawPrepared,confirmed:boolean,originalRequest:WithdrawRequest,root?:Checkpoint["root"]){
-  guardHistory();
-  if(connection.address!==wallet)throw new Error("Connect the wallet that owns this position");
+ async function signAndSend(run:WithdrawRun,prepared:WithdrawPrepared,confirmed:boolean,originalRequest:WithdrawRequest,root?:Checkpoint["root"]){
+  guardRun(run);
   if(Date.now()>=prepared.summary.expiresAt || prepareIsStale(prepared.summary)){
    setProgress("Refreshing transaction…");
-   prepared=await post<WithdrawPrepared>("withdraw-prepare",prepared.summary.stage==="swap"&&root
+   prepared=await post<WithdrawPrepared>(run,"withdraw-prepare",prepared.summary.stage==="swap"&&root
     ?{...originalRequest,confirmHighImpact:confirmed,stage:"swap",previous:root.prepared,tx1Signature:root.signature}
     :{...originalRequest,confirmHighImpact:confirmed});
   }
-  guardHistory();
+  guardRun(run);
   setProgress(prepared.summary.stage==="swap"?"Step 2 of 2: approve conversion in your wallet":"Approve withdrawal in your wallet");
   const unsigned=VersionedTransaction.deserialize(Uint8Array.from(atob(prepared.unsignedTransaction),c=>c.charCodeAt(0)));
   const message=unsigned.message.serialize().slice();
-  const signed=await connection.signTransaction(unsigned);
+  const signed=await currentConnection.current.signTransaction(unsigned);
+  guardRun(run);
+  if(Date.now()>=prepared.summary.expiresAt)throw new Error("Prepared transaction expired while awaiting wallet approval. Review and retry; no new transaction was submitted.");
   if(signed.message.serialize().length!==message.length || signed.message.serialize().some((b,i)=>b!==message[i]))throw new Error("Wallet modified transaction");
   const saved:Checkpoint={prepared,signature:bs58.encode(signed.signatures[0]!),request:originalRequest,confirmHighImpact:confirmed,root};
   // Persist before broadcasting: an interrupted HTTP request can still land.
-  save(saved);setProgress("Submitting withdrawal…");
-  await post("withdraw-broadcast",{wallet,summary:prepared.summary,permit:prepared.permit,confirmHighImpact:confirmed,signedTransaction:btoa(String.fromCharCode(...signed.serialize()))});
+  save(run,saved);setProgress("Submitting withdrawal…");
+  await post(run,"withdraw-broadcast",{wallet,summary:prepared.summary,permit:prepared.permit,confirmHighImpact:confirmed,signedTransaction:btoa(String.fromCharCode(...signed.serialize()))});
   return saved;
  }
  async function run(confirmed=false){
-  if(locked.current)return;locked.current=true;setBusy(true);setError("");setConfirmation(false);
+  const run=begin();if(!run)return;setBusy(true);setError("");setConfirmation(false);
   try{
-   guardHistory();
+   guardRun(run);
    let saved=checkpoint;
-   if(!saved){const prepared=await post<WithdrawPrepared>("withdraw-prepare",{...request,confirmHighImpact:confirmed});saved=await signAndSend(prepared,confirmed,request);}
-   await waitFor(saved);
+   if(!saved){const prepared=await post<WithdrawPrepared>(run,"withdraw-prepare",{...request,confirmHighImpact:confirmed});saved=await signAndSend(run,prepared,confirmed,request);}
+   await waitFor(run,saved);
    if(saved.prepared.summary.stage==="withdraw"){
-    guardHistory();
+    guardRun(run);
     setProgress("Step 1 of 2 complete. Preparing conversion…");
     const nextRequest={...saved.request,stage:"swap",previous:saved.prepared,tx1Signature:saved.signature,confirmHighImpact:confirmed || saved.confirmHighImpact};
-    const nextPreview=await post<WithdrawSummary>("withdraw-quote",nextRequest);
-    guardHistory();setPreview(nextPreview);
+    const nextPreview=await post<WithdrawSummary>(run,"withdraw-quote",nextRequest);
+    guardRun(run);setPreview(nextPreview);
     if(nextPreview.requiresSecondConfirmation && !nextRequest.confirmHighImpact){setConfirmation(true);setProgress("Confirm the conversion price impact to continue");return;}
-    const prepared=await post<WithdrawPrepared>("withdraw-prepare",nextRequest);
-    saved=await signAndSend(prepared,confirmed || saved.confirmHighImpact,saved.request,{prepared:saved.prepared,signature:saved.signature});
-    await waitFor(saved);
+    const prepared=await post<WithdrawPrepared>(run,"withdraw-prepare",nextRequest);
+    saved=await signAndSend(run,prepared,confirmed || saved.confirmHighImpact,saved.request,{prepared:saved.prepared,signature:saved.signature});
+    await waitFor(run,saved);
    }
-   save(null);setProgress("Withdrawal complete");setPreview(null);onConfirmed();
-  }catch(caught){setProgress("");showError(caught,"Withdrawal failed");}
-  finally{setBusy(false);locked.current=false;}
+   save(run,null);setProgress("Withdrawal complete");setPreview(null);currentOnConfirmed.current();
+  }catch(caught){if(owns(run)){setProgress("");showError(caught,"Withdrawal failed");}}
+  finally{finish(run);}
  }
  const disabled=busy || !!checkpoint || !!historyError;
  return <section aria-label="Withdraw from position" className="mt-4 rounded-3xl border border-white/20 bg-char p-5 text-cream">

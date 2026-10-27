@@ -207,6 +207,24 @@ describe("open-position quote validation", () => {
     expect(BigInt(converged)).toBeGreaterThan(0n);
   });
 
+  it("settles a 0.5% allocation wobble instead of throwing", async () => {
+    const twoLeg = state({ inputMint: Keypair.generate().publicKey.toBase58(), decimalsB: 6, price: "1" });
+    let n = 0;
+    vi.mocked(buildRoute).mockImplementation(async (_wallet, inputMint, outputMint, spend) => {
+      n += 1;
+      const out = n % 2 === 0 ? spend * 995n / 1000n : spend;
+      return {
+        inputMint, outputMint, inAmount: spend.toString(), outAmount: out.toString(),
+        otherAmountThreshold: out.toString(), swapMode: "ExactIn", slippageBps: 50, priceImpactPct: "0", routePlan: [],
+      } as never;
+    });
+    const { quote } = await getOpenPositionQuoteBundle(wallet,
+      { poolId, inputMint: twoLeg.inputMint, inputKind: "token" }, "1", { preset: "standard" },
+      9900, 100, 48, twoLeg, "parallel", { build: false });
+    expect(BigInt(quote.spendA) + BigInt(quote.spendB)).toBe(BigInt(quote.requested));
+    expect(BigInt(quote.spendA)).toBeLessThanOrEqual(BigInt(quote.requested));
+  });
+
   it("skips swap-instructions entirely for a preview (build: false)", async () => {
     vi.mocked(readOpenPoolState).mockResolvedValue(state({ inputMint: mintB, inputDecimals: 9, inputKind: "token" }));
     vi.mocked(buildRoute).mockImplementation(async (_wallet, inputMint, outputMint, spend) => ({

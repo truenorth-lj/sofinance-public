@@ -6,7 +6,7 @@ import {WithdrawPanel} from "./withdraw-panel";
 import {withdrawCheckpoint,withdrawWallet,withdrawPosition,withdrawKey} from "@/lib/test-support/withdraw-checkpoint-fixtures";
 import {USDC_MINT} from "@sofinance/engine/ids";
 const mocks=vi.hoisted(()=>({sign:vi.fn(),historyChange:vi.fn()}));
-vi.mock("./wallet-connection",()=>({useWalletConnection:()=>({address:withdrawWallet,signTransaction:mocks.sign})}));
+vi.mock("./wallet-connection",()=>({useWalletConnection:()=>({address:withdrawWallet,connected:true,signTransaction:mocks.sign})}));
 vi.mock("@/lib/position-history-refresh",()=>({notifyPositionHistoryChange:mocks.historyChange}));
 let root:Root,container:HTMLDivElement;
 beforeEach(()=>{

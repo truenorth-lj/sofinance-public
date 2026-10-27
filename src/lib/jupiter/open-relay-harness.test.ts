@@ -56,9 +56,9 @@ describe("open-position relay harness", () => {
     }));
     const pending = postWithJupiterRelay("/api/open-prepare", {}, { store: createJupiterRelayStore() });
     await expect(runUntilSettled(pending)).rejects.toThrow(RELAY_DID_NOT_SETTLE_MESSAGE);
-    // Fail-fast: the pre-change client ran MAX_ROUNDS (8) against this server.
-    expect(jupiterBrowserStats.rounds).toBeLessThanOrEqual(5);
-    expect(jupiterBrowserStats.rounds).toBeGreaterThanOrEqual(3);
+    // Churn used to fail-fast at 3; now a bounded binary search runs first.
+    expect(jupiterBrowserStats.binarySearches).toBeGreaterThan(0);
+    expect(jupiterBrowserStats.rounds).toBeGreaterThan(3);
     expect(posts).toBe(jupiterBrowserStats.rounds);
     expect(jupiterBrowserStats.churnStops).toBe(1);
   });

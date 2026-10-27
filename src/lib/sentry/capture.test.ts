@@ -24,6 +24,7 @@ import { AmountTooSmallError } from "../selected-amount-error";
 import { SelectedNoRouteError } from "../selected-no-route";
 import {
   captureApiRouteError,
+  captureQuoteSettleFailure,
   isUserFacingSelectedError,
   isUserRejectedError,
   resolveApiRoute,
@@ -131,5 +132,27 @@ describe("captureApiRouteError", () => {
       "public_message",
       expect.not.stringMatching(/api[_-]?key|https?:\/\//i),
     );
+  });
+});
+
+describe("captureQuoteSettleFailure", () => {
+  it("is a no-op when both DSN env vars are unset", () => {
+    vi.stubEnv("NEXT_PUBLIC_SENTRY_DSN", "");
+    vi.stubEnv("SENTRY_DSN", "");
+    captureQuoteSettleFailure(new Error("Quote did not settle"), { pair: "HOODx/HOOD", amount: "5", rangeWidth: "tight", rounds: 4 });
+    expect(captureException).not.toHaveBeenCalled();
+  });
+
+  it("reports pair, amount, range width and rounds without a wallet", () => {
+    vi.stubEnv("SENTRY_DSN", "https://key@o1.ingest.us.sentry.io/1");
+    const error = new Error("Quote did not settle");
+    captureQuoteSettleFailure(error, { pair: "HOODx/HOOD", amount: "5", rangeWidth: "micro", rounds: 6 });
+    expect(captureException).toHaveBeenCalledWith(error);
+    expect(setTag).toHaveBeenCalledWith("quote_settle", "did_not_settle");
+    expect(setExtra).toHaveBeenCalledWith("pair", "HOODx/HOOD");
+    expect(setExtra).toHaveBeenCalledWith("amount", "5");
+    expect(setExtra).toHaveBeenCalledWith("range_width", "micro");
+    expect(setExtra).toHaveBeenCalledWith("rounds", 6);
+    expect(setExtra.mock.calls.map((call) => call[0])).not.toContain("wallet");
   });
 });
