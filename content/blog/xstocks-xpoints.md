@@ -1,124 +1,99 @@
 ---
-title: "How to collect xStocks xPoints with same-stock LP (SoFinance as the tool)"
-description: "Official xPoints ranks providing liquidity highest. How same-stock Raydium CLMM works, why IL is low (not zero), live fee-side numbers, and how SoFinance opens the position — with our referral disclosed."
+title: "How to collect xStocks xPoints with SoFinance: step-by-step"
+description: "A screen-by-screen walkthrough: register for xPoints, open a same-stock LP with SoFinance (it builds the Raydium position for you), then check your points."
 datePublished: "2026-10-27"
 dateModified: "2026-10-27"
 hero:
   src: /blog/xstocks-xpoints/hero.png
-  alt: xStocks Introducing xPoints announcement
+  alt: xPoints activity tiers — Hold, Lend, Provide liquidity
 ---
 
-xStocks turned listed equities into Token-2022 assets you can hold, lend, and LP on Solana. The issuer's xPoints program tracks that onchain activity and sets your share of **future rewards the program itself has not specified**. Points are not a token, have no stated monetary value, and are not a promise of an airdrop.
+xStocks are tokenized equities on Solana. The issuer's **xPoints** program tracks onchain activity with those tokens. On the points dashboard, **providing liquidity** is the highest tier — above hold and lend.
 
-@xStocksFi put it plainly when xPoints went live (17 Mar 2026):
-> Hold tokenized stocks in your connected wallet, create a position in lending markets, **add liquidity to pools** — and more.
-> https://x.com/xStocksFi/status/2033952074463916318
-
-![xPoints are live — @xStocksFi, 17 Mar 2026](/blog/xstocks-xpoints/01_xstocks_xpoints_live.png)
-
-Source: [x.com/xStocksFi/status/2033952074463916318](https://x.com/xStocksFi/status/2033952074463916318)
-
-![Introducing xPoints — xstocks.fi news](/blog/xstocks-xpoints/02_xpoints_announcement.png)
-
-Source: [xstocks.fi/us/news/introducing-xpoints](https://xstocks.fi/us/news/introducing-xpoints)
-
-On the points dashboard the activity ladder is:
-
-1. **Hold** xStocks — base tier
-2. **Lend** xStocks as collateral — higher tier
-3. **Provide liquidity** in DeFi pools that accept xStocks — **highest tier**
-
-Rates and exact multipliers are set by xStocks and can change. Always check https://defi.xstocks.fi/points for the live rules. Kraken's own FAQ: holding xStocks **on Kraken** does not count toward xPoints — it is an **onchain** program.
-
-## Why LP (and why same-stock)
-
-If your goal is xPoints under the published ladder, liquidity sits at the top. You also **collect trading fees** from swaps that hit your in-range Raydium CLMM position — separate from points.
+SoFinance is a self-custodial tool that opens a same-stock LP for you: you pick the pair and amount, sign once, and **SoFinance builds the Raydium LP position under the hood**. The position NFT lands in your wallet. You can also **collect trading fees** from swaps that hit your in-range position — separate from points.
 
 ![xPoints activity tiers — Hold, Lend, Provide liquidity](/blog/xstocks-xpoints/03_xpoints_dashboard.png)
 
 Source: [defi.xstocks.fi/points](https://defi.xstocks.fi/points)
 
-Most xStock LP tutorials point people at FOOx/USDC-style pools. Those work, but the two sides are uncorrelated: stock vs dollar. When the stock moves, classic impermanent loss shows up hard.
+![xPoints are live — @xStocksFi](/blog/xstocks-xpoints/01_xstocks_xpoints_live.png)
 
-**Same-stock pools** pair two tokenized versions of the **same** equity — for example Backpack Securities $SPCX with xStocks $SPCXx on Raydium CLMM. Both legs track the same underlying name, so the pool price usually sits near 1:1 and **impermanent loss is low compared with stock/stable pools**.
+Source: [x.com/xStocksFi/status/2033952074463916318](https://x.com/xStocksFi/status/2033952074463916318)
 
-Low ≠ zero. Real risks we list in our docs:
+**Our referral link:** [https://defi.xstocks.fi/points?ref=SOFINANCE](https://defi.xstocks.fi/points?ref=SOFINANCE) (you get a 20% points boost; we get 20% of your points, per the xPoints FAQ)
 
-- The two wraps can trade at a temporary premium/discount (depeg / basis).
-- Concentrated liquidity: **out of range = no trading fees** until price returns or you change range.
-- Smart-contract / Raydium / router risk.
-- Token-2022 freeze / issuer controls on either mint.
-- Small pools: thin liquidity, noisy fee APR, exit cost.
+## 1. Register your wallet for xPoints
 
-We do **not** auto-rebalance. Your position is a normal Raydium position NFT in **your** wallet.
+Open our referral link and click **Connect Wallet**:
 
-## What the fee side looks like right now
+[https://defi.xstocks.fi/points?ref=SOFINANCE](https://defi.xstocks.fi/points?ref=SOFINANCE)
 
-Numbers from https://sofinancelab.xyz/api/rwa-pairs · **2026-10-27 10:59 Asia/Taipei**.
-Est. fee APR = (24h pool fees ÷ TVL) × 365 × 100. **Not LP return. Ignores IL, your range, and rewards.**
+![xPoints page — Connect Wallet](/blog/xstocks-xpoints/steps/step01_xstocks_points_connect_wallet.png)
 
-![Same-asset RWA pairs on SoFinance — est. fee APR from 24h fees and TVL](/blog/xstocks-xpoints/04_sofinance_rwa_pairs.png)
+Choose **Solana** (Phantom or Solflare):
 
-Source: [sofinancelab.xyz/app/rwa-pairs](https://sofinancelab.xyz/app/rwa-pairs)
+![Choose Network — pick Solana](/blog/xstocks-xpoints/steps/step02_xstocks_connect_wallet_modal.png)
 
-![SPCX / SPCXx Raydium CLMM pool](/blog/xstocks-xpoints/07_raydium_pool.png)
+## 2. Open SoFinance
 
-Source: [raydium.io CLMM position for SPCX/SPCXx](https://raydium.io/clmm/create-position/?pool_id=DUzBLHZ5RZdftPuWVijsvjupndogRM1adGJpsR7YTJro)
+Go to [https://sofinancelab.xyz](https://sofinancelab.xyz) and click **Open app**.
 
-- $SPCX/$SPCXx (deepest same-stock pool we list): est. fee APR **~19.3%** on the last 24h · TVL ~$261k · 24h vol ~$1.38M · 1 bp fee
-- $SNDK/$SNDKx: est. fee APR **~41.9%** (24h) · smaller TVL → noisier
-- Thinner names ($NVDA, $TSLA, $AAPL pairs) can print very high 24h fee APR with low TVL — treat those as **noisy**, not a forecast
+![SoFinance home — Open app](/blog/xstocks-xpoints/steps/step03_sofinance_home_hero.png)
 
-Refresh the API before you size a position. Past 24h fees are not a guarantee of the next 24h.
+## 3. Connect your wallet
 
-## How to open the LP with SoFinance (self-custodial tool)
+In the app, click **Connect wallet**. Tick **Terms of Service**, then **Continue to wallet**.
 
-SoFinance is **not** a broker and **not** the xPoints program. We are a self-custodial UI that builds a Raydium CLMM open-position transaction for same-asset RWA pairs. You sign; keys stay in your wallet.
+![App landing — Connect wallet](/blog/xstocks-xpoints/steps/step04_app_landing_positions_empty.png)
 
-App flow (matches https://sofinancelab.xyz/docs and /app):
+![Before you connect — tick Terms, Continue to wallet](/blog/xstocks-xpoints/steps/step05_app_before_you_connect_modal.png)
 
-1. **Register for xPoints first** — connect the same Solana wallet at https://defi.xstocks.fi/points and sign. New registrations with no eligible activity within 7 days can be removed. Prefer a wallet that already holds xStocks.
-2. Open https://sofinancelab.xyz/app — connect that wallet.
-3. Browse **RWA pairs** (https://sofinancelab.xyz/app/rwa-pairs) — same-asset wraps only (e.g. $SPCX ↔ $SPCXx).
-4. Pick a pool. The app suggests a backtested range; **you can override**. Preview shows swaps, amounts, round-trip cost, and est. fee APR for that range — estimates, not guarantees. Read https://sofinancelab.xyz/docs/risks.
+## 4. Find SPCXx/SPCX on RWA pairs
 
-![estimates from historical data, not a guarantee](/blog/xstocks-xpoints/05_sofinance_pool_preview.png)
+Open **RWA pairs**. Scroll to **SPCXx/SPCX**. There are two cards — pick the **1 bps** one (deeper pool); there is also a **5 bps** card.
 
-Source: [sofinancelab.xyz/app](https://sofinancelab.xyz/app)
+![RWA pairs list](/blog/xstocks-xpoints/steps/step06_rwa_pairs_header_first_cards.png)
 
-5. **Approve once** in your wallet. We re-simulate before send. You receive a standard Raydium position NFT you can also manage on Raydium.
-6. Later: add liquidity, compound collected trading fees, or exit from the app — still your signature every time.
+![SPCXx/SPCX — pick the 1 bps card](/blog/xstocks-xpoints/steps/step07_rwa_pairs_spcx_1bps_card.png)
 
-**Points caveat (read this):** Official sources say providing liquidity with xStocks ranks highest, and Solflare documents that xStocks inside **Raydium** LP positions remain counted for their boost rules. Our pools put an **xStock on one side** of a Raydium CLMM position, so the xStock leg is the points-relevant side. The Backpack Securities leg is **not** an xStock. xStocks has **not** published a public list that names each SPCXx/SPCX-style same-stock pool. After you open a position, confirm on the points dashboard that the activity shows under liquidity. If it does not, fall back to an xStock pool the dashboard clearly tracks (or hold/lend tiers) — and tell us.
+## 5. Optional: Plan this pool
 
-## Our referral link (disclosed)
+Click **Plan this pool** to see an estimate for your amount and days (based on historical data, not a guarantee). When ready, click **Create a position in this pool**.
 
-We participate in the xPoints referral program.
-**Our referral link:** [https://defi.xstocks.fi/points?ref=SOFINANCE](https://defi.xstocks.fi/points?ref=SOFINANCE)
+![Plan — amount, days, and chart](/blog/xstocks-xpoints/steps/step10_plan_amount_input_and_chart.png)
 
-Per the live xPoints dashboard FAQ: when someone joins with your link, the referrer gets **20% of the points** their referrals generate, and referred users get a **20% boost** on their points. That wording is from the dashboard FAQ (screenshot below). Using our link supports SoFinance; you can also register with no ref or with someone else's.
+![Plan outcome — Create a position in this pool](/blog/xstocks-xpoints/steps/step12_plan_outcome_panel_cta.png)
 
-![xPoints referral FAQ — 20% of referrals' points / 20% boost](/blog/xstocks-xpoints/03b_xpoints_referral_faq.png)
+## 6. Create position
 
-Source: [defi.xstocks.fi/points](https://defi.xstocks.fi/points)
+Or click **Create position** on the pair card. Choose an input asset (**SOL**, **USDC**, or a pool token), an amount, and a range (**Best** is the suggested default). Then continue.
 
-xPoints / xStocks products are **not available to US persons** or users in sanctioned / restricted jurisdictions. Geo restrictions apply. This is not financial advice.
+![Create position — asset, amount, Best range](/blog/xstocks-xpoints/steps/step08_create_position_modal_spcx.png)
 
-## What we are not saying
+![Create position from Plan CTA](/blog/xstocks-xpoints/steps/step13_plan_cta_opens_create_position_modal.png)
 
-- We are not promising an airdrop, token, or cash value for xPoints.
-- We are not saying impermanent loss is zero.
-- We are not saying fee APR is locked in.
-- We are not a custodian, broker, or the xStocks issuer.
+## 7. Approve once in your wallet
 
-![SoFinance risks docs — IL, out of range, issuer controls](/blog/xstocks-xpoints/06_sofinance_risks.png)
+Approve the transaction in your wallet. SoFinance swaps as needed and **builds the Raydium LP position for you**; the position NFT lands in your wallet.
 
-Source: [sofinancelab.xyz/docs/risks](https://sofinancelab.xyz/docs/risks)
+<!-- TODO: wallet-approval screenshot coming — using create-position modal (step13) for now -->
 
-Collect trading fees in range. Accumulate xPoints under **their** rules. Keep the keys.
+![Create position — ready to approve in wallet](/blog/xstocks-xpoints/steps/step13_plan_cta_opens_create_position_modal.png)
 
-Tool: https://sofinancelab.xyz
-Points (our referral): [https://defi.xstocks.fi/points?ref=SOFINANCE](https://defi.xstocks.fi/points?ref=SOFINANCE)
-$SPCX $SPCXx $SNDK $NVDAx $TSLAx
+## 8. Track it in the app
 
-— SoFinance (@SoFinancelab)
+Open [/app](https://sofinancelab.xyz/app). Under **My positions** / **Performance** you can add liquidity, compound collected trading fees, or withdraw — you sign every time.
+
+![My positions](/blog/xstocks-xpoints/steps/step04_app_landing_positions_empty.png)
+
+![Performance tab](/blog/xstocks-xpoints/steps/step14_position_performance_empty.png)
+
+## 9. Check your xPoints
+
+Return to [https://defi.xstocks.fi/points](https://defi.xstocks.fi/points) and confirm your activity.
+
+<!-- TODO: xPoints dashboard balance / eligible-activity screenshot coming -->
+
+---
+
+Risks: see [sofinancelab.xyz/docs/risks](https://sofinancelab.xyz/docs/risks)
