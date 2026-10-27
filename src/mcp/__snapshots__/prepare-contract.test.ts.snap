@@ -1,0 +1,3818 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`HTTP open retries at most three and never issues a permit on failure 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        {
+          "inputKind": "token",
+          "inputMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "poolId": "EdmxWPmx2WH6WgFfTdu9xfkYf3k1g5wD1zccTVySEEh1",
+        },
+        "1",
+        {
+          "preset": "standard",
+        },
+        9900,
+        100,
+        {
+          "enforceResaleFloor": false,
+        },
+      ],
+      "name": "openBuild",
+    },
+    {
+      "args": [
+        "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        {
+          "inputKind": "token",
+          "inputMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "poolId": "EdmxWPmx2WH6WgFfTdu9xfkYf3k1g5wD1zccTVySEEh1",
+        },
+        "1",
+        {
+          "preset": "standard",
+        },
+        9900,
+        100,
+        {
+          "enforceResaleFloor": false,
+        },
+      ],
+      "name": "openBuild",
+    },
+    {
+      "args": [
+        "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        {
+          "inputKind": "token",
+          "inputMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "poolId": "EdmxWPmx2WH6WgFfTdu9xfkYf3k1g5wD1zccTVySEEh1",
+        },
+        "1",
+        {
+          "preset": "standard",
+        },
+        9900,
+        100,
+        {
+          "enforceResaleFloor": false,
+        },
+      ],
+      "name": "openBuild",
+    },
+  ],
+  "result": {
+    "body": {
+      "error": "Unable to estimate complete transaction network fee",
+    },
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+    },
+    "status": 400,
+  },
+}
+`;
+
+exports[`HTTP retry allowlists reject Unable to estimate complete transaction network fee! 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        {
+          "inputKind": "token",
+          "inputMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "poolId": "EdmxWPmx2WH6WgFfTdu9xfkYf3k1g5wD1zccTVySEEh1",
+        },
+        "1",
+        {
+          "preset": "standard",
+        },
+        9900,
+        100,
+        {
+          "enforceResaleFloor": false,
+        },
+      ],
+      "name": "openBuild",
+    },
+    {
+      "args": [
+        {
+          "percent": 100,
+          "positionMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        },
+      ],
+      "name": "withdraw",
+    },
+  ],
+  "open": {
+    "body": {
+      "error": "Unable to estimate complete transaction network fee!",
+    },
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+    },
+    "status": 400,
+  },
+  "withdraw": {
+    "body": {
+      "error": "Unable to estimate complete transaction network fee!",
+    },
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+    },
+    "status": 400,
+  },
+}
+`;
+
+exports[`HTTP retry allowlists reject permanent failure 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        {
+          "inputKind": "token",
+          "inputMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "poolId": "EdmxWPmx2WH6WgFfTdu9xfkYf3k1g5wD1zccTVySEEh1",
+        },
+        "1",
+        {
+          "preset": "standard",
+        },
+        9900,
+        100,
+        {
+          "enforceResaleFloor": false,
+        },
+      ],
+      "name": "openBuild",
+    },
+    {
+      "args": [
+        {
+          "percent": 100,
+          "positionMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        },
+      ],
+      "name": "withdraw",
+    },
+  ],
+  "open": {
+    "body": {
+      "error": "permanent failure",
+    },
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+    },
+    "status": 400,
+  },
+  "withdraw": {
+    "body": {
+      "error": "permanent failure",
+    },
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+    },
+    "status": 400,
+  },
+}
+`;
+
+exports[`HTTP withdraw refresh happens only after the successful retry 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        {
+          "percent": 100,
+          "positionMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        },
+      ],
+      "name": "withdraw",
+    },
+    {
+      "args": [
+        {
+          "percent": 100,
+          "positionMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        },
+      ],
+      "name": "withdraw",
+    },
+    {
+      "args": [],
+      "name": "rpc",
+    },
+    {
+      "args": [
+        "confirmed",
+      ],
+      "name": "latest",
+    },
+  ],
+  "result": {
+    "body": {
+      "permit": "6f4918bc535668e0a02df014dd039eceec863812ecee8da171a911ce7015e460",
+      "summary": {
+        "blockhash": "uY46ibBrA5pEsx4z8iiQ6BpNeBuMR6weo4u2ubREB9q",
+        "expiresAt": 1793100075000,
+        "lastValidBlockHeight": 180,
+        "operation": "fixture",
+        "preserved": {
+          "fullSummary": true,
+        },
+        "quote": {
+          "floorBps": 9900,
+          "liquidity": "2",
+          "rangeSide": "inside",
+          "requested": "1",
+          "toleranceBps": 100,
+          "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        },
+        "simulated": true,
+        "simulatedAt": 1793100000000,
+        "startingBalances": {
+          "a": "0",
+          "b": "0",
+          "input": "10",
+        },
+        "startingLiquidity": "1",
+        "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+      },
+      "unsignedTransaction": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAQABA4qI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cl//Ig8gL7nI375XZubcD1K1j5goh5gWGdoK3W4s/QwMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA11UHVOCACl0jfu9YJgNXZrmz5aFYaKlAqyiZWHiOOwAQICAAEMAgAAAAEAAAAAAAAAAA==",
+    },
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+    },
+    "status": 200,
+  },
+}
+`;
+
+exports[`HTTP withdraw retries exactly three: Cannot calculate transaction network cost 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        {
+          "percent": 100,
+          "positionMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        },
+      ],
+      "name": "withdraw",
+    },
+    {
+      "args": [
+        {
+          "percent": 100,
+          "positionMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        },
+      ],
+      "name": "withdraw",
+    },
+    {
+      "args": [
+        {
+          "percent": 100,
+          "positionMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        },
+      ],
+      "name": "withdraw",
+    },
+  ],
+  "result": {
+    "body": {
+      "error": "Cannot calculate transaction network cost",
+    },
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+    },
+    "status": 400,
+  },
+}
+`;
+
+exports[`HTTP withdraw retries exactly three: Unable to estimate complete transaction network fee 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        {
+          "percent": 100,
+          "positionMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        },
+      ],
+      "name": "withdraw",
+    },
+    {
+      "args": [
+        {
+          "percent": 100,
+          "positionMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        },
+      ],
+      "name": "withdraw",
+    },
+    {
+      "args": [
+        {
+          "percent": 100,
+          "positionMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        },
+      ],
+      "name": "withdraw",
+    },
+  ],
+  "result": {
+    "body": {
+      "error": "Unable to estimate complete transaction network fee",
+    },
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+    },
+    "status": 400,
+  },
+}
+`;
+
+exports[`HTTP withdraw retries exactly three: Wallet token balance changed; prepare again 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        {
+          "percent": 100,
+          "positionMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        },
+      ],
+      "name": "withdraw",
+    },
+    {
+      "args": [
+        {
+          "percent": 100,
+          "positionMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        },
+      ],
+      "name": "withdraw",
+    },
+    {
+      "args": [
+        {
+          "percent": 100,
+          "positionMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        },
+      ],
+      "name": "withdraw",
+    },
+  ],
+  "result": {
+    "body": {
+      "error": "Wallet token balance changed; prepare again",
+    },
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+    },
+    "status": 400,
+  },
+}
+`;
+
+exports[`HTTP withdraw retries exactly three: Withdrawal received below simulated minimum 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        {
+          "percent": 100,
+          "positionMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        },
+      ],
+      "name": "withdraw",
+    },
+    {
+      "args": [
+        {
+          "percent": 100,
+          "positionMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        },
+      ],
+      "name": "withdraw",
+    },
+    {
+      "args": [
+        {
+          "percent": 100,
+          "positionMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        },
+      ],
+      "name": "withdraw",
+    },
+  ],
+  "result": {
+    "body": {
+      "error": "Withdrawal received below simulated minimum",
+    },
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+    },
+    "status": 400,
+  },
+}
+`;
+
+exports[`compound HTTP deduplicates sources by rejection while MCP preserves duplicates > http 1`] = `
+{
+  "io": [],
+  "result": {
+    "body": {
+      "error": "Invalid yield source transactions; maximum three merges per attempt",
+    },
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+    },
+    "status": 400,
+  },
+}
+`;
+
+exports[`compound HTTP deduplicates sources by rejection while MCP preserves duplicates > stdio 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+        [
+          "1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111",
+          "1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111",
+        ],
+      ],
+      "name": "compound",
+    },
+  ],
+  "result": {
+    "content": [
+      {
+        "text": "{
+  "unsignedTransaction": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAQABA4qI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cl//Ig8gL7nI375XZubcD1K1j5goh5gWGdoK3W4s/QwMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHAQICAAEMAgAAAAEAAAAAAAAAAA==",
+  "permit": "2deb613c92684cbef328527c0f11dcc077e9d82b79f59678592a3e327def2d79",
+  "summary": {
+    "operation": "fixture",
+    "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+    "simulated": true,
+    "quote": {
+      "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+      "requested": "1",
+      "liquidity": "2",
+      "floorBps": 9900,
+      "rangeSide": "inside",
+      "toleranceBps": 100
+    },
+    "startingLiquidity": "1",
+    "startingBalances": {
+      "input": "10",
+      "a": "0",
+      "b": "0"
+    },
+    "expiresAt": 1793100060000,
+    "lastValidBlockHeight": 150,
+    "preserved": {
+      "fullSummary": true
+    }
+  },
+  "signToken": "verified-payload:eyJraW5kIjoiY29tcG91bmQiLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInVuc2lnbmVkVHJhbnNhY3Rpb24iOiJBUUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUNBQVFBQkE0cUk0OTEwQ2ZHVi9WTGJMVHk2WFhMS1p3bS9IWlFTRy9OMGlBRzBEMjljbC8vSWc4Z0w3bkkzNzVYWnViY0QxSzFqNWdvaDVnV0dkb0szVzRzL1F3TUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hBUUlDQUFFTUFnQUFBQUVBQUFBQUFBQUFBQT09IiwicGVybWl0IjoiMmRlYjYxM2M5MjY4NGNiZWYzMjg1MjdjMGYxMWRjYzA3N2U5ZDgyYjc5ZjU5Njc4NTkyYTNlMzI3ZGVmMmQ3OSIsInN1Ym1pdEFyZ3MiOnsicGVybWl0IjoiMmRlYjYxM2M5MjY4NGNiZWYzMjg1MjdjMGYxMWRjYzA3N2U5ZDgyYjc5ZjU5Njc4NTkyYTNlMzI3ZGVmMmQ3OSIsIndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5Iiwic3VtbWFyeSI6eyJvcGVyYXRpb24iOiJmaXh0dXJlIiwid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJzaW11bGF0ZWQiOnRydWUsInF1b3RlIjp7IndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwicmVxdWVzdGVkIjoiMSIsImxpcXVpZGl0eSI6IjIiLCJmbG9vckJwcyI6OTkwMCwicmFuZ2VTaWRlIjoiaW5zaWRlIiwidG9sZXJhbmNlQnBzIjoxMDB9LCJzdGFydGluZ0xpcXVpZGl0eSI6IjEiLCJzdGFydGluZ0JhbGFuY2VzIjp7ImlucHV0IjoiMTAiLCJhIjoiMCIsImIiOiIwIn0sImV4cGlyZXNBdCI6MTc5MzEwMDA2MDAwMCwibGFzdFZhbGlkQmxvY2tIZWlnaHQiOjE1MCwicHJlc2VydmVkIjp7ImZ1bGxTdW1tYXJ5Ijp0cnVlfX19LCJleHBpcmVzQXQiOjE3OTMxMDAwNjAwMDB9",
+  "signUrl": "https://app.invalid.example/app/sign/verified-payload:eyJraW5kIjoiY29tcG91bmQiLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInVuc2lnbmVkVHJhbnNhY3Rpb24iOiJBUUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUNBQVFBQkE0cUk0OTEwQ2ZHVi9WTGJMVHk2WFhMS1p3bS9IWlFTRy9OMGlBRzBEMjljbC8vSWc4Z0w3bkkzNzVYWnViY0QxSzFqNWdvaDVnV0dkb0szVzRzL1F3TUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hBUUlDQUFFTUFnQUFBQUVBQUFBQUFBQUFBQT09IiwicGVybWl0IjoiMmRlYjYxM2M5MjY4NGNiZWYzMjg1MjdjMGYxMWRjYzA3N2U5ZDgyYjc5ZjU5Njc4NTkyYTNlMzI3ZGVmMmQ3OSIsInN1Ym1pdEFyZ3MiOnsicGVybWl0IjoiMmRlYjYxM2M5MjY4NGNiZWYzMjg1MjdjMGYxMWRjYzA3N2U5ZDgyYjc5ZjU5Njc4NTkyYTNlMzI3ZGVmMmQ3OSIsIndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5Iiwic3VtbWFyeSI6eyJvcGVyYXRpb24iOiJmaXh0dXJlIiwid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJzaW11bGF0ZWQiOnRydWUsInF1b3RlIjp7IndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwicmVxdWVzdGVkIjoiMSIsImxpcXVpZGl0eSI6IjIiLCJmbG9vckJwcyI6OTkwMCwicmFuZ2VTaWRlIjoiaW5zaWRlIiwidG9sZXJhbmNlQnBzIjoxMDB9LCJzdGFydGluZ0xpcXVpZGl0eSI6IjEiLCJzdGFydGluZ0JhbGFuY2VzIjp7ImlucHV0IjoiMTAiLCJhIjoiMCIsImIiOiIwIn0sImV4cGlyZXNBdCI6MTc5MzEwMDA2MDAwMCwibGFzdFZhbGlkQmxvY2tIZWlnaHQiOjE1MCwicHJlc2VydmVkIjp7ImZ1bGxTdW1tYXJ5Ijp0cnVlfX19LCJleHBpcmVzQXQiOjE3OTMxMDAwNjAwMDB9",
+  "instructions": {
+    "message": "Sign unsignedTransaction with the wallet, then call submit_compound_transaction with { signedTransaction, permit, wallet, summary }. Pass summary back exactly as returned; it is bound by the permit. Or open signUrl in a browser with the wallet connected to sign via UI."
+  }
+}",
+        "type": "text",
+      },
+    ],
+  },
+}
+`;
+
+exports[`compound prepare baseline > HTTP builder failure precedes missing signing key 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+        [],
+      ],
+      "name": "compound",
+    },
+  ],
+  "result": {
+    "body": {
+      "error": "fixture builder rejected",
+    },
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+    },
+    "status": 400,
+  },
+}
+`;
+
+exports[`compound prepare baseline > HTTP preserves full output, permit, bytes, headers and I/O 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+        [],
+      ],
+      "name": "compound",
+    },
+  ],
+  "result": {
+    "body": {
+      "permit": "2deb613c92684cbef328527c0f11dcc077e9d82b79f59678592a3e327def2d79",
+      "summary": {
+        "expiresAt": 1793100060000,
+        "lastValidBlockHeight": 150,
+        "operation": "fixture",
+        "preserved": {
+          "fullSummary": true,
+        },
+        "quote": {
+          "floorBps": 9900,
+          "liquidity": "2",
+          "rangeSide": "inside",
+          "requested": "1",
+          "toleranceBps": 100,
+          "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        },
+        "simulated": true,
+        "startingBalances": {
+          "a": "0",
+          "b": "0",
+          "input": "10",
+        },
+        "startingLiquidity": "1",
+        "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+      },
+      "unsignedTransaction": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAQABA4qI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cl//Ig8gL7nI375XZubcD1K1j5goh5gWGdoK3W4s/QwMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHAQICAAEMAgAAAAEAAAAAAAAAAA==",
+    },
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+    },
+    "status": 200,
+  },
+}
+`;
+
+exports[`compound prepare baseline > HTTP request/error precedence {"wallet":"invalid"} 1`] = `
+{
+  "io": [],
+  "result": {
+    "body": {
+      "error": "Invalid wallet address",
+    },
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+    },
+    "status": 400,
+  },
+}
+`;
+
+exports[`compound prepare baseline > HTTP request/error precedence {} 1`] = `
+{
+  "io": [],
+  "result": {
+    "body": {
+      "error": "Invalid wallet address",
+    },
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+    },
+    "status": 400,
+  },
+}
+`;
+
+exports[`compound prepare baseline > HTTP request/error precedence null 1`] = `
+{
+  "io": [],
+  "result": {
+    "body": {
+      "error": "Invalid compound input",
+    },
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+    },
+    "status": 400,
+  },
+}
+`;
+
+exports[`compound prepare baseline > HTTP request/error precedence undefined 1`] = `
+{
+  "io": [],
+  "result": {
+    "body": {
+      "error": "Invalid compound input",
+    },
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+    },
+    "status": 400,
+  },
+}
+`;
+
+exports[`compound prepare baseline > http MCP has no HTTP outer retry or refresh 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+        [],
+      ],
+      "name": "compound",
+    },
+  ],
+  "result": {
+    "content": [
+      {
+        "text": "{
+  "error": "Unable to estimate complete transaction network fee"
+}",
+        "type": "text",
+      },
+    ],
+    "isError": true,
+  },
+}
+`;
+
+exports[`compound prepare baseline > http sign URL explicit preserves the entire authenticated payload 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+        [],
+      ],
+      "name": "compound",
+    },
+  ],
+  "origin": "https://app.invalid.example",
+  "result": {
+    "content": [
+      {
+        "text": "{
+  "unsignedTransaction": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAQABA4qI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cl//Ig8gL7nI375XZubcD1K1j5goh5gWGdoK3W4s/QwMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHAQICAAEMAgAAAAEAAAAAAAAAAA==",
+  "permit": "2deb613c92684cbef328527c0f11dcc077e9d82b79f59678592a3e327def2d79",
+  "summary": {
+    "operation": "fixture",
+    "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+    "simulated": true,
+    "quote": {
+      "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+      "requested": "1",
+      "liquidity": "2",
+      "floorBps": 9900,
+      "rangeSide": "inside",
+      "toleranceBps": 100
+    },
+    "startingLiquidity": "1",
+    "startingBalances": {
+      "input": "10",
+      "a": "0",
+      "b": "0"
+    },
+    "expiresAt": 1793100060000,
+    "lastValidBlockHeight": 150,
+    "preserved": {
+      "fullSummary": true
+    }
+  },
+  "signToken": "verified-payload:eyJraW5kIjoiY29tcG91bmQiLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInVuc2lnbmVkVHJhbnNhY3Rpb24iOiJBUUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUNBQVFBQkE0cUk0OTEwQ2ZHVi9WTGJMVHk2WFhMS1p3bS9IWlFTRy9OMGlBRzBEMjljbC8vSWc4Z0w3bkkzNzVYWnViY0QxSzFqNWdvaDVnV0dkb0szVzRzL1F3TUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hBUUlDQUFFTUFnQUFBQUVBQUFBQUFBQUFBQT09IiwicGVybWl0IjoiMmRlYjYxM2M5MjY4NGNiZWYzMjg1MjdjMGYxMWRjYzA3N2U5ZDgyYjc5ZjU5Njc4NTkyYTNlMzI3ZGVmMmQ3OSIsInN1Ym1pdEFyZ3MiOnsicGVybWl0IjoiMmRlYjYxM2M5MjY4NGNiZWYzMjg1MjdjMGYxMWRjYzA3N2U5ZDgyYjc5ZjU5Njc4NTkyYTNlMzI3ZGVmMmQ3OSIsIndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5Iiwic3VtbWFyeSI6eyJvcGVyYXRpb24iOiJmaXh0dXJlIiwid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJzaW11bGF0ZWQiOnRydWUsInF1b3RlIjp7IndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwicmVxdWVzdGVkIjoiMSIsImxpcXVpZGl0eSI6IjIiLCJmbG9vckJwcyI6OTkwMCwicmFuZ2VTaWRlIjoiaW5zaWRlIiwidG9sZXJhbmNlQnBzIjoxMDB9LCJzdGFydGluZ0xpcXVpZGl0eSI6IjEiLCJzdGFydGluZ0JhbGFuY2VzIjp7ImlucHV0IjoiMTAiLCJhIjoiMCIsImIiOiIwIn0sImV4cGlyZXNBdCI6MTc5MzEwMDA2MDAwMCwibGFzdFZhbGlkQmxvY2tIZWlnaHQiOjE1MCwicHJlc2VydmVkIjp7ImZ1bGxTdW1tYXJ5Ijp0cnVlfX19LCJleHBpcmVzQXQiOjE3OTMxMDAwNjAwMDB9",
+  "signUrl": "https://app.invalid.example/app/sign/verified-payload:eyJraW5kIjoiY29tcG91bmQiLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInVuc2lnbmVkVHJhbnNhY3Rpb24iOiJBUUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUNBQVFBQkE0cUk0OTEwQ2ZHVi9WTGJMVHk2WFhMS1p3bS9IWlFTRy9OMGlBRzBEMjljbC8vSWc4Z0w3bkkzNzVYWnViY0QxSzFqNWdvaDVnV0dkb0szVzRzL1F3TUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hBUUlDQUFFTUFnQUFBQUVBQUFBQUFBQUFBQT09IiwicGVybWl0IjoiMmRlYjYxM2M5MjY4NGNiZWYzMjg1MjdjMGYxMWRjYzA3N2U5ZDgyYjc5ZjU5Njc4NTkyYTNlMzI3ZGVmMmQ3OSIsInN1Ym1pdEFyZ3MiOnsicGVybWl0IjoiMmRlYjYxM2M5MjY4NGNiZWYzMjg1MjdjMGYxMWRjYzA3N2U5ZDgyYjc5ZjU5Njc4NTkyYTNlMzI3ZGVmMmQ3OSIsIndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5Iiwic3VtbWFyeSI6eyJvcGVyYXRpb24iOiJmaXh0dXJlIiwid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJzaW11bGF0ZWQiOnRydWUsInF1b3RlIjp7IndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwicmVxdWVzdGVkIjoiMSIsImxpcXVpZGl0eSI6IjIiLCJmbG9vckJwcyI6OTkwMCwicmFuZ2VTaWRlIjoiaW5zaWRlIiwidG9sZXJhbmNlQnBzIjoxMDB9LCJzdGFydGluZ0xpcXVpZGl0eSI6IjEiLCJzdGFydGluZ0JhbGFuY2VzIjp7ImlucHV0IjoiMTAiLCJhIjoiMCIsImIiOiIwIn0sImV4cGlyZXNBdCI6MTc5MzEwMDA2MDAwMCwibGFzdFZhbGlkQmxvY2tIZWlnaHQiOjE1MCwicHJlc2VydmVkIjp7ImZ1bGxTdW1tYXJ5Ijp0cnVlfX19LCJleHBpcmVzQXQiOjE3OTMxMDAwNjAwMDB9",
+  "instructions": {
+    "message": "Sign unsignedTransaction with the wallet, then call submit_compound_transaction with { signedTransaction, permit, wallet, summary }. Pass summary back exactly as returned; it is bound by the permit. Or open signUrl in a browser with the wallet connected to sign via UI."
+  }
+}",
+        "type": "text",
+      },
+    ],
+  },
+}
+`;
+
+exports[`compound prepare baseline > http sign URL relative preserves the entire authenticated payload 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+        [],
+      ],
+      "name": "compound",
+    },
+  ],
+  "origin": "",
+  "result": {
+    "content": [
+      {
+        "text": "{
+  "unsignedTransaction": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAQABA4qI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cl//Ig8gL7nI375XZubcD1K1j5goh5gWGdoK3W4s/QwMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHAQICAAEMAgAAAAEAAAAAAAAAAA==",
+  "permit": "2deb613c92684cbef328527c0f11dcc077e9d82b79f59678592a3e327def2d79",
+  "summary": {
+    "operation": "fixture",
+    "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+    "simulated": true,
+    "quote": {
+      "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+      "requested": "1",
+      "liquidity": "2",
+      "floorBps": 9900,
+      "rangeSide": "inside",
+      "toleranceBps": 100
+    },
+    "startingLiquidity": "1",
+    "startingBalances": {
+      "input": "10",
+      "a": "0",
+      "b": "0"
+    },
+    "expiresAt": 1793100060000,
+    "lastValidBlockHeight": 150,
+    "preserved": {
+      "fullSummary": true
+    }
+  },
+  "signToken": "verified-payload:eyJraW5kIjoiY29tcG91bmQiLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInVuc2lnbmVkVHJhbnNhY3Rpb24iOiJBUUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUNBQVFBQkE0cUk0OTEwQ2ZHVi9WTGJMVHk2WFhMS1p3bS9IWlFTRy9OMGlBRzBEMjljbC8vSWc4Z0w3bkkzNzVYWnViY0QxSzFqNWdvaDVnV0dkb0szVzRzL1F3TUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hBUUlDQUFFTUFnQUFBQUVBQUFBQUFBQUFBQT09IiwicGVybWl0IjoiMmRlYjYxM2M5MjY4NGNiZWYzMjg1MjdjMGYxMWRjYzA3N2U5ZDgyYjc5ZjU5Njc4NTkyYTNlMzI3ZGVmMmQ3OSIsInN1Ym1pdEFyZ3MiOnsicGVybWl0IjoiMmRlYjYxM2M5MjY4NGNiZWYzMjg1MjdjMGYxMWRjYzA3N2U5ZDgyYjc5ZjU5Njc4NTkyYTNlMzI3ZGVmMmQ3OSIsIndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5Iiwic3VtbWFyeSI6eyJvcGVyYXRpb24iOiJmaXh0dXJlIiwid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJzaW11bGF0ZWQiOnRydWUsInF1b3RlIjp7IndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwicmVxdWVzdGVkIjoiMSIsImxpcXVpZGl0eSI6IjIiLCJmbG9vckJwcyI6OTkwMCwicmFuZ2VTaWRlIjoiaW5zaWRlIiwidG9sZXJhbmNlQnBzIjoxMDB9LCJzdGFydGluZ0xpcXVpZGl0eSI6IjEiLCJzdGFydGluZ0JhbGFuY2VzIjp7ImlucHV0IjoiMTAiLCJhIjoiMCIsImIiOiIwIn0sImV4cGlyZXNBdCI6MTc5MzEwMDA2MDAwMCwibGFzdFZhbGlkQmxvY2tIZWlnaHQiOjE1MCwicHJlc2VydmVkIjp7ImZ1bGxTdW1tYXJ5Ijp0cnVlfX19LCJleHBpcmVzQXQiOjE3OTMxMDAwNjAwMDB9",
+  "signUrl": "https://app.invalid.example/app/sign/verified-payload:eyJraW5kIjoiY29tcG91bmQiLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInVuc2lnbmVkVHJhbnNhY3Rpb24iOiJBUUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUNBQVFBQkE0cUk0OTEwQ2ZHVi9WTGJMVHk2WFhMS1p3bS9IWlFTRy9OMGlBRzBEMjljbC8vSWc4Z0w3bkkzNzVYWnViY0QxSzFqNWdvaDVnV0dkb0szVzRzL1F3TUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hBUUlDQUFFTUFnQUFBQUVBQUFBQUFBQUFBQT09IiwicGVybWl0IjoiMmRlYjYxM2M5MjY4NGNiZWYzMjg1MjdjMGYxMWRjYzA3N2U5ZDgyYjc5ZjU5Njc4NTkyYTNlMzI3ZGVmMmQ3OSIsInN1Ym1pdEFyZ3MiOnsicGVybWl0IjoiMmRlYjYxM2M5MjY4NGNiZWYzMjg1MjdjMGYxMWRjYzA3N2U5ZDgyYjc5ZjU5Njc4NTkyYTNlMzI3ZGVmMmQ3OSIsIndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5Iiwic3VtbWFyeSI6eyJvcGVyYXRpb24iOiJmaXh0dXJlIiwid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJzaW11bGF0ZWQiOnRydWUsInF1b3RlIjp7IndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwicmVxdWVzdGVkIjoiMSIsImxpcXVpZGl0eSI6IjIiLCJmbG9vckJwcyI6OTkwMCwicmFuZ2VTaWRlIjoiaW5zaWRlIiwidG9sZXJhbmNlQnBzIjoxMDB9LCJzdGFydGluZ0xpcXVpZGl0eSI6IjEiLCJzdGFydGluZ0JhbGFuY2VzIjp7ImlucHV0IjoiMTAiLCJhIjoiMCIsImIiOiIwIn0sImV4cGlyZXNBdCI6MTc5MzEwMDA2MDAwMCwibGFzdFZhbGlkQmxvY2tIZWlnaHQiOjE1MCwicHJlc2VydmVkIjp7ImZ1bGxTdW1tYXJ5Ijp0cnVlfX19LCJleHBpcmVzQXQiOjE3OTMxMDAwNjAwMDB9",
+  "instructions": {
+    "message": "Sign unsignedTransaction with the wallet, then call submit_compound_transaction with { signedTransaction, permit, wallet, summary }. Pass summary back exactly as returned; it is bound by the permit. Or open signUrl in a browser with the wallet connected to sign via UI."
+  }
+}",
+        "type": "text",
+      },
+    ],
+  },
+}
+`;
+
+exports[`compound prepare baseline > http sign URL vercel preserves the entire authenticated payload 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+        [],
+      ],
+      "name": "compound",
+    },
+  ],
+  "origin": "https://preview.invalid.example",
+  "result": {
+    "content": [
+      {
+        "text": "{
+  "unsignedTransaction": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAQABA4qI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cl//Ig8gL7nI375XZubcD1K1j5goh5gWGdoK3W4s/QwMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHAQICAAEMAgAAAAEAAAAAAAAAAA==",
+  "permit": "2deb613c92684cbef328527c0f11dcc077e9d82b79f59678592a3e327def2d79",
+  "summary": {
+    "operation": "fixture",
+    "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+    "simulated": true,
+    "quote": {
+      "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+      "requested": "1",
+      "liquidity": "2",
+      "floorBps": 9900,
+      "rangeSide": "inside",
+      "toleranceBps": 100
+    },
+    "startingLiquidity": "1",
+    "startingBalances": {
+      "input": "10",
+      "a": "0",
+      "b": "0"
+    },
+    "expiresAt": 1793100060000,
+    "lastValidBlockHeight": 150,
+    "preserved": {
+      "fullSummary": true
+    }
+  },
+  "signToken": "verified-payload:eyJraW5kIjoiY29tcG91bmQiLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInVuc2lnbmVkVHJhbnNhY3Rpb24iOiJBUUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUNBQVFBQkE0cUk0OTEwQ2ZHVi9WTGJMVHk2WFhMS1p3bS9IWlFTRy9OMGlBRzBEMjljbC8vSWc4Z0w3bkkzNzVYWnViY0QxSzFqNWdvaDVnV0dkb0szVzRzL1F3TUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hBUUlDQUFFTUFnQUFBQUVBQUFBQUFBQUFBQT09IiwicGVybWl0IjoiMmRlYjYxM2M5MjY4NGNiZWYzMjg1MjdjMGYxMWRjYzA3N2U5ZDgyYjc5ZjU5Njc4NTkyYTNlMzI3ZGVmMmQ3OSIsInN1Ym1pdEFyZ3MiOnsicGVybWl0IjoiMmRlYjYxM2M5MjY4NGNiZWYzMjg1MjdjMGYxMWRjYzA3N2U5ZDgyYjc5ZjU5Njc4NTkyYTNlMzI3ZGVmMmQ3OSIsIndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5Iiwic3VtbWFyeSI6eyJvcGVyYXRpb24iOiJmaXh0dXJlIiwid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJzaW11bGF0ZWQiOnRydWUsInF1b3RlIjp7IndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwicmVxdWVzdGVkIjoiMSIsImxpcXVpZGl0eSI6IjIiLCJmbG9vckJwcyI6OTkwMCwicmFuZ2VTaWRlIjoiaW5zaWRlIiwidG9sZXJhbmNlQnBzIjoxMDB9LCJzdGFydGluZ0xpcXVpZGl0eSI6IjEiLCJzdGFydGluZ0JhbGFuY2VzIjp7ImlucHV0IjoiMTAiLCJhIjoiMCIsImIiOiIwIn0sImV4cGlyZXNBdCI6MTc5MzEwMDA2MDAwMCwibGFzdFZhbGlkQmxvY2tIZWlnaHQiOjE1MCwicHJlc2VydmVkIjp7ImZ1bGxTdW1tYXJ5Ijp0cnVlfX19LCJleHBpcmVzQXQiOjE3OTMxMDAwNjAwMDB9",
+  "signUrl": "https://app.invalid.example/app/sign/verified-payload:eyJraW5kIjoiY29tcG91bmQiLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInVuc2lnbmVkVHJhbnNhY3Rpb24iOiJBUUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUNBQVFBQkE0cUk0OTEwQ2ZHVi9WTGJMVHk2WFhMS1p3bS9IWlFTRy9OMGlBRzBEMjljbC8vSWc4Z0w3bkkzNzVYWnViY0QxSzFqNWdvaDVnV0dkb0szVzRzL1F3TUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hBUUlDQUFFTUFnQUFBQUVBQUFBQUFBQUFBQT09IiwicGVybWl0IjoiMmRlYjYxM2M5MjY4NGNiZWYzMjg1MjdjMGYxMWRjYzA3N2U5ZDgyYjc5ZjU5Njc4NTkyYTNlMzI3ZGVmMmQ3OSIsInN1Ym1pdEFyZ3MiOnsicGVybWl0IjoiMmRlYjYxM2M5MjY4NGNiZWYzMjg1MjdjMGYxMWRjYzA3N2U5ZDgyYjc5ZjU5Njc4NTkyYTNlMzI3ZGVmMmQ3OSIsIndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5Iiwic3VtbWFyeSI6eyJvcGVyYXRpb24iOiJmaXh0dXJlIiwid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJzaW11bGF0ZWQiOnRydWUsInF1b3RlIjp7IndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwicmVxdWVzdGVkIjoiMSIsImxpcXVpZGl0eSI6IjIiLCJmbG9vckJwcyI6OTkwMCwicmFuZ2VTaWRlIjoiaW5zaWRlIiwidG9sZXJhbmNlQnBzIjoxMDB9LCJzdGFydGluZ0xpcXVpZGl0eSI6IjEiLCJzdGFydGluZ0JhbGFuY2VzIjp7ImlucHV0IjoiMTAiLCJhIjoiMCIsImIiOiIwIn0sImV4cGlyZXNBdCI6MTc5MzEwMDA2MDAwMCwibGFzdFZhbGlkQmxvY2tIZWlnaHQiOjE1MCwicHJlc2VydmVkIjp7ImZ1bGxTdW1tYXJ5Ijp0cnVlfX19LCJleHBpcmVzQXQiOjE3OTMxMDAwNjAwMDB9",
+  "instructions": {
+    "message": "Sign unsignedTransaction with the wallet, then call submit_compound_transaction with { signedTransaction, permit, wallet, summary }. Pass summary back exactly as returned; it is bound by the permit. Or open signUrl in a browser with the wallet connected to sign via UI."
+  }
+}",
+        "type": "text",
+      },
+    ],
+  },
+}
+`;
+
+exports[`compound prepare baseline > stdio MCP has no HTTP outer retry or refresh 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+        [],
+      ],
+      "name": "compound",
+    },
+  ],
+  "result": {
+    "content": [
+      {
+        "text": "{
+  "error": "Unable to estimate complete transaction network fee"
+}",
+        "type": "text",
+      },
+    ],
+    "isError": true,
+  },
+}
+`;
+
+exports[`compound prepare baseline > stdio sign URL explicit preserves the entire authenticated payload 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+        [],
+      ],
+      "name": "compound",
+    },
+  ],
+  "origin": "https://app.invalid.example",
+  "result": {
+    "content": [
+      {
+        "text": "{
+  "unsignedTransaction": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAQABA4qI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cl//Ig8gL7nI375XZubcD1K1j5goh5gWGdoK3W4s/QwMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHAQICAAEMAgAAAAEAAAAAAAAAAA==",
+  "permit": "2deb613c92684cbef328527c0f11dcc077e9d82b79f59678592a3e327def2d79",
+  "summary": {
+    "operation": "fixture",
+    "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+    "simulated": true,
+    "quote": {
+      "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+      "requested": "1",
+      "liquidity": "2",
+      "floorBps": 9900,
+      "rangeSide": "inside",
+      "toleranceBps": 100
+    },
+    "startingLiquidity": "1",
+    "startingBalances": {
+      "input": "10",
+      "a": "0",
+      "b": "0"
+    },
+    "expiresAt": 1793100060000,
+    "lastValidBlockHeight": 150,
+    "preserved": {
+      "fullSummary": true
+    }
+  },
+  "signToken": "verified-payload:eyJraW5kIjoiY29tcG91bmQiLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInVuc2lnbmVkVHJhbnNhY3Rpb24iOiJBUUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUNBQVFBQkE0cUk0OTEwQ2ZHVi9WTGJMVHk2WFhMS1p3bS9IWlFTRy9OMGlBRzBEMjljbC8vSWc4Z0w3bkkzNzVYWnViY0QxSzFqNWdvaDVnV0dkb0szVzRzL1F3TUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hBUUlDQUFFTUFnQUFBQUVBQUFBQUFBQUFBQT09IiwicGVybWl0IjoiMmRlYjYxM2M5MjY4NGNiZWYzMjg1MjdjMGYxMWRjYzA3N2U5ZDgyYjc5ZjU5Njc4NTkyYTNlMzI3ZGVmMmQ3OSIsInN1Ym1pdEFyZ3MiOnsicGVybWl0IjoiMmRlYjYxM2M5MjY4NGNiZWYzMjg1MjdjMGYxMWRjYzA3N2U5ZDgyYjc5ZjU5Njc4NTkyYTNlMzI3ZGVmMmQ3OSIsIndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5Iiwic3VtbWFyeSI6eyJvcGVyYXRpb24iOiJmaXh0dXJlIiwid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJzaW11bGF0ZWQiOnRydWUsInF1b3RlIjp7IndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwicmVxdWVzdGVkIjoiMSIsImxpcXVpZGl0eSI6IjIiLCJmbG9vckJwcyI6OTkwMCwicmFuZ2VTaWRlIjoiaW5zaWRlIiwidG9sZXJhbmNlQnBzIjoxMDB9LCJzdGFydGluZ0xpcXVpZGl0eSI6IjEiLCJzdGFydGluZ0JhbGFuY2VzIjp7ImlucHV0IjoiMTAiLCJhIjoiMCIsImIiOiIwIn0sImV4cGlyZXNBdCI6MTc5MzEwMDA2MDAwMCwibGFzdFZhbGlkQmxvY2tIZWlnaHQiOjE1MCwicHJlc2VydmVkIjp7ImZ1bGxTdW1tYXJ5Ijp0cnVlfX19LCJleHBpcmVzQXQiOjE3OTMxMDAwNjAwMDB9",
+  "signUrl": "https://app.invalid.example/app/sign/verified-payload:eyJraW5kIjoiY29tcG91bmQiLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInVuc2lnbmVkVHJhbnNhY3Rpb24iOiJBUUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUNBQVFBQkE0cUk0OTEwQ2ZHVi9WTGJMVHk2WFhMS1p3bS9IWlFTRy9OMGlBRzBEMjljbC8vSWc4Z0w3bkkzNzVYWnViY0QxSzFqNWdvaDVnV0dkb0szVzRzL1F3TUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hBUUlDQUFFTUFnQUFBQUVBQUFBQUFBQUFBQT09IiwicGVybWl0IjoiMmRlYjYxM2M5MjY4NGNiZWYzMjg1MjdjMGYxMWRjYzA3N2U5ZDgyYjc5ZjU5Njc4NTkyYTNlMzI3ZGVmMmQ3OSIsInN1Ym1pdEFyZ3MiOnsicGVybWl0IjoiMmRlYjYxM2M5MjY4NGNiZWYzMjg1MjdjMGYxMWRjYzA3N2U5ZDgyYjc5ZjU5Njc4NTkyYTNlMzI3ZGVmMmQ3OSIsIndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5Iiwic3VtbWFyeSI6eyJvcGVyYXRpb24iOiJmaXh0dXJlIiwid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJzaW11bGF0ZWQiOnRydWUsInF1b3RlIjp7IndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwicmVxdWVzdGVkIjoiMSIsImxpcXVpZGl0eSI6IjIiLCJmbG9vckJwcyI6OTkwMCwicmFuZ2VTaWRlIjoiaW5zaWRlIiwidG9sZXJhbmNlQnBzIjoxMDB9LCJzdGFydGluZ0xpcXVpZGl0eSI6IjEiLCJzdGFydGluZ0JhbGFuY2VzIjp7ImlucHV0IjoiMTAiLCJhIjoiMCIsImIiOiIwIn0sImV4cGlyZXNBdCI6MTc5MzEwMDA2MDAwMCwibGFzdFZhbGlkQmxvY2tIZWlnaHQiOjE1MCwicHJlc2VydmVkIjp7ImZ1bGxTdW1tYXJ5Ijp0cnVlfX19LCJleHBpcmVzQXQiOjE3OTMxMDAwNjAwMDB9",
+  "instructions": {
+    "message": "Sign unsignedTransaction with the wallet, then call submit_compound_transaction with { signedTransaction, permit, wallet, summary }. Pass summary back exactly as returned; it is bound by the permit. Or open signUrl in a browser with the wallet connected to sign via UI."
+  }
+}",
+        "type": "text",
+      },
+    ],
+  },
+}
+`;
+
+exports[`compound prepare baseline > stdio sign URL relative preserves the entire authenticated payload 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+        [],
+      ],
+      "name": "compound",
+    },
+  ],
+  "origin": "",
+  "result": {
+    "content": [
+      {
+        "text": "{
+  "unsignedTransaction": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAQABA4qI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cl//Ig8gL7nI375XZubcD1K1j5goh5gWGdoK3W4s/QwMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHAQICAAEMAgAAAAEAAAAAAAAAAA==",
+  "permit": "2deb613c92684cbef328527c0f11dcc077e9d82b79f59678592a3e327def2d79",
+  "summary": {
+    "operation": "fixture",
+    "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+    "simulated": true,
+    "quote": {
+      "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+      "requested": "1",
+      "liquidity": "2",
+      "floorBps": 9900,
+      "rangeSide": "inside",
+      "toleranceBps": 100
+    },
+    "startingLiquidity": "1",
+    "startingBalances": {
+      "input": "10",
+      "a": "0",
+      "b": "0"
+    },
+    "expiresAt": 1793100060000,
+    "lastValidBlockHeight": 150,
+    "preserved": {
+      "fullSummary": true
+    }
+  },
+  "signToken": "verified-payload:eyJraW5kIjoiY29tcG91bmQiLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInVuc2lnbmVkVHJhbnNhY3Rpb24iOiJBUUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUNBQVFBQkE0cUk0OTEwQ2ZHVi9WTGJMVHk2WFhMS1p3bS9IWlFTRy9OMGlBRzBEMjljbC8vSWc4Z0w3bkkzNzVYWnViY0QxSzFqNWdvaDVnV0dkb0szVzRzL1F3TUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hBUUlDQUFFTUFnQUFBQUVBQUFBQUFBQUFBQT09IiwicGVybWl0IjoiMmRlYjYxM2M5MjY4NGNiZWYzMjg1MjdjMGYxMWRjYzA3N2U5ZDgyYjc5ZjU5Njc4NTkyYTNlMzI3ZGVmMmQ3OSIsInN1Ym1pdEFyZ3MiOnsicGVybWl0IjoiMmRlYjYxM2M5MjY4NGNiZWYzMjg1MjdjMGYxMWRjYzA3N2U5ZDgyYjc5ZjU5Njc4NTkyYTNlMzI3ZGVmMmQ3OSIsIndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5Iiwic3VtbWFyeSI6eyJvcGVyYXRpb24iOiJmaXh0dXJlIiwid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJzaW11bGF0ZWQiOnRydWUsInF1b3RlIjp7IndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwicmVxdWVzdGVkIjoiMSIsImxpcXVpZGl0eSI6IjIiLCJmbG9vckJwcyI6OTkwMCwicmFuZ2VTaWRlIjoiaW5zaWRlIiwidG9sZXJhbmNlQnBzIjoxMDB9LCJzdGFydGluZ0xpcXVpZGl0eSI6IjEiLCJzdGFydGluZ0JhbGFuY2VzIjp7ImlucHV0IjoiMTAiLCJhIjoiMCIsImIiOiIwIn0sImV4cGlyZXNBdCI6MTc5MzEwMDA2MDAwMCwibGFzdFZhbGlkQmxvY2tIZWlnaHQiOjE1MCwicHJlc2VydmVkIjp7ImZ1bGxTdW1tYXJ5Ijp0cnVlfX19LCJleHBpcmVzQXQiOjE3OTMxMDAwNjAwMDB9",
+  "signUrl": "https://app.invalid.example/app/sign/verified-payload:eyJraW5kIjoiY29tcG91bmQiLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInVuc2lnbmVkVHJhbnNhY3Rpb24iOiJBUUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUNBQVFBQkE0cUk0OTEwQ2ZHVi9WTGJMVHk2WFhMS1p3bS9IWlFTRy9OMGlBRzBEMjljbC8vSWc4Z0w3bkkzNzVYWnViY0QxSzFqNWdvaDVnV0dkb0szVzRzL1F3TUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hBUUlDQUFFTUFnQUFBQUVBQUFBQUFBQUFBQT09IiwicGVybWl0IjoiMmRlYjYxM2M5MjY4NGNiZWYzMjg1MjdjMGYxMWRjYzA3N2U5ZDgyYjc5ZjU5Njc4NTkyYTNlMzI3ZGVmMmQ3OSIsInN1Ym1pdEFyZ3MiOnsicGVybWl0IjoiMmRlYjYxM2M5MjY4NGNiZWYzMjg1MjdjMGYxMWRjYzA3N2U5ZDgyYjc5ZjU5Njc4NTkyYTNlMzI3ZGVmMmQ3OSIsIndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5Iiwic3VtbWFyeSI6eyJvcGVyYXRpb24iOiJmaXh0dXJlIiwid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJzaW11bGF0ZWQiOnRydWUsInF1b3RlIjp7IndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwicmVxdWVzdGVkIjoiMSIsImxpcXVpZGl0eSI6IjIiLCJmbG9vckJwcyI6OTkwMCwicmFuZ2VTaWRlIjoiaW5zaWRlIiwidG9sZXJhbmNlQnBzIjoxMDB9LCJzdGFydGluZ0xpcXVpZGl0eSI6IjEiLCJzdGFydGluZ0JhbGFuY2VzIjp7ImlucHV0IjoiMTAiLCJhIjoiMCIsImIiOiIwIn0sImV4cGlyZXNBdCI6MTc5MzEwMDA2MDAwMCwibGFzdFZhbGlkQmxvY2tIZWlnaHQiOjE1MCwicHJlc2VydmVkIjp7ImZ1bGxTdW1tYXJ5Ijp0cnVlfX19LCJleHBpcmVzQXQiOjE3OTMxMDAwNjAwMDB9",
+  "instructions": {
+    "message": "Sign unsignedTransaction with the wallet, then call submit_compound_transaction with { signedTransaction, permit, wallet, summary }. Pass summary back exactly as returned; it is bound by the permit. Or open signUrl in a browser with the wallet connected to sign via UI."
+  }
+}",
+        "type": "text",
+      },
+    ],
+  },
+}
+`;
+
+exports[`compound prepare baseline > stdio sign URL vercel preserves the entire authenticated payload 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+        [],
+      ],
+      "name": "compound",
+    },
+  ],
+  "origin": "https://preview.invalid.example",
+  "result": {
+    "content": [
+      {
+        "text": "{
+  "unsignedTransaction": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAQABA4qI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cl//Ig8gL7nI375XZubcD1K1j5goh5gWGdoK3W4s/QwMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHAQICAAEMAgAAAAEAAAAAAAAAAA==",
+  "permit": "2deb613c92684cbef328527c0f11dcc077e9d82b79f59678592a3e327def2d79",
+  "summary": {
+    "operation": "fixture",
+    "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+    "simulated": true,
+    "quote": {
+      "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+      "requested": "1",
+      "liquidity": "2",
+      "floorBps": 9900,
+      "rangeSide": "inside",
+      "toleranceBps": 100
+    },
+    "startingLiquidity": "1",
+    "startingBalances": {
+      "input": "10",
+      "a": "0",
+      "b": "0"
+    },
+    "expiresAt": 1793100060000,
+    "lastValidBlockHeight": 150,
+    "preserved": {
+      "fullSummary": true
+    }
+  },
+  "signToken": "verified-payload:eyJraW5kIjoiY29tcG91bmQiLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInVuc2lnbmVkVHJhbnNhY3Rpb24iOiJBUUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUNBQVFBQkE0cUk0OTEwQ2ZHVi9WTGJMVHk2WFhMS1p3bS9IWlFTRy9OMGlBRzBEMjljbC8vSWc4Z0w3bkkzNzVYWnViY0QxSzFqNWdvaDVnV0dkb0szVzRzL1F3TUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hBUUlDQUFFTUFnQUFBQUVBQUFBQUFBQUFBQT09IiwicGVybWl0IjoiMmRlYjYxM2M5MjY4NGNiZWYzMjg1MjdjMGYxMWRjYzA3N2U5ZDgyYjc5ZjU5Njc4NTkyYTNlMzI3ZGVmMmQ3OSIsInN1Ym1pdEFyZ3MiOnsicGVybWl0IjoiMmRlYjYxM2M5MjY4NGNiZWYzMjg1MjdjMGYxMWRjYzA3N2U5ZDgyYjc5ZjU5Njc4NTkyYTNlMzI3ZGVmMmQ3OSIsIndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5Iiwic3VtbWFyeSI6eyJvcGVyYXRpb24iOiJmaXh0dXJlIiwid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJzaW11bGF0ZWQiOnRydWUsInF1b3RlIjp7IndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwicmVxdWVzdGVkIjoiMSIsImxpcXVpZGl0eSI6IjIiLCJmbG9vckJwcyI6OTkwMCwicmFuZ2VTaWRlIjoiaW5zaWRlIiwidG9sZXJhbmNlQnBzIjoxMDB9LCJzdGFydGluZ0xpcXVpZGl0eSI6IjEiLCJzdGFydGluZ0JhbGFuY2VzIjp7ImlucHV0IjoiMTAiLCJhIjoiMCIsImIiOiIwIn0sImV4cGlyZXNBdCI6MTc5MzEwMDA2MDAwMCwibGFzdFZhbGlkQmxvY2tIZWlnaHQiOjE1MCwicHJlc2VydmVkIjp7ImZ1bGxTdW1tYXJ5Ijp0cnVlfX19LCJleHBpcmVzQXQiOjE3OTMxMDAwNjAwMDB9",
+  "signUrl": "https://app.invalid.example/app/sign/verified-payload:eyJraW5kIjoiY29tcG91bmQiLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInVuc2lnbmVkVHJhbnNhY3Rpb24iOiJBUUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUNBQVFBQkE0cUk0OTEwQ2ZHVi9WTGJMVHk2WFhMS1p3bS9IWlFTRy9OMGlBRzBEMjljbC8vSWc4Z0w3bkkzNzVYWnViY0QxSzFqNWdvaDVnV0dkb0szVzRzL1F3TUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hBUUlDQUFFTUFnQUFBQUVBQUFBQUFBQUFBQT09IiwicGVybWl0IjoiMmRlYjYxM2M5MjY4NGNiZWYzMjg1MjdjMGYxMWRjYzA3N2U5ZDgyYjc5ZjU5Njc4NTkyYTNlMzI3ZGVmMmQ3OSIsInN1Ym1pdEFyZ3MiOnsicGVybWl0IjoiMmRlYjYxM2M5MjY4NGNiZWYzMjg1MjdjMGYxMWRjYzA3N2U5ZDgyYjc5ZjU5Njc4NTkyYTNlMzI3ZGVmMmQ3OSIsIndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5Iiwic3VtbWFyeSI6eyJvcGVyYXRpb24iOiJmaXh0dXJlIiwid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJzaW11bGF0ZWQiOnRydWUsInF1b3RlIjp7IndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwicmVxdWVzdGVkIjoiMSIsImxpcXVpZGl0eSI6IjIiLCJmbG9vckJwcyI6OTkwMCwicmFuZ2VTaWRlIjoiaW5zaWRlIiwidG9sZXJhbmNlQnBzIjoxMDB9LCJzdGFydGluZ0xpcXVpZGl0eSI6IjEiLCJzdGFydGluZ0JhbGFuY2VzIjp7ImlucHV0IjoiMTAiLCJhIjoiMCIsImIiOiIwIn0sImV4cGlyZXNBdCI6MTc5MzEwMDA2MDAwMCwibGFzdFZhbGlkQmxvY2tIZWlnaHQiOjE1MCwicHJlc2VydmVkIjp7ImZ1bGxTdW1tYXJ5Ijp0cnVlfX19LCJleHBpcmVzQXQiOjE3OTMxMDAwNjAwMDB9",
+  "instructions": {
+    "message": "Sign unsignedTransaction with the wallet, then call submit_compound_transaction with { signedTransaction, permit, wallet, summary }. Pass summary back exactly as returned; it is bound by the permit. Or open signUrl in a browser with the wallet connected to sign via UI."
+  }
+}",
+        "type": "text",
+      },
+    ],
+  },
+}
+`;
+
+exports[`open HTTP accepts micro while MCP rejects it before building > http 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        {
+          "inputKind": "token",
+          "inputMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "poolId": "EdmxWPmx2WH6WgFfTdu9xfkYf3k1g5wD1zccTVySEEh1",
+        },
+        "1",
+        {
+          "preset": "micro",
+        },
+        9900,
+        100,
+        {
+          "enforceResaleFloor": false,
+        },
+      ],
+      "name": "openBuild",
+    },
+  ],
+  "result": {
+    "body": {
+      "permit": "90b2ad9b5fbfc4e63a96a26621e33f814daae4d35fc2d15b8a374ffe1e4f9991",
+      "summary": {
+        "expiresAt": 1793100060000,
+        "lastValidBlockHeight": 150,
+        "operation": "fixture",
+        "preserved": {
+          "fullSummary": true,
+        },
+        "quote": {
+          "floorBps": 9900,
+          "liquidity": "2",
+          "rangeSide": "inside",
+          "requested": "1",
+          "toleranceBps": 100,
+          "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        },
+        "simulated": true,
+        "startingBalances": {
+          "a": "0",
+          "b": "0",
+          "input": "10",
+        },
+        "startingLiquidity": "1",
+        "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+      },
+      "unsignedTransaction": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAQABA4qI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cl//Ig8gL7nI375XZubcD1K1j5goh5gWGdoK3W4s/QwMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHAQICAAEMAgAAAAEAAAAAAAAAAA==",
+    },
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+    },
+    "status": 200,
+  },
+}
+`;
+
+exports[`open HTTP accepts micro while MCP rejects it before building > stdio 1`] = `
+{
+  "io": [],
+  "result": {
+    "content": [
+      {
+        "text": "{
+  "error": "Invalid arguments: rangePreset: Invalid option: expected one of \\"tight\\"|\\"standard\\"|\\"wide\\"|\\"custom\\""
+}",
+        "type": "text",
+      },
+    ],
+    "isError": true,
+  },
+}
+`;
+
+exports[`open prepare baseline > HTTP builder failure precedes missing signing key 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        {
+          "inputKind": "token",
+          "inputMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "poolId": "EdmxWPmx2WH6WgFfTdu9xfkYf3k1g5wD1zccTVySEEh1",
+        },
+        "1",
+        {
+          "preset": "standard",
+        },
+        9900,
+        100,
+        {
+          "enforceResaleFloor": false,
+        },
+      ],
+      "name": "openBuild",
+    },
+  ],
+  "result": {
+    "body": {
+      "error": "fixture builder rejected",
+    },
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+    },
+    "status": 400,
+  },
+}
+`;
+
+exports[`open prepare baseline > HTTP preserves full output, permit, bytes, headers and I/O 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        {
+          "inputKind": "token",
+          "inputMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "poolId": "EdmxWPmx2WH6WgFfTdu9xfkYf3k1g5wD1zccTVySEEh1",
+        },
+        "1",
+        {
+          "preset": "standard",
+        },
+        9900,
+        100,
+        {
+          "enforceResaleFloor": false,
+        },
+      ],
+      "name": "openBuild",
+    },
+  ],
+  "result": {
+    "body": {
+      "permit": "90b2ad9b5fbfc4e63a96a26621e33f814daae4d35fc2d15b8a374ffe1e4f9991",
+      "summary": {
+        "expiresAt": 1793100060000,
+        "lastValidBlockHeight": 150,
+        "operation": "fixture",
+        "preserved": {
+          "fullSummary": true,
+        },
+        "quote": {
+          "floorBps": 9900,
+          "liquidity": "2",
+          "rangeSide": "inside",
+          "requested": "1",
+          "toleranceBps": 100,
+          "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        },
+        "simulated": true,
+        "startingBalances": {
+          "a": "0",
+          "b": "0",
+          "input": "10",
+        },
+        "startingLiquidity": "1",
+        "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+      },
+      "unsignedTransaction": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAQABA4qI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cl//Ig8gL7nI375XZubcD1K1j5goh5gWGdoK3W4s/QwMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHAQICAAEMAgAAAAEAAAAAAAAAAA==",
+    },
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+    },
+    "status": 200,
+  },
+}
+`;
+
+exports[`open prepare baseline > HTTP request/error precedence {"wallet":"invalid"} 1`] = `
+{
+  "io": [],
+  "result": {
+    "body": {
+      "error": "Invalid wallet address",
+    },
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+    },
+    "status": 400,
+  },
+}
+`;
+
+exports[`open prepare baseline > HTTP request/error precedence {} 1`] = `
+{
+  "io": [],
+  "result": {
+    "body": {
+      "error": "Invalid wallet address",
+    },
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+    },
+    "status": 400,
+  },
+}
+`;
+
+exports[`open prepare baseline > HTTP request/error precedence null 1`] = `
+{
+  "io": [],
+  "result": {
+    "body": {
+      "error": "Invalid open-position input",
+    },
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+    },
+    "status": 400,
+  },
+}
+`;
+
+exports[`open prepare baseline > HTTP request/error precedence undefined 1`] = `
+{
+  "io": [],
+  "result": {
+    "body": {
+      "error": "Invalid open-position input",
+    },
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+    },
+    "status": 400,
+  },
+}
+`;
+
+exports[`open prepare baseline > http MCP has no HTTP outer retry or refresh 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        {
+          "inputKind": "token",
+          "inputMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "poolId": "EdmxWPmx2WH6WgFfTdu9xfkYf3k1g5wD1zccTVySEEh1",
+        },
+        "1",
+        {
+          "preset": "standard",
+        },
+        9900,
+        100,
+      ],
+      "name": "openBuild",
+    },
+  ],
+  "result": {
+    "content": [
+      {
+        "text": "{
+  "error": "Unable to estimate complete transaction network fee"
+}",
+        "type": "text",
+      },
+    ],
+    "isError": true,
+  },
+}
+`;
+
+exports[`open prepare baseline > http sign URL explicit preserves the entire authenticated payload 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        {
+          "inputKind": "token",
+          "inputMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "poolId": "EdmxWPmx2WH6WgFfTdu9xfkYf3k1g5wD1zccTVySEEh1",
+        },
+        "1",
+        {
+          "preset": "standard",
+        },
+        9900,
+        100,
+      ],
+      "name": "openBuild",
+    },
+  ],
+  "origin": "https://app.invalid.example",
+  "result": {
+    "content": [
+      {
+        "text": "{
+  "unsignedTransaction": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAQABA4qI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cl//Ig8gL7nI375XZubcD1K1j5goh5gWGdoK3W4s/QwMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHAQICAAEMAgAAAAEAAAAAAAAAAA==",
+  "permit": "90b2ad9b5fbfc4e63a96a26621e33f814daae4d35fc2d15b8a374ffe1e4f9991",
+  "summary": {
+    "operation": "fixture",
+    "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+    "simulated": true,
+    "quote": {
+      "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+      "requested": "1",
+      "liquidity": "2",
+      "floorBps": 9900,
+      "rangeSide": "inside",
+      "toleranceBps": 100
+    },
+    "startingLiquidity": "1",
+    "startingBalances": {
+      "input": "10",
+      "a": "0",
+      "b": "0"
+    },
+    "expiresAt": 1793100060000,
+    "lastValidBlockHeight": 150,
+    "preserved": {
+      "fullSummary": true
+    }
+  },
+  "signToken": "verified-payload:eyJraW5kIjoib3Blbi1wb3NpdGlvbiIsIndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwidW5zaWduZWRUcmFuc2FjdGlvbiI6IkFRQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQ0FBUUFCQTRxSTQ5MTBDZkdWL1ZMYkxUeTZYWExLWndtL0haUVNHL04waUFHMEQyOWNsLy9JZzhnTDduSTM3NVhadWJjRDFLMWo1Z29oNWdXR2RvSzNXNHMvUXdNQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQWNIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEFRSUNBQUVNQWdBQUFBRUFBQUFBQUFBQUFBPT0iLCJwZXJtaXQiOiI5MGIyYWQ5YjVmYmZjNGU2M2E5NmEyNjYyMWUzM2Y4MTRkYWFlNGQzNWZjMmQxNWI4YTM3NGZmZTFlNGY5OTkxIiwic3VibWl0QXJncyI6eyJwZXJtaXQiOiI5MGIyYWQ5YjVmYmZjNGU2M2E5NmEyNjYyMWUzM2Y4MTRkYWFlNGQzNWZjMmQxNWI4YTM3NGZmZTFlNGY5OTkxIiwid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJzdW1tYXJ5Ijp7Im9wZXJhdGlvbiI6ImZpeHR1cmUiLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInNpbXVsYXRlZCI6dHJ1ZSwicXVvdGUiOnsid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJyZXF1ZXN0ZWQiOiIxIiwibGlxdWlkaXR5IjoiMiIsImZsb29yQnBzIjo5OTAwLCJyYW5nZVNpZGUiOiJpbnNpZGUiLCJ0b2xlcmFuY2VCcHMiOjEwMH0sInN0YXJ0aW5nTGlxdWlkaXR5IjoiMSIsInN0YXJ0aW5nQmFsYW5jZXMiOnsiaW5wdXQiOiIxMCIsImEiOiIwIiwiYiI6IjAifSwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwLCJsYXN0VmFsaWRCbG9ja0hlaWdodCI6MTUwLCJwcmVzZXJ2ZWQiOnsiZnVsbFN1bW1hcnkiOnRydWV9fX0sImV4cGlyZXNBdCI6MTc5MzEwMDA2MDAwMH0",
+  "signUrl": "https://app.invalid.example/app/sign/verified-payload:eyJraW5kIjoib3Blbi1wb3NpdGlvbiIsIndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwidW5zaWduZWRUcmFuc2FjdGlvbiI6IkFRQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQ0FBUUFCQTRxSTQ5MTBDZkdWL1ZMYkxUeTZYWExLWndtL0haUVNHL04waUFHMEQyOWNsLy9JZzhnTDduSTM3NVhadWJjRDFLMWo1Z29oNWdXR2RvSzNXNHMvUXdNQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQWNIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEFRSUNBQUVNQWdBQUFBRUFBQUFBQUFBQUFBPT0iLCJwZXJtaXQiOiI5MGIyYWQ5YjVmYmZjNGU2M2E5NmEyNjYyMWUzM2Y4MTRkYWFlNGQzNWZjMmQxNWI4YTM3NGZmZTFlNGY5OTkxIiwic3VibWl0QXJncyI6eyJwZXJtaXQiOiI5MGIyYWQ5YjVmYmZjNGU2M2E5NmEyNjYyMWUzM2Y4MTRkYWFlNGQzNWZjMmQxNWI4YTM3NGZmZTFlNGY5OTkxIiwid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJzdW1tYXJ5Ijp7Im9wZXJhdGlvbiI6ImZpeHR1cmUiLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInNpbXVsYXRlZCI6dHJ1ZSwicXVvdGUiOnsid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJyZXF1ZXN0ZWQiOiIxIiwibGlxdWlkaXR5IjoiMiIsImZsb29yQnBzIjo5OTAwLCJyYW5nZVNpZGUiOiJpbnNpZGUiLCJ0b2xlcmFuY2VCcHMiOjEwMH0sInN0YXJ0aW5nTGlxdWlkaXR5IjoiMSIsInN0YXJ0aW5nQmFsYW5jZXMiOnsiaW5wdXQiOiIxMCIsImEiOiIwIiwiYiI6IjAifSwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwLCJsYXN0VmFsaWRCbG9ja0hlaWdodCI6MTUwLCJwcmVzZXJ2ZWQiOnsiZnVsbFN1bW1hcnkiOnRydWV9fX0sImV4cGlyZXNBdCI6MTc5MzEwMDA2MDAwMH0",
+  "instructions": {
+    "message": "Sign unsignedTransaction with the wallet (keep the existing NFT-mint partial signature), then call submit_open_position with { signedTransaction, permit, wallet, summary }. Pass summary back exactly as returned. Or open signUrl in a browser with the wallet connected."
+  }
+}",
+        "type": "text",
+      },
+    ],
+  },
+}
+`;
+
+exports[`open prepare baseline > http sign URL relative preserves the entire authenticated payload 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        {
+          "inputKind": "token",
+          "inputMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "poolId": "EdmxWPmx2WH6WgFfTdu9xfkYf3k1g5wD1zccTVySEEh1",
+        },
+        "1",
+        {
+          "preset": "standard",
+        },
+        9900,
+        100,
+      ],
+      "name": "openBuild",
+    },
+  ],
+  "origin": "",
+  "result": {
+    "content": [
+      {
+        "text": "{
+  "unsignedTransaction": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAQABA4qI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cl//Ig8gL7nI375XZubcD1K1j5goh5gWGdoK3W4s/QwMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHAQICAAEMAgAAAAEAAAAAAAAAAA==",
+  "permit": "90b2ad9b5fbfc4e63a96a26621e33f814daae4d35fc2d15b8a374ffe1e4f9991",
+  "summary": {
+    "operation": "fixture",
+    "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+    "simulated": true,
+    "quote": {
+      "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+      "requested": "1",
+      "liquidity": "2",
+      "floorBps": 9900,
+      "rangeSide": "inside",
+      "toleranceBps": 100
+    },
+    "startingLiquidity": "1",
+    "startingBalances": {
+      "input": "10",
+      "a": "0",
+      "b": "0"
+    },
+    "expiresAt": 1793100060000,
+    "lastValidBlockHeight": 150,
+    "preserved": {
+      "fullSummary": true
+    }
+  },
+  "signToken": "verified-payload:eyJraW5kIjoib3Blbi1wb3NpdGlvbiIsIndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwidW5zaWduZWRUcmFuc2FjdGlvbiI6IkFRQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQ0FBUUFCQTRxSTQ5MTBDZkdWL1ZMYkxUeTZYWExLWndtL0haUVNHL04waUFHMEQyOWNsLy9JZzhnTDduSTM3NVhadWJjRDFLMWo1Z29oNWdXR2RvSzNXNHMvUXdNQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQWNIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEFRSUNBQUVNQWdBQUFBRUFBQUFBQUFBQUFBPT0iLCJwZXJtaXQiOiI5MGIyYWQ5YjVmYmZjNGU2M2E5NmEyNjYyMWUzM2Y4MTRkYWFlNGQzNWZjMmQxNWI4YTM3NGZmZTFlNGY5OTkxIiwic3VibWl0QXJncyI6eyJwZXJtaXQiOiI5MGIyYWQ5YjVmYmZjNGU2M2E5NmEyNjYyMWUzM2Y4MTRkYWFlNGQzNWZjMmQxNWI4YTM3NGZmZTFlNGY5OTkxIiwid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJzdW1tYXJ5Ijp7Im9wZXJhdGlvbiI6ImZpeHR1cmUiLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInNpbXVsYXRlZCI6dHJ1ZSwicXVvdGUiOnsid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJyZXF1ZXN0ZWQiOiIxIiwibGlxdWlkaXR5IjoiMiIsImZsb29yQnBzIjo5OTAwLCJyYW5nZVNpZGUiOiJpbnNpZGUiLCJ0b2xlcmFuY2VCcHMiOjEwMH0sInN0YXJ0aW5nTGlxdWlkaXR5IjoiMSIsInN0YXJ0aW5nQmFsYW5jZXMiOnsiaW5wdXQiOiIxMCIsImEiOiIwIiwiYiI6IjAifSwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwLCJsYXN0VmFsaWRCbG9ja0hlaWdodCI6MTUwLCJwcmVzZXJ2ZWQiOnsiZnVsbFN1bW1hcnkiOnRydWV9fX0sImV4cGlyZXNBdCI6MTc5MzEwMDA2MDAwMH0",
+  "signUrl": "https://app.invalid.example/app/sign/verified-payload:eyJraW5kIjoib3Blbi1wb3NpdGlvbiIsIndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwidW5zaWduZWRUcmFuc2FjdGlvbiI6IkFRQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQ0FBUUFCQTRxSTQ5MTBDZkdWL1ZMYkxUeTZYWExLWndtL0haUVNHL04waUFHMEQyOWNsLy9JZzhnTDduSTM3NVhadWJjRDFLMWo1Z29oNWdXR2RvSzNXNHMvUXdNQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQWNIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEFRSUNBQUVNQWdBQUFBRUFBQUFBQUFBQUFBPT0iLCJwZXJtaXQiOiI5MGIyYWQ5YjVmYmZjNGU2M2E5NmEyNjYyMWUzM2Y4MTRkYWFlNGQzNWZjMmQxNWI4YTM3NGZmZTFlNGY5OTkxIiwic3VibWl0QXJncyI6eyJwZXJtaXQiOiI5MGIyYWQ5YjVmYmZjNGU2M2E5NmEyNjYyMWUzM2Y4MTRkYWFlNGQzNWZjMmQxNWI4YTM3NGZmZTFlNGY5OTkxIiwid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJzdW1tYXJ5Ijp7Im9wZXJhdGlvbiI6ImZpeHR1cmUiLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInNpbXVsYXRlZCI6dHJ1ZSwicXVvdGUiOnsid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJyZXF1ZXN0ZWQiOiIxIiwibGlxdWlkaXR5IjoiMiIsImZsb29yQnBzIjo5OTAwLCJyYW5nZVNpZGUiOiJpbnNpZGUiLCJ0b2xlcmFuY2VCcHMiOjEwMH0sInN0YXJ0aW5nTGlxdWlkaXR5IjoiMSIsInN0YXJ0aW5nQmFsYW5jZXMiOnsiaW5wdXQiOiIxMCIsImEiOiIwIiwiYiI6IjAifSwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwLCJsYXN0VmFsaWRCbG9ja0hlaWdodCI6MTUwLCJwcmVzZXJ2ZWQiOnsiZnVsbFN1bW1hcnkiOnRydWV9fX0sImV4cGlyZXNBdCI6MTc5MzEwMDA2MDAwMH0",
+  "instructions": {
+    "message": "Sign unsignedTransaction with the wallet (keep the existing NFT-mint partial signature), then call submit_open_position with { signedTransaction, permit, wallet, summary }. Pass summary back exactly as returned. Or open signUrl in a browser with the wallet connected."
+  }
+}",
+        "type": "text",
+      },
+    ],
+  },
+}
+`;
+
+exports[`open prepare baseline > http sign URL vercel preserves the entire authenticated payload 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        {
+          "inputKind": "token",
+          "inputMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "poolId": "EdmxWPmx2WH6WgFfTdu9xfkYf3k1g5wD1zccTVySEEh1",
+        },
+        "1",
+        {
+          "preset": "standard",
+        },
+        9900,
+        100,
+      ],
+      "name": "openBuild",
+    },
+  ],
+  "origin": "https://preview.invalid.example",
+  "result": {
+    "content": [
+      {
+        "text": "{
+  "unsignedTransaction": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAQABA4qI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cl//Ig8gL7nI375XZubcD1K1j5goh5gWGdoK3W4s/QwMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHAQICAAEMAgAAAAEAAAAAAAAAAA==",
+  "permit": "90b2ad9b5fbfc4e63a96a26621e33f814daae4d35fc2d15b8a374ffe1e4f9991",
+  "summary": {
+    "operation": "fixture",
+    "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+    "simulated": true,
+    "quote": {
+      "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+      "requested": "1",
+      "liquidity": "2",
+      "floorBps": 9900,
+      "rangeSide": "inside",
+      "toleranceBps": 100
+    },
+    "startingLiquidity": "1",
+    "startingBalances": {
+      "input": "10",
+      "a": "0",
+      "b": "0"
+    },
+    "expiresAt": 1793100060000,
+    "lastValidBlockHeight": 150,
+    "preserved": {
+      "fullSummary": true
+    }
+  },
+  "signToken": "verified-payload:eyJraW5kIjoib3Blbi1wb3NpdGlvbiIsIndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwidW5zaWduZWRUcmFuc2FjdGlvbiI6IkFRQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQ0FBUUFCQTRxSTQ5MTBDZkdWL1ZMYkxUeTZYWExLWndtL0haUVNHL04waUFHMEQyOWNsLy9JZzhnTDduSTM3NVhadWJjRDFLMWo1Z29oNWdXR2RvSzNXNHMvUXdNQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQWNIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEFRSUNBQUVNQWdBQUFBRUFBQUFBQUFBQUFBPT0iLCJwZXJtaXQiOiI5MGIyYWQ5YjVmYmZjNGU2M2E5NmEyNjYyMWUzM2Y4MTRkYWFlNGQzNWZjMmQxNWI4YTM3NGZmZTFlNGY5OTkxIiwic3VibWl0QXJncyI6eyJwZXJtaXQiOiI5MGIyYWQ5YjVmYmZjNGU2M2E5NmEyNjYyMWUzM2Y4MTRkYWFlNGQzNWZjMmQxNWI4YTM3NGZmZTFlNGY5OTkxIiwid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJzdW1tYXJ5Ijp7Im9wZXJhdGlvbiI6ImZpeHR1cmUiLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInNpbXVsYXRlZCI6dHJ1ZSwicXVvdGUiOnsid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJyZXF1ZXN0ZWQiOiIxIiwibGlxdWlkaXR5IjoiMiIsImZsb29yQnBzIjo5OTAwLCJyYW5nZVNpZGUiOiJpbnNpZGUiLCJ0b2xlcmFuY2VCcHMiOjEwMH0sInN0YXJ0aW5nTGlxdWlkaXR5IjoiMSIsInN0YXJ0aW5nQmFsYW5jZXMiOnsiaW5wdXQiOiIxMCIsImEiOiIwIiwiYiI6IjAifSwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwLCJsYXN0VmFsaWRCbG9ja0hlaWdodCI6MTUwLCJwcmVzZXJ2ZWQiOnsiZnVsbFN1bW1hcnkiOnRydWV9fX0sImV4cGlyZXNBdCI6MTc5MzEwMDA2MDAwMH0",
+  "signUrl": "https://app.invalid.example/app/sign/verified-payload:eyJraW5kIjoib3Blbi1wb3NpdGlvbiIsIndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwidW5zaWduZWRUcmFuc2FjdGlvbiI6IkFRQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQ0FBUUFCQTRxSTQ5MTBDZkdWL1ZMYkxUeTZYWExLWndtL0haUVNHL04waUFHMEQyOWNsLy9JZzhnTDduSTM3NVhadWJjRDFLMWo1Z29oNWdXR2RvSzNXNHMvUXdNQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQWNIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEFRSUNBQUVNQWdBQUFBRUFBQUFBQUFBQUFBPT0iLCJwZXJtaXQiOiI5MGIyYWQ5YjVmYmZjNGU2M2E5NmEyNjYyMWUzM2Y4MTRkYWFlNGQzNWZjMmQxNWI4YTM3NGZmZTFlNGY5OTkxIiwic3VibWl0QXJncyI6eyJwZXJtaXQiOiI5MGIyYWQ5YjVmYmZjNGU2M2E5NmEyNjYyMWUzM2Y4MTRkYWFlNGQzNWZjMmQxNWI4YTM3NGZmZTFlNGY5OTkxIiwid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJzdW1tYXJ5Ijp7Im9wZXJhdGlvbiI6ImZpeHR1cmUiLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInNpbXVsYXRlZCI6dHJ1ZSwicXVvdGUiOnsid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJyZXF1ZXN0ZWQiOiIxIiwibGlxdWlkaXR5IjoiMiIsImZsb29yQnBzIjo5OTAwLCJyYW5nZVNpZGUiOiJpbnNpZGUiLCJ0b2xlcmFuY2VCcHMiOjEwMH0sInN0YXJ0aW5nTGlxdWlkaXR5IjoiMSIsInN0YXJ0aW5nQmFsYW5jZXMiOnsiaW5wdXQiOiIxMCIsImEiOiIwIiwiYiI6IjAifSwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwLCJsYXN0VmFsaWRCbG9ja0hlaWdodCI6MTUwLCJwcmVzZXJ2ZWQiOnsiZnVsbFN1bW1hcnkiOnRydWV9fX0sImV4cGlyZXNBdCI6MTc5MzEwMDA2MDAwMH0",
+  "instructions": {
+    "message": "Sign unsignedTransaction with the wallet (keep the existing NFT-mint partial signature), then call submit_open_position with { signedTransaction, permit, wallet, summary }. Pass summary back exactly as returned. Or open signUrl in a browser with the wallet connected."
+  }
+}",
+        "type": "text",
+      },
+    ],
+  },
+}
+`;
+
+exports[`open prepare baseline > stdio MCP has no HTTP outer retry or refresh 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        {
+          "inputKind": "token",
+          "inputMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "poolId": "EdmxWPmx2WH6WgFfTdu9xfkYf3k1g5wD1zccTVySEEh1",
+        },
+        "1",
+        {
+          "preset": "standard",
+        },
+        9900,
+        100,
+      ],
+      "name": "openBuild",
+    },
+  ],
+  "result": {
+    "content": [
+      {
+        "text": "{
+  "error": "Unable to estimate complete transaction network fee"
+}",
+        "type": "text",
+      },
+    ],
+    "isError": true,
+  },
+}
+`;
+
+exports[`open prepare baseline > stdio sign URL explicit preserves the entire authenticated payload 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        {
+          "inputKind": "token",
+          "inputMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "poolId": "EdmxWPmx2WH6WgFfTdu9xfkYf3k1g5wD1zccTVySEEh1",
+        },
+        "1",
+        {
+          "preset": "standard",
+        },
+        9900,
+        100,
+      ],
+      "name": "openBuild",
+    },
+  ],
+  "origin": "https://app.invalid.example",
+  "result": {
+    "content": [
+      {
+        "text": "{
+  "unsignedTransaction": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAQABA4qI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cl//Ig8gL7nI375XZubcD1K1j5goh5gWGdoK3W4s/QwMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHAQICAAEMAgAAAAEAAAAAAAAAAA==",
+  "permit": "90b2ad9b5fbfc4e63a96a26621e33f814daae4d35fc2d15b8a374ffe1e4f9991",
+  "summary": {
+    "operation": "fixture",
+    "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+    "simulated": true,
+    "quote": {
+      "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+      "requested": "1",
+      "liquidity": "2",
+      "floorBps": 9900,
+      "rangeSide": "inside",
+      "toleranceBps": 100
+    },
+    "startingLiquidity": "1",
+    "startingBalances": {
+      "input": "10",
+      "a": "0",
+      "b": "0"
+    },
+    "expiresAt": 1793100060000,
+    "lastValidBlockHeight": 150,
+    "preserved": {
+      "fullSummary": true
+    }
+  },
+  "signToken": "verified-payload:eyJraW5kIjoib3Blbi1wb3NpdGlvbiIsIndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwidW5zaWduZWRUcmFuc2FjdGlvbiI6IkFRQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQ0FBUUFCQTRxSTQ5MTBDZkdWL1ZMYkxUeTZYWExLWndtL0haUVNHL04waUFHMEQyOWNsLy9JZzhnTDduSTM3NVhadWJjRDFLMWo1Z29oNWdXR2RvSzNXNHMvUXdNQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQWNIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEFRSUNBQUVNQWdBQUFBRUFBQUFBQUFBQUFBPT0iLCJwZXJtaXQiOiI5MGIyYWQ5YjVmYmZjNGU2M2E5NmEyNjYyMWUzM2Y4MTRkYWFlNGQzNWZjMmQxNWI4YTM3NGZmZTFlNGY5OTkxIiwic3VibWl0QXJncyI6eyJwZXJtaXQiOiI5MGIyYWQ5YjVmYmZjNGU2M2E5NmEyNjYyMWUzM2Y4MTRkYWFlNGQzNWZjMmQxNWI4YTM3NGZmZTFlNGY5OTkxIiwid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJzdW1tYXJ5Ijp7Im9wZXJhdGlvbiI6ImZpeHR1cmUiLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInNpbXVsYXRlZCI6dHJ1ZSwicXVvdGUiOnsid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJyZXF1ZXN0ZWQiOiIxIiwibGlxdWlkaXR5IjoiMiIsImZsb29yQnBzIjo5OTAwLCJyYW5nZVNpZGUiOiJpbnNpZGUiLCJ0b2xlcmFuY2VCcHMiOjEwMH0sInN0YXJ0aW5nTGlxdWlkaXR5IjoiMSIsInN0YXJ0aW5nQmFsYW5jZXMiOnsiaW5wdXQiOiIxMCIsImEiOiIwIiwiYiI6IjAifSwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwLCJsYXN0VmFsaWRCbG9ja0hlaWdodCI6MTUwLCJwcmVzZXJ2ZWQiOnsiZnVsbFN1bW1hcnkiOnRydWV9fX0sImV4cGlyZXNBdCI6MTc5MzEwMDA2MDAwMH0",
+  "signUrl": "https://app.invalid.example/app/sign/verified-payload:eyJraW5kIjoib3Blbi1wb3NpdGlvbiIsIndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwidW5zaWduZWRUcmFuc2FjdGlvbiI6IkFRQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQ0FBUUFCQTRxSTQ5MTBDZkdWL1ZMYkxUeTZYWExLWndtL0haUVNHL04waUFHMEQyOWNsLy9JZzhnTDduSTM3NVhadWJjRDFLMWo1Z29oNWdXR2RvSzNXNHMvUXdNQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQWNIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEFRSUNBQUVNQWdBQUFBRUFBQUFBQUFBQUFBPT0iLCJwZXJtaXQiOiI5MGIyYWQ5YjVmYmZjNGU2M2E5NmEyNjYyMWUzM2Y4MTRkYWFlNGQzNWZjMmQxNWI4YTM3NGZmZTFlNGY5OTkxIiwic3VibWl0QXJncyI6eyJwZXJtaXQiOiI5MGIyYWQ5YjVmYmZjNGU2M2E5NmEyNjYyMWUzM2Y4MTRkYWFlNGQzNWZjMmQxNWI4YTM3NGZmZTFlNGY5OTkxIiwid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJzdW1tYXJ5Ijp7Im9wZXJhdGlvbiI6ImZpeHR1cmUiLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInNpbXVsYXRlZCI6dHJ1ZSwicXVvdGUiOnsid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJyZXF1ZXN0ZWQiOiIxIiwibGlxdWlkaXR5IjoiMiIsImZsb29yQnBzIjo5OTAwLCJyYW5nZVNpZGUiOiJpbnNpZGUiLCJ0b2xlcmFuY2VCcHMiOjEwMH0sInN0YXJ0aW5nTGlxdWlkaXR5IjoiMSIsInN0YXJ0aW5nQmFsYW5jZXMiOnsiaW5wdXQiOiIxMCIsImEiOiIwIiwiYiI6IjAifSwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwLCJsYXN0VmFsaWRCbG9ja0hlaWdodCI6MTUwLCJwcmVzZXJ2ZWQiOnsiZnVsbFN1bW1hcnkiOnRydWV9fX0sImV4cGlyZXNBdCI6MTc5MzEwMDA2MDAwMH0",
+  "instructions": {
+    "message": "Sign unsignedTransaction with the wallet (keep the existing NFT-mint partial signature), then call submit_open_position with { signedTransaction, permit, wallet, summary }. Pass summary back exactly as returned. Or open signUrl in a browser with the wallet connected."
+  }
+}",
+        "type": "text",
+      },
+    ],
+  },
+}
+`;
+
+exports[`open prepare baseline > stdio sign URL relative preserves the entire authenticated payload 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        {
+          "inputKind": "token",
+          "inputMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "poolId": "EdmxWPmx2WH6WgFfTdu9xfkYf3k1g5wD1zccTVySEEh1",
+        },
+        "1",
+        {
+          "preset": "standard",
+        },
+        9900,
+        100,
+      ],
+      "name": "openBuild",
+    },
+  ],
+  "origin": "",
+  "result": {
+    "content": [
+      {
+        "text": "{
+  "unsignedTransaction": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAQABA4qI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cl//Ig8gL7nI375XZubcD1K1j5goh5gWGdoK3W4s/QwMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHAQICAAEMAgAAAAEAAAAAAAAAAA==",
+  "permit": "90b2ad9b5fbfc4e63a96a26621e33f814daae4d35fc2d15b8a374ffe1e4f9991",
+  "summary": {
+    "operation": "fixture",
+    "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+    "simulated": true,
+    "quote": {
+      "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+      "requested": "1",
+      "liquidity": "2",
+      "floorBps": 9900,
+      "rangeSide": "inside",
+      "toleranceBps": 100
+    },
+    "startingLiquidity": "1",
+    "startingBalances": {
+      "input": "10",
+      "a": "0",
+      "b": "0"
+    },
+    "expiresAt": 1793100060000,
+    "lastValidBlockHeight": 150,
+    "preserved": {
+      "fullSummary": true
+    }
+  },
+  "signToken": "verified-payload:eyJraW5kIjoib3Blbi1wb3NpdGlvbiIsIndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwidW5zaWduZWRUcmFuc2FjdGlvbiI6IkFRQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQ0FBUUFCQTRxSTQ5MTBDZkdWL1ZMYkxUeTZYWExLWndtL0haUVNHL04waUFHMEQyOWNsLy9JZzhnTDduSTM3NVhadWJjRDFLMWo1Z29oNWdXR2RvSzNXNHMvUXdNQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQWNIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEFRSUNBQUVNQWdBQUFBRUFBQUFBQUFBQUFBPT0iLCJwZXJtaXQiOiI5MGIyYWQ5YjVmYmZjNGU2M2E5NmEyNjYyMWUzM2Y4MTRkYWFlNGQzNWZjMmQxNWI4YTM3NGZmZTFlNGY5OTkxIiwic3VibWl0QXJncyI6eyJwZXJtaXQiOiI5MGIyYWQ5YjVmYmZjNGU2M2E5NmEyNjYyMWUzM2Y4MTRkYWFlNGQzNWZjMmQxNWI4YTM3NGZmZTFlNGY5OTkxIiwid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJzdW1tYXJ5Ijp7Im9wZXJhdGlvbiI6ImZpeHR1cmUiLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInNpbXVsYXRlZCI6dHJ1ZSwicXVvdGUiOnsid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJyZXF1ZXN0ZWQiOiIxIiwibGlxdWlkaXR5IjoiMiIsImZsb29yQnBzIjo5OTAwLCJyYW5nZVNpZGUiOiJpbnNpZGUiLCJ0b2xlcmFuY2VCcHMiOjEwMH0sInN0YXJ0aW5nTGlxdWlkaXR5IjoiMSIsInN0YXJ0aW5nQmFsYW5jZXMiOnsiaW5wdXQiOiIxMCIsImEiOiIwIiwiYiI6IjAifSwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwLCJsYXN0VmFsaWRCbG9ja0hlaWdodCI6MTUwLCJwcmVzZXJ2ZWQiOnsiZnVsbFN1bW1hcnkiOnRydWV9fX0sImV4cGlyZXNBdCI6MTc5MzEwMDA2MDAwMH0",
+  "signUrl": "https://app.invalid.example/app/sign/verified-payload:eyJraW5kIjoib3Blbi1wb3NpdGlvbiIsIndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwidW5zaWduZWRUcmFuc2FjdGlvbiI6IkFRQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQ0FBUUFCQTRxSTQ5MTBDZkdWL1ZMYkxUeTZYWExLWndtL0haUVNHL04waUFHMEQyOWNsLy9JZzhnTDduSTM3NVhadWJjRDFLMWo1Z29oNWdXR2RvSzNXNHMvUXdNQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQWNIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEFRSUNBQUVNQWdBQUFBRUFBQUFBQUFBQUFBPT0iLCJwZXJtaXQiOiI5MGIyYWQ5YjVmYmZjNGU2M2E5NmEyNjYyMWUzM2Y4MTRkYWFlNGQzNWZjMmQxNWI4YTM3NGZmZTFlNGY5OTkxIiwic3VibWl0QXJncyI6eyJwZXJtaXQiOiI5MGIyYWQ5YjVmYmZjNGU2M2E5NmEyNjYyMWUzM2Y4MTRkYWFlNGQzNWZjMmQxNWI4YTM3NGZmZTFlNGY5OTkxIiwid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJzdW1tYXJ5Ijp7Im9wZXJhdGlvbiI6ImZpeHR1cmUiLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInNpbXVsYXRlZCI6dHJ1ZSwicXVvdGUiOnsid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJyZXF1ZXN0ZWQiOiIxIiwibGlxdWlkaXR5IjoiMiIsImZsb29yQnBzIjo5OTAwLCJyYW5nZVNpZGUiOiJpbnNpZGUiLCJ0b2xlcmFuY2VCcHMiOjEwMH0sInN0YXJ0aW5nTGlxdWlkaXR5IjoiMSIsInN0YXJ0aW5nQmFsYW5jZXMiOnsiaW5wdXQiOiIxMCIsImEiOiIwIiwiYiI6IjAifSwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwLCJsYXN0VmFsaWRCbG9ja0hlaWdodCI6MTUwLCJwcmVzZXJ2ZWQiOnsiZnVsbFN1bW1hcnkiOnRydWV9fX0sImV4cGlyZXNBdCI6MTc5MzEwMDA2MDAwMH0",
+  "instructions": {
+    "message": "Sign unsignedTransaction with the wallet (keep the existing NFT-mint partial signature), then call submit_open_position with { signedTransaction, permit, wallet, summary }. Pass summary back exactly as returned. Or open signUrl in a browser with the wallet connected."
+  }
+}",
+        "type": "text",
+      },
+    ],
+  },
+}
+`;
+
+exports[`open prepare baseline > stdio sign URL vercel preserves the entire authenticated payload 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        {
+          "inputKind": "token",
+          "inputMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "poolId": "EdmxWPmx2WH6WgFfTdu9xfkYf3k1g5wD1zccTVySEEh1",
+        },
+        "1",
+        {
+          "preset": "standard",
+        },
+        9900,
+        100,
+      ],
+      "name": "openBuild",
+    },
+  ],
+  "origin": "https://preview.invalid.example",
+  "result": {
+    "content": [
+      {
+        "text": "{
+  "unsignedTransaction": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAQABA4qI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cl//Ig8gL7nI375XZubcD1K1j5goh5gWGdoK3W4s/QwMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHAQICAAEMAgAAAAEAAAAAAAAAAA==",
+  "permit": "90b2ad9b5fbfc4e63a96a26621e33f814daae4d35fc2d15b8a374ffe1e4f9991",
+  "summary": {
+    "operation": "fixture",
+    "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+    "simulated": true,
+    "quote": {
+      "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+      "requested": "1",
+      "liquidity": "2",
+      "floorBps": 9900,
+      "rangeSide": "inside",
+      "toleranceBps": 100
+    },
+    "startingLiquidity": "1",
+    "startingBalances": {
+      "input": "10",
+      "a": "0",
+      "b": "0"
+    },
+    "expiresAt": 1793100060000,
+    "lastValidBlockHeight": 150,
+    "preserved": {
+      "fullSummary": true
+    }
+  },
+  "signToken": "verified-payload:eyJraW5kIjoib3Blbi1wb3NpdGlvbiIsIndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwidW5zaWduZWRUcmFuc2FjdGlvbiI6IkFRQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQ0FBUUFCQTRxSTQ5MTBDZkdWL1ZMYkxUeTZYWExLWndtL0haUVNHL04waUFHMEQyOWNsLy9JZzhnTDduSTM3NVhadWJjRDFLMWo1Z29oNWdXR2RvSzNXNHMvUXdNQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQWNIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEFRSUNBQUVNQWdBQUFBRUFBQUFBQUFBQUFBPT0iLCJwZXJtaXQiOiI5MGIyYWQ5YjVmYmZjNGU2M2E5NmEyNjYyMWUzM2Y4MTRkYWFlNGQzNWZjMmQxNWI4YTM3NGZmZTFlNGY5OTkxIiwic3VibWl0QXJncyI6eyJwZXJtaXQiOiI5MGIyYWQ5YjVmYmZjNGU2M2E5NmEyNjYyMWUzM2Y4MTRkYWFlNGQzNWZjMmQxNWI4YTM3NGZmZTFlNGY5OTkxIiwid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJzdW1tYXJ5Ijp7Im9wZXJhdGlvbiI6ImZpeHR1cmUiLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInNpbXVsYXRlZCI6dHJ1ZSwicXVvdGUiOnsid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJyZXF1ZXN0ZWQiOiIxIiwibGlxdWlkaXR5IjoiMiIsImZsb29yQnBzIjo5OTAwLCJyYW5nZVNpZGUiOiJpbnNpZGUiLCJ0b2xlcmFuY2VCcHMiOjEwMH0sInN0YXJ0aW5nTGlxdWlkaXR5IjoiMSIsInN0YXJ0aW5nQmFsYW5jZXMiOnsiaW5wdXQiOiIxMCIsImEiOiIwIiwiYiI6IjAifSwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwLCJsYXN0VmFsaWRCbG9ja0hlaWdodCI6MTUwLCJwcmVzZXJ2ZWQiOnsiZnVsbFN1bW1hcnkiOnRydWV9fX0sImV4cGlyZXNBdCI6MTc5MzEwMDA2MDAwMH0",
+  "signUrl": "https://app.invalid.example/app/sign/verified-payload:eyJraW5kIjoib3Blbi1wb3NpdGlvbiIsIndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwidW5zaWduZWRUcmFuc2FjdGlvbiI6IkFRQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQ0FBUUFCQTRxSTQ5MTBDZkdWL1ZMYkxUeTZYWExLWndtL0haUVNHL04waUFHMEQyOWNsLy9JZzhnTDduSTM3NVhadWJjRDFLMWo1Z29oNWdXR2RvSzNXNHMvUXdNQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQWNIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEFRSUNBQUVNQWdBQUFBRUFBQUFBQUFBQUFBPT0iLCJwZXJtaXQiOiI5MGIyYWQ5YjVmYmZjNGU2M2E5NmEyNjYyMWUzM2Y4MTRkYWFlNGQzNWZjMmQxNWI4YTM3NGZmZTFlNGY5OTkxIiwic3VibWl0QXJncyI6eyJwZXJtaXQiOiI5MGIyYWQ5YjVmYmZjNGU2M2E5NmEyNjYyMWUzM2Y4MTRkYWFlNGQzNWZjMmQxNWI4YTM3NGZmZTFlNGY5OTkxIiwid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJzdW1tYXJ5Ijp7Im9wZXJhdGlvbiI6ImZpeHR1cmUiLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInNpbXVsYXRlZCI6dHJ1ZSwicXVvdGUiOnsid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJyZXF1ZXN0ZWQiOiIxIiwibGlxdWlkaXR5IjoiMiIsImZsb29yQnBzIjo5OTAwLCJyYW5nZVNpZGUiOiJpbnNpZGUiLCJ0b2xlcmFuY2VCcHMiOjEwMH0sInN0YXJ0aW5nTGlxdWlkaXR5IjoiMSIsInN0YXJ0aW5nQmFsYW5jZXMiOnsiaW5wdXQiOiIxMCIsImEiOiIwIiwiYiI6IjAifSwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwLCJsYXN0VmFsaWRCbG9ja0hlaWdodCI6MTUwLCJwcmVzZXJ2ZWQiOnsiZnVsbFN1bW1hcnkiOnRydWV9fX0sImV4cGlyZXNBdCI6MTc5MzEwMDA2MDAwMH0",
+  "instructions": {
+    "message": "Sign unsignedTransaction with the wallet (keep the existing NFT-mint partial signature), then call submit_open_position with { signedTransaction, permit, wallet, summary }. Pass summary back exactly as returned. Or open signUrl in a browser with the wallet connected."
+  }
+}",
+        "type": "text",
+      },
+    ],
+  },
+}
+`;
+
+exports[`open preserves relay AsyncLocalStorage and missing-quote 409 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        {
+          "inputKind": "token",
+          "inputMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "poolId": "EdmxWPmx2WH6WgFfTdu9xfkYf3k1g5wD1zccTVySEEh1",
+        },
+        "1",
+        {
+          "preset": "standard",
+        },
+        9900,
+        100,
+        {
+          "enforceResaleFloor": false,
+        },
+      ],
+      "name": "openBuild",
+    },
+  ],
+  "result": {
+    "body": {
+      "code": "jupiter_relay_needed",
+      "error": "Jupiter quotes required",
+      "hints": {
+        "fixture": "9",
+      },
+      "needs": [
+        {
+          "id": "d1989f68b992f208f4d5ccb6d07eabec",
+          "method": "GET",
+          "url": "/swap/v1/quote?amount=1",
+        },
+      ],
+    },
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+    },
+    "status": 409,
+  },
+}
+`;
+
+exports[`open preserves relay success hints 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        {
+          "inputKind": "token",
+          "inputMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "poolId": "EdmxWPmx2WH6WgFfTdu9xfkYf3k1g5wD1zccTVySEEh1",
+        },
+        "1",
+        {
+          "preset": "standard",
+        },
+        9900,
+        100,
+        {
+          "enforceResaleFloor": false,
+        },
+      ],
+      "name": "openBuild",
+    },
+  ],
+  "result": {
+    "body": {
+      "permit": "90b2ad9b5fbfc4e63a96a26621e33f814daae4d35fc2d15b8a374ffe1e4f9991",
+      "summary": {
+        "expiresAt": 1793100060000,
+        "lastValidBlockHeight": 150,
+        "operation": "fixture",
+        "preserved": {
+          "fullSummary": true,
+        },
+        "quote": {
+          "floorBps": 9900,
+          "liquidity": "2",
+          "rangeSide": "inside",
+          "requested": "1",
+          "toleranceBps": 100,
+          "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        },
+        "simulated": true,
+        "startingBalances": {
+          "a": "0",
+          "b": "0",
+          "input": "10",
+        },
+        "startingLiquidity": "1",
+        "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+      },
+      "unsignedTransaction": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAQABA4qI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cl//Ig8gL7nI375XZubcD1K1j5goh5gWGdoK3W4s/QwMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHAQICAAEMAgAAAAEAAAAAAAAAAA==",
+    },
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+      "x-jupiter-relay-hints": "{"fixture":"9"}",
+    },
+    "status": 200,
+  },
+}
+`;
+
+exports[`selected 8 second deadline aborts backend work, keeps retriesLeft1 and returns 504 1`] = `
+{
+  "body": {
+    "error": "Preparation took too long; please retry",
+  },
+  "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json",
+    "server-timing": "total;dur=8000.0",
+  },
+  "status": 504,
+}
+`;
+
+exports[`selected abort after build skips permit and drains sibling work 1`] = `
+{
+  "body": {
+    "error": "Request cancelled",
+  },
+  "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json",
+    "server-timing": "total;dur=0.0",
+  },
+  "status": 499,
+}
+`;
+
+exports[`selected abort after permit never serializes a transaction 1`] = `
+{
+  "body": {
+    "error": "Request cancelled",
+  },
+  "headers": {
+    "cache-control": "no-store",
+    "content-type": "application/json",
+    "server-timing": "total;dur=0.0",
+  },
+  "status": 499,
+}
+`;
+
+exports[`selected prepare baseline > HTTP builder failure precedes missing signing key 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        {
+          "inputKind": "token",
+          "inputMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "positionMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+        },
+        "1",
+        9900,
+        100,
+        {
+          "budget": {
+            "deadlineAt": 1793100008000,
+            "retriesLeft": 1,
+          },
+          "enforceResaleFloor": false,
+          "signal": {
+            "aborted": true,
+          },
+        },
+      ],
+      "name": "selectedBuild",
+    },
+  ],
+  "result": {
+    "body": {
+      "error": "fixture builder rejected",
+    },
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+      "server-timing": "total;dur=0.0",
+    },
+    "status": 400,
+  },
+}
+`;
+
+exports[`selected prepare baseline > HTTP preserves full output, permit, bytes, headers and I/O 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        {
+          "inputKind": "token",
+          "inputMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "positionMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+        },
+        "1",
+        9900,
+        100,
+        {
+          "budget": {
+            "deadlineAt": 1793100008000,
+            "retriesLeft": 1,
+          },
+          "enforceResaleFloor": false,
+          "signal": {
+            "aborted": true,
+          },
+        },
+      ],
+      "name": "selectedBuild",
+    },
+  ],
+  "result": {
+    "body": {
+      "expiresAt": 1793100060000,
+      "lastValidBlockHeight": 150,
+      "operation": "fixture",
+      "permit": "411cde70c7d579fe2d9e07525781564619f88c59d9e2d28d831fbbfff7546b75",
+      "preserved": {
+        "fullSummary": true,
+      },
+      "quote": {
+        "floorBps": 9900,
+        "liquidity": "2",
+        "rangeSide": "inside",
+        "requested": "1",
+        "toleranceBps": 100,
+        "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+      },
+      "simulated": true,
+      "startingBalances": {
+        "a": "0",
+        "b": "0",
+        "input": "10",
+      },
+      "startingLiquidity": "1",
+      "unsignedTransaction": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAQABA4qI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cl//Ig8gL7nI375XZubcD1K1j5goh5gWGdoK3W4s/QwMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHAQICAAEMAgAAAAEAAAAAAAAAAA==",
+      "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+    },
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+      "server-timing": "total;dur=0.0",
+    },
+    "status": 200,
+  },
+}
+`;
+
+exports[`selected prepare baseline > HTTP request/error precedence {"wallet":"invalid"} 1`] = `
+{
+  "io": [],
+  "result": {
+    "body": {
+      "error": "Invalid wallet address",
+    },
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+      "server-timing": "total;dur=0.0",
+    },
+    "status": 400,
+  },
+}
+`;
+
+exports[`selected prepare baseline > HTTP request/error precedence {} 1`] = `
+{
+  "io": [],
+  "result": {
+    "body": {
+      "error": "Invalid wallet address",
+    },
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+      "server-timing": "total;dur=0.0",
+    },
+    "status": 400,
+  },
+}
+`;
+
+exports[`selected prepare baseline > HTTP request/error precedence null 1`] = `
+{
+  "io": [],
+  "result": {
+    "body": {
+      "error": "Invalid quote input",
+    },
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+      "server-timing": "total;dur=0.0",
+    },
+    "status": 400,
+  },
+}
+`;
+
+exports[`selected prepare baseline > HTTP request/error precedence undefined 1`] = `
+{
+  "io": [],
+  "result": {
+    "body": {
+      "error": "Invalid quote input",
+    },
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+      "server-timing": "total;dur=0.0",
+    },
+    "status": 400,
+  },
+}
+`;
+
+exports[`selected prepare baseline > http MCP has no HTTP outer retry or refresh 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        {
+          "inputKind": "token",
+          "inputMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "positionMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+        },
+        "1",
+        9900,
+        100,
+      ],
+      "name": "selectedBuild",
+    },
+  ],
+  "result": {
+    "content": [
+      {
+        "text": "{
+  "error": "Unable to estimate complete transaction network fee"
+}",
+        "type": "text",
+      },
+    ],
+    "isError": true,
+  },
+}
+`;
+
+exports[`selected prepare baseline > http sign URL explicit preserves the entire authenticated payload 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        {
+          "inputKind": "token",
+          "inputMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "positionMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+        },
+        "1",
+        9900,
+        100,
+      ],
+      "name": "selectedBuild",
+    },
+  ],
+  "origin": "https://app.invalid.example",
+  "result": {
+    "content": [
+      {
+        "text": "{
+  "unsignedTransaction": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAQABA4qI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cl//Ig8gL7nI375XZubcD1K1j5goh5gWGdoK3W4s/QwMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHAQICAAEMAgAAAAEAAAAAAAAAAA==",
+  "permit": "411cde70c7d579fe2d9e07525781564619f88c59d9e2d28d831fbbfff7546b75",
+  "submitArgs": {
+    "permit": "411cde70c7d579fe2d9e07525781564619f88c59d9e2d28d831fbbfff7546b75",
+    "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+    "selection": {
+      "positionMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+      "inputMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+      "inputKind": "token"
+    },
+    "requested": "1",
+    "expectedLiquidity": "2",
+    "startingLiquidity": "1",
+    "floorBps": 9900,
+    "expiresAt": 1793100060000,
+    "lastValidBlockHeight": 150,
+    "rangeSide": "inside",
+    "startingBalances": {
+      "input": "10",
+      "a": "0",
+      "b": "0"
+    }
+  },
+  "signToken": "verified-payload:eyJraW5kIjoiYWRkLWxpcXVpZGl0eSIsIndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwidW5zaWduZWRUcmFuc2FjdGlvbiI6IkFRQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQ0FBUUFCQTRxSTQ5MTBDZkdWL1ZMYkxUeTZYWExLWndtL0haUVNHL04waUFHMEQyOWNsLy9JZzhnTDduSTM3NVhadWJjRDFLMWo1Z29oNWdXR2RvSzNXNHMvUXdNQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQWNIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEFRSUNBQUVNQWdBQUFBRUFBQUFBQUFBQUFBPT0iLCJwZXJtaXQiOiI0MTFjZGU3MGM3ZDU3OWZlMmQ5ZTA3NTI1NzgxNTY0NjE5Zjg4YzU5ZDllMmQyOGQ4MzFmYmJmZmY3NTQ2Yjc1Iiwic3VibWl0QXJncyI6eyJwZXJtaXQiOiI0MTFjZGU3MGM3ZDU3OWZlMmQ5ZTA3NTI1NzgxNTY0NjE5Zjg4YzU5ZDllMmQyOGQ4MzFmYmJmZmY3NTQ2Yjc1Iiwid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJzZWxlY3Rpb24iOnsicG9zaXRpb25NaW50IjoiR3lHS3hNeWcxcDlTc0hmbTE1TWtOVXUxdTlUTjJKdFRzcGNkbXJ0R1Vkc2UiLCJpbnB1dE1pbnQiOiJHeUdLeE15ZzFwOVNzSGZtMTVNa05VdTF1OVROMkp0VHNwY2RtcnRHVWRzZSIsImlucHV0S2luZCI6InRva2VuIn0sInJlcXVlc3RlZCI6IjEiLCJleHBlY3RlZExpcXVpZGl0eSI6IjIiLCJzdGFydGluZ0xpcXVpZGl0eSI6IjEiLCJmbG9vckJwcyI6OTkwMCwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwLCJsYXN0VmFsaWRCbG9ja0hlaWdodCI6MTUwLCJyYW5nZVNpZGUiOiJpbnNpZGUiLCJzdGFydGluZ0JhbGFuY2VzIjp7ImlucHV0IjoiMTAiLCJhIjoiMCIsImIiOiIwIn19LCJleHBpcmVzQXQiOjE3OTMxMDAwNjAwMDB9",
+  "signUrl": "https://app.invalid.example/app/sign/verified-payload:eyJraW5kIjoiYWRkLWxpcXVpZGl0eSIsIndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwidW5zaWduZWRUcmFuc2FjdGlvbiI6IkFRQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQ0FBUUFCQTRxSTQ5MTBDZkdWL1ZMYkxUeTZYWExLWndtL0haUVNHL04waUFHMEQyOWNsLy9JZzhnTDduSTM3NVhadWJjRDFLMWo1Z29oNWdXR2RvSzNXNHMvUXdNQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQWNIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEFRSUNBQUVNQWdBQUFBRUFBQUFBQUFBQUFBPT0iLCJwZXJtaXQiOiI0MTFjZGU3MGM3ZDU3OWZlMmQ5ZTA3NTI1NzgxNTY0NjE5Zjg4YzU5ZDllMmQyOGQ4MzFmYmJmZmY3NTQ2Yjc1Iiwic3VibWl0QXJncyI6eyJwZXJtaXQiOiI0MTFjZGU3MGM3ZDU3OWZlMmQ5ZTA3NTI1NzgxNTY0NjE5Zjg4YzU5ZDllMmQyOGQ4MzFmYmJmZmY3NTQ2Yjc1Iiwid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJzZWxlY3Rpb24iOnsicG9zaXRpb25NaW50IjoiR3lHS3hNeWcxcDlTc0hmbTE1TWtOVXUxdTlUTjJKdFRzcGNkbXJ0R1Vkc2UiLCJpbnB1dE1pbnQiOiJHeUdLeE15ZzFwOVNzSGZtMTVNa05VdTF1OVROMkp0VHNwY2RtcnRHVWRzZSIsImlucHV0S2luZCI6InRva2VuIn0sInJlcXVlc3RlZCI6IjEiLCJleHBlY3RlZExpcXVpZGl0eSI6IjIiLCJzdGFydGluZ0xpcXVpZGl0eSI6IjEiLCJmbG9vckJwcyI6OTkwMCwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwLCJsYXN0VmFsaWRCbG9ja0hlaWdodCI6MTUwLCJyYW5nZVNpZGUiOiJpbnNpZGUiLCJzdGFydGluZ0JhbGFuY2VzIjp7ImlucHV0IjoiMTAiLCJhIjoiMCIsImIiOiIwIn19LCJleHBpcmVzQXQiOjE3OTMxMDAwNjAwMDB9",
+  "summary": {
+    "simulated": true,
+    "quote": {
+      "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+      "rangeSide": "inside",
+      "requested": "1",
+      "liquidity": "2",
+      "floorBps": 9900,
+      "slippageToleranceBps": 100
+    },
+    "lastValidBlockHeight": 150,
+    "startingLiquidity": "1",
+    "startingBalances": {
+      "input": "10",
+      "a": "0",
+      "b": "0"
+    },
+    "expiresAt": 1793100060000
+  },
+  "instructions": {
+    "message": "Sign unsignedTransaction with the wallet, then call submit_signed_transaction with { signedTransaction, ...submitArgs }. Do not modify submitArgs; they are bound by the permit. Or open signUrl in a browser with the wallet connected to sign via UI."
+  }
+}",
+        "type": "text",
+      },
+    ],
+  },
+}
+`;
+
+exports[`selected prepare baseline > http sign URL relative preserves the entire authenticated payload 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        {
+          "inputKind": "token",
+          "inputMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "positionMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+        },
+        "1",
+        9900,
+        100,
+      ],
+      "name": "selectedBuild",
+    },
+  ],
+  "origin": "",
+  "result": {
+    "content": [
+      {
+        "text": "{
+  "unsignedTransaction": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAQABA4qI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cl//Ig8gL7nI375XZubcD1K1j5goh5gWGdoK3W4s/QwMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHAQICAAEMAgAAAAEAAAAAAAAAAA==",
+  "permit": "411cde70c7d579fe2d9e07525781564619f88c59d9e2d28d831fbbfff7546b75",
+  "submitArgs": {
+    "permit": "411cde70c7d579fe2d9e07525781564619f88c59d9e2d28d831fbbfff7546b75",
+    "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+    "selection": {
+      "positionMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+      "inputMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+      "inputKind": "token"
+    },
+    "requested": "1",
+    "expectedLiquidity": "2",
+    "startingLiquidity": "1",
+    "floorBps": 9900,
+    "expiresAt": 1793100060000,
+    "lastValidBlockHeight": 150,
+    "rangeSide": "inside",
+    "startingBalances": {
+      "input": "10",
+      "a": "0",
+      "b": "0"
+    }
+  },
+  "signToken": "verified-payload:eyJraW5kIjoiYWRkLWxpcXVpZGl0eSIsIndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwidW5zaWduZWRUcmFuc2FjdGlvbiI6IkFRQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQ0FBUUFCQTRxSTQ5MTBDZkdWL1ZMYkxUeTZYWExLWndtL0haUVNHL04waUFHMEQyOWNsLy9JZzhnTDduSTM3NVhadWJjRDFLMWo1Z29oNWdXR2RvSzNXNHMvUXdNQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQWNIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEFRSUNBQUVNQWdBQUFBRUFBQUFBQUFBQUFBPT0iLCJwZXJtaXQiOiI0MTFjZGU3MGM3ZDU3OWZlMmQ5ZTA3NTI1NzgxNTY0NjE5Zjg4YzU5ZDllMmQyOGQ4MzFmYmJmZmY3NTQ2Yjc1Iiwic3VibWl0QXJncyI6eyJwZXJtaXQiOiI0MTFjZGU3MGM3ZDU3OWZlMmQ5ZTA3NTI1NzgxNTY0NjE5Zjg4YzU5ZDllMmQyOGQ4MzFmYmJmZmY3NTQ2Yjc1Iiwid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJzZWxlY3Rpb24iOnsicG9zaXRpb25NaW50IjoiR3lHS3hNeWcxcDlTc0hmbTE1TWtOVXUxdTlUTjJKdFRzcGNkbXJ0R1Vkc2UiLCJpbnB1dE1pbnQiOiJHeUdLeE15ZzFwOVNzSGZtMTVNa05VdTF1OVROMkp0VHNwY2RtcnRHVWRzZSIsImlucHV0S2luZCI6InRva2VuIn0sInJlcXVlc3RlZCI6IjEiLCJleHBlY3RlZExpcXVpZGl0eSI6IjIiLCJzdGFydGluZ0xpcXVpZGl0eSI6IjEiLCJmbG9vckJwcyI6OTkwMCwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwLCJsYXN0VmFsaWRCbG9ja0hlaWdodCI6MTUwLCJyYW5nZVNpZGUiOiJpbnNpZGUiLCJzdGFydGluZ0JhbGFuY2VzIjp7ImlucHV0IjoiMTAiLCJhIjoiMCIsImIiOiIwIn19LCJleHBpcmVzQXQiOjE3OTMxMDAwNjAwMDB9",
+  "signUrl": "https://app.invalid.example/app/sign/verified-payload:eyJraW5kIjoiYWRkLWxpcXVpZGl0eSIsIndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwidW5zaWduZWRUcmFuc2FjdGlvbiI6IkFRQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQ0FBUUFCQTRxSTQ5MTBDZkdWL1ZMYkxUeTZYWExLWndtL0haUVNHL04waUFHMEQyOWNsLy9JZzhnTDduSTM3NVhadWJjRDFLMWo1Z29oNWdXR2RvSzNXNHMvUXdNQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQWNIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEFRSUNBQUVNQWdBQUFBRUFBQUFBQUFBQUFBPT0iLCJwZXJtaXQiOiI0MTFjZGU3MGM3ZDU3OWZlMmQ5ZTA3NTI1NzgxNTY0NjE5Zjg4YzU5ZDllMmQyOGQ4MzFmYmJmZmY3NTQ2Yjc1Iiwic3VibWl0QXJncyI6eyJwZXJtaXQiOiI0MTFjZGU3MGM3ZDU3OWZlMmQ5ZTA3NTI1NzgxNTY0NjE5Zjg4YzU5ZDllMmQyOGQ4MzFmYmJmZmY3NTQ2Yjc1Iiwid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJzZWxlY3Rpb24iOnsicG9zaXRpb25NaW50IjoiR3lHS3hNeWcxcDlTc0hmbTE1TWtOVXUxdTlUTjJKdFRzcGNkbXJ0R1Vkc2UiLCJpbnB1dE1pbnQiOiJHeUdLeE15ZzFwOVNzSGZtMTVNa05VdTF1OVROMkp0VHNwY2RtcnRHVWRzZSIsImlucHV0S2luZCI6InRva2VuIn0sInJlcXVlc3RlZCI6IjEiLCJleHBlY3RlZExpcXVpZGl0eSI6IjIiLCJzdGFydGluZ0xpcXVpZGl0eSI6IjEiLCJmbG9vckJwcyI6OTkwMCwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwLCJsYXN0VmFsaWRCbG9ja0hlaWdodCI6MTUwLCJyYW5nZVNpZGUiOiJpbnNpZGUiLCJzdGFydGluZ0JhbGFuY2VzIjp7ImlucHV0IjoiMTAiLCJhIjoiMCIsImIiOiIwIn19LCJleHBpcmVzQXQiOjE3OTMxMDAwNjAwMDB9",
+  "summary": {
+    "simulated": true,
+    "quote": {
+      "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+      "rangeSide": "inside",
+      "requested": "1",
+      "liquidity": "2",
+      "floorBps": 9900,
+      "slippageToleranceBps": 100
+    },
+    "lastValidBlockHeight": 150,
+    "startingLiquidity": "1",
+    "startingBalances": {
+      "input": "10",
+      "a": "0",
+      "b": "0"
+    },
+    "expiresAt": 1793100060000
+  },
+  "instructions": {
+    "message": "Sign unsignedTransaction with the wallet, then call submit_signed_transaction with { signedTransaction, ...submitArgs }. Do not modify submitArgs; they are bound by the permit. Or open signUrl in a browser with the wallet connected to sign via UI."
+  }
+}",
+        "type": "text",
+      },
+    ],
+  },
+}
+`;
+
+exports[`selected prepare baseline > http sign URL vercel preserves the entire authenticated payload 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        {
+          "inputKind": "token",
+          "inputMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "positionMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+        },
+        "1",
+        9900,
+        100,
+      ],
+      "name": "selectedBuild",
+    },
+  ],
+  "origin": "https://preview.invalid.example",
+  "result": {
+    "content": [
+      {
+        "text": "{
+  "unsignedTransaction": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAQABA4qI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cl//Ig8gL7nI375XZubcD1K1j5goh5gWGdoK3W4s/QwMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHAQICAAEMAgAAAAEAAAAAAAAAAA==",
+  "permit": "411cde70c7d579fe2d9e07525781564619f88c59d9e2d28d831fbbfff7546b75",
+  "submitArgs": {
+    "permit": "411cde70c7d579fe2d9e07525781564619f88c59d9e2d28d831fbbfff7546b75",
+    "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+    "selection": {
+      "positionMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+      "inputMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+      "inputKind": "token"
+    },
+    "requested": "1",
+    "expectedLiquidity": "2",
+    "startingLiquidity": "1",
+    "floorBps": 9900,
+    "expiresAt": 1793100060000,
+    "lastValidBlockHeight": 150,
+    "rangeSide": "inside",
+    "startingBalances": {
+      "input": "10",
+      "a": "0",
+      "b": "0"
+    }
+  },
+  "signToken": "verified-payload:eyJraW5kIjoiYWRkLWxpcXVpZGl0eSIsIndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwidW5zaWduZWRUcmFuc2FjdGlvbiI6IkFRQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQ0FBUUFCQTRxSTQ5MTBDZkdWL1ZMYkxUeTZYWExLWndtL0haUVNHL04waUFHMEQyOWNsLy9JZzhnTDduSTM3NVhadWJjRDFLMWo1Z29oNWdXR2RvSzNXNHMvUXdNQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQWNIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEFRSUNBQUVNQWdBQUFBRUFBQUFBQUFBQUFBPT0iLCJwZXJtaXQiOiI0MTFjZGU3MGM3ZDU3OWZlMmQ5ZTA3NTI1NzgxNTY0NjE5Zjg4YzU5ZDllMmQyOGQ4MzFmYmJmZmY3NTQ2Yjc1Iiwic3VibWl0QXJncyI6eyJwZXJtaXQiOiI0MTFjZGU3MGM3ZDU3OWZlMmQ5ZTA3NTI1NzgxNTY0NjE5Zjg4YzU5ZDllMmQyOGQ4MzFmYmJmZmY3NTQ2Yjc1Iiwid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJzZWxlY3Rpb24iOnsicG9zaXRpb25NaW50IjoiR3lHS3hNeWcxcDlTc0hmbTE1TWtOVXUxdTlUTjJKdFRzcGNkbXJ0R1Vkc2UiLCJpbnB1dE1pbnQiOiJHeUdLeE15ZzFwOVNzSGZtMTVNa05VdTF1OVROMkp0VHNwY2RtcnRHVWRzZSIsImlucHV0S2luZCI6InRva2VuIn0sInJlcXVlc3RlZCI6IjEiLCJleHBlY3RlZExpcXVpZGl0eSI6IjIiLCJzdGFydGluZ0xpcXVpZGl0eSI6IjEiLCJmbG9vckJwcyI6OTkwMCwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwLCJsYXN0VmFsaWRCbG9ja0hlaWdodCI6MTUwLCJyYW5nZVNpZGUiOiJpbnNpZGUiLCJzdGFydGluZ0JhbGFuY2VzIjp7ImlucHV0IjoiMTAiLCJhIjoiMCIsImIiOiIwIn19LCJleHBpcmVzQXQiOjE3OTMxMDAwNjAwMDB9",
+  "signUrl": "https://app.invalid.example/app/sign/verified-payload:eyJraW5kIjoiYWRkLWxpcXVpZGl0eSIsIndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwidW5zaWduZWRUcmFuc2FjdGlvbiI6IkFRQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQ0FBUUFCQTRxSTQ5MTBDZkdWL1ZMYkxUeTZYWExLWndtL0haUVNHL04waUFHMEQyOWNsLy9JZzhnTDduSTM3NVhadWJjRDFLMWo1Z29oNWdXR2RvSzNXNHMvUXdNQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQWNIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEFRSUNBQUVNQWdBQUFBRUFBQUFBQUFBQUFBPT0iLCJwZXJtaXQiOiI0MTFjZGU3MGM3ZDU3OWZlMmQ5ZTA3NTI1NzgxNTY0NjE5Zjg4YzU5ZDllMmQyOGQ4MzFmYmJmZmY3NTQ2Yjc1Iiwic3VibWl0QXJncyI6eyJwZXJtaXQiOiI0MTFjZGU3MGM3ZDU3OWZlMmQ5ZTA3NTI1NzgxNTY0NjE5Zjg4YzU5ZDllMmQyOGQ4MzFmYmJmZmY3NTQ2Yjc1Iiwid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJzZWxlY3Rpb24iOnsicG9zaXRpb25NaW50IjoiR3lHS3hNeWcxcDlTc0hmbTE1TWtOVXUxdTlUTjJKdFRzcGNkbXJ0R1Vkc2UiLCJpbnB1dE1pbnQiOiJHeUdLeE15ZzFwOVNzSGZtMTVNa05VdTF1OVROMkp0VHNwY2RtcnRHVWRzZSIsImlucHV0S2luZCI6InRva2VuIn0sInJlcXVlc3RlZCI6IjEiLCJleHBlY3RlZExpcXVpZGl0eSI6IjIiLCJzdGFydGluZ0xpcXVpZGl0eSI6IjEiLCJmbG9vckJwcyI6OTkwMCwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwLCJsYXN0VmFsaWRCbG9ja0hlaWdodCI6MTUwLCJyYW5nZVNpZGUiOiJpbnNpZGUiLCJzdGFydGluZ0JhbGFuY2VzIjp7ImlucHV0IjoiMTAiLCJhIjoiMCIsImIiOiIwIn19LCJleHBpcmVzQXQiOjE3OTMxMDAwNjAwMDB9",
+  "summary": {
+    "simulated": true,
+    "quote": {
+      "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+      "rangeSide": "inside",
+      "requested": "1",
+      "liquidity": "2",
+      "floorBps": 9900,
+      "slippageToleranceBps": 100
+    },
+    "lastValidBlockHeight": 150,
+    "startingLiquidity": "1",
+    "startingBalances": {
+      "input": "10",
+      "a": "0",
+      "b": "0"
+    },
+    "expiresAt": 1793100060000
+  },
+  "instructions": {
+    "message": "Sign unsignedTransaction with the wallet, then call submit_signed_transaction with { signedTransaction, ...submitArgs }. Do not modify submitArgs; they are bound by the permit. Or open signUrl in a browser with the wallet connected to sign via UI."
+  }
+}",
+        "type": "text",
+      },
+    ],
+  },
+}
+`;
+
+exports[`selected prepare baseline > stdio MCP has no HTTP outer retry or refresh 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        {
+          "inputKind": "token",
+          "inputMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "positionMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+        },
+        "1",
+        9900,
+        100,
+      ],
+      "name": "selectedBuild",
+    },
+  ],
+  "result": {
+    "content": [
+      {
+        "text": "{
+  "error": "Unable to estimate complete transaction network fee"
+}",
+        "type": "text",
+      },
+    ],
+    "isError": true,
+  },
+}
+`;
+
+exports[`selected prepare baseline > stdio sign URL explicit preserves the entire authenticated payload 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        {
+          "inputKind": "token",
+          "inputMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "positionMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+        },
+        "1",
+        9900,
+        100,
+      ],
+      "name": "selectedBuild",
+    },
+  ],
+  "origin": "https://app.invalid.example",
+  "result": {
+    "content": [
+      {
+        "text": "{
+  "unsignedTransaction": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAQABA4qI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cl//Ig8gL7nI375XZubcD1K1j5goh5gWGdoK3W4s/QwMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHAQICAAEMAgAAAAEAAAAAAAAAAA==",
+  "permit": "411cde70c7d579fe2d9e07525781564619f88c59d9e2d28d831fbbfff7546b75",
+  "submitArgs": {
+    "permit": "411cde70c7d579fe2d9e07525781564619f88c59d9e2d28d831fbbfff7546b75",
+    "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+    "selection": {
+      "positionMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+      "inputMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+      "inputKind": "token"
+    },
+    "requested": "1",
+    "expectedLiquidity": "2",
+    "startingLiquidity": "1",
+    "floorBps": 9900,
+    "expiresAt": 1793100060000,
+    "lastValidBlockHeight": 150,
+    "rangeSide": "inside",
+    "startingBalances": {
+      "input": "10",
+      "a": "0",
+      "b": "0"
+    }
+  },
+  "signToken": "verified-payload:eyJraW5kIjoiYWRkLWxpcXVpZGl0eSIsIndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwidW5zaWduZWRUcmFuc2FjdGlvbiI6IkFRQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQ0FBUUFCQTRxSTQ5MTBDZkdWL1ZMYkxUeTZYWExLWndtL0haUVNHL04waUFHMEQyOWNsLy9JZzhnTDduSTM3NVhadWJjRDFLMWo1Z29oNWdXR2RvSzNXNHMvUXdNQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQWNIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEFRSUNBQUVNQWdBQUFBRUFBQUFBQUFBQUFBPT0iLCJwZXJtaXQiOiI0MTFjZGU3MGM3ZDU3OWZlMmQ5ZTA3NTI1NzgxNTY0NjE5Zjg4YzU5ZDllMmQyOGQ4MzFmYmJmZmY3NTQ2Yjc1Iiwic3VibWl0QXJncyI6eyJwZXJtaXQiOiI0MTFjZGU3MGM3ZDU3OWZlMmQ5ZTA3NTI1NzgxNTY0NjE5Zjg4YzU5ZDllMmQyOGQ4MzFmYmJmZmY3NTQ2Yjc1Iiwid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJzZWxlY3Rpb24iOnsicG9zaXRpb25NaW50IjoiR3lHS3hNeWcxcDlTc0hmbTE1TWtOVXUxdTlUTjJKdFRzcGNkbXJ0R1Vkc2UiLCJpbnB1dE1pbnQiOiJHeUdLeE15ZzFwOVNzSGZtMTVNa05VdTF1OVROMkp0VHNwY2RtcnRHVWRzZSIsImlucHV0S2luZCI6InRva2VuIn0sInJlcXVlc3RlZCI6IjEiLCJleHBlY3RlZExpcXVpZGl0eSI6IjIiLCJzdGFydGluZ0xpcXVpZGl0eSI6IjEiLCJmbG9vckJwcyI6OTkwMCwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwLCJsYXN0VmFsaWRCbG9ja0hlaWdodCI6MTUwLCJyYW5nZVNpZGUiOiJpbnNpZGUiLCJzdGFydGluZ0JhbGFuY2VzIjp7ImlucHV0IjoiMTAiLCJhIjoiMCIsImIiOiIwIn19LCJleHBpcmVzQXQiOjE3OTMxMDAwNjAwMDB9",
+  "signUrl": "https://app.invalid.example/app/sign/verified-payload:eyJraW5kIjoiYWRkLWxpcXVpZGl0eSIsIndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwidW5zaWduZWRUcmFuc2FjdGlvbiI6IkFRQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQ0FBUUFCQTRxSTQ5MTBDZkdWL1ZMYkxUeTZYWExLWndtL0haUVNHL04waUFHMEQyOWNsLy9JZzhnTDduSTM3NVhadWJjRDFLMWo1Z29oNWdXR2RvSzNXNHMvUXdNQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQWNIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEFRSUNBQUVNQWdBQUFBRUFBQUFBQUFBQUFBPT0iLCJwZXJtaXQiOiI0MTFjZGU3MGM3ZDU3OWZlMmQ5ZTA3NTI1NzgxNTY0NjE5Zjg4YzU5ZDllMmQyOGQ4MzFmYmJmZmY3NTQ2Yjc1Iiwic3VibWl0QXJncyI6eyJwZXJtaXQiOiI0MTFjZGU3MGM3ZDU3OWZlMmQ5ZTA3NTI1NzgxNTY0NjE5Zjg4YzU5ZDllMmQyOGQ4MzFmYmJmZmY3NTQ2Yjc1Iiwid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJzZWxlY3Rpb24iOnsicG9zaXRpb25NaW50IjoiR3lHS3hNeWcxcDlTc0hmbTE1TWtOVXUxdTlUTjJKdFRzcGNkbXJ0R1Vkc2UiLCJpbnB1dE1pbnQiOiJHeUdLeE15ZzFwOVNzSGZtMTVNa05VdTF1OVROMkp0VHNwY2RtcnRHVWRzZSIsImlucHV0S2luZCI6InRva2VuIn0sInJlcXVlc3RlZCI6IjEiLCJleHBlY3RlZExpcXVpZGl0eSI6IjIiLCJzdGFydGluZ0xpcXVpZGl0eSI6IjEiLCJmbG9vckJwcyI6OTkwMCwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwLCJsYXN0VmFsaWRCbG9ja0hlaWdodCI6MTUwLCJyYW5nZVNpZGUiOiJpbnNpZGUiLCJzdGFydGluZ0JhbGFuY2VzIjp7ImlucHV0IjoiMTAiLCJhIjoiMCIsImIiOiIwIn19LCJleHBpcmVzQXQiOjE3OTMxMDAwNjAwMDB9",
+  "summary": {
+    "simulated": true,
+    "quote": {
+      "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+      "rangeSide": "inside",
+      "requested": "1",
+      "liquidity": "2",
+      "floorBps": 9900,
+      "slippageToleranceBps": 100
+    },
+    "lastValidBlockHeight": 150,
+    "startingLiquidity": "1",
+    "startingBalances": {
+      "input": "10",
+      "a": "0",
+      "b": "0"
+    },
+    "expiresAt": 1793100060000
+  },
+  "instructions": {
+    "message": "Sign unsignedTransaction with the wallet, then call submit_signed_transaction with { signedTransaction, ...submitArgs }. Do not modify submitArgs; they are bound by the permit. Or open signUrl in a browser with the wallet connected to sign via UI."
+  }
+}",
+        "type": "text",
+      },
+    ],
+  },
+}
+`;
+
+exports[`selected prepare baseline > stdio sign URL relative preserves the entire authenticated payload 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        {
+          "inputKind": "token",
+          "inputMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "positionMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+        },
+        "1",
+        9900,
+        100,
+      ],
+      "name": "selectedBuild",
+    },
+  ],
+  "origin": "",
+  "result": {
+    "content": [
+      {
+        "text": "{
+  "unsignedTransaction": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAQABA4qI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cl//Ig8gL7nI375XZubcD1K1j5goh5gWGdoK3W4s/QwMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHAQICAAEMAgAAAAEAAAAAAAAAAA==",
+  "permit": "411cde70c7d579fe2d9e07525781564619f88c59d9e2d28d831fbbfff7546b75",
+  "submitArgs": {
+    "permit": "411cde70c7d579fe2d9e07525781564619f88c59d9e2d28d831fbbfff7546b75",
+    "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+    "selection": {
+      "positionMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+      "inputMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+      "inputKind": "token"
+    },
+    "requested": "1",
+    "expectedLiquidity": "2",
+    "startingLiquidity": "1",
+    "floorBps": 9900,
+    "expiresAt": 1793100060000,
+    "lastValidBlockHeight": 150,
+    "rangeSide": "inside",
+    "startingBalances": {
+      "input": "10",
+      "a": "0",
+      "b": "0"
+    }
+  },
+  "signToken": "verified-payload:eyJraW5kIjoiYWRkLWxpcXVpZGl0eSIsIndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwidW5zaWduZWRUcmFuc2FjdGlvbiI6IkFRQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQ0FBUUFCQTRxSTQ5MTBDZkdWL1ZMYkxUeTZYWExLWndtL0haUVNHL04waUFHMEQyOWNsLy9JZzhnTDduSTM3NVhadWJjRDFLMWo1Z29oNWdXR2RvSzNXNHMvUXdNQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQWNIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEFRSUNBQUVNQWdBQUFBRUFBQUFBQUFBQUFBPT0iLCJwZXJtaXQiOiI0MTFjZGU3MGM3ZDU3OWZlMmQ5ZTA3NTI1NzgxNTY0NjE5Zjg4YzU5ZDllMmQyOGQ4MzFmYmJmZmY3NTQ2Yjc1Iiwic3VibWl0QXJncyI6eyJwZXJtaXQiOiI0MTFjZGU3MGM3ZDU3OWZlMmQ5ZTA3NTI1NzgxNTY0NjE5Zjg4YzU5ZDllMmQyOGQ4MzFmYmJmZmY3NTQ2Yjc1Iiwid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJzZWxlY3Rpb24iOnsicG9zaXRpb25NaW50IjoiR3lHS3hNeWcxcDlTc0hmbTE1TWtOVXUxdTlUTjJKdFRzcGNkbXJ0R1Vkc2UiLCJpbnB1dE1pbnQiOiJHeUdLeE15ZzFwOVNzSGZtMTVNa05VdTF1OVROMkp0VHNwY2RtcnRHVWRzZSIsImlucHV0S2luZCI6InRva2VuIn0sInJlcXVlc3RlZCI6IjEiLCJleHBlY3RlZExpcXVpZGl0eSI6IjIiLCJzdGFydGluZ0xpcXVpZGl0eSI6IjEiLCJmbG9vckJwcyI6OTkwMCwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwLCJsYXN0VmFsaWRCbG9ja0hlaWdodCI6MTUwLCJyYW5nZVNpZGUiOiJpbnNpZGUiLCJzdGFydGluZ0JhbGFuY2VzIjp7ImlucHV0IjoiMTAiLCJhIjoiMCIsImIiOiIwIn19LCJleHBpcmVzQXQiOjE3OTMxMDAwNjAwMDB9",
+  "signUrl": "https://app.invalid.example/app/sign/verified-payload:eyJraW5kIjoiYWRkLWxpcXVpZGl0eSIsIndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwidW5zaWduZWRUcmFuc2FjdGlvbiI6IkFRQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQ0FBUUFCQTRxSTQ5MTBDZkdWL1ZMYkxUeTZYWExLWndtL0haUVNHL04waUFHMEQyOWNsLy9JZzhnTDduSTM3NVhadWJjRDFLMWo1Z29oNWdXR2RvSzNXNHMvUXdNQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQWNIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEFRSUNBQUVNQWdBQUFBRUFBQUFBQUFBQUFBPT0iLCJwZXJtaXQiOiI0MTFjZGU3MGM3ZDU3OWZlMmQ5ZTA3NTI1NzgxNTY0NjE5Zjg4YzU5ZDllMmQyOGQ4MzFmYmJmZmY3NTQ2Yjc1Iiwic3VibWl0QXJncyI6eyJwZXJtaXQiOiI0MTFjZGU3MGM3ZDU3OWZlMmQ5ZTA3NTI1NzgxNTY0NjE5Zjg4YzU5ZDllMmQyOGQ4MzFmYmJmZmY3NTQ2Yjc1Iiwid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJzZWxlY3Rpb24iOnsicG9zaXRpb25NaW50IjoiR3lHS3hNeWcxcDlTc0hmbTE1TWtOVXUxdTlUTjJKdFRzcGNkbXJ0R1Vkc2UiLCJpbnB1dE1pbnQiOiJHeUdLeE15ZzFwOVNzSGZtMTVNa05VdTF1OVROMkp0VHNwY2RtcnRHVWRzZSIsImlucHV0S2luZCI6InRva2VuIn0sInJlcXVlc3RlZCI6IjEiLCJleHBlY3RlZExpcXVpZGl0eSI6IjIiLCJzdGFydGluZ0xpcXVpZGl0eSI6IjEiLCJmbG9vckJwcyI6OTkwMCwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwLCJsYXN0VmFsaWRCbG9ja0hlaWdodCI6MTUwLCJyYW5nZVNpZGUiOiJpbnNpZGUiLCJzdGFydGluZ0JhbGFuY2VzIjp7ImlucHV0IjoiMTAiLCJhIjoiMCIsImIiOiIwIn19LCJleHBpcmVzQXQiOjE3OTMxMDAwNjAwMDB9",
+  "summary": {
+    "simulated": true,
+    "quote": {
+      "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+      "rangeSide": "inside",
+      "requested": "1",
+      "liquidity": "2",
+      "floorBps": 9900,
+      "slippageToleranceBps": 100
+    },
+    "lastValidBlockHeight": 150,
+    "startingLiquidity": "1",
+    "startingBalances": {
+      "input": "10",
+      "a": "0",
+      "b": "0"
+    },
+    "expiresAt": 1793100060000
+  },
+  "instructions": {
+    "message": "Sign unsignedTransaction with the wallet, then call submit_signed_transaction with { signedTransaction, ...submitArgs }. Do not modify submitArgs; they are bound by the permit. Or open signUrl in a browser with the wallet connected to sign via UI."
+  }
+}",
+        "type": "text",
+      },
+    ],
+  },
+}
+`;
+
+exports[`selected prepare baseline > stdio sign URL vercel preserves the entire authenticated payload 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        {
+          "inputKind": "token",
+          "inputMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "positionMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+        },
+        "1",
+        9900,
+        100,
+      ],
+      "name": "selectedBuild",
+    },
+  ],
+  "origin": "https://preview.invalid.example",
+  "result": {
+    "content": [
+      {
+        "text": "{
+  "unsignedTransaction": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAQABA4qI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cl//Ig8gL7nI375XZubcD1K1j5goh5gWGdoK3W4s/QwMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHAQICAAEMAgAAAAEAAAAAAAAAAA==",
+  "permit": "411cde70c7d579fe2d9e07525781564619f88c59d9e2d28d831fbbfff7546b75",
+  "submitArgs": {
+    "permit": "411cde70c7d579fe2d9e07525781564619f88c59d9e2d28d831fbbfff7546b75",
+    "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+    "selection": {
+      "positionMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+      "inputMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+      "inputKind": "token"
+    },
+    "requested": "1",
+    "expectedLiquidity": "2",
+    "startingLiquidity": "1",
+    "floorBps": 9900,
+    "expiresAt": 1793100060000,
+    "lastValidBlockHeight": 150,
+    "rangeSide": "inside",
+    "startingBalances": {
+      "input": "10",
+      "a": "0",
+      "b": "0"
+    }
+  },
+  "signToken": "verified-payload:eyJraW5kIjoiYWRkLWxpcXVpZGl0eSIsIndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwidW5zaWduZWRUcmFuc2FjdGlvbiI6IkFRQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQ0FBUUFCQTRxSTQ5MTBDZkdWL1ZMYkxUeTZYWExLWndtL0haUVNHL04waUFHMEQyOWNsLy9JZzhnTDduSTM3NVhadWJjRDFLMWo1Z29oNWdXR2RvSzNXNHMvUXdNQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQWNIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEFRSUNBQUVNQWdBQUFBRUFBQUFBQUFBQUFBPT0iLCJwZXJtaXQiOiI0MTFjZGU3MGM3ZDU3OWZlMmQ5ZTA3NTI1NzgxNTY0NjE5Zjg4YzU5ZDllMmQyOGQ4MzFmYmJmZmY3NTQ2Yjc1Iiwic3VibWl0QXJncyI6eyJwZXJtaXQiOiI0MTFjZGU3MGM3ZDU3OWZlMmQ5ZTA3NTI1NzgxNTY0NjE5Zjg4YzU5ZDllMmQyOGQ4MzFmYmJmZmY3NTQ2Yjc1Iiwid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJzZWxlY3Rpb24iOnsicG9zaXRpb25NaW50IjoiR3lHS3hNeWcxcDlTc0hmbTE1TWtOVXUxdTlUTjJKdFRzcGNkbXJ0R1Vkc2UiLCJpbnB1dE1pbnQiOiJHeUdLeE15ZzFwOVNzSGZtMTVNa05VdTF1OVROMkp0VHNwY2RtcnRHVWRzZSIsImlucHV0S2luZCI6InRva2VuIn0sInJlcXVlc3RlZCI6IjEiLCJleHBlY3RlZExpcXVpZGl0eSI6IjIiLCJzdGFydGluZ0xpcXVpZGl0eSI6IjEiLCJmbG9vckJwcyI6OTkwMCwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwLCJsYXN0VmFsaWRCbG9ja0hlaWdodCI6MTUwLCJyYW5nZVNpZGUiOiJpbnNpZGUiLCJzdGFydGluZ0JhbGFuY2VzIjp7ImlucHV0IjoiMTAiLCJhIjoiMCIsImIiOiIwIn19LCJleHBpcmVzQXQiOjE3OTMxMDAwNjAwMDB9",
+  "signUrl": "https://app.invalid.example/app/sign/verified-payload:eyJraW5kIjoiYWRkLWxpcXVpZGl0eSIsIndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwidW5zaWduZWRUcmFuc2FjdGlvbiI6IkFRQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQ0FBUUFCQTRxSTQ5MTBDZkdWL1ZMYkxUeTZYWExLWndtL0haUVNHL04waUFHMEQyOWNsLy9JZzhnTDduSTM3NVhadWJjRDFLMWo1Z29oNWdXR2RvSzNXNHMvUXdNQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQWNIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEFRSUNBQUVNQWdBQUFBRUFBQUFBQUFBQUFBPT0iLCJwZXJtaXQiOiI0MTFjZGU3MGM3ZDU3OWZlMmQ5ZTA3NTI1NzgxNTY0NjE5Zjg4YzU5ZDllMmQyOGQ4MzFmYmJmZmY3NTQ2Yjc1Iiwic3VibWl0QXJncyI6eyJwZXJtaXQiOiI0MTFjZGU3MGM3ZDU3OWZlMmQ5ZTA3NTI1NzgxNTY0NjE5Zjg4YzU5ZDllMmQyOGQ4MzFmYmJmZmY3NTQ2Yjc1Iiwid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJzZWxlY3Rpb24iOnsicG9zaXRpb25NaW50IjoiR3lHS3hNeWcxcDlTc0hmbTE1TWtOVXUxdTlUTjJKdFRzcGNkbXJ0R1Vkc2UiLCJpbnB1dE1pbnQiOiJHeUdLeE15ZzFwOVNzSGZtMTVNa05VdTF1OVROMkp0VHNwY2RtcnRHVWRzZSIsImlucHV0S2luZCI6InRva2VuIn0sInJlcXVlc3RlZCI6IjEiLCJleHBlY3RlZExpcXVpZGl0eSI6IjIiLCJzdGFydGluZ0xpcXVpZGl0eSI6IjEiLCJmbG9vckJwcyI6OTkwMCwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwLCJsYXN0VmFsaWRCbG9ja0hlaWdodCI6MTUwLCJyYW5nZVNpZGUiOiJpbnNpZGUiLCJzdGFydGluZ0JhbGFuY2VzIjp7ImlucHV0IjoiMTAiLCJhIjoiMCIsImIiOiIwIn19LCJleHBpcmVzQXQiOjE3OTMxMDAwNjAwMDB9",
+  "summary": {
+    "simulated": true,
+    "quote": {
+      "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+      "rangeSide": "inside",
+      "requested": "1",
+      "liquidity": "2",
+      "floorBps": 9900,
+      "slippageToleranceBps": 100
+    },
+    "lastValidBlockHeight": 150,
+    "startingLiquidity": "1",
+    "startingBalances": {
+      "input": "10",
+      "a": "0",
+      "b": "0"
+    },
+    "expiresAt": 1793100060000
+  },
+  "instructions": {
+    "message": "Sign unsignedTransaction with the wallet, then call submit_signed_transaction with { signedTransaction, ...submitArgs }. Do not modify submitArgs; they are bound by the permit. Or open signUrl in a browser with the wallet connected to sign via UI."
+  }
+}",
+        "type": "text",
+      },
+    ],
+  },
+}
+`;
+
+exports[`selected preserves relay AsyncLocalStorage and missing-quote 409 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        {
+          "inputKind": "token",
+          "inputMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "positionMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+        },
+        "1",
+        9900,
+        100,
+        {
+          "budget": {
+            "deadlineAt": 1793100008000,
+            "retriesLeft": 1,
+          },
+          "enforceResaleFloor": false,
+          "signal": {
+            "aborted": true,
+          },
+        },
+      ],
+      "name": "selectedBuild",
+    },
+  ],
+  "result": {
+    "body": {
+      "code": "jupiter_relay_needed",
+      "error": "Jupiter quotes required",
+      "hints": {
+        "fixture": "9",
+      },
+      "needs": [
+        {
+          "id": "d1989f68b992f208f4d5ccb6d07eabec",
+          "method": "GET",
+          "url": "/swap/v1/quote?amount=1",
+        },
+      ],
+    },
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+    },
+    "status": 409,
+  },
+}
+`;
+
+exports[`selected preserves relay success hints 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        {
+          "inputKind": "token",
+          "inputMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "positionMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+        },
+        "1",
+        9900,
+        100,
+        {
+          "budget": {
+            "deadlineAt": 1793100008000,
+            "retriesLeft": 1,
+          },
+          "enforceResaleFloor": false,
+          "signal": {
+            "aborted": true,
+          },
+        },
+      ],
+      "name": "selectedBuild",
+    },
+  ],
+  "result": {
+    "body": {
+      "expiresAt": 1793100060000,
+      "lastValidBlockHeight": 150,
+      "operation": "fixture",
+      "permit": "411cde70c7d579fe2d9e07525781564619f88c59d9e2d28d831fbbfff7546b75",
+      "preserved": {
+        "fullSummary": true,
+      },
+      "quote": {
+        "floorBps": 9900,
+        "liquidity": "2",
+        "rangeSide": "inside",
+        "requested": "1",
+        "toleranceBps": 100,
+        "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+      },
+      "simulated": true,
+      "startingBalances": {
+        "a": "0",
+        "b": "0",
+        "input": "10",
+      },
+      "startingLiquidity": "1",
+      "unsignedTransaction": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAQABA4qI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cl//Ig8gL7nI375XZubcD1K1j5goh5gWGdoK3W4s/QwMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHAQICAAEMAgAAAAEAAAAAAAAAAA==",
+      "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+    },
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+      "server-timing": "total;dur=0.0",
+      "x-jupiter-relay-hints": "{"fixture":"9"}",
+    },
+    "status": 200,
+  },
+}
+`;
+
+exports[`withdraw passes the entire raw previous object without parsing at HTTP boundary > http 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        {
+          "confirmHighImpact": true,
+          "ignored": 42,
+          "percent": 100,
+          "positionMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "previous": {
+            "extra": {
+              "receipt": "full",
+            },
+            "permit": "bound-first-stage",
+            "summary": {
+              "expiresAt": 1793100060000,
+              "lastValidBlockHeight": 150,
+              "operation": "fixture",
+              "preserved": {
+                "fullSummary": true,
+              },
+              "quote": {
+                "floorBps": 9900,
+                "liquidity": "2",
+                "rangeSide": "inside",
+                "requested": "1",
+                "toleranceBps": 100,
+                "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+              },
+              "simulated": true,
+              "startingBalances": {
+                "a": "0",
+                "b": "0",
+                "input": "10",
+              },
+              "startingLiquidity": "1",
+              "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+            },
+            "unsignedTransaction": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAQABA4qI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cl//Ig8gL7nI375XZubcD1K1j5goh5gWGdoK3W4s/QwMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHAQICAAEMAgAAAAEAAAAAAAAAAA==",
+          },
+          "stage": "swap",
+          "tx1Signature": "prior",
+          "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        },
+      ],
+      "name": "withdraw",
+    },
+    {
+      "args": [],
+      "name": "rpc",
+    },
+    {
+      "args": [
+        "confirmed",
+      ],
+      "name": "latest",
+    },
+  ],
+  "result": {
+    "body": {
+      "permit": "6f4918bc535668e0a02df014dd039eceec863812ecee8da171a911ce7015e460",
+      "summary": {
+        "blockhash": "uY46ibBrA5pEsx4z8iiQ6BpNeBuMR6weo4u2ubREB9q",
+        "expiresAt": 1793100075000,
+        "lastValidBlockHeight": 180,
+        "operation": "fixture",
+        "preserved": {
+          "fullSummary": true,
+        },
+        "quote": {
+          "floorBps": 9900,
+          "liquidity": "2",
+          "rangeSide": "inside",
+          "requested": "1",
+          "toleranceBps": 100,
+          "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        },
+        "simulated": true,
+        "simulatedAt": 1793100000000,
+        "startingBalances": {
+          "a": "0",
+          "b": "0",
+          "input": "10",
+        },
+        "startingLiquidity": "1",
+        "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+      },
+      "unsignedTransaction": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAQABA4qI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cl//Ig8gL7nI375XZubcD1K1j5goh5gWGdoK3W4s/QwMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA11UHVOCACl0jfu9YJgNXZrmz5aFYaKlAqyiZWHiOOwAQICAAEMAgAAAAEAAAAAAAAAAA==",
+    },
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+    },
+    "status": 200,
+  },
+}
+`;
+
+exports[`withdraw passes the entire raw previous object without parsing at HTTP boundary > stdio 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        {
+          "confirmHighImpact": true,
+          "percent": 100,
+          "positionMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "previous": {
+            "extra": {
+              "receipt": "full",
+            },
+            "permit": "bound-first-stage",
+            "summary": {
+              "expiresAt": 1793100060000,
+              "lastValidBlockHeight": 150,
+              "operation": "fixture",
+              "preserved": {
+                "fullSummary": true,
+              },
+              "quote": {
+                "floorBps": 9900,
+                "liquidity": "2",
+                "rangeSide": "inside",
+                "requested": "1",
+                "toleranceBps": 100,
+                "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+              },
+              "simulated": true,
+              "startingBalances": {
+                "a": "0",
+                "b": "0",
+                "input": "10",
+              },
+              "startingLiquidity": "1",
+              "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+            },
+            "unsignedTransaction": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAQABA4qI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cl//Ig8gL7nI375XZubcD1K1j5goh5gWGdoK3W4s/QwMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHAQICAAEMAgAAAAEAAAAAAAAAAA==",
+          },
+          "receive": "usdc",
+          "stage": "swap",
+          "tx1Signature": "prior",
+          "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        },
+      ],
+      "name": "withdraw",
+    },
+  ],
+  "result": {
+    "content": [
+      {
+        "text": "{
+  "summary": {
+    "operation": "fixture",
+    "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+    "simulated": true,
+    "quote": {
+      "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+      "requested": "1",
+      "liquidity": "2",
+      "floorBps": 9900,
+      "rangeSide": "inside",
+      "toleranceBps": 100
+    },
+    "startingLiquidity": "1",
+    "startingBalances": {
+      "input": "10",
+      "a": "0",
+      "b": "0"
+    },
+    "expiresAt": 1793100060000,
+    "lastValidBlockHeight": 150,
+    "preserved": {
+      "fullSummary": true
+    }
+  },
+  "unsignedTransaction": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAQABA4qI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cl//Ig8gL7nI375XZubcD1K1j5goh5gWGdoK3W4s/QwMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHAQICAAEMAgAAAAEAAAAAAAAAAA==",
+  "permit": "fixture-permit",
+  "submitArgs": {
+    "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+    "permit": "fixture-permit",
+    "summary": {
+      "operation": "fixture",
+      "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+      "simulated": true,
+      "quote": {
+        "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        "requested": "1",
+        "liquidity": "2",
+        "floorBps": 9900,
+        "rangeSide": "inside",
+        "toleranceBps": 100
+      },
+      "startingLiquidity": "1",
+      "startingBalances": {
+        "input": "10",
+        "a": "0",
+        "b": "0"
+      },
+      "expiresAt": 1793100060000,
+      "lastValidBlockHeight": 150,
+      "preserved": {
+        "fullSummary": true
+      }
+    },
+    "confirmHighImpact": true
+  },
+  "signToken": "verified-payload:eyJraW5kIjoid2l0aGRyYXciLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInVuc2lnbmVkVHJhbnNhY3Rpb24iOiJBUUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUNBQVFBQkE0cUk0OTEwQ2ZHVi9WTGJMVHk2WFhMS1p3bS9IWlFTRy9OMGlBRzBEMjljbC8vSWc4Z0w3bkkzNzVYWnViY0QxSzFqNWdvaDVnV0dkb0szVzRzL1F3TUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hBUUlDQUFFTUFnQUFBQUVBQUFBQUFBQUFBQT09IiwicGVybWl0IjoiZml4dHVyZS1wZXJtaXQiLCJzdWJtaXRBcmdzIjp7IndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwicGVybWl0IjoiZml4dHVyZS1wZXJtaXQiLCJzdW1tYXJ5Ijp7Im9wZXJhdGlvbiI6ImZpeHR1cmUiLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInNpbXVsYXRlZCI6dHJ1ZSwicXVvdGUiOnsid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJyZXF1ZXN0ZWQiOiIxIiwibGlxdWlkaXR5IjoiMiIsImZsb29yQnBzIjo5OTAwLCJyYW5nZVNpZGUiOiJpbnNpZGUiLCJ0b2xlcmFuY2VCcHMiOjEwMH0sInN0YXJ0aW5nTGlxdWlkaXR5IjoiMSIsInN0YXJ0aW5nQmFsYW5jZXMiOnsiaW5wdXQiOiIxMCIsImEiOiIwIiwiYiI6IjAifSwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwLCJsYXN0VmFsaWRCbG9ja0hlaWdodCI6MTUwLCJwcmVzZXJ2ZWQiOnsiZnVsbFN1bW1hcnkiOnRydWV9fSwiY29uZmlybUhpZ2hJbXBhY3QiOnRydWV9LCJleHBpcmVzQXQiOjE3OTMxMDAwNjAwMDB9",
+  "signUrl": "https://app.invalid.example/app/sign/verified-payload:eyJraW5kIjoid2l0aGRyYXciLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInVuc2lnbmVkVHJhbnNhY3Rpb24iOiJBUUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUNBQVFBQkE0cUk0OTEwQ2ZHVi9WTGJMVHk2WFhMS1p3bS9IWlFTRy9OMGlBRzBEMjljbC8vSWc4Z0w3bkkzNzVYWnViY0QxSzFqNWdvaDVnV0dkb0szVzRzL1F3TUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hBUUlDQUFFTUFnQUFBQUVBQUFBQUFBQUFBQT09IiwicGVybWl0IjoiZml4dHVyZS1wZXJtaXQiLCJzdWJtaXRBcmdzIjp7IndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwicGVybWl0IjoiZml4dHVyZS1wZXJtaXQiLCJzdW1tYXJ5Ijp7Im9wZXJhdGlvbiI6ImZpeHR1cmUiLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInNpbXVsYXRlZCI6dHJ1ZSwicXVvdGUiOnsid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJyZXF1ZXN0ZWQiOiIxIiwibGlxdWlkaXR5IjoiMiIsImZsb29yQnBzIjo5OTAwLCJyYW5nZVNpZGUiOiJpbnNpZGUiLCJ0b2xlcmFuY2VCcHMiOjEwMH0sInN0YXJ0aW5nTGlxdWlkaXR5IjoiMSIsInN0YXJ0aW5nQmFsYW5jZXMiOnsiaW5wdXQiOiIxMCIsImEiOiIwIiwiYiI6IjAifSwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwLCJsYXN0VmFsaWRCbG9ja0hlaWdodCI6MTUwLCJwcmVzZXJ2ZWQiOnsiZnVsbFN1bW1hcnkiOnRydWV9fSwiY29uZmlybUhpZ2hJbXBhY3QiOnRydWV9LCJleHBpcmVzQXQiOjE3OTMxMDAwNjAwMDB9"
+}",
+        "type": "text",
+      },
+    ],
+  },
+}
+`;
+
+exports[`withdraw prepare baseline > HTTP builder failure precedes missing signing key 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        {
+          "percent": 100,
+          "positionMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        },
+      ],
+      "name": "withdraw",
+    },
+  ],
+  "result": {
+    "body": {
+      "error": "fixture builder rejected",
+    },
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+    },
+    "status": 400,
+  },
+}
+`;
+
+exports[`withdraw prepare baseline > HTTP preserves full output, permit, bytes, headers and I/O 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        {
+          "ignored": "preserved-only-for-withdraw",
+          "percent": 100,
+          "positionMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        },
+      ],
+      "name": "withdraw",
+    },
+    {
+      "args": [],
+      "name": "rpc",
+    },
+    {
+      "args": [
+        "confirmed",
+      ],
+      "name": "latest",
+    },
+  ],
+  "result": {
+    "body": {
+      "permit": "6f4918bc535668e0a02df014dd039eceec863812ecee8da171a911ce7015e460",
+      "summary": {
+        "blockhash": "uY46ibBrA5pEsx4z8iiQ6BpNeBuMR6weo4u2ubREB9q",
+        "expiresAt": 1793100075000,
+        "lastValidBlockHeight": 180,
+        "operation": "fixture",
+        "preserved": {
+          "fullSummary": true,
+        },
+        "quote": {
+          "floorBps": 9900,
+          "liquidity": "2",
+          "rangeSide": "inside",
+          "requested": "1",
+          "toleranceBps": 100,
+          "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        },
+        "simulated": true,
+        "simulatedAt": 1793100000000,
+        "startingBalances": {
+          "a": "0",
+          "b": "0",
+          "input": "10",
+        },
+        "startingLiquidity": "1",
+        "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+      },
+      "unsignedTransaction": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAQABA4qI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cl//Ig8gL7nI375XZubcD1K1j5goh5gWGdoK3W4s/QwMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA11UHVOCACl0jfu9YJgNXZrmz5aFYaKlAqyiZWHiOOwAQICAAEMAgAAAAEAAAAAAAAAAA==",
+    },
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+    },
+    "status": 200,
+  },
+}
+`;
+
+exports[`withdraw prepare baseline > HTTP request/error precedence {"wallet":"invalid"} 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        {
+          "wallet": "invalid",
+        },
+      ],
+      "name": "withdraw",
+    },
+  ],
+  "result": {
+    "body": {
+      "error": "Invalid wallet address",
+    },
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+    },
+    "status": 400,
+  },
+}
+`;
+
+exports[`withdraw prepare baseline > HTTP request/error precedence {} 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        {},
+      ],
+      "name": "withdraw",
+    },
+  ],
+  "result": {
+    "body": {
+      "error": "[ { "expected": "string", "code": "invalid_type", "path": [ "wallet" ], "message": "Invalid input: expected string, received undefined" }, { "expected": "string", "code": "invalid_type", "path": [ "positionMint" ], "m...",
+    },
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+    },
+    "status": 400,
+  },
+}
+`;
+
+exports[`withdraw prepare baseline > HTTP request/error precedence null 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        null,
+      ],
+      "name": "withdraw",
+    },
+  ],
+  "result": {
+    "body": {
+      "error": "[ { "expected": "object", "code": "invalid_type", "path": [], "message": "Invalid input: expected object, received null" } ]",
+    },
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+    },
+    "status": 400,
+  },
+}
+`;
+
+exports[`withdraw prepare baseline > HTTP request/error precedence undefined 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        [],
+      ],
+      "name": "withdraw",
+    },
+  ],
+  "result": {
+    "body": {
+      "error": "[ { "expected": "object", "code": "invalid_type", "path": [], "message": "Invalid input: expected object, received array" } ]",
+    },
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+    },
+    "status": 400,
+  },
+}
+`;
+
+exports[`withdraw prepare baseline > http MCP has no HTTP outer retry or refresh 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        {
+          "percent": 100,
+          "positionMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "receive": "usdc",
+          "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        },
+      ],
+      "name": "withdraw",
+    },
+  ],
+  "result": {
+    "content": [
+      {
+        "text": "{
+  "error": "Unable to estimate complete transaction network fee"
+}",
+        "type": "text",
+      },
+    ],
+    "isError": true,
+  },
+}
+`;
+
+exports[`withdraw prepare baseline > http sign URL explicit preserves the entire authenticated payload 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        {
+          "percent": 100,
+          "positionMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "receive": "usdc",
+          "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        },
+      ],
+      "name": "withdraw",
+    },
+  ],
+  "origin": "https://app.invalid.example",
+  "result": {
+    "content": [
+      {
+        "text": "{
+  "summary": {
+    "operation": "fixture",
+    "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+    "simulated": true,
+    "quote": {
+      "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+      "requested": "1",
+      "liquidity": "2",
+      "floorBps": 9900,
+      "rangeSide": "inside",
+      "toleranceBps": 100
+    },
+    "startingLiquidity": "1",
+    "startingBalances": {
+      "input": "10",
+      "a": "0",
+      "b": "0"
+    },
+    "expiresAt": 1793100060000,
+    "lastValidBlockHeight": 150,
+    "preserved": {
+      "fullSummary": true
+    }
+  },
+  "unsignedTransaction": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAQABA4qI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cl//Ig8gL7nI375XZubcD1K1j5goh5gWGdoK3W4s/QwMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHAQICAAEMAgAAAAEAAAAAAAAAAA==",
+  "permit": "fixture-permit",
+  "submitArgs": {
+    "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+    "permit": "fixture-permit",
+    "summary": {
+      "operation": "fixture",
+      "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+      "simulated": true,
+      "quote": {
+        "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        "requested": "1",
+        "liquidity": "2",
+        "floorBps": 9900,
+        "rangeSide": "inside",
+        "toleranceBps": 100
+      },
+      "startingLiquidity": "1",
+      "startingBalances": {
+        "input": "10",
+        "a": "0",
+        "b": "0"
+      },
+      "expiresAt": 1793100060000,
+      "lastValidBlockHeight": 150,
+      "preserved": {
+        "fullSummary": true
+      }
+    },
+    "confirmHighImpact": false
+  },
+  "signToken": "verified-payload:eyJraW5kIjoid2l0aGRyYXciLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInVuc2lnbmVkVHJhbnNhY3Rpb24iOiJBUUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUNBQVFBQkE0cUk0OTEwQ2ZHVi9WTGJMVHk2WFhMS1p3bS9IWlFTRy9OMGlBRzBEMjljbC8vSWc4Z0w3bkkzNzVYWnViY0QxSzFqNWdvaDVnV0dkb0szVzRzL1F3TUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hBUUlDQUFFTUFnQUFBQUVBQUFBQUFBQUFBQT09IiwicGVybWl0IjoiZml4dHVyZS1wZXJtaXQiLCJzdWJtaXRBcmdzIjp7IndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwicGVybWl0IjoiZml4dHVyZS1wZXJtaXQiLCJzdW1tYXJ5Ijp7Im9wZXJhdGlvbiI6ImZpeHR1cmUiLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInNpbXVsYXRlZCI6dHJ1ZSwicXVvdGUiOnsid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJyZXF1ZXN0ZWQiOiIxIiwibGlxdWlkaXR5IjoiMiIsImZsb29yQnBzIjo5OTAwLCJyYW5nZVNpZGUiOiJpbnNpZGUiLCJ0b2xlcmFuY2VCcHMiOjEwMH0sInN0YXJ0aW5nTGlxdWlkaXR5IjoiMSIsInN0YXJ0aW5nQmFsYW5jZXMiOnsiaW5wdXQiOiIxMCIsImEiOiIwIiwiYiI6IjAifSwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwLCJsYXN0VmFsaWRCbG9ja0hlaWdodCI6MTUwLCJwcmVzZXJ2ZWQiOnsiZnVsbFN1bW1hcnkiOnRydWV9fSwiY29uZmlybUhpZ2hJbXBhY3QiOmZhbHNlfSwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwfQ",
+  "signUrl": "https://app.invalid.example/app/sign/verified-payload:eyJraW5kIjoid2l0aGRyYXciLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInVuc2lnbmVkVHJhbnNhY3Rpb24iOiJBUUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUNBQVFBQkE0cUk0OTEwQ2ZHVi9WTGJMVHk2WFhMS1p3bS9IWlFTRy9OMGlBRzBEMjljbC8vSWc4Z0w3bkkzNzVYWnViY0QxSzFqNWdvaDVnV0dkb0szVzRzL1F3TUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hBUUlDQUFFTUFnQUFBQUVBQUFBQUFBQUFBQT09IiwicGVybWl0IjoiZml4dHVyZS1wZXJtaXQiLCJzdWJtaXRBcmdzIjp7IndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwicGVybWl0IjoiZml4dHVyZS1wZXJtaXQiLCJzdW1tYXJ5Ijp7Im9wZXJhdGlvbiI6ImZpeHR1cmUiLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInNpbXVsYXRlZCI6dHJ1ZSwicXVvdGUiOnsid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJyZXF1ZXN0ZWQiOiIxIiwibGlxdWlkaXR5IjoiMiIsImZsb29yQnBzIjo5OTAwLCJyYW5nZVNpZGUiOiJpbnNpZGUiLCJ0b2xlcmFuY2VCcHMiOjEwMH0sInN0YXJ0aW5nTGlxdWlkaXR5IjoiMSIsInN0YXJ0aW5nQmFsYW5jZXMiOnsiaW5wdXQiOiIxMCIsImEiOiIwIiwiYiI6IjAifSwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwLCJsYXN0VmFsaWRCbG9ja0hlaWdodCI6MTUwLCJwcmVzZXJ2ZWQiOnsiZnVsbFN1bW1hcnkiOnRydWV9fSwiY29uZmlybUhpZ2hJbXBhY3QiOmZhbHNlfSwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwfQ"
+}",
+        "type": "text",
+      },
+    ],
+  },
+}
+`;
+
+exports[`withdraw prepare baseline > http sign URL relative preserves the entire authenticated payload 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        {
+          "percent": 100,
+          "positionMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "receive": "usdc",
+          "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        },
+      ],
+      "name": "withdraw",
+    },
+  ],
+  "origin": "",
+  "result": {
+    "content": [
+      {
+        "text": "{
+  "summary": {
+    "operation": "fixture",
+    "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+    "simulated": true,
+    "quote": {
+      "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+      "requested": "1",
+      "liquidity": "2",
+      "floorBps": 9900,
+      "rangeSide": "inside",
+      "toleranceBps": 100
+    },
+    "startingLiquidity": "1",
+    "startingBalances": {
+      "input": "10",
+      "a": "0",
+      "b": "0"
+    },
+    "expiresAt": 1793100060000,
+    "lastValidBlockHeight": 150,
+    "preserved": {
+      "fullSummary": true
+    }
+  },
+  "unsignedTransaction": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAQABA4qI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cl//Ig8gL7nI375XZubcD1K1j5goh5gWGdoK3W4s/QwMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHAQICAAEMAgAAAAEAAAAAAAAAAA==",
+  "permit": "fixture-permit",
+  "submitArgs": {
+    "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+    "permit": "fixture-permit",
+    "summary": {
+      "operation": "fixture",
+      "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+      "simulated": true,
+      "quote": {
+        "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        "requested": "1",
+        "liquidity": "2",
+        "floorBps": 9900,
+        "rangeSide": "inside",
+        "toleranceBps": 100
+      },
+      "startingLiquidity": "1",
+      "startingBalances": {
+        "input": "10",
+        "a": "0",
+        "b": "0"
+      },
+      "expiresAt": 1793100060000,
+      "lastValidBlockHeight": 150,
+      "preserved": {
+        "fullSummary": true
+      }
+    },
+    "confirmHighImpact": false
+  },
+  "signToken": "verified-payload:eyJraW5kIjoid2l0aGRyYXciLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInVuc2lnbmVkVHJhbnNhY3Rpb24iOiJBUUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUNBQVFBQkE0cUk0OTEwQ2ZHVi9WTGJMVHk2WFhMS1p3bS9IWlFTRy9OMGlBRzBEMjljbC8vSWc4Z0w3bkkzNzVYWnViY0QxSzFqNWdvaDVnV0dkb0szVzRzL1F3TUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hBUUlDQUFFTUFnQUFBQUVBQUFBQUFBQUFBQT09IiwicGVybWl0IjoiZml4dHVyZS1wZXJtaXQiLCJzdWJtaXRBcmdzIjp7IndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwicGVybWl0IjoiZml4dHVyZS1wZXJtaXQiLCJzdW1tYXJ5Ijp7Im9wZXJhdGlvbiI6ImZpeHR1cmUiLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInNpbXVsYXRlZCI6dHJ1ZSwicXVvdGUiOnsid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJyZXF1ZXN0ZWQiOiIxIiwibGlxdWlkaXR5IjoiMiIsImZsb29yQnBzIjo5OTAwLCJyYW5nZVNpZGUiOiJpbnNpZGUiLCJ0b2xlcmFuY2VCcHMiOjEwMH0sInN0YXJ0aW5nTGlxdWlkaXR5IjoiMSIsInN0YXJ0aW5nQmFsYW5jZXMiOnsiaW5wdXQiOiIxMCIsImEiOiIwIiwiYiI6IjAifSwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwLCJsYXN0VmFsaWRCbG9ja0hlaWdodCI6MTUwLCJwcmVzZXJ2ZWQiOnsiZnVsbFN1bW1hcnkiOnRydWV9fSwiY29uZmlybUhpZ2hJbXBhY3QiOmZhbHNlfSwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwfQ",
+  "signUrl": "https://app.invalid.example/app/sign/verified-payload:eyJraW5kIjoid2l0aGRyYXciLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInVuc2lnbmVkVHJhbnNhY3Rpb24iOiJBUUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUNBQVFBQkE0cUk0OTEwQ2ZHVi9WTGJMVHk2WFhMS1p3bS9IWlFTRy9OMGlBRzBEMjljbC8vSWc4Z0w3bkkzNzVYWnViY0QxSzFqNWdvaDVnV0dkb0szVzRzL1F3TUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hBUUlDQUFFTUFnQUFBQUVBQUFBQUFBQUFBQT09IiwicGVybWl0IjoiZml4dHVyZS1wZXJtaXQiLCJzdWJtaXRBcmdzIjp7IndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwicGVybWl0IjoiZml4dHVyZS1wZXJtaXQiLCJzdW1tYXJ5Ijp7Im9wZXJhdGlvbiI6ImZpeHR1cmUiLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInNpbXVsYXRlZCI6dHJ1ZSwicXVvdGUiOnsid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJyZXF1ZXN0ZWQiOiIxIiwibGlxdWlkaXR5IjoiMiIsImZsb29yQnBzIjo5OTAwLCJyYW5nZVNpZGUiOiJpbnNpZGUiLCJ0b2xlcmFuY2VCcHMiOjEwMH0sInN0YXJ0aW5nTGlxdWlkaXR5IjoiMSIsInN0YXJ0aW5nQmFsYW5jZXMiOnsiaW5wdXQiOiIxMCIsImEiOiIwIiwiYiI6IjAifSwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwLCJsYXN0VmFsaWRCbG9ja0hlaWdodCI6MTUwLCJwcmVzZXJ2ZWQiOnsiZnVsbFN1bW1hcnkiOnRydWV9fSwiY29uZmlybUhpZ2hJbXBhY3QiOmZhbHNlfSwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwfQ"
+}",
+        "type": "text",
+      },
+    ],
+  },
+}
+`;
+
+exports[`withdraw prepare baseline > http sign URL vercel preserves the entire authenticated payload 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        {
+          "percent": 100,
+          "positionMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "receive": "usdc",
+          "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        },
+      ],
+      "name": "withdraw",
+    },
+  ],
+  "origin": "https://preview.invalid.example",
+  "result": {
+    "content": [
+      {
+        "text": "{
+  "summary": {
+    "operation": "fixture",
+    "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+    "simulated": true,
+    "quote": {
+      "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+      "requested": "1",
+      "liquidity": "2",
+      "floorBps": 9900,
+      "rangeSide": "inside",
+      "toleranceBps": 100
+    },
+    "startingLiquidity": "1",
+    "startingBalances": {
+      "input": "10",
+      "a": "0",
+      "b": "0"
+    },
+    "expiresAt": 1793100060000,
+    "lastValidBlockHeight": 150,
+    "preserved": {
+      "fullSummary": true
+    }
+  },
+  "unsignedTransaction": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAQABA4qI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cl//Ig8gL7nI375XZubcD1K1j5goh5gWGdoK3W4s/QwMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHAQICAAEMAgAAAAEAAAAAAAAAAA==",
+  "permit": "fixture-permit",
+  "submitArgs": {
+    "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+    "permit": "fixture-permit",
+    "summary": {
+      "operation": "fixture",
+      "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+      "simulated": true,
+      "quote": {
+        "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        "requested": "1",
+        "liquidity": "2",
+        "floorBps": 9900,
+        "rangeSide": "inside",
+        "toleranceBps": 100
+      },
+      "startingLiquidity": "1",
+      "startingBalances": {
+        "input": "10",
+        "a": "0",
+        "b": "0"
+      },
+      "expiresAt": 1793100060000,
+      "lastValidBlockHeight": 150,
+      "preserved": {
+        "fullSummary": true
+      }
+    },
+    "confirmHighImpact": false
+  },
+  "signToken": "verified-payload:eyJraW5kIjoid2l0aGRyYXciLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInVuc2lnbmVkVHJhbnNhY3Rpb24iOiJBUUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUNBQVFBQkE0cUk0OTEwQ2ZHVi9WTGJMVHk2WFhMS1p3bS9IWlFTRy9OMGlBRzBEMjljbC8vSWc4Z0w3bkkzNzVYWnViY0QxSzFqNWdvaDVnV0dkb0szVzRzL1F3TUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hBUUlDQUFFTUFnQUFBQUVBQUFBQUFBQUFBQT09IiwicGVybWl0IjoiZml4dHVyZS1wZXJtaXQiLCJzdWJtaXRBcmdzIjp7IndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwicGVybWl0IjoiZml4dHVyZS1wZXJtaXQiLCJzdW1tYXJ5Ijp7Im9wZXJhdGlvbiI6ImZpeHR1cmUiLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInNpbXVsYXRlZCI6dHJ1ZSwicXVvdGUiOnsid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJyZXF1ZXN0ZWQiOiIxIiwibGlxdWlkaXR5IjoiMiIsImZsb29yQnBzIjo5OTAwLCJyYW5nZVNpZGUiOiJpbnNpZGUiLCJ0b2xlcmFuY2VCcHMiOjEwMH0sInN0YXJ0aW5nTGlxdWlkaXR5IjoiMSIsInN0YXJ0aW5nQmFsYW5jZXMiOnsiaW5wdXQiOiIxMCIsImEiOiIwIiwiYiI6IjAifSwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwLCJsYXN0VmFsaWRCbG9ja0hlaWdodCI6MTUwLCJwcmVzZXJ2ZWQiOnsiZnVsbFN1bW1hcnkiOnRydWV9fSwiY29uZmlybUhpZ2hJbXBhY3QiOmZhbHNlfSwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwfQ",
+  "signUrl": "https://app.invalid.example/app/sign/verified-payload:eyJraW5kIjoid2l0aGRyYXciLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInVuc2lnbmVkVHJhbnNhY3Rpb24iOiJBUUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUNBQVFBQkE0cUk0OTEwQ2ZHVi9WTGJMVHk2WFhMS1p3bS9IWlFTRy9OMGlBRzBEMjljbC8vSWc4Z0w3bkkzNzVYWnViY0QxSzFqNWdvaDVnV0dkb0szVzRzL1F3TUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hBUUlDQUFFTUFnQUFBQUVBQUFBQUFBQUFBQT09IiwicGVybWl0IjoiZml4dHVyZS1wZXJtaXQiLCJzdWJtaXRBcmdzIjp7IndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwicGVybWl0IjoiZml4dHVyZS1wZXJtaXQiLCJzdW1tYXJ5Ijp7Im9wZXJhdGlvbiI6ImZpeHR1cmUiLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInNpbXVsYXRlZCI6dHJ1ZSwicXVvdGUiOnsid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJyZXF1ZXN0ZWQiOiIxIiwibGlxdWlkaXR5IjoiMiIsImZsb29yQnBzIjo5OTAwLCJyYW5nZVNpZGUiOiJpbnNpZGUiLCJ0b2xlcmFuY2VCcHMiOjEwMH0sInN0YXJ0aW5nTGlxdWlkaXR5IjoiMSIsInN0YXJ0aW5nQmFsYW5jZXMiOnsiaW5wdXQiOiIxMCIsImEiOiIwIiwiYiI6IjAifSwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwLCJsYXN0VmFsaWRCbG9ja0hlaWdodCI6MTUwLCJwcmVzZXJ2ZWQiOnsiZnVsbFN1bW1hcnkiOnRydWV9fSwiY29uZmlybUhpZ2hJbXBhY3QiOmZhbHNlfSwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwfQ"
+}",
+        "type": "text",
+      },
+    ],
+  },
+}
+`;
+
+exports[`withdraw prepare baseline > stdio MCP has no HTTP outer retry or refresh 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        {
+          "percent": 100,
+          "positionMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "receive": "usdc",
+          "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        },
+      ],
+      "name": "withdraw",
+    },
+  ],
+  "result": {
+    "content": [
+      {
+        "text": "{
+  "error": "Unable to estimate complete transaction network fee"
+}",
+        "type": "text",
+      },
+    ],
+    "isError": true,
+  },
+}
+`;
+
+exports[`withdraw prepare baseline > stdio sign URL explicit preserves the entire authenticated payload 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        {
+          "percent": 100,
+          "positionMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "receive": "usdc",
+          "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        },
+      ],
+      "name": "withdraw",
+    },
+  ],
+  "origin": "https://app.invalid.example",
+  "result": {
+    "content": [
+      {
+        "text": "{
+  "summary": {
+    "operation": "fixture",
+    "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+    "simulated": true,
+    "quote": {
+      "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+      "requested": "1",
+      "liquidity": "2",
+      "floorBps": 9900,
+      "rangeSide": "inside",
+      "toleranceBps": 100
+    },
+    "startingLiquidity": "1",
+    "startingBalances": {
+      "input": "10",
+      "a": "0",
+      "b": "0"
+    },
+    "expiresAt": 1793100060000,
+    "lastValidBlockHeight": 150,
+    "preserved": {
+      "fullSummary": true
+    }
+  },
+  "unsignedTransaction": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAQABA4qI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cl//Ig8gL7nI375XZubcD1K1j5goh5gWGdoK3W4s/QwMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHAQICAAEMAgAAAAEAAAAAAAAAAA==",
+  "permit": "fixture-permit",
+  "submitArgs": {
+    "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+    "permit": "fixture-permit",
+    "summary": {
+      "operation": "fixture",
+      "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+      "simulated": true,
+      "quote": {
+        "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        "requested": "1",
+        "liquidity": "2",
+        "floorBps": 9900,
+        "rangeSide": "inside",
+        "toleranceBps": 100
+      },
+      "startingLiquidity": "1",
+      "startingBalances": {
+        "input": "10",
+        "a": "0",
+        "b": "0"
+      },
+      "expiresAt": 1793100060000,
+      "lastValidBlockHeight": 150,
+      "preserved": {
+        "fullSummary": true
+      }
+    },
+    "confirmHighImpact": false
+  },
+  "signToken": "verified-payload:eyJraW5kIjoid2l0aGRyYXciLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInVuc2lnbmVkVHJhbnNhY3Rpb24iOiJBUUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUNBQVFBQkE0cUk0OTEwQ2ZHVi9WTGJMVHk2WFhMS1p3bS9IWlFTRy9OMGlBRzBEMjljbC8vSWc4Z0w3bkkzNzVYWnViY0QxSzFqNWdvaDVnV0dkb0szVzRzL1F3TUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hBUUlDQUFFTUFnQUFBQUVBQUFBQUFBQUFBQT09IiwicGVybWl0IjoiZml4dHVyZS1wZXJtaXQiLCJzdWJtaXRBcmdzIjp7IndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwicGVybWl0IjoiZml4dHVyZS1wZXJtaXQiLCJzdW1tYXJ5Ijp7Im9wZXJhdGlvbiI6ImZpeHR1cmUiLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInNpbXVsYXRlZCI6dHJ1ZSwicXVvdGUiOnsid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJyZXF1ZXN0ZWQiOiIxIiwibGlxdWlkaXR5IjoiMiIsImZsb29yQnBzIjo5OTAwLCJyYW5nZVNpZGUiOiJpbnNpZGUiLCJ0b2xlcmFuY2VCcHMiOjEwMH0sInN0YXJ0aW5nTGlxdWlkaXR5IjoiMSIsInN0YXJ0aW5nQmFsYW5jZXMiOnsiaW5wdXQiOiIxMCIsImEiOiIwIiwiYiI6IjAifSwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwLCJsYXN0VmFsaWRCbG9ja0hlaWdodCI6MTUwLCJwcmVzZXJ2ZWQiOnsiZnVsbFN1bW1hcnkiOnRydWV9fSwiY29uZmlybUhpZ2hJbXBhY3QiOmZhbHNlfSwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwfQ",
+  "signUrl": "https://app.invalid.example/app/sign/verified-payload:eyJraW5kIjoid2l0aGRyYXciLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInVuc2lnbmVkVHJhbnNhY3Rpb24iOiJBUUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUNBQVFBQkE0cUk0OTEwQ2ZHVi9WTGJMVHk2WFhMS1p3bS9IWlFTRy9OMGlBRzBEMjljbC8vSWc4Z0w3bkkzNzVYWnViY0QxSzFqNWdvaDVnV0dkb0szVzRzL1F3TUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hBUUlDQUFFTUFnQUFBQUVBQUFBQUFBQUFBQT09IiwicGVybWl0IjoiZml4dHVyZS1wZXJtaXQiLCJzdWJtaXRBcmdzIjp7IndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwicGVybWl0IjoiZml4dHVyZS1wZXJtaXQiLCJzdW1tYXJ5Ijp7Im9wZXJhdGlvbiI6ImZpeHR1cmUiLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInNpbXVsYXRlZCI6dHJ1ZSwicXVvdGUiOnsid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJyZXF1ZXN0ZWQiOiIxIiwibGlxdWlkaXR5IjoiMiIsImZsb29yQnBzIjo5OTAwLCJyYW5nZVNpZGUiOiJpbnNpZGUiLCJ0b2xlcmFuY2VCcHMiOjEwMH0sInN0YXJ0aW5nTGlxdWlkaXR5IjoiMSIsInN0YXJ0aW5nQmFsYW5jZXMiOnsiaW5wdXQiOiIxMCIsImEiOiIwIiwiYiI6IjAifSwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwLCJsYXN0VmFsaWRCbG9ja0hlaWdodCI6MTUwLCJwcmVzZXJ2ZWQiOnsiZnVsbFN1bW1hcnkiOnRydWV9fSwiY29uZmlybUhpZ2hJbXBhY3QiOmZhbHNlfSwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwfQ"
+}",
+        "type": "text",
+      },
+    ],
+  },
+}
+`;
+
+exports[`withdraw prepare baseline > stdio sign URL relative preserves the entire authenticated payload 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        {
+          "percent": 100,
+          "positionMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "receive": "usdc",
+          "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        },
+      ],
+      "name": "withdraw",
+    },
+  ],
+  "origin": "",
+  "result": {
+    "content": [
+      {
+        "text": "{
+  "summary": {
+    "operation": "fixture",
+    "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+    "simulated": true,
+    "quote": {
+      "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+      "requested": "1",
+      "liquidity": "2",
+      "floorBps": 9900,
+      "rangeSide": "inside",
+      "toleranceBps": 100
+    },
+    "startingLiquidity": "1",
+    "startingBalances": {
+      "input": "10",
+      "a": "0",
+      "b": "0"
+    },
+    "expiresAt": 1793100060000,
+    "lastValidBlockHeight": 150,
+    "preserved": {
+      "fullSummary": true
+    }
+  },
+  "unsignedTransaction": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAQABA4qI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cl//Ig8gL7nI375XZubcD1K1j5goh5gWGdoK3W4s/QwMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHAQICAAEMAgAAAAEAAAAAAAAAAA==",
+  "permit": "fixture-permit",
+  "submitArgs": {
+    "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+    "permit": "fixture-permit",
+    "summary": {
+      "operation": "fixture",
+      "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+      "simulated": true,
+      "quote": {
+        "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        "requested": "1",
+        "liquidity": "2",
+        "floorBps": 9900,
+        "rangeSide": "inside",
+        "toleranceBps": 100
+      },
+      "startingLiquidity": "1",
+      "startingBalances": {
+        "input": "10",
+        "a": "0",
+        "b": "0"
+      },
+      "expiresAt": 1793100060000,
+      "lastValidBlockHeight": 150,
+      "preserved": {
+        "fullSummary": true
+      }
+    },
+    "confirmHighImpact": false
+  },
+  "signToken": "verified-payload:eyJraW5kIjoid2l0aGRyYXciLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInVuc2lnbmVkVHJhbnNhY3Rpb24iOiJBUUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUNBQVFBQkE0cUk0OTEwQ2ZHVi9WTGJMVHk2WFhMS1p3bS9IWlFTRy9OMGlBRzBEMjljbC8vSWc4Z0w3bkkzNzVYWnViY0QxSzFqNWdvaDVnV0dkb0szVzRzL1F3TUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hBUUlDQUFFTUFnQUFBQUVBQUFBQUFBQUFBQT09IiwicGVybWl0IjoiZml4dHVyZS1wZXJtaXQiLCJzdWJtaXRBcmdzIjp7IndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwicGVybWl0IjoiZml4dHVyZS1wZXJtaXQiLCJzdW1tYXJ5Ijp7Im9wZXJhdGlvbiI6ImZpeHR1cmUiLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInNpbXVsYXRlZCI6dHJ1ZSwicXVvdGUiOnsid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJyZXF1ZXN0ZWQiOiIxIiwibGlxdWlkaXR5IjoiMiIsImZsb29yQnBzIjo5OTAwLCJyYW5nZVNpZGUiOiJpbnNpZGUiLCJ0b2xlcmFuY2VCcHMiOjEwMH0sInN0YXJ0aW5nTGlxdWlkaXR5IjoiMSIsInN0YXJ0aW5nQmFsYW5jZXMiOnsiaW5wdXQiOiIxMCIsImEiOiIwIiwiYiI6IjAifSwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwLCJsYXN0VmFsaWRCbG9ja0hlaWdodCI6MTUwLCJwcmVzZXJ2ZWQiOnsiZnVsbFN1bW1hcnkiOnRydWV9fSwiY29uZmlybUhpZ2hJbXBhY3QiOmZhbHNlfSwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwfQ",
+  "signUrl": "https://app.invalid.example/app/sign/verified-payload:eyJraW5kIjoid2l0aGRyYXciLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInVuc2lnbmVkVHJhbnNhY3Rpb24iOiJBUUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUNBQVFBQkE0cUk0OTEwQ2ZHVi9WTGJMVHk2WFhMS1p3bS9IWlFTRy9OMGlBRzBEMjljbC8vSWc4Z0w3bkkzNzVYWnViY0QxSzFqNWdvaDVnV0dkb0szVzRzL1F3TUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hBUUlDQUFFTUFnQUFBQUVBQUFBQUFBQUFBQT09IiwicGVybWl0IjoiZml4dHVyZS1wZXJtaXQiLCJzdWJtaXRBcmdzIjp7IndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwicGVybWl0IjoiZml4dHVyZS1wZXJtaXQiLCJzdW1tYXJ5Ijp7Im9wZXJhdGlvbiI6ImZpeHR1cmUiLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInNpbXVsYXRlZCI6dHJ1ZSwicXVvdGUiOnsid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJyZXF1ZXN0ZWQiOiIxIiwibGlxdWlkaXR5IjoiMiIsImZsb29yQnBzIjo5OTAwLCJyYW5nZVNpZGUiOiJpbnNpZGUiLCJ0b2xlcmFuY2VCcHMiOjEwMH0sInN0YXJ0aW5nTGlxdWlkaXR5IjoiMSIsInN0YXJ0aW5nQmFsYW5jZXMiOnsiaW5wdXQiOiIxMCIsImEiOiIwIiwiYiI6IjAifSwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwLCJsYXN0VmFsaWRCbG9ja0hlaWdodCI6MTUwLCJwcmVzZXJ2ZWQiOnsiZnVsbFN1bW1hcnkiOnRydWV9fSwiY29uZmlybUhpZ2hJbXBhY3QiOmZhbHNlfSwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwfQ"
+}",
+        "type": "text",
+      },
+    ],
+  },
+}
+`;
+
+exports[`withdraw prepare baseline > stdio sign URL vercel preserves the entire authenticated payload 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        {
+          "percent": 100,
+          "positionMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "receive": "usdc",
+          "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        },
+      ],
+      "name": "withdraw",
+    },
+  ],
+  "origin": "https://preview.invalid.example",
+  "result": {
+    "content": [
+      {
+        "text": "{
+  "summary": {
+    "operation": "fixture",
+    "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+    "simulated": true,
+    "quote": {
+      "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+      "requested": "1",
+      "liquidity": "2",
+      "floorBps": 9900,
+      "rangeSide": "inside",
+      "toleranceBps": 100
+    },
+    "startingLiquidity": "1",
+    "startingBalances": {
+      "input": "10",
+      "a": "0",
+      "b": "0"
+    },
+    "expiresAt": 1793100060000,
+    "lastValidBlockHeight": 150,
+    "preserved": {
+      "fullSummary": true
+    }
+  },
+  "unsignedTransaction": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAQABA4qI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cl//Ig8gL7nI375XZubcD1K1j5goh5gWGdoK3W4s/QwMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHAQICAAEMAgAAAAEAAAAAAAAAAA==",
+  "permit": "fixture-permit",
+  "submitArgs": {
+    "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+    "permit": "fixture-permit",
+    "summary": {
+      "operation": "fixture",
+      "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+      "simulated": true,
+      "quote": {
+        "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        "requested": "1",
+        "liquidity": "2",
+        "floorBps": 9900,
+        "rangeSide": "inside",
+        "toleranceBps": 100
+      },
+      "startingLiquidity": "1",
+      "startingBalances": {
+        "input": "10",
+        "a": "0",
+        "b": "0"
+      },
+      "expiresAt": 1793100060000,
+      "lastValidBlockHeight": 150,
+      "preserved": {
+        "fullSummary": true
+      }
+    },
+    "confirmHighImpact": false
+  },
+  "signToken": "verified-payload:eyJraW5kIjoid2l0aGRyYXciLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInVuc2lnbmVkVHJhbnNhY3Rpb24iOiJBUUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUNBQVFBQkE0cUk0OTEwQ2ZHVi9WTGJMVHk2WFhMS1p3bS9IWlFTRy9OMGlBRzBEMjljbC8vSWc4Z0w3bkkzNzVYWnViY0QxSzFqNWdvaDVnV0dkb0szVzRzL1F3TUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hBUUlDQUFFTUFnQUFBQUVBQUFBQUFBQUFBQT09IiwicGVybWl0IjoiZml4dHVyZS1wZXJtaXQiLCJzdWJtaXRBcmdzIjp7IndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwicGVybWl0IjoiZml4dHVyZS1wZXJtaXQiLCJzdW1tYXJ5Ijp7Im9wZXJhdGlvbiI6ImZpeHR1cmUiLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInNpbXVsYXRlZCI6dHJ1ZSwicXVvdGUiOnsid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJyZXF1ZXN0ZWQiOiIxIiwibGlxdWlkaXR5IjoiMiIsImZsb29yQnBzIjo5OTAwLCJyYW5nZVNpZGUiOiJpbnNpZGUiLCJ0b2xlcmFuY2VCcHMiOjEwMH0sInN0YXJ0aW5nTGlxdWlkaXR5IjoiMSIsInN0YXJ0aW5nQmFsYW5jZXMiOnsiaW5wdXQiOiIxMCIsImEiOiIwIiwiYiI6IjAifSwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwLCJsYXN0VmFsaWRCbG9ja0hlaWdodCI6MTUwLCJwcmVzZXJ2ZWQiOnsiZnVsbFN1bW1hcnkiOnRydWV9fSwiY29uZmlybUhpZ2hJbXBhY3QiOmZhbHNlfSwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwfQ",
+  "signUrl": "https://app.invalid.example/app/sign/verified-payload:eyJraW5kIjoid2l0aGRyYXciLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInVuc2lnbmVkVHJhbnNhY3Rpb24iOiJBUUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUNBQVFBQkE0cUk0OTEwQ2ZHVi9WTGJMVHk2WFhMS1p3bS9IWlFTRy9OMGlBRzBEMjljbC8vSWc4Z0w3bkkzNzVYWnViY0QxSzFqNWdvaDVnV0dkb0szVzRzL1F3TUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hBUUlDQUFFTUFnQUFBQUVBQUFBQUFBQUFBQT09IiwicGVybWl0IjoiZml4dHVyZS1wZXJtaXQiLCJzdWJtaXRBcmdzIjp7IndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwicGVybWl0IjoiZml4dHVyZS1wZXJtaXQiLCJzdW1tYXJ5Ijp7Im9wZXJhdGlvbiI6ImZpeHR1cmUiLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInNpbXVsYXRlZCI6dHJ1ZSwicXVvdGUiOnsid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJyZXF1ZXN0ZWQiOiIxIiwibGlxdWlkaXR5IjoiMiIsImZsb29yQnBzIjo5OTAwLCJyYW5nZVNpZGUiOiJpbnNpZGUiLCJ0b2xlcmFuY2VCcHMiOjEwMH0sInN0YXJ0aW5nTGlxdWlkaXR5IjoiMSIsInN0YXJ0aW5nQmFsYW5jZXMiOnsiaW5wdXQiOiIxMCIsImEiOiIwIiwiYiI6IjAifSwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwLCJsYXN0VmFsaWRCbG9ja0hlaWdodCI6MTUwLCJwcmVzZXJ2ZWQiOnsiZnVsbFN1bW1hcnkiOnRydWV9fSwiY29uZmlybUhpZ2hJbXBhY3QiOmZhbHNlfSwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwfQ"
+}",
+        "type": "text",
+      },
+    ],
+  },
+}
+`;
+
+exports[`withdraw preserves relay AsyncLocalStorage and missing-quote 409 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        {
+          "jupiterRelay": {
+            "hints": {
+              "fixture": "7",
+            },
+            "responses": {},
+          },
+          "percent": 100,
+          "positionMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        },
+      ],
+      "name": "withdraw",
+    },
+  ],
+  "result": {
+    "body": {
+      "code": "jupiter_relay_needed",
+      "error": "Jupiter quotes required",
+      "hints": {
+        "fixture": "9",
+      },
+      "needs": [
+        {
+          "id": "d1989f68b992f208f4d5ccb6d07eabec",
+          "method": "GET",
+          "url": "/swap/v1/quote?amount=1",
+        },
+      ],
+    },
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+    },
+    "status": 409,
+  },
+}
+`;
+
+exports[`withdraw preserves relay success hints 1`] = `
+{
+  "io": [
+    {
+      "args": [
+        {
+          "jupiterRelay": {
+            "responses": {},
+          },
+          "percent": 100,
+          "positionMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+          "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        },
+      ],
+      "name": "withdraw",
+    },
+    {
+      "args": [],
+      "name": "rpc",
+    },
+    {
+      "args": [
+        "confirmed",
+      ],
+      "name": "latest",
+    },
+  ],
+  "result": {
+    "body": {
+      "permit": "6f4918bc535668e0a02df014dd039eceec863812ecee8da171a911ce7015e460",
+      "summary": {
+        "blockhash": "uY46ibBrA5pEsx4z8iiQ6BpNeBuMR6weo4u2ubREB9q",
+        "expiresAt": 1793100075000,
+        "lastValidBlockHeight": 180,
+        "operation": "fixture",
+        "preserved": {
+          "fullSummary": true,
+        },
+        "quote": {
+          "floorBps": 9900,
+          "liquidity": "2",
+          "rangeSide": "inside",
+          "requested": "1",
+          "toleranceBps": 100,
+          "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+        },
+        "simulated": true,
+        "simulatedAt": 1793100000000,
+        "startingBalances": {
+          "a": "0",
+          "b": "0",
+          "input": "10",
+        },
+        "startingLiquidity": "1",
+        "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+      },
+      "unsignedTransaction": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAQABA4qI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cl//Ig8gL7nI375XZubcD1K1j5goh5gWGdoK3W4s/QwMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA11UHVOCACl0jfu9YJgNXZrmz5aFYaKlAqyiZWHiOOwAQICAAEMAgAAAAEAAAAAAAAAAA==",
+    },
+    "headers": {
+      "cache-control": "no-store",
+      "content-type": "application/json",
+      "x-jupiter-relay-hints": "{"fixture":"9"}",
+    },
+    "status": 200,
+  },
+}
+`;
