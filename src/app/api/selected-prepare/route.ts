@@ -1,29 +1,20 @@
 import "@/lib/engine-host";
+import { getSigningSecret } from "@sofinance/engine/config/server-env";
 import { withJupiterRelay } from "@/lib/jupiter-relay-route";
 import { withSelectedDeadline } from "@/lib/selected-deadline";
 import { parseSelectedQuoteRequest } from "@sofinance/engine/api-input";
 import { selectedApiError } from "@/lib/api-response";
-import { buildAndSimulateSelectedZap } from "@/lib/selected-atomic";
-import { issueSelectedPermit } from "@/lib/selected-permit";
-import { getSigningSecret } from "@sofinance/engine/config/server-env";
+import { prepareSelected } from "@/server/transactions/selected-prepare";
+import { APP_SELECTED_PREPARE } from "@/server/transactions/surface-policy";
 
 export async function POST(request: Request) {
   return withJupiterRelay(request, () => withSelectedDeadline(request, async (signal, budget) => {
   try {
     const { wallet, selection, amount, floorBps, toleranceBps } = await parseSelectedQuoteRequest(request);
-    const { summary, transaction } = await buildAndSimulateSelectedZap(wallet, selection, amount, floorBps, toleranceBps,
-      { enforceResaleFloor: false, signal, budget });
-    signal.throwIfAborted();
-    const permit = issueSelectedPermit(getSigningSecret(), {
-      message: Buffer.from(transaction.message.serialize()).toString("base64"), wallet, selection,
-      requested: summary.quote.requested, floorBps: summary.quote.floorBps,
-      expiresAt: summary.expiresAt, lastValidBlockHeight: summary.lastValidBlockHeight,
-      startingLiquidity: summary.startingLiquidity, expectedLiquidity: summary.quote.liquidity,
-      rangeSide: summary.quote.rangeSide, startingBalances: summary.startingBalances,
-    });
-    signal.throwIfAborted();
-    return Response.json({ ...summary, permit,
-      unsignedTransaction: Buffer.from(transaction.serialize()).toString("base64") }, {
+    const { summary, permit, unsignedTransaction } = await prepareSelected(
+      { wallet, selection, amount, floorBps, toleranceBps }, getSigningSecret, APP_SELECTED_PREPARE, { signal, budget },
+    );
+    return Response.json({ ...summary, permit, unsignedTransaction }, {
       headers: { "Cache-Control": "no-store" },
     });
   } catch (error) {

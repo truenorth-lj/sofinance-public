@@ -3,10 +3,10 @@ import { PublicKey, VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
 import { discoverWallet } from "@sofinance/engine/wallet-discovery";
 import { searchSelectedQuoteBundle } from "../lib/selected-quote";
-import { buildAndSimulateSelectedZap } from "../lib/selected-atomic";
+import { prepareSelected } from "@/server/transactions/selected-prepare";
+import { MCP_SELECTED_PREPARE, MCP_OPEN_PREPARE, MCP_WITHDRAW_PREPARE } from "@/server/transactions/surface-policy";
 import { buildAndSimulateCompound } from "@sofinance/engine/compound-atomic";
-import { issueSelectedPermit } from "../lib/selected-permit";
-import { issueCompoundPermit } from "../lib/compound-permit";
+import { prepareCompound } from "@/server/transactions/compound-prepare";
 import { verifySelectedPermit } from "../lib/selected-permit";
 import { verifyCompoundPermit } from "../lib/compound-permit";
 import { simulateAndVerifySelectedTransaction } from "../lib/selected-simulation";
@@ -25,8 +25,7 @@ import { buildOpenPositionUrl, buildSignUrl } from "../lib/public-urls";
 import { OPEN_RANGE_PRESETS } from "@sofinance/engine/open-range-presets";
 import { rangeInputFromFields } from "@sofinance/engine/open-range";
 import { getOpenPositionQuoteBundle } from "@sofinance/engine/open-quote";
-import { buildAndSimulateOpenPosition } from "@sofinance/engine/open-atomic";
-import { issueOpenPositionPermit } from "../lib/open-permit";
+import { prepareOpen } from "@/server/transactions/open-prepare";
 import { submitOpenPositionFromParts } from "../lib/open-send";
 import type { OpenPositionSummary } from "@sofinance/engine/open-types";
 import { getPoolActivitySnapshot } from "../lib/solami-blur";
@@ -156,6 +155,13 @@ export async function quoteAddLiquidity(input: QuoteAddLiquidityInput) {
   };
 }
 
+// Preserve the original one-key lifetime across the async use-case boundary.
+// Capture lazily after build success; never return key material in prepared data.
+function capturePrepareSigningSecret() {
+  let secret: string | undefined;
+  return () => secret ??= getSigningSecret();
+}
+
 /**
  * Prepare an unsigned, simulated transaction for adding liquidity.
  * Returns base64-encoded transaction for the user/agent wallet to sign.
@@ -165,35 +171,19 @@ export async function quoteAddLiquidity(input: QuoteAddLiquidityInput) {
  * Failure modes: Simulation failure, size limit, blockhash expiry, state changes.
  */
 export async function prepareTransaction(input: PrepareTransactionInput) {
+  const signingSecret = capturePrepareSigningSecret();
   const selection = {
     positionMint: input.positionMint,
     inputMint: input.inputMint,
     inputKind: input.inputKind,
   };
   
-  const { summary, transaction } = await buildAndSimulateSelectedZap(
-    input.wallet,
-    selection,
-    input.amount,
-    input.resaleFloorBps,
-    input.slippageToleranceBps,
-  );
-  
-  const jupiterApiKey = getSigningSecret();
-  const permit = issueSelectedPermit(jupiterApiKey, {
-    message: Buffer.from(transaction.message.serialize()).toString("base64"),
-    wallet: input.wallet,
-    selection,
-    requested: summary.quote.requested,
-    floorBps: summary.quote.floorBps,
-    expiresAt: summary.expiresAt,
-    lastValidBlockHeight: summary.lastValidBlockHeight,
-    startingLiquidity: summary.startingLiquidity,
-    expectedLiquidity: summary.quote.liquidity,
-    rangeSide: summary.quote.rangeSide,
-    startingBalances: summary.startingBalances,
-  });
-  
+  const { summary, permit, unsignedTransaction: unsignedTransactionBase64 } = await prepareSelected({
+    wallet: input.wallet, selection, amount: input.amount,
+    floorBps: input.resaleFloorBps, toleranceBps: input.slippageToleranceBps,
+  }, signingSecret, MCP_SELECTED_PREPARE);
+  const jupiterApiKey = signingSecret();
+
   // Every field submit_signed_transaction needs besides the signed transaction.
   // These values are bound by the permit, so they must be passed back unchanged.
   const submitArgs = {
@@ -209,8 +199,6 @@ export async function prepareTransaction(input: PrepareTransactionInput) {
     rangeSide: summary.quote.rangeSide,
     startingBalances: summary.startingBalances,
   };
-  
-  const unsignedTransactionBase64 = Buffer.from(transaction.serialize()).toString("base64");
   
   // Create self-contained signed token (no shared storage required)
   const signToken = await createSignToken(
@@ -321,21 +309,12 @@ export async function quoteCompound(input: QuoteCompoundInput) {
  * Safety: Same as prepareTransaction, plus isolated yield accounts.
  */
 export async function prepareCompoundTransaction(input: QuoteCompoundInput) {
-  const { summary, transaction } = await buildAndSimulateCompound(
-    input.wallet,
-    input.positionMint,
-    input.sourceSignatures || [],
-  );
-  
-  const jupiterApiKey = getSigningSecret();
-  const permit = issueCompoundPermit(jupiterApiKey, {
-    wallet: input.wallet,
-    summary,
-    message: Buffer.from(transaction.message.serialize()).toString("base64"),
-  });
-  
-  const unsignedTransactionBase64 = Buffer.from(transaction.serialize()).toString("base64");
-  
+  const signingSecret = capturePrepareSigningSecret();
+  const { summary, permit, unsignedTransaction: unsignedTransactionBase64 } = await prepareCompound({
+    wallet: input.wallet, positionMint: input.positionMint, sourceSignatures: input.sourceSignatures || [],
+  }, signingSecret);
+  const jupiterApiKey = signingSecret();
+
   // submitArgs for compound includes signedTransaction, permit, wallet, and full summary
   const submitArgs = {
     permit,
@@ -752,22 +731,17 @@ export async function quoteOpenPosition(input: QuoteOpenPositionInput) {
  * The wallet still signs as fee payer. After signing, call submit_open_position.
  */
 export async function prepareOpenPosition(input: PrepareOpenPositionInput) {
+  const signingSecret = capturePrepareSigningSecret();
   const selection = {
     poolId: input.poolId,
     inputMint: input.inputMint,
     inputKind: input.inputKind,
   };
-  const { summary, transaction } = await buildAndSimulateOpenPosition(
-    input.wallet, selection, input.amount, openRangeFromInput(input),
-    input.resaleFloorBps, input.slippageToleranceBps,
-  );
-  const jupiterApiKey = getSigningSecret();
-  const permit = issueOpenPositionPermit(jupiterApiKey, {
-    wallet: input.wallet,
-    summary,
-    message: Buffer.from(transaction.message.serialize()).toString("base64"),
-  });
-  const unsignedTransactionBase64 = Buffer.from(transaction.serialize()).toString("base64");
+  const { summary, permit, unsignedTransaction: unsignedTransactionBase64 } = await prepareOpen({
+    wallet: input.wallet, selection, amount: input.amount, range: openRangeFromInput(input),
+    floorBps: input.resaleFloorBps, toleranceBps: input.slippageToleranceBps,
+  }, signingSecret, MCP_OPEN_PREPARE);
+  const jupiterApiKey = signingSecret();
   const submitArgs = { permit, wallet: input.wallet, summary };
   const signToken = await createSignToken(
     {
@@ -814,8 +788,8 @@ export async function submitOpenPosition(input: SubmitOpenPositionInput) {
 }
 
 export async function prepareWithdraw(input: import("@sofinance/engine/withdraw/types").WithdrawPrepareRequest) {
- const {buildWithdraw}=await import("@sofinance/engine/withdraw/build");
- const prepared=await buildWithdraw(input);
+ const {prepareWithdrawal}=await import("@/server/transactions/withdraw-prepare");
+ const prepared=await prepareWithdrawal(input, MCP_WITHDRAW_PREPARE);
  const submitArgs={wallet:input.wallet,permit:prepared.permit,summary:prepared.summary,confirmHighImpact:input.confirmHighImpact===true};
  const signToken=await createSignToken({kind:"withdraw",wallet:input.wallet,unsignedTransaction:prepared.unsignedTransaction,permit:prepared.permit,submitArgs,expiresAt:prepared.summary.expiresAt},getSigningSecret());
  return {...prepared,submitArgs,signToken,signUrl:buildSignUrl(signToken)};
