@@ -265,6 +265,11 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
       const terminal = `${current.signature}:${checked.chainStatus ?? checked.status}:${checked.status}`;
       if (previousTerminal.current !== terminal) {
         previousTerminal.current = terminal;
+        // The simulation describes the yield before this transaction. Once it executes,
+        // show the refreshed balance even while the follow-up cleanup awaits a signature.
+        if (executed && current.kind === "compound" && identityRef.current === `${current.wallet}:${current.positionMint}`) {
+          setPreview(null);
+        }
         if (checked.status === "success" && current.kind === "recovery") {
           setCleanup(previous => previous && !previous.running ? { ...previous,
             completed: Math.min(previous.total, previous.completed + 1),

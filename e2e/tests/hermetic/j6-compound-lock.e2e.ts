@@ -1,4 +1,5 @@
 import bs58 from "bs58";
+import { VersionedTransaction } from "@solana/web3.js";
 import type { Page } from "@playwright/test";
 import { expect, test } from "../fixtures";
 import { ConnectModal } from "../../pages/connect-modal";
@@ -75,14 +76,61 @@ async function setup(page: Page, wallet: FakeWallet, reply: Reply, otherWalletRe
     add: page.getByRole("button", { name: "Add liquidity", exact: true }), setReply: (next: Reply) => { reply = next; } };
 }
 
+async function showCompound(page: Page) {
+  const mobileView = page.getByRole("combobox", { name: "Position operations", exact: true });
+  if (await mobileView.isVisible()) await mobileView.selectOption("compound");
+  else await page.getByRole("button", { name: "Yield Compound", exact: true }).click();
+}
+
 for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
+  test(`fresh harvest replaces the compound simulation before cleanup at ${viewport.width}px`, async ({ page, wallet, guards }) => {
+    await page.setViewportSize(viewport);
+    guards.allowConsole(/^Failed to load resource: the server responded with a status of 400/);
+    const flow = await setup(page, wallet, { status: "success", chainStatus: "success" });
+    await page.getByRole("combobox", { name: "Select Raydium position" }).selectOption(flow.oldMint);
+    const freshState = { ...flow.attempt.summary.state, fees: { a: "0", b: "2" } };
+    let compounded = false;
+    await page.route("**/api/compound-state", route => route.fulfill({ json: compounded ? freshState : flow.attempt.summary.state }));
+    await page.route("**/api/compound-prepare", route => {
+      const built = buildSingleSignerTx(wallet.address);
+      return route.fulfill({ json: { permit: "test-permit", unsignedTransaction: built.b64,
+        summary: { ...flow.attempt.summary, blockhash: built.tx.message.recentBlockhash, expiresAt: Date.now() + 75000 } } });
+    });
+    await page.route("**/api/compound-broadcast", route => {
+      const tx = VersionedTransaction.deserialize(Buffer.from(route.request().postDataJSON().signedTransaction, "base64"));
+      compounded = true;
+      return route.fulfill({ json: { signature: bs58.encode(tx.signatures[0]!) } });
+    });
+    await page.route("**/api/compound-confirm", route => route.fulfill({ json: {
+      signature: route.request().postDataJSON().attempt.signature, status: "success", chainStatus: "success", state: compounded ? freshState : null,
+    } }));
+    let finishCleanup!: () => void;
+    const cleanup = new Promise<void>(resolve => { finishCleanup = resolve; });
+    await page.route("**/api/compound-recover-prepare", async route => {
+      await cleanup;
+      await route.fulfill({ status: 400, json: { error: "Cleanup stopped for test" } });
+    });
+    await showCompound(page);
+    const panel = page.getByRole("region", { name: "Yield Compound", exact: true });
+    const harvest = panel.getByRole("region", { name: "Harvest", exact: true }).first();
+    await expect(harvest).toContainText(/0\.00001 \S+ \+ 0\.00002 \S+/);
+    await panel.getByRole("button", { name: "One-click compound", exact: true }).click();
+    await expect(panel.getByRole("button", { name: "Preparing cleanup…", exact: true })).toBeVisible();
+    await expect(harvest).toContainText(/0 \S+ \+ 0\.000002 \S+/);
+    await expect(panel.getByText("Compound confirmed on-chain", { exact: true })).toBeVisible();
+    finishCleanup();
+    await expect(panel.getByText("Cleanup paused.", { exact: false }).first()).toBeVisible();
+    await expect(harvest).toContainText(/0 \S+ \+ 0\.000002 \S+/);
+    expect(wallet.signedTransactions).toHaveLength(1);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  });
   test(`other-position recovery failures remain visible beside their receipt at ${viewport.width}px`, async ({ page, wallet, guards }) => {
     await page.setViewportSize(viewport);
     guards.allowConsole(/^Failed to load resource: the server responded with a status of 400/);
     const flow = await setup(page, wallet, { status: "success", chainStatus: "success" });
     await page.route("**/api/compound-recover-prepare", route => route.fulfill({ status: 400, contentType: "application/json",
       body: JSON.stringify({ error: "Recovery simulation failed" }) }));
-    await page.getByRole("button", { name: "Yield Compound", exact: true }).click();
+    await showCompound(page);
     await page.locator("summary").filter({ hasText: "Yield account management" }).click();
     await page.locator("summary").filter({ hasText: "Other positions (1 records)" }).click();
     await page.getByRole("button", { name: "Retrieve this balance", exact: true }).click();
@@ -100,7 +148,7 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 
     const flow = await setup(page, wallet, { status: "success", chainStatus: "success" });
     await page.route("**/api/compound-prepare", route => route.fulfill({ status: 400, contentType: "application/json",
       body: JSON.stringify({ error: "Complete compound transaction 1268 bytes, exceeds 1,232 byte limit; no transaction was sent" }) }));
-    await page.getByRole("button", { name: "Yield Compound", exact: true }).click();
+    await showCompound(page);
     const compoundPanel = page.getByRole("region", { name: "Yield Compound", exact: true });
     const management = page.locator("summary").filter({ hasText: "Yield account management" });
     const success = page.getByText("Compound confirmed on-chain", { exact: true });

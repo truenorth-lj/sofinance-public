@@ -28,7 +28,9 @@ export function CompoundPanel({ controller: c, tokenLabel = short, onConnect }: 
   const summary = preview || (c.attempt?.kind === "compound" ? c.attempt.summary : null);
   const displaySummary = summary?.positionMint === c.positionMint ? summary : preview;
   const amount = (value: string, decimals: number) => formatAmount(value, decimals, Math.min(decimals, 9));
-  const action = c.stage === "preparing" ? "Verifying yield and simulating transaction…" :
+  const action = c.cleanup?.running ? c.stage === "preparing" ? "Preparing cleanup…" :
+    c.stage === "wallet" ? "Approve cleanup in wallet…" : c.stage === "broadcasting" ? "Sending cleanup…" : "Verifying cleanup…"
+    : c.stage === "preparing" ? "Verifying yield and simulating transaction…" :
     c.stage === "wallet" ? "Confirming in wallet…" : c.stage === "broadcasting" ? "Sending and verifying…" : "One-click compound";
   const blockedText = !c.wallet ? null : !c.positionMint ? "Please select existing position first" :
     c.externalBlocked ? "Another operation is in progress." : state && !state.eligible ? state.reason :
