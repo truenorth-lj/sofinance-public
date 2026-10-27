@@ -13,6 +13,12 @@ export class ConnectModal {
 
   async open() {
     await this.connectButtons.first().click();
+    const terms = this.page.getByRole("dialog", { name: "Before you connect", exact: true });
+    await expect(terms.or(this.walletEntry.first())).toBeVisible();
+    if (await terms.isVisible()) {
+      await terms.getByRole("checkbox").check();
+      await terms.getByRole("button", { name: "Continue to wallet", exact: true }).click();
+    }
     await expect(this.walletEntry.first()).toBeVisible();
   }
 
