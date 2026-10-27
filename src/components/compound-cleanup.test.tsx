@@ -292,6 +292,43 @@ describe("automatic cleanup after a new compound", () => {
     expect(controller.receipts).toHaveLength(0); expect(controller.cleanup?.compoundSignature).toBeTruthy();
     expect(container.textContent).toContain("Compound confirmed.");
   });
+  it.each([true, false])("shows fresh yield while cleanup awaits signing (confirmation includes state: %s)", async includesState => {
+    enableCompound();
+    const freshState = { ...fixture.state, fees: { a: "0", b: "2" } };
+    const handler = fetchMock.getMockImplementation() as (url: string, init?: RequestInit) => Promise<Response>;
+    let compounded = false;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url === "/api/compound-state" && compounded) return Response.json(freshState);
+      if (url === "/api/compound-confirm") {
+        compounded = true;
+        const body = JSON.parse(String(init?.body));
+        return Response.json({ signature: body.attempt.signature, status: "success", chainStatus: "success",
+          state: includesState ? freshState : null });
+      }
+      return handler(url, init);
+    });
+    let rejectCleanup!: (error: Error) => void;
+    mocks.sign.mockImplementationOnce(async (tx: VersionedTransaction) => { tx.sign([testKeypair(1)]); return tx; })
+      .mockImplementationOnce(() => new Promise<VersionedTransaction>((_resolve, reject) => { rejectCleanup = reject; }));
+    const harvest = () => container.querySelector('section[aria-label="Harvest"]')!;
+    const freshAmounts = "0 " + fixture.state.mintA.slice(0, 5) + "…" + fixture.state.mintA.slice(-5) +
+      " + 0.000002 " + fixture.state.mintB.slice(0, 5) + "…" + fixture.state.mintB.slice(-5);
+    await render();
+    const previousHarvest = harvest().textContent;
+    await act(async () => { controller.compound(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(controller.state?.fees).toEqual(freshState.fees);
+    expect(controller.cleanup?.running).toBe(true); expect(controller.stage).toBe("wallet");
+    expect(harvest().textContent).not.toBe(previousHarvest);
+    expect(harvest().textContent).toContain(freshAmounts);
+    expect(controller.preview).toBeNull();
+    expect(container.textContent).toContain("Approve cleanup in wallet…");
+    expect(container.textContent).toContain("Previous transaction simulation record");
+    await act(async () => { rejectCleanup(new Error("User rejected cleanup")); });
+    expect(harvest().textContent).toContain(freshAmounts);
+    expect(controller.attemptStatus).toBe("success"); expect(controller.receipts).toHaveLength(1);
+    expect(broadcastCount).toBe(0); expect(mocks.sign).toHaveBeenCalledTimes(2);
+  });
   it("rearms automatic cleanup when a receipt import refreshes history before its callback starts", async () => {
     enableCompound();
     const handler = fetchMock.getMockImplementation() as (url: string, init?: RequestInit) => Promise<Response>;
