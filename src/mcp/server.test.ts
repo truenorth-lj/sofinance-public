@@ -39,6 +39,18 @@ beforeAll(async () => {
 afterAll(async () => { await client?.close(); });
 
 describe("stdio MCP server", () => {
+  it("preserves the complete stdio discovery response", async () => {
+    expect((await client.listTools()).tools).toMatchSnapshot();
+  });
+
+  it("preserves the complete public HTTP discovery response", async () => {
+    const response = await POST(new NextRequest("http://localhost/api/mcp", {
+      method: "POST", body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+    }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchSnapshot();
+  });
+
   it("identifies itself", () => {
     expect(client.getServerVersion()).toMatchObject({ name: "sofinance-mcp-server", version: "0.1.0" });
     expect(client.getServerCapabilities()).toMatchObject({ tools: {} });
