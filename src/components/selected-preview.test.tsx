@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { Activity, StrictMode, act, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi, type MockInstance } from "vitest";
 import { RELAY_DEADLINE_MS, useSelectedController } from "./use-selected-controller";
 import { resetJupiterBrowserGate } from "@/lib/jupiter/browser-relay";
 
@@ -31,8 +31,8 @@ let hidden: boolean;
 let writes: ReturnType<typeof vi.spyOn>;
 let removes: ReturnType<typeof vi.spyOn>;
 let notifications: number;
-let added: ReturnType<typeof vi.spyOn>;
-let removed: ReturnType<typeof vi.spyOn>;
+let added: MockInstance<typeof document.addEventListener>;
+let removed: MockInstance<typeof document.removeEventListener>;
 const epoch = 1_800_000_000_000;
 const body = (init?: RequestInit): Body => JSON.parse(String(init?.body ?? "{}"));
 const quote = (b: Body) => ({ ...b, requested: String(Math.round(Number(b.amount) * 1e6)),

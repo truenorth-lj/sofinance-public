@@ -8,39 +8,23 @@ import { formatAmount, parseTokenAmount, toleranceFromPercent } from "@sofinance
 import { type AtomicStatus } from "@/lib/attempt-status";
 import { loadSelectedAttempt, persistSelectedAttempt, readSelectedHistory, type SelectedAttempt } from "@/lib/selected-attempt";
 import { readObsoleteAttempts } from "@/lib/obsolete-attempt";
-import type { SelectedQuote } from "@/lib/selected-quote";
 import type { PositionSelection, SelectedPositionState } from "@sofinance/engine/selected-state";
 import type { WalletDiscovery } from "@sofinance/engine/wallet-discovery";
 import { DEFAULT_RESALE_FLOOR_BPS, USDC_MINT } from "@sofinance/engine/ids";
-import { quoteErrorHidesRecalculate } from "@/lib/selected-amount-error";
 import { INPUT_ASSET_NOT_HELD_CODE, INPUT_ASSET_NOT_HELD_MESSAGE } from "@/lib/selected-input-asset-not-held";
 import { useWalletConnection } from "./wallet-connection";
 import { notifyPositionHistoryChange } from "@/lib/position-history-refresh";
 import { createJupiterRelayStore, postWithJupiterRelay } from "@/lib/jupiter/browser-relay";
+import { useSelectedPreview, useSelectedPreviewEffect } from "./transactions/selected/use-selected-preview";
+import { RELAY_DEADLINE_MS, selectionKey, type Preflight } from "./transactions/selected/selected-preview-model";
 
-/**
- * Client deadline for a preview/prepare. Each server round keeps its own 8 s
- * deadline; the browser-fetched Jupiter rounds in between are paced to the
- * keyless per-IP quota, so the whole exchange gets more room.
- */
-export const RELAY_DEADLINE_MS = 20_000;
+export { RELAY_DEADLINE_MS } from "./transactions/selected/selected-preview-model";
 
-type Preflight = { quote: SelectedQuote; simulated: boolean; sizeBytes?: number; unitsConsumed?: number;
-  feeLamports?: number; startingLiquidity?: string; simulatedEndingLiquidity?: string;
-  simulatedAt?: number; expiresAt?: number; startingBalances?: SelectedPositionState["balances"];
-  simulatedInputSpent?: string | null; simulatedSolDebitLamports?: string;
-  simulatedDustA?: string; simulatedDustB?: string; blockhash?: string;
-  lastValidBlockHeight?: number };
 type Prepared = Preflight & { unsignedTransaction: string; blockhash: string;
   lastValidBlockHeight: number; startingLiquidity: string;
   startingBalances: SelectedPositionState["balances"]; expiresAt: number; permit: string };
 type StatusResponse = { status: AtomicStatus; state: SelectedPositionState | null; signature: string; transactionError?: unknown };
 type ApiError = { error: string; code?: string; inputMint?: string; outputMint?: string };
-type Preview = { kind: "idle" } | { kind: "quoted"; result: Preflight };
-
-function selectionKey(selection: PositionSelection | null) {
-  return selection ? `${selection.positionMint}:${selection.inputKind}:${selection.inputMint}` : "";
-}
 
 export function useSelectedController() {
   const { address: wallet, connected, connect, disconnect, isMobile, walletsCount,
@@ -50,7 +34,10 @@ export function useSelectedController() {
   const [selectedState, setSelectedState] = useState<SelectedPositionState | null>(null);
   const [amount, setAmount] = useState("");
   const [tolerancePercent, setTolerancePercent] = useState("1.0");
-  const [preview, setPreview] = useState<Preview>({ kind: "idle" });
+  const previewController = useSelectedPreview();
+  const { preview, quoteError, quoteErrorCode, quoteErrorOutputMint, quoteLoading,
+    invalidate: invalidatePreview, clear: clearPreview, clearErrors: clearQuoteErrors,
+    adopt: adoptPreview, retryCalculation, showQuoteRecalculate } = previewController;
   const [attempt, setAttempt] = useState<SelectedAttempt | null>(null);
   const [attemptStatus, setAttemptStatus] = useState<AtomicStatus | null>(null);
   const [history, setHistory] = useState<SelectedAttempt[]>([]);
@@ -58,12 +45,7 @@ export function useSelectedController() {
   const [obsoletePending, setObsoletePending] = useState(false);
   const [attemptLoadedWallet, setAttemptLoadedWallet] = useState<string | null>(null);
   const [error, setError] = useState("");
-  const [quoteError, setQuoteError] = useState("");
-  const [quoteErrorCode, setQuoteErrorCode] = useState("");
-  const [quoteErrorOutputMint, setQuoteErrorOutputMint] = useState("");
   const [stateError, setStateError] = useState("");
-  const [quoteLoading, setQuoteLoading] = useState(false);
-  const [quoteRevision, setQuoteRevision] = useState(0);
   const [submitStage, setSubmitStage] = useState<"preparing" | "wallet" | "broadcasting" | null>(null);
   const busy = submitStage !== null;
   const [loadingDiscovery, setLoadingDiscovery] = useState(false);
@@ -73,9 +55,9 @@ export function useSelectedController() {
   const selectionRef = useRef(selectionKey(selection));
   const discoveryRequestRef = useRef(0);
   const stateRequestRef = useRef(0);
-  const quoteRequestRef = useRef(0);
   // Browser-fetched Jupiter responses, shared by preview and prepare of this panel.
   const jupiterStoreRef = useRef(createJupiterRelayStore());
+  const getPreviewRelayStore = useCallback(() => jupiterStoreRef.current, []);
   const inputRevisionRef = useRef(0);
   const submittingRef = useRef(false);
   const lifetimeRef = useRef<object | null>(null);
@@ -96,26 +78,28 @@ export function useSelectedController() {
   const previewResult = preview.kind === "idle" ? null : preview.result;
   const result = previewResult && previewResult.quote.wallet === wallet &&
     selectionKey(previewResult.quote) === selectionKey(selection) ? previewResult : null;
+  const isPreviewCurrent = useCallback((address: string, key: string) =>
+    walletRef.current === address && selectionRef.current === key, []);
 
   useEffect(() => {
     walletRef.current = wallet;
     discoveryRequestRef.current++;
     stateRequestRef.current++;
-    quoteRequestRef.current++;
+    invalidatePreview();
     const timer = window.setTimeout(() => {
-      setDiscovery(null); setSelection(null); setSelectedState(null); setPreview({ kind: "idle" });
-      setAmount(""); setStateError(""); setError(""); setQuoteError(""); setQuoteErrorCode(""); setQuoteErrorOutputMint("");
+      setDiscovery(null); setSelection(null); setSelectedState(null); clearPreview();
+      setAmount(""); setStateError(""); setError(""); clearQuoteErrors();
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [wallet]);
+  }, [wallet, invalidatePreview, clearPreview, clearQuoteErrors]);
 
   useEffect(() => {
     selectionRef.current = selectionKey(selection);
     stateRequestRef.current++;
-    quoteRequestRef.current++;
-    const timer = window.setTimeout(() => { setSelectedState(null); setPreview({ kind: "idle" }); setAmount(""); }, 0);
+    invalidatePreview();
+    const timer = window.setTimeout(() => { setSelectedState(null); clearPreview(); setAmount(""); }, 0);
     return () => window.clearTimeout(timer);
-  }, [selection]);
+  }, [selection, invalidatePreview, clearPreview]);
 
   const refreshDiscovery = useCallback(async () => {
     if (!wallet) { setDiscovery(null); return; }
@@ -304,73 +288,8 @@ export function useSelectedController() {
     return "Getting latest quote";
   })();
 
-  useEffect(() => {
-    if (!ready || !wallet || !selection || toleranceBps === null || busy) return;
-    const requestId = ++quoteRequestRef.current;
-    const aborter = new AbortController();
-    let cancelled = false;
-    const key = selectionKey(selection);
-    const requested = rawAmount.toString();
-    let expiryTimer: number | undefined;
-    let deadline: number | undefined;
-    let onVisible: (() => void) | undefined;
-    const scheduleRefresh = (expiresAt: number) => {
-      expiryTimer = window.setTimeout(() => {
-        // A hidden tab does not need a live preview (each one costs shared Jupiter quota): refresh on return.
-        if (!document.hidden) { setQuoteRevision((current) => current + 1); return; }
-        onVisible = () => { if (!document.hidden) setQuoteRevision((current) => current + 1); };
-        document.addEventListener("visibilitychange", onVisible);
-      }, Math.max(1_000, expiresAt - Date.now()));
-    };
-    const current = () => !cancelled && requestId === quoteRequestRef.current &&
-      walletRef.current === wallet && selectionRef.current === key;
-    const timer = window.setTimeout(() => {
-      const load = async () => {
-        setQuoteLoading(true); setPreview({ kind: "idle" }); setQuoteError(""); setQuoteErrorCode(""); setQuoteErrorOutputMint("");
-        deadline = window.setTimeout(() => aborter.abort(new Error("Preview took too long. Please retry.")), RELAY_DEADLINE_MS);
-        try {
-          const response = await postWithJupiterRelay("/api/selected-quote", { wallet, ...selection, amount, floorBps, toleranceBps },
-            { store: jupiterStoreRef.current, signal: aborter.signal });
-          const data = await response.json() as SelectedQuote | ApiError;
-          if (!current() || aborter.signal.aborted) return;
-          if (!response.ok) {
-            const failed = data as ApiError;
-            const failure = new Error(failed.error);
-            (failure as Error & { code?: string; outputMint?: string }).code = failed.code;
-            (failure as Error & { code?: string; outputMint?: string }).outputMint = failed.outputMint;
-            throw failure;
-          }
-          const currentQuote = data as SelectedQuote;
-          if (currentQuote.wallet !== wallet || selectionKey(currentQuote) !== key ||
-            currentQuote.requested !== requested || currentQuote.floorBps !== floorBps ||
-            currentQuote.toleranceBps !== toleranceBps) {
-            throw new Error("Quote and current input mismatch, please re-enter amount");
-          }
-          setPreview({ kind: "quoted", result: { quote: currentQuote, simulated: false } });
-          setNow(Date.now());
-          scheduleRefresh(currentQuote.expiresAt);
-        } catch (caught) {
-          if (current()) {
-            setQuoteError(aborter.signal.aborted ? "Preview took too long. Please retry." :
-              caught instanceof Error ? caught.message : "Preview failed");
-            const code = caught instanceof Error ? (caught as Error & { code?: string }).code : undefined;
-            const outputMint = caught instanceof Error ? (caught as Error & { outputMint?: string }).outputMint : undefined;
-            setQuoteErrorCode(aborter.signal.aborted ? "" : code ?? "");
-            setQuoteErrorOutputMint(aborter.signal.aborted ? "" : outputMint ?? "");
-          }
-        } finally {
-          window.clearTimeout(deadline);
-          if (current()) setQuoteLoading(false);
-        }
-      };
-      void load();
-    }, 450);
-    return () => {
-      cancelled = true; aborter.abort(); window.clearTimeout(timer); window.clearTimeout(deadline);
-      if (expiryTimer !== undefined) window.clearTimeout(expiryTimer);
-      if (onVisible) document.removeEventListener("visibilitychange", onVisible);
-    };
-  }, [amount, busy, floorBps, toleranceBps, quoteRevision, rawAmount, ready, selection, wallet]);
+  useSelectedPreviewEffect({ wallet, selection, amount, rawAmount, floorBps, toleranceBps, ready, busy,
+    getRelayStore: getPreviewRelayStore, isCurrent: isPreviewCurrent, setNow }, previewController);
 
   async function signAndSend() {
     const lifetime = lifetimeRef.current;
@@ -406,7 +325,7 @@ export function useSelectedController() {
       const unsigned = VersionedTransaction.deserialize(bytes);
       if (unsigned.message.recentBlockhash !== prepared.blockhash ||
         unsigned.message.staticAccountKeys[0]?.toBase58() !== wallet) throw new Error("Transaction payer or blockhash mismatch");
-      setPreview({ kind: "quoted", result: prepared }); setNow(Date.now());
+      adoptPreview(prepared); setNow(Date.now());
       setSubmitStage("wallet");
       const originalMessage = unsigned.message.serialize();
       const signed = await signTransaction(unsigned);
@@ -430,7 +349,7 @@ export function useSelectedController() {
       persistSelectedAttempt(window.localStorage, current);
       setHistory(readSelectedHistory(window.localStorage, wallet));
       attemptSignatureRef.current = signature;
-      setAttempt(current); setAttemptStatus("pending"); setPreview({ kind: "idle" }); setSubmitStage("broadcasting");
+      setAttempt(current); setAttemptStatus("pending"); clearPreview(); setSubmitStage("broadcasting");
       const sent = await fetch("/api/selected-broadcast", { method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ wallet, selection, signedTransaction, permit: prepared.permit,
           requested: prepared.quote.requested, floorBps: prepared.quote.floorBps,
@@ -466,18 +385,13 @@ export function useSelectedController() {
     ? "Previous transaction is unconfirmed or needs verification. It may still succeed; starting again may add liquidity twice." : "";
   const primaryAction = () => { void signAndSend(); };
   const changeAmount = (value: string) => {
-    inputRevisionRef.current++; quoteRequestRef.current++; setAmount(value); setPreview({ kind: "idle" });
-    setError(""); setQuoteError(""); setQuoteErrorCode(""); setQuoteErrorOutputMint("");
+    inputRevisionRef.current++; invalidatePreview(); setAmount(value); clearPreview();
+    setError(""); clearQuoteErrors();
   };
   const changeTolerance = (value: string) => {
-    inputRevisionRef.current++; quoteRequestRef.current++; setTolerancePercent(value); setPreview({ kind: "idle" });
-    setError(""); setQuoteError(""); setQuoteErrorCode(""); setQuoteErrorOutputMint("");
+    inputRevisionRef.current++; invalidatePreview(); setTolerancePercent(value); clearPreview();
+    setError(""); clearQuoteErrors();
   };
-  const retryCalculation = () => {
-    setQuoteError(""); setQuoteErrorCode(""); setQuoteErrorOutputMint(""); setPreview({ kind: "idle" });
-    setQuoteRevision((current) => current + 1);
-  };
-  const showQuoteRecalculate = Boolean(quoteError) && !quoteErrorHidesRecalculate(quoteErrorCode);
   const fillMax = () => changeAmount(visibleState ? formatAmount(visibleState.inputBalance, visibleState.inputDecimals, visibleState.inputDecimals) : "");
   const choosePosition = (positionMint: string) => setSelection((current) => current ? { ...current, positionMint } : null);
   const chooseAsset = (kind: "native" | "token", mint: string) => setSelection((current) => current ? { ...current, inputKind: kind, inputMint: mint } : null);
