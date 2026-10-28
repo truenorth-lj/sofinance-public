@@ -138,10 +138,17 @@ it.each(["prepare", "wallet", "mint-sign", "serialize", "stale-prepare", "stale-
     if (failure === "wallet") throw new Error("User rejected request");
     tx.sign([payer]);
     if (failure === "mint-sign") vi.spyOn(tx, "sign").mockImplementation(() => { throw new Error("synthetic mint signing failure"); });
-    if (failure === "serialize") vi.spyOn(tx, "serialize").mockImplementation(() => {
-      expect(secrets[0]!().every(byte => byte === 0)).toBe(true);
-      throw new Error("synthetic serialization failure");
-    });
+    if (failure === "serialize") {
+      const serialize = tx.serialize.bind(tx);
+      vi.spyOn(tx, "serialize").mockImplementation(() => {
+        // The wallet guard also serializes before mint signing; fail only on final bytes.
+        if (tx.signatures[1]?.some(byte => byte !== 0)) {
+          expect(secrets[0]!().every(byte => byte === 0)).toBe(true);
+          throw new Error("synthetic serialization failure");
+        }
+        return serialize();
+      });
+    }
     if (failure === "stale-wallet") controller.changeAmount("0.003");
     if (failure === "unmount") { root.unmount(); root = createRoot(container); }
     return tx;
