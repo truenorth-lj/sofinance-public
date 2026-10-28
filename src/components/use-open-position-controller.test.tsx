@@ -4,7 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PublicKey, VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
-import { useOpenPositionController, type OpenPositionPair } from "./use-open-position-controller";
+import { OPEN_PREPARE_TIMEOUT_MS, useOpenPositionController, type OpenPositionPair } from "./use-open-position-controller";
 import { NATIVE_SOL_MINT } from "@sofinance/engine/ids";
 import { openAttemptKey, persistOpenAttempt } from "@/lib/open-attempt";
 import { appendWalletExtraInstruction, buildTransaction, openSummaryFixture, testKeypair, toBase64 } from "@/lib/test-support/send-fixtures";
@@ -55,7 +55,16 @@ beforeEach(() => {
     if (url.startsWith("/api/wallet")) return Response.json({ assets: [{ kind: "native", mint: NATIVE_SOL_MINT, decimals: 9, balance: "1000000000", eligible: true }] });
     if (url === "/api/open-quote") return Response.json(prepared().summary.quote);
     if (url === "/api/open-prepare") {
-      if (prepareWait) return prepareWait;
+      if (prepareWait) {
+        const signal = init?.signal;
+        if (!signal) return prepareWait;
+        return new Promise((resolve, reject) => {
+          const onAbort = () => reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+          if (signal.aborted) onAbort();
+          else signal.addEventListener("abort", onAbort, { once: true });
+          void prepareWait!.then(resolve, reject);
+        });
+      }
       expect(typeof body.nftMint).toBe("string");
       const value = prepared(new PublicKey(body.nftMint));
       preparedOverride?.(value); return Response.json(value);
@@ -139,6 +148,21 @@ describe("open-position transaction lifecycle", () => {
     await mount(); preparedOverride = value => { value.summary.poolId = pair.mintA; };
     await act(async () => controller.signAndSend());
     expect(mocks.sign).not.toHaveBeenCalled(); expect(calls("/api/open-broadcast")).toHaveLength(0);
+  });
+  it("surfaces a prepare timeout instead of spinning forever", async () => {
+    vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+      const extra = new AbortController();
+      window.setTimeout(() => extra.abort(new DOMException("The operation was aborted due to timeout", "TimeoutError")), ms);
+      return extra.signal;
+    });
+    await mount();
+    prepareWait = new Promise(() => {});
+    await act(async () => { void controller.signAndSend(); });
+    expect(controller.submitStage).toBe("preparing");
+    await advance(OPEN_PREPARE_TIMEOUT_MS);
+    expect(controller.submitStage).toBe(null);
+    expect(controller.error).toMatch(/timed out|retry/i);
+    expect(mocks.sign).not.toHaveBeenCalled();
   });
   it("ignores a late prepare response after the wallet switches", async () => {
     await mount(); let release!: (value: Response) => void;

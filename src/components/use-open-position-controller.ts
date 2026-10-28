@@ -9,7 +9,7 @@ import { NATIVE_SOL_MINT, USDC_MINT } from "@sofinance/engine/ids";
 import { quoteIsFresh } from "@sofinance/engine/quote-math";
 import { OPEN_RANGE_UI_PRESETS, type OpenRangePreset } from "@sofinance/engine/open-range-presets";
 import { addMintSignature, assertWalletReturnedTransaction, missingRequiredSignatures } from "@/lib/open-signatures";
-import { createJupiterRelayStore, jupiterRelayEnabled, postWithJupiterRelay } from "@/lib/jupiter/browser-relay";
+import { createJupiterRelayStore, jupiterRelayEnabled, jupiterRelayFailureMessage, postWithJupiterRelay } from "@/lib/jupiter/browser-relay";
 import { notSentRetryMessage } from "@/lib/public-error";
 import type { OpenPositionQuote, OpenPositionSummary } from "@sofinance/engine/open-types";
 import { openAttemptFromSummary, type OpenAttempt } from "@/lib/open-attempt";
@@ -65,6 +65,9 @@ export const QUOTE_POLL_MS = 3_000;
  * per IP and an open preview costs 2-4 quotes, so poll well under that.
  */
 export const RELAY_QUOTE_POLL_MS = 15_000;
+/** Hard cap so quote/prepare cannot spin past a Jupiter 429 wait with no UI error. */
+export const OPEN_QUOTE_TIMEOUT_MS = 45_000;
+export const OPEN_PREPARE_TIMEOUT_MS = 45_000;
 
 export function useOpenPositionController(pair: OpenPositionPair | null) {
   const { address: wallet, connected, connect, signTransaction } = useWalletConnection();
@@ -205,10 +208,12 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
         setQuoteLoading(true);
         setQuoteError("");
         try {
+          const timeout = AbortSignal.timeout(OPEN_QUOTE_TIMEOUT_MS);
+          const signal = typeof AbortSignal.any === "function" ? AbortSignal.any([aborter.signal, timeout]) : aborter.signal;
           const response = await postWithJupiterRelay("/api/open-quote", {
             wallet, poolId: pair.poolAddress, inputMint, inputKind, amount,
             rangePreset, minPrice, maxPrice,
-          }, { store: jupiterStoreRef.current, signal: aborter.signal });
+          }, { store: jupiterStoreRef.current, signal });
           const data = await response.json() as OpenPositionQuote | ApiError;
           if (!currentRequest()) return;
           if (!response.ok) throw new Error((data as ApiError).error);
@@ -220,7 +225,7 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
           if (currentRequest()) {
             pausedUntil = Date.now() + QUOTE_ERROR_POLL_PAUSE_MS;
             setQuote(null);
-            setQuoteError(caught instanceof Error ? caught.message : "Quote failed");
+            setQuoteError(jupiterRelayFailureMessage(caught, "Quote timed out. Please retry."));
           }
         } finally {
           inFlight = false;
@@ -300,7 +305,7 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
       const response = await postWithJupiterRelay("/api/open-prepare", {
         wallet, poolId: pair.poolAddress, inputMint, inputKind, amount,
         rangePreset, minPrice, maxPrice, nftMint: mint.publicKey.toBase58(),
-      }, { store: jupiterStoreRef.current });
+      }, { store: jupiterStoreRef.current, signal: AbortSignal.timeout(OPEN_PREPARE_TIMEOUT_MS) });
       const data = await response.json() as Prepared | ApiError;
       if (!response.ok) throw new Error((data as ApiError).error);
       const prepared = data as Prepared;
@@ -372,7 +377,7 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
       }
       if (walletRef.current === wallet) setError(persisted
         ? "Submission result is unconfirmed. Tracking the original signature; do not open again until it is verified."
-        : caught instanceof Error ? caught.message : "Open-position transaction failed");
+        : jupiterRelayFailureMessage(caught, "Preparing the transaction timed out. Please retry."));
     } finally {
       mint.secretKey.fill(0);
       submittingRef.current = false;
