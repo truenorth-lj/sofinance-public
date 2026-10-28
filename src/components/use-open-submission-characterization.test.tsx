@@ -261,16 +261,16 @@ describe("Open submission through real facade", () => {
     await act(async () => { if (phase === "prepare") wait.resolve(Response.json(preparedValue)); else json.resolve(preparedValue); await sending; });
     expectNoSend(); expect(boundary.sign).not.toHaveBeenCalled();
   });
-  it("characterizes retained same-value/ABA signing identity without introducing a new epoch", async () => {
+  it("revokes retained same-value/ABA signing ownership", async () => {
     await ready(); const signing = holdSign(); let sending!: Promise<void>; await command("send", () => { sending = c.signAndSend(); });
     await command("ABA input", () => { c.changeAmount("0.003"); c.changeAmount("0.002"); });
-    await act(async () => { signing.release(); await sending; }); expect(calls("/api/open-broadcast")).toHaveLength(1);
+    await act(async () => { signing.release(); await sending; }); expectNoSend();
   });
-  it.each(["activity", "suspense"])("characterizes same-identity %s hide/reveal before signing resolves", async change => {
+  it.each(["activity", "suspense"])("revokes same-identity %s hide/reveal before signing resolves", async change => {
     await ready(); const signing = holdSign(); let sending!: Promise<void>; await command("send", () => { sending = c.signAndSend(); });
     if (change === "activity") mode = "hidden"; else suspend = true; await render();
     mode = "visible"; suspend = false; await render(); await advance(1);
-    await act(async () => { signing.release(); await sending; }); expect(calls("/api/open-broadcast")).toHaveLength(1);
+    await act(async () => { signing.release(); await sending; }); expectNoSend();
   });
   it.each(["failed", "expired"])("reports confirmed-chain %s analytics with original signature", async status => {
     await ready(); await send(); chainStatus = status; await advance(1);

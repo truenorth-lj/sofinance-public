@@ -13,11 +13,15 @@ export function useOpenAttempt(wallet: string | undefined) {
   const attemptRef = useRef<OpenAttempt | null>(null);
   const checkingRef = useRef<string | null>(null);
   const activeRef = useRef(false);
+  // Open's command checks this live gate; SIGN retains its independent command policy.
+  // Close synchronously on track/reload, reopen only after a committed eligible state.
+  const submissionReadyRef = useRef(false);
   useLayoutEffect(() => { activeRef.current = true; return () => { activeRef.current = false; }; }, []);
   useLayoutEffect(() => {
     // Suspense reconnects layout effects without replaying the history loader.
     // Preserve the synchronous owner (including an unsent null) for the same wallet.
     if (walletRef.current !== wallet) {
+      submissionReadyRef.current = false;
       walletRef.current = wallet;
       attemptRef.current = null;
     }
@@ -27,6 +31,7 @@ export function useOpenAttempt(wallet: string | undefined) {
     if (!wallet) return;
     // Activity replays this loader; old replies cannot own history being revalidated.
     // Same-wallet Suspense only reconnects layout effects and retains its owner.
+    submissionReadyRef.current = false;
     attemptRef.current = null;
     const timer = window.setTimeout(() => {
       try {
@@ -65,6 +70,18 @@ export function useOpenAttempt(wallet: string | undefined) {
 
   const visible = visibleOpenAttempt(state, wallet);
   const pending = openAttemptPending(visible, wallet);
+  useLayoutEffect(() => {
+    submissionReadyRef.current = Boolean(visible && !pending);
+  }, [visible, pending]);
+
+  const canSubmit = () => {
+    if (!activeRef.current || !wallet || walletRef.current !== wallet || !submissionReadyRef.current) return false;
+    try {
+      const saved = loadOpenAttempt(window.localStorage, wallet);
+      // Missing/replaced history also revokes a known owner. This read is not a CAS.
+      return !saved.invalid && (saved.attempt?.signature ?? null) === (attemptRef.current?.signature ?? null);
+    } catch { return false; }
+  };
   useEffect(() => {
     if (!visible?.attempt || !pending) return;
     const attempt = visible.attempt;
@@ -81,6 +98,7 @@ export function useOpenAttempt(wallet: string | undefined) {
       throw new Error("Open-position history changed. Reload to verify the original signature before opening again.");
     }
     persistOpenAttempt(window.localStorage, attempt);
+    submissionReadyRef.current = false;
     attemptRef.current = attempt;
     dispatch({ type: "attemptTracked", attempt });
   };
@@ -93,6 +111,7 @@ export function useOpenAttempt(wallet: string | undefined) {
     } catch (error) {
       if (current()) {
         // Detach old queries before adopting a replacement or locking unreadable/missing history.
+        submissionReadyRef.current = false;
         attemptRef.current = null;
         try {
           const saved = loadOpenAttempt(window.localStorage, attempt.wallet);
@@ -111,7 +130,7 @@ export function useOpenAttempt(wallet: string | undefined) {
     dispatch({ type: "markedUnsent", attempt });
   };
   return { attempt: visible?.attempt ?? null, status: visible?.status ?? null, error: visible?.error ?? "",
-    pending, loaded: !wallet || visible !== null, track, markUnsent,
+    pending, loaded: !wallet || visible !== null, canSubmit, track, markUnsent,
     dismissTerminal: () => {
       if (!pending && visible && visible.kind !== "invalid") dispatch({ type: "terminalDismissed", snapshot: visible });
     },

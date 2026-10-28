@@ -65,7 +65,7 @@ describe("Open attempt accepted lifecycle", () => {
   it("loads on timer zero, polls on zero then 3000, and exposes the exact synchronous facade", async () => {
     storage.setItem(openAttemptKey(walletA), JSON.stringify(attempt())); await render();
     expect(api.loaded).toBe(false); expect(api.pending).toBe(true); expect(fetchMock).not.toHaveBeenCalled();
-    expect(Object.keys(api)).toEqual(["attempt", "status", "error", "pending", "loaded", "track", "markUnsent", "dismissTerminal", "retry"]);
+    expect(Object.keys(api)).toEqual(["attempt", "status", "error", "pending", "loaded", "canSubmit", "track", "markUnsent", "dismissTerminal", "retry"]);
     await advance(0); expect(api.loaded).toBe(true); expect(fetchMock).not.toHaveBeenCalled();
     await advance(0); expect(fetchMock).toHaveBeenCalledTimes(1);
     await advance(2999); expect(fetchMock).toHaveBeenCalledTimes(1); await advance(1); expect(fetchMock).toHaveBeenCalledTimes(2);
@@ -331,4 +331,24 @@ describe("Open attempt Activity history revalidation", () => {
     expect(storage.getItem(openAttemptKey(walletA))).toBe(JSON.stringify(attempt()));
   });
 
+});
+
+describe("Open submission live admission port", () => {
+  it.each(["confirmed", "failed", "expired", "unsent"])("closes synchronously on track and reopens for healthy %s", async terminal => {
+    await render(); const beforeLoad = api.canSubmit; expect(beforeLoad()).toBe(false);
+    await advance(); const retained = api.canSubmit; expect(retained()).toBe(true);
+    await act(async () => { api.track(attempt()); expect(retained()).toBe(false); });
+    expect(retained()).toBe(false);
+    if (terminal === "unsent") await act(async () => api.markUnsent(attempt())); else await settle(terminal);
+    expect(retained()).toBe(true);
+    await act(async () => { api.track(attempt(8)); expect(retained()).toBe(false); });
+    expect(api.attempt?.signature).toBe(attempt(8).signature); expect(api.pending).toBe(true);
+  });
+  it("retained admission refuses current unreadable, invalid and foreign history without mutating it", async () => {
+    await mount(); const retained = api.canSubmit; expect(retained()).toBe(true);
+    failRead = true; expect(retained()).toBe(false); failRead = false;
+    storage.setItem(openAttemptKey(walletA), "invalid"); expect(retained()).toBe(false);
+    storage.setItem(openAttemptKey(walletA), JSON.stringify(attempt())); expect(retained()).toBe(false);
+    expect(storage.getItem(openAttemptKey(walletA))).toBe(JSON.stringify(attempt()));
+  });
 });

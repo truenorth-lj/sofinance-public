@@ -86,10 +86,22 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
   const walletRef = useRef(wallet);
   const jupiterStoreRef = useRef(createJupiterRelayStore());
   const activeRef = useRef(false);
-  useLayoutEffect(() => { activeRef.current = true; return () => { activeRef.current = false; }; }, []);
-  const identity = JSON.stringify([wallet, pair?.poolAddress, inputMint, inputKind, amount, rangePreset, minPrice, maxPrice]);
+  const lifetimeRef = useRef(0);
+  const identityKey = JSON.stringify([wallet, pair?.poolAddress, inputMint, inputKind, amount, rangePreset, minPrice, maxPrice]);
+  // Each committed A→B→A has a distinct token; speculative renders never publish it.
+  const identity = useMemo(() => ({ key: identityKey, connected }), [identityKey, connected]);
   const identityRef = useRef(identity);
-  useLayoutEffect(() => { walletRef.current = wallet; identityRef.current = identity; }, [wallet, identity]);
+  useLayoutEffect(() => {
+    activeRef.current = connected;
+    walletRef.current = wallet;
+    identityRef.current = identity;
+    return () => {
+      activeRef.current = false;
+      // Cleanup runs for committed identity changes and retained-tree disconnects.
+      // Never publish speculative render values into these shared refs.
+      lifetimeRef.current += 1;
+    };
+  }, [connected, wallet, identity]);
   const samePool = open.attempt?.poolId === pair?.poolAddress;
   const submitStage: OpenSubmitStage = operationStage ?? (open.pending && open.loaded ? "pending"
     : samePool && open.status !== "unsent" ? open.status : null);
@@ -167,6 +179,7 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
     pair, parsedAmount, rangePreset, selectedAsset, submitStage, wallet, walletRef, jupiterStoreRef, setNow }, preview);
 
   const clearQuote = () => {
+    submission.invalidateSubmission();
     invalidateQuote();
     // Same-value commands and batched A→B→A still need a replacement reader.
     setQuoteRevision((revision) => revision + 1);
@@ -208,7 +221,7 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
 
   const signAndSend = useOpenSubmissionCommand({ pair, wallet, inputMint, inputKind, amount, rangePreset,
     minPrice, maxPrice, parsedAmount, quote, fresh, busy, identity, open, signTransaction,
-    activeRef, walletRef, identityRef, jupiterStoreRef, setError, setNow, setQuote, setQuoteLoading }, submission);
+    activeRef, walletRef, identityRef, lifetimeRef, jupiterStoreRef, setError, setNow, setQuote, setQuoteLoading }, submission);
 
   const walletBlockedReason = !connected
     ? "Connect a wallet to create a position"
@@ -237,6 +250,6 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
     actionDisabled, actionBlockedReason, walletBlockedReason, changeAmount, chooseAsset, choosePreset,
     setMinPrice: changeMinPrice, setMaxPrice: changeMaxPrice, fillMax, signAndSend,
     now, refreshQuote, canRefreshQuote, retryConfirmation: open.retry,
-    createAnother: () => { if (!busy) { open.dismissTerminal(); clearQuote(); } },
+    createAnother: () => { if (!busy && open.canSubmit()) { open.dismissTerminal(); clearQuote(); } },
   };
 }
