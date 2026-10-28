@@ -181,6 +181,8 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
 
   const clearQuote = () => {
     invalidateQuote();
+    // Same-value commands and batched A→B→A still need a replacement reader.
+    setQuoteRevision((revision) => revision + 1);
     setQuote(null);
     setQuoteLoading(false);
     setError("");
@@ -210,7 +212,6 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
   const refreshQuote = () => {
     if (!canRefreshQuote || quoteLoading) return;
     clearQuote();
-    setQuoteRevision((revision) => revision + 1);
   };
 
   const fillMax = () => {
@@ -344,6 +345,6 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
     actionDisabled, actionBlockedReason, walletBlockedReason, changeAmount, chooseAsset, choosePreset,
     setMinPrice: changeMinPrice, setMaxPrice: changeMaxPrice, fillMax, signAndSend,
     now, refreshQuote, canRefreshQuote, retryConfirmation: open.retry,
-    createAnother: () => { if (!busy) { open.dismissTerminal(); clearQuote(); setQuoteRevision(revision => revision + 1); } },
+    createAnother: () => { if (!busy) { open.dismissTerminal(); clearQuote(); } },
   };
 }
