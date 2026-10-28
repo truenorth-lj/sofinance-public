@@ -105,7 +105,8 @@ test("unknown send retains the original signature, blocks another open and can r
   await expect(flow.create).toBeEnabled(); expect(wallet.ledger).toHaveLength(1);
 });
 
-test("wallet Lighthouse extra instruction still mint-signs and broadcasts", async ({ page, wallet }) => {
+test("wallet Lighthouse extra instruction still mint-signs and broadcasts", async ({ page, wallet, guards }) => {
+  guards.allowConsole(/^Failed to load resource: the server responded with a status of 503/);
   wallet.mode = "lighthouse";
   const flow = await setup(page, wallet);
   await flow.create.click();

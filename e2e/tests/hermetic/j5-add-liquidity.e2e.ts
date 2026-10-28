@@ -155,7 +155,8 @@ test("failed prepare never calls the wallet or broadcast", async ({ page, wallet
   expect(wallet.ledger).toEqual([]); expect(calls).not.toContain("/api/selected-broadcast");
 });
 
-test("wallet instruction-data mutation blocks broadcast", async ({ page, wallet }) => {
+test("wallet instruction-data mutation blocks broadcast", async ({ page, wallet, guards }) => {
+  guards.allowConsole(/Wallet removed or changed a required instruction/);
   wallet.mode = "tweak-bytes";
   const { calls, add } = await setup(page, wallet);
   await add.click(); await expect(page.getByRole("alert").filter({ hasText: "Wallet removed or changed a required instruction" })).toBeVisible();
