@@ -72,7 +72,7 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
         "name": "prepare_withdraw",
       },
       {
-        "description": "Submit a wallet signed withdrawal. Verifies its HMAC permit and signature, checks expiry, and re-simulates before broadcast. Supply the unchanged summary and permit from prepare_withdraw. High impact requires confirmHighImpact=true.",
+        "description": "Submit a wallet signed withdrawal. Verifies its HMAC permit and signature, checks expiry, and re-simulates before broadcast. Supply the unchanged summary and permit from prepare_withdraw. If the wallet appended extra instructions (e.g. Phantom Lighthouse), also pass unsignedTransaction from prepare_withdraw. High impact requires confirmHighImpact=true.",
         "inputSchema": {
           "properties": {
             "confirmHighImpact": {
@@ -86,6 +86,9 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
             },
             "summary": {
               "type": "object",
+            },
+            "unsignedTransaction": {
+              "type": "string",
             },
             "wallet": {
               "type": "string",
@@ -773,7 +776,7 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
     "name": "prepare_withdraw",
   },
   {
-    "description": "Submit a wallet signed withdrawal. Verifies its HMAC permit and signature, checks expiry, and re-simulates before broadcast. Supply the unchanged summary and permit from prepare_withdraw. High impact requires confirmHighImpact=true.",
+    "description": "Submit a wallet signed withdrawal. Verifies its HMAC permit and signature, checks expiry, and re-simulates before broadcast. Supply the unchanged summary and permit from prepare_withdraw. If the wallet appended extra instructions (e.g. Phantom Lighthouse), also pass unsignedTransaction from prepare_withdraw. High impact requires confirmHighImpact=true.",
     "inputSchema": {
       "properties": {
         "confirmHighImpact": {
@@ -787,6 +790,9 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
         },
         "summary": {
           "type": "object",
+        },
+        "unsignedTransaction": {
+          "type": "string",
         },
         "wallet": {
           "type": "string",

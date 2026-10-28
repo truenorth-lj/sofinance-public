@@ -17,7 +17,7 @@ function validRaw(value: unknown) {
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json() as SelectedPermitInput & { signedTransaction: string; permit: string };
+    const body = await request.json() as SelectedPermitInput & { signedTransaction: string; permit: string; unsignedTransaction?: string };
     const walletAddress = parseWallet(body.wallet);
     if (!body.selection || typeof body.selection.positionMint !== "string" ||
       typeof body.selection.inputMint !== "string" ||
@@ -36,8 +36,8 @@ export async function POST(request: Request) {
       !["below", "inside", "above"].includes(body.rangeSide)) throw new Error("Invalid or expired signed transaction input");
     const wallet = new PublicKey(walletAddress);
     const transaction = VersionedTransaction.deserialize(Buffer.from(body.signedTransaction, "base64"));
-    const prepared = typeof (body as { unsignedTransaction?: string }).unsignedTransaction === "string"
-      ? VersionedTransaction.deserialize(Buffer.from((body as { unsignedTransaction: string }).unsignedTransaction, "base64"))
+    const prepared = typeof body.unsignedTransaction === "string"
+      ? VersionedTransaction.deserialize(Buffer.from(body.unsignedTransaction, "base64"))
       : transaction;
     const walletSignature = transaction.signatures[0];
     if (!isSingleWalletSignedTransaction(transaction, walletAddress) || !walletSignature) {
