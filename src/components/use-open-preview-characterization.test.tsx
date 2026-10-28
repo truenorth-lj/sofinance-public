@@ -49,7 +49,7 @@ function Harness() {
   return createElement(Suspender);
 }
 async function render() {
-  const child = createElement(Activity, { mode, children: createElement(Suspense, { fallback: "suspended" }, createElement(Harness)) });
+  const child = <Activity mode={mode}><Suspense fallback="suspended"><Harness /></Suspense></Activity>;
   await act(async () => root.render(strict ? createElement(StrictMode, null, child) : child));
 }
 async function advance(ms: number) { note("advance", ms); await act(async () => { await vi.advanceTimersByTimeAsync(ms); }); }

@@ -315,7 +315,7 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
       submittingRef.current = false;
       setSubmitStage(null);
     }
-  }, [amount, busy, fresh, identity, inputKind, inputMint, maxPrice, minPrice, open, pair, parsedAmount, quote, rangePreset, signTransaction, wallet]);
+  }, [amount, busy, fresh, identity, inputKind, inputMint, maxPrice, minPrice, open, pair, parsedAmount, quote, rangePreset, setQuote, setQuoteLoading, signTransaction, wallet]);
 
   const walletBlockedReason = !connected
     ? "Connect a wallet to create a position"
