@@ -39,7 +39,7 @@ type OpenSubmissionOptions = {
   busy: boolean;
   identity: object;
   // Attempt owns durable write/readback, synchronous publication and unsent ownership.
-  open: { loaded: boolean; canSubmit: () => boolean; track: (attempt: OpenAttempt) => void; markUnsent: (attempt: OpenAttempt) => void };
+  open: { attempt: Pick<OpenAttempt, "signature"> | null; loaded: boolean; canSubmit: () => boolean; track: (attempt: OpenAttempt) => void; markUnsent: (attempt: OpenAttempt) => void };
   signTransaction: (transaction: VersionedTransaction) => Promise<VersionedTransaction>;
   // Facade owns form/lifetime effects, shared discovery error, clock and per-modal relay store.
   activeRef: RefObject<boolean>;
@@ -58,6 +58,8 @@ type OpenSubmissionOptions = {
  */
 export function useOpenSubmission() {
   const [operationStage, setSubmitStage] = useState<OpenSubmitStage>(null);
+  // Only a pre-submission retry failure may override its original terminal receipt.
+  const [retryError, setRetryError] = useState<{ signature: string; message: string } | null>(null);
   // Metadata is keyed by the original signature; the facade shows it only after verification.
   const [beamResult, setBeamResult] = useState<{ signature: string; status: OpenBeamStatus } | null>(null);
   const submittingRef = useRef<object | null>(null);
@@ -65,10 +67,11 @@ export function useOpenSubmission() {
   const [inputRevision, setInputRevision] = useState(0);
   const invalidateSubmission = useCallback(() => {
     // Revoke before React renders, including same-value and batched ABA commands.
+    setRetryError(null);
     inputRevisionRef.current += 1;
     setInputRevision(inputRevisionRef.current);
   }, []);
-  return { operationStage, setSubmitStage, beamResult, setBeamResult, submittingRef,
+  return { operationStage, setSubmitStage, retryError, setRetryError, beamResult, setBeamResult, submittingRef,
     inputRevision, inputRevisionRef, invalidateSubmission };
 }
 
@@ -76,7 +79,7 @@ export function useOpenSubmission() {
 export function useOpenSubmissionCommand({ pair, wallet, inputMint, inputKind, amount, rangePreset,
   minPrice, maxPrice, parsedAmount, quote, fresh, busy, identity, open, signTransaction,
   activeRef, walletRef, identityRef, lifetimeRef, jupiterStoreRef, setError, setNow, setQuote, setQuoteLoading,
-}: OpenSubmissionOptions, { setSubmitStage, setBeamResult, submittingRef, inputRevision, inputRevisionRef }: ReturnType<typeof useOpenSubmission>) {
+}: OpenSubmissionOptions, { setSubmitStage, setRetryError, setBeamResult, submittingRef, inputRevision, inputRevisionRef }: ReturnType<typeof useOpenSubmission>) {
   const committedQuoteRef = useRef<OpenPositionQuote | null>(null);
   useLayoutEffect(() => { committedQuoteRef.current = quote; }, [quote]);
   const [generation, setGeneration] = useState<object | null>(null);
@@ -96,7 +99,9 @@ export function useOpenSubmissionCommand({ pair, wallet, inputMint, inputKind, a
       identityRef.current === identity && inputRevisionRef.current === inputRevision;
     if (!ownsInput() || committedQuoteRef.current !== quote) return;
     if (!open.canSubmit()) {
-      setError("Open-position history changed. Reload and verify the original signature before opening again.");
+      const message = "Open-position history changed. Reload and verify the original signature before opening again.";
+      setError(message);
+      setRetryError(open.attempt ? { signature: open.attempt.signature, message } : null);
       return;
     }
     const owner = {};
@@ -107,6 +112,7 @@ export function useOpenSubmissionCommand({ pair, wallet, inputMint, inputKind, a
     setQuoteLoading(false);
     setSubmitStage("preparing");
     setError("");
+    setRetryError(null);
     captureGrowthEvent(GROWTH_EVENTS.openStarted, openEventProperties(pair));
     const mint = Keypair.generate();
     try {
@@ -187,9 +193,15 @@ export function useOpenSubmissionCommand({ pair, wallet, inputMint, inputKind, a
           error_class: classifyOpenError(caught),
         });
       }
-      if (walletRef.current === wallet) setError(persisted
-        ? "Submission result is unconfirmed. Tracking the original signature; do not open again until it is verified."
-        : jupiterRelayFailureMessage(caught, "Preparing the transaction timed out. Please retry."));
+      if (walletRef.current === wallet) {
+        const message = persisted
+          ? "Submission result is unconfirmed. Tracking the original signature; do not open again until it is verified."
+          : jupiterRelayFailureMessage(caught, "Preparing the transaction timed out. Please retry.");
+        setError(message);
+        // A later chain result must supersede an unknown send, even when retrying a failed attempt.
+        if (current()) setRetryError(!persisted && open.attempt
+          ? { signature: open.attempt.signature, message } : null);
+      }
     } finally {
       mint.secretKey.fill(0);
       // A canceled operation keeps its lock until settlement; release only its own owner.
@@ -198,6 +210,6 @@ export function useOpenSubmissionCommand({ pair, wallet, inputMint, inputKind, a
         setSubmitStage(null);
       }
     }
-  }, [amount, busy, fresh, generation, identity, inputRevision, inputRevisionRef, inputKind, inputMint, maxPrice, minPrice, open, pair, parsedAmount, quote, rangePreset, setQuote, setQuoteLoading, signTransaction, wallet, activeRef, identityRef, lifetimeRef, jupiterStoreRef, submittingRef, walletRef, setBeamResult, setError, setNow, setSubmitStage]);
+  }, [amount, busy, fresh, generation, identity, inputRevision, inputRevisionRef, inputKind, inputMint, maxPrice, minPrice, open, pair, parsedAmount, quote, rangePreset, setQuote, setQuoteLoading, signTransaction, wallet, activeRef, identityRef, lifetimeRef, jupiterStoreRef, submittingRef, walletRef, setBeamResult, setError, setNow, setRetryError, setSubmitStage]);
 
 }

@@ -281,6 +281,27 @@ describe("Open submission ownership", () => {
     expect(calls("/api/open-broadcast")).toHaveLength(2); expect(c.signature).not.toBe(first); expect(c.busy).toBe(true);
   });
   for (const terminal of ["failed", "expired"] as const) {
+    it.each([false, true])(`verified ${terminal} replaces an unknown-send error (retry=%s)`, async retry => {
+      await ready();
+      if (retry) {
+        await send(); chainStatus = "failed"; await advance(1); await advance(450);
+        nextTransaction(); chainStatus = "pending";
+      }
+      broadcastReply = async () => { throw new Error("Synthetic lost broadcast response"); };
+      await send();
+      const original = c.signature;
+      const raw = storage.getItem(openAttemptKey(wallet)); expect(raw).not.toBeNull();
+      expect(c.busy).toBe(true); expect(c.error).toContain("unconfirmed");
+      chainStatus = terminal;
+      await command("verify original", () => c.retryConfirmation());
+      expect(c.signature).toBe(original); expect(c.busy).toBe(false);
+      expect(c.error).toContain(terminal === "failed" ? "failed on-chain" : "expired");
+      expect(c.error).not.toContain("unconfirmed");
+      expect(calls("/api/open-broadcast")).toHaveLength(retry ? 2 : 1);
+      expect(boundary.sign).toHaveBeenCalledTimes(retry ? 2 : 1);
+    });
+  }
+  for (const terminal of ["failed", "expired"] as const) {
     it.each(["removed", "unavailable"])(`${terminal} retry exposes history rejection when its receipt is %s`, async condition => {
       await ready(); await send(); chainStatus = terminal; await advance(1); await advance(450);
       expect(c.busy).toBe(false); expect(c.actionDisabled).toBe(false);

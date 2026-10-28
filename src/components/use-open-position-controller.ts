@@ -240,14 +240,14 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
             : !fresh ? "Quote expired, refreshing…"
               : null);
   const actionDisabled = busy || Boolean(actionBlockedReason);
+  // Keep retry admission/preparation errors separate from errors awaiting chain verification.
+  const retryError = (open.status === "failed" || open.status === "expired") &&
+    submission.retryError?.signature === open.attempt?.signature ? submission.retryError?.message : "";
 
   return {
     wallet, connected, connect, inputAssets, selectedAsset, inputMint, inputKind,
     amount, rangePreset, minPrice, maxPrice, quote, quoteLoading, quoteError: formError || quoteError,
-    // A rejected retry must explain its current failure, not invite another retry.
-    error: open.status === "failed" || open.status === "expired"
-      ? error || open.error
-      : open.error || (open.status === "confirmed" ? "" : error),
+    error: retryError || open.error || (open.status === "confirmed" ? "" : error),
     submitStage, signature, positionMint,
     beamStatus: open.status === "confirmed" && beamResult?.signature === signature ? beamResult.status : NO_BEAM_STATUS, presets: OPEN_RANGE_UI_PRESETS, fresh, busy,
     actionDisabled, actionBlockedReason, walletBlockedReason, changeAmount, chooseAsset, choosePreset,
