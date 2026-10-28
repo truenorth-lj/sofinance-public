@@ -1,29 +1,22 @@
 "use client";
 import "@/lib/engine-host";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { VersionedTransaction } from "@solana/web3.js";
-import bs58 from "bs58";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { formatAmount, parseTokenAmount } from "@sofinance/engine/amount";
 import { NATIVE_SOL_MINT, USDC_MINT } from "@sofinance/engine/ids";
 import { quoteIsFresh } from "@sofinance/engine/quote-math";
 import { OPEN_RANGE_UI_PRESETS, type OpenRangePreset } from "@sofinance/engine/open-range-presets";
-import { preserveExtraSignatures } from "@/lib/open-signatures";
-import { createJupiterRelayStore, postWithJupiterRelay } from "@/lib/jupiter/browser-relay";
-import { notSentRetryMessage } from "@/lib/public-error";
-import type { OpenPositionSummary } from "@sofinance/engine/open-types";
-import { openAttemptFromSummary, type OpenAttempt } from "@/lib/open-attempt";
-import { NO_BEAM_STATUS, openBeamStatus, type OpenBeamStatus } from "@/lib/open-beam-status";
+import { createJupiterRelayStore } from "@/lib/jupiter/browser-relay";
+import { NO_BEAM_STATUS } from "@/lib/open-beam-status";
 import type { WalletAsset, WalletDiscovery } from "@sofinance/engine/wallet-discovery";
 import { useWalletConnection } from "./wallet-connection";
 import { notifyPositionHistoryChange } from "@/lib/position-history-refresh";
 import { useOpenAttempt } from "./use-open-attempt";
-import { getStoredAttribution } from "@/lib/analytics/attribution";
-import { captureGrowthEvent, captureGrowthEventOnce } from "@/lib/analytics/client";
-import { classifyOpenError } from "@/lib/analytics/errors";
+import { captureGrowthEventOnce } from "@/lib/analytics/client";
 import { GROWTH_EVENTS, openEventProperties } from "@/lib/analytics/events";
 
 import { useOpenPreview, useOpenPreviewEffect } from "./transactions/open/use-open-preview";
+import { useOpenSubmission, useOpenSubmissionCommand, type OpenSubmitStage } from "./transactions/open/use-open-submission";
 
 export type OpenPositionPair = {
   poolAddress: string;
@@ -40,13 +33,7 @@ export type OpenPositionPair = {
 };
 
 type ApiError = { error: string };
-type Prepared = {
-  unsignedTransaction: string;
-  permit: string;
-  summary: OpenPositionSummary;
-};
-
-export type OpenSubmitStage = "preparing" | "wallet" | "broadcasting" | "pending" | "confirmed" | "failed" | "expired" | "manual-review" | null;
+export type { OpenSubmitStage } from "./transactions/open/use-open-submission";
 
 function pickInput(assets: WalletAsset[], mintA: string, mintB: string): WalletAsset | null {
   const eligible = assets.filter((item) => item.eligible);
@@ -90,14 +77,13 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
   const preview = useOpenPreview();
   const { quote, setQuote, quoteLoading, setQuoteLoading, quoteError, setQuoteError,
     setQuoteRevision, invalidateQuote } = preview;
-  const [operationStage, setSubmitStage] = useState<OpenSubmitStage>(null);
+  const submission = useOpenSubmission();
+  const { operationStage, beamResult } = submission;
+  // Discovery and submission share this error; form commands clear it synchronously.
   const [error, setError] = useState("");
-  // Beam metadata from prepare/broadcast, keyed to the attempt signature; shown only once that attempt is verified.
-  const [beamResult, setBeamResult] = useState<{ signature: string; status: OpenBeamStatus } | null>(null);
   const [now, setNow] = useState(0);
   const walletRef = useRef(wallet);
   const jupiterStoreRef = useRef(createJupiterRelayStore());
-  const submittingRef = useRef(false);
   const activeRef = useRef(false);
   useLayoutEffect(() => { activeRef.current = true; return () => { activeRef.current = false; }; }, []);
   const identity = JSON.stringify([wallet, pair?.poolAddress, inputMint, inputKind, amount, rangePreset, minPrice, maxPrice]);
@@ -219,104 +205,9 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
     changeAmount(formatAmount(selectedAsset.balance, selectedAsset.decimals, selectedAsset.decimals));
   };
 
-  const signAndSend = useCallback(async () => {
-    if (!pair || !wallet || !inputMint || !quote || !fresh || Date.now() >= quote.expiresAt || busy || !open.loaded || submittingRef.current) return;
-    submittingRef.current = true;
-    const requestedIdentity = identity;
-    const current = () => activeRef.current && walletRef.current === wallet && identityRef.current === requestedIdentity;
-    let persisted: OpenAttempt | null = null;
-    setQuoteLoading(false);
-    setSubmitStage("preparing");
-    setError("");
-    captureGrowthEvent(GROWTH_EVENTS.openStarted, openEventProperties(pair));
-    try {
-      // Same per-modal store as the preview: prepare replays the preview's fresh
-      // Jupiter quotes and only fetches swap-instructions.
-      const response = await postWithJupiterRelay("/api/open-prepare", {
-        wallet, poolId: pair.poolAddress, inputMint, inputKind, amount,
-        rangePreset, minPrice, maxPrice,
-      }, { store: jupiterStoreRef.current });
-      const data = await response.json() as Prepared | ApiError;
-      if (!response.ok) throw new Error((data as ApiError).error);
-      const prepared = data as Prepared;
-      if (!current() || !prepared.unsignedTransaction || !prepared.permit || !prepared.summary ||
-        prepared.summary.wallet !== wallet || prepared.summary.poolId !== pair.poolAddress ||
-        prepared.summary.quote.requested !== parsedAmount?.toString() ||
-        prepared.summary.quote.inputMint !== inputMint || prepared.summary.quote.inputKind !== inputKind ||
-        Date.now() >= prepared.summary.expiresAt) {
-        throw new Error("Prepared open-position transaction expired or incomplete");
-      }
-      const bytes = Uint8Array.from(atob(prepared.unsignedTransaction), (character) => character.charCodeAt(0));
-      const unsigned = VersionedTransaction.deserialize(bytes);
-      if (unsigned.message.staticAccountKeys[0]?.toBase58() !== wallet ||
-        unsigned.message.staticAccountKeys[1]?.toBase58() !== prepared.summary.nftMint ||
-        unsigned.message.recentBlockhash !== prepared.summary.blockhash) {
-        throw new Error("Transaction payer mismatch");
-      }
-      setQuote(prepared.summary.quote);
-      setNow(Date.now());
-      setSubmitStage("wallet");
-      const originalMessage = unsigned.message.serialize();
-      const signedByWallet = await signTransaction(unsigned);
-      const signedMessage = signedByWallet.message.serialize();
-      if (signedMessage.length !== originalMessage.length ||
-        signedMessage.some((byte, index) => byte !== originalMessage[index])) {
-        throw new Error("Wallet modified transaction content, stopped submission");
-      }
-      const signed = preserveExtraSignatures(unsigned, signedByWallet);
-      const signatureBytes = signed.signatures[0];
-      if (!signatureBytes || signatureBytes.every((byte) => byte === 0)) {
-        throw new Error("Wallet did not return a valid signature");
-      }
-      if (!signed.signatures[1] || signed.signatures[1].every((byte) => byte === 0)) {
-        throw new Error("Position NFT mint partial signature missing after wallet sign");
-      }
-      const txSignature = bs58.encode(signatureBytes);
-      const signedTransaction = btoa(String.fromCharCode(...signed.serialize()));
-      if (!current() || Date.now() >= prepared.summary.expiresAt) throw new Error("Wallet, input or quote changed during signing; transaction not sent");
-      const attempt = openAttemptFromSummary(txSignature, prepared.summary);
-      open.track(attempt);
-      persisted = attempt;
-      setSubmitStage("broadcasting");
-      const sent = await fetch("/api/open-broadcast", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          signedTransaction,
-          permit: prepared.permit,
-          wallet,
-          summary: prepared.summary,
-          sourceRef: getStoredAttribution()?.ref,
-        }),
-        cache: "no-store", signal: AbortSignal.timeout(15_000),
-      });
-      const broadcast = await sent.json() as { signature?: string; positionMint?: string; beamLabel?: string | null; error?: string; sent?: boolean };
-      if (!sent.ok) {
-        const reason = broadcast.error || "Open-position submission failed";
-        if (broadcast.sent === false) {
-          open.markUnsent(attempt);
-          persisted = null;
-        }
-        throw new Error(broadcast.sent === false ? notSentRetryMessage(reason) : reason);
-      }
-      if (broadcast.signature !== txSignature) throw new Error("RPC returned transaction signature mismatch");
-      // Signature acceptance is pending; useOpenAttempt checks finality and position facts.
-      setBeamResult({ signature: txSignature, status: openBeamStatus(prepared.summary.beam, broadcast.beamLabel) });
-    } catch (caught) {
-      if (!persisted) {
-        captureGrowthEvent(GROWTH_EVENTS.openFailed, {
-          ...openEventProperties(pair),
-          error_class: classifyOpenError(caught),
-        });
-      }
-      if (walletRef.current === wallet) setError(persisted
-        ? "Submission result is unconfirmed. Tracking the original signature; do not open again until it is verified."
-        : caught instanceof Error ? caught.message : "Open-position transaction failed");
-    } finally {
-      submittingRef.current = false;
-      setSubmitStage(null);
-    }
-  }, [amount, busy, fresh, identity, inputKind, inputMint, maxPrice, minPrice, open, pair, parsedAmount, quote, rangePreset, setQuote, setQuoteLoading, signTransaction, wallet]);
+  const signAndSend = useOpenSubmissionCommand({ pair, wallet, inputMint, inputKind, amount, rangePreset,
+    minPrice, maxPrice, parsedAmount, quote, fresh, busy, identity, open, signTransaction,
+    activeRef, walletRef, identityRef, jupiterStoreRef, setError, setNow, setQuote, setQuoteLoading }, submission);
 
   const walletBlockedReason = !connected
     ? "Connect a wallet to create a position"
