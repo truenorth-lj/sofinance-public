@@ -48,7 +48,7 @@ beforeEach(() => {
   ledger = []; requests = []; pending = []; alive = true; sign = vi.fn();
   let serial = 0;
   vi.spyOn(crypto, "randomUUID").mockImplementation(() => `00000000-0000-4000-8000-${String(++serial).padStart(12, "0")}`);
-  callback = vi.fn(() => ledger.push({ type: "confirmed", at: Date.now() }));
+  callback = vi.fn(() => { ledger.push({ type: "confirmed", at: Date.now() }); });
   get = k => Storage.prototype.getItem.call(localStorage, k);
   const set = (k: string, raw: string) => Storage.prototype.setItem.call(localStorage, k, raw);
   const remove = (k: string) => Storage.prototype.removeItem.call(localStorage, k);
@@ -136,7 +136,7 @@ describe("real compound facade attempt protocol", () => {
 
   it("uses latest callback without restarting a selected-NFT-independent historical poll", async () => {
     seed(); await start(); const old = callback;
-    callback = vi.fn(() => ledger.push({ type: "latest-confirmed", at: Date.now() }));
+    callback = vi.fn(() => { ledger.push({ type: "latest-confirmed", at: Date.now() }); });
     mint = testKeypair(81).publicKey.toBase58(); await render(); await advance(1);
     expect(count()).toBe(1); confirm = () => reply("success", "success"); await advance(4_000);
     expect(count()).toBe(2); expect(old).not.toHaveBeenCalled(); expect(callback).toHaveBeenCalledOnce();
