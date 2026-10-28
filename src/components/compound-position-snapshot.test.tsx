@@ -68,6 +68,7 @@ function expectReadPayloads() {
 beforeEach(() => {
   vi.useFakeTimers(); vi.setSystemTime(new Date("2026-10-27T00:00:00Z"));
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true); window.localStorage.clear();
+  vi.spyOn(crypto, "randomUUID").mockReturnValue("00000000-0000-4000-8000-000000000001");
   fixture = compoundHistoryFixture(); wallet = fixture.wallet; mint = fixture.state.positionMint;
   calls = []; views = []; pending = []; mounted = true;
   onConfirmed = vi.fn(); notify = vi.fn(); mocks.sign.mockReset();
