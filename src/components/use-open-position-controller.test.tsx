@@ -202,3 +202,30 @@ describe("open-position transaction lifecycle", () => {
     expect(window.localStorage.getItem(openAttemptKey(wallet))).toBeNull();
   });
 });
+
+
+it.each([false, true])("late unsent keeps newer receipt locked before another sign (storage event: %s)", async event => {
+  await mount(); const originalFetch = fetchMock.getMockImplementation()! as (url: string, init?: RequestInit) => Promise<Response>;
+  let release!: (value: Response) => void;
+  const waiting = new Promise<Response>(resolve => { release = resolve; });
+  fetchMock.mockImplementation((url: string, init?: RequestInit) => url === "/api/open-broadcast" ? waiting : originalFetch(url, init));
+  let sending!: Promise<void>; await act(async () => { sending = controller.signAndSend(); });
+  const key = openAttemptKey(wallet), raw = window.localStorage.getItem(key)!;
+  const original = JSON.parse(raw), newer = { ...original, signature: bs58.encode(new Uint8Array(64).fill(44)) };
+  persistOpenAttempt(window.localStorage, newer);
+  if (event) window.dispatchEvent(new StorageEvent("storage", { key, oldValue: raw, newValue: JSON.stringify(newer) }));
+  await act(async () => { release(Response.json({ error: "preflight", sent: false }, { status: 400 })); await sending; });
+  await advance(450);
+  expect(controller.actionDisabled).toBe(true); expect(controller.signature).toBe(newer.signature);
+  expect(controller.error).not.toContain("safe to retry");
+  expect(window.localStorage.getItem(key)).toBe(JSON.stringify(newer));
+  expect(window.localStorage.getItem(key + ":history:" + original.signature)).toBe(raw);
+  await act(async () => controller.signAndSend());
+  expect(mocks.sign).toHaveBeenCalledTimes(1); expect(calls("/api/open-prepare")).toHaveLength(1);
+  expect(calls("/api/open-broadcast")).toHaveLength(1);
+  fetchMock.mockImplementation(originalFetch); chainStatus = "expired";
+  await act(async () => controller.retryConfirmation()); await advance(450);
+  expect(controller.actionDisabled).toBe(false);
+  chainStatus = "pending"; await act(async () => controller.signAndSend());
+  expect(mocks.sign).toHaveBeenCalledTimes(2); expect(calls("/api/open-broadcast")).toHaveLength(2);
+});

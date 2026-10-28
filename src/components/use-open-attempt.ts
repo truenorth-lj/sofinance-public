@@ -74,8 +74,28 @@ export function useOpenAttempt(wallet: string | undefined) {
     dispatch({ type: "attemptTracked", attempt });
   };
   const markUnsent = (attempt: OpenAttempt) => {
-    abandonUnsentOpenAttempt(window.localStorage, attempt);
-    if (!activeRef.current || walletRef.current !== attempt.wallet || attemptRef.current?.signature !== attempt.signature) return;
+    const current = () => activeRef.current && walletRef.current === attempt.wallet && attemptRef.current?.signature === attempt.signature;
+    try {
+      if (!abandonUnsentOpenAttempt(window.localStorage, attempt)) {
+        throw new Error("Open-position history changed. Verify the saved signature before opening again.");
+      }
+    } catch (error) {
+      if (current()) {
+        // Detach old queries before adopting a replacement or locking unreadable/missing history.
+        attemptRef.current = null;
+        try {
+          const saved = loadOpenAttempt(window.localStorage, attempt.wallet);
+          attemptRef.current = saved.attempt;
+          dispatch({ type: "historyLoaded", wallet: attempt.wallet, attempt: saved.attempt,
+            invalid: saved.invalid || !saved.attempt });
+        } catch {
+          dispatch({ type: "historyUnavailable", wallet: attempt.wallet });
+        }
+      }
+      // Both consumers must avoid projecting the old response as safe to retry.
+      throw error;
+    }
+    if (!current()) return;
     attemptRef.current = null;
     dispatch({ type: "markedUnsent", attempt });
   };
