@@ -31,10 +31,10 @@ let ledger: unknown[], fetchMock: ReturnType<typeof vi.fn>, quoteReply: (body: B
 let pending: Array<ReturnType<typeof deferred<Response>>>;
 let signed: boolean;
 const note = (event: string, ...data: unknown[]) => ledger.push([Date.now(), event, ...data]);
-function deferred<T>() { let resolve!: (v: T) => void, reject!: (e: Error) => void; const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; }
+function deferred<T>() { let resolve!: (v: T) => void, reject!: (e: Error) => void; const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; }); void promise.catch(() => {}); return { promise, resolve, reject }; }
 function quote(body: Body) {
   const decimals = body.inputMint === USDC_MINT ? 6 : 9;
-  return { ...openSummaryFixture().quote, wallet: body.wallet, poolId: body.poolId, inputMint: body.inputMint, inputKind: body.inputKind, inputDecimals: decimals, requested: parseTokenAmount(body.amount, decimals).toString(), expiresAt: Date.now() + 5000 };
+  return { ...openSummaryFixture({ wallet, nftMint: nft.publicKey.toBase58(), blockhash: testKeypair(7).publicKey.toBase58() }).quote, wallet: body.wallet, poolId: body.poolId, inputMint: body.inputMint, inputKind: body.inputKind, inputDecimals: decimals, requested: parseTokenAmount(body.amount, decimals).toString(), expiresAt: Date.now() + 5000 };
 }
 function Suspender() { if (suspend) throw new Promise(() => {}); return null; }
 function Harness() {
@@ -115,6 +115,7 @@ beforeEach(() => {
   container = document.createElement("div"); document.body.append(container); root = createRoot(container);
 });
 afterEach(async context => {
+  try {
   await act(async () => root.unmount());
   await act(async () => { for (const p of pending) p.reject(new Error("Owned teardown")); });
   const count = calls().length; await advance(31000); expect(calls()).toHaveLength(count);
@@ -123,9 +124,11 @@ afterEach(async context => {
   if (!signed) { expect(calls("/api/open-prepare")).toHaveLength(0); expect(boundary.sign).not.toHaveBeenCalled(); }
   expect(calls("/api/open-broadcast")).toHaveLength(0);
   expect(ledger.filter(x => Array.isArray(x) && x[1] === "storage-write" && String(x[2]).startsWith("sofinance:open"))).toEqual([]);
+  } finally {
   // eslint-disable-next-line no-console -- Complete raw baseline/extracted/overlay evidence, never goldens.
   console.log("OPEN_PREVIEW_LEDGER " + JSON.stringify({ name: context.task.name, ledger }));
   container.remove(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers();
+  }
 });
 
 describe("accepted Open preview characterization", () => {
@@ -230,7 +233,7 @@ describe("accepted Open preview characterization", () => {
     expect(c.quote).not.toBeNull(); expect(c.actionDisabled).toBe(false);
   });
   it("retains wallet-level invalid-history lock and error priority without quote work", async () => {
-    window.localStorage.setItem(openAttemptKey(wallet), "broken"); await mount(); await command("amount", () => c.changeAmount("oops")); await advance(450);
+    window.localStorage.setItem(openAttemptKey(wallet), "broken"); note("fixture-seeded", ledger.pop()); await mount(); await command("amount", () => c.changeAmount("oops")); await advance(450);
     expect(c.busy).toBe(true); expect(c.error).toContain("cannot be verified"); expect(c.actionBlockedReason).toContain("original open-position");
     await command("blocked commands", () => { c.refreshQuote(); c.createAnother(); }); expect(calls()).toHaveLength(0);
   });
