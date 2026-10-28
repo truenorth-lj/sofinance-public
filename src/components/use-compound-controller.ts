@@ -207,6 +207,10 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
     onConfirmedRef.current?.();
   }, [updateFeedback]);
   const onConfirmationReadFailure = useCallback((current: CompoundAttempt, message: string) => {
+    // Keep the chain observation, but revoke recovery admission until its local cleanup is verified.
+    if (current.kind === "recovery" && resolvedAttempt.current?.signature === current.signature) {
+      resolvedAttempt.current = null;
+    }
     setAttemptStatus("pending");
     if (message) setError(message, `${current.wallet}:${current.positionMint}`, current.signature);
     else setError("");

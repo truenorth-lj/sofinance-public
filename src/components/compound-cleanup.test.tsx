@@ -81,6 +81,8 @@ describe("wallet-wide leftover yield cleanup", () => {
     persistCompoundAttempt(localStorage, recovery);
     confirmationStatus = "pending";
     await render();
+    const recoverBeforeFailure = controller.recover;
+    const cleanupAllBeforeFailure = controller.cleanupAll;
     const receiptsKey = compoundReceiptsKey(fixture.wallet);
     const before = localStorage.getItem(receiptsKey);
     const savedAttempt = localStorage.getItem(compoundAttemptKey(fixture.wallet));
@@ -117,9 +119,22 @@ describe("wallet-wide leftover yield cleanup", () => {
     expect(storage.getItem(compoundAttemptKey(fixture.wallet))).toBe(savedAttempt);
     if (fault === "write throws" || fault === "silent drop") expect(storage.getItem(receiptsKey)).toBe(before);
     vi.stubGlobal("localStorage", storage);
+    // A restored storage backend does not authorize a new transaction before rechecking the original.
+    mocks.sign.mockRejectedValue(new Error("unexpected new signing request"));
+    await act(async () => { await recoverBeforeFailure(source); });
+    expect(mocks.sign).not.toHaveBeenCalled();
+    await act(async () => { await cleanupAllBeforeFailure(); });
+    expect(mocks.sign).not.toHaveBeenCalled();
+    expect(controller.canCleanup).toBe(false);
+    const retrieveButtons = [...container.querySelectorAll("button")].filter(button => button.textContent === "Retrieve this balance");
+    expect(retrieveButtons).toHaveLength(2);
+    expect(retrieveButtons.every(button => button.disabled)).toBe(true);
+    expect(controller.confirmation).toMatchObject({ signature: recovery.signature, status: "success", chainStatus: "success" });
+    expect(storage.getItem(compoundAttemptKey(fixture.wallet))).toBe(savedAttempt);
     await act(async () => { await controller.retryReconcile(); });
     expect(controller.attemptStatus).toBe("success");
     expect(controller.receipts).toEqual([unrelated]);
+    expect(controller.canCleanup).toBe(true);
     expect(mocks.confirmed).toHaveBeenCalledOnce();
     await act(async () => { await controller.retryReconcile(); });
     expect(mocks.confirmed).toHaveBeenCalledOnce();
