@@ -195,10 +195,46 @@ describe("Open attempt accepted lifecycle", () => {
     await act(async () => result.resolve(Response.json({ signature: attempt().signature, status: "confirmed" })));
     hidden = suspended = false; await act(async () => hold.resolve()); await render(); await advance();
     await settle("expired");
-    // Suspense reconnect replays the wallet layout effect (clears owner), but not history load.
-    if (mode === "suspense") { expect(api.status).toBe("pending"); expect(() => api.track(attempt(8))).toThrow("history changed");
-      await act(async () => root.unmount()); root = createRoot(container); await mount(); await settle("expired"); }
     expect(api.status).toBe("expired");
+  });
+});
+
+describe("Open attempt retained reconnect", () => {
+  it.each(["pending", "manual-review"])("resumes %s polling without reloading or writing history", async status => {
+    await mount(attempt()); await settle(status);
+    const raw = storage.getItem(openAttemptKey(walletA));
+    suspended = true; await render();
+    const start = ledger.length;
+    respond = async body => Response.json({ signature: body.attempt.signature, status: "confirmed" });
+    suspended = false; await act(async () => hold.resolve()); await render(); await advance(3000);
+    expect(api).toMatchObject({ attempt: attempt(), status: "confirmed", pending: false });
+    expect(storage.getItem(openAttemptKey(walletA))).toBe(raw);
+    expect(ledger.slice(start).filter(e => ["get", "set", "remove"].includes((e as unknown[])[1] as string))).toEqual([]);
+  });
+
+  it("keeps an unsent receipt detached when layout effects reconnect", async () => {
+    await mount(attempt()); await act(async () => api.markUnsent(attempt()));
+    const archived = storage.getItem(openAttemptKey(walletA) + ":unsent:" + attempt().signature);
+    suspended = true; await render(); suspended = false;
+    await act(async () => hold.resolve()); await render(); await settle("confirmed");
+    expect(api).toMatchObject({ attempt: attempt(), status: "unsent", pending: false });
+    expect(storage.getItem(openAttemptKey(walletA))).toBeNull();
+    expect(storage.getItem(openAttemptKey(walletA) + ":unsent:" + attempt().signature)).toBe(archived);
+    await act(async () => api.track(attempt(8))); await settle("expired");
+    expect(api).toMatchObject({ attempt: attempt(8), status: "expired" });
+  });
+
+  it("invalidates the old owner when the wallet changes while suspended", async () => {
+    await mount(attempt()); const old = api; const result = deferred<Response>(); respond = () => result.promise;
+    await act(async () => api.retry()); suspended = true; await render();
+    wallet = walletB; storage.setItem(openAttemptKey(walletB), JSON.stringify(attempt(8, walletB)));
+    suspended = false; await act(async () => hold.resolve()); await render();
+    expect(() => old.track(attempt(9))).toThrow("changed");
+    await advance();
+    await act(async () => result.resolve(Response.json({ signature: attempt().signature, status: "confirmed" })));
+    expect(api).toMatchObject({ attempt: attempt(8, walletB), status: "pending" });
+    await settle("expired", attempt(8, walletB).signature);
+    expect(api).toMatchObject({ attempt: attempt(8, walletB), status: "expired" });
   });
 });
 
@@ -237,4 +273,62 @@ describe("late unsent ownership recovery", () => {
     expect(api).toMatchObject({ attempt: null, pending: false, error: "" });
     expect(storage.getItem(openAttemptKey(walletA))).toBe(JSON.stringify(attempt(8)));
   });
+});
+
+
+describe("Open attempt Activity history revalidation", () => {
+  it.each(["before-load", "after-failed-load"].flatMap(timing =>
+    ["expired", "confirmed", "failed", "error"].map(result => [timing, result])))
+  ("rejects old replies %s / %s", async (timing, result) => {
+    await mount(attempt()); await settle("manual-review");
+    const json = deferred<unknown>();
+    respond = async () => ({ ok: true, json: () => json.promise }) as Response;
+    await act(async () => api.retry());
+    hidden = true; await render();
+    failRead = true; hidden = false; await render();
+    if (timing === "after-failed-load") await advance();
+    const prior = { attempt: api.attempt, status: api.status, pending: api.pending, error: api.error };
+    await act(async () => {
+      if (result === "error") json.reject(new Error("old verification error"));
+      else json.resolve({ signature: attempt().signature, status: result });
+    });
+    expect(api).toMatchObject(prior);
+    if (timing === "before-load") await advance();
+    expect(api).toMatchObject({ attempt: null, status: "manual-review", pending: true });
+    expect(api.error).toContain("Unable to read");
+    expect(() => api.track(attempt(8))).toThrow("storage read failed");
+    expect(storage.getItem(openAttemptKey(walletA))).toBe(JSON.stringify(attempt()));
+  });
+  it.each(["same", "replacement"])("adopts %s readable history after Activity reload", async mode => {
+    await mount(attempt()); await settle("manual-review");
+    const json = deferred<unknown>();
+    respond = async () => ({ ok: true, json: () => json.promise }) as Response;
+    await act(async () => api.retry());
+    hidden = true; await render();
+    const saved = mode === "same" ? attempt() : attempt(8);
+    storage.setItem(openAttemptKey(walletA), JSON.stringify(saved));
+    hidden = false; await render();
+    await act(async () => json.resolve({ signature: attempt().signature, status: "expired" }));
+    expect(api.pending).toBe(true);
+    respond = async body => Response.json({ signature: body.attempt.signature, status: "pending" });
+    await advance(); expect(api.attempt).toEqual(saved); expect(api.pending).toBe(true);
+    await settle("confirmed", saved.signature);
+    expect(api).toMatchObject({ attempt: saved, status: "confirmed", pending: false });
+    expect(storage.getItem(openAttemptKey(walletA))).toBe(JSON.stringify(saved));
+  });
+
+  it("detaches an attempt tracked during reload if the subsequent history read fails", async () => {
+    await mount(); hidden = true; await render(); hidden = false; await render();
+    await act(async () => api.track(attempt()));
+    const json = deferred<unknown>();
+    respond = async () => ({ ok: true, json: () => json.promise }) as Response;
+    await act(async () => api.retry());
+    failRead = true; await advance();
+    expect(api).toMatchObject({ attempt: null, status: "manual-review", pending: true });
+    await act(async () => json.resolve({ signature: attempt().signature, status: "expired" }));
+    expect(api).toMatchObject({ attempt: null, status: "manual-review", pending: true });
+    expect(api.error).toContain("Unable to read");
+    expect(storage.getItem(openAttemptKey(walletA))).toBe(JSON.stringify(attempt()));
+  });
+
 });

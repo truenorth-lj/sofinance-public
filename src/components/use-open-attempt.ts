@@ -14,16 +14,27 @@ export function useOpenAttempt(wallet: string | undefined) {
   const checkingRef = useRef<string | null>(null);
   const activeRef = useRef(false);
   useLayoutEffect(() => { activeRef.current = true; return () => { activeRef.current = false; }; }, []);
-  useLayoutEffect(() => { walletRef.current = wallet; attemptRef.current = null; }, [wallet]);
+  useLayoutEffect(() => {
+    // Suspense reconnects layout effects without replaying the history loader.
+    // Preserve the synchronous owner (including an unsent null) for the same wallet.
+    if (walletRef.current !== wallet) {
+      walletRef.current = wallet;
+      attemptRef.current = null;
+    }
+  }, [wallet]);
 
   useEffect(() => {
     if (!wallet) return;
+    // Activity replays this loader; old replies cannot own history being revalidated.
+    // Same-wallet Suspense only reconnects layout effects and retains its owner.
+    attemptRef.current = null;
     const timer = window.setTimeout(() => {
       try {
         const saved = loadOpenAttempt(window.localStorage, wallet);
         attemptRef.current = saved.attempt;
         dispatch({ type: "historyLoaded", wallet, attempt: saved.attempt, invalid: saved.invalid });
       } catch {
+        attemptRef.current = null;
         dispatch({ type: "historyUnavailable", wallet });
       }
     }, 0);
