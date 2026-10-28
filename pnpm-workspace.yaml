@@ -4,3 +4,7 @@ packages:
 ignoredBuiltDependencies:
   - sharp
   - unrs-resolver
+
+# Minutes. Matches Dependabot's 3-day cooldown. Applies when resolving
+# versions, including transitive ones. The committed lockfile still installs.
+minimumReleaseAge: 4320
