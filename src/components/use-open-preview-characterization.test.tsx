@@ -6,7 +6,7 @@ import { useOpenPositionController, type OpenPositionPair } from "./use-open-pos
 import { NATIVE_SOL_MINT, USDC_MINT } from "@sofinance/engine/ids";
 import { parseTokenAmount } from "@sofinance/engine/amount";
 import { openAttemptKey } from "@/lib/open-attempt";
-import { resetJupiterBrowserGate } from "@/lib/jupiter/browser-relay";
+import { JUPITER_BROWSER_ORIGIN, resetJupiterBrowserGate } from "@/lib/jupiter/browser-relay";
 import { buildTransaction, openSummaryFixture, testKeypair, toBase64 } from "@/lib/test-support/send-fixtures";
 
 // Only external boundaries are mocked: the facade, attempt/helper and relay are real.
@@ -102,7 +102,7 @@ beforeEach(() => {
     init?.signal?.addEventListener("abort", () => note("fetch-abort", url), { once: true });
     const body = JSON.parse(String(init?.body ?? "{}")) as Body;
     if (url.startsWith("/api/wallet?")) return Response.json({ assets });
-    if (url.startsWith("https://api.jup.ag/")) return Response.json({ inAmount: "2000000", outAmount: "777", routePlan: [] });
+    if (url.startsWith(JUPITER_BROWSER_ORIGIN + "/")) return Response.json({ inAmount: "2000000", outAmount: "777", routePlan: [] });
     if (url === "/api/open-quote" || url === "/api/open-prepare") {
       if (relay && !body.jupiterRelay?.responses["preview-quote"]) return Response.json({ code: "jupiter_relay_needed", needs: [{ id: "preview-quote", method: "GET", url: `/swap/v1/quote?inputMint=${NATIVE_SOL_MINT}&outputMint=${USDC_MINT}&amount=2000000` }] }, { status: 409 });
       if (url === "/api/open-quote") return quoteReply(body);
@@ -240,7 +240,7 @@ describe("accepted Open preview characterization", () => {
   });
   it("shares the real relay cache with prepare and adopts its quote at the wallet boundary", async () => {
     relay = true; window.localStorage.setItem("sofiJupiterRelay", "on"); await ready();
-    const providerCalls = () => fetchMock.mock.calls.filter(([url]) => url.startsWith("https://api.jup.ag/"));
+    const providerCalls = () => fetchMock.mock.calls.filter(([url]) => url.startsWith(JUPITER_BROWSER_ORIGIN + "/"));
     expect(providerCalls()).toHaveLength(1); const before = c.quote;
     await act(async () => c.signAndSend()); expect(c.quote).not.toBe(before); expect(c.quote?.liquidity).toBe("888");
     expect(c.error).toBe("Synthetic wallet refusal"); expect(providerCalls()).toHaveLength(1); expect(calls("/api/open-prepare")).toHaveLength(1);
