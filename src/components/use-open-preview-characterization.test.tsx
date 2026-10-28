@@ -169,16 +169,48 @@ describe("accepted Open preview characterization", () => {
     expect(c.quoteLoading).toBe(true); expect(c.quote).toBeNull(); expect(c.quoteError).toBe("");
     await act(async () => next.resolve(Response.json(quote(nextBody)))); expect(c.quote?.requested).toBe("2000000"); expect(c.quoteLoading).toBe(false);
   });
-  it("synchronous clear invalidates same-value response without adding a replacement revision", async () => {
+  it("synchronously rejects a same-value response and starts a replacement after debounce", async () => {
     await mount(); const old = holdQuote(); await command("first", () => c.changeAmount("0.002")); await advance(450);
     await act(async () => { c.changeAmount("0.002"); old.resolve(Response.json(quote(bodyAt(0)))); });
-    expect(c.quote).toBeNull(); expect(c.quoteLoading).toBe(false); await advance(6000); expect(calls()).toHaveLength(1);
-    quoteReply = goodQuote; await command("explicit recovery", () => c.refreshQuote()); await advance(450); expect(c.quote).not.toBeNull();
+    expect(c.quote).toBeNull(); expect(c.quoteLoading).toBe(false);
+    quoteReply = goodQuote; await advance(449); expect(calls()).toHaveLength(1);
+    await advance(1); expect(calls()).toHaveLength(2); expect(c.quote?.requested).toBe("2000000");
   });
-  it("preserves batched amount ABA liveness limitation until explicit refresh", async () => {
+  it("restarts once for batched amount ABA without explicit refresh", async () => {
     await ready(); await command("batched ABA", () => { c.changeAmount("0.003"); c.changeAmount("0.002"); });
-    await advance(6000); expect(c.quote).toBeNull(); expect(calls()).toHaveLength(1);
-    await command("recover", () => c.refreshQuote()); await advance(450); expect(c.quote?.requested).toBe("2000000");
+    expect(c.quote).toBeNull(); await advance(449); expect(calls()).toHaveLength(1);
+    await advance(1); expect(calls()).toHaveLength(2); expect(bodyAt(1).amount).toBe("0.002");
+    expect(c.quote?.requested).toBe("2000000");
+  });
+  it.each(["amount", "asset", "preset", "min", "max", "MAX"] as const)("same-value %s restarts once and fences old pending success/error/finally", async kind => {
+    await ready();
+    if (kind === "min" || kind === "max") {
+      await command("custom range", () => { c.choosePreset("custom"); c.setMinPrice("1"); c.setMaxPrice("2"); });
+      await advance(450);
+    }
+    if (kind === "MAX") { await command("first MAX", () => c.fillMax()); await advance(450); }
+    const old = holdQuote(); await advance(3000); const oldBody = bodyAt(-1);
+    const count = calls().length;
+    const repeat = () => {
+      if (kind === "amount") c.changeAmount(c.amount);
+      else if (kind === "asset") c.chooseAsset("native", NATIVE_SOL_MINT);
+      else if (kind === "preset") c.choosePreset(c.rangePreset);
+      else if (kind === "min") c.setMinPrice("1");
+      else if (kind === "max") c.setMaxPrice("2");
+      else c.fillMax();
+    };
+    await command("repeat twice in same batch", () => { repeat(); repeat(); });
+    const next = holdQuote(); await advance(449); expect(calls()).toHaveLength(count);
+    await advance(1); expect(calls()).toHaveLength(count + 1); expect(c.quoteLoading).toBe(true);
+    await act(async () => {
+      if (kind === "amount" || kind === "preset" || kind === "min") old.resolve(Response.json({ ...quote(oldBody), liquidity: "stale" }));
+      else old.reject(new Error("old refresh failed"));
+    });
+    expect(c.quote).toBeNull(); expect(c.quoteError).toBe(""); expect(c.quoteLoading).toBe(true);
+    await act(async () => next.resolve(Response.json(quote(bodyAt(-1)))));
+    expect(c.quoteLoading).toBe(false); expect(c.quote?.liquidity).not.toBe("stale"); expect(c.actionDisabled).toBe(false);
+    quoteReply = goodQuote; await advance(2999); expect(calls()).toHaveLength(count + 1);
+    await advance(1); expect(calls()).toHaveLength(count + 2);
   });
   it("retains request fields for kind, asset, preset, custom min/max and fillMax", async () => {
     await ready(); await command("token SOL", () => c.chooseAsset("token", NATIVE_SOL_MINT)); await advance(450);
