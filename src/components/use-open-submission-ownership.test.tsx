@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act, Activity, createElement, StrictMode, Suspense, useEffect } from "react";
+import { act, Activity, createElement, StrictMode, Suspense, useEffect, useLayoutEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VersionedTransaction } from "@solana/web3.js";
@@ -21,6 +21,9 @@ const pair: OpenPositionPair = { poolAddress: testKeypair(42).publicKey.toBase58
 type Controller = ReturnType<typeof useOpenPositionController>;
 let c: Controller, previous: Controller | undefined, root: Root, container: HTMLDivElement;
 let currentPair: OpenPositionPair | null, mode: "visible" | "hidden", suspend: boolean, strict: boolean;
+let layoutCommand: (() => void) | undefined;
+let controllerLayoutCommand: ((value: Controller) => void) | undefined;
+function LayoutInvoker() { useLayoutEffect(() => { layoutCommand?.(); }); return null; }
 let readUnavailable = false;
 let ledger: unknown[][], fetchMock: ReturnType<typeof vi.fn>, storage: Storage;
 let prepareReply: () => Promise<Response>, broadcastReply: (init: RequestInit) => Promise<Response>;
@@ -37,6 +40,7 @@ function prepared() {
 function Suspender() { if (suspend) throw new Promise(() => {}); return null; }
 function Harness() {
   const value = useOpenPositionController(currentPair);
+  useLayoutEffect(() => { controllerLayoutCommand?.(value); });
   useEffect(() => {
     c = value;
     const projection = Object.fromEntries(Object.entries(value).filter(([, v]) => typeof v !== "function"));
@@ -46,7 +50,7 @@ function Harness() {
   return createElement(Suspender);
 }
 async function render() {
-  const child = <Activity mode={mode}><Suspense fallback="suspended"><Harness /></Suspense></Activity>;
+  const child = <><Activity mode={mode}><Suspense fallback="suspended"><Harness /></Suspense></Activity><LayoutInvoker /></>;
   await act(async () => root.render(strict ? createElement(StrictMode, null, child) : child));
 }
 async function advance(ms: number) { note("advance", ms); await act(async () => { await vi.advanceTimersByTimeAsync(ms); }); }
@@ -63,7 +67,7 @@ function expectNoSend() { expect(calls("/api/open-broadcast")).toHaveLength(0); 
 
 beforeEach(() => {
   vi.useFakeTimers(); vi.setSystemTime(1700000000000); vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  readUnavailable = false; ledger = []; previous = undefined; currentPair = pair; mode = "visible"; suspend = false; strict = false; waits = [];
+  layoutCommand = undefined; controllerLayoutCommand = undefined; readUnavailable = false; ledger = []; previous = undefined; currentPair = pair; mode = "visible"; suspend = false; strict = false; waits = [];
   boundary.wallet = wallet; boundary.connected = true; chainStatus = "pending"; writeMode = "ok"; scanError = false;
   vi.spyOn(crypto, "randomUUID").mockReturnValue("00000000-0000-4000-8000-000000000001");
   resetJupiterBrowserGate(); preparedValue = prepared();
@@ -158,6 +162,44 @@ async function change(kind: string) {
   if (kind === "unmount") { await act(async () => root.unmount()); root = createRoot(container); }
 }
 describe("Open submission ownership", () => {
+  it.each(["activity", "suspense"])("pre-reconnect ready callback cannot borrow the new %s lifetime", async kind => {
+    strict = true; await ready(); const old = c.signAndSend;
+    await change(kind); await advance(1);
+    await act(async () => old());
+    expect(calls("/api/open-prepare")).toHaveLength(0); expect(boundary.sign).not.toHaveBeenCalled(); expectNoSend();
+    await advance(450); await send(); expect(calls("/api/open-broadcast")).toHaveLength(1);
+  });
+  it.each(["activity", "suspense"])("reveal layout cannot revive a saved %s callback before passive revalidation", async kind => {
+    await ready(); const old = c.signAndSend;
+    if (kind === "activity") mode = "hidden"; else suspend = true;
+    await render();
+    let sending: Promise<void> | undefined;
+    layoutCommand = () => { layoutCommand = undefined; sending = old(); };
+    if (kind === "activity") mode = "visible"; else suspend = false;
+    await render(); await act(async () => { await sending; });
+    expect(calls("/api/open-prepare")).toHaveLength(0); expect(boundary.sign).not.toHaveBeenCalled(); expectNoSend();
+    await advance(451); await send(); expect(calls("/api/open-broadcast")).toHaveLength(1);
+  });
+  it("latest Activity layout callbacks wait for passive history revalidation", async () => {
+    strict = true; await ready(); mode = "hidden"; await render();
+    const commands: Promise<void>[] = [];
+    controllerLayoutCommand = value => { commands.push(value.signAndSend()); };
+    mode = "visible"; await render(); await act(async () => { await Promise.all(commands); });
+    expect(commands.length).toBeGreaterThan(0);
+    expect(calls("/api/open-prepare")).toHaveLength(0); expectNoSend();
+    controllerLayoutCommand = undefined;
+    await advance(451); await send(); expect(calls("/api/open-broadcast")).toHaveLength(1);
+  });
+  it.each(["activity", "suspense"])("multiple %s reconnects revoke every older ready generation", async kind => {
+    strict = true; await ready(); const callbacks = [c.signAndSend];
+    for (let i = 0; i < 3; i += 1) {
+      await change(kind); await advance(451);
+      await act(async () => { for (const old of callbacks) await old(); });
+      expect(calls("/api/open-prepare")).toHaveLength(0);
+      callbacks.push(c.signAndSend);
+    }
+    await send(); expect(calls("/api/open-broadcast")).toHaveLength(1);
+  });
   it.each(["accepted", "unknown", "mismatch"])("retained ready command cannot replace its unresolved %s receipt", async outcome => {
     await ready(); const retained = c.signAndSend;
     if (outcome === "unknown") broadcastReply = async () => { throw new Error("unknown send"); };

@@ -72,16 +72,27 @@ export function useOpenSubmission() {
     inputRevision, inputRevisionRef, invalidateSubmission };
 }
 
-/** Input revisions revoke captured quotes; committed lifetime epochs revoke in-flight work. */
+/** Input revisions revoke captured quotes; committed generations revoke saved commands and in-flight work. */
 export function useOpenSubmissionCommand({ pair, wallet, inputMint, inputKind, amount, rangePreset,
   minPrice, maxPrice, parsedAmount, quote, fresh, busy, identity, open, signTransaction,
   activeRef, walletRef, identityRef, lifetimeRef, jupiterStoreRef, setError, setNow, setQuote, setQuoteLoading,
 }: OpenSubmissionOptions, { setSubmitStage, setBeamResult, submittingRef, inputRevision, inputRevisionRef }: ReturnType<typeof useOpenSubmission>) {
   const committedQuoteRef = useRef<OpenPositionQuote | null>(null);
   useLayoutEffect(() => { committedQuoteRef.current = quote; }, [quote]);
+  const [generation, setGeneration] = useState<object | null>(null);
+  const committedGenerationRef = useRef<object | null>(null);
+  useLayoutEffect(() => {
+    const nextGeneration = {};
+    committedGenerationRef.current = nextGeneration;
+    // Publish a new callback after reconnect, even when React retained the render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Layout reconnect is the invalidation event; one commit publishes its new command generation before paint.
+    setGeneration(nextGeneration);
+    return () => { committedGenerationRef.current = null; };
+  }, []);
   return useCallback(async () => {
     if (!pair || !wallet || !inputMint || !quote || !fresh || Date.now() >= quote.expiresAt || busy || !open.loaded || submittingRef.current) return;
-    const ownsInput = () => activeRef.current && walletRef.current === wallet &&
+    const ownsInput = () => generation !== null && committedGenerationRef.current === generation &&
+      activeRef.current && walletRef.current === wallet &&
       identityRef.current === identity && inputRevisionRef.current === inputRevision;
     if (!ownsInput() || committedQuoteRef.current !== quote) return;
     if (!open.canSubmit()) {
@@ -187,6 +198,6 @@ export function useOpenSubmissionCommand({ pair, wallet, inputMint, inputKind, a
         setSubmitStage(null);
       }
     }
-  }, [amount, busy, fresh, identity, inputRevision, inputRevisionRef, inputKind, inputMint, maxPrice, minPrice, open, pair, parsedAmount, quote, rangePreset, setQuote, setQuoteLoading, signTransaction, wallet, activeRef, identityRef, lifetimeRef, jupiterStoreRef, submittingRef, walletRef, setBeamResult, setError, setNow, setSubmitStage]);
+  }, [amount, busy, fresh, generation, identity, inputRevision, inputRevisionRef, inputKind, inputMint, maxPrice, minPrice, open, pair, parsedAmount, quote, rangePreset, setQuote, setQuoteLoading, signTransaction, wallet, activeRef, identityRef, lifetimeRef, jupiterStoreRef, submittingRef, walletRef, setBeamResult, setError, setNow, setSubmitStage]);
 
 }
