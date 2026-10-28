@@ -131,14 +131,15 @@ for (const historyStatus of [undefined, "legacy"] as const) {
 }
 
 test("input enables Add after a lightweight preview; no automatic simulation or prepare", async ({ page, wallet }) => {
-  const { calls } = await setup(page, wallet);
+  const { calls, selection } = await setup(page, wallet);
   await expect(page.getByText("Preview ready. Final checks run when you add liquidity.")).toBeVisible();
   expect(calls.filter((p) => p === "/api/selected-quote")).toHaveLength(1);
   expect(calls).not.toContain("/api/selected-preflight"); expect(calls).not.toContain("/api/selected-prepare");
   expect(wallet.ledger).toEqual([]);
   await expect(page.getByText("Checked when you add liquidity", { exact: true })).toBeVisible();
   await expect(page.getByText("Protocol fee (0.10%)")).toBeVisible();
-  await expect(page.getByText("0.001 USDC", { exact: true })).toBeVisible();
+  const inputLabel = `${selection.inputMint.slice(0, 5)}…${selection.inputMint.slice(-5)}`;
+  await expect(page.getByText(`0.001 ${inputLabel}`, { exact: true })).toBeVisible();
   await page.screenshot({ path: test.info().outputPath("add-preview-desktop.png") });
 });
 
