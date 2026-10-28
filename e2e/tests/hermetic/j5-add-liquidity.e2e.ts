@@ -171,6 +171,14 @@ test("wallet Lighthouse extra instruction still broadcasts", async ({ page, wall
   expect(wallet.ledger[0]).toMatchObject({ outcome: "signed", mode: "lighthouse" });
 });
 
+test("wallet raised ComputeBudget priority fee still broadcasts", async ({ page, wallet }) => {
+  wallet.mode = "priority-fee";
+  const { calls, add } = await setup(page, wallet);
+  await add.click();
+  await expect.poll(() => calls.filter((p) => p === "/api/selected-broadcast").length).toBe(1);
+  expect(wallet.ledger[0]).toMatchObject({ outcome: "signed", mode: "priority-fee" });
+});
+
 test("ambiguous send warns after reload without locking or automatically resending", async ({ page, wallet }) => {
   const { calls, add } = await setup(page, wallet, { uncertainSend: true });
   await add.click();

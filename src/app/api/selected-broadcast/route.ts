@@ -57,7 +57,10 @@ export async function POST(request: Request) {
     if (!nacl.sign.detached.verify(transaction.message.serialize(), walletSignature, wallet.toBytes())) {
       throw new Error("Wallet signature does not match the prepared transaction");
     }
-    const signature = await submitSelected({ transaction, wallet, walletSignature, permitInput }, APP_SELECTED_SUBMIT);
+    const signature = await submitSelected({
+      transaction, wallet, walletSignature, permitInput,
+      prepared: prepared !== transaction ? prepared : undefined,
+    }, APP_SELECTED_SUBMIT);
     return Response.json(
       { signature, beam: null, beamLabel: null, beamLandingUrl: beamLandingUrl(signature) },
       { headers: { "Cache-Control": "no-store" } },

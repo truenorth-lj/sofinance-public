@@ -39,7 +39,7 @@ export async function submitWithdraw(input: {
     const connection = rpcConnection();
     if (await connection.getBlockHeight("confirmed") > summary.lastValidBlockHeight)
         throw new Error("Withdrawal blockhash expired");
-    await simulateWithdraw(connection, transaction, summary, true);
+    await simulateWithdraw(connection, transaction, summary, true, input.unsignedTransaction ? prepared : undefined);
     if (Date.now() >= summary.expiresAt || await connection.getBlockHeight("confirmed") > summary.lastValidBlockHeight)
         throw new Error("Withdrawal expired before broadcast");
     const expected = bs58.encode(transaction.signatures[0]!);

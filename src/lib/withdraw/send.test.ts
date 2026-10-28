@@ -30,7 +30,7 @@ beforeEach(() => {
 it("re-simulates the signed exact message before the single RPC submission", async () => {
     const body = input({ beam: { enabled: false, included: false, tipLamports: 0, tipAddress: null, skippedReason: "disabled" } });
     expect(await submitWithdraw(body)).toHaveProperty("signature", signatureOf(transaction));
-    expect(mocks.simulate).toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.objectContaining({ operation: "withdraw" }), true);
+    expect(mocks.simulate).toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.objectContaining({ operation: "withdraw" }), true, undefined);
     expect(mocks.send).toHaveBeenCalledOnce();
     expect(mocks.beam).toHaveBeenCalledWith(signatureOf(transaction), body.summary.beam);
     expect(mocks.simulate.mock.invocationCallOrder[0]).toBeLessThan(mocks.send.mock.invocationCallOrder[0]!);
@@ -83,6 +83,7 @@ it("accepts a Phantom-style recompile (replaced ComputeBudget + inserted Lightho
         wallet, signedTransaction: toBase64(rewritten), unsignedTransaction: toBase64(unsigned), summary,
         permit: withdrawPermit.issue(SIGNING_SECRET, { wallet, message: messageBase64(unsigned), summary }),
     })).toHaveProperty("signature", signatureOf(rewritten));
+    expect(mocks.simulate).toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.anything(), true, expect.any(VersionedTransaction));
     expect(mocks.send).toHaveBeenCalledOnce();
 });
 it("accepts a wallet-appended Lighthouse instruction when unsignedTransaction is provided", async () => {

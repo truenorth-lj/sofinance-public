@@ -1,6 +1,6 @@
 import { expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
-import { Connection, PublicKey, SystemProgram, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
+import { ComputeBudgetProgram, Connection, PublicKey, SystemProgram, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
 import { TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { simulateWithdraw } from "@sofinance/engine/withdraw/build";
 import type { WithdrawSummary } from "@sofinance/engine/withdraw/types";
@@ -10,15 +10,16 @@ const account = getAssociatedTokenAddressSync(mint, wallet);
 function token(amount: bigint) { const data = Buffer.alloc(165); mint.toBuffer().copy(data); wallet.toBuffer().copy(data, 32); data.writeBigUInt64LE(amount, 64); data[108] = 1; return { data, owner: TOKEN_PROGRAM_ID, lamports: 2039280, executable: false, rentEpoch: 0 }; }
 function fixture(stage: "atomic" | "withdraw" | "swap" = "withdraw") {
     let initial = token(100n), ending = token(150n);
-    const native = { data: Buffer.alloc(0), owner: SystemProgram.programId, lamports: 100000000, executable: false, rentEpoch: 0 };
+    const nativeBefore = { data: Buffer.alloc(0), owner: SystemProgram.programId, lamports: 100000000, executable: false, rentEpoch: 0 };
+    let nativeAfter = { ...nativeBefore };
     const summary = { wallet: wallet.toBase58(), positionAccount: position.toBase58(), positionMint: positionMint.toBase58(), stage, closesPosition: true, receive: "original", maxSolDebitLamports: "5000", assets: [{ mint: mint.toBase58(), account: account.toBase58(), program: TOKEN_PROGRAM_ID.toBase58(), decimals: 6, starting: "100", amount: "50" }], outputs: [{ mint: mint.toBase58(), expected: "50", minimum: "50", decimals: 6 }] } as WithdrawSummary;
-    const connection = { getMultipleAccountsInfoAndContext: vi.fn(async (keys: PublicKey[]) => ({ context: { slot: 10 }, value: keys.map(k => k.equals(wallet) ? native : k.equals(account) ? initial : null) })), simulateTransaction: vi.fn(async (_transaction, config: {
+    const connection = { getMultipleAccountsInfoAndContext: vi.fn(async (keys: PublicKey[]) => ({ context: { slot: 10 }, value: keys.map(k => k.equals(wallet) ? nativeBefore : k.equals(account) ? initial : null) })), simulateTransaction: vi.fn(async (_transaction, config: {
             accounts: {
                 addresses: string[];
             };
-        }) => ({ value: { err: null, accounts: config.accounts.addresses.map(k => { const value = k === wallet.toBase58() ? native : k === account.toBase58() ? ending : null; return value ? { ...value, owner: value.owner.toBase58(), data: [value.data.toString("base64"), "base64"] } : null; }) } })) } as unknown as Connection;
+        }) => ({ value: { err: null, accounts: config.accounts.addresses.map(k => { const value = k === wallet.toBase58() ? nativeAfter : k === account.toBase58() ? ending : null; return value ? { ...value, owner: value.owner.toBase58(), data: [value.data.toString("base64"), "base64"] } : null; }) } })) } as unknown as Connection;
     const transaction = new VersionedTransaction(new TransactionMessage({ payerKey: wallet, recentBlockhash: BLOCKHASH, instructions: [] }).compileToV0Message());
-    return { summary, connection, transaction, setInitial: (amount: bigint) => { initial = token(amount); }, setEnding: (amount: bigint) => { ending = token(amount); } };
+    return { summary, connection, transaction, setInitial: (amount: bigint) => { initial = token(amount); }, setEnding: (amount: bigint) => { ending = token(amount); }, setNativeAfter: (lamports: number) => { nativeAfter = { ...nativeBefore, lamports }; } };
 }
 it("verifies withdrawal minimums and fails closed if received amounts shrink", async () => {
     const f = fixture();
@@ -50,6 +51,27 @@ it("rejects pre-funded isolated atomic sources", async () => {
     f.summary.outputs = [];
     f.summary.isolatedSources = [{ address: account.toBase58(), mint: mint.toBase58(), program: TOKEN_PROGRAM_ID.toBase58(), seed: "seed", space: 165, rentLamports: 2039280 }];
     await expect(simulateWithdraw(f.connection, f.transaction, f.summary)).rejects.toThrow("already exists");
+});
+it("allows a wallet-raised ComputeBudget priority fee under 0.01 SOL and still blocks app-side overspend", async () => {
+    const f = fixture("swap");
+    const signed = new VersionedTransaction(new TransactionMessage({
+        payerKey: wallet, recentBlockhash: BLOCKHASH, instructions: [
+            ComputeBudgetProgram.setComputeUnitLimit({ units: 1_400_000 }),
+            ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 2_500_000 }),
+        ],
+    }).compileToV0Message());
+    f.setNativeAfter(100000000 - 5000 - 3_500_000);
+    await expect(simulateWithdraw(f.connection, signed, f.summary, false, f.transaction)).resolves.toBeDefined();
+    f.setNativeAfter(100000000 - 5000 - 3_500_000 - 1);
+    await expect(simulateWithdraw(f.connection, signed, f.summary, false, f.transaction)).rejects.toThrow("exceeds SOL cost budget");
+    const over = new VersionedTransaction(new TransactionMessage({
+        payerKey: wallet, recentBlockhash: BLOCKHASH, instructions: [
+            ComputeBudgetProgram.setComputeUnitLimit({ units: 1_400_000 }),
+            ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 8_000_000 }),
+        ],
+    }).compileToV0Message());
+    f.setNativeAfter(100000000 - 11_200_000);
+    await expect(simulateWithdraw(f.connection, over, f.summary, false, f.transaction)).rejects.toThrow("priority fee exceeds 0.01 SOL");
 });
 it("allows the full-withdrawal close to touch the position NFT account", async () => {
     const f = fixture();

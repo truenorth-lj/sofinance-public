@@ -114,3 +114,13 @@ test("wallet Lighthouse extra instruction still mint-signs and broadcasts", asyn
   expect(wallet.ledger[0]).toMatchObject({ outcome: "signed", mode: "lighthouse" });
   expect(flow.calls.filter((path) => path === "/api/open-broadcast")).toHaveLength(1);
 });
+
+test("wallet raised ComputeBudget priority fee still mint-signs and broadcasts", async ({ page, wallet, guards }) => {
+  guards.allowConsole(/^Failed to load resource: the server responded with a status of 503/);
+  wallet.mode = "priority-fee";
+  const flow = await setup(page, wallet);
+  await flow.create.click();
+  await expect(page.getByText("Waiting for on-chain confirmation…", { exact: true }).first()).toBeVisible();
+  expect(wallet.ledger[0]).toMatchObject({ outcome: "signed", mode: "priority-fee" });
+  expect(flow.calls.filter((path) => path === "/api/open-broadcast")).toHaveLength(1);
+});

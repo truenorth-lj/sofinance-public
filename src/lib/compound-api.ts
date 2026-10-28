@@ -56,5 +56,5 @@ export async function parseCompoundBroadcast(request: Request, operation: "compo
     (summary.operation === "compound" ? summary.state.wallet : summary.wallet) !== wallet) {
     throw new Error("Compound authorization type, wallet, or expiry mismatch");
   }
-  return { wallet, summary, transaction };
+  return { wallet, summary, transaction, prepared };
 }

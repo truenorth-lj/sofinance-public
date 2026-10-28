@@ -187,16 +187,45 @@ export function WithdrawPanel({wallet,positionMint,mintA,mintB,label,onClose,onB
   const saved:Checkpoint={prepared,signature:bs58.encode(signed.signatures[0]!),request:originalRequest,confirmHighImpact:confirmed,root};
   // Persist before broadcasting: an interrupted HTTP request can still land.
   save(run,saved);setProgress("Submitting withdrawal…");
-  await post(run,"withdraw-broadcast",{wallet,summary:prepared.summary,permit:prepared.permit,confirmHighImpact:confirmed,unsignedTransaction:prepared.unsignedTransaction,signedTransaction:btoa(String.fromCharCode(...signed.serialize()))});
+  try{
+   await post(run,"withdraw-broadcast",{wallet,summary:prepared.summary,permit:prepared.permit,confirmHighImpact:confirmed,unsignedTransaction:prepared.unsignedTransaction,signedTransaction:btoa(String.fromCharCode(...signed.serialize()))});
+  }catch(error){
+   // Pre-send 4xx (budget, simulation) never reached the RPC. Restore the first-stage
+   // checkpoint so Resume re-prepares conversion instead of waiting on a never-sent sig.
+   if(root && /exceeds SOL cost budget|priority fee exceeds|simulation failed|authorization|Invalid or expired|Invalid wallet signature|blockhash expired|required instruction|Wallet (?:changed|dropped|removed)|Confirm|balance changed|below simulated|existing wallet inventory|output below/i.test(error instanceof Error?error.message:"")){
+    save(run,{prepared:root.prepared,signature:root.signature,request:originalRequest,confirmHighImpact:confirmed});
+   }
+   throw error;
+  }
   return saved;
  }
  async function run(confirmed=false){
   const run=begin();if(!run)return;setBusy(true);setError("");setConfirmation(false);
   try{
    guardRun(run);
+   const resuming=!!checkpoint;
    let saved=checkpoint;
    if(!saved){const prepared=await post<WithdrawPrepared>(run,"withdraw-prepare",{...request,confirmHighImpact:confirmed});saved=await signAndSend(run,prepared,confirmed,request);}
-   await waitFor(run,saved);
+   if(resuming && saved.prepared.summary.stage==="swap" && saved.root){
+    const result=await post<{status:string}>(run,"withdraw-status",{signature:saved.signature,prepared:saved.prepared});
+    guardRun(run);
+    if(result.status==="success"){
+     notifyPositionHistoryChange(saved.prepared.summary.positionMint,undefined);
+     save(run,null);setProgress("Withdrawal complete");setPreview(null);currentOnConfirmed.current();return;
+    }
+    if(result.status==="failed" || result.status==="expired"){
+     const restored={...saved,prepared:saved.root.prepared,signature:saved.root.signature,root:undefined};
+     save(run,restored);
+     notifyPositionHistoryChange(restored.prepared.summary.positionMint,restored.signature);
+     saved=restored;
+    }else if(result.status==="pending"){
+     await waitFor(run,saved);
+    }else{
+     throw new Error(`Transaction status: ${result.status}. Review it before starting another withdrawal.`);
+    }
+   }else{
+    await waitFor(run,saved);
+   }
    if(saved.prepared.summary.stage==="withdraw"){
     guardRun(run);
     setProgress("Step 1 of 2 complete. Preparing conversion…");

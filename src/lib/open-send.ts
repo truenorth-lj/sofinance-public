@@ -23,6 +23,7 @@ export async function sendSignedOpenPosition(
   transaction: VersionedTransaction,
   summary: OpenPositionSummary,
   sourceRef?: unknown,
+  prepared?: VersionedTransaction,
 ) {
   let connection: ReturnType<typeof rpcConnection>;
   try {
@@ -81,6 +82,7 @@ export async function sendSignedOpenPosition(
       expectedLiquidity: BigInt(summary.quote.liquidity),
       maxSolDebitLamports: BigInt(summary.maxSolDebitLamports),
       sigVerify: true,
+      prepared,
     });
     if (Date.now() >= summary.expiresAt || await connection.getBlockHeight("confirmed") > summary.lastValidBlockHeight) {
       throw new Error("Signed transaction expired before broadcast");
@@ -135,5 +137,5 @@ export async function submitOpenPositionFromParts(input: {
     throw new Error("Transaction does not match simulated open-position authorization");
   }
   if (input.unsignedTransaction) assertWalletReturnedTransaction(prepared, transaction, input.wallet);
-  return sendSignedOpenPosition(input.wallet, transaction, input.summary, input.sourceRef);
+  return sendSignedOpenPosition(input.wallet, transaction, input.summary, input.sourceRef, input.unsignedTransaction ? prepared : undefined);
 }

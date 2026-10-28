@@ -15,6 +15,7 @@ export { CompoundSendError };
 
 export async function reverifySignedCompound(
   wallet: string, transaction: VersionedTransaction, summary: CompoundSummary,
+  prepared?: VersionedTransaction,
 ) {
   const connection = rpcConnection();
   const [height, state] = await Promise.all([
@@ -30,7 +31,7 @@ export async function reverifySignedCompound(
   }
   const verified = await simulateAndVerifyCompound({ connection, transaction, state,
     compoundAccounts: summary.compoundAccounts, priorSources: summary.priorSources, expectedLiquidity: BigInt(summary.liquidity),
-    maxSolDebitLamports: BigInt(summary.maxSolDebitLamports), sigVerify: true });
+    maxSolDebitLamports: BigInt(summary.maxSolDebitLamports), sigVerify: true, prepared });
   if (verified.rewards.some((reward) => BigInt(reward.amount) > 0n)) {
     throw new Error("Third reward yield appeared with no isolated swap path, cannot fully reinvest; transaction not sent");
   }
@@ -43,10 +44,11 @@ export async function reverifySignedCompound(
 
 export async function sendSignedCompoundTransaction(
   wallet: string, transaction: VersionedTransaction, summary: CompoundSummary,
+  prepared?: VersionedTransaction,
 ) {
   let connection;
   try {
-    connection = await reverifySignedCompound(wallet, transaction, summary);
+    connection = await reverifySignedCompound(wallet, transaction, summary, prepared);
   } catch (error) {
     throw new CompoundSendError(error, false);
   }

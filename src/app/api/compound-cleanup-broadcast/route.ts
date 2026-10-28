@@ -28,7 +28,10 @@ export async function POST(request: Request) {
     const summary = await parseCleanupBatchSummary(body.summary, wallet), connection = rpcConnection();
     if (summary.blockhash !== transaction.message.recentBlockhash || exceedsTxSizeLimit(transaction.serialize().length) ||
       Date.now() >= summary.expiresAt || await connection.getBlockHeight("confirmed") > summary.lastValidBlockHeight) throw new Error("Cleanup authorization expired or blockhash mismatch");
-    await simulateAndVerifyCleanupBatch({ connection, transaction, summary, sigVerify: true });
+    await simulateAndVerifyCleanupBatch({
+      connection, transaction, summary, sigVerify: true,
+      prepared: prepared !== transaction ? prepared : undefined,
+    });
     if (Date.now() >= summary.expiresAt || await connection.getBlockHeight("confirmed") > summary.lastValidBlockHeight) throw new Error("Cleanup transaction expired before broadcast");
     const expected = bs58.encode(transaction.signatures[0]!);
     submitted = true;
