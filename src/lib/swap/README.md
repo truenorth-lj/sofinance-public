@@ -10,7 +10,7 @@ plans, instructions and route ALTs in their existing atomic transactions.
 
 | Flow | Mechanism |
 | --- | --- |
-| Open / selected add | Reserve 10 bps from the entire deposit once (`depositFeePlan`); explicit checked transfer of the **input mint** (or native SOL) to the fee wallet’s ATA for that mint before swaps/add. Parallel legs and sequential secondary legs use zero additional fee bps. Includes the same-mint portion. |
+| Open / selected add | Reserve 10 bps from the entire deposit once (`depositFeePlan`); explicit checked transfer of the **input mint** to the fee wallet’s ATA for that mint before swaps/add. Native SOL wraps the full input into the user’s wSOL ATA, then TransferChecked 10 bps to the fee wallet’s wSOL ATA (never a raw lamport transfer). Parallel legs and sequential secondary legs use zero additional fee bps. Includes the same-mint portion. |
 | Compound SPCX/SPCXx rebalance | Same 10 bps input-token transfer from isolated harvested yield (the reinvested swap input). Not a performance fee on LP earnings. |
 | Exit / withdraw to USDC | Jupiter ExactIn output USDC `platformFee` on each converted withdrawal asset, without reducing its input. |
 | Withdraw conversion to a non-USDC mint | Still reserves the input fee and may append a compact ExactIn USDC hop (`collectSwapFee`); `fitFeeCollections` falls back to an input-asset transfer if that hop makes the packet too large. |
@@ -19,8 +19,9 @@ plans, instructions and route ALTs in their existing atomic transactions.
 Integer fees floor to atomic units; zero needs no instruction. Deposit flows never
 append a second Jupiter fee-to-USDC route. Missing recipient ATAs get
 `createAssociatedTokenAccountIdempotent` with **user as payer**; existing invalid,
-uninitialized or frozen accounts fail closed. Native SOL fees require a
-rent-funded operator wallet. Nothing silently skips collection. Upstream
+uninitialized or frozen accounts fail closed. Native SOL deposits wrap first,
+then charge the fee as wSOL `transferChecked` (user pays the fee wallet’s wSOL
+ATA rent if missing). Nothing silently skips collection. Upstream
 platform fee quotes (withdraw-to-USDC) must report the requested rate and a
 valid amount.
 
@@ -42,10 +43,10 @@ Limit: **1,232 bytes**.
 | Representative envelope | ATA exists | ATA missing |
 | --- | ---: | ---: |
 | Open, USDC upfront, two legs | 1283 | 1325 |
-| Open, SOL sequential + input-token fee | 1258 | — (native transfer, no ATA) |
+| Open, SOL sequential + input-token fee | 1258 | 1300 |
 | Open, single leg + input-token fee | 1250 | 1292 |
 | Open, pool-token + input-token fee | 1211 | 1253 |
-| Selected add, SOL + input-token fee | 1141 | — |
+| Selected add, SOL + input-token fee | 1141 | 1183 |
 | Selected add, pool-token + input-token fee | 1094 | 1136 |
 | Compound input-token fee | 1216 | 1258 |
 | Exit conversion, USDC platform fee | 480 | 621 |
@@ -58,6 +59,14 @@ setup, pool accounts, and route overlap alter size. A missing compound fee ATA
 exceeds the limit with tip in this fixture: existing Beam selection may omit the
 tip if the complete untipped packet fits, otherwise preparation fails. Fee ATA
 creation is never omitted to squeeze in a transaction.
+
+Native SOL now TransferChecked wSOL (same 1258 B as the previous lamport
+transfer when the fee ATA exists). Creating the fee wallet’s wSOL ATA adds
+**42 B**. Live SOL opens were 1178–1223 B; the extra create can push a large
+packet over 1,232 B. `compactAtaInstructions` drops the create once the ATA
+exists, Beam tip is already omitted when oversize, and open retries smaller
+Jupiter routes. The 1.4M CU limit is kept: dropping it would leave the
+transaction on the 200k default, which is not enough for Jupiter + Raydium.
 
 Open / selected / compound **always** collect the protocol fee in the input
 asset. The previous extra Jupiter USDC fee hop is gone on those flows (that is

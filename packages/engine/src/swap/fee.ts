@@ -3,9 +3,10 @@ import { engineEnv } from "../host";
 // lives in collection.ts; callers must not silently waive missing recipient ATAs.
 import {
   createTransferCheckedInstruction,
-  getAccountLenForMint, getAssociatedTokenAddressSync, unpackMint,
+  getAccountLenForMint, getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID, unpackMint,
 } from "@solana/spl-token";
-import { PublicKey, SystemProgram, type Connection, type TransactionInstruction } from "@solana/web3.js";
+import { PublicKey, type Connection, type TransactionInstruction } from "@solana/web3.js";
+import { NATIVE_SOL_MINT } from "../ids";
 
 export const DEFAULT_SWAP_FEE_BPS = 10;
 export const MAX_SWAP_FEE_BPS = 100;
@@ -77,13 +78,8 @@ export function swapFeeQuoteFields(amount: bigint, config: SwapFeeConfig): SwapF
   };
 }
 
-export async function assertNativeSwapFeeRecipient(connection: Connection, recipient: PublicKey, fee: bigint) {
-  if (fee <= 0n) return;
-  const account = await connection.getAccountInfo(recipient, "confirmed");
-  const minimum = BigInt(await connection.getMinimumBalanceForRentExemption(account?.data.length ?? 0, "confirmed"));
-  if (BigInt(account?.lamports ?? 0) + fee < minimum) {
-    throw new Error(`Protocol fee wallet is not funded for account rent. The site operator must fund the fee wallet with at least ${Number(minimum) / 1e9} SOL; no transaction was sent`);
-  }
+export function nativeSolOwnerAta(owner: PublicKey): PublicKey {
+  return getAssociatedTokenAddressSync(new PublicKey(NATIVE_SOL_MINT), owner, false, TOKEN_PROGRAM_ID);
 }
 
 export function swapFeeRecipientAta(recipient: PublicKey, mint: PublicKey, program: PublicKey): PublicKey {
@@ -93,7 +89,10 @@ export function swapFeeRecipientAta(recipient: PublicKey, mint: PublicKey, progr
 export function swapFeeTransferInstructions(input: SwapFeeTransferInput): TransactionInstruction[] {
   if (input.amount <= 0n) return [];
   if (input.kind === "native") {
-    return [SystemProgram.transfer({ fromPubkey: input.owner, toPubkey: input.recipient, lamports: input.amount })];
+    const mint = new PublicKey(NATIVE_SOL_MINT);
+    return swapFeeTransferInstructions({
+      ...input, kind: "token", mint, source: nativeSolOwnerAta(input.owner), decimals: 9, program: TOKEN_PROGRAM_ID,
+    });
   }
   const ata = swapFeeRecipientAta(input.recipient, input.mint, input.program);
   return [

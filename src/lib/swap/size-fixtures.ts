@@ -5,7 +5,7 @@ import { createAssociatedTokenAccountIdempotentInstruction, createInitializeAcco
 import openFixture from "../fixtures/open-size-compact-route.json";
 import compoundFixture from "../fixtures/compound-size-route.json";
 import { versionedTransactionSize } from "@sofinance/engine/open-transaction";
-import { USDC_MINT } from "@sofinance/engine/ids";
+import { NATIVE_SOL_MINT, USDC_MINT } from "@sofinance/engine/ids";
 import { exceedsTxSizeLimit } from "@sofinance/engine/transaction-limits";
 const key = (n: number) => new PublicKey(new Uint8Array(32).fill(n));
 function decode(f: typeof openFixture) {
@@ -48,7 +48,13 @@ export function feeSizeFixtures() {
   const usdcOpen = open.instructions.filter((_, i) => ![1, 2, 3, 9].includes(i));
   measure("open USDC upfront / ATA exists", open, [...usdcOpen, of.transfer]);
   measure("open USDC upfront / ATA missing", open, [...usdcOpen, of.create, of.transfer]);
-  measure("open SOL sequential + input-token fee", open, [...open.instructions, SystemProgram.transfer({ fromPubkey: open.payer, toPubkey: key(239), lamports: 1000 })]);
+  const wsol = new PublicKey(NATIVE_SOL_MINT), wsolRecipient = key(239);
+  const wsolFeeAta = getAssociatedTokenAddressSync(wsol, wsolRecipient, true);
+  const userWsol = getAssociatedTokenAddressSync(wsol, open.payer, false);
+  const wsolCreate = createAssociatedTokenAccountIdempotentInstruction(open.payer, wsolFeeAta, wsolRecipient, wsol);
+  const wsolTransfer = createTransferCheckedInstruction(userWsol, wsol, wsolFeeAta, open.payer, 1000n, 9);
+  measure("open SOL sequential + input-token fee / ATA exists", open, [...open.instructions, wsolTransfer]);
+  measure("open SOL sequential + input-token fee / ATA missing", open, [...open.instructions, wsolCreate, wsolTransfer]);
   measure("open single leg + input-token fee / ATA exists", open, [...open.instructions.filter((_, i) => i !== 7), of.transfer]);
   measure("open single leg + input-token fee / ATA missing", open, [...open.instructions.filter((_, i) => i !== 7), of.create, of.transfer]);
   const tokenOpen = open.instructions.filter((_, i) => ![1, 2, 3, 7, 9].includes(i));
@@ -58,7 +64,8 @@ export function feeSizeFixtures() {
   const add = new TransactionInstruction({ programId: open.instructions[8]!.programId, data: Buffer.alloc(42),
     keys: open.instructions[8]!.keys.filter(k => !k.isSigner || k.pubkey.equals(open.payer)).slice(0, 16) });
   const selected = [...open.instructions.slice(0, 8), add, open.instructions[9]!];
-  measure("selected SOL + input-token fee", open, [...selected, SystemProgram.transfer({ fromPubkey: open.payer, toPubkey: key(239), lamports: 1000 })]);
+  measure("selected SOL + input-token fee / ATA exists", open, [...selected, wsolTransfer]);
+  measure("selected SOL + input-token fee / ATA missing", open, [...selected, wsolCreate, wsolTransfer]);
   const tokenSelected = selected.filter((_, i) => ![1, 2, 3, 7, 9].includes(i));
   measure("selected pool-token + input-token fee / ATA exists", open, [...tokenSelected, of.transfer]);
   measure("selected pool-token + input-token fee / ATA missing", open, [...tokenSelected, of.create, of.transfer]);

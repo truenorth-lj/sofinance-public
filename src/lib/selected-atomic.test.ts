@@ -1,7 +1,9 @@
-import { getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { ASSOCIATED_TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { createHash } from "node:crypto";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { Keypair, PublicKey, TransactionInstruction } from "@solana/web3.js";
+import { Keypair, PublicKey, SystemProgram, TransactionInstruction } from "@solana/web3.js";
+import { NATIVE_SOL_MINT } from "@sofinance/engine/ids";
+import { nativeSolOwnerAta, swapFeeRecipientAta } from "@sofinance/engine/swap/fee";
 vi.mock("server-only", () => ({}));
 vi.mock("@sofinance/engine/rpc", async (importOriginal) => ({
   ...await importOriginal<typeof import("@sofinance/engine/rpc")>(),
@@ -20,6 +22,7 @@ import { buildSelectedAddInstruction } from "./selected-add-instruction";
 import { simulateAndVerifySelectedTransaction } from "./selected-simulation";
 import { fetchBeamTipAddress } from "@sofinance/engine/solami-beam";
 import { JupiterNoRouteError } from "@sofinance/engine/swap/jupiter";
+import { walletReturnedTransactionMatches } from "@sofinance/engine/wallet-returned-tx";
 import { buildAndSimulateSelectedZap } from "./selected-atomic";
 import { JUPITER_NO_ROUTE_CODE } from "./selected-no-route";
 import { HIGH_ACCOUNT_DEXES } from "./selected-route-retry";
@@ -176,6 +179,42 @@ it("includes the selected-add protocol transfer before the swap", async () => {
   const dest = transaction.message.staticAccountKeys[fee.accountKeyIndexes[2]!];
   expect(dest!.equals(getAssociatedTokenAddressSync(new PublicKey(value.state.inputMint), recipient, true, TOKEN_PROGRAM_ID))).toBe(true);
 });
+it("wraps native SOL then TransferChecked 10 bps, never SystemProgram.transfer to the fee wallet", async () => {
+  const recipient = key();
+  vi.stubEnv("SOFINANCE_FEE_WALLET", recipient.toBase58()); vi.stubEnv("SOFINANCE_FEE_BPS", "10");
+  const value = writableBundle(new PublicKey(state.ataA));
+  value.quote.feeBps = 10; value.quote.feeAmount = "1"; value.quote.feeWallet = recipient.toBase58();
+  value.quote.requested = "1000";
+  value.state = { ...value.state, inputMint: NATIVE_SOL_MINT, inputKind: "native", inputDecimals: 9,
+    inputAccount: null, inputTokenProgram: null, wsolBalance: "0" };
+  value.legs[0]!.inputMint = NATIVE_SOL_MINT;
+  value.legs[0]!.feeAmount = 1n;
+  (value.legs[0]!.route! as { inputMint: string; inAmount: string }).inputMint = NATIVE_SOL_MINT;
+  (value.legs[0]!.route! as { inAmount: string }).inAmount = "999";
+  vi.mocked(readSelectedPositionState).mockResolvedValue(value.state);
+  vi.mocked(getSelectedQuoteBundle).mockResolvedValue(value);
+  const { transaction } = await buildAndSimulateSelectedZap(wallet.toBase58(), { ...selection, inputMint: NATIVE_SOL_MINT, inputKind: "native" }, "0.001", 9900);
+  const compiled = transaction.message.compiledInstructions.map(ix => ({
+    program: transaction.message.staticAccountKeys[ix.programIdIndex]!,
+    data: Buffer.from(ix.data),
+    keys: ix.accountKeyIndexes.map(index => transaction.message.staticAccountKeys[index]!),
+  }));
+  const userWsol = nativeSolOwnerAta(wallet);
+  const feeAta = swapFeeRecipientAta(recipient, new PublicKey(NATIVE_SOL_MINT), TOKEN_PROGRAM_ID);
+  expect(compiled.some(ix => ix.program.equals(SystemProgram.programId) && ix.keys[1]?.equals(recipient))).toBe(false);
+  const wrap = compiled.find(ix => ix.program.equals(SystemProgram.programId) && ix.keys[1]?.equals(userWsol));
+  expect(wrap?.data.readBigUInt64LE(4)).toBe(1000n);
+  const feeCreate = compiled.find(ix => ix.program.equals(ASSOCIATED_TOKEN_PROGRAM_ID) && ix.keys[2]?.equals(recipient)
+    && ix.keys[3]?.toBase58() === NATIVE_SOL_MINT);
+  expect(feeCreate?.data[0]).toBe(1);
+  expect(feeCreate?.keys[0]?.equals(wallet)).toBe(true);
+  const feeTransfer = compiled.find(ix => ix.program.equals(TOKEN_PROGRAM_ID) && ix.data[0] === 12 && ix.keys[2]?.equals(feeAta));
+  expect(feeTransfer?.data.readBigUInt64LE(1)).toBe(1n);
+  expect(compiled.findIndex(ix => ix === wrap)).toBeGreaterThan(0);
+  expect(compiled.findIndex(ix => ix === feeTransfer)).toBeGreaterThan(compiled.findIndex(ix => ix === wrap));
+  expect(walletReturnedTransactionMatches(transaction, transaction, wallet.toBase58())).toBe(true);
+});
+
 it("collects a non-USDC selected-add fee in the input mint, not via a USDC Jupiter hop", async () => {
   const recipient = key();
   const inputMint = key();

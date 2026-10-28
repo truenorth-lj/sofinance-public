@@ -1,11 +1,11 @@
 import "@/lib/engine-host";
-import { swapRouteInstructions, rejectUnselectedWalletTokenWrites, readSwapFeeConfig, collectInputAssetFee, type FeeCollection } from "@sofinance/engine/swap";
+import { swapRouteInstructions, rejectUnselectedWalletTokenWrites, readSwapFeeConfig, collectInputAssetFee, wrapNativeSolInstructions, type FeeCollection } from "@sofinance/engine/swap";
 import "server-only";
 
 import { createHash } from "node:crypto";
 import { buildSelectedAddInstruction } from "./selected-add-instruction";
-import { createAssociatedTokenAccountIdempotentInstruction, createSyncNativeInstruction, TOKEN_PROGRAM_ID } from "@solana/spl-token";
-import { ComputeBudgetProgram, PublicKey, SystemProgram, TransactionMessage, VersionedTransaction, type Connection, type TransactionInstruction } from "@solana/web3.js";
+import { createAssociatedTokenAccountIdempotentInstruction, createCloseAccountInstruction, getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { ComputeBudgetProgram, PublicKey, TransactionMessage, VersionedTransaction, type Connection, type TransactionInstruction } from "@solana/web3.js";
 import { NATIVE_SOL_MINT, QUOTE_TTL_MS } from "@sofinance/engine/ids";
 import { compactAtaInstructions } from "@sofinance/engine/open-transaction";
 import { readLookupTables, validateRouteTables } from "@sofinance/engine/transaction-helpers";
@@ -82,8 +82,10 @@ async function buildAndSimulateSelectedZapOnce(
   }
   const routeInstructions = swapRouteInstructions(routes, wallet)
     .filter((ix) => !ix.programId.equals(ComputeBudgetProgram.programId));
+  const nativeAta = state.inputKind === "native"
+    ? getAssociatedTokenAddressSync(new PublicKey(NATIVE_SOL_MINT), wallet, false, TOKEN_PROGRAM_ID) : null;
   await rejectUnselectedWalletTokenWrites(connection, wallet, [...feeInstructions.instructions, ...routeInstructions],
-    [state.inputAccount, state.ataA, state.ataB, ...((feeInstructions as FeeCollection).receiveOnlyAccounts ?? [])].filter((item): item is string => Boolean(item)));
+    [state.inputAccount, state.ataA, state.ataB, nativeAta?.toBase58(), ...((feeInstructions as FeeCollection).receiveOnlyAccounts ?? [])].filter((item): item is string => Boolean(item)));
   const routeKeys = [...routes, ...feeInstructions.routes].flatMap((route) => Object.keys(route.addressesByLookupTableAddress || {}).map((key) => new PublicKey(key)));
   const [routeTables, raydiumTable] = await Promise.all([
     readLookupTables(connection, routeKeys),
@@ -91,28 +93,23 @@ async function buildAndSimulateSelectedZapOnce(
   ]);
   const raydiumTables = raydiumTable.value?.isActive() ? [raydiumTable.value] : [];
   validateRouteTables([...routes, ...feeInstructions.routes], routeTables);
-  const directSol = state.inputKind === "native" ? legs.find((item) => !item.route && item.outputMint === NATIVE_SOL_MINT) : null;
-  const wrapLamports = directSol ? directSol.spend - (directSol.feeAmount ?? 0n) : 0n;
-  const wrapInstructions = directSol && wrapLamports > 0n ? [
-    createAssociatedTokenAccountIdempotentInstruction(wallet, new PublicKey(state.mintA === NATIVE_SOL_MINT ? state.ataA : state.ataB),
-      wallet, new PublicKey(NATIVE_SOL_MINT), TOKEN_PROGRAM_ID),
-    SystemProgram.transfer({ fromPubkey: wallet,
-      toPubkey: new PublicKey(state.mintA === NATIVE_SOL_MINT ? state.ataA : state.ataB), lamports: wrapLamports }),
-    createSyncNativeInstruction(new PublicKey(state.mintA === NATIVE_SOL_MINT ? state.ataA : state.ataB)),
-  ] : [];
-  // The direct SOL wrap above already creates its ATA idempotently.
-  const wrappedAta = directSol ? (state.mintA === NATIVE_SOL_MINT ? state.ataA : state.ataB) : null;
+  // Wrap the full native SOL input once (including the fee), then TransferChecked
+  // 10 bps from the user's wSOL ATA. Jupiter routes are built without wrap/close.
+  const wrapInstructions = nativeAta ? wrapNativeSolInstructions(wallet, BigInt(quote.requested)) : [];
+  const wrappedAta = nativeAta?.toBase58() ?? null;
   const createAtaInstructions = [
     ...(state.ataAExists || wrappedAta === state.ataA ? [] : [createAssociatedTokenAccountIdempotentInstruction(wallet, new PublicKey(state.ataA), wallet,
       new PublicKey(state.mintA), new PublicKey(state.programA))]),
     ...(state.ataBExists || wrappedAta === state.ataB ? [] : [createAssociatedTokenAccountIdempotentInstruction(wallet, new PublicKey(state.ataB), wallet,
       new PublicKey(state.mintB), new PublicKey(state.programB))]),
   ];
+  const cleanupInstructions = nativeAta && ![state.mintA, state.mintB].includes(NATIVE_SOL_MINT)
+    ? [createCloseAccountInstruction(nativeAta, wallet, wallet)] : [];
   const tables = [...new Map([...routeTables, ...raydiumTables]
     .map((table) => [table.key.toBase58(), table])).values()];
   const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
   const baseInstructions = await compactAtaInstructions(connection, [atomicComputeUnitLimitInstruction(),
-    ...feeInstructions.instructions, ...routeInstructions, ...wrapInstructions, ...createAtaInstructions, ...raydiumInstructions]);
+    ...wrapInstructions, ...feeInstructions.instructions, ...routeInstructions, ...createAtaInstructions, ...raydiumInstructions, ...cleanupInstructions]);
   const compile = (instructions: TransactionInstruction[]) => new VersionedTransaction(new TransactionMessage({
     payerKey: wallet, recentBlockhash: blockhash, instructions,
   }).compileToV0Message(tables));

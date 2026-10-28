@@ -1,28 +1,16 @@
 import { createTransferCheckedInstruction, getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
-import { Keypair, PublicKey, SystemProgram } from "@solana/web3.js";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { Keypair, PublicKey } from "@solana/web3.js";
+import { afterEach, describe, expect, it } from "vitest";
+import { NATIVE_SOL_MINT } from "@sofinance/engine/ids";
 import {
-  computeSwapFee, DEFAULT_SWAP_FEE_BPS, MAX_SWAP_FEE_BPS, netSwapInput, parseSwapFeeBps, parseSwapFeeWallet,
-  assertNativeSwapFeeRecipient, readSwapFeeConfig, swapFeeQuoteFields, swapFeeRecipientAta, swapFeeTransferInstructions, unfundedSwapFeeAtaRent,
+  computeSwapFee, DEFAULT_SWAP_FEE_BPS, MAX_SWAP_FEE_BPS, nativeSolOwnerAta, netSwapInput, parseSwapFeeBps, parseSwapFeeWallet,
+  readSwapFeeConfig, swapFeeQuoteFields, swapFeeRecipientAta, swapFeeTransferInstructions, unfundedSwapFeeAtaRent,
 } from "@sofinance/engine/swap/fee";
 
 const wallet = Keypair.generate().publicKey;
 const mint = Keypair.generate().publicKey;
 const source = Keypair.generate().publicKey;
 const payer = Keypair.generate().publicKey;
-
-it("rejects a small native fee to an uninitialized recipient and accepts a funded recipient", async () => {
-  const connection = {
-    getAccountInfo: vi.fn(async () => null as { lamports: number; data: Buffer } | null),
-    getMinimumBalanceForRentExemption: vi.fn(async () => 890880),
-  };
-  await expect(assertNativeSwapFeeRecipient(connection as never, wallet, 100000n)).rejects.toThrow(/site operator must fund.*0.00089088 SOL/);
-  connection.getAccountInfo.mockResolvedValue({ lamports: 890880, data: Buffer.alloc(0) });
-  await expect(assertNativeSwapFeeRecipient(connection as never, wallet, 100000n)).resolves.toBeUndefined();
-  connection.getAccountInfo.mockClear();
-  await assertNativeSwapFeeRecipient(connection as never, wallet, 0n);
-  expect(connection.getAccountInfo).not.toHaveBeenCalled();
-});
 
 describe("parseSwapFeeBps", () => {
   it("defaults to 10 and caps at 100", () => {
@@ -117,14 +105,18 @@ describe("swapFeeQuoteFields", () => {
 });
 
 describe("swapFeeTransferInstructions", () => {
-  it("transfers native SOL with no ATA", () => {
+  it("transfer-checks native SOL as wSOL instead of a raw lamport transfer", () => {
+    const mint = new PublicKey(NATIVE_SOL_MINT);
+    const source = nativeSolOwnerAta(payer);
+    const ata = swapFeeRecipientAta(wallet, mint, TOKEN_PROGRAM_ID);
     const [ix] = swapFeeTransferInstructions({
       payer, owner: payer, recipient: wallet, amount: 1_000n, kind: "native",
     });
-    expect(ix?.programId.equals(SystemProgram.programId)).toBe(true);
-    expect(ix?.keys[0]?.pubkey.equals(payer)).toBe(true);
-    expect(ix?.keys[1]?.pubkey.equals(wallet)).toBe(true);
-    expect(ix?.data.readBigUInt64LE(4)).toBe(1_000n);
+    const expected = createTransferCheckedInstruction(source, mint, ata, payer, 1_000n, 9, [], TOKEN_PROGRAM_ID);
+    expect(ix?.programId.equals(TOKEN_PROGRAM_ID)).toBe(true);
+    expect(ix?.data.equals(expected.data)).toBe(true);
+    expect(ix?.keys[0]?.pubkey.equals(source)).toBe(true);
+    expect(ix?.keys[2]?.pubkey.equals(ata)).toBe(true);
   });
 
   it("transfer-checks the token without creating operator accounts", () => {

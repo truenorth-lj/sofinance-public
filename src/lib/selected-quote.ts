@@ -108,10 +108,12 @@ async function getSelectedQuoteBundleOnce(
   const feeConfig = readSwapFeeConfig();
   // Sizing rounds are quote-only. Once converged, the final legs are built from
   // the very quotes that sized them (swap-instructions only, no re-quote).
+  // Native SOL is wrapped once in selected-atomic (full input, then wSOL fee).
+  // Jupiter must debit the remaining wSOL rather than wrapping again.
   const actualLeg = (outputMint: string, spend: bigint) => leg(wallet, state.inputMint, outputMint, spend,
-    state.inputKind === "native", jupiter, false, options.signal, options.budget, deposit.legBps, state);
+    false, jupiter, false, options.signal, options.budget, deposit.legBps, state);
   const buildLeg = async (sized: SwapLeg) => options.buildTransactions === false || !sized.route ? sized
-    : await leg(wallet, sized.inputMint, sized.outputMint, sized.spend, state.inputKind === "native", jupiter, true,
+    : await leg(wallet, sized.inputMint, sized.outputMint, sized.spend, false, jupiter, true,
       options.signal, options.budget, deposit.legBps, state, sized.route);
   if (!state.ownsNft) throw new Error("Wallet does not have an available position NFT ATA for the selected position");
   if (state.paused || state.frozen || state.transferFee || state.unsupportedExtensions.length) {

@@ -2,7 +2,7 @@ import { swapRouteInstructions, rejectUnselectedWalletTokenWrites } from "./swap
 import { createHash } from "node:crypto";
 import BN from "bn.js";
 import { ClmmInstrument, Raydium } from "@raydium-io/raydium-sdk-v2";
-import { createAssociatedTokenAccountIdempotentInstruction, createCloseAccountInstruction, createSyncNativeInstruction, getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { createAssociatedTokenAccountIdempotentInstruction, createCloseAccountInstruction, getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import {
   PublicKey, SystemProgram,
   type AccountInfo, type Connection,
@@ -19,7 +19,7 @@ import { jupiterRelayActive } from "./jupiter/client";
 import { getOpenPositionQuoteBundle, type OpenSwapStrategy } from "./open-quote";
 import { TargetPoolProjectionError } from "./target-pool-projection";
 import { simulateAndVerifyOpenTransaction } from "./open-simulation";
-import { readSwapFeeConfig, collectInputAssetFee, type FeeCollection, feeRecipientRent } from "./swap";
+import { readSwapFeeConfig, collectInputAssetFee, wrapNativeSolInstructions, type FeeCollection, feeRecipientRent } from "./swap";
 import type { OpenRangeInput } from "./open-range";
 import { readOpenPoolState, type OpenPoolState, type OpenPositionSelection } from "./open-state";
 import type { OpenPositionSummary } from "./open-types";
@@ -210,21 +210,16 @@ async function buildOpenPositionAttempt(
     feeRoutes.push(...secondaryFee.routes);
     return [...secondaryFee.instructions, ...swapRouteInstructions([item.route], wallet)];
   }))).flat();
+  const nativeAta = state.inputKind === "native"
+    ? getAssociatedTokenAddressSync(new PublicKey(NATIVE_SOL_MINT), wallet, false, TOKEN_PROGRAM_ID) : null;
   await rejectUnselectedWalletTokenWrites(connection, wallet, routeInstructions,
-    [state.inputAccount, state.ataA, state.ataB, ...collections.flatMap(c => c.receiveOnlyAccounts ?? [])].filter((item): item is string => Boolean(item)));
+    [state.inputAccount, state.ataA, state.ataB, nativeAta?.toBase58(), ...collections.flatMap(c => c.receiveOnlyAccounts ?? [])].filter((item): item is string => Boolean(item)));
   const routeTables = await resources.readTables(routes.flatMap((route) =>
     Object.keys(route.addressesByLookupTableAddress || {}).map((key) => new PublicKey(key))));
   validateRouteTables(routes, routeTables);
-  // Fund WSOL once for both swap legs. Jupiter routes are built without their
-  // own wrap/close sequence, which otherwise repeats transfers and ATA setup.
-  const nativeAta = state.inputKind === "native"
-    ? getAssociatedTokenAddressSync(new PublicKey(NATIVE_SOL_MINT), wallet, false, TOKEN_PROGRAM_ID) : null;
-  const wrapLamports = nativeAta ? BigInt(quote.requested) - protocolFee : 0n;
-  const wrapInstructions = nativeAta && wrapLamports > 0n ? [
-    createAssociatedTokenAccountIdempotentInstruction(wallet, nativeAta, wallet, new PublicKey(NATIVE_SOL_MINT)),
-    SystemProgram.transfer({ fromPubkey: wallet, toPubkey: nativeAta, lamports: wrapLamports }),
-    createSyncNativeInstruction(nativeAta),
-  ] : [];
+  // Wrap the full native SOL input once, then TransferChecked the protocol fee
+  // from the user's wSOL ATA. Jupiter routes are built without wrap/close.
+  const wrapInstructions = nativeAta ? wrapNativeSolInstructions(wallet, BigInt(quote.requested)) : [];
   if (protocolFee > 0n && state.inputKind === "token" && (!state.inputAccount || !state.inputTokenProgram)) {
     throw new Error("Protocol fee requires the selected input token account");
   }
@@ -242,7 +237,7 @@ async function buildOpenPositionAttempt(
   const feeTables = await resources.readTables(feeRoutes.flatMap(route => Object.keys(route.addressesByLookupTableAddress || {}).map(key => new PublicKey(key))));
   validateRouteTables(feeRoutes, feeTables);
   await rejectUnselectedWalletTokenWrites(connection, wallet, [...feeInstructions.instructions, ...routeInstructions],
-    [state.inputAccount, state.ataA, state.ataB, ...collections.flatMap(c => c.receiveOnlyAccounts ?? [])].filter((item): item is string => Boolean(item)));
+    [state.inputAccount, state.ataA, state.ataB, nativeAta?.toBase58(), ...collections.flatMap(c => c.receiveOnlyAccounts ?? [])].filter((item): item is string => Boolean(item)));
   const wrappedAta = nativeAta?.toBase58() ?? null;
   const cleanupInstructions = nativeAta && ![state.mintA, state.mintB].includes(NATIVE_SOL_MINT)
     ? [createCloseAccountInstruction(nativeAta, wallet, wallet)] : [];
@@ -257,7 +252,7 @@ async function buildOpenPositionAttempt(
   const simulationBlockhash = (await connection.getLatestBlockhash("confirmed")).blockhash;
   const instructions = await compactAtaInstructions(connection, [
     atomicComputeUnitLimitInstruction(),
-    ...feeInstructions.instructions, ...wrapInstructions, ...createAtaInstructions, ...routeInstructions, ...raydiumInstructions, ...cleanupInstructions,
+    ...wrapInstructions, ...feeInstructions.instructions, ...createAtaInstructions, ...routeInstructions, ...raydiumInstructions, ...cleanupInstructions,
   ]);
   assertOpenTransactionSize(compileCompactOpenTransaction({ payerKey: payer, recentBlockhash: simulationBlockhash, instructions }, availableTables).transaction);
   // Beam tips are paid by the wallet; sponsored transactions never carry one.

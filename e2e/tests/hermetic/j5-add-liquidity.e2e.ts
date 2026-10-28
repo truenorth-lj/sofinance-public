@@ -11,25 +11,27 @@ async function fillReadyInput(page: Page) {
   await expect(input).toHaveValue("1");
 }
 
-async function setup(page: Page, wallet: FakeWallet, options: { selectedStateGate?: () => Promise<void>; connectOnly?: boolean; prepareFails?: boolean; uncertainSend?: boolean; previewGate?: Promise<void>; previewFails?: boolean; skipPreviewWait?: boolean; historyStatus?: "pending" | "manual-review" | "invalid" | "legacy" } = {}) {
+async function setup(page: Page, wallet: FakeWallet, options: { selectedStateGate?: () => Promise<void>; connectOnly?: boolean; prepareFails?: boolean; uncertainSend?: boolean; previewGate?: Promise<void>; previewFails?: boolean; skipPreviewWait?: boolean; historyStatus?: "pending" | "manual-review" | "invalid" | "legacy"; nativeSol?: boolean } = {}) {
   const positionMint = randomAddress(), mintA = randomAddress(), mintB = randomAddress();
-  const inputMint = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+  const inputMint = options.nativeSol ? "So11111111111111111111111111111111111111112" : "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
   const poolId = randomAddress(), positionAccount = randomAddress();
-  const selection = { positionMint, inputMint, inputKind: "token" };
+  const selection = { positionMint, inputMint, inputKind: options.nativeSol ? "native" : "token" };
+  const decimals = options.nativeSol ? 9 : 6;
+  const requestedOf = (amount: string) => String(Math.round(Number(amount) * 10 ** decimals));
   const state = { wallet: wallet.address, ...selection, poolId, positionAccount,
-    slot: 42, solLamports: 1_000_000_000, inputDecimals: 6, inputBalance: "200000311", inputAccount: randomAddress(), nftAta: randomAddress(),
+    slot: 42, solLamports: 1_000_000_000, inputDecimals: decimals, inputBalance: options.nativeSol ? "200000311000" : "200000311", inputAccount: options.nativeSol ? null : randomAddress(), nftAta: randomAddress(),
     mintA, mintB, decimalsA: 6, decimalsB: 6, ownsNft: true, sufficientSol: true, unsupportedExtensions: [],
     paused: false, frozen: false, transferFee: false, rangeSide: "inside", inRange: true,
     price: "1", tickLower: -10, tickUpper: 10, liquidity: "100", currentAmounts: { a: "1000000", b: "1000000" },
-    balances: { input: "200000311", a: "0", b: "0" }, fees: { a: "0", b: "0" }, rewards: [], eligible: true };
+    balances: { input: options.nativeSol ? "200000311000" : "200000311", a: "0", b: "0" }, fees: { a: "0", b: "0" }, rewards: [], eligible: true };
   const calls: string[] = [];
   const quoteRequests: Record<string, unknown>[] = [];
   await page.route("**/api/**", async (route) => {
     const pathname = new URL(route.request().url()).pathname;
     calls.push(pathname);
     const body = route.request().method() === "POST" ? route.request().postDataJSON() : {};
-    const requested = String(Math.round(Number(body.amount ?? "1") * 1e6));
-    const preview = { wallet: wallet.address, ...selection, poolId, positionAccount, inputDecimals: 6,
+    const requested = requestedOf(String(body.amount ?? "1"));
+    const preview = { wallet: wallet.address, ...selection, poolId, positionAccount, inputDecimals: decimals,
       requested, floorBps: body.floorBps ?? 9900,
       toleranceBps: body.toleranceBps ?? 100, expiresAt: Date.now() + 75000, passesFloor: false,
       spendA: "500000", spendB: "500000", minOutA: "495000", minOutB: "495000", decimalsA: 6, decimalsB: 6,
@@ -38,7 +40,7 @@ async function setup(page: Page, wallet: FakeWallet, options: { selectedStateGat
     let value: unknown = {};
     if (pathname === "/api/wallet") value = { wallet: wallet.address, slot: 1, fetchedAt: Date.now(),
       positions: [{ ...state, symbolA: "AAA", symbolB: "BBB", feeTierBps: 1, tickCurrent: 0 }],
-      assets: [{ kind: "token", mint: inputMint, eligible: true, decimals: 6, balance: "200000311", totalBalance: "200000311", reason: null }] };
+      assets: [{ kind: options.nativeSol ? "native" : "token", mint: inputMint, eligible: true, decimals, balance: state.inputBalance, totalBalance: state.inputBalance, reason: null }] };
     if (pathname === "/api/selected-state") await options.selectedStateGate?.();
     if (pathname === "/api/selected-state" || pathname === "/api/compound-state") value = state;
     if (pathname === "/api/selected-quote") {
@@ -129,6 +131,13 @@ for (const historyStatus of [undefined, "legacy"] as const) {
     });
   }
 }
+
+test("native SOL preview shows the 10 bps protocol fee in SOL", async ({ page, wallet }) => {
+  await setup(page, wallet, { nativeSol: true });
+  await expect(page.getByText("Preview ready. Final checks run when you add liquidity.")).toBeVisible();
+  await expect(page.getByText("Protocol fee (0.10%)")).toBeVisible();
+  await expect(page.getByText("0.001 SOL", { exact: true })).toBeVisible();
+});
 
 test("input enables Add after a lightweight preview; no automatic simulation or prepare", async ({ page, wallet }) => {
   const { calls, selection } = await setup(page, wallet);

@@ -17,7 +17,13 @@ exports[`measures complete offline packets with Beam tips and snapshots fee over
   {
     "bytes": 1258,
     "fits": false,
-    "flow": "open SOL sequential + input-token fee",
+    "flow": "open SOL sequential + input-token fee / ATA exists",
+    "serialized": true,
+  },
+  {
+    "bytes": 1300,
+    "fits": false,
+    "flow": "open SOL sequential + input-token fee / ATA missing",
     "serialized": true,
   },
   {
@@ -47,7 +53,13 @@ exports[`measures complete offline packets with Beam tips and snapshots fee over
   {
     "bytes": 1141,
     "fits": true,
-    "flow": "selected SOL + input-token fee",
+    "flow": "selected SOL + input-token fee / ATA exists",
+    "serialized": true,
+  },
+  {
+    "bytes": 1183,
+    "fits": true,
+    "flow": "selected SOL + input-token fee / ATA missing",
     "serialized": true,
   },
   {

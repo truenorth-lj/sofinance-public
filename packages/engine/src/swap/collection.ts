@@ -1,10 +1,10 @@
-import { ASSOCIATED_TOKEN_PROGRAM_ID, createAssociatedTokenAccountIdempotentInstruction, getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID, unpackAccount } from "@solana/spl-token";
-import { PublicKey, type VersionedTransaction, type Connection, type TransactionInstruction } from "@solana/web3.js";
+import { ASSOCIATED_TOKEN_PROGRAM_ID, createAssociatedTokenAccountIdempotentInstruction, createSyncNativeInstruction, getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID, unpackAccount } from "@solana/spl-token";
+import { PublicKey, SystemProgram, type VersionedTransaction, type Connection, type TransactionInstruction } from "@solana/web3.js";
 import { versionedTransactionSize } from "../open-transaction";
-import { USDC_MINT } from "../ids";
+import { NATIVE_SOL_MINT, USDC_MINT } from "../ids";
 import { buildRoute, type BuildRoute } from "./jupiter";
 import { retargetSwapSource, swapRouteInstructions } from "./instructions";
-import { assertNativeSwapFeeRecipient, swapFeeRecipientAta, swapFeeTransferInstructions, unfundedSwapFeeAtaRent, type SwapFeeTransferInput } from "./fee";
+import { nativeSolOwnerAta, swapFeeRecipientAta, swapFeeTransferInstructions, unfundedSwapFeeAtaRent, type SwapFeeTransferInput } from "./fee";
 import { exceedsTxSizeLimit } from "../transaction-limits";
 import { JUPITER_MAX_ACCOUNTS } from "../jupiter-route-retry";
 
@@ -22,6 +22,8 @@ export async function feeAccountSetup(connection: Connection, payer: PublicKey, 
 }
 
 /** Deposit flows (open / selected add / compound) always use `collectInputAssetFee`.
+ * Native SOL deposits wrap the full input into the user's wSOL ATA first, then
+ * TransferChecked 10 bps to the fee wallet's wSOL ATA (user pays ATA rent).
  * Withdraw conversion to a non-USDC mint still uses this USDC hop, with
  * `fitFeeCollections` as the measured oversize fallback. USDC withdraw keeps
  * Jupiter `platformFee` instead. */
@@ -31,12 +33,26 @@ export async function feeAccountSetup(connection: Connection, payer: PublicKey, 
  * debited, so callers may exempt it from the unselected-asset write guard. */
 export type FeeCollection = { instructions: TransactionInstruction[]; routes: BuildRoute[]; input?: SwapFeeTransferInput; receiveOnlyAccounts?: string[] };
 
+/** Wrap native SOL into the owner's wSOL ATA so the fee can be a TransferChecked. */
+export function wrapNativeSolInstructions(owner: PublicKey, lamports: bigint): TransactionInstruction[] {
+  if (lamports <= 0n) return [];
+  const ata = nativeSolOwnerAta(owner);
+  const mint = new PublicKey(NATIVE_SOL_MINT);
+  return [
+    createAssociatedTokenAccountIdempotentInstruction(owner, ata, owner, mint, TOKEN_PROGRAM_ID),
+    SystemProgram.transfer({ fromPubkey: owner, toPubkey: ata, lamports }),
+    createSyncNativeInstruction(ata),
+  ];
+}
+
 export async function collectSwapFee(connection: Connection, input: SwapFeeTransferInput,
   inputTokenFallback = false): Promise<FeeCollection> {
   if (input.amount <= 0n) return { instructions: [], routes: [] };
   if (inputTokenFallback && input.kind === "native") {
-    await assertNativeSwapFeeRecipient(connection, input.recipient, input.amount);
-    return { instructions: swapFeeTransferInstructions(input), routes: [] };
+    const mint = new PublicKey(NATIVE_SOL_MINT);
+    return collectSwapFee(connection, {
+      ...input, kind: "token", mint, source: nativeSolOwnerAta(input.owner), decimals: 9, program: TOKEN_PROGRAM_ID,
+    }, true);
   }
   const usdc = new PublicKey(USDC_MINT);
   if (input.kind === "token" && (input.mint.equals(usdc) || inputTokenFallback)) {
@@ -86,7 +102,8 @@ export async function feeRecipientRent(connection: Connection, recipient: Public
 }
 
 /** 10 bps of the deposited (or compound-swap) input, transferred to the fee
- * wallet's ATA for that mint. Creates a missing ATA with the user as payer. */
+ * wallet's ATA for that mint (wSOL for native SOL input). Creates a missing ATA
+ * with the user as payer. Callers wrap the full native SOL input before this. */
 export async function collectInputAssetFee(connection: Connection, input: SwapFeeTransferInput) {
   return collectSwapFee(connection, input, true);
 }
