@@ -1,9 +1,10 @@
 "use client";
 import "@/lib/engine-host";
 
-import { useCallback, useRef, useState, type RefObject } from "react";
-import { Keypair, VersionedTransaction } from "@solana/web3.js";
+import { useCallback, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
+import { createEphemeralMint, type EphemeralMint } from "@/lib/ephemeral-mint";
 import type { OpenPositionQuote, OpenPositionSummary } from "@sofinance/engine/open-types";
 import type { OpenRangePreset } from "@sofinance/engine/open-range-presets";
 import { addMintSignature, assertWalletReturnedTransaction, missingRequiredSignatures } from "@/lib/open-signatures";
@@ -37,14 +38,15 @@ type OpenSubmissionOptions = {
   quote: OpenPositionQuote | null;
   fresh: boolean;
   busy: boolean;
-  identity: string;
+  identity: object;
   // Attempt owns durable write/readback, synchronous publication and unsent ownership.
-  open: { loaded: boolean; track: (attempt: OpenAttempt) => void; markUnsent: (attempt: OpenAttempt) => void };
+  open: { attempt: Pick<OpenAttempt, "signature"> | null; loaded: boolean; canSubmit: () => boolean; track: (attempt: OpenAttempt) => void; markUnsent: (attempt: OpenAttempt) => void };
   signTransaction: (transaction: VersionedTransaction) => Promise<VersionedTransaction>;
   // Facade owns form/lifetime effects, shared discovery error, clock and per-modal relay store.
   activeRef: RefObject<boolean>;
   walletRef: RefObject<string | undefined>;
-  identityRef: RefObject<string>;
+  identityRef: RefObject<object>;
+  lifetimeRef: RefObject<number>;
   jupiterStoreRef: RefObject<JupiterRelayStore>;
   setError: (error: string) => void;
   setNow: (now: number) => void;
@@ -53,33 +55,69 @@ type OpenSubmissionOptions = {
 };
 
 /** State only: bind the command after the facade derives busy/form/identity.
- * Neither phase registers effects, so attempt, analytics, lifetime and preview keep their order.
+ * The command phase publishes only committed quote readiness; it never owns preview loading effects.
  */
 export function useOpenSubmission() {
   const [operationStage, setSubmitStage] = useState<OpenSubmitStage>(null);
+  // Only a pre-submission retry failure may override its original terminal receipt.
+  const [retryError, setRetryError] = useState<{ signature: string; message: string } | null>(null);
   // Metadata is keyed by the original signature; the facade shows it only after verification.
   const [beamResult, setBeamResult] = useState<{ signature: string; status: OpenBeamStatus } | null>(null);
-  const submittingRef = useRef(false);
-  return { operationStage, setSubmitStage, beamResult, setBeamResult, submittingRef };
+  const submittingRef = useRef<object | null>(null);
+  const inputRevisionRef = useRef(0);
+  const [inputRevision, setInputRevision] = useState(0);
+  const invalidateSubmission = useCallback(() => {
+    // Revoke before React renders, including same-value and batched ABA commands.
+    setRetryError(null);
+    inputRevisionRef.current += 1;
+    setInputRevision(inputRevisionRef.current);
+  }, []);
+  return { operationStage, setSubmitStage, retryError, setRetryError, beamResult, setBeamResult, submittingRef,
+    inputRevision, inputRevisionRef, invalidateSubmission };
 }
 
-/** Render-captured inputs preserve retained callback semantics; only identity/lifetime refs are live. */
+/** Input revisions revoke captured quotes; committed generations revoke saved commands and in-flight work. */
 export function useOpenSubmissionCommand({ pair, wallet, inputMint, inputKind, amount, rangePreset,
   minPrice, maxPrice, parsedAmount, quote, fresh, busy, identity, open, signTransaction,
-  activeRef, walletRef, identityRef, jupiterStoreRef, setError, setNow, setQuote, setQuoteLoading,
-}: OpenSubmissionOptions, { setSubmitStage, setBeamResult, submittingRef }: ReturnType<typeof useOpenSubmission>) {
+  activeRef, walletRef, identityRef, lifetimeRef, jupiterStoreRef, setError, setNow, setQuote, setQuoteLoading,
+}: OpenSubmissionOptions, { setSubmitStage, setRetryError, setBeamResult, submittingRef, inputRevision, inputRevisionRef }: ReturnType<typeof useOpenSubmission>) {
+  const committedQuoteRef = useRef<OpenPositionQuote | null>(null);
+  useLayoutEffect(() => { committedQuoteRef.current = quote; }, [quote]);
+  const [generation, setGeneration] = useState<object | null>(null);
+  const committedGenerationRef = useRef<object | null>(null);
+  useLayoutEffect(() => {
+    const nextGeneration = {};
+    committedGenerationRef.current = nextGeneration;
+    // Publish a new callback after reconnect, even when React retained the render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Layout reconnect is the invalidation event; one commit publishes its new command generation before paint.
+    setGeneration(nextGeneration);
+    return () => { committedGenerationRef.current = null; };
+  }, []);
   return useCallback(async () => {
     if (!pair || !wallet || !inputMint || !quote || !fresh || Date.now() >= quote.expiresAt || busy || !open.loaded || submittingRef.current) return;
-    submittingRef.current = true;
-    const requestedIdentity = identity;
-    const current = () => activeRef.current && walletRef.current === wallet && identityRef.current === requestedIdentity;
+    const ownsInput = () => generation !== null && committedGenerationRef.current === generation &&
+      activeRef.current && walletRef.current === wallet &&
+      identityRef.current === identity && inputRevisionRef.current === inputRevision;
+    if (!ownsInput() || committedQuoteRef.current !== quote) return;
+    if (!open.canSubmit()) {
+      const message = "Open-position history changed. Reload and verify the original signature before opening again.";
+      setError(message);
+      setRetryError(open.attempt ? { signature: open.attempt.signature, message } : null);
+      return;
+    }
+    const owner = {};
+    submittingRef.current = owner;
+    const lifetime = lifetimeRef.current;
+    const current = () => ownsInput() && lifetimeRef.current === lifetime && submittingRef.current === owner;
     let persisted: OpenAttempt | null = null;
     setQuoteLoading(false);
     setSubmitStage("preparing");
     setError("");
+    setRetryError(null);
     captureGrowthEvent(GROWTH_EVENTS.openStarted, openEventProperties(pair));
-    const mint = Keypair.generate();
+    let mint: EphemeralMint | undefined;
     try {
+      mint = createEphemeralMint();
       // Same per-modal store as the preview: prepare replays the preview's fresh
       // Jupiter quotes and only fetches swap-instructions.
       const response = await postWithJupiterRelay("/api/open-prepare", {
@@ -105,13 +143,18 @@ export function useOpenSubmissionCommand({ pair, wallet, inputMint, inputKind, a
         unsigned.message.recentBlockhash !== prepared.summary.blockhash) {
         throw new Error("Transaction payer mismatch");
       }
+      if (!open.canSubmit()) throw new Error("Open-position history changed. Reload and verify the original signature before opening again.");
       setQuote(prepared.summary.quote);
       setNow(Date.now());
       setSubmitStage("wallet");
       const signedByWallet = await signTransaction(unsigned);
       assertWalletReturnedTransaction(preparedSnapshot, signedByWallet, wallet);
-      const signed = addMintSignature(signedByWallet, mint);
-      mint.secretKey.fill(0);
+      let signed: VersionedTransaction;
+      try {
+        signed = addMintSignature(signedByWallet, mint);
+      } finally {
+        mint.dispose();
+      }
       if (missingRequiredSignatures(signed).length) {
         throw new Error("Open-position transaction is missing required signatures");
       }
@@ -119,6 +162,7 @@ export function useOpenSubmissionCommand({ pair, wallet, inputMint, inputKind, a
       const txSignature = bs58.encode(signatureBytes);
       const signedTransaction = btoa(String.fromCharCode(...signed.serialize()));
       if (!current() || Date.now() >= prepared.summary.expiresAt) throw new Error("Wallet, input or quote changed during signing; transaction not sent");
+      if (!open.canSubmit()) throw new Error("Open-position history changed. Reload and verify the original signature before opening again.");
       const attempt = openAttemptFromSummary(txSignature, prepared.summary);
       open.track(attempt);
       persisted = attempt;
@@ -155,14 +199,23 @@ export function useOpenSubmissionCommand({ pair, wallet, inputMint, inputKind, a
           error_class: classifyOpenError(caught),
         });
       }
-      if (walletRef.current === wallet) setError(persisted
-        ? "Submission result is unconfirmed. Tracking the original signature; do not open again until it is verified."
-        : jupiterRelayFailureMessage(caught, "Preparing the transaction timed out. Please retry."));
+      if (walletRef.current === wallet) {
+        const message = persisted
+          ? "Submission result is unconfirmed. Tracking the original signature; do not open again until it is verified."
+          : jupiterRelayFailureMessage(caught, "Preparing the transaction timed out. Please retry.");
+        setError(message);
+        // A later chain result must supersede an unknown send, even when retrying a failed attempt.
+        if (current()) setRetryError(!persisted && open.attempt
+          ? { signature: open.attempt.signature, message } : null);
+      }
     } finally {
-      mint.secretKey.fill(0);
-      submittingRef.current = false;
-      setSubmitStage(null);
+      mint?.dispose();
+      // A canceled operation keeps its lock until settlement; release only its own owner.
+      if (submittingRef.current === owner) {
+        submittingRef.current = null;
+        setSubmitStage(null);
+      }
     }
-  }, [amount, busy, fresh, identity, inputKind, inputMint, maxPrice, minPrice, open, pair, parsedAmount, quote, rangePreset, setQuote, setQuoteLoading, signTransaction, wallet, activeRef, identityRef, jupiterStoreRef, submittingRef, walletRef, setBeamResult, setError, setNow, setSubmitStage]);
+  }, [amount, busy, fresh, generation, identity, inputRevision, inputRevisionRef, inputKind, inputMint, maxPrice, minPrice, open, pair, parsedAmount, quote, rangePreset, setQuote, setQuoteLoading, signTransaction, wallet, activeRef, identityRef, lifetimeRef, jupiterStoreRef, submittingRef, walletRef, setBeamResult, setError, setNow, setRetryError, setSubmitStage]);
 
 }
