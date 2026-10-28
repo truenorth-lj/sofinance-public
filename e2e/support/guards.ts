@@ -62,18 +62,18 @@ export async function attachGuards(context: BrowserContext, page: Page, baseOrig
 }
 
 /** The wallet scan and token-metadata calls the app makes after connecting hit live RPC on the server: stub them. */
-export async function stubWalletApis(context: BrowserContext, address?: string) {
+export async function stubWalletApis(context: BrowserContext, address?: string, headers?: Record<string, string>) {
   await context.route("**/api/wallet?**", (route) => {
     const wallet = new URL(route.request().url()).searchParams.get("wallet") ?? address ?? "";
-    return route.fulfill({ status: 200, contentType: "application/json",
+    return route.fulfill({ status: 200, contentType: "application/json", headers,
       body: JSON.stringify({ wallet, slot: 1, fetchedAt: Date.now(), positions: [], assets: [] }) });
   });
   await context.route("**/api/token-metadata", (route) =>
-    route.fulfill({ status: 200, contentType: "application/json", body: "{}" }));
+    route.fulfill({ status: 200, contentType: "application/json", headers, body: "{}" }));
   // Sign-link and modal open attempts now reconcile after submission. Keep
   // synthetic signatures off the server's RPC; journey tests may override this.
   await context.route("**/api/open-status", route => {
     const body = route.request().postDataJSON();
-    return route.fulfill({ json: { signature: body.attempt.signature, status: "pending" } });
+    return route.fulfill({ headers, json: { signature: body.attempt.signature, status: "pending" } });
   });
 }

@@ -54,6 +54,8 @@ export default function SignPage() {
   const [error, setError] = useState("");
   const [signature, setSignature] = useState("");
 
+  const verificationSignature = payload?.kind === "open-position" ? open.attempt?.signature || signature : signature;
+
   const signToken = params.token;
   const identity = `${wallet ?? ""}:${signToken}`;
   const identityRef = useRef(identity);
@@ -383,17 +385,17 @@ export default function SignPage() {
           {payload?.kind === "open-position" && open.pending && <p role="status" className="text-sm text-smoke">
             Checking the original open-position transaction before opening again.{open.error ? ` ${open.error}` : ""}
           </p>}
-          {(signature || open.attempt?.signature) && (
+          {verificationSignature && (
             <div className="rounded-2xl border border-mint/30 bg-mint/10 p-4">
               <p className="text-sm font-medium text-mint">{payload?.kind === "open-position" ? "Original open-position transaction" : "Transaction submitted"}</p>
               <p className="mt-2 text-xs text-mint">
                 <a
-                  href={`https://solscan.io/tx/${signature || open.attempt?.signature}`}
+                  href={`https://solscan.io/tx/${verificationSignature}`}
                   target="_blank"
                   rel="noreferrer"
                   className="underline"
                 >
-                  View on Solscan: {short(signature || open.attempt?.signature || "")}
+                  View on Solscan: {short(verificationSignature)}
                 </a>
               </p>
             </div>

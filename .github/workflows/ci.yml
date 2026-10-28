@@ -86,6 +86,9 @@ jobs:
         working-directory: e2e
       - run: npx playwright install --with-deps chromium
         working-directory: e2e
+      - name: Loopback browser egress policy controls
+        run: npm run test:policy
+        working-directory: e2e
       - name: Production build and hermetic browser flows
         run: npm run test:hermetic
         working-directory: e2e

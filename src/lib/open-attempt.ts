@@ -36,7 +36,9 @@ export function parseOpenAttempt(value: unknown, wallet: string): OpenAttempt | 
   return record as OpenAttempt;
 }
 export function loadOpenAttempt(storage: StorageRead, wallet: string) {
-  const saved = storage.getItem(openAttemptKey(wallet));
+  return readOpenAttempt(storage.getItem(openAttemptKey(wallet)), wallet);
+}
+function readOpenAttempt(saved: string | null, wallet: string) {
   if (saved === null) return { attempt: null, invalid: false };
   try {
     const attempt = parseOpenAttempt(JSON.parse(saved), wallet);
@@ -59,16 +61,19 @@ export function persistOpenAttempt(storage: StorageWrite, attempt: OpenAttempt) 
   if (storage.getItem(key) !== serialized) throw new Error("Unable to save open-position signature; transaction not broadcast");
 }
 
-/** A definitive preflight rejection may release the lock, but never erase its signature. */
-export function abandonUnsentOpenAttempt(storage: StorageWrite & Pick<Storage, "removeItem">, attempt: OpenAttempt) {
+/** True only after releasing this receipt. False means history changed; it is not permission to retry. */
+export function abandonUnsentOpenAttempt(storage: StorageWrite & Pick<Storage, "removeItem">, attempt: OpenAttempt): boolean {
   const key = openAttemptKey(attempt.wallet);
-  const saved = loadOpenAttempt(storage, attempt.wallet);
+  const raw = storage.getItem(key);
+  const saved = readOpenAttempt(raw, attempt.wallet);
   if (saved.invalid) throw new Error("Open-position history needs verification");
-  if (saved.attempt?.signature !== attempt.signature) return;
-  const raw = storage.getItem(key)!;
+  if (raw === null || saved.attempt?.signature !== attempt.signature) return false;
   const archive = `${key}:unsent:${attempt.signature}`;
   storage.setItem(archive, raw);
   if (storage.getItem(archive) !== raw) throw new Error("Unable to preserve unsent open-position record");
+  // Observe replacements before deletion. localStorage does not provide cross-tab compare-and-swap.
+  if (storage.getItem(key) !== raw) return false;
   storage.removeItem(key);
   if (storage.getItem(key) !== null) throw new Error("Unable to clear unsent open-position record");
+  return true;
 }

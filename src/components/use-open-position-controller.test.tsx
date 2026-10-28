@@ -15,9 +15,11 @@ const wallet = payer.publicKey.toBase58();
 const poolId = testKeypair(42).publicKey.toBase58();
 const pair: OpenPositionPair = { poolAddress: poolId, mintA: testKeypair(8).publicKey.toBase58(), mintB: testKeypair(9).publicKey.toBase58(),
   symbolA: "AAA", symbolB: "BBB", wrappedSymbol: "AAAx", plainSymbol: "AAA", feeTierBps: 1, token2022A: false, token2022B: false, freezeRisk: false };
+let currentPair: OpenPositionPair;
+let ledger: unknown[];
 let controller: ReturnType<typeof useOpenPositionController>;
 let root: Root, container: HTMLDivElement;
-let chainStatus: string, sendMode: "ok" | "lost" | "unsent";
+let chainStatus: string, sendMode: "ok" | "lost" | "unsent" | "mismatch";
 let verificationError: boolean;
 let preparedOverride: ((value: ReturnType<typeof prepared>) => void) | null;
 let prepareWait: Promise<Response> | null;
@@ -33,8 +35,9 @@ function prepared(nftMint = nft.publicKey) {
   return { unsignedTransaction: toBase64(tx), permit: "test-permit", summary: { ...summary, quote } };
 }
 function Harness() {
-  const value = useOpenPositionController(pair);
-  useEffect(() => { controller = value; });
+  const value = useOpenPositionController(currentPair);
+  useEffect(() => { controller = value; const { submitStage, signature, positionMint, error, actionDisabled, beamStatus, quote, quoteError, quoteLoading } = value;
+    ledger.push([Date.now(), "commit", { submitStage, signature, positionMint, error, actionDisabled, beamStatus, quote, quoteError, quoteLoading }]); });
   return null;
 }
 const calls = (url: string) => fetchMock.mock.calls.filter(([path]) => path === url);
@@ -46,11 +49,21 @@ async function mount() {
   await advance(450);
 }
 beforeEach(() => {
-  vi.useFakeTimers(); vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.useFakeTimers(); vi.setSystemTime(1700000000000); ledger = []; currentPair = pair; vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.spyOn(crypto, "randomUUID").mockReturnValue("00000000-0000-4000-8000-000000000001");
   window.localStorage.clear(); mocks.address = wallet;
+  const storage = window.localStorage;
+  const wrappedStorage = {
+    getItem: (key: string) => { ledger.push([Date.now(), "get", key]); return storage.getItem(key); },
+    setItem: (key: string, value: string) => { ledger.push([Date.now(), "set", key, value]); storage.setItem(key, value); },
+    removeItem: (key: string) => { ledger.push([Date.now(), "remove", key]); storage.removeItem(key); },
+    get length() { return storage.length; }, key: storage.key.bind(storage),
+  };
+  vi.spyOn(window, "localStorage", "get").mockReturnValue(new Proxy(storage, { get: (target, key) => key in wrappedStorage ? wrappedStorage[key as keyof typeof wrappedStorage] : Reflect.get(target, key) }));
   chainStatus = "pending"; sendMode = "ok"; verificationError = false; preparedOverride = null; prepareWait = null;
-  mocks.sign.mockImplementation(async (tx: VersionedTransaction) => { tx.sign([payer]); return tx; });
+  mocks.sign.mockImplementation(async (tx: VersionedTransaction) => { ledger.push([Date.now(), "sign", toBase64(tx)]); tx.sign([payer]); ledger.push([Date.now(), "signed", toBase64(tx)]); return tx; });
   fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    ledger.push([Date.now(), "fetch", url, init?.body ?? null]);
     const body = typeof init?.body === "string" ? JSON.parse(init.body) : {};
     if (url.startsWith("/api/wallet")) return Response.json({ assets: [{ kind: "native", mint: NATIVE_SOL_MINT, decimals: 9, balance: "1000000000", eligible: true }] });
     if (url === "/api/open-quote") return Response.json(prepared().summary.quote);
@@ -76,7 +89,7 @@ beforeEach(() => {
       const tx = VersionedTransaction.deserialize(Buffer.from(body.signedTransaction, "base64"));
       expect(tx.signatures[0]?.some((byte: number) => byte !== 0)).toBe(true);
       expect(tx.signatures[1]?.some((byte: number) => byte !== 0)).toBe(true);
-      return Response.json({ signature: bs58.encode(tx.signatures[0]!), positionMint: tx.message.staticAccountKeys[1]!.toBase58() });
+      return Response.json({ signature: sendMode === "mismatch" ? "wrong" : bs58.encode(tx.signatures[0]!), beamLabel: "Beam landed", positionMint: tx.message.staticAccountKeys[1]!.toBase58() });
     }
     if (url === "/api/open-status") {
       if (verificationError) throw new Error("RPC unavailable");
@@ -87,7 +100,11 @@ beforeEach(() => {
   vi.stubGlobal("fetch", fetchMock);
   container = document.createElement("div"); document.body.append(container); root = createRoot(container);
 });
-afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers(); });
+afterEach(async context => { await act(async () => root.unmount()); container.remove();
+  ledger.push([Date.now(), "sign-count", mocks.sign.mock.calls.length]);
+  // eslint-disable-next-line no-console -- Raw before/after characterization evidence.
+  console.log("OPEN_CONSUMER_LEDGER " + JSON.stringify({ name: context.task.name, ledger }));
+  vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers(); });
 describe("open-position transaction lifecycle", () => {
   it("persists before send and stays pending until finalized position verification", async () => {
     await mount(); expect(controller.actionDisabled).toBe(false);
@@ -98,6 +115,32 @@ describe("open-position transaction lifecycle", () => {
     expect(controller.submitStage).toBe("confirmed"); expect(controller.error).toBe("");
     await act(async () => controller.createAnother()); await advance(450);
     expect(controller.actionDisabled).toBe(false);
+  });
+  it("keeps wallet-level lock across pools and same-pool position projection", async () => {
+    await mount(); await act(async () => controller.signAndSend()); await advance(1);
+    const original = controller.signature; currentPair = { ...pair, poolAddress: pair.mintA };
+    await act(async () => root.render(createElement(Harness)));
+    expect(controller.actionDisabled).toBe(true); expect(controller.submitStage).toBe("pending");
+    expect(controller.signature).toBe(original); expect(controller.positionMint).toBe("");
+    chainStatus = "confirmed"; await advance(3000); expect(controller.submitStage).toBeNull();
+    currentPair = pair; await act(async () => root.render(createElement(Harness)));
+    expect(controller.submitStage).toBe("confirmed"); expect(controller.positionMint).toBe(JSON.parse(window.localStorage.getItem(openAttemptKey(wallet))!).nftMint);
+  });
+  it("shows Beam only after confirmed and createAnother retains receipt while preparing a new quote", async () => {
+    await mount(); await act(async () => controller.signAndSend()); await advance(1);
+    expect(controller.beamStatus.landedLabel).toBeNull(); chainStatus = "confirmed"; await advance(3000);
+    expect(controller.beamStatus.landedLabel).toBe("Beam landed"); const raw = window.localStorage.getItem(openAttemptKey(wallet));
+    await act(async () => controller.createAnother()); expect(controller.signature).toBe("");
+    expect(controller.positionMint).toBe(JSON.parse(raw!).nftMint); expect(controller.beamStatus.landedLabel).toBeNull();
+    expect(window.localStorage.getItem(openAttemptKey(wallet))).toBe(raw); await advance(450); expect(controller.actionDisabled).toBe(false);
+    chainStatus = "pending"; await act(async () => controller.signAndSend()); expect(mocks.sign).toHaveBeenCalledTimes(2);
+  });
+  it("keeps mismatched broadcast and manual-review locked without re-signing", async () => {
+    await mount(); sendMode = "mismatch"; await act(async () => controller.signAndSend()); await advance(1);
+    expect(controller.error).toContain("unconfirmed"); const signature = controller.signature;
+    chainStatus = "manual-review"; await advance(3000); expect(controller.error).toContain("manual verification");
+    await act(async () => { controller.createAnother(); void controller.signAndSend(); });
+    expect(controller.signature).toBe(signature); expect(controller.actionDisabled).toBe(true); expect(mocks.sign).toHaveBeenCalledOnce();
   });
   it("retains a lost submission response and recovers it after remount without re-signing", async () => {
     await mount(); sendMode = "lost";
@@ -215,4 +258,31 @@ describe("open-position transaction lifecycle", () => {
     expect(calls("/api/open-broadcast")).toHaveLength(1);
     expect(controller.error).toBe("");
   });
+});
+
+
+it.each([false, true])("late unsent keeps newer receipt locked before another sign (storage event: %s)", async event => {
+  await mount(); const originalFetch = fetchMock.getMockImplementation()! as (url: string, init?: RequestInit) => Promise<Response>;
+  let release!: (value: Response) => void;
+  const waiting = new Promise<Response>(resolve => { release = resolve; });
+  fetchMock.mockImplementation((url: string, init?: RequestInit) => url === "/api/open-broadcast" ? waiting : originalFetch(url, init));
+  let sending!: Promise<void>; await act(async () => { sending = controller.signAndSend(); });
+  const key = openAttemptKey(wallet), raw = window.localStorage.getItem(key)!;
+  const original = JSON.parse(raw), newer = { ...original, signature: bs58.encode(new Uint8Array(64).fill(44)) };
+  persistOpenAttempt(window.localStorage, newer);
+  if (event) window.dispatchEvent(new StorageEvent("storage", { key, oldValue: raw, newValue: JSON.stringify(newer) }));
+  await act(async () => { release(Response.json({ error: "preflight", sent: false }, { status: 400 })); await sending; });
+  await advance(450);
+  expect(controller.actionDisabled).toBe(true); expect(controller.signature).toBe(newer.signature);
+  expect(controller.error).not.toContain("safe to retry");
+  expect(window.localStorage.getItem(key)).toBe(JSON.stringify(newer));
+  expect(window.localStorage.getItem(key + ":history:" + original.signature)).toBe(raw);
+  await act(async () => controller.signAndSend());
+  expect(mocks.sign).toHaveBeenCalledTimes(1); expect(calls("/api/open-prepare")).toHaveLength(1);
+  expect(calls("/api/open-broadcast")).toHaveLength(1);
+  fetchMock.mockImplementation(originalFetch); chainStatus = "expired";
+  await act(async () => controller.retryConfirmation()); await advance(450);
+  expect(controller.actionDisabled).toBe(false);
+  chainStatus = "pending"; await act(async () => controller.signAndSend());
+  expect(mocks.sign).toHaveBeenCalledTimes(2); expect(calls("/api/open-broadcast")).toHaveLength(2);
 });

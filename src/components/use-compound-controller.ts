@@ -16,6 +16,8 @@ import { useCleanupBatchController } from "./use-cleanup-batch-controller";
 import { loadCleanupBatch, cleanupBatchKey } from "@/lib/compound-cleanup-batch-attempt";
 import { notifyPositionHistoryChange } from "@/lib/position-history-refresh";
 import { captureWalletReturnedTxFailure } from "@/lib/sentry/capture";
+import { post } from "./transactions/compound/compound-client";
+import { useCompoundPositionSnapshot } from "./transactions/compound/use-compound-position-snapshot";
 
 export type CompoundConfirmation = { status: AtomicStatus; signature: string; state: CompoundPositionState | null;
   chainStatus?: CompoundChainStatus;
@@ -49,34 +51,7 @@ function recoveryMayProceed(value: { status: AtomicStatus; chainStatus?: Compoun
 }
 const emptyScan = { started: false, scanning: false, cursor: null as string | null, scanned: 0, total: 0, incomplete: false, error: "" };
 
-/** A failed API call that also keeps the route's machine-readable code (e.g. `rpc_unavailable`). */
-class CompoundApiError extends ApiRequestError {
-  readonly code?: string;
-  constructor(message: string, sent?: boolean, code?: string) {
-    super(message, sent);
-    if (code) this.code = code;
-  }
-}
-/**
- * Yield reads are safe to repeat. A provider rate-limit window is about a second, so wait it out a
- * couple of times before showing "Solana RPC is temporarily unavailable" (one burst of page-load
- * reads should not surface as an error).
- */
-export const COMPOUND_STATE_RPC_RETRY_DELAYS_MS = [1_500, 3_000] as const;
-function isRpcUnavailable(error: unknown) {
-  return error instanceof CompoundApiError && error.code === "rpc_unavailable";
-}
-
-async function post<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
-  const response = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body), cache: "no-store", signal });
-  const value = await response.json() as T & { error?: string; sent?: boolean; code?: string };
-  if (!response.ok) {
-    throw new CompoundApiError(value.error || "Unable to complete on-chain query, please retry later",
-      value.sent === false ? false : undefined, typeof value.code === "string" ? value.code : undefined);
-  }
-  return value;
-}
+export { COMPOUND_STATE_RPC_RETRY_DELAYS_MS } from "./transactions/compound/use-compound-position-snapshot";
 
 /** The fresh position read a finalized compound confirmation carries, when it is for the selection on screen. */
 export function confirmedStateFor(confirmation: Pick<CompoundConfirmation, "state">, identity: string): CompoundPositionState | null {
@@ -86,7 +61,6 @@ export function confirmedStateFor(confirmation: Pick<CompoundConfirmation, "stat
 
 export function useCompoundController({ wallet, positionMint, externalBlocked, onConfirmed }: Options) {
   const connection = useWalletConnection();
-  const [state, setState] = useState<CompoundPositionState | null>(null);
   const [preview, setPreview] = useState<CompoundSummary | null>(null);
   const [attempt, setAttempt] = useState<CompoundAttempt | null>(null);
   const [attemptStatus, setAttemptStatus] = useState<AtomicStatus | null>(null);
@@ -97,7 +71,6 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
   const [loadedWallet, setLoadedWallet] = useState<string | null>(null);
   const [storageInvalid, setStorageInvalid] = useState(false);
   const [importing, setImporting] = useState(false);
-  const [loading, setLoading] = useState(false);
   const [scan, setScan] = useState(emptyScan);
   const [cleanup, setCleanup] = useState<CleanupProgress | null>(null);
   const mounted = useRef(true);
@@ -122,7 +95,6 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
   const externalBlockedRef = useRef(externalBlocked);
   const onConfirmedRef = useRef(onConfirmed);
   const connectionRef = useRef(connection);
-  const stateRequest = useRef(0);
   const confirmationRequest = useRef(0);
   const submitting = useRef(false);
   const operationRequest = useRef(0);
@@ -180,57 +152,26 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
     return () => { cancelled = true; window.clearTimeout(timer); };
   }, [wallet, setError]);
 
-  const refreshState = useCallback(async () => {
-    const requestedWallet = wallet;
-    const requestedMint = positionMint;
-    const requestId = ++stateRequest.current;
-    if (!requestedWallet || !requestedMint) { setState(null); setLoading(false); return; }
-    const requestedIdentity = `${requestedWallet}:${requestedMint}`;
-    setLoading(true);
-    try {
-      let next: CompoundPositionState;
-      for (let attempt = 0; ; attempt += 1) {
-        try {
-          next = await post<CompoundPositionState>("/api/compound-state", { wallet: requestedWallet, positionMint: requestedMint });
-          break;
-        } catch (caught) {
-          const delay = COMPOUND_STATE_RPC_RETRY_DELAYS_MS[attempt];
-          if (delay === undefined || !isRpcUnavailable(caught)) throw caught;
-          await new Promise<void>((resolve) => { window.setTimeout(resolve, delay); });
-          if (!mounted.current || identityRef.current !== requestedIdentity || requestId !== stateRequest.current) return;
-        }
-      }
-      if (!mounted.current || identityRef.current !== requestedIdentity || requestId !== stateRequest.current) return;
-      if (next.wallet !== requestedWallet || next.positionMint !== requestedMint) throw new Error("Yield reading does not match selected position");
-      setState(next);
-      if (!keepSubmitErrorRef.current) clearError(requestedIdentity);
-    } catch (caught) {
-      if (mounted.current && identityRef.current === requestedIdentity && requestId === stateRequest.current) {
-        // Keep the last yield snapshot so a transient RPC failure (skipped slot,
-        // getBlockTime) cannot grey out One-click compound. Do not overwrite a
-        // broadcast/prepare error that expired confirm must still show.
-        if (!keepSubmitErrorRef.current) setError(caught instanceof Error ? caught.message : "Yield reading failed", requestedIdentity);
-      }
-    } finally {
-      if (mounted.current && identityRef.current === requestedIdentity && requestId === stateRequest.current) setLoading(false);
-    }
-  }, [wallet, positionMint, clearError, setError]);
-  // A position read that arrived some other way (the confirmation of a finalized compound) replaces any read still in flight,
-  // so the tab does not read the same position twice.
-  const adoptState = useCallback((next: CompoundPositionState) => {
-    stateRequest.current++;
-    setState(next); setLoading(false);
-    if (!keepSubmitErrorRef.current) clearError(`${next.wallet}:${next.positionMint}`);
+  const isSnapshotCurrent = useCallback((requestedIdentity: string) =>
+    mounted.current && identityRef.current === requestedIdentity, []);
+  const onReadSuccess = useCallback((requestedIdentity: string) => {
+    if (!keepSubmitErrorRef.current) clearError(requestedIdentity);
   }, [clearError]);
+  const onReadError = useCallback((requestedIdentity: string, message: string) => {
+    // Read failures must not replace a prepare/broadcast error, including after expired confirmation.
+    if (!keepSubmitErrorRef.current) setError(message, requestedIdentity);
+  }, [setError]);
+  const { state, loading, refresh: refreshState, adopt: adoptState, invalidate: invalidateState, clear: clearState } =
+    useCompoundPositionSnapshot({ wallet, positionMint, isCurrent: isSnapshotCurrent, onReadSuccess, onReadError });
   // Confirmation polling reads the latest readers through refs, so selecting a position does not restart the poll.
   const refreshStateRef = useRef(refreshState);
   const adoptStateRef = useRef(adoptState);
   useLayoutEffect(() => { refreshStateRef.current = refreshState; adoptStateRef.current = adoptState; });
   useEffect(() => {
-    stateRequest.current++;
-    const timer = window.setTimeout(() => { setState(null); setPreview(null); void refreshState(); }, 0);
+    invalidateState();
+    const timer = window.setTimeout(() => { clearState(); setPreview(null); void refreshState(); }, 0);
     return () => window.clearTimeout(timer);
-  }, [refreshState]);
+  }, [refreshState, invalidateState, clearState]);
 
   const reconcile = useCallback(async (current: CompoundAttempt, signal?: AbortSignal) => {
     const requestId = ++confirmationRequest.current;

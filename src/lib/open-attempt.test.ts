@@ -44,3 +44,28 @@ describe("open-position recovery records", () => {
     expect(saved.getItem(`${openAttemptKey(wallet)}:unsent:${attempt.signature}`)).toBe(JSON.stringify(attempt));
   });
 });
+
+
+describe("unsent release ownership", () => {
+  it("reports successful release explicitly", () => {
+    const saved = storage(); persistOpenAttempt(saved, attempt);
+    expect(abandonUnsentOpenAttempt(saved, attempt)).toBe(true);
+  });
+  it.each(["newer", "missing"])("does not release %s history", mode => {
+    const saved = storage(); persistOpenAttempt(saved, attempt);
+    const newer = { ...attempt, signature: bs58.encode(new Uint8Array(64).fill(2)) };
+    if (mode === "newer") persistOpenAttempt(saved, newer); else saved.removeItem(openAttemptKey(wallet));
+    const before = [...saved.values];
+    expect(abandonUnsentOpenAttempt(saved, attempt)).toBe(false);
+    expect([...saved.values]).toEqual(before);
+  });
+  it("preserves a replacement observed after archiving, before removal", () => {
+    const saved = storage(); persistOpenAttempt(saved, attempt);
+    const newer = { ...attempt, signature: bs58.encode(new Uint8Array(64).fill(2)) };
+    const set = saved.setItem;
+    saved.setItem = (key, raw) => { set(key, raw); if (key.includes(":unsent:")) set(openAttemptKey(wallet), JSON.stringify(newer)); };
+    expect(abandonUnsentOpenAttempt(saved, attempt)).toBe(false);
+    expect(saved.getItem(openAttemptKey(wallet))).toBe(JSON.stringify(newer));
+    expect(saved.getItem(openAttemptKey(wallet) + ":unsent:" + attempt.signature)).toBe(JSON.stringify(attempt));
+  });
+});
