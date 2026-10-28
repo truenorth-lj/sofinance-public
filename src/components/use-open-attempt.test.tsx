@@ -274,3 +274,61 @@ describe("late unsent ownership recovery", () => {
     expect(storage.getItem(openAttemptKey(walletA))).toBe(JSON.stringify(attempt(8)));
   });
 });
+
+
+describe("Open attempt Activity history revalidation", () => {
+  it.each(["before-load", "after-failed-load"].flatMap(timing =>
+    ["expired", "confirmed", "failed", "error"].map(result => [timing, result])))
+  ("rejects old replies %s / %s", async (timing, result) => {
+    await mount(attempt()); await settle("manual-review");
+    const json = deferred<unknown>();
+    respond = async () => ({ ok: true, json: () => json.promise }) as Response;
+    await act(async () => api.retry());
+    hidden = true; await render();
+    failRead = true; hidden = false; await render();
+    if (timing === "after-failed-load") await advance();
+    const prior = { attempt: api.attempt, status: api.status, pending: api.pending, error: api.error };
+    await act(async () => {
+      if (result === "error") json.reject(new Error("old verification error"));
+      else json.resolve({ signature: attempt().signature, status: result });
+    });
+    expect(api).toMatchObject(prior);
+    if (timing === "before-load") await advance();
+    expect(api).toMatchObject({ attempt: null, status: "manual-review", pending: true });
+    expect(api.error).toContain("Unable to read");
+    expect(() => api.track(attempt(8))).toThrow("storage read failed");
+    expect(storage.getItem(openAttemptKey(walletA))).toBe(JSON.stringify(attempt()));
+  });
+  it.each(["same", "replacement"])("adopts %s readable history after Activity reload", async mode => {
+    await mount(attempt()); await settle("manual-review");
+    const json = deferred<unknown>();
+    respond = async () => ({ ok: true, json: () => json.promise }) as Response;
+    await act(async () => api.retry());
+    hidden = true; await render();
+    const saved = mode === "same" ? attempt() : attempt(8);
+    storage.setItem(openAttemptKey(walletA), JSON.stringify(saved));
+    hidden = false; await render();
+    await act(async () => json.resolve({ signature: attempt().signature, status: "expired" }));
+    expect(api.pending).toBe(true);
+    respond = async body => Response.json({ signature: body.attempt.signature, status: "pending" });
+    await advance(); expect(api.attempt).toEqual(saved); expect(api.pending).toBe(true);
+    await settle("confirmed", saved.signature);
+    expect(api).toMatchObject({ attempt: saved, status: "confirmed", pending: false });
+    expect(storage.getItem(openAttemptKey(walletA))).toBe(JSON.stringify(saved));
+  });
+
+  it("detaches an attempt tracked during reload if the subsequent history read fails", async () => {
+    await mount(); hidden = true; await render(); hidden = false; await render();
+    await act(async () => api.track(attempt()));
+    const json = deferred<unknown>();
+    respond = async () => ({ ok: true, json: () => json.promise }) as Response;
+    await act(async () => api.retry());
+    failRead = true; await advance();
+    expect(api).toMatchObject({ attempt: null, status: "manual-review", pending: true });
+    await act(async () => json.resolve({ signature: attempt().signature, status: "expired" }));
+    expect(api).toMatchObject({ attempt: null, status: "manual-review", pending: true });
+    expect(api.error).toContain("Unable to read");
+    expect(storage.getItem(openAttemptKey(walletA))).toBe(JSON.stringify(attempt()));
+  });
+
+});

@@ -25,12 +25,16 @@ export function useOpenAttempt(wallet: string | undefined) {
 
   useEffect(() => {
     if (!wallet) return;
+    // Activity replays this loader; old replies cannot own history being revalidated.
+    // Same-wallet Suspense only reconnects layout effects and retains its owner.
+    attemptRef.current = null;
     const timer = window.setTimeout(() => {
       try {
         const saved = loadOpenAttempt(window.localStorage, wallet);
         attemptRef.current = saved.attempt;
         dispatch({ type: "historyLoaded", wallet, attempt: saved.attempt, invalid: saved.invalid });
       } catch {
+        attemptRef.current = null;
         dispatch({ type: "historyUnavailable", wallet });
       }
     }, 0);
