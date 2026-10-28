@@ -14,7 +14,14 @@ export function useOpenAttempt(wallet: string | undefined) {
   const checkingRef = useRef<string | null>(null);
   const activeRef = useRef(false);
   useLayoutEffect(() => { activeRef.current = true; return () => { activeRef.current = false; }; }, []);
-  useLayoutEffect(() => { walletRef.current = wallet; attemptRef.current = null; }, [wallet]);
+  useLayoutEffect(() => {
+    // Suspense reconnects layout effects without replaying the history loader.
+    // Preserve the synchronous owner (including an unsent null) for the same wallet.
+    if (walletRef.current !== wallet) {
+      walletRef.current = wallet;
+      attemptRef.current = null;
+    }
+  }, [wallet]);
 
   useEffect(() => {
     if (!wallet) return;
