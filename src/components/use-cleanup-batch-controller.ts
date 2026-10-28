@@ -8,6 +8,7 @@ import { ApiRequestError } from "@/lib/public-error";
 import { batchUnresolved, cleanupBatchKey, cleanupBatchProgress, loadCleanupBatch, persistCleanupBatch, pruneCleanedReceipts,
   validBatchSummary, type CleanupBatchAttempt } from "@/lib/compound-cleanup-batch-attempt";
 import type { WalletConnection } from "./wallet-connection";
+import { captureWalletReturnedTxFailure } from "@/lib/sentry/capture";
 
 type Options = { wallet?: string; identity: string; connection: WalletConnection; blocked: boolean;
   canStart: () => boolean; onReceipts: (receipts: CompoundReceipt[]) => void; onConfirmed: () => void };
@@ -161,7 +162,13 @@ export function useCleanupBatchController(options: Options) {
       }
       if (!Array.isArray(signed) || signed.length !== unsigned.length) throw new Error("Wallet returned incomplete cleanup signatures");
       const signedResults = signed.map((tx, index) => {
-        const result = signedCompoundTransaction(tx, unsigned[index]!.preparedSnapshot, wallet);
+        let result: ReturnType<typeof signedCompoundTransaction>;
+        try {
+          result = signedCompoundTransaction(tx, unsigned[index]!.preparedSnapshot, wallet);
+        } catch (error) {
+          captureWalletReturnedTxFailure(error);
+          throw error;
+        }
         if (!nacl.sign.detached.verify(tx.message.serialize(), tx.signatures[0]!, tx.message.staticAccountKeys[0]!.toBytes())) throw new Error("Wallet returned an invalid cleanup signature");
         if (tx.serialize().length > 1232 || Date.now() >= prepared.transactions[index]!.summary.expiresAt) throw new Error("Signed cleanup transaction expired or is oversized");
         return result;

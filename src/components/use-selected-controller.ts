@@ -17,7 +17,7 @@ import { INPUT_ASSET_NOT_HELD_CODE, INPUT_ASSET_NOT_HELD_MESSAGE } from "@/lib/s
 import { useWalletConnection } from "./wallet-connection";
 import { notifyPositionHistoryChange } from "@/lib/position-history-refresh";
 import { createJupiterRelayStore, postWithJupiterRelay } from "@/lib/jupiter/browser-relay";
-import { assertWalletReturnedTransaction } from "@sofinance/engine/wallet-returned-tx";
+import { assertWalletReturnedTransaction } from "@/lib/wallet-returned-guard";
 
 /**
  * Client deadline for a preview/prepare. Each server round keeps its own 8 s

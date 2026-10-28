@@ -2,7 +2,7 @@ import "@/lib/engine-host";
 import { VersionedTransaction, type Signer } from "@solana/web3.js";
 import { isZeroSignature } from "@sofinance/engine/transaction-limits";
 
-export { assertWalletReturnedTransaction } from "@sofinance/engine/wallet-returned-tx";
+export { assertWalletReturnedTransaction } from "./wallet-returned-guard";
 
 /**
  * Wallets sometimes rebuild a VersionedTransaction from the message and only

@@ -14,7 +14,7 @@ import { beamAfterSend, noBeamAfterSend } from "@/lib/beam-after-send";
 import type { OpenPositionSummary } from "@sofinance/engine/open-types";
 import { getSigningSecret } from "@sofinance/engine/config/server-env";
 import { exceedsTxSizeLimit, isZeroSignature } from "@sofinance/engine/transaction-limits";
-import { assertWalletReturnedTransaction } from "@sofinance/engine/wallet-returned-tx";
+import { assertWalletReturnedTransaction } from "@/lib/wallet-returned-guard";
 import { logPositionOpenBestEffort, positionOpenRowFromSummary } from "@/lib/opens-log";
 
 

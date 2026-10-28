@@ -13,7 +13,7 @@ import { withdrawPermit } from "@sofinance/engine/withdraw/permit";
 import { simulateWithdraw } from "@sofinance/engine/withdraw/build";
 import { assertImpactConfirmed } from "@sofinance/engine/withdraw/quote";
 import type { WithdrawSummary } from "@sofinance/engine/withdraw/types";
-import { assertWalletReturnedTransaction } from "@sofinance/engine/wallet-returned-tx";
+import { assertWalletReturnedTransaction } from "@/lib/wallet-returned-guard";
 export async function submitWithdraw(input: {
     wallet: string;
     signedTransaction: string;

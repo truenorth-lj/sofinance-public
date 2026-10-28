@@ -15,6 +15,7 @@ import { useWalletConnection } from "./wallet-connection";
 import { useCleanupBatchController } from "./use-cleanup-batch-controller";
 import { loadCleanupBatch, cleanupBatchKey } from "@/lib/compound-cleanup-batch-attempt";
 import { notifyPositionHistoryChange } from "@/lib/position-history-refresh";
+import { captureWalletReturnedTxFailure } from "@/lib/sentry/capture";
 
 export type CompoundConfirmation = { status: AtomicStatus; signature: string; state: CompoundPositionState | null;
   chainStatus?: CompoundChainStatus;
@@ -419,7 +420,13 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
       const { prepared, summary, unsigned, preparedSnapshot } = loaded;
       setStage("wallet");
       const signed = await connectionRef.current.signTransaction(unsigned);
-      const signedResult = signedCompoundTransaction(signed, preparedSnapshot, submittedWallet);
+      let signedResult: ReturnType<typeof signedCompoundTransaction>;
+      try {
+        signedResult = signedCompoundTransaction(signed, preparedSnapshot, submittedWallet);
+      } catch (error) {
+        captureWalletReturnedTxFailure(error);
+        throw error;
+      }
       if (!current() || Date.now() >= summary.expiresAt || externalBlockedRef.current) {
         throw new Error("Wallet, position, or authorization changed during signing; transaction not broadcast");
       }

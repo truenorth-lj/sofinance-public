@@ -6,7 +6,10 @@ vi.mock("server-only", () => ({}));
 const mocks = vi.hoisted(() => ({ statuses: vi.fn(), transaction: vi.fn(), height: vi.fn(), sources: vi.fn(), reset: vi.fn() }));
 vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: () => ({ getSignatureStatuses: mocks.statuses,
   getParsedTransaction: mocks.transaction, getBlockHeight: mocks.height, getMultipleAccountsInfo: mocks.sources }) }));
-vi.mock("@sofinance/engine/rpc/cache", () => ({ resetRpcCache: mocks.reset }));
+vi.mock("@sofinance/engine/rpc/cache", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@sofinance/engine/rpc/cache")>()),
+  resetRpcCache: mocks.reset,
+}));
 vi.mock("@/lib/api-response", () => ({ apiError: () => Response.json({ error: "Verification failed" }, { status: 400 }) }));
 import { POST } from "./route";
 

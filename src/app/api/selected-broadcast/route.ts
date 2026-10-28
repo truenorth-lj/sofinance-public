@@ -9,7 +9,7 @@ import { beamLandingUrl } from "@sofinance/engine/solami-beam";
 import nacl from "tweetnacl";
 import { getSigningSecret } from "@sofinance/engine/config/server-env";
 import { isSingleWalletSignedTransaction } from "@sofinance/engine/transaction-limits";
-import { assertWalletReturnedTransaction } from "@sofinance/engine/wallet-returned-tx";
+import { assertWalletReturnedTransaction } from "@/lib/wallet-returned-guard";
 
 function validRaw(value: unknown) {
   return typeof value === "string" && /^\d+$/.test(value);

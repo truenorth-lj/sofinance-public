@@ -8,7 +8,7 @@ import type { CompoundSummary } from "@sofinance/engine/compound-types";
 import type { CompoundRecoverySummary } from "@sofinance/engine/compound-recovery-types";
 import { getSigningSecret } from "@sofinance/engine/config/server-env";
 import { isSingleWalletSignedTransaction } from "@sofinance/engine/transaction-limits";
-import { assertWalletReturnedTransaction } from "@sofinance/engine/wallet-returned-tx";
+import { assertWalletReturnedTransaction } from "@/lib/wallet-returned-guard";
 
 export async function readCompoundBody(request: Request) {
   const text = await request.text();

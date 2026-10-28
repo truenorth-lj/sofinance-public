@@ -28,7 +28,7 @@ import type { OpenPositionSummary } from "@sofinance/engine/open-types";
 import { sendSignedOpenPosition, submitOpenPositionFromParts } from "./open-send";
 import {
   BEAM_RESULT, BLOCKHASH, LIGHTHOUSE_PROGRAM_ID, SIGNING_SECRET, appendWalletExtraInstruction, buildTransaction,
-  fakeConnection, type FakeConnection, messageBase64, openSummaryFixture, signatureOf, testKeypair, toBase64,
+  fakeConnection, type FakeConnection, messageBase64, openSummaryFixture, phantomRewriteTransaction, signatureOf, testKeypair, toBase64,
 } from "./test-support/send-fixtures";
 
 const walletKey = testKeypair(1);
@@ -259,6 +259,20 @@ describe("submitOpenPositionFromParts", () => {
 
   it("surfaces a raw deserialize error for a garbage transaction", async () => {
     await expect(submitOpenPositionFromParts({ ...parts(), signedTransaction: "AAAA" })).rejects.toThrow();
+  });
+
+  it("accepts a Phantom-style recompile (replaced ComputeBudget + inserted Lighthouse)", async () => {
+    const unsigned = buildTransaction({ payer: walletKey, extraSigners: [nftKey], signWith: [] });
+    const rewritten = phantomRewriteTransaction(unsigned);
+    rewritten.sign([walletKey, nftKey]);
+    connection.sendRawTransaction.mockImplementation(async () => signatureOf(rewritten));
+    const summary = summaryFor({ blockhash: rewritten.message.recentBlockhash });
+    await expect(submitOpenPositionFromParts({
+      signedTransaction: toBase64(rewritten),
+      unsignedTransaction: toBase64(unsigned),
+      wallet, summary,
+      permit: issueOpenPositionPermit(SIGNING_SECRET, { wallet, summary, message: messageBase64(unsigned) }),
+    })).resolves.toMatchObject({ signature: signatureOf(rewritten), positionMint: nftMint });
   });
 
   it("accepts a wallet-appended Lighthouse instruction when unsignedTransaction is provided", async () => {

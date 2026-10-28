@@ -6,7 +6,7 @@ import { getSigningSecret } from "@sofinance/engine/config/server-env";
 import { rpcConnection } from "@sofinance/engine/rpc";
 import { readCompoundBody } from "@/lib/compound-api";
 import { parseCleanupBatchSummary, simulateAndVerifyCleanupBatch, validCleanupSignature, verifyCleanupBatchPermit } from "@/lib/compound-cleanup-batch";
-import { assertWalletReturnedTransaction } from "@sofinance/engine/wallet-returned-tx";
+import { assertWalletReturnedTransaction } from "@/lib/wallet-returned-guard";
 import { exceedsTxSizeLimit } from "@sofinance/engine/transaction-limits";
 import { apiError } from "@/lib/api-response";
 

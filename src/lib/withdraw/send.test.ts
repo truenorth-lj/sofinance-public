@@ -9,7 +9,7 @@ import { withdrawPermit } from "@sofinance/engine/withdraw/permit";
 import type { WithdrawSummary } from "@sofinance/engine/withdraw/types";
 import {
   BLOCKHASH, LIGHTHOUSE_PROGRAM_ID, SIGNING_SECRET, appendWalletExtraInstruction, buildTransaction,
-  messageBase64, signatureOf, testKeypair, toBase64,
+  messageBase64, phantomRewriteTransaction, signatureOf, testKeypair, toBase64,
 } from "../test-support/send-fixtures";
 import { TransactionInstruction, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
 const payer = testKeypair(1), wallet = payer.publicKey.toBase58();
@@ -72,6 +72,18 @@ it("never sends when signed simulation fails", async () => {
     mocks.simulate.mockRejectedValue(new Error("Wallet token balance changed"));
     await expect(submitWithdraw(input())).rejects.toThrow("balance changed");
     expect(mocks.send).not.toHaveBeenCalled();
+});
+it("accepts a Phantom-style recompile (replaced ComputeBudget + inserted Lighthouse)", async () => {
+    const unsigned = buildTransaction({ payer, signWith: [] });
+    const rewritten = phantomRewriteTransaction(unsigned);
+    rewritten.sign([payer]);
+    mocks.send.mockResolvedValue(signatureOf(rewritten));
+    const summary = { operation: "withdraw", wallet, stage: "atomic", expiresAt: Date.now() + 60000, lastValidBlockHeight: 150, blockhash: rewritten.message.recentBlockhash, requiresSecondConfirmation: false } as WithdrawSummary;
+    expect(await submitWithdraw({
+        wallet, signedTransaction: toBase64(rewritten), unsignedTransaction: toBase64(unsigned), summary,
+        permit: withdrawPermit.issue(SIGNING_SECRET, { wallet, message: messageBase64(unsigned), summary }),
+    })).toHaveProperty("signature", signatureOf(rewritten));
+    expect(mocks.send).toHaveBeenCalledOnce();
 });
 it("accepts a wallet-appended Lighthouse instruction when unsignedTransaction is provided", async () => {
     const unsigned = buildTransaction({ payer, signWith: [] });

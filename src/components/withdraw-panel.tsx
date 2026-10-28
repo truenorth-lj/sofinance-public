@@ -12,7 +12,7 @@ import { createJupiterRelayStore, postWithJupiterRelay } from "@/lib/jupiter/bro
 import type { WithdrawPrepared, WithdrawSummary, WithdrawRequest } from "@sofinance/engine/withdraw/types";
 import { assertWithdrawHistory, readWithdrawHistory, writeWithdrawHistory, withdrawCheckpointKey, WithdrawHistoryError, WITHDRAW_HISTORY_ERROR, type WithdrawHistory, type WithdrawCheckpoint as Checkpoint } from "@/lib/withdraw-checkpoint";
 import { prepareIsStale } from "@sofinance/engine/fresh-blockhash";
-import { assertWalletReturnedTransaction } from "@sofinance/engine/wallet-returned-tx";
+import { assertWalletReturnedTransaction } from "@/lib/wallet-returned-guard";
 
 export const WITHDRAW_EXPIRED_MESSAGE = "Transaction expired before it landed. Retry to prepare a fresh transaction — no funds moved.";
 
