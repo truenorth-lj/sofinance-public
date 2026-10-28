@@ -111,6 +111,9 @@ it("late unsent SIGN response retains the newer receipt and avoids safe-retry ad
   await advance();
   expect(container.textContent).not.toContain("safe to retry"); expect(signButton()).toBeUndefined();
   expect(container.textContent).toContain("Checking the original");
+  const receiptLink = container.querySelector<HTMLAnchorElement>('a[href^="https://solscan.io/tx/"]');
+  expect(receiptLink?.href).toBe(`https://solscan.io/tx/${newer.signature}`);
+  expect(receiptLink?.textContent).toContain(`${newer.signature.slice(0, 5)}…${newer.signature.slice(-5)}`);
   expect(storage.getItem(key)).toBe(JSON.stringify(newer));
   expect(storage.getItem(key + ":history:" + original.signature)).toBe(raw);
   const statusRequests = mock.mock.calls.filter(([url]) => url === "/api/open-status");
@@ -118,4 +121,18 @@ it("late unsent SIGN response retains the newer receipt and avoids safe-retry ad
   expect(mocks.sign).toHaveBeenCalledTimes(1);
   await act(async () => root.unmount()); root = createRoot(container); mock.mockImplementation(originalFetch);
   chainStatus = "expired"; await mount(); await advance(); expect(signButton()).toBeDefined();
+});
+
+
+it.each(["open-position", "compound", "add-liquidity", "withdraw"] as const)("uses the signed receipt link for %s without an adopted replacement", async kind => {
+  payload.kind = kind;
+  if (kind !== "open-position") {
+    payload.submitArgs.selection = { positionMint: nft.publicKey.toBase58() };
+    (payload.submitArgs.summary as Record<string, unknown>).positionMint = nft.publicKey.toBase58();
+    storage.setItem(openAttemptKey(wallet), "broken");
+  }
+  await mount(); await act(async () => signButton()!.click());
+  const signed = await mocks.sign.mock.results[0]!.value as VersionedTransaction;
+  const expected = bs58.encode(signed.signatures[0]!);
+  expect(container.querySelector<HTMLAnchorElement>('a[href^="https://solscan.io/tx/"]')?.href).toBe(`https://solscan.io/tx/${expected}`);
 });
