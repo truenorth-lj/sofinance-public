@@ -14,19 +14,20 @@ export type OpenPrepareCommand = {
   range: OpenRangeInput;
   floorBps: number;
   toleranceBps?: number;
+  nftMint: string;
 };
 
 export async function prepareOpen(command: OpenPrepareCommand, readSigningSecret: () => string,
   profile: typeof APP_OPEN_PREPARE | typeof MCP_OPEN_PREPARE) {
-  const { wallet, selection, amount, range, floorBps, toleranceBps } = command;
+  const { wallet, selection, amount, range, floorBps, toleranceBps, nftMint } = command;
   const { summary, transaction } = profile === APP_OPEN_PREPARE
     ? await withFeeEstimateRetry(() => buildAndSimulateOpenPosition(
-      wallet, selection, amount, range, floorBps, toleranceBps, { enforceResaleFloor: false },
+      wallet, selection, amount, range, floorBps, toleranceBps, { enforceResaleFloor: false, nftMint },
     ))
-    : await buildAndSimulateOpenPosition(wallet, selection, amount, range, floorBps, toleranceBps);
+    : await buildAndSimulateOpenPosition(wallet, selection, amount, range, floorBps, toleranceBps, { nftMint });
   const permit = issueOpenPositionPermit(readSigningSecret(), {
     wallet, message: Buffer.from(transaction.message.serialize()).toString("base64"), summary,
   });
-  // The engine already refreshed the blockhash and partial-signed with the NFT key.
+  // Fully unsigned: the client (or MCP agent) signs the wallet first, then the NFT mint.
   return { summary, permit, unsignedTransaction: Buffer.from(transaction.serialize()).toString("base64") };
 }

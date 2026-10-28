@@ -8,6 +8,7 @@ describe("open error classes", () => {
     expect(classifyOpenError(new Error("Transaction blockhash expired"))).toBe("expired");
     expect(classifyOpenError(`Transaction simulation failed for ${wallet}`)).toBe("simulation_failed");
     expect(classifyOpenError("Permit mismatch")).toBe("authorization");
+    expect(classifyOpenError("Wallet removed or changed a required instruction (unmatched #0 program=alt)")).toBe("authorization");
     expect(classifyOpenError("socket hang up")).toBe("network");
     expect(classifyOpenError("Open-position transaction failed on-chain")).toBe("onchain_failed");
     expect(classifyOpenError(`secret key ${wallet} leaked`)).toBe("unknown");

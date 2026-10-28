@@ -32,9 +32,12 @@ export const RELAY_AMOUNT_CONVERGE_BPS = 100;
 export const RELAY_BINARY_SEARCH_LIMIT = 8;
 export const RELAY_DID_NOT_SETTLE_MESSAGE =
   "Quote did not settle. Try a smaller amount, a wider range, or refresh the quote.";
+export const JUPITER_RATE_LIMIT_MESSAGE =
+  "Jupiter is rate-limiting quotes from this browser. Wait a few seconds and retry.";
 const MAX_STORED = 40;
-const MAX_RATE_LIMIT_WAIT_MS = 12_000;
-const RATE_LIMIT_RETRIES = 2;
+const MAX_RATE_LIMIT_WAIT_MS = 3_000;
+const RATE_LIMIT_RETRIES = 1;
+const JUPITER_FETCH_TIMEOUT_MS = 10_000;
 const RESET_JITTER_MS = 250;
 const RAYDIUM_CLMM_DEX = "Raydium CLMM";
 const PREFETCH_MAX_ACCOUNTS = "48";
@@ -81,6 +84,28 @@ export function jupiterRelayEnabled(): boolean {
   } catch {
     return typeof window !== "undefined";
   }
+}
+
+function mergeAbort(signal: AbortSignal | undefined, ms: number) {
+  const timeout = AbortSignal.timeout(ms);
+  if (!signal) return timeout;
+  if (typeof AbortSignal.any === "function") return AbortSignal.any([signal, timeout]);
+  const extra = new AbortController();
+  const abort = (reason: unknown) => { if (!extra.signal.aborted) extra.abort(reason); };
+  if (signal.aborted) abort(signal.reason);
+  else signal.addEventListener("abort", () => abort(signal.reason), { once: true });
+  timeout.addEventListener("abort", () => abort(timeout.reason), { once: true });
+  return extra.signal;
+}
+
+export function jupiterRelayFailureMessage(error: unknown, fallback: string) {
+  if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
+    return fallback;
+  }
+  if (error instanceof DOMException && (error.name === "TimeoutError" || error.name === "AbortError")) {
+    return fallback;
+  }
+  return error instanceof Error && error.message ? error.message : fallback;
 }
 
 function sleep(ms: number, signal?: AbortSignal) {
@@ -130,15 +155,19 @@ async function fetchNeedOnce(need: RelayNeed, signal?: AbortSignal): Promise<Omi
   for (let attempt = 0; ; attempt++) {
     await waitForGate(signal);
     let response: Response;
+    const fetchSignal = mergeAbort(signal, JUPITER_FETCH_TIMEOUT_MS);
     try {
       response = await fetch(`${JUPITER_BROWSER_ORIGIN}${need.url}`, {
         method: need.method,
         headers: need.body !== undefined ? { "Content-Type": "application/json" } : undefined,
         body: need.body !== undefined ? JSON.stringify(need.body) : undefined,
-        cache: "no-store", credentials: "omit", signal,
+        cache: "no-store", credentials: "omit", signal: fetchSignal,
       });
     } catch (error) {
       if (signal?.aborted) throw signal.reason;
+      if (fetchSignal.aborted && !signal?.aborted) {
+        throw new DOMException("Jupiter quote timed out", "TimeoutError");
+      }
       // CORS rejection or network failure: let the caller fall back to the server path.
       throw new JupiterBrowserUnavailable(error instanceof Error ? error.message : "Jupiter unreachable");
     }
@@ -151,7 +180,7 @@ async function fetchNeedOnce(need: RelayNeed, signal?: AbortSignal): Promise<Omi
       const wait = rateLimitWaitMs(response);
       gate.blockedUntil = Date.now() + wait;
       if (attempt < RATE_LIMIT_RETRIES) continue;
-      return { status: 429, body: { error: "Jupiter rate limit" }, retryAfterMs: wait };
+      throw new Error(JUPITER_RATE_LIMIT_MESSAGE);
     }
     const body: unknown = await response.json().catch(() => null);
     return { status: response.status, body, retryAfterMs: null };

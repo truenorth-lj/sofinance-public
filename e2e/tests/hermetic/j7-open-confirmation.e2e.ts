@@ -16,7 +16,7 @@ async function connectInModal(page: Page, wallet: FakeWallet) {
 
 async function setup(page: Page, wallet: FakeWallet, mode: "ok" | "unknown" | "unsent" = "ok") {
   const poolId = randomAddress(), mintA = randomAddress(), mintB = randomAddress();
-  const built = buildOpenPositionTx(wallet.address);
+  let built = buildOpenPositionTx(wallet.address, { serverSigns: false });
   const calls: string[] = [];
   let chainStatus = "pending";
   let sentSignature = "";
@@ -42,14 +42,21 @@ async function setup(page: Page, wallet: FakeWallet, mode: "ok" | "unknown" | "u
     if (path === "/api/sol-usdc-price") value = { rate: 150 };
     if (path === "/api/pool-range-apr") return route.fulfill({ status: 503, json: { error: "Estimate unavailable in this test" } });
     if (path === "/api/open-quote") value = quote;
-    if (path === "/api/open-prepare") value = { permit: "e2e-permit", unsignedTransaction: built.b64,
-      summary: { wallet: wallet.address, poolId, nftMint: built.nftMint, positionAccount: randomAddress(),
-        blockhash: built.tx.message.recentBlockhash, lastValidBlockHeight: 1000, expiresAt: Date.now() + 75000,
-        tickLower: -60, tickUpper: 60, quote } };
+    if (path === "/api/open-prepare") {
+      expect(typeof body.nftMint).toBe("string");
+      built = buildOpenPositionTx(wallet.address, { nftMint: body.nftMint, serverSigns: false });
+      value = { permit: "e2e-permit", unsignedTransaction: built.b64,
+        summary: { wallet: wallet.address, poolId, nftMint: built.nftMint, positionAccount: randomAddress(),
+          blockhash: built.tx.message.recentBlockhash, lastValidBlockHeight: 1000, expiresAt: Date.now() + 75000,
+          tickLower: -60, tickUpper: 60, quote } };
+    }
     if (path === "/api/open-broadcast") {
       const tx = VersionedTransaction.deserialize(Buffer.from(body.signedTransaction, "base64"));
       sentSignature = bs58.encode(tx.signatures[0]!);
       expect(FakeWallet.verify(wallet.address, tx.message.serialize(), tx.signatures[0]!)).toBe(true);
+      const mintIndex = tx.message.staticAccountKeys.findIndex((key) => key.toBase58() === built.nftMint);
+      expect(mintIndex).toBeGreaterThanOrEqual(1);
+      expect(FakeWallet.verify(built.nftMint, tx.message.serialize(), tx.signatures[mintIndex]!)).toBe(true);
       const saved = await page.evaluate(address => localStorage.getItem(`sofinance:open-position:v1:${address}`), wallet.address);
       expect(saved).toContain(sentSignature);
       if (mode !== "ok") return route.fulfill({ status: 503, json: { error: "E2E submission unavailable", ...(mode === "unsent" ? { sent: false } : {}) } });
@@ -96,4 +103,24 @@ test("unknown send retains the original signature, blocks another open and can r
   flow.setStatus("failed"); await page.getByRole("button", { name: "Check transaction status" }).click();
   await expect(page.getByText("Open-position transaction failed on-chain. You can prepare a new transaction.")).toBeVisible();
   await expect(flow.create).toBeEnabled(); expect(wallet.ledger).toHaveLength(1);
+});
+
+test("wallet Lighthouse extra instruction still mint-signs and broadcasts", async ({ page, wallet, guards }) => {
+  guards.allowConsole(/^Failed to load resource: the server responded with a status of 503/);
+  wallet.mode = "lighthouse";
+  const flow = await setup(page, wallet);
+  await flow.create.click();
+  await expect(page.getByText("Waiting for on-chain confirmation…", { exact: true }).first()).toBeVisible();
+  expect(wallet.ledger[0]).toMatchObject({ outcome: "signed", mode: "lighthouse" });
+  expect(flow.calls.filter((path) => path === "/api/open-broadcast")).toHaveLength(1);
+});
+
+test("wallet raised ComputeBudget priority fee still mint-signs and broadcasts", async ({ page, wallet, guards }) => {
+  guards.allowConsole(/^Failed to load resource: the server responded with a status of 503/);
+  wallet.mode = "priority-fee";
+  const flow = await setup(page, wallet);
+  await flow.create.click();
+  await expect(page.getByText("Waiting for on-chain confirmation…", { exact: true }).first()).toBeVisible();
+  expect(wallet.ledger[0]).toMatchObject({ outcome: "signed", mode: "priority-fee" });
+  expect(flow.calls.filter((path) => path === "/api/open-broadcast")).toHaveLength(1);
 });

@@ -6,7 +6,7 @@ vi.mock("../sentry/capture", () => ({ captureQuoteSettleFailure }));
 
 import {
   companionQuoteNeeds, conservativeQuoteAmount, createJupiterRelayStore, expandRelayNeeds,
-  jupiterBrowserStats, nextRelaySearchAmount, postWithJupiterRelay, quoteAmount,
+  jupiterBrowserStats, JUPITER_RATE_LIMIT_MESSAGE, nextRelaySearchAmount, postWithJupiterRelay, quoteAmount,
   quoteAmountsWithinBps, quoteSettleFailureExtras, RELAY_DID_NOT_SETTLE_MESSAGE,
   resetJupiterBrowserGate,
 } from "./browser-relay";
@@ -77,6 +77,23 @@ describe("browser Jupiter relay", () => {
     expect(await (await pending).json()).toEqual({ status: 200 });
     expect(attempts).toBe(2);
     expect(jupiterBrowserStats.rateLimited).toBe(1);
+  });
+
+  it("fails fast on a persistent Jupiter 429 instead of looping 409s", async () => {
+    vi.useFakeTimers();
+    let posts = 0;
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
+      if (url.startsWith("https://api.jup.ag/")) return json({ error: "Rate limit" }, 429, { "retry-after": "0" });
+      posts += 1;
+      const responses = JSON.parse(String(init.body)).jupiterRelay.responses;
+      return Object.keys(responses).length ? json({ ok: true }) : json({ code: "jupiter_relay_needed", needs: [need("1")] }, 409);
+    }));
+    const pending = postWithJupiterRelay("/api/open-quote", {}, { store: createJupiterRelayStore() });
+    const rejected = expect(pending).rejects.toThrow(JUPITER_RATE_LIMIT_MESSAGE);
+    await vi.advanceTimersByTimeAsync(800);
+    await rejected;
+    expect(posts).toBe(1);
+    expect(jupiterBrowserStats.rateLimited).toBeGreaterThan(0);
   });
 
   it("passes Jupiter error statuses through to the server (no-route handling stays server-side)", async () => {

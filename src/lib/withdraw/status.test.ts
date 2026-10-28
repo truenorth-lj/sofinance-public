@@ -6,7 +6,7 @@ vi.mock("../position-history-cache",()=>({invalidatePositionHistoryCache:mocks.i
 import {withdrawStatus} from "./status";
 import {withdrawPermit} from "@sofinance/engine/withdraw/permit";
 import type {WithdrawPrepared,WithdrawSummary} from "@sofinance/engine/withdraw/types";
-import {SIGNING_SECRET,buildTransaction,messageBase64,signatureOf,testKeypair,toBase64} from "../test-support/send-fixtures";
+import {SIGNING_SECRET,appendWalletExtraInstruction,buildTransaction,messageBase64,phantomRewriteTransaction,signatureOf,testKeypair,toBase64} from "../test-support/send-fixtures";
 const payer=testKeypair(1),transaction=buildTransaction({payer});
 function input(){
  const summary={wallet:payer.publicKey.toBase58(),operation:"withdraw",stage:"swap",positionMint:testKeypair(5).publicKey.toBase58(),positionAccount:testKeypair(2).publicKey.toBase58(),lastValidBlockHeight:150,assets:[]} as unknown as WithdrawSummary;
@@ -19,15 +19,24 @@ it("keeps confirmed transactions pending until finalization",async()=>{
  expect(await withdrawStatus(input())).toHaveProperty("status","pending");expect(mocks.receipt).not.toHaveBeenCalled();
  expect(mocks.invalidate).not.toHaveBeenCalled();expect(mocks.reset).not.toHaveBeenCalled();
 });
-it("accepts only the complete finalized prepared message",async()=>{
+it("accepts the prepared message or a wallet-appended extra instruction, and reviews a changed core message",async()=>{
  mocks.status.mockResolvedValue({value:[{confirmationStatus:"finalized",err:null}]});
  mocks.receipt.mockResolvedValue({meta:{err:null},transaction:{message:transaction.message}});
  expect(await withdrawStatus(input())).toHaveProperty("status","success");
  expect(mocks.invalidate).toHaveBeenCalledWith(input().prepared.summary.positionMint);expect(mocks.reset).toHaveBeenCalledOnce();
+ const extra=appendWalletExtraInstruction(transaction);
+ extra.sign([payer]);
+ mocks.receipt.mockResolvedValue({meta:{err:null},transaction:{message:extra.message}});
+ expect(await withdrawStatus(input())).toHaveProperty("status","success");
+ expect(mocks.invalidate).toHaveBeenCalledTimes(2);expect(mocks.reset).toHaveBeenCalledTimes(2);
  const changed=buildTransaction({payer,blockhash:testKeypair(3).publicKey.toBase58()});
  mocks.receipt.mockResolvedValue({meta:{err:null},transaction:{message:changed.message}});
  expect(await withdrawStatus(input())).toHaveProperty("status","manual-review");
- expect(mocks.invalidate).toHaveBeenCalledOnce();expect(mocks.reset).toHaveBeenCalledOnce();
+ expect(mocks.invalidate).toHaveBeenCalledTimes(2);expect(mocks.reset).toHaveBeenCalledTimes(2);
+ const rewritten=phantomRewriteTransaction(transaction);
+ mocks.receipt.mockResolvedValue({meta:{err:null,loadedAddresses:{writable:[],readonly:[]}},transaction:{message:rewritten.message}});
+ expect(await withdrawStatus(input())).toHaveProperty("status","success");
+ expect(mocks.invalidate).toHaveBeenCalledTimes(3);expect(mocks.reset).toHaveBeenCalledTimes(3);
 });
 it("recognizes a finalized receipt even when the signature index is missing",async()=>{
  mocks.height.mockResolvedValue(151);mocks.receipt.mockResolvedValue({meta:{err:null},transaction:{message:transaction.message}});

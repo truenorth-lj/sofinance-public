@@ -7,7 +7,11 @@ vi.mock("@/lib/beam-after-send", async (importOriginal) => ({ ...(await importOr
 import { submitWithdraw } from "./send";
 import { withdrawPermit } from "@sofinance/engine/withdraw/permit";
 import type { WithdrawSummary } from "@sofinance/engine/withdraw/types";
-import { BLOCKHASH, SIGNING_SECRET, buildTransaction, messageBase64, signatureOf, testKeypair, toBase64 } from "../test-support/send-fixtures";
+import {
+  BLOCKHASH, LIGHTHOUSE_PROGRAM_ID, SIGNING_SECRET, appendWalletExtraInstruction, buildTransaction,
+  messageBase64, phantomRewriteTransaction, signatureOf, testKeypair, toBase64,
+} from "../test-support/send-fixtures";
+import { TransactionInstruction, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
 const payer = testKeypair(1), wallet = payer.publicKey.toBase58();
 const transaction = buildTransaction({ payer });
 function input(overrides: Partial<WithdrawSummary> = {}) {
@@ -26,7 +30,7 @@ beforeEach(() => {
 it("re-simulates the signed exact message before the single RPC submission", async () => {
     const body = input({ beam: { enabled: false, included: false, tipLamports: 0, tipAddress: null, skippedReason: "disabled" } });
     expect(await submitWithdraw(body)).toHaveProperty("signature", signatureOf(transaction));
-    expect(mocks.simulate).toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.objectContaining({ operation: "withdraw" }), true);
+    expect(mocks.simulate).toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.objectContaining({ operation: "withdraw" }), true, undefined);
     expect(mocks.send).toHaveBeenCalledOnce();
     expect(mocks.beam).toHaveBeenCalledWith(signatureOf(transaction), body.summary.beam);
     expect(mocks.simulate.mock.invocationCallOrder[0]).toBeLessThan(mocks.send.mock.invocationCallOrder[0]!);
@@ -67,5 +71,45 @@ it("rebroadcasts the same signed bytes until the signature is observed", async (
 it("never sends when signed simulation fails", async () => {
     mocks.simulate.mockRejectedValue(new Error("Wallet token balance changed"));
     await expect(submitWithdraw(input())).rejects.toThrow("balance changed");
+    expect(mocks.send).not.toHaveBeenCalled();
+});
+it("accepts a Phantom-style recompile (replaced ComputeBudget + inserted Lighthouse)", async () => {
+    const unsigned = buildTransaction({ payer, signWith: [] });
+    const rewritten = phantomRewriteTransaction(unsigned);
+    rewritten.sign([payer]);
+    mocks.send.mockResolvedValue(signatureOf(rewritten));
+    const summary = { operation: "withdraw", wallet, stage: "atomic", expiresAt: Date.now() + 60000, lastValidBlockHeight: 150, blockhash: rewritten.message.recentBlockhash, requiresSecondConfirmation: false } as WithdrawSummary;
+    expect(await submitWithdraw({
+        wallet, signedTransaction: toBase64(rewritten), unsignedTransaction: toBase64(unsigned), summary,
+        permit: withdrawPermit.issue(SIGNING_SECRET, { wallet, message: messageBase64(unsigned), summary }),
+    })).toHaveProperty("signature", signatureOf(rewritten));
+    expect(mocks.simulate).toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.anything(), true, expect.any(VersionedTransaction));
+    expect(mocks.send).toHaveBeenCalledOnce();
+});
+it("accepts a wallet-appended Lighthouse instruction when unsignedTransaction is provided", async () => {
+    const unsigned = buildTransaction({ payer, signWith: [] });
+    const extra = appendWalletExtraInstruction(unsigned);
+    extra.sign([payer]);
+    mocks.send.mockResolvedValue(signatureOf(extra));
+    const summary = { operation: "withdraw", wallet, stage: "atomic", expiresAt: Date.now() + 60000, lastValidBlockHeight: 150, blockhash: extra.message.recentBlockhash, requiresSecondConfirmation: false } as WithdrawSummary;
+    expect(await submitWithdraw({
+        wallet, signedTransaction: toBase64(extra), unsignedTransaction: toBase64(unsigned), summary,
+        permit: withdrawPermit.issue(SIGNING_SECRET, { wallet, message: messageBase64(unsigned), summary }),
+    })).toHaveProperty("signature", signatureOf(extra));
+    expect(mocks.send).toHaveBeenCalledOnce();
+});
+it("rejects a wallet-returned tx that drops a core instruction", async () => {
+    const unsigned = buildTransaction({ payer, signWith: [] });
+    const emptied = new VersionedTransaction(new TransactionMessage({
+        payerKey: payer.publicKey,
+        recentBlockhash: unsigned.message.recentBlockhash,
+        instructions: [new TransactionInstruction({ programId: LIGHTHOUSE_PROGRAM_ID, keys: [], data: Buffer.from([1]) })],
+    }).compileToV0Message());
+    emptied.sign([payer]);
+    const summary = { operation: "withdraw", wallet, stage: "atomic", expiresAt: Date.now() + 60000, lastValidBlockHeight: 150, blockhash: unsigned.message.recentBlockhash, requiresSecondConfirmation: false } as WithdrawSummary;
+    await expect(submitWithdraw({
+        wallet, signedTransaction: toBase64(emptied), unsignedTransaction: toBase64(unsigned), summary,
+        permit: withdrawPermit.issue(SIGNING_SECRET, { wallet, message: messageBase64(unsigned), summary }),
+    })).rejects.toThrow("required instruction");
     expect(mocks.send).not.toHaveBeenCalled();
 });

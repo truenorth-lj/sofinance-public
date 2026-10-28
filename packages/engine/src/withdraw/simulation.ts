@@ -4,8 +4,15 @@ import { getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID 
 import { NATIVE_SOL_MINT } from "../ids";
 import { verifiedTokenAmount } from "../lp-exit-verification";
 import { transactionIntermediateAccounts, verifyIntermediateAccounts } from "../swap/instructions";
+import { walletPriorityFeeAllowance } from "../wallet-priority-fee";
 import type { WithdrawSummary } from "./types";
-export async function simulateWithdraw(connection: Connection, transaction: VersionedTransaction, summary: WithdrawSummary, sigVerify = false) {
+export async function simulateWithdraw(
+    connection: Connection,
+    transaction: VersionedTransaction,
+    summary: WithdrawSummary,
+    sigVerify = false,
+    prepared?: VersionedTransaction,
+) {
     const wallet = new PublicKey(summary.wallet);
     const outputKeys = summary.outputs.map(o => getAssociatedTokenAddressSync(new PublicKey(o.mint), wallet, false, new PublicKey(summary.assets.find(a => a.mint === o.mint)?.program ?? TOKEN_PROGRAM_ID.toBase58())).toBase58());
     // A full withdrawal burns the position NFT and closes its account in the Raydium instruction.
@@ -24,7 +31,8 @@ export async function simulateWithdraw(connection: Connection, transaction: Vers
     // Sponsored: a zero-SOL wallet has no system account; read it as 0 lamports before and after.
     const zero = summary.feePayer ? { lamports: 0 } : null;
     const nativeBefore = before.value[0] ?? zero, nativeAfter = after[0] ?? zero;
-    if (!nativeBefore || !nativeAfter || BigInt(nativeAfter.lamports) - BigInt(nativeBefore.lamports) < -BigInt(summary.maxSolDebitLamports))
+    const debitCap = BigInt(summary.maxSolDebitLamports) + walletPriorityFeeAllowance(prepared, transaction);
+    if (!nativeBefore || !nativeAfter || BigInt(nativeAfter.lamports) - BigInt(nativeBefore.lamports) < -debitCap)
         throw new Error("Withdrawal exceeds SOL cost budget");
     for (const source of summary.isolatedSources ?? []) {
         const i = addresses.indexOf(source.address);
@@ -62,7 +70,7 @@ export async function simulateWithdraw(connection: Connection, transaction: Vers
         }
         if (summary.receive === "token" && output.mint === NATIVE_SOL_MINT) {
             const nativeDelta = BigInt(after[0]?.lamports ?? 0) - BigInt(before.value[0]?.lamports ?? 0);
-            if (nativeDelta < BigInt(output.minimum) - BigInt(summary.maxSolDebitLamports))
+            if (nativeDelta < BigInt(output.minimum) - debitCap)
                 throw new Error("Native SOL output below minimum");
             continue;
         }

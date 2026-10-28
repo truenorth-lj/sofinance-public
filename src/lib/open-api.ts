@@ -4,6 +4,7 @@ import "server-only";
 import { PublicKey } from "@solana/web3.js";
 import { parseAddToleranceBps, parseResaleFloorBps } from "@sofinance/engine/amount";
 import { parseWallet } from "@sofinance/engine/api-input";
+import { parseClientNftMint } from "@sofinance/engine/open-atomic";
 import { DEFAULT_OPEN_RANGE_PRESET, type OpenRangeInput, type OpenRangePreset } from "@sofinance/engine/open-range";
 import type { OpenPositionSelection } from "@sofinance/engine/open-state";
 
@@ -21,10 +22,7 @@ export function parseOpenRange(fields: Record<string, unknown>): OpenRangeInput 
   return { preset };
 }
 
-export async function parseOpenQuoteRequest(request: Request) {
-  const body: unknown = await request.json();
-  if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("Invalid open-position input");
-  const fields = body as Record<string, unknown>;
+function parseOpenFields(fields: Record<string, unknown>) {
   const wallet = parseWallet(fields.wallet);
   if (typeof fields.poolId !== "string" || typeof fields.inputMint !== "string") {
     throw new Error("Invalid pool or input mint");
@@ -45,4 +43,19 @@ export async function parseOpenQuoteRequest(request: Request) {
     floorBps: parseResaleFloorBps(fields.resaleFloorBps ?? fields.floorBps),
     toleranceBps: parseAddToleranceBps(fields.slippageToleranceBps ?? fields.toleranceBps),
   };
+}
+
+async function readOpenBody(request: Request) {
+  const body: unknown = await request.json();
+  if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("Invalid open-position input");
+  return body as Record<string, unknown>;
+}
+
+export async function parseOpenQuoteRequest(request: Request) {
+  return parseOpenFields(await readOpenBody(request));
+}
+
+export async function parseOpenPrepareRequest(request: Request) {
+  const fields = await readOpenBody(request);
+  return { ...parseOpenFields(fields), nftMint: parseClientNftMint(fields.nftMint).toBase58() };
 }

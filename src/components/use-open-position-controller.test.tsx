@@ -2,12 +2,12 @@
 import { act, createElement, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { VersionedTransaction } from "@solana/web3.js";
+import { PublicKey, VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
-import { useOpenPositionController, type OpenPositionPair } from "./use-open-position-controller";
+import { OPEN_PREPARE_TIMEOUT_MS, useOpenPositionController, type OpenPositionPair } from "./use-open-position-controller";
 import { NATIVE_SOL_MINT } from "@sofinance/engine/ids";
 import { openAttemptKey, persistOpenAttempt } from "@/lib/open-attempt";
-import { buildTransaction, openSummaryFixture, testKeypair, toBase64 } from "@/lib/test-support/send-fixtures";
+import { appendWalletExtraInstruction, buildTransaction, openSummaryFixture, testKeypair, toBase64 } from "@/lib/test-support/send-fixtures";
 const mocks = vi.hoisted(() => ({ address: "", sign: vi.fn() }));
 vi.mock("./wallet-connection", () => ({ useWalletConnection: () => ({ address: mocks.address, connected: true, signTransaction: mocks.sign }) }));
 const payer = testKeypair(1), nft = testKeypair(2);
@@ -24,9 +24,13 @@ let verificationError: boolean;
 let preparedOverride: ((value: ReturnType<typeof prepared>) => void) | null;
 let prepareWait: Promise<Response> | null;
 let fetchMock: ReturnType<typeof vi.fn>;
-function prepared() {
-  const tx = buildTransaction({ payer, extraSigners: [nft], signWith: [nft] });
-  const summary = openSummaryFixture({ wallet, nftMint: nft.publicKey.toBase58(), blockhash: tx.message.recentBlockhash });
+function prepared(nftMint = nft.publicKey) {
+  const tx = buildTransaction({
+    payer,
+    extraSigners: [{ publicKey: nftMint, secretKey: new Uint8Array(64) } as typeof nft],
+    signWith: [],
+  });
+  const summary = openSummaryFixture({ wallet, nftMint: nftMint.toBase58(), blockhash: tx.message.recentBlockhash });
   const quote = { ...summary.quote, poolId, inputMint: NATIVE_SOL_MINT, inputKind: "native", inputDecimals: 9 };
   return { unsignedTransaction: toBase64(tx), permit: "test-permit", summary: { ...summary, quote } };
 }
@@ -63,13 +67,29 @@ beforeEach(() => {
     const body = typeof init?.body === "string" ? JSON.parse(init.body) : {};
     if (url.startsWith("/api/wallet")) return Response.json({ assets: [{ kind: "native", mint: NATIVE_SOL_MINT, decimals: 9, balance: "1000000000", eligible: true }] });
     if (url === "/api/open-quote") return Response.json(prepared().summary.quote);
-    if (url === "/api/open-prepare") { if (prepareWait) return prepareWait; const value = prepared(); preparedOverride?.(value); return Response.json(value); }
+    if (url === "/api/open-prepare") {
+      if (prepareWait) {
+        const signal = init?.signal;
+        if (!signal) return prepareWait;
+        return new Promise((resolve, reject) => {
+          const onAbort = () => reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+          if (signal.aborted) onAbort();
+          else signal.addEventListener("abort", onAbort, { once: true });
+          void prepareWait!.then(resolve, reject);
+        });
+      }
+      expect(typeof body.nftMint).toBe("string");
+      const value = prepared(new PublicKey(body.nftMint));
+      preparedOverride?.(value); return Response.json(value);
+    }
     if (url === "/api/open-broadcast") {
       expect(window.localStorage.getItem(openAttemptKey(wallet))).toContain('"signature"');
       if (sendMode === "lost") throw new Error("socket hang up");
       if (sendMode === "unsent") return Response.json({ error: "preflight rejected", sent: false }, { status: 400 });
       const tx = VersionedTransaction.deserialize(Buffer.from(body.signedTransaction, "base64"));
-      return Response.json({ signature: sendMode === "mismatch" ? "wrong" : bs58.encode(tx.signatures[0]!), beamLabel: "Beam landed", positionMint: nft.publicKey.toBase58() });
+      expect(tx.signatures[0]?.some((byte: number) => byte !== 0)).toBe(true);
+      expect(tx.signatures[1]?.some((byte: number) => byte !== 0)).toBe(true);
+      return Response.json({ signature: sendMode === "mismatch" ? "wrong" : bs58.encode(tx.signatures[0]!), beamLabel: "Beam landed", positionMint: tx.message.staticAccountKeys[1]!.toBase58() });
     }
     if (url === "/api/open-status") {
       if (verificationError) throw new Error("RPC unavailable");
@@ -104,14 +124,14 @@ describe("open-position transaction lifecycle", () => {
     expect(controller.signature).toBe(original); expect(controller.positionMint).toBe("");
     chainStatus = "confirmed"; await advance(3000); expect(controller.submitStage).toBeNull();
     currentPair = pair; await act(async () => root.render(createElement(Harness)));
-    expect(controller.submitStage).toBe("confirmed"); expect(controller.positionMint).toBe(nft.publicKey.toBase58());
+    expect(controller.submitStage).toBe("confirmed"); expect(controller.positionMint).toBe(JSON.parse(window.localStorage.getItem(openAttemptKey(wallet))!).nftMint);
   });
   it("shows Beam only after confirmed and createAnother retains receipt while preparing a new quote", async () => {
     await mount(); await act(async () => controller.signAndSend()); await advance(1);
     expect(controller.beamStatus.landedLabel).toBeNull(); chainStatus = "confirmed"; await advance(3000);
     expect(controller.beamStatus.landedLabel).toBe("Beam landed"); const raw = window.localStorage.getItem(openAttemptKey(wallet));
     await act(async () => controller.createAnother()); expect(controller.signature).toBe("");
-    expect(controller.positionMint).toBe(nft.publicKey.toBase58()); expect(controller.beamStatus.landedLabel).toBeNull();
+    expect(controller.positionMint).toBe(JSON.parse(raw!).nftMint); expect(controller.beamStatus.landedLabel).toBeNull();
     expect(window.localStorage.getItem(openAttemptKey(wallet))).toBe(raw); await advance(450); expect(controller.actionDisabled).toBe(false);
     chainStatus = "pending"; await act(async () => controller.signAndSend()); expect(mocks.sign).toHaveBeenCalledTimes(2);
   });
@@ -172,6 +192,21 @@ describe("open-position transaction lifecycle", () => {
     await act(async () => controller.signAndSend());
     expect(mocks.sign).not.toHaveBeenCalled(); expect(calls("/api/open-broadcast")).toHaveLength(0);
   });
+  it("surfaces a prepare timeout instead of spinning forever", async () => {
+    vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+      const extra = new AbortController();
+      window.setTimeout(() => extra.abort(new DOMException("The operation was aborted due to timeout", "TimeoutError")), ms);
+      return extra.signal;
+    });
+    await mount();
+    prepareWait = new Promise(() => {});
+    await act(async () => { void controller.signAndSend(); });
+    expect(controller.submitStage).toBe("preparing");
+    await advance(OPEN_PREPARE_TIMEOUT_MS);
+    expect(controller.submitStage).toBe(null);
+    expect(controller.error).toMatch(/timed out|retry/i);
+    expect(mocks.sign).not.toHaveBeenCalled();
+  });
   it("ignores a late prepare response after the wallet switches", async () => {
     await mount(); let release!: (value: Response) => void;
     prepareWait = new Promise(resolve => { release = resolve; });
@@ -200,6 +235,28 @@ describe("open-position transaction lifecycle", () => {
     await act(async () => { release(signed); await sending; });
     expect(calls("/api/open-broadcast")).toHaveLength(0);
     expect(window.localStorage.getItem(openAttemptKey(wallet))).toBeNull();
+  });
+  it("aborts when the wallet modifies the message and never mint-signs or broadcasts", async () => {
+    await mount();
+    mocks.sign.mockImplementation(async (tx: VersionedTransaction) => {
+      tx.message.recentBlockhash = "11111111111111111111111111111111";
+      tx.sign([payer]);
+      return tx;
+    });
+    await act(async () => controller.signAndSend());
+    expect(calls("/api/open-broadcast")).toHaveLength(0);
+    expect(controller.error).toContain("Wallet changed the transaction blockhash");
+  });
+  it("broadcasts after the wallet appends a Lighthouse instruction", async () => {
+    await mount();
+    mocks.sign.mockImplementation(async (tx: VersionedTransaction) => {
+      const extra = appendWalletExtraInstruction(tx);
+      extra.sign([payer]);
+      return extra;
+    });
+    await act(async () => controller.signAndSend());
+    expect(calls("/api/open-broadcast")).toHaveLength(1);
+    expect(controller.error).toBe("");
   });
 });
 

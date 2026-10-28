@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from "react"
 import type { OpenPositionQuote } from "@sofinance/engine/open-types";
 import type { OpenRangePreset } from "@sofinance/engine/open-range-presets";
 import type { WalletAsset } from "@sofinance/engine/wallet-discovery";
-import { jupiterRelayEnabled, postWithJupiterRelay, type JupiterRelayStore } from "@/lib/jupiter/browser-relay";
+import { jupiterRelayEnabled, jupiterRelayFailureMessage, postWithJupiterRelay, type JupiterRelayStore } from "@/lib/jupiter/browser-relay";
 
 type ApiError = { error: string };
 type OpenPreviewOptions = {
@@ -37,6 +37,8 @@ export const QUOTE_POLL_MS = 3_000;
  * per IP and an open preview costs 2-4 quotes, so poll well under that.
  */
 export const RELAY_QUOTE_POLL_MS = 15_000;
+/** Hard cap so quote cannot spin past a Jupiter 429 wait with no UI error. */
+export const OPEN_QUOTE_TIMEOUT_MS = 45_000;
 
 /** State only: registering the reader separately preserves the facade's effect order. */
 export function useOpenPreview() {
@@ -70,10 +72,12 @@ export function useOpenPreview() {
         setQuoteLoading(true);
         setQuoteError("");
         try {
+          const timeout = AbortSignal.timeout(OPEN_QUOTE_TIMEOUT_MS);
+          const signal = typeof AbortSignal.any === "function" ? AbortSignal.any([aborter.signal, timeout]) : aborter.signal;
           const response = await postWithJupiterRelay("/api/open-quote", {
             wallet, poolId: pair.poolAddress, inputMint, inputKind, amount,
             rangePreset, minPrice, maxPrice,
-          }, { store: jupiterStoreRef.current, signal: aborter.signal });
+          }, { store: jupiterStoreRef.current, signal });
           const data = await response.json() as OpenPositionQuote | ApiError;
           if (!currentRequest()) return;
           if (!response.ok) throw new Error((data as ApiError).error);
@@ -85,7 +89,7 @@ export function useOpenPreview() {
           if (currentRequest()) {
             pausedUntil = Date.now() + QUOTE_ERROR_POLL_PAUSE_MS;
             setQuote(null);
-            setQuoteError(caught instanceof Error ? caught.message : "Quote failed");
+            setQuoteError(jupiterRelayFailureMessage(caught, "Quote timed out. Please retry."));
           }
         } finally {
           inFlight = false;

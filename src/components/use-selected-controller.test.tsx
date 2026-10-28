@@ -6,6 +6,7 @@ import { PublicKey, TransactionMessage, VersionedTransaction } from "@solana/web
 import bs58 from "bs58";
 import { RELAY_DEADLINE_MS, useSelectedController } from "./use-selected-controller";
 import { persistSelectedAttempt, selectedAttemptKey, type SelectedAttempt } from "@/lib/selected-attempt";
+import { appendWalletExtraInstruction } from "@/lib/test-support/send-fixtures";
 
 const mocks = vi.hoisted(() => ({ sign: vi.fn(), address: "11111111111111111111111111111111" as string | undefined }));
 const wallet = "11111111111111111111111111111111";
@@ -265,8 +266,19 @@ it("rejects a wallet that mutates the original transaction object in place", asy
     tx.message.recentBlockhash = key(); tx.signatures[0] = new Uint8Array(64).fill(1); return tx;
   });
   await act(async () => controller.primaryAction());
-  expect(controller.error).toContain("Wallet modified transaction content");
+  expect(controller.error).toContain("Wallet changed the transaction blockhash");
   expect(calls("/api/selected-broadcast")).toHaveLength(0);
+});
+it("broadcasts when the wallet appends a Lighthouse instruction", async () => {
+  await ready();
+  mocks.sign.mockImplementation(async (tx: VersionedTransaction) => {
+    const extra = appendWalletExtraInstruction(tx);
+    extra.signatures[0] = new Uint8Array(64).fill(1);
+    return extra;
+  });
+  await act(async () => controller.primaryAction());
+  expect(controller.error).toBe("");
+  expect(calls("/api/selected-broadcast")).toHaveLength(1);
 });
 it("rejects an unsigned wallet response", async () => {
   await ready(); mocks.sign.mockImplementation(async (tx: VersionedTransaction) => tx);

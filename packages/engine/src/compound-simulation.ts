@@ -3,6 +3,7 @@ import { PersonalPositionLayout, PoolInfoLayout } from "@raydium-io/raydium-sdk-
 import { unpackAccount } from "@solana/spl-token";
 import { Connection, PublicKey, SystemProgram, VersionedTransaction, type AccountInfo } from "@solana/web3.js";
 import { MIN_SOL_LAMPORTS } from "./ids";
+import { walletPriorityFeeAllowance } from "./wallet-priority-fee";
 import type { CompoundAccount, CompoundPositionState, CompoundPriorSource } from "./compound-types";
 
 export type CompoundSimulationInput = {
@@ -12,6 +13,8 @@ export type CompoundSimulationInput = {
   priorSources?: CompoundPriorSource[];
   /** Sponsored mode: the separate fee payer (message payer, first signer). Omit for owner mode. */
   feePayer?: string;
+  /** Prepared message; wallet-raised ComputeBudget priority is allowed up to 0.01 SOL extra. */
+  prepared?: VersionedTransaction;
 };
 export function compoundTokenAmount(info: AccountInfo<Buffer> | null, address: string, program: string, wallet: string, mint: string) {
   if (!info) return 0n;
@@ -100,7 +103,8 @@ export async function simulateAndVerifyCompound(input: CompoundSimulationInput) 
   if (!walletAfter) throw new Error("Simulation did not read back wallet SOL");
   const solDebit = solBefore - BigInt(walletAfter.lamports);
   const refund = priorSources.reduce((sum, source) => sum + BigInt(source.refundLamports), 0n);
-  if (solDebit < -refund || solDebit > maxSolDebitLamports || walletAfter.lamports < (sponsored ? 0 : MIN_SOL_LAMPORTS)) throw new Error("Compound SOL expenditure or remaining balance exceeds limit");
+  const debitCap = maxSolDebitLamports + walletPriorityFeeAllowance(input.prepared, transaction);
+  if (solDebit < -refund || solDebit > debitCap || walletAfter.lamports < (sponsored ? 0 : MIN_SOL_LAMPORTS)) throw new Error("Compound SOL expenditure or remaining balance exceeds limit");
   // Multiple reward vaults may pay the same mint into the same owner ATA.
   // Report that ATA's aggregate credit once, not once per initialized reward.
   const retainedRewards = [...new Map(state.rewards.filter((reward) => !reward.compounded).map((reward) => [reward.mint, reward])).values()];

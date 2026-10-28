@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 vi.mock("@sofinance/engine/api-input", () => ({ parseSelectedQuoteRequest: vi.fn(), parseWallet: vi.fn((w: string) => w) }));
-vi.mock("@/lib/open-api", () => ({ parseOpenQuoteRequest: vi.fn() }));
+vi.mock("@/lib/open-api", () => ({ parseOpenQuoteRequest: vi.fn(), parseOpenPrepareRequest: vi.fn() }));
 vi.mock("@/lib/compound-api", () => ({ parseCompoundSelection: vi.fn(), readCompoundBody: vi.fn() }));
 vi.mock("@/lib/selected-atomic", () => ({ buildAndSimulateSelectedZap: vi.fn() }));
 vi.mock("@sofinance/engine/open-atomic", () => ({ buildAndSimulateOpenPosition: vi.fn() }));
@@ -21,7 +21,7 @@ vi.mock("@/lib/compound-permit", () => ({ issueCompoundPermit: vi.fn(() => "perm
 
 import { NextRequest } from "next/server";
 import { parseSelectedQuoteRequest } from "@sofinance/engine/api-input";
-import { parseOpenQuoteRequest } from "@/lib/open-api";
+import { parseOpenPrepareRequest } from "@/lib/open-api";
 import { parseCompoundSelection, readCompoundBody } from "@/lib/compound-api";
 import { buildAndSimulateSelectedZap } from "@/lib/selected-atomic";
 import { buildAndSimulateOpenPosition } from "@sofinance/engine/open-atomic";
@@ -65,7 +65,7 @@ describe("prepare routes pass the signing secret to the permit issuer (getSignin
   }
   const cases: [string, () => Promise<Response>, { mock: { calls: unknown[][] } }, () => void][] = [
     ["open-prepare", () => preparedOpen(post("/api/open-prepare", {})), vi.mocked(issueOpenPositionPermit), () => {
-      vi.mocked(parseOpenQuoteRequest).mockResolvedValue({ wallet: "w", selection: {}, amount: "1", range: {}, floorBps: 1, toleranceBps: 1 } as never);
+      vi.mocked(parseOpenPrepareRequest).mockResolvedValue({ wallet: "w", selection: {}, amount: "1", range: {}, floorBps: 1, toleranceBps: 1, nftMint: "m" } as never);
       vi.mocked(buildAndSimulateOpenPosition).mockResolvedValue(built);
     }],
     ["selected-prepare", () => preparedSelected(post("/api/selected-prepare", {})), vi.mocked(issueSelectedPermit), () => {

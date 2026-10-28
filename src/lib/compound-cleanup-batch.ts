@@ -8,6 +8,7 @@ import type { CompoundRecoveryAccount, CompoundRecoverySummary } from "@sofinanc
 import { restampVersionedTransaction, stampPreparedBlockhash } from "@sofinance/engine/fresh-blockhash";
 import { createPermit } from "@sofinance/engine/auth/permit";
 import { SOLANA_TX_SIZE_LIMIT, isSingleWalletSignedTransaction } from "@sofinance/engine/transaction-limits";
+import { walletPriorityFeeAllowance } from "@sofinance/engine/wallet-priority-fee";
 import { confirmedRecovery } from "./compound-receipt";
 import { estimateFeeForMessage } from "./rpc-fee-estimate";
 import nacl from "tweetnacl";
@@ -101,6 +102,8 @@ function decodeToken(info: AccountInfo<Buffer>, account: CompoundRecoveryAccount
 
 type CleanupSimulationInput = {
   connection: Connection; transaction: VersionedTransaction; summary: CompoundRecoverySummary; sigVerify: boolean;
+  /** Prepared message; wallet-raised ComputeBudget priority is allowed up to 0.01 SOL extra. */
+  prepared?: VersionedTransaction;
 };
 class CleanupSnapshotChanged extends Error {}
 export async function simulateAndVerifyCleanupBatch(input: CleanupSimulationInput) {
@@ -160,7 +163,10 @@ async function simulateCleanupBatchSnapshot(input: CleanupSimulationInput) {
   if (!walletBefore.owner.equals(SystemProgram.programId) || !walletAfter || walletAfter.owner !== SystemProgram.programId.toBase58()) {
     throw new Error("Cleanup wallet owner mismatch");
   }
-  if (BigInt(walletAfter.lamports) !== BigInt(walletBefore.lamports) + returned - newRent - BigInt(summary.feeLamports)) {
+  const expectedWallet = BigInt(walletBefore.lamports) + returned - newRent - BigInt(summary.feeLamports);
+  const extraPriority = walletPriorityFeeAllowance(input.prepared, transaction);
+  const actualWallet = BigInt(walletAfter.lamports);
+  if (actualWallet > expectedWallet || actualWallet < expectedWallet - extraPriority) {
     if (result.context.slot > snapshot.context.slot) throw new CleanupSnapshotChanged("Cleanup wallet balance changed between snapshot and simulation");
     throw new Error("Cleanup wallet rent or fee mismatch");
   }
