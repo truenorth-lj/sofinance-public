@@ -42,11 +42,12 @@ test.describe("J2 sign link, happy path", () => {
       expect(sign.broadcasts).toHaveLength(1);
       const call = sign.broadcasts[0]!;
       expect(call.kind).toBe(kind);
+      expect(call.body.unsignedTransaction).toBe(scenario.payload.unsignedTransaction);
       if (kind === "add-liquidity") {
-        expect(Object.keys(call.body).sort()).toEqual(["signedTransaction", ...Object.keys(scenario.submitArgs)].sort());
+        expect(Object.keys(call.body).sort()).toEqual(["signedTransaction", "unsignedTransaction", ...Object.keys(scenario.submitArgs)].sort());
         expect(call.body.selection).toEqual(scenario.submitArgs.selection);
       } else {
-        expect(Object.keys(call.body).sort()).toEqual(["permit", "signedTransaction", "summary", "wallet"]);
+        expect(Object.keys(call.body).sort()).toEqual(["permit", "signedTransaction", "summary", "unsignedTransaction", "wallet"]);
         expect(call.body.summary).toEqual(scenario.submitArgs.summary);
       }
       expect(call.body.permit).toBe(scenario.submitArgs.permit);
