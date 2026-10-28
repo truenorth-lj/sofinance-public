@@ -49,7 +49,7 @@ function Harness() {
   return createElement(Suspender);
 }
 async function render() {
-  const child = createElement(Activity, { mode }, createElement(Suspense, { fallback: "suspended" }, createElement(Harness)));
+  const child = createElement(Activity, { mode, children: createElement(Suspense, { fallback: "suspended" }, createElement(Harness)) });
   await act(async () => root.render(strict ? createElement(StrictMode, null, child) : child));
 }
 async function advance(ms: number) { note("advance", ms); await act(async () => { await vi.advanceTimersByTimeAsync(ms); }); }
@@ -57,6 +57,7 @@ async function command(name: string, fn: () => void) { note("command", name); aw
 async function mount() { await render(); await advance(1); await command("fixture selects native SOL", () => c.chooseAsset("native", NATIVE_SOL_MINT)); }
 async function ready() { await mount(); await command("amount .002", () => c.changeAmount("0.002")); await advance(450); }
 const calls = (path = "/api/open-quote") => fetchMock.mock.calls.filter(([url]) => url === path);
+const bodyAt = (index: number, path?: string): Body => JSON.parse(String(calls(path).at(index)![1]!.body));
 async function visible(value: boolean) { hidden = !value; note("visibility", value); await act(async () => document.dispatchEvent(new Event("visibilitychange"))); }
 function holdQuote() { const wait = deferred<Response>(); pending.push(wait); quoteReply = () => wait.promise; return wait; }
 const goodQuote = async (b: Body) => Response.json(quote(b));
@@ -80,7 +81,7 @@ beforeEach(() => {
   }
   for (const key of ["clearTimeout", "clearInterval"] as const) {
     const original = window[key].bind(window);
-    vi.spyOn(window, key).mockImplementation((id?: number) => { if (id !== undefined && timers.has(id)) note(key, timers.get(id)); original(id); });
+    vi.spyOn(window, key).mockImplementation(id => { if (typeof id === "number" && timers.has(id)) note(key, timers.get(id)); original(id); });
   }
   const add = document.addEventListener.bind(document), remove = document.removeEventListener.bind(document);
   vi.spyOn(document, "addEventListener").mockImplementation((...args: Parameters<typeof document.addEventListener>) => { if (args[0] === "visibilitychange") note("listen", args[0]); add(...args); });
@@ -142,7 +143,7 @@ describe("accepted Open preview characterization", () => {
   it("cancels superseded debounce and maintains clock then discovery then reader effect order", async () => {
     await mount(); await command("first", () => c.changeAmount("0.001")); await advance(449);
     await command("replacement", () => c.changeAmount("0.002")); await advance(449); expect(calls()).toHaveLength(0);
-    await advance(1); expect(calls()).toHaveLength(1); expect(JSON.parse(calls()[0][1].body).amount).toBe("0.002");
+    await advance(1); expect(calls()).toHaveLength(1); expect(bodyAt(0).amount).toBe("0.002");
     const timers = ledger.filter(x => Array.isArray(x) && (x[1] === "setTimeout" || x[1] === "setInterval")) as unknown[][];
     expect(timers.findIndex(x => x[3] === 1000)).toBeLessThan(timers.findIndex(x => x[3] === 450));
     expect(timers.findIndex(x => x[3] === 0)).toBeLessThan(timers.findIndex(x => x[3] === 450));
@@ -163,14 +164,14 @@ describe("accepted Open preview characterization", () => {
   it.each(["success", "error"])("ignores stale %s and finally while replacement is still loading", async result => {
     await mount(); const old = holdQuote(); await command("first", () => c.changeAmount("0.001")); await advance(450);
     const next = holdQuote(); await command("second", () => c.changeAmount("0.002")); await advance(450);
-    const oldBody = JSON.parse(calls()[0][1].body), nextBody = JSON.parse(calls()[1][1].body);
+    const oldBody = bodyAt(0), nextBody = bodyAt(1);
     await act(async () => { if (result === "success") old.resolve(Response.json(quote(oldBody))); else old.reject(new Error("stale error")); });
     expect(c.quoteLoading).toBe(true); expect(c.quote).toBeNull(); expect(c.quoteError).toBe("");
     await act(async () => next.resolve(Response.json(quote(nextBody)))); expect(c.quote?.requested).toBe("2000000"); expect(c.quoteLoading).toBe(false);
   });
   it("synchronous clear invalidates same-value response without adding a replacement revision", async () => {
     await mount(); const old = holdQuote(); await command("first", () => c.changeAmount("0.002")); await advance(450);
-    await act(async () => { c.changeAmount("0.002"); old.resolve(Response.json(quote(JSON.parse(calls()[0][1].body)))); });
+    await act(async () => { c.changeAmount("0.002"); old.resolve(Response.json(quote(bodyAt(0)))); });
     expect(c.quote).toBeNull(); expect(c.quoteLoading).toBe(false); await advance(6000); expect(calls()).toHaveLength(1);
     quoteReply = goodQuote; await command("explicit recovery", () => c.refreshQuote()); await advance(450); expect(c.quote).not.toBeNull();
   });
@@ -186,7 +187,7 @@ describe("accepted Open preview characterization", () => {
     await command("min", () => c.setMinPrice("1")); await advance(450); const count = calls().length;
     await command("max", () => c.setMaxPrice("2")); await advance(450); expect(calls()).toHaveLength(count + 1);
     await command("max amount", () => c.fillMax()); await advance(450);
-    const b = JSON.parse(calls().at(-1)[1].body); expect(b).toMatchObject({ inputKind: "token", inputMint: USDC_MINT, amount: "10", rangePreset: "custom", minPrice: "1", maxPrice: "2" });
+    const b = bodyAt(-1); expect(b).toMatchObject({ inputKind: "token", inputMint: USDC_MINT, amount: "10", rangePreset: "custom", minPrice: "1", maxPrice: "2" });
   });
   it("blocks unsupported assets and parse errors with original priority", async () => {
     await ready(); await command("unsupported", () => c.chooseAsset("token", pair.mintA)); await advance(450);
@@ -206,13 +207,13 @@ describe("accepted Open preview characterization", () => {
   it("does not overlap polling or refresh an in-flight read", async () => {
     await mount(); const wait = holdQuote(); await command("amount", () => c.changeAmount("0.002")); await advance(450);
     await advance(9000); await visible(true); await command("refresh blocked", () => c.refreshQuote()); expect(calls()).toHaveLength(1);
-    await act(async () => wait.resolve(Response.json(quote(JSON.parse(calls()[0][1].body))))); expect(c.quoteLoading).toBe(false);
+    await act(async () => wait.resolve(Response.json(quote(bodyAt(0))))); expect(c.quoteLoading).toBe(false);
   });
   it("fences committed wallet and pair changes with healthy return to original identity", async () => {
     await ready(); const wait = holdQuote(); await advance(3000);
     boundary.wallet = testKeypair(3).publicKey.toBase58(); currentPair = { ...pair, poolAddress: pair.mintA }; await render(); await advance(1);
     quoteReply = goodQuote; await advance(450); const current = c.quote;
-    await act(async () => wait.resolve(Response.json(quote(JSON.parse(calls()[1][1].body))))); expect(c.quote).toBe(current);
+    await act(async () => wait.resolve(Response.json(quote(bodyAt(1))))); expect(c.quote).toBe(current);
     boundary.wallet = wallet; currentPair = pair; await render(); await advance(1); await advance(450); expect(c.quote?.poolId).toBe(pair.poolAddress);
   });
   it("object churn restarts discovery and reader while stable rerender preserves cadence", async () => {
@@ -222,7 +223,7 @@ describe("accepted Open preview characterization", () => {
   });
   it.each(["strict", "activity", "suspense", "unmount"])("preserves %s lifecycle cleanup and recovery", async lifecycle => {
     strict = lifecycle === "strict"; await ready(); const wait = holdQuote(); await advance(3000);
-    const body = JSON.parse(calls().at(-1)[1].body);
+    const body = bodyAt(-1);
     if (lifecycle === "activity") { mode = "hidden"; await render(); }
     if (lifecycle === "suspense") { suspend = true; await render(); }
     if (lifecycle === "unmount" || lifecycle === "strict") { await act(async () => root.unmount()); root = createRoot(container); }
@@ -243,7 +244,7 @@ describe("accepted Open preview characterization", () => {
     expect(providerCalls()).toHaveLength(1); const before = c.quote;
     await act(async () => c.signAndSend()); expect(c.quote).not.toBe(before); expect(c.quote?.liquidity).toBe("888");
     expect(c.error).toBe("Synthetic wallet refusal"); expect(providerCalls()).toHaveLength(1); expect(calls("/api/open-prepare")).toHaveLength(1);
-    expect(JSON.parse(calls("/api/open-prepare")[0][1].body).jupiterRelay.responses["preview-quote"]).toBeTruthy();
+    expect(bodyAt(0, "/api/open-prepare").jupiterRelay!.responses["preview-quote"]).toBeTruthy();
     expect(c.quoteLoading).toBe(false); await advance(450); expect(c.actionDisabled).toBe(false);
   });
 });
