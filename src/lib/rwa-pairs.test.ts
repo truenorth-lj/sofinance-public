@@ -6,11 +6,13 @@ import {
   clearRwaPairsCache,
   discoverRwaPairs,
   getCachedRwaPairs,
+  isAllowlistedPoolCandidate,
   parseRaydiumPoolAsRwaPair,
 } from "./rwa-pairs";
 import { clearJupiterTagsCache } from "./rwa-jupiter-tags";
 import { clearXstocksWhitelistCache } from "./rwa-xstocks-whitelist";
 import { TOKEN_2022_PROGRAM_ID } from "./rwa-pairing";
+import { USDC_MINT, USDC_USDT_CLMM_POOL_ID, USDT_MINT } from "./rwa-allowlist";
 
 const TOKEN_PROGRAM = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
 const MINT_A = "MintA1111111111111111111111111111111111111";
@@ -114,6 +116,72 @@ describe("parseRaydiumPoolAsRwaPair", () => {
   it("returns null for malformed rows", () => {
     expect(parseRaydiumPoolAsRwaPair(null)).toBeNull();
     expect(parseRaydiumPoolAsRwaPair({ id: "x" })).toBeNull();
+  });
+
+  it("accepts the curated USDC/USDT CLMM pool without Jupiter tags", () => {
+    const row = parseRaydiumPoolAsRwaPair(
+      poolFixture({
+        id: USDC_USDT_CLMM_POOL_ID,
+        feeRate: 0.0001,
+        tvl: 1_930_519.13,
+        mintA: {
+          address: USDC_MINT,
+          symbol: "USDC",
+          name: "USD Coin",
+          programId: TOKEN_PROGRAM,
+          tags: ["hasFreeze"],
+          extensions: {},
+        },
+        mintB: {
+          address: USDT_MINT,
+          symbol: "USDT",
+          name: "USDT",
+          programId: TOKEN_PROGRAM,
+          tags: ["hasFreeze"],
+          extensions: {},
+        },
+        day: { volume: 2_477_142.39, volumeFee: 247.71, feeApr: 4.68 },
+      }),
+    );
+    expect(row).not.toBeNull();
+    expect(row!.wrapKind).toBe("stable");
+    expect(row!.relatedness).toBe("allowlisted");
+    expect(row!.qualificationA).toBe("allowlist");
+    expect(row!.qualificationB).toBe("allowlist");
+    expect(row!.wrappedSymbol).toBe("USDC");
+    expect(row!.plainSymbol).toBe("USDT");
+    expect(row!.baseSymbol).toBe("USD");
+    expect(row!.feeTierBps).toBeCloseTo(1, 5);
+    expect(row!.token2022A).toBe(false);
+    expect(isAllowlistedPoolCandidate({ id: USDC_USDT_CLMM_POOL_ID, mintA: { address: USDC_MINT, symbol: "USDC" }, mintB: { address: USDT_MINT, symbol: "USDT" } })).not.toBeNull();
+  });
+
+  it("rejects a different USDC/USDT pool id and a mint mismatch on the allowlisted id", () => {
+    expect(
+      parseRaydiumPoolAsRwaPair(
+        poolFixture({
+          id: "DifferentUsdcUsdtPool1111111111111111111",
+          mintA: { address: USDC_MINT, symbol: "USDC", name: "USD Coin", programId: TOKEN_PROGRAM, tags: [], extensions: {} },
+          mintB: { address: USDT_MINT, symbol: "USDT", name: "USDT", programId: TOKEN_PROGRAM, tags: [], extensions: {} },
+        }),
+      ),
+    ).toBeNull();
+    expect(
+      parseRaydiumPoolAsRwaPair(
+        poolFixture({
+          id: USDC_USDT_CLMM_POOL_ID,
+          mintA: { address: USDC_MINT, symbol: "USDC", name: "USD Coin", programId: TOKEN_PROGRAM, tags: [], extensions: {} },
+          mintB: {
+            address: "So11111111111111111111111111111111111111112",
+            symbol: "WSOL",
+            name: "Wrapped SOL",
+            programId: TOKEN_PROGRAM,
+            tags: [],
+            extensions: {},
+          },
+        }),
+      ),
+    ).toBeNull();
   });
 });
 
@@ -243,6 +311,86 @@ describe("discoverRwaPairs", () => {
     expect(result.pairingRuleSummary).toMatch(/xStocks/i);
     expect(result.source).toMatch(/api-v3\.raydium\.io/);
     expect(result.source).toMatch(/Jupiter/);
+    expect(result.source).toMatch(/allowlist/);
+    expect(result.pairingRuleSummary).toMatch(/USDC\/USDT/);
+  });
+
+  it("merges the curated USDC/USDT pool from the scan and from the ids fallback", async () => {
+    const usdcUsdt = poolFixture({
+      id: USDC_USDT_CLMM_POOL_ID,
+      feeRate: 0.0001,
+      tvl: 50_000,
+      mintA: { address: USDC_MINT, symbol: "USDC", name: "USD Coin", programId: TOKEN_PROGRAM, tags: ["hasFreeze"], extensions: {} },
+      mintB: { address: USDT_MINT, symbol: "USDT", name: "USDT", programId: TOKEN_PROGRAM, tags: ["hasFreeze"], extensions: {} },
+      day: { volume: 10_000, volumeFee: 1, feeApr: 0.73 },
+    });
+    const matching = poolFixture();
+
+    const listThenIds = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/pools/info/list")) {
+        return new Response(
+          JSON.stringify({ success: true, data: { count: 2, data: [matching, usdcUsdt], hasNextPage: false } }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url.includes("/pools/info/ids")) {
+        return new Response("should not fetch ids when the scan already found the pool", { status: 500 });
+      }
+      if (url.includes("/tokens/v2/search")) {
+        return new Response(
+          JSON.stringify([
+            { id: MINT_A, tags: ["stocks", "rwa", "xstocks"] },
+            { id: MINT_B, tags: ["stocks", "rwa", "backpack"] },
+          ]),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url.includes("api.xstocks.fi")) {
+        return new Response(JSON.stringify({ nodes: [], page: { currentPage: 1, hasNextPage: false } }), { status: 200 });
+      }
+      return new Response("not found", { status: 404 });
+    });
+
+    const fromScan = await discoverRwaPairs({
+      minTvl: 0, maxPages: 1, sortBy: "tvl", fetcher: listThenIds as unknown as typeof fetch, bypassCache: true, jupiterApiKey: "test-key",
+    });
+    expect(fromScan.pairs.map((row) => row.poolAddress)).toEqual([USDC_USDT_CLMM_POOL_ID, matching.id]);
+    expect(fromScan.pairs[0]!.wrapKind).toBe("stable");
+    expect(listThenIds.mock.calls.some((call) => String(call[0]).includes("/pools/info/ids"))).toBe(false);
+
+    const idsFallback = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/pools/info/list")) {
+        return new Response(
+          JSON.stringify({ success: true, data: { count: 1, data: [matching], hasNextPage: false } }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url.includes("/pools/info/ids")) {
+        expect(url).toContain(USDC_USDT_CLMM_POOL_ID);
+        return new Response(JSON.stringify({ success: true, data: [usdcUsdt] }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (url.includes("/tokens/v2/search")) {
+        return new Response(
+          JSON.stringify([
+            { id: MINT_A, tags: ["stocks", "rwa", "xstocks"] },
+            { id: MINT_B, tags: ["stocks", "rwa", "backpack"] },
+          ]),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url.includes("api.xstocks.fi")) {
+        return new Response(JSON.stringify({ nodes: [], page: { currentPage: 1, hasNextPage: false } }), { status: 200 });
+      }
+      return new Response("not found", { status: 404 });
+    });
+
+    const fromIds = await discoverRwaPairs({
+      minTvl: 0, maxPages: 1, sortBy: "tvl", fetcher: idsFallback as unknown as typeof fetch, bypassCache: true, jupiterApiKey: "test-key",
+    });
+    expect(fromIds.pairs.map((row) => row.poolAddress)).toEqual([USDC_USDT_CLMM_POOL_ID, matching.id]);
+    expect(fromIds.pairs[0]!.relatedness).toBe("allowlisted");
   });
 
   it("returns null from getCachedRwaPairs when cache is empty", () => {
@@ -360,7 +508,7 @@ describe("discoverRwaPairs", () => {
     let fetchCallCount = 0;
     const fetcher = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
-      if (url.includes("api-v3.raydium.io")) {
+      if (url.includes("api-v3.raydium.io/pools/info/list") || url.includes("api-v3.raydium.io") && url.includes("poolType=concentrated")) {
         fetchCallCount += 1;
         // Simulate slow network
         await new Promise((resolve) => setTimeout(resolve, 100));

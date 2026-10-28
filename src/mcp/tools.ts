@@ -462,8 +462,9 @@ export async function submitCompoundTransaction(input: SubmitCompoundTransaction
 
 /**
  * List Raydium CLMM pools where both sides are the same underlying RWA
- * (wrapped vs unwrapped / xStock style), with fee/TVL/yield annotations.
- * Filter: Jupiter Tokens API tags (stocks|rwa) + Backed xStocks whitelist.
+ * (wrapped vs unwrapped / xStock style), plus the curated USDC/USDT pool,
+ * with fee/TVL/yield annotations.
+ * Filter: Jupiter Tokens API tags (stocks|rwa) + Backed xStocks whitelist + curated CLMM allowlist.
  *
  * Safety: Read-only; uses public Raydium / Jupiter / xStocks APIs. No wallet or private keys.
  */
