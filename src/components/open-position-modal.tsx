@@ -30,6 +30,7 @@ const FIELD_HELP = {
   "Non-refundable rent": "Estimated one-time cost to create shared protocol-position or tick-array accounts. These accounts remain after your position closes, so this cost is not returned to you.",
   "Network fee (est.)": "Estimated Solana transaction fee, confirmed during preparation. It is separate from your investment and account deposits.",
   "Wallet SOL": "Your wallet's total SOL balance. Keep enough SOL to cover account deposits and network fees in addition to your investment.",
+  "Protocol fee": "SoFinance takes 0.10% of the token you deposit, transferred to the protocol fee wallet in the same transaction. If that wallet does not yet have a token account for this mint, this transaction creates it and you pay the one-time account rent in SOL. This is not a performance fee on LP earnings.",
 } as const;
 
 function FieldLabel({ label, help }: { label: keyof typeof FIELD_HELP; help?: string }) {
@@ -240,8 +241,9 @@ export function OpenPositionModal({
                 <div className="flex justify-between gap-3"><FieldLabel label="Non-refundable rent" /><dd>{lamports(quote.rent.nonRefundableLamports)}</dd></div>
                 <div className="flex justify-between gap-3"><FieldLabel label="Network fee (est.)" /><dd>{lamports(quote.networkFeeLamportsEstimate)}</dd></div>
                 <div className="flex justify-between gap-3"><FieldLabel label="Wallet SOL" /><dd>{lamports(quote.solLamports)}</dd></div>
+                {quote.feeBps > 0 && <div className="flex justify-between gap-3"><FieldLabel label="Protocol fee" /><dd>{formatAmount(quote.feeAmount, quote.inputDecimals)} {inputSymbol}</dd></div>}
               </dl>
-              <p className="mt-3 text-xs leading-5 text-smoke">Upfront costs include refundable account deposits, one-time account setup and the estimated network fee. These are separate from your investment. Quotes refresh every 3 seconds. USDC values use the current Jupiter SOL/USDC reference price, refreshed every minute; fees are paid in SOL.</p>
+              <p className="mt-3 text-xs leading-5 text-smoke">Upfront costs include refundable account deposits, one-time account setup and the estimated network fee. These are separate from your investment. Quotes refresh every 3 seconds. USDC values use the current Jupiter SOL/USDC reference price, refreshed every minute. Network fees and account rent are paid in SOL. The protocol fee is 10 bps of the token you deposit.</p>
               {detailWarnings.map(warning => <p key={warning} className="mt-2 text-xs leading-5 text-smoke">{explainTokenWarning(warning)}</p>)}
             </details>
           </div>

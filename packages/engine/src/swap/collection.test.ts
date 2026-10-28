@@ -4,14 +4,27 @@ import { expect, it, vi } from "vitest";
 vi.mock("./jupiter", () => ({ buildRoute: vi.fn() }));
 vi.mock("../open-transaction", () => ({ versionedTransactionSize: vi.fn() }));
 import { versionedTransactionSize } from "../open-transaction";
-import { collectSwapFee, feeAccountSetup, fitFeeCollections } from "./collection";
+import { collectInputAssetFee, collectSwapFee, feeAccountSetup, fitFeeCollections } from "./collection";
 import { depositFeePlan } from "./leg";
+import { buildRoute } from "./jupiter";
 import { USDC_MINT } from "../ids";
 const owner = Keypair.generate().publicKey, recipient = Keypair.generate().publicKey;
 const mint = new PublicKey(USDC_MINT);
-it("USDC deposits pay once, including same-mint allocation and sequential secondary swaps", () => {
+it("deposits pay once in the input mint, including same-mint allocation and sequential secondary swaps", () => {
   expect(depositFeePlan(USDC_MINT, 1000000n, { wallet: recipient, bps: 10 }))
     .toEqual({ feeAmount: 1000n, swapAmount: 999000n, legBps: 0, secondaryBps: 0 });
+  expect(depositFeePlan(Keypair.generate().publicKey.toBase58(), 1000000n, { wallet: recipient, bps: 10 }))
+    .toEqual({ feeAmount: 1000n, swapAmount: 999000n, legBps: 0, secondaryBps: 0 });
+});
+it("collects a non-USDC deposit as an input-mint transfer without a Jupiter hop", async () => {
+  const inputMint = Keypair.generate().publicKey;
+  const result = await collectInputAssetFee({ getAccountInfo: vi.fn(async () => null) } as never,
+    { kind: "token", payer: owner, owner, recipient, mint: inputMint, amount: 1000n,
+      source: Keypair.generate().publicKey, decimals: 6, program: TOKEN_PROGRAM_ID });
+  expect(result.routes).toEqual([]);
+  expect(vi.mocked(buildRoute)).not.toHaveBeenCalled();
+  expect(result.instructions).toHaveLength(2);
+  expect(result.instructions[1]!.data.readBigUInt64LE(1)).toBe(1000n);
 });
 it("creates missing USDC ATA with user payer before transferring the upfront fee", async () => {
   const result = await collectSwapFee({ getAccountInfo: vi.fn(async () => null) } as never,

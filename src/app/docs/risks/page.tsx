@@ -25,7 +25,7 @@ export default function DocsRisksPage() {
         </li>
         <li>
           <strong className="font-medium text-cream">Conversion / exit costs</strong> — swapping into
-          or out of the pool (including withdrawing to USDC) costs swap fees, some price difference on larger amounts, and the SoFinance 10 bps fee. See{" "}
+          or out of the pool (including withdrawing to USDC) costs swap fees, some price difference on larger amounts, and the SoFinance 10 bps protocol fee on the deposited or converted amount. There is no extra performance fee on LP earnings. See{" "}
           <Link href={DOCS_ROUTES.fees}>Fees</Link>.
         </li>
       </ul>

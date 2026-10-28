@@ -1,5 +1,5 @@
 import "@/lib/engine-host";
-import { swapRouteInstructions, rejectUnselectedWalletTokenWrites, readSwapFeeConfig, collectSwapFee, fitFeeCollections, type FeeCollection } from "@sofinance/engine/swap";
+import { swapRouteInstructions, rejectUnselectedWalletTokenWrites, readSwapFeeConfig, collectInputAssetFee, type FeeCollection } from "@sofinance/engine/swap";
 import "server-only";
 
 import { createHash } from "node:crypto";
@@ -66,7 +66,7 @@ async function buildAndSimulateSelectedZapOnce(
     (quote.feeWallet ?? null) !== (feeConfig.wallet?.toBase58() ?? null))
     throw new Error("Quote protocol fee does not match configuration");
   const feeInstructions = feeConfig.wallet && protocolFee > 0n
-    ? await collectSwapFee(connection, state.inputKind === "native"
+    ? await collectInputAssetFee(connection, state.inputKind === "native"
       ? { payer: wallet, owner: wallet, recipient: feeConfig.wallet, amount: protocolFee, kind: "native" }
       : { payer: wallet, owner: wallet, recipient: feeConfig.wallet, amount: protocolFee, kind: "token",
         mint: new PublicKey(state.inputMint), source: new PublicKey(state.inputAccount!),
@@ -92,11 +92,12 @@ async function buildAndSimulateSelectedZapOnce(
   const raydiumTables = raydiumTable.value?.isActive() ? [raydiumTable.value] : [];
   validateRouteTables([...routes, ...feeInstructions.routes], routeTables);
   const directSol = state.inputKind === "native" ? legs.find((item) => !item.route && item.outputMint === NATIVE_SOL_MINT) : null;
-  const wrapInstructions = directSol ? [
+  const wrapLamports = directSol ? directSol.spend - (directSol.feeAmount ?? 0n) : 0n;
+  const wrapInstructions = directSol && wrapLamports > 0n ? [
     createAssociatedTokenAccountIdempotentInstruction(wallet, new PublicKey(state.mintA === NATIVE_SOL_MINT ? state.ataA : state.ataB),
       wallet, new PublicKey(NATIVE_SOL_MINT), TOKEN_PROGRAM_ID),
     SystemProgram.transfer({ fromPubkey: wallet,
-      toPubkey: new PublicKey(state.mintA === NATIVE_SOL_MINT ? state.ataA : state.ataB), lamports: directSol.spend }),
+      toPubkey: new PublicKey(state.mintA === NATIVE_SOL_MINT ? state.ataA : state.ataB), lamports: wrapLamports }),
     createSyncNativeInstruction(new PublicKey(state.mintA === NATIVE_SOL_MINT ? state.ataA : state.ataB)),
   ] : [];
   // The direct SOL wrap above already creates its ATA idempotently.
@@ -110,20 +111,15 @@ async function buildAndSimulateSelectedZapOnce(
   const tables = [...new Map([...routeTables, ...raydiumTables]
     .map((table) => [table.key.toBase58(), table])).values()];
   const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
-  let baseInstructions = await compactAtaInstructions(connection, [atomicComputeUnitLimitInstruction(),
+  const baseInstructions = await compactAtaInstructions(connection, [atomicComputeUnitLimitInstruction(),
     ...feeInstructions.instructions, ...routeInstructions, ...wrapInstructions, ...createAtaInstructions, ...raydiumInstructions]);
   const compile = (instructions: TransactionInstruction[]) => new VersionedTransaction(new TransactionMessage({
     payerKey: wallet, recentBlockhash: blockhash, instructions,
   }).compileToV0Message(tables));
-  if (!feeInstructions.routes.length) {
-    try { if (exceedsTxSizeLimit(compile(baseInstructions).serialize().length)) throw new RangeError(); }
-    catch { throw new Error("Complete swap + add transaction exceeds 1,232 byte limit, please select simpler route or other asset"); }
-  }
+  try { if (exceedsTxSizeLimit(compile(baseInstructions).serialize().length)) throw new RangeError(); }
+  catch { throw new Error("Complete swap + add transaction exceeds 1,232 byte limit, please select simpler route or other asset"); }
   const tip = await fetchBeamTipAddress({ signal });
   signal?.throwIfAborted();
-  const feeFit = await fitFeeCollections(connection, [feeInstructions], baseInstructions, compile,
-    tip ? beamTipInstruction(wallet, tip.address, tip.lamports) : undefined);
-  baseInstructions = feeFit.instructions;
   const withoutTip = compile(baseInstructions);
   try {
     if (exceedsTxSizeLimit(withoutTip.serialize().length)) throw new RangeError("encoding overruns Uint8Array");

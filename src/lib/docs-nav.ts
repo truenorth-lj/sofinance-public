@@ -27,7 +27,7 @@ export const DOCS_PAGES = [
     slug: "fees",
     label: "Fees",
     title: "Fees",
-    description: "Protocol fee (10 bps on conversions), network fees, and what is free.",
+    description: "Protocol fee (10 bps of the deposited token), network fees, and what is free.",
   },
   {
     href: DOCS_ROUTES.withdraw,

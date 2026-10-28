@@ -28,11 +28,13 @@ async function setup(page: Page, wallet: FakeWallet, options: { selectedStateGat
     const pathname = new URL(route.request().url()).pathname;
     calls.push(pathname);
     const body = route.request().method() === "POST" ? route.request().postDataJSON() : {};
+    const requested = String(Math.round(Number(body.amount ?? "1") * 1e6));
     const preview = { wallet: wallet.address, ...selection, poolId, positionAccount, inputDecimals: 6,
-      requested: String(Math.round(Number(body.amount ?? "1") * 1e6)), floorBps: body.floorBps ?? 9900,
+      requested, floorBps: body.floorBps ?? 9900,
       toleranceBps: body.toleranceBps ?? 100, expiresAt: Date.now() + 75000, passesFloor: false,
       spendA: "500000", spendB: "500000", minOutA: "495000", minOutB: "495000", decimalsA: 6, decimalsB: 6,
-      mintA, mintB, liquidity: "100", roundtripCostInput: null };
+      mintA, mintB, liquidity: "100", roundtripCostInput: null,
+      feeBps: 10, feeAmount: String(Math.floor(Number(requested) * 10 / 10_000)), feeWallet: randomAddress() };
     let value: unknown = {};
     if (pathname === "/api/wallet") value = { wallet: wallet.address, slot: 1, fetchedAt: Date.now(),
       positions: [{ ...state, symbolA: "AAA", symbolB: "BBB", feeTierBps: 1, tickCurrent: 0 }],
@@ -135,6 +137,8 @@ test("input enables Add after a lightweight preview; no automatic simulation or 
   expect(calls).not.toContain("/api/selected-preflight"); expect(calls).not.toContain("/api/selected-prepare");
   expect(wallet.ledger).toEqual([]);
   await expect(page.getByText("Checked when you add liquidity", { exact: true })).toBeVisible();
+  await expect(page.getByText("Protocol fee (0.10%)")).toBeVisible();
+  await expect(page.getByText("0.001 USDC", { exact: true })).toBeVisible();
   await page.screenshot({ path: test.info().outputPath("add-preview-desktop.png") });
 });
 

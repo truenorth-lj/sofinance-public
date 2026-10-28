@@ -10,27 +10,19 @@ plans, instructions and route ALTs in their existing atomic transactions.
 
 | Flow | Mechanism |
 | --- | --- |
-| Open / selected add, USDC deposit | Reserve 10 bps from the entire deposit once; explicit checked USDC transfer before swaps/add. Both parallel legs and sequential secondary legs use zero additional fee bps. Includes the same-mint portion. |
-| Open / selected add, leg output USDC | Jupiter v1 `platformFeeBps` and operator USDC `feeAccount`; output/threshold already include the fee. |
-| Open / selected add, non-USDC input/output | Reserve the input fee portion; compact direct ExactIn fee route delivers its entire USDC output directly to the operator ATA. Aggregate fees in the original deposit mint into one route; sequential secondary input fees have their own route. |
-| Non-USDC open / selected packet too large | Shared `fitFeeCollections` measures the actual complete candidate with the available Beam tip. Only conversion collections can be replaced by explicit input-asset transfers; USDC upfront/platform fees are never replaced. Final builder size checks still reject packets that cannot fit. |
-| Compound SPCX/SPCXx rebalance | Explicit checked input-token fee from isolated harvested yield. The measured USDC conversion envelope exceeds the packet limit; original pool route and receipt proof remain intact. |
-| Exit conversion | Jupiter ExactIn output USDC platform fee on each converted withdrawal asset, without reducing its input. |
+| Open / selected add | Reserve 10 bps from the entire deposit once (`depositFeePlan`); explicit checked transfer of the **input mint** (or native SOL) to the fee wallet’s ATA for that mint before swaps/add. Parallel legs and sequential secondary legs use zero additional fee bps. Includes the same-mint portion. |
+| Compound SPCX/SPCXx rebalance | Same 10 bps input-token transfer from isolated harvested yield (the reinvested swap input). Not a performance fee on LP earnings. |
+| Exit / withdraw to USDC | Jupiter ExactIn output USDC `platformFee` on each converted withdrawal asset, without reducing its input. |
+| Withdraw conversion to a non-USDC mint | Still reserves the input fee and may append a compact ExactIn USDC hop (`collectSwapFee`); `fitFeeCollections` falls back to an input-asset transfer if that hop makes the packet too large. |
+| Original-token withdraw | No protocol fee. |
 
-No swap means no converted-leg fee (except a USDC deposit, which pays upfront).
-Integer fees floor to atomic units; zero needs no instruction. The fee route pays
-USDC worth the reserved input portion, subject to its own market spread and route
-slippage, rather than promising an exact USDC valuation. It uses direct routing
-and maxAccounts=16 to avoid another intermediate hop/setup. Missing routes fail
-preparation; they never waive a fee or send collection separately. This is a
-compact candidate, not a proof of globally optimal economic routing.
-
-Before USDC collection, `feeAccountSetup` reads the operator USDC ATA. Only a
-missing ATA gets `createAssociatedTokenAccountIdempotent` with **user as payer**;
-existing invalid, uninitialized or frozen accounts fail closed. Fallback token
-fees similarly create their own missing recipient ATA. Native fallback requires
-a rent-funded operator wallet. Nothing silently skips collection. Upstream
-platform fee quotes must report the requested rate and a valid amount.
+Integer fees floor to atomic units; zero needs no instruction. Deposit flows never
+append a second Jupiter fee-to-USDC route. Missing recipient ATAs get
+`createAssociatedTokenAccountIdempotent` with **user as payer**; existing invalid,
+uninitialized or frozen accounts fail closed. Native SOL fees require a
+rent-funded operator wallet. Nothing silently skips collection. Upstream
+platform fee quotes (withdraw-to-USDC) must report the requested rate and a
+valid amount.
 
 [Jupiter v1 fee documentation](https://developers.jup.ag/docs/swap/v1/add-fees-to-swap)
 permits ExactIn fees in either mint of the pair. We use output USDC, avoiding
@@ -50,34 +42,26 @@ Limit: **1,232 bytes**.
 | Representative envelope | ATA exists | ATA missing |
 | --- | ---: | ---: |
 | Open, USDC upfront, two legs | 1283 | 1325 |
-| Open, SOL sequential + USDC conversion | 1400 | 1474 |
-| Open, single leg + USDC conversion | 1328 | 1402 |
-| Open, pool-token + USDC conversion | 1258 | 1332 |
-| Selected add, SOL + USDC conversion | 1283 | 1357 |
-| Selected add, pool-token + USDC conversion | 1141 | 1215 |
-| Compound + USDC conversion | 1390 | 1464 |
-| Compound input-token fallback | 1216 | 1258 |
+| Open, SOL sequential + input-token fee | 1258 | — (native transfer, no ATA) |
+| Open, single leg + input-token fee | 1250 | 1292 |
+| Open, pool-token + input-token fee | 1211 | 1253 |
+| Selected add, SOL + input-token fee | 1141 | — |
+| Selected add, pool-token + input-token fee | 1094 | 1136 |
+| Compound input-token fee | 1216 | 1258 |
 | Exit conversion, USDC platform fee | 480 | 621 |
 
-Open SOL sequential with native input fallback measures **1258 bytes** with tip.
-These are captured instruction shapes from the repo's open/compound fixtures,
-with synthetic fee-route keys and ALTs. Selected uses an increase-liquidity
-shape without the NFT signer; exit uses the conversion envelope without the
-separately prepared withdrawal. Fee-route shape deliberately models an independent
-compact Jupiter pool. They are offline size envelopes, not executable routes or
-live quotes, and do not prove every route for a flow is infeasible. Pool-token
-fee conversions remove native wrap/close and the same-mint swap, and use the same independent route envelope; actual token programs,
-setup, pool accounts, and route overlap alter size. A simpler production route
-may fit and open/selected will retain USDC collection when it does.
+These are captured instruction shapes from the repo's open/compound fixtures.
+Selected uses an increase-liquidity shape without the NFT signer; exit uses the
+conversion envelope without the separately prepared withdrawal. They are offline
+size envelopes, not executable routes or live quotes. Actual token programs,
+setup, pool accounts, and route overlap alter size. A missing compound fee ATA
+exceeds the limit with tip in this fixture: existing Beam selection may omit the
+tip if the complete untipped packet fits, otherwise preparation fails. Fee ATA
+creation is never omitted to squeeze in a transaction.
 
-The large captured two-leg USDC open itself exceeds the limit and must retry a
-smaller route or fail; it never changes to a non-USDC deposit fee. Compound's
-existing-ATA fallback fits with tip. A missing compound fee ATA exceeds the limit
-with tip in this fixture: existing Beam selection may omit the tip if the complete
-untipped packet fits, otherwise preparation fails. Fee ATA creation is never
-omitted to squeeze in a transaction. Open/selected likewise retain final packet
-checks after fallback. Thus **not every fee is USDC**: non-USDC compound and
-oversized non-USDC open/selected conversions are the explicit exceptions.
+Open / selected / compound **always** collect the protocol fee in the input
+asset. The previous extra Jupiter USDC fee hop is gone on those flows (that is
+what PR #120 was shrinking); withdraw-to-USDC still uses Jupiter `platformFee`.
 
 ## Compound routing assessment (report only)
 

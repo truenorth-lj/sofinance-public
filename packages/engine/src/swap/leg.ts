@@ -5,10 +5,10 @@ import { netSwapInput, type SwapFeeConfig } from "./fee";
 import { buildRoute, quoteRoute, type QuoteRoute } from "./jupiter";
 import { isPoolTokenPair, preferOwnPoolRoute, type OwnPool } from "./own-pool";
 
-/** A USDC deposit pays once, including the same-mint portion and secondary leg. */
-export function depositFeePlan(mint: string, amount: bigint, config: SwapFeeConfig) {
-  const upfront = mint === USDC_MINT ? netSwapInput(amount, config.bps) : { feeAmount: 0n, swapAmount: amount };
-  return { ...upfront, legBps: mint === USDC_MINT ? 0 : config.bps, secondaryBps: mint === USDC_MINT ? 0 : config.bps };
+/** Reserve the protocol fee once from the deposited input; swap legs are uncharged. */
+export function depositFeePlan(_mint: string, amount: bigint, config: SwapFeeConfig) {
+  const upfront = netSwapInput(amount, config.bps);
+  return { ...upfront, legBps: 0, secondaryBps: 0 };
 }
 
 export async function feeSwapLeg(input: {

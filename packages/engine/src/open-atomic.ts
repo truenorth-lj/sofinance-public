@@ -18,7 +18,7 @@ import { jupiterRelayActive } from "./jupiter/client";
 import { getOpenPositionQuoteBundle, type OpenSwapStrategy } from "./open-quote";
 import { TargetPoolProjectionError } from "./target-pool-projection";
 import { simulateAndVerifyOpenTransaction } from "./open-simulation";
-import { readSwapFeeConfig, collectSwapFee, fitFeeCollections, type FeeCollection, feeRecipientRent } from "./swap";
+import { readSwapFeeConfig, collectInputAssetFee, type FeeCollection, feeRecipientRent } from "./swap";
 import type { OpenRangeInput } from "./open-range";
 import { readOpenPoolState, type OpenPoolState, type OpenPositionSelection } from "./open-state";
 import type { OpenPositionSummary } from "./open-types";
@@ -147,7 +147,7 @@ async function buildOpenPositionAttempt(
     const routeInstructions = (await Promise.all(legs.map(async item => {
       if (!item.route) return [];
       const secondaryFee = item.inputMint !== state.inputMint && feeConfig.wallet && item.feeAmount > 0n
-        ? await collectSwapFee(connection, { payer, owner: wallet, recipient: feeConfig.wallet,
+        ? await collectInputAssetFee(connection, { payer, owner: wallet, recipient: feeConfig.wallet,
           amount: item.feeAmount, kind: "token", mint: new PublicKey(item.inputMint),
           source: new PublicKey(item.inputMint === state.mintA ? state.ataA : state.ataB),
           decimals: item.inputMint === state.mintA ? state.decimalsA : state.decimalsB,
@@ -175,7 +175,7 @@ async function buildOpenPositionAttempt(
       throw new Error("Protocol fee requires the selected input token account");
     }
     const feeInstructions = feeConfig.wallet && protocolFee > 0n
-      ? await collectSwapFee(connection, state.inputKind === "native"
+      ? await collectInputAssetFee(connection, state.inputKind === "native"
         ? { payer, owner: wallet, recipient: feeConfig.wallet, amount: protocolFee, kind: "native" }
         : {
           payer, owner: wallet, recipient: feeConfig.wallet, amount: protocolFee, kind: "token",
@@ -201,19 +201,13 @@ async function buildOpenPositionAttempt(
     const availableTables = [...new Map([...routeTables, ...feeTables, ...raydiumTables]
       .map((table) => [table.key.toBase58(), table])).values()];
     const simulationBlockhash = (await connection.getLatestBlockhash("confirmed")).blockhash;
-    let instructions = await compactAtaInstructions(connection, [
+    const instructions = await compactAtaInstructions(connection, [
       atomicComputeUnitLimitInstruction(),
       ...feeInstructions.instructions, ...wrapInstructions, ...createAtaInstructions, ...routeInstructions, ...raydiumInstructions, ...cleanupInstructions,
     ]);
-    if (!collections.some(collection => collection.input)) {
-      assertOpenTransactionSize(compileCompactOpenTransaction({ payerKey: payer, recentBlockhash: simulationBlockhash, instructions }, availableTables).transaction);
-    }
+    assertOpenTransactionSize(compileCompactOpenTransaction({ payerKey: payer, recentBlockhash: simulationBlockhash, instructions }, availableTables).transaction);
     // Beam tips are paid by the wallet; sponsored transactions never carry one.
     const tip = sponsored ? null : await fetchBeamTipAddress();
-    const feeFit = await fitFeeCollections(connection, collections, instructions,
-      ixs => compileCompactOpenTransaction({ payerKey: payer, recentBlockhash: simulationBlockhash, instructions: ixs }, availableTables).transaction,
-      tip ? beamTipInstruction(wallet, tip.address, tip.lamports) : undefined);
-    instructions = feeFit.instructions;
     const messageInput = { payerKey: payer, recentBlockhash: simulationBlockhash, instructions };
     const withoutTip = compileCompactOpenTransaction(messageInput, availableTables);
     assertOpenTransactionSize(withoutTip.transaction);

@@ -327,7 +327,7 @@ describe("open-position quote validation", () => {
     });
   });
 
-  it.each(["sequential", "sequential-b"] as const)("charges both %s swap legs in their own input mint", async strategy => {
+  it.each(["sequential", "sequential-b"] as const)("charges the %s deposit once in the input mint", async strategy => {
     const feeWallet = Keypair.generate().publicKey;
     vi.stubEnv("SOFINANCE_FEE_WALLET", feeWallet.toBase58());
     const snapshot = state({ inputMint: Keypair.generate().publicKey.toBase58(), price: "1", decimalsB: 6 });
@@ -347,12 +347,14 @@ describe("open-position quote validation", () => {
       { poolId, inputMint: snapshot.inputMint, inputKind: "token" }, "1", { preset: "standard" },
       9900, 100, 24, snapshot, strategy);
     expect(legs).toHaveLength(2);
+    expect(legs[0]!.feeAmount).toBe(1000n);
+    expect(legs[1]!.feeAmount).toBe(0n);
     for (const leg of legs) {
-      expect(leg.feeAmount).toBe(leg.outputMint === mintA ? 0n : leg.spend * 10n / 10000n);
       expect(BigInt(leg.route!.inAmount)).toBe(leg.spend - leg.feeAmount);
     }
-    expect(quote.swapFees!.map(fee => fee.mint)).toEqual(legs.map(leg => leg.inputMint));
-    expect(quote.feeAmount).toBe(legs[0]!.feeAmount.toString());
+    expect(quote.feeBps).toBe(10);
+    expect(quote.feeAmount).toBe("1000");
+    expect(quote.feeWallet).toBe(feeWallet.toBase58());
   });
 
   it("rejects combined impact above 5% even when each sequential route reports less than 5%", async () => {
@@ -376,7 +378,7 @@ describe("open-position quote validation", () => {
 
   describe("protocol swap fee", () => {
     const feeWallet = Keypair.generate().publicKey.toBase58();
-    it("uses output USDC platform fees and leaves resale probes uncharged", async () => {
+    it("takes 10 bps of the input token and leaves resale probes uncharged", async () => {
       vi.stubEnv("SOFINANCE_FEE_WALLET", feeWallet);
       vi.stubEnv("SOFINANCE_FEE_BPS", undefined);
       vi.mocked(readOpenPoolState).mockResolvedValue(state({ inputMint: mintB, inputDecimals: 9, inputKind: "token" }));
@@ -393,17 +395,17 @@ describe("open-position quote validation", () => {
         { poolId, inputMint: mintB, inputKind: "token" }, "0.1",
         { preset: "custom", minPrice: "1", maxPrice: "2" });
       expect(legs[0]?.spend).toBe(100_000_000n);
-      expect(legs[0]?.feeAmount).toBe(0n);
+      expect(legs[0]?.feeAmount).toBe(100_000n);
       expect(quote.feeBps).toBe(10);
-      expect(quote.feeAmount).toBe("0");
+      expect(quote.feeAmount).toBe("100000");
       expect(quote.feeWallet).toBe(feeWallet);
-      expect(quote.minOutA).toBe("100000");
-      expect(quotedAmounts(mintB, mintA)).toEqual([100_000_000n, 100_000_000n]);
-      expect(builtAmounts(mintB, mintA)).toEqual([100_000_000n]);
-      expect(quotedAmounts(mintA, mintB)).toEqual([100_000n]);
+      expect(quote.minOutA).toBe("99900");
+      expect(quotedAmounts(mintB, mintA)).toEqual([99_900_000n, 99_900_000n]);
+      expect(builtAmounts(mintB, mintA)).toEqual([99_900_000n]);
+      expect(quotedAmounts(mintA, mintB)).toEqual([99_900n]);
       expect(builtAmounts(mintA, mintB)).toEqual([]);
-      // Output-USDC platform fee on the deposit leg; resale quotes stay uncharged.
-      expect(vi.mocked(quoteRoute).mock.calls.find(call => call[0] === mintB)![6]).toBe(10);
+      // Deposit quotes have no Jupiter platform fee; resale quotes stay uncharged.
+      expect(vi.mocked(quoteRoute).mock.calls.find(call => call[0] === mintB)![6]).toBe(0);
       expect(vi.mocked(quoteRoute).mock.calls.find(call => call[0] === mintA)![6]).toBe(0);
     });
 

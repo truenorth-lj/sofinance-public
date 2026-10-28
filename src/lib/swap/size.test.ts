@@ -6,5 +6,6 @@ it("measures complete offline packets with Beam tips and snapshots fee overhead"
   console.table(sizes);
   expect(sizes).toMatchSnapshot();
   expect(sizes.filter(row => row.fits).every(row => row.serialized)).toBe(true);
-  expect(sizes.find(row => row.flow === "compound + USDC fee route / ATA exists")!.fits).toBe(false);
+  expect(sizes.find(row => row.flow === "compound input-token fee / ATA exists")!.fits).toBe(true);
+  expect(sizes.find(row => row.flow === "exit USDC platform fee / ATA exists")!.fits).toBe(true);
 });

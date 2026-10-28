@@ -234,6 +234,23 @@ describe("open-position signing and quote refresh", () => {
     expect(container.textContent).toContain("0.0078 SOL (≈ 1.17 USDC)");
     expect(container.textContent).toContain("0.00005 SOL (≈ 0.0075 USDC)");
   });
+  it("shows the protocol fee in the deposited input token", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (url.startsWith("/api/pool-range-apr")) return { ok: true, json: async () => payloadFixture() };
+      if (url === "/api/sol-usdc-price") return { ok: true, json: async () => ({ rate: 150 }) };
+      if (url.startsWith("/api/wallet")) return { ok: true, json: async () => ({ assets: [{
+        kind: "native", mint: NATIVE_SOL_MINT, decimals: 9, balance: "216474000", eligible: true,
+      }] }) };
+      if (url === "/api/open-quote") {
+        return { ok: true, json: async () => ({ ...quote(), feeBps: 10, feeAmount: "120000", feeWallet: "Fee111111111111111111111111111111111111111" }) };
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    }));
+    await mount();
+    expect(container.textContent).toContain("Protocol fee");
+    expect(container.textContent).toContain("0.00012 SOL");
+    expect(container.textContent).toContain("The protocol fee is 10 bps of the token you deposit");
+  });
   it("enables signing with a fresh quote and explains why Sign is disabled when it is not", async () => {
     await mount();
     expect(signButton().disabled).toBe(false);

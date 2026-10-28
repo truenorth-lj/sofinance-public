@@ -21,9 +21,10 @@ export async function feeAccountSetup(connection: Connection, payer: PublicKey, 
   return { address, instructions: info ? [] : [createAssociatedTokenAccountIdempotentInstruction(payer, address, recipient, mint, program)] };
 }
 
-/** Reserve the fee in the input asset, deliver its entire ExactIn output as USDC.
- * No separate signature/submission: callers include these instructions and ALTs
- * in their existing atomic transaction. Compound's audited fallback is explicit. */
+/** Deposit flows (open / selected add / compound) always use `collectInputAssetFee`.
+ * Withdraw conversion to a non-USDC mint still uses this USDC hop, with
+ * `fitFeeCollections` as the measured oversize fallback. USDC withdraw keeps
+ * Jupiter `platformFee` instead. */
 /** `receiveOnlyAccounts`: Jupiter's non-shared `route` instruction always marks
  * the user's output-mint ATA writable (userDestinationTokenAccount) even when
  * destinationTokenAccount redirects the output to the fee wallet. It is never
@@ -54,8 +55,9 @@ export async function collectSwapFee(connection: Connection, input: SwapFeeTrans
   return { instructions: [...setup.instructions, ...swapRouteInstructions([route], input.owner)], routes: [route], input, receiveOnlyAccounts: [userUsdc] };
 }
 
-/** Prefer USDC, then measured input-asset fallback. Includes the Beam tip in
- * the decision. Never split collection into a separately submitted transaction. */
+/** Prefer USDC, then measured input-asset fallback. Used by withdraw conversion
+ * when the extra hop does not fit. Includes the Beam tip in the decision.
+ * Never split collection into a separately submitted transaction. */
 export async function fitFeeCollections(connection: Connection, collections: FeeCollection[],
   instructions: TransactionInstruction[], compile: (ixs: TransactionInstruction[]) => VersionedTransaction,
   tip?: TransactionInstruction) {
@@ -83,7 +85,13 @@ export async function feeRecipientRent(connection: Connection, recipient: Public
   return rents.reduce((sum, rent) => sum + rent, 0n);
 }
 
-/** Non-USDC isolated compound's measured envelope cannot fit a second route. */
-export async function collectCompoundSwapFee(connection: Connection, input: SwapFeeTransferInput) {
+/** 10 bps of the deposited (or compound-swap) input, transferred to the fee
+ * wallet's ATA for that mint. Creates a missing ATA with the user as payer. */
+export async function collectInputAssetFee(connection: Connection, input: SwapFeeTransferInput) {
   return collectSwapFee(connection, input, true);
+}
+
+/** Compound rebalance uses the same input-asset transfer as open / selected add. */
+export async function collectCompoundSwapFee(connection: Connection, input: SwapFeeTransferInput) {
+  return collectInputAssetFee(connection, input);
 }

@@ -8,16 +8,26 @@ export default function DocsFeesPage() {
     <DocsArticle page={DOCS_PAGES[3]!}>
       <h2>SoFinance protocol fee</h2>
       <p>
-        When a flow swaps one token into another (opening a position, withdrawing to USDC, SOL
-        or another token, or compounding), SoFinance charges a{" "}
-        <strong className="font-medium text-cream">10 basis point (0.10%)</strong> protocol fee on
-        the amount being swapped. This also applies when compounding requires a swap.
+        SoFinance charges a{" "}
+        <strong className="font-medium text-cream">10 basis point (0.10%)</strong> protocol fee
+        in the token you deposit. There is no separate performance fee on compound or LP earnings.
       </p>
       <ul>
         <li>Currently a fixed 10 bps; any change will be announced in advance.</li>
         <li>
-          Charged <strong className="font-medium text-cream">only on the tokens that get swapped</strong>{" "}
-          — the withdraw preview shows it as a conversion fee.
+          Opening a position, adding to a position, and compounding take the fee{" "}
+          <strong className="font-medium text-cream">directly in the input token</strong> — 10 bps
+          of what you deposit (or of the harvested tokens being reinvested on compound). The
+          preview shows that amount in the same token.
+        </li>
+        <li>
+          If the protocol fee wallet does not yet have a token account for that mint, the
+          transaction creates it and{" "}
+          <strong className="font-medium text-cream">you pay the one-time account rent in SOL</strong>.
+        </li>
+        <li>
+          Withdrawing to USDC still collects the 10 bps as a Jupiter conversion fee in USDC.
+          The withdraw preview shows it as a conversion fee.
         </li>
         <li>
           If you withdraw as <strong className="font-medium text-cream">original tokens</strong>{" "}

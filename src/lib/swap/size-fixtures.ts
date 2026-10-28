@@ -48,34 +48,26 @@ export function feeSizeFixtures() {
   const usdcOpen = open.instructions.filter((_, i) => ![1, 2, 3, 9].includes(i));
   measure("open USDC upfront / ATA exists", open, [...usdcOpen, of.transfer]);
   measure("open USDC upfront / ATA missing", open, [...usdcOpen, of.create, of.transfer]);
-  measure("open SOL sequential + USDC fee route / ATA exists", open, [...open.instructions, of.route], [of.table]);
-  measure("open SOL sequential + USDC fee route / ATA missing", open, [...open.instructions, of.create, of.route], [of.table]);
-  measure("open single leg + USDC fee route / ATA exists", open, [...open.instructions.filter((_, i) => i !== 7), of.route], [of.table]);
-  measure("open single leg + USDC fee route / ATA missing", open, [...open.instructions.filter((_, i) => i !== 7), of.create, of.route], [of.table]);
-  measure("open SOL sequential input fallback", open, [...open.instructions, SystemProgram.transfer({ fromPubkey: open.payer, toPubkey: key(239), lamports: 1000 })]);
+  measure("open SOL sequential + input-token fee", open, [...open.instructions, SystemProgram.transfer({ fromPubkey: open.payer, toPubkey: key(239), lamports: 1000 })]);
+  measure("open single leg + input-token fee / ATA exists", open, [...open.instructions.filter((_, i) => i !== 7), of.transfer]);
+  measure("open single leg + input-token fee / ATA missing", open, [...open.instructions.filter((_, i) => i !== 7), of.create, of.transfer]);
   const tokenOpen = open.instructions.filter((_, i) => ![1, 2, 3, 7, 9].includes(i));
-  measure("open pool-token + USDC fee route / ATA exists", open, [...tokenOpen, of.route], [of.table]);
-  measure("open pool-token + USDC fee route / ATA missing", open, [...tokenOpen, of.create, of.route], [of.table]);
+  measure("open pool-token + input-token fee / ATA exists", open, [...tokenOpen, of.transfer]);
+  measure("open pool-token + input-token fee / ATA missing", open, [...tokenOpen, of.create, of.transfer]);
   // Selected add needs no NFT signer/mint, and uses the 42-byte increase form.
   const add = new TransactionInstruction({ programId: open.instructions[8]!.programId, data: Buffer.alloc(42),
     keys: open.instructions[8]!.keys.filter(k => !k.isSigner || k.pubkey.equals(open.payer)).slice(0, 16) });
   const selected = [...open.instructions.slice(0, 8), add, open.instructions[9]!];
-  measure("selected SOL + USDC fee route / ATA exists", open, [...selected, of.route], [of.table]);
-  measure("selected SOL + USDC fee route / ATA missing", open, [...selected, of.create, of.route], [of.table]);
+  measure("selected SOL + input-token fee", open, [...selected, SystemProgram.transfer({ fromPubkey: open.payer, toPubkey: key(239), lamports: 1000 })]);
   const tokenSelected = selected.filter((_, i) => ![1, 2, 3, 7, 9].includes(i));
-  measure("selected pool-token + USDC fee route / ATA exists", open, [...tokenSelected, of.route], [of.table]);
-  measure("selected pool-token + USDC fee route / ATA missing", open, [...tokenSelected, of.create, of.route], [of.table]);
+  measure("selected pool-token + input-token fee / ATA exists", open, [...tokenSelected, of.transfer]);
+  measure("selected pool-token + input-token fee / ATA missing", open, [...tokenSelected, of.create, of.transfer]);
   const compact = compound.instructions.map((ix, i) => [2, 4].includes(i)
     ? createInitializeAccountInstruction(ix.keys[0]!.pubkey, ix.keys[1]!.pubkey, compound.payer, ix.programId) : ix);
-  const cf = fee(compound);
-  // Remove existing input-token fee ATA setup. Existing input-token fallback
-  // also removes its creation, retaining the original checked transfer.
+  // Compound already collects as an input-token transfer (create ATA when missing).
   const existing = compact.filter((_, i) => i !== 7);
-  measure("compound input-token fallback / ATA exists", compound, existing);
-  measure("compound input-token fallback / ATA missing", compound, compact);
-  const noFee = compact.filter((_, i) => ![7, 8].includes(i));
-  measure("compound + USDC fee route / ATA exists", compound, [...noFee, cf.route], [cf.table]);
-  measure("compound + USDC fee route / ATA missing", compound, [...noFee, cf.create, cf.route], [cf.table]);
+  measure("compound input-token fee / ATA exists", compound, existing);
+  measure("compound input-token fee / ATA missing", compound, compact);
   measure("exit USDC platform fee / ATA exists", open, [open.instructions[0]!, of.route], [of.table]);
   measure("exit USDC platform fee / ATA missing", open, [open.instructions[0]!, of.create, of.route], [of.table]);
   return rows;
