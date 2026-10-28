@@ -54,7 +54,7 @@ async function render() {
 }
 async function advance(ms: number) { note("advance", ms); await act(async () => { await vi.advanceTimersByTimeAsync(ms); }); }
 async function command(name: string, fn: () => void) { note("command", name); await act(async () => fn()); }
-async function mount() { await render(); await advance(1); }
+async function mount() { await render(); await advance(1); await command("fixture selects native SOL", () => c.chooseAsset("native", NATIVE_SOL_MINT)); }
 async function ready() { await mount(); await command("amount .002", () => c.changeAmount("0.002")); await advance(450); }
 const calls = (path = "/api/open-quote") => fetchMock.mock.calls.filter(([url]) => url === path);
 async function visible(value: boolean) { hidden = !value; note("visibility", value); await act(async () => document.dispatchEvent(new Event("visibilitychange"))); }
