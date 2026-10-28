@@ -160,7 +160,7 @@ describe("one-approval batch cleanup", () => {
     seed(); chunkSize = 2;
     mocks.signAll.mockImplementation(async (txs: VersionedTransaction[]) => txs.map(tx => { tx.sign([testKeypair(1)]); return tx; }).reverse());
     await render(); await act(async () => { await controller.cleanupAll(); });
-    expect(broadcasts).toHaveLength(0); expect(controller.error).toContain("modified transaction content");
+    expect(broadcasts).toHaveLength(0); expect(controller.error).toMatch(/required instruction|blockhash|fee payer|required signer/);
   });
   it("prevents duplicate clicks from opening a second signing prompt", async () => {
     seed(); await render(); await act(async () => { await Promise.all([controller.cleanupAll(), controller.cleanupAll()]); }); await flush();

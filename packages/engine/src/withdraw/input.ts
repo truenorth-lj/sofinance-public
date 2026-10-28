@@ -10,5 +10,6 @@ export const withdrawPrepareSchema = withdrawRequestSchema.safeExtend({
     stage: z.literal("swap").optional(), tx1Signature: z.string().optional(),
     previous: z.custom<import("./types").WithdrawPrepared>(value => typeof value === "object" && value !== null).optional(),
 });
-export const withdrawSubmitSchema = z.object({ wallet: address, signedTransaction: z.string().max(2500), permit: z.string(),
+export const withdrawSubmitSchema = z.object({ wallet: address, signedTransaction: z.string().max(2500),
+    unsignedTransaction: z.string().max(2500).optional(), permit: z.string(),
     summary: z.record(z.string(), z.unknown()), confirmHighImpact: z.boolean().optional() });

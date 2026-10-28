@@ -20,7 +20,7 @@ export function classifyOpenError(error: unknown): OpenErrorClass {
   if (/blockhash expired|quote expired|sign token has expired|expired without landing/.test(message)) return "expired";
   if (/insufficient|not enough|no eligible/.test(message)) return "insufficient_funds";
   if (/simulation|slippage|price impact|price slippage/.test(message)) return "simulation_failed";
-  if (/permit|authorization|signature mismatch|payer mismatch|modified transaction/.test(message)) return "authorization";
+  if (/permit|authorization|signature mismatch|payer mismatch|modified transaction|required instruction/.test(message)) return "authorization";
   if (/timeout|network|failed to fetch|429|socket hang up|unavailable/.test(message)) return "network";
   if (/failed on-chain/.test(message)) return "onchain_failed";
   if (/unconfirmed|manual verification|unable to verify/.test(message)) return "unconfirmed";

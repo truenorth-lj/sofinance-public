@@ -11,7 +11,10 @@ const backend = vi.hoisted(() => ({ selected: vi.fn(), compound: vi.fn(), open: 
   selectedState: vi.fn(), compoundState: vi.fn(), openState: vi.fn(), selectedSim: vi.fn(), compoundSim: vi.fn(), openSim: vi.fn(), withdrawSim: vi.fn(), rpc: vi.fn(), send: vi.fn(), height: vi.fn(), status: vi.fn() }));
 vi.mock("@/lib/selected-atomic", () => ({ buildAndSimulateSelectedZap: backend.selected }));
 vi.mock("@sofinance/engine/compound-atomic", () => ({ buildAndSimulateCompound: backend.compound }));
-vi.mock("@sofinance/engine/open-atomic", () => ({ buildAndSimulateOpenPosition: backend.open }));
+vi.mock("@sofinance/engine/open-atomic", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@sofinance/engine/open-atomic")>()),
+  buildAndSimulateOpenPosition: backend.open,
+}));
 vi.mock("@sofinance/engine/withdraw/build", () => ({ buildWithdraw: backend.withdraw, simulateWithdraw: backend.withdrawSim }));
 vi.mock("@sofinance/engine/selected-state", () => ({ readSelectedPositionState: backend.selectedState }));
 vi.mock("@sofinance/engine/compound-state", () => ({ readCompoundPositionState: backend.compoundState }));

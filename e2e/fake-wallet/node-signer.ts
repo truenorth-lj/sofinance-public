@@ -11,10 +11,12 @@ export type WalletMode =
   | "tweak-bytes"       // wallet changes bytes WITHOUT changing the message length (e.g. an instruction's data)
   | "no-signature"      // wallet returns the transaction without filling its signature slot (all zeros)
   | "lighthouse"        // wallet appends a Lighthouse-style guard instruction (what Phantom/Solflare do on mainnet)
+  | "priority-fee"      // wallet raises ComputeBudget CU price (Phantom congestion fee rewrite)
   | "slow";             // delays the answer (exercises the "Waiting for wallet signature" state)
 
-export const LIGHTHOUSE_PROGRAM = "L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95";
+export const LIGHTHOUSE_PROGRAM = "L2TExMFKdjpN9kozasaurPPf4nCVfRTb7cTZo5GsqqY";
 export const MEMO_PROGRAM = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr";
+export const COMPUTE_BUDGET_PROGRAM = "ComputeBudget111111111111111111111111111111";
 
 export type LedgerEntry = {
   kind: "signTransaction" | "signMessage";
@@ -88,6 +90,7 @@ export class FakeWallet {
       ix.data = data;
     }
     if (this.mode === "lighthouse") appendInstruction(tx, LIGHTHOUSE_PROGRAM, Buffer.from([1, 0, 0, 0]));
+    if (this.mode === "priority-fee") appendInstruction(tx, COMPUTE_BUDGET_PROGRAM, setComputeUnitPrice(2_500_000n));
 
     const me = this.address;
     const index = tx.message.staticAccountKeys.findIndex((key) => key.toBase58() === me);
@@ -99,7 +102,7 @@ export class FakeWallet {
       this.ledger.push({ ...base, outcome: "signed", signerIndex: index, programIds: programIdsOf(tx), messageBytes: tx.message.serialize().length });
       return Buffer.from(tx.serialize()).toString("base64");
     }
-    // Fill ONLY our slot: keeps any server-held partial signature (position NFT mint on open-position).
+    // Fill ONLY our slot: keeps any extra signature already on the tx (MCP open-position fallback).
     tx.signatures[index] = nacl.sign.detached(tx.message.serialize(), this.#secretKey);
     this.ledger.push({ ...base, outcome: "signed", signerIndex: index, programIds: programIdsOf(tx), messageBytes: tx.message.serialize().length });
     return Buffer.from(tx.serialize()).toString("base64");
@@ -125,6 +128,13 @@ export class FakeWallet {
 function programIdsOf(tx: VersionedTransaction): string[] {
   const keys = tx.message.staticAccountKeys;
   return [...new Set(tx.message.compiledInstructions.map((ix) => keys[ix.programIdIndex]?.toBase58() ?? "?"))];
+}
+
+function setComputeUnitPrice(microLamports: bigint) {
+  const data = Buffer.alloc(9);
+  data[0] = 3;
+  data.writeBigUInt64LE(microLamports, 1);
+  return data;
 }
 
 /** Append a program-only instruction to a v0 message that has no lookup tables (keeps every index stable). */

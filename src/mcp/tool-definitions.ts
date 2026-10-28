@@ -2,7 +2,7 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 const TOOL_DEFINITIONS = {
     prepare_withdraw: { name: "prepare_withdraw", description: "Prepare a fully simulated position withdrawal with a sign link. Default receive USDC; original keeps position tokens. Supply percent (1–100) OR targetUSDC. Impact above 5% requires confirmHighImpact. For two transactions, finalize the first then call again with stage=swap, tx1Signature and previous (the complete first result).", inputSchema: { type: "object" as const, properties: { wallet: { type: "string" }, positionMint: { type: "string" }, percent: { type: "number", minimum: 1, maximum: 100 }, targetUSDC: { type: "number" }, receive: { type: "string", enum: ["usdc", "token", "original"] }, outputMint: { type: "string" }, confirmHighImpact: { type: "boolean" }, stage: { type: "string", enum: ["swap"] }, tx1Signature: { type: "string" }, previous: { type: "object" } }, oneOf: [{ required: ["percent"] }, { required: ["targetUSDC"] }], required: ["wallet", "positionMint"] } },
-    submit_withdraw: { name: "submit_withdraw", description: "Submit a wallet signed withdrawal. Verifies its HMAC permit and signature, checks expiry, and re-simulates before broadcast. Supply the unchanged summary and permit from prepare_withdraw. High impact requires confirmHighImpact=true.", inputSchema: { type: "object" as const, properties: { wallet: { type: "string" }, signedTransaction: { type: "string" }, permit: { type: "string" }, summary: { type: "object" }, confirmHighImpact: { type: "boolean" } }, required: ["wallet", "signedTransaction", "permit", "summary"] } },
+    submit_withdraw: { name: "submit_withdraw", description: "Submit a wallet signed withdrawal. Verifies its HMAC permit and signature, checks expiry, and re-simulates before broadcast. Supply the unchanged summary and permit from prepare_withdraw. If the wallet appended extra instructions (e.g. Phantom Lighthouse), also pass unsignedTransaction from prepare_withdraw. High impact requires confirmHighImpact=true.", inputSchema: { type: "object" as const, properties: { wallet: { type: "string" }, signedTransaction: { type: "string" }, unsignedTransaction: { type: "string" }, permit: { type: "string" }, summary: { type: "object" }, confirmHighImpact: { type: "boolean" } }, required: ["wallet", "signedTransaction", "permit", "summary"] } },
     get_position_performance: {
         name: "get_position_performance",
         description: "Compute holding-period return and realized fee APR for a Raydium CLMM position NFT from finalized history and current on-chain state (not Raydium pool 24h feeApr). Prefer token-native metrics: for same-asset RWA wrap pairs (e.g. SPCXx/SPCX) report TE in the plain/base ticker using current tick mid (1.0001^tick×10^(decA−decB)), plus raw A/B inventory, holdingDays, feeOnlyAprPct and annualizedReturnPct (HPR×365/days; feesEarned/deposited×365/days). USD is optional/secondary (Jupiter Price v3 / Raydium stable-leg, labeled current — not historical). Discovers open/increase/decrease txs via personal-position signatures + Anchor events + current equity. After submitting a position transaction, use refreshHistory=true and historyAfterSignatures to require its finalized history. Read-only.",
@@ -254,6 +254,10 @@ const TOOL_DEFINITIONS = {
                     type: "string",
                     description: "Base64-encoded signed transaction",
                 },
+                unsignedTransaction: {
+                    type: "string",
+                    description: "Base64 prepared transaction from prepare_transaction. Pass this when the wallet rewrote the message (Phantom Lighthouse / ComputeBudget).",
+                },
                 permit: {
                     type: "string",
                     description: "HMAC permit from prepare_transaction",
@@ -336,6 +340,10 @@ const TOOL_DEFINITIONS = {
                     type: "string",
                     description: "Base64-encoded signed transaction",
                 },
+                unsignedTransaction: {
+                    type: "string",
+                    description: "Base64 prepared transaction from prepare_compound_transaction. Pass this when the wallet rewrote the message (Phantom Lighthouse / ComputeBudget).",
+                },
                 permit: {
                     type: "string",
                     description: "HMAC permit from prepare_compound_transaction",
@@ -387,7 +395,7 @@ const TOOL_DEFINITIONS = {
     },
     prepare_open_position: {
         name: "prepare_open_position",
-        description: "Prepare an unsigned, fully-simulated transaction that opens a new CLMM position. Returns base64 tx (already partial-signed by the ephemeral NFT mint; wallet signs as fee payer), HMAC permit, summary, and signUrl. Server never holds keys after prepare; the mint secret is discarded. 1232-byte limit, fresh blockhash, full simulation. After signing, call submit_open_position (not submit_signed_transaction — this tx has two required signers).",
+        description: "Prepare an unsigned, fully-simulated transaction that opens a new CLMM position. Prefer passing nftMint from an agent-held Keypair so the server never signs: wallet signs first, then add the mint signature on the wallet-returned tx and call submit_open_position. Omitting nftMint uses an MCP-ONLY server partial-sign so /app/sign can submit (Phantom may still warn). HMAC permit, summary, signUrl. 1232-byte limit, fresh blockhash, full simulation. Not submit_signed_transaction — this tx has two required signers.",
         inputSchema: {
             type: "object",
             properties: {
@@ -405,17 +413,22 @@ const TOOL_DEFINITIONS = {
                 maxPrice: { type: "string" },
                 resaleFloorBps: { type: "number", default: 9900 },
                 slippageToleranceBps: { type: "number", default: 100 },
+                nftMint: {
+                    type: "string",
+                    description: "Client-generated position NFT mint public key. Prefer this so the server never signs. Omit only for the MCP signUrl fallback.",
+                },
             },
             required: ["wallet", "poolId", "inputMint", "inputKind", "amount"],
         },
     },
     submit_open_position: {
         name: "submit_open_position",
-        description: "Submit a signed open-position transaction. Re-verifies HMAC permit, re-reads pool/balances, re-simulates (sigVerify true, including the NFT-mint partial signature), then broadcasts. Pass signedTransaction plus permit, wallet, and the complete summary from prepare_open_position, unchanged. Returns signature and the new positionMint.",
+        description: "Submit a signed open-position transaction. Re-verifies HMAC permit, re-reads pool/balances, re-simulates (sigVerify true, including the NFT-mint partial signature), then broadcasts. Pass signedTransaction plus permit, wallet, and the complete summary from prepare_open_position, unchanged. If the wallet rewrote the message (Phantom Lighthouse / ComputeBudget), also pass unsignedTransaction from prepare. Returns signature and the new positionMint.",
         inputSchema: {
             type: "object",
             properties: {
                 signedTransaction: { type: "string", description: "Base64-encoded signed transaction" },
+                unsignedTransaction: { type: "string", description: "Base64 prepared transaction from prepare_open_position. Pass this when the wallet rewrote the message (Phantom Lighthouse / ComputeBudget)." },
                 permit: { type: "string", description: "HMAC permit from prepare_open_position" },
                 wallet: { type: "string", description: "Wallet public key" },
                 summary: {

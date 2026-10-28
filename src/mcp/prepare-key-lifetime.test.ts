@@ -3,7 +3,10 @@ vi.mock("server-only", () => ({}));
 const backend = vi.hoisted(() => ({ build: vi.fn(), secret: vi.fn() }));
 vi.mock("@/lib/selected-atomic", () => ({ buildAndSimulateSelectedZap: backend.build }));
 vi.mock("@sofinance/engine/compound-atomic", () => ({ buildAndSimulateCompound: backend.build }));
-vi.mock("@sofinance/engine/open-atomic", () => ({ buildAndSimulateOpenPosition: backend.build }));
+vi.mock("@sofinance/engine/open-atomic", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@sofinance/engine/open-atomic")>()),
+  buildAndSimulateOpenPosition: backend.build,
+}));
 vi.mock("@sofinance/engine/config/server-env", async original => ({
   ...await original<typeof import("@sofinance/engine/config/server-env")>(), getSigningSecret: backend.secret,
 }));

@@ -177,7 +177,7 @@ export function HomepagePoolsTable() {
           id="homepage-pools-heading"
           className="max-w-3xl text-[clamp(1.7rem,3.4vw,2.75rem)] font-medium leading-[1.08] tracking-[-0.035em]"
         >
-          Same-asset xStock pools, ranked by TVL
+          Listed CLMM pools, ranked by TVL
         </h2>
       </div>
 

@@ -9,16 +9,20 @@ import type { OpenPositionSummary } from "@sofinance/engine/open-types";
 export async function POST(request: Request) {
   try {
     const body = await request.json() as {
-      signedTransaction?: string; permit?: string; wallet?: string; summary?: OpenPositionSummary; sourceRef?: unknown;
+      signedTransaction?: string; unsignedTransaction?: string; permit?: string;
+      wallet?: string; summary?: OpenPositionSummary; sourceRef?: unknown;
     };
     const wallet = parseWallet(body.wallet);
     if (typeof body.signedTransaction !== "string" || body.signedTransaction.length > 2_500 ||
+      (body.unsignedTransaction !== undefined && (typeof body.unsignedTransaction !== "string" ||
+        body.unsignedTransaction.length > 2_500)) ||
       typeof body.permit !== "string" || !body.summary || typeof body.summary !== "object") {
       throw new Error("Invalid or expired signed open-position input");
     }
     VersionedTransaction.deserialize(Buffer.from(body.signedTransaction, "base64"));
     const result = await submitOpenPositionFromParts({
       signedTransaction: body.signedTransaction,
+      unsignedTransaction: body.unsignedTransaction,
       permit: body.permit,
       wallet,
       summary: body.summary,

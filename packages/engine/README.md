@@ -39,7 +39,9 @@ Every top-level builder also accepts an injected `connection`.
 `buildAndSimulateOpenPosition(..., { feePayer })`, `buildAndSimulateCompound(wallet, mint, sources, { feePayer })`
 and `buildWithdraw(request, preview, { feePayer })`:
 
-- owner mode (omit `feePayer`, or pass the wallet): unchanged, byte-for-byte (tests + golden snapshots);
+`buildAndSimulateOpenPosition` requires a client-supplied `nftMint` public key (Raydium `getEphemeralSigners`). It returns a fully unsigned v0 transaction; the host must not locally sign the mint. The wallet signs first, then the client (or MCP agent) adds the mint signature on the wallet-returned message (extra Lighthouse / compute-budget instructions are allowed).
+
+- owner mode (omit `feePayer`, or pass the wallet): unchanged instruction bytes aside from a zero NFT-mint signature slot (tests + golden snapshots);
 - sponsored mode: the fee payer is the message payer and first signer, funds every new account
   (ATAs, Raydium position NFT/account via `open_position_with_token22_nft` payer, isolated accounts,
   fee-recipient ATA), the wallet's SOL is required not to move (`maxSolDebitLamports = 0`, zero-SOL wallets allowed),

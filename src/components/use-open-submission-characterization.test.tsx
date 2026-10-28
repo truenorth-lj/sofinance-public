@@ -2,9 +2,9 @@
 import { act, Activity, createElement, StrictMode, Suspense, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { VersionedTransaction } from "@solana/web3.js";
+import { PublicKey, VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
-import { useOpenPositionController, type OpenPositionPair } from "./use-open-position-controller";
+import { OPEN_PREPARE_TIMEOUT_MS, useOpenPositionController, type OpenPositionPair } from "./use-open-position-controller";
 import { NATIVE_SOL_MINT } from "@sofinance/engine/ids";
 import { openAttemptKey } from "@/lib/open-attempt";
 import { resetJupiterBrowserGate } from "@/lib/jupiter/browser-relay";
@@ -27,9 +27,14 @@ let preparedValue: ReturnType<typeof prepared>, chainStatus: string, writeMode: 
 let waits: Array<ReturnType<typeof deferred<VersionedTransaction>>>;
 const note = (event: string, ...data: unknown[]) => ledger.push([Date.now(), event, ...data]);
 function deferred<T>() { let resolve!: (value: T) => void, reject!: (error: unknown) => void; const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; }
-function prepared() {
-  const tx = buildTransaction({ payer, extraSigners: [nft], signWith: [nft] });
-  const summary = openSummaryFixture({ wallet, nftMint: nft.publicKey.toBase58(), blockhash: tx.message.recentBlockhash });
+function prepared(nftMint = nft.publicKey, blockhash?: string) {
+  const tx = buildTransaction({
+    payer,
+    extraSigners: [{ publicKey: nftMint, secretKey: new Uint8Array(64) } as typeof nft],
+    signWith: [],
+    ...(blockhash ? { blockhash } : {}),
+  });
+  const summary = openSummaryFixture({ wallet, nftMint: nftMint.toBase58(), blockhash: tx.message.recentBlockhash });
   return { unsignedTransaction: toBase64(tx), permit: "synthetic-permit", summary: { ...summary, poolId: pair.poolAddress,
     quote: { ...summary.quote, poolId: pair.poolAddress, inputMint: NATIVE_SOL_MINT, inputKind: "native" as "native" | "token", inputDecimals: 9 } } };
 }
@@ -106,7 +111,31 @@ beforeEach(() => {
     let response: Response;
     if (url.startsWith("/api/wallet?")) response = scanError ? Response.json({ error: "Synthetic scan failure" }, { status: 500 }) : Response.json({ assets: [{ kind: "native", mint: NATIVE_SOL_MINT, decimals: 9, balance: "1000000000", eligible: true }] });
     else if (url === "/api/open-quote") response = Response.json(preparedValue.summary.quote);
-    else if (url === "/api/open-prepare") response = await prepareReply();
+    else if (url === "/api/open-prepare") {
+      if (typeof body.nftMint === "string") {
+        try {
+          const mint = new PublicKey(body.nftMint);
+          const current = VersionedTransaction.deserialize(Buffer.from(preparedValue.unsignedTransaction, "base64"));
+          const payerOk = current.message.staticAccountKeys[0]?.equals(payer.publicKey);
+          const nftMismatch = preparedValue.summary.nftMint === pair.mintA;
+          if (payerOk && !nftMismatch) {
+            const next = prepared(mint, current.message.recentBlockhash);
+            preparedValue = {
+              unsignedTransaction: next.unsignedTransaction,
+              permit: preparedValue.permit,
+              summary: {
+                ...preparedValue.summary,
+                nftMint: mint.toBase58(),
+                blockhash: preparedValue.summary.blockhash === current.message.recentBlockhash
+                  ? next.summary.blockhash
+                  : preparedValue.summary.blockhash,
+              },
+            };
+          }
+        } catch { /* Keep mutated bytes so mismatch cases still reject. */ }
+      }
+      response = await prepareReply();
+    }
     else if (url === "/api/open-broadcast") response = await broadcastReply(init!);
     else if (url === "/api/open-status") response = Response.json({ signature: body.attempt.signature, status: chainStatus });
     else throw new Error(`Unexpected request: ${url}`);
@@ -118,7 +147,7 @@ afterEach(async context => {
   try {
     await act(async () => root.unmount());
     await act(async () => { for (const wait of waits) wait.reject(new Error("Owned teardown")); });
-    await advance(31000); note("cleanup", { timers: vi.getTimerCount(), signs: boundary.sign.mock.calls.length, prepares: calls("/api/open-prepare").length, broadcasts: calls("/api/open-broadcast").length,
+    await advance(OPEN_PREPARE_TIMEOUT_MS + 1_000); note("cleanup", { timers: vi.getTimerCount(), signs: boundary.sign.mock.calls.length, prepares: calls("/api/open-prepare").length, broadcasts: calls("/api/open-broadcast").length,
       storage: Object.fromEntries(Array.from({ length: storage.length }, (_, i) => { const key = storage.key(i)!; return [key, storage.getItem(key)]; })) });
     expect(vi.getTimerCount()).toBe(0);
   } finally {
@@ -134,9 +163,9 @@ describe("Open submission through real facade", () => {
     const body = JSON.parse(String(calls("/api/open-broadcast")[0]![1].body));
     const tx = VersionedTransaction.deserialize(Buffer.from(body.signedTransaction, "base64"));
     const original = VersionedTransaction.deserialize(Buffer.from(preparedValue.unsignedTransaction, "base64"));
-    expect(tx.message.serialize()).toEqual(original.message.serialize()); expect(tx.signatures[1]).toEqual(original.signatures[1]);
+    expect(tx.message.serialize()).toEqual(original.message.serialize()); expect(tx.signatures[1]?.some((byte: number) => byte !== 0)).toBe(true);
     const signature = bs58.encode(tx.signatures[0]!); expect(c.signature).toBe(signature);
-    expect(body).toEqual({ signedTransaction: toBase64(tx), permit: preparedValue.permit, wallet, summary: preparedValue.summary, sourceRef: "synthetic-source" });
+    expect(body).toEqual({ signedTransaction: toBase64(tx), unsignedTransaction: preparedValue.unsignedTransaction, permit: preparedValue.permit, wallet, summary: preparedValue.summary, sourceRef: "synthetic-source" });
     const stored = JSON.parse(storage.getItem(openAttemptKey(wallet))!); expect(stored.signature).toBe(signature);
     const writeAt = ledger.findIndex(x => x[1] === "storage-write" && x[2] === openAttemptKey(wallet));
     const readAt = ledger.findIndex((x, i) => i > writeAt && x[1] === "storage-read" && x[2] === openAttemptKey(wallet) && x[3] === JSON.stringify(stored));
@@ -144,7 +173,7 @@ describe("Open submission through real facade", () => {
     expect(writeAt).toBeGreaterThan(-1); expect(readAt).toBeGreaterThan(writeAt); expect(sendAt).toBeGreaterThan(readAt);
     expect(c.submitStage).toBe("pending"); expect(c.busy).toBe(true); expect(c.beamStatus.landedLabel).toBeNull(); expect(boundary.once).not.toHaveBeenCalled();
     chainStatus = "confirmed"; await advance(1); expect(c.submitStage).toBe("confirmed"); expect(c.beamStatus.landedLabel).toBe("Beam landed");
-    expect(boundary.notify).toHaveBeenCalledWith(nft.publicKey.toBase58()); expect(boundary.once).toHaveBeenCalledWith(`open-ok:${signature}`, "open_position_success", { pool: pair.poolAddress, pair: "AAA/BBB" });
+    expect(boundary.notify).toHaveBeenCalledWith(preparedValue.summary.nftMint); expect(boundary.once).toHaveBeenCalledWith(`open-ok:${signature}`, "open_position_success", { pool: pair.poolAddress, pair: "AAA/BBB" });
   });
   it("keeps preparing and wallet phases observable and blocks duplicate retained callbacks synchronously", async () => {
     await ready(); const wait = deferred<Response>(); prepareReply = () => wait.promise; const retained = c.signAndSend;
@@ -183,19 +212,19 @@ describe("Open submission through real facade", () => {
   });
   it.each(["changed-message", "zero-payer", "missing-nft", "count"])("rejects wallet %s before storage or broadcast", async bad => {
     await ready();
-    if (bad === "missing-nft") { const tx = VersionedTransaction.deserialize(Buffer.from(preparedValue.unsignedTransaction, "base64")); tx.signatures[1] = new Uint8Array(64); preparedValue.unsignedTransaction = toBase64(tx); }
     boundary.sign.mockImplementation(async (tx: VersionedTransaction) => { const result = signed(tx);
       if (bad === "changed-message") result.message.recentBlockhash = pair.mintA;
       if (bad === "zero-payer") result.signatures[0] = new Uint8Array(64);
-      if (bad === "count") result.signatures.pop();
+      if (bad === "missing-nft") return buildTransaction({ payer, signWith: [payer] });
+      if (bad === "count") result.signatures = [];
       note("sign-output", toBase64(result)); return result;
     });
     await send(); expectNoSend(); expect(c.error).not.toBe(""); expect(c.busy).toBe(false);
   });
-  it("restores an NFT partial signature dropped by the wallet", async () => {
+  it("adds the NFT mint signature after the wallet drops that slot", async () => {
     await ready(); boundary.sign.mockImplementation(async (tx: VersionedTransaction) => { const result = signed(tx); result.signatures[1] = new Uint8Array(64); note("sign-output", toBase64(result)); return result; });
     await send(); const body = JSON.parse(calls("/api/open-broadcast")[0]![1].body); const tx = VersionedTransaction.deserialize(Buffer.from(body.signedTransaction, "base64"));
-    expect(tx.signatures[1]).toEqual(VersionedTransaction.deserialize(Buffer.from(preparedValue.unsignedTransaction, "base64")).signatures[1]); expect(c.submitStage).toBe("pending");
+    expect(tx.signatures[1]?.some((byte: number) => byte !== 0)).toBe(true); expect(body.unsignedTransaction).toBe(preparedValue.unsignedTransaction); expect(c.submitStage).toBe("pending");
   });
   it.each(["throw", "drop"] as const)("does not send on storage %s and reports failure before finally unlock", async bad => {
     await ready(); writeMode = bad; await send(); expectNoSend(); expect(c.error).toContain(bad === "throw" ? "storage denied" : "Unable to save"); expect(c.busy).toBe(false); expect(boundary.growth).toHaveBeenLastCalledWith("open_position_failed", expect.any(Object));
@@ -250,7 +279,7 @@ describe("Open submission through real facade", () => {
   it("does not display previous Beam metadata after another attempt is confirmed", async () => {
     await ready(); await send(); chainStatus = "confirmed"; await advance(1); expect(c.beamStatus.landedLabel).toBe("Beam landed");
     await command("new position", () => c.createAnother()); await advance(450);
-    const tx = buildTransaction({ payer, extraSigners: [nft], signWith: [nft], blockhash: pair.mintA });
+    const tx = buildTransaction({ payer, extraSigners: [nft], signWith: [], blockhash: pair.mintA });
     preparedValue.unsignedTransaction = toBase64(tx); preparedValue.summary.blockhash = tx.message.recentBlockhash;
     broadcastReply = async () => { throw new Error("lost response"); }; chainStatus = "pending"; await send();
     chainStatus = "confirmed"; await advance(1); expect(c.submitStage).toBe("confirmed"); expect(c.beamStatus.landedLabel).toBeNull();

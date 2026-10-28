@@ -5,6 +5,7 @@ import { publicErrorCode, CompoundSendError, sanitizePublicError } from "../publ
 import { AMOUNT_TOO_SMALL_CODE, JUPITER_CLIENT_ERROR_CODE } from "../selected-amount-error";
 import { isSentryEnabled } from "./runtime";
 import { pathnameFromUrl, routeFromRequest, routeFromTransaction } from "./route";
+import { logSafeError } from "../safe-error-log";
 
 export function sentryErrorClass(error: unknown): string {
   if (error instanceof CompoundSendError && error.cause !== undefined) {
@@ -109,6 +110,23 @@ export type QuoteSettleFailureExtras = {
   rounds?: number;
   quotePath?: string;
 };
+
+/** Phantom-modified tx failed the cheap sanity check. Program ids only — no wallet, no secrets. */
+export function captureWalletReturnedTxFailure(error: unknown): void {
+  try {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!/Wallet removed or changed a required instruction/.test(message)) return;
+    logSafeError(message, error);
+    if (!isSentryEnabled()) return;
+    Sentry.withScope((scope) => {
+      scope.setTag("error_class", "wallet_returned_tx_mismatch");
+      scope.setExtra("diagnostic", message);
+      Sentry.captureException(error instanceof Error ? error : new Error(message));
+    });
+  } catch {
+    // Monitoring must never fail the flow.
+  }
+}
 
 /** Open-position quote sizing never settled. Pair/amount/range only — no wallet, no secrets. */
 export function captureQuoteSettleFailure(error: unknown, extras: QuoteSettleFailureExtras = {}): void {

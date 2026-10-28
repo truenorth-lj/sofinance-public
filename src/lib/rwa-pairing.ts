@@ -19,6 +19,9 @@
  *    but are not required.
  * 4. **Secondary — Backed xStocks whitelist**: a mint on the Backed xStocks public assets list
  *    (Solana deployment address) also qualifies even if Jupiter tags lag.
+ * 5. **Curated CLMM allowlist** (sibling of 1–4, not a wrap pair): specific Raydium CLMM
+ *    pool ids in `rwa-allowlist.ts` (currently USDC/USDT). Spam wrap-of-stable pools stay
+ *    excluded by rule 2.
  *
  * Name / string heuristics are **not** used as the primary filter (they previously matched
  * unrelated meme tickers that collided on the bare symbol).
@@ -266,7 +269,7 @@ export const FEE_APR_ESTIMATE_LABEL =
   "Estimated fee APR = (24h pool fees USD / TVL USD) × 365 × 100. Not LP return; ignores IL, range, and rewards.";
 
 export const PAIRING_RULE_SUMMARY =
-  "FOOx/FOO (or FOO-x / xFOO) symbol wrap + both mints Jupiter-tagged (stocks|rwa) or on Backed xStocks whitelist; stables excluded.";
+  "FOOx/FOO (or FOO-x / xFOO) symbol wrap + both mints Jupiter-tagged (stocks|rwa) or on Backed xStocks whitelist; stables excluded except the curated USDC/USDT CLMM allowlist.";
 
 export function isToken2022Program(programId?: string | null): boolean {
   return (programId || "") === TOKEN_2022_PROGRAM_ID;

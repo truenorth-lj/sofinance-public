@@ -11,6 +11,7 @@ import {
   getPoolActivitySchema,
   getPositionRangeStatusSchema,
   quoteOpenPositionSchema,
+  prepareOpenPositionSchema,
   submitOpenPositionSchema,
 } from "./schemas";
 
@@ -382,6 +383,24 @@ describe("quoteOpenPositionSchema", () => {
 
   it("rejects an invalid amount", () => {
     expect(quoteOpenPositionSchema.safeParse({ ...validInput, amount: "nope" }).success).toBe(false);
+  });
+});
+
+describe("prepareOpenPositionSchema", () => {
+  const validInput = {
+    wallet: "11111111111111111111111111111111",
+    poolId: "So11111111111111111111111111111111111111112",
+    inputMint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+    inputKind: "token" as const,
+    amount: "1.5",
+  };
+
+  it("accepts an optional nftMint and still prepares without one", () => {
+    expect(prepareOpenPositionSchema.parse(validInput).nftMint).toBeUndefined();
+    expect(prepareOpenPositionSchema.parse({
+      ...validInput,
+      nftMint: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+    }).nftMint).toBe("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
   });
 });
 

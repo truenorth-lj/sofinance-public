@@ -25,6 +25,7 @@ import { SelectedNoRouteError } from "../selected-no-route";
 import {
   captureApiRouteError,
   captureQuoteSettleFailure,
+  captureWalletReturnedTxFailure,
   isUserFacingSelectedError,
   isUserRejectedError,
   resolveApiRoute,
@@ -156,5 +157,26 @@ describe("captureQuoteSettleFailure", () => {
     expect(setExtra).toHaveBeenCalledWith("rounds", 6);
     expect(setTag).toHaveBeenCalledWith("quote_path", "browser");
     expect(setExtra.mock.calls.map((call) => call[0])).not.toContain("wallet");
+  });
+});
+
+describe("captureWalletReturnedTxFailure", () => {
+  it("reports the compact diagnostic and no wallet extra", () => {
+    vi.stubEnv("SENTRY_DSN", "https://key@o1.ingest.us.sentry.io/1");
+    const error = new Error("Wallet removed or changed a required instruction (unmatched #1 program=CAMMCzo5; returned=[ComputeBudget111111111111111111111111111111,L2TEx])");
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    captureWalletReturnedTxFailure(error);
+    expect(String(logged.mock.calls[0]?.[0])).toContain("unmatched #1 program=CAMMCzo5");
+    expect(captureException).toHaveBeenCalledWith(error);
+    expect(setTag).toHaveBeenCalledWith("error_class", "wallet_returned_tx_mismatch");
+    expect(setExtra).toHaveBeenCalledWith("diagnostic", error.message);
+    expect(setExtra.mock.calls.map((call) => call[0])).not.toContain("wallet");
+    logged.mockRestore();
+  });
+
+  it("ignores unrelated errors", () => {
+    vi.stubEnv("SENTRY_DSN", "https://key@o1.ingest.us.sentry.io/1");
+    captureWalletReturnedTxFailure(new Error("User rejected the request"));
+    expect(captureException).not.toHaveBeenCalled();
   });
 });

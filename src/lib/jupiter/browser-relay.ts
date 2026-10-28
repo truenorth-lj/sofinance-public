@@ -39,7 +39,7 @@ export const JUPITER_RATE_LIMIT_MESSAGE =
 export const JUPITER_QUOTE_UNAVAILABLE_MESSAGE =
   "Jupiter quotes are unavailable right now. Wait a few seconds and retry.";
 const MAX_STORED = 40;
-/** Cap matches PR #162 fail-fast; we then fall back to the server instead of looping. */
+/** PR #162 fail-fast caps; persistent 429 / timeout then fall back to the server. */
 const MAX_RATE_LIMIT_WAIT_MS = 3_000;
 const RATE_LIMIT_RETRIES = 1;
 const JUPITER_FETCH_TIMEOUT_MS = 10_000;
@@ -91,18 +91,6 @@ function noteServedBy(path: JupiterQuotePath) {
   jupiterBrowserStats.servedBy = path;
 }
 
-function mergeAbort(signal: AbortSignal | undefined, ms: number) {
-  const timeout = AbortSignal.timeout(ms);
-  if (!signal) return timeout;
-  if (typeof AbortSignal.any === "function") return AbortSignal.any([signal, timeout]);
-  const extra = new AbortController();
-  const abort = (reason: unknown) => { if (!extra.signal.aborted) extra.abort(reason); };
-  if (signal.aborted) abort(signal.reason);
-  else signal.addEventListener("abort", () => abort(signal.reason), { once: true });
-  timeout.addEventListener("abort", () => abort(timeout.reason), { once: true });
-  return extra.signal;
-}
-
 function isJupiterUnavailableBody(status: number, body: unknown): boolean {
   if (status === 429) return true;
   if (status !== 503) return false;
@@ -125,6 +113,37 @@ export function jupiterRelayEnabled(): boolean {
   } catch {
     return typeof window !== "undefined";
   }
+}
+
+function mergeAbort(signal: AbortSignal | undefined, ms: number) {
+  const timeout = AbortSignal.timeout(ms);
+  if (!signal) return timeout;
+  if (typeof AbortSignal.any === "function") return AbortSignal.any([signal, timeout]);
+  const extra = new AbortController();
+  const abort = (reason: unknown) => { if (!extra.signal.aborted) extra.abort(reason); };
+  if (signal.aborted) abort(signal.reason);
+  else signal.addEventListener("abort", () => abort(signal.reason), { once: true });
+  timeout.addEventListener("abort", () => abort(timeout.reason), { once: true });
+  return extra.signal;
+}
+
+class JupiterBrowserUnavailable extends Error {}
+
+export function jupiterRelayFailureMessage(error: unknown, fallback: string) {
+  if (isTimeoutFailure(error)) return fallback;
+  return error instanceof Error && error.message ? error.message : fallback;
+}
+
+function isTimeoutFailure(error: unknown) {
+  if (error instanceof DOMException && (error.name === "TimeoutError" || error.name === "AbortError")) return true;
+  return error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError"
+    || error.message === "Jupiter quote timed out");
+}
+
+function isBrowserRelayFailure(error: unknown) {
+  if (error instanceof JupiterBrowserUnavailable) return true;
+  if (isTimeoutFailure(error)) return true;
+  return error instanceof Error && error.message === JUPITER_RATE_LIMIT_MESSAGE;
 }
 
 function sleep(ms: number, signal?: AbortSignal) {
@@ -167,8 +186,6 @@ async function waitForGate(signal?: AbortSignal) {
     await sleep(wait, signal);
   }
 }
-
-class JupiterBrowserUnavailable extends Error {}
 
 async function fetchNeedOnce(need: RelayNeed, signal?: AbortSignal): Promise<Omit<StoredResponse, "at">> {
   for (let attempt = 0; ; attempt++) {
@@ -476,7 +493,7 @@ export async function postWithJupiterRelay(url: string, payload: Record<string, 
           remember(store, need, { ...await fetchNeed(need, signal), at: Date.now() });
         }
       } catch (error) {
-        if (!(error instanceof JupiterBrowserUnavailable)) throw error;
+        if (!isBrowserRelayFailure(error)) throw error;
         return fallbackToServer(post, payload);
       }
     }

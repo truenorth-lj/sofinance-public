@@ -185,6 +185,14 @@ describe("matchSameAssetPair", () => {
     if (!result.matched) expect(result.reason).toMatch(/stablecoin/i);
   });
 
+  it("does not treat USDC/USDT as a wrap pair (allowlist is a sibling gate)", () => {
+    const result = matchSameAssetPair(
+      { symbol: "USDC", jupiterTags: ["stablecoin"] },
+      { symbol: "USDT", jupiterTags: ["stablecoin"] },
+    );
+    expect(result.matched).toBe(false);
+  });
+
   it("rejects identical symbols", () => {
     const result = matchSameAssetPair(
       { symbol: "USDC", jupiterTags: ["stocks"] },

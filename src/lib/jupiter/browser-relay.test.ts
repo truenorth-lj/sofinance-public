@@ -81,6 +81,36 @@ describe("browser Jupiter relay", () => {
     expect(jupiterBrowserStats.rateLimited).toBe(1);
   });
 
+  it("fails fast on a persistent Jupiter 429 instead of looping 409s", async () => {
+    vi.useFakeTimers();
+    let jupCalls = 0;
+    let relayPosts = 0;
+    const bodies: Record<string, unknown>[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
+      if (url.startsWith("https://api.jup.ag/")) {
+        jupCalls += 1;
+        return json({ error: "Rate limit" }, 429, { "retry-after": "0" });
+      }
+      const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+      bodies.push(body);
+      if (!body.jupiterRelay) {
+        return bodies.length === 1
+          ? json({ code: "jupiter_rate_limited", error: "limited" }, 503)
+          : json({ ok: true, path: "server" });
+      }
+      relayPosts += 1;
+      return json({ code: "jupiter_relay_needed", needs: [need("1")] }, 409);
+    }));
+    const pending = postWithJupiterRelay("/api/open-quote", {}, { store: createJupiterRelayStore() });
+    const settled = pending.then(async (response) => response.json());
+    await vi.advanceTimersByTimeAsync(3_500);
+    expect(await settled).toEqual({ ok: true, path: "server" });
+    expect(jupCalls).toBe(2);
+    expect(relayPosts).toBe(1);
+    expect(jupiterBrowserStats.rateLimited).toBe(2);
+    expect(jupiterBrowserStats.servedBy).toBe("server_fallback");
+  });
+
   it("passes Jupiter error statuses through to the server (no-route handling stays server-side)", async () => {
     let relayed: unknown;
     vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
