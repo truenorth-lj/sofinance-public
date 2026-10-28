@@ -2,13 +2,13 @@
 import { act, Activity, createElement, StrictMode, Suspense, useEffect, useLayoutEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { VersionedTransaction } from "@solana/web3.js";
+import { PublicKey, VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
-import { useOpenPositionController, type OpenPositionPair } from "./use-open-position-controller";
+import { OPEN_PREPARE_TIMEOUT_MS, useOpenPositionController, type OpenPositionPair } from "./use-open-position-controller";
 import { NATIVE_SOL_MINT } from "@sofinance/engine/ids";
 import { openAttemptKey } from "@/lib/open-attempt";
 import { resetJupiterBrowserGate } from "@/lib/jupiter/browser-relay";
-import { buildTransaction, openSummaryFixture, testKeypair, toBase64 } from "@/lib/test-support/send-fixtures";
+import { buildTransaction, openSummaryFixture, phantomRewriteTransaction, tamperTransferLamports, testKeypair, toBase64 } from "@/lib/test-support/send-fixtures";
 
 // Real facade, preview, attempt, storage helpers and relay; only external boundaries are synthetic.
 const boundary = vi.hoisted(() => ({ wallet: "" as string | undefined, connected: true, sign: vi.fn(), connect: vi.fn(), growth: vi.fn(), once: vi.fn(), notify: vi.fn() }));
@@ -31,9 +31,9 @@ let preparedValue: ReturnType<typeof prepared>, chainStatus: string, writeMode: 
 let waits: Array<ReturnType<typeof deferred<VersionedTransaction>>>;
 const note = (event: string, ...data: unknown[]) => ledger.push([Date.now(), event, ...data]);
 function deferred<T>() { let resolve!: (value: T) => void, reject!: (error: unknown) => void; const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; }
-function prepared() {
-  const tx = buildTransaction({ payer, extraSigners: [nft], signWith: [nft] });
-  const summary = openSummaryFixture({ wallet, nftMint: nft.publicKey.toBase58(), blockhash: tx.message.recentBlockhash });
+function prepared(nftMint = nft.publicKey, blockhash?: string) {
+  const tx = buildTransaction({ payer, extraSigners: [{ publicKey: nftMint, secretKey: new Uint8Array(64) } as typeof nft], signWith: [], ...(blockhash ? { blockhash } : {}) });
+  const summary = openSummaryFixture({ wallet, nftMint: nftMint.toBase58(), blockhash: tx.message.recentBlockhash });
   return { unsignedTransaction: toBase64(tx), permit: "synthetic-permit", summary: { ...summary, poolId: pair.poolAddress,
     quote: { ...summary.quote, poolId: pair.poolAddress, inputMint: NATIVE_SOL_MINT, inputKind: "native" as "native" | "token", inputDecimals: 9 } } };
 }
@@ -111,7 +111,15 @@ beforeEach(() => {
     let response: Response;
     if (url.startsWith("/api/wallet?")) response = scanError ? Response.json({ error: "Synthetic scan failure" }, { status: 500 }) : Response.json({ assets: [{ kind: "native", mint: NATIVE_SOL_MINT, decimals: 9, balance: "1000000000", eligible: true }] });
     else if (url === "/api/open-quote") response = Response.json(preparedValue.summary.quote);
-    else if (url === "/api/open-prepare") response = await prepareReply();
+    else if (url === "/api/open-prepare") {
+      // The app now owns the mint key; the server prepares its requested public key unsigned.
+      expect(typeof body.nftMint).toBe("string");
+      const current = VersionedTransaction.deserialize(Buffer.from(preparedValue.unsignedTransaction, "base64"));
+      const next = prepared(new PublicKey(body.nftMint), current.message.recentBlockhash);
+      preparedValue = { ...preparedValue, unsignedTransaction: next.unsignedTransaction,
+        summary: { ...preparedValue.summary, nftMint: body.nftMint } };
+      response = await prepareReply();
+    }
     else if (url === "/api/open-broadcast") response = await broadcastReply(init!);
     else if (url === "/api/open-status") response = Response.json({ signature: body.attempt.signature, status: chainStatus });
     else throw new Error(`Unexpected request: ${url}`);
@@ -123,7 +131,7 @@ afterEach(async context => {
   try {
     await act(async () => root.unmount());
     await act(async () => { for (const wait of waits) wait.reject(new Error("Owned teardown")); });
-    await advance(31000); note("cleanup", { timers: vi.getTimerCount(), signs: boundary.sign.mock.calls.length, prepares: calls("/api/open-prepare").length, broadcasts: calls("/api/open-broadcast").length,
+    await advance(OPEN_PREPARE_TIMEOUT_MS + 1_000); note("cleanup", { timers: vi.getTimerCount(), signs: boundary.sign.mock.calls.length, prepares: calls("/api/open-prepare").length, broadcasts: calls("/api/open-broadcast").length,
       storage: Object.fromEntries(Array.from({ length: storage.length }, (_, i) => { const key = storage.key(i)!; return [key, storage.getItem(key)]; })) });
     expect(vi.getTimerCount()).toBe(0);
   } finally {
@@ -199,6 +207,27 @@ describe("Open submission ownership", () => {
       callbacks.push(c.signAndSend);
     }
     await send(); expect(calls("/api/open-broadcast")).toHaveLength(1);
+  });
+  it.each(["activity", "suspense"])("fresh %s generation preserves Phantom wallet-first signing", async kind => {
+    await ready(); const old = c.signAndSend;
+    await change(kind); await advance(451);
+    boundary.sign.mockImplementation(async (tx: VersionedTransaction) => {
+      expect(tx.signatures.every(slot => slot.every(byte => byte === 0))).toBe(true);
+      return signed(phantomRewriteTransaction(tx));
+    });
+    await act(async () => old()); expect(calls("/api/open-prepare")).toHaveLength(0);
+    await send(); expect(calls("/api/open-broadcast")).toHaveLength(1);
+    const body = JSON.parse(String(calls("/api/open-broadcast")[0]![1].body));
+    const tx = VersionedTransaction.deserialize(Buffer.from(body.signedTransaction, "base64"));
+    expect(tx.signatures.every(slot => slot.some(byte => byte !== 0))).toBe(true);
+    expect(body.unsignedTransaction).toBe(preparedValue.unsignedTransaction);
+    expect(c.signature).toBe(bs58.encode(tx.signatures[0]!));
+  });
+  it("new generation still rejects wallet changes to core transfer instructions", async () => {
+    await ready(); await change("suspense"); await advance(1);
+    boundary.sign.mockImplementation(async (tx: VersionedTransaction) => signed(tamperTransferLamports(tx, 123_456)));
+    await send(); expect(calls("/api/open-prepare")).toHaveLength(1);
+    expect(boundary.sign).toHaveBeenCalledTimes(1); expectNoSend(); expect(c.error).not.toBe("");
   });
   it.each(["accepted", "unknown", "mismatch"])("retained ready command cannot replace its unresolved %s receipt", async outcome => {
     await ready(); const retained = c.signAndSend;
