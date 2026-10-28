@@ -5,9 +5,6 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import type postgres from "postgres";
 
-// postgres 3.4.9 types TransactionSql separately from Sql. Both can run the queries below.
-type QueryClient = postgres.Sql | postgres.TransactionSql;
-
 export const rwaTables = ["background_job_state", "rwa_apr_daily", "rwa_apr_latest", "rwa_feed_state", "rwa_pool_latest"];
 const identifier = (value: string) => {
   if (!/^[a-z_][a-z0-9_]*$/.test(value)) throw new Error("Invalid migration schema");
@@ -17,7 +14,7 @@ const migrationSchema = (schema: string) => schema === "public" ? "drizzle" : `$
 const lockKey = 763240911;
 
 /** Structural comparison uses PostgreSQL's own parsed/deparsed DDL, not text guesses. */
-async function signature(db: QueryClient, schema: string) {
+async function signature(db: postgres.Sql, schema: string) {
   const normalize = (value: unknown) => typeof value === "string"
     ? value.replaceAll(`"${schema}".`, "").replaceAll(`${schema}.`, "") : value;
   const columns = await db`
@@ -47,7 +44,7 @@ async function tableCount(db: postgres.Sql, schema: string) {
 }
 
 /** Re-create the initial generated migration only in a disposable schema, then compare. */
-async function verifyBaseline(db: QueryClient, schema: string, folder: string) {
+async function verifyBaseline(db: postgres.Sql, schema: string, folder: string) {
   const baseline = readMigrationFiles({ migrationsFolder: folder })[0];
   if (!baseline) throw new Error("Missing initial migration");
   const scratch = `rwa_baseline_${randomUUID().replaceAll("-", "")}`;
