@@ -11,7 +11,8 @@ import { DEFAULT_RESALE_FLOOR_BPS, MIN_SOL_LAMPORTS, NATIVE_SOL_MINT, USDC_MINT 
 import { restampVersionedTransaction, stampPreparedBlockhash } from "./fresh-blockhash";
 import { validateRouteTables } from "./transaction-helpers";
 import { assertOpenTransactionSize, compactAtaInstructions, compileCompactOpenTransaction, OpenTransactionSizeError, openLookupTableReader } from "./open-transaction";
-import { rpcConnection } from "./rpc";
+import { defaultRpcConnection, rpcConnection } from "./rpc";
+import { estimateFeeForMessage, OPEN_FEE_ESTIMATE_MESSAGE } from "./rpc/fee-estimate";
 import { JupiterNoRouteError, type BuildRoute } from "./swap/jupiter";
 import { BEAM_MIN_TIP_LAMPORTS, beamTipInstruction, chooseBeamTransaction, fetchBeamTipAddress } from "./solami-beam";
 import { jupiterRelayActive } from "./jupiter/client";
@@ -288,13 +289,14 @@ async function buildOpenPositionAttempt(
   if (Date.now() >= quote.expiresAt) throw new Error("Quote expired while constructing transaction, please resimulate");
   const rentLamports = BigInt(quote.rent.refundableLamports) + BigInt(quote.rent.nonRefundableLamports)
     + BigInt(quote.rent.walletTokenAccountLamports ?? "0");
-  const feeEstimate = await connection.getFeeForMessage(simulated.message, "confirmed");
-  if (feeEstimate.value === null) throw new Error("Unable to estimate complete transaction network fee");
+  const feeEstimateValue = await estimateFeeForMessage(connection, simulated.message, "confirmed", {
+    fallback: defaultRpcConnection, emptyError: OPEN_FEE_ESTIMATE_MESSAGE,
+  });
   const feeAtaRent = feeConfig.wallet
     ? await feeRecipientRent(connection, feeConfig.wallet, instructions) : 0n;
   // Sponsored: the fee payer covers rent and network fees, so the wallet's SOL must not move at all.
   const maxSolDebitLamports = sponsored ? 0n : (state.inputKind === "native" ? BigInt(quote.requested) : 0n)
-    + rentLamports + feeAtaRent + BigInt(feeEstimate.value) + 100_000n
+    + rentLamports + feeAtaRent + BigInt(feeEstimateValue) + 100_000n
     + (chosen.included ? BigInt(BEAM_MIN_TIP_LAMPORTS) : 0n);
   const verified = await simulateAndVerifyOpenTransaction({
     connection, transaction: simulated, wallet, state, nftMint,
@@ -306,8 +308,9 @@ async function buildOpenPositionAttempt(
   const latest = await connection.getLatestBlockhash("confirmed");
   const restamped = restampVersionedTransaction(simulated, latest.blockhash, tables);
   const sizeBytes = assertOpenTransactionSize(restamped);
-  const fee = await connection.getFeeForMessage(restamped.message, "confirmed");
-  if (fee.value === null) throw new Error("Unable to estimate complete transaction network fee");
+  const fee = await estimateFeeForMessage(connection, restamped.message, "confirmed", {
+    fallback: defaultRpcConnection, emptyError: OPEN_FEE_ESTIMATE_MESSAGE,
+  });
   const summary: OpenPositionSummary = {
     operation: "open-position", simulated: true, quote,
     nftMint: nftMintAddress, positionAccount: verified.positionAccount, nftAta: verified.nftAta,
@@ -317,7 +320,7 @@ async function buildOpenPositionAttempt(
     simulatedDustA: verified.dustA, simulatedDustB: verified.dustB,
     simulatedSolDebitLamports: verified.solDebitLamports,
     maxSolDebitLamports: maxSolDebitLamports.toString(),
-    feeLamports: fee.value, rentLamports: Number(rentLamports > BigInt(Number.MAX_SAFE_INTEGER) ? Number.MAX_SAFE_INTEGER : rentLamports),
+    feeLamports: fee, rentLamports: Number(rentLamports > BigInt(Number.MAX_SAFE_INTEGER) ? Number.MAX_SAFE_INTEGER : rentLamports),
     sizeBytes, unitsConsumed: verified.unitsConsumed,
     beam: {
       included: chosen.included,
@@ -327,7 +330,7 @@ async function buildOpenPositionAttempt(
     },
     ...stampPreparedBlockhash(latest),
   };
-  if (!sponsored && BigInt(MIN_SOL_LAMPORTS) + BigInt(summary.rentLamports) + BigInt(fee.value) > BigInt(state.solLamports)
+  if (!sponsored && BigInt(MIN_SOL_LAMPORTS) + BigInt(summary.rentLamports) + BigInt(fee) > BigInt(state.solLamports)
     && state.inputKind !== "native") {
     throw new Error("Insufficient SOL remaining after simulated open-position rent and fees");
   }

@@ -3,7 +3,10 @@ import { createHash } from "node:crypto";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Keypair, PublicKey, TransactionInstruction } from "@solana/web3.js";
 vi.mock("server-only", () => ({}));
-vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: vi.fn() }));
+vi.mock("@sofinance/engine/rpc", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@sofinance/engine/rpc")>(),
+  rpcConnection: vi.fn(),
+}));
 vi.mock("@sofinance/engine/selected-state", () => ({ readSelectedPositionState: vi.fn() }));
 vi.mock("./selected-quote", () => ({ getSelectedQuoteBundle: vi.fn() }));
 vi.mock("./selected-simulation", () => ({ simulateAndVerifySelectedTransaction: vi.fn() }));

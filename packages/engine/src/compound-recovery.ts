@@ -6,7 +6,8 @@ import {
 } from "@solana/spl-token";
 import type { CompoundAccount } from "./compound-types";
 import type { CompoundRecoveryAccount, CompoundRecoverySummary } from "./compound-recovery-types";
-import { rpcConnection } from "./rpc";
+import { defaultRpcConnection, rpcConnection } from "./rpc";
+import { estimateFeeForMessage, RECOVERY_FEE_ESTIMATE_MESSAGE } from "./rpc/fee-estimate";
 import { restampVersionedTransaction, stampPreparedBlockhash } from "./fresh-blockhash";
 import { exceedsTxSizeLimit } from "./transaction-limits";
 
@@ -135,10 +136,11 @@ export async function buildAndSimulateCompoundRecovery(walletAddress: string, de
   let sizeBytes: number;
   try { sizeBytes = simulated.serialize().length; } catch { throw new Error("Recovery transaction exceeds size limit"); }
   if (exceedsTxSizeLimit(sizeBytes)) throw new Error("Recovery transaction exceeds size limit");
-  const fee = await connection.getFeeForMessage(simulated.message, "confirmed");
-  if (fee.value === null) throw new Error("Unable to estimate recovery transaction fee");
+  const fee = await estimateFeeForMessage(connection, simulated.message, "confirmed", {
+    fallback: defaultRpcConnection, emptyError: RECOVERY_FEE_ESTIMATE_MESSAGE,
+  });
   const summary: CompoundRecoverySummary = { operation: "recovery", simulated: true, wallet: walletAddress,
-    compoundAccounts: accounts, feeLamports: fee.value, sizeBytes, ...stampPreparedBlockhash(simulation) };
+    compoundAccounts: accounts, feeLamports: fee, sizeBytes, ...stampPreparedBlockhash(simulation) };
   const verified = await simulateAndVerifyRecovery({ connection, transaction: simulated, summary, sigVerify: false });
   const latest = await connection.getLatestBlockhash("confirmed");
   Object.assign(summary, stampPreparedBlockhash(latest));

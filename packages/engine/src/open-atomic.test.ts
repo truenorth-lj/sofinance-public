@@ -2,7 +2,7 @@ import { AddressLookupTableAccount, Keypair, PublicKey, TransactionInstruction }
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import oldFixture from "./fixtures/open-size-route.json";
 import compactFixture from "./fixtures/open-size-compact-route.json";
-vi.mock("./rpc", () => ({ rpcConnection: vi.fn() }));
+vi.mock("./rpc", async (importOriginal) => ({ ...await importOriginal<typeof import("./rpc")>(), rpcConnection: vi.fn() }));
 vi.mock("./open-state", () => ({ readOpenPoolState: vi.fn() }));
 vi.mock("./open-quote", () => ({ getOpenPositionQuoteBundle: vi.fn() }));
 vi.mock("./open-simulation", () => ({ simulateAndVerifyOpenTransaction: vi.fn() }));

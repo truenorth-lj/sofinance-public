@@ -41,6 +41,21 @@ describe("jupiter relay", () => {
     expect(error).toMatchObject({ status: 400, bodyError: "COULD_NOT_FIND_ANY_ROUTE" });
   });
 
+  it("falls through a relayed 429 to the keyed server fetch", async () => {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ out: "server" }), { status: 200 }));
+    const responses = new Map([[jupiterRelayId(quoteRequest), { status: 429, body: { error: "Jupiter rate limit" }, retryAfterMs: 1000 }]]);
+    const outcome = await runWithJupiterRelay(responses, () =>
+      jupiterRequest<{ out: string }>({
+        path: "/swap/v1/quote",
+        query: { inputMint: "A", outputMint: "B", amount: "10" },
+        fetcher: fetcher as never,
+        cacheTtlMs: null,
+        retry: { maxAttempts: 1, budgetMs: 100, baseMs: 1, maxDelayMs: 1 },
+      }));
+    expect(outcome).toEqual({ needs: null, value: { out: "server" }, hints: {} });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
   it("reports needs even when engine code swallowed the missing-response error", async () => {
     const outcome = await runWithJupiterRelay(new Map(), async () => {
       await quote("10").catch(() => null);

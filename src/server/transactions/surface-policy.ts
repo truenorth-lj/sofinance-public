@@ -6,5 +6,7 @@ export const APP_OPEN_PREPARE = "app-open";
 export const MCP_OPEN_PREPARE = "mcp-open";
 export const APP_WITHDRAW_PREPARE = "app-withdraw";
 export const MCP_WITHDRAW_PREPARE = "mcp-withdraw";
+export const APP_COMPOUND_PREPARE = "app-compound";
+export const MCP_COMPOUND_PREPARE = "mcp-compound";
 export const APP_SELECTED_SUBMIT = "app-selected-submit";
 export const MCP_SELECTED_SUBMIT = "mcp-selected-submit";

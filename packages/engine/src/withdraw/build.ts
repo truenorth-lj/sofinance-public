@@ -17,7 +17,8 @@ import { collectSwapFee, fitFeeCollections, type FeeCollection } from "../swap/c
 import { retargetSwapSource, swapRouteInstructions } from "../swap/instructions";
 import type { BuildRoute } from "../swap/jupiter";
 import { beamTipInstruction, chooseBeamTransaction, emptyBeamPlan, fetchBeamTipAddress, BEAM_MIN_TIP_LAMPORTS } from "../solami-beam";
-import { rpcConnection } from "../rpc";
+import { defaultRpcConnection, rpcConnection } from "../rpc";
+import { estimateFeeForMessage, WITHDRAW_FEE_ESTIMATE_MESSAGE } from "../rpc/fee-estimate";
 import { getSigningSecret } from "../config/server-env";
 import { simulateAtContextSlot, simulateWithdraw } from "./simulation";
 import { withdrawPermit } from "./permit";
@@ -243,9 +244,9 @@ async function buildSwapStage(raw: WithdrawPrepareRequest, connection: Connectio
     return preview ? { summary, unsignedTransaction: "", permit: "" } : prepareResult(chosen.transaction, summary);
 }
 async function solDebitBudget(connection: Connection, transaction: VersionedTransaction, instructions: TransactionInstruction[]) {
-    const network = (await connection.getFeeForMessage(transaction.message, "confirmed")).value;
-    if (network === null)
-        throw new Error("Cannot calculate transaction network cost");
+    const network = await estimateFeeForMessage(connection, transaction.message, "confirmed", {
+        fallback: defaultRpcConnection, emptyError: WITHDRAW_FEE_ESTIMATE_MESSAGE,
+    });
     // Each retained ATA creation is budgeted conservatively, including Token-2022.
     const ataCreates = instructions.filter(ix => ix.programId.toBase58() === "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL").length;
     const rent = await connection.getMinimumBalanceForRentExemption(512, "confirmed");

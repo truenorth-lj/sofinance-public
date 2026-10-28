@@ -277,8 +277,8 @@ describe("accepted Open preview characterization", () => {
     const providerCalls = () => fetchMock.mock.calls.filter(([url]) => url.startsWith(JUPITER_BROWSER_ORIGIN + "/"));
     expect(providerCalls()).toHaveLength(1); const before = c.quote;
     await act(async () => c.signAndSend()); expect(c.quote).not.toBe(before); expect(c.quote?.liquidity).toBe("888");
-    expect(c.error).toBe("Synthetic wallet refusal"); expect(providerCalls()).toHaveLength(1); expect(calls("/api/open-prepare")).toHaveLength(1);
-    expect(bodyAt(0, "/api/open-prepare").jupiterRelay!.responses["preview-quote"]).toBeTruthy();
+    expect(c.error).toBe("Synthetic wallet refusal"); expect(providerCalls()).toHaveLength(1); expect(calls("/api/open-prepare")).toHaveLength(2);
+    expect(bodyAt(1, "/api/open-prepare").jupiterRelay!.responses["preview-quote"]).toBeTruthy();
     expect(c.quoteLoading).toBe(false); await advance(450); expect(c.actionDisabled).toBe(false);
   });
 });

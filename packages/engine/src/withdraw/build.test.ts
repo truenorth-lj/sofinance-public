@@ -1,7 +1,7 @@
 import { beforeEach, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ state: vi.fn(), rpc: vi.fn(), leg: vi.fn(), fee: vi.fn(), padding: 0, impact: "0.01", swapStage: false, receivedA: 200n, receivedB: 300n }));
 vi.mock("../selected-state", () => ({ readSelectedPositionState: mocks.state }));
-vi.mock("../rpc", () => ({ rpcConnection: mocks.rpc }));
+vi.mock("../rpc", async (importOriginal) => ({ ...await importOriginal<typeof import("../rpc")>(), rpcConnection: mocks.rpc }));
 vi.mock("../swap/leg", () => ({ feeSwapLeg: mocks.leg }));
 vi.mock("../swap/collection", () => ({ collectSwapFee: mocks.fee, fitFeeCollections: async (_connection: unknown, _collections: unknown, instructions: unknown) => ({ instructions }) }));
 vi.mock("../solami-beam", async () => ({ ...await vi.importActual("../solami-beam"), fetchBeamTipAddress: async () => null }));

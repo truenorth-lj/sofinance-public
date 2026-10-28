@@ -461,7 +461,7 @@ it.each(["prepare", "sign"] as const)("lifecycle: unmount during %s stops new wa
   await act(async () => controller.primaryAction());
   expect(calls("/api/selected-prepare")).toHaveLength(1);
   expect(requestBody(calls("/api/selected-prepare")[0]!)).toEqual({ wallet, ...selection,
-    amount: "0.01", floorBps: 9900, toleranceBps: 100, jupiterRelay: { hints: {}, responses: {} } });
+    amount: "0.01", floorBps: 9900, toleranceBps: 100 });
   expect(mocks.sign).toHaveBeenCalledTimes(stage === "sign" ? 1 : 0);
   expect(writes).not.toHaveBeenCalled();
   await act(async () => root.unmount());

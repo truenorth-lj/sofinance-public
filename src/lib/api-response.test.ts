@@ -199,12 +199,12 @@ it("returns Jupiter's 400 body instead of bare HTTP 400", async () => {
 it("captures Jupiter 429/5xx and generic 5xx, not user-facing selected 4xx", async () => {
   const rateLimited = new JupiterHttpError(429, "/swap/v2/build", 3_001);
   selectedApiError(rateLimited, "failed");
-  expect(captureApiRouteError).toHaveBeenCalledWith(rateLimited, { fallback: "failed", status: 503 });
+  expect(captureApiRouteError).toHaveBeenCalledWith(rateLimited, { fallback: "failed", status: 503, quotePath: "server" });
 
   captureApiRouteError.mockClear();
   const unavailable = new JupiterHttpError(503, "/swap/v2/build");
   selectedApiError(unavailable, "failed");
-  expect(captureApiRouteError).toHaveBeenCalledWith(unavailable, { fallback: "failed", status: 503 });
+  expect(captureApiRouteError).toHaveBeenCalledWith(unavailable, { fallback: "failed", status: 503, quotePath: "server" });
 
   captureApiRouteError.mockClear();
   selectedApiError(new SelectedNoRouteError("SPCX", "INTC", "spcx", "intc"), "Quote failed");
@@ -230,6 +230,7 @@ it("captures Jupiter 429/5xx and generic 5xx, not user-facing selected 4xx", asy
     route: undefined,
     request,
     status: 503,
+    quotePath: "server",
   });
 
   captureApiRouteError.mockClear();
