@@ -15,7 +15,7 @@ export default function RwaPairsPage() {
       <InkHero label="RWA pairs" title="Same-asset RWA pairs">
         <p>
           Find Raydium CLMM pools where both tokens represent the same underlying (wrapped vs unwrapped /
-          Jupiter stocks/rwa tags + xStocks whitelist). Ranked by estimated fee APR from 24h fees and TVL.
+          Jupiter stocks/rwa tags + xStocks whitelist), plus the curated USDC/USDT pool. Ranked by estimated fee APR from 24h fees and TVL.
           Create position swaps your chosen wallet asset into pool tokens as needed, then opens a new LP position and adds liquidity in one transaction.
         </p>
       </InkHero>
