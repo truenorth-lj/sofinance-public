@@ -280,6 +280,37 @@ describe("Open submission ownership", () => {
     nextTransaction(); broadcastReply = normal; chainStatus = "pending"; await send();
     expect(calls("/api/open-broadcast")).toHaveLength(2); expect(c.signature).not.toBe(first); expect(c.busy).toBe(true);
   });
+  for (const terminal of ["failed", "expired"] as const) {
+    it.each(["removed", "unavailable"])(`${terminal} retry exposes history rejection when its receipt is %s`, async condition => {
+      await ready(); await send(); chainStatus = terminal; await advance(1); await advance(450);
+      expect(c.busy).toBe(false); expect(c.actionDisabled).toBe(false);
+      const terminalError = c.error;
+      expect(terminalError).not.toBe("");
+      const raw = storage.getItem(openAttemptKey(wallet)); expect(raw).not.toBeNull();
+      if (condition === "removed") storage.removeItem(openAttemptKey(wallet));
+      else readUnavailable = true;
+      await send();
+      expect(calls("/api/open-prepare")).toHaveLength(1);
+      expect(boundary.sign).toHaveBeenCalledTimes(1);
+      expect(calls("/api/open-broadcast")).toHaveLength(1);
+      expect(storage.getItem(openAttemptKey(wallet))).toBe(condition === "removed" ? null : raw);
+      expect(c.error).toContain("history changed");
+      expect(c.error).not.toBe(terminalError);
+      // Restoring the receipt and clearing the form error keeps terminal diagnostics available.
+      readUnavailable = false; storage.setItem(openAttemptKey(wallet), raw!);
+      await command("clear error", () => c.changeAmount(c.amount));
+      expect(c.error).toBe(terminalError);
+    });
+    it(`${terminal} retry exposes the latest prepare failure`, async () => {
+      await ready(); await send(); chainStatus = terminal; await advance(1); await advance(450);
+      prepareReply = async () => Response.json({ error: "Synthetic retry prepare failure" }, { status: 500 });
+      await send();
+      expect(c.error).toBe("Synthetic retry prepare failure");
+      expect(calls("/api/open-prepare")).toHaveLength(2);
+      expect(boundary.sign).toHaveBeenCalledTimes(1);
+      expect(calls("/api/open-broadcast")).toHaveLength(1);
+    });
+  }
   it.each(["invalid", "unavailable", "manual-review", "foreign-pool"])("retained callback respects current %s history", async kind => {
     await ready(); const retained = c.signAndSend;
     if (kind === "manual-review" || kind === "foreign-pool") { await send(); chainStatus = "manual-review"; await advance(1); if (kind === "foreign-pool") { currentPair = { ...pair, poolAddress: pair.mintA }; await render(); } }

@@ -244,7 +244,10 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
   return {
     wallet, connected, connect, inputAssets, selectedAsset, inputMint, inputKind,
     amount, rangePreset, minPrice, maxPrice, quote, quoteLoading, quoteError: formError || quoteError,
-    error: open.error || (open.status === "confirmed" ? "" : error),
+    // A rejected retry must explain its current failure, not invite another retry.
+    error: open.status === "failed" || open.status === "expired"
+      ? error || open.error
+      : open.error || (open.status === "confirmed" ? "" : error),
     submitStage, signature, positionMint,
     beamStatus: open.status === "confirmed" && beamResult?.signature === signature ? beamResult.status : NO_BEAM_STATUS, presets: OPEN_RANGE_UI_PRESETS, fresh, busy,
     actionDisabled, actionBlockedReason, walletBlockedReason, changeAmount, chooseAsset, choosePreset,

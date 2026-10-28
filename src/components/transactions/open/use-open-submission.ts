@@ -96,7 +96,7 @@ export function useOpenSubmissionCommand({ pair, wallet, inputMint, inputKind, a
       identityRef.current === identity && inputRevisionRef.current === inputRevision;
     if (!ownsInput() || committedQuoteRef.current !== quote) return;
     if (!open.canSubmit()) {
-      setError("Open-position history changed. Verify the original signature before opening again.");
+      setError("Open-position history changed. Reload and verify the original signature before opening again.");
       return;
     }
     const owner = {};
@@ -135,7 +135,7 @@ export function useOpenSubmissionCommand({ pair, wallet, inputMint, inputKind, a
         unsigned.message.recentBlockhash !== prepared.summary.blockhash) {
         throw new Error("Transaction payer mismatch");
       }
-      if (!open.canSubmit()) throw new Error("Open-position history changed. Verify the original signature before opening again.");
+      if (!open.canSubmit()) throw new Error("Open-position history changed. Reload and verify the original signature before opening again.");
       setQuote(prepared.summary.quote);
       setNow(Date.now());
       setSubmitStage("wallet");
@@ -150,7 +150,7 @@ export function useOpenSubmissionCommand({ pair, wallet, inputMint, inputKind, a
       const txSignature = bs58.encode(signatureBytes);
       const signedTransaction = btoa(String.fromCharCode(...signed.serialize()));
       if (!current() || Date.now() >= prepared.summary.expiresAt) throw new Error("Wallet, input or quote changed during signing; transaction not sent");
-      if (!open.canSubmit()) throw new Error("Open-position history changed. Verify the original signature before opening again.");
+      if (!open.canSubmit()) throw new Error("Open-position history changed. Reload and verify the original signature before opening again.");
       const attempt = openAttemptFromSummary(txSignature, prepared.summary);
       open.track(attempt);
       persisted = attempt;
