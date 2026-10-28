@@ -4,10 +4,10 @@ import "@/lib/engine-host";
  * `defaultRpcConnection` fallback so existing callers stay unchanged.
  */
 import type { Commitment, Connection, Message, VersionedMessage } from "@solana/web3.js";
+import * as engineRpc from "@sofinance/engine/rpc";
 import {
   CLEANUP_FEE_ESTIMATE_MESSAGE,
   COMPOUND_FEE_ESTIMATE_MESSAGE,
-  defaultRpcConnection,
   estimateFeeForMessage as estimateEngineFeeForMessage,
   FEE_ESTIMATE_ATTEMPTS,
   FEE_ESTIMATE_BACKOFF_MS,
@@ -19,7 +19,7 @@ import {
   RECOVERY_FEE_ESTIMATE_MESSAGE,
   WITHDRAW_FEE_ESTIMATE_MESSAGE,
   withFeeEstimateRetry,
-} from "@sofinance/engine/rpc";
+} from "@sofinance/engine/rpc/fee-estimate";
 
 export {
   CLEANUP_FEE_ESTIMATE_MESSAGE,
@@ -53,9 +53,13 @@ export async function estimateFeeForMessage(
   } = {},
 ): Promise<number> {
   return estimateEngineFeeForMessage(connection, message, commitment, {
-    fallback: options.fallback ?? defaultRpcConnection,
+    fallback: options.fallback ?? hostDefaultRpcConnection(),
     sleep: options.sleep,
     emptyError: options.emptyError ?? OPEN_FEE_ESTIMATE_MESSAGE,
     timeoutMs: options.timeoutMs,
   });
+}
+
+function hostDefaultRpcConnection() {
+  return "defaultRpcConnection" in engineRpc ? engineRpc.defaultRpcConnection : undefined;
 }

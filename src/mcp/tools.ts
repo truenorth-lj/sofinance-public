@@ -4,7 +4,7 @@ import { discoverWallet } from "@sofinance/engine/wallet-discovery";
 import { searchSelectedQuoteBundle } from "../lib/selected-quote";
 import { submitSelected } from "@/server/transactions/selected-submit";
 import { prepareSelected } from "@/server/transactions/selected-prepare";
-import { MCP_SELECTED_PREPARE, MCP_OPEN_PREPARE, MCP_WITHDRAW_PREPARE, MCP_SELECTED_SUBMIT } from "@/server/transactions/surface-policy";
+import { MCP_SELECTED_PREPARE, MCP_OPEN_PREPARE, MCP_WITHDRAW_PREPARE, MCP_SELECTED_SUBMIT, MCP_COMPOUND_PREPARE } from "@/server/transactions/surface-policy";
 import { buildAndSimulateCompound } from "@sofinance/engine/compound-atomic";
 import { prepareCompound } from "@/server/transactions/compound-prepare";
 import { verifySelectedPermit } from "../lib/selected-permit";
@@ -308,7 +308,7 @@ export async function prepareCompoundTransaction(input: QuoteCompoundInput) {
   const signingSecret = capturePrepareSigningSecret();
   const { summary, permit, unsignedTransaction: unsignedTransactionBase64 } = await prepareCompound({
     wallet: input.wallet, positionMint: input.positionMint, sourceSignatures: input.sourceSignatures || [],
-  }, signingSecret);
+  }, signingSecret, MCP_COMPOUND_PREPARE);
   const jupiterApiKey = signingSecret();
 
   // submitArgs for compound includes signedTransaction, permit, wallet, and full summary

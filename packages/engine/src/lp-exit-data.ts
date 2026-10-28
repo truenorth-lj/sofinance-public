@@ -6,7 +6,8 @@ import { CLMM_PROGRAM_ID, PersonalPositionLayout, PoolInfoLayout, getPdaPersonal
 import { PublicKey, TransactionMessage, VersionedTransaction, type AccountInfo } from "@solana/web3.js";
 import { withCacheAndInflight } from "./rpc/cache";
 import { PREVIEW_RETRY } from "./rpc/retry";
-import { defaultRpcConnection, estimateFeeForMessage, rpcConnection, type RpcEnv } from "./rpc";
+import { defaultRpcConnection, rpcConnection, type RpcEnv } from "./rpc";
+import { estimateFeeForMessage } from "./rpc/fee-estimate";
 import { unpackMint, unpackAccount, getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID, createAssociatedTokenAccountIdempotentInstruction } from "@solana/spl-token";
 import { compactAtaInstructions, compileCompactOpenTransaction, openLookupTableReader, versionedTransactionSize } from "./open-transaction";
 import { instruction } from "./transaction-helpers";

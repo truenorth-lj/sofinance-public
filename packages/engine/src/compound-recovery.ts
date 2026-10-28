@@ -6,7 +6,8 @@ import {
 } from "@solana/spl-token";
 import type { CompoundAccount } from "./compound-types";
 import type { CompoundRecoveryAccount, CompoundRecoverySummary } from "./compound-recovery-types";
-import { defaultRpcConnection, estimateFeeForMessage, RECOVERY_FEE_ESTIMATE_MESSAGE, rpcConnection } from "./rpc";
+import { defaultRpcConnection, rpcConnection } from "./rpc";
+import { estimateFeeForMessage, RECOVERY_FEE_ESTIMATE_MESSAGE } from "./rpc/fee-estimate";
 import { restampVersionedTransaction, stampPreparedBlockhash } from "./fresh-blockhash";
 import { exceedsTxSizeLimit } from "./transaction-limits";
 

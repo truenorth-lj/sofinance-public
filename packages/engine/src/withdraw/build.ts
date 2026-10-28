@@ -17,7 +17,8 @@ import { collectSwapFee, fitFeeCollections, type FeeCollection } from "../swap/c
 import { retargetSwapSource, swapRouteInstructions } from "../swap/instructions";
 import type { BuildRoute } from "../swap/jupiter";
 import { beamTipInstruction, chooseBeamTransaction, emptyBeamPlan, fetchBeamTipAddress, BEAM_MIN_TIP_LAMPORTS } from "../solami-beam";
-import { defaultRpcConnection, estimateFeeForMessage, rpcConnection, WITHDRAW_FEE_ESTIMATE_MESSAGE } from "../rpc";
+import { defaultRpcConnection, rpcConnection } from "../rpc";
+import { estimateFeeForMessage, WITHDRAW_FEE_ESTIMATE_MESSAGE } from "../rpc/fee-estimate";
 import { getSigningSecret } from "../config/server-env";
 import { simulateAtContextSlot, simulateWithdraw } from "./simulation";
 import { withdrawPermit } from "./permit";

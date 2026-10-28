@@ -11,7 +11,8 @@ import { DEFAULT_RESALE_FLOOR_BPS, MIN_SOL_LAMPORTS, NATIVE_SOL_MINT } from "./i
 import { restampVersionedTransaction, stampPreparedBlockhash } from "./fresh-blockhash";
 import { validateRouteTables } from "./transaction-helpers";
 import { assertOpenTransactionSize, compactAtaInstructions, compileCompactOpenTransaction, OpenTransactionSizeError, openLookupTableReader } from "./open-transaction";
-import { defaultRpcConnection, estimateFeeForMessage, OPEN_FEE_ESTIMATE_MESSAGE, rpcConnection } from "./rpc";
+import { defaultRpcConnection, rpcConnection } from "./rpc";
+import { estimateFeeForMessage, OPEN_FEE_ESTIMATE_MESSAGE } from "./rpc/fee-estimate";
 import { JupiterNoRouteError, type BuildRoute } from "./swap/jupiter";
 import { BEAM_MIN_TIP_LAMPORTS, beamTipInstruction, chooseBeamTransaction, fetchBeamTipAddress } from "./solami-beam";
 import { jupiterRelayActive } from "./jupiter/client";
