@@ -6,6 +6,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import nacl from "tweetnacl";
 
 // Mock server-only module
 vi.mock("server-only", () => ({}));
@@ -629,7 +630,8 @@ describe("MCP Tools", () => {
 
     it("MCP-ONLY fallback generates a mint when nftMint is omitted", async () => {
       const mint = Keypair.generate();
-      const generate = vi.spyOn(Keypair, "generate").mockReturnValue(mint);
+      const ownedSecret = mint.secretKey;
+      const generate = vi.spyOn(nacl.sign, "keyPair").mockReturnValue({ publicKey: mint.publicKey.toBytes(), secretKey: ownedSecret });
       const mockSummary = {
         operation: "open-position",
         simulated: true,
@@ -666,6 +668,8 @@ describe("MCP Tools", () => {
         expect(tx.signatures[0]!.every((byte) => byte === 0)).toBe(true);
         expect(tx.signatures[1]!.some((byte) => byte !== 0)).toBe(true);
         expect(result.instructions.message).toContain("MCP-ONLY fallback");
+        expect(generate).toHaveBeenCalledOnce();
+        expect(ownedSecret.every(byte => byte === 0)).toBe(true);
       } finally {
         generate.mockRestore();
       }

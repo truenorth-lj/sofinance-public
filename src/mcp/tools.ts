@@ -1,5 +1,6 @@
 import "@/lib/engine-host";
-import { Keypair, PublicKey, VersionedTransaction } from "@solana/web3.js";
+import { PublicKey, VersionedTransaction } from "@solana/web3.js";
+import { createEphemeralMint, type EphemeralMint } from "@/lib/ephemeral-mint";
 import { discoverWallet } from "@sofinance/engine/wallet-discovery";
 import { searchSelectedQuoteBundle } from "../lib/selected-quote";
 import { submitSelected } from "@/server/transactions/selected-submit";
@@ -683,9 +684,13 @@ export async function quoteOpenPosition(input: QuoteOpenPositionInput) {
  * presents a pre-signed extra signer. Prefer passing `nftMint` and signing the
  * mint after the wallet (Phantom multi-signer recipe).
  */
-function mcpPartialSignOpenMint(unsignedTransactionBase64: string, mint: Keypair): string {
+function mcpPartialSignOpenMint(unsignedTransactionBase64: string, mint: EphemeralMint): string {
   const tx = VersionedTransaction.deserialize(Buffer.from(unsignedTransactionBase64, "base64"));
-  tx.sign([mint]);
+  try {
+    tx.sign([mint]);
+  } finally {
+    mint.dispose();
+  }
   return Buffer.from(tx.serialize()).toString("base64");
 }
 
@@ -703,7 +708,7 @@ export async function prepareOpenPosition(input: PrepareOpenPositionInput) {
   };
   // MCP-ONLY: generate and partial-sign when the agent omits nftMint (signUrl
   // cannot hold the mint secret). Agents that can sign should pass nftMint.
-  const mint = input.nftMint ? undefined : Keypair.generate();
+  const mint = input.nftMint ? undefined : createEphemeralMint();
   try {
     const { summary, permit, unsignedTransaction } = await prepareOpen({
       wallet: input.wallet, selection, amount: input.amount, range: openRangeFromInput(input),
@@ -737,7 +742,7 @@ export async function prepareOpenPosition(input: PrepareOpenPositionInput) {
       },
     };
   } finally {
-    mint?.secretKey.fill(0);
+    mint?.dispose();
   }
 }
 
