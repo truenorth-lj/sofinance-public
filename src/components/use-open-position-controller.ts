@@ -9,9 +9,9 @@ import { NATIVE_SOL_MINT, USDC_MINT } from "@sofinance/engine/ids";
 import { quoteIsFresh } from "@sofinance/engine/quote-math";
 import { OPEN_RANGE_UI_PRESETS, type OpenRangePreset } from "@sofinance/engine/open-range-presets";
 import { preserveExtraSignatures } from "@/lib/open-signatures";
-import { createJupiterRelayStore, jupiterRelayEnabled, postWithJupiterRelay } from "@/lib/jupiter/browser-relay";
+import { createJupiterRelayStore, postWithJupiterRelay } from "@/lib/jupiter/browser-relay";
 import { notSentRetryMessage } from "@/lib/public-error";
-import type { OpenPositionQuote, OpenPositionSummary } from "@sofinance/engine/open-types";
+import type { OpenPositionSummary } from "@sofinance/engine/open-types";
 import { openAttemptFromSummary, type OpenAttempt } from "@/lib/open-attempt";
 import { NO_BEAM_STATUS, openBeamStatus, type OpenBeamStatus } from "@/lib/open-beam-status";
 import type { WalletAsset, WalletDiscovery } from "@sofinance/engine/wallet-discovery";
@@ -22,6 +22,8 @@ import { getStoredAttribution } from "@/lib/analytics/attribution";
 import { captureGrowthEvent, captureGrowthEventOnce } from "@/lib/analytics/client";
 import { classifyOpenError } from "@/lib/analytics/errors";
 import { GROWTH_EVENTS, openEventProperties } from "@/lib/analytics/events";
+
+import { useOpenPreview, useOpenPreviewEffect } from "./transactions/open/use-open-preview";
 
 export type OpenPositionPair = {
   poolAddress: string;
@@ -56,15 +58,7 @@ function pickInput(assets: WalletAsset[], mintA: string, mintB: string): WalletA
   return eligible.find((item) => item.mint === mintA || item.mint === mintB || item.mint === NATIVE_SOL_MINT || item.mint === USDC_MINT) ?? null;
 }
 
-/** Background quote polling pauses this long after a failed refresh. */
-export const QUOTE_ERROR_POLL_PAUSE_MS = 30_000;
-/** Server-keyed polling interval (relay disabled). */
-export const QUOTE_POLL_MS = 3_000;
-/**
- * Browser-quoted polling interval. Jupiter's keyless quota is ~5 requests / 10 s
- * per IP and an open preview costs 2-4 quotes, so poll well under that.
- */
-export const RELAY_QUOTE_POLL_MS = 15_000;
+export { QUOTE_ERROR_POLL_PAUSE_MS, QUOTE_POLL_MS, RELAY_QUOTE_POLL_MS } from "./transactions/open/use-open-preview";
 
 export function useOpenPositionController(pair: OpenPositionPair | null) {
   const { address: wallet, connected, connect, signTransaction } = useWalletConnection();
@@ -93,17 +87,15 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
   const [rangePreset, setRangePreset] = useState<OpenRangePreset>("standard");
   const [minPrice, setMinPrice] = useState("");
   const [maxPrice, setMaxPrice] = useState("");
-  const [quote, setQuote] = useState<OpenPositionQuote | null>(null);
-  const [quoteLoading, setQuoteLoading] = useState(false);
-  const [quoteError, setQuoteError] = useState("");
-  const [quoteRevision, setQuoteRevision] = useState(0);
+  const preview = useOpenPreview();
+  const { quote, setQuote, quoteLoading, setQuoteLoading, quoteError, setQuoteError,
+    setQuoteRevision, invalidateQuote } = preview;
   const [operationStage, setSubmitStage] = useState<OpenSubmitStage>(null);
   const [error, setError] = useState("");
   // Beam metadata from prepare/broadcast, keyed to the attempt signature; shown only once that attempt is verified.
   const [beamResult, setBeamResult] = useState<{ signature: string; status: OpenBeamStatus } | null>(null);
   const [now, setNow] = useState(0);
   const walletRef = useRef(wallet);
-  const quoteRequestRef = useRef(0);
   const jupiterStoreRef = useRef(createJupiterRelayStore());
   const submittingRef = useRef(false);
   const activeRef = useRef(false);
@@ -184,68 +176,11 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
     };
   }, [wallet, pair]);
 
-  useEffect(() => {
-    if (!pair || !wallet || !inputMint || !selectedAsset?.eligible || busy || submitStage === "confirmed") return;
-    if (parsedAmount === null || formError) return;
-    const raw = parsedAmount;
-    const requestId = ++quoteRequestRef.current;
-    const aborter = new AbortController();
-    let pollTimer: number | undefined;
-    let inFlight = false;
-    // Background refreshes skip hidden tabs and pause after a failure: every quote spends shared
-    // server-side Jupiter quota. The explicit "Refresh quote" action restarts this effect at once.
-    let pausedUntil = 0;
-    let onVisible: (() => void) | undefined;
-    const currentRequest = () => requestId === quoteRequestRef.current &&
-      !aborter.signal.aborted && walletRef.current === wallet;
-    const timer = window.setTimeout(() => {
-      const load = async () => {
-        if (inFlight || !currentRequest()) return;
-        inFlight = true;
-        setQuoteLoading(true);
-        setQuoteError("");
-        try {
-          const response = await postWithJupiterRelay("/api/open-quote", {
-            wallet, poolId: pair.poolAddress, inputMint, inputKind, amount,
-            rangePreset, minPrice, maxPrice,
-          }, { store: jupiterStoreRef.current, signal: aborter.signal });
-          const data = await response.json() as OpenPositionQuote | ApiError;
-          if (!currentRequest()) return;
-          if (!response.ok) throw new Error((data as ApiError).error);
-          const current = data as OpenPositionQuote;
-          if (current.requested !== raw.toString()) throw new Error("Quote and current input mismatch, please re-enter amount");
-          setQuote(current);
-          setNow(Date.now());
-        } catch (caught) {
-          if (currentRequest()) {
-            pausedUntil = Date.now() + QUOTE_ERROR_POLL_PAUSE_MS;
-            setQuote(null);
-            setQuoteError(caught instanceof Error ? caught.message : "Quote failed");
-          }
-        } finally {
-          inFlight = false;
-          if (currentRequest()) setQuoteLoading(false);
-        }
-      };
-      const poll = () => {
-        if (document.hidden || Date.now() < pausedUntil) return;
-        void load();
-      };
-      pollTimer = window.setInterval(poll, jupiterRelayEnabled() ? RELAY_QUOTE_POLL_MS : QUOTE_POLL_MS);
-      onVisible = () => { if (!document.hidden) poll(); };
-      document.addEventListener("visibilitychange", onVisible);
-      void load();
-    }, 450);
-    return () => {
-      aborter.abort();
-      window.clearTimeout(timer);
-      if (pollTimer !== undefined) window.clearInterval(pollTimer);
-      if (onVisible) document.removeEventListener("visibilitychange", onVisible);
-    };
-  }, [amount, busy, formError, inputKind, inputMint, maxPrice, minPrice, pair, parsedAmount, quoteRevision, rangePreset, selectedAsset, submitStage, wallet]);
+  useOpenPreviewEffect({ amount, busy, formError, inputKind, inputMint, maxPrice, minPrice,
+    pair, parsedAmount, rangePreset, selectedAsset, submitStage, wallet, walletRef, jupiterStoreRef, setNow }, preview);
 
   const clearQuote = () => {
-    quoteRequestRef.current += 1;
+    invalidateQuote();
     setQuote(null);
     setQuoteLoading(false);
     setError("");
@@ -380,7 +315,7 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
       submittingRef.current = false;
       setSubmitStage(null);
     }
-  }, [amount, busy, fresh, identity, inputKind, inputMint, maxPrice, minPrice, open, pair, parsedAmount, quote, rangePreset, signTransaction, wallet]);
+  }, [amount, busy, fresh, identity, inputKind, inputMint, maxPrice, minPrice, open, pair, parsedAmount, quote, rangePreset, setQuote, setQuoteLoading, signTransaction, wallet]);
 
   const walletBlockedReason = !connected
     ? "Connect a wallet to create a position"
