@@ -9,6 +9,7 @@ export async function POST(request: Request) {
     const parsed = await parseCompoundBroadcast(request, "compound");
     const { signature } = await sendSignedCompoundTransaction(
       parsed.wallet, parsed.transaction, parsed.summary as CompoundSummary,
+      parsed.prepared !== parsed.transaction ? parsed.prepared : undefined,
     );
     return Response.json({ signature }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {

@@ -6,7 +6,8 @@ import { CLMM_PROGRAM_ID, PersonalPositionLayout, PoolInfoLayout, getPdaPersonal
 import { PublicKey, TransactionMessage, VersionedTransaction, type AccountInfo } from "@solana/web3.js";
 import { withCacheAndInflight } from "./rpc/cache";
 import { PREVIEW_RETRY } from "./rpc/retry";
-import { rpcConnection, type RpcEnv } from "./rpc";
+import { defaultRpcConnection, rpcConnection, type RpcEnv } from "./rpc";
+import { estimateFeeForMessage } from "./rpc/fee-estimate";
 import { unpackMint, unpackAccount, getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID, createAssociatedTokenAccountIdempotentInstruction } from "@solana/spl-token";
 import { compactAtaInstructions, compileCompactOpenTransaction, openLookupTableReader, versionedTransactionSize } from "./open-transaction";
 import { instruction } from "./transaction-helpers";
@@ -77,7 +78,9 @@ async function readFullExitPreviewUnlocked(positionId:string,nftAccount?:string,
  const usdcAta=getAssociatedTokenAddressSync(new PublicKey(USDC),owner),finalAddresses=[...addresses,usdcAta];
  const usdcInfo=await connection.getAccountInfo(usdcAta);
  const finalBefore={context:before.context,value:[...before.value,usdcInfo]};
- const fee=(await connection.getFeeForMessage(compiled.transaction.message)).value;
+ let fee:number|null=null;
+ try{fee=await estimateFeeForMessage(connection,compiled.transaction.message,"confirmed",{fallback:defaultRpcConnection});}
+ catch{fee=null;}
  const simulation=await connection.simulateTransaction(compiled.transaction,{sigVerify:false,replaceRecentBlockhash:true,minContextSlot:before.context.slot,accounts:{encoding:"base64",addresses:finalAddresses.map(a=>a.toBase58())}});
  if(simulation.value.err||!simulation.value.accounts)throw new Error(`Combined exit simulation failed: ${JSON.stringify(simulation.value.err)}`);
  const actual=simulation.value.accounts;

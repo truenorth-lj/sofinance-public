@@ -2,12 +2,12 @@
 import "@/lib/engine-host";
 
 import { useCallback, useRef, useState, type RefObject } from "react";
-import { VersionedTransaction } from "@solana/web3.js";
+import { Keypair, VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
 import type { OpenPositionQuote, OpenPositionSummary } from "@sofinance/engine/open-types";
 import type { OpenRangePreset } from "@sofinance/engine/open-range-presets";
-import { preserveExtraSignatures } from "@/lib/open-signatures";
-import { postWithJupiterRelay, type JupiterRelayStore } from "@/lib/jupiter/browser-relay";
+import { addMintSignature, assertWalletReturnedTransaction, missingRequiredSignatures } from "@/lib/open-signatures";
+import { jupiterRelayFailureMessage, postWithJupiterRelay, type JupiterRelayStore } from "@/lib/jupiter/browser-relay";
 import { notSentRetryMessage } from "@/lib/public-error";
 import { openAttemptFromSummary, type OpenAttempt } from "@/lib/open-attempt";
 import { openBeamStatus, type OpenBeamStatus } from "@/lib/open-beam-status";
@@ -20,6 +20,9 @@ type ApiError = { error: string };
 type Prepared = { unsignedTransaction: string; permit: string; summary: OpenPositionSummary };
 
 export type OpenSubmitStage = "preparing" | "wallet" | "broadcasting" | "pending" | "confirmed" | "failed" | "expired" | "manual-review" | null;
+
+/** Hard cap so prepare cannot spin past a Jupiter 429 wait with no UI error. */
+export const OPEN_PREPARE_TIMEOUT_MS = 45_000;
 
 type OpenSubmissionOptions = {
   pair: { poolAddress: string; symbolA: string; symbolB: string } | null;
@@ -75,18 +78,20 @@ export function useOpenSubmissionCommand({ pair, wallet, inputMint, inputKind, a
     setSubmitStage("preparing");
     setError("");
     captureGrowthEvent(GROWTH_EVENTS.openStarted, openEventProperties(pair));
+    const mint = Keypair.generate();
     try {
       // Same per-modal store as the preview: prepare replays the preview's fresh
       // Jupiter quotes and only fetches swap-instructions.
       const response = await postWithJupiterRelay("/api/open-prepare", {
         wallet, poolId: pair.poolAddress, inputMint, inputKind, amount,
-        rangePreset, minPrice, maxPrice,
-      }, { store: jupiterStoreRef.current });
+        rangePreset, minPrice, maxPrice, nftMint: mint.publicKey.toBase58(),
+      }, { store: jupiterStoreRef.current, signal: AbortSignal.timeout(OPEN_PREPARE_TIMEOUT_MS) });
       const data = await response.json() as Prepared | ApiError;
       if (!response.ok) throw new Error((data as ApiError).error);
       const prepared = data as Prepared;
       if (!current() || !prepared.unsignedTransaction || !prepared.permit || !prepared.summary ||
         prepared.summary.wallet !== wallet || prepared.summary.poolId !== pair.poolAddress ||
+        prepared.summary.nftMint !== mint.publicKey.toBase58() ||
         prepared.summary.quote.requested !== parsedAmount?.toString() ||
         prepared.summary.quote.inputMint !== inputMint || prepared.summary.quote.inputKind !== inputKind ||
         Date.now() >= prepared.summary.expiresAt) {
@@ -94,6 +99,7 @@ export function useOpenSubmissionCommand({ pair, wallet, inputMint, inputKind, a
       }
       const bytes = Uint8Array.from(atob(prepared.unsignedTransaction), (character) => character.charCodeAt(0));
       const unsigned = VersionedTransaction.deserialize(bytes);
+      const preparedSnapshot = VersionedTransaction.deserialize(unsigned.serialize());
       if (unsigned.message.staticAccountKeys[0]?.toBase58() !== wallet ||
         unsigned.message.staticAccountKeys[1]?.toBase58() !== prepared.summary.nftMint ||
         unsigned.message.recentBlockhash !== prepared.summary.blockhash) {
@@ -102,21 +108,14 @@ export function useOpenSubmissionCommand({ pair, wallet, inputMint, inputKind, a
       setQuote(prepared.summary.quote);
       setNow(Date.now());
       setSubmitStage("wallet");
-      const originalMessage = unsigned.message.serialize();
       const signedByWallet = await signTransaction(unsigned);
-      const signedMessage = signedByWallet.message.serialize();
-      if (signedMessage.length !== originalMessage.length ||
-        signedMessage.some((byte, index) => byte !== originalMessage[index])) {
-        throw new Error("Wallet modified transaction content, stopped submission");
+      assertWalletReturnedTransaction(preparedSnapshot, signedByWallet, wallet);
+      const signed = addMintSignature(signedByWallet, mint);
+      mint.secretKey.fill(0);
+      if (missingRequiredSignatures(signed).length) {
+        throw new Error("Open-position transaction is missing required signatures");
       }
-      const signed = preserveExtraSignatures(unsigned, signedByWallet);
-      const signatureBytes = signed.signatures[0];
-      if (!signatureBytes || signatureBytes.every((byte) => byte === 0)) {
-        throw new Error("Wallet did not return a valid signature");
-      }
-      if (!signed.signatures[1] || signed.signatures[1].every((byte) => byte === 0)) {
-        throw new Error("Position NFT mint partial signature missing after wallet sign");
-      }
+      const signatureBytes = signed.signatures[0]!;
       const txSignature = bs58.encode(signatureBytes);
       const signedTransaction = btoa(String.fromCharCode(...signed.serialize()));
       if (!current() || Date.now() >= prepared.summary.expiresAt) throw new Error("Wallet, input or quote changed during signing; transaction not sent");
@@ -129,6 +128,7 @@ export function useOpenSubmissionCommand({ pair, wallet, inputMint, inputKind, a
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           signedTransaction,
+          unsignedTransaction: prepared.unsignedTransaction,
           permit: prepared.permit,
           wallet,
           summary: prepared.summary,
@@ -157,8 +157,9 @@ export function useOpenSubmissionCommand({ pair, wallet, inputMint, inputKind, a
       }
       if (walletRef.current === wallet) setError(persisted
         ? "Submission result is unconfirmed. Tracking the original signature; do not open again until it is verified."
-        : caught instanceof Error ? caught.message : "Open-position transaction failed");
+        : jupiterRelayFailureMessage(caught, "Preparing the transaction timed out. Please retry."));
     } finally {
+      mint.secretKey.fill(0);
       submittingRef.current = false;
       setSubmitStage(null);
     }

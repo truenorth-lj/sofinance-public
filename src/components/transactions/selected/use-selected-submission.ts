@@ -7,6 +7,7 @@ import bs58 from "bs58";
 import type { PositionSelection, SelectedPositionState } from "@sofinance/engine/selected-state";
 import { persistSelectedAttempt, type SelectedAttempt } from "@/lib/selected-attempt";
 import type { SelectedQuote } from "@/lib/selected-quote";
+import { assertWalletReturnedTransaction } from "@/lib/wallet-returned-guard";
 import { postWithJupiterRelay, type JupiterRelayStore } from "@/lib/jupiter/browser-relay";
 import { RELAY_DEADLINE_MS, selectionKey, type Preflight } from "./selected-preview-model";
 
@@ -99,17 +100,14 @@ export function useSelectedSubmission() {
       }
       const bytes = Uint8Array.from(atob(prepared.unsignedTransaction), (character) => character.charCodeAt(0));
       const unsigned = VersionedTransaction.deserialize(bytes);
+      const preparedSnapshot = VersionedTransaction.deserialize(unsigned.serialize());
       if (unsigned.message.recentBlockhash !== prepared.blockhash ||
         unsigned.message.staticAccountKeys[0]?.toBase58() !== wallet) throw new Error("Transaction payer or blockhash mismatch");
       adoptPreview(prepared); setNow(Date.now());
       setSubmitStage("wallet");
-      const originalMessage = unsigned.message.serialize();
       const signed = await signTransaction(unsigned);
       if (!ownsLifetime()) return;
-      const signedMessage = signed.message.serialize();
-      if (signedMessage.length !== originalMessage.length || signedMessage.some((byte, index) => byte !== originalMessage[index])) {
-        throw new Error("Wallet modified transaction content, stopped submission");
-      }
+      assertWalletReturnedTransaction(preparedSnapshot, signed, wallet);
       const signatureBytes = signed.signatures[0];
       if (!signatureBytes || signatureBytes.every((byte) => byte === 0)) throw new Error("Wallet did not return valid signature");
       if (!isWalletCurrent(wallet) || getSelectionKey() !== key || getInputRevision() !== inputRevision ||
@@ -126,7 +124,7 @@ export function useSelectedSubmission() {
       publishPersisted(current);
       clearPreview(); setSubmitStage("broadcasting");
       const sent = await fetch("/api/selected-broadcast", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ wallet, selection, signedTransaction, permit: prepared.permit,
+        body: JSON.stringify({ wallet, selection, signedTransaction, unsignedTransaction: prepared.unsignedTransaction, permit: prepared.permit,
           requested: prepared.quote.requested, floorBps: prepared.quote.floorBps,
           expiresAt: prepared.expiresAt, lastValidBlockHeight: prepared.lastValidBlockHeight,
           startingLiquidity: prepared.startingLiquidity, expectedLiquidity: prepared.quote.liquidity,

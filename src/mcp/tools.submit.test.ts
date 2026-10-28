@@ -28,7 +28,7 @@ import { readSelectedPositionState } from "@sofinance/engine/selected-state";
 import { beamAfterSend } from "@/lib/beam-after-send";
 import {
   BEAM_RESULT, BLOCKHASH, SIGNING_SECRET, buildTransaction, compoundSummaryFixture, fakeConnection, type FakeConnection, messageBase64,
-  openSummaryFixture, signatureOf, testKeypair, toBase64,
+  openSummaryFixture, phantomRewriteTransaction, signatureOf, tamperTransferLamports, testKeypair, toBase64,
 } from "../lib/test-support/send-fixtures";
 import type { SubmitSignedTransactionInput } from "./schemas";
 import { submitCompoundTransaction, submitOpenPosition, submitSignedTransaction } from "./tools";
@@ -285,6 +285,42 @@ describe("submitOpenPosition (MCP open-position submit)", () => {
     expect(error).toBeInstanceOf(Error);
     expect((error as Error).message).toBe("RPC returned transaction signature mismatch");
     expect(connection.sendRawTransaction).toHaveBeenCalledOnce();
+  });
+
+  it("accepts a Phantom-style rewrite when unsignedTransaction is provided", async () => {
+    const unsigned = buildTransaction({ payer: walletKey, extraSigners: [nftKey], signWith: [] });
+    const rewritten = phantomRewriteTransaction(unsigned);
+    rewritten.sign([walletKey, nftKey]);
+    connection.sendRawTransaction.mockImplementation(async () => signatureOf(rewritten));
+    const rewrittenSummary = openSummaryFixture({
+      wallet, nftMint: nftKey.publicKey.toBase58(), blockhash: rewritten.message.recentBlockhash,
+    });
+    await expect(submitOpenPosition({
+      signedTransaction: toBase64(rewritten),
+      unsignedTransaction: toBase64(unsigned),
+      wallet, summary: rewrittenSummary,
+      permit: issueOpenPositionPermit(SIGNING_SECRET, {
+        wallet, summary: rewrittenSummary, message: messageBase64(unsigned),
+      }),
+    })).resolves.toMatchObject({ signature: signatureOf(rewritten), positionMint: nftKey.publicKey.toBase58() });
+  });
+
+  it("rejects a tampered amount even when the permit matches the prepared message", async () => {
+    const unsigned = buildTransaction({ payer: walletKey, extraSigners: [nftKey], signWith: [] });
+    const tampered = tamperTransferLamports(unsigned, 99);
+    tampered.sign([walletKey, nftKey]);
+    const tamperedSummary = openSummaryFixture({
+      wallet, nftMint: nftKey.publicKey.toBase58(), blockhash: unsigned.message.recentBlockhash,
+    });
+    await expect(submitOpenPosition({
+      signedTransaction: toBase64(tampered),
+      unsignedTransaction: toBase64(unsigned),
+      wallet, summary: tamperedSummary,
+      permit: issueOpenPositionPermit(SIGNING_SECRET, {
+        wallet, summary: tamperedSummary, message: messageBase64(unsigned),
+      }),
+    })).rejects.toThrow(/required instruction/);
+    expect(rpcConnection).not.toHaveBeenCalled();
   });
 });
 

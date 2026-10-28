@@ -14,6 +14,7 @@ type SelectedSubmitCommand = {
   wallet: PublicKey;
   walletSignature: Uint8Array;
   permitInput: SelectedPermitInput;
+  prepared?: VersionedTransaction;
 };
 type SelectedSubmitProfile = typeof APP_SELECTED_SUBMIT | typeof MCP_SELECTED_SUBMIT;
 
@@ -21,7 +22,7 @@ type SelectedSubmitProfile = typeof APP_SELECTED_SUBMIT | typeof MCP_SELECTED_SU
 // structure checks, in their original order; this type is not authorization proof.
 // Never rebuild the signed transaction or classify a send failure as unsent here.
 export async function submitSelected(
-  { transaction, wallet, walletSignature, permitInput: input }: SelectedSubmitCommand,
+  { transaction, wallet, walletSignature, permitInput: input, prepared }: SelectedSubmitCommand,
   profile: SelectedSubmitProfile,
 ) {
   const app = profile === APP_SELECTED_SUBMIT;
@@ -51,6 +52,7 @@ export async function submitSelected(
   await simulateAndVerifySelectedTransaction({
     connection, transaction, wallet, state, requested: BigInt(input.requested),
     expectedLiquidity: BigInt(input.expectedLiquidity), sigVerify: true,
+    prepared,
     ...(app ? { useStateSnapshot: true } : {}),
   });
   if (Date.now() >= input.expiresAt || await connection.getBlockHeight("confirmed") > input.lastValidBlockHeight) {

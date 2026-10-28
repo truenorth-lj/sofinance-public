@@ -244,13 +244,13 @@ describe("compound signature and recovery persistence", () => {
     const transaction = new VersionedTransaction(new TransactionMessage({ payerKey: owner.publicKey,
       recentBlockhash: key(), instructions: [SystemProgram.transfer({ fromPubkey: owner.publicKey,
         toPubkey: Keypair.generate().publicKey, lamports: 1 })] }).compileToV0Message());
-    const original = Uint8Array.from(transaction.message.serialize());
-    expect(() => signedCompoundTransaction(transaction, original, owner.publicKey.toBase58())).toThrow("did not return transaction signature");
+    const prepared = VersionedTransaction.deserialize(transaction.serialize());
+    expect(() => signedCompoundTransaction(transaction, prepared, owner.publicKey.toBase58())).toThrow("did not return transaction signature");
     transaction.sign([owner]);
-    const signed = signedCompoundTransaction(transaction, original, owner.publicKey.toBase58());
+    const signed = signedCompoundTransaction(transaction, prepared, owner.publicKey.toBase58());
     expect(signed.signature).toBe(bs58.encode(transaction.signatures[0]!));
     transaction.message.recentBlockhash = key();
-    expect(() => signedCompoundTransaction(transaction, original, owner.publicKey.toBase58())).toThrow("modified transaction content");
+    expect(() => signedCompoundTransaction(transaction, prepared, owner.publicKey.toBase58())).toThrow("Wallet changed the transaction blockhash");
   });
 });
 

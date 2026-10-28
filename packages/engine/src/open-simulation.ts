@@ -3,6 +3,7 @@ import { getPdaPersonalPositionAddress, PersonalPositionLayout } from "@raydium-
 import { getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID, unpackAccount } from "@solana/spl-token";
 import { Connection, PublicKey, SystemProgram, VersionedTransaction, type AccountInfo } from "@solana/web3.js";
 import { MIN_SOL_LAMPORTS, NATIVE_SOL_MINT } from "./ids";
+import { walletPriorityFeeAllowance } from "./wallet-priority-fee";
 import { simulatedInputSpendMatches } from "./amount";
 import type { OpenPoolState } from "./open-state";
 
@@ -20,6 +21,8 @@ type VerifyInput = {
   sigVerify: boolean;
   /** Minimum wallet SOL that must remain. Defaults to MIN_SOL_LAMPORTS; sponsored mode passes 0n (the wallet may hold no SOL). */
   minRemainingSolLamports?: bigint;
+  /** Prepared message; wallet-raised ComputeBudget priority is allowed up to 0.01 SOL extra. */
+  prepared?: VersionedTransaction;
 };
 
 function decodeToken(info: AccountInfo<Buffer> | null, key: PublicKey, program: PublicKey, wallet: PublicKey, mint: PublicKey) {
@@ -122,7 +125,8 @@ export async function simulateAndVerifyOpenTransaction(input: VerifyInput) {
   const solResult = solRead ?? (sponsoredWallet && solBefore === 0 ? { lamports: 0 } : null);
   if (!solResult) throw new Error("Simulation did not read back wallet SOL account");
   const solDebit = BigInt(solBefore) - BigInt(solResult.lamports);
-  if (solDebit < 0n || solDebit > maxSolDebitLamports || BigInt(solResult.lamports) < minRemainingSol) {
+  const debitCap = maxSolDebitLamports + walletPriorityFeeAllowance(input.prepared, transaction);
+  if (solDebit < 0n || solDebit > debitCap || BigInt(solResult.lamports) < minRemainingSol) {
     throw new Error("Simulated SOL expenditure or remaining balance exceeds limit");
   }
   let spentInput: bigint | null = null;

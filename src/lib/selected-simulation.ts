@@ -7,11 +7,14 @@ import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID, unpackAccount } from "
 import { Connection, PublicKey, VersionedTransaction, type AccountInfo } from "@solana/web3.js";
 import { MIN_SOL_LAMPORTS, NATIVE_SOL_MINT } from "@sofinance/engine/ids";
 import { simulatedInputSpendMatches } from "@sofinance/engine/amount";
+import { walletPriorityFeeAllowance } from "@sofinance/engine/wallet-priority-fee";
 import type { SelectedPositionState } from "@sofinance/engine/selected-state";
 
 type VerifyInput = {
   connection: Connection; transaction: VersionedTransaction; wallet: PublicKey;
   state: SelectedPositionState; requested: bigint; expectedLiquidity: bigint; sigVerify: boolean; useStateSnapshot?: boolean;
+  /** Prepared message; wallet-raised ComputeBudget priority is allowed up to 0.01 SOL extra. */
+  prepared?: VersionedTransaction;
 };
 
 function decodeToken(info: AccountInfo<Buffer> | null, key: PublicKey, program: PublicKey, wallet: PublicKey, mint: PublicKey) {
@@ -87,7 +90,8 @@ export async function simulateAndVerifySelectedTransaction(input: VerifyInput) {
   const solResult = simulated?.[addresses.length - 1];
   if (!solResult) throw new Error("Simulation did not read back wallet SOL account");
   const solDebit = BigInt(solBefore) - BigInt(solResult.lamports);
-  const maxSolDebit = state.inputKind === "native" ? requested + 10_000_000n : 10_000_000n;
+  const maxSolDebit = (state.inputKind === "native" ? requested + 10_000_000n : 10_000_000n)
+    + walletPriorityFeeAllowance(input.prepared, transaction);
   if (solDebit < 0n || solDebit > maxSolDebit || BigInt(solResult.lamports) < BigInt(MIN_SOL_LAMPORTS)) {
     throw new Error("Simulated SOL expenditure or remaining balance exceeds limit");
   }

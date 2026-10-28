@@ -105,7 +105,7 @@ test.describe("J3 sign link, wallet / transaction guards", () => {
     expect(wallet.ledger).toHaveLength(1);
   });
 
-  test("wallet modifies the message (appends an instruction): 'Wallet modified transaction content', nothing broadcast", async ({ page, wallet }) => {
+  test("wallet appends a Memo instruction: core ixs still match, so the signed tx is posted", async ({ page, wallet }) => {
     wallet.mode = "mutate-message";
     const scenario = makeScenario("compound", wallet.address);
     const sign = new SignPage(page);
@@ -113,14 +113,16 @@ test.describe("J3 sign link, wallet / transaction guards", () => {
     await sign.goto(scenario.token);
     await new ConnectModal(page, wallet).connect();
     await sign.signButton.click();
-    await sign.expectStatus("Wallet modified transaction content");
+    await sign.expectStatus(SUCCESS);
     await page.screenshot({ path: test.info().outputPath("j3-wallet-modified.png") });
     expect(wallet.ledger).toHaveLength(1);
     expect(wallet.ledger[0]).toMatchObject({ outcome: "signed", mode: "mutate-message" });
-    expect(sign.broadcasts, "a transaction the wallet changed must never be posted").toEqual([]);
+    expect(sign.broadcasts).toHaveLength(1);
+    expect(sign.broadcasts[0]?.body.unsignedTransaction).toBe(scenario.payload.unsignedTransaction);
   });
 
-  test("wallet changes bytes without changing the length (instruction data): same guard, nothing broadcast", async ({ page, wallet }) => {
+  test("wallet changes instruction data: required-instruction guard, nothing broadcast", async ({ page, wallet, guards }) => {
+    guards.allowConsole(/Wallet removed or changed a required instruction/);
     wallet.mode = "tweak-bytes";
     const scenario = makeScenario("compound", wallet.address);
     const sign = new SignPage(page);
@@ -128,7 +130,7 @@ test.describe("J3 sign link, wallet / transaction guards", () => {
     await sign.goto(scenario.token);
     await new ConnectModal(page, wallet).connect();
     await sign.signButton.click();
-    await sign.expectStatus("Wallet modified transaction content");
+    await sign.expectStatus(/required instruction/);
     expect(wallet.ledger[0]).toMatchObject({ outcome: "signed", mode: "tweak-bytes" });
     expect(sign.broadcasts).toEqual([]);
   });
@@ -146,23 +148,22 @@ test.describe("J3 sign link, wallet / transaction guards", () => {
   });
 
   for (const kind of ["compound", "add-liquidity", "open-position"] as const) {
-    test(`${kind}: a Lighthouse-style guard instruction added by the wallet trips the same guard (documented product risk)`, async ({ page, wallet }) => {
+    test(`${kind}: a Lighthouse-style guard instruction added by the wallet is posted with unsignedTransaction`, async ({ page, wallet }) => {
       wallet.mode = "lighthouse";
-      test.info().annotations.push({ type: "risk",
-        description: "Phantom/Solflare add Lighthouse guard instructions on mainnet; the byte-equality guard would reject them. Verify with a real wallet (roadmap C.6)." });
       const scenario = makeScenario(kind, wallet.address);
       const sign = new SignPage(page);
       await sign.mockBroadcast(kind);
       await sign.goto(scenario.token);
       await new ConnectModal(page, wallet).connect();
       await sign.signButton.click();
-      await sign.expectStatus("Wallet modified transaction content");
-      expect(wallet.ledger[0]!.programIds).toContain("L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95");
-      expect(sign.broadcasts).toEqual([]);
+      await sign.expectStatus(SUCCESS);
+      expect(wallet.ledger[0]!.programIds).toContain("L2TExMFKdjpN9kozasaurPPf4nCVfRTb7cTZo5GsqqY");
+      expect(sign.broadcasts).toHaveLength(1);
+      expect(sign.broadcasts[0]?.body.unsignedTransaction).toBe(scenario.payload.unsignedTransaction);
     });
   }
 
-  test("open-position without the server's NFT-mint partial signature is refused after the wallet signs", async ({ page, wallet }) => {
+  test("open-position without an NFT-mint signature is refused after the wallet signs (MCP signUrl)", async ({ page, wallet }) => {
     const scenario = makeScenario("open-position", wallet.address, { serverSigns: false });
     const sign = new SignPage(page);
     await sign.mockBroadcast("open-position");

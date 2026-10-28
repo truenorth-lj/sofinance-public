@@ -21,6 +21,8 @@ export type JupiterLogEvent = {
   rateLimitReset?: number;
   /** Served from a client-supplied (browser) response; no server Jupiter call. */
   relayed?: boolean;
+  /** Which path produced this quote: browser relay, server key, or server after a relayed 429/5xx. */
+  quotePath?: "browser" | "server" | "server_fallback";
 };
 
 export type JupiterLogger = (event: JupiterLogEvent) => void;
@@ -42,6 +44,7 @@ export function formatJupiterLog(event: JupiterLogEvent): string {
     ...(event.attempt !== undefined ? { attempt: event.attempt } : {}),
     ...(event.selected ? { selected: true } : {}),
     ...(event.relayed ? { relayed: true } : {}),
+    ...(event.quotePath ? { quotePath: event.quotePath } : {}),
     ...(event.durationMs !== undefined ? { durationMs: event.durationMs } : {}),
     ...(event.delayMs !== undefined ? { delayMs: event.delayMs } : {}),
     ...(event.rateLimitCurrent !== undefined ? { rateLimitCurrent: event.rateLimitCurrent } : {}),

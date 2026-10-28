@@ -45,6 +45,7 @@ export type QuoteCompoundInput = z.infer<typeof quoteCompoundSchema>;
 // Submit signed transaction input schema
 export const submitSignedTransactionSchema = z.object({
   signedTransaction: z.string().max(2500, "Signed transaction too large"),
+  unsignedTransaction: z.string().max(2500, "Unsigned transaction too large").optional(),
   permit: z.string(),
   wallet: publicKeySchema,
   selection: z.object({
@@ -70,6 +71,7 @@ export type SubmitSignedTransactionInput = z.infer<typeof submitSignedTransactio
 // Submit compound transaction input schema
 export const submitCompoundTransactionSchema = z.object({
   signedTransaction: z.string().max(2500, "Signed transaction too large"),
+  unsignedTransaction: z.string().max(2500, "Unsigned transaction too large").optional(),
   permit: z.string(),
   wallet: publicKeySchema,
   summary: z.any(), // Complex object, validated by existing code
@@ -99,11 +101,14 @@ export const quoteOpenPositionSchema = z.object({
   slippageToleranceBps: z.number().int().min(0).max(500).multipleOf(10).default(100),
 });
 export type QuoteOpenPositionInput = z.infer<typeof quoteOpenPositionSchema>;
-export const prepareOpenPositionSchema = quoteOpenPositionSchema;
-export type PrepareOpenPositionInput = QuoteOpenPositionInput;
+export const prepareOpenPositionSchema = quoteOpenPositionSchema.extend({
+  nftMint: publicKeySchema.optional().describe("Client-generated position NFT mint. Prefer this: wallet signs first, then the agent adds the mint signature. Omit only for the MCP signUrl fallback, which partial-signs server-side."),
+});
+export type PrepareOpenPositionInput = z.infer<typeof prepareOpenPositionSchema>;
 
 export const submitOpenPositionSchema = z.object({
   signedTransaction: z.string().max(2500, "Signed transaction too large"),
+  unsignedTransaction: z.string().max(2500, "Unsigned transaction too large").optional(),
   permit: z.string(),
   wallet: publicKeySchema,
   summary: z.any(),

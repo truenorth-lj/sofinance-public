@@ -169,19 +169,54 @@ it("two-stage unknown S2 reload retains complete first prepared and S1, and succ
  expect(mocks.sign).toHaveBeenCalledTimes(2); expect(calls("broadcast")).toHaveLength(2); expect(calls("prepare")).toHaveLength(2);
  expect(mocks.history.mock.calls).toEqual([[withdrawPosition, s1], [withdrawPosition, undefined]]); expect(mocks.confirmed).toHaveBeenCalledOnce(); expect(raw()).toBeNull();
 });
-it.each(["failed", "expired"])("swap %s restores the full root and Resume only prepares conversion", async status => {
+it.each(["failed", "expired"])("swap %s Resume restores the root and re-prepares conversion in one click", async status => {
  const saved = withdrawCheckpoint("swap", { wallet: withdrawWallet, positionMint: withdrawPosition, targetUSDC: 12.34, receive: "token", outputMint: withdrawPosition, confirmHighImpact: true });
- const original = JSON.stringify(saved); rawSet.call(localStorage, withdrawKey, original);
- const { first, s1 } = twoStage();
+ rawSet.call(localStorage, withdrawKey, JSON.stringify(saved));
+ const first = saved.root!.prepared, s1 = saved.root!.signature;
+ const second = withdrawPrepared("swap", { tx1Signature: s1 });
+ fetcher.mockImplementation(async (path: string, init: RequestInit) => {
+  const body = JSON.parse(init.body as string); record(path, body);
+  if (path.endsWith("quote")) return Response.json(body.stage === "swap" ? second.summary : first.summary);
+  if (path.endsWith("prepare")) { prepared = body.stage === "swap" ? second : first; return Response.json(prepared); }
+  if (path.endsWith("broadcast")) return Response.json({ accepted: true });
+  if (path.endsWith("status")) return Response.json({ status: "success" });
+  throw new Error(`Unexpected ${path}`);
+ });
  fetcher.mockResolvedValueOnce(Response.json({ status }));
  await render(); await click("Resume withdrawal");
- expect(JSON.parse(raw()!)).toEqual({ ...saved, prepared: saved.root!.prepared, signature: saved.root!.signature, root: undefined });
- expect(mocks.sign).not.toHaveBeenCalled(); expect(mocks.history).not.toHaveBeenCalled();
- await click("Resume withdrawal");
  expect(calls("prepare")).toHaveLength(1); const request = JSON.parse(calls("prepare")[0]![1].body as string);
- expect(request).toMatchObject({ ...saved.request, confirmHighImpact: false, stage: "swap", previous: saved.root!.prepared, tx1Signature: saved.root!.signature });
+ expect(request).toMatchObject({ ...saved.request, confirmHighImpact: false, stage: "swap", previous: first, tx1Signature: s1 });
  expect(request.previous.unsignedTransaction).toBe(first.unsignedTransaction); expect(request.tx1Signature).toBe(s1);
- expect(mocks.sign).toHaveBeenCalledOnce(); expect(mocks.history).toHaveBeenCalledWith(withdrawPosition, s1);
+ expect(mocks.sign).toHaveBeenCalledOnce();
+ expect(mocks.history.mock.calls).toEqual([[withdrawPosition, s1], [withdrawPosition, undefined]]);
+ expect(mocks.confirmed).toHaveBeenCalledOnce(); expect(raw()).toBeNull();
+});
+it("convert SOL-budget rejection restores S1 so Resume re-prepares conversion", async () => {
+ const first = withdrawPrepared("withdraw"); const s1 = signedWithdraw(first).signature;
+ const second = withdrawPrepared("swap", { tx1Signature: s1 });
+ let failConvert = true;
+ fetcher.mockImplementation(async (path: string, init: RequestInit) => {
+  const body = JSON.parse(init.body as string); record(path, body);
+  if (path.endsWith("quote")) return Response.json(body.stage === "swap" ? second.summary : first.summary);
+  if (path.endsWith("prepare")) { prepared = body.stage === "swap" ? second : first; return Response.json(prepared); }
+  if (path.endsWith("broadcast")) {
+   if (body.summary.stage === "swap" && failConvert) {
+    failConvert = false;
+    return Response.json({ error: "Withdrawal exceeds SOL cost budget" }, { status: 400 });
+   }
+   return Response.json({ accepted: true });
+  }
+  if (path.endsWith("status")) return Response.json({ status: "success" });
+  throw new Error(`Unexpected ${path}`);
+ });
+ prepared = first;
+ await fresh();
+ expect(container.textContent).toContain("Withdrawal exceeds SOL cost budget");
+ expect(JSON.parse(raw()!).prepared).toEqual(first); expect(JSON.parse(raw()!).signature).toBe(s1);
+ expect(JSON.parse(raw()!).root).toBeUndefined(); expect(mocks.confirmed).not.toHaveBeenCalled();
+ await click("Resume withdrawal");
+ expect(calls("prepare").filter(([, init]) => JSON.parse(init.body as string).stage === "swap")).toHaveLength(2);
+ expect(mocks.confirmed).toHaveBeenCalledOnce(); expect(raw()).toBeNull();
 });
 it.each(["throw", "drop", "read-throw"])("failed swap retains S2 and its root when restoration write %s", async mode => {
  const saved = withdrawCheckpoint("swap"), original = JSON.stringify(saved); rawSet.call(localStorage, withdrawKey, original);

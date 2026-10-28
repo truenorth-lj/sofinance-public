@@ -25,6 +25,7 @@ import { SelectedNoRouteError } from "../selected-no-route";
 import {
   captureApiRouteError,
   captureQuoteSettleFailure,
+  captureWalletReturnedTxFailure,
   isUserFacingSelectedError,
   isUserRejectedError,
   resolveApiRoute,
@@ -146,13 +147,36 @@ describe("captureQuoteSettleFailure", () => {
   it("reports pair, amount, range width and rounds without a wallet", () => {
     vi.stubEnv("SENTRY_DSN", "https://key@o1.ingest.us.sentry.io/1");
     const error = new Error("Quote did not settle");
-    captureQuoteSettleFailure(error, { pair: "HOODx/HOOD", amount: "5", rangeWidth: "micro", rounds: 6 });
+    captureQuoteSettleFailure(error, { pair: "HOODx/HOOD", amount: "5", rangeWidth: "micro", rounds: 6, quotePath: "browser" });
     expect(captureException).toHaveBeenCalledWith(error);
     expect(setTag).toHaveBeenCalledWith("quote_settle", "did_not_settle");
+    expect(setTag).toHaveBeenCalledWith("error_class", "Error");
     expect(setExtra).toHaveBeenCalledWith("pair", "HOODx/HOOD");
     expect(setExtra).toHaveBeenCalledWith("amount", "5");
     expect(setExtra).toHaveBeenCalledWith("range_width", "micro");
     expect(setExtra).toHaveBeenCalledWith("rounds", 6);
+    expect(setTag).toHaveBeenCalledWith("quote_path", "browser");
     expect(setExtra.mock.calls.map((call) => call[0])).not.toContain("wallet");
+  });
+});
+
+describe("captureWalletReturnedTxFailure", () => {
+  it("reports the compact diagnostic and no wallet extra", () => {
+    vi.stubEnv("SENTRY_DSN", "https://key@o1.ingest.us.sentry.io/1");
+    const error = new Error("Wallet removed or changed a required instruction (unmatched #1 program=CAMMCzo5; returned=[ComputeBudget111111111111111111111111111111,L2TEx])");
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    captureWalletReturnedTxFailure(error);
+    expect(String(logged.mock.calls[0]?.[0])).toContain("unmatched #1 program=CAMMCzo5");
+    expect(captureException).toHaveBeenCalledWith(error);
+    expect(setTag).toHaveBeenCalledWith("error_class", "wallet_returned_tx_mismatch");
+    expect(setExtra).toHaveBeenCalledWith("diagnostic", error.message);
+    expect(setExtra.mock.calls.map((call) => call[0])).not.toContain("wallet");
+    logged.mockRestore();
+  });
+
+  it("ignores unrelated errors", () => {
+    vi.stubEnv("SENTRY_DSN", "https://key@o1.ingest.us.sentry.io/1");
+    captureWalletReturnedTxFailure(new Error("User rejected the request"));
+    expect(captureException).not.toHaveBeenCalled();
   });
 });

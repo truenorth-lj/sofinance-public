@@ -19,6 +19,7 @@ exports[`HTTP open retries at most three and never issues a permit on failure 1`
         100,
         {
           "enforceResaleFloor": false,
+          "nftMint": "8SFqwqnq4whPhs8icwHA2hQg3hUoN1qrCLK1SBx3WKwe",
         },
       ],
       "name": "openBuild",
@@ -39,6 +40,7 @@ exports[`HTTP open retries at most three and never issues a permit on failure 1`
         100,
         {
           "enforceResaleFloor": false,
+          "nftMint": "8SFqwqnq4whPhs8icwHA2hQg3hUoN1qrCLK1SBx3WKwe",
         },
       ],
       "name": "openBuild",
@@ -59,6 +61,7 @@ exports[`HTTP open retries at most three and never issues a permit on failure 1`
         100,
         {
           "enforceResaleFloor": false,
+          "nftMint": "8SFqwqnq4whPhs8icwHA2hQg3hUoN1qrCLK1SBx3WKwe",
         },
       ],
       "name": "openBuild",
@@ -96,6 +99,7 @@ exports[`HTTP retry allowlists reject Unable to estimate complete transaction ne
         100,
         {
           "enforceResaleFloor": false,
+          "nftMint": "8SFqwqnq4whPhs8icwHA2hQg3hUoN1qrCLK1SBx3WKwe",
         },
       ],
       "name": "openBuild",
@@ -153,6 +157,7 @@ exports[`HTTP retry allowlists reject permanent failure 1`] = `
         100,
         {
           "enforceResaleFloor": false,
+          "nftMint": "8SFqwqnq4whPhs8icwHA2hQg3hUoN1qrCLK1SBx3WKwe",
         },
       ],
       "name": "openBuild",
@@ -1073,6 +1078,7 @@ exports[`open HTTP accepts micro while MCP rejects it before building > http 1`]
         100,
         {
           "enforceResaleFloor": false,
+          "nftMint": "8SFqwqnq4whPhs8icwHA2hQg3hUoN1qrCLK1SBx3WKwe",
         },
       ],
       "name": "openBuild",
@@ -1152,6 +1158,7 @@ exports[`open prepare baseline > HTTP builder failure precedes missing signing k
         100,
         {
           "enforceResaleFloor": false,
+          "nftMint": "8SFqwqnq4whPhs8icwHA2hQg3hUoN1qrCLK1SBx3WKwe",
         },
       ],
       "name": "openBuild",
@@ -1189,6 +1196,7 @@ exports[`open prepare baseline > HTTP preserves full output, permit, bytes, head
         100,
         {
           "enforceResaleFloor": false,
+          "nftMint": "8SFqwqnq4whPhs8icwHA2hQg3hUoN1qrCLK1SBx3WKwe",
         },
       ],
       "name": "openBuild",
@@ -1313,6 +1321,9 @@ exports[`open prepare baseline > http MCP has no HTTP outer retry or refresh 1`]
         },
         9900,
         100,
+        {
+          "nftMint": "8SFqwqnq4whPhs8icwHA2hQg3hUoN1qrCLK1SBx3WKwe",
+        },
       ],
       "name": "openBuild",
     },
@@ -1348,6 +1359,9 @@ exports[`open prepare baseline > http sign URL explicit preserves the entire aut
         },
         9900,
         100,
+        {
+          "nftMint": "8SFqwqnq4whPhs8icwHA2hQg3hUoN1qrCLK1SBx3WKwe",
+        },
       ],
       "name": "openBuild",
     },
@@ -1386,7 +1400,7 @@ exports[`open prepare baseline > http sign URL explicit preserves the entire aut
   "signToken": "verified-payload:eyJraW5kIjoib3Blbi1wb3NpdGlvbiIsIndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwidW5zaWduZWRUcmFuc2FjdGlvbiI6IkFRQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQ0FBUUFCQTRxSTQ5MTBDZkdWL1ZMYkxUeTZYWExLWndtL0haUVNHL04waUFHMEQyOWNsLy9JZzhnTDduSTM3NVhadWJjRDFLMWo1Z29oNWdXR2RvSzNXNHMvUXdNQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQWNIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEFRSUNBQUVNQWdBQUFBRUFBQUFBQUFBQUFBPT0iLCJwZXJtaXQiOiI5MGIyYWQ5YjVmYmZjNGU2M2E5NmEyNjYyMWUzM2Y4MTRkYWFlNGQzNWZjMmQxNWI4YTM3NGZmZTFlNGY5OTkxIiwic3VibWl0QXJncyI6eyJwZXJtaXQiOiI5MGIyYWQ5YjVmYmZjNGU2M2E5NmEyNjYyMWUzM2Y4MTRkYWFlNGQzNWZjMmQxNWI4YTM3NGZmZTFlNGY5OTkxIiwid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJzdW1tYXJ5Ijp7Im9wZXJhdGlvbiI6ImZpeHR1cmUiLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInNpbXVsYXRlZCI6dHJ1ZSwicXVvdGUiOnsid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJyZXF1ZXN0ZWQiOiIxIiwibGlxdWlkaXR5IjoiMiIsImZsb29yQnBzIjo5OTAwLCJyYW5nZVNpZGUiOiJpbnNpZGUiLCJ0b2xlcmFuY2VCcHMiOjEwMH0sInN0YXJ0aW5nTGlxdWlkaXR5IjoiMSIsInN0YXJ0aW5nQmFsYW5jZXMiOnsiaW5wdXQiOiIxMCIsImEiOiIwIiwiYiI6IjAifSwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwLCJsYXN0VmFsaWRCbG9ja0hlaWdodCI6MTUwLCJwcmVzZXJ2ZWQiOnsiZnVsbFN1bW1hcnkiOnRydWV9fX0sImV4cGlyZXNBdCI6MTc5MzEwMDA2MDAwMH0",
   "signUrl": "https://app.invalid.example/app/sign/verified-payload:eyJraW5kIjoib3Blbi1wb3NpdGlvbiIsIndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwidW5zaWduZWRUcmFuc2FjdGlvbiI6IkFRQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQ0FBUUFCQTRxSTQ5MTBDZkdWL1ZMYkxUeTZYWExLWndtL0haUVNHL04waUFHMEQyOWNsLy9JZzhnTDduSTM3NVhadWJjRDFLMWo1Z29oNWdXR2RvSzNXNHMvUXdNQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQWNIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEFRSUNBQUVNQWdBQUFBRUFBQUFBQUFBQUFBPT0iLCJwZXJtaXQiOiI5MGIyYWQ5YjVmYmZjNGU2M2E5NmEyNjYyMWUzM2Y4MTRkYWFlNGQzNWZjMmQxNWI4YTM3NGZmZTFlNGY5OTkxIiwic3VibWl0QXJncyI6eyJwZXJtaXQiOiI5MGIyYWQ5YjVmYmZjNGU2M2E5NmEyNjYyMWUzM2Y4MTRkYWFlNGQzNWZjMmQxNWI4YTM3NGZmZTFlNGY5OTkxIiwid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJzdW1tYXJ5Ijp7Im9wZXJhdGlvbiI6ImZpeHR1cmUiLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInNpbXVsYXRlZCI6dHJ1ZSwicXVvdGUiOnsid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJyZXF1ZXN0ZWQiOiIxIiwibGlxdWlkaXR5IjoiMiIsImZsb29yQnBzIjo5OTAwLCJyYW5nZVNpZGUiOiJpbnNpZGUiLCJ0b2xlcmFuY2VCcHMiOjEwMH0sInN0YXJ0aW5nTGlxdWlkaXR5IjoiMSIsInN0YXJ0aW5nQmFsYW5jZXMiOnsiaW5wdXQiOiIxMCIsImEiOiIwIiwiYiI6IjAifSwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwLCJsYXN0VmFsaWRCbG9ja0hlaWdodCI6MTUwLCJwcmVzZXJ2ZWQiOnsiZnVsbFN1bW1hcnkiOnRydWV9fX0sImV4cGlyZXNBdCI6MTc5MzEwMDA2MDAwMH0",
   "instructions": {
-    "message": "Sign unsignedTransaction with the wallet (keep the existing NFT-mint partial signature), then call submit_open_position with { signedTransaction, permit, wallet, summary }. Pass summary back exactly as returned. Or open signUrl in a browser with the wallet connected."
+    "message": "Sign unsignedTransaction with the wallet FIRST, then add the NFT mint signature to the transaction the wallet returns without modifying the message, then call submit_open_position with { signedTransaction, permit, wallet, summary }. Pass summary back exactly as returned. signUrl cannot add the mint signature; use programmatic submit when you generated nftMint."
   }
 }",
         "type": "text",
@@ -1413,6 +1427,9 @@ exports[`open prepare baseline > http sign URL relative preserves the entire aut
         },
         9900,
         100,
+        {
+          "nftMint": "8SFqwqnq4whPhs8icwHA2hQg3hUoN1qrCLK1SBx3WKwe",
+        },
       ],
       "name": "openBuild",
     },
@@ -1451,7 +1468,7 @@ exports[`open prepare baseline > http sign URL relative preserves the entire aut
   "signToken": "verified-payload:eyJraW5kIjoib3Blbi1wb3NpdGlvbiIsIndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwidW5zaWduZWRUcmFuc2FjdGlvbiI6IkFRQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQ0FBUUFCQTRxSTQ5MTBDZkdWL1ZMYkxUeTZYWExLWndtL0haUVNHL04waUFHMEQyOWNsLy9JZzhnTDduSTM3NVhadWJjRDFLMWo1Z29oNWdXR2RvSzNXNHMvUXdNQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQWNIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEFRSUNBQUVNQWdBQUFBRUFBQUFBQUFBQUFBPT0iLCJwZXJtaXQiOiI5MGIyYWQ5YjVmYmZjNGU2M2E5NmEyNjYyMWUzM2Y4MTRkYWFlNGQzNWZjMmQxNWI4YTM3NGZmZTFlNGY5OTkxIiwic3VibWl0QXJncyI6eyJwZXJtaXQiOiI5MGIyYWQ5YjVmYmZjNGU2M2E5NmEyNjYyMWUzM2Y4MTRkYWFlNGQzNWZjMmQxNWI4YTM3NGZmZTFlNGY5OTkxIiwid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJzdW1tYXJ5Ijp7Im9wZXJhdGlvbiI6ImZpeHR1cmUiLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInNpbXVsYXRlZCI6dHJ1ZSwicXVvdGUiOnsid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJyZXF1ZXN0ZWQiOiIxIiwibGlxdWlkaXR5IjoiMiIsImZsb29yQnBzIjo5OTAwLCJyYW5nZVNpZGUiOiJpbnNpZGUiLCJ0b2xlcmFuY2VCcHMiOjEwMH0sInN0YXJ0aW5nTGlxdWlkaXR5IjoiMSIsInN0YXJ0aW5nQmFsYW5jZXMiOnsiaW5wdXQiOiIxMCIsImEiOiIwIiwiYiI6IjAifSwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwLCJsYXN0VmFsaWRCbG9ja0hlaWdodCI6MTUwLCJwcmVzZXJ2ZWQiOnsiZnVsbFN1bW1hcnkiOnRydWV9fX0sImV4cGlyZXNBdCI6MTc5MzEwMDA2MDAwMH0",
   "signUrl": "https://app.invalid.example/app/sign/verified-payload:eyJraW5kIjoib3Blbi1wb3NpdGlvbiIsIndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwidW5zaWduZWRUcmFuc2FjdGlvbiI6IkFRQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQ0FBUUFCQTRxSTQ5MTBDZkdWL1ZMYkxUeTZYWExLWndtL0haUVNHL04waUFHMEQyOWNsLy9JZzhnTDduSTM3NVhadWJjRDFLMWo1Z29oNWdXR2RvSzNXNHMvUXdNQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQWNIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEFRSUNBQUVNQWdBQUFBRUFBQUFBQUFBQUFBPT0iLCJwZXJtaXQiOiI5MGIyYWQ5YjVmYmZjNGU2M2E5NmEyNjYyMWUzM2Y4MTRkYWFlNGQzNWZjMmQxNWI4YTM3NGZmZTFlNGY5OTkxIiwic3VibWl0QXJncyI6eyJwZXJtaXQiOiI5MGIyYWQ5YjVmYmZjNGU2M2E5NmEyNjYyMWUzM2Y4MTRkYWFlNGQzNWZjMmQxNWI4YTM3NGZmZTFlNGY5OTkxIiwid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJzdW1tYXJ5Ijp7Im9wZXJhdGlvbiI6ImZpeHR1cmUiLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInNpbXVsYXRlZCI6dHJ1ZSwicXVvdGUiOnsid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJyZXF1ZXN0ZWQiOiIxIiwibGlxdWlkaXR5IjoiMiIsImZsb29yQnBzIjo5OTAwLCJyYW5nZVNpZGUiOiJpbnNpZGUiLCJ0b2xlcmFuY2VCcHMiOjEwMH0sInN0YXJ0aW5nTGlxdWlkaXR5IjoiMSIsInN0YXJ0aW5nQmFsYW5jZXMiOnsiaW5wdXQiOiIxMCIsImEiOiIwIiwiYiI6IjAifSwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwLCJsYXN0VmFsaWRCbG9ja0hlaWdodCI6MTUwLCJwcmVzZXJ2ZWQiOnsiZnVsbFN1bW1hcnkiOnRydWV9fX0sImV4cGlyZXNBdCI6MTc5MzEwMDA2MDAwMH0",
   "instructions": {
-    "message": "Sign unsignedTransaction with the wallet (keep the existing NFT-mint partial signature), then call submit_open_position with { signedTransaction, permit, wallet, summary }. Pass summary back exactly as returned. Or open signUrl in a browser with the wallet connected."
+    "message": "Sign unsignedTransaction with the wallet FIRST, then add the NFT mint signature to the transaction the wallet returns without modifying the message, then call submit_open_position with { signedTransaction, permit, wallet, summary }. Pass summary back exactly as returned. signUrl cannot add the mint signature; use programmatic submit when you generated nftMint."
   }
 }",
         "type": "text",
@@ -1478,6 +1495,9 @@ exports[`open prepare baseline > http sign URL vercel preserves the entire authe
         },
         9900,
         100,
+        {
+          "nftMint": "8SFqwqnq4whPhs8icwHA2hQg3hUoN1qrCLK1SBx3WKwe",
+        },
       ],
       "name": "openBuild",
     },
@@ -1516,7 +1536,7 @@ exports[`open prepare baseline > http sign URL vercel preserves the entire authe
   "signToken": "verified-payload:eyJraW5kIjoib3Blbi1wb3NpdGlvbiIsIndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwidW5zaWduZWRUcmFuc2FjdGlvbiI6IkFRQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQ0FBUUFCQTRxSTQ5MTBDZkdWL1ZMYkxUeTZYWExLWndtL0haUVNHL04waUFHMEQyOWNsLy9JZzhnTDduSTM3NVhadWJjRDFLMWo1Z29oNWdXR2RvSzNXNHMvUXdNQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQWNIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEFRSUNBQUVNQWdBQUFBRUFBQUFBQUFBQUFBPT0iLCJwZXJtaXQiOiI5MGIyYWQ5YjVmYmZjNGU2M2E5NmEyNjYyMWUzM2Y4MTRkYWFlNGQzNWZjMmQxNWI4YTM3NGZmZTFlNGY5OTkxIiwic3VibWl0QXJncyI6eyJwZXJtaXQiOiI5MGIyYWQ5YjVmYmZjNGU2M2E5NmEyNjYyMWUzM2Y4MTRkYWFlNGQzNWZjMmQxNWI4YTM3NGZmZTFlNGY5OTkxIiwid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJzdW1tYXJ5Ijp7Im9wZXJhdGlvbiI6ImZpeHR1cmUiLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInNpbXVsYXRlZCI6dHJ1ZSwicXVvdGUiOnsid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJyZXF1ZXN0ZWQiOiIxIiwibGlxdWlkaXR5IjoiMiIsImZsb29yQnBzIjo5OTAwLCJyYW5nZVNpZGUiOiJpbnNpZGUiLCJ0b2xlcmFuY2VCcHMiOjEwMH0sInN0YXJ0aW5nTGlxdWlkaXR5IjoiMSIsInN0YXJ0aW5nQmFsYW5jZXMiOnsiaW5wdXQiOiIxMCIsImEiOiIwIiwiYiI6IjAifSwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwLCJsYXN0VmFsaWRCbG9ja0hlaWdodCI6MTUwLCJwcmVzZXJ2ZWQiOnsiZnVsbFN1bW1hcnkiOnRydWV9fX0sImV4cGlyZXNBdCI6MTc5MzEwMDA2MDAwMH0",
   "signUrl": "https://app.invalid.example/app/sign/verified-payload:eyJraW5kIjoib3Blbi1wb3NpdGlvbiIsIndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwidW5zaWduZWRUcmFuc2FjdGlvbiI6IkFRQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQ0FBUUFCQTRxSTQ5MTBDZkdWL1ZMYkxUeTZYWExLWndtL0haUVNHL04waUFHMEQyOWNsLy9JZzhnTDduSTM3NVhadWJjRDFLMWo1Z29oNWdXR2RvSzNXNHMvUXdNQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQWNIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEFRSUNBQUVNQWdBQUFBRUFBQUFBQUFBQUFBPT0iLCJwZXJtaXQiOiI5MGIyYWQ5YjVmYmZjNGU2M2E5NmEyNjYyMWUzM2Y4MTRkYWFlNGQzNWZjMmQxNWI4YTM3NGZmZTFlNGY5OTkxIiwic3VibWl0QXJncyI6eyJwZXJtaXQiOiI5MGIyYWQ5YjVmYmZjNGU2M2E5NmEyNjYyMWUzM2Y4MTRkYWFlNGQzNWZjMmQxNWI4YTM3NGZmZTFlNGY5OTkxIiwid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJzdW1tYXJ5Ijp7Im9wZXJhdGlvbiI6ImZpeHR1cmUiLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInNpbXVsYXRlZCI6dHJ1ZSwicXVvdGUiOnsid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJyZXF1ZXN0ZWQiOiIxIiwibGlxdWlkaXR5IjoiMiIsImZsb29yQnBzIjo5OTAwLCJyYW5nZVNpZGUiOiJpbnNpZGUiLCJ0b2xlcmFuY2VCcHMiOjEwMH0sInN0YXJ0aW5nTGlxdWlkaXR5IjoiMSIsInN0YXJ0aW5nQmFsYW5jZXMiOnsiaW5wdXQiOiIxMCIsImEiOiIwIiwiYiI6IjAifSwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwLCJsYXN0VmFsaWRCbG9ja0hlaWdodCI6MTUwLCJwcmVzZXJ2ZWQiOnsiZnVsbFN1bW1hcnkiOnRydWV9fX0sImV4cGlyZXNBdCI6MTc5MzEwMDA2MDAwMH0",
   "instructions": {
-    "message": "Sign unsignedTransaction with the wallet (keep the existing NFT-mint partial signature), then call submit_open_position with { signedTransaction, permit, wallet, summary }. Pass summary back exactly as returned. Or open signUrl in a browser with the wallet connected."
+    "message": "Sign unsignedTransaction with the wallet FIRST, then add the NFT mint signature to the transaction the wallet returns without modifying the message, then call submit_open_position with { signedTransaction, permit, wallet, summary }. Pass summary back exactly as returned. signUrl cannot add the mint signature; use programmatic submit when you generated nftMint."
   }
 }",
         "type": "text",
@@ -1543,6 +1563,9 @@ exports[`open prepare baseline > stdio MCP has no HTTP outer retry or refresh 1`
         },
         9900,
         100,
+        {
+          "nftMint": "8SFqwqnq4whPhs8icwHA2hQg3hUoN1qrCLK1SBx3WKwe",
+        },
       ],
       "name": "openBuild",
     },
@@ -1578,6 +1601,9 @@ exports[`open prepare baseline > stdio sign URL explicit preserves the entire au
         },
         9900,
         100,
+        {
+          "nftMint": "8SFqwqnq4whPhs8icwHA2hQg3hUoN1qrCLK1SBx3WKwe",
+        },
       ],
       "name": "openBuild",
     },
@@ -1616,7 +1642,7 @@ exports[`open prepare baseline > stdio sign URL explicit preserves the entire au
   "signToken": "verified-payload:eyJraW5kIjoib3Blbi1wb3NpdGlvbiIsIndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwidW5zaWduZWRUcmFuc2FjdGlvbiI6IkFRQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQ0FBUUFCQTRxSTQ5MTBDZkdWL1ZMYkxUeTZYWExLWndtL0haUVNHL04waUFHMEQyOWNsLy9JZzhnTDduSTM3NVhadWJjRDFLMWo1Z29oNWdXR2RvSzNXNHMvUXdNQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQWNIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEFRSUNBQUVNQWdBQUFBRUFBQUFBQUFBQUFBPT0iLCJwZXJtaXQiOiI5MGIyYWQ5YjVmYmZjNGU2M2E5NmEyNjYyMWUzM2Y4MTRkYWFlNGQzNWZjMmQxNWI4YTM3NGZmZTFlNGY5OTkxIiwic3VibWl0QXJncyI6eyJwZXJtaXQiOiI5MGIyYWQ5YjVmYmZjNGU2M2E5NmEyNjYyMWUzM2Y4MTRkYWFlNGQzNWZjMmQxNWI4YTM3NGZmZTFlNGY5OTkxIiwid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJzdW1tYXJ5Ijp7Im9wZXJhdGlvbiI6ImZpeHR1cmUiLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInNpbXVsYXRlZCI6dHJ1ZSwicXVvdGUiOnsid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJyZXF1ZXN0ZWQiOiIxIiwibGlxdWlkaXR5IjoiMiIsImZsb29yQnBzIjo5OTAwLCJyYW5nZVNpZGUiOiJpbnNpZGUiLCJ0b2xlcmFuY2VCcHMiOjEwMH0sInN0YXJ0aW5nTGlxdWlkaXR5IjoiMSIsInN0YXJ0aW5nQmFsYW5jZXMiOnsiaW5wdXQiOiIxMCIsImEiOiIwIiwiYiI6IjAifSwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwLCJsYXN0VmFsaWRCbG9ja0hlaWdodCI6MTUwLCJwcmVzZXJ2ZWQiOnsiZnVsbFN1bW1hcnkiOnRydWV9fX0sImV4cGlyZXNBdCI6MTc5MzEwMDA2MDAwMH0",
   "signUrl": "https://app.invalid.example/app/sign/verified-payload:eyJraW5kIjoib3Blbi1wb3NpdGlvbiIsIndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwidW5zaWduZWRUcmFuc2FjdGlvbiI6IkFRQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQ0FBUUFCQTRxSTQ5MTBDZkdWL1ZMYkxUeTZYWExLWndtL0haUVNHL04waUFHMEQyOWNsLy9JZzhnTDduSTM3NVhadWJjRDFLMWo1Z29oNWdXR2RvSzNXNHMvUXdNQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQWNIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEFRSUNBQUVNQWdBQUFBRUFBQUFBQUFBQUFBPT0iLCJwZXJtaXQiOiI5MGIyYWQ5YjVmYmZjNGU2M2E5NmEyNjYyMWUzM2Y4MTRkYWFlNGQzNWZjMmQxNWI4YTM3NGZmZTFlNGY5OTkxIiwic3VibWl0QXJncyI6eyJwZXJtaXQiOiI5MGIyYWQ5YjVmYmZjNGU2M2E5NmEyNjYyMWUzM2Y4MTRkYWFlNGQzNWZjMmQxNWI4YTM3NGZmZTFlNGY5OTkxIiwid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJzdW1tYXJ5Ijp7Im9wZXJhdGlvbiI6ImZpeHR1cmUiLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInNpbXVsYXRlZCI6dHJ1ZSwicXVvdGUiOnsid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJyZXF1ZXN0ZWQiOiIxIiwibGlxdWlkaXR5IjoiMiIsImZsb29yQnBzIjo5OTAwLCJyYW5nZVNpZGUiOiJpbnNpZGUiLCJ0b2xlcmFuY2VCcHMiOjEwMH0sInN0YXJ0aW5nTGlxdWlkaXR5IjoiMSIsInN0YXJ0aW5nQmFsYW5jZXMiOnsiaW5wdXQiOiIxMCIsImEiOiIwIiwiYiI6IjAifSwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwLCJsYXN0VmFsaWRCbG9ja0hlaWdodCI6MTUwLCJwcmVzZXJ2ZWQiOnsiZnVsbFN1bW1hcnkiOnRydWV9fX0sImV4cGlyZXNBdCI6MTc5MzEwMDA2MDAwMH0",
   "instructions": {
-    "message": "Sign unsignedTransaction with the wallet (keep the existing NFT-mint partial signature), then call submit_open_position with { signedTransaction, permit, wallet, summary }. Pass summary back exactly as returned. Or open signUrl in a browser with the wallet connected."
+    "message": "Sign unsignedTransaction with the wallet FIRST, then add the NFT mint signature to the transaction the wallet returns without modifying the message, then call submit_open_position with { signedTransaction, permit, wallet, summary }. Pass summary back exactly as returned. signUrl cannot add the mint signature; use programmatic submit when you generated nftMint."
   }
 }",
         "type": "text",
@@ -1643,6 +1669,9 @@ exports[`open prepare baseline > stdio sign URL relative preserves the entire au
         },
         9900,
         100,
+        {
+          "nftMint": "8SFqwqnq4whPhs8icwHA2hQg3hUoN1qrCLK1SBx3WKwe",
+        },
       ],
       "name": "openBuild",
     },
@@ -1681,7 +1710,7 @@ exports[`open prepare baseline > stdio sign URL relative preserves the entire au
   "signToken": "verified-payload:eyJraW5kIjoib3Blbi1wb3NpdGlvbiIsIndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwidW5zaWduZWRUcmFuc2FjdGlvbiI6IkFRQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQ0FBUUFCQTRxSTQ5MTBDZkdWL1ZMYkxUeTZYWExLWndtL0haUVNHL04waUFHMEQyOWNsLy9JZzhnTDduSTM3NVhadWJjRDFLMWo1Z29oNWdXR2RvSzNXNHMvUXdNQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQWNIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEFRSUNBQUVNQWdBQUFBRUFBQUFBQUFBQUFBPT0iLCJwZXJtaXQiOiI5MGIyYWQ5YjVmYmZjNGU2M2E5NmEyNjYyMWUzM2Y4MTRkYWFlNGQzNWZjMmQxNWI4YTM3NGZmZTFlNGY5OTkxIiwic3VibWl0QXJncyI6eyJwZXJtaXQiOiI5MGIyYWQ5YjVmYmZjNGU2M2E5NmEyNjYyMWUzM2Y4MTRkYWFlNGQzNWZjMmQxNWI4YTM3NGZmZTFlNGY5OTkxIiwid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJzdW1tYXJ5Ijp7Im9wZXJhdGlvbiI6ImZpeHR1cmUiLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInNpbXVsYXRlZCI6dHJ1ZSwicXVvdGUiOnsid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJyZXF1ZXN0ZWQiOiIxIiwibGlxdWlkaXR5IjoiMiIsImZsb29yQnBzIjo5OTAwLCJyYW5nZVNpZGUiOiJpbnNpZGUiLCJ0b2xlcmFuY2VCcHMiOjEwMH0sInN0YXJ0aW5nTGlxdWlkaXR5IjoiMSIsInN0YXJ0aW5nQmFsYW5jZXMiOnsiaW5wdXQiOiIxMCIsImEiOiIwIiwiYiI6IjAifSwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwLCJsYXN0VmFsaWRCbG9ja0hlaWdodCI6MTUwLCJwcmVzZXJ2ZWQiOnsiZnVsbFN1bW1hcnkiOnRydWV9fX0sImV4cGlyZXNBdCI6MTc5MzEwMDA2MDAwMH0",
   "signUrl": "https://app.invalid.example/app/sign/verified-payload:eyJraW5kIjoib3Blbi1wb3NpdGlvbiIsIndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwidW5zaWduZWRUcmFuc2FjdGlvbiI6IkFRQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQ0FBUUFCQTRxSTQ5MTBDZkdWL1ZMYkxUeTZYWExLWndtL0haUVNHL04waUFHMEQyOWNsLy9JZzhnTDduSTM3NVhadWJjRDFLMWo1Z29oNWdXR2RvSzNXNHMvUXdNQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQWNIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEFRSUNBQUVNQWdBQUFBRUFBQUFBQUFBQUFBPT0iLCJwZXJtaXQiOiI5MGIyYWQ5YjVmYmZjNGU2M2E5NmEyNjYyMWUzM2Y4MTRkYWFlNGQzNWZjMmQxNWI4YTM3NGZmZTFlNGY5OTkxIiwic3VibWl0QXJncyI6eyJwZXJtaXQiOiI5MGIyYWQ5YjVmYmZjNGU2M2E5NmEyNjYyMWUzM2Y4MTRkYWFlNGQzNWZjMmQxNWI4YTM3NGZmZTFlNGY5OTkxIiwid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJzdW1tYXJ5Ijp7Im9wZXJhdGlvbiI6ImZpeHR1cmUiLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInNpbXVsYXRlZCI6dHJ1ZSwicXVvdGUiOnsid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJyZXF1ZXN0ZWQiOiIxIiwibGlxdWlkaXR5IjoiMiIsImZsb29yQnBzIjo5OTAwLCJyYW5nZVNpZGUiOiJpbnNpZGUiLCJ0b2xlcmFuY2VCcHMiOjEwMH0sInN0YXJ0aW5nTGlxdWlkaXR5IjoiMSIsInN0YXJ0aW5nQmFsYW5jZXMiOnsiaW5wdXQiOiIxMCIsImEiOiIwIiwiYiI6IjAifSwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwLCJsYXN0VmFsaWRCbG9ja0hlaWdodCI6MTUwLCJwcmVzZXJ2ZWQiOnsiZnVsbFN1bW1hcnkiOnRydWV9fX0sImV4cGlyZXNBdCI6MTc5MzEwMDA2MDAwMH0",
   "instructions": {
-    "message": "Sign unsignedTransaction with the wallet (keep the existing NFT-mint partial signature), then call submit_open_position with { signedTransaction, permit, wallet, summary }. Pass summary back exactly as returned. Or open signUrl in a browser with the wallet connected."
+    "message": "Sign unsignedTransaction with the wallet FIRST, then add the NFT mint signature to the transaction the wallet returns without modifying the message, then call submit_open_position with { signedTransaction, permit, wallet, summary }. Pass summary back exactly as returned. signUrl cannot add the mint signature; use programmatic submit when you generated nftMint."
   }
 }",
         "type": "text",
@@ -1708,6 +1737,9 @@ exports[`open prepare baseline > stdio sign URL vercel preserves the entire auth
         },
         9900,
         100,
+        {
+          "nftMint": "8SFqwqnq4whPhs8icwHA2hQg3hUoN1qrCLK1SBx3WKwe",
+        },
       ],
       "name": "openBuild",
     },
@@ -1746,7 +1778,7 @@ exports[`open prepare baseline > stdio sign URL vercel preserves the entire auth
   "signToken": "verified-payload:eyJraW5kIjoib3Blbi1wb3NpdGlvbiIsIndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwidW5zaWduZWRUcmFuc2FjdGlvbiI6IkFRQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQ0FBUUFCQTRxSTQ5MTBDZkdWL1ZMYkxUeTZYWExLWndtL0haUVNHL04waUFHMEQyOWNsLy9JZzhnTDduSTM3NVhadWJjRDFLMWo1Z29oNWdXR2RvSzNXNHMvUXdNQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQWNIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEFRSUNBQUVNQWdBQUFBRUFBQUFBQUFBQUFBPT0iLCJwZXJtaXQiOiI5MGIyYWQ5YjVmYmZjNGU2M2E5NmEyNjYyMWUzM2Y4MTRkYWFlNGQzNWZjMmQxNWI4YTM3NGZmZTFlNGY5OTkxIiwic3VibWl0QXJncyI6eyJwZXJtaXQiOiI5MGIyYWQ5YjVmYmZjNGU2M2E5NmEyNjYyMWUzM2Y4MTRkYWFlNGQzNWZjMmQxNWI4YTM3NGZmZTFlNGY5OTkxIiwid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJzdW1tYXJ5Ijp7Im9wZXJhdGlvbiI6ImZpeHR1cmUiLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInNpbXVsYXRlZCI6dHJ1ZSwicXVvdGUiOnsid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJyZXF1ZXN0ZWQiOiIxIiwibGlxdWlkaXR5IjoiMiIsImZsb29yQnBzIjo5OTAwLCJyYW5nZVNpZGUiOiJpbnNpZGUiLCJ0b2xlcmFuY2VCcHMiOjEwMH0sInN0YXJ0aW5nTGlxdWlkaXR5IjoiMSIsInN0YXJ0aW5nQmFsYW5jZXMiOnsiaW5wdXQiOiIxMCIsImEiOiIwIiwiYiI6IjAifSwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwLCJsYXN0VmFsaWRCbG9ja0hlaWdodCI6MTUwLCJwcmVzZXJ2ZWQiOnsiZnVsbFN1bW1hcnkiOnRydWV9fX0sImV4cGlyZXNBdCI6MTc5MzEwMDA2MDAwMH0",
   "signUrl": "https://app.invalid.example/app/sign/verified-payload:eyJraW5kIjoib3Blbi1wb3NpdGlvbiIsIndhbGxldCI6IkFLbkw0Tk5mM0RHV1pKUzZjUGtuQnVFR25Wc1Y0QTRtNXRnZWJMSGFSU1o5IiwidW5zaWduZWRUcmFuc2FjdGlvbiI6IkFRQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQ0FBUUFCQTRxSTQ5MTBDZkdWL1ZMYkxUeTZYWExLWndtL0haUVNHL04waUFHMEQyOWNsLy9JZzhnTDduSTM3NVhadWJjRDFLMWo1Z29oNWdXR2RvSzNXNHMvUXdNQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQWNIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEJ3Y0hCd2NIQndjSEFRSUNBQUVNQWdBQUFBRUFBQUFBQUFBQUFBPT0iLCJwZXJtaXQiOiI5MGIyYWQ5YjVmYmZjNGU2M2E5NmEyNjYyMWUzM2Y4MTRkYWFlNGQzNWZjMmQxNWI4YTM3NGZmZTFlNGY5OTkxIiwic3VibWl0QXJncyI6eyJwZXJtaXQiOiI5MGIyYWQ5YjVmYmZjNGU2M2E5NmEyNjYyMWUzM2Y4MTRkYWFlNGQzNWZjMmQxNWI4YTM3NGZmZTFlNGY5OTkxIiwid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJzdW1tYXJ5Ijp7Im9wZXJhdGlvbiI6ImZpeHR1cmUiLCJ3YWxsZXQiOiJBS25MNE5OZjNER1daSlM2Y1BrbkJ1RUduVnNWNEE0bTV0Z2ViTEhhUlNaOSIsInNpbXVsYXRlZCI6dHJ1ZSwicXVvdGUiOnsid2FsbGV0IjoiQUtuTDROTmYzREdXWkpTNmNQa25CdUVHblZzVjRBNG01dGdlYkxIYVJTWjkiLCJyZXF1ZXN0ZWQiOiIxIiwibGlxdWlkaXR5IjoiMiIsImZsb29yQnBzIjo5OTAwLCJyYW5nZVNpZGUiOiJpbnNpZGUiLCJ0b2xlcmFuY2VCcHMiOjEwMH0sInN0YXJ0aW5nTGlxdWlkaXR5IjoiMSIsInN0YXJ0aW5nQmFsYW5jZXMiOnsiaW5wdXQiOiIxMCIsImEiOiIwIiwiYiI6IjAifSwiZXhwaXJlc0F0IjoxNzkzMTAwMDYwMDAwLCJsYXN0VmFsaWRCbG9ja0hlaWdodCI6MTUwLCJwcmVzZXJ2ZWQiOnsiZnVsbFN1bW1hcnkiOnRydWV9fX0sImV4cGlyZXNBdCI6MTc5MzEwMDA2MDAwMH0",
   "instructions": {
-    "message": "Sign unsignedTransaction with the wallet (keep the existing NFT-mint partial signature), then call submit_open_position with { signedTransaction, permit, wallet, summary }. Pass summary back exactly as returned. Or open signUrl in a browser with the wallet connected."
+    "message": "Sign unsignedTransaction with the wallet FIRST, then add the NFT mint signature to the transaction the wallet returns without modifying the message, then call submit_open_position with { signedTransaction, permit, wallet, summary }. Pass summary back exactly as returned. signUrl cannot add the mint signature; use programmatic submit when you generated nftMint."
   }
 }",
         "type": "text",
@@ -1775,6 +1807,7 @@ exports[`open preserves relay AsyncLocalStorage and missing-quote 409 1`] = `
         100,
         {
           "enforceResaleFloor": false,
+          "nftMint": "8SFqwqnq4whPhs8icwHA2hQg3hUoN1qrCLK1SBx3WKwe",
         },
       ],
       "name": "openBuild",
@@ -1823,6 +1856,7 @@ exports[`open preserves relay success hints 1`] = `
         100,
         {
           "enforceResaleFloor": false,
+          "nftMint": "8SFqwqnq4whPhs8icwHA2hQg3hUoN1qrCLK1SBx3WKwe",
         },
       ],
       "name": "openBuild",

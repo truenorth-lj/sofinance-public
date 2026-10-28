@@ -17,12 +17,14 @@ import { collectSwapFee, fitFeeCollections, type FeeCollection } from "../swap/c
 import { retargetSwapSource, swapRouteInstructions } from "../swap/instructions";
 import type { BuildRoute } from "../swap/jupiter";
 import { beamTipInstruction, chooseBeamTransaction, emptyBeamPlan, fetchBeamTipAddress, BEAM_MIN_TIP_LAMPORTS } from "../solami-beam";
-import { rpcConnection } from "../rpc";
+import { defaultRpcConnection, rpcConnection } from "../rpc";
+import { estimateFeeForMessage, WITHDRAW_FEE_ESTIMATE_MESSAGE } from "../rpc/fee-estimate";
 import { getSigningSecret } from "../config/server-env";
 import { simulateAtContextSlot, simulateWithdraw } from "./simulation";
 import { withdrawPermit } from "./permit";
 import { assertImpactConfirmed, impactFlags, percentToBps, principalMinimum, capReceivedAmount, shouldSwap, targetUSDCToBps, transactionCount } from "./quote";
 import { withdrawPrepareSchema } from "./input";
+import { landedTransactionMatchesPrepared } from "../wallet-returned-tx";
 import type { WithdrawAsset, WithdrawPrepareRequest, WithdrawPrepared, WithdrawSummary } from "./types";
 export { simulateWithdraw } from "./simulation";
 async function swapInstructions(connection: Connection, wallet: PublicKey, assets: WithdrawAsset[], receive: string, output: string, pool: {
@@ -200,7 +202,9 @@ async function buildSwapStage(raw: WithdrawPrepareRequest, connection: Connectio
     if (!withdrawPermit.verify(getSigningSecret(), { wallet: raw.wallet, message: Buffer.from(first.message.serialize()).toString("base64"), summary: original }, previous.permit) || original.wallet !== raw.wallet || original.positionMint !== raw.positionMint || original.stage !== "withdraw")
         throw new Error("Invalid first transaction authorization");
     const receipt = await connection.getTransaction(raw.tx1Signature, { commitment: "finalized", maxSupportedTransactionVersion: 0 });
-    if (!receipt || !receipt.meta || receipt.meta.err || !Buffer.from(receipt.transaction.message.serialize()).equals(Buffer.from(first.message.serialize())))
+    // Permit stays bound to the prepared first-stage message. The landed tx may
+    // be Phantom-rewritten (Lighthouse / ComputeBudget / recompile / ALTs).
+    if (!landedTransactionMatchesPrepared(first, receipt, raw.wallet) || !receipt?.meta)
         throw new Error("First transaction must be finalized and match the prepared withdrawal");
     const keys = receipt.transaction.message.getAccountKeys({ accountKeysFromLookups: receipt.meta.loadedAddresses });
     const assets = original.assets.map(a => {
@@ -240,9 +244,9 @@ async function buildSwapStage(raw: WithdrawPrepareRequest, connection: Connectio
     return preview ? { summary, unsignedTransaction: "", permit: "" } : prepareResult(chosen.transaction, summary);
 }
 async function solDebitBudget(connection: Connection, transaction: VersionedTransaction, instructions: TransactionInstruction[]) {
-    const network = (await connection.getFeeForMessage(transaction.message, "confirmed")).value;
-    if (network === null)
-        throw new Error("Cannot calculate transaction network cost");
+    const network = await estimateFeeForMessage(connection, transaction.message, "confirmed", {
+        fallback: defaultRpcConnection, emptyError: WITHDRAW_FEE_ESTIMATE_MESSAGE,
+    });
     // Each retained ATA creation is budgeted conservatively, including Token-2022.
     const ataCreates = instructions.filter(ix => ix.programId.toBase58() === "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL").length;
     const rent = await connection.getMinimumBalanceForRentExemption(512, "confirmed");

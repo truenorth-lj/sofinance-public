@@ -201,10 +201,15 @@ it.each(["atomic","withdraw","swap"] as const)("canceled %s status success/faile
 it.each(["failed","expired","manual-review","success"])("live status body %s retains existing finality and root behavior",async status=>{
  const saved=withdrawCheckpoint("swap"),original=JSON.stringify(saved);rawSet.call(localStorage,withdrawKey,original);
  const gate=hold("status",()=>true,true);await render();await click("Resume withdrawal");await gate.release({status});
- if(status==="success"){expect(raw()).toBeNull();expect(mocks.confirmed).toHaveBeenCalledOnce();}
- else if(status==="manual-review")expect(raw()).toBe(original);
- else expect(JSON.parse(raw()!)).toEqual({...saved,prepared:saved.root!.prepared,signature:saved.root!.signature,root:undefined});
- expect(calls("prepare")).toHaveLength(0);expect(mocks.sign).not.toHaveBeenCalled();expect(calls("broadcast")).toHaveLength(0);
+ if(status==="success"){expect(raw()).toBeNull();expect(mocks.confirmed).toHaveBeenCalledOnce();
+  expect(calls("prepare")).toHaveLength(0);expect(mocks.sign).not.toHaveBeenCalled();expect(calls("broadcast")).toHaveLength(0);}
+ else if(status==="manual-review"){expect(raw()).toBe(original);
+  expect(calls("prepare")).toHaveLength(0);expect(mocks.sign).not.toHaveBeenCalled();expect(calls("broadcast")).toHaveLength(0);}
+ else {
+  expect(raw()).toBeNull();expect(mocks.confirmed).toHaveBeenCalledOnce();
+  expect(calls("prepare").some(e=>(e.value as {stage?:string}).stage==="swap")).toBe(true);
+  expect(mocks.sign).toHaveBeenCalled();expect(calls("broadcast")).toHaveLength(1);
+ }
 });
 it.each([false,true])("pending delay cancellation=%s owns and clears its timer",async cancel=>{
  twoStage();const saved=withdrawCheckpoint("withdraw");rawSet.call(localStorage,withdrawKey,JSON.stringify(saved));

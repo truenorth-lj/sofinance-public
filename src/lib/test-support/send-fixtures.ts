@@ -3,7 +3,7 @@
 // transactions signed by throw-away deterministic keypairs, real HMAC permits,
 // and no network access. Never put a real secret or a real wallet key in here.
 import {
-  Keypair, PublicKey, SystemProgram, TransactionInstruction, TransactionMessage, VersionedTransaction,
+  ComputeBudgetProgram, Keypair, PublicKey, SystemProgram, TransactionInstruction, TransactionMessage, VersionedTransaction,
 } from "@solana/web3.js";
 import bs58 from "bs58";
 import { vi, type Mock } from "vitest";
@@ -65,6 +65,63 @@ export function oversizedSignedBase64(payer: Keypair) {
 export const toBase64 = (transaction: VersionedTransaction) => Buffer.from(transaction.serialize()).toString("base64");
 export const messageBase64 = (transaction: VersionedTransaction) => Buffer.from(transaction.message.serialize()).toString("base64");
 export const signatureOf = (transaction: VersionedTransaction) => bs58.encode(transaction.signatures[0]!);
+
+export { LIGHTHOUSE_PROGRAM_ID } from "@sofinance/engine/wallet-returned-tx";
+
+/**
+ * Rebuild `tx` the way Phantom does: replace ComputeBudget, insert a Lighthouse ix
+ * between remaining instructions, and leave core program ixs intact. Caller resigns.
+ */
+export function phantomRewriteTransaction(tx: VersionedTransaction) {
+  const message = TransactionMessage.decompile(tx.message);
+  const core = message.instructions.filter((ix) => !ix.programId.equals(ComputeBudgetProgram.programId)
+    && !ix.programId.equals(new PublicKey("L2TExMFKdjpN9kozasaurPPf4nCVfRTb7cTZo5GsqqY")));
+  const split = Math.min(1, core.length);
+  return new VersionedTransaction(new TransactionMessage({
+    payerKey: message.payerKey,
+    recentBlockhash: message.recentBlockhash,
+    instructions: [
+      ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }),
+      ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 50_000 }),
+      ...core.slice(0, split),
+      new TransactionInstruction({
+        programId: new PublicKey("L2TExMFKdjpN9kozasaurPPf4nCVfRTb7cTZo5GsqqY"),
+        keys: [],
+        data: Buffer.from([7]),
+      }),
+      ...core.slice(split),
+    ],
+  }).compileToV0Message());
+}
+
+/** Change the first SystemProgram transfer's lamports. Caller resigns. */
+export function tamperTransferLamports(tx: VersionedTransaction, lamports: number) {
+  const message = TransactionMessage.decompile(tx.message);
+  const instructions = message.instructions.map((ix) => {
+    if (!ix.programId.equals(SystemProgram.programId) || ix.keys.length < 2) return ix;
+    return SystemProgram.transfer({ fromPubkey: message.payerKey, toPubkey: ix.keys[1]!.pubkey, lamports });
+  });
+  return new VersionedTransaction(new TransactionMessage({
+    payerKey: message.payerKey, recentBlockhash: message.recentBlockhash, instructions,
+  }).compileToV0Message());
+}
+
+/** Rebuild `tx` with an extra instruction (Phantom Lighthouse / compute-budget style). Caller resigns. */
+export function appendWalletExtraInstruction(
+  tx: VersionedTransaction,
+  extra: TransactionInstruction = new TransactionInstruction({
+    programId: new PublicKey("L2TExMFKdjpN9kozasaurPPf4nCVfRTb7cTZo5GsqqY"),
+    keys: [],
+    data: Buffer.from([1]),
+  }),
+) {
+  const message = TransactionMessage.decompile(tx.message);
+  return new VersionedTransaction(new TransactionMessage({
+    payerKey: message.payerKey,
+    recentBlockhash: message.recentBlockhash,
+    instructions: [...message.instructions, extra],
+  }).compileToV0Message());
+}
 
 export function jsonRequest(url: string, body: unknown, init: RequestInit = {}) {
   return new Request(url, {

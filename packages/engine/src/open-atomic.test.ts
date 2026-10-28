@@ -2,7 +2,7 @@ import { AddressLookupTableAccount, Keypair, PublicKey, TransactionInstruction }
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import oldFixture from "./fixtures/open-size-route.json";
 import compactFixture from "./fixtures/open-size-compact-route.json";
-vi.mock("./rpc", () => ({ rpcConnection: vi.fn() }));
+vi.mock("./rpc", async (importOriginal) => ({ ...await importOriginal<typeof import("./rpc")>(), rpcConnection: vi.fn() }));
 vi.mock("./open-state", () => ({ readOpenPoolState: vi.fn() }));
 vi.mock("./open-quote", () => ({ getOpenPositionQuoteBundle: vi.fn() }));
 vi.mock("./open-simulation", () => ({ simulateAndVerifyOpenTransaction: vi.fn() }));
@@ -63,7 +63,7 @@ beforeEach(() => {
   });
   vi.mocked(ClmmInstrument.openPositionFromLiquidityInstructions).mockImplementation(async () => ({
     instructions: [strategy === "sequential" ? compact.ixs[8]! : old.ixs[17]!], lookupTableAddress: [],
-    signers: [Keypair.fromSeed(new Uint8Array(32).fill(8))],
+    signers: [],
   } as never));
   vi.mocked(getOpenPositionQuoteBundle).mockImplementation(async (_wallet, _selection, _amount, _range, _floor, _tolerance, _budget, _snapshot, mode) => {
     strategy = mode === "parallel" ? "parallel" : "sequential";
@@ -93,7 +93,9 @@ function apiInstruction(ix: TransactionInstruction) {
   return { programId: ix.programId.toBase58(), data: ix.data.toString("base64"),
     accounts: ix.keys.map(key => ({ pubkey: key.pubkey.toBase58(), isSigner: key.isSigner, isWritable: key.isWritable })) };
 }
-const prepare = () => buildAndSimulateOpenPosition(wallet, { poolId, inputMint, inputKind: "native" }, "0.03", { preset: "standard" }, 9900, 100);
+const nftMint = Keypair.fromSeed(new Uint8Array(32).fill(8)).publicKey.toBase58();
+const prepare = (options?: Parameters<typeof buildAndSimulateOpenPosition>[6]) =>
+  buildAndSimulateOpenPosition(wallet, { poolId, inputMint, inputKind: "native" }, "0.03", { preset: "standard" }, 9900, 100, { nftMint, ...options });
 
 function oversized(bundle: Awaited<ReturnType<typeof getOpenPositionQuoteBundle>>) {
   for (const leg of bundle.legs) if (leg.route) {
@@ -114,8 +116,12 @@ it("prepares the compact captured sequential transaction first", async () => {
   expect(summary.sizeBytes).toBeLessThanOrEqual(1232);
   expect(summary.sizeBytes).toBe(transaction.serialize().length);
   expect(Buffer.from(transaction.serialize()).toString("base64")).toMatchSnapshot();
-  expect(transaction.signatures[0]!.every(byte => byte === 0)).toBe(true);
-  expect(transaction.signatures[1]!.some(byte => byte !== 0)).toBe(true);
+  expect(transaction.signatures.every(signature => signature.every(byte => byte === 0))).toBe(true);
+  expect(summary.nftMint).toBe(nftMint);
+  const sdkInput = vi.mocked(ClmmInstrument.openPositionFromLiquidityInstructions).mock.calls[0]![0] as {
+    getEphemeralSigners?: (count: number) => Promise<PublicKey[]>;
+  };
+  await expect(sdkInput.getEphemeralSigners?.(1)).resolves.toEqual([Keypair.fromSeed(new Uint8Array(32).fill(8)).publicKey]);
 });
 it("enforces the resale floor for agent/MCP prepares unless the caller disables it", async () => {
   vi.mocked(getOpenPositionQuoteBundle).mockResolvedValue({
@@ -125,8 +131,7 @@ it("enforces the resale floor for agent/MCP prepares unless the caller disables 
     legs: [],
   } as never);
   await expect(prepare()).rejects.toThrow(/resale/i);
-  await expect(buildAndSimulateOpenPosition(wallet, { poolId, inputMint, inputKind: "native" }, "0.03",
-    { preset: "standard" }, 9900, 100, { enforceResaleFloor: false }))
+  await expect(prepare({ enforceResaleFloor: false }))
     .rejects.toThrow(/Swap route does not match/);
 });
 
@@ -206,6 +211,26 @@ it("budgets newly created pool token accounts in the simulation SOL limit", asyn
   expect(summary.rentLamports).toBe(4155120);
 });
 
+it("rejects a missing, invalid, colliding, or already-used NFT mint before building", async () => {
+  await expect(buildAndSimulateOpenPosition(wallet, { poolId, inputMint, inputKind: "native" }, "0.03", { preset: "standard" }, 9900, 100))
+    .rejects.toThrow("Position NFT mint is required");
+  await expect(prepare({ nftMint: "not-a-pubkey" })).rejects.toThrow("Invalid position NFT mint");
+  await expect(prepare({ nftMint: wallet })).rejects.toThrow(/collides/i);
+  vi.mocked(rpcConnection).mockReturnValue({
+    ...vi.mocked(rpcConnection)(),
+    getMultipleAccountsInfo: vi.fn(async (keys: PublicKey[]) => keys.map(key =>
+      key.toBase58() === nftMint ? { lamports: 1, data: Buffer.alloc(0), owner: PublicKey.default, executable: false, rentEpoch: 0 } : null)),
+  } as never);
+  await expect(prepare()).rejects.toThrow("Position NFT mint already exists");
+});
+
+it("refuses Raydium extra signers instead of locally signing a client-supplied mint", async () => {
+  vi.mocked(ClmmInstrument.openPositionFromLiquidityInstructions).mockResolvedValue({
+    instructions: [compact.ixs[8]!], lookupTableAddress: [], signers: [Keypair.fromSeed(new Uint8Array(32).fill(8))],
+  } as never);
+  await expect(prepare()).rejects.toThrow(/must not return local signers/);
+});
+
 describe("fee payer separation (sponsored mode)", () => {
   const sponsor = Keypair.fromSeed(new Uint8Array(32).fill(3)).publicKey.toBase58();
   const tokenState = () => ({ ...state, inputKind: "token", inputAccount: Keypair.fromSeed(new Uint8Array(32).fill(4)).publicKey.toBase58(),
@@ -213,7 +238,7 @@ describe("fee payer separation (sponsored mode)", () => {
 
   it("owner mode: feePayer equal to the wallet yields byte-identical transactions", async () => {
     const plain = await prepare();
-    const same = await buildAndSimulateOpenPosition(wallet, { poolId, inputMint, inputKind: "native" }, "0.03", { preset: "standard" }, 9900, 100, { feePayer: wallet });
+    const same = await prepare({ feePayer: wallet });
     expect(Buffer.from(same.transaction.serialize()).equals(Buffer.from(plain.transaction.serialize()))).toBe(true);
     const stable = (summary: object) => JSON.parse(JSON.stringify(summary, (key, value) => /At$/.test(key) ? undefined : value));
     expect(stable(same.summary as never)).toEqual(stable(plain.summary as never));
@@ -222,12 +247,12 @@ describe("fee payer separation (sponsored mode)", () => {
   it("uses an injected connection instead of the host default", async () => {
     const injected = vi.mocked(rpcConnection).getMockImplementation()?.() ?? vi.mocked(rpcConnection)();
     vi.mocked(rpcConnection).mockClear();
-    await buildAndSimulateOpenPosition(wallet, { poolId, inputMint, inputKind: "native" }, "0.03", { preset: "standard" }, 9900, 100, { connection: injected as never });
+    await prepare({ connection: injected as never });
     expect(rpcConnection).not.toHaveBeenCalled();
   });
 
   it("rejects native SOL input (the wallet would have to fund the wrap)", async () => {
-    await expect(buildAndSimulateOpenPosition(wallet, { poolId, inputMint, inputKind: "native" }, "0.03", { preset: "standard" }, 9900, 100, { feePayer: sponsor }))
+    await expect(prepare({ feePayer: sponsor }))
       .rejects.toThrow("Sponsored open-position does not accept native SOL input");
   });
 
@@ -238,7 +263,7 @@ describe("fee payer separation (sponsored mode)", () => {
     let result: Awaited<ReturnType<typeof prepare>> | undefined;
     let sizeError: unknown;
     try {
-      result = await buildAndSimulateOpenPosition(wallet, { poolId, inputMint, inputKind: "token" }, "0.03", { preset: "standard" }, 9900, 100, { feePayer: sponsor });
+      result = await buildAndSimulateOpenPosition(wallet, { poolId, inputMint, inputKind: "token" }, "0.03", { preset: "standard" }, 9900, 100, { nftMint, feePayer: sponsor });
     } catch (error) { sizeError = error; }
     expect(fetchBeamTipAddress).not.toHaveBeenCalled();
     expect(sizeError).toBeUndefined();
@@ -248,6 +273,7 @@ describe("fee payer separation (sponsored mode)", () => {
     expect(transaction.message.staticAccountKeys[open.accountKeyIndexes[1]!]!.toBase58()).toBe(wallet);
     const keys = transaction.message.staticAccountKeys.map(key => key.toBase58());
     expect(transaction.message.header.numRequiredSignatures).toBe(3);
+    expect(transaction.signatures.every(signature => signature.every(byte => byte === 0))).toBe(true);
     expect(keys[0]).toBe(sponsor);
     expect(keys.slice(0, 3)).toContain(wallet);
     expect(summary.maxSolDebitLamports).toBe("0");

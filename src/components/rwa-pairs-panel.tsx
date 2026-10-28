@@ -336,11 +336,12 @@ export function RwaPairsPanel() {
         <div className="flex flex-wrap items-start justify-between gap-3 border-b border-white/10 pb-5">
           <div>
             <h2 id="rwa-pairs-heading" className="text-base font-semibold text-cream">
-              Same-asset RWA CLMM pairs
+              RWA and curated CLMM pairs
             </h2>
             <p className="mt-2 max-w-2xl text-xs leading-5 text-smoke">
               Raydium concentrated pools where both sides are the same underlying (e.g. MSTRx/MSTR, NVDAx/NVDA),
-              filtered by Jupiter tags (stocks|rwa) and the Backed xStocks whitelist. Create position swaps your chosen wallet asset into pool tokens as needed, then opens a new LP position and adds liquidity.
+              filtered by Jupiter tags (stocks|rwa) and the Backed xStocks whitelist, plus the curated USDC/USDT
+              CLMM pool. Create position swaps your chosen wallet asset into pool tokens as needed, then opens a new LP position and adds liquidity.
             </p>
           </div>
           <button

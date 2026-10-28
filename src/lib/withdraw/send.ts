@@ -13,18 +13,24 @@ import { withdrawPermit } from "@sofinance/engine/withdraw/permit";
 import { simulateWithdraw } from "@sofinance/engine/withdraw/build";
 import { assertImpactConfirmed } from "@sofinance/engine/withdraw/quote";
 import type { WithdrawSummary } from "@sofinance/engine/withdraw/types";
+import { assertWalletReturnedTransaction } from "@/lib/wallet-returned-guard";
 export async function submitWithdraw(input: {
     wallet: string;
     signedTransaction: string;
+    unsignedTransaction?: string;
     permit: string;
     summary: WithdrawSummary;
     confirmHighImpact?: boolean;
 }) {
     withdrawSubmitSchema.parse(input);
     const transaction = VersionedTransaction.deserialize(Buffer.from(input.signedTransaction, "base64"));
+    const prepared = input.unsignedTransaction
+        ? VersionedTransaction.deserialize(Buffer.from(input.unsignedTransaction, "base64"))
+        : transaction;
     const summary = input.summary;
-    if (!withdrawPermit.verify(getSigningSecret(), { wallet: input.wallet, message: Buffer.from(transaction.message.serialize()).toString("base64"), summary }, input.permit))
+    if (!withdrawPermit.verify(getSigningSecret(), { wallet: input.wallet, message: Buffer.from(prepared.message.serialize()).toString("base64"), summary }, input.permit))
         throw new Error("Withdrawal authorization does not match transaction");
+    if (input.unsignedTransaction) assertWalletReturnedTransaction(prepared, transaction, input.wallet);
     assertImpactConfirmed(summary, input.confirmHighImpact);
     if (summary.operation !== "withdraw" || summary.wallet !== input.wallet || summary.expiresAt <= Date.now() || summary.blockhash !== transaction.message.recentBlockhash || !isSingleWalletSignedTransaction(transaction, input.wallet))
         throw new Error("Invalid or expired withdrawal transaction");
@@ -33,7 +39,7 @@ export async function submitWithdraw(input: {
     const connection = rpcConnection();
     if (await connection.getBlockHeight("confirmed") > summary.lastValidBlockHeight)
         throw new Error("Withdrawal blockhash expired");
-    await simulateWithdraw(connection, transaction, summary, true);
+    await simulateWithdraw(connection, transaction, summary, true, input.unsignedTransaction ? prepared : undefined);
     if (Date.now() >= summary.expiresAt || await connection.getBlockHeight("confirmed") > summary.lastValidBlockHeight)
         throw new Error("Withdrawal expired before broadcast");
     const expected = bs58.encode(transaction.signatures[0]!);

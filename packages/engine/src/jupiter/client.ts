@@ -17,6 +17,14 @@ export const JUPITER_RETRY: RetryConfig = {
   budgetMs: 12_000,
 };
 
+/** Per-request cap for a single Jupiter HTTP call (merged with any caller signal). */
+export const JUPITER_FETCH_TIMEOUT_MS = 10_000;
+
+function requestSignal(signal?: AbortSignal): AbortSignal {
+  const timeout = AbortSignal.timeout(JUPITER_FETCH_TIMEOUT_MS);
+  return signal ? AbortSignal.any([signal, timeout]) : timeout;
+}
+
 /** Best-effort price / metadata lookups. */
 export const JUPITER_SOFT_RETRY: RetryConfig = {
   maxAttempts: 2,
@@ -156,7 +164,7 @@ async function fetchJupiterOnce<T>(options: JupiterRequestOptions): Promise<T> {
     headers,
     body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
     cache: "no-store",
-    signal: options.signal,
+    signal: requestSignal(options.signal),
     ...(options.next ? { next: options.next } : {}),
   } as RequestInit);
   const numberHeader = (name: string) => {
@@ -172,6 +180,7 @@ async function fetchJupiterOnce<T>(options: JupiterRequestOptions): Promise<T> {
       rateLimitCurrent: numberHeader("x-ratelimit-current"),
       rateLimitRemaining: numberHeader("x-ratelimit-remaining"),
       rateLimitReset: numberHeader("x-ratelimit-reset"),
+      quotePath: relayResolver?.active() ? "server_fallback" : "server",
     });
   }
   if (!response.ok) {
@@ -294,8 +303,15 @@ function relayedJupiter<T>(options: JupiterRequestOptions, method: string): { hi
   const relayed = relayResolver.resolve(request);
   if (relayed === undefined) return { hit: false };
   if (relayed === "missing") throw new JupiterRelayMissingError(request);
+  // Browser 429 / 5xx: do not fail the quote. Fall through to the keyed server fetch.
+  if (relayed.status === 429 || relayed.status >= 500) {
+    emitJupiterLog({ path: options.path, method, outcome: "retry", status: relayed.status,
+      cacheHit: false, retries: 0, relayed: true, quotePath: "server_fallback",
+      errorKind: relayed.status === 429 ? "rate-limit" : "http-5xx" });
+    return { hit: false };
+  }
   emitJupiterLog({ path: options.path, method, outcome: relayed.status >= 200 && relayed.status < 300 ? "ok" : "error",
-    status: relayed.status, cacheHit: false, retries: 0, relayed: true });
+    status: relayed.status, cacheHit: false, retries: 0, relayed: true, quotePath: "browser" });
   if (relayed.status >= 200 && relayed.status < 300) return { hit: true, value: relayed.body as T };
   throw new JupiterHttpError(relayed.status, options.path, relayed.retryAfterMs ?? null, relayBodyError(relayed.body));
 }
@@ -304,6 +320,7 @@ export async function jupiterRequest<T>(options: JupiterRequestOptions): Promise
   const method = options.method ?? (options.body !== undefined ? "POST" : "GET");
   const relayed = relayedJupiter<T>(options, method);
   if (relayed.hit) return relayed.value;
+  const quotePath = relayResolver?.active() ? "server_fallback" : "server";
   const cacheable = method === "GET" && options.cacheKey && options.cacheTtlMs;
   const { value, cacheHit } = await withJupiterCache(
     cacheable ? options.cacheKey! : null,
@@ -316,12 +333,13 @@ export async function jupiterRequest<T>(options: JupiterRequestOptions): Promise
         outcome: "ok",
         retries: result.retries,
         cacheHit: false,
+        quotePath,
       });
       return result.value;
     },
   );
   if (cacheHit) {
-    emitJupiterLog({ path: options.path, method, outcome: "cache-hit", cacheHit: true, retries: 0 });
+    emitJupiterLog({ path: options.path, method, outcome: "cache-hit", cacheHit: true, retries: 0, quotePath });
   }
   return value;
 }

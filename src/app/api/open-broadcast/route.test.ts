@@ -15,7 +15,7 @@ import { rpcConnection } from "@sofinance/engine/rpc";
 import { beamAfterSend } from "@/lib/beam-after-send";
 import {
   BEAM_RESULT, BLOCKHASH, SIGNING_SECRET, buildTransaction, fakeConnection, type FakeConnection, jsonRequest, messageBase64, openSummaryFixture,
-  signatureOf, testKeypair, toBase64,
+  phantomRewriteTransaction, signatureOf, tamperTransferLamports, testKeypair, toBase64,
 } from "@/lib/test-support/send-fixtures";
 import { POST } from "./route";
 
@@ -108,6 +108,46 @@ describe("POST /api/open-broadcast", () => {
     connection.sendRawTransaction.mockRejectedValue(new Error("socket hang up"));
     const { json } = await call(body());
     expect(json).not.toHaveProperty("sent");
+  });
+
+  it("accepts a Phantom-style rewrite when unsignedTransaction is the permit-bound prepared message", async () => {
+    const unsigned = buildTransaction({ payer: walletKey, extraSigners: [nftKey], signWith: [] });
+    const rewritten = phantomRewriteTransaction(unsigned);
+    rewritten.sign([walletKey, nftKey]);
+    connection.sendRawTransaction.mockImplementation(async () => signatureOf(rewritten));
+    const rewrittenSummary = openSummaryFixture({ wallet, nftMint, blockhash: rewritten.message.recentBlockhash });
+    const { response, json } = await call({
+      signedTransaction: toBase64(rewritten),
+      unsignedTransaction: toBase64(unsigned),
+      wallet, summary: rewrittenSummary,
+      permit: issueOpenPositionPermit(SIGNING_SECRET, {
+        wallet, summary: rewrittenSummary, message: messageBase64(unsigned),
+      }),
+    });
+    expect(response.status).toBe(200);
+    expect(json).toMatchObject({ signature: signatureOf(rewritten), positionMint: nftMint });
+    expect(simulateAndVerifyOpenTransaction).toHaveBeenCalledWith(expect.objectContaining({
+      sigVerify: true,
+      prepared: expect.objectContaining({ message: expect.anything() }),
+    }));
+  });
+
+  it("rejects a tampered transfer amount even when the permit matches the prepared message", async () => {
+    const unsigned = buildTransaction({ payer: walletKey, extraSigners: [nftKey], signWith: [] });
+    const tampered = tamperTransferLamports(unsigned, 99);
+    tampered.sign([walletKey, nftKey]);
+    const tamperedSummary = openSummaryFixture({ wallet, nftMint, blockhash: unsigned.message.recentBlockhash });
+    const { response, json } = await call({
+      signedTransaction: toBase64(tampered),
+      unsignedTransaction: toBase64(unsigned),
+      wallet, summary: tamperedSummary,
+      permit: issueOpenPositionPermit(SIGNING_SECRET, {
+        wallet, summary: tamperedSummary, message: messageBase64(unsigned),
+      }),
+    });
+    expect(response.status).toBe(400);
+    expect(json).toEqual({ error: expect.stringMatching(/required instruction/), sent: false });
+    expect(rpcConnection).not.toHaveBeenCalled();
   });
 
   it("QUIRK: a garbage signedTransaction leaks the raw web3.js deserialize message", async () => {

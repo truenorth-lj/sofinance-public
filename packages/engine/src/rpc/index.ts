@@ -34,6 +34,21 @@ export type { RpcPool, RpcPoolMember, RpcProviderEntry } from "./pool";
 export { TokenBucket, rateLimiterFor, resetRpcRateLimiters } from "./rate-limit";
 export { DEFAULT_READ_WEIGHT, readWeight, resetReadRotation, spreadsReads, weightedReadOrder } from "./select";
 export { rpcRequest } from "./json-rpc";
+export {
+  estimateFeeForMessage,
+  withFeeEstimateRetry,
+  isEmptyFeeEstimate,
+  isTransientFeeEstimateError,
+  FEE_ESTIMATE_ATTEMPTS,
+  FEE_ESTIMATE_BACKOFF_MS,
+  FEE_ESTIMATE_TIMEOUT_MS,
+  OPEN_FEE_ESTIMATE_MESSAGE,
+  WITHDRAW_FEE_ESTIMATE_MESSAGE,
+  COMPOUND_FEE_ESTIMATE_MESSAGE,
+  RECOVERY_FEE_ESTIMATE_MESSAGE,
+  CLEANUP_FEE_ESTIMATE_MESSAGE,
+  FEE_ESTIMATE_TIMEOUT_MESSAGE,
+} from "./fee-estimate";
 export { MemoryRpcCache, getRpcCache, setRpcCache, resetRpcCache, cacheKeyFor } from "./cache";
 export { setRpcLogger } from "./logger";
 export { setRpcRetryConfig, computeBackoffMs, parseRetryAfter, invokeWithRetries, DEFAULT_RETRY, PREVIEW_RETRY, MIN_CONTEXT_SLOT_RETRY_MS } from "./retry";

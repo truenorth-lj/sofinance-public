@@ -8,6 +8,7 @@
   "sideEffects": false,
   "exports": {
     "./rpc": "./src/rpc/index.ts",
+    "./rpc/fee-estimate": "./src/rpc/fee-estimate.ts",
     "./jupiter": "./src/jupiter/index.ts",
     "./swap": "./src/swap/index.ts",
     "./*": "./src/*.ts"

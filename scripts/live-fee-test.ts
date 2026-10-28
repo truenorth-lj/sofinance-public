@@ -99,13 +99,14 @@ type SelectedPrepared = {
   startingLiquidity: string; startingBalances: { input: string; a: string; b: string }; beam?: Beam;
 };
 type Fee = { mint: string; amount: string; destination: string };
-async function inspect(encoded: string, beam?: Beam) {
+async function inspect(encoded: string, beam?: Beam, extraSigners: Keypair[] = []) {
   const tx = VersionedTransaction.deserialize(Buffer.from(encoded, "base64"));
   if (tx.message.staticAccountKeys[0]?.toBase58() !== wallet) throw new Error("Prepared transaction payer mismatch");
   const message = Buffer.from(tx.message.serialize());
   if (!keypair) throw new Error(`Keypair file missing: ${keypairPath}; signed size verification requires it`);
-  tx.sign([keypair]); // Preserves the app's NFT mint partial signature.
+  tx.sign([keypair]);
   if (!Buffer.from(tx.message.serialize()).equals(message)) throw new Error("Message changed during signing");
+  if (extraSigners.length) tx.sign(extraSigners);
   if (tx.signatures.some((sig) => sig.every((byte) => byte === 0))) throw new Error("Missing required signature");
   const tables = await Promise.all(tx.message.addressTableLookups.map(async (lookup) => {
     const table = (await rpc.getAddressLookupTable(lookup.accountKey)).value;
@@ -166,12 +167,13 @@ async function balances(mints: string[]) {
   return result;
 }
 async function execute(encoded: string, validity: { expiresAt?: number; lastValidBlockHeight: number }, mints: string[],
-  broadcast: (signedTransaction: string) => Promise<{ signature: string }>, confirm?: (signature: string) => Promise<void>, beam?: Beam) {
+  broadcast: (signedTransaction: string) => Promise<{ signature: string }>, confirm?: (signature: string) => Promise<void>, beam?: Beam,
+  extraSigners: Keypair[] = []) {
   if (!keypair) {
     console.log(JSON.stringify({ preparedBytesUnsigned: Buffer.from(encoded, "base64").length,
       signedSizeVerified: false, beamPlan: beam ?? null }, null, 2));
   }
-  const measured = await inspect(encoded, beam);
+  const measured = await inspect(encoded, beam, extraSigners);
   if (!send) { console.log("Dry-run: prepared and signed locally; no transaction broadcast."); return; }
   if (measured.wire.length > 1232) throw new Error("Transaction exceeds 1232 bytes");
   const before = await balances([...mints, ...measured.fees.map((fee) => fee.mint)]);
@@ -276,10 +278,15 @@ async function main() {
     const body = { wallet, poolId: pair.poolAddress, inputMint, inputKind: deposit === "sol" ? "native" : "token", amount: required("amount"), rangePreset: "standard", minPrice: "", maxPrice: "" };
     const quote = await api<unknown>("open-quote", body);
     console.log("open-quote:", JSON.stringify(quote));
-    const prepared = await api<Prepared<OpenPositionSummary>>("open-prepare", body);
-    await execute(prepared.unsignedTransaction, prepared.summary, [inputMint, pair.mintA, pair.mintB],
-      (signedTransaction) => api("open-broadcast", { wallet, signedTransaction, permit: prepared.permit, summary: prepared.summary }, true),
-      (signature) => poll("transaction-finality", { signature, lastValidBlockHeight: prepared.summary.lastValidBlockHeight }), prepared.summary.beam);
+    const mint = Keypair.generate();
+    try {
+      const prepared = await api<Prepared<OpenPositionSummary>>("open-prepare", { ...body, nftMint: mint.publicKey.toBase58() });
+      await execute(prepared.unsignedTransaction, prepared.summary, [inputMint, pair.mintA, pair.mintB],
+        (signedTransaction) => api("open-broadcast", { wallet, signedTransaction, permit: prepared.permit, summary: prepared.summary }, true),
+        (signature) => poll("transaction-finality", { signature, lastValidBlockHeight: prepared.summary.lastValidBlockHeight }), prepared.summary.beam, [mint]);
+    } finally {
+      mint.secretKey.fill(0);
+    }
   } else if (command === "add") {
     const positionMint = required("position");
     const owned = await api<WalletDiscovery>(`wallet?wallet=${wallet}`);

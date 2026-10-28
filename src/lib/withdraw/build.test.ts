@@ -2,7 +2,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 const mocks = vi.hoisted(() => ({ state: vi.fn(), rpc: vi.fn(), leg: vi.fn(), fee: vi.fn(), padding: 0, impact: "0.01", swapStage: false, receivedA: 200n, receivedB: 300n }));
 vi.mock("@sofinance/engine/selected-state", () => ({ readSelectedPositionState: mocks.state }));
-vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: mocks.rpc }));
+vi.mock("@sofinance/engine/rpc", async (importOriginal) => ({ ...await importOriginal<typeof import("@sofinance/engine/rpc")>(), rpcConnection: mocks.rpc }));
 vi.mock("@sofinance/engine/swap/leg", () => ({ feeSwapLeg: mocks.leg }));
 vi.mock("@sofinance/engine/swap/collection", () => ({ collectSwapFee: mocks.fee, fitFeeCollections: async (_connection: unknown, _collections: unknown, instructions: unknown) => ({ instructions }) }));
 vi.mock("@sofinance/engine/solami-beam", async () => ({ ...await vi.importActual("@sofinance/engine/solami-beam"), fetchBeamTipAddress: async () => null }));
@@ -18,7 +18,7 @@ import { PublicKey, SystemProgram, VersionedTransaction, type Connection } from 
 import { TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { PersonalPositionLayout, PoolInfoLayout } from "@raydium-io/raydium-sdk-v2";
 import { buildWithdraw } from "@sofinance/engine/withdraw/build";
-import { BLOCKHASH, SIGNING_SECRET, testKeypair } from "../test-support/send-fixtures";
+import { BLOCKHASH, SIGNING_SECRET, phantomRewriteTransaction, testKeypair } from "../test-support/send-fixtures";
 import { USDC_MINT } from "@sofinance/engine/ids";
 const key = (n: number) => testKeypair(n).publicKey;
 const wallet = key(1), mintA = key(2), mintB = key(3), positionMint = key(4), positionKey = key(5), poolKey = key(6), nft = key(7);
@@ -140,6 +140,27 @@ it("prepares conversion only from a finalized matching receipt and actual token 
     expect(second.summary.stage).toBe("swap");
     expect(second.summary.assets.map(a => a.amount)).toEqual(["199", "300"]);
     expect(second.summary.assets.map(a => a.starting)).toEqual(["299", "400"]);
+});
+it("prepares conversion from a Phantom-modified finalized first receipt", async () => {
+    mocks.padding = 1100;
+    const previous = await buildWithdraw(request);
+    const first = VersionedTransaction.deserialize(Buffer.from(previous.unsignedTransaction, "base64"));
+    const landed = phantomRewriteTransaction(first);
+    expect(Buffer.from(landed.message.serialize()).equals(Buffer.from(first.message.serialize()))).toBe(false);
+    const keys = landed.message.getAccountKeys();
+    const receiptBalances = (post: boolean) => previous.summary.assets.map((a, i) => ({
+        accountIndex: Array.from({ length: keys.length }, (_, n) => keys.get(n)?.toBase58()).indexOf(a.account),
+        mint: a.mint, owner: request.wallet, uiTokenAmount: { amount: (100n + (post ? (i === 0 ? 199n : 300n) : 0n)).toString() },
+    }));
+    const receipt = { transaction: { message: landed.message }, meta: { err: null, loadedAddresses: { writable: [], readonly: [] }, preTokenBalances: receiptBalances(false), postTokenBalances: receiptBalances(true) } };
+    Object.assign(mocks.rpc(), { getTransaction: vi.fn(async () => receipt) });
+    mocks.padding = 0;
+    mocks.swapStage = true;
+    mocks.receivedA = 199n;
+    const second = await buildWithdraw({ ...request, stage: "swap", tx1Signature: "receipt", previous });
+    expect(second.summary.stage).toBe("swap");
+    expect(second.summary.assets.map(a => a.amount)).toEqual(["199", "300"]);
+    expect(second.summary.tx1Signature).toBe("receipt");
 });
 it("rejects an absent, failed, mismatched, or under-minimum first receipt", async () => {
     mocks.padding = 1100;

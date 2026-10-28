@@ -9,6 +9,7 @@ import { beamLandingUrl } from "@sofinance/engine/solami-beam";
 import nacl from "tweetnacl";
 import { getSigningSecret } from "@sofinance/engine/config/server-env";
 import { isSingleWalletSignedTransaction } from "@sofinance/engine/transaction-limits";
+import { assertWalletReturnedTransaction } from "@/lib/wallet-returned-guard";
 
 function validRaw(value: unknown) {
   return typeof value === "string" && /^\d+$/.test(value);
@@ -16,7 +17,7 @@ function validRaw(value: unknown) {
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json() as SelectedPermitInput & { signedTransaction: string; permit: string };
+    const body = await request.json() as SelectedPermitInput & { signedTransaction: string; permit: string; unsignedTransaction?: string };
     const walletAddress = parseWallet(body.wallet);
     if (!body.selection || typeof body.selection.positionMint !== "string" ||
       typeof body.selection.inputMint !== "string" ||
@@ -35,12 +36,16 @@ export async function POST(request: Request) {
       !["below", "inside", "above"].includes(body.rangeSide)) throw new Error("Invalid or expired signed transaction input");
     const wallet = new PublicKey(walletAddress);
     const transaction = VersionedTransaction.deserialize(Buffer.from(body.signedTransaction, "base64"));
+    const prepared = typeof body.unsignedTransaction === "string"
+      ? VersionedTransaction.deserialize(Buffer.from(body.unsignedTransaction, "base64"))
+      : transaction;
     const walletSignature = transaction.signatures[0];
     if (!isSingleWalletSignedTransaction(transaction, walletAddress) || !walletSignature) {
       throw new Error("Payer, signature count, or transaction size mismatch");
     }
+    if (prepared !== transaction) assertWalletReturnedTransaction(prepared, transaction, walletAddress);
     const permitInput: SelectedPermitInput = {
-      message: Buffer.from(transaction.message.serialize()).toString("base64"), wallet: walletAddress,
+      message: Buffer.from(prepared.message.serialize()).toString("base64"), wallet: walletAddress,
       selection: body.selection, requested: body.requested, floorBps: body.floorBps,
       expiresAt: body.expiresAt, lastValidBlockHeight: body.lastValidBlockHeight,
       startingLiquidity: body.startingLiquidity, expectedLiquidity: body.expectedLiquidity,
@@ -52,7 +57,10 @@ export async function POST(request: Request) {
     if (!nacl.sign.detached.verify(transaction.message.serialize(), walletSignature, wallet.toBytes())) {
       throw new Error("Wallet signature does not match the prepared transaction");
     }
-    const signature = await submitSelected({ transaction, wallet, walletSignature, permitInput }, APP_SELECTED_SUBMIT);
+    const signature = await submitSelected({
+      transaction, wallet, walletSignature, permitInput,
+      prepared: prepared !== transaction ? prepared : undefined,
+    }, APP_SELECTED_SUBMIT);
     return Response.json(
       { signature, beam: null, beamLabel: null, beamLandingUrl: beamLandingUrl(signature) },
       { headers: { "Cache-Control": "no-store" } },

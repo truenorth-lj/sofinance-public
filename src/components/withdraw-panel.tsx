@@ -12,6 +12,7 @@ import { createJupiterRelayStore, postWithJupiterRelay } from "@/lib/jupiter/bro
 import type { WithdrawPrepared, WithdrawSummary, WithdrawRequest } from "@sofinance/engine/withdraw/types";
 import { assertWithdrawHistory, readWithdrawHistory, writeWithdrawHistory, withdrawCheckpointKey, WithdrawHistoryError, WITHDRAW_HISTORY_ERROR, type WithdrawHistory, type WithdrawCheckpoint as Checkpoint } from "@/lib/withdraw-checkpoint";
 import { prepareIsStale } from "@sofinance/engine/fresh-blockhash";
+import { assertWalletReturnedTransaction } from "@/lib/wallet-returned-guard";
 
 export const WITHDRAW_EXPIRED_MESSAGE = "Transaction expired before it landed. Retry to prepare a fresh transaction — no funds moved.";
 
@@ -178,24 +179,53 @@ export function WithdrawPanel({wallet,positionMint,mintA,mintB,label,onClose,onB
   guardRun(run);
   setProgress(prepared.summary.stage==="swap"?"Step 2 of 2: approve conversion in your wallet":"Approve withdrawal in your wallet");
   const unsigned=VersionedTransaction.deserialize(Uint8Array.from(atob(prepared.unsignedTransaction),c=>c.charCodeAt(0)));
-  const message=unsigned.message.serialize().slice();
+  const preparedSnapshot=VersionedTransaction.deserialize(unsigned.serialize());
   const signed=await currentConnection.current.signTransaction(unsigned);
   guardRun(run);
   if(Date.now()>=prepared.summary.expiresAt)throw new Error("Prepared transaction expired while awaiting wallet approval. Review and retry; no new transaction was submitted.");
-  if(signed.message.serialize().length!==message.length || signed.message.serialize().some((b,i)=>b!==message[i]))throw new Error("Wallet modified transaction");
+  assertWalletReturnedTransaction(preparedSnapshot,signed,wallet);
   const saved:Checkpoint={prepared,signature:bs58.encode(signed.signatures[0]!),request:originalRequest,confirmHighImpact:confirmed,root};
   // Persist before broadcasting: an interrupted HTTP request can still land.
   save(run,saved);setProgress("Submitting withdrawal…");
-  await post(run,"withdraw-broadcast",{wallet,summary:prepared.summary,permit:prepared.permit,confirmHighImpact:confirmed,signedTransaction:btoa(String.fromCharCode(...signed.serialize()))});
+  try{
+   await post(run,"withdraw-broadcast",{wallet,summary:prepared.summary,permit:prepared.permit,confirmHighImpact:confirmed,unsignedTransaction:prepared.unsignedTransaction,signedTransaction:btoa(String.fromCharCode(...signed.serialize()))});
+  }catch(error){
+   // Pre-send 4xx (budget, simulation) never reached the RPC. Restore the first-stage
+   // checkpoint so Resume re-prepares conversion instead of waiting on a never-sent sig.
+   if(root && /exceeds SOL cost budget|priority fee exceeds|simulation failed|authorization|Invalid or expired|Invalid wallet signature|blockhash expired|required instruction|Wallet (?:changed|dropped|removed)|Confirm|balance changed|below simulated|existing wallet inventory|output below/i.test(error instanceof Error?error.message:"")){
+    save(run,{prepared:root.prepared,signature:root.signature,request:originalRequest,confirmHighImpact:confirmed});
+   }
+   throw error;
+  }
   return saved;
  }
  async function run(confirmed=false){
   const run=begin();if(!run)return;setBusy(true);setError("");setConfirmation(false);
   try{
    guardRun(run);
+   const resuming=!!checkpoint;
    let saved=checkpoint;
    if(!saved){const prepared=await post<WithdrawPrepared>(run,"withdraw-prepare",{...request,confirmHighImpact:confirmed});saved=await signAndSend(run,prepared,confirmed,request);}
-   await waitFor(run,saved);
+   if(resuming && saved.prepared.summary.stage==="swap" && saved.root){
+    const result=await post<{status:string}>(run,"withdraw-status",{signature:saved.signature,prepared:saved.prepared});
+    guardRun(run);
+    if(result.status==="success"){
+     notifyPositionHistoryChange(saved.prepared.summary.positionMint,undefined);
+     save(run,null);setProgress("Withdrawal complete");setPreview(null);currentOnConfirmed.current();return;
+    }
+    if(result.status==="failed" || result.status==="expired"){
+     const restored={...saved,prepared:saved.root.prepared,signature:saved.root.signature,root:undefined};
+     save(run,restored);
+     notifyPositionHistoryChange(restored.prepared.summary.positionMint,restored.signature);
+     saved=restored;
+    }else if(result.status==="pending"){
+     await waitFor(run,saved);
+    }else{
+     throw new Error(`Transaction status: ${result.status}. Review it before starting another withdrawal.`);
+    }
+   }else{
+    await waitFor(run,saved);
+   }
    if(saved.prepared.summary.stage==="withdraw"){
     guardRun(run);
     setProgress("Step 1 of 2 complete. Preparing conversion…");

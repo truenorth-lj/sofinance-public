@@ -47,7 +47,7 @@ beforeEach(() => {
       expect(Buffer.from(signed.message.serialize())).toEqual(Buffer.from(tx.message.serialize()));
       if (payload.kind === "open-position") {
         expect(signed.signatures[1]).toEqual(tx.signatures[1]); expect(storage.getItem(openAttemptKey(wallet))).toContain(sig);
-        expect(body).toEqual({ signedTransaction: toBase64(signed), ...payload.submitArgs });
+        expect(body).toEqual({ signedTransaction: toBase64(signed), unsignedTransaction: payload.unsignedTransaction, ...payload.submitArgs });
       } else expect(storage.getItem(openAttemptKey(wallet))).toBe("broken");
       if (sendMode === "unknown") throw new Error("lost response");
       if (sendMode === "unsent") return Response.json({ error: "preflight", sent: false }, { status: 400 });

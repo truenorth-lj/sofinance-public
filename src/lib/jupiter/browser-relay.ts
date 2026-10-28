@@ -32,9 +32,17 @@ export const RELAY_AMOUNT_CONVERGE_BPS = 100;
 export const RELAY_BINARY_SEARCH_LIMIT = 8;
 export const RELAY_DID_NOT_SETTLE_MESSAGE =
   "Quote did not settle. Try a smaller amount, a wider range, or refresh the quote.";
+/** Browser IP quota is exhausted; the caller should fall back to the server key. */
+export const JUPITER_RATE_LIMIT_MESSAGE =
+  "Jupiter is rate-limiting quotes from this browser. Wait a few seconds and retry.";
+/** Both the keyed server path and the browser relay failed. */
+export const JUPITER_QUOTE_UNAVAILABLE_MESSAGE =
+  "Jupiter quotes are unavailable right now. Wait a few seconds and retry.";
 const MAX_STORED = 40;
-const MAX_RATE_LIMIT_WAIT_MS = 12_000;
-const RATE_LIMIT_RETRIES = 2;
+/** PR #162 fail-fast caps; persistent 429 / timeout then fall back to the server. */
+const MAX_RATE_LIMIT_WAIT_MS = 3_000;
+const RATE_LIMIT_RETRIES = 1;
+const JUPITER_FETCH_TIMEOUT_MS = 10_000;
 const RESET_JITTER_MS = 250;
 const RAYDIUM_CLMM_DEX = "Raydium CLMM";
 const PREFETCH_MAX_ACCOUNTS = "48";
@@ -60,9 +68,12 @@ function keepHints(store: JupiterRelayStore, hints: unknown) {
   store.hints = Object.fromEntries(Object.entries(merged).filter(([, value]) => typeof value === "string").slice(-MAX_HINTS));
 }
 
+export type JupiterQuotePath = "server" | "browser" | "server_fallback";
+
 /** Counters for diagnostics/verification (also exposed as `window.__sofiJupiter`). */
 export const jupiterBrowserStats = {
   calls: 0, quotes: 0, swapInstructions: 0, rateLimited: 0, waitedMs: 0, reused: 0, rounds: 0, fallbacks: 0, churnStops: 0, binarySearches: 0,
+  servedBy: null as JupiterQuotePath | null, serverFirst: 0,
 };
 
 const gate = { remaining: undefined as number | undefined, resetAtMs: 0, blockedUntil: 0 };
@@ -72,7 +83,28 @@ export function resetJupiterBrowserGate() {
   gate.remaining = undefined; gate.resetAtMs = 0; gate.blockedUntil = 0; queue = Promise.resolve();
   Object.assign(jupiterBrowserStats, {
     calls: 0, quotes: 0, swapInstructions: 0, rateLimited: 0, waitedMs: 0, reused: 0, rounds: 0, fallbacks: 0, churnStops: 0, binarySearches: 0,
+    servedBy: null, serverFirst: 0,
   });
+}
+
+function noteServedBy(path: JupiterQuotePath) {
+  jupiterBrowserStats.servedBy = path;
+}
+
+function isJupiterUnavailableBody(status: number, body: unknown): boolean {
+  if (status === 429) return true;
+  if (status !== 503) return false;
+  const code = body && typeof body === "object" ? (body as { code?: unknown }).code : undefined;
+  return code === "jupiter_rate_limited" || code === "jupiter_unavailable";
+}
+
+async function peekJson(response: Response): Promise<unknown> {
+  try {
+    if (typeof response.clone !== "function") return null;
+    return await response.clone().json();
+  } catch {
+    return null;
+  }
 }
 
 export function jupiterRelayEnabled(): boolean {
@@ -81,6 +113,37 @@ export function jupiterRelayEnabled(): boolean {
   } catch {
     return typeof window !== "undefined";
   }
+}
+
+function mergeAbort(signal: AbortSignal | undefined, ms: number) {
+  const timeout = AbortSignal.timeout(ms);
+  if (!signal) return timeout;
+  if (typeof AbortSignal.any === "function") return AbortSignal.any([signal, timeout]);
+  const extra = new AbortController();
+  const abort = (reason: unknown) => { if (!extra.signal.aborted) extra.abort(reason); };
+  if (signal.aborted) abort(signal.reason);
+  else signal.addEventListener("abort", () => abort(signal.reason), { once: true });
+  timeout.addEventListener("abort", () => abort(timeout.reason), { once: true });
+  return extra.signal;
+}
+
+class JupiterBrowserUnavailable extends Error {}
+
+export function jupiterRelayFailureMessage(error: unknown, fallback: string) {
+  if (isTimeoutFailure(error)) return fallback;
+  return error instanceof Error && error.message ? error.message : fallback;
+}
+
+function isTimeoutFailure(error: unknown) {
+  if (error instanceof DOMException && (error.name === "TimeoutError" || error.name === "AbortError")) return true;
+  return error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError"
+    || error.message === "Jupiter quote timed out");
+}
+
+function isBrowserRelayFailure(error: unknown) {
+  if (error instanceof JupiterBrowserUnavailable) return true;
+  if (isTimeoutFailure(error)) return true;
+  return error instanceof Error && error.message === JUPITER_RATE_LIMIT_MESSAGE;
 }
 
 function sleep(ms: number, signal?: AbortSignal) {
@@ -124,21 +187,23 @@ async function waitForGate(signal?: AbortSignal) {
   }
 }
 
-class JupiterBrowserUnavailable extends Error {}
-
 async function fetchNeedOnce(need: RelayNeed, signal?: AbortSignal): Promise<Omit<StoredResponse, "at">> {
   for (let attempt = 0; ; attempt++) {
     await waitForGate(signal);
     let response: Response;
+    const fetchSignal = mergeAbort(signal, JUPITER_FETCH_TIMEOUT_MS);
     try {
       response = await fetch(`${JUPITER_BROWSER_ORIGIN}${need.url}`, {
         method: need.method,
         headers: need.body !== undefined ? { "Content-Type": "application/json" } : undefined,
         body: need.body !== undefined ? JSON.stringify(need.body) : undefined,
-        cache: "no-store", credentials: "omit", signal,
+        cache: "no-store", credentials: "omit", signal: fetchSignal,
       });
     } catch (error) {
       if (signal?.aborted) throw signal.reason;
+      if (fetchSignal.aborted && !signal?.aborted) {
+        throw new JupiterBrowserUnavailable("Jupiter quote timed out");
+      }
       // CORS rejection or network failure: let the caller fall back to the server path.
       throw new JupiterBrowserUnavailable(error instanceof Error ? error.message : "Jupiter unreachable");
     }
@@ -151,7 +216,7 @@ async function fetchNeedOnce(need: RelayNeed, signal?: AbortSignal): Promise<Omi
       const wait = rateLimitWaitMs(response);
       gate.blockedUntil = Date.now() + wait;
       if (attempt < RATE_LIMIT_RETRIES) continue;
-      return { status: 429, body: { error: "Jupiter rate limit" }, retryAfterMs: wait };
+      throw new JupiterBrowserUnavailable(JUPITER_RATE_LIMIT_MESSAGE);
     }
     const body: unknown = await response.json().catch(() => null);
     return { status: response.status, body, retryAfterMs: null };
@@ -234,7 +299,7 @@ export function quoteSettleFailureExtras(
   payload: Record<string, unknown>,
   needs: readonly Pick<RelayNeed, "url">[],
   rounds: number,
-): { pair?: string; amount?: string; rangeWidth?: string; rounds: number } {
+): { pair?: string; amount?: string; rangeWidth?: string; rounds: number; quotePath?: JupiterQuotePath } {
   const amount = typeof payload.amount === "string" ? payload.amount : undefined;
   const rangeWidth = typeof payload.rangePreset === "string" ? payload.rangePreset : undefined;
   let pair: string | undefined;
@@ -244,7 +309,7 @@ export function quoteSettleFailureExtras(
     const [inputMint, outputMint] = key.split(":");
     if (inputMint && outputMint) { pair = `${inputMint}/${outputMint}`; break; }
   }
-  return { pair, amount, rangeWidth, rounds };
+  return { pair, amount, rangeWidth, rounds, quotePath: jupiterBrowserStats.servedBy ?? undefined };
 }
 
 function isAmountChurn(need: RelayNeed, store: JupiterRelayStore) {
@@ -330,84 +395,122 @@ function throwDidNotSettle(payload: Record<string, unknown>, needs: readonly Pic
   throw error;
 }
 
+async function fallbackToServer(
+  post: (body: Record<string, unknown>) => Promise<Response>,
+  payload: Record<string, unknown>,
+): Promise<Response> {
+  jupiterBrowserStats.fallbacks++;
+  const response = await post(payload);
+  const body = await peekJson(response);
+  if (isJupiterUnavailableBody(response.status, body)) {
+    throw new Error(JUPITER_QUOTE_UNAVAILABLE_MESSAGE);
+  }
+  noteServedBy("server_fallback");
+  return response;
+}
+
 /**
- * POSTs `payload` to one of our quote/prepare routes, serving every Jupiter call
- * the server needs from this browser. Returns the route's final Response.
- * Falls back to the server-keyed path if Jupiter is unreachable from the browser.
+ * POSTs `payload` to one of our quote/prepare routes.
+ *
+ * Server-first: the keyed path is used when server quota is healthy. Browser
+ * relay (keyless `api.jup.ag`) runs only when the server returns 429 / Jupiter
+ * unavailable, or answers `jupiter_relay_needed`. A browser 429 / timeout /
+ * network failure falls back to the server again. Both failing yields a clear
+ * error instead of "Quote did not settle".
  */
 export async function postWithJupiterRelay(url: string, payload: Record<string, unknown>,
   options: { store: JupiterRelayStore; signal?: AbortSignal }): Promise<Response> {
   const post = (body: Record<string, unknown>) => fetch(url, { method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body), cache: "no-store", signal: options.signal });
-  if (!jupiterRelayEnabled()) return post(payload);
-  const { store, signal } = options;
-  let churnRounds = 0;
-  let searchSteps = 0;
-  let lastNeeds: RelayNeed[] = [];
-  const maxRounds = MAX_RELAY_ROUNDS + RELAY_BINARY_SEARCH_LIMIT;
-  for (let round = 0; round < maxRounds; round++) {
-    prune(store);
-    jupiterBrowserStats.rounds++;
-    const response = await post({ ...payload, jupiterRelay: relayPayload(store) });
-    if (response.status !== 409) {
-      try { keepHints(store, JSON.parse(response.headers.get(HINTS_HEADER) ?? "null")); } catch { /* ignore malformed hints */ }
-      return response;
-    }
-    const data = await response.clone().json().catch(() => null) as { code?: string; needs?: RelayNeed[]; hints?: unknown } | null;
-    if (data?.code !== JUPITER_RELAY_NEEDED_CODE || !Array.isArray(data.needs) || data.needs.length === 0) return response;
-    keepHints(store, data.hints);
-    const listed = data.needs.filter((need): need is RelayNeed =>
-      !!need && typeof need === "object" && typeof need.id === "string" && (need.method === "GET" || need.method === "POST") && typeof need.url === "string");
-    if (listed.length === 0) return response;
-    lastNeeds = listed;
-    const freshListed = listed.filter((need) => !storedFor(store, need));
-    const withinTolerance = freshListed.length > 0 && freshListed.every((need) => !quotePairKey(need.url) || nearbyStoredAmount(store, need) !== null);
-    const churning = freshListed.length > 0 && freshListed.every((need) => isAmountChurn(need, store)) && !withinTolerance;
-    churnRounds = churning ? churnRounds + 1 : 0;
-    const wouldStop = churnRounds >= RELAY_AMOUNT_CHURN_LIMIT;
-    if (withinTolerance) {
-      for (const need of freshListed) {
-        const nearby = nearbyStoredAmount(store, need);
-        if (!nearby) continue;
-        retargetHints(store, [nearby.prev, nearby.amount], conservativeQuoteAmount(nearby.prev, nearby.amount));
-      }
-    }
-    if (wouldStop && !withinTolerance) {
-      if (searchSteps < RELAY_BINARY_SEARCH_LIMIT) {
-        searchSteps++;
-        jupiterBrowserStats.binarySearches++;
-        churnRounds = 0;
-        for (const need of freshListed) {
-          const pair = quotePairKey(need.url);
-          const amount = quoteAmount(need.url);
-          if (!pair || amount === null) continue;
-          const prev = previousAmountForPair(store, pair, need.url);
-          if (prev === null) continue;
-          retargetHints(store, [prev, amount], nextRelaySearchAmount(prev, amount));
-        }
-        continue;
-      }
-      throwDidNotSettle(payload, listed);
-    }
-    const toFetch = withinTolerance
-      ? listed.filter((need) => {
-        const nearby = nearbyStoredAmount(store, need);
-        if (!nearby) return true;
-        return conservativeQuoteAmount(nearby.prev, nearby.amount) === nearby.amount;
-      })
-      : listed;
-    try {
-      for (const need of expandRelayNeeds(toFetch)) {
-        if (storedFor(store, need)) { jupiterBrowserStats.reused++; continue; }
-        remember(store, need, { ...await fetchNeed(need, signal), at: Date.now() });
-      }
-    } catch (error) {
-      if (!(error instanceof JupiterBrowserUnavailable)) throw error;
-      jupiterBrowserStats.fallbacks++;
-      return post(payload);
-    }
+  if (!jupiterRelayEnabled()) {
+    noteServedBy("server");
+    return post(payload);
   }
-  throwDidNotSettle(payload, lastNeeds);
+  const { store, signal } = options;
+
+  const runRelay = async (initial?: Response): Promise<Response> => {
+    let pending = initial;
+    let churnRounds = 0;
+    let searchSteps = 0;
+    let lastNeeds: RelayNeed[] = [];
+    const maxRounds = MAX_RELAY_ROUNDS + RELAY_BINARY_SEARCH_LIMIT;
+    for (let round = 0; round < maxRounds; round++) {
+      prune(store);
+      jupiterBrowserStats.rounds++;
+      const response = pending ?? await post({ ...payload, jupiterRelay: relayPayload(store) });
+      pending = undefined;
+      if (response.status !== 409) {
+        try { keepHints(store, JSON.parse(response.headers.get(HINTS_HEADER) ?? "null")); } catch { /* ignore malformed hints */ }
+        noteServedBy("browser");
+        return response;
+      }
+      const data = await response.clone().json().catch(() => null) as { code?: string; needs?: RelayNeed[]; hints?: unknown } | null;
+      if (data?.code !== JUPITER_RELAY_NEEDED_CODE || !Array.isArray(data.needs) || data.needs.length === 0) return response;
+      keepHints(store, data.hints);
+      const listed = data.needs.filter((need): need is RelayNeed =>
+        !!need && typeof need === "object" && typeof need.id === "string" && (need.method === "GET" || need.method === "POST") && typeof need.url === "string");
+      if (listed.length === 0) return response;
+      lastNeeds = listed;
+      const freshListed = listed.filter((need) => !storedFor(store, need));
+      const withinTolerance = freshListed.length > 0 && freshListed.every((need) => !quotePairKey(need.url) || nearbyStoredAmount(store, need) !== null);
+      const churning = freshListed.length > 0 && freshListed.every((need) => isAmountChurn(need, store)) && !withinTolerance;
+      churnRounds = churning ? churnRounds + 1 : 0;
+      const wouldStop = churnRounds >= RELAY_AMOUNT_CHURN_LIMIT;
+      if (withinTolerance) {
+        for (const need of freshListed) {
+          const nearby = nearbyStoredAmount(store, need);
+          if (!nearby) continue;
+          retargetHints(store, [nearby.prev, nearby.amount], conservativeQuoteAmount(nearby.prev, nearby.amount));
+        }
+      }
+      if (wouldStop && !withinTolerance) {
+        if (searchSteps < RELAY_BINARY_SEARCH_LIMIT) {
+          searchSteps++;
+          jupiterBrowserStats.binarySearches++;
+          churnRounds = 0;
+          for (const need of freshListed) {
+            const pair = quotePairKey(need.url);
+            const amount = quoteAmount(need.url);
+            if (!pair || amount === null) continue;
+            const prev = previousAmountForPair(store, pair, need.url);
+            if (prev === null) continue;
+            retargetHints(store, [prev, amount], nextRelaySearchAmount(prev, amount));
+          }
+          continue;
+        }
+        throwDidNotSettle(payload, listed);
+      }
+      const toFetch = withinTolerance
+        ? listed.filter((need) => {
+          const nearby = nearbyStoredAmount(store, need);
+          if (!nearby) return true;
+          return conservativeQuoteAmount(nearby.prev, nearby.amount) === nearby.amount;
+        })
+        : listed;
+      try {
+        for (const need of expandRelayNeeds(toFetch)) {
+          if (storedFor(store, need)) { jupiterBrowserStats.reused++; continue; }
+          remember(store, need, { ...await fetchNeed(need, signal), at: Date.now() });
+        }
+      } catch (error) {
+        if (!isBrowserRelayFailure(error)) throw error;
+        return fallbackToServer(post, payload);
+      }
+    }
+    throwDidNotSettle(payload, lastNeeds);
+  };
+
+  const first = await post(payload);
+  if (first.status === 409) {
+    const data = await peekJson(first) as { code?: string } | null;
+    if (data?.code === JUPITER_RELAY_NEEDED_CODE) return runRelay(first);
+  }
+  if (!isJupiterUnavailableBody(first.status, await peekJson(first))) {
+    noteServedBy("server");
+    jupiterBrowserStats.serverFirst++;
+    return first;
+  }
+  return runRelay();
 }
 
 if (typeof window !== "undefined") {

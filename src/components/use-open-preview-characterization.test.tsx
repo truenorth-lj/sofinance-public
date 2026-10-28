@@ -2,7 +2,8 @@
 import { act, Activity, createElement, StrictMode, Suspense, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useOpenPositionController, type OpenPositionPair } from "./use-open-position-controller";
+import { PublicKey } from "@solana/web3.js";
+import { OPEN_QUOTE_TIMEOUT_MS, useOpenPositionController, type OpenPositionPair } from "./use-open-position-controller";
 import { NATIVE_SOL_MINT, USDC_MINT } from "@sofinance/engine/ids";
 import { parseTokenAmount } from "@sofinance/engine/amount";
 import { openAttemptKey } from "@/lib/open-attempt";
@@ -24,7 +25,7 @@ const assets = [
   { kind: "token", mint: pair.mintA, decimals: 6, balance: "9000000", eligible: false, reason: "Synthetic unsupported asset" },
 ];
 type Controller = ReturnType<typeof useOpenPositionController>;
-type Body = { wallet: string; poolId: string; amount: string; inputMint: string; inputKind: "native" | "token"; rangePreset: string; minPrice: string; maxPrice: string; jupiterRelay?: { responses: Record<string, unknown> } };
+type Body = { wallet: string; poolId: string; amount: string; inputMint: string; inputKind: "native" | "token"; rangePreset: string; minPrice: string; maxPrice: string; nftMint?: string; jupiterRelay?: { responses: Record<string, unknown> } };
 let c: Controller, previous: Controller | undefined, root: Root, container: HTMLDivElement;
 let currentPair: OpenPositionPair | null, hidden: boolean, suspend: boolean, mode: "visible" | "hidden", strict: boolean;
 let ledger: unknown[], fetchMock: ReturnType<typeof vi.fn>, quoteReply: (body: Body) => Promise<Response>, relay: boolean;
@@ -106,8 +107,9 @@ beforeEach(() => {
     if (url === "/api/open-quote" || url === "/api/open-prepare") {
       if (relay && !body.jupiterRelay?.responses["preview-quote"]) return Response.json({ code: "jupiter_relay_needed", needs: [{ id: "preview-quote", method: "GET", url: `/swap/v1/quote?inputMint=${NATIVE_SOL_MINT}&outputMint=${USDC_MINT}&amount=2000000` }] }, { status: 409 });
       if (url === "/api/open-quote") return quoteReply(body);
-      const tx = buildTransaction({ payer, extraSigners: [nft], signWith: [nft] });
-      const summary = openSummaryFixture({ wallet, nftMint: nft.publicKey.toBase58(), blockhash: tx.message.recentBlockhash });
+      const mint = body.nftMint ? new PublicKey(body.nftMint) : nft.publicKey;
+      const tx = buildTransaction({ payer, extraSigners: [{ publicKey: mint, secretKey: new Uint8Array(64) } as typeof nft], signWith: [] });
+      const summary = openSummaryFixture({ wallet, nftMint: mint.toBase58(), blockhash: tx.message.recentBlockhash });
       return Response.json({ unsignedTransaction: toBase64(tx), permit: "synthetic", summary: { ...summary, poolId: pair.poolAddress, quote: { ...quote(body), expiresAt: Date.now() + 10000, liquidity: "888" } } });
     }
     throw new Error(`Unexpected request: ${url}`);
@@ -119,7 +121,7 @@ afterEach(async context => {
   try {
   await act(async () => root.unmount());
   await act(async () => { for (const p of pending) p.reject(new Error("Owned teardown")); });
-  const count = calls().length; await advance(31000); expect(calls()).toHaveLength(count);
+  const count = calls().length; await advance(Math.max(31_000, OPEN_QUOTE_TIMEOUT_MS + 1_000)); expect(calls()).toHaveLength(count);
   note("cleanup", { timers: vi.getTimerCount(), sign: boundary.sign.mock.calls.length, prepare: calls("/api/open-prepare").length, broadcast: calls("/api/open-broadcast").length });
   expect(vi.getTimerCount()).toBe(0);
   if (!signed) { expect(calls("/api/open-prepare")).toHaveLength(0); expect(boundary.sign).not.toHaveBeenCalled(); }
@@ -275,8 +277,8 @@ describe("accepted Open preview characterization", () => {
     const providerCalls = () => fetchMock.mock.calls.filter(([url]) => url.startsWith(JUPITER_BROWSER_ORIGIN + "/"));
     expect(providerCalls()).toHaveLength(1); const before = c.quote;
     await act(async () => c.signAndSend()); expect(c.quote).not.toBe(before); expect(c.quote?.liquidity).toBe("888");
-    expect(c.error).toBe("Synthetic wallet refusal"); expect(providerCalls()).toHaveLength(1); expect(calls("/api/open-prepare")).toHaveLength(1);
-    expect(bodyAt(0, "/api/open-prepare").jupiterRelay!.responses["preview-quote"]).toBeTruthy();
+    expect(c.error).toBe("Synthetic wallet refusal"); expect(providerCalls()).toHaveLength(1); expect(calls("/api/open-prepare")).toHaveLength(2);
+    expect(bodyAt(1, "/api/open-prepare").jupiterRelay!.responses["preview-quote"]).toBeTruthy();
     expect(c.quoteLoading).toBe(false); await advance(450); expect(c.actionDisabled).toBe(false);
   });
 });

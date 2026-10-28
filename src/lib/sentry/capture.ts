@@ -5,6 +5,7 @@ import { publicErrorCode, CompoundSendError, sanitizePublicError } from "../publ
 import { AMOUNT_TOO_SMALL_CODE, JUPITER_CLIENT_ERROR_CODE } from "../selected-amount-error";
 import { isSentryEnabled } from "./runtime";
 import { pathnameFromUrl, routeFromRequest, routeFromTransaction } from "./route";
+import { logSafeError } from "../safe-error-log";
 
 export function sentryErrorClass(error: unknown): string {
   if (error instanceof CompoundSendError && error.cause !== undefined) {
@@ -84,7 +85,7 @@ export function resolveApiRoute(options: {
 
 export function captureApiRouteError(
   error: unknown,
-  options: { route?: string; request?: { url: string }; fallback?: string; status?: number } = {},
+  options: { route?: string; request?: { url: string }; fallback?: string; status?: number; quotePath?: string } = {},
 ): void {
   try {
     if (!isSentryEnabled()) return;
@@ -93,6 +94,7 @@ export function captureApiRouteError(
     Sentry.withScope((scope) => {
       if (route) scope.setTag("route", route);
       scope.setTag("error_class", sentryErrorClass(error));
+      if (options.quotePath) scope.setTag("quote_path", options.quotePath);
       scope.setExtra("public_message", sanitizePublicError(error, options.fallback ?? "API route error"));
       Sentry.captureException(error);
     });
@@ -106,7 +108,25 @@ export type QuoteSettleFailureExtras = {
   amount?: string;
   rangeWidth?: string;
   rounds?: number;
+  quotePath?: string;
 };
+
+/** Phantom-modified tx failed the cheap sanity check. Program ids only — no wallet, no secrets. */
+export function captureWalletReturnedTxFailure(error: unknown): void {
+  try {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!/Wallet removed or changed a required instruction/.test(message)) return;
+    logSafeError(message, error);
+    if (!isSentryEnabled()) return;
+    Sentry.withScope((scope) => {
+      scope.setTag("error_class", "wallet_returned_tx_mismatch");
+      scope.setExtra("diagnostic", message);
+      Sentry.captureException(error instanceof Error ? error : new Error(message));
+    });
+  } catch {
+    // Monitoring must never fail the flow.
+  }
+}
 
 /** Open-position quote sizing never settled. Pair/amount/range only — no wallet, no secrets. */
 export function captureQuoteSettleFailure(error: unknown, extras: QuoteSettleFailureExtras = {}): void {
@@ -115,6 +135,7 @@ export function captureQuoteSettleFailure(error: unknown, extras: QuoteSettleFai
     Sentry.withScope((scope) => {
       scope.setTag("error_class", sentryErrorClass(error));
       scope.setTag("quote_settle", "did_not_settle");
+      if (extras.quotePath) scope.setTag("quote_path", extras.quotePath);
       if (extras.pair) scope.setExtra("pair", extras.pair);
       if (extras.amount) scope.setExtra("amount", extras.amount);
       if (extras.rangeWidth) scope.setExtra("range_width", extras.rangeWidth);

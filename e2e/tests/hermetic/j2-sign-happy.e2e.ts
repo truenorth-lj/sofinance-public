@@ -42,11 +42,12 @@ test.describe("J2 sign link, happy path", () => {
       expect(sign.broadcasts).toHaveLength(1);
       const call = sign.broadcasts[0]!;
       expect(call.kind).toBe(kind);
+      expect(call.body.unsignedTransaction).toBe(scenario.payload.unsignedTransaction);
       if (kind === "add-liquidity") {
-        expect(Object.keys(call.body).sort()).toEqual(["signedTransaction", ...Object.keys(scenario.submitArgs)].sort());
+        expect(Object.keys(call.body).sort()).toEqual(["signedTransaction", "unsignedTransaction", ...Object.keys(scenario.submitArgs)].sort());
         expect(call.body.selection).toEqual(scenario.submitArgs.selection);
       } else {
-        expect(Object.keys(call.body).sort()).toEqual(["permit", "signedTransaction", "summary", "wallet"]);
+        expect(Object.keys(call.body).sort()).toEqual(["permit", "signedTransaction", "summary", "unsignedTransaction", "wallet"]);
         expect(call.body.summary).toEqual(scenario.submitArgs.summary);
       }
       expect(call.body.permit).toBe(scenario.submitArgs.permit);
@@ -63,7 +64,7 @@ test.describe("J2 sign link, happy path", () => {
     });
   }
 
-  test("open-position keeps the server's NFT-mint partial signature and fills only the wallet slot", async ({ page, wallet }) => {
+  test("open-position MCP signUrl keeps the fallback NFT-mint partial signature and fills only the wallet slot", async ({ page, wallet }) => {
     const scenario = makeScenario("open-position", wallet.address);
     const sign = new SignPage(page);
     await sign.mockBroadcast("open-position");
@@ -74,7 +75,7 @@ test.describe("J2 sign link, happy path", () => {
 
     const call = sign.broadcasts[0]!;
     expect(sign.signatureVerifies(call, wallet.address, 0)).toBe(true);
-    expect(sign.signatureVerifies(call, scenario.built.nftMint!, 1)).toBe(true);   // the server-held partial signature survived
+    expect(sign.signatureVerifies(call, scenario.built.nftMint!, 1)).toBe(true);   // MCP-ONLY server partial-sign fallback survived
     expect(wallet.ledger[0]!.programIds).toEqual(["11111111111111111111111111111111"]);
   });
 
