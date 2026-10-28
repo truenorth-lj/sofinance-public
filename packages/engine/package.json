@@ -37,7 +37,7 @@
     "decimal.js": "^10.6.0",
     "typescript": "^5.9.3",
     "vitest": "^5.0.3",
-    "zod": "^4.6.5"
+    "zod": "^4.6.6"
   },
   "peerDependencies": {
     "@raydium-io/raydium-sdk-v2": "0.2.73-alpha",
@@ -46,6 +46,6 @@
     "bn.js": "^5.2.5",
     "bs58": "6.0.0",
     "decimal.js": "^10.6.0",
-    "zod": "^4.6.5"
+    "zod": "^4.6.6"
   }
 }

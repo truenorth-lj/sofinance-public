@@ -54,7 +54,7 @@
     "tailwind-merge": "^3.7.0",
     "tsx": "^4.23.15",
     "tweetnacl": "^1.0.3",
-    "zod": "^4.6.5"
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
