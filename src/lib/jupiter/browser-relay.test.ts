@@ -6,7 +6,7 @@ vi.mock("../sentry/capture", () => ({ captureQuoteSettleFailure }));
 
 import {
   companionQuoteNeeds, conservativeQuoteAmount, createJupiterRelayStore, expandRelayNeeds,
-  jupiterBrowserStats, nextRelaySearchAmount, postWithJupiterRelay, quoteAmount,
+  JUPITER_QUOTE_UNAVAILABLE_MESSAGE, jupiterBrowserStats, nextRelaySearchAmount, postWithJupiterRelay, quoteAmount,
   quoteAmountsWithinBps, quoteSettleFailureExtras, RELAY_DID_NOT_SETTLE_MESSAGE,
   resetJupiterBrowserGate,
 } from "./browser-relay";
@@ -14,6 +14,8 @@ import {
 const need = (id: string, url = `/swap/v1/quote?amount=${id}`) => ({ id: id.padStart(32, "0"), method: "GET" as const, url });
 const json = (body: unknown, status = 200, headers: Record<string, string> = {}) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json", ...headers } });
+const relayResponses = (init?: RequestInit): Record<string, { status: number } | undefined> =>
+  (JSON.parse(String(init?.body)).jupiterRelay?.responses ?? {}) as Record<string, { status: number } | undefined>;
 
 beforeEach(() => {
   resetJupiterBrowserGate();
@@ -36,7 +38,7 @@ describe("browser Jupiter relay", () => {
       }
       const body = JSON.parse(String(init.body));
       posts.push(body);
-      const responses = body.jupiterRelay.responses;
+      const responses = relayResponses(init);
       if (!responses[need("1").id]) return json({ code: "jupiter_relay_needed", needs: [need("1")] }, 409);
       return json({ ok: true, wallet: body.wallet });
     });
@@ -53,7 +55,7 @@ describe("browser Jupiter relay", () => {
     let jupiterCalls = 0;
     vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
       if (url.startsWith("https://api.jup.ag/")) { jupiterCalls++; return json({ outAmount: "5" }); }
-      const responses = JSON.parse(String(init.body)).jupiterRelay.responses;
+      const responses = relayResponses(init);
       return responses[need("1").id] ? json({ ok: true }) : json({ code: "jupiter_relay_needed", needs: [need("1")] }, 409);
     }));
     await postWithJupiterRelay("/api/selected-quote", {}, { store });
@@ -69,8 +71,8 @@ describe("browser Jupiter relay", () => {
         attempts++;
         return attempts === 1 ? json({ error: "Rate limit" }, 429, { "retry-after": "2" }) : json({ outAmount: "5" });
       }
-      const responses = JSON.parse(String(init.body)).jupiterRelay.responses;
-      return responses[need("1").id] ? json({ status: responses[need("1").id].status }) : json({ code: "jupiter_relay_needed", needs: [need("1")] }, 409);
+      const responses = relayResponses(init);
+      return responses[need("1").id] ? json({ status: responses[need("1").id]!.status }) : json({ code: "jupiter_relay_needed", needs: [need("1")] }, 409);
     }));
     const pending = postWithJupiterRelay("/api/open-quote", {}, { store: createJupiterRelayStore() });
     await vi.advanceTimersByTimeAsync(2_300);
@@ -83,7 +85,7 @@ describe("browser Jupiter relay", () => {
     let relayed: unknown;
     vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
       if (url.startsWith("https://api.jup.ag/")) return json({ errorCode: "COULD_NOT_FIND_ANY_ROUTE" }, 400);
-      const responses = JSON.parse(String(init.body)).jupiterRelay.responses;
+      const responses = relayResponses(init);
       if (!responses[need("1").id]) return json({ code: "jupiter_relay_needed", needs: [need("1")] }, 409);
       relayed = responses[need("1").id];
       return json({ error: "no route" }, 422);
@@ -93,18 +95,77 @@ describe("browser Jupiter relay", () => {
     expect(relayed).toMatchObject({ status: 400, body: { errorCode: "COULD_NOT_FIND_ANY_ROUTE" } });
   });
 
+  it("uses the server-keyed path first when quota is healthy", async () => {
+    const fetcher = vi.fn(async (url: string, init: RequestInit) => {
+      if (url.startsWith("https://api.jup.ag/")) throw new Error("browser must not be called");
+      expect(JSON.parse(String(init.body)).jupiterRelay).toBeUndefined();
+      return json({ ok: true, path: "server" });
+    });
+    vi.stubGlobal("fetch", fetcher);
+    const response = await postWithJupiterRelay("/api/open-quote", { wallet: "w" }, { store: createJupiterRelayStore() });
+    expect(await response.json()).toEqual({ ok: true, path: "server" });
+    expect(jupiterBrowserStats.servedBy).toBe("server");
+    expect(jupiterBrowserStats.serverFirst).toBe(1);
+    expect(jupiterBrowserStats.quotes).toBe(0);
+  });
+
+  it("falls back to the server-keyed path when the browser relay reports 429", async () => {
+    const bodies: Record<string, unknown>[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
+      if (url.startsWith("https://api.jup.ag/")) return json({ error: "Rate limit" }, 429, { "retry-after": "1" });
+      const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+      bodies.push(body);
+      if (!body.jupiterRelay) {
+        return bodies.length === 1
+          ? json({ code: "jupiter_rate_limited", error: "Jupiter rate limit reached. Please retry later." }, 503)
+          : json({ ok: true, path: "server" });
+      }
+      return json({ code: "jupiter_relay_needed", needs: [need("1")] }, 409);
+    }));
+    vi.useFakeTimers();
+    const pending = postWithJupiterRelay("/api/open-quote", { wallet: "w" }, { store: createJupiterRelayStore() });
+    const settled = pending.then(async (response) => response.json());
+    await vi.advanceTimersByTimeAsync(3_500);
+    expect(await settled).toEqual({ ok: true, path: "server" });
+    expect(jupiterBrowserStats.fallbacks).toBe(1);
+    expect(jupiterBrowserStats.servedBy).toBe("server_fallback");
+    expect(jupiterBrowserStats.rateLimited).toBeGreaterThan(0);
+    expect(bodies.at(-1)).toEqual({ wallet: "w" });
+  });
+
+  it("returns a clear error when both the server and the browser relay fail", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
+      if (url.startsWith("https://api.jup.ag/")) return json({ error: "Rate limit" }, 429);
+      const body = JSON.parse(String(init.body));
+      if (!body.jupiterRelay) return json({ code: "jupiter_rate_limited", error: "limited" }, 503);
+      return json({ code: "jupiter_relay_needed", needs: [need("1")] }, 409);
+    }));
+    vi.useFakeTimers();
+    const pending = postWithJupiterRelay("/api/open-quote", { wallet: "w" }, { store: createJupiterRelayStore() });
+    const expected = expect(pending).rejects.toThrow(JUPITER_QUOTE_UNAVAILABLE_MESSAGE);
+    await vi.advanceTimersByTimeAsync(3_500);
+    await expected;
+    expect(jupiterBrowserStats.fallbacks).toBe(1);
+  });
+
   it("falls back to the server-keyed path when Jupiter is unreachable from the browser (CORS/network)", async () => {
     const bodies: Record<string, unknown>[] = [];
     vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
       if (url.startsWith("https://api.jup.ag/")) throw new TypeError("Failed to fetch");
       const body = JSON.parse(String(init.body));
       bodies.push(body);
-      return body.jupiterRelay ? json({ code: "jupiter_relay_needed", needs: [need("1")] }, 409) : json({ ok: true });
+      if (!body.jupiterRelay) {
+        return bodies.length === 1
+          ? json({ code: "jupiter_rate_limited" }, 503)
+          : json({ ok: true });
+      }
+      return json({ code: "jupiter_relay_needed", needs: [need("1")] }, 409);
     }));
     const response = await postWithJupiterRelay("/api/open-quote", { wallet: "w" }, { store: createJupiterRelayStore() });
     expect(await response.json()).toEqual({ ok: true });
     expect(bodies.at(-1)).toEqual({ wallet: "w" });
     expect(jupiterBrowserStats.fallbacks).toBe(1);
+    expect(jupiterBrowserStats.servedBy).toBe("server_fallback");
   });
 
   it("can be switched off per browser for debugging", async () => {
@@ -120,14 +181,17 @@ describe("browser Jupiter relay", () => {
     const sent: unknown[] = [];
     vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
       if (url.startsWith("https://api.jup.ag/")) return json({ outAmount: "5" });
-      const relay = JSON.parse(String(init.body)).jupiterRelay;
-      sent.push(relay.hints);
-      if (!relay.responses[need("1").id]) return json({ code: "jupiter_relay_needed", needs: [need("1")], hints: { k: "1" } }, 409);
+      const relay = JSON.parse(String(init.body)).jupiterRelay as { responses?: Record<string, unknown>; hints?: Record<string, string> } | undefined;
+      sent.push(relay?.hints ?? {});
+      if (!relay?.responses?.[need("1").id]) {
+        return json({ code: "jupiter_relay_needed", needs: [need("1")], ...(relay ? { hints: { k: "1" } } : {}) }, 409);
+      }
       return json({ ok: true }, 200, { "x-jupiter-relay-hints": JSON.stringify({ k: "2" }) });
     }));
     await postWithJupiterRelay("/api/open-quote", {}, { store });
     await postWithJupiterRelay("/api/open-prepare", {}, { store });
-    expect(sent).toEqual([{}, { k: "1" }, { k: "2" }]);
+    expect(sent.at(-1)).toEqual({ k: "2" });
+    expect(store.hints).toEqual({ k: "2" });
   });
 
   it("fails after a bounded binary search when the same pair keeps coming back at a new amount", async () => {
@@ -154,7 +218,7 @@ describe("browser Jupiter relay", () => {
     let step = 0;
     vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
       if (String(url).startsWith("https://api.jup.ag/")) return json({ outAmount: "5" });
-      const relay = JSON.parse(String(init?.body)).jupiterRelay as { hints: Record<string, string>; responses: Record<string, unknown> };
+      const relay = (JSON.parse(String(init?.body)).jupiterRelay ?? { hints: {}, responses: {} }) as { hints: Record<string, string>; responses: Record<string, unknown> };
       sent.push(relay.hints);
       if (step === 0) {
         step = 1;
@@ -178,7 +242,7 @@ describe("browser Jupiter relay", () => {
     let amount = 100;
     vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
       if (String(url).startsWith("https://api.jup.ag/")) return json({ outAmount: "5" });
-      const hints = JSON.parse(String(init?.body)).jupiterRelay.hints as Record<string, string>;
+      const hints = (JSON.parse(String(init?.body)).jupiterRelay?.hints ?? {}) as Record<string, string>;
       if (Object.values(hints).some((value) => value === "450")) return json({ ok: true });
       amount += 100;
       return json({
@@ -203,7 +267,7 @@ describe("browser Jupiter relay", () => {
     let step = 0;
     vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
       if (String(url).startsWith("https://api.jup.ag/")) return json({ outAmount: "5" });
-      const responses = JSON.parse(String(init?.body)).jupiterRelay.responses;
+      const responses = relayResponses(init);
       const pending = sequence[step];
       if (pending && !responses[pending[0]!.id]) return json({ code: "jupiter_relay_needed", needs: pending }, 409);
       step += 1;

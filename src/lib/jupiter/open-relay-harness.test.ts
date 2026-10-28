@@ -79,7 +79,7 @@ describe("open-position relay harness", () => {
         return json({ outAmount: "5" });
       }
       posts += 1;
-      const responses = JSON.parse(String(init?.body)).jupiterRelay.responses as Record<string, unknown>;
+      const responses = (JSON.parse(String(init?.body)).jupiterRelay?.responses ?? {}) as Record<string, unknown>;
       const has = (item: { id: string }) => Boolean(responses[item.id]);
       if (String(url) === "/api/open-quote") {
         if (phase === "preview-own" && !has(own)) {

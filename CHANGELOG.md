@@ -9,6 +9,8 @@ This project uses [Semantic Versioning](https://semver.org/). `package.json` is 
 
 ### Fixed
 
+- Open / add / compound Jupiter quotes try the keyed server path first and fall back to it when the browser relay hits 429, times out, or is unreachable, instead of failing with "Quote did not settle"
+- Open / add / compound / withdraw fee estimates retry empty or timed-out `getFeeForMessage` results and fail over to the public RPC, then show a clear retryable error
 - PostHog events are sent through a first-party relay (`/lumen`, Next.js rewrites) instead of `us.i.posthog.com`, which ad blockers block
 - Track `wallet_connect_clicked` and `performance_view` (the Performance tab doesn't change the URL, so it had no pageview)
 - Heatmaps, web vitals, and surveys are turned off in the client so remote project settings can't add events beyond the documented list

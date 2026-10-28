@@ -2,6 +2,7 @@ import "@/lib/engine-host";
 import "server-only";
 import { buildAndSimulateCompound } from "@sofinance/engine/compound-atomic";
 import { issueCompoundPermit } from "@/lib/compound-permit";
+import { withFeeEstimateRetry } from "@/lib/rpc-fee-estimate";
 
 export type CompoundPrepareCommand = {
   wallet: string;
@@ -12,7 +13,9 @@ export type CompoundPrepareCommand = {
 // Quote deliberately calls the builder directly: it must not require a signing key.
 export async function prepareCompound(command: CompoundPrepareCommand, readSigningSecret: () => string) {
   const { wallet, positionMint, sourceSignatures } = command;
-  const { summary, transaction } = await buildAndSimulateCompound(wallet, positionMint, sourceSignatures);
+  const { summary, transaction } = await withFeeEstimateRetry(
+    () => buildAndSimulateCompound(wallet, positionMint, sourceSignatures),
+  );
   const permit = issueCompoundPermit(readSigningSecret(), {
     wallet, summary, message: Buffer.from(transaction.message.serialize()).toString("base64"),
   });

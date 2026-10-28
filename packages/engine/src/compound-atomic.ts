@@ -4,7 +4,7 @@ import BN from "bn.js";
 import { ClmmInstrument, getPdaExBitmapAccount, getPdaProtocolPositionAddress, getPdaTickArrayAddress, PersonalPositionLayout, Raydium, TickArrayUtil } from "@raydium-io/raydium-sdk-v2";
 import { createAssociatedTokenAccountIdempotentInstruction, getAccountLenForMint, TOKEN_2022_PROGRAM_ID, unpackMint } from "@solana/spl-token";
 import { PublicKey, SystemProgram, TransactionMessage, VersionedTransaction, type Connection, type TransactionInstruction } from "@solana/web3.js";
-import { rpcConnection } from "./rpc";
+import { COMPOUND_FEE_ESTIMATE_MESSAGE, defaultRpcConnection, estimateFeeForMessage, rpcConnection } from "./rpc";
 import { beamTipInstruction, chooseBeamTransaction, fetchBeamTipAddress } from "./solami-beam";
 import { readLookupTables } from "./transaction-helpers";
 import { restampVersionedTransaction, stampPreparedBlockhash } from "./fresh-blockhash";
@@ -153,10 +153,11 @@ export async function buildAndSimulateCompound(walletAddress: string, positionMi
   const tip = sponsored ? null : await fetchBeamTipAddress();
   const baseline = build(harvest.instructions);
   assertCompoundTransactionSize(baseline);
-  const fee = await connection.getFeeForMessage(baseline.message, "confirmed");
-  if (fee.value === null) throw new Error("Unable to estimate compound network fee");
+  const fee = await estimateFeeForMessage(connection, baseline.message, "confirmed", {
+    fallback: defaultRpcConnection, emptyError: COMPOUND_FEE_ESTIMATE_MESSAGE,
+  });
   // Sponsored: the wallet pays nothing; it may only pass recovered prior-account rent through to the sponsor.
-  const maxSolDebitLamports = sponsored ? 0n : BigInt(rentLamports + fee.value + 100_000 + (tip ? tip.lamports : 0));
+  const maxSolDebitLamports = sponsored ? 0n : BigInt(rentLamports + fee + 100_000 + (tip ? tip.lamports : 0));
   const simulate = (transaction: VersionedTransaction, expectedLiquidity: bigint) => simulateAndVerifyCompound({ connection, transaction, state,
     compoundAccounts: accounts, priorSources: prior.sources, expectedLiquidity, maxSolDebitLamports, sigVerify: false,
     ...(sponsored ? { feePayer: payer.toBase58() } : {}) });
@@ -222,7 +223,7 @@ export async function buildAndSimulateCompound(walletAddress: string, positionMi
     simulatedEndingLiquidity: verified.endingLiquidity, simulatedDustA: verified.endingA, simulatedDustB: verified.endingB,
     simulatedSolDebitLamports: verified.solDebitLamports, maxSolDebitLamports: maxSolWithFee.toString(),
     feeBps: feeConfig.bps, feeAmount: protocolFee.toString(), feeWallet: feeConfig.wallet?.toBase58() ?? null,
-    feeLamports: fee.value, rentLamports, sizeBytes, unitsConsumed: verified.unitsConsumed,
+    feeLamports: fee, rentLamports, sizeBytes, unitsConsumed: verified.unitsConsumed,
     nonRefundableRentLamports: feeAtaRent.toString(),
     beam: {
       included: chosen.included,

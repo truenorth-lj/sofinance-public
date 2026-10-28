@@ -84,7 +84,7 @@ export function resolveApiRoute(options: {
 
 export function captureApiRouteError(
   error: unknown,
-  options: { route?: string; request?: { url: string }; fallback?: string; status?: number } = {},
+  options: { route?: string; request?: { url: string }; fallback?: string; status?: number; quotePath?: string } = {},
 ): void {
   try {
     if (!isSentryEnabled()) return;
@@ -93,6 +93,7 @@ export function captureApiRouteError(
     Sentry.withScope((scope) => {
       if (route) scope.setTag("route", route);
       scope.setTag("error_class", sentryErrorClass(error));
+      if (options.quotePath) scope.setTag("quote_path", options.quotePath);
       scope.setExtra("public_message", sanitizePublicError(error, options.fallback ?? "API route error"));
       Sentry.captureException(error);
     });
@@ -106,6 +107,7 @@ export type QuoteSettleFailureExtras = {
   amount?: string;
   rangeWidth?: string;
   rounds?: number;
+  quotePath?: string;
 };
 
 /** Open-position quote sizing never settled. Pair/amount/range only — no wallet, no secrets. */
@@ -115,6 +117,7 @@ export function captureQuoteSettleFailure(error: unknown, extras: QuoteSettleFai
     Sentry.withScope((scope) => {
       scope.setTag("error_class", sentryErrorClass(error));
       scope.setTag("quote_settle", "did_not_settle");
+      if (extras.quotePath) scope.setTag("quote_path", extras.quotePath);
       if (extras.pair) scope.setExtra("pair", extras.pair);
       if (extras.amount) scope.setExtra("amount", extras.amount);
       if (extras.rangeWidth) scope.setExtra("range_width", extras.rangeWidth);

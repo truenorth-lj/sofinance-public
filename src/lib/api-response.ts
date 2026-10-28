@@ -2,7 +2,7 @@ import "@/lib/engine-host";
 import "server-only";
 
 import { CompoundSendError, publicErrorCode, sanitizePublicError } from "./public-error";
-import { JupiterRelayMissingError } from "@sofinance/engine/jupiter/client";
+import { JupiterRelayMissingError, jupiterRelayActive } from "@sofinance/engine/jupiter/client";
 import { JupiterHttpError, JupiterUnavailableError, JUPITER_UNAVAILABLE_CODE, JUPITER_UNAVAILABLE_MESSAGE, RPC_UNAVAILABLE_CODE } from "@sofinance/engine/jupiter/errors";
 import { SelectedNoRouteError } from "./selected-no-route";
 import { captureApiRouteError, shouldCaptureApiError } from "./sentry/capture";
@@ -12,7 +12,9 @@ import { logSafeError } from "./safe-error-log";
 export function selectedApiError(error: unknown, fallback: string) {
   if (!(error instanceof JupiterHttpError && (error.status === 429 || error.status >= 500)) &&
     !(error instanceof JupiterUnavailableError)) return apiError(error, fallback);
-  if (shouldCaptureApiError(error, 503)) captureApiRouteError(error, { fallback, status: 503 });
+  if (shouldCaptureApiError(error, 503)) {
+    captureApiRouteError(error, { fallback, status: 503, quotePath: jupiterRelayActive() ? "browser" : "server" });
+  }
   const limited = error instanceof JupiterHttpError && error.status === 429;
   const retryAfterMs = error instanceof JupiterHttpError ? error.retryAfterMs : null;
   return Response.json({ error: limited ? "Jupiter rate limit reached. Please retry later." : JUPITER_UNAVAILABLE_MESSAGE,
@@ -32,7 +34,10 @@ export function apiError(error: unknown, fallback: string, status = 400, extra?:
   // log it as a route failure — `withJupiterRelay` turns this into `jupiter_relay_needed`.
   if (error instanceof JupiterRelayMissingError) throw error;
   if (shouldCaptureApiError(error, status)) {
-    captureApiRouteError(error, { fallback, route: extra?.route, request: extra?.request, status });
+    captureApiRouteError(error, {
+      fallback, route: extra?.route, request: extra?.request, status,
+      quotePath: jupiterRelayActive() ? "browser" : "server",
+    });
   }
   logSafeError(fallback, error);
   const source = error instanceof CompoundSendError && error.cause !== undefined ? error.cause : error;

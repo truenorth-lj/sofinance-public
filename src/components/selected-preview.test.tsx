@@ -112,7 +112,7 @@ it("exact 449/450 debounce, latest raw amount/body, informational passesFloor an
   expect(count("/api/selected-quote")).toBe(0); expect(c.calculating).toBe(true); expect(c.actionDisabled).toBe(true);
   await advance(1);
   expect(requests.filter(r => r.url === "/api/selected-quote")).toEqual([{ time: 670, url: "/api/selected-quote", method: "POST", cache: "no-store",
-    body: JSON.stringify({ wallet, ...selection, amount: "2.00", floorBps: 9900, toleranceBps: 100, jupiterRelay: { responses: {}, hints: {} } }) }]);
+    body: JSON.stringify({ wallet, ...selection, amount: "2.00", floorBps: 9900, toleranceBps: 100 }) }]);
   expect(c.quote?.requested).toBe("2000000"); expect(c.quote?.passesFloor).toBe(false); expect(c.result?.simulated).toBe(false);
   expect(c.actionDisabled).toBe(false); expect(c.status).toBe("Preview ready. Final checks run when you add liquidity."); pure();
 });
@@ -279,12 +279,13 @@ it.each([1000, 1005])("panel relay cache is shared by explicit prepare at near a
   const need = (n: number) => ({ id: `quote-${n}`, method: "GET", url: url(n) });
   quoteHandler = async (path, init) => {
     if (path.startsWith(JUPITER_BROWSER_ORIGIN + "/")) return Response.json({ inAmount: "1000", outAmount: "900" });
-    const b = body(init); const relay = b.jupiterRelay as { responses: Body };
-    if (!relay.responses["quote-1000"]) return Response.json({ code: "jupiter_relay_needed", needs: [need(1000)] }, { status: 409 });
+    const b = body(init); const relay = b.jupiterRelay as { responses: Body } | undefined;
+    if (!relay?.responses["quote-1000"]) return Response.json({ code: "jupiter_relay_needed", needs: [need(1000)] }, { status: 409 });
     return Response.json(quote(b));
   };
   prepareHandler = async (_url, init) => {
-    const relay = body(init).jupiterRelay as { responses: Body; hints: Body };
+    const relay = body(init).jupiterRelay as { responses: Body; hints: Body } | undefined;
+    if (!relay) return Response.json({ code: "jupiter_relay_needed", needs: [need(amount)] }, { status: 409 });
     expect(relay.responses["quote-1000"]).toEqual({ status: 200, body: { inAmount: "1000", outAmount: "900" }, retryAfterMs: null });
     if (amount !== 1000 && relay.hints.spend !== "1000") return Response.json({ code: "jupiter_relay_needed", needs: [need(amount)], hints: { spend: String(amount) } }, { status: 409 });
     return Response.json({ error: "Stopped at HTTP prepare boundary" }, { status: 400 });
@@ -292,7 +293,7 @@ it.each([1000, 1005])("panel relay cache is shared by explicit prepare at near a
   await fresh(); expect(requests.filter(r => r.url.startsWith(JUPITER_BROWSER_ORIGIN + "/"))).toHaveLength(1);
   await act(async () => c.primaryAction()); expect(c.error).toBe("Stopped at HTTP prepare boundary");
   expect(requests.filter(r => r.url.startsWith(JUPITER_BROWSER_ORIGIN + "/"))).toHaveLength(1);
-  expect(count("/api/selected-prepare")).toBe(amount === 1000 ? 1 : 2);
+  expect(count("/api/selected-prepare")).toBe(amount === 1000 ? 2 : 3);
   expect(mocks.sign).not.toHaveBeenCalled(); expect(writes).not.toHaveBeenCalled(); expect(count("/api/selected-broadcast")).toBe(0);
 });
 

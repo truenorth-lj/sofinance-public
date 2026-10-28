@@ -2,7 +2,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 const mocks = vi.hoisted(() => ({ state: vi.fn(), rpc: vi.fn(), leg: vi.fn(), fee: vi.fn(), padding: 0, impact: "0.01", swapStage: false, receivedA: 200n, receivedB: 300n }));
 vi.mock("@sofinance/engine/selected-state", () => ({ readSelectedPositionState: mocks.state }));
-vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: mocks.rpc }));
+vi.mock("@sofinance/engine/rpc", async (importOriginal) => ({ ...await importOriginal<typeof import("@sofinance/engine/rpc")>(), rpcConnection: mocks.rpc }));
 vi.mock("@sofinance/engine/swap/leg", () => ({ feeSwapLeg: mocks.leg }));
 vi.mock("@sofinance/engine/swap/collection", () => ({ collectSwapFee: mocks.fee, fitFeeCollections: async (_connection: unknown, _collections: unknown, instructions: unknown) => ({ instructions }) }));
 vi.mock("@sofinance/engine/solami-beam", async () => ({ ...await vi.importActual("@sofinance/engine/solami-beam"), fetchBeamTipAddress: async () => null }));

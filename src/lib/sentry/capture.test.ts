@@ -146,13 +146,15 @@ describe("captureQuoteSettleFailure", () => {
   it("reports pair, amount, range width and rounds without a wallet", () => {
     vi.stubEnv("SENTRY_DSN", "https://key@o1.ingest.us.sentry.io/1");
     const error = new Error("Quote did not settle");
-    captureQuoteSettleFailure(error, { pair: "HOODx/HOOD", amount: "5", rangeWidth: "micro", rounds: 6 });
+    captureQuoteSettleFailure(error, { pair: "HOODx/HOOD", amount: "5", rangeWidth: "micro", rounds: 6, quotePath: "browser" });
     expect(captureException).toHaveBeenCalledWith(error);
     expect(setTag).toHaveBeenCalledWith("quote_settle", "did_not_settle");
+    expect(setTag).toHaveBeenCalledWith("error_class", "Error");
     expect(setExtra).toHaveBeenCalledWith("pair", "HOODx/HOOD");
     expect(setExtra).toHaveBeenCalledWith("amount", "5");
     expect(setExtra).toHaveBeenCalledWith("range_width", "micro");
     expect(setExtra).toHaveBeenCalledWith("rounds", 6);
+    expect(setTag).toHaveBeenCalledWith("quote_path", "browser");
     expect(setExtra.mock.calls.map((call) => call[0])).not.toContain("wallet");
   });
 });

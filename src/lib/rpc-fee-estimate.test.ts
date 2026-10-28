@@ -28,6 +28,16 @@ describe("rpc fee estimate retry", () => {
     expect(fallback.getFeeForMessage).not.toHaveBeenCalled();
   });
 
+  it("retries a thrown RPC error, then uses the failover RPC", async () => {
+    const primary = { getFeeForMessage: vi.fn(async () => { throw new Error("fetch failed"); }) };
+    const fallback = { getFeeForMessage: vi.fn(async () => ({ value: 7500 })) };
+    await expect(estimateFeeForMessage(primary as never, {} as never, "confirmed", {
+      fallback: () => fallback as never, sleep: async () => undefined,
+    })).resolves.toBe(7500);
+    expect(primary.getFeeForMessage).toHaveBeenCalledTimes(FEE_ESTIMATE_ATTEMPTS);
+    expect(fallback.getFeeForMessage).toHaveBeenCalledOnce();
+  });
+
   it("retries only the empty-fee prepare errors", async () => {
     expect(isTransientFeeEstimateError(new Error(OPEN_FEE_ESTIMATE_MESSAGE))).toBe(true);
     expect(isTransientFeeEstimateError(new Error(WITHDRAW_FEE_ESTIMATE_MESSAGE))).toBe(true);
