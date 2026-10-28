@@ -94,6 +94,18 @@ export function phantomRewriteTransaction(tx: VersionedTransaction) {
   }).compileToV0Message());
 }
 
+/** Change the first SystemProgram transfer's lamports. Caller resigns. */
+export function tamperTransferLamports(tx: VersionedTransaction, lamports: number) {
+  const message = TransactionMessage.decompile(tx.message);
+  const instructions = message.instructions.map((ix) => {
+    if (!ix.programId.equals(SystemProgram.programId) || ix.keys.length < 2) return ix;
+    return SystemProgram.transfer({ fromPubkey: message.payerKey, toPubkey: ix.keys[1]!.pubkey, lamports });
+  });
+  return new VersionedTransaction(new TransactionMessage({
+    payerKey: message.payerKey, recentBlockhash: message.recentBlockhash, instructions,
+  }).compileToV0Message());
+}
+
 /** Rebuild `tx` with an extra instruction (Phantom Lighthouse / compute-budget style). Caller resigns. */
 export function appendWalletExtraInstruction(
   tx: VersionedTransaction,

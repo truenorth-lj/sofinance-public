@@ -9,7 +9,7 @@ import { LoaderCircle, CircleAlert, CheckCircle2 } from "lucide-react";
 import { InkHero, InkShell, InkCard, InkNav } from "@/components/ink";
 import { useWalletConnection } from "@/components/wallet-connection";
 import { notSentRetryMessage } from "@/lib/public-error";
-import { preserveExtraSignatures } from "@/lib/open-signatures";
+import { assertWalletReturnedTransaction, preserveExtraSignatures } from "@/lib/open-signatures";
 import type { PendingSignPayload } from "@/lib/pending-sign-token";
 import { openAttemptFromSummary, type OpenAttempt } from "@/lib/open-attempt";
 import type { OpenPositionSummary } from "@sofinance/engine/open-types";
@@ -127,15 +127,9 @@ export default function SignPage() {
         throw new Error("Transaction payer mismatch");
       }
       
-      const originalMessage = unsigned.message.serialize();
+      const preparedSnapshot = VersionedTransaction.deserialize(unsigned.serialize());
       const signedByWallet = await signTransaction(unsigned);
-      const signedMessage = signedByWallet.message.serialize();
-      if (
-        signedMessage.length !== originalMessage.length ||
-        signedMessage.some((byte, index) => byte !== originalMessage[index])
-      ) {
-        throw new Error("Wallet modified transaction content");
-      }
+      assertWalletReturnedTransaction(preparedSnapshot, signedByWallet, wallet);
 
       // MCP signUrl fallback: prepared tx may already carry an NFT-mint signature.
       const signed = payload.kind === "open-position"
@@ -173,9 +167,10 @@ export default function SignPage() {
           : "/api/compound-broadcast";
       
       const submitBody = payload.kind === "add-liquidity"
-        ? { signedTransaction, ...payload.submitArgs }
+        ? { signedTransaction, unsignedTransaction: payload.unsignedTransaction, ...payload.submitArgs }
         : {
             signedTransaction,
+            unsignedTransaction: payload.unsignedTransaction,
             confirmHighImpact: payload.submitArgs.confirmHighImpact,
             permit: payload.submitArgs.permit,
             wallet: payload.submitArgs.wallet,

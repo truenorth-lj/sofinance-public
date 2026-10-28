@@ -43,6 +43,7 @@ import type {
   SubmitOpenPositionInput,
 } from "./schemas";
 import { isSingleWalletSignedTransaction } from "@sofinance/engine/transaction-limits";
+import { assertWalletReturnedTransaction } from "@/lib/wallet-returned-guard";
 
 /**
  * List all Raydium CLMM positions and assets for a wallet.
@@ -366,11 +367,15 @@ export async function submitSignedTransaction(input: SubmitSignedTransactionInpu
   const transaction = VersionedTransaction.deserialize(
     Buffer.from(input.signedTransaction, "base64")
   );
-  
-  // Verify permit
+  const prepared = input.unsignedTransaction
+    ? VersionedTransaction.deserialize(Buffer.from(input.unsignedTransaction, "base64"))
+    : transaction;
+  if (prepared !== transaction) assertWalletReturnedTransaction(prepared, transaction, walletAddress);
+
+  // Verify permit against the prepared message; the wallet-returned tx is matched semantically.
   const jupiterApiKey = getSigningSecret();
   const permitInput = {
-    message: Buffer.from(transaction.message.serialize()).toString("base64"),
+    message: Buffer.from(prepared.message.serialize()).toString("base64"),
     wallet: walletAddress,
     selection: input.selection,
     requested: input.requested,
@@ -397,7 +402,10 @@ export async function submitSignedTransaction(input: SubmitSignedTransactionInpu
     throw new Error("Payer, signature count, or transaction size mismatch");
   }
   
-  const signature = await submitSelected({ transaction, wallet, walletSignature, permitInput }, MCP_SELECTED_SUBMIT);
+  const signature = await submitSelected({
+    transaction, wallet, walletSignature, permitInput,
+    prepared: prepared !== transaction ? prepared : undefined,
+  }, MCP_SELECTED_SUBMIT);
 
   // Same as /api/selected-broadcast: no inline Beam wait; landing is status-only via /api/beam-landing.
   const beam = await beamAfterSend(signature, null).catch(() => noBeamAfterSend(signature));
@@ -415,6 +423,10 @@ export async function submitCompoundTransaction(input: SubmitCompoundTransaction
     const transaction = VersionedTransaction.deserialize(
       Buffer.from(input.signedTransaction, "base64")
     );
+    const prepared = input.unsignedTransaction
+      ? VersionedTransaction.deserialize(Buffer.from(input.unsignedTransaction, "base64"))
+      : transaction;
+    if (prepared !== transaction) assertWalletReturnedTransaction(prepared, transaction, input.wallet);
 
     const jupiterApiKey = getSigningSecret();
     if (
@@ -422,7 +434,7 @@ export async function submitCompoundTransaction(input: SubmitCompoundTransaction
         jupiterApiKey,
         {
           wallet: input.wallet,
-          message: Buffer.from(transaction.message.serialize()).toString("base64"),
+          message: Buffer.from(prepared.message.serialize()).toString("base64"),
           summary: input.summary,
         },
         input.permit
@@ -450,7 +462,9 @@ export async function submitCompoundTransaction(input: SubmitCompoundTransaction
       throw new Error("Compound authorization type, wallet, or expiry mismatch");
     }
 
-    return await sendSignedCompoundTransaction(input.wallet, transaction, summary);
+    return await sendSignedCompoundTransaction(
+      input.wallet, transaction, summary, prepared !== transaction ? prepared : undefined,
+    );
   } catch (error) {
     if (error instanceof CompoundSendError) {
       const message = sanitizePublicError(error.cause ?? error, "Compound transaction broadcast failed");
@@ -734,6 +748,7 @@ export async function submitOpenPosition(input: SubmitOpenPositionInput) {
   try {
     return await submitOpenPositionFromParts({
       signedTransaction: input.signedTransaction,
+      unsignedTransaction: input.unsignedTransaction,
       permit: input.permit,
       wallet: input.wallet,
       summary: input.summary as OpenPositionSummary,

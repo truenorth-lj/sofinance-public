@@ -254,6 +254,10 @@ const TOOL_DEFINITIONS = {
                     type: "string",
                     description: "Base64-encoded signed transaction",
                 },
+                unsignedTransaction: {
+                    type: "string",
+                    description: "Base64 prepared transaction from prepare_transaction. Pass this when the wallet rewrote the message (Phantom Lighthouse / ComputeBudget).",
+                },
                 permit: {
                     type: "string",
                     description: "HMAC permit from prepare_transaction",
@@ -336,6 +340,10 @@ const TOOL_DEFINITIONS = {
                     type: "string",
                     description: "Base64-encoded signed transaction",
                 },
+                unsignedTransaction: {
+                    type: "string",
+                    description: "Base64 prepared transaction from prepare_compound_transaction. Pass this when the wallet rewrote the message (Phantom Lighthouse / ComputeBudget).",
+                },
                 permit: {
                     type: "string",
                     description: "HMAC permit from prepare_compound_transaction",
@@ -415,11 +423,12 @@ const TOOL_DEFINITIONS = {
     },
     submit_open_position: {
         name: "submit_open_position",
-        description: "Submit a signed open-position transaction. Re-verifies HMAC permit, re-reads pool/balances, re-simulates (sigVerify true, including the NFT-mint partial signature), then broadcasts. Pass signedTransaction plus permit, wallet, and the complete summary from prepare_open_position, unchanged. Returns signature and the new positionMint.",
+        description: "Submit a signed open-position transaction. Re-verifies HMAC permit, re-reads pool/balances, re-simulates (sigVerify true, including the NFT-mint partial signature), then broadcasts. Pass signedTransaction plus permit, wallet, and the complete summary from prepare_open_position, unchanged. If the wallet rewrote the message (Phantom Lighthouse / ComputeBudget), also pass unsignedTransaction from prepare. Returns signature and the new positionMint.",
         inputSchema: {
             type: "object",
             properties: {
                 signedTransaction: { type: "string", description: "Base64-encoded signed transaction" },
+                unsignedTransaction: { type: "string", description: "Base64 prepared transaction from prepare_open_position. Pass this when the wallet rewrote the message (Phantom Lighthouse / ComputeBudget)." },
                 permit: { type: "string", description: "HMAC permit from prepare_open_position" },
                 wallet: { type: "string", description: "Wallet public key" },
                 summary: {

@@ -482,6 +482,10 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
               "description": "Starting liquidity from summary",
               "type": "string",
             },
+            "unsignedTransaction": {
+              "description": "Base64 prepared transaction from prepare_transaction. Pass this when the wallet rewrote the message (Phantom Lighthouse / ComputeBudget).",
+              "type": "string",
+            },
             "wallet": {
               "description": "Wallet public key",
               "type": "string",
@@ -520,6 +524,10 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
             "summary": {
               "description": "Complete summary object from prepare_compound_transaction response, unchanged (bound by the permit)",
               "type": "object",
+            },
+            "unsignedTransaction": {
+              "description": "Base64 prepared transaction from prepare_compound_transaction. Pass this when the wallet rewrote the message (Phantom Lighthouse / ComputeBudget).",
+              "type": "string",
             },
             "wallet": {
               "description": "Wallet public key",
@@ -673,7 +681,7 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
         "name": "prepare_open_position",
       },
       {
-        "description": "Submit a signed open-position transaction. Re-verifies HMAC permit, re-reads pool/balances, re-simulates (sigVerify true, including the NFT-mint partial signature), then broadcasts. Pass signedTransaction plus permit, wallet, and the complete summary from prepare_open_position, unchanged. Returns signature and the new positionMint.",
+        "description": "Submit a signed open-position transaction. Re-verifies HMAC permit, re-reads pool/balances, re-simulates (sigVerify true, including the NFT-mint partial signature), then broadcasts. Pass signedTransaction plus permit, wallet, and the complete summary from prepare_open_position, unchanged. If the wallet rewrote the message (Phantom Lighthouse / ComputeBudget), also pass unsignedTransaction from prepare. Returns signature and the new positionMint.",
         "inputSchema": {
           "properties": {
             "permit": {
@@ -687,6 +695,10 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
             "summary": {
               "description": "Complete summary object from prepare_open_position, unchanged (bound by the permit)",
               "type": "object",
+            },
+            "unsignedTransaction": {
+              "description": "Base64 prepared transaction from prepare_open_position. Pass this when the wallet rewrote the message (Phantom Lighthouse / ComputeBudget).",
+              "type": "string",
             },
             "wallet": {
               "description": "Wallet public key",
@@ -1186,6 +1198,10 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
           "description": "Starting liquidity from summary",
           "type": "string",
         },
+        "unsignedTransaction": {
+          "description": "Base64 prepared transaction from prepare_transaction. Pass this when the wallet rewrote the message (Phantom Lighthouse / ComputeBudget).",
+          "type": "string",
+        },
         "wallet": {
           "description": "Wallet public key",
           "type": "string",
@@ -1346,7 +1362,7 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
     "name": "prepare_open_position",
   },
   {
-    "description": "Submit a signed open-position transaction. Re-verifies HMAC permit, re-reads pool/balances, re-simulates (sigVerify true, including the NFT-mint partial signature), then broadcasts. Pass signedTransaction plus permit, wallet, and the complete summary from prepare_open_position, unchanged. Returns signature and the new positionMint.",
+    "description": "Submit a signed open-position transaction. Re-verifies HMAC permit, re-reads pool/balances, re-simulates (sigVerify true, including the NFT-mint partial signature), then broadcasts. Pass signedTransaction plus permit, wallet, and the complete summary from prepare_open_position, unchanged. If the wallet rewrote the message (Phantom Lighthouse / ComputeBudget), also pass unsignedTransaction from prepare. Returns signature and the new positionMint.",
     "inputSchema": {
       "properties": {
         "permit": {
@@ -1360,6 +1376,10 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
         "summary": {
           "description": "Complete summary object from prepare_open_position, unchanged (bound by the permit)",
           "type": "object",
+        },
+        "unsignedTransaction": {
+          "description": "Base64 prepared transaction from prepare_open_position. Pass this when the wallet rewrote the message (Phantom Lighthouse / ComputeBudget).",
+          "type": "string",
         },
         "wallet": {
           "description": "Wallet public key",
@@ -1391,6 +1411,10 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
         "summary": {
           "description": "Complete summary object from prepare_compound_transaction response, unchanged (bound by the permit)",
           "type": "object",
+        },
+        "unsignedTransaction": {
+          "description": "Base64 prepared transaction from prepare_compound_transaction. Pass this when the wallet rewrote the message (Phantom Lighthouse / ComputeBudget).",
+          "type": "string",
         },
         "wallet": {
           "description": "Wallet public key",
