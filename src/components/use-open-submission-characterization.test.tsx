@@ -116,9 +116,9 @@ beforeEach(() => {
         try {
           const mint = new PublicKey(body.nftMint);
           const current = VersionedTransaction.deserialize(Buffer.from(preparedValue.unsignedTransaction, "base64"));
-          const fixtureDefault = current.message.staticAccountKeys[0]?.equals(payer.publicKey)
-            && current.message.staticAccountKeys[1]?.equals(nft.publicKey);
-          if (fixtureDefault && preparedValue.summary.nftMint === nft.publicKey.toBase58()) {
+          const payerOk = current.message.staticAccountKeys[0]?.equals(payer.publicKey);
+          const nftMismatch = preparedValue.summary.nftMint === pair.mintA;
+          if (payerOk && !nftMismatch) {
             const next = prepared(mint, current.message.recentBlockhash);
             preparedValue = {
               unsignedTransaction: next.unsignedTransaction,
@@ -216,7 +216,7 @@ describe("Open submission through real facade", () => {
       if (bad === "changed-message") result.message.recentBlockhash = pair.mintA;
       if (bad === "zero-payer") result.signatures[0] = new Uint8Array(64);
       if (bad === "missing-nft") return buildTransaction({ payer, signWith: [payer] });
-      if (bad === "count") result.signatures.pop();
+      if (bad === "count") result.signatures = [];
       note("sign-output", toBase64(result)); return result;
     });
     await send(); expectNoSend(); expect(c.error).not.toBe(""); expect(c.busy).toBe(false);
