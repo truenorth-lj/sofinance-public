@@ -4,7 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import bs58 from "bs58";
 import { useOpenAttempt } from "./use-open-attempt";
-import { openAttemptKey, type OpenAttempt } from "@/lib/open-attempt";
+import { openAttemptKey, persistOpenAttempt, type OpenAttempt } from "@/lib/open-attempt";
 import { testKeypair } from "@/lib/test-support/send-fixtures";
 
 const walletA = testKeypair(1).publicKey.toBase58(), walletB = testKeypair(3).publicKey.toBase58();
@@ -199,5 +199,42 @@ describe("Open attempt accepted lifecycle", () => {
     if (mode === "suspense") { expect(api.status).toBe("pending"); expect(() => api.track(attempt(8))).toThrow("history changed");
       await act(async () => root.unmount()); root = createRoot(container); await mount(); await settle("expired"); }
     expect(api.status).toBe("expired");
+  });
+});
+
+
+describe("late unsent ownership recovery", () => {
+  it("adopts newer durable history, fences old status, then recovers without remount", async () => {
+    const old = attempt(), newer = attempt(8); await mount(old);
+    const stale = deferred<Response>(); respond = () => stale.promise;
+    await act(async () => api.retry());
+    persistOpenAttempt(storage, newer);
+    await act(async () => { expect(() => api.markUnsent(old)).toThrow("history changed"); });
+    expect(api).toMatchObject({ attempt: newer, status: "pending", pending: true });
+    await act(async () => stale.resolve(Response.json({ signature: old.signature, status: "confirmed" })));
+    expect(api).toMatchObject({ attempt: newer, status: "pending", pending: true });
+    expect(storage.getItem(openAttemptKey(walletA))).toBe(JSON.stringify(newer));
+    expect(storage.getItem(openAttemptKey(walletA) + ":history:" + old.signature)).toBe(JSON.stringify(old));
+    await settle("expired", newer.signature); expect(api.pending).toBe(false);
+    await act(async () => api.track(attempt(9))); expect(api.attempt).toEqual(attempt(9));
+  });
+  it.each(["missing", "invalid", "unavailable"])("keeps %s history locked against stale status", async mode => {
+    const old = attempt(); await mount(old);
+    const stale = deferred<Response>(); respond = () => stale.promise;
+    await act(async () => api.retry());
+    if (mode === "missing") storage.removeItem(openAttemptKey(walletA));
+    if (mode === "invalid") storage.setItem(openAttemptKey(walletA), "broken");
+    failRead = mode === "unavailable";
+    await act(async () => { expect(() => api.markUnsent(old)).toThrow(); });
+    expect(api).toMatchObject({ attempt: null, status: "manual-review", pending: true });
+    await act(async () => stale.resolve(Response.json({ signature: old.signature, status: "confirmed" })));
+    expect(api).toMatchObject({ attempt: null, status: "manual-review", pending: true });
+  });
+  it("does not replace another wallet's owner while checking old durable history", async () => {
+    const old = attempt(); await mount(old); persistOpenAttempt(storage, attempt(8));
+    wallet = walletB; await render(); await advance();
+    await act(async () => { expect(() => api.markUnsent(old)).toThrow("history changed"); });
+    expect(api).toMatchObject({ attempt: null, pending: false, error: "" });
+    expect(storage.getItem(openAttemptKey(walletA))).toBe(JSON.stringify(attempt(8)));
   });
 });

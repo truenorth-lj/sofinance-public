@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import bs58 from "bs58";
 import { VersionedTransaction } from "@solana/web3.js";
 import SignPage from "@/app/app/sign/[token]/page";
-import { openAttemptFromSummary, openAttemptKey } from "@/lib/open-attempt";
+import { openAttemptFromSummary, openAttemptKey, persistOpenAttempt } from "@/lib/open-attempt";
 import type { OpenPositionSummary } from "@sofinance/engine/open-types";
 import type { PendingSignPayload } from "@/lib/pending-sign-token";
 import { buildTransaction, openSummaryFixture, testKeypair, toBase64 } from "@/lib/test-support/send-fixtures";
@@ -95,4 +95,44 @@ describe("real SIGN page with real Open attempt boundary", () => {
     await act(async () => signButton()!.click()); expect(broadcasts).toBe(1); expect(container.textContent).toContain("Transaction submitted successfully");
     expect(ledger.some(event => JSON.stringify(event).includes('/api/open-status'))).toBe(false);
   });
+});
+
+
+it("late unsent SIGN response retains the newer receipt and avoids safe-retry advice", async () => {
+  await mount(); const mock = vi.mocked(fetch), originalFetch = mock.getMockImplementation()!;
+  let release!: (value: Response) => void;
+  const waiting = new Promise<Response>(resolve => { release = resolve; });
+  mock.mockImplementation((url, init) => url === "/api/open-broadcast" ? waiting : originalFetch(url, init));
+  await act(async () => signButton()!.click());
+  const key = openAttemptKey(wallet), raw = storage.getItem(key)!;
+  const original = JSON.parse(raw), newer = { ...original, signature: bs58.encode(new Uint8Array(64).fill(44)) };
+  persistOpenAttempt(storage, newer);
+  await act(async () => { release(Response.json({ error: "preflight", sent: false }, { status: 400 })); });
+  await advance();
+  expect(container.textContent).not.toContain("safe to retry"); expect(signButton()).toBeUndefined();
+  expect(container.textContent).toContain("Checking the original");
+  const receiptLink = container.querySelector<HTMLAnchorElement>('a[href^="https://solscan.io/tx/"]');
+  expect(receiptLink?.href).toBe(`https://solscan.io/tx/${newer.signature}`);
+  expect(receiptLink?.textContent).toContain(`${newer.signature.slice(0, 5)}…${newer.signature.slice(-5)}`);
+  expect(storage.getItem(key)).toBe(JSON.stringify(newer));
+  expect(storage.getItem(key + ":history:" + original.signature)).toBe(raw);
+  const statusRequests = mock.mock.calls.filter(([url]) => url === "/api/open-status");
+  expect(statusRequests.some(([, init]) => JSON.parse(String(init?.body)).attempt.signature === newer.signature)).toBe(true);
+  expect(mocks.sign).toHaveBeenCalledTimes(1);
+  await act(async () => root.unmount()); root = createRoot(container); mock.mockImplementation(originalFetch);
+  chainStatus = "expired"; await mount(); await advance(); expect(signButton()).toBeDefined();
+});
+
+
+it.each(["open-position", "compound", "add-liquidity", "withdraw"] as const)("uses the signed receipt link for %s without an adopted replacement", async kind => {
+  payload.kind = kind;
+  if (kind !== "open-position") {
+    payload.submitArgs.selection = { positionMint: nft.publicKey.toBase58() };
+    (payload.submitArgs.summary as Record<string, unknown>).positionMint = nft.publicKey.toBase58();
+    storage.setItem(openAttemptKey(wallet), "broken");
+  }
+  await mount(); await act(async () => signButton()!.click());
+  const signed = await mocks.sign.mock.results[0]!.value as VersionedTransaction;
+  const expected = bs58.encode(signed.signatures[0]!);
+  expect(container.querySelector<HTMLAnchorElement>('a[href^="https://solscan.io/tx/"]')?.href).toBe(`https://solscan.io/tx/${expected}`);
 });
