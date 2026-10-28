@@ -2,8 +2,9 @@
 import "@/lib/engine-host";
 
 import { useCallback, useLayoutEffect, useRef, useState, type RefObject } from "react";
-import { Keypair, VersionedTransaction } from "@solana/web3.js";
+import { VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
+import { createEphemeralMint, type EphemeralMint } from "@/lib/ephemeral-mint";
 import type { OpenPositionQuote, OpenPositionSummary } from "@sofinance/engine/open-types";
 import type { OpenRangePreset } from "@sofinance/engine/open-range-presets";
 import { addMintSignature, assertWalletReturnedTransaction, missingRequiredSignatures } from "@/lib/open-signatures";
@@ -114,8 +115,9 @@ export function useOpenSubmissionCommand({ pair, wallet, inputMint, inputKind, a
     setError("");
     setRetryError(null);
     captureGrowthEvent(GROWTH_EVENTS.openStarted, openEventProperties(pair));
-    const mint = Keypair.generate();
+    let mint: EphemeralMint | undefined;
     try {
+      mint = createEphemeralMint();
       // Same per-modal store as the preview: prepare replays the preview's fresh
       // Jupiter quotes and only fetches swap-instructions.
       const response = await postWithJupiterRelay("/api/open-prepare", {
@@ -147,8 +149,12 @@ export function useOpenSubmissionCommand({ pair, wallet, inputMint, inputKind, a
       setSubmitStage("wallet");
       const signedByWallet = await signTransaction(unsigned);
       assertWalletReturnedTransaction(preparedSnapshot, signedByWallet, wallet);
-      const signed = addMintSignature(signedByWallet, mint);
-      mint.secretKey.fill(0);
+      let signed: VersionedTransaction;
+      try {
+        signed = addMintSignature(signedByWallet, mint);
+      } finally {
+        mint.dispose();
+      }
       if (missingRequiredSignatures(signed).length) {
         throw new Error("Open-position transaction is missing required signatures");
       }
@@ -203,7 +209,7 @@ export function useOpenSubmissionCommand({ pair, wallet, inputMint, inputKind, a
           ? { signature: open.attempt.signature, message } : null);
       }
     } finally {
-      mint.secretKey.fill(0);
+      mint?.dispose();
       // A canceled operation keeps its lock until settlement; release only its own owner.
       if (submittingRef.current === owner) {
         submittingRef.current = null;
