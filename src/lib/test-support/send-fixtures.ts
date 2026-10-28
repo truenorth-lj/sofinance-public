@@ -66,6 +66,25 @@ export const toBase64 = (transaction: VersionedTransaction) => Buffer.from(trans
 export const messageBase64 = (transaction: VersionedTransaction) => Buffer.from(transaction.message.serialize()).toString("base64");
 export const signatureOf = (transaction: VersionedTransaction) => bs58.encode(transaction.signatures[0]!);
 
+export { LIGHTHOUSE_PROGRAM_ID } from "@sofinance/engine/wallet-returned-tx";
+
+/** Rebuild `tx` with an extra instruction (Phantom Lighthouse / compute-budget style). Caller resigns. */
+export function appendWalletExtraInstruction(
+  tx: VersionedTransaction,
+  extra: TransactionInstruction = new TransactionInstruction({
+    programId: new PublicKey("L2TExMFKdjpN9kozasaurPPf4nCVfRTb7cTZo5GsqqY"),
+    keys: [],
+    data: Buffer.from([1]),
+  }),
+) {
+  const message = TransactionMessage.decompile(tx.message);
+  return new VersionedTransaction(new TransactionMessage({
+    payerKey: message.payerKey,
+    recentBlockhash: message.recentBlockhash,
+    instructions: [...message.instructions, extra],
+  }).compileToV0Message());
+}
+
 export function jsonRequest(url: string, body: unknown, init: RequestInit = {}) {
   return new Request(url, {
     method: "POST", headers: { "Content-Type": "application/json", ...(init.headers ?? {}) },

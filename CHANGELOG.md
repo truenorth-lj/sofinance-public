@@ -10,6 +10,7 @@ This project uses [Semantic Versioning](https://semver.org/). `package.json` is 
 ### Changed
 
 - Open-position signing follows Phantom’s multi-signer recipe: the client generates the position NFT mint, `/api/open-prepare` returns a fully unsigned transaction, the wallet signs first, then the mint signature is added on the wallet-returned tx. MCP agents should pass `nftMint` and mint-sign after the wallet; omitting it keeps an MCP-only server partial-sign for `/app/sign`.
+- Wallet-returned transactions are the source of truth. Extra Lighthouse / ComputeBudget instructions from Phantom `signTransaction` are allowed; the fee payer, required signers, and original program instructions must still be present in order. MCP `/app/sign` still requires a byte-identical message.
 
 ### Fixed
 

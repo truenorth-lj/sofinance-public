@@ -7,7 +7,7 @@ import bs58 from "bs58";
 import { useOpenPositionController, type OpenPositionPair } from "./use-open-position-controller";
 import { NATIVE_SOL_MINT } from "@sofinance/engine/ids";
 import { openAttemptKey, persistOpenAttempt } from "@/lib/open-attempt";
-import { buildTransaction, openSummaryFixture, testKeypair, toBase64 } from "@/lib/test-support/send-fixtures";
+import { appendWalletExtraInstruction, buildTransaction, openSummaryFixture, testKeypair, toBase64 } from "@/lib/test-support/send-fixtures";
 const mocks = vi.hoisted(() => ({ address: "", sign: vi.fn() }));
 vi.mock("./wallet-connection", () => ({ useWalletConnection: () => ({ address: mocks.address, connected: true, signTransaction: mocks.sign }) }));
 const payer = testKeypair(1), nft = testKeypair(2);
@@ -178,6 +178,17 @@ describe("open-position transaction lifecycle", () => {
     });
     await act(async () => controller.signAndSend());
     expect(calls("/api/open-broadcast")).toHaveLength(0);
-    expect(controller.error).toContain("Wallet modified transaction content");
+    expect(controller.error).toContain("Wallet changed the transaction blockhash");
+  });
+  it("broadcasts after the wallet appends a Lighthouse instruction", async () => {
+    await mount();
+    mocks.sign.mockImplementation(async (tx: VersionedTransaction) => {
+      const extra = appendWalletExtraInstruction(tx);
+      extra.sign([payer]);
+      return extra;
+    });
+    await act(async () => controller.signAndSend());
+    expect(calls("/api/open-broadcast")).toHaveLength(1);
+    expect(controller.error).toBe("");
   });
 });

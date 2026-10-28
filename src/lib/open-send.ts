@@ -14,6 +14,7 @@ import { beamAfterSend, noBeamAfterSend } from "@/lib/beam-after-send";
 import type { OpenPositionSummary } from "@sofinance/engine/open-types";
 import { getSigningSecret } from "@sofinance/engine/config/server-env";
 import { exceedsTxSizeLimit, isZeroSignature } from "@sofinance/engine/transaction-limits";
+import { assertWalletReturnedTransaction } from "@sofinance/engine/wallet-returned-tx";
 import { logPositionOpenBestEffort, positionOpenRowFromSummary } from "@/lib/opens-log";
 
 
@@ -34,14 +35,17 @@ export async function sendSignedOpenPosition(
     const wallet = new PublicKey(walletAddress);
     const nftMint = new PublicKey(summary.nftMint);
     const message = transaction.message.serialize();
+    const keys = transaction.message.staticAccountKeys;
+    const mintIndex = keys.findIndex((key) => key.equals(nftMint));
     const walletSignature = transaction.signatures[0];
-    const nftSignature = transaction.signatures[1];
+    const nftSignature = mintIndex >= 0 ? transaction.signatures[mintIndex] : undefined;
+    if (exceedsTxSizeLimit(transaction.serialize().length)) {
+      throw new Error("Wallet additions exceed the 1,232 byte transaction limit");
+    }
     if (
-      exceedsTxSizeLimit(transaction.serialize().length) ||
-      transaction.message.staticAccountKeys[0]?.toBase58() !== walletAddress ||
-      transaction.message.staticAccountKeys[1]?.toBase58() !== summary.nftMint ||
-      transaction.message.header.numRequiredSignatures !== 2 ||
-      transaction.signatures.length !== 2 ||
+      keys[0]?.toBase58() !== walletAddress ||
+      mintIndex < 1 || mintIndex >= transaction.message.header.numRequiredSignatures ||
+      transaction.message.header.numRequiredSignatures < 2 ||
       isZeroSignature(walletSignature) || isZeroSignature(nftSignature)
     ) {
       throw new Error("Open-position payer, NFT mint signature, or transaction size mismatch");
@@ -113,18 +117,23 @@ export async function sendSignedOpenPosition(
 
 export async function submitOpenPositionFromParts(input: {
   signedTransaction: string;
+  unsignedTransaction?: string;
   permit: string;
   wallet: string;
   summary: OpenPositionSummary;
   sourceRef?: unknown;
 }) {
   const transaction = VersionedTransaction.deserialize(Buffer.from(input.signedTransaction, "base64"));
+  const prepared = input.unsignedTransaction
+    ? VersionedTransaction.deserialize(Buffer.from(input.unsignedTransaction, "base64"))
+    : transaction;
   if (!verifyOpenPositionPermit(getSigningSecret(), {
     wallet: input.wallet,
-    message: Buffer.from(transaction.message.serialize()).toString("base64"),
+    message: Buffer.from(prepared.message.serialize()).toString("base64"),
     summary: input.summary,
   }, input.permit)) {
     throw new Error("Transaction does not match simulated open-position authorization");
   }
+  if (input.unsignedTransaction) assertWalletReturnedTransaction(prepared, transaction, input.wallet);
   return sendSignedOpenPosition(input.wallet, transaction, input.summary, input.sourceRef);
 }

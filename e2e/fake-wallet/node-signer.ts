@@ -13,7 +13,7 @@ export type WalletMode =
   | "lighthouse"        // wallet appends a Lighthouse-style guard instruction (what Phantom/Solflare do on mainnet)
   | "slow";             // delays the answer (exercises the "Waiting for wallet signature" state)
 
-export const LIGHTHOUSE_PROGRAM = "L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95";
+export const LIGHTHOUSE_PROGRAM = "L2TExMFKdjpN9kozasaurPPf4nCVfRTb7cTZo5GsqqY";
 export const MEMO_PROGRAM = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr";
 
 export type LedgerEntry = {

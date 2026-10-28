@@ -155,11 +155,19 @@ test("failed prepare never calls the wallet or broadcast", async ({ page, wallet
   expect(wallet.ledger).toEqual([]); expect(calls).not.toContain("/api/selected-broadcast");
 });
 
-test("wallet message mutation blocks broadcast", async ({ page, wallet }) => {
-  wallet.mode = "mutate-message";
+test("wallet instruction-data mutation blocks broadcast", async ({ page, wallet }) => {
+  wallet.mode = "tweak-bytes";
   const { calls, add } = await setup(page, wallet);
-  await add.click(); await expect(page.getByRole("alert").filter({ hasText: "Wallet modified transaction content" })).toBeVisible();
+  await add.click(); await expect(page.getByRole("alert").filter({ hasText: "Wallet removed or changed a required instruction" })).toBeVisible();
   expect(calls).not.toContain("/api/selected-broadcast");
+});
+
+test("wallet Lighthouse extra instruction still broadcasts", async ({ page, wallet }) => {
+  wallet.mode = "lighthouse";
+  const { calls, add } = await setup(page, wallet);
+  await add.click();
+  await expect.poll(() => calls.filter((p) => p === "/api/selected-broadcast").length).toBe(1);
+  expect(wallet.ledger[0]).toMatchObject({ outcome: "signed", mode: "lighthouse" });
 });
 
 test("ambiguous send warns after reload without locking or automatically resending", async ({ page, wallet }) => {

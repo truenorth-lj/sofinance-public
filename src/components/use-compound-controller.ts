@@ -383,10 +383,11 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
             summary.operation !== "compound" || (summary as CompoundSummary).state.wallet !== wallet ||
             (summary as CompoundSummary).positionMint !== positionMint)) throw new Error("Simulation result and selection mismatch or expired");
         const unsigned = VersionedTransaction.deserialize(Uint8Array.from(atob(prepared.unsignedTransaction), (item) => item.charCodeAt(0)));
+        const preparedSnapshot = VersionedTransaction.deserialize(unsigned.serialize());
         if (unsigned.message.staticAccountKeys[0]?.toBase58() !== wallet || unsigned.message.recentBlockhash !== summary.blockhash) {
           throw new Error("Transaction payer or blockhash and preparation result mismatch");
         }
-        return { prepared, summary, unsigned };
+        return { prepared, summary, unsigned, preparedSnapshot };
       };
       const acceptClosed = (response: CompoundPrepared | RecoveryPrepared | AlreadyClosedRecovery) => {
         if (!("alreadyClosed" in response)) return false;
@@ -415,11 +416,10 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
         loaded = acceptPrepared(response as CompoundPrepared | RecoveryPrepared);
       }
       if (!receipt) setPreview(loaded.summary as CompoundSummary);
-      const { prepared, summary, unsigned } = loaded;
-      const originalMessage = Uint8Array.from(unsigned.message.serialize());
+      const { prepared, summary, unsigned, preparedSnapshot } = loaded;
       setStage("wallet");
       const signed = await connectionRef.current.signTransaction(unsigned);
-      const signedResult = signedCompoundTransaction(signed, originalMessage, submittedWallet);
+      const signedResult = signedCompoundTransaction(signed, preparedSnapshot, submittedWallet);
       if (!current() || Date.now() >= summary.expiresAt || externalBlockedRef.current) {
         throw new Error("Wallet, position, or authorization changed during signing; transaction not broadcast");
       }
@@ -443,7 +443,7 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
       if (window.localStorage.getItem(cleanupBatchKey(wallet)) !== cleanupBatchRecord) throw new Error("Cleanup transaction changed in another tab; verify original signatures before continuing.");
       const broadcast = await post<{ signature: string }>(receipt ? "/api/compound-recover-broadcast" : "/api/compound-broadcast", {
         wallet: submittedWallet, positionMint: created.positionMint, summary, permit: prepared.permit,
-        signedTransaction: signedResult.signedTransaction,
+        unsignedTransaction: prepared.unsignedTransaction, signedTransaction: signedResult.signedTransaction,
       }, AbortSignal.timeout(15_000));
       if (broadcast.signature !== created.signature) throw new Error("Broadcast returned inconsistent signature; retain original signature and check on-chain result");
       if (receipt) {

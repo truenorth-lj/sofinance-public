@@ -54,7 +54,9 @@ async function setup(page: Page, wallet: FakeWallet, mode: "ok" | "unknown" | "u
       const tx = VersionedTransaction.deserialize(Buffer.from(body.signedTransaction, "base64"));
       sentSignature = bs58.encode(tx.signatures[0]!);
       expect(FakeWallet.verify(wallet.address, tx.message.serialize(), tx.signatures[0]!)).toBe(true);
-      expect(FakeWallet.verify(built.nftMint, tx.message.serialize(), tx.signatures[1]!)).toBe(true);
+      const mintIndex = tx.message.staticAccountKeys.findIndex((key) => key.toBase58() === built.nftMint);
+      expect(mintIndex).toBeGreaterThanOrEqual(1);
+      expect(FakeWallet.verify(built.nftMint, tx.message.serialize(), tx.signatures[mintIndex]!)).toBe(true);
       const saved = await page.evaluate(address => localStorage.getItem(`sofinance:open-position:v1:${address}`), wallet.address);
       expect(saved).toContain(sentSignature);
       if (mode !== "ok") return route.fulfill({ status: 503, json: { error: "E2E submission unavailable", ...(mode === "unsent" ? { sent: false } : {}) } });
@@ -101,4 +103,13 @@ test("unknown send retains the original signature, blocks another open and can r
   flow.setStatus("failed"); await page.getByRole("button", { name: "Check transaction status" }).click();
   await expect(page.getByText("Open-position transaction failed on-chain. You can prepare a new transaction.")).toBeVisible();
   await expect(flow.create).toBeEnabled(); expect(wallet.ledger).toHaveLength(1);
+});
+
+test("wallet Lighthouse extra instruction still mint-signs and broadcasts", async ({ page, wallet }) => {
+  wallet.mode = "lighthouse";
+  const flow = await setup(page, wallet);
+  await flow.create.click();
+  await expect(page.getByText("Waiting for on-chain confirmation…", { exact: true }).first()).toBeVisible();
+  expect(wallet.ledger[0]).toMatchObject({ outcome: "signed", mode: "lighthouse" });
+  expect(flow.calls.filter((path) => path === "/api/open-broadcast")).toHaveLength(1);
 });

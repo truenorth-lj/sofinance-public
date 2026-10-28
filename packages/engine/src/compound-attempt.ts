@@ -3,6 +3,7 @@ import { PublicKey, VersionedTransaction } from "@solana/web3.js";
 import { TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID } from "@solana/spl-token";
 import type { CompoundAccount, CompoundSummary } from "./compound-types";
 import type { CompoundRecoverySummary } from "./compound-recovery-types";
+import { assertWalletReturnedTransaction } from "./wallet-returned-tx";
 
 type AttemptIdentity = { version: 1; wallet: string; positionMint: string; signature: string; createdAt: number };
 export type CompoundAttempt = AttemptIdentity & (
@@ -198,12 +199,10 @@ export function removeConsumedCompoundReceipts(storage: StorageWrite, attempt: C
   }
 }
 
-// Snapshot before the provider call: wallets may mutate the input object while signing.
-export function signedCompoundTransaction(signed: VersionedTransaction, originalMessage: Uint8Array, wallet: string) {
-  const message = signed.message.serialize();
-  if (message.length !== originalMessage.length || message.some((byte, index) => byte !== originalMessage[index])) {
-    throw new Error("Wallet modified transaction content; broadcast stopped");
-  }
+// Wallet-returned tx is the source of truth. Extra Lighthouse / compute-budget
+// instructions are allowed; dropping a required signer or core ix is not.
+export function signedCompoundTransaction(signed: VersionedTransaction, prepared: VersionedTransaction, wallet: string) {
+  assertWalletReturnedTransaction(prepared, signed, wallet);
   if (signed.message.staticAccountKeys[0]?.toBase58() !== wallet) throw new Error("Signing wallet does not match transaction payer");
   const bytes = signed.signatures[0];
   if (!bytes || bytes.every((byte) => byte === 0)) throw new Error("Wallet did not return transaction signature");

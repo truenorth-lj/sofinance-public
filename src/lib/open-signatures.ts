@@ -2,6 +2,7 @@ import "@/lib/engine-host";
 import { VersionedTransaction, type Signer } from "@solana/web3.js";
 import { isZeroSignature } from "@sofinance/engine/transaction-limits";
 
+export { assertWalletReturnedTransaction } from "@sofinance/engine/wallet-returned-tx";
 
 /**
  * Wallets sometimes rebuild a VersionedTransaction from the message and only
@@ -40,25 +41,18 @@ export function missingRequiredSignatures(transaction: VersionedTransaction): nu
   return missing;
 }
 
-export function assertUnmodifiedMessage(
-  prepared: VersionedTransaction | Uint8Array,
-  signed: VersionedTransaction,
-  message: string,
-) {
-  const original = prepared instanceof Uint8Array ? prepared : prepared.message.serialize();
-  const next = signed.message.serialize();
-  if (original.length !== next.length || next.some((byte, index) => byte !== original[index])) {
-    throw new Error(message);
-  }
-}
-
 /**
- * Phantom recipe: wallet signs the unsigned tx first, then other signers are
- * applied to the transaction Phantom returns without changing the message.
+ * Phantom recipe: wallet signs first, then the mint key signs the wallet-returned
+ * (possibly modified) message. The wallet signature stays valid because Phantom
+ * signed that same message.
  */
 export function addMintSignature(walletSigned: VersionedTransaction, mint: Signer): VersionedTransaction {
   const walletSignature = walletSigned.signatures[0] ? Uint8Array.from(walletSigned.signatures[0]) : undefined;
   if (!walletSignature || isZeroSignature(walletSignature)) throw new Error("Wallet did not return a valid signature");
+  const mintIndex = walletSigned.message.staticAccountKeys
+    .slice(0, walletSigned.message.header.numRequiredSignatures)
+    .findIndex((key) => key.equals(mint.publicKey));
+  if (mintIndex < 0) throw new Error("Position NFT mint is not a required signer of the wallet-returned transaction");
   walletSigned.sign([mint]);
   if (
     isZeroSignature(walletSigned.signatures[0]) ||
@@ -66,7 +60,7 @@ export function addMintSignature(walletSigned: VersionedTransaction, mint: Signe
   ) {
     throw new Error("Adding the NFT mint signature would replace the wallet signature");
   }
-  if (isZeroSignature(walletSigned.signatures[1])) {
+  if (isZeroSignature(walletSigned.signatures[mintIndex])) {
     throw new Error("Position NFT mint signature missing after local sign");
   }
   return walletSigned;

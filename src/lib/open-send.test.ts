@@ -17,7 +17,7 @@ vi.mock("@/lib/opens-log", async (importOriginal) => {
   return { ...original, logPositionOpenBestEffort: opensLog.logPositionOpenBestEffort };
 });
 
-import { SendTransactionError, VersionedTransaction } from "@solana/web3.js";
+import { SendTransactionError, TransactionInstruction, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
 import { CompoundSendError } from "./public-error";
 import { issueOpenPositionPermit } from "./open-permit";
 import { readOpenPoolState } from "@sofinance/engine/open-state";
@@ -27,8 +27,8 @@ import { beamAfterSend } from "@/lib/beam-after-send";
 import type { OpenPositionSummary } from "@sofinance/engine/open-types";
 import { sendSignedOpenPosition, submitOpenPositionFromParts } from "./open-send";
 import {
-  BEAM_RESULT, BLOCKHASH, SIGNING_SECRET, buildTransaction, fakeConnection, type FakeConnection, messageBase64, openSummaryFixture, signatureOf,
-  testKeypair, toBase64,
+  BEAM_RESULT, BLOCKHASH, LIGHTHOUSE_PROGRAM_ID, SIGNING_SECRET, appendWalletExtraInstruction, buildTransaction,
+  fakeConnection, type FakeConnection, messageBase64, openSummaryFixture, signatureOf, testKeypair, toBase64,
 } from "./test-support/send-fixtures";
 
 const walletKey = testKeypair(1);
@@ -259,6 +259,42 @@ describe("submitOpenPositionFromParts", () => {
 
   it("surfaces a raw deserialize error for a garbage transaction", async () => {
     await expect(submitOpenPositionFromParts({ ...parts(), signedTransaction: "AAAA" })).rejects.toThrow();
+  });
+
+  it("accepts a wallet-appended Lighthouse instruction when unsignedTransaction is provided", async () => {
+    const unsigned = buildTransaction({ payer: walletKey, extraSigners: [nftKey], signWith: [] });
+    const extra = appendWalletExtraInstruction(unsigned);
+    extra.sign([walletKey, nftKey]);
+    connection.sendRawTransaction.mockImplementation(async () => signatureOf(extra));
+    const summary = summaryFor({ blockhash: extra.message.recentBlockhash });
+    await expect(submitOpenPositionFromParts({
+      signedTransaction: toBase64(extra),
+      unsignedTransaction: toBase64(unsigned),
+      wallet, summary,
+      permit: issueOpenPositionPermit(SIGNING_SECRET, { wallet, summary, message: messageBase64(unsigned) }),
+    })).resolves.toMatchObject({ signature: signatureOf(extra), positionMint: nftMint });
+  });
+
+  it("rejects a wallet-returned tx that drops a core instruction", async () => {
+    const unsigned = buildTransaction({ payer: walletKey, extraSigners: [nftKey], signWith: [] });
+    const emptied = new VersionedTransaction(new TransactionMessage({
+      payerKey: walletKey.publicKey,
+      recentBlockhash: unsigned.message.recentBlockhash,
+      instructions: [new TransactionInstruction({
+        programId: LIGHTHOUSE_PROGRAM_ID,
+        keys: [{ pubkey: nftKey.publicKey, isSigner: true, isWritable: false }],
+        data: Buffer.from([1]),
+      })],
+    }).compileToV0Message());
+    emptied.sign([walletKey, nftKey]);
+    const summary = summaryFor({ blockhash: unsigned.message.recentBlockhash });
+    await expect(submitOpenPositionFromParts({
+      signedTransaction: toBase64(emptied),
+      unsignedTransaction: toBase64(unsigned),
+      wallet, summary,
+      permit: issueOpenPositionPermit(SIGNING_SECRET, { wallet, summary, message: messageBase64(unsigned) }),
+    })).rejects.toThrow("required instruction");
+    expect(rpcConnection).not.toHaveBeenCalled();
   });
 });
 

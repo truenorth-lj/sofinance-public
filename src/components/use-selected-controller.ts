@@ -17,6 +17,7 @@ import { INPUT_ASSET_NOT_HELD_CODE, INPUT_ASSET_NOT_HELD_MESSAGE } from "@/lib/s
 import { useWalletConnection } from "./wallet-connection";
 import { notifyPositionHistoryChange } from "@/lib/position-history-refresh";
 import { createJupiterRelayStore, postWithJupiterRelay } from "@/lib/jupiter/browser-relay";
+import { assertWalletReturnedTransaction } from "@sofinance/engine/wallet-returned-tx";
 
 /**
  * Client deadline for a preview/prepare. Each server round keeps its own 8 s
@@ -404,17 +405,14 @@ export function useSelectedController() {
       }
       const bytes = Uint8Array.from(atob(prepared.unsignedTransaction), (character) => character.charCodeAt(0));
       const unsigned = VersionedTransaction.deserialize(bytes);
+      const preparedSnapshot = VersionedTransaction.deserialize(unsigned.serialize());
       if (unsigned.message.recentBlockhash !== prepared.blockhash ||
         unsigned.message.staticAccountKeys[0]?.toBase58() !== wallet) throw new Error("Transaction payer or blockhash mismatch");
       setPreview({ kind: "quoted", result: prepared }); setNow(Date.now());
       setSubmitStage("wallet");
-      const originalMessage = unsigned.message.serialize();
       const signed = await signTransaction(unsigned);
       if (!ownsLifetime()) return;
-      const signedMessage = signed.message.serialize();
-      if (signedMessage.length !== originalMessage.length || signedMessage.some((byte, index) => byte !== originalMessage[index])) {
-        throw new Error("Wallet modified transaction content, stopped submission");
-      }
+      assertWalletReturnedTransaction(preparedSnapshot, signed, wallet);
       const signatureBytes = signed.signatures[0];
       if (!signatureBytes || signatureBytes.every((byte) => byte === 0)) throw new Error("Wallet did not return valid signature");
       if (walletRef.current !== wallet || selectionRef.current !== key || inputRevisionRef.current !== inputRevision ||
@@ -432,7 +430,7 @@ export function useSelectedController() {
       attemptSignatureRef.current = signature;
       setAttempt(current); setAttemptStatus("pending"); setPreview({ kind: "idle" }); setSubmitStage("broadcasting");
       const sent = await fetch("/api/selected-broadcast", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ wallet, selection, signedTransaction, permit: prepared.permit,
+        body: JSON.stringify({ wallet, selection, signedTransaction, unsignedTransaction: prepared.unsignedTransaction, permit: prepared.permit,
           requested: prepared.quote.requested, floorBps: prepared.quote.floorBps,
           expiresAt: prepared.expiresAt, lastValidBlockHeight: prepared.lastValidBlockHeight,
           startingLiquidity: prepared.startingLiquidity, expectedLiquidity: prepared.quote.liquidity,

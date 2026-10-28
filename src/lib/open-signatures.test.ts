@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { Keypair, SystemProgram, TransactionInstruction, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
 import {
-  addMintSignature, assertUnmodifiedMessage, missingRequiredSignatures, preserveExtraSignatures,
+  addMintSignature, assertWalletReturnedTransaction, missingRequiredSignatures, preserveExtraSignatures,
 } from "./open-signatures";
+import { appendWalletExtraInstruction } from "./test-support/send-fixtures";
 
 function twoSignerTx(payer: Keypair, nft: Keypair) {
   const message = new TransactionMessage({
@@ -59,7 +60,7 @@ describe("open-position extra signatures", () => {
     const walletSigned = VersionedTransaction.deserialize(prepared.serialize());
     walletSigned.sign([payer]);
     const walletSignature = Uint8Array.from(walletSigned.signatures[0]!);
-    assertUnmodifiedMessage(prepared, walletSigned, "Wallet modified transaction content, stopped submission");
+    assertWalletReturnedTransaction(prepared, walletSigned, payer.publicKey.toBase58());
     const signed = addMintSignature(walletSigned, nft);
     expect(missingRequiredSignatures(signed)).toEqual([]);
     expect(Buffer.from(signed.signatures[0]!)).toEqual(Buffer.from(walletSignature));
@@ -67,16 +68,26 @@ describe("open-position extra signatures", () => {
     nft.secretKey.fill(0);
   });
 
-  it("aborts when the wallet modifies the message before the mint is signed", () => {
+  it("wallet-first then mint-sign still works when the wallet appends a Lighthouse instruction", () => {
     const payer = Keypair.generate();
     const nft = Keypair.generate();
     const prepared = twoSignerTx(payer, nft);
-    const originalMessage = prepared.message.serialize();
+    const extra = appendWalletExtraInstruction(prepared);
+    extra.sign([payer]);
+    assertWalletReturnedTransaction(prepared, extra, payer.publicKey.toBase58());
+    const signed = addMintSignature(extra, nft);
+    expect(missingRequiredSignatures(signed)).toEqual([]);
+    nft.secretKey.fill(0);
+  });
+
+  it("rejects a wallet that changes the fee payer or a core instruction", () => {
+    const payer = Keypair.generate();
+    const nft = Keypair.generate();
+    const prepared = twoSignerTx(payer, nft);
     const mutated = VersionedTransaction.deserialize(prepared.serialize());
     mutated.message.recentBlockhash = Keypair.generate().publicKey.toBase58();
     mutated.sign([payer]);
-    expect(() => assertUnmodifiedMessage(originalMessage, mutated, "Wallet modified transaction content, stopped submission"))
-      .toThrow("Wallet modified transaction content, stopped submission");
-    expect(missingRequiredSignatures(mutated)).toContain(1);
+    expect(() => assertWalletReturnedTransaction(prepared, mutated, payer.publicKey.toBase58()))
+      .toThrow("Wallet changed the transaction blockhash");
   });
 });

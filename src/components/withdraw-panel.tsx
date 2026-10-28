@@ -12,6 +12,7 @@ import { createJupiterRelayStore, postWithJupiterRelay } from "@/lib/jupiter/bro
 import type { WithdrawPrepared, WithdrawSummary, WithdrawRequest } from "@sofinance/engine/withdraw/types";
 import { assertWithdrawHistory, readWithdrawHistory, writeWithdrawHistory, withdrawCheckpointKey, WithdrawHistoryError, WITHDRAW_HISTORY_ERROR, type WithdrawHistory, type WithdrawCheckpoint as Checkpoint } from "@/lib/withdraw-checkpoint";
 import { prepareIsStale } from "@sofinance/engine/fresh-blockhash";
+import { assertWalletReturnedTransaction } from "@sofinance/engine/wallet-returned-tx";
 
 export const WITHDRAW_EXPIRED_MESSAGE = "Transaction expired before it landed. Retry to prepare a fresh transaction — no funds moved.";
 
@@ -178,15 +179,15 @@ export function WithdrawPanel({wallet,positionMint,mintA,mintB,label,onClose,onB
   guardRun(run);
   setProgress(prepared.summary.stage==="swap"?"Step 2 of 2: approve conversion in your wallet":"Approve withdrawal in your wallet");
   const unsigned=VersionedTransaction.deserialize(Uint8Array.from(atob(prepared.unsignedTransaction),c=>c.charCodeAt(0)));
-  const message=unsigned.message.serialize().slice();
+  const preparedSnapshot=VersionedTransaction.deserialize(unsigned.serialize());
   const signed=await currentConnection.current.signTransaction(unsigned);
   guardRun(run);
   if(Date.now()>=prepared.summary.expiresAt)throw new Error("Prepared transaction expired while awaiting wallet approval. Review and retry; no new transaction was submitted.");
-  if(signed.message.serialize().length!==message.length || signed.message.serialize().some((b,i)=>b!==message[i]))throw new Error("Wallet modified transaction");
+  assertWalletReturnedTransaction(preparedSnapshot,signed,wallet);
   const saved:Checkpoint={prepared,signature:bs58.encode(signed.signatures[0]!),request:originalRequest,confirmHighImpact:confirmed,root};
   // Persist before broadcasting: an interrupted HTTP request can still land.
   save(run,saved);setProgress("Submitting withdrawal…");
-  await post(run,"withdraw-broadcast",{wallet,summary:prepared.summary,permit:prepared.permit,confirmHighImpact:confirmed,signedTransaction:btoa(String.fromCharCode(...signed.serialize()))});
+  await post(run,"withdraw-broadcast",{wallet,summary:prepared.summary,permit:prepared.permit,confirmHighImpact:confirmed,unsignedTransaction:prepared.unsignedTransaction,signedTransaction:btoa(String.fromCharCode(...signed.serialize()))});
   return saved;
  }
  async function run(confirmed=false){

@@ -8,6 +8,7 @@ import type { CompoundSummary } from "@sofinance/engine/compound-types";
 import type { CompoundRecoverySummary } from "@sofinance/engine/compound-recovery-types";
 import { getSigningSecret } from "@sofinance/engine/config/server-env";
 import { isSingleWalletSignedTransaction } from "@sofinance/engine/transaction-limits";
+import { assertWalletReturnedTransaction } from "@sofinance/engine/wallet-returned-tx";
 
 export async function readCompoundBody(request: Request) {
   const text = await request.text();
@@ -37,11 +38,15 @@ export async function parseCompoundBroadcast(request: Request, operation: "compo
     throw new Error("Invalid signed transaction input");
   }
   const transaction = VersionedTransaction.deserialize(Buffer.from(body.signedTransaction, "base64"));
+  const prepared = typeof body.unsignedTransaction === "string"
+    ? VersionedTransaction.deserialize(Buffer.from(body.unsignedTransaction, "base64"))
+    : transaction;
   if (!isSingleWalletSignedTransaction(transaction, wallet)) {
     throw new Error("Compound payer, signature, or transaction size mismatch");
   }
+  if (prepared !== transaction) assertWalletReturnedTransaction(prepared, transaction, wallet);
   if (!verifyCompoundPermit(getSigningSecret(), {
-    wallet, message: Buffer.from(transaction.message.serialize()).toString("base64"), summary: body.summary,
+    wallet, message: Buffer.from(prepared.message.serialize()).toString("base64"), summary: body.summary,
   }, body.permit)) throw new Error("Transaction does not match simulated compound authorization");
   // Summary fields become trusted only after the complete HMAC is verified.
   const summary = body.summary as CompoundSummary | CompoundRecoverySummary;

@@ -8,7 +8,7 @@ import { formatAmount, parseTokenAmount } from "@sofinance/engine/amount";
 import { NATIVE_SOL_MINT, USDC_MINT } from "@sofinance/engine/ids";
 import { quoteIsFresh } from "@sofinance/engine/quote-math";
 import { OPEN_RANGE_UI_PRESETS, type OpenRangePreset } from "@sofinance/engine/open-range-presets";
-import { addMintSignature, assertUnmodifiedMessage, missingRequiredSignatures } from "@/lib/open-signatures";
+import { addMintSignature, assertWalletReturnedTransaction, missingRequiredSignatures } from "@/lib/open-signatures";
 import { createJupiterRelayStore, jupiterRelayEnabled, postWithJupiterRelay } from "@/lib/jupiter/browser-relay";
 import { notSentRetryMessage } from "@/lib/public-error";
 import type { OpenPositionQuote, OpenPositionSummary } from "@sofinance/engine/open-types";
@@ -314,6 +314,7 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
       }
       const bytes = Uint8Array.from(atob(prepared.unsignedTransaction), (character) => character.charCodeAt(0));
       const unsigned = VersionedTransaction.deserialize(bytes);
+      const preparedSnapshot = VersionedTransaction.deserialize(unsigned.serialize());
       if (unsigned.message.staticAccountKeys[0]?.toBase58() !== wallet ||
         unsigned.message.staticAccountKeys[1]?.toBase58() !== prepared.summary.nftMint ||
         unsigned.message.recentBlockhash !== prepared.summary.blockhash) {
@@ -322,9 +323,8 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
       setQuote(prepared.summary.quote);
       setNow(Date.now());
       setSubmitStage("wallet");
-      const originalMessage = unsigned.message.serialize();
       const signedByWallet = await signTransaction(unsigned);
-      assertUnmodifiedMessage(originalMessage, signedByWallet, "Wallet modified transaction content, stopped submission");
+      assertWalletReturnedTransaction(preparedSnapshot, signedByWallet, wallet);
       const signed = addMintSignature(signedByWallet, mint);
       mint.secretKey.fill(0);
       if (missingRequiredSignatures(signed).length) {
@@ -343,6 +343,7 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           signedTransaction,
+          unsignedTransaction: prepared.unsignedTransaction,
           permit: prepared.permit,
           wallet,
           summary: prepared.summary,

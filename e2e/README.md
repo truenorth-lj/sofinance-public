@@ -39,7 +39,7 @@ The provider variant is inlined at build time: `E2E_PROVIDER=appkit` (default, s
 ## Fake wallet modes (`wallet.mode`)
 
 `normal`, `reject`, `mutate-message` (appends a Memo instruction), `tweak-bytes` (same-length change), `lighthouse`
-(appends a Lighthouse-style instruction as Phantom/Solflare do), `no-signature` (returns an unsigned tx), `slow`.
+(appends a Lighthouse-style instruction as Phantom/Solflare do; HTTP flows accept that extra ix, MCP `/app/sign` still requires a byte-identical message), `no-signature` (returns an unsigned tx), `slow`.
 The wallet is called "E2E Test Wallet" on purpose (AppKit maps well-known wallet names to special behaviour).
 
 ## Secrets

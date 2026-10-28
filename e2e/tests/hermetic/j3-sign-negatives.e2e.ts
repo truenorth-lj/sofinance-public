@@ -157,7 +157,7 @@ test.describe("J3 sign link, wallet / transaction guards", () => {
       await new ConnectModal(page, wallet).connect();
       await sign.signButton.click();
       await sign.expectStatus("Wallet modified transaction content");
-      expect(wallet.ledger[0]!.programIds).toContain("L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95");
+      expect(wallet.ledger[0]!.programIds).toContain("L2TExMFKdjpN9kozasaurPPf4nCVfRTb7cTZo5GsqqY");
       expect(sign.broadcasts).toEqual([]);
     });
   }

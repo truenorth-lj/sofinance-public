@@ -147,21 +147,22 @@ export function useCleanupBatchController(options: Options) {
         const tx = VersionedTransaction.deserialize(Uint8Array.from(atob(item.unsignedTransaction), ch => ch.charCodeAt(0)));
         if (tx.serialize().length > 1232 || tx.message.header.numRequiredSignatures !== 1 || tx.message.staticAccountKeys[0]?.toBase58() !== wallet ||
           tx.message.recentBlockhash !== item.summary.blockhash) throw new Error("Cleanup transaction payer, size, or blockhash mismatch");
-        return tx;
+        return { tx, preparedSnapshot: VersionedTransaction.deserialize(tx.serialize()) };
       });
       if (seen.size !== expected.size) throw new Error("Cleanup preparation omitted selected accounts");
       if (unsigned.length > 1 && !latest.current.connection.signAllTransactions) throw new Error("This wallet does not support one-approval batch signing. Use a wallet with signAllTransactions support to clean all balances together.");
-      const messages = unsigned.map(tx => Uint8Array.from(tx.message.serialize()));
       let signed: VersionedTransaction[] = [];
       if (unsigned.length) {
         setStage("wallet"); fence();
-        signed = unsigned.length === 1 ? [await latest.current.connection.signTransaction(unsigned[0]!)] : await latest.current.connection.signAllTransactions!(unsigned);
+        signed = unsigned.length === 1
+          ? [await latest.current.connection.signTransaction(unsigned[0]!.tx)]
+          : await latest.current.connection.signAllTransactions!(unsigned.map((item) => item.tx));
         fence();
       }
       if (!Array.isArray(signed) || signed.length !== unsigned.length) throw new Error("Wallet returned incomplete cleanup signatures");
       const signedResults = signed.map((tx, index) => {
-        const result = signedCompoundTransaction(tx, messages[index]!, wallet);
-        if (!nacl.sign.detached.verify(messages[index]!, tx.signatures[0]!, tx.message.staticAccountKeys[0]!.toBytes())) throw new Error("Wallet returned an invalid cleanup signature");
+        const result = signedCompoundTransaction(tx, unsigned[index]!.preparedSnapshot, wallet);
+        if (!nacl.sign.detached.verify(tx.message.serialize(), tx.signatures[0]!, tx.message.staticAccountKeys[0]!.toBytes())) throw new Error("Wallet returned an invalid cleanup signature");
         if (tx.serialize().length > 1232 || Date.now() >= prepared.transactions[index]!.summary.expiresAt) throw new Error("Signed cleanup transaction expired or is oversized");
         return result;
       });
@@ -176,7 +177,7 @@ export function useCleanupBatchController(options: Options) {
         fence();
         const item = prepared.transactions[index]!;
         return post<{ signature: string }>("/api/compound-cleanup-broadcast", { wallet, summary: item.summary,
-          permit: item.permit, signedTransaction: result.signedTransaction }, 60_000).then(response => {
+          permit: item.permit, unsignedTransaction: item.unsignedTransaction, signedTransaction: result.signedTransaction }, 60_000).then(response => {
           if (response.signature !== result.signature) throw new Error("Cleanup broadcast signature mismatch; checking original signature");
           return response;
         });
