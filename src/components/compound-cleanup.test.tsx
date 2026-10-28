@@ -428,3 +428,22 @@ describe("automatic cleanup after a new compound", () => {
     expect(mocks.sign).toHaveBeenCalledTimes(2); expect(broadcastCount).toBe(1);
   });
 });
+
+it("recovery wait exclusively checks its signature until selection cancellation releases background polling", async () => {
+  persistCompoundReceipt(window.localStorage, receipt()); confirmationStatus = "pending";
+  await render(); let work!: Promise<void>;
+  await act(async () => { work = controller.recover(controller.receipts[0]!); });
+  const checks = () => fetchMock.mock.calls.filter(([url]) => url === "/api/compound-confirm");
+  expect(checks()).toHaveLength(1);
+  const signature = controller.attempt!.signature;
+  await act(async () => { await vi.advanceTimersByTimeAsync(1); }); expect(checks()).toHaveLength(1);
+  await act(async () => { await vi.advanceTimersByTimeAsync(3_999); }); expect(checks()).toHaveLength(2);
+  positionMint = testKeypair(91).publicKey.toBase58();
+  await render(); await act(async () => { await work; });
+  expect(controller.cleanup?.running ?? false).toBe(false);
+  const before = checks().length;
+  await act(async () => { await vi.advanceTimersByTimeAsync(4_000); }); expect(checks()).toHaveLength(before + 1);
+  expect(checks().every(([, init]) => JSON.parse(String(init?.body)).attempt.signature === signature)).toBe(true);
+  expect(JSON.parse(window.localStorage.getItem(compoundAttemptKey(fixture.wallet))!).signature).toBe(signature);
+  expect(mocks.sign).toHaveBeenCalledOnce(); expect(broadcastCount).toBe(1);
+});
