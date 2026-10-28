@@ -8,9 +8,9 @@ import { rpcConnection, resetRpcCache } from "@sofinance/engine/rpc";
 import { invalidatePositionHistoryCache } from "../position-history-cache";
 import { getSigningSecret } from "@sofinance/engine/config/server-env";
 import { withdrawPermit } from "@sofinance/engine/withdraw/permit";
-import { walletReturnedTransactionMatches } from "@sofinance/engine/wallet-returned-tx";
+import { landedTransactionMatchesPrepared } from "@sofinance/engine/wallet-returned-tx";
 import type { WithdrawPrepared } from "@sofinance/engine/withdraw/types";
-/** Compare the confirmed transaction's complete message with its server authorization. */
+/** Confirm a landed withdrawal against the permit-bound prepared intent (Phantom-tolerant). */
 export async function withdrawStatus(input: {
     signature: string;
     prepared: WithdrawPrepared;
@@ -34,7 +34,7 @@ export async function withdrawStatus(input: {
         if (observed || await connection.getBlockHeight("confirmed") <= summary.lastValidBlockHeight)
             return { status: "pending", signature: input.signature };
         const historical = await connection.getTransaction(input.signature, { commitment: "finalized", maxSupportedTransactionVersion: 0 });
-        if (historical?.meta && !historical.meta.err && walletReturnedTransactionMatches(expected, new VersionedTransaction(historical.transaction.message), summary.wallet))
+        if (landedTransactionMatchesPrepared(expected, historical, summary.wallet))
             return successful();
         // An absent signature is not enough to declare an attempted withdrawal safe to retry.
         const keys = [...summary.assets.map(a => new PublicKey(a.account)), new PublicKey(summary.positionAccount)];
@@ -52,6 +52,6 @@ export async function withdrawStatus(input: {
         return { status: "manual-review", signature: input.signature };
     if (receipt.meta.err)
         return { status: "failed", signature: input.signature };
-    if (walletReturnedTransactionMatches(expected, new VersionedTransaction(receipt.transaction.message), summary.wallet)) return successful();
+    if (landedTransactionMatchesPrepared(expected, receipt, summary.wallet)) return successful();
     return { status: "manual-review", signature: input.signature, stage: summary.stage };
 }

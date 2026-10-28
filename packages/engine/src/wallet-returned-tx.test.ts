@@ -4,8 +4,8 @@ import {
   TransactionInstruction, TransactionMessage, VersionedTransaction,
 } from "@solana/web3.js";
 import {
-  LIGHTHOUSE_PROGRAM_ID, assertWalletReturnedTransaction, walletReturnedTransactionMatches,
-  walletReturnedTxDiagnostic,
+  LIGHTHOUSE_PROGRAM_ID, assertWalletReturnedTransaction, landedTransactionMatchesPrepared,
+  walletReturnedTransactionMatches, walletReturnedTxDiagnostic,
 } from "./wallet-returned-tx";
 
 function transferTx(payer: Keypair, dest = Keypair.generate().publicKey) {
@@ -123,4 +123,66 @@ it("rejects a changed fee payer or removed core instruction", () => {
   destChanged.sign([payer]);
   expect(() => assertWalletReturnedTransaction(prepared, destChanged, payer.publicKey.toBase58()))
     .toThrow(/Wallet removed or changed a required instruction/);
+});
+
+function loadedFromTable(tx: VersionedTransaction, table: AddressLookupTableAccount) {
+  const lookup = tx.message.addressTableLookups[0]!;
+  return {
+    writable: [...lookup.writableIndexes].map((index) => table.state.addresses[index]!),
+    readonly: [...lookup.readonlyIndexes].map((index) => table.state.addresses[index]!),
+  };
+}
+
+it("matches a Phantom-modified landed tx and resolves ALT accounts from loadedAddresses", () => {
+  const payer = Keypair.generate();
+  const dest = Keypair.generate().publicKey;
+  const memoProgram = Keypair.generate().publicKey;
+  const blockhash = Keypair.generate().publicKey.toBase58();
+  const transfer = SystemProgram.transfer({ fromPubkey: payer.publicKey, toPubkey: dest, lamports: 5 });
+  const memo = new TransactionInstruction({
+    programId: memoProgram,
+    keys: [{ pubkey: dest, isSigner: false, isWritable: true }],
+    data: Buffer.from("core"),
+  });
+  const prepared = new VersionedTransaction(new TransactionMessage({
+    payerKey: payer.publicKey, recentBlockhash: blockhash,
+    instructions: [ComputeBudgetProgram.setComputeUnitLimit({ units: 200_000 }), transfer, memo],
+  }).compileToV0Message());
+  const table = new AddressLookupTableAccount({
+    key: Keypair.generate().publicKey,
+    state: {
+      deactivationSlot: 2n ** 64n - 1n,
+      lastExtendedSlot: 0,
+      lastExtendedSlotStartIndex: 0,
+      addresses: [dest, memoProgram],
+    },
+  });
+  const landed = new VersionedTransaction(new TransactionMessage({
+    payerKey: payer.publicKey,
+    recentBlockhash: blockhash,
+    instructions: [
+      ComputeBudgetProgram.setComputeUnitLimit({ units: 1_400_000 }),
+      transfer,
+      new TransactionInstruction({ programId: LIGHTHOUSE_PROGRAM_ID, keys: [], data: Buffer.from([2]) }),
+      memo,
+    ],
+  }).compileToV0Message([table]));
+  const loaded = loadedFromTable(landed, table);
+  expect(landed.message.addressTableLookups.length).toBeGreaterThan(0);
+  expect(loaded.writable.some((key) => key.equals(dest))).toBe(true);
+  expect(walletReturnedTransactionMatches(prepared, landed, payer.publicKey.toBase58(), loaded)).toBe(true);
+  expect(landedTransactionMatchesPrepared(prepared, {
+    transaction: { message: landed.message },
+    meta: { err: null, loadedAddresses: loaded },
+  }, payer.publicKey.toBase58())).toBe(true);
+  const spoofed = {
+    writable: loaded.writable.map((key) => key.equals(dest) ? Keypair.generate().publicKey : key),
+    readonly: loaded.readonly,
+  };
+  expect(walletReturnedTransactionMatches(prepared, landed, payer.publicKey.toBase58(), spoofed)).toBe(false);
+  expect(landedTransactionMatchesPrepared(prepared, {
+    transaction: { message: landed.message },
+    meta: { err: "InstructionError" },
+  }, payer.publicKey.toBase58())).toBe(false);
+  expect(landedTransactionMatchesPrepared(prepared, null, payer.publicKey.toBase58())).toBe(false);
 });

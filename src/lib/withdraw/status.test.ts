@@ -6,7 +6,7 @@ vi.mock("../position-history-cache",()=>({invalidatePositionHistoryCache:mocks.i
 import {withdrawStatus} from "./status";
 import {withdrawPermit} from "@sofinance/engine/withdraw/permit";
 import type {WithdrawPrepared,WithdrawSummary} from "@sofinance/engine/withdraw/types";
-import {SIGNING_SECRET,appendWalletExtraInstruction,buildTransaction,messageBase64,signatureOf,testKeypair,toBase64} from "../test-support/send-fixtures";
+import {SIGNING_SECRET,appendWalletExtraInstruction,buildTransaction,messageBase64,phantomRewriteTransaction,signatureOf,testKeypair,toBase64} from "../test-support/send-fixtures";
 const payer=testKeypair(1),transaction=buildTransaction({payer});
 function input(){
  const summary={wallet:payer.publicKey.toBase58(),operation:"withdraw",stage:"swap",positionMint:testKeypair(5).publicKey.toBase58(),positionAccount:testKeypair(2).publicKey.toBase58(),lastValidBlockHeight:150,assets:[]} as unknown as WithdrawSummary;
@@ -33,6 +33,10 @@ it("accepts the prepared message or a wallet-appended extra instruction, and rev
  mocks.receipt.mockResolvedValue({meta:{err:null},transaction:{message:changed.message}});
  expect(await withdrawStatus(input())).toHaveProperty("status","manual-review");
  expect(mocks.invalidate).toHaveBeenCalledTimes(2);expect(mocks.reset).toHaveBeenCalledTimes(2);
+ const rewritten=phantomRewriteTransaction(transaction);
+ mocks.receipt.mockResolvedValue({meta:{err:null,loadedAddresses:{writable:[],readonly:[]}},transaction:{message:rewritten.message}});
+ expect(await withdrawStatus(input())).toHaveProperty("status","success");
+ expect(mocks.invalidate).toHaveBeenCalledTimes(3);expect(mocks.reset).toHaveBeenCalledTimes(3);
 });
 it("recognizes a finalized receipt even when the signature index is missing",async()=>{
  mocks.height.mockResolvedValue(151);mocks.receipt.mockResolvedValue({meta:{err:null},transaction:{message:transaction.message}});

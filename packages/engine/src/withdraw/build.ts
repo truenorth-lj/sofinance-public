@@ -23,6 +23,7 @@ import { simulateAtContextSlot, simulateWithdraw } from "./simulation";
 import { withdrawPermit } from "./permit";
 import { assertImpactConfirmed, impactFlags, percentToBps, principalMinimum, capReceivedAmount, shouldSwap, targetUSDCToBps, transactionCount } from "./quote";
 import { withdrawPrepareSchema } from "./input";
+import { landedTransactionMatchesPrepared } from "../wallet-returned-tx";
 import type { WithdrawAsset, WithdrawPrepareRequest, WithdrawPrepared, WithdrawSummary } from "./types";
 export { simulateWithdraw } from "./simulation";
 async function swapInstructions(connection: Connection, wallet: PublicKey, assets: WithdrawAsset[], receive: string, output: string, pool: {
@@ -200,7 +201,9 @@ async function buildSwapStage(raw: WithdrawPrepareRequest, connection: Connectio
     if (!withdrawPermit.verify(getSigningSecret(), { wallet: raw.wallet, message: Buffer.from(first.message.serialize()).toString("base64"), summary: original }, previous.permit) || original.wallet !== raw.wallet || original.positionMint !== raw.positionMint || original.stage !== "withdraw")
         throw new Error("Invalid first transaction authorization");
     const receipt = await connection.getTransaction(raw.tx1Signature, { commitment: "finalized", maxSupportedTransactionVersion: 0 });
-    if (!receipt || !receipt.meta || receipt.meta.err || !Buffer.from(receipt.transaction.message.serialize()).equals(Buffer.from(first.message.serialize())))
+    // Permit stays bound to the prepared first-stage message. The landed tx may
+    // be Phantom-rewritten (Lighthouse / ComputeBudget / recompile / ALTs).
+    if (!landedTransactionMatchesPrepared(first, receipt, raw.wallet) || !receipt?.meta)
         throw new Error("First transaction must be finalized and match the prepared withdrawal");
     const keys = receipt.transaction.message.getAccountKeys({ accountKeysFromLookups: receipt.meta.loadedAddresses });
     const assets = original.assets.map(a => {
