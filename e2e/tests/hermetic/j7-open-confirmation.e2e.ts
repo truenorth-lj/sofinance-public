@@ -14,6 +14,7 @@ async function connectInModal(page: Page, wallet: FakeWallet) {
   await expect(new ConnectModal(page, wallet).navAddress).toBeVisible();
 }
 
+// Input is a pool token, not native SOL: SOL input for opens is temporarily off (src/lib/feature-flags.ts).
 async function setup(page: Page, wallet: FakeWallet, mode: "ok" | "unknown" | "unsent" = "ok") {
   const poolId = randomAddress(), mintA = randomAddress(), mintB = randomAddress();
   let built = buildOpenPositionTx(wallet.address, { serverSigns: false });
@@ -24,8 +25,8 @@ async function setup(page: Page, wallet: FakeWallet, mode: "ok" | "unknown" | "u
   await page.route("**/api/**", async route => {
     const path = new URL(route.request().url()).pathname; calls.push(path);
     const body = route.request().method() === "POST" ? route.request().postDataJSON() : {};
-    const quote = { wallet: wallet.address, poolId, mintA, mintB, symbolA: "AAAx", symbolB: "AAA", inputMint: "So11111111111111111111111111111111111111112", inputKind: "native",
-      inputDecimals: 9, decimalsA: 6, decimalsB: 6, requested: String(Math.round(Number(body.amount ?? "0.01") * 1e9)),
+    const quote = { wallet: wallet.address, poolId, mintA, mintB, symbolA: "AAAx", symbolB: "AAA", inputMint: mintA, inputKind: "token",
+      inputDecimals: 6, decimalsA: 6, decimalsB: 6, requested: String(Math.round(Number(body.amount ?? "0.01") * 1e6)),
       liquidity: "100", tickLower: -60, tickUpper: 60, currentPrice: "1", tickCurrent: 0, tickSpacing: 1, rangePreset: "standard",
       rangeSide: "inside", warnings: [], minOutA: "500000", minOutB: "500000", amountMaxA: "500000", amountMaxB: "500000",
       roundtripCostInput: "1000", floorBps: 9900, passesFloor: true, expiresAt: Date.now() + 75000,
@@ -37,7 +38,7 @@ async function setup(page: Page, wallet: FakeWallet, mode: "ok" | "unknown" | "u
       feeTierBps: 1, tvlUsd: 100000, volume24hUsd: 10000, fees24hUsd: 10, estimatedFeeAprPct: 4, raydiumFeeApr24h: 4,
       token2022A: false, token2022B: false, freezeRisk: false, jupiterTagsA: [], jupiterTagsB: [] }],
       fetchedAt: new Date().toISOString(), scannedPools: 1, pagesFetched: 1, pairingRuleSummary: "Test pair", estimatedFeeAprLabel: "Estimated APR" };
-    if (path === "/api/wallet") value = { assets: [{ kind: "native", mint: quote.inputMint, eligible: true, decimals: 9, balance: "1000000000" }] };
+    if (path === "/api/wallet") value = { assets: [{ kind: "token", mint: quote.inputMint, eligible: true, decimals: 6, balance: "1000000000" }] };
     if (path === "/api/token-metadata") value = {};
     if (path === "/api/sol-usdc-price") value = { rate: 150 };
     if (path === "/api/pool-range-apr") return route.fulfill({ status: 503, json: { error: "Estimate unavailable in this test" } });
