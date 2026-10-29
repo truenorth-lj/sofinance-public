@@ -1,17 +1,20 @@
 import { apiError } from "@/lib/api-response";
+import { discoverMeteoraPairs } from "@/lib/meteora-pairs";
 import { discoverOrcaPairs } from "@/lib/orca-pairs";
-import { isOrcaDiscoveryEnabled, isRhcUniv4DiscoveryEnabled } from "@/lib/protocol-flags";
+import { isMeteoraDlmmDiscoveryEnabled, isOrcaDiscoveryEnabled, isRhcUniv4DiscoveryEnabled } from "@/lib/protocol-flags";
 import { discoverRhcUniv4Pools } from "@/lib/rhc-univ4-pools";
 
 /**
  * Read-only pool discovery for protocols that are not yet in `/api/rwa-pairs`.
  * - `?protocol=orca-whirlpool` (default), behind `ORCA_DISCOVERY_ENABLED`;
- * - `?protocol=uniswap-v4-rhc` (Uniswap v4 on Robinhood Chain), behind `RHC_UNIV4_DISCOVERY_ENABLED`.
- * Both flags are off in production → 404. Rows cannot be opened yet.
+ * - `?protocol=uniswap-v4-rhc` (Uniswap v4 on Robinhood Chain), behind `RHC_UNIV4_DISCOVERY_ENABLED`;
+ * - `?protocol=meteora-dlmm` (Meteora DLMM), behind `METEORA_DLMM_DISCOVERY_ENABLED`.
+ * All flags are off in production → 404. Rows cannot be opened yet.
  */
 const DISCOVERY = {
   "orca-whirlpool": { enabled: isOrcaDiscoveryEnabled, load: () => discoverOrcaPairs() },
   "uniswap-v4-rhc": { enabled: isRhcUniv4DiscoveryEnabled, load: () => discoverRhcUniv4Pools() },
+  "meteora-dlmm": { enabled: isMeteoraDlmmDiscoveryEnabled, load: () => discoverMeteoraPairs() },
 } as const;
 
 export async function GET(request: Request) {

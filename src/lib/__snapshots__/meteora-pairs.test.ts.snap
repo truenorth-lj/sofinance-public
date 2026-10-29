@@ -1,0 +1,37 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Meteora pair rows > maps the captured cbBTC/WBTC pool to a read-only meteora-dlmm row (golden) 1`] = `
+{
+  "baseSymbol": "BTC",
+  "estimatedFeeAprLabel": "Estimated fee APR = (24h pool fees USD / TVL USD) × 365 × 100. Not LP return; ignores IL, range, and rewards.",
+  "estimatedFeeAprPct": 0.4221884144313853,
+  "feeRate": 0.0001,
+  "feeTierBps": 1,
+  "fees24hUsd": 3.8888002748898995,
+  "freezeRisk": true,
+  "freezeRiskA": true,
+  "freezeRiskB": false,
+  "jupiterTagsA": [],
+  "jupiterTagsB": [],
+  "mintA": "cbbtcf3aa214zXHbiAZQwf4122FBYbraNdFqgw4iMij",
+  "mintB": "3NZ9JMVBmGAqocybic2c7LQCJScmgsAZ6vQqTDzcqmJh",
+  "nameA": "Coinbase Wrapped BTC",
+  "nameB": "Wrapped BTC (Portal)",
+  "plainSymbol": "WBTC",
+  "poolAddress": "53oyyjgybx6dH7i5aGeKfBUi3xPJQDeBkaENPri57x2H",
+  "preferredTags": false,
+  "protocol": "meteora-dlmm",
+  "qualificationA": "allowlist",
+  "qualificationB": "allowlist",
+  "raydiumFeeApr24h": null,
+  "relatedness": "allowlisted",
+  "symbolA": "cbBTC",
+  "symbolB": "WBTC",
+  "token2022A": false,
+  "token2022B": false,
+  "tvlUsd": 336203.47025545826,
+  "volume24hUsd": 44848.20467564547,
+  "wrapKind": "same-asset",
+  "wrappedSymbol": "cbBTC",
+}
+`;

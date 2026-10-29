@@ -102,3 +102,17 @@ export const RHC_UNIV4_WALLET_SIGNING_ENABLED: Readonly<Record<DeployTarget, boo
 export function isRhcUniv4WalletSigningEnabled(target: DeployTarget = deployTarget()): boolean {
   return RHC_UNIV4_WALLET_SIGNING_ENABLED[target];
 }
+
+/**
+ * Meteora DLMM read-only pool discovery (`/api/protocol-pools?protocol=meteora-dlmm`).
+ * OFF in production, same targets as above. Nothing on this path signs or sends.
+ */
+export const METEORA_DLMM_DISCOVERY_ENABLED: Readonly<Record<DeployTarget, boolean>> = Object.freeze({
+  production: false,
+  preview: true,
+  development: true,
+});
+
+export function isMeteoraDlmmDiscoveryEnabled(target: DeployTarget = deployTarget()): boolean {
+  return METEORA_DLMM_DISCOVERY_ENABLED[target];
+}
