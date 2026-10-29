@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { appSubdomainRewritePath, isAppSubdomainHost, trailingSlashRedirectPath } from "@/lib/app-host";
+import { REGION_NOTICE_COOKIE, REGION_NOTICE_COOKIE_MAX_AGE, regionNoticeForCountry } from "@/lib/region-notice";
 
 /**
- * Next.js 16 Proxy (formerly middleware). Host-based App rewrite only.
+ * Next.js 16 Proxy (formerly middleware). Host-based App rewrite, plus the region-notice flag cookie
+ * (notice only; it never blocks or redirects — see src/lib/region-notice.ts).
  *
  * On a future custom domain, `app.<domain>/<path>` → `/app/<path>`.
  * No effect on `*.vercel.app`.
@@ -22,18 +24,28 @@ export function proxy(request: NextRequest) {
   }
 
   const host = request.headers.get("host");
-  if (!isAppSubdomainHost(host)) {
-    return NextResponse.next();
-  }
-
-  const rewritePath = appSubdomainRewritePath(request.nextUrl.pathname);
+  const rewritePath = isAppSubdomainHost(host) ? appSubdomainRewritePath(request.nextUrl.pathname) : null;
   if (!rewritePath) {
-    return NextResponse.next();
+    return withRegionNotice(request, NextResponse.next());
   }
 
   const url = request.nextUrl.clone();
   url.pathname = rewritePath;
-  return NextResponse.rewrite(url);
+  return withRegionNotice(request, NextResponse.rewrite(url));
+}
+
+/** Sets (or clears) the readable notice flag from Vercel's geo header. Never changes status or path. */
+function withRegionNotice(request: NextRequest, response: NextResponse) {
+  const show = regionNoticeForCountry(request.headers.get("x-vercel-ip-country"));
+  const hasFlag = request.cookies.get(REGION_NOTICE_COOKIE)?.value === "1";
+  if (show && !hasFlag) {
+    response.cookies.set(REGION_NOTICE_COOKIE, "1", {
+      path: "/", maxAge: REGION_NOTICE_COOKIE_MAX_AGE, sameSite: "lax", secure: request.nextUrl.protocol === "https:",
+    });
+  } else if (show === false && hasFlag) {
+    response.cookies.delete(REGION_NOTICE_COOKIE);
+  }
+  return response;
 }
 
 export const config = {

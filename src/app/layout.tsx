@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 import { Geist_Mono, Host_Grotesk } from "next/font/google";
 import { AnalyticsRoot } from "@/components/analytics-root";
+import { RegionNotice } from "@/components/region-notice";
 import "./globals.css";
 
 const display = Host_Grotesk({ subsets: ["latin"], variable: "--font-grotesk" });
@@ -20,6 +21,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Suspense fallback={null}>
           <AnalyticsRoot />
         </Suspense>
+        <RegionNotice />
         {children}
       </body>
     </html>
