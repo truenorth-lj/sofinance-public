@@ -8,6 +8,10 @@ class CompoundApiError extends ApiRequestError {
     if (code) this.code = code;
   }
 }
+/** The route's machine-readable error code, when the failure came from a compound API call. */
+export function apiErrorCode(error: unknown) {
+  return error instanceof CompoundApiError ? error.code : undefined;
+}
 export function isRpcUnavailable(error: unknown) {
   return error instanceof CompoundApiError && error.code === "rpc_unavailable";
 }

@@ -16,6 +16,26 @@ export type CompoundSimulationInput = {
   /** Prepared message; wallet-raised ComputeBudget priority is allowed up to 0.01 SOL extra. */
   prepared?: VersionedTransaction;
 };
+export const INSUFFICIENT_SOL_CODE = "insufficient_sol";
+const LAMPORTS_PER_SOL = 1_000_000_000n;
+/** Round a lamport shortfall up to 0.0001 SOL so the copy never under-states what to add. */
+export function formatSolShortfall(lamports: bigint) {
+  const step = LAMPORTS_PER_SOL / 10_000n;
+  const units = (lamports + step - 1n) / step;
+  return `${units / 10_000n}.${(units % 10_000n).toString().padStart(4, "0")}`;
+}
+/**
+ * The wallet cannot cover this compound's network fee, temporary yield-account rent and the
+ * {@link MIN_SOL_LAMPORTS} reserve. Same limits as before; only the user-facing copy is specific.
+ */
+export class CompoundInsufficientSolError extends Error {
+  readonly code = INSUFFICIENT_SOL_CODE;
+  constructor(readonly shortfallLamports: bigint) {
+    super(`Not enough SOL: add about ${formatSolShortfall(shortfallLamports)} SOL more to cover network fees and temporary account rent (0.01 SOL must stay in your wallet), then try again.`);
+    this.name = "CompoundInsufficientSolError";
+  }
+}
+
 export function compoundTokenAmount(info: AccountInfo<Buffer> | null, address: string, program: string, wallet: string, mint: string) {
   if (!info) return 0n;
   if (info.owner.toBase58() !== program) throw new Error("Compound token program mismatch");
@@ -70,7 +90,15 @@ export async function simulateAndVerifyCompound(input: CompoundSimulationInput) 
   }
   const solBefore = BigInt(before.get(state.wallet)?.lamports ?? 0);
   const result = await connection.simulateTransaction(transaction, { sigVerify, commitment: "confirmed", minContextSlot: intermediate.slot, accounts: { encoding: "base64", addresses } });
-  if (result.value.err) throw new Error(`Compound simulation failed: ${JSON.stringify(result.value.err)}; ${result.value.logs?.slice(-5).join(" | ") || "no logs"}`);
+  if (result.value.err) {
+    // A wallet too poor to pay rent fails inside the runtime before our balance check can run.
+    const failure = `${JSON.stringify(result.value.err)} ${result.value.logs?.join(" ") ?? ""}`;
+    const needed = maxSolDebitLamports + BigInt(sponsored ? 0 : MIN_SOL_LAMPORTS);
+    if (!sponsored && solBefore < needed && /insufficient (?:lamports|funds)|InsufficientFundsForRent|"Custom":1\b/i.test(failure)) {
+      throw new CompoundInsufficientSolError(needed - solBefore);
+    }
+    throw new Error(`Compound simulation failed: ${JSON.stringify(result.value.err)}; ${result.value.logs?.slice(-5).join(" | ") || "no logs"}`);
+  }
   verifyIntermediateAccounts(intermediate.accounts, addresses, result.value.accounts, wallet);
   const after = new Map(addresses.map((address, index) => {
     const account = result.value.accounts?.[index];
@@ -104,7 +132,10 @@ export async function simulateAndVerifyCompound(input: CompoundSimulationInput) 
   const solDebit = solBefore - BigInt(walletAfter.lamports);
   const refund = priorSources.reduce((sum, source) => sum + BigInt(source.refundLamports), 0n);
   const debitCap = maxSolDebitLamports + walletPriorityFeeAllowance(input.prepared, transaction);
-  if (solDebit < -refund || solDebit > debitCap || walletAfter.lamports < (sponsored ? 0 : MIN_SOL_LAMPORTS)) throw new Error("Compound SOL expenditure or remaining balance exceeds limit");
+  const reserve = BigInt(sponsored ? 0 : MIN_SOL_LAMPORTS);
+  const walletLamports = BigInt(walletAfter.lamports);
+  if (solDebit < -refund || solDebit > debitCap) throw new Error("Compound SOL expenditure or remaining balance exceeds limit");
+  if (walletLamports < reserve) throw new CompoundInsufficientSolError(reserve - walletLamports);
   // Multiple reward vaults may pay the same mint into the same owner ATA.
   // Report that ATA's aggregate credit once, not once per initialized reward.
   const retainedRewards = [...new Map(state.rewards.filter((reward) => !reward.compounded).map((reward) => [reward.mint, reward])).values()];

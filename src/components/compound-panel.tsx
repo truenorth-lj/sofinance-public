@@ -4,6 +4,7 @@ import "@/lib/engine-host";
 import { ArrowUpRight, CircleAlert, LoaderCircle, RefreshCw, Sprout } from "lucide-react";
 import { useState } from "react";
 import { CompoundOverview } from "./compound-overview";
+import { CompoundSubmitDialog } from "./compound-submit-dialog";
 import { useSolUsdcPrices } from "./use-sol-usdc-price";
 import { formatAmount } from "@sofinance/engine/amount";
 import type { CompoundController } from "./use-compound-controller";
@@ -83,6 +84,7 @@ export function CompoundPanel({ controller: c, tokenLabel = short, onConnect }: 
       <span role="status" className="text-xs text-smoke">{c.loading ? "Loading latest yield…" : blockedText}</span>
     </div>
     {showCurrentAttempt && attemptCard}
+    <CompoundSubmitDialog feedback={c.feedback} slow={c.feedbackSlow} onDismiss={c.dismissFeedback} />
     {c.error && <div role="alert" className="mt-4 flex gap-2 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80"><CircleAlert className="mt-0.5 h-4 w-4 shrink-0" /><span>{c.error}</span></div>}
     {!preview && displaySummary && <details className="mt-5 text-xs text-smoke"><summary className="cursor-pointer font-semibold">Previous transaction simulation record</summary><p className="mt-3">Previous transaction estimate; a new compound will re-read yield and simulate. USDC values use current reference prices.</p><CompoundOverview state={displaySummary.state} summary={displaySummary} tokenLabel={tokenLabel} prices={prices} /></details>}
     {c.cleanup && <div role="status" className="mt-5 rounded-2xl border border-white/15 p-4 text-xs leading-6 text-cream/80">
