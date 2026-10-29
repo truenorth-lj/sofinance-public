@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { deployTarget, isSolamiEnabled, SOLAMI_ENABLED, isPoolActivityEnabled, isPoolActivityEnabledInBrowser, POOL_ACTIVITY_ENABLED, isOrcaDiscoveryEnabled, isOrcaPositionsEnabled, isRhcUniv4DiscoveryEnabled, ORCA_DISCOVERY_ENABLED, ORCA_POSITIONS_ENABLED, RHC_UNIV4_DISCOVERY_ENABLED } from "./protocol-flags";
+import { deployTarget, isSolamiEnabled, SOLAMI_ENABLED, isPoolActivityEnabled, isPoolActivityEnabledInBrowser, POOL_ACTIVITY_ENABLED, isOrcaDiscoveryEnabled, isOrcaPositionsEnabled, isRhcUniv4DiscoveryEnabled, isRhcUniv4TxBuildEnabled, ORCA_DISCOVERY_ENABLED, ORCA_POSITIONS_ENABLED, RHC_UNIV4_DISCOVERY_ENABLED, RHC_UNIV4_TX_BUILD_ENABLED } from "./protocol-flags";
 
 describe("ORCA_DISCOVERY_ENABLED", () => {
   it("is a code constant that is OFF in production", () => {
@@ -48,6 +48,12 @@ describe("ORCA_DISCOVERY_ENABLED", () => {
     vi.stubEnv("VERCEL_ENV", "development");
     expect(isPoolActivityEnabledInBrowser()).toBe(true);
     vi.unstubAllEnvs();
+  });
+  it("RHC_UNIV4_TX_BUILD_ENABLED is a frozen code constant that is OFF in production", () => {
+    expect(RHC_UNIV4_TX_BUILD_ENABLED).toEqual({ production: false, preview: true, development: true });
+    expect(Object.isFrozen(RHC_UNIV4_TX_BUILD_ENABLED)).toBe(true);
+    expect(isRhcUniv4TxBuildEnabled("production")).toBe(false);
+    expect(isRhcUniv4TxBuildEnabled("preview")).toBe(true);
   });
   it("treats anything that is not an explicit Vercel preview/development as production", () => {
     for (const env of [undefined, "", "production", "staging", "PREVIEW"]) expect(deployTarget(env)).toBe("production");
