@@ -36,13 +36,25 @@ const GECKO_COOLDOWN_MS = 5 * 60_000;
 
 const cache = new AsyncCache<RhcUniv4PoolsResult>({ ttlMs: STATE_TTL_MS, failureTtlMs: FAILURE_TTL_MS, maxEntries: 1 });
 const marketCache = new AsyncCache<Univ4MarketData | null>({ ttlMs: MARKET_TTL_MS, failureTtlMs: MARKET_FAILURE_TTL_MS, maxEntries: 16 });
+/** Our own GeckoTerminal budget (below its ~5–10/min keyless limit): at most 4 fallback calls per rolling minute. */
+const GECKO_MAX_CALLS_PER_MINUTE = 4;
 let geckoBlockedUntil = 0;
+let geckoCalls: number[] = [];
+
+/** True (and the call is counted) when a GeckoTerminal fallback request fits the budget. */
+export function takeGeckoTerminalSlot(now = Date.now()): boolean {
+  if (now < geckoBlockedUntil) return false;
+  geckoCalls = geckoCalls.filter(t => now - t < 60_000);
+  if (geckoCalls.length >= GECKO_MAX_CALLS_PER_MINUTE) return false;
+  geckoCalls.push(now);
+  return true;
+}
 let stateClient: PublicClient | null = null;
 
 function marketDataFor(fetcher?: typeof fetch) {
   return (spec: Univ4AllowlistedPool) => marketCache.get(spec.poolId.toLowerCase(), () => fetchUniv4MarketData(spec, {
     fetcher,
-    allowFallback: () => Date.now() >= geckoBlockedUntil,
+    allowFallback: () => takeGeckoTerminalSlot(),
     onUpstream: event => { if (event.source === "geckoterminal" && event.outcome === "rate-limited") geckoBlockedUntil = Date.now() + GECKO_COOLDOWN_MS; },
   }));
 }
@@ -72,5 +84,6 @@ export function resetRhcUniv4PoolsCache(): void {
   cache.clear();
   marketCache.clear();
   geckoBlockedUntil = 0;
+  geckoCalls = [];
   stateClient = null;
 }

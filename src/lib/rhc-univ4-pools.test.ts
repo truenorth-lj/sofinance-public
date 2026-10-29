@@ -4,7 +4,7 @@ import dexScreenerCapture from "../../packages/engine/src/fixtures/univ4-rhc-spc
 vi.mock("server-only", () => ({}));
 import { createRhcClients, resetEvmRpcGuards } from "@sofinance/engine/rpc-evm/index";
 import { mockRhcChain, mockRhcTransport } from "@sofinance/engine/test-support/rhc-mock-rpc";
-import { discoverRhcUniv4Pools, resetRhcUniv4PoolsCache } from "./rhc-univ4-pools";
+import { discoverRhcUniv4Pools, resetRhcUniv4PoolsCache, takeGeckoTerminalSlot } from "./rhc-univ4-pools";
 
 beforeEach(() => { resetRhcUniv4PoolsCache(); resetEvmRpcGuards(); });
 
@@ -50,5 +50,15 @@ describe("discoverRhcUniv4Pools (mock Robinhood Chain RPC + DexScreener capture)
     const fetcher = (async () => new Response("busy", { status: 429 })) as unknown as typeof fetch;
     const { pools } = await discoverRhcUniv4Pools({ clients, fetcher, bypassCache: true });
     expect(pools[0]).toMatchObject({ status: "listed", estimatedApr: null });
+  });
+});
+
+describe("GeckoTerminal fallback budget", () => {
+  beforeEach(() => resetRhcUniv4PoolsCache());
+  it("allows at most 4 fallback calls per rolling minute", () => {
+    const t0 = 1_000_000;
+    expect([0, 1, 2, 3, 4].map(i => takeGeckoTerminalSlot(t0 + i))).toEqual([true, true, true, true, false]);
+    expect(takeGeckoTerminalSlot(t0 + 59_999)).toBe(false);
+    expect(takeGeckoTerminalSlot(t0 + 60_001)).toBe(true);
   });
 });

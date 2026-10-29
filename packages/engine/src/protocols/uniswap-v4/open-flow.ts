@@ -3,7 +3,7 @@ import { UNIV4_RHC, type Univ4AllowlistedPool } from "./constants";
 import { ERC20_OPEN_ABI, PERMIT2_ABI } from "./open-abi";
 import { analyseOpenLogs, type OpenContext, type OpenSimAnalysis, quoterFor, readOpenContext, type RpcStateOverrides, simulateCalls, toViemStateOverride } from "./open-chain";
 import {
-  EVM_FEE_RECIPIENT, EVM_FEE_RECIPIENT_IS_PLACEHOLDER, GAS_BUFFER_BPS, MAX_REQUOTE_RETRIES, MAX_UINT256, PINNED_UNIVERSAL_ROUTER, REQUOTE_CONFIRM_MESSAGE,
+  EVM_FEE_RECIPIENT, EVM_FEE_RECIPIENT_IS_PLACEHOLDER, GAS_BUFFER_BPS, LEFTOVER_REFUND_TEMPLATE, MAX_REQUOTE_RETRIES, MAX_UINT256, PINNED_UNIVERSAL_ROUTER, REQUOTE_CONFIRM_MESSAGE,
 } from "./open-constants";
 import { assertOpenRange, type OpenAmounts, OpenPlanError, planOpenAmounts, type QuoteFn } from "./open-quote";
 import { buildOpenExecute, buildPermitSingle, type OpenTxRequest, type PermitSingle, permitTypedData } from "./tx-open-ur";
@@ -55,13 +55,16 @@ export type OpenPlanView = {
   feeRecipientIsPlaceholder: boolean;
 };
 
+/** Refunded share of the deposit (both tokens, valued in the deposit token at the post-swap price). */
+export type LeftoverView = { pctOfDeposit: number; display: string; refund0: string; refund1: string; message: { zh: string; en: string } };
+
 export type SimulationView = { status: "success" | "reverted"; gasUsed: string; revert: string | null; checks: Record<keyof OpenSimAnalysis, string | boolean | string[] | null> | null };
 
 export type TxView = { from: Address; to: Address; data: Hex; value: "0x0"; gasLimit?: string; chainId: 4663 };
 
 export type OpenFlowResult =
-  | { state: "needs_signature"; plan: OpenPlanView; typedData: ReturnType<typeof permitTypedDataJson>; permit: PermitJson; approvalTx: TxView | null; simulation: SimulationView }
-  | { state: "ready" | "confirm_again"; attempt: number; plan: OpenPlanView; tx: TxView; gas: { estimate: string; limit: string }; simulation: SimulationView;
+  | { state: "needs_signature"; plan: OpenPlanView; leftover: LeftoverView; typedData: ReturnType<typeof permitTypedDataJson>; permit: PermitJson; approvalTx: TxView | null; simulation: SimulationView }
+  | { state: "ready" | "confirm_again"; attempt: number; plan: OpenPlanView; leftover: LeftoverView; tx: TxView; gas: { estimate: string; limit: string }; simulation: SimulationView;
       message?: typeof REQUOTE_CONFIRM_MESSAGE }
   | { state: "failed"; code: OpenFailureCode; message: string; attempt?: number };
 
@@ -110,6 +113,27 @@ function simView(status: "success" | "reverted", gasUsed: bigint, revert: string
   const checks = analysis && Object.fromEntries(Object.entries(analysis).map(([k, v]) =>
     [k, typeof v === "bigint" ? v.toString() : Array.isArray(v) ? v.map(String) : v as string | boolean | null])) as SimulationView["checks"];
   return { status, gasUsed: gasUsed.toString(), revert, checks };
+}
+
+const Q192 = 1n << 192n;
+
+/** "<0.01", "0.37", "2.4" — the X in the leftover note. */
+export function formatLeftoverPct(pct: number): string {
+  if (!(pct > 0)) return "0";
+  if (pct < 0.01) return "<0.01";
+  return pct < 1 ? pct.toFixed(2) : pct.toFixed(1);
+}
+
+/** Leftover note from the simulated refund transfers (POSM SWEEPs to the user). */
+export function leftoverRefund(analysis: Pick<OpenSimAnalysis, "refund0" | "refund1">, amounts: Pick<OpenAmounts, "amountIn" | "sqrtPriceAfterX96">, depositIsToken0: boolean): LeftoverView {
+  const sp2 = amounts.sqrtPriceAfterX96 * amounts.sqrtPriceAfterX96;
+  const value = sp2 === 0n ? (depositIsToken0 ? analysis.refund0 : analysis.refund1)
+    : depositIsToken0 ? analysis.refund0 + analysis.refund1 * Q192 / sp2 : analysis.refund1 + analysis.refund0 * sp2 / Q192;
+  const ppm = amounts.amountIn > 0n ? value * 1_000_000n / amounts.amountIn : 0n;
+  const pctOfDeposit = Number(ppm) / 10_000;
+  const display = formatLeftoverPct(pctOfDeposit);
+  return { pctOfDeposit, display, refund0: analysis.refund0.toString(), refund1: analysis.refund1.toString(),
+    message: { zh: LEFTOVER_REFUND_TEMPLATE.zh.replace("{x}", display), en: LEFTOVER_REFUND_TEMPLATE.en.replace("{x}", display) } };
 }
 
 /** Post-simulation invariants: NFT to the user only, fee exactly floor(10 bps × swap output), never on the deposit token. */
@@ -178,7 +202,7 @@ export async function prepareOpen(deps: OpenFlowDeps, req: OpenRequest): Promise
   const analysis = analyseOpenLogs(last.logs, req.pool, req.user, depositIsToken0);
   const problem = simulationProblems(analysis, amounts.kind);
   if (problem) return failed("simulation-check", problem);
-  return { state: "needs_signature", plan: view, typedData: permitTypedDataJson(permit), permit: permitJson(permit),
+  return { state: "needs_signature", plan: view, leftover: leftoverRefund(analysis, amounts, depositIsToken0), typedData: permitTypedDataJson(permit), permit: permitJson(permit),
     approvalTx: approvalTx && txView(approvalTx), simulation: simView("success", last.gasUsed, null, analysis) };
 }
 
@@ -216,7 +240,7 @@ export async function finalizeOpen(deps: OpenFlowDeps, req: OpenRequest & { perm
     estimate = await deps.client.estimateGas({ account: req.user, to: tx.to, data: tx.data, value: 0n, blockTag: "latest", stateOverride: toViemStateOverride(deps.stateOverrides) });
   } catch { return failed("rpc", "Gas estimate failed", req.attempt); }
   const limit = estimate * (10_000n + GAS_BUFFER_BPS) / 10_000n;
-  const base = { attempt: req.attempt, plan: planView(req, ctx, amounts), tx: txView(tx, limit), gas: { estimate: estimate.toString(), limit: limit.toString() },
+  const base = { attempt: req.attempt, plan: planView(req, ctx, amounts), leftover: leftoverRefund(analysis, amounts, depositIsToken0), tx: txView(tx, limit), gas: { estimate: estimate.toString(), limit: limit.toString() },
     simulation: simView("success", sim!.gasUsed, null, analysis) };
   return req.attempt === 0 ? { state: "ready", ...base } : { state: "confirm_again", ...base, message: REQUOTE_CONFIRM_MESSAGE };
 }
