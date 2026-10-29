@@ -1,0 +1,40 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`parseOrcaPool > parses the captured Orca API v2 pool (golden) 1`] = `
+{
+  "adaptiveFeeEnabled": false,
+  "decimalsA": 8,
+  "decimalsB": 8,
+  "feeRate": 0.0001,
+  "feeTierBps": 1,
+  "fees24hUsd": 207.3769011264072,
+  "fees7dUsd": 1059.6513660238572,
+  "lpFees24hUsd": 180.41790397997426,
+  "mintA": "cbbtcf3aa214zXHbiAZQwf4122FBYbraNdFqgw4iMij",
+  "mintB": "3NZ9JMVBmGAqocybic2c7LQCJScmgsAZ6vQqTDzcqmJh",
+  "nameA": "Coinbase Wrapped BTC",
+  "nameB": "Wrapped BTC (Wormhole)",
+  "poolAddress": "4v8ufj8Hj7UvFgtofQJAtzUud5xomwZfEqfCTHZ4wM72",
+  "price": 1.0016113942344946,
+  "programA": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+  "programB": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+  "protocolFeeShare": 0.13,
+  "spec": {
+    "baseSymbol": "BTC",
+    "mintA": "cbbtcf3aa214zXHbiAZQwf4122FBYbraNdFqgw4iMij",
+    "mintB": "3NZ9JMVBmGAqocybic2c7LQCJScmgsAZ6vQqTDzcqmJh",
+    "plainSymbol": "WBTC",
+    "poolAddress": "4v8ufj8Hj7UvFgtofQJAtzUud5xomwZfEqfCTHZ4wM72",
+    "wrappedSymbol": "cbBTC",
+  },
+  "symbolA": "cbBTC",
+  "symbolB": "WBTC",
+  "tagsA": [],
+  "tagsB": [],
+  "tickSpacing": 1,
+  "tvlUsd": 1263790.7035452,
+  "updatedAt": "2026-10-29T04:35:12.511506Z",
+  "volume24hUsd": 2028277.76840673,
+  "volume7dUsd": 10392593.205572,
+}
+`;

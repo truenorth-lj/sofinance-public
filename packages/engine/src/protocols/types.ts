@@ -18,6 +18,14 @@ export type ProtocolId = (typeof PROTOCOL_IDS)[number];
 export const DEFAULT_PROTOCOL: ProtocolId = "raydium-clmm";
 
 /**
+ * Protocols whose pools can be listed (read-only discovery). A superset of
+ * PROTOCOL_IDS: Orca pools are discoverable before Orca can build
+ * transactions, and `getProtocolAdapter` only accepts a `ProtocolId`.
+ */
+export const POOL_PROTOCOL_IDS = ["raydium-clmm", "orca-whirlpool"] as const;
+export type PoolProtocolId = (typeof POOL_PROTOCOL_IDS)[number];
+
+/**
  * One protocol's open / add / compound / exit / read surface.
  *
  * The SoFinance swap fee is deliberately NOT part of this contract: fees are
