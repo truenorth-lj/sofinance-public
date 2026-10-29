@@ -38,6 +38,8 @@ import { matchWrapPairShape } from "./rwa-pairing";
 
 export const ORCA_PROTOCOL = "orca-whirlpool" as const;
 export const ORCA_NOT_SHOWN = "This Orca position was not opened through SoFinance; it is not shown yet.";
+/** Configuration error, not a provenance verdict: without the open log no Orca position can be shown (fails closed). */
+export const ORCA_OPENS_DB_MISSING = "Orca positions are unavailable: the SoFinance open log database is not configured on this deployment.";
 const PROVENANCE_PAGE = 1000;
 const PROVENANCE_MAX_PAGES = 5;
 const LIST_MAX_OPENS = 50;
@@ -146,7 +148,9 @@ export async function readShownOrcaPosition(positionMint: string, options: OrcaR
   const connection = options.connection ?? rpcConnection();
   const snapshot = await readOrcaPositionSnapshot(positionMint, connection);
   if (!snapshot) return null;
-  const provenance = await orcaPositionProvenance(snapshot, { connection, sql: options.sql });
+  const sql = opensSql(options.sql);
+  if (!sql) throw new Error(ORCA_OPENS_DB_MISSING);
+  const provenance = await orcaPositionProvenance(snapshot, { connection, sql });
   if (!provenance) throw new Error(ORCA_NOT_SHOWN);
   return { snapshot, provenance, connection };
 }
@@ -192,10 +196,11 @@ export type OrcaListedPosition = {
   liquidity: string;
 };
 
-/** Orca positions the wallet opened through SoFinance in allowlisted pools and still holds. */
+/** Orca positions the wallet opened through SoFinance in allowlisted pools and still holds. Throws ORCA_OPENS_DB_MISSING without the open log. */
 export async function listOrcaPositions(wallet: string, options: OrcaReadOptions = {}): Promise<OrcaListedPosition[]> {
   const sql = opensSql(options.sql);
-  if (!sql) return [];
+  // Surfaced by list_positions as a protocolErrors entry instead of a silent empty list.
+  if (!sql) throw new Error(ORCA_OPENS_DB_MISSING);
   const owner = new PublicKey(wallet).toBase58();
   const connection = options.connection ?? rpcConnection();
   const rows = await sql.unsafe(

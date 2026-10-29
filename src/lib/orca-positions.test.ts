@@ -12,7 +12,7 @@ vi.mock("./position-performance-history", async (importOriginal) => ({
 
 const { fetchPositionHistoryTransactions } = await import("./position-performance-history");
 const {
-  getOrcaPositionPerformance, listOrcaPositions, ORCA_NOT_SHOWN, readOrcaPositionRangeFacts, readShownOrcaPosition,
+  getOrcaPositionPerformance, listOrcaPositions, ORCA_NOT_SHOWN, ORCA_OPENS_DB_MISSING, readOrcaPositionRangeFacts, readShownOrcaPosition,
 } = await import("./orca-positions");
 
 const WHIRLPOOL = "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc";
@@ -85,8 +85,20 @@ describe("Orca position reads (shown only when opened through SoFinance)", () =>
     expect(connection.getSignaturesForAddress).not.toHaveBeenCalled();
   });
 
-  it("hides positions without a SoFinance open: no opens database, no row, or a row for another transaction", async () => {
-    for (const sql of [null, opensRows([])]) {
+  it("reports a missing opens database as a configuration error, still hiding the position", async () => {
+    const connection = fakeConnection(store, signaturesFor(BELOW, "sig-open-below"));
+    await expect(readShownOrcaPosition(mintOf(BELOW), { connection, sql: null })).rejects.toThrow(ORCA_OPENS_DB_MISSING);
+    await expect(readOrcaPositionRangeFacts(mintOf(BELOW), { connection, sql: null })).rejects.toThrow(ORCA_OPENS_DB_MISSING);
+    await expect(getOrcaPositionPerformance(mintOf(BELOW), { connection, sql: null })).rejects.toThrow(ORCA_OPENS_DB_MISSING);
+    expect(connection.getSignaturesForAddress).not.toHaveBeenCalled();
+    // A non-Orca mint still falls through to Raydium without needing the database.
+    await expect(readShownOrcaPosition(new PublicKey(Buffer.alloc(32, 7)).toBase58(), { connection, sql: null })).resolves.toBeNull();
+    await expect(listOrcaPositions(OWNER, { connection, sql: null })).rejects.toThrow(ORCA_OPENS_DB_MISSING);
+    expect(ORCA_OPENS_DB_MISSING).not.toBe(ORCA_NOT_SHOWN);
+  });
+
+  it("hides positions without a SoFinance open: no row, or a row for another transaction", async () => {
+    for (const sql of [opensRows([])]) {
       await expect(readShownOrcaPosition(mintOf(BELOW), { connection: fakeConnection(store, signaturesFor(BELOW, "sig-open-below")), sql }))
         .rejects.toThrow(ORCA_NOT_SHOWN);
     }
@@ -131,7 +143,6 @@ describe("Orca position reads (shown only when opened through SoFinance)", () =>
     // A logged signature that is not the position's first transaction is not its open.
     const notOpen = fakeConnection(store, signaturesFor(BELOW, "sig-something-else"));
     await expect(listOrcaPositions(OWNER, { connection: notOpen, sql })).resolves.toEqual([]);
-    await expect(listOrcaPositions(OWNER, { connection, sql: null })).resolves.toEqual([]);
   });
 
   it("computes performance from the parsed receipts and live state", async () => {
