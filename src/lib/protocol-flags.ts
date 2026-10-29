@@ -90,3 +90,33 @@ export const RHC_UNIV4_TX_BUILD_ENABLED: Readonly<Record<DeployTarget, boolean>>
 export function isRhcUniv4TxBuildEnabled(target: DeployTarget = deployTarget()): boolean {
   return RHC_UNIV4_TX_BUILD_ENABLED[target];
 }
+
+/**
+ * Uniswap v4 on Robinhood Chain: the open-position page and EVM wallet flow (`/app/rhc`,
+ * design §6 PR5): MetaMask connect, chain 4663 add/switch, Permit2 approve → sign → execute
+ * UX and the open preview. OFF in production, same targets as above.
+ */
+export const RHC_UNIV4_TRADING_ENABLED: Readonly<Record<DeployTarget, boolean>> = Object.freeze({
+  production: false,
+  preview: true,
+  development: true,
+});
+
+export function isRhcUniv4TradingEnabled(target: DeployTarget = deployTarget()): boolean {
+  return RHC_UNIV4_TRADING_ENABLED[target];
+}
+
+/**
+ * Real wallet requests that sign or send on Robinhood Chain (`approve(Permit2)`, the Permit2
+ * signature, `execute`). OFF EVERYWHERE until PR6, which needs PM approval, LJ's funded EVM test
+ * wallet and the EVM fee wallet address. The buttons are wired but stay disabled while this is off.
+ */
+export const RHC_UNIV4_WALLET_SIGNING_ENABLED: Readonly<Record<DeployTarget, boolean>> = Object.freeze({
+  production: false,
+  preview: false,
+  development: false,
+});
+
+export function isRhcUniv4WalletSigningEnabled(target: DeployTarget = deployTarget()): boolean {
+  return RHC_UNIV4_WALLET_SIGNING_ENABLED[target];
+}

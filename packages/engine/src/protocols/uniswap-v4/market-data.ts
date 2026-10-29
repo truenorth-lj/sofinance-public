@@ -121,9 +121,14 @@ export async function fetchUniv4MarketData(spec: Univ4AllowlistedPool, options: 
 /** UI/API label every displayed APR must carry (PM, 2026-10-29). */
 export const ESTIMATED_APR_LABEL = { zh: "估計", en: "Estimated" } as const;
 
+/** Shown next to the APR only when GeckoTerminal data is displayed (their terms); DexScreener needs none (PM, 2026-10-29). */
+export const GECKOTERMINAL_ATTRIBUTION = Object.freeze({ text: "Data: GeckoTerminal", url: "https://www.geckoterminal.com" });
+
 export type Univ4PoolApr = {
   /** Always true: an estimate from 24h indexer volume, never a guarantee. */
   estimated: true;
+  /** Non-null only when the numbers came from GeckoTerminal (the fallback). */
+  attribution: typeof GECKOTERMINAL_ATTRIBUTION | null;
   label: typeof ESTIMATED_APR_LABEL;
   basis: "24h-volume";
   source: Univ4MarketSource;
@@ -140,7 +145,8 @@ export type Univ4PoolApr = {
 export function poolAprFromMarket(market: Univ4MarketData, feePips: { zeroForOne: number; oneForZero: number }): Univ4PoolApr {
   const feeRate = (feePips.zeroForOne + feePips.oneForZero) / 2 / 1_000_000;
   return {
-    estimated: true, label: ESTIMATED_APR_LABEL, basis: "24h-volume", source: market.source, feeRatePct: feeRate * 100,
+    estimated: true, attribution: market.source === "geckoterminal" ? GECKOTERMINAL_ATTRIBUTION : null,
+    label: ESTIMATED_APR_LABEL, basis: "24h-volume", source: market.source, feeRatePct: feeRate * 100,
     volume24hUsd: market.volume24hUsd, tvlUsd: market.tvlUsd, txns24h: market.txns24h,
     estimatedPoolFeeAprPct: market.tvlUsd > 0 ? (feeRate * market.volume24hUsd / market.tvlUsd) * 365 * 100 : null,
   };

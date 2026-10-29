@@ -56,3 +56,12 @@ export const MAX_UINT256 = (1n << 256n) - 1n;
 export const UR_ADDRESS_THIS: Address = "0x0000000000000000000000000000000000000002";
 /** v4 ActionConstants.OPEN_DELTA (amountIn = 0 → use the full open credit). */
 export const OPEN_DELTA = 0n;
+
+/**
+ * Open preview note for the part of the deposit that does not fit the range (PM, 2026-10-29). `{x}` = percent of
+ * the deposit refunded in the same transaction, from the simulation's actual refund transfers.
+ */
+export const LEFTOVER_REFUND_TEMPLATE = Object.freeze({
+  zh: "約 {x}% 無法放進區間，會在同一筆交易退回你的錢包",
+  en: "About {x}% won't fit in the range and is returned to your wallet in the same transaction",
+});

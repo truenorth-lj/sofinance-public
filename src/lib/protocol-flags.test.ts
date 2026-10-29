@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { deployTarget, isSolamiEnabled, SOLAMI_ENABLED, isOrcaDiscoveryEnabled, isOrcaPositionsEnabled, isRhcUniv4DiscoveryEnabled, isRhcUniv4TxBuildEnabled, ORCA_DISCOVERY_ENABLED, ORCA_POSITIONS_ENABLED, RHC_UNIV4_DISCOVERY_ENABLED, RHC_UNIV4_TX_BUILD_ENABLED } from "./protocol-flags";
+import { deployTarget, isSolamiEnabled, SOLAMI_ENABLED, isOrcaDiscoveryEnabled, isOrcaPositionsEnabled, isRhcUniv4DiscoveryEnabled, isRhcUniv4TxBuildEnabled, ORCA_DISCOVERY_ENABLED, ORCA_POSITIONS_ENABLED, RHC_UNIV4_DISCOVERY_ENABLED, RHC_UNIV4_TX_BUILD_ENABLED, isRhcUniv4TradingEnabled, RHC_UNIV4_TRADING_ENABLED, isRhcUniv4WalletSigningEnabled, RHC_UNIV4_WALLET_SIGNING_ENABLED } from "./protocol-flags";
 
 describe("ORCA_DISCOVERY_ENABLED", () => {
   it("is a code constant that is OFF in production", () => {
@@ -34,6 +34,17 @@ describe("ORCA_DISCOVERY_ENABLED", () => {
     expect(Object.isFrozen(RHC_UNIV4_TX_BUILD_ENABLED)).toBe(true);
     expect(isRhcUniv4TxBuildEnabled("production")).toBe(false);
     expect(isRhcUniv4TxBuildEnabled("preview")).toBe(true);
+  });
+  it("RHC_UNIV4_TRADING_ENABLED is a frozen code constant that is OFF in production", () => {
+    expect(RHC_UNIV4_TRADING_ENABLED).toEqual({ production: false, preview: true, development: true });
+    expect(Object.isFrozen(RHC_UNIV4_TRADING_ENABLED)).toBe(true);
+    expect(isRhcUniv4TradingEnabled("production")).toBe(false);
+    expect(isRhcUniv4TradingEnabled("preview")).toBe(true);
+  });
+  it("RHC_UNIV4_WALLET_SIGNING_ENABLED is OFF on every target until PR6", () => {
+    expect(RHC_UNIV4_WALLET_SIGNING_ENABLED).toEqual({ production: false, preview: false, development: false });
+    expect(Object.isFrozen(RHC_UNIV4_WALLET_SIGNING_ENABLED)).toBe(true);
+    for (const t of ["production", "preview", "development"] as const) expect(isRhcUniv4WalletSigningEnabled(t)).toBe(false);
   });
   it("treats anything that is not an explicit Vercel preview/development as production", () => {
     for (const env of [undefined, "", "production", "staging", "PREVIEW"]) expect(deployTarget(env)).toBe("production");

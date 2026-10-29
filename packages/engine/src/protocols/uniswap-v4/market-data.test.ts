@@ -68,4 +68,11 @@ describe("uniswap-v4-rhc market data (DexScreener / GeckoTerminal captures, 2026
     expect(apr.estimatedPoolFeeAprPct).toBeCloseTo(0.00005 * 0.5 * 365 * 100, 9);
     expect(poolAprFromMarket({ source: "dexscreener", volume24hUsd: 1, tvlUsd: 0, txns24h: null, reserves: null }, { zeroForOne: 50, oneForZero: 50 }).estimatedPoolFeeAprPct).toBeNull();
   });
+
+  it("attribution only when GeckoTerminal data is shown (PM, 2026-10-29)", () => {
+    const fee = { zeroForOne: 50, oneForZero: 50 };
+    expect(poolAprFromMarket({ source: "dexscreener", volume24hUsd: 1, tvlUsd: 1, txns24h: null, reserves: null }, fee).attribution).toBeNull();
+    expect(poolAprFromMarket({ source: "geckoterminal", volume24hUsd: 1, tvlUsd: 1, txns24h: null, reserves: null }, fee).attribution)
+      .toEqual({ text: "Data: GeckoTerminal", url: "https://www.geckoterminal.com" });
+  });
 });
