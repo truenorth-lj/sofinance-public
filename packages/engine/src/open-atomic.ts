@@ -127,7 +127,7 @@ async function buildOpenPositionAttempt(
   if (legs.length !== (quote.rangeSide === "inside" ? 2 : 1) || legs.some((item) =>
     ![state.mintA, state.mintB].includes(item.outputMint) ||
     item.route && (item.route.inputMint !== item.inputMint || item.route.outputMint !== item.outputMint ||
-      BigInt(item.route.inAmount) !== item.spend - (item.feeAmount ?? 0n)))) {
+      BigInt(item.route.inAmount) !== item.spend - (item.feeInRoute ? 0n : item.feeAmount ?? 0n)))) {
     throw new Error("Swap route does not match selected assets or pool");
   }
   if (strategy !== "parallel" && quote.rangeSide === "inside" && ![state.mintA, state.mintB].includes(state.inputMint)) {
@@ -217,16 +217,20 @@ async function buildOpenPositionAttempt(
   const routeTables = await resources.readTables(routes.flatMap((route) =>
     Object.keys(route.addressesByLookupTableAddress || {}).map((key) => new PublicKey(key))));
   validateRouteTables(routes, routeTables);
-  // Wrap the full native SOL input once, then TransferChecked the protocol fee
-  // from the user's wSOL ATA. Jupiter routes are built without wrap/close.
+  // Wrap the full native SOL input once into the user's own wSOL ATA. Jupiter
+  // routes are built without wrap/close and debit each leg from it; the native
+  // SOL protocol fee is Jupiter's input-mint platform fee inside those swaps
+  // (paid into the pre-created fee wSOL ATA), never our own transfer.
   const wrapInstructions = nativeAta ? wrapNativeSolInstructions(wallet, BigInt(quote.requested)) : [];
   if (protocolFee > 0n && state.inputKind === "token" && (!state.inputAccount || !state.inputTokenProgram)) {
     throw new Error("Protocol fee requires the selected input token account");
   }
-  const feeInstructions = feeConfig.wallet && protocolFee > 0n
-    ? await collectInputAssetFee(connection, state.inputKind === "native"
-      ? { payer, owner: wallet, recipient: feeConfig.wallet, amount: protocolFee, kind: "native" }
-      : {
+  if (state.inputKind === "native" && protocolFee > 0n &&
+    legs.some(item => item.inputMint === state.inputMint && item.feeAmount > 0n && !item.feeInRoute)) {
+    throw new Error("Native SOL protocol fee must be collected inside the Jupiter swap");
+  }
+  const feeInstructions = feeConfig.wallet && protocolFee > 0n && state.inputKind === "token"
+    ? await collectInputAssetFee(connection, {
         payer, owner: wallet, recipient: feeConfig.wallet, amount: protocolFee, kind: "token",
         mint: new PublicKey(state.inputMint), source: new PublicKey(state.inputAccount!),
         decimals: state.inputDecimals, program: new PublicKey(state.inputTokenProgram!),

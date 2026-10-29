@@ -6,14 +6,15 @@
 /**
  * Native SOL as the input asset when opening a new position.
  *
- * Temporarily `false` (2026-10-29): Phantom currently shows "Request blocked"
- * (malicious) for every open whose input is native SOL, while opens funded with
- * other tokens (e.g. SPCX, USDC) preview normally. Until the SOL → wSOL open
- * transaction is fixed, the open picker shows SOL as unavailable and the open
- * quote/prepare paths (app API and MCP) refuse native SOL input.
+ * Re-enabled (2026-10-29) after the native SOL protocol fee moved inside the
+ * Jupiter swap (`platformFeeBps` into the fee wallet's pre-created wSOL ATA).
+ * It was briefly `false` because Phantom showed "Request blocked" for opens
+ * whose own instruction transferred SOL/wSOL straight to the fee wallet.
  *
- * To restore SOL input, flip this to `true`. Nothing else needs to change.
+ * Set to `false` to switch SOL input off again: the open picker then shows SOL
+ * as unavailable and the open quote/prepare paths (app API and MCP) refuse
+ * native SOL input. Nothing else needs to change.
  */
-export const SOL_INPUT_ENABLED = false;
+export const SOL_INPUT_ENABLED = true;
 
 export const SOL_INPUT_DISABLED_MESSAGE = "SOL deposits are temporarily unavailable — please use another token.";

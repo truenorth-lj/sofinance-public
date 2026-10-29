@@ -108,12 +108,7 @@ function oversized(bundle: Awaited<ReturnType<typeof getOpenPositionQuoteBundle>
   return bundle;
 }
 
-it("wraps the full native SOL input then TransferChecked 10 bps, never SystemProgram.transfer to the fee wallet", async () => {
-  const recipient = Keypair.fromSeed(new Uint8Array(32).fill(9)).publicKey;
-  vi.stubEnv("SOFINANCE_FEE_WALLET", recipient.toBase58());
-  vi.stubEnv("SOFINANCE_FEE_BPS", "10");
-  const feeAmount = 30_000n;
-  const requested = 30_000_000n;
+function nativeFeeBundle(recipient: PublicKey, feeAmount: bigint, feeInRoute: boolean) {
   const quoteBundle = vi.mocked(getOpenPositionQuoteBundle).getMockImplementation()!;
   vi.mocked(getOpenPositionQuoteBundle).mockImplementation(async (...args) => {
     const bundle = await quoteBundle(...args);
@@ -122,23 +117,22 @@ it("wraps the full native SOL input then TransferChecked 10 bps, never SystemPro
     bundle.quote.feeWallet = recipient.toBase58();
     const leg = bundle.legs.find(item => item.inputMint === inputMint) ?? bundle.legs[0]!;
     leg.feeAmount = feeAmount;
-    if (leg.route) leg.route.inAmount = (leg.spend - feeAmount).toString();
+    leg.feeInRoute = feeInRoute;
+    // Jupiter's input-mint platform fee: the route spends the gross leg amount.
+    if (leg.route) leg.route.inAmount = (feeInRoute ? leg.spend : leg.spend - feeAmount).toString();
     for (const item of bundle.legs) {
       if (item.route) item.route.swapInstruction.data = Buffer.from([1]).toString("base64");
     }
     return bundle;
   });
-  const mintData = Buffer.alloc(82); mintData[44] = 9; mintData[45] = 1;
-  const previous = vi.mocked(rpcConnection)();
-  vi.mocked(rpcConnection).mockReturnValue({
-    ...previous,
-    getAccountInfo: vi.fn(async () => null),
-    getMinimumBalanceForRentExemption: vi.fn(async () => 2_039_280),
-    getMultipleAccountsInfo: vi.fn(async (keys: PublicKey[]) => keys.map(key =>
-      key.toBase58() === NATIVE_SOL_MINT
-        ? { owner: TOKEN_PROGRAM_ID, data: mintData, lamports: 1_461_600, executable: false, rentEpoch: 0 }
-        : null)),
-  } as never);
+}
+
+it("wraps the full native SOL input and leaves the 10 bps fee to the Jupiter swap: no transfer or ATA create for the fee wallet", async () => {
+  const recipient = Keypair.fromSeed(new Uint8Array(32).fill(9)).publicKey;
+  vi.stubEnv("SOFINANCE_FEE_WALLET", recipient.toBase58());
+  vi.stubEnv("SOFINANCE_FEE_BPS", "10");
+  const requested = 30_000_000n;
+  nativeFeeBundle(recipient, 30_000n, true);
   const { transaction } = await prepare();
   const compiled = transaction.message.compiledInstructions.map(ix => ({
     program: transaction.message.staticAccountKeys[ix.programIdIndex]!,
@@ -149,19 +143,19 @@ it("wraps the full native SOL input then TransferChecked 10 bps, never SystemPro
   const userWsol = nativeSolOwnerAta(walletKey);
   const feeAta = swapFeeRecipientAta(recipient, new PublicKey(NATIVE_SOL_MINT), TOKEN_PROGRAM_ID);
   expect(compiled.some(ix => ix.program.equals(SystemProgram.programId) && ix.keys[1]?.equals(recipient))).toBe(false);
+  expect(compiled.some(ix => ix.program.equals(ASSOCIATED_TOKEN_PROGRAM_ID) && ix.keys[2]?.equals(recipient))).toBe(false);
+  expect(compiled.some(ix => ix.program.equals(TOKEN_PROGRAM_ID) && ix.keys.some(key => key.equals(feeAta)))).toBe(false);
   const wrap = compiled.find(ix => ix.program.equals(SystemProgram.programId) && ix.keys[1]?.equals(userWsol));
   expect(wrap?.data.readBigUInt64LE(4)).toBe(requested);
-  const feeCreate = compiled.find(ix => ix.program.equals(ASSOCIATED_TOKEN_PROGRAM_ID) && ix.keys[2]?.equals(recipient));
-  expect(feeCreate?.data[0]).toBe(1);
-  expect(feeCreate?.keys[0]?.equals(walletKey)).toBe(true);
-  const feeTransfer = compiled.find(ix => ix.program.equals(TOKEN_PROGRAM_ID) && ix.data[0] === 12
-    && (ix.keys[2]?.equals(feeAta) || ix.keys.some(key => key.equals(feeAta))));
-  expect(feeTransfer?.data.readBigUInt64LE(1)).toBe(feeAmount);
-  const wrapIndex = compiled.findIndex(ix => ix === wrap);
-  const feeIndex = compiled.findIndex(ix => ix === feeTransfer);
-  expect(wrapIndex).toBeGreaterThan(0);
-  expect(feeIndex).toBeGreaterThan(wrapIndex);
   expect(walletReturnedTransactionMatches(transaction, transaction, wallet)).toBe(true);
+});
+
+it("refuses a native SOL fee that is not carried by the Jupiter swap", async () => {
+  const recipient = Keypair.fromSeed(new Uint8Array(32).fill(9)).publicKey;
+  vi.stubEnv("SOFINANCE_FEE_WALLET", recipient.toBase58());
+  vi.stubEnv("SOFINANCE_FEE_BPS", "10");
+  nativeFeeBundle(recipient, 30_000n, false);
+  await expect(prepare()).rejects.toThrow("Native SOL protocol fee must be collected inside the Jupiter swap");
 });
 
 it("prepares the compact captured sequential transaction first", async () => {

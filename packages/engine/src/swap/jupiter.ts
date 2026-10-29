@@ -6,8 +6,8 @@ import { JUPITER_MAX_ACCOUNTS, type JupiterRouteConstraints } from "../jupiter-r
 import { getJupiterApiKey } from "../config/server-env";
 import { PublicKey } from "@solana/web3.js";
 import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
-import { USDC_MINT } from "../ids";
-import { feeAccountSetup } from "./collection";
+import { NATIVE_SOL_MINT, USDC_MINT } from "../ids";
+import { feeAccountSetup, requireSwapFeeAccount } from "./collection";
 import { rpcConnection } from "../rpc";
 import { assertPlatformFeeQuote, readSwapFeeConfig, swapFeeRecipientAta } from "./fee";
 import { jupiterQuote, jupiterSwapInstructions } from "./client";
@@ -63,6 +63,11 @@ export async function buildRoute(
   platformFeeBps = 0,
   maxPriceImpactBps = MAX_PRICE_IMPACT_BPS,
   quoted?: QuoteRoute,
+  /** Mint of the fee wallet ATA that receives `platformFeeBps`. USDC (default)
+   * is created in-transaction when missing; native SOL input charges the fee in
+   * the input mint (wSOL) into the operator's pre-created ATA and fails closed
+   * when it is missing. */
+  feeMint: string = USDC_MINT,
 ): Promise<BuildRoute> {
   const key = getJupiterApiKey();
   if (!key && !jupiterRelayActive() && engineEnv().E2E_KEYLESS_JUPITER !== "1") throw new Error("Server-side JUPITER_API_KEY not set, cannot obtain real-time quotes");
@@ -71,13 +76,22 @@ export async function buildRoute(
   if (!Number.isInteger(resolved.maxAccounts) || resolved.maxAccounts < 1 || resolved.maxAccounts > 64) {
     throw new Error("Invalid Jupiter route account budget");
   }
+  const nativeInputFee = Boolean(platformFeeBps) && feeMint === NATIVE_SOL_MINT;
+  if (platformFeeBps && feeMint !== USDC_MINT && !(nativeInputFee && inputMint === NATIVE_SOL_MINT)) {
+    throw new Error("Unsupported protocol fee mint for this route");
+  }
+  const feeAccount = platformFeeBps
+    ? nativeInputFee
+      ? (await requireSwapFeeAccount(rpcConnection(), readSwapFeeConfig().wallet!)).toBase58()
+      : swapFeeRecipientAta(readSwapFeeConfig().wallet!, new PublicKey(USDC_MINT), TOKEN_PROGRAM_ID).toBase58()
+    : null;
   let route: BuildRoute;
   try {
     // Without a caller-supplied quote (one the caller just validated in this
     // request), the route that gets built and signed is quoted fresh.
     const quote = quoted ?? await quoteRoute(inputMint, outputMint, amount, resolved, signal, budget, platformFeeBps, maxPriceImpactBps, false);
     const instructions = await jupiterSwapInstructions<BuildRoute & { addressLookupTableAddresses: string[] }>({
-      ...(platformFeeBps ? { feeAccount: swapFeeRecipientAta(readSwapFeeConfig().wallet!, new PublicKey(USDC_MINT), TOKEN_PROGRAM_ID).toBase58() } : {}),
+      ...(feeAccount ? { feeAccount } : {}),
       destinationTokenAccount, userPublicKey: wallet, quoteResponse: quote, wrapAndUnwrapSol: wrapAndUnwrapSol ?? false,
       useSharedAccounts: false, dynamicComputeUnitLimit: false, prioritizationFeeLamports: 0,
     }, { apiKey: key, budget,
@@ -94,7 +108,12 @@ export async function buildRoute(
   if (!acceptableReportedPriceImpact(route.priceImpactPct, maxPriceImpactBps)) throw new Error(`Swap price impact invalid or exceeds ${MAX_PRICE_IMPACT_BPS / 100}% limit`);
   if (route.tipInstruction) throw new Error("Route contains unexpected SOL tip");
   assertAllowedSwapPrograms(route);
-  if (platformFeeBps) {
+  // Cheap sanity check (not anti-tampering): the input-mint fee must be paid by
+  // the swap instruction itself into the pre-created wSOL fee account.
+  if (nativeInputFee && !route.swapInstruction.accounts.some(key => key.pubkey === feeAccount && key.isWritable)) {
+    throw new Error("Jupiter swap does not pay the protocol fee account");
+  }
+  if (platformFeeBps && !nativeInputFee) {
     const setup = await feeAccountSetup(rpcConnection(), new PublicKey(wallet), readSwapFeeConfig().wallet!);
     route.setupInstructions.unshift(...setup.instructions.map(ix => ({ programId: ix.programId.toBase58(),
       accounts: ix.keys.map(key => ({ pubkey: key.pubkey.toBase58(), isSigner: key.isSigner, isWritable: key.isWritable })), data: ix.data.toString("base64") })));

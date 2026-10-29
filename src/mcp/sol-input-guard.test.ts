@@ -1,7 +1,12 @@
 // MCP open tools (and so /sign links) refuse native SOL while SOL_INPUT_ENABLED is false.
+// The shipped flag is on; this suite pins it off to keep the switch covered.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 const backend = vi.hoisted(() => ({ openQuote: vi.fn(), openBuild: vi.fn() }));
 vi.mock("server-only", () => ({}));
+vi.mock("@/lib/feature-flags", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/feature-flags")>(),
+  SOL_INPUT_ENABLED: false,
+}));
 vi.mock("@sofinance/engine/open-quote", () => ({ getOpenPositionQuoteBundle: backend.openQuote }));
 vi.mock("@sofinance/engine/open-atomic", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@sofinance/engine/open-atomic")>()),

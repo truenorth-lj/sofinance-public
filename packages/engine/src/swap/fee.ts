@@ -86,14 +86,20 @@ export function swapFeeRecipientAta(recipient: PublicKey, mint: PublicKey, progr
   return getAssociatedTokenAddressSync(mint, recipient, true, program);
 }
 
+/** Native SOL fees are never a separate transfer: they are collected inside the
+ * Jupiter swap (`platformFeeBps` + the fee wallet's pre-created wSOL ATA as
+ * `feeAccount`). A direct SOL/wSOL transfer to the fee wallet is what Phantom
+ * flags as malicious, so this refuses to build one. */
+export class NativeSolFeeTransferError extends Error {
+  constructor() {
+    super("Native SOL protocol fee must be collected inside the Jupiter swap, not by a direct transfer");
+    this.name = "NativeSolFeeTransferError";
+  }
+}
+
 export function swapFeeTransferInstructions(input: SwapFeeTransferInput): TransactionInstruction[] {
   if (input.amount <= 0n) return [];
-  if (input.kind === "native") {
-    const mint = new PublicKey(NATIVE_SOL_MINT);
-    return swapFeeTransferInstructions({
-      ...input, kind: "token", mint, source: nativeSolOwnerAta(input.owner), decimals: 9, program: TOKEN_PROGRAM_ID,
-    });
-  }
+  if (input.kind === "native") throw new NativeSolFeeTransferError();
   const ata = swapFeeRecipientAta(input.recipient, input.mint, input.program);
   return [
     createTransferCheckedInstruction(

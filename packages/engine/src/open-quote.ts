@@ -10,7 +10,7 @@ import { type BuildRoute } from "./swap/jupiter";
 import { jupiterRelayHint, setJupiterRelayHint } from "./jupiter/client";
 import { estimateOpenPositionRent } from "./open-rent";
 import { resolveOpenRange, type OpenRangeInput } from "./open-range";
-import { depositFeePlan, feeSwapLeg, readSwapFeeConfig, type SwapFeeConfig } from "./swap";
+import { assertNativeInputFeeCoverage, depositFeePlan, feeSwapLeg, readSwapFeeConfig, type SwapFeeConfig } from "./swap";
 import { rpcConnection } from "./rpc";
 import { readOpenPoolState, type OpenPoolState, type OpenPositionSelection } from "./open-state";
 import type { OpenPositionQuote } from "./open-types";
@@ -24,6 +24,8 @@ export type OpenSwapLeg = {
   outputMint: string;
   spend: bigint;
   feeAmount: bigint;
+  /** Fee is Jupiter's input-mint platform fee inside `route` (native SOL input). */
+  feeInRoute?: boolean;
   minOut: bigint;
   route: BuildRoute | null;
 };
@@ -118,10 +120,10 @@ export async function getOpenPositionQuoteBundle(
   // Sizing rounds are quote-only; the converged legs are built once at the end
   // from the very quotes that sized them.
   const depositLeg: typeof leg = (wallet, inputMint, outputMint, spend, constraints, feeBps = 0) =>
-    feeSwapLeg({ wallet, inputMint, outputMint, spend, constraints, feeBps, ownPool: state, build: false }) as Promise<OpenSwapLeg>;
+    feeSwapLeg({ wallet, inputMint, outputMint, spend, constraints, feeBps, ownPool: state, build: false, inputFee: deposit.inputFee }) as Promise<OpenSwapLeg>;
   const builtLeg = async (sized: OpenSwapLeg, feeBps: number) => !build || !sized.route ? sized : {
     ...(await feeSwapLeg({ wallet, inputMint: sized.inputMint, outputMint: sized.outputMint, spend: sized.spend, feeBps,
-      constraints: routeMaxAccounts, quote: sized.route }) as OpenSwapLeg),
+      constraints: routeMaxAccounts, quote: sized.route, inputFee: deposit.inputFee }) as OpenSwapLeg),
     minOut: sized.minOut,
   };
   const rates = poolPriceRates(state.sqrtPriceX64);
@@ -130,7 +132,7 @@ export async function getOpenPositionQuoteBundle(
   const lowerSqrtX64 = TickUtil.getSqrtPriceAtTick(resolved.tickLower).toString();
   const upperSqrtX64 = TickUtil.getSqrtPriceAtTick(resolved.tickUpper).toString();
   const grossRequested = parseTokenAmount(amount, state.inputDecimals);
-  const deposit = depositFeePlan(state.inputMint, grossRequested, feeConfig);
+  const deposit = depositFeePlan(state.inputMint, grossRequested, feeConfig, state.inputKind);
   const requested = deposit.swapAmount;
   const swapFeeBps = deposit.legBps;
   if (BigInt(state.inputBalance) < grossRequested) {
@@ -207,6 +209,7 @@ export async function getOpenPositionQuoteBundle(
     });
     legs = await Promise.all([builtLeg(legs[0]!, swapFeeBps), builtLeg(legs[1]!, swapFeeBps)]);
   }
+  assertNativeInputFeeCoverage(deposit.inputFee, legs);
   if (deposit.feeAmount > 0n) {
     legs[0]!.spend += deposit.feeAmount;
     legs[0]!.feeAmount += deposit.feeAmount;

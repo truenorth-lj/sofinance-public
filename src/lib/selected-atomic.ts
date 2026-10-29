@@ -59,16 +59,18 @@ async function buildAndSimulateSelectedZapOnce(
   if (legs.length !== (state.rangeSide === "inside" ? 2 : 1) || legs.some((item) =>
     item.inputMint !== state.inputMint || ![state.mintA, state.mintB].includes(item.outputMint) ||
     item.route && (item.route.inputMint !== state.inputMint || item.route.outputMint !== item.outputMint ||
-      BigInt(item.route.inAmount) !== item.spend - (item.feeAmount ?? 0n)))) throw new Error("Swap route does not match selected assets or position");
+      BigInt(item.route.inAmount) !== item.spend - (item.feeInRoute ? 0n : item.feeAmount ?? 0n)))) throw new Error("Swap route does not match selected assets or position");
   const feeConfig = readSwapFeeConfig();
   const protocolFee = legs.reduce((sum, item) => sum + (item.feeAmount ?? 0n), 0n);
   if ((quote.feeAmount ?? "0") !== protocolFee.toString() || (quote.feeBps ?? 0) !== feeConfig.bps ||
     (quote.feeWallet ?? null) !== (feeConfig.wallet?.toBase58() ?? null))
     throw new Error("Quote protocol fee does not match configuration");
-  const feeInstructions = feeConfig.wallet && protocolFee > 0n
-    ? await collectInputAssetFee(connection, state.inputKind === "native"
-      ? { payer: wallet, owner: wallet, recipient: feeConfig.wallet, amount: protocolFee, kind: "native" }
-      : { payer: wallet, owner: wallet, recipient: feeConfig.wallet, amount: protocolFee, kind: "token",
+  // Native SOL pays its fee inside the Jupiter swap legs (input-mint platform
+  // fee into the pre-created fee wSOL ATA); never as our own transfer.
+  if (state.inputKind === "native" && legs.some(item => item.feeAmount > 0n && !item.feeInRoute))
+    throw new Error("Native SOL protocol fee must be collected inside the Jupiter swap");
+  const feeInstructions = feeConfig.wallet && protocolFee > 0n && state.inputKind === "token"
+    ? await collectInputAssetFee(connection, { payer: wallet, owner: wallet, recipient: feeConfig.wallet, amount: protocolFee, kind: "token",
         mint: new PublicKey(state.inputMint), source: new PublicKey(state.inputAccount!),
         decimals: state.inputDecimals, program: new PublicKey(state.inputTokenProgram!) }) : { instructions: [], routes: [] };
   const raydiumInstructions = [buildSelectedAddInstruction(state, quote, wallet)];
@@ -93,8 +95,8 @@ async function buildAndSimulateSelectedZapOnce(
   ]);
   const raydiumTables = raydiumTable.value?.isActive() ? [raydiumTable.value] : [];
   validateRouteTables([...routes, ...feeInstructions.routes], routeTables);
-  // Wrap the full native SOL input once (including the fee), then TransferChecked
-  // 10 bps from the user's wSOL ATA. Jupiter routes are built without wrap/close.
+  // Wrap the full native SOL input once (including the fee) into the user's own
+  // wSOL ATA; Jupiter routes are built without wrap/close and take the fee.
   const wrapInstructions = nativeAta ? wrapNativeSolInstructions(wallet, BigInt(quote.requested)) : [];
   const wrappedAta = nativeAta?.toBase58() ?? null;
   const createAtaInstructions = [

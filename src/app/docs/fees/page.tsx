@@ -26,6 +26,13 @@ export default function DocsFeesPage() {
           <strong className="font-medium text-cream">you pay the one-time account rent in SOL</strong>.
         </li>
         <li>
+          When you deposit <strong className="font-medium text-cream">SOL</strong>, the 10 bps is
+          taken in SOL inside the Jupiter swap itself (as Jupiter&apos;s platform fee), so the
+          transaction contains no separate SOL transfer to us and never creates an account for
+          the fee wallet. Depositing SOL into a pool that itself contains SOL is not available
+          yet; use another token for those pools.
+        </li>
+        <li>
           Withdrawing to USDC still collects the 10 bps as a Jupiter conversion fee in USDC.
           The withdraw preview shows it as a conversion fee.
         </li>

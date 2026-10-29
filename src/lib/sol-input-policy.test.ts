@@ -16,9 +16,9 @@ const usdc = { kind: "token" as const, mint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEG
 afterEach(() => { flag.enabled = false; });
 
 describe("SOL input switch", () => {
-  it("ships disabled with the agreed user-facing note", async () => {
+  it("ships enabled (fee inside the Jupiter swap) and keeps the agreed off-switch note", async () => {
     const actual = await vi.importActual<typeof import("./feature-flags")>("./feature-flags");
-    expect(actual.SOL_INPUT_ENABLED).toBe(false);
+    expect(actual.SOL_INPUT_ENABLED).toBe(true);
     expect(SOL_INPUT_DISABLED_MESSAGE).toBe("SOL deposits are temporarily unavailable — please use another token.");
   });
 

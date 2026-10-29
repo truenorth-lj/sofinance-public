@@ -2,7 +2,7 @@ import "@/lib/engine-host";
 import "server-only";
 
 import { readSwapFeeConfig } from "@sofinance/engine/swap/fee";
-import { depositFeePlan, feeSwapLeg } from "@sofinance/engine/swap/leg";
+import { assertNativeInputFeeCoverage, depositFeePlan, feeSwapLeg } from "@sofinance/engine/swap/leg";
 import BN from "bn.js";
 import { LiquidityMathUtil, SqrtPriceMath, TickUtil } from "@raydium-io/raydium-sdk-v2";
 import { DEFAULT_ADD_TOLERANCE_BPS, DEFAULT_RESALE_FLOOR_BPS, MAX_PRICE_IMPACT_BPS, QUOTE_TTL_MS, SLIPPAGE_BPS } from "@sofinance/engine/ids";
@@ -21,7 +21,7 @@ import { CROSS_LIQUIDITY_BAND_MESSAGE, staysInLiquidityBand } from "@sofinance/e
 
 const MIN_JUPITER_SWAP = minJupiterSwapAmount(SLIPPAGE_BPS);
 
-type SwapLeg = { inputMint: string; outputMint: string; spend: bigint; feeAmount: bigint; minOut: bigint; route: QuoteRoute | null };
+type SwapLeg = { inputMint: string; outputMint: string; spend: bigint; feeAmount: bigint; feeInRoute?: boolean; minOut: bigint; route: QuoteRoute | null };
 
 function projectedSqrt(state: SelectedPositionState, routes: QuoteRoute[]): BN {
   let price = new BN(state.sqrtPriceX64);
@@ -71,12 +71,12 @@ function remapAmountTooSmall(error: unknown): never {
 async function leg(
   wallet: string, inputMint: string, outputMint: string, spend: bigint, nativeSource = false,
   jupiter?: JupiterRouteConstraints, build = false, signal?: AbortSignal, budget?: JupiterRetryBudget, feeBps = 0,
-  ownPool?: { poolId: string; mintA: string; mintB: string }, quote?: QuoteRoute | null,
+  ownPool?: { poolId: string; mintA: string; mintB: string }, quote?: QuoteRoute | null, inputFee = false,
 ): Promise<SwapLeg> {
   if (spend <= 0n) return dummyLeg(inputMint, outputMint, spend);
   if (isUnquoteableJupiterSpend(inputMint, outputMint, spend)) throw new AmountTooSmallError();
   return feeSwapLeg({ wallet, inputMint, outputMint, spend, feeBps, native: nativeSource,
-    constraints: jupiter, build, signal, budget, ownPool, quote });
+    constraints: jupiter, build, signal, budget, ownPool, quote, inputFee });
 }
 
 export async function getSelectedQuoteBundle(
@@ -108,20 +108,21 @@ async function getSelectedQuoteBundleOnce(
   const feeConfig = readSwapFeeConfig();
   // Sizing rounds are quote-only. Once converged, the final legs are built from
   // the very quotes that sized them (swap-instructions only, no re-quote).
-  // Native SOL is wrapped once in selected-atomic (full input, then wSOL fee).
-  // Jupiter must debit the remaining wSOL rather than wrapping again.
+  // Native SOL is wrapped once in selected-atomic (full input). Jupiter debits
+  // each leg from that wSOL and takes the 10 bps input-mint platform fee inside
+  // the swap; it must not wrap again.
   const actualLeg = (outputMint: string, spend: bigint) => leg(wallet, state.inputMint, outputMint, spend,
-    false, jupiter, false, options.signal, options.budget, deposit.legBps, state);
+    false, jupiter, false, options.signal, options.budget, deposit.legBps, state, undefined, deposit.inputFee);
   const buildLeg = async (sized: SwapLeg) => options.buildTransactions === false || !sized.route ? sized
     : await leg(wallet, sized.inputMint, sized.outputMint, sized.spend, false, jupiter, true,
-      options.signal, options.budget, deposit.legBps, state, sized.route);
+      options.signal, options.budget, deposit.legBps, state, sized.route, deposit.inputFee);
   if (!state.ownsNft) throw new Error("Wallet does not have an available position NFT ATA for the selected position");
   if (state.paused || state.frozen || state.transferFee || state.unsupportedExtensions.length) {
     throw new Error(`Pool asset currently paused, account frozen, transfer fee charged, or has unsupported settings${state.unsupportedExtensions.length ? `: ${state.unsupportedExtensions.join(", ")}` : ""}`);
   }
   if (!state.sufficientSol) throw new Error("Insufficient SOL, reserve at least 0.01 SOL to pay network fees and possible ATA rent");
   const grossRequested = parseTokenAmount(amount, state.inputDecimals);
-  const deposit = depositFeePlan(state.inputMint, grossRequested, feeConfig);
+  const deposit = depositFeePlan(state.inputMint, grossRequested, feeConfig, state.inputKind);
   const requested = deposit.swapAmount;
   if (BigInt(state.inputBalance) < grossRequested) throw new Error("Insufficient input asset balance or SOL reserve");
   if (requested <= 0n) throw new AmountTooSmallError();
@@ -162,6 +163,7 @@ async function getSelectedQuoteBundleOnce(
     }
     legs = await Promise.all(legs.map(buildLeg));
   }
+  assertNativeInputFeeCoverage(deposit.inputFee, legs);
   if (deposit.feeAmount > 0n) {
     legs[0]!.spend += deposit.feeAmount;
     legs[0]!.feeAmount += deposit.feeAmount;

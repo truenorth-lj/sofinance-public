@@ -1,21 +1,37 @@
-import { AccountLayout, ASSOCIATED_TOKEN_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { AccountLayout, ASSOCIATED_TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { Keypair, PublicKey, SystemProgram } from "@solana/web3.js";
 import { expect, it, vi } from "vitest";
 vi.mock("./jupiter", () => ({ buildRoute: vi.fn() }));
 vi.mock("../open-transaction", () => ({ versionedTransactionSize: vi.fn() }));
 import { versionedTransactionSize } from "../open-transaction";
-import { collectInputAssetFee, collectSwapFee, feeAccountSetup, fitFeeCollections, wrapNativeSolInstructions } from "./collection";
+import { collectInputAssetFee, collectSwapFee, feeAccountSetup, fitFeeCollections, requireSwapFeeAccount, wrapNativeSolInstructions } from "./collection";
 import { nativeSolOwnerAta } from "./fee";
-import { depositFeePlan } from "./leg";
+import { assertNativeInputFeeCoverage, depositFeePlan } from "./leg";
 import { buildRoute } from "./jupiter";
 import { NATIVE_SOL_MINT, USDC_MINT } from "../ids";
 const owner = Keypair.generate().publicKey, recipient = Keypair.generate().publicKey;
 const mint = new PublicKey(USDC_MINT);
 it("deposits pay once in the input mint, including same-mint allocation and sequential secondary swaps", () => {
   expect(depositFeePlan(USDC_MINT, 1000000n, { wallet: recipient, bps: 10 }))
-    .toEqual({ feeAmount: 1000n, swapAmount: 999000n, legBps: 0, secondaryBps: 0 });
+    .toEqual({ feeAmount: 1000n, swapAmount: 999000n, legBps: 0, secondaryBps: 0, inputFee: false });
   expect(depositFeePlan(Keypair.generate().publicKey.toBase58(), 1000000n, { wallet: recipient, bps: 10 }))
-    .toEqual({ feeAmount: 1000n, swapAmount: 999000n, legBps: 0, secondaryBps: 0 });
+    .toEqual({ feeAmount: 1000n, swapAmount: 999000n, legBps: 0, secondaryBps: 0, inputFee: false });
+  // wSOL held as a token keeps the upfront TransferChecked like any other token.
+  expect(depositFeePlan(NATIVE_SOL_MINT, 1000000n, { wallet: recipient, bps: 10 }, "token"))
+    .toEqual({ feeAmount: 1000n, swapAmount: 999000n, legBps: 0, secondaryBps: 0, inputFee: false });
+});
+it("native SOL deposits reserve nothing up front and charge every SOL swap leg via Jupiter's input-mint fee", () => {
+  expect(depositFeePlan(NATIVE_SOL_MINT, 1000000n, { wallet: recipient, bps: 10 }, "native"))
+    .toEqual({ feeAmount: 0n, swapAmount: 1000000n, legBps: 10, secondaryBps: 0, inputFee: true });
+  expect(depositFeePlan(NATIVE_SOL_MINT, 1000000n, { wallet: null, bps: 0 }, "native"))
+    .toEqual({ feeAmount: 0n, swapAmount: 1000000n, legBps: 0, secondaryBps: 0, inputFee: false });
+});
+it("refuses native SOL kept unswapped (SOL pools) instead of leaving it uncharged", () => {
+  const swapped = { inputMint: NATIVE_SOL_MINT, outputMint: USDC_MINT, spend: 10n };
+  const kept = { inputMint: NATIVE_SOL_MINT, outputMint: NATIVE_SOL_MINT, spend: 10n };
+  expect(() => assertNativeInputFeeCoverage(true, [swapped])).not.toThrow();
+  expect(() => assertNativeInputFeeCoverage(true, [kept, swapped])).toThrow("SOL input is not available for pools that contain SOL");
+  expect(() => assertNativeInputFeeCoverage(false, [kept, swapped])).not.toThrow();
 });
 it("collects a non-USDC deposit as an input-mint transfer without a Jupiter hop", async () => {
   const inputMint = Keypair.generate().publicKey;
@@ -37,21 +53,22 @@ it("creates missing USDC ATA with user payer before transferring the upfront fee
   expect(result.instructions[0]!.keys[0]!.pubkey.equals(owner)).toBe(true);
   expect(result.instructions[1]!.data.readBigUInt64LE(1)).toBe(1000n);
 });
-it("collects native SOL as wSOL TransferChecked with user-paid fee ATA create", async () => {
-  const result = await collectInputAssetFee({ getAccountInfo: vi.fn(async () => null) } as never,
-    { kind: "native", payer: owner, owner, recipient, amount: 1000n });
-  expect(result.routes).toEqual([]);
+it("never builds a direct SOL/wSOL fee transfer or fee-wallet ATA create for native SOL input", async () => {
+  await expect(collectInputAssetFee({ getAccountInfo: vi.fn(async () => null) } as never,
+    { kind: "native", payer: owner, owner, recipient, amount: 1000n })).rejects.toThrow("inside the Jupiter swap");
+  await expect(collectSwapFee({ getAccountInfo: vi.fn(async () => null) } as never,
+    { kind: "native", payer: owner, owner, recipient, amount: 1000n })).rejects.toThrow("inside the Jupiter swap");
   expect(vi.mocked(buildRoute)).not.toHaveBeenCalled();
-  expect(result.instructions).toHaveLength(2);
-  expect(result.instructions[0]!.programId.equals(ASSOCIATED_TOKEN_PROGRAM_ID)).toBe(true);
-  expect(result.instructions[0]!.data[0]).toBe(1);
-  expect(result.instructions[0]!.keys[0]!.pubkey.equals(owner)).toBe(true);
-  expect(result.instructions[0]!.keys[2]!.pubkey.equals(recipient)).toBe(true);
-  expect(result.instructions[0]!.keys[3]!.pubkey.toBase58()).toBe(NATIVE_SOL_MINT);
-  expect(result.instructions[1]!.programId.equals(TOKEN_PROGRAM_ID)).toBe(true);
-  expect(result.instructions[1]!.data[0]).toBe(12);
-  expect(result.instructions[1]!.data.readBigUInt64LE(1)).toBe(1000n);
-  expect(result.instructions.some(ix => ix.programId.equals(SystemProgram.programId))).toBe(false);
+});
+it("requires the pre-created fee wSOL ATA and never creates it", async () => {
+  await expect(requireSwapFeeAccount({ getAccountInfo: vi.fn(async () => null) } as never, recipient))
+    .rejects.toThrow("Protocol fee wSOL account is not set up");
+  const wsol = new PublicKey(NATIVE_SOL_MINT);
+  const data = Buffer.alloc(165);
+  AccountLayout.encode({ mint: wsol, owner: recipient, amount: 0n, delegateOption: 0, delegate: PublicKey.default,
+    state: 1, isNativeOption: 1, isNative: 2039280n, delegatedAmount: 0n, closeAuthorityOption: 0, closeAuthority: PublicKey.default }, data);
+  const address = await requireSwapFeeAccount({ getAccountInfo: vi.fn(async () => ({ data, owner: TOKEN_PROGRAM_ID })) } as never, recipient);
+  expect(address.equals(getAssociatedTokenAddressSync(wsol, recipient, true, TOKEN_PROGRAM_ID))).toBe(true);
 });
 it("wraps the full native SOL input into the user's wSOL ATA", () => {
   const ixs = wrapNativeSolInstructions(owner, 1_000_000n);
@@ -74,7 +91,8 @@ it.each([1, 2])("validates existing USDC ATA state=%s", async state => {
 it("measures with Beam tip and replaces only an oversized conversion", async () => {
   const routeInstruction = SystemProgram.transfer({ fromPubkey: owner, toPubkey: recipient, lamports: 1 });
   const tip = SystemProgram.transfer({ fromPubkey: owner, toPubkey: Keypair.generate().publicKey, lamports: 100000 });
-  const input = { payer: owner, owner, recipient, amount: 1000n, kind: "native" as const };
+  const input = { payer: owner, owner, recipient, amount: 1000n, kind: "token" as const,
+    mint: Keypair.generate().publicKey, source: Keypair.generate().publicKey, decimals: 6, program: TOKEN_PROGRAM_ID };
   const connection = { getAccountInfo: vi.fn(async () => null) };
   const compile = vi.fn(() => ({} as never));
   vi.mocked(versionedTransactionSize).mockReturnValue(1300);
