@@ -18,7 +18,8 @@ export const ORCA_DISCOVERY_ENABLED: Readonly<Record<DeployTarget, boolean>> = O
   development: true,
 });
 
-export function deployTarget(vercelEnv: string | undefined = process.env.VERCEL_ENV): DeployTarget {
+// Client bundles have no VERCEL_ENV; next.config inlines it as NEXT_PUBLIC_SOFI_DEPLOY_ENV at build time.
+export function deployTarget(vercelEnv: string | undefined = process.env.NEXT_PUBLIC_SOFI_DEPLOY_ENV || process.env.VERCEL_ENV): DeployTarget {
   return vercelEnv === "preview" || vercelEnv === "development" ? vercelEnv : "production";
 }
 
@@ -89,12 +90,12 @@ export function isRhcUniv4TradingEnabled(target: DeployTarget = deployTarget()):
 
 /**
  * Real wallet requests that sign or send on Robinhood Chain (`approve(Permit2)`, the Permit2
- * signature, `execute`). OFF EVERYWHERE until PR6, which needs PM approval, LJ's funded EVM test
- * wallet and the EVM fee wallet address. The buttons are wired but stay disabled while this is off.
+ * signature, `execute`). ON for Vercel preview only (PM-approved MetaMask UI signing test with the
+ * EVM test wallet, 2026-10-29). OFF in production and local development.
  */
 export const RHC_UNIV4_WALLET_SIGNING_ENABLED: Readonly<Record<DeployTarget, boolean>> = Object.freeze({
   production: false,
-  preview: false,
+  preview: true,
   development: false,
 });
 
