@@ -1,4 +1,3 @@
-import type { BeamTipPlan } from "../solami-beam";
 export type WithdrawRequest = {
     wallet: string;
     positionMint: string;
@@ -62,7 +61,6 @@ export type WithdrawSummary = {
     lastValidBlockHeight: number;
     blockhash: string;
     bytes: number;
-    beam: BeamTipPlan;
     tx1Signature?: string;
 };
 export type WithdrawPrepared = {

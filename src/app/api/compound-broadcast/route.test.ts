@@ -1,21 +1,19 @@
 // Characterization tests for POST /api/compound-broadcast, including the shared
 // parseCompoundBroadcast() request validator (lib/compound-api.ts).
-// Real: parsing, size/payer/permit/summary checks, compound-send. Mocked: RPC, state, simulation, Beam.
+// Real: parsing, size/payer/permit/summary checks, compound-send. Mocked: RPC, state, simulation.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: vi.fn() }));
 vi.mock("@sofinance/engine/compound-state", () => ({ readCompoundPositionState: vi.fn() }));
 vi.mock("@sofinance/engine/compound-simulation", () => ({ simulateAndVerifyCompound: vi.fn() }));
-vi.mock("@/lib/beam-after-send", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/beam-after-send")>()), beamAfterSend: vi.fn() }));
 
 import { issueCompoundPermit } from "@/lib/compound-permit";
 import { simulateAndVerifyCompound } from "@sofinance/engine/compound-simulation";
 import { readCompoundPositionState } from "@sofinance/engine/compound-state";
 import { rpcConnection } from "@sofinance/engine/rpc";
-import { beamAfterSend } from "@/lib/beam-after-send";
 import {
-  BEAM_RESULT, BLOCKHASH, SIGNING_SECRET, buildTransaction, compoundSummaryFixture, fakeConnection, type FakeConnection, jsonRequest, messageBase64,
+  BLOCKHASH, SIGNING_SECRET, buildTransaction, compoundSummaryFixture, fakeConnection, type FakeConnection, jsonRequest, messageBase64,
   oversizedSignedBase64, signatureOf, testKeypair, toBase64,
 } from "@/lib/test-support/send-fixtures";
 import { POST } from "./route";
@@ -44,7 +42,6 @@ beforeEach(() => {
   vi.mocked(rpcConnection).mockReturnValue(connection as never);
   vi.mocked(readCompoundPositionState).mockResolvedValue({ ...summary.state } as never);
   vi.mocked(simulateAndVerifyCompound).mockResolvedValue({ rewards: [] } as never);
-  vi.mocked(beamAfterSend).mockResolvedValue(BEAM_RESULT as never);
 });
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -53,12 +50,11 @@ afterEach(() => {
 });
 
 describe("POST /api/compound-broadcast", () => {
-  it("QUIRK: on success returns ONLY { signature } (beam fields from the lib are dropped, unlike selected/open)", async () => {
+  it("on success returns ONLY { signature }", async () => {
     const { response, json } = await call(body());
     expect(response.status).toBe(200);
     expect(response.headers.get("Cache-Control")).toBe("no-store");
     expect(json).toEqual({ signature: signatureOf(transaction) });
-    expect(beamAfterSend).toHaveBeenCalledOnce();
   });
 
   it("rejects a request body over 30,000 chars, with sent:false", async () => {
@@ -148,7 +144,7 @@ describe("POST /api/compound-broadcast", () => {
     if (timeoutFirst) connection.sendRawTransaction.mockRejectedValueOnce(new Error("request timed out after remote acceptance"));
     connection.sendRawTransaction.mockRejectedValue(new Error("Transaction simulation failed: custom program error: 0x1781"));
     vi.mocked(rpcConnection).mockReturnValue(createResilientConnection(connection as never, null, {
-      primaryId: "solami", fallbackId: "default",
+      primaryId: "default", fallbackId: "default",
       retry: { maxAttempts: 2, baseMs: 0, maxDelayMs: 0, budgetMs: 2000 },
     }));
     const { response, json } = await call(body());

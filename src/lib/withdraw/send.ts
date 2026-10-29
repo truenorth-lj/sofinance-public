@@ -6,7 +6,6 @@ import nacl from "tweetnacl";
 import { getSigningSecret } from "@sofinance/engine/config/server-env";
 import { isSingleWalletSignedTransaction } from "@sofinance/engine/transaction-limits";
 import { rpcConnection } from "@sofinance/engine/rpc";
-import { beamAfterSend, noBeamAfterSend } from "@/lib/beam-after-send";
 import { sendUntilObserved } from "@/lib/send-until-valid";
 import { withdrawSubmitSchema } from "@sofinance/engine/withdraw/input";
 import { withdrawPermit } from "@sofinance/engine/withdraw/permit";
@@ -46,6 +45,5 @@ export async function submitWithdraw(input: {
     const signature = await sendUntilObserved(connection, transaction.serialize(), summary.lastValidBlockHeight);
     if (signature !== expected)
         throw new Error("RPC transaction signature mismatch");
-    const beam = await beamAfterSend(signature, summary.beam).catch(() => noBeamAfterSend(signature));
-    return { signature, beam: beam.beam, beamLabel: beam.label, beamLandingUrl: beam.beamLandingUrl };
+    return { signature };
 }

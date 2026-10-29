@@ -106,7 +106,7 @@ beforeEach(() => {
     }
     if (url === "/api/open-broadcast") {
       const tx = VersionedTransaction.deserialize(Buffer.from(body.signedTransaction, "base64"));
-      return Response.json({ signature: bs58.encode(tx.signatures[0]!), beamLabel: null, positionMint: tx.message.staticAccountKeys[1]!.toBase58() });
+      return Response.json({ signature: bs58.encode(tx.signatures[0]!), positionMint: tx.message.staticAccountKeys[1]!.toBase58() });
     }
     if (url === "/api/open-status") return Response.json({ signature: body.attempt.signature, status: chainStatus });
     throw new Error(`Unexpected request: ${url}`);

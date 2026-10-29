@@ -12,7 +12,7 @@ Public keys remain `{attempt,status,error,pending,loaded,track,markUnsent,dismis
 
 Errors apply to the latest queued state; dismissal carries the invoking render's captured snapshot. Dismissal retains attempt/storage while clearing status/error. The extra invalid-kind narrowing at dispatch is redundant with the unchanged pending predicate for every reachable wallet state, not a new dismissal policy. Reducer transitions never trigger commands.
 
-Modal/controller and SIGN runtime files are unchanged. Open remains a wallet-level pending lock, including other pools, unread/invalid history and manual review. Selected/Compound warning policy is not generalized. Modal same-pool position/submit-stage, error precedence, confirmed Beam and createAnother behavior remain at their existing consumers. SIGN accepted submission/redirect semantics and all non-open kinds remain unchanged. OpenAttempt v1 keys, raw bytes, archive/unsent helpers, API/engine and dependencies are untouched.
+Modal/controller and SIGN runtime files are unchanged. Open remains a wallet-level pending lock, including other pools, unread/invalid history and manual review. Selected/Compound warning policy is not generalized. Modal same-pool position/submit-stage, error precedence and createAnother behavior remain at their existing consumers. SIGN accepted submission/redirect semantics and all non-open kinds remain unchanged. OpenAttempt v1 keys, raw bytes, archive/unsent helpers, API/engine and dependencies are untouched.
 
 ## Evidence and preserved limits
 

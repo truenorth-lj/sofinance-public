@@ -11,7 +11,6 @@ import { addMintSignature, assertWalletReturnedTransaction, missingRequiredSigna
 import { jupiterRelayFailureMessage, postWithJupiterRelay, type JupiterRelayStore } from "@/lib/jupiter/browser-relay";
 import { notSentRetryMessage } from "@/lib/public-error";
 import { openAttemptFromSummary, type OpenAttempt } from "@/lib/open-attempt";
-import { openBeamStatus, type OpenBeamStatus } from "@/lib/open-beam-status";
 import { getStoredAttribution } from "@/lib/analytics/attribution";
 import { captureGrowthEvent } from "@/lib/analytics/client";
 import { openFailureProperties } from "@/lib/analytics/errors";
@@ -72,8 +71,6 @@ export function useOpenSubmission() {
   const [operationStage, setSubmitStage] = useState<OpenSubmitStage>(null);
   // Only a pre-submission retry failure may override its original terminal receipt.
   const [retryError, setRetryError] = useState<{ signature: string; message: string } | null>(null);
-  // Metadata is keyed by the original signature; the facade shows it only after verification.
-  const [beamResult, setBeamResult] = useState<{ signature: string; status: OpenBeamStatus } | null>(null);
   const [openStep, setOpenStep] = useState<OpenStep>(null);
   // A landed step 1/2 whose step 2/2 open has not confirmed yet ("Continue open (2/2)" resumes from it).
   // Persisted per wallet + pool so form edits, closing the modal or a reload cannot strand the swapped tokens.
@@ -99,7 +96,7 @@ export function useOpenSubmission() {
     inputRevisionRef.current += 1;
     setInputRevision(inputRevisionRef.current);
   }, []);
-  return { operationStage, setSubmitStage, retryError, setRetryError, beamResult, setBeamResult, submittingRef,
+  return { operationStage, setSubmitStage, retryError, setRetryError, submittingRef,
     inputRevision, inputRevisionRef, invalidateSubmission, openStep, setOpenStep, swapReceipt, swapReceiptRef, setSwapReceipt };
 }
 
@@ -107,7 +104,7 @@ export function useOpenSubmission() {
 export function useOpenSubmissionCommand({ pair, wallet, inputMint, inputKind, amount, rangePreset,
   minPrice, maxPrice, parsedAmount, quote, fresh, busy, identity, open, signTransaction,
   activeRef, walletRef, identityRef, lifetimeRef, jupiterStoreRef, setError, setNow, setQuote, setQuoteLoading,
-}: OpenSubmissionOptions, { setSubmitStage, setRetryError, setBeamResult, submittingRef, inputRevision, inputRevisionRef,
+}: OpenSubmissionOptions, { setSubmitStage, setRetryError, submittingRef, inputRevision, inputRevisionRef,
   setOpenStep, swapReceiptRef, setSwapReceipt }: ReturnType<typeof useOpenSubmission>) {
   const committedQuoteRef = useRef<OpenPositionQuote | null>(null);
   useLayoutEffect(() => { committedQuoteRef.current = quote; }, [quote]);
@@ -247,7 +244,7 @@ export function useOpenSubmissionCommand({ pair, wallet, inputMint, inputKind, a
         }),
         cache: "no-store", signal: AbortSignal.timeout(15_000),
       });
-      const broadcast = await sent.json() as { signature?: string; positionMint?: string; beamLabel?: string | null; error?: string; sent?: boolean };
+      const broadcast = await sent.json() as { signature?: string; positionMint?: string; error?: string; sent?: boolean };
       if (!sent.ok) {
         const reason = broadcast.error || "Open-position submission failed";
         if (broadcast.sent === false) {
@@ -258,7 +255,6 @@ export function useOpenSubmissionCommand({ pair, wallet, inputMint, inputKind, a
       }
       if (broadcast.signature !== txSignature) throw new Error("RPC returned transaction signature mismatch");
       // Signature acceptance is pending; useOpenAttempt checks finality and position facts.
-      setBeamResult({ signature: txSignature, status: openBeamStatus(prepared.summary.beam, broadcast.beamLabel) });
     } catch (caught) {
       if (!persisted) {
         captureGrowthEvent(GROWTH_EVENTS.openFailed, {
@@ -290,7 +286,7 @@ export function useOpenSubmissionCommand({ pair, wallet, inputMint, inputKind, a
         setOpenStep(null);
       }
     }
-  }, [amount, busy, fresh, generation, identity, inputRevision, inputRevisionRef, inputKind, inputMint, maxPrice, minPrice, open, pair, parsedAmount, quote, rangePreset, setQuote, setQuoteLoading, signTransaction, wallet, activeRef, identityRef, lifetimeRef, jupiterStoreRef, submittingRef, walletRef, setBeamResult, setError, setNow, setRetryError, setSubmitStage,
+  }, [amount, busy, fresh, generation, identity, inputRevision, inputRevisionRef, inputKind, inputMint, maxPrice, minPrice, open, pair, parsedAmount, quote, rangePreset, setQuote, setQuoteLoading, signTransaction, wallet, activeRef, identityRef, lifetimeRef, jupiterStoreRef, submittingRef, walletRef, setError, setNow, setRetryError, setSubmitStage,
     setOpenStep, setSwapReceipt, swapReceiptRef]);
 
 }

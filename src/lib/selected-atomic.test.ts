@@ -14,13 +14,11 @@ vi.mock("./selected-quote", () => ({ getSelectedQuoteBundle: vi.fn() }));
 vi.mock("./selected-simulation", () => ({ simulateAndVerifySelectedTransaction: vi.fn() }));
 vi.mock("./selected-add-instruction", () => ({ buildSelectedAddInstruction: vi.fn() }));
 vi.mock("@sofinance/engine/transaction-helpers", async (original) => ({ ...await original<typeof import("@sofinance/engine/transaction-helpers")>(), readLookupTables: vi.fn(async () => []) }));
-vi.mock("@sofinance/engine/solami-beam", async (original) => ({ ...await original<typeof import("@sofinance/engine/solami-beam")>(), fetchBeamTipAddress: vi.fn(async () => null) }));
 import { rpcConnection } from "@sofinance/engine/rpc";
 import { readSelectedPositionState } from "@sofinance/engine/selected-state";
 import { getSelectedQuoteBundle } from "./selected-quote";
 import { buildSelectedAddInstruction } from "./selected-add-instruction";
 import { simulateAndVerifySelectedTransaction } from "./selected-simulation";
-import { fetchBeamTipAddress } from "@sofinance/engine/solami-beam";
 import { JupiterNoRouteError } from "@sofinance/engine/swap/jupiter";
 import { walletReturnedTransactionMatches } from "@sofinance/engine/wallet-returned-tx";
 import { buildAndSimulateSelectedZap } from "./selected-atomic";
@@ -62,7 +60,7 @@ beforeEach(() => {
     keys: [wallet, key(), pool, key(), position].map((pubkey, index) => ({ pubkey, isSigner: index === 0, isWritable: index === 2 || index === 4 })) }));
   vi.mocked(simulateAndVerifySelectedTransaction).mockResolvedValue({ endingLiquidity: "11", spentInput: "1000", dustA: "0", dustB: "0", unitsConsumed: 1000, solDebitLamports: "5000" });
 });
-it("rejects oversized candidates before Beam or simulation, tries compact followups, and reads selected state once", async () => {
+it("rejects oversized candidates before simulation, tries compact followups, and reads selected state once", async () => {
   vi.mocked(getSelectedQuoteBundle).mockResolvedValue(bundle(true));
   await expect(buildAndSimulateSelectedZap(wallet.toBase58(), selection, "1", 9900)).rejects.toThrow("1,232 byte");
   expect(readSelectedPositionState).toHaveBeenCalledTimes(1);
@@ -75,7 +73,7 @@ it("rejects oversized candidates before Beam or simulation, tries compact follow
     { maxAccounts: 20, onlyDirectRoutes: true },
     { maxAccounts: 20, onlyDirectRoutes: true, excludeDexes: HIGH_ACCOUNT_DEXES },
   ]);
-  expect(fetchBeamTipAddress).not.toHaveBeenCalled(); expect(simulateAndVerifySelectedTransaction).not.toHaveBeenCalled();
+  expect(simulateAndVerifySelectedTransaction).not.toHaveBeenCalled();
 });
 it("retries an empty getFeeForMessage instead of failing prepare", async () => {
   vi.mocked(getSelectedQuoteBundle).mockResolvedValue(bundle());
@@ -91,9 +89,6 @@ it("successfully switches to a compact candidate without rereading state or simu
   const result = await buildAndSimulateSelectedZap(wallet.toBase58(), selection, "1", 9900, 100, { enforceResaleFloor: false });
   expect(result.summary.simulated).toBe(true); expect(result.summary.sizeBytes).toBeLessThanOrEqual(1232);
   expect(readSelectedPositionState).toHaveBeenCalledTimes(1); expect(simulateAndVerifySelectedTransaction).toHaveBeenCalledTimes(1);
-  expect(fetchBeamTipAddress).toHaveBeenCalledTimes(1);
-  // Same tip-address fetch as open: no per-flow short timeout.
-  expect(vi.mocked(fetchBeamTipAddress).mock.calls[0]?.[0]).not.toHaveProperty("timeoutMs");
   expect(getSelectedQuoteBundle).toHaveBeenLastCalledWith(wallet.toBase58(), selection, "1", 9900, 100,
     { maxAccounts: 24 }, expect.objectContaining({ state, includeResale: false, buildTransactions: true }));
 });
@@ -138,7 +133,7 @@ it.each([false, true])("rejects non-Jupiter writes to a positive unselected wall
   const address = key(); vi.mocked(getSelectedQuoteBundle).mockResolvedValue(writableBundle(address));
   connection.getMultipleAccountsInfoAndContext.mockResolvedValueOnce({ context: { slot: 1 }, value: [rawTokenAccount(wallet, token2022)] } as never);
   await expect(buildAndSimulateSelectedZap(wallet.toBase58(), selection, "1", 9900)).rejects.toThrow("unselected wallet assets");
-  expect(fetchBeamTipAddress).not.toHaveBeenCalled(); expect(simulateAndVerifySelectedTransaction).not.toHaveBeenCalled();
+  expect(simulateAndVerifySelectedTransaction).not.toHaveBeenCalled();
 });
 it.each(["Token-2022 mint", "external pool vault"])("accepts a writable %s without interpreting it as a funded wallet account", async (kind) => {
   const address = key(); vi.mocked(getSelectedQuoteBundle).mockResolvedValue(writableBundle(address));

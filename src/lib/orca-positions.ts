@@ -13,7 +13,7 @@ import {
 import {
   ASSUMPTIONS_LABEL, computePositionPerformance, computeTokenNativeMetrics, PERFORMANCE_METHOD, TOKEN_NATIVE_ASSUMPTIONS,
 } from "@sofinance/engine/position-performance-math";
-import { defaultRpcConnection, rpcConnection, rpcProvider, type RpcProvider } from "@sofinance/engine/rpc";
+import { rpcConnection, rpcProvider, type RpcProvider } from "@sofinance/engine/rpc";
 import { fetchJupiterPricesUsd } from "@sofinance/engine/token-prices";
 import { getTokenMetadata } from "@sofinance/engine/token-metadata";
 import { getJupiterApiKey } from "@sofinance/engine/config/server-env";
@@ -293,8 +293,7 @@ export async function getOrcaPositionPerformance(positionMint: string, options: 
   const nowSeconds = options.nowSeconds ?? Math.floor(Date.now() / 1000);
   const fetcher = options.fetcher ?? fetch;
   const provider = options.provider ?? rpcProvider();
-  const fallbackConnection = options.fallbackConnection ??
-    (provider === "solami" && !options.connection ? defaultRpcConnection(undefined, { signal }) : undefined);
+  const fallbackConnection = options.fallbackConnection;
   const { pool } = snapshot;
   const context: PositionEventContext = {
     positionMint, positionAccount: snapshot.positionAccount, poolId: snapshot.poolId,

@@ -11,7 +11,7 @@ import { Connection, PublicKey, SystemProgram, VersionedTransaction, type Accoun
 import { NextRequest } from "next/server";
 import nacl from "tweetnacl";
 vi.mock("server-only", () => ({}));
-const backend = vi.hoisted(() => ({ rpc: vi.fn(), state: vi.fn(), sim: vi.fn(), invalidate: vi.fn(), beam: vi.fn() }));
+const backend = vi.hoisted(() => ({ rpc: vi.fn(), state: vi.fn(), sim: vi.fn(), invalidate: vi.fn() }));
 vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: backend.rpc }));
 vi.mock("@sofinance/engine/selected-state", () => ({ readSelectedPositionState: backend.state }));
 vi.mock("@/lib/position-history-cache", () => ({ invalidatePositionHistoryCache: backend.invalidate }));
@@ -19,12 +19,6 @@ vi.mock("@/lib/selected-simulation", async original => {
   const actual = await original<typeof import("@/lib/selected-simulation")>();
   return { simulateAndVerifySelectedTransaction: (...args: Parameters<typeof actual.simulateAndVerifySelectedTransaction>) => {
     backend.sim(...args); return actual.simulateAndVerifySelectedTransaction(...args);
-  } };
-});
-vi.mock("@/lib/beam-after-send", async original => {
-  const actual = await original<typeof import("@/lib/beam-after-send")>();
-  return { ...actual, beamAfterSend: async (...args: Parameters<typeof actual.beamAfterSend>) => {
-    backend.beam(...args); return actual.beamAfterSend(...args);
   } };
 });
 import { createResilientConnection } from "@sofinance/engine/rpc/connection";
@@ -146,7 +140,6 @@ beforeEach(async () => {
       Object.hasOwn(rest, "useStateSnapshot") ? rest.useStateSnapshot : "omitted");
   });
   backend.invalidate.mockImplementation(position => record("invalidate", position));
-  backend.beam.mockImplementation((signature, plan) => record("beam", signature, plan));
   server = createMcpServer(); client = new Client({ name: "selected-submit-contract", version: "1" });
   const [a,b] = InMemoryTransport.createLinkedPair(); await server.connect(a); await client.connect(b);
 });
@@ -185,7 +178,6 @@ const cases: Case[] = [
   { name: "state read failure", change: () => { backend.state.mockImplementation(async () => { record("state-failure"); throw new Error("Synthetic state unavailable"); }); } },
   { name: "simulation I/O failure", change: f => { f.physical.simulateTransaction.mockImplementation(async () => { record("simulation-failure"); throw new Error("Synthetic simulation unavailable"); }); } },
   { name: "wrong returned signature", sends: 1, change: f => { f.send.mockImplementation(async (bytes, options) => { record("physical-send", f.wallet, Buffer.from(bytes).toString("base64"), options); return "wrong-signature"; }); } },
-  { name: "accepted then Beam failure", sends: 1, change: () => { backend.beam.mockImplementation((...args) => { record("beam-failure", ...args); throw new Error("Synthetic metadata unavailable"); }); } },
   { name: "native WSOL and changed state precedence", native: true, change: f => { f.state.wsolBalance = "1"; Object.assign(f.state, { ownsNft: false }); } },
   { name: "native WSOL before simulation", native: true, change: f => { f.state.wsolBalance = "1"; f.before.get(f.inputAta.toBase58())!.data.writeBigUInt64LE(1n, 64); } },
   { name: "NFT missing in additional read", change: f => { f.before.delete(f.nftAta.toBase58()); } },

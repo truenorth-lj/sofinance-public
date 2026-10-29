@@ -1,6 +1,7 @@
-import { engineEnv, isSolamiEndpoint, solamiAllowed } from "../host";
+import { engineEnv } from "../host";
 import { jsonRpcMethodOf } from "./methods";
-import { RPC_PROVIDERS, resolveProvider, resolveProviderPair } from "./providers";
+import { resolveProviderPair } from "./providers";
+import { isRetiredRpcEndpoint } from "./urls";
 import type { RpcEnv, RpcMetricId, RpcRoute } from "./types";
 
 /** Concurrency cap of the legacy primary (unchanged from engine 0.1.3). */
@@ -28,12 +29,10 @@ export type RpcPoolMember = {
   rateLimitMaxCooldownMs: number | null;
   /** JSON-RPC methods this provider must not receive (e.g. getProgramAccounts on a free tier). */
   excludeMethods: readonly string[];
-  /** Non-standard JSON-RPC methods only this provider answers (Solami getTransactionsForAddress). */
-  customMethods: readonly string[];
 };
 
 export type RpcPool = {
-  /** `legacy`: SOLANA_RPC_URL / SOLAMI_API_KEY only. `env`: SOLANA_RPC_PROVIDERS. */
+  /** `legacy`: SOLANA_RPC_URL only. `env`: SOLANA_RPC_PROVIDERS. */
   source: "legacy" | "env";
   /** Send / simulate / blockhash / confirm (and slot-context reads), tried strictly in order. */
   transaction: readonly RpcPoolMember[];
@@ -46,7 +45,7 @@ export type RpcPool = {
 /** One entry of SOLANA_RPC_PROVIDERS. */
 export type RpcProviderEntry = {
   name: string;
-  /** Literal URL, or `$VAR` to read another env var (e.g. `$SOLANA_RPC_URL`), or `$SOLAMI`. */
+  /** Literal URL, or `$VAR` to read another env var (e.g. `$SOLANA_RPC_URL`). */
   url: string;
   rps?: number;
   burst?: number;
@@ -59,7 +58,6 @@ export type RpcProviderEntry = {
   exclude?: string[];
 };
 
-const CUSTOM_METHODS = new Set(RPC_PROVIDERS.flatMap((def) => def.customMethods));
 const NAME_PATTERN = /^[a-z0-9][a-z0-9_-]{0,31}$/i;
 
 export class RpcPoolConfigError extends Error {
@@ -70,7 +68,7 @@ export class RpcPoolConfigError extends Error {
 }
 
 /** The legacy primary: concurrency-capped, circuit keyed by metric id (shared with history listing). */
-export function legacyPrimaryMember(metricId: RpcMetricId, endpoint: string, customMethods: readonly string[] = []): RpcPoolMember {
+export function legacyPrimaryMember(metricId: RpcMetricId, endpoint: string): RpcPoolMember {
   return {
     key: metricId,
     metricId,
@@ -81,12 +79,11 @@ export function legacyPrimaryMember(metricId: RpcMetricId, endpoint: string, cus
     trackHealth: true,
     rateLimitMaxCooldownMs: null,
     excludeMethods: [],
-    customMethods,
   };
 }
 
 /** The legacy fallback: uncapped, and its failures never open a circuit (last resort, always tried). */
-export function legacyFallbackMember(metricId: RpcMetricId, endpoint: string, customMethods: readonly string[] = []): RpcPoolMember {
+export function legacyFallbackMember(metricId: RpcMetricId, endpoint: string): RpcPoolMember {
   return {
     key: `${metricId}:fallback`,
     metricId,
@@ -97,15 +94,14 @@ export function legacyFallbackMember(metricId: RpcMetricId, endpoint: string, cu
     trackHealth: false,
     rateLimitMaxCooldownMs: null,
     excludeMethods: [],
-    customMethods,
   };
 }
 
 function legacyPairMembers(env: RpcEnv): RpcPoolMember[] {
   const pair = resolveProviderPair(env);
-  const primary = legacyPrimaryMember(pair.primary.metricId, pair.primary.endpoint, pair.primary.customMethods);
+  const primary = legacyPrimaryMember(pair.primary.metricId, pair.primary.endpoint);
   if (!pair.fallback) return [primary];
-  return [primary, legacyFallbackMember(pair.fallback.metricId, pair.fallback.endpoint, pair.fallback.customMethods)];
+  return [primary, legacyFallbackMember(pair.fallback.metricId, pair.fallback.endpoint)];
 }
 
 function positive(value: unknown, field: string, name: string): number | null {
@@ -116,15 +112,11 @@ function positive(value: unknown, field: string, name: string): number | null {
   return value;
 }
 
-function resolveUrl(url: string, env: RpcEnv): { endpoint: string | null; metricId: RpcMetricId; customMethods: readonly string[] } {
-  if (url === "$SOLAMI") {
-    const solami = resolveProvider("solami", env);
-    return { endpoint: solami?.endpoint ?? null, metricId: "solami", customMethods: solami?.customMethods ?? [] };
-  }
+function resolveUrl(url: string, env: RpcEnv): { endpoint: string | null; metricId: RpcMetricId } {
   const endpoint = url.startsWith("$") ? env[url.slice(1)]?.trim() || null : url.trim();
-  // Host turned Solami off: a Solami URL (literal or via `$VAR`) is skipped like an unset `$VAR`.
-  if (endpoint && isSolamiEndpoint(endpoint) && !solamiAllowed()) return { endpoint: null, metricId: "default", customMethods: [] };
-  return { endpoint, metricId: "default", customMethods: [] };
+  // A retired vendor URL (literal or via `$VAR`) is skipped like an unset `$VAR`.
+  if (endpoint && isRetiredRpcEndpoint(endpoint)) return { endpoint: null, metricId: "default" };
+  return { endpoint, metricId: "default" };
 }
 
 function toMember(entry: RpcProviderEntry, env: RpcEnv): RpcPoolMember | null {
@@ -150,7 +142,6 @@ function toMember(entry: RpcProviderEntry, env: RpcEnv): RpcPoolMember | null {
     trackHealth: true,
     rateLimitMaxCooldownMs: POOL_RATE_LIMIT_MAX_COOLDOWN_MS,
     excludeMethods: entry.exclude ?? [],
-    customMethods: resolved.customMethods,
   };
 }
 
@@ -179,7 +170,7 @@ export function parseRpcProviders(raw: string, env: RpcEnv): RpcPool {
   return {
     source: "env",
     read,
-    // Without an explicit transactions provider, sends keep today's SOLANA_RPC_URL / Solami → public pair.
+    // Without an explicit transactions provider, sends keep today's SOLANA_RPC_URL → public pair.
     transaction: transaction.length > 0 ? transaction : legacyPairMembers(env),
     sticky: true,
   };
@@ -189,7 +180,7 @@ let warnedFor: string | null = null;
 
 /**
  * The provider pool for this environment.
- * - SOLANA_RPC_PROVIDERS unset: exactly the pre-pool behaviour (SOLAMI_API_KEY → SOLANA_RPC_URL →
+ * - SOLANA_RPC_PROVIDERS unset: exactly the pre-pool behaviour (SOLANA_RPC_URL →
  *   public, primary + one fallback, no local rate limit, no stickiness).
  * - Set and valid: the listed providers. Invalid: logs one key-free error and uses the legacy pool, so a
  *   typo never takes RPC down.
@@ -215,9 +206,7 @@ export function resolveRpcPool(env: RpcEnv = engineEnv() as RpcEnv): RpcPool {
 
 /** Whether `member` may receive JSON-RPC `rpcMethod`. */
 export function memberSupports(member: RpcPoolMember, rpcMethod: string): boolean {
-  if (member.excludeMethods.includes(rpcMethod)) return false;
-  if (CUSTOM_METHODS.has(rpcMethod)) return member.customMethods.includes(rpcMethod);
-  return true;
+  return !member.excludeMethods.includes(rpcMethod);
 }
 
 /**

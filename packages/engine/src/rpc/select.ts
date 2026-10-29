@@ -8,7 +8,7 @@ import type { RpcPool, RpcPoolMember } from "./pool";
  *
  * Every pick, each healthy provider's running score grows by its weight. The highest score is
  * chosen and pays back the total weight. With weights 8 / 12 / 5 that gives an even interleaving
- * (alchemy, helius, solami, alchemy, …), about 32 / 48 / 20 %, never long runs of one provider.
+ * (alchemy, helius, quicknode, alchemy, …), about 32 / 48 / 20 %, never long runs of one provider.
  *
  * Returned order = attempt order for the call:
  *   1. the chosen provider;

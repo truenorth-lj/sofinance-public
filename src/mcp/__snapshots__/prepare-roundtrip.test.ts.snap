@@ -3,9 +3,6 @@
 exports[`http add-liquidity prepare -> verified token -> HTTP submit preserves full authorization and signed bytes 1`] = `
 {
   "body": {
-    "beam": null,
-    "beamLabel": null,
-    "beamLandingUrl": "https://api.solami.dev/swqos/tx/JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB",
     "signature": "JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB",
   },
   "status": 200,
@@ -24,9 +21,6 @@ exports[`http compound prepare -> verified token -> HTTP submit preserves full a
 exports[`http open-position prepare -> verified token -> HTTP submit preserves full authorization and signed bytes 1`] = `
 {
   "body": {
-    "beam": null,
-    "beamLabel": null,
-    "beamLandingUrl": "https://api.solami.dev/swqos/tx/2qGF1xne88o6Xn9dq8fxnYURNWPdqjoR7CQoYrxdweV7iFWt19Gr8FkGKuDzSgiRscDzffigZWnrCLLUgsKbw1F6",
     "positionAccount": "GhFJh9xhWQULf6W1WJLNTViiTWEs4wAj3FevZ616wxL2",
     "positionMint": "9hSR6S7WPtxmTojgo6GG3k4yDPecgJY292j7xrsUGWBu",
     "signature": "2qGF1xne88o6Xn9dq8fxnYURNWPdqjoR7CQoYrxdweV7iFWt19Gr8FkGKuDzSgiRscDzffigZWnrCLLUgsKbw1F6",
@@ -38,9 +32,6 @@ exports[`http open-position prepare -> verified token -> HTTP submit preserves f
 exports[`http withdraw prepare -> verified token -> HTTP submit preserves full authorization and signed bytes 1`] = `
 {
   "body": {
-    "beam": null,
-    "beamLabel": null,
-    "beamLandingUrl": "https://api.solami.dev/swqos/tx/JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB",
     "signature": "JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB",
   },
   "status": 200,
@@ -50,9 +41,6 @@ exports[`http withdraw prepare -> verified token -> HTTP submit preserves full a
 exports[`stdio add-liquidity prepare -> verified token -> HTTP submit preserves full authorization and signed bytes 1`] = `
 {
   "body": {
-    "beam": null,
-    "beamLabel": null,
-    "beamLandingUrl": "https://api.solami.dev/swqos/tx/JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB",
     "signature": "JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB",
   },
   "status": 200,
@@ -71,9 +59,6 @@ exports[`stdio compound prepare -> verified token -> HTTP submit preserves full 
 exports[`stdio open-position prepare -> verified token -> HTTP submit preserves full authorization and signed bytes 1`] = `
 {
   "body": {
-    "beam": null,
-    "beamLabel": null,
-    "beamLandingUrl": "https://api.solami.dev/swqos/tx/2qGF1xne88o6Xn9dq8fxnYURNWPdqjoR7CQoYrxdweV7iFWt19Gr8FkGKuDzSgiRscDzffigZWnrCLLUgsKbw1F6",
     "positionAccount": "GhFJh9xhWQULf6W1WJLNTViiTWEs4wAj3FevZ616wxL2",
     "positionMint": "9hSR6S7WPtxmTojgo6GG3k4yDPecgJY292j7xrsUGWBu",
     "signature": "2qGF1xne88o6Xn9dq8fxnYURNWPdqjoR7CQoYrxdweV7iFWt19Gr8FkGKuDzSgiRscDzffigZWnrCLLUgsKbw1F6",
@@ -85,9 +70,6 @@ exports[`stdio open-position prepare -> verified token -> HTTP submit preserves 
 exports[`stdio withdraw prepare -> verified token -> HTTP submit preserves full authorization and signed bytes 1`] = `
 {
   "body": {
-    "beam": null,
-    "beamLabel": null,
-    "beamLandingUrl": "https://api.solami.dev/swqos/tx/JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB",
     "signature": "JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB",
   },
   "status": 200,

@@ -20,6 +20,13 @@ it.each(["atomic", "withdraw", "swap"] as const)("loads full %s bytes and preser
  const next = writeWithdrawHistory(withdrawWallet, withdrawPosition, history, value);
  expect(next).toEqual({ kind: "valid", raw: JSON.stringify(value), checkpoint: value });
 });
+it("still loads a checkpoint saved before the Beam tip was retired, keeping its beam bytes", () => {
+ const value = withdrawCheckpoint("atomic");
+ Object.assign(value.prepared.summary, { beam: { enabled: false, included: false, tipLamports: 0, tipAddress: null, skippedReason: "disabled" } });
+ const raw = JSON.stringify(value); localStorage.setItem(withdrawKey, raw);
+ expect(readWithdrawHistory(withdrawWallet, withdrawPosition)).toEqual({ kind: "valid", raw, checkpoint: value });
+ expect(isWithdrawCheckpoint(value, withdrawWallet, withdrawPosition)).toBe(true);
+});
 it.each([
  { percent: 50 }, { targetUSDC: 12.34 }, { percent: 1.25, receive: "original" as const },
  { percent: 100, receive: "token" as const, outputMint: withdrawPosition, confirmHighImpact: true },

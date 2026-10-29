@@ -10,7 +10,6 @@ import { NATIVE_SOL_MINT, QUOTE_TTL_MS } from "@sofinance/engine/ids";
 import { compactAtaInstructions } from "@sofinance/engine/open-transaction";
 import { readLookupTables, validateRouteTables } from "@sofinance/engine/transaction-helpers";
 import { rpcConnection } from "@sofinance/engine/rpc";
-import { beamTipInstruction, chooseBeamTransaction, fetchBeamTipAddress } from "@sofinance/engine/solami-beam";
 import { type JupiterRouteConstraints } from "@sofinance/engine/jupiter-route-retry";
 import { isJupiterNoRouteError, type BuildRoute } from "@sofinance/engine/swap/jupiter";
 import type { JupiterRetryBudget } from "@sofinance/engine/jupiter/client";
@@ -117,20 +116,16 @@ async function buildAndSimulateSelectedZapOnce(
   }).compileToV0Message(tables));
   try { if (exceedsTxSizeLimit(compile(baseInstructions).serialize().length)) throw new RangeError(); }
   catch { throw new Error("Complete swap + add transaction exceeds 1,232 byte limit, please select simpler route or other asset"); }
-  const tip = await fetchBeamTipAddress({ signal });
   signal?.throwIfAborted();
-  const withoutTip = compile(baseInstructions);
+  const transaction = compile(baseInstructions);
   try {
-    if (exceedsTxSizeLimit(withoutTip.serialize().length)) throw new RangeError("encoding overruns Uint8Array");
+    if (exceedsTxSizeLimit(transaction.serialize().length)) throw new RangeError("encoding overruns Uint8Array");
   } catch (error) {
     if (error instanceof RangeError || error instanceof Error && error.message.includes("encoding overruns Uint8Array")) {
       throw new Error("Complete swap + add transaction exceeds 1,232 byte limit, please select simpler route or other asset");
     }
     throw error;
   }
-  const withTip = tip ? compile([...baseInstructions, beamTipInstruction(wallet, tip.address, tip.lamports)]) : null;
-  const chosen = chooseBeamTransaction(withoutTip, withTip);
-  const transaction = chosen.transaction;
   // web3.js allocates a 1,232-byte buffer while serializing a v0 message.
   // Oversized messages throw before a later size comparison can run.
   let sizeBytes: number;
@@ -159,12 +154,6 @@ async function buildAndSimulateSelectedZapOnce(
     simulatedInputSpent: verified.spentInput, simulatedDustA: verified.dustA,
     simulatedDustB: verified.dustB, simulatedSolDebitLamports: verified.solDebitLamports,
     simulatedAt: timestamp, expiresAt: timestamp + QUOTE_TTL_MS,
-    beam: {
-      included: chosen.included,
-      tipLamports: chosen.included && tip ? tip.lamports : 0,
-      tipAddress: chosen.included && tip ? tip.address.toBase58() : null,
-      skippedReason: chosen.included ? null : chosen.skippedReason,
-    },
   };
   return { summary, transaction };
 }

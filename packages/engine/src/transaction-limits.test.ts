@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import { Keypair, PublicKey, TransactionMessage, VersionedTransaction, SystemProgram } from "@solana/web3.js";
 import { ATOMIC_COMPUTE_UNIT_LIMIT, measuredComputeUnitLimit, SOLANA_TX_SIZE_LIMIT, atomicComputeUnitLimitInstruction, exceedsTxSizeLimit, isSingleWalletSignedTransaction, isZeroSignature } from "./transaction-limits";
 import { MAX_OPEN_TRANSACTION_BYTES } from "./open-transaction";
-import { BEAM_TX_SIZE_LIMIT } from "./solami-beam";
 
 const tx = (payer: Keypair, sign = true) => {
   const message = new TransactionMessage({ payerKey: payer.publicKey, recentBlockhash: PublicKey.default.toBase58(),
@@ -16,7 +15,6 @@ describe("transaction limits", () => {
   it("keeps one packet limit everywhere", () => {
     expect(SOLANA_TX_SIZE_LIMIT).toBe(1232);
     expect(MAX_OPEN_TRANSACTION_BYTES).toBe(SOLANA_TX_SIZE_LIMIT);
-    expect(BEAM_TX_SIZE_LIMIT).toBe(SOLANA_TX_SIZE_LIMIT);
     expect(exceedsTxSizeLimit(1232)).toBe(false);
     expect(exceedsTxSizeLimit(1233)).toBe(true);
   });

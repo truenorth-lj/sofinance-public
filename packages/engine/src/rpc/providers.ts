@@ -1,14 +1,13 @@
-import { engineEnv, isSolamiEndpoint, solamiAllowed } from "../host";
-import { PUBLIC_SOLANA_RPC_URL, SOLAMI_RPC_BASE_URL } from "./urls";
-import type { ProviderPair, ResolvedProvider, RpcConfig, RpcEnv, RpcProviderId } from "./types";
+import { engineEnv } from "../host";
+import { PUBLIC_SOLANA_RPC_URL, isRetiredRpcEndpoint } from "./urls";
+import type { ProviderPair, ResolvedProvider, RpcConfig, RpcEnv, RpcMetricId, RpcProviderId } from "./types";
 
-export { PUBLIC_SOLANA_RPC_URL, SOLAMI_RPC_BASE_URL } from "./urls";
+export { PUBLIC_SOLANA_RPC_URL, RETIRED_RPC_HOSTS, isRetiredRpcEndpoint } from "./urls";
 
 export type RpcProviderDefinition = {
   id: RpcProviderId;
-  metricId: "solami" | "default";
+  metricId: RpcMetricId;
   label: string;
-  customMethods: readonly string[];
   endpoint: (env: RpcEnv) => string | null;
 };
 
@@ -19,30 +18,15 @@ export type RpcProviderDefinition = {
  */
 export const RPC_PROVIDERS: readonly RpcProviderDefinition[] = [
   {
-    id: "solami",
-    metricId: "solami",
-    label: "Solami",
-    customMethods: ["getTransactionsForAddress"],
-    endpoint: (env) => {
-      const key = env.SOLAMI_API_KEY?.trim();
-      if (!key) return null;
-      const url = new URL(SOLAMI_RPC_BASE_URL);
-      url.searchParams.set("api_key", key);
-      return url.toString();
-    },
-  },
-  {
     id: "generic",
     metricId: "default",
     label: "Dedicated RPC",
-    customMethods: [],
     endpoint: (env) => env.SOLANA_RPC_URL?.trim() || null,
   },
   {
     id: "public",
     metricId: "default",
     label: "Public Solana RPC",
-    customMethods: [],
     endpoint: () => PUBLIC_SOLANA_RPC_URL,
   },
 ];
@@ -50,14 +34,13 @@ export const RPC_PROVIDERS: readonly RpcProviderDefinition[] = [
 function resolveDefinition(def: RpcProviderDefinition, env: RpcEnv): ResolvedProvider | null {
   const endpoint = def.endpoint(env);
   if (!endpoint) return null;
-  // Host turned Solami off: skip it (and a SOLANA_RPC_URL that points at Solami) like an unset key.
-  if ((def.id === "solami" || isSolamiEndpoint(endpoint)) && !solamiAllowed()) return null;
+  // A SOLANA_RPC_URL on a retired vendor host is skipped like an unset key.
+  if (isRetiredRpcEndpoint(endpoint)) return null;
   return {
     id: def.id,
     metricId: def.metricId,
     label: def.label,
     endpoint,
-    customMethods: def.customMethods,
   };
 }
 
@@ -67,9 +50,9 @@ export function resolveProvider(id: RpcProviderId, env: RpcEnv = engineEnv() as 
 }
 
 /**
- * Primary is the first configured catalog entry (Solami → generic → public).
+ * Primary is the first configured catalog entry (generic → public).
  * Fallback is the next distinct endpoint — used only when the method policy
- * allows it. Solami never falls back onto itself.
+ * allows it.
  */
 export function resolveProviderPair(env: RpcEnv = engineEnv() as RpcEnv): ProviderPair {
   const resolved = RPC_PROVIDERS
@@ -96,7 +79,7 @@ export function resolveDefaultRpcConfig(env: RpcEnv = engineEnv() as RpcEnv): Rp
   return { endpoint: pub.endpoint, provider: "default" };
 }
 
-export function rpcProvider(env: RpcEnv = engineEnv() as RpcEnv): "solami" | "default" {
+export function rpcProvider(env: RpcEnv = engineEnv() as RpcEnv): RpcMetricId {
   return resolveRpcConfig(env).provider;
 }
 
@@ -109,8 +92,4 @@ export function redactRpcEndpoint(endpoint: string): string {
   } catch {
     return "rpc";
   }
-}
-
-export function providerSupportsCustomMethod(provider: ResolvedProvider, method: string): boolean {
-  return provider.customMethods.includes(method);
 }

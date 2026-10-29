@@ -316,8 +316,6 @@ export function OpenPositionModal({
             <a className="block text-cream/90 underline" href={`https://solscan.io/tx/${c.signature}`} target="_blank" rel="noreferrer">
               View on Solscan
             </a>
-            {c.beamStatus.landedLabel && <p className="text-cream/80">{c.beamStatus.landedLabel}</p>}
-            {!c.beamStatus.landedLabel && c.beamStatus.tipNote && <p className="text-xs text-smoke">{c.beamStatus.tipNote}</p>}
             <a className="block text-cream/90 underline" href="/app">
               Open in Positions{c.positionMint ? ` (${c.positionMint.slice(0, 4)}…${c.positionMint.slice(-4)})` : ""}
             </a>

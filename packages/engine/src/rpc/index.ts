@@ -15,9 +15,9 @@ export type { RpcConfig, RpcEnv, RpcMetricId, RpcProvider, RpcProviderId, RpcCal
 export type { RpcCacheStore } from "./cache";
 export {
   PUBLIC_SOLANA_RPC_URL,
+  RETIRED_RPC_HOSTS,
   RPC_PROVIDERS,
-  SOLAMI_RPC_BASE_URL,
-  providerSupportsCustomMethod,
+  isRetiredRpcEndpoint,
   redactRpcEndpoint,
   resolveDefaultRpcConfig,
   resolveProvider,
@@ -99,7 +99,7 @@ function createEndpointConnection(endpoint: string, init: RpcConnectionInit = {}
 /**
  * A Connection whose every call goes through the provider pool (see README "RPC provider pool").
  *
- * Without SOLANA_RPC_PROVIDERS: Solami when `SOLAMI_API_KEY` is set, else `SOLANA_RPC_URL`, else
+ * Without SOLANA_RPC_PROVIDERS: `SOLANA_RPC_URL`, else
  * public mainnet, with the next distinct endpoint as fallback — unchanged from engine 0.1.3.
  * Auth / rate-limit / 5xx / timeout fail over per `METHOD_POLICIES`; a short circuit-breaker skips a
  * dead provider until its cooldown elapses. Keys stay server-side and never reach logs.

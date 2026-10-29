@@ -18,7 +18,6 @@ vi.mock("../open-state", () => ({ readOpenPoolState: vi.fn() }));
 vi.mock("../open-quote", () => ({ getOpenPositionQuoteBundle: vi.fn() }));
 vi.mock("../open-simulation", () => ({ simulateAndVerifyOpenTransaction: vi.fn() }));
 vi.mock("../open-transaction", async importOriginal => ({ ...await importOriginal<object>(), openLookupTableReader: vi.fn() }));
-vi.mock("../solami-beam", async importOriginal => ({ ...await importOriginal<object>(), fetchBeamTipAddress: vi.fn(async () => null) }));
 vi.mock("@raydium-io/raydium-sdk-v2", async importOriginal => ({ ...await importOriginal<object>(),
   Raydium: { load: vi.fn() }, ClmmInstrument: { ...(await importOriginal<{ ClmmInstrument: object }>()).ClmmInstrument, openPositionFromLiquidityInstructions: vi.fn() },
 }));

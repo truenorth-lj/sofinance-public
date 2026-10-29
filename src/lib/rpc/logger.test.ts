@@ -21,7 +21,7 @@ describe("formatRpcLog", () => {
   it("emits key-free structured fields", () => {
     const line = formatRpcLog({
       method: "simulateTransaction",
-      provider: "solami",
+      provider: "default",
       outcome: "retry",
       attempt: 2,
       retries: 1,
@@ -31,7 +31,7 @@ describe("formatRpcLog", () => {
     expect(JSON.parse(line)).toEqual({
       rpc: true,
       method: "simulateTransaction",
-      provider: "solami",
+      provider: "default",
       outcome: "retry",
       status: "rate-limit",
       retries: 1,
@@ -48,7 +48,7 @@ describe("defaultRpcLogger", () => {
     defaultRpcLogger({ method: "getAccountInfo", provider: "default", outcome: "ok" });
     expect(info).not.toHaveBeenCalled();
     process.env.SOFINANCE_RPC_LOG = "1";
-    defaultRpcLogger({ method: "getAccountInfo", provider: "solami", outcome: "cache-hit", cacheHit: true });
+    defaultRpcLogger({ method: "getAccountInfo", provider: "default", outcome: "cache-hit", cacheHit: true });
     expect(info).toHaveBeenCalledOnce();
     expect(String(info.mock.calls[0]![0])).toContain("\"cacheHit\":true");
     expect(String(info.mock.calls[0]![0])).not.toMatch(/api_key/);

@@ -41,10 +41,4 @@ export type CompoundSummary = {
   feeLamports: number; rentLamports: number; sizeBytes: number; unitsConsumed?: number;
   nonRefundableRentLamports?: string;
   blockhash: string; lastValidBlockHeight: number; simulatedAt: number; expiresAt: number;
-  beam?: {
-    included: boolean;
-    tipLamports: number;
-    tipAddress: string | null;
-    skippedReason: "disabled" | "no-tip-address" | "oversize" | null;
-  };
 };

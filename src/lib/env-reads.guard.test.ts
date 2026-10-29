@@ -4,7 +4,7 @@
 //   - a NEW read (new file, or more reads in a listed file) fails the test: use the config helper;
 //   - REMOVING a read also fails until the allowlist is lowered: that is the ratchet, delete the line.
 // Target end state (architecture review R3): only lib/config/server-env.ts, lib/rpc, lib/jupiter,
-// lib/solami, and the swap-fee reader appear here. "env.X" parameter-style reads inside those
+// and the swap-fee reader appear here. "env.X" parameter-style reads inside those
 // encapsulated modules are listed too, because they are secret reads all the same.
 // The scan is AST based (comments and strings never count) and covers every non-test .ts/.tsx file.
 import { readdirSync, readFileSync, statSync } from "node:fs";
@@ -19,7 +19,7 @@ const SECRET_ENV_NAMES = [
   "DATABASE_URL", "CRON_SECRET", "SOFINANCE_RWA_MIGRATION_DATABASE_URL",
   // Non-secret routing controls are also ratcheted: selection must stay in config helpers.
   "SOFINANCE_RWA_STORE_MODE", "SOFINANCE_RWA_NATIVE_CRON_ENABLED", "SOFINANCE_RWA_DB_EXPECTED_ROLE",
-  "JUPITER_API_KEY", "SOLAMI_API_KEY", "SOLAMI_DATA_API_KEY", "SOLANA_RPC_URL", "SOFINANCE_MCP_TOKEN",
+  "JUPITER_API_KEY", "SOLANA_RPC_URL", "SOFINANCE_MCP_TOKEN",
   "SOFINANCE_OPENS_DATABASE_URL", "SOFINANCE_OPENS_READ_TOKEN",
   // Optional dedicated Robinhood Chain RPC (may embed a provider key); read only inside the engine.
   "RHC_RPC_URL",
@@ -34,13 +34,10 @@ const ALLOWED_SECRET_READS: Record<string, Reads> = {
   SOFINANCE_RWA_MIGRATION_DATABASE_URL: { "lib/config/rwa-migration-env.ts": 1 },
   DATABASE_URL: { "lib/config/rwa-env.ts": 1 },
   CRON_SECRET: { "lib/config/rwa-env.ts": 1 },
-  // JUPITER_API_KEY, SOLAMI_API_KEY and SOLANA_RPC_URL readers (config/server-env, jupiter/urls,
-  // rpc/providers, solami/beam) moved into @sofinance/engine, which reads only the configuration the
+  // JUPITER_API_KEY and SOLANA_RPC_URL readers (config/server-env, jupiter/urls,
+  // rpc/providers) moved into @sofinance/engine, which reads only the configuration the
   // host injects (lib/engine-host.ts hands it process.env, listed in ALLOWED_WHOLE_ENV_PASSES).
   JUPITER_API_KEY: {},
-  SOLAMI_API_KEY: {},
-  // The Blur pool-activity reader was removed; nothing may read this key.
-  SOLAMI_DATA_API_KEY: {},
   SOLANA_RPC_URL: {},
   SOFINANCE_MCP_TOKEN: {
     // local stdio-to-remote shim: reads the user's own token from its own process env
@@ -144,20 +141,20 @@ describe("scanEnvReads (the scanner itself)", () => {
   it("finds direct, element, parameter-style and whole-env reads but ignores comments and strings", () => {
     const reads = scanEnvReads([
       "const a = process.env.JUPITER_API_KEY;",
-      "const b = process.env['SOLAMI_API_KEY'];",
+      "const b = process.env['SOFINANCE_MCP_TOKEN'];",
       "const c = env.SOLANA_RPC_URL;",
-      "const d = options.env.SOLAMI_DATA_API_KEY;",
+      "const d = options.env.RHC_RPC_URL;",
       "const e = foo(process.env);",
       "// process.env.JUPITER_API_KEY in a comment",
       "const s = 'process.env.JUPITER_API_KEY in a string';",
       "const f = process.env as Record<string, string>;",
     ].join("\n"));
-    expect(reads.map((read) => read.name)).toEqual(["JUPITER_API_KEY", "SOLAMI_API_KEY", "SOLANA_RPC_URL", "SOLAMI_DATA_API_KEY", "*", "*"]);
+    expect(reads.map((read) => read.name)).toEqual(["JUPITER_API_KEY", "SOFINANCE_MCP_TOKEN", "SOLANA_RPC_URL", "RHC_RPC_URL", "*", "*"]);
   });
 
   it("finds destructured reads", () => {
-    expect(scanEnvReads("const { JUPITER_API_KEY, SOLAMI_API_KEY: key } = process.env;").map((read) => read.name))
-      .toEqual(["JUPITER_API_KEY", "SOLAMI_API_KEY"]);
+    expect(scanEnvReads("const { JUPITER_API_KEY, SOFINANCE_MCP_TOKEN: key } = process.env;").map((read) => read.name))
+      .toEqual(["JUPITER_API_KEY", "SOFINANCE_MCP_TOKEN"]);
   });
 
   it("an `env.X` read on an unrelated identifier is not counted", () => {

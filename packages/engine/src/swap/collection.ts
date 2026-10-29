@@ -92,12 +92,11 @@ export async function collectSwapFee(connection: Connection, input: SwapFeeTrans
 }
 
 /** Prefer USDC, then measured input-asset fallback. Used by withdraw conversion
- * when the extra hop does not fit. Includes the Beam tip in the decision.
+ * when the extra hop does not fit.
  * Never split collection into a separately submitted transaction. */
 export async function fitFeeCollections(connection: Connection, collections: FeeCollection[],
-  instructions: TransactionInstruction[], compile: (ixs: TransactionInstruction[]) => VersionedTransaction,
-  tip?: TransactionInstruction) {
-  const measured = versionedTransactionSize(compile([...instructions, ...(tip ? [tip] : [])]));
+  instructions: TransactionInstruction[], compile: (ixs: TransactionInstruction[]) => VersionedTransaction) {
+  const measured = versionedTransactionSize(compile(instructions));
   if (!exceedsTxSizeLimit(measured) || !collections.some(c => c.input)) return { instructions, usdcCandidateBytes: measured, fallback: false };
   let result = instructions;
   for (const collection of collections) {

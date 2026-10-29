@@ -30,12 +30,11 @@ Former page paths permanently redirect. MCP `prepare_*` tools now emit `/app/sig
 - **Official X:** https://x.com/SoFinancelab
 - **Colosseum project:** https://colosseum.com/arena/projects/16410
 
-### How Solami is used
+### Infrastructure
 
-- **Solami RPC** (`packages/engine/src/rpc/providers.ts`, `packages/engine/src/rpc/urls.ts`): with the default provider configuration, `SOLAMI_API_KEY` selects `https://rpc.solami.dev/sol` as primary; eligible failures fall back to another provider. `SOLANA_RPC_PROVIDERS` can override this with an explicit pool. Position performance discovers history via Solami `getTransactionsForAddress` (`src/lib/solami/history.ts`, `src/lib/position-performance-math.ts`).
-- **Data API / Blur:** removed. The live pool-activity feature (MCP `get_pool_activity`, `/api/pool-activity` + `/stream`, the live pool-activity panel / swap ticker) was deleted; `get_position_range_status` uses the on-chain pool price.
-- **Production: no Solami at all.** Solami RPC and Beam are behind the code-constant `SOLAMI_ENABLED` (`src/lib/protocol-flags.ts`, on for Vercel preview/development). With it off the app installs `solamiEnabled: () => false` into the engine host (`src/lib/engine-host.ts`): the built-in `solami` RPC provider and any `SOLANA_RPC_PROVIDERS` / `SOLANA_RPC_URL` endpoint on `*.solami.dev` are skipped like an unset `$VAR` (reads and sends use the remaining providers, else `SOLANA_RPC_URL` / public), and Beam tip-address and landing lookups (`/api/beam-landing`) return nothing without a request. Preview/development are unchanged.
-- **Beam** (`packages/engine/src/solami/beam.ts`, `packages/engine/src/open-atomic.ts`): the single atomic open-position tx gets a 100k-lamport Beam tip when it fits. The tip is skipped (`skippedReason: "oversize"`) if adding it would push the tx over 1232 bytes, e.g. SOL input or MSTR pools. Landing info is read back via `/api/beam-landing`. Compound and selected flows use the same logic.
+- **RPC** (`packages/engine/src/rpc/providers.ts`, `packages/engine/src/rpc/urls.ts`): server RPC uses `SOLANA_RPC_URL` when set, else the public mainnet RPC; eligible failures fall back to the next distinct provider. `SOLANA_RPC_PROVIDERS` can override this with an explicit pool. Endpoints on retired vendor hosts (`RETIRED_RPC_HOSTS`, currently `solami.dev`) are skipped like an unset `$VAR`. Position performance discovers history with `getSignaturesForAddress` plus batched `getParsedTransaction` (`src/lib/position-performance-history.ts`, `src/lib/position-performance-math.ts`).
+- **Pool activity:** removed. The live pool-activity feature (MCP `get_pool_activity`, `/api/pool-activity` + `/stream`, the live pool-activity panel / swap ticker) was deleted; `get_position_range_status` uses the on-chain pool price.
+- **No transaction tips.** Prepared transactions contain only the flow's own instructions (plus the optional protocol fee); they are sent with `sendRawTransaction` through the RPC layer above.
 
 ### Run locally
 
@@ -48,21 +47,7 @@ cp .env.example .env.local   # fill in your own keys
 pnpm dev                     # http://localhost:3000
 ```
 
-Solami env vars (server-only, never prefix with `NEXT_PUBLIC_`):
-
-| Variable | Purpose |
-|----------|---------|
-| `SOLAMI_API_KEY` | Solami RPC + Beam. Unset = `SOLANA_RPC_URL`, else public mainnet RPC. |
-| `SOLAMI_BEAM` | Set to `0` to keep Solami RPC but skip Beam tips. |
-
-To use your own key, create one at Solami and put it in `.env.local`. Other variables (`JUPITER_API_KEY`, `NEXT_PUBLIC_REOWN_PROJECT_ID`, `NEXT_PUBLIC_APP_URL`, …) are documented in `.env.example`.
-
-### If the Solami trial key has expired
-
-The deployed app uses a Solami Pro trial key that may expire. What the code does then:
-
-- **RPC:** reads and sends fall back to `SOLANA_RPC_URL`/public RPC on validation, 5xx, 429 / JSON-RPC `-32005`, timeout, and auth/plan errors (401/402/403). Re-broadcasting the same signed transaction is idempotent. A short circuit-breaker skips a dead primary so every subsequent call is not retried there first. Removing `SOLAMI_API_KEY` switches everything to `SOLANA_RPC_URL` or public RPC (no Beam tip).
-- **Beam:** the tip is optional; if no tip address is available the tx is built without it.
+Server-only RPC: set `SOLANA_RPC_URL` (never prefix with `NEXT_PUBLIC_`); unset = public mainnet RPC. Other variables (`JUPITER_API_KEY`, `NEXT_PUBLIC_REOWN_PROJECT_ID`, `NEXT_PUBLIC_APP_URL`, …) are documented in `.env.example`.
 
 ## Self-hosting
 
@@ -92,13 +77,12 @@ Copy `.env.example` → `.env.local`. Comments in that file are the source of tr
 | `NEXT_PUBLIC_REOWN_PROJECT_ID` | Wallet connect in the web UI ([Reown dashboard](https://dashboard.reown.com/)) |
 | `NEXT_PUBLIC_APP_URL` | Absolute MCP and sign-link URLs (local: `http://localhost:3000`; production auto-detects `VERCEL_URL`) |
 
-**RPC (pick a path)** — `SOLAMI_API_KEY` (optional, preferred) and/or `SOLANA_RPC_URL`. If both are unset, server RPC uses public mainnet.
+**RPC** — `SOLANA_RPC_URL` (optional, recommended). If unset, server RPC uses public mainnet.
 
 **Optional**
 
 | Variable | Role |
 |----------|------|
-| `SOLAMI_BEAM` | `0` keeps Solami RPC but skips Beam tips |
 | `NEXT_PUBLIC_SOLANA_RPC_URL` | Browser wallet RPC only; must be a public endpoint, never a key |
 | `SOFINANCE_FEE_WALLET` / `SOFINANCE_FEE_BPS` | Optional protocol fee; **server-only, never `NEXT_PUBLIC_`**. Default 10 bps, max 100. Unset wallet = fee 0, no transfer added. Details: [Protocol swap fee](#protocol-swap-fee). |
 | RWA / history DB vars | Explicit `gateway` (default) or direct TLS `neon` mode; native cron defaults off. See `.env.example`, [DB docs](db/README.md) and [cutover runbook](db/neon-vercel-cutover.md) |
@@ -220,7 +204,7 @@ Kept on both web API and MCP paths:
 ```bash
 pnpm install
 cp .env.example .env.local
-# Server-only: SOLANA_RPC_URL and/or SOLAMI_API_KEY, JUPITER_API_KEY
+# Server-only: SOLANA_RPC_URL, JUPITER_API_KEY
 # Optional protocol fee: SOFINANCE_FEE_WALLET + SOFINANCE_FEE_BPS (default 10, max 100). Unset wallet = fee 0.
 # Public: NEXT_PUBLIC_REOWN_PROJECT_ID (and optional NEXT_PUBLIC_SOLANA_RPC_URL without secrets)
 pnpm dev --webpack --hostname 127.0.0.1
@@ -230,7 +214,7 @@ pnpm dev --webpack --hostname 127.0.0.1
 pnpm lint && pnpm typecheck && pnpm test && pnpm build
 ```
 
-Never commit `.env.local`, mnemonics, or API keys. Do not prefix `SOLANA_RPC_URL` / `SOLAMI_API_KEY` / `JUPITER_API_KEY` / `SOFINANCE_FEE_WALLET` / `SOFINANCE_FEE_BPS` with `NEXT_PUBLIC_`.
+Never commit `.env.local`, mnemonics, or API keys. Do not prefix `SOLANA_RPC_URL` / `JUPITER_API_KEY` / `SOFINANCE_FEE_WALLET` / `SOFINANCE_FEE_BPS` with `NEXT_PUBLIC_`.
 
 ### Protocol swap fee
 
@@ -245,41 +229,33 @@ When `SOFINANCE_FEE_WALLET` is set (Vercel env, server-only), fee-enabled open-p
 
 Quote/prepare JSON includes `feeBps` / `feeAmount` / `feeWallet`. `feeAmount` is in the input mint for open / selected / compound. Rent estimates are unchanged; ATA rent for a new recipient token account is allowed in the simulated SOL debit cap only.
 
-## Powered by Solami
-
-[Solami](https://solami.dev) is optional Solana infrastructure. Bring your own keys — the app keeps working on `SOLANA_RPC_URL` or the public mainnet RPC when they are absent.
+## RPC and Jupiter layers
 
 | Surface | When | What it does |
 |---------|------|----------------|
-| **RPC** | `SOLAMI_API_KEY` set | All server RPC (`rpcConnection()` / `rpcRequest()`) goes through `@sofinance/engine/rpc` (Solami → `SOLANA_RPC_URL` / Helius → public). 429 / 5xx / timeouts retry on the same provider with exponential backoff + jitter (honors `Retry-After`, bounded budget, `AbortSignal`), then fail over. Auth/plan errors (401/402/403) and JSON-RPC `-32005` skip same-provider retry and fail over immediately, including simulate / blockhash / height / fee / send / confirm. Re-broadcasting the same signed transaction is idempotent by signature. A short circuit-breaker then skips the dead primary until a small cooldown elapses. Exit-preview uses a longer 25s per-call budget and coalesces identical position reads for 8s. Safe reads (`getAccountInfo`, `getMultipleAccounts*`, `getTokenLargestAccounts`, finalized/confirmed `getParsedTransaction`) use a small in-process TTL cache with in-flight de-dupe — never sends, simulates, or blockhash/height calls. Methods Solami answers non-compliantly (`getEpochInfo.transactionCount=null`, `getParsedTransaction` jsonParsed unions) still fall back per `METHOD_POLICIES`. History listing uses Solami `getTransactionsForAddress`; empty / HTTP / parse failures use the same policy layer. Fallback reasons are always logged as key-free JSON; set `SOFINANCE_RPC_LOG=1` for per-attempt lines. |
+| **RPC** | always (`SOLANA_RPC_URL` optional) | All server RPC (`rpcConnection()` / `rpcRequest()`) goes through `@sofinance/engine/rpc` (`SOLANA_RPC_URL` → public). 429 / 5xx / timeouts retry on the same provider with exponential backoff + jitter (honors `Retry-After`, bounded budget, `AbortSignal`), then fail over. Auth/plan errors (401/402/403) and JSON-RPC `-32005` skip same-provider retry and fail over immediately, including simulate / blockhash / height / fee / send / confirm. Re-broadcasting the same signed transaction is idempotent by signature. A short circuit-breaker then skips a dead primary until a small cooldown elapses. Exit-preview uses a longer 25s per-call budget and coalesces identical position reads for 8s. Safe reads (`getAccountInfo`, `getMultipleAccounts*`, `getTokenLargestAccounts`, finalized/confirmed `getParsedTransaction`) use a small in-process TTL cache with in-flight de-dupe — never sends, simulates, or blockhash/height calls. Per-method fallback rules live in `METHOD_POLICIES`. Fallback reasons are always logged as key-free JSON; set `SOFINANCE_RPC_LOG=1` for per-attempt lines. |
 | **Jupiter** | `JUPITER_API_KEY` (Portal) | All Jupiter HTTP goes through `packages/engine/src/jupiter/` to `https://api.jup.ag` with `x-api-key` (`lite-api.jup.ag` is retired). 429 / 5xx / timeouts retry with jitter + `Retry-After` / `x-ratelimit-reset`, bounded budget, `AbortSignal`. Read-only quotes cache 8s (key: input/output mint, amount, slippage, maxAccounts) with in-flight de-dupe; POST `/swap-instructions` is not cached. Exit-preview quotes legs in parallel (cap 2) and logs the real error class/message on failure (always-on, key-free). Upstream Jupiter 429/5xx return `errorCode: "jupiter_unavailable"` — not the Solana RPC text. `SOFINANCE_JUPITER_LOG=1` or `SOFINANCE_RPC_LOG=1` logs per-call Jupiter lines. |
-| **Beam** | `SOLAMI_API_KEY` (off with `SOLAMI_BEAM=0`) | Prepare adds a ≥100,000-lamport SystemProgram tip to a live tip address **before** HMAC binding so the user signs it. If the v0 message would exceed 1,232 bytes the tip is omitted. Broadcast is the same `sendRawTransaction` through Solami RPC. After submit we poll `GET /swqos/tx/{signature}` up to ~6s and always return `beamLandingUrl` so clients can refresh. |
 
-Create a key at [solami.dev](https://solami.dev). Paste `SOLAMI_API_KEY` into `.env.local` or Vercel — never `NEXT_PUBLIC_*`. Position performance reports `{ txCount, elapsedMs, provider, solamiTxCount, defaultTxCount, fallbackReasons }` so you can see when Solami served recent txs and the default RPC filled older or unparseable ones.
+Position performance reports `{ txCount, elapsedMs, provider, defaultTxCount, fallbackReasons }`.
 
 ```
 wallet / API / MCP
         │
         ▼
- packages/engine/src/rpc/ ── SOLAMI_API_KEY? ──► rpc.solami.dev
-        │                    else ──► SOLANA_RPC_URL / public RPC
+ packages/engine/src/rpc/ ── SOLANA_RPC_URL? ──► dedicated RPC
+        │                    else ──► public RPC
         │         retry 429/5xx/timeout → then next provider
         │         cache safe reads (per-instance, best effort)
         ▼
  position-performance / exit-preview / MCP
-   solami: getTransactionsForAddress (signatures page) + batched getParsedTransaction
-   fallback: SOLANA_RPC_URL / public (empty window, parse errors, HTTP 5xx/429/-32005/401–403 after retry)
-   default: getSignaturesForAddress + batched getParsedTransaction (8-wide)
+   history: getSignaturesForAddress + batched getParsedTransaction (8-wide)
 ```
 
 ### Demo checklist (RPC layer)
 
-1. Set `SOLAMI_API_KEY` only (no `SOLANA_RPC_URL`) and open `/app/position-performance`.
+1. Set `SOLANA_RPC_URL` (or leave it unset for public RPC) and open `/app/position-performance`.
 2. Compute performance for a real mainnet position NFT.
-3. Confirm the history line shows a tx count / elapsed ms and either `solami` or `Solami for recent / fallback for older` (Solami's history window is limited; older txs come from the default RPC automatically).
-4. Unset the key, restart, and confirm the same page still works via `SOLANA_RPC_URL` / public RPC with `provider: default`.
-5. With `SOLAMI_API_KEY` set, prepare a zap/compound/open and confirm the unsigned message includes a tip transfer (or is omitted only because of the 1,232-byte cap). After broadcast, the status dialog / MCP submit result may show `Landed via Beam · region · tip`.
-6. Set `SOLAMI_BEAM=0` and confirm prepares still work with no tip.
+3. Confirm the history line shows a tx count / elapsed ms and `provider: default`.
 
 ## Quickstart — MCP for AI Agents (Remote, Zero Local Secrets)
 
@@ -453,8 +429,7 @@ routing, method capabilities, retry and cache policies. Add provider policy in t
 not in individual quote/send/MCP callers. The cache is per process; `RpcCacheStore` is the
 extension point for a shared store.
 
-App-specific Solami history parsing remains in `src/lib/solami/`; Beam transaction
-helpers live in `packages/engine/src/solami/beam.ts`.
+Position history listing and parsing live in `src/lib/position-performance-history.ts`.
 
 ## RWA same-asset pairing
 
@@ -471,7 +446,7 @@ Name heuristics are not used as the primary filter. Annotated with fee tier, TVL
 
 Computes a position NFT's **actual holding-period return** from on-chain facts (no database):
 
-1. Load personal-position history: Solami `getTransactionsForAddress` when `SOLAMI_API_KEY` is set (Solami's RPC history window is limited — empty pages and parse/validation errors fall back automatically to `SOLANA_RPC_URL` / public), otherwise `getSignaturesForAddress` plus bounded-parallel `getParsedTransaction` batches (not a sequential N+1 loop)
+1. Load personal-position history: `getSignaturesForAddress` plus bounded-parallel `getParsedTransaction` batches (not a sequential N+1 loop)
 2. Parse Anchor events from logs: `CreatePersonalPositionEvent`, `IncreaseLiquidityEvent`, `DecreaseLiquidityEvent` (exact deposit / principal-out / fee-out amounts)
 3. Current equity = liquidity token amounts (`LiquidityMath`) + uncollected fees (fee-growth accrual, same math as compound)
 4. Metrics: `holdingDays`, deposited / withdrawn / fees, PnL, `holdingPeriodReturnPct`, `annualizedReturnPct` (simple ×365/days; **null when the position is younger than 24h**), `feeOnlyAprPct`

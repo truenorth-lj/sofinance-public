@@ -89,17 +89,16 @@ it.each([1, 2])("validates existing USDC ATA state=%s", async state => {
   else expect((await feeAccountSetup(connection as never, owner, recipient)).instructions).toEqual([]);
 });
 
-it("measures with Beam tip and replaces only an oversized conversion", async () => {
+it("measures the candidate and replaces only an oversized conversion", async () => {
   const routeInstruction = SystemProgram.transfer({ fromPubkey: owner, toPubkey: recipient, lamports: 1 });
-  const tip = SystemProgram.transfer({ fromPubkey: owner, toPubkey: Keypair.generate().publicKey, lamports: 100000 });
   const input = { payer: owner, owner, recipient, amount: 1000n, kind: "token" as const,
     mint: Keypair.generate().publicKey, source: Keypair.generate().publicKey, decimals: 6, program: TOKEN_PROGRAM_ID };
   const connection = { getAccountInfo: vi.fn(async () => null) };
   const compile = vi.fn(() => ({} as never));
   vi.mocked(versionedTransactionSize).mockReturnValue(1300);
   const result = await fitFeeCollections(connection as never,
-    [{ instructions: [routeInstruction], routes: [], input }], [routeInstruction], compile, tip);
-  expect(compile).toHaveBeenCalledWith([routeInstruction, tip]);
+    [{ instructions: [routeInstruction], routes: [], input }], [routeInstruction], compile);
+  expect(compile).toHaveBeenCalledWith([routeInstruction]);
   expect(result.fallback).toBe(true);
   expect(result.usdcCandidateBytes).toBe(1300);
   expect(result.instructions[0]!.programId.equals(ASSOCIATED_TOKEN_PROGRAM_ID)).toBe(true);
@@ -107,5 +106,5 @@ it("measures with Beam tip and replaces only an oversized conversion", async () 
   expect(result.instructions.some(ix => ix.programId.equals(SystemProgram.programId) && ix.keys[1]?.pubkey.equals(recipient))).toBe(false);
   vi.mocked(versionedTransactionSize).mockReturnValue(1200);
   expect((await fitFeeCollections(connection as never,
-    [{ instructions: [routeInstruction], routes: [], input }], [routeInstruction], compile, tip)).fallback).toBe(false);
+    [{ instructions: [routeInstruction], routes: [], input }], [routeInstruction], compile)).fallback).toBe(false);
 });

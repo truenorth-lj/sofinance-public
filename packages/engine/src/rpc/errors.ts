@@ -50,7 +50,7 @@ export function abortError(signal?: AbortSignal): Error {
 }
 
 const AUTH_STATUS = new Set([401, 402, 403]);
-/** Solami (and some others) encode rate-limit / unhealthy node as JSON-RPC -32005. */
+/** Some providers encode rate-limit / unhealthy node as JSON-RPC -32005. */
 const RATE_LIMIT_RPC_CODE = -32005;
 
 function httpStatusOf(error: unknown): number | null {
@@ -79,7 +79,7 @@ function jsonRpcCodeOf(error: unknown): number | null {
 /**
  * Classify a thrown RPC / web3.js failure. 401/402/403 are `auth` (expired key
  * or lapsed plan); 429 and JSON-RPC -32005 are `rate-limit`; Superstruct shape
- * mismatches are `validation` (Solami non-compliance).
+ * mismatches are `validation` (provider non-compliance).
  */
 export function classifyRpcError(error: unknown): RpcErrorKind {
   const status = httpStatusOf(error);

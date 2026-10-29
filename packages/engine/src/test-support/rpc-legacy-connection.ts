@@ -1,7 +1,7 @@
 /**
  * Frozen copy of the engine 0.1.3 two-provider `invokeWithPolicy` / `createResilientConnection`.
  * Test-only: `rpc/legacy-equivalence.test.ts` runs it side by side with the provider pool to prove
- * the single-provider (SOLANA_RPC_URL / SOLAMI_API_KEY) configuration behaves exactly as before.
+ * the single-provider (SOLANA_RPC_URL) configuration behaves exactly as before.
  */
 import type { Connection } from "@solana/web3.js";
 import { withCacheAndInflight, cacheKeyFor } from "../rpc/cache";
@@ -261,14 +261,14 @@ function managedConnectionMethod(name: string): boolean {
 }
 
 /**
- * Prefer `primary` (Solami) for account reads and sends. Same-provider retries
+ * Prefer `primary` for account reads and sends. Same-provider retries
  * cover 429 / 5xx / timeout. On classified failures (including send/confirm
  * auth, rate-limit, 5xx, and timeout), retry the same call on `fallback`.
  */
 export function createResilientConnection(
   primary: Connection,
   fallback: Connection | null = null,
-  options: ResilientConnectionOptions = { primaryId: "solami", fallbackId: "default" },
+  options: ResilientConnectionOptions = { primaryId: "default", fallbackId: "default" },
 ): Connection {
   const proxy = new Proxy(primary, {
     get(target, prop, receiver) {

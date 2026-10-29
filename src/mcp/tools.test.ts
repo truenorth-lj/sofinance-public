@@ -332,7 +332,6 @@ describe("MCP Tools", () => {
           a: "1000000",
           b: "2000000",
         },
-        beam: { included: false, tipLamports: 0, tipAddress: null, skippedReason: "disabled" as const },
       };
 
       const mockTransaction = {

@@ -2,20 +2,20 @@ import "@/lib/engine-host";
 import "server-only";
 import { createHash } from "node:crypto";
 import type { Connection } from "@solana/web3.js";
-import { rpcConnection, defaultRpcConnection, resolveProviderPair, PUBLIC_SOLANA_RPC_URL,
+import { rpcConnection, PUBLIC_SOLANA_RPC_URL,
   parseRetryAfter, RpcUnavailableError, type RpcEnv, type RpcProvider, type RetryConfig } from "@sofinance/engine/rpc";
 
 const ACTIVE_LIMIT = 8;
 const ENDPOINT_LIMIT = 16;
 const QUEUE_LIMIT = 512;
 const BODY_LIMIT = 16 * 1024 * 1024;
-const HISTORY_METHODS = new Set(["getTransaction", "getSignaturesForAddress", "getSignatureStatuses", "getTransactionsForAddress"]);
+const HISTORY_METHODS = new Set(["getTransaction", "getSignaturesForAddress", "getSignatureStatuses"]);
 export type HistoryRpcMetric = {
   attemptCount: number; rateLimitCount: number; queuedMs: number; requestMs: number;
   /** This observer's active physical attempts, including body consumption. */
   maxActive: number;
-  /** Actual Solami leaf attempts; generic/public leaves are counted under defaultAttempts. */
-  primaryAttempts: number; defaultAttempts: number;
+  /** Leaf attempts against the configured providers (generic / public / pool). */
+  defaultAttempts: number;
   /** Decoded response-body bytes actually consumed; not compressed wire/header bytes. */
   responseBytes: number;
 };
@@ -141,11 +141,10 @@ async function readBody(response: Response, signal: AbortSignal, observeBytes: (
 }
 
 /** History-only leaf transport: all internal/outer fallback and retry fetches use shared pacing. */
-export function createHistoryRpcFetch(signal: AbortSignal, env?: RpcEnv,
+export function createHistoryRpcFetch(signal: AbortSignal, _env?: RpcEnv,
   options: HistoryRpcOptions = {}): { fetch: typeof fetch; observer: HistoryRpcObserver } {
-  const pair = resolveProviderPair(env);
   const metric: HistoryRpcMetric = { attemptCount: 0, rateLimitCount: 0, queuedMs: 0,
-    requestMs: 0, maxActive: 0, primaryAttempts: 0, defaultAttempts: 0, responseBytes: 0 };
+    requestMs: 0, maxActive: 0, defaultAttempts: 0, responseBytes: 0 };
   const receipts = new Map<string, RpcProvider>();
   let ownActive = 0;
   const snapshot = () => ({ ...metric });
@@ -156,12 +155,12 @@ export function createHistoryRpcFetch(signal: AbortSignal, env?: RpcEnv,
     const requestSignal = init?.signal ? AbortSignal.any([signal, init.signal]) : signal;
     const url = input instanceof Request ? input.url : String(input);
     const queue = endpointQueue(url);
-    const provider: RpcProvider = pair.primary.metricId === "solami" && url === pair.primary.endpoint ? "solami" : "default";
+    const provider: RpcProvider = "default";
     return queue.run(requestSignal, request.weight, async queuedMs => {
       requestSignal.throwIfAborted();
       const started = Date.now(); ownActive++;
       metric.attemptCount++; metric.queuedMs += queuedMs; metric.maxActive = Math.max(metric.maxActive, ownActive);
-      if (provider === "solami") metric.primaryAttempts++; else metric.defaultAttempts++;
+      metric.defaultAttempts++;
       notify();
       try {
         const response = await (options.fetch ?? fetch)(input, { ...init, signal: requestSignal });
@@ -197,7 +196,5 @@ export function createHistoryRpcConnections(signal: AbortSignal, env?: RpcEnv,
   options: HistoryRpcOptions = {}): { connection: Connection; fallbackConnection?: Connection; observer: HistoryRpcObserver } {
   const transport = createHistoryRpcFetch(signal, env, options);
   const init = { signal, env, fetch: transport.fetch, retry: options.retry };
-  return { connection: rpcConnection(env, init),
-    fallbackConnection: resolveProviderPair(env).primary.metricId === "solami" ? defaultRpcConnection(env, init) : undefined,
-    observer: transport.observer };
+  return { connection: rpcConnection(env, init), observer: transport.observer };
 }

@@ -26,7 +26,6 @@ export function withdrawPrepared(stage: WithdrawSummary["stage"] = "atomic", ove
   protocolFee: { bps: 10, wallet: testKeypair(77).publicKey.toBase58(), legs: [{ mint: USDC_MINT, amount: "1000", collectedMint: USDC_MINT, collectedAmount: "1000" }] },
   rentRefundLamports: "6117840", maxSolDebitLamports: "5000", expiresAt: Date.now() + 60000,
   lastValidBlockHeight: 150, blockhash: transaction.message.recentBlockhash, bytes: transaction.serialize().length,
-  beam: { enabled: false, included: false, tipLamports: 0, tipAddress: null, skippedReason: "disabled" },
   ...overrides,
  };
  return { summary, unsignedTransaction: toBase64(transaction), permit: withdrawPermit.issue(SIGNING_SECRET, { wallet: summary.wallet, message: messageBase64(transaction), summary }) };

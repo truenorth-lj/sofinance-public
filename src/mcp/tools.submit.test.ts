@@ -2,7 +2,7 @@
 //   submitSignedTransaction (add liquidity, a THIRD copy of the broadcast pipeline),
 //   submitCompoundTransaction, submitOpenPosition.
 // Unlike tools.test.ts these use the REAL permit/HMAC code and real signed transactions; only RPC,
-// chain-state readers, simulation and Beam are mocked.
+// chain-state readers and simulation are mocked.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
@@ -13,7 +13,6 @@ vi.mock("@sofinance/engine/open-state", () => ({ readOpenPoolState: vi.fn() }));
 vi.mock("@sofinance/engine/open-simulation", () => ({ simulateAndVerifyOpenTransaction: vi.fn() }));
 vi.mock("@sofinance/engine/compound-state", () => ({ readCompoundPositionState: vi.fn() }));
 vi.mock("@sofinance/engine/compound-simulation", () => ({ simulateAndVerifyCompound: vi.fn() }));
-vi.mock("@/lib/beam-after-send", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/beam-after-send")>()), beamAfterSend: vi.fn() }));
 
 import { issueCompoundPermit } from "../lib/compound-permit";
 import { simulateAndVerifyCompound } from "@sofinance/engine/compound-simulation";
@@ -25,9 +24,8 @@ import { rpcConnection } from "@sofinance/engine/rpc";
 import { issueSelectedPermit, type SelectedPermitInput } from "../lib/selected-permit";
 import { simulateAndVerifySelectedTransaction } from "../lib/selected-simulation";
 import { readSelectedPositionState } from "@sofinance/engine/selected-state";
-import { beamAfterSend } from "@/lib/beam-after-send";
 import {
-  BEAM_RESULT, BLOCKHASH, SIGNING_SECRET, buildTransaction, compoundSummaryFixture, fakeConnection, type FakeConnection, messageBase64,
+  BLOCKHASH, SIGNING_SECRET, buildTransaction, compoundSummaryFixture, fakeConnection, type FakeConnection, messageBase64,
   openSummaryFixture, phantomRewriteTransaction, signatureOf, tamperTransferLamports, testKeypair, toBase64,
 } from "../lib/test-support/send-fixtures";
 import type { SubmitSignedTransactionInput } from "./schemas";
@@ -49,7 +47,6 @@ beforeEach(() => {
   transaction = buildTransaction({ payer: walletKey });
   connection = fakeConnection({ sendRawTransaction: vi.fn(async () => signatureOf(transaction)) });
   vi.mocked(rpcConnection).mockReturnValue(connection as never);
-  vi.mocked(beamAfterSend).mockResolvedValue(BEAM_RESULT as never);
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -86,7 +83,7 @@ describe("submitSignedTransaction (MCP add-liquidity submit)", () => {
 
   it("verifies, simulates with sigVerify and broadcasts with the same fixed options as the web route", async () => {
     const result = await submitSignedTransaction(selectedInput());
-    expect(result).toEqual({ signature: signatureOf(transaction), beam: BEAM_RESULT.beam, beamLabel: "Beam landed", beamLandingUrl: BEAM_RESULT.beamLandingUrl });
+    expect(result).toEqual({ signature: signatureOf(transaction) });
     expect(connection.sendRawTransaction).toHaveBeenCalledWith(expect.any(Uint8Array), {
       skipPreflight: false, preflightCommitment: "confirmed", maxRetries: 3,
     });
@@ -194,13 +191,11 @@ describe("submitSignedTransaction (MCP add-liquidity submit)", () => {
     await expect(submitSignedTransaction(selectedInput())).rejects.toThrow("https://rpc.example/x?api-key=SECRET123");
   });
 
-  it("never waits on Beam after send: no tip plan is passed, and a throwing lookup cannot reject the tool call", async () => {
-    vi.mocked(beamAfterSend).mockRejectedValue(new Error("beam down"));
-    await expect(submitSignedTransaction(selectedInput())).resolves.toMatchObject({
-      signature: signatureOf(transaction), beam: null, beamLabel: null,
+  it("returns only the signature after the single send", async () => {
+    await expect(submitSignedTransaction(selectedInput())).resolves.toEqual({
+      signature: signatureOf(transaction),
     });
     expect(connection.sendRawTransaction).toHaveBeenCalledOnce();
-    expect(beamAfterSend).toHaveBeenCalledWith(signatureOf(transaction), null);
   });
 });
 
@@ -216,9 +211,9 @@ describe("submitCompoundTransaction (MCP compound submit)", () => {
     vi.mocked(simulateAndVerifyCompound).mockResolvedValue({ rewards: [] } as never);
   });
 
-  it("delegates to sendSignedCompoundTransaction and returns signature + beam", async () => {
+  it("delegates to sendSignedCompoundTransaction and returns the signature", async () => {
     await expect(submitCompoundTransaction(input())).resolves.toEqual({
-      signature: signatureOf(transaction), beam: BEAM_RESULT.beam, beamLabel: "Beam landed", beamLandingUrl: BEAM_RESULT.beamLandingUrl,
+      signature: signatureOf(transaction),
     });
   });
 
@@ -386,9 +381,8 @@ for (const surface of ["http", "stdio"] as const) describe(`${surface} real subm
       permit: withdrawPermit.issue(SIGNING_SECRET, { wallet, summary, message: messageBase64(transaction) }) };
   }
   const submissions = ["submit_signed_transaction", "submit_compound_transaction", "submit_open_position", "submit_withdraw"];
-  it.each(submissions)("%s preserves exact bytes, one send, simulation-before-send and accepted metadata failure", async name => {
+  it.each(submissions)("%s preserves exact bytes, one send and simulation-before-send", async name => {
     const args = input(name);
-    vi.mocked(beamAfterSend).mockRejectedValue(new Error("metadata unavailable"));
     const result = await call(name, args);
     expect(result.isError).toBeUndefined();
     expect(result.content).toEqual([{ type: "text", text: expect.stringContaining(signatureOf(transaction)) }]);
@@ -425,7 +419,7 @@ for (const surface of ["http", "stdio"] as const) describe(`${surface} real subm
     connection.sendRawTransaction.mockRejectedValue(new SendTransactionError({ action: "simulate", signature: "",
       transactionMessage: "Transaction simulation failed: insufficient funds" }));
     vi.mocked(rpcConnection).mockReturnValue(createResilientConnection(connection as never, null, {
-      primaryId: "solami", fallbackId: "default", retry: { maxAttempts: 2, baseMs: 0, maxDelayMs: 0, budgetMs: 2000 },
+      primaryId: "default", fallbackId: "default", retry: { maxAttempts: 2, baseMs: 0, maxDelayMs: 0, budgetMs: 2000 },
     }));
     const result = await call(name, args);
     expect(result.isError).toBe(true);
@@ -435,7 +429,6 @@ for (const surface of ["http", "stdio"] as const) describe(`${surface} real subm
       expect(Buffer.from(bytes as Uint8Array)).toEqual(Buffer.from(transaction.serialize()));
     }
     expect(signatureOf(transaction)).toBe(originalSignature);
-    expect(beamAfterSend).not.toHaveBeenCalled();
   });
   it("withdraw's record summary remains accepted by the parser, then permit fails before backend", async () => {
     const result = await call("submit_withdraw", { wallet, summary: {}, permit: "forged", signedTransaction: toBase64(transaction) });

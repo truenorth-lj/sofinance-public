@@ -11,7 +11,7 @@ import { resetRpcRateLimiters } from "./rate-limit";
 import { resetReadRotation } from "./select";
 import { setRpcRetryConfig } from "./retry";
 import type { RpcLogEvent } from "./types";
-import { PUBLIC_SOLANA_RPC_URL } from "./urls";
+import { PUBLIC_SOLANA_RPC_URL, RETIRED_RPC_HOSTS } from "./urls";
 
 const ENV = {
   SOLANA_RPC_URL: "https://helius.example/?api-key=SECRET_H",
@@ -103,10 +103,15 @@ describe("SOLANA_RPC_PROVIDERS parsing", () => {
     expect(names(pool.read)).toEqual(["alchemy", "helius"]);
   });
 
-  it("$SOLAMI builds the Solami endpoint and keeps its custom methods and metric id", () => {
-    const pool = providers([{ name: "solami", url: "$SOLAMI" }, { name: "helius", url: "$SOLANA_RPC_URL" }], { ...ENV, SOLAMI_API_KEY: "k" });
-    expect(pool.read[0]).toMatchObject({ metricId: "solami", customMethods: ["getTransactionsForAddress"] });
-    expect(names(routeMembers(pool, "read", "_rpcRequest", ["getTransactionsForAddress", []]))).toEqual(["solami"]);
+  it("skips retired vendor hosts (literal or via $VAR) like an unset $VAR", () => {
+    const retired = `https://rpc.${RETIRED_RPC_HOSTS[0]}/sol?api_key=k`;
+    const pool = providers([
+      { name: "old", url: "$OLD_RPC_URL" },
+      { name: "literal", url: retired },
+      { name: "helius", url: "$SOLANA_RPC_URL" },
+    ], { ...ENV, OLD_RPC_URL: retired });
+    expect(names(pool.read)).toEqual(["helius"]);
+    expect(pool.read.some((m) => m.endpoint.includes(RETIRED_RPC_HOSTS[0]!))).toBe(false);
   });
 
   it.each([

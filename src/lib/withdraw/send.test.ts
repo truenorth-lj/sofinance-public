@@ -1,9 +1,8 @@
 import { beforeEach, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
-const mocks = vi.hoisted(() => ({ simulate: vi.fn(), height: vi.fn(), send: vi.fn(), status: vi.fn(), beam: vi.fn() }));
+const mocks = vi.hoisted(() => ({ simulate: vi.fn(), height: vi.fn(), send: vi.fn(), status: vi.fn() }));
 vi.mock("@sofinance/engine/withdraw/build", () => ({ simulateWithdraw: mocks.simulate }));
 vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: () => ({ getBlockHeight: mocks.height, sendRawTransaction: mocks.send, getSignatureStatuses: mocks.status }) }));
-vi.mock("@/lib/beam-after-send", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/beam-after-send")>()), beamAfterSend: mocks.beam }));
 import { submitWithdraw } from "./send";
 import { withdrawPermit } from "@sofinance/engine/withdraw/permit";
 import type { WithdrawSummary } from "@sofinance/engine/withdraw/types";
@@ -25,14 +24,12 @@ beforeEach(() => {
     mocks.simulate.mockResolvedValue({});
     mocks.send.mockResolvedValue(signatureOf(transaction));
     mocks.status.mockResolvedValue({ value: [{ confirmationStatus: "confirmed" }] });
-    mocks.beam.mockResolvedValue({ beam: null, label: null, beamLandingUrl: "url" });
 });
 it("re-simulates the signed exact message before the single RPC submission", async () => {
-    const body = input({ beam: { enabled: false, included: false, tipLamports: 0, tipAddress: null, skippedReason: "disabled" } });
-    expect(await submitWithdraw(body)).toHaveProperty("signature", signatureOf(transaction));
+    const body = input();
+    expect(await submitWithdraw(body)).toEqual({ signature: signatureOf(transaction) });
     expect(mocks.simulate).toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.objectContaining({ operation: "withdraw" }), true, undefined);
     expect(mocks.send).toHaveBeenCalledOnce();
-    expect(mocks.beam).toHaveBeenCalledWith(signatureOf(transaction), body.summary.beam);
     expect(mocks.simulate.mock.invocationCallOrder[0]).toBeLessThan(mocks.send.mock.invocationCallOrder[0]!);
 });
 it("rejects a forged permit or a changed summary before simulation or sending", async () => {

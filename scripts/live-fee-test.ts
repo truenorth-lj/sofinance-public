@@ -8,13 +8,7 @@ import "@/lib/engine-host";
  * swap --from usdc --to MINT --amount 1; withdraw --position NFT --percent 100 --receive usdc.
  * Options: --url URL, --keypair FILE, --mint MINT (choose pool token), --send.
  * Loads .env.local without overriding existing environment. Server env is separate.
- * Beam caveat: this branch's isBeamEnabled requires SOLAMI_API_KEY even with
- * SOLAMI_BEAM=true. There is currently NO keyless force-tip/RPC configuration.
- * For production tip sizes, configure a real SOLAMI_API_KEY on the dev server,
- * enable SOLAMI_BEAM and restart it. To support keyless tips with RPC broadcast,
- * isBeamEnabled would need to explicitly accept true/1/on; then restart the server
- * with SOLAMI_BEAM=true and SOLANA_RPC_URL. This harness never adds tips itself:
- * that would invalidate the app permit. Oversize tips may be omitted by the app.
+ * This harness never adds instructions itself: that would invalidate the app permit.
  * Frontend open/add/compound use prepare permits, not /verify-sign-token (the
  * latter belongs to the separate MCP signing flow). Exit preview cannot execute.
  */
@@ -91,15 +85,14 @@ async function request<T>(url: string, body?: unknown, broadcast = false): Promi
   throw new Error("Retry budget exhausted");
 }
 const api = <T>(path: string, body?: unknown, broadcast = false) => request<T>(new URL(`/api/${path}`, base).toString(), body, broadcast);
-type Beam = { tipAddress: string | null; included: boolean; skippedReason: string | null };
 type Prepared<S> = { unsignedTransaction: string; permit: string; summary: S };
 type SelectedPrepared = {
   unsignedTransaction: string; permit: string; quote: SelectedQuote; simulated: boolean;
   expiresAt: number; blockhash: string; lastValidBlockHeight: number;
-  startingLiquidity: string; startingBalances: { input: string; a: string; b: string }; beam?: Beam;
+  startingLiquidity: string; startingBalances: { input: string; a: string; b: string };
 };
 type Fee = { mint: string; amount: string; destination: string };
-async function inspect(encoded: string, beam?: Beam, extraSigners: Keypair[] = []) {
+async function inspect(encoded: string, extraSigners: Keypair[] = []) {
   const tx = VersionedTransaction.deserialize(Buffer.from(encoded, "base64"));
   if (tx.message.staticAccountKeys[0]?.toBase58() !== wallet) throw new Error("Prepared transaction payer mismatch");
   const message = Buffer.from(tx.message.serialize());
@@ -142,14 +135,9 @@ async function inspect(encoded: string, beam?: Beam, extraSigners: Keypair[] = [
       }
     }
   }
-  let tips: string[] = beam?.tipAddress ? [beam.tipAddress] : [];
-  if (!tips.length && systemTransfers.length) {
-    tips = await request<string[]>("https://api.solami.dev/onchain/tip-addresses");
-  }
-  const tipInstructions = systemTransfers.filter((ix) => tips.includes(ix.destination));
   const wire = tx.serialize();
   console.log(JSON.stringify({ transaction: 1, signedBytes: wire.length, "fits<=1232": wire.length <= 1232,
-    beamTipIxPresent: tipInstructions.length > 0, beamTipInstructions: tipInstructions, beamPlan: beam ?? null,
+    systemTransfers,
     detectedFees: fees.length ? fees : "none (amount 0; no fee instruction)", }, null, 2));
   return { tx, wire, fees, signature: bs58.encode(tx.signatures[0]!) };
 }
@@ -167,13 +155,13 @@ async function balances(mints: string[]) {
   return result;
 }
 async function execute(encoded: string, validity: { expiresAt?: number; lastValidBlockHeight: number }, mints: string[],
-  broadcast: (signedTransaction: string) => Promise<{ signature: string }>, confirm?: (signature: string) => Promise<void>, beam?: Beam,
+  broadcast: (signedTransaction: string) => Promise<{ signature: string }>, confirm?: (signature: string) => Promise<void>,
   extraSigners: Keypair[] = []) {
   if (!keypair) {
     console.log(JSON.stringify({ preparedBytesUnsigned: Buffer.from(encoded, "base64").length,
-      signedSizeVerified: false, beamPlan: beam ?? null }, null, 2));
+      signedSizeVerified: false }, null, 2));
   }
-  const measured = await inspect(encoded, beam, extraSigners);
+  const measured = await inspect(encoded, extraSigners);
   if (!send) { console.log("Dry-run: prepared and signed locally; no transaction broadcast."); return; }
   if (measured.wire.length > 1232) throw new Error("Transaction exceeds 1232 bytes");
   const before = await balances([...mints, ...measured.fees.map((fee) => fee.mint)]);
@@ -182,7 +170,7 @@ async function execute(encoded: string, validity: { expiresAt?: number; lastVali
   try {
     const sent = await broadcast(Buffer.from(measured.wire).toString("base64"));
     if (sent.signature !== measured.signature) throw new Error("Broadcast signature mismatch");
-    // Without Beam or priority fees the app's single RPC send may be dropped. Rebroadcast the
+    // Without priority fees the app's single RPC send may be dropped. Rebroadcast the
     // identical signed bytes (same signature, cannot double-execute) until confirmed or expired.
     let landed = false;
     const rebroadcast = (async () => {
@@ -241,7 +229,7 @@ async function main() {
       const current = prepared;
       await execute(current.unsignedTransaction, current.summary, current.summary.assets.map(a => a.mint),
         signedTransaction => api("withdraw-broadcast", {wallet, signedTransaction, permit:current.permit, summary:current.summary}, true),
-        async signature => { finalizedSignature = signature; await poll("withdraw-status", {signature,prepared:current}); }, current.summary.beam);
+        async signature => { finalizedSignature = signature; await poll("withdraw-status", {signature,prepared:current}); });
       if (!send) {
         if (current.summary.stage === "withdraw") console.log("Dry-run: step 2 requires an actual finalized step 1; no conversion transaction prepared.");
         break;
@@ -283,7 +271,7 @@ async function main() {
       const prepared = await api<Prepared<OpenPositionSummary>>("open-prepare", { ...body, nftMint: mint.publicKey.toBase58() });
       await execute(prepared.unsignedTransaction, prepared.summary, [inputMint, pair.mintA, pair.mintB],
         (signedTransaction) => api("open-broadcast", { wallet, signedTransaction, permit: prepared.permit, summary: prepared.summary }, true),
-        (signature) => poll("transaction-finality", { signature, lastValidBlockHeight: prepared.summary.lastValidBlockHeight }), prepared.summary.beam, [mint]);
+        (signature) => poll("transaction-finality", { signature, lastValidBlockHeight: prepared.summary.lastValidBlockHeight }), [mint]);
     } finally {
       mint.secretKey.fill(0);
     }
@@ -308,14 +296,14 @@ async function main() {
       expectedLiquidity: p.quote.liquidity, rangeSide: p.quote.rangeSide, startingBalances: p.startingBalances };
     await execute(p.unsignedTransaction, p, [inputMint, position.mintA, position.mintB],
       (signedTransaction) => api("selected-broadcast", { ...common, signedTransaction, permit: p.permit }, true),
-      (signature) => poll("selected-status", { ...common, signature, poolId: p.quote.poolId, positionAccount: p.quote.positionAccount }), p.beam);
+      (signature) => poll("selected-status", { ...common, signature, poolId: p.quote.poolId, positionAccount: p.quote.positionAccount }));
   } else if (command === "compound") {
     const positionMint = required("position");
     await api("compound-state", { wallet, positionMint });
     const p = await api<Prepared<CompoundSummary>>("compound-prepare", { wallet, positionMint, sourceSignatures: [] });
     await execute(p.unsignedTransaction, p.summary, [p.summary.state.mintA, p.summary.state.mintB, ...p.summary.state.rewards.map((r) => r.mint)],
       (signedTransaction) => api("compound-broadcast", { wallet, positionMint, summary: p.summary, permit: p.permit, signedTransaction }, true),
-      (signature) => poll("compound-confirm", { wallet, attempt: { version: 1, kind: "compound", wallet, positionMint, signature, createdAt: Date.now(), summary: p.summary } }), p.summary.beam);
+      (signature) => poll("compound-confirm", { wallet, attempt: { version: 1, kind: "compound", wallet, positionMint, signature, createdAt: Date.now(), summary: p.summary } }));
   } else if (command === "swap") {
     if (required("from") !== "usdc") throw new Error("Swap helper only accepts --from usdc");
     const outputMint = new PublicKey(required("to")).toBase58();

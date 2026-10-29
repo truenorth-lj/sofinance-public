@@ -111,7 +111,7 @@ beforeEach(() => {
   for (const [name, mock] of [["growth", boundary.growth], ["growth-once", boundary.once], ["notify", boundary.notify]] as const) mock.mockReset().mockImplementation((...args) => note(name, ...args));
   boundary.sign.mockReset().mockImplementation(async (tx: VersionedTransaction) => { note("sign-input", toBase64(tx)); const value = signed(tx); note("sign-output", toBase64(value)); return value; });
   prepareReply = async () => Response.json(preparedValue);
-  broadcastReply = async init => { const body = JSON.parse(String(init.body)); const tx = VersionedTransaction.deserialize(Buffer.from(body.signedTransaction, "base64")); return Response.json({ signature: bs58.encode(tx.signatures[0]!), beamLabel: "Beam landed" }); };
+  broadcastReply = async init => { const body = JSON.parse(String(init.body)); const tx = VersionedTransaction.deserialize(Buffer.from(body.signedTransaction, "base64")); return Response.json({ signature: bs58.encode(tx.signatures[0]!) }); };
   fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     note("fetch", url, { method: init?.method ?? "GET", body: init?.body ?? null, headers: init?.headers ?? null, cache: init?.cache, aborted: init?.signal?.aborted ?? null });
     init?.signal?.addEventListener("abort", () => note("fetch-abort", url), { once: true });
@@ -179,8 +179,8 @@ describe("Open submission through real facade", () => {
     const readAt = ledger.findIndex((x, i) => i > writeAt && x[1] === "storage-read" && x[2] === openAttemptKey(wallet) && x[3] === JSON.stringify(stored));
     const sendAt = ledger.findIndex(x => x[1] === "fetch" && x[2] === "/api/open-broadcast");
     expect(writeAt).toBeGreaterThan(-1); expect(readAt).toBeGreaterThan(writeAt); expect(sendAt).toBeGreaterThan(readAt);
-    expect(c.submitStage).toBe("pending"); expect(c.busy).toBe(true); expect(c.beamStatus.landedLabel).toBeNull(); expect(boundary.once).not.toHaveBeenCalled();
-    chainStatus = "confirmed"; await advance(1); expect(c.submitStage).toBe("confirmed"); expect(c.beamStatus.landedLabel).toBe("Beam landed");
+    expect(c.submitStage).toBe("pending"); expect(c.busy).toBe(true); expect(boundary.once).not.toHaveBeenCalled();
+    chainStatus = "confirmed"; await advance(1); expect(c.submitStage).toBe("confirmed");
     expect(boundary.notify).toHaveBeenCalledWith(preparedValue.summary.nftMint); expect(boundary.once).toHaveBeenCalledWith(`open-ok:${signature}`, "open_position_success", { pool: pair.poolAddress, pair: "AAA/BBB", wallet_address: wallet });
   });
   it("keeps preparing and wallet phases observable and blocks duplicate retained callbacks synchronously", async () => {
@@ -285,14 +285,6 @@ describe("Open submission through real facade", () => {
   it.each(["failed", "expired"])("reports confirmed-chain %s analytics with original signature", async status => {
     await ready(); await send(); chainStatus = status; await advance(1);
     expect(boundary.once).toHaveBeenCalledWith(`open-fail:${c.signature}`, "open_position_failed", { pool: pair.poolAddress, pair: "AAA/BBB", wallet_address: wallet, error_class: status === "expired" ? "expired" : "onchain_failed", error_reason: status === "expired" ? "expired" : "onchain_failed" });
-  });
-  it("does not display previous Beam metadata after another attempt is confirmed", async () => {
-    await ready(); await send(); chainStatus = "confirmed"; await advance(1); expect(c.beamStatus.landedLabel).toBe("Beam landed");
-    await command("new position", () => c.createAnother()); await advance(450);
-    const tx = buildTransaction({ payer, extraSigners: [nft], signWith: [], blockhash: pair.mintA });
-    preparedValue.unsignedTransaction = toBase64(tx); preparedValue.summary.blockhash = tx.message.recentBlockhash;
-    broadcastReply = async () => { throw new Error("lost response"); }; chainStatus = "pending"; await send();
-    chainStatus = "confirmed"; await advance(1); expect(c.submitStage).toBe("confirmed"); expect(c.beamStatus.landedLabel).toBeNull();
   });
   it("retains discovery and submission shared-error clearing semantics", async () => {
     scanError = true; await render(); await advance(1); expect(c.error).toBe("Synthetic scan failure");

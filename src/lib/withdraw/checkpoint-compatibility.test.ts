@@ -6,7 +6,6 @@ vi.mock("@sofinance/engine/selected-state", () => ({ readSelectedPositionState: 
 vi.mock("@sofinance/engine/rpc", async (importOriginal) => ({ ...await importOriginal<typeof import("@sofinance/engine/rpc")>(), rpcConnection: mocks.rpc }));
 vi.mock("@sofinance/engine/swap/leg", () => ({ feeSwapLeg: mocks.leg }));
 vi.mock("@sofinance/engine/swap/collection", () => ({ collectSwapFee: mocks.fee, fitFeeCollections: async (_connection: unknown, _collections: unknown, instructions: unknown) => ({ instructions }) }));
-vi.mock("@sofinance/engine/solami-beam", async () => ({ ...await vi.importActual("@sofinance/engine/solami-beam"), fetchBeamTipAddress: async () => null }));
 vi.mock("@sofinance/engine/open-transaction", async () => ({ ...await vi.importActual("@sofinance/engine/open-transaction"), openLookupTableReader: () => async () => [] }));
 vi.mock("@sofinance/engine/lp-exit-instructions", async () => {
     const { TransactionInstruction } = await import("@solana/web3.js");

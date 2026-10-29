@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { deployTarget, isSolamiEnabled, SOLAMI_ENABLED, isOrcaDiscoveryEnabled, isOrcaPositionsEnabled, isRhcUniv4DiscoveryEnabled, isRhcUniv4TxBuildEnabled, ORCA_DISCOVERY_ENABLED, ORCA_POSITIONS_ENABLED, RHC_UNIV4_DISCOVERY_ENABLED, RHC_UNIV4_TX_BUILD_ENABLED, isRhcUniv4TradingEnabled, RHC_UNIV4_TRADING_ENABLED, isRhcUniv4WalletSigningEnabled, RHC_UNIV4_WALLET_SIGNING_ENABLED } from "./protocol-flags";
+import { deployTarget, isOrcaDiscoveryEnabled, isOrcaPositionsEnabled, isRhcUniv4DiscoveryEnabled, isRhcUniv4TxBuildEnabled, ORCA_DISCOVERY_ENABLED, ORCA_POSITIONS_ENABLED, RHC_UNIV4_DISCOVERY_ENABLED, RHC_UNIV4_TX_BUILD_ENABLED, isRhcUniv4TradingEnabled, RHC_UNIV4_TRADING_ENABLED, isRhcUniv4WalletSigningEnabled, RHC_UNIV4_WALLET_SIGNING_ENABLED } from "./protocol-flags";
 
 describe("ORCA_DISCOVERY_ENABLED", () => {
   it("is a code constant that is OFF in production", () => {
@@ -21,13 +21,6 @@ describe("ORCA_DISCOVERY_ENABLED", () => {
     expect(Object.isFrozen(RHC_UNIV4_DISCOVERY_ENABLED)).toBe(true);
     expect(isRhcUniv4DiscoveryEnabled("production")).toBe(false);
     expect(isRhcUniv4DiscoveryEnabled("preview")).toBe(true);
-  });
-  it("SOLAMI_ENABLED is a frozen code constant that is OFF in production", () => {
-    expect(SOLAMI_ENABLED).toEqual({ production: false, preview: true, development: true });
-    expect(Object.isFrozen(SOLAMI_ENABLED)).toBe(true);
-    expect(isSolamiEnabled("production")).toBe(false);
-    expect(isSolamiEnabled("preview")).toBe(true);
-    expect(isSolamiEnabled("development")).toBe(true);
   });
   it("RHC_UNIV4_TX_BUILD_ENABLED is a frozen code constant that is OFF in production", () => {
     expect(RHC_UNIV4_TX_BUILD_ENABLED).toEqual({ production: false, preview: true, development: true });

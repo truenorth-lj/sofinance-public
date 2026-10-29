@@ -200,7 +200,7 @@ describe("incremental position history", () => {
       upstream.parsed.mockImplementation(async (...args) => { await wait(23); return parsed(...args); });
       const run = () => syncPositionHistory({ context, store, connection: upstream.connection, maxSignatures: 100,
         rpcMetrics: () => ({ attemptCount: store.released, rateLimitCount: 0, queuedMs: 0, requestMs: 0,
-          maxActive: 0, primaryAttempts: 0, defaultAttempts: 0, responseBytes: 0 }) });
+          maxActive: 0, defaultAttempts: 0, responseBytes: 0 }) });
       const cold = run();
       await vi.runAllTimersAsync();
       expect((await cold).metric).toMatchObject({ elapsedMs: 71, rpc: { attemptCount: 1 }, stages: {
@@ -219,14 +219,14 @@ describe("incremental position history", () => {
     } finally { vi.useRealTimers(); }
   });
 
-  it("attributes observer-backed receipts to actual leaf providers and exposes unknown receipts without inventing Solami", async () => {
+  it("attributes observer-backed receipts to actual leaf providers and exposes unknown receipts as unknown", async () => {
     const upstream = rpc([1]);
     const known = await syncPositionHistory({ context, store: new MemoryStore(), connection: upstream.connection,
-      maxSignatures: 100, provider: "solami", receiptProvider: () => "default" });
-    expect(known.metric).toMatchObject({ provider: "default", solamiTxCount: 0, defaultTxCount: 1, unattributedTxCount: 0 });
+      maxSignatures: 100, provider: "default", receiptProvider: () => "default" });
+    expect(known.metric).toMatchObject({ provider: "default", defaultTxCount: 1, unattributedTxCount: 0 });
     const unknown = await syncPositionHistory({ context, store: new MemoryStore(), connection: upstream.connection,
-      maxSignatures: 100, provider: "solami", receiptProvider: () => undefined });
-    expect(unknown.metric).toMatchObject({ provider: "unknown", solamiTxCount: 0, defaultTxCount: 0, unattributedTxCount: 1 });
+      maxSignatures: 100, provider: "default", receiptProvider: () => undefined });
+    expect(unknown.metric).toMatchObject({ provider: "unknown", defaultTxCount: 0, unattributedTxCount: 1 });
   });
 
   it("measures synchronous receipt parsing and replay without counting replay as new detail work", async () => {

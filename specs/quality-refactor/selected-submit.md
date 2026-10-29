@@ -18,8 +18,8 @@ The two named application profiles preserve exact state-reader arguments, HTTP d
 HTTP early native WSOL rejection, HTTP useStateSnapshot:true versus MCP additional reads, and
 both original state-change and signature-mismatch error strings. Request data cannot select flags.
 
-Both adapters own their original response/error projection and Beam mapping. Invalidation stays
-after matching accepted signature and before Beam. Once a physical send starts, an exception
+Both adapters own their original response/error projection. Invalidation stays
+after the matching accepted signature. Once a physical send starts, an exception
 remains unknown: no sent:false or safe-to-retry inference. Existing callers retain their original
 signature; this extraction does not add server persistence or idempotency. Duplicate calls can
 still send identical bytes twice. Other operation senders, all engine algorithms, prepare/quote,
@@ -31,13 +31,13 @@ Checkpoint `b9f2efbf33e81c27c9d28be35d0ab927f045150d` adds only tests/snapshots 
 accepted runtime, before migration: 155 tests and 152 complete response/I/O-trace snapshots.
 Real App HTTP, HTTP MCP and in-process registered SDK use actual tools, real HMAC/transaction
 validation, real selected simulator and (for timeout then retry rejection) real engine RPC
-wrapper. Only backend state/RPC/cache/Beam I/O is controlled by disposable fixtures. Synthetic
+wrapper. Only backend state/RPC/cache I/O is controlled by disposable fixtures. Synthetic
 signed transactions never reach a network. Tests record exact bytes, send options/count/order,
 read arguments, extra account/balance reads and invalidation ordering.
 
 Cases include structure+permit precedence, malformed fields/wallet/signatures/size, modified
 permit-bound facts, BigInt precision, state/NFT/WSOL changes, expiry, simulation failures,
-unknown sends, signature mismatch, accepted then Beam failure, concurrent wallets/positions,
+unknown sends, signature mismatch, concurrent wallets/positions,
 duplicate submissions, HTTP cancellation and async context. Existing complete authenticated
 prepare/sign-token/HTTP-submit roundtrip and compression-normalized goldens remain unchanged.
 Fresh local gates include focused checks, lint, app/engine/E2E types, both environment lanes,

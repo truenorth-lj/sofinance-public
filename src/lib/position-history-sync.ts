@@ -98,8 +98,7 @@ export async function syncPositionHistory(options: SyncPositionHistoryOptions): 
     parserVersion: POSITION_HISTORY_PARSER_VERSION })) as PositionHistorySnapshot;
   let fetchedTxCount = 0;
   let listingCount = 0;
-  let primaryCount = 0;
-  let fallbackCount = 0;
+  let defaultCount = 0;
   let unattributedCount = 0;
   const fallbackReasons = new Set<HistoryFallbackReason>();
   let detailWindow: { started?: number; ended?: number } | undefined;
@@ -122,9 +121,8 @@ export async function syncPositionHistory(options: SyncPositionHistoryOptions): 
       .sort((a, b) => a.slot - b.slot || (a.blockTime ?? 0) - (b.blockTime ?? 0));
     const metric: HistoryFetchMetric = { txCount: transactions.filter(row => row.status === "parsed").length,
       elapsedMs: Date.now() - started,
-      provider: primaryCount && fallbackCount ? "solami+default" : primaryCount ? "solami" : fallbackCount ? "default"
-        : unattributedCount ? "unknown" : "default",
-      source: "databaseIncremental", solamiTxCount: primaryCount, defaultTxCount: fallbackCount,
+      provider: defaultCount ? "default" : unattributedCount ? "unknown" : "default",
+      source: "databaseIncremental", defaultTxCount: defaultCount,
       fallbackReasons: [...fallbackReasons], cachedTxCount: snapshot.transactions.filter(row => !needsParse(row)).length,
       fetchedTxCount, listingCount, detailBudget: budget, historyComplete: !incomplete, canContinue: incomplete && moreWork,
       unattributedTxCount: unattributedCount, stages: { ...stages }, rpc: options.rpcMetrics?.() };
@@ -163,10 +161,8 @@ export async function syncPositionHistory(options: SyncPositionHistoryOptions): 
                 commitment: "finalized", maxSupportedTransactionVersion: 0 });
               if (candidate && receiptMatches(candidate, info)) {
                 tx = candidate;
-                const servedBy = options.receiptProvider ? options.receiptProvider(info.signature)
-                  : connection === options.fallbackConnection || options.provider !== "solami" ? "default" : "solami";
-                if (servedBy === "solami") primaryCount++;
-                else if (servedBy === "default") fallbackCount++;
+                const servedBy = options.receiptProvider ? options.receiptProvider(info.signature) : "default";
+                if (servedBy === "default") defaultCount++;
                 else unattributedCount++;
                 break;
               }

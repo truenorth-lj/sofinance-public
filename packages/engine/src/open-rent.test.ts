@@ -164,7 +164,7 @@ describe("estimateOpenPositionRent", () => {
     expect(rent.protocolPositionLamports).toBe(0n);
     expect(rent.nonRefundableLamports).toBe(0n);
     expect(getMinimumBalanceForRentExemption).toHaveBeenCalledWith(fixture.accounts.nftMint.space, "confirmed");
-    expect(rent.refundableLamports + BigInt(fixture.beamTipLamports) + BigInt(fixture.feeLamports))
+    expect(rent.refundableLamports + BigInt(fixture.extraDebitLamports) + BigInt(fixture.feeLamports))
       .toBe(BigInt(-fixture.walletDeltaLamports));
   });
 });

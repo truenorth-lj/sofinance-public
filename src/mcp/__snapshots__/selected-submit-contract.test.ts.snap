@@ -52,9 +52,6 @@ exports[`HTTP abort during fresh read does not introduce a prepare deadline or d
 {
   "result": {
     "body": {
-      "beam": null,
-      "beamLabel": null,
-      "beamLandingUrl": "https://api.solami.dev/swqos/tx/JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB",
       "signature": "JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB",
     },
     "headers": {
@@ -214,106 +211,6 @@ exports[`app > NFT missing in additional read 1`] = `
 }
 `;
 
-exports[`app > accepted then Beam failure 1`] = `
-{
-  "result": {
-    "body": {
-      "beam": null,
-      "beamLabel": null,
-      "beamLandingUrl": "https://api.solami.dev/swqos/tx/JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB",
-      "signature": "JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB",
-    },
-    "headers": {
-      "cache-control": "no-store",
-      "content-type": "application/json",
-    },
-    "status": 200,
-  },
-  "trace": [
-    [
-      "connection",
-    ],
-    [
-      "height",
-      "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
-      "confirmed",
-    ],
-    [
-      "state",
-      "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
-      {
-        "inputKind": "token",
-        "inputMint": "Gq2ZG2URrWhVFeWRua7PnRuipDytEXyh26VgCo7cBm46",
-        "positionMint": "FMUEmtxhU46GzhKF4FW9MLJdQWiLgjiXP9TYRWSrqTpV",
-      },
-      [
-        false,
-        {
-          "displayPrices": false,
-        },
-      ],
-    ],
-    [
-      "simulator",
-      "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
-      "AQ8OF96Z40qF9qmjsT0qDD8pSXv27as/4GZl/YuioFrtxi8+BlMiUlf77AmTT8DQ81KTDJKtwdiDy0LKtYo9aQCAAQABA4qI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cl//Ig8gL7nI375XZubcD1K1j5goh5gWGdoK3W4s/QwMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHAQICAAEMAgAAAAEAAAAAAAAAAA==",
-      "1000",
-      "5",
-      true,
-      true,
-    ],
-    [
-      "accounts",
-      "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
-      [
-        "BELn9TCk4uWEihwdgoUx8xUfd5ujL9pKrwtJCesiQAev",
-      ],
-      "confirmed",
-    ],
-    [
-      "rpc-simulate",
-      "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
-      "AQ8OF96Z40qF9qmjsT0qDD8pSXv27as/4GZl/YuioFrtxi8+BlMiUlf77AmTT8DQ81KTDJKtwdiDy0LKtYo9aQCAAQABA4qI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cl//Ig8gL7nI375XZubcD1K1j5goh5gWGdoK3W4s/QwMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHAQICAAEMAgAAAAEAAAAAAAAAAA==",
-      {
-        "accounts": {
-          "addresses": [
-            "HqznL4EpJTbWZmqqetb4sJPftBUN1s6uNdQURBAfAsBr",
-            "BgXmrzDGKZ9JF2mywkYpYzW6JwFy5TWSqhho7JKPwAsB",
-            "BqdMBpkgWW2Udy77VpqaU6t11n8Lo88Q7MBkt4JZQZ46",
-            "Cv3RoHzgs8gZ5meKonuWQpujGx4dKoQCMG4s4ZQrGVNa",
-            "4KvUU217UZobPi54eiYAgzj32qTkmA7PG4nBnm3HA55c",
-            "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
-          ],
-          "encoding": "base64",
-        },
-        "commitment": "confirmed",
-        "minContextSlot": 42,
-        "sigVerify": true,
-      },
-    ],
-    [
-      "height",
-      "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
-      "confirmed",
-    ],
-    [
-      "physical-send",
-      "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
-      "AQ8OF96Z40qF9qmjsT0qDD8pSXv27as/4GZl/YuioFrtxi8+BlMiUlf77AmTT8DQ81KTDJKtwdiDy0LKtYo9aQCAAQABA4qI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cl//Ig8gL7nI375XZubcD1K1j5goh5gWGdoK3W4s/QwMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHAQICAAEMAgAAAAEAAAAAAAAAAA==",
-      {
-        "maxRetries": 3,
-        "preflightCommitment": "confirmed",
-        "skipPreflight": false,
-      },
-    ],
-    [
-      "invalidate",
-      "FMUEmtxhU46GzhKF4FW9MLJdQWiLgjiXP9TYRWSrqTpV",
-    ],
-  ],
-}
-`;
-
 exports[`app > balances mutation 1`] = `
 {
   "result": {
@@ -350,9 +247,6 @@ exports[`app > duplicate calls are still separate sends, not new idempotency 1`]
 {
   "first": {
     "body": {
-      "beam": null,
-      "beamLabel": null,
-      "beamLandingUrl": "https://api.solami.dev/swqos/tx/JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB",
       "signature": "JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB",
     },
     "headers": {
@@ -618,9 +512,6 @@ exports[`app > floor lower endpoint 1`] = `
 {
   "result": {
     "body": {
-      "beam": null,
-      "beamLabel": null,
-      "beamLandingUrl": "https://api.solami.dev/swqos/tx/JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB",
       "signature": "JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB",
     },
     "headers": {
@@ -734,9 +625,6 @@ exports[`app > floor upper endpoint 1`] = `
 {
   "result": {
     "body": {
-      "beam": null,
-      "beamLabel": null,
-      "beamLandingUrl": "https://api.solami.dev/swqos/tx/JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB",
       "signature": "JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB",
     },
     "headers": {
@@ -850,9 +738,6 @@ exports[`app > height equal accepted 1`] = `
 {
   "result": {
     "body": {
-      "beam": null,
-      "beamLabel": null,
-      "beamLandingUrl": "https://api.solami.dev/swqos/tx/JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB",
       "signature": "JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB",
     },
     "headers": {
@@ -1201,9 +1086,6 @@ exports[`app > native success 1`] = `
 {
   "result": {
     "body": {
-      "beam": null,
-      "beamLabel": null,
-      "beamLandingUrl": "https://api.solami.dev/swqos/tx/JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB",
       "signature": "JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB",
     },
     "headers": {
@@ -2200,9 +2082,6 @@ exports[`app > success 1`] = `
 {
   "result": {
     "body": {
-      "beam": null,
-      "beamLabel": null,
-      "beamLandingUrl": "https://api.solami.dev/swqos/tx/JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB",
       "signature": "JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB",
     },
     "headers": {
@@ -2535,132 +2414,6 @@ exports[`http-mcp > NFT missing in additional read 1`] = `
 }
 `;
 
-exports[`http-mcp > accepted then Beam failure 1`] = `
-{
-  "result": {
-    "body": {
-      "id": 1,
-      "jsonrpc": "2.0",
-      "result": {
-        "content": [
-          {
-            "text": "{
-  "signature": "JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB",
-  "beam": null,
-  "beamLabel": null,
-  "beamLandingUrl": "https://api.solami.dev/swqos/tx/JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB"
-}",
-            "type": "text",
-          },
-        ],
-      },
-    },
-    "headers": {
-      "content-type": "application/json",
-    },
-    "status": 200,
-  },
-  "trace": [
-    [
-      "connection",
-    ],
-    [
-      "height",
-      "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
-      "confirmed",
-    ],
-    [
-      "state",
-      "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
-      {
-        "inputKind": "token",
-        "inputMint": "Gq2ZG2URrWhVFeWRua7PnRuipDytEXyh26VgCo7cBm46",
-        "positionMint": "FMUEmtxhU46GzhKF4FW9MLJdQWiLgjiXP9TYRWSrqTpV",
-      },
-      [],
-    ],
-    [
-      "simulator",
-      "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
-      "AQ8OF96Z40qF9qmjsT0qDD8pSXv27as/4GZl/YuioFrtxi8+BlMiUlf77AmTT8DQ81KTDJKtwdiDy0LKtYo9aQCAAQABA4qI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cl//Ig8gL7nI375XZubcD1K1j5goh5gWGdoK3W4s/QwMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHAQICAAEMAgAAAAEAAAAAAAAAAA==",
-      "1000",
-      "5",
-      true,
-      "omitted",
-    ],
-    [
-      "accounts",
-      "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
-      [
-        "BgXmrzDGKZ9JF2mywkYpYzW6JwFy5TWSqhho7JKPwAsB",
-        "BqdMBpkgWW2Udy77VpqaU6t11n8Lo88Q7MBkt4JZQZ46",
-        "Cv3RoHzgs8gZ5meKonuWQpujGx4dKoQCMG4s4ZQrGVNa",
-        "4KvUU217UZobPi54eiYAgzj32qTkmA7PG4nBnm3HA55c",
-      ],
-      "confirmed",
-    ],
-    [
-      "balance",
-      "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
-      "confirmed",
-    ],
-    [
-      "accounts",
-      "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
-      [
-        "BELn9TCk4uWEihwdgoUx8xUfd5ujL9pKrwtJCesiQAev",
-      ],
-      "confirmed",
-    ],
-    [
-      "rpc-simulate",
-      "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
-      "AQ8OF96Z40qF9qmjsT0qDD8pSXv27as/4GZl/YuioFrtxi8+BlMiUlf77AmTT8DQ81KTDJKtwdiDy0LKtYo9aQCAAQABA4qI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cl//Ig8gL7nI375XZubcD1K1j5goh5gWGdoK3W4s/QwMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHAQICAAEMAgAAAAEAAAAAAAAAAA==",
-      {
-        "accounts": {
-          "addresses": [
-            "HqznL4EpJTbWZmqqetb4sJPftBUN1s6uNdQURBAfAsBr",
-            "BgXmrzDGKZ9JF2mywkYpYzW6JwFy5TWSqhho7JKPwAsB",
-            "BqdMBpkgWW2Udy77VpqaU6t11n8Lo88Q7MBkt4JZQZ46",
-            "Cv3RoHzgs8gZ5meKonuWQpujGx4dKoQCMG4s4ZQrGVNa",
-            "4KvUU217UZobPi54eiYAgzj32qTkmA7PG4nBnm3HA55c",
-            "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
-          ],
-          "encoding": "base64",
-        },
-        "commitment": "confirmed",
-        "minContextSlot": 42,
-        "sigVerify": true,
-      },
-    ],
-    [
-      "height",
-      "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
-      "confirmed",
-    ],
-    [
-      "physical-send",
-      "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
-      "AQ8OF96Z40qF9qmjsT0qDD8pSXv27as/4GZl/YuioFrtxi8+BlMiUlf77AmTT8DQ81KTDJKtwdiDy0LKtYo9aQCAAQABA4qI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cl//Ig8gL7nI375XZubcD1K1j5goh5gWGdoK3W4s/QwMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHAQICAAEMAgAAAAEAAAAAAAAAAA==",
-      {
-        "maxRetries": 3,
-        "preflightCommitment": "confirmed",
-        "skipPreflight": false,
-      },
-    ],
-    [
-      "invalidate",
-      "FMUEmtxhU46GzhKF4FW9MLJdQWiLgjiXP9TYRWSrqTpV",
-    ],
-    [
-      "beam-failure",
-      "JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB",
-      null,
-    ],
-  ],
-}
-`;
-
 exports[`http-mcp > balances mutation 1`] = `
 {
   "result": {
@@ -2725,10 +2478,7 @@ exports[`http-mcp > duplicate calls are still separate sends, not new idempotenc
         "content": [
           {
             "text": "{
-  "signature": "JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB",
-  "beam": null,
-  "beamLabel": null,
-  "beamLandingUrl": "https://api.solami.dev/swqos/tx/JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB"
+  "signature": "JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB"
 }",
             "type": "text",
           },
@@ -2833,11 +2583,6 @@ exports[`http-mcp > duplicate calls are still separate sends, not new idempotenc
       "FMUEmtxhU46GzhKF4FW9MLJdQWiLgjiXP9TYRWSrqTpV",
     ],
     [
-      "beam",
-      "JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB",
-      null,
-    ],
-    [
       "connection",
     ],
     [
@@ -2927,11 +2672,6 @@ exports[`http-mcp > duplicate calls are still separate sends, not new idempotenc
     [
       "invalidate",
       "FMUEmtxhU46GzhKF4FW9MLJdQWiLgjiXP9TYRWSrqTpV",
-    ],
-    [
-      "beam",
-      "JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB",
-      null,
     ],
   ],
 }
@@ -3068,10 +2808,7 @@ exports[`http-mcp > floor lower endpoint 1`] = `
         "content": [
           {
             "text": "{
-  "signature": "JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB",
-  "beam": null,
-  "beamLabel": null,
-  "beamLandingUrl": "https://api.solami.dev/swqos/tx/JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB"
+  "signature": "JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB"
 }",
             "type": "text",
           },
@@ -3174,11 +2911,6 @@ exports[`http-mcp > floor lower endpoint 1`] = `
     [
       "invalidate",
       "FMUEmtxhU46GzhKF4FW9MLJdQWiLgjiXP9TYRWSrqTpV",
-    ],
-    [
-      "beam",
-      "JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB",
-      null,
     ],
   ],
 }
@@ -3221,10 +2953,7 @@ exports[`http-mcp > floor upper endpoint 1`] = `
         "content": [
           {
             "text": "{
-  "signature": "JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB",
-  "beam": null,
-  "beamLabel": null,
-  "beamLandingUrl": "https://api.solami.dev/swqos/tx/JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB"
+  "signature": "JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB"
 }",
             "type": "text",
           },
@@ -3327,11 +3056,6 @@ exports[`http-mcp > floor upper endpoint 1`] = `
     [
       "invalidate",
       "FMUEmtxhU46GzhKF4FW9MLJdQWiLgjiXP9TYRWSrqTpV",
-    ],
-    [
-      "beam",
-      "JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB",
-      null,
     ],
   ],
 }
@@ -3374,10 +3098,7 @@ exports[`http-mcp > height equal accepted 1`] = `
         "content": [
           {
             "text": "{
-  "signature": "JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB",
-  "beam": null,
-  "beamLabel": null,
-  "beamLandingUrl": "https://api.solami.dev/swqos/tx/JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB"
+  "signature": "JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB"
 }",
             "type": "text",
           },
@@ -3480,11 +3201,6 @@ exports[`http-mcp > height equal accepted 1`] = `
     [
       "invalidate",
       "FMUEmtxhU46GzhKF4FW9MLJdQWiLgjiXP9TYRWSrqTpV",
-    ],
-    [
-      "beam",
-      "JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB",
-      null,
     ],
   ],
 }
@@ -3844,10 +3560,7 @@ exports[`http-mcp > native success 1`] = `
         "content": [
           {
             "text": "{
-  "signature": "JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB",
-  "beam": null,
-  "beamLabel": null,
-  "beamLandingUrl": "https://api.solami.dev/swqos/tx/JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB"
+  "signature": "JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB"
 }",
             "type": "text",
           },
@@ -3950,11 +3663,6 @@ exports[`http-mcp > native success 1`] = `
     [
       "invalidate",
       "FMUEmtxhU46GzhKF4FW9MLJdQWiLgjiXP9TYRWSrqTpV",
-    ],
-    [
-      "beam",
-      "JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB",
-      null,
     ],
   ],
 }
@@ -5102,10 +4810,7 @@ exports[`http-mcp > success 1`] = `
         "content": [
           {
             "text": "{
-  "signature": "JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB",
-  "beam": null,
-  "beamLabel": null,
-  "beamLandingUrl": "https://api.solami.dev/swqos/tx/JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB"
+  "signature": "JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB"
 }",
             "type": "text",
           },
@@ -5208,11 +4913,6 @@ exports[`http-mcp > success 1`] = `
     [
       "invalidate",
       "FMUEmtxhU46GzhKF4FW9MLJdQWiLgjiXP9TYRWSrqTpV",
-    ],
-    [
-      "beam",
-      "JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB",
-      null,
     ],
   ],
 }
@@ -5599,124 +5299,6 @@ exports[`sdk > NFT missing in additional read 1`] = `
 }
 `;
 
-exports[`sdk > accepted then Beam failure 1`] = `
-{
-  "result": {
-    "result": {
-      "content": [
-        {
-          "text": "{
-  "signature": "JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB",
-  "beam": null,
-  "beamLabel": null,
-  "beamLandingUrl": "https://api.solami.dev/swqos/tx/JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB"
-}",
-          "type": "text",
-        },
-      ],
-    },
-  },
-  "trace": [
-    [
-      "connection",
-    ],
-    [
-      "height",
-      "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
-      "confirmed",
-    ],
-    [
-      "state",
-      "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
-      {
-        "inputKind": "token",
-        "inputMint": "Gq2ZG2URrWhVFeWRua7PnRuipDytEXyh26VgCo7cBm46",
-        "positionMint": "FMUEmtxhU46GzhKF4FW9MLJdQWiLgjiXP9TYRWSrqTpV",
-      },
-      [],
-    ],
-    [
-      "simulator",
-      "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
-      "AQ8OF96Z40qF9qmjsT0qDD8pSXv27as/4GZl/YuioFrtxi8+BlMiUlf77AmTT8DQ81KTDJKtwdiDy0LKtYo9aQCAAQABA4qI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cl//Ig8gL7nI375XZubcD1K1j5goh5gWGdoK3W4s/QwMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHAQICAAEMAgAAAAEAAAAAAAAAAA==",
-      "1000",
-      "5",
-      true,
-      "omitted",
-    ],
-    [
-      "accounts",
-      "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
-      [
-        "BgXmrzDGKZ9JF2mywkYpYzW6JwFy5TWSqhho7JKPwAsB",
-        "BqdMBpkgWW2Udy77VpqaU6t11n8Lo88Q7MBkt4JZQZ46",
-        "Cv3RoHzgs8gZ5meKonuWQpujGx4dKoQCMG4s4ZQrGVNa",
-        "4KvUU217UZobPi54eiYAgzj32qTkmA7PG4nBnm3HA55c",
-      ],
-      "confirmed",
-    ],
-    [
-      "balance",
-      "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
-      "confirmed",
-    ],
-    [
-      "accounts",
-      "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
-      [
-        "BELn9TCk4uWEihwdgoUx8xUfd5ujL9pKrwtJCesiQAev",
-      ],
-      "confirmed",
-    ],
-    [
-      "rpc-simulate",
-      "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
-      "AQ8OF96Z40qF9qmjsT0qDD8pSXv27as/4GZl/YuioFrtxi8+BlMiUlf77AmTT8DQ81KTDJKtwdiDy0LKtYo9aQCAAQABA4qI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cl//Ig8gL7nI375XZubcD1K1j5goh5gWGdoK3W4s/QwMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHAQICAAEMAgAAAAEAAAAAAAAAAA==",
-      {
-        "accounts": {
-          "addresses": [
-            "HqznL4EpJTbWZmqqetb4sJPftBUN1s6uNdQURBAfAsBr",
-            "BgXmrzDGKZ9JF2mywkYpYzW6JwFy5TWSqhho7JKPwAsB",
-            "BqdMBpkgWW2Udy77VpqaU6t11n8Lo88Q7MBkt4JZQZ46",
-            "Cv3RoHzgs8gZ5meKonuWQpujGx4dKoQCMG4s4ZQrGVNa",
-            "4KvUU217UZobPi54eiYAgzj32qTkmA7PG4nBnm3HA55c",
-            "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
-          ],
-          "encoding": "base64",
-        },
-        "commitment": "confirmed",
-        "minContextSlot": 42,
-        "sigVerify": true,
-      },
-    ],
-    [
-      "height",
-      "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
-      "confirmed",
-    ],
-    [
-      "physical-send",
-      "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
-      "AQ8OF96Z40qF9qmjsT0qDD8pSXv27as/4GZl/YuioFrtxi8+BlMiUlf77AmTT8DQ81KTDJKtwdiDy0LKtYo9aQCAAQABA4qI4910CfGV/VLbLTy6XXLKZwm/HZQSG/N0iAG0D29cl//Ig8gL7nI375XZubcD1K1j5goh5gWGdoK3W4s/QwMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHAQICAAEMAgAAAAEAAAAAAAAAAA==",
-      {
-        "maxRetries": 3,
-        "preflightCommitment": "confirmed",
-        "skipPreflight": false,
-      },
-    ],
-    [
-      "invalidate",
-      "FMUEmtxhU46GzhKF4FW9MLJdQWiLgjiXP9TYRWSrqTpV",
-    ],
-    [
-      "beam-failure",
-      "JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB",
-      null,
-    ],
-  ],
-}
-`;
-
 exports[`sdk > balances mutation 1`] = `
 {
   "result": {
@@ -5762,10 +5344,7 @@ exports[`sdk > duplicate calls are still separate sends, not new idempotency 1`]
       "content": [
         {
           "text": "{
-  "signature": "JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB",
-  "beam": null,
-  "beamLabel": null,
-  "beamLandingUrl": "https://api.solami.dev/swqos/tx/JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB"
+  "signature": "JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB"
 }",
           "type": "text",
         },
@@ -5865,11 +5444,6 @@ exports[`sdk > duplicate calls are still separate sends, not new idempotency 1`]
       "FMUEmtxhU46GzhKF4FW9MLJdQWiLgjiXP9TYRWSrqTpV",
     ],
     [
-      "beam",
-      "JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB",
-      null,
-    ],
-    [
       "connection",
     ],
     [
@@ -5959,11 +5533,6 @@ exports[`sdk > duplicate calls are still separate sends, not new idempotency 1`]
     [
       "invalidate",
       "FMUEmtxhU46GzhKF4FW9MLJdQWiLgjiXP9TYRWSrqTpV",
-    ],
-    [
-      "beam",
-      "JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB",
-      null,
     ],
   ],
 }
@@ -6081,10 +5650,7 @@ exports[`sdk > floor lower endpoint 1`] = `
       "content": [
         {
           "text": "{
-  "signature": "JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB",
-  "beam": null,
-  "beamLabel": null,
-  "beamLandingUrl": "https://api.solami.dev/swqos/tx/JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB"
+  "signature": "JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB"
 }",
           "type": "text",
         },
@@ -6182,11 +5748,6 @@ exports[`sdk > floor lower endpoint 1`] = `
     [
       "invalidate",
       "FMUEmtxhU46GzhKF4FW9MLJdQWiLgjiXP9TYRWSrqTpV",
-    ],
-    [
-      "beam",
-      "JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB",
-      null,
     ],
   ],
 }
@@ -6218,10 +5779,7 @@ exports[`sdk > floor upper endpoint 1`] = `
       "content": [
         {
           "text": "{
-  "signature": "JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB",
-  "beam": null,
-  "beamLabel": null,
-  "beamLandingUrl": "https://api.solami.dev/swqos/tx/JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB"
+  "signature": "JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB"
 }",
           "type": "text",
         },
@@ -6319,11 +5877,6 @@ exports[`sdk > floor upper endpoint 1`] = `
     [
       "invalidate",
       "FMUEmtxhU46GzhKF4FW9MLJdQWiLgjiXP9TYRWSrqTpV",
-    ],
-    [
-      "beam",
-      "JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB",
-      null,
     ],
   ],
 }
@@ -6355,10 +5908,7 @@ exports[`sdk > height equal accepted 1`] = `
       "content": [
         {
           "text": "{
-  "signature": "JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB",
-  "beam": null,
-  "beamLabel": null,
-  "beamLandingUrl": "https://api.solami.dev/swqos/tx/JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB"
+  "signature": "JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB"
 }",
           "type": "text",
         },
@@ -6456,11 +6006,6 @@ exports[`sdk > height equal accepted 1`] = `
     [
       "invalidate",
       "FMUEmtxhU46GzhKF4FW9MLJdQWiLgjiXP9TYRWSrqTpV",
-    ],
-    [
-      "beam",
-      "JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB",
-      null,
     ],
   ],
 }
@@ -6761,10 +6306,7 @@ exports[`sdk > native success 1`] = `
       "content": [
         {
           "text": "{
-  "signature": "JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB",
-  "beam": null,
-  "beamLabel": null,
-  "beamLandingUrl": "https://api.solami.dev/swqos/tx/JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB"
+  "signature": "JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB"
 }",
           "type": "text",
         },
@@ -6862,11 +6404,6 @@ exports[`sdk > native success 1`] = `
     [
       "invalidate",
       "FMUEmtxhU46GzhKF4FW9MLJdQWiLgjiXP9TYRWSrqTpV",
-    ],
-    [
-      "beam",
-      "JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB",
-      null,
     ],
   ],
 }
@@ -7827,10 +7364,7 @@ exports[`sdk > success 1`] = `
       "content": [
         {
           "text": "{
-  "signature": "JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB",
-  "beam": null,
-  "beamLabel": null,
-  "beamLandingUrl": "https://api.solami.dev/swqos/tx/JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB"
+  "signature": "JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB"
 }",
           "type": "text",
         },
@@ -7928,11 +7462,6 @@ exports[`sdk > success 1`] = `
     [
       "invalidate",
       "FMUEmtxhU46GzhKF4FW9MLJdQWiLgjiXP9TYRWSrqTpV",
-    ],
-    [
-      "beam",
-      "JTZTdubkyQCpTjGbXR3fEjSbMVmN2Wm7HdcUn4B74cnNa7W1bdMGLCD4YbHkPMqxonZ6oyN8WEvnR3osCe6mHpB",
-      null,
     ],
   ],
 }

@@ -16,7 +16,7 @@ export const DEFAULT_RETRY: RetryConfig = {
   budgetMs: 8_000,
 };
 
-/** User-initiated exit preview (90s route). Stay on Solami longer before failing. */
+/** User-initiated exit preview (90s route). Stay on the primary longer before failing. */
 export const PREVIEW_RETRY: RetryConfig = {
   maxAttempts: 6,
   baseMs: 400,

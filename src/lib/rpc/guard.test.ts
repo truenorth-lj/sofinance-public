@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 const SRC = join(import.meta.dirname, "..", "..");
 const NEW_CONNECTION = /\bnew\s+Connection\s*\(/;
-const RPC_URL = /https:\/\/api\.mainnet-beta\.solana\.com|https:\/\/rpc\.solami\.dev/;
+const RPC_URL = /https:\/\/api\.mainnet-beta\.solana\.com/;
 
 function allowed(rel: string): boolean {
   return rel === "lib/rpc.test.ts" || rel.startsWith("lib/rpc/");
