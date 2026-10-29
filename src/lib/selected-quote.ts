@@ -122,7 +122,7 @@ async function getSelectedQuoteBundleOnce(
   }
   if (!state.sufficientSol) throw new Error("Insufficient SOL, reserve at least 0.01 SOL to pay network fees and possible ATA rent");
   const grossRequested = parseTokenAmount(amount, state.inputDecimals);
-  const deposit = depositFeePlan(state.inputMint, grossRequested, feeConfig, state.inputKind);
+  const deposit = depositFeePlan(grossRequested, feeConfig);
   const requested = deposit.swapAmount;
   if (BigInt(state.inputBalance) < grossRequested) throw new Error("Insufficient input asset balance or SOL reserve");
   if (requested <= 0n) throw new AmountTooSmallError();

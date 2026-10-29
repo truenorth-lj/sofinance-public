@@ -3,9 +3,9 @@ import { engineEnv } from "../host";
 // lives in collection.ts; callers must not silently waive missing recipient ATAs.
 import {
   createTransferCheckedInstruction,
-  getAccountLenForMint, getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID, unpackMint,
+  ASSOCIATED_TOKEN_PROGRAM_ID, getAccountLenForMint, getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID, unpackMint,
 } from "@solana/spl-token";
-import { PublicKey, type Connection, type TransactionInstruction } from "@solana/web3.js";
+import { PublicKey, SystemProgram, type Connection, type TransactionInstruction } from "@solana/web3.js";
 import { NATIVE_SOL_MINT } from "../ids";
 
 export const DEFAULT_SWAP_FEE_BPS = 10;
@@ -145,4 +145,32 @@ export function assertPlatformFeeQuote(quote: { platformFee?: unknown }, bps: nu
   const fee = quote.platformFee as { feeBps?: number; amount?: string } | null;
   if (!fee || fee.feeBps !== bps || typeof fee.amount !== "string" || !/^\d+$/.test(fee.amount))
     throw new Error("Jupiter quote protocol fee does not match configuration");
+}
+
+/** Deposit transactions must never move tokens or SOL to the fee wallet with
+ * their own top-level instruction, nor create a fee-wallet account: the fee is
+ * paid only inside the Jupiter swap (input-mint platform fee). A direct
+ * transfer to the fee wallet is what Phantom flags as "Request blocked". */
+export function assertNoDirectFeeWalletInstructions(instructions: TransactionInstruction[], feeWallet: PublicKey | null) {
+  if (!feeWallet) return;
+  const tokenPrograms = [TOKEN_PROGRAM_ID.toBase58(), TOKEN_2022_PROGRAM_ID.toBase58()];
+  for (const ix of instructions) {
+    const program = ix.programId.toBase58();
+    if (program === SystemProgram.programId.toBase58() && ix.data.length >= 4 && ix.data.readUInt32LE(0) === 2 &&
+      ix.keys[1]?.pubkey.equals(feeWallet)) throw new DirectFeeWalletInstructionError();
+    if (program === ASSOCIATED_TOKEN_PROGRAM_ID.toBase58() && ix.keys[2]?.pubkey.equals(feeWallet)) throw new DirectFeeWalletInstructionError();
+    if (tokenPrograms.includes(program) && ix.keys.some(key => key.pubkey.equals(feeWallet))) throw new DirectFeeWalletInstructionError();
+    if (tokenPrograms.includes(program) && (ix.data[0] === 3 || ix.data[0] === 12)) {
+      const destination = ix.data[0] === 3 ? ix.keys[1]?.pubkey : ix.keys[2]?.pubkey;
+      const mint = ix.data[0] === 12 ? ix.keys[1]?.pubkey : null;
+      if (destination && mint && swapFeeRecipientAta(feeWallet, mint, ix.programId).equals(destination)) throw new DirectFeeWalletInstructionError();
+    }
+  }
+}
+
+export class DirectFeeWalletInstructionError extends Error {
+  constructor() {
+    super("Deposit transaction must not transfer to or create accounts for the protocol fee wallet directly");
+    this.name = "DirectFeeWalletInstructionError";
+  }
 }

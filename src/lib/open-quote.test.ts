@@ -350,7 +350,8 @@ describe("open-position quote validation", () => {
     expect(legs[0]!.feeAmount).toBe(1000n);
     expect(legs[1]!.feeAmount).toBe(0n);
     for (const leg of legs) {
-      expect(BigInt(leg.route!.inAmount)).toBe(leg.spend - leg.feeAmount);
+      // The fee is taken from the full leg spend inside the Jupiter swap.
+      expect(BigInt(leg.route!.inAmount)).toBe(leg.spend);
     }
     expect(quote.feeBps).toBe(10);
     expect(quote.feeAmount).toBe("1000");
@@ -399,17 +400,18 @@ describe("open-position quote validation", () => {
       expect(quote.feeBps).toBe(10);
       expect(quote.feeAmount).toBe("100000");
       expect(quote.feeWallet).toBe(feeWallet);
-      expect(quote.minOutA).toBe("99900");
-      expect(quotedAmounts(mintB, mintA)).toEqual([99_900_000n, 99_900_000n]);
-      expect(builtAmounts(mintB, mintA)).toEqual([99_900_000n]);
-      expect(quotedAmounts(mintA, mintB)).toEqual([99_900n]);
+      // Jupiter swaps the full leg and deducts the fee in the input mint itself.
+      expect(quote.minOutA).toBe("100000");
+      expect(quotedAmounts(mintB, mintA)).toEqual([100_000_000n, 100_000_000n]);
+      expect(builtAmounts(mintB, mintA)).toEqual([100_000_000n]);
+      expect(quotedAmounts(mintA, mintB)).toEqual([100_000n]);
       expect(builtAmounts(mintA, mintB)).toEqual([]);
-      // Deposit quotes have no Jupiter platform fee; resale quotes stay uncharged.
-      expect(vi.mocked(quoteRoute).mock.calls.find(call => call[0] === mintB)![6]).toBe(0);
+      // Deposit quotes carry the 10 bps Jupiter platform fee; resale quotes stay uncharged.
+      expect(vi.mocked(quoteRoute).mock.calls.find(call => call[0] === mintB)![6]).toBe(10);
       expect(vi.mocked(quoteRoute).mock.calls.find(call => call[0] === mintA)![6]).toBe(0);
     });
 
-    it("takes the USDC deposit fee even for a same-mint open", async () => {
+    it("does not charge the unswapped part of a same-mint USDC open", async () => {
       vi.stubEnv("SOFINANCE_FEE_WALLET", feeWallet);
       vi.stubEnv("SOFINANCE_FEE_BPS", undefined);
       const { quote, legs } = await getOpenPositionQuoteBundle(
@@ -418,10 +420,11 @@ describe("open-position quote validation", () => {
         "100",
         { preset: "custom", minPrice: "1", maxPrice: "2" },
       );
+      // The unswapped part of a same-mint open is not charged.
       expect(legs[0]?.route).toBeNull();
-      expect(legs[0]?.feeAmount).toBe(100000n);
+      expect(legs[0]?.feeAmount).toBe(0n);
       expect(quote.feeBps).toBe(10);
-      expect(quote.feeAmount).toBe("100000");
+      expect(quote.feeAmount).toBe("0");
       expect(quote.feeWallet).toBe(feeWallet);
       expect(buildRoute).not.toHaveBeenCalled();
     });

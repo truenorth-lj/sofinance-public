@@ -10,7 +10,7 @@ plans, instructions and route ALTs in their existing atomic transactions.
 
 | Flow | Mechanism |
 | --- | --- |
-| Open / selected add | Reserve 10 bps from the entire deposit once (`depositFeePlan`); explicit checked transfer of the **input mint** to the fee wallet’s ATA for that mint before swaps/add. Native SOL is the exception: no upfront reserve; every SOL→token Jupiter leg carries `platformFeeBps=10` with `feeAccount` = the fee wallet’s **pre-created** wSOL ATA, so Jupiter takes 10 bps of that leg in the input mint (ExactIn). No direct SOL/wSOL transfer to the fee wallet and no fee-wallet ATA creation in the user tx. Native SOL kept unswapped (pools containing SOL) is refused (`assertNativeInputFeeCoverage`). Parallel legs and sequential secondary legs use zero additional fee bps. Includes the same-mint portion. |
+| Open / selected add | Every input mint (native SOL, USDC, USDT, stock tokens incl. Token-2022): no upfront reserve and no transfer. Each Jupiter leg from the input mint carries `platformFeeBps=10` with `feeAccount` = the fee wallet’s **pre-created** ATA for that mint (`requireInputFeeAccount`, program from the mint owner), so Jupiter takes 10 bps of that leg in the input mint (ExactIn, V2 instructions). `assertNoDirectFeeWalletInstructions` rejects any SOL/token transfer to the fee wallet or ATA create for it in the user tx (LJ, 2026-10-29: Phantom blocks direct transfers to the fee wallet). A missing fee ATA fails closed with `protocol_fee_account_missing`. The unswapped same-mint portion is not charged; native SOL kept unswapped (pools containing SOL) is still refused (`assertNativeInputFeeCoverage`). Sequential secondary legs carry no fee. |
 | Compound SPCX/SPCXx rebalance | Same 10 bps input-token transfer from isolated harvested yield (the reinvested swap input). Not a performance fee on LP earnings. |
 | Exit / withdraw to USDC | Jupiter ExactIn output USDC `platformFee` on each converted withdrawal asset, without reducing its input. |
 | Withdraw conversion to a non-USDC mint | Still reserves the input fee and may append a compact ExactIn USDC hop (`collectSwapFee`); `fitFeeCollections` falls back to an input-asset transfer if that hop makes the packet too large. |
@@ -19,18 +19,16 @@ plans, instructions and route ALTs in their existing atomic transactions.
 Integer fees floor to atomic units; zero needs no instruction. Deposit flows never
 append a second Jupiter fee-to-USDC route. Missing recipient ATAs get
 `createAssociatedTokenAccountIdempotent` with **user as payer**; existing invalid,
-uninitialized or frozen accounts fail closed. Native SOL deposits wrap the full
-input into the user’s own wSOL ATA and pay the fee inside the Jupiter swap; if
-the fee wallet’s wSOL ATA is missing, `requireSwapFeeAccount` fails with
+uninitialized or frozen accounts fail closed. Deposits (any input mint) pay the fee inside the Jupiter swap; if the fee
+wallet’s ATA for the input mint is missing, `requireInputFeeAccount` fails with
 `protocol_fee_account_missing` and nothing is built (it is never created in a
-user tx). Nothing silently skips collection. Upstream
+user tx). The ATA-create rule above applies only to compound/withdraw. Nothing silently skips collection. Upstream
 platform fee quotes (withdraw-to-USDC) must report the requested rate and a
 valid amount.
 
 [Jupiter v1 fee documentation](https://developers.jup.ag/docs/swap/v1/add-fees-to-swap)
 permits ExactIn fees in either mint of the pair. Withdraw uses output USDC;
-native SOL deposits use the input mint (wSOL) into the operator’s pre-created
-wSOL ATA (LJ, 2026-10-29: Phantom flags a direct SOL transfer to the fee wallet).
+deposits use the input mint into the operator’s pre-created ATA for that mint (LJ, 2026-10-29: Phantom flags a direct SOL transfer to the fee wallet).
 With a parallel open (two SOL legs) the total is the sum of per-leg floors, at
 most 1 lamport below floor(gross × 10 / 10,000). Requests use instructionVersion V2 for Token-2022 support.
 The API is superseded by v2; this module deliberately retains composable v1

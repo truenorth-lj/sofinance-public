@@ -12,19 +12,10 @@ import { buildRoute } from "@sofinance/engine/swap/jupiter";
 import { NATIVE_SOL_MINT, USDC_MINT } from "@sofinance/engine/ids";
 const owner = Keypair.generate().publicKey, recipient = Keypair.generate().publicKey;
 const mint = new PublicKey(USDC_MINT);
-it("deposits pay once in the input mint, including same-mint allocation and sequential secondary swaps", () => {
-  expect(depositFeePlan(USDC_MINT, 1000000n, { wallet: recipient, bps: 10 }))
-    .toEqual({ feeAmount: 1000n, swapAmount: 999000n, legBps: 0, secondaryBps: 0, inputFee: false });
-  expect(depositFeePlan(Keypair.generate().publicKey.toBase58(), 1000000n, { wallet: recipient, bps: 10 }))
-    .toEqual({ feeAmount: 1000n, swapAmount: 999000n, legBps: 0, secondaryBps: 0, inputFee: false });
-  // wSOL held as a token keeps the upfront TransferChecked like any other token.
-  expect(depositFeePlan(NATIVE_SOL_MINT, 1000000n, { wallet: recipient, bps: 10 }, "token"))
-    .toEqual({ feeAmount: 1000n, swapAmount: 999000n, legBps: 0, secondaryBps: 0, inputFee: false });
-});
-it("native SOL deposits reserve nothing up front and charge every SOL swap leg via Jupiter's input-mint fee", () => {
-  expect(depositFeePlan(NATIVE_SOL_MINT, 1000000n, { wallet: recipient, bps: 10 }, "native"))
+it("deposits reserve nothing up front: every input-mint swap leg is charged inside Jupiter, whatever the input", () => {
+  expect(depositFeePlan(1000000n, { wallet: recipient, bps: 10 }))
     .toEqual({ feeAmount: 0n, swapAmount: 1000000n, legBps: 10, secondaryBps: 0, inputFee: true });
-  expect(depositFeePlan(NATIVE_SOL_MINT, 1000000n, { wallet: null, bps: 0 }, "native"))
+  expect(depositFeePlan(1000000n, { wallet: null, bps: 0 }))
     .toEqual({ feeAmount: 0n, swapAmount: 1000000n, legBps: 0, secondaryBps: 0, inputFee: false });
 });
 it("refuses native SOL kept unswapped (SOL pools) instead of leaving it uncharged", () => {

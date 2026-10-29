@@ -1,4 +1,4 @@
-import { ASSOCIATED_TOKEN_PROGRAM_ID, createAssociatedTokenAccountIdempotentInstruction, createSyncNativeInstruction, getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID, unpackAccount } from "@solana/spl-token";
+import { ASSOCIATED_TOKEN_PROGRAM_ID, createAssociatedTokenAccountIdempotentInstruction, createSyncNativeInstruction, getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID, unpackAccount } from "@solana/spl-token";
 import { PublicKey, SystemProgram, type VersionedTransaction, type Connection, type TransactionInstruction } from "@solana/web3.js";
 import { versionedTransactionSize } from "../open-transaction";
 import { NATIVE_SOL_MINT, USDC_MINT } from "../ids";
@@ -23,8 +23,10 @@ export async function feeAccountSetup(connection: Connection, payer: PublicKey, 
 
 export class SwapFeeAccountMissingError extends Error {
   readonly code = "protocol_fee_account_missing";
-  constructor() {
-    super("Protocol fee wSOL account is not set up, so SOL input is unavailable right now. No transaction was built; please use another token.");
+  constructor(nativeSol = true) {
+    super(nativeSol
+      ? "Protocol fee wSOL account is not set up, so SOL input is unavailable right now. No transaction was built; please use another token."
+      : "Protocol fee account for this input token is not set up, so it is unavailable as input right now. No transaction was built; please use another token.");
     this.name = "SwapFeeAccountMissingError";
   }
 }
@@ -37,18 +39,30 @@ export async function requireSwapFeeAccount(connection: Connection, recipient: P
   mint = new PublicKey(NATIVE_SOL_MINT), program = TOKEN_PROGRAM_ID) {
   const address = swapFeeRecipientAta(recipient, mint, program);
   const info = await connection.getAccountInfo(address, "confirmed");
-  if (!info) throw new SwapFeeAccountMissingError();
+  if (!info) throw new SwapFeeAccountMissingError(mint.toBase58() === NATIVE_SOL_MINT);
   const account = unpackAccount(address, info, program);
   if (!account.isInitialized || account.isFrozen || !account.mint.equals(mint) || !account.owner.equals(recipient))
     throw new Error("Protocol fee ATA is invalid or frozen");
   return address;
 }
 
-/** Token deposits (open / selected add / compound) use `collectInputAssetFee`:
- * a TransferChecked of 10 bps of the input token to the fee wallet's ATA.
- * Native SOL deposits never use this module: the fee is Jupiter
- * `platformFeeBps` on the SOL swap leg(s), paid into the pre-created wSOL ATA
- * (see `feeSwapLeg` / `buildRoute`). Withdraw conversion to a non-USDC mint
+/** Deposit input fee (any input mint: SOL, USDC, stock tokens): Jupiter takes
+ * `platformFeeBps` of the swapped input into the fee wallet's pre-created ATA
+ * for that mint (SPL or Token-2022, resolved from the mint's owner program).
+ * Never created in the user's transaction: missing fails closed. */
+export async function requireInputFeeAccount(connection: Connection, recipient: PublicKey, mint: PublicKey) {
+  if (mint.toBase58() === NATIVE_SOL_MINT) return requireSwapFeeAccount(connection, recipient, mint, TOKEN_PROGRAM_ID);
+  const info = await connection.getAccountInfo(mint, "confirmed");
+  if (!info || !(info.owner.equals(TOKEN_PROGRAM_ID) || info.owner.equals(TOKEN_2022_PROGRAM_ID)))
+    throw new Error("Protocol fee mint program is not SPL Token or Token-2022");
+  return requireSwapFeeAccount(connection, recipient, mint, info.owner);
+}
+
+/** Deposits (open / selected add), whatever the input mint, never use a
+ * transfer from this module: the fee is Jupiter `platformFeeBps` on each
+ * swap leg from the input mint, paid into the fee wallet's pre-created ATA for
+ * that mint (see `feeSwapLeg` / `buildRoute` / `requireInputFeeAccount`).
+ * Compound rebalance still uses `collectCompoundSwapFee` (TransferChecked). Withdraw conversion to a non-USDC mint
  * still uses this USDC hop, with `fitFeeCollections` as the measured oversize
  * fallback. USDC withdraw keeps Jupiter `platformFee` instead. */
 /** `receiveOnlyAccounts`: Jupiter's non-shared `route` instruction always marks

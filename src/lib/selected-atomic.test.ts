@@ -154,7 +154,17 @@ it("snapshots the selected transaction wire bytes", async () => {
 });
 
 afterEach(() => vi.unstubAllEnvs());
-it("includes the selected-add protocol transfer before the swap", async () => {
+function feeWalletTouched(transaction: { message: { compiledInstructions: { programIdIndex: number; accountKeyIndexes: number[] }[]; staticAccountKeys: PublicKey[] } }, recipient: PublicKey, feeAta: PublicKey) {
+  return transaction.message.compiledInstructions.some(ix => {
+    const program = transaction.message.staticAccountKeys[ix.programIdIndex]!;
+    if (program.toBase58() === "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4") return false;
+    return ix.accountKeyIndexes.some(index => {
+      const k = transaction.message.staticAccountKeys[index];
+      return k?.equals(recipient) || k?.equals(feeAta);
+    });
+  });
+}
+it("selected-add USDC input carries the fee inside the Jupiter swap: no top-level transfer or ATA create for the fee wallet", async () => {
   const recipient = key();
   vi.stubEnv("SOFINANCE_FEE_WALLET", recipient.toBase58()); vi.stubEnv("SOFINANCE_FEE_BPS", "10");
   const value = writableBundle(new PublicKey(state.ataA));
@@ -164,15 +174,13 @@ it("includes the selected-add protocol transfer before the swap", async () => {
   (value.legs[0]!.route! as { inputMint: string }).inputMint = value.state.inputMint;
   vi.mocked(readSelectedPositionState).mockResolvedValue(value.state);
   value.legs[0]!.feeAmount = 1n;
-  (value.legs[0]!.route! as { inAmount: string }).inAmount = "999";
+  (value.legs[0]! as { feeInRoute?: boolean }).feeInRoute = true;
   vi.mocked(getSelectedQuoteBundle).mockResolvedValue(value);
   const { transaction } = await buildAndSimulateSelectedZap(wallet.toBase58(), selection, "0.001", 9900);
-  const fee = transaction.message.compiledInstructions[2]!;
-  expect(transaction.message.staticAccountKeys[fee.programIdIndex]!.equals(TOKEN_PROGRAM_ID)).toBe(true);
-  expect(fee.data[0]).toBe(12); // TransferChecked
-  expect(Buffer.from(fee.data).readBigUInt64LE(1)).toBe(1n);
-  const dest = transaction.message.staticAccountKeys[fee.accountKeyIndexes[2]!];
-  expect(dest!.equals(getAssociatedTokenAddressSync(new PublicKey(value.state.inputMint), recipient, true, TOKEN_PROGRAM_ID))).toBe(true);
+  const feeAta = getAssociatedTokenAddressSync(new PublicKey(value.state.inputMint), recipient, true, TOKEN_PROGRAM_ID);
+  expect(feeWalletTouched(transaction, recipient, feeAta)).toBe(false);
+  expect(transaction.message.compiledInstructions.some(ix =>
+    transaction.message.staticAccountKeys[ix.programIdIndex]!.equals(TOKEN_PROGRAM_ID) && (ix.data[0] === 12 || ix.data[0] === 3))).toBe(false);
 });
 function nativeSelectedBundle(recipient: PublicKey, feeInRoute: boolean) {
   const value = writableBundle(new PublicKey(state.ataA));
@@ -216,10 +224,10 @@ it("refuses a native SOL selected-add whose fee is not inside the Jupiter swap",
   vi.stubEnv("SOFINANCE_FEE_WALLET", recipient.toBase58()); vi.stubEnv("SOFINANCE_FEE_BPS", "10");
   nativeSelectedBundle(recipient, false);
   await expect(buildAndSimulateSelectedZap(wallet.toBase58(), { ...selection, inputMint: NATIVE_SOL_MINT, inputKind: "native" }, "0.001", 9900))
-    .rejects.toThrow("Native SOL protocol fee must be collected inside the Jupiter swap");
+    .rejects.toThrow("Protocol fee must be collected inside the Jupiter swap");
 });
 
-it("collects a non-USDC selected-add fee in the input mint, not via a USDC Jupiter hop", async () => {
+it("refuses a token selected-add whose fee would need a top-level transfer", async () => {
   const recipient = key();
   const inputMint = key();
   vi.stubEnv("SOFINANCE_FEE_WALLET", recipient.toBase58()); vi.stubEnv("SOFINANCE_FEE_BPS", "10");
@@ -230,15 +238,10 @@ it("collects a non-USDC selected-add fee in the input mint, not via a USDC Jupit
   (value.legs[0]!.route! as { inputMint: string }).inputMint = value.state.inputMint;
   vi.mocked(readSelectedPositionState).mockResolvedValue(value.state);
   value.legs[0]!.feeAmount = 1n;
+  (value.legs[0]! as { feeInRoute?: boolean }).feeInRoute = false;
+  // Old upfront-transfer shape: the route only swaps spend minus the fee.
   (value.legs[0]!.route! as { inAmount: string }).inAmount = "999";
   vi.mocked(getSelectedQuoteBundle).mockResolvedValue(value);
-  const { transaction } = await buildAndSimulateSelectedZap(wallet.toBase58(), selection, "0.001", 9900);
-  const fee = transaction.message.compiledInstructions.find(ix =>
-    transaction.message.staticAccountKeys[ix.programIdIndex]!.equals(TOKEN_PROGRAM_ID) && ix.data[0] === 12);
-  expect(fee).toBeDefined();
-  expect(Buffer.from(fee!.data).readBigUInt64LE(1)).toBe(1n);
-  const dest = transaction.message.staticAccountKeys[fee!.accountKeyIndexes[2]!];
-  expect(dest!.equals(getAssociatedTokenAddressSync(inputMint, recipient, true, TOKEN_PROGRAM_ID))).toBe(true);
-  expect(transaction.message.compiledInstructions.some(ix =>
-    transaction.message.staticAccountKeys[ix.programIdIndex]!.toBase58() === "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4")).toBe(false);
+  await expect(buildAndSimulateSelectedZap(wallet.toBase58(), selection, "0.001", 9900))
+    .rejects.toThrow("Protocol fee must be collected inside the Jupiter swap");
 });

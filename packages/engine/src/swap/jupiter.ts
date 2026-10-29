@@ -6,8 +6,8 @@ import { JUPITER_MAX_ACCOUNTS, type JupiterRouteConstraints } from "../jupiter-r
 import { getJupiterApiKey } from "../config/server-env";
 import { PublicKey } from "@solana/web3.js";
 import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
-import { NATIVE_SOL_MINT, USDC_MINT } from "../ids";
-import { feeAccountSetup, requireSwapFeeAccount } from "./collection";
+import { USDC_MINT } from "../ids";
+import { feeAccountSetup, requireInputFeeAccount } from "./collection";
 import { rpcConnection } from "../rpc";
 import { assertPlatformFeeQuote, readSwapFeeConfig, swapFeeRecipientAta } from "./fee";
 import { jupiterQuote, jupiterSwapInstructions } from "./client";
@@ -63,10 +63,11 @@ export async function buildRoute(
   platformFeeBps = 0,
   maxPriceImpactBps = MAX_PRICE_IMPACT_BPS,
   quoted?: QuoteRoute,
-  /** Mint of the fee wallet ATA that receives `platformFeeBps`. USDC (default)
-   * is created in-transaction when missing; native SOL input charges the fee in
-   * the input mint (wSOL) into the operator's pre-created ATA and fails closed
-   * when it is missing. */
+  /** Mint of the fee wallet ATA that receives `platformFeeBps`. USDC output
+   * (default; withdraw) is created in-transaction when missing. When it equals
+   * `inputMint` (deposits: SOL, USDC, stock tokens) the fee is charged in the
+   * input mint into the operator's pre-created ATA and fails closed when it is
+   * missing. */
   feeMint: string = USDC_MINT,
 ): Promise<BuildRoute> {
   const key = getJupiterApiKey();
@@ -76,13 +77,15 @@ export async function buildRoute(
   if (!Number.isInteger(resolved.maxAccounts) || resolved.maxAccounts < 1 || resolved.maxAccounts > 64) {
     throw new Error("Invalid Jupiter route account budget");
   }
-  const nativeInputFee = Boolean(platformFeeBps) && feeMint === NATIVE_SOL_MINT;
-  if (platformFeeBps && feeMint !== USDC_MINT && !(nativeInputFee && inputMint === NATIVE_SOL_MINT)) {
+  // Input-mint fee: deposits (SOL, USDC, stock tokens) pay 10 bps of the
+  // swapped input into the fee wallet's pre-created ATA for that mint.
+  const inputMintFee = Boolean(platformFeeBps) && feeMint === inputMint;
+  if (platformFeeBps && !inputMintFee && feeMint !== USDC_MINT) {
     throw new Error("Unsupported protocol fee mint for this route");
   }
   const feeAccount = platformFeeBps
-    ? nativeInputFee
-      ? (await requireSwapFeeAccount(rpcConnection(), readSwapFeeConfig().wallet!)).toBase58()
+    ? inputMintFee
+      ? (await requireInputFeeAccount(rpcConnection(), readSwapFeeConfig().wallet!, new PublicKey(inputMint))).toBase58()
       : swapFeeRecipientAta(readSwapFeeConfig().wallet!, new PublicKey(USDC_MINT), TOKEN_PROGRAM_ID).toBase58()
     : null;
   let route: BuildRoute;
@@ -109,11 +112,11 @@ export async function buildRoute(
   if (route.tipInstruction) throw new Error("Route contains unexpected SOL tip");
   assertAllowedSwapPrograms(route);
   // Cheap sanity check (not anti-tampering): the input-mint fee must be paid by
-  // the swap instruction itself into the pre-created wSOL fee account.
-  if (nativeInputFee && !route.swapInstruction.accounts.some(key => key.pubkey === feeAccount && key.isWritable)) {
+  // the swap instruction itself into the pre-created fee account.
+  if (inputMintFee && !route.swapInstruction.accounts.some(key => key.pubkey === feeAccount && key.isWritable)) {
     throw new Error("Jupiter swap does not pay the protocol fee account");
   }
-  if (platformFeeBps && !nativeInputFee) {
+  if (platformFeeBps && !inputMintFee) {
     const setup = await feeAccountSetup(rpcConnection(), new PublicKey(wallet), readSwapFeeConfig().wallet!);
     route.setupInstructions.unshift(...setup.instructions.map(ix => ({ programId: ix.programId.toBase58(),
       accounts: ix.keys.map(key => ({ pubkey: key.pubkey.toBase58(), isSigner: key.isSigner, isWritable: key.isWritable })), data: ix.data.toString("base64") })));

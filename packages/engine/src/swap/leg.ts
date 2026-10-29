@@ -5,17 +5,14 @@ import { computeSwapFee, netSwapInput, type SwapFeeConfig } from "./fee";
 import { buildRoute, quoteRoute, type QuoteRoute } from "./jupiter";
 import { isPoolTokenPair, preferOwnPoolRoute, type OwnPool } from "./own-pool";
 
-/** Token deposits reserve the protocol fee once from the input (a separate
- * TransferChecked); swap legs are uncharged. Native SOL deposits reserve
- * nothing up front: every SOL-input swap leg carries Jupiter `platformFeeBps`
- * in the input mint (wSOL), so the whole SOL input is charged 10 bps inside
- * the swaps (`inputFee`). */
-export function depositFeePlan(mint: string, amount: bigint, config: SwapFeeConfig, inputKind: "native" | "token" = "token") {
-  if (inputKind === "native" && mint === NATIVE_SOL_MINT && config.bps > 0) {
-    return { feeAmount: 0n, swapAmount: amount, legBps: config.bps, secondaryBps: 0, inputFee: true };
-  }
-  const upfront = netSwapInput(amount, config.bps);
-  return { ...upfront, legBps: 0, secondaryBps: 0, inputFee: false };
+/** Deposits reserve nothing up front: every swap leg from the input mint
+ * (SOL, USDC, stock tokens) carries Jupiter `platformFeeBps` in the input mint,
+ * paid into the fee wallet's pre-created ATA for that mint (`inputFee`). The
+ * part of a deposit kept as-is (the input is itself a pool token) is not
+ * swapped and not charged. There is no separate fee transfer. */
+export function depositFeePlan(amount: bigint, config: SwapFeeConfig) {
+  if (config.bps > 0) return { feeAmount: 0n, swapAmount: amount, legBps: config.bps, secondaryBps: 0, inputFee: true };
+  return { feeAmount: 0n, swapAmount: amount, legBps: 0, secondaryBps: 0, inputFee: false };
 }
 
 /** Native SOL input pays its fee only inside swaps, so any SOL kept as SOL
@@ -33,18 +30,19 @@ export async function feeSwapLeg(input: {
   signal?: AbortSignal; budget?: JupiterRetryBudget; ownPool?: OwnPool; maxPriceImpactBps?: number;
   /** Build swap-instructions for this already-validated quote (same request) instead of re-quoting. */
   quote?: QuoteRoute | null;
-  /** Native SOL deposit: charge `feeBps` as Jupiter platform fee in the input
-   * mint (wSOL) on the full `spend`; the route's inAmount is the gross spend. */
+  /** Deposit leg: charge `feeBps` as Jupiter platform fee in the input mint
+   * (wSOL, USDC, stock token) on the full `spend`; the route's inAmount is the
+   * gross spend. */
   inputFee?: boolean;
 }) {
   const { wallet, inputMint, outputMint, spend, feeBps } = input;
   if (spend <= 0n) throw new Error("Swap amount must be greater than zero");
   if (inputMint === outputMint) return { inputMint, outputMint, spend, feeAmount: 0n, feeInRoute: false, minOut: spend, route: null };
-  const inputFee = Boolean(input.inputFee) && feeBps > 0 && inputMint === NATIVE_SOL_MINT;
-  // Output (USDC) and input (wSOL) platform fees are reflected in Jupiter's
+  const inputFee = Boolean(input.inputFee) && feeBps > 0;
+  // Output (USDC) and input-mint platform fees are reflected in Jupiter's
   // output and threshold; only other fees are reserved from the spend.
   const platformFeeBps = inputFee || outputMint === USDC_MINT ? feeBps : 0;
-  const feeMint = inputFee ? NATIVE_SOL_MINT : USDC_MINT;
+  const feeMint = inputFee ? inputMint : USDC_MINT;
   // Jupiter takes floor(inAmount * bps / 10_000) of the input mint for ExactIn.
   const { feeAmount, swapAmount } = inputFee
     ? { feeAmount: computeSwapFee(spend, feeBps), swapAmount: spend }
