@@ -107,7 +107,7 @@ function opensSql(sql: OpensSql | null | undefined) {
 }
 
 /** First successful signature of the position account (its open), bounded; null when the history is longer (fail closed). */
-async function firstSuccessfulSignature(connection: MeteoraConnection, address: string): Promise<string | null> {
+export async function meteoraPositionFirstSignature(connection: Pick<Connection, "getSignaturesForAddress">, address: string): Promise<string | null> {
   let before: string | undefined;
   let oldest: string | null = null;
   for (let page = 0; page < PROVENANCE_MAX_PAGES; page++) {
@@ -127,7 +127,7 @@ export async function meteoraPositionProvenance(
   const sql = opensSql(options.sql);
   if (!sql || !allowlisted(snapshot.poolId)) return null;
   try {
-    const openSignature = await firstSuccessfulSignature(options.connection, snapshot.positionAccount);
+    const openSignature = await meteoraPositionFirstSignature(options.connection, snapshot.positionAccount);
     if (!openSignature) return null;
     const rows = await sql.unsafe(
       "SELECT wallet FROM sofinance_position_opens WHERE tx_signature = $1 AND pool_address = $2 LIMIT 1",

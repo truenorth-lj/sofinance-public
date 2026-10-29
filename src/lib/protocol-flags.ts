@@ -117,3 +117,33 @@ export const METEORA_DLMM_DISCOVERY_ENABLED: Readonly<Record<DeployTarget, boole
 export function isMeteoraDlmmDiscoveryEnabled(target: DeployTarget = deployTarget()): boolean {
   return METEORA_DLMM_DISCOVERY_ENABLED[target];
 }
+
+/**
+ * Meteora DLMM open flow: build + simulate the 1/2 setup (position account, user ATAs) and 2/2 deposit
+ * (Jupiter legs with the 10 bps platform fee on the swapped portion + add_liquidity_by_strategy2), and
+ * the close-and-refund transaction (`/api/meteora-open`, `/app/meteora`). OFF in production.
+ * Building never signs or sends.
+ */
+export const METEORA_DLMM_TX_BUILD_ENABLED: Readonly<Record<DeployTarget, boolean>> = Object.freeze({
+  production: false,
+  preview: true,
+  development: true,
+});
+
+export function isMeteoraDlmmTxBuildEnabled(target: DeployTarget = deployTarget()): boolean {
+  return METEORA_DLMM_TX_BUILD_ENABLED[target];
+}
+
+/**
+ * Wallet signing for the Meteora open flow (Phantom sign buttons) and recording landed opens in the
+ * opens log. OFF everywhere until the test-wallet run is approved.
+ */
+export const METEORA_DLMM_WALLET_SIGNING_ENABLED: Readonly<Record<DeployTarget, boolean>> = Object.freeze({
+  production: false,
+  preview: false,
+  development: false,
+});
+
+export function isMeteoraDlmmWalletSigningEnabled(target: DeployTarget = deployTarget()): boolean {
+  return METEORA_DLMM_WALLET_SIGNING_ENABLED[target];
+}
