@@ -21,6 +21,8 @@ const SECRET_ENV_NAMES = [
   "SOFINANCE_RWA_STORE_MODE", "SOFINANCE_RWA_NATIVE_CRON_ENABLED", "SOFINANCE_RWA_DB_EXPECTED_ROLE",
   "JUPITER_API_KEY", "SOLAMI_API_KEY", "SOLAMI_DATA_API_KEY", "SOLANA_RPC_URL", "SOFINANCE_MCP_TOKEN",
   "SOFINANCE_OPENS_DATABASE_URL", "SOFINANCE_OPENS_READ_TOKEN",
+  // Optional dedicated Robinhood Chain RPC (may embed a provider key); read only inside the engine.
+  "RHC_RPC_URL",
 ] as const;
 
 /** `*` = the whole `process.env` object handed on to a function (can reach any secret). */
@@ -45,6 +47,7 @@ const ALLOWED_SECRET_READS: Record<string, Reads> = {
     // local stdio-to-remote shim: reads the user's own token from its own process env
     "mcp/remote-shim.ts": 1,
   },
+  RHC_RPC_URL: {},
   SOFINANCE_OPENS_DATABASE_URL: { "lib/config/opens-env.ts": 1 },
   SOFINANCE_OPENS_READ_TOKEN: { "lib/config/opens-env.ts": 1 },
 };

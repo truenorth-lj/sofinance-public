@@ -39,3 +39,11 @@ Public program state only; no wallets, signatures or credentials.
 positions on it (one in range, one above, one below) and the two tick arrays
 holding their boundary ticks. Public program state only; the position owners
 are not part of these accounts and no signatures or credentials are recorded.
+
+`univ4-rhc-spcx-live.json` is a read-only capture (Robinhood Chain 4663, block
+100701103, 2026-10-29) of the allowlisted Uniswap v4 SPCX/SPCXon pool on the
+StablePairHook: StateView slot0 / liquidity, the hook's dynamic fee and fee
+config, the ERC1967 implementation slot, token metadata, and the decoded
+Swap / ModifyLiquidity / Upgraded history since pool init. Public contract
+state and events only; no wallets, signatures or credentials.
+`test-support/rhc-mock-rpc.ts` replays it as a mock JSON-RPC.

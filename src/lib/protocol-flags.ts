@@ -40,3 +40,18 @@ export const ORCA_POSITIONS_ENABLED: Readonly<Record<DeployTarget, boolean>> = O
 export function isOrcaPositionsEnabled(target: DeployTarget = deployTarget()): boolean {
   return ORCA_POSITIONS_ENABLED[target];
 }
+
+/**
+ * Uniswap v4 on Robinhood Chain (4663): read-only discovery of the allowlisted
+ * StablePairHook pools (`/api/protocol-pools?protocol=uniswap-v4-rhc`). OFF in
+ * production, same targets as above. Nothing on this path signs or sends.
+ */
+export const RHC_UNIV4_DISCOVERY_ENABLED: Readonly<Record<DeployTarget, boolean>> = Object.freeze({
+  production: false,
+  preview: true,
+  development: true,
+});
+
+export function isRhcUniv4DiscoveryEnabled(target: DeployTarget = deployTarget()): boolean {
+  return RHC_UNIV4_DISCOVERY_ENABLED[target];
+}
