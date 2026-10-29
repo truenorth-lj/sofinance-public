@@ -46,7 +46,7 @@ const TOKEN_ACCOUNT_RENT_FALLBACK = 2_039_280;
 /** Lamports per signature (base fee). */
 const SIGNATURE_LAMPORTS = 5_000;
 /** Allowance for intermediate token accounts a Jupiter route may create in 2/2 (two token accounts). */
-const DEPOSIT_INTERMEDIATE_RENT_ALLOWANCE = 2 * TOKEN_ACCOUNT_RENT_FALLBACK;
+export const DEPOSIT_INTERMEDIATE_RENT_ALLOWANCE = 2 * TOKEN_ACCOUNT_RENT_FALLBACK;
 
 export class MeteoraOpenBlockedError extends Error {
   constructor(message: string, readonly code: string) {
@@ -119,6 +119,12 @@ function assertInputMint(pool: MeteoraAllowlistedPool, inputMint: string) {
   if (![pool.mintX, pool.mintY, USDC_MINT].includes(inputMint)) {
     throw new MeteoraOpenBlockedError("Meteora v1 accepts only USDC or a pool token as input", "input_not_supported");
   }
+}
+
+function insufficientInputMessage(params: MeteoraOpenParams, state: Pick<MeteoraOpenState, "pool" | "inputBalance">) {
+  const [symbol, decimals] = params.inputMint === USDC_MINT ? ["USDC", 6] : params.inputMint === state.pool.mintX ? [state.pool.wrappedSymbol, 8] : [state.pool.plainSymbol, 8];
+  const units = (raw: bigint) => (Number(raw) / 10 ** decimals).toLocaleString("en-US", { maximumFractionDigits: decimals });
+  return `Not enough ${symbol}: add about ${units(params.amount - state.inputBalance)} ${symbol} or lower the amount (you have ${units(state.inputBalance)} ${symbol}).`;
 }
 
 export function assertMeteoraParams(params: MeteoraOpenParams) {
@@ -337,7 +343,7 @@ export async function prepareMeteoraSetup(params: MeteoraOpenParams, deps: Meteo
   const { connection } = deps;
   const state = await readMeteoraOpenState(connection, params);
   if (state.positionInfo) throw new Error("Position account already exists; generate a fresh position keypair");
-  if (state.inputBalance < params.amount) throw new MeteoraOpenBlockedError("Input token balance is lower than the amount", "input_balance_insufficient");
+  if (state.inputBalance < params.amount) throw new MeteoraOpenBlockedError(insufficientInputMessage(params, state), "input_balance_insufficient");
   const wallet = new PublicKey(params.wallet);
   const [positionRent, tokenRent, latest] = await Promise.all([
     rentFor(connection, METEORA_POSITION_BASE_LEN, 57_406_080),
@@ -358,7 +364,7 @@ export async function prepareMeteoraSetup(params: MeteoraOpenParams, deps: Meteo
   };
   if (!minimum.ok) {
     throw Object.assign(new MeteoraOpenBlockedError(
-      `Not enough SOL: this open needs about ${(Number(required) / 1e9).toFixed(4)} SOL (position rent ${(Number(positionRent) / 1e9).toFixed(4)} SOL, refunded when the position is closed, plus token accounts, network fees and a ${MIN_SOL_LAMPORTS / 1e9} SOL reserve); the wallet has ${(Number(state.walletLamports) / 1e9).toFixed(4)} SOL.`,
+      `Not enough SOL: add about ${(Math.ceil(Number(required - state.walletLamports) / 1e5) / 1e4).toFixed(4)} SOL. This open needs about ${(Number(required) / 1e9).toFixed(4)} SOL (position rent ${(Number(positionRent) / 1e9).toFixed(4)} SOL, refunded when you close the position, plus token accounts, network fees and a ${MIN_SOL_LAMPORTS / 1e9} SOL reserve); your wallet has ${(Number(state.walletLamports) / 1e9).toFixed(4)} SOL.`,
       "sol_insufficient",
     ), { rent, minimum });
   }
@@ -413,8 +419,15 @@ export async function prepareMeteoraDeposit(params: MeteoraOpenParams, deps: Met
   const { connection } = deps;
   const state = await readMeteoraOpenState(connection, params);
   assertEmptyOwnedPosition(state.positionInfo, params);
-  if (state.inputBalance < params.amount) throw new MeteoraOpenBlockedError("Input token balance is lower than the amount", "input_balance_insufficient");
+  if (state.inputBalance < params.amount) throw new MeteoraOpenBlockedError(insufficientInputMessage(params, state), "input_balance_insufficient");
   if (!state.ataXExists || !state.ataYExists) throw new Error("Wallet token accounts from step 1/2 are missing");
+  const depositNeed = BigInt(DEPOSIT_INTERMEDIATE_RENT_ALLOWANCE + SIGNATURE_LAMPORTS);
+  if (state.walletLamports < depositNeed) {
+    throw Object.assign(new MeteoraOpenBlockedError(
+      `Not enough SOL: add about ${(Math.ceil(Number(depositNeed - state.walletLamports) / 1e5) / 1e4).toFixed(4)} SOL to finish step 2/2, or close the empty position to get its rent back.`,
+      "sol_insufficient",
+    ), { minimum: minimumCheck(state.walletLamports, depositNeed) });
+  }
   const wallet = new PublicKey(params.wallet);
   const latest = await connection.getLatestBlockhash("confirmed");
   const built = await compileMeteoraDeposit(connection, params, state, deps, latest.blockhash, { compactAtas: true });

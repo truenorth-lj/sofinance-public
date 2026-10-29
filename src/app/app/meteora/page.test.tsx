@@ -12,10 +12,10 @@ describe("/app/meteora page", () => {
     const { default: MeteoraPage } = await import("./page");
     await expect(MeteoraPage()).rejects.toThrow("NEXT_NOT_FOUND");
   });
-  it("renders on preview with signing off", async () => {
+  it("renders on preview with signing on", async () => {
     vi.stubEnv("VERCEL_ENV", "preview");
     const { default: MeteoraPage } = await import("./page");
     const json = JSON.stringify(await MeteoraPage(), (_k, v) => (typeof v === "function" ? v.name : v));
-    expect(json).toContain("\"signingEnabled\":false");
+    expect(json).toContain("\"signingEnabled\":true");
   });
 });
