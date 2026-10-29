@@ -4,6 +4,10 @@ import type { OpenFlowResult } from "@sofinance/engine/protocols/uniswap-v4/open
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const flags = vi.hoisted(() => ({ signing: false }));
+vi.mock("@/lib/protocol-flags", async importOriginal => ({ ...await importOriginal<typeof import("@/lib/protocol-flags")>(), isRhcUniv4WalletSigningEnabled: () => flags.signing }));
+
 import { EstimatedAprBadge, OpenPreview, type RhcPoolView, RhcUniv4OpenPanel, StepList } from "./rhc-univ4-open-panel";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -33,7 +37,7 @@ const needsSig = (approval: boolean) => ({
 
 let container: HTMLDivElement; let root: Root;
 beforeEach(() => { container = document.createElement("div"); document.body.append(container); root = createRoot(container); });
-afterEach(() => { act(() => root.unmount()); container.remove(); vi.unstubAllGlobals(); delete (window as unknown as { ethereum?: unknown }).ethereum; });
+afterEach(() => { flags.signing = false; act(() => root.unmount()); container.remove(); vi.unstubAllGlobals(); delete (window as unknown as { ethereum?: unknown }).ethereum; });
 const render = (el: Parameters<Root["render"]>[0]) => act(() => root.render(el));
 const text = () => container.textContent ?? "";
 
@@ -128,5 +132,114 @@ describe("RhcUniv4OpenPanel", () => {
   it("blocks opening a delisted pool", () => {
     render(createElement(RhcUniv4OpenPanel, { pool: pool({ status: "delisted" }), signingEnabled: false }));
     expect(text()).toContain("This pool is delisted");
+  });
+});
+
+const UR = "0x204FAca1764B154221e35c0d20aBb3c525710498";
+const PM = "0x58daec3116aae6d93017baaea7749052e8a04fa7";
+const SIG = `0x${"11".repeat(65)}`, HASH = `0x${"cd".repeat(32)}`;
+const permitJson = (sigDeadline = String(Math.floor(Date.now() / 1000) + 600)) =>
+  ({ details: { token: SPCX, amount: "1000000000000000000", expiration: Math.floor(Date.now() / 1000) + 1800, nonce: 3 }, spender: UR, sigDeadline });
+const prepared = (sigDeadline?: string) => ({ ...(needsSig(false) as object), typedData: { primaryType: "PermitSingle" }, permit: permitJson(sigDeadline) }) as unknown as OpenFlowResult;
+const ready = (tx: Record<string, unknown> = {}) => ({
+  state: "ready", attempt: 0, plan, leftover, simulation: { status: "success", gasUsed: "685843", revert: null, checks: null }, gas: { estimate: "765000", limit: "957060" },
+  tx: { from: USER, to: UR, data: "0x3593564c", value: "0x0", gasLimit: "957060", chainId: 4663, ...tx },
+}) as unknown as OpenFlowResult;
+const mintReceipt = { status: "0x1", logs: [{ address: PM, topics: [
+  "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef", `0x${"0".repeat(64)}`, `0x${"0".repeat(24)}${USER.slice(2)}`, `0x${(1234).toString(16).padStart(64, "0")}`,
+] }] };
+
+/** Signing-enabled panel with a mocked MetaMask + server; returns the wallet calls and fetch bodies. */
+async function signingPanel({ prepare = prepared(), finalize = ready(), chainAtSend = "0x1237" }: { prepare?: OpenFlowResult; finalize?: unknown; chainAtSend?: string } = {}) {
+  flags.signing = true;
+  const calls: { method: string; params?: unknown }[] = [];
+  let chain = "0x1237";
+  (window as unknown as { ethereum: unknown }).ethereum = { request: vi.fn(async ({ method, params }: { method: string; params?: unknown }) => {
+    calls.push({ method, params });
+    if (method === "eth_requestAccounts") return [USER];
+    if (method === "eth_chainId") return chain;
+    if (method === "eth_signTypedData_v4") { chain = chainAtSend; return SIG; }
+    if (method === "eth_sendTransaction") return HASH;
+    if (method === "eth_getTransactionReceipt") return mintReceipt;
+    return null;
+  }) };
+  const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+    const action = JSON.parse(init.body as string).action;
+    return { ok: true, json: async () => (action === "prepare" ? prepare : finalize) };
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  render(createElement(RhcUniv4OpenPanel, { pool: pool(), signingEnabled: true, receiptPoll: { intervalMs: 1, timeoutMs: 50 } }));
+  const button = (label: string) => [...container.querySelectorAll("button")].find(b => b.textContent === label)!;
+  await act(async () => { button("Connect MetaMask").click(); await new Promise(r => setTimeout(r, 300)); });
+  await act(async () => { button("Preview open (simulated)").click(); await new Promise(r => setTimeout(r, 0)); });
+  const stepButton = (id: string) => container.querySelector(`li[data-step=${id}] button`) as HTMLButtonElement;
+  const click = (id: string) => act(async () => { stepButton(id).click(); await new Promise(r => setTimeout(r, 20)); });
+  const bodies = () => fetchMock.mock.calls.map(c => JSON.parse((c[1] as RequestInit).body as string));
+  const sends = () => calls.filter(c => c.method === "eth_sendTransaction");
+  const alert = () => container.querySelector("[role=alert]")?.textContent ?? null;
+  return { calls, bodies, sends, stepButton, click, alert };
+}
+
+describe("RhcUniv4OpenPanel signing (preview flag on)", () => {
+  it("passes the wallet signature + prepare permit to finalize, then sends exactly one execute to the pinned UR", async () => {
+    const prep0 = prepared();
+    const p = await signingPanel({ prepare: prep0 });
+    expect(p.stepButton("sign").disabled).toBe(false);
+    expect(p.stepButton("execute").disabled).toBe(true);
+    await p.click("sign");
+    const sign = p.calls.find(c => c.method === "eth_signTypedData_v4")!;
+    expect(sign.params).toEqual([USER, JSON.stringify({ primaryType: "PermitSingle" })]);
+    const [prep, fin] = p.bodies();
+    expect(fin).toEqual({ ...prep, action: "finalize", attempt: 0, signature: SIG, permit: (prep0 as { permit: unknown }).permit });
+    expect(fin).toMatchObject({ poolId: pool().poolId, user: USER, depositToken: SPCX, amount: "1000000000000000000", tickLower: -11, tickUpper: 9 });
+    expect(p.sends()).toEqual([]);
+    expect(p.stepButton("execute").disabled).toBe(false);
+    await p.click("execute");
+    expect(p.sends()).toEqual([{ method: "eth_sendTransaction", params: [{ from: USER, to: UR, data: "0x3593564c", value: "0x0", gas: "0x" + (957060).toString(16) }] }]);
+    expect(p.calls.some(c => c.method === "eth_getTransactionReceipt")).toBe(true);
+    const status = container.querySelector("[data-testid=tx-execute]")!;
+    expect(status.textContent).toContain("confirmed");
+    expect(status.textContent).toContain("Position NFT #1234");
+    expect(status.querySelector("a")!.getAttribute("href")).toBe(`https://robinhoodchain.blockscout.com/tx/${HASH}`);
+    expect(p.alert()).toBeNull();
+    expect(p.stepButton("execute").disabled).toBe(true);
+  });
+  it("shows finalize errors and never sends", async () => {
+    const p = await signingPanel({ finalize: { state: "failed", code: "simulation-reverted", message: "Simulation reverted: X" } });
+    await p.click("sign");
+    expect(p.alert()).toBe("Simulation reverted: X");
+    expect(p.stepButton("execute").disabled).toBe(true);
+    expect(p.sends()).toEqual([]);
+  });
+  it.each([
+    ["to is not the Universal Router", { to: SPCX }, /unexpected contract/],
+    ["value is not zero", { value: "0x1" }, /sends native ETH/],
+    ["tx chainId is not 4663", { chainId: 1 }, /not for Robinhood Chain/],
+    ["from is not the connected wallet", { from: SPCXON }, /not from the connected wallet/],
+  ])("refuses execute when %s and never calls the wallet", async (_name, tx, message) => {
+    const p = await signingPanel({ finalize: ready(tx) });
+    await p.click("sign");
+    await p.click("execute");
+    expect(p.alert()).toMatch(message);
+    expect(p.sends()).toEqual([]);
+  });
+  it("refuses execute when the wallet is not on chain 4663", async () => {
+    const p = await signingPanel({ chainAtSend: "0x1" });
+    await p.click("sign");
+    await p.click("execute");
+    expect(p.alert()).toMatch(/not on Robinhood Chain/);
+    expect(p.sends()).toEqual([]);
+  });
+  it("asks to preview again when the Permit2 sigDeadline has passed", async () => {
+    const p = await signingPanel({ prepare: prepared(String(Math.floor(Date.now() / 1000) - 1)) });
+    await p.click("sign");
+    expect(p.alert()).toMatch(/expired\. Preview again/);
+    expect(p.calls.some(c => c.method === "eth_signTypedData_v4")).toBe(false);
+    expect(p.bodies().length).toBe(1);
+  });
+  it("maps a server-side expiry to the preview-again message", async () => {
+    const p = await signingPanel({ finalize: { state: "failed", code: "permit-mismatch", message: "Permit2 signature expired; please sign again" } });
+    await p.click("sign");
+    expect(p.alert()).toMatch(/expired\. Preview again/);
   });
 });
