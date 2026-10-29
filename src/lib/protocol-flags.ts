@@ -25,3 +25,18 @@ export function deployTarget(vercelEnv: string | undefined = process.env.VERCEL_
 export function isOrcaDiscoveryEnabled(target: DeployTarget = deployTarget()): boolean {
   return ORCA_DISCOVERY_ENABLED[target];
 }
+
+/**
+ * Orca Whirlpools read-only positions in MCP `list_positions` /
+ * `get_position_performance` / `get_position_range_status` (allowlisted pools,
+ * SoFinance-opened positions only). OFF in production, same targets as above.
+ */
+export const ORCA_POSITIONS_ENABLED: Readonly<Record<DeployTarget, boolean>> = Object.freeze({
+  production: false,
+  preview: true,
+  development: true,
+});
+
+export function isOrcaPositionsEnabled(target: DeployTarget = deployTarget()): boolean {
+  return ORCA_POSITIONS_ENABLED[target];
+}

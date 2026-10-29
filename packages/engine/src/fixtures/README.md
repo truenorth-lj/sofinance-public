@@ -33,3 +33,9 @@ collection and reward-vault transfers.
 capture (mainnet, one slot, 2026-10-29) of the Orca cbBTC/WBTC Whirlpool
 `4v8ufj8H…`, its two mints and the eight tick arrays covering ticks −352…351.
 Public program state only; no wallets, signatures or credentials.
+
+`orca-positions-cbbtc-wbtc.json` is a read-only `getMultipleAccounts` capture
+(mainnet, slot 462766205, 2026-10-29) of the same Whirlpool, three existing
+positions on it (one in range, one above, one below) and the two tick arrays
+holding their boundary ticks. Public program state only; the position owners
+are not part of these accounts and no signatures or credentials are recorded.

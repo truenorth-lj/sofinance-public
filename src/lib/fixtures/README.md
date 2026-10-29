@@ -28,3 +28,14 @@ lines, scoped calculation events, final liquidity events and transfer receipts
 are retained. The differential replay removes each final event and verifies
 that recovered cashflows exactly match the original event, including zero-fee
 collection and reward-vault transfers.
+
+`orca-position-history-cbbtc-wbtc.json` contains 41 minimized successful
+mainnet receipts (read-only `getTransaction`, jsonParsed) for the three Orca
+cbBTC/WBTC positions in `packages/engine/src/fixtures/orca-positions-cbbtc-wbtc.json`:
+opens, increases (v1, v2 and by-token-amounts), decreases and fee collections.
+Program, pool, vault, mint, position and position-NFT keys are real public
+program state; every other key (wallets, wallet token accounts, tick arrays,
+other positions) is replaced with a deterministic hash. Signatures and
+blockhashes are dropped (labels are used instead); non-Orca outer instructions
+are stubbed and only the Orca instructions' inner receipts are kept. Replaying
+them reproduces each position's captured on-chain liquidity exactly.

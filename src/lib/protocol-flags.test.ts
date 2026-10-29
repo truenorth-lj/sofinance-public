@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { deployTarget, isOrcaDiscoveryEnabled, ORCA_DISCOVERY_ENABLED } from "./protocol-flags";
+import { deployTarget, isOrcaDiscoveryEnabled, isOrcaPositionsEnabled, ORCA_DISCOVERY_ENABLED, ORCA_POSITIONS_ENABLED } from "./protocol-flags";
 
 describe("ORCA_DISCOVERY_ENABLED", () => {
   it("is a code constant that is OFF in production", () => {
@@ -9,6 +9,12 @@ describe("ORCA_DISCOVERY_ENABLED", () => {
     expect(Object.isFrozen(ORCA_DISCOVERY_ENABLED)).toBe(true);
     expect(isOrcaDiscoveryEnabled("production")).toBe(false);
     expect(isOrcaDiscoveryEnabled("preview")).toBe(true);
+  });
+  it("ORCA_POSITIONS_ENABLED is a frozen code constant that is OFF in production", () => {
+    expect(ORCA_POSITIONS_ENABLED).toEqual({ production: false, preview: true, development: true });
+    expect(Object.isFrozen(ORCA_POSITIONS_ENABLED)).toBe(true);
+    expect(isOrcaPositionsEnabled("production")).toBe(false);
+    expect(isOrcaPositionsEnabled("preview")).toBe(true);
   });
   it("treats anything that is not an explicit Vercel preview/development as production", () => {
     for (const env of [undefined, "", "production", "staging", "PREVIEW"]) expect(deployTarget(env)).toBe("production");
@@ -33,6 +39,13 @@ describe("Raydium discovery is untouched by Orca", () => {
     for (const file of ["src/lib/pool-range-apr.ts", "src/lib/range-apr/onchain-liquidity.ts", "src/lib/range-apr/raydium-economics.ts", "src/app/api/pool-range-apr/route.ts"]) {
       const source = readFileSync(join(process.cwd(), file), "utf8");
       expect(source, file).not.toMatch(/orca|protocol-flags|protocol-pools/i);
+    }
+  });
+
+  it("the Raydium position readers never import Orca code or the protocol flag", () => {
+    for (const file of ["src/lib/position-performance.ts", "src/lib/position-performance-events.ts", "src/lib/position-range-onchain.ts"]) {
+      const source = readFileSync(join(process.cwd(), file), "utf8");
+      expect(source, file).not.toMatch(/orca|protocol-flags/i);
     }
   });
 });
