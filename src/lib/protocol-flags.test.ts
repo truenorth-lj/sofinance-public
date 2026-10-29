@@ -16,29 +16,29 @@ describe("ORCA_DISCOVERY_ENABLED", () => {
     expect(isOrcaPositionsEnabled("production")).toBe(false);
     expect(isOrcaPositionsEnabled("preview")).toBe(true);
   });
-  it("RHC_UNIV4_DISCOVERY_ENABLED is a frozen code constant that is OFF in production", () => {
-    expect(RHC_UNIV4_DISCOVERY_ENABLED).toEqual({ production: false, preview: true, development: true });
+  it("RHC_UNIV4_DISCOVERY_ENABLED is a frozen code constant, ON in production since the 2026-10-29 launch", () => {
+    expect(RHC_UNIV4_DISCOVERY_ENABLED).toEqual({ production: true, preview: true, development: true });
     expect(Object.isFrozen(RHC_UNIV4_DISCOVERY_ENABLED)).toBe(true);
-    expect(isRhcUniv4DiscoveryEnabled("production")).toBe(false);
+    expect(isRhcUniv4DiscoveryEnabled("production")).toBe(true);
     expect(isRhcUniv4DiscoveryEnabled("preview")).toBe(true);
   });
-  it("RHC_UNIV4_TX_BUILD_ENABLED is a frozen code constant that is OFF in production", () => {
-    expect(RHC_UNIV4_TX_BUILD_ENABLED).toEqual({ production: false, preview: true, development: true });
+  it("RHC_UNIV4_TX_BUILD_ENABLED is a frozen code constant, ON in production since the 2026-10-29 launch", () => {
+    expect(RHC_UNIV4_TX_BUILD_ENABLED).toEqual({ production: true, preview: true, development: true });
     expect(Object.isFrozen(RHC_UNIV4_TX_BUILD_ENABLED)).toBe(true);
-    expect(isRhcUniv4TxBuildEnabled("production")).toBe(false);
+    expect(isRhcUniv4TxBuildEnabled("production")).toBe(true);
     expect(isRhcUniv4TxBuildEnabled("preview")).toBe(true);
   });
-  it("RHC_UNIV4_TRADING_ENABLED is a frozen code constant that is OFF in production", () => {
-    expect(RHC_UNIV4_TRADING_ENABLED).toEqual({ production: false, preview: true, development: true });
+  it("RHC_UNIV4_TRADING_ENABLED is a frozen code constant, ON in production since the 2026-10-29 launch", () => {
+    expect(RHC_UNIV4_TRADING_ENABLED).toEqual({ production: true, preview: true, development: true });
     expect(Object.isFrozen(RHC_UNIV4_TRADING_ENABLED)).toBe(true);
-    expect(isRhcUniv4TradingEnabled("production")).toBe(false);
+    expect(isRhcUniv4TradingEnabled("production")).toBe(true);
     expect(isRhcUniv4TradingEnabled("preview")).toBe(true);
   });
-  it("RHC_UNIV4_WALLET_SIGNING_ENABLED is ON only on preview", () => {
-    expect(RHC_UNIV4_WALLET_SIGNING_ENABLED).toEqual({ production: false, preview: true, development: false });
+  it("RHC_UNIV4_WALLET_SIGNING_ENABLED is ON in production and preview, off in development", () => {
+    expect(RHC_UNIV4_WALLET_SIGNING_ENABLED).toEqual({ production: true, preview: true, development: false });
     expect(Object.isFrozen(RHC_UNIV4_WALLET_SIGNING_ENABLED)).toBe(true);
-    expect(isRhcUniv4WalletSigningEnabled("preview")).toBe(true);
-    for (const t of ["production", "development"] as const) expect(isRhcUniv4WalletSigningEnabled(t)).toBe(false);
+    for (const t of ["production", "preview"] as const) expect(isRhcUniv4WalletSigningEnabled(t)).toBe(true);
+    expect(isRhcUniv4WalletSigningEnabled("development")).toBe(false);
   });
   it("treats anything that is not an explicit Vercel preview/development as production", () => {
     for (const env of [undefined, "", "production", "staging", "PREVIEW"]) expect(deployTarget(env)).toBe("production");
@@ -92,7 +92,8 @@ describe("deployTarget env resolution", () => {
     vi.stubEnv("NEXT_PUBLIC_SOFI_DEPLOY_ENV", "preview"); vi.stubEnv("VERCEL_ENV", "");
     expect(deployTarget()).toBe("preview");
     expect(isRhcUniv4WalletSigningEnabled()).toBe(true);
-    vi.stubEnv("NEXT_PUBLIC_SOFI_DEPLOY_ENV", "production");
+    vi.stubEnv("NEXT_PUBLIC_SOFI_DEPLOY_ENV", "development"); vi.stubEnv("VERCEL_ENV", "production");
+    expect(deployTarget()).toBe("development");
     expect(isRhcUniv4WalletSigningEnabled()).toBe(false);
     vi.stubEnv("NEXT_PUBLIC_SOFI_DEPLOY_ENV", ""); vi.stubEnv("VERCEL_ENV", "");
     expect(deployTarget()).toBe("production");

@@ -1,10 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
+vi.mock("@/lib/protocol-flags", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/protocol-flags")>();
+  return { ...actual, isRhcUniv4DiscoveryEnabled: vi.fn(actual.isRhcUniv4DiscoveryEnabled) };
+});
 vi.mock("@/lib/orca-pairs", () => ({ discoverOrcaPairs: vi.fn(async () => ({ protocol: "orca-whirlpool", readOnly: true, pairs: [{ poolAddress: "pool" }] })) }));
 vi.mock("@/lib/rhc-univ4-pools", () => ({ discoverRhcUniv4Pools: vi.fn(async () => ({ protocol: "uniswap-v4-rhc", chainId: 4663, readOnly: true, pools: [{ poolId: "0xpool", status: "listed" }] })) }));
 import { discoverOrcaPairs } from "@/lib/orca-pairs";
 import { discoverRhcUniv4Pools } from "@/lib/rhc-univ4-pools";
+import { isRhcUniv4DiscoveryEnabled } from "@/lib/protocol-flags";
 import { GET } from "./route";
 
 const get = (query = "") => GET(new Request(`https://example.test/api/protocol-pools${query}`));
@@ -33,8 +38,9 @@ describe("/api/protocol-pools", () => {
     expect(discoverOrcaPairs).not.toHaveBeenCalled();
   });
 
-  it.each([undefined, "production"])("404s and never touches Robinhood Chain when VERCEL_ENV=%s (flag off)", async (env) => {
-    vi.stubEnv("VERCEL_ENV", env);
+  it("404s and never touches Robinhood Chain when the flag is off (kill switch)", async () => {
+    vi.stubEnv("VERCEL_ENV", "production");
+    vi.mocked(isRhcUniv4DiscoveryEnabled).mockReturnValueOnce(false);
     const response = await get("?protocol=uniswap-v4-rhc");
     expect(response.status).toBe(404);
     expect(response.headers.get("Cache-Control")).toBe("no-store");

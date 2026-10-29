@@ -6,10 +6,12 @@ vi.mock("@/lib/rhc-univ4-pool-view", () => ({ loadRhcPoolView: vi.fn(async () =>
 afterEach(() => { vi.unstubAllEnvs(); });
 
 describe("/app/rhc page", () => {
-  it("is a 404 in production (RHC_UNIV4_TRADING_ENABLED off)", async () => {
+  it("renders in production with signing on (launched 2026-10-29)", async () => {
     vi.stubEnv("VERCEL_ENV", "production");
     const { default: RhcPage } = await import("./page");
-    await expect(RhcPage()).rejects.toThrow("NEXT_NOT_FOUND");
+    const el = await RhcPage();
+    const json = JSON.stringify(el, (_k, v) => (typeof v === "function" ? v.name : v));
+    expect(json).toContain("\"signingEnabled\":true");
   });
   it("renders on preview with signing on (preview-only test signing)", async () => {
     vi.stubEnv("VERCEL_ENV", "preview");
