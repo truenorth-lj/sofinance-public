@@ -28,4 +28,11 @@ describe("Raydium discovery is untouched by Orca", () => {
       expect(source, file).not.toMatch(/orca|protocol-flags|protocol-pools/i);
     }
   });
+
+  it("the Raydium range-APR path (/api/pool-range-apr) never imports Orca code or the protocol flag", () => {
+    for (const file of ["src/lib/pool-range-apr.ts", "src/lib/range-apr/onchain-liquidity.ts", "src/lib/range-apr/raydium-economics.ts", "src/app/api/pool-range-apr/route.ts"]) {
+      const source = readFileSync(join(process.cwd(), file), "utf8");
+      expect(source, file).not.toMatch(/orca|protocol-flags|protocol-pools/i);
+    }
+  });
 });

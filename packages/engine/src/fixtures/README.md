@@ -28,3 +28,8 @@ lines, scoped calculation events, final liquidity events and transfer receipts
 are retained. The differential replay removes each final event and verifies
 that recovered cashflows exactly match the original event, including zero-fee
 collection and reward-vault transfers.
+
+`orca-whirlpool-accounts-cbbtc-wbtc.json` is a read-only `getMultipleAccounts`
+capture (mainnet, one slot, 2026-10-29) of the Orca cbBTC/WBTC Whirlpool
+`4v8ufj8H…`, its two mints and the eight tick arrays covering ticks −352…351.
+Public program state only; no wallets, signatures or credentials.
