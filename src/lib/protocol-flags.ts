@@ -92,3 +92,19 @@ export const isPoolActivityEnabled = isSolamiEnabled;
 export const isPoolActivityEnabledInBrowser = isSolamiEnabledInBrowser;
 
 export const POOL_ACTIVITY_DISABLED_MESSAGE = "get_pool_activity is disabled on this deployment.";
+
+/**
+ * Uniswap v4 on Robinhood Chain: server-side BUILD + eth_simulateV1 of the open-position
+ * transaction (`POST /api/rhc-univ4-open`). OFF in production, same targets as above.
+ * The route returns unsigned calldata and Permit2 typed data only: it never signs, never
+ * broadcasts, and the fee recipient is still a placeholder (`EVM_FEE_RECIPIENT_IS_PLACEHOLDER`).
+ */
+export const RHC_UNIV4_TX_BUILD_ENABLED: Readonly<Record<DeployTarget, boolean>> = Object.freeze({
+  production: false,
+  preview: true,
+  development: true,
+});
+
+export function isRhcUniv4TxBuildEnabled(target: DeployTarget = deployTarget()): boolean {
+  return RHC_UNIV4_TX_BUILD_ENABLED[target];
+}
