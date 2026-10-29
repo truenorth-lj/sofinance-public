@@ -104,7 +104,8 @@ export function isRhcUniv4WalletSigningEnabled(target: DeployTarget = deployTarg
 }
 
 /**
- * Meteora DLMM read-only pool discovery (`/api/protocol-pools?protocol=meteora-dlmm`).
+ * Meteora DLMM read-only pool discovery (`/api/protocol-pools?protocol=meteora-dlmm`) and pool state,
+ * bin-array liquidity and estimated range APR (`/api/protocol-pools/range-apr?protocol=meteora-dlmm`).
  * OFF in production, same targets as above. Nothing on this path signs or sends.
  */
 export const METEORA_DLMM_DISCOVERY_ENABLED: Readonly<Record<DeployTarget, boolean>> = Object.freeze({

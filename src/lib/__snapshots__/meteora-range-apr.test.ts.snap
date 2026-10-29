@@ -1,0 +1,106 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`fetchMeteoraRangeApr (read-only, cbBTC/WBTC) > returns the shared payload, labelled estimated, with on-chain fees, state and bin-array liquidity 1`] = `
+{
+  "presetBins": [
+    {
+      "binArrayIndexes": [
+        0,
+      ],
+      "binCount": 4,
+      "id": "micro",
+      "lowerBinId": 14,
+      "upperBinId": 17,
+      "withinExistingBinArrays": true,
+    },
+    {
+      "binArrayIndexes": [
+        0,
+      ],
+      "binCount": 10,
+      "id": "tight",
+      "lowerBinId": 10,
+      "upperBinId": 19,
+      "withinExistingBinArrays": true,
+    },
+    {
+      "binArrayIndexes": [
+        -1,
+        0,
+      ],
+      "binCount": 60,
+      "id": "standard",
+      "lowerBinId": -15,
+      "upperBinId": 44,
+      "withinExistingBinArrays": true,
+    },
+    {
+      "binArrayIndexes": [
+        -2,
+        -1,
+        0,
+        1,
+      ],
+      "binCount": 200,
+      "id": "wide",
+      "lowerBinId": -85,
+      "upperBinId": 114,
+      "withinExistingBinArrays": true,
+    },
+  ],
+  "presets": [
+    {
+      "estimate": {
+        "aprPct": 3.193174529696023,
+        "feesPerDayUsd": 0.0087484233690302,
+        "inRangeVolumePct": 50,
+        "status": "ok",
+      },
+      "id": "micro",
+      "priceLower": 1.0014009103641,
+      "priceUpper": 1.001801530816306,
+      "tickLower": 14,
+      "tickUpper": 18,
+    },
+    {
+      "estimate": {
+        "aprPct": 2.56022486188833,
+        "feesPerDayUsd": 0.007014314690105013,
+        "inRangeVolumePct": 100,
+        "status": "ok",
+      },
+      "id": "tight",
+      "priceLower": 1.001000450120021,
+      "priceUpper": 1.0020019011404844,
+      "tickLower": 10,
+      "tickUpper": 20,
+    },
+    {
+      "estimate": {
+        "aprPct": 0.4276639386180787,
+        "feesPerDayUsd": 0.0011716820236111747,
+        "inRangeVolumePct": 100,
+        "status": "ok",
+      },
+      "id": "standard",
+      "priceLower": 0.998501199320306,
+      "priceUpper": 1.0045099142049112,
+      "tickLower": -15,
+      "tickUpper": 45,
+    },
+    {
+      "estimate": {
+        "aprPct": 0.12855298271528806,
+        "feesPerDayUsd": 0.00035219995264462484,
+        "inRangeVolumePct": 100,
+        "status": "ok",
+      },
+      "id": "wide",
+      "priceLower": 0.9915364442377754,
+      "priceUpper": 1.0115657975978702,
+      "tickLower": -85,
+      "tickUpper": 115,
+    },
+  ],
+}
+`;

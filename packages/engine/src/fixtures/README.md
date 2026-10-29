@@ -67,3 +67,9 @@ The Universal Router bytecode is stored once under `code`. No RPC URL or key is 
 (`https://dlmm.datapi.meteora.ag/pools/{address}`) for the allowlisted cbBTC/WBTC
 DLMM pool `53oyyj…`, captured 2026-10-29 23:40 UTC+8. Public market data only
 (TVL, 24h volume/fees, pool config); no wallets, signatures or credentials.
+
+`meteora-dlmm-accounts-cbbtc-wbtc.json` is a read-only `getMultipleAccounts` capture
+(mainnet slot 462,945,365, 2026-10-30 00:17 UTC+8) of the Meteora cbBTC/WBTC DLMM LbPair
+`53oyyj…`, its two mints and the ten bin arrays (indexes −5…4, bins −350…349) covering
+bins −284…316. Indexes −5 and −4 did not exist and are stored as `null`. Public program
+state only; no wallets, signatures or credentials. No RPC URL or key is recorded.
