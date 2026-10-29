@@ -97,9 +97,17 @@ export function permitFromJson(p: PermitJson): PermitSingle {
   return { details: { token: getAddress(p.details.token), amount: BigInt(p.details.amount), expiration: Number(p.details.expiration), nonce: Number(p.details.nonce) },
     spender: getAddress(p.spender), sigDeadline: BigInt(p.sigDeadline) };
 }
-function permitTypedDataJson(p: PermitSingle) {
+/**
+ * JSON for the wallet's `eth_signTypedData_v4`. Wallets (MetaMask / eth-sig-util) hash the domain with the
+ * `EIP712Domain` type from `types`; if it is missing they hash an empty domain and the signature recovers to a
+ * different address. viem adds it implicitly on the server, so it must be explicit here.
+ */
+export const EIP712_DOMAIN_TYPE = [
+  { name: "name", type: "string" }, { name: "chainId", type: "uint256" }, { name: "verifyingContract", type: "address" },
+] as const;
+export function permitTypedDataJson(p: PermitSingle) {
   const t = permitTypedData(p);
-  return { ...t, message: permitJson(p) };
+  return { ...t, types: { EIP712Domain: EIP712_DOMAIN_TYPE, ...t.types }, message: permitJson(p) };
 }
 
 function planView(req: OpenRequest, ctx: OpenContext, a: OpenAmounts, feeRecipient: Address): OpenPlanView {
