@@ -14,7 +14,7 @@ import { openAttemptFromSummary, type OpenAttempt } from "@/lib/open-attempt";
 import { openBeamStatus, type OpenBeamStatus } from "@/lib/open-beam-status";
 import { getStoredAttribution } from "@/lib/analytics/attribution";
 import { captureGrowthEvent } from "@/lib/analytics/client";
-import { classifyOpenError } from "@/lib/analytics/errors";
+import { openFailureProperties } from "@/lib/analytics/errors";
 import { GROWTH_EVENTS, openEventProperties } from "@/lib/analytics/events";
 import { formatAmount } from "@sofinance/engine/amount";
 import { rawToDecimalString, runSolSwapStep, SolSwapStepError, type SolSwapReceipt, type SolSwapStage } from "./sol-swap-step-client";
@@ -147,7 +147,7 @@ export function useOpenSubmissionCommand({ pair, wallet, inputMint, inputKind, a
     setSubmitStage("preparing");
     setError("");
     setRetryError(null);
-    captureGrowthEvent(GROWTH_EVENTS.openStarted, openEventProperties(pair));
+    captureGrowthEvent(GROWTH_EVENTS.openStarted, openEventProperties(pair, { wallet, inputKind }));
     let mint: EphemeralMint | undefined;
     let receipt: PendingSolSwapReceipt | null = resume;
     try {
@@ -255,8 +255,8 @@ export function useOpenSubmissionCommand({ pair, wallet, inputMint, inputKind, a
     } catch (caught) {
       if (!persisted) {
         captureGrowthEvent(GROWTH_EVENTS.openFailed, {
-          ...openEventProperties(pair),
-          error_class: classifyOpenError(caught),
+          ...openEventProperties(pair, { wallet, inputKind }),
+          ...openFailureProperties(caught),
         });
       }
       if (walletRef.current === wallet) {
