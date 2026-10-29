@@ -26,8 +26,9 @@ import { assertSolInputAllowed } from "@/lib/sol-input-policy";
 import { submitOpenPositionFromParts } from "../lib/open-send";
 import type { OpenPositionSummary } from "@sofinance/engine/open-types";
 import { readPositionRangeFacts } from "../lib/position-range-onchain";
-import { isOrcaPositionsEnabled } from "../lib/protocol-flags";
+import { isMeteoraDlmmDiscoveryEnabled, isOrcaPositionsEnabled } from "../lib/protocol-flags";
 import { getOrcaPositionPerformance, listOrcaPositions, ORCA_PROTOCOL, readOrcaPositionRangeFacts } from "../lib/orca-positions";
+import { listMeteoraPositions, METEORA_PROTOCOL, readMeteoraPositionRangeFacts } from "../lib/meteora-positions";
 import { rangeStatusFromPrice } from "../lib/position-range-status";
 import type {
   ListPositionsInput,
@@ -57,8 +58,18 @@ export async function listPositions(input: ListPositionsInput) {
     (positions) => ({ positions, error: null }),
     (error: unknown) => ({ positions: [], error: sanitizePublicError(error, "Orca positions are unavailable right now.") }),
   ) : null;
+  // Meteora DLMM positions (flagged off in production): read-only, SoFinance-opened only.
+  const meteora = isMeteoraDlmmDiscoveryEnabled() ? listMeteoraPositions(input.wallet).then(
+    (positions) => ({ positions, error: null }),
+    (error: unknown) => ({ positions: [], error: sanitizePublicError(error, "Meteora positions are unavailable right now.") }),
+  ) : null;
   const discovery = await discoverWallet(input.wallet);
   const orcaResult = orca ? await orca : null;
+  const meteoraResult = meteora ? await meteora : null;
+  const protocolErrors = [
+    ...(orcaResult?.error ? [{ protocol: ORCA_PROTOCOL, error: orcaResult.error }] : []),
+    ...(meteoraResult?.error ? [{ protocol: METEORA_PROTOCOL, error: meteoraResult.error }] : []),
+  ];
 
   return {
     wallet: discovery.wallet,
@@ -75,8 +86,8 @@ export async function listPositions(input: ListPositionsInput) {
       tickCurrent: pos.tickCurrent,
       rangeSide: pos.rangeSide,
       liquidity: pos.liquidity,
-    })), ...(orcaResult?.positions ?? [])],
-    ...(orcaResult?.error ? { protocolErrors: [{ protocol: ORCA_PROTOCOL, error: orcaResult.error }] } : {}),
+    })), ...(orcaResult?.positions ?? []), ...(meteoraResult?.positions ?? [])],
+    ...(protocolErrors.length ? { protocolErrors } : {}),
     assets: discovery.assets.map(asset => ({
       kind: asset.kind,
       mint: asset.mint,
@@ -632,7 +643,9 @@ export async function getPositionPerformance(input: GetPositionPerformanceInput)
  */
 export async function getPositionRangeStatus(input: GetPositionRangeStatusInput) {
   const orcaFacts = isOrcaPositionsEnabled() ? await readOrcaPositionRangeFacts(input.positionMint) : null;
-  const facts = orcaFacts ?? await readPositionRangeFacts(input.positionMint);
+  // Meteora positions are addressed by their position account (no NFT).
+  const meteoraFacts = !orcaFacts && isMeteoraDlmmDiscoveryEnabled() ? await readMeteoraPositionRangeFacts(input.positionMint) : null;
+  const facts = orcaFacts ?? meteoraFacts ?? await readPositionRangeFacts(input.positionMint);
   const status = rangeStatusFromPrice({
     priceBPerA: facts.onChainPriceBPerA,
     tickLower: facts.tickLower,
@@ -645,6 +658,7 @@ export async function getPositionRangeStatus(input: GetPositionRangeStatusInput)
     ...(orcaFacts ? { protocol: ORCA_PROTOCOL } : {}),
     wallet: input.wallet ?? null,
     ...facts,
+    ...(meteoraFacts ? { protocol: METEORA_PROTOCOL } : {}),
     poolId: input.poolId ?? facts.poolId,
     ...status,
   };
