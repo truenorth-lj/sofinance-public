@@ -53,3 +53,12 @@ public DexScreener (`/latest/dex/pairs/robinhood/{poolId}`) and GeckoTerminal
 (`/api/v2/networks/robinhood/pools/{poolId}`) responses for the same pool, captured
 2026-10-29 15:14 UTC+8. Public market data only (24h volume, TVL, swap counts);
 no wallets, signatures or credentials.
+
+`univ4-rhc-open-capture.json` is a recorded JSON-RPC capture (Robinhood Chain 4663,
+blocks 100,737,446–100,737,515, 2026-10-29 15:41 UTC+8) of the PR2 open flow: `prepareOpen`
++ `finalizeOpen` (attempts 0/1) for 2 SPCX and 20 SPCXon into [-11, 9], 1 SPCX into [5, 30]
+(no swap) and 500 SPCX into [-61, 59] (pool depth). Requests are keyed by method + params and
+replayed FIFO by `test-support/rhc-replay.ts`; unknown requests fail the test. The account is a
+throwaway derived from a public label (`test-support/rhc-open-capture.ts`), never funded: its
+balances and allowances exist only in `stateOverride`s. Nothing was signed for broadcast or sent.
+The Universal Router bytecode is stored once under `code`. No RPC URL or key is recorded.
