@@ -37,7 +37,7 @@ const needsSig = (approval: boolean) => ({
 
 let container: HTMLDivElement; let root: Root;
 beforeEach(() => { container = document.createElement("div"); document.body.append(container); root = createRoot(container); });
-afterEach(() => { flags.signing = false; act(() => root.unmount()); container.remove(); vi.unstubAllGlobals(); delete (window as unknown as { ethereum?: unknown }).ethereum; });
+afterEach(() => { flags.signing = false; localStorage.clear(); act(() => root.unmount()); container.remove(); vi.unstubAllGlobals(); delete (window as unknown as { ethereum?: unknown }).ethereum; });
 const render = (el: Parameters<Root["render"]>[0]) => act(() => root.render(el));
 const text = () => container.textContent ?? "";
 
@@ -127,7 +127,7 @@ describe("RhcUniv4OpenPanel", () => {
     expect(container.querySelector("[data-testid=leftover-note]")).not.toBeNull();
     expect(text()).toContain("Step 1/3");
     expect([...container.querySelectorAll("li[data-step] button")].every(b => (b as HTMLButtonElement).disabled)).toBe(true);
-    expect(methods.filter(m => !["eth_requestAccounts", "eth_chainId"].includes(m))).toEqual([]);
+    expect(methods.filter(m => !["eth_requestAccounts", "eth_chainId", "eth_getBalance", "eth_call"].includes(m))).toEqual([]);
   });
   it("blocks opening a delisted pool", () => {
     render(createElement(RhcUniv4OpenPanel, { pool: pool({ status: "delisted" }), signingEnabled: false }));
@@ -163,7 +163,8 @@ async function signingPanel({ prepare = prepared(), finalize = ready(), chainAtS
     if (method === "eth_getTransactionReceipt") return mintReceipt;
     return null;
   }) };
-  const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+  const fetchMock = vi.fn(async (url: string, init: RequestInit) => {
+    if (url === "/api/rhc-univ4-exit") return { ok: true, json: async () => ({ state: "positions", positions: [] }) };
     const action = JSON.parse(init.body as string).action;
     return { ok: true, json: async () => (action === "prepare" ? prepare : finalize) };
   });
@@ -174,10 +175,11 @@ async function signingPanel({ prepare = prepared(), finalize = ready(), chainAtS
   await act(async () => { button("Preview open (simulated)").click(); await new Promise(r => setTimeout(r, 0)); });
   const stepButton = (id: string) => container.querySelector(`li[data-step=${id}] button`) as HTMLButtonElement;
   const click = (id: string) => act(async () => { stepButton(id).click(); await new Promise(r => setTimeout(r, 20)); });
-  const bodies = () => fetchMock.mock.calls.map(c => JSON.parse((c[1] as RequestInit).body as string));
+  const bodies = () => fetchMock.mock.calls.filter(c => c[0] !== "/api/rhc-univ4-exit").map(c => JSON.parse((c[1] as RequestInit).body as string));
+  const exitBodies = () => fetchMock.mock.calls.filter(c => c[0] === "/api/rhc-univ4-exit").map(c => JSON.parse((c[1] as RequestInit).body as string));
   const sends = () => calls.filter(c => c.method === "eth_sendTransaction");
   const alert = () => container.querySelector("[role=alert]")?.textContent ?? null;
-  return { calls, bodies, sends, stepButton, click, alert };
+  return { calls, bodies, exitBodies, sends, stepButton, click, alert };
 }
 
 describe("RhcUniv4OpenPanel signing (preview flag on)", () => {
@@ -203,6 +205,11 @@ describe("RhcUniv4OpenPanel signing (preview flag on)", () => {
     expect(status.querySelector("a")!.getAttribute("href")).toBe(`https://robinhoodchain.blockscout.com/tx/${HASH}`);
     expect(p.alert()).toBeNull();
     expect(p.stepButton("execute").disabled).toBe(true);
+    // PR7: the minted NFT is remembered for the Close list, positions + balances refresh after the confirmed tx.
+    expect(JSON.parse(localStorage.getItem(`sofi:rhc:positions:${USER}`)!)).toEqual(["1234"]);
+    expect(p.exitBodies().at(-1)).toEqual({ action: "positions", user: USER, tokenIds: ["1234"] });
+    expect(p.calls.filter(c => c.method === "eth_getBalance").length).toBeGreaterThanOrEqual(2);
+    expect(container.querySelector("[data-testid=wallet-balances]")).not.toBeNull();
   });
   it("shows finalize errors and never sends", async () => {
     const p = await signingPanel({ finalize: { state: "failed", code: "simulation-reverted", message: "Simulation reverted: X" } });

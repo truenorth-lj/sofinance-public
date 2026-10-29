@@ -10,6 +10,8 @@ import {
 import {
   checkExecuteTx, checkTx, explorerTxUrl, isPermitExpired, mintedPositionId, requireRobinhoodChain, SIGNATURE_EXPIRED_MESSAGE, waitForReceipt, walletTxParams,
 } from "@/lib/rhc-wallet/open-execute";
+import { readWalletBalances, trackPositionId, type WalletBalances } from "@/lib/rhc-wallet/exit-execute";
+import { RhcUniv4PositionsPanel } from "./rhc-univ4-positions-panel";
 import { openSteps, RETRY_CONFIRM_TEXT, stepProgressLabel, type OpenStepId } from "@/lib/rhc-wallet/open-steps";
 
 /**
@@ -87,6 +89,8 @@ export function OpenPreview({ result, pool }: { result: OpenFlowResult; pool: Rh
   </div>;
 }
 
+const fmtBalance = (v: bigint, decimals = 18) => { const n = Number(formatUnits(v, decimals)); return n === 0 ? "0" : n < 0.000001 ? "<0.000001" : n.toLocaleString("en-US", { maximumFractionDigits: 6 }); };
+
 type Wallet = { provider: Eip1193Provider; address: `0x${string}`; name: string };
 type PrepareRequest = { poolId: string; user: string; depositToken: string; amount: string; tickLower: number; tickUpper: number };
 type Signed = { signature: `0x${string}`; permit: PermitJson };
@@ -119,11 +123,19 @@ export function RhcUniv4OpenPanel({ pool, signingEnabled, receiptPoll }: { pool:
   const [signed, setSigned] = useState<Signed | null>(null);
   const [exec, setExec] = useState<ExecResult | null>(null);
   const [sent, setSent] = useState<Sent | null>(null);
+  const [balances, setBalances] = useState<WalletBalances | null>(null);
+  const [positionsKey, setPositionsKey] = useState(0);
 
   const reset = () => { setResult(null); setPrepared(null); setStep(null); setSigned(null); setExec(null); setSent(null); };
 
   if (!pool) return <p className="mt-6 text-sm text-smoke">Pool data is unavailable right now.</p>;
   const token = side === 0 ? pool.token0 : pool.token1;
+
+  /** Read-only wallet balances (ETH for gas + both pool tokens); refreshed after every confirmed transaction. */
+  const refreshBalances = async (w: Pick<Wallet, "provider" | "address"> | null = wallet) => {
+    if (!w) return;
+    try { setBalances(await readWalletBalances(w.provider, w.address, [pool.token0.address, pool.token1.address])); } catch { setBalances(null); }
+  };
 
   const connect = async () => {
     setError(null); setBusy(true);
@@ -133,6 +145,7 @@ export function RhcUniv4OpenPanel({ pool, signingEnabled, receiptPoll }: { pool:
       const address = await connectEvmWallet(first.provider);
       await ensureRobinhoodChain(first.provider);
       setWallet({ provider: first.provider, address, name: first.info.name });
+      void refreshBalances({ provider: first.provider, address });
     } catch (e) { setError(e instanceof Error ? e.message : "Wallet connection failed"); } finally { setBusy(false); }
   };
 
@@ -176,12 +189,14 @@ export function RhcUniv4OpenPanel({ pool, signingEnabled, receiptPoll }: { pool:
     if (!wallet) return null;
     await requireRobinhoodChain(wallet.provider);
     const hash = await guardedWalletRequest(wallet.provider, "eth_sendTransaction", [walletTxParams(tx)]);
-    if (typeof hash !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(hash)) throw new Error("Wallet returned no transaction hash");
+    if (typeof hash !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(hash)) throw new Error("Your wallet did not return a transaction hash. Check the wallet's activity before trying again.");
     setSent({ kind, hash, status: "pending" });
     const receipt = await waitForReceipt(wallet.provider, hash, receiptPoll);
     const status: Sent["status"] = !receipt ? "timeout" : receipt.status === "0x1" ? "success" : "reverted";
     const positionId = kind === "execute" && receipt ? mintedPositionId(receipt, wallet.address) : null;
     setSent({ kind, hash, status, positionId });
+    if (positionId) { trackPositionId(wallet.address, positionId); setPositionsKey(k => k + 1); }
+    if (status !== "timeout") void refreshBalances();
     return status;
   };
 
@@ -231,7 +246,12 @@ export function RhcUniv4OpenPanel({ pool, signingEnabled, receiptPoll }: { pool:
         <EstimatedAprBadge apr={pool.estimatedApr} />
       </div>
       {wallet
-        ? <p className="text-xs text-smoke" data-testid="wallet-address">{wallet.name}: {wallet.address.slice(0, 6)}…{wallet.address.slice(-4)} · Robinhood Chain</p>
+        ? <div className="text-right">
+            <p className="text-xs text-smoke" data-testid="wallet-address">{wallet.name}: {wallet.address.slice(0, 6)}…{wallet.address.slice(-4)} · Robinhood Chain</p>
+            {balances ? <p className="text-xs text-smoke" data-testid="wallet-balances">
+              {fmtBalance(balances.eth)} ETH · {fmtBalance(balances.tokens[pool.token0.address.toLowerCase()] ?? 0n, pool.token0.decimals)} {pool.token0.symbol} · {fmtBalance(balances.tokens[pool.token1.address.toLowerCase()] ?? 0n, pool.token1.decimals)} {pool.token1.symbol}
+            </p> : null}
+          </div>
         : <button type="button" onClick={connect} disabled={busy} className="rounded-xl border border-white/25 px-4 py-2 text-sm font-semibold text-cream disabled:opacity-40">Connect MetaMask</button>}
     </div>
     {pool.status !== "listed" ? <p role="alert" className="mt-3 text-sm text-red-200">This pool is delisted; opening is disabled.</p> : null}
@@ -256,5 +276,6 @@ export function RhcUniv4OpenPanel({ pool, signingEnabled, receiptPoll }: { pool:
     {result ? <OpenPreview result={exec ?? result} pool={pool} /> : null}
     {result && result.state !== "failed" ? <StepList needsApproval={needsApproval} current={current} signingEnabled={signingEnabled} onStep={runStep} /> : null}
     {sent ? <TxStatus sent={sent} /> : null}
+    <RhcUniv4PositionsPanel wallet={wallet} signingEnabled={signingEnabled} refreshKey={positionsKey} onChanged={() => void refreshBalances()} receiptPoll={receiptPoll} />
   </section>;
 }

@@ -103,7 +103,27 @@ export async function guardedWalletRequest(provider: Eip1193Provider, method: st
   if (!SIGNING_METHODS.has(method)) throw new WalletRequestError("unknown", `Not a signing method: ${method}`);
   if (!isRhcUniv4WalletSigningEnabled()) throw new WalletRequestError("signing-disabled", SIGNING_DISABLED_MESSAGE);
   try { return await provider.request({ method, params }); } catch (error) {
-    if (errorCode(error) === 4001) throw new WalletRequestError("rejected", "Request was rejected in the wallet");
-    throw new WalletRequestError("unknown", "Wallet request failed");
+    if (errorCode(error) === 4001) throw new WalletRequestError("rejected", "You rejected the request in your wallet. Nothing was sent.");
+    throw new WalletRequestError("unknown", plainWalletError(error));
   }
+}
+
+export const NOT_ENOUGH_GAS_MESSAGE = "Not enough ETH on Robinhood Chain to pay for gas. Add some ETH to this wallet, then try again.";
+
+/** Plain-language cause for a failed wallet request (wallets put the node's reason in `message` / `data.message`). */
+export function plainWalletError(error: unknown): string {
+  const parts: string[] = [];
+  let e: unknown = error;
+  for (let i = 0; i < 6 && e && typeof e === "object"; i++) {
+    const o = e as { message?: unknown; data?: unknown; cause?: unknown };
+    if (typeof o.message === "string") parts.push(o.message);
+    if (o.data && typeof o.data === "object" && typeof (o.data as { message?: unknown }).message === "string") parts.push((o.data as { message: string }).message);
+    e = o.cause ?? (o.data && typeof o.data === "object" ? o.data : undefined);
+  }
+  const text = parts.join(" ");
+  if (/insufficient funds|exceeds balance|not enough (eth|funds)/i.test(text)) return NOT_ENOUGH_GAS_MESSAGE;
+  if (/nonce too low|replacement transaction/i.test(text)) return "Your wallet has another pending transaction. Wait for it to confirm, then try again.";
+  if (/execution reverted|revert/i.test(text)) return "The wallet says this transaction would fail on chain. Nothing was sent. Preview again.";
+  if (/disconnected|not connected|locked/i.test(text)) return "Your wallet is locked or disconnected. Unlock it and try again.";
+  return "Your wallet could not complete the request. Nothing was sent. Please try again.";
 }

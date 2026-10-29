@@ -22,6 +22,11 @@ export const PINNED_UNIVERSAL_ROUTER = {
 export const OPEN_FEE_BPS = 10n;
 /** Swap slippage (minOut) in bps — PM default 2026-10-29. */
 export const SLIPPAGE_BPS = 5n;
+/**
+ * Exit (PR7) min-out: amount0Min/amount1Min = simulated amounts × (1 − EXIT_SLIPPAGE_BPS / 1e4). 50 bps is the value
+ * used for the PR6 live exit (design §6.2). No SoFinance fee on exit (design §3.8).
+ */
+export const EXIT_SLIPPAGE_BPS = 50n;
 /** priceTol = max(PRICE_TOL_FLOOR_BPS, PRICE_TOL_HALFWIDTH_PCT % of the range half-width in bps). */
 export const PRICE_TOL_FLOOR_BPS = 0.2;
 export const PRICE_TOL_HALFWIDTH_PCT = 1;
