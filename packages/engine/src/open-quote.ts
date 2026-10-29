@@ -113,8 +113,9 @@ export async function getOpenPositionQuoteBundle(
   const single = diagSingleSide();
   const diagPrice = Number(state.price);
   if (single) range = { preset: "custom",
-    minPrice: String(single === "above" ? diagPrice * 1.02 : diagPrice * 0.90),
-    maxPrice: String(single === "above" ? diagPrice * 1.10 : diagPrice * 0.98) };
+    // Close to the current price so the tick arrays are already funded.
+    minPrice: String(single === "above" ? diagPrice * 1.002 : diagPrice * 0.99),
+    maxPrice: String(single === "above" ? diagPrice * 1.01 : diagPrice * 0.998) };
   const resolved = resolveOpenRange({
     range,
     currentPrice: Number(state.price),
