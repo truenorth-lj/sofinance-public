@@ -21,8 +21,10 @@ export const DEFAULT_PROTOCOL: ProtocolId = "raydium-clmm";
  * Protocols whose pools can be listed (read-only discovery). A superset of
  * PROTOCOL_IDS: Orca pools are discoverable before Orca can build
  * transactions, and `getProtocolAdapter` only accepts a `ProtocolId`.
+ * "uniswap-v4-rhc" is Uniswap v4 on Robinhood Chain (EVM, chain 4663; read-only,
+ * `protocols/uniswap-v4/discovery.ts`).
  */
-export const POOL_PROTOCOL_IDS = ["raydium-clmm", "orca-whirlpool"] as const;
+export const POOL_PROTOCOL_IDS = ["raydium-clmm", "orca-whirlpool", "uniswap-v4-rhc"] as const;
 export type PoolProtocolId = (typeof POOL_PROTOCOL_IDS)[number];
 
 /**

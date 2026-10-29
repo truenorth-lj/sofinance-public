@@ -1,0 +1,101 @@
+{
+  "state": {
+    "blockNumber": "100701103",
+    "blockTimestamp": 1793255845,
+    "slot0": {
+      "sqrtPriceX96": "79228148539194125574439197534",
+      "tick": -1,
+      "protocolFee": 0,
+      "lpFee": 0
+    },
+    "liquidity": "114958581440704952836431",
+    "dynamicFee": {
+      "zeroForOne": 50,
+      "oneForZero": 51
+    },
+    "feeConfig": {
+      "k": 16609443,
+      "optimalFeeE6": 50,
+      "targetMultiplier": 100,
+      "referenceSqrtPriceX96": "79228162514264337593543950336"
+    },
+    "implementation": "0xaF7895228C7E5ea4FA60d6CB7E42eedC99e94000",
+    "token0": {
+      "address": "0x4a0E65A3EcceC6dBe60AE065F2e7bb85Fae35eEa",
+      "name": "Space Exploration Technologies Corp. Class A Common Stock • Robinhood Token",
+      "symbol": "SPCX",
+      "decimals": 18
+    },
+    "token1": {
+      "address": "0x9B8294F24453379aa87C807ab82bf1d5722153Fc",
+      "name": "SpaceX (Ondo Tokenized)",
+      "symbol": "SPCXon",
+      "decimals": 18
+    }
+  },
+  "history": {
+    "scannedFrom": "98425782",
+    "scannedTo": "100701103",
+    "swaps": [
+      {
+        "blockNumber": "99300927",
+        "amount0": "-6700781924183875",
+        "amount1": "6700446494547130",
+        "liquidity": "114958581440704952836431",
+        "tick": -1,
+        "fee": 50
+      },
+      {
+        "blockNumber": "99301112",
+        "amount0": "6700105162316441",
+        "amount1": "-6700446494547130",
+        "liquidity": "114958581440704952836431",
+        "tick": -1,
+        "fee": 51
+      },
+      {
+        "blockNumber": "100172742",
+        "amount0": "-119356639254244781",
+        "amount1": "119350547511136234",
+        "liquidity": "114958581440704952836431",
+        "tick": -1,
+        "fee": 50
+      },
+      {
+        "blockNumber": "100174634",
+        "amount0": "116969395777474438",
+        "amount1": "-116975471615664624",
+        "liquidity": "114958581440704952836431",
+        "tick": -1,
+        "fee": 53
+      },
+      {
+        "blockNumber": "100299802",
+        "amount0": "-17896846454072031",
+        "amount1": "17895948084325580",
+        "liquidity": "114958581440704952836431",
+        "tick": -1,
+        "fee": 50
+      }
+    ],
+    "ranges": [
+      {
+        "tickLower": -30,
+        "tickUpper": 29,
+        "liquidity": "114958581440704952836431"
+      },
+      {
+        "tickLower": 0,
+        "tickUpper": 1,
+        "liquidity": "264186019065551540933"
+      }
+    ],
+    "feeConfigUpdates": [],
+    "upgrades": [
+      {
+        "blockNumber": "98423592",
+        "implementation": "0xaF7895228C7E5ea4FA60d6CB7E42eedC99e94000"
+      }
+    ]
+  }
+}

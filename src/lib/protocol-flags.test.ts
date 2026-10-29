@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { deployTarget, isOrcaDiscoveryEnabled, isOrcaPositionsEnabled, ORCA_DISCOVERY_ENABLED, ORCA_POSITIONS_ENABLED } from "./protocol-flags";
+import { deployTarget, isOrcaDiscoveryEnabled, isOrcaPositionsEnabled, isRhcUniv4DiscoveryEnabled, ORCA_DISCOVERY_ENABLED, ORCA_POSITIONS_ENABLED, RHC_UNIV4_DISCOVERY_ENABLED } from "./protocol-flags";
 
 describe("ORCA_DISCOVERY_ENABLED", () => {
   it("is a code constant that is OFF in production", () => {
@@ -15,6 +15,12 @@ describe("ORCA_DISCOVERY_ENABLED", () => {
     expect(Object.isFrozen(ORCA_POSITIONS_ENABLED)).toBe(true);
     expect(isOrcaPositionsEnabled("production")).toBe(false);
     expect(isOrcaPositionsEnabled("preview")).toBe(true);
+  });
+  it("RHC_UNIV4_DISCOVERY_ENABLED is a frozen code constant that is OFF in production", () => {
+    expect(RHC_UNIV4_DISCOVERY_ENABLED).toEqual({ production: false, preview: true, development: true });
+    expect(Object.isFrozen(RHC_UNIV4_DISCOVERY_ENABLED)).toBe(true);
+    expect(isRhcUniv4DiscoveryEnabled("production")).toBe(false);
+    expect(isRhcUniv4DiscoveryEnabled("preview")).toBe(true);
   });
   it("treats anything that is not an explicit Vercel preview/development as production", () => {
     for (const env of [undefined, "", "production", "staging", "PREVIEW"]) expect(deployTarget(env)).toBe("production");
@@ -46,6 +52,19 @@ describe("Raydium discovery is untouched by Orca", () => {
     for (const file of ["src/lib/position-performance.ts", "src/lib/position-performance-events.ts", "src/lib/position-range-onchain.ts"]) {
       const source = readFileSync(join(process.cwd(), file), "utf8");
       expect(source, file).not.toMatch(/orca|protocol-flags/i);
+    }
+  });
+});
+
+describe("Raydium and Orca are untouched by Robinhood Chain", () => {
+  it("existing feeds and readers never import Robinhood Chain / Uniswap v4 / EVM code", () => {
+    for (const file of [
+      "src/lib/rwa-pairs.ts", "src/lib/rwa-store.ts", "src/lib/rwa-postgres-store.ts", "src/app/api/rwa-pairs/route.ts",
+      "src/lib/pool-range-apr.ts", "src/app/api/pool-range-apr/route.ts", "src/lib/orca-pairs.ts", "src/lib/orca-range-apr.ts",
+      "src/lib/orca-positions.ts", "src/mcp/tools.ts",
+    ]) {
+      const source = readFileSync(join(process.cwd(), file), "utf8");
+      expect(source, file).not.toMatch(/rhc|uniswap|rpc-evm|viem/i);
     }
   });
 });
