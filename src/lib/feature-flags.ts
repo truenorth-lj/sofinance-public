@@ -11,12 +11,12 @@
  * what the swap delivered), because Phantom showed "Request blocked" for every
  * single-transaction SOL open variant (wrap + swap + Raydium open).
  *
- * Kept `false` until the two-step flow passes a Phantom and real-signing
- * check. Vercel preview deployments (VERCEL_ENV=preview) enable it anyway so
- * that check can run there; production follows only this constant. While off,
- * the open picker shows SOL as unavailable and the quote / prepare / swap-step
- * paths refuse native SOL. Nothing else needs to change.
+ * Enabled after the two-step flow passed a Phantom and real-signing check on
+ * a Vercel preview (PR #176). Set back to `false` to switch SOL input off: the
+ * open picker then shows SOL as unavailable and the quote / prepare / swap-step
+ * paths refuse native SOL. Vercel preview deployments (VERCEL_ENV=preview)
+ * enable it regardless. Nothing else needs to change.
  */
-export const SOL_INPUT_ENABLED = false;
+export const SOL_INPUT_ENABLED = true;
 
 export const SOL_INPUT_DISABLED_MESSAGE = "SOL deposits are temporarily unavailable — please use another token.";
