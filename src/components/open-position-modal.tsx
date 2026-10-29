@@ -17,6 +17,7 @@ import { DOCS_ROUTES } from "@/lib/public-urls";
 import { NATIVE_SOL_MINT, USDC_MINT } from "@sofinance/engine/ids";
 import { SOL_INPUT_DISABLED_MESSAGE } from "@/lib/feature-flags";
 import { isSolInputBlocked } from "@/lib/sol-input-policy";
+import { solSwapReceiptLabel } from "@/components/transactions/open/use-open-submission";
 import { depositUsd } from "@/lib/range-apr/size-aware";
 import { useDebouncedValue } from "./use-debounced-value";
 
@@ -112,7 +113,15 @@ export function OpenPositionModal({
     })}${formatRangeStatus(quote.rangeSide) ? ` · ${formatRangeStatus(quote.rangeSide)}` : ""}`
     : `${pair.wrappedSymbol}/${pair.plainSymbol}`;
 
-  const status = c.submitStage === "preparing" ? "Preparing latest transaction…"
+  const stepPrefix = c.openStep ? `Step ${c.openStep}/2 · ` : "";
+  const swapStatus = c.submitStage === "swap-preparing" ? "Preparing SOL swap…"
+    : c.submitStage === "swap-wallet" ? "Sign the SOL swap in your wallet…"
+      : c.submitStage === "swap-broadcasting" ? "Sending SOL swap…"
+        : c.submitStage === "swap-pending" ? "Waiting for the swap to confirm…" : null;
+  const status = swapStatus ? `${stepPrefix}${swapStatus}`
+    : c.openStep && (c.submitStage === "preparing" || c.submitStage === "wallet" || c.submitStage === "broadcasting")
+      ? `${stepPrefix}${c.submitStage === "preparing" ? "Preparing open position…" : c.submitStage === "wallet" ? "Sign the open position in your wallet…" : "Sending open position…"}`
+    : c.submitStage === "preparing" ? "Preparing latest transaction…"
     : c.submitStage === "wallet" ? "Waiting for wallet signature…"
       : c.submitStage === "broadcasting" ? "Sending transaction…"
         : c.submitStage === "pending" ? "Waiting for on-chain confirmation…"
@@ -261,6 +270,16 @@ export function OpenPositionModal({
           </div>
         )}
 
+        {c.solTwoStep && !c.pendingSwap && c.submitStage !== "confirmed" && (
+          <p className="mt-3 text-xs leading-5 text-smoke">SOL deposits take two wallet approvals: 1/2 swaps your SOL to a pool token (the 10 bps protocol fee is charged inside this swap), 2/2 opens the position with exactly what the swap delivered.</p>
+        )}
+        {c.pendingSwap && !c.busy && c.submitStage !== "confirmed" && (
+          <div role="status" className="mt-3 space-y-1 text-xs leading-5 text-cream/90">
+            <p>Step 1/2 done: {solSwapReceiptLabel(c.pendingSwap)} are in your wallet. Step 2/2 opens the position with them.</p>
+            <a className="underline" href={`https://solscan.io/tx/${c.pendingSwap.signature}`} target="_blank" rel="noreferrer">View swap on Solscan</a>
+          </div>
+        )}
+
         {(c.quoteError || c.error) && (
           <div className="mt-3 space-y-2 text-xs leading-5 text-smoke">
             {c.quoteError && <p role="alert" className="text-coral">{c.quoteError}</p>}
@@ -314,7 +333,7 @@ export function OpenPositionModal({
                 <LoaderCircle className="h-4 w-4 animate-spin" />
                 {status}
               </span>
-            ) : "Create position"}
+            ) : c.pendingSwap ? "Retry open (2/2)" : c.solTwoStep ? "Create position (2 steps)" : "Create position"}
           </button>
         )}
       </div>

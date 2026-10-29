@@ -51,7 +51,17 @@ export function parseSwapFeeWallet(value: string | undefined): PublicKey | null 
   }
 }
 
+/** Set (server-only) by `runWithSwapFeePaidUpstream` in `../fee-waiver.ts`. Read
+ * through globalThis so this module stays free of `node:async_hooks`. */
+function swapFeePaidUpstream(): boolean {
+  const holder = globalThis as { __sofiSwapFeePaidUpstream?: { getStore(): unknown } };
+  return holder.__sofiSwapFeePaidUpstream?.getStore() === true;
+}
+
 export function readSwapFeeConfig(): SwapFeeConfig {
+  // Step 2/2 of a two-transaction SOL open: the 10 bps was already charged
+  // inside the step-1 Jupiter swap, so the token-input open charges nothing.
+  if (swapFeePaidUpstream()) return { wallet: null, bps: 0 };
   const wallet = parseSwapFeeWallet(engineEnv().SOFINANCE_FEE_WALLET);
   if (!wallet) return { wallet: null, bps: 0 };
   return { wallet, bps: parseSwapFeeBps(engineEnv().SOFINANCE_FEE_BPS) };

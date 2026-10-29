@@ -9,8 +9,8 @@ import { APP_OPEN_PREPARE } from "@/server/transactions/surface-policy";
 export async function POST(request: Request) {
   return withJupiterRelay(request, async () => {
   try {
-    const { wallet, selection, amount, range, floorBps, toleranceBps, nftMint } = await parseOpenPrepareRequest(request);
-    const prepared = await prepareOpen({ wallet, selection, amount, range, floorBps, toleranceBps, nftMint }, getSigningSecret, APP_OPEN_PREPARE);
+    const { wallet, selection, amount, range, floorBps, toleranceBps, nftMint, solSwapSignature } = await parseOpenPrepareRequest(request);
+    const prepared = await prepareOpen({ wallet, selection, amount, range, floorBps, toleranceBps, nftMint, solSwapSignature }, getSigningSecret, APP_OPEN_PREPARE);
     return Response.json(prepared, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return apiError(error, "Open-position preparation failed");

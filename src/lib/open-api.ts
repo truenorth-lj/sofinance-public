@@ -59,5 +59,11 @@ export async function parseOpenQuoteRequest(request: Request) {
 
 export async function parseOpenPrepareRequest(request: Request) {
   const fields = await readOpenBody(request);
-  return { ...parseOpenFields(fields), nftMint: parseClientNftMint(fields.nftMint).toBase58() };
+  if (fields.solSwapSignature !== undefined && (typeof fields.solSwapSignature !== "string" || fields.solSwapSignature.length > 100)) {
+    throw new Error("Invalid step-1 swap signature");
+  }
+  return {
+    ...parseOpenFields(fields), nftMint: parseClientNftMint(fields.nftMint).toBase58(),
+    ...(typeof fields.solSwapSignature === "string" ? { solSwapSignature: fields.solSwapSignature } : {}),
+  };
 }

@@ -81,7 +81,7 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
   const { quote, setQuote, quoteLoading, setQuoteLoading, quoteError, setQuoteError,
     setQuoteRevision, invalidateQuote } = preview;
   const submission = useOpenSubmission();
-  const { operationStage, beamResult } = submission;
+  const { operationStage, beamResult, openStep, swapReceipt, setSwapReceipt } = submission;
   // Discovery and submission share this error; form commands clear it synchronously.
   const [error, setError] = useState("");
   const [now, setNow] = useState(0);
@@ -118,7 +118,15 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
 
   const selectedAsset = inputAssets.find((item) => item.mint === inputMint && item.kind === inputKind) ?? null;
   const fresh = quote ? quoteIsFresh(quote.expiresAt, now) : false;
-  const busy = operationStage === "preparing" || operationStage === "wallet" || operationStage === "broadcasting" || open.pending;
+  const busy = operationStage === "preparing" || operationStage === "wallet" || operationStage === "broadcasting" ||
+    operationStage === "swap-preparing" || operationStage === "swap-wallet" || operationStage === "swap-broadcasting" ||
+    operationStage === "swap-pending" || open.pending;
+  // Step 1/2 landed for this wallet + pool but its open has not confirmed: offer "Retry open".
+  const pendingSwap = swapReceipt && swapReceipt.wallet === wallet && swapReceipt.poolId === pair?.poolAddress ? swapReceipt : null;
+  useEffect(() => {
+    // The two-step deposit is complete once its step-2 open confirms.
+    if (open.status === "confirmed" && samePool && swapReceipt) setSwapReceipt(null);
+  }, [open.status, samePool, swapReceipt, setSwapReceipt]);
   let parsedAmount: bigint | null = null;
   if (selectedAsset?.eligible && amount) {
     try {
@@ -236,6 +244,7 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
         : null;
 
   const actionBlockedReason = open.pending ? "Checking the original open-position transaction before opening again"
+    : pendingSwap ? (!connected ? "Connect a wallet to create a position" : rangePreset === "custom" && (!minPrice || !maxPrice) ? formError : null)
     : walletBlockedReason || formError ||
     (quoteLoading && (!quote || !fresh) ? "Fetching quote…"
       : quoteError ? quoteError
@@ -252,7 +261,8 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
     wallet, connected, connect, inputAssets, selectedAsset, inputMint, inputKind,
     amount, rangePreset, minPrice, maxPrice, quote, quoteLoading, quoteError: formError || quoteError,
     error: retryError || open.error || (open.status === "confirmed" ? "" : error),
-    submitStage, signature, positionMint,
+    submitStage, signature, positionMint, openStep, pendingSwap,
+    solTwoStep: inputKind === "native" || Boolean(pendingSwap),
     beamStatus: open.status === "confirmed" && beamResult?.signature === signature ? beamResult.status : NO_BEAM_STATUS, presets: OPEN_RANGE_UI_PRESETS, fresh, busy,
     actionDisabled, actionBlockedReason, walletBlockedReason, changeAmount, chooseAsset, choosePreset,
     setMinPrice: changeMinPrice, setMaxPrice: changeMaxPrice, fillMax, signAndSend,

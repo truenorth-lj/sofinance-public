@@ -4,8 +4,8 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// These suites drive the open flow with native SOL input; keep them exercising the
-// SOL path regardless of the temporary SOL_INPUT_ENABLED switch (see feature-flags.ts).
+// Single-transaction suites use wSOL token input (native SOL opens in two steps); the
+// flag mock keeps native SOL listed for the quote/preview and switch tests.
 const solInputFlag = vi.hoisted(() => ({ enabled: true }));
 vi.mock("@/lib/feature-flags", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/feature-flags")>(),
@@ -47,7 +47,7 @@ const pair: OpenPositionPair = {
 
 function quote(): OpenPositionQuote {
   return {
-    wallet: mocks.wallet, poolId: pair.poolAddress, inputMint: NATIVE_SOL_MINT, inputKind: "native",
+    wallet: mocks.wallet, poolId: pair.poolAddress, inputMint: NATIVE_SOL_MINT, inputKind: "token",
     inputDecimals: 9, mintA: pair.mintA, mintB: pair.mintB, decimalsA: 6, decimalsB: 6,
     symbolA: "HOODx", symbolB: "HOOD", feeTierBps: 1, tickSpacing: 1, tickCurrent: 0,
     priceLower: 0.9974, priceUpper: 1.0094, currentPrice: "1", projectedPrice: "1",
@@ -114,7 +114,7 @@ beforeEach(() => {
     if (url.startsWith("/api/pool-range-apr")) return { ok: true, json: async () => payloadFixture() };
     if (url === "/api/sol-usdc-price") return { ok: true, json: async () => ({ rate: 150 }) };
     if (url.startsWith("/api/wallet")) return { ok: true, json: async () => ({ assets: [{
-      kind: "native", mint: NATIVE_SOL_MINT, decimals: 9, balance: "216474000", eligible: true,
+      kind: "token", mint: NATIVE_SOL_MINT, decimals: 9, balance: "216474000", eligible: true,
     }] }) };
     if (url === "/api/open-quote") {
       quoteCalls++;
@@ -223,7 +223,7 @@ describe("range presets and estimated APR", () => {
     vi.stubGlobal("fetch", vi.fn(async (url: string) => {
       if (url.startsWith("/api/pool-range-apr")) return { ok: false, json: async () => ({ error: "down" }) };
       if (url === "/api/sol-usdc-price") return { ok: true, json: async () => ({ rate: 150 }) };
-      if (url.startsWith("/api/wallet")) return { ok: true, json: async () => ({ assets: [{ kind: "native", mint: NATIVE_SOL_MINT, decimals: 9, balance: "216474000", eligible: true }] }) };
+      if (url.startsWith("/api/wallet")) return { ok: true, json: async () => ({ assets: [{ kind: "token", mint: NATIVE_SOL_MINT, decimals: 9, balance: "216474000", eligible: true }] }) };
       if (url === "/api/open-quote") return { ok: true, json: async () => quote() };
       throw new Error(`Unexpected request: ${url}`);
     }));
@@ -250,7 +250,7 @@ describe("open-position signing and quote refresh", () => {
         kind: "native", mint: NATIVE_SOL_MINT, decimals: 9, balance: "216474000", eligible: true,
       }] }) };
       if (url === "/api/open-quote") {
-        return { ok: true, json: async () => ({ ...quote(), feeBps: 10, feeAmount: "120000", feeWallet: "Fee111111111111111111111111111111111111111" }) };
+        return { ok: true, json: async () => ({ ...quote(), inputKind: "native", feeBps: 10, feeAmount: "120000", feeWallet: "Fee111111111111111111111111111111111111111" }) };
       }
       throw new Error(`Unexpected request: ${url}`);
     }));
@@ -271,7 +271,7 @@ describe("open-position signing and quote refresh", () => {
   it("shows round-trip total cost in the summary and tooltip without disabling Sign", async () => {
     vi.stubGlobal("fetch", vi.fn(async (url: string) => {
       if (url.startsWith("/api/wallet")) return { ok: true, json: async () => ({ assets: [{
-        kind: "native", mint: NATIVE_SOL_MINT, decimals: 9, balance: "216474000", eligible: true,
+        kind: "token", mint: NATIVE_SOL_MINT, decimals: 9, balance: "216474000", eligible: true,
       }] }) };
       if (url === "/api/open-quote") {
         quoteCalls++;
@@ -295,7 +295,7 @@ describe("open-position signing and quote refresh", () => {
     expect(container.textContent).not.toContain("Immediate resale of this position");
     const info = container.querySelector<HTMLButtonElement>('button[aria-label="About Total cost"]')!;
     await act(async () => { info.dispatchEvent(new MouseEvent("mouseover", { bubbles: true })); });
-    expect(container.querySelector('[role="tooltip"]')?.textContent).toBe("Estimated round-trip cost: about 10.00% (assuming you open the position, immediately withdraw, and swap back to SOL). This conservative estimate includes swap fees, price impact, and slippage tolerance. It does not block signing.");
+    expect(container.querySelector('[role="tooltip"]')?.textContent).toBe("Estimated round-trip cost: about 10.00% (assuming you open the position, immediately withdraw, and swap back to WSOL). This conservative estimate includes swap fees, price impact, and slippage tolerance. It does not block signing.");
     expect(container.querySelector('[role="tooltip"]')?.classList.contains("bg-char")).toBe(true);
     await act(async () => {
       info.click();

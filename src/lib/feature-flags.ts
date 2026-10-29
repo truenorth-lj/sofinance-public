@@ -6,15 +6,17 @@
 /**
  * Native SOL as the input asset when opening a new position.
  *
- * Re-enabled (2026-10-29) after the native SOL protocol fee moved inside the
- * Jupiter swap (`platformFeeBps` into the fee wallet's pre-created wSOL ATA).
- * It was briefly `false` because Phantom showed "Request blocked" for opens
- * whose own instruction transferred SOL/wSOL straight to the fee wallet.
+ * SOL deposits now open in two transactions (1/2: SOL -> pool token swap with
+ * the 10 bps fee inside the Jupiter swap; 2/2: a token-input open sized from
+ * what the swap delivered), because Phantom showed "Request blocked" for every
+ * single-transaction SOL open variant (wrap + swap + Raydium open).
  *
- * Set to `false` to switch SOL input off again: the open picker then shows SOL
- * as unavailable and the open quote/prepare paths (app API and MCP) refuse
- * native SOL input. Nothing else needs to change.
+ * Kept `false` until the two-step flow passes a Phantom and real-signing
+ * check. Vercel preview deployments (VERCEL_ENV=preview) enable it anyway so
+ * that check can run there; production follows only this constant. While off,
+ * the open picker shows SOL as unavailable and the quote / prepare / swap-step
+ * paths refuse native SOL. Nothing else needs to change.
  */
-export const SOL_INPUT_ENABLED = true;
+export const SOL_INPUT_ENABLED = false;
 
 export const SOL_INPUT_DISABLED_MESSAGE = "SOL deposits are temporarily unavailable — please use another token.";
