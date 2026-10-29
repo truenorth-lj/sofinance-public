@@ -240,13 +240,14 @@ Never commit `.env.local`, mnemonics, or API keys. Do not prefix `SOLANA_RPC_URL
 
 Implementation and detailed audit: [shared swap module](src/lib/swap/README.md).
 
-When `SOFINANCE_FEE_WALLET` is set (Vercel env, server-only), fee-enabled open-position and compound swaps take `SOFINANCE_FEE_BPS` (default 10, max 100) of that swap’s input inside the same atomic v0 transaction the wallet signs. Unset wallet keeps fee 0. A floored-zero fee adds no transfer and no recipient ATA.
+When `SOFINANCE_FEE_WALLET` is set (Vercel env, server-only), fee-enabled open-position, selected-add, and compound flows take `SOFINANCE_FEE_BPS` (default 10, max 100) of the **input token** inside the same atomic v0 transaction the wallet signs, transferred to the fee wallet’s ATA for that mint (created if missing; the user pays ATA rent). Unset wallet keeps fee 0. A floored-zero fee adds no transfer and no recipient ATA. There is no performance fee on compound / LP earnings.
 
-- Open position (Jupiter): fee is an SPL/SOL transfer of the input asset; the Jupiter `/build` amount is the net after the fee. Resale-floor probes are not charged.
-- Selected-position add: no protocol fee is currently collected. Sequential open charges the primary conversion only; direct same-mint legs and secondary conversions remain fee-free.
-- One-click compound (Raydium): fee is an SPL transfer from the isolated swap-input account after harvest, before the in-pool SPCXx↔SPCX rebalance.
+- Open position: 10 bps of the deposited token as an SPL/SOL transfer; Jupiter `/build` amount is the net after the fee. Sequential secondary legs are not charged again. Resale-floor probes are not charged.
+- Selected-position add: the same 10 bps input-token transfer as open.
+- One-click compound (Raydium): 10 bps of the isolated swap-input (harvested tokens being reinvested) as an SPL transfer before the in-pool rebalance — not a performance fee on earnings.
+- Withdraw to USDC: unchanged Jupiter `platformFee` in USDC. Original-token withdraw is 0.
 
-Quote/prepare JSON includes `feeBps` / `feeAmount` / `feeWallet`. Rent estimates are unchanged; ATA rent for a new recipient token account is allowed in the simulated SOL debit cap only.
+Quote/prepare JSON includes `feeBps` / `feeAmount` / `feeWallet`. `feeAmount` is in the input mint for open / selected / compound. Rent estimates are unchanged; ATA rent for a new recipient token account is allowed in the simulated SOL debit cap only.
 
 ## Powered by Solami
 

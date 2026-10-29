@@ -281,7 +281,9 @@ describe("accepted Open preview characterization", () => {
     await command("blocked commands", () => { c.refreshQuote(); c.createAnother(); }); expect(calls()).toHaveLength(0);
   });
   it("shares the real relay cache with prepare and adopts its quote at the wallet boundary", async () => {
-    relay = true; window.localStorage.setItem("sofiJupiterRelay", "on"); await ready();
+    // Single-transaction prepare is token input only (native SOL opens in two steps).
+    relay = true; window.localStorage.setItem("sofiJupiterRelay", "on"); await mount();
+    await command("token SOL", () => c.chooseAsset("token", NATIVE_SOL_MINT)); await command("amount .002", () => c.changeAmount("0.002")); await advance(450);
     const providerCalls = () => fetchMock.mock.calls.filter(([url]) => url.startsWith(JUPITER_BROWSER_ORIGIN + "/"));
     expect(providerCalls()).toHaveLength(1); const before = c.quote;
     await act(async () => c.signAndSend()); expect(c.quote).not.toBe(before); expect(c.quote?.liquidity).toBe("888");

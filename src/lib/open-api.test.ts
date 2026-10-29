@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
+// SOL input ships enabled; pin the switch off so its refusal path stays covered.
+vi.mock("./feature-flags", async (importOriginal) => ({
+  ...await importOriginal<typeof import("./feature-flags")>(),
+  SOL_INPUT_ENABLED: false,
+}));
 
 import { PublicKey } from "@solana/web3.js";
 import { parseOpenPrepareRequest, parseOpenQuoteRequest, parseOpenRange } from "./open-api";

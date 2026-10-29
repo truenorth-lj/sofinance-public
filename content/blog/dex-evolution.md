@@ -177,7 +177,7 @@ SoFinance (sofinancelab.xyz) is a self-custody app on Solana for one specific co
 
 **Numbers, honestly.** Any APR you see in the app is an **estimate from a backtest over a stated window (7 days for range estimates), not a guarantee**. Many of these pools are small, so a sizable deposit can change the result a lot. Estimates ignore IL and your trading costs.
 
-**Costs.** The hosted app charges a disclosed **10 bps (0.10%) protocol fee** on the amount being swapped in a flow, shown in the preview and visible on-chain. Normal Solana network fees and swap-route costs apply.
+**Costs.** The hosted app charges a disclosed **10 bps (0.10%) protocol fee** on the token you deposit (open, add, and compound reinvest), shown in the preview in that token and visible on-chain. Withdraw-to-USDC still takes the same 10 bps as a conversion fee in USDC. There is no performance fee on LP earnings. Normal Solana network fees and swap-route costs apply.
 
 **Risks to weigh.** These include IL and issuer premium/discount moves, out-of-range periods with no fees, Token-2022 freeze authority and other issuer controls, smart-contract risk across Raydium, Jupiter and token programs.
 

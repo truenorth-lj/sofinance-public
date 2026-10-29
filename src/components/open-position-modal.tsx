@@ -17,6 +17,8 @@ import { DOCS_ROUTES } from "@/lib/public-urls";
 import { NATIVE_SOL_MINT, USDC_MINT } from "@sofinance/engine/ids";
 import { SOL_INPUT_DISABLED_MESSAGE } from "@/lib/feature-flags";
 import { isSolInputBlocked } from "@/lib/sol-input-policy";
+import { solSwapReceiptLabel } from "@/components/transactions/open/use-open-submission";
+import { SOL_SWAP_RECEIPT_TTL_MS } from "@/components/transactions/open/sol-swap-receipt-store";
 import { depositUsd } from "@/lib/range-apr/size-aware";
 import { useDebouncedValue } from "./use-debounced-value";
 
@@ -32,6 +34,7 @@ const FIELD_HELP = {
   "Non-refundable rent": "Estimated one-time cost to create shared protocol-position or tick-array accounts. These accounts remain after your position closes, so this cost is not returned to you.",
   "Network fee (est.)": "Estimated Solana transaction fee, confirmed during preparation. It is separate from your investment and account deposits.",
   "Wallet SOL": "Your wallet's total SOL balance. Keep enough SOL to cover account deposits and network fees in addition to your investment.",
+  "Protocol fee": "SoFinance takes 0.10% of the token you deposit, transferred to the protocol fee wallet in the same transaction. If that wallet does not yet have a token account for this mint, this transaction creates it and you pay the one-time account rent in SOL. This is not a performance fee on LP earnings.",
 } as const;
 
 function FieldLabel({ label, help }: { label: keyof typeof FIELD_HELP; help?: string }) {
@@ -111,7 +114,15 @@ export function OpenPositionModal({
     })}${formatRangeStatus(quote.rangeSide) ? ` · ${formatRangeStatus(quote.rangeSide)}` : ""}`
     : `${pair.wrappedSymbol}/${pair.plainSymbol}`;
 
-  const status = c.submitStage === "preparing" ? "Preparing latest transaction…"
+  const stepPrefix = c.openStep ? `Step ${c.openStep}/2 · ` : "";
+  const swapStatus = c.submitStage === "swap-preparing" ? "Preparing SOL swap…"
+    : c.submitStage === "swap-wallet" ? "Sign the SOL swap in your wallet…"
+      : c.submitStage === "swap-broadcasting" ? "Sending SOL swap…"
+        : c.submitStage === "swap-pending" ? "Waiting for the swap to confirm…" : null;
+  const status = swapStatus ? `${stepPrefix}${swapStatus}`
+    : c.openStep && (c.submitStage === "preparing" || c.submitStage === "wallet" || c.submitStage === "broadcasting")
+      ? `${stepPrefix}${c.submitStage === "preparing" ? "Preparing open position…" : c.submitStage === "wallet" ? "Sign the open position in your wallet…" : "Sending open position…"}`
+    : c.submitStage === "preparing" ? "Preparing latest transaction…"
     : c.submitStage === "wallet" ? "Waiting for wallet signature…"
       : c.submitStage === "broadcasting" ? "Sending transaction…"
         : c.submitStage === "pending" ? "Waiting for on-chain confirmation…"
@@ -246,8 +257,9 @@ export function OpenPositionModal({
                 <div className="flex justify-between gap-3"><FieldLabel label="Non-refundable rent" /><dd>{lamports(quote.rent.nonRefundableLamports)}</dd></div>
                 <div className="flex justify-between gap-3"><FieldLabel label="Network fee (est.)" /><dd>{lamports(quote.networkFeeLamportsEstimate)}</dd></div>
                 <div className="flex justify-between gap-3"><FieldLabel label="Wallet SOL" /><dd>{lamports(quote.solLamports)}</dd></div>
+                {quote.feeBps > 0 && <div className="flex justify-between gap-3"><FieldLabel label="Protocol fee" /><dd>{formatAmount(quote.feeAmount, quote.inputDecimals)} {inputSymbol}</dd></div>}
               </dl>
-              <p className="mt-3 text-xs leading-5 text-smoke">Upfront costs include refundable account deposits, one-time account setup and the estimated network fee. These are separate from your investment. Quotes refresh every 3 seconds. USDC values use the current Jupiter SOL/USDC reference price, refreshed every minute; fees are paid in SOL.</p>
+              <p className="mt-3 text-xs leading-5 text-smoke">Upfront costs include refundable account deposits, one-time account setup and the estimated network fee. These are separate from your investment. Quotes refresh every 3 seconds. USDC values use the current Jupiter SOL/USDC reference price, refreshed every minute. Network fees and account rent are paid in SOL. The protocol fee is 10 bps of the token you deposit.</p>
               {detailWarnings.map(warning => <p key={warning} className="mt-2 text-xs leading-5 text-smoke">{explainTokenWarning(warning)}</p>)}
             </details>
           </div>
@@ -256,6 +268,26 @@ export function OpenPositionModal({
           <div role="status" className="mt-2 flex items-center gap-2 text-xs leading-5 text-smoke">
             <RefreshCw size={24} strokeWidth={2} className="preview-icon h-3.5 w-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" />
             <span>Fetching the best price on Jupiter</span>
+          </div>
+        )}
+
+        {c.solTwoStep && !c.pendingSwap && c.submitStage !== "confirmed" && (
+          <p className="mt-3 text-xs leading-5 text-smoke">SOL deposits take two wallet approvals: 1/2 swaps your SOL to a pool token (the 10 bps protocol fee is charged inside this swap), 2/2 opens the position with exactly what the swap delivered.</p>
+        )}
+        {c.pendingSwap && !c.busy && c.submitStage !== "confirmed" && (
+          <div role="status" data-testid="pending-sol-swap" className="mt-3 space-y-2 rounded-2xl border border-white/12 p-3 text-xs leading-5 text-cream/90">
+            <p>Your wallet already has {solSwapReceiptLabel(c.pendingSwap)} from step 1/2 (the SOL swap you just made). Open the position with it?</p>
+            <p className="text-smoke">Step 2/2 deposits exactly this amount; the 10 bps protocol fee was already paid in the swap. Amount and input asset edits don&apos;t apply to it; you can still change the range. Available until {new Date(c.pendingSwap.landedAt + SOL_SWAP_RECEIPT_TTL_MS).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.</p>
+            <div className="flex flex-wrap items-center gap-3">
+              <button type="button" onClick={() => void c.signAndSend()} disabled={c.actionDisabled}
+                className="rounded-full bg-lemon px-3 py-1.5 font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-40">
+                Continue (2/2)
+              </button>
+              <button type="button" onClick={c.dismissPendingSwap} className="text-cream/80 underline">
+                Dismiss
+              </button>
+              <a className="underline" href={`https://solscan.io/tx/${c.pendingSwap.signature}`} target="_blank" rel="noreferrer">View swap on Solscan</a>
+            </div>
           </div>
         )}
 
@@ -312,7 +344,7 @@ export function OpenPositionModal({
                 <LoaderCircle className="h-4 w-4 animate-spin" />
                 {status}
               </span>
-            ) : "Create position"}
+            ) : c.pendingSwap ? "Continue open (2/2)" : c.solTwoStep ? "Create position (2 steps)" : "Create position"}
           </button>
         )}
       </div>

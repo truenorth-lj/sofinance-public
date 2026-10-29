@@ -23,7 +23,7 @@ it.each([TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID])("never waives fees for missin
   expect(instructions).toHaveLength(1);
   expect(instructions[0]!.programId.equals(program)).toBe(true);
 });
-it("native collection needs no fee ATA", async () => {
+it("native collection still resolves the configured rate without probing accounts", async () => {
   vi.stubEnv("SOFINANCE_FEE_WALLET", wallet.toBase58());
   vi.stubEnv("SOFINANCE_FEE_BPS", "10");
   const getAccountInfo = vi.fn();

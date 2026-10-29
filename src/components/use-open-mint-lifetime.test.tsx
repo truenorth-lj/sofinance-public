@@ -3,8 +3,8 @@ import { act, createElement, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-// These suites drive the open flow with native SOL input; keep them exercising the
-// SOL path regardless of the temporary SOL_INPUT_ENABLED switch (see feature-flags.ts).
+// These suites drive the single-transaction open flow with wSOL token input (native
+// SOL now opens in two steps; see sol-swap-step tests). The flag mock keeps SOL listed.
 const solInputFlag = vi.hoisted(() => ({ enabled: true }));
 vi.mock("@/lib/feature-flags", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/feature-flags")>(),
@@ -41,7 +41,7 @@ function prepared(nftMint = nft.publicKey) {
     signWith: [],
   });
   const summary = openSummaryFixture({ wallet, nftMint: nftMint.toBase58(), blockhash: tx.message.recentBlockhash });
-  const quote = { ...summary.quote, poolId, inputMint: NATIVE_SOL_MINT, inputKind: "native", inputDecimals: 9 };
+  const quote = { ...summary.quote, poolId, inputMint: NATIVE_SOL_MINT, inputKind: "token", inputDecimals: 9 };
   return { unsignedTransaction: toBase64(tx), permit: "test-permit", summary: { ...summary, quote } };
 }
 function Harness() {
@@ -80,7 +80,7 @@ beforeEach(() => {
   fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     ledger.push([Date.now(), "fetch", url, init?.body ?? null]);
     const body = typeof init?.body === "string" ? JSON.parse(init.body) : {};
-    if (url.startsWith("/api/wallet")) return Response.json({ assets: [{ kind: "native", mint: NATIVE_SOL_MINT, decimals: 9, balance: "1000000000", eligible: true }] });
+    if (url.startsWith("/api/wallet")) return Response.json({ assets: [{ kind: "token", mint: NATIVE_SOL_MINT, decimals: 9, balance: "1000000000", eligible: true }] });
     if (url === "/api/open-quote") return Response.json(prepared().summary.quote);
     if (url === "/api/open-prepare") {
       if (prepareWait) {

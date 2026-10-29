@@ -3,9 +3,10 @@ import { engineEnv } from "../host";
 // lives in collection.ts; callers must not silently waive missing recipient ATAs.
 import {
   createTransferCheckedInstruction,
-  getAccountLenForMint, getAssociatedTokenAddressSync, unpackMint,
+  getAccountLenForMint, getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID, unpackMint,
 } from "@solana/spl-token";
-import { PublicKey, SystemProgram, type Connection, type TransactionInstruction } from "@solana/web3.js";
+import { PublicKey, type Connection, type TransactionInstruction } from "@solana/web3.js";
+import { NATIVE_SOL_MINT } from "../ids";
 
 export const DEFAULT_SWAP_FEE_BPS = 10;
 export const MAX_SWAP_FEE_BPS = 100;
@@ -50,7 +51,17 @@ export function parseSwapFeeWallet(value: string | undefined): PublicKey | null 
   }
 }
 
+/** Set (server-only) by `runWithSwapFeePaidUpstream` in `../fee-waiver.ts`. Read
+ * through globalThis so this module stays free of `node:async_hooks`. */
+function swapFeePaidUpstream(): boolean {
+  const holder = globalThis as { __sofiSwapFeePaidUpstream?: { getStore(): unknown } };
+  return holder.__sofiSwapFeePaidUpstream?.getStore() === true;
+}
+
 export function readSwapFeeConfig(): SwapFeeConfig {
+  // Step 2/2 of a two-transaction SOL open: the 10 bps was already charged
+  // inside the step-1 Jupiter swap, so the token-input open charges nothing.
+  if (swapFeePaidUpstream()) return { wallet: null, bps: 0 };
   const wallet = parseSwapFeeWallet(engineEnv().SOFINANCE_FEE_WALLET);
   if (!wallet) return { wallet: null, bps: 0 };
   return { wallet, bps: parseSwapFeeBps(engineEnv().SOFINANCE_FEE_BPS) };
@@ -77,24 +88,28 @@ export function swapFeeQuoteFields(amount: bigint, config: SwapFeeConfig): SwapF
   };
 }
 
-export async function assertNativeSwapFeeRecipient(connection: Connection, recipient: PublicKey, fee: bigint) {
-  if (fee <= 0n) return;
-  const account = await connection.getAccountInfo(recipient, "confirmed");
-  const minimum = BigInt(await connection.getMinimumBalanceForRentExemption(account?.data.length ?? 0, "confirmed"));
-  if (BigInt(account?.lamports ?? 0) + fee < minimum) {
-    throw new Error(`Protocol fee wallet is not funded for account rent. The site operator must fund the fee wallet with at least ${Number(minimum) / 1e9} SOL; no transaction was sent`);
-  }
+export function nativeSolOwnerAta(owner: PublicKey): PublicKey {
+  return getAssociatedTokenAddressSync(new PublicKey(NATIVE_SOL_MINT), owner, false, TOKEN_PROGRAM_ID);
 }
 
 export function swapFeeRecipientAta(recipient: PublicKey, mint: PublicKey, program: PublicKey): PublicKey {
   return getAssociatedTokenAddressSync(mint, recipient, true, program);
 }
 
+/** Native SOL fees are never a separate transfer: they are collected inside the
+ * Jupiter swap (`platformFeeBps` + the fee wallet's pre-created wSOL ATA as
+ * `feeAccount`). A direct SOL/wSOL transfer to the fee wallet is what Phantom
+ * flags as malicious, so this refuses to build one. */
+export class NativeSolFeeTransferError extends Error {
+  constructor() {
+    super("Native SOL protocol fee must be collected inside the Jupiter swap, not by a direct transfer");
+    this.name = "NativeSolFeeTransferError";
+  }
+}
+
 export function swapFeeTransferInstructions(input: SwapFeeTransferInput): TransactionInstruction[] {
   if (input.amount <= 0n) return [];
-  if (input.kind === "native") {
-    return [SystemProgram.transfer({ fromPubkey: input.owner, toPubkey: input.recipient, lamports: input.amount })];
-  }
+  if (input.kind === "native") throw new NativeSolFeeTransferError();
   const ata = swapFeeRecipientAta(input.recipient, input.mint, input.program);
   return [
     createTransferCheckedInstruction(

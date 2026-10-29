@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const flag = vi.hoisted(() => ({ enabled: false }));
 vi.mock("./feature-flags", async (importOriginal) => ({
@@ -7,16 +7,17 @@ vi.mock("./feature-flags", async (importOriginal) => ({
 }));
 
 import { SOL_INPUT_DISABLED_MESSAGE } from "./feature-flags";
-import { applySolInputPolicy, assertSolInputAllowed, isSolInputBlocked, SolInputDisabledError } from "./sol-input-policy";
+import { applySolInputPolicy, assertSolInputAllowed, isSolInputBlocked, SolInputDisabledError, solInputEnabled, solInputPreviewOverride } from "./sol-input-policy";
 
 const sol = { kind: "native" as const, mint: "So11111111111111111111111111111111111111112", eligible: true, reason: null };
 const wsol = { kind: "token" as const, mint: "So11111111111111111111111111111111111111112", eligible: true, reason: null };
 const usdc = { kind: "token" as const, mint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", eligible: true, reason: null };
 
-afterEach(() => { flag.enabled = false; });
+afterEach(() => { flag.enabled = false; vi.unstubAllEnvs(); });
+beforeEach(() => { vi.stubEnv("NEXT_PUBLIC_SOFI_DEPLOY_ENV", ""); vi.stubEnv("VERCEL_ENV", ""); });
 
 describe("SOL input switch", () => {
-  it("ships disabled with the agreed user-facing note", async () => {
+  it("ships off until the two-step SOL open is verified, and keeps the agreed off-switch note", async () => {
     const actual = await vi.importActual<typeof import("./feature-flags")>("./feature-flags");
     expect(actual.SOL_INPUT_ENABLED).toBe(false);
     expect(SOL_INPUT_DISABLED_MESSAGE).toBe("SOL deposits are temporarily unavailable — please use another token.");
@@ -44,5 +45,18 @@ describe("SOL input switch", () => {
     expect(applySolInputPolicy(assets)).toBe(assets);
     expect(isSolInputBlocked("native")).toBe(false);
     expect(() => assertSolInputAllowed({ inputKind: "native" })).not.toThrow();
+  });
+
+  it("enables SOL on Vercel preview deployments only", () => {
+    for (const [key, value, on] of [
+      ["NEXT_PUBLIC_SOFI_DEPLOY_ENV", "preview", true], ["VERCEL_ENV", "preview", true],
+      ["NEXT_PUBLIC_SOFI_DEPLOY_ENV", "production", false], ["VERCEL_ENV", "production", false], ["VERCEL_ENV", "development", false],
+    ] as const) {
+      vi.stubEnv(key, value);
+      expect(solInputPreviewOverride()).toBe(on);
+      expect(solInputEnabled()).toBe(on);
+      expect(isSolInputBlocked("native")).toBe(!on);
+      vi.stubEnv(key, "");
+    }
   });
 });

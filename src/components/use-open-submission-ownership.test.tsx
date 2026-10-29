@@ -3,8 +3,8 @@ import { act, Activity, createElement, StrictMode, Suspense, useEffect, useLayou
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// These suites drive the open flow with native SOL input; keep them exercising the
-// SOL path regardless of the temporary SOL_INPUT_ENABLED switch (see feature-flags.ts).
+// These suites drive the single-transaction open flow with wSOL token input (native
+// SOL now opens in two steps; see sol-swap-step tests). The flag mock keeps SOL listed.
 const solInputFlag = vi.hoisted(() => ({ enabled: true }));
 vi.mock("@/lib/feature-flags", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/feature-flags")>(),
@@ -43,7 +43,7 @@ function prepared(nftMint = nft.publicKey, blockhash?: string) {
   const tx = buildTransaction({ payer, extraSigners: [{ publicKey: nftMint, secretKey: new Uint8Array(64) } as typeof nft], signWith: [], ...(blockhash ? { blockhash } : {}) });
   const summary = openSummaryFixture({ wallet, nftMint: nftMint.toBase58(), blockhash: tx.message.recentBlockhash });
   return { unsignedTransaction: toBase64(tx), permit: "synthetic-permit", summary: { ...summary, poolId: pair.poolAddress,
-    quote: { ...summary.quote, poolId: pair.poolAddress, inputMint: NATIVE_SOL_MINT, inputKind: "native" as "native" | "token", inputDecimals: 9 } } };
+    quote: { ...summary.quote, poolId: pair.poolAddress, inputMint: NATIVE_SOL_MINT, inputKind: "token" as "native" | "token", inputDecimals: 9 } } };
 }
 function Suspender() { if (suspend) throw new Promise(() => {}); return null; }
 function Harness() {
@@ -117,7 +117,7 @@ beforeEach(() => {
     init?.signal?.addEventListener("abort", () => note("fetch-abort", url), { once: true });
     const body = JSON.parse(String(init?.body ?? "{}"));
     let response: Response;
-    if (url.startsWith("/api/wallet?")) response = scanError ? Response.json({ error: "Synthetic scan failure" }, { status: 500 }) : Response.json({ assets: [{ kind: "native", mint: NATIVE_SOL_MINT, decimals: 9, balance: "1000000000", eligible: true }] });
+    if (url.startsWith("/api/wallet?")) response = scanError ? Response.json({ error: "Synthetic scan failure" }, { status: 500 }) : Response.json({ assets: [{ kind: "token", mint: NATIVE_SOL_MINT, decimals: 9, balance: "1000000000", eligible: true }] });
     else if (url === "/api/open-quote") response = Response.json(preparedValue.summary.quote);
     else if (url === "/api/open-prepare") {
       // The app now owns the mint key; the server prepares its requested public key unsigned.

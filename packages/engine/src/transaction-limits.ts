@@ -5,6 +5,17 @@ export const SOLANA_TX_SIZE_LIMIT = 1_232;
 /** Compute-unit limit requested by every atomic swap + CLMM transaction. */
 export const ATOMIC_COMPUTE_UNIT_LIMIT = 1_400_000;
 
+/**
+ * Wallets (Phantom) that add their own priority fee price it per *requested* CU, so a
+ * 1.4M limit on a ~65k-CU swap multiplies that fee ~20x. Single-swap steps request the
+ * simulated units plus headroom (route drift and wallet-appended guard instructions).
+ */
+export function measuredComputeUnitLimit(unitsConsumed: number): number {
+  if (!Number.isFinite(unitsConsumed) || unitsConsumed <= 0) return ATOMIC_COMPUTE_UNIT_LIMIT;
+  const units = Math.ceil(unitsConsumed);
+  return Math.min(ATOMIC_COMPUTE_UNIT_LIMIT, units + Math.max(Math.ceil(units / 4), 50_000));
+}
+
 export const exceedsTxSizeLimit = (bytes: number) => bytes > SOLANA_TX_SIZE_LIMIT;
 
 export const atomicComputeUnitLimitInstruction = () =>

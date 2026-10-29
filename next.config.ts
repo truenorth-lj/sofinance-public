@@ -7,6 +7,8 @@ export const nextConfig: NextConfig = {
   reactCompiler: true,
   // @sofinance/engine is a workspace package shipping TypeScript source.
   transpilePackages: ["@sofinance/engine"],
+  // Client-visible deployment environment ("preview" enables SOL input on previews only; see feature-flags.ts).
+  env: { NEXT_PUBLIC_SOFI_DEPLOY_ENV: process.env.VERCEL_ENV ?? "" },
   // PostHog's ingest paths end in "/" (e.g. /i/v0/e/). Without this, Next would 308 them before the
   // relay rewrite. Page trailing-slash redirects are kept in src/proxy.ts instead.
   skipTrailingSlashRedirect: true,

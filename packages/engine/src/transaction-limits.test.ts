@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Keypair, PublicKey, TransactionMessage, VersionedTransaction, SystemProgram } from "@solana/web3.js";
-import { ATOMIC_COMPUTE_UNIT_LIMIT, SOLANA_TX_SIZE_LIMIT, atomicComputeUnitLimitInstruction, exceedsTxSizeLimit, isSingleWalletSignedTransaction, isZeroSignature } from "./transaction-limits";
+import { ATOMIC_COMPUTE_UNIT_LIMIT, measuredComputeUnitLimit, SOLANA_TX_SIZE_LIMIT, atomicComputeUnitLimitInstruction, exceedsTxSizeLimit, isSingleWalletSignedTransaction, isZeroSignature } from "./transaction-limits";
 import { MAX_OPEN_TRANSACTION_BYTES } from "./open-transaction";
 import { BEAM_TX_SIZE_LIMIT } from "./solami-beam";
 
@@ -29,5 +29,18 @@ describe("transaction limits", () => {
     expect(isSingleWalletSignedTransaction(tx(payer), payer.publicKey.toBase58())).toBe(true);
     expect(isSingleWalletSignedTransaction(tx(payer, false), payer.publicKey.toBase58())).toBe(false);
     expect(isSingleWalletSignedTransaction(tx(payer), Keypair.generate().publicKey.toBase58())).toBe(false);
+  });
+});
+
+describe("measuredComputeUnitLimit", () => {
+  it("requests simulated units plus headroom instead of the 1.4M ceiling", () => {
+    // Real step-1 swap: ~62k simulated, 71.6k on chain after Phantom's guard instructions.
+    expect(measuredComputeUnitLimit(61_800)).toBe(111_800);
+    expect(measuredComputeUnitLimit(400_000)).toBe(500_000);
+    expect(measuredComputeUnitLimit(1_300_000)).toBe(ATOMIC_COMPUTE_UNIT_LIMIT);
+  });
+  it("falls back to the ceiling when simulation reported no units", () => {
+    expect(measuredComputeUnitLimit(0)).toBe(ATOMIC_COMPUTE_UNIT_LIMIT);
+    expect(measuredComputeUnitLimit(Number.NaN)).toBe(ATOMIC_COMPUTE_UNIT_LIMIT);
   });
 });

@@ -1,7 +1,9 @@
-import { TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { ASSOCIATED_TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { createHash } from "node:crypto";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { Keypair, PublicKey, TransactionInstruction } from "@solana/web3.js";
+import { Keypair, PublicKey, SystemProgram, TransactionInstruction } from "@solana/web3.js";
+import { NATIVE_SOL_MINT } from "@sofinance/engine/ids";
+import { nativeSolOwnerAta, swapFeeRecipientAta } from "@sofinance/engine/swap/fee";
 vi.mock("server-only", () => ({}));
 vi.mock("@sofinance/engine/rpc", async (importOriginal) => ({
   ...await importOriginal<typeof import("@sofinance/engine/rpc")>(),
@@ -20,6 +22,7 @@ import { buildSelectedAddInstruction } from "./selected-add-instruction";
 import { simulateAndVerifySelectedTransaction } from "./selected-simulation";
 import { fetchBeamTipAddress } from "@sofinance/engine/solami-beam";
 import { JupiterNoRouteError } from "@sofinance/engine/swap/jupiter";
+import { walletReturnedTransactionMatches } from "@sofinance/engine/wallet-returned-tx";
 import { buildAndSimulateSelectedZap } from "./selected-atomic";
 import { JUPITER_NO_ROUTE_CODE } from "./selected-no-route";
 import { HIGH_ACCOUNT_DEXES } from "./selected-route-retry";
@@ -173,4 +176,74 @@ it("includes the selected-add protocol transfer before the swap", async () => {
   expect(transaction.message.staticAccountKeys[fee.programIdIndex]!.equals(TOKEN_PROGRAM_ID)).toBe(true);
   expect(fee.data[0]).toBe(12); // TransferChecked
   expect(Buffer.from(fee.data).readBigUInt64LE(1)).toBe(1n);
+  const dest = transaction.message.staticAccountKeys[fee.accountKeyIndexes[2]!];
+  expect(dest!.equals(getAssociatedTokenAddressSync(new PublicKey(value.state.inputMint), recipient, true, TOKEN_PROGRAM_ID))).toBe(true);
+});
+function nativeSelectedBundle(recipient: PublicKey, feeInRoute: boolean) {
+  const value = writableBundle(new PublicKey(state.ataA));
+  value.quote.feeBps = 10; value.quote.feeAmount = "1"; value.quote.feeWallet = recipient.toBase58();
+  value.quote.requested = "1000";
+  value.state = { ...value.state, inputMint: NATIVE_SOL_MINT, inputKind: "native", inputDecimals: 9,
+    inputAccount: null, inputTokenProgram: null, wsolBalance: "0" };
+  value.legs[0]!.inputMint = NATIVE_SOL_MINT;
+  value.legs[0]!.feeAmount = 1n;
+  (value.legs[0]! as { feeInRoute?: boolean }).feeInRoute = feeInRoute;
+  (value.legs[0]!.route! as { inputMint: string; inAmount: string }).inputMint = NATIVE_SOL_MINT;
+  // Jupiter's input-mint platform fee is taken from the full leg spend.
+  (value.legs[0]!.route! as { inAmount: string }).inAmount = feeInRoute ? "1000" : "999";
+  vi.mocked(readSelectedPositionState).mockResolvedValue(value.state);
+  vi.mocked(getSelectedQuoteBundle).mockResolvedValue(value);
+  return value;
+}
+
+it("native SOL selected-add charges the fee inside the Jupiter swap: no SOL/wSOL transfer or ATA create for the fee wallet", async () => {
+  const recipient = key();
+  vi.stubEnv("SOFINANCE_FEE_WALLET", recipient.toBase58()); vi.stubEnv("SOFINANCE_FEE_BPS", "10");
+  nativeSelectedBundle(recipient, true);
+  const { transaction } = await buildAndSimulateSelectedZap(wallet.toBase58(), { ...selection, inputMint: NATIVE_SOL_MINT, inputKind: "native" }, "0.001", 9900);
+  const compiled = transaction.message.compiledInstructions.map(ix => ({
+    program: transaction.message.staticAccountKeys[ix.programIdIndex]!,
+    data: Buffer.from(ix.data),
+    keys: ix.accountKeyIndexes.map(index => transaction.message.staticAccountKeys[index]!),
+  }));
+  const userWsol = nativeSolOwnerAta(wallet);
+  const feeAta = swapFeeRecipientAta(recipient, new PublicKey(NATIVE_SOL_MINT), TOKEN_PROGRAM_ID);
+  expect(compiled.some(ix => ix.program.equals(SystemProgram.programId) && ix.keys.some(k => k.equals(recipient) || k.equals(feeAta)))).toBe(false);
+  expect(compiled.some(ix => ix.program.equals(ASSOCIATED_TOKEN_PROGRAM_ID) && ix.keys[2]?.equals(recipient))).toBe(false);
+  expect(compiled.some(ix => ix.program.equals(TOKEN_PROGRAM_ID) && ix.keys.some(k => k.equals(feeAta) || k.equals(recipient)))).toBe(false);
+  const wrap = compiled.find(ix => ix.program.equals(SystemProgram.programId) && ix.keys[1]?.equals(userWsol));
+  expect(wrap?.data.readBigUInt64LE(4)).toBe(1000n);
+  expect(walletReturnedTransactionMatches(transaction, transaction, wallet.toBase58())).toBe(true);
+});
+
+it("refuses a native SOL selected-add whose fee is not inside the Jupiter swap", async () => {
+  const recipient = key();
+  vi.stubEnv("SOFINANCE_FEE_WALLET", recipient.toBase58()); vi.stubEnv("SOFINANCE_FEE_BPS", "10");
+  nativeSelectedBundle(recipient, false);
+  await expect(buildAndSimulateSelectedZap(wallet.toBase58(), { ...selection, inputMint: NATIVE_SOL_MINT, inputKind: "native" }, "0.001", 9900))
+    .rejects.toThrow("Native SOL protocol fee must be collected inside the Jupiter swap");
+});
+
+it("collects a non-USDC selected-add fee in the input mint, not via a USDC Jupiter hop", async () => {
+  const recipient = key();
+  const inputMint = key();
+  vi.stubEnv("SOFINANCE_FEE_WALLET", recipient.toBase58()); vi.stubEnv("SOFINANCE_FEE_BPS", "10");
+  const value = writableBundle(new PublicKey(state.ataA));
+  value.quote.feeBps = 10; value.quote.feeAmount = "1"; value.quote.feeWallet = recipient.toBase58();
+  value.state = { ...value.state, inputMint: inputMint.toBase58(), inputTokenProgram: TOKEN_PROGRAM_ID.toBase58(), inputDecimals: 6 };
+  value.legs[0]!.inputMint = value.state.inputMint;
+  (value.legs[0]!.route! as { inputMint: string }).inputMint = value.state.inputMint;
+  vi.mocked(readSelectedPositionState).mockResolvedValue(value.state);
+  value.legs[0]!.feeAmount = 1n;
+  (value.legs[0]!.route! as { inAmount: string }).inAmount = "999";
+  vi.mocked(getSelectedQuoteBundle).mockResolvedValue(value);
+  const { transaction } = await buildAndSimulateSelectedZap(wallet.toBase58(), selection, "0.001", 9900);
+  const fee = transaction.message.compiledInstructions.find(ix =>
+    transaction.message.staticAccountKeys[ix.programIdIndex]!.equals(TOKEN_PROGRAM_ID) && ix.data[0] === 12);
+  expect(fee).toBeDefined();
+  expect(Buffer.from(fee!.data).readBigUInt64LE(1)).toBe(1n);
+  const dest = transaction.message.staticAccountKeys[fee!.accountKeyIndexes[2]!];
+  expect(dest!.equals(getAssociatedTokenAddressSync(inputMint, recipient, true, TOKEN_PROGRAM_ID))).toBe(true);
+  expect(transaction.message.compiledInstructions.some(ix =>
+    transaction.message.staticAccountKeys[ix.programIdIndex]!.toBase58() === "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4")).toBe(false);
 });

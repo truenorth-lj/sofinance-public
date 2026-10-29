@@ -9,16 +9,25 @@ export class SolInputDisabledError extends Error {
   }
 }
 
+/** Vercel preview deployments only (never production or local/CI) — see feature-flags.ts. */
+export function solInputPreviewOverride(): boolean {
+  return (process.env.NEXT_PUBLIC_SOFI_DEPLOY_ENV || process.env.VERCEL_ENV) === "preview";
+}
+
+export function solInputEnabled(): boolean {
+  return SOL_INPUT_ENABLED || solInputPreviewOverride();
+}
+
 /** True when this input kind is native SOL and SOL input is switched off. */
 export function isSolInputBlocked(kind: "native" | "token"): boolean {
-  return !SOL_INPUT_ENABLED && kind === "native";
+  return !solInputEnabled() && kind === "native";
 }
 
 /** Marks native SOL as ineligible (with the user-facing note) while SOL input is off. */
 export function applySolInputPolicy<T extends { kind: "native" | "token"; eligible: boolean; reason: string | null }>(
   assets: T[],
 ): T[] {
-  if (SOL_INPUT_ENABLED) return assets;
+  if (solInputEnabled()) return assets;
   return assets.map((asset) => asset.kind === "native"
     ? { ...asset, eligible: false, reason: SOL_INPUT_DISABLED_MESSAGE }
     : asset);

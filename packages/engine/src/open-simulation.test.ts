@@ -46,8 +46,10 @@ it("verifies a native SOL open with funded Jupiter intermediate USDC and fails c
   ]);
   const connection = {
     getMultipleAccountsInfo: vi.fn(async (keys: PublicKey[]) => keys.map(() => null)),
-    getMultipleAccountsInfoAndContext: vi.fn(async (keys: PublicKey[]) => ({ context: { slot: 123 }, value: keys.map(k => k.equals(intermediate) ? before : null) })),
-    getBalance: vi.fn(async () => 100_000_000),
+    getMultipleAccountsInfoAndContext: vi.fn(async (keys: PublicKey[]) => ({ context: { slot: 123 }, value: keys.map(k =>
+      k.equals(intermediate) ? before : k.equals(wallet) ? { ...before, owner: SystemProgram.programId, data: Buffer.alloc(0), lamports: 100_000_000 } : null) })),
+    // A lagging read-route provider still showing a step-1 swap's SOL; must never be the "before" balance.
+    getBalance: vi.fn(async () => 104_505_000),
     simulateTransaction: vi.fn(async (_tx, config: { accounts: { addresses: string[] } }) => ({ value: { err: null, accounts: config.accounts.addresses.map(address => {
       const info = after.get(address); return info ? { ...info, owner: info.owner.toBase58(), data: [info.data.toString("base64"), "base64"] } : null;
     }) } })),
@@ -61,4 +63,94 @@ it("verifies a native SOL open with funded Jupiter intermediate USDC and fails c
   await expect(simulateAndVerifyOpenTransaction(input)).rejects.toThrow(intermediate.toBase58());
   after.delete(intermediate.toBase58());
   await expect(simulateAndVerifyOpenTransaction(input)).rejects.toThrow(intermediate.toBase58());
+  // Step 2/2: the snapshot (wallet SOL included) is read at or after the step-1 slot, and the
+  // simulation never runs before it. SOL debit is measured within one slot-consistent pair.
+  after.set(intermediate.toBase58(), before);
+  vi.mocked(connection.simulateTransaction).mockClear();
+  await expect(simulateAndVerifyOpenTransaction({ ...input, minContextSlot: 500 })).resolves.toMatchObject({ solDebitLamports: "2000000" });
+  expect(connection.getBalance).not.toHaveBeenCalled();
+  expect(connection.getMultipleAccountsInfoAndContext).toHaveBeenCalledWith(expect.arrayContaining([wallet]), { commitment: "confirmed", minContextSlot: 500 });
+  expect(connection.simulateTransaction).toHaveBeenCalledWith(transaction, expect.objectContaining({ minContextSlot: 500 }));
+  // The cap itself still bounds the open: rent + fees only.
+  await expect(simulateAndVerifyOpenTransaction({ ...input, maxSolDebitLamports: 1_999_999n })).rejects.toThrow("Simulated SOL expenditure or remaining balance exceeds limit");
+});
+
+it("step 2/2 token open: a Phantom-added SetComputeUnitPrice may spend into the SOL reserve, but extra SOL movement still fails", async () => {
+  // Shape of PR #176 real run 4: wallet 16,523,541 lamports after step 1/2; step 2/2 pays
+  // 5,267,960 refundable rent + 10,000 base fee; Phantom appended a 2.5M µL/CU price on the
+  // 1.4M CU limit (3.5M lamports), leaving 7.7M < the 10M reserve that prepare had checked.
+  const { ComputeBudgetProgram } = await import("@solana/web3.js");
+  const key = () => Keypair.generate().publicKey;
+  const wallet = key(), nftMint = key(), mintA = key(), mintB = key(), pool = key(), program = key();
+  const ataA = getAssociatedTokenAddressSync(mintA, wallet), ataB = getAssociatedTokenAddressSync(mintB, wallet);
+  const nftAta = getAssociatedTokenAddressSync(nftMint, wallet, false, TOKEN_2022_PROGRAM_ID);
+  const positionAddress = getPdaPersonalPositionAddress(program, nftMint).publicKey;
+  const token = (mint: PublicKey, amount: bigint, owner = TOKEN_PROGRAM_ID) => {
+    const data = Buffer.alloc(owner.equals(TOKEN_2022_PROGRAM_ID) ? 166 : 165);
+    mint.toBuffer().copy(data); wallet.toBuffer().copy(data, 32); data.writeBigUInt64LE(amount, 64); data[108] = 1;
+    if (data.length > 165) data[165] = 2;
+    return { data, owner, executable: false, lamports: 2039280, rentEpoch: 0 };
+  };
+  const position = Buffer.alloc(PersonalPositionLayout.span);
+  nftMint.toBuffer().copy(position, PersonalPositionLayout.offsetOf("nftMint"));
+  pool.toBuffer().copy(position, PersonalPositionLayout.offsetOf("poolId"));
+  position.writeInt32LE(-100, PersonalPositionLayout.offsetOf("tickLower"));
+  position.writeInt32LE(100, PersonalPositionLayout.offsetOf("tickUpper"));
+  position.writeBigUInt64LE(15n, PersonalPositionLayout.offsetOf("liquidity"));
+  const solBefore = 16_523_541, rent = 5_267_960, baseFee = 10_000;
+  let solAfter = 0;
+  const system = (lamports: number) => ({ data: Buffer.alloc(0), owner: SystemProgram.programId, executable: false, lamports, rentEpoch: 0 });
+  const after = () => new Map([
+    [positionAddress.toBase58(), { ...token(mintA, 0n), owner: program, data: position }],
+    [nftAta.toBase58(), token(nftMint, 1n, TOKEN_2022_PROGRAM_ID)],
+    [ataA.toBase58(), token(mintA, 26_038n + 3n)], [ataB.toBase58(), token(mintB, 20n)],
+    [wallet.toBase58(), system(solAfter)],
+  ]);
+  const connection = {
+    getMultipleAccountsInfo: vi.fn(async (keys: PublicKey[]) => keys.map(() => null)),
+    getMultipleAccountsInfoAndContext: vi.fn(async (keys: PublicKey[]) => ({ context: { slot: 123 }, value: keys.map(k =>
+      k.equals(ataA) ? token(mintA, 26_734n) : k.equals(ataB) ? token(mintB, 20n) : k.equals(wallet) ? system(solBefore) : null) })),
+    simulateTransaction: vi.fn(async (_tx, config: { accounts: { addresses: string[] } }) => {
+      const state = after();
+      return { value: { err: null, unitsConsumed: 127_209, accounts: config.accounts.addresses.map(address => {
+        const info = state.get(address); return info ? { ...info, owner: info.owner.toBase58(), data: [info.data.toString("base64"), "base64"] } : null;
+      }) } };
+    }),
+  } as unknown as Connection;
+  const blockhash = key().toBase58();
+  const route = new TransactionInstruction({ programId: JUPITER_PROGRAM_ID, keys: [{ pubkey: ataA, isSigner: false, isWritable: true }] });
+  const compile = (instructions: TransactionInstruction[]) =>
+    new VersionedTransaction(new TransactionMessage({ payerKey: wallet, recentBlockhash: blockhash, instructions }).compileToV0Message());
+  const prepared = compile([ComputeBudgetProgram.setComputeUnitLimit({ units: 1_400_000 }), route]);
+  // Phantom-style: wallet prepends its own CU price (and leaves our limit in place).
+  const signed = compile([ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 2_500_000 }),
+    ComputeBudgetProgram.setComputeUnitLimit({ units: 1_400_000 }), route]);
+  const priority = 3_500_000;
+  const state = { programId: program.toBase58(), poolId: pool.toBase58(), mintA: mintA.toBase58(), mintB: mintB.toBase58(), ataA: ataA.toBase58(), ataB: ataB.toBase58(),
+    programA: TOKEN_PROGRAM_ID.toBase58(), programB: TOKEN_PROGRAM_ID.toBase58(), inputKind: "token", inputMint: mintA.toBase58(),
+    inputAccount: ataA.toBase58(), inputTokenProgram: TOKEN_PROGRAM_ID.toBase58() } as OpenPoolState;
+  const maxSolDebitLamports = BigInt(rent + baseFee + 100_000);
+  const input = { connection, transaction: signed, prepared, wallet, state, nftMint, tickLower: -100, tickUpper: 100,
+    requested: 696n, expectedLiquidity: 15n, maxSolDebitLamports, sigVerify: true };
+
+  solAfter = solBefore - rent - baseFee - priority;
+  expect(solAfter).toBeLessThan(10_000_000);
+  await expect(simulateAndVerifyOpenTransaction(input)).resolves.toMatchObject({ solDebitLamports: String(rent + baseFee + priority) });
+  // Without the prepared message there is no wallet-added fee to recognise: the old rejection.
+  await expect(simulateAndVerifyOpenTransaction({ ...input, prepared: undefined })).rejects.toThrow("Simulated SOL expenditure or remaining balance exceeds limit");
+  // Any SOL moved beyond rent + fees + the wallet's own priority fee (e.g. a transfer elsewhere) still fails.
+  solAfter = solBefore - rent - baseFee - priority - 200_000;
+  await expect(simulateAndVerifyOpenTransaction(input)).rejects.toThrow("Simulated SOL expenditure or remaining balance exceeds limit");
+  // A wallet that would end below the reserve from our own costs alone still fails.
+  solAfter = solBefore - rent - baseFee - priority;
+  const poorer = { ...input, connection: { ...connection, getMultipleAccountsInfoAndContext: vi.fn(async (keys: PublicKey[]) => ({ context: { slot: 123 }, value: keys.map(k =>
+    k.equals(ataA) ? token(mintA, 26_734n) : k.equals(ataB) ? token(mintB, 20n) : k.equals(wallet) ? system(solBefore - 6_000_000) : null) })) } as unknown as Connection };
+  solAfter = solBefore - 6_000_000 - rent - baseFee - priority;
+  await expect(simulateAndVerifyOpenTransaction(poorer)).rejects.toThrow("Simulated SOL expenditure or remaining balance exceeds limit");
+  // With the measured CU limit (~127k used -> ~177k requested) the same Phantom price costs ~0.00044 SOL.
+  const { measuredComputeUnitLimit } = await import("./transaction-limits");
+  const { computeBudgetPriorityLamports } = await import("./wallet-priority-fee");
+  const sized = compile([ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 2_500_000 }),
+    ComputeBudgetProgram.setComputeUnitLimit({ units: measuredComputeUnitLimit(127_209) }), route]);
+  expect(computeBudgetPriorityLamports(sized)).toBeLessThan(500_000n);
 });

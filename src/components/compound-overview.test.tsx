@@ -28,3 +28,19 @@ it("shows the combined USDC harvest above token amounts without other sections",
     vi.unstubAllGlobals();
   }
 });
+
+it("shows the protocol fee in the compound swap input token", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const state = { mintA: "INTCx", mintB: "INTC", decimalsA: 8, decimalsB: 6, fees: { a: "687", b: "4" }, pricing: { priceUsdA: 100, priceUsdB: 100 } } as CompoundSummary["state"];
+  const summary = { state, simulatedHarvest: state.fees, feeBps: 10, feeAmount: "85",
+    swaps: [{ inputMint: "INTCx", inputDecimals: 8, feeAmount: "85", feeBps: 10 }] } as unknown as CompoundSummary;
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  try {
+    await act(async () => root.render(createElement(CompoundOverview, { state, summary, tokenLabel: mint => mint, prices: { rate: 150, usdcUsd: 1 } })));
+    expect(container.textContent).toContain("Protocol fee (0.10%): 0.00000085 INTCx");
+  } finally {
+    await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});
