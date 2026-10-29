@@ -14,6 +14,7 @@ import { notifyPositionHistoryChange } from "@/lib/position-history-refresh";
 import { useOpenAttempt } from "./use-open-attempt";
 import { captureGrowthEventOnce } from "@/lib/analytics/client";
 import { GROWTH_EVENTS, openEventProperties } from "@/lib/analytics/events";
+import { openOutcomeFailureProperties } from "@/lib/analytics/errors";
 import { SOL_INPUT_DISABLED_MESSAGE } from "@/lib/feature-flags";
 import { applySolInputPolicy, isSolInputBlocked } from "@/lib/sol-input-policy";
 
@@ -62,16 +63,16 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
   useEffect(() => {
     const attempt = open.attempt;
     if (!attempt) return;
-    const properties = openEventProperties(pair);
+    const properties = openEventProperties(pair, { wallet });
     if (open.status === "confirmed") {
       captureGrowthEventOnce(`open-ok:${attempt.signature}`, GROWTH_EVENTS.openSuccess, properties);
     } else if (open.status === "failed" || open.status === "expired") {
       captureGrowthEventOnce(`open-fail:${attempt.signature}`, GROWTH_EVENTS.openFailed, {
         ...properties,
-        error_class: open.status === "expired" ? "expired" : "onchain_failed",
+        ...openOutcomeFailureProperties(open.status),
       });
     }
-  }, [open.attempt, open.status, pair]);
+  }, [open.attempt, open.status, pair, wallet]);
   const [discovery, setDiscovery] = useState<WalletDiscovery | null>(null);
   const [inputMint, setInputMint] = useState<string | null>(null);
   const [inputKind, setInputKind] = useState<"native" | "token">("token");

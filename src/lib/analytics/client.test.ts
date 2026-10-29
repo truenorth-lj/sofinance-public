@@ -7,6 +7,9 @@ const posthog = vi.hoisted(() => ({
   register: vi.fn(),
   identify: vi.fn(),
   setPersonProperties: vi.fn(),
+  unregister: vi.fn(),
+  reset: vi.fn(),
+  get_distinct_id: vi.fn((): string => "0192f0c4-anon"),
 }));
 
 vi.mock("posthog-js", () => ({ default: posthog }));
@@ -16,13 +19,14 @@ import {
   captureGrowthEvent,
   capturePageview,
   captureWalletConnected,
+  captureWalletDisconnected,
   initGrowthAnalytics,
   posthogApiHost,
   posthogProjectKey,
   resetGrowthAnalyticsForTests,
 } from "./client";
 import { GROWTH_EVENTS } from "./events";
-import { hashWallet } from "./hash-wallet";
+import { INTERNAL_WALLETS } from "./internal-wallets";
 
 beforeEach(() => {
   resetGrowthAnalyticsForTests();
@@ -84,14 +88,55 @@ describe("event firing when the key is set", () => {
     expect(JSON.parse(window.localStorage.getItem(FIRST_TOUCH_KEY)!)).toMatchObject({ ref: "x-launch" });
   });
 
-  it("identifies a hashed wallet and never sends the address as an event property", async () => {
+  it("identifies by the public address and tags wallet_connected with is_internal", async () => {
     const wallet = "So11111111111111111111111111111111111111112";
     await initGrowthAnalytics();
     await captureWalletConnected(wallet);
-    expect(posthog.identify).toHaveBeenCalledWith(`wallet:${await hashWallet(wallet)}`);
-    expect(posthog.capture).toHaveBeenCalledWith(GROWTH_EVENTS.walletConnected, undefined);
+    expect(posthog.reset).not.toHaveBeenCalled();
+    expect(posthog.identify).toHaveBeenCalledWith(wallet);
+    const properties = { wallet_address: wallet, is_internal: false };
+    expect(posthog.register).toHaveBeenCalledWith(properties);
+    expect(posthog.setPersonProperties).toHaveBeenCalledWith(properties);
+    expect(posthog.capture).toHaveBeenCalledWith(GROWTH_EVENTS.walletConnected, properties);
+    // Raw `wallet`/`address` keys are still stripped; only `wallet_address` is sent.
     captureGrowthEvent(GROWTH_EVENTS.openSuccess, { wallet, pool: "pool" });
     expect(posthog.capture).toHaveBeenLastCalledWith(GROWTH_EVENTS.openSuccess, { pool: "pool" });
+  });
+
+  it("marks team wallets internal", async () => {
+    await initGrowthAnalytics();
+    await captureWalletConnected(INTERNAL_WALLETS[0]!);
+    expect(posthog.capture).toHaveBeenCalledWith(GROWTH_EVENTS.walletConnected,
+      { wallet_address: INTERNAL_WALLETS[0]!, is_internal: true });
+  });
+
+  it("resets a previous wallet identity (legacy hashed id or another address) before identifying", async () => {
+    await initGrowthAnalytics();
+    posthog.get_distinct_id.mockReturnValueOnce(`wallet:${"a".repeat(64)}`);
+    await captureWalletConnected(INTERNAL_WALLETS[1]!);
+    expect(posthog.reset).toHaveBeenCalledTimes(1);
+    posthog.get_distinct_id.mockReturnValueOnce(INTERNAL_WALLETS[1]!);
+    await captureWalletConnected(INTERNAL_WALLETS[2]!);
+    expect(posthog.reset).toHaveBeenCalledTimes(2);
+    posthog.get_distinct_id.mockReturnValueOnce(INTERNAL_WALLETS[2]!);
+    await captureWalletConnected(INTERNAL_WALLETS[2]!);
+    expect(posthog.reset).toHaveBeenCalledTimes(2);
+  });
+
+  it("drops the wallet tags and resets on disconnect, keeping first-touch attribution", async () => {
+    window.history.replaceState({}, "", "/app?ref=x-launch");
+    await initGrowthAnalytics(window.location.search);
+    captureWalletDisconnected();
+    expect(posthog.reset).not.toHaveBeenCalled();
+    await captureWalletConnected(INTERNAL_WALLETS[0]!);
+    posthog.register.mockClear();
+    captureWalletDisconnected();
+    expect(posthog.unregister).toHaveBeenCalledWith("wallet_address");
+    expect(posthog.unregister).toHaveBeenCalledWith("is_internal");
+    expect(posthog.reset).toHaveBeenCalledTimes(1);
+    expect(posthog.register).toHaveBeenCalledWith(expect.objectContaining({ ref: "x-launch" }));
+    captureWalletDisconnected();
+    expect(posthog.reset).toHaveBeenCalledTimes(1);
   });
 
   it("respects Do Not Track without initializing", async () => {

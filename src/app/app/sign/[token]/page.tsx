@@ -16,7 +16,7 @@ import type { OpenPositionSummary } from "@sofinance/engine/open-types";
 import { useOpenAttempt } from "@/components/use-open-attempt";
 import { getStoredAttribution } from "@/lib/analytics/attribution";
 import { captureGrowthEvent, captureGrowthEventOnce } from "@/lib/analytics/client";
-import { classifyOpenError } from "@/lib/analytics/errors";
+import { openFailureProperties, openOutcomeFailureProperties } from "@/lib/analytics/errors";
 import { GROWTH_EVENTS, openEventProperties } from "@/lib/analytics/events";
 
 type Status = "loading" | "expired" | "wallet-mismatch" | "ready" | "signing" | "submitting" | "success" | "error";
@@ -39,13 +39,13 @@ export default function SignPage() {
       poolAddress: summary.poolId,
       symbolA: summary.quote.symbolA ?? "",
       symbolB: summary.quote.symbolB ?? "",
-    });
+    }, { wallet: summary.wallet, inputKind: summary.quote.inputKind });
     if (open.status === "confirmed") {
       captureGrowthEventOnce(`open-ok:${attempt.signature}`, GROWTH_EVENTS.openSuccess, properties);
     } else if (open.status === "failed" || open.status === "expired") {
       captureGrowthEventOnce(`open-fail:${attempt.signature}`, GROWTH_EVENTS.openFailed, {
         ...properties,
-        error_class: open.status === "expired" ? "expired" : "onchain_failed",
+        ...openOutcomeFailureProperties(open.status),
       });
     }
   }, [open.attempt, open.status, payload]);
@@ -117,7 +117,7 @@ export default function SignPage() {
         poolAddress: (payload.submitArgs.summary as OpenPositionSummary).poolId,
         symbolA: (payload.submitArgs.summary as OpenPositionSummary).quote.symbolA ?? "",
         symbolB: (payload.submitArgs.summary as OpenPositionSummary).quote.symbolB ?? "",
-      })
+      }, { wallet, inputKind: (payload.submitArgs.summary as OpenPositionSummary).quote.inputKind })
       : {};
     if (payload.kind === "open-position") captureGrowthEvent(GROWTH_EVENTS.openStarted, openProperties);
     
@@ -212,7 +212,7 @@ export default function SignPage() {
       if (payload.kind === "open-position" && (!openAttempt || unsent)) {
         captureGrowthEvent(GROWTH_EVENTS.openFailed, {
           ...openProperties,
-          error_class: classifyOpenError(caught),
+          ...openFailureProperties(caught),
         });
       }
       setSignStatus("idle");

@@ -19,7 +19,11 @@ import { openAttemptKey, persistOpenAttempt } from "@/lib/open-attempt";
 import { buildTransaction, openSummaryFixture, testKeypair, toBase64 } from "@/lib/test-support/send-fixtures";
 import { SOL_SWAP_RECEIPT_TTL_MS, solSwapReceiptKey, type PendingSolSwapReceipt } from "./transactions/open/sol-swap-receipt-store";
 
-const mocks = vi.hoisted(() => ({ address: "", sign: vi.fn() }));
+const mocks = vi.hoisted(() => ({ address: "", sign: vi.fn(), growth: vi.fn() }));
+vi.mock("@/lib/analytics/client", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/analytics/client")>(),
+  captureGrowthEvent: mocks.growth,
+}));
 vi.mock("./wallet-connection", () => ({ useWalletConnection: () => ({ address: mocks.address, connected: true, signTransaction: mocks.sign }) }));
 const payer = testKeypair(1), otherPayer = testKeypair(3);
 const wallet = payer.publicKey.toBase58(), otherWallet = otherPayer.publicKey.toBase58();
@@ -33,6 +37,7 @@ let controller: ReturnType<typeof useOpenPositionController>;
 let root: Root, container: HTMLDivElement;
 let chainStatus: string;
 let prepareFails: boolean;
+let swapPrepareFails: boolean;
 let fetchMock: ReturnType<typeof vi.fn>;
 
 function receipt(over: Partial<PendingSolSwapReceipt> = {}): PendingSolSwapReceipt {
@@ -71,8 +76,8 @@ async function reload() {
 
 beforeEach(() => {
   vi.useFakeTimers(); vi.setSystemTime(1700000000000); currentPair = pair; vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  window.localStorage.clear(); mocks.address = wallet; chainStatus = "pending"; prepareFails = false;
-  mocks.sign.mockReset();
+  window.localStorage.clear(); mocks.address = wallet; chainStatus = "pending"; prepareFails = false; swapPrepareFails = false;
+  mocks.sign.mockReset(); mocks.growth.mockReset();
   mocks.sign.mockImplementation(async (tx: VersionedTransaction) => { tx.sign([payer]); return tx; });
   fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     const body = typeof init?.body === "string" ? JSON.parse(init.body) : {};
@@ -84,6 +89,7 @@ beforeEach(() => {
       return Response.json(preparedOpen(testKeypair(2).publicKey, { inputMint: body.inputMint, inputKind: body.inputKind }).summary.quote);
     }
     if (url === "/api/sol-swap-prepare") {
+      if (swapPrepareFails) return Response.json({ error: "Jupiter route unavailable" }, { status: 502 });
       const tx = buildTransaction({ payer, signWith: [] });
       return Response.json({ unsignedTransaction: toBase64(tx), permit: "p", summary: { operation: "sol-swap-step", wallet, poolId,
         requested: "2000000", outputMint: pair.mintA, outputSymbol: "AAA", blockhash: tx.message.recentBlockhash,
@@ -221,5 +227,27 @@ describe("step 1/2 receipt persistence", () => {
     expect(stored()).toBeNull();
     await reload();
     expect(controller.pendingSwap).toBeNull();
+  });
+
+  it("tags open_position_failed with the failing step of the two-step SOL open", async () => {
+    const failed = () => mocks.growth.mock.calls.filter(([name]) => name === "open_position_failed").map(([, props]) => props as Record<string, unknown>);
+    await mount();
+    await act(async () => controller.chooseAsset("native", NATIVE_SOL_MINT)); await advance(450);
+    await act(async () => controller.changeAmount("0.002")); await advance(450);
+    // Step 1/2 fails before anything lands.
+    swapPrepareFails = true;
+    await act(async () => controller.signAndSend()); await advance(1);
+    expect(failed()).toHaveLength(1);
+    expect(failed()[0]).toMatchObject({ input_kind: "native", open_step: 1, open_resumed: false, wallet_address: wallet });
+    // Step 1/2 lands, step 2/2 prepare fails.
+    swapPrepareFails = false; prepareFails = true;
+    await act(async () => controller.signAndSend()); await advance(1);
+    expect(failed()).toHaveLength(2);
+    expect(failed()[1]).toMatchObject({ input_kind: "native", open_step: 2, open_resumed: false });
+    // "Continue open (2/2)" from the stored receipt fails again.
+    await act(async () => controller.signAndSend()); await advance(1);
+    expect(failed()).toHaveLength(3);
+    expect(failed()[2]).toMatchObject({ open_step: 2, open_resumed: true });
+    expect(calls("/api/sol-swap-broadcast")).toHaveLength(1);
   });
 });
