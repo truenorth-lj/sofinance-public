@@ -55,7 +55,7 @@ async function fixture(issuePermit: typeof issueCompoundPermit) {
     permit: issuePermit(SIGNING_SECRET, { wallet, summary, message: messageBase64(transaction) }) };
   const connection = fakeConnection();
   vi.mocked(rpcConnection).mockReturnValue(createResilientConnection(connection as never, null, {
-    primaryId: "solami", fallbackId: "default",
+    primaryId: "default", fallbackId: "default",
     retry: { maxAttempts: 2, baseMs: 0, maxDelayMs: 0, budgetMs: 2000 },
   }));
   return { transaction, body, connection };

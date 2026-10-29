@@ -16,7 +16,7 @@ license does not relicense this package. This move does not publish an npm packa
 Open (`open-atomic`, `open-quote`, `open-state`, `open-simulation`, `open-transaction`, `open-rent`, ...),
 compound (`compound-*`, `swap/compound`), withdraw (`withdraw/*`, `lp-exit-*`), the shared swap / fee
 layer (`swap/*`, 10 bps default to `SOFINANCE_FEE_WALLET`), Jupiter and resilient RPC clients
-(`jupiter/*`, `rpc/*`), Solami Beam tips, and their tests and golden fixtures. Deep imports mirror the
+(`jupiter/*`, `rpc/*`), and their tests and golden fixtures. Deep imports mirror the
 original layout: `src/lib/open-atomic.ts` → `@sofinance/engine/open-atomic`, `src/lib/rpc/index.ts` →
 `@sofinance/engine/rpc`. Source ships as TypeScript; hosts transpile it (Next `transpilePackages`).
 
@@ -45,7 +45,7 @@ and `buildWithdraw(request, preview, { feePayer })`:
 - sponsored mode: the fee payer is the message payer and first signer, funds every new account
   (ATAs, Raydium position NFT/account via `open_position_with_token22_nft` payer, isolated accounts,
   fee-recipient ATA), the wallet's SOL is required not to move (`maxSolDebitLamports = 0`, zero-SOL wallets allowed),
-  Beam tips are skipped, native-SOL input/output is refused, and recovered rent goes back to the sponsor
+  native-SOL input/output is refused, and recovered rent goes back to the sponsor
   (position close rent via an exact `SystemProgram.transfer`, isolated account closes directly to the sponsor,
   compound prior-account refunds passed through).
 - The engine does **not** verify the sponsor's own SOL spend; the host's sponsor guard must (P3).
@@ -64,8 +64,8 @@ requests-per-second budget, and fails over when one breaks. Callers never pick p
 
 ### Default: nothing to configure
 
-Without `SOLANA_RPC_PROVIDERS` the router is exactly the 0.1.3 behaviour: Solami when `SOLAMI_API_KEY`
-is set, else `SOLANA_RPC_URL`, else public mainnet, with the next distinct endpoint as fallback. That
+Without `SOLANA_RPC_PROVIDERS` the router is exactly the 0.1.3 behaviour: `SOLANA_RPC_URL`,
+else public mainnet, with the next distinct endpoint as fallback. That
 means the same primary concurrency cap (6), the same circuit breaker, no local rate limit, and no
 stickiness. `rpc/legacy-equivalence.test.ts` checks this. It runs every method class, circuit state, and
 provider outcome through a frozen copy of the 0.1.3 code and through the pool, then compares the
@@ -88,7 +88,7 @@ var. With `$VAR`, the list itself holds no keys and each key stays in its own se
 | field | default | meaning |
 | --- | --- | --- |
 | `name` | required | Log label (`via` in log lines). Letters, digits, `-`, `_`. |
-| `url` | required | `https://…`, `$VAR` (another env var; the provider is skipped when it is unset), or `$SOLAMI` (built from `SOLAMI_API_KEY`). |
+| `url` | required | `https://…`, `$VAR` (another env var; the provider is skipped when it is unset). Endpoints on a retired vendor host (`RETIRED_RPC_HOSTS` in `rpc/urls.ts`) are skipped the same way. |
 | `rps` | none | Client-side budget (token bucket, per server instance) **and the read-spreading weight**. Set it a little under the plan limit; a read provider without `rps` gets weight 1. |
 | `burst` | `rps` | Bucket size. |
 | `maxConcurrency` | none | Max in-flight requests from one instance. |

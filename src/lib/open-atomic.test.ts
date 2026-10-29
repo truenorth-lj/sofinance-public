@@ -11,10 +11,6 @@ vi.mock("@sofinance/engine/open-state", () => ({ readOpenPoolState: vi.fn() }));
 vi.mock("@sofinance/engine/open-quote", () => ({ getOpenPositionQuoteBundle: vi.fn() }));
 vi.mock("@sofinance/engine/open-simulation", () => ({ simulateAndVerifyOpenTransaction: vi.fn() }));
 vi.mock("@sofinance/engine/open-transaction", async importOriginal => ({ ...await importOriginal<object>(), openLookupTableReader: vi.fn() }));
-vi.mock("@sofinance/engine/solami-beam", async importOriginal => ({
-  ...await importOriginal<object>(),
-  fetchBeamTipAddress: vi.fn(async () => null),
-}));
 vi.mock("@raydium-io/raydium-sdk-v2", async importOriginal => ({ ...await importOriginal<object>(),
   Raydium: { load: vi.fn() }, ClmmInstrument: { openPositionFromLiquidityInstructions: vi.fn() },
 }));
@@ -24,7 +20,6 @@ import { readOpenPoolState } from "@sofinance/engine/open-state";
 import { getOpenPositionQuoteBundle } from "@sofinance/engine/open-quote";
 import { simulateAndVerifyOpenTransaction } from "@sofinance/engine/open-simulation";
 import { openLookupTableReader } from "@sofinance/engine/open-transaction";
-import { fetchBeamTipAddress } from "@sofinance/engine/solami-beam";
 import { walletReturnedTransactionMatches } from "@sofinance/engine/wallet-returned-tx";
 import { buildAndSimulateOpenPosition } from "@sofinance/engine/open-atomic";
 
@@ -230,13 +225,12 @@ it("tries the other swap direction when the first swap + open route exceeds the 
   expect(simulateAndVerifyOpenTransaction).toHaveBeenCalledTimes(1);
 });
 
-it("rejects oversized candidates before looking up optional Beam tips", async () => {
+it("rejects oversized candidates before simulating", async () => {
   const quoteBundle = vi.mocked(getOpenPositionQuoteBundle).getMockImplementation()!;
   vi.mocked(getOpenPositionQuoteBundle).mockImplementation(async (...args) => {
     return oversized(await quoteBundle(...args));
   });
   await expect(prepare()).rejects.toThrow(/exceeds 1,232 byte limit/);
-  expect(fetchBeamTipAddress).not.toHaveBeenCalled();
   expect(simulateAndVerifyOpenTransaction).not.toHaveBeenCalled();
 });
 

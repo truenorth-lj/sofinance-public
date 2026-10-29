@@ -103,7 +103,7 @@ async function observe(
     outcome = { ok: false, name: (error as Error).name, message: (error as Error).message };
   }
   const circuit: Observation["circuit"] = {};
-  for (const id of ["solami", "default"]) circuit[id] = { open: isPrimaryCircuitOpen(id), kind: circuitErrorKind(id) };
+  for (const id of ["default"]) circuit[id] = { open: isPrimaryCircuitOpen(id), kind: circuitErrorKind(id) };
   return { outcome, events, calls: [counters[0](), counters[1]()], metric: metricOf(), circuit };
 }
 
@@ -125,8 +125,6 @@ describe("legacy configuration resolves to the 0.1.3 provider pair", () => {
   const envs = [
     {},
     { SOLANA_RPC_URL: "https://dedicated.example/?api-key=k" },
-    { SOLAMI_API_KEY: "k" },
-    { SOLAMI_API_KEY: "k", SOLANA_RPC_URL: "https://dedicated.example/?api-key=k" },
     { SOLANA_RPC_URL: PUBLIC_SOLANA_RPC_URL },
   ];
   for (const env of envs) {
@@ -148,7 +146,6 @@ describe("legacy configuration resolves to the 0.1.3 provider pair", () => {
 describe("pool ≡ engine 0.1.3 for every method class, circuit state, and provider outcome", () => {
   const legacyEnvs: Array<{ label: string; env: Record<string, string>; primaryId: RpcMetricId }> = [
     { label: "SOLANA_RPC_URL only (current production)", env: { SOLANA_RPC_URL: "https://dedicated.example/?api-key=k" }, primaryId: "default" },
-    { label: "SOLAMI_API_KEY + SOLANA_RPC_URL", env: { SOLAMI_API_KEY: "k", SOLANA_RPC_URL: "https://dedicated.example/?api-key=k" }, primaryId: "solami" },
   ];
   for (const { label, env, primaryId } of legacyEnvs) {
     it(`rpcConnection / rpcReadConnection pool vs 0.1.3 createResilientConnection — ${label}`, async () => {
@@ -189,7 +186,7 @@ describe("pool ≡ engine 0.1.3 for every method class, circuit state, and provi
       for (const pre of PRE_STATES) {
         for (const primaryScript of PRIMARY_SCRIPTS) {
           for (const fallbackScript of FALLBACK_SCRIPTS) {
-            for (const ids of [["default", "default"], ["solami", "default"]] as Array<[RpcMetricId, RpcMetricId]>) {
+            for (const ids of [["default", "default"]] as Array<[RpcMetricId, RpcMetricId]>) {
               const run = async (useLegacy: boolean) => {
                 const events = prepare(ids[0], pre);
                 const primary = scripted("primary", primaryScript);

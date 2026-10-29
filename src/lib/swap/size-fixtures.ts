@@ -1,6 +1,6 @@
 // Offline envelopes: captured instruction shapes, dummy recipient/route keys and ALTs.
 import "@/lib/engine-host";
-import { AddressLookupTableAccount, PublicKey, SystemProgram, TransactionInstruction, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
+import { AddressLookupTableAccount, PublicKey, TransactionInstruction, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
 import { createAssociatedTokenAccountIdempotentInstruction, createInitializeAccountInstruction, createTransferCheckedInstruction, getAssociatedTokenAddressSync } from "@solana/spl-token";
 import openFixture from "../fixtures/open-size-compact-route.json";
 import compoundFixture from "../fixtures/compound-size-route.json";
@@ -20,9 +20,8 @@ export function feeSizeFixtures() {
   const open = decode(openFixture), compound = decode(compoundFixture);
   const rows: { flow: string; bytes: number; fits: boolean; serialized: boolean }[] = [];
   function measure(flow: string, f: typeof open, instructions: TransactionInstruction[], extra: AddressLookupTableAccount[] = []) {
-    const tip = SystemProgram.transfer({ fromPubkey: f.payer, toPubkey: key(240), lamports: 100000 });
     const tx = new VersionedTransaction(new TransactionMessage({ payerKey: f.payer, recentBlockhash: f.blockhash,
-      instructions: [...instructions, tip] }).compileToV0Message([...f.tables, ...extra]));
+      instructions }).compileToV0Message([...f.tables, ...extra]));
     const bytes = versionedTransactionSize(tx);
     let serialized = false;
     try { if (tx.serialize().length !== bytes) throw new Error("Size calculation mismatch"); serialized = true; } catch (e) { if (!exceedsTxSizeLimit(bytes)) throw e; }

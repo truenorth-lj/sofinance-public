@@ -454,7 +454,7 @@ export type ResilientConnectionOptions = {
 export function createResilientConnection(
   primary: Connection,
   fallback: Connection | null = null,
-  options: ResilientConnectionOptions = { primaryId: "solami", fallbackId: "default" },
+  options: ResilientConnectionOptions = { primaryId: "default", fallbackId: "default" },
 ): Connection {
   const primaryMember = legacyPrimaryMember(options.primaryId, "primary");
   const members = fallback ? [primaryMember, legacyFallbackMember(options.fallbackId, "fallback")] : [primaryMember];

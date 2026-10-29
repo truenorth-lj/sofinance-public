@@ -39,7 +39,7 @@ a second prepare after tx1 finalizes.
 
 Run `tsx scripts/live-fee-test.ts withdraw --position NFT --percent 100 --receive
 usdc` for a dry-run (use `--receive token --mint M` or `original`). Only `--send`
-enables broadcasting. The command reports signed bytes, Beam tips, fees, recipient
+enables broadcasting. The command reports signed bytes, system transfers, fees, recipient
 balance deltas, and wallet SOL changes. A dry-run cannot prepare stage 2 without
 a finalized stage 1. High-impact requests fail unless explicitly confirmed by a
 client; the CLI intentionally does not automatically confirm them.

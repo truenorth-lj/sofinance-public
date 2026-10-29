@@ -100,13 +100,13 @@ export class PositionHistoryCache {
     const metric = { ...result.metric, elapsedMs: Math.max(0, this.clock() - started),
       memoryCacheHit: hit, memoryCacheAgeMs: hit ? Math.max(0, this.clock() - syncedAt) : 0,
       historySyncedAt: new Date(syncedAt).toISOString(),
-      ...(hit ? { fetchedTxCount: 0, listingCount: 0, solamiTxCount: 0, defaultTxCount: 0,
+      ...(hit ? { fetchedTxCount: 0, listingCount: 0, defaultTxCount: 0,
         cachedTxCount: result.signatureCount, fallbackReasons: [],
         ...(result.metric.unattributedTxCount !== undefined ? { unattributedTxCount: 0 } : {}),
         ...(result.metric.stages ? { stages: { claimMs: 0, listingMs: 0, detailsMs: 0,
           parseMs: 0, commitMs: 0, releaseMs: 0 } } : {}),
         ...(result.metric.rpc ? { rpc: { attemptCount: 0, rateLimitCount: 0, queuedMs: 0,
-          requestMs: 0, maxActive: 0, primaryAttempts: 0, defaultAttempts: 0, responseBytes: 0 } } : {}) } : {}) };
+          requestMs: 0, maxActive: 0, defaultAttempts: 0, responseBytes: 0 } } : {}) } : {}) };
     result.metric = metric;
     return result;
   }

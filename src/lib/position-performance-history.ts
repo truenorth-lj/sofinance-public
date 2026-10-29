@@ -3,28 +3,35 @@ import type { Connection, ParsedTransactionWithMeta, PublicKey } from "@solana/w
 import { invokeWithPolicy } from "@sofinance/engine/rpc/connection";
 import { policyFor } from "@sofinance/engine/rpc/methods";
 import type { RpcProvider } from "@sofinance/engine/rpc/types";
-import {
-  listSolamiAddressSignatures,
-  parseHistoryTxCandidate,
-  toHistorySignature,
-  unwrapTransactionsForAddressResult,
-  type CustomRpcCall,
-  type HistoryFallbackReason,
-  type HistorySignature,
-  type ParsedHistoryTx,
-} from "./solami/history";
 
 export const HISTORY_BATCH_SIZE = 8;
 
-export type HistoryFetchSource = "getTransactionsForAddress" | "getParsedTransactionBatch" | "databaseIncremental";
+export type HistoryFetchSource = "getParsedTransactionBatch" | "databaseIncremental";
 
-export type HistoryProvider = "solami" | "default" | "solami+default" | "unknown";
+export type HistoryProvider = "default" | "unknown";
 
-export type {
-  CustomRpcCall,
-  HistoryFallbackReason,
-  HistorySignature,
-  ParsedHistoryTx,
+/** Why history detail fetches left the first RPC for the fallback (incremental sync only). */
+export type HistoryFallbackReason =
+  | "history-primary-empty"
+  | "history-primary-invalid-receipt"
+  | "history-primary-error";
+
+export type HistorySignature = {
+  signature: string;
+  slot: number;
+  blockTime?: number | null;
+  err?: unknown;
+};
+
+export type ParsedHistoryTx = {
+  signature: string;
+  blockTime: number | null;
+  slot: number;
+  err: unknown;
+  logMessages: string[] | null;
+  servedBy?: "default";
+  /** Preserve instruction receipts when event logs were truncated. */
+  parsedTransaction?: ParsedTransactionWithMeta;
 };
 
 export type HistoryFetchMetric = {
@@ -32,7 +39,6 @@ export type HistoryFetchMetric = {
   elapsedMs: number;
   provider: HistoryProvider;
   source: HistoryFetchSource;
-  solamiTxCount: number;
   defaultTxCount: number;
   fallbackReasons: HistoryFallbackReason[];
   cachedTxCount?: number;
@@ -51,7 +57,7 @@ export type HistoryFetchMetric = {
   rpc?: import("./position-history-rpc").HistoryRpcMetric;
 };
 
-export type HistoryServedBy = "solami" | "default";
+export type HistoryServedBy = "default";
 
 export type HistoryConnection = {
   getSignaturesForAddress: Connection["getSignaturesForAddress"];
@@ -63,8 +69,7 @@ export type FetchPositionHistoryOptions = {
   maxSignatures: number;
   connection: HistoryConnection;
   provider: RpcProvider;
-  customRpc?: CustomRpcCall;
-  /** Non-Solami RPC used when Solami listing is empty or a parsed tx fails. */
+  /** RPC used first for parsed tx details (the primary connection is the fallback). */
   fallbackConnection?: HistoryConnection;
   batchSize?: number;
   nowMs?: () => number;
@@ -75,11 +80,6 @@ export type PositionHistoryFetch = {
   truncated: boolean;
   signatureCount: number;
   metric: HistoryFetchMetric;
-};
-
-export {
-  parseHistoryTxCandidate,
-  unwrapTransactionsForAddressResult,
 };
 
 /**
@@ -122,7 +122,7 @@ export type FetchParsedOptions = {
   batchSize?: number;
   fallback?: HistoryConnection | null;
   primaryProvider?: HistoryServedBy;
-  /** Signatures that should skip Solami and parse on the fallback RPC first (older window). */
+  /** Signatures that should parse on the fallback RPC first. */
   parseOnFallbackFirst?: ReadonlySet<string>;
 };
 
@@ -184,14 +184,6 @@ export async function fetchParsedTransactionsBatched(
   return fetched.filter((item): item is ParsedHistoryTx => item !== null);
 }
 
-async function defaultCustomRpc(connection: HistoryConnection): Promise<CustomRpcCall | null> {
-  const rpc = connection as HistoryConnection & {
-    _rpcRequest?: (method: string, args: unknown[]) => Promise<unknown>;
-  };
-  if (typeof rpc._rpcRequest !== "function") return null;
-  return async (method, params) => rpc._rpcRequest!(method, params);
-}
-
 async function listSignatures(
   connection: HistoryConnection,
   address: PublicKey,
@@ -229,109 +221,52 @@ function uniqueReasons(reasons: readonly HistoryFallbackReason[]): HistoryFallba
   return [...new Set(reasons)];
 }
 
-function historyProviderOf(solamiTxCount: number, defaultTxCount: number): HistoryProvider {
-  if (solamiTxCount > 0 && defaultTxCount > 0) return "solami+default";
-  if (solamiTxCount > 0) return "solami";
-  return "default";
-}
-
 function buildMetric(input: {
   items: ParsedHistoryTx[];
   elapsedMs: number;
   source: HistoryFetchSource;
   fallbackReasons: HistoryFallbackReason[];
 }): HistoryFetchMetric {
-  const solamiTxCount = input.items.filter((item) => item.servedBy === "solami").length;
   const defaultTxCount = input.items.filter((item) => item.servedBy === "default").length;
   return {
     txCount: input.items.length,
     elapsedMs: input.elapsedMs,
-    provider: historyProviderOf(solamiTxCount, defaultTxCount),
+    provider: "default",
     source: input.source,
-    solamiTxCount,
     defaultTxCount,
     fallbackReasons: uniqueReasons(input.fallbackReasons),
   };
 }
 
 /**
- * Load personal-position history. Solami listing (`getTransactionsForAddress`)
- * and per-tx `getParsedTransaction` fallbacks go through the shared RPC
- * policy layer — this file only merges windows and records metrics.
+ * Load personal-position history: `getSignaturesForAddress` listing plus
+ * bounded-parallel `getParsedTransaction` details, both through the shared
+ * RPC policy layer — this file only windows the list and records metrics.
  */
 export async function fetchPositionHistoryTransactions(
   options: FetchPositionHistoryOptions,
 ): Promise<PositionHistoryFetch> {
   const started = (options.nowMs ?? Date.now)();
   const batchSize = options.batchSize ?? HISTORY_BATCH_SIZE;
-  const customRpc = options.customRpc ?? (await defaultCustomRpc(options.connection));
   const fallback = options.fallbackConnection;
-  const reasons: HistoryFallbackReason[] = [];
 
-  let solamiListed: HistorySignature[] = [];
-  let usedSolamiListing = false;
-
-  if (options.provider === "solami" && customRpc) {
-    const listed = await listSolamiAddressSignatures(customRpc, options.address.toBase58(), options.maxSignatures);
-    if (listed.ok) {
-      solamiListed = listed.items.map(toHistorySignature);
-      usedSolamiListing = true;
-    } else {
-      reasons.push(listed.reason);
-    }
-  }
-
-  let defaultListed: HistorySignature[] = [];
-  if (options.provider !== "solami") {
-    defaultListed = await listSignatures(options.connection, options.address, options.maxSignatures);
-  } else if (fallback) {
-    try {
-      defaultListed = await listSignatures(fallback, options.address, options.maxSignatures);
-    } catch {
-      if (!usedSolamiListing) {
-        defaultListed = await listSignatures(options.connection, options.address, options.maxSignatures).catch(
-          () => [],
-        );
-      }
-    }
-  } else if (!usedSolamiListing) {
-    defaultListed = await listSignatures(options.connection, options.address, options.maxSignatures);
-  }
-
-  const solamiSigs = new Set(solamiListed.map((item) => item.signature));
-  if (usedSolamiListing && defaultListed.some((item) => !solamiSigs.has(item.signature))) {
-    reasons.push("solami-limited-window");
-  }
-
-  const merged = usedSolamiListing
-    ? mergeHistorySignatures(solamiListed, defaultListed, options.maxSignatures)
-    : defaultListed.slice(0, options.maxSignatures);
-  const truncated = usedSolamiListing
-    ? solamiListed.length >= options.maxSignatures || defaultListed.length >= options.maxSignatures
-    : defaultListed.length >= options.maxSignatures;
-
-  const parseOnFallbackFirst = new Set(
-    merged.filter((item) => !solamiSigs.has(item.signature)).map((item) => item.signature),
-  );
+  const listed = await listSignatures(options.connection, options.address, options.maxSignatures);
+  const merged = listed.slice(0, options.maxSignatures);
+  const truncated = listed.length >= options.maxSignatures;
 
   const parsed = await fetchParsedTransactionsBatched(options.connection, merged, {
     batchSize,
     fallback,
-    primaryProvider: options.provider === "solami" ? "solami" : "default",
-    parseOnFallbackFirst,
+    primaryProvider: "default",
+    parseOnFallbackFirst: new Set(merged.map((item) => item.signature)),
   });
 
-  if (parsed.some((item) => solamiSigs.has(item.signature) && item.servedBy === "default")) {
-    reasons.push("solami-parse-error");
-  }
-
   const elapsedMs = Math.max(0, (options.nowMs ?? Date.now)() - started);
-  const source: HistoryFetchSource = usedSolamiListing ? "getTransactionsForAddress" : "getParsedTransactionBatch";
   return {
     items: parsed,
     truncated,
     signatureCount: merged.length,
-    metric: buildMetric({ items: parsed, elapsedMs, source, fallbackReasons: reasons }),
+    metric: buildMetric({ items: parsed, elapsedMs, source: "getParsedTransactionBatch", fallbackReasons: [] }),
   };
 }
 

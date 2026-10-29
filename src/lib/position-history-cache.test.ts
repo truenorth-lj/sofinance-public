@@ -20,7 +20,7 @@ function complete(): SyncedPositionHistory {
   return { history: [{ signature: "a".repeat(64), slot: 10, blockTime: 1000,
     events: [{ kind: "increase", positionNftMint: "1".repeat(32), liquidity: "10", amountA: "20", amountB: "30" }] }],
     signatureCount: 1, truncated: false, metric: { txCount: 1, elapsedMs: 10, provider: "default",
-      source: "databaseIncremental", solamiTxCount: 0, defaultTxCount: 1, fallbackReasons: [],
+      source: "databaseIncremental", defaultTxCount: 1, fallbackReasons: [],
       historyComplete: true, fetchedTxCount: 1, listingCount: 1 } };
 }
 afterEach(() => { resetPositionHistoryCache(); vi.useRealTimers(); });
@@ -31,7 +31,7 @@ describe("position history short cache", () => {
     const load = vi.fn(async () => ({ ...complete(), metric: { ...complete().metric,
       stages: { claimMs: 3, listingMs: 4, detailsMs: 20, parseMs: 1, commitMs: 5, releaseMs: 2 },
       rpc: { attemptCount: 4, rateLimitCount: 1, queuedMs: 12, requestMs: 20, maxActive: 3,
-        primaryAttempts: 2, defaultAttempts: 2, responseBytes: 1000 }, unattributedTxCount: 1 } }));
+        defaultAttempts: 2, responseBytes: 1000 }, unattributedTxCount: 1 } }));
     const first = await cache.get(input, load);
     expect(first.metric.stages?.releaseMs).toBe(2);
     expect(first.metric.rpc?.attemptCount).toBe(4);
@@ -40,7 +40,7 @@ describe("position history short cache", () => {
     expect(hit.metric.stages).toEqual({ claimMs: 0, listingMs: 0, detailsMs: 0,
       parseMs: 0, commitMs: 0, releaseMs: 0 });
     expect(hit.metric.rpc).toEqual({ attemptCount: 0, rateLimitCount: 0, queuedMs: 0,
-      requestMs: 0, maxActive: 0, primaryAttempts: 0, defaultAttempts: 0, responseBytes: 0 });
+      requestMs: 0, maxActive: 0, defaultAttempts: 0, responseBytes: 0 });
     expect(hit.metric.unattributedTxCount).toBe(0);
   });
   it("caches only history for eight seconds, reports age/zero work and clones every result", async () => {
@@ -56,7 +56,7 @@ describe("position history short cache", () => {
     expect(load).toHaveBeenCalledTimes(1);
     expect(hit.history[0]!.events).toHaveLength(1);
     expect(hit.metric).toMatchObject({ memoryCacheHit: true, memoryCacheAgeMs: 1000,
-      fetchedTxCount: 0, listingCount: 0, defaultTxCount: 0, solamiTxCount: 0, elapsedMs: 0 });
+      fetchedTxCount: 0, listingCount: 0, defaultTxCount: 0, elapsedMs: 0 });
     hit.history.length = 0;
     expect((await cache.get(input, load)).history).toHaveLength(1);
     now = 9005;

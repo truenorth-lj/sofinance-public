@@ -111,7 +111,7 @@ beforeEach(() => {
   for (const [name, mock] of [["growth", boundary.growth], ["growth-once", boundary.once], ["notify", boundary.notify]] as const) mock.mockReset().mockImplementation((...args) => note(name, ...args));
   boundary.sign.mockReset().mockImplementation(async (tx: VersionedTransaction) => { note("sign-input", toBase64(tx)); const value = signed(tx); note("sign-output", toBase64(value)); return value; });
   prepareReply = async () => Response.json(preparedValue);
-  broadcastReply = async init => { const body = JSON.parse(String(init.body)); const tx = VersionedTransaction.deserialize(Buffer.from(body.signedTransaction, "base64")); return Response.json({ signature: bs58.encode(tx.signatures[0]!), beamLabel: "Beam landed" }); };
+  broadcastReply = async init => { const body = JSON.parse(String(init.body)); const tx = VersionedTransaction.deserialize(Buffer.from(body.signedTransaction, "base64")); return Response.json({ signature: bs58.encode(tx.signatures[0]!) }); };
   fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     note("fetch", url, { method: init?.method ?? "GET", body: init?.body ?? null, headers: init?.headers ?? null, cache: init?.cache, aborted: init?.signal?.aborted ?? null });
     init?.signal?.addEventListener("abort", () => note("fetch-abort", url), { once: true });

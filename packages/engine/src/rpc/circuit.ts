@@ -1,8 +1,7 @@
 import type { RpcErrorKind } from "./types";
 
 /**
- * Circuits are keyed per provider: the legacy primary uses its metric id (`solami` / `default`, shared
- * with history listing as before), pool providers use their configured name.
+ * Circuits are keyed per provider: the legacy primary uses its metric id (`default`), pool providers use their configured name.
  *
  * Short process-local breaker so a dead primary (expired key, lapsed plan,
  * sustained 429 / 5xx) is not retried on every RPC. Cooldowns stay small so a

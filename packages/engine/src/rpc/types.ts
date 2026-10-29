@@ -1,8 +1,8 @@
 /** Metric / history label. Dedicated RPCs (Helius, etc.) report as `default`. */
-export type RpcMetricId = "solami" | "default";
+export type RpcMetricId = "default";
 
 /** Config catalog id. `generic` is SOLANA_RPC_URL (Helius or any JSON-RPC). */
-export type RpcProviderId = "solami" | "generic" | "public";
+export type RpcProviderId = "generic" | "public";
 
 /** @deprecated Use RpcMetricId. Kept so existing history/UI labels stay stable. */
 export type RpcProvider = RpcMetricId;
@@ -69,7 +69,6 @@ export type ResolvedProvider = {
   metricId: RpcMetricId;
   label: string;
   endpoint: string;
-  customMethods: readonly string[];
 };
 
 export type ProviderPair = {

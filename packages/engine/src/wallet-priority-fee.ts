@@ -4,7 +4,7 @@ import { ComputeBudgetProgram, VersionedTransaction } from "@solana/web3.js";
  * Wallet-raised ComputeBudget priority fees are user-chosen network fees (Phantom
  * shows them on the confirm screen). Cap them separately so a rewritten CU price
  * cannot drain unbounded SOL, without counting them against the app spend budget
- * (rent, ATA creation, our transfers / fee ix / beam tip).
+ * (rent, ATA creation, our transfers / fee ix).
  */
 export const WALLET_PRIORITY_FEE_CEILING_LAMPORTS = 10_000_000n;
 

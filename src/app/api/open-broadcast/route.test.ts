@@ -1,20 +1,18 @@
 // Characterization tests for POST /api/open-broadcast (route layer over submitOpenPositionFromParts).
-// Real: route validation, permit, open-send logic, apiError sanitising. Mocked: RPC, state, simulation, Beam.
+// Real: route validation, permit, open-send logic, apiError sanitising. Mocked: RPC, state, simulation.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: vi.fn() }));
 vi.mock("@sofinance/engine/open-state", () => ({ readOpenPoolState: vi.fn() }));
 vi.mock("@sofinance/engine/open-simulation", () => ({ simulateAndVerifyOpenTransaction: vi.fn() }));
-vi.mock("@/lib/beam-after-send", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/beam-after-send")>()), beamAfterSend: vi.fn() }));
 
 import { issueOpenPositionPermit } from "@/lib/open-permit";
 import { readOpenPoolState } from "@sofinance/engine/open-state";
 import { simulateAndVerifyOpenTransaction } from "@sofinance/engine/open-simulation";
 import { rpcConnection } from "@sofinance/engine/rpc";
-import { beamAfterSend } from "@/lib/beam-after-send";
 import {
-  BEAM_RESULT, BLOCKHASH, SIGNING_SECRET, buildTransaction, fakeConnection, type FakeConnection, jsonRequest, messageBase64, openSummaryFixture,
+  BLOCKHASH, SIGNING_SECRET, buildTransaction, fakeConnection, type FakeConnection, jsonRequest, messageBase64, openSummaryFixture,
   phantomRewriteTransaction, signatureOf, tamperTransferLamports, testKeypair, toBase64,
 } from "@/lib/test-support/send-fixtures";
 import { POST } from "./route";
@@ -48,7 +46,6 @@ beforeEach(() => {
     poolId: summary.poolId, inputMint: summary.inputMint, inputKind: summary.inputKind, balances: { ...summary.startingBalances },
   } as never);
   vi.mocked(simulateAndVerifyOpenTransaction).mockResolvedValue(undefined as never);
-  vi.mocked(beamAfterSend).mockResolvedValue(BEAM_RESULT as never);
 });
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -57,13 +54,12 @@ afterEach(() => {
 });
 
 describe("POST /api/open-broadcast", () => {
-  it("broadcasts and returns signature, position ids and beam fields with no-store", async () => {
+  it("broadcasts and returns signature and position ids with no-store", async () => {
     const { response, json } = await call(body());
     expect(response.status).toBe(200);
     expect(response.headers.get("Cache-Control")).toBe("no-store");
     expect(json).toEqual({
       signature: signatureOf(transaction), positionMint: nftMint, positionAccount: summary.positionAccount,
-      beam: BEAM_RESULT.beam, beamLabel: "Beam landed", beamLandingUrl: BEAM_RESULT.beamLandingUrl,
     });
   });
 

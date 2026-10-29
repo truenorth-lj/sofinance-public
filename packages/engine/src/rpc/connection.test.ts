@@ -20,14 +20,14 @@ function pair() {
     getParsedTransaction: vi.fn(async () => {
       throw PARSED_TX_ERROR;
     }),
-    getAccountInfo: vi.fn(async () => ({ owner: "solami" })),
-    getLatestBlockhash: vi.fn(async () => ({ blockhash: "solami-hash" })),
-    getMultipleAccountsInfo: vi.fn(async () => [{ owner: "solami" }]),
+    getAccountInfo: vi.fn(async () => ({ owner: "primary" })),
+    getLatestBlockhash: vi.fn(async () => ({ blockhash: "primary-hash" })),
+    getMultipleAccountsInfo: vi.fn(async () => [{ owner: "primary" }]),
     simulateTransaction: vi.fn(async () => ({ value: { err: null } })),
     sendRawTransaction: vi.fn(async () => {
       throw EPOCH_ERROR;
     }),
-    rpcEndpoint: "https://rpc.solami.dev/sol",
+    rpcEndpoint: "https://primary.example/rpc",
   };
   const fallback = {
     getEpochInfo: vi.fn(async () => ({ epoch: 800, transactionCount: 12 })),
@@ -109,7 +109,7 @@ describe("invokeWithPolicy", () => {
       method: "getParsedTransaction",
       primary: async () => null,
       fallback: async () => ({ slot: 9 }),
-      primaryId: "solami",
+      primaryId: "default",
       fallbackId: "default",
     });
     expect(result).toMatchObject({ value: { slot: 9 }, servedBy: "default", fallback: true, errorKind: "empty" });
@@ -122,7 +122,7 @@ describe("invokeWithPolicy", () => {
         throw new Error("502 Bad Gateway");
       },
       fallback: async () => ({ owner: "helius" }),
-      primaryId: "solami",
+      primaryId: "default",
       fallbackId: "default",
     });
     expect(result.servedBy).toBe("default");
@@ -136,7 +136,7 @@ describe("invokeWithPolicy", () => {
         throw new Error("429 rate limited");
       },
       fallback: async () => ({ owner: "default" }),
-      primaryId: "solami",
+      primaryId: "default",
       fallbackId: "default",
     });
     expect(result).toMatchObject({ value: { owner: "default" }, servedBy: "default", fallback: true, errorKind: "rate-limit" });
@@ -149,7 +149,7 @@ describe("invokeWithPolicy", () => {
         throw new Error("400 bad request");
       },
       fallback: async () => 9,
-      primaryId: "solami",
+      primaryId: "default",
       fallbackId: "default",
     })).rejects.toThrow(/400/);
   });
@@ -161,7 +161,7 @@ describe("invokeWithPolicy", () => {
         throw new RpcHttpError(401, "RPC HTTP 401");
       },
       fallback: async () => ({ owner: "helius" }),
-      primaryId: "solami",
+      primaryId: "default",
       fallbackId: "default",
     });
     expect(result).toMatchObject({
@@ -180,7 +180,7 @@ describe("invokeWithPolicy", () => {
         throw Object.assign(new Error("RPC -32005: Rate limited"), { code: -32005 });
       },
       fallback: async () => ({ owner: "helius" }),
-      primaryId: "solami",
+      primaryId: "default",
       fallbackId: "default",
     });
     expect(result).toMatchObject({
@@ -196,7 +196,7 @@ describe("createResilientConnection", () => {
     setRpcRetryConfig({ maxAttempts: 1 });
   });
 
-  it("falls back getEpochInfo and getParsedTransaction when Solami fails validation", async () => {
+  it("falls back getEpochInfo and getParsedTransaction when the primary fails validation", async () => {
     const { connection, fallback, primary } = pair();
     await expect(connection.getEpochInfo("confirmed")).resolves.toEqual({ epoch: 800, transactionCount: 12 });
     await expect(connection.getParsedTransaction("sig")).resolves.toEqual({ slot: 1 });
@@ -208,17 +208,17 @@ describe("createResilientConnection", () => {
     expect(lastRpcCallMetric(connection)?.fallback).toBe(true);
   });
 
-  it("keeps successful Solami account reads, blockhashes, and simulation on the primary", async () => {
+  it("keeps successful primary account reads, blockhashes, and simulation on the primary", async () => {
     const { connection, fallback, primary } = pair();
-    await expect(connection.getAccountInfo("x" as never)).resolves.toEqual({ owner: "solami" });
-    await expect(connection.getLatestBlockhash()).resolves.toEqual({ blockhash: "solami-hash" });
-    await expect(connection.getMultipleAccountsInfo([] as never)).resolves.toEqual([{ owner: "solami" }]);
+    await expect(connection.getAccountInfo("x" as never)).resolves.toEqual({ owner: "primary" });
+    await expect(connection.getLatestBlockhash()).resolves.toEqual({ blockhash: "primary-hash" });
+    await expect(connection.getMultipleAccountsInfo([] as never)).resolves.toEqual([{ owner: "primary" }]);
     await expect(connection.simulateTransaction({} as never)).resolves.toEqual({ value: { err: null } });
     expect(fallback.getAccountInfo).not.toHaveBeenCalled();
     expect(fallback.getLatestBlockhash).not.toHaveBeenCalled();
     expect(fallback.simulateTransaction).not.toHaveBeenCalled();
     expect(primary.getAccountInfo).toHaveBeenCalledOnce();
-    expect(lastRpcCallMetric(connection)?.servedBy).toBe("solami");
+    expect(lastRpcCallMetric(connection)?.servedBy).toBe("default");
   });
 
   it("does not fall back sends on validation errors", async () => {

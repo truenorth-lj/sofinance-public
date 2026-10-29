@@ -42,33 +42,31 @@ Run `node_modules/.bin/tsx scripts/measure-swap-fees.ts` or
 `npm test -- src/lib/swap/size.test.ts`. The snapshot checks byte accounting
 against serialization wherever web3.js permits serialization. Oversized messages
 can exceed its internal buffer; the structural size includes all signature slots,
-short-vector lengths, instructions, ALT lookups and a **100,000-lamport Beam tip**.
+short-vector lengths, instructions and ALT lookups (no tip instruction).
 Limit: **1,232 bytes**.
 
 | Representative envelope | ATA exists | ATA missing |
 | --- | ---: | ---: |
-| Open, USDC upfront, two legs | 1283 | 1325 |
-| Open, SOL sequential + input-token fee | 1258 | 1300 |
-| Open, single leg + input-token fee | 1250 | 1292 |
-| Open, pool-token + input-token fee | 1211 | 1253 |
-| Selected add, SOL + input-token fee | 1141 | 1183 |
-| Selected add, pool-token + input-token fee | 1094 | 1136 |
-| Compound input-token fee | 1216 | 1258 |
-| Exit conversion, USDC platform fee | 480 | 621 |
+| Open, USDC upfront, two legs | 1203 | 1245 |
+| Open, SOL sequential + input-token fee | 1209 | 1251 |
+| Open, single leg + input-token fee | 1201 | 1243 |
+| Open, pool-token + input-token fee | 1131 | 1173 |
+| Selected add, SOL + input-token fee | 1092 | 1134 |
+| Selected add, pool-token + input-token fee | 1014 | 1056 |
+| Compound input-token fee | 1167 | 1209 |
+| Exit conversion, USDC platform fee | 399 | 541 |
 
 These are captured instruction shapes from the repo's open/compound fixtures.
 Selected uses an increase-liquidity shape without the NFT signer; exit uses the
 conversion envelope without the separately prepared withdrawal. They are offline
 size envelopes, not executable routes or live quotes. Actual token programs,
-setup, pool accounts, and route overlap alter size. A missing compound fee ATA
-exceeds the limit with tip in this fixture: existing Beam selection may omit the
-tip if the complete untipped packet fits, otherwise preparation fails. Fee ATA
-creation is never omitted to squeeze in a transaction.
+setup, pool accounts, and route overlap alter size. If a complete packet does
+not fit, preparation fails. Fee ATA creation is never omitted to squeeze in a
+transaction.
 
 Native SOL no longer adds any fee instruction: the fee wallet’s wSOL ATA is a
 writable account on the Jupiter swap instruction (+32 B or an ALT index), and
-no fee-wallet ATA create is ever included. Beam tip is already omitted when
-oversize, and open retries smaller Jupiter routes. The 1.4M CU limit is kept: dropping it would leave the
+no fee-wallet ATA create is ever included, and open retries smaller Jupiter routes. The 1.4M CU limit is kept: dropping it would leave the
 transaction on the 200k default, which is not enough for Jupiter + Raydium.
 
 Open / selected / compound **always** collect the protocol fee in the input
@@ -111,10 +109,7 @@ synthetic envelopes cannot establish it.
 ## Live mainnet verification (2026-10-13, test wallet EweTgJ6v…)
 
 Local `next dev` with the production env (`SOFINANCE_FEE_WALLET=CS5CWY…`, 10 bps)
-using keyless Jupiter and no `SOLAMI_API_KEY`. **The Beam tip was therefore never
-included**; add roughly 45–50 bytes for a tip instruction with a non-ALT tip
-account. If a transaction plus tip would go over 1,232 bytes,
-`chooseBeamTransaction` sends it without the tip. Sizes are real signed wire
+using keyless Jupiter. No tip instruction is included. Sizes are real signed wire
 bytes. Harness: `scripts/live-fee-test.ts`.
 
 | Flow | Signed bytes (no tip) | Fee collected |
@@ -140,7 +135,7 @@ Bugs fixed during live testing:
   or `Cannot compute other amount threshold` (HTTP 400), which aborted the whole
   compound. Those probe sizes are now treated as "no swap at this size".
 
-## Live overflow rates (2026-10-14, real prepare code, dry-run signed, no Beam tip)
+## Live overflow rates (2026-10-14, real prepare code, dry-run signed, no tip)
 
 ~20 live `open-prepare` / `selected-prepare` builds per flow with varied amounts
 on SPCX/SPCXx `DUzBLHZ5…` and MSTR/MSTRx `CxEUkLtu…` (pool `3ofY6ksv…` rejects
@@ -167,7 +162,7 @@ leg (open sequential secondary, pool-token deposits, selected add), shrinking
 those packets and raising SOL-open success. Compound stays on the input-token fee:
 without live yield its USDC envelope (offline 1390 B) is unverified.
 
-Live sends 2026-10-14 (after changes; RPC broadcast, Beam disabled):
+Live sends 2026-10-14 (after changes; RPC broadcast, no tip):
 
 | Flow | Tx | Bytes | Fee | Fee wallet delta |
 |---|---|---:|---|---|
@@ -189,7 +184,7 @@ simulation had no size check, so the failure surfaced as an RPC error.
 Compound now builds the own-pool `swap_v2` directly (the pre-#95 builder,
 `swap/compound.ts`, still validated by `validateCompoundSwapInstruction`). It
 reuses the harvest/add pool, vault, mint and token-program keys and adds no
-program. Live real-code builds (no Beam tip): 1,189 B with an existing fee
+program. Live real-code builds (no tip): 1,189 B with an existing fee
 ATA, 1,223 B when the fee wallet's input-token ATA must be created.
 `compileCompoundTransaction` drops the optional 1.4M CU limit (−40 B) only
 when the packet would otherwise overflow; the runtime default (200k per

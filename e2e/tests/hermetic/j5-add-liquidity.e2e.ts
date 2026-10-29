@@ -67,7 +67,6 @@ async function setup(page: Page, wallet: FakeWallet, options: { selectedStateGat
     }
     if (pathname === "/api/selected-status") value = { status: options.historyStatus === "manual-review" ? "manual-review" : "pending", state: null, signature: body.signature };
     if (pathname === "/api/transaction-finality") value = { status: "pending" };
-    if (pathname === "/api/beam-status") value = { beam: null };
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(value) });
   });
   if (options.historyStatus) {

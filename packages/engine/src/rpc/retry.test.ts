@@ -54,7 +54,7 @@ describe("429 backoff and failover", () => {
       method: "getAccountInfo",
       primary,
       fallback,
-      primaryId: "solami",
+      primaryId: "default",
       fallbackId: "default",
     });
     await vi.runAllTimersAsync();
@@ -74,7 +74,7 @@ describe("429 backoff and failover", () => {
     const primary = vi.fn()
       .mockRejectedValueOnce(new RpcHttpError(429, "RPC HTTP 429", 1_250))
       .mockResolvedValueOnce({ owner: "retried" });
-    const promise = invokeWithRetries(primary, { method: "getAccountInfo", providerId: "solami" });
+    const promise = invokeWithRetries(primary, { method: "getAccountInfo", providerId: "default" });
     await vi.advanceTimersByTimeAsync(1_249);
     expect(primary).toHaveBeenCalledOnce();
     await vi.advanceTimersByTimeAsync(1);
@@ -93,7 +93,7 @@ describe("429 backoff and failover", () => {
       method: "getAccountInfo",
       primary,
       fallback,
-      primaryId: "solami",
+      primaryId: "default",
       fallbackId: "default",
       retry: PREVIEW_RETRY,
     });
@@ -114,7 +114,7 @@ describe("429 backoff and failover", () => {
       method: "simulateTransaction",
       primary,
       fallback,
-      primaryId: "solami",
+      primaryId: "default",
       fallbackId: "default",
       retry: PREVIEW_RETRY,
     });
@@ -139,7 +139,7 @@ describe("429 backoff and failover", () => {
       fallback: async () => {
         throw new Error("503 unavailable");
       },
-      primaryId: "solami",
+      primaryId: "default",
       fallbackId: "default",
     })).rejects.toBeInstanceOf(RpcUnavailableError);
   });
@@ -158,7 +158,7 @@ describe("abort handling", () => {
       method: "getAccountInfo",
       primary,
       fallback: async () => ({ owner: "nope" }),
-      primaryId: "solami",
+      primaryId: "default",
       fallbackId: "default",
       signal: controller.signal,
     });
@@ -177,7 +177,7 @@ describe("abort handling", () => {
     await expect(invokeWithPolicy({
       method: "getAccountInfo",
       primary,
-      primaryId: "solami",
+      primaryId: "default",
       signal: controller.signal,
     })).rejects.toMatchObject({ name: "AbortError" });
     expect(primary).not.toHaveBeenCalled();

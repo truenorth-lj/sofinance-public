@@ -92,10 +92,6 @@ export function fakeConnection(overrides: Partial<Record<keyof FakeConnection, u
   } as FakeConnection;
 }
 
-export const BEAM_RESULT = {
-  beam: { signature: "beam-sig", isLanded: true }, label: "Beam landed", provider: "default",
-  beamLandingUrl: "https://beam.invalid/landing/x",
-};
 
 /** Minimal open-position summary: only the fields the send path reads, cast to the full type by callers. */
 export function openSummaryFixture(input: {

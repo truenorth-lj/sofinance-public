@@ -1,13 +1,12 @@
 // Characterization tests for lib/compound-send.ts (re-verify + broadcast of a signed compound tx).
 // Real: CompoundSendError wrapping and submission-stage classification. Mocked: RPC, state
-// reader, simulation, Beam lookup.
+// reader, simulation.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: vi.fn() }));
 vi.mock("@sofinance/engine/compound-state", () => ({ readCompoundPositionState: vi.fn() }));
 vi.mock("@sofinance/engine/compound-simulation", () => ({ simulateAndVerifyCompound: vi.fn() }));
-vi.mock("@/lib/beam-after-send", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/beam-after-send")>()), beamAfterSend: vi.fn() }));
 
 import { SendTransactionError, type VersionedTransaction } from "@solana/web3.js";
 import { readCompoundPositionState } from "@sofinance/engine/compound-state";
@@ -16,9 +15,8 @@ import type { CompoundSummary } from "@sofinance/engine/compound-types";
 import { CompoundSendError, reverifySignedCompound, sendSignedCompoundTransaction } from "./compound-send";
 import { resolveCompoundBroadcastFailure } from "./public-error";
 import { rpcConnection } from "@sofinance/engine/rpc";
-import { beamAfterSend } from "@/lib/beam-after-send";
 import {
-  BEAM_RESULT, BLOCKHASH, buildTransaction, compoundSummaryFixture, fakeConnection, type FakeConnection, signatureOf, testKeypair,
+  BLOCKHASH, buildTransaction, compoundSummaryFixture, fakeConnection, type FakeConnection, signatureOf, testKeypair,
 } from "./test-support/send-fixtures";
 
 const walletKey = testKeypair(1);
@@ -37,7 +35,6 @@ beforeEach(() => {
   vi.mocked(rpcConnection).mockReturnValue(connection as never);
   vi.mocked(readCompoundPositionState).mockImplementation(async () => stateMatching(summaryFor()) as never);
   vi.mocked(simulateAndVerifyCompound).mockResolvedValue({ rewards: [] } as never);
-  vi.mocked(beamAfterSend).mockResolvedValue(BEAM_RESULT as never);
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -51,14 +48,13 @@ async function failure(promise: Promise<unknown>) {
 }
 
 describe("sendSignedCompoundTransaction: happy path", () => {
-  it("re-reads state, simulates with sigVerify, broadcasts with fixed options and returns the beam fields", async () => {
+  it("re-reads state, simulates with sigVerify, broadcasts with fixed options and returns only the signature", async () => {
     const summary = summaryFor();
     const result = await sendSignedCompoundTransaction(wallet, transaction, summary);
     expect(result).toEqual({
-      signature: signatureOf(transaction), beam: BEAM_RESULT.beam, beamLabel: "Beam landed", beamLandingUrl: BEAM_RESULT.beamLandingUrl,
+      signature: signatureOf(transaction),
     });
     expect(readCompoundPositionState).toHaveBeenCalledWith(wallet, summary.positionMint, connection);
-    expect(beamAfterSend).toHaveBeenCalledWith(signatureOf(transaction), summary.beam);
     expect(simulateAndVerifyCompound).toHaveBeenCalledWith(expect.objectContaining({
       connection, expectedLiquidity: 1200n, maxSolDebitLamports: 9_000_000n, sigVerify: true,
     }));
@@ -156,13 +152,6 @@ describe("sendSignedCompoundTransaction: broadcast failures", () => {
     expect((error.cause as Error).message).toBe(message);
   });
 
-  it("a Beam lookup failure after a successful send cannot overturn the accepted submission", async () => {
-    vi.mocked(beamAfterSend).mockRejectedValue(new Error("beam down"));
-    await expect(sendSignedCompoundTransaction(wallet, transaction, summaryFor())).resolves.toMatchObject({
-      signature: signatureOf(transaction), beam: null, beamLabel: null,
-    });
-    expect(connection.sendRawTransaction).toHaveBeenCalledOnce();
-  });
 });
 
 describe("reverifySignedCompound", () => {
@@ -180,7 +169,7 @@ describe("compound resilient send safety", () => {
     if (timeoutFirst) connection.sendRawTransaction.mockRejectedValueOnce(new Error("request timed out after remote acceptance"));
     connection.sendRawTransaction.mockRejectedValue(rejection);
     vi.mocked(rpcConnection).mockReturnValue(createResilientConnection(connection as never, null, {
-      primaryId: "solami", fallbackId: "default",
+      primaryId: "default", fallbackId: "default",
       retry: { maxAttempts: 2, baseMs: 0, maxDelayMs: 0, budgetMs: 2000 },
     }));
     const expectedSignature = signatureOf(transaction);
@@ -192,7 +181,6 @@ describe("compound resilient send safety", () => {
     expect(error.sent).toBeUndefined();
     expect(resolveCompoundBroadcastFailure({ persisted: true, sent: error.sent, message: error.message }))
       .toEqual({ abandon: false, keepPending: true, error: "" });
-    expect(beamAfterSend).not.toHaveBeenCalled();
   });
 
   it("does not trust an unsent flag thrown from inside the send boundary", async () => {

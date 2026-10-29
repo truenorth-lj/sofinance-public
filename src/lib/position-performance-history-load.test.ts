@@ -16,7 +16,7 @@ const input = { address: PublicKey.unique(), context, connection, provider: "def
   maxSignatures: 100, store: { request: vi.fn() } };
 const result = (): SyncedPositionHistory => ({ history: [{ signature: "old", slot: 1, blockTime: 1, events: [] }],
   signatureCount: 1, truncated: false, metric: { source: "databaseIncremental", provider: "default", txCount: 1,
-    elapsedMs: 1, solamiTxCount: 0, defaultTxCount: 0, fallbackReasons: [], historyComplete: true } });
+    elapsedMs: 1, defaultTxCount: 0, fallbackReasons: [], historyComplete: true } });
 beforeEach(() => { resetPositionHistoryCache(); vi.resetAllMocks(); mocks.sync.mockImplementation(async () => result()); });
 describe("short cache with transaction refresh", () => {
   it("skips database sync on repeat reads and misses on a changed position account", async () => {
@@ -52,7 +52,7 @@ describe("short cache with transaction refresh", () => {
   });
   it("forwards request-scoped RPC observers only to a new shared history load", async () => {
     const rpcMetrics = vi.fn(() => ({ attemptCount: 1, rateLimitCount: 0, queuedMs: 2,
-      requestMs: 3, maxActive: 1, primaryAttempts: 0, defaultAttempts: 1, responseBytes: 100 }));
+      requestMs: 3, maxActive: 1, defaultAttempts: 1, responseBytes: 100 }));
     const receiptProvider = vi.fn(() => "default" as const);
     const factory = vi.fn(() => ({ connection, rpcMetrics, receiptProvider }));
     await loadPerformanceHistory({ ...input, maxDetailRequests: 100, connectionsForSignal: factory });
@@ -66,7 +66,7 @@ describe("short cache with transaction refresh", () => {
     let attemptCount = 1;
     statuses.mockImplementation(async () => { attemptCount++; return { value: [{ confirmationStatus: "finalized", err: {} }] }; });
     const rpcMetrics = () => ({ attemptCount, rateLimitCount: 0, queuedMs: 0, requestMs: 0,
-      maxActive: 1, primaryAttempts: 0, defaultAttempts: attemptCount, responseBytes: 100 });
+      maxActive: 1, defaultAttempts: attemptCount, responseBytes: 100 });
     const response = await loadPerformanceHistory({ ...input, afterSignatures: ["new"],
       connectionsForSignal: () => ({ connection, rpcMetrics }) });
     expect(response.metric.refreshSignaturesResolved).toBe(true);

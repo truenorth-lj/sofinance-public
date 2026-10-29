@@ -7,7 +7,6 @@ import { NATIVE_SOL_MINT, USDC_MINT } from "@sofinance/engine/ids";
 import { quoteIsFresh } from "@sofinance/engine/quote-math";
 import { OPEN_RANGE_UI_PRESETS, type OpenRangePreset } from "@sofinance/engine/open-range-presets";
 import { createJupiterRelayStore } from "@/lib/jupiter/browser-relay";
-import { NO_BEAM_STATUS } from "@/lib/open-beam-status";
 import type { WalletAsset, WalletDiscovery } from "@sofinance/engine/wallet-discovery";
 import { useWalletConnection } from "./wallet-connection";
 import { notifyPositionHistoryChange } from "@/lib/position-history-refresh";
@@ -84,7 +83,7 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
   const { quote, setQuote, quoteLoading, setQuoteLoading, quoteError, setQuoteError,
     setQuoteRevision, invalidateQuote } = preview;
   const submission = useOpenSubmission();
-  const { operationStage, beamResult, openStep, swapReceipt, setSwapReceipt } = submission;
+  const { operationStage, openStep, swapReceipt, setSwapReceipt } = submission;
   // Discovery and submission share this error; form commands clear it synchronously.
   const [error, setError] = useState("");
   const [now, setNow] = useState(0);
@@ -287,7 +286,7 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
     error: retryError || open.error || (open.status === "confirmed" ? "" : error),
     submitStage, signature, positionMint, openStep, pendingSwap,
     solTwoStep: inputKind === "native" || Boolean(pendingSwap),
-    beamStatus: open.status === "confirmed" && beamResult?.signature === signature ? beamResult.status : NO_BEAM_STATUS, presets: OPEN_RANGE_UI_PRESETS, fresh, busy,
+    presets: OPEN_RANGE_UI_PRESETS, fresh, busy,
     actionDisabled, actionBlockedReason, walletBlockedReason, changeAmount, chooseAsset, choosePreset,
     setMinPrice: changeMinPrice, setMaxPrice: changeMaxPrice, fillMax, signAndSend,
     now, refreshQuote, canRefreshQuote, retryConfirmation: open.retry,

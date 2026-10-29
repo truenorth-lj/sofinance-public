@@ -6,9 +6,8 @@
  */
 
 export const PERFORMANCE_METHOD = [
-  "Discover txs via Solami getTransactionsForAddress (signatures pages) when SOLAMI_API_KEY is set,",
-  "falling back to SOLANA_RPC_URL / public RPC when Solami's history window is empty or a parsed tx fails;",
-  "else getSignaturesForAddress + bounded-parallel getParsedTransaction batches.",
+  "Discover txs via getSignaturesForAddress + bounded-parallel getParsedTransaction batches",
+  "(SOLANA_RPC_URL / provider pool, falling back to public RPC when a parsed tx fails).",
   "Parse Raydium Anchor events from tx logs: CreatePersonalPositionEvent,",
   "IncreaseLiquidityEvent, DecreaseLiquidityEvent (exact deposit/withdraw/fee amounts).",
   "If logs are truncated, recover matched opening/add/collect operations from actual inner token transfers;",

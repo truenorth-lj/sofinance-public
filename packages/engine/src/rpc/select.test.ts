@@ -12,13 +12,13 @@ import { resetReadRotation, spreadsReads, weightedReadOrder } from "./select";
 const ENV = {
   SOLANA_RPC_URL: "https://helius.example/k",
   ALCHEMY_RPC_URL: "https://alchemy.example/k",
-  SOLAMI_RPC_URL: "https://solami.example/k",
+  QUICKNODE_RPC_URL: "https://quicknode.example/k",
 };
 // Production shape: rps doubles as the spreading weight.
 const PROD = [
   { name: "helius", url: "$SOLANA_RPC_URL", rps: 8 },
   { name: "alchemy", url: "$ALCHEMY_RPC_URL", rps: 12 },
-  { name: "solami", url: "$SOLAMI_RPC_URL", rps: 5, exclude: ["getEpochInfo"] },
+  { name: "quicknode", url: "$QUICKNODE_RPC_URL", rps: 5, exclude: ["getEpochInfo"] },
 ];
 const pool = (list: unknown[] = PROD): RpcPool => parseRpcProviders(JSON.stringify(list), ENV);
 const names = (members: readonly RpcPoolMember[]) => members.map((m) => m.name);
@@ -40,13 +40,13 @@ describe("weightedReadOrder", () => {
   it("spreads picks exactly in proportion to rps (8 / 12 / 5)", () => {
     const { read } = pool();
     const picks = Array.from({ length: 250 }, () => weightedReadOrder(read, { isOpen: closed })[0]!.name!);
-    expect(tally(picks)).toEqual({ helius: 80, alchemy: 120, solami: 50 });
+    expect(tally(picks)).toEqual({ helius: 80, alchemy: 120, quicknode: 50 });
   });
 
   it("interleaves smoothly instead of draining one provider first", () => {
     const { read } = pool();
     const picks = Array.from({ length: 25 }, () => weightedReadOrder(read, { isOpen: closed })[0]!.name!);
-    expect(picks.slice(0, 5)).toEqual(["alchemy", "helius", "solami", "alchemy", "helius"]);
+    expect(picks.slice(0, 5)).toEqual(["alchemy", "helius", "quicknode", "alchemy", "helius"]);
     const longestRun = Math.max(...picks.map((_, i) => {
       let n = 1;
       while (picks[i + n] === picks[i]) n += 1;
@@ -59,7 +59,7 @@ describe("weightedReadOrder", () => {
     const { read } = pool([
       { name: "a", url: "$SOLANA_RPC_URL", rps: 5 },
       { name: "b", url: "$ALCHEMY_RPC_URL", rps: 5 },
-      { name: "c", url: "$SOLAMI_RPC_URL", rps: 20 },
+      { name: "c", url: "$QUICKNODE_RPC_URL", rps: 20 },
     ]);
     expect(names(weightedReadOrder(read, { isOpen: closed }))).toEqual(["c", "a", "b"]);
     expect(names(weightedReadOrder(read, { isOpen: closed }))).toEqual(["a", "c", "b"]);
@@ -71,20 +71,20 @@ describe("weightedReadOrder", () => {
     const isOpen = (key: string) => key === "pool:alchemy";
     const picks = Array.from({ length: 13 }, () => weightedReadOrder(read, { isOpen }));
     expect(picks.every((order) => order.at(-1)!.name === "alchemy")).toBe(true);
-    expect(tally(picks.map((order) => order[0]!.name!))).toEqual({ helius: 8, solami: 5 });
+    expect(tally(picks.map((order) => order[0]!.name!))).toEqual({ helius: 8, quicknode: 5 });
   });
 
   it("keeps list order when every provider is open", () => {
     const { read } = pool();
-    expect(names(weightedReadOrder(read, { isOpen: () => true }))).toEqual(["helius", "alchemy", "solami"]);
+    expect(names(weightedReadOrder(read, { isOpen: () => true }))).toEqual(["helius", "alchemy", "quicknode"]);
   });
 
   it("keeps a preferred provider without advancing the rotation, unless it is unhealthy", () => {
     const { read } = pool();
-    expect(weightedReadOrder(read, { preferredKey: "pool:solami", isOpen: closed })[0]!.name).toBe("solami");
+    expect(weightedReadOrder(read, { preferredKey: "pool:quicknode", isOpen: closed })[0]!.name).toBe("quicknode");
     expect(weightedReadOrder(read, { isOpen: closed })[0]!.name).toBe("alchemy"); // rotation untouched
-    const isOpen = (key: string) => key === "pool:solami";
-    expect(weightedReadOrder(read, { preferredKey: "pool:solami", isOpen })[0]!.name).not.toBe("solami");
+    const isOpen = (key: string) => key === "pool:quicknode";
+    expect(weightedReadOrder(read, { preferredKey: "pool:quicknode", isOpen })[0]!.name).not.toBe("quicknode");
   });
 
   it("only env pools spread reads; the legacy pool keeps its fixed order", () => {
@@ -119,7 +119,7 @@ describe("pooled connections", () => {
     const p = pool();
     const { served, connectionFor } = fleet(p);
     for (let i = 0; i < 25; i += 1) await call(createPooledConnection(p, connectionFor), "getBalance", `w${i}`);
-    expect(tally(served.map((s) => s.split(":")[0]!))).toEqual({ helius: 8, alchemy: 12, solami: 5 });
+    expect(tally(served.map((s) => s.split(":")[0]!))).toEqual({ helius: 8, alchemy: 12, quicknode: 5 });
   });
 
   it("a connection's calls stay on its provider, including concurrent first calls", async () => {
@@ -134,7 +134,7 @@ describe("pooled connections", () => {
   it("skips a provider that excludes the method, for that call only", async () => {
     const p = pool();
     const { served, connectionFor } = fleet(p);
-    // Rotation: alchemy, helius, then solami for the third connection.
+    // Rotation: alchemy, helius, then quicknode for the third connection.
     for (let i = 0; i < 2; i += 1) await call(createPooledConnection(p, connectionFor), "getBalance", `w${i}`);
     const conn = createPooledConnection(p, connectionFor);
     await call(conn, "getEpochInfo");
@@ -147,7 +147,7 @@ describe("pooled connections", () => {
     notePrimaryFailure("pool:alchemy", "auth");
     const { served, connectionFor } = fleet(p);
     for (let i = 0; i < 13; i += 1) await call(createPooledConnection(p, connectionFor), "getBalance", `w${i}`);
-    expect(tally(served.map((s) => s.split(":")[0]!))).toEqual({ helius: 8, solami: 5 });
+    expect(tally(served.map((s) => s.split(":")[0]!))).toEqual({ helius: 8, quicknode: 5 });
   });
 
   it("sends are not spread: no provider is flagged for transactions, so all go to the legacy SOLANA_RPC_URL primary", async () => {
@@ -168,6 +168,6 @@ describe("rpcRequest", () => {
       return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: 1 }), { status: 200 });
     });
     for (let i = 0; i < 25; i += 1) await rpcRequest("getBalance", [`w${i}`], { env, fetcher: fetcher as unknown as typeof fetch });
-    expect(tally(hosts)).toEqual({ helius: 8, alchemy: 12, solami: 5 });
+    expect(tally(hosts)).toEqual({ helius: 8, alchemy: 12, quicknode: 5 });
   });
 });

@@ -18,9 +18,8 @@ import { Connection, PublicKey } from "@solana/web3.js";
 import { createHash } from "node:crypto";
 import { accruedFee } from "@sofinance/engine/compound-math";
 import { positionSide } from "@sofinance/engine/quote-math";
-import { defaultRpcConnection, rpcConnection, rpcProvider, type RpcProvider } from "@sofinance/engine/rpc";
+import { rpcConnection, rpcProvider, type RpcProvider } from "@sofinance/engine/rpc";
 import {
-  type CustomRpcCall,
   type HistoryConnection,
   type HistoryFetchMetric,
 } from "./position-performance-history";
@@ -122,7 +121,7 @@ export type PositionPerformanceResult = {
   assumptions: string;
   /** Sparse cumulative realized fee APR from already-parsed events. Not a daily fill. */
   realizedFeeAprSeries: RealizedFeeAprSeries;
-  /** How position history was loaded (batched; Solami getTransactionsForAddress when available). */
+  /** How position history was loaded (getSignaturesForAddress + batched getParsedTransaction). */
   historyFetch: HistoryFetchMetric;
   timings?: { totalMs: number; accountsMs: number; historyMs: number; pricingMs: number; metadataMs: number };
 };
@@ -139,9 +138,7 @@ export type GetPositionPerformanceOptions = {
   nowSeconds?: number;
   /** Override RPC provider label (tests). Defaults to `rpcProvider()`. */
   provider?: RpcProvider;
-  /** Override Solami custom RPC (tests). */
-  customRpc?: CustomRpcCall;
-  /** Non-Solami RPC for history fallback (tests). Defaults to `defaultRpcConnection()`. */
+  /** Extra RPC for history detail fallback (tests). */
   fallbackConnection?: HistoryConnection;
   /** Explicit null selects the legacy reader for controlled comparisons. */
   historyStore?: PositionHistoryStore | null;
@@ -288,9 +285,7 @@ export async function getPositionPerformance(
 
   const accountsMs = Date.now() - started;
   const provider = options.provider ?? rpcProvider();
-  const fallbackConnection =
-    options.fallbackConnection ??
-    (provider === "solami" && !options.connection ? defaultRpcConnection(undefined, { signal }) : undefined);
+  const fallbackConnection = options.fallbackConnection;
   const historyStore = options.historyStore !== undefined ? options.historyStore
     : !options.connection && getRwaConfig().positionHistoryEnabled ? getPositionHistoryStore() : null;
   const [fetched, uncollected, ownsNft] = await Promise.all([loadPerformanceHistory({
@@ -299,7 +294,6 @@ export async function getPositionPerformance(
     maxDetailRequests: options.connection ? undefined : MAX_PACED_HISTORY_DETAILS,
     connection,
     provider,
-    customRpc: options.customRpc,
     fallbackConnection,
     context: { positionMint, positionAccount: positionPda.toBase58(), poolId: poolId.toBase58(),
       mintA: pool.mintA.toBase58(), mintB: pool.mintB.toBase58(),

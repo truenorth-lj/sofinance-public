@@ -14,7 +14,6 @@ import { assertOpenTransactionSize, compactAtaInstructions, compileCompactOpenTr
 import { defaultRpcConnection, rpcConnection } from "./rpc";
 import { estimateFeeForMessage, OPEN_FEE_ESTIMATE_MESSAGE } from "./rpc/fee-estimate";
 import { JupiterNoRouteError, type BuildRoute } from "./swap/jupiter";
-import { BEAM_MIN_TIP_LAMPORTS, beamTipInstruction, chooseBeamTransaction, fetchBeamTipAddress } from "./solami-beam";
 import { jupiterRelayActive } from "./jupiter/client";
 import { getOpenPositionQuoteBundle, type OpenSwapStrategy } from "./open-quote";
 import { TargetPoolProjectionError } from "./target-pool-projection";
@@ -262,20 +261,10 @@ async function buildOpenPositionAttempt(
     ...wrapInstructions, ...feeInstructions.instructions, ...createAtaInstructions, ...routeInstructions, ...raydiumInstructions, ...cleanupInstructions,
   ]);
   assertOpenTransactionSize(compileCompactOpenTransaction({ payerKey: payer, recentBlockhash: simulationBlockhash, instructions }, availableTables).transaction);
-  // Beam tips are paid by the wallet; sponsored transactions never carry one.
-  const tip = sponsored ? null : await fetchBeamTipAddress();
-  const messageInput = { payerKey: payer, recentBlockhash: simulationBlockhash, instructions };
-  const withoutTip = compileCompactOpenTransaction(messageInput, availableTables);
-  assertOpenTransactionSize(withoutTip.transaction);
-  const withTip = tip
-    ? compileCompactOpenTransaction({
-      ...messageInput,
-      instructions: [...instructions, beamTipInstruction(wallet, tip.address, tip.lamports)],
-    }, availableTables)
-    : null;
-  const chosen = chooseBeamTransaction(withoutTip.transaction, withTip?.transaction ?? null);
-  const simulated = chosen.transaction;
-  const tables = chosen.included && withTip ? withTip.tables : withoutTip.tables;
+  const compiled = compileCompactOpenTransaction({ payerKey: payer, recentBlockhash: simulationBlockhash, instructions }, availableTables);
+  assertOpenTransactionSize(compiled.transaction);
+  const simulated = compiled.transaction;
+  const tables = compiled.tables;
   if (simulated.message.header.numRequiredSignatures !== (sponsored ? 3 : 2)) {
     throw new Error(sponsored
       ? "Sponsored open-position transaction must require fee payer + wallet + NFT mint signatures"
@@ -292,8 +281,7 @@ async function buildOpenPositionAttempt(
     ? await feeRecipientRent(connection, feeConfig.wallet, instructions) : 0n;
   // Sponsored: the fee payer covers rent and network fees, so the wallet's SOL must not move at all.
   const maxSolDebitLamports = sponsored ? 0n : (state.inputKind === "native" ? BigInt(quote.requested) : 0n)
-    + rentLamports + feeAtaRent + BigInt(feeEstimateValue) + 100_000n
-    + (chosen.included ? BigInt(BEAM_MIN_TIP_LAMPORTS) : 0n);
+    + rentLamports + feeAtaRent + BigInt(feeEstimateValue) + 100_000n;
   const verified = await simulateAndVerifyOpenTransaction({
     connection, transaction: simulated, wallet, state, nftMint,
     tickLower: quote.tickLower, tickUpper: quote.tickUpper,
@@ -323,12 +311,6 @@ async function buildOpenPositionAttempt(
     maxSolDebitLamports: maxSolDebitLamports.toString(),
     feeLamports: fee, rentLamports: Number(rentLamports > BigInt(Number.MAX_SAFE_INTEGER) ? Number.MAX_SAFE_INTEGER : rentLamports),
     sizeBytes, unitsConsumed: verified.unitsConsumed,
-    beam: {
-      included: chosen.included,
-      tipLamports: chosen.included && tip ? tip.lamports : 0,
-      tipAddress: chosen.included && tip ? tip.address.toBase58() : null,
-      skippedReason: chosen.included ? null : chosen.skippedReason,
-    },
     ...stampPreparedBlockhash(latest),
   };
   if (!sponsored && BigInt(MIN_SOL_LAMPORTS) + BigInt(summary.rentLamports) + BigInt(fee) > BigInt(state.solLamports)

@@ -57,25 +57,6 @@ export function isRhcUniv4DiscoveryEnabled(target: DeployTarget = deployTarget()
 }
 
 /**
- * Every remaining Solami integration: Solami RPC (the built-in `solami`
- * provider and any SOLANA_RPC_PROVIDERS / SOLANA_RPC_URL endpoint on
- * *.solami.dev, including `getTransactionsForAddress` history) and Beam (tip
- * addresses and landing lookups), wired into the engine via
- * `src/lib/engine-host.ts`. OFF in production: no Solami request is attempted
- * and RPC goes to the remaining providers. Enabled on Vercel preview/development
- * (where it still needs SOLAMI_API_KEY / a Solami RPC URL to do anything).
- */
-export const SOLAMI_ENABLED: Readonly<Record<DeployTarget, boolean>> = Object.freeze({
-  production: false,
-  preview: true,
-  development: true,
-});
-
-export function isSolamiEnabled(target: DeployTarget = deployTarget()): boolean {
-  return SOLAMI_ENABLED[target];
-}
-
-/**
  * Uniswap v4 on Robinhood Chain: server-side BUILD + eth_simulateV1 of the open-position
  * transaction (`POST /api/rhc-univ4-open`). OFF in production, same targets as above.
  * The route returns unsigned calldata and Permit2 typed data only: it never signs, never

@@ -16,7 +16,6 @@ import { readSwapFeeConfig } from "../swap/fee";
 import { collectSwapFee, fitFeeCollections, type FeeCollection } from "../swap/collection";
 import { retargetSwapSource, swapRouteInstructions } from "../swap/instructions";
 import type { BuildRoute } from "../swap/jupiter";
-import { beamTipInstruction, chooseBeamTransaction, emptyBeamPlan, fetchBeamTipAddress, BEAM_MIN_TIP_LAMPORTS } from "../solami-beam";
 import { defaultRpcConnection, rpcConnection } from "../rpc";
 import { estimateFeeForMessage, WITHDRAW_FEE_ESTIMATE_MESSAGE } from "../rpc/fee-estimate";
 import { getSigningSecret } from "../config/server-env";
@@ -179,14 +178,12 @@ export async function buildWithdraw(raw: WithdrawPrepareRequest, preview = false
     Object.assign(blockhash, await connection.getLatestBlockhash("confirmed"));
     const chosenInstructions = count === 2 ? [...prefix, ...rentRecovery] : combined;
     const compileFinal = (ixs: TransactionInstruction[]) => compileCompactOpenTransaction({ payerKey: payer, recentBlockhash: blockhash.blockhash, instructions: ixs }, count === 2 ? commonTables : tables).transaction;
-    // Beam tips are paid by the wallet; sponsored transactions never carry one.
-    const base = compileFinal(chosenInstructions), tip = sponsored ? null : await fetchBeamTipAddress();
-    const chosen = chooseBeamTransaction(base, tip ? compileFinal([...chosenInstructions, beamTipInstruction(wallet, tip.address, tip.lamports)]) : null);
-    const summary: WithdrawSummary = { operation: "withdraw", wallet: request.wallet, positionMint: request.positionMint, positionAccount: state.positionAccount, poolId: state.poolId, percentBps, receive: request.receive, outputMint: output, stage: count === 2 ? "withdraw" : "atomic", transactions: count, closesPosition: percentBps === 10000, startingLiquidity: state.liquidity, removedLiquidity: removed.toString(), assets, isolatedSources: count === 1 ? isolatedSources : [], outputs: swaps.outputs, priceImpactBps: swaps.priceImpactBps, protocolFee: swaps.protocolFee, ...impactFlags(swaps.priceImpactBps), slippageBps: SLIPPAGE_BPS, rentRefundLamports: rentRefund.toString(), maxSolDebitLamports: sponsored ? "0" : await solDebitBudget(connection, chosen.transaction, chosenInstructions), expiresAt: Date.now() + 60000, lastValidBlockHeight: blockhash.lastValidBlockHeight, blockhash: blockhash.blockhash, bytes: versionedTransactionSize(chosen.transaction), beam: { ...emptyBeamPlan(), enabled: !!tip, included: chosen.included, tipAddress: chosen.included ? tip!.address.toBase58() : null, tipLamports: chosen.included ? tip!.lamports : 0, skippedReason: chosen.skippedReason }, ...(sponsored ? { feePayer: payer.toBase58() } : {}) };
+    const transaction = compileFinal(chosenInstructions);
+    const summary: WithdrawSummary = { operation: "withdraw", wallet: request.wallet, positionMint: request.positionMint, positionAccount: state.positionAccount, poolId: state.poolId, percentBps, receive: request.receive, outputMint: output, stage: count === 2 ? "withdraw" : "atomic", transactions: count, closesPosition: percentBps === 10000, startingLiquidity: state.liquidity, removedLiquidity: removed.toString(), assets, isolatedSources: count === 1 ? isolatedSources : [], outputs: swaps.outputs, priceImpactBps: swaps.priceImpactBps, protocolFee: swaps.protocolFee, ...impactFlags(swaps.priceImpactBps), slippageBps: SLIPPAGE_BPS, rentRefundLamports: rentRefund.toString(), maxSolDebitLamports: sponsored ? "0" : await solDebitBudget(connection, transaction, chosenInstructions), expiresAt: Date.now() + 60000, lastValidBlockHeight: blockhash.lastValidBlockHeight, blockhash: blockhash.blockhash, bytes: versionedTransactionSize(transaction), ...(sponsored ? { feePayer: payer.toBase58() } : {}) };
     if (!preview)
         assertImpactConfirmed(summary, request.confirmHighImpact);
-    await simulateWithdraw(connection, chosen.transaction, summary);
-    return preview ? { summary, unsignedTransaction: "", permit: "" } : prepareResult(chosen.transaction, summary);
+    await simulateWithdraw(connection, transaction, summary);
+    return preview ? { summary, unsignedTransaction: "", permit: "" } : prepareResult(transaction, summary);
 }
 function prepareResult(transaction: VersionedTransaction, summary: WithdrawSummary): WithdrawPrepared {
     const unsignedTransaction = Buffer.from(transaction.serialize()).toString("base64");
@@ -227,8 +224,7 @@ async function buildSwapStage(raw: WithdrawPrepareRequest, connection: Connectio
     const tables = await openLookupTableReader(connection)([...new Set(swaps.routes.flatMap(r => Object.keys(r.addressesByLookupTableAddress ?? {})))].map(k => new PublicKey(k)));
     let instructions = await compactAtaInstructions(connection, [atomicComputeUnitLimitInstruction(), ...swaps.instructions]);
     const compile = (ixs: TransactionInstruction[]) => compileCompactOpenTransaction({ payerKey: payer, recentBlockhash: blockhash.blockhash, instructions: ixs }, tables).transaction;
-    const tip = sponsored ? null : await fetchBeamTipAddress();
-    const fitted = await fitFeeCollections(connection, swaps.collections, instructions, compile, tip ? beamTipInstruction(wallet, tip.address, tip.lamports) : undefined);
+    const fitted = await fitFeeCollections(connection, swaps.collections, instructions, compile);
     instructions = fitted.instructions;
     if (fitted.fallback)
         for (const fee of swaps.protocolFee.legs) {
@@ -238,11 +234,12 @@ async function buildSwapStage(raw: WithdrawPrepareRequest, connection: Connectio
     const base = compile(instructions);
     if (exceedsTxSizeLimit(versionedTransactionSize(base)))
         throw new Error("Swap stage exceeds transaction size limit; received tokens remain in wallet");
-    const chosen = chooseBeamTransaction(base, tip ? compile([...instructions, beamTipInstruction(wallet, tip.address, tip.lamports)]) : null);
-    const summary: WithdrawSummary = { ...original, stage: "swap", maxSolDebitLamports: sponsored ? "0" : await solDebitBudget(connection, chosen.transaction, instructions), assets, outputs: swaps.outputs, protocolFee: swaps.protocolFee, priceImpactBps: swaps.priceImpactBps, ...impactFlags(swaps.priceImpactBps), tx1Signature: raw.tx1Signature, blockhash: blockhash.blockhash, lastValidBlockHeight: blockhash.lastValidBlockHeight, expiresAt: Date.now() + 60000, bytes: versionedTransactionSize(chosen.transaction), beam: { ...emptyBeamPlan(), enabled: !!tip, included: chosen.included, tipAddress: chosen.included ? tip!.address.toBase58() : null, tipLamports: chosen.included ? tip!.lamports : 0, skippedReason: chosen.skippedReason } };
-    await simulateWithdraw(connection, chosen.transaction, summary);
-    return preview ? { summary, unsignedTransaction: "", permit: "" } : prepareResult(chosen.transaction, summary);
+    const summary: WithdrawSummary = { ...original, stage: "swap", maxSolDebitLamports: sponsored ? "0" : await solDebitBudget(connection, base, instructions), assets, outputs: swaps.outputs, protocolFee: swaps.protocolFee, priceImpactBps: swaps.priceImpactBps, ...impactFlags(swaps.priceImpactBps), tx1Signature: raw.tx1Signature, blockhash: blockhash.blockhash, lastValidBlockHeight: blockhash.lastValidBlockHeight, expiresAt: Date.now() + 60000, bytes: versionedTransactionSize(base) };
+    await simulateWithdraw(connection, base, summary);
+    return preview ? { summary, unsignedTransaction: "", permit: "" } : prepareResult(base, summary);
 }
+/** Fixed SOL-debit allowance on top of network fee + ATA rent (unchanged 100,000 lamports, 0.0001 SOL). */
+export const WITHDRAW_SOL_DEBIT_MARGIN_LAMPORTS = 100_000n;
 async function solDebitBudget(connection: Connection, transaction: VersionedTransaction, instructions: TransactionInstruction[]) {
     const network = await estimateFeeForMessage(connection, transaction.message, "confirmed", {
         fallback: defaultRpcConnection, emptyError: WITHDRAW_FEE_ESTIMATE_MESSAGE,
@@ -250,6 +247,6 @@ async function solDebitBudget(connection: Connection, transaction: VersionedTran
     // Each retained ATA creation is budgeted conservatively, including Token-2022.
     const ataCreates = instructions.filter(ix => ix.programId.toBase58() === "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL").length;
     const rent = await connection.getMinimumBalanceForRentExemption(512, "confirmed");
-    return (BigInt(network) + BigInt(ataCreates) * BigInt(rent) + BigInt(BEAM_MIN_TIP_LAMPORTS)).toString();
+    return (BigInt(network) + BigInt(ataCreates) * BigInt(rent) + WITHDRAW_SOL_DEBIT_MARGIN_LAMPORTS).toString();
 }
 

@@ -44,8 +44,8 @@ function prepared(nftMint = nft.publicKey) {
 }
 function Harness() {
   const value = useOpenPositionController(currentPair);
-  useEffect(() => { controller = value; const { submitStage, signature, positionMint, error, actionDisabled, beamStatus, quote, quoteError, quoteLoading } = value;
-    ledger.push([Date.now(), "commit", { submitStage, signature, positionMint, error, actionDisabled, beamStatus, quote, quoteError, quoteLoading }]); });
+  useEffect(() => { controller = value; const { submitStage, signature, positionMint, error, actionDisabled, quote, quoteError, quoteLoading } = value;
+    ledger.push([Date.now(), "commit", { submitStage, signature, positionMint, error, actionDisabled, quote, quoteError, quoteLoading }]); });
   return null;
 }
 const calls = (url: string) => fetchMock.mock.calls.filter(([path]) => path === url);
@@ -97,7 +97,7 @@ beforeEach(() => {
       const tx = VersionedTransaction.deserialize(Buffer.from(body.signedTransaction, "base64"));
       expect(tx.signatures[0]?.some((byte: number) => byte !== 0)).toBe(true);
       expect(tx.signatures[1]?.some((byte: number) => byte !== 0)).toBe(true);
-      return Response.json({ signature: sendMode === "mismatch" ? "wrong" : bs58.encode(tx.signatures[0]!), beamLabel: "Beam landed", positionMint: tx.message.staticAccountKeys[1]!.toBase58() });
+      return Response.json({ signature: sendMode === "mismatch" ? "wrong" : bs58.encode(tx.signatures[0]!), positionMint: tx.message.staticAccountKeys[1]!.toBase58() });
     }
     if (url === "/api/open-status") {
       if (verificationError) throw new Error("RPC unavailable");
@@ -134,12 +134,12 @@ describe("open-position transaction lifecycle", () => {
     currentPair = pair; await act(async () => root.render(createElement(Harness)));
     expect(controller.submitStage).toBe("confirmed"); expect(controller.positionMint).toBe(JSON.parse(window.localStorage.getItem(openAttemptKey(wallet))!).nftMint);
   });
-  it("shows Beam only after confirmed and createAnother retains receipt while preparing a new quote", async () => {
+  it("createAnother retains receipt after confirmation while preparing a new quote", async () => {
     await mount(); await act(async () => controller.signAndSend()); await advance(1);
-    expect(controller.beamStatus.landedLabel).toBeNull(); chainStatus = "confirmed"; await advance(3000);
-    expect(controller.beamStatus.landedLabel).toBe("Beam landed"); const raw = window.localStorage.getItem(openAttemptKey(wallet));
+    chainStatus = "confirmed"; await advance(3000);
+    expect(controller.submitStage).toBe("confirmed"); const raw = window.localStorage.getItem(openAttemptKey(wallet));
     await act(async () => controller.createAnother()); expect(controller.signature).toBe("");
-    expect(controller.positionMint).toBe(JSON.parse(raw!).nftMint); expect(controller.beamStatus.landedLabel).toBeNull();
+    expect(controller.positionMint).toBe(JSON.parse(raw!).nftMint);
     expect(window.localStorage.getItem(openAttemptKey(wallet))).toBe(raw); await advance(450); expect(controller.actionDisabled).toBe(false);
     chainStatus = "pending"; await act(async () => controller.signAndSend()); expect(mocks.sign).toHaveBeenCalledTimes(2);
   });

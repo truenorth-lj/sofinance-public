@@ -80,7 +80,7 @@ async function buildForOutput(connection: Connection, walletAddress: string, sta
   const readTables = openLookupTableReader(connection);
   const tables = await readTables(Object.keys(route.addressesByLookupTableAddress || {}).map((key) => new PublicKey(key)));
   validateRouteTables([route], tables);
-  // Same shape as the Phantom-clean diag v4: CU limit, wrap, (output ATA), swap, close. No Beam tip.
+  // Same shape as the Phantom-clean diag v4: CU limit, wrap, (output ATA), swap, close.
   const instructions = await compactAtaInstructions(connection, [
     atomicComputeUnitLimitInstruction(),
     ...wrapNativeSolInstructions(wallet, requested),

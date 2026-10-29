@@ -26,7 +26,7 @@ The browser harness uses unfunded, throwaway Wallet Standard keys. Broadcast and
 
 ## Regression coverage
 
-- Service, HTTP and MCP: explicit RPC preflight rejection is unsent; network/RPC/signature mismatch after submission remains unknown; optional Beam failure preserves accepted submission.
+- Service, HTTP and MCP: explicit RPC preflight rejection is unsent; network/RPC/signature mismatch after submission remains unknown.
 - Persistence: record saved before broadcast, previous record archived, corrupt/foreign records rejected, silent storage failures prevent broadcast, definite unsent records archived before unlocking.
 - Status endpoint: waits for finalized status, verifies original wallet/NFT signers, blockhash, CLMM open instruction, derived position PDA, pool, ticks and liquidity. Missing history with a surviving position requires manual review.
 - Controller: acceptance remains pending, reload restores original signature without another sign/prepare, failed/expired results permit retry, unknown RPC result stays blocked, late wallet/selection/unmount results cannot broadcast.

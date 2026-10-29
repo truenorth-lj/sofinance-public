@@ -10,6 +10,10 @@ This project uses [Semantic Versioning](https://semver.org/). `package.json` is 
 ### Removed
 
 - Live pool trade activity (Solami Blur): the MCP `get_pool_activity` tool (stdio + remote), `/api/pool-activity` and `/api/pool-activity/stream`, the app's Live pool activity panel / swap ticker, the Blur client, and `POOL_ACTIVITY_ENABLED`. `get_position_range_status` uses the on-chain pool price. MCP now lists 15 tools.
+- Solami entirely (production already ran with it switched off): the Solami RPC provider, the Solami (`getTransactionsForAddress`) position-history path, Beam tips and landing lookups, `/api/beam-landing` (now 404), the `SOLAMI_ENABLED` flag, the Solami credit link, and every `SOLAMI_*` env read. RPC is `SOLANA_RPC_URL` → public; any `SOLANA_RPC_URL` / `SOLANA_RPC_PROVIDERS` endpoint on `solami.dev` is still skipped. Position history uses `getSignaturesForAddress` + batched `getParsedTransaction`, as production already did.
+- `beam`, `beamLabel` and `beamLandingUrl` from open / compound / selected / withdraw broadcast and MCP submit responses, and `summary.beam` from prepare summaries. Withdraw checkpoints saved with `beam` still load. The withdraw SOL budget keeps its 100,000-lamport margin (`WITHDRAW_SOL_DEBIT_MARGIN_LAMPORTS`).
+- `solamiTxCount` and `historyFetch.rpc.primaryAttempts` from position-performance metrics (always 0 in production).
+- The "Sent without Beam tip" line in the open-position modal.
 
 ### Changed
 

@@ -5,7 +5,6 @@ import { PublicKey, VersionedTransaction } from "@solana/web3.js";
 import { parseWallet } from "@sofinance/engine/api-input";
 import { apiError } from "@/lib/api-response";
 import { verifySelectedPermit, type SelectedPermitInput } from "@/lib/selected-permit";
-import { beamLandingUrl } from "@sofinance/engine/solami-beam";
 import nacl from "tweetnacl";
 import { getSigningSecret } from "@sofinance/engine/config/server-env";
 import { isSingleWalletSignedTransaction } from "@sofinance/engine/transaction-limits";
@@ -62,7 +61,7 @@ export async function POST(request: Request) {
       prepared: prepared !== transaction ? prepared : undefined,
     }, APP_SELECTED_SUBMIT);
     return Response.json(
-      { signature, beam: null, beamLabel: null, beamLandingUrl: beamLandingUrl(signature) },
+      { signature },
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (error) {

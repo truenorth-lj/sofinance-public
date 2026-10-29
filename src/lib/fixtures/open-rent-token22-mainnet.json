@@ -2,7 +2,7 @@
   "signature": "SynthTestS1gnature111111111111111111111111111111111111111111111111111111111111111111111",
   "slot": 455000000,
   "feeLamports": 10000,
-  "beamTipLamports": 100000,
+  "extraDebitLamports": 100000,
   "walletDeltaLamports": -5377960,
   "instruction": "open_position_with_token22_nft",
   "programId": "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK",

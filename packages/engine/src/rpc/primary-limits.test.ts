@@ -25,32 +25,32 @@ describe("primary RPC concurrency", () => {
         active -= 1;
         return { index };
       },
-      primaryId: "solami",
+      primaryId: "default",
     } as never));
     const results = await Promise.all(calls);
     expect(results.map((result) => (result.value as { index: number }).index)).toEqual([...Array(40).keys()]);
     expect(peak).toBe(PRIMARY_RPC_CONCURRENCY);
-    expect(primaryRpcSlotUsage("solami")).toEqual({ active: 0, waiting: 0 });
+    expect(primaryRpcSlotUsage("default")).toEqual({ active: 0, waiting: 0 });
   });
 
   it("releases a queued slot when its caller aborts", async () => {
     let release: () => void = () => undefined;
     const gate = new Promise<void>((resolve) => { release = resolve; });
     const holders = Array.from({ length: PRIMARY_RPC_CONCURRENCY }, () => invokeWithPolicy({
-      method: "getAccountInfo", primary: async () => { await gate; return 1; }, primaryId: "solami",
+      method: "getAccountInfo", primary: async () => { await gate; return 1; }, primaryId: "default",
     } as never));
     const aborter = new AbortController();
     const queued = invokeWithPolicy({
-      method: "getAccountInfo", primary: async () => 2, primaryId: "solami", signal: aborter.signal,
+      method: "getAccountInfo", primary: async () => 2, primaryId: "default", signal: aborter.signal,
     } as never);
     await tick();
-    expect(primaryRpcSlotUsage("solami").waiting).toBe(1);
+    expect(primaryRpcSlotUsage("default").waiting).toBe(1);
     aborter.abort(new Error("user left"));
     await expect(queued).rejects.toThrow();
-    expect(primaryRpcSlotUsage("solami").waiting).toBe(0);
+    expect(primaryRpcSlotUsage("default").waiting).toBe(0);
     release();
     await Promise.all(holders);
-    expect(primaryRpcSlotUsage("solami")).toEqual({ active: 0, waiting: 0 });
+    expect(primaryRpcSlotUsage("default")).toEqual({ active: 0, waiting: 0 });
   });
 });
 
@@ -61,27 +61,27 @@ describe("rate-limited primary with a refusing fallback", () => {
 
   it("tries the primary again when the circuit is open for rate-limit and the fallback refuses", async () => {
     setRpcRetryConfig({ maxAttempts: 1 });
-    notePrimaryFailure("solami", "rate-limit");
-    expect(isPrimaryCircuitOpen("solami")).toBe(true);
+    notePrimaryFailure("default", "rate-limit");
+    expect(isPrimaryCircuitOpen("default")).toBe(true);
     const result = await invokeWithPolicy({
       method: "getAccountInfo",
       primary: async () => ({ owner: "primary" }),
       fallback: async () => { throw new Error("429 Too Many Requests: Connection rate limits exceeded"); },
-      primaryId: "solami", fallbackId: "default",
+      primaryId: "default", fallbackId: "default",
     } as never);
-    expect(result).toMatchObject({ value: { owner: "primary" }, servedBy: "solami", fallback: false });
-    expect(isPrimaryCircuitOpen("solami")).toBe(false);
+    expect(result).toMatchObject({ value: { owner: "primary" }, servedBy: "default", fallback: false });
+    expect(isPrimaryCircuitOpen("default")).toBe(false);
   });
 
   it("does not retry the primary when the circuit is open for auth", async () => {
     setRpcRetryConfig({ maxAttempts: 1 });
-    notePrimaryFailure("solami", "auth");
+    notePrimaryFailure("default", "auth");
     let primaryCalls = 0;
     await expect(invokeWithPolicy({
       method: "getAccountInfo",
       primary: async () => { primaryCalls += 1; return 1; },
       fallback: async () => { throw new Error("429 Too Many Requests"); },
-      primaryId: "solami", fallbackId: "default",
+      primaryId: "default", fallbackId: "default",
     } as never)).rejects.toThrow();
     expect(primaryCalls).toBe(0);
   });

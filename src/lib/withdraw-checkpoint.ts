@@ -43,7 +43,9 @@ const summary = z.object({
  priceImpactBps: z.number().nonnegative(), warning: z.boolean(), requiresSecondConfirmation: z.boolean(), slippageBps: z.number().nonnegative(),
  protocolFee: z.object({ bps: z.number().nonnegative(), wallet: address.nullable(), legs: z.array(z.object({ mint: address, amount, collectedMint: address.optional(), collectedAmount: amount.optional() })) }),
  rentRefundLamports: amount, maxSolDebitLamports: amount, expiresAt: integer, lastValidBlockHeight: integer, blockhash: address, bytes: integer,
- beam: z.object({ enabled: z.boolean(), included: z.boolean(), tipLamports: integer, tipAddress: address.nullable(), skippedReason: z.enum(["disabled", "no-tip-address", "oversize"]).nullable() }),
+ // Retired Beam tip plan: no longer produced, kept optional so checkpoints saved before its removal still
+ // parse to the exact summary their permit HMAC covers.
+ beam: z.object({ enabled: z.boolean(), included: z.boolean(), tipLamports: integer, tipAddress: address.nullable(), skippedReason: z.enum(["disabled", "no-tip-address", "oversize"]).nullable() }).optional(),
  tx1Signature: signature.optional(),
 });
 const prepared = z.object({ summary, permit: z.string().min(1), unsignedTransaction: z.string().min(1).refine(value => {

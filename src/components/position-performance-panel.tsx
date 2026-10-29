@@ -116,9 +116,8 @@ type PerformanceResponse = {
   historyFetch?: {
     txCount: number;
     elapsedMs: number;
-    provider: "solami" | "default" | "solami+default" | "unknown";
+    provider: "default" | "unknown";
     source?: string;
-    solamiTxCount?: number;
     defaultTxCount?: number;
     fallbackReasons?: string[];
     canContinue?: boolean;

@@ -10,7 +10,6 @@ import { buildAndSimulateCompound } from "@sofinance/engine/compound-atomic";
 import { prepareCompound } from "@/server/transactions/compound-prepare";
 import { verifySelectedPermit } from "../lib/selected-permit";
 import { verifyCompoundPermit } from "../lib/compound-permit";
-import { beamAfterSend, noBeamAfterSend } from "@/lib/beam-after-send";
 import { sendSignedCompoundTransaction } from "../lib/compound-send";
 import { CompoundSendError, notSentRetryMessage, sanitizePublicError } from "../lib/public-error";
 import { getSigningSecret } from "@sofinance/engine/config/server-env";
@@ -415,9 +414,8 @@ export async function submitSignedTransaction(input: SubmitSignedTransactionInpu
     prepared: prepared !== transaction ? prepared : undefined,
   }, MCP_SELECTED_SUBMIT);
 
-  // Same as /api/selected-broadcast: no inline Beam wait; landing is status-only via /api/beam-landing.
-  const beam = await beamAfterSend(signature, null).catch(() => noBeamAfterSend(signature));
-  return { signature, beam: beam.beam, beamLabel: beam.label, beamLandingUrl: beam.beamLandingUrl };
+  // Same response as /api/selected-broadcast.
+  return { signature };
 }
 
 /**

@@ -41,7 +41,7 @@ describe("server-env equivalence with the previous inline reads", () => {
 
   it("does not read any other variable", () => {
     vi.stubEnv("JUPITER_API_KEY", undefined);
-    vi.stubEnv("SOLAMI_API_KEY", "other");
+    vi.stubEnv("SOLANA_RPC_URL", "https://other.example");
     vi.stubEnv("SOFINANCE_SIGNING_SECRET", "other");
     expect(getSigningSecret()).toBe("");
     expect(getJupiterApiKey()).toBeUndefined();

@@ -33,23 +33,23 @@ describe("RPC primary circuit breaker", () => {
       method: "getAccountInfo",
       primary,
       fallback,
-      primaryId: "solami",
+      primaryId: "default",
       fallbackId: "default",
     });
     expect(first).toMatchObject({ servedBy: "default", errorKind: "auth", reason: "primary-error" });
-    expect(isPrimaryCircuitOpen("solami")).toBe(true);
+    expect(isPrimaryCircuitOpen("default")).toBe(true);
 
     const second = await invokeWithPolicy({
       method: "getAccountInfo",
       primary,
       fallback,
-      primaryId: "solami",
+      primaryId: "default",
       fallbackId: "default",
     });
     expect(second).toMatchObject({ servedBy: "default", reason: "circuit-open" });
     expect(primary).toHaveBeenCalledOnce();
     expect(fallback).toHaveBeenCalledTimes(2);
-    expect(JSON.stringify(events)).not.toMatch(/api_key|https?:\/\/|solami\.dev|helius/i);
+    expect(JSON.stringify(events)).not.toMatch(/api_key|https?:\/\/|helius/i);
   });
 
   it("retries the primary after the short auth cooldown", async () => {
@@ -59,13 +59,13 @@ describe("RPC primary circuit breaker", () => {
     setRpcCircuitClock(() => now);
     const primary = vi.fn()
       .mockRejectedValueOnce(new RpcHttpError(403, "RPC HTTP 403"))
-      .mockResolvedValueOnce({ owner: "solami" });
+      .mockResolvedValueOnce({ owner: "primary" });
     const fallback = vi.fn(async () => ({ owner: "helius" }));
     await invokeWithPolicy({
       method: "getAccountInfo",
       primary,
       fallback,
-      primaryId: "solami",
+      primaryId: "default",
       fallbackId: "default",
     });
     now = 2_001;
@@ -73,10 +73,10 @@ describe("RPC primary circuit breaker", () => {
       method: "getAccountInfo",
       primary,
       fallback,
-      primaryId: "solami",
+      primaryId: "default",
       fallbackId: "default",
     });
-    expect(recovered).toMatchObject({ value: { owner: "solami" }, servedBy: "solami", fallback: false });
+    expect(recovered).toMatchObject({ value: { owner: "primary" }, servedBy: "default", fallback: false });
     expect(primary).toHaveBeenCalledTimes(2);
   });
 
@@ -90,14 +90,14 @@ describe("RPC primary circuit breaker", () => {
       method: "sendRawTransaction",
       primary,
       fallback,
-      primaryId: "solami",
+      primaryId: "default",
       fallbackId: "default",
     });
     await invokeWithPolicy({
       method: "sendRawTransaction",
       primary,
       fallback,
-      primaryId: "solami",
+      primaryId: "default",
       fallbackId: "default",
     });
     expect(primary).toHaveBeenCalledOnce();

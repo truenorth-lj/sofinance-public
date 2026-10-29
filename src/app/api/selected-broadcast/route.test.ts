@@ -1,7 +1,7 @@
 // Characterization tests: pin the CURRENT behaviour of POST /api/selected-broadcast
 // (the route that broadcasts a user-signed add-liquidity transaction), quirks included.
 // Real: tx parsing, HMAC permit, public-error sanitising. Mocked: RPC, state read,
-// simulation, Beam lookup. If one of these tests fails after a refactor, the wire
+// simulation. If one of these tests fails after a refactor, the wire
 // behaviour of a money-moving endpoint changed; decide deliberately, don't just update.
 import { PublicKey } from "@solana/web3.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -10,15 +10,13 @@ vi.mock("server-only", () => ({}));
 vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: vi.fn() }));
 vi.mock("@sofinance/engine/selected-state", () => ({ readSelectedPositionState: vi.fn() }));
 vi.mock("@/lib/selected-simulation", () => ({ simulateAndVerifySelectedTransaction: vi.fn() }));
-vi.mock("@sofinance/engine/solami-beam", () => ({ lookupBeamAfterSend: vi.fn(), beamLandingUrl: (signature: string) => `https://api.solami.dev/swqos/tx/${signature}` }));
 
 import { rpcConnection } from "@sofinance/engine/rpc";
 import { readSelectedPositionState } from "@sofinance/engine/selected-state";
 import { simulateAndVerifySelectedTransaction } from "@/lib/selected-simulation";
-import { lookupBeamAfterSend } from "@sofinance/engine/solami-beam";
 import { issueSelectedPermit, type SelectedPermitInput } from "@/lib/selected-permit";
 import {
-  BEAM_RESULT, SIGNING_SECRET, buildTransaction, fakeConnection, type FakeConnection, jsonRequest, messageBase64, oversizedSignedBase64, signatureOf,
+  SIGNING_SECRET, buildTransaction, fakeConnection, type FakeConnection, jsonRequest, messageBase64, oversizedSignedBase64, signatureOf,
   testKeypair, toBase64,
 } from "@/lib/test-support/send-fixtures";
 import { POST } from "./route";
@@ -71,7 +69,6 @@ beforeEach(() => {
   vi.mocked(rpcConnection).mockReturnValue(connection as never);
   vi.mocked(readSelectedPositionState).mockResolvedValue(chainState() as never);
   vi.mocked(simulateAndVerifySelectedTransaction).mockResolvedValue(undefined as never);
-  vi.mocked(lookupBeamAfterSend).mockResolvedValue(BEAM_RESULT as never);
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -81,13 +78,11 @@ afterEach(() => {
 });
 
 describe("POST /api/selected-broadcast: happy path", () => {
-  it("verifies the prepared message and fresh state, uses RPC preflight, and returns before Beam", async () => {
-    vi.mocked(lookupBeamAfterSend).mockImplementation(() => new Promise(() => {}));
+  it("verifies the prepared message and fresh state, uses RPC preflight, and returns only the signature", async () => {
     const { response, json } = await call(validBody(transaction));
     expect(response.status).toBe(200);
     expect(response.headers.get("Cache-Control")).toBe("no-store");
-    expect(json).toEqual({ signature: signatureOf(transaction), beam: null, beamLabel: null,
-      beamLandingUrl: `https://api.solami.dev/swqos/tx/${signatureOf(transaction)}` });
+    expect(json).toEqual({ signature: signatureOf(transaction) });
     expect(connection.sendRawTransaction).toHaveBeenCalledWith(expect.any(Uint8Array), {
       skipPreflight: false, preflightCommitment: "confirmed", maxRetries: 3,
     });
@@ -96,7 +91,6 @@ describe("POST /api/selected-broadcast: happy path", () => {
     expect(simulateAndVerifySelectedTransaction).toHaveBeenCalledWith(expect.objectContaining({
       sigVerify: true, useStateSnapshot: true, requested: 1_000_000n, expectedLiquidity: 500n,
     }));
-    expect(lookupBeamAfterSend).not.toHaveBeenCalled();
   });
 
   it("does not require any fee-related or extra fields: a resale floor of exactly 9500 and 10000 are accepted", async () => {
@@ -341,7 +335,6 @@ describe("POST /api/selected-broadcast: broadcast result handling", () => {
     const { response, json } = await call(validBody(transaction));
     expect(response.status).toBe(400);
     expect(json).toEqual({ error: "Dedicated RPC returned transaction signature mismatch" });
-    expect(lookupBeamAfterSend).not.toHaveBeenCalled();
   });
 
   it("QUIRK: errors never carry sent:false, even when nothing was broadcast (open/compound routes do)", async () => {
@@ -363,14 +356,5 @@ describe("POST /api/selected-broadcast: broadcast result handling", () => {
     connection.sendRawTransaction.mockRejectedValue(new Error("Transaction simulation failed: Blockhash not found"));
     const { json } = await call(validBody(transaction));
     expect(String(json.error)).toContain("Transaction blockhash expired.");
-  });
-
-  it("a Beam outage cannot turn a successful send into an error", async () => {
-    vi.mocked(lookupBeamAfterSend).mockRejectedValue(new Error("beam down"));
-    const { response, json } = await call(validBody(transaction));
-    expect(connection.sendRawTransaction).toHaveBeenCalledOnce();
-    expect(response.status).toBe(200);
-    expect(json.signature).toBe(signatureOf(transaction));
-    expect(lookupBeamAfterSend).not.toHaveBeenCalled();
   });
 });

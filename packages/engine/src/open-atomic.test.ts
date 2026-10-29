@@ -10,10 +10,6 @@ vi.mock("./open-state", () => ({ readOpenPoolState: vi.fn() }));
 vi.mock("./open-quote", () => ({ getOpenPositionQuoteBundle: vi.fn() }));
 vi.mock("./open-simulation", () => ({ simulateAndVerifyOpenTransaction: vi.fn() }));
 vi.mock("./open-transaction", async importOriginal => ({ ...await importOriginal<object>(), openLookupTableReader: vi.fn() }));
-vi.mock("./solami-beam", async importOriginal => ({
-  ...await importOriginal<object>(),
-  fetchBeamTipAddress: vi.fn(async () => null),
-}));
 vi.mock("@raydium-io/raydium-sdk-v2", async importOriginal => ({ ...await importOriginal<object>(),
   Raydium: { load: vi.fn() }, ClmmInstrument: { openPositionFromLiquidityInstructions: vi.fn() },
 }));
@@ -23,7 +19,6 @@ import { readOpenPoolState } from "./open-state";
 import { getOpenPositionQuoteBundle } from "./open-quote";
 import { simulateAndVerifyOpenTransaction } from "./open-simulation";
 import { openLookupTableReader } from "./open-transaction";
-import { fetchBeamTipAddress } from "./solami-beam";
 import { walletReturnedTransactionMatches } from "./wallet-returned-tx";
 import { buildAndSimulateOpenPosition } from "./open-atomic";
 import { TargetPoolProjectionError } from "./target-pool-projection";
@@ -243,13 +238,12 @@ it("tries the other swap direction when the first swap + open route exceeds the 
   expect(simulateAndVerifyOpenTransaction).toHaveBeenCalledTimes(1);
 });
 
-it("rejects oversized candidates before looking up optional Beam tips", async () => {
+it("rejects oversized candidates before simulating", async () => {
   const quoteBundle = vi.mocked(getOpenPositionQuoteBundle).getMockImplementation()!;
   vi.mocked(getOpenPositionQuoteBundle).mockImplementation(async (...args) => {
     return oversized(await quoteBundle(...args));
   });
   await expect(prepare()).rejects.toThrow(/exceeds 1,232 byte limit/);
-  expect(fetchBeamTipAddress).not.toHaveBeenCalled();
   expect(simulateAndVerifyOpenTransaction).not.toHaveBeenCalled();
 });
 
@@ -310,7 +304,7 @@ describe("fee payer separation (sponsored mode)", () => {
       .rejects.toThrow("Sponsored open-position does not accept native SOL input");
   });
 
-  it("makes the sponsor the message payer and Raydium rent payer, never asks the wallet for SOL, and skips Beam", async () => {
+  it("makes the sponsor the message payer and Raydium rent payer, never asks the wallet for SOL", async () => {
     vi.mocked(readOpenPoolState).mockResolvedValue(tokenState() as never);
     const quoteBundle = vi.mocked(getOpenPositionQuoteBundle).getMockImplementation()!;
     vi.mocked(getOpenPositionQuoteBundle).mockImplementation(async (...args) => ({ ...await quoteBundle(...args), state: tokenState() } as never));
@@ -319,7 +313,6 @@ describe("fee payer separation (sponsored mode)", () => {
     try {
       result = await buildAndSimulateOpenPosition(wallet, { poolId, inputMint, inputKind: "token" }, "0.03", { preset: "standard" }, 9900, 100, { nftMint, feePayer: sponsor });
     } catch (error) { sizeError = error; }
-    expect(fetchBeamTipAddress).not.toHaveBeenCalled();
     expect(sizeError).toBeUndefined();
     const { transaction, summary } = result!;
     const open = transaction.message.compiledInstructions.find(ix => transaction.message.staticAccountKeys[ix.programIdIndex]!.toBase58() === state.programId)!;

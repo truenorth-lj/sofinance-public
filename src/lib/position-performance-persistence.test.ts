@@ -56,7 +56,7 @@ beforeEach(() => {
       tickUpper: 100, liquidity: "10000", amountA: "100000000", amountB: "100000000" }] }],
     signatureCount: 1, truncated: false,
     metric: { txCount: 1, elapsedMs: 1, provider: "default", source: "databaseIncremental",
-      solamiTxCount: 0, defaultTxCount: 0, fallbackReasons: [], fetchedTxCount: 0, cachedTxCount: 1 } });
+      defaultTxCount: 0, fallbackReasons: [], fetchedTxCount: 0, cachedTxCount: 1 } });
 });
 const lookup = (historyStore: PositionHistoryStore | null = store) => getPositionPerformance(nft.toBase58(), {
   connection, historyStore, skipPricing: true, fetcher, nowSeconds: 1700000000 + 3 * 86400,
@@ -65,7 +65,7 @@ describe("performance with persisted history", () => {
   it("uses the shared paced history transport without changing current valuation reads", async () => {
     const historyConnection = { getParsedTransaction: vi.fn(), getSignaturesForAddress: vi.fn() };
     const metric = { attemptCount: 2, rateLimitCount: 0, queuedMs: 1, requestMs: 2,
-      maxActive: 1, primaryAttempts: 0, defaultAttempts: 2, responseBytes: 100 };
+      maxActive: 1, defaultAttempts: 2, responseBytes: 100 };
     const observer = { snapshot: vi.fn(() => metric), receiptProvider: vi.fn(() => "default" as const) };
     transports.valuation.mockReturnValue(connection);
     transports.history.mockReturnValue({ connection: historyConnection, observer });

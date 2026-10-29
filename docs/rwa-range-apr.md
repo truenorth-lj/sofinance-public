@@ -167,7 +167,7 @@ What changed:
   are no-trade hours. Few candles are fine; fewer than 12 in the window just flags the estimate low confidence (`*`). Only a pool with no
   usable candles *and* real volume is degraded. A pool with no candles and **zero** volume in the window is an honest 0%, not "unavailable".
 * **No second price source.** Considered and rejected: Raydium API v3 has no price-history endpoint (`/pools/line/price` does not exist;
-  `/pools/line/position` is liquidity per price, not time), and decoding swap logs (Solami/Blur) is a heavy, separate pipeline. A guess from
+  `/pools/line/position` is liquidity per price, not time), and decoding on-chain swap logs is a heavy, separate pipeline. A guess from
   anything cruder is what #79 removed. If GeckoTerminal is unavailable and nothing is cached, the answer stays "no estimate".
 * `/api/pool-daily-apr` (sparklines) also uses the shared cache for its GeckoTerminal call, which reduces the burst on the same IP.
 

@@ -15,7 +15,7 @@ const FALLBACK_READ: readonly RpcErrorKind[] = ["validation", "http-5xx", "rate-
 
 const READ: MethodPolicy = { fallback: true, fallbackOn: FALLBACK_READ };
 
-/** jsonParsed / epoch shapes Solami often fails; also treat a null tx as empty. */
+/** jsonParsed / epoch shapes some providers fail; also treat a null tx as empty. */
 const PARSED: MethodPolicy = {
   fallback: true,
   fallbackOn: [...FALLBACK_READ, "empty"],
@@ -29,7 +29,7 @@ const EPOCH: MethodPolicy = {
 
 /**
  * Simulate / blockhash / height / fee / slot-context reads. Fail over on
- * auth, rate-limit, timeout, validation, and 5xx so a lapsed Solami plan
+ * auth, rate-limit, timeout, validation, and 5xx so a lapsed provider plan
  * does not stall prepare/confirm. Ordinary 400s stay on the primary.
  */
 const PRIMARY_STAY_FALLBACK_ON: readonly RpcErrorKind[] = ["validation", "http-5xx", "auth", "rate-limit", "timeout"];
@@ -39,7 +39,7 @@ const PRIMARY_STAY: MethodPolicy = { fallback: true, fallbackOn: PRIMARY_STAY_FA
 const SLOT_CONTEXT: MethodPolicy = { fallback: true, fallbackOn: PRIMARY_STAY_FALLBACK_ON, route: "context" };
 
 /**
- * Per-method routing. Primary is Solami when configured. Fallback runs only
+ * Per-method routing. Fallback runs only
  * for listed error kinds, after same-provider retries for 429 / 5xx / timeout.
  * Auth (401/402/403) skips same-provider retry and fails over immediately.
  *

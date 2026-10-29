@@ -86,7 +86,7 @@ describe("POST /api/compound-recover-broadcast", () => {
     expect((await call(body())).json).not.toHaveProperty("sent");
   });
 
-  it("QUIRK: no Beam lookup on the recovery path", async () => {
+  it("returns only the signature on the recovery path", async () => {
     const { json } = await call(body());
     expect(Object.keys(json)).toEqual(["signature"]);
   });

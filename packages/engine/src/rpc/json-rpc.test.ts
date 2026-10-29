@@ -4,7 +4,9 @@ import { resetRpcCircuit } from "./circuit";
 import { RpcHttpError, RpcUnavailableError } from "./errors";
 import { rpcRequest } from "./json-rpc";
 import { setRpcLogger } from "./logger";
-import { SOLAMI_RPC_BASE_URL } from "./providers";
+import { PUBLIC_SOLANA_RPC_URL } from "./providers";
+
+const DEDICATED = "https://dedicated.example/rpc";
 import { setRpcRetryConfig } from "./retry";
 import type { RpcLogEvent } from "./types";
 
@@ -24,27 +26,27 @@ function jsonResponse(body: unknown, status = 200, headers?: HeadersInit) {
 }
 
 describe("rpcRequest", () => {
-  it("posts JSON-RPC to Solami first and then the dedicated fallback", async () => {
+  it("posts JSON-RPC to the dedicated RPC first and then the public fallback", async () => {
     setRpcRetryConfig({ maxAttempts: 1 });
     const events: RpcLogEvent[] = [];
     setRpcLogger((event) => events.push(event));
     const fetcher = vi.fn(async (url: RequestInfo | URL) => {
       const href = String(url);
-      if (href.startsWith(SOLAMI_RPC_BASE_URL)) {
+      if (href.startsWith(DEDICATED)) {
         return jsonResponse({}, 503);
       }
-      return jsonResponse({ jsonrpc: "2.0", id: 1, result: { value: { owner: "dedicated" } } });
+      return jsonResponse({ jsonrpc: "2.0", id: 1, result: { value: { owner: "fallback" } } });
     });
     const result = await rpcRequest("getAccountInfo", ["acct", { encoding: "base64" }], {
-      env: { SOLAMI_API_KEY: "k", SOLANA_RPC_URL: "https://dedicated.example/rpc" },
+      env: { SOLANA_RPC_URL: `${DEDICATED}?api-key=k` },
       fetcher,
     });
-    expect(result).toEqual({ value: { owner: "dedicated" } });
+    expect(result).toEqual({ value: { owner: "fallback" } });
     expect(fetcher).toHaveBeenCalledTimes(2);
-    expect(String(fetcher.mock.calls[0]![0])).toContain("api_key=k");
-    expect(String(fetcher.mock.calls[1]![0])).toBe("https://dedicated.example/rpc");
+    expect(String(fetcher.mock.calls[0]![0])).toContain("api-key=k");
+    expect(String(fetcher.mock.calls[1]![0])).toBe(PUBLIC_SOLANA_RPC_URL);
     expect(events.some((event) => event.outcome === "fallback" && event.provider === "default")).toBe(true);
-    expect(JSON.stringify(events)).not.toMatch(/api_key|solami\.dev|dedicated\.example/);
+    expect(JSON.stringify(events)).not.toMatch(/api-key|dedicated\.example|mainnet-beta/);
   });
 
   it("parses Retry-After from a 429 and then succeeds on the same provider", async () => {
@@ -67,45 +69,45 @@ describe("rpcRequest", () => {
     setRpcRetryConfig({ maxAttempts: 1 });
     const fetcher = vi.fn(async () => jsonResponse({}, 429, { "Retry-After": "2" }));
     await expect(rpcRequest("getAccountInfo", ["acct"], {
-      env: { SOLAMI_API_KEY: "super-secret", SOLANA_RPC_URL: "https://dedicated.example/rpc" },
+      env: { SOLANA_RPC_URL: `${DEDICATED}?api-key=super-secret` },
       fetcher,
     })).rejects.toBeInstanceOf(RpcUnavailableError);
     await expect(rpcRequest("getAccountInfo", ["acct"], {
-      env: { SOLAMI_API_KEY: "super-secret", SOLANA_RPC_URL: "https://dedicated.example/rpc" },
+      env: { SOLANA_RPC_URL: `${DEDICATED}?api-key=super-secret` },
       fetcher,
     })).rejects.toThrow(/temporarily unavailable/);
   });
 
-  it("falls back 401 from Solami onto the dedicated RPC without logging secrets", async () => {
+  it("falls back 401 from the dedicated RPC onto the public RPC without logging secrets", async () => {
     setRpcRetryConfig({ maxAttempts: 1 });
     const events: RpcLogEvent[] = [];
     setRpcLogger((event) => events.push(event));
     const fetcher = vi.fn(async (url: RequestInfo | URL) => {
       const href = String(url);
-      if (href.startsWith(SOLAMI_RPC_BASE_URL)) return jsonResponse({}, 401);
+      if (href.startsWith(DEDICATED)) return jsonResponse({}, 401);
       return jsonResponse({ jsonrpc: "2.0", id: 1, result: "sig" });
     });
     await expect(rpcRequest("sendTransaction", ["bytes"], {
-      env: { SOLAMI_API_KEY: "super-secret", SOLANA_RPC_URL: "https://dedicated.example/rpc" },
+      env: { SOLANA_RPC_URL: `${DEDICATED}?api-key=super-secret` },
       fetcher,
     })).resolves.toBe("sig");
     expect(fetcher).toHaveBeenCalledTimes(2);
     expect(events.some((event) => event.outcome === "fallback" && event.errorKind === "auth")).toBe(true);
-    expect(JSON.stringify(events)).not.toMatch(/api_key|super-secret|solami\.dev|dedicated\.example/);
+    expect(JSON.stringify(events)).not.toMatch(/api-key|super-secret|dedicated\.example|mainnet-beta/);
   });
 
-  it("falls back HTTP 200 JSON-RPC -32005 onto the dedicated RPC", async () => {
+  it("falls back HTTP 200 JSON-RPC -32005 onto the public RPC", async () => {
     setRpcRetryConfig({ maxAttempts: 1 });
     const fetcher = vi.fn(async (url: RequestInfo | URL) => {
-      if (String(url).startsWith(SOLAMI_RPC_BASE_URL)) {
+      if (String(url).startsWith(DEDICATED)) {
         return jsonResponse({ jsonrpc: "2.0", id: 1, error: { code: -32005, message: "Rate limited" } });
       }
-      return jsonResponse({ jsonrpc: "2.0", id: 1, result: { value: { owner: "dedicated" } } });
+      return jsonResponse({ jsonrpc: "2.0", id: 1, result: { value: { owner: "fallback" } } });
     });
     await expect(rpcRequest("getAccountInfo", ["acct"], {
-      env: { SOLAMI_API_KEY: "k", SOLANA_RPC_URL: "https://dedicated.example/rpc" },
+      env: { SOLANA_RPC_URL: `${DEDICATED}?api-key=k` },
       fetcher,
-    })).resolves.toEqual({ value: { owner: "dedicated" } });
+    })).resolves.toEqual({ value: { owner: "fallback" } });
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
 

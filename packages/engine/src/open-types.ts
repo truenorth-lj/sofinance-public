@@ -116,10 +116,4 @@ export type OpenPositionSummary = {
   lastValidBlockHeight: number;
   simulatedAt: number;
   expiresAt: number;
-  beam?: {
-    included: boolean;
-    tipLamports: number;
-    tipAddress: string | null;
-    skippedReason: "disabled" | "no-tip-address" | "oversize" | null;
-  };
 };

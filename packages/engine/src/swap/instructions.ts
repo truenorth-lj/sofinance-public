@@ -16,7 +16,7 @@ export function instruction(value: ApiInstruction, wallet: PublicKey) {
 }
 
 /** Preserve Jupiter's setup → swap → cleanup → other order. Compute budget
- * and Beam tips remain the responsibility of each atomic flow. */
+ * remains the responsibility of each atomic flow. */
 export function swapRouteInstructions(routes: Pick<BuildRoute, "setupInstructions" | "swapInstruction" | "cleanupInstruction" | "otherInstructions">[], wallet: PublicKey): TransactionInstruction[] {
   return routes.flatMap((route) => [
     ...route.setupInstructions.map((ix) => instruction(ix, wallet)),

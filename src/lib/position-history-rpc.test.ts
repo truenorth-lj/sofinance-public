@@ -1,8 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// Solami-on behaviour (SOLAMI_ENABLED is on for Vercel preview/development, off in production).
-beforeEach(() => { vi.stubEnv("VERCEL_ENV", "preview"); });
-afterEach(() => { vi.unstubAllEnvs(); });
 vi.mock("server-only", () => ({}));
 import { createHistoryRpcFetch, createHistoryRpcConnections, resetHistoryRpcPacingForTests } from "./position-history-rpc";
 import { PUBLIC_SOLANA_RPC_URL, resolveProviderPair, resetRpcRuntime } from "@sofinance/engine/rpc";
@@ -40,7 +37,7 @@ describe("history-only paced physical RPC transport", () => {
     await tick(1); expect(starts.map(item => item.id)).toEqual(["1", "2"]);
     await tick(125); await Promise.all(calls);
     expect(starts.map(item => item.at)).toEqual([0, 125, 250]);
-    expect(a.observer.snapshot()).toMatchObject({ attemptCount: 2, primaryAttempts: 0, defaultAttempts: 2, queuedMs: 250 });
+    expect(a.observer.snapshot()).toMatchObject({ attemptCount: 2, defaultAttempts: 2, queuedMs: 250 });
     expect(b.observer.snapshot()).toMatchObject({ attemptCount: 1, queuedMs: 125 });
     const changed = a.observer.snapshot(); changed.attemptCount = 99;
     expect(a.observer.snapshot().attemptCount).toBe(2);
@@ -135,12 +132,12 @@ describe("history-only paced physical RPC transport", () => {
   });
 
   it("paces every actual retry and labels successful internal fallback receipts by their leaf provider", async () => {
-    const fallbackEnv = { SOLAMI_API_KEY: "secret-solami-key", SOLANA_RPC_URL: "https://fallback.example/private-token" };
+    const fallbackEnv = { SOLANA_RPC_URL: "https://primary.example/private-token" };
     const starts: number[] = [];
     const fetcher: typeof fetch = vi.fn(async (input, init) => {
       starts.push(Date.now());
       const body = JSON.parse(init!.body as string);
-      if (String(input).includes("solami")) return new Response("limited", { status: 429 });
+      if (String(input).includes("primary.example")) return new Response("limited", { status: 429 });
       return new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id, result: receipt(body.params[0]) }));
     });
     const connections = createHistoryRpcConnections(new AbortController().signal, fallbackEnv,
@@ -150,23 +147,23 @@ describe("history-only paced physical RPC transport", () => {
     expect(tx!.transaction.signatures[0]).toBe(signature);
     expect(starts).toEqual([0, 1000, 1000]);
     expect(connections.observer.snapshot()).toMatchObject({ attemptCount: 3, rateLimitCount: 2,
-      primaryAttempts: 2, defaultAttempts: 1 });
+      defaultAttempts: 3 });
     expect(connections.observer.receiptProvider(signature)).toBe("default");
     expect(connections.observer.receiptProvider("unknown")).toBeUndefined();
     const output = JSON.stringify(connections.observer.snapshot());
-    expect(output).not.toMatch(/secret-solami-key|private-token|http/);
+    expect(output).not.toMatch(/primary\.example|private-token|http/);
   });
 
   it("tracks primary receipt attribution, precise decoded body bytes/time and body-size guard", async () => {
-    const configured = { SOLAMI_API_KEY: "secret" }, pair = resolveProviderPair(configured);
+    const configured = { SOLANA_RPC_URL: "https://primary.example/secret" }, pair = resolveProviderPair(configured);
     const value = JSON.stringify({ jsonrpc: "2.0", id: "1", result: receipt() });
     let stream!: ReadableStreamDefaultController<Uint8Array>;
     const transport = createHistoryRpcFetch(new AbortController().signal, configured, { fetch: async () =>
       new Response(new ReadableStream<Uint8Array>({ start(controller) { stream = controller; } })) });
     const pending = transport.fetch(pair.primary.endpoint, request("getTransaction"));
     await tick(30); stream.enqueue(new TextEncoder().encode(value)); stream.close(); await pending;
-    expect(transport.observer.snapshot()).toMatchObject({ responseBytes: Buffer.byteLength(value), requestMs: 30, primaryAttempts: 1 });
-    expect(transport.observer.receiptProvider(signature)).toBe("solami");
+    expect(transport.observer.snapshot()).toMatchObject({ responseBytes: Buffer.byteLength(value), requestMs: 30, defaultAttempts: 1 });
+    expect(transport.observer.receiptProvider(signature)).toBe("default");
     await tick(125);
     const oversized = createHistoryRpcFetch(new AbortController().signal, configured, { fetch: async () =>
       new Response(new Uint8Array(16 * 1024 * 1024 + 1)) });

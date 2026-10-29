@@ -48,13 +48,13 @@ describe("invokeWithPolicy cache", () => {
       method: "getAccountInfo",
       args: ["acct"],
       primary,
-      primaryId: "solami",
+      primaryId: "default",
     });
     const second = invokeWithPolicy({
       method: "getAccountInfo",
       args: ["acct"],
       primary,
-      primaryId: "solami",
+      primaryId: "default",
     });
     expect(primary).toHaveBeenCalledOnce();
     resolveFirst({ owner: "shared" });
@@ -66,7 +66,7 @@ describe("invokeWithPolicy cache", () => {
       method: "getAccountInfo",
       args: ["acct"],
       primary,
-      primaryId: "solami",
+      primaryId: "default",
     });
     expect(cached).toMatchObject({ value: { owner: "shared" }, cacheHit: true });
     expect(primary).toHaveBeenCalledOnce();
@@ -76,16 +76,16 @@ describe("invokeWithPolicy cache", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-10-10T00:00:00Z"));
     const primary = vi.fn(async () => ({ owner: "fresh" }));
-    await invokeWithPolicy({ method: "getAccountInfo", args: ["acct"], primary, primaryId: "solami" });
+    await invokeWithPolicy({ method: "getAccountInfo", args: ["acct"], primary, primaryId: "default" });
     vi.advanceTimersByTime(5_001);
-    await invokeWithPolicy({ method: "getAccountInfo", args: ["acct"], primary, primaryId: "solami" });
+    await invokeWithPolicy({ method: "getAccountInfo", args: ["acct"], primary, primaryId: "default" });
     expect(primary).toHaveBeenCalledTimes(2);
   });
 
   it("does not cache uncacheable methods", async () => {
     const primary = vi.fn(async () => ({ blockhash: "h1" }));
-    await invokeWithPolicy({ method: "getLatestBlockhash", args: [], primary, primaryId: "solami" });
-    await invokeWithPolicy({ method: "getLatestBlockhash", args: [], primary, primaryId: "solami" });
+    await invokeWithPolicy({ method: "getLatestBlockhash", args: [], primary, primaryId: "default" });
+    await invokeWithPolicy({ method: "getLatestBlockhash", args: [], primary, primaryId: "default" });
     expect(primary).toHaveBeenCalledTimes(2);
     expect(cacheTtlFor("simulateTransaction")).toBeNull();
     expect(cacheTtlFor("sendRawTransaction")).toBeNull();
@@ -97,8 +97,8 @@ describe("invokeWithPolicy cache", () => {
 
   it("does not cache when args are omitted (history invoke path)", async () => {
     const primary = vi.fn(async () => ({ slot: 1 }));
-    await invokeWithPolicy({ method: "getParsedTransaction", primary, primaryId: "solami" });
-    await invokeWithPolicy({ method: "getParsedTransaction", primary, primaryId: "solami" });
+    await invokeWithPolicy({ method: "getParsedTransaction", primary, primaryId: "default" });
+    await invokeWithPolicy({ method: "getParsedTransaction", primary, primaryId: "default" });
     expect(primary).toHaveBeenCalledTimes(2);
   });
 });
