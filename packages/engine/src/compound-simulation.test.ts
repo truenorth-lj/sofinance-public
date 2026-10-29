@@ -4,7 +4,7 @@ import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { Connection, Keypair, PublicKey, SystemProgram, TransactionInstruction, TransactionMessage, VersionedTransaction, type AccountInfo } from "@solana/web3.js";
 import { expect, it, vi } from "vitest";
 import { JUPITER_PROGRAM_ID } from "./swap/instructions";
-import { simulateAndVerifyCompound } from "./compound-simulation";
+import { CompoundInsufficientSolError, formatSolShortfall, INSUFFICIENT_SOL_CODE, simulateAndVerifyCompound } from "./compound-simulation";
 import type { CompoundAccount, CompoundPositionState, CompoundPriorSource } from "./compound-types";
 
 const key = () => Keypair.generate().publicKey.toBase58();
@@ -134,4 +134,33 @@ it("requests and preserves Jupiter intermediate wallet balances in compound simu
   await expect(simulateAndVerifyCompound(input)).rejects.toThrow(address);
   after.delete(address);
   await expect(simulateAndVerifyCompound(input)).rejects.toThrow(address);
+});
+
+it("names the SOL shortfall when the 0.01 SOL reserve would be breached (limits unchanged)", async () => {
+  const { input, before, after } = await fixture();
+  // Production 10/29: 0.01114577 SOL before, compound spends 0.00616196 (fee + two yield-account rents).
+  before.set(input.state.wallet, info(Buffer.alloc(0), SystemProgram.programId, 11_145_765));
+  after.set(input.state.wallet, info(Buffer.alloc(0), SystemProgram.programId, 4_983_805));
+  const caught = await simulateAndVerifyCompound({ ...input, maxSolDebitLamports: 6_200_000n }).catch((error: unknown) => error);
+  expect(caught).toBeInstanceOf(CompoundInsufficientSolError);
+  expect((caught as CompoundInsufficientSolError).code).toBe(INSUFFICIENT_SOL_CODE);
+  expect((caught as CompoundInsufficientSolError).shortfallLamports).toBe(5_016_195n);
+  expect((caught as Error).message).toMatch(/^Not enough SOL: add about 0\.0051 SOL more/);
+  // Over the app spend cap is not a balance problem and keeps the original message.
+  await expect(simulateAndVerifyCompound({ ...input, maxSolDebitLamports: 6_000_000n })).rejects.toThrow("Compound SOL expenditure or remaining balance exceeds limit");
+});
+it("maps a runtime rent/lamports failure to the SOL shortfall only when the wallet is below fee + rent + reserve", async () => {
+  const { input, before } = await fixture();
+  before.set(input.state.wallet, info(Buffer.alloc(0), SystemProgram.programId, 3_000_000));
+  vi.mocked(input.connection.simulateTransaction).mockResolvedValueOnce({ value: { err: { InstructionError: [1, { Custom: 1 }] }, logs: ["Transfer: insufficient lamports 3000000, need 3500000"] } } as never);
+  await expect(simulateAndVerifyCompound(input)).rejects.toThrow("Not enough SOL: add about 0.0121 SOL more");
+  before.set(input.state.wallet, info(Buffer.alloc(0), SystemProgram.programId, 100_000_000));
+  vi.mocked(input.connection.simulateTransaction).mockResolvedValueOnce({ value: { err: { InstructionError: [1, { Custom: 1 }] }, logs: [] } } as never);
+  await expect(simulateAndVerifyCompound(input)).rejects.toThrow("Compound simulation failed");
+});
+it("rounds SOL shortfalls up to 0.0001", () => {
+  expect(formatSolShortfall(1n)).toBe("0.0001");
+  expect(formatSolShortfall(100_000n)).toBe("0.0001");
+  expect(formatSolShortfall(100_001n)).toBe("0.0002");
+  expect(formatSolShortfall(1_234_500_000n)).toBe("1.2345");
 });

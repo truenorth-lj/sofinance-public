@@ -199,3 +199,16 @@ describe("apiError logging and sent flag", () => {
     expect(logged).toHaveBeenCalled();
   });
 });
+
+describe("compound insufficient SOL", () => {
+  it("passes the add-SOL copy through unchanged and tags it with a stable code", async () => {
+    const { CompoundInsufficientSolError } = await import("@sofinance/engine/compound-simulation");
+    const error = new CompoundInsufficientSolError(5_016_195n);
+    expect(publicErrorCode(error)).toBe("insufficient_sol");
+    const response = apiError(error, "Compound transaction preparation failed");
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ code: "insufficient_sol",
+      error: "Not enough SOL: add about 0.0051 SOL more to cover network fees and temporary account rent (0.01 SOL must stay in your wallet), then try again." });
+    expect(publicErrorCode(new Error("Compound SOL expenditure or remaining balance exceeds limit"))).toBeUndefined();
+  });
+});

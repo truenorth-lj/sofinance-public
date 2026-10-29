@@ -344,3 +344,57 @@ it("continues checking retained old history after a new prepare fails", async ()
   expect(controller.walletBlocked).toBe(false);
   expect(mocks.sign).not.toHaveBeenCalled();
 });
+
+describe("one-click compound submit dialog", () => {
+  async function submitWith(confirmReply: () => Response | Promise<Response>) {
+    let newSignature = "";
+    mocks.sign.mockImplementation(async (tx: VersionedTransaction) => { tx.sign([testKeypair(1)]); newSignature = bs58.encode(tx.signatures[0]!); return tx; });
+    const broadcast = deferred<Response>();
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url === "/api/compound-state") return Response.json({ ...fixture.state, positionMint: selectedMint });
+      if (url === "/api/compound-confirm") return confirmReply();
+      if (url === "/api/compound-prepare") return Response.json(freshPrepared());
+      if (url === "/api/compound-broadcast") return broadcast.promise;
+      throw new Error(`Unexpected request ${url}`);
+    });
+    await render("compound");
+    await act(async () => controller.compound()); await advance(1);
+    return { signature: () => newSignature, broadcast };
+  }
+  const dialog = () => container.querySelector<HTMLDialogElement>("dialog[aria-labelledby='compound-submit-title']");
+  const button = (label: string) => [...dialog()!.querySelectorAll("button")].find(b => b.textContent === label);
+
+  it("shows submitting → confirming → confirmed with Solscan, and OK refreshes the position", async () => {
+    let status: "pending" | "success" = "pending"; let sig = "";
+    const run = await submitWith(() => Response.json({ signature: sig, status, chainStatus: status, state: null }));
+    sig = run.signature();
+    expect(controller.feedback).toMatchObject({ phase: "submitting", signature: sig });
+    expect(dialog()?.textContent).toContain("Submitting…"); expect(button("OK")).toBeUndefined(); expect(button("Close")).toBeUndefined();
+    expect(dialog()!.querySelector("a")!.getAttribute("href")).toBe(`https://solscan.io/tx/${sig}`);
+    await act(async () => run.broadcast.resolve(Response.json({ signature: sig }))); await advance(1);
+    expect(dialog()?.textContent).toContain("Confirming…"); expect(controller.busy).toBe(false);
+    status = "success"; await advance(4_000);
+    expect(controller.feedback?.phase).toBe("success");
+    expect(dialog()?.textContent).toContain("Compound confirmed");
+    const statesBefore = fetchMock.mock.calls.filter(([url]) => url === "/api/compound-state").length;
+    const refreshBefore = mocks.refresh.mock.calls.length;
+    await act(async () => button("OK")!.click()); await advance(1);
+    expect(controller.feedback).toBeNull(); expect(dialog()).toBeNull();
+    expect(fetchMock.mock.calls.filter(([url]) => url === "/api/compound-state").length).toBeGreaterThan(statesBefore);
+    expect(mocks.refresh.mock.calls.length).toBeGreaterThan(refreshBefore);
+    expect(fetchMock.mock.calls.filter(([url]) => url === "/api/compound-broadcast")).toHaveLength(1);
+  });
+
+  it("shows the chain failure with a Solscan link and a Close button", async () => {
+    let sig = "";
+    const run = await submitWith(() => Response.json({ signature: sig, status: "failed", chainStatus: "failed", state: null }));
+    sig = run.signature();
+    await act(async () => run.broadcast.resolve(Response.json({ signature: sig }))); await advance(1); await advance(4_000);
+    expect(controller.feedback?.phase).toBe("failed");
+    expect(dialog()?.textContent).toContain("Compound failed");
+    expect(dialog()?.textContent).toContain("failed");
+    expect(dialog()!.querySelector("a")!.getAttribute("href")).toBe(`https://solscan.io/tx/${sig}`);
+    await act(async () => button("Close")!.click());
+    expect(controller.feedback).toBeNull();
+  });
+});

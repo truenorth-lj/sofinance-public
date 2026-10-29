@@ -23,6 +23,9 @@ import { SolInputDisabledError } from "./sol-input-policy";
 
 const PUBLIC_ERROR_LIMIT = 220;
 
+/** Compound prepare/broadcast: wallet SOL cannot cover fees, temporary rent and the 0.01 SOL reserve. */
+export const INSUFFICIENT_SOL_CODE = "insufficient_sol";
+
 /** Prepare/quote rejected a size that would walk the pool through a tick where liquidity changes. */
 export const CROSS_TICK_USER_MESSAGE =
   "This amount is large for this pool's current depth. Try a smaller amount, a wider range, or refresh the quote.";
@@ -105,6 +108,8 @@ export function publicErrorCode(error: unknown): string | undefined {
   }
   if (isAmountTooSmallError(error)) return AMOUNT_TOO_SMALL_CODE;
   if (error instanceof SolInputDisabledError) return error.code;
+  // Engine CompoundInsufficientSolError; matched by code so client bundles need not load the simulator.
+  if (error instanceof Error && (error as { code?: unknown }).code === INSUFFICIENT_SOL_CODE) return INSUFFICIENT_SOL_CODE;
   if (error instanceof JupiterHttpError && error.status === 400) return JUPITER_CLIENT_ERROR_CODE;
   if (error instanceof JupiterUnavailableError || isJupiterUpstreamError(error)) {
     return JUPITER_UNAVAILABLE_CODE;
