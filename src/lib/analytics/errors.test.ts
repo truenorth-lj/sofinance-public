@@ -81,3 +81,35 @@ describe("sanitized error message", () => {
     expect(openOutcomeFailureProperties("failed")).toEqual({ error_class: "onchain_failed", error_reason: "onchain_failed" });
   });
 });
+
+describe("error_reason for previously-unknown open failures", () => {
+  it.each([
+    ["Prepared open-position transaction expired or incomplete", "stale_quote"],
+    ["Prepared SOL swap expired or incomplete", "stale_quote"],
+    ["Pool, wallet balance, or asset flags have changed since preparation", "stale_quote"],
+    ["Wallet or input changed after step 1/2", "stale_quote"],
+    ["Quote and current input mismatch, please re-enter amount", "stale_quote"],
+    ["Pool price and swap ratio did not converge, please retry later", "stale_quote"],
+    ["No routes found", "no_route"],
+    ["Jupiter /build has no available routes (HTTP 400)", "no_route"],
+    ["Complete swap + open-position transaction 1284 bytes, exceeds 1,232 byte limit", "tx_too_large"],
+    ["Wallet additions exceed the 1,232 byte transaction limit", "tx_too_large"],
+    ["Open-position history changed. Reload and verify the original signature before opening again.", "local_history"],
+    ["Unable to clear unsent open-position record", "local_history"],
+    ["Wallet did not return a valid signature", "wallet_error"],
+    ["Wallet returned a different signature count than the prepared transaction", "wallet_error"],
+    ["Open-position transaction is missing required signatures", "wallet_error"],
+    ["Invalid step-1 swap signature", "invalid_input"],
+    ["Input amount too small to allocate", "invalid_input"],
+  ] as const)("%s -> %s", (message, reason) => {
+    expect(classifyOpenErrorReason(new Error(message))).toBe(reason);
+  });
+
+  it("reads plain wallet rejection objects and wallet-adapter errors", () => {
+    expect(classifyOpenErrorReason({ code: 4001, message: "User rejected the request." })).toBe("user_rejected");
+    expect(classifyOpenErrorReason({ message: "User rejected the request." })).toBe("user_rejected");
+    expect(classifyOpenErrorReason({ code: -32603, message: "Unexpected error" })).toBe("wallet_error");
+    const adapter = Object.assign(new Error(""), { name: "WalletSignTransactionError" });
+    expect(classifyOpenErrorReason(adapter)).toBe("wallet_error");
+  });
+});

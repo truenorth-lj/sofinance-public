@@ -21,6 +21,7 @@ import {
   captureWalletConnected,
   captureWalletDisconnected,
   initGrowthAnalytics,
+  isProductionHost,
   posthogApiHost,
   posthogProjectKey,
   resetGrowthAnalyticsForTests,
@@ -28,7 +29,12 @@ import {
 import { GROWTH_EVENTS } from "./events";
 import { INTERNAL_WALLETS } from "./internal-wallets";
 
+function setHost(url: string) {
+  (window as unknown as { happyDOM: { setURL: (url: string) => void } }).happyDOM.setURL(url);
+}
+
 beforeEach(() => {
+  setHost("https://sofinancelab.xyz/");
   resetGrowthAnalyticsForTests();
   window.localStorage.clear();
   vi.unstubAllEnvs();
@@ -144,5 +150,33 @@ describe("event firing when the key is set", () => {
     expect(await initGrowthAnalytics()).toBe(false);
     captureGrowthEvent(GROWTH_EVENTS.walletConnected);
     expect(posthog.init).not.toHaveBeenCalled();
+  });
+
+  it("registers app_env production on the production host", async () => {
+    expect(isProductionHost("www.sofinancelab.xyz")).toBe(true);
+    await initGrowthAnalytics();
+    expect(posthog.register).toHaveBeenCalledWith({ app_env: "production" });
+  });
+
+  it("marks Vercel preview traffic internal, even for external wallets and after reset", async () => {
+    setHost("https://sofinance-public-git-x-truenorth.vercel.app/app");
+    expect(isProductionHost()).toBe(false);
+    await initGrowthAnalytics();
+    expect(posthog.register).toHaveBeenCalledWith({ app_env: "preview", is_internal: true });
+    const wallet = "So11111111111111111111111111111111111111112";
+    posthog.get_distinct_id.mockReturnValueOnce(INTERNAL_WALLETS[1]!);
+    await captureWalletConnected(wallet);
+    const properties = { wallet_address: wallet, is_internal: true };
+    expect(posthog.setPersonProperties).toHaveBeenCalledWith(properties);
+    expect(posthog.register).toHaveBeenCalledWith(properties);
+    expect(posthog.capture).toHaveBeenCalledWith(GROWTH_EVENTS.walletConnected, properties);
+    // reset() ran for the previous wallet; preview tags were re-registered right after.
+    const resetOrder = posthog.reset.mock.invocationCallOrder[0]!;
+    const reRegistered = posthog.register.mock.calls.findIndex((call, i) =>
+      posthog.register.mock.invocationCallOrder[i]! > resetOrder && call[0].app_env === "preview");
+    expect(reRegistered).toBeGreaterThan(-1);
+    posthog.register.mockClear();
+    captureWalletDisconnected();
+    expect(posthog.register).toHaveBeenCalledWith({ app_env: "preview", is_internal: true });
   });
 });

@@ -18,6 +18,12 @@ export type OpenErrorClass = (typeof OPEN_ERROR_CLASSES)[number];
 export const OPEN_ERROR_REASONS = [
   "sol_input_disabled",
   "phantom_blocked",
+  "wallet_error",
+  "stale_quote",
+  "no_route",
+  "tx_too_large",
+  "invalid_input",
+  "local_history",
   "user_rejected",
   "expired",
   "insufficient_funds",
@@ -40,7 +46,18 @@ const USER_REJECTED_CODE = 4001;
 function errorText(error: unknown): string {
   if (typeof error === "string") return error;
   if (error instanceof Error) return error.message;
+  // Wallet adapters / providers sometimes reject with plain `{ code, message }` objects.
+  if (error && typeof error === "object") {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === "string") return message;
+  }
   return "";
+}
+
+function errorName(error: unknown): string {
+  if (!error || typeof error !== "object") return "";
+  const name = (error as { name?: unknown }).name;
+  return typeof name === "string" ? name : "";
 }
 
 function errorCode(error: unknown): number | undefined {
@@ -80,6 +97,13 @@ export function classifyOpenErrorReason(error: unknown): OpenErrorReason {
   if (coarse === "user_rejected" || coarse === "expired" || coarse === "insufficient_funds") return coarse;
   if (/price impact|large for this pool|cross(?:es|ing)? (?:a )?tick|cross-tick/.test(message)) return "price_impact";
   if (coarse === "simulation_failed" || coarse === "authorization") return coarse;
+  if (/no (?:available )?routes|route not found|could not find any route/.test(message)) return "no_route";
+  if (/exceeds? (?:the )?1,?232 byte|transaction (?:is )?too large|encoding overruns/.test(message)) return "tx_too_large";
+  if (/open-position history|open-position record|open-position transaction record/.test(message)) return "local_history";
+  if (/expired or incomplete|changed since preparation|changed during signing|changed after step|quote and current input mismatch|did not converge/.test(message)) return "stale_quote";
+  if (/^wallet/.test(errorName(error).toLowerCase()) || errorCode(error) === -32603 ||
+    /wallet (?:did not return|returned|signature is invalid)|nft mint (?:signature|partial signature|is not a required signer)|wallet signature|missing required signatures|plugin closed|unexpected error|not connected|wallet additions/.test(message)) return "wallet_error";
+  if (/^invalid |range preset|custom range requires|too small to allocate|quotes required/.test(message)) return "invalid_input";
   if (/submission failed|broadcast|send(?:ing)? (?:the )?transaction|sendtransaction|not sent/.test(message)) return "broadcast_failed";
   if (coarse === "network" || /timed out|aborted/.test(message) ||
     (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError"))) return "network";

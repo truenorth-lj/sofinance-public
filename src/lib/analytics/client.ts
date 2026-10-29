@@ -27,6 +27,24 @@ const queue: Array<{ event: string; properties?: Record<string, unknown> }> = []
 const once = new Set<string>();
 let identifiedWallet: string | null = null;
 
+export const PRODUCTION_HOSTS: readonly string[] = ["sofinancelab.xyz", "www.sofinancelab.xyz"];
+
+/** Vercel previews, localhost, etc. count as internal so growth stats only see production. */
+export function isProductionHost(hostname = typeof window === "undefined" ? "" : window.location.hostname): boolean {
+  return PRODUCTION_HOSTS.includes(hostname.toLowerCase());
+}
+
+function environmentProperties() {
+  const production = isProductionHost();
+  return production
+    ? { app_env: "production" as const }
+    : { app_env: "preview" as const, is_internal: true as const };
+}
+
+function applyEnvironment(target: GrowthClient) {
+  target.register(environmentProperties());
+}
+
 export function posthogProjectKey(): string | undefined {
   const key = process.env.NEXT_PUBLIC_POSTHOG_KEY?.trim();
   return key || undefined;
@@ -125,6 +143,7 @@ export async function initGrowthAnalytics(search?: string): Promise<boolean> {
     });
     client = posthog;
     status = "on";
+    applyEnvironment(posthog);
     const query = search ?? window.location.search;
     applyAttribution(readAndStoreFirstTouch(query, window.localStorage));
     flushQueue();
@@ -161,7 +180,9 @@ function resetIdentity(nextClient: GrowthClient) {
   nextClient.unregister?.("is_internal");
   nextClient.reset?.();
   identifiedWallet = null;
-  // reset() drops super properties; keep first-touch attribution on the new anonymous id.
+  // reset() drops super properties; restore app_env (and preview is_internal).
+  applyEnvironment(nextClient);
+  // Keep first-touch attribution on the new anonymous id.
   const stored = typeof window === "undefined" ? null : getStoredAttribution(window.localStorage);
   if (stored) applyAttribution(stored);
 }
@@ -173,7 +194,9 @@ export async function captureWalletConnected(wallet: string) {
   if (!enabled || !client) return;
   const current = client.get_distinct_id?.();
   if (current && current !== wallet && WALLET_DISTINCT_ID.test(current)) resetIdentity(client);
-  const properties = walletEventProperties(wallet);
+  const base = walletEventProperties(wallet);
+  // is_internal = internal wallet OR non-production host (never downgraded to false on preview).
+  const properties = { ...base, is_internal: base.is_internal || !isProductionHost() };
   client.identify(wallet);
   identifiedWallet = wallet;
   client.register(properties);
