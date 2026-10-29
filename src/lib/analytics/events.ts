@@ -18,6 +18,10 @@ export type OpenEventProperties = {
   wallet_address?: string;
   is_internal?: boolean;
   input_kind?: "native" | "token";
+  /** Two-step SOL open only: which step failed (1 = SOL -> pool-token swap, 2 = token-input open). */
+  open_step?: 1 | 2;
+  /** Two-step SOL open only: true when step 2/2 resumed from a stored step-1 receipt ("Continue open (2/2)"). */
+  open_resumed?: boolean;
 };
 
 export type OpenEventContext = {

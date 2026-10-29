@@ -150,22 +150,29 @@ export function useOpenSubmissionCommand({ pair, wallet, inputMint, inputKind, a
     captureGrowthEvent(GROWTH_EVENTS.openStarted, openEventProperties(pair, { wallet, inputKind }));
     let mint: EphemeralMint | undefined;
     let receipt: PendingSolSwapReceipt | null = resume;
+    // Two-step SOL open: the step a failure belongs to (reported as open_step on open_position_failed).
+    let failedStep: 1 | 2 | null = resume ? 2 : null;
     try {
       if (!receipt && inputKind === "native") {
         // Step 1/2: SOL -> pool token swap (10 bps inside the Jupiter swap). Phantom
         // blocks a single wrap + swap + open transaction, but passes these two.
         setOpenStep(1);
+        failedStep = 1;
         const landed: SolSwapReceipt = await runSolSwapStep({
           wallet, poolId: pair.poolAddress, amount, requested: parsedAmount?.toString() ?? "",
           store: jupiterStoreRef.current, timeoutMs: OPEN_PREPARE_TIMEOUT_MS, signTransaction,
           setStage: setSubmitStage, current,
         });
         receipt = { ...landed, landedAt: Date.now() };
+        failedStep = 2;
         setSwapReceipt(receipt);
         if (!current()) throw new Error("Wallet or input changed after step 1/2");
         setSubmitStage("preparing");
       }
-      if (receipt) setOpenStep(2);
+      if (receipt) {
+        setOpenStep(2);
+        failedStep = 2;
+      }
       // Step 2/2 deposits exactly what step 1 delivered (confirmed tx meta), never the quote.
       const openInputMint = receipt ? receipt.outputMint : inputMint!;
       const openInputKind: "native" | "token" = receipt ? "token" : inputKind;
@@ -257,6 +264,7 @@ export function useOpenSubmissionCommand({ pair, wallet, inputMint, inputKind, a
         captureGrowthEvent(GROWTH_EVENTS.openFailed, {
           ...openEventProperties(pair, { wallet, inputKind }),
           ...openFailureProperties(caught),
+          ...(failedStep ? { open_step: failedStep, open_resumed: resume !== null } : {}),
         });
       }
       if (walletRef.current === wallet) {
