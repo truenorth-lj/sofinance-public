@@ -677,8 +677,13 @@ export async function quoteOpenPosition(input: QuoteOpenPositionInput) {
  * exists anywhere. The returned transaction is a preview; `/app/sign/<token>`
  * generates the real mint in the browser and re-prepares (wallet signs first).
  */
-function previewOnlyMintAddress(): string {
-  return new PublicKey(randomBytes(32)).toBase58();
+export function previewOnlyMintAddress(): string {
+  // Random bytes that decode to a valid ed25519 point (the engine requires an on-curve
+  // mint): a usable public key whose secret key nobody knows. ~50% of draws qualify.
+  for (;;) {
+    const bytes = randomBytes(32);
+    if (PublicKey.isOnCurve(bytes) && !bytes.every(byte => byte === 0)) return new PublicKey(bytes).toBase58();
+  }
 }
 
 /**

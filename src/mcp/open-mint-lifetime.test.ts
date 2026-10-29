@@ -11,7 +11,8 @@ vi.mock("@sofinance/engine/config/server-env", async original => ({
 }));
 import { buildTransaction, openSummaryFixture, SIGNING_SECRET, testKeypair, toBase64 } from "@/lib/test-support/send-fixtures";
 import * as tokens from "@/lib/pending-sign-token";
-import { prepareOpenPosition } from "./tools";
+import { parseClientNftMint } from "@sofinance/engine/open-atomic";
+import { prepareOpenPosition, previewOnlyMintAddress } from "./tools";
 import { prepareOpenPositionSchema } from "./schemas";
 import { VALID_ARGS } from "./test-support/dispatch-fixtures";
 const payer = testKeypair(1);
@@ -65,4 +66,14 @@ it("supplied mint never generates or signs a server mint and keeps bytes unchang
   const tx = VersionedTransaction.deserialize(Buffer.from(result.unsignedTransaction, "base64"));
   expect(tx.signatures.every(sig => sig.every(byte => byte === 0))).toBe(true);
   expect((await tokens.verifySignToken(result.signToken, SIGNING_SECRET))?.openRequest).toBeUndefined();
+});
+
+it("placeholder mint is a valid on-curve key the engine accepts (no secret exists for it)", () => {
+  const seen = new Set<string>();
+  for (let i = 0; i < 200; i++) {
+    const mint = previewOnlyMintAddress();
+    expect(parseClientNftMint(mint).toBase58()).toBe(mint);
+    seen.add(mint);
+  }
+  expect(seen.size).toBe(200);
 });
