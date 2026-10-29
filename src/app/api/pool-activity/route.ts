@@ -1,5 +1,6 @@
 import { apiError } from "@/lib/api-response";
-import { getPoolActivitySnapshot } from "@/lib/solami-blur";
+import { isPoolActivityEnabled } from "@/lib/protocol-flags";
+import { getPoolActivitySnapshot, unavailablePoolActivitySnapshot } from "@/lib/solami-blur";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +19,10 @@ export async function GET(request: Request) {
     if (!Number.isInteger(limit) || limit < 1 || limit > 200) {
       throw new Error("limit must be an integer 1–200");
     }
-    const snapshot = await getPoolActivitySnapshot(poolId, { limit });
+    // Flag off: answer locally, never contact Solami.
+    const snapshot = isPoolActivityEnabled()
+      ? await getPoolActivitySnapshot(poolId, { limit })
+      : unavailablePoolActivitySnapshot(poolId, "disabled");
     return Response.json(snapshot, {
       headers: { "Cache-Control": "no-store" },
     });

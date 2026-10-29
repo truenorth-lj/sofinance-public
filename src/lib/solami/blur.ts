@@ -61,6 +61,27 @@ export type BlurLiveEvent = {
   trade: BlurTrade;
 };
 
+/**
+ * Why a snapshot or stream is unavailable. Status codes only: never the key,
+ * a URL (the WS URL carries the key), or an upstream body.
+ * - `disabled`: POOL_ACTIVITY_ENABLED is off for this deployment; nothing was requested.
+ * - `not-configured`: SOLAMI_DATA_API_KEY is unset; nothing was requested.
+ * - `plan-<status>`: Solami refused the key for this plan (401/402/403/429).
+ * - `http-<status>`: any other non-2xx from Solami.
+ * - `upstream-error`: the request failed before a response (network, bad JSON).
+ * - `no-data`: Solami answered but the pool payload had nothing usable.
+ * - `upstream-close` / `websocket-unavailable`: stream only (see classifyBlurStreamClose).
+ */
+export type PoolActivityUnavailableReason =
+  | "disabled"
+  | "not-configured"
+  | `plan-${number}`
+  | `http-${number}`
+  | "upstream-error"
+  | "no-data"
+  | "upstream-close"
+  | "websocket-unavailable";
+
 export type PoolActivitySnapshot = {
   available: boolean;
   poolId: string;
@@ -68,13 +89,39 @@ export type PoolActivitySnapshot = {
   trades: BlurTrade[];
   fetchedAt: string;
   source: "solami-blur" | "unavailable";
+  /** Present only when `available` is false. */
+  reason?: PoolActivityUnavailableReason;
 };
+
+/** Thrown by the REST client; carries the HTTP status and nothing else from the response. */
+export class BlurHttpError extends Error {
+  readonly status: number;
+  constructor(path: string, status: number) {
+    super(`Solami Blur ${path} returned ${status} (${isBlurPlanHttpStatus(status) ? "plan" : "http"})`);
+    this.name = "BlurHttpError";
+    this.status = status;
+  }
+}
+
+export function blurUnavailableReasonForStatus(status: number): PoolActivityUnavailableReason {
+  return isBlurPlanHttpStatus(status) ? `plan-${status}` : `http-${status}`;
+}
+
+/** Sanitized one-line log: a fixed tag, the reason (status code only) and nothing else. */
+export function logPoolActivityUnavailable(surface: "snapshot" | "stream", reason: PoolActivityUnavailableReason): void {
+  if (reason === "disabled" || reason === "not-configured") return;
+  // eslint-disable-next-line no-console -- sanitized: fixed tag + reason (status code only)
+  console.warn(`[pool-activity] ${surface} unavailable: ${reason}`);
+}
 
 export function isBlurPlanHttpStatus(status: number): boolean {
   return status === 401 || status === 402 || status === 403 || status === 429;
 }
 
-export function unavailablePoolActivitySnapshot(poolId: string): PoolActivitySnapshot {
+export function unavailablePoolActivitySnapshot(
+  poolId: string,
+  reason: PoolActivityUnavailableReason = "no-data",
+): PoolActivitySnapshot {
   return {
     available: false,
     poolId,
@@ -82,6 +129,7 @@ export function unavailablePoolActivitySnapshot(poolId: string): PoolActivitySna
     trades: [],
     fetchedAt: new Date().toISOString(),
     source: "unavailable",
+    reason,
   };
 }
 
@@ -345,11 +393,7 @@ async function blurGet(
     },
     cache: "no-store",
   });
-  if (!response.ok) {
-    const status = response.status;
-    const detail = isBlurPlanHttpStatus(status) ? "plan" : "http";
-    throw new Error(`Solami Blur ${path} returned ${status} (${detail})`);
-  }
+  if (!response.ok) throw new BlurHttpError(path, response.status);
   return response.json();
 }
 
@@ -392,24 +436,28 @@ export async function getPoolActivitySnapshot(
 ): Promise<PoolActivitySnapshot> {
   const env = options.env ?? (process.env as BlurEnv);
   if (!isBlurConfigured(env)) {
-    return unavailablePoolActivitySnapshot(poolId);
+    return unavailablePoolActivitySnapshot(poolId, "not-configured");
   }
+  let pool: BlurPoolSnapshot | null;
   try {
-    const pool = await fetchBlurPool(poolId, options);
-    if (!pool || !poolSnapshotIsUseful(pool)) return unavailablePoolActivitySnapshot(poolId);
-    const limit = options.limit ?? 20;
-    const trades = pool.mint
-      ? await fetchBlurTokenTradesForPool(poolId, pool.mint, limit, options).catch(() => [] as BlurTrade[])
-      : [];
-    return {
-      available: true,
-      poolId,
-      pool,
-      trades,
-      fetchedAt: new Date().toISOString(),
-      source: "solami-blur",
-    };
-  } catch {
-    return unavailablePoolActivitySnapshot(poolId);
+    pool = await fetchBlurPool(poolId, options);
+  } catch (error) {
+    const reason = error instanceof BlurHttpError ? blurUnavailableReasonForStatus(error.status) : "upstream-error";
+    logPoolActivityUnavailable("snapshot", reason);
+    return unavailablePoolActivitySnapshot(poolId, reason);
   }
+  if (!pool || !poolSnapshotIsUseful(pool)) return unavailablePoolActivitySnapshot(poolId, "no-data");
+  const limit = options.limit ?? 20;
+  // Trades are best-effort: the pool snapshot is still useful without them.
+  const trades = pool.mint
+    ? await fetchBlurTokenTradesForPool(poolId, pool.mint, limit, options).catch(() => [] as BlurTrade[])
+    : [];
+  return {
+    available: true,
+    poolId,
+    pool,
+    trades,
+    fetchedAt: new Date().toISOString(),
+    source: "solami-blur",
+  };
 }

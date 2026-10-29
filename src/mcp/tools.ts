@@ -26,9 +26,9 @@ import { prepareOpen } from "@/server/transactions/open-prepare";
 import { assertSolInputAllowed } from "@/lib/sol-input-policy";
 import { submitOpenPositionFromParts } from "../lib/open-send";
 import type { OpenPositionSummary } from "@sofinance/engine/open-types";
-import { getPoolActivitySnapshot } from "../lib/solami-blur";
+import { getPoolActivitySnapshot, unavailablePoolActivitySnapshot } from "../lib/solami-blur";
 import { readPositionRangeFacts } from "../lib/position-range-onchain";
-import { isOrcaPositionsEnabled } from "../lib/protocol-flags";
+import { isOrcaPositionsEnabled, isPoolActivityEnabled } from "../lib/protocol-flags";
 import { getOrcaPositionPerformance, listOrcaPositions, ORCA_PROTOCOL, readOrcaPositionRangeFacts } from "../lib/orca-positions";
 import { blurPriceToBPerA, rangeStatusFromPrice } from "../lib/position-range-status";
 import type {
@@ -632,9 +632,12 @@ export async function getPositionPerformance(input: GetPositionPerformanceInput)
 
 /**
  * Live Blur snapshot for a pool (stats + recent swaps). Read-only.
- * Returns `available: false` when SOLAMI_DATA_API_KEY is unset.
+ * Returns `available: false` with a sanitized `reason` (see
+ * PoolActivityUnavailableReason). Behind POOL_ACTIVITY_ENABLED: dispatch hides
+ * and refuses the tool when off; this guard keeps direct callers off Solami too.
  */
 export async function getPoolActivity(input: GetPoolActivityInput) {
+  if (!isPoolActivityEnabled()) return unavailablePoolActivitySnapshot(input.poolId, "disabled");
   return getPoolActivitySnapshot(input.poolId, { limit: input.limit });
 }
 

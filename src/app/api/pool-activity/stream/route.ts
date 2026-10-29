@@ -6,10 +6,13 @@ import {
   formatSseComment,
   isBlurConfigured,
   isBlurConnectedFrame,
+  logPoolActivityUnavailable,
   parseBlurLiveEvent,
+  type PoolActivityUnavailableReason,
   rememberBlurEvent,
 } from "@/lib/solami-blur";
 import { captureApiRouteError } from "@/lib/sentry/capture";
+import { isPoolActivityEnabled } from "@/lib/protocol-flags";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -33,25 +36,22 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const poolId = parsePoolId(url.searchParams.get("poolId"));
 
-    const unavailable = encodeSseEvent("unavailable", { available: false, poolId });
-    if (!isBlurConfigured() || !unavailable) {
-      return new Response(unavailable ?? "event: unavailable\ndata: {}\n\n", {
-        headers: {
-          "Content-Type": "text/event-stream; charset=utf-8",
-          "Cache-Control": "no-store",
+    const unavailableResponse = (reason: PoolActivityUnavailableReason) =>
+      new Response(
+        encodeSseEvent("unavailable", { available: false, poolId, reason }) ?? "event: unavailable\ndata: {}\n\n",
+        {
+          headers: {
+            "Content-Type": "text/event-stream; charset=utf-8",
+            "Cache-Control": "no-store",
+          },
         },
-      });
-    }
+      );
 
+    // Flag off: no Solami socket is opened at all.
+    if (!isPoolActivityEnabled()) return unavailableResponse("disabled");
+    if (!isBlurConfigured()) return unavailableResponse("not-configured");
     const wsUrl = blurWsUrl(poolId);
-    if (!wsUrl) {
-      return new Response(unavailable, {
-        headers: {
-          "Content-Type": "text/event-stream; charset=utf-8",
-          "Cache-Control": "no-store",
-        },
-      });
-    }
+    if (!wsUrl) return unavailableResponse("not-configured");
 
     const stream = new ReadableStream({
       start(controller) {
@@ -103,6 +103,7 @@ export async function GET(request: Request) {
         try {
           socket = new WebSocket(wsUrl);
         } catch {
+          logPoolActivityUnavailable("stream", "websocket-unavailable");
           send("unavailable", { available: false, poolId, reason: "websocket-unavailable" });
           cleanup();
           return;
@@ -117,6 +118,7 @@ export async function GET(request: Request) {
             cause,
           });
           if (classified.event === "unavailable") {
+            logPoolActivityUnavailable("stream", classified.reason);
             send("unavailable", { available: false, poolId, reason: classified.reason });
           } else {
             send("end", { reason: classified.reason, poolId });

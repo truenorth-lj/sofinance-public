@@ -55,3 +55,33 @@ export const RHC_UNIV4_DISCOVERY_ENABLED: Readonly<Record<DeployTarget, boolean>
 export function isRhcUniv4DiscoveryEnabled(target: DeployTarget = deployTarget()): boolean {
   return RHC_UNIV4_DISCOVERY_ENABLED[target];
 }
+
+/**
+ * Solami Blur live pool activity: the MCP `get_pool_activity` tool, the
+ * `/api/pool-activity` snapshot and `/api/pool-activity/stream` SSE routes, and
+ * the app's pool-activity panel / live ticker. OFF in production (the Solami
+ * account is on the Free plan, which serves neither the snapshot nor the
+ * stream); when off, no Solami request or socket is attempted and the MCP tool
+ * is hidden from tools/list. Enabled on Vercel preview/development.
+ * `get_position_range_status` is not gated: it falls back to the on-chain mid.
+ */
+export const POOL_ACTIVITY_ENABLED: Readonly<Record<DeployTarget, boolean>> = Object.freeze({
+  production: false,
+  preview: true,
+  development: true,
+});
+
+export function isPoolActivityEnabled(target: DeployTarget = deployTarget()): boolean {
+  return POOL_ACTIVITY_ENABLED[target];
+}
+
+/**
+ * Client-side read of the same flag. `NEXT_PUBLIC_SOFI_DEPLOY_ENV` is inlined
+ * from `VERCEL_ENV` at build time (next.config.ts); `VERCEL_ENV` covers server
+ * renders and tests.
+ */
+export function isPoolActivityEnabledInBrowser(): boolean {
+  return isPoolActivityEnabled(deployTarget(process.env.NEXT_PUBLIC_SOFI_DEPLOY_ENV || process.env.VERCEL_ENV));
+}
+
+export const POOL_ACTIVITY_DISABLED_MESSAGE = "get_pool_activity is disabled on this deployment.";

@@ -147,27 +147,6 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
         "name": "get_position_performance",
       },
       {
-        "description": "Live Solami Blur snapshot for a Solana pool: decoded pool stats (price, TVL, 24h fees, LP flows) plus recent swaps. Read-only. Returns available=false when SOLAMI_DATA_API_KEY is unset so agents can fall back. Free Solami keys have REST but not WebSocket.",
-        "inputSchema": {
-          "properties": {
-            "limit": {
-              "default": 20,
-              "description": "Max recent swaps to return (1-200, default 20)",
-              "type": "number",
-            },
-            "poolId": {
-              "description": "Pool address (Raydium CLMM id)",
-              "type": "string",
-            },
-          },
-          "required": [
-            "poolId",
-          ],
-          "type": "object",
-        },
-        "name": "get_pool_activity",
-      },
-      {
         "description": "Compute live in-range / out-of-range status for a Raydium CLMM position from the latest Solami Blur pool price versus tickLower/tickUpper (B per 1 A). Flags when price approaches a range edge. Falls back to the on-chain mid if Blur is unavailable. Read-only.",
         "inputSchema": {
           "properties": {
@@ -861,27 +840,6 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
       "type": "object",
     },
     "name": "get_position_performance",
-  },
-  {
-    "description": "Live Solami Blur snapshot for a Solana pool: decoded pool stats (price, TVL, 24h fees, LP flows) plus recent swaps. Read-only. Returns available=false when SOLAMI_DATA_API_KEY is unset so agents can fall back. Free Solami keys have REST but not WebSocket.",
-    "inputSchema": {
-      "properties": {
-        "limit": {
-          "default": 20,
-          "description": "Max recent swaps to return (1-200, default 20)",
-          "type": "number",
-        },
-        "poolId": {
-          "description": "Pool address (Raydium CLMM id)",
-          "type": "string",
-        },
-      },
-      "required": [
-        "poolId",
-      ],
-      "type": "object",
-    },
-    "name": "get_pool_activity",
   },
   {
     "description": "Compute live in-range / out-of-range status for a Raydium CLMM position from the latest Solami Blur pool price versus tickLower/tickUpper (B per 1 A). Flags when price approaches a range edge. Falls back to the on-chain mid if Blur is unavailable. Read-only.",

@@ -45,6 +45,8 @@ async function callTool(name: string, args: unknown, token = goodToken()) {
 
 beforeEach(() => {
   vi.stubEnv("JUPITER_API_KEY", SIGNING_SECRET);
+  // The full 16-tool contract is the preview/development surface; production is pinned below.
+  vi.stubEnv("VERCEL_ENV", "preview");
   vi.spyOn(console, "error").mockImplementation(() => {});
   for (const fn of Object.values(toolFns)) fn.mockResolvedValue({ ok: true });
 });
@@ -61,6 +63,20 @@ const EXPECTED_TOOL_NAMES = [
   "quote_add_liquidity", "prepare_transaction", "quote_compound", "prepare_compound_transaction",
   "submit_signed_transaction", "submit_compound_transaction", "quote_open_position", "prepare_open_position", "submit_open_position",
 ];
+
+describe("production surface (POOL_ACTIVITY_ENABLED off)", () => {
+  it.each([undefined, "production"])("VERCEL_ENV=%s hides get_pool_activity from tools/list and refuses a direct call", async (vercelEnv) => {
+    vi.stubEnv("VERCEL_ENV", vercelEnv);
+    const { json } = await send({ jsonrpc: "2.0", id: 1, method: "tools/list" });
+    const names = json.result.tools.map((tool: { name: string }) => tool.name);
+    expect(names).toEqual(EXPECTED_TOOL_NAMES.filter((name) => name !== "get_pool_activity"));
+    expect(names).toHaveLength(15);
+    const call = await callTool("get_pool_activity", { poolId: pool });
+    expect(call.json.result.isError).toBe(true);
+    expect(JSON.parse(call.json.result.content[0].text)).toEqual({ error: "get_pool_activity is disabled on this deployment." });
+    expect(toolFns.getPoolActivity).not.toHaveBeenCalled();
+  });
+});
 
 describe("tools/list wire contract", () => {
   it("lists exactly the 16 tools in the current order, without authentication", async () => {

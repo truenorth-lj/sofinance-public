@@ -253,6 +253,7 @@ describe("getPoolActivitySnapshot", () => {
     expect(snapshot.available).toBe(false);
     expect(snapshot.source).toBe("unavailable");
     expect(snapshot.trades).toEqual([]);
+    expect(snapshot.reason).toBe("not-configured");
   });
 
   it("loads /data/pool then /data/token/trades?address=<mint> and filters by pool", async () => {
@@ -325,6 +326,38 @@ describe("getPoolActivitySnapshot", () => {
     expect(snapshot.source).toBe("unavailable");
     expect(snapshot.pool).toBeNull();
     expect(snapshot.trades).toEqual([]);
+    expect(snapshot.reason).toBe("plan-402");
+  });
+
+  it.each([
+    [401, "plan-401"], [403, "plan-403"], [429, "plan-429"], [404, "http-404"], [500, "http-500"],
+  ])("reports status %i as reason %s and logs only the status", async (status, reason) => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const fetcher = vi.fn(async () => new Response("upstream body with test-data-key", { status }));
+    const snapshot = await getPoolActivitySnapshot(POOL, {
+      env: { SOLAMI_DATA_API_KEY: "test-data-key" },
+      fetcher,
+    });
+    expect(snapshot).toMatchObject({ available: false, source: "unavailable", reason });
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(`[pool-activity] snapshot unavailable: ${reason}`);
+    expect(JSON.stringify(snapshot) + JSON.stringify(warn.mock.calls)).not.toMatch(/test-data-key|solami\.dev|upstream body/);
+    warn.mockRestore();
+  });
+
+  it("reports a request that fails before a response as upstream-error without leaking the error", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const fetcher = vi.fn(async () => {
+      throw new Error("connect ECONNREFUSED https://api.solami.dev/data/pool?api_key=test-data-key");
+    });
+    const snapshot = await getPoolActivitySnapshot(POOL, {
+      env: { SOLAMI_DATA_API_KEY: "test-data-key" },
+      fetcher,
+    });
+    expect(snapshot.reason).toBe("upstream-error");
+    expect(warn).toHaveBeenCalledWith("[pool-activity] snapshot unavailable: upstream-error");
+    expect(JSON.stringify(warn.mock.calls)).not.toMatch(/test-data-key|solami\.dev/);
+    warn.mockRestore();
   });
 
   it("hides the panel when pool stats cannot be parsed", async () => {
@@ -334,6 +367,7 @@ describe("getPoolActivitySnapshot", () => {
       fetcher,
     });
     expect(snapshot.available).toBe(false);
+    expect(snapshot.reason).toBe("no-data");
   });
 });
 
