@@ -69,4 +69,15 @@ describe("MCP Orca routing (ORCA_POSITIONS_ENABLED)", () => {
     expect(await getPositionRangeStatus({ positionMint: "m" } as never)).not.toHaveProperty("protocol");
     expect(readPositionRangeFacts).toHaveBeenCalledTimes(1);
   });
+
+  it("preview: a missing opens database is reported as a protocol error, not an empty list", async () => {
+    vi.stubEnv("VERCEL_ENV", "preview");
+    const { ORCA_OPENS_DB_MISSING } = await vi.importActual<typeof import("../lib/orca-positions")>("../lib/orca-positions");
+    vi.mocked(orca.listOrcaPositions).mockRejectedValue(new Error(ORCA_OPENS_DB_MISSING));
+    const listed = await listPositions({ wallet: WALLET });
+    expect(listed.positions).toEqual([raydiumRow]);
+    expect(listed.protocolErrors).toEqual([{ protocol: "orca-whirlpool", error: ORCA_OPENS_DB_MISSING }]);
+    const { publicToolError } = await import("./public-tool-error");
+    expect(publicToolError(new Error(ORCA_OPENS_DB_MISSING))).toBe(ORCA_OPENS_DB_MISSING);
+  });
 });
