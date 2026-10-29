@@ -32,13 +32,14 @@ export async function prepareOpen(command: OpenPrepareCommand, readSigningSecret
   assertSolInputAllowed(selection);
   if (selection.inputKind === "native") throw new Error(SINGLE_TX_SOL_OPEN_MESSAGE);
   const feePaidUpstream = profile === APP_OPEN_PREPARE && command.solSwapSignature !== undefined;
+  let minContextSlot: number | undefined;
   if (feePaidUpstream) {
     // Checked before entering the waiver scope, which hides the fee wallet.
-    await assertSolSwapFeeCredit(wallet, command.solSwapSignature!, selection.inputMint, amount);
+    ({ slot: minContextSlot } = await assertSolSwapFeeCredit(wallet, command.solSwapSignature!, selection.inputMint, amount));
   }
   const build = () => profile === APP_OPEN_PREPARE
     ? withFeeEstimateRetry(() => buildAndSimulateOpenPosition(
-      wallet, selection, amount, range, floorBps, toleranceBps, { enforceResaleFloor: false, nftMint },
+      wallet, selection, amount, range, floorBps, toleranceBps, { enforceResaleFloor: false, nftMint, ...(minContextSlot ? { minContextSlot } : {}) },
     ))
     : buildAndSimulateOpenPosition(wallet, selection, amount, range, floorBps, toleranceBps, { nftMint });
   const { summary, transaction } = feePaidUpstream ? await runWithSwapFeePaidUpstream(build) : await build();

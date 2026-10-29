@@ -38,6 +38,8 @@ export type OpenPositionBuildOptions = {
    * multi-signer recipe). Required.
    */
   nftMint?: string;
+  /** Earliest slot for the pre-simulation snapshot (step 2/2: the confirmed step-1 swap's slot). */
+  minContextSlot?: number;
 };
 
 /** On-curve position NFT mint the client will sign after the wallet. */
@@ -87,6 +89,7 @@ type OpenResources = {
   pool: () => ReturnType<Awaited<ReturnType<typeof Raydium.load>>["clmm"]["getPoolInfoFromRpc"]>;
   poolTable: () => Promise<string | undefined>;
   readTables: ReturnType<typeof openLookupTableReader>;
+  minContextSlot?: number;
 };
 
 async function buildOpenPositionAttempt(
@@ -297,6 +300,7 @@ async function buildOpenPositionAttempt(
     requested: BigInt(quote.requested), expectedLiquidity: BigInt(quote.liquidity),
     maxSolDebitLamports, sigVerify: false,
     ...(sponsored ? { minRemainingSolLamports: 0n } : {}),
+    ...(resources.minContextSlot ? { minContextSlot: resources.minContextSlot } : {}),
   });
   const latest = await connection.getLatestBlockhash("confirmed");
   const restamped = restampVersionedTransaction(simulated, latest.blockhash, tables);
@@ -350,7 +354,7 @@ export async function buildAndSimulateOpenPosition(
   let pool: ReturnType<OpenResources["pool"]> | undefined;
   let poolTable: Promise<string | undefined> | undefined;
   const resources: OpenResources = {
-    connection, state, readTables: openLookupTableReader(connection),
+    connection, state, readTables: openLookupTableReader(connection), minContextSlot: options?.minContextSlot,
     pool: () => pool ??= sdk().then(sdk => sdk.clmm.getPoolInfoFromRpc(selection.poolId)),
     poolTable: () => poolTable ??= sdk().then(async sdk => {
       const [keys] = await sdk.api.fetchPoolKeysById({ idList: [selection.poolId] }).catch(() => []);

@@ -17,7 +17,7 @@ function connection(opts: { status?: unknown; keys?: PublicKey[]; pre?: unknown[
     getSignatureStatuses: vi.fn(async () => ({ value: ["status" in opts ? opts.status : { err: null, confirmationStatus: "confirmed" }] })),
     getBlockHeight: vi.fn(async () => opts.height ?? 0),
     getTransaction: vi.fn(async () => ({
-      blockTime: 1_700_000_000,
+      blockTime: 1_700_000_000, slot: 462_750_173,
       meta: { err: opts.err ?? null, loadedAddresses: { writable: [], readonly: [] }, preTokenBalances: opts.pre ?? [balance(wallet, "100")], postTokenBalances: opts.post ?? [balance(wallet, "24650100"), balance(other, "5")] },
       transaction: { message: { getAccountKeys: () => ({ length: keys.length, get: (i: number) => keys[i] }) } },
     })),
@@ -30,7 +30,7 @@ afterEach(() => vi.unstubAllEnvs());
 
 describe("readSolSwapDelivery", () => {
   it("measures what the swap actually delivered to the wallet (post minus pre)", async () => {
-    expect(await read(connection())).toEqual({ status: "confirmed", delivered: "24650000", decimals: 9, blockTime: 1_700_000_000, feeAccountPaid: true });
+    expect(await read(connection())).toEqual({ status: "confirmed", delivered: "24650000", decimals: 9, blockTime: 1_700_000_000, feeAccountPaid: true, slot: 462_750_173 });
   });
   it("reports whether the protocol fee account was in the transaction", async () => {
     expect(await read(connection({ keys: [wallet, other] }))).toMatchObject({ status: "confirmed", feeAccountPaid: false });

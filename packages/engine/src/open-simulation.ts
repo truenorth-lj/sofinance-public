@@ -23,6 +23,12 @@ type VerifyInput = {
   minRemainingSolLamports?: bigint;
   /** Prepared message; wallet-raised ComputeBudget priority is allowed up to 0.01 SOL extra. */
   prepared?: VersionedTransaction;
+  /**
+   * Earliest slot the "before" snapshot may be read at, e.g. the slot of a confirmed step-1
+   * swap whose output this open deposits. Without it, a provider still behind that swap would
+   * report pre-swap balances and the swap's own SOL spend would count against this open's cap.
+   */
+  minContextSlot?: number;
 };
 
 function decodeToken(info: AccountInfo<Buffer> | null, key: PublicKey, program: PublicKey, wallet: PublicKey, mint: PublicKey) {
@@ -67,7 +73,14 @@ export async function simulateAndVerifyOpenTransaction(input: VerifyInput) {
     ? getAssociatedTokenAddressSync(new PublicKey(NATIVE_SOL_MINT), wallet, false, TOKEN_PROGRAM_ID) : null;
   const keys = [...new Map([nftAta, ataA, ataB, ...(inputAta ? [inputAta] : []), ...(wsolAta ? [wsolAta] : [])]
     .map((key) => [key.toBase58(), key])).values()];
-  const beforeInfos = await connection.getMultipleAccountsInfo(keys, "confirmed");
+  // One snapshot (wallet SOL + token accounts) on the slot-context route, i.e. the same providers
+  // as simulateTransaction, which then runs at or after that slot. Separate read-route calls could
+  // land on a provider that lags the simulator, so SOL "before" and "after" came from different
+  // slots and anything confirmed in between (a step-1 swap) was billed to this open.
+  const snapshot = await connection.getMultipleAccountsInfoAndContext([...keys, wallet], {
+    commitment: "confirmed", ...(input.minContextSlot ? { minContextSlot: input.minContextSlot } : {}),
+  });
+  const beforeInfos = snapshot.value;
   const before = new Map(keys.map((key, index) => [key.toBase58(), beforeInfos[index] ?? null] as const));
   const tokenBefore = (key: PublicKey, program: string, mint: string) =>
     decodeToken(before.get(key.toBase58()) ?? null, key, new PublicKey(program), wallet, new PublicKey(mint));
@@ -81,14 +94,15 @@ export async function simulateAndVerifyOpenTransaction(input: VerifyInput) {
   if (wsolAta && tokenBefore(wsolAta, TOKEN_PROGRAM_ID.toBase58(), NATIVE_SOL_MINT) !== 0n) {
     throw new Error("Native SOL input already has WSOL ATA balance, please handle separately to avoid using existing WSOL");
   }
-  const solBefore = await connection.getBalance(wallet, "confirmed");
+  // A wallet with no system account (sponsored, zero SOL) reads as null: 0 lamports.
+  const solBefore = beforeInfos[keys.length]?.lamports ?? 0;
   if (state.inputKind === "native" && BigInt(solBefore) < requested + BigInt(MIN_SOL_LAMPORTS)) {
     throw new Error("Native SOL insufficient to pay input and reserved fees");
   }
   const intermediate = await transactionIntermediateAccounts(connection, transaction, wallet, keys.map(key => key.toBase58()));
   const addresses = [positionAccount.toBase58(), ...keys.map((key) => key.toBase58()), ...intermediate.accounts.map(account => account.address), wallet.toBase58()];
   const simulation = await connection.simulateTransaction(transaction, {
-    sigVerify, commitment: "confirmed", minContextSlot: intermediate.slot, accounts: { encoding: "base64", addresses },
+    sigVerify, commitment: "confirmed", minContextSlot: Math.max(snapshot.context.slot, intermediate.slot, input.minContextSlot ?? 0), accounts: { encoding: "base64", addresses },
   });
   if (simulation.value.err) {
     throw new Error(`Open-position simulation failed: ${JSON.stringify(simulation.value.err)}; ${simulation.value.logs?.slice(-5).join(" | ") || "no logs"}`);

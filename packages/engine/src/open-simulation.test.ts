@@ -46,8 +46,10 @@ it("verifies a native SOL open with funded Jupiter intermediate USDC and fails c
   ]);
   const connection = {
     getMultipleAccountsInfo: vi.fn(async (keys: PublicKey[]) => keys.map(() => null)),
-    getMultipleAccountsInfoAndContext: vi.fn(async (keys: PublicKey[]) => ({ context: { slot: 123 }, value: keys.map(k => k.equals(intermediate) ? before : null) })),
-    getBalance: vi.fn(async () => 100_000_000),
+    getMultipleAccountsInfoAndContext: vi.fn(async (keys: PublicKey[]) => ({ context: { slot: 123 }, value: keys.map(k =>
+      k.equals(intermediate) ? before : k.equals(wallet) ? { ...before, owner: SystemProgram.programId, data: Buffer.alloc(0), lamports: 100_000_000 } : null) })),
+    // A lagging read-route provider still showing a step-1 swap's SOL; must never be the "before" balance.
+    getBalance: vi.fn(async () => 104_505_000),
     simulateTransaction: vi.fn(async (_tx, config: { accounts: { addresses: string[] } }) => ({ value: { err: null, accounts: config.accounts.addresses.map(address => {
       const info = after.get(address); return info ? { ...info, owner: info.owner.toBase58(), data: [info.data.toString("base64"), "base64"] } : null;
     }) } })),
@@ -61,4 +63,14 @@ it("verifies a native SOL open with funded Jupiter intermediate USDC and fails c
   await expect(simulateAndVerifyOpenTransaction(input)).rejects.toThrow(intermediate.toBase58());
   after.delete(intermediate.toBase58());
   await expect(simulateAndVerifyOpenTransaction(input)).rejects.toThrow(intermediate.toBase58());
+  // Step 2/2: the snapshot (wallet SOL included) is read at or after the step-1 slot, and the
+  // simulation never runs before it. SOL debit is measured within one slot-consistent pair.
+  after.set(intermediate.toBase58(), before);
+  vi.mocked(connection.simulateTransaction).mockClear();
+  await expect(simulateAndVerifyOpenTransaction({ ...input, minContextSlot: 500 })).resolves.toMatchObject({ solDebitLamports: "2000000" });
+  expect(connection.getBalance).not.toHaveBeenCalled();
+  expect(connection.getMultipleAccountsInfoAndContext).toHaveBeenCalledWith(expect.arrayContaining([wallet]), { commitment: "confirmed", minContextSlot: 500 });
+  expect(connection.simulateTransaction).toHaveBeenCalledWith(transaction, expect.objectContaining({ minContextSlot: 500 }));
+  // The cap itself still bounds the open: rent + fees only.
+  await expect(simulateAndVerifyOpenTransaction({ ...input, maxSolDebitLamports: 1_999_999n })).rejects.toThrow("Simulated SOL expenditure or remaining balance exceeds limit");
 });

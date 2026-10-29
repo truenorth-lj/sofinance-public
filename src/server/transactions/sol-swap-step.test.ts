@@ -20,7 +20,7 @@ const mint = Keypair.generate().publicKey.toBase58();
 const signature = bs58.encode(new Uint8Array(64).fill(7));
 const now = 1_800_000_000_000;
 const delivered = (over: Record<string, unknown> = {}) => ({
-  status: "confirmed", delivered: "24650000", decimals: 9, blockTime: now / 1000 - 60, feeAccountPaid: true, ...over,
+  status: "confirmed", delivered: "24650000", decimals: 9, blockTime: now / 1000 - 60, feeAccountPaid: true, slot: 462750173, ...over,
 });
 
 beforeEach(() => {
@@ -38,7 +38,7 @@ afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); });
 
 describe("assertSolSwapFeeCredit", () => {
   it("accepts a recent confirmed fee-paying swap that delivered at least the open amount", async () => {
-    await expect(assertSolSwapFeeCredit(wallet, signature, mint, "0.02465")).resolves.toBeUndefined();
+    await expect(assertSolSwapFeeCredit(wallet, signature, mint, "0.02465")).resolves.toEqual({ slot: 462750173 });
     expect(engine.delivery).toHaveBeenCalledWith({ signature, wallet, outputMint: mint });
   });
   it.each([
@@ -79,6 +79,12 @@ describe("prepareOpen with SOL", () => {
     await prepareOpen(command({ solSwapSignature: signature }), () => "secret", APP_OPEN_PREPARE);
     expect(engine.feeSeen).toEqual([0]);
     expect(readSwapFeeConfig().bps).toBe(10);
+    // Step 2's pre-simulation snapshot must not predate the step-1 swap it deposits.
+    expect(engine.build.mock.calls[0]?.[6]).toMatchObject({ minContextSlot: 462750173 });
+  });
+  it("does not pin a snapshot slot for a plain token open", async () => {
+    await prepareOpen(command(), () => "secret", APP_OPEN_PREPARE);
+    expect(engine.build.mock.calls[0]?.[6]).not.toHaveProperty("minContextSlot");
   });
   it("does not build when the step-1 swap check fails", async () => {
     engine.delivery.mockResolvedValue(delivered({ feeAccountPaid: false }));

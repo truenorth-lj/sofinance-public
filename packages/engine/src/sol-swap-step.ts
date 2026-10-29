@@ -9,7 +9,7 @@ import {
   createAssociatedTokenAccountIdempotentInstruction, createCloseAccountInstruction, getAssociatedTokenAddressSync,
   TOKEN_PROGRAM_ID, unpackAccount,
 } from "@solana/spl-token";
-import { PublicKey, type Connection, type VersionedTransaction } from "@solana/web3.js";
+import { ComputeBudgetProgram, PublicKey, type Connection, type VersionedTransaction } from "@solana/web3.js";
 import { parseTokenAmount } from "./amount";
 import { NATIVE_SOL_MINT } from "./ids";
 import { stampPreparedBlockhash, restampVersionedTransaction } from "./fresh-blockhash";
@@ -24,7 +24,7 @@ import { wrapNativeSolInstructions } from "./swap/collection";
 import { rejectUnselectedWalletTokenWrites, swapRouteInstructions } from "./swap/instructions";
 import { readOpenPoolState } from "./open-state";
 import { JUPITER_MAX_ACCOUNTS } from "./jupiter-route-retry";
-import { atomicComputeUnitLimitInstruction } from "./transaction-limits";
+import { atomicComputeUnitLimitInstruction, measuredComputeUnitLimit } from "./transaction-limits";
 
 export const SOL_POOL_INPUT_MESSAGE = "SOL input is not available for pools that contain SOL yet. Please use another token.";
 
@@ -118,7 +118,15 @@ async function buildForOutput(connection: Connection, walletAddress: string, sta
   if (feeAta && feeConfig.bps > 0 && !route.swapInstruction.accounts.some((key) => key.pubkey === feeAta && key.isWritable)) {
     throw new Error("Jupiter swap does not pay the protocol fee account");
   }
-  return { leg, transaction, tables, outputAccount, simulatedOut, solDebit, unitsConsumed: simulation.value.unitsConsumed ?? 0, feeConfig };
+  const unitsConsumed = simulation.value.unitsConsumed ?? 0;
+  // Simulated with the 1.4M ceiling; ship the measured limit so a wallet-added priority fee stays small.
+  const limitIndex = instructions.findIndex((ix) => ix.programId.equals(ComputeBudgetProgram.programId) && ix.data[0] === 2);
+  if (limitIndex < 0) throw new Error("SOL swap step is missing its compute-unit limit");
+  const sized = instructions.map((ix, index) => index === limitIndex
+    ? ComputeBudgetProgram.setComputeUnitLimit({ units: measuredComputeUnitLimit(unitsConsumed) }) : ix);
+  const final = compileCompactOpenTransaction({ payerKey: wallet, recentBlockhash: simulationBlockhash, instructions: sized }, tables).transaction;
+  assertOpenTransactionSize(final);
+  return { leg, transaction: final, tables, outputAccount, simulatedOut, solDebit, unitsConsumed, feeConfig };
 }
 
 export async function buildAndSimulateSolSwapStep(walletAddress: string, poolId: string, amount: string,
@@ -168,7 +176,7 @@ export async function buildAndSimulateSolSwapStep(walletAddress: string, poolId:
 
 export type SolSwapDelivery =
   | { status: "pending" | "expired" | "failed" }
-  | { status: "confirmed"; delivered: string; decimals: number; blockTime: number | null; feeAccountPaid: boolean };
+  | { status: "confirmed"; delivered: string; decimals: number; blockTime: number | null; feeAccountPaid: boolean; slot: number };
 
 /**
  * What a confirmed step-1 swap ACTUALLY delivered to the wallet: the wallet's
@@ -202,5 +210,5 @@ export async function readSolSwapDelivery(input: {
   const feeWallet = readSwapFeeConfig().wallet;
   const feeAta = feeWallet ? swapFeeRecipientAta(feeWallet, new PublicKey(NATIVE_SOL_MINT), TOKEN_PROGRAM_ID).toBase58() : null;
   const feeAccountPaid = !feeAta || [...Array(keys.length).keys()].some((index) => keys.get(index)?.toBase58() === feeAta);
-  return { status: "confirmed", delivered: delivered.toString(), decimals: post.uiTokenAmount.decimals, blockTime: tx.blockTime ?? null, feeAccountPaid };
+  return { status: "confirmed", delivered: delivered.toString(), decimals: post.uiTokenAmount.decimals, blockTime: tx.blockTime ?? null, feeAccountPaid, slot: tx.slot };
 }

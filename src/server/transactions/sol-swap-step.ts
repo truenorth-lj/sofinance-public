@@ -75,7 +75,8 @@ export async function readSolSwapStepStatus(wallet: string, signature: string, o
  * Step 2/2 fee credit. Cheap sanity checks only (product decision: no
  * server-side anti-tampering on fees): the step-1 swap is confirmed, paid by
  * this wallet, wrote the protocol fee account, is recent, and delivered at
- * least the amount this open deposits.
+ * least the amount this open deposits. Returns the swap's slot so step 2
+ * never simulates against state from before the swap landed.
  */
 export async function assertSolSwapFeeCredit(wallet: string, signature: string, inputMint: string, amount: string) {
   if (typeof signature !== "string" || bs58.decode(signature).length !== 64) throw new Error("Invalid step-1 swap signature");
@@ -88,4 +89,5 @@ export async function assertSolSwapFeeCredit(wallet: string, signature: string, 
   if (parseTokenAmount(amount, delivery.decimals) > BigInt(delivery.delivered)) {
     throw new Error("Open amount exceeds what the step 1/2 swap delivered");
   }
+  return { slot: delivery.slot };
 }
