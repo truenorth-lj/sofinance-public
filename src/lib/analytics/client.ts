@@ -5,7 +5,6 @@ import {
   type Attribution,
 } from "./attribution";
 import { GROWTH_EVENTS } from "./events";
-import { walletEventProperties } from "./internal-wallets";
 import { POSTHOG_RELAY_PATH, posthogUpstream } from "./relay";
 
 export type GrowthClient = {
@@ -63,7 +62,7 @@ function doNotTrack(): boolean {
 }
 
 // Raw `wallet`/`address` keys are still stripped as a guard; the public address is sent
-// deliberately and only as `wallet_address` (see internal-wallets.ts).
+// deliberately and only as `wallet_address`. Internal/test wallets are filtered in PostHog.
 function dropSecrets(properties: Record<string, unknown> | undefined) {
   if (!properties) return properties;
   const next = { ...properties };
@@ -158,7 +157,6 @@ const WALLET_DISTINCT_ID = /^(?:wallet:[0-9a-f]{64}|[1-9A-HJ-NP-Za-km-z]{32,44})
 
 function resetIdentity(nextClient: GrowthClient) {
   nextClient.unregister?.("wallet_address");
-  nextClient.unregister?.("is_internal");
   nextClient.reset?.();
   identifiedWallet = null;
   // reset() drops super properties; keep first-touch attribution on the new anonymous id.
@@ -166,14 +164,14 @@ function resetIdentity(nextClient: GrowthClient) {
   if (stored) applyAttribution(stored);
 }
 
-/** Identify by the public wallet address and tag later events with it and `is_internal`. */
+/** Identify by the public wallet address and tag later events with it. */
 export async function captureWalletConnected(wallet: string) {
   if (!wallet) return;
   const enabled = await initGrowthAnalytics();
   if (!enabled || !client) return;
   const current = client.get_distinct_id?.();
   if (current && current !== wallet && WALLET_DISTINCT_ID.test(current)) resetIdentity(client);
-  const properties = walletEventProperties(wallet);
+  const properties = { wallet_address: wallet };
   client.identify(wallet);
   identifiedWallet = wallet;
   client.register(properties);
