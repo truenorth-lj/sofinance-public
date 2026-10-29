@@ -3,6 +3,10 @@
 // CompoundSendError wrapping. Mocked: RPC, pool-state reader, simulation, Beam lookup.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+// Solami-on behaviour (SOLAMI_ENABLED is on for Vercel preview/development, off in production).
+beforeEach(() => { vi.stubEnv("VERCEL_ENV", "preview"); });
+afterEach(() => { vi.unstubAllEnvs(); });
+
 vi.mock("server-only", () => ({}));
 vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: vi.fn() }));
 vi.mock("@sofinance/engine/open-state", () => ({ readOpenPoolState: vi.fn() }));

@@ -1,4 +1,4 @@
-import { engineEnv } from "../host";
+import { engineEnv, isSolamiEndpoint, solamiAllowed } from "../host";
 import { jsonRpcMethodOf } from "./methods";
 import { RPC_PROVIDERS, resolveProvider, resolveProviderPair } from "./providers";
 import type { RpcEnv, RpcMetricId, RpcRoute } from "./types";
@@ -122,6 +122,8 @@ function resolveUrl(url: string, env: RpcEnv): { endpoint: string | null; metric
     return { endpoint: solami?.endpoint ?? null, metricId: "solami", customMethods: solami?.customMethods ?? [] };
   }
   const endpoint = url.startsWith("$") ? env[url.slice(1)]?.trim() || null : url.trim();
+  // Host turned Solami off: a Solami URL (literal or via `$VAR`) is skipped like an unset `$VAR`.
+  if (endpoint && isSolamiEndpoint(endpoint) && !solamiAllowed()) return { endpoint: null, metricId: "default", customMethods: [] };
   return { endpoint, metricId: "default", customMethods: [] };
 }
 

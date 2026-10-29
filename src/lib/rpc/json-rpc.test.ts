@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetRpcCache } from "@sofinance/engine/rpc/cache";
 import { resetRpcCircuit } from "@sofinance/engine/rpc/circuit";
 import { RpcHttpError, RpcUnavailableError } from "@sofinance/engine/rpc/errors";
@@ -7,6 +7,10 @@ import { setRpcLogger } from "@sofinance/engine/rpc/logger";
 import { SOLAMI_RPC_BASE_URL } from "@sofinance/engine/rpc/providers";
 import { setRpcRetryConfig } from "@sofinance/engine/rpc/retry";
 import type { RpcLogEvent } from "@sofinance/engine/rpc/types";
+
+// Solami-on behaviour (SOLAMI_ENABLED is on for Vercel preview/development, off in production).
+beforeEach(() => { vi.stubEnv("VERCEL_ENV", "preview"); });
+afterEach(() => { vi.unstubAllEnvs(); });
 
 afterEach(() => {
   resetRpcCache();

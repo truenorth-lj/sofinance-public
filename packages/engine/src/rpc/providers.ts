@@ -1,4 +1,4 @@
-import { engineEnv } from "../host";
+import { engineEnv, isSolamiEndpoint, solamiAllowed } from "../host";
 import { PUBLIC_SOLANA_RPC_URL, SOLAMI_RPC_BASE_URL } from "./urls";
 import type { ProviderPair, ResolvedProvider, RpcConfig, RpcEnv, RpcProviderId } from "./types";
 
@@ -50,6 +50,8 @@ export const RPC_PROVIDERS: readonly RpcProviderDefinition[] = [
 function resolveDefinition(def: RpcProviderDefinition, env: RpcEnv): ResolvedProvider | null {
   const endpoint = def.endpoint(env);
   if (!endpoint) return null;
+  // Host turned Solami off: skip it (and a SOLANA_RPC_URL that points at Solami) like an unset key.
+  if ((def.id === "solami" || isSolamiEndpoint(endpoint)) && !solamiAllowed()) return null;
   return {
     id: def.id,
     metricId: def.metricId,

@@ -71,15 +71,6 @@ exports[`http real read/prepare handlers > get_position_range_status preserves b
       ],
       "name": "range",
     },
-    {
-      "args": [
-        "EdmxWPmx2WH6WgFfTdu9xfkYf3k1g5wD1zccTVySEEh1",
-        {
-          "limit": 8,
-        },
-      ],
-      "name": "activity",
-    },
   ],
   "result": {
     "content": [
@@ -630,15 +621,6 @@ exports[`stdio real read/prepare handlers > get_position_range_status preserves 
         "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
       ],
       "name": "range",
-    },
-    {
-      "args": [
-        "EdmxWPmx2WH6WgFfTdu9xfkYf3k1g5wD1zccTVySEEh1",
-        {
-          "limit": 8,
-        },
-      ],
-      "name": "activity",
     },
   ],
   "result": {

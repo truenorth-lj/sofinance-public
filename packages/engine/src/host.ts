@@ -11,6 +11,7 @@
 //   SOFINANCE_FEE_WALLET, SOFINANCE_FEE_BPS,
 //   SOLAMI_API_KEY, SOLANA_RPC_URL, SOLAMI_* / RPC_* (provider selection, logging),
 //   SOLAMI_BEAM_* (Beam tip acceleration).
+// Hosts may also pass `solamiEnabled` to switch every Solami request (RPC, Beam) off.
 // RPC connections can also be injected per call (every builder accepts a `connection` option).
 
 export type EngineEnv = Readonly<Record<string, string | undefined>>;
@@ -18,6 +19,13 @@ export type EngineEnv = Readonly<Record<string, string | undefined>>;
 export type EngineHost = {
   /** Returns the configuration snapshot to use for this read. Called on every read. */
   env: () => EngineEnv;
+  /**
+   * Whether the engine may contact Solami at all (RPC at *.solami.dev, Beam tip addresses and
+   * landing lookups). Called on every check. Omitted = allowed (unchanged engine behaviour).
+   * When it returns false, Solami RPC providers are skipped exactly like an unset `$VAR` and Beam
+   * is off, so no request or socket reaches Solami.
+   */
+  solamiEnabled?: () => boolean;
 };
 
 let host: EngineHost | null = null;
@@ -34,6 +42,21 @@ export function resetEngineHost() {
 
 export function isEngineConfigured() {
   return host !== null;
+}
+
+/** Whether the host allows Solami. True when no host or no hook is installed. */
+export function solamiAllowed(): boolean {
+  return host?.solamiEnabled ? host.solamiEnabled() : true;
+}
+
+/** True for Solami-operated endpoints (solami.dev and any subdomain). Never throws. */
+export function isSolamiEndpoint(endpoint: string): boolean {
+  try {
+    const hostname = new URL(endpoint).hostname.toLowerCase();
+    return hostname === "solami.dev" || hostname.endsWith(".solami.dev");
+  } catch {
+    return false;
+  }
 }
 
 /** Current configuration. Throws when the host forgot to call `configureEngine()`. */

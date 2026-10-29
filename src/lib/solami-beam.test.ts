@@ -1,5 +1,9 @@
 import { PublicKey, SystemProgram, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// Solami-on behaviour (SOLAMI_ENABLED is on for Vercel preview/development, off in production).
+beforeEach(() => { vi.stubEnv("VERCEL_ENV", "preview"); });
+afterEach(() => { vi.unstubAllEnvs(); });
 
 vi.mock("server-only", () => ({}));
 
@@ -216,5 +220,17 @@ describe("fetchBeamTipAddress / fetchBeamLanding", () => {
     expect(result.beam?.isLanded).toBe(true);
     expect(result.label).toBe("Landed via Beam · nyc · 100000 lamports");
     expect(result.beamLandingUrl).toBe(beamLandingUrl(live.signature));
+  });
+});
+
+describe("SOLAMI_ENABLED off (production): no Beam request", () => {
+  it.each([undefined, "production"])("Beam is off and tip / landing lookups never fetch (VERCEL_ENV=%s)", async (vercelEnv) => {
+    vi.stubEnv("VERCEL_ENV", vercelEnv);
+    const fetcher = vi.fn();
+    expect(isBeamEnabled({ SOLAMI_API_KEY: "k" })).toBe(false);
+    await expect(fetchBeamTipAddress({ env: { SOLAMI_API_KEY: "k" }, fetcher })).resolves.toBeNull();
+    await expect(fetchBeamLanding("sig", { env: {}, fetcher })).resolves.toBeNull();
+    await expect(fetchBeamLanding("sig", { env: { SOLAMI_API_KEY: "k" }, fetcher })).resolves.toBeNull();
+    expect(fetcher).not.toHaveBeenCalled();
   });
 });
