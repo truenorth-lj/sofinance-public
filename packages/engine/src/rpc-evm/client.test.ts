@@ -33,10 +33,11 @@ describe("rpc-evm provider catalog", () => {
     ]);
   });
 
-  it("puts an optional dedicated RHC_RPC_URL first on both routes", () => {
+  it("puts an optional dedicated RHC_RPC_URL (Alchemy free: 10-block getLogs cap) first on the state route only", () => {
     const env = { RHC_RPC_URL: " https://dedicated.example/v2/KEY " };
     expect(resolveEvmProviders("state", env).map(provider => provider.id)).toEqual(["dedicated", "drpc", "publicnode", "official"]);
-    expect(resolveEvmProviders("logs", env)[0]).toMatchObject({ id: "dedicated", url: "https://dedicated.example/v2/KEY" });
+    expect(resolveEvmProviders("state", env)[0]).toMatchObject({ id: "dedicated", url: "https://dedicated.example/v2/KEY" });
+    expect(resolveEvmProviders("logs", env).map(provider => provider.id)).toEqual(["official"]);
     expect(resolveEvmProviders("state", { RHC_RPC_URL: "  " })[0]!.id).toBe("drpc");
   });
 });

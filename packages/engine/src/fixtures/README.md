@@ -47,3 +47,9 @@ config, the ERC1967 implementation slot, token metadata, and the decoded
 Swap / ModifyLiquidity / Upgraded history since pool init. Public contract
 state and events only; no wallets, signatures or credentials.
 `test-support/rhc-mock-rpc.ts` replays it as a mock JSON-RPC.
+
+`univ4-rhc-spcx-dexscreener.json` and `univ4-rhc-spcx-geckoterminal.json` are the
+public DexScreener (`/latest/dex/pairs/robinhood/{poolId}`) and GeckoTerminal
+(`/api/v2/networks/robinhood/pools/{poolId}`) responses for the same pool, captured
+2026-10-29 15:14 UTC+8. Public market data only (24h volume, TVL, swap counts);
+no wallets, signatures or credentials.

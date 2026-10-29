@@ -10,8 +10,10 @@ import { ROBINHOOD_PUBLIC_RPC_URL } from "../chains/robinhood";
  *   PublicNode treats any historical range as an archive request, so only the official RPC (or a
  *   dedicated key, if one is configured later) can serve them.
  *
- * `RHC_RPC_URL` is an optional host-injected slot for a dedicated provider (e.g. an Alchemy URL with
- * its key). It is not set anywhere today; when present it is tried first on both routes. URLs are
+ * `RHC_RPC_URL` is an optional host-injected slot for a dedicated provider: an Alchemy free-tier URL with
+ * its key (PM, 2026-10-29; added to Vercel by LJ). Alchemy's free tier caps eth_getLogs at 10 blocks per
+ * call, so it serves the `state` route only (tried first): eth_call / multicall, eth_simulateV1 and
+ * eth_estimateGas at transaction time. Pool volume/TVL come from public indexers, not log scans. URLs are
  * never logged or returned to clients: only the provider `id` is.
  */
 export type EvmRpcProviderId = "dedicated" | "drpc" | "publicnode" | "official";
@@ -31,7 +33,7 @@ export const DRPC_ROBINHOOD_URL = "https://robinhood.drpc.org";
 export const PUBLICNODE_ROBINHOOD_URL = "https://robinhood-rpc.publicnode.com";
 
 export const RHC_RPC_PROVIDERS: readonly EvmRpcProviderDefinition[] = Object.freeze([
-  { id: "dedicated", label: "Dedicated RPC (RHC_RPC_URL)", routes: ["state", "logs"], rps: 10, burst: 20,
+  { id: "dedicated", label: "Dedicated RPC (RHC_RPC_URL, Alchemy free)", routes: ["state"], rps: 10, burst: 20,
     endpoint: env => env.RHC_RPC_URL?.trim() || null },
   { id: "drpc", label: "dRPC (free)", routes: ["state"], rps: 4, burst: 8, endpoint: () => DRPC_ROBINHOOD_URL },
   { id: "publicnode", label: "PublicNode", routes: ["state"], rps: 4, burst: 8, endpoint: () => PUBLICNODE_ROBINHOOD_URL },
