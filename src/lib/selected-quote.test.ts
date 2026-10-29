@@ -256,15 +256,10 @@ it.each(["native", "token"] as const)("selected add charges the configured fee o
   expect(result.quote.feeAmount).toBe("100000");
   expect(result.quote.feeWallet).toBe(feeWallet.toBase58());
   expect(result.legs[0]!.feeAmount).toBe(100000n);
-  if (kind === "native") {
-    // Native SOL: Jupiter takes 10 bps of the full leg as an input-mint
-    // platform fee into the fee wallet's pre-created wSOL ATA.
-    expect(result.legs[0]!.feeInRoute).toBe(true);
-    expect(result.legs[0]!.route!.inAmount).toBe("100000000");
-    const call = vi.mocked(buildRoute).mock.calls[0]!;
-    expect([call[1], call[3], call[9], call[12]]).toEqual([mintB, 100000000n, 10, mintB]);
-  } else {
-    expect(result.legs[0]!.feeInRoute).toBe(false);
-    expect(result.legs[0]!.route!.inAmount).toBe("99900000");
-  }
+  // Native SOL and tokens alike: Jupiter takes 10 bps of the full leg as an
+  // input-mint platform fee into the fee wallet's pre-created ATA for that mint.
+  expect(result.legs[0]!.feeInRoute).toBe(true);
+  expect(result.legs[0]!.route!.inAmount).toBe("100000000");
+  const call = vi.mocked(buildRoute).mock.calls[0]!;
+  expect([call[1], call[3], call[9], call[12]]).toEqual([mintB, 100000000n, 10, mintB]);
 });

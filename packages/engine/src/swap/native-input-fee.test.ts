@@ -73,11 +73,11 @@ it("rejects a swap that does not pay the fee wSOL account", async () => {
     .rejects.toThrow("does not pay the protocol fee account");
 });
 
-it("keeps token inputs unchanged: no input-mint platform fee, fee reserved from the spend", async () => {
+it("token inputs also pay the fee inside Jupiter: input-mint platform fee on the full spend", async () => {
   const token = Keypair.generate().publicKey.toBase58();
-  vi.mocked(jupiterQuote).mockResolvedValue({ ...quote(token), inAmount: "999000" });
+  vi.mocked(jupiterQuote).mockResolvedValue({ ...quote(token), inAmount: "1000000" });
   const leg = await feeSwapLeg({ wallet, inputMint: token, outputMint, spend: 1_000_000n, feeBps: 10, inputFee: true, build: false });
-  expect(leg.feeInRoute).toBe(false);
+  expect(leg.feeInRoute).toBe(true);
   expect(leg.feeAmount).toBe(1000n);
-  expect(jupiterQuote).toHaveBeenCalledWith(expect.objectContaining({ amount: "999000", platformFeeBps: 0 }));
+  expect(jupiterQuote).toHaveBeenCalledWith(expect.objectContaining({ amount: "1000000", platformFeeBps: 10 }));
 });

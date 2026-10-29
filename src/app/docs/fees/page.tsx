@@ -15,22 +15,20 @@ export default function DocsFeesPage() {
       <ul>
         <li>Currently a fixed 10 bps; any change will be announced in advance.</li>
         <li>
-          Opening a position, adding to a position, and compounding take the fee{" "}
-          <strong className="font-medium text-cream">directly in the input token</strong> — 10 bps
-          of what you deposit (or of the harvested tokens being reinvested on compound). The
-          preview shows that amount in the same token.
+          Opening a position or adding to a position takes the fee{" "}
+          <strong className="font-medium text-cream">in the input token, inside the Jupiter swap</strong>{" "}
+          (as Jupiter&apos;s platform fee): 10 bps of the part of your deposit that is swapped. Any
+          part deposited directly, without a swap (for example USDC into a USDC pool), is not
+          charged. The transaction contains no separate transfer to us and never creates an
+          account for the fee wallet. The preview shows the fee in the same token.
         </li>
         <li>
-          If the protocol fee wallet does not yet have a token account for that mint, the
-          transaction creates it and{" "}
-          <strong className="font-medium text-cream">you pay the one-time account rent in SOL</strong>.
+          If the protocol fee wallet has no token account yet for your input token, that token
+          is temporarily unavailable as input and no transaction is built; use another token.
+          Depositing SOL into a pool that itself contains SOL is not available yet.
         </li>
         <li>
-          When you deposit <strong className="font-medium text-cream">SOL</strong>, the 10 bps is
-          taken in SOL inside the Jupiter swap itself (as Jupiter&apos;s platform fee), so the
-          transaction contains no separate SOL transfer to us and never creates an account for
-          the fee wallet. Depositing SOL into a pool that itself contains SOL is not available
-          yet; use another token for those pools.
+          Compounding takes 10 bps of the harvested tokens being reinvested, in that token.
         </li>
         <li>
           Withdrawing to USDC still collects the 10 bps as a Jupiter conversion fee in USDC.

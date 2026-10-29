@@ -150,7 +150,7 @@ it("refuses a native SOL fee that is not carried by the Jupiter swap", async () 
   vi.stubEnv("SOFINANCE_FEE_WALLET", recipient.toBase58());
   vi.stubEnv("SOFINANCE_FEE_BPS", "10");
   nativeFeeBundle(recipient, 30_000n, false);
-  await expect(prepare()).rejects.toThrow("Native SOL protocol fee must be collected inside the Jupiter swap");
+  await expect(prepare()).rejects.toThrow("Protocol fee must be collected inside the Jupiter swap");
 });
 
 it("prepares the compact captured sequential transaction first", async () => {

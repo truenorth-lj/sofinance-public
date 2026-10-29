@@ -1,5 +1,5 @@
 import "@/lib/engine-host";
-import { swapRouteInstructions, rejectUnselectedWalletTokenWrites, readSwapFeeConfig, collectInputAssetFee, wrapNativeSolInstructions, type FeeCollection } from "@sofinance/engine/swap";
+import { swapRouteInstructions, rejectUnselectedWalletTokenWrites, readSwapFeeConfig, wrapNativeSolInstructions, assertNoDirectFeeWalletInstructions } from "@sofinance/engine/swap";
 import "server-only";
 
 import { createHash } from "node:crypto";
@@ -64,14 +64,11 @@ async function buildAndSimulateSelectedZapOnce(
   if ((quote.feeAmount ?? "0") !== protocolFee.toString() || (quote.feeBps ?? 0) !== feeConfig.bps ||
     (quote.feeWallet ?? null) !== (feeConfig.wallet?.toBase58() ?? null))
     throw new Error("Quote protocol fee does not match configuration");
-  // Native SOL pays its fee inside the Jupiter swap legs (input-mint platform
-  // fee into the pre-created fee wSOL ATA); never as our own transfer.
-  if (state.inputKind === "native" && legs.some(item => item.feeAmount > 0n && !item.feeInRoute))
-    throw new Error("Native SOL protocol fee must be collected inside the Jupiter swap");
-  const feeInstructions = feeConfig.wallet && protocolFee > 0n && state.inputKind === "token"
-    ? await collectInputAssetFee(connection, { payer: wallet, owner: wallet, recipient: feeConfig.wallet, amount: protocolFee, kind: "token",
-        mint: new PublicKey(state.inputMint), source: new PublicKey(state.inputAccount!),
-        decimals: state.inputDecimals, program: new PublicKey(state.inputTokenProgram!) }) : { instructions: [], routes: [] };
+  // Every deposit (native SOL, USDC, stock tokens) pays its fee inside the
+  // Jupiter swap legs (input-mint platform fee into the fee wallet's
+  // pre-created ATA for that mint); never as our own transfer.
+  if (legs.some(item => item.feeAmount > 0n && !item.feeInRoute))
+    throw new Error("Protocol fee must be collected inside the Jupiter swap");
   const raydiumInstructions = [buildSelectedAddInstruction(state, quote, wallet)];
   const addInstructions = raydiumInstructions.filter((ix) => ix.programId.toBase58() === state.programId);
   const addDiscriminator = createHash("sha256").update("global:increase_liquidity_v2").digest().subarray(0, 8);
@@ -85,15 +82,15 @@ async function buildAndSimulateSelectedZapOnce(
     .filter((ix) => !ix.programId.equals(ComputeBudgetProgram.programId));
   const nativeAta = state.inputKind === "native"
     ? getAssociatedTokenAddressSync(new PublicKey(NATIVE_SOL_MINT), wallet, false, TOKEN_PROGRAM_ID) : null;
-  await rejectUnselectedWalletTokenWrites(connection, wallet, [...feeInstructions.instructions, ...routeInstructions],
-    [state.inputAccount, state.ataA, state.ataB, nativeAta?.toBase58(), ...((feeInstructions as FeeCollection).receiveOnlyAccounts ?? [])].filter((item): item is string => Boolean(item)));
-  const routeKeys = [...routes, ...feeInstructions.routes].flatMap((route) => Object.keys(route.addressesByLookupTableAddress || {}).map((key) => new PublicKey(key)));
+  await rejectUnselectedWalletTokenWrites(connection, wallet, routeInstructions,
+    [state.inputAccount, state.ataA, state.ataB, nativeAta?.toBase58()].filter((item): item is string => Boolean(item)));
+  const routeKeys = routes.flatMap((route) => Object.keys(route.addressesByLookupTableAddress || {}).map((key) => new PublicKey(key)));
   const [routeTables, raydiumTable] = await Promise.all([
     readLookupTables(connection, routeKeys),
     connection.getAddressLookupTable(new PublicKey("AcL1Vo8oy1ULiavEcjSUcwfBSForXMudcZvDZy5nzJkU"), { commitment: "confirmed" }),
   ]);
   const raydiumTables = raydiumTable.value?.isActive() ? [raydiumTable.value] : [];
-  validateRouteTables([...routes, ...feeInstructions.routes], routeTables);
+  validateRouteTables(routes, routeTables);
   // Wrap the full native SOL input once (including the fee) into the user's own
   // wSOL ATA; Jupiter routes are built without wrap/close and take the fee.
   const wrapInstructions = nativeAta ? wrapNativeSolInstructions(wallet, BigInt(quote.requested)) : [];
@@ -110,7 +107,8 @@ async function buildAndSimulateSelectedZapOnce(
     .map((table) => [table.key.toBase58(), table])).values()];
   const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
   const baseInstructions = await compactAtaInstructions(connection, [atomicComputeUnitLimitInstruction(),
-    ...wrapInstructions, ...feeInstructions.instructions, ...routeInstructions, ...createAtaInstructions, ...raydiumInstructions, ...cleanupInstructions]);
+    ...wrapInstructions, ...routeInstructions, ...createAtaInstructions, ...raydiumInstructions, ...cleanupInstructions]);
+  assertNoDirectFeeWalletInstructions(baseInstructions, feeConfig.wallet);
   const compile = (instructions: TransactionInstruction[]) => new VersionedTransaction(new TransactionMessage({
     payerKey: wallet, recentBlockhash: blockhash, instructions,
   }).compileToV0Message(tables));

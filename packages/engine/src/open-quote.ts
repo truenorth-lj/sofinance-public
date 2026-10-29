@@ -132,7 +132,7 @@ export async function getOpenPositionQuoteBundle(
   const lowerSqrtX64 = TickUtil.getSqrtPriceAtTick(resolved.tickLower).toString();
   const upperSqrtX64 = TickUtil.getSqrtPriceAtTick(resolved.tickUpper).toString();
   const grossRequested = parseTokenAmount(amount, state.inputDecimals);
-  const deposit = depositFeePlan(state.inputMint, grossRequested, feeConfig, state.inputKind);
+  const deposit = depositFeePlan(grossRequested, feeConfig);
   const requested = deposit.swapAmount;
   const swapFeeBps = deposit.legBps;
   if (BigInt(state.inputBalance) < grossRequested) {
