@@ -58,3 +58,21 @@ describe("parseOpenPrepareRequest", () => {
     }))).rejects.toThrow("Invalid position NFT mint");
   });
 });
+
+describe("temporary SOL input switch", () => {
+  it("refuses native SOL input on open quote and prepare with a clear public error", async () => {
+    const { apiError } = await import("./api-response");
+    const body = JSON.stringify({ ...quoteBody, inputMint: poolId, inputKind: "native", nftMint });
+    for (const parse of [parseOpenQuoteRequest, parseOpenPrepareRequest]) {
+      const caught = await parse(new Request("http://localhost/api/open", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body,
+      })).catch((error: unknown) => error);
+      expect(caught).toBeInstanceOf(Error);
+      const response = apiError(caught, "Open-position quote failed");
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({
+        error: "SOL deposits are temporarily unavailable — please use another token.", code: "sol_input_disabled",
+      });
+    }
+  });
+});

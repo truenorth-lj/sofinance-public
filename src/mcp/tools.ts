@@ -23,6 +23,7 @@ import { OPEN_RANGE_PRESETS } from "@sofinance/engine/open-range-presets";
 import { rangeInputFromFields } from "@sofinance/engine/open-range";
 import { getOpenPositionQuoteBundle } from "@sofinance/engine/open-quote";
 import { prepareOpen } from "@/server/transactions/open-prepare";
+import { assertSolInputAllowed } from "@/lib/sol-input-policy";
 import { submitOpenPositionFromParts } from "../lib/open-send";
 import type { OpenPositionSummary } from "@sofinance/engine/open-types";
 import { getPoolActivitySnapshot } from "../lib/solami-blur";
@@ -670,6 +671,7 @@ export async function quoteOpenPosition(input: QuoteOpenPositionInput) {
     inputMint: input.inputMint,
     inputKind: input.inputKind,
   };
+  assertSolInputAllowed(selection);
   const { quote } = await getOpenPositionQuoteBundle(
     input.wallet, selection, input.amount, openRangeFromInput(input),
     input.resaleFloorBps, input.slippageToleranceBps,
