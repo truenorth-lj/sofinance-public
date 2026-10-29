@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { FLAG_OFF_NOT_FOUND_PATH, isFlaggedOffPage } from "@/lib/flagged-pages";
 import { appSubdomainRewritePath, isAppSubdomainHost, trailingSlashRedirectPath } from "@/lib/app-host";
 import { REGION_NOTICE_COOKIE, REGION_NOTICE_COOKIE_MAX_AGE, regionNoticeForCountry } from "@/lib/region-notice";
 
@@ -25,6 +26,12 @@ export function proxy(request: NextRequest) {
 
   const host = request.headers.get("host");
   const rewritePath = isAppSubdomainHost(host) ? appSubdomainRewritePath(request.nextUrl.pathname) : null;
+  if (isFlaggedOffPage(rewritePath ?? request.nextUrl.pathname)) {
+    // Real 404 status for flag-off pages (a dynamic page's notFound() streams as 200 under the root Suspense).
+    const url = request.nextUrl.clone();
+    url.pathname = FLAG_OFF_NOT_FOUND_PATH;
+    return withRegionNotice(request, NextResponse.rewrite(url));
+  }
   if (!rewritePath) {
     return withRegionNotice(request, NextResponse.next());
   }
