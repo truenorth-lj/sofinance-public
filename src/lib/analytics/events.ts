@@ -1,5 +1,3 @@
-import { walletEventProperties } from "./internal-wallets";
-
 export const GROWTH_EVENTS = {
   rwaPairsView: "rwa_pairs_view",
   walletConnectClicked: "wallet_connect_clicked",
@@ -16,7 +14,6 @@ export type OpenEventProperties = {
   pool?: string;
   pair?: string;
   wallet_address?: string;
-  is_internal?: boolean;
   input_kind?: "native" | "token";
   /** Two-step SOL open only: which step failed (1 = SOL -> pool-token swap, 2 = token-input open). */
   open_step?: 1 | 2;
@@ -25,7 +22,7 @@ export type OpenEventProperties = {
 };
 
 export type OpenEventContext = {
-  /** Connected wallet's public address (tagged with `is_internal`). */
+  /** Connected wallet's public address (internal/test wallets are filtered in PostHog, not here). */
   wallet?: string | null;
   inputKind?: "native" | "token" | null;
 };
@@ -35,7 +32,7 @@ export function openEventProperties(pair: {
   symbolA: string;
   symbolB: string;
 } | null | undefined, context: OpenEventContext = {}): OpenEventProperties {
-  const properties: OpenEventProperties = context.wallet ? walletEventProperties(context.wallet) : {};
+  const properties: OpenEventProperties = context.wallet ? { wallet_address: context.wallet } : {};
   if (context.inputKind) properties.input_kind = context.inputKind;
   if (!pair) return properties;
   if (pair.poolAddress) properties.pool = pair.poolAddress;
