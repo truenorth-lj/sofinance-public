@@ -1,0 +1,26 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`exit instruction list is unchanged > exit: decrease (+ close=false) matches the Raydium SDK instructions exactly 1`] = `
+[
+  {
+    "data": "3a7fbc3e4f52c46015cd5b070000000000000000000000000b000000000000001600000000000000",
+    "keys": 20,
+    "program": "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK",
+  },
+]
+`;
+
+exports[`exit instruction list is unchanged > exit: decrease (+ close=true) matches the Raydium SDK instructions exactly 1`] = `
+[
+  {
+    "data": "3a7fbc3e4f52c46015cd5b070000000000000000000000000b000000000000001600000000000000",
+    "keys": 20,
+    "program": "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK",
+  },
+  {
+    "data": "7b86510031446262",
+    "keys": 7,
+    "program": "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK",
+  },
+]
+`;
