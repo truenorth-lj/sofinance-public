@@ -62,3 +62,8 @@ replayed FIFO by `test-support/rhc-replay.ts`; unknown requests fail the test. T
 throwaway derived from a public label (`test-support/rhc-open-capture.ts`), never funded: its
 balances and allowances exist only in `stateOverride`s. Nothing was signed for broadcast or sent.
 The Universal Router bytecode is stored once under `code`. No RPC URL or key is recorded.
+
+`meteora-dlmm-pool-cbbtc-wbtc.json` is the public Meteora datapi response
+(`https://dlmm.datapi.meteora.ag/pools/{address}`) for the allowlisted cbBTC/WBTC
+DLMM pool `53oyyj…`, captured 2026-10-29 23:40 UTC+8. Public market data only
+(TVL, 24h volume/fees, pool config); no wallets, signatures or credentials.
