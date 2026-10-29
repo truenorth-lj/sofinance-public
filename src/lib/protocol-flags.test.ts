@@ -107,8 +107,8 @@ describe("Raydium, Orca and Robinhood Chain are untouched by Meteora", () => {
 
   it("MCP tools reach Meteora position readers only behind METEORA_DLMM_DISCOVERY_ENABLED", () => {
     const source = readFileSync(join(process.cwd(), "src/mcp/tools.ts"), "utf8");
-    const calls = source.split("\n").filter((line) => /(listMeteoraPositions|readMeteoraPositionRangeFacts)\(/.test(line));
-    expect(calls).toHaveLength(2);
+    const calls = source.split("\n").filter((line) => /(listMeteoraPositions|readMeteoraPositionRangeFacts|getMeteoraPositionPerformance)\(/.test(line));
+    expect(calls).toHaveLength(3);
     for (const line of calls) expect(line).toContain("isMeteoraDlmmDiscoveryEnabled()");
   });
 });
