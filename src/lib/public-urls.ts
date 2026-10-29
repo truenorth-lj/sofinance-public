@@ -14,17 +14,26 @@ export const SIGN_PATH = `${APP_PATH}/sign`;
 /** Canonical production origin. Used by sitemap/robots when NEXT_PUBLIC_APP_URL is unset. */
 export const CANONICAL_SITE_URL = "https://sofinancelab.xyz";
 
+/**
+ * Origin for absolute links we hand out (MCP config URL, MCP `signUrl`, deep links).
+ *
+ * 1. NEXT_PUBLIC_APP_URL when set.
+ * 2. Vercel preview/development deployments point at themselves (VERCEL_URL):
+ *    their sign tokens are bound to that deployment's secret.
+ * 3. Any other Vercel deployment (production) uses CANONICAL_SITE_URL, never the
+ *    per-deployment `*.vercel.app` host, which is protected and pinned to one build.
+ * 4. Off Vercel (no VERCEL_URL): "" so callers emit root-relative paths.
+ */
 export function getPublicBaseUrl(): string {
   const fromEnv = process.env.NEXT_PUBLIC_APP_URL?.trim();
   if (fromEnv) return fromEnv.replace(/\/$/, "");
 
   const vercel = process.env.VERCEL_URL?.trim();
-  if (vercel) {
-    const host = vercel.replace(/\/$/, "");
-    return host.startsWith("http") ? host : `https://${host}`;
-  }
-
-  return "";
+  if (!vercel) return "";
+  const vercelEnv = process.env.VERCEL_ENV?.trim();
+  if (vercelEnv !== "preview" && vercelEnv !== "development") return CANONICAL_SITE_URL;
+  const host = vercel.replace(/\/$/, "");
+  return host.startsWith("http") ? host : `https://${host}`;
 }
 
 /** Origin for SEO metadata. Prefers NEXT_PUBLIC_APP_URL; never VERCEL_URL (preview hosts). */

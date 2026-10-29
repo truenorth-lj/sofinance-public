@@ -144,6 +144,7 @@ for (const c of cases) describe(`${c.kind} prepare baseline`, () => {
     it.each(["explicit", "vercel", "relative"])(`${surface} sign URL %s preserves the entire authenticated payload`, async origin => {
       vi.stubEnv("NEXT_PUBLIC_APP_URL", origin === "explicit" ? " https://app.invalid.example/ " : undefined);
       vi.stubEnv("VERCEL_URL", origin === "vercel" ? "preview.invalid.example" : undefined);
+      vi.stubEnv("VERCEL_ENV", origin === "vercel" ? "preview" : undefined);
       const result = await call(surface, c.name, VALID_ARGS[c.name]);
       const first = result.content[0]; expect(first?.type).toBe("text");
       if (first?.type !== "text") throw new Error("missing text");
