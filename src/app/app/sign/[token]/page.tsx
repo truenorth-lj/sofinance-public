@@ -9,7 +9,8 @@ import { LoaderCircle, CircleAlert, CheckCircle2 } from "lucide-react";
 import { InkHero, InkShell, InkCard, InkNav } from "@/components/ink";
 import { useWalletConnection } from "@/components/wallet-connection";
 import { notSentRetryMessage } from "@/lib/public-error";
-import { assertWalletReturnedTransaction, preserveExtraSignatures } from "@/lib/open-signatures";
+import { addMintSignature, assertWalletReturnedTransaction, preserveExtraSignatures } from "@/lib/open-signatures";
+import { createEphemeralMint, type EphemeralMint } from "@/lib/ephemeral-mint";
 import type { PendingSignPayload } from "@/lib/pending-sign-token";
 import { openAttemptFromSummary, type OpenAttempt } from "@/lib/open-attempt";
 import type { OpenPositionSummary } from "@sofinance/engine/open-types";
@@ -109,6 +110,7 @@ export default function SignPage() {
     if (payload.kind === "open-position" && (!open.loaded || open.pending)) return;
     let openAttempt: OpenAttempt | null = null;
     let unsent = false;
+    let mint: EphemeralMint | undefined;
     
     setSignStatus("signing");
     setError("");
@@ -122,7 +124,30 @@ export default function SignPage() {
     if (payload.kind === "open-position") captureGrowthEvent(GROWTH_EVENTS.openStarted, openProperties);
     
     try {
-      const bytes = Uint8Array.from(atob(payload.unsignedTransaction), (c) => c.charCodeAt(0));
+      let prepared = {
+        unsignedTransaction: payload.unsignedTransaction,
+        permit: payload.submitArgs.permit,
+        summary: payload.submitArgs.summary,
+      };
+      if (payload.kind === "open-position" && payload.openRequest) {
+        // MCP open without nftMint: the mint is created here, the server re-prepares with
+        // its public key, the wallet signs first and the mint signs the returned tx.
+        mint = createEphemeralMint();
+        const response = await fetch("/api/sign-open-prepare", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token: signToken, nftMint: mint.publicKey.toBase58() }),
+          cache: "no-store",
+        });
+        const data = await response.json() as { unsignedTransaction?: string; permit?: string; summary?: OpenPositionSummary; error?: string };
+        if (!response.ok) throw new Error(notSentRetryMessage(data.error || "Open-position preparation failed"));
+        if (identityRef.current !== identity || !data.unsignedTransaction || !data.permit || !data.summary ||
+          data.summary.wallet !== wallet || data.summary.nftMint !== mint.publicKey.toBase58() || Date.now() >= data.summary.expiresAt) {
+          throw new Error("Prepared open-position transaction expired or incomplete");
+        }
+        prepared = { unsignedTransaction: data.unsignedTransaction, permit: data.permit, summary: data.summary };
+      }
+      const bytes = Uint8Array.from(atob(prepared.unsignedTransaction), (c) => c.charCodeAt(0));
       const unsigned = VersionedTransaction.deserialize(bytes);
       
       if (unsigned.message.staticAccountKeys[0]?.toBase58() !== wallet) {
@@ -133,10 +158,15 @@ export default function SignPage() {
       const signedByWallet = await signTransaction(unsigned);
       assertWalletReturnedTransaction(preparedSnapshot, signedByWallet, wallet);
 
-      // MCP signUrl fallback: prepared tx may already carry an NFT-mint signature.
-      const signed = payload.kind === "open-position"
-        ? preserveExtraSignatures(unsigned, signedByWallet)
-        : signedByWallet;
+      let signed = signedByWallet;
+      if (payload.kind === "open-position") {
+        try {
+          // Browser mint signs after the wallet; legacy links may already carry a mint signature.
+          signed = mint ? addMintSignature(signedByWallet, mint) : preserveExtraSignatures(unsigned, signedByWallet);
+        } finally {
+          mint?.dispose();
+        }
+      }
       
       const signatureBytes = signed.signatures[0];
       if (!signatureBytes || signatureBytes.every((byte) => byte === 0)) {
@@ -150,8 +180,8 @@ export default function SignPage() {
       const txSignature = bs58.encode(signatureBytes);
       const signedTransaction = btoa(String.fromCharCode(...signed.serialize()));
       if (payload.kind === "open-position") {
-        if (identityRef.current !== identity || Date.now() >= payload.expiresAt) throw new Error("Wallet or signing authorization changed; transaction not sent");
-        const summary = payload.submitArgs.summary as OpenPositionSummary;
+        const summary = prepared.summary as OpenPositionSummary;
+        if (identityRef.current !== identity || Date.now() >= (payload.openRequest ? summary.expiresAt : payload.expiresAt)) throw new Error("Wallet or signing authorization changed; transaction not sent");
         if (summary.wallet !== wallet || summary.blockhash !== signed.message.recentBlockhash ||
           signed.message.staticAccountKeys[1]?.toBase58() !== summary.nftMint) throw new Error("Open-position authorization mismatch");
         openAttempt = openAttemptFromSummary(txSignature, summary);
@@ -169,14 +199,14 @@ export default function SignPage() {
           : "/api/compound-broadcast";
       
       const submitBody = payload.kind === "add-liquidity"
-        ? { signedTransaction, unsignedTransaction: payload.unsignedTransaction, ...payload.submitArgs }
+        ? { signedTransaction, unsignedTransaction: prepared.unsignedTransaction, ...payload.submitArgs }
         : {
             signedTransaction,
-            unsignedTransaction: payload.unsignedTransaction,
+            unsignedTransaction: prepared.unsignedTransaction,
             confirmHighImpact: payload.submitArgs.confirmHighImpact,
-            permit: payload.submitArgs.permit,
+            permit: prepared.permit,
             wallet: payload.submitArgs.wallet,
-            summary: payload.submitArgs.summary,
+            summary: prepared.summary,
             ...(payload.kind === "open-position" ? { sourceRef: getStoredAttribution()?.ref } : {}),
           };
       
@@ -209,6 +239,7 @@ export default function SignPage() {
         router.push("/app");
       }, 5000);
     } catch (caught) {
+      mint?.dispose();
       if (payload.kind === "open-position" && (!openAttempt || unsent)) {
         captureGrowthEvent(GROWTH_EVENTS.openFailed, {
           ...openProperties,
@@ -330,7 +361,7 @@ export default function SignPage() {
                   <div className="flex items-start justify-between gap-4 text-sm">
                     <span className="text-smoke">New position NFT</span>
                     <span className="font-mono text-xs text-cream/80">
-                      {short((payload.submitArgs.summary as { nftMint: string }).nftMint)}
+                      {payload.openRequest ? "Created in your browser when you sign" : short((payload.submitArgs.summary as { nftMint: string }).nftMint)}
                     </span>
                   </div>
                 </>

@@ -5,7 +5,23 @@ import { promisify } from "util";
 const deflateAsync = promisify(deflate);
 const inflateAsync = promisify(inflate);
 
+import type { OpenPositionSelection } from "@sofinance/engine/open-state";
+import type { OpenRangeInput } from "@sofinance/engine/open-range";
+
 export type PendingSignKind = "add-liquidity" | "compound" | "open-position" | "withdraw";
+
+/**
+ * MCP open without `nftMint`: the sign page generates the position NFT mint in the
+ * browser and re-prepares with these HMAC-bound inputs, so the wallet signs first
+ * and the mint signs the wallet-returned transaction. The server never holds the secret.
+ */
+export interface SignOpenRequest {
+  selection: OpenPositionSelection;
+  amount: string;
+  range: OpenRangeInput;
+  floorBps: number;
+  toleranceBps?: number;
+}
 
 export interface PendingSignPayload {
   kind: PendingSignKind;
@@ -14,6 +30,8 @@ export interface PendingSignPayload {
   permit: string;
   submitArgs: Record<string, unknown>;
   expiresAt: number;
+  /** Present only for open-position links created without `nftMint`. */
+  openRequest?: SignOpenRequest;
 }
 
 function hmacSign(data: string, secret: string): string {

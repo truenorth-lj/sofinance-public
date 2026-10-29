@@ -102,7 +102,7 @@ export const quoteOpenPositionSchema = z.object({
 });
 export type QuoteOpenPositionInput = z.infer<typeof quoteOpenPositionSchema>;
 export const prepareOpenPositionSchema = quoteOpenPositionSchema.extend({
-  nftMint: publicKeySchema.optional().describe("Client-generated position NFT mint. Prefer this: wallet signs first, then the agent adds the mint signature. Omit only for the MCP signUrl fallback, which partial-signs server-side."),
+  nftMint: publicKeySchema.optional().describe("Client-generated position NFT mint. Prefer this: wallet signs first, then the agent adds the mint signature. If omitted, open signUrl: the sign page generates the mint in the browser and the wallet still signs first."),
 });
 export type PrepareOpenPositionInput = z.infer<typeof prepareOpenPositionSchema>;
 

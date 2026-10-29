@@ -98,7 +98,7 @@ import { buildAndSimulateSelectedZap } from "../lib/selected-atomic";
 import { buildAndSimulateCompound } from "@sofinance/engine/compound-atomic";
 import { getOpenPositionQuoteBundle } from "@sofinance/engine/open-quote";
 import { buildAndSimulateOpenPosition } from "@sofinance/engine/open-atomic";
-import { Keypair, VersionedTransaction } from "@solana/web3.js";
+import { Keypair, PublicKey, VersionedTransaction } from "@solana/web3.js";
 import { buildTransaction, testKeypair } from "@/lib/test-support/send-fixtures";
 import { discoverRwaPairs } from "../lib/rwa-pairs";
 import { readPositionRangeFacts } from "../lib/position-range-onchain";
@@ -625,21 +625,16 @@ describe("MCP Tools", () => {
       expect(result.instructions.message).toContain("wallet FIRST");
     });
 
-    it("MCP-ONLY fallback generates a mint when nftMint is omitted", async () => {
-      const mint = Keypair.generate();
-      const ownedSecret = mint.secretKey;
-      const generate = vi.spyOn(nacl.sign, "keyPair").mockReturnValue({ publicKey: mint.publicKey.toBytes(), secretKey: ownedSecret });
-      const mockSummary = {
-        operation: "open-position",
-        simulated: true,
-        nftMint: mint.publicKey.toBase58(),
-        poolId: "So11111111111111111111111111111111111111112",
-        expiresAt: Date.now() + 30000,
-        quote: { requested: "1000000", liquidity: "10" },
-      };
-      vi.mocked(buildAndSimulateOpenPosition).mockResolvedValue({
-        summary: mockSummary as never,
-        transaction: buildTransaction({ payer: testKeypair(1), extraSigners: [mint], signWith: [] }),
+    it("without nftMint uses a secret-less placeholder mint and leaves the preview fully unsigned", async () => {
+      const keyPair = vi.spyOn(nacl.sign, "keyPair");
+      const generate = vi.spyOn(Keypair, "generate");
+      vi.mocked(buildAndSimulateOpenPosition).mockImplementation(async (...args: unknown[]) => {
+        const mint = new PublicKey((args[6] as { nftMint: string }).nftMint);
+        return {
+          summary: { operation: "open-position", simulated: true, nftMint: mint.toBase58(), poolId: "So11111111111111111111111111111111111111112",
+            expiresAt: Date.now() + 30000, quote: { requested: "1000000", liquidity: "10" } } as never,
+          transaction: buildTransaction({ payer: testKeypair(1), extraSigners: [{ publicKey: mint } as Keypair], signWith: [] }),
+        };
       });
       try {
         const result = await prepareOpenPosition({
@@ -659,15 +654,16 @@ describe("MCP Tools", () => {
           { preset: "standard" },
           9800,
           100,
-          expect.objectContaining({ nftMint: mint.publicKey.toBase58() }),
+          expect.objectContaining({ nftMint: expect.any(String) }),
         );
         const tx = VersionedTransaction.deserialize(Buffer.from(result.unsignedTransaction, "base64"));
-        expect(tx.signatures[0]!.every((byte) => byte === 0)).toBe(true);
-        expect(tx.signatures[1]!.some((byte) => byte !== 0)).toBe(true);
-        expect(result.instructions.message).toContain("MCP-ONLY fallback");
-        expect(generate).toHaveBeenCalledOnce();
-        expect(ownedSecret.every(byte => byte === 0)).toBe(true);
+        expect(tx.signatures.every((sig) => sig.every((byte) => byte === 0))).toBe(true);
+        expect(Object.keys(result).sort()).toEqual(["instructions", "permit", "signToken", "signUrl", "summary", "unsignedTransaction"]);
+        expect(result.instructions.message).toContain("open signUrl");
+        expect(keyPair).not.toHaveBeenCalled();
+        expect(generate).not.toHaveBeenCalled();
       } finally {
+        keyPair.mockRestore();
         generate.mockRestore();
       }
     });
