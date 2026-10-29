@@ -73,3 +73,12 @@ DLMM pool `53oyyj…`, captured 2026-10-29 23:40 UTC+8. Public market data only
 `53oyyj…`, its two mints and the ten bin arrays (indexes −5…4, bins −350…349) covering
 bins −284…316. Indexes −5 and −4 did not exist and are stored as `null`. Public program
 state only; no wallets, signatures or credentials. No RPC URL or key is recorded.
+
+`meteora-positions-cbbtc-wbtc.json` is a read-only `getMultipleAccounts` capture (one
+context, mainnet slot 462,951,355, 2026-10-30 00:38 UTC+8) of the Meteora cbBTC/WBTC LbPair
+`53oyyj…`, its two mints, bin arrays −1, 0 and 1, and five public `PositionV2` accounts in
+that pool (in range, spanning two bin arrays, below, above, and one with no liquidity left
+but pending fees). `expected` holds amounts and uncollected fees computed offline from the
+same bytes by `@meteora-ag/dlmm` 1.9.14 `DLMM.processPosition` (not a dependency). Public
+program state only (owner addresses are the positions' public on-chain owners); no RPC URL,
+key or credential is recorded.

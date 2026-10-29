@@ -10,6 +10,12 @@ vi.mock("../lib/orca-positions", () => ({
   getOrcaPositionPerformance: vi.fn(),
   readOrcaPositionRangeFacts: vi.fn(),
 }));
+// Meteora routing is covered in tools.meteora.test.ts; here it finds nothing.
+vi.mock("../lib/meteora-positions", () => ({
+  METEORA_PROTOCOL: "meteora-dlmm",
+  listMeteoraPositions: vi.fn(async () => []),
+  readMeteoraPositionRangeFacts: vi.fn(async () => null),
+}));
 
 const { discoverWallet } = await import("@sofinance/engine/wallet-discovery");
 const { getPositionPerformance: readRaydiumPerformance } = await import("../lib/position-performance");
