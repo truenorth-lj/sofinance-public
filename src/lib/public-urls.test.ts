@@ -4,12 +4,15 @@ import { APP_ROUTES, CANONICAL_SITE_URL, SIGN_PATH, buildOpenPositionUrl, buildP
 describe("public app URLs", () => {
   const originalAppUrl = process.env.NEXT_PUBLIC_APP_URL;
   const originalVercelUrl = process.env.VERCEL_URL;
+  const originalVercelEnv = process.env.VERCEL_ENV;
 
   afterEach(() => {
     if (originalAppUrl === undefined) delete process.env.NEXT_PUBLIC_APP_URL;
     else process.env.NEXT_PUBLIC_APP_URL = originalAppUrl;
     if (originalVercelUrl === undefined) delete process.env.VERCEL_URL;
     else process.env.VERCEL_URL = originalVercelUrl;
+    if (originalVercelEnv === undefined) delete process.env.VERCEL_ENV;
+    else process.env.VERCEL_ENV = originalVercelEnv;
   });
 
   it("keeps product pages under /app", () => {
@@ -29,12 +32,33 @@ describe("public app URLs", () => {
     expect(buildSignUrl("tok")).toBe("https://sofinancelab.xyz/app/sign/tok");
   });
 
-  it("falls back to VERCEL_URL and root-relative paths", () => {
+  it("previews and vercel dev point at their own VERCEL_URL", () => {
     delete process.env.NEXT_PUBLIC_APP_URL;
-    process.env.VERCEL_URL = "sofinancelab.xyz";
-    expect(buildSignUrl("tok")).toBe("https://sofinancelab.xyz/app/sign/tok");
+    process.env.VERCEL_URL = "sofinance-abc123-team.vercel.app/";
+    for (const env of ["preview", "development"]) {
+      process.env.VERCEL_ENV = env;
+      expect(getPublicBaseUrl()).toBe("https://sofinance-abc123-team.vercel.app");
+      expect(buildSignUrl("tok")).toBe("https://sofinance-abc123-team.vercel.app/app/sign/tok");
+    }
+  });
 
+  it("production never hands out the per-deployment vercel.app host", () => {
+    delete process.env.NEXT_PUBLIC_APP_URL;
+    process.env.VERCEL_URL = "sofinance-abc123-team.vercel.app";
+    for (const env of ["production", undefined, "", "unexpected"]) {
+      if (env === undefined) delete process.env.VERCEL_ENV;
+      else process.env.VERCEL_ENV = env;
+      expect(getPublicBaseUrl()).toBe(CANONICAL_SITE_URL);
+      expect(buildSignUrl("tok")).toBe("https://sofinancelab.xyz/app/sign/tok");
+      expect(buildOpenPositionUrl("Pool1")).toBe("https://sofinancelab.xyz/app/rwa-pairs?pool=Pool1&open=1");
+    }
+  });
+
+  it("uses root-relative paths off Vercel", () => {
+    delete process.env.NEXT_PUBLIC_APP_URL;
     delete process.env.VERCEL_URL;
+    process.env.VERCEL_ENV = "production";
+    expect(getPublicBaseUrl()).toBe("");
     expect(buildSignUrl("tok")).toBe("/app/sign/tok");
   });
 

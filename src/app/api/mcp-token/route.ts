@@ -10,6 +10,7 @@ import {
 } from "@/lib/mcp-auth";
 import { getJupiterApiKey } from "@sofinance/engine/config/server-env";
 import { captureApiRouteError } from "@/lib/sentry/capture";
+import { CANONICAL_SITE_URL, getPublicBaseUrl } from "@/lib/public-urls";
 
 /**
  * GET /api/mcp-token?wallet=<address>
@@ -149,14 +150,8 @@ export async function POST(request: NextRequest) {
     const token = generateMcpToken(wallet, secret, ttlMs);
     const expiresAt = Date.now() + ttlMs;
 
-    const appUrl =
-      process.env.NEXT_PUBLIC_APP_URL ||
-      process.env.VERCEL_URL ||
-      "https://sofinancelab.xyz";
-
-    const normalizedAppUrl = appUrl.startsWith("http")
-      ? appUrl
-      : `https://${appUrl}`;
+    // Production never hands out its per-deployment *.vercel.app host (see getPublicBaseUrl).
+    const normalizedAppUrl = getPublicBaseUrl() || CANONICAL_SITE_URL;
 
     const mcpConfig = {
       mcpServers: {
