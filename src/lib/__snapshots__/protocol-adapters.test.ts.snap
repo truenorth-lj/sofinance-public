@@ -1,0 +1,85 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`app protocol builders > Raydium add is the existing builder and prepares the same golden instruction 1`] = `
+{
+  "data": "851d59df45eeb00af2af966ca0101f9b241a00000000000079df0d8648700000c03ac49756d500000000",
+  "keys": [
+    [
+      "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+      true,
+      false,
+    ],
+    [
+      "JAYwnTWS9z44Bv3N3otEHihbKfMLzTwwskqhWc9n5qii",
+      false,
+      false,
+    ],
+    [
+      "9hSR6S7WPtxmTojgo6GG3k4yDPecgJY292j7xrsUGWBu",
+      false,
+      true,
+    ],
+    [
+      "5EAz1hadsXhpjeBB1TNFuVrLVSK81Wn34YqsTXnRvmhD",
+      false,
+      false,
+    ],
+    [
+      "RAwGtDGVjKJ17uRiWxW28tjw3PRa9CJT5A3V3grxni9",
+      false,
+      true,
+    ],
+    [
+      "BUCyVSHautTeUfCbS9v1TEPJzY4jDdtjStXMZzJcWyRn",
+      false,
+      true,
+    ],
+    [
+      "7egPPkPywzu2wgmognkqPKkFke3XwPvSNKo4kWbBSk3N",
+      false,
+      true,
+    ],
+    [
+      "AS4agAYaHGkZ7qvSRkNeNjPcoricha1WhSko5qv28eLY",
+      false,
+      true,
+    ],
+    [
+      "2sWGXSMQDtjGUGiRCan7DPZrKEGSnDNSkRc7tvE42z55",
+      false,
+      true,
+    ],
+    [
+      "AKkzLhjhyFtM9j7WAhbaqYpFe49cXeJBg2kzLRC2PnNa",
+      false,
+      true,
+    ],
+    [
+      "GmaDrppBC7P5ARKV8g3djiwP89vz1jLK23V2GBjuAEGB",
+      false,
+      true,
+    ],
+    [
+      "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+      false,
+      false,
+    ],
+    [
+      "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+      false,
+      false,
+    ],
+    [
+      "EdmxWPmx2WH6WgFfTdu9xfkYf3k1g5wD1zccTVySEEh1",
+      false,
+      false,
+    ],
+    [
+      "8SFqwqnq4whPhs8icwHA2hQg3hUoN1qrCLK1SBx3WKwe",
+      false,
+      false,
+    ],
+  ],
+  "program": "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK",
+}
+`;

@@ -17,6 +17,7 @@ import {
   type Relatedness,
   type RwaQualificationSource,
 } from "./rwa-pairing";
+import { DEFAULT_PROTOCOL, type ProtocolId } from "@sofinance/engine/protocols/types";
 import { fetchJupiterTagsByMint, getJupiterTagsObservedAt } from "./rwa-jupiter-tags";
 import { fetchXstocksSolanaMintSet, getXstocksObservedAt } from "./rwa-xstocks-whitelist";
 
@@ -44,6 +45,8 @@ export type DiscoverRwaPairsOptions = {
 
 export type RwaPairRow = {
   poolAddress: string;
+  /** Concentrated-liquidity protocol that owns the pool. */
+  protocol: ProtocolId;
   mintA: string;
   mintB: string;
   symbolA: string;
@@ -231,6 +234,7 @@ function pairRowFromCandidate(
   const freezeRiskB = hasFreezeTag(mintTags((pool.mintB || {}).tags));
   return {
     poolAddress,
+    protocol: DEFAULT_PROTOCOL,
     mintA: addressA,
     mintB: addressB,
     symbolA,

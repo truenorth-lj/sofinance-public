@@ -8,6 +8,7 @@ import { assertRwaDatabaseIdentity } from "./rwa-database";
 export { createRwaDatabase } from "./rwa-database";
 import { getRwaConfig } from "./config/rwa-env";
 import { dailyWindow, validateHistoryRange, volumeWindowEnd } from "./rwa-daily";
+import { DEFAULT_PROTOCOL } from "@sofinance/engine/protocols/types";
 import { sortPairs, type DiscoverRwaPairsResult, type RwaPairRow } from "./rwa-pairs";
 import { pickHighestAprPreset } from "./range-apr/preset-list";
 import {
@@ -31,7 +32,8 @@ const leaseWhere = (lease: Lease) => and(eq(job.jobKey, lease.job),
 
 
 function pair(row: typeof pool.$inferSelect): RwaPairRow {
-  return { ...row.details, poolAddress: row.poolAddress, mintA: row.mintA, mintB: row.mintB,
+  // Rows persisted before the protocol field existed are Raydium CLMM pools.
+  return { protocol: DEFAULT_PROTOCOL, ...row.details, poolAddress: row.poolAddress, mintA: row.mintA, mintB: row.mintB,
     symbolA: row.symbolA, symbolB: row.symbolB, tvlUsd: row.tvlUsd,
     volume24hUsd: row.volume24hUsd, fees24hUsd: row.fees24hUsd, feeRate: row.feeRate,
     estimatedFeeAprPct: row.poolFeeAprPct } as RwaPairRow;

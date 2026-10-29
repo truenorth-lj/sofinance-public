@@ -1,6 +1,6 @@
 import "@/lib/engine-host";
 import "server-only";
-import { buildAndSimulateCompound } from "@sofinance/engine/compound-atomic";
+import { getProtocolAdapter } from "@sofinance/engine/protocols/registry";
 import { issueCompoundPermit } from "@/lib/compound-permit";
 import { withFeeEstimateRetry } from "@/lib/rpc-fee-estimate";
 import { APP_COMPOUND_PREPARE, MCP_COMPOUND_PREPARE } from "./surface-policy";
@@ -18,6 +18,7 @@ export async function prepareCompound(
   profile: typeof APP_COMPOUND_PREPARE | typeof MCP_COMPOUND_PREPARE = APP_COMPOUND_PREPARE,
 ) {
   const { wallet, positionMint, sourceSignatures } = command;
+  const { buildAndSimulateCompound } = getProtocolAdapter();
   const { summary, transaction } = profile === APP_COMPOUND_PREPARE
     ? await withFeeEstimateRetry(() => buildAndSimulateCompound(wallet, positionMint, sourceSignatures))
     : await buildAndSimulateCompound(wallet, positionMint, sourceSignatures);

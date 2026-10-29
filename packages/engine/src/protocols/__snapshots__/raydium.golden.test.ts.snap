@@ -1,0 +1,42 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`10 bps protocol fee is unchanged > token-input fee is one transferChecked of the fee to the recipient ATA (golden bytes) 1`] = `
+[
+  [
+    "EdmxWPmx2WH6WgFfTdu9xfkYf3k1g5wD1zccTVySEEh1",
+    false,
+    true,
+  ],
+  [
+    "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+    false,
+    false,
+  ],
+  [
+    "13KoHDCDXebtaN59JpGpQCmhsk8u7qk9H9FFSCMyynLh",
+    false,
+    true,
+  ],
+  [
+    "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
+    true,
+    false,
+  ],
+]
+`;
+
+exports[`add / compound / exit instruction lists are unchanged > compound: compiles the committed compound-size golden packet 1`] = `
+[
+  "ComputeBudget111111111111111111111111111111",
+  "11111111111111111111111111111111",
+  "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+  "11111111111111111111111111111111",
+  "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+  "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
+  "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK",
+  "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
+  "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+  "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK",
+  "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK",
+]
+`;
