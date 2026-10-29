@@ -102,7 +102,25 @@ export type FetchPoolRangeAprOptions = {
   gate?: ThrottleGate;
 };
 
-type UpstreamOptions = Pick<FetchPoolRangeAprOptions, "retry" | "gate">;
+/**
+ * Where pool-level economics (fee rate, TVL, token amounts, fee cuts) come from. Defaults to Raydium API v3;
+ * other protocols pass their own parser into the same RaydiumPoolEconomics shape.
+ */
+export type PoolEconomicsSource = {
+  name: string;
+  url: (encodedPoolId: string) => string;
+  parse: (body: unknown) => RaydiumPoolEconomics | null;
+  source: string;
+};
+
+export const RAYDIUM_ECONOMICS_SOURCE: PoolEconomicsSource = {
+  name: "Raydium",
+  url: (id) => `${RAYDIUM_POOL_IDS}?ids=${id}`,
+  parse: parseRaydiumPoolEconomics,
+  source: `${RAYDIUM_POOL_IDS} (feeRate, TVL, token amounts, fee cuts)`,
+};
+
+type UpstreamOptions = Pick<FetchPoolRangeAprOptions, "retry" | "gate"> & { economics?: PoolEconomicsSource };
 
 /** Next's Data Cache hint; ignored by injected test fetchers. */
 const cached = (revalidateSeconds: number, signal?: AbortSignal): RequestInit => ({ next: { revalidate: revalidateSeconds }, ...(signal ? { signal } : {}) });
@@ -119,6 +137,7 @@ export async function loadVolumeProfile(
   const retryOptions = { attempts: 3, baseDelayMs: 300, maxDelayMs: 1_500, ...upstream.retry };
   const signal = upstream.retry?.signal;
   const observed = async (result: Promise<JsonResult>) => ({ ...(await result), observedAt: new Date().toISOString() });
+  const economicsSource = upstream.economics ?? RAYDIUM_ECONOMICS_SOURCE;
   const getRaydium = (url: string) => observed(
     retryJson(() => fetchJsonOnce(fetcher, url, UPSTREAM_TIMEOUT_MS, cached(ECONOMICS_REVALIDATE_S, signal)), retryOptions));
   const getGecko = (url: string, revalidateSeconds: number) => observed(getGeckoRaw(url, revalidateSeconds));
@@ -136,13 +155,13 @@ export async function loadVolumeProfile(
       : { ok: false, reason: `throttled (429); cooling down ${Math.ceil(run.blocked / 1000)}s` };
   };
   const [ids, daily, hourly] = await Promise.all([
-    getRaydium(`${RAYDIUM_POOL_IDS}?ids=${id}`),
+    getRaydium(economicsSource.url(id)),
     getGecko(`${GECKO_TERMINAL_OHLCV}/${id}/ohlcv/day?aggregate=1&limit=30&currency=usd`, DAILY_REVALIDATE_S),
     getGecko(`${GECKO_TERMINAL_OHLCV}/${id}/ohlcv/hour?aggregate=1&limit=200&currency=token`, HOURLY_REVALIDATE_S),
   ]);
-  const economics = ids.ok ? parseRaydiumPoolEconomics(ids.body) : null;
-  if (!economics) throw new Error("Pool economics unavailable from Raydium");
-  const sources = [`${RAYDIUM_POOL_IDS} (feeRate, TVL, token amounts, fee cuts)`];
+  const economics = ids.ok ? economicsSource.parse(ids.body) : null;
+  if (!economics) throw new Error(`Pool economics unavailable from ${economicsSource.name}`);
+  const sources = [economicsSource.source];
   const issues: string[] = [];
   const dailySample = daily.ok ? averageDailyVolume(parseGeckoDailyVolumes(daily.body), nowSeconds) : null;
   if (dailySample) sources.push(`${GECKO_TERMINAL_OHLCV}/{pool}/ohlcv/day (USD volume)`);
