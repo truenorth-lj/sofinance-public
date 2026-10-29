@@ -3,7 +3,7 @@ import "server-only";
 
 import type { Univ4AllowlistedPool } from "@sofinance/engine/protocols/uniswap-v4/constants";
 import { discoverUniv4RhcPools, type Univ4PoolSummary } from "@sofinance/engine/protocols/uniswap-v4/discovery";
-import { fetchUniv4MarketData, type Univ4MarketData } from "@sofinance/engine/protocols/uniswap-v4/market-data";
+import { ESTIMATED_APR_LABEL, fetchUniv4MarketData, type Univ4MarketData } from "@sofinance/engine/protocols/uniswap-v4/market-data";
 import { createRhcClient } from "@sofinance/engine/rpc-evm/index";
 import type { PublicClient } from "viem";
 import { AsyncCache } from "./async-cache";
@@ -22,6 +22,7 @@ export type RhcUniv4PoolsResult = {
   pools: Univ4PoolSummary[];
   fetchedAt: string;
   source: string;
+  aprLabel: { zh: "估計"; en: "Estimated" };
   aprNote: string;
 };
 
@@ -59,7 +60,8 @@ export async function discoverRhcUniv4Pools(options: { clients?: { state: Public
       pools,
       fetchedAt: new Date().toISOString(),
       source: "Robinhood Chain RPC: StateView / StablePairHook (allowlist: SPCX/SPCXon); 24h volume and TVL: DexScreener (GeckoTerminal fallback)",
-      aprNote: "Pool fee APR = hook's current fee rate × 24h volume / TVL × 365 (USD, from public indexers). The StablePairHook fee is dynamic; an estimate, not a guarantee.",
+      aprLabel: ESTIMATED_APR_LABEL,
+      aprNote: "Estimated (估計) pool fee APR = hook's current fee rate × 24h volume / TVL × 365 (USD, from public indexers). The StablePairHook fee is dynamic; an estimate, not a guarantee.",
     };
   };
   return options.bypassCache ? load() : cache.get("pools", load);

@@ -110,7 +110,8 @@ export type Univ4PoolSummary = {
   /** (price / referencePrice − 1) in bps. */
   priceVsReferenceBps: number | null;
   /** fee rate × 24h volume / TVL from DexScreener (GeckoTerminal fallback); null when neither has the pool. */
-  apr: Univ4PoolApr | null;
+  /** Labelled 「估計」/"Estimated" wherever shown. */
+  estimatedApr: Univ4PoolApr | null;
   warnings: string[];
 };
 
@@ -155,7 +156,7 @@ export function evaluatePool(spec: Univ4AllowlistedPool, state: RawPoolState, ma
   const referencePrice = state.feeConfig ? sqrtPriceX96ToPrice(state.feeConfig.referenceSqrtPriceX96, decimals0, decimals1) : null;
   const warnings: string[] = [];
   if (state.slot0 && state.slot0.protocolFee !== 0) warnings.push("protocol fee is non-zero: APR assumes LPs keep the full swap fee");
-  const apr = market && state.dynamicFee ? poolAprFromMarket(market, state.dynamicFee) : null;
+  const estimatedApr = market && state.dynamicFee ? poolAprFromMarket(market, state.dynamicFee) : null;
   return {
     protocol: "uniswap-v4-rhc",
     chainId: 4663,
@@ -181,7 +182,7 @@ export function evaluatePool(spec: Univ4AllowlistedPool, state: RawPoolState, ma
     feeConfig: state.feeConfig && { ...state.feeConfig, referenceSqrtPriceX96: state.feeConfig.referenceSqrtPriceX96.toString() },
     referencePrice,
     priceVsReferenceBps: price !== null && referencePrice ? (price / referencePrice - 1) * 10_000 : null,
-    apr,
+    estimatedApr,
     warnings,
   };
 }
@@ -189,7 +190,7 @@ export function evaluatePool(spec: Univ4AllowlistedPool, state: RawPoolState, ma
 export type DiscoverUniv4Options = {
   clients: { state: PublicClient };
   pools?: readonly Univ4AllowlistedPool[];
-  /** 24h volume / TVL per pool (host-cached public indexers); omitted or failing → `apr: null`. */
+  /** 24h volume / TVL per pool (host-cached public indexers); omitted or failing → `estimatedApr: null`. */
   marketData?: (spec: Univ4AllowlistedPool) => Promise<Univ4MarketData | null>;
 };
 

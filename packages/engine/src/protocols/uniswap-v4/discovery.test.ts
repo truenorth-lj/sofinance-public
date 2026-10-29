@@ -20,14 +20,14 @@ describe("uniswap-v4-rhc discovery (mock RPC replaying the 2026-10-29 capture)",
       protocol: "uniswap-v4-rhc", chainId: 4663, poolId: SPCX.poolId, status: "listed", delistReasons: [],
       token0: { symbol: "SPCX", decimals: 18, issuer: "robinhood" }, token1: { symbol: "SPCXon", decimals: 18, issuer: "ondo" },
       tick: -1, liquidity: "114958581440704952836431", dynamicFeePips: { zeroForOne: 50, oneForZero: 51 }, protocolFee: 0, referencePrice: 1, warnings: [],
-      apr: { basis: "24h-volume", source: "dexscreener", volume24hUsd: 36.54, tvlUsd: 48711.43, txns24h: 3 },
+      estimatedApr: { estimated: true, basis: "24h-volume", source: "dexscreener", volume24hUsd: 36.54, tvlUsd: 48711.43, txns24h: 3 },
     });
     expect(pool!.checks.map(check => check.id)).toEqual(["pool-id", "pool-key", "initialized", "hook-permissions", "hook-implementation", "fee-config", "token-metadata"]);
     expect(pool!.checks.every(check => check.ok === true)).toBe(true);
     expect(pool!.price).toBeCloseTo(0.99999965, 7);
     // 50.5 pips × $36.54 / $48,711.43 × 365 ≈ 0.00138 %.
-    expect(pool!.apr!.feeRatePct).toBeCloseTo(0.00505, 6);
-    expect(pool!.apr!.poolFeeAprPct).toBeCloseTo(0.00505 / 100 * 36.54 / 48711.43 * 365 * 100, 9);
+    expect(pool!.estimatedApr!.feeRatePct).toBeCloseTo(0.00505, 6);
+    expect(pool!.estimatedApr!.estimatedPoolFeeAprPct).toBeCloseTo(0.00505 / 100 * 36.54 / 48711.43 * 365 * 100, 9);
     // RPC: 1 block + 1 multicall + 1 storage read; never eth_getLogs.
     expect(chain.calls.map(call => call.method).sort()).toEqual(["eth_call", "eth_getBlockByNumber", "eth_getStorageAt"]);
   });
@@ -53,12 +53,12 @@ describe("uniswap-v4-rhc discovery (mock RPC replaying the 2026-10-29 capture)",
     down.failing = new Set(["eth_getBlockByNumber"]);
     const [dead] = await discoverUniv4RhcPools({ clients: clientsFor(down), marketData: async () => market });
     expect(dead!.status).toBe("delisted");
-    expect(dead!.apr).toBeNull();
+    expect(dead!.estimatedApr).toBeNull();
 
     resetEvmRpcGuards();
     const [pool] = await discoverUniv4RhcPools({ clients: clientsFor(mockRhcChain()), marketData: async () => { throw new Error("indexer down"); } });
     expect(pool!.status).toBe("listed");
-    expect(pool!.apr).toBeNull();
+    expect(pool!.estimatedApr).toBeNull();
   });
 
   it("delists on unexpected token metadata or hook-reported state", async () => {

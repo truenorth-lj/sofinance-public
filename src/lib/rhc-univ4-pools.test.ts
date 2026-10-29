@@ -23,10 +23,10 @@ describe("discoverRhcUniv4Pools (mock Robinhood Chain RPC + DexScreener capture)
     const { hits, fetcher } = indexer();
     const clients = createRhcClients({ env: {}, transportFor: () => mockRhcTransport(chain) });
     const result = await discoverRhcUniv4Pools({ clients, fetcher });
-    expect(result).toMatchObject({ protocol: "uniswap-v4-rhc", chainId: 4663, readOnly: true });
+    expect(result).toMatchObject({ protocol: "uniswap-v4-rhc", chainId: 4663, readOnly: true, aprLabel: { zh: "估計", en: "Estimated" } });
     expect(result.pools).toHaveLength(1);
     expect(result.pools[0]).toMatchObject({ baseSymbol: "SPCX", status: "listed", dynamicFeePips: { zeroForOne: 50, oneForZero: 51 },
-      apr: { source: "dexscreener", volume24hUsd: 36.54, tvlUsd: 48711.43 } });
+      estimatedApr: { estimated: true, label: { zh: "估計", en: "Estimated" }, source: "dexscreener", volume24hUsd: 36.54, tvlUsd: 48711.43 } });
     expect(() => JSON.stringify(result)).not.toThrow();
     expect(chain.calls.some(call => call.method === "eth_getLogs")).toBe(false);
     const calls = chain.calls.length;
@@ -49,6 +49,6 @@ describe("discoverRhcUniv4Pools (mock Robinhood Chain RPC + DexScreener capture)
     const clients = createRhcClients({ env: {}, transportFor: () => mockRhcTransport(mockRhcChain()) });
     const fetcher = (async () => new Response("busy", { status: 429 })) as unknown as typeof fetch;
     const { pools } = await discoverRhcUniv4Pools({ clients, fetcher, bypassCache: true });
-    expect(pools[0]).toMatchObject({ status: "listed", apr: null });
+    expect(pools[0]).toMatchObject({ status: "listed", estimatedApr: null });
   });
 });

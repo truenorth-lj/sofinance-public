@@ -63,8 +63,9 @@ describe("uniswap-v4-rhc market data (DexScreener / GeckoTerminal captures, 2026
 
   it("APR = fee rate × 24h volume / TVL × 365", () => {
     const apr = poolAprFromMarket({ source: "dexscreener", volume24hUsd: 1_000_000, tvlUsd: 2_000_000, txns24h: null, reserves: null }, { zeroForOne: 50, oneForZero: 50 });
+    expect(apr).toMatchObject({ estimated: true, label: { zh: "估計", en: "Estimated" } });
     expect(apr.feeRatePct).toBeCloseTo(0.005, 12);
-    expect(apr.poolFeeAprPct).toBeCloseTo(0.00005 * 0.5 * 365 * 100, 9);
-    expect(poolAprFromMarket({ source: "dexscreener", volume24hUsd: 1, tvlUsd: 0, txns24h: null, reserves: null }, { zeroForOne: 50, oneForZero: 50 }).poolFeeAprPct).toBeNull();
+    expect(apr.estimatedPoolFeeAprPct).toBeCloseTo(0.00005 * 0.5 * 365 * 100, 9);
+    expect(poolAprFromMarket({ source: "dexscreener", volume24hUsd: 1, tvlUsd: 0, txns24h: null, reserves: null }, { zeroForOne: 50, oneForZero: 50 }).estimatedPoolFeeAprPct).toBeNull();
   });
 });

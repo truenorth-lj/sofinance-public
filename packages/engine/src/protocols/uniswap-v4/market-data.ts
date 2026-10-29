@@ -118,7 +118,13 @@ export async function fetchUniv4MarketData(spec: Univ4AllowlistedPool, options: 
   return null;
 }
 
+/** UI/API label every displayed APR must carry (PM, 2026-10-29). */
+export const ESTIMATED_APR_LABEL = { zh: "估計", en: "Estimated" } as const;
+
 export type Univ4PoolApr = {
+  /** Always true: an estimate from 24h indexer volume, never a guarantee. */
+  estimated: true;
+  label: typeof ESTIMATED_APR_LABEL;
   basis: "24h-volume";
   source: Univ4MarketSource;
   /** Hook's current LP fee (mean of both swap directions), percent. The StablePairHook fee is dynamic. */
@@ -127,15 +133,15 @@ export type Univ4PoolApr = {
   tvlUsd: number;
   txns24h: number | null;
   /** fee rate × 24h volume / TVL × 365, percent (simple, no compounding). Null when TVL is 0. */
-  poolFeeAprPct: number | null;
+  estimatedPoolFeeAprPct: number | null;
 };
 
 /** APR = fee rate × 24h volume / TVL, annualised. */
 export function poolAprFromMarket(market: Univ4MarketData, feePips: { zeroForOne: number; oneForZero: number }): Univ4PoolApr {
   const feeRate = (feePips.zeroForOne + feePips.oneForZero) / 2 / 1_000_000;
   return {
-    basis: "24h-volume", source: market.source, feeRatePct: feeRate * 100,
+    estimated: true, label: ESTIMATED_APR_LABEL, basis: "24h-volume", source: market.source, feeRatePct: feeRate * 100,
     volume24hUsd: market.volume24hUsd, tvlUsd: market.tvlUsd, txns24h: market.txns24h,
-    poolFeeAprPct: market.tvlUsd > 0 ? (feeRate * market.volume24hUsd / market.tvlUsd) * 365 * 100 : null,
+    estimatedPoolFeeAprPct: market.tvlUsd > 0 ? (feeRate * market.volume24hUsd / market.tvlUsd) * 365 * 100 : null,
   };
 }
