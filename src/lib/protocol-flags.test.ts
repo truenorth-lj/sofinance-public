@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { deployTarget, isOrcaDiscoveryEnabled, isOrcaPositionsEnabled, isRhcUniv4DiscoveryEnabled, isRhcUniv4TxBuildEnabled, ORCA_DISCOVERY_ENABLED, ORCA_POSITIONS_ENABLED, RHC_UNIV4_DISCOVERY_ENABLED, RHC_UNIV4_TX_BUILD_ENABLED, isRhcUniv4TradingEnabled, RHC_UNIV4_TRADING_ENABLED, isRhcUniv4WalletSigningEnabled, RHC_UNIV4_WALLET_SIGNING_ENABLED } from "./protocol-flags";
 
 describe("ORCA_DISCOVERY_ENABLED", () => {
@@ -34,10 +34,11 @@ describe("ORCA_DISCOVERY_ENABLED", () => {
     expect(isRhcUniv4TradingEnabled("production")).toBe(false);
     expect(isRhcUniv4TradingEnabled("preview")).toBe(true);
   });
-  it("RHC_UNIV4_WALLET_SIGNING_ENABLED is OFF on every target until PR6", () => {
-    expect(RHC_UNIV4_WALLET_SIGNING_ENABLED).toEqual({ production: false, preview: false, development: false });
+  it("RHC_UNIV4_WALLET_SIGNING_ENABLED is ON only on preview", () => {
+    expect(RHC_UNIV4_WALLET_SIGNING_ENABLED).toEqual({ production: false, preview: true, development: false });
     expect(Object.isFrozen(RHC_UNIV4_WALLET_SIGNING_ENABLED)).toBe(true);
-    for (const t of ["production", "preview", "development"] as const) expect(isRhcUniv4WalletSigningEnabled(t)).toBe(false);
+    expect(isRhcUniv4WalletSigningEnabled("preview")).toBe(true);
+    for (const t of ["production", "development"] as const) expect(isRhcUniv4WalletSigningEnabled(t)).toBe(false);
   });
   it("treats anything that is not an explicit Vercel preview/development as production", () => {
     for (const env of [undefined, "", "production", "staging", "PREVIEW"]) expect(deployTarget(env)).toBe("production");
@@ -46,7 +47,7 @@ describe("ORCA_DISCOVERY_ENABLED", () => {
   });
   it("is not driven by a SOFINANCE_* env var", () => {
     const source = readFileSync(join(__dirname, "protocol-flags.ts"), "utf8");
-    expect(source.match(/process\.env\.[A-Z_]+/g)).toEqual(["process.env.VERCEL_ENV"]);
+    expect(source.match(/process\.env\.[A-Z_]+/g)).toEqual(["process.env.NEXT_PUBLIC_SOFI_DEPLOY_ENV", "process.env.VERCEL_ENV"]);
   });
 });
 
@@ -83,5 +84,18 @@ describe("Raydium and Orca are untouched by Robinhood Chain", () => {
       const source = readFileSync(join(process.cwd(), file), "utf8");
       expect(source, file).not.toMatch(/rhc|uniswap|rpc-evm|viem/i);
     }
+  });
+});
+
+describe("deployTarget env resolution", () => {
+  it("prefers the build-inlined NEXT_PUBLIC_SOFI_DEPLOY_ENV (client bundles have no VERCEL_ENV)", () => {
+    vi.stubEnv("NEXT_PUBLIC_SOFI_DEPLOY_ENV", "preview"); vi.stubEnv("VERCEL_ENV", "");
+    expect(deployTarget()).toBe("preview");
+    expect(isRhcUniv4WalletSigningEnabled()).toBe(true);
+    vi.stubEnv("NEXT_PUBLIC_SOFI_DEPLOY_ENV", "production");
+    expect(isRhcUniv4WalletSigningEnabled()).toBe(false);
+    vi.stubEnv("NEXT_PUBLIC_SOFI_DEPLOY_ENV", ""); vi.stubEnv("VERCEL_ENV", "");
+    expect(deployTarget()).toBe("production");
+    vi.unstubAllEnvs();
   });
 });

@@ -16,7 +16,7 @@ export default async function RhcPage() {
       <InkHero label="Robinhood Chain" title="Open a SPCX / SPCXon position">
         <p>
           One Uniswap v4 transaction on Robinhood Chain: swap the part you need, open the position and return any leftover.
-          Preview build: every step is simulated, and wallet signing stays off until real signing is approved.
+          Preview build: every step is simulated before your wallet is asked to sign.
         </p>
       </InkHero>
       <RhcUniv4OpenPanel pool={pool} signingEnabled={isRhcUniv4WalletSigningEnabled()} />

@@ -11,11 +11,11 @@ describe("/app/rhc page", () => {
     const { default: RhcPage } = await import("./page");
     await expect(RhcPage()).rejects.toThrow("NEXT_NOT_FOUND");
   });
-  it("renders on preview with signing still off", async () => {
+  it("renders on preview with signing on (preview-only test signing)", async () => {
     vi.stubEnv("VERCEL_ENV", "preview");
     const { default: RhcPage } = await import("./page");
     const el = await RhcPage();
     const json = JSON.stringify(el, (_k, v) => (typeof v === "function" ? v.name : v));
-    expect(json).toContain("\"signingEnabled\":false");
+    expect(json).toContain("\"signingEnabled\":true");
   });
 });

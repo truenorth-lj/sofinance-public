@@ -84,7 +84,7 @@ describe("ensureRobinhoodChain", () => {
   });
 });
 
-describe("guardedWalletRequest (signing off until PR6)", () => {
+describe("guardedWalletRequest (signing off outside preview)", () => {
   it("refuses every signing/sending method without touching the wallet", async () => {
     const { provider, calls } = mockProvider(() => "0xsig");
     for (const method of SIGNING_METHODS) {
