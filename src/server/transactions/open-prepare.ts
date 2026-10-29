@@ -5,6 +5,7 @@ import type { OpenPositionSelection } from "@sofinance/engine/open-state";
 import type { OpenRangeInput } from "@sofinance/engine/open-range";
 import { issueOpenPositionPermit } from "@/lib/open-permit";
 import { withFeeEstimateRetry } from "@/lib/rpc-fee-estimate";
+import { assertSolInputAllowed } from "@/lib/sol-input-policy";
 import { APP_OPEN_PREPARE, MCP_OPEN_PREPARE } from "./surface-policy";
 
 export type OpenPrepareCommand = {
@@ -20,6 +21,8 @@ export type OpenPrepareCommand = {
 export async function prepareOpen(command: OpenPrepareCommand, readSigningSecret: () => string,
   profile: typeof APP_OPEN_PREPARE | typeof MCP_OPEN_PREPARE) {
   const { wallet, selection, amount, range, floorBps, toleranceBps, nftMint } = command;
+  // Covers both the app route and MCP prepare_open_position (and so /sign links).
+  assertSolInputAllowed(selection);
   const { summary, transaction } = profile === APP_OPEN_PREPARE
     ? await withFeeEstimateRetry(() => buildAndSimulateOpenPosition(
       wallet, selection, amount, range, floorBps, toleranceBps, { enforceResaleFloor: false, nftMint },

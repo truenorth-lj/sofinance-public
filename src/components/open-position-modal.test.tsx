@@ -3,6 +3,14 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// These suites drive the open flow with native SOL input; keep them exercising the
+// SOL path regardless of the temporary SOL_INPUT_ENABLED switch (see feature-flags.ts).
+const solInputFlag = vi.hoisted(() => ({ enabled: true }));
+vi.mock("@/lib/feature-flags", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/feature-flags")>(),
+  get SOL_INPUT_ENABLED() { return solInputFlag.enabled; },
+}));
 import { NATIVE_SOL_MINT, QUOTE_TTL_MS } from "@sofinance/engine/ids";
 import type { OpenPositionQuote } from "@sofinance/engine/open-types";
 import { payloadFixture, payloadWithAprs } from "../lib/range-apr/payload.fixture";
@@ -426,5 +434,51 @@ describe("open-position signing and quote refresh", () => {
     expect(mocks.controller!.quoteError).toBe("");
     await advance(9000);
     expect(quoteCalls).toBe(2);
+  });
+});
+
+describe("temporary SOL input switch (SOL_INPUT_ENABLED = false)", () => {
+  const usdc = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+  const stubWallet = (assets: unknown[]) => {
+    const original = fetch as unknown as (url: string, init?: RequestInit) => Promise<unknown>;
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) =>
+      url.startsWith("/api/wallet") ? { ok: true, json: async () => ({ assets }) } : original(url, init)));
+  };
+  const solAsset = { kind: "native", mint: NATIVE_SOL_MINT, decimals: 9, balance: "216474000", eligible: true, reason: null };
+  const usdcAsset = { kind: "token", mint: usdc, decimals: 6, balance: "5000000", eligible: true, reason: null };
+  beforeEach(() => { solInputFlag.enabled = false; });
+  afterEach(() => { solInputFlag.enabled = true; });
+
+  it("shows SOL as an unselectable option with the note and defaults to another token", async () => {
+    stubWallet([solAsset, usdcAsset]);
+    await act(async () => { root.render(createElement(OpenPositionModal, { pair, onClose: vi.fn() })); });
+    await advance(1);
+    const option = container.querySelector<HTMLOptionElement>(`option[value='native:${NATIVE_SOL_MINT}']`)!;
+    expect(option.disabled).toBe(true);
+    expect(option.textContent).toContain("SOL deposits are temporarily unavailable");
+    expect(container.querySelector<HTMLOptionElement>(`option[value='token:${usdc}']`)!.disabled).toBe(false);
+    expect(container.querySelector("[data-testid='sol-input-disabled-note']")!.textContent)
+      .toBe("SOL deposits are temporarily unavailable — please use another token.");
+    expect(mocks.controller!.inputKind).toBe("token");
+    expect(mocks.controller!.inputMint).toBe(usdc);
+  });
+
+  it("blocks the action with the SOL note when SOL is the only input in the wallet", async () => {
+    stubWallet([solAsset]);
+    await act(async () => { root.render(createElement(OpenPositionModal, { pair, onClose: vi.fn() })); });
+    await advance(1);
+    expect(mocks.controller!.selectedAsset).toBeNull();
+    expect(mocks.controller!.actionDisabled).toBe(true);
+    expect(mocks.controller!.walletBlockedReason).toBe("SOL deposits are temporarily unavailable — please use another token.");
+  });
+
+  it("leaves SOL selectable and the default unchanged when the switch is on", async () => {
+    solInputFlag.enabled = true;
+    stubWallet([solAsset, usdcAsset]);
+    await act(async () => { root.render(createElement(OpenPositionModal, { pair, onClose: vi.fn() })); });
+    await advance(1);
+    expect(container.querySelector<HTMLOptionElement>(`option[value='native:${NATIVE_SOL_MINT}']`)!.disabled).toBe(false);
+    expect(container.querySelector("[data-testid='sol-input-disabled-note']")).toBeNull();
+    expect(mocks.controller!.inputMint).toBe(usdc);
   });
 });

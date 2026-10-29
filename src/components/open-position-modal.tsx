@@ -15,6 +15,8 @@ import { smallAmountNarrowRangeHint } from "@/lib/open-range-hint";
 import { usePoolRangeApr } from "./range-apr/use-pool-range-apr";
 import { DOCS_ROUTES } from "@/lib/public-urls";
 import { NATIVE_SOL_MINT, USDC_MINT } from "@sofinance/engine/ids";
+import { SOL_INPUT_DISABLED_MESSAGE } from "@/lib/feature-flags";
+import { isSolInputBlocked } from "@/lib/sol-input-policy";
 import { depositUsd } from "@/lib/range-apr/size-aware";
 import { useDebouncedValue } from "./use-debounced-value";
 
@@ -168,7 +170,8 @@ export function OpenPositionModal({
                     ? tokenSymbol(asset.mint, undefined, pair.symbolB)
                     : tokenSymbol(asset.mint);
               return (
-                <option key={`${asset.kind}:${asset.mint}`} value={`${asset.kind}:${asset.mint}`}>
+                <option key={`${asset.kind}:${asset.mint}`} value={`${asset.kind}:${asset.mint}`}
+                  disabled={isSolInputBlocked(asset.kind)}>
                   {label} · {formatAmount(asset.balance, asset.decimals)}
                   {asset.eligible ? "" : ` (${asset.reason || "ineligible"})`}
                 </option>
@@ -177,6 +180,9 @@ export function OpenPositionModal({
           </select>
           <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-cream" aria-hidden="true" />
         </div>
+        {c.inputAssets.some((asset) => isSolInputBlocked(asset.kind)) && (
+          <p className="mt-1 text-xs text-smoke" data-testid="sol-input-disabled-note">{SOL_INPUT_DISABLED_MESSAGE}</p>
+        )}
 
         <div className="mt-3 flex items-end gap-2">
           <div className="flex-1">

@@ -2,6 +2,14 @@
 import { act, createElement, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// These suites drive the open flow with native SOL input; keep them exercising the
+// SOL path regardless of the temporary SOL_INPUT_ENABLED switch (see feature-flags.ts).
+const solInputFlag = vi.hoisted(() => ({ enabled: true }));
+vi.mock("@/lib/feature-flags", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/feature-flags")>(),
+  get SOL_INPUT_ENABLED() { return solInputFlag.enabled; },
+}));
 import { PublicKey, VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
 import { OPEN_PREPARE_TIMEOUT_MS, useOpenPositionController, type OpenPositionPair } from "./use-open-position-controller";

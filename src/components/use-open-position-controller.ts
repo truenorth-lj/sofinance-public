@@ -14,6 +14,8 @@ import { notifyPositionHistoryChange } from "@/lib/position-history-refresh";
 import { useOpenAttempt } from "./use-open-attempt";
 import { captureGrowthEventOnce } from "@/lib/analytics/client";
 import { GROWTH_EVENTS, openEventProperties } from "@/lib/analytics/events";
+import { SOL_INPUT_DISABLED_MESSAGE } from "@/lib/feature-flags";
+import { applySolInputPolicy, isSolInputBlocked } from "@/lib/sol-input-policy";
 
 import { useOpenPreview, useOpenPreviewEffect } from "./transactions/open/use-open-preview";
 import { useOpenSubmission, useOpenSubmissionCommand, type OpenSubmitStage } from "./transactions/open/use-open-submission";
@@ -111,7 +113,7 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
   const inputAssets = useMemo(() => {
     if (!discovery || !pair) return [];
     const allowed = new Set([NATIVE_SOL_MINT, USDC_MINT, pair.mintA, pair.mintB]);
-    return discovery.assets.filter((item) => allowed.has(item.mint));
+    return applySolInputPolicy(discovery.assets.filter((item) => allowed.has(item.mint)));
   }, [discovery, pair]);
 
   const selectedAsset = inputAssets.find((item) => item.mint === inputMint && item.kind === inputKind) ?? null;
@@ -156,7 +158,7 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
           if (walletRef.current !== wallet) return;
           const found = data as WalletDiscovery;
           setDiscovery(found);
-          const pick = pair ? pickInput(found.assets, pair.mintA, pair.mintB) : null;
+          const pick = pair ? pickInput(applySolInputPolicy(found.assets), pair.mintA, pair.mintB) : null;
           if (pick) {
             setInputMint(pick.mint);
             setInputKind(pick.kind);
@@ -226,7 +228,9 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
   const walletBlockedReason = !connected
     ? "Connect a wallet to create a position"
     : !selectedAsset
-      ? "No eligible SOL, USDC, or pool token in this wallet"
+      ? (inputAssets.some((item) => isSolInputBlocked(item.kind)) && !inputAssets.some((item) => item.eligible)
+        ? SOL_INPUT_DISABLED_MESSAGE
+        : "No eligible SOL, USDC, or pool token in this wallet")
       : selectedAsset && !selectedAsset.eligible
         ? (selectedAsset.reason || "Selected asset is not eligible")
         : null;
