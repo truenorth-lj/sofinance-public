@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { deployTarget, isPoolActivityEnabled, isPoolActivityEnabledInBrowser, POOL_ACTIVITY_ENABLED, isOrcaDiscoveryEnabled, isOrcaPositionsEnabled, isRhcUniv4DiscoveryEnabled, ORCA_DISCOVERY_ENABLED, ORCA_POSITIONS_ENABLED, RHC_UNIV4_DISCOVERY_ENABLED } from "./protocol-flags";
+import { deployTarget, isSolamiEnabled, SOLAMI_ENABLED, isPoolActivityEnabled, isPoolActivityEnabledInBrowser, POOL_ACTIVITY_ENABLED, isOrcaDiscoveryEnabled, isOrcaPositionsEnabled, isRhcUniv4DiscoveryEnabled, ORCA_DISCOVERY_ENABLED, ORCA_POSITIONS_ENABLED, RHC_UNIV4_DISCOVERY_ENABLED } from "./protocol-flags";
 
 describe("ORCA_DISCOVERY_ENABLED", () => {
   it("is a code constant that is OFF in production", () => {
@@ -27,6 +27,14 @@ describe("ORCA_DISCOVERY_ENABLED", () => {
     expect(Object.isFrozen(POOL_ACTIVITY_ENABLED)).toBe(true);
     expect(isPoolActivityEnabled("production")).toBe(false);
     expect(isPoolActivityEnabled("preview")).toBe(true);
+  });
+  it("SOLAMI_ENABLED covers every Solami integration; POOL_ACTIVITY_ENABLED is the same flag", () => {
+    expect(SOLAMI_ENABLED).toEqual({ production: false, preview: true, development: true });
+    expect(Object.isFrozen(SOLAMI_ENABLED)).toBe(true);
+    expect(POOL_ACTIVITY_ENABLED).toBe(SOLAMI_ENABLED);
+    expect(isSolamiEnabled("production")).toBe(false);
+    expect(isSolamiEnabled("preview")).toBe(true);
+    expect(isSolamiEnabled("development")).toBe(true);
   });
   it("isPoolActivityEnabledInBrowser follows the build-time deploy env, then VERCEL_ENV", () => {
     vi.stubEnv("NEXT_PUBLIC_SOFI_DEPLOY_ENV", "");

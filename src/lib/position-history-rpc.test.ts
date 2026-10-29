@@ -1,4 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// Solami-on behaviour (SOLAMI_ENABLED is on for Vercel preview/development, off in production).
+beforeEach(() => { vi.stubEnv("VERCEL_ENV", "preview"); });
+afterEach(() => { vi.unstubAllEnvs(); });
 vi.mock("server-only", () => ({}));
 import { createHistoryRpcFetch, createHistoryRpcConnections, resetHistoryRpcPacingForTests } from "./position-history-rpc";
 import { PUBLIC_SOLANA_RPC_URL, resolveProviderPair, resetRpcRuntime } from "@sofinance/engine/rpc";

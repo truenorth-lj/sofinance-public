@@ -28,7 +28,7 @@ import { submitOpenPositionFromParts } from "../lib/open-send";
 import type { OpenPositionSummary } from "@sofinance/engine/open-types";
 import { getPoolActivitySnapshot, unavailablePoolActivitySnapshot } from "../lib/solami-blur";
 import { readPositionRangeFacts } from "../lib/position-range-onchain";
-import { isOrcaPositionsEnabled, isPoolActivityEnabled } from "../lib/protocol-flags";
+import { isOrcaPositionsEnabled, isPoolActivityEnabled, isSolamiEnabled } from "../lib/protocol-flags";
 import { getOrcaPositionPerformance, listOrcaPositions, ORCA_PROTOCOL, readOrcaPositionRangeFacts } from "../lib/orca-positions";
 import { blurPriceToBPerA, rangeStatusFromPrice } from "../lib/position-range-status";
 import type {
@@ -644,12 +644,16 @@ export async function getPoolActivity(input: GetPoolActivityInput) {
 /**
  * In/out-of-range status from the latest Blur pool price versus position ticks.
  * Falls back to the on-chain mid when Blur is unavailable. Read-only.
+ * With SOLAMI_ENABLED off (production) Solami is never contacted: the on-chain
+ * price is used directly.
  */
 export async function getPositionRangeStatus(input: GetPositionRangeStatusInput) {
   const orcaFacts = isOrcaPositionsEnabled() ? await readOrcaPositionRangeFacts(input.positionMint) : null;
   const facts = orcaFacts ?? await readPositionRangeFacts(input.positionMint);
   const poolId = input.poolId ?? facts.poolId;
-  const activity = await getPoolActivitySnapshot(poolId, { limit: 8 });
+  const activity = isSolamiEnabled()
+    ? await getPoolActivitySnapshot(poolId, { limit: 8 })
+    : unavailablePoolActivitySnapshot(poolId, "disabled");
   const blurOriented = blurPriceToBPerA(
     activity.pool?.price ?? null,
     activity.pool?.mint ?? null,

@@ -57,22 +57,24 @@ export function isRhcUniv4DiscoveryEnabled(target: DeployTarget = deployTarget()
 }
 
 /**
- * Solami Blur live pool activity: the MCP `get_pool_activity` tool, the
- * `/api/pool-activity` snapshot and `/api/pool-activity/stream` SSE routes, and
- * the app's pool-activity panel / live ticker. OFF in production (the Solami
- * account is on the Free plan, which serves neither the snapshot nor the
- * stream); when off, no Solami request or socket is attempted and the MCP tool
- * is hidden from tools/list. Enabled on Vercel preview/development.
- * `get_position_range_status` is not gated: it falls back to the on-chain mid.
+ * Every Solami integration: Blur live pool activity (the MCP `get_pool_activity`
+ * tool, the `/api/pool-activity` snapshot and `/api/pool-activity/stream` SSE
+ * routes, the app's pool-activity panel / live ticker, and the Blur price in
+ * `get_position_range_status`), Solami RPC (the built-in `solami` provider and
+ * any SOLANA_RPC_PROVIDERS / SOLANA_RPC_URL endpoint on *.solami.dev), and Beam
+ * (tip addresses and landing lookups). OFF in production (the Solami account is
+ * on the Free plan): no Solami request or socket is attempted, the MCP tool is
+ * hidden from tools/list, `get_position_range_status` uses the on-chain price,
+ * and RPC goes to the remaining providers. Enabled on Vercel preview/development.
  */
-export const POOL_ACTIVITY_ENABLED: Readonly<Record<DeployTarget, boolean>> = Object.freeze({
+export const SOLAMI_ENABLED: Readonly<Record<DeployTarget, boolean>> = Object.freeze({
   production: false,
   preview: true,
   development: true,
 });
 
-export function isPoolActivityEnabled(target: DeployTarget = deployTarget()): boolean {
-  return POOL_ACTIVITY_ENABLED[target];
+export function isSolamiEnabled(target: DeployTarget = deployTarget()): boolean {
+  return SOLAMI_ENABLED[target];
 }
 
 /**
@@ -80,8 +82,13 @@ export function isPoolActivityEnabled(target: DeployTarget = deployTarget()): bo
  * from `VERCEL_ENV` at build time (next.config.ts); `VERCEL_ENV` covers server
  * renders and tests.
  */
-export function isPoolActivityEnabledInBrowser(): boolean {
-  return isPoolActivityEnabled(deployTarget(process.env.NEXT_PUBLIC_SOFI_DEPLOY_ENV || process.env.VERCEL_ENV));
+export function isSolamiEnabledInBrowser(): boolean {
+  return isSolamiEnabled(deployTarget(process.env.NEXT_PUBLIC_SOFI_DEPLOY_ENV || process.env.VERCEL_ENV));
 }
+
+/** Pool activity is a Solami feature: same flag (kept as an alias, identical behaviour). */
+export const POOL_ACTIVITY_ENABLED = SOLAMI_ENABLED;
+export const isPoolActivityEnabled = isSolamiEnabled;
+export const isPoolActivityEnabledInBrowser = isSolamiEnabledInBrowser;
 
 export const POOL_ACTIVITY_DISABLED_MESSAGE = "get_pool_activity is disabled on this deployment.";

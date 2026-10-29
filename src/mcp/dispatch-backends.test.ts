@@ -22,7 +22,10 @@ vi.mock("@sofinance/engine/open-atomic", async (importOriginal) => ({
 vi.mock("@sofinance/engine/withdraw/build", () => ({ buildWithdraw: backend.withdraw }));
 vi.mock("@/lib/rwa-store", () => ({ getRwaPairs: backend.pairs }));
 vi.mock("@/lib/position-performance", () => ({ getPositionPerformance: backend.performance }));
-vi.mock("@/lib/solami-blur", () => ({ getPoolActivitySnapshot: backend.activity }));
+vi.mock("@/lib/solami-blur", () => ({
+  getPoolActivitySnapshot: backend.activity,
+  unavailablePoolActivitySnapshot: (poolId: string, reason: string) => ({ available: false, poolId, pool: null, trades: [], fetchedAt: "fixture", source: "unavailable", reason }),
+}));
 vi.mock("@/lib/position-range-onchain", () => ({ readPositionRangeFacts: backend.range }));
 vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: backend.rpc }));
 import { POST } from "@/app/api/mcp/route";
@@ -38,7 +41,7 @@ const expectedIO = {
   list_positions: ["discover"], quote_add_liquidity: ["selectedQuote"], prepare_transaction: ["selectedBuild"],
   quote_compound: ["compound"], prepare_compound_transaction: ["compound"], quote_open_position: ["openQuote"],
   prepare_open_position: ["openBuild"], prepare_withdraw: ["withdraw"], get_position_performance: ["performance"],
-  get_position_range_status: ["range", "activity"], get_pool_activity: ["activity"], list_rwa_pairs: ["pairs"],
+  get_position_range_status: ["range"], get_pool_activity: ["activity"], list_rwa_pairs: ["pairs"],
 };
 const transaction = buildTransaction({ payer: testKeypair(1), signWith: [] });
 const summary = {
@@ -102,8 +105,8 @@ async function snapshotResult(result: Awaited<ReturnType<typeof call>>) {
 }
 for (const surface of ["http", "stdio"] as const) describe(`${surface} real read/prepare handlers`, () => {
   it.each(names)("%s preserves backend arguments, count/order, response and authenticated sign payload", async name => {
-    // get_pool_activity is behind POOL_ACTIVITY_ENABLED (preview only). Scoped to that tool so the
-    // other read tools keep the production (Orca-off) backend path.
+    // get_pool_activity is behind SOLAMI_ENABLED (preview only). Scoped to that tool so the other read
+    // tools keep the production path (Orca off; get_position_range_status never calls Solami).
     if (name === "get_pool_activity") vi.stubEnv("VERCEL_ENV", "preview");
     const result = await call(surface, name, { ...VALID_ARGS[name], ignored: "stripped" });
     expect(result.isError).toBeUndefined();

@@ -4,7 +4,10 @@ vi.mock("server-only", () => ({}));
 vi.mock("@sofinance/engine/wallet-discovery", () => ({ discoverWallet: vi.fn() }));
 vi.mock("../lib/position-performance", () => ({ getPositionPerformance: vi.fn() }));
 vi.mock("../lib/position-range-onchain", () => ({ readPositionRangeFacts: vi.fn() }));
-vi.mock("../lib/solami-blur", () => ({ getPoolActivitySnapshot: vi.fn(async () => ({ available: false, pool: null, trades: [] })) }));
+vi.mock("../lib/solami-blur", () => ({
+  getPoolActivitySnapshot: vi.fn(async () => ({ available: false, pool: null, trades: [] })),
+  unavailablePoolActivitySnapshot: vi.fn((poolId: string, reason: string) => ({ available: false, poolId, pool: null, trades: [], source: "unavailable", reason })),
+}));
 vi.mock("../lib/orca-positions", () => ({
   ORCA_PROTOCOL: "orca-whirlpool",
   listOrcaPositions: vi.fn(),
@@ -16,6 +19,7 @@ const { discoverWallet } = await import("@sofinance/engine/wallet-discovery");
 const { getPositionPerformance: readRaydiumPerformance } = await import("../lib/position-performance");
 const { readPositionRangeFacts } = await import("../lib/position-range-onchain");
 const orca = await import("../lib/orca-positions");
+const { getPoolActivitySnapshot } = await import("../lib/solami-blur");
 const { getPositionPerformance, getPositionRangeStatus, listPositions } = await import("./tools");
 
 const WALLET = "7BgBvyjrZX1YKz4oh9mjb8ZScatkkwb8DzFx7LoiVkM3";
@@ -44,6 +48,8 @@ describe("MCP Orca routing (ORCA_POSITIONS_ENABLED)", () => {
     expect(orca.listOrcaPositions).not.toHaveBeenCalled();
     expect(orca.getOrcaPositionPerformance).not.toHaveBeenCalled();
     expect(orca.readOrcaPositionRangeFacts).not.toHaveBeenCalled();
+    expect(getPoolActivitySnapshot).not.toHaveBeenCalled(); // SOLAMI_ENABLED off: on-chain price only
+    expect(range).toMatchObject({ priceSource: "on-chain", blurAvailable: false, latestTrades: [] });
   });
 
   it("preview: appends shown Orca positions after Raydium rows and reports Orca failures separately", async () => {

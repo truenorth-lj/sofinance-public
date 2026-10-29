@@ -57,6 +57,10 @@ vi.mock("../lib/rwa-pairs", () => ({
   getCachedRwaPairs: vi.fn(() => null),
 }));
 
+vi.mock("../lib/orca-positions", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/orca-positions")>()),
+  readOrcaPositionRangeFacts: vi.fn(async () => null),
+}));
 vi.mock("../lib/solami-blur", () => ({
   getPoolActivitySnapshot: vi.fn(),
   unavailablePoolActivitySnapshot: (poolId: string, reason: string) => ({
@@ -710,7 +714,38 @@ describe("MCP Tools", () => {
   });
 
   describe("getPositionRangeStatus", () => {
+    const rangeFacts = {
+      positionMint: "8BgBvyjrZX1YKz4oh9mjb8ZScatkkwb8DzFx7LoiVkM4",
+      poolId: "DUzBLHZ5RZdftPuWVijsvjupndogRM1adGJpsR7YTJro",
+      mintA: "MintA1111111111111111111111111111111111111",
+      mintB: "MintB1111111111111111111111111111111111111",
+      decimalsA: 6,
+      decimalsB: 6,
+      tickLower: -100,
+      tickUpper: 100,
+      tickCurrent: 0,
+      onChainPriceBPerA: 1,
+    };
+
+    it.each([undefined, "production"])("uses the on-chain price and never calls Solami when SOLAMI_ENABLED is off (VERCEL_ENV=%s)", async (vercelEnv) => {
+      vi.stubEnv("VERCEL_ENV", vercelEnv);
+      vi.mocked(readPositionRangeFacts).mockResolvedValue(rangeFacts);
+      const fetchSpy = vi.spyOn(globalThis, "fetch");
+      try {
+        const result = await getPositionRangeStatus({ positionMint: rangeFacts.positionMint });
+        expect(getPoolActivitySnapshot).not.toHaveBeenCalled();
+        expect(fetchSpy).not.toHaveBeenCalled();
+        expect(result.priceSource).toBe("on-chain");
+        expect(result.inRange).toBe(true);
+        expect(result.blurAvailable).toBe(false);
+        expect(result.latestTrades).toEqual([]);
+      } finally {
+        fetchSpy.mockRestore();
+      }
+    });
+
     it("uses Blur price when present and reports in-range", async () => {
+      vi.stubEnv("VERCEL_ENV", "preview");
       vi.mocked(readPositionRangeFacts).mockResolvedValue({
         positionMint: "8BgBvyjrZX1YKz4oh9mjb8ZScatkkwb8DzFx7LoiVkM4",
         poolId: "DUzBLHZ5RZdftPuWVijsvjupndogRM1adGJpsR7YTJro",

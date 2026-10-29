@@ -1,4 +1,5 @@
 import "server-only";
+import { isSolamiEnabled } from "@/lib/protocol-flags";
 
 /**
  * Solami Blur REST client + defensive parsers.
@@ -64,7 +65,7 @@ export type BlurLiveEvent = {
 /**
  * Why a snapshot or stream is unavailable. Status codes only: never the key,
  * a URL (the WS URL carries the key), or an upstream body.
- * - `disabled`: POOL_ACTIVITY_ENABLED is off for this deployment; nothing was requested.
+ * - `disabled`: SOLAMI_ENABLED (alias POOL_ACTIVITY_ENABLED) is off for this deployment; nothing was requested.
  * - `not-configured`: SOLAMI_DATA_API_KEY is unset; nothing was requested.
  * - `plan-<status>`: Solami refused the key for this plan (401/402/403/429).
  * - `http-<status>`: any other non-2xx from Solami.
@@ -175,6 +176,7 @@ export function isBlurConfigured(env: BlurEnv = process.env as BlurEnv): boolean
 }
 
 export function blurWsUrl(poolId: string, env: BlurEnv = process.env as BlurEnv): string | null {
+  if (!isSolamiEnabled()) return null; // SOLAMI_ENABLED off: never open a socket.
   const key = solamiDataApiKey(env);
   if (!key) return null;
   const url = new URL(SOLAMI_BLUR_WS_BASE);
@@ -381,6 +383,7 @@ async function blurGet(
   env: BlurEnv,
   fetcher: BlurFetcher,
 ): Promise<unknown> {
+  if (!isSolamiEnabled()) throw new Error("Solami is disabled on this deployment");
   const key = solamiDataApiKey(env);
   if (!key) throw new Error("SOLAMI_DATA_API_KEY is not configured");
   const url = new URL(`${SOLAMI_DATA_API_BASE}${path}`);
@@ -434,6 +437,7 @@ export async function getPoolActivitySnapshot(
   poolId: string,
   options: { limit?: number; env?: BlurEnv; fetcher?: BlurFetcher } = {},
 ): Promise<PoolActivitySnapshot> {
+  if (!isSolamiEnabled()) return unavailablePoolActivitySnapshot(poolId, "disabled");
   const env = options.env ?? (process.env as BlurEnv);
   if (!isBlurConfigured(env)) {
     return unavailablePoolActivitySnapshot(poolId, "not-configured");

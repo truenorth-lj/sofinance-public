@@ -1,4 +1,8 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// Solami-on behaviour (SOLAMI_ENABLED is on for Vercel preview/development, off in production).
+beforeEach(() => { vi.stubEnv("VERCEL_ENV", "preview"); });
+afterEach(() => { vi.unstubAllEnvs(); });
 
 vi.mock("server-only", () => ({}));
 
@@ -402,5 +406,19 @@ describe("parseDecimal", () => {
     expect(parseDecimal(1.5)).toBe(1.5);
     expect(parseDecimal("2.25")).toBe(2.25);
     expect(parseDecimal("nope")).toBeNull();
+  });
+});
+
+describe("SOLAMI_ENABLED off (production): no Solami request or socket", () => {
+  it.each([undefined, "production"])("snapshot is disabled and the WS URL is never built (VERCEL_ENV=%s)", async (vercelEnv) => {
+    vi.stubEnv("VERCEL_ENV", vercelEnv);
+    const fetcher = vi.fn();
+    const snapshot = await getPoolActivitySnapshot("DUzBLHZ5RZdftPuWVijsvjupndogRM1adGJpsR7YTJro", {
+      env: { SOLAMI_DATA_API_KEY: "sk_test" },
+      fetcher,
+    });
+    expect(snapshot).toMatchObject({ available: false, source: "unavailable", reason: "disabled" });
+    expect(blurWsUrl("DUzBLHZ5RZdftPuWVijsvjupndogRM1adGJpsR7YTJro", { SOLAMI_DATA_API_KEY: "sk_test" })).toBeNull();
+    expect(fetcher).not.toHaveBeenCalled();
   });
 });

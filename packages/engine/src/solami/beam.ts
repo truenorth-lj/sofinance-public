@@ -1,4 +1,4 @@
-import { engineEnv } from "../host";
+import { engineEnv, solamiAllowed } from "../host";
 import { PublicKey, SystemProgram, type TransactionInstruction, type VersionedTransaction } from "@solana/web3.js";
 import { rpcProvider, type RpcProvider } from "../rpc";
 import { SOLANA_TX_SIZE_LIMIT } from "../transaction-limits";
@@ -28,6 +28,7 @@ export type BeamLanding = {
 };
 
 export function isBeamEnabled(env: BeamEnv = engineEnv() as BeamEnv): boolean {
+  if (!solamiAllowed()) return false;
   const flag = env.SOLAMI_BEAM?.trim().toLowerCase();
   if (flag === "0" || flag === "false" || flag === "off") return false;
   return Boolean(env.SOLAMI_API_KEY?.trim());
@@ -164,6 +165,7 @@ export async function fetchBeamLanding(
 ): Promise<BeamLanding | null> {
   const fetcher = options.fetcher ?? fetch;
   const env = options.env ?? (engineEnv() as BeamEnv);
+  if (!solamiAllowed()) return null;
   const key = env.SOLAMI_API_KEY?.trim();
   try {
     const response = await fetcher(beamLandingUrl(signature), {

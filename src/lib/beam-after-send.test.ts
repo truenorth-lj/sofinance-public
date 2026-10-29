@@ -1,6 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BEAM_INLINE_LOOKUP_TIMEOUT_MS, beamAfterSend, noBeamAfterSend } from "@/lib/beam-after-send";
 import { beamLandingUrl } from "@sofinance/engine/solami-beam";
+
+// Solami-on behaviour (SOLAMI_ENABLED is on for Vercel preview/development, off in production).
+beforeEach(() => { vi.stubEnv("VERCEL_ENV", "preview"); });
+afterEach(() => { vi.unstubAllEnvs(); });
 
 const SIG = "5".repeat(88);
 
