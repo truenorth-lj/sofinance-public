@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { meteoraBinArrayAddress } from "./accounts";
 import { METEORA_DLMM_PROGRAM_ID } from "./constants";
 import {
-  assertMeteoraOpenRange, meteoraAddLiquidityByStrategy2Instruction, meteoraClosePosition2Instruction, meteoraEventAuthority,
+  type MeteoraAddLiquidityInput, assertMeteoraOpenRange, meteoraAddLiquidityByStrategy2Instruction, meteoraClosePosition2Instruction, meteoraEventAuthority,
   meteoraInitializePositionInstruction, meteoraMaxActiveBinSlippage, meteoraSpotSplit, meteoraSpotXShare,
 } from "./open";
 
@@ -37,9 +37,9 @@ describe("Meteora DLMM open instructions (SDK byte parity)", () => {
   });
 
   it("add_liquidity_by_strategy2 (Spot) data, accounts and bin arrays", () => {
-    const k = Object.fromEntries(["position", "sender", "userTokenX", "userTokenY", "reserveX", "reserveY", "tokenXMint", "tokenYMint", "tokenXProgram", "tokenYProgram"].map((name) => [name, key()])) as Record<string, PublicKey>;
+    const k = Object.fromEntries(["position", "sender", "userTokenX", "userTokenY", "reserveX", "reserveY", "tokenXMint", "tokenYMint", "tokenXProgram", "tokenYProgram"].map((name) => [name, key()])) as unknown as Omit<MeteoraAddLiquidityInput, "lbPair" | "amountX" | "amountY" | "activeId" | "maxActiveBinSlippage" | "minBinId" | "maxBinId">;
     const ix = meteoraAddLiquidityByStrategy2Instruction({
-      ...(k as never), lbPair: POOL, amountX: 123_456_789n, amountY: 987_654_321n, activeId: -12, maxActiveBinSlippage: 50, minBinId: -40, maxBinId: 29,
+      ...k, lbPair: POOL, amountX: 123_456_789n, amountY: 987_654_321n, activeId: -12, maxActiveBinSlippage: 50, minBinId: -40, maxBinId: 29,
     });
     expect(ix.data.toString("hex")).toBe(SDK.addBalanced);
     expect(ix.keys).toHaveLength(14 + 2); // bin arrays -1 and 0
@@ -49,7 +49,7 @@ describe("Meteora DLMM open instructions (SDK byte parity)", () => {
       [meteoraBinArrayAddress(POOL.toBase58(), -1), true], [meteoraBinArrayAddress(POOL.toBase58(), 0), true],
     ]);
     const oneSide = meteoraAddLiquidityByStrategy2Instruction({
-      ...(k as never), lbPair: POOL, amountX: 5n, amountY: 0n, activeId: 7, maxActiveBinSlippage: 3, minBinId: 8, maxBinId: 20,
+      ...k, lbPair: POOL, amountX: 5n, amountY: 0n, activeId: 7, maxActiveBinSlippage: 3, minBinId: 8, maxBinId: 20,
     });
     expect(oneSide.data.toString("hex")).toBe(SDK.addOneSide);
   });
