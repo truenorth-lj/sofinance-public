@@ -17,7 +17,7 @@ import {
   type Relatedness,
   type RwaQualificationSource,
 } from "./rwa-pairing";
-import { DEFAULT_PROTOCOL, type ProtocolId } from "@sofinance/engine/protocols/types";
+import { DEFAULT_PROTOCOL, type PoolProtocolId } from "@sofinance/engine/protocols/types";
 import { fetchJupiterTagsByMint, getJupiterTagsObservedAt } from "./rwa-jupiter-tags";
 import { fetchXstocksSolanaMintSet, getXstocksObservedAt } from "./rwa-xstocks-whitelist";
 
@@ -46,7 +46,7 @@ export type DiscoverRwaPairsOptions = {
 export type RwaPairRow = {
   poolAddress: string;
   /** Concentrated-liquidity protocol that owns the pool. */
-  protocol: ProtocolId;
+  protocol: PoolProtocolId;
   mintA: string;
   mintB: string;
   symbolA: string;
@@ -56,7 +56,7 @@ export type RwaPairRow = {
   baseSymbol: string;
   wrappedSymbol: string;
   plainSymbol: string;
-  wrapKind: PairingMatch["wrapKind"] | "stable";
+  wrapKind: PairingMatch["wrapKind"] | "stable" | "same-asset";
   relatedness: Relatedness | "allowlisted";
   qualificationA: RwaQualificationSource | "allowlist";
   qualificationB: RwaQualificationSource | "allowlist";

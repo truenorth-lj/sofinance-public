@@ -1,0 +1,37 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Orca pair rows > maps the captured cbBTC/WBTC pool to a read-only orca-whirlpool row (golden) 1`] = `
+{
+  "baseSymbol": "BTC",
+  "estimatedFeeAprLabel": "Estimated fee APR = (24h pool fees USD / TVL USD) × 365 × 100. Not LP return; ignores IL, range, and rewards.",
+  "estimatedFeeAprPct": 5.21071525276775,
+  "feeRate": 0.0001,
+  "feeTierBps": 1,
+  "fees24hUsd": 180.41790397997426,
+  "freezeRisk": false,
+  "freezeRiskA": false,
+  "freezeRiskB": false,
+  "jupiterTagsA": [],
+  "jupiterTagsB": [],
+  "mintA": "cbbtcf3aa214zXHbiAZQwf4122FBYbraNdFqgw4iMij",
+  "mintB": "3NZ9JMVBmGAqocybic2c7LQCJScmgsAZ6vQqTDzcqmJh",
+  "nameA": "Coinbase Wrapped BTC",
+  "nameB": "Wrapped BTC (Wormhole)",
+  "plainSymbol": "WBTC",
+  "poolAddress": "4v8ufj8Hj7UvFgtofQJAtzUud5xomwZfEqfCTHZ4wM72",
+  "preferredTags": false,
+  "protocol": "orca-whirlpool",
+  "qualificationA": "allowlist",
+  "qualificationB": "allowlist",
+  "raydiumFeeApr24h": null,
+  "relatedness": "allowlisted",
+  "symbolA": "cbBTC",
+  "symbolB": "WBTC",
+  "token2022A": false,
+  "token2022B": false,
+  "tvlUsd": 1263790.7035452,
+  "volume24hUsd": 2028277.76840673,
+  "wrapKind": "same-asset",
+  "wrappedSymbol": "cbBTC",
+}
+`;
