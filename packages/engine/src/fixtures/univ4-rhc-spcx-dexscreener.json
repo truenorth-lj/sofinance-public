@@ -1,0 +1,117 @@
+{
+ "schemaVersion": "1.0.0",
+ "pairs": [
+  {
+   "chainId": "robinhood",
+   "dexId": "uniswap",
+   "url": "https://dexscreener.com/robinhood/0x4f54c74021e4139bbc4c7bc924346c921975136ea120cf118a93c43b50bdbd3c",
+   "pairAddress": "0x4f54c74021e4139bbc4c7bc924346c921975136ea120cf118a93c43b50bdbd3c",
+   "labels": [
+    "v4"
+   ],
+   "baseToken": {
+    "address": "0x9B8294F24453379aa87C807ab82bf1d5722153Fc",
+    "name": "SpaceX (Ondo Tokenized)",
+    "symbol": "SPCXon"
+   },
+   "quoteToken": {
+    "address": "0x4a0E65A3EcceC6dBe60AE065F2e7bb85Fae35eEa",
+    "name": "Space Exploration Technologies Corp. Class A Common Stock \u2022 Robinhood Token",
+    "symbol": "SPCX"
+   },
+   "priceNative": "1.0000003527",
+   "priceUsd": "143.74",
+   "txns": {
+    "m5": {
+     "buys": 0,
+     "sells": 0
+    },
+    "h1": {
+     "buys": 0,
+     "sells": 0
+    },
+    "h6": {
+     "buys": 0,
+     "sells": 0
+    },
+    "h24": {
+     "buys": 2,
+     "sells": 1
+    }
+   },
+   "volume": {
+    "h24": 36.54,
+    "h6": 0,
+    "h1": 0,
+    "m5": 0
+   },
+   "priceChange": {
+    "h24": -0.01
+   },
+   "liquidity": {
+    "usd": 48711.43,
+    "base": 172.2797,
+    "quote": 166.5943
+   },
+   "fdv": 24767,
+   "marketCap": 24767,
+   "pairCreatedAt": 1793019210000
+  }
+ ],
+ "pair": {
+  "chainId": "robinhood",
+  "dexId": "uniswap",
+  "url": "https://dexscreener.com/robinhood/0x4f54c74021e4139bbc4c7bc924346c921975136ea120cf118a93c43b50bdbd3c",
+  "pairAddress": "0x4f54c74021e4139bbc4c7bc924346c921975136ea120cf118a93c43b50bdbd3c",
+  "labels": [
+   "v4"
+  ],
+  "baseToken": {
+   "address": "0x9B8294F24453379aa87C807ab82bf1d5722153Fc",
+   "name": "SpaceX (Ondo Tokenized)",
+   "symbol": "SPCXon"
+  },
+  "quoteToken": {
+   "address": "0x4a0E65A3EcceC6dBe60AE065F2e7bb85Fae35eEa",
+   "name": "Space Exploration Technologies Corp. Class A Common Stock \u2022 Robinhood Token",
+   "symbol": "SPCX"
+  },
+  "priceNative": "1.0000003527",
+  "priceUsd": "143.74",
+  "txns": {
+   "m5": {
+    "buys": 0,
+    "sells": 0
+   },
+   "h1": {
+    "buys": 0,
+    "sells": 0
+   },
+   "h6": {
+    "buys": 0,
+    "sells": 0
+   },
+   "h24": {
+    "buys": 2,
+    "sells": 1
+   }
+  },
+  "volume": {
+   "h24": 36.54,
+   "h6": 0,
+   "h1": 0,
+   "m5": 0
+  },
+  "priceChange": {
+   "h24": -0.01
+  },
+  "liquidity": {
+   "usd": 48711.43,
+   "base": 172.2797,
+   "quote": 166.5943
+  },
+  "fdv": 24767,
+  "marketCap": 24767,
+  "pairCreatedAt": 1793019210000
+ }
+}

@@ -1,15 +1,14 @@
 import { getAddress, isAddressEqual, type Address, type Hex, type PublicClient } from "viem";
-import { ERC20_METADATA_ABI, FEE_CONFIG_UPDATED_EVENT, MODIFY_LIQUIDITY_EVENT, STABLE_PAIR_HOOK_ABI, STATE_VIEW_ABI, SWAP_EVENT, UPGRADED_EVENT } from "./abi";
-import { estimateUniv4Apr, liquidityByRange, type RangeLiquidity, type SwapSample, type Univ4AprEstimate } from "./apr";
-import { ERC1967_IMPLEMENTATION_SLOT, RHC_BLOCK_ANCHOR, STABLE_PAIR_HOOK, UNIV4_RHC, UNIV4_RHC_ALLOWLISTED_POOLS, type StableFeeConfig, type Univ4AllowlistedPool } from "./constants";
-import { getLogsChunked, type ChunkedLogsOptions } from "./logs";
+import { ERC20_METADATA_ABI, STABLE_PAIR_HOOK_ABI, STATE_VIEW_ABI } from "./abi";
+import { ERC1967_IMPLEMENTATION_SLOT, STABLE_PAIR_HOOK, UNIV4_RHC, UNIV4_RHC_ALLOWLISTED_POOLS, type StableFeeConfig, type Univ4AllowlistedPool } from "./constants";
+import { poolAprFromMarket, type Univ4MarketData, type Univ4PoolApr } from "./market-data";
 import { addressFromSlot, decodeHookPermissions, hookPermissionBits, isSortedPair, poolIdOf, type PoolKey } from "./pool-key";
 
 /**
  * Read-only Uniswap v4 discovery on Robinhood Chain. Nothing here builds, signs or broadcasts a
  * transaction. State comes from StateView + the StablePairHook (one multicall) and the hook's ERC1967
- * implementation slot; history (swaps, liquidity changes, hook config / upgrade events) from
- * PoolManager and hook logs.
+ * implementation slot. No event scans (PM decision 2026-10-29): 24h volume / TVL come from public indexers
+ * (`market-data.ts`) and RPC is used for current state only.
  */
 
 export type TokenMetadata = { address: Address; name: string; symbol: string; decimals: number };
@@ -24,17 +23,6 @@ export type RawPoolState = {
   implementation: Address | null;
   token0: TokenMetadata | null;
   token1: TokenMetadata | null;
-};
-
-export type RawPoolHistory = {
-  scannedFrom: bigint;
-  scannedTo: bigint;
-  /** Swaps still inside the longest APR window. */
-  swaps: SwapSample[];
-  /** Net liquidity per (tickLower, tickUpper) from every ModifyLiquidity since pool init. */
-  ranges: RangeLiquidity[];
-  feeConfigUpdates: bigint[];
-  upgrades: { blockNumber: bigint; implementation: Address }[];
 };
 
 export const poolKeyOf = (spec: Univ4AllowlistedPool): PoolKey => ({
@@ -84,53 +72,10 @@ export async function readPoolState(client: PublicClient, spec: Univ4Allowlisted
   };
 }
 
-export type ReadPoolHistoryOptions = ChunkedLogsOptions & {
-  toBlock: bigint;
-  /** Oldest block whose swaps are kept (APR window start). */
-  swapsFromBlock: bigint;
-  /** Previous scan to extend incrementally (same pool). */
-  previous?: RawPoolHistory | null;
-};
-
-/**
- * Pool history from logs, incrementally on top of `previous`. Four single-topic queries (the official
- * RPC limits OR-topic filters to 100k blocks): Swap and ModifyLiquidity for this pool on PoolManager,
- * FeeConfigUpdated for this pool and Upgraded on the hook.
- */
-export async function readPoolHistory(client: PublicClient, spec: Univ4AllowlistedPool, options: ReadPoolHistoryOptions): Promise<RawPoolHistory> {
-  const previous = options.previous && options.previous.scannedTo < options.toBlock ? options.previous : null;
-  if (options.previous && !previous) return pruneSwaps(options.previous, options.swapsFromBlock);
-  const from = previous ? previous.scannedTo + 1n : spec.initBlock;
-  const hookFrom = previous ? previous.scannedTo + 1n : STABLE_PAIR_HOOK.deployBlock;
-  const to = options.toBlock;
-  const chunk = { maxSpan: options.maxSpan, minSpan: options.minSpan, maxRequests: options.maxRequests };
-  const swapFrom = from > options.swapsFromBlock ? from : options.swapsFromBlock;
-  const swaps = await getLogsChunked((fromBlock, toBlock) => client.getLogs({ address: UNIV4_RHC.poolManager, event: SWAP_EVENT, args: { id: spec.poolId }, fromBlock, toBlock, strict: true }), swapFrom, to, chunk);
-  const modifications = await getLogsChunked((fromBlock, toBlock) => client.getLogs({ address: UNIV4_RHC.poolManager, event: MODIFY_LIQUIDITY_EVENT, args: { id: spec.poolId }, fromBlock, toBlock, strict: true }), from, to, chunk);
-  const feeConfigUpdates = await getLogsChunked((fromBlock, toBlock) => client.getLogs({ address: spec.hooks, event: FEE_CONFIG_UPDATED_EVENT, args: { poolId: spec.poolId }, fromBlock, toBlock, strict: true }), hookFrom, to, chunk);
-  const upgrades = await getLogsChunked((fromBlock, toBlock) => client.getLogs({ address: spec.hooks, event: UPGRADED_EVENT, fromBlock, toBlock, strict: true }), hookFrom, to, chunk);
-  const next: RawPoolHistory = {
-    scannedFrom: previous?.scannedFrom ?? spec.initBlock,
-    scannedTo: to,
-    swaps: [...(previous?.swaps ?? []), ...swaps.map(log => ({
-      blockNumber: log.blockNumber!, amount0: log.args.amount0, amount1: log.args.amount1, liquidity: log.args.liquidity, tick: Number(log.args.tick), fee: Number(log.args.fee),
-    }))],
-    ranges: liquidityByRange([...(previous?.ranges ?? []).map(range => ({ tickLower: range.tickLower, tickUpper: range.tickUpper, liquidityDelta: range.liquidity })),
-      ...modifications.map(log => ({ tickLower: Number(log.args.tickLower), tickUpper: Number(log.args.tickUpper), liquidityDelta: log.args.liquidityDelta }))]),
-    feeConfigUpdates: [...(previous?.feeConfigUpdates ?? []), ...feeConfigUpdates.map(log => log.blockNumber!)],
-    upgrades: [...(previous?.upgrades ?? []), ...upgrades.map(log => ({ blockNumber: log.blockNumber!, implementation: getAddress(log.args.implementation) }))],
-  };
-  return pruneSwaps(next, options.swapsFromBlock);
-}
-
-const pruneSwaps = (history: RawPoolHistory, fromBlock: bigint): RawPoolHistory =>
-  ({ ...history, swaps: history.swaps.filter(swap => swap.blockNumber >= fromBlock) });
-
 export type Univ4CheckId =
-  | "pool-id" | "pool-key" | "initialized" | "hook-permissions" | "hook-implementation" | "fee-config"
-  | "fee-config-events" | "upgrade-events" | "token-metadata";
+  | "pool-id" | "pool-key" | "initialized" | "hook-permissions" | "hook-implementation" | "fee-config" | "token-metadata";
 
-/** `ok: null` = not checked this time (history unavailable); it never lists or delists on its own. */
+/** `ok: null` = not checked this time; it never lists or delists on its own. */
 export type Univ4Check = { id: Univ4CheckId; ok: boolean | null; detail: string };
 
 export type Univ4PoolStatus = "listed" | "delisted";
@@ -164,8 +109,9 @@ export type Univ4PoolSummary = {
   referencePrice: number | null;
   /** (price / referencePrice − 1) in bps. */
   priceVsReferenceBps: number | null;
-  apr: Univ4AprEstimate | null;
-  historyScannedTo: string | null;
+  /** fee rate × 24h volume / TVL from DexScreener (GeckoTerminal fallback); null when neither has the pool. */
+  /** Labelled 「估計」/"Estimated" wherever shown. */
+  estimatedApr: Univ4PoolApr | null;
   warnings: string[];
 };
 
@@ -181,10 +127,11 @@ export function sqrtPriceX96ToPrice(sqrtPriceX96: bigint, decimals0: number, dec
  * Apply the allowlist invariants (design §3.1 / §9 risk 1). Any failed state check auto-delists the
  * pool: wrong pool id / key, uninitialized, unexpected hook permissions, a hook implementation other
  * than the reviewed StablePairHook, a fee config that differs from the reviewed snapshot, unexpected
- * token metadata, or any FeeConfigUpdated / Upgraded event after the reviewed deployment.
- * Unreadable state counts as failed (fail closed).
+ * token metadata. Hook upgrades and fee-config changes are caught from current state (ERC1967 implementation
+ * slot, `feeConfig(poolId)`) on every refresh, and re-read at transaction time. Unreadable state counts as
+ * failed (fail closed).
  */
-export function evaluatePool(spec: Univ4AllowlistedPool, state: RawPoolState, history: RawPoolHistory | null, now: { blocksPerSecond?: number } = {}): Univ4PoolSummary {
+export function evaluatePool(spec: Univ4AllowlistedPool, state: RawPoolState, market: Univ4MarketData | null = null): Univ4PoolSummary {
   const key = poolKeyOf(spec);
   const checks: Univ4Check[] = [];
   const add = (id: Univ4CheckId, okValue: boolean | null, detail: string) => checks.push({ id, ok: okValue, detail });
@@ -203,31 +150,13 @@ export function evaluatePool(spec: Univ4AllowlistedPool, state: RawPoolState, hi
   const metaOk = (meta: TokenMetadata | null, expected: { symbol: string; decimals: number }) => meta !== null && meta.decimals === expected.decimals && meta.symbol === expected.symbol;
   const tokensOk = metaOk(state.token0, spec.currency0) && metaOk(state.token1, spec.currency1);
   add("token-metadata", tokensOk, tokensOk ? `${spec.currency0.symbol}/${spec.currency1.symbol}, ${spec.currency0.decimals}/${spec.currency1.decimals} decimals` : "token symbol/decimals unreadable or changed");
-  if (history) {
-    add("fee-config-events", history.feeConfigUpdates.length === 0, history.feeConfigUpdates.length === 0 ? "no FeeConfigUpdated since hook deployment" : `FeeConfigUpdated at ${history.feeConfigUpdates.join(", ")}`);
-    const unexpected = history.upgrades.filter(upgrade => !(upgrade.blockNumber === STABLE_PAIR_HOOK.deployBlock && isAddressEqual(upgrade.implementation, STABLE_PAIR_HOOK.implementation)));
-    add("upgrade-events", unexpected.length === 0, unexpected.length === 0 ? "only the deployment upgrade" : `Upgraded at ${unexpected.map(upgrade => upgrade.blockNumber).join(", ")}`);
-  } else {
-    add("fee-config-events", null, "history unavailable");
-    add("upgrade-events", null, "history unavailable");
-  }
-
   const delistReasons = checks.filter(check => check.ok === false).map(check => check.id);
   const decimals0 = state.token0?.decimals ?? spec.currency0.decimals, decimals1 = state.token1?.decimals ?? spec.currency1.decimals;
   const price = state.slot0 && state.slot0.sqrtPriceX96 > 0n ? sqrtPriceX96ToPrice(state.slot0.sqrtPriceX96, decimals0, decimals1) : null;
   const referencePrice = state.feeConfig ? sqrtPriceX96ToPrice(state.feeConfig.referenceSqrtPriceX96, decimals0, decimals1) : null;
   const warnings: string[] = [];
   if (state.slot0 && state.slot0.protocolFee !== 0) warnings.push("protocol fee is non-zero: APR assumes LPs keep the full swap fee");
-  let apr: Univ4AprEstimate | null = null;
-  if (history && state.slot0 && state.slot0.sqrtPriceX96 > 0n) {
-    const blocksPerSecond = now.blocksPerSecond ?? blocksPerSecondAt(state.blockNumber, state.blockTimestamp);
-    apr = estimateUniv4Apr({
-      swaps: history.swaps, ranges: history.ranges, sqrtPriceX96: state.slot0.sqrtPriceX96, tick: state.slot0.tick,
-      toBlock: history.scannedTo, initBlock: spec.initBlock, blocksPerSecond, decimals0, decimals1,
-    });
-    if (state.liquidity !== null && apr.activeLiquidityFromRanges !== state.liquidity.toString())
-      warnings.push("active liquidity from ModifyLiquidity history does not match StateView");
-  }
+  const estimatedApr = market && state.dynamicFee ? poolAprFromMarket(market, state.dynamicFee) : null;
   return {
     protocol: "uniswap-v4-rhc",
     chainId: 4663,
@@ -253,56 +182,33 @@ export function evaluatePool(spec: Univ4AllowlistedPool, state: RawPoolState, hi
     feeConfig: state.feeConfig && { ...state.feeConfig, referenceSqrtPriceX96: state.feeConfig.referenceSqrtPriceX96.toString() },
     referencePrice,
     priceVsReferenceBps: price !== null && referencePrice ? (price / referencePrice - 1) * 10_000 : null,
-    apr,
-    historyScannedTo: history?.scannedTo.toString() ?? null,
+    estimatedApr,
     warnings,
   };
 }
 
-/** Measured block rate between the fixed anchor and `blockNumber`. */
-export function blocksPerSecondAt(blockNumber: bigint, timestamp: number): number {
-  const seconds = timestamp - RHC_BLOCK_ANCHOR.timestamp;
-  return seconds > 0 && blockNumber > RHC_BLOCK_ANCHOR.number ? Number(blockNumber - RHC_BLOCK_ANCHOR.number) / seconds : 9.6;
-}
-
-export const APR_WINDOW_SECONDS = 7 * 86_400;
-
 export type DiscoverUniv4Options = {
-  clients: { state: PublicClient; logs: PublicClient };
+  clients: { state: PublicClient };
   pools?: readonly Univ4AllowlistedPool[];
-  /** Per-pool previous history (incremental log scans); updated in place by the caller. */
-  history?: Map<Hex, RawPoolHistory>;
-  logs?: ChunkedLogsOptions;
+  /** 24h volume / TVL per pool (host-cached public indexers); omitted or failing → `estimatedApr: null`. */
+  marketData?: (spec: Univ4AllowlistedPool) => Promise<Univ4MarketData | null>;
 };
 
 /**
  * One summary per allowlisted pool. A pool whose state cannot be read is reported delisted (fail
- * closed); history failures only drop APR and the event checks.
+ * closed); market-data failures only drop APR.
  */
 export async function discoverUniv4RhcPools(options: DiscoverUniv4Options): Promise<Univ4PoolSummary[]> {
   const pools = options.pools ?? UNIV4_RHC_ALLOWLISTED_POOLS;
   const out: Univ4PoolSummary[] = [];
   for (const spec of pools) {
-    let state: RawPoolState;
-    try {
-      state = await readPoolState(options.clients.state, spec);
-    } catch {
-      state = { blockNumber: 0n, blockTimestamp: 0, slot0: null, liquidity: null, dynamicFee: null, feeConfig: null, implementation: null, token0: null, token1: null };
-      out.push(evaluatePool(spec, state, null));
-      continue;
-    }
-    const blocksPerSecond = blocksPerSecondAt(state.blockNumber, state.blockTimestamp);
-    const swapsFromBlock = state.blockNumber - BigInt(Math.ceil(APR_WINDOW_SECONDS * blocksPerSecond));
-    let history: RawPoolHistory | null = null;
-    try {
-      history = await readPoolHistory(options.clients.logs, spec, {
-        ...options.logs, toBlock: state.blockNumber, swapsFromBlock, previous: options.history?.get(spec.poolId) ?? null,
-      });
-      options.history?.set(spec.poolId, history);
-    } catch {
-      history = null;
-    }
-    out.push(evaluatePool(spec, state, history, { blocksPerSecond }));
+    const [state, market] = await Promise.all([
+      readPoolState(options.clients.state, spec).catch((): RawPoolState => ({
+        blockNumber: 0n, blockTimestamp: 0, slot0: null, liquidity: null, dynamicFee: null, feeConfig: null, implementation: null, token0: null, token1: null,
+      })),
+      options.marketData ? options.marketData(spec).catch(() => null) : Promise.resolve(null),
+    ]);
+    out.push(evaluatePool(spec, state, market));
   }
   return out;
 }

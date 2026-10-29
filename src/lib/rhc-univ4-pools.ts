@@ -1,16 +1,19 @@
 import "@/lib/engine-host";
 import "server-only";
 
-import { discoverUniv4RhcPools, type RawPoolHistory, type Univ4PoolSummary } from "@sofinance/engine/protocols/uniswap-v4/discovery";
-import { createRhcClients, type RhcClients } from "@sofinance/engine/rpc-evm/index";
-import type { Hex } from "viem";
+import type { Univ4AllowlistedPool } from "@sofinance/engine/protocols/uniswap-v4/constants";
+import { discoverUniv4RhcPools, type Univ4PoolSummary } from "@sofinance/engine/protocols/uniswap-v4/discovery";
+import { ESTIMATED_APR_LABEL, fetchUniv4MarketData, type Univ4MarketData } from "@sofinance/engine/protocols/uniswap-v4/market-data";
+import { createRhcClient } from "@sofinance/engine/rpc-evm/index";
+import type { PublicClient } from "viem";
 import { AsyncCache } from "./async-cache";
 
 /**
  * Read-only Uniswap v4 pools on Robinhood Chain (chain 4663) for `/api/protocol-pools`.
- * Only the reviewed allowlist (SPCX/SPCXon on the StablePairHook); each pool is re-checked on
- * every refresh and reported `delisted` if its hook implementation, fee config, key or metadata
- * no longer match. No transaction is built here (PR1 of the Robinhood Chain plan).
+ * Only the reviewed allowlist (SPCX/SPCXon on the StablePairHook); each pool is re-checked from current
+ * on-chain state on every refresh and reported `delisted` if its hook implementation, fee config, key or
+ * metadata no longer match. APR = hook fee rate × 24h volume / TVL from DexScreener (GeckoTerminal fallback):
+ * no event scans over RPC (PM decision 2026-10-29). No transaction is built here.
  */
 export type RhcUniv4PoolsResult = {
   protocol: "uniswap-v4-rhc";
@@ -19,28 +22,46 @@ export type RhcUniv4PoolsResult = {
   pools: Univ4PoolSummary[];
   fetchedAt: string;
   source: string;
+  aprLabel: { zh: "估計"; en: "Estimated" };
   aprNote: string;
 };
 
 const STATE_TTL_MS = 60_000;
 const FAILURE_TTL_MS = 15_000;
-const cache = new AsyncCache<RhcUniv4PoolsResult>({ ttlMs: STATE_TTL_MS, failureTtlMs: FAILURE_TTL_MS, maxEntries: 1 });
-// Incremental log cursor per pool (per server instance; a cold start rescans from pool init,
-// 4 eth_getLogs calls on the official RPC).
-const history = new Map<Hex, RawPoolHistory>();
-let clients: RhcClients | null = null;
+/** One DexScreener call per pool per 2 min per instance (documented limit: 300/min). */
+const MARKET_TTL_MS = 120_000;
+const MARKET_FAILURE_TTL_MS = 60_000;
+/** GeckoTerminal keyless is ~5–10 calls/min per shared IP: after a 429 skip it for 5 min. */
+const GECKO_COOLDOWN_MS = 5 * 60_000;
 
-export async function discoverRhcUniv4Pools(options: { clients?: RhcClients; bypassCache?: boolean } = {}): Promise<RhcUniv4PoolsResult> {
+const cache = new AsyncCache<RhcUniv4PoolsResult>({ ttlMs: STATE_TTL_MS, failureTtlMs: FAILURE_TTL_MS, maxEntries: 1 });
+const marketCache = new AsyncCache<Univ4MarketData | null>({ ttlMs: MARKET_TTL_MS, failureTtlMs: MARKET_FAILURE_TTL_MS, maxEntries: 16 });
+let geckoBlockedUntil = 0;
+let stateClient: PublicClient | null = null;
+
+function marketDataFor(fetcher?: typeof fetch) {
+  return (spec: Univ4AllowlistedPool) => marketCache.get(spec.poolId.toLowerCase(), () => fetchUniv4MarketData(spec, {
+    fetcher,
+    allowFallback: () => Date.now() >= geckoBlockedUntil,
+    onUpstream: event => { if (event.source === "geckoterminal" && event.outcome === "rate-limited") geckoBlockedUntil = Date.now() + GECKO_COOLDOWN_MS; },
+  }));
+}
+
+export async function discoverRhcUniv4Pools(options: { clients?: { state: PublicClient }; fetcher?: typeof fetch; bypassCache?: boolean } = {}): Promise<RhcUniv4PoolsResult> {
   const load = async (): Promise<RhcUniv4PoolsResult> => {
-    const pools = await discoverUniv4RhcPools({ clients: options.clients ?? (clients ??= createRhcClients()), history });
+    const pools = await discoverUniv4RhcPools({
+      clients: options.clients ?? { state: (stateClient ??= createRhcClient("state")) },
+      marketData: marketDataFor(options.fetcher),
+    });
     return {
       protocol: "uniswap-v4-rhc",
       chainId: 4663,
       readOnly: true,
       pools,
       fetchedAt: new Date().toISOString(),
-      source: "Robinhood Chain RPC: StateView / StablePairHook / PoolManager logs (allowlist: SPCX/SPCXon)",
-      aprNote: "Estimates in token0 units from this pool's own swaps (24h / 7d) and liquidity; no USD prices, not a guarantee.",
+      source: "Robinhood Chain RPC: StateView / StablePairHook (allowlist: SPCX/SPCXon); 24h volume and TVL: DexScreener (GeckoTerminal fallback)",
+      aprLabel: ESTIMATED_APR_LABEL,
+      aprNote: "Estimated (估計) pool fee APR = hook's current fee rate × 24h volume / TVL × 365 (USD, from public indexers). The StablePairHook fee is dynamic; an estimate, not a guarantee.",
     };
   };
   return options.bypassCache ? load() : cache.get("pools", load);
@@ -49,6 +70,7 @@ export async function discoverRhcUniv4Pools(options: { clients?: RhcClients; byp
 /** Test hook. */
 export function resetRhcUniv4PoolsCache(): void {
   cache.clear();
-  history.clear();
-  clients = null;
+  marketCache.clear();
+  geckoBlockedUntil = 0;
+  stateClient = null;
 }
