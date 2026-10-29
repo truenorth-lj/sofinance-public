@@ -19,10 +19,12 @@ describe("landing page copy and routes", () => {
     "src/app/manifest.ts",
   ];
 
-  it("leads with tokenized-stock LP in one signature, not a yield product", () => {
-    expect(src).toContain("LP tokenized stocks on Raydium — in one signature.");
-    expect(src).toContain("Pick an xStock pool. The app picks the best backtest range — you can override it.");
-    expect(src).toContain("Compound fees or exit in one click.");
+  it("leads with the option B hero (hold the stock, collect the fees), not a yield product", () => {
+    expect(src).toContain("Hold the stock. Collect the fees.");
+    expect(src).toContain(
+      "Your $TSLA, $MSTR or $SPCX tokens can collect trading fees from swaps in Raydium pools. We show the estimated APR and a 7-day backtest before you sign. Not guaranteed; risks apply.",
+    );
+    expect(src).not.toContain("LP tokenized stocks on Raydium — in one signature.");
     expect(src).toContain("You sign every transaction");
     expect(src).toContain("normal Raydium position");
     expect(src).toContain("Browse pools");
@@ -30,7 +32,8 @@ describe("landing page copy and routes", () => {
     expect(src).toMatch(/non-custodial/i);
     expect(src).toContain("verifiable on Solscan");
     expect(src).not.toMatch(/audited|trustless|risk-free|fully automated|autonomous/i);
-    expect(src).not.toMatch(/\btrading\b/i);
+    // "trading" is allowed only as "trading fees" (approved option B subhead), never as a trading product.
+    expect(src.replace(/trading fees/g, "")).not.toMatch(/\btrading\b/i);
   });
 
   it("has no yield or strategy headlines", () => {

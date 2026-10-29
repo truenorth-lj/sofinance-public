@@ -113,14 +113,11 @@ export function LandingPage() {
           <section className="mt-3 animate-rise rounded-[28px] bg-cream p-6 text-ink motion-reduce:animate-none sm:p-10">
             <span className={`${labelPill} border-ink/70`}>Self-custodial · Raydium CLMM · Tokenized stocks</span>
             <h1 className="mt-6 max-w-[18ch] text-[clamp(2.1rem,5.4vw,4.4rem)] font-medium leading-[1.02] tracking-[-0.045em]">
-              LP tokenized stocks on Raydium — in one signature.
+              Hold the stock. Collect the fees.
             </h1>
             <div className="mt-6 border-t border-ink/20 pt-5">
               <p className="max-w-2xl text-base leading-7 text-ink/70 sm:text-lg">
-                Pick an xStock pool. The app picks the best backtest range — you can override it.
-                Open the position with a single wallet signature.
-                Compound fees or exit in one click. You sign every transaction, and it stays a normal
-                Raydium position you can manage anywhere.
+                Your $TSLA, $MSTR or $SPCX tokens can collect trading fees from swaps in Raydium pools. We show the estimated APR and a 7-day backtest before you sign. Not guaranteed; risks apply.
               </p>
               <p className="mt-4 font-data text-[11px] uppercase tracking-[0.12em] text-ink/55">
                 1 signature · 0 keys on our servers · verifiable on Solscan
