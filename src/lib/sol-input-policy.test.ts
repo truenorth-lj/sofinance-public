@@ -17,9 +17,9 @@ afterEach(() => { flag.enabled = false; vi.unstubAllEnvs(); });
 beforeEach(() => { vi.stubEnv("NEXT_PUBLIC_SOFI_DEPLOY_ENV", ""); vi.stubEnv("VERCEL_ENV", ""); });
 
 describe("SOL input switch", () => {
-  it("ships off until the two-step SOL open is verified, and keeps the agreed off-switch note", async () => {
+  it("ships on now that the two-step SOL open is verified, and keeps the agreed off-switch note", async () => {
     const actual = await vi.importActual<typeof import("./feature-flags")>("./feature-flags");
-    expect(actual.SOL_INPUT_ENABLED).toBe(false);
+    expect(actual.SOL_INPUT_ENABLED).toBe(true);
     expect(SOL_INPUT_DISABLED_MESSAGE).toBe("SOL deposits are temporarily unavailable — please use another token.");
   });
 
