@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/rhc-univ4-open", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/rhc-univ4-open")>();
-  return { ...actual, runRhcUniv4Open: vi.fn(async () => ({ state: "needs_signature", plan: { feeRecipientIsPlaceholder: true } })) };
+  return { ...actual, runRhcUniv4Open: vi.fn(async () => ({ state: "needs_signature", plan: { kind: "swap" } })) };
 });
 import { runRhcUniv4Open } from "@/lib/rhc-univ4-open";
 import { GET, POST } from "./route";
@@ -37,7 +37,7 @@ describe("/api/rhc-univ4-open", () => {
     const response = await post(prepare);
     expect(response.status).toBe(200);
     expect(response.headers.get("Cache-Control")).toBe("no-store");
-    expect(await response.json()).toMatchObject({ state: "needs_signature", plan: { feeRecipientIsPlaceholder: true } });
+    expect(await response.json()).toMatchObject({ state: "needs_signature", plan: { kind: "swap" } });
     expect(runRhcUniv4Open).toHaveBeenCalledWith(expect.objectContaining({ action: "prepare", amount: "2000000000000000000", tickLower: -11 }));
   });
 

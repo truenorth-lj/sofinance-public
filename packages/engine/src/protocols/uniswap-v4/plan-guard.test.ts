@@ -1,8 +1,8 @@
-import { type Address, decodeAbiParameters, decodeFunctionData, encodeAbiParameters, encodeFunctionData, type Hex, hexToBytes, toHex } from "viem";
+import { type Address, decodeAbiParameters, decodeFunctionData, encodeAbiParameters, encodeFunctionData, getAddress, type Hex, hexToBytes, toHex } from "viem";
 import { describe, expect, it } from "vitest";
 import { UNIV4_RHC_ALLOWLISTED_POOLS } from "./constants";
 import { POSITION_MANAGER_ABI, UNIVERSAL_ROUTER_ABI, UR_COMMAND, UR_PARAMS, V4_ACTION } from "./open-abi";
-import { EVM_FEE_RECIPIENT, PINNED_UNIVERSAL_ROUTER } from "./open-constants";
+import { PINNED_UNIVERSAL_ROUTER } from "./open-constants";
 import type { OpenAmounts } from "./open-quote";
 import { checkOpenPlan, type GuardInput, PlanGuardError } from "./plan-guard";
 import { buildOpenExecute, buildPermitSingle } from "./tx-open-ur";
@@ -13,6 +13,8 @@ const attacker = "0x000000000000000000000000000000000000dEaD" as Address;
 const NOW = 1_800_000_000;
 const E18 = 10n ** 18n;
 const SIG = `0x${"ab".repeat(65)}` as Hex;
+/** Dummy fee recipient (never a real wallet; the real one is the server-only env RHC_UNIV4_FEE_WALLET). */
+const FEE = getAddress("0x000000000000000000000000000000000000fee5");
 
 const swapAmounts: OpenAmounts = {
   kind: "swap", zeroForOne: true, amountIn: 2n * E18, swapIn: 1_081_300_000_000_000_000n, quoteOut: 1_081_267_182_139_017_000n,
@@ -24,10 +26,10 @@ const noSwapAmounts: OpenAmounts = { ...swapAmounts, kind: "no-swap", swapIn: 0n
 
 function build(amounts = swapAmounts, tickLower = -11, tickUpper = 9) {
   const permit = buildPermitSingle(pool.currency0.address, amounts.amountIn, 0, NOW);
-  return buildOpenExecute({ pool, user, depositIsToken0: true, amounts, tickLower, tickUpper, permit, signature: SIG, nowSeconds: NOW });
+  return buildOpenExecute({ pool, user, depositIsToken0: true, amounts, tickLower, tickUpper, permit, signature: SIG, nowSeconds: NOW, feeRecipient: FEE });
 }
 const guard = (tx: GuardInput["tx"], extra: Partial<GuardInput> = {}) =>
-  checkOpenPlan({ tx, pool, user, tokenIn: pool.currency0.address, nowSeconds: NOW, routerCodeHash: PINNED_UNIVERSAL_ROUTER.runtimeCodeHash, ...extra });
+  checkOpenPlan({ tx, pool, user, tokenIn: pool.currency0.address, nowSeconds: NOW, routerCodeHash: PINNED_UNIVERSAL_ROUTER.runtimeCodeHash, feeRecipient: FEE, ...extra });
 const codeOf = (fn: () => unknown) => { try { fn(); } catch (e) { if (e instanceof PlanGuardError) return e.code; throw e; } return "ok"; };
 
 /** Editable view of an execute: UR commands/inputs, V4_SWAP actions/params, POSM actions/params. */
@@ -67,7 +69,7 @@ describe("checkOpenPlan accepts the builder's output", () => {
     expect(guard(build())).toMatchObject({ sequence: "swap", tickLower: -11, tickUpper: 9, permitAmount: 2n * E18 });
     expect(guard(build(noSwapAmounts, 5, 30))).toMatchObject({ sequence: "no-swap", tickLower: 5, tickUpper: 30 });
     const permit = buildPermitSingle(pool.currency0.address, 2n * E18, 0, NOW);
-    const pre = buildOpenExecute({ pool, user, depositIsToken0: true, amounts: swapAmounts, tickLower: -11, tickUpper: 9, permit, signature: null, nowSeconds: NOW });
+    const pre = buildOpenExecute({ pool, user, depositIsToken0: true, amounts: swapAmounts, tickLower: -11, tickUpper: 9, permit, signature: null, nowSeconds: NOW, feeRecipient: FEE });
     expect(guard(pre, { presign: true })).toMatchObject({ sequence: "swap", permitAmount: null });
     expect(codeOf(() => guard(pre))).toBe("ur-sequence");
   });
@@ -94,9 +96,11 @@ describe("checkOpenPlan rejects unsafe plans", () => {
   it("fee recipient, fee bps, fee on a no-swap plan", () => {
     const takePortionAt = (p: Parts) => p.swap!.actions.indexOf(V4_ACTION.TAKE_PORTION);
     expect(codeOf(() => guard(mutate(p => { p.swap!.params[takePortionAt(p)] = encodeAbiParameters(UR_PARAMS.takePortion, [pool.currency1.address, attacker, 10n]); })))).toBe("fee");
-    expect(codeOf(() => guard(mutate(p => { p.swap!.params[takePortionAt(p)] = encodeAbiParameters(UR_PARAMS.takePortion, [pool.currency1.address, EVM_FEE_RECIPIENT, 11n]); })))).toBe("fee");
+    expect(codeOf(() => guard(mutate(p => { p.swap!.params[takePortionAt(p)] = encodeAbiParameters(UR_PARAMS.takePortion, [pool.currency1.address, FEE, 11n]); })))).toBe("fee");
     // Fee on the deposit (input) token instead of the swap output.
-    expect(codeOf(() => guard(mutate(p => { p.swap!.params[takePortionAt(p)] = encodeAbiParameters(UR_PARAMS.takePortion, [pool.currency0.address, EVM_FEE_RECIPIENT, 10n]); })))).not.toBe("ok");
+    expect(codeOf(() => guard(mutate(p => { p.swap!.params[takePortionAt(p)] = encodeAbiParameters(UR_PARAMS.takePortion, [pool.currency0.address, FEE, 10n]); })))).not.toBe("ok");
+    // A plan built for one fee wallet is rejected when the guard expects another (config drift).
+    expect(codeOf(() => guard(build(), { feeRecipient: attacker }))).toBe("fee");
   });
   it("swap output taken to anyone but the POSM; leftover sweep to anyone but the POSM", () => {
     expect(codeOf(() => guard(mutate(p => { p.swap!.params[3] = encodeAbiParameters(UR_PARAMS.take, [pool.currency1.address, attacker, 0n]); })))).toBe("take-recipient");

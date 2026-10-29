@@ -80,7 +80,6 @@ export function OpenPreview({ result, pool }: { result: OpenFlowResult; pool: Rh
     {plan.kind === "swap" ? <p>SoFinance fee 0.10% of the swap output: {fmt(plan.fee, tout.decimals)} {tout.symbol}</p> : null}
     <p data-testid="leftover-note">{result.leftover.message.zh}<br /><span className="text-cream/70">{result.leftover.message.en}</span></p>
     <p className="text-xs text-smoke">Simulated on Robinhood Chain at block {plan.blockNumber}; gas {"gas" in result ? "limit" : "used"} {Number(gas).toLocaleString("en-US")}.</p>
-    {plan.feeRecipientIsPlaceholder ? <p className="text-xs text-amber-200/80" data-testid="fee-placeholder">Preview only: the fee wallet is a placeholder (TBD).</p> : null}
   </div>;
 }
 

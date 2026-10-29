@@ -22,7 +22,7 @@ const pool = (over: Partial<RhcPoolView> = {}): RhcPoolView => ({
 const plan = {
   kind: "swap", depositToken: SPCX, amountIn: "1000000000000000000", swapIn: "480000000000000000", quoteOut: "479000000000000000", minOut: "478000000000000000",
   fee: "479000000000000", liquidity: "1", amount0Max: "1", amount1Max: "1", priceTolBps: 20, slippageBps: 20, ticksCrossed: [], iterations: 3,
-  sqrtPriceBeforeX96: "1", sqrtPriceAfterX96: "1", blockNumber: "98425782", feeRecipient: SPCX, feeRecipientIsPlaceholder: true,
+  sqrtPriceBeforeX96: "1", sqrtPriceAfterX96: "1", blockNumber: "98425782", feeRecipient: SPCX,
 };
 const leftover = { pctOfDeposit: 2.5, display: "2.5", refund0: "1", refund1: "1",
   message: { zh: "約 2.5% 無法放進區間，會在同一筆交易退回你的錢包", en: "About 2.5% won't fit in the range and is returned to your wallet in the same transaction" } };
@@ -59,15 +59,22 @@ describe("EstimatedAprBadge", () => {
 });
 
 describe("OpenPreview", () => {
-  it("shows swap, fee, the leftover refund note (zh + en) and the placeholder fee wallet", () => {
+  it("shows swap, fee and the leftover refund note (zh + en); no placeholder note", () => {
     render(createElement(OpenPreview, { result: needsSig(true), pool: pool() }));
     expect(text()).toContain("Swap 0.48 SPCX → ≈0.479 SPCXon");
     expect(text()).toContain("SoFinance fee 0.10% of the swap output: 0.000479 SPCXon");
     const note = container.querySelector("[data-testid=leftover-note]")!.textContent!;
     expect(note).toContain("約 2.5% 無法放進區間，會在同一筆交易退回你的錢包");
     expect(note).toContain("About 2.5% won't fit in the range and is returned to your wallet in the same transaction");
-    expect(container.querySelector("[data-testid=fee-placeholder]")).not.toBeNull();
+    expect(container.querySelector("[data-testid=fee-placeholder]")).toBeNull();
+    expect(text()).not.toMatch(/placeholder|TBD/i);
     expect(container.querySelector("[data-testid=retry-notice]")).toBeNull();
+  });
+  it("shows 'fee wallet not configured' when the server fails closed", () => {
+    const r = { state: "failed", code: "fee-wallet-unconfigured", message: "Fee wallet not configured; opening is disabled" } as OpenFlowResult;
+    render(createElement(OpenPreview, { result: r, pool: pool() }));
+    expect(container.querySelector("[role=alert]")!.textContent).toBe("Fee wallet not configured; opening is disabled");
+    expect(container.querySelector("[data-testid=open-preview]")).toBeNull();
   });
   it("shows the PM re-quote wording on confirm_again", () => {
     const r = { ...needsSig(false), state: "confirm_again", attempt: 1, tx: {}, gas: { estimate: "1", limit: "500000" } } as unknown as OpenFlowResult;

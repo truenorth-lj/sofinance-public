@@ -6,6 +6,12 @@ import type { RpcStateOverrides } from "../protocols/uniswap-v4/open-chain";
  * Test-only helpers for the recorded open-position captures. The capture account is a THROWAWAY key derived from
  * a public label: it has never held funds and exists only inside eth_simulateV1 / eth_call state overrides.
  */
+/**
+ * DUMMY fee recipient the capture was recorded with (TAKE_PORTION recipient in the replayed calldata). Not a wallet:
+ * nobody holds a key for it. The real fee wallet is never in the repo (server-only env `RHC_UNIV4_FEE_WALLET`).
+ */
+export const CAPTURE_FEE_RECIPIENT: Address = "0x00000000000000000000000000000000000Fee01";
+
 export function captureAccountKey(): Hex {
   return keccak256(toBytes("sofinance-rhc-univ4-open-capture-throwaway-v1"));
 }

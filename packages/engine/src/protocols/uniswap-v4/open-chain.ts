@@ -4,7 +4,7 @@ import {
 import { UNIV4_RHC, type Univ4AllowlistedPool } from "./constants";
 import { evaluatePool, poolKeyOf, readPoolState, type Univ4PoolSummary } from "./discovery";
 import { ERC20_OPEN_ABI, KNOWN_REVERTS, PERMIT2_ABI, STATE_VIEW_TICKS_ABI, TRANSFER_TOPIC, V4_QUOTER_ABI } from "./open-abi";
-import { EVM_FEE_RECIPIENT, OPEN_FEE_BPS, PINNED_UNIVERSAL_ROUTER, TICK_SCAN_WORDS } from "./open-constants";
+import { OPEN_FEE_BPS, PINNED_UNIVERSAL_ROUTER, TICK_SCAN_WORDS } from "./open-constants";
 import type { OpenPoolState, QuoteFn } from "./open-quote";
 
 /**
@@ -175,11 +175,11 @@ export type OpenSimAnalysis = {
 const topicAddress = (topic: Hex | undefined) => (`0x${(topic ?? "").slice(-40)}`).toLowerCase();
 
 /** Transfer-log assertions for an open (sim_v2 `analyse_open`). */
-export function analyseOpenLogs(logs: SimLog[], pool: Univ4AllowlistedPool, user: Address, depositIsToken0: boolean): OpenSimAnalysis {
+export function analyseOpenLogs(logs: SimLog[], pool: Univ4AllowlistedPool, user: Address, depositIsToken0: boolean, feeRecipient: Address): OpenSimAnalysis {
   const t0 = pool.currency0.address.toLowerCase(), t1 = pool.currency1.address.toLowerCase();
   const [tokenIn, tokenOut] = depositIsToken0 ? [t0, t1] : [t1, t0];
   const pm = UNIV4_RHC.poolManager.toLowerCase(), posm = UNIV4_RHC.positionManager.toLowerCase();
-  const fee = EVM_FEE_RECIPIENT.toLowerCase(), u = user.toLowerCase();
+  const fee = feeRecipient.toLowerCase(), u = user.toLowerCase();
   let swapOutput = 0n, feePaid = 0n, feeOnDepositToken = 0n, refund0 = 0n, refund1 = 0n, nftTokenId: bigint | null = null;
   const nftTo: Address[] = [];
   for (const log of logs) {
