@@ -1,18 +1,22 @@
 "use client";
 
 import type { Univ4PoolApr } from "@sofinance/engine/protocols/uniswap-v4/market-data";
-import type { OpenFlowResult } from "@sofinance/engine/protocols/uniswap-v4/open-flow";
+import type { OpenFlowResult, PermitJson } from "@sofinance/engine/protocols/uniswap-v4/open-flow";
 import { useState } from "react";
 import { formatUnits, parseUnits } from "viem";
 import {
   connectEvmWallet, discoverEvmWallets, type Eip1193Provider, ensureRobinhoodChain, guardedWalletRequest, SIGNING_DISABLED_MESSAGE, WalletRequestError,
 } from "@/lib/rhc-wallet/eip1193";
+import {
+  checkExecuteTx, checkTx, explorerTxUrl, isPermitExpired, mintedPositionId, requireRobinhoodChain, SIGNATURE_EXPIRED_MESSAGE, waitForReceipt, walletTxParams,
+} from "@/lib/rhc-wallet/open-execute";
 import { openSteps, RETRY_CONFIRM_TEXT, stepProgressLabel, type OpenStepId } from "@/lib/rhc-wallet/open-steps";
 
 /**
  * Robinhood Chain (4663) Uniswap v4 open-position flow (design §6 PR5), behind `RHC_UNIV4_TRADING_ENABLED`.
  * Connect + chain switch are live; approve / sign / execute are wired through `guardedWalletRequest` and stay
- * disabled while `RHC_UNIV4_WALLET_SIGNING_ENABLED` is off (every target until PR6).
+ * disabled while `RHC_UNIV4_WALLET_SIGNING_ENABLED` is off (production). Flow: prepare → (approve) → Permit2 signature
+ * → server `finalize` (re-quote + simulate) → client guards (4663, pinned UR, sender, value 0) → `execute` → receipt.
  */
 
 export type RhcPoolView = {
@@ -84,8 +88,25 @@ export function OpenPreview({ result, pool }: { result: OpenFlowResult; pool: Rh
 }
 
 type Wallet = { provider: Eip1193Provider; address: `0x${string}`; name: string };
+type PrepareRequest = { poolId: string; user: string; depositToken: string; amount: string; tickLower: number; tickUpper: number };
+type Signed = { signature: `0x${string}`; permit: PermitJson };
+type Sent = { kind: "approve" | "execute"; hash: string; status: "pending" | "success" | "reverted" | "timeout"; positionId?: string | null };
+type ExecResult = Extract<OpenFlowResult, { state: "ready" | "confirm_again" }>;
 
-export function RhcUniv4OpenPanel({ pool, signingEnabled }: { pool: RhcPoolView | null; signingEnabled: boolean }) {
+export function TxStatus({ sent }: { sent: Sent }) {
+  const label = sent.kind === "approve" ? "Approval" : "Open transaction";
+  const status = { pending: "waiting for confirmation…", success: "confirmed", reverted: "reverted", timeout: "not confirmed after 2 minutes; check the explorer" }[sent.status];
+  return <p role="status" className="mt-3 text-sm text-cream/90" data-testid={`tx-${sent.kind}`}>
+    {label} {status}:{" "}
+    <a href={explorerTxUrl(sent.hash)} target="_blank" rel="noopener noreferrer" className="underline">{sent.hash.slice(0, 10)}…{sent.hash.slice(-6)}</a>
+    {sent.positionId ? <span> · Position NFT #{sent.positionId}</span> : null}
+  </p>;
+}
+
+/** Receipt poll cadence (tests pass a short one). */
+export type ReceiptPoll = { intervalMs?: number; timeoutMs?: number };
+
+export function RhcUniv4OpenPanel({ pool, signingEnabled, receiptPoll }: { pool: RhcPoolView | null; signingEnabled: boolean; receiptPoll?: ReceiptPoll }) {
   const [wallet, setWallet] = useState<Wallet | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -93,6 +114,13 @@ export function RhcUniv4OpenPanel({ pool, signingEnabled }: { pool: RhcPoolView 
   const [amount, setAmount] = useState("1");
   const [halfWidth, setHalfWidth] = useState<number>(RANGE_PRESETS[0]);
   const [result, setResult] = useState<OpenFlowResult | null>(null);
+  const [prepared, setPrepared] = useState<{ request: PrepareRequest } | null>(null);
+  const [step, setStep] = useState<OpenStepId | null>(null);
+  const [signed, setSigned] = useState<Signed | null>(null);
+  const [exec, setExec] = useState<ExecResult | null>(null);
+  const [sent, setSent] = useState<Sent | null>(null);
+
+  const reset = () => { setResult(null); setPrepared(null); setStep(null); setSigned(null); setExec(null); setSent(null); };
 
   if (!pool) return <p className="mt-6 text-sm text-smoke">Pool data is unavailable right now.</p>;
   const token = side === 0 ? pool.token0 : pool.token1;
@@ -110,31 +138,91 @@ export function RhcUniv4OpenPanel({ pool, signingEnabled }: { pool: RhcPoolView 
 
   const preview = async () => {
     if (!wallet || pool.tick === null) return;
-    setError(null); setBusy(true); setResult(null);
+    setError(null); setBusy(true); reset();
     try {
       let wei: bigint;
       try { wei = parseUnits(amount.trim(), token.decimals); } catch { throw new Error("Enter a valid amount"); }
       if (wei <= 0n) throw new Error("Enter a valid amount");
+      const request: PrepareRequest = { poolId: pool.poolId, user: wallet.address, depositToken: token.address, amount: wei.toString(),
+        tickLower: pool.tick - halfWidth, tickUpper: pool.tick + halfWidth };
       const response = await fetch("/api/rhc-univ4-open", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "prepare", poolId: pool.poolId, user: wallet.address, depositToken: token.address, amount: wei.toString(),
-          tickLower: pool.tick - halfWidth, tickUpper: pool.tick + halfWidth }) });
+        body: JSON.stringify({ action: "prepare", ...request }) });
       const body = await response.json().catch(() => null) as OpenFlowResult | { error?: string } | null;
-      if (body && "state" in body) setResult(body);
+      if (body && "state" in body) {
+        setResult(body); setPrepared({ request });
+        if (body.state === "needs_signature") setStep(body.approvalTx ? "approve" : "sign");
+      }
       else throw new Error(body && "error" in body && body.error ? body.error : "Preview failed");
     } catch (e) { setError(e instanceof Error ? e.message : "Preview failed"); } finally { setBusy(false); }
   };
 
+  const fail = (e: unknown, fallback: string) => setError(e instanceof Error ? e.message : fallback);
+
+  /** Server re-quote + simulation with the user's Permit2 signature; returns the unsigned `execute`. */
+  const finalize = async (signedNow: Signed, attempt: number): Promise<boolean> => {
+    if (!wallet || !prepared) return false;
+    if (isPermitExpired(signedNow.permit.sigDeadline)) throw new Error(SIGNATURE_EXPIRED_MESSAGE);
+    const response = await fetch("/api/rhc-univ4-open", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "finalize", ...prepared.request, attempt, signature: signedNow.signature, permit: signedNow.permit }) });
+    const body = await response.json().catch(() => null) as OpenFlowResult | { error?: string } | null;
+    if (!body || !("state" in body)) throw new Error(body && "error" in body && body.error ? body.error : "Finalize failed");
+    if (body.state === "failed") throw new Error(/expired/i.test(body.message) ? SIGNATURE_EXPIRED_MESSAGE : body.message);
+    if (body.state === "needs_signature") throw new Error("Unexpected finalize response");
+    setExec(body); setStep("execute");
+    return true;
+  };
+
+  const send = async (kind: Sent["kind"], tx: Parameters<typeof walletTxParams>[0]) => {
+    if (!wallet) return null;
+    await requireRobinhoodChain(wallet.provider);
+    const hash = await guardedWalletRequest(wallet.provider, "eth_sendTransaction", [walletTxParams(tx)]);
+    if (typeof hash !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(hash)) throw new Error("Wallet returned no transaction hash");
+    setSent({ kind, hash, status: "pending" });
+    const receipt = await waitForReceipt(wallet.provider, hash, receiptPoll);
+    const status: Sent["status"] = !receipt ? "timeout" : receipt.status === "0x1" ? "success" : "reverted";
+    const positionId = kind === "execute" && receipt ? mintedPositionId(receipt, wallet.address) : null;
+    setSent({ kind, hash, status, positionId });
+    return status;
+  };
+
   const runStep = async (id: OpenStepId) => {
-    if (!wallet || !result || result.state !== "needs_signature") return;
-    setError(null);
+    if (!wallet || !result || result.state !== "needs_signature" || !prepared || busy) return;
+    setError(null); setBusy(true);
     try {
-      if (id === "approve" && result.approvalTx) await guardedWalletRequest(wallet.provider, "eth_sendTransaction", [result.approvalTx]);
-      if (id === "sign") await guardedWalletRequest(wallet.provider, "eth_signTypedData_v4", [wallet.address, JSON.stringify(result.typedData)]);
-    } catch (e) { setError(e instanceof Error ? e.message : "Wallet request failed"); }
+      if (id === "approve" && result.approvalTx) {
+        checkTx(result.approvalTx, wallet.address, prepared.request.depositToken, "Approval");
+        const status = await send("approve", result.approvalTx);
+        if (status === "success") setStep("sign");
+        else if (status === "reverted") { setStep(null); throw new Error("Approval reverted on chain. Preview again."); }
+        else if (status === "timeout") { setStep(null); throw new Error("Approval not confirmed yet. Check the explorer, then preview again."); }
+      }
+      if (id === "sign") {
+        if (isPermitExpired(result.permit.sigDeadline)) throw new Error(SIGNATURE_EXPIRED_MESSAGE);
+        const signature = await guardedWalletRequest(wallet.provider, "eth_signTypedData_v4", [wallet.address, JSON.stringify(result.typedData)]);
+        if (typeof signature !== "string" || !/^0x[0-9a-fA-F]{130}$/.test(signature)) throw new Error("Wallet returned an invalid signature");
+        const signedNow: Signed = { signature: signature as `0x${string}`, permit: result.permit };
+        setSigned(signedNow);
+        await finalize(signedNow, 0);
+      }
+      if (id === "execute") {
+        if (!exec || !signed) return;
+        if (isPermitExpired(signed.permit.sigDeadline)) throw new Error(SIGNATURE_EXPIRED_MESSAGE);
+        checkExecuteTx(exec.tx, wallet.address);
+        const status = await send("execute", exec.tx);
+        if (status === "success" || status === "timeout") setStep(null);
+        if (status === "timeout") throw new Error("Not confirmed after 2 minutes. Check the explorer before trying again; do not resend.");
+        if (status === "reverted") {
+          // Design §3.10: one automatic re-quote reusing the same Permit2 signature; the user confirms once more.
+          // The server enforces the retry budget and returns the "price moving too fast" failure after that.
+          setError("The transaction reverted on chain. Re-quoting…");
+          if (await finalize(signed, exec.attempt + 1)) setError(null);
+        }
+      }
+    } catch (e) { fail(e, "Wallet request failed"); } finally { setBusy(false); }
   };
 
   const needsApproval = result?.state === "needs_signature" && result.approvalTx !== null;
-  const current: OpenStepId | null = result?.state === "needs_signature" ? (needsApproval ? "approve" : "sign") : null;
+  const current: OpenStepId | null = busy ? null : step;
 
   return <section className="mt-6 rounded-2xl border border-white/12 bg-white/[0.03] p-4 sm:p-5" aria-label="Open a Robinhood Chain position">
     <div className="flex flex-wrap items-center justify-between gap-3">
@@ -149,15 +237,15 @@ export function RhcUniv4OpenPanel({ pool, signingEnabled }: { pool: RhcPoolView 
     {pool.status !== "listed" ? <p role="alert" className="mt-3 text-sm text-red-200">This pool is delisted; opening is disabled.</p> : null}
     <div className="mt-4 grid gap-3 sm:grid-cols-3">
       <label className="text-xs text-smoke">Deposit token
-        <select value={side} onChange={e => { setSide(Number(e.target.value) as 0 | 1); setResult(null); }} className="mt-1 block w-full rounded-lg bg-black/30 p-2 text-sm text-cream">
+        <select value={side} onChange={e => { setSide(Number(e.target.value) as 0 | 1); reset(); }} className="mt-1 block w-full rounded-lg bg-black/30 p-2 text-sm text-cream">
           <option value={0}>{pool.token0.symbol}</option><option value={1}>{pool.token1.symbol}</option>
         </select>
       </label>
       <label className="text-xs text-smoke">Amount
-        <input inputMode="decimal" value={amount} onChange={e => { setAmount(e.target.value); setResult(null); }} className="mt-1 block w-full rounded-lg bg-black/30 p-2 text-sm text-cream" />
+        <input inputMode="decimal" value={amount} onChange={e => { setAmount(e.target.value); reset(); }} className="mt-1 block w-full rounded-lg bg-black/30 p-2 text-sm text-cream" />
       </label>
       <label className="text-xs text-smoke">Range (minimum ±10 ticks)
-        <select value={halfWidth} onChange={e => { setHalfWidth(Number(e.target.value)); setResult(null); }} className="mt-1 block w-full rounded-lg bg-black/30 p-2 text-sm text-cream">
+        <select value={halfWidth} onChange={e => { setHalfWidth(Number(e.target.value)); reset(); }} className="mt-1 block w-full rounded-lg bg-black/30 p-2 text-sm text-cream">
           {RANGE_PRESETS.map(h => <option key={h} value={h}>±{h} ticks (≈±{((1.0001 ** h - 1) * 100).toFixed(2)}%)</option>)}
         </select>
       </label>
@@ -165,7 +253,8 @@ export function RhcUniv4OpenPanel({ pool, signingEnabled }: { pool: RhcPoolView 
     <button type="button" onClick={preview} disabled={!wallet || busy || pool.status !== "listed" || pool.tick === null}
       className="mt-4 rounded-xl border border-white/25 px-4 py-2 text-sm font-semibold text-cream disabled:opacity-40">Preview open (simulated)</button>
     {error ? <p role="alert" className="mt-3 text-sm text-red-200">{error}</p> : null}
-    {result ? <OpenPreview result={result} pool={pool} /> : null}
+    {result ? <OpenPreview result={exec ?? result} pool={pool} /> : null}
     {result && result.state !== "failed" ? <StepList needsApproval={needsApproval} current={current} signingEnabled={signingEnabled} onStep={runStep} /> : null}
+    {sent ? <TxStatus sent={sent} /> : null}
   </section>;
 }
