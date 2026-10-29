@@ -2,7 +2,7 @@ import { type Address, decodeAbiParameters, decodeFunctionData, type Hex, hexToB
 import { UNIV4_RHC, type Univ4AllowlistedPool } from "./constants";
 import { POSITION_MANAGER_ABI, UNIVERSAL_ROUTER_ABI, UR_COMMAND, UR_PARAMS, V4_ACTION } from "./open-abi";
 import {
-  EVM_FEE_RECIPIENT, EXECUTE_DEADLINE_SECONDS, OPEN_FEE_BPS, PERMIT_EXPIRATION_SECONDS, PERMIT_SIG_DEADLINE_SECONDS, PINNED_UNIVERSAL_ROUTER, UR_ADDRESS_THIS,
+  EXECUTE_DEADLINE_SECONDS, OPEN_FEE_BPS, PERMIT_EXPIRATION_SECONDS, PERMIT_SIG_DEADLINE_SECONDS, PINNED_UNIVERSAL_ROUTER, UR_ADDRESS_THIS,
 } from "./open-constants";
 import { assertOpenRange, OpenPlanError } from "./open-quote";
 
@@ -47,6 +47,8 @@ export type GuardInput = {
   presign?: boolean;
   /** keccak256 of the router's runtime code at `latest`, when the caller has read it. */
   routerCodeHash?: Hex | null;
+  /** The only allowed TAKE_PORTION recipient (the configured EVM fee wallet). */
+  feeRecipient: Address;
 };
 
 export type GuardResult = { sequence: "swap" | "no-swap"; tickLower: number; tickUpper: number; liquidity: bigint; permitAmount: bigint | null };
@@ -88,7 +90,7 @@ export function checkOpenPlan(input: GuardInput): GuardResult {
     } else if (command === UR_COMMAND.PERMIT2_TRANSFER_FROM) {
       const [token, recipient, amount] = decodeAbiParameters(UR_PARAMS.permit2TransferFrom, data);
       if (!same(token, tokenIn)) fail("transfer-recipient", "transferFrom token must be the deposit token");
-      if (same(recipient, EVM_FEE_RECIPIENT)) fail("transfer-recipient", "No direct transfer to the fee recipient");
+      if (same(recipient, input.feeRecipient)) fail("transfer-recipient", "No direct transfer to the fee recipient");
       const expected = commands.includes(UR_COMMAND.V4_SWAP) ? UR_ADDRESS_THIS : posm;
       if (!same(recipient, expected)) fail("transfer-recipient", `transferFrom recipient must be ${expected}`);
       transferAmount = amount;
@@ -103,7 +105,7 @@ export function checkOpenPlan(input: GuardInput): GuardResult {
       if (swap.zeroForOne !== same(tokenIn, pool.currency0.address)) fail("swap-actions", "Swap direction must sell the deposit token");
       if (swap.amountOutMinimum <= 0n) fail("swap-actions", "Swap must set amountOutMinimum");
       const [feeCurrency, feeRecipient, bips] = decodeAbiParameters(UR_PARAMS.takePortion, params[2]!);
-      if (!same(feeRecipient, EVM_FEE_RECIPIENT) || bips !== OPEN_FEE_BPS || !same(feeCurrency, tokenOut))
+      if (!same(feeRecipient, input.feeRecipient) || bips !== OPEN_FEE_BPS || !same(feeCurrency, tokenOut))
         fail("fee", "Fee must be TAKE_PORTION(swap output token, fee recipient, 10 bps)");
       feeSeen++;
       const [, takeRecipient] = decodeAbiParameters(UR_PARAMS.take, params[3]!);

@@ -14,13 +14,9 @@ export const PINNED_UNIVERSAL_ROUTER = {
 } as const;
 
 /**
- * TBD — PLACEHOLDER fee recipient. NOT a real wallet: nobody holds a key for it. The EVM fee wallet is a pending
- * PM/LJ decision (design.md §10.2). This must be replaced before any real broadcast (PR6 gate); the plan checker
- * flags `feeRecipientIsPlaceholder` on every plan until then.
+ * The fee recipient (TAKE_PORTION) is NOT a constant: it comes from the server-only env var `RHC_UNIV4_FEE_WALLET`
+ * (see `fee-recipient.ts`) and is passed to the builder, guard and simulation checks explicitly.
  */
-export const EVM_FEE_RECIPIENT_PLACEHOLDER: Address = "0x00000000000000000000000000000000000fee01";
-export const EVM_FEE_RECIPIENT: Address = EVM_FEE_RECIPIENT_PLACEHOLDER;
-export const EVM_FEE_RECIPIENT_IS_PLACEHOLDER = true as const;
 
 /** SoFinance fee: TAKE_PORTION on the swap OUTPUT only (never on the unswapped side). */
 export const OPEN_FEE_BPS = 10n;

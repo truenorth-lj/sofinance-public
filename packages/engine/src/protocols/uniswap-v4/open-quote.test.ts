@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   EXECUTE_DEADLINE_SECONDS, GAS_BUFFER_BPS, MAX_REQUOTE_RETRIES, MIN_RANGE_WIDTH_TICKS, OPEN_FEE_BPS, PERMIT_EXPIRATION_SECONDS,
   PERMIT_SIG_DEADLINE_SECONDS, PRICE_TOL_FLOOR_BPS, PRICE_TOL_HALFWIDTH_PCT, REQUOTE_CONFIRM_MESSAGE, SLIPPAGE_BPS,
-  EVM_FEE_RECIPIENT, EVM_FEE_RECIPIENT_IS_PLACEHOLDER, PINNED_UNIVERSAL_ROUTER,
+  PINNED_UNIVERSAL_ROUTER,
 } from "./open-constants";
 import { assertOpenRange, defaultPriceTolBps, OpenPlanError, type OpenPoolState, planOpenAmounts, type QuoteFn, solveSplit, walkSqrtPriceAfter } from "./open-quote";
 import { amountsForLiquidity, Q96, sqrtPriceAtTick } from "./tick-math";
@@ -27,10 +27,6 @@ describe("open constants (design §3.10, PM decisions 2026-10-29)", () => {
         GAS_BUFFER_BPS: 2500n, PERMIT_EXPIRATION_SECONDS: 1800, PERMIT_SIG_DEADLINE_SECONDS: 600, EXECUTE_DEADLINE_SECONDS: 600 });
     expect(PINNED_UNIVERSAL_ROUTER.address).toBe("0x204FAca1764B154221e35c0d20aBb3c525710498");
     expect(REQUOTE_CONFIRM_MESSAGE).toEqual({ zh: "價格剛變動，已重新報價，請再確認一次", en: "Price just moved. We re-quoted it, please confirm once more." });
-  });
-  it("fee recipient is still the TBD placeholder", () => {
-    expect(EVM_FEE_RECIPIENT_IS_PLACEHOLDER).toBe(true);
-    expect(EVM_FEE_RECIPIENT).toBe("0x00000000000000000000000000000000000fee01");
   });
 });
 

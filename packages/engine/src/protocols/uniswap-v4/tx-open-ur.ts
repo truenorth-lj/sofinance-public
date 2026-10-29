@@ -2,7 +2,7 @@ import { type Address, encodeAbiParameters, encodeFunctionData, type Hex, toHex 
 import { UNIV4_RHC, type Univ4AllowlistedPool } from "./constants";
 import { POSITION_MANAGER_ABI, UNIVERSAL_ROUTER_ABI, UR_COMMAND, UR_PARAMS, V4_ACTION } from "./open-abi";
 import {
-  EVM_FEE_RECIPIENT, EXECUTE_DEADLINE_SECONDS, OPEN_DELTA, OPEN_FEE_BPS, PERMIT_EXPIRATION_SECONDS, PERMIT_SIG_DEADLINE_SECONDS,
+  EXECUTE_DEADLINE_SECONDS, OPEN_DELTA, OPEN_FEE_BPS, PERMIT_EXPIRATION_SECONDS, PERMIT_SIG_DEADLINE_SECONDS,
   PINNED_UNIVERSAL_ROUTER, UR_ADDRESS_THIS,
 } from "./open-constants";
 import type { OpenAmounts } from "./open-quote";
@@ -58,6 +58,8 @@ export type BuildOpenArgs = {
    */
   signature: Hex | null;
   nowSeconds: number;
+  /** TAKE_PORTION recipient: the checksummed EVM fee wallet from `RHC_UNIV4_FEE_WALLET` (never a constant). */
+  feeRecipient: Address;
 };
 
 const poolKeyTuple = (pool: Univ4AllowlistedPool) => ({
@@ -82,7 +84,7 @@ export function buildOpenExecute(args: BuildOpenArgs): OpenTxRequest & { deadlin
     const params = [
       encodeAbiParameters(UR_PARAMS.settle, [tokenIn, a.swapIn, false]),
       encodeAbiParameters(UR_PARAMS.exactInputSingle, [{ poolKey: poolKeyTuple(pool), zeroForOne: z, amountIn: OPEN_DELTA, amountOutMinimum: a.minOut, minHopPriceX36: 0n, hookData: "0x" }]),
-      encodeAbiParameters(UR_PARAMS.takePortion, [tokenOut, EVM_FEE_RECIPIENT, OPEN_FEE_BPS]),
+      encodeAbiParameters(UR_PARAMS.takePortion, [tokenOut, args.feeRecipient, OPEN_FEE_BPS]),
       encodeAbiParameters(UR_PARAMS.take, [tokenOut, posm, OPEN_DELTA]),
     ];
     commands.push(UR_COMMAND.V4_SWAP);

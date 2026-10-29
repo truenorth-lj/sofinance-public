@@ -60,7 +60,7 @@ export function isRhcUniv4DiscoveryEnabled(target: DeployTarget = deployTarget()
  * Uniswap v4 on Robinhood Chain: server-side BUILD + eth_simulateV1 of the open-position
  * transaction (`POST /api/rhc-univ4-open`). OFF in production, same targets as above.
  * The route returns unsigned calldata and Permit2 typed data only: it never signs, never
- * broadcasts, and the fee recipient is still a placeholder (`EVM_FEE_RECIPIENT_IS_PLACEHOLDER`).
+ * broadcasts. The fee recipient is the server-only env `RHC_UNIV4_FEE_WALLET`; unset/invalid fails closed.
  */
 export const RHC_UNIV4_TX_BUILD_ENABLED: Readonly<Record<DeployTarget, boolean>> = Object.freeze({
   production: false,

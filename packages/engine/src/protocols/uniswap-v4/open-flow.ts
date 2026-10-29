@@ -3,8 +3,9 @@ import { UNIV4_RHC, type Univ4AllowlistedPool } from "./constants";
 import { ERC20_OPEN_ABI, PERMIT2_ABI } from "./open-abi";
 import { analyseOpenLogs, type OpenContext, type OpenSimAnalysis, quoterFor, readOpenContext, type RpcStateOverrides, simulateCalls, toViemStateOverride } from "./open-chain";
 import {
-  EVM_FEE_RECIPIENT, EVM_FEE_RECIPIENT_IS_PLACEHOLDER, GAS_BUFFER_BPS, LEFTOVER_REFUND_TEMPLATE, MAX_REQUOTE_RETRIES, MAX_UINT256, PINNED_UNIVERSAL_ROUTER, REQUOTE_CONFIRM_MESSAGE,
+  GAS_BUFFER_BPS, LEFTOVER_REFUND_TEMPLATE, MAX_REQUOTE_RETRIES, MAX_UINT256, PINNED_UNIVERSAL_ROUTER, REQUOTE_CONFIRM_MESSAGE,
 } from "./open-constants";
+import { FEE_WALLET_UNCONFIGURED_MESSAGE, parseRhcFeeRecipient } from "./fee-recipient";
 import { assertOpenRange, type OpenAmounts, OpenPlanError, planOpenAmounts, type QuoteFn } from "./open-quote";
 import { buildOpenExecute, buildPermitSingle, type OpenTxRequest, type PermitSingle, permitTypedData } from "./tx-open-ur";
 import { checkOpenPlan, PlanGuardError } from "./plan-guard";
@@ -30,7 +31,7 @@ export type OpenRequest = {
 
 export type OpenFailureCode =
   | OpenPlanError["code"] | PlanGuardError["code"] | "pool-delisted" | "deposit-token" | "insufficient-balance" | "simulation-reverted"
-  | "simulation-check" | "permit-mismatch" | "signature-invalid" | "retry-budget" | "rpc";
+  | "simulation-check" | "permit-mismatch" | "signature-invalid" | "retry-budget" | "rpc" | "fee-wallet-unconfigured";
 
 export type OpenPlanView = {
   kind: OpenAmounts["kind"];
@@ -50,9 +51,8 @@ export type OpenPlanView = {
   sqrtPriceBeforeX96: string;
   sqrtPriceAfterX96: string;
   blockNumber: string;
+  /** TAKE_PORTION recipient: the configured EVM fee wallet (`RHC_UNIV4_FEE_WALLET`). */
   feeRecipient: Address;
-  /** True until LJ's EVM fee wallet replaces the placeholder (design §10.2). */
-  feeRecipientIsPlaceholder: boolean;
 };
 
 /** Refunded share of the deposit (both tokens, valued in the deposit token at the post-swap price). */
@@ -76,6 +76,11 @@ export type OpenFlowDeps = {
   quote?: QuoteFn;
   /** Offline captures / tests only (balances for a throwaway account). Never set from a request. */
   stateOverrides?: RpcStateOverrides;
+  /**
+   * EVM fee wallet from the host's server-only `RHC_UNIV4_FEE_WALLET`. Fail closed: missing or not an EIP-55
+   * checksummed address → `fee-wallet-unconfigured`, before any RPC call, and nothing is built.
+   */
+  feeRecipient: string | null | undefined;
 };
 
 export const RETRY_FAILED_MESSAGE = {
@@ -97,13 +102,13 @@ function permitTypedDataJson(p: PermitSingle) {
   return { ...t, message: permitJson(p) };
 }
 
-function planView(req: OpenRequest, ctx: OpenContext, a: OpenAmounts): OpenPlanView {
+function planView(req: OpenRequest, ctx: OpenContext, a: OpenAmounts, feeRecipient: Address): OpenPlanView {
   return {
     kind: a.kind, depositToken: req.depositToken, amountIn: a.amountIn.toString(), swapIn: a.swapIn.toString(), quoteOut: a.quoteOut.toString(),
     minOut: a.minOut.toString(), fee: a.fee.toString(), liquidity: a.liquidity.toString(), amount0Max: a.amount0Max.toString(), amount1Max: a.amount1Max.toString(),
     priceTolBps: a.priceTolBps, slippageBps: Number(a.slippageBps), ticksCrossed: a.ticksCrossed, iterations: a.iterations,
     sqrtPriceBeforeX96: ctx.state.sqrtPriceX96.toString(), sqrtPriceAfterX96: a.sqrtPriceAfterX96.toString(), blockNumber: ctx.blockNumber.toString(),
-    feeRecipient: EVM_FEE_RECIPIENT, feeRecipientIsPlaceholder: EVM_FEE_RECIPIENT_IS_PLACEHOLDER,
+    feeRecipient,
   };
 }
 
@@ -173,13 +178,15 @@ async function plan(deps: OpenFlowDeps, req: OpenRequest): Promise<Planned | Ope
 }
 
 export async function prepareOpen(deps: OpenFlowDeps, req: OpenRequest): Promise<OpenFlowResult> {
+  const feeRecipient = parseRhcFeeRecipient(deps.feeRecipient);
+  if (!feeRecipient) return failed("fee-wallet-unconfigured", FEE_WALLET_UNCONFIGURED_MESSAGE);
   const planned = await plan(deps, req);
   if ("state" in planned) return planned;
   const { ctx, amounts, depositIsToken0 } = planned;
   const permit = buildPermitSingle(req.depositToken, req.amount, ctx.user.permit2.nonce, ctx.nowSeconds);
-  const tx = buildOpenExecute({ pool: req.pool, user: req.user, depositIsToken0, amounts, tickLower: req.tickLower, tickUpper: req.tickUpper, permit, signature: null, nowSeconds: ctx.nowSeconds });
+  const tx = buildOpenExecute({ pool: req.pool, user: req.user, depositIsToken0, amounts, tickLower: req.tickLower, tickUpper: req.tickUpper, permit, signature: null, nowSeconds: ctx.nowSeconds, feeRecipient });
   try {
-    checkOpenPlan({ tx, pool: req.pool, user: req.user, tokenIn: req.depositToken, nowSeconds: ctx.nowSeconds, presign: true, routerCodeHash: ctx.routerCodeHash });
+    checkOpenPlan({ tx, pool: req.pool, user: req.user, tokenIn: req.depositToken, nowSeconds: ctx.nowSeconds, presign: true, routerCodeHash: ctx.routerCodeHash, feeRecipient });
   } catch (error) {
     if (error instanceof PlanGuardError) return failed(error.code, error.message);
     throw error;
@@ -196,10 +203,10 @@ export async function prepareOpen(deps: OpenFlowDeps, req: OpenRequest): Promise
     sim = await simulateCalls(deps.client, [...(approvalTx ? [approvalTx] : []), permit2Approve, tx], deps.stateOverrides);
   } catch { return failed("rpc", "Simulation unavailable"); }
   const last = sim.at(-1)!;
-  const view = planView(req, ctx, amounts);
+  const view = planView(req, ctx, amounts, feeRecipient);
   if (sim.slice(0, -1).some(s => s.status !== "success")) return failed("simulation-reverted", "Approval step failed in simulation");
   if (last.status !== "success") return failed("simulation-reverted", `Simulation reverted: ${last.revert}`);
-  const analysis = analyseOpenLogs(last.logs, req.pool, req.user, depositIsToken0);
+  const analysis = analyseOpenLogs(last.logs, req.pool, req.user, depositIsToken0, feeRecipient);
   const problem = simulationProblems(analysis, amounts.kind);
   if (problem) return failed("simulation-check", problem);
   return { state: "needs_signature", plan: view, leftover: leftoverRefund(analysis, amounts, depositIsToken0), typedData: permitTypedDataJson(permit), permit: permitJson(permit),
@@ -209,6 +216,8 @@ export async function prepareOpen(deps: OpenFlowDeps, req: OpenRequest): Promise
 export async function finalizeOpen(deps: OpenFlowDeps, req: OpenRequest & { permit: PermitSingle; signature: Hex; attempt: number }): Promise<OpenFlowResult> {
   if (!Number.isInteger(req.attempt) || req.attempt < 0) return failed("retry-budget", "Invalid attempt");
   if (req.attempt > MAX_REQUOTE_RETRIES) return failed("retry-budget", RETRY_FAILED_MESSAGE.en, req.attempt);
+  const feeRecipient = parseRhcFeeRecipient(deps.feeRecipient);
+  if (!feeRecipient) return failed("fee-wallet-unconfigured", FEE_WALLET_UNCONFIGURED_MESSAGE, req.attempt);
   const p = req.permit;
   if (!isAddressEqual(p.details.token, req.depositToken) || p.details.amount !== req.amount || !isAddressEqual(p.spender, PINNED_UNIVERSAL_ROUTER.address))
     return failed("permit-mismatch", "Permit does not match this deposit");
@@ -221,9 +230,9 @@ export async function finalizeOpen(deps: OpenFlowDeps, req: OpenRequest & { perm
   if (BigInt(ctx.nowSeconds) >= p.sigDeadline || ctx.nowSeconds >= p.details.expiration) return failed("permit-mismatch", "Permit2 signature expired; please sign again", req.attempt);
   if (ctx.user.permit2.nonce !== p.details.nonce) return failed("permit-mismatch", "Permit2 nonce changed; please sign again", req.attempt);
   if (ctx.user.erc20AllowanceToPermit2 < req.amount) return failed("permit-mismatch", "Approve Permit2 for this token first", req.attempt);
-  const tx = buildOpenExecute({ pool: req.pool, user: req.user, depositIsToken0, amounts, tickLower: req.tickLower, tickUpper: req.tickUpper, permit: p, signature: req.signature, nowSeconds: ctx.nowSeconds });
+  const tx = buildOpenExecute({ pool: req.pool, user: req.user, depositIsToken0, amounts, tickLower: req.tickLower, tickUpper: req.tickUpper, permit: p, signature: req.signature, nowSeconds: ctx.nowSeconds, feeRecipient });
   try {
-    checkOpenPlan({ tx, pool: req.pool, user: req.user, tokenIn: req.depositToken, nowSeconds: ctx.nowSeconds, routerCodeHash: ctx.routerCodeHash });
+    checkOpenPlan({ tx, pool: req.pool, user: req.user, tokenIn: req.depositToken, nowSeconds: ctx.nowSeconds, routerCodeHash: ctx.routerCodeHash, feeRecipient });
   } catch (error) {
     if (error instanceof PlanGuardError) return failed(error.code, error.message, req.attempt);
     throw error;
@@ -233,14 +242,14 @@ export async function finalizeOpen(deps: OpenFlowDeps, req: OpenRequest & { perm
     [sim] = await simulateCalls(deps.client, [tx], deps.stateOverrides);
   } catch { return failed("rpc", "Simulation unavailable", req.attempt); }
   if (sim!.status !== "success") return failed("simulation-reverted", `Simulation reverted: ${sim!.revert}`, req.attempt);
-  const analysis = analyseOpenLogs(sim!.logs, req.pool, req.user, depositIsToken0);
+  const analysis = analyseOpenLogs(sim!.logs, req.pool, req.user, depositIsToken0, feeRecipient);
   const problem = simulationProblems(analysis, amounts.kind);
   if (problem) return failed("simulation-check", problem, req.attempt);
   try {
     estimate = await deps.client.estimateGas({ account: req.user, to: tx.to, data: tx.data, value: 0n, blockTag: "latest", stateOverride: toViemStateOverride(deps.stateOverrides) });
   } catch { return failed("rpc", "Gas estimate failed", req.attempt); }
   const limit = estimate * (10_000n + GAS_BUFFER_BPS) / 10_000n;
-  const base = { attempt: req.attempt, plan: planView(req, ctx, amounts), leftover: leftoverRefund(analysis, amounts, depositIsToken0), tx: txView(tx, limit), gas: { estimate: estimate.toString(), limit: limit.toString() },
+  const base = { attempt: req.attempt, plan: planView(req, ctx, amounts, feeRecipient), leftover: leftoverRefund(analysis, amounts, depositIsToken0), tx: txView(tx, limit), gas: { estimate: estimate.toString(), limit: limit.toString() },
     simulation: simView("success", sim!.gasUsed, null, analysis) };
   return req.attempt === 0 ? { state: "ready", ...base } : { state: "confirm_again", ...base, message: REQUOTE_CONFIRM_MESSAGE };
 }

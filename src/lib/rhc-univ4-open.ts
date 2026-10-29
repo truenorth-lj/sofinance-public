@@ -2,6 +2,7 @@ import "@/lib/engine-host";
 import "server-only";
 
 import { UNIV4_RHC_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/uniswap-v4/constants";
+import { RHC_FEE_WALLET_ENV } from "@sofinance/engine/protocols/uniswap-v4/fee-recipient";
 import { finalizeOpen, type OpenFlowResult, permitFromJson, prepareOpen } from "@sofinance/engine/protocols/uniswap-v4/open-flow";
 import { createRhcClient } from "@sofinance/engine/rpc-evm/index";
 import { type Address, getAddress, type Hex, isAddress, isAddressEqual, type PublicClient } from "viem";
@@ -9,7 +10,8 @@ import { z } from "zod";
 
 /**
  * Robinhood Chain Uniswap v4 open-position BUILD + simulate (PR2). Returns unsigned calldata and Permit2 typed data;
- * nothing here signs or broadcasts. State overrides are never accepted from a request.
+ * nothing here signs or broadcasts. State overrides are never accepted from a request. The fee wallet comes from the
+ * server-only `RHC_UNIV4_FEE_WALLET` (EIP-55 checksummed); unset or invalid → every open fails closed.
  */
 
 const address = z.string().refine(v => isAddress(v, { strict: false }), "invalid address").transform(v => getAddress(v));
@@ -52,7 +54,8 @@ export async function runRhcUniv4Open(input: RhcOpenRequest, options: { client?:
   const amount = BigInt(input.amount);
   if (amount <= 0n) throw new RhcOpenInputError("Amount must be positive");
   const client = options.client ?? (stateClient ??= createRhcClient("state"));
+  const feeRecipient = process.env[RHC_FEE_WALLET_ENV];
   const req = { pool, user: input.user as Address, depositToken, amount, tickLower: input.tickLower, tickUpper: input.tickUpper };
-  if (input.action === "prepare") return prepareOpen({ client }, req);
-  return finalizeOpen({ client }, { ...req, permit: permitFromJson(input.permit as Parameters<typeof permitFromJson>[0]), signature: input.signature as Hex, attempt: input.attempt });
+  if (input.action === "prepare") return prepareOpen({ client, feeRecipient }, req);
+  return finalizeOpen({ client, feeRecipient }, { ...req, permit: permitFromJson(input.permit as Parameters<typeof permitFromJson>[0]), signature: input.signature as Hex, attempt: input.attempt });
 }
