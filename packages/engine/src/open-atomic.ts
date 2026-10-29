@@ -25,6 +25,7 @@ import { readOpenPoolState, type OpenPoolState, type OpenPositionSelection } fro
 import type { OpenPositionSummary } from "./open-types";
 import { JUPITER_MAX_ACCOUNTS, type JupiterRouteConstraints } from "./jupiter-route-retry";
 import { atomicComputeUnitLimitInstruction } from "./transaction-limits";
+import { diagJupiterWrap, diagSwapOnly, openDiag } from "./diag";
 
 export type OpenPositionBuildOptions = {
   enforceResaleFloor?: boolean;
@@ -221,7 +222,8 @@ async function buildOpenPositionAttempt(
   // routes are built without wrap/close and debit each leg from it; the native
   // SOL protocol fee is Jupiter's input-mint platform fee inside those swaps
   // (paid into the pre-created fee wSOL ATA), never our own transfer.
-  const wrapInstructions = nativeAta ? wrapNativeSolInstructions(wallet, BigInt(quote.requested)) : [];
+  // DIAG ONLY (v2): Jupiter wraps itself, so skip our own wrap/close.
+  const wrapInstructions = nativeAta && !diagJupiterWrap() ? wrapNativeSolInstructions(wallet, BigInt(quote.requested)) : [];
   if (protocolFee > 0n && state.inputKind === "token" && (!state.inputAccount || !state.inputTokenProgram)) {
     throw new Error("Protocol fee requires the selected input token account");
   }
@@ -243,7 +245,7 @@ async function buildOpenPositionAttempt(
   await rejectUnselectedWalletTokenWrites(connection, wallet, [...feeInstructions.instructions, ...routeInstructions],
     [state.inputAccount, state.ataA, state.ataB, nativeAta?.toBase58(), ...collections.flatMap(c => c.receiveOnlyAccounts ?? [])].filter((item): item is string => Boolean(item)));
   const wrappedAta = nativeAta?.toBase58() ?? null;
-  const cleanupInstructions = nativeAta && ![state.mintA, state.mintB].includes(NATIVE_SOL_MINT)
+  const cleanupInstructions = nativeAta && !diagJupiterWrap() && ![state.mintA, state.mintB].includes(NATIVE_SOL_MINT)
     ? [createCloseAccountInstruction(nativeAta, wallet, wallet)] : [];
   const createAtaInstructions = [
     ...(ataAInfo || wrappedAta === state.ataA ? [] : [createAssociatedTokenAccountIdempotentInstruction(payer, new PublicKey(state.ataA), wallet,
@@ -254,7 +256,13 @@ async function buildOpenPositionAttempt(
   const availableTables = [...new Map([...routeTables, ...feeTables, ...raydiumTables]
     .map((table) => [table.key.toBase58(), table])).values()];
   const simulationBlockhash = (await connection.getLatestBlockhash("confirmed")).blockhash;
-  const instructions = await compactAtaInstructions(connection, [
+  const swapOnly = diagSwapOnly();
+  // DIAG ONLY (v4): a pure swap from our domain — wrap + first Jupiter leg + close, no Raydium open.
+  const instructions = await compactAtaInstructions(connection, swapOnly ? [
+    atomicComputeUnitLimitInstruction(),
+    ...wrapInstructions, ...createAtaInstructions,
+    ...(legs[0]?.route ? swapRouteInstructions([legs[0].route], wallet) : []), ...cleanupInstructions,
+  ] : [
     atomicComputeUnitLimitInstruction(),
     ...wrapInstructions, ...feeInstructions.instructions, ...createAtaInstructions, ...routeInstructions, ...raydiumInstructions, ...cleanupInstructions,
   ]);
@@ -273,7 +281,7 @@ async function buildOpenPositionAttempt(
   const chosen = chooseBeamTransaction(withoutTip.transaction, withTip?.transaction ?? null);
   const simulated = chosen.transaction;
   const tables = chosen.included && withTip ? withTip.tables : withoutTip.tables;
-  if (simulated.message.header.numRequiredSignatures !== (sponsored ? 3 : 2)) {
+  if (!swapOnly && simulated.message.header.numRequiredSignatures !== (sponsored ? 3 : 2)) {
     throw new Error(sponsored
       ? "Sponsored open-position transaction must require fee payer + wallet + NFT mint signatures"
       : "Open-position transaction must require wallet + NFT mint signatures");
@@ -291,7 +299,12 @@ async function buildOpenPositionAttempt(
   const maxSolDebitLamports = sponsored ? 0n : (state.inputKind === "native" ? BigInt(quote.requested) : 0n)
     + rentLamports + feeAtaRent + BigInt(feeEstimateValue) + 100_000n
     + (chosen.included ? BigInt(BEAM_MIN_TIP_LAMPORTS) : 0n);
-  const verified = await simulateAndVerifyOpenTransaction({
+  const verified = swapOnly ? await (async () => {
+    const sim = await connection.simulateTransaction(simulated, { sigVerify: false, replaceRecentBlockhash: true });
+    if (sim.value.err) throw new Error(`Diag ${openDiag()} simulation failed: ${JSON.stringify(sim.value.err)}`);
+    return { positionAccount: "diag-v4-no-position", nftAta: "diag-v4-no-position", endingLiquidity: "0", spentInput: quote.requested,
+      dustA: "0", dustB: "0", solDebitLamports: quote.requested, unitsConsumed: sim.value.unitsConsumed ?? 0 };
+  })() : await simulateAndVerifyOpenTransaction({
     connection, transaction: simulated, wallet, state, nftMint,
     tickLower: quote.tickLower, tickUpper: quote.tickUpper,
     requested: BigInt(quote.requested), expectedLiquidity: BigInt(quote.liquidity),

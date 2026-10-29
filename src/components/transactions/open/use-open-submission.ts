@@ -10,6 +10,7 @@ import type { OpenRangePreset } from "@sofinance/engine/open-range-presets";
 import { addMintSignature, assertWalletReturnedTransaction, missingRequiredSignatures } from "@/lib/open-signatures";
 import { jupiterRelayFailureMessage, postWithJupiterRelay, type JupiterRelayStore } from "@/lib/jupiter/browser-relay";
 import { notSentRetryMessage } from "@/lib/public-error";
+import { clientOpenDiag } from "@/lib/open-diag-client";
 import { openAttemptFromSummary, type OpenAttempt } from "@/lib/open-attempt";
 import { openBeamStatus, type OpenBeamStatus } from "@/lib/open-beam-status";
 import { getStoredAttribution } from "@/lib/analytics/attribution";
@@ -122,7 +123,7 @@ export function useOpenSubmissionCommand({ pair, wallet, inputMint, inputKind, a
       // Jupiter quotes and only fetches swap-instructions.
       const response = await postWithJupiterRelay("/api/open-prepare", {
         wallet, poolId: pair.poolAddress, inputMint, inputKind, amount,
-        rangePreset, minPrice, maxPrice, nftMint: mint.publicKey.toBase58(),
+        rangePreset, minPrice, maxPrice, nftMint: mint.publicKey.toBase58(), diag: clientOpenDiag(),
       }, { store: jupiterStoreRef.current, signal: AbortSignal.timeout(OPEN_PREPARE_TIMEOUT_MS) });
       const data = await response.json() as Prepared | ApiError;
       if (!response.ok) throw new Error((data as ApiError).error);
@@ -139,7 +140,7 @@ export function useOpenSubmissionCommand({ pair, wallet, inputMint, inputKind, a
       const unsigned = VersionedTransaction.deserialize(bytes);
       const preparedSnapshot = VersionedTransaction.deserialize(unsigned.serialize());
       if (unsigned.message.staticAccountKeys[0]?.toBase58() !== wallet ||
-        unsigned.message.staticAccountKeys[1]?.toBase58() !== prepared.summary.nftMint ||
+        (clientOpenDiag() !== "v4" && unsigned.message.staticAccountKeys[1]?.toBase58() !== prepared.summary.nftMint) ||
         unsigned.message.recentBlockhash !== prepared.summary.blockhash) {
         throw new Error("Transaction payer mismatch");
       }

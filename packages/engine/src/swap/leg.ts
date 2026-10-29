@@ -3,6 +3,7 @@ import type { JupiterRouteConstraints } from "../jupiter-route-retry";
 import type { JupiterRetryBudget } from "../jupiter/client";
 import { computeSwapFee, netSwapInput, type SwapFeeConfig } from "./fee";
 import { buildRoute, quoteRoute, type QuoteRoute } from "./jupiter";
+import { diagJupiterWrap } from "../diag";
 import { isPoolTokenPair, preferOwnPoolRoute, type OwnPool } from "./own-pool";
 
 /** Token deposits reserve the protocol fee once from the input (a separate
@@ -38,6 +39,8 @@ export async function feeSwapLeg(input: {
   inputFee?: boolean;
 }) {
   const { wallet, inputMint, outputMint, spend, feeBps } = input;
+  // DIAG ONLY (v2): Jupiter wraps/unwraps native SOL itself.
+  if (input.native === undefined && diagJupiterWrap() && inputMint === NATIVE_SOL_MINT) input = { ...input, native: true };
   if (spend <= 0n) throw new Error("Swap amount must be greater than zero");
   if (inputMint === outputMint) return { inputMint, outputMint, spend, feeAmount: 0n, feeInRoute: false, minOut: spend, route: null };
   const inputFee = Boolean(input.inputFee) && feeBps > 0 && inputMint === NATIVE_SOL_MINT;

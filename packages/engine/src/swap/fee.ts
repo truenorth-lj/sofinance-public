@@ -7,6 +7,7 @@ import {
 } from "@solana/spl-token";
 import { PublicKey, type Connection, type TransactionInstruction } from "@solana/web3.js";
 import { NATIVE_SOL_MINT } from "../ids";
+import { diagNoFee } from "../diag";
 
 export const DEFAULT_SWAP_FEE_BPS = 10;
 export const MAX_SWAP_FEE_BPS = 100;
@@ -52,6 +53,7 @@ export function parseSwapFeeWallet(value: string | undefined): PublicKey | null 
 }
 
 export function readSwapFeeConfig(): SwapFeeConfig {
+  if (diagNoFee()) return { wallet: null, bps: 0 }; // DIAG ONLY
   const wallet = parseSwapFeeWallet(engineEnv().SOFINANCE_FEE_WALLET);
   if (!wallet) return { wallet: null, bps: 0 };
   return { wallet, bps: parseSwapFeeBps(engineEnv().SOFINANCE_FEE_BPS) };

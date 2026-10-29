@@ -8,6 +8,7 @@ import { parseClientNftMint } from "@sofinance/engine/open-atomic";
 import { DEFAULT_OPEN_RANGE_PRESET, type OpenRangeInput, type OpenRangePreset } from "@sofinance/engine/open-range";
 import type { OpenPositionSelection } from "@sofinance/engine/open-state";
 import { assertSolInputAllowed } from "./sol-input-policy";
+import { parseOpenDiag } from "@sofinance/engine/diag";
 
 const PRESETS = new Set<OpenRangePreset>(["micro", "tight", "standard", "wide", "custom"]);
 
@@ -44,6 +45,8 @@ function parseOpenFields(fields: Record<string, unknown>) {
     wallet, selection, amount: fields.amount, range: parseOpenRange(fields),
     floorBps: parseResaleFloorBps(fields.resaleFloorBps ?? fields.floorBps),
     toleranceBps: parseAddToleranceBps(fields.slippageToleranceBps ?? fields.toleranceBps),
+    // DIAG ONLY: ignored when VERCEL_ENV === "production".
+    diag: parseOpenDiag(fields.diag, process.env.VERCEL_ENV),
   };
 }
 

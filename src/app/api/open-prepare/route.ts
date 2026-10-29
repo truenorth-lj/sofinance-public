@@ -5,12 +5,13 @@ import { parseOpenPrepareRequest } from "@/lib/open-api";
 import { apiError } from "@/lib/api-response";
 import { prepareOpen } from "@/server/transactions/open-prepare";
 import { APP_OPEN_PREPARE } from "@/server/transactions/surface-policy";
+import { runWithOpenDiag } from "@sofinance/engine/diag-store";
 
 export async function POST(request: Request) {
   return withJupiterRelay(request, async () => {
   try {
-    const { wallet, selection, amount, range, floorBps, toleranceBps, nftMint } = await parseOpenPrepareRequest(request);
-    const prepared = await prepareOpen({ wallet, selection, amount, range, floorBps, toleranceBps, nftMint }, getSigningSecret, APP_OPEN_PREPARE);
+    const { wallet, selection, amount, range, floorBps, toleranceBps, nftMint, diag } = await parseOpenPrepareRequest(request);
+    const prepared = await runWithOpenDiag(diag, () => prepareOpen({ wallet, selection, amount, range, floorBps, toleranceBps, nftMint }, getSigningSecret, APP_OPEN_PREPARE));
     return Response.json(prepared, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return apiError(error, "Open-position preparation failed");

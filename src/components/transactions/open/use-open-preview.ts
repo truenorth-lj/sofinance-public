@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { clientOpenDiag } from "@/lib/open-diag-client";
 import type { OpenPositionQuote } from "@sofinance/engine/open-types";
 import type { OpenRangePreset } from "@sofinance/engine/open-range-presets";
 import type { WalletAsset } from "@sofinance/engine/wallet-discovery";
@@ -76,7 +77,7 @@ export function useOpenPreview() {
           const signal = typeof AbortSignal.any === "function" ? AbortSignal.any([aborter.signal, timeout]) : aborter.signal;
           const response = await postWithJupiterRelay("/api/open-quote", {
             wallet, poolId: pair.poolAddress, inputMint, inputKind, amount,
-            rangePreset, minPrice, maxPrice,
+            rangePreset, minPrice, maxPrice, diag: clientOpenDiag(),
           }, { store: jupiterStoreRef.current, signal });
           const data = await response.json() as OpenPositionQuote | ApiError;
           if (!currentRequest()) return;

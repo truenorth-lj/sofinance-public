@@ -10,6 +10,7 @@ import { type BuildRoute } from "./swap/jupiter";
 import { jupiterRelayHint, setJupiterRelayHint } from "./jupiter/client";
 import { estimateOpenPositionRent } from "./open-rent";
 import { resolveOpenRange, type OpenRangeInput } from "./open-range";
+import { diagSingleSide } from "./diag";
 import { assertNativeInputFeeCoverage, depositFeePlan, feeSwapLeg, readSwapFeeConfig, type SwapFeeConfig } from "./swap";
 import { rpcConnection } from "./rpc";
 import { readOpenPoolState, type OpenPoolState, type OpenPositionSelection } from "./open-state";
@@ -108,6 +109,12 @@ export async function getOpenPositionQuoteBundle(
   if (!state.sufficientSol) {
     throw new Error("Insufficient SOL, reserve at least 0.01 SOL to pay network fees and position rent");
   }
+  // DIAG ONLY (v3/v3b): force a one-sided range so a single swap leg is built.
+  const single = diagSingleSide();
+  const diagPrice = Number(state.price);
+  if (single) range = { preset: "custom",
+    minPrice: String(single === "above" ? diagPrice * 1.02 : diagPrice * 0.90),
+    maxPrice: String(single === "above" ? diagPrice * 1.10 : diagPrice * 0.98) };
   const resolved = resolveOpenRange({
     range,
     currentPrice: Number(state.price),
