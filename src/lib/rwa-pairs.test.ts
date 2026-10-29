@@ -1,8 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
+const freezeMock = vi.hoisted(() => ({ read: vi.fn<(connection: unknown, mints: string[]) => Promise<Map<string, boolean>>>(async () => new Map()) }));
+vi.mock("./onchain-mint-freeze", () => ({ readMintFreezeAuthorities: freezeMock.read }));
+vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: () => ({}) }));
 
 import {
+  applyOnchainFreezeRisk,
   clearRwaPairsCache,
   discoverRwaPairs,
   getCachedRwaPairs,
@@ -570,5 +574,67 @@ describe("discoverRwaPairs", () => {
 
     // But Raydium API should only be called once (stampede prevented)
     expect(fetchCallCount).toBe(1);
+  });
+});
+
+describe("applyOnchainFreezeRisk (Raydium rows)", () => {
+  afterEach(() => { freezeMock.read.mockReset(); freezeMock.read.mockResolvedValue(new Map()); });
+  const qualifiers = {
+    jupiterTagsByMint: new Map([[MINT_A, ["stocks"]], [MINT_B, ["stocks"]]]),
+    xstocksMints: new Set<string>(),
+  };
+  const row = () => parseRaydiumPoolAsRwaPair(poolFixture(), qualifiers)!;
+
+  it("uses the mints' on-chain freeze authority over Raydium tags", async () => {
+    const base = row();
+    expect(base.freezeRiskA).toBe(true); // hasFreeze tag
+    freezeMock.read.mockResolvedValueOnce(new Map([[MINT_A, false], [MINT_B, true]]));
+    const { pairs, source } = await applyOnchainFreezeRisk([base], {} as never);
+    expect(source).toBe("onchain");
+    expect(pairs[0]).toMatchObject({ freezeRiskA: false, freezeRiskB: true, freezeRisk: true });
+    expect(freezeMock.read).toHaveBeenCalledWith({}, [MINT_A, MINT_B]);
+  });
+
+  it("keeps the tag value for mints the chain read did not resolve", async () => {
+    const base = row();
+    freezeMock.read.mockResolvedValueOnce(new Map([[MINT_B, false]]));
+    const { pairs, source } = await applyOnchainFreezeRisk([base], {} as never);
+    expect(source).toBe("mixed");
+    expect(pairs[0]).toMatchObject({ freezeRiskA: base.freezeRiskA, freezeRiskB: false });
+  });
+
+  it("falls back to tags when the RPC fails, and skips the read when connection is null", async () => {
+    const base = row();
+    freezeMock.read.mockRejectedValueOnce(new Error("rpc down"));
+    const failed = await applyOnchainFreezeRisk([base], {} as never);
+    expect(failed.source).toBe("tags");
+    expect(failed.pairs[0]).toMatchObject({ freezeRiskA: base.freezeRiskA, freezeRiskB: base.freezeRiskB, freezeRisk: base.freezeRisk });
+    freezeMock.read.mockClear();
+    const skipped = await applyOnchainFreezeRisk([base], null);
+    expect(skipped.source).toBe("tags");
+    expect(freezeMock.read).not.toHaveBeenCalled();
+  });
+
+  it("discoverRwaPairs applies the chain read to discovered rows", async () => {
+    clearRwaPairsCache();
+    freezeMock.read.mockImplementation(async (_c: unknown, mints: string[]) => new Map(mints.map((mint) => [mint, false])));
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("api-v3.raydium.io")) {
+        return new Response(JSON.stringify({ success: true, data: { data: [poolFixture()], hasNextPage: false } }), { status: 200 });
+      }
+      if (url.includes("jup.ag")) {
+        return new Response(JSON.stringify([{ id: MINT_A, tags: ["stocks"] }, { id: MINT_B, tags: ["stocks"] }]), { status: 200 });
+      }
+      if (url.includes("api.xstocks.fi")) {
+        return new Response(JSON.stringify({ nodes: [], page: { currentPage: 1, hasNextPage: false } }), { status: 200 });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    const result = await discoverRwaPairs({ maxPages: 1, fetcher: fetcher as unknown as typeof fetch, bypassCache: true, jupiterApiKey: "k", connection: {} as never });
+    expect(result.pairs.length).toBeGreaterThan(0);
+    expect(result.freezeRiskSource).toBe("onchain");
+    expect(result.pairs.every((pair) => pair.freezeRisk === false)).toBe(true);
+    expect(result.source).toMatch(/mint freeze authority/);
   });
 });

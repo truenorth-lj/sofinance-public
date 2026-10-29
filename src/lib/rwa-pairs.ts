@@ -20,6 +20,9 @@ import {
 import { DEFAULT_PROTOCOL, type PoolProtocolId } from "@sofinance/engine/protocols/types";
 import { fetchJupiterTagsByMint, getJupiterTagsObservedAt } from "./rwa-jupiter-tags";
 import { fetchXstocksSolanaMintSet, getXstocksObservedAt } from "./rwa-xstocks-whitelist";
+import type { Connection } from "@solana/web3.js";
+import { rpcConnection } from "@sofinance/engine/rpc";
+import { readMintFreezeAuthorities } from "./onchain-mint-freeze";
 
 export const RAYDIUM_API_V3 = "https://api-v3.raydium.io";
 const DEFAULT_PAGE_SIZE = 1000;
@@ -41,6 +44,8 @@ export type DiscoverRwaPairsOptions = {
   bypassCache?: boolean;
   /** Override Jupiter API key (tests). Defaults to process.env.JUPITER_API_KEY. */
   jupiterApiKey?: string | undefined;
+  /** Solana RPC for the mints' on-chain freeze authority (tests inject one). `null` skips the chain read (tags only). */
+  connection?: Connection | null;
 };
 
 export type RwaPairRow = {
@@ -97,6 +102,8 @@ export type DiscoverRwaPairsResult = {
   stale?: boolean;
   /** Age of the cached result in seconds. */
   ageSeconds?: number;
+  /** Where row freeze risk came from: every mint read from chain, Raydium's `hasFreeze` tags only (RPC down), or a mix. */
+  freezeRiskSource?: "onchain" | "tags" | "mixed";
   discovery?: { sourcePages: Record<string, number>; poolObservedAt: Record<string, string>; pageCounts: number[]; qualificationObservedAt: Record<string, string | null> };
 };
 
@@ -530,15 +537,17 @@ export async function discoverRwaPairs(
         pairs.push(parsed);
       }
 
+      const freeze = await applyOnchainFreezeRisk(pairs, options.connection);
       const result: DiscoverRwaPairsResult = {
-        pairs: sortPairs(pairs, sortBy),
+        pairs: sortPairs(freeze.pairs, sortBy),
+        freezeRiskSource: freeze.source,
         discovery: { sourcePages, poolObservedAt, pageCounts, qualificationObservedAt: { jupiter: getJupiterTagsObservedAt(mints), xstocks: getXstocksObservedAt() } },
         scannedPools,
         pagesFetched,
         fetchedAt: new Date().toISOString(),
         pairingRuleSummary: PAIRING_RULE_SUMMARY,
         estimatedFeeAprLabel: FEE_APR_ESTIMATE_LABEL,
-        source: `${RAYDIUM_API_V3}/pools/info/list?poolType=concentrated + Jupiter tokens/v2/search tags + xStocks whitelist + curated CLMM allowlist`,
+        source: `${RAYDIUM_API_V3}/pools/info/list?poolType=concentrated + Jupiter tokens/v2/search tags + xStocks whitelist + curated CLMM allowlist; Solana RPC: mint freeze authority`,
       };
 
       cache = { key: cacheKey, value: result, createdAt: Date.now() };
@@ -554,6 +563,37 @@ export async function discoverRwaPairs(
   }
 
   return refreshPromise;
+}
+
+const FREEZE_READ_TIMEOUT_MS = 8_000;
+
+/**
+ * Freeze risk from each mint's on-chain freeze authority (one batched read). A mint the chain read could not
+ * resolve (RPC down, timeout, malformed) keeps Raydium's `hasFreeze` tag value.
+ */
+export async function applyOnchainFreezeRisk(pairs: RwaPairRow[], connection?: Connection | null) {
+  if (pairs.length === 0) return { pairs, source: "onchain" as const };
+  let chain = new Map<string, boolean>();
+  if (connection !== null) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      chain = await Promise.race([
+        readMintFreezeAuthorities(connection ?? rpcConnection(), pairs.flatMap((pair) => [pair.mintA, pair.mintB])),
+        new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("freeze read timeout")), FREEZE_READ_TIMEOUT_MS); }),
+      ]);
+    } catch { /* RPC down: keep the tags */ } finally { if (timer) clearTimeout(timer); }
+  }
+  let known = 0;
+  const updated = pairs.map((pair) => {
+    const a = chain.get(pair.mintA);
+    const b = chain.get(pair.mintB);
+    known += Number(a !== undefined) + Number(b !== undefined);
+    const freezeRiskA = a ?? pair.freezeRiskA;
+    const freezeRiskB = b ?? pair.freezeRiskB;
+    return { ...pair, freezeRiskA, freezeRiskB, freezeRisk: freezeRiskA || freezeRiskB };
+  });
+  const source: "onchain" | "tags" | "mixed" = known === pairs.length * 2 ? "onchain" : known === 0 ? "tags" : "mixed";
+  return { pairs: updated, source };
 }
 
 /** Test helper to clear the module cache. */
