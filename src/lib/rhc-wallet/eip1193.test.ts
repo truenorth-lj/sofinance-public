@@ -84,8 +84,9 @@ describe("ensureRobinhoodChain", () => {
   });
 });
 
-describe("guardedWalletRequest (signing off outside preview)", () => {
+describe("guardedWalletRequest (signing off in development)", () => {
   it("refuses every signing/sending method without touching the wallet", async () => {
+    vi.stubEnv("NEXT_PUBLIC_SOFI_DEPLOY_ENV", "development");
     const { provider, calls } = mockProvider(() => "0xsig");
     for (const method of SIGNING_METHODS) {
       const error = await guardedWalletRequest(provider, method, []).catch((e: unknown) => e) as WalletRequestError;
@@ -93,6 +94,7 @@ describe("guardedWalletRequest (signing off outside preview)", () => {
       expect(error.code).toBe("signing-disabled");
     }
     expect(calls).toEqual([]);
+    vi.unstubAllEnvs();
   });
   it("only accepts signing methods", async () => {
     await expect(guardedWalletRequest(mockProvider(() => null).provider, "eth_chainId", [])).rejects.toMatchObject({ code: "unknown" });

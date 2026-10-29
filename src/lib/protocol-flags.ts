@@ -48,7 +48,7 @@ export function isOrcaPositionsEnabled(target: DeployTarget = deployTarget()): b
  * production, same targets as above. Nothing on this path signs or sends.
  */
 export const RHC_UNIV4_DISCOVERY_ENABLED: Readonly<Record<DeployTarget, boolean>> = Object.freeze({
-  production: false,
+  production: true,
   preview: true,
   development: true,
 });
@@ -64,7 +64,7 @@ export function isRhcUniv4DiscoveryEnabled(target: DeployTarget = deployTarget()
  * broadcasts. The fee recipient is the server-only env `RHC_UNIV4_FEE_WALLET`; unset/invalid fails closed.
  */
 export const RHC_UNIV4_TX_BUILD_ENABLED: Readonly<Record<DeployTarget, boolean>> = Object.freeze({
-  production: false,
+  production: true,
   preview: true,
   development: true,
 });
@@ -79,7 +79,7 @@ export function isRhcUniv4TxBuildEnabled(target: DeployTarget = deployTarget()):
  * UX and the open preview. OFF in production, same targets as above.
  */
 export const RHC_UNIV4_TRADING_ENABLED: Readonly<Record<DeployTarget, boolean>> = Object.freeze({
-  production: false,
+  production: true,
   preview: true,
   development: true,
 });
@@ -94,7 +94,7 @@ export function isRhcUniv4TradingEnabled(target: DeployTarget = deployTarget()):
  * EVM test wallet, 2026-10-29). OFF in production and local development.
  */
 export const RHC_UNIV4_WALLET_SIGNING_ENABLED: Readonly<Record<DeployTarget, boolean>> = Object.freeze({
-  production: false,
+  production: true,
   preview: true,
   development: false,
 });

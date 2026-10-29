@@ -4,6 +4,10 @@ import { getAddress } from "viem";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
+vi.mock("@/lib/protocol-flags", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/protocol-flags")>();
+  return { ...actual, isRhcUniv4TxBuildEnabled: vi.fn(actual.isRhcUniv4TxBuildEnabled) };
+});
 vi.mock("@/lib/rhc-univ4-exit", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/rhc-univ4-exit")>();
   return { ...actual, runRhcUniv4Exit: vi.fn(async (input: { action: string }) => (input.action === "positions"
@@ -11,6 +15,7 @@ vi.mock("@/lib/rhc-univ4-exit", async (importOriginal) => {
     : { state: "failed", code: "not-owner", message: "Position #1 belongs to another wallet (0x2222…2222), not the connected one." })) };
 });
 import { runRhcUniv4Exit } from "@/lib/rhc-univ4-exit";
+import { isRhcUniv4TxBuildEnabled } from "@/lib/protocol-flags";
 import { GET, POST } from "./route";
 
 const USER = "0xb95b77e9429643cbafde865fa2a9f687e8d21b04";
@@ -20,8 +25,9 @@ const post = (body: unknown) => POST(new Request("https://example.test/api/rhc-u
 describe("/api/rhc-univ4-exit", () => {
   afterEach(() => { vi.unstubAllEnvs(); vi.clearAllMocks(); });
 
-  it.each([undefined, "production"])("404s and never touches Robinhood Chain when VERCEL_ENV=%s (flag off)", async (env) => {
-    vi.stubEnv("VERCEL_ENV", env);
+  it("404s and never touches Robinhood Chain when the flag is off (kill switch)", async () => {
+    vi.stubEnv("VERCEL_ENV", "production");
+    vi.mocked(isRhcUniv4TxBuildEnabled).mockReturnValueOnce(false);
     const response = await post(prepare);
     expect(response.status).toBe(404);
     expect(response.headers.get("Cache-Control")).toBe("no-store");

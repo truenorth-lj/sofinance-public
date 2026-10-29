@@ -17,7 +17,7 @@ export default async function RhcPage() {
         <p>
           One Uniswap v4 transaction on Robinhood Chain: swap the part you need, open the position and return any leftover.
           Closing is one transaction too: withdraw everything, collect earned fees and burn the position NFT, with no SoFinance fee.
-          Preview build: every step is simulated before your wallet is asked to sign.
+          Every step is simulated before your wallet is asked to sign.
         </p>
       </InkHero>
       <RhcUniv4OpenPanel pool={pool} signingEnabled={isRhcUniv4WalletSigningEnabled()} />
