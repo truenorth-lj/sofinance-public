@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PoolActivityPanel } from "./pool-activity-panel";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -38,7 +38,13 @@ class FakeEventSource {
   }
 }
 
+beforeEach(() => {
+  // POOL_ACTIVITY_ENABLED is on for preview/development builds only.
+  vi.stubEnv("NEXT_PUBLIC_SOFI_DEPLOY_ENV", "preview");
+});
+
 afterEach(() => {
+  vi.unstubAllEnvs();
   FakeEventSource.instances = [];
   vi.unstubAllGlobals();
   vi.useRealTimers();
@@ -49,6 +55,27 @@ describe("PoolActivityPanel", () => {
   it("renders nothing until a pool id is provided", () => {
     const markup = renderToStaticMarkup(createElement(PoolActivityPanel, {}));
     expect(markup).toBe("");
+  });
+
+  it.each(["production", ""])("renders nothing and never fetches or streams when POOL_ACTIVITY_ENABLED is off (deploy env %j)", async (deployEnv) => {
+    vi.stubEnv("NEXT_PUBLIC_SOFI_DEPLOY_ENV", deployEnv);
+    vi.stubEnv("VERCEL_ENV", undefined);
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const fetchMock = vi.fn(async () => Response.json({ available: true }));
+    vi.stubGlobal("fetch", fetchMock);
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    try {
+      await act(async () => {
+        root.render(createElement(PoolActivityPanel, { poolId: POOL }));
+      });
+      expect(container.textContent).toBe("");
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(FakeEventSource.instances).toHaveLength(0);
+    } finally {
+      await act(async () => { root.unmount(); });
+    }
   });
 
   it("hides the section when the snapshot is unavailable", async () => {

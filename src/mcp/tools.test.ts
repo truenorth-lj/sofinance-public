@@ -59,6 +59,9 @@ vi.mock("../lib/rwa-pairs", () => ({
 
 vi.mock("../lib/solami-blur", () => ({
   getPoolActivitySnapshot: vi.fn(),
+  unavailablePoolActivitySnapshot: (poolId: string, reason: string) => ({
+    available: false, poolId, pool: null, trades: [], fetchedAt: "2026-10-10T00:00:00.000Z", source: "unavailable", reason,
+  }),
 }));
 
 vi.mock("../lib/position-range-onchain", () => ({
@@ -678,6 +681,7 @@ describe("MCP Tools", () => {
 
   describe("getPoolActivity", () => {
     it("returns the Blur snapshot from the shared client", async () => {
+      vi.stubEnv("VERCEL_ENV", "preview");
       vi.mocked(getPoolActivitySnapshot).mockResolvedValue({
         available: true,
         poolId: "DUzBLHZ5RZdftPuWVijsvjupndogRM1adGJpsR7YTJro",
@@ -695,6 +699,13 @@ describe("MCP Tools", () => {
         "DUzBLHZ5RZdftPuWVijsvjupndogRM1adGJpsR7YTJro",
         { limit: 10 },
       );
+    });
+
+    it.each([undefined, "production"])("never calls Solami when POOL_ACTIVITY_ENABLED is off (VERCEL_ENV=%s)", async (vercelEnv) => {
+      vi.stubEnv("VERCEL_ENV", vercelEnv);
+      const result = await getPoolActivity({ poolId: "DUzBLHZ5RZdftPuWVijsvjupndogRM1adGJpsR7YTJro", limit: 10 });
+      expect(result).toMatchObject({ available: false, source: "unavailable", reason: "disabled" });
+      expect(getPoolActivitySnapshot).not.toHaveBeenCalled();
     });
   });
 

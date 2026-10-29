@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { SolamiCredit } from "./solami-credit";
+import { isPoolActivityEnabledInBrowser } from "../lib/protocol-flags";
 import { rangeStatusFromPrice, blurPriceToBPerA, type PositionRangeStatus } from "../lib/position-range-status";
 
 type Trade = {
@@ -72,6 +73,9 @@ export function PoolActivityPanel({
   mintA?: string;
   mintB?: string;
 }) {
+  // POOL_ACTIVITY_ENABLED (protocol-flags.ts): when off, render nothing and never call
+  // /api/pool-activity or open the stream.
+  const enabled = isPoolActivityEnabledInBrowser();
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [trades, setTrades] = useState<Trade[]>([]);
   const [livePrice, setLivePrice] = useState<number | null>(null);
@@ -81,7 +85,7 @@ export function PoolActivityPanel({
   const streamUnavailable = Boolean(poolId) && streamBlockedFor === poolId;
 
   useEffect(() => {
-    if (!poolId) return;
+    if (!enabled || !poolId) return;
     const aborter = new AbortController();
     const load = async () => {
       try {
@@ -116,10 +120,10 @@ export function PoolActivityPanel({
       aborter.abort();
       window.clearInterval(poll);
     };
-  }, [poolId, mintA, mintB]);
+  }, [enabled, poolId, mintA, mintB]);
 
   useEffect(() => {
-    if (!poolId || hidden || streamUnavailable || !snapshot) return;
+    if (!enabled || !poolId || hidden || streamUnavailable || !snapshot) return;
     let source: EventSource | null = null;
     let retry: number | undefined;
     const connect = () => {
@@ -166,7 +170,7 @@ export function PoolActivityPanel({
       source?.close();
       if (retry) window.clearTimeout(retry);
     };
-  }, [poolId, hidden, streamUnavailable, snapshot, mintA, mintB]);
+  }, [enabled, poolId, hidden, streamUnavailable, snapshot, mintA, mintB]);
 
   const range: PositionRangeStatus | null = useMemo(() => {
     if (
@@ -192,7 +196,7 @@ export function PoolActivityPanel({
     }
   }, [livePrice, tickLower, tickUpper, decimalsA, decimalsB]);
 
-  if (!poolId || hidden || !snapshot) return null;
+  if (!enabled || !poolId || hidden || !snapshot) return null;
 
   return (
     <section

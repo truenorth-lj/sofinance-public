@@ -30,6 +30,8 @@ let client: Client;
 let server: ReturnType<typeof createMcpServer>;
 beforeEach(async () => {
   vi.stubEnv("JUPITER_API_KEY", SIGNING_SECRET);
+  // Full 16-tool contract: get_pool_activity is behind POOL_ACTIVITY_ENABLED (preview only).
+  vi.stubEnv("VERCEL_ENV", "preview");
   vi.spyOn(console, "error").mockImplementation(() => {});
   for (const handler of Object.values(handlers)) handler.mockReset().mockResolvedValue(resultValue);
   server = createMcpServer();

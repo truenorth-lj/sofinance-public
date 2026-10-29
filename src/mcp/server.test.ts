@@ -19,7 +19,7 @@ import { POST } from "@/app/api/mcp/route";
 
 const EXPECTED_NAMES = [
   "prepare_withdraw", "submit_withdraw",
-  "get_position_performance", "get_pool_activity", "get_position_range_status", "list_rwa_pairs", "list_positions",
+  "get_position_performance", "get_position_range_status", "list_rwa_pairs", "list_positions",
   "quote_add_liquidity", "prepare_transaction", "quote_compound", "prepare_compound_transaction",
   "submit_signed_transaction", "submit_compound_transaction", "quote_open_position", "prepare_open_position", "submit_open_position",
 ];
@@ -61,9 +61,11 @@ describe("stdio MCP server", () => {
     return Object.assign({}, ...Object.entries(value).map(([key, item]) => flatten(item, prefix ? `${prefix}.${key}` : key)));
   }
 
-  it("lists the same 16 tool names as the HTTP route", async () => {
+  // No VERCEL_ENV here (clean child env, unset in vitest): the production surface, where
+  // get_pool_activity is hidden by POOL_ACTIVITY_ENABLED. The 16-tool preview surface is in route.test.ts.
+  it("lists the same 15 tool names as the HTTP route", async () => {
     const stdio = await client.listTools();
-    expect(stdio.tools).toHaveLength(16);
+    expect(stdio.tools).toHaveLength(15);
     expect(stdio.tools.map((tool) => tool.name).sort()).toEqual([...EXPECTED_NAMES].sort());
   });
 
@@ -87,11 +89,17 @@ describe("stdio MCP server", () => {
     const names = (await client.listTools()).tools.map((tool) => tool.name);
     expect(names).toEqual([
       "prepare_withdraw", "submit_withdraw",
-  "get_position_performance", "get_pool_activity", "get_position_range_status", "list_rwa_pairs", "list_positions",
+  "get_position_performance", "get_position_range_status", "list_rwa_pairs", "list_positions",
       "quote_add_liquidity", "prepare_transaction", "quote_compound", "prepare_compound_transaction",
       "submit_signed_transaction", "quote_open_position", "prepare_open_position", "submit_open_position",
       "submit_compound_transaction",
     ]);
+  });
+
+  it("refuses get_pool_activity with a clear message when POOL_ACTIVITY_ENABLED is off", async () => {
+    const result = await client.callTool({ name: "get_pool_activity", arguments: { poolId: "DUzBLHZ5RZdftPuWVijsvjupndogRM1adGJpsR7YTJro" } });
+    expect(result.isError).toBe(true);
+    expect(JSON.parse((result.content as { text: string }[])[0]!.text)).toEqual({ error: "get_pool_activity is disabled on this deployment." });
   });
 
   it("an unknown tool is an isError result with the (sanitized, unchanged) message", async () => {

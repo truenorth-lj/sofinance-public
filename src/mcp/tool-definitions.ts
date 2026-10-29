@@ -35,7 +35,7 @@ const TOOL_DEFINITIONS = {
     },
     get_pool_activity: {
         name: "get_pool_activity",
-        description: "Live Solami Blur snapshot for a Solana pool: decoded pool stats (price, TVL, 24h fees, LP flows) plus recent swaps. Read-only. Returns available=false when SOLAMI_DATA_API_KEY is unset so agents can fall back. Free Solami keys have REST but not WebSocket.",
+        description: "Live Solami Blur snapshot for a Solana pool: decoded pool stats (price, TVL, 24h fees, LP flows) plus recent swaps. Read-only. When the data is unavailable it returns available=false with a reason (not-configured, plan-<status>, http-<status>, upstream-error, no-data) so agents can fall back.",
         inputSchema: {
             type: "object",
             properties: {

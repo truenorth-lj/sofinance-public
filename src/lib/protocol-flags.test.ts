@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
-import { deployTarget, isOrcaDiscoveryEnabled, isOrcaPositionsEnabled, isRhcUniv4DiscoveryEnabled, ORCA_DISCOVERY_ENABLED, ORCA_POSITIONS_ENABLED, RHC_UNIV4_DISCOVERY_ENABLED } from "./protocol-flags";
+import { describe, expect, it, vi } from "vitest";
+import { deployTarget, isPoolActivityEnabled, isPoolActivityEnabledInBrowser, POOL_ACTIVITY_ENABLED, isOrcaDiscoveryEnabled, isOrcaPositionsEnabled, isRhcUniv4DiscoveryEnabled, ORCA_DISCOVERY_ENABLED, ORCA_POSITIONS_ENABLED, RHC_UNIV4_DISCOVERY_ENABLED } from "./protocol-flags";
 
 describe("ORCA_DISCOVERY_ENABLED", () => {
   it("is a code constant that is OFF in production", () => {
@@ -22,6 +22,25 @@ describe("ORCA_DISCOVERY_ENABLED", () => {
     expect(isRhcUniv4DiscoveryEnabled("production")).toBe(false);
     expect(isRhcUniv4DiscoveryEnabled("preview")).toBe(true);
   });
+  it("POOL_ACTIVITY_ENABLED is a frozen code constant that is OFF in production", () => {
+    expect(POOL_ACTIVITY_ENABLED).toEqual({ production: false, preview: true, development: true });
+    expect(Object.isFrozen(POOL_ACTIVITY_ENABLED)).toBe(true);
+    expect(isPoolActivityEnabled("production")).toBe(false);
+    expect(isPoolActivityEnabled("preview")).toBe(true);
+  });
+  it("isPoolActivityEnabledInBrowser follows the build-time deploy env, then VERCEL_ENV", () => {
+    vi.stubEnv("NEXT_PUBLIC_SOFI_DEPLOY_ENV", "");
+    vi.stubEnv("VERCEL_ENV", undefined);
+    expect(isPoolActivityEnabledInBrowser()).toBe(false);
+    vi.stubEnv("NEXT_PUBLIC_SOFI_DEPLOY_ENV", "production");
+    expect(isPoolActivityEnabledInBrowser()).toBe(false);
+    vi.stubEnv("NEXT_PUBLIC_SOFI_DEPLOY_ENV", "preview");
+    expect(isPoolActivityEnabledInBrowser()).toBe(true);
+    vi.stubEnv("NEXT_PUBLIC_SOFI_DEPLOY_ENV", "");
+    vi.stubEnv("VERCEL_ENV", "development");
+    expect(isPoolActivityEnabledInBrowser()).toBe(true);
+    vi.unstubAllEnvs();
+  });
   it("treats anything that is not an explicit Vercel preview/development as production", () => {
     for (const env of [undefined, "", "production", "staging", "PREVIEW"]) expect(deployTarget(env)).toBe("production");
     expect(deployTarget("preview")).toBe("preview");
@@ -29,7 +48,7 @@ describe("ORCA_DISCOVERY_ENABLED", () => {
   });
   it("is not driven by a SOFINANCE_* env var", () => {
     const source = readFileSync(join(__dirname, "protocol-flags.ts"), "utf8");
-    expect(source.match(/process\.env\.[A-Z_]+/g)).toEqual(["process.env.VERCEL_ENV"]);
+    expect(new Set(source.match(/process\.env\.[A-Z_]+/g))).toEqual(new Set(["process.env.VERCEL_ENV", "process.env.NEXT_PUBLIC_SOFI_DEPLOY_ENV"]));
   });
 });
 

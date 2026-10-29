@@ -102,6 +102,9 @@ async function snapshotResult(result: Awaited<ReturnType<typeof call>>) {
 }
 for (const surface of ["http", "stdio"] as const) describe(`${surface} real read/prepare handlers`, () => {
   it.each(names)("%s preserves backend arguments, count/order, response and authenticated sign payload", async name => {
+    // get_pool_activity is behind POOL_ACTIVITY_ENABLED (preview only). Scoped to that tool so the
+    // other read tools keep the production (Orca-off) backend path.
+    if (name === "get_pool_activity") vi.stubEnv("VERCEL_ENV", "preview");
     const result = await call(surface, name, { ...VALID_ARGS[name], ignored: "stripped" });
     expect(result.isError).toBeUndefined();
     expect(io().map(item => item.name)).toEqual(expectedIO[name]);

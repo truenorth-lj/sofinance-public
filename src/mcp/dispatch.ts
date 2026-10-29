@@ -1,5 +1,6 @@
 import type { WithdrawSummary } from "@sofinance/engine/withdraw/types";
 import type { ToolName } from "./tool-definitions";
+import { disabledToolMessage, isToolEnabled } from "./tool-availability";
 import {
   listPositions,
   quoteAddLiquidity,
@@ -137,5 +138,7 @@ function isToolName(name: string): name is ToolName {
 
 export async function dispatchTool(name: string, args: unknown, context: McpDispatchContext): Promise<unknown> {
   if (!isToolName(name)) throw new Error(`Unknown tool: ${name}`);
+  // Hidden from tools/list; a direct call gets a clear, non-secret refusal.
+  if (!isToolEnabled(name)) throw new Error(disabledToolMessage(name));
   return TOOL_DISPATCH[name](args, context);
 }
