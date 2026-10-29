@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  connectEvmWallet, discoverEvmWallets, type Eip1193Provider, ensureRobinhoodChain, guardedWalletRequest, RHC_ADD_CHAIN_PARAMS, SIGNING_METHODS, WalletRequestError,
+  connectEvmWallet, discoverEvmWallets, type Eip1193Provider, ensureRobinhoodChain, guardedWalletRequest, NOT_ENOUGH_GAS_MESSAGE, plainWalletError, RHC_ADD_CHAIN_PARAMS, SIGNING_METHODS, WalletRequestError,
 } from "./eip1193";
 
 const ADDR = "0x1111111111111111111111111111111111111111";
@@ -96,5 +96,19 @@ describe("guardedWalletRequest (signing off outside preview)", () => {
   });
   it("only accepts signing methods", async () => {
     await expect(guardedWalletRequest(mockProvider(() => null).provider, "eth_chainId", [])).rejects.toMatchObject({ code: "unknown" });
+  });
+});
+
+describe("plainWalletError", () => {
+  it.each([
+    [{ message: "Internal JSON-RPC error.", data: { message: "insufficient funds for gas * price + value" } }, NOT_ENOUGH_GAS_MESSAGE],
+    [new Error("err: insufficient funds for transfer"), NOT_ENOUGH_GAS_MESSAGE],
+    [{ message: "nonce too low" }, /another pending transaction/],
+    [{ message: "x", cause: { message: "execution reverted: 0x12816f22" } }, /would fail on chain\. Nothing was sent/],
+    [{ message: "weird" }, /could not complete the request\. Nothing was sent/],
+    [null, /could not complete the request/],
+  ])("states the real cause in plain words (%#)", (error, expected) => {
+    if (typeof expected === "string") expect(plainWalletError(error)).toBe(expected);
+    else expect(plainWalletError(error)).toMatch(expected);
   });
 });
