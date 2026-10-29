@@ -6,9 +6,9 @@ export { assertWalletReturnedTransaction } from "./wallet-returned-guard";
 
 /**
  * Wallets sometimes rebuild a VersionedTransaction from the message and only
- * fill the fee-payer slot. Used by the MCP sign-link fallback when the prepared
- * tx already carries an NFT-mint signature. The HTTP app path signs the mint
- * after the wallet instead (Phantom multi-signer recipe).
+ * fill the fee-payer slot. Kept for sign links issued before browser-generated
+ * mints (prepared tx already carrying an NFT-mint signature). Current paths sign
+ * the mint after the wallet instead (Phantom multi-signer recipe).
  */
 export function preserveExtraSignatures(
   prepared: VersionedTransaction,

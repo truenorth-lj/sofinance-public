@@ -590,7 +590,7 @@ exports[`tools/list wire contract > matches the golden snapshot (names, descript
       "name": "quote_open_position",
     },
     {
-      "description": "Prepare an unsigned, fully-simulated transaction that opens a new CLMM position. Prefer passing nftMint from an agent-held Keypair so the server never signs: wallet signs first, then add the mint signature on the wallet-returned tx and call submit_open_position. Omitting nftMint uses an MCP-ONLY server partial-sign so /app/sign can submit (Phantom may still warn). HMAC permit, summary, signUrl. 1232-byte limit, fresh blockhash, full simulation. Not submit_signed_transaction — this tx has two required signers.",
+      "description": "Prepare an unsigned, fully-simulated transaction that opens a new CLMM position. Prefer passing nftMint from an agent-held Keypair so the server never signs: wallet signs first, then add the mint signature on the wallet-returned tx and call submit_open_position. Without nftMint, open signUrl: the sign page generates the mint in the browser, re-prepares, wallet signs first, then the mint (the returned tx is a preview only). HMAC permit, summary, signUrl. 1232-byte limit, fresh blockhash, full simulation. Not submit_signed_transaction — this tx has two required signers.",
       "inputSchema": {
         "properties": {
           "amount": {

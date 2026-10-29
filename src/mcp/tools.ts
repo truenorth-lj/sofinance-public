@@ -1,6 +1,6 @@
 import "@/lib/engine-host";
 import { PublicKey, VersionedTransaction } from "@solana/web3.js";
-import { createEphemeralMint, type EphemeralMint } from "@/lib/ephemeral-mint";
+import { randomBytes } from "crypto";
 import { discoverWallet } from "@sofinance/engine/wallet-discovery";
 import { searchSelectedQuoteBundle } from "../lib/selected-quote";
 import { submitSelected } from "@/server/transactions/selected-submit";
@@ -673,26 +673,24 @@ export async function quoteOpenPosition(input: QuoteOpenPositionInput) {
 }
 
 /**
- * MCP-ONLY fallback: partial-sign with an ephemeral mint so `/app/sign/<token>`
- * can broadcast without a browser-held mint secret. HTTP `/api/open-prepare`
- * never takes this path. Phantom may still warn because the sign page then
- * presents a pre-signed extra signer. Prefer passing `nftMint` and signing the
- * mint after the wallet (Phantom multi-signer recipe).
+ * Placeholder mint for MCP prepares without `nftMint`: random bytes, so no secret
+ * exists anywhere. The returned transaction is a preview; `/app/sign/<token>`
+ * generates the real mint in the browser and re-prepares (wallet signs first).
  */
-function mcpPartialSignOpenMint(unsignedTransactionBase64: string, mint: EphemeralMint): string {
-  const tx = VersionedTransaction.deserialize(Buffer.from(unsignedTransactionBase64, "base64"));
-  try {
-    tx.sign([mint]);
-  } finally {
-    mint.dispose();
+export function previewOnlyMintAddress(): string {
+  // Random bytes that decode to a valid ed25519 point (the engine requires an on-curve
+  // mint): a usable public key whose secret key nobody knows. ~50% of draws qualify.
+  for (;;) {
+    const bytes = randomBytes(32);
+    if (PublicKey.isOnCurve(bytes) && !bytes.every(byte => byte === 0)) return new PublicKey(bytes).toBase58();
   }
-  return Buffer.from(tx.serialize()).toString("base64");
 }
 
 /**
  * Prepare an unsigned open-position transaction. Prefer `nftMint` from an agent-held
  * Keypair: the server never signs. After the wallet signs, add the mint signature
  * to the transaction the wallet returns, zero the secret, then submit_open_position.
+ * Without `nftMint`, use signUrl: the sign page creates the mint in the browser.
  */
 export async function prepareOpenPosition(input: PrepareOpenPositionInput) {
   const signingSecret = capturePrepareSigningSecret();
@@ -701,44 +699,41 @@ export async function prepareOpenPosition(input: PrepareOpenPositionInput) {
     inputMint: input.inputMint,
     inputKind: input.inputKind,
   };
-  // MCP-ONLY: generate and partial-sign when the agent omits nftMint (signUrl
-  // cannot hold the mint secret). Agents that can sign should pass nftMint.
-  const mint = input.nftMint ? undefined : createEphemeralMint();
-  try {
-    const { summary, permit, unsignedTransaction } = await prepareOpen({
-      wallet: input.wallet, selection, amount: input.amount, range: openRangeFromInput(input),
-      floorBps: input.resaleFloorBps, toleranceBps: input.slippageToleranceBps,
-      nftMint: input.nftMint ?? mint!.publicKey.toBase58(),
-    }, signingSecret, MCP_OPEN_PREPARE);
-    const unsignedTransactionBase64 = mint ? mcpPartialSignOpenMint(unsignedTransaction, mint) : unsignedTransaction;
-    const jupiterApiKey = signingSecret();
-    const submitArgs = { permit, wallet: input.wallet, summary };
-    const signToken = await createSignToken(
-      {
-        kind: "open-position",
-        wallet: input.wallet,
-        unsignedTransaction: unsignedTransactionBase64,
-        permit,
-        submitArgs,
-        expiresAt: summary.expiresAt,
-      },
-      jupiterApiKey,
-    );
-    return {
-      unsignedTransaction: unsignedTransactionBase64,
+  const range = openRangeFromInput(input);
+  const browserMint = !input.nftMint;
+  const { summary, permit, unsignedTransaction } = await prepareOpen({
+    wallet: input.wallet, selection, amount: input.amount, range,
+    floorBps: input.resaleFloorBps, toleranceBps: input.slippageToleranceBps,
+    nftMint: input.nftMint ?? previewOnlyMintAddress(),
+  }, signingSecret, MCP_OPEN_PREPARE);
+  const submitArgs = { permit, wallet: input.wallet, summary };
+  const signToken = await createSignToken(
+    {
+      kind: "open-position",
+      wallet: input.wallet,
+      unsignedTransaction,
       permit,
-      summary,
-      signToken,
-      signUrl: buildSignUrl(signToken),
-      instructions: {
-        message: mint
-          ? "MCP-ONLY fallback: this transaction is partial-signed by an ephemeral NFT mint so /app/sign can submit without a browser-held mint secret. Phantom may still warn. Prefer passing nftMint, signing the wallet first, then adding the mint signature on the wallet-returned tx before submit_open_position."
-          : "Sign unsignedTransaction with the wallet FIRST, then add the NFT mint signature to the transaction the wallet returns without modifying the message, then call submit_open_position with { signedTransaction, permit, wallet, summary }. Pass summary back exactly as returned. signUrl cannot add the mint signature; use programmatic submit when you generated nftMint.",
-      },
-    };
-  } finally {
-    mint?.dispose();
-  }
+      submitArgs,
+      expiresAt: summary.expiresAt,
+      ...(browserMint ? { openRequest: {
+        selection, amount: input.amount, range, floorBps: input.resaleFloorBps,
+        ...(input.slippageToleranceBps === undefined ? {} : { toleranceBps: input.slippageToleranceBps }),
+      } } : {}),
+    },
+    signingSecret(),
+  );
+  return {
+    unsignedTransaction,
+    permit,
+    summary,
+    signToken,
+    signUrl: buildSignUrl(signToken),
+    instructions: {
+      message: browserMint
+        ? "No nftMint was passed, so open signUrl in a browser: the sign page generates the position NFT mint there, re-prepares, has the wallet sign FIRST, then adds the mint signature. unsignedTransaction/summary here are a preview built with a placeholder mint and cannot be submitted directly. To submit programmatically, call prepare_open_position again with your own nftMint."
+        : "Sign unsignedTransaction with the wallet FIRST, then add the NFT mint signature to the transaction the wallet returns without modifying the message, then call submit_open_position with { signedTransaction, permit, wallet, summary }. Pass summary back exactly as returned. signUrl cannot add the mint signature; use programmatic submit when you generated nftMint.",
+    },
+  };
 }
 
 /**
