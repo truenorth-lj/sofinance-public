@@ -19,6 +19,7 @@ import {
   JUPITER_CLIENT_ERROR_CODE,
   jupiterClientErrorMessage,
 } from "./selected-amount-error";
+import { SolInputDisabledError } from "./sol-input-policy";
 
 const PUBLIC_ERROR_LIMIT = 220;
 
@@ -103,6 +104,7 @@ export function publicErrorCode(error: unknown): string | undefined {
     return JUPITER_NO_ROUTE_CODE;
   }
   if (isAmountTooSmallError(error)) return AMOUNT_TOO_SMALL_CODE;
+  if (error instanceof SolInputDisabledError) return error.code;
   if (error instanceof JupiterHttpError && error.status === 400) return JUPITER_CLIENT_ERROR_CODE;
   if (error instanceof JupiterUnavailableError || isJupiterUpstreamError(error)) {
     return JUPITER_UNAVAILABLE_CODE;

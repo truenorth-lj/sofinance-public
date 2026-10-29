@@ -7,6 +7,7 @@ import { parseWallet } from "@sofinance/engine/api-input";
 import { parseClientNftMint } from "@sofinance/engine/open-atomic";
 import { DEFAULT_OPEN_RANGE_PRESET, type OpenRangeInput, type OpenRangePreset } from "@sofinance/engine/open-range";
 import type { OpenPositionSelection } from "@sofinance/engine/open-state";
+import { assertSolInputAllowed } from "./sol-input-policy";
 
 const PRESETS = new Set<OpenRangePreset>(["micro", "tight", "standard", "wide", "custom"]);
 
@@ -38,6 +39,7 @@ function parseOpenFields(fields: Record<string, unknown>) {
   if (fields.inputKind !== "native" && fields.inputKind !== "token") throw new Error("Invalid input asset type");
   if (typeof fields.amount !== "string" || fields.amount.length > 40) throw new Error("Invalid input amount");
   const selection: OpenPositionSelection = { poolId, inputMint, inputKind: fields.inputKind };
+  assertSolInputAllowed(selection);
   return {
     wallet, selection, amount: fields.amount, range: parseOpenRange(fields),
     floorBps: parseResaleFloorBps(fields.resaleFloorBps ?? fields.floorBps),
