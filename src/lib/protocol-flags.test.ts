@@ -40,12 +40,13 @@ describe("ORCA_DISCOVERY_ENABLED", () => {
     for (const t of ["production", "preview"] as const) expect(isRhcUniv4WalletSigningEnabled(t)).toBe(true);
     expect(isRhcUniv4WalletSigningEnabled("development")).toBe(false);
   });
-  it("Meteora open flags: build OFF in production, signing OFF everywhere", () => {
+  it("Meteora open flags: build and signing OFF in production", () => {
     expect(METEORA_DLMM_TX_BUILD_ENABLED).toEqual({ production: false, preview: true, development: true });
-    expect(METEORA_DLMM_WALLET_SIGNING_ENABLED).toEqual({ production: false, preview: false, development: false });
+    expect(METEORA_DLMM_WALLET_SIGNING_ENABLED).toEqual({ production: false, preview: true, development: true });
     expect(Object.isFrozen(METEORA_DLMM_TX_BUILD_ENABLED) && Object.isFrozen(METEORA_DLMM_WALLET_SIGNING_ENABLED)).toBe(true);
     expect(isMeteoraDlmmTxBuildEnabled("production")).toBe(false);
-    for (const t of ["production", "preview", "development"] as const) expect(isMeteoraDlmmWalletSigningEnabled(t)).toBe(false);
+    expect(isMeteoraDlmmWalletSigningEnabled("production")).toBe(false);
+    expect(isMeteoraDlmmWalletSigningEnabled("preview")).toBe(true);
   });
 
   it("METEORA_DLMM_DISCOVERY_ENABLED is a frozen code constant that is OFF in production", () => {

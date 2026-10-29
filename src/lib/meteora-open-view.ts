@@ -1,6 +1,7 @@
 import "@/lib/engine-host";
 import "server-only";
 
+import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID, unpackAccount } from "@solana/spl-token";
 import { PublicKey, type Connection } from "@solana/web3.js";
 import { decodeLbPair, meteoraBinArrayAddress, meteoraBinArrayIndex, METEORA_BINS_PER_ARRAY } from "@sofinance/engine/protocols/meteora/accounts";
 import { METEORA_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/meteora/constants";
@@ -45,4 +46,25 @@ export async function loadMeteoraOpenPoolView(connection: Pick<Connection, "getM
   } catch {
     return null;
   }
+}
+
+export type MeteoraWalletBalances = { wallet: string; solLamports: string; usdc: string; x: string; y: string };
+
+const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+
+/** Raw wallet balances for the open panel (SOL lamports; USDC / X / Y raw units from the wallet's ATAs). */
+export async function readMeteoraWalletBalances(
+  wallet: string,
+  connection: Pick<Connection, "getMultipleAccountsInfo"> = rpcConnection(),
+): Promise<MeteoraWalletBalances> {
+  const pool = METEORA_ALLOWLISTED_POOLS[0]!;
+  const owner = new PublicKey(wallet);
+  const atas = [USDC_MINT, pool.mintX, pool.mintY].map((mint) => getAssociatedTokenAddressSync(new PublicKey(mint), owner, false, TOKEN_PROGRAM_ID));
+  const [walletInfo, ...tokens] = await connection.getMultipleAccountsInfo([owner, ...atas], "confirmed");
+  const amount = (i: number) => {
+    const info = tokens[i];
+    if (!info || !info.owner.equals(TOKEN_PROGRAM_ID)) return "0";
+    return unpackAccount(atas[i]!, info, TOKEN_PROGRAM_ID).amount.toString();
+  };
+  return { wallet, solLamports: String(walletInfo?.lamports ?? 0), usdc: amount(0), x: amount(1), y: amount(2) };
 }

@@ -135,13 +135,14 @@ export function isMeteoraDlmmTxBuildEnabled(target: DeployTarget = deployTarget(
 }
 
 /**
- * Wallet signing for the Meteora open flow (Phantom sign buttons) and recording landed opens in the
- * opens log. OFF everywhere until the test-wallet run is approved.
+ * Wallet signing for the Meteora open flow (Phantom / Jupiter Wallet sign buttons, server broadcast of the
+ * wallet-signed tx after permit + fee-guard checks, status, and recording landed opens in the opens log).
+ * Preview + development only; OFF in production.
  */
 export const METEORA_DLMM_WALLET_SIGNING_ENABLED: Readonly<Record<DeployTarget, boolean>> = Object.freeze({
   production: false,
-  preview: false,
-  development: false,
+  preview: true,
+  development: true,
 });
 
 export function isMeteoraDlmmWalletSigningEnabled(target: DeployTarget = deployTarget()): boolean {

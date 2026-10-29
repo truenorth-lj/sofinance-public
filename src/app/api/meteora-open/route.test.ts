@@ -1,7 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
-const prepareMeteoraSetup = vi.fn(async () => ({ step: 1 }));
+const prepareMeteoraSetup = vi.fn(async () => ({
+  step: 1, wallet: "53oyyjgybx6dH7i5aGeKfBUi3xPJQDeBkaENPri57x2H", position: "53oyyjgybx6dH7i5aGeKfBUi3xPJQDeBkaENPri57x2H",
+  transaction: "", blockhash: "GHtXQBsoZHVnNFa9YevAzFr17DJjgHXk3ycTKD5xD3Zi", lastValidBlockHeight: 1, rent: { totalLamports: "43388280" },
+}));
+const issueMeteoraTxPermit = vi.fn(() => "a".repeat(64));
+vi.mock("@/lib/meteora-open-send", async (orig) => ({ ...(await orig<typeof import("@/lib/meteora-open-send")>()), issueMeteoraTxPermit }));
 vi.mock("@/lib/meteora-open", async (orig) => ({ ...(await orig<typeof import("@/lib/meteora-open")>()), prepareMeteoraSetup }));
 const recordMeteoraOpen = vi.fn();
 vi.mock("@/lib/meteora-open-record", async (orig) => ({ ...(await orig<typeof import("@/lib/meteora-open-record")>()), recordMeteoraOpen }));
@@ -27,14 +32,27 @@ describe("/api/meteora-open", () => {
     const res = await POST(req(setupBody));
     expect(res.status).toBe(200);
     expect(prepareMeteoraSetup).toHaveBeenCalledWith(expect.objectContaining({ amount: 1_000_000n }), expect.anything());
+    const body = await res.json();
+    expect(body.permit).toBe("a".repeat(64));
+    expect(body.summary).toMatchObject({ kind: "setup", maxSolDebitLamports: String(43_388_280 + 1_000_000) });
   });
 
-  it("record is 404 while METEORA_DLMM_WALLET_SIGNING_ENABLED is off", async () => {
-    vi.stubEnv("VERCEL_ENV", "preview");
+  it("signing actions are 404 in production (METEORA_DLMM_WALLET_SIGNING_ENABLED off)", async () => {
+    vi.stubEnv("VERCEL_ENV", "production");
     const { POST } = await import("./route");
     const sig = "5".repeat(88);
     expect((await POST(req({ action: "record", wallet: A, setupSignature: sig, depositSignature: "4".repeat(88) }))).status).toBe(404);
+    expect((await POST(req({ action: "status", signature: sig, lastValidBlockHeight: 1 }))).status).toBe(404);
     expect(recordMeteoraOpen).not.toHaveBeenCalled();
+  });
+
+  it("record is allowed on preview (signing on)", async () => {
+    vi.stubEnv("VERCEL_ENV", "preview");
+    recordMeteoraOpen.mockResolvedValueOnce({ recorded: true });
+    const { POST } = await import("./route");
+    const sig = "5".repeat(88);
+    expect((await POST(req({ action: "record", wallet: A, setupSignature: sig, depositSignature: "4".repeat(88) }))).status).toBe(200);
+    expect(recordMeteoraOpen).toHaveBeenCalled();
   });
 
   it("rejects invalid bodies", async () => {
