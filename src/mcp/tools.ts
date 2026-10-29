@@ -28,6 +28,8 @@ import { submitOpenPositionFromParts } from "../lib/open-send";
 import type { OpenPositionSummary } from "@sofinance/engine/open-types";
 import { getPoolActivitySnapshot } from "../lib/solami-blur";
 import { readPositionRangeFacts } from "../lib/position-range-onchain";
+import { isOrcaPositionsEnabled } from "../lib/protocol-flags";
+import { getOrcaPositionPerformance, listOrcaPositions, ORCA_PROTOCOL, readOrcaPositionRangeFacts } from "../lib/orca-positions";
 import { blurPriceToBPerA, rangeStatusFromPrice } from "../lib/position-range-status";
 import type {
   ListPositionsInput,
@@ -54,13 +56,18 @@ import { assertWalletReturnedTransaction } from "@/lib/wallet-returned-guard";
  * Safety: Read-only operation, no private keys required.
  */
 export async function listPositions(input: ListPositionsInput) {
+  const orca = isOrcaPositionsEnabled() ? listOrcaPositions(input.wallet).then(
+    (positions) => ({ positions, error: null }),
+    (error: unknown) => ({ positions: [], error: sanitizePublicError(error, "Orca positions are unavailable right now.") }),
+  ) : null;
   const discovery = await discoverWallet(input.wallet);
-  
+  const orcaResult = orca ? await orca : null;
+
   return {
     wallet: discovery.wallet,
     slot: discovery.slot,
     fetchedAt: discovery.fetchedAt,
-    positions: discovery.positions.map(pos => ({
+    positions: [...discovery.positions.map(pos => ({
       positionMint: pos.positionMint,
       positionAccount: pos.positionAccount,
       poolId: pos.poolId,
@@ -71,7 +78,8 @@ export async function listPositions(input: ListPositionsInput) {
       tickCurrent: pos.tickCurrent,
       rangeSide: pos.rangeSide,
       liquidity: pos.liquidity,
-    })),
+    })), ...(orcaResult?.positions ?? [])],
+    ...(orcaResult?.error ? { protocolErrors: [{ protocol: ORCA_PROTOCOL, error: orcaResult.error }] } : {}),
     assets: discovery.assets.map(asset => ({
       kind: asset.kind,
       mint: asset.mint,
@@ -544,7 +552,13 @@ export async function listRwaPairs(input: ListRwaPairsInput) {
  * Jupiter Price v3 (Raydium stable-leg fallback) when available (labeled — not historical).
  */
 export async function getPositionPerformance(input: GetPositionPerformanceInput) {
-  const result = await readPositionPerformance(input.positionMint, {
+  // Orca positions (flagged off in production) are recognised by their position account; anything else is Raydium.
+  const orca = isOrcaPositionsEnabled() ? await getOrcaPositionPerformance(input.positionMint, {
+    wallet: input.wallet,
+    maxSignatures: input.maxSignatures,
+    skipPricing: input.skipPricing,
+  }) : null;
+  const result = orca ?? await readPositionPerformance(input.positionMint, {
     wallet: input.wallet,
     maxSignatures: input.maxSignatures,
     skipPricing: input.skipPricing,
@@ -553,6 +567,7 @@ export async function getPositionPerformance(input: GetPositionPerformanceInput)
   });
 
   return {
+    ...(orca ? { protocol: ORCA_PROTOCOL } : {}),
     wallet: result.wallet,
     ownsNft: result.ownsNft,
     positionMint: result.positionMint,
@@ -628,7 +643,8 @@ export async function getPoolActivity(input: GetPoolActivityInput) {
  * Falls back to the on-chain mid when Blur is unavailable. Read-only.
  */
 export async function getPositionRangeStatus(input: GetPositionRangeStatusInput) {
-  const facts = await readPositionRangeFacts(input.positionMint);
+  const orcaFacts = isOrcaPositionsEnabled() ? await readOrcaPositionRangeFacts(input.positionMint) : null;
+  const facts = orcaFacts ?? await readPositionRangeFacts(input.positionMint);
   const poolId = input.poolId ?? facts.poolId;
   const activity = await getPoolActivitySnapshot(poolId, { limit: 8 });
   const blurOriented = blurPriceToBPerA(
@@ -648,6 +664,7 @@ export async function getPositionRangeStatus(input: GetPositionRangeStatusInput)
     priceSource: blurOriented !== null ? "solami-blur" : "on-chain",
   });
   return {
+    ...(orcaFacts ? { protocol: ORCA_PROTOCOL } : {}),
     wallet: input.wallet ?? null,
     ...facts,
     poolId,
