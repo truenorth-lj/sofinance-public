@@ -18,6 +18,7 @@ import { NATIVE_SOL_MINT, USDC_MINT } from "@sofinance/engine/ids";
 import { SOL_INPUT_DISABLED_MESSAGE } from "@/lib/feature-flags";
 import { isSolInputBlocked } from "@/lib/sol-input-policy";
 import { solSwapReceiptLabel } from "@/components/transactions/open/use-open-submission";
+import { SOL_SWAP_RECEIPT_TTL_MS } from "@/components/transactions/open/sol-swap-receipt-store";
 import { depositUsd } from "@/lib/range-apr/size-aware";
 import { useDebouncedValue } from "./use-debounced-value";
 
@@ -274,9 +275,19 @@ export function OpenPositionModal({
           <p className="mt-3 text-xs leading-5 text-smoke">SOL deposits take two wallet approvals: 1/2 swaps your SOL to a pool token (the 10 bps protocol fee is charged inside this swap), 2/2 opens the position with exactly what the swap delivered.</p>
         )}
         {c.pendingSwap && !c.busy && c.submitStage !== "confirmed" && (
-          <div role="status" className="mt-3 space-y-1 text-xs leading-5 text-cream/90">
-            <p>Step 1/2 done: {solSwapReceiptLabel(c.pendingSwap)} are in your wallet. Step 2/2 opens the position with them.</p>
-            <a className="underline" href={`https://solscan.io/tx/${c.pendingSwap.signature}`} target="_blank" rel="noreferrer">View swap on Solscan</a>
+          <div role="status" data-testid="pending-sol-swap" className="mt-3 space-y-2 rounded-2xl border border-white/12 p-3 text-xs leading-5 text-cream/90">
+            <p>Your wallet already has {solSwapReceiptLabel(c.pendingSwap)} from step 1/2 (the SOL swap you just made). Open the position with it?</p>
+            <p className="text-smoke">Step 2/2 deposits exactly this amount; the 10 bps protocol fee was already paid in the swap. Amount and input asset edits don&apos;t apply to it; you can still change the range. Available until {new Date(c.pendingSwap.landedAt + SOL_SWAP_RECEIPT_TTL_MS).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.</p>
+            <div className="flex flex-wrap items-center gap-3">
+              <button type="button" onClick={() => void c.signAndSend()} disabled={c.actionDisabled}
+                className="rounded-full bg-lemon px-3 py-1.5 font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-40">
+                Continue (2/2)
+              </button>
+              <button type="button" onClick={c.dismissPendingSwap} className="text-cream/80 underline">
+                Dismiss
+              </button>
+              <a className="underline" href={`https://solscan.io/tx/${c.pendingSwap.signature}`} target="_blank" rel="noreferrer">View swap on Solscan</a>
+            </div>
           </div>
         )}
 
@@ -333,7 +344,7 @@ export function OpenPositionModal({
                 <LoaderCircle className="h-4 w-4 animate-spin" />
                 {status}
               </span>
-            ) : c.pendingSwap ? "Retry open (2/2)" : c.solTwoStep ? "Create position (2 steps)" : "Create position"}
+            ) : c.pendingSwap ? "Continue open (2/2)" : c.solTwoStep ? "Create position (2 steps)" : "Create position"}
           </button>
         )}
       </div>

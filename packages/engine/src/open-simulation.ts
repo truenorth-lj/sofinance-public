@@ -139,8 +139,13 @@ export async function simulateAndVerifyOpenTransaction(input: VerifyInput) {
   const solResult = solRead ?? (sponsoredWallet && solBefore === 0 ? { lamports: 0 } : null);
   if (!solResult) throw new Error("Simulation did not read back wallet SOL account");
   const solDebit = BigInt(solBefore) - BigInt(solResult.lamports);
-  const debitCap = maxSolDebitLamports + walletPriorityFeeAllowance(input.prepared, transaction);
-  if (solDebit < 0n || solDebit > debitCap || BigInt(solResult.lamports) < minRemainingSol) {
+  // A priority fee the wallet added after prepare (Phantom prices it per requested CU and shows
+  // it on its confirm screen) is the user's own network-fee choice, bounded by the allowance
+  // ceiling. It may raise the debit cap and must not by itself breach the SOL reserve that
+  // prepare already checked against our rent + fees; any other extra SOL movement still fails.
+  const walletPriority = walletPriorityFeeAllowance(input.prepared, transaction);
+  const debitCap = maxSolDebitLamports + walletPriority;
+  if (solDebit < 0n || solDebit > debitCap || BigInt(solResult.lamports) + walletPriority < minRemainingSol) {
     throw new Error("Simulated SOL expenditure or remaining balance exceeds limit");
   }
   let spentInput: bigint | null = null;

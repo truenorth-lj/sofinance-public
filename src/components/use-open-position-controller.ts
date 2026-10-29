@@ -19,6 +19,8 @@ import { applySolInputPolicy, isSolInputBlocked } from "@/lib/sol-input-policy";
 
 import { useOpenPreview, useOpenPreviewEffect } from "./transactions/open/use-open-preview";
 import { useOpenSubmission, useOpenSubmissionCommand, type OpenSubmitStage } from "./transactions/open/use-open-submission";
+import { clearWalletSolSwapReceipts, isSolSwapReceiptExpired, loadSolSwapReceipt,
+  receiptStorage } from "./transactions/open/sol-swap-receipt-store";
 
 export type OpenPositionPair = {
   poolAddress: string;
@@ -121,12 +123,33 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
   const busy = operationStage === "preparing" || operationStage === "wallet" || operationStage === "broadcasting" ||
     operationStage === "swap-preparing" || operationStage === "swap-wallet" || operationStage === "swap-broadcasting" ||
     operationStage === "swap-pending" || open.pending;
-  // Step 1/2 landed for this wallet + pool but its open has not confirmed: offer "Retry open".
-  const pendingSwap = swapReceipt && swapReceipt.wallet === wallet && swapReceipt.poolId === pair?.poolAddress ? swapReceipt : null;
+  // Step 1/2 landed for this wallet + pool but its open has not confirmed: offer "Continue open (2/2)".
+  const pendingSwap = swapReceipt && swapReceipt.wallet === wallet && swapReceipt.poolId === pair?.poolAddress &&
+    !(now > 0 && isSolSwapReceiptExpired(swapReceipt, now)) ? swapReceipt : null;
+  const poolAddress = pair?.poolAddress;
+  const lastWalletRef = useRef<string | undefined>(undefined);
+  const { submittingRef } = submission;
   useEffect(() => {
-    // The two-step deposit is complete once its step-2 open confirms.
-    if (open.status === "confirmed" && samePool && swapReceipt) setSwapReceipt(null);
-  }, [open.status, samePool, swapReceipt, setSwapReceipt]);
+    // Hydrate the persisted step 1/2 receipt for this wallet + pool (survives input edits, modal close, reload).
+    // A switch to a different wallet drops the previous wallet's receipts; a transient disconnect does not.
+    const previous = lastWalletRef.current;
+    if (wallet) lastWalletRef.current = wallet;
+    const timer = window.setTimeout(() => {
+      const storage = receiptStorage();
+      if (storage && wallet && previous && previous !== wallet) clearWalletSolSwapReceipts(storage, previous);
+      if (submittingRef.current) return;
+      const loaded = storage && wallet && poolAddress ? loadSolSwapReceipt(storage, wallet, poolAddress, Date.now()) : null;
+      setSwapReceipt(loaded, { persist: false });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [wallet, poolAddress, setSwapReceipt, submittingRef]);
+  useEffect(() => {
+    if (!swapReceipt) return;
+    // The two-step deposit is complete once ITS step-2 open confirms; the receipt also lapses with the fee credit.
+    const consumed = open.status === "confirmed" && Boolean(swapReceipt.openSignature) &&
+      open.attempt?.signature === swapReceipt.openSignature;
+    if (consumed || (now > 0 && isSolSwapReceiptExpired(swapReceipt, now))) setSwapReceipt(null);
+  }, [open.status, open.attempt?.signature, swapReceipt, setSwapReceipt, now]);
   let parsedAmount: bigint | null = null;
   if (selectedAsset?.eligible && amount) {
     try {
@@ -267,6 +290,7 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
     actionDisabled, actionBlockedReason, walletBlockedReason, changeAmount, chooseAsset, choosePreset,
     setMinPrice: changeMinPrice, setMaxPrice: changeMaxPrice, fillMax, signAndSend,
     now, refreshQuote, canRefreshQuote, retryConfirmation: open.retry,
+    dismissPendingSwap: () => { if (!busy) setSwapReceipt(null); },
     createAnother: () => { if (!busy && open.canSubmit()) { open.dismissTerminal(); clearQuote(); } },
   };
 }

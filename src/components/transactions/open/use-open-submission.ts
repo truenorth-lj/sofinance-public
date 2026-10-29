@@ -18,6 +18,8 @@ import { classifyOpenError } from "@/lib/analytics/errors";
 import { GROWTH_EVENTS, openEventProperties } from "@/lib/analytics/events";
 import { formatAmount } from "@sofinance/engine/amount";
 import { rawToDecimalString, runSolSwapStep, SolSwapStepError, type SolSwapReceipt, type SolSwapStage } from "./sol-swap-step-client";
+import { clearSolSwapReceipt, isSolSwapReceiptExpired, receiptStorage, saveSolSwapReceipt,
+  type PendingSolSwapReceipt } from "./sol-swap-receipt-store";
 
 type ApiError = { error: string };
 type Prepared = { unsignedTransaction: string; permit: string; summary: OpenPositionSummary };
@@ -73,12 +75,20 @@ export function useOpenSubmission() {
   // Metadata is keyed by the original signature; the facade shows it only after verification.
   const [beamResult, setBeamResult] = useState<{ signature: string; status: OpenBeamStatus } | null>(null);
   const [openStep, setOpenStep] = useState<OpenStep>(null);
-  // A landed step 1/2 whose step 2/2 open has not confirmed yet ("retry open" resumes from it).
-  const [swapReceipt, setSwapReceiptState] = useState<SolSwapReceipt | null>(null);
-  const swapReceiptRef = useRef<SolSwapReceipt | null>(null);
-  const setSwapReceipt = useCallback((receipt: SolSwapReceipt | null) => {
+  // A landed step 1/2 whose step 2/2 open has not confirmed yet ("Continue open (2/2)" resumes from it).
+  // Persisted per wallet + pool so form edits, closing the modal or a reload cannot strand the swapped tokens.
+  const [swapReceipt, setSwapReceiptState] = useState<PendingSolSwapReceipt | null>(null);
+  const swapReceiptRef = useRef<PendingSolSwapReceipt | null>(null);
+  /** `persist: false` only mirrors storage into memory (hydration); null then leaves storage untouched. */
+  const setSwapReceipt = useCallback((receipt: PendingSolSwapReceipt | null, options: { persist?: boolean } = {}) => {
+    const previous = swapReceiptRef.current;
     swapReceiptRef.current = receipt;
     setSwapReceiptState(receipt);
+    if (options.persist === false) return;
+    const storage = receiptStorage();
+    if (!storage) return;
+    if (receipt) saveSolSwapReceipt(storage, receipt);
+    else if (previous) clearSolSwapReceipt(storage, previous.wallet, previous.poolId);
   }, []);
   const submittingRef = useRef<object | null>(null);
   const inputRevisionRef = useRef(0);
@@ -112,9 +122,10 @@ export function useOpenSubmissionCommand({ pair, wallet, inputMint, inputKind, a
     return () => { committedGenerationRef.current = null; };
   }, []);
   return useCallback(async () => {
-    // Retry open (2/2): a landed step-1 swap for this wallet and pool resumes at the token-input open.
+    // Continue open (2/2): a landed step-1 swap for this wallet and pool resumes at the token-input open.
     const resume = swapReceiptRef.current && swapReceiptRef.current.wallet === wallet &&
-      swapReceiptRef.current.poolId === pair?.poolAddress ? swapReceiptRef.current : null;
+      swapReceiptRef.current.poolId === pair?.poolAddress && !isSolSwapReceiptExpired(swapReceiptRef.current, Date.now())
+      ? swapReceiptRef.current : null;
     if (!pair || !wallet || busy || !open.loaded || submittingRef.current) return;
     if (!resume && (!inputMint || !quote || !fresh || Date.now() >= quote.expiresAt)) return;
     const ownsInput = () => generation !== null && committedGenerationRef.current === generation &&
@@ -138,17 +149,18 @@ export function useOpenSubmissionCommand({ pair, wallet, inputMint, inputKind, a
     setRetryError(null);
     captureGrowthEvent(GROWTH_EVENTS.openStarted, openEventProperties(pair));
     let mint: EphemeralMint | undefined;
-    let receipt: SolSwapReceipt | null = resume;
+    let receipt: PendingSolSwapReceipt | null = resume;
     try {
       if (!receipt && inputKind === "native") {
         // Step 1/2: SOL -> pool token swap (10 bps inside the Jupiter swap). Phantom
         // blocks a single wrap + swap + open transaction, but passes these two.
         setOpenStep(1);
-        receipt = await runSolSwapStep({
+        const landed: SolSwapReceipt = await runSolSwapStep({
           wallet, poolId: pair.poolAddress, amount, requested: parsedAmount?.toString() ?? "",
           store: jupiterStoreRef.current, timeoutMs: OPEN_PREPARE_TIMEOUT_MS, signTransaction,
           setStage: setSubmitStage, current,
         });
+        receipt = { ...landed, landedAt: Date.now() };
         setSwapReceipt(receipt);
         if (!current()) throw new Error("Wallet or input changed after step 1/2");
         setSubmitStage("preparing");
@@ -209,6 +221,11 @@ export function useOpenSubmissionCommand({ pair, wallet, inputMint, inputKind, a
       const attempt = openAttemptFromSummary(txSignature, prepared.summary);
       open.track(attempt);
       persisted = attempt;
+      // The receipt is consumed once THIS open confirms (not any other confirmed open on the pool).
+      if (receipt) {
+        receipt = { ...receipt, openSignature: txSignature };
+        setSwapReceipt(receipt);
+      }
       setSubmitStage("broadcasting");
       const sent = await fetch("/api/open-broadcast", {
         method: "POST",
@@ -247,7 +264,7 @@ export function useOpenSubmissionCommand({ pair, wallet, inputMint, inputKind, a
         const message = persisted
           ? "Submission result is unconfirmed. Tracking the original signature; do not open again until it is verified."
           : receipt
-            ? `Step 1/2 done: ${solSwapReceiptLabel(receipt)} are in your wallet. Step 2/2 (open position) failed: ${reason} Use "Retry open" to try step 2/2 again.`
+            ? `Step 1/2 done: ${solSwapReceiptLabel(receipt)} are in your wallet. Step 2/2 (open position) failed: ${reason} Use "Continue open (2/2)" to try step 2/2 again.`
             : caught instanceof SolSwapStepError && caught.signature
               ? `${reason} (swap ${caught.signature.slice(0, 8)}…)`
               : reason;

@@ -24,7 +24,7 @@ import type { OpenRangeInput } from "./open-range";
 import { readOpenPoolState, type OpenPoolState, type OpenPositionSelection } from "./open-state";
 import type { OpenPositionSummary } from "./open-types";
 import { JUPITER_MAX_ACCOUNTS, type JupiterRouteConstraints } from "./jupiter-route-retry";
-import { atomicComputeUnitLimitInstruction } from "./transaction-limits";
+import { atomicComputeUnitLimitInstruction, measuredComputeUnitLimit } from "./transaction-limits";
 
 export type OpenPositionBuildOptions = {
   enforceResaleFloor?: boolean;
@@ -303,7 +303,11 @@ async function buildOpenPositionAttempt(
     ...(resources.minContextSlot ? { minContextSlot: resources.minContextSlot } : {}),
   });
   const latest = await connection.getLatestBlockhash("confirmed");
-  const restamped = restampVersionedTransaction(simulated, latest.blockhash, tables);
+  // Simulated with the 1.4M ceiling; ship the measured limit (like the SOL swap step) so a
+  // wallet-added priority fee, priced per requested CU, stays small. Broadcast re-simulates the
+  // signed message, so a too-tight limit is rejected there instead of failing on-chain.
+  const restamped = restampVersionedTransaction(simulated, latest.blockhash, tables,
+    { computeUnitLimit: measuredComputeUnitLimit(verified.unitsConsumed ?? 0) });
   const sizeBytes = assertOpenTransactionSize(restamped);
   const fee = await estimateFeeForMessage(connection, restamped.message, "confirmed", {
     fallback: defaultRpcConnection, emptyError: OPEN_FEE_ESTIMATE_MESSAGE,

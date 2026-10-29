@@ -251,3 +251,21 @@ it("budgets newly created pool token accounts in the simulation SOL limit", asyn
   expect(summary.maxSolDebitLamports).toBe("34265120");
   expect(summary.rentLamports).toBe(4155120);
 });
+
+it("simulates with the 1.4M CU ceiling but ships the measured CU limit so a wallet-added priority fee stays small", async () => {
+  const { ComputeBudgetProgram } = await import("@solana/web3.js");
+  const { measuredComputeUnitLimit } = await import("@sofinance/engine/transaction-limits");
+  const cuLimit = (tx: import("@solana/web3.js").VersionedTransaction) => {
+    const keys = tx.message.staticAccountKeys;
+    const ix = tx.message.compiledInstructions.find(item => keys[item.programIdIndex]?.equals(ComputeBudgetProgram.programId) && item.data[0] === 2);
+    return ix ? Buffer.from(ix.data).readUInt32LE(1) : null;
+  };
+  const { transaction, summary } = await prepare();
+  const simulated = vi.mocked(simulateAndVerifyOpenTransaction).mock.calls.at(-1)![0].transaction;
+  expect(cuLimit(simulated)).toBe(1_400_000);
+  expect(cuLimit(transaction)).toBe(measuredComputeUnitLimit(350_000));
+  expect(cuLimit(transaction)).toBe(437_500);
+  expect(transaction.message.recentBlockhash).toBe(summary.blockhash);
+  // Only the CU limit changes: same instruction count and account keys.
+  expect(transaction.message.compiledInstructions).toHaveLength(simulated.message.compiledInstructions.length);
+});
