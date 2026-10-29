@@ -15,6 +15,7 @@ vi.mock("../lib/meteora-positions", () => ({
   METEORA_PROTOCOL: "meteora-dlmm",
   listMeteoraPositions: vi.fn(async () => []),
   readMeteoraPositionRangeFacts: vi.fn(async () => null),
+  getMeteoraPositionPerformance: vi.fn(async () => null),
 }));
 
 const { discoverWallet } = await import("@sofinance/engine/wallet-discovery");

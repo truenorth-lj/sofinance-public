@@ -14,13 +14,15 @@ vi.mock("../lib/meteora-positions", () => ({
   METEORA_PROTOCOL: "meteora-dlmm",
   listMeteoraPositions: vi.fn(),
   readMeteoraPositionRangeFacts: vi.fn(),
+  getMeteoraPositionPerformance: vi.fn(),
 }));
 
 const { discoverWallet } = await import("@sofinance/engine/wallet-discovery");
 const { readPositionRangeFacts } = await import("../lib/position-range-onchain");
+const { getPositionPerformance: readRaydiumPerformance } = await import("../lib/position-performance");
 const orca = await import("../lib/orca-positions");
 const meteora = await import("../lib/meteora-positions");
-const { getPositionRangeStatus, listPositions } = await import("./tools");
+const { getPositionPerformance, getPositionRangeStatus, listPositions } = await import("./tools");
 
 const WALLET = "7BgBvyjrZX1YKz4oh9mjb8ZScatkkwb8DzFx7LoiVkM3";
 const raydiumRow = { positionMint: "m", positionAccount: "a", poolId: "p", mintA: "A", mintB: "B", tickLower: -10, tickUpper: 10, tickCurrent: 0, rangeSide: "inside", liquidity: "1" };
@@ -43,6 +45,9 @@ describe("MCP Meteora routing (METEORA_DLMM_DISCOVERY_ENABLED)", () => {
     expect(range).not.toHaveProperty("protocol");
     expect(meteora.listMeteoraPositions).not.toHaveBeenCalled();
     expect(meteora.readMeteoraPositionRangeFacts).not.toHaveBeenCalled();
+    vi.mocked(readRaydiumPerformance).mockResolvedValue({ metrics: {}, history: [] } as never);
+    expect(await getPositionPerformance({ positionMint: "m" } as never)).not.toHaveProperty("protocol");
+    expect(meteora.getMeteoraPositionPerformance).not.toHaveBeenCalled();
   });
 
   it("preview: appends shown Meteora positions and reports Meteora failures separately", async () => {
@@ -68,5 +73,21 @@ describe("MCP Meteora routing (METEORA_DLMM_DISCOVERY_ENABLED)", () => {
     vi.mocked(orca.readOrcaPositionRangeFacts).mockResolvedValueOnce({ ...facts, positionMint: "om" });
     expect(await getPositionRangeStatus({ positionMint: "om" } as never)).toMatchObject({ protocol: "orca-whirlpool" });
     expect(meteora.readMeteoraPositionRangeFacts).toHaveBeenCalledTimes(2);
+  });
+
+  it("preview: performance routes Meteora position accounts after Orca and before Raydium", async () => {
+    vi.stubEnv("VERCEL_ENV", "preview");
+    vi.mocked(meteora.getMeteoraPositionPerformance).mockResolvedValueOnce({ metrics: {}, history: [], poolId: "mp" } as never).mockResolvedValueOnce(null);
+    vi.mocked(readRaydiumPerformance).mockResolvedValue({ metrics: {}, history: [], poolId: "rp" } as never);
+    expect(await getPositionPerformance({ positionMint: "pos", wallet: WALLET, skipPricing: true } as never)).toMatchObject({ protocol: "meteora-dlmm", poolId: "mp" });
+    expect(meteora.getMeteoraPositionPerformance).toHaveBeenCalledWith("pos", expect.objectContaining({ wallet: WALLET, skipPricing: true }));
+    const raydium = await getPositionPerformance({ positionMint: "m" } as never);
+    expect(raydium).not.toHaveProperty("protocol");
+    expect(raydium.poolId).toBe("rp");
+    expect(readRaydiumPerformance).toHaveBeenCalledTimes(1);
+
+    vi.mocked(orca.getOrcaPositionPerformance).mockResolvedValueOnce({ metrics: {}, history: [], poolId: "op" } as never);
+    expect(await getPositionPerformance({ positionMint: "om" } as never)).toMatchObject({ protocol: "orca-whirlpool" });
+    expect(meteora.getMeteoraPositionPerformance).toHaveBeenCalledTimes(2);
   });
 });

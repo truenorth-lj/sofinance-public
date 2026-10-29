@@ -39,3 +39,16 @@ other positions) is replaced with a deterministic hash. Signatures and
 blockhashes are dropped (labels are used instead); non-Orca outer instructions
 are stubbed and only the Orca instructions' inner receipts are kept. Replaying
 them reproduces each position's captured on-chain liquidity exactly.
+
+`meteora-position-history-cbbtc-wbtc.json` contains 30 minimized successful
+mainnet receipts (read-only `getTransaction`, jsonParsed, public RPC, captured
+2026-10-30) for two Meteora DLMM cbBTC/WBTC positions in
+`packages/engine/src/fixtures/meteora-positions-cbbtc-wbtc.json`: an in-range
+open (initialize + add in one transaction) and a fully withdrawn position
+(open, a second add, 24 fee claims, a remove), plus one maintenance-only
+receipt each. Program, event authority, pool, reserve, mint and position keys
+are real public program state; every other key in instructions and transfer
+receipts (wallets, wallet token accounts, bin arrays) is replaced with a
+deterministic hash. Self-CPI event data is kept verbatim. Signatures, logs and
+blockhashes are dropped (labels are used instead). Claimed fees replayed from
+these receipts equal the position's on-chain `total_claimed_fee_x/y`.

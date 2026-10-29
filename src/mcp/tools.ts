@@ -28,7 +28,7 @@ import type { OpenPositionSummary } from "@sofinance/engine/open-types";
 import { readPositionRangeFacts } from "../lib/position-range-onchain";
 import { isMeteoraDlmmDiscoveryEnabled, isOrcaPositionsEnabled } from "../lib/protocol-flags";
 import { getOrcaPositionPerformance, listOrcaPositions, ORCA_PROTOCOL, readOrcaPositionRangeFacts } from "../lib/orca-positions";
-import { listMeteoraPositions, METEORA_PROTOCOL, readMeteoraPositionRangeFacts } from "../lib/meteora-positions";
+import { getMeteoraPositionPerformance, listMeteoraPositions, METEORA_PROTOCOL, readMeteoraPositionRangeFacts } from "../lib/meteora-positions";
 import { rangeStatusFromPrice } from "../lib/position-range-status";
 import type {
   ListPositionsInput,
@@ -565,7 +565,9 @@ export async function getPositionPerformance(input: GetPositionPerformanceInput)
     maxSignatures: input.maxSignatures,
     skipPricing: input.skipPricing,
   }) : null;
-  const result = orca ?? await readPositionPerformance(input.positionMint, {
+  // Meteora DLMM positions (flagged off in production) are recognised by their position account.
+  const meteora = !orca && isMeteoraDlmmDiscoveryEnabled() ? await getMeteoraPositionPerformance(input.positionMint, { wallet: input.wallet, maxSignatures: input.maxSignatures, skipPricing: input.skipPricing }) : null;
+  const result = orca ?? meteora ?? await readPositionPerformance(input.positionMint, {
     wallet: input.wallet,
     maxSignatures: input.maxSignatures,
     skipPricing: input.skipPricing,
@@ -574,7 +576,7 @@ export async function getPositionPerformance(input: GetPositionPerformanceInput)
   });
 
   return {
-    ...(orca ? { protocol: ORCA_PROTOCOL } : {}),
+    ...(orca ? { protocol: ORCA_PROTOCOL } : meteora ? { protocol: METEORA_PROTOCOL } : {}),
     wallet: result.wallet,
     ownsNft: result.ownsNft,
     positionMint: result.positionMint,
