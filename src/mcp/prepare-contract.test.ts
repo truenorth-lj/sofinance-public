@@ -8,7 +8,7 @@ import { createHmac } from "node:crypto";
 import { deflateSync } from "node:zlib";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const backend = vi.hoisted(() => ({ discover: vi.fn(), selectedQuote: vi.fn(), selectedBuild: vi.fn(), compound: vi.fn(),
-  openQuote: vi.fn(), openBuild: vi.fn(), withdraw: vi.fn(), pairs: vi.fn(), performance: vi.fn(), activity: vi.fn(), range: vi.fn(), rpc: vi.fn(), latest: vi.fn() }));
+  openQuote: vi.fn(), openBuild: vi.fn(), withdraw: vi.fn(), pairs: vi.fn(), performance: vi.fn(), range: vi.fn(), rpc: vi.fn(), latest: vi.fn() }));
 vi.mock("server-only", () => ({}));
 vi.mock("@sofinance/engine/wallet-discovery", () => ({ discoverWallet: backend.discover }));
 vi.mock("@/lib/selected-quote", () => ({ searchSelectedQuoteBundle: backend.selectedQuote }));
@@ -22,7 +22,6 @@ vi.mock("@sofinance/engine/open-atomic", async (importOriginal) => ({
 vi.mock("@sofinance/engine/withdraw/build", () => ({ buildWithdraw: backend.withdraw }));
 vi.mock("@/lib/rwa-store", () => ({ getRwaPairs: backend.pairs }));
 vi.mock("@/lib/position-performance", () => ({ getPositionPerformance: backend.performance }));
-vi.mock("@/lib/solami-blur", () => ({ getPoolActivitySnapshot: backend.activity }));
 vi.mock("@/lib/position-range-onchain", () => ({ readPositionRangeFacts: backend.range }));
 vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: backend.rpc }));
 import { POST } from "@/app/api/mcp/route";
@@ -57,8 +56,7 @@ beforeEach(async () => {
   backend.latest.mockResolvedValue({ blockhash: testKeypair(90).publicKey.toBase58(), lastValidBlockHeight: 180 });
   backend.pairs.mockResolvedValue({ pairs: [], source: "synthetic", scannedPools: 0, pagesFetched: 1 });
   backend.performance.mockResolvedValue({ positionMint: VALID_ARGS.get_position_performance.positionMint, metrics: { holdingDays: 1 }, history: [] });
-  backend.activity.mockResolvedValue({ available: false, pool: null, trades: [] });
-  backend.range.mockResolvedValue({ poolId: VALID_ARGS.get_pool_activity.poolId, mintA: wallet, mintB: otherWallet,
+  backend.range.mockResolvedValue({ poolId: VALID_ARGS.quote_open_position.poolId, mintA: wallet, mintB: otherWallet,
     tickLower: -60, tickUpper: 60, decimalsA: 9, decimalsB: 9, onChainPriceBPerA: 1 });
   server = createMcpServer(); client = new Client({ name: "real-handlers", version: "1" });
   const [a, b] = InMemoryTransport.createLinkedPair(); await server.connect(a); await client.connect(b);

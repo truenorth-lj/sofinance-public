@@ -3,28 +3,13 @@ import { z } from "zod";
 vi.mock("server-only", () => ({}));
 import { defineTool, dispatchTool, TOOL_DISPATCH, type McpDispatchContext } from "./dispatch";
 import { listToolDefinitions, type ToolName } from "./tool-definitions";
-import { isToolEnabled, listEnabledToolDefinitions } from "./tool-availability";
 
 it("covers every unique metadata name on both surfaces exactly once", () => {
   for (const surface of ["http", "stdio"] as const) {
     const names = listToolDefinitions(surface).map(tool => tool.name);
-    expect(new Set(names).size).toBe(16);
+    expect(new Set(names).size).toBe(15);
     expect(names.toSorted()).toEqual(Object.keys(TOOL_DISPATCH).toSorted());
   }
-});
-it("POOL_ACTIVITY_ENABLED gates get_pool_activity in discovery and dispatch only", async () => {
-  expect(isToolEnabled("get_pool_activity", "production")).toBe(false);
-  expect(isToolEnabled("get_pool_activity", "preview")).toBe(true);
-  expect(isToolEnabled("list_positions", "production")).toBe(true);
-  for (const surface of ["http", "stdio"] as const) {
-    const all = listToolDefinitions(surface).map(tool => tool.name);
-    expect(listEnabledToolDefinitions(surface, "preview").map(tool => tool.name)).toEqual(all);
-    expect(listEnabledToolDefinitions(surface, "production").map(tool => tool.name)).toEqual(all.filter(name => name !== "get_pool_activity"));
-  }
-  vi.stubEnv("VERCEL_ENV", "production");
-  await expect(dispatchTool("get_pool_activity", { poolId: "DUzBLHZ5RZdftPuWVijsvjupndogRM1adGJpsR7YTJro" }, { surface: "mcp-stdio" }))
-    .rejects.toThrow("get_pool_activity is disabled on this deployment.");
-  vi.unstubAllEnvs();
 });
 it.each(["__proto__", "constructor", "toString", "hasOwnProperty", "unknown"])("rejects non-own tool name %s", async name => {
   await expect(dispatchTool(name, {}, { surface: "mcp-stdio" })).rejects.toThrow(`Unknown tool: ${name}`);

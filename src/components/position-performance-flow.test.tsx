@@ -8,7 +8,6 @@ import fixture from "./__fixtures__/position-performance-sample.json";
 import bs58 from "bs58";
 import { notifyPositionHistoryChange, readPositionHistoryRefresh } from "@/lib/position-history-refresh";
 
-vi.mock("./pool-activity-panel", () => ({ PoolActivityPanel: () => null }));
 vi.mock("./pool-daily-apr-panel", () => ({ PoolDailyAprChart: () => null }));
 vi.mock("./use-token-metadata", () => ({ useTokenMetadata: () => ({}) }));
 

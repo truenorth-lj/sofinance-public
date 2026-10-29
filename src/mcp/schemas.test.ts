@@ -8,7 +8,6 @@ import {
   submitCompoundTransactionSchema,
   listRwaPairsSchema,
   getPositionPerformanceSchema,
-  getPoolActivitySchema,
   getPositionRangeStatusSchema,
   quoteOpenPositionSchema,
   prepareOpenPositionSchema,
@@ -327,19 +326,6 @@ describe("getPositionPerformanceSchema", () => {
 
   it("rejects invalid mint", () => {
     expect(getPositionPerformanceSchema.safeParse({ positionMint: "x" }).success).toBe(false);
-  });
-});
-
-describe("getPoolActivitySchema", () => {
-  it("requires poolId and defaults limit", () => {
-    const result = getPoolActivitySchema.parse({
-      poolId: "DUzBLHZ5RZdftPuWVijsvjupndogRM1adGJpsR7YTJro",
-    });
-    expect(result.limit).toBe(20);
-  });
-
-  it("rejects an invalid pool id", () => {
-    expect(getPoolActivitySchema.safeParse({ poolId: "x" }).success).toBe(false);
   });
 });
 

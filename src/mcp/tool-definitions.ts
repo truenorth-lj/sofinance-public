@@ -33,28 +33,9 @@ const TOOL_DEFINITIONS = {
             required: ["positionMint"],
         },
     },
-    get_pool_activity: {
-        name: "get_pool_activity",
-        description: "Live Solami Blur snapshot for a Solana pool: decoded pool stats (price, TVL, 24h fees, LP flows) plus recent swaps. Read-only. When the data is unavailable it returns available=false with a reason (not-configured, plan-<status>, http-<status>, upstream-error, no-data) so agents can fall back.",
-        inputSchema: {
-            type: "object",
-            properties: {
-                poolId: {
-                    type: "string",
-                    description: "Pool address (Raydium CLMM id)",
-                },
-                limit: {
-                    type: "number",
-                    description: "Max recent swaps to return (1-200, default 20)",
-                    default: 20,
-                },
-            },
-            required: ["poolId"],
-        },
-    },
     get_position_range_status: {
         name: "get_position_range_status",
-        description: "Compute live in-range / out-of-range status for a Raydium CLMM position from the latest Solami Blur pool price versus tickLower/tickUpper (B per 1 A). Flags when price approaches a range edge. Falls back to the on-chain mid if Blur is unavailable. Read-only.",
+        description: "Compute live in-range / out-of-range status for a Raydium CLMM position from the current on-chain pool price versus tickLower/tickUpper (B per 1 A). Flags when price approaches a range edge. Read-only.",
         inputSchema: {
             type: "object",
             properties: {
@@ -442,7 +423,7 @@ const TOOL_DEFINITIONS = {
 } satisfies Record<string, Tool>;
 export type ToolName = keyof typeof TOOL_DEFINITIONS;
 export type McpSurface = "http" | "stdio";
-const HTTP_ORDER = ["prepare_withdraw", "submit_withdraw", "get_position_performance", "get_pool_activity", "get_position_range_status", "list_rwa_pairs", "list_positions", "quote_add_liquidity", "prepare_transaction", "quote_compound", "prepare_compound_transaction", "submit_signed_transaction", "submit_compound_transaction", "quote_open_position", "prepare_open_position", "submit_open_position"] as const satisfies readonly ToolName[];
+const HTTP_ORDER = ["prepare_withdraw", "submit_withdraw", "get_position_performance", "get_position_range_status", "list_rwa_pairs", "list_positions", "quote_add_liquidity", "prepare_transaction", "quote_compound", "prepare_compound_transaction", "submit_signed_transaction", "submit_compound_transaction", "quote_open_position", "prepare_open_position", "submit_open_position"] as const satisfies readonly ToolName[];
 const STDIO_ORDER: readonly ToolName[] = [
     ...HTTP_ORDER.filter(name => name !== "submit_compound_transaction"),
     "submit_compound_transaction",

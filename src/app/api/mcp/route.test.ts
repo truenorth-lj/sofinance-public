@@ -1,6 +1,6 @@
 // Characterization tests for the remote MCP endpoint (POST /api/mcp): JSON-RPC envelope, bearer
 // auth, the tools/list wire contract (golden snapshot) and per-tool wallet binding.
-// Real: route, mcp-auth token verification, zod schemas. Mocked: the 16 tool implementations.
+// Real: route, mcp-auth token verification, zod schemas. Mocked: the 15 tool implementations.
 import { inspect } from "node:util";
 import { SendTransactionError } from "@solana/web3.js";
 import { CROSS_TICK_USER_MESSAGE } from "@/lib/public-error";
@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 vi.mock("@/mcp/tools", () => Object.fromEntries([
   "listPositions", "quoteAddLiquidity", "prepareTransaction", "quoteCompound", "prepareCompoundTransaction",
-  "submitSignedTransaction", "submitCompoundTransaction", "listRwaPairs", "getPositionPerformance", "getPoolActivity",
+  "submitSignedTransaction", "submitCompoundTransaction", "listRwaPairs", "getPositionPerformance",
   "getPositionRangeStatus", "quoteOpenPosition", "prepareOpenPosition", "submitOpenPosition", "prepareWithdraw", "submitWithdrawTransaction",
 ].map((name) => [name, vi.fn()])));
 
@@ -45,8 +45,6 @@ async function callTool(name: string, args: unknown, token = goodToken()) {
 
 beforeEach(() => {
   vi.stubEnv("JUPITER_API_KEY", SIGNING_SECRET);
-  // The full 16-tool contract is the preview/development surface; production is pinned below.
-  vi.stubEnv("VERCEL_ENV", "preview");
   vi.spyOn(console, "error").mockImplementation(() => {});
   for (const fn of Object.values(toolFns)) fn.mockResolvedValue({ ok: true });
 });
@@ -59,27 +57,25 @@ afterEach(() => {
 // -------------------------------------------------------------------- tools/list contract
 const EXPECTED_TOOL_NAMES = [
   "prepare_withdraw", "submit_withdraw",
-  "get_position_performance", "get_pool_activity", "get_position_range_status", "list_rwa_pairs", "list_positions",
+  "get_position_performance", "get_position_range_status", "list_rwa_pairs", "list_positions",
   "quote_add_liquidity", "prepare_transaction", "quote_compound", "prepare_compound_transaction",
   "submit_signed_transaction", "submit_compound_transaction", "quote_open_position", "prepare_open_position", "submit_open_position",
 ];
 
-describe("production surface (POOL_ACTIVITY_ENABLED off)", () => {
-  it.each([undefined, "production"])("VERCEL_ENV=%s hides get_pool_activity from tools/list and refuses a direct call", async (vercelEnv) => {
-    vi.stubEnv("VERCEL_ENV", vercelEnv);
+describe("removed tools", () => {
+  it("get_pool_activity is gone from tools/list and a direct call is an unknown tool", async () => {
     const { json } = await send({ jsonrpc: "2.0", id: 1, method: "tools/list" });
     const names = json.result.tools.map((tool: { name: string }) => tool.name);
-    expect(names).toEqual(EXPECTED_TOOL_NAMES.filter((name) => name !== "get_pool_activity"));
+    expect(names).not.toContain("get_pool_activity");
     expect(names).toHaveLength(15);
     const call = await callTool("get_pool_activity", { poolId: pool });
     expect(call.json.result.isError).toBe(true);
-    expect(JSON.parse(call.json.result.content[0].text)).toEqual({ error: "get_pool_activity is disabled on this deployment." });
-    expect(toolFns.getPoolActivity).not.toHaveBeenCalled();
+    expect(call.json.result.content[0].text).toContain("Unknown tool: get_pool_activity");
   });
 });
 
 describe("tools/list wire contract", () => {
-  it("lists exactly the 16 tools in the current order, without authentication", async () => {
+  it("lists exactly the 15 tools in the current order, without authentication", async () => {
     const { response, json } = await send({ jsonrpc: "2.0", id: 1, method: "tools/list" });
     expect(response.status).toBe(200);
     expect(json).toMatchObject({ jsonrpc: "2.0", id: 1 });
@@ -101,7 +97,7 @@ describe("tools/list wire contract", () => {
 
   const zodFor: Record<string, keyof typeof schemas> = {
     prepare_withdraw:"prepareWithdrawSchema",submit_withdraw:"submitWithdrawSchema",
-    get_position_performance: "getPositionPerformanceSchema", get_pool_activity: "getPoolActivitySchema",
+    get_position_performance: "getPositionPerformanceSchema",
     get_position_range_status: "getPositionRangeStatusSchema", list_rwa_pairs: "listRwaPairsSchema",
     list_positions: "listPositionsSchema", quote_add_liquidity: "quoteAddLiquiditySchema",
     prepare_transaction: "prepareTransactionSchema", quote_compound: "quoteCompoundSchema",
@@ -257,7 +253,6 @@ const VALID_ARGS: Record<string, unknown> = {
   submit_open_position: { signedTransaction: "AA", permit: "p", wallet, summary: {} },
   get_position_performance: { positionMint: mint, wallet },
   get_position_range_status: { positionMint: mint, wallet },
-  get_pool_activity: { poolId: pool },
   list_rwa_pairs: {},
 };
 const IMPLEMENTATION: Record<string, string> = {
@@ -267,12 +262,12 @@ const IMPLEMENTATION: Record<string, string> = {
   submit_signed_transaction: "submitSignedTransaction", submit_compound_transaction: "submitCompoundTransaction",
   quote_open_position: "quoteOpenPosition", prepare_open_position: "prepareOpenPosition", submit_open_position: "submitOpenPosition",
   get_position_performance: "getPositionPerformance", get_position_range_status: "getPositionRangeStatus",
-  get_pool_activity: "getPoolActivity", list_rwa_pairs: "listRwaPairs",
+  list_rwa_pairs: "listRwaPairs",
 };
-const WALLET_REQUIRED = EXPECTED_TOOL_NAMES.filter((name) => !["get_position_performance", "get_position_range_status", "get_pool_activity", "list_rwa_pairs"].includes(name));
+const WALLET_REQUIRED = EXPECTED_TOOL_NAMES.filter((name) => !["get_position_performance", "get_position_range_status", "list_rwa_pairs"].includes(name));
 
 describe("tools/call dispatch and wallet binding", () => {
-  it("covers all 16 tools", () => {
+  it("covers all 15 tools", () => {
     expect(Object.keys(VALID_ARGS).sort()).toEqual([...EXPECTED_TOOL_NAMES].sort());
     expect(Object.keys(IMPLEMENTATION).sort()).toEqual([...EXPECTED_TOOL_NAMES].sort());
   });
@@ -303,9 +298,8 @@ describe("tools/call dispatch and wallet binding", () => {
     expect(toolFns[IMPLEMENTATION[name]!]).toHaveBeenCalledOnce();
   });
 
-  it("QUIRK: the passed wallet is whatever the token holds; get_pool_activity / list_rwa_pairs take no wallet and are unbound", async () => {
+  it("QUIRK: the passed wallet is whatever the token holds; list_rwa_pairs takes no wallet and is unbound", async () => {
     const other = generateMcpToken(otherWallet, SIGNING_SECRET);
-    expect((await callTool("get_pool_activity", { poolId: pool }, other)).json.result.isError).toBeUndefined();
     expect((await callTool("list_rwa_pairs", undefined, other)).json.result.isError).toBeUndefined();
   });
 

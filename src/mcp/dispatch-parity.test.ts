@@ -12,7 +12,7 @@ import { IMPLEMENTATION, VALID_ARGS, wallet, otherWallet } from "./test-support/
 
 const handlers = vi.hoisted(() => ({
   prepareWithdraw: vi.fn(), submitWithdrawTransaction: vi.fn(),
-  getPositionPerformance: vi.fn(), getPoolActivity: vi.fn(), getPositionRangeStatus: vi.fn(), listRwaPairs: vi.fn(),
+  getPositionPerformance: vi.fn(), getPositionRangeStatus: vi.fn(), listRwaPairs: vi.fn(),
   listPositions: vi.fn(), quoteAddLiquidity: vi.fn(), prepareTransaction: vi.fn(), quoteCompound: vi.fn(),
   prepareCompoundTransaction: vi.fn(), submitSignedTransaction: vi.fn(), submitCompoundTransaction: vi.fn(),
   quoteOpenPosition: vi.fn(), prepareOpenPosition: vi.fn(), submitOpenPosition: vi.fn(),
@@ -24,14 +24,12 @@ import { createMcpServer } from "./create-server";
 
 const names = Object.keys(VALID_ARGS) as (keyof typeof VALID_ARGS)[];
 const optional = ["get_position_performance", "get_position_range_status"];
-const none = ["get_pool_activity", "list_rwa_pairs"];
+const none = ["list_rwa_pairs"];
 const resultValue = { ok: true, nested: { values: [1, null, "繁體"], omitted: undefined }, signature: "original-signature" };
 let client: Client;
 let server: ReturnType<typeof createMcpServer>;
 beforeEach(async () => {
   vi.stubEnv("JUPITER_API_KEY", SIGNING_SECRET);
-  // Full 16-tool contract: get_pool_activity is behind POOL_ACTIVITY_ENABLED (preview only).
-  vi.stubEnv("VERCEL_ENV", "preview");
   vi.spyOn(console, "error").mockImplementation(() => {});
   for (const handler of Object.values(handlers)) handler.mockReset().mockResolvedValue(resultValue);
   server = createMcpServer();

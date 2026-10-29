@@ -8,7 +8,7 @@ import { createHmac } from "node:crypto";
 import { deflateSync } from "node:zlib";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const backend = vi.hoisted(() => ({ discover: vi.fn(), selectedQuote: vi.fn(), selectedBuild: vi.fn(), compound: vi.fn(),
-  openQuote: vi.fn(), openBuild: vi.fn(), withdraw: vi.fn(), pairs: vi.fn(), performance: vi.fn(), activity: vi.fn(), range: vi.fn(), rpc: vi.fn() }));
+  openQuote: vi.fn(), openBuild: vi.fn(), withdraw: vi.fn(), pairs: vi.fn(), performance: vi.fn(), range: vi.fn(), rpc: vi.fn() }));
 vi.mock("server-only", () => ({}));
 vi.mock("@sofinance/engine/wallet-discovery", () => ({ discoverWallet: backend.discover }));
 vi.mock("@/lib/selected-quote", () => ({ searchSelectedQuoteBundle: backend.selectedQuote }));
@@ -22,10 +22,6 @@ vi.mock("@sofinance/engine/open-atomic", async (importOriginal) => ({
 vi.mock("@sofinance/engine/withdraw/build", () => ({ buildWithdraw: backend.withdraw }));
 vi.mock("@/lib/rwa-store", () => ({ getRwaPairs: backend.pairs }));
 vi.mock("@/lib/position-performance", () => ({ getPositionPerformance: backend.performance }));
-vi.mock("@/lib/solami-blur", () => ({
-  getPoolActivitySnapshot: backend.activity,
-  unavailablePoolActivitySnapshot: (poolId: string, reason: string) => ({ available: false, poolId, pool: null, trades: [], fetchedAt: "fixture", source: "unavailable", reason }),
-}));
 vi.mock("@/lib/position-range-onchain", () => ({ readPositionRangeFacts: backend.range }));
 vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: backend.rpc }));
 import { POST } from "@/app/api/mcp/route";
@@ -36,12 +32,12 @@ import { buildTransaction, SIGNING_SECRET, testKeypair, toBase64 } from "@/lib/t
 import { VALID_ARGS, wallet, otherWallet } from "./test-support/dispatch-fixtures";
 
 const names = ["list_positions", "quote_add_liquidity", "prepare_transaction", "quote_compound", "prepare_compound_transaction",
-  "quote_open_position", "prepare_open_position", "prepare_withdraw", "get_position_performance", "get_position_range_status", "get_pool_activity", "list_rwa_pairs"] as const;
+  "quote_open_position", "prepare_open_position", "prepare_withdraw", "get_position_performance", "get_position_range_status", "list_rwa_pairs"] as const;
 const expectedIO = {
   list_positions: ["discover"], quote_add_liquidity: ["selectedQuote"], prepare_transaction: ["selectedBuild"],
   quote_compound: ["compound"], prepare_compound_transaction: ["compound"], quote_open_position: ["openQuote"],
   prepare_open_position: ["openBuild"], prepare_withdraw: ["withdraw"], get_position_performance: ["performance"],
-  get_position_range_status: ["range"], get_pool_activity: ["activity"], list_rwa_pairs: ["pairs"],
+  get_position_range_status: ["range"], list_rwa_pairs: ["pairs"],
 };
 const transaction = buildTransaction({ payer: testKeypair(1), signWith: [] });
 const summary = {
@@ -64,8 +60,7 @@ beforeEach(async () => {
   backend.withdraw.mockResolvedValue({ summary, unsignedTransaction: toBase64(transaction), permit: "fixture-permit" });
   backend.pairs.mockResolvedValue({ pairs: [], source: "synthetic", scannedPools: 0, pagesFetched: 1 });
   backend.performance.mockResolvedValue({ positionMint: VALID_ARGS.get_position_performance.positionMint, metrics: { holdingDays: 1 }, history: [] });
-  backend.activity.mockResolvedValue({ available: false, pool: null, trades: [] });
-  backend.range.mockResolvedValue({ poolId: VALID_ARGS.get_pool_activity.poolId, mintA: wallet, mintB: otherWallet,
+  backend.range.mockResolvedValue({ poolId: VALID_ARGS.quote_open_position.poolId, mintA: wallet, mintB: otherWallet,
     tickLower: -60, tickUpper: 60, decimalsA: 9, decimalsB: 9, onChainPriceBPerA: 1 });
   server = createMcpServer(); client = new Client({ name: "real-handlers", version: "1" });
   const [a, b] = InMemoryTransport.createLinkedPair(); await server.connect(a); await client.connect(b);
@@ -105,9 +100,6 @@ async function snapshotResult(result: Awaited<ReturnType<typeof call>>) {
 }
 for (const surface of ["http", "stdio"] as const) describe(`${surface} real read/prepare handlers`, () => {
   it.each(names)("%s preserves backend arguments, count/order, response and authenticated sign payload", async name => {
-    // get_pool_activity is behind SOLAMI_ENABLED (preview only). Scoped to that tool so the other read
-    // tools keep the production path (Orca off; get_position_range_status never calls Solami).
-    if (name === "get_pool_activity") vi.stubEnv("VERCEL_ENV", "preview");
     const result = await call(surface, name, { ...VALID_ARGS[name], ignored: "stripped" });
     expect(result.isError).toBeUndefined();
     expect(io().map(item => item.name)).toEqual(expectedIO[name]);
@@ -130,7 +122,7 @@ for (const surface of ["http", "stdio"] as const) describe(`${surface} real read
       }
     }
   });
-  if (surface === "http") it.each(names.filter(name => !["get_pool_activity", "list_rwa_pairs"].includes(name)))("%s rejects HTTP wallet mismatch before backend", async name => {
+  if (surface === "http") it.each(names.filter(name => name !== "list_rwa_pairs"))("%s rejects HTTP wallet mismatch before backend", async name => {
     expect((await call(surface, name, { ...VALID_ARGS[name], wallet: otherWallet })).isError).toBe(true);
     expect(io()).toEqual([]);
   });

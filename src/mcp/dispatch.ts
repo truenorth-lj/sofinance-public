@@ -1,6 +1,5 @@
 import type { WithdrawSummary } from "@sofinance/engine/withdraw/types";
 import type { ToolName } from "./tool-definitions";
-import { disabledToolMessage, isToolEnabled } from "./tool-availability";
 import {
   listPositions,
   quoteAddLiquidity,
@@ -11,7 +10,6 @@ import {
   submitCompoundTransaction,
   listRwaPairs,
   getPositionPerformance,
-  getPoolActivity,
   getPositionRangeStatus,
   quoteOpenPosition,
   prepareOpenPosition,
@@ -28,7 +26,6 @@ import {
   submitCompoundTransactionSchema,
   listRwaPairsSchema,
   getPositionPerformanceSchema,
-  getPoolActivitySchema,
   getPositionRangeStatusSchema,
   quoteOpenPositionSchema,
   prepareOpenPositionSchema,
@@ -114,9 +111,6 @@ export const TOOL_DISPATCH = {
   get_position_range_status: defineTool({
     parser: getPositionRangeStatusSchema, missingArgs: "empty-object", binding: optionalWallet, handler: getPositionRangeStatus,
   }),
-  get_pool_activity: defineTool({
-    parser: getPoolActivitySchema, missingArgs: "empty-object", binding: noWallet, handler: getPoolActivity,
-  }),
   list_rwa_pairs: defineTool({
     parser: listRwaPairsSchema, missingArgs: "empty-object", binding: noWallet, handler: listRwaPairs,
   }),
@@ -138,7 +132,5 @@ function isToolName(name: string): name is ToolName {
 
 export async function dispatchTool(name: string, args: unknown, context: McpDispatchContext): Promise<unknown> {
   if (!isToolName(name)) throw new Error(`Unknown tool: ${name}`);
-  // Hidden from tools/list; a direct call gets a clear, non-secret refusal.
-  if (!isToolEnabled(name)) throw new Error(disabledToolMessage(name));
   return TOOL_DISPATCH[name](args, context);
 }

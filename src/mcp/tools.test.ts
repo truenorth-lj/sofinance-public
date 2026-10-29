@@ -61,13 +61,6 @@ vi.mock("../lib/orca-positions", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/orca-positions")>()),
   readOrcaPositionRangeFacts: vi.fn(async () => null),
 }));
-vi.mock("../lib/solami-blur", () => ({
-  getPoolActivitySnapshot: vi.fn(),
-  unavailablePoolActivitySnapshot: (poolId: string, reason: string) => ({
-    available: false, poolId, pool: null, trades: [], fetchedAt: "2026-10-10T00:00:00.000Z", source: "unavailable", reason,
-  }),
-}));
-
 vi.mock("../lib/position-range-onchain", () => ({
   readPositionRangeFacts: vi.fn(),
 }));
@@ -94,7 +87,6 @@ import {
   quoteOpenPosition,
   prepareOpenPosition,
   listRwaPairs,
-  getPoolActivity,
   getPositionRangeStatus,
 } from "./tools";
 import { discoverWallet } from "@sofinance/engine/wallet-discovery";
@@ -109,7 +101,6 @@ import { buildAndSimulateOpenPosition } from "@sofinance/engine/open-atomic";
 import { Keypair, VersionedTransaction } from "@solana/web3.js";
 import { buildTransaction, testKeypair } from "@/lib/test-support/send-fixtures";
 import { discoverRwaPairs } from "../lib/rwa-pairs";
-import { getPoolActivitySnapshot } from "../lib/solami-blur";
 import { readPositionRangeFacts } from "../lib/position-range-onchain";
 
 describe("MCP Tools", () => {
@@ -683,69 +674,8 @@ describe("MCP Tools", () => {
     });
   });
 
-  describe("getPoolActivity", () => {
-    it("returns the Blur snapshot from the shared client", async () => {
-      vi.stubEnv("VERCEL_ENV", "preview");
-      vi.mocked(getPoolActivitySnapshot).mockResolvedValue({
-        available: true,
-        poolId: "DUzBLHZ5RZdftPuWVijsvjupndogRM1adGJpsR7YTJro",
-        pool: null,
-        trades: [],
-        fetchedAt: "2026-10-10T00:00:00.000Z",
-        source: "solami-blur",
-      });
-      const result = await getPoolActivity({
-        poolId: "DUzBLHZ5RZdftPuWVijsvjupndogRM1adGJpsR7YTJro",
-        limit: 10,
-      });
-      expect(result.available).toBe(true);
-      expect(getPoolActivitySnapshot).toHaveBeenCalledWith(
-        "DUzBLHZ5RZdftPuWVijsvjupndogRM1adGJpsR7YTJro",
-        { limit: 10 },
-      );
-    });
-
-    it.each([undefined, "production"])("never calls Solami when POOL_ACTIVITY_ENABLED is off (VERCEL_ENV=%s)", async (vercelEnv) => {
-      vi.stubEnv("VERCEL_ENV", vercelEnv);
-      const result = await getPoolActivity({ poolId: "DUzBLHZ5RZdftPuWVijsvjupndogRM1adGJpsR7YTJro", limit: 10 });
-      expect(result).toMatchObject({ available: false, source: "unavailable", reason: "disabled" });
-      expect(getPoolActivitySnapshot).not.toHaveBeenCalled();
-    });
-  });
-
   describe("getPositionRangeStatus", () => {
-    const rangeFacts = {
-      positionMint: "8BgBvyjrZX1YKz4oh9mjb8ZScatkkwb8DzFx7LoiVkM4",
-      poolId: "DUzBLHZ5RZdftPuWVijsvjupndogRM1adGJpsR7YTJro",
-      mintA: "MintA1111111111111111111111111111111111111",
-      mintB: "MintB1111111111111111111111111111111111111",
-      decimalsA: 6,
-      decimalsB: 6,
-      tickLower: -100,
-      tickUpper: 100,
-      tickCurrent: 0,
-      onChainPriceBPerA: 1,
-    };
-
-    it.each([undefined, "production"])("uses the on-chain price and never calls Solami when SOLAMI_ENABLED is off (VERCEL_ENV=%s)", async (vercelEnv) => {
-      vi.stubEnv("VERCEL_ENV", vercelEnv);
-      vi.mocked(readPositionRangeFacts).mockResolvedValue(rangeFacts);
-      const fetchSpy = vi.spyOn(globalThis, "fetch");
-      try {
-        const result = await getPositionRangeStatus({ positionMint: rangeFacts.positionMint });
-        expect(getPoolActivitySnapshot).not.toHaveBeenCalled();
-        expect(fetchSpy).not.toHaveBeenCalled();
-        expect(result.priceSource).toBe("on-chain");
-        expect(result.inRange).toBe(true);
-        expect(result.blurAvailable).toBe(false);
-        expect(result.latestTrades).toEqual([]);
-      } finally {
-        fetchSpy.mockRestore();
-      }
-    });
-
-    it("uses Blur price when present and reports in-range", async () => {
-      vi.stubEnv("VERCEL_ENV", "preview");
+    it("uses the on-chain price and never makes a network request beyond the position read", async () => {
       vi.mocked(readPositionRangeFacts).mockResolvedValue({
         positionMint: "8BgBvyjrZX1YKz4oh9mjb8ZScatkkwb8DzFx7LoiVkM4",
         poolId: "DUzBLHZ5RZdftPuWVijsvjupndogRM1adGJpsR7YTJro",
@@ -758,37 +688,18 @@ describe("MCP Tools", () => {
         tickCurrent: 0,
         onChainPriceBPerA: 1,
       });
-      vi.mocked(getPoolActivitySnapshot).mockResolvedValue({
-        available: true,
-        poolId: "DUzBLHZ5RZdftPuWVijsvjupndogRM1adGJpsR7YTJro",
-        pool: {
-          pool: "DUzBLHZ5RZdftPuWVijsvjupndogRM1adGJpsR7YTJro",
-          dex: "raydium_clmm",
-          mint: "MintA1111111111111111111111111111111111111",
-          quoteMint: "MintB1111111111111111111111111111111111111",
-          name: null,
-          symbol: null,
-          price: 1,
-          priceUsd: 1,
-          baseReserve: null,
-          quoteReserve: null,
-          liquidityUsd: 1,
-          tvlUsd: 1,
-          fees24hUsd: null,
-          volumeTvlRatio: null,
-          lpDeposit24hUsd: null,
-          lpWithdraw24hUsd: null,
-        },
-        trades: [],
-        fetchedAt: "2026-10-10T00:00:00.000Z",
-        source: "solami-blur",
-      });
-      const result = await getPositionRangeStatus({
-        positionMint: "8BgBvyjrZX1YKz4oh9mjb8ZScatkkwb8DzFx7LoiVkM4",
-      });
-      expect(result.inRange).toBe(true);
-      expect(result.priceSource).toBe("solami-blur");
-      expect(result.blurAvailable).toBe(true);
+      const fetchSpy = vi.spyOn(globalThis, "fetch");
+      try {
+        const result = await getPositionRangeStatus({ positionMint: "8BgBvyjrZX1YKz4oh9mjb8ZScatkkwb8DzFx7LoiVkM4" });
+        expect(fetchSpy).not.toHaveBeenCalled();
+        expect(result.priceSource).toBe("on-chain");
+        expect(result.priceBPerA).toBe(1);
+        expect(result.inRange).toBe(true);
+        expect(result).not.toHaveProperty("blurAvailable");
+        expect(result).not.toHaveProperty("latestTrades");
+      } finally {
+        fetchSpy.mockRestore();
+      }
     });
   });
 });

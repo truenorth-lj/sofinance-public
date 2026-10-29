@@ -1,25 +1,8 @@
 import { TickUtil } from "@raydium-io/raydium-sdk-v2";
 import { describe, expect, it } from "vitest";
-import { blurPriceToBPerA, rangeStatusFromPrice } from "./position-range-status";
+import { rangeStatusFromPrice } from "./position-range-status";
 import { uiPriceBPerAFromTick } from "@sofinance/engine/position-performance-math";
 
-const mintA = "MintA1111111111111111111111111111111111111";
-const mintB = "MintB1111111111111111111111111111111111111";
-
-describe("blurPriceToBPerA", () => {
-  it("passes through when Blur mint/quote match A/B", () => {
-    expect(blurPriceToBPerA(1.5, mintA, mintB, mintA, mintB)).toBe(1.5);
-  });
-
-  it("inverts when Blur mint/quote are swapped versus A/B", () => {
-    expect(blurPriceToBPerA(2, mintB, mintA, mintA, mintB)).toBe(0.5);
-  });
-
-  it("returns null for non-positive prices", () => {
-    expect(blurPriceToBPerA(0, mintA, mintB, mintA, mintB)).toBeNull();
-    expect(blurPriceToBPerA(null, mintA, mintB, mintA, mintB)).toBeNull();
-  });
-});
 
 describe("rangeStatusFromPrice", () => {
   const tickLower = -100;
@@ -35,12 +18,12 @@ describe("rangeStatusFromPrice", () => {
       tickUpper,
       decimalsA: 6,
       decimalsB: 6,
-      priceSource: "solami-blur",
+      priceSource: "on-chain",
     });
     expect(status.inRange).toBe(true);
     expect(status.rangeSide).toBe("inside");
     expect(status.nearEdge).toBe(false);
-    expect(status.priceSource).toBe("solami-blur");
+    expect(status.priceSource).toBe("on-chain");
     expect(status.distanceToLowerPct).toBeCloseTo(((mid - lower) / (upper - lower)) * 100, 8);
     expect(status.distanceToLowerPricePct).toBeCloseTo(((mid - lower) / lower) * 100, 8);
     expect(status.distanceToUpperPricePct).toBeCloseTo(((upper - mid) / upper) * 100, 8);

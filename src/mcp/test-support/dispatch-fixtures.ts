@@ -25,7 +25,6 @@ export const VALID_ARGS = {
   submit_open_position: { signedTransaction: "AA", permit: "p", wallet, summary: {} },
   get_position_performance: { positionMint: mint, wallet },
   get_position_range_status: { positionMint: mint, wallet },
-  get_pool_activity: { poolId: pool },
   list_rwa_pairs: {},
 } satisfies Record<ToolName, Record<string, unknown>>;
 export const IMPLEMENTATION = {
@@ -35,5 +34,5 @@ export const IMPLEMENTATION = {
   submit_signed_transaction: "submitSignedTransaction", submit_compound_transaction: "submitCompoundTransaction",
   quote_open_position: "quoteOpenPosition", prepare_open_position: "prepareOpenPosition", submit_open_position: "submitOpenPosition",
   get_position_performance: "getPositionPerformance", get_position_range_status: "getPositionRangeStatus",
-  get_pool_activity: "getPoolActivity", list_rwa_pairs: "listRwaPairs",
+  list_rwa_pairs: "listRwaPairs",
 } as const satisfies Record<ToolName, keyof typeof tools>;

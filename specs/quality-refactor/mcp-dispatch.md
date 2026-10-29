@@ -19,11 +19,11 @@ Raw arguments cannot choose surface, token wallet or binding. Required-match: li
 quote_add_liquidity, prepare_transaction, quote_compound, prepare_compound_transaction,
 submit_signed_transaction, submit_compound_transaction, quote_open_position,
 prepare_open_position, submit_open_position, prepare_withdraw, submit_withdraw.
-Optional-match: get_position_performance, get_position_range_status. None: list_rwa_pairs,
-get_pool_activity. HTTP authenticates every tool; stdio has no token gate. Optional wallet
+Optional-match: get_position_performance, get_position_range_status. None: list_rwa_pairs
+(get_pool_activity was removed). HTTP authenticates every tool; stdio has no token gate. Optional wallet
 stays omitted, never populated from context. Compare only parsed wallet values.
 
-Only performance/activity/range/pairs use `args ?? {}`; all others parse raw args.
+Only performance/range/pairs use `args ?? {}`; all others parse raw args.
 Prepare compound uses quoteCompoundSchema. Preserve schema defaults, stripping, transforms,
 refinements, validation errors and parse-before-wallet precedence. Lookup uses an own-property
 check, rejecting prototype names with the existing `Unknown tool: ...` wording. HTTP and SDK

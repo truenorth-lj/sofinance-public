@@ -39,9 +39,8 @@ const ALLOWED_SECRET_READS: Record<string, Reads> = {
   // host injects (lib/engine-host.ts hands it process.env, listed in ALLOWED_WHOLE_ENV_PASSES).
   JUPITER_API_KEY: {},
   SOLAMI_API_KEY: {},
-  SOLAMI_DATA_API_KEY: {
-    "lib/solami/blur.ts": 1,
-  },
+  // The Blur pool-activity reader was removed; nothing may read this key.
+  SOLAMI_DATA_API_KEY: {},
   SOLANA_RPC_URL: {},
   SOFINANCE_MCP_TOKEN: {
     // local stdio-to-remote shim: reads the user's own token from its own process env
@@ -56,7 +55,6 @@ const ALLOWED_SECRET_READS: Record<string, Reads> = {
 const ALLOWED_WHOLE_ENV_PASSES: Reads = {
   // the single host injection point for @sofinance/engine (replaces the engine modules' own env defaults)
   "lib/engine-host.ts": 1,
-  "lib/solami/blur.ts": 6,
 };
 
 type EnvRead = { name: string; line: number };

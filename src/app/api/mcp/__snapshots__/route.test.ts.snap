@@ -144,28 +144,7 @@ exports[`tools/list wire contract > matches the golden snapshot (names, descript
       "name": "get_position_performance",
     },
     {
-      "description": "Live Solami Blur snapshot for a Solana pool: decoded pool stats (price, TVL, 24h fees, LP flows) plus recent swaps. Read-only. When the data is unavailable it returns available=false with a reason (not-configured, plan-<status>, http-<status>, upstream-error, no-data) so agents can fall back.",
-      "inputSchema": {
-        "properties": {
-          "limit": {
-            "default": 20,
-            "description": "Max recent swaps to return (1-200, default 20)",
-            "type": "number",
-          },
-          "poolId": {
-            "description": "Pool address (Raydium CLMM id)",
-            "type": "string",
-          },
-        },
-        "required": [
-          "poolId",
-        ],
-        "type": "object",
-      },
-      "name": "get_pool_activity",
-    },
-    {
-      "description": "Compute live in-range / out-of-range status for a Raydium CLMM position from the latest Solami Blur pool price versus tickLower/tickUpper (B per 1 A). Flags when price approaches a range edge. Falls back to the on-chain mid if Blur is unavailable. Read-only.",
+      "description": "Compute live in-range / out-of-range status for a Raydium CLMM position from the current on-chain pool price versus tickLower/tickUpper (B per 1 A). Flags when price approaches a range edge. Read-only.",
       "inputSchema": {
         "properties": {
           "poolId": {
