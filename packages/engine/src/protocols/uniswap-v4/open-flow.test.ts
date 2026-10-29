@@ -131,3 +131,16 @@ describe("leftover refund note", () => {
     expect([0, 0.004, 0.374, 2.44, 12.06].map(formatLeftoverPct)).toEqual(["0", "<0.01", "0.37", "2.4", "12.1"]);
   });
 });
+
+describe("permitTypedDataJson (wallet eth_signTypedData_v4 payload)", () => {
+  it("declares EIP712Domain so wallets hash the same domain viem recovers with", async () => {
+    const { permitTypedDataJson, EIP712_DOMAIN_TYPE } = await import("./open-flow");
+    const json = permitTypedDataJson({
+      details: { token: "0x4a0e65a3eccec6dbe60ae065f2e7bb85fae35eea", amount: 30000000000000000n, expiration: 1793300000, nonce: 1 },
+      spender: "0x204FAca1764B154221e35c0d20aBb3c525710498", sigDeadline: 1793299000n,
+    });
+    expect(json.types.EIP712Domain).toEqual(EIP712_DOMAIN_TYPE);
+    expect(EIP712_DOMAIN_TYPE.map(f => f.name)).toEqual(Object.keys(json.domain));
+    expect(json.message.details.amount).toBe("30000000000000000");
+  });
+});
