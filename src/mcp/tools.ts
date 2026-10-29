@@ -26,11 +26,10 @@ import { prepareOpen } from "@/server/transactions/open-prepare";
 import { assertSolInputAllowed } from "@/lib/sol-input-policy";
 import { submitOpenPositionFromParts } from "../lib/open-send";
 import type { OpenPositionSummary } from "@sofinance/engine/open-types";
-import { getPoolActivitySnapshot, unavailablePoolActivitySnapshot } from "../lib/solami-blur";
 import { readPositionRangeFacts } from "../lib/position-range-onchain";
-import { isOrcaPositionsEnabled, isPoolActivityEnabled, isSolamiEnabled } from "../lib/protocol-flags";
+import { isOrcaPositionsEnabled } from "../lib/protocol-flags";
 import { getOrcaPositionPerformance, listOrcaPositions, ORCA_PROTOCOL, readOrcaPositionRangeFacts } from "../lib/orca-positions";
-import { blurPriceToBPerA, rangeStatusFromPrice } from "../lib/position-range-status";
+import { rangeStatusFromPrice } from "../lib/position-range-status";
 import type {
   ListPositionsInput,
   QuoteAddLiquidityInput,
@@ -40,7 +39,6 @@ import type {
   SubmitCompoundTransactionInput,
   ListRwaPairsInput,
   GetPositionPerformanceInput,
-  GetPoolActivityInput,
   GetPositionRangeStatusInput,
   QuoteOpenPositionInput,
   PrepareOpenPositionInput,
@@ -631,52 +629,25 @@ export async function getPositionPerformance(input: GetPositionPerformanceInput)
 }
 
 /**
- * Live Blur snapshot for a pool (stats + recent swaps). Read-only.
- * Returns `available: false` with a sanitized `reason` (see
- * PoolActivityUnavailableReason). Behind POOL_ACTIVITY_ENABLED: dispatch hides
- * and refuses the tool when off; this guard keeps direct callers off Solami too.
- */
-export async function getPoolActivity(input: GetPoolActivityInput) {
-  if (!isPoolActivityEnabled()) return unavailablePoolActivitySnapshot(input.poolId, "disabled");
-  return getPoolActivitySnapshot(input.poolId, { limit: input.limit });
-}
-
-/**
- * In/out-of-range status from the latest Blur pool price versus position ticks.
- * Falls back to the on-chain mid when Blur is unavailable. Read-only.
- * With SOLAMI_ENABLED off (production) Solami is never contacted: the on-chain
- * price is used directly.
+ * In/out-of-range status from the current on-chain pool price versus position
+ * ticks. Read-only.
  */
 export async function getPositionRangeStatus(input: GetPositionRangeStatusInput) {
   const orcaFacts = isOrcaPositionsEnabled() ? await readOrcaPositionRangeFacts(input.positionMint) : null;
   const facts = orcaFacts ?? await readPositionRangeFacts(input.positionMint);
-  const poolId = input.poolId ?? facts.poolId;
-  const activity = isSolamiEnabled()
-    ? await getPoolActivitySnapshot(poolId, { limit: 8 })
-    : unavailablePoolActivitySnapshot(poolId, "disabled");
-  const blurOriented = blurPriceToBPerA(
-    activity.pool?.price ?? null,
-    activity.pool?.mint ?? null,
-    activity.pool?.quoteMint ?? null,
-    facts.mintA,
-    facts.mintB,
-  );
-  const priceBPerA = blurOriented ?? facts.onChainPriceBPerA;
   const status = rangeStatusFromPrice({
-    priceBPerA,
+    priceBPerA: facts.onChainPriceBPerA,
     tickLower: facts.tickLower,
     tickUpper: facts.tickUpper,
     decimalsA: facts.decimalsA,
     decimalsB: facts.decimalsB,
-    priceSource: blurOriented !== null ? "solami-blur" : "on-chain",
+    priceSource: "on-chain",
   });
   return {
     ...(orcaFacts ? { protocol: ORCA_PROTOCOL } : {}),
     wallet: input.wallet ?? null,
     ...facts,
-    poolId,
-    blurAvailable: activity.available,
-    latestTrades: activity.trades.slice(0, 5),
+    poolId: input.poolId ?? facts.poolId,
     ...status,
   };
 }

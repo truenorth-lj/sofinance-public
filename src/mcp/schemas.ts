@@ -127,12 +127,6 @@ export const getPositionPerformanceSchema = z.object({
 });
 export type GetPositionPerformanceInput = z.infer<typeof getPositionPerformanceSchema>;
 
-export const getPoolActivitySchema = z.object({
-  poolId: publicKeySchema,
-  limit: z.number().int().min(1).max(200).default(20),
-});
-export type GetPoolActivityInput = z.infer<typeof getPoolActivitySchema>;
-
 export const getPositionRangeStatusSchema = z.object({
   positionMint: publicKeySchema,
   wallet: publicKeySchema.optional(),

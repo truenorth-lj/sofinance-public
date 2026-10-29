@@ -146,7 +146,7 @@ export default function AIManagementPage() {
                       <p>
                         Your AI agent uses the MCP configuration to call the remote SoFinance API
                         at <code className="rounded bg-white/10 px-1.5 py-0.5">/api/mcp</code> over
-                        HTTPS (14 tools, including quote/prepare/submit_open_position plus live Blur pool activity). No local RPC or API keys needed.
+                        HTTPS (15 tools, including quote/prepare/submit_open_position and live range status). No local RPC or API keys needed.
                       </p>
                     </div>
                     <div className="flex gap-3">

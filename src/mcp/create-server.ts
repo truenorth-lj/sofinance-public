@@ -1,4 +1,4 @@
-import { listEnabledToolDefinitions } from "./tool-availability.js";
+import { listToolDefinitions } from "./tool-definitions.js";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import {
   CallToolRequestSchema,
@@ -23,7 +23,7 @@ export function createMcpServer() {
   // Tool definitions with comprehensive descriptions
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     return {
-      tools: listEnabledToolDefinitions("stdio"),
+      tools: listToolDefinitions("stdio"),
     };
   });
 

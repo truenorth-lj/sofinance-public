@@ -1,5 +1,5 @@
 import "@/lib/engine-host";
-import { listEnabledToolDefinitions } from "@/mcp/tool-availability";
+import { listToolDefinitions } from "@/mcp/tool-definitions";
 import { NextRequest, NextResponse } from "next/server";
 import { verifyMcpToken } from "@/lib/mcp-auth";
 import { publicToolError } from "@/mcp/public-tool-error";
@@ -129,7 +129,7 @@ export async function POST(request: NextRequest) {
     if (method === "tools/list") {
       return NextResponse.json(
         createJsonRpcSuccess(id ?? null, {
-          tools: listEnabledToolDefinitions("http"),
+          tools: listToolDefinitions("http"),
         })
       );
     }

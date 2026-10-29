@@ -1,33 +1,5 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`http real read/prepare handlers > get_pool_activity preserves backend arguments, count/order, response and authenticated sign payload 1`] = `
-{
-  "io": [
-    {
-      "args": [
-        "EdmxWPmx2WH6WgFfTdu9xfkYf3k1g5wD1zccTVySEEh1",
-        {
-          "limit": 20,
-        },
-      ],
-      "name": "activity",
-    },
-  ],
-  "result": {
-    "content": [
-      {
-        "text": "{
-  "available": false,
-  "pool": null,
-  "trades": []
-}",
-        "type": "text",
-      },
-    ],
-  },
-}
-`;
-
 exports[`http real read/prepare handlers > get_position_performance preserves backend arguments, count/order, response and authenticated sign payload 1`] = `
 {
   "io": [
@@ -85,8 +57,6 @@ exports[`http real read/prepare handlers > get_position_range_status preserves b
   "decimalsA": 9,
   "decimalsB": 9,
   "onChainPriceBPerA": 1,
-  "blurAvailable": false,
-  "latestTrades": [],
   "rangeSide": "inside",
   "inRange": true,
   "nearEdge": false,
@@ -551,34 +521,6 @@ exports[`http real read/prepare handlers > quote_open_position preserves backend
 }
 `;
 
-exports[`stdio real read/prepare handlers > get_pool_activity preserves backend arguments, count/order, response and authenticated sign payload 1`] = `
-{
-  "io": [
-    {
-      "args": [
-        "EdmxWPmx2WH6WgFfTdu9xfkYf3k1g5wD1zccTVySEEh1",
-        {
-          "limit": 20,
-        },
-      ],
-      "name": "activity",
-    },
-  ],
-  "result": {
-    "content": [
-      {
-        "text": "{
-  "available": false,
-  "pool": null,
-  "trades": []
-}",
-        "type": "text",
-      },
-    ],
-  },
-}
-`;
-
 exports[`stdio real read/prepare handlers > get_position_performance preserves backend arguments, count/order, response and authenticated sign payload 1`] = `
 {
   "io": [
@@ -636,8 +578,6 @@ exports[`stdio real read/prepare handlers > get_position_range_status preserves 
   "decimalsA": 9,
   "decimalsB": 9,
   "onChainPriceBPerA": 1,
-  "blurAvailable": false,
-  "latestTrades": [],
   "rangeSide": "inside",
   "inRange": true,
   "nearEdge": false,

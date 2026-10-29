@@ -10,7 +10,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 vi.mock("@/mcp/tools", () => Object.fromEntries([
   "listPositions", "quoteAddLiquidity", "prepareTransaction", "quoteCompound", "prepareCompoundTransaction",
-  "submitSignedTransaction", "submitCompoundTransaction", "listRwaPairs", "getPositionPerformance", "getPoolActivity",
+  "submitSignedTransaction", "submitCompoundTransaction", "listRwaPairs", "getPositionPerformance",
   "getPositionRangeStatus", "quoteOpenPosition", "prepareOpenPosition", "submitOpenPosition", "prepareWithdraw", "submitWithdrawTransaction",
 ].map((name) => [name, vi.fn()])));
 
@@ -61,8 +61,6 @@ describe("stdio MCP server", () => {
     return Object.assign({}, ...Object.entries(value).map(([key, item]) => flatten(item, prefix ? `${prefix}.${key}` : key)));
   }
 
-  // No VERCEL_ENV here (clean child env, unset in vitest): the production surface, where
-  // get_pool_activity is hidden by POOL_ACTIVITY_ENABLED. The 16-tool preview surface is in route.test.ts.
   it("lists the same 15 tool names as the HTTP route", async () => {
     const stdio = await client.listTools();
     expect(stdio.tools).toHaveLength(15);
@@ -96,10 +94,10 @@ describe("stdio MCP server", () => {
     ]);
   });
 
-  it("refuses get_pool_activity with a clear message when POOL_ACTIVITY_ENABLED is off", async () => {
+  it("get_pool_activity was removed: a call is an unknown tool", async () => {
     const result = await client.callTool({ name: "get_pool_activity", arguments: { poolId: "DUzBLHZ5RZdftPuWVijsvjupndogRM1adGJpsR7YTJro" } });
     expect(result.isError).toBe(true);
-    expect(JSON.parse((result.content as { text: string }[])[0]!.text)).toEqual({ error: "get_pool_activity is disabled on this deployment." });
+    expect((result.content as { text: string }[])[0]!.text).toContain("Unknown tool: get_pool_activity");
   });
 
   it("an unknown tool is an isError result with the (sanitized, unchanged) message", async () => {

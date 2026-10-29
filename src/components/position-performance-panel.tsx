@@ -17,7 +17,6 @@ import { DecisionSession } from "@/lib/lp-decision-session";
 import { clearPositionHistoryRefresh, readPositionHistoryRefresh, subscribePositionHistoryRefresh } from "@/lib/position-history-refresh";
 import { PositionExitEstimate } from "./position-exit-estimate";
 import { PoolDailyAprChart } from "./pool-daily-apr-panel";
-import { PoolActivityPanel } from "./pool-activity-panel";
 import { formatHoldingTime, returnUnavailableReason } from "../lib/position-performance-display";
 
 type UiSide = { a: number; b: number };
@@ -507,20 +506,6 @@ export function PositionPerformancePanel({
 
       {data && decisionMint && <PositionExitEstimate key={decisionMint} positionId={decisionMint} nftAccount={decisionMint === selectedMint ? selectedNftAccount : undefined}
         nftAccountPending={decisionMint === selectedMint && nftAccountPending} autoExit={embedded} className="mt-5" />}
-
-      {(data?.poolId || previewPoolId) && (
-        <div className={data ? "mt-6" : undefined}>
-          <PoolActivityPanel
-            poolId={data?.poolId || previewPoolId}
-            tickLower={data?.tickLower}
-            tickUpper={data?.tickUpper}
-            decimalsA={data?.decimalsA}
-            decimalsB={data?.decimalsB}
-            mintA={data?.mintA}
-            mintB={data?.mintB}
-          />
-        </div>
-      )}
 
       {(data?.poolId || previewPoolId) && (
         <div className="mt-6">

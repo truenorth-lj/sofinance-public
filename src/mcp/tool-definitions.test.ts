@@ -7,8 +7,8 @@ describe("MCP discovery metadata", () => {
   it("has one definition for each tool on both transports", () => {
     for (const surface of ["http", "stdio"] as const) {
       const tools = listToolDefinitions(surface);
-      expect(tools).toHaveLength(16);
-      expect(new Set(tools.map(tool => tool.name)).size).toBe(16);
+      expect(tools).toHaveLength(15);
+      expect(new Set(tools.map(tool => tool.name)).size).toBe(15);
       expect(tools.slice(0, 2).map(tool => tool.name)).toEqual(["prepare_withdraw", "submit_withdraw"]);
       expect(tools.every(tool => tool.inputSchema.type === "object")).toBe(true);
     }

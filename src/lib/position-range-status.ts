@@ -19,26 +19,8 @@ export type PositionRangeStatus = {
   /** True price distances: (price - lower) / lower and (upper - price) / upper. */
   distanceToLowerPricePct: number | null;
   distanceToUpperPricePct: number | null;
-  priceSource: "solami-blur" | "on-chain" | "unknown";
+  priceSource: "on-chain" | "unknown";
 };
-
-/**
- * Map a Blur pool `price` onto Raydium mintA/mintB orientation (B per 1 A).
- * Blur fields are `mint` / `quote_mint` / `price` (quote per base).
- */
-export function blurPriceToBPerA(
-  price: number | null,
-  blurMint: string | null,
-  blurQuoteMint: string | null,
-  mintA: string,
-  mintB: string,
-): number | null {
-  if (price === null || !(price > 0) || !Number.isFinite(price)) return null;
-  if (blurMint === mintA && blurQuoteMint === mintB) return price;
-  if (blurMint === mintB && blurQuoteMint === mintA) return 1 / price;
-  // Orientation unverified against this pair — use the raw price (documented assumption).
-  return price;
-}
 
 export function rangeStatusFromPrice(input: {
   priceBPerA: number;

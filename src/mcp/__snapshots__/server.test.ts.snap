@@ -147,7 +147,7 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
         "name": "get_position_performance",
       },
       {
-        "description": "Compute live in-range / out-of-range status for a Raydium CLMM position from the latest Solami Blur pool price versus tickLower/tickUpper (B per 1 A). Flags when price approaches a range edge. Falls back to the on-chain mid if Blur is unavailable. Read-only.",
+        "description": "Compute live in-range / out-of-range status for a Raydium CLMM position from the current on-chain pool price versus tickLower/tickUpper (B per 1 A). Flags when price approaches a range edge. Read-only.",
         "inputSchema": {
           "properties": {
             "poolId": {
@@ -842,7 +842,7 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
     "name": "get_position_performance",
   },
   {
-    "description": "Compute live in-range / out-of-range status for a Raydium CLMM position from the latest Solami Blur pool price versus tickLower/tickUpper (B per 1 A). Flags when price approaches a range edge. Falls back to the on-chain mid if Blur is unavailable. Read-only.",
+    "description": "Compute live in-range / out-of-range status for a Raydium CLMM position from the current on-chain pool price versus tickLower/tickUpper (B per 1 A). Flags when price approaches a range edge. Read-only.",
     "inputSchema": {
       "properties": {
         "poolId": {

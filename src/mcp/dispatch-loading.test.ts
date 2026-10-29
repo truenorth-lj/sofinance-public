@@ -10,7 +10,7 @@ vi.mock("@sofinance/engine/config/server-env", async importOriginal => ({
 it("loads real handlers and registers the SDK without signing/RPC or eager withdrawal imports", async () => {
   const { TOOL_DISPATCH } = await import("./dispatch");
   const { createMcpServer } = await import("./create-server");
-  expect(Object.keys(TOOL_DISPATCH)).toHaveLength(16);
+  expect(Object.keys(TOOL_DISPATCH)).toHaveLength(15);
   const server = createMcpServer();
   await server.close();
 });

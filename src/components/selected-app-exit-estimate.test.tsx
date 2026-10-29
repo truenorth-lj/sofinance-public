@@ -16,7 +16,6 @@ vi.mock("./use-compound-controller", () => ({ useCompoundController: () => ({
   wallet: undefined, state: compoundMock.state, preview: null, attempt: null, stage: "idle", busy: false, canCompound: false,
   compound: vi.fn(), receipts: [], priorReceipts: [], error: "" }) }));
 vi.mock("./transaction-status-dialog", () => ({ TransactionStatusDialog: () => null }));
-vi.mock("./pool-activity-panel", () => ({ PoolActivityPanel: () => null }));
 vi.mock("./pool-daily-apr-panel", () => ({ PoolDailyAprChart: () => null }));
 
 const DEEP_LINK_MINT = "DeepLink1111111111111111111111111111111111";

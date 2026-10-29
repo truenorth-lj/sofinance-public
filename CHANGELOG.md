@@ -7,6 +7,10 @@ This project uses [Semantic Versioning](https://semver.org/). `package.json` is 
 
 ## [Unreleased]
 
+### Removed
+
+- Live pool trade activity (Solami Blur): the MCP `get_pool_activity` tool (stdio + remote), `/api/pool-activity` and `/api/pool-activity/stream`, the app's Live pool activity panel / swap ticker, the Blur client, and `POOL_ACTIVITY_ENABLED`. `get_position_range_status` uses the on-chain pool price. MCP now lists 15 tools.
+
 ### Changed
 
 - Open-position signing follows Phantom’s multi-signer recipe: the client generates the position NFT mint, `/api/open-prepare` returns a fully unsigned transaction, the wallet signs first, then the mint signature is added on the wallet-returned tx. MCP agents should pass `nftMint` and mint-sign after the wallet; omitting it keeps an MCP-only server partial-sign for `/app/sign`.

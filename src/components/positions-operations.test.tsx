@@ -24,7 +24,6 @@ vi.mock("./use-compound-controller", () => ({ useCompoundController: () => ({
   compound: mocks.compound, receipts: [], priorReceipts: [], error: "",
 }) }));
 vi.mock("./transaction-status-dialog", () => ({ TransactionStatusDialog: () => null }));
-vi.mock("./pool-activity-panel", () => ({ PoolActivityPanel: () => null }));
 vi.mock("./pool-daily-apr-panel", () => ({ PoolDailyAprChart: () => null }));
 let container: HTMLDivElement;
 let root: Root;

@@ -8,7 +8,6 @@ import { PositionExitEstimate } from "./position-exit-estimate";
 import { WalletConnectionContext, type WalletConnection } from "./wallet-connection";
 import fixture from "./__fixtures__/position-performance-sample.json";
 
-vi.mock("./pool-activity-panel", () => ({ PoolActivityPanel: () => null }));
 vi.mock("./pool-daily-apr-panel", () => ({ PoolDailyAprChart: () => null }));
 vi.mock("./use-token-metadata", () => ({ useTokenMetadata: () => ({}) }));
 
