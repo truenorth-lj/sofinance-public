@@ -181,7 +181,7 @@ describe("Open submission through real facade", () => {
     expect(writeAt).toBeGreaterThan(-1); expect(readAt).toBeGreaterThan(writeAt); expect(sendAt).toBeGreaterThan(readAt);
     expect(c.submitStage).toBe("pending"); expect(c.busy).toBe(true); expect(c.beamStatus.landedLabel).toBeNull(); expect(boundary.once).not.toHaveBeenCalled();
     chainStatus = "confirmed"; await advance(1); expect(c.submitStage).toBe("confirmed"); expect(c.beamStatus.landedLabel).toBe("Beam landed");
-    expect(boundary.notify).toHaveBeenCalledWith(preparedValue.summary.nftMint); expect(boundary.once).toHaveBeenCalledWith(`open-ok:${signature}`, "open_position_success", { pool: pair.poolAddress, pair: "AAA/BBB" });
+    expect(boundary.notify).toHaveBeenCalledWith(preparedValue.summary.nftMint); expect(boundary.once).toHaveBeenCalledWith(`open-ok:${signature}`, "open_position_success", { pool: pair.poolAddress, pair: "AAA/BBB", wallet_address: wallet, is_internal: false });
   });
   it("keeps preparing and wallet phases observable and blocks duplicate retained callbacks synchronously", async () => {
     await ready(); const wait = deferred<Response>(); prepareReply = () => wait.promise; const retained = c.signAndSend;
@@ -201,6 +201,8 @@ describe("Open submission through real facade", () => {
     if (failure === "wallet-non-error") boundary.sign.mockRejectedValue("synthetic rejection");
     await send(); expectNoSend(); expect(c.busy).toBe(false); expect(c.submitStage).toBeNull(); expect(c.error).not.toBe("");
     expect(boundary.growth.mock.calls.map(x => x[0])).toEqual(["open_position_started", "open_position_failed"]);
+    expect(boundary.growth.mock.calls[1]![1]).toMatchObject({ wallet_address: wallet, is_internal: false, error_reason: expect.any(String) });
+    if (failure === "wallet-reject") expect(boundary.growth.mock.calls[1]![1]).toMatchObject({ error_reason: "user_rejected", error_message: "User rejected request" });
     prepareReply = normalPrepare; boundary.sign.mockImplementation(normalSign); await advance(450); await send(); expect(calls("/api/open-broadcast")).toHaveLength(1);
   });
   it.each(["wallet", "pool", "amount", "mint", "kind", "expired", "permit", "bytes", "payer", "nft", "blockhash"])("rejects prepared %s mismatch before signing", async mismatch => {
@@ -282,7 +284,7 @@ describe("Open submission through real facade", () => {
   });
   it.each(["failed", "expired"])("reports confirmed-chain %s analytics with original signature", async status => {
     await ready(); await send(); chainStatus = status; await advance(1);
-    expect(boundary.once).toHaveBeenCalledWith(`open-fail:${c.signature}`, "open_position_failed", { pool: pair.poolAddress, pair: "AAA/BBB", error_class: status === "expired" ? "expired" : "onchain_failed" });
+    expect(boundary.once).toHaveBeenCalledWith(`open-fail:${c.signature}`, "open_position_failed", { pool: pair.poolAddress, pair: "AAA/BBB", wallet_address: wallet, is_internal: false, error_class: status === "expired" ? "expired" : "onchain_failed", error_reason: status === "expired" ? "expired" : "onchain_failed" });
   });
   it("does not display previous Beam metadata after another attempt is confirmed", async () => {
     await ready(); await send(); chainStatus = "confirmed"; await advance(1); expect(c.beamStatus.landedLabel).toBe("Beam landed");

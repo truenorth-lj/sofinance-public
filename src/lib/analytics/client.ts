@@ -1,10 +1,11 @@
 import {
+  getStoredAttribution,
   isEmptyAttribution,
   readAndStoreFirstTouch,
   type Attribution,
 } from "./attribution";
 import { GROWTH_EVENTS } from "./events";
-import { hashWallet } from "./hash-wallet";
+import { walletEventProperties } from "./internal-wallets";
 import { POSTHOG_RELAY_PATH, posthogUpstream } from "./relay";
 
 export type GrowthClient = {
@@ -13,6 +14,9 @@ export type GrowthClient = {
   register: (properties: Record<string, unknown>) => void;
   identify: (id: string) => void;
   setPersonProperties?: (properties: Record<string, unknown>) => void;
+  unregister?: (property: string) => void;
+  reset?: () => void;
+  get_distinct_id?: () => string;
 };
 
 type Status = "unset" | "off" | "on";
@@ -21,6 +25,7 @@ let status: Status = "unset";
 let client: GrowthClient | null = null;
 const queue: Array<{ event: string; properties?: Record<string, unknown> }> = [];
 const once = new Set<string>();
+let identifiedWallet: string | null = null;
 
 export function posthogProjectKey(): string | undefined {
   const key = process.env.NEXT_PUBLIC_POSTHOG_KEY?.trim();
@@ -42,6 +47,7 @@ export function resetGrowthAnalyticsForTests() {
   client = null;
   queue.length = 0;
   once.clear();
+  identifiedWallet = null;
 }
 
 export function installGrowthClientForTests(next: GrowthClient | null) {
@@ -56,6 +62,8 @@ function doNotTrack(): boolean {
   return nav.doNotTrack === "1" || nav.doNotTrack === "yes" || nav.msDoNotTrack === "1";
 }
 
+// Raw `wallet`/`address` keys are still stripped as a guard; the public address is sent
+// deliberately and only as `wallet_address` (see internal-wallets.ts).
 function dropSecrets(properties: Record<string, unknown> | undefined) {
   if (!properties) return properties;
   const next = { ...properties };
@@ -145,13 +153,38 @@ export function captureGrowthEventOnce(key: string, event: string, properties?: 
   captureGrowthEvent(event, properties);
 }
 
+// A distinct id from an earlier wallet: a raw base58 address or the legacy `wallet:<sha256>` id.
+const WALLET_DISTINCT_ID = /^(?:wallet:[0-9a-f]{64}|[1-9A-HJ-NP-Za-km-z]{32,44})$/;
+
+function resetIdentity(nextClient: GrowthClient) {
+  nextClient.unregister?.("wallet_address");
+  nextClient.unregister?.("is_internal");
+  nextClient.reset?.();
+  identifiedWallet = null;
+  // reset() drops super properties; keep first-touch attribution on the new anonymous id.
+  const stored = typeof window === "undefined" ? null : getStoredAttribution(window.localStorage);
+  if (stored) applyAttribution(stored);
+}
+
+/** Identify by the public wallet address and tag later events with it and `is_internal`. */
 export async function captureWalletConnected(wallet: string) {
   if (!wallet) return;
   const enabled = await initGrowthAnalytics();
   if (!enabled || !client) return;
-  const hashed = await hashWallet(wallet);
-  client.identify(`wallet:${hashed}`);
-  captureGrowthEvent(GROWTH_EVENTS.walletConnected);
+  const current = client.get_distinct_id?.();
+  if (current && current !== wallet && WALLET_DISTINCT_ID.test(current)) resetIdentity(client);
+  const properties = walletEventProperties(wallet);
+  client.identify(wallet);
+  identifiedWallet = wallet;
+  client.register(properties);
+  client.setPersonProperties?.(properties);
+  captureGrowthEvent(GROWTH_EVENTS.walletConnected, properties);
+}
+
+/** Wallet disconnected: stop tagging events with it and start a fresh anonymous id. */
+export function captureWalletDisconnected() {
+  if (status !== "on" || !client || !identifiedWallet) return;
+  resetIdentity(client);
 }
 
 export function capturePageview(pathname: string, href: string) {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { captureWalletConnected } from "@/lib/analytics/client";
+import { captureWalletConnected, captureWalletDisconnected } from "@/lib/analytics/client";
 import { useWalletConnection } from "./wallet-connection";
 
 export function WalletGrowthAnalytics() {
@@ -10,6 +10,7 @@ export function WalletGrowthAnalytics() {
 
   useEffect(() => {
     if (!connected || !address) {
+      if (last.current) captureWalletDisconnected();
       last.current = null;
       return;
     }
