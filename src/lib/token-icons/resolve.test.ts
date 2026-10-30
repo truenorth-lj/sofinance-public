@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 import { ICON_HOSTS, trustedIcon } from "@sofinance/engine/token-metadata";
 import { MANUAL_TOKEN_ICONS, iconFor, tokenIconMap } from "./map";
+import { UNIV4_RHC_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/uniswap-v4/constants";
 import { dexScreenerIcons, geckoTerminalIcons, raydiumIcons, resolveTokenIcons, type IconSources } from "./resolve";
 import { storeRequestSchema } from "../rwa-store-types";
 
@@ -52,8 +53,25 @@ describe("token icon sources", () => {
       .toEqual({ [SPCXX]: "https://img-v1.raydium.io/icon/a.png" });
     expect(await dexScreenerIcons(json([{ baseToken: { address: RHC_SPCX }, info: { imageUrl: "https://dd.dexscreener.com/a.png" } }, { baseToken: { address: RHC_SPCX } }]))([RHC_SPCX.toLowerCase()]))
       .toEqual({ [RHC_SPCX.toLowerCase()]: "https://dd.dexscreener.com/a.png" });
-    const gecko = geckoTerminalIcons(json({ data: { attributes: { image_url: "missing.png" } } }));
+    const gecko = geckoTerminalIcons(json({ data: [{ attributes: { address: RHC_SPCX.toLowerCase(), image_url: "missing.png" } }] }));
     expect(await gecko([RHC_SPCX.toLowerCase()])).toEqual({});
+  });
+
+  it("covers every allowlisted Robinhood Chain token with one batched GeckoTerminal call (regression: per-token calls stopped at 10)", async () => {
+    const tokens = [...new Set(UNIV4_RHC_ALLOWLISTED_POOLS.flatMap((pool) => [pool.currency0.address, pool.currency1.address]).map((a) => a.toLowerCase()))];
+    expect(tokens).toHaveLength(22);
+    const urls: string[] = [];
+    const fetcher = vi.fn(async (url: string) => {
+      urls.push(url);
+      const asked = url.split("/tokens/multi/")[1]!.split(",");
+      return new Response(JSON.stringify({ data: asked.map((address, i) => ({ attributes: {
+        address, image_url: `https://coin-images.coingecko.com/coins/images/${i}/large/t.png` } })) }), { status: 200 });
+    }) as unknown as typeof fetch;
+    const rows = await resolveTokenIcons("robinhood", tokens, [{ source: "geckoterminal", lookup: geckoTerminalIcons(fetcher) }], { manual: [] });
+    expect(urls).toHaveLength(1);
+    expect(urls[0]).toContain("/networks/robinhood/tokens/multi/");
+    expect(rows.map((row) => row.address).sort()).toEqual([...tokens].sort());
+    expect(rows.every((row) => row.source === "geckoterminal" && row.image.startsWith("https://coin-images.coingecko.com/"))).toBe(true);
   });
 
   it("keeps every manual icon on ICON_HOSTS, including the Raydium / DexScreener / CoinGecko fallback hosts", () => {
@@ -112,7 +130,8 @@ describe("missing rwa_token_icon table or column (migration 0002 not applied on 
       const href = String(url);
       if (href.includes("raydium")) return new Response(JSON.stringify({ data: [{ address: OTHER, logoURI: "https://evil.example/o.png" }] }));
       if (href.includes("dexscreener")) return new Response(JSON.stringify([]));
-      if (href.includes("geckoterminal")) return new Response(JSON.stringify({ data: { attributes: { image_url: "https://coin-images.coingecko.com/coins/images/9/large/spcx.png" } } }));
+      if (href.includes("geckoterminal")) return new Response(JSON.stringify({ data: href.split("/tokens/multi/")[1]!.split(",").map((address) =>
+        ({ attributes: { address, image_url: `https://coin-images.coingecko.com/coins/images/9/large/${address.slice(2, 8)}.png` } })) }));
       return new Response("[]");
     }) as unknown as typeof fetch;
     const behavior: { saveError?: Error } = {};
@@ -133,7 +152,8 @@ describe("missing rwa_token_icon table or column (migration 0002 not applied on 
     expect(saved.every((row) => trustedIcon(row.image) === row.image)).toBe(true);
     expect(saved.find((row) => row.address === OTHER)).toBeUndefined();
     expect(saved.find((row) => row.address === SPCXX)?.source).toBe("manual");
-    expect(saved.filter((row) => row.source === "geckoterminal").map((row) => row.address).length).toBeGreaterThanOrEqual(2);
+    // All 22 allowlisted Robinhood Chain tokens get an indexer icon (not only SPCX via the manual list).
+    expect(saved.filter((row) => row.source === "geckoterminal").map((row) => row.address)).toHaveLength(22);
     behavior.saveError = new RwaStoreError("TOKEN_ICONS_UNAVAILABLE");
     await expect(refreshTokenIcons(store, lease, [], fetcher, new AbortController().signal)).rejects.toMatchObject({ code: "TOKEN_ICONS_UNAVAILABLE" });
   });

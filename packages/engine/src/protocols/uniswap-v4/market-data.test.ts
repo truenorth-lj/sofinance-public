@@ -16,7 +16,17 @@ describe("uniswap-v4-rhc market data (DexScreener / GeckoTerminal captures, 2026
       source: "dexscreener", volume24hUsd: 36.54, tvlUsd: 48711.43, txns24h: 3,
       // DexScreener's base is SPCXon (token1), quote SPCX (token0).
       reserves: { token0: 166.5943, token1: 172.2797 },
+      // priceUsd is SPCXon's (base) USD price; SPCX's comes from priceNative (quote per base).
+      priceUsd: { token0: 143.74 / 1.0000003527, token1: 143.74 },
     });
+  });
+
+  it("reads token USD prices (stock tokens trade at the share price, not $1)", () => {
+    // GeckoTerminal's base is SPCXon (token1), quote SPCX (token0).
+    expect(parseGeckoTerminalPool(geckoCapture, SPCX)?.priceUsd).toEqual({ token0: 144.702839920411, token1: 144.710103947608 });
+    const noPrice = structuredClone(geckoCapture) as { data: { attributes: Record<string, unknown> } };
+    noPrice.data.attributes.quote_token_price_usd = null;
+    expect(parseGeckoTerminalPool(noPrice, SPCX)?.priceUsd).toBeNull();
   });
 
   it("parses the GeckoTerminal pool", () => {

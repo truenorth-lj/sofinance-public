@@ -4,7 +4,7 @@ import "@/lib/engine-host";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { ArrowDown, ArrowUp, ArrowUpDown, ArrowUpRight, LayoutGrid, List, LoaderCircle, RefreshCw, Search } from "lucide-react";
-import { HIGHEST_RANGE_APR_7D_HELP, POOL_FEE_APR_24H_HELP } from "@/lib/apr-labels/copy";
+import { HIGHEST_RANGE_APR_7D_HELP, POOL_FEE_APR_24H_HELP, POOL_FEE_APR_24H_SHORT } from "@/lib/apr-labels/copy";
 import { exactAprTitle, formatAprPct } from "@/lib/apr-labels/format-apr";
 import { cn } from "@/lib/cn";
 import { buildPlanPath, DOCS_ROUTES } from "@/lib/public-urls";
@@ -65,7 +65,7 @@ const money = (value: number | null) => {
 const pct = formatAprPct;
 
 const APR7D_SHORT = "Est. APR · 7d";
-const APR24H_SHORT = "Est. pool fee APR · 24h";
+const APR24H_SHORT = POOL_FEE_APR_24H_SHORT;
 const NOT_GUARANTEED = "Estimates, not guaranteed.";
 const chip = "inline-flex h-6 items-center whitespace-nowrap rounded-full px-2.5 font-data text-[10px] uppercase tracking-[0.12em]";
 

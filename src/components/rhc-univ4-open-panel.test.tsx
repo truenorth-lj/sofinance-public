@@ -51,10 +51,13 @@ const render = (el: Parameters<Root["render"]>[0]) => act(() => root.render(el))
 const text = () => container.textContent ?? "";
 
 describe("EstimatedAprBadge", () => {
-  it("labels 估計/Estimated and shows no attribution for DexScreener data", () => {
+  it("labels the 24h figure like the card field (not as the 7d headline) and shows no attribution for DexScreener data", () => {
     render(createElement(EstimatedAprBadge, { apr: apr("dexscreener") }));
     expect(text()).toContain("7.50%");
-    expect(text()).toContain("估計 · Estimated APR");
+    const label = container.querySelector("[data-testid=estimated-apr-label]")!;
+    expect(label.textContent).toBe("Est. pool fee APR · 24h");
+    expect(label.getAttribute("title")).toBe("估計 · Estimated");
+    expect(text()).not.toContain("Estimated APR");
     expect(container.querySelector("a")).toBeNull();
     expect(text()).not.toContain("GeckoTerminal");
   });

@@ -64,29 +64,40 @@ export function rhcPoolSpec(poolId: string): Univ4AllowlistedPool | null {
   return UNIV4_RHC_ALLOWLISTED_POOLS.find((p) => p.poolId.toLowerCase() === poolId.toLowerCase()) ?? null;
 }
 
-/** Hook fee (mean of both directions, pips), slot0 and indexer TVL → the shared economics shape. Pure. */
+/**
+ * Hook fee (mean of both directions, pips), slot0, indexer TVL and token USD prices → the shared economics shape.
+ * Pure. Throws when no token USD price is known: RHC stock tokens trade at the share price (e.g. GOOGL ≈ $285),
+ * and treating one token as $1 would overstate a $100 deposit's share of the liquidity by that factor.
+ */
 export function rhcEconomics(
   spec: Univ4AllowlistedPool,
   state: { feePips: { zeroForOne: number; oneForZero: number }; sqrtPriceX96: bigint; protocolFee: number | null },
   tvlUsd: number,
+  priceUsd: { token0: number; token1: number } | null | undefined,
 ): PoolEconomics {
   const feeRate = (state.feePips.zeroForOne + state.feePips.oneForZero) / 2 / 1_000_000;
   const decimals0 = spec.currency0.decimals, decimals1 = spec.currency1.decimals;
   const price = state.sqrtPriceX96 > 0n
     ? Math.pow(Number(state.sqrtPriceX96) / 2 ** 96, 2) * 10 ** (decimals0 - decimals1)
     : 1;
-  // Indexers report USD TVL; approximate token amounts so usdPerRawTokenB can recover a USD-per-raw-B.
-  const halfTvl = tvlUsd / 2;
+  // USD per whole token1 (B); from token0 through the pool price when only that one is known.
+  const usdB = priceUsd && priceUsd.token1 > 0 ? priceUsd.token1
+    : priceUsd && priceUsd.token0 > 0 && price > 0 ? priceUsd.token0 / price : null;
+  if (usdB === null) throw new Error(RHC_TOKEN_PRICE_UNAVAILABLE);
+  // Indexers report USD TVL; split it into token amounts so usdPerRawTokenB recovers USD per raw B (= usdB / 10^decimals1).
+  const amountB = tvlUsd / 2 / usdB;
   return {
     mintA: spec.currency0.address, mintB: spec.currency1.address,
     decimalsA: decimals0, decimalsB: decimals1,
-    feeRate, tvlUsd, price, mintAmountA: price > 0 ? halfTvl / price : 0, mintAmountB: halfTvl,
+    feeRate, tvlUsd, price, mintAmountA: price > 0 ? amountB / price : 0, mintAmountB: amountB,
     protocolFeeRate: state.protocolFee === 0 ? 0 : null,
     fundFeeRate: 0,
     weekVolumeUsd: null,
     dayFeeApr: null, weekFeeApr: null,
   };
 }
+
+export const RHC_TOKEN_PRICE_UNAVAILABLE = "Token USD price unavailable from GeckoTerminal or DexScreener";
 
 async function loadRhcEconomics(poolId: string, fetcher: typeof fetch): Promise<PoolEconomics | null> {
   const spec = rhcPoolSpec(poolId);
@@ -101,8 +112,8 @@ async function loadRhcEconomics(poolId: string, fetcher: typeof fetch): Promise<
       },
     }),
   ]);
-  if (!state.dynamicFee || !state.slot0 || !market) return null;
-  return rhcEconomics(spec, { feePips: state.dynamicFee, sqrtPriceX96: state.slot0.sqrtPriceX96, protocolFee: state.slot0.protocolFee }, market.tvlUsd);
+  if (!state.dynamicFee || !state.slot0 || !market || !market.priceUsd) return null;
+  return rhcEconomics(spec, { feePips: state.dynamicFee, sqrtPriceX96: state.slot0.sqrtPriceX96, protocolFee: state.slot0.protocolFee }, market.tvlUsd, market.priceUsd);
 }
 
 export const RHC_ECONOMICS_SOURCE: LoadedPoolEconomicsSource = {

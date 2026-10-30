@@ -159,7 +159,7 @@ export async function refreshRhcAprSnapshots(input: {
       const nowMs = clock(), nowSeconds = Math.floor(nowMs / 1000);
       const economics = rhcEconomics(spec, {
         feePips: summary.dynamicFeePips!, sqrtPriceX96: BigInt(summary.sqrtPriceX96!), protocolFee: summary.protocolFee,
-      }, summary.estimatedApr!.tvlUsd);
+      }, summary.estimatedApr!.tvlUsd, market.get(poolId)?.priceUsd);
       let stored: StoredProfile | null = cached ? { ...cached, profile: { ...cached.profile, economics } } : null;
       if (needsFetch) {
         const fresh = await loadVolumeProfile(poolId, fetcher, nowSeconds, {

@@ -23,6 +23,11 @@ export type Univ4MarketData = {
   txns24h: number | null;
   /** Pool token balances as reported by the source (token units), when available. */
   reserves: { token0: number; token1: number } | null;
+  /**
+   * USD price of one whole token (currency0 / currency1) when the source reports it. RHC stock tokens trade at
+   * the share price, not $1, so the range model needs this to turn the pool TVL into token units.
+   */
+  priceUsd?: { token0: number; token1: number } | null;
 };
 
 export const DEXSCREENER_CHAIN_ID = "robinhood";
@@ -56,11 +61,15 @@ export function parseDexScreenerPair(payload: unknown, spec: Univ4AllowlistedPoo
   const txns = isObj(pair.txns) && isObj(pair.txns.h24) ? pair.txns.h24 : null;
   const buys = txns ? num(txns.buys) : null, sells = txns ? num(txns.sells) : null;
   const baseAmount = liquidity ? num(liquidity.base) : null, quoteAmount = liquidity ? num(liquidity.quote) : null;
+  // priceUsd is the base token's USD price, priceNative the base price in quote tokens.
+  const baseUsd = num(pair.priceUsd), native = num(pair.priceNative);
+  const quoteUsd = baseUsd !== null && native !== null && native > 0 ? baseUsd / native : null;
   return {
     source: "dexscreener", volume24hUsd, tvlUsd,
     txns24h: buys !== null && sells !== null ? buys + sells : null,
     reserves: baseAmount !== null && quoteAmount !== null
       ? (baseIs0 ? { token0: baseAmount, token1: quoteAmount } : { token0: quoteAmount, token1: baseAmount }) : null,
+    priceUsd: tokenPrices(baseIs0, baseUsd, quoteUsd),
   };
 }
 
@@ -73,12 +82,21 @@ export function parseGeckoTerminalPool(payload: unknown, spec: Univ4AllowlistedP
   const tokens = [tokenId(relationships.base_token), tokenId(relationships.quote_token)];
   const expected = [spec.currency0.address, spec.currency1.address];
   if (!expected.every(address => tokens.some(token => sameAddress(token, address)))) return null;
+  const baseIs0 = sameAddress(tokens[0], spec.currency0.address);
   const volume24hUsd = isObj(attributes.volume_usd) ? num(attributes.volume_usd.h24) : null;
   const tvlUsd = num(attributes.reserve_in_usd);
   if (volume24hUsd === null || tvlUsd === null) return null;
   const tx = isObj(attributes.transactions) && isObj(attributes.transactions.h24) ? attributes.transactions.h24 : null;
   const buys = tx ? num(tx.buys) : null, sells = tx ? num(tx.sells) : null;
-  return { source: "geckoterminal", volume24hUsd, tvlUsd, txns24h: buys !== null && sells !== null ? buys + sells : null, reserves: null };
+  return {
+    source: "geckoterminal", volume24hUsd, tvlUsd, txns24h: buys !== null && sells !== null ? buys + sells : null, reserves: null,
+    priceUsd: tokenPrices(baseIs0, num(attributes.base_token_price_usd), num(attributes.quote_token_price_usd)),
+  };
+}
+
+function tokenPrices(baseIs0: boolean, baseUsd: number | null, quoteUsd: number | null): Univ4MarketData["priceUsd"] {
+  if (baseUsd === null || quoteUsd === null || !(baseUsd > 0) || !(quoteUsd > 0)) return null;
+  return baseIs0 ? { token0: baseUsd, token1: quoteUsd } : { token0: quoteUsd, token1: baseUsd };
 }
 
 /** One GeckoTerminal call for up to 30 pools (`/pools/multi/{a,b,…}`). */
