@@ -7,7 +7,7 @@ import {
 import { validRwaAuthorization } from "./rwa-auth";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { APR_SNAPSHOT_MAX_AGE_MS, RWA_REFRESH_CRON, aprSnapshotExpired } from "./rwa-freshness";
+import { APR_SNAPSHOT_MAX_AGE_MS, RWA_PAIRS_STALE_MS, RWA_REFRESH_CRON, aprSnapshotExpired } from "./rwa-freshness";
 import { payloadFixture } from "./range-apr/payload.fixture";
 
 describe("RWA observation boundaries", () => {
@@ -69,5 +69,44 @@ describe("RWA observation boundaries", () => {
     expect(Number(hour) * 60 + Number(minute)).toBeGreaterThanOrEqual(10);
     expect(Number(hour) * 60 + Number(minute)).toBeLessThan(70);
     expect(APR_SNAPSHOT_MAX_AGE_MS).toBeGreaterThan(24 * 3_600_000);
+  });
+});
+
+/** Minutes of the day a cron field set fires at. Supports any value, step (every n), single value, range and comma lists for minute and hour. */
+function cronField(field: string, max: number): number[] {
+  const out = new Set<number>();
+  for (const part of field.split(",")) {
+    const [range, stepText] = part.split("/");
+    const step = stepText ? Number(stepText) : 1;
+    const [lo, hi] = range === "*" ? [0, max - 1] : range!.includes("-") ? range!.split("-").map(Number) : [Number(range), Number(range)];
+    if (![lo, hi, step].every(Number.isInteger) || step < 1) throw new Error(`unsupported cron field ${field}`);
+    for (let v = lo!; v <= hi!; v += step) out.add(v);
+  }
+  return [...out].sort((a, b) => a - b);
+}
+
+/** Longest gap between two runs of a daily-repeating cron (day/month/weekday fields must be `*`). */
+function longestCronGapMs(schedule: string): number {
+  const [minute, hour, ...rest] = schedule.trim().split(/\s+/);
+  if (rest.join(" ") !== "* * *") throw new Error(`unsupported cron schedule ${schedule}`);
+  const runs = cronField(hour!, 24).flatMap((h) => cronField(minute!, 60).map((m) => h * 60 + m)).sort((a, b) => a - b);
+  const gaps = runs.map((run, i) => (i + 1 < runs.length ? runs[i + 1]! : runs[0]! + 1440) - run);
+  return Math.max(...gaps) * 60_000;
+}
+
+describe("stale thresholds vs the refresh cron", () => {
+  const vercel = JSON.parse(readFileSync(resolve("vercel.json"), "utf8")) as { crons: { path: string; schedule: string }[] };
+  const schedule = vercel.crons.find((entry) => entry.path === "/api/internal/rwa-refresh")!.schedule;
+
+  it("parses cron schedules into the longest gap between runs", () => {
+    expect(longestCronGapMs("15 0 * * *")).toBe(24 * 3_600_000);
+    expect(longestCronGapMs("*/15 * * * *")).toBe(15 * 60_000);
+    expect(longestCronGapMs("0 0,6 * * *")).toBe(18 * 3_600_000);
+  });
+
+  it("server (/api/rwa-pairs) and client (7d APR) thresholds outlast the gap between vercel.json refresh runs", () => {
+    const gap = longestCronGapMs(schedule);
+    expect(RWA_PAIRS_STALE_MS).toBeGreaterThan(gap);
+    expect(APR_SNAPSHOT_MAX_AGE_MS).toBeGreaterThan(gap);
   });
 });
