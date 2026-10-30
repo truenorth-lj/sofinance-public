@@ -10,6 +10,9 @@ export const HOMEPAGE_POOL_APR_LABEL = HIGHEST_RANGE_APR_7D_LABEL;
 export const HOMEPAGE_APR_DOCS_LINK_LABEL = "APR details";
 export const HIGHEST_RANGE_APR_7D_HELP =
   "Estimated from the past 7 days' average volume, LP net fees, for a $100 position in this range. Not guaranteed.";
+/** `/app` 7-day column: Solana range figure plus how Robinhood Chain pools (no range model) are estimated. */
+export const APP_APR_7D_HELP =
+  `${HIGHEST_RANGE_APR_7D_HELP} Robinhood Chain pools: whole-pool fee APR from the past 7 days' average volume (fee rate × volume ÷ TVL). "—" means no data right now.`;
 
 /** Today's volume vs the 7-day daily average: a ratio above this (or below its inverse) gets a note. */
 export const VOLUME_DIVERGENCE_THRESHOLD = 2;

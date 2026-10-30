@@ -29,13 +29,29 @@ describe("solanaPool", () => {
 describe("rhcPool", () => {
   it("maps the allowlisted SPCX/SPCXon pool on Robinhood Chain", () => {
     expect(rhcPool(summary())).toMatchObject({
-      chain: "robinhood", protocol: "uniswap-v4-rhc", pairLabel: "SPCX/SPCXon", tvlUsd: 5000, volume24hUsd: 700, poolFeeApr24hPct: 12, risks: [],
+      chain: "robinhood", protocol: "uniswap-v4-rhc", pairLabel: "SPCX/SPCXon", tvlUsd: 5000, volume24hUsd: 700, poolFeeApr24hPct: 12,
+      poolFeeApr7dPct: null,
     });
+  });
+  it("never shows 'No flags': a neutral New chain label, plus Freeze risk for the issuers' on-chain transfer controls", () => {
+    const pool = rhcPool(summary())!;
+    expect(pool.risks).toEqual(["new-chain", "freeze"]);
+    expect(pool.riskNotes!["freeze"]).toBe("The SPCX and SPCXon issuers can pause all transfers, block wallets from sending or receiving, remove tokens from any wallet and change the token contract (checked on-chain), like a Solana freeze authority.");
+    // No liquidity flag from TVL (same as Solana pools): TVL is only shown.
+    expect(rhcPool(summary({ estimatedApr: { tvlUsd: 10, volume24hUsd: 0, estimatedPoolFeeAprPct: 0 } as RhcPoolSummary["estimatedApr"] }))!.risks).toEqual(["new-chain", "freeze"]);
+    expect(rhcPool(summary({ freezeRisk: false, tokenControls: [] }))!.risks).toEqual(["new-chain"]);
+    const unconfirmed = rhcPool(summary({ freezeRisk: true, tokenControls: [
+      { symbol: "SPCX", powers: ["pause"], paused: false, reviewed: true }, { symbol: "SPCXon", powers: ["pause"], paused: null, reviewed: false }] }))!;
+    expect(unconfirmed.riskNotes!["freeze"]).toContain("SPCXon controls could not be confirmed right now.");
+  });
+  it("uses the 7-day whole-pool fee APR and its GeckoTerminal attribution", () => {
+    const attribution = { text: "Data: GeckoTerminal", url: "https://www.geckoterminal.com" } as const;
+    expect(rhcPool(summary({ estimatedApr7d: { estimatedPoolFeeAprPct: 0.0007, attribution } }))).toMatchObject({ poolFeeApr7dPct: 0.0007, attribution });
   });
   it("drops delisted and unknown pools and flags discovery warnings", () => {
     expect(rhcPool(summary({ status: "delisted" } as Partial<RhcPoolSummary>))).toBeNull();
     expect(rhcPool(summary({ poolId: "0xdead" }))).toBeNull();
-    expect(rhcPool(summary({ warnings: ["thin liquidity"] } as Partial<RhcPoolSummary>))!.risks).toEqual(["pool-warning"]);
+    expect(rhcPool(summary({ warnings: ["thin liquidity"] } as Partial<RhcPoolSummary>))!.risks).toEqual(["new-chain", "freeze", "pool-warning"]);
   });
   it("builds the open panel view from the reviewed allowlist tokens", () => {
     expect(rhcPoolView(summary())).toMatchObject({ poolId: spec.poolId, tick: 10, token0: { address: spec.currency0.address, decimals: spec.currency0.decimals } });

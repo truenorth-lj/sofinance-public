@@ -74,17 +74,33 @@ describe("UnifiedPoolsPanel", () => {
     await render();
     expect(shown()).toEqual(["solana:spcxA", "solana:tsla", `robinhood:${rhcSpec.poolId.toLowerCase()}`]);
     expect([...container.querySelectorAll("[data-testid=chain-badge]")].map((el) => el.textContent)).toEqual(["Solana", "Solana", "Robinhood Chain"]);
-    expect(container.textContent).toContain("Show all pools (1 hidden)");
+    expect(container.querySelector("[data-testid=hidden-duplicates]")!.textContent).toBe("1 hidden");
+    expect(container.textContent).not.toContain("Show all pools");
   });
 
-  it("shows hidden duplicates after Show all pools and the toggle", async () => {
+  it("labels the Robinhood Chain pool 'New chain' with its freeze risk (never 'No flags') and shows <0.01% for a tiny APR", async () => {
+    rhcSummary.estimatedApr.estimatedPoolFeeAprPct = 0.000558;
+    try {
+      await render();
+      const card = container.querySelector(`[data-pool="robinhood:${rhcSpec.poolId.toLowerCase()}"]`)!;
+      expect([...card.querySelectorAll("[data-risk]")].map((el) => el.textContent)).toEqual(["New chain", "Freeze risk"]);
+      expect(card.textContent).not.toContain("No flags");
+      expect(card.textContent).toContain("<0.01%");
+      expect(card.textContent).not.toContain("0.00%");
+      expect(card.querySelector("[data-risk=freeze]")!.getAttribute("title")).toContain("checked on-chain");
+    } finally { rhcSummary.estimatedApr.estimatedPoolFeeAprPct = 9; }
+  });
+
+  it("shows hidden duplicates only through the Hide duplicate pools toggle", async () => {
     await render();
-    await act(async () => { container.querySelector<HTMLButtonElement>("[data-testid=show-all-pools]")!.click(); });
-    expect(shown()).toContain("solana:spcxB");
     const toggle = container.querySelector<HTMLInputElement>("input[role=switch]")!;
-    expect(toggle.checked).toBe(false);
+    expect(toggle.checked).toBe(true);
+    await act(async () => { toggle.click(); });
+    expect(shown()).toContain("solana:spcxB");
+    expect(container.querySelector("[data-testid=hidden-duplicates]")).toBeNull();
     await act(async () => { toggle.click(); });
     expect(shown()).not.toContain("solana:spcxB");
+    expect(container.querySelector("[data-testid=hidden-duplicates]")!.textContent).toBe("1 hidden");
   });
 
   it("does not ask for or show Orca / Meteora pools when their flags are off", async () => {

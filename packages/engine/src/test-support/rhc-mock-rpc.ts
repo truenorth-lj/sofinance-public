@@ -4,8 +4,8 @@ import {
 } from "viem";
 import fixture from "../fixtures/univ4-rhc-spcx-live.json";
 import { MULTICALL3_ADDRESS } from "../chains/robinhood";
-import { ERC20_METADATA_ABI, FEE_CONFIG_UPDATED_EVENT, MODIFY_LIQUIDITY_EVENT, STABLE_PAIR_HOOK_ABI, STATE_VIEW_ABI, SWAP_EVENT, UPGRADED_EVENT } from "../protocols/uniswap-v4/abi";
-import { ERC1967_IMPLEMENTATION_SLOT, STABLE_PAIR_HOOK, UNIV4_RHC, UNIV4_RHC_ALLOWLISTED_POOLS } from "../protocols/uniswap-v4/constants";
+import { ERC20_METADATA_ABI, FEE_CONFIG_UPDATED_EVENT, MODIFY_LIQUIDITY_EVENT, STABLE_PAIR_HOOK_ABI, STATE_VIEW_ABI, SWAP_EVENT, TOKEN_CONTROLS_ABI, UPGRADED_EVENT } from "../protocols/uniswap-v4/abi";
+import { ERC1967_IMPLEMENTATION_SLOT, RHC_TOKEN_CONTROLS, STABLE_PAIR_HOOK, UNIV4_RHC, UNIV4_RHC_ALLOWLISTED_POOLS } from "../protocols/uniswap-v4/constants";
 
 /**
  * Mock Robinhood Chain JSON-RPC (EIP-1193) replaying the recorded SPCX/SPCXon capture
@@ -34,6 +34,11 @@ export type MockRhcChain = {
   feeConfig: [number, number, number, bigint];
   implementation: Address;
   tokens: Record<string, { name: string; symbol: string; decimals: number }>;
+  /** Token transfer controls: `implementation()` per beacon, `paused()` per contract, Ondo pause manager per token. */
+  beaconImplementations: Record<string, Address>;
+  pausedContracts: Record<string, boolean>;
+  pauseManagers: Record<string, Address>;
+  pausedByManager: Record<string, boolean>;
   logs: MockLog[];
   /** Reject getLogs spanning more blocks than this, with the official RPC's message. */
   maxLogSpan?: bigint;
@@ -97,6 +102,11 @@ export function mockRhcChain(): MockRhcChain {
       [s.token0.address.toLowerCase()]: s.token0,
       [s.token1.address.toLowerCase()]: s.token1,
     },
+    // 2026-10-30 reads (public RPC): reviewed implementations, nothing paused.
+    beaconImplementations: Object.fromEntries(Object.values(RHC_TOKEN_CONTROLS).map(c => [c.beacon.toLowerCase(), c.implementation])),
+    pausedContracts: Object.fromEntries(Object.values(RHC_TOKEN_CONTROLS).flatMap(c => [c.token, ...(c.pause.kind === "self" ? c.pause.extraTargets : [])]).map(a => [a.toLowerCase(), false])),
+    pauseManagers: Object.fromEntries(Object.values(RHC_TOKEN_CONTROLS).flatMap(c => c.pause.kind === "manager" ? [[c.token.toLowerCase(), c.pause.manager]] : [])),
+    pausedByManager: Object.fromEntries(Object.values(RHC_TOKEN_CONTROLS).flatMap(c => c.pause.kind === "manager" ? [[c.token.toLowerCase(), false]] : [])),
     logs: [
       upgradedLog(getAddress(h.upgrades[0]!.implementation), BigInt(h.upgrades[0]!.blockNumber)),
       modifyLiquidityLog(h.ranges[0]!, 98434580n),
@@ -121,6 +131,17 @@ function answer(chain: MockRhcChain, call: Call): Hex | null {
     const decoded = tryDecode(STABLE_PAIR_HOOK_ABI);
     if (decoded?.functionName === "getFee") return encodeFunctionResult({ abi: STABLE_PAIR_HOOK_ABI, functionName: "getFee", result: chain.dynamicFee });
     if (decoded?.functionName === "feeConfig") return encodeFunctionResult({ abi: STABLE_PAIR_HOOK_ABI, functionName: "feeConfig", result: chain.feeConfig });
+  }
+  const controls = tryDecode(TOKEN_CONTROLS_ABI);
+  if (controls?.functionName === "implementation" && chain.beaconImplementations[target])
+    return encodeFunctionResult({ abi: TOKEN_CONTROLS_ABI, functionName: "implementation", result: chain.beaconImplementations[target] });
+  if (controls?.functionName === "paused" && target in chain.pausedContracts)
+    return encodeFunctionResult({ abi: TOKEN_CONTROLS_ABI, functionName: "paused", result: chain.pausedContracts[target]! });
+  if (controls?.functionName === "tokenPauseManager" && chain.pauseManagers[target])
+    return encodeFunctionResult({ abi: TOKEN_CONTROLS_ABI, functionName: "tokenPauseManager", result: chain.pauseManagers[target] });
+  if (controls?.functionName === "isTokenPaused" && Object.values(chain.pauseManagers).some(m => m.toLowerCase() === target)) {
+    const tokenArg = String(controls.args?.[0] ?? "").toLowerCase();
+    if (tokenArg in chain.pausedByManager) return encodeFunctionResult({ abi: TOKEN_CONTROLS_ABI, functionName: "isTokenPaused", result: chain.pausedByManager[tokenArg]! });
   }
   const token = chain.tokens[target];
   if (token) {

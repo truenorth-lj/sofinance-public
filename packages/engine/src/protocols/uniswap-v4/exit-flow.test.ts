@@ -20,7 +20,7 @@ const nftBurn = (id = ID, from: string = USER) => ({ address: UNIV4_RHC.position
 const okLogs = () => [erc20(pool.currency0.address, UNIV4_RHC.poolManager, USER, OUT0), erc20(pool.currency1.address, UNIV4_RHC.poolManager, USER, OUT1), nftBurn()];
 
 type Fake = { owner?: string | null; key?: Record<string, unknown>; sim?: (data: Hex, n: number) => { status: Hex; gasUsed: Hex; returnData: Hex; logs: unknown[]; error?: unknown };
-  balance?: bigint; estimate?: bigint | Error; rpcDown?: boolean };
+  balance?: bigint; estimate?: bigint | Error; rpcDown?: boolean; nextTokenId?: bigint };
 
 function fakeClient(f: Fake = {}) {
   const sims: Hex[] = [];
@@ -30,6 +30,7 @@ function fakeClient(f: Fake = {}) {
       if (f.rpcDown) throw new Error("fetch failed");
       if (functionName === "ownerOf") { if (f.owner === null) throw Object.assign(new Error("execution reverted"), { name: "ContractFunctionExecutionError" }); return f.owner ?? USER; }
       if (functionName === "getPositionLiquidity") return LIQ;
+      if (functionName === "nextTokenId") return f.nextTokenId ?? 100n;
       return [key, info(-11, 9)];
     },
     getBlock: async () => ({ number: 100_997_267n, timestamp: NOW }),
@@ -99,7 +100,10 @@ describe("lookupPositions", () => {
     const owned = await lookupPositions(fakeClient().client, USER, [ID, ID]);
     expect(owned).toEqual([{ tokenId: "4077059", position: expect.objectContaining({ ownedByUser: true, poolId: pool.poolId, baseSymbol: pool.baseSymbol }) }]);
     expect((await lookupPositions(fakeClient({ owner: OTHER }).client, USER, [ID]))[0]!.position).toMatchObject({ ownedByUser: false });
-    expect(await lookupPositions(fakeClient({ owner: null }).client, USER, [1n])).toEqual([{ tokenId: "1", position: null, error: "not-found" }]);
+    // ownerOf reverts: below nextTokenId it was minted then burned (closed); at or above it, it never existed.
+    expect(await lookupPositions(fakeClient({ owner: null }).client, USER, [1n])).toEqual([{ tokenId: "1", position: null, error: "closed" }]);
+    expect(await lookupPositions(fakeClient({ owner: null, nextTokenId: 100n }).client, USER, [100n, 5000n])).toEqual([
+      { tokenId: "100", position: null, error: "not-found" }, { tokenId: "5000", position: null, error: "not-found" }]);
     expect(await lookupPositions(fakeClient({ rpcDown: true }).client, USER, [1n])).toEqual([{ tokenId: "1", position: null, error: "rpc" }]);
     expect(await lookupPositions(fakeClient().client, USER, Array.from({ length: 15 }, (_, i) => BigInt(i + 1)))).toHaveLength(10);
   });

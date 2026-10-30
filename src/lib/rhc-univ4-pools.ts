@@ -7,19 +7,27 @@ import { ESTIMATED_APR_LABEL, fetchUniv4MarketData, type Univ4MarketData } from 
 import { createRhcClient } from "@sofinance/engine/rpc-evm/index";
 import type { PublicClient } from "viem";
 import { AsyncCache } from "./async-cache";
+import { parseGeckoDailyVolumes, type GeckoVolumePoint } from "./pool-daily-apr-math";
+import { rhcDailyOhlcvUrl, rhcPoolApr7d, type RhcPoolApr7d } from "./rhc-univ4-apr7d";
 
 /**
  * Read-only Uniswap v4 pools on Robinhood Chain (chain 4663) for `/api/protocol-pools`.
  * Only the reviewed allowlist (SPCX/SPCXon on the StablePairHook); each pool is re-checked from current
  * on-chain state on every refresh and reported `delisted` if its hook implementation, fee config, key or
  * metadata no longer match. APR = hook fee rate × 24h volume / TVL from DexScreener (GeckoTerminal fallback):
- * no event scans over RPC (PM decision 2026-10-29). No transaction is built here.
+ * no event scans over RPC (PM decision 2026-10-29). The 7-day APR uses GeckoTerminal daily volume (same method as
+ * Solana, `rhc-univ4-apr7d.ts`), also without RPC. No transaction is built here.
  */
+export type RhcUniv4PoolSummary = Univ4PoolSummary & {
+  /** Whole-pool fee APR from the 7-day average daily volume; null (shown as "—") when unavailable. */
+  estimatedApr7d: RhcPoolApr7d | null;
+};
+
 export type RhcUniv4PoolsResult = {
   protocol: "uniswap-v4-rhc";
   chainId: 4663;
   readOnly: true;
-  pools: Univ4PoolSummary[];
+  pools: RhcUniv4PoolSummary[];
   fetchedAt: string;
   source: string;
   aprLabel: { zh: "估計"; en: "Estimated" };
@@ -33,11 +41,16 @@ const MARKET_TTL_MS = 120_000;
 const MARKET_FAILURE_TTL_MS = 60_000;
 /** GeckoTerminal keyless is ~5–10 calls/min per shared IP: after a 429 skip it for 5 min. */
 const GECKO_COOLDOWN_MS = 5 * 60_000;
+/** Daily candles change once a UTC day: one GeckoTerminal call per pool per 30 min per instance (inside the budget). */
+const DAILY_TTL_MS = 30 * 60_000;
+const DAILY_FAILURE_TTL_MS = 2 * 60_000;
+const DAILY_TIMEOUT_MS = 8_000;
 
 const cache = new AsyncCache<RhcUniv4PoolsResult>({ ttlMs: STATE_TTL_MS, failureTtlMs: FAILURE_TTL_MS, maxEntries: 1 });
 const marketCache = new AsyncCache<Univ4MarketData | null>({ ttlMs: MARKET_TTL_MS, failureTtlMs: MARKET_FAILURE_TTL_MS, maxEntries: 16 });
 /** Our own GeckoTerminal budget (below its ~5–10/min keyless limit): at most 4 fallback calls per rolling minute. */
 const GECKO_MAX_CALLS_PER_MINUTE = 4;
+const dailyCache = new AsyncCache<GeckoVolumePoint[]>({ ttlMs: DAILY_TTL_MS, failureTtlMs: DAILY_FAILURE_TTL_MS, maxEntries: 16 });
 let geckoBlockedUntil = 0;
 let geckoCalls: number[] = [];
 
@@ -59,21 +72,39 @@ function marketDataFor(fetcher?: typeof fetch) {
   }));
 }
 
+/** GeckoTerminal daily USD volume for one pool (budgeted and cached); throws when unavailable. */
+function dailyVolumesFor(poolId: string, fetcher: typeof fetch = fetch): Promise<GeckoVolumePoint[]> {
+  return dailyCache.get(poolId.toLowerCase(), async () => {
+    if (!takeGeckoTerminalSlot()) throw new Error("GeckoTerminal budget used up");
+    const response = await fetcher(rhcDailyOhlcvUrl(poolId), { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(DAILY_TIMEOUT_MS) });
+    if (response.status === 429) geckoBlockedUntil = Date.now() + GECKO_COOLDOWN_MS;
+    if (!response.ok) throw new Error(`GeckoTerminal ${response.status}`);
+    return parseGeckoDailyVolumes(await response.json());
+  });
+}
+
+async function withApr7d(pool: Univ4PoolSummary, fetcher?: typeof fetch): Promise<RhcUniv4PoolSummary> {
+  if (pool.status !== "listed" || !pool.estimatedApr || !pool.dynamicFeePips) return { ...pool, estimatedApr7d: null };
+  const points = await dailyVolumesFor(pool.poolId, fetcher).catch(() => null);
+  return { ...pool, estimatedApr7d: rhcPoolApr7d({ points, nowSeconds: Date.now() / 1000, feePips: pool.dynamicFeePips, tvlUsd: pool.estimatedApr.tvlUsd }) };
+}
+
 export async function discoverRhcUniv4Pools(options: { clients?: { state: PublicClient }; fetcher?: typeof fetch; bypassCache?: boolean } = {}): Promise<RhcUniv4PoolsResult> {
   const load = async (): Promise<RhcUniv4PoolsResult> => {
-    const pools = await discoverUniv4RhcPools({
+    const discovered = await discoverUniv4RhcPools({
       clients: options.clients ?? { state: (stateClient ??= createRhcClient("state")) },
       marketData: marketDataFor(options.fetcher),
     });
+    const pools = await Promise.all(discovered.map(pool => withApr7d(pool, options.fetcher)));
     return {
       protocol: "uniswap-v4-rhc",
       chainId: 4663,
       readOnly: true,
       pools,
       fetchedAt: new Date().toISOString(),
-      source: "Robinhood Chain RPC: StateView / StablePairHook (allowlist: SPCX/SPCXon); 24h volume and TVL: DexScreener (GeckoTerminal fallback)",
+      source: "Robinhood Chain RPC: StateView / StablePairHook (allowlist: SPCX/SPCXon); 24h volume and TVL: DexScreener (GeckoTerminal fallback); 7-day volume: GeckoTerminal daily candles",
       aprLabel: ESTIMATED_APR_LABEL,
-      aprNote: "Estimated (估計) pool fee APR = hook's current fee rate × 24h volume / TVL × 365 (USD, from public indexers). The StablePairHook fee is dynamic; an estimate, not a guarantee.",
+      aprNote: "Estimated (估計) pool fee APR = hook's current fee rate × 24h volume / TVL × 365 (USD, from public indexers). 7-day: same with the average daily volume of the last 7 complete UTC days (GeckoTerminal). The StablePairHook fee is dynamic; an estimate, not a guarantee.",
     };
   };
   return options.bypassCache ? load() : cache.get("pools", load);
@@ -83,6 +114,7 @@ export async function discoverRhcUniv4Pools(options: { clients?: { state: Public
 export function resetRhcUniv4PoolsCache(): void {
   cache.clear();
   marketCache.clear();
+  dailyCache.clear();
   geckoBlockedUntil = 0;
   geckoCalls = [];
   stateClient = null;

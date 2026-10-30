@@ -156,11 +156,14 @@ describe("RhcUniv4PositionsPanel", () => {
     await mount({ positions: [
       { tokenId: "1", position: position({ tokenId: "1", owner: OTHER, ownedByUser: false }) },
       { tokenId: "2", position: null, error: "not-found" },
+      { tokenId: "4", position: null, error: "closed" },
       { tokenId: "3", position: position({ tokenId: "3", poolId: null, baseSymbol: null }) },
     ] });
     expect(button("Close")).toBeUndefined();
     expect(text()).toContain("Owned by another wallet (0x2222…2222).");
-    expect(text()).toContain("Closed (or never existed).");
+    expect(text()).toContain("Not found. No position NFT has this number.");
+    expect(text()).toContain("Closed. This position was closed and its NFT burned.");
+    expect(text()).not.toContain("never existed");
     expect(text()).toContain("Not in a pool SoFinance supports.");
   });
 

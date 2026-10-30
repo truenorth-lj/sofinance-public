@@ -24,3 +24,11 @@ export const MODIFY_LIQUIDITY_EVENT = parseAbiItem("event ModifyLiquidity(bytes3
 /** StablePairHook (IStableFeeConfiguration) and ERC1967 proxy events. */
 export const FEE_CONFIG_UPDATED_EVENT = parseAbiItem("event FeeConfigUpdated(bytes32 indexed poolId, (uint24 k, uint24 optimalFeeE6, uint8 targetMultiplier, uint160 referenceSqrtPriceX96) feeConfig)");
 export const UPGRADED_EVENT = parseAbiItem("event Upgraded(address indexed implementation)");
+
+/** Token transfer-control reads (Robinhood Stock / Ondo GMToken BeaconProxies and Ondo's TokenPauseManager). */
+export const TOKEN_CONTROLS_ABI = parseAbi([
+  "function implementation() view returns (address)",
+  "function paused() view returns (bool)",
+  "function tokenPauseManager() view returns (address)",
+  "function isTokenPaused(address token) view returns (bool)",
+]);

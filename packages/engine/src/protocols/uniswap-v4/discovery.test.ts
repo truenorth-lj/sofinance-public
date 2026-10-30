@@ -25,6 +25,12 @@ describe("uniswap-v4-rhc discovery (mock RPC replaying the 2026-10-29 capture)",
     expect(pool!.checks.map(check => check.id)).toEqual(["pool-id", "pool-key", "initialized", "hook-permissions", "hook-implementation", "fee-config", "token-metadata"]);
     expect(pool!.checks.every(check => check.ok === true)).toBe(true);
     expect(pool!.price).toBeCloseTo(0.99999965, 7);
+    // Both tokens: issuer can pause / blocklist / burn / upgrade → shown like a Solana freeze authority.
+    expect(pool!.freezeRisk).toBe(true);
+    expect(pool!.tokenControls).toMatchObject([
+      { symbol: "SPCX", reviewed: true, paused: false, powers: ["pause", "blocklist", "admin-burn", "upgradeable"] },
+      { symbol: "SPCXon", reviewed: true, paused: false, powers: ["pause", "blocklist", "admin-burn", "upgradeable"] },
+    ]);
     // 50.5 pips × $36.54 / $48,711.43 × 365 ≈ 0.00138 %.
     expect(pool!.estimatedApr!.feeRatePct).toBeCloseTo(0.00505, 6);
     expect(pool!.estimatedApr!.estimatedPoolFeeAprPct).toBeCloseTo(0.00505 / 100 * 36.54 / 48711.43 * 365 * 100, 9);
@@ -59,6 +65,29 @@ describe("uniswap-v4-rhc discovery (mock RPC replaying the 2026-10-29 capture)",
     const [pool] = await discoverUniv4RhcPools({ clients: clientsFor(mockRhcChain()), marketData: async () => { throw new Error("indexer down"); } });
     expect(pool!.status).toBe("listed");
     expect(pool!.estimatedApr).toBeNull();
+  });
+
+  it("warns when a token is paused or its controls change, without delisting", async () => {
+    const chain = mockRhcChain();
+    chain.pausedByManager[SPCX.currency1.address.toLowerCase()] = true;
+    const beacon0 = Object.keys(chain.beaconImplementations).find(beacon => beacon === "0xe10b6f6b275de231345c20d14ab812db62151b00")!;
+    chain.beaconImplementations[beacon0] = "0x000000000000000000000000000000000000dEaD";
+    const [pool] = await discoverUniv4RhcPools({ clients: clientsFor(chain) });
+    expect(pool!.status).toBe("listed");
+    expect(pool!.freezeRisk).toBe(true);
+    expect(pool!.tokenControls.map(c => [c.symbol, c.reviewed, c.paused])).toEqual([["SPCX", false, false], ["SPCXon", true, true]]);
+    expect(pool!.warnings).toEqual([
+      "SPCX token contract could not be confirmed as the reviewed version",
+      "SPCXon transfers are paused by its issuer right now",
+    ]);
+  });
+
+  it("treats a registry-wide pause as paused and unreadable controls as unconfirmed", async () => {
+    const chain = mockRhcChain();
+    chain.pausedContracts["0xe10b6f6b275de231345c20d14ab812db62151b00"] = true;
+    chain.pauseManagers = {};
+    const [pool] = await discoverUniv4RhcPools({ clients: clientsFor(chain) });
+    expect(pool!.tokenControls.map(c => [c.symbol, c.reviewed, c.paused])).toEqual([["SPCX", true, true], ["SPCXon", false, null]]);
   });
 
   it("delists on unexpected token metadata or hook-reported state", async () => {

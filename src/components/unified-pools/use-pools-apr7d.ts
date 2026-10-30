@@ -7,13 +7,18 @@ import { aprSnapshotExpired } from "@/lib/rwa-freshness";
 import type { UnifiedPool } from "@/lib/unified-pools/model";
 import { loadPoolRangeApr, type RangeAprProtocol } from "../range-apr/pool-range-apr-client";
 
-export type Apr7dState = { status: "loading" } | { status: "ready"; aprPct: number } | { status: "missing"; reason: string };
+export type Apr7dState =
+  | { status: "loading" }
+  /** `basis: "pool-fee"` = whole-pool fee APR (Robinhood Chain); otherwise the highest range APR (Solana). */
+  | { status: "ready"; aprPct: number; basis?: "range" | "pool-fee" }
+  | { status: "missing"; reason: string };
 
-/** Robinhood Chain pools publish a 24h estimate only (hook fee × 24h volume / TVL); there is no 7-day range model. */
-export const NO_7D_APR_RHC = "No 7-day estimate for this pool yet; see the 24h estimate.";
+/** Robinhood Chain without a 7-day figure (GeckoTerminal daily volume or TVL unavailable right now). */
+export const NO_7D_APR_RHC = "No 7-day estimate right now (trading data unavailable). Shown as —, not 0%.";
 
 /**
- * Estimated highest range APR (7-day average) for every Solana pool in the list, through the shared cached client
+ * Estimated 7-day APR per pool. Robinhood Chain: the whole-pool fee APR from `/api/protocol-pools` (7-day average
+ * daily volume). Solana: the estimated highest range APR (7-day average) for every pool in the list, through the shared cached client
  * (`pool-range-apr-client`: one request per pool per minute, at most two at a time), resolved with the same
  * `highestRangeSummary` the cards and the Create position modal use, so the list, its sorting and its duplicate
  * hiding agree with the number on each card.
@@ -50,7 +55,11 @@ export function usePoolsApr7d(pools: readonly UnifiedPool[], refreshKey = 0): Re
   return useMemo(() => {
     const out: Record<string, Apr7dState> = {};
     for (const pool of pools) {
-      out[pool.key] = pool.chain === "robinhood" ? { status: "missing", reason: NO_7D_APR_RHC } : settled[pool.key] ?? { status: "loading" };
+      if (pool.chain === "robinhood") {
+        // Whole-pool fee APR from the 7-day average daily volume (server side, GeckoTerminal; no RPC).
+        const apr = pool.poolFeeApr7dPct;
+        out[pool.key] = typeof apr === "number" && Number.isFinite(apr) ? { status: "ready", aprPct: apr, basis: "pool-fee" } : { status: "missing", reason: NO_7D_APR_RHC };
+      } else out[pool.key] = settled[pool.key] ?? { status: "loading" };
     }
     return out;
   }, [pools, settled]);

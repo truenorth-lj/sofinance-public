@@ -58,7 +58,12 @@ describe("EstimatedAprBadge", () => {
   });
   it("says unavailable without data", () => {
     render(createElement(EstimatedAprBadge, { apr: null }));
-    expect(text()).toBe("APR unavailable");
+    expect(text()).toBe("— · APR unavailable right now");
+  });
+  it("shows <0.01% instead of 0.00% for a tiny positive estimate", () => {
+    render(createElement(EstimatedAprBadge, { apr: { ...apr("dexscreener")!, estimatedPoolFeeAprPct: 0.000558 } }));
+    expect(text()).toContain("<0.01%");
+    expect(text()).not.toContain("0.00%");
   });
 });
 
