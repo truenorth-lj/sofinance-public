@@ -1,28 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { OPEN_RANGE_UI_PRESETS } from "@sofinance/engine/open-range-presets";
-import { highestRangeSummary } from "@/lib/range-apr/preset-list";
-import { aprSnapshotExpired } from "@/lib/rwa-freshness";
+import { summarizeApr7d, type Apr7dState } from "@/lib/unified-pools/apr7d";
 import type { UnifiedPool } from "@/lib/unified-pools/model";
 import { loadPoolRangeApr, type RangeAprProtocol } from "../range-apr/pool-range-apr-client";
 import { isRhcApr7dEnabled } from "@/lib/protocol-flags";
 
-/** When the pool's APR snapshot was taken, and whether its refresh is late or failed ("Data delayed"). */
-export type AprFreshness = { snapshotAt: string; delayed: boolean };
-export type Apr7dState =
-  | { status: "loading" }
-  | {
-    status: "ready"; aprPct: number;
-    /** The highest-APR candidate range, as the Create position modal names it ("Best"). */
-    rangeLabel: string;
-    /** Thin or patchy recent trading behind the estimate. */
-    lowConfidence: boolean;
-    /** 7-day average daily volume behind the estimate (for the volume divergence note). */
-    avgDailyVolumeUsd: number | null;
-    freshness?: AprFreshness;
-  }
-  | { status: "missing"; reason: string; degraded?: boolean; freshness?: AprFreshness };
+export type { Apr7dState, AprFreshness } from "@/lib/unified-pools/apr7d";
 
 /** Kept for tests and offline copy when `RHC_APR7D_ENABLED` is off. */
 export const NO_7D_APR_RHC = "No 7-day estimate for this pool yet; see the 24h estimate.";
@@ -48,27 +32,7 @@ export function usePoolsApr7d(pools: readonly UnifiedPool[], refreshKey = 0): Re
         loadPoolRangeApr(entry.poolAddress, entry.protocol).then(
           (payload) => {
             if (cancelled) return;
-            const expired = aprSnapshotExpired(payload, Date.now());
-            const summary = !expired ? highestRangeSummary(OPEN_RANGE_UI_PRESETS, payload) : null;
-            // Server `stale` (older than 26h, see `aprSnapshotDelayed`), a failed last refresh, or a snapshot this
-            // browser already sees as older than 26h (e.g. a cached response) all say "Data delayed".
-            const freshness = payload.freshness ? {
-              snapshotAt: payload.freshness.snapshotAt,
-              delayed: payload.freshness.stale || payload.freshness.lastAttemptStatus === "error" || expired,
-            } : undefined;
-            setSettled((previous) => ({ ...previous, [entry.key]: summary
-              ? {
-                status: "ready", aprPct: summary.aprPct, freshness,
-                rangeLabel: entry.protocol === "uniswap-v4-rhc" && summary.id === "micro"
-                  ? "Min (±10 ticks)"
-                  : OPEN_RANGE_UI_PRESETS.find((preset) => preset.id === summary.id)?.label ?? summary.label,
-                lowConfidence: payload.sample.confidence === "low",
-                avgDailyVolumeUsd: Number.isFinite(payload.model?.avgDailyVolumeUsd) ? payload.model.avgDailyVolumeUsd : null,
-              }
-              : {
-                status: "missing", freshness, degraded: payload.sample.degraded,
-                reason: payload.sample.degraded ? "Not enough recent trading data for a 7-day estimate." : "No 7-day estimate right now.",
-              } }));
+            setSettled((previous) => ({ ...previous, [entry.key]: summarizeApr7d(payload, entry.protocol, Date.now()) }));
           },
           () => { if (!cancelled) setSettled((previous) => ({ ...previous, [entry.key]: { status: "missing", reason: "APR data is temporarily unavailable." } })); },
         );

@@ -169,13 +169,13 @@ SoFinance (sofinancelab.xyz) is a self-custody app on Solana for one specific co
 **What the app does.**
 
 - You enter **one SOL or USDC amount**. SoFinance routes the swap through **Jupiter** into both sides of the pair and opens the Raydium CLMM position in **one atomic v0 transaction**. The transaction is **simulated before you sign** and **re-simulated before it's broadcast**.
-- It prices **four range candidates (Micro, Tight, Standard, Wide)** against the pool's **last ~7 days of volume** and picks the range with the best backtest result, so you don't have to do range research yourself. You can override it and set your own range.
+- On Solana, it prices **four range candidates (Micro, Tight, Standard, Wide)** against the pool's **last ~7 days of volume** and picks the range with the best backtest result, so you don't have to do range research yourself. You can override it and set your own range.
 - **One-click compound** and **one-click withdraw**.
 - The **position NFT sits in your wallet**. It's a standard Raydium position. You can manage it in SoFinance or directly on Raydium.
 
 **What it doesn't do.** SoFinance doesn't change the AMM. It doesn't price from an oracle like Metric, and it doesn't set dynamic fees like Fables. It doesn't automatically rebalance or re-center your position either. The pool, its fee tier and its arbitrage flow are all Raydium's. What we do is turn the correlated-pair approach on existing Raydium CLMM pools into a single transaction with a backtested range.
 
-**Numbers, honestly.** Any APR you see in the app is an **estimate from a backtest over a stated window (7 days for range estimates), not a guarantee**. Many of these pools are small, so a sizable deposit can change the result a lot. Estimates ignore IL and your trading costs.
+**Numbers, honestly.** Any APR you see in the app is an **estimate over a stated window (24h of pool fees, or on Solana a 7-day backtest for range estimates), not a guarantee**. Many of these pools are small, so a sizable deposit can change the result a lot. Estimates ignore IL and your trading costs.
 
 **Costs.** The hosted app charges a disclosed **10 bps (0.10%) protocol fee** on the token you deposit (open, add, and compound reinvest), shown in the preview in that token and visible on-chain. Withdraw-to-USDC still takes the same 10 bps as a conversion fee in USDC. There is no performance fee on LP earnings. Normal Solana network fees and swap-route costs apply.
 
@@ -183,7 +183,7 @@ SoFinance (sofinancelab.xyz) is a self-custody app on Solana for one specific co
 
 SoFinance isn't affiliated with Metric, Fables, Raydium, Jupiter, xStocks, Backpack or any token issuer.
 
-If you hold a tokenized stock and want to see what a same-stock pool looks like, including its backtested ranges and risk flags, before you commit anything:
+If you hold a tokenized stock and want to see what a same-stock pool looks like, including its backtested ranges (Solana pools) and risk flags, before you commit anything:
 
 **[https://sofinancelab.xyz/app/rwa-pairs?ref=x-article](https://sofinancelab.xyz/app/rwa-pairs?ref=x-article)**
 

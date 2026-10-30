@@ -19,6 +19,7 @@ import { assertRhcOpenAttempt, clearRhcOpenAttempt, isRhcTxHash, parseRhcOpenAtt
   reconcileRhcOpenAttempt, rhcOpenAttemptKey, rhcOpenStorage, RHC_HISTORY_ERROR, RHC_UNKNOWN_SEND,
   subscribeRhcOpenAttempt, writeRhcOpenAttempt, type RhcOpenAttempt } from "@/lib/rhc-wallet/open-attempt";
 import type { RhcPoolView } from "@/lib/rhc-wallet/pool-view";
+import { rhcPairLabel } from "@/lib/unified-pools/rows";
 import type { EvmWallet } from "@/lib/rhc-wallet/evm-session";
 
 /**
@@ -427,7 +428,7 @@ export function RhcUniv4OpenPanel({ pool, signingEnabled, receiptPoll, initialWa
   return <section className="mt-6 rounded-2xl border border-white/12 bg-white/[0.03] p-4 sm:p-5" aria-label="Open a Robinhood Chain position">
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div>
-        <p className="text-base font-semibold text-cream">{pool.token0.symbol} / {pool.token1.symbol} · Uniswap v4 · Robinhood Chain</p>
+        <p className="text-base font-semibold text-cream">{rhcPairLabel(pool.poolId, " / ") ?? `${pool.token0.symbol} / ${pool.token1.symbol}`} · Uniswap v4 · Robinhood Chain</p>
         <EstimatedAprBadge apr={pool.estimatedApr} />
       </div>
       {wallet && !walletChanged

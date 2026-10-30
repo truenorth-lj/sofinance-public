@@ -14,6 +14,7 @@ import { unavailableReasonText } from "@/lib/range-apr/format";
 import { pairIssuerLabel } from "@/lib/rwa-pair-names";
 import type { TokenIconMap } from "@/lib/token-icons/map";
 import { fetchRwaPairsList } from "@/lib/rwa-pairs-list";
+import { updatedLabel, type SnapshotSourceTime } from "@/lib/snapshot-updated";
 import {
   CHAIN_LABELS, DEFAULT_FILTERS, DEFAULT_SORT, FIRST_CLICK_DIR, PROTOCOL_LABELS, RISK_LABELS, selectPools,
   type PoolChain, type PoolFilters, type RiskFilter, type SortDir, type SortKey, type UnifiedPool, type UnifiedProtocol,
@@ -46,7 +47,8 @@ const SOURCE_ERROR: Record<Source, string> = {
 };
 
 /** `icons`: token icon links stored by the daily refresh, served with `/api/rwa-pairs` (`tokenIcons`). */
-type Loaded = { rows: SolanaPoolRow[]; rhc: RhcPoolSummary[]; icons?: TokenIconMap };
+/** `updated`: when each chain's saved list was written (`fetchedAt`), for the "Updated … UTC" line. */
+type Loaded = { rows: SolanaPoolRow[]; rhc: RhcPoolSummary[]; icons?: TokenIconMap; updated: SnapshotSourceTime[] };
 
 async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
   const response = await fetch(url, { signal, headers: { Accept: "application/json" } });
@@ -259,7 +261,7 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", header 
   header?: ReactNode;
 }) {
   const { connected, connect } = useWalletConnection();
-  const [loaded, setLoaded] = useState<Loaded>({ rows: [], rhc: [] });
+  const [loaded, setLoaded] = useState<Loaded>({ rows: [], rhc: [], updated: [] });
   const [errors, setErrors] = useState<Partial<Record<Source, string>>>({});
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -272,22 +274,28 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", header 
   const load = useCallback(async (signal?: AbortSignal) => {
     const sources: { source: Source; run: () => Promise<Partial<Loaded>> }[] = [
       { source: "raydium", run: async () => {
-        const body = await fetchRwaPairsList<{ pairs: SolanaPoolRow[]; tokenIcons?: TokenIconMap }>(signal);
-        return { rows: body.pairs, icons: body.tokenIcons };
+        const body = await fetchRwaPairsList<{ pairs: SolanaPoolRow[]; tokenIcons?: TokenIconMap; fetchedAt?: string; freshness?: { stale?: boolean } }>(signal);
+        return { rows: body.pairs, icons: body.tokenIcons,
+          updated: body.fetchedAt ? [{ chain: "solana" as const, fetchedAt: body.fetchedAt, stale: body.freshness?.stale ?? false }] : [] };
       } },
       ...(flags.orca ? [{ source: "orca" as const, run: async () => ({ rows: (await getJson<{ pairs: SolanaPoolRow[] }>("/api/protocol-pools?protocol=orca-whirlpool", signal)).pairs }) }] : []),
       ...(flags.meteora ? [{ source: "meteora" as const, run: async () => ({ rows: (await getJson<{ pairs: SolanaPoolRow[] }>("/api/protocol-pools?protocol=meteora-dlmm", signal)).pairs }) }] : []),
-      ...(flags.rhc ? [{ source: "rhc" as const, run: async () => ({ rhc: (await getJson<{ pools: RhcPoolSummary[] }>("/api/protocol-pools?protocol=uniswap-v4-rhc", signal)).pools }) }] : []),
+      ...(flags.rhc ? [{ source: "rhc" as const, run: async () => {
+        const body = await getJson<{ pools: RhcPoolSummary[]; fetchedAt?: string; snapshot?: { stale?: boolean } }>("/api/protocol-pools?protocol=uniswap-v4-rhc", signal);
+        return { rhc: body.pools,
+          updated: body.fetchedAt ? [{ chain: "robinhood" as const, fetchedAt: body.fetchedAt, stale: body.snapshot?.stale ?? false }] : [] };
+      } }] : []),
     ];
     const results = await Promise.allSettled(sources.map((entry) => entry.run()));
     if (signal?.aborted) return;
-    const next: Loaded = { rows: [], rhc: [] };
+    const next: Loaded = { rows: [], rhc: [], updated: [] };
     const nextErrors: Partial<Record<Source, string>> = {};
     results.forEach((result, index) => {
       if (result.status === "fulfilled") {
         next.rows.push(...(Array.isArray(result.value.rows) ? result.value.rows : []));
         next.rhc.push(...(Array.isArray(result.value.rhc) ? result.value.rhc : []));
         if (result.value.icons) next.icons = result.value.icons;
+        next.updated.push(...(result.value.updated ?? []));
       } else nextErrors[sources[index]!.source] = SOURCE_ERROR[sources[index]!.source];
     });
     setLoaded(next); setErrors(nextErrors); setLoading(false);
@@ -367,6 +375,7 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", header 
   const chains = [...new Set(pools.map((pool) => pool.chain))];
   const protocols = [...new Set(pools.map((pool) => pool.protocol))];
   const errorList = Object.values(errors);
+  const updatedText = updatedLabel(loaded.updated);
 
   return <section id="pools" className="mt-3 scroll-mt-4" aria-labelledby="pools-heading">
     <div className="rounded-[28px] border border-white/12 bg-char p-6 sm:p-8">
@@ -379,6 +388,7 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", header 
             if it is not connected yet. {NOT_GUARANTEED}{" "}
             <Link href={DOCS_ROUTES.feeApr} className="text-cream/80 underline underline-offset-2 hover:text-cream">Fee APR</Link>
           </p>
+          {updatedText ? <p data-testid="pools-updated" className="mt-2 font-data text-[11px] uppercase tracking-[0.12em] text-smoke">{updatedText}</p> : null}
           {header}
         </div>
         <button type="button" onClick={refresh} disabled={loading}

@@ -6,6 +6,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HIGHEST_RANGE_APR_7D_LABEL, HOMEPAGE_POOL_APR_LABEL } from "@/lib/apr-labels/copy";
 import { payloadWithAprs } from "@/lib/range-apr/payload.fixture";
 import { RWA_PAIRS_LIST_PATH } from "@/lib/rwa-pairs-list";
+import { UNIV4_RHC_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/uniswap-v4/constants";
+import { toHomepagePoolsSnapshot, type HomepageSolanaRow } from "@/lib/homepage-pools";
+import type { RhcPoolSummary } from "@/lib/unified-pools/rows";
 import { HomepagePoolsTable, HomepagePoolsView } from "./homepage-pools-table";
 import type { PoolRangeAprState } from "./range-apr/use-pool-range-apr";
 
@@ -16,15 +19,30 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(search),
 }));
 const mocks = vi.hoisted(() => ({
-  aprFor: vi.fn<(poolId: string) => PoolRangeAprState>(() => ({ status: "loading" })),
+  aprFor: vi.fn<(poolId: string, protocol?: string) => PoolRangeAprState>(() => ({ status: "loading" })),
   tokens: {} as Record<string, { icon: string | null }>,
 }));
-vi.mock("./range-apr/use-pool-range-apr", () => ({ usePoolRangeApr: (poolId: string) => mocks.aprFor(poolId) }));
+// The table reads APRs through `usePoolsApr7d` (the /app/rwa-pairs hook), which loads each pool through the shared
+// client; `aprFor` states map to that client's promise (ready → payload, error → rejection, loading → pending).
+vi.mock("./range-apr/pool-range-apr-client", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./range-apr/pool-range-apr-client")>()),
+  loadPoolRangeApr: (poolId: string, protocol?: string) => {
+    const state = mocks.aprFor(poolId, protocol);
+    if (state.status === "ready") return Promise.resolve(state.data);
+    if (state.status === "error") return Promise.reject(new Error(state.message));
+    return new Promise(() => {});
+  },
+}));
 
+// Distinct pools need distinct mints: the /app/rwa-pairs duplicate rule keeps one pool per chain and token pair.
+const mintsFor = (poolAddress: unknown) =>
+  !poolAddress || poolAddress === "spcx-pool" ? { mintA: "mint-wrapped", mintB: "mint-plain" } : { mintA: `${poolAddress}-a`, mintB: `${poolAddress}-b` };
 const pair = (overrides: Record<string, unknown>) => ({
   poolAddress: "pool",
-  mintA: "mint-wrapped",
-  mintB: "mint-plain",
+  protocol: "raydium-clmm",
+  nameA: "SpaceX xStock",
+  nameB: "SpaceX",
+  ...mintsFor(overrides.poolAddress),
   symbolA: "SPCXx",
   symbolB: "SPCX",
   wrappedSymbol: "SPCXx",
@@ -68,17 +86,33 @@ async function mount(highlightPool?: string) {
   await act(async () => {
     root.render(createElement(HomepagePoolsTable));
   });
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 5));
-  });
+  // Lists, then the per-pool APR requests (queued on a timer), then their results: a few short rounds so a loaded
+  // machine (the env matrix runs suites in parallel) still settles.
+  for (let round = 0; round < 4; round += 1) {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    });
+  }
 }
 
-function jsonOk(body: unknown) {
+const RHC_URL = "/api/protocol-pools?protocol=uniswap-v4-rhc";
+
+function jsonOk(body: unknown, rhcBody: unknown = { pools: [] }) {
   fetchMock.mockImplementation(async (url: string) => ({
     ok: true,
-    json: async () => (url.startsWith("/api/token-metadata") ? { tokens: mocks.tokens } : body),
+    json: async () => (url.startsWith("/api/token-metadata") ? { tokens: mocks.tokens } : url === RHC_URL ? rhcBody : body),
   }));
 }
+
+const rhcSummary = (index: number, tvlUsd: number): RhcPoolSummary => {
+  const spec = UNIV4_RHC_ALLOWLISTED_POOLS[index]!;
+  return {
+    poolId: spec.poolId, status: "listed", tick: 0, price: null, warnings: [],
+    estimatedApr: { tvlUsd, volume24hUsd: 500, estimatedPoolFeeAprPct: 3 },
+    token0: { name: spec.currency0.symbol, symbol: spec.currency0.symbol },
+    token1: { name: spec.currency1.symbol, symbol: spec.currency1.symbol },
+  } as unknown as RhcPoolSummary;
+};
 
 describe("HomepagePoolsTable", () => {
   it("loads the shared /api/rwa-pairs cache, sorts by TVL, and deep-links Open position", async () => {
@@ -107,7 +141,7 @@ describe("HomepagePoolsTable", () => {
     expect(rows[0]!.getAttribute("data-pool")).toBe("spcx-pool");
     expect(rows[0]!.textContent).toContain("SPCXx/SPCX");
     expect(rows[0]!.textContent).toContain("$256.9k");
-    expect(rows[0]!.querySelector("[data-testid='homepage-apr']")!.textContent).toBe("81%");
+    expect(rows[0]!.querySelector("[data-testid='homepage-apr']")!.textContent).toBe("81.00%");
     expect(rows[0]!.textContent).not.toContain("12.60%");
     expect(HOMEPAGE_POOL_APR_LABEL).toBe(HIGHEST_RANGE_APR_7D_LABEL);
     expect(table.querySelector("thead")!.textContent).toContain("Est. highest range APR · 7d avg · not guaranteed");
@@ -225,10 +259,10 @@ describe("HomepagePoolsTable", () => {
   });
 
   it("renders the server snapshot at once, refreshes it from the API, and keeps it when the refresh fails", async () => {
-    const initial = {
-      pairs: [pair({ poolAddress: "spcx-pool" })],
-      freshness: { snapshotAt: "2026-10-30T11:02:00.000Z", stale: false },
-    };
+    const initial = toHomepagePoolsSnapshot({
+      solana: { pairs: [pair({ poolAddress: "spcx-pool" }) as HomepageSolanaRow], fetchedAt: "2026-10-30T11:02:00.000Z", stale: false },
+      rhc: { pools: [rhcSummary(0, 50_000)], fetchedAt: "2026-10-30T11:02:56.939Z", stale: false },
+    });
     fetchMock.mockImplementation(() => new Promise(() => {})); // refresh never answers yet
     await act(async () => {
       root.render(createElement(HomepagePoolsView, { initial }));
@@ -239,6 +273,8 @@ describe("HomepagePoolsTable", () => {
       await new Promise((resolve) => setTimeout(resolve, 5));
     });
     expect(fetchMock).toHaveBeenCalledWith(RWA_PAIRS_LIST_PATH, expect.anything());
+    expect(fetchMock).toHaveBeenCalledWith(RHC_URL, expect.anything());
+    expect(container.querySelector("[data-testid='homepage-pools-updated']")!.textContent).toBe("Updated 2026-10-30 11:02 UTC");
 
     await act(async () => root.unmount());
     root = createRoot(container);
@@ -251,6 +287,99 @@ describe("HomepagePoolsTable", () => {
       await new Promise((resolve) => setTimeout(resolve, 5));
     });
     expect(container.textContent).toContain("SPCXx/SPCX");
+    expect(container.textContent).toContain("SPCX/SPCXon");
     expect(container.textContent).not.toContain("offline");
+    expect(container.textContent).toContain("Updated 2026-10-30 11:02 UTC");
+  });
+
+  it("lists Robinhood Chain pools next to Solana ones, with chain tags, protocol, Uniswap v4 APR and the RHC open link", async () => {
+    mocks.aprFor.mockImplementation((_poolId, protocol) =>
+      protocol === "uniswap-v4-rhc" ? { status: "ready", data: payloadWithAprs({ micro: 5, tight: 33, standard: 9, wide: 2 }) } : { status: "loading" });
+    jsonOk(
+      { pairs: [pair({ poolAddress: "spcx-pool", tvlUsd: 256_900 })], fetchedAt: "2026-10-30T11:02:46.419Z", freshness: { snapshotAt: "2026-10-30T11:02:46.419Z", stale: false } },
+      { pools: [rhcSummary(0, 52_000), rhcSummary(1, 300_000)], fetchedAt: "2026-10-29T11:05:00.000Z", snapshot: { stale: false } },
+    );
+    await mount();
+    const rows = [...container.querySelectorAll('[data-testid="homepage-pools-table"] tbody tr')];
+    const nvda = UNIV4_RHC_ALLOWLISTED_POOLS[1]!;
+    expect(rows.map((row) => row.getAttribute("data-chain"))).toEqual(["robinhood", "solana", "robinhood"]);
+    expect(rows[0]!.textContent).toContain(`${nvda.currency0.symbol}/${nvda.currency1.symbol}`);
+    expect(rows[0]!.querySelector("[data-testid='homepage-chain']")!.textContent).toBe("Robinhood Chain");
+    expect(rows[1]!.querySelector("[data-testid='homepage-chain']")!.textContent).toBe("Solana");
+    expect(rows[0]!.textContent).toContain("Uniswap v4 · dynamic fee");
+    expect(rows[1]!.textContent).toContain("Raydium · 1 bps");
+    expect(rows[0]!.querySelector("[data-testid='homepage-apr']")!.textContent).toBe("33.00%");
+    expect(mocks.aprFor).toHaveBeenCalledWith(nvda.poolId, "uniswap-v4-rhc");
+    expect(mocks.aprFor).toHaveBeenCalledWith("spcx-pool", "raydium-clmm");
+    expect(rows[0]!.querySelector("a[href^='/app/rwa-pairs']")!.getAttribute("href")).toBe(`/app/rwa-pairs?openPool=${nvda.poolId}`);
+    expect(rows[1]!.querySelector("a[href^='/app/rwa-pairs']")!.getAttribute("href")).toBe("/app/rwa-pairs?pool=spcx-pool&open=1");
+    // Different minutes per chain: each chain gets its own time.
+    expect(container.querySelector("[data-testid='homepage-pools-updated']")!.textContent).toBe(
+      "Updated 2026-10-30 11:02 UTC (Solana) · 2026-10-29 11:05 UTC (Robinhood Chain)",
+    );
+  });
+
+  it("lists the USDC/USDT stablecoin pool after every same-stock pool, even with the highest TVL", async () => {
+    jsonOk(
+      { pairs: [
+        pair({ poolAddress: "usdc-usdt", wrappedSymbol: "USDC", plainSymbol: "USDT", symbolA: "USDC", symbolB: "USDT", mintA: "usdc", mintB: "usdt", tvlUsd: 1_800_000, wrapKind: "stable" }),
+        pair({ poolAddress: "spcx-pool", wrapKind: "suffix-x" }),
+      ] },
+      { pools: [rhcSummary(2, 45_000)] },
+    );
+    await mount();
+    const rows = [...container.querySelectorAll('[data-testid="homepage-pools-table"] tbody tr')];
+    expect(rows.map((row) => row.getAttribute("data-pool"))).toEqual(["spcx-pool", UNIV4_RHC_ALLOWLISTED_POOLS[2]!.poolId, "usdc-usdt"]);
+    expect(rows[2]!.textContent).toContain("Stablecoins");
+    expect(container.textContent).toContain("Stablecoin pools (USDC/USDT) are listed last");
+  });
+
+  it("keeps showing the Solana rows when only the Robinhood Chain request fails", async () => {
+    fetchMock.mockImplementation(async (url: string) => url === RHC_URL
+      ? { ok: false, json: async () => ({ error: "down" }) }
+      : { ok: true, json: async () => ({ pairs: [pair({ poolAddress: "spcx-pool" })] }) });
+    await mount();
+    expect(container.querySelector("[role='alert']")).toBeNull();
+    expect(container.querySelectorAll('[data-testid="homepage-pools-table"] tbody tr')).toHaveLength(1);
+  });
+
+  it("keeps the /app/rwa-pairs pick per pair: the highest 7-day APR pool, even with less TVL, and shows tiny APRs as <0.01%", async () => {
+    mocks.aprFor.mockImplementation((poolId) =>
+      poolId === "spcx-small" ? { status: "ready", data: payloadWithAprs({ micro: 30, tight: 25, standard: 2, wide: 1 }) }
+        : poolId === "spcx-pool" ? { status: "ready", data: payloadWithAprs({ micro: 4, tight: 3, standard: 2, wide: 1 }) }
+        : poolId === "tiny-pool" ? { status: "ready", data: payloadWithAprs({ micro: 0.004, tight: 0.003, standard: 0.002, wide: 0.001 }) }
+        : { status: "error", message: "down" });
+    jsonOk({ pairs: [
+      pair({ poolAddress: "spcx-pool", tvlUsd: 256_900 }),
+      pair({ poolAddress: "spcx-small", tvlUsd: 40_000, mintA: "mint-wrapped", mintB: "mint-plain" }),
+      pair({ poolAddress: "tiny-pool", wrappedSymbol: "MSTRx", plainSymbol: "MSTR", symbolA: "MSTRx", symbolB: "MSTR", tvlUsd: 30_000 }),
+      pair({ poolAddress: "none-pool", wrappedSymbol: "TSLAx", plainSymbol: "TSLA", symbolA: "TSLAx", symbolB: "TSLA", tvlUsd: 20_000 }),
+    ] });
+    await mount();
+    const rows = [...container.querySelectorAll('[data-testid="homepage-pools-table"] tbody tr')];
+    expect(rows.map((row) => row.getAttribute("data-pool"))).toEqual(["spcx-small", "tiny-pool", "none-pool"]);
+    const apr = rows.map((row) => row.querySelector("[data-testid='homepage-apr']")!);
+    expect(apr.map((cell) => cell.textContent)).toEqual(["30.00%", "<0.01%", "—"]);
+    expect(apr[1]!.getAttribute("title")).toBe("≈0.0040%");
+  });
+
+  it("uses the server snapshot's 7-day APRs to pick pools until the client estimates load, without printing them", async () => {
+    const pairs = [
+      pair({ poolAddress: "spcx-pool", tvlUsd: 256_900 }) as HomepageSolanaRow,
+      pair({ poolAddress: "spcx-small", tvlUsd: 40_000, mintA: "mint-wrapped", mintB: "mint-plain" }) as HomepageSolanaRow,
+    ];
+    const initial = toHomepagePoolsSnapshot({
+      solana: { pairs, fetchedAt: "2026-10-30T11:02:00.000Z", stale: false },
+      apr7d: { "solana:spcx-small": 30, "solana:spcx-pool": 4 },
+    });
+    expect(Object.keys(initial.apr7d)).toHaveLength(2);
+    fetchMock.mockImplementation(() => new Promise(() => {}));
+    await act(async () => {
+      root.render(createElement(HomepagePoolsView, { initial }));
+    });
+    const rows = [...container.querySelectorAll('[data-testid="homepage-pools-table"] tbody tr')];
+    expect(rows.map((row) => row.getAttribute("data-pool"))).toEqual(["spcx-small"]);
+    expect(rows[0]!.querySelector("[data-testid='homepage-apr']")!.textContent).toBe("…");
   });
 });
+

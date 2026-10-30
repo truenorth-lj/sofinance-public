@@ -36,8 +36,8 @@ export default function DocsFeeAprPage() {
           range (Micro / Tight / Standard / Wide). Not guaranteed.
         </li>
         <li>
-          <strong className="font-medium text-cream">Est. fee APR</strong> on the create-position
-          flow uses the last 7 full days of trading volume and how much liquidity sits near each price today. It assumes recent volume/price behavior continues, counts fees only while price is
+          <strong className="font-medium text-cream">Est. fee APR</strong> on the Solana
+          create-position flow is a 7-day backtest: it uses the last 7 full days of trading volume and how much liquidity sits near each price today. It assumes recent volume/price behavior continues, counts fees only while price is
           inside the range, and ignores impermanent loss and your trading costs.
         </li>
       </ul>
