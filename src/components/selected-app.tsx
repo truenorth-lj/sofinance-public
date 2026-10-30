@@ -20,7 +20,7 @@ import { ConnectWalletPrompt } from "./connect-wallet-prompt";
 import { WithdrawPanel } from "./withdraw-panel";
 import { ActionSelector } from "./action-selector";
 import { AssetRisksDialog } from "./asset-risks-dialog";
-import { DOCS_ROUTES } from "@/lib/public-urls";
+import { APP_ROUTES, DOCS_ROUTES } from "@/lib/public-urls";
 import { formatSelectedNoRouteMessage, JUPITER_NO_ROUTE_CODE } from "@/lib/selected-no-route";
 import Link from "next/link";
 import { captureGrowthEvent } from "@/lib/analytics/client";
@@ -44,15 +44,13 @@ function calculateInputUsd(amount: string, priceUsd: number | null): string | nu
   }
 }
 
-export function SelectedApp({ initialView = "compound", initialMint = "", initialWallet = "", previewPoolId = "", extraPositions, poolsSection }: {
+export function SelectedApp({ initialView = "compound", initialMint = "", initialWallet = "", previewPoolId = "", extraPositions }: {
   initialView?: "compound" | "performance" | "deposit" | "withdraw";
   initialMint?: string;
   initialWallet?: string;
   previewPoolId?: string;
   /** Other chains' positions, shown under the Solana ones in "My positions" (`/app`: Robinhood Chain). */
   extraPositions?: ReactNode;
-  /** The pool list, shown between "My positions" and the position tools (`/app`: Solana + Robinhood Chain pools). */
-  poolsSection?: ReactNode;
 } = {}) {
   const [withdrawBusy,setWithdrawBusy]=useState(false);
   const controller = useSelectedController();
@@ -152,7 +150,7 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
           placeholder={!positionOptions.length ? (connected ? "No identifiable position found" : "Connect wallet to view positions") : undefined}
           className="mt-3 w-full rounded-2xl border border-white/20 bg-white/[0.06] px-3 py-3 text-sm text-cream outline-none focus:border-white/40"
         /> : <div className="mt-3"><ConnectWalletPrompt onConnect={connect} /></div>}
-        {connected && discovery && positionOptions.length === 0 && <a href={poolsSection ? "#pools" : "/app/rwa-pairs"} className="mt-3 text-sm font-semibold text-cream underline underline-offset-4">{poolsSection ? "Pick a pool below to open a position" : "Explore RWA Pairs to open a position"}</a>}
+        {connected && discovery && positionOptions.length === 0 && <a href={APP_ROUTES.rwaPairs} className="mt-3 text-sm font-semibold text-cream underline underline-offset-4">Explore pools to open a position</a>}
         {state && <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs">
           <span className={`rounded-full border px-2.5 py-1 ${state.inRange ? "border-white/40 bg-white/[0.07] text-cream/80" : "border-white/20 bg-white/[0.05] text-smoke"}`}>{state.rangeSide === "above" ? "Above range · single-sided" : state.rangeSide === "below" ? "Below range · single-sided" : "Price within range"}</span>
 
@@ -173,8 +171,6 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
         </div>}
       </section>
       </div>
-
-      {poolsSection}
 
       <ActionSelector value={activeView} onChange={setActiveView} options={[
         { value: "compound", label: "Yield Compound", icon: Sprout, controls: "compound-view" },

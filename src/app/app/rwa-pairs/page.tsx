@@ -1,28 +1,16 @@
-"use client";
+import { PoolsPage } from "@/components/unified-pools/pools-page";
+import { unifiedPoolFlags } from "@/lib/unified-pools/flags";
 
-import { Suspense } from "react";
-import { InkHero, InkShell, InkNav } from "@/components/ink";
-import { RwaPairsPanel } from "@/components/rwa-pairs-panel";
-import { useWalletConnection } from "@/components/wallet-connection";
-
-export default function RwaPairsPage() {
-  const { address, connected, connect, disconnect } = useWalletConnection();
-
-  return (
-    <InkShell>
-      <InkNav wallet={address} connected={connected} onConnect={connect} onDisconnect={disconnect} />
-
-      <InkHero label="RWA pairs" title="Same-asset RWA pairs">
-        <p>
-          Find Raydium CLMM pools where both tokens represent the same underlying (wrapped vs unwrapped /
-          Jupiter stocks/rwa tags + xStocks whitelist), plus the curated USDC/USDT pool. Ranked by estimated fee APR from 24h fees and TVL.
-          Create position swaps your chosen wallet asset into pool tokens as needed, then opens a new LP position and adds liquidity in one transaction.
-        </p>
-      </InkHero>
-
-      <Suspense fallback={<p className="mt-6 px-2 text-sm text-smoke">Loading pairs…</p>}>
-        <RwaPairsPanel />
-      </Suspense>
-    </InkShell>
-  );
+/**
+ * The pools page: Solana + Robinhood Chain pools in one list. `?openPool=<id>` opens that pool (where `/app/rhc` and old
+ * `/app?openPool=` links are redirected); the older `?pool=<id>&open=1` link (MCP `openPositionUrl`, homepage) still works.
+ */
+export default async function RwaPairsPage({ searchParams }: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const query = await searchParams;
+  const first = (value: string | string[] | undefined) => Array.isArray(value) ? value[0] || "" : value || "";
+  const deepLinkPool = first(query.openPool) || (first(query.open) === "1" ? first(query.pool) : "");
+  const { rhcSigning, ...flags } = unifiedPoolFlags();
+  return <PoolsPage flags={flags} rhcSigningEnabled={rhcSigning} deepLinkPool={deepLinkPool || undefined} />;
 }

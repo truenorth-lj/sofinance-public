@@ -53,7 +53,7 @@ describe("docs routes and copy guards", () => {
 
   it("links APR explanations and open confirm to docs pages", () => {
     const picker = readFileSync(resolve("src/components/range-apr/range-preset-picker.tsx"), "utf8");
-    const pairs = readFileSync(resolve("src/components/rwa-pairs-panel.tsx"), "utf8");
+    const pairs = readFileSync(resolve("src/components/unified-pools/unified-pools-panel.tsx"), "utf8");
     const open = readFileSync(resolve("src/components/open-position-modal.tsx"), "utf8");
     const selected = readFileSync(resolve("src/components/selected-app.tsx"), "utf8");
     expect(picker).toContain("DOCS_ROUTES.yieldAndApr");

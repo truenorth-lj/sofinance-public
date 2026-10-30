@@ -1,5 +1,5 @@
 /**
- * One pool list for `/app` across chains (pure; no fetching here).
+ * One pool list for `/app/rwa-pairs` across chains (pure; no fetching here).
  *
  * Solana rows (Raydium CLMM, plus Orca / Meteora when their discovery flag is on) and Robinhood Chain Uniswap v4
  * rows share one shape so search, filters, sorting and "Hide duplicate pools" work the same for every card and row.
