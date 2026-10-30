@@ -344,8 +344,6 @@ export async function jupiterRequest<T>(options: JupiterRequestOptions): Promise
   return value;
 }
 
-export { jupiterQuote, jupiterQuotePreferCompact, jupiterSwapInstructions } from "../swap/client";
-
 export async function mapPool<T, R>(
   items: readonly T[],
   concurrency: number,

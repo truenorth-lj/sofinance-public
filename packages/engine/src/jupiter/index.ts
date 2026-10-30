@@ -48,11 +48,9 @@ export {
   JUPITER_PREVIEW_QUOTE_TTL_MS,
   jupiterRetryConfig,
   jupiterRequest,
-  jupiterQuote,
-  jupiterQuotePreferCompact,
-  jupiterSwapInstructions,
   mapPool,
 } from "./client";
+export { jupiterQuote, jupiterQuotePreferCompact, jupiterSwapInstructions } from "../swap/client";
 export type { JupiterRequestOptions, JupiterQuoteParams } from "./client";
 
 export { quoteCacheKey, resetJupiterCache, setJupiterCache, withJupiterCache } from "./cache";

@@ -11,7 +11,7 @@ import { restampVersionedTransaction, stampPreparedBlockhash } from "./fresh-blo
 import { readCompoundPositionState } from "./compound-state";
 import { simulateAndVerifyCompound } from "./compound-simulation";
 import { conservativeSwapBalances, sizeBufferedCompoundLiquidity } from "./compound-math";
-import { buildCompoundSwapPlan } from "./compound-swap";
+import { buildCompoundSwapPlan } from "./swap/compound";
 import { readCompoundPriorSources } from "./compound-prior-sources";
 import { readSwapFeeConfig, collectCompoundSwapFee, unfundedSwapFeeAtaRent } from "./swap";
 import { versionedTransactionSize } from "./open-transaction";

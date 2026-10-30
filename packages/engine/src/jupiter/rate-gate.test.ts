@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { jupiterQuote, jupiterRateGateWaitMs, jupiterRequest, noteJupiterRateHeaders, resetJupiterRateGate } from "./client";
+import { jupiterRateGateWaitMs, jupiterRequest, noteJupiterRateHeaders, resetJupiterRateGate } from "./client";
+import { jupiterQuote } from "../swap/client";
 import { resetJupiterRuntime } from "./index";
 
 const NOW = new Date("2026-10-21T13:35:00Z").getTime();

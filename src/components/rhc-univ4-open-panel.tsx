@@ -13,6 +13,7 @@ import {
 import { readWalletBalances, trackPositionId, type WalletBalances } from "@/lib/rhc-wallet/exit-execute";
 import { RhcUniv4PositionsPanel } from "./rhc-univ4-positions-panel";
 import { openSteps, RETRY_CONFIRM_TEXT, stepProgressLabel, type OpenStepId } from "@/lib/rhc-wallet/open-steps";
+import type { RhcPoolView } from "@/lib/rhc-wallet/pool-view";
 
 /**
  * Robinhood Chain (4663) Uniswap v4 open-position flow (design §6 PR5), behind `RHC_UNIV4_TRADING_ENABLED`.
@@ -21,15 +22,7 @@ import { openSteps, RETRY_CONFIRM_TEXT, stepProgressLabel, type OpenStepId } fro
  * → server `finalize` (re-quote + simulate) → client guards (4663, pinned UR, sender, value 0) → `execute` → receipt.
  */
 
-export type RhcPoolView = {
-  poolId: string;
-  status: "listed" | "delisted";
-  tick: number | null;
-  price: number | null;
-  token0: { address: string; symbol: string; decimals: number };
-  token1: { address: string; symbol: string; decimals: number };
-  estimatedApr: Univ4PoolApr | null;
-};
+export type { RhcPoolView };
 
 const RANGE_PRESETS = [10, 30, 100] as const;
 
