@@ -37,6 +37,15 @@ export type StoredProfile = {
   profile: VolumeProfile;
   windowEndUtc: string;
   observedAt: string;
+  /** Price-history fetch bookkeeping (RHC cron rotation); kept by `saveApr` even when the profile is not replaced. */
+  fetchState?: ProfileFetchState;
+};
+export type ProfileFetchState = {
+  lastAttemptAt: string;
+  /** Consecutive failed price-history fetches (0 after a success). */
+  failures: number;
+  /** Trades are known up to here: the last good fetch, or a later check that found no trades in the last 24 h. */
+  coveredUntil?: string;
 };
 export type ActivePool = {
   pair: RwaPairRow;
@@ -153,6 +162,7 @@ const aprSchema = z.object({
         .passthrough(),
       windowEndUtc: timestamp,
       observedAt: timestamp,
+      fetchState: z.object({ lastAttemptAt: timestamp, failures: z.number().int().min(0), coveredUntil: timestamp.optional() }).optional(),
     })
     .nullable(),
   chainObservedAt: timestamp.nullable(),

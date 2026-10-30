@@ -10,13 +10,14 @@ import {
   FEE_APR_ESTIMATE_LABEL,
   hasFreezeTag,
   isToken2022Program,
-  matchSameAssetPair,
   matchWrapPairShape,
   PAIRING_RULE_SUMMARY,
   type PairingMatch,
   type Relatedness,
   type RwaQualificationSource,
 } from "./rwa-pairing";
+import { matchSameAssetPair, solanaStaticToken } from "./pool-metrics/solana-registry";
+import { pairRegistryTokens } from "./pool-metrics/token-registry";
 import { DEFAULT_PROTOCOL, type PoolProtocolId } from "@sofinance/engine/protocols/types";
 import { fetchJupiterTagsByMint, getJupiterTagsObservedAt } from "./rwa-jupiter-tags";
 import { fetchXstocksSolanaMintSet, getXstocksObservedAt } from "./rwa-xstocks-whitelist";
@@ -215,6 +216,9 @@ export function isAllowlistedPoolCandidate(raw: unknown): StructuralCandidate | 
   if (!candidate) return null;
   const spec = allowlistedPoolById(candidate.poolAddress);
   if (!spec || !mintsMatchAllowlist(spec, candidate.addressA, candidate.addressB)) return null;
+  // Same rule as every other pair: registry tokens of one underlying from different issuers.
+  const tokenA = solanaStaticToken(candidate.addressA), tokenB = solanaStaticToken(candidate.addressB);
+  if (!tokenA || !tokenB || !pairRegistryTokens([tokenA], [tokenB])) return null;
   return candidate;
 }
 
@@ -303,12 +307,14 @@ export function parseRaydiumPoolAsRwaPair(
   // site via a synthetic qualifier map — empty lookup means unqualified.
   const match = matchSameAssetPair(
     {
+      address: candidate.addressA,
       symbol: candidate.symbolA,
       name: candidate.nameA,
       jupiterTags: jupiterTagsA,
       onXstocksWhitelist: onWhitelistA,
     },
     {
+      address: candidate.addressB,
       symbol: candidate.symbolB,
       name: candidate.nameB,
       jupiterTags: jupiterTagsB,

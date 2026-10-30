@@ -42,6 +42,11 @@ export class ThrottleGate {
     return Math.max(0, this.blockedUntil - this.now());
   }
 
+  /** Milliseconds until the next call may start (spacing and cooldown), when no call is queued. */
+  nextStartInMs(): number {
+    return Math.max(this.blockedForMs(), this.lastStart + this.minSpacingMs - this.now(), 0);
+  }
+
   /** Opens (or extends) the cooldown after a 429. */
   block(retryAfterMs?: number): void {
     const wanted = retryAfterMs !== undefined && Number.isFinite(retryAfterMs) ? retryAfterMs : this.defaultCooldownMs;

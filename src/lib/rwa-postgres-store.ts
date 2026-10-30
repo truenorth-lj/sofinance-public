@@ -340,7 +340,9 @@ export class PostgresRwaStore implements RwaStore {
         .where(eq(apr.poolAddress, data.poolId)).for("update");
       const replace = !!data.payload && (!data.payload.sample.degraded || !old?.payload || old.payload.sample.degraded);
       const freshProfile = data.profile && !data.profile.profile.stale && (data.profile.profile.candles?.length ?? 0) > 0;
-      const profile = freshProfile ? data.profile : old?.profile ?? data.profile;
+      const kept = freshProfile ? data.profile : old?.profile ?? data.profile;
+      // Fetch bookkeeping is always the latest attempt's, so a failing pool rotates to the back (rhc-apr-refresh).
+      const profile = kept && data.profile?.fetchState ? { ...kept, fetchState: data.profile.fetchState } : kept;
       const observed = data.profile?.profile.observedAt;
       const isRhc = /^0x[0-9a-f]{64}$/i.test(data.poolId);
       await tx.insert(apr).values({

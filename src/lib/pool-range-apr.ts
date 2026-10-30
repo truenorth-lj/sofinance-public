@@ -6,7 +6,7 @@ import { RAYDIUM_POOL_IDS } from "./pool-daily-apr";
 import { geckoGate, geckoOhlcvUrl, geckoPoolsUrl, type GeckoNetwork } from "./pool-metrics/gecko";
 import { parseGeckoDailyVolumes } from "./pool-daily-apr-math";
 import { buildAprBins, lpFeeFraction, sampleConfidence, usdPerRawTokenB } from "./range-apr/build-model";
-import { candlesInWindow, averageDailyVolume, VOLUME_WINDOW_DAYS } from "./range-apr/daily-volume";
+import { candlesInWindow, averageDailyVolume, dailyVolumesFromHourly, VOLUME_WINDOW_DAYS } from "./range-apr/daily-volume";
 import { orientCandles, parseGeckoHourlyCandles, type RawCandle } from "./range-apr/gecko-candles";
 import { binVolumeShares, candlesToTickCandles, type OccupancyResult } from "./range-apr/occupancy";
 import { readOnchainPoolLiquidity, type OnchainPoolLiquidity } from "./range-apr/onchain-liquidity";
@@ -136,6 +136,11 @@ type UpstreamOptions = Pick<FetchPoolRangeAprOptions, "retry" | "gate"> & {
   economics?: PoolEconomicsSource;
   /** GeckoTerminal network for the candles (default solana). */
   network?: GeckoNetwork;
+  /**
+   * One GeckoTerminal call instead of two: daily volume from the hourly candles at this token USD price
+   * (see `dailyVolumesFromHourly`; same-value pairs only). Robinhood Chain uses it to fit its call budget.
+   */
+  dailyFromHourly?: { tokenPriceUsd: number; createdAtSeconds?: number };
 };
 
 /** Next's Data Cache hint; ignored by injected test fetchers. */
@@ -179,27 +184,34 @@ export async function loadVolumeProfile(
     const ids = await getRaydium(economicsSource.url(encodeURIComponent(poolId)));
     return { economics: ids.ok ? economicsSource.parse(ids.body) : null, observedAt: ids.observedAt };
   };
+  const fromHourly = upstream.dailyFromHourly;
   const [ids, daily, hourly] = await Promise.all([
     loadEconomics(),
-    getGecko(geckoOhlcvUrl(network, poolId, "day", { limit: 30, currency: "usd" }), DAILY_REVALIDATE_S),
+    fromHourly ? null : getGecko(geckoOhlcvUrl(network, poolId, "day", { limit: 30, currency: "usd" }), DAILY_REVALIDATE_S),
     getGecko(geckoOhlcvUrl(network, poolId, "hour", { limit: 200, currency: "token" }), HOURLY_REVALIDATE_S),
   ]);
   const economics = ids.economics;
   if (!economics) throw new Error(`Pool economics unavailable from ${economicsSource.name}`);
   const sources = [economicsSource.source];
   const issues: string[] = [];
-  const dailySample = daily.ok ? averageDailyVolume(parseGeckoDailyVolumes(daily.body), nowSeconds) : null;
-  if (dailySample) sources.push(`${geckoBase}/{pool}/ohlcv/day (USD volume)`);
-  else issues.push(`GeckoTerminal daily candles: ${daily.ok ? "no complete days" : daily.reason}`);
-  let candles: RawCandle[] | null = null;
+  const candles: RawCandle[] | null = hourly.ok ? orientCandles(parseGeckoHourlyCandles(hourly.body), economics.mintA, economics.mintB) : null;
+  let dailySample: VolumeProfile["daily"] = null, dailyObservedAt: string | null = null;
+  if (daily) {
+    dailySample = daily.ok ? averageDailyVolume(parseGeckoDailyVolumes(daily.body), nowSeconds) : null;
+    if (dailySample) { sources.push(`${geckoBase}/{pool}/ohlcv/day (USD volume)`); dailyObservedAt = daily.observedAt; }
+    else issues.push(`GeckoTerminal daily candles: ${daily.ok ? "no complete days" : daily.reason}`);
+  } else if (fromHourly && candles) {
+    dailySample = averageDailyVolume(dailyVolumesFromHourly(candles, fromHourly.tokenPriceUsd), nowSeconds, undefined, fromHourly.createdAtSeconds);
+    if (dailySample) { sources.push(`${geckoBase}/{pool}/ohlcv/hour (daily USD volume: token volume x token USD price)`); dailyObservedAt = hourly.observedAt; }
+    else issues.push("GeckoTerminal hourly candles: no complete days");
+  }
   if (hourly.ok) {
-    candles = orientCandles(parseGeckoHourlyCandles(hourly.body), economics.mintA, economics.mintB);
     if (candles) sources.push(`${geckoBase}/{pool}/ohlcv/hour (price path, token currency)`);
     else issues.push("GeckoTerminal hourly candles: unusable response");
   } else {
     issues.push(`GeckoTerminal hourly candles: ${hourly.reason}`);
   }
-  return { economics, protocol: economicsSource.protocol, daily: dailySample, candles, sources, issues, observedAt: { economics: ids.observedAt, daily: dailySample ? daily.observedAt : null, hourly: candles?.length ? hourly.observedAt : null } };
+  return { economics, protocol: economicsSource.protocol, daily: dailySample, candles, sources, issues, observedAt: { economics: ids.observedAt, daily: dailyObservedAt, hourly: candles?.length ? hourly.observedAt : null } };
 }
 
 /**

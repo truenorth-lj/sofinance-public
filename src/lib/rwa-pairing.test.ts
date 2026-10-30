@@ -5,12 +5,12 @@ import {
   hasJupiterStocksOrRwaTags,
   hasPreferredJupiterTags,
   isToken2022Program,
-  matchSameAssetPair,
   matchWrapPairShape,
   parseWrapSymbol,
   qualifyRwaMint,
   TOKEN_2022_PROGRAM_ID,
 } from "./rwa-pairing";
+import { matchSameAssetPair } from "./pool-metrics/solana-registry";
 
 describe("parseWrapSymbol", () => {
   it("parses FOOx suffix", () => {

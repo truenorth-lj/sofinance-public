@@ -11,6 +11,7 @@ import {
   type AprWrite,
   type DiscoveryWrite,
   type Lease,
+  type StoredProfile,
 } from "./rwa-store-types";
 import type { RwaPairRow } from "./rwa-pairs";
 import type { VolumeProfile } from "./pool-range-apr";
@@ -357,6 +358,23 @@ describe.skipIf(!url)("RWA PostgreSQL snapshots and fencing", () => {
       issues: ["No TVL / 24h volume from GeckoTerminal or DexScreener"] } });
     const [failed] = await db!`SELECT failure_reason FROM rwa_apr_daily WHERE pool_address=${nvda!.poolId.toLowerCase()} AND snapshot_date='2026-10-15'`;
     expect(failed!.failure_reason).toBe("error:No TVL / 24h volume from GeckoTerminal or DexScreener");
+    // Fetch bookkeeping: a failed (stale) fetch keeps the good saved history but records the latest attempt.
+    const spcxId = spcx!.poolId.toLowerCase();
+    const at = new Date(now).toISOString();
+    const good = {
+      algorithmVersion: ALGORITHM_VERSION, windowEndUtc: "2026-10-15T00:00:00.000Z", observedAt: at,
+      fetchState: { lastAttemptAt: at, failures: 0, coveredUntil: at },
+      profile: {
+        economics: { mintA: spcx!.currency0.address, mintB: spcx!.currency1.address }, candles: [{ time: 1, volume: 1 }], stale: false,
+        daily: { avgDailyVolumeUsd: 42, days: 7 }, sources: [], issues: [], observedAt: { economics: at, daily: at, hourly: at },
+      },
+    } as unknown as StoredProfile;
+    await store!.request({ op: "saveApr", lease, data: { poolId: spcxId, payload: null, profile: good, chainObservedAt: null, issues: ["x"] } });
+    const failedFetch = { ...good, fetchState: { lastAttemptAt: at, failures: 1, coveredUntil: at },
+      profile: { ...good.profile, stale: true, daily: { avgDailyVolumeUsd: 0, days: 7 } } } as StoredProfile;
+    await store!.request({ op: "saveApr", lease, data: { poolId: spcxId, payload: null, profile: failedFetch, chainObservedAt: null, issues: ["y"] } });
+    const again = await store!.request({ op: "ensureRhcRoster", lease, data: [{ poolId: spcxId, summary: summary(spcx, 48_000) }] });
+    expect(again.profiles[spcxId]).toMatchObject({ fetchState: { failures: 1 }, profile: { stale: false, daily: { avgDailyVolumeUsd: 42 } } });
     await store!.request({ op: "finish", lease, outcome: "ok", processed: 2, issues: [] });
   });
 });
