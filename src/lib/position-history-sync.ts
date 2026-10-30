@@ -95,7 +95,7 @@ export async function syncPositionHistory(options: SyncPositionHistoryOptions): 
     : Math.min(500, Math.max(1, Math.floor(options.maxDetailRequests) || 1));
   const budget = Math.min(requestedBudget, transportBudget);
   const snapshot = await measure("claimMs", () => options.store.request({ op: "claim", context: options.context,
-    parserVersion: POSITION_HISTORY_PARSER_VERSION })) as PositionHistorySnapshot;
+    parserVersion: POSITION_HISTORY_PARSER_VERSION }));
   let fetchedTxCount = 0;
   let listingCount = 0;
   let defaultCount = 0;
@@ -329,7 +329,7 @@ export async function syncPositionHistory(options: SyncPositionHistoryOptions): 
     // A no-change lookup needs only release; avoid republishing the identical full ledger.
     if (!updates.size && unchangedState) return result(oldState, snapshot.transactions);
     const committed = await measure("commitMs", () => options.store.request({ op: "commit", lease: snapshot.lease!,
-      state, transactions: [...updates.values()] })) as PositionHistorySnapshot;
+      state, transactions: [...updates.values()] }));
     return result(committed.state, committed.transactions);
   } finally {
     // The lease expires even if an upstream/storage failure prevents release.

@@ -6,6 +6,7 @@ import type {
 } from "./rwa-pairs";
 import type { PoolRangeAprPayload } from "./range-apr/types";
 import type { VolumeProfile } from "./pool-range-apr";
+import type { Univ4PoolSummary } from "@sofinance/engine/protocols/uniswap-v4/discovery";
 import { trustedIcon } from "@sofinance/engine/token-metadata";
 import { iconAddress, validIconAddress, type TokenIconMap, type TokenIconRow } from "./token-icons/map";
 
@@ -134,7 +135,8 @@ const aprSchema = z.object({
             ]),
           }),
         )
-        .length(4),
+        .min(3)
+        .max(4),
       referenceCapitalUsd: z.number().positive(),
       model: z.object({ bins: z.array(z.unknown()).max(5000) }).passthrough(),
     })
@@ -155,7 +157,11 @@ const aprSchema = z.object({
     .nullable(),
   chainObservedAt: timestamp.nullable(),
   issues: z.array(z.string().max(500)).max(20),
-});
+}).refine(
+  // Raydium serves 4 presets (micro/tight/standard/wide); RHC omits Tight (below the ±10-tick minimum).
+  (value) => !value.payload || value.payload.presets.length === (/^0x/.test(value.poolId) ? 3 : 4),
+  "Unexpected preset count",
+);
 
 /** Icon rows from the daily refresh. Re-checked against `ICON_HOSTS` here so no caller can store an off-list link. */
 export const tokenIconWriteSchema = z.array(z.object({
@@ -166,6 +172,16 @@ export const tokenIconWriteSchema = z.array(z.object({
 }).refine((row) => validIconAddress(row.chain, row.address) && row.address === iconAddress(row.chain, row.address)
   && trustedIcon(row.image) === row.image, "Untrusted token icon")).max(500);
 export type TokenIconWrite = TokenIconRow[];
+
+/**
+ * One row per allowlisted RHC pool from the cron: the full read-only pool summary (StateView/hook checks + one
+ * batched indexer call for TVL / 24h volume). Served back by `rhcPools` so the page never calls RPC or indexers.
+ */
+export type RhcRosterRow = { poolId: string; summary: Univ4PoolSummary };
+const rhcRosterSchema = z.array(z.object({
+  poolId: z.string().regex(RHC_POOL_ID),
+  summary: z.object({ protocol: z.literal("uniswap-v4-rhc"), poolId: z.string().regex(RHC_POOL_ID) }).passthrough(),
+}).refine((row) => row.poolId.toLowerCase() === row.summary.poolId.toLowerCase(), "Pool id mismatch")).min(1).max(32);
 
 export const storeRequestSchema = z.discriminatedUnion("op", [
   z.object({
@@ -208,10 +224,16 @@ export const storeRequestSchema = z.discriminatedUnion("op", [
     data: z.custom<AprWrite>((value) => aprSchema.safeParse(value).success),
   }),
   z.object({ op: z.literal("prepareDaily"), lease: leaseSchema }),
-  z.object({ op: z.literal("ensureRhcRoster"), lease: leaseSchema }),
+  z.object({ op: z.literal("ensureRhcRoster"), lease: leaseSchema, data: rhcRosterSchema }),
+  z.object({ op: z.literal("rhcPools") }),
   z.object({ op: z.literal("saveTokenIcons"), lease: leaseSchema, data: tokenIconWriteSchema }),
 ]);
-export type StoreRequest = z.infer<typeof storeRequestSchema>;
+type ParsedStoreRequest = z.infer<typeof storeRequestSchema>;
+export type StoreOperation = ParsedStoreRequest["op"];
+/** Mapped union preserves the operation/result relationship through generic dispatch. */
+export type StoreRequest<K extends StoreOperation = StoreOperation> = {
+  [P in K]: Extract<ParsedStoreRequest, { op: P }>;
+}[K];
 export type PairOptions = {
   minTvl: number;
   maxPages: number;
@@ -221,6 +243,36 @@ export type PairOptions = {
 export type SnapshotPairs = DiscoverRwaPairsResult & { freshness: Freshness; tokenIcons?: TokenIconMap };
 export type SnapshotApr = PoolRangeAprPayload & { freshness: Freshness };
 
+export type SnapshotHistory = {
+  poolId: string;
+  timezone: "Asia/Taipei";
+  points: Array<{
+    date: string; capturedAt: string | null; status: string;
+    poolFeeAprPct: number | null; highestRangeAprPct: number | null; highestRangeId: string | null;
+    presets: PoolRangeAprPayload["presets"]; referenceCapitalUsd: number;
+    algorithmVersion: string; sample: Partial<PoolRangeAprPayload["sample"]>; reason: string | null;
+  }>;
+};
+export type StoreResultMap = {
+  pairs: SnapshotPairs;
+  apr: SnapshotApr;
+  history: SnapshotHistory;
+  activePools: ActivePool[];
+  claim: Lease | null;
+  renew: boolean;
+  finish: boolean;
+  publishDiscovery: { generation: string; pools: number };
+  prepareDaily: { date: string; eligible: boolean };
+  saveApr: { poolId: string; status: "ok" | "degraded" | "error" };
+  saveTokenIcons: { saved: number };
+  ensureRhcRoster: { pools: number; profiles: Record<string, StoredProfile | null> };
+  rhcPools: SnapshotRhcPools;
+};
+/** Saved RHC pool summaries; `observedAt` is when the cron last read them, `stale` past the 26h rule. */
+export type SnapshotRhcPools = { pools: Univ4PoolSummary[]; observedAt: string | null; stale: boolean };
+export type StoreHandlers = {
+  [K in StoreOperation]: (input: StoreRequest<K>) => Promise<StoreResultMap[K]>;
+};
 export interface RwaStore {
-  request(input: StoreRequest): Promise<unknown>;
+  request<K extends StoreOperation>(input: StoreRequest<K>): Promise<StoreResultMap[K]>;
 }

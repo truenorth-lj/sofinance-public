@@ -2,7 +2,10 @@ import "server-only";
 import { getRwaConfig } from "./config/rwa-env";
 import { getRwaDatabase, runRwaDatabaseRequest } from "./rwa-database";
 import { PostgresPositionHistoryStore } from "./position-history-postgres-store";
-import { PositionHistoryStoreError, positionStoreRequestSchema, type PositionHistoryStore } from "./position-history-store-types";
+import {
+  PositionHistoryStoreError, positionStoreRequestSchema, type PositionHistoryStore,
+  type PositionStoreOperation, type PositionStoreRequest, type PositionStoreResultMap,
+} from "./position-history-store-types";
 
 let direct: { db: ReturnType<typeof getRwaDatabase>; store: PositionHistoryStore } | undefined;
 let gateway: { url: string; secret: string; store: PositionHistoryStore } | undefined;
@@ -20,7 +23,7 @@ export function getPositionHistoryStore(): PositionHistoryStore {
     if (!config.secret || config.secret.length < 32) throw new PositionHistoryStoreError("POSITION_STORE_UNAVAILABLE");
     if (gateway?.url === base.href && gateway.secret === config.secret) return gateway.store;
     const store: PositionHistoryStore = {
-      async request(input) {
+      async request<K extends PositionStoreOperation>(input: PositionStoreRequest<K>) {
         const body = JSON.stringify(positionStoreRequestSchema.parse(input));
         if (Buffer.byteLength(body) > 16_000_000) throw new PositionHistoryStoreError("POSITION_HISTORY_BATCH_TOO_LARGE");
         try {
@@ -32,7 +35,8 @@ export function getPositionHistoryStore(): PositionHistoryStore {
           const result = await response.json();
           if (!response.ok) throw new PositionHistoryStoreError(
             typeof result.code === "string" ? result.code : "POSITION_STORE_UNAVAILABLE");
-          return result;
+          // Trusted internal gateway wire boundary, not runtime response-schema validation.
+          return result as PositionStoreResultMap[K];
         } catch (error) {
           throw error instanceof PositionHistoryStoreError ? error : new PositionHistoryStoreError("POSITION_STORE_UNAVAILABLE");
         }

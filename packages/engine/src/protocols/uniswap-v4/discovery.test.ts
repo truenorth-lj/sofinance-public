@@ -15,7 +15,7 @@ beforeEach(() => resetEvmRpcGuards());
 describe("uniswap-v4-rhc discovery (mock RPC replaying the 2026-10-29 capture)", () => {
   it("lists SPCX/SPCXon from current state only, with APR from the indexer's 24h volume / TVL", async () => {
     const chain = mockRhcChain();
-    const [pool] = await discoverUniv4RhcPools({ clients: clientsFor(chain), marketData: async () => market });
+    const [pool] = await discoverUniv4RhcPools({ pools: [SPCX], clients: clientsFor(chain), marketData: async () => market });
     expect(pool).toMatchObject({
       protocol: "uniswap-v4-rhc", chainId: 4663, poolId: SPCX.poolId, status: "listed", delistReasons: [],
       token0: { symbol: "SPCX", decimals: 18, issuer: "robinhood" }, token1: { symbol: "SPCXon", decimals: 18, issuer: "ondo" },
@@ -36,7 +36,7 @@ describe("uniswap-v4-rhc discovery (mock RPC replaying the 2026-10-29 capture)",
     const chain = mockRhcChain();
     chain.implementation = "0x000000000000000000000000000000000000dEaD";
     chain.logs.push(upgradedLog(chain.implementation, chain.blockNumber - 10n));
-    const [pool] = await discoverUniv4RhcPools({ clients: clientsFor(chain) });
+    const [pool] = await discoverUniv4RhcPools({ pools: [SPCX], clients: clientsFor(chain) });
     expect(pool!.status).toBe("delisted");
     expect(pool!.delistReasons).toEqual(["hook-implementation"]);
     expect(chain.calls.some(call => call.method === "eth_getLogs")).toBe(false);
@@ -45,18 +45,18 @@ describe("uniswap-v4-rhc discovery (mock RPC replaying the 2026-10-29 capture)",
   it("auto-delists when the fee config values change", async () => {
     const changed = mockRhcChain();
     changed.feeConfig = [changed.feeConfig[0], 3000, changed.feeConfig[2], changed.feeConfig[3]];
-    expect((await discoverUniv4RhcPools({ clients: clientsFor(changed) }))[0]!.delistReasons).toEqual(["fee-config"]);
+    expect((await discoverUniv4RhcPools({ pools: [SPCX], clients: clientsFor(changed) }))[0]!.delistReasons).toEqual(["fee-config"]);
   });
 
   it("fails closed when state is unreadable; a market-data failure only drops APR", async () => {
     const down = mockRhcChain();
     down.failing = new Set(["eth_getBlockByNumber"]);
-    const [dead] = await discoverUniv4RhcPools({ clients: clientsFor(down), marketData: async () => market });
+    const [dead] = await discoverUniv4RhcPools({ pools: [SPCX], clients: clientsFor(down), marketData: async () => market });
     expect(dead!.status).toBe("delisted");
     expect(dead!.estimatedApr).toBeNull();
 
     resetEvmRpcGuards();
-    const [pool] = await discoverUniv4RhcPools({ clients: clientsFor(mockRhcChain()), marketData: async () => { throw new Error("indexer down"); } });
+    const [pool] = await discoverUniv4RhcPools({ pools: [SPCX], clients: clientsFor(mockRhcChain()), marketData: async () => { throw new Error("indexer down"); } });
     expect(pool!.status).toBe("listed");
     expect(pool!.estimatedApr).toBeNull();
   });

@@ -13,10 +13,10 @@ import { rpcConnection } from "@sofinance/engine/rpc";
 import { mapPool } from "@sofinance/engine/jupiter";
 import { volumeWindowEnd } from "./rwa-daily";
 import { sanitizePublicError } from "./public-error";
-import { getRwaStore, storeCall } from "./rwa-store";
+import { getRwaStore } from "./rwa-store";
 import { UNIV4_RHC_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/uniswap-v4/constants";
 import { isRhcApr7dEnabled } from "./protocol-flags";
-import { fetchRhcRangeApr } from "./rhc-range-apr";
+import { refreshRhcAprSnapshots } from "./rhc-apr-refresh";
 import { resolveTokenIcons, rhcIconSources, solanaIconSources } from "./token-icons/resolve";
 import type { RwaPairRow } from "./rwa-pairs";
 import {
@@ -118,11 +118,12 @@ export async function refreshProfile(
   };
 }
 
-async function runJob(job: JobName, options: Options): Promise<JobResult> {
+/** One job run (claim → work → finish). Exported for the local cron runner and tests. */
+export async function runJob(job: JobName, options: Options): Promise<JobResult> {
   const store = options.store ?? getRwaStore(),
     config = getRwaConfig(),
     clock = options.clock ?? Date.now;
-  const lease = await storeCall<Lease | null>(store, {
+  const lease = await store.request({
     op: "claim",
     job,
     force: !!options.force,
@@ -145,20 +146,25 @@ async function runJob(job: JobName, options: Options): Promise<JobResult> {
       if (!result.discovery)
         throw new Error("Discovery coverage metadata missing");
       const data: DiscoveryWrite = { result, ...result.discovery };
-      await storeCall(store, { op: "publishDiscovery", lease, data });
+      await store.request({ op: "publishDiscovery", lease, data });
       processed = result.pairs.length;
       // Best effort: a missing table or an indexer outage leaves the snapshot published and the old icons in place.
       await refreshTokenIcons(store, lease, result.pairs, options.fetcher, signal).catch(() => {
         issues.push("Token icons not saved");
       });
     } else {
-      await storeCall(store, { op: "prepareDaily", lease });
-      const pools = await storeCall<ActivePool[]>(store, { op: "activePools" });
+      await store.request({ op: "prepareDaily", lease });
+      // RHC runs beside the Solana pass: its GeckoTerminal calls are spaced on their own gate (see rhc-apr-refresh).
+      const rhcPass = isRhcApr7dEnabled()
+        ? refreshRhcAprSnapshots({ store, lease, fetcher: options.fetcher ?? fetch, clock, signal })
+          .catch((error) => ({ processed: 0, issues: [`RHC: ${sanitizePublicError(error, "RHC APR refresh failed").slice(0, 200)}`] }))
+        : null;
+      const pools = await store.request({ op: "activePools" });
       await mapPool(pools, config.concurrency, async (pool) => {
         const poolId = pool.pair.poolAddress;
         try {
           signal.throwIfAborted();
-          await storeCall(store, { op: "renew", lease });
+          await store.request({ op: "renew", lease });
           const [profile, chainSnapshot] = await Promise.all([
             refreshProfile(pool, options.fetcher ?? fetch, clock(), signal),
             readOnchainPoolLiquidity(
@@ -187,8 +193,8 @@ async function runJob(job: JobName, options: Options): Promise<JobResult> {
             Date.parse(profile.windowEndUtc) - payload.sample.days * 86_400_000,
           ).toISOString();
           signal.throwIfAborted();
-          await storeCall(store, { op: "prepareDaily", lease });
-          await storeCall(store, {
+          await store.request({ op: "prepareDaily", lease });
+          await store.request({
             op: "saveApr",
             lease,
             data: {
@@ -209,7 +215,7 @@ async function runJob(job: JobName, options: Options): Promise<JobResult> {
           ).slice(0, 400);
           issues.push(`${poolId}: ${message}`);
           if (!signal.aborted)
-            await storeCall(store, {
+            await store.request({
               op: "saveApr",
               lease,
               data: {
@@ -223,12 +229,12 @@ async function runJob(job: JobName, options: Options): Promise<JobResult> {
         }
       });
       signal.throwIfAborted();
-      if (isRhcApr7dEnabled()) {
-        const rhc = await refreshRhcAprSnapshots({ store, lease, fetcher: options.fetcher ?? fetch, clock, signal });
+      if (rhcPass) {
+        const rhc = await rhcPass;
         processed += rhc.processed;
         issues.push(...rhc.issues);
       }
-      await storeCall(store, { op: "prepareDaily", lease });
+      await store.request({ op: "prepareDaily", lease });
       if (issues.length) status = "partial";
     }
   } catch (error) {
@@ -236,7 +242,7 @@ async function runJob(job: JobName, options: Options): Promise<JobResult> {
     issues.push(sanitizePublicError(error, "Refresh failed").slice(0, 400));
   }
   try {
-    await storeCall(store, {
+    await store.request({
       op: "finish",
       lease,
       processed,
@@ -263,60 +269,12 @@ export async function refreshRwaSnapshots(options: Options = {}) {
  * pass `ICON_HOSTS` are written.
  */
 
-/**
- * Upsert the allowlisted RHC pools into `rwa_pool_latest` (feed `uniswap-v4-rhc-v1`) and snapshot their
- * 7-day range APR. Failures are recorded per pool and never abort the Solana pass.
- */
-async function refreshRhcAprSnapshots(input: {
-  store: RwaStore; lease: Lease; fetcher: typeof fetch; clock: () => number; signal: AbortSignal;
-}): Promise<{ processed: number; issues: string[] }> {
-  const { store, lease, fetcher, clock, signal } = input;
-  const issues: string[] = [];
-  let processed = 0;
-  // Ensure the RHC feed + pool rows exist so saveApr's FK to rwa_pool_latest holds.
-  await storeCall(store, { op: "ensureRhcRoster", lease }).catch((error) => {
-    issues.push(`RHC roster: ${sanitizePublicError(error, "roster failed").slice(0, 200)}`);
-  });
-  for (const pool of UNIV4_RHC_ALLOWLISTED_POOLS) {
-    const poolId = pool.poolId;
-    try {
-      signal.throwIfAborted();
-      await storeCall(store, { op: "renew", lease });
-      const payload = await fetchRhcRangeApr(poolId, { fetcher, nowSeconds: Math.floor(clock() / 1000), bypassCache: true });
-      signal.throwIfAborted();
-      await storeCall(store, {
-        op: "saveApr",
-        lease,
-        data: {
-          poolId,
-          payload,
-          profile: null,
-          chainObservedAt: payload.fetchedAt,
-          issues: payload.sample.issues.slice(0, 20),
-        },
-      });
-      processed += 1;
-      if (payload.sample.degraded) issues.push(`${poolId}: Price history unavailable`);
-    } catch (error) {
-      const message = sanitizePublicError(error, "RHC APR refresh failed").slice(0, 400);
-      issues.push(`${poolId}: ${message}`);
-      if (!signal.aborted) {
-        await storeCall(store, {
-          op: "saveApr", lease,
-          data: { poolId, payload: null, profile: null, chainObservedAt: null, issues: [message] },
-        }).catch(() => undefined);
-      }
-    }
-  }
-  return { processed, issues };
-}
-
 export async function refreshTokenIcons(store: RwaStore, lease: Lease, pairs: readonly Pick<RwaPairRow, "mintA" | "mintB">[],
   fetcher: typeof fetch | undefined, signal: AbortSignal) {
   const solana = await resolveTokenIcons("solana", pairs.flatMap((pair) => [pair.mintA, pair.mintB]), solanaIconSources(fetcher), { signal });
   const rhc = await resolveTokenIcons("robinhood",
     UNIV4_RHC_ALLOWLISTED_POOLS.flatMap((pool) => [pool.currency0.address, pool.currency1.address]), rhcIconSources(fetcher), { signal });
   signal.throwIfAborted();
-  await storeCall(store, { op: "renew", lease });
-  return storeCall<{ saved: number }>(store, { op: "saveTokenIcons", lease, data: [...solana, ...rhc] });
+  await store.request({ op: "renew", lease });
+  return store.request({ op: "saveTokenIcons", lease, data: [...solana, ...rhc] });
 }

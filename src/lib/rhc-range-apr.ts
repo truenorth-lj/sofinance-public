@@ -64,6 +64,30 @@ export function rhcPoolSpec(poolId: string): Univ4AllowlistedPool | null {
   return UNIV4_RHC_ALLOWLISTED_POOLS.find((p) => p.poolId.toLowerCase() === poolId.toLowerCase()) ?? null;
 }
 
+/** Hook fee (mean of both directions, pips), slot0 and indexer TVL → the shared economics shape. Pure. */
+export function rhcEconomics(
+  spec: Univ4AllowlistedPool,
+  state: { feePips: { zeroForOne: number; oneForZero: number }; sqrtPriceX96: bigint; protocolFee: number | null },
+  tvlUsd: number,
+): PoolEconomics {
+  const feeRate = (state.feePips.zeroForOne + state.feePips.oneForZero) / 2 / 1_000_000;
+  const decimals0 = spec.currency0.decimals, decimals1 = spec.currency1.decimals;
+  const price = state.sqrtPriceX96 > 0n
+    ? Math.pow(Number(state.sqrtPriceX96) / 2 ** 96, 2) * 10 ** (decimals0 - decimals1)
+    : 1;
+  // Indexers report USD TVL; approximate token amounts so usdPerRawTokenB can recover a USD-per-raw-B.
+  const halfTvl = tvlUsd / 2;
+  return {
+    mintA: spec.currency0.address, mintB: spec.currency1.address,
+    decimalsA: decimals0, decimalsB: decimals1,
+    feeRate, tvlUsd, price, mintAmountA: price > 0 ? halfTvl / price : 0, mintAmountB: halfTvl,
+    protocolFeeRate: state.protocolFee === 0 ? 0 : null,
+    fundFeeRate: 0,
+    weekVolumeUsd: null,
+    dayFeeApr: null, weekFeeApr: null,
+  };
+}
+
 async function loadRhcEconomics(poolId: string, fetcher: typeof fetch): Promise<PoolEconomics | null> {
   const spec = rhcPoolSpec(poolId);
   if (!spec) return null;
@@ -78,25 +102,7 @@ async function loadRhcEconomics(poolId: string, fetcher: typeof fetch): Promise<
     }),
   ]);
   if (!state.dynamicFee || !state.slot0 || !market) return null;
-  const feePips = (state.dynamicFee.zeroForOne + state.dynamicFee.oneForZero) / 2;
-  const feeRate = feePips / 1_000_000;
-  const decimals0 = spec.currency0.decimals, decimals1 = spec.currency1.decimals;
-  const price = state.slot0.sqrtPriceX96 > 0n
-    ? Math.pow(Number(state.slot0.sqrtPriceX96) / 2 ** 96, 2) * 10 ** (decimals0 - decimals1)
-    : 1;
-  // Indexers report USD TVL; approximate token amounts so usdPerRawTokenB can recover a USD-per-raw-B.
-  const halfTvl = market.tvlUsd / 2;
-  const mintAmountA = price > 0 ? halfTvl / price : 0;
-  const mintAmountB = halfTvl;
-  return {
-    mintA: spec.currency0.address, mintB: spec.currency1.address,
-    decimalsA: decimals0, decimalsB: decimals1,
-    feeRate, tvlUsd: market.tvlUsd, price, mintAmountA, mintAmountB,
-    protocolFeeRate: state.slot0.protocolFee === 0 ? 0 : null,
-    fundFeeRate: 0,
-    weekVolumeUsd: null,
-    dayFeeApr: null, weekFeeApr: null,
-  };
+  return rhcEconomics(spec, { feePips: state.dynamicFee, sqrtPriceX96: state.slot0.sqrtPriceX96, protocolFee: state.slot0.protocolFee }, market.tvlUsd);
 }
 
 export const RHC_ECONOMICS_SOURCE: LoadedPoolEconomicsSource = {
@@ -111,24 +117,33 @@ export async function readRhcPoolLiquidity(poolId: string, publicClient: PublicC
   if (!spec) throw new Error("RHC pool is not allowlisted");
   const state = await readPoolState(publicClient, spec);
   if (!state.slot0 || state.liquidity === null) throw new Error("RHC pool state unavailable");
-  const half = halfWindowBinsFor(spec.tickSpacing);
-  const { liquidityNet } = await readTickWindow(publicClient, spec, state.slot0.tick);
+  return rhcLiquidityAt(publicClient, spec, { tick: state.slot0.tick, sqrtPriceX96: state.slot0.sqrtPriceX96, liquidity: state.liquidity });
+}
+
+/** Liquidity bins around a known slot0 (two batched multicalls: tick bitmap words, then initialised ticks). */
+export async function rhcLiquidityAt(
+  publicClient: PublicClient, spec: Univ4AllowlistedPool, state: { tick: number; sqrtPriceX96: bigint; liquidity: bigint },
+): Promise<OnchainPoolLiquidity> {
+  const { liquidityNet } = await readTickWindow(publicClient, spec, state.tick);
   const bins: LiquidityBin[] = buildLiquidityBins({
-    tickCurrent: state.slot0.tick,
+    tickCurrent: state.tick,
     tickSpacing: spec.tickSpacing,
     poolLiquidity: state.liquidity,
     liquidityNet,
-    halfWindowBins: half,
+    halfWindowBins: halfWindowBinsFor(spec.tickSpacing),
   });
   return {
     poolId: spec.poolId,
     mintA: spec.currency0.address, mintB: spec.currency1.address,
     decimalsA: spec.currency0.decimals, decimalsB: spec.currency1.decimals,
-    tickSpacing: spec.tickSpacing, tickCurrent: state.slot0.tick,
-    sqrtPriceX64: sqrtPriceX96ToX64(state.slot0.sqrtPriceX96),
+    tickSpacing: spec.tickSpacing, tickCurrent: state.tick,
+    sqrtPriceX64: sqrtPriceX96ToX64(state.sqrtPriceX96),
     bins,
   };
 }
+
+/** Shared Robinhood Chain state client (cron and dev fallback). */
+export const rhcStateClient = client;
 
 export type RhcRangeAprPayload = PoolRangeAprPayload & {
   protocol: "uniswap-v4-rhc";

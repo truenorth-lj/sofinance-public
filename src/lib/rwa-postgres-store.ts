@@ -2,7 +2,7 @@ import { UNIV4_RHC_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/uniswap
 import "server-only";
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
-import { and, asc, between, eq, exists, gt, isNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, between, eq, exists, gt, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import * as schema from "../db/schema";
 import { assertRwaDatabaseIdentity } from "./rwa-database";
@@ -15,7 +15,7 @@ import { pickHighestAprPreset } from "./range-apr/preset-list";
 import { RWA_PAIRS_STALE_MS, aprSnapshotDelayed } from "./rwa-freshness";
 import {
   ALGORITHM_VERSION, FEED_KEY, FEED_KEY_RHC, PAIRING_VERSION, RwaStoreError, storeRequestSchema,
-  type AprWrite, type DiscoveryWrite, type Lease, type RwaStore, type SnapshotApr, type StoreRequest,
+  type AprWrite, type DiscoveryWrite, type Lease, type RwaStore, type SnapshotApr, type StoreRequest, type StoreOperation, type RhcRosterRow, type StoredProfile, type StoreResultMap, type StoreHandlers,
 } from "./rwa-store-types";
 
 import { tokenIconMap, type TokenIconRow } from "./token-icons/map";
@@ -82,72 +82,76 @@ export class PostgresRwaStore implements RwaStore {
     });
   }
 
-  async request(raw: StoreRequest): Promise<unknown> {
-    const input = storeRequestSchema.parse(raw);
+  async request<K extends StoreOperation>(raw: StoreRequest<K>): Promise<StoreResultMap[K]> {
+    // Zod validates/defaults fields and preserves the discriminator; it cannot infer generic K.
+    const input = storeRequestSchema.parse(raw) as StoreRequest<K>;
     await assertRwaDatabaseIdentity(this.db);
-    switch (input.op) {
-      case "pairs": return this.readPairs(input.minTvl, input.maxPages, input.sortBy);
-      case "apr": return this.readApr(input.poolId);
-      case "history": {
-        validateHistoryRange(input.from, input.to);
-        const rows = await this.orm.select().from(daily).where(and(eq(daily.poolAddress, input.poolId),
-          between(daily.snapshotDate, input.from, input.to))).orderBy(asc(daily.snapshotDate));
-        return { poolId: input.poolId, timezone: "Asia/Taipei", points: rows.map((row) => ({
-          date: row.snapshotDate, capturedAt: row.capturedAt ? iso(row.capturedAt) : null,
-          status: row.status, poolFeeAprPct: row.poolFeeAprPct, highestRangeAprPct: row.highestRangeAprPct,
-          highestRangeId: row.highestRangeId, presets: row.presets, referenceCapitalUsd: row.referenceCapitalUsd,
-          algorithmVersion: row.algorithmVersion, sample: row.sample, reason: row.failureReason,
-        })) };
-      }
-      case "activePools": {
-        const rows = await this.orm.select({ pool, profile: apr.profileCache }).from(pool)
-          .innerJoin(feed, and(eq(feed.feedKey, pool.feedKey), eq(feed.generationId, pool.lastSeenGeneration)))
-          .leftJoin(apr, eq(apr.poolAddress, pool.poolAddress)).where(eq(feed.feedKey, FEED_KEY))
-          .orderBy(asc(pool.poolAddress));
-        return rows.map((row) => ({ pair: pair(row.pool), metricsObservedAt: iso(row.pool.metricsObservedAt), profile: row.profile }));
-      }
-      case "claim": {
-        const owner = randomUUID();
-        const rows = await this.orm.transaction(async (tx) => {
-          await tx.insert(job).values({ jobKey: input.job }).onConflictDoNothing();
-          return tx.update(job).set({ leaseOwner: owner, leaseEpoch: sql`${job.leaseEpoch}+1`,
-            leaseExpiresAt: sql`${nowSql}+${interval(getRwaConfig().leaseMs)}`,
-            lastStartedAt: nowSql, lastStatus: "running" })
-            .where(and(eq(job.jobKey, input.job), or(isNull(job.leaseOwner), lte(job.leaseExpiresAt, nowSql)),
-              input.force ? sql`true` : or(isNull(job.nextDueAt), lte(job.nextDueAt, sql`${nowSql}+${DUE_GRACE}`))))
-            .returning({ epoch: job.leaseEpoch });
-        });
-        return rows.length ? { job: input.job, owner, epoch: rows[0]!.epoch } : null;
-      }
-      case "renew": return this.guarded(input.lease, async (tx) => {
-        await tx.update(job).set({ leaseExpiresAt: sql`${nowSql}+${interval(getRwaConfig().leaseMs)}` })
-          .where(eq(job.jobKey, input.lease.job));
-        return true;
-      });
-      case "finish": return this.guarded(input.lease, async (tx) => {
-        const config = getRwaConfig();
-        const cadence = input.lease.job === "rwa-discovery" ? config.discoveryIntervalMs : config.aprIntervalMs;
-        await tx.update(job).set({ lastCompletedAt: nowSql,
-          lastSuccessAt: input.outcome === "ok" ? nowSql : job.lastSuccessAt,
-          nextDueAt: sql`GREATEST(${nowSql}+interval '10 seconds', ${job.lastStartedAt}+${interval(input.outcome === "error" ? Math.min(cadence, 300_000) : cadence)})`,
-          lastStatus: input.outcome, consecutiveFailures: input.outcome === "ok" ? 0 : sql`${job.consecutiveFailures}+1`,
-          lastDurationMs: sql`GREATEST(0,round(extract(epoch FROM(${nowSql}-${job.lastStartedAt}))*1000)::integer)`,
-          lastError: input.issues.length ? { issues: input.issues } : null,
-          lastSummary: { processed: input.processed, issueCount: input.issues.length },
-        }).where(eq(job.jobKey, input.lease.job));
-        return true;
-      }).then(async (result) => {
-        // Release only the same epoch after the final expiry check, never a replacement lease.
-        await this.orm.update(job).set({ leaseOwner: null, leaseExpiresAt: null }).where(leaseWhere(input.lease));
-        return result;
-      });
-      case "publishDiscovery": return this.publish(input.lease, input.data as DiscoveryWrite);
-      case "prepareDaily": return this.prepareDaily(input.lease);
-      case "saveApr": return this.saveApr(input.lease, input.data as AprWrite);
-      case "ensureRhcRoster": return this.ensureRhcRoster(input.lease);
-      case "saveTokenIcons": return this.saveTokenIcons(input.lease, input.data);
-    }
+    return this.handlers[input.op](input);
   }
+
+  private readonly handlers: StoreHandlers = {
+    pairs: input => this.readPairs(input.minTvl, input.maxPages, input.sortBy),
+    apr: input => this.readApr(input.poolId),
+    history: async input => {
+      validateHistoryRange(input.from, input.to);
+      const rows = await this.orm.select().from(daily).where(and(eq(daily.poolAddress, input.poolId),
+        between(daily.snapshotDate, input.from, input.to))).orderBy(asc(daily.snapshotDate));
+      return { poolId: input.poolId, timezone: "Asia/Taipei", points: rows.map((row) => ({
+        date: row.snapshotDate, capturedAt: row.capturedAt ? iso(row.capturedAt) : null,
+        status: row.status, poolFeeAprPct: row.poolFeeAprPct, highestRangeAprPct: row.highestRangeAprPct,
+        highestRangeId: row.highestRangeId, presets: row.presets, referenceCapitalUsd: row.referenceCapitalUsd,
+        algorithmVersion: row.algorithmVersion, sample: row.sample, reason: row.failureReason,
+      })) };
+    },
+    activePools: async () => {
+      const rows = await this.orm.select({ pool, profile: apr.profileCache }).from(pool)
+        .innerJoin(feed, and(eq(feed.feedKey, pool.feedKey), eq(feed.generationId, pool.lastSeenGeneration)))
+        .leftJoin(apr, eq(apr.poolAddress, pool.poolAddress)).where(eq(feed.feedKey, FEED_KEY))
+        .orderBy(asc(pool.poolAddress));
+      return rows.map((row) => ({ pair: pair(row.pool), metricsObservedAt: iso(row.pool.metricsObservedAt), profile: row.profile }));
+    },
+    claim: async input => {
+      const owner = randomUUID();
+      const rows = await this.orm.transaction(async (tx) => {
+        await tx.insert(job).values({ jobKey: input.job }).onConflictDoNothing();
+        return tx.update(job).set({ leaseOwner: owner, leaseEpoch: sql`${job.leaseEpoch}+1`,
+          leaseExpiresAt: sql`${nowSql}+${interval(getRwaConfig().leaseMs)}`,
+          lastStartedAt: nowSql, lastStatus: "running" })
+          .where(and(eq(job.jobKey, input.job), or(isNull(job.leaseOwner), lte(job.leaseExpiresAt, nowSql)),
+            input.force ? sql`true` : or(isNull(job.nextDueAt), lte(job.nextDueAt, sql`${nowSql}+${DUE_GRACE}`))))
+          .returning({ epoch: job.leaseEpoch });
+      });
+      return rows.length ? { job: input.job, owner, epoch: rows[0]!.epoch } : null;
+    },
+    renew: input => this.guarded(input.lease, async (tx) => {
+      await tx.update(job).set({ leaseExpiresAt: sql`${nowSql}+${interval(getRwaConfig().leaseMs)}` })
+        .where(eq(job.jobKey, input.lease.job));
+      return true;
+    }),
+    finish: input => this.guarded(input.lease, async (tx) => {
+      const config = getRwaConfig();
+      const cadence = input.lease.job === "rwa-discovery" ? config.discoveryIntervalMs : config.aprIntervalMs;
+      await tx.update(job).set({ lastCompletedAt: nowSql,
+        lastSuccessAt: input.outcome === "ok" ? nowSql : job.lastSuccessAt,
+        nextDueAt: sql`GREATEST(${nowSql}+interval '10 seconds', ${job.lastStartedAt}+${interval(input.outcome === "error" ? Math.min(cadence, 300_000) : cadence)})`,
+        lastStatus: input.outcome, consecutiveFailures: input.outcome === "ok" ? 0 : sql`${job.consecutiveFailures}+1`,
+        lastDurationMs: sql`GREATEST(0,round(extract(epoch FROM(${nowSql}-${job.lastStartedAt}))*1000)::integer)`,
+        lastError: input.issues.length ? { issues: input.issues } : null,
+        lastSummary: { processed: input.processed, issueCount: input.issues.length },
+      }).where(eq(job.jobKey, input.lease.job));
+      return true;
+    }).then(async (result) => {
+      // Release only the same epoch after the final expiry check, never a replacement lease.
+      await this.orm.update(job).set({ leaseOwner: null, leaseExpiresAt: null }).where(leaseWhere(input.lease));
+      return result;
+    }),
+    publishDiscovery: input => this.publish(input.lease, input.data),
+    prepareDaily: input => this.prepareDaily(input.lease),
+    saveApr: input => this.saveApr(input.lease, input.data),
+    saveTokenIcons: input => this.saveTokenIcons(input.lease, input.data),
+    ensureRhcRoster: input => this.ensureRhcRoster(input.lease, input.data as RhcRosterRow[]),
+    rhcPools: () => this.readRhcPools(),
+  };
 
   private async readPairs(minTvl: number, maxPages: number, sortBy: "estimatedFeeApr" | "tvl" | "volume24h") {
     // One statement gives feed and pools the same MVCC snapshot during generation publication.
@@ -180,39 +184,69 @@ export class PostgresRwaStore implements RwaStore {
 
 
   /** Seed the RHC feed + allowlisted pool rows so APR snapshots can FK to them. */
-  private async ensureRhcRoster(lease: Lease) {
+  /**
+   * Upsert the allowlisted RHC pools into `rwa_pool_latest` (feed `uniswap-v4-rhc-v1`) with the cron's pool
+   * summaries (TVL / 24h volume / hook fee / checks), and return each pool's saved price-history profile so the
+   * cron can skip OHLCV calls it does not need.
+   */
+  private async ensureRhcRoster(lease: Lease, rows: RhcRosterRow[]): Promise<StoreResultMap["ensureRhcRoster"]> {
     if (lease.job !== "rwa-apr-refresh") throw new RwaStoreError("INVALID_JOB");
+    const allowed = new Map(UNIV4_RHC_ALLOWLISTED_POOLS.map((spec) => [spec.poolId.toLowerCase(), spec]));
+    if (rows.some((row) => !allowed.has(row.poolId.toLowerCase()))) throw new RwaStoreError("INVALID_RHC_ROSTER");
     const generation = "00000000-0000-4000-8000-0000000000a1";
     return this.guarded(lease, async (tx) => {
       await tx.insert(feed).values({
         feedKey: FEED_KEY_RHC, pairingRuleVersion: "uniswap-v4-rhc-allowlist-v1",
         generationId: generation, scanMaxPages: 1, pagesFetched: 1,
-        scannedPools: UNIV4_RHC_ALLOWLISTED_POOLS.length,
-        pagePoolCounts: [UNIV4_RHC_ALLOWLISTED_POOLS.length],
+        scannedPools: rows.length, pagePoolCounts: [rows.length],
         publishedAt: nowSql as unknown as string,
         summary: { source: "allowlist", pairingRuleSummary: "StablePairHook allowlist", estimatedFeeAprLabel: "Estimated" },
       }).onConflictDoUpdate({
         target: feed.feedKey,
         set: {
-          generationId: generation, scannedPools: UNIV4_RHC_ALLOWLISTED_POOLS.length,
-          pagePoolCounts: [UNIV4_RHC_ALLOWLISTED_POOLS.length], publishedAt: nowSql as unknown as string,
-          pairingRuleVersion: "uniswap-v4-rhc-allowlist-v1",
+          generationId: generation, scannedPools: rows.length, pagePoolCounts: [rows.length],
+          publishedAt: nowSql as unknown as string, pairingRuleVersion: "uniswap-v4-rhc-allowlist-v1",
         },
       });
-      for (const spec of UNIV4_RHC_ALLOWLISTED_POOLS) {
+      for (const row of rows) {
+        const spec = allowed.get(row.poolId.toLowerCase())!;
+        const market = row.summary.estimatedApr;
         const values = {
           chain: "robinhood" as const, protocol: "uniswap-v4-rhc" as const,
           mintA: spec.currency0.address.toLowerCase(), mintB: spec.currency1.address.toLowerCase(),
           symbolA: spec.currency0.symbol, symbolB: spec.currency1.symbol,
-          tvlUsd: null, volume24hUsd: null, fees24hUsd: null, feeRate: null, poolFeeAprPct: null,
-          details: {}, sourcePage: 1, lastSeenGeneration: generation,
+          tvlUsd: market?.tvlUsd ?? null, volume24hUsd: market?.volume24hUsd ?? null,
+          fees24hUsd: market ? market.volume24hUsd * market.feeRatePct / 100 : null,
+          feeRate: market ? market.feeRatePct / 100 : null, poolFeeAprPct: market?.estimatedPoolFeeAprPct ?? null,
+          details: row.summary as unknown as Record<string, unknown>, sourcePage: 1, lastSeenGeneration: generation,
           metricsObservedAt: nowSql as unknown as string,
         };
         await tx.insert(pool).values({ poolAddress: spec.poolId.toLowerCase(), feedKey: FEED_KEY_RHC, ...values })
           .onConflictDoUpdate({ target: pool.poolAddress, set: { ...values, lastSeenAt: nowSql as unknown as string } });
       }
-      return { pools: UNIV4_RHC_ALLOWLISTED_POOLS.length };
+      const saved = await tx.select({ poolAddress: apr.poolAddress, profile: apr.profileCache }).from(apr)
+        .where(inArray(apr.poolAddress, rows.map((row) => row.poolId.toLowerCase())));
+      const profiles = Object.fromEntries(rows.map((row) => [row.poolId.toLowerCase(), null])) as Record<string, StoredProfile | null>;
+      for (const row of saved) profiles[row.poolAddress] = row.profile ?? null;
+      return { pools: rows.length, profiles };
     });
+  }
+
+  /** The RHC pool summaries the cron saved last (allowlist order). Never touches RPC or indexers. */
+  private async readRhcPools(): Promise<StoreResultMap["rhcPools"]> {
+    const rows = await this.orm.select({ pool }).from(pool).innerJoin(feed, and(eq(feed.feedKey, pool.feedKey),
+      eq(feed.generationId, pool.lastSeenGeneration))).where(eq(feed.feedKey, FEED_KEY_RHC));
+    if (!rows.length) throw new RwaStoreError("SNAPSHOT_UNAVAILABLE");
+    const order = new Map(UNIV4_RHC_ALLOWLISTED_POOLS.map((spec, index) => [spec.poolId.toLowerCase(), index]));
+    const sorted = rows.map((row) => row.pool).filter((row) => order.has(row.poolAddress))
+      .sort((a, b) => order.get(a.poolAddress)! - order.get(b.poolAddress)!);
+    const observed = sorted.map((row) => Date.parse(iso(row.metricsObservedAt))).filter(Number.isFinite);
+    const oldest = observed.length ? Math.min(...observed) : NaN;
+    return {
+      pools: sorted.map((row) => row.details as unknown as RhcRosterRow["summary"]),
+      observedAt: Number.isFinite(oldest) ? new Date(oldest).toISOString() : null,
+      stale: !Number.isFinite(oldest) || this.clock() - oldest > RWA_PAIRS_STALE_MS,
+    };
   }
 
   /** Upsert icon links found by the daily discovery job; rows already passed the `ICON_HOSTS` check in the schema. */
@@ -280,14 +314,15 @@ export class PostgresRwaStore implements RwaStore {
       if (window.eligible) {
         // One insert-select freezes the roster once per day under the APR job lease.
         await tx.execute(sql`INSERT INTO ${daily}
-          (pool_address,snapshot_date,scheduled_for,mint_a,mint_b,symbol_a,symbol_b,
+          (pool_address,chain,protocol,snapshot_date,scheduled_for,mint_a,mint_b,symbol_a,symbol_b,
            tvl_usd,volume_24h_usd,fees_24h_usd,pool_fee_apr_pct,pool_metrics_observed_at,algorithm_version)
-          SELECT ${pool.poolAddress},${window.date}::date,${new Date(window.start).toISOString()}::timestamptz,
+          SELECT ${pool.poolAddress},${pool.chain},${pool.protocol},${window.date}::date,${new Date(window.start).toISOString()}::timestamptz,
             ${pool.mintA},${pool.mintB},${pool.symbolA},${pool.symbolB},${pool.tvlUsd},
             ${pool.volume24hUsd},${pool.fees24hUsd},${pool.poolFeeAprPct},${pool.metricsObservedAt},${ALGORITHM_VERSION}
           FROM ${pool} JOIN ${feed} ON ${feed.feedKey}=${pool.feedKey} AND ${feed.generationId}=${pool.lastSeenGeneration}
-          WHERE ${feed.feedKey}=${FEED_KEY} AND ${feed.publishedAt}>${new Date(this.clock() - 1_800_000).toISOString()}::timestamptz
-            AND NOT EXISTS(SELECT 1 FROM ${daily} WHERE ${daily.snapshotDate}=${window.date}::date)
+          WHERE ${feed.feedKey} IN (${FEED_KEY},${FEED_KEY_RHC}) AND ${feed.publishedAt}>${new Date(this.clock() - 1_800_000).toISOString()}::timestamptz
+            AND NOT EXISTS(SELECT 1 FROM ${daily} d JOIN ${pool} p ON p.pool_address=d.pool_address
+              WHERE d.snapshot_date=${window.date}::date AND p.feed_key=${feed.feedKey})
           ON CONFLICT DO NOTHING`);
       }
       await tx.update(daily).set({ status: sql`CASE WHEN ${daily.failureReason} LIKE 'degraded:%' THEN 'degraded'
@@ -297,7 +332,7 @@ export class PostgresRwaStore implements RwaStore {
     });
   }
 
-  private async saveApr(lease: Lease, data: AprWrite) {
+  private async saveApr(lease: Lease, data: AprWrite): Promise<StoreResultMap["saveApr"]> {
     if (lease.job !== "rwa-apr-refresh" || (data.payload && data.payload.poolId !== data.poolId)) throw new RwaStoreError("INVALID_APR");
     const status = data.payload ? data.payload.sample.degraded ? "degraded" : "ok" : "error";
     return this.guarded(lease, async (tx) => {
@@ -321,7 +356,9 @@ export class PostgresRwaStore implements RwaStore {
       const window = dailyWindow(this.clock());
       const winner = data.payload && !data.payload.sample.degraded ? pickHighestAprPreset(data.payload.presets) : null;
       const eligible = window.eligible && winner?.estimate.status === "ok" && freshProfile &&
-        data.profile!.windowEndUtc === volumeWindowEnd(this.clock()) && this.clock() - Date.parse(data.profile!.observedAt) <= 1_800_000 &&
+        data.profile!.windowEndUtc === volumeWindowEnd(this.clock()) &&
+        // RHC reuses a same-UTC-day price history (its OHLCV calls are spaced across runs); Raydium's is ≤30 min old.
+        (isRhc || this.clock() - Date.parse(data.profile!.observedAt) <= 1_800_000) &&
         !!data.chainObservedAt && Date.parse(data.chainObservedAt) >= window.start;
       const pending = and(eq(daily.poolAddress, data.poolId), eq(daily.snapshotDate, window.date), eq(daily.status, "pending"));
       if (eligible && data.payload && winner?.estimate.status === "ok") {

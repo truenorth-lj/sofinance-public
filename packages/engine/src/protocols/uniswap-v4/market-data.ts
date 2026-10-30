@@ -81,6 +81,34 @@ export function parseGeckoTerminalPool(payload: unknown, spec: Univ4AllowlistedP
   return { source: "geckoterminal", volume24hUsd, tvlUsd, txns24h: buys !== null && sells !== null ? buys + sells : null, reserves: null };
 }
 
+/** One GeckoTerminal call for up to 30 pools (`/pools/multi/{a,b,…}`). */
+export const geckoTerminalPoolsMultiUrl = (poolIds: readonly Hex[]) =>
+  `https://api.geckoterminal.com/api/v2/networks/${GECKOTERMINAL_NETWORK}/pools/multi/${poolIds.map(id => id.toLowerCase()).join(",")}`;
+/** One DexScreener call for up to 30 pairs. */
+export const dexScreenerPairsUrl = (poolIds: readonly Hex[]) =>
+  `https://api.dexscreener.com/latest/dex/pairs/${DEXSCREENER_CHAIN_ID}/${poolIds.map(id => id.toLowerCase()).join(",")}`;
+
+/** GeckoTerminal `/pools/multi` payload → market data per allowlisted pool id (lowercase). Pools it lacks are absent. */
+export function parseGeckoTerminalPools(payload: unknown, specs: readonly Univ4AllowlistedPool[]): Map<string, Univ4MarketData> {
+  const out = new Map<string, Univ4MarketData>();
+  const items = isObj(payload) && Array.isArray(payload.data) ? payload.data : [];
+  for (const spec of specs) for (const item of items) {
+    const parsed = parseGeckoTerminalPool({ data: item }, spec);
+    if (parsed) { out.set(spec.poolId.toLowerCase(), parsed); break; }
+  }
+  return out;
+}
+
+/** DexScreener multi-pair payload → market data per allowlisted pool id (lowercase). */
+export function parseDexScreenerPairs(payload: unknown, specs: readonly Univ4AllowlistedPool[]): Map<string, Univ4MarketData> {
+  const out = new Map<string, Univ4MarketData>();
+  for (const spec of specs) {
+    const parsed = parseDexScreenerPair(payload, spec);
+    if (parsed) out.set(spec.poolId.toLowerCase(), parsed);
+  }
+  return out;
+}
+
 export type FetchUniv4MarketOptions = {
   fetcher?: typeof fetch;
   timeoutMs?: number;

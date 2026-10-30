@@ -12,7 +12,7 @@ function deferred<T>() {
 function options(mint = "1".repeat(32)): CachedPositionHistoryOptions {
   return { context: { positionMint: mint, positionAccount: "2".repeat(32), poolId: "3".repeat(32),
     mintA: "4".repeat(32), mintB: "5".repeat(32), vaultA: "6".repeat(32), vaultB: "7".repeat(32) },
-    store: { request: vi.fn(async () => null) }, connection: {
+    store: { request: vi.fn(async () => { throw new Error("Cache fixture must not call the store"); }) }, connection: {
       getSignaturesForAddress: vi.fn(async () => []), getParsedTransaction: vi.fn(async () => null),
     }, maxSignatures: 100 };
 }
@@ -72,7 +72,7 @@ describe("position history short cache", () => {
     await cache.get({ ...input, parserVersion: 2 }, load);
     await cache.get({ ...input, maxSignatures: 101 }, load);
     await cache.get({ ...input, stateFingerprint: "changed" }, load);
-    await cache.get({ ...input, store: { request: vi.fn(async () => null) } }, load);
+    await cache.get({ ...input, store: { request: vi.fn(async () => { throw new Error("Cache fixture must not call the store"); }) } }, load);
     await cache.get({ ...input, maxDetailRequests: 10 }, load);
     await cache.get({ ...input, maxDetailRequests: 0 }, load);
     await cache.get({ ...input, maxDetailRequests: 1 }, load);

@@ -24,7 +24,27 @@ export type RhcUniv4PoolsResult = {
   source: string;
   aprLabel: { zh: "估計"; en: "Estimated" };
   aprNote: string;
+  /** Present when served from the cron's saved snapshot (production): `stale` past the 26h rule. */
+  snapshot?: { stale: boolean };
 };
+
+const LIVE_SOURCE = "Robinhood Chain RPC: StateView / StablePairHook (allowlist: 11 StablePairHook RH↔Ondo pairs); 24h volume and TVL: DexScreener (GeckoTerminal fallback)";
+const SNAPSHOT_SOURCE = "Daily snapshot (cron): Robinhood Chain RPC StateView / StablePairHook checks; 24h volume and TVL: GeckoTerminal /pools/multi (DexScreener fallback)";
+
+/** Response body for a list of pool summaries (live read or saved snapshot). */
+export function rhcPoolsResult(pools: Univ4PoolSummary[], fetchedAt: string, snapshot?: { stale: boolean; snapshot: true }): RhcUniv4PoolsResult {
+  return {
+    protocol: "uniswap-v4-rhc",
+    chainId: 4663,
+    readOnly: true,
+    pools,
+    fetchedAt,
+    source: snapshot ? SNAPSHOT_SOURCE : LIVE_SOURCE,
+    aprLabel: ESTIMATED_APR_LABEL,
+    aprNote: "Estimated (估計) pool fee APR = hook's current fee rate × 24h volume / TVL × 365 (USD, from public indexers). The StablePairHook fee is dynamic; an estimate, not a guarantee.",
+    ...(snapshot ? { snapshot: { stale: snapshot.stale } } : {}),
+  };
+}
 
 const STATE_TTL_MS = 60_000;
 const FAILURE_TTL_MS = 15_000;
@@ -70,16 +90,7 @@ export async function discoverRhcUniv4Pools(options: {
       marketData: marketDataFor(options.fetcher),
       ...(options.pools ? { pools: options.pools } : {}),
     });
-    return {
-      protocol: "uniswap-v4-rhc",
-      chainId: 4663,
-      readOnly: true,
-      pools,
-      fetchedAt: new Date().toISOString(),
-      source: "Robinhood Chain RPC: StateView / StablePairHook (allowlist: 11 StablePairHook RH↔Ondo pairs); 24h volume and TVL: DexScreener (GeckoTerminal fallback)",
-      aprLabel: ESTIMATED_APR_LABEL,
-      aprNote: "Estimated (估計) pool fee APR = hook's current fee rate × 24h volume / TVL × 365 (USD, from public indexers). The StablePairHook fee is dynamic; an estimate, not a guarantee.",
-    };
+    return rhcPoolsResult(pools, new Date().toISOString());
   };
   return options.bypassCache ? load() : cache.get("pools", load);
 }

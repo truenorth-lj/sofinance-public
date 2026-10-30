@@ -1,3 +1,4 @@
+import type { StoreRequest, StoreOperation, StoreResultMap, RwaStore } from "../rwa-store-types";
 import { describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 import { ICON_HOSTS, trustedIcon } from "@sofinance/engine/token-metadata";
@@ -114,7 +115,18 @@ describe("missing rwa_token_icon table or column (migration 0002 not applied on 
       if (href.includes("geckoterminal")) return new Response(JSON.stringify({ data: { attributes: { image_url: "https://coin-images.coingecko.com/coins/images/9/large/spcx.png" } } }));
       return new Response("[]");
     }) as unknown as typeof fetch;
-    const store = { request: vi.fn(async (input: { op: string; data?: unknown }): Promise<unknown> => { calls.push(input); return { saved: 1 }; }) };
+    const behavior: { saveError?: Error } = {};
+    function request<K extends StoreOperation>(input: StoreRequest<K>): Promise<StoreResultMap[K]>;
+    async function request(input: StoreRequest): Promise<boolean | { saved: number }> {
+      calls.push(input);
+      if (input.op === "renew") return true;
+      if (input.op === "saveTokenIcons") {
+        if (behavior.saveError) throw behavior.saveError;
+        return { saved: 1 };
+      }
+      throw new Error(`Unexpected icon-refresh operation: ${input.op}`);
+    }
+    const store: RwaStore = { request };
     await refreshTokenIcons(store, lease, [{ mintA: SPCXX, mintB: OTHER }], fetcher, new AbortController().signal);
     expect(calls.map((c) => c.op)).toEqual(["renew", "saveTokenIcons"]);
     const saved = calls[1]!.data as { address: string; image: string; source: string }[];
@@ -122,7 +134,7 @@ describe("missing rwa_token_icon table or column (migration 0002 not applied on 
     expect(saved.find((row) => row.address === OTHER)).toBeUndefined();
     expect(saved.find((row) => row.address === SPCXX)?.source).toBe("manual");
     expect(saved.filter((row) => row.source === "geckoterminal").map((row) => row.address).length).toBeGreaterThanOrEqual(2);
-    store.request.mockImplementation(async (input) => { if (input.op === "saveTokenIcons") throw new RwaStoreError("TOKEN_ICONS_UNAVAILABLE"); return null; });
+    behavior.saveError = new RwaStoreError("TOKEN_ICONS_UNAVAILABLE");
     await expect(refreshTokenIcons(store, lease, [], fetcher, new AbortController().signal)).rejects.toMatchObject({ code: "TOKEN_ICONS_UNAVAILABLE" });
   });
 });

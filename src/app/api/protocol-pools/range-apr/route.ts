@@ -2,7 +2,10 @@ import { apiError } from "@/lib/api-response";
 import { fetchMeteoraRangeApr, isAllowlistedMeteoraPool } from "@/lib/meteora-range-apr";
 import { fetchOrcaRangeApr, isAllowlistedOrcaPool } from "@/lib/orca-range-apr";
 import { isMeteoraDlmmDiscoveryEnabled, isOrcaDiscoveryEnabled, isRhcApr7dEnabled } from "@/lib/protocol-flags";
-import { fetchRhcRangeApr, isAllowlistedRhcPool } from "@/lib/rhc-range-apr";
+import { isAllowlistedRhcPool } from "@/lib/rhc-range-apr";
+import { getRhcAprSnapshot } from "@/lib/rhc-snapshot";
+import { snapshotError } from "@/lib/rwa-store";
+import { getRwaConfig } from "@/lib/config/rwa-env";
 
 /**
  * Read-only Orca Whirlpool pool state, range APR presets and liquidity distribution
@@ -35,9 +38,11 @@ export async function GET(request: Request) {
   if (protocol === "uniswap-v4-rhc") {
     if (!isRhcApr7dEnabled() || !isAllowlistedRhcPool(poolId)) return NOT_FOUND();
     try {
-      const payload = await fetchRhcRangeApr(poolId);
+      // Same saved snapshot as `/api/pool-range-apr?poolId=0x…` (live only without a store, i.e. local dev).
+      const payload = await getRhcAprSnapshot(poolId);
       return Response.json(payload, { headers: payload.sample.degraded ? DEGRADED_CDN_HEADERS : CDN_HEADERS });
     } catch (error) {
+      if (getRwaConfig().enabled) return snapshotError(error);
       return apiError(error, "RHC range APR unavailable", 503);
     }
   }

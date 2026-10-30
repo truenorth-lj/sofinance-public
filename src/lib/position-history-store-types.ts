@@ -50,8 +50,22 @@ export const positionStoreRequestSchema = z.discriminatedUnion("op", [
     transactions: z.array(transactionSchema).max(500) }),
   z.object({ op: z.literal("release"), lease: positionLeaseSchema }),
 ]);
-export type PositionStoreRequest = z.infer<typeof positionStoreRequestSchema>;
-export interface PositionHistoryStore { request(input: PositionStoreRequest): Promise<unknown> }
+type ParsedPositionStoreRequest = z.infer<typeof positionStoreRequestSchema>;
+export type PositionStoreOperation = ParsedPositionStoreRequest["op"];
+export type PositionStoreRequest<K extends PositionStoreOperation = PositionStoreOperation> = {
+  [P in K]: Extract<ParsedPositionStoreRequest, { op: P }>;
+}[K];
+export type PositionStoreResultMap = {
+  claim: PositionHistorySnapshot;
+  commit: PositionHistorySnapshot;
+  release: boolean;
+};
+export type PositionStoreHandlers = {
+  [K in PositionStoreOperation]: (input: PositionStoreRequest<K>) => Promise<PositionStoreResultMap[K]>;
+};
+export interface PositionHistoryStore {
+  request<K extends PositionStoreOperation>(input: PositionStoreRequest<K>): Promise<PositionStoreResultMap[K]>;
+}
 export class PositionHistoryStoreError extends Error {
   constructor(public readonly code: string) { super(code); }
 }

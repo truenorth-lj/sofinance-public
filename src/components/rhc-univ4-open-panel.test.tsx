@@ -121,7 +121,7 @@ describe("StepList", () => {
     expect([...container.querySelectorAll("li[data-step]")].map(li => li.getAttribute("data-step"))).toEqual(["approve", "sign", "execute"]);
     expect(text()).toContain("Step 1/3");
     expect([...container.querySelectorAll("button")].every(b => b.disabled)).toBe(true);
-    expect(container.querySelector("[data-testid=signing-disabled]")!.textContent).toMatch(/off until real signing is approved \(PR6\)/);
+    expect(container.querySelector("[data-testid=signing-disabled]")!.textContent).toMatch(/Wallet signing is currently disabled here/);
   });
   it("is 1/2 without the approve step", () => {
     render(createElement(StepList, { needsApproval: false, current: "sign", signingEnabled: false }));
