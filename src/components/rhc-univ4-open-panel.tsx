@@ -3,23 +3,26 @@
 import type { Univ4PoolApr } from "@sofinance/engine/protocols/uniswap-v4/market-data";
 import { exactAprTitle, formatAprPct } from "@/lib/apr-labels/format-apr";
 import type { OpenFlowResult, PermitJson } from "@sofinance/engine/protocols/uniswap-v4/open-flow";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { formatUnits, parseUnits } from "viem";
 import {
   connectEvmWallet, discoverEvmWallets, type Eip1193Provider, ensureRobinhoodChain, guardedWalletRequest, SIGNING_DISABLED_MESSAGE, WalletRequestError,
 } from "@/lib/rhc-wallet/eip1193";
 import {
-  checkExecuteTx, checkTx, explorerTxUrl, isPermitExpired, mintedPositionId, requireRobinhoodChain, SIGNATURE_EXPIRED_MESSAGE, waitForReceipt, walletTxParams,
+  checkExecuteTx, checkTx, explorerTxUrl, isPermitExpired, requireRobinhoodChain, SIGNATURE_EXPIRED_MESSAGE, walletTxParams,
 } from "@/lib/rhc-wallet/open-execute";
 import { readWalletBalances, trackPositionId, type WalletBalances } from "@/lib/rhc-wallet/exit-execute";
 import { RhcUniv4PositionsPanel } from "./rhc-univ4-positions-panel";
 import { openSteps, RETRY_CONFIRM_TEXT, stepProgressLabel, type OpenStepId } from "@/lib/rhc-wallet/open-steps";
+import { assertRhcOpenAttempt, clearRhcOpenAttempt, isRhcTxHash, parseRhcOpenAttempt, readRhcOpenAttempt,
+  reconcileRhcOpenAttempt, rhcOpenAttemptKey, rhcOpenStorage, RHC_HISTORY_ERROR, RHC_UNKNOWN_SEND,
+  subscribeRhcOpenAttempt, writeRhcOpenAttempt, type RhcOpenAttempt } from "@/lib/rhc-wallet/open-attempt";
 import type { RhcPoolView } from "@/lib/rhc-wallet/pool-view";
 
 /**
  * Robinhood Chain (4663) Uniswap v4 open-position flow (design §6 PR5), behind `RHC_UNIV4_TRADING_ENABLED`.
  * Connect + chain switch are live; approve / sign / execute are wired through `guardedWalletRequest` and stay
- * disabled while `RHC_UNIV4_WALLET_SIGNING_ENABLED` is off (production). Flow: prepare → (approve) → Permit2 signature
+ * disabled wherever `RHC_UNIV4_WALLET_SIGNING_ENABLED` is off. Flow: prepare → (approve) → Permit2 signature
  * → server `finalize` (re-quote + simulate) → client guards (4663, pinned UR, sender, value 0) → `execute` → receipt.
  */
 
@@ -164,25 +167,68 @@ export function RhcUniv4OpenPanel({ pool, signingEnabled, receiptPoll, initialWa
   const [balances, setBalances] = useState<WalletBalances | null>(null);
   const [positionsKey, setPositionsKey] = useState(0);
 
-  const reset = () => { setResult(null); setPrepared(null); setStep(null); setSigned(null); setExec(null); setSent(null); };
+  const mounted = useRef(false), revision = useRef(0), running = useRef<object | null>(null);
+  const [walletChanged, setWalletChanged] = useState(false);
+  // Only a command published by the current committed render may start work.
+  const command = useMemo(() => ({ wallet, pool, signingEnabled, busy, walletChanged,
+    side, amount, halfWidth, result, prepared, step, signed, exec }), [wallet, pool, signingEnabled, busy, walletChanged,
+    side, amount, halfWidth, result, prepared, step, signed, exec]);
+  const committedCommand = useRef<object | null>(null);
+  useLayoutEffect(() => {
+    committedCommand.current = command;
+    return () => { committedCommand.current = null; };
+  }, [command]);
+  useLayoutEffect(() => {
+    mounted.current = true;
+    revision.current += 1;
+    return () => { mounted.current = false; revision.current += 1; };
+  }, [wallet, pool?.poolId, pool?.status, signingEnabled, initialWallet]);
+  useLayoutEffect(() => {
+    if (!wallet) return;
+    const invalidate = () => { committedCommand.current = null; revision.current += 1; setWalletChanged(true); };
+    for (const event of ["accountsChanged", "chainChanged", "disconnect"]) wallet.provider.on?.(event, invalidate);
+    return () => { for (const event of ["accountsChanged", "chainChanged", "disconnect"]) wallet.provider.removeListener?.(event, invalidate); };
+  }, [wallet]);
+  const getSnapshot = useCallback(() => {
+    if (!wallet) return null;
+    try { return rhcOpenStorage().getItem(rhcOpenAttemptKey(wallet.address)); } catch { return "unreadable"; }
+  }, [wallet]);
+  const rawAttempt = useSyncExternalStore(subscribeRhcOpenAttempt, getSnapshot, () => null);
+  const history = useMemo(() => {
+    try { return { attempt: wallet ? parseRhcOpenAttempt(rawAttempt, wallet.address) : null, invalid: false }; }
+    catch { return { attempt: null, invalid: true }; }
+  }, [rawAttempt, wallet]);
+  const hasPending = history.invalid || Boolean(history.attempt);
+  useLayoutEffect(() => {
+    // A committed external wallet/pool change revokes the old preview as well as in-flight commands.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Reset form-owned transaction state at this identity boundary.
+    setResult(null); setPrepared(null); setStep(null); setSigned(null); setExec(null); setSent(null);
+    if (initialWallet) { setWallet(initialWallet); setWalletChanged(false); }
+  }, [initialWallet, pool?.poolId]);
+  const assertAvailable = () => {
+    if (!wallet || !mounted.current || walletChanged || pool?.status !== "listed") throw new Error("Wallet or pool changed. Reconnect and preview again.");
+    if (readRhcOpenAttempt(wallet.address)) throw new Error(RHC_UNKNOWN_SEND);
+  };
+  const reset = () => { committedCommand.current = null; revision.current += 1; setResult(null); setPrepared(null); setStep(null); setSigned(null); setExec(null); setSent(null); };
 
   // Auto-connect once when opened from the pool list; a wallet passed in from the page is reused instead.
   // (Deferred a tick and cancelled on cleanup, so React StrictMode's double mount asks the wallet only once.)
   useEffect(() => {
     if (!pool) return;
+    let active = true;
     const tokens = [pool.token0.address, pool.token1.address];
     const loadBalances = (w: Pick<Wallet, "provider" | "address">) =>
-      readWalletBalances(w.provider, w.address, tokens).then(setBalances, () => setBalances(null));
+      readWalletBalances(w.provider, w.address, tokens).then(value => { if (active) setBalances(value); }, () => { if (active) setBalances(null); });
     const timer = window.setTimeout(() => {
       if (initialWallet) { void loadBalances(initialWallet); return; }
       if (!autoConnect) return;
       setError(null); setBusy(true);
       connectRhcWallet()
-        .then((connected) => { setWallet(connected); onWalletChange?.(connected); void loadBalances(connected); })
-        .catch((e: unknown) => setError(e instanceof Error ? e.message : "Wallet connection failed"))
-        .finally(() => setBusy(false));
+        .then((connected) => { if (!active) return; setWallet(connected); onWalletChange?.(connected); void loadBalances(connected); })
+        .catch((e: unknown) => { if (active) setError(e instanceof Error ? e.message : "Wallet connection failed"); })
+        .finally(() => { if (active) setBusy(false); });
     }, 0);
-    return () => window.clearTimeout(timer);
+    return () => { active = false; window.clearTimeout(timer); };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- run once per mount
   }, []);
 
@@ -192,108 +238,182 @@ export function RhcUniv4OpenPanel({ pool, signingEnabled, receiptPoll, initialWa
   /** Read-only wallet balances (ETH for gas + both pool tokens); refreshed after every confirmed transaction. */
   const refreshBalances = async (w: Pick<Wallet, "provider" | "address"> | null = wallet) => {
     if (!w) return;
-    try { setBalances(await readWalletBalances(w.provider, w.address, [pool.token0.address, pool.token1.address])); } catch { setBalances(null); }
+    const epoch = revision.current;
+    try {
+      const value = await readWalletBalances(w.provider, w.address, [pool.token0.address, pool.token1.address]);
+      if (mounted.current && revision.current === epoch) setBalances(value);
+    } catch { if (mounted.current && revision.current === epoch) setBalances(null); }
   };
 
   const connect = async () => {
+    if (running.current || committedCommand.current !== command) return;
+    committedCommand.current = null;
+    const owner = {}; running.current = owner;
+    const epoch = revision.current;
     setError(null); setBusy(true);
     try {
       const connected = await connectRhcWallet();
-      setWallet(connected);
+      if (!mounted.current || revision.current !== epoch) return;
+      reset(); setWalletChanged(false); setWallet(connected);
       onWalletChange?.(connected);
       void refreshBalances(connected);
-    } catch (e) { setError(e instanceof Error ? e.message : "Wallet connection failed"); } finally { setBusy(false); }
+    } catch (e) { if (mounted.current) setError(e instanceof Error ? e.message : "Wallet connection failed"); } finally { if (running.current === owner) { running.current = null; if (mounted.current) setBusy(false); } }
   };
 
   const preview = async () => {
-    if (!wallet || pool.tick === null) return;
+    if (!wallet || pool.tick === null || running.current || committedCommand.current !== command) return;
+    const owner = {}; running.current = owner;
     setError(null); setBusy(true); reset();
+    const epoch = revision.current;
+    const current = () => mounted.current && revision.current === epoch;
     try {
+      assertAvailable();
       let wei: bigint;
       try { wei = parseUnits(amount.trim(), token.decimals); } catch { throw new Error("Enter a valid amount"); }
       if (wei <= 0n) throw new Error("Enter a valid amount");
       const request: PrepareRequest = { poolId: pool.poolId, user: wallet.address, depositToken: token.address, amount: wei.toString(),
         tickLower: pool.tick - halfWidth, tickUpper: pool.tick + halfWidth };
       const response = await fetch("/api/rhc-univ4-open", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "prepare", ...request }) });
+      body: JSON.stringify({ action: "prepare", ...request }), signal: AbortSignal.timeout(30_000) });
       const body = await response.json().catch(() => null) as OpenFlowResult | { error?: string } | null;
+      if (!current()) return;
+      assertAvailable();
       if (body && "state" in body) {
         setResult(body); setPrepared({ request });
         if (body.state === "needs_signature") setStep(body.approvalTx ? "approve" : "sign");
       }
       else throw new Error(body && "error" in body && body.error ? body.error : "Preview failed");
-    } catch (e) { setError(e instanceof Error ? e.message : "Preview failed"); } finally { setBusy(false); }
+    } catch (e) { if (current()) setError(e instanceof Error ? e.message : "Preview failed"); } finally { if (running.current === owner) { running.current = null; if (mounted.current) setBusy(false); } }
   };
 
   const fail = (e: unknown, fallback: string) => setError(e instanceof Error ? e.message : fallback);
 
   /** Server re-quote + simulation with the user's Permit2 signature; returns the unsigned `execute`. */
-  const finalize = async (signedNow: Signed, attempt: number): Promise<boolean> => {
+  const finalize = async (signedNow: Signed, attempt: number, current: () => boolean): Promise<boolean> => {
     if (!wallet || !prepared) return false;
     if (isPermitExpired(signedNow.permit.sigDeadline)) throw new Error(SIGNATURE_EXPIRED_MESSAGE);
     const response = await fetch("/api/rhc-univ4-open", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "finalize", ...prepared.request, attempt, signature: signedNow.signature, permit: signedNow.permit }) });
+      body: JSON.stringify({ action: "finalize", ...prepared.request, attempt, signature: signedNow.signature, permit: signedNow.permit }), signal: AbortSignal.timeout(30_000) });
     const body = await response.json().catch(() => null) as OpenFlowResult | { error?: string } | null;
     if (!body || !("state" in body)) throw new Error(body && "error" in body && body.error ? body.error : "Finalize failed");
     if (body.state === "failed") throw new Error(/expired/i.test(body.message) ? SIGNATURE_EXPIRED_MESSAGE : body.message);
     if (body.state === "needs_signature") throw new Error("Unexpected finalize response");
+    if (!current()) throw new Error("Wallet or form changed; preview again.");
+    assertAvailable();
     setExec(body); setStep("execute");
     return true;
   };
 
-  const send = async (kind: Sent["kind"], tx: Parameters<typeof walletTxParams>[0]) => {
+  const observe = async (attempt: RhcOpenAttempt, current: () => boolean) => {
+    if (!wallet || !attempt.hash) throw new Error(RHC_UNKNOWN_SEND);
+    setSent({ kind: attempt.kind, hash: attempt.hash, status: "pending" });
+    const outcome = await reconcileRhcOpenAttempt(attempt, wallet.provider, current, receiptPoll);
+    if (!current()) return null;
+    if (outcome.positionId && !trackPositionId(attempt.wallet, outcome.positionId).includes(outcome.positionId)) throw new Error(RHC_HISTORY_ERROR);
+    if (outcome.status !== "timeout") clearRhcOpenAttempt(attempt);
+    setSent({ kind: attempt.kind, hash: attempt.hash, ...outcome });
+    if (outcome.positionId) { setPositionsKey(k => k + 1); onOpened?.(outcome.positionId); }
+    if (outcome.status !== "timeout") void refreshBalances();
+    return outcome.status;
+  };
+
+  const send = async (kind: Sent["kind"], tx: Parameters<typeof walletTxParams>[0], current: () => boolean) => {
     if (!wallet) return null;
     await requireRobinhoodChain(wallet.provider);
-    const hash = await guardedWalletRequest(wallet.provider, "eth_sendTransaction", [walletTxParams(tx)]);
-    if (typeof hash !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(hash)) throw new Error("Your wallet did not return a transaction hash. Check the wallet's activity before trying again.");
-    setSent({ kind, hash, status: "pending" });
-    const receipt = await waitForReceipt(wallet.provider, hash, receiptPoll);
-    const status: Sent["status"] = !receipt ? "timeout" : receipt.status === "0x1" ? "success" : "reverted";
-    const positionId = kind === "execute" && receipt ? mintedPositionId(receipt, wallet.address) : null;
-    setSent({ kind, hash, status, positionId });
-    if (positionId) { trackPositionId(wallet.address, positionId); setPositionsKey(k => k + 1); onOpened?.(positionId); }
-    if (status !== "timeout") void refreshBalances();
-    return status;
+    if (!current()) throw new Error("Wallet or form changed; transaction not sent.");
+    const accounts = await wallet.provider.request({ method: "eth_accounts" });
+    if (!current() || !Array.isArray(accounts) || typeof accounts[0] !== "string" || accounts[0].toLowerCase() !== wallet.address.toLowerCase()) {
+      throw new Error("Wallet account changed; reconnect and preview again. Transaction not sent.");
+    }
+    assertAvailable();
+    if (kind === "execute" && (!signed || isPermitExpired(signed.permit.sigDeadline))) throw new Error(SIGNATURE_EXPIRED_MESSAGE);
+    const attempt: RhcOpenAttempt = { version: 1, id: crypto.randomUUID(), wallet: wallet.address, poolId: pool.poolId,
+      kind, hash: null, createdAt: Date.now() };
+    writeRhcOpenAttempt(attempt, null);
+    if (!current()) { clearRhcOpenAttempt(attempt); throw new Error("Wallet or form changed; transaction not sent."); }
+    assertRhcOpenAttempt(attempt);
+    let hash: unknown;
+    try { hash = await guardedWalletRequest(wallet.provider, "eth_sendTransaction", [walletTxParams(tx)]); }
+    catch (e) {
+      if (e instanceof WalletRequestError && (e.code === "rejected" || e.code === "signing-disabled")) clearRhcOpenAttempt(attempt);
+      throw e;
+    }
+    if (!isRhcTxHash(hash)) throw new Error(RHC_UNKNOWN_SEND);
+    // Keep the returned hash even if the panel closed or the wallet changed during its prompt.
+    const sentAttempt = { ...attempt, hash };
+    if (current()) setSent({ kind, hash, status: "pending" });
+    writeRhcOpenAttempt(sentAttempt, attempt);
+    if (!current()) return null;
+    return observe(sentAttempt, current);
+  };
+
+  const recheck = async () => {
+    if (!wallet || running.current || !history.attempt?.hash || committedCommand.current !== command) return;
+    committedCommand.current = null;
+    const owner = {}; running.current = owner;
+    const epoch = revision.current;
+    const current = () => mounted.current && revision.current === epoch;
+    setBusy(true); setError(null);
+    // Recovery settles history only; it cannot reactivate an old execute or Permit2 signature.
+    setStep(null); setExec(null); setSigned(null); setPrepared(null); setResult(null);
+    try { await observe(history.attempt, current); }
+    catch (e) { if (current()) fail(e, "Unable to check the original transaction"); }
+    finally { if (running.current === owner) { running.current = null; if (mounted.current) setBusy(false); } }
   };
 
   const runStep = async (id: OpenStepId) => {
-    if (!wallet || !result || result.state !== "needs_signature" || !prepared || busy) return;
+    if (!wallet || !result || result.state !== "needs_signature" || !prepared || busy || running.current || id !== step || !signingEnabled || committedCommand.current !== command) return;
+    committedCommand.current = null;
+    const owner = {}; running.current = owner;
+    const epoch = revision.current;
+    const current = () => mounted.current && revision.current === epoch && running.current === owner;
     setError(null); setBusy(true);
     try {
+      assertAvailable();
+      if (prepared.request.poolId !== pool.poolId || prepared.request.user.toLowerCase() !== wallet.address.toLowerCase()) throw new Error("Preview belongs to a different wallet or pool. Preview again.");
       if (id === "approve" && result.approvalTx) {
         checkTx(result.approvalTx, wallet.address, prepared.request.depositToken, "Approval");
-        const status = await send("approve", result.approvalTx);
+        const status = await send("approve", result.approvalTx, current);
+        if (!current()) return;
         if (status === "success") setStep("sign");
         else if (status === "reverted") { setStep(null); throw new Error("Approval reverted on chain. Preview again."); }
         else if (status === "timeout") { setStep(null); throw new Error("Approval not confirmed yet. Check the explorer, then preview again."); }
       }
       if (id === "sign") {
         if (isPermitExpired(result.permit.sigDeadline)) throw new Error(SIGNATURE_EXPIRED_MESSAGE);
+        await requireRobinhoodChain(wallet.provider);
+        const accounts = await wallet.provider.request({ method: "eth_accounts" });
+        if (!current() || !Array.isArray(accounts) || typeof accounts[0] !== "string" || accounts[0].toLowerCase() !== wallet.address.toLowerCase()) throw new Error("Wallet or form changed; preview again.");
+        assertAvailable();
+        if (isPermitExpired(result.permit.sigDeadline)) throw new Error(SIGNATURE_EXPIRED_MESSAGE);
         const signature = await guardedWalletRequest(wallet.provider, "eth_signTypedData_v4", [wallet.address, JSON.stringify(result.typedData)]);
         if (typeof signature !== "string" || !/^0x[0-9a-fA-F]{130}$/.test(signature)) throw new Error("Wallet returned an invalid signature");
         const signedNow: Signed = { signature: signature as `0x${string}`, permit: result.permit };
+        if (!current()) return;
+        assertAvailable();
         setSigned(signedNow);
-        await finalize(signedNow, 0);
+        await finalize(signedNow, 0, current);
       }
       if (id === "execute") {
         if (!exec || !signed) return;
         if (isPermitExpired(signed.permit.sigDeadline)) throw new Error(SIGNATURE_EXPIRED_MESSAGE);
         checkExecuteTx(exec.tx, wallet.address);
-        const status = await send("execute", exec.tx);
+        const status = await send("execute", exec.tx, current);
+        if (!current()) return;
         if (status === "success" || status === "timeout") setStep(null);
         if (status === "timeout") throw new Error("Not confirmed after 2 minutes. Check the explorer before trying again; do not resend.");
         if (status === "reverted") {
           // Design §3.10: one automatic re-quote reusing the same Permit2 signature; the user confirms once more.
           // The server enforces the retry budget and returns the "price moving too fast" failure after that.
           setError("The transaction reverted on chain. Re-quoting…");
-          if (await finalize(signed, exec.attempt + 1)) setError(null);
+          if (await finalize(signed, exec.attempt + 1, current)) setError(null);
         }
       }
-    } catch (e) { fail(e, "Wallet request failed"); } finally { setBusy(false); }
+    } catch (e) { if (current()) fail(e, "Wallet request failed"); } finally { if (running.current === owner) { running.current = null; if (mounted.current) setBusy(false); } }
   };
 
   const needsApproval = result?.state === "needs_signature" && result.approvalTx !== null;
-  const current: OpenStepId | null = busy ? null : step;
+  const current: OpenStepId | null = busy || hasPending || walletChanged ? null : step;
 
   return <section className="mt-6 rounded-2xl border border-white/12 bg-white/[0.03] p-4 sm:p-5" aria-label="Open a Robinhood Chain position">
     <div className="flex flex-wrap items-center justify-between gap-3">
@@ -301,7 +421,7 @@ export function RhcUniv4OpenPanel({ pool, signingEnabled, receiptPoll, initialWa
         <p className="text-base font-semibold text-cream">{pool.token0.symbol} / {pool.token1.symbol} · Uniswap v4 · Robinhood Chain</p>
         <EstimatedAprBadge apr={pool.estimatedApr} />
       </div>
-      {wallet
+      {wallet && !walletChanged
         ? <div className="text-right">
             <p className="text-xs text-smoke" data-testid="wallet-address">{wallet.name}: {wallet.address.slice(0, 6)}…{wallet.address.slice(-4)} · Robinhood Chain</p>
             {balances ? <p className="text-xs text-smoke" data-testid="wallet-balances">
@@ -326,12 +446,19 @@ export function RhcUniv4OpenPanel({ pool, signingEnabled, receiptPoll, initialWa
         </select>
       </label>
     </div>
-    <button type="button" onClick={preview} disabled={!wallet || busy || pool.status !== "listed" || pool.tick === null}
+    <button type="button" onClick={preview} disabled={!wallet || busy || hasPending || walletChanged || pool.status !== "listed" || pool.tick === null}
       className="mt-4 rounded-xl border border-white/25 px-4 py-2 text-sm font-semibold text-cream disabled:opacity-40">Preview open (simulated)</button>
+    {hasPending ? <div className="mt-3 rounded-xl border border-amber-300/40 p-3 text-sm" role="status">
+      <p>{history.invalid ? RHC_HISTORY_ERROR : history.attempt?.hash ? "Check the original Robinhood Chain transaction before opening again." : RHC_UNKNOWN_SEND}</p>
+      {history.attempt?.hash ? <>
+        <TxStatus sent={{ kind: history.attempt.kind, hash: history.attempt.hash, status: "pending" }} />
+        <button type="button" disabled={busy} onClick={() => void recheck()} className="mt-2 underline disabled:opacity-40">Check original transaction</button>
+      </> : null}
+    </div> : null}
     {error ? <p role="alert" className="mt-3 text-sm text-red-200">{error}</p> : null}
     {result ? <OpenPreview result={exec ?? result} pool={pool} /> : null}
     {result && result.state !== "failed" ? <StepList needsApproval={needsApproval} current={current} signingEnabled={signingEnabled} onStep={runStep} /> : null}
-    {sent ? <TxStatus sent={sent} /> : null}
+    {sent && !history.attempt?.hash ? <TxStatus sent={sent} /> : null}
     {showPositions ? <RhcUniv4PositionsPanel wallet={wallet} signingEnabled={signingEnabled} refreshKey={positionsKey} onChanged={() => void refreshBalances()} receiptPoll={receiptPoll} /> : null}
   </section>;
 }

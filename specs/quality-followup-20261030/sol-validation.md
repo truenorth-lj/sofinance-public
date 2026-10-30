@@ -37,7 +37,15 @@ were unavailable; native ESLint and TypeScript checks were used.
 
 - FINANCIAL NOT_EXERCISED: no real signing, broadcasting or funds movement.
 - Database integration is skipped locally without its test database; hosted CI
-  supplies PostgreSQL. Hosted CI, merge and deployed identity are still pending.
+  supplies PostgreSQL. Hosted CI passed on `a274603` (check, database,
+  e2e-hermetic and container); merged through [PR 243](https://github.com/truenorth-lj/sofinance-public/pull/243)
+  as `69fdef1d29bf37e0cc5a15a0cb3ec3463a0b5b37`.
+- Deployment verified on 2026-10-30: that merge SHA's Vercel status is success
+  for `FQGMKRWLZ8kcEwmNtFRXjAhw6Gx9`; an HTTP GET of
+  `https://sofinancelab.xyz/app` returned the same `dpl_` identity in its HTML.
+  This proves deployed identity and HTTP availability, not a real wallet flow.
+  Vercel CLI inspect lacked access to the account; GitHub commit status and the
+  custom-domain HTML were used instead.
 - Storage readback detects changed snapshots; it does not provide atomic locking
   across simultaneous browser tabs. Cross-device storage is not shared.
 - Recovery never prepares, signs or resends. A successful explicit recheck saves
