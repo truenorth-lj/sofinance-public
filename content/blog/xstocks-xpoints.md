@@ -75,23 +75,23 @@ In the app, click **Connect wallet**. Tick **Terms of Service**, then **Continue
 
 ![Before you connect — tick Terms, Continue to wallet](/blog/xstocks-xpoints/steps/step05_app_before_you_connect_modal.png)
 
-## 4. Find SPCXx/SPCX on RWA pairs
+## 4. Find SPCXx/SPCX in the pool list
 
-Open **RWA pairs**. Scroll to **SPCXx/SPCX**. There are two cards — pick the **1 bps** one (deeper pool); there is also a **5 bps** card.
+Open **Pools** (the pool list on the app page; the old **RWA pairs** page now opens it). Search **SPCX** to find **SPCXx/SPCX**. If you turn off **Hide duplicate pools** you will see two cards — pick the **1 bps** one (deeper pool); there is also a **5 bps** card.
 
-![RWA pairs list](/blog/xstocks-xpoints/steps/step06_rwa_pairs_header_first_cards.png)
+![Pool list (screenshot taken on the earlier RWA pairs page)](/blog/xstocks-xpoints/steps/step06_rwa_pairs_header_first_cards.png)
 
 ![SPCXx/SPCX — pick the 1 bps card](/blog/xstocks-xpoints/steps/step07_rwa_pairs_spcx_1bps_card.png)
 
 ## 5. Optional: Plan this pool
 
-Click **Plan this pool** to see an estimate for your amount and days (based on historical data, not a guarantee). When ready, click **Create a position in this pool**.
+Open **Plan** in the top menu and pick **SPCXx/SPCX** to see an estimate for your amount and days (based on historical data, not a guarantee). When ready, click **Create a position in this pool**.
 
 ![Plan — amount and days](/blog/xstocks-xpoints/steps/step10_plan_amount_input_and_chart.png)
 
 ## 6. Create position
 
-Or click **Create position** on the pair card. Choose an input asset (**SOL**, **USDC**, or a pool token), an amount, and a range (**Best** is the suggested default — here **Micro ±0.02%**). Then continue.
+Or click **Open position** on the pool card. Choose an input asset (**SOL**, **USDC**, or a pool token), an amount, and a range (**Best** is the suggested default — here **Micro ±0.02%**). Then continue.
 
 ![Create position — SPCXx/SPCX, Best = Micro ±0.02%, ~36% est. fee APR (not guaranteed; one pool snapshot)](/blog/xstocks-xpoints/steps/step08_create_position_modal_spcx.png)
 

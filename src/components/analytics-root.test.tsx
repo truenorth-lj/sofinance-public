@@ -42,16 +42,17 @@ afterEach(async () => {
 });
 
 describe("AnalyticsRoot pageviews", () => {
-  it("captures a pageview on / and rwa_pairs_view with ref on /app/rwa-pairs", async () => {
+  it("captures a pageview on / and on /app with ref; rwa_pairs_view is retired with /app/rwa-pairs", async () => {
     await act(async () => { root.render(createElement(AnalyticsRoot)); });
     await act(async () => { await Promise.resolve(); });
     expect(mocks.pageview).toHaveBeenCalledWith("/", expect.any(String));
     expect(mocks.capture).not.toHaveBeenCalled();
 
-    mocks.pathname = "/app/rwa-pairs";
+    mocks.pathname = "/app";
     mocks.search = "ref=x-thread";
     await act(async () => { root.render(createElement(AnalyticsRoot)); });
     await act(async () => { await Promise.resolve(); });
-    expect(mocks.capture).toHaveBeenCalledWith(GROWTH_EVENTS.rwaPairsView, { ref: "x-thread" });
+    expect(mocks.pageview).toHaveBeenLastCalledWith("/app", expect.any(String));
+    expect(mocks.capture).not.toHaveBeenCalledWith(GROWTH_EVENTS.rwaPairsView, expect.anything());
   });
 });

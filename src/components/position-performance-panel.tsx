@@ -340,8 +340,8 @@ export function PositionPerformancePanel({
         {!embedded && !connectedAddress && <ConnectWalletPrompt onConnect={connect} />}
         {positionsStatus === "ready" && listedPositions.length === 0 && <div role="status" className="rounded-2xl border border-white/12 bg-white/[0.03] p-4">
           <p className="font-medium text-cream/90">No positions found in this wallet</p>
-          <p className="mt-1 text-xs leading-5 text-smoke">Explore RWA pairs and open a position to start tracking performance.</p>
-          <a href="/app/rwa-pairs" className="mt-3 inline-flex items-center gap-2 rounded-full border border-white/20 px-4 py-2 text-sm font-semibold text-cream hover:bg-white/10">Explore RWA Pairs <ArrowUpRight className="h-4 w-4" /></a>
+          <p className="mt-1 text-xs leading-5 text-smoke">Explore pools and open a position to start tracking performance.</p>
+          <a href="/app#pools" className="mt-3 inline-flex items-center gap-2 rounded-full border border-white/20 px-4 py-2 text-sm font-semibold text-cream hover:bg-white/10">Explore pools <ArrowUpRight className="h-4 w-4" /></a>
         </div>}
         {!embedded && <details className="rounded-2xl border border-white/10 p-3">
           <summary className="cursor-pointer text-xs font-medium text-smoke">Look up another position by NFT mint</summary>

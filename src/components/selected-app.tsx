@@ -152,7 +152,7 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
           placeholder={!positionOptions.length ? (connected ? "No identifiable position found" : "Connect wallet to view positions") : undefined}
           className="mt-3 w-full rounded-2xl border border-white/20 bg-white/[0.06] px-3 py-3 text-sm text-cream outline-none focus:border-white/40"
         /> : <div className="mt-3"><ConnectWalletPrompt onConnect={connect} /></div>}
-        {connected && discovery && positionOptions.length === 0 && <a href={poolsSection ? "#pools" : "/app/rwa-pairs"} className="mt-3 text-sm font-semibold text-cream underline underline-offset-4">{poolsSection ? "Pick a pool below to open a position" : "Explore RWA Pairs to open a position"}</a>}
+        {connected && discovery && positionOptions.length === 0 && <a href={poolsSection ? "#pools" : "/app#pools"} className="mt-3 text-sm font-semibold text-cream underline underline-offset-4">{poolsSection ? "Pick a pool below to open a position" : "Explore pools to open a position"}</a>}
         {state && <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs">
           <span className={`rounded-full border px-2.5 py-1 ${state.inRange ? "border-white/40 bg-white/[0.07] text-cream/80" : "border-white/20 bg-white/[0.05] text-smoke"}`}>{state.rangeSide === "above" ? "Above range · single-sided" : state.rangeSide === "below" ? "Below range · single-sided" : "Price within range"}</span>
 

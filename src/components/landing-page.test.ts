@@ -68,7 +68,7 @@ describe("landing page copy and routes", () => {
     expect(src).toContain("DOCS_ROUTES.risks");
     expect(src).toContain("BLOG_ROUTES.home");
     expect(src).toContain("HomepagePoolsTable");
-    expect(table).toContain("APP_ROUTES.rwaPairs");
+    expect(table).toContain("APP_ROUTES.pools");
     expect(table).toContain("buildOpenPositionPath");
     expect(table).toContain("Open position");
     expect(table).toContain("fetchRwaPairsList");

@@ -155,7 +155,8 @@ export function RhcUniv4PositionsPanel({ wallet, signingEnabled, refreshKey = 0,
         const p = l.position;
         const pool = p ? poolOf(p) : null;
         const closable = Boolean(p && p.ownedByUser && pool);
-        const note = !p ? (l.error === "rpc" ? "Could not read this position right now." : "Closed (or never existed).")
+        const note = !p ? (l.error === "rpc" ? "Could not read this position right now."
+          : l.error === "closed" ? "Closed. This position was closed and its NFT burned." : "Not found. No position NFT has this number.")
           : !p.ownedByUser ? `Owned by another wallet (${short(p.owner)}).` : !pool ? "Not in a pool SoFinance supports." : null;
         return <li key={l.tokenId} className="rounded-xl border border-white/12 p-3" data-position={l.tokenId}>
           <div className="flex flex-wrap items-center justify-between gap-2">

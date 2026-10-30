@@ -3,7 +3,7 @@ import type { BrowserContext, Page, Request } from "@playwright/test";
 import { readonlyTransportFor } from "./readonly-transport";
 
 const PUBLIC_PAGES = new Set([
-  "/", "/app", "/app/plan", "/app/rwa-pairs", "/app/position-performance",
+  "/", "/app", "/app/plan", "/app/position-performance",
   "/app/ai", "/docs", "/docs/yield-and-apr", "/blog",
   "/app/sign/AAAA.BBBB", "/app/sign/justonepart",
 ]);

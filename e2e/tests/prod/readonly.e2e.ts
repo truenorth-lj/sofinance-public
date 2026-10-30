@@ -12,7 +12,7 @@ const EXPECTED_TOOLS = [
 ];
 
 test.describe("production, read-only", () => {
-  for (const path of ["/", "/app", "/app/plan", "/app/rwa-pairs", "/app/position-performance"]) {
+  for (const path of ["/", "/app", "/app/plan", "/app/position-performance"]) {
     test(`page ${path} loads (200) without page errors`, async ({ page }) => {
       const errors: string[] = [];
       page.on("pageerror", (error) => errors.push(error.message));

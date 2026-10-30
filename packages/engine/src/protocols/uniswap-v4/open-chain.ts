@@ -86,7 +86,7 @@ export async function readUserTokenState(client: PublicClient, user: Address, to
 
 /** Everything the planner needs, re-read at transaction time (listing checks included: a delisted pool cannot open). */
 export async function readOpenContext(client: PublicClient, pool: Univ4AllowlistedPool, user: Address, tokenIn: Address, overrides?: RpcStateOverrides): Promise<OpenContext> {
-  const raw = await readPoolState(client, pool);
+  const raw = await readPoolState(client, pool, { tokenControls: false });
   const summary = evaluatePool(pool, raw);
   if (!raw.slot0 || raw.liquidity === null) throw new Error("pool state unavailable");
   const [window, code, userState] = await Promise.all([

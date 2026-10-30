@@ -48,8 +48,8 @@ export default function DocsGettingStartedPage() {
           <Link href={APP_ROUTES.home}>App</Link>.
         </li>
         <li>
-          Browse same-asset RWA pairs on{" "}
-          <Link href={APP_ROUTES.rwaPairs}>RWA pairs</Link>, or pick an existing position under
+          Browse same-asset RWA pairs in the{" "}
+          <Link href={APP_ROUTES.pools}>pool list</Link>, or pick an existing position under
           Positions.
         </li>
         <li>

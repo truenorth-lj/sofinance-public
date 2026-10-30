@@ -18,7 +18,7 @@ describe("public app URLs", () => {
   it("keeps product pages under /app", () => {
     expect(APP_ROUTES.home).toBe("/app");
     expect(APP_ROUTES.plan).toBe("/app/plan");
-    expect(APP_ROUTES.rwaPairs).toBe("/app/rwa-pairs");
+    expect(APP_ROUTES.pools).toBe("/app#pools");
     expect(APP_ROUTES.positionPerformance).toBe("/app/position-performance");
     expect(APP_ROUTES.ai).toBe("/app/ai");
     expect(SIGN_PATH).toBe("/app/sign");
@@ -50,7 +50,7 @@ describe("public app URLs", () => {
       else process.env.VERCEL_ENV = env;
       expect(getPublicBaseUrl()).toBe(CANONICAL_SITE_URL);
       expect(buildSignUrl("tok")).toBe("https://sofinancelab.xyz/app/sign/tok");
-      expect(buildOpenPositionUrl("Pool1")).toBe("https://sofinancelab.xyz/app/rwa-pairs?pool=Pool1&open=1");
+      expect(buildOpenPositionUrl("Pool1")).toBe("https://sofinancelab.xyz/app?openPool=Pool1#pools");
     }
   });
 
@@ -62,11 +62,11 @@ describe("public app URLs", () => {
     expect(buildSignUrl("tok")).toBe("/app/sign/tok");
   });
 
-  it("builds an open-position deep link under /app/rwa-pairs", () => {
+  it("builds an open-position deep link into the /app pool list", () => {
     delete process.env.NEXT_PUBLIC_APP_URL;
     delete process.env.VERCEL_URL;
     expect(buildOpenPositionUrl("Pool1111111111111111111111111111111111111")).toBe(
-      "/app/rwa-pairs?pool=Pool1111111111111111111111111111111111111&open=1",
+      "/app?openPool=Pool1111111111111111111111111111111111111#pools",
     );
   });
 

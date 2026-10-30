@@ -4,7 +4,8 @@ import "@/lib/engine-host";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { ArrowDown, ArrowUp, ArrowUpDown, ArrowUpRight, LayoutGrid, List, LoaderCircle, RefreshCw, Search } from "lucide-react";
-import { HIGHEST_RANGE_APR_7D_HELP, POOL_FEE_APR_24H_HELP } from "@/lib/apr-labels/copy";
+import { APP_APR_7D_HELP, POOL_FEE_APR_24H_HELP } from "@/lib/apr-labels/copy";
+import { formatAprPct } from "@/lib/format-apr";
 import { cn } from "@/lib/cn";
 import { DOCS_ROUTES } from "@/lib/public-urls";
 import { fetchRwaPairsList } from "@/lib/rwa-pairs-list";
@@ -53,7 +54,9 @@ const money = (value: number | null) => {
   if (Math.abs(value) >= 1_000) return `$${(value / 1_000).toFixed(1)}k`;
   return `$${value.toFixed(2)}`;
 };
-const pct = (value: number | null) => (value === null || !Number.isFinite(value) ? "—" : `${value.toFixed(2)}%`);
+const pct = formatAprPct;
+/** Robinhood Chain's 7-day figure is the whole-pool fee APR (no range model), said in plain words where it shows. */
+const POOL_FEE_7D_NOTE = "Whole-pool fee APR · 7d avg (fee rate × average daily volume / TVL)";
 
 const APR7D_SHORT = "Est. APR · 7d";
 const APR24H_SHORT = "Est. pool fee APR · 24h";
@@ -68,14 +71,23 @@ function ChainBadge({ chain, tone = "light" }: { chain: PoolChain; tone?: "light
 
 function RiskChips({ pool, tone = "light" }: { pool: UnifiedPool; tone?: "light" | "dark" }) {
   if (!pool.risks.length) return <span className={cn("text-xs", tone === "light" ? "text-ink/55" : "text-smoke")}>No flags</span>;
-  return <span className="flex flex-wrap gap-1.5">{pool.risks.map((risk) => (
-    <span key={risk} className={cn(chip, risk === "freeze" ? "bg-coral text-ink" : tone === "light" ? "bg-white text-ink" : "border border-white/25 text-cream/80")}>{RISK_LABELS[risk]}</span>
+  return <span className="flex flex-wrap gap-1.5" data-testid="risk-chips">{pool.risks.map((risk) => (
+    <span key={risk} data-risk={risk} title={pool.riskNotes?.[risk]} className={cn(chip, risk === "freeze" ? "bg-coral text-ink"
+      : risk === "new-chain" ? tone === "light" ? "border border-ink/25 text-ink/75" : "border border-white/15 text-smoke"
+        : tone === "light" ? "bg-white text-ink" : "border border-white/25 text-cream/80")}>{RISK_LABELS[risk]}</span>
   ))}</span>;
+}
+
+function Attribution({ pool, tone = "light" }: { pool: UnifiedPool; tone?: "light" | "dark" }) {
+  if (!pool.attribution) return null;
+  return <a href={pool.attribution.url} target="_blank" rel="noopener noreferrer"
+    className={cn("text-[11px] underline", tone === "light" ? "text-ink/60" : "text-smoke")}>{pool.attribution.text}</a>;
 }
 
 function Apr7dValue({ state, size = "lg" }: { state: Apr7dState | undefined; size?: "lg" | "sm" }) {
   const text = state?.status === "ready" ? pct(state.aprPct) : state?.status === "missing" ? "—" : "…";
-  return <span data-testid="apr7d" data-apr-status={state?.status ?? "loading"} title={state?.status === "missing" ? state.reason : undefined}
+  return <span data-testid="apr7d" data-apr-status={state?.status ?? "loading"}
+    title={state?.status === "missing" ? state.reason : state?.status === "ready" && state.basis === "pool-fee" ? POOL_FEE_7D_NOTE : undefined}
     className={cn("inline-flex items-center justify-center whitespace-nowrap rounded-full font-semibold tabular-nums",
       size === "lg" ? "h-10 px-4 text-xl" : "h-7 min-w-[3.5rem] px-2.5 text-sm",
       state?.status === "ready" ? "bg-lemon text-ink" : size === "lg" ? "bg-ink/10 text-ink/70" : "bg-white/[0.06] text-cream/70")}>{text}</span>;
@@ -107,13 +119,14 @@ function PoolCard({ pool, apr, action }: { pool: UnifiedPool; apr: Apr7dState | 
       </div>
     </div>
     {apr?.status === "missing" && <p className="mt-2 text-xs text-ink/60">{apr.reason}</p>}
+    {apr?.status === "ready" && apr.basis === "pool-fee" && <p className="mt-2 text-xs text-ink/60" data-testid="apr7d-basis">{POOL_FEE_7D_NOTE}.</p>}
     <dl className="mt-5 grid grid-cols-2 gap-x-4 gap-y-4 border-t border-ink/20 pt-4 sm:grid-cols-4">
       <div><dt className="font-data text-[10px] uppercase tracking-[0.12em] text-ink/60">{APR24H_SHORT}</dt><dd className="mt-1 font-semibold tabular-nums">{pct(pool.poolFeeApr24hPct)}</dd></div>
       <div><dt className="font-data text-[10px] uppercase tracking-[0.12em] text-ink/60">TVL</dt><dd className="mt-1 font-semibold tabular-nums">{money(pool.tvlUsd)}</dd></div>
       <div><dt className="font-data text-[10px] uppercase tracking-[0.12em] text-ink/60">24h vol</dt><dd className="mt-1 font-semibold tabular-nums">{money(pool.volume24hUsd)}</dd></div>
       <div><dt className="font-data text-[10px] uppercase tracking-[0.12em] text-ink/60">Fee</dt><dd className="mt-1 font-semibold tabular-nums">{pool.feeTierBps === null ? pool.chain === "robinhood" ? "Dynamic" : "—" : `${pool.feeTierBps} bps`}</dd></div>
     </dl>
-    <div className="mt-4"><RiskChips pool={pool} /></div>
+    <div className="mt-4 flex flex-wrap items-center justify-between gap-2"><RiskChips pool={pool} /><Attribution pool={pool} /></div>
     <div className="mt-auto flex flex-wrap items-center justify-between gap-3 pt-5">
       <OpenButton action={action} label={pool.pairLabel} />
       <span className="font-data text-[10px] tracking-[0.08em] text-ink/55" title={pool.poolAddress}>{pool.poolAddress.slice(0, 4)}…{pool.poolAddress.slice(-4)}</span>
@@ -125,7 +138,7 @@ const COLUMNS: { key: SortKey; label: string; short?: string; help?: string; num
   { key: "name", label: "Pool" },
   { key: "chain", label: "Chain" },
   { key: "protocol", label: "Protocol" },
-  { key: "apr7d", label: APR7D_SHORT, short: "Est. APR 7d", help: HIGHEST_RANGE_APR_7D_HELP, numeric: true },
+  { key: "apr7d", label: APR7D_SHORT, short: "Est. APR 7d", help: APP_APR_7D_HELP, numeric: true },
   { key: "apr24h", label: APR24H_SHORT, short: "Est. fee APR 24h", help: POOL_FEE_APR_24H_HELP, numeric: true },
   { key: "tvl", label: "TVL", numeric: true },
   { key: "volume", label: "24h vol", numeric: true },
@@ -163,7 +176,7 @@ function PoolTable({ pools, apr, actionFor, sort, onSort }: {
           <td className="px-3 py-3 text-right tabular-nums text-cream/80">{pct(pool.poolFeeApr24hPct)}</td>
           <td className="px-3 py-3 text-right tabular-nums text-cream/80">{money(pool.tvlUsd)}</td>
           <td className="px-3 py-3 text-right tabular-nums text-cream/80">{money(pool.volume24hUsd)}</td>
-          <td className="px-3 py-3"><RiskChips pool={pool} tone="dark" /></td>
+          <td className="px-3 py-3"><RiskChips pool={pool} tone="dark" />{pool.attribution && <div className="mt-1"><Attribution pool={pool} tone="dark" /></div>}</td>
           <td className="px-3 py-3 text-right"><OpenButton action={actionFor(pool)} label={pool.pairLabel} compact /></td>
         </tr>
       ))}</tbody>
@@ -325,7 +338,8 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", header 
           options={[{ value: "all", label: "All protocols" }, ...protocols.map((protocol) => ({ value: protocol, label: PROTOCOL_LABELS[protocol] }))] as { value: UnifiedProtocol | "all"; label: string }[]} />
         <Select<RiskFilter> label="Risk" value={filters.risk} onChange={(value) => setFilter("risk", value)}
           options={[{ value: "all", label: "Any risk" }, { value: "none", label: "No risk flags" },
-            { value: "freeze", label: RISK_LABELS.freeze }, { value: "token-2022", label: RISK_LABELS["token-2022"] }, { value: "pool-warning", label: RISK_LABELS["pool-warning"] }]} />
+            { value: "freeze", label: RISK_LABELS.freeze }, { value: "token-2022", label: RISK_LABELS["token-2022"] }, { value: "pool-warning", label: RISK_LABELS["pool-warning"] },
+            { value: "new-chain", label: RISK_LABELS["new-chain"] }]} />
       </div>
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
@@ -347,9 +361,7 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", header 
             </InfoTip>
           </label>
           {!showAll && selected.hiddenDuplicates > 0 && (
-            <button type="button" onClick={() => setShowAll(true)} className="text-xs text-smoke underline underline-offset-2 hover:text-cream" data-testid="show-all-pools">
-              Show all pools ({selected.hiddenDuplicates} hidden)
-            </button>
+            <span className="text-xs text-smoke" data-testid="hidden-duplicates">{selected.hiddenDuplicates} hidden</span>
           )}
         </div>
         {view === "cards" && <Select<SortKey> label="Sort by" value={sort.key} onChange={(key) => setSort({ key, dir: FIRST_CLICK_DIR[key] })}

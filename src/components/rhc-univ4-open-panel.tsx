@@ -10,6 +10,7 @@ import {
 import {
   checkExecuteTx, checkTx, explorerTxUrl, isPermitExpired, mintedPositionId, requireRobinhoodChain, SIGNATURE_EXPIRED_MESSAGE, waitForReceipt, walletTxParams,
 } from "@/lib/rhc-wallet/open-execute";
+import { formatAprPct } from "@/lib/format-apr";
 import { readWalletBalances, trackPositionId, type WalletBalances } from "@/lib/rhc-wallet/exit-execute";
 import { RhcUniv4PositionsPanel } from "./rhc-univ4-positions-panel";
 import { openSteps, RETRY_CONFIRM_TEXT, stepProgressLabel, type OpenStepId } from "@/lib/rhc-wallet/open-steps";
@@ -40,11 +41,12 @@ const fmt = (raw: string | bigint, decimals: number, digits = 6) => {
   return frac ? `${i}.${frac}` : i!;
 };
 
+/** 24h estimate; "—" when missing and "<0.01%" for tiny values (never a misleading 0.00%). */
 export function EstimatedAprBadge({ apr }: { apr: Univ4PoolApr | null }) {
-  if (!apr || apr.estimatedPoolFeeAprPct === null) return <span className="text-sm text-smoke">APR unavailable</span>;
+  if (!apr || apr.estimatedPoolFeeAprPct === null) return <span className="text-sm text-smoke">— · APR unavailable right now</span>;
   return <span className="inline-flex flex-wrap items-baseline gap-2" data-testid="estimated-apr">
-    <span className="text-sm font-semibold text-cream">{apr.estimatedPoolFeeAprPct.toFixed(2)}%</span>
-    <span className="rounded border border-white/20 px-1.5 text-[11px] text-cream/80">{apr.label.zh} · {apr.label.en} APR</span>
+    <span className="text-sm font-semibold text-cream">{formatAprPct(apr.estimatedPoolFeeAprPct)}</span>
+    <span className="rounded border border-white/20 px-1.5 text-[11px] text-cream/80">{apr.label.zh} · {apr.label.en} APR · 24h</span>
     {apr.attribution
       ? <a href={apr.attribution.url} target="_blank" rel="noopener noreferrer" className="text-[11px] text-smoke underline">{apr.attribution.text}</a>
       : null}

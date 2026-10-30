@@ -13,7 +13,11 @@
 
 export type PoolChain = "solana" | "robinhood";
 export type UnifiedProtocol = "raydium-clmm" | "orca-whirlpool" | "meteora-dlmm" | "uniswap-v4-rhc";
-export type RiskFlag = "freeze" | "token-2022" | "pool-warning";
+/**
+ * `freeze`: a token issuer can stop or block transfers (Solana freeze authority; on Robinhood Chain the stock tokens'
+ * pause / blocklist / admin-burn powers, read on-chain). `new-chain`: neutral label for Robinhood Chain pools.
+ */
+export type RiskFlag = "freeze" | "token-2022" | "pool-warning" | "new-chain";
 
 export const CHAIN_LABELS: Readonly<Record<PoolChain, string>> = { solana: "Solana", robinhood: "Robinhood Chain" };
 export const PROTOCOL_LABELS: Readonly<Record<UnifiedProtocol, string>> = {
@@ -26,6 +30,7 @@ export const RISK_LABELS: Readonly<Record<RiskFlag, string>> = {
   freeze: "Freeze risk",
   "token-2022": "Token-2022",
   "pool-warning": "Pool warning",
+  "new-chain": "New chain",
 };
 
 export type UnifiedPool = {
@@ -47,7 +52,16 @@ export type UnifiedPool = {
   volume24hUsd: number | null;
   /** Estimated pool fee APR from the last 24h, percent. */
   poolFeeApr24hPct: number | null;
+  /**
+   * Robinhood Chain only: estimated whole-pool fee APR from the 7-day average daily volume (GeckoTerminal), percent.
+   * Used as the pool's 7-day APR (it has no range model); null / absent when unavailable.
+   */
+  poolFeeApr7dPct?: number | null;
+  /** Shown next to numbers that came from GeckoTerminal (their terms). */
+  attribution?: { text: string; url: string } | null;
   risks: RiskFlag[];
+  /** Plain-words explanation per flag (chip tooltip). */
+  riskNotes?: Partial<Record<RiskFlag, string>>;
 };
 
 /** Estimated highest range APR (7-day average), percent; null when the pool has none (yet). */

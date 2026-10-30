@@ -1,13 +1,17 @@
-import { getAddress, isAddressEqual, type Address, type Hex, type PublicClient } from "viem";
-import { ERC20_METADATA_ABI, STABLE_PAIR_HOOK_ABI, STATE_VIEW_ABI } from "./abi";
-import { ERC1967_IMPLEMENTATION_SLOT, STABLE_PAIR_HOOK, UNIV4_RHC, UNIV4_RHC_ALLOWLISTED_POOLS, type StableFeeConfig, type Univ4AllowlistedPool } from "./constants";
+import { getAddress, isAddressEqual, type Address, type ContractFunctionParameters, type Hex, type PublicClient } from "viem";
+import { ERC20_METADATA_ABI, STABLE_PAIR_HOOK_ABI, STATE_VIEW_ABI, TOKEN_CONTROLS_ABI } from "./abi";
+import {
+  ERC1967_IMPLEMENTATION_SLOT, STABLE_PAIR_HOOK, UNIV4_RHC, UNIV4_RHC_ALLOWLISTED_POOLS, rhcTokenControls,
+  type RhcTokenPower, type StableFeeConfig, type Univ4AllowlistedPool,
+} from "./constants";
 import { poolAprFromMarket, type Univ4MarketData, type Univ4PoolApr } from "./market-data";
 import { addressFromSlot, decodeHookPermissions, hookPermissionBits, isSortedPair, poolIdOf, type PoolKey } from "./pool-key";
 
 /**
  * Read-only Uniswap v4 discovery on Robinhood Chain. Nothing here builds, signs or broadcasts a
  * transaction. State comes from StateView + the StablePairHook (one multicall) and the hook's ERC1967
- * implementation slot. No event scans (PM decision 2026-10-29): 24h volume / TVL come from public indexers
+ * implementation slot; the same multicall reads each token's transfer controls (beacon implementation, paused).
+ * No event scans (PM decision 2026-10-29): 24h volume / TVL come from public indexers
  * (`market-data.ts`) and RPC is used for current state only.
  */
 
@@ -23,7 +27,12 @@ export type RawPoolState = {
   implementation: Address | null;
   token0: TokenMetadata | null;
   token1: TokenMetadata | null;
+  /** Live transfer-control state per token (same multicall); absent in older captures = unread. */
+  tokenControls?: [TokenControlState, TokenControlState];
 };
+
+/** `null` = unread (call failed or no reviewed controls for this token). */
+export type TokenControlState = { implementation: Address | null; paused: boolean | null; pauseManager: Address | null };
 
 export const poolKeyOf = (spec: Univ4AllowlistedPool): PoolKey => ({
   currency0: spec.currency0.address, currency1: spec.currency1.address, fee: spec.fee, tickSpacing: spec.tickSpacing, hooks: spec.hooks,
@@ -31,8 +40,38 @@ export const poolKeyOf = (spec: Univ4AllowlistedPool): PoolKey => ({
 
 const ok = <T>(entry: { status: "success"; result: unknown } | { status: "failure" }) => (entry.status === "success" ? entry.result as T : null);
 
-/** Current pool state: 1 block header + 1 multicall + 1 storage read (all at `latest`). */
-export async function readPoolState(client: PublicClient, spec: Univ4AllowlistedPool): Promise<RawPoolState> {
+type ControlCall = { address: Address; abi: typeof TOKEN_CONTROLS_ABI; functionName: "implementation" | "paused" | "tokenPauseManager" | "isTokenPaused"; args?: readonly [Address] };
+
+/** Calls that read one token's transfer controls; `read` turns their results (in order) into a `TokenControlState`. */
+function tokenControlCalls(token: Address): { calls: ControlCall[]; read: (results: readonly unknown[]) => TokenControlState } {
+  const controls = rhcTokenControls(token);
+  if (!controls) return { calls: [], read: () => ({ implementation: null, paused: null, pauseManager: null }) };
+  const calls: ControlCall[] = [{ address: controls.beacon, abi: TOKEN_CONTROLS_ABI, functionName: "implementation" }];
+  if (controls.pause.kind === "self") {
+    calls.push({ address: controls.token, abi: TOKEN_CONTROLS_ABI, functionName: "paused" });
+    for (const target of controls.pause.extraTargets) calls.push({ address: target, abi: TOKEN_CONTROLS_ABI, functionName: "paused" });
+  } else {
+    calls.push({ address: controls.token, abi: TOKEN_CONTROLS_ABI, functionName: "tokenPauseManager" });
+    calls.push({ address: controls.pause.manager, abi: TOKEN_CONTROLS_ABI, functionName: "isTokenPaused", args: [controls.token] });
+  }
+  return {
+    calls,
+    read: (results) => {
+      const implementation = typeof results[0] === "string" ? getAddress(results[0]) : null;
+      const flags = controls.pause.kind === "self" ? results.slice(1) : results.slice(2);
+      const paused = flags.every(flag => typeof flag === "boolean") ? flags.some(Boolean) : flags.some(flag => flag === true) ? true : null;
+      const pauseManager = controls.pause.kind === "manager" && typeof results[1] === "string" ? getAddress(results[1]) : null;
+      return { implementation, paused, pauseManager };
+    },
+  };
+}
+
+/**
+ * Current pool state: 1 block header + 1 multicall + 1 storage read (all at `latest`). `tokenControls: false` skips the
+ * token transfer-control reads (the transaction-time re-read only needs the listing checks).
+ */
+export async function readPoolState(client: PublicClient, spec: Univ4AllowlistedPool, options: { tokenControls?: boolean } = {}): Promise<RawPoolState> {
+  const withControls = options.tokenControls ?? true;
   const block = await client.getBlock({ blockTag: "latest" });
   const key = poolKeyOf(spec);
   const token = (address: Address) => [
@@ -40,6 +79,9 @@ export async function readPoolState(client: PublicClient, spec: Univ4Allowlisted
     { address, abi: ERC20_METADATA_ABI, functionName: "symbol" },
     { address, abi: ERC20_METADATA_ABI, functionName: "decimals" },
   ] as const;
+  const none = { calls: [] as ControlCall[], read: () => null };
+  const controls0 = withControls ? tokenControlCalls(spec.currency0.address) : none;
+  const controls1 = withControls ? tokenControlCalls(spec.currency1.address) : none;
   const results = await client.multicall({
     allowFailure: true,
     contracts: [
@@ -49,8 +91,11 @@ export async function readPoolState(client: PublicClient, spec: Univ4Allowlisted
       { address: spec.hooks, abi: STABLE_PAIR_HOOK_ABI, functionName: "feeConfig", args: [spec.poolId] },
       ...token(spec.currency0.address),
       ...token(spec.currency1.address),
-    ],
+      ...controls0.calls,
+      ...controls1.calls,
+    ] as readonly ContractFunctionParameters[],
   });
+  const controlResults = (from: number, count: number) => results.slice(from, from + count).map(entry => ok<unknown>(entry));
   const implementationWord = await client.getStorageAt({ address: spec.hooks, slot: ERC1967_IMPLEMENTATION_SLOT });
   const slot0 = ok<readonly [bigint, number, number, number]>(results[0]!);
   const fee = ok<readonly [number, number]>(results[2]!);
@@ -69,8 +114,26 @@ export async function readPoolState(client: PublicClient, spec: Univ4Allowlisted
     implementation: addressFromSlot(implementationWord),
     token0: meta(spec.currency0.address, 4),
     token1: meta(spec.currency1.address, 7),
+    ...(withControls ? { tokenControls: [
+      controls0.read(controlResults(10, controls0.calls.length))!,
+      controls1.read(controlResults(10 + controls0.calls.length, controls1.calls.length))!,
+    ] as [TokenControlState, TokenControlState] } : {}),
   };
 }
+
+/** Issuer transfer controls of one token, as shown to users (docs/rhc-token-permissions.md). */
+export type Univ4TokenControlsSummary = {
+  symbol: string;
+  address: Address;
+  contract: string | null;
+  /** Reviewed powers; any of them is shown like a Solana freeze authority. */
+  powers: RhcTokenPower[];
+  /** Live implementation / pause manager equal the reviewed ones; false when changed or unreadable. */
+  reviewed: boolean;
+  implementation: Address | null;
+  /** Transfers paused right now; null when unread. */
+  paused: boolean | null;
+};
 
 export type Univ4CheckId =
   | "pool-id" | "pool-key" | "initialized" | "hook-permissions" | "hook-implementation" | "fee-config" | "token-metadata";
@@ -112,8 +175,26 @@ export type Univ4PoolSummary = {
   /** fee rate × 24h volume / TVL from DexScreener (GeckoTerminal fallback); null when neither has the pool. */
   /** Labelled 「估計」/"Estimated" wherever shown. */
   estimatedApr: Univ4PoolApr | null;
+  /** Issuer transfer controls per token (pause / blocklist / admin burn / upgrade), from the multicall. */
+  tokenControls: Univ4TokenControlsSummary[];
+  /**
+   * Some token's issuer can stop or block transfers (or its controls could not be confirmed): the same "Freeze risk"
+   * flag a Solana mint with a freeze authority gets.
+   */
+  freezeRisk: boolean;
   warnings: string[];
 };
+
+function summarizeControls(token: Univ4AllowlistedPool["currency0"], live: TokenControlState | undefined): Univ4TokenControlsSummary {
+  const controls = rhcTokenControls(token.address);
+  if (!controls) return { symbol: token.symbol, address: getAddress(token.address), contract: null, powers: [], reviewed: false, implementation: null, paused: null };
+  const implOk = live?.implementation ? isAddressEqual(live.implementation, controls.implementation) : false;
+  const managerOk = controls.pause.kind === "manager" ? (live?.pauseManager ? isAddressEqual(live.pauseManager, controls.pause.manager) : false) : true;
+  return {
+    symbol: token.symbol, address: getAddress(controls.token), contract: controls.contract, powers: [...controls.powers],
+    reviewed: implOk && managerOk, implementation: live?.implementation ?? null, paused: live?.paused ?? null,
+  };
+}
 
 const sameConfig = (a: StableFeeConfig, b: StableFeeConfig) =>
   a.k === b.k && a.optimalFeeE6 === b.optimalFeeE6 && a.targetMultiplier === b.targetMultiplier && a.referenceSqrtPriceX96 === b.referenceSqrtPriceX96;
@@ -157,6 +238,14 @@ export function evaluatePool(spec: Univ4AllowlistedPool, state: RawPoolState, ma
   const warnings: string[] = [];
   if (state.slot0 && state.slot0.protocolFee !== 0) warnings.push("protocol fee is non-zero: APR assumes LPs keep the full swap fee");
   const estimatedApr = market && state.dynamicFee ? poolAprFromMarket(market, state.dynamicFee) : null;
+  const tokenControls = [summarizeControls(spec.currency0, state.tokenControls?.[0]), summarizeControls(spec.currency1, state.tokenControls?.[1])];
+  // Not read (transaction-time path) → no control warnings; the reviewed powers still count as a freeze risk.
+  if (state.tokenControls) for (const controls of tokenControls) {
+    if (controls.paused === true) warnings.push(`${controls.symbol} transfers are paused by its issuer right now`);
+    if (controls.contract && !controls.reviewed) warnings.push(`${controls.symbol} token contract could not be confirmed as the reviewed version`);
+  }
+  // Fail closed: unknown or unconfirmed controls count as a freeze risk too.
+  const freezeRisk = tokenControls.some(controls => controls.powers.length > 0 || (state.tokenControls !== undefined && !controls.reviewed));
   return {
     protocol: "uniswap-v4-rhc",
     chainId: 4663,
@@ -183,6 +272,8 @@ export function evaluatePool(spec: Univ4AllowlistedPool, state: RawPoolState, ma
     referencePrice,
     priceVsReferenceBps: price !== null && referencePrice ? (price / referencePrice - 1) * 10_000 : null,
     estimatedApr,
+    tokenControls,
+    freezeRisk,
     warnings,
   };
 }

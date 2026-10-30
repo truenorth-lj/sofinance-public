@@ -34,7 +34,8 @@ describe("discoverRhcUniv4Pools (mock Robinhood Chain RPC + DexScreener capture)
     expect(chain.calls).toHaveLength(calls);
     // Market data is cached separately (2 min): a state refresh does not call the indexer again.
     await discoverRhcUniv4Pools({ clients, fetcher, bypassCache: true });
-    expect(hits).toEqual(["api.dexscreener.com"]);
+    // One DexScreener call (24h) and one GeckoTerminal daily-candle call (7d); both cached past a state refresh.
+    expect(hits).toEqual(["api.dexscreener.com", "api.geckoterminal.com"]);
   });
 
   it("reports the pool as delisted when the hook implementation changes", async () => {
@@ -50,6 +51,31 @@ describe("discoverRhcUniv4Pools (mock Robinhood Chain RPC + DexScreener capture)
     const fetcher = (async () => new Response("busy", { status: 429 })) as unknown as typeof fetch;
     const { pools } = await discoverRhcUniv4Pools({ clients, fetcher, bypassCache: true });
     expect(pools[0]).toMatchObject({ status: "listed", estimatedApr: null });
+  });
+});
+
+describe("7-day pool fee APR (GeckoTerminal daily volume, no RPC)", () => {
+  it("adds estimatedApr7d from daily candles × the hook fee / DexScreener TVL", async () => {
+    const chain = mockRhcChain();
+    const clients = createRhcClients({ env: {}, transportFor: () => mockRhcTransport(chain) });
+    const lastDay = Math.floor(Date.now() / 86_400_000) * 86_400 - 86_400;
+    const daily = { data: { attributes: { ohlcv_list: [[lastDay, 1, 1, 1, 1, 70], [lastDay - 3 * 86_400, 1, 1, 1, 1, 70], [lastDay - 6 * 86_400, 1, 1, 1, 1, 70]] } } };
+    const fetcher = (async (url: string) => new Response(JSON.stringify(url.includes("geckoterminal") ? daily : dexScreenerCapture), { status: 200 })) as unknown as typeof fetch;
+    const before = chain.calls.length;
+    const { pools } = await discoverRhcUniv4Pools({ clients, fetcher, bypassCache: true });
+    expect(pools[0]!.estimatedApr7d).toMatchObject({ days: 7, avgDailyVolumeUsd: 30, tvlUsd: 48711.43, source: "geckoterminal" });
+    expect(pools[0]!.estimatedApr7d!.estimatedPoolFeeAprPct).toBeCloseTo(0.0000505 * 30 / 48711.43 * 365 * 100, 12);
+    // Same RPC reads as without the 7-day figure (block + multicall + storage slot).
+    expect(chain.calls.slice(before).map(call => call.method).sort()).toEqual(["eth_call", "eth_getBlockByNumber", "eth_getStorageAt"]);
+  });
+
+  it("is null when GeckoTerminal is unavailable (the UI shows —)", async () => {
+    const clients = createRhcClients({ env: {}, transportFor: () => mockRhcTransport(mockRhcChain()) });
+    const fetcher = (async (url: string) => url.includes("geckoterminal") ? new Response("busy", { status: 429 })
+      : new Response(JSON.stringify(dexScreenerCapture), { status: 200 })) as unknown as typeof fetch;
+    const { pools } = await discoverRhcUniv4Pools({ clients, fetcher, bypassCache: true });
+    expect(pools[0]!.estimatedApr).not.toBeNull();
+    expect(pools[0]!.estimatedApr7d).toBeNull();
   });
 });
 

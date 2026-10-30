@@ -25,6 +25,7 @@ export const POSITION_MANAGER_ABI = parseAbi([
 /** PositionManager reads for the exit path (PR7): owner, liquidity, pool key + packed PositionInfo. */
 export const POSITION_MANAGER_READ_ABI = parseAbi([
   "function ownerOf(uint256 id) view returns (address)",
+  "function nextTokenId() view returns (uint256)",
   "function getPositionLiquidity(uint256 tokenId) view returns (uint128)",
   "function getPoolAndPositionInfo(uint256 tokenId) view returns ((address currency0, address currency1, uint24 fee, int24 tickSpacing, address hooks) poolKey, uint256 info)",
 ]);

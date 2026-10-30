@@ -90,3 +90,54 @@ export const UNIV4_RHC_ALLOWLISTED_POOLS: readonly Univ4AllowlistedPool[] = Obje
  * the latest block, so no per-window timestamp lookups are needed.
  */
 export const RHC_BLOCK_ANCHOR = Object.freeze({ number: 98_425_782n, timestamp: 1_793_019_101 });
+
+/** Admin powers a token contract gives its issuer over holders' transfers (reviewed from verified source). */
+export type RhcTokenPower = "pause" | "blocklist" | "admin-burn" | "upgradeable";
+
+/**
+ * Reviewed transfer controls of the Robinhood Chain stock tokens (docs/rhc-token-permissions.md; recheck with
+ * `pnpm tsx scripts/rhc-token-permissions.ts`). Both tokens are BeaconProxies: the code that decides who may transfer
+ * lives at `beacon.implementation()`, which discovery reads on every refresh together with the live pause state.
+ * Any of these powers is shown like a Solana freeze authority ("Freeze risk"); an implementation or pause manager
+ * that differs from the reviewed one is also a pool warning (the new code has not been reviewed).
+ */
+export type RhcTokenControls = {
+  token: Address;
+  /** Contract family, for docs and tooltips. */
+  contract: string;
+  beacon: Address;
+  /** Reviewed `beacon.implementation()` (Blockscout-verified source). */
+  implementation: Address;
+  powers: readonly RhcTokenPower[];
+  /**
+   * How to read "transfers paused now": `self` = the token's own `paused()` plus `paused()` on each extra target
+   * (the Robinhood registry pauses every token at once); `manager` = Ondo's `tokenPauseManager().isTokenPaused(token)`.
+   */
+  pause: { kind: "self"; extraTargets: readonly Address[] } | { kind: "manager"; manager: Address };
+};
+
+export const RHC_TOKEN_CONTROLS: Readonly<Record<string, RhcTokenControls>> = Object.freeze({
+  // SPCX: Robinhood "Stock" token. TOKEN_PAUSER_ROLE pause + registry-wide pause, registry BLOCKER_ROLE blocklist
+  // (checked on transfer / transferFrom / approve / permit), ADMIN_BURNER_ROLE burn from any address, beacon upgrade.
+  "0x4a0e65a3eccec6dbe60ae065f2e7bb85fae35eea": Object.freeze({
+    token: "0x4a0E65A3EcceC6dBe60AE065F2e7bb85Fae35eEa",
+    contract: "Robinhood Stock (BeaconProxy)",
+    beacon: "0xe10b6f6B275de231345c20D14Ab812db62151b00",
+    implementation: "0xb35490d6f9163DE4F80d88dc75c3516eb64C5aE2",
+    powers: Object.freeze(["pause", "blocklist", "admin-burn", "upgradeable"] as const),
+    // The registry is also the beacon (AccessControlledRegistry).
+    pause: Object.freeze({ kind: "self", extraTargets: Object.freeze(["0xe10b6f6B275de231345c20D14Ab812db62151b00"] as Address[]) }),
+  }) as RhcTokenControls,
+  // SPCXon: Ondo Global Markets "GMToken". TokenPauseManager pause on every transfer, compliance contract checks
+  // from / to / sender (blocklist / sanctions), BURNER_ROLE burn(from), CONFIGURER_ROLE can swap both, beacon upgrade.
+  "0x9b8294f24453379aa87c807ab82bf1d5722153fc": Object.freeze({
+    token: "0x9B8294F24453379aa87C807ab82bf1d5722153Fc",
+    contract: "Ondo GMToken (BeaconProxy)",
+    beacon: "0xC6fBC077d53d01f73e3195B2b916fD95555bA222",
+    implementation: "0xf74a964355485aE20457601b554754311c14233F",
+    powers: Object.freeze(["pause", "blocklist", "admin-burn", "upgradeable"] as const),
+    pause: Object.freeze({ kind: "manager", manager: "0x2C81cFDFFb8D17d24BCc78a9a542891331a48184" }),
+  }) as RhcTokenControls,
+});
+
+export const rhcTokenControls = (token: Address): RhcTokenControls | null => RHC_TOKEN_CONTROLS[token.toLowerCase()] ?? null;

@@ -4,7 +4,8 @@ export const APP_PATH = "/app";
 export const APP_ROUTES = {
   home: APP_PATH,
   plan: `${APP_PATH}/plan`,
-  rwaPairs: `${APP_PATH}/rwa-pairs`,
+  /** The pool list on `/app` (Solana + Robinhood Chain). Replaces the retired `/app/rwa-pairs` (it redirects here). */
+  pools: `${APP_PATH}#pools`,
   positionPerformance: `${APP_PATH}/position-performance`,
   ai: `${APP_PATH}/ai`,
 } as const;
@@ -54,11 +55,12 @@ export function buildSignUrl(signToken: string): string {
   return base ? `${base}${path}` : path;
 }
 
+/** `/app?openPool=<id>#pools`: the `/app` pool list opens that pool's Create position flow once it is listed. */
 export function buildOpenPositionPath(poolId: string): string {
-  return `${APP_ROUTES.rwaPairs}?pool=${encodeURIComponent(poolId)}&open=1`;
+  return `${APP_PATH}?openPool=${encodeURIComponent(poolId)}#pools`;
 }
 
-/** Deep link that opens the add-liquidity modal on /app/rwa-pairs. */
+/** Deep link that opens the add-liquidity flow for a pool in the `/app` pool list. */
 export function buildOpenPositionUrl(poolId: string): string {
   const path = buildOpenPositionPath(poolId);
   const base = getPublicBaseUrl();

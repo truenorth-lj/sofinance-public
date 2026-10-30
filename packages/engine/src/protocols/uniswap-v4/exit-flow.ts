@@ -104,15 +104,20 @@ const view = (p: PositionRead, user: Address): RhcPositionView => ({
   tickLower: p.tickLower, tickUpper: p.tickUpper, poolId: p.pool?.poolId ?? null, baseSymbol: p.pool?.baseSymbol ?? null,
 });
 
-export type PositionLookup = { tokenId: string; position: RhcPositionView | null; error?: "not-found" | "rpc" };
+/** `closed`: the NFT was minted (id below `nextTokenId`) and then burned; `not-found`: no NFT was ever minted with that id. */
+export type PositionLookup = { tokenId: string; position: RhcPositionView | null; error?: "closed" | "not-found" | "rpc" };
 
 /** Read positions by NFT id (v4 POSM is not enumerable and RHC RPC log scans are not viable; the client supplies ids). */
 export async function lookupPositions(client: PublicClient, user: Address, tokenIds: bigint[]): Promise<PositionLookup[]> {
   const ids = [...new Set(tokenIds.map(String))].slice(0, MAX_POSITION_LOOKUP).map(BigInt);
+  let next: Promise<bigint> | null = null;
+  const nextTokenId = () => (next ??= client.readContract({ address: UNIV4_RHC.positionManager as Address, abi: POSITION_MANAGER_READ_ABI, functionName: "nextTokenId" }));
   return Promise.all(ids.map(async (id): Promise<PositionLookup> => {
     try {
       const p = await readPosition(client, id);
-      return p ? { tokenId: id.toString(), position: view(p, user) } : { tokenId: id.toString(), position: null, error: "not-found" };
+      if (p) return { tokenId: id.toString(), position: view(p, user) };
+      // ownerOf reverted: ids below nextTokenId were minted, so this one was burned (closed); otherwise it never existed.
+      return { tokenId: id.toString(), position: null, error: id > 0n && id < await nextTokenId() ? "closed" : "not-found" };
     } catch { return { tokenId: id.toString(), position: null, error: "rpc" }; }
   }));
 }

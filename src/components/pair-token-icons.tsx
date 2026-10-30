@@ -16,7 +16,7 @@ export type PairTokenIconsPair = {
 };
 
 /**
- * The overlapping xStock / plain-stock logo pair shown on the /app/rwa-pairs cards and the homepage pool list:
+ * The overlapping xStock / plain-stock logo pair shown on the /app pool cards and the homepage pool list:
  * wrapped token first, icons from `/api/token-metadata` (`useTokenMetadata`), Raydium's icon path as fallback.
  */
 export function PairTokenIcons({

@@ -1,6 +1,6 @@
 # Range APR estimate, Micro, and "Best"
 
-Design note for the **Est. fee APR** shown in the Create position modal (`/app/rwa-pairs`), the **Best** preset, and the
+Design note for the **Est. fee APR** shown in the Create position modal (opened from the `/app#pools` pool list), the **Best** preset, and the
 **Highest range** fields of the pair cards. Code: `src/lib/range-apr/`, `src/lib/pool-range-apr.ts`,
 `src/app/api/pool-range-apr/route.ts`, UI in `src/components/range-apr/`. Web-only: the MCP `rangePreset` enum and
 `recommendedRanges` are unchanged.
@@ -42,7 +42,7 @@ of volume, see below), resolved by the pure functions in `range-apr/preset-list.
 
 ## Highest range (pair cards)
 
-`/app/rwa-pairs` lists pairs as cream cards (one column on narrow screens, two from `lg`), still pre-ranked by the pool-level 24h estimate
+The former `/app/rwa-pairs` page (now redirected to `/app#pools`) listed pairs as cream cards, pre-ranked by the pool-level 24h estimate
 (shown on each card as *Pool fee APR*). The range estimate appears exactly once per card, split from the range it belongs to:
 
 * **Highest range APR** — the headline pill: the highest candidate estimate as a bare figure, e.g. `38% APR`. The `~` and the
