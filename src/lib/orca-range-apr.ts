@@ -47,11 +47,10 @@ export function clearOrcaRangeAprCache() {
 export function assembleOrcaRangeApr(
   poolId: string, profile: VolumeProfile, chain: OrcaPoolLiquidity, nowSeconds: number,
 ): OrcaRangeAprPayload {
-  const payload = assemblePoolRangeApr(poolId, profile, chain, nowSeconds);
+  const payload = assemblePoolRangeApr(poolId, profile, chain, nowSeconds, { assumptions: ORCA_RANGE_APR_ASSUMPTIONS, chainSource: ORCA_CHAIN_SOURCE });
   return {
     ...payload,
     assumptions: ORCA_RANGE_APR_ASSUMPTIONS,
-    sources: [...profile.sources, ORCA_CHAIN_SOURCE],
     protocol: "orca-whirlpool",
     readOnly: true,
     state: { ...chain.state, sqrtPriceX64: chain.sqrtPriceX64, mintA: chain.mintA, mintB: chain.mintB },

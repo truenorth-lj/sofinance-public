@@ -1,8 +1,8 @@
 /** Pool-level economics from Orca API v2 `/pools/{address}` (pure parser, allowlisted pools only). */
 import { ORCA_API_V2 } from "@sofinance/engine/protocols/orca/constants";
 import { parseOrcaPool } from "@sofinance/engine/protocols/orca/discovery";
-import type { PoolEconomicsSource } from "../pool-range-apr";
-import type { RaydiumPoolEconomics } from "./raydium-economics";
+import type { HttpPoolEconomicsSource } from "../pool-range-apr";
+import type { PoolEconomics } from "./raydium-economics";
 
 const DAYS_PER_YEAR = 365;
 
@@ -19,7 +19,7 @@ function num(value: unknown): number | null {
  * - mintAmountA/B: UI units from Orca's raw vault balances.
  * - dayFeeApr / weekFeeApr: gross whole-pool fee APR in percent (like Raydium's published `feeApr`).
  */
-export function parseOrcaPoolEconomics(body: unknown): RaydiumPoolEconomics | null {
+export function parseOrcaPoolEconomics(body: unknown): PoolEconomics | null {
   if (!body || typeof body !== "object" || Array.isArray(body)) return null;
   const raw = (body as { data?: unknown }).data;
   const summary = parseOrcaPool(raw);
@@ -43,8 +43,9 @@ export function parseOrcaPoolEconomics(body: unknown): RaydiumPoolEconomics | nu
   };
 }
 
-export const ORCA_ECONOMICS_SOURCE: PoolEconomicsSource = {
+export const ORCA_ECONOMICS_SOURCE: HttpPoolEconomicsSource = {
   name: "Orca",
+  protocol: "orca-whirlpool",
   url: (id) => `${ORCA_API_V2}/pools/${id}`,
   parse: parseOrcaPoolEconomics,
   source: `${ORCA_API_V2}/pools/{address} (feeRate, protocolFeeRate, TVL, vault balances)`,

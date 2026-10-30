@@ -1,6 +1,7 @@
 "use client";
 
 import type { Univ4PoolApr } from "@sofinance/engine/protocols/uniswap-v4/market-data";
+import { POOL_FEE_APR_24H_SHORT } from "@/lib/apr-labels/copy";
 import { exactAprTitle, formatAprPct } from "@/lib/apr-labels/format-apr";
 import type { OpenFlowResult, PermitJson } from "@sofinance/engine/protocols/uniswap-v4/open-flow";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
@@ -46,7 +47,8 @@ export function EstimatedAprBadge({ apr }: { apr: Univ4PoolApr | null }) {
     ? `${Number(apr.feeRatePct.toPrecision(2))}% fee × ${usd(apr.volume24hUsd)} 24h vol / ${usd(apr.tvlUsd)} TVL` : null;
   return <span className="inline-flex flex-wrap items-baseline gap-2" data-testid="estimated-apr" data-apr-status={Number.isFinite(value) ? "ready" : "missing"}>
     <span className="text-sm font-semibold text-cream" title={Number.isFinite(value) ? exactAprTitle(value) : "No 24h volume / TVL from DexScreener or GeckoTerminal right now"}>{formatAprPct(value)}</span>
-    <span className="rounded border border-white/20 px-1.5 text-[11px] text-cream/80">{label.zh} · {label.en} APR</span>
+    {/* The 24h pool figure, labelled like the card field so it is not read as the card's 7d range headline. */}
+    <span className="rounded border border-white/20 px-1.5 text-[11px] text-cream/80" title={`${label.zh} · ${label.en}`} data-testid="estimated-apr-label">{POOL_FEE_APR_24H_SHORT}</span>
     {basis ? <span className="text-[11px] text-smoke" data-testid="estimated-apr-basis">{basis}</span> : null}
     {apr?.attribution
       ? <a href={apr.attribution.url} target="_blank" rel="noopener noreferrer" className="text-[11px] text-smoke underline">{apr.attribution.text}</a>

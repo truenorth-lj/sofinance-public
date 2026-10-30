@@ -103,6 +103,22 @@ export function isRhcUniv4WalletSigningEnabled(target: DeployTarget = deployTarg
   return RHC_UNIV4_WALLET_SIGNING_ENABLED[target];
 }
 
+
+/**
+ * Uniswap v4 on Robinhood Chain: 7-day range APR (shared Solana model) for the allowlisted StablePairHook
+ * pools — cron snapshot, `/api/protocol-pools/range-apr?protocol=uniswap-v4-rhc`, and the unified list
+ * 7d column. ON in production (PM/LJ 2026-10-30). Easy to switch off by flipping the production value.
+ */
+export const RHC_APR7D_ENABLED: Readonly<Record<DeployTarget, boolean>> = Object.freeze({
+  production: true,
+  preview: true,
+  development: true,
+});
+
+export function isRhcApr7dEnabled(target: DeployTarget = deployTarget()): boolean {
+  return RHC_APR7D_ENABLED[target];
+}
+
 /**
  * Meteora DLMM read-only pool discovery (`/api/protocol-pools?protocol=meteora-dlmm`) and pool state,
  * bin-array liquidity and estimated range APR (`/api/protocol-pools/range-apr?protocol=meteora-dlmm`).

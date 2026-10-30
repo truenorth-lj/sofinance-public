@@ -53,14 +53,24 @@ export const dexScreenerIcons = (fetcher: typeof fetch = fetch): IconLookup => a
   return out;
 };
 
-/** GeckoTerminal token info (`attributes.image_url`; their "missing.png" placeholder counts as none). One call per token. */
+/**
+ * GeckoTerminal token info, batched: `/tokens/multi/{a,b,…}` (up to 30 per call; keyless GeckoTerminal allows only a
+ * few calls a minute, so one call covers every allowlisted Robinhood Chain token). `attributes.image_url`; their
+ * "missing.png" placeholder counts as none.
+ */
+export const GECKOTERMINAL_TOKENS_PER_CALL = 30;
 export const geckoTerminalIcons = (fetcher: typeof fetch = fetch): IconLookup => async (addresses, signal) => {
   const out: Record<string, unknown> = {};
-  for (const address of addresses.slice(0, 10)) {
-    const body = await getJson(`https://api.geckoterminal.com/api/v2/networks/${GECKOTERMINAL_NETWORK}/tokens/${address}`, fetcher, signal) as
-      { data?: { attributes?: { image_url?: unknown } } } | null;
-    const image = body?.data?.attributes?.image_url;
-    if (typeof image === "string" && !/missing\.png/i.test(image)) out[address] = image;
+  for (let i = 0; i < addresses.length; i += GECKOTERMINAL_TOKENS_PER_CALL) {
+    const part = addresses.slice(i, i + GECKOTERMINAL_TOKENS_PER_CALL);
+    const body = await getJson(`https://api.geckoterminal.com/api/v2/networks/${GECKOTERMINAL_NETWORK}/tokens/multi/${part.join(",")}`, fetcher, signal) as
+      { data?: unknown } | null;
+    for (const token of Array.isArray(body?.data) ? body.data : []) {
+      const attributes = (token as { attributes?: { address?: unknown; image_url?: unknown } } | null)?.attributes;
+      const address = typeof attributes?.address === "string" ? attributes.address.toLowerCase() : null;
+      const image = attributes?.image_url;
+      if (address && part.includes(address) && typeof image === "string" && !/missing\.png/i.test(image)) out[address] = image;
+    }
   }
   return out;
 };

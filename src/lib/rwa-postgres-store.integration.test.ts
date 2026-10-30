@@ -15,6 +15,7 @@ import {
 import type { RwaPairRow } from "./rwa-pairs";
 import type { VolumeProfile } from "./pool-range-apr";
 import { payloadFixture } from "./range-apr/payload.fixture";
+import { UNIV4_RHC_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/uniswap-v4/constants";
 
 const url = process.env.RWA_DB_TEST_URL;
 describe.skipIf(!url)("RWA PostgreSQL snapshots and fencing", () => {
@@ -275,6 +276,29 @@ describe.skipIf(!url)("RWA PostgreSQL snapshots and fencing", () => {
       await db!`SELECT extract(epoch FROM(next_due_at-last_started_at)) AS interval FROM background_job_state WHERE job_key='rwa-apr-refresh'`;
     expect(Number(job!.interval)).toBe(300);
   });
+  it("0003: stores RHC (robinhood/uniswap-v4) pools beside Solana rows and rejects mismatched addresses", async () => {
+    const legacy = await db!`SELECT DISTINCT chain,protocol FROM rwa_apr_daily UNION SELECT DISTINCT chain,protocol FROM rwa_pool_latest`;
+    expect(legacy).toEqual([{ chain: "solana", protocol: "raydium-clmm" }]);
+    const rhcPool = "0x4f54c74021e4139bbc4c7bc924346c921975136ea120cf118a93c43b50bdbd3c";
+    const mintA = `0x${"a".repeat(40)}`, mintB = `0x${"b".repeat(40)}`, gen = randomUUID();
+    await db!`INSERT INTO rwa_feed_state(feed_key,generation_id,published_at,pairing_rule_version) VALUES('uniswap-v4-rhc-v1',${gen},now(),'fixture')`;
+    await db!`INSERT INTO rwa_pool_latest(pool_address,feed_key,chain,protocol,mint_a,mint_b,symbol_a,symbol_b,source_page,last_seen_generation)
+      VALUES(${rhcPool},'uniswap-v4-rhc-v1','robinhood','uniswap-v4-rhc',${mintA},${mintB},'SPCX','USDC',1,${gen})`;
+    await db!`INSERT INTO rwa_apr_latest(pool_address,chain,protocol,algorithm_version,last_attempt_status) VALUES(${rhcPool},'robinhood','uniswap-v4-rhc',${ALGORITHM_VERSION},'ok')`;
+    await db!`INSERT INTO rwa_apr_daily(pool_address,chain,protocol,snapshot_date,scheduled_for,mint_a,mint_b,symbol_a,symbol_b,algorithm_version)
+      VALUES(${rhcPool},'robinhood','uniswap-v4-rhc','2026-10-30',now(),${mintA},${mintB},'SPCX','USDC',${ALGORITHM_VERSION})`;
+    const bad = (pool: string, chain: string, protocol: string) =>
+      db!`INSERT INTO rwa_apr_latest(pool_address,chain,protocol,algorithm_version,last_attempt_status) VALUES(${pool},${chain},${protocol},'v','ok')`;
+    await expect(db!`INSERT INTO rwa_apr_latest(pool_address,algorithm_version,last_attempt_status) VALUES(${`0x${"c".repeat(64)}`},'v','ok')`)
+      .rejects.toMatchObject({ code: "23514" }); // 0x pool under the solana default
+    await expect(bad(rhcPool.toUpperCase().replace("0X", "0x"), "robinhood", "uniswap-v4-rhc")).rejects.toMatchObject({ code: "23514" });
+    await expect(bad("0xabc", "robinhood", "uniswap-v4-rhc")).rejects.toMatchObject({ code: "23514" });
+    await expect(bad(poolId, "robinhood", "uniswap-v4-rhc")).rejects.toMatchObject({ code: "23514" });
+    await expect(bad(`0x${"e".repeat(64)}`, "robinhood", "raydium-clmm")).rejects.toMatchObject({ code: "23514" });
+    // Raydium readers still filter on their own feed: the RHC pool never leaks into the Solana pairs snapshot.
+    const pairs = await store!.request({ op: "pairs", minTvl: 0, maxPages: 2, sortBy: "tvl" });
+    expect(pairs.pairs.map((p) => p.poolAddress)).not.toContain(rhcPool);
+  });
   it("upserts allowlisted token icons and keeps serving pairs (manual icons) when rwa_token_icon is missing", async () => {
     await db!`UPDATE background_job_state SET lease_expires_at=clock_timestamp()-interval '1 second' WHERE job_key='rwa-discovery' AND lease_owner IS NOT NULL`;
     const lease = (await store!.request({ op: "claim", job: "rwa-discovery", force: true })) as Lease;
@@ -299,5 +323,40 @@ describe.skipIf(!url)("RWA PostgreSQL snapshots and fencing", () => {
     expect(pairs.tokenIcons!.robinhood[rhc]).toBe("https://s3-symbol-logo.tradingview.com/spacex.svg");
     await expect(store!.request({ op: "saveTokenIcons", lease, data: [row("https://static.jup.ag/a.png", "jupiter")] }))
       .rejects.toMatchObject({ code: "TOKEN_ICONS_UNAVAILABLE" });
+  });
+  it("RHC cron roster: upserts the allowlist summaries, serves them without RPC, and joins the daily roster", async () => {
+    now = Date.parse("2026-10-15T00:20:00Z"); // inside the 08:10–09:10 Taipei daily window
+    const lease = (await store!.request({ op: "claim", job: "rwa-apr-refresh", force: true })) as Lease;
+    const [spcx, nvda] = UNIV4_RHC_ALLOWLISTED_POOLS;
+    const summary = (spec: typeof spcx, tvlUsd: number | null) => ({
+      poolId: spec!.poolId, protocol: "uniswap-v4-rhc", baseSymbol: spec!.baseSymbol,
+      estimatedApr: tvlUsd === null ? null : { tvlUsd, volume24hUsd: 10, feeRatePct: 0.05, estimatedPoolFeeAprPct: 3.65 },
+    }) as never;
+    await expect(store!.request({ op: "ensureRhcRoster", lease, data: [{ poolId: `0x${"9".repeat(64)}`, summary: { ...(summary(spcx, 1) as object), poolId: `0x${"9".repeat(64)}` } as never }] }))
+      .rejects.toMatchObject({ code: "INVALID_RHC_ROSTER" });
+    const roster = await store!.request({ op: "ensureRhcRoster", lease, data: [
+      { poolId: nvda!.poolId.toLowerCase(), summary: summary(nvda, null) },
+      { poolId: spcx!.poolId.toLowerCase(), summary: summary(spcx, 48_000) },
+    ] });
+    expect(roster).toEqual({ pools: 2, profiles: { [spcx!.poolId.toLowerCase()]: null, [nvda!.poolId.toLowerCase()]: null } });
+    const read = await store!.request({ op: "rhcPools" });
+    expect(read.pools.map((p) => p.baseSymbol)).toEqual(["SPCX", "NVDA"]); // allowlist order
+    expect(read.stale).toBe(false);
+    const [row] = await db!`SELECT tvl_usd,volume_24h_usd,chain,mint_a FROM rwa_pool_latest WHERE pool_address=${spcx!.poolId.toLowerCase()}`;
+    expect(row).toMatchObject({ chain: "robinhood", mint_a: spcx!.currency0.address.toLowerCase() });
+    expect(Number(row!.tvl_usd)).toBe(48_000);
+    // Raydium pairs never include RHC rows.
+    const pairs = await store!.request({ op: "pairs", minTvl: 0, maxPages: 2, sortBy: "tvl" });
+    expect(pairs.pairs.some((p) => p.poolAddress.startsWith("0x"))).toBe(false);
+    await store!.request({ op: "prepareDaily", lease });
+    const daily = await db!`SELECT pool_address,chain,protocol,status FROM rwa_apr_daily WHERE snapshot_date='2026-10-15' AND chain='robinhood' ORDER BY pool_address`;
+    expect(daily.map((d) => d.pool_address).sort()).toEqual([spcx!.poolId.toLowerCase(), nvda!.poolId.toLowerCase()].sort());
+    expect(daily.every((d) => d.protocol === "uniswap-v4-rhc" && d.status === "pending")).toBe(true);
+    // A real reason (no payload) is recorded on the daily row and on the latest attempt.
+    await store!.request({ op: "saveApr", lease, data: { poolId: nvda!.poolId.toLowerCase(), payload: null, profile: null, chainObservedAt: null,
+      issues: ["No TVL / 24h volume from GeckoTerminal or DexScreener"] } });
+    const [failed] = await db!`SELECT failure_reason FROM rwa_apr_daily WHERE pool_address=${nvda!.poolId.toLowerCase()} AND snapshot_date='2026-10-15'`;
+    expect(failed!.failure_reason).toBe("error:No TVL / 24h volume from GeckoTerminal or DexScreener");
+    await store!.request({ op: "finish", lease, outcome: "ok", processed: 2, issues: [] });
   });
 });

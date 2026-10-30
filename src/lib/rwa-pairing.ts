@@ -1,3 +1,5 @@
+import { feeAprPct } from "@sofinance/engine/fee-apr";
+
 /**
  * Same-underlying RWA pair detection for Raydium CLMM pools.
  *
@@ -259,10 +261,9 @@ export function matchSameAssetPair(mintA: MintHints, mintB: MintHints): PairingR
  * Annualized fee APR estimate from 24h fees and TVL.
  * Formula: (fee24hUsd / tvlUsd) * 365 * 100. Returns null when TVL <= 0.
  */
+/** Shared formula (`@sofinance/engine/fee-apr`): (24h fees / TVL) × 365 × 100. */
 export function estimateFeeAprPct(fee24hUsd: number, tvlUsd: number): number | null {
-  if (!Number.isFinite(fee24hUsd) || !Number.isFinite(tvlUsd) || tvlUsd <= 0) return null;
-  if (fee24hUsd < 0) return null;
-  return (fee24hUsd / tvlUsd) * 365 * 100;
+  return feeAprPct(fee24hUsd, tvlUsd);
 }
 
 export const FEE_APR_ESTIMATE_LABEL =

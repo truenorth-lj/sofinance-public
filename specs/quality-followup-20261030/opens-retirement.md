@@ -26,7 +26,7 @@ removal is not database-resource decommissioning or financial validation.
 ## Superseded work
 
 Migration [PR 249](https://github.com/truenorth-lj/sofinance-public/pull/249) is
-superseded, not merged. Its schema/migration files never landed on main and are
+closed as superseded, not merged. Its schema/migration files never landed on main and are
 not imported by this change. Historical Neon migration specifications retain
 their data-preservation requirements for any existing opens rows.
 
@@ -44,3 +44,8 @@ The build manifest contains both transaction routes and no opens-daily route.
 PostHog modules, engine, RWA migrations and dependencies are unchanged.
 Self-review completed; independent OpenCode/MiniMax review was unavailable.
 Financial flows NOT_EXERCISED.
+
+Integration follow-up: merged main `279d3c1` (APR PR 247) without conflicts.
+The retirement runtime patch is unchanged; PostHog, engine and RWA migrations
+match that base. Full app tests, lint and app/engine typecheck passed again;
+hosted checks must rerun for the synchronized head.

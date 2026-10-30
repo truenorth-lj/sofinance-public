@@ -1,3 +1,4 @@
+import { UNIV4_RHC_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/uniswap-v4/constants";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import dexScreenerCapture from "../../packages/engine/src/fixtures/univ4-rhc-spcx-dexscreener.json";
 
@@ -6,6 +7,7 @@ import { createRhcClients, resetEvmRpcGuards } from "@sofinance/engine/rpc-evm/i
 import { mockRhcChain, mockRhcTransport } from "@sofinance/engine/test-support/rhc-mock-rpc";
 import { discoverRhcUniv4Pools, resetRhcUniv4PoolsCache, takeGeckoTerminalSlot } from "./rhc-univ4-pools";
 
+const spcxOnly = UNIV4_RHC_ALLOWLISTED_POOLS.filter((p) => p.baseSymbol === "SPCX");
 beforeEach(() => { resetRhcUniv4PoolsCache(); resetEvmRpcGuards(); });
 
 const indexer = () => {
@@ -22,7 +24,7 @@ describe("discoverRhcUniv4Pools (mock Robinhood Chain RPC + DexScreener capture)
     const chain = mockRhcChain();
     const { hits, fetcher } = indexer();
     const clients = createRhcClients({ env: {}, transportFor: () => mockRhcTransport(chain) });
-    const result = await discoverRhcUniv4Pools({ clients, fetcher });
+    const result = await discoverRhcUniv4Pools({ clients, fetcher, pools: spcxOnly });
     expect(result).toMatchObject({ protocol: "uniswap-v4-rhc", chainId: 4663, readOnly: true, aprLabel: { zh: "估計", en: "Estimated" } });
     expect(result.pools).toHaveLength(1);
     expect(result.pools[0]).toMatchObject({ baseSymbol: "SPCX", status: "listed", dynamicFeePips: { zeroForOne: 50, oneForZero: 51 },
@@ -30,10 +32,10 @@ describe("discoverRhcUniv4Pools (mock Robinhood Chain RPC + DexScreener capture)
     expect(() => JSON.stringify(result)).not.toThrow();
     expect(chain.calls.some(call => call.method === "eth_getLogs")).toBe(false);
     const calls = chain.calls.length;
-    expect(await discoverRhcUniv4Pools({ clients, fetcher })).toBe(result);
+    expect(await discoverRhcUniv4Pools({ clients, fetcher, pools: spcxOnly })).toBe(result);
     expect(chain.calls).toHaveLength(calls);
     // Market data is cached separately (2 min): a state refresh does not call the indexer again.
-    await discoverRhcUniv4Pools({ clients, fetcher, bypassCache: true });
+    await discoverRhcUniv4Pools({ clients, fetcher, bypassCache: true, pools: spcxOnly });
     expect(hits).toEqual(["api.dexscreener.com"]);
   });
 
@@ -41,14 +43,14 @@ describe("discoverRhcUniv4Pools (mock Robinhood Chain RPC + DexScreener capture)
     const chain = mockRhcChain();
     chain.implementation = "0x000000000000000000000000000000000000bEEF";
     const clients = createRhcClients({ env: {}, transportFor: () => mockRhcTransport(chain) });
-    const { pools } = await discoverRhcUniv4Pools({ clients, fetcher: indexer().fetcher, bypassCache: true });
+    const { pools } = await discoverRhcUniv4Pools({ clients, fetcher: indexer().fetcher, bypassCache: true, pools: spcxOnly });
     expect(pools[0]).toMatchObject({ status: "delisted", delistReasons: ["hook-implementation"] });
   });
 
   it("keeps the pool listed without APR when the indexers are unavailable", async () => {
     const clients = createRhcClients({ env: {}, transportFor: () => mockRhcTransport(mockRhcChain()) });
     const fetcher = (async () => new Response("busy", { status: 429 })) as unknown as typeof fetch;
-    const { pools } = await discoverRhcUniv4Pools({ clients, fetcher, bypassCache: true });
+    const { pools } = await discoverRhcUniv4Pools({ clients, fetcher, bypassCache: true, pools: spcxOnly });
     expect(pools[0]).toMatchObject({ status: "listed", estimatedApr: null });
   });
 });

@@ -106,7 +106,7 @@ describe("fetchPoolRangeApr", () => {
   it("is degraded, with NO estimates, when price history is missing (never a number from the current price alone)", async () => {
     const { impl } = fetcher({ daily: null, hourlyOk: false });
     const payload = await fetchPoolRangeApr(POOL, { fetcher: impl, nowSeconds: NOW, retry: NO_WAIT, gate: gate(), bypassCache: true });
-    expect(payload.sample).toMatchObject({ volumeSource: "raydium-7d", occupancySource: "current-price", candleCount: 0, confidence: "low", degraded: true });
+    expect(payload.sample).toMatchObject({ volumeSource: "protocol-7d", volumeProtocol: "raydium-clmm", occupancySource: "current-price", candleCount: 0, confidence: "low", degraded: true });
     expect(payload.sample.issues).toEqual([
       "GeckoTerminal daily candles: Upstream request failed (429)",
       // the first 429 opened the cooldown, so the second call was not even sent
