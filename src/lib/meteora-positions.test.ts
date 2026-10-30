@@ -6,7 +6,7 @@ import fixture from "../../packages/engine/src/fixtures/meteora-positions-cbbtc-
 vi.mock("server-only", () => ({}));
 
 const {
-  listMeteoraPositions, METEORA_NOT_SHOWN, METEORA_OPENS_DB_MISSING, readMeteoraPositionRangeFacts, readMeteoraPositionSnapshot, readShownMeteoraPosition,
+  listMeteoraPositions, METEORA_POOL_NOT_SUPPORTED, readMeteoraPosition, readMeteoraPositionRangeFacts, readMeteoraPositionSnapshot,
 } = await import("./meteora-positions");
 const { rangeStatusFromPrice } = await import("./position-range-status");
 
@@ -30,40 +30,27 @@ function storeFrom(overrides: Record<string, Account | null> = {}): Store {
 }
 
 type Filter = { memcmp: { offset: number; bytes: string } };
+type GpaConfig = { filters: Filter[]; dataSlice?: { offset: number; length: number } };
 type ReadConnection = NonNullable<import("./meteora-positions").MeteoraReadOptions["connection"]>;
-function fakeConnection(store: Store, signatures: Record<string, Array<{ signature: string; err: unknown }>> = {}) {
+function fakeConnection(store: Store) {
   const connection = {
     getAccountInfo: vi.fn(async (key: PublicKey) => store.get(key.toBase58()) ?? null),
     getMultipleAccountsInfo: vi.fn(async (keys: PublicKey[]) => keys.map((key) => store.get(key.toBase58()) ?? null)),
     getProgramAccounts: vi.fn(async (program: PublicKey, config?: unknown) => [...store.entries()]
       .filter(([, account]) => account.owner.equals(program))
-      .filter(([, account]) => ((config as { filters: Filter[] }).filters).every(({ memcmp }) => {
+      .filter(([, account]) => (config as GpaConfig).filters.every(({ memcmp }) => {
         const want = Buffer.from(bs58.decode(memcmp.bytes));
         return account.data.subarray(memcmp.offset, memcmp.offset + want.length).equals(want);
       }))
-      .map(([address, account]) => ({ pubkey: new PublicKey(address), account }))),
-    getSignaturesForAddress: vi.fn(async (key: PublicKey, options?: { limit?: number; before?: string }) => {
-      const all = signatures[key.toBase58()] ?? [];
-      const start = options?.before ? all.findIndex((item) => item.signature === options.before) + 1 : 0;
-      return all.slice(start, start + (options?.limit ?? 1000));
-    }),
+      .map(([address, account]) => {
+        const slice = (config as GpaConfig).dataSlice;
+        const data = slice ? account.data.subarray(slice.offset, slice.offset + slice.length) : account.data;
+        return { pubkey: new PublicKey(address), account: { ...account, data } };
+      })),
+    getSignaturesForAddress: vi.fn(async () => []),
   };
   return connection as typeof connection & ReadConnection;
 }
-
-/** Opens log with one row per (signature, pool, wallet). */
-function fakeSql(rows: Array<{ tx_signature: string; pool_address: string; wallet: string }>) {
-  return {
-    unsafe: vi.fn(async (query: string, params?: unknown[]) => {
-      if (/CREATE|INSERT|UPDATE|DELETE/i.test(query)) throw new Error("no DDL/DML expected");
-      const [signature, pool] = params as [string, string];
-      return rows.filter((row) => row.tx_signature === signature && row.pool_address === pool).map(({ wallet }) => ({ wallet }));
-    }),
-  };
-}
-
-// Newest first, like getSignaturesForAddress: the open is the oldest successful one.
-const history = { [IN_RANGE]: [{ signature: "sig-claim", err: null }, { signature: "sig-open", err: null }, { signature: "sig-failed", err: {} }] };
 
 describe("Meteora DLMM position snapshot", () => {
   it("values positions from one batched read, matching the SDK capture", async () => {
@@ -91,7 +78,7 @@ describe("Meteora DLMM position snapshot", () => {
     new PublicKey(CBBTC).toBuffer().copy(foreign, 8);
     const program = storeFrom().get(IN_RANGE)!.owner;
     await expect(readMeteoraPositionSnapshot(IN_RANGE, fakeConnection(storeFrom({ [IN_RANGE]: { owner: program, data: foreign } }))))
-      .rejects.toThrow(METEORA_NOT_SHOWN);
+      .rejects.toThrow(METEORA_POOL_NOT_SUPPORTED);
     const arrays = Object.keys(fixture.accounts).slice(3, 6);
     await expect(readMeteoraPositionSnapshot(IN_RANGE, fakeConnection(storeFrom({ [arrays[0]!]: null }))))
       .rejects.toThrow("bin array missing");
@@ -100,70 +87,67 @@ describe("Meteora DLMM position snapshot", () => {
   });
 });
 
-describe("Meteora provenance (SoFinance-opened only)", () => {
+describe("Meteora positions are shown wherever they were opened", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("shows a position whose first successful signature is a logged open by its owner", async () => {
-    const connection = fakeConnection(storeFrom(), history);
-    const sql = fakeSql([{ tx_signature: "sig-open", pool_address: POOL, wallet: OWNER }]);
-    const shown = await readShownMeteoraPosition(IN_RANGE, { connection, sql });
-    expect(shown!.provenance).toEqual({ openSignature: "sig-open", wallet: OWNER });
-  });
-
-  it("hides positions not opened through SoFinance, logged by another wallet, or without the open log", async () => {
-    const connection = fakeConnection(storeFrom(), history);
-    await expect(readShownMeteoraPosition(IN_RANGE, { connection, sql: fakeSql([]) })).rejects.toThrow(METEORA_NOT_SHOWN);
-    await expect(readShownMeteoraPosition(IN_RANGE, { connection, sql: fakeSql([{ tx_signature: "sig-claim", pool_address: POOL, wallet: OWNER }]) }))
-      .rejects.toThrow(METEORA_NOT_SHOWN);
-    await expect(readShownMeteoraPosition(IN_RANGE, { connection, sql: fakeSql([{ tx_signature: "sig-open", pool_address: POOL, wallet: CBBTC }]) }))
-      .rejects.toThrow(METEORA_NOT_SHOWN);
-    await expect(readShownMeteoraPosition(IN_RANGE, { connection, sql: null })).rejects.toThrow(METEORA_OPENS_DB_MISSING);
-    expect(await readShownMeteoraPosition(POOL, { connection, sql: null })).toBeNull();
-  });
-
-  it("fails closed when the history is longer than the provenance bound", async () => {
-    const long = Array.from({ length: 5000 }, (_, i) => ({ signature: `s${i}`, err: null }));
-    const connection = fakeConnection(storeFrom(), { [IN_RANGE]: long });
-    const sql = fakeSql([{ tx_signature: "s4999", pool_address: POOL, wallet: OWNER }]);
-    await expect(readShownMeteoraPosition(IN_RANGE, { connection, sql })).rejects.toThrow(METEORA_NOT_SHOWN);
+  it("reads any position in an allowlisted pool without the open log or its signature history", async () => {
+    const connection = fakeConnection(storeFrom());
+    const read = await readMeteoraPosition(IN_RANGE, { connection });
+    expect(read!.snapshot).toMatchObject({ positionAccount: IN_RANGE, poolId: POOL, rangeSide: "inside" });
+    expect(await readMeteoraPosition(POOL, { connection })).toBeNull();
+    expect(connection.getSignaturesForAddress).not.toHaveBeenCalled();
   });
 });
 
 describe("listMeteoraPositions", () => {
-  it("finds the wallet's positions by owner + pool and lists only SoFinance-opened ones", async () => {
-    const connection = fakeConnection(storeFrom(), history);
-    const sql = fakeSql([{ tx_signature: "sig-open", pool_address: POOL, wallet: OWNER }]);
-    const listed = await listMeteoraPositions(OWNER, { connection, sql });
-    expect(listed).toEqual([{
+  beforeEach(() => vi.clearAllMocks());
+
+  it("finds every position the wallet owns in allowlisted pools with one owner-filtered program scan", async () => {
+    const connection = fakeConnection(storeFrom());
+    const listed = await listMeteoraPositions(OWNER, { connection });
+    const owned = fixture.positions.filter((address) => expected[address]!.owner === OWNER).sort();
+    expect(listed.map((row) => row.positionAccount)).toEqual(owned);
+    expect(listed.find((row) => row.positionAccount === IN_RANGE)).toEqual({
       protocol: "meteora-dlmm", positionMint: IN_RANGE, positionAccount: IN_RANGE, poolId: POOL,
       mintA: CBBTC, mintB: "3NZ9JMVBmGAqocybic2c7LQCJScmgsAZ6vQqTDzcqmJh",
       tickLower: -15, tickUpper: 54, tickCurrent: 16, lowerBinId: -15, upperBinId: 53, activeBinId: 16, rangeSide: "inside",
       liquidity: expect.stringMatching(/^\d+$/),
       amountsRaw: { a: expected[IN_RANGE]!.totalXAmount, b: expected[IN_RANGE]!.totalYAmount },
       uncollectedFeesRaw: { a: expected[IN_RANGE]!.feeX, b: expected[IN_RANGE]!.feeY },
-    }]);
+    });
+    // One program scan (discriminator + owner, head bytes only), no per-pool loop, no signature history.
+    expect(connection.getProgramAccounts).toHaveBeenCalledTimes(1);
     const [, config] = connection.getProgramAccounts.mock.calls[0]!;
-    expect((config as { filters: Filter[] }).filters.map((filter) => filter.memcmp.offset)).toEqual([0, 8, 40]);
+    expect((config as GpaConfig).filters.map((filter) => filter.memcmp.offset)).toEqual([0, 40]);
+    expect((config as GpaConfig).dataSlice).toEqual({ offset: 0, length: 72 });
+    expect(connection.getSignaturesForAddress).not.toHaveBeenCalled();
     // Other owners' positions are never returned by the owner filter.
-    expect(await listMeteoraPositions(expected[EMPTY]!.owner, { connection, sql })).toEqual([]);
-    await expect(listMeteoraPositions(OWNER, { connection, sql: null })).rejects.toThrow(METEORA_OPENS_DB_MISSING);
+    const other = expected[EMPTY]!.owner;
+    const otherOwned = fixture.positions.filter((address) => expected[address]!.owner === other).sort();
+    expect((await listMeteoraPositions(other, { connection })).map((row) => row.positionAccount)).toEqual(otherOwned);
+    expect(await listMeteoraPositions("11111111111111111111111111111112", { connection })).toEqual([]);
+  });
+
+  it("skips positions in pools that are not allowlisted", async () => {
+    const foreign = Buffer.from(storeFrom().get(IN_RANGE)!.data);
+    new PublicKey(CBBTC).toBuffer().copy(foreign, 8);
+    const program = storeFrom().get(IN_RANGE)!.owner;
+    const connection = fakeConnection(storeFrom({ [IN_RANGE]: { owner: program, data: foreign } }));
+    const listed = await listMeteoraPositions(OWNER, { connection });
+    expect(listed.map((row) => row.positionAccount)).not.toContain(IN_RANGE);
   });
 });
 
 describe("readMeteoraPositionRangeFacts", () => {
   it("maps bins [lower, upper] to ticks [lower, upper + 1) with the active bin midpoint as price", async () => {
-    const connection = fakeConnection(storeFrom(), { ...history, [BELOW]: [{ signature: "sig-open-below", err: null }] });
-    const sql = fakeSql([
-      { tx_signature: "sig-open", pool_address: POOL, wallet: OWNER },
-      { tx_signature: "sig-open-below", pool_address: POOL, wallet: expected[BELOW]!.owner },
-    ]);
-    const facts = (await readMeteoraPositionRangeFacts(IN_RANGE, { connection, sql }))!;
+    const connection = fakeConnection(storeFrom());
+    const facts = (await readMeteoraPositionRangeFacts(IN_RANGE, { connection }))!;
     expect(facts).toMatchObject({ protocol: "meteora-dlmm", positionMint: IN_RANGE, tickLower: -15, tickUpper: 54, tickCurrent: 16, activeBinId: 16 });
     expect(facts.activeBinPriceBPerA).toBeCloseTo(1.0001 ** 16, 12);
     expect(rangeStatusFromPrice({ ...facts, priceBPerA: facts.onChainPriceBPerA })).toMatchObject({ rangeSide: "inside", inRange: true });
-    const below = (await readMeteoraPositionRangeFacts(BELOW, { connection, sql }))!;
+    const below = (await readMeteoraPositionRangeFacts(BELOW, { connection }))!;
     expect(rangeStatusFromPrice({ ...below, priceBPerA: below.onChainPriceBPerA }).rangeSide).toBe("below");
-    expect(await readMeteoraPositionRangeFacts(POOL, { connection, sql })).toBeNull();
+    expect(await readMeteoraPositionRangeFacts(POOL, { connection })).toBeNull();
   });
 
   it("reads an edge bin as in range (active bin = lower or upper bin)", () => {

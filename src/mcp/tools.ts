@@ -48,8 +48,9 @@ import { isSingleWalletSignedTransaction } from "@sofinance/engine/transaction-l
 import { assertWalletReturnedTransaction } from "@/lib/wallet-returned-guard";
 
 /**
- * List all Raydium CLMM positions and assets for a wallet.
- * Returns positions (NFTs), eligible assets, and balances.
+ * List a wallet's positions and assets: Raydium CLMM position NFTs, plus (behind their
+ * flags) Orca Whirlpool position NFTs and Meteora DLMM position accounts the wallet holds
+ * on-chain in allowlisted pools, wherever they were opened. Also returns eligible assets and balances.
  * 
  * Safety: Read-only operation, no private keys required.
  */
@@ -58,7 +59,7 @@ export async function listPositions(input: ListPositionsInput) {
     (positions) => ({ positions, error: null }),
     (error: unknown) => ({ positions: [], error: sanitizePublicError(error, "Orca positions are unavailable right now.") }),
   ) : null;
-  // Meteora DLMM positions (flagged off in production): read-only, SoFinance-opened only.
+  // Meteora DLMM positions (flagged off in production): read-only, every wallet-owned position in allowlisted pools.
   const meteora = isMeteoraDlmmDiscoveryEnabled() ? listMeteoraPositions(input.wallet).then(
     (positions) => ({ positions, error: null }),
     (error: unknown) => ({ positions: [], error: sanitizePublicError(error, "Meteora positions are unavailable right now.") }),

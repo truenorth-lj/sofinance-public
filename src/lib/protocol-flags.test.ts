@@ -122,6 +122,15 @@ describe("Raydium, Orca and Robinhood Chain are untouched by Meteora", () => {
   });
 });
 
+describe("Orca and Meteora positions are found on-chain like Raydium", () => {
+  it("position readers never consult the SoFinance open log", () => {
+    for (const file of ["src/lib/orca-positions.ts", "src/lib/meteora-positions.ts"]) {
+      const source = readFileSync(join(process.cwd(), file), "utf8");
+      expect(source, file).not.toMatch(/opens-log|sofinance_position_opens|getOpensSql/);
+    }
+  });
+});
+
 describe("deployTarget env resolution", () => {
   it("prefers the build-inlined NEXT_PUBLIC_SOFI_DEPLOY_ENV (client bundles have no VERCEL_ENV)", () => {
     vi.stubEnv("NEXT_PUBLIC_SOFI_DEPLOY_ENV", "preview"); vi.stubEnv("VERCEL_ENV", "");

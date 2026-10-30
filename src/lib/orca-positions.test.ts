@@ -1,4 +1,4 @@
-import { getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID } from "@solana/spl-token";
+import { getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { PublicKey, type ParsedTransactionWithMeta } from "@solana/web3.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import accounts from "../../packages/engine/src/fixtures/orca-positions-cbbtc-wbtc.json";
@@ -12,7 +12,7 @@ vi.mock("./position-performance-history", async (importOriginal) => ({
 
 const { fetchPositionHistoryTransactions } = await import("./position-performance-history");
 const {
-  getOrcaPositionPerformance, listOrcaPositions, ORCA_NOT_SHOWN, ORCA_OPENS_DB_MISSING, readOrcaPositionRangeFacts, readShownOrcaPosition,
+  getOrcaPositionPerformance, listOrcaPositions, ORCA_POOL_NOT_SUPPORTED, readOrcaPosition, readOrcaPositionRangeFacts,
 } = await import("./orca-positions");
 
 const WHIRLPOOL = "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc";
@@ -37,28 +37,35 @@ function mintAccount(decimals: number) {
   data[45] = 1;
   return { owner: new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"), data };
 }
-function tokenAccount(mint: string, owner: string, amount: bigint) {
+function tokenAccount(mint: string, owner: string, amount: bigint, program = TOKEN_2022_PROGRAM_ID) {
   const data = Buffer.alloc(165);
   new PublicKey(mint).toBuffer().copy(data, 0);
   new PublicKey(owner).toBuffer().copy(data, 32);
   data.writeBigUInt64LE(amount, 64);
-  return { owner: TOKEN_2022_PROGRAM_ID, data };
+  return { owner: program, data };
+}
+function hold(store: Store, mint: string, wallet: string, amount = 1n, program = TOKEN_2022_PROGRAM_ID) {
+  const ata = getAssociatedTokenAddressSync(new PublicKey(mint), new PublicKey(wallet), true, program);
+  store.set(ata.toBase58(), tokenAccount(mint, wallet, amount, program));
 }
 
 type Store = Map<string, { owner: PublicKey; data: Buffer }>;
-type Options = import("./orca-positions").OrcaReadOptions;
-function fakeConnection(store: Store, signatures: Record<string, Array<{ signature: string; err: unknown }>> = {}) {
+type Options = import("./orca-positions").OrcaPerformanceOptions;
+function fakeConnection(store: Store) {
   const connection = {
     getAccountInfo: vi.fn(async (key: PublicKey) => store.get(key.toBase58()) ?? null),
     getMultipleAccountsInfo: vi.fn(async (keys: PublicKey[]) => keys.map((key) => store.get(key.toBase58()) ?? null)),
-    getSignaturesForAddress: vi.fn(async (key: PublicKey, options?: { limit?: number; before?: string }) => {
-      const all = signatures[key.toBase58()] ?? [];
-      const start = options?.before ? all.findIndex((item) => item.signature === options.before) + 1 : 0;
-      return all.slice(start, start + (options?.limit ?? 1000));
-    }),
-    getParsedTransaction: vi.fn(async (signature: string) => (signature === "sig-open-below" ? openTx : null)),
+    // Token accounts of a program whose owner field is the wallet (what the RPC returns for a programId filter).
+    getTokenAccountsByOwner: vi.fn(async (wallet: PublicKey, filter: { programId: PublicKey }) => ({
+      context: { slot: 1 },
+      value: [...store.entries()]
+        .filter(([, account]) => account.owner.equals(filter.programId) && account.data.length === 165 && new PublicKey(account.data.subarray(32, 64)).equals(wallet))
+        .map(([address, account]) => ({ pubkey: new PublicKey(address), account: { ...account, executable: false, lamports: 1, rentEpoch: 0 } })),
+    })),
+    getSignaturesForAddress: vi.fn(async () => []),
+    getParsedTransaction: vi.fn(async () => null),
   };
-  return connection as typeof connection & NonNullable<Options["connection"]>;
+  return connection as unknown as typeof connection & NonNullable<Options["connection"]>;
 }
 function baseStore(): Store {
   const store: Store = new Map();
@@ -69,80 +76,76 @@ function baseStore(): Store {
   store.set(WBTC, mintAccount(8));
   return store;
 }
-const opensRows = (rows: Array<Record<string, string>>) => {
-  const sql = { unsafe: vi.fn<(text: string, params: unknown[]) => Promise<typeof rows>>(async () => rows) };
-  return sql as typeof sql & NonNullable<Options["sql"]>;
-};
-const signaturesFor = (position: string, oldest: string) => ({ [position]: [{ signature: "later", err: null }, { signature: oldest, err: null }, { signature: "failed-attempt", err: { x: 1 } }] });
 
-describe("Orca position reads (shown only when opened through SoFinance)", () => {
+describe("Orca position reads (shown wherever they were opened)", () => {
   let store: Store;
   beforeEach(() => { store = baseStore(); vi.mocked(fetchPositionHistoryTransactions).mockReset(); });
 
   it("treats a mint without an Orca position account as not Orca (Raydium falls through)", async () => {
     const connection = fakeConnection(store);
-    await expect(readShownOrcaPosition(new PublicKey(Buffer.alloc(32, 7)).toBase58(), { connection, sql: opensRows([]) })).resolves.toBeNull();
+    await expect(readOrcaPosition(new PublicKey(Buffer.alloc(32, 7)).toBase58(), { connection })).resolves.toBeNull();
+  });
+
+  it("reads any Orca position in an allowlisted pool without the open log or its signature history", async () => {
+    const connection = fakeConnection(store);
+    const read = await readOrcaPosition(mintOf(BELOW), { connection });
+    expect(read!.snapshot).toMatchObject({ positionAccount: BELOW, poolId: accounts.pool, rangeSide: "below" });
     expect(connection.getSignaturesForAddress).not.toHaveBeenCalled();
   });
 
-  it("reports a missing opens database as a configuration error, still hiding the position", async () => {
-    const connection = fakeConnection(store, signaturesFor(BELOW, "sig-open-below"));
-    await expect(readShownOrcaPosition(mintOf(BELOW), { connection, sql: null })).rejects.toThrow(ORCA_OPENS_DB_MISSING);
-    await expect(readOrcaPositionRangeFacts(mintOf(BELOW), { connection, sql: null })).rejects.toThrow(ORCA_OPENS_DB_MISSING);
-    await expect(getOrcaPositionPerformance(mintOf(BELOW), { connection, sql: null })).rejects.toThrow(ORCA_OPENS_DB_MISSING);
-    expect(connection.getSignaturesForAddress).not.toHaveBeenCalled();
-    // A non-Orca mint still falls through to Raydium without needing the database.
-    await expect(readShownOrcaPosition(new PublicKey(Buffer.alloc(32, 7)).toBase58(), { connection, sql: null })).resolves.toBeNull();
-    await expect(listOrcaPositions(OWNER, { connection, sql: null })).rejects.toThrow(ORCA_OPENS_DB_MISSING);
-    expect(ORCA_OPENS_DB_MISSING).not.toBe(ORCA_NOT_SHOWN);
+  it("rejects a position in a pool that is not allowlisted", async () => {
+    const position = store.get(BELOW)!;
+    const foreign = Buffer.from(position.data);
+    new PublicKey(Buffer.alloc(32, 9)).toBuffer().copy(foreign, 8); // whirlpool field
+    store.set(BELOW, { owner: position.owner, data: foreign });
+    await expect(readOrcaPosition(mintOf(BELOW), { connection: fakeConnection(store) })).rejects.toThrow(ORCA_POOL_NOT_SUPPORTED);
   });
 
-  it("hides positions without a SoFinance open: no row, or a row for another transaction", async () => {
-    for (const sql of [opensRows([])]) {
-      await expect(readShownOrcaPosition(mintOf(BELOW), { connection: fakeConnection(store, signaturesFor(BELOW, "sig-open-below")), sql }))
-        .rejects.toThrow(ORCA_NOT_SHOWN);
-    }
-    const sql = opensRows([{ wallet: OWNER }]);
-    await readShownOrcaPosition(mintOf(BELOW), { connection: fakeConnection(store, signaturesFor(BELOW, "sig-open-below")), sql });
-    // The oldest successful signature is checked; failed attempts are skipped.
-    expect(sql.unsafe.mock.calls[0]![1]).toEqual(["sig-open-below", accounts.pool]);
-    expect(sql.unsafe.mock.calls[0]![0]).toMatch(/^SELECT wallet FROM sofinance_position_opens WHERE tx_signature = \$1 AND pool_address = \$2/);
-  });
-
-  it("fails closed when the position history is too long to reach its open, or the log cannot be read", async () => {
-    const long = { [BELOW]: Array.from({ length: 5000 }, (_, index) => ({ signature: `s${index}`, err: null })) };
-    await expect(readShownOrcaPosition(mintOf(BELOW), { connection: fakeConnection(store, long), sql: opensRows([{ wallet: OWNER }]) }))
-      .rejects.toThrow(ORCA_NOT_SHOWN);
-    const broken = { unsafe: vi.fn(async () => { throw new Error('relation "sofinance_position_opens" does not exist'); }) } as unknown as NonNullable<Options["sql"]>;
-    await expect(readShownOrcaPosition(mintOf(BELOW), { connection: fakeConnection(store, signaturesFor(BELOW, "sig-open-below")), sql: broken }))
-      .rejects.toThrow(ORCA_NOT_SHOWN);
-  });
-
-  it("reports range facts for a shown position from the captured pool state", async () => {
-    const options = (position: string) => ({ connection: fakeConnection(store, signaturesFor(position, "sig")), sql: opensRows([{ wallet: OWNER }]) });
-    const inRange = await readOrcaPositionRangeFacts(mintOf(IN_RANGE), options(IN_RANGE));
+  it("reports range facts from the captured pool state", async () => {
+    const connection = fakeConnection(store);
+    const inRange = await readOrcaPositionRangeFacts(mintOf(IN_RANGE), { connection });
     expect(inRange).toMatchObject({ poolId: accounts.pool, mintA: CBBTC, mintB: WBTC, decimalsA: 8, decimalsB: 8, tickLower: 9, tickUpper: 29 });
     expect(inRange!.onChainPriceBPerA).toBeGreaterThan(1.0001 ** 9);
     expect(inRange!.onChainPriceBPerA).toBeLessThan(1.0001 ** 29);
-    const above = await readOrcaPositionRangeFacts(mintOf(ABOVE), options(ABOVE));
+    const above = await readOrcaPositionRangeFacts(mintOf(ABOVE), { connection });
     expect(above!.onChainPriceBPerA).toBeGreaterThanOrEqual(1.0001 ** above!.tickUpper);
   });
 
-  it("lists only logged opens in allowlisted pools that the wallet still holds", async () => {
-    const sql = opensRows([{ tx_signature: "sig-open-below" }, { tx_signature: "sig-unknown" }]);
-    const connection = fakeConnection(store, signaturesFor(BELOW, "sig-open-below"));
-    await expect(listOrcaPositions(OWNER, { connection, sql })).resolves.toEqual([]); // NFT not held
+  it("lists the position NFTs the wallet holds (SPL Token and Token-2022) in allowlisted pools", async () => {
+    const connection = fakeConnection(store);
+    await expect(listOrcaPositions(OWNER, { connection })).resolves.toEqual([]); // no NFTs held
+    expect(connection.getMultipleAccountsInfo).not.toHaveBeenCalled();
 
-    const ata = getAssociatedTokenAddressSync(new PublicKey(mintOf(BELOW)), new PublicKey(OWNER), true, TOKEN_2022_PROGRAM_ID);
-    store.set(ata.toBase58(), tokenAccount(mintOf(BELOW), OWNER, 1n));
-    const listed = await listOrcaPositions(OWNER, { connection, sql });
-    expect(listed).toEqual([expect.objectContaining({ protocol: "orca-whirlpool", positionMint: mintOf(BELOW), positionAccount: BELOW,
-      poolId: accounts.pool, mintA: CBBTC, mintB: WBTC, tickLower: 18, tickUpper: 38, rangeSide: "below" })]);
-    expect(sql.unsafe.mock.calls[0]![1]).toEqual([OWNER, [accounts.pool]]);
+    hold(store, mintOf(BELOW), OWNER); // Token-2022 position NFT
+    hold(store, mintOf(IN_RANGE), OWNER, 1n, TOKEN_PROGRAM_ID); // legacy SPL position NFT
+    hold(store, mintOf(ABOVE), OWNER, 0n); // emptied token account: not held
+    hold(store, CBBTC, OWNER, 5n, TOKEN_PROGRAM_ID); // fungible balance: not an NFT
+    hold(store, WBTC, OWNER, 1n, TOKEN_PROGRAM_ID); // 1 raw unit of a fungible token: no Orca position PDA
+    vi.clearAllMocks();
+    const listed = await listOrcaPositions(OWNER, { connection });
+    expect(listed).toHaveLength(2);
+    expect(listed).toEqual(expect.arrayContaining([
+      expect.objectContaining({ protocol: "orca-whirlpool", positionMint: mintOf(BELOW), positionAccount: BELOW,
+        poolId: accounts.pool, mintA: CBBTC, mintB: WBTC, tickLower: 18, tickUpper: 38, rangeSide: "below" }),
+      expect.objectContaining({ positionMint: mintOf(IN_RANGE), positionAccount: IN_RANGE, tickLower: 9, tickUpper: 29, rangeSide: "inside" }),
+    ]));
+    // 2 token-account scans, 1 batch of position PDAs, 1 batch of pools; no per-position or provenance reads.
+    expect(connection.getTokenAccountsByOwner).toHaveBeenCalledTimes(2);
+    expect(connection.getMultipleAccountsInfo).toHaveBeenCalledTimes(2);
+    expect(connection.getAccountInfo).not.toHaveBeenCalled();
+    expect(connection.getSignaturesForAddress).not.toHaveBeenCalled();
 
-    // A logged signature that is not the position's first transaction is not its open.
-    const notOpen = fakeConnection(store, signaturesFor(BELOW, "sig-something-else"));
-    await expect(listOrcaPositions(OWNER, { connection: notOpen, sql })).resolves.toEqual([]);
+    // Someone else's wallet does not see these positions.
+    await expect(listOrcaPositions(new PublicKey(Buffer.alloc(32, 3)).toBase58(), { connection })).resolves.toEqual([]);
+  });
+
+  it("skips held positions in pools that are not allowlisted", async () => {
+    const position = store.get(BELOW)!;
+    const foreign = Buffer.from(position.data);
+    new PublicKey(Buffer.alloc(32, 9)).toBuffer().copy(foreign, 8);
+    store.set(BELOW, { owner: position.owner, data: foreign });
+    hold(store, mintOf(BELOW), OWNER);
+    await expect(listOrcaPositions(OWNER, { connection: fakeConnection(store) })).resolves.toEqual([]);
   });
 
   it("computes performance from the parsed receipts and live state", async () => {
@@ -150,7 +153,7 @@ describe("Orca position reads (shown only when opened through SoFinance)", () =>
       err: null, logMessages: tx.meta!.logMessages ?? null, parsedTransaction: tx }));
     vi.mocked(fetchPositionHistoryTransactions).mockResolvedValue({ items, truncated: false, signatureCount: items.length, metric: {} as never });
     const result = await getOrcaPositionPerformance(mintOf(BELOW), {
-      connection: fakeConnection(store, signaturesFor(BELOW, items[0]!.signature)), sql: opensRows([{ wallet: OWNER }]), skipPricing: true,
+      connection: fakeConnection(store), skipPricing: true,
       nowSeconds: 1_800_000_000,
     });
     expect(result).toMatchObject({
@@ -163,10 +166,10 @@ describe("Orca position reads (shown only when opened through SoFinance)", () =>
     expect(result!.metrics.holdingDays).toBeGreaterThan(0);
     expect(result!.assumptions).not.toMatch(/incomplete/);
 
-    // History that does not reach the logged open is reported as incomplete.
+    // History that does not reach the open is reported as incomplete.
     vi.mocked(fetchPositionHistoryTransactions).mockResolvedValue({ items: items.slice(1), truncated: true, signatureCount: 500, metric: {} as never });
     const partial = await getOrcaPositionPerformance(mintOf(BELOW), {
-      connection: fakeConnection(store, signaturesFor(BELOW, items[0]!.signature)), sql: opensRows([{ wallet: OWNER }]), skipPricing: true,
+      connection: fakeConnection(store), skipPricing: true,
     });
     expect(partial!.assumptions).toMatch(/incomplete/);
     expect(partial!.metrics.feeOnlyAprPct).toBeNull();

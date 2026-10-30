@@ -29,8 +29,8 @@ export function isOrcaDiscoveryEnabled(target: DeployTarget = deployTarget()): b
 
 /**
  * Orca Whirlpools read-only positions in MCP `list_positions` /
- * `get_position_performance` / `get_position_range_status` (allowlisted pools,
- * SoFinance-opened positions only). OFF in production, same targets as above.
+ * `get_position_performance` / `get_position_range_status` (positions the wallet
+ * holds on-chain in allowlisted pools). OFF in production, same targets as above.
  */
 export const ORCA_POSITIONS_ENABLED: Readonly<Record<DeployTarget, boolean>> = Object.freeze({
   production: false,

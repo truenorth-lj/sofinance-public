@@ -2,8 +2,7 @@ import "@/lib/engine-host";
 import "server-only";
 
 import { getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
-import { PublicKey, type Connection, type ParsedTransactionWithMeta } from "@solana/web3.js";
-import bs58 from "bs58";
+import { PublicKey, type AccountInfo, type Connection } from "@solana/web3.js";
 import { decodeMintDecimals, decodeWhirlpool, orcaTickArrayAddress, orcaTickArrayStartIndex, type WhirlpoolState } from "@sofinance/engine/protocols/orca/accounts";
 import { ORCA_ALLOWLISTED_POOLS, ORCA_WHIRLPOOL_PROGRAM_ID } from "@sofinance/engine/protocols/orca/constants";
 import {
@@ -17,8 +16,7 @@ import { rpcConnection, rpcProvider, type RpcProvider } from "@sofinance/engine/
 import { fetchJupiterPricesUsd } from "@sofinance/engine/token-prices";
 import { getTokenMetadata } from "@sofinance/engine/token-metadata";
 import { getJupiterApiKey } from "@sofinance/engine/config/server-env";
-import { getOpensSql, type OpensSql } from "./opens-log/persist";
-import { ORCA_INSTRUCTION, parseOrcaPositionCashflowEvents } from "./orca-position-events";
+import { parseOrcaPositionCashflowEvents } from "./orca-position-events";
 import { aggregateCashflowsForPosition, type PositionEventContext } from "./position-performance-events";
 import { fetchPositionHistoryTransactions, toChronological, type HistoryConnection } from "./position-performance-history";
 import type { PositionHistoryEvent, PositionPerformanceResult } from "./position-performance";
@@ -29,24 +27,23 @@ import { matchWrapPairShape } from "./rwa-pairing";
 /**
  * Read-only Orca Whirlpool positions for the allowlisted pools.
  *
- * Product rule: positions opened outside SoFinance are not shown yet. A
- * position is visible only when its first successful transaction is a
- * SoFinance-logged open (`sofinance_position_opens`) in an allowlisted pool.
- * Everything fails closed: no opens database, an unreadable log, a history
- * too long to reach the open, or a non-allowlisted pool all hide it.
+ * Positions are found the same way as Raydium: scan the wallet's position
+ * NFTs (SPL Token and Token-2022) on-chain and show every one that belongs to
+ * an allowlisted pool, wherever it was opened. Nothing here depends on the
+ * SoFinance open log. Position bundles (one bundle NFT holding several
+ * positions) are not listed; SoFinance and the Orca UI do not open them.
  */
 
 export const ORCA_PROTOCOL = "orca-whirlpool" as const;
-export const ORCA_NOT_SHOWN = "This Orca position was not opened through SoFinance; it is not shown yet.";
-/** Configuration error, not a provenance verdict: without the open log no Orca position can be shown (fails closed). */
-export const ORCA_OPENS_DB_MISSING = "Orca positions are unavailable: the SoFinance open log database is not configured on this deployment.";
-const PROVENANCE_PAGE = 1000;
-const PROVENANCE_MAX_PAGES = 5;
-const LIST_MAX_OPENS = 50;
+export const ORCA_POOL_NOT_SUPPORTED = "This Orca position is in a pool SoFinance does not support yet.";
+const LIST_MAX_POSITIONS = 50;
+/** Upper bound on 1-unit token accounts checked for an Orca position (10 getMultipleAccounts batches). */
+const LIST_MAX_CANDIDATES = 1000;
+const MULTIPLE_ACCOUNTS_BATCH = 100;
 const DEFAULT_MAX_SIGNATURES = 100;
 
-type OrcaConnection = Pick<Connection, "getAccountInfo" | "getMultipleAccountsInfo" | "getSignaturesForAddress" | "getParsedTransaction">;
-export type OrcaReadOptions = { connection?: OrcaConnection; sql?: OpensSql | null };
+type OrcaConnection = Pick<Connection, "getAccountInfo" | "getMultipleAccountsInfo" | "getTokenAccountsByOwner">;
+export type OrcaReadOptions = { connection?: OrcaConnection };
 
 const allowlisted = (poolId: string) => ORCA_ALLOWLISTED_POOLS.find((pool) => pool.poolAddress === poolId);
 
@@ -72,7 +69,7 @@ export async function readOrcaPositionSnapshot(positionMint: string, connection:
   const position = decodeOrcaPosition(info.data);
   if (position.positionMint !== positionMint) throw new Error("Orca position NFT mint mismatch");
   const allow = allowlisted(position.whirlpool);
-  if (!allow) throw new Error(ORCA_NOT_SHOWN);
+  if (!allow) throw new Error(ORCA_POOL_NOT_SUPPORTED);
   return snapshotFromPosition(positionAccount, position, connection, Buffer.from(info.data).toString("base64"));
 }
 
@@ -106,53 +103,11 @@ async function snapshotFromPosition(positionAccount: string, position: OrcaPosit
   };
 }
 
-function opensSql(sql: OpensSql | null | undefined) {
-  return sql === undefined ? getOpensSql() : sql ?? undefined;
-}
-
-/**
- * First successful signature of the position account (its open), bounded.
- * Returns null when the history is longer than the bound (fail closed).
- */
-async function firstSuccessfulSignature(connection: OrcaConnection, address: string): Promise<string | null> {
-  let before: string | undefined;
-  let oldest: string | null = null;
-  for (let page = 0; page < PROVENANCE_MAX_PAGES; page++) {
-    const batch = await connection.getSignaturesForAddress(new PublicKey(address), { limit: PROVENANCE_PAGE, before }, "confirmed");
-    for (const item of batch) if (!item.err) oldest = item.signature;
-    if (batch.length < PROVENANCE_PAGE) return oldest;
-    before = batch[batch.length - 1]!.signature;
-  }
-  return null;
-}
-
-/** The SoFinance open log row for this position, or null (not shown). Never runs DDL. */
-export async function orcaPositionProvenance(snapshot: Pick<OrcaPositionSnapshot, "positionAccount" | "poolId">, options: { connection: OrcaConnection; sql?: OpensSql | null }) {
-  const sql = opensSql(options.sql);
-  if (!sql || !allowlisted(snapshot.poolId)) return null;
-  try {
-    const openSignature = await firstSuccessfulSignature(options.connection, snapshot.positionAccount);
-    if (!openSignature) return null;
-    const rows = await sql.unsafe(
-      "SELECT wallet FROM sofinance_position_opens WHERE tx_signature = $1 AND pool_address = $2 LIMIT 1",
-      [openSignature, snapshot.poolId],
-    ) as Array<{ wallet: string }>;
-    return rows[0] ? { openSignature, wallet: rows[0].wallet } : null;
-  } catch {
-    return null;
-  }
-}
-
-/** Shown Orca snapshot for a mint: null when it is not an Orca position, throws when it is one that is not shown. */
-export async function readShownOrcaPosition(positionMint: string, options: OrcaReadOptions = {}) {
+/** Live Orca snapshot for a mint: null when it is not an Orca position, throws for a pool SoFinance does not support. */
+export async function readOrcaPosition(positionMint: string, options: OrcaReadOptions = {}) {
   const connection = options.connection ?? rpcConnection();
   const snapshot = await readOrcaPositionSnapshot(positionMint, connection);
-  if (!snapshot) return null;
-  const sql = opensSql(options.sql);
-  if (!sql) throw new Error(ORCA_OPENS_DB_MISSING);
-  const provenance = await orcaPositionProvenance(snapshot, { connection, sql });
-  if (!provenance) throw new Error(ORCA_NOT_SHOWN);
-  return { snapshot, provenance, connection };
+  return snapshot ? { snapshot, connection } : null;
 }
 
 async function walletHoldsNft(connection: OrcaConnection, wallet: string, mint: string): Promise<boolean> {
@@ -163,23 +118,25 @@ async function walletHoldsNft(connection: OrcaConnection, wallet: string, mint: 
     info.data.readBigUInt64LE(64) === 1n));
 }
 
-/** Position mint opened by an Orca open instruction in this transaction for `wallet`, in an allowlisted pool. */
-function openedOrcaPosition(transaction: ParsedTransactionWithMeta | null, wallet: string): { positionMint: string; poolId: string } | null {
-  if (!transaction?.meta || transaction.meta.err) return null;
-  const opens: Record<string, number> = {
-    [ORCA_INSTRUCTION.openPosition]: 5, [ORCA_INSTRUCTION.openPositionWithMetadata]: 6, [ORCA_INSTRUCTION.openPositionWithTokenExtensions]: 5,
-  };
-  for (const instruction of transaction.transaction.message.instructions) {
-    if (instruction.programId.toBase58() !== ORCA_WHIRLPOOL_PROGRAM_ID || !("accounts" in instruction)) continue;
-    let disc: string;
-    try { disc = Buffer.from(bs58.decode(instruction.data)).subarray(0, 8).toString("hex"); } catch { continue; }
-    const whirlpoolIndex = opens[disc];
-    if (whirlpoolIndex === undefined) continue;
-    const poolId = instruction.accounts[whirlpoolIndex]?.toBase58();
-    const positionMint = instruction.accounts[3]?.toBase58();
-    if (poolId && positionMint && allowlisted(poolId) && instruction.accounts[1]?.toBase58() === wallet) return { positionMint, poolId };
+async function accountsInBatches(connection: OrcaConnection, keys: PublicKey[]) {
+  const out: Array<AccountInfo<Buffer> | null> = [];
+  for (let start = 0; start < keys.length; start += MULTIPLE_ACCOUNTS_BATCH) {
+    out.push(...await connection.getMultipleAccountsInfo(keys.slice(start, start + MULTIPLE_ACCOUNTS_BATCH), "confirmed"));
   }
-  return null;
+  return out;
+}
+
+/** Mints of the wallet's 1-unit token accounts (SPL Token + Token-2022): every Orca position NFT is one of these. */
+async function walletNftMints(connection: OrcaConnection, owner: PublicKey): Promise<string[]> {
+  const [legacy, token2022] = await Promise.all([TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID].map((programId) =>
+    connection.getTokenAccountsByOwner(owner, { programId }, "confirmed")));
+  const mints = new Set<string>();
+  for (const { account } of [...legacy!.value, ...token2022!.value]) {
+    const data = account.data;
+    if (data.length < 72 || !new PublicKey(data.subarray(32, 64)).equals(owner) || data.readBigUInt64LE(64) !== 1n) continue;
+    mints.add(new PublicKey(data.subarray(0, 32)).toBase58());
+  }
+  return [...mints].sort();
 }
 
 export type OrcaListedPosition = {
@@ -196,47 +153,54 @@ export type OrcaListedPosition = {
   liquidity: string;
 };
 
-/** Orca positions the wallet opened through SoFinance in allowlisted pools and still holds. Throws ORCA_OPENS_DB_MISSING without the open log. */
+/**
+ * Orca positions the wallet holds in allowlisted pools, found on-chain like Raydium:
+ * the wallet's 1-unit token accounts (2 getTokenAccountsByOwner calls), their position
+ * PDAs (batched getMultipleAccounts), then one batch for the distinct pools.
+ */
 export async function listOrcaPositions(wallet: string, options: OrcaReadOptions = {}): Promise<OrcaListedPosition[]> {
-  const sql = opensSql(options.sql);
-  // Surfaced by list_positions as a protocolErrors entry instead of a silent empty list.
-  if (!sql) throw new Error(ORCA_OPENS_DB_MISSING);
-  const owner = new PublicKey(wallet).toBase58();
+  const owner = new PublicKey(wallet);
   const connection = options.connection ?? rpcConnection();
-  const rows = await sql.unsafe(
-    `SELECT tx_signature FROM sofinance_position_opens
-     WHERE wallet = $1 AND pool_address = ANY($2::text[]) ORDER BY opened_at DESC LIMIT ${LIST_MAX_OPENS}`,
-    [owner, ORCA_ALLOWLISTED_POOLS.map((pool) => pool.poolAddress)],
-  ) as Array<{ tx_signature: string }>;
-  const out: OrcaListedPosition[] = [];
-  for (const row of rows) {
-    const transaction = await connection.getParsedTransaction(row.tx_signature, { maxSupportedTransactionVersion: 0, commitment: "confirmed" });
-    const opened = openedOrcaPosition(transaction, owner);
-    if (!opened || out.some((item) => item.positionMint === opened.positionMint)) continue;
-    const snapshot = await readOrcaPositionSnapshot(opened.positionMint, connection);
-    if (!snapshot || !(await walletHoldsNft(connection, owner, snapshot.positionMint))) continue;
-    // The logged transaction must be this position's open, not merely one that names it.
-    const provenance = await orcaPositionProvenance(snapshot, { connection, sql });
-    if (provenance?.openSignature !== row.tx_signature) continue;
-    out.push(listedRow(snapshot));
-  }
-  return out;
-}
-
-function listedRow(snapshot: OrcaPositionSnapshot): OrcaListedPosition {
-  return {
-    protocol: ORCA_PROTOCOL,
-    positionMint: snapshot.positionMint,
-    positionAccount: snapshot.positionAccount,
-    poolId: snapshot.poolId,
-    mintA: snapshot.pool.tokenMintA,
-    mintB: snapshot.pool.tokenMintB,
-    tickLower: snapshot.position.tickLowerIndex,
-    tickUpper: snapshot.position.tickUpperIndex,
-    tickCurrent: snapshot.pool.tickCurrentIndex,
-    rangeSide: snapshot.rangeSide,
-    liquidity: snapshot.position.liquidity.toString(),
-  };
+  const mints = (await walletNftMints(connection, owner)).slice(0, LIST_MAX_CANDIDATES);
+  if (!mints.length) return [];
+  const addresses = mints.map((mint) => orcaPositionAddress(mint));
+  const infos = await accountsInBatches(connection, addresses.map((address) => new PublicKey(address)));
+  const found: Array<{ positionAccount: string; position: OrcaPosition }> = [];
+  infos.forEach((info, index) => {
+    if (!info || info.owner.toBase58() !== ORCA_WHIRLPOOL_PROGRAM_ID || !isOrcaPositionAccount(info.data)) return;
+    const position = decodeOrcaPosition(info.data);
+    if (position.positionMint !== mints[index] || !allowlisted(position.whirlpool)) return;
+    found.push({ positionAccount: addresses[index]!, position });
+  });
+  const shown = found.slice(0, LIST_MAX_POSITIONS);
+  if (!shown.length) return [];
+  const poolIds = [...new Set(shown.map((item) => item.position.whirlpool))];
+  const poolInfos = await connection.getMultipleAccountsInfo(poolIds.map((id) => new PublicKey(id)), "confirmed");
+  const pools = new Map<string, WhirlpoolState>();
+  poolIds.forEach((id, index) => {
+    const info = poolInfos[index];
+    const allow = allowlisted(id)!;
+    if (!info || info.owner.toBase58() !== ORCA_WHIRLPOOL_PROGRAM_ID) throw new Error("Orca whirlpool account missing");
+    const pool = decodeWhirlpool(info.data);
+    if (pool.tokenMintA !== allow.mintA || pool.tokenMintB !== allow.mintB) throw new Error("Orca whirlpool mints do not match the allowlist");
+    pools.set(id, pool);
+  });
+  return shown.map(({ positionAccount, position }) => {
+    const pool = pools.get(position.whirlpool)!;
+    return {
+      protocol: ORCA_PROTOCOL,
+      positionMint: position.positionMint,
+      positionAccount,
+      poolId: position.whirlpool,
+      mintA: pool.tokenMintA,
+      mintB: pool.tokenMintB,
+      tickLower: position.tickLowerIndex,
+      tickUpper: position.tickUpperIndex,
+      tickCurrent: pool.tickCurrentIndex,
+      rangeSide: orcaRangeSide(pool.sqrtPriceX64, position.tickLowerIndex, position.tickUpperIndex),
+      liquidity: position.liquidity.toString(),
+    };
+  });
 }
 
 function onChainPriceBPerA(sqrtPriceX64: bigint, decimalsA: number, decimalsB: number) {
@@ -246,9 +210,9 @@ function onChainPriceBPerA(sqrtPriceX64: bigint, decimalsA: number, decimalsB: n
 
 /** Range facts for `get_position_range_status`, or null when the mint is not an Orca position. */
 export async function readOrcaPositionRangeFacts(positionMint: string, options: OrcaReadOptions = {}): Promise<PositionRangeFacts | null> {
-  const shown = await readShownOrcaPosition(positionMint, options);
-  if (!shown) return null;
-  const { snapshot } = shown;
+  const read = await readOrcaPosition(positionMint, options);
+  if (!read) return null;
+  const { snapshot } = read;
   const price = onChainPriceBPerA(snapshot.pool.sqrtPriceX64, snapshot.decimalsA, snapshot.decimalsB);
   if (!Number.isFinite(price) || price <= 0) throw new Error("On-chain pool mid price is not a positive B-per-A value");
   return {
@@ -265,7 +229,8 @@ export async function readOrcaPositionRangeFacts(positionMint: string, options: 
   };
 }
 
-export type OrcaPerformanceOptions = OrcaReadOptions & {
+export type OrcaPerformanceOptions = {
+  connection?: OrcaConnection & Pick<Connection, "getSignaturesForAddress" | "getParsedTransaction">;
   wallet?: string;
   maxSignatures?: number;
   skipPricing?: boolean;
@@ -277,7 +242,7 @@ export type OrcaPerformanceOptions = OrcaReadOptions & {
 };
 
 /**
- * Holding-period / realized fee metrics for a shown Orca position, from its
+ * Holding-period / realized fee metrics for an Orca position in an allowlisted pool, from its
  * landed receipts (no durable history store yet) and live on-chain state.
  * Returns null when the mint is not an Orca position.
  */
@@ -285,9 +250,9 @@ export async function getOrcaPositionPerformance(positionMint: string, options: 
   const started = Date.now();
   const signal = AbortSignal.timeout(50_000);
   const connection = options.connection ?? rpcConnection(undefined, { signal });
-  const shown = await readShownOrcaPosition(positionMint, { connection, sql: options.sql });
-  if (!shown) return null;
-  const { snapshot } = shown;
+  const read = await readOrcaPosition(positionMint, { connection });
+  if (!read) return null;
+  const { snapshot } = read;
   const accountsMs = Date.now() - started;
   const maxSignatures = Math.min(Math.max(1, options.maxSignatures ?? DEFAULT_MAX_SIGNATURES), 500);
   const nowSeconds = options.nowSeconds ?? Math.floor(Date.now() / 1000);
@@ -361,7 +326,7 @@ export async function getOrcaPositionPerformance(positionMint: string, options: 
   });
 
   // Without the open (history longer than the window) the ledger is partial.
-  const incomplete = fetched.truncated || !opened || opened.signature !== shown.provenance.openSignature;
+  const incomplete = fetched.truncated || !opened;
   if (incomplete) {
     metrics.pnlUsd = null;
     metrics.holdingPeriodReturnPct = null;
