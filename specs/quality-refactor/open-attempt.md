@@ -1,6 +1,13 @@
 # P3a Open attempt state model
 
-Local implementation candidate only; independent root Code/Security/QA review is still required. Accepted base `b96d55631a173a4c7fef0808c1744ca53c632b87`, tree `575fbf2957d3108315a1f04555c73daa4310e3c1`. P3b preview and P3c submission remain later work. No prototype or remote delivery.
+Delivery update (2026-10-30): this model extraction merged in [PR #169](https://github.com/truenorth-lj/sofinance-public/pull/169)
+as `411e0f8f4469fa73c8d5ce4787a9ee45927a05bc`. Preview and submission extraction
+subsequently merged in #172 and #174. See [current delivery status](delivery-status-20261030.md).
+
+The following scope and evidence describe the original candidate on accepted base
+`b96d55631a173a4c7fef0808c1744ca53c632b87`, tree
+`575fbf2957d3108315a1f04555c73daa4310e3c1`. Later safety corrections do not rewrite
+its preserved baseline results. Prototype ownership remains unchanged.
 
 ## Ownership and contract
 
@@ -25,4 +32,4 @@ Preserved baseline limits (not introduced or repaired here):
 - Suspense layout reconnect clears attemptRef without replaying history load; manual status results remain ignored and track is blocked until a full remount reloads history. Activity and StrictMode have their own characterized effect replay behavior.
 - With a response adapter that ignores the composed timeout during slow JSON, the original current predicate can still accept its result. The timeout signal is passed unchanged; this is not a claim about all browser fetch implementations.
 
-No safety correction is hidden in this extraction. Selected L1/B1 stay out of scope. Full commands, first failures, mutation controls, manifests, build binding, fresh/reused gates and cleanup are recorded in workspace `output/sofinance-open-attempt-model-implementation-20261028-r1.md` and its same-name evidence directory. Local synthetic results are not release or financial proof. FINANCIAL NOT_EXERCISED; overall P3–P7 and typed-store/analytics work remain unfinished.
+No safety correction is hidden in this extraction. Selected L1/B1 stay out of scope. Full commands, first failures, mutation controls, manifests, build binding, fresh/reused gates and cleanup are recorded in workspace `output/sofinance-open-attempt-model-implementation-20261028-r1.md` and its same-name evidence directory. Local synthetic results are not release or financial proof. FINANCIAL NOT_EXERCISED. Overall P3–P7 and typed-store/analytics work were unfinished at this candidate checkpoint; use the current delivery map for subsequent merges.
