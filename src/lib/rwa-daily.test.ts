@@ -5,7 +5,9 @@ import {
   volumeWindowEnd,
 } from "./rwa-daily";
 import { validRwaAuthorization } from "./rwa-auth";
-import { aprSnapshotExpired } from "./rwa-freshness";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { APR_SNAPSHOT_MAX_AGE_MS, RWA_REFRESH_CRON, aprSnapshotExpired } from "./rwa-freshness";
 import { payloadFixture } from "./range-apr/payload.fixture";
 
 describe("RWA observation boundaries", () => {
@@ -46,15 +48,26 @@ describe("RWA observation boundaries", () => {
     const payload = payloadFixture({
       freshness: {
         snapshotAt: "2026-10-14T01:00:00Z",
-        chainObservedAt: "2026-10-14T00:10:00Z",
+        chainObservedAt: "2026-10-14T00:15:00Z",
         stale: true,
       },
     });
-    expect(
-      aprSnapshotExpired(payload, Date.parse("2026-10-14T00:20:00Z")),
-    ).toBe(false);
-    expect(
-      aprSnapshotExpired(payload, Date.parse("2026-10-14T01:00:00Z")),
-    ).toBe(true);
+    // A daily snapshot stays on screen until after the next day's run (00:15 UTC) plus grace.
+    expect(aprSnapshotExpired(payload, Date.parse("2026-10-14T01:00:00Z"))).toBe(false);
+    expect(aprSnapshotExpired(payload, Date.parse("2026-10-15T00:14:00Z"))).toBe(false);
+    expect(aprSnapshotExpired(payload, Date.parse("2026-10-15T02:14:00Z"))).toBe(false);
+    expect(aprSnapshotExpired(payload, Date.parse("2026-10-15T02:16:00Z"))).toBe(true);
+    expect(aprSnapshotExpired(payloadFixture({ freshness: { snapshotAt: "not a date", stale: true } }), Date.now())).toBe(true);
+  });
+  it("keeps the display window longer than the production cron interval", () => {
+    const vercel = JSON.parse(readFileSync(resolve("vercel.json"), "utf8")) as { crons: { path: string; schedule: string }[] };
+    const cron = vercel.crons.find((entry) => entry.path === "/api/internal/rwa-refresh");
+    expect(cron?.schedule).toBe(RWA_REFRESH_CRON);
+    // Daily, at a minute inside the 00:10–01:10 UTC (08:10–09:10 Taipei) daily-sample window.
+    const [minute, hour, ...rest] = RWA_REFRESH_CRON.split(" ");
+    expect(rest).toEqual(["*", "*", "*"]);
+    expect(Number(hour) * 60 + Number(minute)).toBeGreaterThanOrEqual(10);
+    expect(Number(hour) * 60 + Number(minute)).toBeLessThan(70);
+    expect(APR_SNAPSHOT_MAX_AGE_MS).toBeGreaterThan(24 * 3_600_000);
   });
 });
