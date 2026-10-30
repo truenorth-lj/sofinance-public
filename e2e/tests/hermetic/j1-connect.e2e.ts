@@ -17,7 +17,7 @@ test.describe("J1 connect wallet", () => {
 
     await modal.walletEntry.first().click();
     await expect(modal.navAddress).toBeVisible();
-    await expect(page.getByRole("button", { name: /^connect wallet$/i })).toHaveCount(0);
+    await expect(modal.connectButtons).toHaveCount(0);
     await page.screenshot({ path: test.info().outputPath("j1-connected.png") });
     // Connecting must never request a signature (only an explicit user action may).
     expect(wallet.ledger).toEqual([]);

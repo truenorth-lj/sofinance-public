@@ -5,11 +5,12 @@ import type { FakeWallet } from "../fake-wallet/node-signer";
 export class ConnectModal {
   constructor(private readonly page: Page, private readonly wallet: FakeWallet) {}
 
-  get connectButtons() { return this.page.getByRole("button", { name: /^connect wallet$/i }); }
+  /** The nav "Solana wallet" button (first in the DOM), the My positions "Connect Solana wallet" prompt, or a dialog's "Connect wallet". */
+  get connectButtons() { return this.page.getByRole("button", { name: /^(connect )?solana wallet$|^connect wallet$/i }); }
   get walletEntry() { return this.page.getByRole("button", { name: new RegExp(this.wallet.name, "i") }); }
-  /** Short form shown by the nav once connected: first 4 + … + last 4 (src/components/ink InkNav). */
+  /** Short form shown by the nav once connected: first 4 + … + last 4 and a "SOL" hint (src/components/ink InkNav). */
   get shortAddress() { return `${this.wallet.address.slice(0, 4)}…${this.wallet.address.slice(-4)}`; }
-  get navAddress() { return this.page.getByRole("button", { name: this.shortAddress, exact: true }).first(); }
+  get navAddress() { return this.page.getByTestId("nav-solana-wallet").filter({ hasText: this.shortAddress }); }
 
   async open(trigger: Locator = this.connectButtons.first()) {
     await trigger.click();

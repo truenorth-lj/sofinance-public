@@ -249,7 +249,7 @@ export type OpenRhcRequest = { pool: RhcPoolView };
  * `/app/rwa-pairs` pool list: Solana (Raydium; Orca / Meteora when their flags are on) and Robinhood Chain (Uniswap v4) in one
  * list. Cards or a sortable table, search, chain / protocol / risk filters, and "Hide duplicate pools" (on by default;
  * see `lib/unified-pools/model.ts` for the rule). Opening a Solana pool connects the Solana wallet and opens the
- * existing Create position modal; opening a Robinhood Chain pool asks the page to open its MetaMask flow.
+ * existing Create position modal; opening a Robinhood Chain pool asks the page to open its dialog on the nav's EVM wallet.
  */
 export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", header }: {
   flags: UnifiedPoolFlags;
@@ -374,8 +374,9 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", header 
         <div>
           <h2 id="pools-heading" className="text-base font-semibold text-cream">Pools</h2>
           <p className="mt-2 max-w-2xl text-xs leading-5 text-smoke">
-            Solana and Robinhood Chain pools in one list. Opening a pool connects the wallet for its chain: Phantom or another
-            Solana wallet for Solana, MetaMask for Robinhood Chain. {NOT_GUARANTEED}{" "}
+            Solana and Robinhood Chain pools in one list. The two wallets are separate (top bar): a Solana wallet such as Phantom
+            for Solana pools, an EVM wallet such as MetaMask for Robinhood Chain. Opening a pool asks for its chain&apos;s wallet
+            if it is not connected yet. {NOT_GUARANTEED}{" "}
             <Link href={DOCS_ROUTES.yieldAndApr} className="text-cream/80 underline underline-offset-2 hover:text-cream">Yield &amp; APR</Link>
           </p>
           {header}
