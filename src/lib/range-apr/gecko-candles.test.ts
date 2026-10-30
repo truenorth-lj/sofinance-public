@@ -48,3 +48,15 @@ describe("orientCandles", () => {
     expect(orientCandles(parseGeckoHourlyCandles(null), A, B)).toBeNull();
   });
 });
+
+  it("matches checksummed EVM addresses against Gecko's lowercase meta (RHC)", () => {
+    const geckoBase = "0x9b8294f24453379aa87c807ab82bf1d5722153fc";
+    const geckoQuote = "0x4a0e65a3eccec6dbe60ae065f2e7bb85fae35eea";
+    const currency0 = "0x4a0E65A3EcceC6dBe60AE065F2e7bb85Fae35eEa";
+    const currency1 = "0x9B8294F24453379aa87C807ab82bf1d5722153Fc";
+    const evm = parseGeckoHourlyCandles(body([[3600, 2, 4, 1, 2, 9]], geckoBase, geckoQuote));
+    // Gecko base = currency1 → invert to B-per-A of the v4 pool
+    const [flipped] = orientCandles(evm, currency0, currency1)!;
+    expect(flipped).toEqual({ time: 3600, open: 0.5, high: 1, low: 0.25, close: 0.5, volume: 9 });
+    expect(orientCandles(evm, currency1, currency0)).toEqual(evm.candles);
+  });

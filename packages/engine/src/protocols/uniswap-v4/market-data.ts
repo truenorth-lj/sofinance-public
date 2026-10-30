@@ -1,5 +1,6 @@
 import { isAddressEqual, type Address, type Hex } from "viem";
 import type { Univ4AllowlistedPool } from "./constants";
+import { poolFeeAprPct } from "../../fee-apr";
 
 /**
  * 24h volume and TVL for an allowlisted v4 pool from public indexers (PM decision 2026-10-29: no event scans
@@ -22,6 +23,11 @@ export type Univ4MarketData = {
   txns24h: number | null;
   /** Pool token balances as reported by the source (token units), when available. */
   reserves: { token0: number; token1: number } | null;
+  /**
+   * USD price of one whole token (currency0 / currency1) when the source reports it. RHC stock tokens trade at
+   * the share price, not $1, so the range model needs this to turn the pool TVL into token units.
+   */
+  priceUsd?: { token0: number; token1: number } | null;
 };
 
 export const DEXSCREENER_CHAIN_ID = "robinhood";
@@ -55,11 +61,15 @@ export function parseDexScreenerPair(payload: unknown, spec: Univ4AllowlistedPoo
   const txns = isObj(pair.txns) && isObj(pair.txns.h24) ? pair.txns.h24 : null;
   const buys = txns ? num(txns.buys) : null, sells = txns ? num(txns.sells) : null;
   const baseAmount = liquidity ? num(liquidity.base) : null, quoteAmount = liquidity ? num(liquidity.quote) : null;
+  // priceUsd is the base token's USD price, priceNative the base price in quote tokens.
+  const baseUsd = num(pair.priceUsd), native = num(pair.priceNative);
+  const quoteUsd = baseUsd !== null && native !== null && native > 0 ? baseUsd / native : null;
   return {
     source: "dexscreener", volume24hUsd, tvlUsd,
     txns24h: buys !== null && sells !== null ? buys + sells : null,
     reserves: baseAmount !== null && quoteAmount !== null
       ? (baseIs0 ? { token0: baseAmount, token1: quoteAmount } : { token0: quoteAmount, token1: baseAmount }) : null,
+    priceUsd: tokenPrices(baseIs0, baseUsd, quoteUsd),
   };
 }
 
@@ -72,12 +82,49 @@ export function parseGeckoTerminalPool(payload: unknown, spec: Univ4AllowlistedP
   const tokens = [tokenId(relationships.base_token), tokenId(relationships.quote_token)];
   const expected = [spec.currency0.address, spec.currency1.address];
   if (!expected.every(address => tokens.some(token => sameAddress(token, address)))) return null;
+  const baseIs0 = sameAddress(tokens[0], spec.currency0.address);
   const volume24hUsd = isObj(attributes.volume_usd) ? num(attributes.volume_usd.h24) : null;
   const tvlUsd = num(attributes.reserve_in_usd);
   if (volume24hUsd === null || tvlUsd === null) return null;
   const tx = isObj(attributes.transactions) && isObj(attributes.transactions.h24) ? attributes.transactions.h24 : null;
   const buys = tx ? num(tx.buys) : null, sells = tx ? num(tx.sells) : null;
-  return { source: "geckoterminal", volume24hUsd, tvlUsd, txns24h: buys !== null && sells !== null ? buys + sells : null, reserves: null };
+  return {
+    source: "geckoterminal", volume24hUsd, tvlUsd, txns24h: buys !== null && sells !== null ? buys + sells : null, reserves: null,
+    priceUsd: tokenPrices(baseIs0, num(attributes.base_token_price_usd), num(attributes.quote_token_price_usd)),
+  };
+}
+
+function tokenPrices(baseIs0: boolean, baseUsd: number | null, quoteUsd: number | null): Univ4MarketData["priceUsd"] {
+  if (baseUsd === null || quoteUsd === null || !(baseUsd > 0) || !(quoteUsd > 0)) return null;
+  return baseIs0 ? { token0: baseUsd, token1: quoteUsd } : { token0: quoteUsd, token1: baseUsd };
+}
+
+/** One GeckoTerminal call for up to 30 pools (`/pools/multi/{a,b,…}`). */
+export const geckoTerminalPoolsMultiUrl = (poolIds: readonly Hex[]) =>
+  `https://api.geckoterminal.com/api/v2/networks/${GECKOTERMINAL_NETWORK}/pools/multi/${poolIds.map(id => id.toLowerCase()).join(",")}`;
+/** One DexScreener call for up to 30 pairs. */
+export const dexScreenerPairsUrl = (poolIds: readonly Hex[]) =>
+  `https://api.dexscreener.com/latest/dex/pairs/${DEXSCREENER_CHAIN_ID}/${poolIds.map(id => id.toLowerCase()).join(",")}`;
+
+/** GeckoTerminal `/pools/multi` payload → market data per allowlisted pool id (lowercase). Pools it lacks are absent. */
+export function parseGeckoTerminalPools(payload: unknown, specs: readonly Univ4AllowlistedPool[]): Map<string, Univ4MarketData> {
+  const out = new Map<string, Univ4MarketData>();
+  const items = isObj(payload) && Array.isArray(payload.data) ? payload.data : [];
+  for (const spec of specs) for (const item of items) {
+    const parsed = parseGeckoTerminalPool({ data: item }, spec);
+    if (parsed) { out.set(spec.poolId.toLowerCase(), parsed); break; }
+  }
+  return out;
+}
+
+/** DexScreener multi-pair payload → market data per allowlisted pool id (lowercase). */
+export function parseDexScreenerPairs(payload: unknown, specs: readonly Univ4AllowlistedPool[]): Map<string, Univ4MarketData> {
+  const out = new Map<string, Univ4MarketData>();
+  for (const spec of specs) {
+    const parsed = parseDexScreenerPair(payload, spec);
+    if (parsed) out.set(spec.poolId.toLowerCase(), parsed);
+  }
+  return out;
 }
 
 export type FetchUniv4MarketOptions = {
@@ -148,6 +195,6 @@ export function poolAprFromMarket(market: Univ4MarketData, feePips: { zeroForOne
     estimated: true, attribution: market.source === "geckoterminal" ? GECKOTERMINAL_ATTRIBUTION : null,
     label: ESTIMATED_APR_LABEL, basis: "24h-volume", source: market.source, feeRatePct: feeRate * 100,
     volume24hUsd: market.volume24hUsd, tvlUsd: market.tvlUsd, txns24h: market.txns24h,
-    estimatedPoolFeeAprPct: market.tvlUsd > 0 ? (feeRate * market.volume24hUsd / market.tvlUsd) * 365 * 100 : null,
+    estimatedPoolFeeAprPct: poolFeeAprPct({ feeRate, dailyVolumeUsd: market.volume24hUsd, tvlUsd: market.tvlUsd }),
   };
 }

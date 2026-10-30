@@ -1,7 +1,8 @@
+import { UNIV4_RHC_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/uniswap-v4/constants";
 import "server-only";
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
-import { and, asc, between, eq, exists, gt, isNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, between, eq, exists, gt, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import * as schema from "../db/schema";
 import { assertRwaDatabaseIdentity } from "./rwa-database";
@@ -13,8 +14,8 @@ import { sortPairs, type DiscoverRwaPairsResult, type RwaPairRow } from "./rwa-p
 import { pickHighestAprPreset } from "./range-apr/preset-list";
 import { RWA_PAIRS_STALE_MS, aprSnapshotDelayed } from "./rwa-freshness";
 import {
-  ALGORITHM_VERSION, FEED_KEY, PAIRING_VERSION, RwaStoreError, storeRequestSchema,
-  type AprWrite, type DiscoveryWrite, type Lease, type RwaStore, type SnapshotApr, type StoreRequest, type StoreOperation, type StoreResultMap, type StoreHandlers,
+  ALGORITHM_VERSION, FEED_KEY, FEED_KEY_RHC, PAIRING_VERSION, RwaStoreError, storeRequestSchema,
+  type AprWrite, type DiscoveryWrite, type Lease, type RwaStore, type SnapshotApr, type StoreRequest, type StoreOperation, type RhcRosterRow, type StoredProfile, type StoreResultMap, type StoreHandlers,
 } from "./rwa-store-types";
 
 import { tokenIconMap, type TokenIconRow } from "./token-icons/map";
@@ -148,6 +149,8 @@ export class PostgresRwaStore implements RwaStore {
     prepareDaily: input => this.prepareDaily(input.lease),
     saveApr: input => this.saveApr(input.lease, input.data),
     saveTokenIcons: input => this.saveTokenIcons(input.lease, input.data),
+    ensureRhcRoster: input => this.ensureRhcRoster(input.lease, input.data as RhcRosterRow[]),
+    rhcPools: () => this.readRhcPools(),
   };
 
   private async readPairs(minTvl: number, maxPages: number, sortBy: "estimatedFeeApr" | "tvl" | "volume24h") {
@@ -177,6 +180,73 @@ export class PostgresRwaStore implements RwaStore {
   private readTokenIcons(): Promise<TokenIconRow[]> {
     return tolerantTokenIcons(() => this.orm.select({ chain: tokenIcon.chain, address: tokenIcon.address,
       image: tokenIcon.image, source: tokenIcon.source }).from(tokenIcon));
+  }
+
+
+  /** Seed the RHC feed + allowlisted pool rows so APR snapshots can FK to them. */
+  /**
+   * Upsert the allowlisted RHC pools into `rwa_pool_latest` (feed `uniswap-v4-rhc-v1`) with the cron's pool
+   * summaries (TVL / 24h volume / hook fee / checks), and return each pool's saved price-history profile so the
+   * cron can skip OHLCV calls it does not need.
+   */
+  private async ensureRhcRoster(lease: Lease, rows: RhcRosterRow[]): Promise<StoreResultMap["ensureRhcRoster"]> {
+    if (lease.job !== "rwa-apr-refresh") throw new RwaStoreError("INVALID_JOB");
+    const allowed = new Map(UNIV4_RHC_ALLOWLISTED_POOLS.map((spec) => [spec.poolId.toLowerCase(), spec]));
+    if (rows.some((row) => !allowed.has(row.poolId.toLowerCase()))) throw new RwaStoreError("INVALID_RHC_ROSTER");
+    const generation = "00000000-0000-4000-8000-0000000000a1";
+    return this.guarded(lease, async (tx) => {
+      await tx.insert(feed).values({
+        feedKey: FEED_KEY_RHC, pairingRuleVersion: "uniswap-v4-rhc-allowlist-v1",
+        generationId: generation, scanMaxPages: 1, pagesFetched: 1,
+        scannedPools: rows.length, pagePoolCounts: [rows.length],
+        publishedAt: nowSql as unknown as string,
+        summary: { source: "allowlist", pairingRuleSummary: "StablePairHook allowlist", estimatedFeeAprLabel: "Estimated" },
+      }).onConflictDoUpdate({
+        target: feed.feedKey,
+        set: {
+          generationId: generation, scannedPools: rows.length, pagePoolCounts: [rows.length],
+          publishedAt: nowSql as unknown as string, pairingRuleVersion: "uniswap-v4-rhc-allowlist-v1",
+        },
+      });
+      for (const row of rows) {
+        const spec = allowed.get(row.poolId.toLowerCase())!;
+        const market = row.summary.estimatedApr;
+        const values = {
+          chain: "robinhood" as const, protocol: "uniswap-v4-rhc" as const,
+          mintA: spec.currency0.address.toLowerCase(), mintB: spec.currency1.address.toLowerCase(),
+          symbolA: spec.currency0.symbol, symbolB: spec.currency1.symbol,
+          tvlUsd: market?.tvlUsd ?? null, volume24hUsd: market?.volume24hUsd ?? null,
+          fees24hUsd: market ? market.volume24hUsd * market.feeRatePct / 100 : null,
+          feeRate: market ? market.feeRatePct / 100 : null, poolFeeAprPct: market?.estimatedPoolFeeAprPct ?? null,
+          details: row.summary as unknown as Record<string, unknown>, sourcePage: 1, lastSeenGeneration: generation,
+          metricsObservedAt: nowSql as unknown as string,
+        };
+        await tx.insert(pool).values({ poolAddress: spec.poolId.toLowerCase(), feedKey: FEED_KEY_RHC, ...values })
+          .onConflictDoUpdate({ target: pool.poolAddress, set: { ...values, lastSeenAt: nowSql as unknown as string } });
+      }
+      const saved = await tx.select({ poolAddress: apr.poolAddress, profile: apr.profileCache }).from(apr)
+        .where(inArray(apr.poolAddress, rows.map((row) => row.poolId.toLowerCase())));
+      const profiles = Object.fromEntries(rows.map((row) => [row.poolId.toLowerCase(), null])) as Record<string, StoredProfile | null>;
+      for (const row of saved) profiles[row.poolAddress] = row.profile ?? null;
+      return { pools: rows.length, profiles };
+    });
+  }
+
+  /** The RHC pool summaries the cron saved last (allowlist order). Never touches RPC or indexers. */
+  private async readRhcPools(): Promise<StoreResultMap["rhcPools"]> {
+    const rows = await this.orm.select({ pool }).from(pool).innerJoin(feed, and(eq(feed.feedKey, pool.feedKey),
+      eq(feed.generationId, pool.lastSeenGeneration))).where(eq(feed.feedKey, FEED_KEY_RHC));
+    if (!rows.length) throw new RwaStoreError("SNAPSHOT_UNAVAILABLE");
+    const order = new Map(UNIV4_RHC_ALLOWLISTED_POOLS.map((spec, index) => [spec.poolId.toLowerCase(), index]));
+    const sorted = rows.map((row) => row.pool).filter((row) => order.has(row.poolAddress))
+      .sort((a, b) => order.get(a.poolAddress)! - order.get(b.poolAddress)!);
+    const observed = sorted.map((row) => Date.parse(iso(row.metricsObservedAt))).filter(Number.isFinite);
+    const oldest = observed.length ? Math.min(...observed) : NaN;
+    return {
+      pools: sorted.map((row) => row.details as unknown as RhcRosterRow["summary"]),
+      observedAt: Number.isFinite(oldest) ? new Date(oldest).toISOString() : null,
+      stale: !Number.isFinite(oldest) || this.clock() - oldest > RWA_PAIRS_STALE_MS,
+    };
   }
 
   /** Upsert icon links found by the daily discovery job; rows already passed the `ICON_HOSTS` check in the schema. */
@@ -244,14 +314,15 @@ export class PostgresRwaStore implements RwaStore {
       if (window.eligible) {
         // One insert-select freezes the roster once per day under the APR job lease.
         await tx.execute(sql`INSERT INTO ${daily}
-          (pool_address,snapshot_date,scheduled_for,mint_a,mint_b,symbol_a,symbol_b,
+          (pool_address,chain,protocol,snapshot_date,scheduled_for,mint_a,mint_b,symbol_a,symbol_b,
            tvl_usd,volume_24h_usd,fees_24h_usd,pool_fee_apr_pct,pool_metrics_observed_at,algorithm_version)
-          SELECT ${pool.poolAddress},${window.date}::date,${new Date(window.start).toISOString()}::timestamptz,
+          SELECT ${pool.poolAddress},${pool.chain},${pool.protocol},${window.date}::date,${new Date(window.start).toISOString()}::timestamptz,
             ${pool.mintA},${pool.mintB},${pool.symbolA},${pool.symbolB},${pool.tvlUsd},
             ${pool.volume24hUsd},${pool.fees24hUsd},${pool.poolFeeAprPct},${pool.metricsObservedAt},${ALGORITHM_VERSION}
           FROM ${pool} JOIN ${feed} ON ${feed.feedKey}=${pool.feedKey} AND ${feed.generationId}=${pool.lastSeenGeneration}
-          WHERE ${feed.feedKey}=${FEED_KEY} AND ${feed.publishedAt}>${new Date(this.clock() - 1_800_000).toISOString()}::timestamptz
-            AND NOT EXISTS(SELECT 1 FROM ${daily} WHERE ${daily.snapshotDate}=${window.date}::date)
+          WHERE ${feed.feedKey} IN (${FEED_KEY},${FEED_KEY_RHC}) AND ${feed.publishedAt}>${new Date(this.clock() - 1_800_000).toISOString()}::timestamptz
+            AND NOT EXISTS(SELECT 1 FROM ${daily} d JOIN ${pool} p ON p.pool_address=d.pool_address
+              WHERE d.snapshot_date=${window.date}::date AND p.feed_key=${feed.feedKey})
           ON CONFLICT DO NOTHING`);
       }
       await tx.update(daily).set({ status: sql`CASE WHEN ${daily.failureReason} LIKE 'degraded:%' THEN 'degraded'
@@ -271,7 +342,11 @@ export class PostgresRwaStore implements RwaStore {
       const freshProfile = data.profile && !data.profile.profile.stale && (data.profile.profile.candles?.length ?? 0) > 0;
       const profile = freshProfile ? data.profile : old?.profile ?? data.profile;
       const observed = data.profile?.profile.observedAt;
-      await tx.insert(apr).values({ poolAddress: data.poolId, algorithmVersion: ALGORITHM_VERSION, lastAttemptStatus: status }).onConflictDoNothing();
+      const isRhc = /^0x[0-9a-f]{64}$/i.test(data.poolId);
+      await tx.insert(apr).values({
+        poolAddress: data.poolId, algorithmVersion: ALGORITHM_VERSION, lastAttemptStatus: status,
+        ...(isRhc ? { chain: "robinhood", protocol: "uniswap-v4-rhc" } : {}),
+      }).onConflictDoNothing();
       await tx.update(apr).set({ lastAttemptAt: nowSql, lastAttemptStatus: status, lastAttemptIssues: data.issues,
         profileCache: profile }).where(eq(apr.poolAddress, data.poolId));
       if (replace && data.payload) await tx.update(apr).set({ payload: data.payload, payloadSnapshotAt: data.payload.fetchedAt,
@@ -281,7 +356,9 @@ export class PostgresRwaStore implements RwaStore {
       const window = dailyWindow(this.clock());
       const winner = data.payload && !data.payload.sample.degraded ? pickHighestAprPreset(data.payload.presets) : null;
       const eligible = window.eligible && winner?.estimate.status === "ok" && freshProfile &&
-        data.profile!.windowEndUtc === volumeWindowEnd(this.clock()) && this.clock() - Date.parse(data.profile!.observedAt) <= 1_800_000 &&
+        data.profile!.windowEndUtc === volumeWindowEnd(this.clock()) &&
+        // RHC reuses a same-UTC-day price history (its OHLCV calls are spaced across runs); Raydium's is ≤30 min old.
+        (isRhc || this.clock() - Date.parse(data.profile!.observedAt) <= 1_800_000) &&
         !!data.chainObservedAt && Date.parse(data.chainObservedAt) >= window.start;
       const pending = and(eq(daily.poolAddress, data.poolId), eq(daily.snapshotDate, window.date), eq(daily.status, "pending"));
       if (eligible && data.payload && winner?.estimate.status === "ok") {

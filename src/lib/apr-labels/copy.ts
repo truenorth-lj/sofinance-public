@@ -1,5 +1,7 @@
 /** Labels and tooltips for the APR figures on the /app/rwa-pairs cards. Copy only; no APR math here. */
 export const POOL_FEE_APR_24H_LABEL = "Est. pool fee APR · 24h · not guaranteed";
+/** Short field name on the cards, also used for the 24h figure in the RHC open dialog (so it never reads as the 7d headline). */
+export const POOL_FEE_APR_24H_SHORT = "Est. pool fee APR · 24h";
 export const POOL_FEE_APR_24H_HELP =
   "Estimate based on the last 24h of fees ÷ TVL, annualized. Gross fee (before Raydium's 16% protocol cut). Not guaranteed.";
 

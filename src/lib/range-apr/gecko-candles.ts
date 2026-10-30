@@ -59,11 +59,18 @@ export function parseGeckoHourlyCandles(body: unknown): GeckoHourlyCandles {
  * `baseAddress === mintA` (price already B per A); when base is B the price is A per B and is inverted.
  * Returns null when the pool's tokens cannot be matched.
  */
+/** Solana mints are case-sensitive base58; EVM (0x…) addresses are case-insensitive. */
+function sameMint(left: string | null, right: string): boolean {
+  if (!left) return false;
+  if (left.startsWith("0x") || right.startsWith("0x")) return left.toLowerCase() === right.toLowerCase();
+  return left === right;
+}
+
 export function orientCandles(
   parsed: GeckoHourlyCandles, mintA: string, mintB: string,
 ): RawCandle[] | null {
-  if (parsed.baseAddress === mintA && parsed.quoteAddress === mintB) return parsed.candles;
-  if (parsed.baseAddress === mintB && parsed.quoteAddress === mintA) {
+  if (sameMint(parsed.baseAddress, mintA) && sameMint(parsed.quoteAddress, mintB)) return parsed.candles;
+  if (sameMint(parsed.baseAddress, mintB) && sameMint(parsed.quoteAddress, mintA)) {
     return parsed.candles.map((candle) => ({
       ...candle,
       open: 1 / candle.open, close: 1 / candle.close, high: 1 / candle.low, low: 1 / candle.high,

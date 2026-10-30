@@ -32,6 +32,9 @@ export const rwaFeedState = pgTable("rwa_feed_state", {
 
 export const rwaPoolLatest = pgTable("rwa_pool_latest", {
 	poolAddress: text("pool_address").primaryKey().notNull(),
+	/** Added in 0003: which chain/protocol the row belongs to (existing rows: solana / raydium-clmm). */
+	chain: text().default('solana').notNull(),
+	protocol: text().default('raydium-clmm').notNull(),
 	feedKey: text("feed_key").notNull(),
 	mintA: text("mint_a").notNull(),
 	mintB: text("mint_b").notNull(),
@@ -59,9 +62,10 @@ export const rwaPoolLatest = pgTable("rwa_pool_latest", {
 	check("rwa_pool_latest_details_check", sql`jsonb_typeof(details) = 'object'::text`),
 	check("rwa_pool_latest_fee_rate_check", sql`(fee_rate >= (0)::numeric) AND (fee_rate <= (1)::numeric)`),
 	check("rwa_pool_latest_fees_24h_usd_check", sql`(fees_24h_usd >= (0)::numeric) AND (fees_24h_usd < 'Infinity'::numeric)`),
-	check("rwa_pool_latest_mint_a_check", sql`mint_a ~ '^[1-9A-HJ-NP-Za-km-z]{32,44}$'::text`),
-	check("rwa_pool_latest_mint_b_check", sql`mint_b ~ '^[1-9A-HJ-NP-Za-km-z]{32,44}$'::text`),
-	check("rwa_pool_latest_pool_address_check", sql`pool_address ~ '^[1-9A-HJ-NP-Za-km-z]{32,44}$'::text`),
+	check("rwa_pool_latest_mint_a_check", sql`(chain = 'solana' AND mint_a ~ '^[1-9A-HJ-NP-Za-km-z]{32,44}$') OR (chain = 'robinhood' AND mint_a ~ '^0x[0-9a-f]{40}$')`),
+	check("rwa_pool_latest_mint_b_check", sql`(chain = 'solana' AND mint_b ~ '^[1-9A-HJ-NP-Za-km-z]{32,44}$') OR (chain = 'robinhood' AND mint_b ~ '^0x[0-9a-f]{40}$')`),
+	check("rwa_pool_latest_pool_address_check", sql`(chain = 'solana' AND pool_address ~ '^[1-9A-HJ-NP-Za-km-z]{32,44}$') OR (chain = 'robinhood' AND pool_address ~ '^0x[0-9a-f]{64}$')`),
+	check("rwa_pool_latest_chain_protocol_check", sql`(chain = 'solana' AND protocol IN ('raydium-clmm', 'orca-whirlpool', 'meteora-dlmm')) OR (chain = 'robinhood' AND protocol = 'uniswap-v4-rhc')`),
 	check("rwa_pool_latest_pool_fee_apr_pct_check", sql`(pool_fee_apr_pct >= (0)::numeric) AND (pool_fee_apr_pct < 'Infinity'::numeric)`),
 	check("rwa_pool_latest_source_page_check", sql`(source_page >= 1) AND (source_page <= 30)`),
 	check("rwa_pool_latest_symbol_a_check", sql`length(btrim(symbol_a)) > 0`),
@@ -72,6 +76,9 @@ export const rwaPoolLatest = pgTable("rwa_pool_latest", {
 
 export const rwaAprLatest = pgTable("rwa_apr_latest", {
 	poolAddress: text("pool_address").primaryKey().notNull(),
+	/** Added in 0003: which chain/protocol the row belongs to (existing rows: solana / raydium-clmm). */
+	chain: text().default('solana').notNull(),
+	protocol: text().default('raydium-clmm').notNull(),
 	payload: jsonb().$type<PoolRangeAprPayload>(),
 	payloadSnapshotAt: timestamp("payload_snapshot_at", { withTimezone: true, mode: 'string' }),
 	chainObservedAt: timestamp("chain_observed_at", { withTimezone: true, mode: 'string' }),
@@ -90,6 +97,8 @@ export const rwaAprLatest = pgTable("rwa_apr_latest", {
 			foreignColumns: [rwaPoolLatest.poolAddress],
 			name: "rwa_apr_latest_pool_address_fkey"
 		}).onDelete("restrict"),
+	check("rwa_apr_latest_pool_address_check", sql`(chain = 'solana' AND pool_address ~ '^[1-9A-HJ-NP-Za-km-z]{32,44}$') OR (chain = 'robinhood' AND pool_address ~ '^0x[0-9a-f]{64}$')`),
+	check("rwa_apr_latest_chain_protocol_check", sql`(chain = 'solana' AND protocol IN ('raydium-clmm', 'orca-whirlpool', 'meteora-dlmm')) OR (chain = 'robinhood' AND protocol = 'uniswap-v4-rhc')`),
 	check("rwa_apr_latest_algorithm_version_check", sql`length(btrim(algorithm_version)) > 0`),
 	check("rwa_apr_latest_check", sql`(payload IS NULL) = (payload_snapshot_at IS NULL)`),
 	check("rwa_apr_latest_check1", sql`(payload IS NULL) OR ((payload ? 'poolId'::text) AND ((payload ->> 'poolId'::text) = pool_address))`),
@@ -132,6 +141,9 @@ export const backgroundJobState = pgTable("background_job_state", {
 
 export const rwaAprDaily = pgTable("rwa_apr_daily", {
 	poolAddress: text("pool_address").notNull(),
+	/** Added in 0003: which chain/protocol the row belongs to (existing rows: solana / raydium-clmm). */
+	chain: text().default('solana').notNull(),
+	protocol: text().default('raydium-clmm').notNull(),
 	snapshotDate: date("snapshot_date").notNull(),
 	scheduledFor: timestamp("scheduled_for", { withTimezone: true, mode: 'string' }).notNull(),
 	capturedAt: timestamp("captured_at", { withTimezone: true, mode: 'string' }),
@@ -169,6 +181,8 @@ export const rwaAprDaily = pgTable("rwa_apr_daily", {
 			name: "rwa_apr_daily_pool_address_fkey"
 		}).onDelete("restrict"),
 	primaryKey({ columns: [table.poolAddress, table.snapshotDate], name: "rwa_apr_daily_pkey"}),
+	check("rwa_apr_daily_pool_address_check", sql`(chain = 'solana' AND pool_address ~ '^[1-9A-HJ-NP-Za-km-z]{32,44}$') OR (chain = 'robinhood' AND pool_address ~ '^0x[0-9a-f]{64}$')`),
+	check("rwa_apr_daily_chain_protocol_check", sql`(chain = 'solana' AND protocol IN ('raydium-clmm', 'orca-whirlpool', 'meteora-dlmm')) OR (chain = 'robinhood' AND protocol = 'uniswap-v4-rhc')`),
 	check("rwa_apr_daily_algorithm_version_check", sql`length(btrim(algorithm_version)) > 0`),
 	check("rwa_apr_daily_check", sql`snapshot_date = ((scheduled_for AT TIME ZONE 'Asia/Taipei'::text))::date`),
 	check("rwa_apr_daily_check1", sql`(tick_lower IS NULL) = (tick_upper IS NULL)`),
@@ -183,8 +197,8 @@ export const rwaAprDaily = pgTable("rwa_apr_daily", {
 	check("rwa_apr_daily_fees_24h_usd_check", sql`(fees_24h_usd >= (0)::numeric) AND (fees_24h_usd < 'Infinity'::numeric)`),
 	check("rwa_apr_daily_highest_range_apr_pct_check", sql`(highest_range_apr_pct >= (0)::numeric) AND (highest_range_apr_pct < 'Infinity'::numeric)`),
 	check("rwa_apr_daily_highest_range_id_check", sql`highest_range_id = ANY (ARRAY['micro'::text, 'tight'::text, 'standard'::text, 'wide'::text])`),
-	check("rwa_apr_daily_mint_a_check", sql`mint_a ~ '^[1-9A-HJ-NP-Za-km-z]{32,44}$'::text`),
-	check("rwa_apr_daily_mint_b_check", sql`mint_b ~ '^[1-9A-HJ-NP-Za-km-z]{32,44}$'::text`),
+	check("rwa_apr_daily_mint_a_check", sql`(chain = 'solana' AND mint_a ~ '^[1-9A-HJ-NP-Za-km-z]{32,44}$') OR (chain = 'robinhood' AND mint_a ~ '^0x[0-9a-f]{40}$')`),
+	check("rwa_apr_daily_mint_b_check", sql`(chain = 'solana' AND mint_b ~ '^[1-9A-HJ-NP-Za-km-z]{32,44}$') OR (chain = 'robinhood' AND mint_b ~ '^0x[0-9a-f]{40}$')`),
 	check("rwa_apr_daily_payload_schema_version_check", sql`payload_schema_version >= 1`),
 	check("rwa_apr_daily_pool_fee_apr_pct_check", sql`(pool_fee_apr_pct >= (0)::numeric) AND (pool_fee_apr_pct < 'Infinity'::numeric)`),
 	check("rwa_apr_daily_presets_check", sql`jsonb_typeof(presets) = 'array'::text`),

@@ -27,7 +27,11 @@ export type SizeFit = {
 };
 
 export type SampleConfidence = "ok" | "low";
-export type VolumeSource = "geckoterminal-daily" | "raydium-7d";
+/**
+ * Where the average daily volume came from: GeckoTerminal daily candles, or the protocol's published 7-day
+ * volume (`sample.volumeProtocol` names it). "raydium-7d" is the pre-fix label kept for stored snapshots.
+ */
+export type VolumeSource = "geckoterminal-daily" | "protocol-7d" | "raydium-7d";
 export type OccupancySource = "hourly-candles" | "current-price";
 
 export type PoolRangeAprPayload = {
@@ -59,6 +63,8 @@ export type PoolRangeAprPayload = {
     windowEndUtc?: string;
     days: number;
     volumeSource: VolumeSource;
+    /** Protocol of a `protocol-7d` volume (e.g. "raydium-clmm"). */
+    volumeProtocol?: string;
     occupancySource: OccupancySource;
     candleCount: number;
     /** Percent of sampled volume that could not be placed on a bin with liquidity (outside the window or in empty bins). */

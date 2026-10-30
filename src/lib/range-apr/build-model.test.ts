@@ -46,6 +46,7 @@ describe("sampleConfidence", () => {
   it("is ok for a full sample with placed volume", () => expect(sampleConfidence(good)).toBe("ok"));
   it("is low for thin or patchy samples", () => {
     expect(sampleConfidence({ ...good, days: 2 })).toBe("low");
+    expect(sampleConfidence({ ...good, volumeSource: "protocol-7d" })).toBe("low");
     expect(sampleConfidence({ ...good, volumeSource: "raydium-7d" })).toBe("low");
     expect(sampleConfidence({ ...good, occupancySource: "current-price" })).toBe("low");
     expect(sampleConfidence({ ...good, unplacedVolumePct: 31 })).toBe("low");

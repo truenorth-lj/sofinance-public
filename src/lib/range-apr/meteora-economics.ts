@@ -1,8 +1,8 @@
 /** Pool-level economics from the Meteora datapi `/pools/{address}` (pure parser, allowlisted pools only). */
 import { METEORA_DLMM_DATAPI } from "@sofinance/engine/protocols/meteora/constants";
 import { parseMeteoraPool } from "@sofinance/engine/protocols/meteora/discovery";
-import type { PoolEconomicsSource } from "../pool-range-apr";
-import type { RaydiumPoolEconomics } from "./raydium-economics";
+import type { HttpPoolEconomicsSource } from "../pool-range-apr";
+import type { PoolEconomics } from "./raydium-economics";
 
 const DAYS_PER_YEAR = 365;
 
@@ -19,7 +19,7 @@ function num(value: unknown): number | null {
  * - mintAmountA/B: UI token amounts; weekVolumeUsd: null (datapi only publishes up to 24h).
  * - dayFeeApr: gross whole-pool 24h fee APR in percent; weekFeeApr: null.
  */
-export function parseMeteoraPoolEconomics(body: unknown): RaydiumPoolEconomics | null {
+export function parseMeteoraPoolEconomics(body: unknown): PoolEconomics | null {
   const summary = parseMeteoraPool(body);
   if (!summary || summary.decimalsX <= 0 || summary.decimalsY <= 0) return null;
   const pool = body as Record<string, unknown>;
@@ -39,8 +39,9 @@ export function parseMeteoraPoolEconomics(body: unknown): RaydiumPoolEconomics |
   };
 }
 
-export const METEORA_ECONOMICS_SOURCE: PoolEconomicsSource = {
+export const METEORA_ECONOMICS_SOURCE: HttpPoolEconomicsSource = {
   name: "Meteora",
+  protocol: "meteora-dlmm",
   url: (id) => `${METEORA_DLMM_DATAPI}/pools/${id}`,
   parse: parseMeteoraPoolEconomics,
   source: `${METEORA_DLMM_DATAPI}/pools/{address} (TVL, price, token amounts)`,

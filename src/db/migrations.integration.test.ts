@@ -26,17 +26,28 @@ describe.skipIf(!url)("Drizzle adoption preserves existing snapshots", () => {
     const journal = JSON.parse(readFileSync(resolve(folder, "meta/_journal.json"), "utf8"));
     for (const entry of journal.entries) {
       const filename = `${entry.tag}.sql`;
-      writeFileSync(resolve(temporary, filename), readFileSync(resolve(folder, filename), "utf8").replaceAll('"public".', `"${schema}".`));
+      writeFileSync(resolve(temporary, filename), readFileSync(resolve(folder, filename), "utf8").replaceAll('"public".', `"${schema}_full".`));
     }
-    await migrate(drizzle(db!), { migrationsFolder: temporary, migrationsSchema: `${schema}_fresh` });
-    await migrate(drizzle(db!), { migrationsFolder: temporary, migrationsSchema: `${schema}_fresh` });
+    // A fresh database runs every migration (twice, idempotently) in its own schema...
+    await db!.unsafe(`CREATE SCHEMA "${schema}_full"`);
+    const full = postgres(target!.url, { ssl: target!.ssl, max: 1, prepare: false, onnotice: () => {},
+      connection: { options: `-c search_path=${schema}_full -c statement_timeout=30000 -c lock_timeout=5000` } });
+    try {
+      await migrate(drizzle(full), { migrationsFolder: temporary, migrationsSchema: `${schema}_fresh` });
+      await migrate(drizzle(full), { migrationsFolder: temporary, migrationsSchema: `${schema}_fresh` });
+    } finally { await full.end(); }
     const fresh = await db!.unsafe(`SELECT hash FROM "${schema}_fresh".__drizzle_migrations`);
     expect(fresh).toHaveLength(readMigrationFiles({ migrationsFolder: folder }).length);
+    // ...while baseline adoption models the pre-Drizzle production schema, i.e. the initial migration only
+    // (later migrations such as 0003 alter the five RWA tables and are applied by db:migrate after adoption).
+    for (const statement of readMigrationFiles({ migrationsFolder: folder })[0]!.sql)
+      await db!.unsafe(statement.replaceAll('"public".', `"${schema}".`));
     await db!`INSERT INTO rwa_feed_state(feed_key,pairing_rule_version,summary) VALUES('retained','v1','{"retained":true}'::jsonb)`;
   }, 30_000);
   afterAll(async () => {
     if (db) {
       await db.unsafe(`DROP SCHEMA IF EXISTS "${schema}_fresh" CASCADE`);
+      await db.unsafe(`DROP SCHEMA IF EXISTS "${schema}_full" CASCADE`);
       await db.unsafe(`DROP SCHEMA IF EXISTS "${schema}_drizzle" CASCADE`);
       await db.unsafe(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
       await db.end();

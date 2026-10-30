@@ -15,6 +15,8 @@ import { volumeWindowEnd } from "./rwa-daily";
 import { sanitizePublicError } from "./public-error";
 import { getRwaStore } from "./rwa-store";
 import { UNIV4_RHC_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/uniswap-v4/constants";
+import { isRhcApr7dEnabled } from "./protocol-flags";
+import { refreshRhcAprSnapshots } from "./rhc-apr-refresh";
 import { resolveTokenIcons, rhcIconSources, solanaIconSources } from "./token-icons/resolve";
 import type { RwaPairRow } from "./rwa-pairs";
 import {
@@ -116,7 +118,8 @@ export async function refreshProfile(
   };
 }
 
-async function runJob(job: JobName, options: Options): Promise<JobResult> {
+/** One job run (claim → work → finish). Exported for the local cron runner and tests. */
+export async function runJob(job: JobName, options: Options): Promise<JobResult> {
   const store = options.store ?? getRwaStore(),
     config = getRwaConfig(),
     clock = options.clock ?? Date.now;
@@ -151,6 +154,11 @@ async function runJob(job: JobName, options: Options): Promise<JobResult> {
       });
     } else {
       await store.request({ op: "prepareDaily", lease });
+      // RHC runs beside the Solana pass: its GeckoTerminal calls are spaced on their own gate (see rhc-apr-refresh).
+      const rhcPass = isRhcApr7dEnabled()
+        ? refreshRhcAprSnapshots({ store, lease, fetcher: options.fetcher ?? fetch, clock, signal })
+          .catch((error) => ({ processed: 0, issues: [`RHC: ${sanitizePublicError(error, "RHC APR refresh failed").slice(0, 200)}`] }))
+        : null;
       const pools = await store.request({ op: "activePools" });
       await mapPool(pools, config.concurrency, async (pool) => {
         const poolId = pool.pair.poolAddress;
@@ -221,6 +229,11 @@ async function runJob(job: JobName, options: Options): Promise<JobResult> {
         }
       });
       signal.throwIfAborted();
+      if (rhcPass) {
+        const rhc = await rhcPass;
+        processed += rhc.processed;
+        issues.push(...rhc.issues);
+      }
       await store.request({ op: "prepareDaily", lease });
       if (issues.length) status = "partial";
     }
@@ -255,6 +268,7 @@ export async function refreshRwaSnapshots(options: Options = {}) {
  * → manual) and the allowlisted Robinhood Chain pool tokens (DexScreener → GeckoTerminal → manual). Only links that
  * pass `ICON_HOSTS` are written.
  */
+
 export async function refreshTokenIcons(store: RwaStore, lease: Lease, pairs: readonly Pick<RwaPairRow, "mintA" | "mintB">[],
   fetcher: typeof fetch | undefined, signal: AbortSignal) {
   const solana = await resolveTokenIcons("solana", pairs.flatMap((pair) => [pair.mintA, pair.mintB]), solanaIconSources(fetcher), { signal });
