@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Vercel "Ignored Build Step". Exit 0 = skip this build, exit 1 = build.
 # Keeps Build CPU Minutes down:
-#  - Preview builds run only when asked: commit message contains "[preview]",
-#    or the branch name starts with "preview/".
+#  - Preview builds never run (test locally instead).
 #  - Any build is skipped when the change only touches docs, tests or artifacts.
 set -u
 msg="${VERCEL_GIT_COMMIT_MESSAGE:-}"
@@ -10,11 +9,7 @@ ref="${VERCEL_GIT_COMMIT_REF:-}"
 env="${VERCEL_ENV:-}"
 
 if [ "$env" != "production" ]; then
-  case "$msg" in *"[preview]"*) ;; *)
-    case "$ref" in preview/*) ;; *)
-      echo "Skip preview build (add [preview] to the commit message to build)."; exit 0;;
-    esac;;
-  esac
+  echo "Preview builds are disabled; test locally."; exit 0
 fi
 
 prev="${VERCEL_GIT_PREVIOUS_SHA:-}"
