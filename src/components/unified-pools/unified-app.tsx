@@ -1,5 +1,6 @@
 "use client";
 
+import { useCallback, useState } from "react";
 import { useEvmWalletConnection } from "../evm-wallet-connection";
 import { SelectedApp } from "../selected-app";
 import { RhcPositionsSection } from "./rhc-positions-section";
@@ -18,7 +19,16 @@ export function UnifiedApp({ selected, flags, rhcSigningEnabled }: {
   rhcSigningEnabled: boolean;
 }) {
   const { wallet: evmWallet } = useEvmWalletConnection();
+  // Shared refresh counter: "Rescan wallet" bumps it, and the Robinhood Chain panel rescans (fresh=1) whenever it changes.
+  // It belongs to one EVM address, so a newly connected wallet starts at 0 (first load keeps the server's cached scan).
+  const address = evmWallet?.address ?? "";
+  const [rescans, setRescans] = useState({ address: "", count: 0 });
+  const rescanKey = rescans.address === address ? rescans.count : 0;
+  const rescan = useCallback(() => setRescans((current) =>
+    ({ address, count: (current.address === address ? current.count : 0) + 1 })), [address]);
 
+  const rhc = flags.rhc && evmWallet;
   return <SelectedApp {...selected}
-    extraPositions={flags.rhc && evmWallet ? <RhcPositionsSection wallet={evmWallet} signingEnabled={rhcSigningEnabled} refreshKey={0} /> : undefined} />;
+    onRescan={rhc ? rescan : undefined}
+    extraPositions={rhc ? <RhcPositionsSection wallet={evmWallet} signingEnabled={rhcSigningEnabled} refreshKey={rescanKey} /> : undefined} />;
 }
