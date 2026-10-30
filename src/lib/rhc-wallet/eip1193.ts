@@ -3,7 +3,7 @@ import { isRhcUniv4WalletSigningEnabled } from "@/lib/protocol-flags";
 /**
  * Minimal injected EVM wallet access for Robinhood Chain (design §6 PR5). MetaMask first via EIP-6963, then
  * `window.ethereum`. Connect and add/switch chain are allowed; every request that signs or sends goes through
- * `guardedWalletRequest`, which refuses while `RHC_UNIV4_WALLET_SIGNING_ENABLED` is off (all targets until PR6).
+ * `guardedWalletRequest`, which refuses wherever `RHC_UNIV4_WALLET_SIGNING_ENABLED` is off.
  */
 
 export type Eip1193Provider = {
@@ -97,18 +97,24 @@ export const SIGNING_DISABLED_MESSAGE = "Wallet signing is off until real signin
 
 /**
  * The only path to a signing/sending wallet request. Refuses (without touching the wallet) while
- * `RHC_UNIV4_WALLET_SIGNING_ENABLED` is off; it is off on every target in this PR.
+ * `RHC_UNIV4_WALLET_SIGNING_ENABLED` is off.
  */
 export async function guardedWalletRequest(provider: Eip1193Provider, method: string, params: unknown[]): Promise<unknown> {
   if (!SIGNING_METHODS.has(method)) throw new WalletRequestError("unknown", `Not a signing method: ${method}`);
   if (!isRhcUniv4WalletSigningEnabled()) throw new WalletRequestError("signing-disabled", SIGNING_DISABLED_MESSAGE);
   try { return await provider.request({ method, params }); } catch (error) {
     if (errorCode(error) === 4001) throw new WalletRequestError("rejected", "You rejected the request in your wallet. Nothing was sent.");
+    if (method === "eth_sendTransaction" || method === "wallet_sendCalls") {
+      const gas = plainWalletError(error) === NOT_ENOUGH_GAS_MESSAGE
+        ? "Not enough ETH on Robinhood Chain to pay for gas. Add some ETH only after checking wallet activity. " : "";
+      throw new WalletRequestError("unknown", gas + RHC_UNKNOWN_SEND);
+    }
     throw new WalletRequestError("unknown", plainWalletError(error));
   }
 }
 
 export const NOT_ENOUGH_GAS_MESSAGE = "Not enough ETH on Robinhood Chain to pay for gas. Add some ETH to this wallet, then try again.";
+export const RHC_UNKNOWN_SEND = "The wallet request outcome is unknown. Check your wallet activity before opening again; do not resend.";
 
 /** Plain-language cause for a failed wallet request (wallets put the node's reason in `message` / `data.message`). */
 export function plainWalletError(error: unknown): string {

@@ -36,8 +36,17 @@ const needsSig = (approval: boolean) => ({
 }) as unknown as OpenFlowResult;
 
 let container: HTMLDivElement; let root: Root;
-beforeEach(() => { container = document.createElement("div"); document.body.append(container); root = createRoot(container); });
-afterEach(() => { flags.signing = false; localStorage.clear(); act(() => root.unmount()); container.remove(); vi.unstubAllGlobals(); delete (window as unknown as { ethereum?: unknown }).ethereum; });
+beforeEach(() => {
+  // Fresh storage avoids Happy DOM bound proxy spies leaking across fault-injection tests.
+  const records = new Map<string, string>();
+  const storage: Storage = {
+    get length() { return records.size; }, key: index => [...records.keys()][index] ?? null,
+    getItem: key => records.get(key) ?? null, setItem: (key, value) => { records.set(key, value); },
+    removeItem: key => { records.delete(key); }, clear: () => records.clear(),
+  };
+  vi.spyOn(window, "localStorage", "get").mockReturnValue(storage);
+  container = document.createElement("div"); document.body.append(container); root = createRoot(container); });
+afterEach(() => { flags.signing = false; localStorage.clear(); act(() => root.unmount()); container.remove(); vi.restoreAllMocks(); vi.unstubAllGlobals(); delete (window as unknown as { ethereum?: unknown }).ethereum; });
 const render = (el: Parameters<Root["render"]>[0]) => act(() => root.render(el));
 const text = () => container.textContent ?? "";
 
@@ -160,7 +169,7 @@ const ready = (tx: Record<string, unknown> = {}) => ({
   state: "ready", attempt: 0, plan, leftover, simulation: { status: "success", gasUsed: "685843", revert: null, checks: null }, gas: { estimate: "765000", limit: "957060" },
   tx: { from: USER, to: UR, data: "0x3593564c", value: "0x0", gasLimit: "957060", chainId: 4663, ...tx },
 }) as unknown as OpenFlowResult;
-const mintReceipt = { status: "0x1", logs: [{ address: PM, topics: [
+const mintReceipt = { transactionHash: HASH, status: "0x1", logs: [{ address: PM, topics: [
   "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef", `0x${"0".repeat(64)}`, `0x${"0".repeat(24)}${USER.slice(2)}`, `0x${(1234).toString(16).padStart(64, "0")}`,
 ] }] };
 
@@ -169,15 +178,17 @@ async function signingPanel({ prepare = prepared(), finalize = ready(), chainAtS
   flags.signing = true;
   const calls: { method: string; params?: unknown }[] = [];
   let chain = "0x1237";
+  const listeners = new Map<string, (...args: unknown[]) => void>();
   (window as unknown as { ethereum: unknown }).ethereum = { request: vi.fn(async ({ method, params }: { method: string; params?: unknown }) => {
     calls.push({ method, params });
-    if (method === "eth_requestAccounts") return [USER];
+    if (method === "eth_requestAccounts" || method === "eth_accounts") return [USER];
     if (method === "eth_chainId") return chain;
     if (method === "eth_signTypedData_v4") { chain = chainAtSend; return SIG; }
     if (method === "eth_sendTransaction") return HASH;
     if (method === "eth_getTransactionReceipt") return mintReceipt;
     return null;
-  }) };
+  }), on: (event: string, listener: (...args: unknown[]) => void) => listeners.set(event, listener),
+    removeListener: (event: string) => listeners.delete(event) };
   const fetchMock = vi.fn(async (url: string, init: RequestInit) => {
     if (url === "/api/rhc-univ4-exit") return { ok: true, json: async () => ({ state: "positions", positions: [] }) };
     const action = JSON.parse(init.body as string).action;
@@ -194,7 +205,7 @@ async function signingPanel({ prepare = prepared(), finalize = ready(), chainAtS
   const exitBodies = () => fetchMock.mock.calls.filter(c => c[0] === "/api/rhc-univ4-exit").map(c => JSON.parse((c[1] as RequestInit).body as string));
   const sends = () => calls.filter(c => c.method === "eth_sendTransaction");
   const alert = () => container.querySelector("[role=alert]")?.textContent ?? null;
-  return { calls, bodies, exitBodies, sends, stepButton, click, alert };
+  return { calls, bodies, exitBodies, sends, stepButton, click, alert, emit: (event: string) => listeners.get(event)?.() };
 }
 
 describe("RhcUniv4OpenPanel signing (preview flag on)", () => {
@@ -264,4 +275,199 @@ describe("RhcUniv4OpenPanel signing (preview flag on)", () => {
     await p.click("sign");
     expect(p.alert()).toMatch(/expired\. Preview again/);
   });
+});
+
+describe("review 20261030 additional safety probes", () => {
+  it("SAFETY: unmount during chain check prevents a later wallet send", async () => {
+    const p = await signingPanel(); await p.click("sign");
+    const provider = (window as unknown as { ethereum: { request: (a: { method: string }) => Promise<unknown> } }).ethereum;
+    const original = provider.request;
+    let release!: (value: unknown) => void; let held = false;
+    provider.request = async args => {
+      if (args.method === "eth_chainId" && !held) { held = true; return new Promise(r => { release = r; }); }
+      return original(args);
+    };
+    await p.click("execute"); expect(release).toBeTypeOf("function");
+    await act(async () => { root.render(null); });
+    await act(async () => { release("0x1237"); await new Promise(r => setTimeout(r, 20)); });
+    expect(p.sends()).toHaveLength(0);
+  });
+  it("SAFETY: unknown wallet transport errors do not claim definitely unsent", async () => {
+    const p = await signingPanel(); await p.click("sign");
+    const provider = (window as unknown as { ethereum: { request: (a: { method: string }) => Promise<unknown> } }).ethereum;
+    const original = provider.request;
+    provider.request = async args => {
+      if (args.method === "eth_sendTransaction") throw new Error("response lost after node accepted transaction");
+      return original(args);
+    };
+    await p.click("execute");
+    expect(p.alert()).not.toContain("Nothing was sent");
+    expect(p.stepButton("execute").disabled).toBe(true);
+  });
+  it("SAFETY: pending transaction survives a panel remount", async () => {
+    const p = await signingPanel(); await p.click("sign");
+    const provider = (window as unknown as { ethereum: { request: (a: { method: string }) => Promise<unknown> } }).ethereum;
+    const original = provider.request;
+    provider.request = async args => args.method === "eth_getTransactionReceipt" ? null : original(args);
+    await p.click("execute");
+    await act(async () => { await new Promise(r => setTimeout(r, 70)); });
+    expect(p.sends()).toHaveLength(1);
+    expect(container.querySelector("[data-testid=tx-execute]")).not.toBeNull();
+    await act(async () => root.render(null));
+    await act(async () => { root.render(createElement(RhcUniv4OpenPanel, { pool: pool(), signingEnabled: true,
+      initialWallet: { provider, address: USER, name: "mock" }, receiptPoll: { intervalMs: 1, timeoutMs: 50 } })); await new Promise(r => setTimeout(r, 20)); });
+    expect(container.querySelector(`a[href$="${HASH}"]`)).not.toBeNull();
+  });
+});
+
+
+it("SAFETY: unknown wallet send outcome blocks a second send", async () => {
+  const p = await signingPanel(); await p.click("sign");
+  const provider = (window as unknown as { ethereum: { request: (a: { method: string }) => Promise<unknown> } }).ethereum;
+  const original = provider.request; let attempted = 0;
+  provider.request = async args => {
+    if (args.method === "eth_sendTransaction") { attempted++; throw new Error("response lost after node accepted transaction"); }
+    return original(args);
+  };
+  await p.click("execute"); await p.click("execute");
+  expect(attempted).toBe(1);
+});
+
+const injectedProvider = () => (window as unknown as { ethereum: import("@/lib/rhc-wallet/eip1193").Eip1193Provider }).ethereum;
+const pauseRequest = (method: string) => {
+  const provider = injectedProvider(), original = provider.request;
+  let release!: (value: unknown) => void;
+  provider.request = args => args.method === method ? new Promise(resolve => { release = resolve; }) : original(args);
+  return { release: (value: unknown) => release(value), original, provider };
+};
+const previewButton = () => [...container.querySelectorAll("button")].find(b => b.textContent === "Preview open (simulated)")!;
+
+describe("RHC durable send and lifecycle", () => {
+  it.each(["throw", "drop"])("does not ask the wallet to send if durable intent storage %s fails", async mode => {
+    const p = await signingPanel(); await p.click("sign");
+    const original = localStorage.setItem;
+    const spy = vi.spyOn(localStorage, "setItem").mockImplementation(function(this: Storage, key, value) {
+      if (key.includes("open-attempt")) { if (mode === "throw") throw new Error("quota"); return; }
+      original.call(this, key, value);
+    });
+    try { await p.click("execute"); expect(spy).toHaveBeenCalled(); expect(p.sends()).toHaveLength(0); expect(p.alert()).toContain("Unable to verify"); }
+    finally { spy.mockRestore(); }
+  });
+  it("clears an explicit user rejection and allows a new wallet request", async () => {
+    const p = await signingPanel(); await p.click("sign");
+    const provider = injectedProvider(), original = provider.request;
+    provider.request = async args => { if (args.method === "eth_sendTransaction") throw Object.assign(new Error("rejected"), { code: 4001 }); return original(args); };
+    await p.click("execute");
+    expect(localStorage.getItem(`sofi:rhc:open-attempt:v1:4663:${USER}`)).toBeNull();
+    expect(p.stepButton("execute").disabled).toBe(false);
+    provider.request = original; await p.click("execute"); expect(p.sends()).toHaveLength(1);
+  });
+  it("retains unknown intent across reload and refuses another preview", async () => {
+    const p = await signingPanel(); await p.click("sign");
+    const provider = injectedProvider(), original = provider.request;
+    provider.request = async args => { if (args.method === "eth_sendTransaction") throw new Error("connection lost"); return original(args); };
+    await p.click("execute");
+    const raw = localStorage.getItem(`sofi:rhc:open-attempt:v1:4663:${USER}`)!;
+    expect(JSON.parse(raw)).toMatchObject({ hash: null, kind: "execute", wallet: USER });
+    await act(async () => root.render(null));
+    render(createElement(RhcUniv4OpenPanel, { pool: pool(), signingEnabled: true, initialWallet: { provider, address: USER, name: "mock" }, showPositions: false }));
+    expect(previewButton().disabled).toBe(true);
+    expect(text()).toContain("outcome is unknown");
+    expect(localStorage.getItem(`sofi:rhc:open-attempt:v1:4663:${USER}`)).toBe(raw);
+  });
+  it("saves a late wallet hash after unmount without polling or opening a new position", async () => {
+    const p = await signingPanel(); await p.click("sign");
+    const held = pauseRequest("eth_sendTransaction");
+    await p.click("execute");
+    await act(async () => root.render(null));
+    await act(async () => { held.release(HASH); await new Promise(r => setTimeout(r, 10)); });
+    expect(JSON.parse(localStorage.getItem(`sofi:rhc:open-attempt:v1:4663:${USER}`)!)).toMatchObject({ hash: HASH });
+    expect(p.calls.some(c => c.method === "eth_getTransactionReceipt")).toBe(false);
+  });
+  it("never finalizes a Permit2 signature returned after the input changes", async () => {
+    const p = await signingPanel(); const held = pauseRequest("eth_signTypedData_v4");
+    await p.click("sign");
+    await act(async () => {
+      const input = container.querySelector("input")!;
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "2");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => { held.release(SIG); await new Promise(r => setTimeout(r, 10)); });
+    expect(p.bodies()).toHaveLength(1);
+    expect(p.sends()).toHaveLength(0);
+  });
+  it("refuses a changed account even when the provider does not emit an event", async () => {
+    const p = await signingPanel(); await p.click("sign");
+    const provider = injectedProvider(), original = provider.request;
+    provider.request = async args => args.method === "eth_accounts" ? [SPCXON] : original(args);
+    await p.click("execute"); expect(p.sends()).toHaveLength(0); expect(p.alert()).toContain("account changed");
+  });
+  it("rechecks the original receipt without reactivating an old execute button", async () => {
+    const p = await signingPanel(); await p.click("sign");
+    const provider = injectedProvider(), original = provider.request;
+    provider.request = async args => args.method === "eth_getTransactionReceipt" ? {} : original(args);
+    await p.click("execute");
+    expect(p.stepButton("execute").disabled).toBe(true);
+    provider.request = original;
+    await act(async () => {
+      [...container.querySelectorAll("button")].find(b => b.textContent === "Check original transaction")!.click();
+      await new Promise(r => setTimeout(r, 20));
+    });
+    expect(p.sends()).toHaveLength(1);
+    expect(container.querySelector("li[data-step=execute]")).toBeNull();
+    expect(text()).toContain("Position NFT #1234");
+    expect(localStorage.getItem(`sofi:rhc:open-attempt:v1:4663:${USER}`)).toBeNull();
+  });
+});
+
+it.each(["accountsChanged", "chainChanged", "disconnect"])("revokes an in-flight send synchronously on %s", async event => {
+  const p = await signingPanel(); await p.click("sign");
+  const held = pauseRequest("eth_accounts"); await p.click("execute");
+  await act(async () => { p.emit(event); held.release([USER]); await new Promise(r => setTimeout(r, 10)); });
+  expect(p.sends()).toHaveLength(0);
+  expect(p.stepButton("execute").disabled).toBe(true);
+});
+it("discards the old preview when the pool prop changes", async () => {
+  const p = await signingPanel(); await p.click("sign");
+  render(createElement(RhcUniv4OpenPanel, { pool: pool({ poolId: `0x${"ef".repeat(32)}` }), signingEnabled: true, showPositions: false }));
+  expect(container.querySelector("li[data-step=execute]")).toBeNull();
+  expect(p.sends()).toHaveLength(0);
+});
+it("preserves the approved flow and the explicit reverted-execute re-quote", async () => {
+  const prep = { ...prepared(), approvalTx: { from: USER, to: SPCX, data: "0x", value: "0x0", chainId: 4663 } } as OpenFlowResult;
+  const p = await signingPanel({ prepare: prep });
+  await p.click("approve"); expect(p.stepButton("sign").disabled).toBe(false);
+  await p.click("sign");
+  const provider = injectedProvider(), original = provider.request;
+  provider.request = async args => args.method === "eth_getTransactionReceipt" ? { transactionHash: HASH, status: "0x0" } : original(args);
+  await p.click("execute");
+  expect(p.bodies().at(-1)).toMatchObject({ action: "finalize", attempt: 1 });
+  expect(p.stepButton("execute").disabled).toBe(false);
+  expect(p.sends()).toHaveLength(2); // One approval and one execute; no automatic resend.
+});
+
+it("retains the pending transaction if its minted position cannot be saved", async () => {
+  const p = await signingPanel(); await p.click("sign");
+  const original = localStorage.setItem;
+  const spy = vi.spyOn(localStorage, "setItem").mockImplementation((key, value) => {
+    if (key.startsWith("sofi:rhc:positions:")) throw new Error("quota");
+    original(key, value);
+  });
+  try {
+    await p.click("execute");
+    expect(p.sends()).toHaveLength(1);
+    expect(p.alert()).toContain("Unable to verify");
+    expect(JSON.parse(localStorage.getItem(`sofi:rhc:open-attempt:v1:4663:${USER}`)!)).toMatchObject({ hash: HASH });
+    expect(p.stepButton("execute").disabled).toBe(true);
+  } finally { spy.mockRestore(); }
+});
+
+it("revokes a retained execute callback after its transaction has confirmed", async () => {
+  const p = await signingPanel(); await p.click("sign");
+  const button = p.stepButton("execute");
+  const propsKey = Object.keys(button).find(key => key.startsWith("__reactProps$"))!;
+  const retained = (button as unknown as Record<string, { onClick: () => Promise<void> }>)[propsKey]!.onClick;
+  await p.click("execute");
+  await act(async () => { await retained(); });
+  expect(p.sends()).toHaveLength(1);
 });
