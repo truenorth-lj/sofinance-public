@@ -6,8 +6,9 @@ import { RhcWrongNetworkPrompt } from "./rhc-wrong-network-prompt";
 import { RhcUniv4PositionsPanel } from "../rhc-univ4-positions-panel";
 
 /**
- * "My positions" on `/app`, Robinhood Chain part: positions opened in this browser plus NFT numbers added by hand
- * (owner-checked by the server; the v4 PositionManager is not enumerable), with the existing simulated full close.
+ * "My positions" on `/app`, Robinhood Chain part: the Uniswap v4 positions the wallet holds on chain (server scan of the
+ * PositionManager's Transfer logs), plus positions opened in this browser and NFT numbers added by hand (deduped,
+ * owner-checked by the server), with the existing simulated full close.
  * Rendered only while the nav's EVM wallet is connected (nav "EVM wallet" or a Robinhood Chain pool's Open position), so
  * Solana users see no wallet prompts for another chain here. While that wallet is on another network, a switch prompt
  * replaces the positions list.

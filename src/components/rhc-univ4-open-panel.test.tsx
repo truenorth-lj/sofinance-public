@@ -149,7 +149,7 @@ describe("RhcUniv4OpenPanel", () => {
     await act(async () => { button("Connect MetaMask").click(); await new Promise(r => setTimeout(r, 300)); });
     expect(container.querySelector("[data-testid=wallet-address]")!.textContent).toContain("0x2222…2222");
     await act(async () => { button("Preview open (simulated)").click(); await new Promise(r => setTimeout(r, 0)); });
-    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    const [, init] = (fetchMock.mock.calls as unknown as [string, RequestInit][]).find(c => !c[0].startsWith("/api/rhc-univ4-positions"))!;
     expect(JSON.parse(init.body as string)).toMatchObject({ action: "prepare", user: USER, depositToken: SPCX, amount: "1000000000000000000", tickLower: -11, tickUpper: 9 });
     expect(container.querySelector("[data-testid=leftover-note]")).not.toBeNull();
     expect(text()).toContain("Step 1/3");
@@ -194,6 +194,7 @@ async function signingPanel({ prepare = prepared(), finalize = ready(), chainAtS
     removeListener: (event: string) => listeners.delete(event) };
   const fetchMock = vi.fn(async (url: string, init: RequestInit) => {
     if (url === "/api/rhc-univ4-exit") return { ok: true, json: async () => ({ state: "positions", positions: [] }) };
+    if (url.startsWith("/api/rhc-univ4-positions")) return { ok: true, status: 200, json: async () => ({ state: "scan", positions: [] }) };
     const action = JSON.parse(init.body as string).action;
     return { ok: true, json: async () => (action === "prepare" ? prepare : finalize) };
   });
@@ -204,7 +205,7 @@ async function signingPanel({ prepare = prepared(), finalize = ready(), chainAtS
   await act(async () => { button("Preview open (simulated)").click(); await new Promise(r => setTimeout(r, 0)); });
   const stepButton = (id: string) => container.querySelector(`li[data-step=${id}] button`) as HTMLButtonElement;
   const click = (id: string) => act(async () => { stepButton(id).click(); await new Promise(r => setTimeout(r, 20)); });
-  const bodies = () => fetchMock.mock.calls.filter(c => c[0] !== "/api/rhc-univ4-exit").map(c => JSON.parse((c[1] as RequestInit).body as string));
+  const bodies = () => fetchMock.mock.calls.filter(c => c[0] !== "/api/rhc-univ4-exit" && !String(c[0]).startsWith("/api/rhc-univ4-positions")).map(c => JSON.parse((c[1] as RequestInit).body as string));
   const exitBodies = () => fetchMock.mock.calls.filter(c => c[0] === "/api/rhc-univ4-exit").map(c => JSON.parse((c[1] as RequestInit).body as string));
   const sends = () => calls.filter(c => c.method === "eth_sendTransaction");
   const alert = () => container.querySelector("[role=alert]")?.textContent ?? null;
