@@ -118,7 +118,7 @@ async function fillFromRaydium(
       const response = await fetcher(url, {
         headers: {
           Accept: "application/json",
-          "User-Agent": "SoFinance/0.1 (mint symbols; +https://github.com/truenorth-lj/sofinance-public)",
+          "User-Agent": "SoFinance/0.1 (mint symbols; +https://sofinancelab.xyz)",
         },
         signal: AbortSignal.timeout(8_000),
       });

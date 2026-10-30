@@ -40,7 +40,7 @@ export const DOCS_PAGES = [
     slug: "fees",
     label: "Fees",
     title: "Fees",
-    description: "Protocol fee (10 bps of the deposited token), network fees, and what is free.",
+    description: "Protocol fee (10 bps, only when a swap is made for you), network fees, and what is free.",
     metaTitle: "Fees: 10 bps protocol fee and network costs",
     metaDescription:
       "SoFinance's 10 basis point protocol fee, network fees, swap costs and refundable account deposits, and which actions cost no SoFinance fee at all.",

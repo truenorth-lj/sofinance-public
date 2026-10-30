@@ -58,9 +58,9 @@ SoFinance is not a broker, does not sell stocks, and does not issue tokens. It b
 - Lists same-stock pools on Solana (Raydium CLMM, Backpack Securities and xStocks tokens) and Robinhood Chain (Uniswap v4 pools with a reviewed StablePairHook, Robinhood and Ondo Global Markets tokens), with fee tier, TVL, 24h volume and token risk flags.
 - Suggests a range: on Solana the app prices range presets (Micro, Tight, Standard, Wide) against the last 7 full days of volume and current liquidity. You can override the suggestion.
 - Opens the position: if your wallet does not hold the two tokens in the right ratio, part of the deposit is swapped into the pool tokens first. Solana transactions are simulated again before they are sent.
-- Manages the position: add liquidity, compound collected fees back into the position (Solana), or withdraw at any time.
-- Wallets: a Solana wallet (Phantom, Solflare, Backpack) for Solana pools; an EVM wallet such as MetaMask for Robinhood Chain.
-- Works with AI agents: an MCP server lets an AI assistant list pools, quote, and prepare unsigned transactions. Only your wallet can approve them.
+- Manages the position: on Solana, add liquidity, compound collected fees back into the position, or withdraw at any time; on Robinhood Chain, close the position at any time, which returns both pool tokens and the fees it has collected.
+- Wallets: for Solana pools, a Solana browser wallet such as Phantom (any wallet the browser exposes through the Wallet Standard); for Robinhood Chain, an EVM browser wallet found through EIP-6963 (MetaMask listed first) or the browser's default injected wallet.
+- Works with AI agents (Solana only): an MCP server lets an AI assistant list Solana pools, quote, and prepare unsigned, simulated transactions to open, add to, compound or withdraw a Raydium position. Your wallet signs each one. Robinhood Chain pools are not available through MCP.
 - SoFinance does not move or re-center your range automatically. If price leaves your range, you decide whether to wait, change range, or withdraw.
 
 ## How LP fees work here
@@ -72,7 +72,9 @@ SoFinance is not a broker, does not sell stocks, and does not issue tokens. It b
 
 ## Costs
 
-- SoFinance protocol fee: 10 basis points (0.10%) on the amount swapped for you (opening a position from other tokens, compounding, or withdrawing to USDC). Withdrawing as the two original tokens has no SoFinance fee. The fee is taken inside the transaction you sign.
+- SoFinance protocol fee: 10 basis points (0.10%), only when a swap is made for you, taken inside the transaction you sign.
+  - Solana: on the swapped part of a deposit when opening or adding (in the input token), on harvested tokens swapped when compounding, and on tokens converted when withdrawing to USDC or another single token. Withdrawing as the two original tokens: no SoFinance fee.
+  - Robinhood Chain: on the tokens the swap returns when opening a position. Closing a position: no SoFinance fee; it returns the two pool tokens (no convert-to-USDC exit).
 - Network fees, plus on Solana small account deposits that mostly come back when you close the position.
 - Swap route costs and price impact; swaps have a price-protection limit and fail rather than fill worse.
 

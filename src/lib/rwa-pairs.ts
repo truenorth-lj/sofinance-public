@@ -355,7 +355,7 @@ async function fetchClmmPage(
   const response = await fetcher(url, {
     headers: {
       Accept: "application/json",
-      "User-Agent": "SoFinance/0.1 (RWA pair discovery; +https://github.com/truenorth-lj/sofinance-public)",
+      "User-Agent": "SoFinance/0.1 (RWA pair discovery; +https://sofinancelab.xyz)",
     },
     signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(45_000)]) : AbortSignal.timeout(45_000),
   });
@@ -390,7 +390,7 @@ async function fetchClmmPoolsByIds(
   const response = await fetcher(url, {
     headers: {
       Accept: "application/json",
-      "User-Agent": "SoFinance/0.1 (RWA pair discovery; +https://github.com/truenorth-lj/sofinance-public)",
+      "User-Agent": "SoFinance/0.1 (RWA pair discovery; +https://sofinancelab.xyz)",
     },
     signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(45_000)]) : AbortSignal.timeout(45_000),
   });

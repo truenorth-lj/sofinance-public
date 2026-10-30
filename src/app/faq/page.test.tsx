@@ -3,6 +3,10 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { FAQ_ITEMS, FAQ_SECTIONS } from "@/lib/faq";
+import { DEFAULT_SWAP_FEE_BPS } from "@sofinance/engine/swap/fee";
+import { OPEN_FEE_BPS } from "@sofinance/engine/protocols/uniswap-v4/open-constants";
+import { RHC_EXPLORER_TX } from "@/lib/rhc-wallet/open-execute";
+import { listToolDefinitions } from "@/mcp/tool-definitions";
 
 vi.mock("@/components/ink", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/components/ink")>()),
@@ -44,6 +48,31 @@ describe("/faq", () => {
     expect(copy).not.toMatch(/open[- ]source|github|Turnkey|0-SOL|zero[- ]SOL|fee wallet|Taiwan|prototype/i);
     expect(copy.replaceAll("0.10%", "")).not.toMatch(/\d\s*%/); // only the fixed 0.10% fee, never an APR figure
     expect(copy).not.toContain("yield-and-apr");
+  });
+
+  it("states only claims the code backs (fees, wallets, explorers, MCP scope)", () => {
+    const answer = (question: string) => FAQ_ITEMS.find((item) => item.question === question)!.answer;
+    // 0.10% is the Solana default and the Robinhood Chain code constant.
+    expect(DEFAULT_SWAP_FEE_BPS).toBe(10);
+    expect(OPEN_FEE_BPS).toBe(10n);
+    const cost = answer("How much does SoFinance cost?");
+    expect(cost).toContain("On Solana:");
+    expect(cost).toContain("On Robinhood Chain:");
+    expect(cost).toContain("closing a position has no SoFinance fee");
+    expect(cost).toContain("no option to convert them to USDC");
+    // Wallets: no adapters are registered by name, so only "such as Phantom"; RHC = EIP-6963, MetaMask first.
+    const wallets = answer("Which wallet do I need?");
+    expect(wallets).toContain("such as Phantom");
+    expect(wallets).toContain("EIP-6963");
+    expect(wallets).not.toMatch(/Solflare|Backpack/);
+    // Explorers: the hosts the UI links to.
+    const custody = answer("Is SoFinance custodial? What if the site goes offline?");
+    expect(custody).toContain("solscan.io");
+    expect(custody).toContain(new URL(RHC_EXPLORER_TX).host);
+    // MCP: Solana only; no Robinhood Chain / Uniswap tool exists.
+    const tools = JSON.stringify([...listToolDefinitions("http"), ...listToolDefinitions("stdio")]);
+    expect(tools).not.toMatch(/robinhood|uniswap|univ4|rhc/i);
+    expect(answer("Can an AI agent use SoFinance for me?")).toContain("Robinhood Chain pools are not available through the MCP server");
   });
 
   it("is a static page", () => {

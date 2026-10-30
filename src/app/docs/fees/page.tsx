@@ -12,53 +12,59 @@ export default function DocsFeesPage() {
       <h2>SoFinance protocol fee</h2>
       <p>
         SoFinance charges a{" "}
-        <strong className="font-medium text-cream">10 basis point (0.10%)</strong> protocol fee
-        in the token you deposit. There is no separate performance fee on compounding or on the trading fees you collect.
+        <strong className="font-medium text-cream">10 basis point (0.10%)</strong> protocol fee, only
+        when a swap is made for you. There is no separate performance fee on compounding or on the trading fees you collect.
+        The preview shows the fee before you sign, and it is taken inside the same transaction.
       </p>
+
+      <h3>On Solana</h3>
       <ul>
-        <li>Currently a fixed 10 bps; any change will be announced in advance.</li>
         <li>
-          Opening a position or adding to a position takes the fee{" "}
-          <strong className="font-medium text-cream">in the input token, inside the Jupiter swap</strong>{" "}
-          (as Jupiter&apos;s platform fee): 10 bps of the part of your deposit that is swapped. Any
-          part deposited directly, without a swap (for example USDC into a USDC pool), is not
-          charged. The transaction contains no separate transfer to us and never creates an
-          account for the fee wallet. The preview shows the fee in the same token.
+          Opening a position or adding to a position: 10 bps of the part of your deposit that is
+          swapped, in the token you deposit. Any part deposited directly, without a swap (for
+          example USDC into a USDC pool), is not charged.
         </li>
         <li>
-          If the protocol fee wallet has no token account yet for your input token, that token
-          is temporarily unavailable as input and no transaction is built; use another token.
-          Depositing SOL into a pool that itself contains SOL is not available yet.
+          Compounding: 10 bps of the harvested tokens that are swapped to rebalance the position, in
+          that token. If no swap is needed, there is no fee.
         </li>
         <li>
-          Compounding takes 10 bps of the harvested tokens being reinvested, in that token.
-        </li>
-        <li>
-          Withdrawing to USDC still collects the 10 bps as a Jupiter conversion fee in USDC.
+          Withdrawing to USDC or to another single token: 10 bps of the tokens that are converted.
           The withdraw preview shows it as a conversion fee.
         </li>
         <li>
-          If you withdraw as <strong className="font-medium text-cream">original tokens</strong>{" "}
-          (the two pool tokens, no swap), the fee is{" "}
+          Withdrawing as <strong className="font-medium text-cream">original tokens</strong>{" "}
+          (the two pool tokens, no swap): the fee is{" "}
           <strong className="font-medium text-cream">0</strong>.
-        </li>
-        <li>
-          The fee is taken inside the same transaction you sign, so you can see it on Solscan.
         </li>
       </ul>
 
-      <h2>Solana network fees</h2>
+      <h3>On Robinhood Chain</h3>
+      <ul>
+        <li>
+          Opening a position: 10 bps of the tokens the swap returns, when part of your deposit is
+          swapped into the other pool token. If your range needs only the token you deposit, there
+          is no swap and no fee.
+        </li>
+        <li>
+          Closing a position: the fee is <strong className="font-medium text-cream">0</strong>. You
+          receive the two pool tokens; there is no option to convert them to USDC.
+        </li>
+      </ul>
+
+      <h2>Network fees</h2>
       <p>
-        Your wallet pays the normal Solana network fee in SOL for each transaction you sign. Keep a
-        little SOL for fees and account deposits on top of what you invest.
+        Your wallet pays the normal network fee for each transaction you sign: SOL on Solana, ETH on
+        Robinhood Chain. Keep a little SOL for fees and account deposits, or a little ETH for gas, on
+        top of what you invest.
       </p>
 
       <h2>Other costs in the preview</h2>
       <ul>
         <li>Swap costs: the trading fee of the swap route, plus a small price difference on larger swaps.</li>
-        <li>A 0.5% price-protection limit on swaps: if the price moves more than that, the swap fails instead of filling worse.</li>
+        <li>A price-protection limit on swaps (0.5% on Solana, 0.05% on Robinhood Chain): if the price moves more than that, the swap fails instead of filling worse.</li>
         <li>
-          Small SOL deposits Solana requires to create new accounts. Most come back when you close the
+          On Solana, small SOL deposits Solana requires to create new accounts. Most come back when you close the
           position; a small one-time setup cost may not. The preview lists each one.
         </li>
       </ul>

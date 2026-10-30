@@ -70,8 +70,7 @@ export default function DocsGettingStartedPage() {
 
       <h2>Who we are</h2>
       <p>
-        SoFinance is a non-custodial Solana LP toolkit built for the Colosseum hackathon track and
-        shipping in public. Whether you use the App or an AI assistant, the same checks apply: preview,
+        SoFinance is a non-custodial LP toolkit, started for the Colosseum hackathon track. Whether you use the App or an AI assistant, the same checks apply: preview,
         your signature, a final check, then send.
       </p>
       <ul>
@@ -79,12 +78,6 @@ export default function DocsGettingStartedPage() {
           Live app:{" "}
           <a href="https://sofinancelab.xyz" {...EXTERNAL_LINK_PROPS}>
             sofinancelab.xyz
-          </a>
-        </li>
-        <li>
-          Public repository:{" "}
-          <a href="https://github.com/truenorth-lj/sofinance-public" {...EXTERNAL_LINK_PROPS}>
-            truenorth-lj/sofinance-public
           </a>
         </li>
         <li>

@@ -26,7 +26,7 @@ export const FAQ_SECTIONS: readonly FaqSection[] = [
       {
         question: "How do liquidity providers collect trading fees?",
         answer:
-          "Every swap through a pool pays that pool's fee. Liquidity providers (LPs) deposit two tokens into the pool, and the fees are shared among LPs in proportion to the liquidity they have active at the current price. In concentrated-liquidity pools (Raydium CLMM on Solana, Uniswap v4 on Robinhood Chain) you choose a price range, and your position collects fees only while the pool price is inside that range. On SoFinance you pick a same-stock pool, review the suggested range, and open the position from your own wallet. You can collect, compound or withdraw at any time. Liquidity providing can lose money; see the risks questions below.",
+          "Every swap through a pool pays that pool's fee. Liquidity providers (LPs) deposit two tokens into the pool, and the fees are shared among LPs in proportion to the liquidity they have active at the current price. In concentrated-liquidity pools (Raydium CLMM on Solana, Uniswap v4 on Robinhood Chain) you choose a price range, and your position collects fees only while the pool price is inside that range. On SoFinance you pick a same-stock pool, review the suggested range, and open the position from your own wallet. On Solana you can compound collected fees or withdraw at any time; on Robinhood Chain you can close the position at any time, which returns both pool tokens and the fees it has collected. Liquidity providing can lose money; see the risks questions below.",
       },
       {
         question: "What happens when the price leaves my LP range?",
@@ -71,27 +71,27 @@ export const FAQ_SECTIONS: readonly FaqSection[] = [
       {
         question: "Which wallet do I need?",
         answer:
-          "For Solana pools, a Solana wallet such as Phantom, Solflare or Backpack. For Robinhood Chain pools, an EVM wallet such as MetaMask connected to Robinhood Chain. You keep the keys in both cases; SoFinance only asks your wallet to sign.",
+          "For Solana pools, a Solana browser wallet such as Phantom: the app lists the Solana wallets your browser makes available through the Wallet Standard. For Robinhood Chain pools, an EVM browser wallet: the app finds wallets that announce themselves through EIP-6963, lists MetaMask first, falls back to the browser's default injected wallet, and then asks the wallet to switch to or add Robinhood Chain. You keep the keys in both cases; SoFinance only asks your wallet to sign.",
       },
       {
         question: "What can I do with tokenized stocks sitting idle in my wallet?",
         answer:
-          "You can keep holding them, use them as collateral where a lending protocol supports them, or provide liquidity. With SoFinance you can put idle tokens like MSTRx or SPCX into a same-stock pool and collect trading fees while the price stays in your range. If you hold only one version, part of it is swapped into the other side when you open the position, and a 0.10% SoFinance fee applies to the swapped amount. The position stays in your own wallet.",
+          "You can keep holding them, use them as collateral where a lending protocol supports them, or provide liquidity. With SoFinance you can put idle tokens like MSTRx or SPCX into a same-stock pool and collect trading fees while the price stays in your range. If you hold only one version, part of it is swapped into the other side when you open the position. SoFinance charges 0.10% on that swap: on Solana, of the part of your deposit that is swapped, in the token you deposit; on Robinhood Chain, of the tokens the swap returns. If no swap is needed, there is no SoFinance fee. The position stays in your own wallet.",
       },
       {
         question: "Is SoFinance custodial? What if the site goes offline?",
         answer:
-          "SoFinance is self-custodial. It never holds your private keys or tokens; every action is a transaction you sign in your own wallet and can check on a block explorer (Solscan for Solana, Blockscout for Robinhood Chain). On Solana your position is a standard Raydium position NFT, and on Robinhood Chain a standard Uniswap v4 position, so you could still manage or withdraw it directly with the underlying protocol. Self-custodial does not mean risk-free: issuer controls such as freezing, smart contract risk and market risk still apply.",
+          "SoFinance is self-custodial. It never holds your private keys or tokens; every action is a transaction you sign in your own wallet and can check on a block explorer: Solscan (solscan.io) for Solana and the Robinhood Chain Blockscout explorer (robinhoodchain.blockscout.com) for Robinhood Chain. On Solana your position is a standard Raydium position NFT, and on Robinhood Chain a standard Uniswap v4 position NFT, so you could still manage or withdraw it directly with the underlying protocol. Self-custodial does not mean risk-free: issuer controls such as freezing, smart contract risk and market risk still apply.",
       },
       {
         question: "How much does SoFinance cost?",
         answer:
-          "SoFinance charges a 10 basis point (0.10%) protocol fee only on amounts it swaps for you: opening a position from other tokens, compounding, or withdrawing to USDC. Withdrawing as the two original pool tokens has no SoFinance fee. You also pay network fees, swap route costs and, on Solana, small account deposits that mostly come back when you close the position. The preview lists every cost before you sign.",
+          "SoFinance charges a 10 basis point (0.10%) protocol fee only when a swap is made for you, and what it applies to differs by chain. On Solana: opening or adding to a position (on the part of your deposit that is swapped, in the token you deposit), compounding (on the harvested tokens swapped to rebalance), and withdrawing to USDC or another single token (on the tokens converted); withdrawing as the two original pool tokens has no SoFinance fee. On Robinhood Chain: opening a position (on the tokens the swap returns); closing a position has no SoFinance fee and returns the two pool tokens, with no option to convert them to USDC. You also pay network fees, swap route costs and, on Solana, small account deposits that mostly come back when you close the position. The preview lists every cost before you sign.",
       },
       {
         question: "Can an AI agent use SoFinance for me?",
         answer:
-          "Yes, with limits. SoFinance runs an MCP server, so an AI assistant can list same-stock pools, quote a position and prepare an unsigned transaction. Only your wallet can approve and sign it. Connect an agent from sofinancelab.xyz/app/ai.",
+          "Yes, with limits, and for Solana pools only. SoFinance runs an MCP server: after you connect a Solana wallet at sofinancelab.xyz/app/ai and sign a message to create a short-lived access token, an AI assistant can list Solana same-stock pools, quote a position, and prepare unsigned, simulated transactions to open, add to, compound or withdraw a Raydium position. Your wallet still has to sign each one. Robinhood Chain pools are not available through the MCP server.",
       },
     ],
   },
