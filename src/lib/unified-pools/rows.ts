@@ -1,6 +1,6 @@
 import { UNIV4_RHC_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/uniswap-v4/constants";
 import type { Univ4PoolSummary } from "@sofinance/engine/protocols/uniswap-v4/discovery";
-import type { RhcPoolView } from "@/components/rhc-univ4-open-panel";
+import type { RhcPoolView } from "@/lib/rhc-wallet/pool-view";
 import type { RiskFlag, UnifiedPool, UnifiedProtocol } from "./model";
 
 /** The fields `/api/rwa-pairs` and `/api/protocol-pools` (Orca / Meteora) rows share. */

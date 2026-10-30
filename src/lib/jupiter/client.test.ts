@@ -6,13 +6,11 @@ import { quoteCacheKey, resetJupiterCache } from "@sofinance/engine/jupiter/cach
 import {
   EXIT_JUPITER_CONCURRENCY,
   JUPITER_QUOTE_TTL_MS,
-  jupiterQuote,
-  jupiterQuotePreferCompact,
   jupiterRequest,
-  jupiterSwapInstructions,
   mapPool,
   setJupiterRetryConfig,
 } from "@sofinance/engine/jupiter/client";
+import { jupiterQuote, jupiterQuotePreferCompact, jupiterSwapInstructions } from "@sofinance/engine/swap/client";
 import { JupiterHttpError, retryAfterFromJupiterHeaders } from "@sofinance/engine/jupiter/errors";
 import { resetJupiterRuntime } from "@sofinance/engine/jupiter";
 

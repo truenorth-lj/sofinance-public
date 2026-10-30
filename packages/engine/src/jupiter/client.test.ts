@@ -5,13 +5,11 @@ import { quoteCacheKey, resetJupiterCache } from "./cache";
 import {
   EXIT_JUPITER_CONCURRENCY,
   JUPITER_QUOTE_TTL_MS,
-  jupiterQuote,
-  jupiterQuotePreferCompact,
   jupiterRequest,
-  jupiterSwapInstructions,
   mapPool,
   setJupiterRetryConfig,
 } from "./client";
+import { jupiterQuote, jupiterQuotePreferCompact, jupiterSwapInstructions } from "../swap/client";
 import { JupiterHttpError, retryAfterFromJupiterHeaders } from "./errors";
 import { resetJupiterRuntime } from "./index";
 

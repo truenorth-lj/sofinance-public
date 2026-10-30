@@ -106,5 +106,3 @@ export function validateCompoundSwapInstruction(ix: TransactionInstruction, shap
     if (key.pubkey.toBase58() !== expected[index] || key.isSigner !== (index === 0) || key.isWritable !== writable.has(index)) throw new Error("Compound swap account or permission mismatch");
   });
 }
-
-export { buildCompoundSwapPlan } from "./swap/compound";

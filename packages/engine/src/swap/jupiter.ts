@@ -7,7 +7,7 @@ import { getJupiterApiKey } from "../config/server-env";
 import { PublicKey } from "@solana/web3.js";
 import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { USDC_MINT } from "../ids";
-import { feeAccountSetup, requireInputFeeAccount } from "./collection";
+import { feeAccountSetup, requireInputFeeAccount } from "./fee-accounts";
 import { rpcConnection } from "../rpc";
 import { assertPlatformFeeQuote, readSwapFeeConfig, swapFeeRecipientAta } from "./fee";
 import { jupiterQuote, jupiterSwapInstructions } from "./client";
