@@ -75,5 +75,11 @@ One local self-review covered the full panel, persistence/reconciliation helpers
 wallet request guard, receipt helpers, position-ID storage and dialog caller.
 The OpenCode/MiniMax provider remains unavailable; no independent review claimed.
 
-FINANCIAL NOT_EXERCISED: synthetic provider/server responses only. Hosted CI,
-merge and production deployment for this batch are pending.
+FINANCIAL NOT_EXERCISED: synthetic provider/server responses only.
+
+Hosted check, PostgreSQL, e2e-hermetic and container jobs passed on `c9b342e`.
+[PR 244](https://github.com/truenorth-lj/sofinance-public/pull/244) merged as
+`d90fd0eae5aa4d464e2c749841e511361cdbab64`. On 2026-10-30 its Vercel commit status
+reported success for `BE9WzAxX1vF4tV4VkWHnwsKB7U91`, and an HTTP GET of
+`https://sofinancelab.xyz/app` returned the matching `dpl_` identity. This verifies
+deployed identity and HTTP availability, not a real wallet transaction.
