@@ -8,7 +8,7 @@ import { CREATE_PERSONAL_POSITION_DISC, INCREASE_LIQUIDITY_DISC,
   aggregateCashflowsForPosition, type PositionEventContext } from "./position-performance-events";
 import { syncPositionHistory } from "./position-history-sync";
 import { POSITION_HISTORY_PARSER_VERSION, positionStoreRequestSchema, type PositionHistorySnapshot,
-  type PositionHistoryStore, type PositionStoreRequest } from "./position-history-store-types";
+  type PositionHistoryStore, type PositionStoreRequest, type PositionStoreOperation, type PositionStoreResultMap, type PositionStoreHandlers } from "./position-history-store-types";
 import type { HistoryConnection } from "./position-performance-history";
 
 const key = () => PublicKey.unique().toBase58();
@@ -49,21 +49,26 @@ class MemoryStore implements PositionHistoryStore {
   claims = 0;
   locked = false;
   commitSizes: number[] = [];
-  async request(input: PositionStoreRequest) {
+  async request<K extends PositionStoreOperation>(input: PositionStoreRequest<K>): Promise<PositionStoreResultMap[K]> {
     positionStoreRequestSchema.parse(input);
-    if (input.op === "claim") {
+    return this.handlers[input.op](input);
+  }
+  private readonly handlers: PositionStoreHandlers = {
+    claim: async () => {
       this.claims++;
       return { ...structuredClone(this.snapshot), lease: this.locked ? null : { positionMint: context.positionMint,
         owner: "2de80986-8a40-4a34-9d4e-c5f8b30a676e", epoch: this.claims, revision: this.snapshot.state.revision } };
-    }
-    if (input.op === "release") { this.released++; return null; }
-    this.commitSizes.push(input.transactions.length);
-    const rows = new Map(this.snapshot.transactions.map(row => [row.signature, row]));
-    for (const row of input.transactions) rows.set(row.signature, structuredClone(row));
-    this.snapshot = { lease: null, state: { ...input.state, revision: this.snapshot.state.revision + 1 },
-      transactions: [...rows.values()] };
-    return structuredClone(this.snapshot);
-  }
+    },
+    release: async () => { this.released++; return true; },
+    commit: async input => {
+      this.commitSizes.push(input.transactions.length);
+      const rows = new Map(this.snapshot.transactions.map(row => [row.signature, row]));
+      for (const row of input.transactions) rows.set(row.signature, structuredClone(row));
+      this.snapshot = { lease: null, state: { ...input.state, revision: this.snapshot.state.revision + 1 },
+        transactions: [...rows.values()] };
+      return structuredClone(this.snapshot);
+    },
+  };
 }
 
 function rpc(ids: number[], txs = new Map(ids.map(id => [id, receipt(id, id === 1 ? "open" : "increase")])), pageSize = 500) {

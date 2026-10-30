@@ -8,7 +8,7 @@ import * as schema from "../db/schema";
 import {
   MAX_POSITION_HISTORY_TRANSACTIONS, POSITION_HISTORY_LEASE_MS, PositionHistoryStoreError, positionStoreRequestSchema,
   type PositionContext, type PositionHistoryLease, type PositionHistorySnapshot,
-  type PositionHistoryStore, type PositionStoreRequest, type StoredPositionTransaction,
+  type PositionHistoryStore, type PositionStoreRequest, type PositionStoreOperation, type PositionStoreResultMap, type PositionStoreHandlers, type StoredPositionTransaction,
 } from "./position-history-store-types";
 
 const { positionHistoryState: state, positionHistoryTransactions: history } = schema;
@@ -26,19 +26,24 @@ export class PostgresPositionHistoryStore implements PositionHistoryStore {
   private readonly orm: Database;
   constructor(public readonly db: postgres.Sql) { this.orm = drizzle(db, { schema }); }
 
-  async request(raw: PositionStoreRequest): Promise<unknown> {
-    const input = positionStoreRequestSchema.parse(raw);
+  async request<K extends PositionStoreOperation>(raw: PositionStoreRequest<K>): Promise<PositionStoreResultMap[K]> {
+    // Parsing preserves op while applying its schema; the assertion retains that generic relationship.
+    const input = positionStoreRequestSchema.parse(raw) as PositionStoreRequest<K>;
     await assertRwaDatabaseIdentity(this.db);
-    if (input.op === "claim") return this.claim(input.context, input.parserVersion);
-    if (input.op === "release") {
+    return this.handlers[input.op](input);
+  }
+
+  private readonly handlers: PositionStoreHandlers = {
+    claim: input => this.claim(input.context, input.parserVersion),
+    release: async input => {
       // A stale owner must never release the replacement lease; release is idempotent.
       const released = await this.orm.update(state).set({ leaseOwner: null, leaseExpiresAt: null })
         .where(and(identity(input.lease.positionMint), eq(state.leaseOwner, input.lease.owner),
           eq(state.leaseEpoch, input.lease.epoch))).returning({ mint: state.positionMint });
       return released.length > 0;
-    }
-    return this.commit(input);
-  }
+    },
+    commit: input => this.commit(input),
+  };
 
   private async snapshot(tx: Transaction, row: typeof state.$inferSelect, parserVersion: number,
     lease: PositionHistoryLease | null): Promise<PositionHistorySnapshot> {

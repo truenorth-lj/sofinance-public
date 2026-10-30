@@ -74,4 +74,9 @@ scoped persistence and legacy removal can leave conflicting records blocked for
 investigation. Existing confirmation and block-height expiry semantics are
 unchanged. Owned-buffer disposal does not claim erasure of JS/crypto copies.
 
-Hosted CI, merge and production deployment are pending.
+All six hosted checks passed on `2f05ad1`; no new review findings. PR #246
+merged as `ed936bb8edeaef2cd90e34cb06ce560ccfab17ec`. Its successful Vercel
+deployment `HQgJ4zUHBh7pAWFesjHRL5AsjQKc` matches the production `/app` HTML
+on 2026-10-30. `/app/meteora` contains the Next not-found fallback and no open
+panel. Its streamed response has HTTP 200, so this is not an HTTP-404 claim.
+This verifies deployed identity and the visible gate, not financial behavior.

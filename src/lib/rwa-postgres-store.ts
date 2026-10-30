@@ -14,7 +14,7 @@ import { pickHighestAprPreset } from "./range-apr/preset-list";
 import { RWA_PAIRS_STALE_MS, aprSnapshotDelayed } from "./rwa-freshness";
 import {
   ALGORITHM_VERSION, FEED_KEY, PAIRING_VERSION, RwaStoreError, storeRequestSchema,
-  type AprWrite, type DiscoveryWrite, type Lease, type RwaStore, type SnapshotApr, type StoreRequest,
+  type AprWrite, type DiscoveryWrite, type Lease, type RwaStore, type SnapshotApr, type StoreRequest, type StoreOperation, type StoreResultMap, type StoreHandlers,
 } from "./rwa-store-types";
 
 import { tokenIconMap, type TokenIconRow } from "./token-icons/map";
@@ -81,71 +81,74 @@ export class PostgresRwaStore implements RwaStore {
     });
   }
 
-  async request(raw: StoreRequest): Promise<unknown> {
-    const input = storeRequestSchema.parse(raw);
+  async request<K extends StoreOperation>(raw: StoreRequest<K>): Promise<StoreResultMap[K]> {
+    // Zod validates/defaults fields and preserves the discriminator; it cannot infer generic K.
+    const input = storeRequestSchema.parse(raw) as StoreRequest<K>;
     await assertRwaDatabaseIdentity(this.db);
-    switch (input.op) {
-      case "pairs": return this.readPairs(input.minTvl, input.maxPages, input.sortBy);
-      case "apr": return this.readApr(input.poolId);
-      case "history": {
-        validateHistoryRange(input.from, input.to);
-        const rows = await this.orm.select().from(daily).where(and(eq(daily.poolAddress, input.poolId),
-          between(daily.snapshotDate, input.from, input.to))).orderBy(asc(daily.snapshotDate));
-        return { poolId: input.poolId, timezone: "Asia/Taipei", points: rows.map((row) => ({
-          date: row.snapshotDate, capturedAt: row.capturedAt ? iso(row.capturedAt) : null,
-          status: row.status, poolFeeAprPct: row.poolFeeAprPct, highestRangeAprPct: row.highestRangeAprPct,
-          highestRangeId: row.highestRangeId, presets: row.presets, referenceCapitalUsd: row.referenceCapitalUsd,
-          algorithmVersion: row.algorithmVersion, sample: row.sample, reason: row.failureReason,
-        })) };
-      }
-      case "activePools": {
-        const rows = await this.orm.select({ pool, profile: apr.profileCache }).from(pool)
-          .innerJoin(feed, and(eq(feed.feedKey, pool.feedKey), eq(feed.generationId, pool.lastSeenGeneration)))
-          .leftJoin(apr, eq(apr.poolAddress, pool.poolAddress)).where(eq(feed.feedKey, FEED_KEY))
-          .orderBy(asc(pool.poolAddress));
-        return rows.map((row) => ({ pair: pair(row.pool), metricsObservedAt: iso(row.pool.metricsObservedAt), profile: row.profile }));
-      }
-      case "claim": {
-        const owner = randomUUID();
-        const rows = await this.orm.transaction(async (tx) => {
-          await tx.insert(job).values({ jobKey: input.job }).onConflictDoNothing();
-          return tx.update(job).set({ leaseOwner: owner, leaseEpoch: sql`${job.leaseEpoch}+1`,
-            leaseExpiresAt: sql`${nowSql}+${interval(getRwaConfig().leaseMs)}`,
-            lastStartedAt: nowSql, lastStatus: "running" })
-            .where(and(eq(job.jobKey, input.job), or(isNull(job.leaseOwner), lte(job.leaseExpiresAt, nowSql)),
-              input.force ? sql`true` : or(isNull(job.nextDueAt), lte(job.nextDueAt, sql`${nowSql}+${DUE_GRACE}`))))
-            .returning({ epoch: job.leaseEpoch });
-        });
-        return rows.length ? { job: input.job, owner, epoch: rows[0]!.epoch } : null;
-      }
-      case "renew": return this.guarded(input.lease, async (tx) => {
-        await tx.update(job).set({ leaseExpiresAt: sql`${nowSql}+${interval(getRwaConfig().leaseMs)}` })
-          .where(eq(job.jobKey, input.lease.job));
-        return true;
-      });
-      case "finish": return this.guarded(input.lease, async (tx) => {
-        const config = getRwaConfig();
-        const cadence = input.lease.job === "rwa-discovery" ? config.discoveryIntervalMs : config.aprIntervalMs;
-        await tx.update(job).set({ lastCompletedAt: nowSql,
-          lastSuccessAt: input.outcome === "ok" ? nowSql : job.lastSuccessAt,
-          nextDueAt: sql`GREATEST(${nowSql}+interval '10 seconds', ${job.lastStartedAt}+${interval(input.outcome === "error" ? Math.min(cadence, 300_000) : cadence)})`,
-          lastStatus: input.outcome, consecutiveFailures: input.outcome === "ok" ? 0 : sql`${job.consecutiveFailures}+1`,
-          lastDurationMs: sql`GREATEST(0,round(extract(epoch FROM(${nowSql}-${job.lastStartedAt}))*1000)::integer)`,
-          lastError: input.issues.length ? { issues: input.issues } : null,
-          lastSummary: { processed: input.processed, issueCount: input.issues.length },
-        }).where(eq(job.jobKey, input.lease.job));
-        return true;
-      }).then(async (result) => {
-        // Release only the same epoch after the final expiry check, never a replacement lease.
-        await this.orm.update(job).set({ leaseOwner: null, leaseExpiresAt: null }).where(leaseWhere(input.lease));
-        return result;
-      });
-      case "publishDiscovery": return this.publish(input.lease, input.data as DiscoveryWrite);
-      case "prepareDaily": return this.prepareDaily(input.lease);
-      case "saveApr": return this.saveApr(input.lease, input.data as AprWrite);
-      case "saveTokenIcons": return this.saveTokenIcons(input.lease, input.data);
-    }
+    return this.handlers[input.op](input);
   }
+
+  private readonly handlers: StoreHandlers = {
+    pairs: input => this.readPairs(input.minTvl, input.maxPages, input.sortBy),
+    apr: input => this.readApr(input.poolId),
+    history: async input => {
+      validateHistoryRange(input.from, input.to);
+      const rows = await this.orm.select().from(daily).where(and(eq(daily.poolAddress, input.poolId),
+        between(daily.snapshotDate, input.from, input.to))).orderBy(asc(daily.snapshotDate));
+      return { poolId: input.poolId, timezone: "Asia/Taipei", points: rows.map((row) => ({
+        date: row.snapshotDate, capturedAt: row.capturedAt ? iso(row.capturedAt) : null,
+        status: row.status, poolFeeAprPct: row.poolFeeAprPct, highestRangeAprPct: row.highestRangeAprPct,
+        highestRangeId: row.highestRangeId, presets: row.presets, referenceCapitalUsd: row.referenceCapitalUsd,
+        algorithmVersion: row.algorithmVersion, sample: row.sample, reason: row.failureReason,
+      })) };
+    },
+    activePools: async () => {
+      const rows = await this.orm.select({ pool, profile: apr.profileCache }).from(pool)
+        .innerJoin(feed, and(eq(feed.feedKey, pool.feedKey), eq(feed.generationId, pool.lastSeenGeneration)))
+        .leftJoin(apr, eq(apr.poolAddress, pool.poolAddress)).where(eq(feed.feedKey, FEED_KEY))
+        .orderBy(asc(pool.poolAddress));
+      return rows.map((row) => ({ pair: pair(row.pool), metricsObservedAt: iso(row.pool.metricsObservedAt), profile: row.profile }));
+    },
+    claim: async input => {
+      const owner = randomUUID();
+      const rows = await this.orm.transaction(async (tx) => {
+        await tx.insert(job).values({ jobKey: input.job }).onConflictDoNothing();
+        return tx.update(job).set({ leaseOwner: owner, leaseEpoch: sql`${job.leaseEpoch}+1`,
+          leaseExpiresAt: sql`${nowSql}+${interval(getRwaConfig().leaseMs)}`,
+          lastStartedAt: nowSql, lastStatus: "running" })
+          .where(and(eq(job.jobKey, input.job), or(isNull(job.leaseOwner), lte(job.leaseExpiresAt, nowSql)),
+            input.force ? sql`true` : or(isNull(job.nextDueAt), lte(job.nextDueAt, sql`${nowSql}+${DUE_GRACE}`))))
+          .returning({ epoch: job.leaseEpoch });
+      });
+      return rows.length ? { job: input.job, owner, epoch: rows[0]!.epoch } : null;
+    },
+    renew: input => this.guarded(input.lease, async (tx) => {
+      await tx.update(job).set({ leaseExpiresAt: sql`${nowSql}+${interval(getRwaConfig().leaseMs)}` })
+        .where(eq(job.jobKey, input.lease.job));
+      return true;
+    }),
+    finish: input => this.guarded(input.lease, async (tx) => {
+      const config = getRwaConfig();
+      const cadence = input.lease.job === "rwa-discovery" ? config.discoveryIntervalMs : config.aprIntervalMs;
+      await tx.update(job).set({ lastCompletedAt: nowSql,
+        lastSuccessAt: input.outcome === "ok" ? nowSql : job.lastSuccessAt,
+        nextDueAt: sql`GREATEST(${nowSql}+interval '10 seconds', ${job.lastStartedAt}+${interval(input.outcome === "error" ? Math.min(cadence, 300_000) : cadence)})`,
+        lastStatus: input.outcome, consecutiveFailures: input.outcome === "ok" ? 0 : sql`${job.consecutiveFailures}+1`,
+        lastDurationMs: sql`GREATEST(0,round(extract(epoch FROM(${nowSql}-${job.lastStartedAt}))*1000)::integer)`,
+        lastError: input.issues.length ? { issues: input.issues } : null,
+        lastSummary: { processed: input.processed, issueCount: input.issues.length },
+      }).where(eq(job.jobKey, input.lease.job));
+      return true;
+    }).then(async (result) => {
+      // Release only the same epoch after the final expiry check, never a replacement lease.
+      await this.orm.update(job).set({ leaseOwner: null, leaseExpiresAt: null }).where(leaseWhere(input.lease));
+      return result;
+    }),
+    publishDiscovery: input => this.publish(input.lease, input.data),
+    prepareDaily: input => this.prepareDaily(input.lease),
+    saveApr: input => this.saveApr(input.lease, input.data),
+    saveTokenIcons: input => this.saveTokenIcons(input.lease, input.data),
+  };
 
   private async readPairs(minTvl: number, maxPages: number, sortBy: "estimatedFeeApr" | "tvl" | "volume24h") {
     // One statement gives feed and pools the same MVCC snapshot during generation publication.
@@ -258,7 +261,7 @@ export class PostgresRwaStore implements RwaStore {
     });
   }
 
-  private async saveApr(lease: Lease, data: AprWrite) {
+  private async saveApr(lease: Lease, data: AprWrite): Promise<StoreResultMap["saveApr"]> {
     if (lease.job !== "rwa-apr-refresh" || (data.payload && data.payload.poolId !== data.poolId)) throw new RwaStoreError("INVALID_APR");
     const status = data.payload ? data.payload.sample.degraded ? "degraded" : "ok" : "error";
     return this.guarded(lease, async (tx) => {

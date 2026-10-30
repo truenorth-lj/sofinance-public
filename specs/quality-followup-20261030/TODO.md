@@ -9,9 +9,11 @@
 - [x] Integrate Compound `9022829` / `606ba5c` on current main and finish batch fences.
 - [x] Compound review, CI, merge and deployment verification — [PR 245](https://github.com/truenorth-lj/sofinance-public/pull/245), merge `09a577c`.
 - [x] Meteora durable signature, storage failures and wallet/lifecycle recovery.
-- [ ] Meteora review, CI, merge and deployment verification.
-- [ ] Evaluate shared primitives without merging Solana and EVM transaction semantics.
-- [ ] Type store operation results and migrate remaining opens-log schema management.
+- [x] Meteora review, CI, merge and deployment verification — [PR 246](https://github.com/truenorth-lj/sofinance-public/pull/246), merge `ed936bb`.
+- [x] Evaluate shared primitives without merging Solana and EVM transaction semantics — [decision](shared-primitives.md).
+- [x] Type store operation results, handlers and callers.
+- [ ] Store contracts review, CI, merge and deployment verification.
+- [ ] Migrate remaining opens-log schema management (separate database target).
 - [ ] Remove orphan snapshots, refresh flags/comments and original delivery tracking.
 - [ ] Verify all phase PRs, deployment identities and final outstanding boundaries.
 
@@ -24,3 +26,5 @@ RHC open recovery scope and evidence: [validation](rhc-validation.md).
 Compound recovery scope and evidence: [validation](compound-validation.md).
 
 Meteora recovery scope and evidence: [validation](meteora-validation.md).
+
+Store response contracts and evidence: [validation](store-contracts-validation.md).

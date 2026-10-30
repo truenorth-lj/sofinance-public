@@ -196,7 +196,7 @@ describe("F2 actual-driver offline deadline and recovery", () => {
     const first = db(); const identity = observe(assertRwaDatabaseIdentity(first)); await flush(); expect(identity.error).toBeUndefined();
     mode = "business";
     peers[0]!.mode = "business";
-    const request = observe(store === "rwa" ? getRwaStore().request({ op: "activePools" }) : getPositionHistoryStore().request(release));
+    const request = observe<unknown>(store === "rwa" ? getRwaStore().request({ op: "activePools" }) : getPositionHistoryStore().request(release));
     await flush(); const sent = commands().length; expect(request.settled).toBe(false);
     await vi.advanceTimersByTimeAsync(10_000); await flush();
     expect(request.error).toMatchObject({ code: store === "rwa" ? "RWA_STORE_UNAVAILABLE" : "POSITION_STORE_UNAVAILABLE" });

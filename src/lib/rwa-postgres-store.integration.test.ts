@@ -11,8 +11,6 @@ import {
   type AprWrite,
   type DiscoveryWrite,
   type Lease,
-  type SnapshotApr,
-  type SnapshotPairs,
 } from "./rwa-store-types";
 import type { RwaPairRow } from "./rwa-pairs";
 import type { VolumeProfile } from "./pool-range-apr";
@@ -135,7 +133,7 @@ describe.skipIf(!url)("RWA PostgreSQL snapshots and fencing", () => {
       minTvl: 0,
       maxPages: 1,
       sortBy: "tvl",
-    })) as SnapshotPairs;
+    }));
     expect(first.pairs.map((p) => p.poolAddress)).toEqual([poolId]);
     expect(first.scannedPools).toBe(1);
     await expect(
@@ -157,7 +155,7 @@ describe.skipIf(!url)("RWA PostgreSQL snapshots and fencing", () => {
           minTvl: 0,
           maxPages: 10,
           sortBy: "tvl",
-        })) as SnapshotPairs
+        }))
       ).pairs,
     ).toHaveLength(3);
     await store!.request({
@@ -196,7 +194,7 @@ describe.skipIf(!url)("RWA PostgreSQL snapshots and fencing", () => {
     })) as Lease;
     await store!.request({ op: "prepareDaily", lease: apr });
     await store!.request({ op: "saveApr", lease: apr, data: aprData() });
-    const first = (await store!.request({ op: "apr", poolId })) as SnapshotApr;
+    const first = (await store!.request({ op: "apr", poolId }));
     expect(first.model.bins).toHaveLength(21);
     expect(first.freshness.chainObservedAt).toBe(observed());
     await store!.request({
@@ -213,12 +211,12 @@ describe.skipIf(!url)("RWA PostgreSQL snapshots and fencing", () => {
     const retained = (await store!.request({
       op: "apr",
       poolId,
-    })) as SnapshotApr;
+    }));
     expect(retained.model).toEqual(first.model);
     expect(retained.freshness.lastAttemptStatus).toBe("error");
     const [active] = (await new PostgresRwaStore(db!, () => now).request({
       op: "activePools",
-    })) as { profile: unknown }[];
+    }));
     expect(active!.profile).not.toBeNull();
     await expect(
       store!.request({ op: "apr", poolId: poolB }),
@@ -291,11 +289,11 @@ describe.skipIf(!url)("RWA PostgreSQL snapshots and fencing", () => {
       { chain: "solana", address: spcxx, image: "https://static.jup.ag/a.png", source: "jupiter" },
     ]);
     await expect(db!`INSERT INTO rwa_token_icon(chain,address,image,source) VALUES('robinhood','0xABC','http://x','manual')`).rejects.toThrow();
-    let pairs = (await store!.request({ op: "pairs", minTvl: 0, maxPages: 2, sortBy: "tvl" })) as SnapshotPairs;
+    let pairs = (await store!.request({ op: "pairs", minTvl: 0, maxPages: 2, sortBy: "tvl" }));
     expect(pairs.tokenIcons!.solana[spcxx]).toBe("https://static.jup.ag/a.png");
 
     await db!.unsafe("DROP TABLE rwa_token_icon");
-    pairs = (await store!.request({ op: "pairs", minTvl: 0, maxPages: 2, sortBy: "tvl" })) as SnapshotPairs;
+    pairs = (await store!.request({ op: "pairs", minTvl: 0, maxPages: 2, sortBy: "tvl" }));
     expect(pairs.pairs.length).toBeGreaterThan(0);
     expect(pairs.tokenIcons!.solana[spcxx]).toBe("https://xstocks-metadata.backed.fi/logos/tokens/SPCXx.png");
     expect(pairs.tokenIcons!.robinhood[rhc]).toBe("https://s3-symbol-logo.tradingview.com/spacex.svg");
