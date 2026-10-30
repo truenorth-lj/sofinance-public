@@ -34,6 +34,18 @@ export function trackedPositionIds(address: string, storage: Pick<Storage, "getI
   } catch { return []; }
 }
 
+/** True when this browser has a Robinhood Chain position NFT saved for any wallet (opened here or added by hand). */
+export function hasAnyTrackedPositions(storage: Pick<Storage, "length" | "key" | "getItem"> | null = safeStorage()): boolean {
+  try {
+    if (!storage) return false;
+    for (let i = 0; i < storage.length; i++) {
+      const key = storage.key(i);
+      if (key?.startsWith("sofi:rhc:positions:") && trackedPositionIds(key.slice("sofi:rhc:positions:".length), storage).length > 0) return true;
+    }
+  } catch { /* storage disabled */ }
+  return false;
+}
+
 export function saveTrackedPositionIds(address: string, ids: string[], storage: Pick<Storage, "setItem"> | null = safeStorage()): void {
   try { storage?.setItem(storageKey(address), JSON.stringify([...new Set(ids)].slice(0, 10))); } catch { /* storage full or disabled */ }
 }

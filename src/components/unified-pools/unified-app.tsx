@@ -25,7 +25,7 @@ export function UnifiedApp({ selected, flags, rhcSigningEnabled, deepLinkPool }:
   const [rhcOpen, setRhcOpen] = useState<RhcPoolView | null>(null);
 
   return <>
-    <SelectedApp {...selected}
+    <SelectedApp {...selected} solanaToolsHidden={rhcOpen !== null}
       extraPositions={flags.rhc ? <RhcPositionsSection wallet={evmWallet} onConnected={setEvmWallet} signingEnabled={rhcSigningEnabled} refreshKey={rhcPositionsKey} /> : undefined}
       poolsSection={<UnifiedPoolsPanel flags={flags} deepLinkPool={deepLinkPool} onOpenRhc={({ pool }) => setRhcOpen(pool)} />} />
     {rhcOpen && <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center" role="dialog" aria-modal="true" aria-labelledby="rhc-open-title">
