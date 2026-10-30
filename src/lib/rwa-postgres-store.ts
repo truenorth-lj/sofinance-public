@@ -11,6 +11,7 @@ import { dailyWindow, validateHistoryRange, volumeWindowEnd } from "./rwa-daily"
 import { DEFAULT_PROTOCOL } from "@sofinance/engine/protocols/types";
 import { sortPairs, type DiscoverRwaPairsResult, type RwaPairRow } from "./rwa-pairs";
 import { pickHighestAprPreset } from "./range-apr/preset-list";
+import { RWA_PAIRS_STALE_MS } from "./rwa-freshness";
 import {
   ALGORITHM_VERSION, FEED_KEY, PAIRING_VERSION, RwaStoreError, storeRequestSchema,
   type AprWrite, type DiscoveryWrite, type Lease, type RwaStore, type SnapshotApr, type StoreRequest,
@@ -137,8 +138,8 @@ export class PostgresRwaStore implements RwaStore {
     return { ...(state.summary as Omit<DiscoverRwaPairsResult, "pairs">),
       pairs: sortPairs(rows.flatMap((row) => row.pool ? [pair(row.pool)] : []), sortBy),
       pagesFetched: pages, scannedPools: state.pagePoolCounts.slice(0, pages).reduce((sum, n) => sum + n, 0),
-      fetchedAt: published, cachedAt: published, stale: ageMs > 1_800_000, ageSeconds: Math.floor(ageMs / 1000),
-      freshness: { snapshotAt: published, stale: ageMs > 1_800_000 } };
+      fetchedAt: published, cachedAt: published, stale: ageMs > RWA_PAIRS_STALE_MS, ageSeconds: Math.floor(ageMs / 1000),
+      freshness: { snapshotAt: published, stale: ageMs > RWA_PAIRS_STALE_MS } };
   }
 
   private async readApr(poolId: string): Promise<SnapshotApr> {

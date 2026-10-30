@@ -15,6 +15,14 @@ export const RWA_REFRESH_CRON = "15 0 * * *";
  */
 export const APR_SNAPSHOT_MAX_AGE_MS = 26 * 3_600_000;
 
+/**
+ * `/api/rwa-pairs` (Postgres store) marks the published pool list stale after this. Same as the client APR expiry:
+ * the list is published by the same daily refresh, so it is current all day. (It was 30 minutes, which flagged it
+ * stale for ~23.5 hours a day under the daily cron.) Write-side guards inside one refresh run keep their own
+ * 30-minute windows.
+ */
+export const RWA_PAIRS_STALE_MS = APR_SNAPSHOT_MAX_AGE_MS;
+
 export function aprSnapshotExpired(
   payload: PoolRangeAprPayload,
   nowMs: number,
