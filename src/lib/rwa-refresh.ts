@@ -1,5 +1,6 @@
 import "@/lib/engine-host";
 import "server-only";
+import type { PublicClient } from "viem";
 import { getRwaConfig } from "./config/rwa-env";
 import { discoverRwaPairs } from "./rwa-pairs";
 import {
@@ -16,7 +17,10 @@ import { sanitizePublicError } from "./public-error";
 import { getRwaStore } from "./rwa-store";
 import { UNIV4_RHC_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/uniswap-v4/constants";
 import { isRhcApr7dEnabled } from "./protocol-flags";
-import { refreshRhcAprSnapshots } from "./rhc-apr-refresh";
+import { refreshRhcAprSnapshots, type RhcAprRunStats } from "./rhc-apr-refresh";
+import { discoverRhcRegistryPools, rhcDiscoveryFindings, type RhcDiscoveryResult } from "./pool-metrics/rhc-discovery";
+import { rhcStateClient } from "./rhc-range-apr";
+import { captureRhcDiscoveryFindings } from "./sentry/capture";
 import { resolveTokenIcons, rhcIconSources, solanaIconSources } from "./token-icons/resolve";
 import type { RwaPairRow } from "./rwa-pairs";
 import {
@@ -34,12 +38,19 @@ type Options = {
   force?: boolean;
   fetcher?: typeof fetch;
   clock?: () => number;
+  /** Robinhood Chain state client for the registry discovery (tests). */
+  rhcClient?: PublicClient;
 };
 type JobResult = {
   job: JobName;
   status: "skipped" | "ok" | "partial" | "error";
   processed: number;
   issues: string[];
+  elapsedMs?: number;
+  /** rwa-discovery: Robinhood Chain registry check (hidden candidates for review; never shown). */
+  rhcDiscovery?: RhcDiscoveryResult | { error: string };
+  /** rwa-apr-refresh: what the RHC pass did with price histories this run. */
+  rhc?: RhcAprRunStats;
 };
 
 /** Profile timestamps survive instance recycling; new UTC windows cannot reuse yesterday's volume sample. */
@@ -130,9 +141,12 @@ export async function runJob(job: JobName, options: Options): Promise<JobResult>
   });
   if (!lease) return { job, status: "skipped", processed: 0, issues: [] };
   const signal = AbortSignal.timeout(config.jobTimeoutMs),
-    issues: string[] = [];
+    issues: string[] = [],
+    startedAt = clock();
   let processed = 0,
-    status: "ok" | "partial" | "error" = "ok";
+    status: "ok" | "partial" | "error" = "ok",
+    rhcDiscovery: JobResult["rhcDiscovery"],
+    rhcStats: RhcAprRunStats | undefined;
   try {
     if (job === "rwa-discovery") {
       const result = await discoverRwaPairs({
@@ -152,12 +166,16 @@ export async function runJob(job: JobName, options: Options): Promise<JobResult>
       await refreshTokenIcons(store, lease, result.pairs, options.fetcher, signal).catch(() => {
         issues.push("Token icons not saved");
       });
+      // Best effort, state reads only (one multicall): reported here and to Sentry, never published.
+      rhcDiscovery = await discoverRhcRegistryPools(options.rhcClient ?? rhcStateClient())
+        .then((result) => { captureRhcDiscoveryFindings(rhcDiscoveryFindings(result)); return result; })
+        .catch((error) => ({ error: sanitizePublicError(error, "RHC discovery failed").slice(0, 200) }));
     } else {
       await store.request({ op: "prepareDaily", lease });
       // RHC runs beside the Solana pass: its GeckoTerminal calls are spaced on their own gate (see rhc-apr-refresh).
       const rhcPass = isRhcApr7dEnabled()
         ? refreshRhcAprSnapshots({ store, lease, fetcher: options.fetcher ?? fetch, clock, signal })
-          .catch((error) => ({ processed: 0, issues: [`RHC: ${sanitizePublicError(error, "RHC APR refresh failed").slice(0, 200)}`] }))
+          .catch((error) => ({ processed: 0, issues: [`RHC: ${sanitizePublicError(error, "RHC APR refresh failed").slice(0, 200)}`], stats: undefined }))
         : null;
       const pools = await store.request({ op: "activePools" });
       await mapPool(pools, config.concurrency, async (pool) => {
@@ -233,6 +251,7 @@ export async function runJob(job: JobName, options: Options): Promise<JobResult>
         const rhc = await rhcPass;
         processed += rhc.processed;
         issues.push(...rhc.issues);
+        rhcStats = rhc.stats;
       }
       await store.request({ op: "prepareDaily", lease });
       if (issues.length) status = "partial";
@@ -253,7 +272,10 @@ export async function runJob(job: JobName, options: Options): Promise<JobResult>
     status = "error";
     issues.push("Job lease was lost before completion");
   }
-  return { job, status, processed, issues: issues.slice(0, 20) };
+  return {
+    job, status, processed, issues: issues.slice(0, 20), elapsedMs: clock() - startedAt,
+    ...(rhcDiscovery ? { rhcDiscovery } : {}), ...(rhcStats ? { rhc: rhcStats } : {}),
+  };
 }
 
 export async function refreshRwaSnapshots(options: Options = {}) {

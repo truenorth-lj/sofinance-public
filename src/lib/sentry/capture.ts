@@ -146,3 +146,21 @@ export function captureQuoteSettleFailure(error: unknown, extras: QuoteSettleFai
     // Monitoring must never fail the request.
   }
 }
+
+/**
+ * Robinhood Chain registry discovery found something to review (a non-allowlisted pool, a beacon change).
+ * Info level: nothing is broken and nothing is shown to users. Addresses and pool ids only.
+ */
+export function captureRhcDiscoveryFindings(findings: readonly string[]): void {
+  try {
+    if (!findings.length || !isSentryEnabled()) return;
+    Sentry.withScope((scope) => {
+      scope.setLevel("info");
+      scope.setTag("rhc_discovery", "findings");
+      scope.setExtra("findings", findings.slice(0, 50));
+      Sentry.captureMessage(`RHC discovery: ${findings.length} finding(s) to review`, "info");
+    });
+  } catch {
+    // Monitoring must never fail the cron.
+  }
+}

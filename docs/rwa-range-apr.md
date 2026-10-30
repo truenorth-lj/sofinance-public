@@ -198,3 +198,30 @@ on-chain state 30 s; in-flight de-duplication; 15 s negative cache; the browser 
 * `sample` (days, sources, unplaced volume, confidence, `degraded`, `issues`), `published` (Raydium's own APR), `assumptions`, `sources`.
 
 Reproduce the comparison: `npx tsx scripts/research-range-apr.ts [poolId …]` (read-only).
+
+## Same-asset pair discovery (token registry)
+
+Pairs come from one token registry (`src/lib/pool-metrics/token-registry.ts`): each token has an issuer, chain, address,
+underlying (ticker / ISIN) and how it was verified. Two tokens pair when they are on the same chain, have the same underlying and
+come from different issuers; the per-protocol pool lookup is unchanged.
+
+* **Solana** (`solana-registry.ts`): built on every discovery run from the Raydium scan, Jupiter tags and the xStocks whitelist, so
+  new mints are still found automatically. A golden test (`__fixtures__/solana-discovery-*.json`) pins the discovered pair set.
+* **Robinhood Chain** (`rhc-registry.ts`): Robinhood stock tokens and Ondo GM tokens in the checked-in `rhc-tokens.json`, each
+  verified by its issuer's EIP-1967 beacon. Regenerate it **by hand, offline only** (event scans and the asset registry API are
+  not allowed in the cron): `pnpm rhc:tokens` writes the file, `pnpm rhc:tokens --check` fails if it is out of date. It uses
+  `RHC_RPC_URL` when set (never printed), else the public RPC; commit the diff after review.
+* The `rwa-discovery` cron job checks the RHC registry with **one** Multicall3 `eth_call` (state reads only): StablePairHook v4
+  poolId → `getSlot0`, Uniswap v3 `getPool` at fees 100/500/3000/10000, and both beacons' `implementation()`. The route JSON
+  (`discovery.rhcDiscovery`) and a Sentry info event list any non-allowlisted live pool, any v3 pool, an allowlisted pool that no
+  longer derives, or a beacon upgrade. These are **candidates for review only**; users see the allowlist.
+
+## RHC price history in the daily cron
+
+The `rwa-apr-refresh` job (90 s, GeckoTerminal ≤ 4 calls/min, so calls start ≥ 16 s apart) makes one `pools/multi` call, then up to
+4 hourly-candle calls (one per pool: daily USD volume = token volume × token USD price from the same candles, both sides are the same
+stock). Pools with no trades in GeckoTerminal's last 24 h roll their saved history forward with no call (a zero-volume day). The
+remaining pools are fetched in fair order (missing history first, then the longest waiting); a failed fetch goes to the back with a
+12 h → 4 day backoff. No call starts after 66 s, and each pool is saved as soon as it is done. The job result (`apr.rhc`) shows
+`fetched / rolledForward / reused / deferred / failedFetches`. With more than 4 active pools a pool's history can be up to a day or two
+old (shown with its window dates).

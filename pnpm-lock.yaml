@@ -61,7 +61,7 @@ importers:
         version: 10.6.0
       drizzle-orm:
         specifier: 0.45.4
-        version: 0.45.4(@opentelemetry/api@1.10.0)(postgres@3.4.7)
+        version: 0.45.4(@opentelemetry/api@1.10.0)(postgres@3.4.9)
       gray-matter:
         specifier: ^4.0.3
         version: 4.0.3
@@ -72,8 +72,8 @@ importers:
         specifier: 16.4.3
         version: 16.4.3(@babel/core@7.29.7)(@opentelemetry/api@1.10.0)(@types/node@24.19.2)(babel-plugin-react-compiler@1.0.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       postgres:
-        specifier: 3.4.7
-        version: 3.4.7
+        specifier: 3.4.9
+        version: 3.4.9
       posthog-js:
         specifier: ^1.438.21
         version: 1.438.21(@types/react@19.3.0)(react@19.3.1)
@@ -5650,8 +5650,8 @@ packages:
     resolution: {integrity: sha512-YUbWYCgErwnMAVkjUnYa+KlMBzGpHwiIt/DE7f0G33AuX2LH9UcTk6KgWxd3zRU+pN3u/C+Xl3EnMLM4Hea7Sg==}
     engines: {node: ^10 || ^12 || >=14}
 
-  postgres@3.4.7:
-    resolution: {integrity: sha512-Jtc2612XINuBjIl/QTWsV5UvE8UHuNblcO3vVADSrKsrc6RqGX6lOW1cEo3CM2v0XG4Nat8nI+YM7/f26VxXLw==}
+  postgres@3.4.9:
+    resolution: {integrity: sha512-GD3qdB0x1z9xgFI6cdRD6xu2Sp2WCOEoe3mtnyB5Ee0XrrL5Pe+e4CCnJrRMnL1zYtRDZmQQVbvOttLnKDLnaw==}
     engines: {node: '>=12'}
 
   posthog-js@1.438.21:
@@ -11043,10 +11043,10 @@ snapshots:
       esbuild: 0.25.12
       tsx: 4.23.15
 
-  drizzle-orm@0.45.4(@opentelemetry/api@1.10.0)(postgres@3.4.7):
+  drizzle-orm@0.45.4(@opentelemetry/api@1.10.0)(postgres@3.4.9):
     optionalDependencies:
       '@opentelemetry/api': 1.10.0
-      postgres: 3.4.7
+      postgres: 3.4.9
 
   dunder-proto@1.0.1:
     dependencies:
@@ -13317,7 +13317,7 @@ snapshots:
       picocolors: 1.1.1
       source-map-js: 1.2.2
 
-  postgres@3.4.7: {}
+  postgres@3.4.9: {}
 
   posthog-js@1.438.21(@types/react@19.3.0)(react@19.3.1):
     dependencies:

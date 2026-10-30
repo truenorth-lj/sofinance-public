@@ -23,12 +23,12 @@ const inputs = JSON.parse(readFileSync(`${dir}solana-discovery-inputs.json`, "ut
 };
 const byPath = new Map(Object.entries(inputs.responses).map(([url, value]) => {
   const parsed = new URL(url);
-  return [`${parsed.hostname === "lite-api.jup.ag" ? "api.jup.ag" : parsed.hostname}${parsed.pathname}${parsed.search}`, value];
+  return [`${parsed.hostname.replace(/^lite-/, "")}${parsed.pathname}${parsed.search}`, value];
 }));
 
 const replay = (async (input: RequestInfo | URL) => {
   const parsed = new URL(String(input instanceof Request ? input.url : input));
-  const hit = byPath.get(`${parsed.hostname === "lite-api.jup.ag" ? "api.jup.ag" : parsed.hostname}${parsed.pathname}${parsed.search}`);
+  const hit = byPath.get(`${parsed.hostname.replace(/^lite-/, "")}${parsed.pathname}${parsed.search}`);
   if (!hit) throw new Error(`unrecorded request ${parsed.hostname}${parsed.pathname}`);
   return new Response(JSON.stringify(hit.body), { status: hit.status, headers: { "content-type": "application/json" } });
 }) as typeof fetch;

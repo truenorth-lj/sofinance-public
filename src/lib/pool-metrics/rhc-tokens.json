@@ -1,0 +1,320 @@
+{
+  "chainId": 4663,
+  "beacons": {
+    "robinhood": {
+      "address": "0xe10b6f6B275de231345c20D14Ab812db62151b00",
+      "implementation": "0xb35490d6f9163DE4F80d88dc75c3516eb64C5aE2"
+    },
+    "ondo": {
+      "address": "0xC6fBC077d53d01f73e3195B2b916fD95555bA222",
+      "implementation": "0xf74a964355485aE20457601b554754311c14233F"
+    }
+  },
+  "unpairedOndo": [
+    "CPER",
+    "FXI",
+    "HOOD"
+  ],
+  "tokens": [
+    {
+      "chain": "robinhood",
+      "address": "0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9",
+      "symbol": "AAPL",
+      "issuer": "robinhood",
+      "underlying": "AAPL",
+      "isin": "US0378331005",
+      "decimals": 18,
+      "verification": {
+        "method": "issuer-beacon",
+        "beacon": "0xe10b6f6B275de231345c20D14Ab812db62151b00"
+      }
+    },
+    {
+      "chain": "robinhood",
+      "address": "0x9Bf86418CaF2b7a939603d6c24219a77Bf7F9b33",
+      "symbol": "AAPLon",
+      "issuer": "ondo",
+      "underlying": "AAPL",
+      "decimals": 18,
+      "verification": {
+        "method": "issuer-beacon",
+        "beacon": "0xC6fBC077d53d01f73e3195B2b916fD95555bA222"
+      }
+    },
+    {
+      "chain": "robinhood",
+      "address": "0x9a7842EDed60b0FE1e03eEc342C82A397c821eD0",
+      "symbol": "BMNR",
+      "issuer": "robinhood",
+      "underlying": "BMNR",
+      "isin": "US09175A2069",
+      "decimals": 18,
+      "verification": {
+        "method": "issuer-beacon",
+        "beacon": "0xe10b6f6B275de231345c20D14Ab812db62151b00"
+      }
+    },
+    {
+      "chain": "robinhood",
+      "address": "0x900F8970d2fAe8060D06bB29234F629C837c3383",
+      "symbol": "BMNRon",
+      "issuer": "ondo",
+      "underlying": "BMNR",
+      "decimals": 18,
+      "verification": {
+        "method": "issuer-beacon",
+        "beacon": "0xC6fBC077d53d01f73e3195B2b916fD95555bA222"
+      }
+    },
+    {
+      "chain": "robinhood",
+      "address": "0xdF0992E440dD0be65BD8439b609d6D4366bf1CB5",
+      "symbol": "CRCL",
+      "issuer": "robinhood",
+      "underlying": "CRCL",
+      "isin": "US1725731079",
+      "decimals": 18,
+      "verification": {
+        "method": "issuer-beacon",
+        "beacon": "0xe10b6f6B275de231345c20D14Ab812db62151b00"
+      }
+    },
+    {
+      "chain": "robinhood",
+      "address": "0x369C4748E98C153e9B7aDeBc3E71e9e2a5f60Dc0",
+      "symbol": "CRCLon",
+      "issuer": "ondo",
+      "underlying": "CRCL",
+      "decimals": 18,
+      "verification": {
+        "method": "issuer-beacon",
+        "beacon": "0xC6fBC077d53d01f73e3195B2b916fD95555bA222"
+      }
+    },
+    {
+      "chain": "robinhood",
+      "address": "0x1b0E319c6A659F002271B69dB8A7df2F911c153E",
+      "symbol": "GME",
+      "issuer": "robinhood",
+      "underlying": "GME",
+      "isin": "US36467W1099",
+      "decimals": 18,
+      "verification": {
+        "method": "issuer-beacon",
+        "beacon": "0xe10b6f6B275de231345c20D14Ab812db62151b00"
+      }
+    },
+    {
+      "chain": "robinhood",
+      "address": "0xB094d0d3221D7F7a9F14b0f78C34CD38d7ACf6F2",
+      "symbol": "GMEon",
+      "issuer": "ondo",
+      "underlying": "GME",
+      "decimals": 18,
+      "verification": {
+        "method": "issuer-beacon",
+        "beacon": "0xC6fBC077d53d01f73e3195B2b916fD95555bA222"
+      }
+    },
+    {
+      "chain": "robinhood",
+      "address": "0x2e0847E8910a9732eB3fb1bb4b70a580ADAD4FE3",
+      "symbol": "GOOGL",
+      "issuer": "robinhood",
+      "underlying": "GOOGL",
+      "isin": "US02079K3059",
+      "decimals": 18,
+      "verification": {
+        "method": "issuer-beacon",
+        "beacon": "0xe10b6f6B275de231345c20D14Ab812db62151b00"
+      }
+    },
+    {
+      "chain": "robinhood",
+      "address": "0xe10cc5f0cd0C90322ebEB33e7757B2c9090146DC",
+      "symbol": "GOOGLon",
+      "issuer": "ondo",
+      "underlying": "GOOGL",
+      "decimals": 18,
+      "verification": {
+        "method": "issuer-beacon",
+        "beacon": "0xC6fBC077d53d01f73e3195B2b916fD95555bA222"
+      }
+    },
+    {
+      "chain": "robinhood",
+      "address": "0xc0D6457C16Cc70d6790Dd43521C899C87ce02f35",
+      "symbol": "META",
+      "issuer": "robinhood",
+      "underlying": "META",
+      "isin": "US30303M1027",
+      "decimals": 18,
+      "verification": {
+        "method": "issuer-beacon",
+        "beacon": "0xe10b6f6B275de231345c20D14Ab812db62151b00"
+      }
+    },
+    {
+      "chain": "robinhood",
+      "address": "0x7b5026cfcB4De0cF3d9a39FE2A541514b71437A2",
+      "symbol": "METAon",
+      "issuer": "ondo",
+      "underlying": "META",
+      "decimals": 18,
+      "verification": {
+        "method": "issuer-beacon",
+        "beacon": "0xC6fBC077d53d01f73e3195B2b916fD95555bA222"
+      }
+    },
+    {
+      "chain": "robinhood",
+      "address": "0xec262a75e413fAfD0dF80480274532C79D42da09",
+      "symbol": "MSTR",
+      "issuer": "robinhood",
+      "underlying": "MSTR",
+      "isin": "US5949724083",
+      "decimals": 18,
+      "verification": {
+        "method": "issuer-beacon",
+        "beacon": "0xe10b6f6B275de231345c20D14Ab812db62151b00"
+      }
+    },
+    {
+      "chain": "robinhood",
+      "address": "0x09dedC334fC47ab543e5D70C7FD9D2B1aea175bd",
+      "symbol": "MSTRon",
+      "issuer": "ondo",
+      "underlying": "MSTR",
+      "decimals": 18,
+      "verification": {
+        "method": "issuer-beacon",
+        "beacon": "0xC6fBC077d53d01f73e3195B2b916fD95555bA222"
+      }
+    },
+    {
+      "chain": "robinhood",
+      "address": "0xd0601CE157Db5bdC3162BbaC2a2C8aF5320D9EEC",
+      "symbol": "NVDA",
+      "issuer": "robinhood",
+      "underlying": "NVDA",
+      "isin": "US67066G1040",
+      "decimals": 18,
+      "verification": {
+        "method": "issuer-beacon",
+        "beacon": "0xe10b6f6B275de231345c20D14Ab812db62151b00"
+      }
+    },
+    {
+      "chain": "robinhood",
+      "address": "0xf1b95AE4E7700b962714702EA53784Dc8492a856",
+      "symbol": "NVDAon",
+      "issuer": "ondo",
+      "underlying": "NVDA",
+      "decimals": 18,
+      "verification": {
+        "method": "issuer-beacon",
+        "beacon": "0xC6fBC077d53d01f73e3195B2b916fD95555bA222"
+      }
+    },
+    {
+      "chain": "robinhood",
+      "address": "0xD5f3879160bc7c32ebb4dC785F8a4F505888de68",
+      "symbol": "QQQ",
+      "issuer": "robinhood",
+      "underlying": "QQQ",
+      "isin": "US46090E1038",
+      "decimals": 18,
+      "verification": {
+        "method": "issuer-beacon",
+        "beacon": "0xe10b6f6B275de231345c20D14Ab812db62151b00"
+      }
+    },
+    {
+      "chain": "robinhood",
+      "address": "0x300fE8a40701cE81460503fB886f9eD81A3B5e14",
+      "symbol": "QQQon",
+      "issuer": "ondo",
+      "underlying": "QQQ",
+      "decimals": 18,
+      "verification": {
+        "method": "issuer-beacon",
+        "beacon": "0xC6fBC077d53d01f73e3195B2b916fD95555bA222"
+      }
+    },
+    {
+      "chain": "robinhood",
+      "address": "0x4a0E65A3EcceC6dBe60AE065F2e7bb85Fae35eEa",
+      "symbol": "SPCX",
+      "issuer": "robinhood",
+      "underlying": "SPCX",
+      "isin": "US84615Q1031",
+      "decimals": 18,
+      "verification": {
+        "method": "issuer-beacon",
+        "beacon": "0xe10b6f6B275de231345c20D14Ab812db62151b00"
+      }
+    },
+    {
+      "chain": "robinhood",
+      "address": "0x9B8294F24453379aa87C807ab82bf1d5722153Fc",
+      "symbol": "SPCXon",
+      "issuer": "ondo",
+      "underlying": "SPCX",
+      "decimals": 18,
+      "verification": {
+        "method": "issuer-beacon",
+        "beacon": "0xC6fBC077d53d01f73e3195B2b916fD95555bA222"
+      }
+    },
+    {
+      "chain": "robinhood",
+      "address": "0x117cc2133c37B721F49dE2A7a74833232B3B4C0C",
+      "symbol": "SPY",
+      "issuer": "robinhood",
+      "underlying": "SPY",
+      "isin": "US78462F1030",
+      "decimals": 18,
+      "verification": {
+        "method": "issuer-beacon",
+        "beacon": "0xe10b6f6B275de231345c20D14Ab812db62151b00"
+      }
+    },
+    {
+      "chain": "robinhood",
+      "address": "0x533C5571ae586985E1FDDFAa24304284d970C62a",
+      "symbol": "SPYon",
+      "issuer": "ondo",
+      "underlying": "SPY",
+      "decimals": 18,
+      "verification": {
+        "method": "issuer-beacon",
+        "beacon": "0xC6fBC077d53d01f73e3195B2b916fD95555bA222"
+      }
+    },
+    {
+      "chain": "robinhood",
+      "address": "0x322F0929c4625eD5bAd873c95208D54E1c003b2d",
+      "symbol": "TSLA",
+      "issuer": "robinhood",
+      "underlying": "TSLA",
+      "isin": "US88160R1014",
+      "decimals": 18,
+      "verification": {
+        "method": "issuer-beacon",
+        "beacon": "0xe10b6f6B275de231345c20D14Ab812db62151b00"
+      }
+    },
+    {
+      "chain": "robinhood",
+      "address": "0xB197F36C25BA9b66960688882A4dC595C6b04309",
+      "symbol": "TSLAon",
+      "issuer": "ondo",
+      "underlying": "TSLA",
+      "decimals": 18,
+      "verification": {
+        "method": "issuer-beacon",
+        "beacon": "0xC6fBC077d53d01f73e3195B2b916fD95555bA222"
+      }
+    }
+  ]
+}
