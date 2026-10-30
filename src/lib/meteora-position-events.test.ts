@@ -13,7 +13,7 @@ vi.mock("./position-performance-history", async (importOriginal) => ({
 const { fetchPositionHistoryTransactions } = await import("./position-performance-history");
 const { METEORA_EVENT, METEORA_EVENT_AUTHORITY, METEORA_EVENT_IX_TAG, parseMeteoraPositionCashflowEvents } = await import("./meteora-position-events");
 const { aggregateCashflowsForPosition } = await import("./position-performance-events");
-const { getMeteoraPositionPerformance, METEORA_NOT_SHOWN } = await import("./meteora-positions");
+const { getMeteoraPositionPerformance } = await import("./meteora-positions");
 
 const POOL = accounts.pool;
 const CBBTC = "cbbtcf3aa214zXHbiAZQwf4122FBYbraNdFqgw4iMij";
@@ -107,16 +107,13 @@ describe("getMeteoraPositionPerformance", () => {
     getAccountInfo: vi.fn(async (key: PublicKey) => store.get(key.toBase58()) ?? null),
     getMultipleAccountsInfo: vi.fn(async (keys: PublicKey[]) => keys.map((key) => store.get(key.toBase58()) ?? null)),
     getProgramAccounts: vi.fn(async () => []),
-    // Newest first: the open is the oldest successful signature.
-    getSignaturesForAddress: vi.fn(async () => [...items].reverse().map((item) => ({ signature: item.signature, err: null }))),
+    getSignaturesForAddress: vi.fn(async () => []),
     getParsedTransaction: vi.fn(),
   } as unknown as NonNullable<Parameters<typeof getMeteoraPositionPerformance>[1]>["connection"];
-  const sql = (wallet: string) => ({ unsafe: vi.fn(async (_query: string, params?: unknown[]) =>
-    (params as string[])[0] === items[0]!.signature ? [{ wallet }] : []) }) as never;
 
-  it("reports cashflows, live equity and holding period for a SoFinance-opened position", async () => {
+  it("reports cashflows, live equity and holding period for a position opened anywhere", async () => {
     vi.mocked(fetchPositionHistoryTransactions).mockResolvedValue({ items, truncated: false, signatureCount: items.length, metric: { elapsedMs: 1 } as never });
-    const result = (await getMeteoraPositionPerformance(EMPTY, { connection, sql: sql(expected[EMPTY]!.owner), skipPricing: true, nowSeconds: 1_800_000_000,
+    const result = (await getMeteoraPositionPerformance(EMPTY, { connection, skipPricing: true, nowSeconds: 1_800_000_000,
       wallet: expected[EMPTY]!.owner, fetcher: vi.fn(async () => { throw new Error("offline"); }) as never }))!;
     expect(result).toMatchObject({
       positionAccount: EMPTY, positionMint: EMPTY, poolId: POOL, mintA: CBBTC, mintB: WBTC, tickLower: -34, tickUpper: 35, ownsNft: true,
@@ -129,15 +126,15 @@ describe("getMeteoraPositionPerformance", () => {
     expect(result.metrics.holdingDays).toBeGreaterThan(0);
 
     vi.mocked(fetchPositionHistoryTransactions).mockResolvedValue({ items: items.slice(1), truncated: true, signatureCount: 500, metric: { elapsedMs: 1 } as never });
-    const partial = (await getMeteoraPositionPerformance(EMPTY, { connection, sql: sql(expected[EMPTY]!.owner), skipPricing: true, nowSeconds: 1_800_000_000,
+    const partial = (await getMeteoraPositionPerformance(EMPTY, { connection, skipPricing: true, nowSeconds: 1_800_000_000,
       fetcher: vi.fn(async () => { throw new Error("offline"); }) as never }))!;
     expect(partial.assumptions).toMatch(/incomplete/);
     expect(partial.metrics.feeOnlyAprPct).toBeNull();
   });
 
-  it("is null for non-Meteora addresses and hidden for positions SoFinance did not open", async () => {
-    expect(await getMeteoraPositionPerformance(POOL, { connection, sql: sql("x") })).toBeNull();
-    await expect(getMeteoraPositionPerformance(EMPTY, { connection, sql: sql(CBBTC) })).rejects.toThrow(METEORA_NOT_SHOWN);
+  it("is null for non-Meteora addresses and never reads the open log or the signature history for provenance", async () => {
+    expect(await getMeteoraPositionPerformance(POOL, { connection })).toBeNull();
     expect(fetchPositionHistoryTransactions).not.toHaveBeenCalled();
+    expect(connection!.getSignaturesForAddress).not.toHaveBeenCalled();
   });
 });

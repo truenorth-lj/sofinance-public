@@ -1,7 +1,7 @@
 import "@/lib/engine-host";
 import "server-only";
 
-import { PublicKey, type Connection, type GetProgramAccountsConfig } from "@solana/web3.js";
+import { PublicKey, type AccountInfo, type Connection, type GetProgramAccountsConfig } from "@solana/web3.js";
 import bs58 from "bs58";
 import { decodeLbPair, decodeMintDecimals, meteoraBinArrayAddress, meteoraBinArrayIndexesForRange, type LbPairState } from "@sofinance/engine/protocols/meteora/accounts";
 import { METEORA_ALLOWLISTED_POOLS, METEORA_DLMM_PROGRAM_ID } from "@sofinance/engine/protocols/meteora/constants";
@@ -16,7 +16,6 @@ import { rpcConnection, rpcProvider, type RpcProvider } from "@sofinance/engine/
 import { fetchJupiterPricesUsd } from "@sofinance/engine/token-prices";
 import { getTokenMetadata } from "@sofinance/engine/token-metadata";
 import { getJupiterApiKey } from "@sofinance/engine/config/server-env";
-import { getOpensSql, type OpensSql } from "./opens-log/persist";
 import { parseMeteoraPositionCashflowEvents, type MeteoraEventContext } from "./meteora-position-events";
 import { aggregateCashflowsForPosition } from "./position-performance-events";
 import { fetchPositionHistoryTransactions, toChronological, type HistoryConnection } from "./position-performance-history";
@@ -29,26 +28,27 @@ import { matchWrapPairShape } from "./rwa-pairing";
  * Read-only Meteora DLMM positions for the allowlisted pools.
  *
  * A DLMM position is a program account owned by the wallet (no NFT); its
- * address is the position id (`positionMint` in MCP inputs). Same product
- * rule as Orca: a position is shown only when its first successful
- * transaction is a SoFinance-logged open (`sofinance_position_opens`) by the
- * owner in an allowlisted pool. Everything fails closed: no opens database,
- * an unreadable log, a history too long to reach the open, or a
- * non-allowlisted pool all hide it. Nothing here builds or signs a transaction.
+ * address is the position id (`positionMint` in MCP inputs). Like Raydium,
+ * every position the wallet owns on-chain in an allowlisted pool is shown,
+ * wherever it was opened; nothing here depends on the SoFinance open log.
+ * Nothing here builds or signs a transaction.
  */
 
 export const METEORA_PROTOCOL = "meteora-dlmm" as const;
-export const METEORA_NOT_SHOWN = "This Meteora position was not opened through SoFinance; it is not shown yet.";
-export const METEORA_OPENS_DB_MISSING = "Meteora positions are unavailable: the SoFinance open log database is not configured on this deployment.";
-const PROVENANCE_PAGE = 1000;
-const PROVENANCE_MAX_PAGES = 5;
+export const METEORA_POOL_NOT_SUPPORTED = "This Meteora position is in a pool SoFinance does not support yet.";
+/** Bounds for `meteoraPositionFirstSignature` (used by the open log write path). */
+const FIRST_SIGNATURE_PAGE = 1000;
+const FIRST_SIGNATURE_MAX_PAGES = 5;
 const LIST_MAX_POSITIONS = 50;
+const MULTIPLE_ACCOUNTS_BATCH = 100;
+/** Discriminator + lb_pair + owner: enough to pick the allowlisted positions before fetching full accounts. */
+const POSITION_HEAD_LEN = METEORA_POSITION_OWNER_OFFSET + 32;
 const DEFAULT_MAX_SIGNATURES = 100;
 
-type MeteoraConnection = Pick<Connection, "getAccountInfo" | "getMultipleAccountsInfo" | "getSignaturesForAddress"> & {
+type MeteoraConnection = Pick<Connection, "getAccountInfo" | "getMultipleAccountsInfo"> & {
   getProgramAccounts(programId: PublicKey, config: GetProgramAccountsConfig): Promise<ReadonlyArray<{ pubkey: PublicKey; account: { data: Uint8Array } }>>;
 };
-export type MeteoraReadOptions = { connection?: MeteoraConnection; sql?: OpensSql | null };
+export type MeteoraReadOptions = { connection?: MeteoraConnection };
 
 const allowlisted = (poolId: string) => METEORA_ALLOWLISTED_POOLS.find((pool) => pool.poolAddress === poolId);
 
@@ -75,7 +75,7 @@ export async function readMeteoraPositionSnapshot(positionAccount: string, conne
 async function snapshotFromData(positionAccount: string, data: Uint8Array, connection: MeteoraConnection): Promise<MeteoraPositionSnapshot> {
   const position = decodeMeteoraPosition(data);
   const allow = allowlisted(position.lbPair);
-  if (!allow) throw new Error(METEORA_NOT_SHOWN);
+  if (!allow) throw new Error(METEORA_POOL_NOT_SUPPORTED);
   const indexes = meteoraBinArrayIndexesForRange(position.lowerBinId, position.upperBinId);
   // One batch: pool, both mints, and every bin array the position spans.
   const infos = await connection.getMultipleAccountsInfo(
@@ -102,54 +102,24 @@ async function snapshotFromData(positionAccount: string, data: Uint8Array, conne
   };
 }
 
-function opensSql(sql: OpensSql | null | undefined) {
-  return sql === undefined ? getOpensSql() : sql ?? undefined;
-}
-
 /** First successful signature of the position account (its open), bounded; null when the history is longer (fail closed). */
 export async function meteoraPositionFirstSignature(connection: Pick<Connection, "getSignaturesForAddress">, address: string): Promise<string | null> {
   let before: string | undefined;
   let oldest: string | null = null;
-  for (let page = 0; page < PROVENANCE_MAX_PAGES; page++) {
-    const batch = await connection.getSignaturesForAddress(new PublicKey(address), { limit: PROVENANCE_PAGE, before }, "confirmed");
+  for (let page = 0; page < FIRST_SIGNATURE_MAX_PAGES; page++) {
+    const batch = await connection.getSignaturesForAddress(new PublicKey(address), { limit: FIRST_SIGNATURE_PAGE, before }, "confirmed");
     for (const item of batch) if (!item.err) oldest = item.signature;
-    if (batch.length < PROVENANCE_PAGE) return oldest;
+    if (batch.length < FIRST_SIGNATURE_PAGE) return oldest;
     before = batch[batch.length - 1]!.signature;
   }
   return null;
 }
 
-/** The SoFinance open log row for this position (logged by its owner), or null (not shown). Never runs DDL. */
-export async function meteoraPositionProvenance(
-  snapshot: Pick<MeteoraPositionSnapshot, "positionAccount" | "poolId"> & { position: Pick<MeteoraPosition, "owner"> },
-  options: { connection: MeteoraConnection; sql?: OpensSql | null },
-) {
-  const sql = opensSql(options.sql);
-  if (!sql || !allowlisted(snapshot.poolId)) return null;
-  try {
-    const openSignature = await meteoraPositionFirstSignature(options.connection, snapshot.positionAccount);
-    if (!openSignature) return null;
-    const rows = await sql.unsafe(
-      "SELECT wallet FROM sofinance_position_opens WHERE tx_signature = $1 AND pool_address = $2 LIMIT 1",
-      [openSignature, snapshot.poolId],
-    ) as Array<{ wallet: string }>;
-    const row = rows[0];
-    return row && row.wallet === snapshot.position.owner ? { openSignature, wallet: row.wallet } : null;
-  } catch {
-    return null;
-  }
-}
-
-/** Shown snapshot for a position account: null when it is not a Meteora position, throws when it is one that is not shown. */
-export async function readShownMeteoraPosition(positionAccount: string, options: MeteoraReadOptions = {}) {
+/** Live snapshot for a position account: null when it is not a Meteora position, throws for a pool SoFinance does not support. */
+export async function readMeteoraPosition(positionAccount: string, options: MeteoraReadOptions = {}) {
   const connection = options.connection ?? rpcConnection();
   const snapshot = await readMeteoraPositionSnapshot(positionAccount, connection);
-  if (!snapshot) return null;
-  const sql = opensSql(options.sql);
-  if (!sql) throw new Error(METEORA_OPENS_DB_MISSING);
-  const provenance = await meteoraPositionProvenance(snapshot, { connection, sql });
-  if (!provenance) throw new Error(METEORA_NOT_SHOWN);
-  return { snapshot, provenance, connection };
+  return snapshot ? { snapshot, connection } : null;
 }
 
 export type MeteoraListedPosition = {
@@ -197,37 +167,41 @@ function listedRow(snapshot: MeteoraPositionSnapshot): MeteoraListedPosition {
 }
 
 /**
- * Meteora positions owned by the wallet in allowlisted pools (getProgramAccounts by
- * owner + pool), shown only when SoFinance opened them. Throws METEORA_OPENS_DB_MISSING
- * without the open log.
+ * Meteora positions owned by the wallet in allowlisted pools: one getProgramAccounts by
+ * discriminator + owner (head bytes only), then a batched getMultipleAccounts for the
+ * allowlisted ones and one batch per position for its pool, mints and bin arrays.
  */
 export async function listMeteoraPositions(wallet: string, options: MeteoraReadOptions = {}): Promise<MeteoraListedPosition[]> {
-  const sql = opensSql(options.sql);
-  // Surfaced by list_positions as a protocolErrors entry instead of a silent empty list.
-  if (!sql) throw new Error(METEORA_OPENS_DB_MISSING);
   const owner = new PublicKey(wallet).toBase58();
   const connection = options.connection ?? rpcConnection();
   const discriminator = bs58.encode(Buffer.from(METEORA_POSITION_V2_DISCRIMINATOR, "hex"));
-  const found: Array<{ address: string; data: Uint8Array }> = [];
-  for (const pool of METEORA_ALLOWLISTED_POOLS) {
-    const accounts = await connection.getProgramAccounts(new PublicKey(METEORA_DLMM_PROGRAM_ID), {
-      commitment: "confirmed",
-      filters: [
-        { memcmp: { offset: 0, bytes: discriminator } },
-        { memcmp: { offset: METEORA_POSITION_LB_PAIR_OFFSET, bytes: pool.poolAddress } },
-        { memcmp: { offset: METEORA_POSITION_OWNER_OFFSET, bytes: owner } },
-      ],
-    });
-    for (const account of accounts) found.push({ address: account.pubkey.toBase58(), data: account.account.data });
+  const heads = await connection.getProgramAccounts(new PublicKey(METEORA_DLMM_PROGRAM_ID), {
+    commitment: "confirmed",
+    dataSlice: { offset: 0, length: POSITION_HEAD_LEN },
+    filters: [
+      { memcmp: { offset: 0, bytes: discriminator } },
+      { memcmp: { offset: METEORA_POSITION_OWNER_OFFSET, bytes: owner } },
+    ],
+  });
+  const candidates = heads.flatMap(({ pubkey, account }) => {
+    const data = Buffer.from(account.data);
+    if (data.length < POSITION_HEAD_LEN || data.subarray(0, 8).toString("hex") !== METEORA_POSITION_V2_DISCRIMINATOR) return [];
+    const lbPair = new PublicKey(data.subarray(METEORA_POSITION_LB_PAIR_OFFSET, METEORA_POSITION_LB_PAIR_OFFSET + 32)).toBase58();
+    const holder = new PublicKey(data.subarray(METEORA_POSITION_OWNER_OFFSET, METEORA_POSITION_OWNER_OFFSET + 32)).toBase58();
+    return holder === owner && allowlisted(lbPair) ? [pubkey.toBase58()] : [];
+  }).sort().slice(0, LIST_MAX_POSITIONS);
+  if (!candidates.length) return [];
+  const infos: Array<AccountInfo<Buffer> | null> = [];
+  for (let start = 0; start < candidates.length; start += MULTIPLE_ACCOUNTS_BATCH) {
+    infos.push(...await connection.getMultipleAccountsInfo(
+      candidates.slice(start, start + MULTIPLE_ACCOUNTS_BATCH).map((key) => new PublicKey(key)), "confirmed"));
   }
   const out: MeteoraListedPosition[] = [];
-  for (const item of found.sort((a, b) => a.address.localeCompare(b.address)).slice(0, LIST_MAX_POSITIONS)) {
-    if (!isMeteoraPositionAccount(item.data)) continue;
-    const position = decodeMeteoraPosition(item.data);
+  for (const [index, info] of infos.entries()) {
+    if (!info || info.owner.toBase58() !== METEORA_DLMM_PROGRAM_ID || !isMeteoraPositionAccount(info.data)) continue;
+    const position = decodeMeteoraPosition(info.data);
     if (position.owner !== owner || !allowlisted(position.lbPair)) continue;
-    const provenance = await meteoraPositionProvenance({ positionAccount: item.address, poolId: position.lbPair, position }, { connection, sql });
-    if (!provenance) continue;
-    out.push(listedRow(await snapshotFromData(item.address, item.data, connection)));
+    out.push(listedRow(await snapshotFromData(candidates[index]!, info.data, connection)));
   }
   return out;
 }
@@ -251,9 +225,9 @@ export type MeteoraPositionRangeFacts = PositionRangeFacts & {
  * Bins [lower, upper] are reported as ticks [lower, upper + 1) (bin step 1 only).
  */
 export async function readMeteoraPositionRangeFacts(positionAccount: string, options: MeteoraReadOptions = {}): Promise<MeteoraPositionRangeFacts | null> {
-  const shown = await readShownMeteoraPosition(positionAccount, options);
-  if (!shown) return null;
-  const { snapshot } = shown;
+  const read = await readMeteoraPosition(positionAccount, options);
+  if (!read) return null;
+  const { snapshot } = read;
   const { pool, position } = snapshot;
   if (pool.binStep !== 1) throw new Error("Meteora range status supports bin step 1 pools only");
   const activeBinPriceBPerA = binPriceBPerA(pool.activeId, pool.binStep, snapshot.decimalsX, snapshot.decimalsY);
@@ -279,8 +253,7 @@ export async function readMeteoraPositionRangeFacts(positionAccount: string, opt
 }
 
 export type MeteoraPerformanceOptions = {
-  connection?: MeteoraConnection & Pick<Connection, "getParsedTransaction">;
-  sql?: OpensSql | null;
+  connection?: MeteoraConnection & Pick<Connection, "getSignaturesForAddress" | "getParsedTransaction">;
   wallet?: string;
   maxSignatures?: number;
   skipPricing?: boolean;
@@ -292,7 +265,7 @@ export type MeteoraPerformanceOptions = {
 };
 
 /**
- * Holding-period / realized fee metrics for a shown Meteora position, from its
+ * Holding-period / realized fee metrics for a Meteora position in an allowlisted pool, from its
  * landed receipts (DLMM self-CPI events checked against reserve transfers) and
  * live on-chain state. Token X/Y are reported as A/B. Returns null when the
  * address is not a Meteora position.
@@ -301,9 +274,9 @@ export async function getMeteoraPositionPerformance(positionAccount: string, opt
   const started = Date.now();
   const signal = AbortSignal.timeout(50_000);
   const connection = options.connection ?? rpcConnection(undefined, { signal });
-  const shown = await readShownMeteoraPosition(positionAccount, { connection, sql: options.sql });
-  if (!shown) return null;
-  const { snapshot } = shown;
+  const read = await readMeteoraPosition(positionAccount, { connection });
+  if (!read) return null;
+  const { snapshot } = read;
   const accountsMs = Date.now() - started;
   const maxSignatures = Math.min(Math.max(1, options.maxSignatures ?? DEFAULT_MAX_SIGNATURES), 500);
   const nowSeconds = options.nowSeconds ?? Math.floor(Date.now() / 1000);
@@ -376,7 +349,7 @@ export async function getMeteoraPositionPerformance(positionAccount: string, opt
   });
 
   // Without the open (history longer than the window) the ledger is partial.
-  const incomplete = fetched.truncated || !opened || opened.signature !== shown.provenance.openSignature;
+  const incomplete = fetched.truncated || !opened;
   if (incomplete) {
     metrics.pnlUsd = null;
     metrics.holdingPeriodReturnPct = null;

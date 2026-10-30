@@ -77,14 +77,15 @@ describe("MCP Orca routing (ORCA_POSITIONS_ENABLED)", () => {
     expect(readPositionRangeFacts).toHaveBeenCalledTimes(1);
   });
 
-  it("preview: a missing opens database is reported as a protocol error, not an empty list", async () => {
+  it("preview: Orca rows are listed without an opens database and unsupported-pool errors stay readable", async () => {
     vi.stubEnv("VERCEL_ENV", "preview");
-    const { ORCA_OPENS_DB_MISSING } = await vi.importActual<typeof import("../lib/orca-positions")>("../lib/orca-positions");
-    vi.mocked(orca.listOrcaPositions).mockRejectedValue(new Error(ORCA_OPENS_DB_MISSING));
+    vi.stubEnv("SOFINANCE_OPENS_DATABASE_URL", "");
+    vi.mocked(orca.listOrcaPositions).mockResolvedValue([orcaRow] as never);
     const listed = await listPositions({ wallet: WALLET });
-    expect(listed.positions).toEqual([raydiumRow]);
-    expect(listed.protocolErrors).toEqual([{ protocol: "orca-whirlpool", error: ORCA_OPENS_DB_MISSING }]);
+    expect(listed.positions).toEqual([raydiumRow, orcaRow]);
+    expect(listed).not.toHaveProperty("protocolErrors");
+    const { ORCA_POOL_NOT_SUPPORTED } = await vi.importActual<typeof import("../lib/orca-positions")>("../lib/orca-positions");
     const { publicToolError } = await import("./public-tool-error");
-    expect(publicToolError(new Error(ORCA_OPENS_DB_MISSING))).toBe(ORCA_OPENS_DB_MISSING);
+    expect(publicToolError(new Error(ORCA_POOL_NOT_SUPPORTED))).toBe(ORCA_POOL_NOT_SUPPORTED);
   });
 });
