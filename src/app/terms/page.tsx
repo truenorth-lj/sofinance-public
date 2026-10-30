@@ -7,7 +7,7 @@ import { SOCIAL_LINKS } from "@/lib/social-links";
 import { TERMS_JURISDICTION_EN, TERMS_LAST_UPDATED } from "@/lib/terms-content";
 
 export const metadata: Metadata = {
-  title: "Terms of Service · SoFinance",
+  title: "Terms of Service",
   description: "Terms of Service for SoFinance, a self-custodial software interface for Raydium CLMM positions on Solana.",
 };
 

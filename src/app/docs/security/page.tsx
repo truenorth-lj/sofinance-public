@@ -3,6 +3,9 @@ import { DocsArticle } from "@/components/docs/docs-article";
 import { DOCS_PAGES } from "@/lib/docs-nav";
 import { APP_ROUTES, DOCS_ROUTES } from "@/lib/public-urls";
 import { EXTERNAL_LINK_PROPS } from "@/lib/social-links";
+import { docsPageMetadata } from "@/lib/seo";
+
+export const metadata = docsPageMetadata("security");
 
 const EXAMPLE_TX =
   "https://solscan.io/tx/3YkXwPpSotg8pJEv4XAFYWrU71kY8Wf8U7iHZunve8E7J5b26hbynwXV3tWm9X1WCh4m6FaeFhb1RXTXwQoTev3t";

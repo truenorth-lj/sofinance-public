@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Position performance · SoFinance",
+  title: "Position performance",
   description: "Realized trading-fee APR and current position value for a Raydium CLMM position NFT from on-chain facts.",
 };
 

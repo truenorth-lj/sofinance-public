@@ -11,6 +11,7 @@
     "test": "pnpm test:app && pnpm test:engine",
     "test:env-matrix": "bash scripts/test-env-matrix.sh",
     "brand:assets": "node scripts/generate-brand-assets.mjs",
+    "og:image": "node scripts/generate-og-image.mjs",
     "mcp:start": "tsx src/mcp/server.ts",
     "mcp:dev": "tsx watch src/mcp/server.ts",
     "build:rwa-service": "esbuild scripts/rwa-data-service.ts --bundle --platform=node --format=cjs --outfile=dist/rwa-data-service.cjs --alias:server-only=./src/mcp/server-only-mock-impl.js",

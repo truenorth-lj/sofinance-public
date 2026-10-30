@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { ArrowUpRight, LoaderCircle } from "lucide-react";
@@ -14,8 +14,10 @@ import { cn } from "@/lib/cn";
 import {
   formatUsd,
   freshnessLabel,
+  snapshotTimeLabel,
   selectHomepagePools,
   type HomepagePool,
+  type HomepagePoolsSnapshot,
 } from "@/lib/homepage-pools";
 import { fetchRwaPairsList } from "@/lib/rwa-pairs-list";
 import { APP_ROUTES, DOCS_ROUTES, buildOpenPositionPath } from "@/lib/public-urls";
@@ -73,7 +75,7 @@ function AprLabel({ docsLink }: { docsLink?: boolean }) {
       </span>
       {docsLink && (
         <Link
-          href={DOCS_ROUTES.yieldAndApr}
+          href={DOCS_ROUTES.feeApr}
           className="ml-1.5 whitespace-nowrap font-display text-[11px] font-normal normal-case tracking-normal text-cream/70 underline underline-offset-2 hover:text-cream"
         >
           {HOMEPAGE_APR_DOCS_LINK_LABEL}
@@ -126,28 +128,49 @@ function RiskChips({ pool }: { pool: HomepagePool }) {
   );
 }
 
-export function HomepagePoolsTable() {
+/** Reads the `?pool=` tweet deep link, then renders the table (client-only: inside the landing page's Suspense). */
+export function HomepagePoolsTable({ initial }: { initial?: HomepagePoolsSnapshot | null }) {
   const highlightPool = useSearchParams().get("pool") ?? undefined;
-  const [pairs, setPairs] = useState<HomepagePool[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [icons, setIcons] = useState<TokenIconMap | undefined>(undefined);
-  const [freshness, setFreshness] = useState<{ snapshotAt: string; stale: boolean } | null>(null);
-  const [now, setNow] = useState(() => Date.now());
+  return <HomepagePoolsView initial={initial} highlightPool={highlightPool} />;
+}
 
+/**
+ * The pools table. `initial` is the server snapshot (ISR) so the prerendered HTML already lists pool names, fee
+ * tier and TVL; after mount it refreshes from the CDN-cached `/api/rwa-pairs` like before. Without a snapshot it
+ * shows "Loading pool data…" until that fetch returns.
+ */
+export function HomepagePoolsView({
+  initial,
+  highlightPool,
+}: {
+  initial?: HomepagePoolsSnapshot | null;
+  highlightPool?: string;
+}) {
+  const [pairs, setPairs] = useState<HomepagePool[] | null>(initial?.pairs ?? null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(!initial);
+  const [icons, setIcons] = useState<TokenIconMap | undefined>(initial?.tokenIcons);
+  const [freshness, setFreshness] = useState<{ snapshotAt: string; stale: boolean } | null>(initial?.freshness ?? null);
+  // Null until mounted when rendering the server snapshot: cached HTML shows the absolute snapshot time, not "just now".
+  const [now, setNow] = useState<number | null>(() => (initial ? null : Date.now()));
+
+  const hasSnapshot = useRef(Boolean(initial?.pairs.length));
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
       const body = await fetchRwaPairsList<PairsResponse>(signal);
       if (signal?.aborted) return;
       setPairs(body.pairs ?? []);
+      hasSnapshot.current = Boolean(body.pairs?.length);
       setIcons(body.tokenIcons);
       setFreshness(body.freshness ?? null);
       setError(null);
       setLoading(false);
     } catch (err) {
       if (signal?.aborted) return;
-      setError(err instanceof Error ? err.message : "Failed to load RWA pairs");
       setLoading(false);
+      // Keep showing the server snapshot when the refresh fails; only an empty table shows the error.
+      if (hasSnapshot.current) return;
+      setError(err instanceof Error ? err.message : "Failed to load RWA pairs");
     }
   }, []);
 
@@ -163,8 +186,13 @@ export function HomepagePoolsTable() {
   }, [load]);
 
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 30_000);
-    return () => window.clearInterval(timer);
+    const tick = () => setNow(Date.now());
+    const first = window.setTimeout(tick, 0);
+    const timer = window.setInterval(tick, 30_000);
+    return () => {
+      window.clearTimeout(first);
+      window.clearInterval(timer);
+    };
   }, []);
 
   const rows = pairs ? selectHomepagePools(pairs, highlightPool) : [];
@@ -297,11 +325,11 @@ export function HomepagePoolsTable() {
           <div className="mt-5 flex flex-col gap-3 border-t border-white/10 px-2 pt-4 sm:flex-row sm:items-end sm:justify-between">
             <p className="max-w-2xl text-xs leading-5 text-smoke">
               {HIGHEST_RANGE_APR_7D_HELP} Not LP return; ignores IL and rewards. Data: Raydium API
-              {freshness ? ` · ${freshnessLabel(freshness.snapshotAt, now)}` : ""}.
+              {freshness ? ` · ${now === null ? snapshotTimeLabel(freshness.snapshotAt) : freshnessLabel(freshness.snapshotAt, now)}` : ""}.
             </p>
             <div className="flex shrink-0 items-center gap-4">
               <Link
-                href={DOCS_ROUTES.yieldAndApr}
+                href={DOCS_ROUTES.feeApr}
                 className="text-sm text-cream/70 underline underline-offset-2 hover:text-cream"
               >
                 {HOMEPAGE_APR_DOCS_LINK_LABEL}

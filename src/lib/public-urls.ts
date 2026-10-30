@@ -78,7 +78,7 @@ export const DOCS_PATH = "/docs";
 export const DOCS_ROUTES = {
   home: DOCS_PATH,
   gettingStarted: DOCS_PATH,
-  yieldAndApr: `${DOCS_PATH}/yield-and-apr`,
+  feeApr: `${DOCS_PATH}/fee-apr`,
   risks: `${DOCS_PATH}/risks`,
   fees: `${DOCS_PATH}/fees`,
   withdraw: `${DOCS_PATH}/withdraw`,
@@ -95,6 +95,12 @@ export const BLOG_ROUTES = {
 export function blogArticlePath(slug: string): string {
   return `${BLOG_PATH}/${slug}`;
 }
+
+/** Plain-language Q&A page (public site, English). */
+export const FAQ_ROUTE = "/faq";
+
+/** Plain-text site summary for AI assistants (https://llmstxt.org). */
+export const LLMS_TXT_ROUTE = "/llms.txt";
 
 /** Legal pages (public site, English). */
 export const LEGAL_ROUTES = {

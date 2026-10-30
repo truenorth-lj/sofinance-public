@@ -2,6 +2,9 @@ import Link from "next/link";
 import { DocsArticle } from "@/components/docs/docs-article";
 import { DOCS_PAGES } from "@/lib/docs-nav";
 import { DOCS_ROUTES } from "@/lib/public-urls";
+import { docsPageMetadata } from "@/lib/seo";
+
+export const metadata = docsPageMetadata("fees");
 
 export default function DocsFeesPage() {
   return (
@@ -10,7 +13,7 @@ export default function DocsFeesPage() {
       <p>
         SoFinance charges a{" "}
         <strong className="font-medium text-cream">10 basis point (0.10%)</strong> protocol fee
-        in the token you deposit. There is no separate performance fee on compound or LP earnings.
+        in the token you deposit. There is no separate performance fee on compounding or on the trading fees you collect.
       </p>
       <ul>
         <li>Currently a fixed 10 bps; any change will be announced in advance.</li>

@@ -377,7 +377,7 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", header 
             Solana and Robinhood Chain pools in one list. The two wallets are separate (top bar): a Solana wallet such as Phantom
             for Solana pools, an EVM wallet such as MetaMask for Robinhood Chain. Opening a pool asks for its chain&apos;s wallet
             if it is not connected yet. {NOT_GUARANTEED}{" "}
-            <Link href={DOCS_ROUTES.yieldAndApr} className="text-cream/80 underline underline-offset-2 hover:text-cream">Yield &amp; APR</Link>
+            <Link href={DOCS_ROUTES.feeApr} className="text-cream/80 underline underline-offset-2 hover:text-cream">Fee APR</Link>
           </p>
           {header}
         </div>

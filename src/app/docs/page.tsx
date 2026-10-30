@@ -3,6 +3,9 @@ import { DocsArticle } from "@/components/docs/docs-article";
 import { DOCS_PAGES } from "@/lib/docs-nav";
 import { APP_ROUTES, DOCS_ROUTES } from "@/lib/public-urls";
 import { EXTERNAL_LINK_PROPS } from "@/lib/social-links";
+import { docsPageMetadata } from "@/lib/seo";
+
+export const metadata = docsPageMetadata("getting-started");
 
 const EXAMPLE_TX =
   "https://solscan.io/tx/3YkXwPpSotg8pJEv4XAFYWrU71kY8Wf8U7iHZunve8E7J5b26hbynwXV3tWm9X1WCh4m6FaeFhb1RXTXwQoTev3t";
@@ -59,8 +62,8 @@ export default function DocsGettingStartedPage() {
         <li>Approve once in your wallet. Before sending, we simulate the transaction again to make sure the result matches what you saw.</li>
       </ol>
       <p>
-        Yield figures in the App are estimates — see{" "}
-        <Link href={DOCS_ROUTES.yieldAndApr}>Yield &amp; APR</Link>. Fee rules are on{" "}
+        Fee APR figures in the App are estimates — see{" "}
+        <Link href={DOCS_ROUTES.feeApr}>Fee APR</Link>. Fee rules are on{" "}
         <Link href={DOCS_ROUTES.fees}>Fees</Link>. You can leave anytime —{" "}
         <Link href={DOCS_ROUTES.withdraw}>Withdraw anytime</Link>.
       </p>

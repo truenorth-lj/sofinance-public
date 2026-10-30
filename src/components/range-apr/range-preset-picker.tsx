@@ -58,8 +58,8 @@ function Headline({ apr, sized, selection, best, others }: {
       <p className="flex flex-wrap items-center gap-1.5 text-smoke">
         {APR_ESTIMATE_LABEL}
         <InfoTip label={`About ${APR_ESTIMATE_LABEL}`}>{APR_ESTIMATE_CAVEAT}</InfoTip>
-        <Link href={DOCS_ROUTES.yieldAndApr} className="text-[11px] text-lemon underline underline-offset-2 hover:text-[#fff27f]">
-          Yield &amp; APR
+        <Link href={DOCS_ROUTES.feeApr} className="text-[11px] text-lemon underline underline-offset-2 hover:text-[#fff27f]">
+          Fee APR
         </Link>
       </p>
       <p
