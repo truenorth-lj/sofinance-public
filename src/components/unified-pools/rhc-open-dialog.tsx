@@ -3,11 +3,13 @@
 import { X } from "lucide-react";
 import { useEvmWalletConnection } from "../evm-wallet-connection";
 import { RhcUniv4OpenPanel, type RhcPoolView } from "../rhc-univ4-open-panel";
+import { RhcWrongNetworkPrompt } from "./rhc-wrong-network-prompt";
 
 /**
  * Robinhood Chain open flow as a dialog over the pool list (`/app/rwa-pairs`). It uses the nav's EVM wallet
  * (`useEvmWalletConnection`); with none connected it asks to connect when it opens, and that connects the same shared
- * session the nav shows. Every step is simulated before MetaMask asks to sign (`RhcUniv4OpenPanel`). No Solana content here.
+ * session the nav shows. While that wallet is on another network the dialog shows a switch prompt instead of the open
+ * panel. Every step is simulated before MetaMask asks to sign (`RhcUniv4OpenPanel`). No Solana content here.
  */
 export function RhcOpenDialog({ pool, signingEnabled, onClose, onOpened }: {
   pool: RhcPoolView; signingEnabled: boolean; onClose: () => void; onOpened?: (positionId: string) => void;
@@ -26,8 +28,9 @@ export function RhcOpenDialog({ pool, signingEnabled, onClose, onOpened }: {
         </div>
         <button type="button" onClick={onClose} className="rounded-lg p-1 text-smoke hover:text-cream/90" aria-label="Close"><X className="h-4 w-4" /></button>
       </div>
-      <RhcUniv4OpenPanel pool={pool} signingEnabled={signingEnabled} initialWallet={evm.wallet} connectWallet={evm.connect}
-        autoConnect={!evm.wallet} showPositions={false} onOpened={onOpened} />
+      {evm.status === "restoring" ? <p className="mt-4 text-xs text-smoke" role="status">Checking your EVM wallet…</p>
+        : evm.wrongNetwork ? <RhcWrongNetworkPrompt purpose="open this position" /> : <RhcUniv4OpenPanel pool={pool} signingEnabled={signingEnabled} initialWallet={evm.wallet} connectWallet={evm.connect}
+        autoConnect={!evm.wallet} showPositions={false} onOpened={onOpened} />}
     </div>
   </div>;
 }

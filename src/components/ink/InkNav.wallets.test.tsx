@@ -93,11 +93,13 @@ describe("InkNav wallets", () => {
     expect(sol().dataset.connected).toBe("true");
   });
 
-  it("follows wallet events: another network shows an EVM hint, an emptied account list disconnects only EVM", async () => {
+  it("follows wallet events: another network shows a Wrong network button, an emptied account list disconnects only EVM", async () => {
     await render({ initialSolana: SOL });
     await act(async () => { listeners.get("chainChanged")!("0x1"); });
-    expect(evm()!.textContent).toBe("0xb95b…1b04EVM");
+    expect(evm()!.textContent).toBe("0xb95b…1b04");
+    expect(container.querySelector("[data-testid=nav-evm-switch]")!.textContent).toBe("Wrong network");
     expect(evm()!.getAttribute("aria-label")).toContain("another network");
+    expect(sol().dataset.connected).toBe("true");
     await act(async () => { listeners.get("accountsChanged")!([]); });
     expect(evm()!.dataset.connected).toBe("false");
     expect(sol().dataset.connected).toBe("true");

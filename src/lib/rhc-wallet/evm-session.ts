@@ -9,6 +9,7 @@ import {
  * - `restore()`: the account the wallet already shares with this site (`eth_accounts`, never a prompt or a chain switch),
  *   skipped after the user pressed Disconnect here.
  * - `disconnect()`: clears only SoFinance's own state (and remembers the choice); the wallet's site permission is untouched.
+ * - `switchNetwork()`: `ensureRobinhoodChain` on the connected wallet (switch, or add then switch) for the "Wrong network" prompts.
  * - Wallet events: `accountsChanged` (new account → new wallet object, [] → cleared), `chainChanged` (chain hint only),
  *   `disconnect` (cleared).
  * Signing is not here: every signing request still goes through `guardedWalletRequest`.
@@ -129,12 +130,27 @@ export function createEvmSession({ discover = () => discoverEvmWallets(), storag
     }
   };
 
+  /** Wrong network → Robinhood Chain. Wallet rejections land in `error`; the wallet stays connected either way. */
+  const switchNetwork = async (): Promise<void> => {
+    const wallet = state.wallet;
+    if (!wallet) return;
+    set({ error: null });
+    try {
+      await ensureRobinhoodChain(wallet.provider);
+      const chainId = await currentChainId(wallet.provider);
+      if (state.wallet?.provider === wallet.provider) set({ chainId });
+    } catch (error) {
+      if (state.wallet?.provider === wallet.provider) set({ error: error instanceof Error ? error.message : "Network switch failed" });
+      throw error;
+    }
+  };
+
   const disconnect = () => { clear(); write({ ...read(), disconnected: true }); };
   const dismissError = () => { if (state.error) set({ error: null }); };
 
   return {
     getState: () => state,
     subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; },
-    connect, restore, disconnect, dismissError,
+    connect, restore, disconnect, dismissError, switchNetwork,
   };
 }

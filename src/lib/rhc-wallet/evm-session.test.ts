@@ -172,3 +172,53 @@ describe("wallet events", () => {
     expect(s2.getState().wallet).toMatchObject({ address: B });
   });
 });
+
+describe("switchNetwork (Wrong network)", () => {
+  it("switches a wallet on another network to Robinhood Chain, keeping the same wallet object", async () => {
+    const mm = mockWallet("MetaMask", "io.metamask", { chain: "0x1" });
+    const s = session([mm.wallet]);
+    await s.restore();
+    const before = s.getState().wallet;
+    expect(s.getState().chainId).toBe(1);
+    mm.calls.length = 0;
+    await s.switchNetwork();
+    expect(mm.calls).toEqual(["eth_chainId", "wallet_switchEthereumChain", "eth_chainId", "eth_chainId"]);
+    expect(s.getState()).toMatchObject({ chainId: 4663, status: "connected", error: null });
+    expect(s.getState().wallet).toBe(before);
+    expect(mm.calls).not.toContain("eth_requestAccounts");
+  });
+
+  it("adds the chain when the wallet does not know it, and reports a rejection without disconnecting", async () => {
+    const mm = mockWallet("MetaMask", "io.metamask", { chain: "0x1" });
+    const request = mm.provider.request as ReturnType<typeof vi.fn>;
+    const base = request.getMockImplementation()! as (args: { method: string }) => Promise<unknown>;
+    let added = false;
+    request.mockImplementation(async (args: { method: string }) => {
+      if (args.method === "wallet_switchEthereumChain") throw Object.assign(new Error("unknown chain"), { code: 4902 });
+      if (args.method === "wallet_addEthereumChain") { added = true; mm.state.chain = "0x1237"; return null; }
+      return base(args);
+    });
+    const s = session([mm.wallet]);
+    await s.restore();
+    await s.switchNetwork();
+    expect(added).toBe(true);
+    expect(s.getState().chainId).toBe(4663);
+
+    mm.state.chain = "0x1";
+    mm.emit("chainChanged", "0x1");
+    request.mockImplementation(async (args: { method: string }) => {
+      if (args.method === "wallet_switchEthereumChain") throw Object.assign(new Error("no"), { code: 4001 });
+      return base(args);
+    });
+    await expect(s.switchNetwork()).rejects.toMatchObject({ code: "rejected" });
+    expect(s.getState()).toMatchObject({ status: "connected", chainId: 1, error: "Network switch was rejected in the wallet" });
+    expect(s.getState().wallet?.address).toBe(A);
+  });
+
+  it("does nothing without a wallet", async () => {
+    const mm = mockWallet("MetaMask", "io.metamask");
+    const s = session([mm.wallet]);
+    await s.switchNetwork();
+    expect(mm.calls).toEqual([]);
+  });
+});
