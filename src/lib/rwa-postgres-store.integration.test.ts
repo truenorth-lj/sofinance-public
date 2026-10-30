@@ -277,4 +277,29 @@ describe.skipIf(!url)("RWA PostgreSQL snapshots and fencing", () => {
       await db!`SELECT extract(epoch FROM(next_due_at-last_started_at)) AS interval FROM background_job_state WHERE job_key='rwa-apr-refresh'`;
     expect(Number(job!.interval)).toBe(300);
   });
+  it("upserts allowlisted token icons and keeps serving pairs (manual icons) when rwa_token_icon is missing", async () => {
+    await db!`UPDATE background_job_state SET lease_expires_at=clock_timestamp()-interval '1 second' WHERE job_key='rwa-discovery' AND lease_owner IS NOT NULL`;
+    const lease = (await store!.request({ op: "claim", job: "rwa-discovery", force: true })) as Lease;
+    const spcxx = "Xs3oZwbHvqis4NYcf4YKWmEia2eC84wSiVrcYcTqpH8", rhc = "0x4a0e65a3eccec6dbe60ae065f2e7bb85fae35eea";
+    const row = (image: string, source: "jupiter" | "raydium") => ({ chain: "solana" as const, address: spcxx, image, source });
+    await store!.request({ op: "saveTokenIcons", lease, data: [row("https://img-v1.raydium.io/icon/a.png", "raydium"),
+      { chain: "robinhood", address: rhc, image: "https://coin-images.coingecko.com/coins/images/1/large/a.png", source: "geckoterminal" }] });
+    await store!.request({ op: "saveTokenIcons", lease, data: [row("https://static.jup.ag/a.png", "jupiter")] });
+    const stored = await db!`SELECT chain,address,image,source FROM rwa_token_icon ORDER BY chain`;
+    expect(stored).toEqual([
+      { chain: "robinhood", address: rhc, image: "https://coin-images.coingecko.com/coins/images/1/large/a.png", source: "geckoterminal" },
+      { chain: "solana", address: spcxx, image: "https://static.jup.ag/a.png", source: "jupiter" },
+    ]);
+    await expect(db!`INSERT INTO rwa_token_icon(chain,address,image,source) VALUES('robinhood','0xABC','http://x','manual')`).rejects.toThrow();
+    let pairs = (await store!.request({ op: "pairs", minTvl: 0, maxPages: 2, sortBy: "tvl" })) as SnapshotPairs;
+    expect(pairs.tokenIcons!.solana[spcxx]).toBe("https://static.jup.ag/a.png");
+
+    await db!.unsafe("DROP TABLE rwa_token_icon");
+    pairs = (await store!.request({ op: "pairs", minTvl: 0, maxPages: 2, sortBy: "tvl" })) as SnapshotPairs;
+    expect(pairs.pairs.length).toBeGreaterThan(0);
+    expect(pairs.tokenIcons!.solana[spcxx]).toBe("https://xstocks-metadata.backed.fi/logos/tokens/SPCXx.png");
+    expect(pairs.tokenIcons!.robinhood[rhc]).toBe("https://s3-symbol-logo.tradingview.com/spacex.svg");
+    await expect(store!.request({ op: "saveTokenIcons", lease, data: [row("https://static.jup.ag/a.png", "jupiter")] }))
+      .rejects.toMatchObject({ code: "TOKEN_ICONS_UNAVAILABLE" });
+  });
 });

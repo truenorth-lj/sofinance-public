@@ -6,6 +6,8 @@ import type {
 } from "./rwa-pairs";
 import type { PoolRangeAprPayload } from "./range-apr/types";
 import type { VolumeProfile } from "./pool-range-apr";
+import { trustedIcon } from "@sofinance/engine/token-metadata";
+import { iconAddress, validIconAddress, type TokenIconMap, type TokenIconRow } from "./token-icons/map";
 
 export const FEED_KEY = "raydium-clmm-rwa-v1";
 export const PAIRING_VERSION = "rwa-pairing-v1";
@@ -147,6 +149,16 @@ const aprSchema = z.object({
   issues: z.array(z.string().max(500)).max(20),
 });
 
+/** Icon rows from the daily refresh. Re-checked against `ICON_HOSTS` here so no caller can store an off-list link. */
+export const tokenIconWriteSchema = z.array(z.object({
+  chain: z.enum(["solana", "robinhood"]),
+  address: z.string().max(64),
+  image: z.string().max(1024),
+  source: z.enum(["jupiter", "raydium", "dexscreener", "geckoterminal", "manual"]),
+}).refine((row) => validIconAddress(row.chain, row.address) && row.address === iconAddress(row.chain, row.address)
+  && trustedIcon(row.image) === row.image, "Untrusted token icon")).max(500);
+export type TokenIconWrite = TokenIconRow[];
+
 export const storeRequestSchema = z.discriminatedUnion("op", [
   z.object({
     op: z.literal("pairs"),
@@ -188,6 +200,7 @@ export const storeRequestSchema = z.discriminatedUnion("op", [
     data: z.custom<AprWrite>((value) => aprSchema.safeParse(value).success),
   }),
   z.object({ op: z.literal("prepareDaily"), lease: leaseSchema }),
+  z.object({ op: z.literal("saveTokenIcons"), lease: leaseSchema, data: tokenIconWriteSchema }),
 ]);
 export type StoreRequest = z.infer<typeof storeRequestSchema>;
 export type PairOptions = {
@@ -195,7 +208,8 @@ export type PairOptions = {
   maxPages: number;
   sortBy: RwaPairSortBy;
 };
-export type SnapshotPairs = DiscoverRwaPairsResult & { freshness: Freshness };
+/** `tokenIcons` is absent from stores that predate it; readers fall back (see `iconFor`). */
+export type SnapshotPairs = DiscoverRwaPairsResult & { freshness: Freshness; tokenIcons?: TokenIconMap };
 export type SnapshotApr = PoolRangeAprPayload & { freshness: Freshness };
 
 export interface RwaStore {

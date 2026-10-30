@@ -2,7 +2,7 @@
 title: "How to collect xStocks xPoints with SoFinance: step-by-step"
 description: "A screen-by-screen walkthrough: register for xPoints, open a same-stock LP with SoFinance (it builds the Raydium position for you), then check your points."
 datePublished: "2026-10-27"
-dateModified: "2026-10-27"
+dateModified: "2026-10-30"
 hero:
   src: /blog/xstocks-xpoints/hero.png
   alt: xPoints activity tiers — Hold, Lend, Provide liquidity
@@ -77,11 +77,11 @@ In the app, click **Connect wallet**. Tick **Terms of Service**, then **Continue
 
 ## 4. Find SPCXx/SPCX on RWA pairs
 
-Open **RWA pairs**. Scroll to **SPCXx/SPCX**. There are two cards — pick the **1 bps** one (deeper pool); there is also a **5 bps** card.
+Open **RWA pairs**. Type **SPCX** in **Search token** (or scroll) to find **SPCXx/SPCX**. **Hide duplicate pools** is on by default, so you see one card for the pair: the pool with the highest estimated 7-day APR. Its fee tier (**1 bps** or **5 bps**) is on the card. To compare both pools, click **Show all pools (N hidden)**.
 
 ![RWA pairs list](/blog/xstocks-xpoints/steps/step06_rwa_pairs_header_first_cards.png)
 
-![SPCXx/SPCX — pick the 1 bps card](/blog/xstocks-xpoints/steps/step07_rwa_pairs_spcx_1bps_card.png)
+![SPCXx/SPCX — one card per pair; Show all pools reveals the other fee tier](/blog/xstocks-xpoints/steps/step07_rwa_pairs_spcx_1bps_card.png)
 
 ## 5. Optional: Plan this pool
 

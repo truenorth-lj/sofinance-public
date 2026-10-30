@@ -5,13 +5,14 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import Link from "next/link";
 import { ArrowDown, ArrowUp, ArrowUpDown, ArrowUpRight, LayoutGrid, List, LoaderCircle, RefreshCw, Search } from "lucide-react";
 import { HIGHEST_RANGE_APR_7D_HELP, POOL_FEE_APR_24H_HELP } from "@/lib/apr-labels/copy";
+import { exactAprTitle, formatAprPct } from "@/lib/apr-labels/format-apr";
 import { cn } from "@/lib/cn";
 import { buildPlanPath, DOCS_ROUTES } from "@/lib/public-urls";
 import { volumeDivergenceNote } from "@/lib/apr-labels/volume-divergence";
 import { HIGHEST_RANGE_COLUMN_LABEL, HIGHEST_RANGE_HELP } from "@/lib/range-apr/copy";
 import { unavailableReasonText } from "@/lib/range-apr/format";
 import { pairIssuerLabel } from "@/lib/rwa-pair-names";
-import type { TokenMetadata } from "@sofinance/engine/token-metadata";
+import type { TokenIconMap } from "@/lib/token-icons/map";
 import { fetchRwaPairsList } from "@/lib/rwa-pairs-list";
 import {
   CHAIN_LABELS, DEFAULT_FILTERS, DEFAULT_SORT, FIRST_CLICK_DIR, PROTOCOL_LABELS, RISK_LABELS, selectPools,
@@ -24,7 +25,6 @@ import { OpenPositionModal } from "../open-position-modal";
 import { clearPoolRangeAprClientCache } from "../range-apr/pool-range-apr-client";
 import type { RhcPoolView } from "../rhc-univ4-open-panel";
 import type { OpenPositionPair } from "../use-open-position-controller";
-import { useTokenMetadata } from "../use-token-metadata";
 import { useWalletConnection } from "../wallet-connection";
 import { usePoolsApr7d, type Apr7dState } from "./use-pools-apr7d";
 
@@ -45,7 +45,8 @@ const SOURCE_ERROR: Record<Source, string> = {
   rhc: "Robinhood Chain pools could not be loaded right now. SoFinance could not reach the chain or its price source.",
 };
 
-type Loaded = { rows: SolanaPoolRow[]; rhc: RhcPoolSummary[] };
+/** `icons`: token icon links stored by the daily refresh, served with `/api/rwa-pairs` (`tokenIcons`). */
+type Loaded = { rows: SolanaPoolRow[]; rhc: RhcPoolSummary[]; icons?: TokenIconMap };
 
 async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
   const response = await fetch(url, { signal, headers: { Accept: "application/json" } });
@@ -60,7 +61,8 @@ const money = (value: number | null) => {
   if (Math.abs(value) >= 1_000) return `$${(value / 1_000).toFixed(1)}k`;
   return `$${value.toFixed(2)}`;
 };
-const pct = (value: number | null) => (value === null || !Number.isFinite(value) ? "—" : `${value.toFixed(2)}%`);
+/** Missing APR is "—"; a real but tiny APR is "<0.01%" (never a misleading "0.00%"). */
+const pct = formatAprPct;
 
 const APR7D_SHORT = "Est. APR · 7d";
 const APR24H_SHORT = "Est. pool fee APR · 24h";
@@ -115,8 +117,8 @@ const iconPair = (pool: UnifiedPool) => {
  * modal calls Best), when the data was updated, confidence and volume notes in the tooltip, then TVL, volume, fee and
  * 24h pool fee APR. Solana Raydium pools also link "Plan this pool" and the pool on Raydium.
  */
-function PoolCard({ pool, apr, action, tokens }: {
-  pool: UnifiedPool; apr: Apr7dState | undefined; action: OpenAction; tokens: Record<string, TokenMetadata>;
+function PoolCard({ pool, apr, action, icons }: {
+  pool: UnifiedPool; apr: Apr7dState | undefined; action: OpenAction; icons: TokenIconMap | undefined;
 }) {
   const ready = apr?.status === "ready" ? apr : null;
   const volumeNote = ready ? volumeDivergenceNote(pool.volume24hUsd, ready.avgDailyVolumeUsd) : null;
@@ -127,7 +129,7 @@ function PoolCard({ pool, apr, action, tokens }: {
     <div className="flex flex-wrap items-center gap-1.5"><ChainBadge chain={pool.chain} /><span className={cn(chip, "border border-ink/25")}>{PROTOCOL_LABELS[pool.protocol]}</span></div>
     <div className="mt-4 flex items-start justify-between gap-3">
       <div className="flex min-w-0 items-center gap-3">
-        {pool.chain === "solana" && <PairTokenIcons pair={iconPair(pool)} tokens={tokens} iconClassName="h-10 w-10" />}
+        <PairTokenIcons pair={iconPair(pool)} icons={icons} chain={pool.chain} iconClassName="h-10 w-10" />
         <div className="min-w-0">
           <h3 className="text-xl font-medium tracking-[-0.02em]">{pool.pairLabel}</h3>
           <p className="truncate text-xs text-ink/65" title={`${pool.nameA} / ${pool.nameB}`}>{pairIssuerLabel(pool.nameA, pool.nameB)}</p>
@@ -159,7 +161,7 @@ function PoolCard({ pool, apr, action, tokens }: {
     </div>}
     <dl className="mt-5 grid grid-cols-2 gap-x-4 gap-y-4 border-t border-ink/20 pt-4">
       <div><dt className={cn("flex items-center gap-1", cardEyebrow)}>{APR24H_SHORT}<InfoTip label="About Est. pool fee APR" placement="above" tone="light">{withVolumeNote(POOL_FEE_APR_24H_HELP)}</InfoTip></dt>
-        <dd className="mt-1 font-semibold tabular-nums" data-testid="pool-fee-apr">{pct(pool.poolFeeApr24hPct)}</dd></div>
+        <dd className="mt-1 font-semibold tabular-nums" data-testid="pool-fee-apr" title={exactAprTitle(pool.poolFeeApr24hPct)}>{pct(pool.poolFeeApr24hPct)}</dd></div>
       <div><dt className={cardEyebrow}>TVL</dt><dd className="mt-1 font-semibold tabular-nums">{money(pool.tvlUsd)}</dd></div>
       <div><dt className={cardEyebrow}>24h vol</dt><dd className="mt-1 font-semibold tabular-nums">{money(pool.volume24hUsd)}</dd></div>
       <div><dt className={cardEyebrow}>Fee</dt><dd className="mt-1 font-semibold tabular-nums">{pool.feeTierBps === null ? pool.chain === "robinhood" ? "Dynamic" : "—" : `${pool.feeTierBps} bps`}</dd></div>
@@ -219,7 +221,7 @@ function PoolTable({ pools, apr, actionFor, sort, onSort }: {
           <td className="px-3 py-3"><ChainBadge chain={pool.chain} tone="dark" /></td>
           <td className="px-3 py-3 text-cream/80">{PROTOCOL_LABELS[pool.protocol]}</td>
           <td className="px-3 py-3 text-right"><Apr7dValue state={apr[pool.key]} size="sm" /></td>
-          <td className="px-3 py-3 text-right tabular-nums text-cream/80">{pct(pool.poolFeeApr24hPct)}</td>
+          <td className="px-3 py-3 text-right tabular-nums text-cream/80" title={exactAprTitle(pool.poolFeeApr24hPct)}>{pct(pool.poolFeeApr24hPct)}</td>
           <td className="px-3 py-3 text-right tabular-nums text-cream/80">{money(pool.tvlUsd)}</td>
           <td className="px-3 py-3 text-right tabular-nums text-cream/80">{money(pool.volume24hUsd)}</td>
           <td className="px-3 py-3"><RiskChips pool={pool} tone="dark" /></td>
@@ -269,7 +271,10 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", header 
 
   const load = useCallback(async (signal?: AbortSignal) => {
     const sources: { source: Source; run: () => Promise<Partial<Loaded>> }[] = [
-      { source: "raydium", run: async () => ({ rows: (await fetchRwaPairsList<{ pairs: SolanaPoolRow[] }>(signal)).pairs }) },
+      { source: "raydium", run: async () => {
+        const body = await fetchRwaPairsList<{ pairs: SolanaPoolRow[]; tokenIcons?: TokenIconMap }>(signal);
+        return { rows: body.pairs, icons: body.tokenIcons };
+      } },
       ...(flags.orca ? [{ source: "orca" as const, run: async () => ({ rows: (await getJson<{ pairs: SolanaPoolRow[] }>("/api/protocol-pools?protocol=orca-whirlpool", signal)).pairs }) }] : []),
       ...(flags.meteora ? [{ source: "meteora" as const, run: async () => ({ rows: (await getJson<{ pairs: SolanaPoolRow[] }>("/api/protocol-pools?protocol=meteora-dlmm", signal)).pairs }) }] : []),
       ...(flags.rhc ? [{ source: "rhc" as const, run: async () => ({ rhc: (await getJson<{ pools: RhcPoolSummary[] }>("/api/protocol-pools?protocol=uniswap-v4-rhc", signal)).pools }) }] : []),
@@ -282,6 +287,7 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", header 
       if (result.status === "fulfilled") {
         next.rows.push(...(Array.isArray(result.value.rows) ? result.value.rows : []));
         next.rhc.push(...(Array.isArray(result.value.rhc) ? result.value.rhc : []));
+        if (result.value.icons) next.icons = result.value.icons;
       } else nextErrors[sources[index]!.source] = SOURCE_ERROR[sources[index]!.source];
     });
     setLoaded(next); setErrors(nextErrors); setLoading(false);
@@ -311,7 +317,6 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", header 
   const rhcByKey = useMemo(() => new Map(loaded.rhc.map((summary) => [`robinhood:${summary.poolId.toLowerCase()}`, summary])), [loaded.rhc]);
 
   const apr = usePoolsApr7d(pools, refreshKey);
-  const tokens = useTokenMetadata(pools.filter((pool) => pool.chain === "solana").flatMap((pool) => [pool.mintA, pool.mintB]));
   const apr7d = useCallback((pool: UnifiedPool) => { const state = apr[pool.key]; return state?.status === "ready" ? state.aprPct : null; }, [apr]);
   const selected = useMemo(() => selectPools(pools, { filters, hideDuplicates: !showAll, sort, apr7d }), [pools, filters, showAll, sort, apr7d]);
 
@@ -436,7 +441,7 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", header 
 
     {selected.pools.length > 0 && (view === "cards"
       ? <ul className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3" data-testid="pools-cards">
-          {selected.pools.map((pool) => <PoolCard key={pool.key} pool={pool} apr={apr[pool.key]} action={actionFor(pool)} tokens={tokens} />)}
+          {selected.pools.map((pool) => <PoolCard key={pool.key} pool={pool} apr={apr[pool.key]} action={actionFor(pool)} icons={loaded.icons} />)}
         </ul>
       : <PoolTable pools={selected.pools} apr={apr} actionFor={actionFor} sort={sort} onSort={onSort} />)}
 

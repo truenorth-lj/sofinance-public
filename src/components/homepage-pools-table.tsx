@@ -24,10 +24,11 @@ import { highestRangeSummary } from "@/lib/range-apr/preset-list";
 import { InfoTip } from "./info-tip";
 import { PairTokenIcons } from "./pair-token-icons";
 import { usePoolRangeApr } from "./range-apr/use-pool-range-apr";
-import { useTokenMetadata } from "./use-token-metadata";
+import type { TokenIconMap } from "@/lib/token-icons/map";
 
 type PairsResponse = {
   pairs?: HomepagePool[];
+  tokenIcons?: TokenIconMap;
   estimatedFeeAprLabel?: string;
   freshness?: { snapshotAt: string; stale: boolean };
   error?: string;
@@ -82,10 +83,10 @@ function AprLabel({ docsLink }: { docsLink?: boolean }) {
   );
 }
 
-function PoolName({ pool, tokens }: { pool: HomepagePool; tokens: ReturnType<typeof useTokenMetadata> }) {
+function PoolName({ pool, icons }: { pool: HomepagePool; icons: TokenIconMap | undefined }) {
   return (
     <div className="flex min-w-0 items-start gap-3">
-      <PairTokenIcons pair={pool} tokens={tokens} ringClassName="ring-char" iconClassName="h-9 w-9 text-xs" />
+      <PairTokenIcons pair={pool} icons={icons} ringClassName="ring-char" iconClassName="h-9 w-9 text-xs" />
       <div className="min-w-0">
         <p className="text-base font-medium tracking-[-0.02em]">{pairLabel(pool)}</p>
         {pool.feeTierBps !== null && (
@@ -130,6 +131,7 @@ export function HomepagePoolsTable() {
   const [pairs, setPairs] = useState<HomepagePool[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [icons, setIcons] = useState<TokenIconMap | undefined>(undefined);
   const [freshness, setFreshness] = useState<{ snapshotAt: string; stale: boolean } | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
@@ -138,6 +140,7 @@ export function HomepagePoolsTable() {
       const body = await fetchRwaPairsList<PairsResponse>(signal);
       if (signal?.aborted) return;
       setPairs(body.pairs ?? []);
+      setIcons(body.tokenIcons);
       setFreshness(body.freshness ?? null);
       setError(null);
       setLoading(false);
@@ -165,7 +168,6 @@ export function HomepagePoolsTable() {
   }, []);
 
   const rows = pairs ? selectHomepagePools(pairs, highlightPool) : [];
-  const tokens = useTokenMetadata(rows.flatMap((pool) => [pool.mintA, pool.mintB]));
 
   return (
     <section id="pools" className="scroll-mt-6" aria-labelledby="homepage-pools-heading">
@@ -228,7 +230,7 @@ export function HomepagePoolsTable() {
                     className={`rounded-2xl border p-4 ${highlighted ? "border-lemon bg-white/[0.04]" : "border-white/10"}`}
                   >
                     <div className="flex items-start justify-between gap-3">
-                      <PoolName pool={pool} tokens={tokens} />
+                      <PoolName pool={pool} icons={icons} />
                       <div className="shrink-0 text-right">
                         <p className="font-data text-[10px] uppercase tracking-[0.12em] text-smoke">TVL</p>
                         <p className="mt-1 text-lg font-semibold tabular-nums">{formatUsd(pool.tvlUsd)}</p>
@@ -273,7 +275,7 @@ export function HomepagePoolsTable() {
                         className={`border-b border-white/10 ${highlighted ? "bg-white/[0.04]" : ""}`}
                       >
                         <td className="px-3 py-4">
-                          <PoolName pool={pool} tokens={tokens} />
+                          <PoolName pool={pool} icons={icons} />
                         </td>
                         <td className="px-3 py-4 text-base font-semibold tabular-nums">{formatUsd(pool.tvlUsd)}</td>
                         <td className="px-3 py-4">

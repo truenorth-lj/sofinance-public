@@ -50,9 +50,9 @@ describe("saved RWA foreground reads", () => {
       return Response.json({ stored: true });
     });
     vi.stubGlobal("fetch", fetcher);
-    expect(
-      await getRwaPairs({ minTvl: 0, maxPages: 10, sortBy: "tvl" }),
-    ).toEqual({ stored: true });
+    // A gateway without `tokenIcons` (older store build) gets the manual icon list added, nothing else.
+    const pairs = await getRwaPairs({ minTvl: 0, maxPages: 10, sortBy: "tvl" });
+    expect(pairs).toEqual({ stored: true, tokenIcons: expect.objectContaining({ solana: expect.any(Object), robinhood: expect.any(Object) }) });
     expect(await getPoolAprSnapshot("1".repeat(32))).toEqual({ stored: true });
     expect(fetcher).toHaveBeenCalledTimes(2);
     expect(String(fetcher.mock.calls[0]?.[0])).toBe(

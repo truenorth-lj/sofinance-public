@@ -41,4 +41,21 @@ describe("usePoolsApr7d", () => {
     expect(state).toMatchObject({ status: "ready", lowConfidence: true, freshness: { snapshotAt, delayed: true },
       rangeLabel: OPEN_RANGE_UI_PRESETS.find((preset) => preset.id === best.id)!.label });
   });
+
+  it("a fresh (within 26h) snapshot is not delayed; one older than 26h is delayed even if the server said fresh", async () => {
+    const data = payloadWithAprs({ micro: 3, tight: 4, standard: 61, wide: 5 });
+    const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString();
+    const fresh = await run({ ...data, freshness: { snapshotAt: hoursAgo(20), chainObservedAt: hoursAgo(20), stale: false, lastAttemptStatus: "ok" } });
+    expect(fresh).toMatchObject({ status: "ready", freshness: { delayed: false } });
+    await act(async () => root.unmount()); root = createRoot(container);
+    const old = await run({ ...data, freshness: { snapshotAt: hoursAgo(27), chainObservedAt: hoursAgo(27), stale: false, lastAttemptStatus: "ok" } });
+    expect(old).toMatchObject({ status: "missing", freshness: { delayed: true } });
+  });
+
+  it("a failed last refresh still says delayed", async () => {
+    const data = payloadWithAprs({ micro: 3, tight: 4, standard: 61, wide: 5 });
+    const at = new Date().toISOString();
+    expect(await run({ ...data, freshness: { snapshotAt: at, chainObservedAt: at, stale: false, lastAttemptStatus: "error" } }))
+      .toMatchObject({ freshness: { delayed: true } });
+  });
 });

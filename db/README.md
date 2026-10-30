@@ -62,6 +62,17 @@ discovery/APR due cadences remain 15/5 minutes, so APR is not refreshed every fi
 minutes by this cron. Daily observations remain 08:10–09:10 Asia/Taipei; missed
 windows remain missing, never fabricated.
 
+Token icons use `rwa_token_icon` (`drizzle/0002_token-icons.sql`): one row per token
+(`chain`, `address`) holding an icon link (never an image file) and its `source`. The
+daily rwa-discovery job fills it after the pool scan (Solana: Jupiter → Raydium →
+manual list; Robinhood Chain: DexScreener → GeckoTerminal → manual list), keeping only
+links on `ICON_HOSTS`. `/api/rwa-pairs` returns them as `tokenIcons`. The migration is
+not applied by the build or the cron: run `pnpm db:migrate` against the target (on the
+public Neon target with `SOFINANCE_RWA_DB_EXPECTED_ROLE=sofinance_owner`). Until then,
+or while the table is empty, reads return the manual list only and the cards fall back
+to Raydium's icon path and initials; the save step records an issue and does not fail
+discovery. The next cron after the migration fills the table.
+
 Position performance uses two additional tables: `position_history_state` for
 fenced synchronization progress and `position_history_transactions` for receipts
 and parsed event arrays. Apply the committed migration and deploy the gateway

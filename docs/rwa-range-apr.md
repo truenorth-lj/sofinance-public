@@ -53,8 +53,10 @@ Both show `…` while loading and `—` when nothing could be priced; a degraded
 reason in the pill's tooltip. They read the same cached `/api/pool-range-apr` payload and
 `highestRangeSummary` → `buildPresetList`, so they always equal the modal's Best. Labelled APR (not APY); the pill's tooltip carries the
 estimate caveat, the range field's tooltip explains how the range is picked. Raydium's published 24h feeApr is not shown on the cards.
-Token icons are Jupiter's (`/api/token-metadata`, host allowlist in `token-metadata.ts`), falling back to Raydium's icon host
-(`img-v1.raydium.io/icon/<mint>.png`) and then to initials. The line under the pair is `pairIssuerLabel` (company + issuers, full names
+Token icons are the links the daily refresh stored in `rwa_token_icon` (Jupiter, then Raydium, then a manual list; DexScreener,
+then GeckoTerminal, then the manual list for Robinhood Chain; only hosts on `ICON_HOSTS` in `token-metadata.ts`), served with
+`/api/rwa-pairs` as `tokenIcons`; a Solana token without one falls back to Raydium's icon host
+(`img-v1.raydium.io/icon/<mint>.png`), and any icon that fails to load shows initials. The line under the pair is `pairIssuerLabel` (company + issuers, full names
 in the tooltip), and the pool address links to the pool on Raydium (`raydium.io/clmm/create-position/?pool_id=<pool>`).
 
 ## APR method (chosen: "liquidity profile × volume occupancy")

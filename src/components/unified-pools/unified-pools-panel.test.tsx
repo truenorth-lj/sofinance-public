@@ -13,7 +13,7 @@ import { UnifiedPoolsPanel, type UnifiedPoolFlags } from "./unified-pools-panel"
 const mocks = vi.hoisted(() => ({
   apr: {} as Record<string, number>,
   state: {} as Record<string, Apr7dState>,
-  tokens: {} as Record<string, { icon: string | null }>,
+  icons: undefined as undefined | { solana: Record<string, string>; robinhood: Record<string, string> },
   connect: vi.fn(),
   connected: false,
   modal: vi.fn(),
@@ -45,7 +45,7 @@ beforeEach(() => {
   mocks.apr = { spcxA: 40, spcxB: 12, tsla: 20 };
   mocks.connected = false;
   mocks.state = {};
-  mocks.tokens = {};
+  mocks.icons = undefined;
   mocks.connect.mockReset();
   mocks.modal.mockReset();
   container = document.createElement("div");
@@ -53,10 +53,9 @@ beforeEach(() => {
   root = createRoot(container);
   vi.stubGlobal("fetch", vi.fn(async (url: string) => {
     requested.push(url);
-    if (url.startsWith("/api/token-metadata")) return { ok: true, json: async () => ({ tokens: mocks.tokens }) };
     const body = url.startsWith("/api/rwa-pairs") ? { pairs: [
       row("spcxA", "SPCXx", "SPCX", "x1", "s1"), row("spcxB", "SPCX", "SPCXx", "s1", "x1"), row("tsla", "TSLAx", "TSLA", "t1", "t2", { freezeRisk: true }),
-    ] } : url.includes("uniswap-v4-rhc") ? { pools: [rhcSummary] } : url.includes("meteora-dlmm") ? { pairs: [meteoraRow] } : { pairs: [] };
+    ], ...(mocks.icons ? { tokenIcons: mocks.icons } : {}) } : url.includes("uniswap-v4-rhc") ? { pools: [rhcSummary] } : url.includes("meteora-dlmm") ? { pairs: [meteoraRow] } : { pairs: [] };
     return { ok: true, json: async () => body };
   }));
 });
@@ -191,10 +190,11 @@ describe("UnifiedPoolsPanel cards (the RWA pairs card fields)", () => {
     expect(card("solana:tsla").querySelector("button[aria-label='About Est. highest range APR']")).not.toBeNull();
   });
 
-  it("shows token icons (wrapped first, Raydium fallback), short issuer names, a Plan link and the pool on Raydium", async () => {
-    mocks.tokens = { x1: { icon: "https://static.jup.ag/x1.png" }, s1: { icon: null } };
+  it("shows token icons from the database (wrapped first, Raydium fallback), short issuer names, a Plan link and the pool on Raydium", async () => {
+    mocks.icons = { solana: { x1: "https://static.jup.ag/x1.png" }, robinhood: {} };
     await render();
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
+    expect(requested.some((url) => url.startsWith("/api/token-metadata"))).toBe(false);
     const spcx = card("solana:spcxA");
     expect([...spcx.querySelectorAll("img")].map((img) => img.getAttribute("src"))).toEqual(["https://static.jup.ag/x1.png", "https://img-v1.raydium.io/icon/s1.png"]);
     expect(spcx.querySelector("h3 + p")!.getAttribute("title")).toBe("SPCXx name / SPCX name");
@@ -210,7 +210,36 @@ describe("UnifiedPoolsPanel cards (the RWA pairs card fields)", () => {
     const rhc = card(`robinhood:${rhcSpec.poolId.toLowerCase()}`);
     expect(rhc.querySelector("[data-testid=highest-range]")).toBeNull();
     expect(rhc.querySelector("a[href^='/app/plan']")).toBeNull();
-    expect(rhc.querySelector("img")).toBeNull();
     expect(rhc.textContent).not.toMatch(/Raydium|Phantom/);
+  });
+
+  it("shows the Robinhood Chain card's stored icons (no Raydium fallback; letter avatars without one) and no icons in the list view", async () => {
+    const [a, b] = [rhcSpec.currency0.address.toLowerCase(), rhcSpec.currency1.address.toLowerCase()];
+    mocks.icons = { solana: {}, robinhood: { [a]: "https://coin-images.coingecko.com/a.png", [b]: "https://coin-images.coingecko.com/b.png" } };
+    await render();
+    const rhc = card(`robinhood:${rhcSpec.poolId.toLowerCase()}`);
+    expect([...rhc.querySelectorAll("img")].map((img) => img.getAttribute("src")).sort())
+      .toEqual(["https://coin-images.coingecko.com/a.png", "https://coin-images.coingecko.com/b.png"]);
+    mocks.icons = { solana: {}, robinhood: {} };
+    act(() => root.unmount()); root = createRoot(container);
+    await render();
+    const bare = card(`robinhood:${rhcSpec.poolId.toLowerCase()}`);
+    expect(bare.querySelector("img")).toBeNull();
+    expect(bare.querySelector("[data-testid=pair-token-icons]")!.textContent).toMatch(/^SP/);
+    await act(async () => { button("List").click(); });
+    expect(container.querySelector("table img")).toBeNull();
+  });
+
+  it("shows a real tiny RHC 24h APR as <0.01% and a missing 7d APR as — on the card (never 0.00%)", async () => {
+    rhcSummary.estimatedApr = { tvlUsd: 48795, volume24hUsd: 14.76, estimatedPoolFeeAprPct: 0.0005575645952321763 };
+    try {
+      await render();
+      const rhc = card(`robinhood:${rhcSpec.poolId.toLowerCase()}`);
+      expect(rhc.textContent).toContain("<0.01%");
+      expect(rhc.textContent).not.toContain("0.00%");
+      expect(rhc.querySelector("[data-testid=apr7d]")?.textContent ?? rhc.textContent).toContain("—");
+    } finally {
+      rhcSummary.estimatedApr = { tvlUsd: 2000, volume24hUsd: 300, estimatedPoolFeeAprPct: 9 };
+    }
   });
 });

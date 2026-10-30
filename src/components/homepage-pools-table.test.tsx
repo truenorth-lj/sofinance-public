@@ -122,11 +122,12 @@ describe("HomepagePoolsTable", () => {
     expect(container.textContent).not.toMatch(/\byield\b|\bearn\b|make your money|strateg|recipe|open[- ]source|\bMIT\b/i);
   });
 
-  it("shows the paired token logos from token metadata, wrapped token first, with the Raydium fallback", async () => {
-    mocks.tokens = { "mint-wrapped": { icon: "https://static.jup.ag/spcxx.png" }, "mint-plain": { icon: null } };
-    jsonOk({ pairs: [pair({ poolAddress: "spcx-pool" })] });
+  it("shows the paired token logos stored in the database (tokenIcons), wrapped token first, with the Raydium fallback", async () => {
+    jsonOk({ pairs: [pair({ poolAddress: "spcx-pool" })],
+      tokenIcons: { solana: { "mint-wrapped": "https://static.jup.ag/spcxx.png" }, robinhood: {} } });
     await mount();
-    expect(fetchMock).toHaveBeenCalledWith("/api/token-metadata", expect.objectContaining({ method: "POST" }));
+    // No per-request Jupiter lookup any more: the icons ride along with /api/rwa-pairs.
+    expect(fetchMock.mock.calls.some(([url]) => String(url).startsWith("/api/token-metadata"))).toBe(false);
     const row = container.querySelector('[data-testid="homepage-pools-table"] tbody tr')!;
     expect([...row.querySelectorAll("img")].map((img) => img.getAttribute("src"))).toEqual([
       "https://static.jup.ag/spcxx.png",
@@ -136,9 +137,19 @@ describe("HomepagePoolsTable", () => {
     expect(card.querySelectorAll("img")).toHaveLength(2);
   });
 
+  it("shows Raydium icons when the response has no tokenIcons (store not migrated / older gateway)", async () => {
+    jsonOk({ pairs: [pair({ poolAddress: "spcx-pool" })] });
+    await mount();
+    const row = container.querySelector('[data-testid="homepage-pools-table"] tbody tr')!;
+    expect([...row.querySelectorAll("img")].map((img) => img.getAttribute("src"))).toEqual([
+      "https://img-v1.raydium.io/icon/mint-wrapped.png",
+      "https://img-v1.raydium.io/icon/mint-plain.png",
+    ]);
+  });
+
   it("puts the plain-stock logo second when the pool lists the wrapped token as B", async () => {
-    mocks.tokens = { "mint-wrapped": { icon: "https://static.jup.ag/w.png" }, "mint-plain": { icon: "https://static.jup.ag/p.png" } };
-    jsonOk({ pairs: [pair({ poolAddress: "spcx-pool", mintA: "mint-plain", mintB: "mint-wrapped", symbolA: "SPCX", symbolB: "SPCXx" })] });
+    jsonOk({ pairs: [pair({ poolAddress: "spcx-pool", mintA: "mint-plain", mintB: "mint-wrapped", symbolA: "SPCX", symbolB: "SPCXx" })],
+      tokenIcons: { solana: { "mint-wrapped": "https://static.jup.ag/w.png", "mint-plain": "https://static.jup.ag/p.png" }, robinhood: {} } });
     await mount();
     const row = container.querySelector('[data-testid="homepage-pools-table"] tbody tr')!;
     expect([...row.querySelectorAll("img")].map((img) => img.getAttribute("src"))).toEqual([
