@@ -287,7 +287,7 @@ describe.skipIf(!url)("RWA PostgreSQL snapshots and fencing", () => {
       VALUES(${rhcPool},'uniswap-v4-rhc-v1','robinhood','uniswap-v4-rhc',${mintA},${mintB},'SPCX','USDC',1,${gen})`;
     await db!`INSERT INTO rwa_apr_latest(pool_address,chain,protocol,algorithm_version,last_attempt_status) VALUES(${rhcPool},'robinhood','uniswap-v4-rhc',${ALGORITHM_VERSION},'ok')`;
     await db!`INSERT INTO rwa_apr_daily(pool_address,chain,protocol,snapshot_date,scheduled_for,mint_a,mint_b,symbol_a,symbol_b,algorithm_version)
-      VALUES(${rhcPool},'robinhood','uniswap-v4-rhc','2026-10-30',now(),${mintA},${mintB},'SPCX','USDC',${ALGORITHM_VERSION})`;
+      VALUES(${rhcPool},'robinhood','uniswap-v4-rhc',(now() AT TIME ZONE 'Asia/Taipei')::date,now(),${mintA},${mintB},'SPCX','USDC',${ALGORITHM_VERSION})`;
     const bad = (pool: string, chain: string, protocol: string) =>
       db!`INSERT INTO rwa_apr_latest(pool_address,chain,protocol,algorithm_version,last_attempt_status) VALUES(${pool},${chain},${protocol},'v','ok')`;
     await expect(db!`INSERT INTO rwa_apr_latest(pool_address,algorithm_version,last_attempt_status) VALUES(${`0x${"c".repeat(64)}`},'v','ok')`)
