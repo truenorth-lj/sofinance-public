@@ -310,6 +310,14 @@ export function OpenPositionModal({
           <a className="block text-cream/90 underline" href={`https://solscan.io/tx/${c.signature}`} target="_blank" rel="noreferrer">View original transaction on Solscan</a>
           <button type="button" onClick={c.retryConfirmation} className="text-cream/90 underline">Check transaction status</button>
         </div>}
+        {c.unconfirmedSwap && (
+          <div className="mt-4 rounded-xl border border-amber-300/40 p-3 text-sm text-cream" role="status">
+            <p>Your SOL swap still needs confirmation. Check it before opening another position.</p>
+            <a className="block underline" href={`https://solscan.io/tx/${c.unconfirmedSwap.signature}`} target="_blank" rel="noreferrer">View original swap on Solscan</a>
+            <button type="button" className="mt-2 underline disabled:opacity-40" disabled={c.busy || c.checkingSwap || !c.connected}
+              onClick={() => void c.recheckSwap()}>{c.checkingSwap ? "Checking original swap…" : "Recheck original SOL swap"}</button>
+          </div>
+        )}
         {c.submitStage === "confirmed" ? (
           <div className="mt-3 space-y-2 text-sm">
             <p role="status" className="text-mint">Position opened</p>
