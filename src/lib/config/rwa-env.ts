@@ -85,11 +85,11 @@ export function getRwaConfig() {
 }
 
 /**
- * Default scheduler tick: 15 minutes. Each tick is one Vercel function
- * invocation, so the tick (not the DB job cadence) bounds Fluid Active CPU.
- * Keep it at or below ~20 minutes: the range-APR UI hides snapshots whose chain
- * observation is older than 30 minutes (`aprSnapshotExpired`), and the daily
- * 08:10–09:10 Taipei sample needs a refresh inside that window.
+ * Default tick for the self-hosted scheduler: 15 minutes. Each tick is one
+ * function invocation, so the tick (not the DB job cadence) bounds Fluid Active
+ * CPU. Production on Vercel uses the daily cron instead (`RWA_REFRESH_CRON`,
+ * 00:15 UTC); the range-APR UI keeps a snapshot for `APR_SNAPSHOT_MAX_AGE_MS`
+ * (26 h), and the daily 08:10–09:10 Taipei sample needs a refresh inside that window.
  */
 export const DEFAULT_RWA_SCHEDULER_INTERVAL_MS = 900_000;
 

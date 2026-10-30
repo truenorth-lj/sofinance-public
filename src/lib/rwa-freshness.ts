@@ -1,4 +1,20 @@
 import type { PoolRangeAprPayload } from "./range-apr/types";
+
+/**
+ * How often production refreshes saved APR snapshots: the Vercel cron in `vercel.json` runs
+ * `/api/internal/rwa-refresh` once a day at 00:15 UTC (08:15 Taipei, inside the 08:10–09:10 Taipei daily-sample
+ * window and after the last complete UTC volume day closes). `vercel.json` must keep this schedule (tested).
+ */
+export const RWA_REFRESH_CRON = "15 0 * * *";
+
+/**
+ * A displayed estimate expires when its chain observation is older than this: one daily refresh plus a 2-hour
+ * grace for a slow or retried run. The 7-day volume window only moves once a day, so a snapshot from today's run
+ * is the current estimate all day. (It was 30 minutes while the cron ran every 15 minutes; with the daily cron
+ * from #234 that hid every pool's 7d APR as "—" about 30 minutes after each run.)
+ */
+export const APR_SNAPSHOT_MAX_AGE_MS = 26 * 3_600_000;
+
 export function aprSnapshotExpired(
   payload: PoolRangeAprPayload,
   nowMs: number,
@@ -7,5 +23,5 @@ export function aprSnapshotExpired(
   const stamp = Date.parse(
     payload.freshness.chainObservedAt ?? payload.freshness.snapshotAt,
   );
-  return !Number.isFinite(stamp) || nowMs - stamp > 30 * 60_000;
+  return !Number.isFinite(stamp) || nowMs - stamp > APR_SNAPSHOT_MAX_AGE_MS;
 }
