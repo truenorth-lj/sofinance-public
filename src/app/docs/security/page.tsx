@@ -3,6 +3,9 @@ import { DocsArticle } from "@/components/docs/docs-article";
 import { DOCS_PAGES } from "@/lib/docs-nav";
 import { APP_ROUTES, DOCS_ROUTES } from "@/lib/public-urls";
 import { EXTERNAL_LINK_PROPS } from "@/lib/social-links";
+import { docsPageMetadata } from "@/lib/seo";
+
+export const metadata = docsPageMetadata("security");
 
 const EXAMPLE_TX =
   "https://solscan.io/tx/3YkXwPpSotg8pJEv4XAFYWrU71kY8Wf8U7iHZunve8E7J5b26hbynwXV3tWm9X1WCh4m6FaeFhb1RXTXwQoTev3t";
@@ -49,9 +52,9 @@ export default function DocsSecurityPage() {
         features, and market risk still apply — see <Link href={DOCS_ROUTES.risks}>Risks</Link>.
       </p>
 
-      <h2>Shipping in public</h2>
+      <h2>Try it yourself</h2>
       <p>
-        SoFinance is a hackathon-born toolkit with a public product repository and a live deployment.
+        SoFinance is a hackathon-born toolkit with a live deployment.
         Use the <Link href={APP_ROUTES.home}>App</Link> yourself, or{" "}
         <Link href={APP_ROUTES.ai}>Use AI</Link> to let an assistant prepare transactions you approve. Start from{" "}
         <Link href={DOCS_ROUTES.gettingStarted}>Getting started</Link> if you are new.

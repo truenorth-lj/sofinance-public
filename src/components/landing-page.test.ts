@@ -95,7 +95,7 @@ describe("landing page copy and routes", () => {
     );
     expect(table).toContain("HOMEPAGE_POOL_APR_LABEL");
     expect(table).toContain("HIGHEST_RANGE_APR_7D_HELP");
-    expect(table).toContain("DOCS_ROUTES.yieldAndApr");
+    expect(table).toContain("DOCS_ROUTES.feeApr");
     expect(table).toContain("usePoolRangeApr");
     expect(table).not.toContain("POOL_FEE_APR_24H_HELP");
   });

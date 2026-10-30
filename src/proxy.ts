@@ -61,6 +61,6 @@ function withRegionNotice(request: NextRequest, response: NextResponse) {
 
 export const config = {
   matcher: [
-    "/((?!api|lumen|_next/static|_next/image|favicon.ico|favicon.svg|sitemap.xml|robots.txt|.*\\.png$|.*\\.ico$|.*\\.svg$).*)",
+    "/((?!api|lumen|_next/static|_next/image|favicon.ico|favicon.svg|sitemap.xml|robots.txt|llms.txt|.*\\.png$|.*\\.ico$|.*\\.svg$).*)",
   ],
 };

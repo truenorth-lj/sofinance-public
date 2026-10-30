@@ -4,8 +4,8 @@ import { openPoolRedirect } from "@/lib/unified-pools/deep-link";
 import { unifiedPoolFlags } from "@/lib/unified-pools/flags";
 
 export const metadata = {
-  title: "Positions · SoFinance",
-  description: "Your Solana and Robinhood Chain liquidity positions, with Yield Compound, Performance, Add to position and Withdraw.",
+  title: "Positions",
+  description: "Your Solana and Robinhood Chain liquidity positions, with fee compounding, Performance, Add to position and Withdraw.",
 };
 
 export default async function AppHome({ searchParams }: {

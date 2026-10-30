@@ -42,7 +42,7 @@ export async function fetchXstocksSolanaMintSet(
     const response = await fetcher(url, {
       headers: {
         Accept: "application/json",
-        "User-Agent": "SoFinance/0.1 (RWA pair discovery; +https://github.com/truenorth-lj/sofinance-public)",
+        "User-Agent": "SoFinance/0.1 (RWA pair discovery; +https://sofinancelab.xyz)",
       },
       signal: options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(45_000)]) : AbortSignal.timeout(45_000),
     });

@@ -68,7 +68,7 @@ export async function fetchJupiterTagsByMint(
       fetcher,
       apiKey,
       headers: {
-        "User-Agent": "SoFinance/0.1 (RWA pair discovery; +https://github.com/truenorth-lj/sofinance-public)",
+        "User-Agent": "SoFinance/0.1 (RWA pair discovery; +https://sofinancelab.xyz)",
       },
       cacheKey: null, // This module owns the cache and its source timestamps.
       cacheTtlMs: CACHE_TTL_MS,

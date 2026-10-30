@@ -9,7 +9,7 @@ describe("docs routes and copy guards", () => {
     expect(DOCS_PAGES).toHaveLength(6);
     expect(DOCS_PAGES.map((page) => page.href)).toEqual([
       DOCS_ROUTES.gettingStarted,
-      DOCS_ROUTES.yieldAndApr,
+      DOCS_ROUTES.feeApr,
       DOCS_ROUTES.risks,
       DOCS_ROUTES.fees,
       DOCS_ROUTES.withdraw,
@@ -56,8 +56,8 @@ describe("docs routes and copy guards", () => {
     const pairs = readFileSync(resolve("src/components/unified-pools/unified-pools-panel.tsx"), "utf8");
     const open = readFileSync(resolve("src/components/open-position-modal.tsx"), "utf8");
     const selected = readFileSync(resolve("src/components/selected-app.tsx"), "utf8");
-    expect(picker).toContain("DOCS_ROUTES.yieldAndApr");
-    expect(pairs).toContain("DOCS_ROUTES.yieldAndApr");
+    expect(picker).toContain("DOCS_ROUTES.feeApr");
+    expect(pairs).toContain("DOCS_ROUTES.feeApr");
     expect(open).toContain("DOCS_ROUTES.risks");
     expect(selected).toContain("DOCS_ROUTES.risks");
   });

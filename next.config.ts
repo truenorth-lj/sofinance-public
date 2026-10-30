@@ -21,6 +21,8 @@ export const nextConfig: NextConfig = {
       { source: "/position-performance", destination: "/app/position-performance", permanent: true },
       { source: "/ai", destination: "/app/ai", permanent: true },
       { source: "/sign/:token", destination: "/app/sign/:token", permanent: true },
+      // Renamed docs page (SEO Phase 1): a real 301 (Next's `permanent` sends 308) so links and search results move.
+      { source: "/docs/yield-and-apr", destination: "/docs/fee-apr", statusCode: 301 },
     ];
   },
 };

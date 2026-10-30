@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { Suspense, type ReactNode } from "react";
 import { BrandMark } from "@/components/brand-mark";
-import { HomepagePoolsTable } from "@/components/homepage-pools-table";
+import { HomepagePoolsTable, HomepagePoolsView } from "@/components/homepage-pools-table";
+import type { HomepagePoolsSnapshot } from "@/lib/homepage-pools";
 import { ArrowUpRight } from "lucide-react";
-import { APP_ROUTES, BLOG_ROUTES, DOCS_ROUTES, LEGAL_ROUTES } from "@/lib/public-urls";
+import { APP_ROUTES, BLOG_ROUTES, DOCS_ROUTES, FAQ_ROUTE, LEGAL_ROUTES, LLMS_TXT_ROUTE } from "@/lib/public-urls";
 import { EXTERNAL_LINK_PROPS, SOCIAL_LINKS } from "@/lib/social-links";
 import { XIcon } from "@/components/x-icon";
 
@@ -70,7 +71,7 @@ function SectionHeading({ label, children }: { label: string; children: string }
   );
 }
 
-export function LandingPage() {
+export function LandingPage({ initialPools = null }: { initialPools?: HomepagePoolsSnapshot | null } = {}) {
   return (
     <div className="min-h-screen overflow-x-clip bg-canvas text-cream">
       <div className="mx-auto max-w-[1280px] px-3 pb-10 pt-3 sm:px-5 sm:pt-5">
@@ -136,14 +137,10 @@ export function LandingPage() {
             </div>
           </section>
 
-          <Suspense
-            fallback={
-              <section id="pools" className="scroll-mt-6" aria-busy="true">
-                <p className="px-2 py-10 text-sm text-smoke">Loading pool data…</p>
-              </section>
-            }
-          >
-            <HomepagePoolsTable />
+          {/* The fallback is what prerendered HTML contains (useSearchParams bails out to the client), so it renders
+              the server snapshot: crawlers see pool names and stats, not "Loading pool data…". */}
+          <Suspense fallback={<HomepagePoolsView initial={initialPools} />}>
+            <HomepagePoolsTable initial={initialPools} />
           </Suspense>
 
           <section id="how" className="scroll-mt-6">
@@ -285,12 +282,18 @@ export function LandingPage() {
             <Link href={DOCS_ROUTES.home} className="transition-colors hover:text-cream">
               Docs
             </Link>
+            <Link href={FAQ_ROUTE} className="transition-colors hover:text-cream">
+              FAQ
+            </Link>
             <Link href={DOCS_ROUTES.risks} className="transition-colors hover:text-cream">
               Risks
             </Link>
             <Link href={LEGAL_ROUTES.terms} className="transition-colors hover:text-cream">
               Terms
             </Link>
+            <a href={LLMS_TXT_ROUTE} className="transition-colors hover:text-cream" title="Plain-text summary for AI assistants">
+              llms.txt
+            </a>
             <a
               href={SOCIAL_LINKS.x.href}
               {...EXTERNAL_LINK_PROPS}

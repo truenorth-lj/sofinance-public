@@ -18,7 +18,7 @@ export const RAYDIUM_POOL_IDS = `${RAYDIUM_API_V3}/pools/info/ids`;
 export const GECKO_TERMINAL_OHLCV = geckoPoolsUrl("solana");
 
 const STALE_THRESHOLD_MS = 3_600_000;
-const USER_AGENT = "SoFinance/0.1 (pool daily APR; +https://github.com/truenorth-lj/sofinance-public)";
+const USER_AGENT = "SoFinance/0.1 (pool daily APR; +https://sofinancelab.xyz)";
 
 export type PoolDailyAprResult = {
   poolId: string;

@@ -3,6 +3,8 @@ import { join } from "node:path";
 import matter from "gray-matter";
 import type { Metadata } from "next";
 import { BLOG_ROUTES, blogArticlePath, CANONICAL_SITE_URL, getCanonicalSiteUrl } from "@/lib/public-urls";
+import { ORGANIZATION_ID, serializeJsonLd } from "@/lib/json-ld";
+import { OG_IMAGE, SITE_X_HANDLE } from "@/lib/seo";
 
 /** Publisher / author for every article. Never a person's name. */
 export const BLOG_ORGANIZATION = "SoFinance";
@@ -171,7 +173,7 @@ export function blogArticleMetadata(article: BlogArticle): Metadata {
   const size = getPublicPngSize(article.hero.src);
 
   return {
-    title: `${article.title} · SoFinance`,
+    title: article.title,
     description: article.description,
     alternates: { canonical },
     openGraph: {
@@ -195,6 +197,7 @@ export function blogArticleMetadata(article: BlogArticle): Metadata {
     },
     twitter: {
       card: "summary_large_image",
+      site: SITE_X_HANDLE,
       title: article.title,
       description: article.description,
       images: [image],
@@ -205,7 +208,7 @@ export function blogArticleMetadata(article: BlogArticle): Metadata {
 export function blogIndexMetadata(): Metadata {
   const canonical = absoluteUrl(BLOG_ROUTES.home);
   return {
-    title: "Blog · SoFinance",
+    title: "Blog",
     description:
       "Long-form notes from SoFinance on on-chain market making, concentrated liquidity, and tokenized-stock pools.",
     alternates: { canonical },
@@ -217,9 +220,12 @@ export function blogIndexMetadata(): Metadata {
       url: canonical,
       siteName: BLOG_ORGANIZATION,
       locale: "en_US",
+      images: [{ ...OG_IMAGE }],
     },
     twitter: {
       card: "summary_large_image",
+      site: SITE_X_HANDLE,
+      images: [OG_IMAGE.url],
       title: "Blog · SoFinance",
       description:
         "Long-form notes from SoFinance on on-chain market making, concentrated liquidity, and tokenized-stock pools.",
@@ -234,6 +240,7 @@ export function blogArticleJsonLd(article: BlogArticle): JsonLd {
   const image = absoluteUrl(article.hero.src);
   const organization = {
     "@type": "Organization",
+    "@id": ORGANIZATION_ID,
     name: BLOG_ORGANIZATION,
     url: CANONICAL_SITE_URL,
   };
@@ -275,6 +282,7 @@ export function blogIndexJsonLd(articles: BlogArticle[]): JsonLd {
     url: absoluteUrl(BLOG_ROUTES.home),
     publisher: {
       "@type": "Organization",
+      "@id": ORGANIZATION_ID,
       name: BLOG_ORGANIZATION,
       url: CANONICAL_SITE_URL,
     },
@@ -288,6 +296,4 @@ export function blogIndexJsonLd(articles: BlogArticle[]): JsonLd {
   };
 }
 
-export function serializeJsonLd(data: JsonLd): string {
-  return JSON.stringify(data).replace(/</g, "\\u003c");
-}
+export { serializeJsonLd };

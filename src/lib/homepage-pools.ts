@@ -1,3 +1,5 @@
+import type { TokenIconMap } from "@/lib/token-icons/map";
+
 export const HOMEPAGE_POOL_LIMIT = 6;
 /** Tiny pools can print 100%+ est. APR; keep them off the homepage headline when larger ones exist. */
 export const HOMEPAGE_TVL_FLOOR_USD = 10_000;
@@ -18,6 +20,39 @@ export type HomepagePool = {
   token2022A: boolean;
   token2022B: boolean;
 };
+
+export type HomepagePoolsSnapshot = {
+  pairs: HomepagePool[];
+  tokenIcons?: TokenIconMap;
+  freshness: { snapshotAt: string; stale: boolean } | null;
+};
+
+const HOMEPAGE_POOL_KEYS = [
+  "poolAddress", "mintA", "mintB", "symbolA", "symbolB", "wrappedSymbol", "plainSymbol", "feeTierBps", "tvlUsd",
+  "volume24hUsd", "estimatedFeeAprPct", "freezeRisk", "token2022A", "token2022B",
+] as const satisfies readonly (keyof HomepagePool)[];
+
+/**
+ * Server snapshot for the homepage table, trimmed to the fields the table reads (keeps the RSC payload small):
+ * the homepage rows by TVL, plus only the icons those rows use.
+ */
+export function toHomepagePoolsSnapshot(input: {
+  pairs: readonly HomepagePool[];
+  tokenIcons?: TokenIconMap;
+  freshness: { snapshotAt: string; stale: boolean } | null;
+}): HomepagePoolsSnapshot {
+  const pairs = input.pairs.map((row) =>
+    Object.fromEntries(HOMEPAGE_POOL_KEYS.map((key) => [key, row[key]])) as HomepagePool);
+  const shown = selectHomepagePools(pairs);
+  const mints = new Set(shown.flatMap((row) => [row.mintA, row.mintB]));
+  const tokenIcons = input.tokenIcons
+    ? {
+        solana: Object.fromEntries(Object.entries(input.tokenIcons.solana ?? {}).filter(([mint]) => mints.has(mint))),
+        robinhood: {},
+      }
+    : undefined;
+  return { pairs: shown, tokenIcons, freshness: input.freshness };
+}
 
 export function sortPoolsByTvl<T extends { tvlUsd: number | null }>(pairs: readonly T[]): T[] {
   return [...pairs].sort((a, b) => (b.tvlUsd ?? -1) - (a.tvlUsd ?? -1));
@@ -63,4 +98,11 @@ export function freshnessLabel(snapshotAt: string, now: number): string {
   if (mins < 60) return `Updated ${mins} min ago`;
   const hours = Math.round(mins / 60);
   return hours === 1 ? "Updated 1h ago" : `Updated ${hours}h ago`;
+}
+
+/** Absolute UTC time for server-rendered (cached) HTML, e.g. "Snapshot 2026-10-30 11:02 UTC". */
+export function snapshotTimeLabel(snapshotAt: string): string {
+  const ms = Date.parse(snapshotAt);
+  if (!Number.isFinite(ms)) return "Snapshot";
+  return `Snapshot ${new Date(ms).toISOString().slice(0, 16).replace("T", " ")} UTC`;
 }

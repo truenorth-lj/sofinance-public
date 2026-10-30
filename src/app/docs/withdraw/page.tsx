@@ -3,6 +3,9 @@ import { DocsArticle } from "@/components/docs/docs-article";
 import { DOCS_PAGES } from "@/lib/docs-nav";
 import { DOCS_ROUTES } from "@/lib/public-urls";
 import { EXTERNAL_LINK_PROPS } from "@/lib/social-links";
+import { docsPageMetadata } from "@/lib/seo";
+
+export const metadata = docsPageMetadata("withdraw");
 
 export default function DocsWithdrawPage() {
   return (

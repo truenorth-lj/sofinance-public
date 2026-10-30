@@ -16,6 +16,15 @@ describe("legacy page redirects", () => {
   });
 });
 
+describe("renamed docs pages", () => {
+  it("sends /docs/yield-and-apr to /docs/fee-apr with a real 301", async () => {
+    const redirects = nextConfig.redirects ? await nextConfig.redirects() : [];
+    const rename = redirects.find((entry) => entry.source === "/docs/yield-and-apr");
+    expect(rename).toEqual({ source: "/docs/yield-and-apr", destination: "/docs/fee-apr", statusCode: 301 });
+    expect(rename).not.toHaveProperty("permanent");
+  });
+});
+
 describe("PostHog first-party relay", () => {
   it("rewrites /lumen to PostHog and skips the trailing-slash redirect its ingest paths need", async () => {
     const rewrites = nextConfig.rewrites ? await nextConfig.rewrites() : [];

@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HIGHEST_RANGE_APR_7D_LABEL, HOMEPAGE_POOL_APR_LABEL } from "@/lib/apr-labels/copy";
 import { payloadWithAprs } from "@/lib/range-apr/payload.fixture";
 import { RWA_PAIRS_LIST_PATH } from "@/lib/rwa-pairs-list";
-import { HomepagePoolsTable } from "./homepage-pools-table";
+import { HomepagePoolsTable, HomepagePoolsView } from "./homepage-pools-table";
 import type { PoolRangeAprState } from "./range-apr/use-pool-range-apr";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -112,7 +112,7 @@ describe("HomepagePoolsTable", () => {
     expect(HOMEPAGE_POOL_APR_LABEL).toBe(HIGHEST_RANGE_APR_7D_LABEL);
     expect(table.querySelector("thead")!.textContent).toContain("Est. highest range APR · 7d avg · not guaranteed");
     expect(table.querySelector("thead button[aria-label='About Est. highest range APR']")).not.toBeNull();
-    const docsLink = table.querySelector("thead a[href='/docs/yield-and-apr']")!;
+    const docsLink = table.querySelector("thead a[href='/docs/fee-apr']")!;
     expect(docsLink.textContent).toBe("APR details");
     expect(rows[0]!.querySelector("a[href^='/app/rwa-pairs']")!.getAttribute("href")).toBe(
       "/app/rwa-pairs?pool=spcx-pool&open=1",
@@ -222,5 +222,35 @@ describe("HomepagePoolsTable", () => {
     const marked = container.querySelectorAll('[data-highlighted="true"]');
     expect(marked.length).toBeGreaterThan(0);
     expect([...marked].every((node) => node.getAttribute("data-pool") === "hood-pool")).toBe(true);
+  });
+
+  it("renders the server snapshot at once, refreshes it from the API, and keeps it when the refresh fails", async () => {
+    const initial = {
+      pairs: [pair({ poolAddress: "spcx-pool" })],
+      freshness: { snapshotAt: "2026-10-30T11:02:00.000Z", stale: false },
+    };
+    fetchMock.mockImplementation(() => new Promise(() => {})); // refresh never answers yet
+    await act(async () => {
+      root.render(createElement(HomepagePoolsView, { initial }));
+    });
+    expect(container.textContent).not.toContain("Loading pool data");
+    expect(container.textContent).toContain("SPCXx/SPCX");
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    });
+    expect(fetchMock).toHaveBeenCalledWith(RWA_PAIRS_LIST_PATH, expect.anything());
+
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    fetchMock.mockReset();
+    fetchMock.mockRejectedValue(new Error("offline"));
+    await act(async () => {
+      root.render(createElement(HomepagePoolsView, { initial }));
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    });
+    expect(container.textContent).toContain("SPCXx/SPCX");
+    expect(container.textContent).not.toContain("offline");
   });
 });

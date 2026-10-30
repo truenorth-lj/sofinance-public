@@ -2,6 +2,9 @@ import Link from "next/link";
 import { DocsArticle } from "@/components/docs/docs-article";
 import { DOCS_PAGES } from "@/lib/docs-nav";
 import { DOCS_ROUTES } from "@/lib/public-urls";
+import { docsPageMetadata } from "@/lib/seo";
+
+export const metadata = docsPageMetadata("risks");
 
 export default function DocsRisksPage() {
   return (
@@ -14,8 +17,8 @@ export default function DocsRisksPage() {
           same-asset wraps, the two tokens can trade at a temporary premium or discount. The mix of the two tokens in your position shifts as the price moves.
         </li>
         <li>
-          <strong className="font-medium text-cream">Out of range stops earning</strong> — while the
-          pool price is outside your range, you earn no trading fees from that position until price
+          <strong className="font-medium text-cream">Out of range collects no fees</strong> — while the
+          pool price is outside your range, that position collects no trading fees until price
           returns or you change range.
         </li>
         <li>
@@ -25,13 +28,13 @@ export default function DocsRisksPage() {
         </li>
         <li>
           <strong className="font-medium text-cream">Conversion / exit costs</strong> — swapping into
-          or out of the pool (including withdrawing to USDC) costs swap fees, some price difference on larger amounts, and the SoFinance 10 bps protocol fee on the deposited or converted amount. There is no extra performance fee on LP earnings. See{" "}
+          or out of the pool (including withdrawing to USDC) costs swap fees, some price difference on larger amounts, and the SoFinance 10 bps protocol fee on the deposited or converted amount. There is no extra performance fee on the trading fees you collect. See{" "}
           <Link href={DOCS_ROUTES.fees}>Fees</Link>.
         </li>
       </ul>
       <p>
         APR tooltips and pair cards link here and to{" "}
-        <Link href={DOCS_ROUTES.yieldAndApr}>Yield &amp; APR</Link> because fee APR estimates ignore
+        <Link href={DOCS_ROUTES.feeApr}>Fee APR</Link> because fee APR estimates ignore
         IL and costs.
       </p>
 
