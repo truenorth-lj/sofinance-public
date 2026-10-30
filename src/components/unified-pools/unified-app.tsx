@@ -11,8 +11,8 @@ type SelectedAppProps = Parameters<typeof SelectedApp>[0];
 
 /**
  * `/app`: the Solana positions manager (`SelectedApp`) with the unified Solana + Robinhood Chain pool list and the
- * Robinhood Chain positions added to "My positions". The MetaMask account is shared between the Robinhood Chain open
- * dialog and the positions section, so connecting in one shows up in the other.
+ * Robinhood Chain positions added to "My positions" once MetaMask is connected. MetaMask connects from a Robinhood Chain
+ * pool's Open position dialog; that account is then shared with the positions section.
  */
 export function UnifiedApp({ selected, flags, rhcSigningEnabled, deepLinkPool }: {
   selected: SelectedAppProps;
@@ -26,7 +26,7 @@ export function UnifiedApp({ selected, flags, rhcSigningEnabled, deepLinkPool }:
 
   return <>
     <SelectedApp {...selected} solanaToolsHidden={rhcOpen !== null}
-      extraPositions={flags.rhc ? <RhcPositionsSection wallet={evmWallet} onConnected={setEvmWallet} signingEnabled={rhcSigningEnabled} refreshKey={rhcPositionsKey} /> : undefined}
+      extraPositions={flags.rhc && evmWallet ? <RhcPositionsSection wallet={evmWallet} signingEnabled={rhcSigningEnabled} refreshKey={rhcPositionsKey} /> : undefined}
       poolsSection={<UnifiedPoolsPanel flags={flags} deepLinkPool={deepLinkPool} onOpenRhc={({ pool }) => setRhcOpen(pool)} />} />
     {rhcOpen && <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center" role="dialog" aria-modal="true" aria-labelledby="rhc-open-title">
       <button type="button" className="absolute inset-0 bg-black/70" aria-label="Close Robinhood Chain position" onClick={() => setRhcOpen(null)} />
