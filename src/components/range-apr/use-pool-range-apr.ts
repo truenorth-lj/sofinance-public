@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { PoolRangeAprPayload } from "@/lib/range-apr/types";
-import { loadPoolRangeApr } from "./pool-range-apr-client";
+import { loadPoolRangeApr, type RangeAprProtocol } from "./pool-range-apr-client";
 import { aprSnapshotExpired } from "@/lib/rwa-freshness";
 
 export type PoolRangeAprState =
@@ -16,8 +16,11 @@ const MAX_DEGRADED_RETRIES = 4;
 
 type Settled = { poolId: string; result: { data: PoolRangeAprPayload } | { message: string } };
 
-/** Loads the per-pool range APR payload (cached and de-duplicated in `pool-range-apr-client`). */
-export function usePoolRangeApr(poolId: string | null, refreshKey?: number): PoolRangeAprState {
+/**
+ * Loads the per-pool range APR payload (cached and de-duplicated in `pool-range-apr-client`). `protocol` picks the
+ * endpoint: Raydium (default) or a flag-gated protocol such as Uniswap v4 on Robinhood Chain (same payload shape).
+ */
+export function usePoolRangeApr(poolId: string | null, refreshKey?: number, protocol: RangeAprProtocol = "raydium-clmm"): PoolRangeAprState {
   const [settled, setSettled] = useState<Settled | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [now, setNow] = useState(Date.now);
@@ -27,7 +30,7 @@ export function usePoolRangeApr(poolId: string | null, refreshKey?: number): Poo
     let cancelled = false;
     // Deferred like the other data hooks so state is never set synchronously inside the effect.
     const timer = window.setTimeout(() => {
-      loadPoolRangeApr(poolId).then(
+      loadPoolRangeApr(poolId, protocol).then(
         (data) => { if (!cancelled) setSettled({ poolId, result: { data } }); },
         (error: unknown) => {
           if (!cancelled) {
@@ -46,7 +49,7 @@ export function usePoolRangeApr(poolId: string | null, refreshKey?: number): Poo
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [poolId, attempt, refreshKey]);
+  }, [poolId, attempt, refreshKey, protocol]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 30_000);

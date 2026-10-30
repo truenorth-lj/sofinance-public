@@ -112,16 +112,16 @@ export function LandingPage({ initialPools = null }: { initialPools?: HomepagePo
 
         <main>
           <section className="mt-3 animate-rise rounded-[28px] bg-cream p-6 text-ink motion-reduce:animate-none sm:p-10">
-            <span className={`${labelPill} border-ink/70`}>Self-custodial · Raydium CLMM · Tokenized stocks</span>
+            <span className={`${labelPill} border-ink/70`}>Self-custodial · Solana + Robinhood Chain</span>
             <h1 className="mt-6 max-w-[18ch] text-[clamp(2.1rem,5.4vw,4.4rem)] font-medium leading-[1.02] tracking-[-0.045em]">
               Hold the stock. Collect the fees.
             </h1>
             <div className="mt-6 border-t border-ink/20 pt-5">
               <p className="max-w-2xl text-base leading-7 text-ink/70 sm:text-lg">
-                Your $TSLA, $MSTR or $SPCX tokens can collect trading fees from swaps in Raydium pools. We show the estimated APR and a 7-day backtest before you sign. Not guaranteed; risks apply.
+                Your $TSLA, $MSTR or $SPCX tokens can collect trading fees from swaps in Raydium (Solana) and Uniswap v4 (Robinhood Chain) pools. We show the estimated fee APR and a 7-day backtest before you sign. Not guaranteed; risks apply.
               </p>
               <p className="mt-4 font-data text-[11px] uppercase tracking-[0.12em] text-ink/55">
-                1 signature · 0 keys on our servers · verifiable on Solscan
+                0 keys on our servers · verifiable on Solscan and Blockscout
               </p>
               <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-3">
                 <ArrowCta href="#pools" tone="ink">
@@ -144,23 +144,23 @@ export function LandingPage({ initialPools = null }: { initialPools?: HomepagePo
           </Suspense>
 
           <section id="how" className="scroll-mt-6">
-            <SectionHeading label="How it works">Three steps. You sign once.</SectionHeading>
+            <SectionHeading label="How it works">Three steps. Your wallet signs.</SectionHeading>
             <ol className="grid gap-3 md:grid-cols-3">
               {[
                 {
                   n: "01",
                   title: "Pick a pool",
-                  body: "Choose an xStock pair. The app picks the best backtest range — you can override it. The preview shows est. fee APR for that range — not guaranteed.",
+                  body: "Choose a same-stock pool on Solana or Robinhood Chain and a price range. On Solana the app suggests the best backtest range; you can override it. Est. fee APR is shown before you sign — not guaranteed.",
                 },
                 {
                   n: "02",
                   title: "Review the preview",
-                  body: "See the swaps, the amounts, and the total round-trip cost before you sign.",
+                  body: "See the swap, the amounts and the fees before you sign. On Solana the preview also shows the total round-trip cost.",
                 },
                 {
                   n: "03",
-                  title: "Sign once",
-                  body: "One wallet signature opens the position. Later you can add, compound fees, or exit in one click.",
+                  title: "Sign in your wallet",
+                  body: "Solana: one signature opens the position; later you can add, compound fees or exit. Robinhood Chain: a one-time token approval, a signature, then one transaction; you can close it here later.",
                 },
               ].map((step) => (
                 <li key={step.n} className={`${darkCard} flex flex-col`}>
@@ -174,7 +174,7 @@ export function LandingPage({ initialPools = null }: { initialPools?: HomepagePo
 
           <section>
             <SectionHeading label="Your keys, your position">
-              Non-custodial. A normal Raydium position NFT.
+              Non-custodial. A standard position NFT in your wallet.
             </SectionHeading>
             <div className="grid gap-3 md:grid-cols-3">
               <article className="rounded-[28px] bg-cream p-6 text-ink sm:p-7">
@@ -185,17 +185,18 @@ export function LandingPage({ initialPools = null }: { initialPools?: HomepagePo
                 </p>
               </article>
               <article className="rounded-[28px] bg-mint p-6 text-ink sm:p-7">
-                <h3 className="text-xl font-medium tracking-[-0.02em]">Verifiable on Solscan</h3>
+                <h3 className="text-xl font-medium tracking-[-0.02em]">Verifiable on Solscan and Blockscout</h3>
                 <p className="mt-3 border-t border-ink/25 pt-3 text-sm leading-6 text-ink/75">
-                  Every confirmed transaction is public. Open the signature on Solscan to inspect what
-                  moved.
+                  Every confirmed transaction is public. Open it on Solscan (Solana) or Blockscout (Robinhood
+                  Chain) to inspect what moved.
                 </p>
               </article>
               <article className={darkCard}>
                 <h3 className="text-xl font-medium tracking-[-0.02em]">Portable position</h3>
                 <p className="mt-3 border-t border-white/15 pt-3 text-sm leading-6 text-smoke">
-                  Opening a position puts a standard Raydium position NFT in your wallet. You can manage
-                  it here or directly on Raydium.
+                  Opening a position puts a standard position NFT in your wallet: a Raydium position NFT on
+                  Solana, a Uniswap v4 position NFT on Robinhood Chain. Manage it here; Raydium positions can
+                  also be managed directly on Raydium.
                 </p>
               </article>
             </div>
@@ -206,8 +207,9 @@ export function LandingPage({ initialPools = null }: { initialPools?: HomepagePo
             <article className={`${darkCard} sm:p-8`}>
               <ul className="grid gap-4 text-sm leading-6 text-smoke sm:grid-cols-2">
                 <li>
-                  <strong className="font-medium text-cream">Est. APR is not guaranteed.</strong> It is
-                  last-24h fees divided by TVL, annualized — not LP return.
+                  <strong className="font-medium text-cream">Est. fee APR is not guaranteed.</strong> It is
+                  recent pool fees divided by TVL, annualized (last 24h, or a 7-day backtest for a range) — not
+                  LP return.
                 </li>
                 <li>
                   <strong className="font-medium text-cream">Out of range means no fees.</strong> If the
@@ -219,8 +221,10 @@ export function LandingPage({ initialPools = null }: { initialPools?: HomepagePo
                   tokens, LP can underperform when the two sides move apart.
                 </li>
                 <li>
-                  <strong className="font-medium text-cream">Token-2022 freeze authority.</strong> xStock
-                  issuers may retain freeze or other controls that can block transfers.
+                  <strong className="font-medium text-cream">Issuer controls.</strong> On Solana, xStock
+                  issuers may retain Token-2022 freeze or other controls that can block transfers. Each
+                  Robinhood Chain pool pairs a Robinhood stock token with the Ondo token of the same stock, so
+                  it depends on both issuers.
                 </li>
               </ul>
               <p className="mt-6 border-t border-white/15 pt-4 text-sm text-smoke">
@@ -252,11 +256,11 @@ export function LandingPage({ initialPools = null }: { initialPools?: HomepagePo
 
           <section className="mt-8 rounded-[28px] bg-cream p-8 text-ink sm:mt-12 sm:p-12">
             <h2 className="max-w-[16ch] text-[clamp(2rem,5vw,3.6rem)] font-medium leading-[1.02] tracking-[-0.04em]">
-              Pick a pool. Sign once.
+              Pick a pool. Your wallet signs.
             </h2>
             <div className="mt-8 flex flex-col gap-6 border-t border-ink/20 pt-6 md:flex-row md:items-center md:justify-between">
               <p className="max-w-xl text-sm leading-6 text-ink/70 sm:text-base">
-                Browse live xStock pools, or manage a position you already hold. Self-custodial throughout.
+                Browse live tokenized-stock pools on Solana and Robinhood Chain, or manage a position you already hold. Self-custodial throughout.
               </p>
               <div className="flex flex-wrap items-center gap-3">
                 <ArrowCta href="#pools" tone="ink">
@@ -271,7 +275,7 @@ export function LandingPage({ initialPools = null }: { initialPools?: HomepagePo
         </main>
 
         <footer className="mt-6 flex flex-col gap-4 px-2 py-6 font-data text-[11px] uppercase tracking-[0.12em] text-smoke sm:flex-row sm:items-center sm:justify-between">
-          <p>SoFinance · Self-custodial Raydium CLMM tool</p>
+          <p>SoFinance · Self-custodial liquidity on Solana and Robinhood Chain</p>
           <div className="flex flex-wrap items-center gap-5">
             <Link href={APP_ROUTES.home} className="transition-colors hover:text-cream">
               App

@@ -9,6 +9,12 @@ interface McpConnectionCardProps {
   wallet: string;
 }
 
+/**
+ * Option B's `cwd`: a placeholder the user replaces with the folder of their local SoFinance MCP install (the stdio
+ * shim runs from there with `npx tsx`). Generic on purpose: no machine path or project folder name.
+ */
+export const MCP_INSTALL_DIR_PLACEHOLDER = "<folder of your local SoFinance MCP install>";
+
 export function McpConnectionCard({ wallet }: McpConnectionCardProps) {
   const { signMessage } = useWalletConnection();
   const [token, setToken] = useState<string | null>(null);
@@ -120,7 +126,7 @@ export function McpConnectionCard({ wallet }: McpConnectionCardProps) {
         sofinance: {
           command: "npx",
           args: ["tsx", "src/mcp/remote-shim.ts"],
-          cwd: "/absolute/path/to/sofinance-public",
+          cwd: MCP_INSTALL_DIR_PLACEHOLDER,
           env: {
             SOFINANCE_MCP_URL: `${appUrl}/api/mcp`,
             SOFINANCE_MCP_TOKEN: token,
@@ -288,7 +294,7 @@ export function McpConnectionCard({ wallet }: McpConnectionCardProps) {
               </button>
             </div>
             <p className="mt-1 text-xs text-smoke/70">
-              Use if your agent only supports stdio. Requires: <code className="rounded bg-white/10 px-1">pnpm install</code> + update <code className="rounded bg-white/10 px-1">cwd</code> path
+              Use if your agent only supports stdio. Requires your local SoFinance MCP install: set <code className="rounded bg-white/10 px-1">cwd</code> to its folder
             </p>
             <pre className="mt-2 overflow-x-auto rounded-lg border border-white/10 bg-canvas p-3 text-[11px] leading-5">
               <code className="text-cream/80">{shimConfigJson}</code>
@@ -303,7 +309,7 @@ export function McpConnectionCard({ wallet }: McpConnectionCardProps) {
               <strong className="text-smoke">Try Option A first:</strong> Direct HTTP is simpler (no local files needed)
             </li>
             <li>
-              <strong className="text-smoke">If that doesn&apos;t work:</strong> Use Option B shim (requires <code className="rounded bg-white/10 px-1">pnpm install</code> in repo)
+              <strong className="text-smoke">If that doesn&apos;t work:</strong> Use Option B (requires your local SoFinance MCP install)
             </li>
             <li>
               <strong className="text-smoke">Cursor:</strong> Paste into MCP settings

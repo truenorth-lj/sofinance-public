@@ -14,6 +14,8 @@ describe("landing page copy and routes", () => {
     "src/components/landing-page.tsx",
     "src/components/homepage-pools-table.tsx",
     "src/lib/homepage-pools.ts",
+    "src/lib/homepage-pools-snapshot.ts",
+    "src/lib/snapshot-updated.ts",
     "src/app/page.tsx",
     "src/app/layout.tsx",
     "src/app/manifest.ts",
@@ -22,15 +24,17 @@ describe("landing page copy and routes", () => {
   it("leads with the option B hero (hold the stock, collect the fees), not a yield product", () => {
     expect(src).toContain("Hold the stock. Collect the fees.");
     expect(src).toContain(
-      "Your $TSLA, $MSTR or $SPCX tokens can collect trading fees from swaps in Raydium pools. We show the estimated APR and a 7-day backtest before you sign. Not guaranteed; risks apply.",
+      "Your $TSLA, $MSTR or $SPCX tokens can collect trading fees from swaps in Raydium (Solana) and Uniswap v4 (Robinhood Chain) pools. We show the estimated fee APR and a 7-day backtest before you sign. Not guaranteed; risks apply.",
     );
     expect(src).not.toContain("LP tokenized stocks on Raydium — in one signature.");
     expect(src).toContain("You sign every transaction");
-    expect(src).toContain("normal Raydium position");
+    expect(src).not.toMatch(/estimated APR/);
+    expect(src).toContain("Self-custodial · Solana + Robinhood Chain");
+    expect(src).not.toContain("Raydium CLMM · Tokenized stocks");
     expect(src).toContain("Browse pools");
     expect(src).toContain("Already have a position? Manage it");
     expect(src).toMatch(/non-custodial/i);
-    expect(src).toContain("verifiable on Solscan");
+    expect(src).toContain("verifiable on Solscan and Blockscout");
     expect(src).not.toMatch(/audited|trustless|risk-free|fully automated|autonomous/i);
     // "trading" is allowed only as "trading fees" (approved option B subhead), never as a trading product.
     expect(src.replace(/trading fees/g, "")).not.toMatch(/\btrading\b/i);
@@ -77,9 +81,9 @@ describe("landing page copy and routes", () => {
 
   it("replaces the four-step technical flow with three user steps and drops engine jargon", () => {
     expect(src).toContain("Pick a pool");
-    expect(src).toContain("The app picks the best backtest range — you can override it.");
+    expect(src).toContain("On Solana the app suggests the best backtest range; you can override it.");
     expect(src).toContain("Review the preview");
-    expect(src).toContain("Sign once");
+    expect(src).toContain("Sign in your wallet");
     expect(src).not.toContain("The problem");
     expect(src).not.toContain("Three pillars");
     expect(src).not.toContain("Coming soon");
@@ -98,5 +102,27 @@ describe("landing page copy and routes", () => {
     expect(table).toContain("DOCS_ROUTES.feeApr");
     expect(table).toContain("usePoolRangeApr");
     expect(table).not.toContain("POOL_FEE_APR_24H_HELP");
+  });
+
+  it("covers both chains in the position, explorer and risk copy", () => {
+    expect(src).toContain("Verifiable on Solscan and Blockscout");
+    expect(src).toContain("Open it on Solscan (Solana) or Blockscout (Robinhood");
+    expect(src).toContain("a Raydium position NFT on");
+    expect(src).toContain("a Uniswap v4 position NFT on Robinhood Chain");
+    expect(src).not.toContain("A normal Raydium position NFT");
+    expect(src).not.toContain("Self-custodial Raydium CLMM tool");
+    // "One signature" is Solana-only: Robinhood Chain needs a one-time approval, a signature and a transaction.
+    expect(src).not.toMatch(/1 signature ·|You sign once|Sign once\./);
+    expect(src).toContain("Est. fee APR is not guaranteed.");
+    expect(src).not.toMatch(/guaranteed (yield|return|apr)|will earn|risk-free/i);
+  });
+
+  it("keeps public copy free of repo, location, education, prototype, Turnkey and 0-SOL wording", () => {
+    for (const file of [...copyFiles, "src/components/mcp-connection-card.tsx"]) {
+      const text = readFileSync(resolve(file), "utf8");
+      expect(text, file).not.toMatch(/\brepo(sitory)?\b|github|open[- ]source|sofinance-public/i);
+      expect(text, file).not.toMatch(/Turnkey|prototype|0[- ]SOL|zero SOL|fee wallet/i);
+      expect(text, file).not.toMatch(/\b(Taipei|Taiwan|university|student|education)\b/i);
+    }
   });
 });

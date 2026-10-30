@@ -167,6 +167,31 @@ describe("UnifiedPoolsPanel", () => {
     expect(container.querySelector("[role=alert]")!.textContent).toContain("Robinhood Chain pools could not be loaded right now");
     expect(shown()).toEqual(["solana:tsla"]);
   });
+
+  it("shows when the saved pool lists were written (fetchedAt), one UTC time when both chains match", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => ({ ok: true, json: async () => url.includes("uniswap-v4-rhc")
+      ? { pools: [rhcSummary], fetchedAt: "2026-10-30T11:02:56.939Z", snapshot: { stale: false } }
+      : url.startsWith("/api/rwa-pairs")
+        ? { pairs: [row("tsla", "TSLAx", "TSLA", "t1", "t2")], fetchedAt: "2026-10-30T11:02:46.419Z", freshness: { snapshotAt: "2026-10-30T11:02:46.419Z", stale: false } }
+        : { pairs: [] } })));
+    await render();
+    expect(container.querySelector("[data-testid=pools-updated]")!.textContent).toBe("Updated 2026-10-30 11:02 UTC");
+  });
+
+  it("names each chain's time when they differ, flags a stale list, and omits the line without times", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => ({ ok: true, json: async () => url.includes("uniswap-v4-rhc")
+      ? { pools: [rhcSummary], fetchedAt: "2026-10-29T09:00:00.000Z", snapshot: { stale: true } }
+      : { pairs: [row("tsla", "TSLAx", "TSLA", "t1", "t2")], fetchedAt: "2026-10-30T11:02:46.419Z" } })));
+    await render();
+    expect(container.querySelector("[data-testid=pools-updated]")!.textContent)
+      .toBe("Updated 2026-10-30 11:02 UTC (Solana) · 2026-10-29 09:00 UTC (Robinhood Chain) · Data delayed");
+
+    act(() => root.unmount());
+    root = createRoot(container);
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ pairs: [], pools: [] }) })));
+    await render();
+    expect(container.querySelector("[data-testid=pools-updated]")).toBeNull();
+  });
 });
 
 describe("UnifiedPoolsPanel cards (the RWA pairs card fields)", () => {

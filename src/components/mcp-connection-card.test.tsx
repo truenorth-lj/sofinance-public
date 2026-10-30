@@ -1,7 +1,9 @@
 import { createElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { McpConnectionCard } from "./mcp-connection-card";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { MCP_INSTALL_DIR_PLACEHOLDER, McpConnectionCard } from "./mcp-connection-card";
 import { WalletConnectionContext, type WalletConnection } from "./wallet-connection";
 
 const wallet = "11111111111111111111111111111111";
@@ -50,5 +52,13 @@ describe("McpConnectionCard", () => {
     expect(signMessage).not.toHaveBeenCalled();
 
     vi.unstubAllGlobals();
+  });
+
+  it("shows a generic local-install placeholder in the stdio (Option B) example, not a project checkout path", () => {
+    const src = readFileSync(resolve("src/components/mcp-connection-card.tsx"), "utf8");
+    expect(MCP_INSTALL_DIR_PLACEHOLDER).toBe("<folder of your local SoFinance MCP install>");
+    expect(src).toContain("cwd: MCP_INSTALL_DIR_PLACEHOLDER");
+    expect(src).not.toMatch(/absolute\/path|sofinance-public|\brepo\b|pnpm install/i);
+    expect(src).toContain("Requires your local SoFinance MCP install");
   });
 });

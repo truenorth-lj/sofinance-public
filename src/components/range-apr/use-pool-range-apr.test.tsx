@@ -65,4 +65,15 @@ describe("usePoolRangeApr", () => {
     expect(container.textContent).toBe("degraded");
     expect(fetchMock).toHaveBeenCalledTimes(5); // first load + 4 retries
   });
+
+  it("reads a Robinhood Chain pool from the protocol range-APR endpoint when asked", async () => {
+    function RhcProbe() {
+      const state = usePoolRangeApr("0xpool", undefined, "uniswap-v4-rhc");
+      return createElement("span", null, state.status);
+    }
+    await act(async () => { root.render(createElement(RhcProbe)); });
+    await advance(1);
+    expect(container.textContent).toBe("ready");
+    expect(fetchMock).toHaveBeenCalledWith("/api/protocol-pools/range-apr?protocol=uniswap-v4-rhc&poolId=0xpool", expect.anything());
+  });
 });
