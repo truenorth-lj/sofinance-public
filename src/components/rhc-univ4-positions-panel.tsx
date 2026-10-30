@@ -10,6 +10,7 @@ import {
   checkExitTx, EXIT_EXPIRED_MESSAGE, isDeadlinePassed, trackedPositionIds, trackPositionId, untrackPositionId,
 } from "@/lib/rhc-wallet/exit-execute";
 import { explorerTxUrl, requireRobinhoodChain, waitForReceipt, walletTxParams } from "@/lib/rhc-wallet/open-execute";
+import { rhcPairLabel } from "@/lib/unified-pools/rows";
 
 /**
  * Robinhood Chain (4663) Uniswap v4 positions + Close (PR7), inside the `/app/rhc` panel (same flags: page behind
@@ -189,7 +190,7 @@ export function RhcUniv4PositionsPanel({ wallet, signingEnabled, refreshKey = 0,
           : !p.ownedByUser ? `Owned by another wallet (${short(p.owner)}).` : !pool ? (held ? otherPoolNote(held) : "Not in a pool SoFinance supports.") : null;
         return <li key={l.tokenId} className="rounded-xl border border-white/12 p-3" data-position={l.tokenId} data-source={held ? "wallet" : "local"}>
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-sm text-cream">#{l.tokenId}{pool ? ` · ${pool.currency0.symbol} / ${pool.currency1.symbol}` : ""}{p ? ` · ticks ${p.tickLower} to ${p.tickUpper}` : ""}
+            <p className="text-sm text-cream">#{l.tokenId}{pool ? ` · ${rhcPairLabel(pool.poolId, " / ")}` : ""}{p ? ` · ticks ${p.tickLower} to ${p.tickUpper}` : ""}
               {held ? <span className="ml-2 rounded-full border border-white/15 px-1.5 py-0.5 align-middle text-[10px] text-smoke" data-testid="position-in-wallet">In your wallet</span> : null}</p>
             <div className="flex gap-2">
               {closable ? <button type="button" disabled={busy !== null} onClick={() => preview(l.tokenId)}

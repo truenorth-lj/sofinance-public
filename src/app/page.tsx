@@ -14,7 +14,7 @@ export const metadata = pageMetadata({
   title: "SoFinance: collect trading fees on your tokenized stocks",
   absoluteTitle: true,
   description:
-    "Pair two tokens of the same stock, like SPCX/SPCXx or MSTR/MSTRx, in one pool and collect trading fees. Review a 7-day backtested range first. Self-custodial.",
+    "Pair two tokens of the same stock, like SPCX/SPCXx, and collect trading fees. See the estimated fee APR first, plus a 7-day backtested range on Solana. Self-custodial.",
   path: "/",
 });
 

@@ -1,10 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { ArrowUpRight, LoaderCircle } from "lucide-react";
-import { OPEN_RANGE_UI_PRESETS } from "@sofinance/engine/open-range-presets";
 import {
   HIGHEST_RANGE_APR_7D_HELP,
   HOMEPAGE_APR_DOCS_LINK_LABEL,
@@ -13,24 +12,25 @@ import {
 import { cn } from "@/lib/cn";
 import {
   buildHomepagePools,
+  exactAprTitle,
+  formatAprPct,
   formatUsd,
-  selectHomepagePools,
+  homepageRows,
   updatedLabel,
   type HomepagePool,
   type HomepagePoolsSnapshot,
   type HomepageSolanaRow,
   type HomepageSourceTime,
 } from "@/lib/homepage-pools";
-import { isRhcApr7dEnabled, isRhcUniv4DiscoveryEnabled } from "@/lib/protocol-flags";
+import { isRhcUniv4DiscoveryEnabled } from "@/lib/protocol-flags";
 import { fetchRwaPairsList } from "@/lib/rwa-pairs-list";
 import { APP_ROUTES, DOCS_ROUTES, buildOpenPositionPath } from "@/lib/public-urls";
-import { formatAprPct as formatRangeAprPct } from "@/lib/range-apr/format";
-import { highestRangeSummary } from "@/lib/range-apr/preset-list";
-import { CHAIN_LABELS, PROTOCOL_LABELS, RISK_LABELS, type PoolChain } from "@/lib/unified-pools/model";
+import type { Apr7dState } from "@/lib/unified-pools/apr7d";
+import { CHAIN_LABELS, PROTOCOL_LABELS, RISK_LABELS, type PoolChain, type UnifiedPool } from "@/lib/unified-pools/model";
 import type { RhcPoolSummary } from "@/lib/unified-pools/rows";
 import { InfoTip } from "./info-tip";
 import { PairTokenIcons } from "./pair-token-icons";
-import { usePoolRangeApr } from "./range-apr/use-pool-range-apr";
+import { usePoolsApr7d } from "./unified-pools/use-pools-apr7d";
 import type { TokenIconMap } from "@/lib/token-icons/map";
 
 type PairsResponse = {
@@ -47,23 +47,22 @@ const chip =
   "inline-flex h-6 items-center whitespace-nowrap rounded-full px-2.5 font-data text-[10px] uppercase tracking-[0.14em]";
 
 /**
- * The pool's headline APR: the estimated fee APR of its highest-APR candidate range (7-day average), read from
- * the same cached range-APR payload and pure resolver as the /app/rwa-pairs card badge, so both always show the same
- * number (Raydium: `/api/pool-range-apr`; Robinhood Chain: `/api/protocol-pools/range-apr`). "…" while loading; "—"
- * when there is no estimate (error, degraded data, or the Robinhood Chain estimate is switched off).
+ * The pool's headline APR: the estimated fee APR of its highest-APR candidate range (7-day average), from the same
+ * `usePoolsApr7d` state as the /app/rwa-pairs card badge and formatted with the same formatter, so both show the same
+ * figure ("<0.01%" for a real but tiny APR, "0.00%" only for a true zero). "…" while loading; "—" when there is no
+ * estimate (error, degraded data, or the Robinhood Chain estimate is switched off).
  */
-function RangeAprValue({ pool }: { pool: HomepagePool }) {
-  const enabled = pool.chain === "solana" || isRhcApr7dEnabled();
-  const apr = usePoolRangeApr(enabled ? pool.poolAddress : null, undefined, pool.protocol);
-  const summary = apr.status === "ready" ? highestRangeSummary(OPEN_RANGE_UI_PRESETS, apr.data) : null;
-  const text = summary ? formatRangeAprPct(summary.aprPct, false) : apr.status === "loading" ? "…" : "—";
+function RangeAprValue({ state }: { state: Apr7dState | undefined }) {
+  const ready = state?.status === "ready" ? state : null;
+  const text = ready ? formatAprPct(ready.aprPct) : state?.status === "missing" ? "—" : "…";
   return (
     <span
       data-testid="homepage-apr"
-      data-apr-status={summary ? "ready" : apr.status === "loading" ? "loading" : "missing"}
+      data-apr-status={ready ? "ready" : state?.status === "missing" ? "missing" : "loading"}
+      title={ready ? exactAprTitle(ready.aprPct) : undefined}
       className={cn(
         "inline-flex h-8 min-w-[3.5rem] items-center justify-center whitespace-nowrap rounded-full px-3 text-base font-semibold tabular-nums",
-        summary ? "bg-lemon text-ink" : "bg-white/[0.06] text-cream/70",
+        ready ? "bg-lemon text-ink" : "bg-white/[0.06] text-cream/70",
       )}
     >
       {text}
@@ -158,6 +157,7 @@ export function HomepagePoolsTable({ initial }: { initial?: HomepagePoolsSnapsho
 }
 
 type ChainPools = Partial<Record<PoolChain, HomepagePool[]>>;
+const NO_POOLS: HomepagePool[] = [];
 
 function splitByChain(pools: readonly HomepagePool[] | undefined): ChainPools {
   const out: ChainPools = {};
@@ -240,8 +240,19 @@ export function HomepagePoolsView({
     };
   }, [load]);
 
-  const pools = byChain ? [...(byChain.solana ?? []), ...(byChain.robinhood ?? [])] : null;
-  const rows = pools ? selectHomepagePools(pools, highlightPool) : [];
+  const pools = useMemo(() => (byChain ? [...(byChain.solana ?? []), ...(byChain.robinhood ?? [])] : null), [byChain]);
+  // Same 7-day APR state as /app/rwa-pairs; until a pool's estimate loads, the server snapshot's value stands in, so
+  // the server HTML and the first client render pick the same pool per pair.
+  const apr = usePoolsApr7d(pools ?? NO_POOLS);
+  const serverApr = initial?.apr7d;
+  const apr7d = useCallback((pool: UnifiedPool) => {
+    const state = apr[pool.key];
+    if (state?.status === "ready") return state.aprPct;
+    if (state?.status === "missing") return null;
+    const saved = serverApr?.[pool.key];
+    return typeof saved === "number" && Number.isFinite(saved) ? saved : null;
+  }, [apr, serverApr]);
+  const rows = useMemo(() => (pools ? homepageRows(pools, apr7d, highlightPool) : []), [pools, apr7d, highlightPool]);
   const updatedText = updatedLabel(updated);
   const isHighlighted = (pool: HomepagePool) =>
     !!highlightPool && pool.poolAddress.toLowerCase() === highlightPool.trim().toLowerCase();
@@ -323,7 +334,7 @@ export function HomepagePoolsView({
                       <p className="min-w-0 font-data text-[10px] uppercase leading-4 tracking-[0.12em] text-smoke">
                         <AprLabel />
                       </p>
-                      <RangeAprValue pool={pool} />
+                      <RangeAprValue state={apr[pool.key]} />
                     </div>
                     <div className="mt-3">
                       <OpenPositionLink pool={pool} compact />
@@ -354,7 +365,7 @@ export function HomepagePoolsView({
                       <tr
                         key={pool.key}
                         data-pool={pool.poolAddress}
-                    data-chain={pool.chain}
+                        data-chain={pool.chain}
                         data-highlighted={highlighted ? "true" : undefined}
                         className={`border-b border-white/10 ${highlighted ? "bg-white/[0.04]" : ""}`}
                       >
@@ -363,7 +374,7 @@ export function HomepagePoolsView({
                         </td>
                         <td className="px-3 py-4 text-base font-semibold tabular-nums">{formatUsd(pool.tvlUsd)}</td>
                         <td className="px-3 py-4">
-                          <RangeAprValue pool={pool} />
+                          <RangeAprValue state={apr[pool.key]} />
                         </td>
                         <td className="px-3 py-4 text-right">
                           <OpenPositionLink pool={pool} />

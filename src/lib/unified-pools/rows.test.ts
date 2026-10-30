@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { UNIV4_RHC_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/uniswap-v4/constants";
-import { rhcPool, rhcPoolView, solanaPool, type RhcPoolSummary, type SolanaPoolRow } from "./rows";
+import { rhcPairLabel, rhcPool, rhcPoolView, solanaPool, type RhcPoolSummary, type SolanaPoolRow } from "./rows";
 
 const row: SolanaPoolRow = {
   poolAddress: "pool1", mintA: "mA", mintB: "mB", symbolA: "SPCXx", symbolB: "SPCX", nameA: "SpaceX xStock", nameB: "SpaceX",
@@ -31,6 +31,18 @@ describe("rhcPool", () => {
     expect(rhcPool(summary())).toMatchObject({
       chain: "robinhood", protocol: "uniswap-v4-rhc", pairLabel: "SPCX/SPCXon", tvlUsd: 5000, volume24hUsd: 700, poolFeeApr24hPct: 12, risks: [],
     });
+  });
+  it("lists every pair as Robinhood token / Ondo token, also when the pool's currency0 is the Ondo token", () => {
+    const mstr = UNIV4_RHC_ALLOWLISTED_POOLS.find((pool) => pool.currency1.symbol === "MSTR")!;
+    expect(mstr.currency0.issuer).toBe("ondo");
+    const pool = rhcPool(summary({ poolId: mstr.poolId }))!;
+    expect(pool).toMatchObject({ pairLabel: "MSTR/MSTRon", symbolA: "MSTR", symbolB: "MSTRon" });
+    expect(pool.mintA.toLowerCase()).toBe(mstr.currency1.address.toLowerCase());
+    expect(rhcPairLabel(mstr.poolId, " / ")).toBe("MSTR / MSTRon");
+    const labels = UNIV4_RHC_ALLOWLISTED_POOLS.map((spec) => rhcPairLabel(spec.poolId));
+    expect(labels).toEqual(expect.arrayContaining(["AAPL/AAPLon", "TSLA/TSLAon", "MSTR/MSTRon"]));
+    expect(labels.every((label) => /^([A-Z]+)\/\1on$/.test(label ?? ""))).toBe(true);
+    expect(rhcPairLabel("0xdead")).toBeNull();
   });
   it("drops delisted and unknown pools and flags discovery warnings", () => {
     expect(rhcPool(summary({ status: "delisted" } as Partial<RhcPoolSummary>))).toBeNull();

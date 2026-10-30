@@ -24,7 +24,7 @@ describe("landing page copy and routes", () => {
   it("leads with the option B hero (hold the stock, collect the fees), not a yield product", () => {
     expect(src).toContain("Hold the stock. Collect the fees.");
     expect(src).toContain(
-      "Your $TSLA, $MSTR or $SPCX tokens can collect trading fees from swaps in Raydium (Solana) and Uniswap v4 (Robinhood Chain) pools. We show the estimated fee APR and a 7-day backtest before you sign. Not guaranteed; risks apply.",
+      "Your $TSLA, $MSTR or $SPCX tokens can collect trading fees from swaps in Raydium (Solana) and Uniswap v4 (Robinhood Chain) pools. We show the estimated fee APR before you sign, plus a 7-day backtested range on Solana. Not guaranteed; risks apply.",
     );
     expect(src).not.toContain("LP tokenized stocks on Raydium — in one signature.");
     expect(src).toContain("You sign every transaction");
@@ -100,8 +100,29 @@ describe("landing page copy and routes", () => {
     expect(table).toContain("HOMEPAGE_POOL_APR_LABEL");
     expect(table).toContain("HIGHEST_RANGE_APR_7D_HELP");
     expect(table).toContain("DOCS_ROUTES.feeApr");
-    expect(table).toContain("usePoolRangeApr");
+    expect(table).toContain("usePoolsApr7d"); // the /app/rwa-pairs APR state
+    expect(table).not.toContain("@/lib/range-apr/format"); // the rounding formatter that showed tiny APRs as 0%
     expect(table).not.toContain("POOL_FEE_APR_24H_HELP");
+  });
+
+  it("claims the 7-day backtest for Solana only, in every public page, the metadata, docs, llms.txt and FAQ", () => {
+    const files = [
+      "src/components/landing-page.tsx",
+      "src/app/page.tsx",
+      "src/components/blog/blog-shell.tsx",
+      "src/app/docs/fee-apr/page.tsx",
+      "src/lib/llms-txt.ts",
+      "src/lib/faq.ts",
+      "content/blog/dex-evolution.md",
+    ];
+    for (const file of files) {
+      const text = readFileSync(resolve(file), "utf8").replace(/\s+/g, " ");
+      // Each sentence that mentions a backtest also names Solana (or Raydium, which is Solana-only here).
+      for (const sentence of text.split(/(?<=[.!?])\s/)) {
+        if (/backtest/i.test(sentence)) expect(sentence, `${file}: ${sentence}`).toMatch(/Solana|Raydium/);
+      }
+    }
+    expect(readFileSync(resolve("src/app/page.tsx"), "utf8")).toContain("plus a 7-day backtested range on Solana");
   });
 
   it("covers both chains in the position, explorer and risk copy", () => {

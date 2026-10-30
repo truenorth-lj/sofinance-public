@@ -2,15 +2,16 @@ import { renderToString } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { UNIV4_RHC_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/uniswap-v4/constants";
 import type { HomepageSolanaRow } from "@/lib/homepage-pools";
+import { payloadWithAprs } from "@/lib/range-apr/payload.fixture";
 import type { RhcPoolSummary } from "@/lib/unified-pools/rows";
 
 // Server HTML must carry pool names (crawlers and AI fetchers do not run the client fetch).
 vi.mock("server-only", () => ({}));
 vi.mock("next/cache", () => ({ unstable_cache: <T extends (...args: never[]) => unknown>(fn: T) => fn }));
 vi.mock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams() }));
-const mocks = vi.hoisted(() => ({ getRwaPairs: vi.fn(), getRhcPoolsSnapshot: vi.fn() }));
-vi.mock("@/lib/rwa-store", () => ({ getRwaPairs: mocks.getRwaPairs }));
-vi.mock("@/lib/rhc-snapshot", () => ({ getRhcPoolsSnapshot: mocks.getRhcPoolsSnapshot }));
+const mocks = vi.hoisted(() => ({ getRwaPairs: vi.fn(), getRhcPoolsSnapshot: vi.fn(), getPoolAprSnapshot: vi.fn(), getRhcAprSnapshot: vi.fn() }));
+vi.mock("@/lib/rwa-store", () => ({ getRwaPairs: mocks.getRwaPairs, getPoolAprSnapshot: mocks.getPoolAprSnapshot }));
+vi.mock("@/lib/rhc-snapshot", () => ({ getRhcPoolsSnapshot: mocks.getRhcPoolsSnapshot, getRhcAprSnapshot: mocks.getRhcAprSnapshot }));
 // Production flag values (RHC discovery and APR are code constants, on in production).
 vi.mock("@/lib/protocol-flags", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/protocol-flags")>()),
@@ -66,6 +67,10 @@ const storeResult = {
 beforeEach(() => {
   mocks.getRwaPairs.mockReset();
   mocks.getRhcPoolsSnapshot.mockReset();
+  mocks.getPoolAprSnapshot.mockReset();
+  mocks.getRhcAprSnapshot.mockReset();
+  mocks.getPoolAprSnapshot.mockRejectedValue(new Error("not tracked"));
+  mocks.getRhcAprSnapshot.mockRejectedValue(new Error("not tracked"));
 });
 
 describe("homepage server render", () => {
@@ -100,6 +105,29 @@ describe("homepage server render", () => {
     expect(html).not.toMatch(/\d+(\.\d+)?%\s*<\/span>|87\.5/);
     expect(html).toContain('"@type":"Organization"');
     expect(html).toContain('"@type":"WebSite"');
+  });
+
+  it("prerenders the /app/rwa-pairs pick for a duplicated pair (highest saved 7-day APR, not TVL) and the Robinhood / Ondo order", async () => {
+    mocks.getRwaPairs.mockResolvedValue({
+      ...storeResult,
+      pairs: [...storeResult.pairs, pool("SPCXx", "SPCX", 60_000, { poolAddress: "spcx-hot" })],
+    });
+    mocks.getRhcPoolsSnapshot.mockResolvedValue(rhcResult);
+    mocks.getPoolAprSnapshot.mockImplementation(async (poolId: string) =>
+      payloadWithAprs(poolId === "spcx-hot" ? { micro: 40, tight: 30, standard: 5, wide: 1 } : { micro: 2, tight: 1, standard: 1, wide: 1 }));
+    const { default: Home } = await import("./page");
+    const html = renderToString(await Home());
+    // Only pools that share a pair with another pool need their APR read.
+    expect(mocks.getPoolAprSnapshot.mock.calls.map(([id]) => id).sort()).toEqual(["spcx-hot", "spcx-pool"]);
+    expect(mocks.getRhcAprSnapshot).not.toHaveBeenCalled();
+    const cards = html.slice(html.indexOf('data-testid="homepage-pools-cards"'), html.indexOf('data-testid="homepage-pools-table"'));
+    const order = [...cards.matchAll(/data-pool="([^"]+)"/g)].map((match) => match[1]);
+    expect(order).toContain("spcx-hot");
+    expect(order).not.toContain("spcx-pool");
+    for (const name of ["MSTR/MSTRon", "AAPL/AAPLon", "TSLA/TSLAon"]) expect(html).toContain(name);
+    expect(html).not.toContain("MSTRon/MSTR");
+    // Still no APR figure in the cached HTML.
+    expect(html).not.toMatch(/\d+(\.\d+)?%\s*<\/span>/);
   });
 
   it("still prerenders the other chain when one chain's snapshot read fails", async () => {

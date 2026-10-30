@@ -250,7 +250,7 @@ describe("UnifiedPoolsPanel cards (the RWA pairs card fields)", () => {
     await render();
     const bare = card(`robinhood:${rhcSpec.poolId.toLowerCase()}`);
     expect(bare.querySelector("img")).toBeNull();
-    expect(bare.querySelector("[data-testid=pair-token-icons]")!.textContent).toMatch(/^SP/);
+    expect(bare.querySelector("[data-testid=pair-token-icons]")!.textContent).toBe("SS"); // first letters of SPCX / SPCXon
     await act(async () => { button("List").click(); });
     expect(container.querySelector("table img")).toBeNull();
   });

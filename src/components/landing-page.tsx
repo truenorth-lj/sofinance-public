@@ -118,7 +118,7 @@ export function LandingPage({ initialPools = null }: { initialPools?: HomepagePo
             </h1>
             <div className="mt-6 border-t border-ink/20 pt-5">
               <p className="max-w-2xl text-base leading-7 text-ink/70 sm:text-lg">
-                Your $TSLA, $MSTR or $SPCX tokens can collect trading fees from swaps in Raydium (Solana) and Uniswap v4 (Robinhood Chain) pools. We show the estimated fee APR and a 7-day backtest before you sign. Not guaranteed; risks apply.
+                Your $TSLA, $MSTR or $SPCX tokens can collect trading fees from swaps in Raydium (Solana) and Uniswap v4 (Robinhood Chain) pools. We show the estimated fee APR before you sign, plus a 7-day backtested range on Solana. Not guaranteed; risks apply.
               </p>
               <p className="mt-4 font-data text-[11px] uppercase tracking-[0.12em] text-ink/55">
                 0 keys on our servers · verifiable on Solscan and Blockscout
@@ -208,7 +208,7 @@ export function LandingPage({ initialPools = null }: { initialPools?: HomepagePo
               <ul className="grid gap-4 text-sm leading-6 text-smoke sm:grid-cols-2">
                 <li>
                   <strong className="font-medium text-cream">Est. fee APR is not guaranteed.</strong> It is
-                  recent pool fees divided by TVL, annualized (last 24h, or a 7-day backtest for a range) — not
+                  recent pool fees divided by TVL, annualized (last 24h; on Solana, also a 7-day backtest for a range) — not
                   LP return.
                 </li>
                 <li>

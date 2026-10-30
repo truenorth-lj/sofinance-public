@@ -13,8 +13,8 @@ export function BlogAppCta() {
         Open the app
       </h2>
       <p className="mt-4 max-w-xl text-sm leading-6 text-ink/70">
-        Browse same-stock pools, review a backtested range, and open a position with one wallet
-        signature.
+        Browse same-stock pools on Solana and Robinhood Chain, check the estimated fee APR (plus a
+        backtested range on Solana), and open a position from your own wallet.
       </p>
       <Link
         href={APP_ROUTES.home}
