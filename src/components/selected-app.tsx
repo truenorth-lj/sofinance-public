@@ -44,13 +44,15 @@ function calculateInputUsd(amount: string, priceUsd: number | null): string | nu
   }
 }
 
-export function SelectedApp({ initialView = "compound", initialMint = "", initialWallet = "", previewPoolId = "", extraPositions }: {
+export function SelectedApp({ initialView = "compound", initialMint = "", initialWallet = "", previewPoolId = "", extraPositions, onRescan }: {
   initialView?: "compound" | "performance" | "deposit" | "withdraw";
   initialMint?: string;
   initialWallet?: string;
   previewPoolId?: string;
   /** Other chains' positions, shown under the Solana ones in "My positions" (`/app`: Robinhood Chain). */
   extraPositions?: ReactNode;
+  /** Called by "Rescan wallet" alongside the Solana rescan, so the other chains' positions in "My positions" rescan too. */
+  onRescan?: () => void;
 } = {}) {
   const [withdrawBusy,setWithdrawBusy]=useState(false);
   const controller = useSelectedController();
@@ -127,6 +129,8 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
   const displayError = quoteErrorCode === JUPITER_NO_ROUTE_CODE && noRouteOutput
     ? formatSelectedNoRouteMessage(inputLabel, poolLabel(noRouteOutput))
     : error;
+  // "Rescan wallet": the Solana scan (unchanged) plus, on /app, the Robinhood Chain scan via the parent's refresh counter.
+  const rescan = () => { if (wallet) void refreshDiscovery(); onRescan?.(); };
   return <div className="min-h-screen bg-canvas text-cream">
     <div className="relative mx-auto max-w-[1280px] px-3 pb-32 pt-3 sm:px-5 sm:pt-5">
       <InkNav wallet={wallet} connected={connected} onConnect={connect} onDisconnect={disconnect} />
@@ -136,7 +140,7 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
 
       <section aria-labelledby="position-heading" className="flex flex-col rounded-[28px] border border-white/12 bg-char p-6 sm:p-9 lg:col-span-5">
         <div className="flex flex-1 flex-col justify-center">
-        <div className="flex items-center justify-between gap-3"><h2 id="position-heading" className="text-base font-semibold text-cream">My positions</h2><button type="button" disabled={!wallet || busy} onClick={() => void refreshDiscovery()} className="text-xs font-semibold text-cream/80 transition-opacity hover:opacity-70 disabled:opacity-40">Rescan wallet</button></div>
+        <div className="flex items-center justify-between gap-3"><h2 id="position-heading" className="text-base font-semibold text-cream">My positions</h2><button type="button" disabled={(!wallet && !(extraPositions && onRescan)) || busy} onClick={rescan} className="text-xs font-semibold text-cream/80 transition-opacity hover:opacity-70 disabled:opacity-40">Rescan wallet</button></div>
         {extraPositions && <p className="mt-3 text-sm font-semibold text-cream">Solana</p>}
         {connected ? <PositionSelect
           id="position"
