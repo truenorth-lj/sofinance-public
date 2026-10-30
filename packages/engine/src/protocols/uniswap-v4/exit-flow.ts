@@ -64,9 +64,9 @@ export function decodePositionInfo(info: bigint): { tickLower: number; tickUpper
   return { hasSubscriber: (info & 0xffn) !== 0n, tickLower: int24(info >> 8n), tickUpper: int24(info >> 32n) };
 }
 
-type PositionRead = { tokenId: bigint; owner: Address; liquidity: bigint; tickLower: number; tickUpper: number; pool: Univ4AllowlistedPool | null };
+export type PositionRead = { tokenId: bigint; owner: Address; liquidity: bigint; tickLower: number; tickUpper: number; pool: Univ4AllowlistedPool | null };
 
-function poolFor(key: { currency0: Address; currency1: Address; fee: number; tickSpacing: number; hooks: Address }): Univ4AllowlistedPool | null {
+export function poolFor(key: { currency0: Address; currency1: Address; fee: number; tickSpacing: number; hooks: Address }): Univ4AllowlistedPool | null {
   return UNIV4_RHC_ALLOWLISTED_POOLS.find(p => isAddressEqual(key.currency0, p.currency0.address) && isAddressEqual(key.currency1, p.currency1.address)
     && key.fee === p.fee && key.tickSpacing === p.tickSpacing && isAddressEqual(key.hooks, p.hooks)) ?? null;
 }
@@ -99,20 +99,20 @@ function isRevert(error: unknown): boolean {
   return false;
 }
 
-const view = (p: PositionRead, user: Address): RhcPositionView => ({
+export const positionView = (p: PositionRead, user: Address): RhcPositionView => ({
   tokenId: p.tokenId.toString(), owner: p.owner, ownedByUser: isAddressEqual(p.owner, user), liquidity: p.liquidity.toString(),
   tickLower: p.tickLower, tickUpper: p.tickUpper, poolId: p.pool?.poolId ?? null, baseSymbol: p.pool?.baseSymbol ?? null,
 });
 
 export type PositionLookup = { tokenId: string; position: RhcPositionView | null; error?: "not-found" | "rpc" };
 
-/** Read positions by NFT id (v4 POSM is not enumerable and RHC RPC log scans are not viable; the client supplies ids). */
+/** Read positions by NFT id (ids opened in this browser or added by hand; wallet holdings come from `position-scan.ts`). */
 export async function lookupPositions(client: PublicClient, user: Address, tokenIds: bigint[]): Promise<PositionLookup[]> {
   const ids = [...new Set(tokenIds.map(String))].slice(0, MAX_POSITION_LOOKUP).map(BigInt);
   return Promise.all(ids.map(async (id): Promise<PositionLookup> => {
     try {
       const p = await readPosition(client, id);
-      return p ? { tokenId: id.toString(), position: view(p, user) } : { tokenId: id.toString(), position: null, error: "not-found" };
+      return p ? { tokenId: id.toString(), position: positionView(p, user) } : { tokenId: id.toString(), position: null, error: "not-found" };
     } catch { return { tokenId: id.toString(), position: null, error: "rpc" }; }
   }));
 }
@@ -215,7 +215,7 @@ export async function prepareExit(deps: ExitFlowDeps, req: { user: Address; toke
   if (balance < maxCost) return failed("insufficient-gas", INSUFFICIENT_GAS_MESSAGE(maxCost, balance));
   return {
     state: "ready",
-    position: view(pos, user),
+    position: positionView(pos, user),
     expected: { amount0: a1.amount0.toString(), amount1: a1.amount1.toString() },
     min: { amount0: amount0Min.toString(), amount1: amount1Min.toString() },
     slippageBps: Number(EXIT_SLIPPAGE_BPS),

@@ -2,6 +2,7 @@
 
 import { UNIV4_RHC_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/uniswap-v4/constants";
 import type { ExitFlowResult, PositionLookup, RhcPositionView } from "@sofinance/engine/protocols/uniswap-v4/exit-flow";
+import type { ScannedPosition } from "@sofinance/engine/protocols/uniswap-v4/position-scan";
 import { useEffect, useState } from "react";
 import { formatUnits } from "viem";
 import { type Eip1193Provider, guardedWalletRequest } from "@/lib/rhc-wallet/eip1193";
@@ -13,8 +14,9 @@ import { explorerTxUrl, requireRobinhoodChain, waitForReceipt, walletTxParams } 
 /**
  * Robinhood Chain (4663) Uniswap v4 positions + Close (PR7), inside the `/app/rhc` panel (same flags: page behind
  * `RHC_UNIV4_TRADING_ENABLED`, server build behind `RHC_UNIV4_TX_BUILD_ENABLED`, wallet send behind
- * `RHC_UNIV4_WALLET_SIGNING_ENABLED`). Positions are read by NFT id (opened in this browser or added by hand; the v4
- * PositionManager is not enumerable). Close = server prepare (owner + allowlist checks, simulation from the owner) →
+ * `RHC_UNIV4_WALLET_SIGNING_ENABLED`). Positions come from the wallet's on-chain holdings (server scan of the
+ * PositionManager's Transfer logs, `GET /api/rhc-univ4-positions`), plus, deduped, NFT ids opened in this browser or
+ * added by hand (still shown when the scan fails). Close = server prepare (owner + allowlist checks, simulation from the owner) →
  * client guards (4663, pinned PositionManager, sender, value 0, re-decoded actions) → one `eth_sendTransaction` →
  * receipt → refresh positions and balances. No fee on exit.
  */
@@ -70,10 +72,28 @@ async function fetchPositions(address: string, ids: string[]): Promise<{ lookups
   } catch (e) { return { lookups: [], error: e instanceof Error ? e.message : "Could not load positions" }; }
 }
 
+type Scan = { positions: ScannedPosition[]; error: string | null };
+const SCAN_ERROR = "Couldn't check this wallet's Robinhood Chain positions right now. Positions saved in this browser and added by number are still shown.";
+
+async function fetchScan(address: string, fresh = false): Promise<Scan> {
+  try {
+    const response = await fetch(`/api/rhc-univ4-positions?wallet=${address}${fresh ? "&fresh=1" : ""}`, { cache: "no-store" });
+    const json = await response.json().catch(() => null) as { state?: string; positions?: ScannedPosition[]; error?: string } | null;
+    if (response.ok && json?.state === "scan" && Array.isArray(json.positions)) return { positions: json.positions, error: null };
+    return { positions: [], error: response.status === 429 ? "Too many checks from this browser. Try again in a minute." : json?.error || SCAN_ERROR };
+  } catch { return { positions: [], error: SCAN_ERROR }; }
+}
+
+/** A held position outside SoFinance's allowlist: labelled, view only. */
+const otherPoolNote = (s: ScannedPosition | undefined) => s?.stablePair
+  ? "StablePair pool that SoFinance does not list yet: view only."
+  : "Another Uniswap v4 pool, not supported by SoFinance: view only.";
+
 export function RhcUniv4PositionsPanel({ wallet, signingEnabled, refreshKey = 0, onChanged, receiptPoll }: {
   wallet: Wallet | null; signingEnabled: boolean; refreshKey?: number; onChanged?: () => void; receiptPoll?: { intervalMs?: number; timeoutMs?: number };
 }) {
   const [lookups, setLookups] = useState<PositionLookup[]>([]);
+  const [scan, setScan] = useState<Scan | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [addId, setAddId] = useState("");
@@ -87,15 +107,16 @@ export function RhcUniv4PositionsPanel({ wallet, signingEnabled, refreshKey = 0,
   const load = async (ids?: string[]) => {
     if (!address) return;
     setLoading(true);
-    const r = await fetchPositions(address, ids ?? trackedPositionIds(address));
-    setLookups(r.lookups); setLoadError(r.error); setLoading(false);
+    const [r, s] = await Promise.all([fetchPositions(address, ids ?? trackedPositionIds(address)), ids ? Promise.resolve(null) : fetchScan(address, true)]);
+    setLookups(r.lookups); setLoadError(r.error); if (s) setScan(s); setLoading(false);
   };
 
   useEffect(() => {
     if (!address) return;
     let live = true;
     void fetchPositions(address, trackedPositionIds(address)).then(r => { if (live) { setLookups(r.lookups); setLoadError(r.error); } });
-    return () => { live = false; };
+    void fetchScan(address, refreshKey > 0).then(s => { if (live) setScan(s); });
+    return () => { live = false; setScan(null); };
   }, [address, refreshKey]);
 
   if (!wallet) return null;
@@ -139,31 +160,41 @@ export function RhcUniv4PositionsPanel({ wallet, signingEnabled, refreshKey = 0,
 
   const symbols = (p: RhcPositionView | null): [string, string] => { const pool = p && poolOf(p); return pool ? [pool.currency0.symbol, pool.currency1.symbol] : ["token0", "token1"]; };
 
+  // Wallet holdings first (newest NFT first), then local records the scan did not find (deduped by NFT id).
+  const scanned = scan?.positions ?? [];
+  const scannedById = new Map(scanned.map(s => [s.tokenId, s]));
+  const rows: PositionLookup[] = [...scanned, ...lookups.filter(l => !scannedById.has(l.tokenId))];
+  const scanning = scan === null;
+
   return <section className="mt-6 border-t border-white/12 pt-4" aria-label="Your Robinhood Chain positions" data-testid="positions-panel">
     <p className="text-sm font-semibold text-cream">Your positions</p>
-    <p className="text-xs text-smoke">Positions opened in this browser show up here. Opened elsewhere? Add the position NFT number.</p>
+    <p className="text-xs text-smoke">Uniswap v4 positions this wallet holds on Robinhood Chain show up here automatically. Missing one? Add its position NFT number.</p>
     <div className="mt-2 flex flex-wrap gap-2">
       <input inputMode="numeric" value={addId} onChange={e => setAddId(e.target.value)} placeholder="Position NFT #" aria-label="Position NFT number"
         className="w-40 rounded-lg bg-black/30 p-2 text-sm text-cream" />
       <button type="button" onClick={add} className="rounded-lg border border-white/25 px-3 py-1.5 text-xs font-semibold text-cream">Add</button>
     </div>
     {loading ? <p role="status" className="mt-2 text-xs text-smoke">Loading positions…</p> : null}
+    {scanning && !loading ? <p role="status" className="mt-2 text-xs text-smoke" data-testid="positions-scanning">Checking this wallet&apos;s Robinhood Chain positions…</p> : null}
+    {scan?.error ? <p className="mt-2 text-xs text-amber-200/90" data-testid="positions-scan-error">{scan.error}</p> : null}
     {loadError ? <p className="mt-2 text-xs text-red-200" data-testid="positions-error">{loadError}</p> : null}
-    {!loading && !lookups.length && !loadError ? <p className="mt-2 text-xs text-smoke" data-testid="positions-empty">No positions yet.</p> : null}
+    {!loading && !scanning && !rows.length && !loadError && !scan?.error ? <p className="mt-2 text-xs text-smoke" data-testid="positions-empty">No Robinhood Chain positions in this wallet.</p> : null}
     <ul className="mt-3 space-y-2">
-      {lookups.map(l => {
+      {rows.map(l => {
         const p = l.position;
         const pool = p ? poolOf(p) : null;
+        const held = scannedById.get(l.tokenId);
         const closable = Boolean(p && p.ownedByUser && pool);
         const note = !p ? (l.error === "rpc" ? "Could not read this position right now." : "Closed (or never existed).")
-          : !p.ownedByUser ? `Owned by another wallet (${short(p.owner)}).` : !pool ? "Not in a pool SoFinance supports." : null;
-        return <li key={l.tokenId} className="rounded-xl border border-white/12 p-3" data-position={l.tokenId}>
+          : !p.ownedByUser ? `Owned by another wallet (${short(p.owner)}).` : !pool ? (held ? otherPoolNote(held) : "Not in a pool SoFinance supports.") : null;
+        return <li key={l.tokenId} className="rounded-xl border border-white/12 p-3" data-position={l.tokenId} data-source={held ? "wallet" : "local"}>
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-sm text-cream">#{l.tokenId}{pool ? ` · ${pool.currency0.symbol} / ${pool.currency1.symbol}` : ""}{p ? ` · ticks ${p.tickLower} to ${p.tickUpper}` : ""}</p>
+            <p className="text-sm text-cream">#{l.tokenId}{pool ? ` · ${pool.currency0.symbol} / ${pool.currency1.symbol}` : ""}{p ? ` · ticks ${p.tickLower} to ${p.tickUpper}` : ""}
+              {held ? <span className="ml-2 rounded-full border border-white/15 px-1.5 py-0.5 align-middle text-[10px] text-smoke" data-testid="position-in-wallet">In your wallet</span> : null}</p>
             <div className="flex gap-2">
               {closable ? <button type="button" disabled={busy !== null} onClick={() => preview(l.tokenId)}
                 className="rounded-lg border border-white/25 px-3 py-1.5 text-xs font-semibold text-cream disabled:opacity-40">{busy === l.tokenId && !ready ? "Simulating…" : "Close"}</button> : null}
-              {!p || !p.ownedByUser ? <button type="button" onClick={() => remove(l.tokenId)} className="text-xs text-smoke underline">Remove</button> : null}
+              {!held && (!p || !p.ownedByUser) ? <button type="button" onClick={() => remove(l.tokenId)} className="text-xs text-smoke underline">Remove</button> : null}
             </div>
           </div>
           {note ? <p className="text-xs text-smoke">{note}</p> : null}
@@ -180,7 +211,7 @@ export function RhcUniv4PositionsPanel({ wallet, signingEnabled, refreshKey = 0,
           {sent && sent.tokenId === l.tokenId ? <CloseStatus sent={sent} symbols={symbols(p)} /> : null}
         </li>;
       })}
-      {sent && !lookups.some(l => l.tokenId === sent.tokenId) ? <li><CloseStatus sent={sent} symbols={["SPCX", "SPCXon"]} /></li> : null}
+      {sent && !rows.some(l => l.tokenId === sent.tokenId) ? <li><CloseStatus sent={sent} symbols={["SPCX", "SPCXon"]} /></li> : null}
     </ul>
   </section>;
 }

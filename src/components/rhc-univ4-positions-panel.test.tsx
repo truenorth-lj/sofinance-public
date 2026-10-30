@@ -37,8 +37,9 @@ const button = (label: string) => [...container.querySelectorAll("button")].find
 const tick = (ms = 20) => act(async () => { await new Promise(r => setTimeout(r, ms)); });
 
 async function mount({ positions = [{ tokenId: ID, position: position() }] as unknown[], prepare = ready() as unknown, receipt = { status: "0x1", logs: [] } as unknown,
-  send = (): unknown => HASH, signingEnabled = true } = {}) {
-  localStorage.setItem(`sofi:rhc:positions:${USER}`, JSON.stringify([ID]));
+  send = (): unknown => HASH, signingEnabled = true, local = [ID] as string[],
+  scan = { status: 200, json: { state: "scan", wallet: USER, positions: [], scannedToBlock: "101764305", checkedAt: 0, rpcCalls: 0 } as unknown } } = {}) {
+  if (local.length) localStorage.setItem(`sofi:rhc:positions:${USER}`, JSON.stringify(local));
   const calls: { method: string; params?: unknown }[] = [];
   const provider = { request: vi.fn(async ({ method, params }: { method: string; params?: unknown }) => {
     calls.push({ method, params });
@@ -47,7 +48,8 @@ async function mount({ positions = [{ tokenId: ID, position: position() }] as un
     if (method === "eth_getTransactionReceipt") return receipt;
     return null;
   }) };
-  const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+  const fetchMock = vi.fn(async (url: string, init: RequestInit) => {
+    if (url.startsWith("/api/rhc-univ4-positions")) return { ok: scan.status === 200, status: scan.status, json: async () => scan.json };
     const body = JSON.parse(init.body as string);
     const json = body.action === "positions" ? { state: "positions", positions } : prepare;
     return { ok: true, status: (json as { state?: string }).state === "failed" ? 422 : 200, json: async () => json };
@@ -56,10 +58,11 @@ async function mount({ positions = [{ tokenId: ID, position: position() }] as un
   const onChanged = vi.fn();
   await act(async () => { root.render(createElement(RhcUniv4PositionsPanel, { wallet: { provider, address: USER }, signingEnabled, onChanged, receiptPoll: { intervalMs: 1, timeoutMs: 50 } })); });
   await tick();
-  const bodies = () => fetchMock.mock.calls.map(c => JSON.parse((c[1] as RequestInit).body as string));
+  const bodies = () => fetchMock.mock.calls.filter(c => c[0] === "/api/rhc-univ4-exit").map(c => JSON.parse((c[1] as RequestInit).body as string));
+  const scans = () => fetchMock.mock.calls.map(c => c[0] as string).filter(u => u.startsWith("/api/rhc-univ4-positions"));
   const sends = () => calls.filter(c => c.method === "eth_sendTransaction");
   const alert = () => container.querySelector("[role=alert]")?.textContent ?? null;
-  return { calls, bodies, sends, alert, onChanged };
+  return { calls, bodies, scans, sends, alert, onChanged };
 }
 
 describe("RhcUniv4PositionsPanel", () => {
@@ -174,5 +177,74 @@ describe("RhcUniv4PositionsPanel", () => {
     await act(async () => { button("Add")!.click(); });
     await tick();
     expect(p.bodies().at(-1)).toEqual({ action: "positions", user: USER, tokenIds: ["77", ID] });
+  });
+
+  describe("wallet holdings scan", () => {
+    const HELD = "4072237";
+    const held = (over: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) => ({
+      tokenId: HELD, position: position({ tokenId: HELD, liquidity: "23244502727111678263", tickLower: -21, tickUpper: 19, ...over }),
+      hooks: "0xd061f665d1c4816787FCeAa168FA66c59d3Abcc0", stablePair: true, ...extra,
+    });
+    const scanOk = (positions: unknown[]) => ({ status: 200, json: { state: "scan", wallet: USER, positions, scannedToBlock: "101764305", checkedAt: 0, rpcCalls: 13 } });
+
+    it("shows a position the wallet holds with no local record (found by the scan), closable", async () => {
+      const p = await mount({ local: [], positions: [], scan: scanOk([held()]) });
+      expect(p.scans()).toEqual([`/api/rhc-univ4-positions?wallet=${USER}`]);
+      expect(p.bodies()).toEqual([]);
+      const row = container.querySelector(`[data-position="${HELD}"]`)!;
+      expect(row.getAttribute("data-source")).toBe("wallet");
+      expect(row.textContent).toContain("#4072237 · SPCX / SPCXon · ticks -21 to 19");
+      expect(row.textContent).toContain("In your wallet");
+      expect(button("Close")).toBeDefined();
+      expect(button("Remove")).toBeUndefined();
+      expect(container.querySelector("[data-testid=positions-empty]")).toBeNull();
+      expect(text()).toContain("Missing one? Add its position NFT number.");
+    });
+
+    it("dedupes a local record the scan also found", async () => {
+      await mount({ local: [HELD], positions: [{ tokenId: HELD, position: held().position }], scan: scanOk([held()]) });
+      expect(container.querySelectorAll(`[data-position="${HELD}"]`)).toHaveLength(1);
+      expect(container.querySelector(`[data-position="${HELD}"]`)!.getAttribute("data-source")).toBe("wallet");
+    });
+
+    it("keeps local records and the manual entry, with a plain error, when the scan fails", async () => {
+      const message = "Couldn't check this wallet's Robinhood Chain positions right now. Positions saved in this browser and added by number are still shown.";
+      const p = await mount({ scan: { status: 503, json: { error: message, code: "rpc_unavailable" } } });
+      expect(container.querySelector("[data-testid=positions-scan-error]")!.textContent).toBe(message);
+      expect(container.querySelector(`[data-position="${ID}"]`)!.getAttribute("data-source")).toBe("local");
+      expect(container.querySelector("input[aria-label='Position NFT number']")).not.toBeNull();
+      expect(container.querySelector("[data-testid=positions-empty]")).toBeNull();
+      expect(p.alert()).toBeNull();
+    });
+
+    it("says the scan is too frequent on 429 and a network failure in plain words", async () => {
+      await mount({ local: [], positions: [], scan: { status: 429, json: { error: "Too many requests. Please wait a minute." } } });
+      expect(container.querySelector("[data-testid=positions-scan-error]")!.textContent).toBe("Too many checks from this browser. Try again in a minute.");
+    });
+
+    it("labels held positions outside the allowlist and offers no Close", async () => {
+      await mount({ local: [], positions: [], scan: scanOk([
+        held({ tokenId: "11", poolId: null, baseSymbol: null }, { tokenId: "11" }),
+        held({ tokenId: "12", poolId: null, baseSymbol: null }, { tokenId: "12", hooks: "0x0000000000000000000000000000000000000000", stablePair: false }),
+      ]) });
+      expect(button("Close")).toBeUndefined();
+      expect(container.querySelector('[data-position="11"]')!.textContent).toContain("StablePair pool that SoFinance does not list yet: view only.");
+      expect(container.querySelector('[data-position="12"]')!.textContent).toContain("Another Uniswap v4 pool, not supported by SoFinance: view only.");
+    });
+
+    it("says the wallet has none only after the scan answered empty", async () => {
+      await mount({ local: [], positions: [] });
+      expect(container.querySelector("[data-testid=positions-empty]")!.textContent).toBe("No Robinhood Chain positions in this wallet.");
+    });
+
+    it("rescans (fresh) after a close", async () => {
+      const p = await mount({ local: [], positions: [], scan: scanOk([held({ tokenId: ID }, { tokenId: ID })]) });
+      await act(async () => { button("Close")!.click(); });
+      await tick();
+      await act(async () => { button("Confirm close in wallet")!.click(); });
+      await tick(50);
+      expect(p.sends()).toHaveLength(1);
+      expect(p.scans()).toEqual([`/api/rhc-univ4-positions?wallet=${USER}`, `/api/rhc-univ4-positions?wallet=${USER}&fresh=1`]);
+    });
   });
 });
