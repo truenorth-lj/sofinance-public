@@ -239,6 +239,50 @@ describe("compound signature and recovery persistence", () => {
     expect(loadCompoundReceipts(storage, first.wallet).receipts.map((item) => item.sourceSignature)).toEqual([later.signature]);
   });
 
+  describe.each(["source signature", "legacy addresses"])("recovery receipt readback by %s", (identity) => {
+    it.each(["write throws", "silent drop", "readback throws", "readback differs"])("rejects %s and permits idempotent cleanup retry", (fault) => {
+      const storage = memoryStorage(), first = attempt();
+      const later = attempt(first.wallet);
+      persistCompoundAttempt(storage, first);
+      persistCompoundAttempt(storage, later);
+      const recovery: CompoundAttempt = { ...first, kind: "recovery",
+        sourceSignature: identity === "source signature" ? first.signature : undefined,
+        summary: { operation: "recovery", simulated: true, wallet: first.wallet,
+          compoundAccounts: first.summary.compoundAccounts.map((item) => ({ ...item, amount: "1", decimals: 6,
+            destination: key(), sourceLamports: item.rentLamports })),
+          feeLamports: 5_000, sizeBytes: 400, blockhash: key(), lastValidBlockHeight: 123,
+          expiresAt: Date.now() + 30_000 } };
+      persistCompoundAttempt(storage, recovery);
+      const receiptsKey = compoundReceiptsKey(first.wallet);
+      const before = storage.getItem(receiptsKey);
+      const savedAttempt = storage.getItem(compoundAttemptKey(first.wallet));
+      let wrote = false;
+      const faulty = {
+        getItem: (name: string) => {
+          if (name === receiptsKey && wrote) {
+            if (fault === "readback throws") throw new Error("synthetic read failure");
+            if (fault === "readback differs") return before;
+          }
+          return storage.getItem(name);
+        },
+        setItem: (name: string, value: string) => {
+          if (fault === "write throws") throw new Error("synthetic quota");
+          wrote = true;
+          if (fault !== "silent drop") storage.setItem(name, value);
+        },
+      };
+      expect(() => removeRecoveredReceipt(faulty, recovery)).toThrow();
+      if (fault === "write throws" || fault === "silent drop") expect(storage.getItem(receiptsKey)).toBe(before);
+      expect(storage.getItem(compoundAttemptKey(first.wallet))).toBe(savedAttempt);
+      removeRecoveredReceipt(storage, recovery);
+      expect(loadCompoundReceipts(storage, first.wallet).receipts.map((item) => item.sourceSignature)).toEqual([later.signature]);
+      const cleaned = storage.getItem(receiptsKey);
+      removeRecoveredReceipt(storage, recovery);
+      expect(storage.getItem(receiptsKey)).toBe(cleaned);
+      expect(storage.getItem(compoundAttemptKey(first.wallet))).toBe(savedAttempt);
+    });
+  });
+
   it("detects a wallet mutating the supplied transaction, using the pre-sign snapshot", () => {
     const owner = Keypair.generate();
     const transaction = new VersionedTransaction(new TransactionMessage({ payerKey: owner.publicKey,

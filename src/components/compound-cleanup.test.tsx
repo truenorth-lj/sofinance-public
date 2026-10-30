@@ -6,12 +6,12 @@ import { PublicKey, SystemProgram, TransactionMessage, VersionedTransaction } fr
 import bs58 from "bs58";
 import { useCompoundController } from "./use-compound-controller";
 import { CompoundPanel } from "./compound-panel";
-import { compoundAttemptKey, compoundReceiptsKey, persistCompoundAttempt, persistCompoundReceipt, type CompoundReceipt } from "@sofinance/engine/compound-attempt";
+import { compoundAttemptKey, compoundReceiptsKey, persistCompoundAttempt, persistCompoundReceipt, type CompoundAttempt, type CompoundReceipt } from "@sofinance/engine/compound-attempt";
 import { persistCleanupBatch } from "@/lib/compound-cleanup-batch-attempt";
 import { compoundHistoryFixture } from "@/lib/test-support/compound-history-fixture";
 import { testKeypair } from "@/lib/test-support/send-fixtures";
 
-const mocks = vi.hoisted(() => ({ sign: vi.fn() }));
+const mocks = vi.hoisted(() => ({ sign: vi.fn(), confirmed: vi.fn() }));
 vi.mock("./wallet-connection", () => ({ useWalletConnection: () => ({ address: wallet, connected: !!wallet, signTransaction: mocks.sign }) }));
 vi.mock("./use-sol-usdc-price", () => ({ useSolUsdcPrices: () => ({ rate: null, usdcUsd: null }) }));
 let wallet: string | undefined;
@@ -24,7 +24,7 @@ let confirmationStatus: "success" | "pending" | "manual-review" | "failed";
 let broadcastCount: number;
 let broadcastSignatures: string[];
 function Harness() {
-  const value = useCompoundController({ wallet, positionMint, externalBlocked: false });
+  const value = useCompoundController({ wallet, positionMint, externalBlocked: false, onConfirmed: mocks.confirmed });
   useLayoutEffect(() => { controller = value; });
   return createElement(CompoundPanel, { controller: value });
 }
@@ -47,6 +47,7 @@ beforeEach(() => {
   vi.useFakeTimers(); vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true); window.localStorage.clear();
   fixture = compoundHistoryFixture(); wallet = fixture.wallet; positionMint = undefined; broadcastCount = 0; broadcastSignatures = [];
   confirmationStatus = "success";
+  mocks.confirmed.mockReset();
   mocks.sign.mockReset(); mocks.sign.mockImplementation(async (tx: VersionedTransaction) => { tx.sign([testKeypair(1)]); return tx; });
   fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     const body = JSON.parse(String(init?.body || "{}"));
@@ -71,6 +72,78 @@ beforeEach(() => {
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe("wallet-wide leftover yield cleanup", () => {
+  it.each(["write throws", "silent drop", "readback throws", "readback differs"])("keeps recovery cleanup pending after %s and rechecks without signing", async (fault) => {
+    const source = receipt(), unrelated = receipt(1);
+    persistCompoundReceipt(localStorage, source);
+    persistCompoundReceipt(localStorage, unrelated);
+    const recovery: CompoundAttempt = { ...fixture.attempt, kind: "recovery", sourceSignature: source.sourceSignature,
+      summary: { ...prepared(source).summary, operation: "recovery", simulated: true } };
+    persistCompoundAttempt(localStorage, recovery);
+    confirmationStatus = "pending";
+    await render();
+    const recoverBeforeFailure = controller.recover;
+    const cleanupAllBeforeFailure = controller.cleanupAll;
+    const receiptsKey = compoundReceiptsKey(fixture.wallet);
+    const before = localStorage.getItem(receiptsKey);
+    const savedAttempt = localStorage.getItem(compoundAttemptKey(fixture.wallet));
+    const storage = localStorage;
+    let wrote = false, faultWrites = 0;
+    vi.stubGlobal("localStorage", new Proxy(storage, {
+      get(target, property) {
+        if (property === "getItem") return (name: string) => {
+          if (name === receiptsKey && wrote) {
+            if (fault === "readback throws") throw new Error("synthetic read failure");
+            if (fault === "readback differs") return before;
+          }
+          return target.getItem(name);
+        };
+        if (property === "setItem") return (name: string, value: string) => {
+          if (name === receiptsKey) {
+            faultWrites++;
+            if (fault === "write throws") throw new Error("synthetic quota");
+            wrote = true;
+            if (fault === "silent drop") return;
+          }
+          target.setItem(name, value);
+        };
+        return Reflect.get(target, property);
+      },
+    }));
+    confirmationStatus = "success";
+    await act(async () => { await controller.retryReconcile(); });
+    expect(faultWrites).toBe(1);
+    expect(controller.attemptStatus).toBe("pending");
+    expect(controller.confirmation).toMatchObject({ signature: recovery.signature, status: "success", chainStatus: "success" });
+    expect(controller.receipts).toEqual([source, unrelated]);
+    expect(mocks.confirmed).not.toHaveBeenCalled();
+    expect(storage.getItem(compoundAttemptKey(fixture.wallet))).toBe(savedAttempt);
+    if (fault === "write throws" || fault === "silent drop") expect(storage.getItem(receiptsKey)).toBe(before);
+    vi.stubGlobal("localStorage", storage);
+    // A restored storage backend does not authorize a new transaction before rechecking the original.
+    mocks.sign.mockRejectedValue(new Error("unexpected new signing request"));
+    await act(async () => { await recoverBeforeFailure(source); });
+    expect(mocks.sign).not.toHaveBeenCalled();
+    await act(async () => { await cleanupAllBeforeFailure(); });
+    expect(mocks.sign).not.toHaveBeenCalled();
+    expect(controller.canCleanup).toBe(false);
+    const retrieveButtons = [...container.querySelectorAll("button")].filter(button => button.textContent === "Retrieve this balance");
+    expect(retrieveButtons).toHaveLength(2);
+    expect(retrieveButtons.every(button => button.disabled)).toBe(true);
+    expect(controller.confirmation).toMatchObject({ signature: recovery.signature, status: "success", chainStatus: "success" });
+    expect(storage.getItem(compoundAttemptKey(fixture.wallet))).toBe(savedAttempt);
+    await act(async () => { await controller.retryReconcile(); });
+    expect(controller.attemptStatus).toBe("success");
+    expect(controller.receipts).toEqual([unrelated]);
+    expect(controller.canCleanup).toBe(true);
+    expect(mocks.confirmed).toHaveBeenCalledOnce();
+    await act(async () => { await controller.retryReconcile(); });
+    expect(mocks.confirmed).toHaveBeenCalledOnce();
+    expect(localStorage.getItem(compoundAttemptKey(fixture.wallet))).toBe(savedAttempt);
+    expect(mocks.sign).not.toHaveBeenCalled();
+    expect(broadcastCount).toBe(0);
+    expect(fetchMock.mock.calls.every(([url]) => url === "/api/compound-confirm")).toBe(true);
+  });
+
   it("discovers and cleans historical receipts without a selected NFT or local records", async () => {
     await render(); expect(controller.receipts).toHaveLength(0);
     await act(async () => { await controller.scanWallet(); });

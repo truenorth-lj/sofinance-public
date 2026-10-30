@@ -1,11 +1,13 @@
 // @vitest-environment happy-dom
 import { act, createElement, useLayoutEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { PublicKey, SystemProgram, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
 import { useCompoundController } from "./use-compound-controller";
-import { compoundAttemptKey, persistCompoundReceipt, type CompoundReceipt } from "@sofinance/engine/compound-attempt";
+import { useCleanupBatchController } from "./use-cleanup-batch-controller";
+import { useWalletConnection } from "./wallet-connection";
+import { compoundAttemptKey, compoundReceiptsKey, persistCompoundAttempt, persistCompoundReceipt, type CompoundAttempt, type CompoundReceipt } from "@sofinance/engine/compound-attempt";
 import { cleanupBatchKey } from "@/lib/compound-cleanup-batch-attempt";
 import { compoundHistoryFixture } from "@/lib/test-support/compound-history-fixture";
 import { testKeypair } from "@/lib/test-support/send-fixtures";
@@ -15,7 +17,7 @@ vi.mock("./wallet-connection", () => ({ useWalletConnection: () => ({ address: w
   signTransaction: mocks.sign, signAllTransactions: supported ? mocks.signAll : undefined }) }));
 let wallet: string | undefined, supported: boolean;
 let controller: ReturnType<typeof useCompoundController>, root: Root, container: HTMLDivElement;
-let fixture: ReturnType<typeof compoundHistoryFixture>, fetchMock: ReturnType<typeof vi.fn>;
+let fixture: ReturnType<typeof compoundHistoryFixture>, fetchMock: Mock<(url: string, init: RequestInit) => Promise<Response>>;
 let chunkSize: number, result: "pending" | "success" | "manual-review", failures: number, broadcasts: string[];
 const receipt = (index: number): CompoundReceipt => ({ wallet: fixture.wallet, positionMint: fixture.state.positionMint,
   sourceSignature: bs58.encode(new Uint8Array(64).fill(9 + index)), compoundAccounts: fixture.attempt.summary.compoundAccounts.map((account, leg) => ({ ...account,
@@ -67,6 +69,68 @@ afterEach(async () => { await act(async () => root.unmount()); container.remove(
 const seed = (count = 3) => { for (let index = 0; index < count; index++) persistCompoundReceipt(window.localStorage, receipt(index)); };
 const flush = async () => { await act(async () => { await vi.advanceTimersByTimeAsync(1); }); };
 describe("one-approval batch cleanup", () => {
+  it.each([1, 2].flatMap(chunks => ["prepare", "sign"].flatMap(phase => [false, true].map(revoke => ({ chunks, phase, revoke })))))
+  ("rechecks recovery admission after $phase with $chunks chunks, revoked=$revoke", async ({ chunks, phase, revoke }) => {
+    seed(); chunkSize = chunks === 1 ? 64 : 2;
+    const source = receipt(0);
+    const recovery: CompoundAttempt = { ...fixture.attempt, kind: "recovery", sourceSignature: source.sourceSignature,
+      summary: { ...prepared(source.compoundAccounts).transactions[0]!.summary, operation: "recovery", simulated: true } };
+    persistCompoundAttempt(localStorage, recovery);
+    const savedAttempt = localStorage.getItem(compoundAttemptKey(fixture.wallet));
+    const handler = fetchMock.getMockImplementation()!;
+    const confirmed = () => Response.json({ signature: recovery.signature, status: "success", chainStatus: "success", state: null });
+    fetchMock.mockImplementation((url, init) => url === "/api/compound-confirm" ? Promise.resolve(confirmed()) : handler(url, init));
+    await render();
+    await act(async () => { controller.retryReconcile(); });
+    expect(controller.canCleanup).toBe(true);
+    expect(controller.receipts).toEqual([receipt(1), receipt(2)]);
+    let releaseConfirm!: (response: Response) => void;
+    let releasePrepare!: (response: Response) => void;
+    let releaseSigned!: () => void;
+    const batchPrepared = prepared(controller.receipts.flatMap(item => item.compoundAccounts));
+    fetchMock.mockImplementation((url, init) => {
+      if (url === "/api/compound-confirm") return new Promise<Response>(resolve => { releaseConfirm = resolve; });
+      if (url === "/api/compound-cleanup-prepare" && phase === "prepare") return new Promise<Response>(resolve => { releasePrepare = resolve; });
+      return handler(url, init);
+    });
+    if (phase === "sign") {
+      mocks.sign.mockImplementation((tx: VersionedTransaction) => new Promise(resolve => {
+        releaseSigned = () => { tx.sign([testKeypair(1)]); resolve(tx); };
+      }));
+      mocks.signAll.mockImplementation((txs: VersionedTransaction[]) => new Promise(resolve => {
+        releaseSigned = () => { txs.forEach(tx => tx.sign([testKeypair(1)])); resolve(txs); };
+      }));
+    }
+    await act(async () => { controller.retryReconcile(); });
+    let work!: Promise<void>;
+    await act(async () => { work = controller.cleanupAll(); });
+    expect(phase === "prepare" ? releasePrepare : releaseSigned).toBeTypeOf("function");
+    const storage = localStorage;
+    if (revoke) vi.stubGlobal("localStorage", new Proxy(storage, { get(target, property) {
+      if (property === "setItem") return (key: string, value: string) => {
+        if (key === compoundReceiptsKey(fixture.wallet)) throw new Error("synthetic cleanup write failure");
+        target.setItem(key, value);
+      };
+      return Reflect.get(target, property);
+    } }));
+    await act(async () => { releaseConfirm(confirmed()); });
+    expect(controller.attemptStatus).toBe(revoke ? "pending" : "success");
+    expect(controller.confirmation).toMatchObject({ signature: recovery.signature, chainStatus: "success" });
+    vi.stubGlobal("localStorage", storage);
+    await act(async () => {
+      if (phase === "prepare") releasePrepare(Response.json(batchPrepared)); else releaseSigned();
+      await work;
+    });
+    expect(mocks.sign.mock.calls.length + mocks.signAll.mock.calls.length).toBe(revoke && phase === "prepare" ? 0 : 1);
+    expect(broadcasts).toHaveLength(revoke ? 0 : chunks);
+    expect(localStorage.getItem(compoundAttemptKey(fixture.wallet))).toBe(savedAttempt);
+    if (revoke) {
+      expect(localStorage.getItem(cleanupBatchKey(fixture.wallet))).toBeNull();
+      expect(controller.receipts).toEqual([receipt(1), receipt(2)]);
+      expect(controller.error).toContain("authorization changed");
+    }
+  });
+
   it("packs three compound groups into one signed transaction and removes all source receipts", async () => {
     seed(); await render(); await act(async () => { await controller.cleanupAll(); }); await flush();
     expect(mocks.sign).toHaveBeenCalledOnce(); expect(mocks.signAll).not.toHaveBeenCalled(); expect(broadcasts).toHaveLength(1);
@@ -174,5 +238,60 @@ describe("one-approval batch cleanup", () => {
     else window.localStorage.setItem(compoundAttemptKey(fixture.wallet), "other-tab-record");
     await act(async () => { signed.sign([testKeypair(1)]); resolve(signed); await work; });
     expect(broadcasts).toHaveLength(0); expect(window.localStorage.getItem(cleanupBatchKey(fixture.wallet))).toBeNull();
+  });
+});
+
+let admission = true;
+let batch: ReturnType<typeof useCleanupBatchController>;
+function BatchAdmissionHarness() {
+  const connection = useWalletConnection();
+  const value = useCleanupBatchController({ wallet, identity: `${wallet}:${fixture.state.positionMint}`,
+    connection, blocked: false, canStart: () => admission, onReceipts: () => {}, onConfirmed: () => {} });
+  useLayoutEffect(() => { batch = value; });
+  return null;
+}
+
+describe("live admission after durable batch persistence", () => {
+  it.each(["persist", "first-broadcast"].flatMap(phase => [false, true].map(revoke => ({ phase, revoke }))))
+  ("retains signed history after $phase, revoked=$revoke", async ({ phase, revoke }) => {
+    admission = true; seed(); chunkSize = 2; result = "pending";
+    await act(async () => root.render(createElement(BatchAdmissionHarness)));
+    await flush();
+    const storage = window.localStorage;
+    let savedSnapshot: string | null = null;
+    vi.stubGlobal("localStorage", new Proxy(storage, { get(target, property) {
+      if (property === "setItem") return (key: string, value: string) => {
+        target.setItem(key, value);
+        if (key === cleanupBatchKey(fixture.wallet)) {
+          savedSnapshot = value;
+          if (phase === "persist" && revoke) admission = false;
+        }
+      };
+      return Reflect.get(target, property);
+    } }));
+    let requests = 0;
+    const handler = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation((url, init) => {
+      if (url === "/api/compound-cleanup-broadcast") {
+        requests++;
+        if (phase === "first-broadcast" && revoke) {
+          admission = false;
+          return Promise.reject(new Error("unknown transport outcome after revocation"));
+        }
+      }
+      return handler(url, init);
+    });
+    await act(async () => { await batch.start([receipt(0), receipt(1), receipt(2)]); });
+    expect(mocks.signAll).toHaveBeenCalledOnce();
+    expect(requests).toBe(revoke ? phase === "persist" ? 0 : 1 : 3);
+    expect(savedSnapshot).not.toBeNull();
+    expect(storage.getItem(cleanupBatchKey(fixture.wallet))).toBe(savedSnapshot);
+    expect(JSON.parse(savedSnapshot!).transactions).toHaveLength(3);
+    expect(batch.unresolved).toBe(true);
+    if (revoke) expect(batch.error).toContain("authorization changed");
+    // A later click cannot sign over retained unknown signatures, even after admission is restored.
+    admission = true;
+    await act(async () => { await batch.start([receipt(0), receipt(1), receipt(2)]); });
+    expect(mocks.signAll).toHaveBeenCalledOnce();
   });
 });

@@ -151,9 +151,13 @@ export function removeRecoveredReceipt(storage: StorageWrite, attempt: CompoundA
   const saved = loadCompoundReceipts(storage, attempt.wallet);
   if (saved.invalid) throw new Error("Balance recovered, but local records need verification");
   const recoveredAddresses = attempt.summary.compoundAccounts.map((item) => item.address);
-  storage.setItem(compoundReceiptsKey(attempt.wallet), JSON.stringify(saved.receipts.filter((item) =>
+  const serialized = JSON.stringify(saved.receipts.filter((item) =>
     attempt.kind === "recovery" && attempt.sourceSignature ? item.sourceSignature !== attempt.sourceSignature :
-      !item.compoundAccounts.every((account) => recoveredAddresses.includes(account.address)))));
+      !item.compoundAccounts.every((account) => recoveredAddresses.includes(account.address))));
+  storage.setItem(compoundReceiptsKey(attempt.wallet), serialized);
+  if (storage.getItem(compoundReceiptsKey(attempt.wallet)) !== serialized) {
+    throw new Error("Balance recovered, but unable to update local yield account records");
+  }
 }
 
 // Pre-broadcast receipts exist so a crash after send can still recover ATAs. Expired or

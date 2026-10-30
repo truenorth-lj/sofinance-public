@@ -119,7 +119,8 @@ export function useCleanupBatchController(options: Options) {
     const current = () => alive.current && generation.current === selectedGeneration && latest.current.wallet === wallet &&
       latest.current.identity === initial.identity && latest.current.connection.connected && latest.current.connection.address === wallet && !latest.current.blocked;
     const fence = () => {
-      if (!current()) throw new Error("Wallet, position, or authorization changed; cleanup stopped");
+      // Admission may be revoked by confirmation readback without a wallet/record change or React commit.
+      if (!current() || !latest.current.canStart()) throw new Error("Wallet, position, or authorization changed; cleanup stopped");
       if (window.localStorage.getItem(compoundAttemptKey(wallet)) !== compoundRecord ||
         window.localStorage.getItem(cleanupBatchKey(wallet)) !== batchRecord) throw new Error(tabChanged);
     };
@@ -180,7 +181,7 @@ export function useCleanupBatchController(options: Options) {
       latest.current.onReceipts(pruneCleanedReceipts(window.localStorage, durable));
       setStage("broadcasting");
       // Broadcast all signed chunks while their shared validity window remains fresh. Confirmation is independent and restartable.
-      const outcomes = await Promise.allSettled(signedResults.map((result, index) => {
+      const outcomes = await Promise.allSettled(signedResults.map(async (result, index) => {
         fence();
         const item = prepared.transactions[index]!;
         return post<{ signature: string }>("/api/compound-cleanup-broadcast", { wallet, summary: item.summary,
