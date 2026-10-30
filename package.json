@@ -20,7 +20,10 @@
     "test:app": "vitest run",
     "test:engine": "pnpm --filter @sofinance/engine test",
     "typecheck:app": "tsc --noEmit --incremental false",
-    "typecheck:engine": "pnpm --filter @sofinance/engine typecheck"
+    "typecheck:engine": "pnpm --filter @sofinance/engine typecheck",
+    "db:opens:generate": "drizzle-kit generate --config drizzle.opens.config.ts",
+    "db:opens:baseline": "node --env-file-if-exists=.env.local --import tsx scripts/opens-migrate.ts baseline",
+    "db:opens:migrate": "node --env-file-if-exists=.env.local --import tsx scripts/opens-migrate.ts migrate"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",

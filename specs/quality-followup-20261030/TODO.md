@@ -12,8 +12,9 @@
 - [x] Meteora review, CI, merge and deployment verification — [PR 246](https://github.com/truenorth-lj/sofinance-public/pull/246), merge `ed936bb`.
 - [x] Evaluate shared primitives without merging Solana and EVM transaction semantics — [decision](shared-primitives.md).
 - [x] Type store operation results, handlers and callers.
-- [ ] Store contracts review, CI, merge and deployment verification.
-- [ ] Migrate remaining opens-log schema management (separate database target).
+- [x] Store contracts review, CI, merge and deployment verification — [PR 248](https://github.com/truenorth-lj/sofinance-public/pull/248), merge `ee6f5ec`.
+- [x] Implement separate opens-log schema migrations and remove request-time DDL.
+- [ ] Opens migrations: CI, production target verification/adoption, merge and deployment.
 - [ ] Remove orphan snapshots, refresh flags/comments and original delivery tracking.
 - [ ] Verify all phase PRs, deployment identities and final outstanding boundaries.
 
@@ -28,3 +29,5 @@ Compound recovery scope and evidence: [validation](compound-validation.md).
 Meteora recovery scope and evidence: [validation](meteora-validation.md).
 
 Store response contracts and evidence: [validation](store-contracts-validation.md).
+
+Opens migration evidence and deployment hold: [validation](opens-migrations-validation.md).

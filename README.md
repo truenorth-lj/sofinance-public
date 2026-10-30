@@ -375,7 +375,7 @@ Optional. Local dev, forks, and tests stay a no-op until the PostHog key and/or 
 | `open_position_success` | Open confirmed on-chain via `/api/open-status` | `pool`, `pair` |
 | `open_position_failed` | Open failed before send, or on-chain failed/expired | `error_class` only (never raw error text) |
 
-**North-star opens log (server)** — after a successful open broadcast (`/api/open-broadcast` and MCP `submit_open_position`), best-effort insert into Postgres: UTC time, wallet, pool, pair symbols, USDC notional when the input is USDC, tx signature (unique), `sourceRef` if the client sends the first-touch `ref`. Failures never delay or fail the broadcast. Idempotent DDL: `src/lib/opens-log/schema.sql` (also applied on first write).
+**North-star opens log (server)** — after a successful open broadcast (`/api/open-broadcast` and MCP `submit_open_position`), best-effort insert into Postgres: UTC time, wallet, pool, pair symbols, USDC notional when the input is USDC, tx signature (unique), `sourceRef` if the client sends the first-touch `ref`. Failures never delay or fail the broadcast. Schema source: `src/db/opens-schema.ts`; generated migrations: `drizzle-opens/`. Reads and writes never run DDL. Apply the separate opens migrations before enabling logging or deploying the runtime-DDL removal; see [opens migration procedure](docs/opens-migrations.md).
 
 Read path (GTM):
 

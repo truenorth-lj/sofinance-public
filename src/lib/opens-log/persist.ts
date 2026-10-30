@@ -1,6 +1,5 @@
 import postgres from "postgres";
 import { getOpensDatabaseUrl } from "@/lib/config/opens-env";
-import { OPENS_DDL_STATEMENTS } from "./schema";
 import type { PositionOpenRow } from "./types";
 import { runBestEffort } from "./wait-until";
 
@@ -10,11 +9,9 @@ export type OpensSql = {
 };
 
 let cached: OpensSql | undefined;
-let schemaReady = false;
 
 export function resetOpensClientForTests() {
   cached = undefined;
-  schemaReady = false;
 }
 
 export function getOpensSql(create: (url: string) => OpensSql = connectOpens): OpensSql | undefined {
@@ -32,12 +29,6 @@ function connectOpens(url: string): OpensSql {
     prepare: false,
     onnotice: () => {},
   });
-}
-
-export async function ensureOpensSchema(sql: OpensSql) {
-  if (schemaReady) return;
-  for (const statement of OPENS_DDL_STATEMENTS) await sql.unsafe(statement);
-  schemaReady = true;
 }
 
 export function insertOpenSql(row: PositionOpenRow) {
@@ -60,7 +51,6 @@ export function insertOpenSql(row: PositionOpenRow) {
 
 export async function persistPositionOpen(row: PositionOpenRow, sql = getOpensSql()) {
   if (!sql) return { skipped: true as const, inserted: false };
-  await ensureOpensSchema(sql);
   const { sql: text, params } = insertOpenSql(row);
   await sql.unsafe(text, params);
   return { skipped: false as const, inserted: true };

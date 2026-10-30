@@ -30,7 +30,8 @@ jobs:
       - name: Verify committed Drizzle migrations
         run: |
           pnpm db:generate
-          test -z "$(git status --porcelain -- drizzle)"
+          pnpm db:opens:generate
+          test -z "$(git status --porcelain -- drizzle drizzle-opens)"
       - run: pnpm test:env-matrix
       - run: pnpm build:rwa-service
 
@@ -60,9 +61,10 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: PostgreSQL integration tests
-        run: pnpm exec vitest run src/db/migrations.integration.test.ts src/lib/rwa-database.integration.test.ts src/lib/rwa-postgres-store.integration.test.ts src/lib/position-history-postgres-store.integration.test.ts --maxWorkers=4
+        run: pnpm exec vitest run src/db/migrations.integration.test.ts src/db/opens-migrations.integration.test.ts src/lib/rwa-database.integration.test.ts src/lib/rwa-postgres-store.integration.test.ts src/lib/position-history-postgres-store.integration.test.ts --maxWorkers=4
         env:
           RWA_DB_TEST_URL: postgres://sofinance:ci-only-password@127.0.0.1:5432/sofinance
+          OPENS_DB_TEST_URL: postgres://sofinance:ci-only-password@127.0.0.1:5432/sofinance
 
   e2e-hermetic:
     runs-on: ubuntu-latest

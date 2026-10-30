@@ -1,4 +1,4 @@
-import { getOpensSql, ensureOpensSchema, type OpensSql } from "./persist";
+import { getOpensSql, type OpensSql } from "./persist";
 import { aggregateOpensDaily, opensDailyCsv } from "./aggregate";
 import type { DailyOpens, OpenLogRecord } from "./types";
 
@@ -48,7 +48,6 @@ export async function queryOpensDaily(options: { days?: number; now?: number; sq
   if (!sql) {
     return { configured: false, days: [], range: { from: range.from.toISOString(), to: range.to.toISOString() } };
   }
-  await ensureOpensSchema(sql);
   const rows = await sql.unsafe(
     `SELECT opened_at, wallet, source_ref, notional_usd
      FROM sofinance_position_opens

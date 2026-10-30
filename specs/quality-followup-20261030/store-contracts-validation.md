@@ -56,4 +56,7 @@ OpenCode/MiniMax review remains unavailable; no independent approval is claimed.
 No schema/data migration, configuration change or financial flag activation is
 part of this batch. The prior dirty Compound worktree remains untouched.
 
-Hosted CI, merge and deployment verification are pending.
+All six hosted checks passed on `4aa2883`; no new review findings. PR #248
+merged as `ee6f5ecf947f4b75b93b5c6fb263e5946bf0189a`. Its successful Vercel
+deployment `4Ek3UbBVbWt3wDKdjoMN5tWDEzSM` matches the production `/app` HTML
+on 2026-10-30. This verifies the served build identity, not financial behavior.

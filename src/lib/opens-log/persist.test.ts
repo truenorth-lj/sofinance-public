@@ -3,7 +3,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 
 import { insertOpenSql, logPositionOpenBestEffort, persistPositionOpen, resetOpensClientForTests } from "./persist";
-import { OPENS_DDL_STATEMENTS } from "./schema";
 import { positionOpenRowFromSummary } from "./row";
 import { openSummaryFixture, testKeypair } from "@/lib/test-support/send-fixtures";
 import { USDC_MINT } from "@sofinance/engine/ids";
@@ -37,14 +36,13 @@ describe("opens persist", () => {
     logPositionOpenBestEffort(row());
   });
 
-  it("applies idempotent DDL then inserts ON CONFLICT DO NOTHING by tx signature", async () => {
+  it("only inserts ON CONFLICT DO NOTHING by tx signature, never runtime DDL", async () => {
     vi.stubEnv("SOFINANCE_OPENS_DATABASE_URL", "postgres://opens@localhost/opens");
     const sql = { unsafe: vi.fn<(query: string, params?: unknown[]) => Promise<undefined>>(async () => undefined) };
     const first = row();
     await persistPositionOpen(first, sql);
     await persistPositionOpen(first, sql);
     expect(sql.unsafe.mock.calls.map((call) => call[0])).toEqual([
-      ...OPENS_DDL_STATEMENTS,
       insertOpenSql(first).sql,
       insertOpenSql(first).sql,
     ]);

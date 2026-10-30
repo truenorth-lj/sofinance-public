@@ -1,7 +1,4 @@
--- Idempotent DDL for SoFinance north-star open logs.
--- Run against the database in SOFINANCE_OPENS_DATABASE_URL (Neon / Vercel Postgres).
--- The app also applies this on first write when the URL is set (best-effort, never on the user path).
-
+-- Historical runtime DDL, frozen for adoption compatibility tests only.
 CREATE TABLE IF NOT EXISTS sofinance_position_opens (
   tx_signature text PRIMARY KEY,
   opened_at timestamptz NOT NULL DEFAULT timezone('utc', now()),
