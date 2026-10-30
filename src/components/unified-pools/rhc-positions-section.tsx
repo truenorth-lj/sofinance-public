@@ -6,8 +6,8 @@ import { RhcUniv4PositionsPanel } from "../rhc-univ4-positions-panel";
 /**
  * "My positions" on `/app`, Robinhood Chain part: positions opened in this browser plus NFT numbers added by hand
  * (owner-checked by the server; the v4 PositionManager is not enumerable), with the existing simulated full close.
- * Rendered only once MetaMask is connected (from a Robinhood Chain pool card's Open position), so Solana users
- * see no wallet prompts for another chain here.
+ * Rendered only while the nav's EVM wallet is connected (nav "EVM wallet" or a Robinhood Chain pool's Open position), so
+ * Solana users see no wallet prompts for another chain here.
  */
 export function RhcPositionsSection({ wallet, signingEnabled, refreshKey }: {
   wallet: RhcWallet | null; signingEnabled: boolean; refreshKey: number;

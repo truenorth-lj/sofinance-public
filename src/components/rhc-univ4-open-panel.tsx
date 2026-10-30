@@ -7,7 +7,7 @@ import type { OpenFlowResult, PermitJson } from "@sofinance/engine/protocols/uni
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { formatUnits, parseUnits } from "viem";
 import {
-  connectEvmWallet, discoverEvmWallets, type Eip1193Provider, ensureRobinhoodChain, guardedWalletRequest, SIGNING_DISABLED_MESSAGE, WalletRequestError,
+  connectEvmWallet, discoverEvmWallets, ensureRobinhoodChain, guardedWalletRequest, SIGNING_DISABLED_MESSAGE, WalletRequestError,
 } from "@/lib/rhc-wallet/eip1193";
 import {
   checkExecuteTx, checkTx, explorerTxUrl, isPermitExpired, requireRobinhoodChain, SIGNATURE_EXPIRED_MESSAGE, walletTxParams,
@@ -19,6 +19,7 @@ import { assertRhcOpenAttempt, clearRhcOpenAttempt, isRhcTxHash, parseRhcOpenAtt
   reconcileRhcOpenAttempt, rhcOpenAttemptKey, rhcOpenStorage, RHC_HISTORY_ERROR, RHC_UNKNOWN_SEND,
   subscribeRhcOpenAttempt, writeRhcOpenAttempt, type RhcOpenAttempt } from "@/lib/rhc-wallet/open-attempt";
 import type { RhcPoolView } from "@/lib/rhc-wallet/pool-view";
+import type { EvmWallet } from "@/lib/rhc-wallet/evm-session";
 
 /**
  * Robinhood Chain (4663) Uniswap v4 open-position flow (design §6 PR5), behind `RHC_UNIV4_TRADING_ENABLED`.
@@ -96,7 +97,7 @@ export function OpenPreview({ result, pool }: { result: OpenFlowResult; pool: Rh
 
 const fmtBalance = (v: bigint, decimals = 18) => { const n = Number(formatUnits(v, decimals)); return n === 0 ? "0" : n < 0.000001 ? "<0.000001" : n.toLocaleString("en-US", { maximumFractionDigits: 6 }); };
 
-export type RhcWallet = { provider: Eip1193Provider; address: `0x${string}`; name: string };
+export type RhcWallet = EvmWallet;
 type Wallet = RhcWallet;
 type PrepareRequest = { poolId: string; user: string; depositToken: string; amount: string; tickLower: number; tickUpper: number };
 type Signed = { signature: `0x${string}`; permit: PermitJson };
@@ -117,8 +118,8 @@ export function TxStatus({ sent }: { sent: Sent }) {
 export type ReceiptPoll = { intervalMs?: number; timeoutMs?: number };
 
 /**
- * Connect MetaMask (or the first EIP-6963 wallet), switch/add Robinhood Chain 4663, and return the account. Shared by the
- * open panel and the `/app` "My positions" Robinhood section so both connect the same way.
+ * Connect MetaMask (or the first EIP-6963 wallet), switch/add Robinhood Chain 4663, and return the account. The default
+ * for a standalone panel; inside the app the panel is given the shared nav session's `connect` (`useEvmWalletConnection`).
  */
 export async function connectRhcWallet(): Promise<RhcWallet> {
   const [first] = await discoverEvmWallets();
@@ -128,24 +129,15 @@ export async function connectRhcWallet(): Promise<RhcWallet> {
   return { provider: first.provider, address, name: first.info.name };
 }
 
-/**
- * The account MetaMask already shares with this site, without a prompt (`eth_accounts`), or null. `/app` uses it so a
- * wallet connected on the pools page shows its Robinhood Chain positions; it never asks to connect or switch chain
- * (a close still refuses unless the wallet is on Robinhood Chain).
- */
-export async function restoreRhcWallet(): Promise<RhcWallet | null> {
-  const [first] = await discoverEvmWallets();
-  if (!first) return null;
-  const accounts = await first.provider.request({ method: "eth_accounts" }).catch(() => null);
-  const account = Array.isArray(accounts) ? accounts[0] : null;
-  if (typeof account !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(account)) return null;
-  return { provider: first.provider, address: account as `0x${string}`, name: first.info.name };
-}
-
-export function RhcUniv4OpenPanel({ pool, signingEnabled, receiptPoll, initialWallet = null, autoConnect = false, showPositions = true, onWalletChange, onOpened }: {
+export function RhcUniv4OpenPanel({ pool, signingEnabled, receiptPoll, initialWallet = null, connectWallet, autoConnect = false, showPositions = true, onWalletChange, onOpened }: {
   pool: RhcPoolView | null; signingEnabled: boolean; receiptPoll?: ReceiptPoll;
   /** A wallet already connected elsewhere on the page (`/app` My positions). */
   initialWallet?: RhcWallet | null;
+  /**
+   * The app-wide EVM session's `connect` (nav "EVM wallet"). When given, the panel follows `initialWallet` exactly
+   * (a nav disconnect clears it here too) and its own Connect button connects that same session.
+   */
+  connectWallet?: () => Promise<RhcWallet>;
   /** Ask the wallet to connect as soon as the panel opens (the user just chose this Robinhood Chain pool). */
   autoConnect?: boolean;
   /** False when the page lists Robinhood Chain positions elsewhere (`/app` My positions). */
@@ -205,7 +197,8 @@ export function RhcUniv4OpenPanel({ pool, signingEnabled, receiptPoll, initialWa
     // A committed external wallet/pool change revokes the old preview as well as in-flight commands.
     // eslint-disable-next-line react-hooks/set-state-in-effect -- Reset form-owned transaction state at this identity boundary.
     setResult(null); setPrepared(null); setStep(null); setSigned(null); setExec(null); setSent(null);
-    if (initialWallet) { setWallet(initialWallet); setWalletChanged(false); }
+    if (initialWallet || connectWallet) { setWallet(initialWallet); setWalletChanged(false); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `connectWallet` only marks the panel as following the shared session.
   }, [initialWallet, pool?.poolId]);
   const assertAvailable = () => {
     if (!wallet || !mounted.current || walletChanged || pool?.status !== "listed") throw new Error("Wallet or pool changed. Reconnect and preview again.");
@@ -222,10 +215,10 @@ export function RhcUniv4OpenPanel({ pool, signingEnabled, receiptPoll, initialWa
     const loadBalances = (w: Pick<Wallet, "provider" | "address">) =>
       readWalletBalances(w.provider, w.address, tokens).then(value => { if (active) setBalances(value); }, () => { if (active) setBalances(null); });
     const timer = window.setTimeout(() => {
-      if (initialWallet) { void loadBalances(initialWallet); return; }
+      if (initialWallet) { if (!connectWallet) void loadBalances(initialWallet); return; }
       if (!autoConnect) return;
       setError(null); setBusy(true);
-      connectRhcWallet()
+      (connectWallet ?? connectRhcWallet)()
         .then((connected) => { if (!active) return; setWallet(connected); onWalletChange?.(connected); void loadBalances(connected); })
         .catch((e: unknown) => { if (active) setError(e instanceof Error ? e.message : "Wallet connection failed"); })
         .finally(() => { if (active) setBusy(false); });
@@ -233,6 +226,20 @@ export function RhcUniv4OpenPanel({ pool, signingEnabled, receiptPoll, initialWa
     return () => { active = false; window.clearTimeout(timer); };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- run once per mount
   }, []);
+
+  // Following the shared session: a new account (or a nav disconnect) must never show the previous account's balances.
+  const followedAddress = connectWallet ? wallet?.address ?? null : undefined;
+  useEffect(() => {
+    if (followedAddress === undefined || !pool) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Balances belong to the wallet identity that just changed.
+    setBalances(null);
+    if (!wallet) return;
+    let active = true;
+    readWalletBalances(wallet.provider, wallet.address, [pool.token0.address, pool.token1.address])
+      .then(value => { if (active) setBalances(value); }, () => { if (active) setBalances(null); });
+    return () => { active = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the followed wallet only
+  }, [wallet, followedAddress]);
 
   if (!pool) return <p className="mt-6 text-sm text-smoke">Pool data is unavailable right now.</p>;
   const token = side === 0 ? pool.token0 : pool.token1;
@@ -254,7 +261,7 @@ export function RhcUniv4OpenPanel({ pool, signingEnabled, receiptPoll, initialWa
     const epoch = revision.current;
     setError(null); setBusy(true);
     try {
-      const connected = await connectRhcWallet();
+      const connected = await (connectWallet ?? connectRhcWallet)();
       if (!mounted.current || revision.current !== epoch) return;
       reset(); setWalletChanged(false); setWallet(connected);
       onWalletChange?.(connected);

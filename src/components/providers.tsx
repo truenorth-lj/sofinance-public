@@ -11,6 +11,7 @@ import { GROWTH_EVENTS } from "@/lib/analytics/events";
 import { WalletGrowthAnalytics } from "./wallet-growth-analytics";
 import { WalletConnectionContext } from "./wallet-connection";
 import { TermsGate } from "./terms-gate";
+import { EvmWalletProvider } from "./evm-wallet-connection";
 
 const MobileWalletProvider = dynamic(() => import("./mobile-wallet-provider").then((module) => module.MobileWalletProvider), { ssr: false });
 
@@ -18,9 +19,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
   const endpoint = process.env.NEXT_PUBLIC_SOLANA_RPC_URL || PUBLIC_SOLANA_RPC_URL;
   const projectId = process.env.NEXT_PUBLIC_REOWN_PROJECT_ID?.trim();
 
-  return <ConnectionProvider endpoint={endpoint}>
+  // The EVM wallet (Robinhood Chain) sits beside the Solana providers, not inside them: separate state, separate buttons.
+  return <EvmWalletProvider><ConnectionProvider endpoint={endpoint}>
     {projectId ? <MobileWalletProvider><TermsGate>{children}</TermsGate></MobileWalletProvider> : <BrowserWalletProvider><TermsGate>{children}</TermsGate></BrowserWalletProvider>}
-  </ConnectionProvider>;
+  </ConnectionProvider></EvmWalletProvider>;
 }
 
 function BrowserWalletProvider({ children }: { children: React.ReactNode }) {
