@@ -7,7 +7,7 @@ vi.mock("server-only", () => ({}));
 vi.setConfig({ testTimeout: 30_000 });
 import { createRwaDatabase } from "./rwa-postgres-store";
 import { MAX_POSITION_HISTORY_RESPONSE_BYTES, PostgresPositionHistoryStore } from "./position-history-postgres-store";
-import { MAX_POSITION_HISTORY_TRANSACTIONS, type PositionContext, type PositionHistorySnapshot, type StoredPositionTransaction } from "./position-history-store-types";
+import { MAX_POSITION_HISTORY_TRANSACTIONS, type PositionContext, type StoredPositionTransaction } from "./position-history-store-types";
 
 const url = process.env.RWA_DB_TEST_URL;
 describe.skipIf(!url)("Position PostgreSQL persistence and fencing", () => {
@@ -22,7 +22,7 @@ describe.skipIf(!url)("Position PostgreSQL persistence and fencing", () => {
     parserVersion: 1, events: [{ kind: "open", poolState: c.poolId, nftOwner: "8".repeat(32),
       tickLower: 0, tickUpper: 10, liquidity: "12345678901234567890", amountA: "100", amountB: "200" }],
   });
-  const claim = async (c = context(), parserVersion = 1) => await store!.request({ op: "claim", context: c, parserVersion }) as PositionHistorySnapshot;
+  const claim = async (c = context(), parserVersion = 1) => await store!.request({ op: "claim", context: c, parserVersion });
   beforeAll(async () => {
     await db!.unsafe(`CREATE SCHEMA ${schema}`);
     for (const migration of readMigrationFiles({ migrationsFolder: resolve("drizzle") }))
@@ -41,7 +41,7 @@ describe.skipIf(!url)("Position PostgreSQL persistence and fencing", () => {
     const transaction = opening(c);
     const request = { op: "commit" as const, lease: first.lease!,
       state: { headSignature: transaction.signature, backfillBefore: null, complete: true, parserVersion: 1 }, transactions: [transaction] };
-    const saved = await store!.request(request) as PositionHistorySnapshot;
+    const saved = await store!.request(request);
     expect(saved).toMatchObject({ lease: null, state: { complete: true, revision: 1 } });
     expect(saved.transactions).toEqual([{ ...transaction, receipt: null }]);
     await expect(store!.request(request)).rejects.toMatchObject({ code: "LEASE_LOST" });
@@ -80,13 +80,13 @@ describe.skipIf(!url)("Position PostgreSQL persistence and fencing", () => {
     const upgrade = await claim(c, 2);
     const pending = { ...transaction, parserVersion: 2, status: "pending" as const, events: [], receipt: null };
     const saved = await store!.request({ op: "commit", lease: upgrade.lease!,
-      state: { ...completeState, parserVersion: 2 }, transactions: [pending] }) as PositionHistorySnapshot;
+      state: { ...completeState, parserVersion: 2 }, transactions: [pending] });
     expect(saved.state).toEqual({ ...completeState, parserVersion: 2, revision: 2 });
     expect(saved.transactions).toEqual([{ ...pending, receipt: transaction.receipt }]);
     const retry = await claim(c, 2);
     expect(retry.transactions[0]!.status).toBe("pending");
     const repaired = await store!.request({ op: "commit", lease: retry.lease!,
-      state: { ...completeState, parserVersion: 2 }, transactions: [{ ...transaction, parserVersion: 2, receipt: null }] }) as PositionHistorySnapshot;
+      state: { ...completeState, parserVersion: 2 }, transactions: [{ ...transaction, parserVersion: 2, receipt: null }] });
     expect(repaired.state).toEqual({ ...completeState, parserVersion: 2, revision: 3 });
     expect(repaired.transactions[0]!.status).toBe("parsed");
     expect(repaired.transactions[0]!.receipt).toBeNull();
@@ -102,13 +102,13 @@ describe.skipIf(!url)("Position PostgreSQL persistence and fencing", () => {
     const next = await claim(c), pending = { ...transaction, signature: "j".repeat(64), slot: 11,
       status: "pending" as const, events: [], receipt: null };
     const deltaState = { ...completeState, deltaBefore: pending.signature, deltaHead: pending.signature };
-    const saved = await store!.request({ op: "commit", lease: next.lease!, state: deltaState, transactions: [pending] }) as PositionHistorySnapshot;
+    const saved = await store!.request({ op: "commit", lease: next.lease!, state: deltaState, transactions: [pending] });
     expect(saved.state).toEqual({ ...deltaState, revision: 2 });
     const retry = await claim(c);
     await expect(store!.request({ op: "commit", lease: retry.lease!, state: { ...deltaState,
       headSignature: pending.signature }, transactions: [] })).rejects.toMatchObject({ code: "INCOMPLETE_HISTORY" });
     const repaired = await store!.request({ op: "commit", lease: retry.lease!, state: { ...completeState,
-      headSignature: pending.signature }, transactions: [{ ...pending, status: "parsed" }] }) as PositionHistorySnapshot;
+      headSignature: pending.signature }, transactions: [{ ...pending, status: "parsed" }] });
     expect(repaired.state).toEqual({ ...completeState, headSignature: pending.signature, revision: 3 });
   });
 
@@ -122,7 +122,7 @@ describe.skipIf(!url)("Position PostgreSQL persistence and fencing", () => {
     expect(upgrade.transactions.find((row) => row.status === "ignored")!.receipt).toBeNull();
     expect(upgrade.transactions.find((row) => row.status === "parsed")!.receipt).toEqual(transaction.receipt);
     const saved = await store!.request({ op: "commit", lease: upgrade.lease!, state: { ...completeState, parserVersion: 2 },
-      transactions: [ignored, { ...transaction, parserVersion: 2, receipt: null }] }) as PositionHistorySnapshot;
+      transactions: [ignored, { ...transaction, parserVersion: 2, receipt: null }] });
     expect(saved.state.complete).toBe(true);
     expect(saved.transactions.find((row) => row.status === "ignored")!.parserVersion).toBe(1);
     const [raw] = await db!`SELECT receipt FROM position_history_transactions WHERE position_mint=${c.positionMint} AND status='ignored'`;
@@ -165,7 +165,7 @@ describe.skipIf(!url)("Position PostgreSQL persistence and fencing", () => {
         receipt: { meta: { logMessages: ["batch".repeat(400)] } } };
     });
     const saved = await store!.request({ op: "commit", lease: first.lease!,
-      state: { ...first.state, headSignature: rows.at(-1)!.signature, complete: true }, transactions: rows }) as PositionHistorySnapshot;
+      state: { ...first.state, headSignature: rows.at(-1)!.signature, complete: true }, transactions: rows });
     expect(saved.transactions).toHaveLength(500);
     expect(saved.state.revision).toBe(1);
     const [count] = await db!`SELECT count(*)::int AS count FROM position_history_transactions WHERE position_mint=${c.positionMint}`;
@@ -210,7 +210,7 @@ describe.skipIf(!url)("Position PostgreSQL persistence and fencing", () => {
     expect(Buffer.byteLength(JSON.stringify(upgrade))).toBeLessThan(4 * 1024 * 1024);
     const saved = await store!.request({ op: "commit", lease: upgrade.lease!,
       state: { ...upgrade.state, parserVersion: 2 }, transactions: supplied.map((transaction) => ({
-        ...transaction, parserVersion: 2, receipt: null })) }) as PositionHistorySnapshot;
+        ...transaction, parserVersion: 2, receipt: null })) });
     const nextReceipts = saved.transactions.filter((transaction) => transaction.receipt);
     expect(nextReceipts.length).toBeGreaterThan(0);
     const suppliedSignatures = new Set(supplied.map((transaction) => transaction.signature));
@@ -248,7 +248,7 @@ describe.skipIf(!url)("Position PostgreSQL persistence and fencing", () => {
     expect(await db!`SELECT signature FROM position_history_transactions WHERE position_mint=${c.positionMint} AND signature=${addition.signature}`).toHaveLength(0);
     // Updating an existing row at the cap must remain possible; only new unique signatures consume capacity.
     const update = { ...addition, signature: "B".padStart(64, "1"), slot: 1, receipt: { changed: true } };
-    const capped = await store!.request({ op: "commit", lease: first.lease!, state: first.state, transactions: [update] }) as PositionHistorySnapshot;
+    const capped = await store!.request({ op: "commit", lease: first.lease!, state: first.state, transactions: [update] });
     expect(capped.transactions).toHaveLength(MAX_POSITION_HISTORY_TRANSACTIONS);
     await db!`INSERT INTO position_history_transactions(position_mint,signature,slot,block_time,status,receipt,events,parser_version)
       VALUES(${c.positionMint},${addition.signature},${addition.slot},1000,'parsed',NULL,'[]'::jsonb,1)`;

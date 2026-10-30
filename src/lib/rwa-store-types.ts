@@ -202,7 +202,12 @@ export const storeRequestSchema = z.discriminatedUnion("op", [
   z.object({ op: z.literal("prepareDaily"), lease: leaseSchema }),
   z.object({ op: z.literal("saveTokenIcons"), lease: leaseSchema, data: tokenIconWriteSchema }),
 ]);
-export type StoreRequest = z.infer<typeof storeRequestSchema>;
+type ParsedStoreRequest = z.infer<typeof storeRequestSchema>;
+export type StoreOperation = ParsedStoreRequest["op"];
+/** Mapped union preserves the operation/result relationship through generic dispatch. */
+export type StoreRequest<K extends StoreOperation = StoreOperation> = {
+  [P in K]: Extract<ParsedStoreRequest, { op: P }>;
+}[K];
 export type PairOptions = {
   minTvl: number;
   maxPages: number;
@@ -212,6 +217,32 @@ export type PairOptions = {
 export type SnapshotPairs = DiscoverRwaPairsResult & { freshness: Freshness; tokenIcons?: TokenIconMap };
 export type SnapshotApr = PoolRangeAprPayload & { freshness: Freshness };
 
+export type SnapshotHistory = {
+  poolId: string;
+  timezone: "Asia/Taipei";
+  points: Array<{
+    date: string; capturedAt: string | null; status: string;
+    poolFeeAprPct: number | null; highestRangeAprPct: number | null; highestRangeId: string | null;
+    presets: PoolRangeAprPayload["presets"]; referenceCapitalUsd: number;
+    algorithmVersion: string; sample: Partial<PoolRangeAprPayload["sample"]>; reason: string | null;
+  }>;
+};
+export type StoreResultMap = {
+  pairs: SnapshotPairs;
+  apr: SnapshotApr;
+  history: SnapshotHistory;
+  activePools: ActivePool[];
+  claim: Lease | null;
+  renew: boolean;
+  finish: boolean;
+  publishDiscovery: { generation: string; pools: number };
+  prepareDaily: { date: string; eligible: boolean };
+  saveApr: { poolId: string; status: "ok" | "degraded" | "error" };
+  saveTokenIcons: { saved: number };
+};
+export type StoreHandlers = {
+  [K in StoreOperation]: (input: StoreRequest<K>) => Promise<StoreResultMap[K]>;
+};
 export interface RwaStore {
-  request(input: StoreRequest): Promise<unknown>;
+  request<K extends StoreOperation>(input: StoreRequest<K>): Promise<StoreResultMap[K]>;
 }

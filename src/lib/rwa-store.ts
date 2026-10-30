@@ -9,9 +9,9 @@ import {
   RwaStoreError,
   type PairOptions,
   type RwaStore,
-  type SnapshotApr,
-  type SnapshotPairs,
   type StoreRequest,
+  type StoreOperation,
+  type StoreResultMap,
 } from "./rwa-store-types";
 
 let direct: { db: ReturnType<typeof getRwaDatabase>; store: RwaStore } | undefined;
@@ -35,7 +35,7 @@ export function getRwaStore(): RwaStore {
     if (!config.secret || config.secret.length < 32)
       throw new RwaStoreError("RWA_STORE_UNAVAILABLE");
     return {
-      async request(input) {
+      async request<K extends StoreOperation>(input: StoreRequest<K>) {
         try {
           const response = await fetch(new URL("/v1/rwa", base), {
             method: "POST",
@@ -54,7 +54,9 @@ export function getRwaStore(): RwaStore {
                 ? body.code
                 : "RWA_STORE_UNAVAILABLE",
             );
-          return body;
+          // Trusted internal gateway wire boundary; the service uses the same checked handlers.
+          // This annotation is not runtime response-schema validation.
+          return body as StoreResultMap[K];
         } catch (error) {
           throw error instanceof RwaStoreError
             ? error
@@ -90,17 +92,17 @@ export async function getRwaPairs(options: PairOptions) {
       getCachedRwaPairs(options.minTvl, options.maxPages, options.sortBy) ??
       discoverRwaPairs(options)
     );
-  const snapshot = (await getRwaStore().request({
+  const snapshot = await getRwaStore().request({
     op: "pairs",
     ...options,
-  })) as SnapshotPairs;
+  });
   // A gateway running an older store build returns no `tokenIcons`; keep the manual list in that case.
   return snapshot.tokenIcons ? snapshot : { ...snapshot, tokenIcons: tokenIconMap([]) };
 }
 export async function getPoolAprSnapshot(poolId: string) {
   if (!getRwaConfig().enabled) return fetchPoolRangeApr(poolId);
   try {
-    return (await getRwaStore().request({ op: "apr", poolId })) as SnapshotApr;
+    return await getRwaStore().request({ op: "apr", poolId });
   } catch (error) {
     // This endpoint also serves ordinary CLMM positions. Only pools never in
     // the RWA feed keep that existing path; failed tracked snapshots fail closed.
@@ -124,11 +126,4 @@ export function snapshotError(error: unknown) {
       headers: { "Cache-Control": "no-store", "Retry-After": "60" },
     },
   );
-}
-
-export async function storeCall<T>(
-  store: RwaStore,
-  request: StoreRequest,
-): Promise<T> {
-  return (await store.request(request)) as T;
 }

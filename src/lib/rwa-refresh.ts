@@ -13,7 +13,7 @@ import { rpcConnection } from "@sofinance/engine/rpc";
 import { mapPool } from "@sofinance/engine/jupiter";
 import { volumeWindowEnd } from "./rwa-daily";
 import { sanitizePublicError } from "./public-error";
-import { getRwaStore, storeCall } from "./rwa-store";
+import { getRwaStore } from "./rwa-store";
 import { UNIV4_RHC_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/uniswap-v4/constants";
 import { resolveTokenIcons, rhcIconSources, solanaIconSources } from "./token-icons/resolve";
 import type { RwaPairRow } from "./rwa-pairs";
@@ -120,7 +120,7 @@ async function runJob(job: JobName, options: Options): Promise<JobResult> {
   const store = options.store ?? getRwaStore(),
     config = getRwaConfig(),
     clock = options.clock ?? Date.now;
-  const lease = await storeCall<Lease | null>(store, {
+  const lease = await store.request({
     op: "claim",
     job,
     force: !!options.force,
@@ -143,20 +143,20 @@ async function runJob(job: JobName, options: Options): Promise<JobResult> {
       if (!result.discovery)
         throw new Error("Discovery coverage metadata missing");
       const data: DiscoveryWrite = { result, ...result.discovery };
-      await storeCall(store, { op: "publishDiscovery", lease, data });
+      await store.request({ op: "publishDiscovery", lease, data });
       processed = result.pairs.length;
       // Best effort: a missing table or an indexer outage leaves the snapshot published and the old icons in place.
       await refreshTokenIcons(store, lease, result.pairs, options.fetcher, signal).catch(() => {
         issues.push("Token icons not saved");
       });
     } else {
-      await storeCall(store, { op: "prepareDaily", lease });
-      const pools = await storeCall<ActivePool[]>(store, { op: "activePools" });
+      await store.request({ op: "prepareDaily", lease });
+      const pools = await store.request({ op: "activePools" });
       await mapPool(pools, config.concurrency, async (pool) => {
         const poolId = pool.pair.poolAddress;
         try {
           signal.throwIfAborted();
-          await storeCall(store, { op: "renew", lease });
+          await store.request({ op: "renew", lease });
           const [profile, chainSnapshot] = await Promise.all([
             refreshProfile(pool, options.fetcher ?? fetch, clock(), signal),
             readOnchainPoolLiquidity(
@@ -185,8 +185,8 @@ async function runJob(job: JobName, options: Options): Promise<JobResult> {
             Date.parse(profile.windowEndUtc) - payload.sample.days * 86_400_000,
           ).toISOString();
           signal.throwIfAborted();
-          await storeCall(store, { op: "prepareDaily", lease });
-          await storeCall(store, {
+          await store.request({ op: "prepareDaily", lease });
+          await store.request({
             op: "saveApr",
             lease,
             data: {
@@ -207,7 +207,7 @@ async function runJob(job: JobName, options: Options): Promise<JobResult> {
           ).slice(0, 400);
           issues.push(`${poolId}: ${message}`);
           if (!signal.aborted)
-            await storeCall(store, {
+            await store.request({
               op: "saveApr",
               lease,
               data: {
@@ -221,7 +221,7 @@ async function runJob(job: JobName, options: Options): Promise<JobResult> {
         }
       });
       signal.throwIfAborted();
-      await storeCall(store, { op: "prepareDaily", lease });
+      await store.request({ op: "prepareDaily", lease });
       if (issues.length) status = "partial";
     }
   } catch (error) {
@@ -229,7 +229,7 @@ async function runJob(job: JobName, options: Options): Promise<JobResult> {
     issues.push(sanitizePublicError(error, "Refresh failed").slice(0, 400));
   }
   try {
-    await storeCall(store, {
+    await store.request({
       op: "finish",
       lease,
       processed,
@@ -261,6 +261,6 @@ export async function refreshTokenIcons(store: RwaStore, lease: Lease, pairs: re
   const rhc = await resolveTokenIcons("robinhood",
     UNIV4_RHC_ALLOWLISTED_POOLS.flatMap((pool) => [pool.currency0.address, pool.currency1.address]), rhcIconSources(fetcher), { signal });
   signal.throwIfAborted();
-  await storeCall(store, { op: "renew", lease });
-  return storeCall<{ saved: number }>(store, { op: "saveTokenIcons", lease, data: [...solana, ...rhc] });
+  await store.request({ op: "renew", lease });
+  return store.request({ op: "saveTokenIcons", lease, data: [...solana, ...rhc] });
 }
