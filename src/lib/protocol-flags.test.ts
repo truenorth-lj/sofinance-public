@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { deployTarget, isOrcaDiscoveryEnabled, isOrcaPositionsEnabled, isRhcUniv4DiscoveryEnabled, isRhcUniv4TxBuildEnabled, ORCA_DISCOVERY_ENABLED, ORCA_POSITIONS_ENABLED, RHC_UNIV4_DISCOVERY_ENABLED, RHC_UNIV4_TX_BUILD_ENABLED, isRhcUniv4TradingEnabled, RHC_UNIV4_TRADING_ENABLED, isRhcUniv4WalletSigningEnabled, RHC_UNIV4_WALLET_SIGNING_ENABLED, isMeteoraDlmmDiscoveryEnabled, METEORA_DLMM_DISCOVERY_ENABLED, isMeteoraDlmmTxBuildEnabled, METEORA_DLMM_TX_BUILD_ENABLED, isMeteoraDlmmWalletSigningEnabled, METEORA_DLMM_WALLET_SIGNING_ENABLED } from "./protocol-flags";
+import { deployTarget, isOrcaDiscoveryEnabled, isOrcaPositionsEnabled, isRhcUniv4DiscoveryEnabled, isRhcUniv4TxBuildEnabled, ORCA_DISCOVERY_ENABLED, ORCA_POSITIONS_ENABLED, RHC_UNIV4_DISCOVERY_ENABLED, RHC_UNIV4_TX_BUILD_ENABLED, isRhcUniv4TradingEnabled, RHC_UNIV4_TRADING_ENABLED, isRhcUniv4WalletSigningEnabled, RHC_UNIV4_WALLET_SIGNING_ENABLED, isRhcApr7dEnabled, RHC_APR7D_ENABLED, isMeteoraDlmmDiscoveryEnabled, METEORA_DLMM_DISCOVERY_ENABLED, isMeteoraDlmmTxBuildEnabled, METEORA_DLMM_TX_BUILD_ENABLED, isMeteoraDlmmWalletSigningEnabled, METEORA_DLMM_WALLET_SIGNING_ENABLED } from "./protocol-flags";
 
 describe("ORCA_DISCOVERY_ENABLED", () => {
   it("is a code constant that is OFF in production", () => {
@@ -49,6 +49,12 @@ describe("ORCA_DISCOVERY_ENABLED", () => {
     expect(isMeteoraDlmmWalletSigningEnabled("preview")).toBe(true);
   });
 
+  it("RHC_APR7D_ENABLED is a frozen code constant, ON in production (PM/LJ 2026-10-30)", () => {
+    expect(RHC_APR7D_ENABLED).toEqual({ production: true, preview: true, development: true });
+    expect(Object.isFrozen(RHC_APR7D_ENABLED)).toBe(true);
+    expect(isRhcApr7dEnabled("production")).toBe(true);
+  });
+
   it("METEORA_DLMM_DISCOVERY_ENABLED is a frozen code constant that is OFF in production", () => {
     expect(METEORA_DLMM_DISCOVERY_ENABLED).toEqual({ production: false, preview: true, development: true });
     expect(Object.isFrozen(METEORA_DLMM_DISCOVERY_ENABLED)).toBe(true);
@@ -92,26 +98,28 @@ describe("Raydium discovery is untouched by Orca", () => {
 describe("Raydium and Orca are untouched by Robinhood Chain", () => {
   it("existing feeds and readers never import Robinhood Chain / Uniswap v4 / EVM code", () => {
     for (const file of [
-      "src/lib/rwa-pairs.ts", "src/lib/rwa-store.ts", "src/lib/rwa-postgres-store.ts", "src/app/api/rwa-pairs/route.ts",
+      "src/lib/rwa-pairs.ts", "src/lib/rwa-store.ts", "src/app/api/rwa-pairs/route.ts",
       "src/lib/pool-range-apr.ts", "src/app/api/pool-range-apr/route.ts", "src/lib/orca-pairs.ts", "src/lib/orca-range-apr.ts",
       "src/lib/orca-positions.ts", "src/mcp/tools.ts",
     ]) {
       const source = readFileSync(join(process.cwd(), file), "utf8");
       expect(source, file).not.toMatch(/rhc|uniswap|rpc-evm|viem/i);
     }
+    // rwa-postgres-store holds the RHC feed/roster (migration 0003 + D8 cron); it may mention RHC without importing viem.
   });
 });
 
 describe("Raydium, Orca and Robinhood Chain are untouched by Meteora", () => {
   it("existing feeds and readers never import Meteora code", () => {
     for (const file of [
-      "src/lib/rwa-pairs.ts", "src/lib/rwa-store.ts", "src/lib/rwa-postgres-store.ts", "src/app/api/rwa-pairs/route.ts",
+      "src/lib/rwa-pairs.ts", "src/lib/rwa-store.ts", "src/app/api/rwa-pairs/route.ts",
       "src/lib/pool-range-apr.ts", "src/app/api/pool-range-apr/route.ts", "src/lib/orca-pairs.ts", "src/lib/orca-range-apr.ts",
       "src/lib/orca-positions.ts", "src/lib/rhc-univ4-pools.ts",
     ]) {
       const source = readFileSync(join(process.cwd(), file), "utf8");
       expect(source, file).not.toMatch(/meteora|dlmm/i);
     }
+    // rwa-postgres-store is shared across protocols after 0003; Meteora snapshots may land there later.
   });
 
   it("MCP tools reach Meteora position readers only behind METEORA_DLMM_DISCOVERY_ENABLED", () => {

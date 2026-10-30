@@ -95,12 +95,11 @@ export function assembleMeteoraRangeApr(
     ...profile,
     economics: { ...economics, feeRate: onchainFeeRate, protocolFeeRate: onchainProtocolFeeRate, fundFeeRate: 0 },
   };
-  const payload = assemblePoolRangeApr(poolId, onchainProfile, chain, nowSeconds);
+  const payload = assemblePoolRangeApr(poolId, onchainProfile, chain, nowSeconds, { assumptions: METEORA_RANGE_APR_ASSUMPTIONS, chainSource: METEORA_CHAIN_SOURCE });
   return {
     ...payload,
     label: METEORA_RANGE_APR_LABEL,
     assumptions: METEORA_RANGE_APR_ASSUMPTIONS,
-    sources: [...profile.sources, METEORA_CHAIN_SOURCE],
     protocol: "meteora-dlmm",
     readOnly: true,
     estimated: true,

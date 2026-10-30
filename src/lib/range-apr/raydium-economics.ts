@@ -1,5 +1,8 @@
-/** Pool-level economics from Raydium API v3 `/pools/info/ids` (pure parser). */
-export type RaydiumPoolEconomics = {
+/**
+ * Pool-level economics every range APR adapter produces (Raydium API v3 `/pools/info/ids` is parsed here;
+ * Other protocol adapters build the same shape).
+ */
+export type PoolEconomics = {
   mintA: string;
   mintB: string;
   decimalsA: number;
@@ -18,6 +21,9 @@ export type RaydiumPoolEconomics = {
   weekFeeApr: number | null;
 };
 
+/** @deprecated Former name, kept so existing imports keep compiling. Use `PoolEconomics`. */
+export type RaydiumPoolEconomics = PoolEconomics;
+
 function num(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string" && value.trim() !== "") {
@@ -34,7 +40,7 @@ function mintField(value: unknown): { address: string; decimals: number } | null
   return decimals === null ? null : { address: record.address, decimals };
 }
 
-export function parseRaydiumPoolEconomics(body: unknown): RaydiumPoolEconomics | null {
+export function parseRaydiumPoolEconomics(body: unknown): PoolEconomics | null {
   if (!body || typeof body !== "object" || Array.isArray(body)) return null;
   const envelope = body as { success?: unknown; data?: unknown };
   if (envelope.success === false || !Array.isArray(envelope.data)) return null;

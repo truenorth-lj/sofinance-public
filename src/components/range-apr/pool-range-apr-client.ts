@@ -16,7 +16,7 @@ const cache = new AsyncCache<PoolRangeAprPayload>({
 });
 
 /** Raydium pools use `/api/pool-range-apr`; Orca / Meteora use the flag-gated `/api/protocol-pools/range-apr` (same payload shape). */
-export type RangeAprProtocol = "raydium-clmm" | "orca-whirlpool" | "meteora-dlmm";
+export type RangeAprProtocol = "raydium-clmm" | "orca-whirlpool" | "meteora-dlmm" | "uniswap-v4-rhc";
 
 const rangeAprUrl = (poolId: string, protocol: RangeAprProtocol) => protocol === "raydium-clmm"
   ? `/api/pool-range-apr?poolId=${encodeURIComponent(poolId)}`

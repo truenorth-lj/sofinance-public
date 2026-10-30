@@ -1,3 +1,4 @@
+import { UNIV4_RHC_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/uniswap-v4/constants";
 import "server-only";
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
@@ -13,7 +14,7 @@ import { sortPairs, type DiscoverRwaPairsResult, type RwaPairRow } from "./rwa-p
 import { pickHighestAprPreset } from "./range-apr/preset-list";
 import { RWA_PAIRS_STALE_MS, aprSnapshotDelayed } from "./rwa-freshness";
 import {
-  ALGORITHM_VERSION, FEED_KEY, PAIRING_VERSION, RwaStoreError, storeRequestSchema,
+  ALGORITHM_VERSION, FEED_KEY, FEED_KEY_RHC, PAIRING_VERSION, RwaStoreError, storeRequestSchema,
   type AprWrite, type DiscoveryWrite, type Lease, type RwaStore, type SnapshotApr, type StoreRequest,
 } from "./rwa-store-types";
 
@@ -143,6 +144,7 @@ export class PostgresRwaStore implements RwaStore {
       case "publishDiscovery": return this.publish(input.lease, input.data as DiscoveryWrite);
       case "prepareDaily": return this.prepareDaily(input.lease);
       case "saveApr": return this.saveApr(input.lease, input.data as AprWrite);
+      case "ensureRhcRoster": return this.ensureRhcRoster(input.lease);
       case "saveTokenIcons": return this.saveTokenIcons(input.lease, input.data);
     }
   }
@@ -174,6 +176,43 @@ export class PostgresRwaStore implements RwaStore {
   private readTokenIcons(): Promise<TokenIconRow[]> {
     return tolerantTokenIcons(() => this.orm.select({ chain: tokenIcon.chain, address: tokenIcon.address,
       image: tokenIcon.image, source: tokenIcon.source }).from(tokenIcon));
+  }
+
+
+  /** Seed the RHC feed + allowlisted pool rows so APR snapshots can FK to them. */
+  private async ensureRhcRoster(lease: Lease) {
+    if (lease.job !== "rwa-apr-refresh") throw new RwaStoreError("INVALID_JOB");
+    const generation = "00000000-0000-4000-8000-0000000000a1";
+    return this.guarded(lease, async (tx) => {
+      await tx.insert(feed).values({
+        feedKey: FEED_KEY_RHC, pairingRuleVersion: "uniswap-v4-rhc-allowlist-v1",
+        generationId: generation, scanMaxPages: 1, pagesFetched: 1,
+        scannedPools: UNIV4_RHC_ALLOWLISTED_POOLS.length,
+        pagePoolCounts: [UNIV4_RHC_ALLOWLISTED_POOLS.length],
+        publishedAt: nowSql as unknown as string,
+        summary: { source: "allowlist", pairingRuleSummary: "StablePairHook allowlist", estimatedFeeAprLabel: "Estimated" },
+      }).onConflictDoUpdate({
+        target: feed.feedKey,
+        set: {
+          generationId: generation, scannedPools: UNIV4_RHC_ALLOWLISTED_POOLS.length,
+          pagePoolCounts: [UNIV4_RHC_ALLOWLISTED_POOLS.length], publishedAt: nowSql as unknown as string,
+          pairingRuleVersion: "uniswap-v4-rhc-allowlist-v1",
+        },
+      });
+      for (const spec of UNIV4_RHC_ALLOWLISTED_POOLS) {
+        const values = {
+          chain: "robinhood" as const, protocol: "uniswap-v4-rhc" as const,
+          mintA: spec.currency0.address.toLowerCase(), mintB: spec.currency1.address.toLowerCase(),
+          symbolA: spec.currency0.symbol, symbolB: spec.currency1.symbol,
+          tvlUsd: null, volume24hUsd: null, fees24hUsd: null, feeRate: null, poolFeeAprPct: null,
+          details: {}, sourcePage: 1, lastSeenGeneration: generation,
+          metricsObservedAt: nowSql as unknown as string,
+        };
+        await tx.insert(pool).values({ poolAddress: spec.poolId.toLowerCase(), feedKey: FEED_KEY_RHC, ...values })
+          .onConflictDoUpdate({ target: pool.poolAddress, set: { ...values, lastSeenAt: nowSql as unknown as string } });
+      }
+      return { pools: UNIV4_RHC_ALLOWLISTED_POOLS.length };
+    });
   }
 
   /** Upsert icon links found by the daily discovery job; rows already passed the `ICON_HOSTS` check in the schema. */
@@ -268,7 +307,11 @@ export class PostgresRwaStore implements RwaStore {
       const freshProfile = data.profile && !data.profile.profile.stale && (data.profile.profile.candles?.length ?? 0) > 0;
       const profile = freshProfile ? data.profile : old?.profile ?? data.profile;
       const observed = data.profile?.profile.observedAt;
-      await tx.insert(apr).values({ poolAddress: data.poolId, algorithmVersion: ALGORITHM_VERSION, lastAttemptStatus: status }).onConflictDoNothing();
+      const isRhc = /^0x[0-9a-f]{64}$/i.test(data.poolId);
+      await tx.insert(apr).values({
+        poolAddress: data.poolId, algorithmVersion: ALGORITHM_VERSION, lastAttemptStatus: status,
+        ...(isRhc ? { chain: "robinhood", protocol: "uniswap-v4-rhc" } : {}),
+      }).onConflictDoNothing();
       await tx.update(apr).set({ lastAttemptAt: nowSql, lastAttemptStatus: status, lastAttemptIssues: data.issues,
         profileCache: profile }).where(eq(apr.poolAddress, data.poolId));
       if (replace && data.payload) await tx.update(apr).set({ payload: data.payload, payloadSnapshotAt: data.payload.fetchedAt,

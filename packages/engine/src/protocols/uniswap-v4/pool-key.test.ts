@@ -27,6 +27,6 @@ describe("uniswap v4 pool key", () => {
 
   it("keeps the allowlist frozen", () => {
     expect(Object.isFrozen(UNIV4_RHC_ALLOWLISTED_POOLS)).toBe(true);
-    expect(UNIV4_RHC_ALLOWLISTED_POOLS.map(pool => pool.baseSymbol)).toEqual(["SPCX"]);
+    expect(UNIV4_RHC_ALLOWLISTED_POOLS.map(pool => pool.baseSymbol)).toEqual(["SPCX", "NVDA", "SPY", "META", "GOOGL", "AAPL", "MSTR", "CRCL", "TSLA", "QQQ", "GME"]);
   });
 });

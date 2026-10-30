@@ -10,9 +10,16 @@ import { trustedIcon } from "@sofinance/engine/token-metadata";
 import { iconAddress, validIconAddress, type TokenIconMap, type TokenIconRow } from "./token-icons/map";
 
 export const FEED_KEY = "raydium-clmm-rwa-v1";
+export const FEED_KEY_RHC = "uniswap-v4-rhc-v1";
 export const PAIRING_VERSION = "rwa-pairing-v1";
 export const ALGORITHM_VERSION = "range-apr-v1";
-export const POOL_ID = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+export const SOLANA_POOL_ID = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+/** Uniswap v4 pool id on Robinhood Chain: 0x + 64 hex. */
+export const RHC_POOL_ID = /^0x[0-9a-f]{64}$/i;
+/** Any pool address the store accepts (Solana base58 or RHC 0x-hex). */
+export const POOL_ID = /^(?:[1-9A-HJ-NP-Za-km-z]{32,44}|0x[0-9a-f]{64})$/i;
+/** @deprecated Alias kept for existing imports. Prefer SOLANA_POOL_ID when the chain is known. */
+export const SOLANA_ONLY_POOL_ID = SOLANA_POOL_ID;
 export const jobNames = ["rwa-discovery", "rwa-apr-refresh"] as const;
 export type JobName = (typeof jobNames)[number];
 export type Lease = { job: JobName; owner: string; epoch: number };
@@ -62,11 +69,12 @@ const leaseSchema = z.object({
   epoch: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
 });
 const poolSchema = z.string().regex(POOL_ID);
+const solanaPoolSchema = z.string().regex(SOLANA_POOL_ID);
 const pairSchema = z
   .object({
-    poolAddress: poolSchema,
-    mintA: poolSchema,
-    mintB: poolSchema,
+    poolAddress: solanaPoolSchema,
+    mintA: solanaPoolSchema,
+    mintB: solanaPoolSchema,
     symbolA: z.string().min(1),
     symbolB: z.string().min(1),
     tvlUsd: z.number().finite().nonnegative().nullable(),
@@ -90,10 +98,10 @@ const discoverySchema = z.object({
     })
     .passthrough(),
   sourcePages: z.record(
-    z.string().regex(POOL_ID),
+    solanaPoolSchema,
     z.number().int().min(1).max(30),
   ),
-  poolObservedAt: z.record(z.string().regex(POOL_ID), timestamp),
+  poolObservedAt: z.record(solanaPoolSchema, timestamp),
   pageCounts: z.array(z.number().int().min(0).max(1000)).max(30),
   qualificationObservedAt: z.record(z.string(), timestamp.nullable()),
 });
@@ -200,6 +208,7 @@ export const storeRequestSchema = z.discriminatedUnion("op", [
     data: z.custom<AprWrite>((value) => aprSchema.safeParse(value).success),
   }),
   z.object({ op: z.literal("prepareDaily"), lease: leaseSchema }),
+  z.object({ op: z.literal("ensureRhcRoster"), lease: leaseSchema }),
   z.object({ op: z.literal("saveTokenIcons"), lease: leaseSchema, data: tokenIconWriteSchema }),
 ]);
 export type StoreRequest = z.infer<typeof storeRequestSchema>;

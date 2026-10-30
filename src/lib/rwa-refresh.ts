@@ -15,6 +15,8 @@ import { volumeWindowEnd } from "./rwa-daily";
 import { sanitizePublicError } from "./public-error";
 import { getRwaStore, storeCall } from "./rwa-store";
 import { UNIV4_RHC_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/uniswap-v4/constants";
+import { isRhcApr7dEnabled } from "./protocol-flags";
+import { fetchRhcRangeApr } from "./rhc-range-apr";
 import { resolveTokenIcons, rhcIconSources, solanaIconSources } from "./token-icons/resolve";
 import type { RwaPairRow } from "./rwa-pairs";
 import {
@@ -221,6 +223,11 @@ async function runJob(job: JobName, options: Options): Promise<JobResult> {
         }
       });
       signal.throwIfAborted();
+      if (isRhcApr7dEnabled()) {
+        const rhc = await refreshRhcAprSnapshots({ store, lease, fetcher: options.fetcher ?? fetch, clock, signal });
+        processed += rhc.processed;
+        issues.push(...rhc.issues);
+      }
       await storeCall(store, { op: "prepareDaily", lease });
       if (issues.length) status = "partial";
     }
@@ -255,6 +262,55 @@ export async function refreshRwaSnapshots(options: Options = {}) {
  * → manual) and the allowlisted Robinhood Chain pool tokens (DexScreener → GeckoTerminal → manual). Only links that
  * pass `ICON_HOSTS` are written.
  */
+
+/**
+ * Upsert the allowlisted RHC pools into `rwa_pool_latest` (feed `uniswap-v4-rhc-v1`) and snapshot their
+ * 7-day range APR. Failures are recorded per pool and never abort the Solana pass.
+ */
+async function refreshRhcAprSnapshots(input: {
+  store: RwaStore; lease: Lease; fetcher: typeof fetch; clock: () => number; signal: AbortSignal;
+}): Promise<{ processed: number; issues: string[] }> {
+  const { store, lease, fetcher, clock, signal } = input;
+  const issues: string[] = [];
+  let processed = 0;
+  // Ensure the RHC feed + pool rows exist so saveApr's FK to rwa_pool_latest holds.
+  await storeCall(store, { op: "ensureRhcRoster", lease }).catch((error) => {
+    issues.push(`RHC roster: ${sanitizePublicError(error, "roster failed").slice(0, 200)}`);
+  });
+  for (const pool of UNIV4_RHC_ALLOWLISTED_POOLS) {
+    const poolId = pool.poolId;
+    try {
+      signal.throwIfAborted();
+      await storeCall(store, { op: "renew", lease });
+      const payload = await fetchRhcRangeApr(poolId, { fetcher, nowSeconds: Math.floor(clock() / 1000), bypassCache: true });
+      signal.throwIfAborted();
+      await storeCall(store, {
+        op: "saveApr",
+        lease,
+        data: {
+          poolId,
+          payload,
+          profile: null,
+          chainObservedAt: payload.fetchedAt,
+          issues: payload.sample.issues.slice(0, 20),
+        },
+      });
+      processed += 1;
+      if (payload.sample.degraded) issues.push(`${poolId}: Price history unavailable`);
+    } catch (error) {
+      const message = sanitizePublicError(error, "RHC APR refresh failed").slice(0, 400);
+      issues.push(`${poolId}: ${message}`);
+      if (!signal.aborted) {
+        await storeCall(store, {
+          op: "saveApr", lease,
+          data: { poolId, payload: null, profile: null, chainObservedAt: null, issues: [message] },
+        }).catch(() => undefined);
+      }
+    }
+  }
+  return { processed, issues };
+}
+
 export async function refreshTokenIcons(store: RwaStore, lease: Lease, pairs: readonly Pick<RwaPairRow, "mintA" | "mintB">[],
   fetcher: typeof fetch | undefined, signal: AbortSignal) {
   const solana = await resolveTokenIcons("solana", pairs.flatMap((pair) => [pair.mintA, pair.mintB]), solanaIconSources(fetcher), { signal });

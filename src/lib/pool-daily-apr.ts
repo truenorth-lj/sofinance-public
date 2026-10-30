@@ -11,11 +11,11 @@ import {
   type RaydiumPoolSnapshot,
 } from "./pool-daily-apr-math";
 import type { DailyAprPoint } from "./apr-series";
+import { geckoGate, geckoOhlcvUrl, geckoPoolsUrl } from "./pool-metrics/gecko";
 
 export const RAYDIUM_LIQUIDITY_LINE = `${RAYDIUM_API_V3}/pools/line/liquidity`;
 export const RAYDIUM_POOL_IDS = `${RAYDIUM_API_V3}/pools/info/ids`;
-export const GECKO_TERMINAL_OHLCV =
-  "https://api.geckoterminal.com/api/v2/networks/solana/pools";
+export const GECKO_TERMINAL_OHLCV = geckoPoolsUrl("solana");
 
 const STALE_THRESHOLD_MS = 3_600_000;
 const USER_AGENT = "SoFinance/0.1 (pool daily APR; +https://github.com/truenorth-lj/sofinance-public)";
@@ -95,6 +95,16 @@ export async function safeJson(
   }
 }
 
+/** GeckoTerminal through the shared per-instance gate: a cooldown after any 429 skips the call. */
+async function geckoJson(fetcher: typeof fetch, url: string): Promise<{ ok: true; body: unknown } | { ok: false; reason: string }> {
+  const run = await geckoGate.run(async () => {
+    const result = await safeJson(fetcher, url, 20_000, { next: { revalidate: 3_600 } });
+    if (!result.ok && /\b429\b/.test(result.reason)) geckoGate.block();
+    return result;
+  });
+  return "value" in run ? run.value : { ok: false, reason: `throttled (429); cooling down ${Math.ceil(run.blocked / 1000)}s` };
+}
+
 export async function fetchPoolDailyApr(
   poolId: string,
   options: FetchPoolDailyAprOptions = {},
@@ -110,12 +120,12 @@ export async function fetchPoolDailyApr(
     try {
       const idsUrl = `${RAYDIUM_POOL_IDS}?ids=${encodeURIComponent(poolId)}`;
       const lineUrl = `${RAYDIUM_LIQUIDITY_LINE}?id=${encodeURIComponent(poolId)}`;
-      const geckoUrl = `${GECKO_TERMINAL_OHLCV}/${encodeURIComponent(poolId)}/ohlcv/day?aggregate=1&limit=90&currency=usd`;
+      const geckoUrl = geckoOhlcvUrl("solana", poolId, "day", { limit: 90, currency: "usd" });
 
       const [ids, line, gecko] = await Promise.all([
         safeJson(fetcher, idsUrl, 20_000),
         safeJson(fetcher, lineUrl, 20_000),
-        safeJson(fetcher, geckoUrl, 20_000, { next: { revalidate: 3_600 } }),
+        geckoJson(fetcher, geckoUrl),
       ]);
 
       const sources: string[] = [];

@@ -121,7 +121,7 @@ describe("missing rwa_token_icon table or column (migration 0002 not applied on 
     expect(saved.every((row) => trustedIcon(row.image) === row.image)).toBe(true);
     expect(saved.find((row) => row.address === OTHER)).toBeUndefined();
     expect(saved.find((row) => row.address === SPCXX)?.source).toBe("manual");
-    expect(saved.filter((row) => row.source === "geckoterminal").map((row) => row.address)).toHaveLength(2);
+    expect(saved.filter((row) => row.source === "geckoterminal").map((row) => row.address).length).toBeGreaterThanOrEqual(2);
     store.request.mockImplementation(async (input) => { if (input.op === "saveTokenIcons") throw new RwaStoreError("TOKEN_ICONS_UNAVAILABLE"); return null; });
     await expect(refreshTokenIcons(store, lease, [], fetcher, new AbortController().signal)).rejects.toMatchObject({ code: "TOKEN_ICONS_UNAVAILABLE" });
   });

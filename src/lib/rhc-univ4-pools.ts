@@ -1,7 +1,7 @@
 import "@/lib/engine-host";
 import "server-only";
 
-import type { Univ4AllowlistedPool } from "@sofinance/engine/protocols/uniswap-v4/constants";
+import { UNIV4_RHC_ALLOWLISTED_POOLS, type Univ4AllowlistedPool } from "@sofinance/engine/protocols/uniswap-v4/constants";
 import { discoverUniv4RhcPools, type Univ4PoolSummary } from "@sofinance/engine/protocols/uniswap-v4/discovery";
 import { ESTIMATED_APR_LABEL, fetchUniv4MarketData, type Univ4MarketData } from "@sofinance/engine/protocols/uniswap-v4/market-data";
 import { createRhcClient } from "@sofinance/engine/rpc-evm/index";
@@ -10,7 +10,7 @@ import { AsyncCache } from "./async-cache";
 
 /**
  * Read-only Uniswap v4 pools on Robinhood Chain (chain 4663) for `/api/protocol-pools`.
- * Only the reviewed allowlist (SPCX/SPCXon on the StablePairHook); each pool is re-checked from current
+ * Only the reviewed StablePairHook allowlist (11 RH↔Ondo pairs); each pool is re-checked from current
  * on-chain state on every refresh and reported `delisted` if its hook implementation, fee config, key or
  * metadata no longer match. APR = hook fee rate × 24h volume / TVL from DexScreener (GeckoTerminal fallback):
  * no event scans over RPC (PM decision 2026-10-29). No transaction is built here.
@@ -59,11 +59,16 @@ function marketDataFor(fetcher?: typeof fetch) {
   }));
 }
 
-export async function discoverRhcUniv4Pools(options: { clients?: { state: PublicClient }; fetcher?: typeof fetch; bypassCache?: boolean } = {}): Promise<RhcUniv4PoolsResult> {
+export async function discoverRhcUniv4Pools(options: {
+  clients?: { state: PublicClient }; fetcher?: typeof fetch; bypassCache?: boolean;
+  /** Override the allowlist (tests pass the SPCX-only fixture). */
+  pools?: typeof UNIV4_RHC_ALLOWLISTED_POOLS;
+} = {}): Promise<RhcUniv4PoolsResult> {
   const load = async (): Promise<RhcUniv4PoolsResult> => {
     const pools = await discoverUniv4RhcPools({
       clients: options.clients ?? { state: (stateClient ??= createRhcClient("state")) },
       marketData: marketDataFor(options.fetcher),
+      ...(options.pools ? { pools: options.pools } : {}),
     });
     return {
       protocol: "uniswap-v4-rhc",
@@ -71,7 +76,7 @@ export async function discoverRhcUniv4Pools(options: { clients?: { state: Public
       readOnly: true,
       pools,
       fetchedAt: new Date().toISOString(),
-      source: "Robinhood Chain RPC: StateView / StablePairHook (allowlist: SPCX/SPCXon); 24h volume and TVL: DexScreener (GeckoTerminal fallback)",
+      source: "Robinhood Chain RPC: StateView / StablePairHook (allowlist: 11 StablePairHook RH↔Ondo pairs); 24h volume and TVL: DexScreener (GeckoTerminal fallback)",
       aprLabel: ESTIMATED_APR_LABEL,
       aprNote: "Estimated (估計) pool fee APR = hook's current fee rate × 24h volume / TVL × 365 (USD, from public indexers). The StablePairHook fee is dynamic; an estimate, not a guarantee.",
     };

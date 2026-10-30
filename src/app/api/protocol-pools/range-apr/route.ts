@@ -1,14 +1,15 @@
 import { apiError } from "@/lib/api-response";
 import { fetchMeteoraRangeApr, isAllowlistedMeteoraPool } from "@/lib/meteora-range-apr";
 import { fetchOrcaRangeApr, isAllowlistedOrcaPool } from "@/lib/orca-range-apr";
-import { isMeteoraDlmmDiscoveryEnabled, isOrcaDiscoveryEnabled } from "@/lib/protocol-flags";
+import { isMeteoraDlmmDiscoveryEnabled, isOrcaDiscoveryEnabled, isRhcApr7dEnabled } from "@/lib/protocol-flags";
+import { fetchRhcRangeApr, isAllowlistedRhcPool } from "@/lib/rhc-range-apr";
 
 /**
  * Read-only Orca Whirlpool pool state, range APR presets and liquidity distribution
  * (`?protocol=orca-whirlpool&poolId=…`, same payload shape as `/api/pool-range-apr` plus `state`).
  * Behind `ORCA_DISCOVERY_ENABLED` (off in production → 404); allowlisted pools only.
- * `?protocol=meteora-dlmm&poolId=…` serves the Meteora DLMM equivalent (bin arrays, estimated APR) behind
- * `METEORA_DLMM_DISCOVERY_ENABLED` (off in production → 404).
+ * `?protocol=meteora-dlmm&poolId=…` serves Meteora; `?protocol=uniswap-v4-rhc&poolId=…` serves Robinhood Chain
+ * Uniswap v4 (behind `RHC_APR7D_ENABLED`).
  */
 const NOT_FOUND = () => Response.json({ error: "Not found" }, { status: 404, headers: { "Cache-Control": "no-store" } });
 
@@ -29,6 +30,15 @@ export async function GET(request: Request) {
       return Response.json(payload, { headers: payload.sample.degraded ? DEGRADED_CDN_HEADERS : CDN_HEADERS });
     } catch (error) {
       return apiError(error, "Meteora range APR unavailable", 503);
+    }
+  }
+  if (protocol === "uniswap-v4-rhc") {
+    if (!isRhcApr7dEnabled() || !isAllowlistedRhcPool(poolId)) return NOT_FOUND();
+    try {
+      const payload = await fetchRhcRangeApr(poolId);
+      return Response.json(payload, { headers: payload.sample.degraded ? DEGRADED_CDN_HEADERS : CDN_HEADERS });
+    } catch (error) {
+      return apiError(error, "RHC range APR unavailable", 503);
     }
   }
   if (!isOrcaDiscoveryEnabled()) return NOT_FOUND();

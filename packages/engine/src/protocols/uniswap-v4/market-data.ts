@@ -1,5 +1,6 @@
 import { isAddressEqual, type Address, type Hex } from "viem";
 import type { Univ4AllowlistedPool } from "./constants";
+import { poolFeeAprPct } from "../../fee-apr";
 
 /**
  * 24h volume and TVL for an allowlisted v4 pool from public indexers (PM decision 2026-10-29: no event scans
@@ -148,6 +149,6 @@ export function poolAprFromMarket(market: Univ4MarketData, feePips: { zeroForOne
     estimated: true, attribution: market.source === "geckoterminal" ? GECKOTERMINAL_ATTRIBUTION : null,
     label: ESTIMATED_APR_LABEL, basis: "24h-volume", source: market.source, feeRatePct: feeRate * 100,
     volume24hUsd: market.volume24hUsd, tvlUsd: market.tvlUsd, txns24h: market.txns24h,
-    estimatedPoolFeeAprPct: market.tvlUsd > 0 ? (feeRate * market.volume24hUsd / market.tvlUsd) * 365 * 100 : null,
+    estimatedPoolFeeAprPct: poolFeeAprPct({ feeRate, dailyVolumeUsd: market.volume24hUsd, tvlUsd: market.tvlUsd }),
   };
 }
