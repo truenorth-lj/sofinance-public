@@ -2,7 +2,9 @@
 
 import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useRef } from "react";
-import { capturePageview, initGrowthAnalytics } from "@/lib/analytics/client";
+import { captureGrowthEvent, capturePageview, initGrowthAnalytics } from "@/lib/analytics/client";
+import { GROWTH_EVENTS } from "@/lib/analytics/events";
+import { sanitizeAttrValue } from "@/lib/analytics/attribution";
 
 export function AnalyticsRoot() {
   const pathname = usePathname();
@@ -18,11 +20,13 @@ export function AnalyticsRoot() {
       if (!enabled) return;
       if (last.current === key) return;
       last.current = key;
-      // `/app/rwa-pairs` is retired (307 to `/app#pools`, `ref` kept), so `rwa_pairs_view` no longer fires; the
-      // `/app` pageview carries the same `ref` in `$current_url`.
       capturePageview(pathname, window.location.href);
+      if (pathname === "/app/rwa-pairs") {
+        const ref = sanitizeAttrValue(searchParams.get("ref"));
+        captureGrowthEvent(GROWTH_EVENTS.rwaPairsView, ref ? { ref } : {});
+      }
     })();
-  }, [pathname, search]);
+  }, [pathname, search, searchParams]);
 
   return null;
 }

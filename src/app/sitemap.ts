@@ -3,11 +3,11 @@ import { articleCanonicalPath, listBlogArticles } from "@/lib/blog";
 import { DOCS_PAGES } from "@/lib/docs-nav";
 import { APP_ROUTES, BLOG_ROUTES, getCanonicalSiteUrl } from "@/lib/public-urls";
 
-/** Public indexable paths on main: marketing home, the app (pool list), docs, and blog. */
+/** Public indexable paths on main: marketing home, RWA pairs, docs, and blog. */
 export function publicSitemapPaths(): string[] {
   return [
     "/",
-    APP_ROUTES.home,
+    APP_ROUTES.rwaPairs,
     ...DOCS_PAGES.map((page) => page.href),
     BLOG_ROUTES.home,
     ...listBlogArticles().map((article) => articleCanonicalPath(article.slug)),

@@ -94,7 +94,7 @@ export function OutcomePanel({
             are ignored.
           </p>
           <Link
-            href={APP_ROUTES.pools}
+            href={APP_ROUTES.rwaPairs}
             className="group mt-8 flex h-12 items-center justify-between rounded-full bg-lemon pl-5 pr-1.5 text-sm font-semibold text-ink outline-none transition-transform hover:-translate-y-px focus-visible:shadow-[0_0_0_3px_var(--color-cream)]"
           >
             Choose a pool for this plan
@@ -151,7 +151,7 @@ export function OutcomePanel({
               {`Best case, not a probability or a promise. "Best APY" is the highest of this pool's 7, 30 and 90-day average fee yields (complete UTC days only), compounded daily with no price-shock path. Break-even is the first day the projection covers the typical cost of creating the position and adding liquidity (around ${planOpenCostPctLabel()}% of the deposit). Network fees are ignored. Read-only: nothing here prepares, signs or sends a transaction.`}
             </p>
             <Link
-              href={poolId ? buildOpenPositionPath(poolId) : APP_ROUTES.pools}
+              href={poolId ? buildOpenPositionPath(poolId) : APP_ROUTES.rwaPairs}
               className="group flex h-12 items-center justify-between rounded-full border border-white/30 pl-5 pr-1.5 text-sm font-medium text-cream outline-none transition-colors hover:border-cream focus-visible:border-lemon"
             >
               {poolId ? "Create a position in this pool" : "Choose a pool for this plan"}

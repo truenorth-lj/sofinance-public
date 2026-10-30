@@ -17,7 +17,7 @@ export const nextConfig: NextConfig = {
   },
   async redirects() {
     return [
-      { source: "/rwa-pairs", destination: "/app/rwa-pairs", permanent: true }, // then the proxy 307s to /app#pools
+      { source: "/rwa-pairs", destination: "/app/rwa-pairs", permanent: true },
       { source: "/position-performance", destination: "/app/position-performance", permanent: true },
       { source: "/ai", destination: "/app/ai", permanent: true },
       { source: "/sign/:token", destination: "/app/sign/:token", permanent: true },

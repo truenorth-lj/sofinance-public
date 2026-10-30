@@ -7,18 +7,9 @@ import type { Page } from "@playwright/test";
 import { FakeWallet } from "../../fake-wallet/node-signer";
 
 async function connectInModal(page: Page, wallet: FakeWallet) {
-  const modal = new ConnectModal(page, wallet);
-  // Opening a pool on /app starts the wallet connect by itself, so the terms step may already be on screen.
-  const terms = page.getByRole("dialog", { name: "Before you connect", exact: true });
-  await expect(terms.or(modal.walletEntry.first()).or(modal.navAddress)).toBeVisible();
-  if (await terms.isVisible()) {
-    await terms.getByRole("checkbox").check();
-    await terms.getByRole("button", { name: "Continue to wallet", exact: true }).click();
-  }
-  if (await modal.walletEntry.first().isVisible()) await modal.walletEntry.first().click();
   const connect = page.getByRole("dialog", { name: "Create position" }).getByRole("button", { name: "Connect wallet", exact: true });
-  if (!(await modal.navAddress.isVisible()) && await connect.count()) {
-    await modal.connect(connect);
+  if (await connect.count()) {
+    await new ConnectModal(page, wallet).connect(connect);
   }
   await expect(new ConnectModal(page, wallet).navAddress).toBeVisible();
 }
@@ -47,7 +38,6 @@ async function setup(page: Page, wallet: FakeWallet, mode: "ok" | "unknown" | "u
       feeTierBps: 1, tvlUsd: 100000, volume24hUsd: 10000, fees24hUsd: 10, estimatedFeeAprPct: 4, raydiumFeeApr24h: 4,
       token2022A: false, token2022B: false, freezeRisk: false, jupiterTagsA: [], jupiterTagsB: [] }],
       fetchedAt: new Date().toISOString(), scannedPools: 1, pagesFetched: 1, pairingRuleSummary: "Test pair", estimatedFeeAprLabel: "Estimated APR" };
-    if (path === "/api/protocol-pools") value = { pairs: [], pools: [] };
     if (path === "/api/wallet") value = { assets: [{ kind: "token", mint: quote.inputMint, eligible: true, decimals: 6, balance: "1000000000" }] };
     if (path === "/api/token-metadata") value = {};
     if (path === "/api/sol-usdc-price") value = { rate: 150 };
@@ -76,9 +66,7 @@ async function setup(page: Page, wallet: FakeWallet, mode: "ok" | "unknown" | "u
     if (path === "/api/open-status") value = { signature: body.attempt.signature, status: chainStatus };
     await route.fulfill({ json: value });
   });
-  // The retired /app/rwa-pairs deep link 307s to /app?openPool=<id>#pools; this also covers that redirect.
   await page.goto(`/app/rwa-pairs?pool=${poolId}&open=1`, { waitUntil: "domcontentloaded" });
-  await expect(page).toHaveURL(new RegExp(`/app\\?openPool=${poolId}#pools$`));
   await expect(page.getByRole("dialog", { name: "Create position" })).toBeVisible();
   await connectInModal(page, wallet);
   await page.getByRole("textbox", { name: "Amount", exact: true }).fill("0.01");

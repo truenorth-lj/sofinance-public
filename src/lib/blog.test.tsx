@@ -92,7 +92,7 @@ describe("blog content", () => {
     expect(html).toContain("payoff-gamma.png");
     expect(html).toContain("liquidity-behavior.png");
     expect(html).toContain("comparison-table.png");
-    expect(html).toContain('href="/app?ref=x-article#pools"');
+    expect(html).toContain('href="/app/rwa-pairs?ref=x-article"');
   });
 
   it("reads PNG dimensions from public files and formats dates without locale drift", () => {

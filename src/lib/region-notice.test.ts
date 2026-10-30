@@ -53,7 +53,7 @@ describe("region notice copy", () => {
 describe("Proxy never blocks notice countries", () => {
   for (const code of NOTICE) {
     it(`${code}: page and app load normally and get the notice flag`, () => {
-      for (const path of ["/", "/app", "/app/plan", "/app/sign/abc", "/terms"]) {
+      for (const path of ["/", "/app", "/app/rwa-pairs", "/app/sign/abc", "/terms"]) {
         const response = visit(path, code);
         expect(response.status).toBe(200);
         expect(response.headers.get("location")).toBe(null);

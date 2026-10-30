@@ -525,7 +525,7 @@ describe("MCP Tools", () => {
       } as never);
 
       const result = await listRwaPairs({ minTvl: 0, maxPages: 1, sortBy: "estimatedFeeApr" });
-      expect(result.pairs[0]?.openPositionUrl).toContain(`/app?openPool=${poolId}#pools`);
+      expect(result.pairs[0]?.openPositionUrl).toContain(`/app/rwa-pairs?pool=${poolId}&open=1`);
       expect(result.pairs[0]?.recommendedRanges.some((item: { id: string }) => item.id === "standard")).toBe(true);
     });
   });

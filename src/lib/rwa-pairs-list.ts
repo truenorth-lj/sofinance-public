@@ -1,5 +1,5 @@
 /**
- * Client fetch for the public RWA pairs list. Homepage, the /app pool list, and the plan
+ * Client fetch for the public RWA pairs list. Homepage, /app/rwa-pairs, and the plan
  * picker share this path so they hit the same cached `/api/rwa-pairs` response.
  */
 export const RWA_PAIRS_LIST_PATH =

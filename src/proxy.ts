@@ -34,7 +34,7 @@ export function proxy(request: NextRequest) {
     return withRegionNotice(request, NextResponse.rewrite(url));
   }
   // Old pages merged into `/app` (flag-off pages above stay 404). A real 307, not a streamed client redirect.
-  const moved = unifiedAppRedirect(rewritePath ?? request.nextUrl.pathname, request.nextUrl.search);
+  const moved = unifiedAppRedirect(rewritePath ?? request.nextUrl.pathname);
   if (moved) return withRegionNotice(request, NextResponse.redirect(new URL(moved, request.url), 307));
   if (!rewritePath) {
     return withRegionNotice(request, NextResponse.next());

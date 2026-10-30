@@ -42,7 +42,7 @@ function pairLabel(pool: HomepagePool) {
 
 /**
  * The pool's headline APR: the estimated fee APR of its highest-APR candidate range (7-day average), read from
- * the same cached `/api/pool-range-apr` payload and pure resolver as the /app pool cards, so both
+ * the same cached `/api/pool-range-apr` payload and pure resolver as the /app/rwa-pairs card badge, so both
  * always show the same number. "…" while loading; "—" when there is no estimate (error or degraded data).
  */
 function RangeAprValue({ poolId }: { poolId: string }) {
@@ -209,7 +209,7 @@ export function HomepagePoolsTable() {
         {pairs && rows.length === 0 && !loading && !error && (
           <p className="px-2 py-8 text-sm text-smoke">
             No same-asset pools to show right now.{" "}
-            <Link href={APP_ROUTES.pools} className="text-cream underline underline-offset-2">
+            <Link href={APP_ROUTES.rwaPairs} className="text-cream underline underline-offset-2">
               See all pools
             </Link>
           </p>
@@ -305,7 +305,7 @@ export function HomepagePoolsTable() {
                 {HOMEPAGE_APR_DOCS_LINK_LABEL}
               </Link>
               <Link
-                href={APP_ROUTES.pools}
+                href={APP_ROUTES.rwaPairs}
                 className="text-sm font-semibold text-cream underline-offset-2 hover:underline"
               >
                 See all pools →

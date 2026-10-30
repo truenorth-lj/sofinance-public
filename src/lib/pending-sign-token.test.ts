@@ -53,6 +53,6 @@ describe("open-position signUrl token", () => {
 
   it("builds an open-position deep link for a pool id", () => {
     const pool = Keypair.generate().publicKey.toBase58();
-    expect(buildOpenPositionUrl(pool)).toBe(`/app?openPool=${encodeURIComponent(pool)}#pools`);
+    expect(buildOpenPositionUrl(pool)).toBe(`/app/rwa-pairs?pool=${encodeURIComponent(pool)}&open=1`);
   });
 });

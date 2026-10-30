@@ -29,12 +29,12 @@ describe("SEO metadata routes", () => {
     else process.env.NEXT_PUBLIC_APP_URL = originalAppUrl;
   });
 
-  it("indexes the homepage, the app pool list, every docs page, and every blog article", () => {
+  it("indexes the homepage, RWA pairs, every docs page, and every blog article", () => {
     delete process.env.NEXT_PUBLIC_APP_URL;
     const blogPaths = [BLOG_ROUTES.home, ...listBlogArticles().map((article) => articleCanonicalPath(article.slug))];
     expect(publicSitemapPaths()).toEqual([
       "/",
-      APP_ROUTES.home,
+      APP_ROUTES.rwaPairs,
       ...DOCS_PAGES.map((page) => page.href),
       ...blogPaths,
     ]);
@@ -46,7 +46,7 @@ describe("SEO metadata routes", () => {
     const urls = sitemap().map((entry) => entry.url);
     expect(urls).toEqual([
       CANONICAL_SITE_URL,
-      `${CANONICAL_SITE_URL}/app`,
+      `${CANONICAL_SITE_URL}/app/rwa-pairs`,
       ...DOCS_PAGES.map((page) => `${CANONICAL_SITE_URL}${page.href}`),
       ...blogPaths.map((path) => `${CANONICAL_SITE_URL}${path}`),
     ]);

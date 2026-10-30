@@ -1,18 +1,28 @@
-import { redirect } from "next/navigation";
-import { rwaPairsRedirect } from "@/lib/unified-pools/deep-link";
+"use client";
 
-/**
- * Retired (PM 2026-10-30): the RWA pairs are in the `/app` pool list. `src/proxy.ts` sends the real 307
- * (`/app/rwa-pairs?pool=<id>&open=1` → `/app?openPool=<id>#pools`, otherwise `/app#pools`); this page is the fallback.
- */
-export const dynamic = "force-dynamic";
-export const metadata = { robots: { index: false, follow: false } };
+import { Suspense } from "react";
+import { InkHero, InkShell, InkNav } from "@/components/ink";
+import { RwaPairsPanel } from "@/components/rwa-pairs-panel";
+import { useWalletConnection } from "@/components/wallet-connection";
 
-export default async function RwaPairsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  const query = new URLSearchParams();
-  for (const [key, value] of Object.entries(await searchParams)) {
-    const first = Array.isArray(value) ? value[0] : value;
-    if (typeof first === "string") query.set(key, first);
-  }
-  redirect(rwaPairsRedirect(query));
+export default function RwaPairsPage() {
+  const { address, connected, connect, disconnect } = useWalletConnection();
+
+  return (
+    <InkShell>
+      <InkNav wallet={address} connected={connected} onConnect={connect} onDisconnect={disconnect} />
+
+      <InkHero label="RWA pairs" title="Same-asset RWA pairs">
+        <p>
+          Find Raydium CLMM pools where both tokens represent the same underlying (wrapped vs unwrapped /
+          Jupiter stocks/rwa tags + xStocks whitelist), plus the curated USDC/USDT pool. Ranked by estimated fee APR from 24h fees and TVL.
+          Create position swaps your chosen wallet asset into pool tokens as needed, then opens a new LP position and adds liquidity in one transaction.
+        </p>
+      </InkHero>
+
+      <Suspense fallback={<p className="mt-6 px-2 text-sm text-smoke">Loading pairs…</p>}>
+        <RwaPairsPanel />
+      </Suspense>
+    </InkShell>
+  );
 }

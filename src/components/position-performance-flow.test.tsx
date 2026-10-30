@@ -203,10 +203,10 @@ describe("position performance workflow", () => {
     expect(container.querySelector<HTMLSelectElement>("#perf-position")!.value).toBe(secondMint);
   });
 
-  it("offers the pool list only after a successful scan with no positions", async () => {
+  it("offers RWA Pairs only after a successful scan with no positions", async () => {
     positions = [];
     await scan();
-    expect(container.querySelector('a[href="/app#pools"]')?.textContent).toContain("Explore pools");
+    expect(container.querySelector('a[href="/app/rwa-pairs"]')?.textContent).toContain("Explore RWA Pairs");
     const button = Array.from(container.querySelectorAll("button")).find((item) => item.textContent?.includes("Compute performance"));
     expect(button?.disabled).toBe(true);
   });
@@ -214,7 +214,7 @@ describe("position performance workflow", () => {
   it("does not treat a wallet scan error as an empty wallet", async () => {
     fetchMock.mockRejectedValue(new Error("RPC unavailable"));
     await scan();
-    expect(container.querySelector('a[href="/app#pools"]')).toBeNull();
+    expect(container.querySelector('a[href="/app/rwa-pairs"]')).toBeNull();
     expect(container.textContent).toContain("Could not load positions");
   });
 

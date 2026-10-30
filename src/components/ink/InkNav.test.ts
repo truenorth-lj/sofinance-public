@@ -14,7 +14,7 @@ describe("InkNav app routes", () => {
     const src = readFileSync(resolve("src/components/ink/InkNav.tsx"), "utf8");
     expect(src).toContain("APP_ROUTES.home");
     expect(src).not.toContain("APP_ROUTES.positionPerformance");
-    expect(src).toContain("APP_ROUTES.pools");
+    expect(src).toContain("APP_ROUTES.rwaPairs");
     expect(src).toContain("APP_ROUTES.ai");
     expect(src).toContain("DOCS_ROUTES.home");
     expect(src).toContain("BLOG_ROUTES.home");

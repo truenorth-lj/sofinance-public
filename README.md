@@ -9,12 +9,12 @@ One shared workspace engine in `packages/engine`, with application policies in `
 
 The server never holds private keys. Agents/users sign locally; broadcast re-verifies an HMAC permit and re-simulates before send. Open-position uses Phantom’s multi-signer recipe: the browser (or agent) generates the position NFT mint, the wallet signs the unsigned transaction first, then the mint signature is added on the transaction the wallet returns (including any extra Lighthouse / compute-budget instructions Phantom added). HTTP withdraw and other single-signer flows broadcast that wallet-returned transaction after a cheap sanity check.
 
-The marketing landing page lives at `/`. Product UI lives under `/app` (Positions and the Solana + Robinhood Chain pool list, Plan, position performance, Use AI, and sign deep-links). `/api/*` is unchanged.
+The marketing landing page lives at `/`. Product UI lives under `/app` (Positions, Plan, RWA pairs, position performance, Use AI, and sign deep-links). `/api/*` is unchanged.
 
 | Old path | New path |
 |----------|----------|
 | `/` (app home) | `/app` |
-| `/rwa-pairs`, `/app/rwa-pairs` | `/app#pools` (`?pool=<id>&open=1` becomes `?openPool=<id>`; `ref` / `utm_*` kept) |
+| `/rwa-pairs` | `/app/rwa-pairs` |
 | `/position-performance` | `/app/position-performance` |
 | `/ai` | `/app/ai` |
 | `/sign/<token>` | `/app/sign/<token>` |
@@ -162,8 +162,8 @@ Local stdio against this checkout: see [Quickstart — MCP for AI Agents](#quick
 - Web UI Advanced settings for resale gap and price tolerance; MCP exposes the same knobs
 - **Position performance / realized fee APR**: holding-period return from on-chain open/increase/decrease events + current equity (not Raydium pool 24h feeApr). Same-asset RWA pairs prefer **token-equivalent (TE)** in the plain/base ticker via current tick mid (raw A/B + TE; USD secondary) — MCP `get_position_performance`, `/api/position-performance`, `/app/position-performance` UI
 - **Live range status**: in-range / near-edge status from the on-chain pool price versus the position ticks — MCP `get_position_range_status`
-- **Same-asset RWA pair discovery**: Raydium CLMM pools where both sides are the same underlying (e.g. `MSTRx`/`MSTR`, `NVDAx`/`NVDA`), filtered by Jupiter Tokens API tags (`stocks`|`rwa`) plus Backed xStocks whitelist, with fee tier, TVL, 24h volume/fees, estimated fee APR, Token-2022 / freeze flags — MCP `list_rwa_pairs` and the `/app#pools` pool list
-- **Open CLMM position**: create a new Raydium concentrated position from the `/app#pools` pool list (Open position) or MCP `quote_open_position` / `prepare_open_position` / `submit_open_position`, with Jupiter swap-to-ratio, range presets (web UI adds a **Micro** band, an estimated fee APR per preset, and an **Best** button that picks the candidate with the highest estimated APR; see `docs/rwa-range-apr.md`), and the same quote → prepare → sign → re-sim gates. No need to open the NFT on raydium.io first. The position NFT mint is an ephemeral **client** Keypair: `/api/open-prepare` takes its public key and returns a fully unsigned v0 tx. The wallet `signTransaction`s first (Phantom recipe); the client then adds the mint signature on the returned tx (extras such as Lighthouse are allowed) and zeroes the secret. Dedicated `submit_open_position` (not `submit_signed_transaction`) because this message has two required signers. MCP agents should pass `nftMint` and mint-sign after the wallet; without it, `/app/sign/<token>` generates the mint in the browser, re-prepares via `/api/sign-open-prepare`, and signs it after the wallet (the server never holds a mint secret).
+- **Same-asset RWA pair discovery**: Raydium CLMM pools where both sides are the same underlying (e.g. `MSTRx`/`MSTR`, `NVDAx`/`NVDA`), filtered by Jupiter Tokens API tags (`stocks`|`rwa`) plus Backed xStocks whitelist, with fee tier, TVL, 24h volume/fees, estimated fee APR, Token-2022 / freeze flags — MCP `list_rwa_pairs` and `/app/rwa-pairs` UI
+- **Open CLMM position**: create a new Raydium concentrated position from `/app/rwa-pairs` (Add liquidity) or MCP `quote_open_position` / `prepare_open_position` / `submit_open_position`, with Jupiter swap-to-ratio, range presets (web UI adds a **Micro** band, an estimated fee APR per preset, and an **Best** button that picks the candidate with the highest estimated APR; see `docs/rwa-range-apr.md`), and the same quote → prepare → sign → re-sim gates. No need to open the NFT on raydium.io first. The position NFT mint is an ephemeral **client** Keypair: `/api/open-prepare` takes its public key and returns a fully unsigned v0 tx. The wallet `signTransaction`s first (Phantom recipe); the client then adds the mint signature on the returned tx (extras such as Lighthouse are allowed) and zeroes the secret. Dedicated `submit_open_position` (not `submit_signed_transaction`) because this message has two required signers. MCP agents should pass `nftMint` and mint-sign after the wallet; without it, `/app/sign/<token>` generates the mint in the browser, re-prepares via `/api/sign-open-prepare`, and signs it after the wallet (the server never holds a mint secret).
 
 ## Safety gates
 
@@ -366,8 +366,8 @@ Optional. Local dev, forks, and tests stay a no-op until the PostHog key and/or 
 
 | Event | When | Properties |
 |-------|------|------------|
-| `$pageview` | App Router route changes (including `/` and `/app`; `/app/rwa-pairs` now redirects to `/app#pools` with `ref` kept) | `$pathname`, `$current_url` |
-| `rwa_pairs_view` | Retired with `/app/rwa-pairs` (no longer sent; use the `/app` `$pageview` and its `ref`) | — |
+| `$pageview` | App Router route changes (including `/` and `/app/rwa-pairs`) | `$pathname`, `$current_url` |
+| `rwa_pairs_view` | Landing on `/app/rwa-pairs` | `ref` if present on that URL |
 | `wallet_connect_clicked` | User opens the wallet picker (any Connect wallet button) | none |
 | `wallet_connected` | Wallet connects (also on auto-reconnect after a hard load) | none (identify uses `wallet:<sha256>`, not the address) |
 | `performance_view` | Performance tab shown in `/app` (tab click or `?view=performance` deep link); the URL doesn't change, so `$pageview` can't see it | none |

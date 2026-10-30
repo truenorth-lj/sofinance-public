@@ -1,10 +1,10 @@
-/** Labels and tooltips for the APR figures on the /app pool cards and table. Copy only; no APR math here. */
+/** Labels and tooltips for the APR figures on the /app/rwa-pairs cards. Copy only; no APR math here. */
 export const POOL_FEE_APR_24H_LABEL = "Est. pool fee APR · 24h · not guaranteed";
 export const POOL_FEE_APR_24H_HELP =
   "Estimate based on the last 24h of fees ÷ TVL, annualized. Gross fee (before Raydium's 16% protocol cut). Not guaranteed.";
 
 export const HIGHEST_RANGE_APR_7D_LABEL = "Est. highest range APR · 7d avg · not guaranteed";
-/** Homepage pool list APR column: the same headline figure (and label) as the /app pool cards. */
+/** Homepage pool list APR column: the same headline figure (and label) as the /app/rwa-pairs cards. */
 export const HOMEPAGE_POOL_APR_LABEL = HIGHEST_RANGE_APR_7D_LABEL;
 /** Homepage link text for the APR docs page (homepage copy avoids the word in the docs page title). */
 export const HOMEPAGE_APR_DOCS_LINK_LABEL = "APR details";

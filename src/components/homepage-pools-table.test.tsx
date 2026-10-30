@@ -114,8 +114,8 @@ describe("HomepagePoolsTable", () => {
     expect(table.querySelector("thead button[aria-label='About Est. highest range APR']")).not.toBeNull();
     const docsLink = table.querySelector("thead a[href='/docs/yield-and-apr']")!;
     expect(docsLink.textContent).toBe("APR details");
-    expect(rows[0]!.querySelector("a[href^='/app?openPool=']")!.getAttribute("href")).toBe(
-      "/app?openPool=spcx-pool#pools",
+    expect(rows[0]!.querySelector("a[href^='/app/rwa-pairs']")!.getAttribute("href")).toBe(
+      "/app/rwa-pairs?pool=spcx-pool&open=1",
     );
     expect(rows.some((row) => row.getAttribute("data-pool") === "sndk-pool")).toBe(false);
     expect(container.textContent).toContain("See all pools");
@@ -200,7 +200,7 @@ describe("HomepagePoolsTable", () => {
     jsonOk({ pairs: [] });
     await mount();
     expect(container.textContent).toMatch(/No same-asset pools/);
-    expect(container.querySelector(`a[href='/app#pools']`)).not.toBeNull();
+    expect(container.querySelector(`a[href='/app/rwa-pairs']`)).not.toBeNull();
   });
 
   it("marks a highlighted pool from a tweet deep link", async () => {
