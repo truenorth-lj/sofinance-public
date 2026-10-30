@@ -1,6 +1,7 @@
 "use client";
 
 import type { Univ4PoolApr } from "@sofinance/engine/protocols/uniswap-v4/market-data";
+import { exactAprTitle, formatAprPct } from "@/lib/apr-labels/format-apr";
 import type { OpenFlowResult, PermitJson } from "@sofinance/engine/protocols/uniswap-v4/open-flow";
 import { useEffect, useState } from "react";
 import { formatUnits, parseUnits } from "viem";
@@ -34,11 +35,17 @@ const fmt = (raw: string | bigint, decimals: number, digits = 6) => {
 };
 
 export function EstimatedAprBadge({ apr }: { apr: Univ4PoolApr | null }) {
-  if (!apr || apr.estimatedPoolFeeAprPct === null) return <span className="text-sm text-smoke">APR unavailable</span>;
-  return <span className="inline-flex flex-wrap items-baseline gap-2" data-testid="estimated-apr">
-    <span className="text-sm font-semibold text-cream">{apr.estimatedPoolFeeAprPct.toFixed(2)}%</span>
-    <span className="rounded border border-white/20 px-1.5 text-[11px] text-cream/80">{apr.label.zh} · {apr.label.en} APR</span>
-    {apr.attribution
+  // No market data (or TVL 0) is "—", never "0.00%"; a real but tiny APR is "<0.01%" with the exact value on hover.
+  const value = apr?.estimatedPoolFeeAprPct;
+  const label = apr?.label ?? { zh: "估計", en: "Estimated" };
+  const usd = (n: number) => `$${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+  const basis = apr && Number.isFinite(value) && [apr.feeRatePct, apr.volume24hUsd, apr.tvlUsd].every(Number.isFinite)
+    ? `${Number(apr.feeRatePct.toPrecision(2))}% fee × ${usd(apr.volume24hUsd)} 24h vol / ${usd(apr.tvlUsd)} TVL` : null;
+  return <span className="inline-flex flex-wrap items-baseline gap-2" data-testid="estimated-apr" data-apr-status={Number.isFinite(value) ? "ready" : "missing"}>
+    <span className="text-sm font-semibold text-cream" title={Number.isFinite(value) ? exactAprTitle(value) : "No 24h volume / TVL from DexScreener or GeckoTerminal right now"}>{formatAprPct(value)}</span>
+    <span className="rounded border border-white/20 px-1.5 text-[11px] text-cream/80">{label.zh} · {label.en} APR</span>
+    {basis ? <span className="text-[11px] text-smoke" data-testid="estimated-apr-basis">{basis}</span> : null}
+    {apr?.attribution
       ? <a href={apr.attribution.url} target="_blank" rel="noopener noreferrer" className="text-[11px] text-smoke underline">{apr.attribution.text}</a>
       : null}
   </span>;

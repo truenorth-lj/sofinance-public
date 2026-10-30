@@ -4,6 +4,7 @@ import { discoverRwaPairs, getCachedRwaPairs } from "./rwa-pairs";
 import { fetchPoolRangeApr } from "./pool-range-apr";
 import { PostgresRwaStore } from "./rwa-postgres-store";
 import { getRwaDatabase, runRwaDatabaseRequest } from "./rwa-database";
+import { tokenIconMap } from "./token-icons/map";
 import {
   RwaStoreError,
   type PairOptions,
@@ -89,10 +90,12 @@ export async function getRwaPairs(options: PairOptions) {
       getCachedRwaPairs(options.minTvl, options.maxPages, options.sortBy) ??
       discoverRwaPairs(options)
     );
-  return (await getRwaStore().request({
+  const snapshot = (await getRwaStore().request({
     op: "pairs",
     ...options,
   })) as SnapshotPairs;
+  // A gateway running an older store build returns no `tokenIcons`; keep the manual list in that case.
+  return snapshot.tokenIcons ? snapshot : { ...snapshot, tokenIcons: tokenIconMap([]) };
 }
 export async function getPoolAprSnapshot(poolId: string) {
   if (!getRwaConfig().enabled) return fetchPoolRangeApr(poolId);

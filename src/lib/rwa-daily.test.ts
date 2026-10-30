@@ -7,7 +7,7 @@ import {
 import { validRwaAuthorization } from "./rwa-auth";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { APR_SNAPSHOT_MAX_AGE_MS, RWA_PAIRS_STALE_MS, RWA_REFRESH_CRON, aprSnapshotExpired } from "./rwa-freshness";
+import { APR_SNAPSHOT_MAX_AGE_MS, RWA_PAIRS_STALE_MS, RWA_REFRESH_CRON, aprSnapshotDelayed, aprSnapshotExpired } from "./rwa-freshness";
 import { payloadFixture } from "./range-apr/payload.fixture";
 
 describe("RWA observation boundaries", () => {
@@ -108,5 +108,28 @@ describe("stale thresholds vs the refresh cron", () => {
     const gap = longestCronGapMs(schedule);
     expect(RWA_PAIRS_STALE_MS).toBeGreaterThan(gap);
     expect(APR_SNAPSHOT_MAX_AGE_MS).toBeGreaterThan(gap);
+  });
+
+  // "Data delayed" on the pool cards / list comes from the per-pool `freshness.stale` (`aprSnapshotDelayed`).
+  const run = "2026-10-30T00:15:30.000Z";
+  const snapshot = { chainObservedAt: run, volumeObservedAt: run, windowEndUtc: "2026-10-30T00:00:00.000Z" };
+  const at = (iso: string) => Date.parse(iso);
+
+  it("a snapshot from the daily run is not delayed at any time before the next run (incl. 00:00–00:15 UTC)", () => {
+    for (const now of ["2026-10-30T00:16:00Z", "2026-10-30T01:00:00Z", "2026-10-30T12:00:00Z", "2026-10-30T23:59:00Z",
+      "2026-10-31T00:05:00Z", "2026-10-31T00:15:00Z"]) expect(aprSnapshotDelayed(snapshot, at(now)), now).toBe(false);
+    expect(aprSnapshotDelayed(snapshot, at(run) + longestCronGapMs(schedule))).toBe(false);
+  });
+
+  it("is delayed once chain or volume data is older than 26h (a missed run), or timestamps are unreadable", () => {
+    expect(aprSnapshotDelayed(snapshot, at(run) + APR_SNAPSHOT_MAX_AGE_MS + 1)).toBe(true);
+    expect(aprSnapshotDelayed(snapshot, at("2026-11-01T00:00:00Z"))).toBe(true);
+    expect(aprSnapshotDelayed({ ...snapshot, volumeObservedAt: "2026-10-28T23:00:00.000Z" }, at("2026-10-30T02:00:00Z"))).toBe(true);
+    expect(aprSnapshotDelayed({ ...snapshot, chainObservedAt: "not a date" }, at("2026-10-30T02:00:00Z"))).toBe(true);
+  });
+
+  it("is delayed when the 7-day volume window is older than any run in the last 26h could have produced", () => {
+    expect(aprSnapshotDelayed({ ...snapshot, windowEndUtc: "2026-10-28T00:00:00.000Z" }, at("2026-10-30T02:00:00Z"))).toBe(true);
+    expect(aprSnapshotDelayed({ ...snapshot, windowEndUtc: "2026-10-29T00:00:00.000Z" }, at("2026-10-30T02:00:00Z"))).toBe(false);
   });
 });

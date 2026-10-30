@@ -18,7 +18,8 @@ describe("position history schema and transport validation", () => {
     expect(tables[0]!.checks.map((check) => check.name)).toContain("position_history_state_identity_check");
     expect(tables[1]!.foreignKeys).toHaveLength(1);
     expect(tables[1]!.primaryKeys[0]!.columns.map((column) => column.name)).toEqual(["position_mint", "signature"]);
-    const migration = readMigrationFiles({ migrationsFolder: resolve("drizzle") }).at(-1)!;
+    const migration = readMigrationFiles({ migrationsFolder: resolve("drizzle") })
+      .find((entry) => entry.sql.some((statement) => statement.includes('CREATE TABLE "position_history_state"')))!;
     const ddl = migration.sql.join("\n");
     expect(ddl.match(/CREATE TABLE/g)).toHaveLength(2);
     expect(ddl).toContain("mainnet-beta");

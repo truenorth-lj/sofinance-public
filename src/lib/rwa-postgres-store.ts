@@ -11,14 +11,36 @@ import { dailyWindow, validateHistoryRange, volumeWindowEnd } from "./rwa-daily"
 import { DEFAULT_PROTOCOL } from "@sofinance/engine/protocols/types";
 import { sortPairs, type DiscoverRwaPairsResult, type RwaPairRow } from "./rwa-pairs";
 import { pickHighestAprPreset } from "./range-apr/preset-list";
-import { RWA_PAIRS_STALE_MS } from "./rwa-freshness";
+import { RWA_PAIRS_STALE_MS, aprSnapshotDelayed } from "./rwa-freshness";
 import {
   ALGORITHM_VERSION, FEED_KEY, PAIRING_VERSION, RwaStoreError, storeRequestSchema,
   type AprWrite, type DiscoveryWrite, type Lease, type RwaStore, type SnapshotApr, type StoreRequest,
 } from "./rwa-store-types";
 
+import { tokenIconMap, type TokenIconRow } from "./token-icons/map";
+import { logSafeError } from "./safe-error-log";
+
 const { backgroundJobState: job, rwaFeedState: feed, rwaPoolLatest: pool,
-  rwaAprLatest: apr, rwaAprDaily: daily } = schema;
+  rwaAprLatest: apr, rwaAprDaily: daily, rwaTokenIcon: tokenIcon } = schema;
+
+/** Postgres undefined_table / undefined_column: `drizzle/0002_token-icons.sql` not applied yet. */
+export function isMissingRelation(error: unknown): boolean {
+  for (let e = error, depth = 0; e && typeof e === "object" && depth < 4; e = (e as { cause?: unknown }).cause, depth++) {
+    const code = (e as { code?: unknown }).code;
+    if (code === "42P01" || code === "42703") return true;
+  }
+  return false;
+}
+
+/** Runs the icon query; a missing table/column (or any read error) yields no rows instead of failing the caller. */
+export async function tolerantTokenIcons(query: () => Promise<TokenIconRow[]>): Promise<TokenIconRow[]> {
+  try {
+    return await query();
+  } catch (error) {
+    if (!isMissingRelation(error)) logSafeError("[rwa] token icons unreadable; using fallback icons", error);
+    return [];
+  }
+}
 type Database = PostgresJsDatabase<typeof schema>;
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 const nowSql = sql`clock_timestamp()`;
@@ -121,6 +143,7 @@ export class PostgresRwaStore implements RwaStore {
       case "publishDiscovery": return this.publish(input.lease, input.data as DiscoveryWrite);
       case "prepareDaily": return this.prepareDaily(input.lease);
       case "saveApr": return this.saveApr(input.lease, input.data as AprWrite);
+      case "saveTokenIcons": return this.saveTokenIcons(input.lease, input.data);
     }
   }
 
@@ -139,7 +162,34 @@ export class PostgresRwaStore implements RwaStore {
       pairs: sortPairs(rows.flatMap((row) => row.pool ? [pair(row.pool)] : []), sortBy),
       pagesFetched: pages, scannedPools: state.pagePoolCounts.slice(0, pages).reduce((sum, n) => sum + n, 0),
       fetchedAt: published, cachedAt: published, stale: ageMs > RWA_PAIRS_STALE_MS, ageSeconds: Math.floor(ageMs / 1000),
-      freshness: { snapshotAt: published, stale: ageMs > RWA_PAIRS_STALE_MS } };
+      freshness: { snapshotAt: published, stale: ageMs > RWA_PAIRS_STALE_MS },
+      tokenIcons: tokenIconMap(await this.readTokenIcons()) };
+  }
+
+  /**
+   * Stored icons, or none when the table is missing (migration 0002 not applied), empty, or unreadable: icons are
+   * cosmetic, so this never fails the pairs read. `tokenIconMap` then fills in the manual list, and the cards fall
+   * back to the Raydium icon path and finally the letter avatar.
+   */
+  private readTokenIcons(): Promise<TokenIconRow[]> {
+    return tolerantTokenIcons(() => this.orm.select({ chain: tokenIcon.chain, address: tokenIcon.address,
+      image: tokenIcon.image, source: tokenIcon.source }).from(tokenIcon));
+  }
+
+  /** Upsert icon links found by the daily discovery job; rows already passed the `ICON_HOSTS` check in the schema. */
+  private async saveTokenIcons(lease: Lease, rows: TokenIconRow[]) {
+    if (!rows.length) return { saved: 0 };
+    try {
+      return await this.guarded(lease, async (tx) => {
+        await tx.insert(tokenIcon).values(rows.map((row) => ({ ...row, updatedAt: sql`clock_timestamp()` as unknown as string })))
+          .onConflictDoUpdate({ target: [tokenIcon.chain, tokenIcon.address],
+            set: { image: sql`excluded.image`, source: sql`excluded.source`, updatedAt: sql`clock_timestamp()` } });
+        return { saved: rows.length };
+      });
+    } catch (error) {
+      if (isMissingRelation(error)) throw new RwaStoreError("TOKEN_ICONS_UNAVAILABLE");
+      throw error;
+    }
   }
 
   private async readApr(poolId: string): Promise<SnapshotApr> {
@@ -151,8 +201,8 @@ export class PostgresRwaStore implements RwaStore {
     const chain = iso(row.chainObservedAt ?? row.payloadSnapshotAt), volume = iso(row.volumeObservedAt ?? row.payloadSnapshotAt);
     return { ...row.payload, freshness: { snapshotAt: iso(row.payloadSnapshotAt), chainObservedAt: chain,
       economicsObservedAt: row.economicsObservedAt ? iso(row.economicsObservedAt) : undefined,
-      volumeObservedAt: volume, stale: this.clock() - Date.parse(chain) > 600_000 ||
-        this.clock() - Date.parse(volume) > 1_800_000 || row.payload.sample.windowEndUtc !== volumeWindowEnd(this.clock()),
+      volumeObservedAt: volume, stale: aprSnapshotDelayed({ chainObservedAt: chain, volumeObservedAt: volume,
+        windowEndUtc: row.payload.sample.windowEndUtc }, this.clock()),
       lastAttemptStatus: row.lastAttemptStatus } };
   }
 

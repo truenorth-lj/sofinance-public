@@ -12,17 +12,24 @@ export type TokenMetadata = {
   tokenProgram: string | null;
 };
 
-const ICON_HOSTS = new Set([
+/**
+ * HTTPS hosts a token icon link may point at. Every icon from Jupiter, and every icon the daily refresh stores in the
+ * database (Jupiter → Raydium for Solana; DexScreener → GeckoTerminal → manual list for Robinhood Chain), must pass
+ * `trustedIcon` first. The last four hosts serve the Raydium, DexScreener and GeckoTerminal (CoinGecko) fallbacks.
+ */
+export const ICON_HOSTS: ReadonlySet<string> = new Set([
   "static.jup.ag", "raw.githubusercontent.com", "ipfs.io", "upload.wikimedia.org",
   "storage.googleapis.com", "s3-symbol-logo.tradingview.com", "xstocks-metadata.backed.fi",
   "arweave.net", "gateway.pinata.cloud", "backpack.exchange",
+  "img-v1.raydium.io", "dd.dexscreener.com", "cdn.dexscreener.com", "coin-images.coingecko.com", "assets.coingecko.com",
 ]);
 
 function textField(value: unknown, maxLength: number) {
   return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
 }
 
-function trustedIcon(value: unknown): string | null {
+/** The icon link if it is HTTPS on an `ICON_HOSTS` host (no credentials or port, at most 1024 chars); otherwise null. */
+export function trustedIcon(value: unknown): string | null {
   if (typeof value !== "string" || value.length > 1024) return null;
   try {
     const url = new URL(value);

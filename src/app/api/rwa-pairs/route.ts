@@ -3,6 +3,7 @@ import { getRwaPairs, snapshotError } from "@/lib/rwa-store";
 import { after } from "next/server";
 import { unstable_cache } from "next/cache";
 import { apiError } from "@/lib/api-response";
+import { tokenIconMap } from "@/lib/token-icons/map";
 import { discoverRwaPairs, getCachedRwaPairs, type RwaPairSortBy } from "@/lib/rwa-pairs";
 
 // Enable CDN caching with 1 hour revalidation
@@ -56,7 +57,8 @@ export async function GET(request: Request) {
     
     if (inMemoryCached) {
       // We have in-memory cached data - return it immediately
-      const result = inMemoryCached;
+      // Without the RWA database only the manual icon list applies (cards then fall back as usual).
+      const result = { ...inMemoryCached, tokenIcons: tokenIconMap([]) };
       
       // If stale (> 1 hour), schedule a background refresh
       if (inMemoryCached.stale) {
@@ -97,6 +99,7 @@ export async function GET(request: Request) {
       cachedAt: result.fetchedAt,
       stale,
       ageSeconds,
+      tokenIcons: tokenIconMap([]),
     };
     
     // Schedule background refresh if stale

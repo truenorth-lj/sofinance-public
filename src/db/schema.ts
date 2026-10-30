@@ -245,3 +245,23 @@ export const positionHistoryTransactions = pgTable("position_history_transaction
   check("position_history_transactions_receipt_check", sql`receipt IS NULL OR jsonb_typeof(receipt) = 'object'`),
   check("position_history_transactions_events_check", sql`jsonb_typeof(events) = 'array' AND (status <> 'ignored' OR events = '[]'::jsonb)`),
 ]);
+
+/**
+ * Token icon links (no image files) written by the daily rwa-refresh discovery job, one row per token, shared by
+ * every pool that holds it (SPCXx is in several pools; Robinhood Chain tokens are not in `rwa_pool_latest`).
+ * `image` is already filtered through `ICON_HOSTS` (`trustedIcon`) before the write; the check below only pins https.
+ * Solana `address` is the base58 mint; Robinhood Chain `address` is the lowercase 0x ERC-20 address.
+ */
+export const rwaTokenIcon = pgTable("rwa_token_icon", {
+  chain: text("chain").$type<"solana" | "robinhood">().notNull(),
+  address: text("address").notNull(),
+  image: text("image").notNull(),
+  source: text("source").$type<"jupiter" | "raydium" | "dexscreener" | "geckoterminal" | "manual">().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.chain, table.address], name: "rwa_token_icon_pkey" }),
+  check("rwa_token_icon_chain_check", sql`chain IN ('solana', 'robinhood')`),
+  check("rwa_token_icon_address_check", sql`(chain = 'solana' AND address ~ '^[1-9A-HJ-NP-Za-km-z]{32,44}$') OR (chain = 'robinhood' AND address ~ '^0x[0-9a-f]{40}$')`),
+  check("rwa_token_icon_image_check", sql`image ~ '^https://' AND length(image) <= 1024`),
+  check("rwa_token_icon_source_check", sql`source IN ('jupiter', 'raydium', 'dexscreener', 'geckoterminal', 'manual')`),
+]);

@@ -47,10 +47,13 @@ export function usePoolsApr7d(pools: readonly UnifiedPool[], refreshKey = 0): Re
         loadPoolRangeApr(entry.poolAddress, entry.protocol).then(
           (payload) => {
             if (cancelled) return;
-            const summary = !aprSnapshotExpired(payload, Date.now()) ? highestRangeSummary(OPEN_RANGE_UI_PRESETS, payload) : null;
+            const expired = aprSnapshotExpired(payload, Date.now());
+            const summary = !expired ? highestRangeSummary(OPEN_RANGE_UI_PRESETS, payload) : null;
+            // Server `stale` (older than 26h, see `aprSnapshotDelayed`), a failed last refresh, or a snapshot this
+            // browser already sees as older than 26h (e.g. a cached response) all say "Data delayed".
             const freshness = payload.freshness ? {
               snapshotAt: payload.freshness.snapshotAt,
-              delayed: payload.freshness.stale || payload.freshness.lastAttemptStatus === "error",
+              delayed: payload.freshness.stale || payload.freshness.lastAttemptStatus === "error" || expired,
             } : undefined;
             setSettled((previous) => ({ ...previous, [entry.key]: summary
               ? {

@@ -14,6 +14,9 @@ import { mapPool } from "@sofinance/engine/jupiter";
 import { volumeWindowEnd } from "./rwa-daily";
 import { sanitizePublicError } from "./public-error";
 import { getRwaStore, storeCall } from "./rwa-store";
+import { UNIV4_RHC_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/uniswap-v4/constants";
+import { resolveTokenIcons, rhcIconSources, solanaIconSources } from "./token-icons/resolve";
+import type { RwaPairRow } from "./rwa-pairs";
 import {
   ALGORITHM_VERSION,
   type ActivePool,
@@ -142,6 +145,10 @@ async function runJob(job: JobName, options: Options): Promise<JobResult> {
       const data: DiscoveryWrite = { result, ...result.discovery };
       await storeCall(store, { op: "publishDiscovery", lease, data });
       processed = result.pairs.length;
+      // Best effort: a missing table or an indexer outage leaves the snapshot published and the old icons in place.
+      await refreshTokenIcons(store, lease, result.pairs, options.fetcher, signal).catch(() => {
+        issues.push("Token icons not saved");
+      });
     } else {
       await storeCall(store, { op: "prepareDaily", lease });
       const pools = await storeCall<ActivePool[]>(store, { op: "activePools" });
@@ -241,4 +248,19 @@ export async function refreshRwaSnapshots(options: Options = {}) {
   const discovery = await runJob("rwa-discovery", options);
   const apr = await runJob("rwa-apr-refresh", options);
   return { discovery, apr };
+}
+
+/**
+ * Daily token icon pass, run inside the rwa-discovery job after the pool scan: Solana pool tokens (Jupiter → Raydium
+ * → manual) and the allowlisted Robinhood Chain pool tokens (DexScreener → GeckoTerminal → manual). Only links that
+ * pass `ICON_HOSTS` are written.
+ */
+export async function refreshTokenIcons(store: RwaStore, lease: Lease, pairs: readonly Pick<RwaPairRow, "mintA" | "mintB">[],
+  fetcher: typeof fetch | undefined, signal: AbortSignal) {
+  const solana = await resolveTokenIcons("solana", pairs.flatMap((pair) => [pair.mintA, pair.mintB]), solanaIconSources(fetcher), { signal });
+  const rhc = await resolveTokenIcons("robinhood",
+    UNIV4_RHC_ALLOWLISTED_POOLS.flatMap((pool) => [pool.currency0.address, pool.currency1.address]), rhcIconSources(fetcher), { signal });
+  signal.throwIfAborted();
+  await storeCall(store, { op: "renew", lease });
+  return storeCall<{ saved: number }>(store, { op: "saveTokenIcons", lease, data: [...solana, ...rhc] });
 }

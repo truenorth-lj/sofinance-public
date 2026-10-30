@@ -1,4 +1,5 @@
 import type { PoolRangeAprPayload } from "./range-apr/types";
+import { volumeWindowEnd } from "./rwa-daily";
 
 /**
  * How often production refreshes saved APR snapshots: the Vercel cron in `vercel.json` runs
@@ -32,4 +33,24 @@ export function aprSnapshotExpired(
     payload.freshness.chainObservedAt ?? payload.freshness.snapshotAt,
   );
   return !Number.isFinite(stamp) || nowMs - stamp > APR_SNAPSHOT_MAX_AGE_MS;
+}
+
+/**
+ * Whether a saved pool APR snapshot should say "Data delayed" (`freshness.stale` from `/api/pool-range-apr`).
+ * The daily refresh writes every pool once a day, so a snapshot is current until it is older than
+ * `APR_SNAPSHOT_MAX_AGE_MS` (26h). It was 10 minutes (chain) / 30 minutes (volume) plus "volume window is not
+ * today's", tuned for the old 15-minute cron, which flagged every pool "Data delayed" for almost the whole day.
+ * Still delayed: a chain or volume observation older than 26h (the refresh missed a run), an unreadable timestamp,
+ * or a 7-day volume window that ends earlier than any run within the last 26h could have produced.
+ */
+export function aprSnapshotDelayed(
+  snapshot: { chainObservedAt: string; volumeObservedAt: string; windowEndUtc?: string | null },
+  nowMs: number,
+) {
+  const chain = Date.parse(snapshot.chainObservedAt);
+  const volume = Date.parse(snapshot.volumeObservedAt);
+  const windowEnd = snapshot.windowEndUtc ? Date.parse(snapshot.windowEndUtc) : Number.NaN;
+  if (![chain, volume, windowEnd].every(Number.isFinite)) return true;
+  if (nowMs - chain > APR_SNAPSHOT_MAX_AGE_MS || nowMs - volume > APR_SNAPSHOT_MAX_AGE_MS) return true;
+  return windowEnd < Date.parse(volumeWindowEnd(nowMs - APR_SNAPSHOT_MAX_AGE_MS));
 }

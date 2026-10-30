@@ -56,9 +56,24 @@ describe("EstimatedAprBadge", () => {
     expect(link.getAttribute("href")).toBe("https://www.geckoterminal.com");
     expect(link.getAttribute("rel")).toContain("noopener");
   });
-  it("says unavailable without data", () => {
+  it("shows — (not 0.00%) without data", () => {
     render(createElement(EstimatedAprBadge, { apr: null }));
-    expect(text()).toBe("APR unavailable");
+    expect(container.querySelector("[data-testid=estimated-apr]")!.firstElementChild!.textContent).toBe("—");
+    expect(text()).not.toContain("0.00%");
+  });
+  it("shows — (not 0.00%) when TVL is 0 or the value is missing", () => {
+    render(createElement(EstimatedAprBadge, { apr: { ...apr("dexscreener"), estimatedPoolFeeAprPct: null } as RhcPoolView["estimatedApr"] }));
+    expect(text()).toContain("—");
+    expect(text()).not.toContain("0.00%");
+    render(createElement(EstimatedAprBadge, { apr: { ...apr("dexscreener"), estimatedPoolFeeAprPct: undefined } as unknown as RhcPoolView["estimatedApr"] }));
+    expect(text()).not.toContain("0.00%");
+  });
+  it("shows a real but tiny APR as <0.01% with its basis (the 2026-10-30 prod SPCX/SPCXon case)", () => {
+    render(createElement(EstimatedAprBadge, { apr: { ...apr("dexscreener"), estimatedPoolFeeAprPct: 0.0005575645952321763,
+      feeRatePct: 0.005, volume24hUsd: 14.76, tvlUsd: 48795.01 } as RhcPoolView["estimatedApr"] }));
+    expect(text()).toContain("<0.01%");
+    expect(text()).not.toContain("0.00%");
+    expect(container.querySelector("[data-testid=estimated-apr-basis]")!.textContent).toBe("0.005% fee × $15 24h vol / $48,795 TVL");
   });
 });
 

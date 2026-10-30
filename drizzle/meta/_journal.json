@@ -15,6 +15,13 @@
       "when": 1791943513459,
       "tag": "0001_position-history-cache",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793333038884,
+      "tag": "0002_token-icons",
+      "breakpoints": true
     }
   ]
 }
