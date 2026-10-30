@@ -40,6 +40,9 @@ reproduce replies arriving before the history timer; a catch-only fix is
 insufficient. Corrective evidence is in workspace
 `output/sofinance-open-attempt-reconnect-rework-20261028-r2/`: 105 focused tests
 and the four original reviewer probes pass. Eleven new cases fail against the
-prior runtime; removing either detachment guard is detected. Corrected-HEAD full
-validation and independent review remain pending. No real wallet, provider or
+prior runtime; removing either detachment guard is detected. The candidate report left corrected-HEAD full
+validation and independent review pending. Delivery update (2026-10-30):
+[PR #171](https://github.com/truenorth-lj/sofinance-public/pull/171) subsequently
+merged as `fd2f525c0f1eb612e6fad5fc36c33bd690031a01`. This update verifies merge
+history, without reclassifying the candidate report as independent review proof. No real wallet, provider or
 financial operation was performed.

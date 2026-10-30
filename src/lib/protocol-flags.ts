@@ -44,8 +44,8 @@ export function isOrcaPositionsEnabled(target: DeployTarget = deployTarget()): b
 
 /**
  * Uniswap v4 on Robinhood Chain (4663): read-only discovery of the allowlisted
- * StablePairHook pools (`/api/protocol-pools?protocol=uniswap-v4-rhc`). OFF in
- * production, same targets as above. Nothing on this path signs or sends.
+ * StablePairHook pools (`/api/protocol-pools?protocol=uniswap-v4-rhc`). Enabled in
+ * production, preview and development. Nothing on this path signs or sends.
  */
 export const RHC_UNIV4_DISCOVERY_ENABLED: Readonly<Record<DeployTarget, boolean>> = Object.freeze({
   production: true,
@@ -59,7 +59,7 @@ export function isRhcUniv4DiscoveryEnabled(target: DeployTarget = deployTarget()
 
 /**
  * Uniswap v4 on Robinhood Chain: server-side BUILD + eth_simulateV1 of the open-position
- * transaction (`POST /api/rhc-univ4-open`). OFF in production, same targets as above.
+ * transaction (`POST /api/rhc-univ4-open`). Enabled in production, preview and development.
  * The route returns unsigned calldata and Permit2 typed data only: it never signs, never
  * broadcasts. The fee recipient is the server-only env `RHC_UNIV4_FEE_WALLET`; unset/invalid fails closed.
  */
@@ -76,7 +76,7 @@ export function isRhcUniv4TxBuildEnabled(target: DeployTarget = deployTarget()):
 /**
  * Uniswap v4 on Robinhood Chain: the open-position page and EVM wallet flow (`/app/rhc`,
  * design §6 PR5): MetaMask connect, chain 4663 add/switch, Permit2 approve → sign → execute
- * UX and the open preview. OFF in production, same targets as above.
+ * UX and the open preview. Enabled in production, preview and development.
  */
 export const RHC_UNIV4_TRADING_ENABLED: Readonly<Record<DeployTarget, boolean>> = Object.freeze({
   production: true,
@@ -90,8 +90,8 @@ export function isRhcUniv4TradingEnabled(target: DeployTarget = deployTarget()):
 
 /**
  * Real wallet requests that sign or send on Robinhood Chain (`approve(Permit2)`, the Permit2
- * signature, `execute`). ON for Vercel preview only (PM-approved MetaMask UI signing test with the
- * EVM test wallet, 2026-10-29). OFF in production and local development.
+ * signature, `execute`). Enabled in production and Vercel preview; disabled in local
+ * development. These constants describe configuration, not financial validation.
  */
 export const RHC_UNIV4_WALLET_SIGNING_ENABLED: Readonly<Record<DeployTarget, boolean>> = Object.freeze({
   production: true,

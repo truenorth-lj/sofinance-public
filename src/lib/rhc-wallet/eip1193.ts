@@ -93,7 +93,7 @@ export async function ensureRobinhoodChain(provider: Eip1193Provider): Promise<v
 /** Wallet methods that sign or send. Only reachable through `guardedWalletRequest`. */
 export const SIGNING_METHODS: ReadonlySet<string> = new Set(["eth_sendTransaction", "eth_signTypedData_v4", "personal_sign", "eth_sign", "wallet_sendCalls"]);
 
-export const SIGNING_DISABLED_MESSAGE = "Wallet signing is off until real signing is approved (PR6). Nothing was sent to your wallet.";
+export const SIGNING_DISABLED_MESSAGE = "Wallet signing is currently disabled here. No signing or send request was made.";
 
 /**
  * The only path to a signing/sending wallet request. Refuses (without touching the wallet) while
