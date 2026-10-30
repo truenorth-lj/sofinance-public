@@ -1,7 +1,7 @@
 "use client";
 import "@/lib/engine-host";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowDown, ArrowUp, ArrowUpRight, ChartNoAxesCombined, CircleAlert, LoaderCircle, Sprout } from "lucide-react";
 import { assetMetadata, assetSymbol, TokenPicker } from "./token-picker";
 import { formatAmount } from "@sofinance/engine/amount";
@@ -44,11 +44,15 @@ function calculateInputUsd(amount: string, priceUsd: number | null): string | nu
   }
 }
 
-export function SelectedApp({ initialView = "compound", initialMint = "", initialWallet = "", previewPoolId = "" }: {
+export function SelectedApp({ initialView = "compound", initialMint = "", initialWallet = "", previewPoolId = "", extraPositions, poolsSection }: {
   initialView?: "compound" | "performance" | "deposit" | "withdraw";
   initialMint?: string;
   initialWallet?: string;
   previewPoolId?: string;
+  /** Other chains' positions, shown under the Solana ones in "My positions" (`/app`: Robinhood Chain). */
+  extraPositions?: ReactNode;
+  /** The pool list, shown between "My positions" and the position tools (`/app`: Solana + Robinhood Chain pools). */
+  poolsSection?: ReactNode;
 } = {}) {
   const [withdrawBusy,setWithdrawBusy]=useState(false);
   const controller = useSelectedController();
@@ -135,6 +139,7 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
       <section aria-labelledby="position-heading" className="flex flex-col rounded-[28px] border border-white/12 bg-char p-6 sm:p-9 lg:col-span-5">
         <div className="flex flex-1 flex-col justify-center">
         <div className="flex items-center justify-between gap-3"><h2 id="position-heading" className="text-base font-semibold text-cream">My positions</h2><button type="button" disabled={!wallet || busy} onClick={() => void refreshDiscovery()} className="text-xs font-semibold text-cream/80 transition-opacity hover:opacity-70 disabled:opacity-40">Rescan wallet</button></div>
+        {extraPositions && <p className="mt-3 text-sm font-semibold text-cream">Solana</p>}
         {connected ? <PositionSelect
           id="position"
           label="Select Raydium position"
@@ -147,7 +152,7 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
           placeholder={!positionOptions.length ? (connected ? "No identifiable position found" : "Connect wallet to view positions") : undefined}
           className="mt-3 w-full rounded-2xl border border-white/20 bg-white/[0.06] px-3 py-3 text-sm text-cream outline-none focus:border-white/40"
         /> : <div className="mt-3"><ConnectWalletPrompt onConnect={connect} /></div>}
-        {connected && discovery && positionOptions.length === 0 && <a href="/app/rwa-pairs" className="mt-3 text-sm font-semibold text-cream underline underline-offset-4">Explore RWA Pairs to open a position</a>}
+        {connected && discovery && positionOptions.length === 0 && <a href={poolsSection ? "#pools" : "/app/rwa-pairs"} className="mt-3 text-sm font-semibold text-cream underline underline-offset-4">{poolsSection ? "Pick a pool below to open a position" : "Explore RWA Pairs to open a position"}</a>}
         {state && <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs">
           <span className={`rounded-full border px-2.5 py-1 ${state.inRange ? "border-white/40 bg-white/[0.07] text-cream/80" : "border-white/20 bg-white/[0.05] text-smoke"}`}>{state.rangeSide === "above" ? "Above range · single-sided" : state.rangeSide === "below" ? "Below range · single-sided" : "Price within range"}</span>
 
@@ -158,6 +163,7 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
           <PositionAssetRow symbol={poolLabel(assets.mintB)} icon={metadata[assets.mintB]?.icon ?? null} decimals={assets.decimalsB}
             liquidityRaw={assets.currentAmounts.b} unclaimedFeesRaw={feeState?.fees.b ?? null} priceUsd={assets.pricing?.priceUsdB ?? null} />
         </div>}
+        {extraPositions}
         </div>
         {connected && <div className="mt-6 border-t border-white/10 pt-5 text-sm leading-relaxed">
           <button type="button" aria-haspopup="dialog" onClick={() => setAssetRisksOpen(true)}
@@ -167,6 +173,8 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
         </div>}
       </section>
       </div>
+
+      {poolsSection}
 
       <ActionSelector value={activeView} onChange={setActiveView} options={[
         { value: "compound", label: "Yield Compound", icon: Sprout, controls: "compound-view" },

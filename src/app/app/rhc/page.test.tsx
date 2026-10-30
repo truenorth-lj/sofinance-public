@@ -1,23 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("next/navigation", () => ({ notFound: () => { throw new Error("NEXT_NOT_FOUND"); } }));
-vi.mock("@/lib/rhc-univ4-pool-view", () => ({ loadRhcPoolView: vi.fn(async () => null) }));
+vi.mock("next/navigation", () => ({
+  notFound: () => { throw new Error("NEXT_NOT_FOUND"); },
+  redirect: (url: string) => { throw new Error(`NEXT_REDIRECT ${url}`); },
+}));
 
-afterEach(() => { vi.unstubAllEnvs(); });
+afterEach(() => { vi.unstubAllEnvs(); vi.resetModules(); });
 
 describe("/app/rhc page", () => {
-  it("renders in production with signing on (launched 2026-10-29)", async () => {
-    vi.stubEnv("VERCEL_ENV", "production");
+  it.each(["production", "preview", "development"])("redirects to the RHC pool deep link in /app (%s)", async (env) => {
+    vi.stubEnv("VERCEL_ENV", env);
     const { default: RhcPage } = await import("./page");
-    const el = await RhcPage();
-    const json = JSON.stringify(el, (_k, v) => (typeof v === "function" ? v.name : v));
-    expect(json).toContain("\"signingEnabled\":true");
-  });
-  it("renders on preview with signing on (preview-only test signing)", async () => {
-    vi.stubEnv("VERCEL_ENV", "preview");
-    const { default: RhcPage } = await import("./page");
-    const el = await RhcPage();
-    const json = JSON.stringify(el, (_k, v) => (typeof v === "function" ? v.name : v));
-    expect(json).toContain("\"signingEnabled\":true");
+    expect(() => RhcPage()).toThrow("NEXT_REDIRECT /app?openPool=0x4f54c74021e4139bbc4c7bc924346c921975136ea120cf118a93c43b50bdbd3c");
   });
 });
