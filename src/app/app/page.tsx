@@ -1,8 +1,9 @@
-import { SelectedApp } from "@/components/selected-app";
+import { UnifiedApp } from "@/components/unified-pools/unified-app";
+import { unifiedPoolFlags } from "@/lib/unified-pools/flags";
 
 export const metadata = {
-  title: "Positions · SoFinance",
-  description: "Choose a wallet asset and an existing Raydium CLMM position, then preview an atomic liquidity add.",
+  title: "Pools and positions · SoFinance",
+  description: "Solana and Robinhood Chain liquidity pools in one list, and your positions on both chains.",
 };
 
 export default async function AppHome({ searchParams }: {
@@ -11,6 +12,9 @@ export default async function AppHome({ searchParams }: {
   const query = await searchParams;
   const first = (value: string | string[] | undefined) => Array.isArray(value) ? value[0] || "" : value || "";
   const view = first(query.view);
-  return <SelectedApp key={`${view}:${first(query.mint) || first(query.positionMint)}:${first(query.wallet)}`} initialView={view === "performance" || view === "deposit" ? view : "compound"}
-    initialMint={first(query.mint) || first(query.positionMint)} initialWallet={first(query.wallet)} previewPoolId={first(query.pool)} />;
+  const { rhcSigning, ...flags } = unifiedPoolFlags();
+  return <UnifiedApp key={`${view}:${first(query.mint) || first(query.positionMint)}:${first(query.wallet)}`}
+    selected={{ initialView: view === "performance" || view === "deposit" ? view : "compound",
+      initialMint: first(query.mint) || first(query.positionMint), initialWallet: first(query.wallet), previewPoolId: first(query.pool) }}
+    flags={flags} rhcSigningEnabled={rhcSigning} deepLinkPool={first(query.openPool)} />;
 }

@@ -1,26 +1,16 @@
-import { notFound } from "next/navigation";
-import { InkHero, InkShell } from "@/components/ink";
-import { RhcUniv4OpenPanel } from "@/components/rhc-univ4-open-panel";
-import { isRhcUniv4TradingEnabled, isRhcUniv4WalletSigningEnabled } from "@/lib/protocol-flags";
-import { loadRhcPoolView } from "@/lib/rhc-univ4-pool-view";
+import { notFound, redirect } from "next/navigation";
+import { isRhcUniv4TradingEnabled } from "@/lib/protocol-flags";
+import { RHC_DEEP_LINK } from "@/lib/unified-pools/deep-link";
 
-/** Robinhood Chain Uniswap v4 open (design §6 PR5) + close (PR7) flow. `RHC_UNIV4_TRADING_ENABLED` off (production) → 404. */
+/**
+ * Robinhood Chain now lives in the `/app` pool list (LJ 2026-10-30). `/app/rhc` keeps working as a deep link: it
+ * redirects to `/app?openPool=<SPCX/SPCXon pool id>`, which opens that pool's MetaMask flow. `RHC_UNIV4_TRADING_ENABLED`
+ * off → 404, as before. `src/proxy.ts` sends the real 307; this page is the fallback.
+ */
 export const dynamic = "force-dynamic";
 export const metadata = { robots: { index: false, follow: false } };
 
-export default async function RhcPage() {
+export default function RhcPage() {
   if (!isRhcUniv4TradingEnabled()) notFound();
-  const pool = await loadRhcPoolView();
-  return (
-    <InkShell>
-      <InkHero label="Robinhood Chain" title="SPCX / SPCXon positions">
-        <p>
-          One Uniswap v4 transaction on Robinhood Chain: swap the part you need, open the position and return any leftover.
-          Closing is one transaction too: withdraw everything, collect earned fees and burn the position NFT, with no SoFinance fee.
-          Every step is simulated before your wallet is asked to sign.
-        </p>
-      </InkHero>
-      <RhcUniv4OpenPanel pool={pool} signingEnabled={isRhcUniv4WalletSigningEnabled()} />
-    </InkShell>
-  );
+  redirect(RHC_DEEP_LINK);
 }

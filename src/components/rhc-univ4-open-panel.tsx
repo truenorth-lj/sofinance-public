@@ -2,7 +2,7 @@
 
 import type { Univ4PoolApr } from "@sofinance/engine/protocols/uniswap-v4/market-data";
 import type { OpenFlowResult, PermitJson } from "@sofinance/engine/protocols/uniswap-v4/open-flow";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { formatUnits, parseUnits } from "viem";
 import {
   connectEvmWallet, discoverEvmWallets, type Eip1193Provider, ensureRobinhoodChain, guardedWalletRequest, SIGNING_DISABLED_MESSAGE, WalletRequestError,
@@ -91,7 +91,8 @@ export function OpenPreview({ result, pool }: { result: OpenFlowResult; pool: Rh
 
 const fmtBalance = (v: bigint, decimals = 18) => { const n = Number(formatUnits(v, decimals)); return n === 0 ? "0" : n < 0.000001 ? "<0.000001" : n.toLocaleString("en-US", { maximumFractionDigits: 6 }); };
 
-type Wallet = { provider: Eip1193Provider; address: `0x${string}`; name: string };
+export type RhcWallet = { provider: Eip1193Provider; address: `0x${string}`; name: string };
+type Wallet = RhcWallet;
 type PrepareRequest = { poolId: string; user: string; depositToken: string; amount: string; tickLower: number; tickUpper: number };
 type Signed = { signature: `0x${string}`; permit: PermitJson };
 type Sent = { kind: "approve" | "execute"; hash: string; status: "pending" | "success" | "reverted" | "timeout"; positionId?: string | null };
@@ -110,8 +111,31 @@ export function TxStatus({ sent }: { sent: Sent }) {
 /** Receipt poll cadence (tests pass a short one). */
 export type ReceiptPoll = { intervalMs?: number; timeoutMs?: number };
 
-export function RhcUniv4OpenPanel({ pool, signingEnabled, receiptPoll }: { pool: RhcPoolView | null; signingEnabled: boolean; receiptPoll?: ReceiptPoll }) {
-  const [wallet, setWallet] = useState<Wallet | null>(null);
+/**
+ * Connect MetaMask (or the first EIP-6963 wallet), switch/add Robinhood Chain 4663, and return the account. Shared by the
+ * open panel and the `/app` "My positions" Robinhood section so both connect the same way.
+ */
+export async function connectRhcWallet(): Promise<RhcWallet> {
+  const [first] = await discoverEvmWallets();
+  if (!first) throw new WalletRequestError("no-account", "No EVM wallet found. Install MetaMask to continue.");
+  const address = await connectEvmWallet(first.provider);
+  await ensureRobinhoodChain(first.provider);
+  return { provider: first.provider, address, name: first.info.name };
+}
+
+export function RhcUniv4OpenPanel({ pool, signingEnabled, receiptPoll, initialWallet = null, autoConnect = false, showPositions = true, onWalletChange, onOpened }: {
+  pool: RhcPoolView | null; signingEnabled: boolean; receiptPoll?: ReceiptPoll;
+  /** A wallet already connected elsewhere on the page (`/app` My positions). */
+  initialWallet?: RhcWallet | null;
+  /** Ask the wallet to connect as soon as the panel opens (the user just chose this Robinhood Chain pool). */
+  autoConnect?: boolean;
+  /** False when the page lists Robinhood Chain positions elsewhere (`/app` My positions). */
+  showPositions?: boolean;
+  onWalletChange?: (wallet: RhcWallet) => void;
+  /** Called after an open transaction confirms and its position NFT is tracked. */
+  onOpened?: (positionId: string) => void;
+}) {
+  const [wallet, setWallet] = useState<Wallet | null>(initialWallet);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [side, setSide] = useState<0 | 1>(0);
@@ -128,6 +152,26 @@ export function RhcUniv4OpenPanel({ pool, signingEnabled, receiptPoll }: { pool:
 
   const reset = () => { setResult(null); setPrepared(null); setStep(null); setSigned(null); setExec(null); setSent(null); };
 
+  // Auto-connect once when opened from the pool list; a wallet passed in from the page is reused instead.
+  // (Deferred a tick and cancelled on cleanup, so React StrictMode's double mount asks the wallet only once.)
+  useEffect(() => {
+    if (!pool) return;
+    const tokens = [pool.token0.address, pool.token1.address];
+    const loadBalances = (w: Pick<Wallet, "provider" | "address">) =>
+      readWalletBalances(w.provider, w.address, tokens).then(setBalances, () => setBalances(null));
+    const timer = window.setTimeout(() => {
+      if (initialWallet) { void loadBalances(initialWallet); return; }
+      if (!autoConnect) return;
+      setError(null); setBusy(true);
+      connectRhcWallet()
+        .then((connected) => { setWallet(connected); onWalletChange?.(connected); void loadBalances(connected); })
+        .catch((e: unknown) => setError(e instanceof Error ? e.message : "Wallet connection failed"))
+        .finally(() => setBusy(false));
+    }, 0);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once per mount
+  }, []);
+
   if (!pool) return <p className="mt-6 text-sm text-smoke">Pool data is unavailable right now.</p>;
   const token = side === 0 ? pool.token0 : pool.token1;
 
@@ -140,12 +184,10 @@ export function RhcUniv4OpenPanel({ pool, signingEnabled, receiptPoll }: { pool:
   const connect = async () => {
     setError(null); setBusy(true);
     try {
-      const [first] = await discoverEvmWallets();
-      if (!first) throw new WalletRequestError("no-account", "No EVM wallet found. Install MetaMask to continue.");
-      const address = await connectEvmWallet(first.provider);
-      await ensureRobinhoodChain(first.provider);
-      setWallet({ provider: first.provider, address, name: first.info.name });
-      void refreshBalances({ provider: first.provider, address });
+      const connected = await connectRhcWallet();
+      setWallet(connected);
+      onWalletChange?.(connected);
+      void refreshBalances(connected);
     } catch (e) { setError(e instanceof Error ? e.message : "Wallet connection failed"); } finally { setBusy(false); }
   };
 
@@ -195,7 +237,7 @@ export function RhcUniv4OpenPanel({ pool, signingEnabled, receiptPoll }: { pool:
     const status: Sent["status"] = !receipt ? "timeout" : receipt.status === "0x1" ? "success" : "reverted";
     const positionId = kind === "execute" && receipt ? mintedPositionId(receipt, wallet.address) : null;
     setSent({ kind, hash, status, positionId });
-    if (positionId) { trackPositionId(wallet.address, positionId); setPositionsKey(k => k + 1); }
+    if (positionId) { trackPositionId(wallet.address, positionId); setPositionsKey(k => k + 1); onOpened?.(positionId); }
     if (status !== "timeout") void refreshBalances();
     return status;
   };
@@ -276,6 +318,6 @@ export function RhcUniv4OpenPanel({ pool, signingEnabled, receiptPoll }: { pool:
     {result ? <OpenPreview result={exec ?? result} pool={pool} /> : null}
     {result && result.state !== "failed" ? <StepList needsApproval={needsApproval} current={current} signingEnabled={signingEnabled} onStep={runStep} /> : null}
     {sent ? <TxStatus sent={sent} /> : null}
-    <RhcUniv4PositionsPanel wallet={wallet} signingEnabled={signingEnabled} refreshKey={positionsKey} onChanged={() => void refreshBalances()} receiptPoll={receiptPoll} />
+    {showPositions ? <RhcUniv4PositionsPanel wallet={wallet} signingEnabled={signingEnabled} refreshKey={positionsKey} onChanged={() => void refreshBalances()} receiptPoll={receiptPoll} /> : null}
   </section>;
 }

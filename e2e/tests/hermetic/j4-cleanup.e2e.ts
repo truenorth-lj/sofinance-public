@@ -64,6 +64,9 @@ for (const scenario of ["packed", "chunked", "interrupted-confirmation"] as cons
       const pending = count <= 2;
       return route.fulfill({ json: { signature, status: pending ? "pending" : "success", chainStatus: pending ? "pending" : "success" } });
     });
+    // `/app` also lists pools (Solana + Robinhood Chain); this journey is about cleanup, so the pool list is empty.
+    await page.route("**/api/rwa-pairs**", route => route.fulfill({ json: { pairs: [] } }));
+    await page.route("**/api/protocol-pools**", route => route.fulfill({ json: { pairs: [], pools: [] } }));
     await page.goto("/app", { waitUntil: "domcontentloaded" });
     await new ConnectModal(page, wallet).connect();
     await expect(page.getByRole("heading", { name: "Clean up leftover yield" })).toBeVisible();

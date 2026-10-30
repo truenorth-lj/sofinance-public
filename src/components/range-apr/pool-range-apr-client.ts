@@ -15,8 +15,15 @@ const cache = new AsyncCache<PoolRangeAprPayload>({
   ttlMs: 60_000, failureTtlMs: 10_000, ttlFor: (payload) => (payload.sample.degraded ? DEGRADED_TTL_MS : 60_000),
 });
 
-async function request(poolId: string): Promise<PoolRangeAprPayload> {
-  const response = await fetch(`/api/pool-range-apr?poolId=${encodeURIComponent(poolId)}`, {
+/** Raydium pools use `/api/pool-range-apr`; Orca / Meteora use the flag-gated `/api/protocol-pools/range-apr` (same payload shape). */
+export type RangeAprProtocol = "raydium-clmm" | "orca-whirlpool" | "meteora-dlmm";
+
+const rangeAprUrl = (poolId: string, protocol: RangeAprProtocol) => protocol === "raydium-clmm"
+  ? `/api/pool-range-apr?poolId=${encodeURIComponent(poolId)}`
+  : `/api/protocol-pools/range-apr?protocol=${protocol}&poolId=${encodeURIComponent(poolId)}`;
+
+async function request(poolId: string, protocol: RangeAprProtocol): Promise<PoolRangeAprPayload> {
+  const response = await fetch(rangeAprUrl(poolId, protocol), {
     headers: { Accept: "application/json" },
   });
   const body = await response.json() as PoolRangeAprPayload | { error?: string };
@@ -24,8 +31,9 @@ async function request(poolId: string): Promise<PoolRangeAprPayload> {
   return body as PoolRangeAprPayload;
 }
 
-export function loadPoolRangeApr(poolId: string): Promise<PoolRangeAprPayload> {
-  return cache.get(`${cacheEpoch}:${poolId}`, () => limit(() => request(poolId)));
+export function loadPoolRangeApr(poolId: string, protocol: RangeAprProtocol = "raydium-clmm"): Promise<PoolRangeAprPayload> {
+  const key = protocol === "raydium-clmm" ? `${cacheEpoch}:${poolId}` : `${cacheEpoch}:${protocol}:${poolId}`;
+  return cache.get(key, () => limit(() => request(poolId, protocol)));
 }
 
 export function clearPoolRangeAprClientCache() {

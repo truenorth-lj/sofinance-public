@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { FLAG_OFF_NOT_FOUND_PATH, isFlaggedOffPage } from "@/lib/flagged-pages";
 import { appSubdomainRewritePath, isAppSubdomainHost, trailingSlashRedirectPath } from "@/lib/app-host";
+import { unifiedAppRedirect } from "@/lib/unified-pools/deep-link";
 import { REGION_NOTICE_COOKIE, REGION_NOTICE_COOKIE_MAX_AGE, regionNoticeForCountry } from "@/lib/region-notice";
 
 /**
@@ -32,6 +33,9 @@ export function proxy(request: NextRequest) {
     url.pathname = FLAG_OFF_NOT_FOUND_PATH;
     return withRegionNotice(request, NextResponse.rewrite(url));
   }
+  // Old pages merged into `/app` (flag-off pages above stay 404). A real 307, not a streamed client redirect.
+  const moved = unifiedAppRedirect(rewritePath ?? request.nextUrl.pathname);
+  if (moved) return withRegionNotice(request, NextResponse.redirect(new URL(moved, request.url), 307));
   if (!rewritePath) {
     return withRegionNotice(request, NextResponse.next());
   }

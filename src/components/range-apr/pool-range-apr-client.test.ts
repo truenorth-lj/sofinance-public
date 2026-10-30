@@ -37,3 +37,15 @@ describe("loadPoolRangeApr cache", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("loadPoolRangeApr protocols", () => {
+  it("asks the protocol-pools range APR route for Orca / Meteora and keeps their cache apart from Raydium", async () => {
+    payloads = [payloadFixture(), payloadFixture()];
+    await loadPoolRangeApr("pool");
+    await loadPoolRangeApr("pool", "meteora-dlmm");
+    const urls = (fetchMock.mock.calls as unknown as [string][]).map(([url]) => url);
+    expect(urls[0]).toContain("/api/pool-range-apr");
+    expect(urls[1]).toContain("/api/protocol-pools/range-apr");
+    expect(urls[1]).toContain("protocol=meteora-dlmm");
+  });
+});
