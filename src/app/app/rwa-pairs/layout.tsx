@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "RWA pairs · SoFinance",
-  description: "Discover Raydium CLMM same-asset RWA trading pairs filtered by Jupiter tags and xStocks whitelist, plus the curated USDC/USDT pool.",
+  title: "Pools · SoFinance",
+  description: "Same-asset RWA liquidity pools on Solana (Raydium CLMM) and Robinhood Chain (Uniswap v4) in one list, plus the curated USDC/USDT pool.",
 };
 
 export default function RwaPairsLayout({ children }: { children: React.ReactNode }) {

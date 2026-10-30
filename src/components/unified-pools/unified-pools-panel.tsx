@@ -6,7 +6,12 @@ import Link from "next/link";
 import { ArrowDown, ArrowUp, ArrowUpDown, ArrowUpRight, LayoutGrid, List, LoaderCircle, RefreshCw, Search } from "lucide-react";
 import { HIGHEST_RANGE_APR_7D_HELP, POOL_FEE_APR_24H_HELP } from "@/lib/apr-labels/copy";
 import { cn } from "@/lib/cn";
-import { DOCS_ROUTES } from "@/lib/public-urls";
+import { buildPlanPath, DOCS_ROUTES } from "@/lib/public-urls";
+import { volumeDivergenceNote } from "@/lib/apr-labels/volume-divergence";
+import { HIGHEST_RANGE_COLUMN_LABEL, HIGHEST_RANGE_HELP } from "@/lib/range-apr/copy";
+import { unavailableReasonText } from "@/lib/range-apr/format";
+import { pairIssuerLabel } from "@/lib/rwa-pair-names";
+import type { TokenMetadata } from "@sofinance/engine/token-metadata";
 import { fetchRwaPairsList } from "@/lib/rwa-pairs-list";
 import {
   CHAIN_LABELS, DEFAULT_FILTERS, DEFAULT_SORT, FIRST_CLICK_DIR, PROTOCOL_LABELS, RISK_LABELS, selectPools,
@@ -14,10 +19,12 @@ import {
 } from "@/lib/unified-pools/model";
 import { rhcPool, rhcPoolView, solanaPool, type RhcPoolSummary, type SolanaPoolRow } from "@/lib/unified-pools/rows";
 import { InfoTip } from "../info-tip";
+import { PairTokenIcons } from "../pair-token-icons";
 import { OpenPositionModal } from "../open-position-modal";
 import { clearPoolRangeAprClientCache } from "../range-apr/pool-range-apr-client";
 import type { RhcPoolView } from "../rhc-univ4-open-panel";
 import type { OpenPositionPair } from "../use-open-position-controller";
+import { useTokenMetadata } from "../use-token-metadata";
 import { useWalletConnection } from "../wallet-connection";
 import { usePoolsApr7d, type Apr7dState } from "./use-pools-apr7d";
 
@@ -93,30 +100,82 @@ function OpenButton({ action, label, compact }: { action: OpenAction; label: str
   return <span className={cn("text-xs", compact ? "text-smoke" : "text-ink/60")}>{action.reason}</span>;
 }
 
-function PoolCard({ pool, apr, action }: { pool: UnifiedPool; apr: Apr7dState | undefined; action: OpenAction }) {
+const raydiumPoolUrl = (poolId: string) => `https://raydium.io/clmm/create-position/?pool_id=${poolId}`;
+const cardEyebrow = "font-data text-[10px] uppercase tracking-[0.12em] text-ink/60";
+
+/** Wrapped / plain symbols for the token icons, from the "SPCXx/SPCX" pair label (wrapped side first). */
+const iconPair = (pool: UnifiedPool) => {
+  const [wrappedSymbol = pool.symbolA, plainSymbol = pool.symbolB] = pool.pairLabel.split("/");
+  return { mintA: pool.mintA, mintB: pool.mintB, symbolA: pool.symbolA, wrappedSymbol, plainSymbol };
+};
+
+/**
+ * One pool as a cream card (the `/app/rwa-pairs` card fields, now for both chains): token icons and issuer names, the
+ * estimated highest range APR (7-day) with the range it comes from ("Highest range", the same range the Create position
+ * modal calls Best), when the data was updated, confidence and volume notes in the tooltip, then TVL, volume, fee and
+ * 24h pool fee APR. Solana Raydium pools also link "Plan this pool" and the pool on Raydium.
+ */
+function PoolCard({ pool, apr, action, tokens }: {
+  pool: UnifiedPool; apr: Apr7dState | undefined; action: OpenAction; tokens: Record<string, TokenMetadata>;
+}) {
+  const ready = apr?.status === "ready" ? apr : null;
+  const volumeNote = ready ? volumeDivergenceNote(pool.volume24hUsd, ready.avgDailyVolumeUsd) : null;
+  const withVolumeNote = (text: string) => (volumeNote ? `${text} ${volumeNote}` : text);
+  const freshness = apr && apr.status !== "loading" ? apr.freshness : undefined;
+  const raydium = pool.protocol === "raydium-clmm";
   return <li className="flex min-w-0 flex-col rounded-[28px] bg-cream p-6 text-ink" data-pool={pool.key}>
-    <div className="flex items-start justify-between gap-3">
-      <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-1.5"><ChainBadge chain={pool.chain} /><span className={cn(chip, "border border-ink/25")}>{PROTOCOL_LABELS[pool.protocol]}</span></div>
-        <h3 className="mt-3 text-xl font-medium tracking-[-0.02em]">{pool.pairLabel}</h3>
-        <p className="truncate text-xs text-ink/65" title={`${pool.nameA} / ${pool.nameB}`}>{pool.nameA} / {pool.nameB}</p>
+    <div className="flex flex-wrap items-center gap-1.5"><ChainBadge chain={pool.chain} /><span className={cn(chip, "border border-ink/25")}>{PROTOCOL_LABELS[pool.protocol]}</span></div>
+    <div className="mt-4 flex items-start justify-between gap-3">
+      <div className="flex min-w-0 items-center gap-3">
+        {pool.chain === "solana" && <PairTokenIcons pair={iconPair(pool)} tokens={tokens} iconClassName="h-10 w-10" />}
+        <div className="min-w-0">
+          <h3 className="text-xl font-medium tracking-[-0.02em]">{pool.pairLabel}</h3>
+          <p className="truncate text-xs text-ink/65" title={`${pool.nameA} / ${pool.nameB}`}>{pairIssuerLabel(pool.nameA, pool.nameB)}</p>
+        </div>
       </div>
       <div className="shrink-0 text-right">
         <Apr7dValue state={apr} />
-        <p className="mt-1.5 font-data text-[10px] uppercase tracking-[0.12em] text-ink/60">{APR7D_SHORT}</p>
+        <p className={cn("mt-1.5 flex items-center justify-end gap-1", cardEyebrow)}>
+          {APR7D_SHORT}
+          {ready && <InfoTip label="About Est. highest range APR" tone="light">
+            {withVolumeNote(HIGHEST_RANGE_APR_7D_HELP)}{ready.lowConfidence ? " Low confidence for this pool: thin or patchy recent trading." : ""}
+          </InfoTip>}
+          {apr?.status === "missing" && apr.degraded && <InfoTip label="About Est. highest range APR" tone="light">{unavailableReasonText("degraded-data")}.</InfoTip>}
+        </p>
       </div>
     </div>
     {apr?.status === "missing" && <p className="mt-2 text-xs text-ink/60">{apr.reason}</p>}
-    <dl className="mt-5 grid grid-cols-2 gap-x-4 gap-y-4 border-t border-ink/20 pt-4 sm:grid-cols-4">
-      <div><dt className="font-data text-[10px] uppercase tracking-[0.12em] text-ink/60">{APR24H_SHORT}</dt><dd className="mt-1 font-semibold tabular-nums">{pct(pool.poolFeeApr24hPct)}</dd></div>
-      <div><dt className="font-data text-[10px] uppercase tracking-[0.12em] text-ink/60">TVL</dt><dd className="mt-1 font-semibold tabular-nums">{money(pool.tvlUsd)}</dd></div>
-      <div><dt className="font-data text-[10px] uppercase tracking-[0.12em] text-ink/60">24h vol</dt><dd className="mt-1 font-semibold tabular-nums">{money(pool.volume24hUsd)}</dd></div>
-      <div><dt className="font-data text-[10px] uppercase tracking-[0.12em] text-ink/60">Fee</dt><dd className="mt-1 font-semibold tabular-nums">{pool.feeTierBps === null ? pool.chain === "robinhood" ? "Dynamic" : "—" : `${pool.feeTierBps} bps`}</dd></div>
+    {freshness && <p className="mt-2 text-xs text-ink/60" data-testid="apr-freshness">
+      Updated {new Date(freshness.snapshotAt).toLocaleString()}{freshness.delayed && " · Data delayed"}
+    </p>}
+    {pool.chain === "solana" && <div className="mt-4">
+      <p className={cn("flex items-center gap-1", cardEyebrow)}>
+        {HIGHEST_RANGE_COLUMN_LABEL}
+        {ready && <InfoTip label="About Highest range" placement="above" tone="light">{HIGHEST_RANGE_HELP}</InfoTip>}
+      </p>
+      <span data-testid="highest-range" className={cn("mt-1.5 inline-block max-w-full truncate rounded-full px-3 py-1 align-top text-sm font-medium", ready ? "bg-lilac" : "bg-ink/10")}>
+        {ready ? ready.rangeLabel : apr?.status === "missing" ? "—" : "…"}
+      </span>
+    </div>}
+    <dl className="mt-5 grid grid-cols-2 gap-x-4 gap-y-4 border-t border-ink/20 pt-4">
+      <div><dt className={cn("flex items-center gap-1", cardEyebrow)}>{APR24H_SHORT}<InfoTip label="About Est. pool fee APR" placement="above" tone="light">{withVolumeNote(POOL_FEE_APR_24H_HELP)}</InfoTip></dt>
+        <dd className="mt-1 font-semibold tabular-nums" data-testid="pool-fee-apr">{pct(pool.poolFeeApr24hPct)}</dd></div>
+      <div><dt className={cardEyebrow}>TVL</dt><dd className="mt-1 font-semibold tabular-nums">{money(pool.tvlUsd)}</dd></div>
+      <div><dt className={cardEyebrow}>24h vol</dt><dd className="mt-1 font-semibold tabular-nums">{money(pool.volume24hUsd)}</dd></div>
+      <div><dt className={cardEyebrow}>Fee</dt><dd className="mt-1 font-semibold tabular-nums">{pool.feeTierBps === null ? pool.chain === "robinhood" ? "Dynamic" : "—" : `${pool.feeTierBps} bps`}</dd></div>
     </dl>
     <div className="mt-4"><RiskChips pool={pool} /></div>
-    <div className="mt-auto flex flex-wrap items-center justify-between gap-3 pt-5">
+    <div className="mt-auto flex flex-wrap items-center gap-3 pt-5">
       <OpenButton action={action} label={pool.pairLabel} />
-      <span className="font-data text-[10px] tracking-[0.08em] text-ink/55" title={pool.poolAddress}>{pool.poolAddress.slice(0, 4)}…{pool.poolAddress.slice(-4)}</span>
+      {raydium && <Link href={buildPlanPath({ poolId: pool.poolAddress, pair: pool.pairLabel })}
+        className="inline-flex h-11 items-center rounded-full border border-ink/40 px-4 text-sm font-semibold outline-none transition-colors hover:border-ink focus-visible:shadow-[0_0_0_3px_var(--color-lilac)]">
+        Plan this pool
+      </Link>}
+      {raydium
+        ? <a href={raydiumPoolUrl(pool.poolAddress)} target="_blank" rel="noreferrer" title={`Open pool ${pool.poolAddress} on Raydium`}
+          className="ml-auto font-data text-[10px] tracking-[0.08em] text-ink/60 underline underline-offset-2 outline-none hover:text-ink focus-visible:text-ink">
+          {pool.poolAddress.slice(0, 4)}…{pool.poolAddress.slice(-4)}</a>
+        : <span className="ml-auto font-data text-[10px] tracking-[0.08em] text-ink/55" title={pool.poolAddress}>{pool.poolAddress.slice(0, 4)}…{pool.poolAddress.slice(-4)}</span>}
     </div>
   </li>;
 }
@@ -185,7 +244,7 @@ function Select<T extends string>({ label, value, onChange, options }: {
 export type OpenRhcRequest = { pool: RhcPoolView };
 
 /**
- * `/app` pool list: Solana (Raydium; Orca / Meteora when their flags are on) and Robinhood Chain (Uniswap v4) in one
+ * `/app/rwa-pairs` pool list: Solana (Raydium; Orca / Meteora when their flags are on) and Robinhood Chain (Uniswap v4) in one
  * list. Cards or a sortable table, search, chain / protocol / risk filters, and "Hide duplicate pools" (on by default;
  * see `lib/unified-pools/model.ts` for the rule). Opening a Solana pool connects the Solana wallet and opens the
  * existing Create position modal; opening a Robinhood Chain pool asks the page to open its MetaMask flow.
@@ -234,6 +293,15 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", header 
     return () => { window.clearTimeout(timer); aborter.abort(); };
   }, [load]);
 
+  // Same cadence as the old RWA pairs list: re-read the saved lists and APR every minute while the tab is visible.
+  useEffect(() => {
+    const aborter = new AbortController();
+    const timer = window.setInterval(() => {
+      if (!document.hidden) { setRefreshKey((key) => key + 1); void load(aborter.signal); }
+    }, 60_000);
+    return () => { window.clearInterval(timer); aborter.abort(); };
+  }, [load]);
+
   const pools = useMemo(() => {
     const seen = new Set<string>();
     const all = [...loaded.rows.map(solanaPool), ...loaded.rhc.map(rhcPool).filter((pool): pool is UnifiedPool => pool !== null)];
@@ -243,10 +311,12 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", header 
   const rhcByKey = useMemo(() => new Map(loaded.rhc.map((summary) => [`robinhood:${summary.poolId.toLowerCase()}`, summary])), [loaded.rhc]);
 
   const apr = usePoolsApr7d(pools, refreshKey);
+  const tokens = useTokenMetadata(pools.filter((pool) => pool.chain === "solana").flatMap((pool) => [pool.mintA, pool.mintB]));
   const apr7d = useCallback((pool: UnifiedPool) => { const state = apr[pool.key]; return state?.status === "ready" ? state.aprPct : null; }, [apr]);
   const selected = useMemo(() => selectPools(pools, { filters, hideDuplicates: !showAll, sort, apr7d }), [pools, filters, showAll, sort, apr7d]);
 
-  const openPool = useCallback((pool: UnifiedPool) => {
+  /** `connectWallet: false` for deep links: the Create position dialog opens with its own Connect wallet button. */
+  const openPool = useCallback((pool: UnifiedPool, connectWallet = true) => {
     if (pool.chain === "robinhood") {
       const summary = rhcByKey.get(pool.key);
       const view = summary ? rhcPoolView(summary) : null;
@@ -255,7 +325,7 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", header 
     }
     const row = rowsByKey.get(pool.key);
     if (!row) return;
-    if (!connected) connect();
+    if (connectWallet && !connected) connect();
     setOpenPair({ poolAddress: row.poolAddress, mintA: row.mintA, mintB: row.mintB, symbolA: row.symbolA, symbolB: row.symbolB,
       wrappedSymbol: row.wrappedSymbol, plainSymbol: row.plainSymbol, feeTierBps: row.feeTierBps, token2022A: row.token2022A,
       token2022B: row.token2022B, freezeRisk: row.freezeRisk });
@@ -267,14 +337,14 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", header 
     return { kind: "none", reason: "Opening is not available yet" };
   }, [flags.meteoraOpen, openPool]);
 
-  // Deep link (`/app?openPool=…`, also where `/app/rhc` redirects): open that pool once it is listed.
+  // Deep link (`/app/rwa-pairs?openPool=…`, where `/app/rhc` and old `/app?openPool=` links redirect): open that pool once it is listed.
   const [deepLinked, setDeepLinked] = useState(false);
   useEffect(() => {
     if (deepLinked || !deepLinkPool || loading) return;
     const pool = pools.find((item) => item.poolAddress === deepLinkPool || item.poolAddress.toLowerCase() === deepLinkPool.toLowerCase());
     const timer = window.setTimeout(() => {
       setDeepLinked(true);
-      if (pool && actionFor(pool).kind === "open") openPool(pool);
+      if (pool && actionFor(pool).kind === "open") openPool(pool, false);
     }, 0);
     return () => window.clearTimeout(timer);
   }, [deepLinkPool, deepLinked, loading, pools, actionFor, openPool]);
@@ -366,7 +436,7 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", header 
 
     {selected.pools.length > 0 && (view === "cards"
       ? <ul className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3" data-testid="pools-cards">
-          {selected.pools.map((pool) => <PoolCard key={pool.key} pool={pool} apr={apr[pool.key]} action={actionFor(pool)} />)}
+          {selected.pools.map((pool) => <PoolCard key={pool.key} pool={pool} apr={apr[pool.key]} action={actionFor(pool)} tokens={tokens} />)}
         </ul>
       : <PoolTable pools={selected.pools} apr={apr} actionFor={actionFor} sort={sort} onSort={onSort} />)}
 

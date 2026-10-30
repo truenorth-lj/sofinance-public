@@ -33,8 +33,8 @@ export function proxy(request: NextRequest) {
     url.pathname = FLAG_OFF_NOT_FOUND_PATH;
     return withRegionNotice(request, NextResponse.rewrite(url));
   }
-  // Old pages merged into `/app` (flag-off pages above stay 404). A real 307, not a streamed client redirect.
-  const moved = unifiedAppRedirect(rewritePath ?? request.nextUrl.pathname);
+  // `/app/rhc` and old `/app?openPool=` links → the pools page (flag-off pages above stay 404). A real 307.
+  const moved = unifiedAppRedirect(rewritePath ?? request.nextUrl.pathname, request.nextUrl.search);
   if (moved) return withRegionNotice(request, NextResponse.redirect(new URL(moved, request.url), 307));
   if (!rewritePath) {
     return withRegionNotice(request, NextResponse.next());

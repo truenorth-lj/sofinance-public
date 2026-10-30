@@ -1,58 +1,61 @@
 // @vitest-environment happy-dom
-// /app: while the Robinhood Chain open dialog is up, the Solana (Raydium) position tools behind it are hidden.
+// /app (Positions): My positions and the Solana position tools only; no pool list. The Robinhood Chain part of
+// My positions shows only while MetaMask shares an account with the site (never from saved positions alone).
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const seen = vi.hoisted(() => ({ hidden: [] as boolean[], openRhc: null as null | ((r: { pool: unknown }) => void),
-  walletChange: null as null | ((w: unknown) => void) }));
+const seen = vi.hoisted(() => ({ restore: vi.fn<() => Promise<unknown>>(), panel: vi.fn() }));
 vi.mock("../selected-app", () => ({
-  SelectedApp: (props: { solanaToolsHidden?: boolean; poolsSection?: unknown; extraPositions?: unknown }) => {
-    seen.hidden.push(Boolean(props.solanaToolsHidden));
-    return createElement("div", { "data-testid": "selected-app", "data-tools-hidden": String(Boolean(props.solanaToolsHidden)),
-      "data-has-rhc": String(Boolean(props.extraPositions)) }, props.poolsSection as never);
-  },
+  SelectedApp: (props: Record<string, unknown>) => createElement("div", { "data-testid": "selected-app",
+    "data-props": Object.keys(props).sort().join(","), "data-has-rhc": String(Boolean(props.extraPositions)) }),
 }));
-vi.mock("./unified-pools-panel", () => ({
-  UnifiedPoolsPanel: (props: { onOpenRhc: (r: { pool: unknown }) => void }) => { seen.openRhc = props.onOpenRhc; return null; },
-}));
+vi.mock("./unified-pools-panel", () => ({ UnifiedPoolsPanel: () => { seen.panel(); return null; } }));
 vi.mock("./rhc-positions-section", () => ({ RhcPositionsSection: () => null }));
-vi.mock("../rhc-univ4-open-panel", () => ({ RhcUniv4OpenPanel: (props: { onWalletChange?: (w: unknown) => void }) => {
-  seen.walletChange = props.onWalletChange ?? null;
-  return createElement("div", { "data-testid": "rhc-open-panel" });
-} }));
+vi.mock("../rhc-univ4-open-panel", () => ({ restoreRhcWallet: () => seen.restore() }));
 
 import { UnifiedApp } from "./unified-app";
 
+const FLAGS = { orca: false, meteora: false, meteoraOpen: false, rhc: true };
 let container: HTMLDivElement; let root: Root;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   container = document.createElement("div"); document.body.append(container); root = createRoot(container);
-  seen.hidden = []; seen.openRhc = null; seen.walletChange = null;
+  seen.restore.mockReset(); seen.panel.mockReset();
 });
-afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.unstubAllGlobals(); });
+afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.unstubAllGlobals(); localStorage.clear(); });
 
-describe("UnifiedApp", () => {
-  it("hides the Solana position tools only while a Robinhood Chain pool is being opened", async () => {
-    await act(async () => { root.render(createElement(UnifiedApp, { selected: {}, flags: { orca: false, meteora: false, meteoraOpen: false, rhc: true }, rhcSigningEnabled: false })); });
-    const app = () => container.querySelector("[data-testid=selected-app]")!;
-    expect(app().getAttribute("data-tools-hidden")).toBe("false");
-    await act(async () => { seen.openRhc!({ pool: { poolId: "0xpool" } }); });
-    expect(container.querySelector("[data-testid=rhc-open-panel]")).not.toBeNull();
-    expect(app().getAttribute("data-tools-hidden")).toBe("true");
-    await act(async () => { container.querySelector<HTMLButtonElement>("button[aria-label='Close']")!.click(); });
-    expect(container.querySelector("[data-testid=rhc-open-panel]")).toBeNull();
-    expect(app().getAttribute("data-tools-hidden")).toBe("false");
+const app = () => container.querySelector("[data-testid=selected-app]")!;
+async function render(flags = FLAGS) {
+  await act(async () => { root.render(createElement(UnifiedApp, { selected: {}, flags, rhcSigningEnabled: false })); });
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+}
+
+describe("UnifiedApp (/app)", () => {
+  it("renders only My positions and the position tools: no pool list, no Robinhood Chain dialog", async () => {
+    seen.restore.mockResolvedValue(null);
+    await render();
+    expect(seen.panel).not.toHaveBeenCalled();
+    expect(app().getAttribute("data-props")).not.toMatch(/poolsSection|solanaToolsHidden/);
+    expect(container.querySelector("[role=dialog]")).toBeNull();
   });
 
-  it("adds the Robinhood Chain part of My positions only after MetaMask connects from a pool's Open position", async () => {
+  it("shows no Robinhood Chain section without MetaMask, even with saved Robinhood Chain positions", async () => {
     localStorage.setItem("sofi:rhc:positions:0xabc", JSON.stringify(["12"]));
-    await act(async () => { root.render(createElement(UnifiedApp, { selected: {}, flags: { orca: false, meteora: false, meteoraOpen: false, rhc: true }, rhcSigningEnabled: false })); });
-    const app = () => container.querySelector("[data-testid=selected-app]")!;
+    seen.restore.mockResolvedValue(null);
+    await render();
     expect(app().getAttribute("data-has-rhc")).toBe("false");
-    await act(async () => { seen.openRhc!({ pool: { poolId: "0xpool" } }); });
-    await act(async () => { seen.walletChange!({ name: "MetaMask", address: "0x1234567890abcdef1234567890abcdef12345678", provider: {} }); });
+  });
+
+  it("adds the Robinhood Chain positions when MetaMask already shares an account with the site", async () => {
+    seen.restore.mockResolvedValue({ name: "MetaMask", address: "0x1234567890abcdef1234567890abcdef12345678", provider: {} });
+    await render();
     expect(app().getAttribute("data-has-rhc")).toBe("true");
-    localStorage.clear();
+  });
+
+  it("never asks MetaMask when Robinhood Chain is off", async () => {
+    await render({ ...FLAGS, rhc: false });
+    expect(seen.restore).not.toHaveBeenCalled();
+    expect(app().getAttribute("data-has-rhc")).toBe("false");
   });
 });

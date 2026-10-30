@@ -123,6 +123,20 @@ export async function connectRhcWallet(): Promise<RhcWallet> {
   return { provider: first.provider, address, name: first.info.name };
 }
 
+/**
+ * The account MetaMask already shares with this site, without a prompt (`eth_accounts`), or null. `/app` uses it so a
+ * wallet connected on the pools page shows its Robinhood Chain positions; it never asks to connect or switch chain
+ * (a close still refuses unless the wallet is on Robinhood Chain).
+ */
+export async function restoreRhcWallet(): Promise<RhcWallet | null> {
+  const [first] = await discoverEvmWallets();
+  if (!first) return null;
+  const accounts = await first.provider.request({ method: "eth_accounts" }).catch(() => null);
+  const account = Array.isArray(accounts) ? accounts[0] : null;
+  if (typeof account !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(account)) return null;
+  return { provider: first.provider, address: account as `0x${string}`, name: first.info.name };
+}
+
 export function RhcUniv4OpenPanel({ pool, signingEnabled, receiptPoll, initialWallet = null, autoConnect = false, showPositions = true, onWalletChange, onOpened }: {
   pool: RhcPoolView | null; signingEnabled: boolean; receiptPoll?: ReceiptPoll;
   /** A wallet already connected elsewhere on the page (`/app` My positions). */

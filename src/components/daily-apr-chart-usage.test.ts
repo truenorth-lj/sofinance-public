@@ -12,7 +12,7 @@ describe("daily APR chart wiring", () => {
   });
 
   it("keeps daily APR off the RWA pair cards (no per-card sparkline requests)", () => {
-    const src = readFileSync(resolve("src/components/rwa-pairs-panel.tsx"), "utf8");
+    const src = readFileSync(resolve("src/components/unified-pools/unified-pools-panel.tsx"), "utf8");
     expect(src).not.toContain("PoolAprSparkline");
     expect(src).not.toContain("Daily APR");
   });
@@ -20,14 +20,14 @@ describe("daily APR chart wiring", () => {
   it("plans a pool from its daily APR series instead of synthetic sample paths", () => {
     const app = readFileSync(resolve("src/components/plan/plan-app.tsx"), "utf8");
     const chart = readFileSync(resolve("src/components/plan/comparison-chart.tsx"), "utf8");
-    const pairs = readFileSync(resolve("src/components/rwa-pairs-panel.tsx"), "utf8");
+    const pairs = readFileSync(resolve("src/components/unified-pools/unified-pools-panel.tsx"), "utf8");
     expect(app).toContain("usePoolYield");
     expect(app).toContain("buildPlanComparison");
     expect(app).not.toContain("evaluateIntent");
     expect(app).not.toContain("ScenarioCards");
     expect(chart).toContain("Best case from past yield, not a forecast");
     expect(pairs).toContain("buildPlanPath");
-    expect(pairs).toContain("poolId: pair.poolAddress");
+    expect(pairs).toContain("poolId: pool.poolAddress");
   });
 
   it("exposes the sparse realized series on get_position_performance MCP output", () => {
