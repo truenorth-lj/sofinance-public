@@ -14,10 +14,7 @@ const migrationSchema = (schema: string) => schema === "public" ? "drizzle" : `$
 const lockKey = 763240911;
 
 /** Structural comparison uses PostgreSQL's own parsed/deparsed DDL, not text guesses. */
-/** A client, a reserved connection or a transaction (postgres.js 3.4.9 types a transaction apart from `Sql`). */
-type Queryable = postgres.Sql | postgres.TransactionSql;
-
-async function signature(db: Queryable, schema: string) {
+async function signature(db: postgres.Sql, schema: string) {
   const normalize = (value: unknown) => typeof value === "string"
     ? value.replaceAll(`"${schema}".`, "").replaceAll(`${schema}.`, "") : value;
   const columns = await db`
@@ -41,13 +38,13 @@ async function signature(db: Queryable, schema: string) {
   return JSON.stringify({ columns, constraints, indexes }, (_key, value) => normalize(value));
 }
 
-async function tableCount(db: Queryable, schema: string) {
+async function tableCount(db: postgres.Sql, schema: string) {
   const [row] = await db`SELECT count(*)::int AS count FROM pg_tables WHERE schemaname=${schema} AND tablename IN ${db(rwaTables)}`;
   return Number(row!.count);
 }
 
 /** Re-create the initial generated migration only in a disposable schema, then compare. */
-async function verifyBaseline(db: Queryable, schema: string, folder: string) {
+async function verifyBaseline(db: postgres.Sql, schema: string, folder: string) {
   const baseline = readMigrationFiles({ migrationsFolder: folder })[0];
   if (!baseline) throw new Error("Missing initial migration");
   const scratch = `rwa_baseline_${randomUUID().replaceAll("-", "")}`;
@@ -67,7 +64,7 @@ async function verifyBaseline(db: Queryable, schema: string, folder: string) {
   return baseline;
 }
 
-async function ledger(db: Queryable, schema: string) {
+async function ledger(db: postgres.Sql, schema: string) {
   const name = `${identifier(migrationSchema(schema))}.__drizzle_migrations`;
   const [exists] = await db`SELECT to_regclass(${name}) IS NOT NULL AS present`;
   if (!exists!.present) return [];
