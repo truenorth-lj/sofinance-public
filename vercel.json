@@ -1,4 +1,10 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "crons": [{ "path": "/api/internal/rwa-refresh", "schedule": "*/15 * * * *" }]
+  "ignoreCommand": "bash scripts/vercel-ignore-build.sh",
+  "crons": [
+    {
+      "path": "/api/internal/rwa-refresh",
+      "schedule": "0 0 * * *"
+    }
+  ]
 }
