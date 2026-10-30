@@ -19,6 +19,7 @@ import { applySolInputPolicy, isSolInputBlocked } from "@/lib/sol-input-policy";
 
 import { useOpenPreview, useOpenPreviewEffect } from "./transactions/open/use-open-preview";
 import { useOpenSubmission, useOpenSubmissionCommand, type OpenSubmitStage } from "./transactions/open/use-open-submission";
+import { useSolSwapRecovery } from "./transactions/open/use-sol-swap-recovery";
 import { clearWalletSolSwapReceipts, isSolSwapReceiptExpired, loadSolSwapReceipt,
   receiptStorage } from "./transactions/open/sol-swap-receipt-store";
 
@@ -123,6 +124,9 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
   const busy = operationStage === "preparing" || operationStage === "wallet" || operationStage === "broadcasting" ||
     operationStage === "swap-preparing" || operationStage === "swap-wallet" || operationStage === "swap-broadcasting" ||
     operationStage === "swap-pending" || open.pending;
+  const swapRecovery = useSolSwapRecovery({ wallet, connected, blocked: busy, onReceipt: (receipt) => {
+    if (receipt.wallet === wallet && receipt.poolId === pair?.poolAddress) setSwapReceipt(receipt, { persist: false });
+  } });
   // Step 1/2 landed for this wallet + pool but its open has not confirmed: offer "Continue open (2/2)".
   const pendingSwap = swapReceipt && swapReceipt.wallet === wallet && swapReceipt.poolId === pair?.poolAddress &&
     !(now > 0 && isSolSwapReceiptExpired(swapReceipt, now)) ? swapReceipt : null;
@@ -266,7 +270,9 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
         ? (selectedAsset.reason || "Selected asset is not eligible")
         : null;
 
-  const actionBlockedReason = open.pending ? "Checking the original open-position transaction before opening again"
+  const actionBlockedReason = swapRecovery.invalid ? swapRecovery.error
+    : swapRecovery.attempt ? "Check the original SOL swap before opening again"
+    : open.pending ? "Checking the original open-position transaction before opening again"
     : pendingSwap ? (!connected ? "Connect a wallet to create a position" : rangePreset === "custom" && (!minPrice || !maxPrice) ? formError : null)
     : walletBlockedReason || formError ||
     (quoteLoading && (!quote || !fresh) ? "Fetching quote…"
@@ -275,7 +281,7 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
           : !quote ? "Waiting for quote…"
             : !fresh ? "Quote expired, refreshing…"
               : null);
-  const actionDisabled = busy || Boolean(actionBlockedReason);
+  const actionDisabled = busy || swapRecovery.checking || Boolean(actionBlockedReason);
   // Keep retry admission/preparation errors separate from errors awaiting chain verification.
   const retryError = (open.status === "failed" || open.status === "expired") &&
     submission.retryError?.signature === open.attempt?.signature ? submission.retryError?.message : "";
@@ -283,8 +289,10 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
   return {
     wallet, connected, connect, inputAssets, selectedAsset, inputMint, inputKind,
     amount, rangePreset, minPrice, maxPrice, quote, quoteLoading, quoteError: formError || quoteError,
-    error: retryError || open.error || (open.status === "confirmed" ? "" : error),
+    error: swapRecovery.error || retryError || open.error || (open.status === "confirmed" ? "" : error),
     submitStage, signature, positionMint, openStep, pendingSwap,
+    unconfirmedSwap: swapRecovery.attempt, checkingSwap: swapRecovery.checking,
+    recheckSwap: swapRecovery.recheck,
     solTwoStep: inputKind === "native" || Boolean(pendingSwap),
     presets: OPEN_RANGE_UI_PRESETS, fresh, busy,
     actionDisabled, actionBlockedReason, walletBlockedReason, changeAmount, chooseAsset, choosePreset,

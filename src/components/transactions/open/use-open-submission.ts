@@ -15,6 +15,7 @@ import { getStoredAttribution } from "@/lib/analytics/attribution";
 import { captureGrowthEvent } from "@/lib/analytics/client";
 import { openFailureProperties } from "@/lib/analytics/errors";
 import { GROWTH_EVENTS, openEventProperties } from "@/lib/analytics/events";
+import { readSolSwapAttempt, requireSolSwapStorage } from "./sol-swap-attempt-store";
 import { formatAmount } from "@sofinance/engine/amount";
 import { rawToDecimalString, runSolSwapStep, SolSwapStepError, type SolSwapReceipt, type SolSwapStage } from "./sol-swap-step-client";
 import { clearSolSwapReceipt, isSolSwapReceiptExpired, receiptStorage, saveSolSwapReceipt,
@@ -129,6 +130,12 @@ export function useOpenSubmissionCommand({ pair, wallet, inputMint, inputKind, a
       activeRef.current && walletRef.current === wallet &&
       identityRef.current === identity && inputRevisionRef.current === inputRevision;
     if (!ownsInput() || (!resume && committedQuoteRef.current !== quote)) return;
+    try {
+      if (readSolSwapAttempt(requireSolSwapStorage(), wallet)) {
+        setError("Check the original SOL swap before opening again.");
+        return;
+      }
+    } catch (error) { setError(error instanceof Error ? error.message : "Unable to read SOL swap history"); return; }
     if (!open.canSubmit()) {
       const message = "Open-position history changed. Reload and verify the original signature before opening again.";
       setError(message);
@@ -155,14 +162,14 @@ export function useOpenSubmissionCommand({ pair, wallet, inputMint, inputKind, a
         // blocks a single wrap + swap + open transaction, but passes these two.
         setOpenStep(1);
         failedStep = 1;
-        const landed: SolSwapReceipt = await runSolSwapStep({
+        const landed = await runSolSwapStep({
           wallet, poolId: pair.poolAddress, amount, requested: parsedAmount?.toString() ?? "",
           store: jupiterStoreRef.current, timeoutMs: OPEN_PREPARE_TIMEOUT_MS, signTransaction,
           setStage: setSubmitStage, current,
         });
-        receipt = { ...landed, landedAt: Date.now() };
+        receipt = landed;
         failedStep = 2;
-        setSwapReceipt(receipt);
+        setSwapReceipt(receipt, { persist: false });
         if (!current()) throw new Error("Wallet or input changed after step 1/2");
         setSubmitStage("preparing");
       }
@@ -202,6 +209,7 @@ export function useOpenSubmissionCommand({ pair, wallet, inputMint, inputKind, a
         unsigned.message.recentBlockhash !== prepared.summary.blockhash) {
         throw new Error("Transaction payer mismatch");
       }
+      if (readSolSwapAttempt(requireSolSwapStorage(), wallet)) throw new Error("Check the original SOL swap before opening again.");
       if (!open.canSubmit()) throw new Error("Open-position history changed. Reload and verify the original signature before opening again.");
       setQuote(prepared.summary.quote);
       setNow(Date.now());
@@ -221,6 +229,7 @@ export function useOpenSubmissionCommand({ pair, wallet, inputMint, inputKind, a
       const txSignature = bs58.encode(signatureBytes);
       const signedTransaction = btoa(String.fromCharCode(...signed.serialize()));
       if (!current() || Date.now() >= prepared.summary.expiresAt) throw new Error("Wallet, input or quote changed during signing; transaction not sent");
+      if (readSolSwapAttempt(requireSolSwapStorage(), wallet)) throw new Error("Check the original SOL swap before opening again.");
       if (!open.canSubmit()) throw new Error("Open-position history changed. Reload and verify the original signature before opening again.");
       const attempt = openAttemptFromSummary(txSignature, prepared.summary);
       open.track(attempt);

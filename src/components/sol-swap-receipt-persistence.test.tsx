@@ -19,6 +19,8 @@ import { openAttemptKey, persistOpenAttempt } from "@/lib/open-attempt";
 import { buildTransaction, openSummaryFixture, testKeypair, toBase64 } from "@/lib/test-support/send-fixtures";
 import { SOL_SWAP_RECEIPT_TTL_MS, solSwapReceiptKey, type PendingSolSwapReceipt } from "./transactions/open/sol-swap-receipt-store";
 
+import { solSwapAttemptKey, type SolSwapAttempt } from "./transactions/open/sol-swap-attempt-store";
+
 const mocks = vi.hoisted(() => ({ address: "", sign: vi.fn(), growth: vi.fn() }));
 vi.mock("@/lib/analytics/client", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/analytics/client")>(),
@@ -249,5 +251,92 @@ describe("step 1/2 receipt persistence", () => {
     expect(failed()).toHaveLength(3);
     expect(failed()[2]).toMatchObject({ open_step: 2, open_resumed: true });
     expect(calls("/api/sol-swap-broadcast")).toHaveLength(1);
+  });
+});
+
+
+describe("unconfirmed step 1 recovery", () => {
+  function pending(over: Partial<SolSwapAttempt> = {}): SolSwapAttempt {
+    return { version: 1, wallet, poolId, signature: swapSignature, outputMint: pair.mintA, outputSymbol: "AAA",
+      createdAt: Date.now(), lastValidBlockHeight: 150, ...over };
+  }
+  it("reloads an unresolved swap, blocks retained submit, and rechecks without signing", async () => {
+    localStorage.setItem(solSwapAttemptKey(wallet), JSON.stringify(pending()));
+    await mount(); await reload();
+    expect(controller.unconfirmedSwap?.signature).toBe(swapSignature);
+    expect(controller.actionDisabled).toBe(true);
+    await act(async () => controller.signAndSend());
+    expect(mocks.sign).not.toHaveBeenCalled();
+    expect(calls("/api/sol-swap-prepare")).toHaveLength(0);
+    await act(async () => controller.recheckSwap());
+    expect(controller.unconfirmedSwap).toBeNull();
+    expect(controller.pendingSwap?.signature).toBe(swapSignature);
+    expect(calls("/api/open-prepare")).toHaveLength(0);
+    expect(mocks.sign).not.toHaveBeenCalled();
+    await act(async () => controller.signAndSend());
+    expect(calls("/api/sol-swap-prepare")).toHaveLength(0);
+    expect(bodyOf(calls("/api/open-prepare")[0]!)).toMatchObject({ solSwapSignature: swapSignature });
+  });
+  it("keeps unresolved wallet A history when switching away and back", async () => {
+    const raw = JSON.stringify(pending()); localStorage.setItem(solSwapAttemptKey(wallet), raw);
+    await mount();
+    mocks.address = otherWallet;
+    await act(async () => root.render(createElement(Harness))); await advance(1);
+    expect(controller.unconfirmedSwap).toBeNull();
+    expect(localStorage.getItem(solSwapAttemptKey(wallet))).toBe(raw);
+    mocks.address = wallet;
+    await act(async () => root.render(createElement(Harness))); await advance(1);
+    expect(controller.unconfirmedSwap?.signature).toBe(swapSignature);
+    expect(controller.actionDisabled).toBe(true);
+  });
+  it("blocks other pools and stores recovered delivery under its original pool", async () => {
+    localStorage.setItem(solSwapAttemptKey(wallet), JSON.stringify(pending())); currentPair = otherPair;
+    await mount();
+    expect(controller.actionDisabled).toBe(true);
+    await act(async () => controller.recheckSwap());
+    expect(stored()?.signature).toBe(swapSignature);
+    expect(controller.pendingSwap).toBeNull();
+    expect(stored(wallet, otherPair.poolAddress)).toBeNull();
+    expect(mocks.sign).not.toHaveBeenCalled();
+  });
+  it("does not clear invalid pending history or sign a new transaction", async () => {
+    localStorage.setItem(solSwapAttemptKey(wallet), "{broken");
+    await mount();
+    expect(controller.actionDisabled).toBe(true);
+    await act(async () => controller.signAndSend());
+    expect(localStorage.getItem(solSwapAttemptKey(wallet))).toBe("{broken");
+    expect(mocks.sign).not.toHaveBeenCalled();
+    expect(controller.error).toContain("Unable to verify saved SOL swap history");
+  });
+  it("reconciles a lost broadcast response before advancing step 2", async () => {
+    const original = fetchMock.getMockImplementation() as (url: string, init?: RequestInit) => Promise<Response>;
+    fetchMock.mockImplementation(async (url, init) => {
+      if (url === "/api/sol-swap-broadcast") throw new TypeError("Failed to fetch");
+      return original(url, init);
+    });
+    await mount(); await act(async () => controller.chooseAsset("native", NATIVE_SOL_MINT)); await advance(450);
+    await act(async () => controller.signAndSend());
+    expect(calls("/api/sol-swap-broadcast")).toHaveLength(1);
+    expect(calls("/api/sol-swap-status")).toHaveLength(1);
+    expect(calls("/api/open-prepare")).toHaveLength(1);
+    expect(localStorage.getItem(solSwapAttemptKey(wallet))).toBeNull();
+    expect(stored()?.signature).toBe(bodyOf(calls("/api/sol-swap-status")[0]!).signature);
+  });
+  it("retains the original attempt when wallet changes during a delayed status response", async () => {
+    const original = fetchMock.getMockImplementation() as (url: string, init?: RequestInit) => Promise<Response>;
+    let release!: (response: Response) => void;
+    fetchMock.mockImplementation(async (url, init) => url === "/api/sol-swap-status"
+      ? new Promise<Response>(resolve => { release = resolve; }) : original(url, init));
+    await mount(); await act(async () => controller.chooseAsset("native", NATIVE_SOL_MINT)); await advance(450);
+    let running!: Promise<void>;
+    await act(async () => { running = controller.signAndSend(); });
+    expect(release).toBeTypeOf("function");
+    const raw = localStorage.getItem(solSwapAttemptKey(wallet)); expect(raw).not.toBeNull();
+    mocks.address = otherWallet;
+    await act(async () => root.render(createElement(Harness))); await advance(1);
+    await act(async () => { release(Response.json({ status: "confirmed", delivered: "695", decimals: 6 })); await running; });
+    expect(localStorage.getItem(solSwapAttemptKey(wallet))).toBe(raw);
+    expect(calls("/api/open-prepare")).toHaveLength(0);
+    expect(controller.unconfirmedSwap).toBeNull();
   });
 });
