@@ -25,6 +25,10 @@ import { feeAprPct } from "@sofinance/engine/fee-apr";
  *    pool ids in `rwa-allowlist.ts` (currently USDC/USDT). Spam wrap-of-stable pools stay
  *    excluded by rule 2.
  *
+ * Rules 1–4 run through the general token registry (`pool-metrics/token-registry.ts`): each verified
+ * mint gets registry entries (`pool-metrics/solana-registry.ts`) and a pair is two tokens of the same
+ * chain and underlying from different issuers, the same rule Robinhood Chain uses.
+ *
  * Name / string heuristics are **not** used as the primary filter (they previously matched
  * unrelated meme tickers that collided on the bare symbol).
  *
@@ -205,56 +209,6 @@ export function matchWrapPairShape(
     return { matched: false, reason: "both symbols look wrapped" };
   }
   return { matched: false, reason: "symbols are not a FOOx/FOO (or xFOO/FOO) wrap pair" };
-}
-
-/**
- * Decide whether mint A/B form a same-underlying RWA wrap pair.
- * Pure function — safe for unit tests without network.
- */
-export function matchSameAssetPair(mintA: MintHints, mintB: MintHints): PairingResult {
-  const shape = matchWrapPairShape(mintA.symbol || "", mintB.symbol || "");
-  if (!shape.matched) return shape;
-
-  const { baseSymbol, wrappedSymbol, plainSymbol, wrapKind, wrappedSide } = shape;
-
-
-  const qualificationA = qualifyRwaMint(mintA);
-  const qualificationB = qualifyRwaMint(mintB);
-  if (!qualificationA || !qualificationB) {
-    const missing =
-      !qualificationA && !qualificationB
-        ? "both mints"
-        : !qualificationA
-          ? "mint A"
-          : "mint B";
-    return {
-      matched: false,
-      reason: `${missing} lack Jupiter stocks/rwa tags and are not on the xStocks whitelist`,
-    };
-  }
-
-  let relatedness: Relatedness;
-  if (qualificationA === "jupiter-tags" && qualificationB === "jupiter-tags") {
-    relatedness = "both-jupiter-tagged";
-  } else if (qualificationA === "xstocks-whitelist" && qualificationB === "xstocks-whitelist") {
-    relatedness = "both-whitelisted";
-  } else {
-    relatedness = "mixed-jupiter-whitelist";
-  }
-
-  return {
-    matched: true,
-    baseSymbol,
-    wrappedSymbol,
-    plainSymbol,
-    wrapKind,
-    wrappedSide,
-    qualificationA,
-    qualificationB,
-    relatedness,
-    preferredTags:
-      hasPreferredJupiterTags(mintA.jupiterTags) || hasPreferredJupiterTags(mintB.jupiterTags),
-  };
 }
 
 /**

@@ -35,9 +35,10 @@ const replay = (async (input: RequestInfo | URL) => {
 
 /** Timestamps are the only run-dependent fields. */
 function normalise(result: Awaited<ReturnType<typeof discoverRwaPairs>>) {
-  const { fetchedAt: _fetchedAt, discovery, ...rest } = result;
+  const { discovery, ...rest } = result;
   return {
     ...rest,
+    fetchedAt: undefined,
     discovery: discovery && { sourcePages: discovery.sourcePages, pageCounts: discovery.pageCounts, pools: Object.keys(discovery.poolObservedAt).sort() },
   };
 }
