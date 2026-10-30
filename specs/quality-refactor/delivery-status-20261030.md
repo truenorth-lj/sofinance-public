@@ -25,11 +25,10 @@ not rerun as part of this cleanup.
 
 ## Still open
 
-- [#249](https://github.com/truenorth-lj/sofinance-public/pull/249) implements the
-  separate opens-log Drizzle migration and removal of request-time DDL. All six
-  checks passed on `1c9bf4a`, but it remains a draft. Production opens configuration
-  is unknown; confirm logging is disabled or verify/adopt the configured opens
-  database before merge. Main still uses its prior runtime DDL until then.
+- On 2026-10-30 the user requested removal of opens analytics code. Migration
+  [#249](https://github.com/truenorth-lj/sofinance-public/pull/249) is superseded
+  by [code retirement](../quality-followup-20261030/opens-retirement.md). Existing
+  database resources and rows are preserved; removal still requires delivery.
 - The broader Compound/controller decomposition is partial. A narrow confirmation
   extraction, recovery fixes, or the shared-primitives assessment does not mean
   every submission/recovery/UI responsibility has been extracted.

@@ -8,9 +8,8 @@ const prepareMeteoraSetup = vi.fn(async () => ({
 const issueMeteoraTxPermit = vi.fn(() => "a".repeat(64));
 vi.mock("@/lib/meteora-open-send", async (orig) => ({ ...(await orig<typeof import("@/lib/meteora-open-send")>()), issueMeteoraTxPermit }));
 vi.mock("@/lib/meteora-open", async (orig) => ({ ...(await orig<typeof import("@/lib/meteora-open")>()), prepareMeteoraSetup }));
-const recordMeteoraOpen = vi.fn();
-vi.mock("@/lib/meteora-open-record", async (orig) => ({ ...(await orig<typeof import("@/lib/meteora-open-record")>()), recordMeteoraOpen }));
-vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: () => ({}) }));
+const rpcConnection = vi.fn(() => ({}));
+vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection }));
 
 afterEach(() => { vi.unstubAllEnvs(); vi.clearAllMocks(); });
 
@@ -41,18 +40,17 @@ describe("/api/meteora-open", () => {
     vi.stubEnv("VERCEL_ENV", "production");
     const { POST } = await import("./route");
     const sig = "5".repeat(88);
-    expect((await POST(req({ action: "record", wallet: A, setupSignature: sig, depositSignature: "4".repeat(88) }))).status).toBe(404);
     expect((await POST(req({ action: "status", signature: sig, lastValidBlockHeight: 1 }))).status).toBe(404);
-    expect(recordMeteoraOpen).not.toHaveBeenCalled();
+    expect(rpcConnection).not.toHaveBeenCalled();
   });
 
-  it("record is allowed on preview (signing on)", async () => {
+  it("rejects the retired record action before any RPC work", async () => {
     vi.stubEnv("VERCEL_ENV", "preview");
-    recordMeteoraOpen.mockResolvedValueOnce({ recorded: true });
     const { POST } = await import("./route");
     const sig = "5".repeat(88);
-    expect((await POST(req({ action: "record", wallet: A, setupSignature: sig, depositSignature: "4".repeat(88) }))).status).toBe(200);
-    expect(recordMeteoraOpen).toHaveBeenCalled();
+    expect((await POST(req({ action: "record", wallet: A, setupSignature: sig, depositSignature: "4".repeat(88) }))).status).toBe(400);
+    expect(rpcConnection).not.toHaveBeenCalled();
+    expect(prepareMeteoraSetup).not.toHaveBeenCalled();
   });
 
   it("rejects invalid bodies", async () => {

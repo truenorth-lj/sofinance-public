@@ -14,14 +14,12 @@ import type { OpenPositionSummary } from "@sofinance/engine/open-types";
 import { getSigningSecret } from "@sofinance/engine/config/server-env";
 import { exceedsTxSizeLimit, isZeroSignature } from "@sofinance/engine/transaction-limits";
 import { assertWalletReturnedTransaction } from "@/lib/wallet-returned-guard";
-import { logPositionOpenBestEffort, positionOpenRowFromSummary } from "@/lib/opens-log";
 
 
 export async function sendSignedOpenPosition(
   walletAddress: string,
   transaction: VersionedTransaction,
   summary: OpenPositionSummary,
-  sourceRef?: unknown,
   prepared?: VersionedTransaction,
 ) {
   let connection: ReturnType<typeof rpcConnection>;
@@ -104,9 +102,6 @@ export async function sendSignedOpenPosition(
   }
   // Conservatively evict on accepted broadcast; this is not finality proof.
   invalidatePositionHistoryCache(summary.nftMint);
-  logPositionOpenBestEffort(positionOpenRowFromSummary({
-    signature, wallet: walletAddress, summary, sourceRef,
-  }));
   return {
     signature, positionMint: summary.nftMint, positionAccount: summary.positionAccount,
   };
@@ -118,7 +113,6 @@ export async function submitOpenPositionFromParts(input: {
   permit: string;
   wallet: string;
   summary: OpenPositionSummary;
-  sourceRef?: unknown;
 }) {
   const transaction = VersionedTransaction.deserialize(Buffer.from(input.signedTransaction, "base64"));
   const prepared = input.unsignedTransaction
@@ -132,5 +126,5 @@ export async function submitOpenPositionFromParts(input: {
     throw new Error("Transaction does not match simulated open-position authorization");
   }
   if (input.unsignedTransaction) assertWalletReturnedTransaction(prepared, transaction, input.wallet);
-  return sendSignedOpenPosition(input.wallet, transaction, input.summary, input.sourceRef, input.unsignedTransaction ? prepared : undefined);
+  return sendSignedOpenPosition(input.wallet, transaction, input.summary, input.unsignedTransaction ? prepared : undefined);
 }

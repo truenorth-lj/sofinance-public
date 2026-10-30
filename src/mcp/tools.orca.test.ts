@@ -77,9 +77,8 @@ describe("MCP Orca routing (ORCA_POSITIONS_ENABLED)", () => {
     expect(readPositionRangeFacts).toHaveBeenCalledTimes(1);
   });
 
-  it("preview: Orca rows are listed without an opens database and unsupported-pool errors stay readable", async () => {
+  it("preview: Orca rows are listed and unsupported-pool errors stay readable", async () => {
     vi.stubEnv("VERCEL_ENV", "preview");
-    vi.stubEnv("SOFINANCE_OPENS_DATABASE_URL", "");
     vi.mocked(orca.listOrcaPositions).mockResolvedValue([orcaRow] as never);
     const listed = await listPositions({ wallet: WALLET });
     expect(listed.positions).toEqual([raydiumRow, orcaRow]);

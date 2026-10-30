@@ -13,9 +13,10 @@
 - [x] Evaluate shared primitives without merging Solana and EVM transaction semantics — [decision](shared-primitives.md).
 - [x] Type store operation results, handlers and callers.
 - [x] Store contracts review, CI, merge and deployment verification — [PR 248](https://github.com/truenorth-lj/sofinance-public/pull/248), merge `ee6f5ec`, deployment `dpl_4Ek3UbBVbWt3wDKdjoMN5tWDEzSM`.
-- [ ] Migrate remaining opens-log schema management (separate database target) — [draft PR 249](https://github.com/truenorth-lj/sofinance-public/pull/249) passed all six checks on `1c9bf4a`; production configuration/adoption remains unverified.
+- [x] Replace the opens-log migration plan with user-authorized code retirement; PR 249 is superseded.
+- [ ] Opens retirement review, CI, merge and deployment verification — [scope](opens-retirement.md).
 - [x] Remove the orphan protocol-adapters snapshot; refresh RHC flag/signing text and original delivery tracking.
-- [ ] Cleanup CI, merge and deployment verification.
+- [x] Cleanup CI, merge and deployment verification — [PR 250](https://github.com/truenorth-lj/sofinance-public/pull/250), merge `a5c9f4a`, deployment `dpl_GUwydfQ4fn2oT9YkAgq6o42fERtt`.
 - [ ] Verify all phase PRs, deployment identities and final outstanding boundaries.
 
 Review evidence is in workspace `output/sofinance-latest-quality-review-20261030/`.

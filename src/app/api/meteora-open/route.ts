@@ -1,7 +1,6 @@
 import { apiError } from "@/lib/api-response";
 import { rpcConnection } from "@sofinance/engine/rpc";
 import { DEPOSIT_INTERMEDIATE_RENT_ALLOWANCE, MeteoraOpenBlockedError, prepareMeteoraCloseRefund, prepareMeteoraDeposit, prepareMeteoraSetup } from "@/lib/meteora-open";
-import { MeteoraRecordError, recordMeteoraOpen } from "@/lib/meteora-open-record";
 import { MeteoraOpenRequestSchema } from "@/lib/meteora-open-request";
 import {
   issueMeteoraTxPermit, METEORA_PERMIT_TTL_MS, METEORA_WALLET_FEE_ALLOWANCE_LAMPORTS, meteoraTransactionStatus, MeteoraSendError, sendMeteoraTransaction,
@@ -15,8 +14,8 @@ import { isMeteoraDlmmTxBuildEnabled, isMeteoraDlmmWalletSigningEnabled } from "
  * - `setup` (1/2) / `deposit` (2/2) / `close` return an unsigned, simulated transaction, and `balances` reads the wallet,
  *   behind `METEORA_DLMM_TX_BUILD_ENABLED` (off in production → 404).
  * - With `METEORA_DLMM_WALLET_SIGNING_ENABLED` (preview + development; production off → 404) prepared transactions carry a
- *   permit, `send` broadcasts the user's wallet-signed transaction after the server checks, `status` polls it, and
- *   `record` verifies a landed open on chain and logs it. The server never holds a user key.
+ *   permit, `send` broadcasts the user's wallet-signed transaction after the server checks, and `status` polls it.
+ *   The server never holds a user key.
  */
 const NO_STORE = { "Cache-Control": "no-store" } as const;
 const SIGNATURE_LAMPORTS = 5_000n;
@@ -35,7 +34,7 @@ function withPermit<T extends { transaction: string; blockhash: string; lastVali
   return { ...result, summary, permit: issueMeteoraTxPermit(result.transaction, summary) };
 }
 
-const SIGNING_ACTIONS = new Set(["send", "status", "record"]);
+const SIGNING_ACTIONS = new Set(["send", "status"]);
 
 export async function POST(request: Request) {
   if (!isMeteoraDlmmTxBuildEnabled()) return notFound();
@@ -48,7 +47,6 @@ export async function POST(request: Request) {
   const connection = rpcConnection();
   try {
     switch (input.action) {
-      case "record": return json(await recordMeteoraOpen(input, connection));
       case "send": return json(await sendMeteoraTransaction(input, { connection }));
       case "status": return json(await meteoraTransactionStatus(input, connection));
       case "balances": return json(await readMeteoraWalletBalances(input.wallet, connection));
@@ -73,7 +71,6 @@ export async function POST(request: Request) {
     if (error instanceof MeteoraSendError) {
       return json({ error: error.message, sent: error.sent, signature: (error as MeteoraSendError & { signature?: string }).signature }, error.sent ? 502 : 422);
     }
-    if (error instanceof MeteoraRecordError) return json({ error: error.message }, 422);
     return apiError(error, "Meteora open request failed", 503);
   }
 }
