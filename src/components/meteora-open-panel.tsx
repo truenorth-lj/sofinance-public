@@ -193,11 +193,8 @@ export function MeteoraOpenPanel({ view, signingEnabled }: { view: MeteoraOpenPo
       }
     } else {
       if (kind === "deposit") {
-        // Keep original signatures until the optional position-log request has settled.
-        const recorded = p.setupSignature ? await post({ action: "record", wallet: p.wallet, setupSignature: p.setupSignature, depositSignature: signature }) : { error: "missing setup signature" };
-        fence();
         writeMeteoraPending(p.wallet, null, p);
-        setTxState(kind, { phase: "success", signature, message: recorded.error ? "Liquidity added. (It may take a moment to show in your positions.)" : "Liquidity added. Your position is open." });
+        setTxState(kind, { phase: "success", signature, message: "Liquidity added. Your position is open." });
       } else {
         writeMeteoraPending(p.wallet, null, p);
         setTxState(kind, { phase: "success", signature, message: "Position closed and rent refunded to your wallet." });

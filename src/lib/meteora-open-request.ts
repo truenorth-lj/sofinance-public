@@ -10,7 +10,7 @@ const open = {
 
 /**
  * `/api/meteora-open` body. `setup` (1/2), `deposit` (2/2), `close` (refund) build + simulate; `balances` reads the wallet;
- * `send` broadcasts a wallet-signed prepared tx, `status` polls it, `record` logs a landed open (signing flag).
+ * `send` broadcasts a wallet-signed prepared tx and `status` polls it (signing flag).
  */
 export const MeteoraOpenRequestSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("setup"), ...open }),
@@ -28,6 +28,5 @@ export const MeteoraOpenRequestSchema = z.discriminatedUnion("action", [
     }).strict(),
   }),
   z.object({ action: z.literal("status"), signature, lastValidBlockHeight: z.number().int().positive() }),
-  z.object({ action: z.literal("record"), wallet: address, setupSignature: signature, depositSignature: signature, sourceRef: z.string().max(64).optional() }),
 ]);
 export type MeteoraOpenRequest = z.infer<typeof MeteoraOpenRequestSchema>;

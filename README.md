@@ -90,10 +90,8 @@ Copy `.env.example` → `.env.local`. Comments in that file are the source of tr
 | `NEXT_PUBLIC_SENTRY_DSN` / `SENTRY_DSN` | Optional Sentry error monitoring (US, `ingest.us.sentry.io`). Unset both = complete no-op. |
 | `SENTRY_AUTH_TOKEN` / `SENTRY_ORG` / `SENTRY_PROJECT` | Source-map upload on `next build`. All three required to upload; build succeeds if any is missing. Never `NEXT_PUBLIC_`. See [Error monitoring](#error-monitoring-sentry). |
 | `NEXT_PUBLIC_POSTHOG_KEY` / `NEXT_PUBLIC_POSTHOG_HOST` | Optional PostHog product analytics. Unset key = complete client no-op. The browser always sends to the first-party relay `/lumen` (Next.js rewrite); the host only picks the upstream region and defaults to `https://us.i.posthog.com`. |
-| `SOFINANCE_OPENS_DATABASE_URL` | Optional Postgres URL (Neon / Vercel Postgres) for north-star open logs. Unset = log nothing. Not the Zeabur RWA `DATABASE_URL`. |
-| `SOFINANCE_OPENS_READ_TOKEN` | Bearer token (≥32 chars) for `GET /api/internal/opens-daily`. Unset = route 404s. |
 
-See [Growth analytics](#growth-analytics) for event names and the internal read endpoint.
+See [Growth analytics](#growth-analytics) for event names.
 
 ### Run
 
@@ -360,7 +358,7 @@ Or: `pnpm mcp:start` with env already exported.
 
 ## Growth analytics
 
-Optional. Local dev, forks, and tests stay a no-op until the PostHog key and/or opens database URL are set.
+Optional. Local dev, forks, and tests stay a no-op until the PostHog key is set.
 
 **PostHog (browser, `posthog-js`)** — init only when `NEXT_PUBLIC_POSTHOG_KEY` is set. Autocapture, heatmaps, web vitals, surveys, and session recording off; Do Not Track respected. Requests go to `/lumen/*` on our own domain, which `next.config.ts` rewrites to PostHog (`us.i.posthog.com` for events, `us-assets.i.posthog.com` for `/static` and `/array`), so ad blockers that block `*.posthog.com` don't drop events. `/lumen` is excluded from the Proxy matcher and disallowed in `robots.txt`. First-touch `ref` (`?ref=x-<slug>`) and `utm_*` are stored in localStorage and registered as PostHog super/person properties so later events keep attribution.
 
@@ -374,19 +372,6 @@ Optional. Local dev, forks, and tests stay a no-op until the PostHog key and/or 
 | `open_position_started` | User starts an open (prepare/sign) | `pool`, `pair` when known |
 | `open_position_success` | Open confirmed on-chain via `/api/open-status` | `pool`, `pair` |
 | `open_position_failed` | Open failed before send, or on-chain failed/expired | `error_class` only (never raw error text) |
-
-**North-star opens log (server)** — after a successful open broadcast (`/api/open-broadcast` and MCP `submit_open_position`), best-effort insert into Postgres: UTC time, wallet, pool, pair symbols, USDC notional when the input is USDC, tx signature (unique), `sourceRef` if the client sends the first-touch `ref`. Failures never delay or fail the broadcast. Idempotent DDL: `src/lib/opens-log/schema.sql` (also applied on first write).
-
-Read path (GTM):
-
-```bash
-curl -sS -H "Authorization: Bearer $SOFINANCE_OPENS_READ_TOKEN" \
-  "https://sofinancelab.xyz/api/internal/opens-daily?days=90"
-curl -sS -H "Authorization: Bearer $SOFINANCE_OPENS_READ_TOKEN" \
-  "https://sofinancelab.xyz/api/internal/opens-daily?days=90&format=csv"
-```
-
-JSON fields per UTC day: `opens`, `uniqueWallets`, `newUniqueWallets`, `notionalUsd`, `byRef[]`. The fee wallet is not included.
 
 ## Architecture
 

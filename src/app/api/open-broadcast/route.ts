@@ -10,7 +10,7 @@ export async function POST(request: Request) {
   try {
     const body = await request.json() as {
       signedTransaction?: string; unsignedTransaction?: string; permit?: string;
-      wallet?: string; summary?: OpenPositionSummary; sourceRef?: unknown;
+      wallet?: string; summary?: OpenPositionSummary;
     };
     const wallet = parseWallet(body.wallet);
     if (typeof body.signedTransaction !== "string" || body.signedTransaction.length > 2_500 ||
@@ -26,7 +26,6 @@ export async function POST(request: Request) {
       permit: body.permit,
       wallet,
       summary: body.summary,
-      sourceRef: body.sourceRef,
     });
     return Response.json(result, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {

@@ -11,7 +11,6 @@ import { addMintSignature, assertWalletReturnedTransaction, missingRequiredSigna
 import { jupiterRelayFailureMessage, postWithJupiterRelay, type JupiterRelayStore } from "@/lib/jupiter/browser-relay";
 import { notSentRetryMessage } from "@/lib/public-error";
 import { openAttemptFromSummary, type OpenAttempt } from "@/lib/open-attempt";
-import { getStoredAttribution } from "@/lib/analytics/attribution";
 import { captureGrowthEvent } from "@/lib/analytics/client";
 import { openFailureProperties } from "@/lib/analytics/errors";
 import { GROWTH_EVENTS, openEventProperties } from "@/lib/analytics/events";
@@ -249,7 +248,6 @@ export function useOpenSubmissionCommand({ pair, wallet, inputMint, inputKind, a
           permit: prepared.permit,
           wallet,
           summary: prepared.summary,
-          sourceRef: getStoredAttribution()?.ref,
         }),
         cache: "no-store", signal: AbortSignal.timeout(15_000),
       });

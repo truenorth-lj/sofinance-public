@@ -20,7 +20,6 @@ const SECRET_ENV_NAMES = [
   // Non-secret routing controls are also ratcheted: selection must stay in config helpers.
   "SOFINANCE_RWA_STORE_MODE", "SOFINANCE_RWA_NATIVE_CRON_ENABLED", "SOFINANCE_RWA_DB_EXPECTED_ROLE",
   "JUPITER_API_KEY", "SOLANA_RPC_URL", "SOFINANCE_MCP_TOKEN",
-  "SOFINANCE_OPENS_DATABASE_URL", "SOFINANCE_OPENS_READ_TOKEN",
   // Optional dedicated Robinhood Chain RPC (may embed a provider key); read only inside the engine.
   "RHC_RPC_URL",
 ] as const;
@@ -44,8 +43,6 @@ const ALLOWED_SECRET_READS: Record<string, Reads> = {
     "mcp/remote-shim.ts": 1,
   },
   RHC_RPC_URL: {},
-  SOFINANCE_OPENS_DATABASE_URL: { "lib/config/opens-env.ts": 1 },
-  SOFINANCE_OPENS_READ_TOKEN: { "lib/config/opens-env.ts": 1 },
 };
 
 /** Files that pass the whole `process.env` object to a callee (callee then reads secrets by name). */

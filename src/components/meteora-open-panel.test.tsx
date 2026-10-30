@@ -48,7 +48,6 @@ beforeEach(async () => {
       return Response.json({ ...body, transaction: Buffer.from(tx.serialize()).toString("base64"), permit: "mock", summary: {
         kind: body.action, wallet: body.wallet, poolId: body.poolId, position: body.position, blockhash: tx.message.recentBlockhash, expiresAt: Date.now() + 90_000, lastValidBlockHeight: 100 } });
     }
-    if (body.action === "record") return Response.json({ recorded: true });
     if (body.action === "status") return Response.json({ signature: body.signature, status });
     if (body.action === "send") {
       const signed = VersionedTransaction.deserialize(Buffer.from(body.signedTransaction, "base64"));
@@ -161,7 +160,8 @@ it("blocks new work over malformed legacy storage", async () => {
   expect(container.textContent).toContain("Unable to verify");
   expect(localStorage.getItem(METEORA_PENDING_KEY)).toBe("{bad");
 });
-it("does not consume a new record when an old status response arrives", async () => {
+it.each(["setup", "deposit"])("does not consume a new record when an old %s status response arrives", async kind => {
+  await readyStage(kind);
   const original = fetch;
   let release!: (response: Response) => void;
   vi.stubGlobal("fetch", async (...args: Parameters<typeof fetch>) => {
@@ -169,12 +169,32 @@ it("does not consume a new record when an old status response arrives", async ()
     if (body.action === "status") return new Promise<Response>(resolve => { release = resolve; });
     return original(...args);
   });
-  send = async () => Response.json({ signature: expectedSignature }); await click("Sign 1/2");
-  const replacement = { ...saved(), setupSignature: bs58.encode(new Uint8Array(64).fill(66)) };
+  send = async () => Response.json({ signature: expectedSignature }); await click(stageButton(kind));
+  const replacement = { ...saved(), [`${kind}Signature`]: bs58.encode(new Uint8Array(64).fill(66)) };
   localStorage.setItem(key(), JSON.stringify(replacement));
   await act(async () => { release(Response.json({ signature: expectedSignature, status: "confirmed" })); await flush(); });
   expect(saved()).toEqual(replacement);
-  expect(actions).not.toContain("deposit");
+  if (kind === "setup") expect(actions).not.toContain("deposit");
+});
+
+it("clears a confirmed deposit only after matching status, without a record request", async () => {
+  await readyStage("deposit");
+  const original = fetch;
+  let release!: (response: Response) => void;
+  vi.stubGlobal("fetch", async (...args: Parameters<typeof fetch>) => {
+    if (JSON.parse(args[1]!.body as string).action === "status") {
+      return new Promise<Response>(resolve => { release = resolve; });
+    }
+    return original(...args);
+  });
+  await click("Sign 2/2");
+  expect(saved()).toMatchObject({ stage: "deposit_submitted", depositSignature: expectedSignature });
+  expect(container.textContent).not.toContain("Liquidity added. Your position is open.");
+  await act(async () => { release(Response.json({ signature: expectedSignature, status: "confirmed" })); await flush(); });
+  expect(localStorage.getItem(key())).toBeNull();
+  expect(container.textContent).toContain("Liquidity added. Your position is open.");
+  expect(actions).not.toContain("record");
+  expect(sends).toHaveLength(2);
 });
 it("revokes a retained setup callback after confirmation", async () => {
   const element = button("Sign 1/2");

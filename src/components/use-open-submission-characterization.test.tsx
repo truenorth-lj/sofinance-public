@@ -23,7 +23,6 @@ const boundary = vi.hoisted(() => ({ wallet: "" as string | undefined, connected
 vi.mock("./wallet-connection", () => ({ useWalletConnection: () => ({ address: boundary.wallet, connected: boundary.connected, signTransaction: boundary.sign, connect: boundary.connect }) }));
 vi.mock("@/lib/analytics/client", () => ({ captureGrowthEvent: boundary.growth, captureGrowthEventOnce: boundary.once }));
 vi.mock("@/lib/position-history-refresh", () => ({ notifyPositionHistoryChange: boundary.notify }));
-vi.mock("@/lib/analytics/attribution", () => ({ getStoredAttribution: () => ({ ref: "synthetic-source" }) }));
 const payer = testKeypair(1), nft = testKeypair(2), wallet = payer.publicKey.toBase58();
 const pair: OpenPositionPair = { poolAddress: testKeypair(42).publicKey.toBase58(), mintA: testKeypair(8).publicKey.toBase58(), mintB: testKeypair(9).publicKey.toBase58(), symbolA: "AAA", symbolB: "BBB", wrappedSymbol: "AAAx", plainSymbol: "AAA", feeTierBps: 1, token2022A: false, token2022B: false, freezeRisk: false };
 type Controller = ReturnType<typeof useOpenPositionController>;
@@ -173,7 +172,7 @@ describe("Open submission through real facade", () => {
     const original = VersionedTransaction.deserialize(Buffer.from(preparedValue.unsignedTransaction, "base64"));
     expect(tx.message.serialize()).toEqual(original.message.serialize()); expect(tx.signatures[1]?.some((byte: number) => byte !== 0)).toBe(true);
     const signature = bs58.encode(tx.signatures[0]!); expect(c.signature).toBe(signature);
-    expect(body).toEqual({ signedTransaction: toBase64(tx), unsignedTransaction: preparedValue.unsignedTransaction, permit: preparedValue.permit, wallet, summary: preparedValue.summary, sourceRef: "synthetic-source" });
+    expect(body).toEqual({ signedTransaction: toBase64(tx), unsignedTransaction: preparedValue.unsignedTransaction, permit: preparedValue.permit, wallet, summary: preparedValue.summary });
     const stored = JSON.parse(storage.getItem(openAttemptKey(wallet))!); expect(stored.signature).toBe(signature);
     const writeAt = ledger.findIndex(x => x[1] === "storage-write" && x[2] === openAttemptKey(wallet));
     const readAt = ledger.findIndex((x, i) => i > writeAt && x[1] === "storage-read" && x[2] === openAttemptKey(wallet) && x[3] === JSON.stringify(stored));

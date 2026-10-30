@@ -15,7 +15,6 @@ import type { PendingSignPayload } from "@/lib/pending-sign-token";
 import { openAttemptFromSummary, type OpenAttempt } from "@/lib/open-attempt";
 import type { OpenPositionSummary } from "@sofinance/engine/open-types";
 import { useOpenAttempt } from "@/components/use-open-attempt";
-import { getStoredAttribution } from "@/lib/analytics/attribution";
 import { captureGrowthEvent, captureGrowthEventOnce } from "@/lib/analytics/client";
 import { openFailureProperties, openOutcomeFailureProperties } from "@/lib/analytics/errors";
 import { GROWTH_EVENTS, openEventProperties } from "@/lib/analytics/events";
@@ -207,7 +206,6 @@ export default function SignPage() {
             permit: prepared.permit,
             wallet: payload.submitArgs.wallet,
             summary: prepared.summary,
-            ...(payload.kind === "open-position" ? { sourceRef: getStoredAttribution()?.ref } : {}),
           };
       
       const response = await fetch(submitPath, {

@@ -152,7 +152,7 @@ export function isMeteoraDlmmTxBuildEnabled(target: DeployTarget = deployTarget(
 
 /**
  * Wallet signing for the Meteora open flow (Phantom / Jupiter Wallet sign buttons, server broadcast of the
- * wallet-signed tx after permit + fee-guard checks, status, and recording landed opens in the opens log).
+ * wallet-signed tx after permit + fee-guard checks, and status).
  * Preview + development only; OFF in production.
  */
 export const METEORA_DLMM_WALLET_SIGNING_ENABLED: Readonly<Record<DeployTarget, boolean>> = Object.freeze({
