@@ -7,8 +7,9 @@
 - [x] RHC pending storage, unknown outcomes, lifecycle checks and regression tests.
 - [x] RHC review, CI, merge and deployment verification — [PR 244](https://github.com/truenorth-lj/sofinance-public/pull/244), merge `d90fd0e`.
 - [x] Integrate Compound `9022829` / `606ba5c` on current main and finish batch fences.
-- [ ] Compound review, CI, merge and deployment verification.
-- [ ] Meteora durable signature, storage failures and wallet/lifecycle recovery.
+- [x] Compound review, CI, merge and deployment verification — [PR 245](https://github.com/truenorth-lj/sofinance-public/pull/245), merge `09a577c`.
+- [x] Meteora durable signature, storage failures and wallet/lifecycle recovery.
+- [ ] Meteora review, CI, merge and deployment verification.
 - [ ] Evaluate shared primitives without merging Solana and EVM transaction semantics.
 - [ ] Type store operation results and migrate remaining opens-log schema management.
 - [ ] Remove orphan snapshots, refresh flags/comments and original delivery tracking.
@@ -21,3 +22,5 @@ its pending batch probes copied into a fresh worktree for integration.
 SOL local evidence and remaining delivery gates: [validation](sol-validation.md).
 RHC open recovery scope and evidence: [validation](rhc-validation.md).
 Compound recovery scope and evidence: [validation](compound-validation.md).
+
+Meteora recovery scope and evidence: [validation](meteora-validation.md).

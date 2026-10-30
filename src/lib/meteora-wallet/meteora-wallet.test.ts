@@ -1,9 +1,10 @@
+import bs58 from "bs58";
 import { describe, expect, it } from "vitest";
 import { meteoraFailedOnChainMessage, meteoraPlainError, solscanTxUrl } from "./errors";
 import { parseMeteoraPending } from "./pending";
 
 const A = "53oyyjgybx6dH7i5aGeKfBUi3xPJQDeBkaENPri57x2H";
-const base = { wallet: A, poolId: A, position: A, inputMint: A, lowerBinId: 1, upperBinId: 5, amount: "100", stage: "setup_confirmed", setupSignature: "5".repeat(88) };
+const base = { wallet: A, poolId: A, position: A, inputMint: A, lowerBinId: 1, upperBinId: 5, amount: "100", stage: "setup_confirmed", setupSignature: bs58.encode(new Uint8Array(64).fill(5)) };
 
 describe("meteora wallet helpers", () => {
   it("parses only well-formed pending records (public data only)", () => {

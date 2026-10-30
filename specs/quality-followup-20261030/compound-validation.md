@@ -55,4 +55,8 @@ OpenCode/MiniMax provider remains unavailable; no independent approval claimed.
 Storage comparison is not a cross-tab atomic lock. This batch does not change
 protocol amounts, fees, flags or chain confirmation semantics.
 
-Hosted CI, merge and production deployment are pending.
+All six hosted checks passed on `96e300e`. PR #245 merged as
+`09a577c905b4116a217b897bdbe395ae7427003c`. Its successful Vercel deployment
+`3BkqeFr47d9RWXRR6FvMwiwtyjmA` matches the deployment ID in the production
+`https://sofinancelab.xyz/app` HTML on 2026-10-30. This verifies served build
+identity, not a financial transaction.
