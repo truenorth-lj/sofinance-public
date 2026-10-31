@@ -77,6 +77,11 @@ export type PoolRangeAprPayload = {
      * client never ranks, headlines or highlights it.
      */
     degraded: boolean;
+    /**
+     * True when this estimate was computed from earlier saved price history because the latest fetch failed
+     * (at most `SAVED_PRICE_HISTORY_MAX_AGE_MS` old). Not degraded: the estimate stands, shown as "Data delayed".
+     */
+    priceHistoryStale?: boolean;
     /** Why upstream data was missing (for diagnosis), e.g. "GeckoTerminal hourly candles: Upstream request failed (429)". */
     issues: string[];
   };

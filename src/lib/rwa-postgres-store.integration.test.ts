@@ -16,6 +16,7 @@ import {
 import type { RwaPairRow } from "./rwa-pairs";
 import type { VolumeProfile } from "./pool-range-apr";
 import { payloadFixture } from "./range-apr/payload.fixture";
+import { volumeWindowEnd } from "./rwa-daily";
 import { UNIV4_RHC_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/uniswap-v4/constants";
 
 const url = process.env.RWA_DB_TEST_URL;
@@ -88,7 +89,8 @@ describe.skipIf(!url)("RWA PostgreSQL snapshots and fencing", () => {
         algorithmVersion: ALGORITHM_VERSION,
         profile,
         observedAt: observed(),
-        windowEndUtc: "2026-10-14T00:00:00.000Z",
+        // The current UTC volume window, as the refresh writes it.
+        windowEndUtc: volumeWindowEnd(now),
       },
     };
   }
@@ -220,16 +222,23 @@ describe.skipIf(!url)("RWA PostgreSQL snapshots and fencing", () => {
       op: "activePools",
     }));
     expect(active!.profile).not.toBeNull();
+    // The APR queue key: the latest of the saved snapshot and the last attempt; never-refreshed pools are null.
+    expect(active!.refreshedAt).toEqual(expect.any(String));
+    const never = await new PostgresRwaStore(db!, () => now).request({ op: "activePools" });
+    expect(never.find((row) => row.pair.poolAddress === poolB)!.refreshedAt).toBeNull();
     await expect(
       store!.request({ op: "apr", poolId: poolB }),
     ).rejects.toMatchObject({ code: "SNAPSHOT_UNAVAILABLE" });
   });
 
-  it("captures one valid sample per day, never overwrites it, and finalizes failed/missing values as NULL", async () => {
+  it("writes each pool's history row on its first successful update of the Taipei day, once, and finalizes days without one", async () => {
+    // 2026-10-14 08:15 Taipei: poolId already captured by the run above.
     const [before] =
       await db!`SELECT highest_range_apr_pct,captured_at FROM rwa_apr_daily WHERE pool_address=${poolId}`;
     expect(before!.highest_range_apr_pct).not.toBeNull();
-    now += 300_000;
+    // A later success the same day (next run) never overwrites the day's row.
+    now += 4 * 3_600_000;
+    await store!.request({ op: "prepareDaily", lease: apr });
     const changed = aprData();
     changed.payload!.presets.forEach((p) => {
       if (p.estimate.status === "ok") p.estimate.aprPct = 999;
@@ -238,34 +247,63 @@ describe.skipIf(!url)("RWA PostgreSQL snapshots and fencing", () => {
     const [after] =
       await db!`SELECT highest_range_apr_pct,captured_at FROM rwa_apr_daily WHERE pool_address=${poolId}`;
     expect(after).toEqual(before);
+    // poolB: degraded this run (reason kept on the pending row); poolC: first success at 12:15 Taipei (a later run).
     const stale = aprData(poolB);
     stale.profile!.profile.stale = true;
     stale.payload!.sample.degraded = true;
     await store!.request({ op: "saveApr", lease: apr, data: stale });
-    now = Date.parse("2026-10-14T01:10:00Z");
-    await store!.request({ op: "prepareDaily", lease: apr });
-    const missing =
-      await db!`SELECT pool_address,status,highest_range_apr_pct FROM rwa_apr_daily ORDER BY pool_address`;
-    expect(missing.map((r) => r.status)).toEqual(["ok", "degraded", "missing"]);
-    expect(missing.slice(1).map((r) => r.highest_range_apr_pct)).toEqual([
-      null,
-      null,
-    ]);
     await store!.request({ op: "saveApr", lease: apr, data: aprData(poolC) });
-    const [late] =
-      await db!`SELECT status,highest_range_apr_pct FROM rwa_apr_daily WHERE pool_address=${poolC}`;
-    expect(late).toMatchObject({
-      status: "missing",
-      highest_range_apr_pct: null,
-    });
+    const sameDay = await db!`SELECT pool_address,status,captured_at FROM rwa_apr_daily WHERE snapshot_date='2026-10-14' ORDER BY pool_address`;
+    expect(sameDay.map((r) => r.status)).toEqual(["ok", "pending", "ok"]);
+    expect(new Date(sameDay[2]!.captured_at).toISOString()).toBe("2026-10-14T04:15:00.000Z");
+
+    // Next Taipei day (00:15 Taipei = 16:15 UTC): the first run finalizes 10-14 and seeds 10-15.
+    now = Date.parse("2026-10-14T16:15:00Z");
+    await store!.request({ op: "prepareDaily", lease: apr });
+    await store!.request({ op: "prepareDaily", lease: apr });
+    // Day boundary: the 00:15 and 04:15 Taipei runs still see the window ending 10-14 00:00Z (10-14's window), so a
+    // success then is not 10-15's row (it would repeat 10-14's window and skip 10-15's).
+    const early = aprData(poolB);
+    expect(early.profile!.windowEndUtc).toBe("2026-10-14T00:00:00.000Z");
+    await store!.request({ op: "saveApr", lease: apr, data: early });
+    now = Date.parse("2026-10-14T20:15:00Z");
+    await store!.request({ op: "saveApr", lease: apr, data: aprData(poolB) });
+    const beforeEight = await db!`SELECT status FROM rwa_apr_daily WHERE snapshot_date='2026-10-15' AND pool_address=${poolB}`;
+    expect(beforeEight.map((r) => r.status)).toEqual(["pending"]);
+    // 08:15 Taipei (00:15 UTC): the window now ends at 10-15 00:00Z, the day's own window; poolB's first success
+    // of 10-15 writes its row once, nothing is duplicated.
+    now = Date.parse("2026-10-15T00:15:00Z");
+    await store!.request({ op: "prepareDaily", lease: apr });
+    await store!.request({ op: "saveApr", lease: apr, data: aprData(poolB) });
+    now += 4 * 3_600_000;
+    await store!.request({ op: "saveApr", lease: apr, data: aprData(poolB) });
+    const [captured] = await db!`SELECT captured_at FROM rwa_apr_daily WHERE snapshot_date='2026-10-15' AND pool_address=${poolB}`;
+    expect(new Date(captured!.captured_at).toISOString()).toBe("2026-10-15T00:15:00.000Z");
+    const days = await db!`SELECT snapshot_date::text AS date,pool_address,status,highest_range_apr_pct FROM rwa_apr_daily
+      WHERE pool_address IN (${poolId},${poolB},${poolC}) ORDER BY snapshot_date,pool_address`;
+    expect(days.map((r) => [r.date, r.pool_address, r.status])).toEqual([
+      ["2026-10-14", poolId, "ok"], ["2026-10-14", poolB, "degraded"], ["2026-10-14", poolC, "ok"],
+      ["2026-10-15", poolId, "pending"], ["2026-10-15", poolB, "ok"], ["2026-10-15", poolC, "pending"],
+    ]);
+    expect(days[1]!.highest_range_apr_pct).toBeNull();
+    expect(days[4]!.highest_range_apr_pct).not.toBeNull();
+
+    // A day that ends with no success for a pool: missing (NULL), still one row per pool per day (no gaps).
+    now = Date.parse("2026-10-15T16:15:00Z");
+    await store!.request({ op: "prepareDaily", lease: apr });
+    const finalized = await db!`SELECT pool_address,status,highest_range_apr_pct FROM rwa_apr_daily
+      WHERE snapshot_date='2026-10-15' AND pool_address IN (${poolId},${poolB},${poolC}) ORDER BY pool_address`;
+    expect(finalized.map((r) => r.status)).toEqual(["missing", "ok", "missing"]);
+    const seeded = await db!`SELECT count(*)::int AS count FROM rwa_apr_daily WHERE snapshot_date='2026-10-16' AND pool_address IN (${poolId},${poolB},${poolC})`;
+    expect(seeded[0]?.count).toBe(3);
     const history = (await store!.request({
       op: "history",
       poolId: poolC,
       from: "2026-10-14",
-      to: "2026-10-14",
-    })) as { points: { highestRangeAprPct: unknown }[] };
-    expect(history.points).toHaveLength(1);
-    expect(history.points[0]!.highestRangeAprPct).toBeNull();
+      to: "2026-10-15",
+    })) as { points: { highestRangeAprPct: unknown; status: string }[] };
+    expect(history.points.map((p) => p.status)).toEqual(["ok", "missing"]);
+    expect(history.points[1]!.highestRangeAprPct).toBeNull();
     await store!.request({
       op: "finish",
       lease: apr,
@@ -326,7 +364,7 @@ describe.skipIf(!url)("RWA PostgreSQL snapshots and fencing", () => {
       .rejects.toMatchObject({ code: "TOKEN_ICONS_UNAVAILABLE" });
   });
   it("RHC cron roster: upserts the allowlist summaries, serves them without RPC, and joins the daily roster", async () => {
-    now = Date.parse("2026-10-15T00:20:00Z"); // inside the 08:10–09:10 Taipei daily window
+    now = Date.parse("2026-10-15T00:20:00Z");
     const lease = (await store!.request({ op: "claim", job: "rwa-apr-refresh", force: true })) as Lease;
     const [spcx, nvda] = UNIV4_RHC_ALLOWLISTED_POOLS;
     const summary = (spec: typeof spcx, tvlUsd: number | null) => ({
@@ -339,7 +377,9 @@ describe.skipIf(!url)("RWA PostgreSQL snapshots and fencing", () => {
       { poolId: nvda!.poolId.toLowerCase(), summary: summary(nvda, null) },
       { poolId: spcx!.poolId.toLowerCase(), summary: summary(spcx, 48_000) },
     ] });
-    expect(roster).toEqual({ pools: 2, profiles: { [spcx!.poolId.toLowerCase()]: null, [nvda!.poolId.toLowerCase()]: null } });
+    expect(roster).toEqual({ pools: 2, profiles: { [spcx!.poolId.toLowerCase()]: null, [nvda!.poolId.toLowerCase()]: null },
+      // SPCX has an earlier attempt row (0003 test above): its queue key is that attempt; NVDA was never refreshed.
+      refreshedAt: { [spcx!.poolId.toLowerCase()]: expect.any(String), [nvda!.poolId.toLowerCase()]: null } });
     const read = await store!.request({ op: "rhcPools" });
     expect(read.pools.map((p) => p.baseSymbol)).toEqual(["SPCX", "NVDA"]); // allowlist order
     expect(read.stale).toBe(false);
@@ -349,6 +389,10 @@ describe.skipIf(!url)("RWA PostgreSQL snapshots and fencing", () => {
     // Raydium pairs never include RHC rows.
     const pairs = await store!.request({ op: "pairs", minTvl: 0, maxPages: 2, sortBy: "tvl" });
     expect(pairs.pairs.some((p) => p.poolAddress.startsWith("0x"))).toBe(false);
+    // RHC 7d APR flag off: no RHC history rows are seeded (nothing would ever fill them).
+    await store!.request({ op: "prepareDaily", lease, includeRhc: false });
+    const none = await db!`SELECT count(*)::int AS count FROM rwa_apr_daily WHERE snapshot_date='2026-10-15' AND chain='robinhood'`;
+    expect(none[0]?.count).toBe(0);
     await store!.request({ op: "prepareDaily", lease });
     const daily = await db!`SELECT pool_address,chain,protocol,status FROM rwa_apr_daily WHERE snapshot_date='2026-10-15' AND chain='robinhood' ORDER BY pool_address`;
     expect(daily.map((d) => d.pool_address).sort()).toEqual([spcx!.poolId.toLowerCase(), nvda!.poolId.toLowerCase()].sort());

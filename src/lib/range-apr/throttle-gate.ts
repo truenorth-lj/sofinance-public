@@ -15,6 +15,16 @@ export type ThrottleGateOptions = {
   maxCooldownMs?: number;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
+  /**
+   * After the first 429 (`block()`), refuse every later call for the gate's lifetime instead of reopening when the
+   * cooldown ends. The cron gate (one per run) uses it: a 429 ends the run, nothing calls GeckoTerminal again.
+   */
+  stickyBlock?: boolean;
+  /**
+   * Attempts per call (callers cap their retries to this). The cron gate uses 1: a retry inside a gate slot would
+   * start without the gate's spacing.
+   */
+  maxAttempts?: number;
 };
 
 export class ThrottleGate {
@@ -27,6 +37,11 @@ export class ThrottleGate {
   private readonly maxCooldownMs: number;
   private readonly now: () => number;
   private readonly sleep: (ms: number) => Promise<void>;
+  private readonly stickyBlock: boolean;
+  /** Attempts per call; callers cap their retries to this (see `ThrottleGateOptions.maxAttempts`). */
+  readonly maxAttempts: number;
+  /** Set by the first `block()` (a 429) and never cleared: the cron run checks it to end the run. */
+  hit429 = false;
 
   constructor(options: ThrottleGateOptions = {}) {
     this.minSpacingMs = options.minSpacingMs ?? 250;
@@ -35,11 +50,15 @@ export class ThrottleGate {
     this.maxCooldownMs = options.maxCooldownMs ?? 60_000;
     this.now = options.now ?? (() => Date.now());
     this.sleep = options.sleep ?? ((ms) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+    this.stickyBlock = options.stickyBlock ?? false;
+    this.maxAttempts = Math.max(1, options.maxAttempts ?? Number.POSITIVE_INFINITY);
   }
 
   /** Milliseconds until calls are allowed again (0 when open). */
   blockedForMs(): number {
-    return Math.max(0, this.blockedUntil - this.now());
+    const cooling = Math.max(0, this.blockedUntil - this.now());
+    // Sticky: still blocked after the cooldown (reported as the minimum cooldown for messages).
+    return this.stickyBlock && this.hit429 ? Math.max(cooling, this.minCooldownMs) : cooling;
   }
 
   /** Milliseconds until the next call may start (spacing and cooldown), when no call is queued. */
@@ -51,6 +70,7 @@ export class ThrottleGate {
   block(retryAfterMs?: number): void {
     const wanted = retryAfterMs !== undefined && Number.isFinite(retryAfterMs) ? retryAfterMs : this.defaultCooldownMs;
     const ms = Math.min(this.maxCooldownMs, Math.max(this.minCooldownMs, wanted));
+    this.hit429 = true;
     this.blockedUntil = Math.max(this.blockedUntil, this.now() + ms);
   }
 

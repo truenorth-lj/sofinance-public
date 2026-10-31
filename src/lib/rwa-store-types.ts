@@ -51,6 +51,12 @@ export type ActivePool = {
   pair: RwaPairRow;
   metricsObservedAt: string;
   profile: StoredProfile | null;
+  /**
+   * When the pool's APR was last refreshed or attempted (latest of the saved snapshot and the last attempt; null
+   * = never): the APR cron's oldest-first queue key. Required; the cron still falls back to the saved profile's
+   * last attempt / observation if a store sends null for a pool it has a profile for (`activePoolRefreshedAt`).
+   */
+  refreshedAt: string | null;
 };
 export type AprWrite = {
   poolId: string;
@@ -233,7 +239,7 @@ export const storeRequestSchema = z.discriminatedUnion("op", [
     lease: leaseSchema,
     data: z.custom<AprWrite>((value) => aprSchema.safeParse(value).success),
   }),
-  z.object({ op: z.literal("prepareDaily"), lease: leaseSchema }),
+  z.object({ op: z.literal("prepareDaily"), lease: leaseSchema, includeRhc: z.boolean().optional() }),
   z.object({ op: z.literal("ensureRhcRoster"), lease: leaseSchema, data: rhcRosterSchema }),
   z.object({ op: z.literal("rhcPools") }),
   z.object({ op: z.literal("saveTokenIcons"), lease: leaseSchema, data: tokenIconWriteSchema }),
@@ -272,10 +278,11 @@ export type StoreResultMap = {
   renew: boolean;
   finish: boolean;
   publishDiscovery: { generation: string; pools: number };
-  prepareDaily: { date: string; eligible: boolean };
+  prepareDaily: { date: string };
   saveApr: { poolId: string; status: "ok" | "degraded" | "error" };
   saveTokenIcons: { saved: number };
-  ensureRhcRoster: { pools: number; profiles: Record<string, StoredProfile | null> };
+  /** `refreshedAt`: per pool, as `ActivePool.refreshedAt`. */
+  ensureRhcRoster: { pools: number; profiles: Record<string, StoredProfile | null>; refreshedAt: Record<string, string | null> };
   rhcPools: SnapshotRhcPools;
 };
 /** Saved RHC pool summaries; `observedAt` is when the cron last read them, `stale` past the 26h rule. */
