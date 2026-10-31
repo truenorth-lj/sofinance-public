@@ -4,7 +4,6 @@ import { describe, expect, it } from "vitest";
 import {
   HIGHEST_RANGE_APR_7D_HELP,
   HOMEPAGE_APR_DOCS_LINK_LABEL,
-  HOMEPAGE_POOL_APR_LABEL,
 } from "@/lib/apr-labels/copy";
 
 describe("landing page copy and routes", () => {
@@ -74,8 +73,13 @@ describe("landing page copy and routes", () => {
     expect(src).toContain("HomepagePoolsTable");
     expect(table).toContain("APP_ROUTES.rwaPairs");
     expect(table).toContain("buildOpenPositionPath");
-    expect(table).toContain("Open position");
     expect(table).toContain("fetchRwaPairsList");
+    // The homepage reuses the /app/rwa-pairs list view (same PoolTable, Open action, selectPools order), capped at 5.
+    expect(table).toContain('from "./unified-pools/pool-list"');
+    expect(table).toContain("<PoolTable");
+    expect(table).toContain("homepageRows(");
+    expect(table).toContain("View all pools");
+    expect(table).not.toMatch(/<table|homepage-pools-cards/);
     expect(src).not.toContain('href="/rwa-pairs"');
   });
 
@@ -91,16 +95,16 @@ describe("landing page copy and routes", () => {
     expect(table).not.toMatch(/HMAC|v0 tx|signUrl|permit/i);
   });
 
-  it("labels homepage APR with the cards' Est. highest range APR / not guaranteed copy", () => {
-    expect(HOMEPAGE_POOL_APR_LABEL).toBe("Est. highest range APR · 7d avg · not guaranteed");
+  it("ranks homepage pools by the /app/rwa-pairs Est. APR · 7d with the not-guaranteed help and APR details link", () => {
     expect(HOMEPAGE_APR_DOCS_LINK_LABEL).toBe("APR details");
-    expect(`${HOMEPAGE_POOL_APR_LABEL} ${HIGHEST_RANGE_APR_7D_HELP} ${HOMEPAGE_APR_DOCS_LINK_LABEL}`).not.toMatch(
+    expect(`${HIGHEST_RANGE_APR_7D_HELP} ${HOMEPAGE_APR_DOCS_LINK_LABEL}`).not.toMatch(
       /\byield\b|\bearn\b|make your money|strateg|recipe|open[- ]source|\bMIT\b/i,
     );
-    expect(table).toContain("HOMEPAGE_POOL_APR_LABEL");
+    expect(table).toContain("Ranked by Est. APR · 7d, high to low (on Solana, from a 7-day backtest of candidate ranges).");
     expect(table).toContain("HIGHEST_RANGE_APR_7D_HELP");
     expect(table).toContain("DOCS_ROUTES.feeApr");
     expect(table).toContain("usePoolsApr7d"); // the /app/rwa-pairs APR state
+    expect(table).toContain("DEFAULT_SORT");
     expect(table).not.toContain("@/lib/range-apr/format"); // the rounding formatter that showed tiny APRs as 0%
     expect(table).not.toContain("POOL_FEE_APR_24H_HELP");
   });

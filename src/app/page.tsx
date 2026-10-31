@@ -5,7 +5,7 @@ import { pageMetadata } from "@/lib/seo";
 
 /**
  * ISR: the prerendered homepage (with both chains' pool snapshot and its "Updated … UTC" time in the HTML) is
- * regenerated at most every 15 minutes, on traffic only, with one saved-snapshot read per chain each time. The
+ * regenerated at most every 15 minutes, on traffic only, from saved snapshots (each chain's list and its pools' 7-day APRs). The
  * client still refreshes the table from the CDN-cached `/api/rwa-pairs` and `/api/protocol-pools` after load.
  */
 export const revalidate = 900; // keep equal to HOMEPAGE_POOLS_REVALIDATE_SECONDS

@@ -92,8 +92,19 @@ export type PoolFilters = {
   chain: PoolChain | "all";
   protocol: UnifiedProtocol | "all";
   risk: RiskFilter;
+  /** Minimum TVL in USD; null = any TVL. Applied before duplicate hiding (see `selectPools`). */
+  minTvl: number | null;
 };
-export const DEFAULT_FILTERS: PoolFilters = { query: "", chain: "all", protocol: "all", risk: "all" };
+export const DEFAULT_FILTERS: PoolFilters = { query: "", chain: "all", protocol: "all", risk: "all", minTvl: null };
+
+/** `/app/rwa-pairs` TVL filter presets (USD), next to "Any" and a custom amount (LJ, 2026-10-31). */
+export const TVL_FILTER_PRESETS = [5_000, 10_000, 50_000] as const;
+
+/** Whether a pool passes a minimum-TVL filter (null = any TVL; a pool with unknown TVL fails any minimum). */
+export function meetsMinTvl(pool: Pick<UnifiedPool, "tvlUsd">, minTvl: number | null): boolean {
+  if (minTvl === null) return true;
+  return finite(pool.tvlUsd) && pool.tvlUsd >= minTvl;
+}
 
 /** Search matches token symbols, token names and the pair label (case-insensitive, every word must match). */
 export function filterPools(pools: readonly UnifiedPool[], filters: PoolFilters): UnifiedPool[] {
@@ -151,13 +162,21 @@ export function sortPools(pools: readonly UnifiedPool[], key: SortKey, dir: Sort
     .map((entry) => entry.pool);
 }
 
-/** Search / filter → optional duplicate hiding → sort. Returns the rows and how many duplicates were hidden. */
+/**
+ * TVL filter → optional duplicate hiding → search / other filters → sort. Returns the rows and how many duplicates
+ * were hidden.
+ * - The TVL minimum comes first (LJ, 2026-10-31): a pool below it never takes part in the duplicate rule, so a tiny
+ *   pool with a higher 7-day APR cannot hide the bigger pool of the same pair.
+ * - Search and the chain / protocol / risk filters come after: duplicates are decided over the whole (TVL-eligible)
+ *   list, so those filters never promote a pool that lost to a hidden one.
+ */
 export function selectPools(pools: readonly UnifiedPool[], options: {
   filters: PoolFilters; hideDuplicates: boolean; sort: { key: SortKey; dir: SortDir }; apr7d: Apr7dLookup;
 }): { pools: UnifiedPool[]; hiddenDuplicates: number } {
-  // Duplicates are decided over the whole list first, so a filter never promotes a pool that lost to a hidden one.
-  const deduped = options.hideDuplicates ? hideDuplicatePools(pools, options.apr7d) : [...pools];
+  const minTvl = options.filters.minTvl ?? null;
+  const eligible = minTvl === null ? [...pools] : pools.filter((pool) => meetsMinTvl(pool, minTvl));
+  const deduped = options.hideDuplicates ? hideDuplicatePools(eligible, options.apr7d) : eligible;
   const visible = filterPools(deduped, options.filters);
-  const hiddenDuplicates = options.hideDuplicates ? filterPools(pools, options.filters).length - visible.length : 0;
+  const hiddenDuplicates = options.hideDuplicates ? filterPools(eligible, options.filters).length - visible.length : 0;
   return { pools: sortPools(visible, options.sort.key, options.sort.dir, options.apr7d), hiddenDuplicates };
 }
