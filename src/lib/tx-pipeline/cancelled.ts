@@ -15,7 +15,10 @@ export function watchCancelledSend(error: TxWalletCancelledError, track: {
   flow: TxFlow; successTitle: string; wallet: string; lastValidBlockHeight: number;
   storage?: Pick<Storage, "getItem" | "setItem" | "removeItem">; positionMint?: string; retry?: () => void;
   context?: TxReportContext;
-  /** Called once with the landed signature, after tracking started. */
+  /**
+   * Called once with the landed (or landed-but-failed) signature, also when another attempt already tracks it:
+   * the flow's own bookkeeping (e.g. the step 1/2 swap attempt) must exist either way. Errors are swallowed.
+   */
   onLanded?: (signature: string) => void;
 }): Promise<void> {
   return error.landed.then((outcome) => {
@@ -23,8 +26,9 @@ export function watchCancelledSend(error: TxWalletCancelledError, track: {
     const { signature } = outcome;
     dismissTxNotice(cancelNoticeIdFor(error));
     captureTxWalletErrorLanded(track.flow, { ...track.context, landedCheck: outcome.status, afterCancel: true });
+    const bookkeeping = () => { try { track.onLanded?.(signature); } catch { /* must not hide a landed signature */ } };
     // Another attempt may already track this exact signature (identical bytes): never reset its state.
-    if (findTxNotice(noticeIdFor(signature))) return;
+    if (findTxNotice(noticeIdFor(signature))) { bookkeeping(); return; }
     const attempt = { version: 1 as const, flow: track.flow, wallet: track.wallet, signature,
       lastValidBlockHeight: track.lastValidBlockHeight, createdAt: Date.now(), successTitle: track.successTitle,
       positionMint: track.positionMint };
@@ -32,6 +36,6 @@ export function watchCancelledSend(error: TxWalletCancelledError, track: {
     trackTxSignature({ ...attempt, retry: track.retry });
     // Funds moved after the user saw "cancelled": refresh now (confirmation refreshes again).
     requestBalancesRefresh({ flow: track.flow, signature });
-    try { track.onLanded?.(signature); } catch { /* bookkeeping must not hide a landed signature */ }
+    bookkeeping();
   }, () => undefined);
 }

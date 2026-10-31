@@ -17,7 +17,8 @@ import { findLandedTransaction, LANDED_EXPIRY_MARGIN_BLOCKS } from "@/lib/tx-lan
 import { CANCEL_CHECK_PENDING_COPY, cancelCheckKey, getTxNotices, isCancelCheckPending, noticeIdFor, resetCancelChecks, resetTxNotices,
   TxWalletCancelledError, type FindLanded, type TxWallet } from "@/lib/tx-pipeline";
 import { readSolSwapAttempt, type SolSwapStorage } from "./sol-swap-attempt-store";
-import { runSolSwapStep, solSwapFailureContext, type SolSwapStage } from "./sol-swap-step-client";
+import { loadSolSwapReceipt } from "./sol-swap-receipt-store";
+import { reconcileSolSwapStep, runSolSwapStep, solSwapFailureContext, type SolSwapStage } from "./sol-swap-step-client";
 
 const payer = testKeypair(81);
 const WALLET = payer.publicKey.toBase58();
@@ -113,13 +114,29 @@ describe("runSolSwapStep with a Phantom-shaped transaction", () => {
       const rebuilt = phantomMainnetReturn(tx, testKeypair(84).publicKey); rebuilt.sign([payer]); broadcast.push(rebuilt);
       throw Object.assign(new Error("User rejected the request."), { code: 4001 });
     }) };
+    const storage = memoryStorage();
     const error = await runSolSwapStep({ poolId: POOL, amount: "0.001", requested: "1000000", store: {} as never, timeoutMs: 5_000,
-      wallet, setStage: () => {}, current: () => true, storage: memoryStorage(), findLanded: chainLookup(() => broadcast) }).catch((e) => e);
+      wallet, setStage: () => {}, current: () => true, storage, findLanded: chainLookup(() => broadcast) }).catch((e) => e);
     expect(error).toBeInstanceOf(TxWalletCancelledError);
     await error.landed; await new Promise((resolve) => setTimeout(resolve, 0));
     expect(getTxNotices()).toMatchObject([{ id: noticeIdFor(LANDED_SIG), flow: "swap", state: "loading", signature: LANDED_SIG,
       watch: { successTitle: "Step 1/2 swap confirmed", lastValidBlockHeight: LVBH } }]);
     expect(sentry.landed).toHaveBeenCalledWith("swap", expect.objectContaining({ walletErrorCode: 4001, landedCheck: "landed", afterCancel: true,
       blockhash: unsigned.message.recentBlockhash }));
+    // Saved as this wallet's step 1/2 attempt, like a normal send: before the one-minute hold is released.
+    const saved = readSolSwapAttempt(storage, WALLET);
+    expect(saved).toMatchObject({ wallet: WALLET, poolId: POOL, signature: LANDED_SIG, outputMint: OUTPUT, lastValidBlockHeight: LVBH });
+    expect(isCancelCheckPending(cancelCheckKey("open", POOL))).toBe(false);
+    // A retry after the hold never swaps SOL again: step 1 is refused before preparing or asking the wallet.
+    relay.post.mockClear();
+    await expect(runSolSwapStep({ poolId: POOL, amount: "0.001", requested: "1000000", store: {} as never, timeoutMs: 5_000,
+      wallet, setStage: () => {}, current: () => true, storage })).rejects.toThrow("Check the original SOL swap before opening again.");
+    expect(relay.post).not.toHaveBeenCalled(); expect(wallet.signAndSendTransaction).toHaveBeenCalledTimes(1);
+    // Recovery confirms the saved swap and stores its receipt: the open modal offers "Continue open (2/2)" (step 2 only).
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ status: "confirmed", delivered: "123456", decimals: 6 })));
+    const receipt = await reconcileSolSwapStep(saved!, { storage, current: () => true, sleep: async () => undefined });
+    expect(receipt).toMatchObject({ signature: LANDED_SIG, poolId: POOL, delivered: "123456" });
+    expect(readSolSwapAttempt(storage, WALLET)).toBeNull();
+    expect(loadSolSwapReceipt(storage, WALLET, POOL, Date.now())).toMatchObject({ signature: LANDED_SIG, delivered: "123456", decimals: 6 });
   });
 });

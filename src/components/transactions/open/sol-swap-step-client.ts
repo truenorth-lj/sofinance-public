@@ -113,12 +113,17 @@ export async function runSolSwapStep(input: {
     if (checkingId) dismissTxNotice(checkingId);
     if (error instanceof TxNotLandedError) context.landedCheck = "not-landed";
     else if (error instanceof TxLandedUnknownError) context.landedCheck = "unknown";
-    // Cancelled in the wallet: the caller reports it now; if the swap landed anyway, track it (toast + balances).
+    // Cancelled in the wallet: the caller reports it now; if the swap landed anyway, track it (toast + balances) and
+    // save it as this wallet's step 1/2 attempt, exactly as a normal send does: recovery then confirms it and offers
+    // "Continue open (2/2)", and a new step 1 is refused (no second SOL swap after the one-minute hold).
     // Until that background check ends, this pool's open (step 1 and 2) cannot be sent again.
     if (error instanceof TxWalletCancelledError) {
       context.walletErrorCode = walletErrorInfo(error.cause).code;
+      const lastValidBlockHeight = summary.lastValidBlockHeight;
       holdCancelCheck(cancelCheckKey("open", poolId), watchCancelledSend(error, { flow: "swap", successTitle: "Step 1/2 swap confirmed", wallet,
-        lastValidBlockHeight: summary.lastValidBlockHeight, context: { ...context } }));
+        lastValidBlockHeight, context: { ...context },
+        onLanded: (landed) => persistSolSwapAttempt(storage, { version: 1, wallet, poolId, signature: landed, outputMint: summary.outputMint,
+          outputSymbol: summary.outputSymbol, lastValidBlockHeight, createdAt: Date.now() }) }));
     }
     if (!(error instanceof TxSendUnknownError)) {
       if (error && typeof error === "object") failureContexts.set(error, { ...context });

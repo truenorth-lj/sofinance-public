@@ -64,7 +64,8 @@ export class TxLandedUnknownError extends Error {
 let cancelSequence = 0;
 
 /**
- * The person cancelled in the wallet (code 4001, or explicit cancel wording with no code) after we asked it to
+ * The person cancelled in the wallet (an exact code 4001 only; cancel wording without that code, or any other code
+ * such as Phantom's 400 "rejected by user", is checked on Solana first instead) after we asked it to
  * sign AND send. We say so at once and unlock the form, but a wallet can broadcast and still report a cancel, so
  * `landed` keeps checking Solana silently until the blockhash expires (see `watchCancelledSend`). It never says
  * "nothing was sent": that is not known yet. `attemptId` keys this attempt's toast, so a resubmit never overwrites it.
