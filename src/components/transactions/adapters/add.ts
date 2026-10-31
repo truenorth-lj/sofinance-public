@@ -10,7 +10,7 @@ export type AddInput = {
   selection: PositionSelection; amount: string; rawAmount: bigint; floorBps: number; toleranceBps: number;
   relayStore: JupiterRelayStore;
 };
-type AddPrepareResponse = Preflight & { unsignedTransaction: string; blockhash: string; lastValidBlockHeight: number;
+type AddPrepareResponse = Preflight & { unsignedTransaction: string; sendPermit?: string; blockhash: string; lastValidBlockHeight: number;
   startingLiquidity: string; startingBalances: SelectedPositionState["balances"] };
 export type AddPrepared = PreparedTx & { preflight: AddPrepareResponse };
 
@@ -35,6 +35,7 @@ export const addLiquidityAdapter: TxAdapter<AddInput, AddPrepared> = {
     return {
       transaction: decodePreparedTransaction(data.unsignedTransaction, wallet, data.blockhash),
       lastValidBlockHeight: data.lastValidBlockHeight, positionMint: input.selection.positionMint, preflight: data,
+      sendPermit: data.sendPermit,
     };
   },
 };

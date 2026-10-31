@@ -11,7 +11,7 @@ async function fillReadyInput(page: Page) {
   await expect(input).toHaveValue("1");
 }
 
-async function setup(page: Page, wallet: FakeWallet, options: { selectedStateGate?: () => Promise<void>; connectOnly?: boolean; prepareFails?: boolean; uncertainSend?: boolean; previewGate?: Promise<void>; previewFails?: boolean; skipPreviewWait?: boolean; historyStatus?: "pending" | "manual-review" | "invalid" | "legacy"; nativeSol?: boolean } = {}) {
+async function setup(page: Page, wallet: FakeWallet, options: { selectedStateGate?: () => Promise<void>; connectOnly?: boolean; prepareFails?: boolean; uncertainSend?: boolean; previewGate?: Promise<void>; previewFails?: boolean; skipPreviewWait?: boolean; historyStatus?: "pending" | "manual-review" | "invalid" | "legacy"; nativeSol?: boolean; finality?: () => string } = {}) {
   const positionMint = randomAddress(), mintA = randomAddress(), mintB = randomAddress();
   const inputMint = options.nativeSol ? "So11111111111111111111111111111111111111112" : "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
   const poolId = randomAddress(), positionAccount = randomAddress();
@@ -65,7 +65,7 @@ async function setup(page: Page, wallet: FakeWallet, options: { selectedStateGat
       const bs58 = (await import("bs58")).default;
       value = { signature: bs58.encode(tx.signatures[0]!) };
     }
-    if (pathname === "/api/transaction-finality") value = { status: "pending" };
+    if (pathname === "/api/transaction-finality") value = { status: options.finality?.() ?? "pending" };
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(value) });
   });
   if (options.historyStatus) {
@@ -159,6 +159,32 @@ test("one Add prepares once, signs the same message, broadcasts once and persist
   await expect(page.getByText("Transaction status: pending", { exact: true })).toBeVisible();
   await page.screenshot({ path: test.info().outputPath("add-pending.png") });
 });
+
+for (const viewport of [{ name: "desktop", width: 1280, height: 900 }, { name: "375", width: 375, height: 812 }] as const) {
+  test(`expired add: status dialog offers Try again, which re-prepares and signs a fresh transaction (${viewport.name})`, async ({ page, wallet }) => {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    let finality = "expired";
+    const { calls, add } = await setup(page, wallet, { finality: () => finality });
+    await add.click();
+    await expect.poll(() => calls.filter((p) => p === "/api/tx-send").length).toBe(1);
+    await expect(page.getByText("Transaction status: expired", { exact: true })).toBeVisible();
+    // On a phone the expiry toast overlaps the aside, so open the status dialog from the keyboard.
+    const statusButton = page.getByRole("button", { name: "View transaction status and tx hash" });
+    await statusButton.focus();
+    await page.keyboard.press("Enter");
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByRole("heading", { name: "Transaction expired" })).toBeVisible();
+    const retry = dialog.getByRole("button", { name: "Try again", exact: true });
+    await expect(retry).toBeVisible();
+    await page.screenshot({ path: test.info().outputPath(`add-dialog-expired-try-again-${viewport.name}.png`), animations: "disabled" });
+    finality = "pending";
+    await retry.click();
+    await expect(dialog).toBeHidden();
+    await expect.poll(() => calls.filter((p) => p === "/api/selected-prepare").length).toBe(2);
+    await expect.poll(() => calls.filter((p) => p === "/api/tx-send").length).toBe(2);
+    expect(wallet.ledger).toHaveLength(2);
+  });
+}
 
 test("failed prepare never calls the wallet or broadcast", async ({ page, wallet, guards }) => {
   guards.allowConsole(/^Failed to load resource: the server responded with a status of 400/);

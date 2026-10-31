@@ -39,7 +39,7 @@ export const openPositionAdapter: TxAdapter<OpenInput, OpenPrepared> = {
         rangePreset: input.rangePreset, minPrice: input.minPrice, maxPrice: input.maxPrice, nftMint,
         ...(input.solSwapSignature ? { solSwapSignature: input.solSwapSignature } : {}),
       }, { store: input.relayStore, signal: AbortSignal.timeout(OPEN_PREPARE_TIMEOUT_MS) });
-      const data = await response.json() as { unsignedTransaction?: string; summary?: OpenPositionSummary; error?: string; code?: string };
+      const data = await response.json() as { unsignedTransaction?: string; sendPermit?: string; summary?: OpenPositionSummary; error?: string; code?: string };
       if (!response.ok) throw Object.assign(new TxNotSentError(data.error || "Preparation failed. Nothing was sent."), { code: data.code });
       const summary = data.summary;
       if (!data.unsignedTransaction || !summary || summary.wallet !== wallet || summary.poolId !== input.poolId ||
@@ -53,7 +53,7 @@ export const openPositionAdapter: TxAdapter<OpenInput, OpenPrepared> = {
       }
       input.beforeWallet?.();
       return {
-        transaction, summary, lastValidBlockHeight: summary.lastValidBlockHeight, positionMint: nftMint,
+        transaction, summary, lastValidBlockHeight: summary.lastValidBlockHeight, positionMint: nftMint, sendPermit: data.sendPermit,
         cosign: (walletSigned) => {
           const signed = addMintSignature(walletSigned, mint);
           if (missingRequiredSignatures(signed).length) throw new TxNotSentError("A required signature is missing, so nothing was sent.");

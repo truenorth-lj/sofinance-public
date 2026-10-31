@@ -25,13 +25,13 @@ const post = (body: unknown) => POST(jsonRequest("http://localhost/api/sign-open
 describe("POST /api/sign-open-prepare", () => {
   beforeEach(() => {
     vi.mocked(getSigningSecret).mockReturnValue(SIGNING_SECRET);
-    vi.mocked(prepareOpen).mockReset().mockResolvedValue({ summary: { nftMint } as never, permit: "fresh", unsignedTransaction: "tx" });
+    vi.mocked(prepareOpen).mockReset().mockResolvedValue({ summary: { nftMint } as never, permit: "fresh", unsignedTransaction: "tx", sendPermit: "send" });
   });
 
   it("re-prepares with the token's HMAC-bound inputs, the browser mint public key and the MCP profile", async () => {
     const response = await post({ token: await createSignToken(payload(), SIGNING_SECRET), nftMint });
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ summary: { nftMint }, permit: "fresh", unsignedTransaction: "tx" });
+    expect(await response.json()).toEqual({ summary: { nftMint }, permit: "fresh", unsignedTransaction: "tx", sendPermit: "send" });
     expect(prepareOpen).toHaveBeenCalledWith({ wallet, ...openRequest, nftMint }, expect.any(Function), MCP_OPEN_PREPARE);
   });
 

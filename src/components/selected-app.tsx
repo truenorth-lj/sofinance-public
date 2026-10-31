@@ -59,7 +59,7 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
   const { wallet, connected, connect, disconnect, connectionError,
     discovery, selection, state, amount, tolerancePercent, result, attempt, attemptStatus,
     error, reprepare, quoteError, quoteErrorCode, quoteErrorOutputMint, showQuoteRecalculate,
-    busy: addBusy, calculating, now, quote, fresh, status,
+    busy: addBusy, retryAdd, calculating, now, quote, fresh, status,
     actionLabel, actionDisabled: addDisabled, primaryAction: addAction, changeAmount, changeTolerance, fillMax,
     choosePosition, chooseAsset, refreshDiscovery, refreshState, retryCalculation,
     loadingDiscovery, loadingState, stateError } = controller;
@@ -235,7 +235,8 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
       <p><Link href={DOCS_ROUTES.risks} className="text-lemon underline underline-offset-2 hover:text-[#fff27f]">Read the Risks docs</Link> before adding liquidity.</p>
     </AssetRisksDialog>
     <TransactionStatusDialog attempt={visibleAttempt} status={attemptStatus} error={error} open={statusDialogOpen}
-      onOpenChange={setStatusDialogOpen} />
+      onOpenChange={setStatusDialogOpen}
+      onRetry={retryAdd ? () => { setStatusDialogOpen(false); retryAdd(); } : undefined} />
     {activeView === "deposit" && <div className="fixed inset-x-0 bottom-0 z-10 border-t border-white/12 bg-canvas/95 p-4 backdrop-blur sm:hidden"><button className={buttonClass} disabled={actionDisabled} aria-busy={actionLoading} onClick={primaryAction}>{actionLoading ? <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin motion-reduce:animate-none" /> : <ArrowDown aria-hidden="true" className="h-4 w-4" />}{buttonLabel}</button></div>}
   </div>;
 }

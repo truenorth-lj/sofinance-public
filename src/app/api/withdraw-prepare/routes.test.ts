@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
+vi.mock("@/lib/tx-send/permit", () => ({ sendPermitFor: vi.fn(() => "send-permit") }));
 const mocks = vi.hoisted(() => ({ build: vi.fn(), send: vi.fn(), status: vi.fn() }));
 vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: () => ({}) }));
 vi.mock("@sofinance/engine/withdraw/build", () => ({ buildWithdraw: mocks.build }));

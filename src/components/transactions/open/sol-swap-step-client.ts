@@ -25,7 +25,7 @@ export type SolSwapReceipt = {
   decimals: number;
 };
 
-type Prepared = { unsignedTransaction: string; permit: string; summary: SolSwapStepSummary };
+type Prepared = { unsignedTransaction: string; permit: string; sendPermit?: string; summary: SolSwapStepSummary };
 type Delivery = { status: "pending" | "expired" | "failed" } | { status: "confirmed"; delivered: string; decimals: number };
 
 export const SOL_SWAP_POLL_MS = 1_500;
@@ -83,7 +83,7 @@ export async function runSolSwapStep(input: {
   // saved with the returned signature so a reload keeps polling it; nothing is resent.
   let signature: string;
   try {
-    signature = (await sendWithWallet(input.wallet, unsigned, { sendRaw: input.sendRaw })).signature;
+    signature = (await sendWithWallet(input.wallet, unsigned, { sendRaw: input.sendRaw, sendPermit: prepared.sendPermit })).signature;
   } catch (error) {
     if (!(error instanceof TxSendUnknownError)) throw error;
     signature = error.signature;

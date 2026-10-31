@@ -73,8 +73,9 @@ it("generates the NFT mint in the browser, wallet signs first, mint signs the wa
   const message = signed.message.serialize();
   expect(nacl.sign.detached.verify(message, signed.signatures[0]!, payer.publicKey.toBytes())).toBe(true);
   expect(nacl.sign.detached.verify(message, signed.signatures[1]!, new PublicKey(prepareBodies[0]!.nftMint).toBytes())).toBe(true);
-  // The relay only carries signed bytes; the position mint in them is the browser-generated one.
-  expect(Object.keys(broadcastBody!)).toEqual(["signedTransaction"]);
+  // The relay carries the signed bytes plus the prepared (unsigned) transaction its permit covers
+  // (this mocked prepare returns no permit); the position mint in them is the browser-generated one.
+  expect(Object.keys(broadcastBody!)).toEqual(["signedTransaction", "unsignedTransaction"]);
   expect(signed.message.staticAccountKeys[1]!.toBase58()).toBe(prepareBodies[0]!.nftMint);
   expect(reprepared).toBeDefined();
   expect(container.textContent).toContain("Transaction submitted successfully");

@@ -1,5 +1,6 @@
 import { beforeEach, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
+vi.mock("@/lib/tx-send/permit", () => ({ sendPermitFor: vi.fn(() => "send-permit") }));
 vi.mock("@sofinance/engine/api-input", () => ({ parseSelectedQuoteRequest: vi.fn() }));
 vi.mock("@/lib/selected-atomic", () => ({ buildAndSimulateSelectedZap: vi.fn() }));
 vi.mock("@/lib/selected-permit", () => ({ issueSelectedPermit: vi.fn(() => "permit") }));

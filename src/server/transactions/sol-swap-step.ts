@@ -7,6 +7,7 @@ import { getSigningSecret } from "@sofinance/engine/config/server-env";
 import { issueSolSwapPermit } from "@/lib/sol-swap-permit";
 import { assertSolInputAllowed } from "@/lib/sol-input-policy";
 import { withFeeEstimateRetry } from "@/lib/rpc-fee-estimate";
+import { sendPermitFor } from "@/lib/tx-send/permit";
 
 /** How long after step 1 lands a step-2 open may still skip the (already paid) fee. */
 export const SOL_SWAP_FEE_CREDIT_MS = 30 * 60_000;
@@ -14,10 +15,11 @@ export const SOL_SWAP_FEE_CREDIT_MS = 30 * 60_000;
 export async function prepareSolSwapStep(wallet: string, poolId: string, amount: string) {
   assertSolInputAllowed({ inputKind: "native" });
   const { summary, transaction } = await withFeeEstimateRetry(() => buildAndSimulateSolSwapStep(wallet, poolId, amount));
-  const permit = issueSolSwapPermit(getSigningSecret(), {
+  const secret = getSigningSecret();
+  const permit = issueSolSwapPermit(secret, {
     wallet, message: Buffer.from(transaction.message.serialize()).toString("base64"), summary,
   });
-  return { summary, permit, unsignedTransaction: Buffer.from(transaction.serialize()).toString("base64") };
+  return { summary, permit, unsignedTransaction: Buffer.from(transaction.serialize()).toString("base64"), sendPermit: sendPermitFor(wallet, Buffer.from(transaction.serialize()).toString("base64"), secret) };
 }
 
 export async function readSolSwapStepStatus(wallet: string, signature: string, outputMint: string, lastValidBlockHeight?: number) {

@@ -59,19 +59,6 @@ export function shouldCaptureApiError(error: unknown, status = 500): boolean {
   return status >= 500;
 }
 
-/**
- * Transaction routes (broadcast/status): also report 4xx failures, because an
- * expired, unsent or stuck transaction is an operational problem even when the request
- * itself was valid. Still skips user rejections, coded user-facing errors and malformed input.
- */
-export function shouldCaptureTransactionError(error: unknown, status = 500): boolean {
-  if (shouldCaptureApiError(error, status)) return true;
-  if (status < 400 || isUserRejectedError(error) || isUserFacingSelectedError(error)) return false;
-  const source = error instanceof CompoundSendError && error.cause !== undefined ? error.cause : error;
-  const message = source instanceof Error ? source.message : String(source);
-  return !/^Invalid\b/i.test(message.trim());
-}
-
 function routeFromActiveSentryContext(): string | undefined {
   try {
     const scope = Sentry.getCurrentScope();
@@ -104,11 +91,11 @@ export function captureApiRouteError(
   try {
     if (!isSentryEnabled()) return;
     const status = options.status ?? 500;
-    if (!(options.transaction ? shouldCaptureTransactionError(error, status) : shouldCaptureApiError(error, status))) return;
+    // Ordinary 4xx (bad input, refused relay, rate limit) never reach Sentry, so abuse cannot burn the quota.
+    if (!shouldCaptureApiError(error, status)) return;
     const route = resolveApiRoute(options);
     Sentry.withScope((scope) => {
       if (route) scope.setTag("route", route);
-      if (options.transaction && status < 500) scope.setLevel("warning");
       if (options.transaction) scope.setTag("tx_sent", options.sent === false ? "no" : "unknown");
       scope.setTag("error_class", sentryErrorClass(error));
       if (options.quotePath) scope.setTag("quote_path", options.quotePath);

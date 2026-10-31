@@ -178,8 +178,10 @@ export function WithdrawPanel({wallet,positionMint,mintA,mintB,label,onClose,onB
   }
   throw new Error("Confirmation is taking longer. Resume to check the same transaction.");
  }
- async function signAndSend(run:WithdrawRun,prepared:WithdrawPrepared,confirmed:boolean,originalRequest:WithdrawRequest,root?:Checkpoint["root"]){
+ async function signAndSend(run:WithdrawRun,response:WithdrawPrepared&{sendPermit?:string},confirmed:boolean,originalRequest:WithdrawRequest,root?:Checkpoint["root"]){
   guardRun(run);
+  // The relay permit is used for this send only; the checkpoint keeps the server's WithdrawPrepared shape.
+  const {sendPermit,...prepared}=response;
   setProgress(prepared.summary.stage==="swap"?"Step 2 of 2: approve conversion in your wallet":"Approve withdrawal in your wallet");
   const unsigned=VersionedTransaction.deserialize(Uint8Array.from(atob(prepared.unsignedTransaction),c=>c.charCodeAt(0)));
   // Shared pipeline send stage: the wallet sends (or signs and we relay once). The
@@ -188,7 +190,7 @@ export function WithdrawPanel({wallet,positionMint,mintA,mintB,label,onClose,onB
   try{
    const {signature}=await sendAndTrack({flow:"withdraw",wallet:{address:wallet,signTransaction:currentConnection.current.signTransaction,signAndSendTransaction:currentConnection.current.signAndSendTransaction},
     successTitle:isSwap?"Conversion confirmed":"Withdrawal confirmed",storage:window.localStorage,
-    prepared:{transaction:unsigned,lastValidBlockHeight:prepared.summary.lastValidBlockHeight,positionMint:prepared.summary.positionMint},
+    prepared:{transaction:unsigned,lastValidBlockHeight:prepared.summary.lastValidBlockHeight,positionMint:prepared.summary.positionMint,sendPermit},
     isCurrent:()=>{try{guardRun(run);return true;}catch{return false;}}});
    const saved:Checkpoint={prepared,signature,request:originalRequest,confirmHighImpact:confirmed,root};
    persistSent(run,saved);setProgress("Submitting withdrawal…");

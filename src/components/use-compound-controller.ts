@@ -329,7 +329,8 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
         flow: "compound", successTitle: receipt ? "Cleanup confirmed" : "Compound confirmed", storage: window.localStorage,
         wallet: { address: submittedWallet, signTransaction: connectionRef.current.signTransaction,
           signAndSendTransaction: connectionRef.current.signAndSendTransaction },
-        prepared: { transaction: unsigned, lastValidBlockHeight: summary.lastValidBlockHeight, positionMint: receipt?.positionMint || submittedMint },
+        prepared: { transaction: unsigned, lastValidBlockHeight: summary.lastValidBlockHeight, positionMint: receipt?.positionMint || submittedMint,
+          sendPermit: (loaded.prepared as { sendPermit?: string }).sendPermit },
         isCurrent: () => current() && !externalBlockedRef.current && (() => {
           try { verifyRecoveryAttempt(); } catch (error) {
             throw new TxNotSentError(error instanceof Error ? error.message : "Transaction record changed, so nothing was sent.");

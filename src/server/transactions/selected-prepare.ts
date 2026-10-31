@@ -5,6 +5,7 @@ import { issueSelectedPermit } from "@/lib/selected-permit";
 import type { PositionSelection } from "@sofinance/engine/selected-state";
 import type { JupiterRetryBudget } from "@sofinance/engine/jupiter/client";
 import { APP_SELECTED_PREPARE, MCP_SELECTED_PREPARE } from "./surface-policy";
+import { sendPermitFor } from "@/lib/tx-send/permit";
 
 export type SelectedPrepareCommand = {
   wallet: string;
@@ -28,7 +29,8 @@ export async function prepareSelected(
       { enforceResaleFloor: false, signal: context.signal, budget: context.budget })
     : await buildAndSimulateSelectedZap(wallet, selection, amount, floorBps, toleranceBps);
   context?.signal.throwIfAborted();
-  const permit = issueSelectedPermit(readSigningSecret(), {
+  const secret = readSigningSecret();
+  const permit = issueSelectedPermit(secret, {
     message: Buffer.from(transaction.message.serialize()).toString("base64"), wallet, selection,
     requested: summary.quote.requested, floorBps: summary.quote.floorBps,
     expiresAt: summary.expiresAt, lastValidBlockHeight: summary.lastValidBlockHeight,
@@ -36,5 +38,7 @@ export async function prepareSelected(
     rangeSide: summary.quote.rangeSide, startingBalances: summary.startingBalances,
   });
   context?.signal.throwIfAborted();
-  return { summary, permit, unsignedTransaction: Buffer.from(transaction.serialize()).toString("base64") };
+  // Relay permit for /api/tx-send (app surface only; MCP signs on the sign page, which gets it from verify-sign-token).
+  return { summary, permit, unsignedTransaction: Buffer.from(transaction.serialize()).toString("base64"),
+    ...(profile === APP_SELECTED_PREPARE ? { sendPermit: sendPermitFor(wallet, Buffer.from(transaction.serialize()).toString("base64"), secret) } : {}) };
 }

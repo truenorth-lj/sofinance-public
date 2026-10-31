@@ -124,10 +124,11 @@ export default function SignPage() {
     if (payload.kind === "open-position") captureGrowthEvent(GROWTH_EVENTS.openStarted, openProperties);
     
     try {
-      let prepared = {
+      let prepared: { unsignedTransaction: string; permit: unknown; summary: unknown; sendPermit?: string } = {
         unsignedTransaction: payload.unsignedTransaction,
         permit: payload.submitArgs.permit,
         summary: payload.submitArgs.summary,
+        sendPermit: (payload as { sendPermit?: string }).sendPermit,
       };
       if (payload.kind === "open-position" && payload.openRequest) {
         // MCP open without nftMint: the mint is created here, the server re-prepares with
@@ -139,13 +140,13 @@ export default function SignPage() {
           body: JSON.stringify({ token: signToken, nftMint: mint.publicKey.toBase58() }),
           cache: "no-store",
         });
-        const data = await response.json() as { unsignedTransaction?: string; permit?: string; summary?: OpenPositionSummary; error?: string };
+        const data = await response.json() as { unsignedTransaction?: string; permit?: string; sendPermit?: string; summary?: OpenPositionSummary; error?: string };
         if (!response.ok) throw new Error(notSentRetryMessage(data.error || "Open-position preparation failed"));
         if (identityRef.current !== identity || !data.unsignedTransaction || !data.permit || !data.summary ||
           data.summary.wallet !== wallet || data.summary.nftMint !== mint.publicKey.toBase58()) {
           throw new TxNotSentError("Prepared open-position transaction is incomplete. Nothing was sent.");
         }
-        prepared = { unsignedTransaction: data.unsignedTransaction, permit: data.permit, summary: data.summary };
+        prepared = { unsignedTransaction: data.unsignedTransaction, permit: data.permit, summary: data.summary, sendPermit: data.sendPermit };
       }
       const bytes = Uint8Array.from(atob(prepared.unsignedTransaction), (c) => c.charCodeAt(0));
       const unsigned = VersionedTransaction.deserialize(bytes);
@@ -172,6 +173,7 @@ export default function SignPage() {
         storage: window.localStorage,
         prepared: {
           transaction: unsigned, lastValidBlockHeight: Number.isSafeInteger(lastValidBlockHeight) && lastValidBlockHeight > 0 ? lastValidBlockHeight : Number.MAX_SAFE_INTEGER,
+          sendPermit: prepared.sendPermit,
           positionMint: payload.kind === "open-position" ? (prepared.summary as OpenPositionSummary).nftMint : undefined,
           cosign: payload.kind === "open-position"
             ? (walletSigned) => mint ? addMintSignature(walletSigned, mint) : preserveExtraSignatures(unsigned, walletSigned)

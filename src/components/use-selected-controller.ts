@@ -204,6 +204,8 @@ export function useSelectedController() {
   const actionDisabled = busy || !ready || quoteLoading || !quote || !fresh;
   const walletBlocked = busy;
   const primaryAction = () => { void signAndSend(); };
+  /** Status dialog "Try again": re-prepare and re-sign the same add (only once the last one expired or failed). */
+  const retryAdd = tx.status === "failed" && tx.retryable && !busy ? tx.retry : undefined;
   const changeAmount = (value: string) => {
     inputRevisionRef.current++; invalidateInputPreview(); setAmount(value); clearPreview();
     clearError(); clearQuoteErrors();
@@ -218,7 +220,7 @@ export function useSelectedController() {
   return { wallet, connected, connect, disconnect, isMobile, walletsCount, connectionError,
     discovery, selection, state: visibleState, amount, tolerancePercent, result: displayedResult, attempt, attemptStatus,
     error: error || quoteError, reprepare: tx.status === "failed" && !!tx.retryable, quoteError, quoteErrorCode, quoteErrorOutputMint, showQuoteRecalculate,
-    busy, calculating, now, floorBps, quote, fresh, status,
+    busy, retryAdd, calculating, now, floorBps, quote, fresh, status,
     actionLabel, actionDisabled, walletBlocked, primaryAction, changeAmount, changeTolerance, fillMax,
     choosePosition, chooseAsset, refreshDiscovery, refreshState, retryCalculation,
     loadingDiscovery, loadingState, stateError };

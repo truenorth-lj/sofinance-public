@@ -4,7 +4,7 @@ import "server-only";
 import { CompoundSendError, publicErrorCode, sanitizePublicError } from "./public-error";
 import { isAvailabilityErrorCode, isUpstreamRelayPending, UPSTREAM_UNAVAILABLE_MESSAGE, upstreamQuotePath, upstreamUnavailable } from "./upstream-errors";
 import { SelectedNoRouteError } from "./selected-no-route";
-import { captureApiRouteError, shouldCaptureApiError, shouldCaptureTransactionError } from "./sentry/capture";
+import { captureApiRouteError, shouldCaptureApiError } from "./sentry/capture";
 import { logSafeError } from "./safe-error-log";
 
 /** Selected upstream failures are availability errors, not invalid user input. */
@@ -27,14 +27,14 @@ export function apiError(error: unknown, fallback: string, status = 400, extra?:
   sent?: boolean;
   route?: string;
   request?: { url: string };
-  /** Transaction route: report 4xx operational failures too (expired, unsent, stuck). */
+  /** Transaction route: tag 5xx reports with the send outcome. 4xx is never reported. */
   transaction?: boolean;
 }) {
   // Expected 409 protocol step: the browser still needs to fetch Jupiter. Do not
   // log it as a route failure — `withJupiterRelay` turns this into `jupiter_relay_needed`.
   if (isUpstreamRelayPending(error)) throw error;
   const transaction = extra?.transaction === true;
-  if (transaction ? shouldCaptureTransactionError(error, status) : shouldCaptureApiError(error, status)) {
+  if (shouldCaptureApiError(error, status)) {
     const sentFlag = extra?.sent === false || error instanceof CompoundSendError && error.sent === false ? false : undefined;
     captureApiRouteError(error, {
       fallback, route: extra?.route, request: extra?.request, status,

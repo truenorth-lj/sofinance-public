@@ -16,6 +16,7 @@ import {
   TxNotSentError, TxRunError, TxSendUnknownError, watchTxNotice, type TxAdapter, type TxAttempt, type TxWallet,
 } from "./index";
 import { TX_EXPIRED_MESSAGE } from "@/lib/public-error";
+import type { SendRaw } from "./wallet-send";
 
 const payer = testKeypair(11);
 const cosigner = testKeypair(12);
@@ -178,16 +179,27 @@ describe("wallet send", () => {
     const mismatch = await sendWithWallet(signingWallet(), unsigned(), { sendRaw: async () => SIG }).catch((e) => e);
     expect(mismatch).toBeInstanceOf(TxSendUnknownError);
   });
-  it("relays only the signed bytes with a timeout", async () => {
+  it("relays the signed bytes with the prepared message and its permit, with a timeout", async () => {
     const fetchMock = vi.fn(async () => Response.json({ signature: SIG })); vi.stubGlobal("fetch", fetchMock);
     const timeout = vi.spyOn(AbortSignal, "timeout");
-    const tx = unsigned(); tx.sign([payer]);
-    expect(await relaySignedTransaction(tx)).toBe(SIG);
+    const prepared = unsigned(); const tx = copy(prepared); tx.sign([payer]);
+    expect(await relaySignedTransaction(tx, { prepared, sendPermit: "f".repeat(64) })).toBe(SIG);
     const [url, init] = fetchMock.mock.calls[0]! as unknown as [string, RequestInit];
-    expect(url).toBe("/api/tx-send"); expect(Object.keys(JSON.parse(String(init.body)))).toEqual(["signedTransaction"]);
+    const body = JSON.parse(String(init.body));
+    expect(url).toBe("/api/tx-send"); expect(Object.keys(body)).toEqual(["signedTransaction", "unsignedTransaction", "sendPermit"]);
+    expect(body.unsignedTransaction).toBe(Buffer.from(prepared.serialize()).toString("base64")); expect(body.sendPermit).toBe("f".repeat(64));
     expect(timeout).toHaveBeenCalledWith(RELAY_TIMEOUT_MS); expect(init.signal).toBeInstanceOf(AbortSignal);
     fetchMock.mockResolvedValueOnce(Response.json({ error: "Simulation failed", sent: false }, { status: 400 }));
-    await expect(relaySignedTransaction(tx)).rejects.toMatchObject({ message: "Simulation failed", sent: false });
+    await expect(relaySignedTransaction(tx, { prepared })).rejects.toMatchObject({ message: "Simulation failed", sent: false });
+  });
+  it("passes the pristine prepared transaction and permit to the relay", async () => {
+    const sendRaw = vi.fn<SendRaw>(async (tx) => sigOf(tx));
+    const prepared = unsigned();
+    await sendWithWallet(signingWallet(), prepared, { sendRaw, sendPermit: "permit" });
+    const context = sendRaw.mock.calls[0]![1];
+    expect(context.sendPermit).toBe("permit");
+    expect(Buffer.from(context.prepared.serialize())).toEqual(Buffer.from(prepared.serialize()));
+    expect(context.prepared.signatures.every((sig) => sig.every((b) => b === 0))).toBe(true);
   });
 });
 

@@ -118,8 +118,8 @@ test.describe("J3 sign link, wallet / transaction guards", () => {
     expect(wallet.ledger).toHaveLength(1);
     expect(wallet.ledger[0]).toMatchObject({ outcome: "signed", mode: "mutate-message" });
     expect(sign.broadcasts).toHaveLength(1);
-    // The shared send route carries only the signed bytes (the wallet's added Memo included).
-    expect(Object.keys(sign.broadcasts[0]!.body)).toEqual(["signedTransaction"]);
+    // The shared send route carries the signed bytes (the wallet's added Memo included), the prepared message and its permit.
+    expect(Object.keys(sign.broadcasts[0]!.body)).toEqual(["signedTransaction", "unsignedTransaction", "sendPermit"]);
   });
 
   test("wallet changes instruction data: required-instruction guard, nothing broadcast", async ({ page, wallet, guards }) => {
@@ -160,7 +160,7 @@ test.describe("J3 sign link, wallet / transaction guards", () => {
       await sign.expectStatus(SUCCESS);
       expect(wallet.ledger[0]!.programIds).toContain("L2TExMFKdjpN9kozasaurPPf4nCVfRTb7cTZo5GsqqY");
       expect(sign.broadcasts).toHaveLength(1);
-      expect(Object.keys(sign.broadcasts[0]!.body)).toEqual(["signedTransaction"]);
+      expect(Object.keys(sign.broadcasts[0]!.body)).toEqual(["signedTransaction", "unsignedTransaction", "sendPermit"]);
     });
   }
 

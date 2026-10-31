@@ -42,7 +42,11 @@ test.describe("J2 sign link, happy path", () => {
       expect(sign.broadcasts).toHaveLength(1);
       const call = sign.broadcasts[0]!;
       expect(call.kind).toBe(kind);
-      expect(Object.keys(call.body)).toEqual(["signedTransaction"]);
+      // The relay is permit-bound: signed bytes + the prepared message + the HMAC permit verify-sign-token issued for it.
+      expect(Object.keys(call.body)).toEqual(["signedTransaction", "unsignedTransaction", "sendPermit"]);
+      expect(String(call.body.sendPermit)).toMatch(/^[0-9a-f]{64}$/);
+      const relayedPrepared = VersionedTransaction.deserialize(Buffer.from(String(call.body.unsignedTransaction), "base64"));
+      expect(Buffer.from(relayedPrepared.message.serialize()).equals(Buffer.from(scenario.built.tx.message.serialize()))).toBe(true);
 
       // The posted transaction carries a valid wallet signature over the UNMODIFIED message.
       const posted = VersionedTransaction.deserialize(Buffer.from(String(call.body.signedTransaction), "base64"));

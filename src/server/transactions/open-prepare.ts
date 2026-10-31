@@ -9,6 +9,7 @@ import { assertSolInputAllowed } from "@/lib/sol-input-policy";
 import { runWithSwapFeePaidUpstream } from "@sofinance/engine/fee-waiver";
 import { assertSolSwapFeeCredit } from "./sol-swap-step";
 import { APP_OPEN_PREPARE, MCP_OPEN_PREPARE } from "./surface-policy";
+import { sendPermitFor } from "@/lib/tx-send/permit";
 
 export type OpenPrepareCommand = {
   wallet: string;
@@ -43,9 +44,12 @@ export async function prepareOpen(command: OpenPrepareCommand, readSigningSecret
     ))
     : buildAndSimulateOpenPosition(wallet, selection, amount, range, floorBps, toleranceBps, { nftMint });
   const { summary, transaction } = feePaidUpstream ? await runWithSwapFeePaidUpstream(build) : await build();
-  const permit = issueOpenPositionPermit(readSigningSecret(), {
+  const secret = readSigningSecret();
+  const permit = issueOpenPositionPermit(secret, {
     wallet, message: Buffer.from(transaction.message.serialize()).toString("base64"), summary,
   });
   // Fully unsigned: the client (or MCP agent) signs the wallet first, then the NFT mint.
-  return { summary, permit, unsignedTransaction: Buffer.from(transaction.serialize()).toString("base64") };
+  // Relay permit for /api/tx-send (app surface only; MCP signs on the sign page, which gets it from verify-sign-token).
+  return { summary, permit, unsignedTransaction: Buffer.from(transaction.serialize()).toString("base64"),
+    ...(profile === APP_OPEN_PREPARE ? { sendPermit: sendPermitFor(wallet, Buffer.from(transaction.serialize()).toString("base64"), secret) } : {}) };
 }

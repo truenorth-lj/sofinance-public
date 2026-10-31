@@ -233,6 +233,7 @@ exports[`HTTP withdraw refresh happens only after the successful retry 1`] = `
   "result": {
     "body": {
       "permit": "6f4918bc535668e0a02df014dd039eceec863812ecee8da171a911ce7015e460",
+      "sendPermit": "130fbfac7ee4eb85973f5294286f461e184632f690e7a38dfcd3f3eeeaf92fed",
       "summary": {
         "blockhash": "uY46ibBrA5pEsx4z8iiQ6BpNeBuMR6weo4u2ubREB9q",
         "expiresAt": 1793100075000,
@@ -572,6 +573,7 @@ exports[`compound prepare baseline > HTTP preserves full output, permit, bytes, 
   "result": {
     "body": {
       "permit": "2deb613c92684cbef328527c0f11dcc077e9d82b79f59678592a3e327def2d79",
+      "sendPermit": "4357b9568124424b2101b6ff6f186aef53d7522bd5bc3c3508d8ab686272c8b5",
       "summary": {
         "expiresAt": 1793100060000,
         "lastValidBlockHeight": 150,
@@ -1087,6 +1089,7 @@ exports[`open HTTP accepts micro while MCP rejects it before building > http 1`]
   "result": {
     "body": {
       "permit": "90b2ad9b5fbfc4e63a96a26621e33f814daae4d35fc2d15b8a374ffe1e4f9991",
+      "sendPermit": "4357b9568124424b2101b6ff6f186aef53d7522bd5bc3c3508d8ab686272c8b5",
       "summary": {
         "expiresAt": 1793100060000,
         "lastValidBlockHeight": 150,
@@ -1205,6 +1208,7 @@ exports[`open prepare baseline > HTTP preserves full output, permit, bytes, head
   "result": {
     "body": {
       "permit": "90b2ad9b5fbfc4e63a96a26621e33f814daae4d35fc2d15b8a374ffe1e4f9991",
+      "sendPermit": "4357b9568124424b2101b6ff6f186aef53d7522bd5bc3c3508d8ab686272c8b5",
       "summary": {
         "expiresAt": 1793100060000,
         "lastValidBlockHeight": 150,
@@ -1865,6 +1869,7 @@ exports[`open preserves relay success hints 1`] = `
   "result": {
     "body": {
       "permit": "90b2ad9b5fbfc4e63a96a26621e33f814daae4d35fc2d15b8a374ffe1e4f9991",
+      "sendPermit": "4357b9568124424b2101b6ff6f186aef53d7522bd5bc3c3508d8ab686272c8b5",
       "summary": {
         "expiresAt": 1793100060000,
         "lastValidBlockHeight": 150,
@@ -2030,6 +2035,7 @@ exports[`selected prepare baseline > HTTP preserves full output, permit, bytes, 
         "toleranceBps": 100,
         "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
       },
+      "sendPermit": "4357b9568124424b2101b6ff6f186aef53d7522bd5bc3c3508d8ab686272c8b5",
       "simulated": true,
       "startingBalances": {
         "a": "0",
@@ -2747,6 +2753,7 @@ exports[`selected preserves relay success hints 1`] = `
         "toleranceBps": 100,
         "wallet": "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9",
       },
+      "sendPermit": "4357b9568124424b2101b6ff6f186aef53d7522bd5bc3c3508d8ab686272c8b5",
       "simulated": true,
       "startingBalances": {
         "a": "0",
@@ -2830,6 +2837,7 @@ exports[`withdraw passes the entire raw previous object without parsing at HTTP 
   "result": {
     "body": {
       "permit": "6f4918bc535668e0a02df014dd039eceec863812ecee8da171a911ce7015e460",
+      "sendPermit": "130fbfac7ee4eb85973f5294286f461e184632f690e7a38dfcd3f3eeeaf92fed",
       "summary": {
         "blockhash": "uY46ibBrA5pEsx4z8iiQ6BpNeBuMR6weo4u2ubREB9q",
         "expiresAt": 1793100075000,
@@ -3040,6 +3048,7 @@ exports[`withdraw prepare baseline > HTTP preserves full output, permit, bytes, 
   "result": {
     "body": {
       "permit": "6f4918bc535668e0a02df014dd039eceec863812ecee8da171a911ce7015e460",
+      "sendPermit": "130fbfac7ee4eb85973f5294286f461e184632f690e7a38dfcd3f3eeeaf92fed",
       "summary": {
         "blockhash": "uY46ibBrA5pEsx4z8iiQ6BpNeBuMR6weo4u2ubREB9q",
         "expiresAt": 1793100075000,
@@ -3813,6 +3822,7 @@ exports[`withdraw preserves relay success hints 1`] = `
   "result": {
     "body": {
       "permit": "6f4918bc535668e0a02df014dd039eceec863812ecee8da171a911ce7015e460",
+      "sendPermit": "130fbfac7ee4eb85973f5294286f461e184632f690e7a38dfcd3f3eeeaf92fed",
       "summary": {
         "blockhash": "uY46ibBrA5pEsx4z8iiQ6BpNeBuMR6weo4u2ubREB9q",
         "expiresAt": 1793100075000,

@@ -17,6 +17,8 @@ export type PreparedTx = {
   lastValidBlockHeight: number;
   /** Signers that must sign after the wallet (e.g. a new position's mint keypair). */
   cosign?: (walletSigned: VersionedTransaction) => VersionedTransaction;
+  /** Prepare-issued HMAC permit that `/api/tx-send` requires on the relay path. */
+  sendPermit?: string;
   /** Release secrets held for cosigning; always called once the run ends. */
   dispose?: () => void;
   positionMint?: string;
@@ -75,7 +77,8 @@ export async function runTx<Input, Prepared extends PreparedTx>(
     options.onStage?.("wallet");
     try {
       signature = (await sendWithWallet(wallet, prepared.transaction, {
-        cosign: prepared.cosign, sendRaw: options.sendRaw, stillWanted: options.isCurrent,
+        cosign: prepared.cosign, sendPermit: prepared.sendPermit,
+        sendRaw: options.sendRaw, stillWanted: options.isCurrent,
       })).signature;
     } catch (error) {
       if (!(error instanceof TxSendUnknownError)) throw error;
