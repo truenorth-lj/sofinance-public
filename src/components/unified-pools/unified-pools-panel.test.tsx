@@ -116,18 +116,19 @@ describe("UnifiedPoolsPanel", () => {
     expect(table.querySelector("th[aria-sort=ascending]")!.textContent).toContain("TVL");
   });
 
-  it("searches by token name and filters by chain and risk", async () => {
+  it("searches by token name and filters by chain; there is no risk filter", async () => {
     await render();
     const input = container.querySelector<HTMLInputElement>("input[type=search]")!;
     const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
     await act(async () => { setValue.call(input, "ondo"); input.dispatchEvent(new Event("input", { bubbles: true })); });
     expect(shown()).toEqual([`robinhood:${rhcSpec.poolId.toLowerCase()}`]);
     await act(async () => { setValue.call(input, ""); input.dispatchEvent(new Event("input", { bubbles: true })); });
-    const [chain, , risk] = [...container.querySelectorAll("select")];
+    const selects = [...container.querySelectorAll("select")];
+    expect(selects.map((select) => select.closest("label")?.firstChild?.textContent)).not.toContain("Risk");
+    expect(container.textContent).not.toMatch(/Any risk|No risk flags/);
+    const [chain] = selects;
     await act(async () => { chain!.value = "solana"; chain!.dispatchEvent(new Event("change", { bubbles: true })); });
     expect(shown()).toEqual(["solana:spcxA", "solana:tsla"]);
-    await act(async () => { risk!.value = "freeze"; risk!.dispatchEvent(new Event("change", { bubbles: true })); });
-    expect(shown()).toEqual(["solana:tsla"]);
   });
 
   it("opening a Solana pool connects the Solana wallet and opens Create position", async () => {
@@ -286,6 +287,13 @@ describe("UnifiedPoolsPanel cards (the RWA pairs card fields)", () => {
     const raydium = spcx.querySelector<HTMLAnchorElement>("a[target='_blank']")!;
     expect(raydium.getAttribute("href")).toBe("https://raydium.io/clmm/create-position/?pool_id=spcxA");
     expect(raydium.getAttribute("rel")).toBe("noreferrer");
+  });
+
+  it("shows no risk badges on any card, even for a pool whose row carries freezeRisk", async () => {
+    await render();
+    for (const key of ["solana:spcxA", "solana:tsla", `robinhood:${rhcSpec.poolId.toLowerCase()}`]) {
+      expect(card(key).textContent).not.toMatch(/Freeze risk|Token-2022|No flags|Pool warning/);
+    }
   });
 
   it("keeps Solana-only fields off the Robinhood Chain card", async () => {

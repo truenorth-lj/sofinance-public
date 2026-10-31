@@ -341,6 +341,33 @@ describe("open-position signing and quote refresh", () => {
     expect(quoteCalls).toBe(3);
   });
 
+  it("shows no Freeze risk / Token-2022 chips or generic freeze-authority notes, keeps rent notes and the Risks link", async () => {
+    const original = fetch as unknown as (url: string, init?: RequestInit) => Promise<unknown>;
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => url === "/api/open-quote"
+      ? { ok: true, json: async () => ({ ...quote(), warnings: [
+        "One or both pool tokens use Token-2022. Transfer-fee and freeze extensions are blocked when currently active; freeze authority may still exist.",
+        "A pool mint has a freeze authority. The issuer could freeze accounts later.",
+        "This tick range has no protocol position yet; opening pays extra one-time rent that is not returned to you.",
+      ] }) }
+      : original(url, init)));
+    await mount(); // pair: token2022A and freezeRisk are true
+    expect(container.textContent).not.toMatch(/Freeze risk|Token-2022|freeze authority|freeze token accounts/i);
+    expect(container.textContent).toContain("This tick range has no protocol position yet");
+    expect(container.querySelector("a[href='/docs/risks']")!.textContent).toBe("Read risks before you confirm");
+    expect(signButton().disabled).toBe(false);
+  });
+
+  it("still blocks a paused / frozen / transfer-fee pool asset with the unchanged quote error", async () => {
+    const blocked = "Pool asset currently paused, account frozen, transfer fee charged, or has unsupported settings";
+    const original = fetch as unknown as (url: string, init?: RequestInit) => Promise<unknown>;
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => url === "/api/open-quote"
+      ? { ok: false, json: async () => ({ error: blocked }) }
+      : original(url, init)));
+    await mount();
+    expect(container.textContent).toContain(blocked);
+    expect(signButton().disabled).toBe(true);
+  });
+
   it("lets the user retry a failed refresh without editing a valid amount", async () => {
     await mount();
     failQuote = true;

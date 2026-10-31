@@ -8,7 +8,7 @@ import {
 const pool = (over: Partial<UnifiedPool> & Pick<UnifiedPool, "poolAddress">): UnifiedPool => ({
   key: `${over.chain ?? "solana"}:${over.poolAddress}`, chain: "solana", protocol: "raydium-clmm", pairLabel: "SPCXx/SPCX",
   symbolA: "SPCXx", symbolB: "SPCX", nameA: "SpaceX xStock", nameB: "SpaceX", mintA: "mintX", mintB: "mintS", feeTierBps: 25,
-  tvlUsd: 1000, volume24hUsd: 100, poolFeeApr24hPct: 10, risks: [], ...over,
+  tvlUsd: 1000, volume24hUsd: 100, poolFeeApr24hPct: 10, ...over,
 });
 const aprs = (map: Record<string, number | null>) => (p: UnifiedPool) => map[p.poolAddress] ?? null;
 
@@ -53,8 +53,8 @@ describe("hideDuplicatePools", () => {
 describe("filterPools", () => {
   const list = [
     pool({ poolAddress: "spcx" }),
-    pool({ poolAddress: "tsla", pairLabel: "TSLAx/TSLA", symbolA: "TSLAx", symbolB: "TSLA", nameA: "Tesla xStock", nameB: "Tesla", mintA: "t1", mintB: "t2", risks: ["freeze"] }),
-    pool({ poolAddress: "0xrh", chain: "robinhood", protocol: "uniswap-v4-rhc", pairLabel: "SPCX/SPCXon", symbolA: "SPCX", symbolB: "SPCXon", nameA: "SpaceX", nameB: "SpaceX Ondo", risks: ["pool-warning"] }),
+    pool({ poolAddress: "tsla", pairLabel: "TSLAx/TSLA", symbolA: "TSLAx", symbolB: "TSLA", nameA: "Tesla xStock", nameB: "Tesla", mintA: "t1", mintB: "t2" }),
+    pool({ poolAddress: "0xrh", chain: "robinhood", protocol: "uniswap-v4-rhc", pairLabel: "SPCX/SPCXon", symbolA: "SPCX", symbolB: "SPCXon", nameA: "SpaceX", nameB: "SpaceX Ondo" }),
   ];
   const ids = (f: Partial<typeof DEFAULT_FILTERS>) => filterPools(list, { ...DEFAULT_FILTERS, ...f }).map((p) => p.poolAddress);
   it("searches symbols and names, case-insensitive, every word", () => {
@@ -63,11 +63,14 @@ describe("filterPools", () => {
     expect(ids({ query: "spacex ondo" })).toEqual(["0xrh"]);
     expect(ids({ query: "SPCXx/SPCX" })).toEqual(["spcx"]);
   });
-  it("filters by chain, protocol and risk", () => {
+  it("filters by chain and protocol", () => {
     expect(ids({ chain: "robinhood" })).toEqual(["0xrh"]);
     expect(ids({ protocol: "raydium-clmm" })).toEqual(["spcx", "tsla"]);
-    expect(ids({ risk: "none" })).toEqual(["spcx"]);
-    expect(ids({ risk: "freeze" })).toEqual(["tsla"]);
+  });
+  it("has no risk filter: a stray risk value (e.g. an old ?risk= link) is ignored and every pool stays listed", () => {
+    expect(Object.keys(DEFAULT_FILTERS)).not.toContain("risk");
+    const stray = { ...DEFAULT_FILTERS, risk: "freeze" } as typeof DEFAULT_FILTERS;
+    expect(filterPools(list, stray).map((p) => p.poolAddress)).toEqual(["spcx", "tsla", "0xrh"]);
   });
 });
 

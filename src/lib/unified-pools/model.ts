@@ -13,7 +13,6 @@
 
 export type PoolChain = "solana" | "robinhood";
 export type UnifiedProtocol = "raydium-clmm" | "orca-whirlpool" | "meteora-dlmm" | "uniswap-v4-rhc";
-export type RiskFlag = "freeze" | "token-2022" | "pool-warning";
 
 export const CHAIN_LABELS: Readonly<Record<PoolChain, string>> = { solana: "Solana", robinhood: "Robinhood Chain" };
 export const PROTOCOL_LABELS: Readonly<Record<UnifiedProtocol, string>> = {
@@ -21,11 +20,6 @@ export const PROTOCOL_LABELS: Readonly<Record<UnifiedProtocol, string>> = {
   "orca-whirlpool": "Orca",
   "meteora-dlmm": "Meteora",
   "uniswap-v4-rhc": "Uniswap v4",
-};
-export const RISK_LABELS: Readonly<Record<RiskFlag, string>> = {
-  freeze: "Freeze risk",
-  "token-2022": "Token-2022",
-  "pool-warning": "Pool warning",
 };
 
 export type UnifiedPool = {
@@ -47,7 +41,6 @@ export type UnifiedPool = {
   volume24hUsd: number | null;
   /** Estimated pool fee APR from the last 24h, percent. */
   poolFeeApr24hPct: number | null;
-  risks: RiskFlag[];
 };
 
 /** Estimated highest range APR (7-day average), percent; null when the pool has none (yet). */
@@ -86,16 +79,14 @@ export function hideDuplicatePools(pools: readonly UnifiedPool[], apr7d: Apr7dLo
   return pools.filter((pool) => kept.has(pool.key));
 }
 
-export type RiskFilter = "all" | "none" | RiskFlag;
 export type PoolFilters = {
   query: string;
   chain: PoolChain | "all";
   protocol: UnifiedProtocol | "all";
-  risk: RiskFilter;
   /** Minimum TVL in USD; null = any TVL. Applied before duplicate hiding (see `selectPools`). */
   minTvl: number | null;
 };
-export const DEFAULT_FILTERS: PoolFilters = { query: "", chain: "all", protocol: "all", risk: "all", minTvl: null };
+export const DEFAULT_FILTERS: PoolFilters = { query: "", chain: "all", protocol: "all", minTvl: null };
 
 /** `/app/rwa-pairs` TVL filter presets (USD), next to "Any" and a custom amount (LJ, 2026-10-31). */
 export const TVL_FILTER_PRESETS = [5_000, 10_000, 50_000] as const;
@@ -112,20 +103,18 @@ export function filterPools(pools: readonly UnifiedPool[], filters: PoolFilters)
   return pools.filter((pool) => {
     if (filters.chain !== "all" && pool.chain !== filters.chain) return false;
     if (filters.protocol !== "all" && pool.protocol !== filters.protocol) return false;
-    if (filters.risk === "none" && pool.risks.length > 0) return false;
-    if (filters.risk !== "all" && filters.risk !== "none" && !pool.risks.includes(filters.risk)) return false;
     if (!words.length) return true;
     const haystack = [pool.pairLabel, pool.symbolA, pool.symbolB, pool.nameA, pool.nameB].join(" ").toLowerCase();
     return words.every((word) => haystack.includes(word));
   });
 }
 
-export type SortKey = "apr7d" | "apr24h" | "tvl" | "volume" | "name" | "chain" | "protocol" | "risk";
+export type SortKey = "apr7d" | "apr24h" | "tvl" | "volume" | "name" | "chain" | "protocol";
 export type SortDir = "asc" | "desc";
 export const DEFAULT_SORT: { key: SortKey; dir: SortDir } = { key: "apr7d", dir: "desc" };
-/** Direction a column sorts in on its first click: numbers high→low, text A→Z, risk fewest flags first. */
+/** Direction a column sorts in on its first click: numbers high→low, text A→Z. */
 export const FIRST_CLICK_DIR: Readonly<Record<SortKey, SortDir>> = {
-  apr7d: "desc", apr24h: "desc", tvl: "desc", volume: "desc", name: "asc", chain: "asc", protocol: "asc", risk: "asc",
+  apr7d: "desc", apr24h: "desc", tvl: "desc", volume: "desc", name: "asc", chain: "asc", protocol: "asc",
 };
 
 function sortValue(pool: UnifiedPool, key: SortKey, apr7d: Apr7dLookup): number | string | null {
@@ -137,7 +126,6 @@ function sortValue(pool: UnifiedPool, key: SortKey, apr7d: Apr7dLookup): number 
     case "name": return pool.pairLabel.toLowerCase();
     case "chain": return CHAIN_LABELS[pool.chain];
     case "protocol": return PROTOCOL_LABELS[pool.protocol];
-    case "risk": return pool.risks.length;
   }
 }
 
@@ -167,7 +155,7 @@ export function sortPools(pools: readonly UnifiedPool[], key: SortKey, dir: Sort
  * were hidden.
  * - The TVL minimum comes first (LJ, 2026-10-31): a pool below it never takes part in the duplicate rule, so a tiny
  *   pool with a higher 7-day APR cannot hide the bigger pool of the same pair.
- * - Search and the chain / protocol / risk filters come after: duplicates are decided over the whole (TVL-eligible)
+ * - Search and the chain / protocol filters come after: duplicates are decided over the whole (TVL-eligible)
  *   list, so those filters never promote a pool that lost to a hidden one.
  */
 export function selectPools(pools: readonly UnifiedPool[], options: {

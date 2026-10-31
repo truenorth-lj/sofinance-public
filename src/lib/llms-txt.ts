@@ -55,7 +55,7 @@ SoFinance is not a broker, does not sell stocks, and does not issue tokens. It b
 
 ## What it does
 
-- Lists same-stock pools on Solana (Raydium CLMM, Backpack Securities and xStocks tokens) and Robinhood Chain (Uniswap v4 pools with a reviewed StablePairHook, Robinhood and Ondo Global Markets tokens), with fee tier, TVL, 24h volume and token risk flags.
+- Lists same-stock pools on Solana (Raydium CLMM, Backpack Securities and xStocks tokens) and Robinhood Chain (Uniswap v4 pools with a reviewed StablePairHook, Robinhood and Ondo Global Markets tokens), with fee tier, TVL and 24h volume.
 - Suggests a range: on Solana the app prices range presets (Micro, Tight, Standard, Wide) against the last 7 full days of volume and current liquidity. You can override the suggestion.
 - Opens the position: if your wallet does not hold the two tokens in the right ratio, part of the deposit is swapped into the pool tokens first. Solana transactions are simulated again before they are sent.
 - Manages the position: on Solana, add liquidity, compound collected fees back into the position, or withdraw at any time; on Robinhood Chain, close the position at any time, which returns both pool tokens and the fees it has collected.

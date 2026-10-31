@@ -7,7 +7,7 @@ import { exactAprTitle, formatAprPct } from "@/lib/apr-labels/format-apr";
 import { cn } from "@/lib/cn";
 import type { TokenIconMap } from "@/lib/token-icons/map";
 import type { Apr7dState } from "@/lib/unified-pools/apr7d";
-import { CHAIN_LABELS, PROTOCOL_LABELS, RISK_LABELS, type PoolChain, type SortDir, type SortKey, type UnifiedPool } from "@/lib/unified-pools/model";
+import { CHAIN_LABELS, PROTOCOL_LABELS, type PoolChain, type SortDir, type SortKey, type UnifiedPool } from "@/lib/unified-pools/model";
 import { InfoTip } from "../info-tip";
 import { PairTokenIcons } from "../pair-token-icons";
 
@@ -30,13 +30,6 @@ export function ChainBadge({ chain, tone = "light", wrapBelowMd }: { chain: Pool
   return <span data-testid="chain-badge" className={cn(chip, wrapBelowMd && "max-md:h-auto max-md:whitespace-normal max-md:px-1.5 max-md:py-1 max-md:text-center max-md:text-[9px] max-md:leading-tight max-md:tracking-[0.08em]", chain === "robinhood"
     ? tone === "light" ? "bg-mint text-ink" : "bg-mint/90 text-ink"
     : tone === "light" ? "bg-lilac text-ink" : "bg-lilac/90 text-ink")}>{CHAIN_LABELS[chain]}</span>;
-}
-
-export function RiskChips({ pool, tone = "light" }: { pool: UnifiedPool; tone?: "light" | "dark" }) {
-  if (!pool.risks.length) return <span className={cn("text-xs", tone === "light" ? "text-ink/55" : "text-smoke")}>No flags</span>;
-  return <span className="flex flex-wrap gap-1.5">{pool.risks.map((risk) => (
-    <span key={risk} className={cn(chip, risk === "freeze" ? "bg-coral text-ink" : tone === "light" ? "bg-white text-ink" : "border border-white/25 text-cream/80")}>{RISK_LABELS[risk]}</span>
-  ))}</span>;
 }
 
 export function Apr7dValue({ state, size = "lg" }: { state: Apr7dState | undefined; size?: "lg" | "sm" }) {
@@ -89,7 +82,6 @@ export const COLUMNS: { key: SortKey; label: string; short?: string; help?: stri
   { key: "apr24h", label: APR24H_SHORT, short: "Est. fee APR 24h", help: POOL_FEE_APR_24H_HELP, numeric: true, wide: true },
   { key: "tvl", label: "TVL", numeric: true, wide: true },
   { key: "volume", label: "24h vol", numeric: true, wide: true },
-  { key: "risk", label: "Risk", wide: true },
 ];
 /** Cell classes below 768px: tighter padding; `wide` columns hidden. From 768px up the classes are unchanged. */
 const narrow = "max-md:px-1.5";
@@ -98,7 +90,7 @@ const wideOnly = "max-md:hidden";
 /**
  * The pool list (table) view, shared by `/app/rwa-pairs` (List view, sortable) and the homepage (fixed order, no
  * `onSort`): pair with token icons (letter avatar until a logo loads, or when there is none), chain badge, protocol,
- * Est. APR · 7d, 24h fee APR, TVL, 24h volume, risk flags and the open action. From 768px up the Pool column stays
+ * Est. APR · 7d, 24h fee APR, TVL, 24h volume and the open action. From 768px up the Pool column stays
  * pinned while the table scrolls sideways if needed; below 768px only Pool (with TVL as a small line), Chain,
  * Est. APR · 7d and an icon-only Open are shown, so the table fits the screen with no horizontal scroll.
  */
@@ -157,7 +149,6 @@ export function PoolTable({ pools, apr, actionFor, sort, onSort, icons, highligh
             title={apr24hPending ? undefined : exactAprTitle(pool.poolFeeApr24hPct)}>{apr24hPending ? "…" : pct(pool.poolFeeApr24hPct)}</td>
           <td className={cn("px-3 py-3 text-right tabular-nums text-cream/80", wideOnly)}>{money(pool.tvlUsd)}</td>
           <td className={cn("px-3 py-3 text-right tabular-nums text-cream/80", wideOnly)}>{money(pool.volume24hUsd)}</td>
-          <td className={cn("px-3 py-3", wideOnly)}><RiskChips pool={pool} tone="dark" /></td>
           <td className={cn("px-3 py-3 text-right", narrow)}><OpenButton action={actionFor(pool)} label={pool.pairLabel} compact iconOnlyBelowMd /></td>
         </tr>
       ))}</tbody>
