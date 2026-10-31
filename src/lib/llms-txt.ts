@@ -83,7 +83,6 @@ SoFinance is not a broker, does not sell stocks, and does not issue tokens. It b
 - Liquidity providing is not risk-free. You can end up with less value than if you had held the tokens.
 - The two versions of the same stock can trade at a temporary premium or discount to each other; the token mix in your position shifts as price moves (impermanent loss).
 - Out of range: no trading fees collected.
-- Issuer controls: tokenized stocks may keep freeze or other issuer authorities. A freeze can block transfers or withdrawals even though SoFinance is non-custodial.
 - Smart contract risk in Raydium, Uniswap v4 and its hooks, Jupiter, token programs and related onchain programs.
 - Regional restrictions: token issuers and venues restrict who may hold or trade these assets (for example, xStocks are not offered to US persons). That is outside SoFinance's control.
 
