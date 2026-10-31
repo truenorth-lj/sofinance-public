@@ -2,6 +2,7 @@ import "@/lib/engine-host";
 import "server-only";
 import { getTokenMetadata, trustedIcon } from "@sofinance/engine/token-metadata";
 import { DEXSCREENER_CHAIN_ID, GECKOTERMINAL_NETWORK } from "@sofinance/engine/protocols/uniswap-v4/market-data";
+import type { ThrottleGate } from "@/lib/range-apr/throttle-gate";
 import { MANUAL_TOKEN_ICONS, iconAddress, validIconAddress, type IconChain, type IconSource, type TokenIconRow } from "./map";
 
 /** One source: address list in, raw icon value per address out (unvalidated). Must never throw for "not listed". */
@@ -11,10 +12,17 @@ export type IconSources = { source: IconSource; lookup: IconLookup }[];
 const CHUNK = 100;
 const TIMEOUT_MS = 6_000;
 
-async function getJson(url: string, fetcher: typeof fetch, signal?: AbortSignal): Promise<unknown> {
-  const timeout = AbortSignal.timeout(TIMEOUT_MS);
-  const response = await fetcher(url, { headers: { accept: "application/json" }, signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
-  return response.ok ? response.json() : null;
+async function getJson(url: string, fetcher: typeof fetch, signal?: AbortSignal, gate?: ThrottleGate): Promise<unknown> {
+  const call = async () => {
+    const timeout = AbortSignal.timeout(TIMEOUT_MS);
+    const response = await fetcher(url, { headers: { accept: "application/json" }, signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
+    if (response.status === 429) gate?.block();
+    return response.ok ? response.json() : null;
+  };
+  if (!gate) return call();
+  // Through the cron run's GeckoTerminal gate: spaced with every other call, refused after a 429.
+  const run = await gate.run(call);
+  return "value" in run ? run.value : null;
 }
 
 const chunks = (list: string[]) => Array.from({ length: Math.ceil(list.length / CHUNK) }, (_, i) => list.slice(i * CHUNK, (i + 1) * CHUNK));
@@ -59,11 +67,11 @@ export const dexScreenerIcons = (fetcher: typeof fetch = fetch): IconLookup => a
  * "missing.png" placeholder counts as none.
  */
 export const GECKOTERMINAL_TOKENS_PER_CALL = 30;
-export const geckoTerminalIcons = (fetcher: typeof fetch = fetch): IconLookup => async (addresses, signal) => {
+export const geckoTerminalIcons = (fetcher: typeof fetch = fetch, gate?: ThrottleGate): IconLookup => async (addresses, signal) => {
   const out: Record<string, unknown> = {};
   for (let i = 0; i < addresses.length; i += GECKOTERMINAL_TOKENS_PER_CALL) {
     const part = addresses.slice(i, i + GECKOTERMINAL_TOKENS_PER_CALL);
-    const body = await getJson(`https://api.geckoterminal.com/api/v2/networks/${GECKOTERMINAL_NETWORK}/tokens/multi/${part.join(",")}`, fetcher, signal) as
+    const body = await getJson(`https://api.geckoterminal.com/api/v2/networks/${GECKOTERMINAL_NETWORK}/tokens/multi/${part.join(",")}`, fetcher, signal, gate) as
       { data?: unknown } | null;
     for (const token of Array.isArray(body?.data) ? body.data : []) {
       const attributes = (token as { attributes?: { address?: unknown; image_url?: unknown } } | null)?.attributes;
@@ -105,5 +113,6 @@ export async function resolveTokenIcons(chain: IconChain, addresses: readonly st
 
 export const solanaIconSources = (fetcher?: typeof fetch): IconSources =>
   [{ source: "jupiter", lookup: jupiterIcons(fetcher) }, { source: "raydium", lookup: raydiumIcons(fetcher) }];
-export const rhcIconSources = (fetcher?: typeof fetch): IconSources =>
-  [{ source: "dexscreener", lookup: dexScreenerIcons(fetcher) }, { source: "geckoterminal", lookup: geckoTerminalIcons(fetcher) }];
+/** `gate`: the cron run's GeckoTerminal gate (the daily icon pass), so its call is spaced and stops after a 429. */
+export const rhcIconSources = (fetcher?: typeof fetch, gate?: ThrottleGate): IconSources =>
+  [{ source: "dexscreener", lookup: dexScreenerIcons(fetcher) }, { source: "geckoterminal", lookup: geckoTerminalIcons(fetcher, gate) }];

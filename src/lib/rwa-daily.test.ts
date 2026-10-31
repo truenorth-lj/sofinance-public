@@ -1,32 +1,42 @@
 import { describe, expect, it } from "vitest";
 import {
-  dailyWindow,
+  countsForTaipeiDay,
+  taipeiDay,
+  taipeiDayWindowEnd,
   validateHistoryRange,
   volumeWindowEnd,
 } from "./rwa-daily";
 import { validRwaAuthorization } from "./rwa-auth";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { APR_SNAPSHOT_MAX_AGE_MS, RWA_PAIRS_STALE_MS, RWA_REFRESH_CRON, aprSnapshotDelayed, aprSnapshotExpired } from "./rwa-freshness";
+import {
+  APR_7D_SNAPSHOT_MAX_AGE_MS, APR_SNAPSHOT_DELAYED_AFTER_MS, APR_SNAPSHOT_MAX_AGE_MS, RWA_PAIRS_STALE_MS, RWA_REFRESH_CRON,
+  SAVED_PRICE_HISTORY_MAX_AGE_MS, aprSnapshotDelayed, aprSnapshotExpired, aprSnapshotLate,
+} from "./rwa-freshness";
 import { payloadFixture } from "./range-apr/payload.fixture";
 
 describe("RWA observation boundaries", () => {
-  it("dates in Taipei and accepts only the morning capture window", () => {
-    expect(dailyWindow(Date.parse("2026-10-13T23:00:00Z")).date).toBe(
-      "2026-10-14",
-    );
-    expect(dailyWindow(Date.parse("2026-10-14T00:09:59Z")).eligible).toBe(
-      false,
-    );
-    expect(dailyWindow(Date.parse("2026-10-14T00:10:00Z")).eligible).toBe(true);
-    expect(dailyWindow(Date.parse("2026-10-14T01:09:59Z")).eligible).toBe(true);
-    expect(dailyWindow(Date.parse("2026-10-14T01:10:00Z")).eligible).toBe(
-      false,
-    );
+  it("dates history rows by the Taipei calendar day at any time of day (no capture window)", () => {
+    expect(taipeiDay(Date.parse("2026-10-13T15:59:59Z"))).toEqual({ date: "2026-10-13", start: Date.parse("2026-10-12T16:00:00Z") });
+    expect(taipeiDay(Date.parse("2026-10-13T16:00:00Z"))).toEqual({ date: "2026-10-14", start: Date.parse("2026-10-13T16:00:00Z") });
+    expect(taipeiDay(Date.parse("2026-10-14T12:15:00Z")).date).toBe("2026-10-14");
     expect(volumeWindowEnd(Date.parse("2026-10-13T23:00:00Z"))).toBe(
       "2026-10-13T00:00:00.000Z",
     );
   });
+  it("day boundary: only runs whose UTC volume window is the Taipei day's own (08:00 Taipei on) count for that day", () => {
+    expect(taipeiDayWindowEnd("2026-10-15")).toBe("2026-10-15T00:00:00.000Z");
+    // 00:15 and 04:15 Taipei on 10-15 are still in 10-14's UTC day: their window is 10-14's.
+    for (const at of ["2026-10-14T16:15:00Z", "2026-10-14T20:15:00Z", "2026-10-14T23:59:59Z"]) {
+      expect(taipeiDay(Date.parse(at)).date).toBe("2026-10-15");
+      expect(volumeWindowEnd(Date.parse(at))).toBe("2026-10-14T00:00:00.000Z");
+      expect(countsForTaipeiDay(Date.parse(at))).toBe(false);
+    }
+    // 08:00 Taipei onwards (00:00 UTC): the day's own window, through 23:59 Taipei.
+    for (const at of ["2026-10-15T00:00:00Z", "2026-10-15T00:15:00Z", "2026-10-15T12:15:00Z", "2026-10-15T15:59:59Z"])
+      expect(countsForTaipeiDay(Date.parse(at))).toBe(true);
+  });
+
   it("rejects invalid dates, reverse ranges and more than 366 days", () => {
     expect(() => validateHistoryRange("2026-02-30", "2026-03-01")).toThrow();
     expect(() => validateHistoryRange("2026-10-14", "2026-10-13")).toThrow();
@@ -52,22 +62,42 @@ describe("RWA observation boundaries", () => {
         stale: true,
       },
     });
-    // A daily snapshot stays on screen until after the next day's run (00:15 UTC) plus grace.
+    // A daily 7d snapshot keeps its number for 48h from its chain observation (shown "Data delayed" after 26h).
     expect(aprSnapshotExpired(payload, Date.parse("2026-10-14T01:00:00Z"))).toBe(false);
-    expect(aprSnapshotExpired(payload, Date.parse("2026-10-15T00:14:00Z"))).toBe(false);
-    expect(aprSnapshotExpired(payload, Date.parse("2026-10-15T02:14:00Z"))).toBe(false);
-    expect(aprSnapshotExpired(payload, Date.parse("2026-10-15T02:16:00Z"))).toBe(true);
+    expect(aprSnapshotExpired(payload, Date.parse("2026-10-15T02:16:00Z"))).toBe(false);
+    expect(aprSnapshotExpired(payload, Date.parse("2026-10-16T00:14:00Z"))).toBe(false);
+    expect(aprSnapshotExpired(payload, Date.parse("2026-10-16T00:16:00Z"))).toBe(true);
     expect(aprSnapshotExpired(payloadFixture({ freshness: { snapshotAt: "not a date", stale: true } }), Date.now())).toBe(true);
+  });
+  it("7d rule: fresh under 26h, number + Data delayed from 26h to 48h, expired after 48h; the 24h rule stays 26h", () => {
+    const at = Date.parse("2026-10-30T11:03:00Z");
+    const payload = payloadFixture({ freshness: { snapshotAt: "2026-10-30T11:03:00Z", chainObservedAt: "2026-10-30T11:03:00Z", stale: false } });
+    const h = 3_600_000;
+    expect(APR_SNAPSHOT_DELAYED_AFTER_MS).toBe(26 * h);
+    expect(APR_SNAPSHOT_MAX_AGE_MS).toBe(26 * h);
+    expect(RWA_PAIRS_STALE_MS).toBe(26 * h);
+    expect(APR_7D_SNAPSHOT_MAX_AGE_MS).toBe(48 * h);
+    expect(SAVED_PRICE_HISTORY_MAX_AGE_MS).toBe(48 * h);
+    for (const [ageH, late, expired] of [[1, false, false], [25.9, false, false], [26.1, true, false], [47.9, true, false], [48.1, true, true]] as const) {
+      expect([ageH, aprSnapshotLate(payload, at + ageH * h), aprSnapshotExpired(payload, at + ageH * h)]).toEqual([ageH, late, expired]);
+    }
+  });
+  it("an estimate from saved price history is Data delayed now and expires 48h after its candles", () => {
+    const h = 3_600_000;
+    const payload = payloadFixture({ freshness: { snapshotAt: "2026-10-31T14:36:00Z", chainObservedAt: "2026-10-31T14:36:00Z", volumeObservedAt: "2026-10-30T11:03:00Z", stale: true } });
+    payload.sample.priceHistoryStale = true;
+    const now = Date.parse("2026-10-31T14:40:00Z");
+    expect(aprSnapshotLate(payload, now)).toBe(true);
+    expect(aprSnapshotExpired(payload, now)).toBe(false);
+    expect(aprSnapshotDelayed({ chainObservedAt: "2026-10-31T14:36:00Z", volumeObservedAt: "2026-10-31T14:36:00Z", windowEndUtc: "2026-10-31T00:00:00Z", priceHistoryStale: true }, now)).toBe(true);
+    expect(aprSnapshotExpired(payload, Date.parse("2026-10-30T11:03:00Z") + 48 * h + 60_000)).toBe(true);
   });
   it("keeps the display window longer than the production cron interval", () => {
     const vercel = JSON.parse(readFileSync(resolve("vercel.json"), "utf8")) as { crons: { path: string; schedule: string }[] };
     const cron = vercel.crons.find((entry) => entry.path === "/api/internal/rwa-refresh");
     expect(cron?.schedule).toBe(RWA_REFRESH_CRON);
-    // Daily, at a minute inside the 00:10–01:10 UTC (08:10–09:10 Taipei) daily-sample window.
-    const [minute, hour, ...rest] = RWA_REFRESH_CRON.split(" ");
-    expect(rest).toEqual(["*", "*", "*"]);
-    expect(Number(hour) * 60 + Number(minute)).toBeGreaterThanOrEqual(10);
-    expect(Number(hour) * 60 + Number(minute)).toBeLessThan(70);
+    // Every 4 hours at minute 15 (6 runs a day), one of them at 00:15 UTC right after the UTC volume day closes.
+    expect(RWA_REFRESH_CRON).toBe("15 */4 * * *");
     expect(APR_SNAPSHOT_MAX_AGE_MS).toBeGreaterThan(24 * 3_600_000);
   });
 });
@@ -102,6 +132,7 @@ describe("stale thresholds vs the refresh cron", () => {
     expect(longestCronGapMs("15 0 * * *")).toBe(24 * 3_600_000);
     expect(longestCronGapMs("*/15 * * * *")).toBe(15 * 60_000);
     expect(longestCronGapMs("0 0,6 * * *")).toBe(18 * 3_600_000);
+    expect(longestCronGapMs("15 */4 * * *")).toBe(4 * 3_600_000);
   });
 
   it("server (/api/rwa-pairs) and client (7d APR) thresholds outlast the gap between vercel.json refresh runs", () => {

@@ -7,6 +7,7 @@ vi.mock("./range-apr/onchain-liquidity", () => ({ readOnchainPoolLiquidity: read
 
 import { clearPoolRangeAprCache, fetchPoolRangeApr, RANGE_APR_ASSUMPTIONS } from "./pool-range-apr";
 import { ThrottleGate } from "./range-apr/throttle-gate";
+import { createCronGeckoGate } from "./pool-metrics/gecko";
 
 const NO_WAIT = { sleep: async (ms: number) => { void ms; } };
 /** A fresh, unspaced gate per call so cooldowns never leak between tests. */
@@ -144,6 +145,22 @@ describe("fetchPoolRangeApr", () => {
     expect(payload.presets.every((preset) => preset.estimate.status === "ok")).toBe(true);
   });
 
+  it("the cron gate never retries a GeckoTerminal call (a retry would skip its 2.5 s spacing); Raydium still retries", async () => {
+    let hourCalls = 0, idsCalls = 0;
+    const healthy = fetcher().impl;
+    const impl: typeof fetch = async (input, init) => {
+      if (String(input).includes("/ohlcv/hour") && ++hourCalls <= 1) return new Response("{}", { status: 503 });
+      if (String(input).includes("/pools/info/ids") && ++idsCalls <= 1) return new Response("{}", { status: 503 });
+      return healthy(input, init);
+    };
+    const cron = createCronGeckoGate({ sleep: async (ms: number) => { void ms; } });
+    expect(cron.maxAttempts).toBe(1);
+    const payload = await fetchPoolRangeApr(POOL, { fetcher: impl, nowSeconds: NOW, retry: NO_WAIT, gate: cron, bypassCache: true });
+    expect(hourCalls).toBe(1);
+    expect(idsCalls).toBe(2);
+    expect(payload.sample.degraded).toBe(true);
+  });
+
   it("does not retry a 429: it opens the gate's cooldown (Retry-After honoured) and later pools make no GeckoTerminal call", async () => {
     const shared = gate();
     const healthy = fetcher().impl;
@@ -222,10 +239,13 @@ describe("fetchPoolRangeApr", () => {
     const good = await fetchPoolRangeApr(POOL, { fetcher: fetcher().impl, nowSeconds: NOW, retry: NO_WAIT, gate: gate(), bypassCache: true });
     const broken = fetcher({ hourlyOk: false }).impl;
     const soon = await fetchPoolRangeApr(POOL, { fetcher: broken, nowSeconds: NOW + 3_600, retry: NO_WAIT, gate: gate(), bypassCache: true });
-    expect(soon.sample).toMatchObject({ degraded: false, occupancySource: "hourly-candles" });
+    expect(soon.sample).toMatchObject({ degraded: false, occupancySource: "hourly-candles", priceHistoryStale: true });
+    expect(good.sample.priceHistoryStale).toBeUndefined();
     expect(soon.sample.issues.some((issue) => /using price history cached 60 min ago/.test(issue))).toBe(true);
     expect(soon.presets.map((preset) => preset.estimate.status)).toEqual(good.presets.map((preset) => preset.estimate.status));
-    const later = await fetchPoolRangeApr(POOL, { fetcher: broken, nowSeconds: NOW + 7 * 3_600, retry: NO_WAIT, gate: gate(), bypassCache: true });
+    const day2 = await fetchPoolRangeApr(POOL, { fetcher: broken, nowSeconds: NOW + 47 * 3_600, retry: NO_WAIT, gate: gate(), bypassCache: true });
+    expect(day2.sample).toMatchObject({ degraded: false, priceHistoryStale: true }); // saved history is usable up to 48h
+    const later = await fetchPoolRangeApr(POOL, { fetcher: broken, nowSeconds: NOW + 49 * 3_600, retry: NO_WAIT, gate: gate(), bypassCache: true });
     expect(later.sample.degraded).toBe(true);
   });
 

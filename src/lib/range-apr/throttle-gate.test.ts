@@ -35,6 +35,24 @@ describe("ThrottleGate", () => {
     expect(await gate.run(async () => ++ran)).toEqual({ value: 1 });
   });
 
+  it("sticky (cron): remembers a 429 for the rest of the run and refuses even after the cooldown", async () => {
+    const c = clock();
+    const gate = new ThrottleGate({ minSpacingMs: 0, minCooldownMs: 5_000, stickyBlock: true, now: c.now, sleep: c.sleep });
+    expect(gate.hit429).toBe(false);
+    gate.block(5_000);
+    c.advance(60_000);
+    expect(gate.hit429).toBe(true);
+    expect(gate.blockedForMs()).toBe(5_000);
+    let ran = 0;
+    expect(await gate.run(async () => ++ran)).toEqual({ blocked: 5_000 });
+    expect(ran).toBe(0);
+  });
+
+  it("maxAttempts defaults to unlimited and is at least 1", () => {
+    expect(new ThrottleGate().maxAttempts).toBe(Number.POSITIVE_INFINITY);
+    expect(new ThrottleGate({ maxAttempts: 0 }).maxAttempts).toBe(1);
+  });
+
   it("clamps the cooldown and defaults it when there is no Retry-After", () => {
     const c = clock();
     const gate = new ThrottleGate({ defaultCooldownMs: 20_000, minCooldownMs: 5_000, maxCooldownMs: 60_000, now: c.now });

@@ -6,6 +6,7 @@ import { MANUAL_TOKEN_ICONS, iconFor, tokenIconMap } from "./map";
 import { UNIV4_RHC_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/uniswap-v4/constants";
 import { dexScreenerIcons, geckoTerminalIcons, raydiumIcons, resolveTokenIcons, type IconSources } from "./resolve";
 import { storeRequestSchema } from "../rwa-store-types";
+import { ThrottleGate } from "../range-apr/throttle-gate";
 
 const SPCXX = "Xs3oZwbHvqis4NYcf4YKWmEia2eC84wSiVrcYcTqpH8";
 const OTHER = "So11111111111111111111111111111111111111112";
@@ -72,6 +73,17 @@ describe("token icon sources", () => {
     expect(urls[0]).toContain("/networks/robinhood/tokens/multi/");
     expect(rows.map((row) => row.address).sort()).toEqual([...tokens].sort());
     expect(rows.every((row) => row.source === "geckoterminal" && row.image.startsWith("https://coin-images.coingecko.com/"))).toBe(true);
+  });
+
+  it("with the cron run's GeckoTerminal gate: a 429 blocks the gate and later icon calls are refused unsent", async () => {
+    const gate = new ThrottleGate({ minSpacingMs: 0, sleep: async () => undefined });
+    let calls = 0;
+    const fetcher = vi.fn(async () => { calls++; return new Response("{}", { status: 429 }); }) as unknown as typeof fetch;
+    const lookup = geckoTerminalIcons(fetcher, gate);
+    expect(await lookup([RHC_SPCX.toLowerCase()])).toEqual({});
+    expect(gate.hit429).toBe(true);
+    expect(await lookup([RHC_SPCX.toLowerCase()])).toEqual({});
+    expect(calls).toBe(1);
   });
 
   it("keeps every manual icon on ICON_HOSTS, including the Raydium / DexScreener / CoinGecko fallback hosts", () => {

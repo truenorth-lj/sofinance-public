@@ -2,13 +2,13 @@ import { UNIV4_RHC_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/uniswap
 import "server-only";
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
-import { and, asc, between, eq, exists, gt, inArray, isNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, between, eq, gt, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import * as schema from "../db/schema";
 import { assertRwaDatabaseIdentity } from "./rwa-database";
 export { createRwaDatabase } from "./rwa-database";
 import { getRwaConfig } from "./config/rwa-env";
-import { dailyWindow, validateHistoryRange, volumeWindowEnd } from "./rwa-daily";
+import { taipeiDay, taipeiDayWindowEnd, validateHistoryRange, volumeWindowEnd } from "./rwa-daily";
 import { DEFAULT_PROTOCOL } from "@sofinance/engine/protocols/types";
 import { sortPairs, type DiscoverRwaPairsResult, type RwaPairRow } from "./rwa-pairs";
 import { pickHighestAprPreset } from "./range-apr/preset-list";
@@ -63,6 +63,9 @@ function pair(row: typeof pool.$inferSelect): RwaPairRow {
     estimatedFeeAprPct: row.poolFeeAprPct } as RwaPairRow;
 }
 
+/** Queue key of the APR cron: latest of the saved snapshot and the last attempt (NULL = never refreshed). */
+const refreshedAtSql = sql<string | null>`GREATEST(${apr.payloadSnapshotAt},${apr.lastAttemptAt})`;
+
 export class PostgresRwaStore implements RwaStore {
   private readonly orm: Database;
   constructor(public readonly db: postgres.Sql, private readonly clock: () => number = Date.now) {
@@ -104,11 +107,12 @@ export class PostgresRwaStore implements RwaStore {
       })) };
     },
     activePools: async () => {
-      const rows = await this.orm.select({ pool, profile: apr.profileCache }).from(pool)
+      const rows = await this.orm.select({ pool, profile: apr.profileCache, refreshedAt: refreshedAtSql }).from(pool)
         .innerJoin(feed, and(eq(feed.feedKey, pool.feedKey), eq(feed.generationId, pool.lastSeenGeneration)))
         .leftJoin(apr, eq(apr.poolAddress, pool.poolAddress)).where(eq(feed.feedKey, FEED_KEY))
         .orderBy(asc(pool.poolAddress));
-      return rows.map((row) => ({ pair: pair(row.pool), metricsObservedAt: iso(row.pool.metricsObservedAt), profile: row.profile }));
+      return rows.map((row) => ({ pair: pair(row.pool), metricsObservedAt: iso(row.pool.metricsObservedAt), profile: row.profile,
+        refreshedAt: row.refreshedAt ? iso(row.refreshedAt) : null }));
     },
     claim: async input => {
       const owner = randomUUID();
@@ -146,7 +150,7 @@ export class PostgresRwaStore implements RwaStore {
       return result;
     }),
     publishDiscovery: input => this.publish(input.lease, input.data),
-    prepareDaily: input => this.prepareDaily(input.lease),
+    prepareDaily: input => this.prepareDaily(input.lease, input.includeRhc ?? true),
     saveApr: input => this.saveApr(input.lease, input.data),
     saveTokenIcons: input => this.saveTokenIcons(input.lease, input.data),
     ensureRhcRoster: input => this.ensureRhcRoster(input.lease, input.data as RhcRosterRow[]),
@@ -224,11 +228,15 @@ export class PostgresRwaStore implements RwaStore {
         await tx.insert(pool).values({ poolAddress: spec.poolId.toLowerCase(), feedKey: FEED_KEY_RHC, ...values })
           .onConflictDoUpdate({ target: pool.poolAddress, set: { ...values, lastSeenAt: nowSql as unknown as string } });
       }
-      const saved = await tx.select({ poolAddress: apr.poolAddress, profile: apr.profileCache }).from(apr)
+      const saved = await tx.select({ poolAddress: apr.poolAddress, profile: apr.profileCache, refreshedAt: refreshedAtSql }).from(apr)
         .where(inArray(apr.poolAddress, rows.map((row) => row.poolId.toLowerCase())));
       const profiles = Object.fromEntries(rows.map((row) => [row.poolId.toLowerCase(), null])) as Record<string, StoredProfile | null>;
-      for (const row of saved) profiles[row.poolAddress] = row.profile ?? null;
-      return { pools: rows.length, profiles };
+      const refreshedAt = Object.fromEntries(rows.map((row) => [row.poolId.toLowerCase(), null])) as Record<string, string | null>;
+      for (const row of saved) {
+        profiles[row.poolAddress] = row.profile ?? null;
+        refreshedAt[row.poolAddress] = row.refreshedAt ? iso(row.refreshedAt) : null;
+      }
+      return { pools: rows.length, profiles, refreshedAt };
     });
   }
 
@@ -275,7 +283,7 @@ export class PostgresRwaStore implements RwaStore {
     return { ...row.payload, freshness: { snapshotAt: iso(row.payloadSnapshotAt), chainObservedAt: chain,
       economicsObservedAt: row.economicsObservedAt ? iso(row.economicsObservedAt) : undefined,
       volumeObservedAt: volume, stale: aprSnapshotDelayed({ chainObservedAt: chain, volumeObservedAt: volume,
-        windowEndUtc: row.payload.sample.windowEndUtc }, this.clock()),
+        windowEndUtc: row.payload.sample.windowEndUtc, priceHistoryStale: row.payload.sample.priceHistoryStale }, this.clock()),
       lastAttemptStatus: row.lastAttemptStatus } };
   }
 
@@ -307,28 +315,39 @@ export class PostgresRwaStore implements RwaStore {
     });
   }
 
-  private async prepareDaily(lease: Lease) {
+  /**
+   * Today's (Taipei) pending history rows for the active pools (current generation) of both feeds, one per pool
+   * (primary key pool + date, ON CONFLICT DO NOTHING: idempotent across the day's runs), optionally for one pool.
+   * Every active pool gets a row every day the cron runs: without a successful update it ends `missing` /
+   * `failed` / `degraded`, so the history has no silent gaps.
+   */
+  private async seedDaily(tx: Transaction, day: { date: string; start: number }, poolId?: string, includeRhc = true) {
+    await tx.execute(sql`INSERT INTO ${daily}
+      (pool_address,chain,protocol,snapshot_date,scheduled_for,mint_a,mint_b,symbol_a,symbol_b,
+       tvl_usd,volume_24h_usd,fees_24h_usd,pool_fee_apr_pct,pool_metrics_observed_at,algorithm_version)
+      SELECT ${pool.poolAddress},${pool.chain},${pool.protocol},${day.date}::date,${new Date(day.start).toISOString()}::timestamptz,
+        ${pool.mintA},${pool.mintB},${pool.symbolA},${pool.symbolB},${pool.tvlUsd},
+        ${pool.volume24hUsd},${pool.fees24hUsd},${pool.poolFeeAprPct},${pool.metricsObservedAt},${ALGORITHM_VERSION}
+      FROM ${pool} JOIN ${feed} ON ${feed.feedKey}=${pool.feedKey} AND ${feed.generationId}=${pool.lastSeenGeneration}
+      WHERE ${feed.feedKey} IN (${FEED_KEY},${includeRhc ? FEED_KEY_RHC : FEED_KEY}) ${poolId ? sql`AND ${pool.poolAddress}=${poolId}` : sql``}
+      ON CONFLICT DO NOTHING`);
+  }
+
+  /**
+   * Once per run, before the APR queue: finalize earlier days' rows that never got a successful update
+   * (failed / degraded / missing, value NULL) and seed today's pending rows. A row turns `ok` on the pool's first
+   * successful update of the Taipei day (`saveApr`), whichever 4-hourly run that is; there is no capture window.
+   */
+  private async prepareDaily(lease: Lease, includeRhc: boolean) {
     if (lease.job !== "rwa-apr-refresh") throw new RwaStoreError("INVALID_JOB");
-    const window = dailyWindow(this.clock());
+    const day = taipeiDay(this.clock());
     return this.guarded(lease, async (tx) => {
-      if (window.eligible) {
-        // One insert-select freezes the roster once per day under the APR job lease.
-        await tx.execute(sql`INSERT INTO ${daily}
-          (pool_address,chain,protocol,snapshot_date,scheduled_for,mint_a,mint_b,symbol_a,symbol_b,
-           tvl_usd,volume_24h_usd,fees_24h_usd,pool_fee_apr_pct,pool_metrics_observed_at,algorithm_version)
-          SELECT ${pool.poolAddress},${pool.chain},${pool.protocol},${window.date}::date,${new Date(window.start).toISOString()}::timestamptz,
-            ${pool.mintA},${pool.mintB},${pool.symbolA},${pool.symbolB},${pool.tvlUsd},
-            ${pool.volume24hUsd},${pool.fees24hUsd},${pool.poolFeeAprPct},${pool.metricsObservedAt},${ALGORITHM_VERSION}
-          FROM ${pool} JOIN ${feed} ON ${feed.feedKey}=${pool.feedKey} AND ${feed.generationId}=${pool.lastSeenGeneration}
-          WHERE ${feed.feedKey} IN (${FEED_KEY},${FEED_KEY_RHC}) AND ${feed.publishedAt}>${new Date(this.clock() - 1_800_000).toISOString()}::timestamptz
-            AND NOT EXISTS(SELECT 1 FROM ${daily} d JOIN ${pool} p ON p.pool_address=d.pool_address
-              WHERE d.snapshot_date=${window.date}::date AND p.feed_key=${feed.feedKey})
-          ON CONFLICT DO NOTHING`);
-      }
       await tx.update(daily).set({ status: sql`CASE WHEN ${daily.failureReason} LIKE 'degraded:%' THEN 'degraded'
         WHEN ${daily.failureReason} IS NOT NULL THEN 'failed' ELSE 'missing' END`, finalizedAt: nowSql })
-        .where(and(eq(daily.status, "pending"), sql`${daily.scheduledFor}+interval '1 hour'<=${new Date(this.clock()).toISOString()}::timestamptz`));
-      return { date: window.date, eligible: window.eligible };
+        .where(and(eq(daily.status, "pending"), sql`${daily.snapshotDate}<${day.date}::date`));
+      // RHC rows only when the RHC 7d APR flag is on (otherwise nothing would ever fill them).
+      await this.seedDaily(tx, day, undefined, includeRhc);
+      return { date: day.date };
     });
   }
 
@@ -355,24 +374,35 @@ export class PostgresRwaStore implements RwaStore {
         chainObservedAt: data.chainObservedAt, economicsObservedAt: observed?.economics ?? data.profile?.observedAt ?? null,
         volumeObservedAt: observed?.hourly ?? data.profile?.observedAt ?? null, algorithmVersion: ALGORITHM_VERSION,
         referenceCapitalUsd: data.payload.referenceCapitalUsd, payloadSchemaVersion: 1 }).where(eq(apr.poolAddress, data.poolId));
-      const window = dailyWindow(this.clock());
+      const day = taipeiDay(this.clock());
       const winner = data.payload && !data.payload.sample.degraded ? pickHighestAprPreset(data.payload.presets) : null;
-      const eligible = window.eligible && winner?.estimate.status === "ok" && freshProfile &&
+      // A successful update today: an ok estimate from fresh price history of the current UTC volume window and
+      // chain state read today (Taipei).
+      const successToday = winner?.estimate.status === "ok" && freshProfile &&
         data.profile!.windowEndUtc === volumeWindowEnd(this.clock()) &&
-        // RHC reuses a same-UTC-day price history (its OHLCV calls are spaced across runs); Raydium's is ≤30 min old.
+        // The day's own window (`${day.date}T00:00Z`): runs before 08:00 Taipei still see the previous day's window
+        // and must not write it again as today's row (duplicates / a skipped window around 08:00).
+        data.profile!.windowEndUtc === taipeiDayWindowEnd(day.date) &&
+        // RHC reuses a same-UTC-day price history (its OHLCV calls are spread across runs); Raydium's is ≤30 min old.
         (isRhc || this.clock() - Date.parse(data.profile!.observedAt) <= 1_800_000) &&
-        !!data.chainObservedAt && Date.parse(data.chainObservedAt) >= window.start;
-      const pending = and(eq(daily.poolAddress, data.poolId), eq(daily.snapshotDate, window.date), eq(daily.status, "pending"));
-      if (eligible && data.payload && winner?.estimate.status === "ok") {
+        !!data.chainObservedAt && Date.parse(data.chainObservedAt) >= day.start;
+      const pending = and(eq(daily.poolAddress, data.poolId), eq(daily.snapshotDate, day.date), eq(daily.status, "pending"));
+      if (successToday && data.payload && winner?.estimate.status === "ok") {
+        // First success of the day: the row (seeded by prepareDaily, or now for a pool that joined since) turns
+        // ok exactly once; later successes find no pending row and change nothing (no duplicates, no overwrite).
+        await this.seedDaily(tx, day, data.poolId);
+        const metrics = (column: string) => sql`(SELECT ${sql.raw(column)} FROM ${pool} p WHERE p.pool_address=${data.poolId})`;
         await tx.update(daily).set({ status: "ok", capturedAt: data.payload.fetchedAt, finalizedAt: nowSql,
           highestRangeAprPct: winner.estimate.aprPct, highestRangeId: winner.id, tickLower: winner.tickLower,
           tickUpper: winner.tickUpper, priceLower: winner.priceLower, priceUpper: winner.priceUpper,
           presets: data.payload.presets, referenceCapitalUsd: data.payload.referenceCapitalUsd, chainObservedAt: data.chainObservedAt,
           economicsObservedAt: observed?.economics ?? data.profile!.observedAt, volumeObservedAt: observed?.hourly ?? data.profile!.observedAt,
           sample: data.payload.sample, failureReason: null,
-        }).where(and(pending, exists(tx.select({ one: sql`1` }).from(pool).where(and(eq(pool.poolAddress, daily.poolAddress),
-          gt(pool.metricsObservedAt, new Date(this.clock() - 1_800_000).toISOString()))))));
-      } else if (window.eligible && status !== "ok") {
+          // Pool metrics as of the capture (the seeded row holds the day's first run's).
+          tvlUsd: metrics("tvl_usd"), volume24hUsd: metrics("volume_24h_usd"), fees24hUsd: metrics("fees_24h_usd"),
+          poolFeeAprPct: metrics("pool_fee_apr_pct"), poolMetricsObservedAt: metrics("metrics_observed_at"),
+        }).where(pending);
+      } else if (status !== "ok") {
         await tx.update(daily).set({ failureReason: `${status}:${data.issues.join("; ").slice(0, 400)}` }).where(pending);
       }
       return { poolId: data.poolId, status };
