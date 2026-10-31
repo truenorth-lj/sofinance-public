@@ -17,7 +17,7 @@ import { findLandedTransaction, LANDED_EXPIRY_MARGIN_BLOCKS } from "@/lib/tx-lan
 import { CANCEL_CHECK_PENDING_COPY, cancelCheckKey, getTxNotices, isCancelCheckPending, noticeIdFor, resetCancelChecks, resetTxNotices,
   TxWalletCancelledError, type FindLanded, type TxWallet } from "@/lib/tx-pipeline";
 import { readSolSwapAttempt, type SolSwapStorage } from "./sol-swap-attempt-store";
-import { loadSolSwapReceipt } from "./sol-swap-receipt-store";
+import { solSwapReceiptKey } from "./sol-swap-receipt-store";
 import { reconcileSolSwapStep, runSolSwapStep, solSwapFailureContext, type SolSwapStage } from "./sol-swap-step-client";
 
 const payer = testKeypair(81);
@@ -137,6 +137,6 @@ describe("runSolSwapStep with a Phantom-shaped transaction", () => {
     const receipt = await reconcileSolSwapStep(saved!, { storage, current: () => true, sleep: async () => undefined });
     expect(receipt).toMatchObject({ signature: LANDED_SIG, poolId: POOL, delivered: "123456" });
     expect(readSolSwapAttempt(storage, WALLET)).toBeNull();
-    expect(loadSolSwapReceipt(storage, WALLET, POOL, Date.now())).toMatchObject({ signature: LANDED_SIG, delivered: "123456", decimals: 6 });
+    expect(JSON.parse(storage.map.get(solSwapReceiptKey(WALLET, POOL))!)).toMatchObject({ signature: LANDED_SIG, delivered: "123456", decimals: 6 });
   });
 });
