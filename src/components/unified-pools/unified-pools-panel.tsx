@@ -16,7 +16,7 @@ import type { TokenIconMap } from "@/lib/token-icons/map";
 import { fetchRwaPairsList } from "@/lib/rwa-pairs-list";
 import { updatedLabel, type SnapshotSourceTime } from "@/lib/snapshot-updated";
 import {
-  CHAIN_LABELS, DEFAULT_FILTERS, DEFAULT_SORT, FIRST_CLICK_DIR, PROTOCOL_LABELS, RISK_LABELS, selectPools,
+  CHAIN_LABELS, DEFAULT_FILTERS, DEFAULT_SORT, FIRST_CLICK_DIR, PROTOCOL_LABELS, RISK_LABELS, selectPools, TVL_FILTER_PRESETS,
   type PoolChain, type PoolFilters, type RiskFilter, type SortKey, type UnifiedPool, type UnifiedProtocol,
 } from "@/lib/unified-pools/model";
 import { rhcPool, rhcPoolView, solanaPool, type RhcPoolSummary, type SolanaPoolRow } from "@/lib/unified-pools/rows";
@@ -142,6 +142,44 @@ function Select<T extends string>({ label, value, onChange, options }: {
       {options.map((option) => <option key={option.value} value={option.value} className="bg-char">{option.label}</option>)}
     </select>
   </label>;
+}
+
+/** "$5k", "$10k", "$50k" for the TVL filter presets. */
+const tvlPresetLabel = (usd: number) => usd >= 1_000_000 ? `$${usd / 1_000_000}M` : usd >= 1_000 ? `$${usd / 1_000}k` : `$${usd}`;
+type TvlChoice = "any" | "custom" | `${number}`;
+
+/**
+ * TVL filter: Any (default) / the presets / a custom minimum in USD. Applied before "Hide duplicate pools", so a small
+ * pool never hides the bigger pool of its pair.
+ */
+function TvlFilter({ onChange }: { onChange: (minTvl: number | null) => void }) {
+  const [choice, setChoice] = useState<TvlChoice>("any");
+  const [custom, setCustom] = useState("");
+  const customValue = (text: string) => {
+    const value = Number(text.replace(/[$,\s]/g, ""));
+    return text.trim() && Number.isFinite(value) && value >= 0 ? value : null;
+  };
+  return <div className="flex flex-col gap-1 text-[11px] text-smoke">
+    <label className="flex flex-col gap-1">Min TVL
+      <select value={choice} data-testid="tvl-filter" onChange={(event) => {
+        const next = event.target.value as TvlChoice;
+        setChoice(next);
+        onChange(next === "any" ? null : next === "custom" ? customValue(custom) : Number(next));
+      }} className={cn("rounded-xl border bg-white/[0.06] px-3 py-2 text-sm text-cream outline-none focus:border-white/40",
+        choice === "any" ? "border-white/20" : "border-lemon/70")}>
+        <option value="any" className="bg-char">Any TVL</option>
+        {TVL_FILTER_PRESETS.map((usd) => <option key={usd} value={String(usd)} className="bg-char">{`≥ ${tvlPresetLabel(usd)}`}</option>)}
+        <option value="custom" className="bg-char">Custom…</option>
+      </select>
+    </label>
+    {choice === "custom" && <label className="flex items-center gap-2">
+      <span className="sr-only">Custom minimum TVL in USD</span>
+      <span aria-hidden="true">≥ $</span>
+      <input type="number" inputMode="numeric" min={0} step={1000} value={custom} placeholder="e.g. 25000" data-testid="tvl-filter-custom"
+        onChange={(event) => { setCustom(event.target.value); onChange(customValue(event.target.value)); }}
+        className="w-full rounded-xl border border-lemon/70 bg-white/[0.06] px-3 py-1.5 text-sm text-cream outline-none placeholder:text-smoke/70 focus:border-white/40" />
+    </label>}
+  </div>;
 }
 
 export type OpenRhcRequest = { pool: RhcPoolView };
@@ -296,7 +334,7 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", header 
         </button>
       </div>
 
-      <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,2fr)_repeat(3,minmax(0,1fr))]">
+      <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,2fr)_repeat(4,minmax(0,1fr))]">
         <label className="flex flex-col gap-1 text-[11px] text-smoke">Search token
           <span className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-smoke" aria-hidden="true" />
@@ -311,6 +349,7 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", header 
         <Select<RiskFilter> label="Risk" value={filters.risk} onChange={(value) => setFilter("risk", value)}
           options={[{ value: "all", label: "Any risk" }, { value: "none", label: "No risk flags" },
             { value: "freeze", label: RISK_LABELS.freeze }, { value: "token-2022", label: RISK_LABELS["token-2022"] }, { value: "pool-warning", label: RISK_LABELS["pool-warning"] }]} />
+        <TvlFilter onChange={(minTvl) => setFilter("minTvl", minTvl)} />
       </div>
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
@@ -328,7 +367,7 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", header 
             Hide duplicate pools
             <InfoTip label="About Hide duplicate pools">
               When one chain has several pools for the same two tokens, only the one with the highest estimated 7-day APR is shown.
-              Pools without a 7-day estimate rank below those with one (then by TVL). Pools on different chains are never merged.
+              Pools without a 7-day estimate rank below those with one (then by TVL). Pools on different chains are never merged. Pools under the Min TVL filter are left out first, so they never hide a bigger pool.
             </InfoTip>
           </label>
           {!showAll && selected.hiddenDuplicates > 0 && (

@@ -165,6 +165,30 @@ describe("HomepagePoolsTable", () => {
     expect(rowsOf()[2]!.querySelector("[data-testid='chain-badge']")!.textContent).toBe("Robinhood Chain");
   });
 
+  it("leaves out pools under $5k TVL before the duplicate rule, says so, and shows the actual count when fewer than 5 qualify", async () => {
+    const apr: Record<string, number> = { "meta-tiny": 673.66, "meta-big": 40, "tsla-pool": 20, "small-pool": 300 };
+    mocks.aprFor.mockImplementation((poolId) => (apr[poolId] !== undefined ? ready({ micro: apr[poolId]! }) : { status: "error", message: "down" }));
+    jsonOk({ pairs: [
+      pair({ poolAddress: "meta-tiny", symbolA: "METAx", symbolB: "META", mintA: "meta-x", mintB: "meta", tvlUsd: 1_023.91 }),
+      pair({ poolAddress: "meta-big", symbolA: "METAx", symbolB: "META", mintA: "meta-x", mintB: "meta", tvlUsd: 48_000 }),
+      pair({ poolAddress: "tsla-pool", symbolA: "TSLAx", symbolB: "TSLA", tvlUsd: 5_000 }),
+      pair({ poolAddress: "small-pool", symbolA: "AMDx", symbolB: "AMD", tvlUsd: 4_999 }),
+    ] });
+    await mount();
+    expect(keysOf()).toEqual([sol("meta-big"), sol("tsla-pool")]);
+    // The APRs of pools under the floor are never requested.
+    expect(mocks.aprFor.mock.calls.map(([poolId]) => poolId).sort()).toEqual(["meta-big", "tsla-pool"]);
+    expect(container.querySelector("[data-testid=homepage-tvl-note]")!.textContent)
+      .toBe("Pools under $5k TVL are not shown. 2 pools qualify right now.");
+  });
+
+  it("states the TVL floor without a count when 5 pools qualify", async () => {
+    jsonOk({ pairs: ["a", "b", "c", "d", "e", "f"].map((id) => pair({ poolAddress: `${id}-pool`, symbolA: `${id.toUpperCase()}x`, symbolB: id.toUpperCase(), tvlUsd: 50_000 })) });
+    await mount();
+    expect(rowsOf()).toHaveLength(5);
+    expect(container.querySelector("[data-testid=homepage-tvl-note]")!.textContent).toBe("Pools under $5k TVL are not shown.");
+  });
+
   it("shows the paired token logos stored in the database (tokenIcons), wrapped token first, with the Raydium fallback", async () => {
     jsonOk({ pairs: [pair({ poolAddress: "spcx-pool" })],
       tokenIcons: { solana: { "mint-wrapped": "https://static.jup.ag/spcxx.png" }, robinhood: {} } });

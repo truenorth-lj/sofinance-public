@@ -7,7 +7,7 @@ import { summarizeApr7d } from "@/lib/unified-pools/apr7d";
 import { RWA_PAIRS_LIST_QUERY } from "@/lib/rwa-pairs-list";
 import type { TokenIconMap } from "@/lib/token-icons/map";
 import type { RhcPoolSummary } from "@/lib/unified-pools/rows";
-import { buildHomepagePools, toHomepagePoolsSnapshot, type HomepagePool, type HomepagePoolsSnapshot, type HomepageSolanaRow } from "@/lib/homepage-pools";
+import { buildHomepagePools, homepageCandidates, toHomepagePoolsSnapshot, type HomepagePool, type HomepagePoolsSnapshot, type HomepageSolanaRow } from "@/lib/homepage-pools";
 
 /** Give up on one server snapshot read after this long; the page then falls back to the client fetch. */
 const SNAPSHOT_TIMEOUT_MS = 8_000;
@@ -102,9 +102,10 @@ export async function loadHomepagePoolsSnapshot(): Promise<HomepagePoolsSnapshot
     solana: solana.status === "fulfilled" ? solana.value : null,
     rhc: rhc.status === "fulfilled" ? rhc.value : null,
   };
-  // The homepage ranks every pool by its 7-day APR (top 5 of `/app/rwa-pairs`), so every candidate's APR is read:
-  // Solana pools always, Robinhood Chain pools with RHC_APR7D_ENABLED, as on `/app/rwa-pairs`.
-  const candidates = buildHomepagePools({ solana: input.solana?.pairs, rhc: input.rhc?.pools });
+  // The homepage ranks pools by their 7-day APR (top 5 of `/app/rwa-pairs` with the homepage TVL floor), so every pool
+  // above the floor has its APR read: Solana pools always, Robinhood Chain pools with RHC_APR7D_ENABLED, as on
+  // `/app/rwa-pairs`. Pools under the floor are never shown, so their APR is not needed.
+  const candidates = homepageCandidates(buildHomepagePools({ solana: input.solana?.pairs, rhc: input.rhc?.pools }));
   const refs: AprRef[] = candidates
     .filter((pool) => pool.chain === "solana" || isRhcApr7dEnabled())
     .map(({ key, chain, protocol, poolAddress }) => ({ key, chain, protocol, poolAddress }));

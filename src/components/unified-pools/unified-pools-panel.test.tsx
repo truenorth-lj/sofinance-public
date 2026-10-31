@@ -194,6 +194,64 @@ describe("UnifiedPoolsPanel", () => {
   });
 });
 
+describe("UnifiedPoolsPanel TVL filter", () => {
+  const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+  const tvlSelect = () => container.querySelector<HTMLSelectElement>("[data-testid=tvl-filter]")!;
+  const chooseTvl = async (value: string) => {
+    await act(async () => { tvlSelect().value = value; tvlSelect().dispatchEvent(new Event("change", { bubbles: true })); });
+  };
+  // META's two Solana pools: a tiny pool with a high 7d APR and a bigger one of the same pair.
+  const withMeta = () => vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+    requested.push(url);
+    const body = url.startsWith("/api/rwa-pairs") ? { pairs: [
+      row("metaTiny", "METAx", "META", "m1", "m2", { tvlUsd: 1_023.91 }), row("metaBig", "METAx", "META", "m1", "m2", { tvlUsd: 48_000 }),
+      row("tsla", "TSLAx", "TSLA", "t1", "t2", { tvlUsd: 12_000 }),
+    ] } : url.includes("uniswap-v4-rhc") ? { pools: [rhcSummary] } : { pairs: [] };
+    return { ok: true, json: async () => body };
+  }));
+
+  it("offers Any / $5k / $10k / $50k / Custom, defaulting to Any (results unchanged)", async () => {
+    await render();
+    expect([...tvlSelect().options].map((option) => option.textContent)).toEqual(["Any TVL", "≥ $5k", "≥ $10k", "≥ $50k", "Custom…"]);
+    expect(tvlSelect().value).toBe("any");
+    expect(shown()).toEqual(["solana:spcxA", "solana:tsla", `robinhood:${rhcSpec.poolId.toLowerCase()}`]);
+  });
+
+  it("filters by TVL before hiding duplicates, so the tiny META pool never hides the big one (cards and list)", async () => {
+    mocks.apr = { metaTiny: 673.66, metaBig: 40, tsla: 20 };
+    withMeta();
+    await render();
+    expect(shown()).toEqual(["solana:metaTiny", "solana:tsla", `robinhood:${rhcSpec.poolId.toLowerCase()}`]);
+    await chooseTvl("5000");
+    expect(shown()).toEqual(["solana:metaBig", "solana:tsla"]);
+    expect(container.querySelector("[data-testid=show-all-pools]")).toBeNull();
+    await act(async () => { button("List").click(); });
+    expect(container.querySelector("[data-testid=pools-table]")).toBeTruthy();
+    expect(shown()).toEqual(["solana:metaBig", "solana:tsla"]);
+    await chooseTvl("50000");
+    expect(shown()).toEqual([]);
+    expect(container.textContent).toContain("No pools match these filters.");
+    await chooseTvl("any");
+    expect(shown()).toEqual(["solana:metaTiny", "solana:tsla", `robinhood:${rhcSpec.poolId.toLowerCase()}`]);
+  });
+
+  it("takes a custom minimum and works with the search", async () => {
+    mocks.apr = { metaTiny: 673.66, metaBig: 40, tsla: 20 };
+    withMeta();
+    await render();
+    await chooseTvl("custom");
+    const custom = container.querySelector<HTMLInputElement>("[data-testid=tvl-filter-custom]")!;
+    expect(shown()).toHaveLength(3);
+    await act(async () => { setValue.call(custom, "20000"); custom.dispatchEvent(new Event("input", { bubbles: true })); });
+    expect(shown()).toEqual(["solana:metaBig"]);
+    await act(async () => { setValue.call(custom, "1500"); custom.dispatchEvent(new Event("input", { bubbles: true })); });
+    expect(shown()).toEqual(["solana:metaBig", "solana:tsla", `robinhood:${rhcSpec.poolId.toLowerCase()}`]);
+    const search = container.querySelector<HTMLInputElement>("input[type=search]")!;
+    await act(async () => { setValue.call(search, "tsla"); search.dispatchEvent(new Event("input", { bubbles: true })); });
+    expect(shown()).toEqual(["solana:tsla"]);
+  });
+});
+
 describe("UnifiedPoolsPanel cards (the RWA pairs card fields)", () => {
   const card = (key: string) => container.querySelector<HTMLLIElement>(`[data-pool='${key}']`)!;
 

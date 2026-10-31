@@ -1,10 +1,14 @@
 import type { TokenIconMap } from "@/lib/token-icons/map";
 import type { SnapshotSourceTime as HomepageSourceTime } from "@/lib/snapshot-updated";
-import { DEFAULT_FILTERS, DEFAULT_SORT, selectPools, type Apr7dLookup, type PoolChain, type UnifiedPool } from "@/lib/unified-pools/model";
+import { DEFAULT_FILTERS, DEFAULT_SORT, meetsMinTvl, selectPools, type Apr7dLookup, type PoolChain, type UnifiedPool } from "@/lib/unified-pools/model";
 import { rhcPool, solanaPool, type RhcPoolSummary, type SolanaPoolRow } from "@/lib/unified-pools/rows";
 
 /** The homepage shows the top pools of `/app/rwa-pairs` (LJ, 2026-10-31: at most 5), with a "View all pools" link. */
 export const HOMEPAGE_POOL_LIMIT = 5;
+/** Homepage TVL floor in USD (LJ, 2026-10-31): smaller pools are left out before the duplicate rule and the ranking. */
+export const HOMEPAGE_MIN_TVL_USD = 5_000;
+/** Homepage note for the TVL floor. */
+export const HOMEPAGE_MIN_TVL_NOTE = "Pools under $5k TVL are not shown.";
 
 /** A Solana row from `/api/rwa-pairs` (or its saved snapshot). */
 export type HomepageSolanaRow = SolanaPoolRow & { wrapKind?: string };
@@ -42,6 +46,16 @@ export function buildHomepagePools(input: {
 /** `/app/rwa-pairs`'s default view: no filters, "Hide duplicate pools" on, sorted by Est. APR · 7d (high to low). */
 export const RWA_PAIRS_DEFAULT_SELECT = { filters: DEFAULT_FILTERS, hideDuplicates: true, sort: DEFAULT_SORT } as const;
 
+/** The homepage's selection: `/app/rwa-pairs`' default view with the homepage TVL floor as its TVL filter. */
+export const HOMEPAGE_SELECT = {
+  ...RWA_PAIRS_DEFAULT_SELECT,
+  filters: { ...DEFAULT_FILTERS, minTvl: HOMEPAGE_MIN_TVL_USD },
+} as const;
+
+/** Pools that pass the homepage TVL floor (the only ones whose 7-day APR the homepage needs). */
+export const homepageCandidates = <T extends UnifiedPool>(pools: readonly T[]): T[] =>
+  pools.filter((pool) => meetsMinTvl(pool, HOMEPAGE_MIN_TVL_USD));
+
 /**
  * Every pool in `/app/rwa-pairs`'s default order, through the same `selectPools`: one pool per chain and token pair
  * (LJ's rule: the highest estimated 7-day APR wins), both chains merged, by 7-day APR from high to low (pools without
@@ -54,11 +68,12 @@ export function rwaPairsDefaultOrder<T extends UnifiedPool>(pools: readonly T[],
 const samePool = (a: string, b: string) => a === b || a.toLowerCase() === b.toLowerCase();
 
 /**
- * Homepage rows: the first HOMEPAGE_POOL_LIMIT pools of `/app/rwa-pairs`'s default view. If a shared link's pool
- * (`?pool=`) is listed there but not in the top rows, it takes the last slot.
+ * Homepage rows: the first HOMEPAGE_POOL_LIMIT pools of `/app/rwa-pairs`'s default view with its TVL filter set to
+ * HOMEPAGE_MIN_TVL_USD (TVL filter → duplicate rule → Est. APR · 7d, high to low). Fewer rows when fewer pools
+ * qualify. If a shared link's pool (`?pool=`) is listed there but not in the top rows, it takes the last slot.
  */
 export function homepageRows<T extends UnifiedPool>(pools: readonly T[], apr7d: Apr7dLookup, highlightPool?: string): T[] {
-  const ranked = rwaPairsDefaultOrder(pools, apr7d);
+  const ranked = selectPools(pools, { ...HOMEPAGE_SELECT, apr7d }).pools as T[];
   const top = ranked.slice(0, HOMEPAGE_POOL_LIMIT);
   const highlight = highlightPool?.trim();
   if (!highlight || top.some((pool) => samePool(pool.poolAddress, highlight))) return top;

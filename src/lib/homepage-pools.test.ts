@@ -7,6 +7,9 @@ import {
   buildHomepagePools,
   formatAprPct,
   homepageRows,
+  homepageCandidates,
+  HOMEPAGE_MIN_TVL_NOTE,
+  HOMEPAGE_MIN_TVL_USD,
   HOMEPAGE_POOL_LIMIT,
   rwaPairsDefaultOrder,
   toHomepagePoolsSnapshot,
@@ -131,11 +134,31 @@ describe("buildHomepagePools / two chains", () => {
     const apr7d = aprLookupFrom({ [key("spcx-small")]: 42, [key("spcx-pool")]: 3 });
     const ranked = rwaPairsDefaultOrder(pools, apr7d);
     expect(ranked.filter((row) => row.pairLabel === "SPCXx/SPCX").map((row) => row.poolAddress)).toEqual(["spcx-small"]);
-    expect(homepageRows(pools, apr7d)[0]!.poolAddress).toBe("spcx-small");
+    // The homepage's $5k TVL floor is applied before that rule: the $4,986 pool cannot hide the big pool there.
+    expect(homepageRows(pools, apr7d).filter((row) => row.pairLabel === "SPCXx/SPCX").map((row) => row.poolAddress)).toEqual(["spcx-pool"]);
     // A pool with any 7-day APR outranks one without, whatever its TVL.
     const onlySmall = rwaPairsDefaultOrder(pools, aprLookupFrom({ [key("spcx-small")]: 0.001 }));
     expect(onlySmall.filter((row) => row.pairLabel === "SPCXx/SPCX").map((row) => row.poolAddress)).toEqual(["spcx-small"]);
     expect(onlySmall[0]!.poolAddress).toBe("spcx-small");
+  });
+
+  it("leaves out pools under the $5k TVL floor before the duplicate rule, and shows fewer rows when fewer qualify", () => {
+    expect(HOMEPAGE_MIN_TVL_USD).toBe(5_000);
+    expect(HOMEPAGE_MIN_TVL_NOTE).toBe("Pools under $5k TVL are not shown.");
+    const small = buildHomepagePools({ solana: [
+      solanaRow("METAx", "META", 1_023.91, { poolAddress: "meta-tiny" }),
+      solanaRow("METAx", "META", 466.9, { poolAddress: "meta-tinier" }),
+      solanaRow("SPCXx", "SPCX", 262_029),
+      solanaRow("NVDAx", "NVDA", 5_000),
+    ] });
+    const key = (address: string) => small.find((row) => row.poolAddress === address)!.key;
+    const apr7d = aprLookupFrom({ [key("meta-tiny")]: 673.66, [key("meta-tinier")]: 300, [key("spcx-pool")]: 31.85, [key("nvda-pool")]: 89.14 });
+    expect(homepageRows(small, apr7d).map((row) => row.poolAddress)).toEqual(["nvda-pool", "spcx-pool"]);
+    // /app/rwa-pairs' default view (TVL: Any) is unchanged.
+    expect(rwaPairsDefaultOrder(small, apr7d).map((row) => row.poolAddress)).toEqual(["meta-tiny", "nvda-pool", "spcx-pool"]);
+    expect(homepageCandidates(small).map((row) => row.poolAddress)).toEqual(["spcx-pool", "nvda-pool"]);
+    // A shared link to a pool under the floor does not bring it back.
+    expect(homepageRows(small, apr7d, "meta-tiny").map((row) => row.poolAddress)).toEqual(["nvda-pool", "spcx-pool"]);
   });
 
   it("puts a shared link's pool in the last slot when it is not in the top 5", () => {

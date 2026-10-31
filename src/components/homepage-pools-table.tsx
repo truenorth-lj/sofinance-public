@@ -7,7 +7,10 @@ import { LoaderCircle } from "lucide-react";
 import { HIGHEST_RANGE_APR_7D_HELP, HOMEPAGE_APR_DOCS_LINK_LABEL } from "@/lib/apr-labels/copy";
 import {
   buildHomepagePools,
+  homepageCandidates,
   homepageRows,
+  HOMEPAGE_MIN_TVL_NOTE,
+  HOMEPAGE_POOL_LIMIT,
   updatedLabel,
   type HomepagePool,
   type HomepagePoolsSnapshot,
@@ -136,7 +139,9 @@ export function HomepagePoolsView({
   const pools = useMemo(() => (byChain ? [...(byChain.solana ?? []), ...(byChain.robinhood ?? [])] : null), [byChain]);
   // Same 7-day APR state as /app/rwa-pairs; until a pool's estimate loads, the server snapshot's value stands in, so
   // the server HTML and the first client render pick the same pool per pair.
-  const apr = usePoolsApr7d(pools ?? NO_POOLS);
+  // Only pools above the homepage TVL floor can be listed, so only their 7-day APRs are loaded.
+  const candidates = useMemo(() => homepageCandidates(pools ?? NO_POOLS), [pools]);
+  const apr = usePoolsApr7d(candidates);
   // The prerendered HTML (and the first client render) prints no APR figure; the 24h column fills in after mount.
   const [mounted, setMounted] = useState(false);
   useEffect(() => {
@@ -215,6 +220,10 @@ export function HomepagePoolsView({
       {(pools || error) && (
         <div className="mt-4 flex flex-col gap-3 px-2 sm:flex-row sm:items-end sm:justify-between">
           <p className="max-w-2xl text-xs leading-5 text-smoke">
+            <span className="block" data-testid="homepage-tvl-note">
+              {HOMEPAGE_MIN_TVL_NOTE}
+              {pools && rows.length < HOMEPAGE_POOL_LIMIT && ` ${rows.length} ${rows.length === 1 ? "pool qualifies" : "pools qualify"} right now.`}
+            </span>
             Ranked by Est. APR · 7d, high to low (on Solana, from a 7-day backtest of candidate ranges). {HIGHEST_RANGE_APR_7D_HELP}{" "}
             Not LP return; ignores IL and rewards. Data: Raydium API (Solana); GeckoTerminal / DexScreener (Robinhood
             Chain), saved once a day{updatedText ? ` · ${updatedText}` : ""}.

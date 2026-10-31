@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  DEFAULT_FILTERS, DEFAULT_SORT, compareDuplicateRank, filterPools, hideDuplicatePools, samePairKey, selectPools, sortPools,
+  DEFAULT_FILTERS, DEFAULT_SORT, TVL_FILTER_PRESETS, compareDuplicateRank, filterPools, hideDuplicatePools, meetsMinTvl, samePairKey,
+  selectPools, sortPools,
   type UnifiedPool,
 } from "./model";
 
@@ -103,5 +104,50 @@ describe("selectPools", () => {
     const out = selectPools(list, { filters: { ...DEFAULT_FILTERS, query: "other" }, hideDuplicates: true, sort: DEFAULT_SORT, apr7d: aprs({ best: 9, worse: 1 }) });
     expect(out.pools).toEqual([]);
     expect(out.hiddenDuplicates).toBe(1);
+  });
+});
+
+describe("TVL filter (minTvl)", () => {
+  // META's two Solana pools: a tiny pool with a very high 7d APR and a bigger pool of the same pair with a lower one.
+  const meta = (over: Partial<UnifiedPool> & Pick<UnifiedPool, "poolAddress">) => pool({
+    pairLabel: "METAx/META", symbolA: "METAx", symbolB: "META", nameA: "Meta xStock", nameB: "Meta", mintA: "mintMetaX", mintB: "mintMeta", ...over,
+  });
+  const tinyMeta = meta({ poolAddress: "metaTiny", tvlUsd: 1_023.91 });
+  const bigMeta = meta({ poolAddress: "metaBig", tvlUsd: 48_000, mintA: "mintMeta", mintB: "mintMetaX" });
+  const spcx = pool({ poolAddress: "spcx", tvlUsd: 265_900 });
+  const list = [tinyMeta, bigMeta, spcx];
+  const apr7d = aprs({ metaTiny: 673.66, metaBig: 40, spcx: 31.85 });
+  const select = (minTvl: number | null, hideDuplicates = true) =>
+    selectPools(list, { filters: { ...DEFAULT_FILTERS, minTvl }, hideDuplicates, sort: DEFAULT_SORT, apr7d });
+
+  it("defaults to Any, so the default view is unchanged (the tiny META pool wins its pair)", () => {
+    expect(DEFAULT_FILTERS.minTvl).toBeNull();
+    const out = select(null);
+    expect(out.pools.map((p) => p.poolAddress)).toEqual(["metaTiny", "spcx"]);
+    expect(out.hiddenDuplicates).toBe(1);
+  });
+  it("filters by TVL before the duplicate rule: the tiny META pool never hides the big META pool", () => {
+    for (const minTvl of TVL_FILTER_PRESETS.filter((usd) => usd <= 48_000)) {
+      const out = select(minTvl);
+      expect(out.pools.map((p) => p.poolAddress)).toEqual(["metaBig", "spcx"]);
+      expect(out.hiddenDuplicates).toBe(0);
+    }
+  });
+  it("drops the whole pair only when every pool of it is under the minimum", () => {
+    expect(select(50_000).pools.map((p) => p.poolAddress)).toEqual(["spcx"]);
+  });
+  it("takes a custom amount, inclusive", () => {
+    expect(select(48_000).pools.map((p) => p.poolAddress)).toEqual(["metaBig", "spcx"]);
+    expect(select(48_000.01).pools.map((p) => p.poolAddress)).toEqual(["spcx"]);
+  });
+  it("applies with Hide duplicate pools off as well, and alongside the search", () => {
+    expect(select(5_000, false).pools.map((p) => p.poolAddress)).toEqual(["metaBig", "spcx"]);
+    const out = selectPools(list, { filters: { ...DEFAULT_FILTERS, query: "meta", minTvl: 5_000 }, hideDuplicates: true, sort: DEFAULT_SORT, apr7d });
+    expect(out.pools.map((p) => p.poolAddress)).toEqual(["metaBig"]);
+  });
+  it("treats an unknown TVL as failing any minimum", () => {
+    expect(meetsMinTvl({ tvlUsd: null }, 5_000)).toBe(false);
+    expect(meetsMinTvl({ tvlUsd: null }, null)).toBe(true);
+    expect(meetsMinTvl({ tvlUsd: 5_000 }, 5_000)).toBe(true);
   });
 });
