@@ -115,6 +115,16 @@ describe("open-position quote validation", () => {
     )).rejects.toThrow(/frozen|paused/i);
   });
 
+  it.each([
+    ["paused transfers", { paused: true }],
+    ["a frozen account", { frozen: true }],
+    ["a charged transfer fee", { transferFee: true }],
+  ] as const)("still blocks opening on %s with the unchanged error message (the UI risk flags are gone, the block is not)", async (_name, over) => {
+    vi.mocked(readOpenPoolState).mockResolvedValue(state({ ...over, token2022A: true, freezeRiskA: true, freezeRisk: true }));
+    await expect(getOpenPositionQuoteBundle(wallet, { poolId, inputMint: mintA, inputKind: "token" }, "1", { preset: "standard" }))
+      .rejects.toThrow("Pool asset currently paused, account frozen, transfer fee charged, or has unsupported settings");
+  });
+
   it("quotes a pool token below the selected range without a Jupiter hop", async () => {
     const { quote, legs } = await getOpenPositionQuoteBundle(
       wallet,

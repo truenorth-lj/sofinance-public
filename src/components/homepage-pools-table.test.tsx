@@ -137,7 +137,9 @@ describe("HomepagePoolsTable", () => {
     expect(row!.querySelector("[data-testid='chain-badge']")!.textContent).toBe("Solana");
     // Same columns as the /app/rwa-pairs list view, as fixed labels (no sort buttons on the homepage).
     const headers = [...table.querySelectorAll("thead th")].map((th) => th.textContent);
-    expect(headers.slice(0, 8)).toEqual(["Pool", "Chain", "Protocol", "Est. APR 7d", "Est. fee APR 24h", "TVL", "24h vol", "Risk"]);
+    expect(headers.slice(0, 7)).toEqual(["Pool", "Chain", "Protocol", "Est. APR 7d", "Est. fee APR 24h", "TVL", "24h vol"]);
+    expect(headers).not.toContain("Risk");
+    expect(table.textContent).not.toMatch(/Freeze risk|Token-2022|No flags/);
     expect(table.querySelector("thead [aria-sort='descending']")!.textContent).toBe("Est. APR 7d");
     expect(table.querySelectorAll("thead button:not([aria-label^='About'])")).toHaveLength(0);
     expect(row!.querySelector("a[aria-label='Open position in SPCXx/SPCX']")!.getAttribute("href")).toBe("/app/rwa-pairs?pool=spcx-pool&open=1");

@@ -1,7 +1,7 @@
 import { UNIV4_RHC_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/uniswap-v4/constants";
 import type { Univ4PoolSummary } from "@sofinance/engine/protocols/uniswap-v4/discovery";
 import type { RhcPoolView } from "@/lib/rhc-wallet/pool-view";
-import type { RiskFlag, UnifiedPool, UnifiedProtocol } from "./model";
+import type { UnifiedPool, UnifiedProtocol } from "./model";
 
 /** The fields `/api/rwa-pairs` and `/api/protocol-pools` (Orca / Meteora) rows share. */
 export type SolanaPoolRow = {
@@ -28,9 +28,6 @@ const SOLANA_PROTOCOLS = new Set<UnifiedProtocol>(["raydium-clmm", "orca-whirlpo
 
 export function solanaPool(row: SolanaPoolRow): UnifiedPool {
   const protocol = (SOLANA_PROTOCOLS.has(row.protocol as UnifiedProtocol) ? row.protocol : "raydium-clmm") as UnifiedProtocol;
-  const risks: RiskFlag[] = [];
-  if (row.freezeRisk) risks.push("freeze");
-  if (row.token2022A || row.token2022B) risks.push("token-2022");
   return {
     key: `solana:${row.poolAddress}`,
     chain: "solana",
@@ -47,7 +44,6 @@ export function solanaPool(row: SolanaPoolRow): UnifiedPool {
     tvlUsd: row.tvlUsd,
     volume24hUsd: row.volume24hUsd,
     poolFeeApr24hPct: row.estimatedFeeAprPct,
-    risks,
   };
 }
 
@@ -101,7 +97,6 @@ export function rhcPool(summary: RhcPoolSummary): UnifiedPool | null {
     tvlUsd: apr?.tvlUsd ?? null,
     volume24hUsd: apr?.volume24hUsd ?? null,
     poolFeeApr24hPct: apr?.estimatedPoolFeeAprPct ?? null,
-    risks: Array.isArray(summary.warnings) && summary.warnings.length > 0 ? ["pool-warning"] : [],
   };
 }
 

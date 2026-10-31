@@ -56,19 +56,13 @@ function FieldLabel({ label, help }: { label: keyof typeof FIELD_HELP; help?: st
   );
 }
 
-function explainTokenWarning(warning: string) {
-  if (warning.startsWith("One or both pool tokens use Token-2022.")) {
-    return "One or both tokens use Token-2022, which supports additional token features. Assets with active transfer fees, paused transfers or frozen accounts are blocked. The issuer may still retain freeze authority.";
-  }
-  if (warning.startsWith("A pool mint has a freeze authority.")) {
-    return "The issuer can freeze token accounts in the future, which may block transfers or LP deposits and withdrawals. This does not mean the accounts are currently frozen.";
-  }
-  return warning;
-}
-
+/**
+ * Quote warnings shown under the cost details: one-time rent notes only. The quote's generic Token-2022 and
+ * freeze-authority notes (true for every xStock pool) are not shown; a pool asset that is actually paused, frozen
+ * or charges a transfer fee still fails the quote with its blocking error.
+ */
 function isDetailWarning(warning: string) {
-  return warning.startsWith("One or both pool tokens use Token-2022.") ||
-    warning.startsWith("This tick range has no protocol position yet") ||
+  return warning.startsWith("This tick range has no protocol position yet") ||
     warning.startsWith("This range initializes tick array(s)");
 }
 
@@ -148,13 +142,7 @@ export function OpenPositionModal({
         </div>
 
         <div className="mb-4 flex flex-wrap items-center gap-1">
-          {(pair.token2022A || pair.token2022B) && (
-            <span className="rounded-full border border-white/20 px-2 py-0.5 text-[10px] text-smoke">Token-2022</span>
-          )}
-          {pair.freezeRisk && (
-            <span className="rounded-full border border-white/20 px-2 py-0.5 text-[10px] text-smoke">Freeze risk</span>
-          )}
-          <Link href={DOCS_ROUTES.risks} className="ml-1 text-[11px] text-lemon underline underline-offset-2 hover:text-[#fff27f]">
+          <Link href={DOCS_ROUTES.risks} className="text-[11px] text-lemon underline underline-offset-2 hover:text-[#fff27f]">
             Read risks before you confirm
           </Link>
         </div>
@@ -260,7 +248,7 @@ export function OpenPositionModal({
                 {quote.feeBps > 0 && <div className="flex justify-between gap-3"><FieldLabel label="Protocol fee" /><dd>{formatAmount(quote.feeAmount, quote.inputDecimals)} {inputSymbol}</dd></div>}
               </dl>
               <p className="mt-3 text-xs leading-5 text-smoke">Upfront costs include refundable account deposits, one-time account setup and the estimated network fee. These are separate from your investment. Quotes refresh every 3 seconds. USDC values use the current Jupiter SOL/USDC reference price, refreshed every minute. Network fees and account rent are paid in SOL. The protocol fee is 10 bps of the token you deposit, taken inside the Jupiter swap on the swapped part only.</p>
-              {detailWarnings.map(warning => <p key={warning} className="mt-2 text-xs leading-5 text-smoke">{explainTokenWarning(warning)}</p>)}
+              {detailWarnings.map(warning => <p key={warning} className="mt-2 text-xs leading-5 text-smoke">{warning}</p>)}
             </details>
           </div>
         )}

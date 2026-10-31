@@ -55,7 +55,7 @@ SoFinance is not a broker, does not sell stocks, and does not issue tokens. It b
 
 ## What it does
 
-- Lists same-stock pools on Solana (Raydium CLMM, Backpack Securities and xStocks tokens) and Robinhood Chain (Uniswap v4 pools with a reviewed StablePairHook, Robinhood and Ondo Global Markets tokens), with fee tier, TVL, 24h volume and token risk flags.
+- Lists same-stock pools on Solana (Raydium CLMM, Backpack Securities and xStocks tokens) and Robinhood Chain (Uniswap v4 pools with a reviewed StablePairHook, Robinhood and Ondo Global Markets tokens), with fee tier, TVL and 24h volume.
 - Suggests a range: on Solana the app prices range presets (Micro, Tight, Standard, Wide) against the last 7 full days of volume and current liquidity. You can override the suggestion.
 - Opens the position: if your wallet does not hold the two tokens in the right ratio, part of the deposit is swapped into the pool tokens first. Solana transactions are simulated again before they are sent.
 - Manages the position: on Solana, add liquidity, compound collected fees back into the position, or withdraw at any time; on Robinhood Chain, close the position at any time, which returns both pool tokens and the fees it has collected.
@@ -83,7 +83,6 @@ SoFinance is not a broker, does not sell stocks, and does not issue tokens. It b
 - Liquidity providing is not risk-free. You can end up with less value than if you had held the tokens.
 - The two versions of the same stock can trade at a temporary premium or discount to each other; the token mix in your position shifts as price moves (impermanent loss).
 - Out of range: no trading fees collected.
-- Issuer controls: tokenized stocks may keep freeze or other issuer authorities. A freeze can block transfers or withdrawals even though SoFinance is non-custodial.
 - Smart contract risk in Raydium, Uniswap v4 and its hooks, Jupiter, token programs and related onchain programs.
 - Regional restrictions: token issuers and venues restrict who may hold or trade these assets (for example, xStocks are not offered to US persons). That is outside SoFinance's control.
 

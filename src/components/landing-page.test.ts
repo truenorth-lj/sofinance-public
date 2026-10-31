@@ -150,4 +150,12 @@ describe("landing page copy and routes", () => {
       expect(text, file).not.toMatch(/\b(Taipei|Taiwan|university|student|education)\b/i);
     }
   });
+
+  it("has no Issuer controls item in the Risks list, and the remaining three items leave no empty grid slot", () => {
+    expect(src).not.toMatch(/Issuer controls|freeze or other controls|depends on both issuers/i);
+    const risks = src.slice(src.indexOf('label="Risks"'), src.indexOf('id="agents"'));
+    expect(risks.match(/<li\b/g)).toHaveLength(3);
+    expect(risks).toContain('<li className="sm:col-span-2">');
+    expect(risks).toContain("Read the full list in");
+  });
 });

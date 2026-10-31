@@ -24,4 +24,10 @@ describe("/llms.txt", () => {
     expect(text).not.toMatch(/github|open[- ]source|Turnkey|0-SOL|fee wallet|Taiwan|prototype/i);
     expect(text.replaceAll("0.10%", "")).not.toMatch(/\d\s*%/); // the fixed fee only, never an APR figure
   });
+
+  it("makes no issuer-controls / freeze claim (matches the landing page and FAQ)", async () => {
+    const text = await GET().text();
+    expect(text).not.toMatch(/issuer controls|issuer authorit|freez/i);
+    expect(text).toContain("Smart contract risk in Raydium");
+  });
 });

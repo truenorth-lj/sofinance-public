@@ -3,13 +3,11 @@ import "@/lib/engine-host";
 
 import { useEffect, useRef, useState } from "react";
 import { Check, ChevronDown, Search, ShieldCheck, X } from "lucide-react";
-import { TOKEN_2022_PROGRAM_ID } from "@solana/spl-token";
 import { formatAmount } from "@sofinance/engine/amount";
 import type { TokenMetadata } from "@sofinance/engine/token-metadata";
 import type { WalletAsset } from "@sofinance/engine/wallet-discovery";
 import { TokenIcon } from "./token-icon";
 
-const token2022Program = TOKEN_2022_PROGRAM_ID.toBase58();
 const short = (mint: string) => `${mint.slice(0, 5)}…${mint.slice(-5)}`;
 const displayBalance = (asset: WalletAsset) => {
   const balance = formatAmount(asset.balance, asset.decimals);
@@ -53,7 +51,6 @@ function AssetRow({ asset, item, selected, onSelect }: {
       <span className="flex min-w-0 flex-wrap items-center gap-1.5">
         <span className="truncate text-sm font-semibold text-cream sm:text-base">{symbol}</span>
         {item?.isVerified && <ShieldCheck className="h-4 w-4 shrink-0 text-smoke" aria-label="Jupiter verified" />}
-        {asset.tokenProgram === token2022Program && <span className="rounded-full border border-white/20 bg-white/[0.07] px-1.5 py-0.5 text-[10px] text-smoke">Token-2022</span>}
       </span>
       <span className="mt-0.5 block truncate text-xs text-smoke">{assetName(asset, item)} · {short(asset.mint)}</span>
       {!asset.eligible && <span className="mt-1 block text-xs leading-4 text-smoke">{asset.reason || "Not available for deposit"}</span>}

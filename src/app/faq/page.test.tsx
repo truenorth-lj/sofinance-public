@@ -75,6 +75,11 @@ describe("/faq", () => {
     expect(answer("Can an AI agent use SoFinance for me?")).toContain("Robinhood Chain pools are not available through the MCP server");
   });
 
+  it("makes no issuer-controls / freezing claim in the answers or the FAQPage JSON-LD", () => {
+    const text = JSON.stringify(jsonLd) + FAQ_ITEMS.map((item) => item.answer).join(" ");
+    expect(text).not.toMatch(/issuer controls|freezing|freeze/i);
+  });
+
   it("is a static page", () => {
     expect(readFileSync(resolve("src/app/faq/page.tsx"), "utf8")).toContain('export const dynamic = "force-static"');
   });

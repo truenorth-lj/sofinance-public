@@ -16,8 +16,8 @@ import type { TokenIconMap } from "@/lib/token-icons/map";
 import { fetchRwaPairsList } from "@/lib/rwa-pairs-list";
 import { updatedLabel, type SnapshotSourceTime } from "@/lib/snapshot-updated";
 import {
-  CHAIN_LABELS, DEFAULT_FILTERS, DEFAULT_SORT, FIRST_CLICK_DIR, PROTOCOL_LABELS, RISK_LABELS, selectPools, TVL_FILTER_PRESETS,
-  type PoolChain, type PoolFilters, type RiskFilter, type SortKey, type UnifiedPool, type UnifiedProtocol,
+  CHAIN_LABELS, DEFAULT_FILTERS, DEFAULT_SORT, FIRST_CLICK_DIR, PROTOCOL_LABELS, selectPools, TVL_FILTER_PRESETS,
+  type PoolChain, type PoolFilters, type SortKey, type UnifiedPool, type UnifiedProtocol,
 } from "@/lib/unified-pools/model";
 import { rhcPool, rhcPoolView, solanaPool, type RhcPoolSummary, type SolanaPoolRow } from "@/lib/unified-pools/rows";
 import { InfoTip } from "../info-tip";
@@ -28,7 +28,7 @@ import type { RhcPoolView } from "../rhc-univ4-open-panel";
 import type { OpenPositionPair } from "../use-open-position-controller";
 import { useWalletConnection } from "../wallet-connection";
 import { usePoolsApr7d, type Apr7dState } from "./use-pools-apr7d";
-import { APR24H_SHORT, APR7D_SHORT, Apr7dValue, ChainBadge, chip, COLUMNS, iconPair, money, OpenButton, PoolTable, pct, RiskChips, type OpenAction } from "./pool-list";
+import { APR24H_SHORT, APR7D_SHORT, Apr7dValue, ChainBadge, chip, COLUMNS, iconPair, money, OpenButton, PoolTable, pct, type OpenAction } from "./pool-list";
 
 /** Which sources this deployment may show; computed from the code flags on the server and passed down. */
 export type UnifiedPoolFlags = {
@@ -117,7 +117,6 @@ function PoolCard({ pool, apr, action, icons }: {
       <div><dt className={cardEyebrow}>24h vol</dt><dd className="mt-1 font-semibold tabular-nums">{money(pool.volume24hUsd)}</dd></div>
       <div><dt className={cardEyebrow}>Fee</dt><dd className="mt-1 font-semibold tabular-nums">{pool.feeTierBps === null ? pool.chain === "robinhood" ? "Dynamic" : "—" : `${pool.feeTierBps} bps`}</dd></div>
     </dl>
-    <div className="mt-4"><RiskChips pool={pool} /></div>
     <div className="mt-auto flex flex-wrap items-center gap-3 pt-5">
       <OpenButton action={action} label={pool.pairLabel} />
       {raydium && <Link href={buildPlanPath({ poolId: pool.poolAddress, pair: pool.pairLabel })}
@@ -186,7 +185,7 @@ export type OpenRhcRequest = { pool: RhcPoolView };
 
 /**
  * `/app/rwa-pairs` pool list: Solana (Raydium; Orca / Meteora when their flags are on) and Robinhood Chain (Uniswap v4) in one
- * list. Cards or a sortable table, search, chain / protocol / risk filters, and "Hide duplicate pools" (on by default;
+ * list. Cards or a sortable table, search, chain / protocol / TVL filters, and "Hide duplicate pools" (on by default;
  * see `lib/unified-pools/model.ts` for the rule). Opening a Solana pool connects the Solana wallet and opens the
  * existing Create position modal; opening a Robinhood Chain pool asks the page to open its dialog on the nav's EVM wallet.
  */
@@ -334,7 +333,7 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", header 
         </button>
       </div>
 
-      <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,2fr)_repeat(4,minmax(0,1fr))]">
+      <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,2fr)_repeat(3,minmax(0,1fr))]">
         <label className="flex flex-col gap-1 text-[11px] text-smoke">Search token
           <span className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-smoke" aria-hidden="true" />
@@ -346,9 +345,6 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", header 
           options={[{ value: "all", label: "All chains" }, ...chains.map((chain) => ({ value: chain, label: CHAIN_LABELS[chain] }))] as { value: PoolChain | "all"; label: string }[]} />
         <Select label="Protocol" value={filters.protocol} onChange={(value) => setFilter("protocol", value)}
           options={[{ value: "all", label: "All protocols" }, ...protocols.map((protocol) => ({ value: protocol, label: PROTOCOL_LABELS[protocol] }))] as { value: UnifiedProtocol | "all"; label: string }[]} />
-        <Select<RiskFilter> label="Risk" value={filters.risk} onChange={(value) => setFilter("risk", value)}
-          options={[{ value: "all", label: "Any risk" }, { value: "none", label: "No risk flags" },
-            { value: "freeze", label: RISK_LABELS.freeze }, { value: "token-2022", label: RISK_LABELS["token-2022"] }, { value: "pool-warning", label: RISK_LABELS["pool-warning"] }]} />
         <TvlFilter onChange={(minTvl) => setFilter("minTvl", minTvl)} />
       </div>
 

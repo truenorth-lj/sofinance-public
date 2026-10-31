@@ -33,7 +33,7 @@ export const DOCS_PAGES = [
     description: "Ways you can lose money, and risks SoFinance cannot control.",
     metaTitle: "Risks of providing liquidity with tokenized stocks",
     metaDescription:
-      "Ways an LP position can lose money: price moves, out-of-range periods, impermanent loss, issuer freeze controls, smart contract and network risk.",
+      "Ways an LP position can lose money: price moves, out-of-range periods, impermanent loss, smart contract and network risk.",
   },
   {
     href: DOCS_ROUTES.fees,

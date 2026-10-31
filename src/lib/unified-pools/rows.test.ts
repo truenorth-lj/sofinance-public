@@ -15,10 +15,10 @@ const summary = (over: Partial<RhcPoolSummary> = {}): RhcPoolSummary => ({
 });
 
 describe("solanaPool", () => {
-  it("maps a Raydium row with its risk flags", () => {
+  it("maps a Raydium row; freeze / Token-2022 flags are not carried into the list", () => {
     const p = solanaPool(row);
     expect(p).toMatchObject({ key: "solana:pool1", chain: "solana", protocol: "raydium-clmm", pairLabel: "SPCXx/SPCX", poolFeeApr24hPct: 3 });
-    expect(p.risks).toEqual(["freeze", "token-2022"]);
+    expect(p).not.toHaveProperty("risks");
   });
   it("keeps the Orca / Meteora protocol from /api/protocol-pools", () => {
     expect(solanaPool({ ...row, protocol: "meteora-dlmm" }).protocol).toBe("meteora-dlmm");
@@ -29,7 +29,7 @@ describe("solanaPool", () => {
 describe("rhcPool", () => {
   it("maps the allowlisted SPCX/SPCXon pool on Robinhood Chain", () => {
     expect(rhcPool(summary())).toMatchObject({
-      chain: "robinhood", protocol: "uniswap-v4-rhc", pairLabel: "SPCX/SPCXon", tvlUsd: 5000, volume24hUsd: 700, poolFeeApr24hPct: 12, risks: [],
+      chain: "robinhood", protocol: "uniswap-v4-rhc", pairLabel: "SPCX/SPCXon", tvlUsd: 5000, volume24hUsd: 700, poolFeeApr24hPct: 12,
     });
   });
   it("lists every pair as Robinhood token / Ondo token, also when the pool's currency0 is the Ondo token", () => {
@@ -44,10 +44,10 @@ describe("rhcPool", () => {
     expect(labels.every((label) => /^([A-Z]+)\/\1on$/.test(label ?? ""))).toBe(true);
     expect(rhcPairLabel("0xdead")).toBeNull();
   });
-  it("drops delisted and unknown pools and flags discovery warnings", () => {
+  it("drops delisted and unknown pools; a pool with discovery warnings stays listed", () => {
     expect(rhcPool(summary({ status: "delisted" } as Partial<RhcPoolSummary>))).toBeNull();
     expect(rhcPool(summary({ poolId: "0xdead" }))).toBeNull();
-    expect(rhcPool(summary({ warnings: ["thin liquidity"] } as Partial<RhcPoolSummary>))!.risks).toEqual(["pool-warning"]);
+    expect(rhcPool(summary({ warnings: ["thin liquidity"] } as Partial<RhcPoolSummary>))).toMatchObject({ pairLabel: "SPCX/SPCXon" });
   });
   it("builds the open panel view from the reviewed allowlist tokens", () => {
     expect(rhcPoolView(summary())).toMatchObject({ poolId: spec.poolId, tick: 10, token0: { address: spec.currency0.address, decimals: spec.currency0.decimals } });

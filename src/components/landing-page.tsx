@@ -216,15 +216,9 @@ export function LandingPage({ initialPools = null }: { initialPools?: HomepagePo
                   pool price leaves your range, that position collects nothing until price returns or you
                   change range.
                 </li>
-                <li>
+                <li className="sm:col-span-2">
                   <strong className="font-medium text-cream">Impermanent loss.</strong> Versus holding the
                   tokens, LP can underperform when the two sides move apart.
-                </li>
-                <li>
-                  <strong className="font-medium text-cream">Issuer controls.</strong> On Solana, xStock
-                  issuers may retain Token-2022 freeze or other controls that can block transfers. Each
-                  Robinhood Chain pool pairs a Robinhood stock token with the Ondo token of the same stock, so
-                  it depends on both issuers.
                 </li>
               </ul>
               <p className="mt-6 border-t border-white/15 pt-4 text-sm text-smoke">

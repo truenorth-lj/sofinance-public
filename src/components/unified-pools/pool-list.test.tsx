@@ -32,10 +32,10 @@ describe("PoolTable responsive layout (shared by the homepage and /app/rwa-pairs
     expect(cls(table)).toEqual(expect.arrayContaining(["min-w-[980px]", "max-md:min-w-0"]));
     const headers = [...doc.querySelectorAll("thead th")];
     const hiddenBelowMd = headers.filter((th) => cls(th).includes("max-md:hidden")).map((th) => th.textContent);
-    expect(hiddenBelowMd).toEqual(["Protocol", "Est. fee APR 24h", "TVL", "24h vol", "Risk"]);
+    expect(hiddenBelowMd).toEqual(["Protocol", "Est. fee APR 24h", "TVL", "24h vol"]);
     const cells = [...doc.querySelectorAll("tbody tr td")];
     expect(cells.filter((td) => !cls(td).includes("max-md:hidden"))).toHaveLength(4);
-    expect(cells.filter((td) => cls(td).includes("max-md:hidden"))).toHaveLength(5);
+    expect(cells.filter((td) => cls(td).includes("max-md:hidden"))).toHaveLength(4);
     // Not pinned below 768px (nothing scrolls sideways there); pinned from 768px up as before.
     expect(cls(cells[0]!)).toEqual(expect.arrayContaining(["sticky", "max-md:static"]));
     const tvl = doc.querySelector("[data-testid=tvl-narrow]")!;
@@ -56,10 +56,11 @@ describe("PoolTable responsive layout (shared by the homepage and /app/rwa-pairs
   it("keeps every column and the sticky pool column from 768px up", () => {
     const doc = render();
     expect([...doc.querySelectorAll("thead th")].map((th) => th.textContent)).toEqual(
-      ["Pool", "Chain", "Protocol", "Est. APR 7d", "Est. fee APR 24h", "TVL", "24h vol", "Risk", "Open"]);
+      ["Pool", "Chain", "Protocol", "Est. APR 7d", "Est. fee APR 24h", "TVL", "24h vol", "Open"]);
     const row = doc.querySelector("tbody tr")!;
     expect(row.textContent).toContain("Raydium");
     expect(row.textContent).toContain("$10.0k");
-    expect(row.textContent).toContain("Freeze risk");
+    // No Risk column: a freeze-authority / Token-2022 pool shows no risk flags (the API rows still carry them).
+    expect(row.textContent).not.toMatch(/Freeze risk|Token-2022|No flags|Pool warning/);
   });
 });
