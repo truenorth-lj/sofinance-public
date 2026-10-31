@@ -145,7 +145,7 @@ export function PoolTable({ pools, apr, actionFor, sort, onSort, icons, highligh
               <div className="min-w-0">
                 {/* Below 768px the pair may break after the "/" so long pairs fit. */}
                 <p className="whitespace-nowrap font-medium text-cream max-md:whitespace-normal max-md:leading-tight">{pairWithBreak(pool.pairLabel)}</p>
-                <p className="hidden max-w-[12rem] truncate text-xs text-smoke sm:block max-md:hidden">{pool.nameA} / {pool.nameB}</p>
+                <p className="hidden max-w-[8rem] truncate text-xs text-smoke sm:block max-md:hidden" title={`${pool.nameA} / ${pool.nameB}`}>{pool.nameA} / {pool.nameB}</p>
                 <p className="mt-0.5 whitespace-nowrap text-xs tabular-nums text-smoke md:hidden" data-testid="tvl-narrow">TVL {money(pool.tvlUsd)}</p>
               </div>
             </div>
