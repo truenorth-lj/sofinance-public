@@ -4,6 +4,7 @@ import { validRwaAuthorization } from "@/lib/rwa-auth";
 import { refreshRwaSnapshots } from "@/lib/rwa-refresh";
 import { captureApiRouteError } from "@/lib/sentry/capture";
 
+// Literal for Next's static analysis; `RWA_REFRESH_MAX_DURATION_MS` (rwa-refresh.ts) budgets the jobs to it.
 export const maxDuration = 300;
 export function GET(request: Request) { return handleRefresh(request, "GET"); }
 export function POST(request: Request) { return handleRefresh(request, "POST"); }

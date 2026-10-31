@@ -163,8 +163,17 @@ What changed:
 * **Serialised, spaced cold start.** GeckoTerminal calls run one at a time per instance, starts ≥ 250 ms apart (was 2 concurrent), so ten pools no
   longer fire 20 calls at once.
 * **Self-healing, but gentle.** A degraded profile is kept 45 s on the server (was 10 s: it would have re-hit a throttled upstream six times a
-  minute), 10 s at the CDN, 8 s in the browser; the browser re-asks 4 times, 20 s apart. The last good price history of the pool (< 6 h) still stands in
-  for a failed fetch (stale-if-error, flagged in `sample.issues`).
+  minute), 10 s at the CDN, 8 s in the browser; the browser re-asks 4 times, 20 s apart. The last good price history of the pool (< 48 h) still stands in
+  for a failed fetch (stale-if-error, flagged in `sample.issues` and `sample.priceHistoryStale`, shown "Data delayed").
+* **Cron: one oldest-first queue, a 429 ends the run (10/31 incident: 14 of 18 Solana pools lost their history).** The cron
+  (`vercel.json`, `15 */4 * * *`: every 4 h) refreshes the `APR_POOLS_PER_RUN` (22) pools whose 7d APR was refreshed or attempted
+  longest ago, Solana and RHC in ONE queue, **one pool at a time** on one run-wide gate (`createCronGeckoGate`, calls ≥ 2.5 s apart =
+  ≤ 24/min, under GeckoTerminal's ~30/min). On a 429 the run ends at once: the pool that hit it is not saved and, with the pools not
+  reached, goes first next run. A non-429 failure is saved from the pool's saved price history (≤ 48 h old) as a stale estimate ("Data
+  delayed"). N = 22 comes from measurements: the invocation is budgeted to 80% of `maxDuration` (240 s of 300 s); discovery is capped at
+  90 s, leaving ≥ 150 s; ~15 s fixed (RHC `pools/multi`, state multicalls, roster) and ≤ 6 s per pool (2 calls 2.5 s apart, latency
+  ≤ 0.7 s, RPC beside them, one save) give (150 − 15) / 6 = 22. With 29 active pools every pool is refreshed every ≤ 2 runs (8 h), and
+  within 24 h even when 3 runs in a row end on a 429 (tested). A pool is never started with less than 6 s + 10 s reserve left.
 * **Gaps are handled as zero volume.** Volume per hour comes from the daily totals, hourly candles only place it on price bins, so absent hours
   are no-trade hours. Few candles are fine; fewer than 12 in the window just flags the estimate low confidence (`*`). Only a pool with no
   usable candles *and* real volume is degraded. A pool with no candles and **zero** volume in the window is an honest 0%, not "unavailable".
@@ -216,12 +225,29 @@ come from different issuers; the per-protocol pool lookup is unchanged.
   (`discovery.rhcDiscovery`) and a Sentry info event list any non-allowlisted live pool, any v3 pool, an allowlisted pool that no
   longer derives, or a beacon upgrade. These are **candidates for review only**; users see the allowlist.
 
-## RHC price history in the daily cron
+## RHC price history in the cron
 
-The `rwa-apr-refresh` job (90 s, GeckoTerminal ≤ 4 calls/min, so calls start ≥ 16 s apart) makes one `pools/multi` call, then up to
-4 hourly-candle calls (one per pool: daily USD volume = token volume × token USD price from the same candles, both sides are the same
-stock). Pools with no trades in GeckoTerminal's last 24 h roll their saved history forward with no call (a zero-volume day). The
-remaining pools are fetched in fair order (missing history first, then the longest waiting); a failed fetch goes to the back with a
-12 h → 4 day backoff. No call starts after 66 s, and each pool is saved as soon as it is done. The job result (`apr.rhc`) shows
-`fetched / rolledForward / reused / deferred / failedFetches`. With more than 4 active pools a pool's history can be up to a day or two
-old (shown with its window dates).
+Each `rwa-apr-refresh` run makes one GeckoTerminal `pools/multi` call for all RHC pools (TVL, 24h volume and trades), then the RHC pools
+take their turn in the shared oldest-first queue (above). A queued RHC pool makes one hourly-candle call (daily USD volume = token
+volume × token USD price from the same candles, both sides are the same stock). Pools with no trades
+in GeckoTerminal's last 24 h roll their saved history forward with no call (a zero-volume day); a history fetched < 6 h ago in the same
+UTC window is reused. A failed fetch is retried only after a 12 h → 4 day backoff (the pool keeps its saved history meanwhile). The job
+result shows `apr.queue` (`pools / selected / done / stoppedBy`) and `apr.rhc` (`fetched / rolledForward / reused / deferred /
+failedFetches`).
+
+## Daily APR history (`rwa_apr_daily`)
+
+One row per active pool per Taipei day. Each run first finalizes earlier days' rows that never got a successful update (`failed` /
+`degraded` / `missing`, value NULL) and seeds today's pending rows (idempotent). A row turns `ok` on the pool's **first successful
+update of the Taipei day**, in whichever 4-hourly run that is (fresh price history of the current UTC volume window, chain state read
+today); later updates that day never overwrite it, and the primary key (pool, date) rules out duplicates. This replaced the fixed
+08:10–09:10 Taipei capture window.
+
+## 7d APR freshness rule
+
+* Under 26 h (`APR_SNAPSHOT_DELAYED_AFTER_MS`): the number, no label.
+* 26 h to 48 h, or computed from saved price history (`sample.priceHistoryStale`), or the last refresh failed: the number with
+  **"Data delayed"** (a small line under it in the pool tables, in the "Updated …" line on the cards).
+* Over 48 h (`APR_7D_SNAPSHOT_MAX_AGE_MS`): "—". The age is from the chain observation, or from the saved candles when the estimate
+  used saved price history, so a number never outlives 48 h old data.
+* The 24h fee APR column / pool list keep their 26 h rule (`RWA_PAIRS_STALE_MS`).

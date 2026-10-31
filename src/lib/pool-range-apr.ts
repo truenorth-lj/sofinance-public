@@ -16,6 +16,7 @@ import { parseRaydiumPoolEconomics, type PoolEconomics } from "./range-apr/raydi
 import { exactTickFromSqrtPriceX64, sqrtPriceX64ToNumber } from "@sofinance/engine/range-apr/tick-math";
 import type { ThrottleGate } from "./range-apr/throttle-gate";
 import { fetchJsonOnce } from "./range-apr/upstream-http";
+import { SAVED_PRICE_HISTORY_MAX_AGE_MS } from "./rwa-freshness";
 import { isRetryableFailure, retryJson, type JsonResult, type RetryOptions } from "./range-apr/upstream-retry";
 import type { OccupancySource, PoolRangeAprPayload, VolumeSource } from "./range-apr/types";
 import type { Connection } from "@solana/web3.js";
@@ -41,8 +42,8 @@ const FAILURE_TTL_MS = 15_000;
 const DEGRADED_TTL_MS = 45_000;
 /** A profile rebuilt from an older good one (upstream failed just now) is re-checked after a minute. */
 const STALE_TTL_MS = 60_000;
-/** Price history from an earlier good fetch may stand in for a failed one for this long. */
-const STALE_GOOD_MAX_MS = 6 * 3_600_000;
+/** Price history from an earlier good fetch may stand in for a failed one for this long (48h, shared with the cron). */
+const STALE_GOOD_MAX_MS = SAVED_PRICE_HISTORY_MAX_AGE_MS;
 const UPSTREAM_TIMEOUT_MS = 5_000;
 /**
  * Shared Data Cache (Vercel): successful upstream responses are stored for all instances and survive cold
@@ -216,7 +217,7 @@ export async function loadVolumeProfile(
 
 /**
  * `loadVolumeProfile` with stale-if-error: when this fetch lost its price history but an earlier one for the
- * same pool (< 6 h) had it, keep the old history/volume with fresh economics instead of degrading.
+ * same pool (< 48 h) had it, keep the old history/volume with fresh economics instead of degrading.
  */
 export async function loadVolumeProfileResilient(
   poolId: string, fetcher: typeof fetch, nowSeconds: number, upstream: UpstreamOptions = {},
@@ -328,6 +329,7 @@ export function assemblePoolRangeApr(
         days: volume.days, volumeSource: volume.source, occupancySource, unplacedVolumePct, candleCount: windowCandles.length,
       }),
       degraded,
+      ...(profile.stale && !degraded ? { priceHistoryStale: true } : {}),
       issues: idle ? [...profile.issues, "no trades in the sample window"] : profile.issues,
     },
     referenceCapitalUsd: RANGE_APR_REFERENCE_CAPITAL_USD,

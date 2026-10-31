@@ -9,33 +9,27 @@ import {
 } from "@sofinance/engine/protocols/uniswap-v4/market-data";
 import { hasPriceHistory, loadVolumeProfile, type VolumeProfile } from "./pool-range-apr";
 import { averageDailyVolume, dailyVolumesFromHourly } from "./range-apr/daily-volume";
-import { ThrottleGate } from "./range-apr/throttle-gate";
+import type { ThrottleGate } from "./range-apr/throttle-gate";
 import { assembleRhcRangeApr, rhcEconomics, RHC_ECONOMICS_SOURCE, rhcLiquidityAt, rhcStateClient } from "./rhc-range-apr";
 import { volumeWindowEnd } from "./rwa-daily";
 import { sanitizePublicError } from "./public-error";
 import { ALGORITHM_VERSION, type Lease, type ProfileFetchState, type RwaStore, type StoredProfile } from "./rwa-store-types";
 
 /**
- * Cron-only RHC pass (inside `rwa-apr-refresh`). The page reads what this saves and never calls an indexer or RPC.
- * Per run (one daily cron, 90 s job, GeckoTerminal ≤ 4 calls / min: calls start ≥ 16 s apart):
- * 1. one GeckoTerminal `/pools/multi` call for TVL, 24h volume and 24h trades of all 11 pools (one DexScreener
- *    batch call only for pools GeckoTerminal lacks);
- * 2. StateView / hook state per pool through multicall, then the tick window (two multicalls per pool);
- * 3. price history (7 complete UTC days): every pool whose saved history is not from today's window gets
+ * Cron-only RHC part of `rwa-apr-refresh`. The page reads what this saves and never calls an indexer or RPC.
+ * `prepareRhcRun` runs once per cron run, `refreshPool` once per RHC pool the run's oldest-first queue selects
+ * (`rwa-refresh.ts`; Solana and RHC pools share that queue and its one GeckoTerminal gate, one call at a time):
+ * 1. prepare: one GeckoTerminal `/pools/multi` call for TVL, 24h volume and 24h trades of all 11 pools (one
+ *    DexScreener batch call only for pools GeckoTerminal lacks), StateView / hook state per pool through
+ *    multicall, and the roster upsert (returns each pool's saved price history and when it was last refreshed);
+ * 2. per pool: the tick window (two multicalls) and price history (7 complete UTC days). A pool whose saved history
+ *    is not from today's window gets
  *    - rolled forward with no call when GeckoTerminal reports no trades in the last 24 h and the saved history
  *      already covers the time before that (the new day is a zero-volume day), or
  *    - ONE GeckoTerminal hourly-candle call (daily USD volume from the same candles: both tokens are the same
- *      stock), at most `RHC_MAX_PROFILE_FETCHES_PER_RUN`, only while the pass is inside its time budget.
- *    Fetch order is fair: missing history first, then the longest-waiting pool; a pool whose fetch failed goes
- *    to the back with an exponential backoff, so it cannot starve the others. A pool not fetched this run
- *    keeps its saved history with today's economics.
- * Pools that need no call are saved at once (beside the gated fetches), each pool as soon as it is done.
+ *      stock; two calls without a token price), unless an earlier fetch failed and its backoff is still running.
+ *    A pool whose fetch hit a 429 is not saved (`throttled`): the queue ends the run and it goes first next run.
  */
-export const RHC_GECKO_SPACING_MS = 16_000;
-/** pools/multi + 4 OHLCV calls start at 0, 16, 32, 48, 64 s: never more than 4 in any 60 s. */
-export const RHC_MAX_PROFILE_FETCHES_PER_RUN = 4;
-/** No OHLCV call starts later than this after the pass began: the rest of the 90 s job saves results. */
-export const RHC_FETCH_START_BUDGET_MS = 66_000;
 export const RHC_PROFILE_MAX_AGE_MS = 6 * 3_600_000;
 /** Roll-forward needs the saved history to reach back to (now − 24 h − this): GeckoTerminal's txns window is 24 h. */
 export const RHC_QUIET_COVERAGE_SLACK_MS = 15 * 60_000;
@@ -43,10 +37,6 @@ export const RHC_FAILURE_BACKOFF_MS = 12 * 3_600_000;
 export const RHC_FAILURE_BACKOFF_MAX_MS = 4 * 86_400_000;
 /** Measured block rate (`RHC_BLOCK_ANCHOR`), for pool creation days. */
 const RHC_BLOCKS_PER_SECOND = 9.6;
-
-let sharedGate: ThrottleGate | null = null;
-const rhcGeckoGate = () =>
-  (sharedGate ??= new ThrottleGate({ minSpacingMs: RHC_GECKO_SPACING_MS, defaultCooldownMs: 60_000, maxCooldownMs: 120_000 }));
 
 type Fetcher = typeof fetch;
 
@@ -120,15 +110,14 @@ function isQuietSinceSaved(cached: StoredProfile, market: Univ4MarketData | unde
 }
 
 /**
- * Per pool: reuse, roll forward or fetch, and the order of the fetches (missing history first, then the pool
- * waiting longest; pools with failed fetches after all others, and not before their backoff ends).
+ * Per pool: reuse, roll forward or fetch. A pool whose fetches failed keeps its saved history (`reuse`) until its
+ * backoff ends, so it cannot spend the run's GeckoTerminal calls every run.
  */
 export function planRhcProfileFetches(
   pools: readonly Univ4AllowlistedPool[], profiles: Record<string, StoredProfile | null>, nowMs: number,
   market: ReadonlyMap<string, Univ4MarketData> = new Map(),
-): { plan: Map<string, Plan>; fetchOrder: string[] } {
+): Map<string, Plan> {
   const plan = new Map<string, Plan>();
-  const due: { id: string; failures: number; priority: number; waitingSince: number }[] = [];
   for (const spec of pools) {
     const id = spec.poolId.toLowerCase();
     const cached = usableProfile(spec, profiles[id]);
@@ -138,13 +127,11 @@ export function planRhcProfileFetches(
     const state = cached?.fetchState ?? profiles[id]?.fetchState;
     const failures = state?.failures ?? 0;
     const lastAttempt = state ? Date.parse(state.lastAttemptAt) : Number.NEGATIVE_INFINITY;
-    // 1 h of slack: daily runs are ~24 h apart, not exactly.
+    // 1 h of slack: runs are 4 h apart, not exactly.
     if (failures > 0 && nowMs < lastAttempt + rhcFailureBackoffMs(failures) - 3_600_000) { plan.set(id, { action: "reuse", cached }); continue; }
     plan.set(id, { action: "fetch", cached });
-    due.push({ id, failures, priority, waitingSince: state ? lastAttempt : cached ? Date.parse(cached.observedAt) : Number.NEGATIVE_INFINITY });
   }
-  due.sort((a, b) => Number(a.failures > 0) - Number(b.failures > 0) || a.priority - b.priority || a.waitingSince - b.waitingSince);
-  return { plan, fetchOrder: due.map((row) => row.id) };
+  return plan;
 }
 
 function storedFrom(fresh: VolumeProfile, nowMs: number, fetchState?: ProfileFetchState): StoredProfile {
@@ -189,22 +176,31 @@ function missingInputs(summary: Univ4PoolSummary): string | null {
   return null;
 }
 
+/** `deferred`: RHC pools the run's queue did not reach (oldest-first: they go first next run). */
 export type RhcAprRunStats = { fetched: number; rolledForward: number; reused: number; deferred: number; failedFetches: number };
+/** saved: estimate saved; degraded / failed: saved without a fresh estimate; throttled: 429, nothing saved. */
+export type RhcPoolOutcome = "saved" | "degraded" | "failed" | "throttled";
+export type RhcRun = {
+  /** Every allowlisted pool with when its APR was last refreshed or attempted (null = never): the queue key. */
+  pools: { spec: Univ4AllowlistedPool; poolId: string; refreshedAt: string | null }[];
+  refreshPool: (spec: Univ4AllowlistedPool) => Promise<RhcPoolOutcome>;
+  /** Issues so far (prepare + every refreshed pool). */
+  issues: string[];
+  stats: RhcAprRunStats;
+};
 
-export async function refreshRhcAprSnapshots(input: {
+/** Once per cron run: market batch, pool state and roster (see the module comment). */
+export async function prepareRhcRun(input: {
   store: RwaStore; lease: Lease; fetcher: Fetcher; clock: () => number; signal: AbortSignal;
-  client?: PublicClient; gate?: ThrottleGate; maxProfileFetches?: number; fetchStartBudgetMs?: number;
-}): Promise<{ processed: number; issues: string[]; stats: RhcAprRunStats }> {
-  const { store, lease, fetcher, clock, signal } = input;
-  const startedAt = clock();
+  /** The run's one GeckoTerminal gate (shared with the Solana pools). */
+  gate: ThrottleGate;
+  client?: PublicClient;
+}): Promise<RhcRun> {
+  const { store, lease, fetcher, clock, signal, gate } = input;
   const client = input.client ?? rhcStateClient();
-  const gate = input.gate ?? rhcGeckoGate();
-  const maxFetches = input.maxProfileFetches ?? RHC_MAX_PROFILE_FETCHES_PER_RUN;
-  const startBudget = input.fetchStartBudgetMs ?? RHC_FETCH_START_BUDGET_MS;
   const pools = UNIV4_RHC_ALLOWLISTED_POOLS;
   const issues: string[] = [];
   const stats: RhcAprRunStats = { fetched: 0, rolledForward: 0, reused: 0, deferred: 0, failedFetches: 0 };
-  let processed = 0;
 
   const { market, issues: marketIssues } = await fetchRhcMarketBatch({ fetcher, gate, signal, pools });
   issues.push(...marketIssues.map((issue) => `RHC market: ${issue}`));
@@ -217,29 +213,26 @@ export async function refreshRhcAprSnapshots(input: {
     op: "ensureRhcRoster", lease,
     data: summaries.map((summary) => ({ poolId: summary.poolId.toLowerCase(), summary })),
   });
-  // The daily history roster (rwa_apr_daily) picks up RHC pools once their feed is published this run.
-  await store.request({ op: "prepareDaily", lease });
-  const { plan, fetchOrder } = planRhcProfileFetches(pools, roster.profiles, clock(), market);
-  let fetchesLeft = maxFetches;
-  const specById = new Map(pools.map((spec) => [spec.poolId.toLowerCase(), spec]));
+  const plan = planRhcProfileFetches(pools, roster.profiles, clock(), market);
 
-  const refreshPool = async (spec: Univ4AllowlistedPool) => {
+  const refreshPool = async (spec: Univ4AllowlistedPool): Promise<RhcPoolOutcome> => {
     const poolId = spec.poolId.toLowerCase();
     const summary = summaries.find((row) => row.poolId.toLowerCase() === poolId)!;
     const { action, cached } = plan.get(poolId)!;
     let stored: StoredProfile | null = null;
-    const fail = async (message: string) => {
+    const fail = async (message: string): Promise<RhcPoolOutcome> => {
       issues.push(`${spec.baseSymbol}: ${message}`);
       // A price history fetched before the failure is still saved (progress), without a payload.
       if (!signal.aborted) await store.request({
         op: "saveApr", lease, data: { poolId, payload: null, profile: stored, chainObservedAt: null, issues: [message] },
       }).catch(() => undefined);
+      return "failed";
     };
     try {
       signal.throwIfAborted();
       await store.request({ op: "renew", lease });
       const missing = missingInputs(summary);
-      if (missing) { await fail(missing); return; }
+      if (missing) return await fail(missing);
       const nowMs = clock(), nowSeconds = Math.floor(nowMs / 1000);
       const priceUsd = rhcTokenPriceUsd(market.get(poolId));
       const economics = rhcEconomics(spec, {
@@ -248,18 +241,15 @@ export async function refreshRhcAprSnapshots(input: {
       const withEconomics = (profile: StoredProfile): StoredProfile => ({ ...profile, profile: { ...profile.profile, economics } });
       if (action === "roll" && cached) { stored = withEconomics(rollRhcProfileForward(cached, spec, nowMs, priceUsd)); stats.rolledForward += 1; }
       else if (cached) stored = withEconomics(cached);
-      // Calls this fetch makes; each must fit the per-run cap and start inside the time budget.
-      const cost = priceUsd ? 1 : 2;
-      const fits = () => cost <= fetchesLeft
-        && clock() - startedAt + gate.nextStartInMs() + (cost - 1) * RHC_GECKO_SPACING_MS <= startBudget;
-      if (action === "fetch" && fits()) {
-        fetchesLeft -= cost;
+      if (action === "fetch") {
         const fresh = await loadVolumeProfile(poolId, fetcher, nowSeconds, {
           economics: { ...RHC_ECONOMICS_SOURCE, load: async () => economics },
           network: "robinhood", gate, retry: { signal, attempts: 1 },
           // Without a token price this pool falls back to the separate daily-candle call.
           ...(priceUsd ? { dailyFromHourly: { tokenPriceUsd: priceUsd, createdAtSeconds: rhcPoolCreatedAtSeconds(spec) } } : {}),
         });
+        // A 429 (now or earlier in the run): save nothing, so the pool keeps its place at the front of the queue.
+        if (gate.blockedForMs() > 0) return "throttled";
         const attemptAt = new Date(clock()).toISOString();
         const previous = (cached ?? roster.profiles[poolId])?.fetchState;
         if (hasPriceHistory(fresh)) {
@@ -273,13 +263,9 @@ export async function refreshRhcAprSnapshots(input: {
             : storedFrom(fresh, nowMs, fetchState);
           stats.failedFetches += 1;
         }
-      } else if (action === "fetch") stats.deferred += 1;
-      else if (action === "reuse") stats.reused += 1;
-      if (!stored) {
-        // No saved history yet and no OHLCV slot left this run: the next run fetches it first.
-        await fail("Price history queued for the next refresh");
-        return;
-      }
+      } else if (action === "reuse") stats.reused += 1;
+      // No saved history and its fetch is in backoff: the next run after the backoff fetches it.
+      if (!stored) return await fail("Price history queued for the next refresh");
       const chainObservedAt = new Date(clock()).toISOString();
       const chain = await rhcLiquidityAt(client, spec, {
         tick: summary.tick!, sqrtPriceX96: BigInt(summary.sqrtPriceX96!), liquidity: BigInt(summary.liquidity!),
@@ -292,24 +278,18 @@ export async function refreshRhcAprSnapshots(input: {
         op: "saveApr", lease,
         data: { poolId, payload, profile: stored, chainObservedAt, issues: payload.sample.issues.slice(0, 20) },
       });
-      processed += 1;
-      if (payload.sample.degraded) issues.push(`${spec.baseSymbol}: Price history unavailable`);
+      if (payload.sample.degraded) { issues.push(`${spec.baseSymbol}: Price history unavailable`); return "degraded"; }
+      return "saved";
     } catch (error) {
-      await fail(sanitizePublicError(error, "RHC APR refresh failed").slice(0, 400));
+      return fail(sanitizePublicError(error, "RHC APR refresh failed").slice(0, 400));
     }
   };
 
-  // Two lanes: gated price-history fetches in fair order, and every other pool at once (cheap RPC + save).
-  const fetchLane = fetchOrder.map((id) => specById.get(id)!);
-  const otherLane = pools.filter((spec) => !fetchOrder.includes(spec.poolId.toLowerCase()));
-  await Promise.all([
-    (async () => { for (const spec of fetchLane) await refreshPool(spec); })(),
-    (async () => { for (const spec of otherLane) await refreshPool(spec); })(),
-  ]);
-  return { processed, issues, stats };
-}
-
-/** Test hook. */
-export function resetRhcAprRefreshGate(): void {
-  sharedGate = null;
+  return {
+    pools: pools.map((spec) => {
+      const poolId = spec.poolId.toLowerCase();
+      return { spec, poolId, refreshedAt: roster.refreshedAt?.[poolId] ?? null };
+    }),
+    refreshPool, issues, stats,
+  };
 }

@@ -1,10 +1,13 @@
 const DAY_MS = 86_400_000;
-/** Observations are dated in Taipei; the market-volume window remains complete UTC days. */
-export function dailyWindow(nowMs: number) {
+/**
+ * The Taipei calendar day of `nowMs`: history rows (`rwa_apr_daily`) are dated in Taipei, and each pool's row for
+ * a day is written by its first successful refresh of that day (any run of the 4-hourly cron), so there is no
+ * fixed capture window. `start` is Taipei midnight (`scheduled_for` of the day's rows).
+ * The market-volume window remains complete UTC days (`volumeWindowEnd`).
+ */
+export function taipeiDay(nowMs: number) {
   const date = new Date(nowMs + 8 * 3_600_000).toISOString().slice(0, 10);
-  const start = Date.parse(`${date}T00:10:00Z`); // 08:10 Taipei
-  const end = Date.parse(`${date}T01:10:00Z`); // 09:10 Taipei
-  return { date, start, end, eligible: nowMs >= start && nowMs < end };
+  return { date, start: Date.parse(`${date}T00:00:00+08:00`) };
 }
 export const volumeWindowEnd = (nowMs: number) =>
   new Date(Math.floor(nowMs / DAY_MS) * DAY_MS).toISOString();

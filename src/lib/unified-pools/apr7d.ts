@@ -1,7 +1,7 @@
 import { OPEN_RANGE_UI_PRESETS } from "@sofinance/engine/open-range-presets";
 import { highestRangeSummary } from "@/lib/range-apr/preset-list";
 import type { PoolRangeAprPayload } from "@/lib/range-apr/types";
-import { aprSnapshotExpired } from "@/lib/rwa-freshness";
+import { aprSnapshotExpired, aprSnapshotLate } from "@/lib/rwa-freshness";
 import type { UnifiedProtocol } from "./model";
 
 /** When the pool's APR snapshot was taken, and whether its refresh is late or failed ("Data delayed"). */
@@ -28,11 +28,12 @@ export type Apr7dState =
 export function summarizeApr7d(payload: PoolRangeAprPayload, protocol: UnifiedProtocol, nowMs: number): Exclude<Apr7dState, { status: "loading" }> {
   const expired = aprSnapshotExpired(payload, nowMs);
   const summary = !expired ? highestRangeSummary(OPEN_RANGE_UI_PRESETS, payload) : null;
-  // Server `stale` (older than 26h, see `aprSnapshotDelayed`), a failed last refresh, or a snapshot this
-  // browser already sees as older than 26h (e.g. a cached response) all say "Data delayed".
+  // Product rule: the number stays, labelled "Data delayed", while the snapshot is under 48h old; past 48h it is
+  // "—" (`aprSnapshotExpired`). "Data delayed": server `stale` (older than 26h, or computed from saved price history,
+  // see `aprSnapshotDelayed`), a failed last refresh, or a snapshot this browser already sees as late (cached response).
   const freshness = payload.freshness ? {
     snapshotAt: payload.freshness.snapshotAt,
-    delayed: payload.freshness.stale || payload.freshness.lastAttemptStatus === "error" || expired,
+    delayed: payload.freshness.stale || payload.freshness.lastAttemptStatus === "error" || expired || aprSnapshotLate(payload, nowMs),
   } : undefined;
   if (!summary) {
     return {

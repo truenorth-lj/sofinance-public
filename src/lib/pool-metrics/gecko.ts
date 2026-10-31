@@ -21,4 +21,20 @@ export function geckoOhlcvUrl(network: GeckoNetwork, poolId: string, timeframe: 
   return `${geckoPoolsUrl(network)}/${encodeURIComponent(id)}/ohlcv/${timeframe}?aggregate=1&limit=${query.limit}&currency=${query.currency}`;
 }
 
+/** Page / API requests (one call at a time, refused during a cooldown so a page never waits on a 429). */
 export const geckoGate = new ThrottleGate({ minSpacingMs: 250, defaultCooldownMs: 20_000 });
+
+/**
+ * Cron (`rwa-apr-refresh`): GeckoTerminal calls start at least this far apart for the whole run (Solana and RHC
+ * pools share one sequential queue), i.e. at most 24 calls/min, under GeckoTerminal's ~30/min per IP. The 250 ms
+ * page spacing let the Solana pass burst ~36 calls in ~10 s beside RHC and the run hit 429 (10/31 incident).
+ */
+export const CRON_GECKO_SPACING_MS = 2_500;
+
+/**
+ * One GeckoTerminal gate per cron run, used by every pool in the queue. A 429 blocks it (`blockedForMs() > 0`),
+ * which ends the run: nothing waits out a cooldown, the remaining pools go first next run.
+ */
+export function createCronGeckoGate(): ThrottleGate {
+  return new ThrottleGate({ minSpacingMs: CRON_GECKO_SPACING_MS, defaultCooldownMs: 20_000, minCooldownMs: 5_000, maxCooldownMs: 60_000 });
+}

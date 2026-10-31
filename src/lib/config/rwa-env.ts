@@ -25,6 +25,14 @@ export function getRwaConfig() {
     10_000,
     120_000,
   );
+  // The APR job (one oldest-first queue of Solana + RHC pools on one GeckoTerminal limit) gets more time than
+  // discovery; the refresh still clamps it to what is left of its 80% share of the route's maxDuration (`runJob`).
+  const aprJobTimeoutMs = number(
+    process.env.SOFINANCE_RWA_APR_JOB_TIMEOUT_MS,
+    180_000,
+    10_000,
+    240_000,
+  );
   const leaseMs = number(
     process.env.SOFINANCE_RWA_JOB_LEASE_MS,
     120_000,
@@ -80,6 +88,7 @@ export function getRwaConfig() {
     maxPages: number(process.env.SOFINANCE_RWA_MAX_PAGES, 10, 1, 30),
     concurrency: number(process.env.SOFINANCE_RWA_POOL_CONCURRENCY, 2, 1, 2),
     jobTimeoutMs,
+    aprJobTimeoutMs,
     leaseMs,
   };
 }
@@ -87,9 +96,10 @@ export function getRwaConfig() {
 /**
  * Default tick for the self-hosted scheduler: 15 minutes. Each tick is one
  * function invocation, so the tick (not the DB job cadence) bounds Fluid Active
- * CPU. Production on Vercel uses the daily cron instead (`RWA_REFRESH_CRON`,
- * 00:15 UTC); the range-APR UI keeps a snapshot for `APR_SNAPSHOT_MAX_AGE_MS`
- * (26 h), and the daily 08:10–09:10 Taipei sample needs a refresh inside that window.
+ * CPU. Production on Vercel uses the 4-hourly cron instead (`RWA_REFRESH_CRON`,
+ * minute 15 every 4 h UTC); the range-APR UI says "Data delayed" after
+ * `APR_SNAPSHOT_MAX_AGE_MS` (26 h), and each pool's daily history row is written by
+ * its first successful refresh of the Taipei day.
  */
 export const DEFAULT_RWA_SCHEDULER_INTERVAL_MS = 900_000;
 

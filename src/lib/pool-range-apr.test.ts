@@ -222,10 +222,13 @@ describe("fetchPoolRangeApr", () => {
     const good = await fetchPoolRangeApr(POOL, { fetcher: fetcher().impl, nowSeconds: NOW, retry: NO_WAIT, gate: gate(), bypassCache: true });
     const broken = fetcher({ hourlyOk: false }).impl;
     const soon = await fetchPoolRangeApr(POOL, { fetcher: broken, nowSeconds: NOW + 3_600, retry: NO_WAIT, gate: gate(), bypassCache: true });
-    expect(soon.sample).toMatchObject({ degraded: false, occupancySource: "hourly-candles" });
+    expect(soon.sample).toMatchObject({ degraded: false, occupancySource: "hourly-candles", priceHistoryStale: true });
+    expect(good.sample.priceHistoryStale).toBeUndefined();
     expect(soon.sample.issues.some((issue) => /using price history cached 60 min ago/.test(issue))).toBe(true);
     expect(soon.presets.map((preset) => preset.estimate.status)).toEqual(good.presets.map((preset) => preset.estimate.status));
-    const later = await fetchPoolRangeApr(POOL, { fetcher: broken, nowSeconds: NOW + 7 * 3_600, retry: NO_WAIT, gate: gate(), bypassCache: true });
+    const day2 = await fetchPoolRangeApr(POOL, { fetcher: broken, nowSeconds: NOW + 47 * 3_600, retry: NO_WAIT, gate: gate(), bypassCache: true });
+    expect(day2.sample).toMatchObject({ degraded: false, priceHistoryStale: true }); // saved history is usable up to 48h
+    const later = await fetchPoolRangeApr(POOL, { fetcher: broken, nowSeconds: NOW + 49 * 3_600, retry: NO_WAIT, gate: gate(), bypassCache: true });
     expect(later.sample.degraded).toBe(true);
   });
 

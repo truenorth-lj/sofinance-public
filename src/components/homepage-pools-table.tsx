@@ -226,7 +226,7 @@ export function HomepagePoolsView({
             </span>
             Ranked by Est. APR · 7d, high to low (on Solana, from a 7-day backtest of candidate ranges). {HIGHEST_RANGE_APR_7D_HELP}{" "}
             Not LP return; ignores IL and rewards. Data: Raydium API (Solana); GeckoTerminal / DexScreener (Robinhood
-            Chain), saved once a day{updatedText ? ` · ${updatedText}` : ""}.
+            Chain), refreshed every 4 hours{updatedText ? ` · ${updatedText}` : ""}.
           </p>
           <div className="flex shrink-0 items-center gap-4">
             <Link href={DOCS_ROUTES.feeApr} className="text-sm text-cream/70 underline underline-offset-2 hover:text-cream">

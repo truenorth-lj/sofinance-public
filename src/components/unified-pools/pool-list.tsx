@@ -32,8 +32,22 @@ export function ChainBadge({ chain, tone = "light", wrapBelowMd }: { chain: Pool
     : tone === "light" ? "bg-lilac text-ink" : "bg-lilac/90 text-ink")}>{CHAIN_LABELS[chain]}</span>;
 }
 
+/**
+ * The 7d APR value. In the table (`sm`) a delayed snapshot that still shows its number (under 48h old) gets a small
+ * "Data delayed" line under it; the cards (`lg`) already say it in their "Updated … · Data delayed" line.
+ */
 export function Apr7dValue({ state, size = "lg" }: { state: Apr7dState | undefined; size?: "lg" | "sm" }) {
   const text = state?.status === "ready" ? pct(state.aprPct) : state?.status === "missing" ? "—" : "…";
+  const value = <Apr7dPill state={state} size={size} text={text} />;
+  if (size !== "sm" || state?.status !== "ready" || !state.freshness?.delayed) return value;
+  return <span className="inline-flex flex-col items-end gap-0.5">
+    {value}
+    <span data-testid="apr7d-delayed" className="whitespace-nowrap font-data text-[10px] uppercase tracking-[0.08em] text-cream/60 max-md:text-[9px]"
+      title={`Snapshot from ${new Date(state.freshness.snapshotAt).toLocaleString()}`}>Data delayed</span>
+  </span>;
+}
+
+function Apr7dPill({ state, size, text }: { state: Apr7dState | undefined; size: "lg" | "sm"; text: string }) {
   return <span data-testid="apr7d" data-apr-status={state?.status ?? "loading"} title={state?.status === "missing" ? state.reason : undefined}
     className={cn("inline-flex items-center justify-center whitespace-nowrap rounded-full font-semibold tabular-nums",
       size === "lg" ? "h-10 px-4 text-xl" : "h-7 min-w-[3.5rem] px-2.5 text-sm max-md:min-w-0 max-md:px-2 max-md:text-[13px]",
