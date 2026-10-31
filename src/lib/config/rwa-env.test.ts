@@ -38,6 +38,14 @@ describe("store rollout configuration", () => {
     vi.stubEnv("SOFINANCE_RWA_NATIVE_CRON_ENABLED", "true");
     expect(getRwaConfig()).toMatchObject({ storeMode: "neon", nativeCronEnabled: true });
   });
+  it("needs a lease that outlives one APR job step (it is renewed after prepare and before every pool)", () => {
+    vi.stubEnv("SOFINANCE_RWA_STORE_MODE", undefined);
+    vi.stubEnv("SOFINANCE_RWA_JOB_TIMEOUT_MS", "30000");
+    vi.stubEnv("SOFINANCE_RWA_JOB_LEASE_MS", "60000");
+    expect(() => getRwaConfig()).toThrow("RWA lease must outlive one APR job step");
+    vi.stubEnv("SOFINANCE_RWA_JOB_LEASE_MS", "80000");
+    expect(getRwaConfig()).toMatchObject({ leaseMs: 80_000 });
+  });
   it.each(["auto", "Neon", "direct", " "])("fails closed for mode %s", (mode) => {
     vi.stubEnv("SOFINANCE_RWA_STORE_MODE", mode);
     expect(() => getRwaConfig()).toThrow("Invalid RWA store mode");

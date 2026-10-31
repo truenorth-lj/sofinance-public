@@ -12,6 +12,17 @@ export function taipeiDay(nowMs: number) {
 export const volumeWindowEnd = (nowMs: number) =>
   new Date(Math.floor(nowMs / DAY_MS) * DAY_MS).toISOString();
 
+/**
+ * The volume window a Taipei day's history row must use: the 7 complete UTC days ending at that date's UTC
+ * midnight (`${date}T00:00Z`, i.e. 08:00 Taipei). Before 08:00 Taipei (the 00:15 and 04:15 runs) the current window
+ * still ends a day earlier (the previous Taipei day's window), so a refresh then must not count for the new day:
+ * one window per day, no duplicate of yesterday's window and no skipped window.
+ */
+export const taipeiDayWindowEnd = (date: string) => new Date(`${date}T00:00:00.000Z`).toISOString();
+
+/** Whether a refresh at `nowMs` can be the Taipei day's history success (its window is that day's: ≥ 08:00 Taipei). */
+export const countsForTaipeiDay = (nowMs: number) => volumeWindowEnd(nowMs) === taipeiDayWindowEnd(taipeiDay(nowMs).date);
+
 export function validateHistoryRange(from: string, to: string) {
   const valid = (value: string) =>
     value.slice(0, 4) !== "0000" &&

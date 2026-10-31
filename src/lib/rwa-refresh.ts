@@ -64,6 +64,14 @@ export const APR_SAVE_RESERVE_MS = 10_000;
  * lane). RHC: 1 call (2 without a token price) + two multicalls + save: ≤ 5 s. Budget 6 s.
  */
 export const APR_POOL_BUDGET_MS = 6_000;
+/**
+ * Longest time one pool can take (the run's start guard), all in parallel then the save: Raydium economics (3
+ * attempts × 5 s timeout + backoff ≈ 17 s), 2 gated GeckoTerminal calls (one attempt each on the cron gate, 2.5 s
+ * apart, 5 s timeout: ≤ 10 s), the RPC liquidity read (8 s retry budget); plus renew + save ≈ 21 s. A pool is
+ * started only when this plus `APR_SAVE_RESERVE_MS` is left, so the job timeout does not cut one in normal runs
+ * (if it still does, the run stops cleanly with `stoppedBy: "time"`).
+ */
+export const APR_POOL_MAX_MS = 21_000;
 /** Fixed APR-job time before the queue, measured 10/31: RHC pools/multi + state multicalls + roster ≈ 10 s. */
 export const APR_QUEUE_FIXED_MS = 15_000;
 /**
@@ -210,7 +218,7 @@ export async function runJob(job: JobName, options: Options): Promise<JobResult>
       await store.request({ op: "publishDiscovery", lease, data });
       processed = result.pairs.length;
       // Best effort: a missing table or an indexer outage leaves the snapshot published and the old icons in place.
-      await refreshTokenIcons(store, lease, result.pairs, options.fetcher, signal).catch(() => {
+      await refreshTokenIcons(store, lease, result.pairs, options.fetcher, signal, options.geckoGate).catch(() => {
         issues.push("Token icons not saved");
       });
       // Best effort, state reads only (one multicall): reported here and to Sentry, never published.
@@ -250,15 +258,26 @@ export async function runJob(job: JobName, options: Options): Promise<JobResult>
 export async function refreshRwaSnapshots(options: Options = {}) {
   const clock = options.clock ?? Date.now;
   const deadlineMs = options.deadlineMs ?? clock() + RWA_REFRESH_MAX_DURATION_MS - RWA_REFRESH_DEADLINE_SLACK_MS;
+  // One GeckoTerminal gate for the whole invocation: the discovery job's icon pass and the APR queue share its
+  // spacing, and a 429 in either ends the GeckoTerminal work of the run.
+  const geckoGate = options.geckoGate ?? createCronGeckoGate();
   // A complete newly published generation is available before APR enumerates its pools.
-  const discovery = await runJob("rwa-discovery", { ...options, deadlineMs });
-  const apr = await runJob("rwa-apr-refresh", { ...options, deadlineMs });
+  const discovery = await runJob("rwa-discovery", { ...options, deadlineMs, geckoGate });
+  const apr = await runJob("rwa-apr-refresh", { ...options, deadlineMs, geckoGate });
   return { discovery, apr };
 }
 
 type QueueItem =
   | { kind: "solana"; poolId: string; refreshedAt: string | null; pool: ActivePool }
   | { kind: "rhc"; poolId: string; refreshedAt: string | null; spec: RhcRun["pools"][number]["spec"] };
+
+/**
+ * Queue key of a Solana pool: the store's `refreshedAt`, else (an older store / gateway that does not send it)
+ * the saved profile's last fetch attempt or observation, so the queue never falls back to pool id order alone.
+ */
+export function activePoolRefreshedAt(pool: Pick<ActivePool, "refreshedAt" | "profile">): string | null {
+  return pool.refreshedAt ?? pool.profile?.fetchState?.lastAttemptAt ?? pool.profile?.observedAt ?? null;
+}
 
 /**
  * The APR queue order: pools never refreshed first, then the oldest last refresh or attempt (`refreshedAt`), then
@@ -284,10 +303,11 @@ async function refreshAprPools(input: {
   const { store, lease, options, signal, clock, jobDeadline } = input;
   const fetcher = options.fetcher ?? fetch;
   const gate = options.geckoGate ?? createCronGeckoGate();
-  const throttled = () => gate.blockedForMs() > 0;
+  // Sticky: once any call of this run saw a 429 the run is over, even after the gate's cooldown has passed.
+  const throttled = () => gate.hit429;
   const issues: string[] = [];
   // Finalizes earlier days' history rows and seeds today's (idempotent).
-  await store.request({ op: "prepareDaily", lease });
+  await store.request({ op: "prepareDaily", lease, includeRhc: isRhcApr7dEnabled() });
   let rhc: RhcRun | null = null;
   if (isRhcApr7dEnabled()) {
     rhc = await prepareRhcRun({ store, lease, fetcher, clock, signal, gate }).catch((error) => {
@@ -295,9 +315,12 @@ async function refreshAprPools(input: {
       return null;
     });
   }
+  // Renewed here and before every pool, so the lease (120 s) only has to outlive one pool or the prepare phase,
+  // never the whole APR job timeout (`aprJobTimeoutMs`, up to 240 s).
+  await store.request({ op: "renew", lease });
   const pools = await store.request({ op: "activePools" });
   const all = orderAprQueue<QueueItem>([
-    ...pools.map((pool) => ({ kind: "solana" as const, poolId: pool.pair.poolAddress, refreshedAt: pool.refreshedAt ?? null, pool })),
+    ...pools.map((pool) => ({ kind: "solana" as const, poolId: pool.pair.poolAddress, refreshedAt: activePoolRefreshedAt(pool), pool })),
     ...(rhc?.pools ?? []).map(({ spec, poolId, refreshedAt }) => ({ kind: "rhc" as const, poolId, refreshedAt, spec })),
   ]);
   const selected = all.slice(0, APR_POOLS_PER_RUN);
@@ -306,8 +329,8 @@ async function refreshAprPools(input: {
   // The RHC pools/multi call already hit a 429: end the run before any pool.
   if (throttled()) queue.stoppedBy = "429";
   for (const item of queue.stoppedBy ? [] : selected) {
-    if (jobDeadline - clock() < APR_POOL_BUDGET_MS + APR_SAVE_RESERVE_MS) { queue.stoppedBy = "time"; break; }
-    signal.throwIfAborted();
+    // Start a pool only if even its slowest case (`APR_POOL_MAX_MS`) plus the save reserve still fits.
+    if (signal.aborted || jobDeadline - clock() < APR_POOL_MAX_MS + APR_SAVE_RESERVE_MS) { queue.stoppedBy = "time"; break; }
     let outcome: PoolOutcome;
     if (item.kind === "solana") {
       const result = await refreshSolanaPool({ store, lease, pool: item.pool, fetcher, clock, signal, gate, throttled });
@@ -318,6 +341,8 @@ async function refreshAprPools(input: {
       outcome = rhcOutcome === "saved" ? "fresh" : rhcOutcome === "failed" ? "error" : rhcOutcome;
     }
     if (outcome === "throttled") { queue.stoppedBy = "429"; break; }
+    // The job timeout fired mid-pool: that pool saved nothing (aborted); stop cleanly, it goes first next run.
+    if (signal.aborted) { queue.stoppedBy = "time"; break; }
     queue.done += 1;
     if (outcome !== "error") processed += 1;
     if (throttled()) { queue.stoppedBy = "429"; break; }
@@ -416,10 +441,10 @@ async function refreshSolanaPool(input: {
  */
 
 export async function refreshTokenIcons(store: RwaStore, lease: Lease, pairs: readonly Pick<RwaPairRow, "mintA" | "mintB">[],
-  fetcher: typeof fetch | undefined, signal: AbortSignal) {
+  fetcher: typeof fetch | undefined, signal: AbortSignal, gate?: ThrottleGate) {
   const solana = await resolveTokenIcons("solana", pairs.flatMap((pair) => [pair.mintA, pair.mintB]), solanaIconSources(fetcher), { signal });
   const rhc = await resolveTokenIcons("robinhood",
-    UNIV4_RHC_ALLOWLISTED_POOLS.flatMap((pool) => [pool.currency0.address, pool.currency1.address]), rhcIconSources(fetcher), { signal });
+    UNIV4_RHC_ALLOWLISTED_POOLS.flatMap((pool) => [pool.currency0.address, pool.currency1.address]), rhcIconSources(fetcher, gate), { signal });
   signal.throwIfAborted();
   await store.request({ op: "renew", lease });
   return store.request({ op: "saveTokenIcons", lease, data: [...solana, ...rhc] });

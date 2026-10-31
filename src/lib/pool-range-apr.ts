@@ -171,7 +171,8 @@ export async function loadVolumeProfile(
         if (!result.ok && result.status === 429) gate.block(result.retryAfterMs);
         return result;
       },
-      { ...retryOptions, attempts: Math.min(retryOptions.attempts, 2), shouldRetry: notThrottled },
+      // Capped by the gate (the cron gate allows 1): a retry inside the slot would skip the gate's spacing.
+      { ...retryOptions, attempts: Math.min(retryOptions.attempts, 2, gate.maxAttempts), shouldRetry: notThrottled },
     ));
     return "value" in run
       ? run.value

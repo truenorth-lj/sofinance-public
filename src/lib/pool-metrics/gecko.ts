@@ -32,9 +32,14 @@ export const geckoGate = new ThrottleGate({ minSpacingMs: 250, defaultCooldownMs
 export const CRON_GECKO_SPACING_MS = 2_500;
 
 /**
- * One GeckoTerminal gate per cron run, used by every pool in the queue. A 429 blocks it (`blockedForMs() > 0`),
- * which ends the run: nothing waits out a cooldown, the remaining pools go first next run.
+ * One GeckoTerminal gate per cron run, used by every pool in the queue. A 429 sets its sticky `hit429` flag and
+ * blocks it for the rest of the run (`stickyBlock`: it never reopens after the cooldown), which ends the run:
+ * nothing waits out a cooldown, the remaining pools go first next run. One attempt per call (`maxAttempts: 1`), so
+ * no retry ever starts inside a slot without the 2.5 s spacing.
  */
-export function createCronGeckoGate(): ThrottleGate {
-  return new ThrottleGate({ minSpacingMs: CRON_GECKO_SPACING_MS, defaultCooldownMs: 20_000, minCooldownMs: 5_000, maxCooldownMs: 60_000 });
+export function createCronGeckoGate(options: { now?: () => number; sleep?: (ms: number) => Promise<void> } = {}): ThrottleGate {
+  return new ThrottleGate({
+    minSpacingMs: CRON_GECKO_SPACING_MS, defaultCooldownMs: 20_000, minCooldownMs: 5_000, maxCooldownMs: 60_000,
+    stickyBlock: true, maxAttempts: 1, ...options,
+  });
 }

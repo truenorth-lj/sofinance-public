@@ -7,6 +7,7 @@ vi.mock("./range-apr/onchain-liquidity", () => ({ readOnchainPoolLiquidity: read
 
 import { clearPoolRangeAprCache, fetchPoolRangeApr, RANGE_APR_ASSUMPTIONS } from "./pool-range-apr";
 import { ThrottleGate } from "./range-apr/throttle-gate";
+import { createCronGeckoGate } from "./pool-metrics/gecko";
 
 const NO_WAIT = { sleep: async (ms: number) => { void ms; } };
 /** A fresh, unspaced gate per call so cooldowns never leak between tests. */
@@ -142,6 +143,22 @@ describe("fetchPoolRangeApr", () => {
     expect(hourCalls).toBe(2);
     expect(payload.sample).toMatchObject({ occupancySource: "hourly-candles", degraded: false });
     expect(payload.presets.every((preset) => preset.estimate.status === "ok")).toBe(true);
+  });
+
+  it("the cron gate never retries a GeckoTerminal call (a retry would skip its 2.5 s spacing); Raydium still retries", async () => {
+    let hourCalls = 0, idsCalls = 0;
+    const healthy = fetcher().impl;
+    const impl: typeof fetch = async (input, init) => {
+      if (String(input).includes("/ohlcv/hour") && ++hourCalls <= 1) return new Response("{}", { status: 503 });
+      if (String(input).includes("/pools/info/ids") && ++idsCalls <= 1) return new Response("{}", { status: 503 });
+      return healthy(input, init);
+    };
+    const cron = createCronGeckoGate({ sleep: async (ms: number) => { void ms; } });
+    expect(cron.maxAttempts).toBe(1);
+    const payload = await fetchPoolRangeApr(POOL, { fetcher: impl, nowSeconds: NOW, retry: NO_WAIT, gate: cron, bypassCache: true });
+    expect(hourCalls).toBe(1);
+    expect(idsCalls).toBe(2);
+    expect(payload.sample.degraded).toBe(true);
   });
 
   it("does not retry a 429: it opens the gate's cooldown (Retry-After honoured) and later pools make no GeckoTerminal call", async () => {

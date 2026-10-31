@@ -16,6 +16,7 @@ import {
 import type { RwaPairRow } from "./rwa-pairs";
 import type { VolumeProfile } from "./pool-range-apr";
 import { payloadFixture } from "./range-apr/payload.fixture";
+import { volumeWindowEnd } from "./rwa-daily";
 import { UNIV4_RHC_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/uniswap-v4/constants";
 
 const url = process.env.RWA_DB_TEST_URL;
@@ -88,7 +89,8 @@ describe.skipIf(!url)("RWA PostgreSQL snapshots and fencing", () => {
         algorithmVersion: ALGORITHM_VERSION,
         profile,
         observedAt: observed(),
-        windowEndUtc: "2026-10-14T00:00:00.000Z",
+        // The current UTC volume window, as the refresh writes it.
+        windowEndUtc: volumeWindowEnd(now),
       },
     };
   }
@@ -255,13 +257,28 @@ describe.skipIf(!url)("RWA PostgreSQL snapshots and fencing", () => {
     expect(sameDay.map((r) => r.status)).toEqual(["ok", "pending", "ok"]);
     expect(new Date(sameDay[2]!.captured_at).toISOString()).toBe("2026-10-14T04:15:00.000Z");
 
-    // Next Taipei day (00:15 Taipei = 16:15 UTC): the first run finalizes 10-14 and seeds 10-15; poolB's first
-    // success of 10-15 writes its row; nothing is duplicated.
+    // Next Taipei day (00:15 Taipei = 16:15 UTC): the first run finalizes 10-14 and seeds 10-15.
     now = Date.parse("2026-10-14T16:15:00Z");
     await store!.request({ op: "prepareDaily", lease: apr });
     await store!.request({ op: "prepareDaily", lease: apr });
+    // Day boundary: the 00:15 and 04:15 Taipei runs still see the window ending 10-14 00:00Z (10-14's window), so a
+    // success then is not 10-15's row (it would repeat 10-14's window and skip 10-15's).
+    const early = aprData(poolB);
+    expect(early.profile!.windowEndUtc).toBe("2026-10-14T00:00:00.000Z");
+    await store!.request({ op: "saveApr", lease: apr, data: early });
+    now = Date.parse("2026-10-14T20:15:00Z");
     await store!.request({ op: "saveApr", lease: apr, data: aprData(poolB) });
+    const beforeEight = await db!`SELECT status FROM rwa_apr_daily WHERE snapshot_date='2026-10-15' AND pool_address=${poolB}`;
+    expect(beforeEight.map((r) => r.status)).toEqual(["pending"]);
+    // 08:15 Taipei (00:15 UTC): the window now ends at 10-15 00:00Z, the day's own window; poolB's first success
+    // of 10-15 writes its row once, nothing is duplicated.
+    now = Date.parse("2026-10-15T00:15:00Z");
+    await store!.request({ op: "prepareDaily", lease: apr });
     await store!.request({ op: "saveApr", lease: apr, data: aprData(poolB) });
+    now += 4 * 3_600_000;
+    await store!.request({ op: "saveApr", lease: apr, data: aprData(poolB) });
+    const [captured] = await db!`SELECT captured_at FROM rwa_apr_daily WHERE snapshot_date='2026-10-15' AND pool_address=${poolB}`;
+    expect(new Date(captured!.captured_at).toISOString()).toBe("2026-10-15T00:15:00.000Z");
     const days = await db!`SELECT snapshot_date::text AS date,pool_address,status,highest_range_apr_pct FROM rwa_apr_daily
       WHERE pool_address IN (${poolId},${poolB},${poolC}) ORDER BY snapshot_date,pool_address`;
     expect(days.map((r) => [r.date, r.pool_address, r.status])).toEqual([
@@ -372,6 +389,10 @@ describe.skipIf(!url)("RWA PostgreSQL snapshots and fencing", () => {
     // Raydium pairs never include RHC rows.
     const pairs = await store!.request({ op: "pairs", minTvl: 0, maxPages: 2, sortBy: "tvl" });
     expect(pairs.pairs.some((p) => p.poolAddress.startsWith("0x"))).toBe(false);
+    // RHC 7d APR flag off: no RHC history rows are seeded (nothing would ever fill them).
+    await store!.request({ op: "prepareDaily", lease, includeRhc: false });
+    const none = await db!`SELECT count(*)::int AS count FROM rwa_apr_daily WHERE snapshot_date='2026-10-15' AND chain='robinhood'`;
+    expect(none[0]?.count).toBe(0);
     await store!.request({ op: "prepareDaily", lease });
     const daily = await db!`SELECT pool_address,chain,protocol,status FROM rwa_apr_daily WHERE snapshot_date='2026-10-15' AND chain='robinhood' ORDER BY pool_address`;
     expect(daily.map((d) => d.pool_address).sort()).toEqual([spcx!.poolId.toLowerCase(), nvda!.poolId.toLowerCase()].sort());

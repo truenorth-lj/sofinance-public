@@ -21,7 +21,8 @@ const rhcFlag = vi.hoisted(() => ({ enabled: false }));
 vi.mock("./protocol-flags", async (load) => ({ ...await load<typeof import("./protocol-flags")>(), isRhcApr7dEnabled: () => rhcFlag.enabled }));
 const rhcRun = vi.hoisted(() => ({ prepare: vi.fn() }));
 vi.mock("./rhc-apr-refresh", async (load) => ({ ...await load<object>(), prepareRhcRun: rhcRun.prepare }));
-import { APR_POOL_BUDGET_MS, APR_POOLS_PER_RUN, APR_SAVE_RESERVE_MS, orderAprQueue, refreshProfile, runJob } from "./rwa-refresh";
+import { activePoolRefreshedAt, APR_POOL_MAX_MS, APR_POOLS_PER_RUN, APR_SAVE_RESERVE_MS, orderAprQueue, refreshProfile, runJob } from "./rwa-refresh";
+import { createCronGeckoGate } from "./pool-metrics/gecko";
 import { ThrottleGate } from "./range-apr/throttle-gate";
 import type { RwaStore } from "./rwa-store-types";
 import { ALGORITHM_VERSION, type ActivePool } from "./rwa-store-types";
@@ -32,7 +33,8 @@ function fixture(): ActivePool {
   const profile = { economics: { mintA: "a", mintB: "b" }, candles: [{ timestamp: 1 }], stale: false,
     daily: null, issues: [], observedAt: { economics: "2026-10-14T00:12:00Z", daily: null, hourly: "2026-10-14T00:11:00Z" } } as unknown as VolumeProfile;
   return { pair: { poolAddress: "pool", mintA: "a", mintB: "b" } as ActivePool["pair"], metricsObservedAt: "2026-10-14T00:12:00Z",
-    profile: { algorithmVersion: ALGORITHM_VERSION, profile, observedAt: "2026-10-14T00:11:00Z", windowEndUtc: "2026-10-14T00:00:00.000Z" } };
+    profile: { algorithmVersion: ALGORITHM_VERSION, profile, observedAt: "2026-10-14T00:11:00Z", windowEndUtc: "2026-10-14T00:00:00.000Z" },
+    refreshedAt: null };
 }
 afterEach(() => { vi.clearAllMocks(); vi.unstubAllEnvs(); rhcFlag.enabled = false; });
 describe("persistent market profile", () => {
@@ -216,12 +218,66 @@ describe("APR queue: one oldest-first queue, one pool at a time", () => {
     expect(result).toMatchObject({ status: "partial", processed: 2, issues: ["poolA: Using previously saved price history"] });
   });
 
-  it("starts no pool without a pool's time budget plus the save reserve left", async () => {
+  it("starts no pool without the slowest single-pool time (~21 s) plus the save reserve left", async () => {
+    expect(APR_POOL_MAX_MS).toBeGreaterThanOrEqual(21_000);
     const { store } = memoryStore(solanaPools([["poolA", hours(9)]]));
     loadProfile.mockResolvedValue(goodProfile);
-    const result = await run(store, { deadlineMs: now + APR_POOL_BUDGET_MS + APR_SAVE_RESERVE_MS - 1 });
+    const result = await run(store, { deadlineMs: now + APR_POOL_MAX_MS + APR_SAVE_RESERVE_MS - 1 });
     expect(loadProfile).not.toHaveBeenCalled();
     expect(result).toMatchObject({ queue: { done: 0, stoppedBy: "time" } });
+    const enough = memoryStore(solanaPools([["poolA", hours(9)]]));
+    expect(await run(enough.store, { deadlineMs: now + APR_POOL_MAX_MS + APR_SAVE_RESERVE_MS + 1 })).toMatchObject({ queue: { done: 1, stoppedBy: null } });
+  });
+
+  it("a job timeout that fires mid-pool stops the run cleanly with reason 'time' (that pool saves nothing)", async () => {
+    const { store, saved } = memoryStore(solanaPools([["poolA", hours(9)], ["poolB", hours(8)]]));
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      // The job's AbortSignal.timeout is clamped to 1 s by this deadline; poolA's fetch outlives it.
+      loadProfile.mockImplementation((_id: string, _f: unknown, _n: number, options: { retry: { signal: AbortSignal } }) =>
+        new Promise((_, reject) => options.retry.signal.addEventListener("abort", () => reject(options.retry.signal.reason))));
+      const pending = runJob("rwa-apr-refresh", { store, clock: () => now, deadlineMs: now + 1_000, geckoGate: openGate() });
+      await vi.advanceTimersByTimeAsync(1_100);
+      const result = await pending;
+      expect(result).toMatchObject({ status: "partial", queue: { done: 0, stoppedBy: "time" } });
+      expect(saved).toHaveLength(0);
+      expect(result.issues.at(-1)).toBe("Time budget: run ended after 0 of 2 pools; the rest go first next run");
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("a 429 is sticky: the run ends even when the gate's cooldown has already passed by the check", async () => {
+    let clock = now;
+    const gate = createCronGeckoGate({ now: () => clock, sleep: async () => undefined });
+    const { store, saved } = memoryStore(solanaPools([["poolA", hours(9)], ["poolB", hours(8)], ["poolC", hours(7)]]));
+    loadProfile.mockImplementation(async (poolId: string) => {
+      if (poolId !== "poolA") return goodProfile;
+      gate.block(5_000);
+      clock += 60_000; // the RPC read (≤ 8 s) and more: the 5 s cooldown is long over
+      return throttledProfile;
+    });
+    const result = await run(store, { geckoGate: gate });
+    expect(gate.blockedForMs()).toBeGreaterThan(0);
+    expect(loadProfile.mock.calls.map((call) => call[0])).toEqual(["poolA"]);
+    expect(saved).toHaveLength(0);
+    expect(result).toMatchObject({ queue: { done: 0, stoppedBy: "429" } });
+  });
+
+  it("queue key falls back to the saved profile's last attempt / observation when the store sends none", () => {
+    const pool = fixture();
+    expect(activePoolRefreshedAt({ ...pool, refreshedAt: "2026-10-14T01:00:00Z" })).toBe("2026-10-14T01:00:00Z");
+    expect(activePoolRefreshedAt(pool)).toBe("2026-10-14T00:11:00Z");
+    pool.profile!.fetchState = { lastAttemptAt: "2026-10-14T00:30:00Z", failures: 1 };
+    expect(activePoolRefreshedAt(pool)).toBe("2026-10-14T00:30:00Z");
+    expect(activePoolRefreshedAt({ ...pool, profile: null })).toBeNull();
+  });
+
+  it("seeds RHC history rows only when the RHC 7d APR flag is on", async () => {
+    const calls: unknown[] = [];
+    const { store } = memoryStore([]);
+    const request = store.request.bind(store);
+    (store as { request: unknown }).request = async (input: { op: string }) => { if (input.op === "prepareDaily") calls.push(input); return request(input as never); };
+    await run(store);
+    expect(calls[0]).toMatchObject({ includeRhc: false });
   });
 
   it("refreshes every pool at least once per 24h at 6 runs/day, even when 3 runs in a row end at once on a 429", () => {

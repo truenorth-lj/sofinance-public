@@ -17,7 +17,7 @@ vi.mock("./rhc-range-apr", async (load) => ({
 }));
 import { ThrottleGate } from "./range-apr/throttle-gate";
 import {
-  fetchRhcMarketBatch, planRhcProfileFetches, prepareRhcRun, rhcFailureBackoffMs, rhcPoolCreatedAtSeconds,
+  fetchRhcMarketBatch, planRhcProfileFetches, withTimeout, prepareRhcRun, rhcFailureBackoffMs, rhcPoolCreatedAtSeconds,
   rhcProfilePriority, rollRhcProfileForward, RHC_PROFILE_MAX_AGE_MS,
 } from "./rhc-apr-refresh";
 import type { Univ4MarketData } from "@sofinance/engine/protocols/uniswap-v4/market-data";
@@ -181,7 +181,7 @@ describe("RHC pools in the APR queue (prepareRhcRun + refreshPool)", () => {
     const store: RwaStore = {
       request: (async (input: { op: string; data?: never }) => {
         calls.push(input);
-        return input.op === "ensureRhcRoster" ? { pools: [], profiles: {} } : {};
+        return input.op === "ensureRhcRoster" ? { pools: [], profiles: {}, refreshedAt: {} } : {};
       }) as never,
     };
     const fetcher = (async () => json({ data: [] })) as unknown as typeof fetch;
@@ -229,7 +229,7 @@ describe("RHC pools in the APR queue (prepareRhcRun + refreshPool)", () => {
     const store: RwaStore = {
       request: (async (input: { op: string; data?: never }) => {
         if (input.op === "saveApr") saves.push(input.data!);
-        return input.op === "ensureRhcRoster" ? { pools: [], profiles: opts.profiles ?? {} } : {};
+        return input.op === "ensureRhcRoster" ? { pools: [], profiles: opts.profiles ?? {}, refreshedAt: {} } : {};
       }) as never,
     };
     let now = NOW;
@@ -276,6 +276,45 @@ describe("RHC pools in the APR queue (prepareRhcRun + refreshPool)", () => {
     const result = await h.run();
     expect(result.pools.map((pool) => pool.poolId)).toEqual(POOLS.map((spec) => spec.poolId.toLowerCase()));
     expect(result.pools.every((pool) => pool.refreshedAt === null)).toBe(true);
+  });
+
+  it("queue key falls back to the saved profile's last attempt / observation when the roster has none", async () => {
+    const at = new Date(NOW - 5 * 3_600_000).toISOString();
+    const profiles = { [SPCX.poolId.toLowerCase()]: profile(SPCX, { fetchState: { lastAttemptAt: at, failures: 1 } }) };
+    const result = await harness({ profiles }).run();
+    expect(result.pools.find((pool) => pool.spec === SPCX)!.refreshedAt).toBe(at);
+  });
+
+  it("reusing an earlier window's history during a fetch backoff is marked stale, aged by its covered time", async () => {
+    const yesterday = volumeWindowEnd(NOW - 86_400_000);
+    const covered = new Date(NOW - 30 * 3_600_000).toISOString();
+    const profiles = Object.fromEntries(POOLS.map((spec) => [spec.poolId.toLowerCase(), profile(spec, {
+      windowEndUtc: yesterday, observedAt: NOW - 30 * 3_600_000, hourlyAt: NOW - 30 * 3_600_000,
+      fetchState: { lastAttemptAt: new Date(NOW - 3_600_000).toISOString(), failures: 1, coveredUntil: covered } })]));
+    const h = harness({ profiles });
+    const result = await h.run();
+    expect(h.ohlcv()).toHaveLength(0);
+    expect(result.stats).toMatchObject({ reused: POOLS.length, fetched: 0 });
+    expect(h.saves).toHaveLength(POOLS.length);
+    for (const save of h.saves) {
+      expect(save.profile!.profile.stale).toBe(true);
+      expect(save.profile!.profile.observedAt!.hourly).toBe(covered);
+      expect(save.profile!.profile.issues).toContain("Using previously saved price history");
+    }
+    // A current-window history is reused as is (not stale).
+    const current = harness({ profiles: Object.fromEntries(POOLS.map((spec) => [spec.poolId.toLowerCase(), profile(spec)])) });
+    await current.run();
+    expect(current.saves.every((save) => !save.profile!.profile.stale)).toBe(true);
+  });
+
+  it("withTimeout rejects a slow call (the RHC tick window read) after its limit or on abort", async () => {
+    const never = new Promise<never>(() => undefined);
+    await expect(withTimeout(never, 5, "Robinhood Chain tick window read timed out")).rejects.toThrow("Robinhood Chain tick window read timed out");
+    const controller = new AbortController();
+    const pending = withTimeout(never, 60_000, "x", controller.signal);
+    controller.abort(new Error("job timeout"));
+    await expect(pending).rejects.toThrow("job timeout");
+    await expect(withTimeout(Promise.resolve(1), 5, "x")).resolves.toBe(1);
   });
 
   it("rolls quiet pools forward with no call, beside the fetches", async () => {

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  countsForTaipeiDay,
   taipeiDay,
+  taipeiDayWindowEnd,
   validateHistoryRange,
   volumeWindowEnd,
 } from "./rwa-daily";
@@ -22,6 +24,19 @@ describe("RWA observation boundaries", () => {
       "2026-10-13T00:00:00.000Z",
     );
   });
+  it("day boundary: only runs whose UTC volume window is the Taipei day's own (08:00 Taipei on) count for that day", () => {
+    expect(taipeiDayWindowEnd("2026-10-15")).toBe("2026-10-15T00:00:00.000Z");
+    // 00:15 and 04:15 Taipei on 10-15 are still in 10-14's UTC day: their window is 10-14's.
+    for (const at of ["2026-10-14T16:15:00Z", "2026-10-14T20:15:00Z", "2026-10-14T23:59:59Z"]) {
+      expect(taipeiDay(Date.parse(at)).date).toBe("2026-10-15");
+      expect(volumeWindowEnd(Date.parse(at))).toBe("2026-10-14T00:00:00.000Z");
+      expect(countsForTaipeiDay(Date.parse(at))).toBe(false);
+    }
+    // 08:00 Taipei onwards (00:00 UTC): the day's own window, through 23:59 Taipei.
+    for (const at of ["2026-10-15T00:00:00Z", "2026-10-15T00:15:00Z", "2026-10-15T12:15:00Z", "2026-10-15T15:59:59Z"])
+      expect(countsForTaipeiDay(Date.parse(at))).toBe(true);
+  });
+
   it("rejects invalid dates, reverse ranges and more than 366 days", () => {
     expect(() => validateHistoryRange("2026-02-30", "2026-03-01")).toThrow();
     expect(() => validateHistoryRange("2026-10-14", "2026-10-13")).toThrow();

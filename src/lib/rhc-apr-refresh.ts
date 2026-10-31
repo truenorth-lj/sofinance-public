@@ -40,6 +40,24 @@ const RHC_BLOCKS_PER_SECOND = 9.6;
 
 type Fetcher = typeof fetch;
 
+/** The per-pool tick window read (two multicalls) gives up after this, so one slow RPC cannot hold the queue. */
+export const RHC_LIQUIDITY_TIMEOUT_MS = 10_000;
+
+/** Rejects with `message` after `ms` (or when `signal` aborts); the slow call is left to settle on its own. */
+export function withTimeout<T>(work: Promise<T>, ms: number, message: string, signal?: AbortSignal): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let onAbort: (() => void) | undefined;
+  const stop = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), ms);
+    onAbort = () => reject(signal!.reason ?? new Error(message));
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+  return Promise.race([work, stop]).finally(() => {
+    clearTimeout(timer);
+    if (onAbort) signal?.removeEventListener("abort", onAbort);
+  });
+}
+
 async function getJson(fetcher: Fetcher, url: string, signal: AbortSignal) {
   const response = await fetcher(url, {
     headers: { accept: "application/json" },
@@ -240,7 +258,19 @@ export async function prepareRhcRun(input: {
       }, summary.estimatedApr!.tvlUsd, market.get(poolId)?.priceUsd);
       const withEconomics = (profile: StoredProfile): StoredProfile => ({ ...profile, profile: { ...profile.profile, economics } });
       if (action === "roll" && cached) { stored = withEconomics(rollRhcProfileForward(cached, spec, nowMs, priceUsd)); stats.rolledForward += 1; }
-      else if (cached) stored = withEconomics(cached);
+      else if (cached) {
+        // Saved history from an earlier UTC window (reused while a failed fetch backs off, or before a fetch that
+        // then fails): an estimate from saved price history, so `priceHistoryStale` ("Data delayed", "—" once the
+        // history is over 48h old) instead of looking fresh because the chain read is new.
+        // Its age is how far trades are known (`coveredUntil`: the last good fetch or a later no-trade roll-forward).
+        const earlierWindow = cached.windowEndUtc !== volumeWindowEnd(nowMs);
+        const known = coveredUntil(cached);
+        stored = withEconomics(earlierWindow && !cached.profile.stale
+          ? { ...cached, profile: { ...cached.profile, stale: true, issues: [...cached.profile.issues, "Using previously saved price history"],
+            observedAt: { economics: cached.profile.observedAt?.economics ?? cached.observedAt, daily: cached.profile.observedAt?.daily ?? null,
+              hourly: Number.isFinite(known) ? new Date(known).toISOString() : (cached.profile.observedAt?.hourly ?? cached.observedAt) } } }
+          : cached);
+      }
       if (action === "fetch") {
         const fresh = await loadVolumeProfile(poolId, fetcher, nowSeconds, {
           economics: { ...RHC_ECONOMICS_SOURCE, load: async () => economics },
@@ -249,7 +279,7 @@ export async function prepareRhcRun(input: {
           ...(priceUsd ? { dailyFromHourly: { tokenPriceUsd: priceUsd, createdAtSeconds: rhcPoolCreatedAtSeconds(spec) } } : {}),
         });
         // A 429 (now or earlier in the run): save nothing, so the pool keeps its place at the front of the queue.
-        if (gate.blockedForMs() > 0) return "throttled";
+        if (gate.hit429) return "throttled";
         const attemptAt = new Date(clock()).toISOString();
         const previous = (cached ?? roster.profiles[poolId])?.fetchState;
         if (hasPriceHistory(fresh)) {
@@ -267,9 +297,9 @@ export async function prepareRhcRun(input: {
       // No saved history and its fetch is in backoff: the next run after the backoff fetches it.
       if (!stored) return await fail("Price history queued for the next refresh");
       const chainObservedAt = new Date(clock()).toISOString();
-      const chain = await rhcLiquidityAt(client, spec, {
+      const chain = await withTimeout(rhcLiquidityAt(client, spec, {
         tick: summary.tick!, sqrtPriceX96: BigInt(summary.sqrtPriceX96!), liquidity: BigInt(summary.liquidity!),
-      });
+      }), RHC_LIQUIDITY_TIMEOUT_MS, "Robinhood Chain tick window read timed out", signal);
       const payload = assembleRhcRangeApr(poolId, stored.profile, chain, nowSeconds);
       payload.sample.windowEndUtc = stored.windowEndUtc;
       payload.sample.windowStartUtc = new Date(Date.parse(stored.windowEndUtc) - payload.sample.days * 86_400_000).toISOString();
@@ -288,7 +318,9 @@ export async function prepareRhcRun(input: {
   return {
     pools: pools.map((spec) => {
       const poolId = spec.poolId.toLowerCase();
-      return { spec, poolId, refreshedAt: roster.refreshedAt?.[poolId] ?? null };
+      const saved = roster.profiles[poolId];
+      // Falls back to the saved profile's last attempt / observation, never to pool id order alone.
+      return { spec, poolId, refreshedAt: roster.refreshedAt[poolId] ?? saved?.fetchState?.lastAttemptAt ?? saved?.observedAt ?? null };
     }),
     refreshPool, issues, stats,
   };

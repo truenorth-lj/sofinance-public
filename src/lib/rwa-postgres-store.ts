@@ -8,7 +8,7 @@ import * as schema from "../db/schema";
 import { assertRwaDatabaseIdentity } from "./rwa-database";
 export { createRwaDatabase } from "./rwa-database";
 import { getRwaConfig } from "./config/rwa-env";
-import { taipeiDay, validateHistoryRange, volumeWindowEnd } from "./rwa-daily";
+import { taipeiDay, taipeiDayWindowEnd, validateHistoryRange, volumeWindowEnd } from "./rwa-daily";
 import { DEFAULT_PROTOCOL } from "@sofinance/engine/protocols/types";
 import { sortPairs, type DiscoverRwaPairsResult, type RwaPairRow } from "./rwa-pairs";
 import { pickHighestAprPreset } from "./range-apr/preset-list";
@@ -150,7 +150,7 @@ export class PostgresRwaStore implements RwaStore {
       return result;
     }),
     publishDiscovery: input => this.publish(input.lease, input.data),
-    prepareDaily: input => this.prepareDaily(input.lease),
+    prepareDaily: input => this.prepareDaily(input.lease, input.includeRhc ?? true),
     saveApr: input => this.saveApr(input.lease, input.data),
     saveTokenIcons: input => this.saveTokenIcons(input.lease, input.data),
     ensureRhcRoster: input => this.ensureRhcRoster(input.lease, input.data as RhcRosterRow[]),
@@ -321,7 +321,7 @@ export class PostgresRwaStore implements RwaStore {
    * Every active pool gets a row every day the cron runs: without a successful update it ends `missing` /
    * `failed` / `degraded`, so the history has no silent gaps.
    */
-  private async seedDaily(tx: Transaction, day: { date: string; start: number }, poolId?: string) {
+  private async seedDaily(tx: Transaction, day: { date: string; start: number }, poolId?: string, includeRhc = true) {
     await tx.execute(sql`INSERT INTO ${daily}
       (pool_address,chain,protocol,snapshot_date,scheduled_for,mint_a,mint_b,symbol_a,symbol_b,
        tvl_usd,volume_24h_usd,fees_24h_usd,pool_fee_apr_pct,pool_metrics_observed_at,algorithm_version)
@@ -329,7 +329,7 @@ export class PostgresRwaStore implements RwaStore {
         ${pool.mintA},${pool.mintB},${pool.symbolA},${pool.symbolB},${pool.tvlUsd},
         ${pool.volume24hUsd},${pool.fees24hUsd},${pool.poolFeeAprPct},${pool.metricsObservedAt},${ALGORITHM_VERSION}
       FROM ${pool} JOIN ${feed} ON ${feed.feedKey}=${pool.feedKey} AND ${feed.generationId}=${pool.lastSeenGeneration}
-      WHERE ${feed.feedKey} IN (${FEED_KEY},${FEED_KEY_RHC}) ${poolId ? sql`AND ${pool.poolAddress}=${poolId}` : sql``}
+      WHERE ${feed.feedKey} IN (${FEED_KEY},${includeRhc ? FEED_KEY_RHC : FEED_KEY}) ${poolId ? sql`AND ${pool.poolAddress}=${poolId}` : sql``}
       ON CONFLICT DO NOTHING`);
   }
 
@@ -338,14 +338,15 @@ export class PostgresRwaStore implements RwaStore {
    * (failed / degraded / missing, value NULL) and seed today's pending rows. A row turns `ok` on the pool's first
    * successful update of the Taipei day (`saveApr`), whichever 4-hourly run that is; there is no capture window.
    */
-  private async prepareDaily(lease: Lease) {
+  private async prepareDaily(lease: Lease, includeRhc: boolean) {
     if (lease.job !== "rwa-apr-refresh") throw new RwaStoreError("INVALID_JOB");
     const day = taipeiDay(this.clock());
     return this.guarded(lease, async (tx) => {
       await tx.update(daily).set({ status: sql`CASE WHEN ${daily.failureReason} LIKE 'degraded:%' THEN 'degraded'
         WHEN ${daily.failureReason} IS NOT NULL THEN 'failed' ELSE 'missing' END`, finalizedAt: nowSql })
         .where(and(eq(daily.status, "pending"), sql`${daily.snapshotDate}<${day.date}::date`));
-      await this.seedDaily(tx, day);
+      // RHC rows only when the RHC 7d APR flag is on (otherwise nothing would ever fill them).
+      await this.seedDaily(tx, day, undefined, includeRhc);
       return { date: day.date };
     });
   }
@@ -379,6 +380,9 @@ export class PostgresRwaStore implements RwaStore {
       // chain state read today (Taipei).
       const successToday = winner?.estimate.status === "ok" && freshProfile &&
         data.profile!.windowEndUtc === volumeWindowEnd(this.clock()) &&
+        // The day's own window (`${day.date}T00:00Z`): runs before 08:00 Taipei still see the previous day's window
+        // and must not write it again as today's row (duplicates / a skipped window around 08:00).
+        data.profile!.windowEndUtc === taipeiDayWindowEnd(day.date) &&
         // RHC reuses a same-UTC-day price history (its OHLCV calls are spread across runs); Raydium's is ≤30 min old.
         (isRhc || this.clock() - Date.parse(data.profile!.observedAt) <= 1_800_000) &&
         !!data.chainObservedAt && Date.parse(data.chainObservedAt) >= day.start;
