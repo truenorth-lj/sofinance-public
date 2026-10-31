@@ -1,7 +1,7 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import { captureTxClientFailure } from "@/lib/sentry/client-tx";
+import { captureTxClientFailure, type TxReportContext } from "@/lib/sentry/client-tx";
 import { notifyPositionHistoryChange } from "@/lib/position-history-refresh";
 import { clearTxAttempt } from "./attempts";
 import { pollSignature, type TxChainStatus } from "./confirm";
@@ -68,11 +68,24 @@ export function requestBalancesRefresh(detail: { flow: TxFlow; signature?: strin
 
 export const noticeIdFor = (signature: string) => `tx-${signature}`;
 
-/** A failure before or during send: plain words, Sentry for anything but a wallet rejection. */
-export function reportTxFailure(input: { flow: TxFlow; error: unknown; id?: string; signature?: string; retry?: () => void }) {
+/**
+ * The wallet threw after a sign-and-send request: a loading notice while we check Solana for it.
+ * Nothing in it says "nothing was sent"; that only follows once the blockhash expired with no match.
+ */
+export function showTxCheckingNotice(flow: TxFlow) {
+  return showTxNotice({ flow, state: "loading", title: "Checking Solana…",
+    detail: "Your wallet returned an error, but the transaction may still have gone through. Checking Solana before anything else; please don't submit again yet (this can take up to about 90 seconds)." });
+}
+
+/**
+ * A failure before or during send: plain words, Sentry for anything but a wallet rejection, and a
+ * balances refresh (a wallet-stage failure may still have moved funds; the screen must not show stale balances).
+ */
+export function reportTxFailure(input: { flow: TxFlow; error: unknown; id?: string; signature?: string; retry?: () => void; context?: TxReportContext }) {
   const kind = txFailureKind(input.error);
   const message = plainTxError(input.error, kind);
-  captureTxClientFailure(input.flow, kind, message);
+  captureTxClientFailure(input.flow, kind, message, input.context);
+  requestBalancesRefresh({ flow: input.flow, signature: input.signature });
   if (kind === "rejected") {
     if (input.id) dismissTxNotice(input.id);
     return { kind, message, retryable: false };

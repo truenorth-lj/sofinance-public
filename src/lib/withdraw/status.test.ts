@@ -49,3 +49,17 @@ it("rejects unauthorized prepared data and failed transactions",async()=>{
  mocks.status.mockResolvedValue({value:[{err:"failed"}]});expect(await withdrawStatus(input())).toHaveProperty("status","failed");
  expect(mocks.invalidate).not.toHaveBeenCalled();expect(mocks.reset).not.toHaveBeenCalled();
 });
+it("accepts a landed withdraw with an extra instruction from any program (relaxed post-landing match), but not a reordered one",async()=>{
+ const {TransactionInstruction,TransactionMessage,VersionedTransaction}=await import("@solana/web3.js");
+ mocks.status.mockResolvedValue({value:[{confirmationStatus:"finalized",err:null}]});
+ const extra=appendWalletExtraInstruction(transaction,new TransactionInstruction({programId:testKeypair(9).publicKey,keys:[],data:Buffer.from([7])}));
+ mocks.receipt.mockResolvedValue({meta:{err:null},transaction:{message:extra.message}});
+ expect(await withdrawStatus(input())).toHaveProperty("status","success");
+ const two=buildTransaction({payer,extraSigners:[testKeypair(8)],signWith:[]});
+ const decompiled=TransactionMessage.decompile(two.message);
+ const reordered=new VersionedTransaction(new TransactionMessage({payerKey:decompiled.payerKey,recentBlockhash:decompiled.recentBlockhash,instructions:[...decompiled.instructions].reverse()}).compileToV0Message());
+ const body=input();
+ body.prepared={...body.prepared,unsignedTransaction:toBase64(two),permit:withdrawPermit.issue(SIGNING_SECRET,{wallet:body.prepared.summary.wallet,message:messageBase64(two),summary:body.prepared.summary})};
+ mocks.receipt.mockResolvedValue({meta:{err:null},transaction:{message:reordered.message}});
+ expect(await withdrawStatus(body)).toHaveProperty("status","manual-review");
+});

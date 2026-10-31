@@ -12,6 +12,7 @@ import { createJupiterRelayStore } from "@/lib/jupiter/browser-relay";
 import { useSelectedPreview, useSelectedPreviewEffect } from "./transactions/selected/use-selected-preview";
 import { selectionKey } from "./transactions/selected/selected-preview-model";
 import { BALANCES_REFRESH_EVENT } from "@/lib/tx-pipeline";
+import { knownTokenSymbol, NOT_ENOUGH_SOL_FOR_FEES_MESSAGE, notEnoughBalanceMessage } from "@sofinance/engine/balance-message";
 import { useTxPipeline } from "./transactions/use-tx-pipeline";
 import { addLiquidityAdapter } from "./transactions/adapters/add";
 
@@ -35,8 +36,9 @@ export function useSelectedController() {
   const txWallet = useMemo(() => wallet ? { address: wallet, signTransaction, signAndSendTransaction } : null,
     [wallet, signTransaction, signAndSendTransaction]);
   const tx = useTxPipeline(addLiquidityAdapter, txWallet);
-  const { busy, reset: clearError } = tx;
-  const submitStage = tx.status === "preparing" || tx.status === "wallet" ? tx.status : null;
+  // `locked` also covers checking Solana after a wallet error and confirming: no second send, no re-quote.
+  const { locked: busy, reset: clearError } = tx;
+  const submitStage = tx.status === "preparing" || tx.status === "wallet" || tx.status === "checking" || tx.status === "confirming" ? tx.status : null;
   const error = tx.status === "failed" ? tx.error ?? "" : "";
   const [stateError, setStateError] = useState("");
   const [loadingDiscovery, setLoadingDiscovery] = useState(false);
@@ -161,8 +163,12 @@ export function useSelectedController() {
   const displayedResult = quote ? result : null;
   const fresh = quote ? now < (result?.expiresAt ?? quote.expiresAt) : false;
   const calculating = Boolean(ready && (quoteLoading || !quote || !fresh) && !quoteError && !busy);
+  // Set when the status is "not enough of the input token"; the panel re-words it with the token's display symbol.
+  let insufficientInput: { balance: string; requested: string; decimals: number; native: boolean } | null = null;
   const status = (() => {
     if (!connected) return "Please connect wallet first";
+    if (submitStage === "checking") return "Your wallet returned an error. Checking Solana in case it went through; please wait.";
+    if (submitStage === "confirming") return "Sent. Confirming on Solana…";
     if (loadingDiscovery) return "Scanning wallet assets and Raydium CLMM positions";
     if (stateError) return stateError;
     if (!discovery?.positions.length) return "Wallet has no identifiable Raydium CLMM position NFT";
@@ -172,10 +178,14 @@ export function useSelectedController() {
     if (!visibleState.ownsNft) return "Selected NFT not available in this wallet ATA";
     if (visibleState.paused || visibleState.frozen || visibleState.transferFee ||
       visibleState.unsupportedExtensions.length) return "Selected pool asset settings not yet supported";
-    if (!visibleState.sufficientSol) return "SOL insufficient, need to reserve at least 0.01 SOL";
+    if (!visibleState.sufficientSol) return NOT_ENOUGH_SOL_FOR_FEES_MESSAGE;
     if (toleranceBps === null) return "Price tolerance must be 0–5%, adjust by 0.1% each time";
     if (rawAmount <= 0n) return "Please enter input amount matching asset precision";
-    if (!affordable) return "Selected asset balance insufficient";
+    if (!affordable) {
+      insufficientInput = { balance: visibleState.inputBalance, requested: rawAmount.toString(), decimals: visibleState.inputDecimals,
+        native: visibleState.inputKind === "native" };
+      return notEnoughBalanceMessage({ ...insufficientInput, symbol: knownTokenSymbol(visibleState.inputMint, visibleState.inputKind) });
+    }
     if (quoteError) return quoteError;
     if (submitStage === "preparing") return "Preparing and checking your transaction…";
     if (submitStage === "wallet") return "Confirm in your wallet";
@@ -200,7 +210,7 @@ export function useSelectedController() {
     : tx.signature && tx.status === "failed" ? (tx.kind === "expired" ? "expired" as const : "failed" as const) : null;
 
   const actionLabel = submitStage === "preparing" ? "Preparing latest transaction…" : submitStage === "wallet" ?
-    "Confirm in your wallet…" : "Add liquidity";
+    "Confirm in your wallet…" : submitStage === "checking" ? "Checking Solana…" : submitStage === "confirming" ? "Confirming on Solana…" : "Add liquidity";
   const actionDisabled = busy || !ready || quoteLoading || !quote || !fresh;
   const walletBlocked = busy;
   const primaryAction = () => { void signAndSend(); };
@@ -219,9 +229,12 @@ export function useSelectedController() {
   const chooseAsset = (kind: "native" | "token", mint: string) => setSelection((current) => current ? { ...current, inputKind: kind, inputMint: mint } : null);
   return { wallet, connected, connect, disconnect, isMobile, walletsCount, connectionError,
     discovery, selection, state: visibleState, amount, tolerancePercent, result: displayedResult, attempt, attemptStatus,
-    error: error || quoteError, reprepare: tx.status === "failed" && !!tx.retryable, quoteError, quoteErrorCode, quoteErrorOutputMint, showQuoteRecalculate,
-    busy, retryAdd, calculating, now, floorBps, quote, fresh, status,
+    // While locked a quote error is stale (it was computed before the send settled): hide it and its Recalculate.
+    error: error || (busy ? "" : quoteError), reprepare: tx.status === "failed" && !!tx.retryable, quoteError: busy ? "" : quoteError,
+    quoteErrorCode, quoteErrorOutputMint, showQuoteRecalculate: showQuoteRecalculate && !busy,
+    busy, retryAdd, calculating, now, floorBps, quote, fresh, status, insufficientInput,
     actionLabel, actionDisabled, walletBlocked, primaryAction, changeAmount, changeTolerance, fillMax,
-    choosePosition, chooseAsset, refreshDiscovery, refreshState, retryCalculation,
+    choosePosition, chooseAsset, refreshDiscovery, refreshState,
+    retryCalculation: () => { if (!busy) retryCalculation(); },
     loadingDiscovery, loadingState, stateError };
 }

@@ -1,5 +1,6 @@
 import "@/lib/engine-host";
 import "server-only";
+import { knownTokenSymbol, NOT_ENOUGH_SOL_FOR_FEES_MESSAGE, notEnoughBalanceMessage } from "@sofinance/engine/balance-message";
 
 import { readSwapFeeConfig } from "@sofinance/engine/swap/fee";
 import { assertNativeInputFeeCoverage, depositFeePlan, feeSwapLeg } from "@sofinance/engine/swap/leg";
@@ -120,11 +121,14 @@ async function getSelectedQuoteBundleOnce(
   if (state.paused || state.frozen || state.transferFee || state.unsupportedExtensions.length) {
     throw new Error(`Pool asset currently paused, account frozen, transfer fee charged, or has unsupported settings${state.unsupportedExtensions.length ? `: ${state.unsupportedExtensions.join(", ")}` : ""}`);
   }
-  if (!state.sufficientSol) throw new Error("Insufficient SOL, reserve at least 0.01 SOL to pay network fees and possible ATA rent");
+  if (!state.sufficientSol) throw new Error(NOT_ENOUGH_SOL_FOR_FEES_MESSAGE);
   const grossRequested = parseTokenAmount(amount, state.inputDecimals);
   const deposit = depositFeePlan(grossRequested, feeConfig);
   const requested = deposit.swapAmount;
-  if (BigInt(state.inputBalance) < grossRequested) throw new Error("Insufficient input asset balance or SOL reserve");
+  if (BigInt(state.inputBalance) < grossRequested) {
+    throw new Error(notEnoughBalanceMessage({ symbol: knownTokenSymbol(state.inputMint, state.inputKind), decimals: state.inputDecimals,
+      balance: state.inputBalance, requested: grossRequested, native: state.inputKind === "native" }));
+  }
   if (requested <= 0n) throw new AmountTooSmallError();
   let spendA = 0n;
   let legs: SwapLeg[] = [];

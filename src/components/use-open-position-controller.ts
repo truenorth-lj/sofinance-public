@@ -126,8 +126,9 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
 
   const selectedAsset = inputAssets.find((item) => item.mint === inputMint && item.kind === inputKind) ?? null;
   const fresh = quote ? quoteIsFresh(quote.expiresAt, now) : false;
-  const busy = operationStage === "preparing" || operationStage === "wallet" || operationStage === "broadcasting" ||
-    operationStage === "swap-preparing" || operationStage === "swap-wallet" || operationStage === "swap-broadcasting" ||
+  // "checking" / "swap-checking": the wallet threw and we are looking for the transaction on-chain; nothing may be resent.
+  const busy = operationStage === "preparing" || operationStage === "wallet" || operationStage === "checking" || operationStage === "broadcasting" ||
+    operationStage === "swap-preparing" || operationStage === "swap-wallet" || operationStage === "swap-checking" || operationStage === "swap-broadcasting" ||
     operationStage === "swap-pending" || open.pending;
   const swapRecovery = useSolSwapRecovery({ wallet, connected, blocked: busy, onReceipt: (receipt) => {
     if (receipt.wallet === wallet && receipt.poolId === pair?.poolAddress) setSwapReceipt(receipt, { persist: false });

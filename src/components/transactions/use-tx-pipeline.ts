@@ -13,14 +13,16 @@ export type TxPipelineState = {
 
 /**
  * React binding for the shared pipeline. A flow passes its adapter and gets back a stage,
- * a plain error, a one-tap retry and `closeLocked` (true while preparing or in the wallet,
- * so a stray backdrop click cannot abandon a signature request).
+ * a plain error, a one-tap retry, `closeLocked` (true while preparing or in the wallet,
+ * so a stray backdrop click cannot abandon a signature request) and `locked` (also true while
+ * checking Solana after a wallet error and while confirming: no second send, no re-quote).
  */
 export function useTxPipeline<Input, Prepared extends PreparedTx>(adapter: TxAdapter<Input, Prepared>, wallet: TxWallet | null) {
   const [owned, setOwned] = useState<{ wallet?: string; state: TxPipelineState }>({ state: { status: "idle" } });
   const generation = useRef(0);
   const mounted = useRef(true);
   const busy = useRef(false);
+  const lockedRef = useRef(false);
   const lastInput = useRef<{ value: Input } | null>(null);
   const latest = useRef({ adapter, wallet });
   useLayoutEffect(() => { latest.current = { adapter, wallet }; });
@@ -30,7 +32,7 @@ export function useTxPipeline<Input, Prepared extends PreparedTx>(adapter: TxAda
 
   const run = useCallback(async (input: Input) => {
     const current = latest.current;
-    if (busy.current || !current.wallet) return null;
+    if (busy.current || lockedRef.current || !current.wallet) return null;
     const own = ++generation.current;
     const submittedWallet = current.wallet.address;
     const isOwner = () => mounted.current && generation.current === own && latest.current.wallet?.address === submittedWallet;
@@ -85,9 +87,15 @@ export function useTxPipeline<Input, Prepared extends PreparedTx>(adapter: TxAda
   // "Confirming…" and an expired/failed run keeps its Try again once the toast is gone.
   // (Adjusting state during render, React's pattern for state derived from an external store.)
   if (view !== state && owned.state === state) setOwned({ ...owned, state: view });
+  const busyNow = view.status === "preparing" || view.status === "wallet" || view.status === "checking";
+  // Confirming locks only while its notice is still tracking the signature (a dismissed toast must not lock the form forever).
+  const locked = busyNow || (view.status === "confirming" && notice?.state === "loading");
+  useLayoutEffect(() => { lockedRef.current = locked; });
   return {
     ...view, run, reset, retry,
-    busy: view.status === "preparing" || view.status === "wallet",
+    busy: busyNow,
+    /** No new send and no re-quote: in flight, checking Solana after a wallet error, or confirming. */
+    locked,
     closeLocked: view.status === "preparing" || view.status === "wallet",
   };
 }

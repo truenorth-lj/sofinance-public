@@ -8,10 +8,12 @@ import { assertSolSwapAttempt, clearSolSwapAttempt, completeSolSwapAttempt, pers
   readSolSwapAttempt, requireSolSwapStorage, SolSwapStorageError, type SolSwapAttempt, type SolSwapStorage } from "./sol-swap-attempt-store";
 import type { PendingSolSwapReceipt } from "./sol-swap-receipt-store";
 import type { SolSwapStepSummary } from "@sofinance/engine/sol-swap-step";
-import { sendWithWallet, trackTxSignature, TxSendUnknownError, type SendRaw, type TxWallet } from "@/lib/tx-pipeline";
+import { dismissTxNotice, sendWithWallet, showTxCheckingNotice, trackTxSignature, TxSendUnknownError, type FindLanded, type SendRaw,
+  type TxWallet } from "@/lib/tx-pipeline";
 import { postWithJupiterRelay, type JupiterRelayStore } from "@/lib/jupiter/browser-relay";
 
-export type SolSwapStage = "swap-preparing" | "swap-wallet" | "swap-broadcasting" | "swap-pending";
+/** "swap-checking": the wallet threw after the sign-and-send request; looking for the swap on-chain before anything else. */
+export type SolSwapStage = "swap-preparing" | "swap-wallet" | "swap-checking" | "swap-broadcasting" | "swap-pending";
 
 /** A landed step 1/2: the tokens are in the wallet; step 2/2 opens with exactly `delivered`. */
 export type SolSwapReceipt = {
@@ -54,6 +56,8 @@ export async function runSolSwapStep(input: {
   setStage: (stage: SolSwapStage) => void; current: () => boolean;
   storage?: SolSwapStorage;
   sleep?: (ms: number) => Promise<void>;
+  /** Test hook for the on-chain lookup after a wallet error. */
+  findLanded?: FindLanded;
 }): Promise<PendingSolSwapReceipt> {
   const wallet = input.wallet.address;
   const { poolId } = input;
@@ -82,12 +86,19 @@ export async function runSolSwapStep(input: {
   // Shared send stage: the wallet broadcasts (or signs and we send once). The attempt is
   // saved with the returned signature so a reload keeps polling it; nothing is resent.
   let signature: string;
+  let checkingId: string | undefined;
   try {
-    signature = (await sendWithWallet(input.wallet, unsigned, { sendRaw: input.sendRaw, sendPermit: prepared.sendPermit })).signature;
+    signature = (await sendWithWallet(input.wallet, unsigned, {
+      sendRaw: input.sendRaw, sendPermit: prepared.sendPermit, lastValidBlockHeight: summary.lastValidBlockHeight,
+      findLanded: input.findLanded,
+      onChecking: () => { checkingId = showTxCheckingNotice("swap"); input.setStage("swap-checking"); },
+    })).signature;
   } catch (error) {
+    if (checkingId) dismissTxNotice(checkingId);
     if (!(error instanceof TxSendUnknownError)) throw error;
     signature = error.signature;
   }
+  if (checkingId) dismissTxNotice(checkingId);
   const attempt: SolSwapAttempt = { version: 1, wallet, poolId, signature, outputMint: summary.outputMint,
     outputSymbol: summary.outputSymbol, lastValidBlockHeight: summary.lastValidBlockHeight, createdAt: Date.now() };
   persistSolSwapAttempt(storage, attempt);

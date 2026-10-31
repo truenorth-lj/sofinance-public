@@ -175,19 +175,53 @@ export function walletReturnedTransactionMatches(
   return walletReturnedTxDiagnostic(prepared, signed, loadedAddresses) === null;
 }
 
-/** Landed `getTransaction` receipt vs the permit-bound prepared message. */
+/**
+ * Post-landing rule (looser than the pre-send checks on purpose): the landed transaction keeps our fee
+ * payer, blockhash and required signers, and every instruction we prepared is present, unchanged and in
+ * the same order. Any other instruction the wallet added is tolerated, whatever its program: once a
+ * transaction has landed, refusing it only strands a real result in manual review. The strict
+ * allow-list (`walletReturnedTransactionMatches`, `/api/tx-send`) still guards everything before sending.
+ */
+export function landedInstructionsMatchPrepared(
+  prepared: VersionedTransaction,
+  landed: VersionedTransaction,
+  wallet: string,
+  loadedAddresses?: LandedLookupAddresses | null,
+): boolean {
+  if (landed.message.staticAccountKeys[0]?.toBase58() !== wallet) return false;
+  if (landed.message.recentBlockhash !== prepared.message.recentBlockhash) return false;
+  if (!requiredSignersPresent(prepared, landed)) return false;
+  const core = coreInstructions(prepared);
+  const { matched } = walkWalletReturnedInstructions(core, fingerprints(landed, loadedAddresses), instructionMatches, () => true);
+  return matched === core.length;
+}
+
+/**
+ * The landed `getTransaction` receipt is our prepared transaction (see `landedInstructionsMatchPrepared`),
+ * whether it succeeded or failed on-chain. Used to find a transaction a wallet sent but did not report.
+ */
+export function landedReceiptIsPrepared(
+  prepared: VersionedTransaction,
+  receipt: LandedTransactionReceipt,
+  wallet: string,
+): boolean {
+  if (!receipt?.meta) return false;
+  try {
+    const landed = new VersionedTransaction(receipt.transaction.message);
+    return landedInstructionsMatchPrepared(prepared, landed, wallet, receipt.meta.loadedAddresses);
+  } catch {
+    return false;
+  }
+}
+
+/** Landed, successful `getTransaction` receipt vs the permit-bound prepared message. */
 export function landedTransactionMatchesPrepared(
   prepared: VersionedTransaction,
   receipt: LandedTransactionReceipt,
   wallet: string,
 ): boolean {
   if (!receipt?.meta || receipt.meta.err) return false;
-  try {
-    const landed = new VersionedTransaction(receipt.transaction.message);
-    return walletReturnedTransactionMatches(prepared, landed, wallet, receipt.meta.loadedAddresses);
-  } catch {
-    return false;
-  }
+  return landedReceiptIsPrepared(prepared, receipt, wallet);
 }
 
 export function assertWalletReturnedTransaction(

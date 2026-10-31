@@ -16,7 +16,8 @@ export async function installFakeWallet(context: BrowserContext, wallet: FakeWal
   await context.exposeBinding("__e2eSignMessage", (_source, messageB64: string) => wallet.signMessageB64(messageB64));
   await context.addInitScript({
     content: `window.__E2E_WALLET_CFG__=${JSON.stringify({
-      address: wallet.address, publicKey: [...wallet.publicKeyBytes], name: wallet.name })};`,
+      address: wallet.address, publicKey: [...wallet.publicKeyBytes], name: wallet.name,
+      signAndSendError: wallet.signAndSendError })};`,
   });
   await context.addInitScript({ content: INPAGE });
 }

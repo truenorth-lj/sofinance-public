@@ -1,7 +1,8 @@
 import bs58 from "bs58";
 import { VersionedTransaction } from "@solana/web3.js";
 import { assertWalletReturnedTransaction } from "@/lib/wallet-returned-guard";
-import { TxNotSentError, TxSendUnknownError } from "./errors";
+import { isWalletRejection, TxLandedUnknownError, TxNotLandedError, TxNotSentError, TxSendUnknownError } from "./errors";
+import { waitForLanded, type FindLanded } from "./landed";
 
 /**
  * Stage 2 (send): let the wallet broadcast. Phantom and other Wallet Standard wallets that
@@ -13,6 +14,11 @@ import { TxNotSentError, TxSendUnknownError } from "./errors";
  * `/api/tx-send`, which only accepts a transaction carrying the prepare-issued `sendPermit`.
  * No client blockhash/TTL gate here: Solana itself rejects an expired transaction, and the
  * confirm stage reports it in plain words.
+ *
+ * If the wallet throws (or returns no usable signature) after we asked it to sign AND send, it may
+ * already have broadcast. We then look the transaction up on-chain (`waitForLanded`) before saying
+ * anything: landed → continue as sent; expired and not found → `TxNotLandedError` (safe to retry);
+ * undecided → `TxLandedUnknownError` (check Solscan first).
  */
 export type TxWallet = {
   address: string;
@@ -72,22 +78,29 @@ export async function sendWithWallet(wallet: TxWallet, transaction: VersionedTra
    * already broadcast by the time it returns, so there is nothing to stop.)
    */
   stillWanted?: () => boolean;
-} = {}): Promise<{ signature: string; via: "wallet" | "relay" }> {
+  /** The prepared blockhash's last valid block height: the landed lookup waits for it to pass before "nothing was sent". */
+  lastValidBlockHeight?: number;
+  /** Called when the wallet threw after a sign-and-send request and the on-chain lookup starts. */
+  onChecking?: (walletError: unknown) => void;
+  /** Test hook; defaults to polling `/api/tx-landed`. */
+  findLanded?: FindLanded;
+} = {}): Promise<{ signature: string; via: "wallet" | "relay"; walletError?: unknown }> {
   const payer = transaction.message.staticAccountKeys[0]?.toBase58();
   if (payer !== wallet.address) throw new TxNotSentError("This transaction was prepared for a different wallet. Nothing was sent.");
   // Pristine prepared copy: the relay's permit covers these bytes; the wallet signs a fresh copy.
   const prepared = clone(transaction);
   if (!options.cosign && wallet.signAndSendTransaction) {
     let signature: string | undefined;
+    const askedAt = Date.now();
     try {
       signature = await wallet.signAndSendTransaction(clone(prepared));
     } catch (error) {
       // Some connectors (AppKit, injected wallets) expose signAndSend but the wallet itself lacks
       // the feature; that refusal happens before any prompt, so fall back to sign-then-relay.
-      if (!isUnsupportedFeatureError(error)) throw error;
+      if (!isUnsupportedFeatureError(error)) return checkLanded(error, askedAt);
     }
     if (signature !== undefined) {
-      if (!SIGNATURE.test(signature)) throw new TxNotSentError("Your wallet did not return a transaction signature.");
+      if (!SIGNATURE.test(signature)) return checkLanded(new Error("Your wallet did not return a transaction signature"), askedAt);
       return { signature, via: "wallet" };
     }
   }
@@ -111,4 +124,14 @@ export async function sendWithWallet(wallet: TxWallet, transaction: VersionedTra
   }
   if (returned !== expected) throw new TxSendUnknownError(expected, new Error("RPC returned a different signature"));
   return { signature: expected, via: "relay" };
+
+  async function checkLanded(walletError: unknown, askedAt: number) {
+    options.onChecking?.(walletError);
+    const outcome = await (options.findLanded ?? waitForLanded)({
+      prepared, sendPermit: options.sendPermit, lastValidBlockHeight: options.lastValidBlockHeight, preparedAt: askedAt,
+    });
+    if (outcome.status === "landed" || outcome.status === "failed") return { signature: outcome.signature, via: "wallet" as const, walletError };
+    if (outcome.status === "not-landed") throw new TxNotLandedError(isWalletRejection(walletError), walletError);
+    throw new TxLandedUnknownError(walletError);
+  }
 }

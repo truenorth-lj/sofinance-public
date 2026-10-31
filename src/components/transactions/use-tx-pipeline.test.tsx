@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import bs58 from "bs58";
 import { buildTransaction, testKeypair } from "@/lib/test-support/send-fixtures";
 
-vi.mock("@/lib/sentry/client-tx", () => ({ captureTxClientFailure: vi.fn() }));
+vi.mock("@/lib/sentry/client-tx", () => ({ captureTxClientFailure: vi.fn(), captureTxWalletErrorLanded: vi.fn() }));
 vi.mock("@/lib/position-history-refresh", () => ({ notifyPositionHistoryChange: vi.fn() }));
 
 import { dismissTxNotice, findTxNotice, getTxNotices, noticeIdFor, resetTxNotices, settleTxNotice, SUCCESS_NOTICE_MS, TxNotSentError, type TxAdapter, type TxWallet } from "@/lib/tx-pipeline";
@@ -91,10 +91,33 @@ describe("useTxPipeline", () => {
     expect(prepare).toHaveBeenLastCalledWith(7, expect.anything());
     expect(box.current.status).toBe("confirming");
   });
-  it("returns to idle on a wallet rejection", async () => {
-    await render(adapter(async () => prepared()), wallet(undefined, vi.fn(async () => { throw new Error("User rejected the request."); })));
+  it("returns to idle on a wallet rejection while signing (nothing was broadcast)", async () => {
+    const w: TxWallet = { address: payer.publicKey.toBase58(), signTransaction: vi.fn(async () => { throw Object.assign(new Error("User rejected the request."), { code: 4001 }); }) };
+    await render(adapter(async () => prepared()), w);
     await act(async () => { await box.current.run(1); });
     expect(box.current.status).toBe("idle"); expect(getTxNotices()).toEqual([]);
+  });
+  it("locks submit (and re-quote) while checking Solana after a wallet error and while confirming", async () => {
+    // The real lookup client (waitForLanded → /api/tx-landed), held open until the test answers.
+    const lookup = deferred<Response>();
+    const fetchMock = vi.fn((url: string) => url === "/api/tx-landed" ? lookup.promise : Promise.resolve(Response.json({ status: "pending" })));
+    vi.stubGlobal("fetch", fetchMock);
+    const prepare = vi.fn(async () => ({ ...prepared(), sendPermit: "permit" }));
+    const w = wallet(undefined, vi.fn(async () => { throw new Error('{"code":400,"message":"Request ab12cd34ef rejected by user"}'); }));
+    await render(adapter(prepare), w);
+    let first!: Promise<unknown>;
+    await act(async () => { first = box.current.run(1); });
+    expect(box.current).toMatchObject({ status: "checking", busy: true, locked: true, closeLocked: false });
+    await act(async () => { await box.current.run(2); box.current.retry(); });
+    expect(prepare).toHaveBeenCalledTimes(1); expect(w.signAndSendTransaction).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith("/api/tx-landed", expect.objectContaining({ method: "POST" }));
+    await act(async () => { lookup.resolve(Response.json({ status: "landed", signature: SIG })); await first; });
+    expect(box.current).toMatchObject({ status: "confirming", signature: SIG, busy: false, locked: true });
+    await act(async () => { await box.current.run(3); });
+    expect(prepare).toHaveBeenCalledTimes(1);
+    await act(async () => { settleTxNotice(noticeIdFor(SIG), "confirmed"); });
+    expect(box.current).toMatchObject({ status: "success", locked: false });
+    vi.unstubAllGlobals();
   });
   it("ignores a second run while busy", async () => {
     const prep = deferred<ReturnType<typeof prepared>>(); const prepare = vi.fn(() => prep.promise);

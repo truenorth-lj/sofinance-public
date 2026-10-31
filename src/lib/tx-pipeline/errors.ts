@@ -15,7 +15,12 @@ export const FLOW_LABEL: Record<TxFlow, string> = {
   add: "Add liquidity", open: "Create position", compound: "Compound", withdraw: "Withdraw", swap: "Swap to tokens",
 };
 
-const REJECTED = /user rejected|rejected the request|user declined|declined|cancel+ed by user|request rejected|4001\b/i;
+/**
+ * Explicit rejection wording. A wallet error that carries a numeric code is a rejection only for EIP-1193 /
+ * Phantom code 4001: Phantom has thrown `{"code":400,"message":"Request … rejected by user"}` AFTER it
+ * broadcast the transaction, so the words alone never prove that nothing was sent.
+ */
+const REJECTED = /user rejected|rejected the request|user declined|rejected by (the )?user|cancel+ed by (the )?user|request rejected|user cancel+ed/i;
 const EXPIRED = /blockhash not found|blockhash expired|block height exceeded|transaction has expired|blockhashNotFound|TransactionExpired/i;
 
 /** A send that failed after we may have handed the signed bytes to the network: track the signature, never resend. */
@@ -34,10 +39,74 @@ export class TxNotSentError extends Error {
   }
 }
 
+/**
+ * The wallet threw after we asked it to sign and send, and the chain lookup then confirmed the transaction
+ * did not land before its blockhash expired. Only this error may say "Nothing was sent, safe to retry".
+ */
+export class TxNotLandedError extends TxNotSentError {
+  constructor(readonly walletRejected: boolean, cause: unknown) {
+    super(walletRejected
+      ? "You cancelled in your wallet. We checked Solana and it did not go through. Nothing was sent, safe to retry."
+      : `Your wallet reported a problem${walletReason(cause)}. We checked Solana and it did not go through. Nothing was sent, safe to retry.`, cause);
+    this.name = "TxNotLandedError";
+  }
+}
+
+/** The wallet threw after we asked it to send, and we could not tell whether it landed. Never safe to retry blindly. */
+export class TxLandedUnknownError extends Error {
+  constructor(readonly cause: unknown) {
+    super(`Your wallet reported a problem${walletReason(cause)}, and we could not confirm whether the transaction went through. Check your wallet activity on Solscan before trying again.`);
+    this.name = "TxLandedUnknownError";
+  }
+}
+
+export type WalletErrorInfo = { code?: number; message: string };
+
+/**
+ * A wallet's thrown value in plain parts. Wallets throw Error objects with `code`, plain `{code, message}`
+ * objects, or an Error whose message is that object as JSON; this never returns JSON.
+ */
+export function walletErrorInfo(error: unknown): WalletErrorInfo {
+  const seen = new Set<unknown>();
+  const read = (value: unknown): WalletErrorInfo => {
+    if (value === null || value === undefined || seen.has(value)) return { message: "" };
+    seen.add(value);
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (trimmed.startsWith("{")) { try { return read(JSON.parse(trimmed)); } catch { return { message: "" }; } }
+      return { message: trimmed };
+    }
+    if (typeof value !== "object") return { message: String(value) };
+    const record = value as { code?: unknown; message?: unknown; error?: unknown; cause?: unknown };
+    const inner = read(record.message);
+    const code = typeof record.code === "number" ? record.code
+      : typeof record.code === "string" && /^-?\d+$/.test(record.code) ? Number(record.code) : inner.code;
+    // Wallet adapters wrap the wallet's own error (WalletSendTransactionError.error); its code still counts.
+    const nested = read(record.error ?? record.cause);
+    return { code: code ?? nested.code, message: inner.message || nested.message };
+  };
+  return read(error);
+}
+
+/** Only an explicit rejection: code 4001, or rejection wording on an error with no other code. */
+export function isWalletRejection(error: unknown): boolean {
+  const info = walletErrorInfo(error);
+  if (info.code !== undefined) return info.code === 4001;
+  return REJECTED.test(info.message);
+}
+
+/** " (“…”)" with the wallet's own words, request ids and JSON stripped; empty when there is nothing readable. */
+function walletReason(error: unknown) {
+  const message = walletErrorInfo(error).message
+    .replace(/\b(request)\s+[0-9a-f-]{8,}\s*/gi, "$1 ").replace(/[{}"[\]]/g, "").replace(/\s+/g, " ").trim().slice(0, 120);
+  return message ? ` (“${message.replace(/[.\s]+$/, "")}”)` : "";
+}
+
 export function txFailureKind(error: unknown): TxFailureKind {
+  if (error instanceof TxNotLandedError) return "not-sent";
+  if (error instanceof TxLandedUnknownError) return "unknown";
   const text = errorText(error);
-  if ((error as { name?: string } | null)?.name === "WalletSignTransactionError" && REJECTED.test(text)) return "rejected";
-  if (REJECTED.test(text)) return "rejected";
+  if (isWalletRejection(error)) return "rejected";
   if (EXPIRED.test(text) || text.includes(TX_EXPIRED_MESSAGE)) return "expired";
   if (error instanceof TxSendUnknownError) return "unknown";
   // Relay timeouts arrive wrapped in TxSendUnknownError, so a bare timeout happened before sending.
@@ -55,12 +124,20 @@ export const canRetry = (kind: TxFailureKind) => kind === "expired" || kind === 
 
 /** Plain words for the person in front of the wallet. Never raw RPC text, never secrets. */
 export function plainTxError(error: unknown, kind = txFailureKind(error)): string {
+  if (error instanceof TxNotLandedError || error instanceof TxLandedUnknownError) return error.message;
   if (kind === "rejected") return "You cancelled in your wallet. Nothing was sent.";
   if (kind === "expired") return TX_EXPIRED_MESSAGE;
   if (error instanceof TxSendUnknownError) return error.message;
   if (kind === "not-sent" && isTimeout(error)) return "Preparing the transaction timed out. Nothing was sent; try again.";
   const known = mapKnownChainError(errorText(error));
-  const message = known ?? sanitizePublicError(error, "The transaction could not be completed.");
+  const message = noJson(known ?? sanitizePublicError(error, "The transaction could not be completed."), error);
   if (kind === "not-sent" && !/nothing was sent|not sent/i.test(message)) return `${message}${/[.!?]$/.test(message) ? "" : "."} Nothing was sent.`;
   return message;
+}
+
+/** Never show raw JSON: fall back to the wallet's own words, or a plain sentence. */
+function noJson(message: string, error: unknown) {
+  if (!/[{}[\]]|"\w+"\s*:/.test(message)) return message;
+  const reason = walletReason(error);
+  return reason ? `Your wallet reported a problem${reason}.` : "The transaction could not be completed.";
 }
