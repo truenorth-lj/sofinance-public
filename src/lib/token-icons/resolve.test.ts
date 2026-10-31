@@ -141,7 +141,7 @@ describe("missing rwa_token_icon table or column (migration 0002 not applied on 
     const fetcher = vi.fn(async (url: string | URL | Request) => {
       const href = String(url);
       if (href.includes("raydium")) return new Response(JSON.stringify({ data: [{ address: OTHER, logoURI: "https://evil.example/o.png" }] }));
-      if (href.includes("dexscreener")) return new Response(JSON.stringify([]));
+      if (href.includes("dexscreener")) return new Response(JSON.stringify([{ baseToken: { address: RHC_SPCX }, info: { imageUrl: "https://dd.dexscreener.com/ds-data/tokens/robinhood/spcx.png" } }]));
       if (href.includes("geckoterminal")) return new Response(JSON.stringify({ data: href.split("/tokens/multi/")[1]!.split(",").map((address) =>
         ({ attributes: { address, image_url: `https://coin-images.coingecko.com/coins/images/9/large/${address.slice(2, 8)}.png` } })) }));
       return new Response("[]");
@@ -164,8 +164,13 @@ describe("missing rwa_token_icon table or column (migration 0002 not applied on 
     expect(saved.every((row) => trustedIcon(row.image) === row.image)).toBe(true);
     expect(saved.find((row) => row.address === OTHER)).toBeUndefined();
     expect(saved.find((row) => row.address === SPCXX)?.source).toBe("manual");
-    // All 22 allowlisted Robinhood Chain tokens get an indexer icon (not only SPCX via the manual list).
-    expect(saved.filter((row) => row.source === "geckoterminal").map((row) => row.address)).toHaveLength(22);
+    // The cron makes no GeckoTerminal call: Robinhood Chain icons come from DexScreener only. Tokens it does not list
+    // get no row (not even a manual one), so their saved icons are left as they are (upsert, nothing deleted).
+    const urls = (fetcher as unknown as { mock: { calls: unknown[][] } }).mock.calls.map((call) => String(call[0]));
+    expect(urls.some((url) => url.includes("geckoterminal"))).toBe(false);
+    expect(urls.some((url) => url.includes("dexscreener"))).toBe(true);
+    const rhcRows = saved.filter((row) => row.address.startsWith("0x"));
+    expect(rhcRows).toEqual([{ chain: "robinhood", address: RHC_SPCX.toLowerCase(), image: "https://dd.dexscreener.com/ds-data/tokens/robinhood/spcx.png", source: "dexscreener" }]);
     behavior.saveError = new RwaStoreError("TOKEN_ICONS_UNAVAILABLE");
     await expect(refreshTokenIcons(store, lease, [], fetcher, new AbortController().signal)).rejects.toMatchObject({ code: "TOKEN_ICONS_UNAVAILABLE" });
   });
