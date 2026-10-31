@@ -66,7 +66,38 @@ export const toBase64 = (transaction: VersionedTransaction) => Buffer.from(trans
 export const messageBase64 = (transaction: VersionedTransaction) => Buffer.from(transaction.message.serialize()).toString("base64");
 export const signatureOf = (transaction: VersionedTransaction) => bs58.encode(transaction.signatures[0]!);
 
-export { LIGHTHOUSE_PROGRAM_ID } from "@sofinance/engine/wallet-returned-tx";
+import { LIGHTHOUSE_PROGRAM_ID } from "@sofinance/engine/wallet-returned-tx";
+export { LIGHTHOUSE_PROGRAM_ID };
+
+/**
+ * Lighthouse instructions as Phantom returns them on mainnet (bytes copied from a mainnet transaction
+ * that Phantom guarded): `AssertAccountData` on one account (data 02 00 10 07 e4dd1363 07000000 05) and
+ * a no-account `AssertSysvarClock` (data 0f 00 00 fbeda21b 00000000 05). Phantom puts them right after
+ * its ComputeBudget instructions, before ours.
+ */
+export function phantomLighthouseInstructions(assertedAccount: PublicKey): TransactionInstruction[] {
+  return [
+    new TransactionInstruction({ programId: LIGHTHOUSE_PROGRAM_ID, keys: [{ pubkey: assertedAccount, isSigner: false, isWritable: false }],
+      data: Buffer.from("02001007e4dd13630700000005", "hex") }),
+    new TransactionInstruction({ programId: LIGHTHOUSE_PROGRAM_ID, keys: [], data: Buffer.from("0f0000fbeda21b0000000005", "hex") }),
+  ];
+}
+
+/** Rebuild `tx` the way Phantom returns it on mainnet: its ComputeBudget, then Lighthouse assertions, then our instructions. Caller resigns. */
+export function phantomMainnetReturn(tx: VersionedTransaction, assertedAccount: PublicKey) {
+  const message = TransactionMessage.decompile(tx.message);
+  const core = message.instructions.filter((ix) => !ix.programId.equals(ComputeBudgetProgram.programId));
+  return new VersionedTransaction(new TransactionMessage({
+    payerKey: message.payerKey,
+    recentBlockhash: message.recentBlockhash,
+    instructions: [
+      ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }),
+      ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 50_000 }),
+      ...phantomLighthouseInstructions(assertedAccount),
+      ...core,
+    ],
+  }).compileToV0Message());
+}
 
 /**
  * Rebuild `tx` the way Phantom does: replace ComputeBudget, insert a Lighthouse ix
@@ -75,7 +106,7 @@ export { LIGHTHOUSE_PROGRAM_ID } from "@sofinance/engine/wallet-returned-tx";
 export function phantomRewriteTransaction(tx: VersionedTransaction) {
   const message = TransactionMessage.decompile(tx.message);
   const core = message.instructions.filter((ix) => !ix.programId.equals(ComputeBudgetProgram.programId)
-    && !ix.programId.equals(new PublicKey("L2TExMFKdjpN9kozasaurPPf4nCVfRTb7cTZo5GsqqY")));
+    && !ix.programId.equals(LIGHTHOUSE_PROGRAM_ID));
   const split = Math.min(1, core.length);
   return new VersionedTransaction(new TransactionMessage({
     payerKey: message.payerKey,
@@ -85,7 +116,7 @@ export function phantomRewriteTransaction(tx: VersionedTransaction) {
       ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 50_000 }),
       ...core.slice(0, split),
       new TransactionInstruction({
-        programId: new PublicKey("L2TExMFKdjpN9kozasaurPPf4nCVfRTb7cTZo5GsqqY"),
+        programId: LIGHTHOUSE_PROGRAM_ID,
         keys: [],
         data: Buffer.from([7]),
       }),
@@ -110,7 +141,7 @@ export function tamperTransferLamports(tx: VersionedTransaction, lamports: numbe
 export function appendWalletExtraInstruction(
   tx: VersionedTransaction,
   extra: TransactionInstruction = new TransactionInstruction({
-    programId: new PublicKey("L2TExMFKdjpN9kozasaurPPf4nCVfRTb7cTZo5GsqqY"),
+    programId: LIGHTHOUSE_PROGRAM_ID,
     keys: [],
     data: Buffer.from([1]),
   }),

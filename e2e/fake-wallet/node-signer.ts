@@ -14,7 +14,7 @@ export type WalletMode =
   | "priority-fee"      // wallet raises ComputeBudget CU price (Phantom congestion fee rewrite)
   | "slow";             // delays the answer (exercises the "Waiting for wallet signature" state)
 
-export const LIGHTHOUSE_PROGRAM = "L2TExMFKdjpN9kozasaurPPf4nCVfRTb7cTZo5GsqqY";
+export const LIGHTHOUSE_PROGRAM = "L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95";
 export const MEMO_PROGRAM = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr";
 export const COMPUTE_BUDGET_PROGRAM = "ComputeBudget111111111111111111111111111111";
 

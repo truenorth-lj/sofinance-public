@@ -1,10 +1,57 @@
 import { ComputeBudgetProgram, PublicKey, VersionedTransaction } from "@solana/web3.js";
 import { exceedsTxSizeLimit } from "./transaction-limits";
 
-/** Phantom Lighthouse simulation-assertion program. Extra ixs from this program are allowed. */
-export const LIGHTHOUSE_PROGRAM_ID = new PublicKey("L2TExMFKdjpN9kozasaurPPf4nCVfRTb7cTZo5GsqqY");
+/**
+ * Lighthouse assertion program (mainnet + devnet), which Phantom inserts into transactions it signs.
+ * Source: github.com/Jac0xb/lighthouse README "Addresses".
+ */
+export const LIGHTHOUSE_PROGRAM_ID = new PublicKey("L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95");
+export const MEMO_V2_PROGRAM_ID = new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
+export const MEMO_V1_PROGRAM_ID = new PublicKey("Memo1UhkJRfHyvLMcVucJwxXeuD728EqVDDwQDxFMNo");
 
 const COMPUTE_BUDGET_PROGRAM = ComputeBudgetProgram.programId.toBase58();
+
+/**
+ * The one allow-list for instructions a wallet may add to a transaction we prepared, used by the client
+ * check, every server-side wallet-returned check and the strict `/api/tx-send` comparison. The program
+ * must be a static account key (a v0 program id can not come from a lookup table anyway).
+ */
+export const WALLET_EXTRA_PROGRAM_IDS: ReadonlySet<string> = new Set([
+  COMPUTE_BUDGET_PROGRAM, LIGHTHOUSE_PROGRAM_ID.toBase58(), MEMO_V2_PROGRAM_ID.toBase58(), MEMO_V1_PROGRAM_ID.toBase58(),
+]);
+
+/** ComputeBudget / Lighthouse in the prepared tx are not required: the wallet may replace or drop them. */
+const REPLACEABLE_PROGRAM_IDS: ReadonlySet<string> = new Set([COMPUTE_BUDGET_PROGRAM, LIGHTHOUSE_PROGRAM_ID.toBase58()]);
+
+/** Program id of an instruction, only if it is a static key in the allow-list. */
+export function isAllowedWalletExtraProgram(programId: string | null, isStaticKey: boolean): boolean {
+  return isStaticKey && programId !== null && WALLET_EXTRA_PROGRAM_IDS.has(programId);
+}
+
+/**
+ * The shared matching rule. Walk the signed instructions in order: one that matches the next required
+ * (prepared) instruction advances; any other must be an allowed wallet extra. Returns how many required
+ * instructions matched and the first signed instruction that is neither.
+ */
+export function walkWalletReturnedInstructions<T>(
+  required: readonly T[],
+  signed: readonly T[],
+  matches: (expected: T, candidate: T) => boolean,
+  isAllowedExtra: (candidate: T) => boolean,
+): { matched: number; firstDisallowedIndex: number | null } {
+  let matched = 0;
+  let firstDisallowedIndex: number | null = null;
+  signed.forEach((ix, index) => {
+    if (matched < required.length && matches(required[matched]!, ix)) matched += 1;
+    else if (!isAllowedExtra(ix) && firstDisallowedIndex === null) firstDisallowedIndex = index;
+  });
+  return { matched, firstDisallowedIndex };
+}
+
+/** Prepared instructions that must survive signing (everything but ComputeBudget / Lighthouse). */
+export function isRequiredPreparedProgram(programId: string | null, isStaticKey: boolean): boolean {
+  return !(isStaticKey && programId !== null && REPLACEABLE_PROGRAM_IDS.has(programId));
+}
 
 /** `getTransaction` meta.loadedAddresses (writable lookups first, then readonly). */
 export type LandedLookupAddresses = {
@@ -19,6 +66,7 @@ export type LandedTransactionReceipt = {
 
 type Fingerprint = {
   programId: string | null;
+  programIsStatic: boolean;
   data: string;
   accounts: (string | null)[];
 };
@@ -45,16 +93,13 @@ function resolveKey(
   return null;
 }
 
-function isExcludedProgram(programId: string | null): boolean {
-  return programId === COMPUTE_BUDGET_PROGRAM || programId === LIGHTHOUSE_PROGRAM_ID.toBase58();
-}
-
 function fingerprints(
   transaction: VersionedTransaction,
   loadedAddresses?: LandedLookupAddresses | null,
 ): Fingerprint[] {
   return transaction.message.compiledInstructions.map((ix) => ({
     programId: resolveKey(transaction, ix.programIdIndex, loadedAddresses),
+    programIsStatic: ix.programIdIndex < transaction.message.staticAccountKeys.length,
     data: Buffer.from(ix.data).toString("base64"),
     accounts: ix.accountKeyIndexes.map((index) => resolveKey(transaction, index, loadedAddresses)),
   }));
@@ -65,7 +110,7 @@ function coreInstructions(
   transaction: VersionedTransaction,
   loadedAddresses?: LandedLookupAddresses | null,
 ): Fingerprint[] {
-  return fingerprints(transaction, loadedAddresses).filter((ix) => !isExcludedProgram(ix.programId));
+  return fingerprints(transaction, loadedAddresses).filter((ix) => isRequiredPreparedProgram(ix.programId, ix.programIsStatic));
 }
 
 function instructionMatches(expected: Fingerprint, candidate: Fingerprint): boolean {
@@ -80,33 +125,30 @@ function instructionMatches(expected: Fingerprint, candidate: Fingerprint): bool
   return true;
 }
 
-function returnedProgramIds(
-  transaction: VersionedTransaction,
-  loadedAddresses?: LandedLookupAddresses | null,
-): string[] {
-  return fingerprints(transaction, loadedAddresses).map((ix) => ix.programId ?? "alt");
-}
-
 export function walletReturnedTxDiagnostic(
   prepared: VersionedTransaction,
   signed: VersionedTransaction,
   loadedAddresses?: LandedLookupAddresses | null,
-): { unmatchedIndex: number; unmatchedProgramId: string; returnedProgramIds: string[] } | null {
+): { kind: "missing" | "extra"; unmatchedIndex: number; unmatchedProgramId: string; returnedProgramIds: string[] } | null {
   const core = coreInstructions(prepared);
-  let index = 0;
-  for (const ix of fingerprints(signed, loadedAddresses)) {
-    if (index < core.length && instructionMatches(core[index]!, ix)) index += 1;
+  const returned = fingerprints(signed, loadedAddresses);
+  const { matched, firstDisallowedIndex } = walkWalletReturnedInstructions(core, returned, instructionMatches,
+    (ix) => isAllowedWalletExtraProgram(ix.programId, ix.programIsStatic));
+  const returnedProgramIds = returned.map((ix) => ix.programId ?? "alt");
+  if (matched < core.length) {
+    return { kind: "missing", unmatchedIndex: matched, unmatchedProgramId: core[matched]!.programId ?? "alt", returnedProgramIds };
   }
-  if (index === core.length) return null;
-  return {
-    unmatchedIndex: index,
-    unmatchedProgramId: core[index]!.programId ?? "alt",
-    returnedProgramIds: returnedProgramIds(signed, loadedAddresses),
-  };
+  if (firstDisallowedIndex !== null) {
+    return { kind: "extra", unmatchedIndex: firstDisallowedIndex, unmatchedProgramId: returned[firstDisallowedIndex]!.programId ?? "alt", returnedProgramIds };
+  }
+  return null;
 }
 
 function formatMismatch(diagnostic: NonNullable<ReturnType<typeof walletReturnedTxDiagnostic>>): string {
-  return `Wallet removed or changed a required instruction (unmatched #${diagnostic.unmatchedIndex} program=${diagnostic.unmatchedProgramId}; returned=[${diagnostic.returnedProgramIds.join(",")}])`;
+  const detail = `#${diagnostic.unmatchedIndex} program=${diagnostic.unmatchedProgramId}; returned=[${diagnostic.returnedProgramIds.join(",")}]`;
+  return diagnostic.kind === "missing"
+    ? `Wallet removed or changed a required instruction (unmatched ${detail})`
+    : `Wallet added an instruction from a program that is not allowed (${detail})`;
 }
 
 function requiredSignersPresent(prepared: VersionedTransaction, signed: VersionedTransaction): boolean {
@@ -118,7 +160,7 @@ function requiredSignersPresent(prepared: VersionedTransaction, signed: Versione
 /**
  * Cheap Phantom-compatible check: the wallet-returned (or landed) tx is the source of truth.
  * Compare resolved program id + data + resolvable account pubkeys.
- * Extra / rewritten ComputeBudget or Lighthouse instructions are allowed (subsequence).
+ * Instructions the wallet adds must come from `WALLET_EXTRA_PROGRAM_IDS` (ComputeBudget, Lighthouse, Memo).
  * Pass `loadedAddresses` from `getTransaction` meta to resolve landed ALT slots.
  */
 export function walletReturnedTransactionMatches(

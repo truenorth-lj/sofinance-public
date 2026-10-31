@@ -186,3 +186,46 @@ it("matches a Phantom-modified landed tx and resolves ALT accounts from loadedAd
   }, payer.publicKey.toBase58())).toBe(false);
   expect(landedTransactionMatchesPrepared(prepared, null, payer.publicKey.toBase58())).toBe(false);
 });
+
+// Shared allow-list (client, server checks, /api/tx-send): ComputeBudget, Lighthouse, Memo by static key.
+function phantomMainnetOpen(payer: Keypair, mint: Keypair, extra: TransactionInstruction[] = []) {
+  const dlmm = new PublicKey("LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo");
+  const blockhash = Keypair.generate().publicKey.toBase58();
+  const core = [new TransactionInstruction({ programId: dlmm, data: Buffer.from([1, 2, 3, 4, 5, 6, 7, 8]), keys: [
+    { pubkey: payer.publicKey, isSigner: true, isWritable: true }, { pubkey: mint.publicKey, isSigner: true, isWritable: true },
+  ] })];
+  const compile = (instructions: TransactionInstruction[]) => new VersionedTransaction(new TransactionMessage({
+    payerKey: payer.publicKey, recentBlockhash: blockhash, instructions }).compileToV0Message());
+  const prepared = compile(core);
+  // Lighthouse bytes as Phantom returned them on mainnet: AssertAccountData + AssertSysvarClock.
+  const signed = compile([
+    ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }), ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 50_000 }),
+    new TransactionInstruction({ programId: LIGHTHOUSE_PROGRAM_ID, keys: [{ pubkey: mint.publicKey, isSigner: false, isWritable: false }],
+      data: Buffer.from("02001007e4dd13630700000005", "hex") }),
+    new TransactionInstruction({ programId: LIGHTHOUSE_PROGRAM_ID, keys: [], data: Buffer.from("0f0000fbeda21b0000000005", "hex") }),
+    ...core, ...extra,
+  ]);
+  return { prepared, signed };
+}
+
+it("Lighthouse is the mainnet program Phantom inserts (L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95)", () => {
+  expect(LIGHTHOUSE_PROGRAM_ID.toBase58()).toBe("L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95");
+});
+
+it("accepts Phantom's mainnet Lighthouse + ComputeBudget return of an open with a mint cosigner", () => {
+  const payer = Keypair.generate(), mint = Keypair.generate();
+  const { prepared, signed } = phantomMainnetOpen(payer, mint);
+  expect(walletReturnedTxDiagnostic(prepared, signed)).toBeNull();
+  expect(() => assertWalletReturnedTransaction(prepared, signed, payer.publicKey.toBase58())).not.toThrow();
+});
+
+it("refuses an inserted SystemProgram.transfer or an unlisted program next to Phantom's Lighthouse", () => {
+  const payer = Keypair.generate(), mint = Keypair.generate();
+  const transfer = SystemProgram.transfer({ fromPubkey: payer.publicKey, toPubkey: Keypair.generate().publicKey, lamports: 1_000_000 });
+  const lookalike = new TransactionInstruction({ programId: new PublicKey("L2TExMFKdjpN9kozasaurPPf4nCVfRTb7cTZo5GsqqY"), keys: [], data: Buffer.from([1]) });
+  for (const extra of [transfer, lookalike]) {
+    const { prepared, signed } = phantomMainnetOpen(payer, mint, [extra]);
+    expect(walletReturnedTxDiagnostic(prepared, signed)).toMatchObject({ kind: "extra", unmatchedProgramId: extra.programId.toBase58() });
+    expect(() => assertWalletReturnedTransaction(prepared, signed, payer.publicKey.toBase58())).toThrow(/Wallet added an instruction from a program that is not allowed/);
+  }
+});
