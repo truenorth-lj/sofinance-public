@@ -15,7 +15,7 @@ vi.mock("./wallet-connection", () => ({ useWalletConnection: () => ({ address: m
 const payer = testKeypair(1), placeholder = testKeypair(3), wallet = payer.publicKey.toBase58();
 let root: Root, container: HTMLDivElement;
 let payload: PendingSignPayload, events: string[], prepareBodies: Array<{ token: string; nftMint: string }>;
-let reprepared: { unsignedTransaction: string; permit: string; summary: ReturnType<typeof openSummaryFixture> } | undefined;
+let reprepared: { unsignedTransaction: string; permit: string; sendPermit: string; summary: ReturnType<typeof openSummaryFixture> } | undefined;
 let broadcastBody: Record<string, unknown> | undefined, prepareFails: boolean;
 const signButton = () => [...container.querySelectorAll("button")].find(b => b.textContent === "Sign and submit");
 async function mount() { await act(async () => root.render(createElement(SignPage))); await act(async () => vi.advanceTimersByTimeAsync(1)); }
@@ -43,7 +43,7 @@ beforeEach(() => {
       if (prepareFails) return Response.json({ error: "Jupiter unavailable" }, { status: 503 });
       const mint = new PublicKey(body.nftMint);
       const tx = buildTransaction({ payer, extraSigners: [{ publicKey: mint } as Keypair], signWith: [] });
-      reprepared = { unsignedTransaction: toBase64(tx), permit: "fresh-permit", summary: openSummaryFixture({ wallet, nftMint: mint.toBase58(), blockhash: tx.message.recentBlockhash }) };
+      reprepared = { unsignedTransaction: toBase64(tx), permit: "fresh-permit", sendPermit: "f".repeat(64), summary: openSummaryFixture({ wallet, nftMint: mint.toBase58(), blockhash: tx.message.recentBlockhash }) };
       return Response.json(reprepared);
     }
     if (url === "/api/tx-send") {
@@ -73,9 +73,11 @@ it("generates the NFT mint in the browser, wallet signs first, mint signs the wa
   const message = signed.message.serialize();
   expect(nacl.sign.detached.verify(message, signed.signatures[0]!, payer.publicKey.toBytes())).toBe(true);
   expect(nacl.sign.detached.verify(message, signed.signatures[1]!, new PublicKey(prepareBodies[0]!.nftMint).toBytes())).toBe(true);
-  // The relay carries the signed bytes plus the prepared (unsigned) transaction its permit covers
-  // (this mocked prepare returns no permit); the position mint in them is the browser-generated one.
-  expect(Object.keys(broadcastBody!)).toEqual(["signedTransaction", "unsignedTransaction"]);
+  // The relay carries the signed bytes plus the re-prepared transaction and the permit issued for it
+  // (not the token's preview permit); the position mint in them is the browser-generated one.
+  expect(Object.keys(broadcastBody!)).toEqual(["signedTransaction", "unsignedTransaction", "sendPermit"]);
+  expect(broadcastBody!.sendPermit).toBe("f".repeat(64));
+  expect(broadcastBody!.unsignedTransaction).toBe(reprepared!.unsignedTransaction);
   expect(signed.message.staticAccountKeys[1]!.toBase58()).toBe(prepareBodies[0]!.nftMint);
   expect(reprepared).toBeDefined();
   expect(container.textContent).toContain("Transaction submitted successfully");

@@ -8,7 +8,8 @@ import { buildTransaction, testKeypair } from "@/lib/test-support/send-fixtures"
 vi.mock("@/lib/sentry/client-tx", () => ({ captureTxClientFailure: vi.fn() }));
 vi.mock("@/lib/position-history-refresh", () => ({ notifyPositionHistoryChange: vi.fn() }));
 
-import { findTxNotice, getTxNotices, noticeIdFor, resetTxNotices, settleTxNotice, TxNotSentError, type TxAdapter, type TxWallet } from "@/lib/tx-pipeline";
+import { dismissTxNotice, findTxNotice, getTxNotices, noticeIdFor, resetTxNotices, settleTxNotice, SUCCESS_NOTICE_MS, TxNotSentError, type TxAdapter, type TxWallet } from "@/lib/tx-pipeline";
+import { TxNoticeHost } from "./tx-notice-host";
 import { openStatusFromNotice } from "@/components/use-open-attempt";
 import { useTxPipeline } from "./use-tx-pipeline";
 
@@ -32,6 +33,39 @@ beforeEach(() => { resetTxNotices(); window.localStorage.clear(); container = do
 afterEach(async () => { await act(async () => root.unmount()); });
 
 describe("useTxPipeline", () => {
+  // The toast is not the source of truth: the dialog must keep the result after the toast closes.
+  describe("keeps the settled result after its toast closes", () => {
+    const withHost = async (a: TxAdapter<number>, w: TxWallet) => act(async () => root.render(createElement("div", null,
+      createElement(Harness, { adapter: a, wallet: w }), createElement(TxNoticeHost, { wallet: w.address }))));
+    beforeEach(() => { vi.useFakeTimers(); vi.stubGlobal("fetch", vi.fn(async () => Response.json({ status: "pending" }))); });
+    afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
+
+    it("still shows success after the success toast auto-closes (SUCCESS_NOTICE_MS)", async () => {
+      await withHost(adapter(async () => prepared()), wallet());
+      await act(async () => { await box.current.run(1); });
+      expect(box.current.status).toBe("confirming");
+      await act(async () => { settleTxNotice(noticeIdFor(SIG), "confirmed"); });
+      expect(box.current).toMatchObject({ status: "success", kind: "landed", signature: SIG });
+      await act(async () => { await vi.advanceTimersByTimeAsync(SUCCESS_NOTICE_MS + 10); });
+      expect(findTxNotice(noticeIdFor(SIG))).toBeUndefined();
+      expect(box.current).toMatchObject({ status: "success", kind: "landed", signature: SIG });
+    });
+
+    it("still shows expired with Try again after the user dismisses the expiry toast", async () => {
+      const prepare = vi.fn(async () => prepared());
+      await withHost(adapter(prepare), wallet());
+      await act(async () => { await box.current.run(3); });
+      await act(async () => { settleTxNotice(noticeIdFor(SIG), "expired"); });
+      expect(box.current).toMatchObject({ status: "failed", kind: "expired", retryable: true, signature: SIG });
+      await act(async () => { dismissTxNotice(noticeIdFor(SIG)); });
+      expect(findTxNotice(noticeIdFor(SIG))).toBeUndefined();
+      expect(box.current).toMatchObject({ status: "failed", kind: "expired", retryable: true, signature: SIG });
+      await act(async () => { box.current.retry(); });
+      await act(async () => {});
+      expect(prepare).toHaveBeenCalledTimes(2); expect(prepare).toHaveBeenLastCalledWith(3, expect.anything());
+    });
+  });
+
   it("locks closing while preparing and signing, then follows the shared notice to success", async () => {
     const prep = deferred<ReturnType<typeof prepared>>();
     const send = deferred<string>();

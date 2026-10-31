@@ -184,6 +184,44 @@ for (const viewport of [{ name: "desktop", width: 1280, height: 900 }, { name: "
     await expect.poll(() => calls.filter((p) => p === "/api/tx-send").length).toBe(2);
     expect(wallet.ledger).toHaveLength(2);
   });
+
+  test(`confirmed add: status dialog still shows success after the success toast auto-closes (${viewport.name})`, async ({ page, wallet }) => {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    const { calls, add } = await setup(page, wallet, { finality: () => "confirmed" });
+    await add.click();
+    await expect.poll(() => calls.filter((p) => p === "/api/tx-send").length).toBe(1);
+    await expect(page.getByText("Transaction status: success", { exact: true })).toBeVisible();
+    // SUCCESS_NOTICE_MS is 8 s: wait past it so the success toast has closed on its own.
+    await page.waitForTimeout(9_000);
+    await expect(page.getByRole("button", { name: "Dismiss notice" })).toHaveCount(0);
+    await expect(page.getByText("Transaction status: success", { exact: true })).toBeVisible();
+    const statusButton = page.getByRole("button", { name: "View transaction status and tx hash" });
+    await statusButton.focus();
+    await page.keyboard.press("Enter");
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByRole("heading", { name: "Liquidity added" })).toBeVisible();
+    await expect(dialog.getByRole("heading", { name: "Confirming on Solana…" })).toHaveCount(0);
+    await page.screenshot({ path: test.info().outputPath(`add-dialog-success-after-toast-${viewport.name}.png`), animations: "disabled" });
+  });
+
+  test(`expired add: dismissing the expiry toast keeps the dialog on expired with Try again (${viewport.name})`, async ({ page, wallet }) => {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    const { calls, add } = await setup(page, wallet, { finality: () => "expired" });
+    await add.click();
+    await expect.poll(() => calls.filter((p) => p === "/api/tx-send").length).toBe(1);
+    await expect(page.getByText("Transaction status: expired", { exact: true })).toBeVisible();
+    const dismiss = page.getByRole("button", { name: "Dismiss notice" });
+    await dismiss.first().click();
+    await expect(dismiss).toHaveCount(0);
+    await expect(page.getByText("Transaction status: expired", { exact: true })).toBeVisible();
+    const statusButton = page.getByRole("button", { name: "View transaction status and tx hash" });
+    await statusButton.focus();
+    await page.keyboard.press("Enter");
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByRole("heading", { name: "Transaction expired" })).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "Try again", exact: true })).toBeVisible();
+    await page.screenshot({ path: test.info().outputPath(`add-dialog-expired-toast-dismissed-${viewport.name}.png`), animations: "disabled" });
+  });
 }
 
 test("failed prepare never calls the wallet or broadcast", async ({ page, wallet, guards }) => {

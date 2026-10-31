@@ -16,7 +16,9 @@ import {
 import { sendPermitFor } from "@/lib/tx-send/permit";
 const permitOf = (tx: VersionedTransaction) => sendPermitFor(tx.message.staticAccountKeys[0]!.toBase58(), Buffer.from(tx.serialize()).toString("base64"), SIGNING_SECRET);
 import { resetTxSendRateLimit, TX_SEND_REQUESTS_PER_IP_PER_MINUTE } from "@/lib/tx-send/rate-limit";
-import type { VersionedTransaction } from "@solana/web3.js";
+import {
+  AddressLookupTableAccount, ComputeBudgetProgram, PublicKey, SystemProgram, TransactionInstruction, TransactionMessage, VersionedTransaction,
+} from "@solana/web3.js";
 import { POST } from "./route";
 
 const payer = testKeypair(21);
@@ -121,5 +123,76 @@ describe("POST /api/tx-send", () => {
     connection.sendRawTransaction.mockResolvedValue(bs58.encode(new Uint8Array(64).fill(8)));
     const { status, json } = await call(signedBody().body);
     expect(status).toBe(502); expect(json.sent).toBeUndefined();
+  });
+});
+
+describe("POST /api/tx-send strict comparison", () => {
+  const BLOCKHASH = buildTransaction({ payer, signWith: [] }).message.recentBlockhash;
+  const program = testKeypair(33).publicKey;
+  const table = testKeypair(30).publicKey;
+  const [inTable, alsoInTable, outside] = [testKeypair(31).publicKey, testKeypair(32).publicKey, testKeypair(34).publicKey];
+  const lookupTable = new AddressLookupTableAccount({ key: table, state: {
+    deactivationSlot: BigInt("18446744073709551615"), lastExtendedSlot: 0, lastExtendedSlotStartIndex: 0, addresses: [inTable, alsoInTable],
+  } });
+  const transfer = SystemProgram.transfer({ fromPubkey: payer.publicKey, toPubkey: testKeypair(200).publicKey, lamports: 1 });
+  const usesAccount = (account: PublicKey) => new TransactionInstruction({ programId: program, keys: [{ pubkey: account, isSigner: false, isWritable: false }], data: Buffer.from([7]) });
+  const compile = (instructions: TransactionInstruction[], tables: AddressLookupTableAccount[] = []) =>
+    new VersionedTransaction(new TransactionMessage({ payerKey: payer.publicKey, recentBlockhash: BLOCKHASH, instructions }).compileToV0Message(tables));
+  const signedCopy = (tx: VersionedTransaction) => { const copy = VersionedTransaction.deserialize(tx.serialize()); copy.sign([payer]); return copy; };
+  let lookups: ReturnType<typeof vi.fn>;
+  beforeEach(() => {
+    lookups = vi.fn(async (key: PublicKey) => ({ value: key.equals(table) ? lookupTable : null }));
+    Object.assign(connection, { getAddressLookupTable: lookups });
+    connection.sendRawTransaction.mockImplementation(async (bytes: unknown) => signatureOf(VersionedTransaction.deserialize(bytes as Uint8Array)));
+  });
+
+  it("refuses an inserted SystemProgram.transfer (extra instructions only from ComputeBudget, Lighthouse or Memo)", async () => {
+    const prepared = compile([transfer]);
+    const drained = signedCopy(compile([transfer, SystemProgram.transfer({ fromPubkey: payer.publicKey, toPubkey: outside, lamports: 1_000_000_000 })]));
+    const { status, json } = await call(relayBody(prepared, drained));
+    expect(status).toBe(400); expect(json.sent).toBe(false);
+    expect(String(json.error)).toMatch(/added or changed an instruction/);
+    expect(connection.sendRawTransaction).not.toHaveBeenCalled();
+  });
+  it("refuses an inserted transfer placed before the prepared instructions too", async () => {
+    const prepared = compile([transfer]);
+    const drained = signedCopy(compile([SystemProgram.transfer({ fromPubkey: payer.publicKey, toPubkey: outside, lamports: 5 }), transfer]));
+    expect((await call(relayBody(prepared, drained))).status).toBe(400);
+    expect(connection.sendRawTransaction).not.toHaveBeenCalled();
+  });
+  it("accepts wallet-added ComputeBudget and Memo instructions", async () => {
+    const prepared = compile([transfer]);
+    const memo = new TransactionInstruction({ programId: new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"), keys: [], data: Buffer.from("wallet") });
+    const signed = signedCopy(compile([ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1 }), transfer, memo]));
+    expect((await call(relayBody(prepared, signed))).status).toBe(200);
+  });
+  it("compares lookup-table accounts slot-for-slot when the table lookups are unchanged (no RPC lookup)", async () => {
+    const prepared = compile([transfer, usesAccount(inTable)], [lookupTable]);
+    expect(prepared.message.addressTableLookups).toHaveLength(1);
+    const signed = signedCopy(prepared);
+    expect((await call(relayBody(prepared, signed))).status).toBe(200);
+    expect(lookups).not.toHaveBeenCalled();
+  });
+  it("resolves lookup tables when the wallet rewrites them and accepts the same addresses", async () => {
+    const prepared = compile([transfer, usesAccount(inTable)], [lookupTable]);
+    const signed = signedCopy(compile([transfer, usesAccount(inTable)]));
+    expect((await call(relayBody(prepared, signed))).status).toBe(200);
+    expect(lookups).toHaveBeenCalledWith(table);
+  });
+  it("refuses a lookup-table account swapped for another address", async () => {
+    const prepared = compile([transfer, usesAccount(inTable)], [lookupTable]);
+    const signed = signedCopy(compile([transfer, usesAccount(alsoInTable)]));
+    const { status, json } = await call(relayBody(prepared, signed));
+    expect(status).toBe(400); expect(json.sent).toBe(false);
+    expect(connection.sendRawTransaction).not.toHaveBeenCalled();
+  });
+  it("refuses (never skips) a lookup table that cannot be resolved", async () => {
+    lookups.mockResolvedValue({ value: null });
+    const prepared = compile([transfer, usesAccount(inTable)], [lookupTable]);
+    const signed = signedCopy(compile([transfer, usesAccount(inTable)]));
+    const { status, json } = await call(relayBody(prepared, signed));
+    expect(status).toBe(400); expect(json.sent).toBe(false);
+    expect(String(json.error)).toMatch(/could not be resolved/);
+    expect(connection.sendRawTransaction).not.toHaveBeenCalled();
   });
 });

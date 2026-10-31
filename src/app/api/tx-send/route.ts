@@ -9,6 +9,7 @@ import { exceedsTxSizeLimit, isZeroSignature } from "@sofinance/engine/transacti
 import { assertWalletReturnedTransaction } from "@sofinance/engine/wallet-returned-tx";
 import { verifyTxSendPermit } from "@/lib/tx-send/permit";
 import { clientIp, txSendRateLimited } from "@/lib/tx-send/rate-limit";
+import { assertStrictRelayMatch, rpcLookupResolver } from "@/lib/tx-send/strict-match";
 
 const NO_STORE = { "Cache-Control": "no-store" } as const;
 const MAX_BASE64 = 2_500;
@@ -28,8 +29,11 @@ function decode(value: unknown, label: string) {
  * 1. Per-IP rate limit (20 requests / minute / instance) → 429.
  * 2. Send permit: HMAC that prepare issued over the prepared transaction bytes + fee payer; the relay
  *    only forwards transactions this app built (not an open relay).
- * 3. Wallet-returned guard: the signed message keeps the prepared fee payer, blockhash, required
- *    signers and every prepared instruction (wallet-added ComputeBudget / Lighthouse / Memo allowed).
+ * 3. Wallet-returned guard: the signed message keeps the prepared fee payer, blockhash and required
+ *    signers, then the strict comparison (`assertStrictRelayMatch`): every prepared instruction
+ *    unchanged and in order, and any added instruction only from ComputeBudget, Lighthouse or Memo
+ *    (static program key). Lookup-table accounts are compared slot-for-slot when the table lookups
+ *    are unchanged, otherwise resolved over RPC; an unresolvable table is refused, never skipped.
  * 4. Every required signature is present and verifies.
  * Then one sendRawTransaction with preflight and `maxRetries: 3`, so the RPC node rebroadcasts
  * for us; there is no resend loop and no expiry gate (Solana rejects an expired blockhash itself).
@@ -52,6 +56,7 @@ export async function POST(request: Request) {
       throw new Error("This transaction was not prepared by SoFinance, so it was not sent");
     }
     assertWalletReturnedTransaction(prepared, transaction, payer);
+    await assertStrictRelayMatch(prepared, transaction, rpcLookupResolver(rpcConnection()));
     const message = transaction.message.serialize();
     const required = transaction.message.header.numRequiredSignatures;
     if (required < 1 || transaction.signatures.length !== required) throw new Error("Invalid signed transaction");
