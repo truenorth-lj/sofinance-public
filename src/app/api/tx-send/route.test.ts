@@ -20,6 +20,8 @@ import {
   AddressLookupTableAccount, ComputeBudgetProgram, PublicKey, SystemProgram, TransactionInstruction, TransactionMessage, VersionedTransaction,
 } from "@solana/web3.js";
 import { POST } from "./route";
+import { sendWithWallet, type TxWallet } from "@/lib/tx-pipeline/wallet-send";
+import { LIGHTHOUSE_PROGRAM_ID, phantomMainnetReturn } from "@/lib/test-support/send-fixtures";
 
 const payer = testKeypair(21);
 const mint = testKeypair(22);
@@ -151,7 +153,7 @@ describe("POST /api/tx-send strict comparison", () => {
     const drained = signedCopy(compile([transfer, SystemProgram.transfer({ fromPubkey: payer.publicKey, toPubkey: outside, lamports: 1_000_000_000 })]));
     const { status, json } = await call(relayBody(prepared, drained));
     expect(status).toBe(400); expect(json.sent).toBe(false);
-    expect(String(json.error)).toMatch(/added or changed an instruction/);
+    expect(String(json.error)).toMatch(/Wallet added an instruction/);
     expect(connection.sendRawTransaction).not.toHaveBeenCalled();
   });
   it("refuses an inserted transfer placed before the prepared instructions too", async () => {
@@ -193,6 +195,93 @@ describe("POST /api/tx-send strict comparison", () => {
     const { status, json } = await call(relayBody(prepared, signed));
     expect(status).toBe(400); expect(json.sent).toBe(false);
     expect(String(json.error)).toMatch(/could not be resolved/);
+    expect(connection.sendRawTransaction).not.toHaveBeenCalled();
+  });
+});
+
+// Regression (prod, ecd34ab): Phantom's open was refused with "Wallet added or changed an instruction
+// (program L2TExMF…S95)" because the shared Lighthouse id was wrong. Each flow's prepared shape goes
+// through the real client check (sendWithWallet, relay path) and this route, with the instructions Phantom
+// returns on mainnet: its ComputeBudget, then Lighthouse AssertAccountData + AssertSysvarClock.
+describe("Phantom mainnet Lighthouse instructions on every flow", () => {
+  const DLMM = new PublicKey("LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo");
+  const JUPITER = new PublicKey("JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4");
+  const TOKEN = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+  const pool = testKeypair(40).publicKey, position = testKeypair(41).publicKey, userToken = testKeypair(42).publicKey;
+  const attacker = testKeypair(43).publicKey;
+  const ix = (programId: PublicKey, tag: number, keys: { pubkey: PublicKey; isSigner?: boolean; isWritable?: boolean }[]) =>
+    new TransactionInstruction({ programId, data: Buffer.from([tag, 1, 2, 3, 4, 5, 6, 7, 8]),
+      keys: keys.map((key) => ({ pubkey: key.pubkey, isSigner: key.isSigner ?? false, isWritable: key.isWritable ?? true })) });
+  const me = { pubkey: payer.publicKey, isSigner: true };
+  const flows = {
+    "open (mint cosign)": [ComputeBudgetProgram.setComputeUnitLimit({ units: 600_000 }),
+      ix(DLMM, 1, [me, { pubkey: mint.publicKey, isSigner: true }, { pubkey: pool }]),
+      ix(DLMM, 2, [me, { pubkey: mint.publicKey, isWritable: false }, { pubkey: pool }, { pubkey: userToken }])],
+    add: [ix(JUPITER, 3, [me, { pubkey: userToken }]), ix(DLMM, 2, [me, { pubkey: position }, { pubkey: pool }, { pubkey: userToken }])],
+    compound: [ix(DLMM, 4, [me, { pubkey: position }, { pubkey: pool }]), ix(JUPITER, 3, [me, { pubkey: userToken }]),
+      ix(DLMM, 2, [me, { pubkey: position }, { pubkey: pool }, { pubkey: userToken }])],
+    "withdraw/exit": [ix(DLMM, 5, [me, { pubkey: position }, { pubkey: pool }]), ix(DLMM, 6, [me, { pubkey: position }]),
+      ix(TOKEN, 9, [{ pubkey: userToken }, { pubkey: payer.publicKey }, me])],
+  } as const;
+  const prepare = (instructions: readonly TransactionInstruction[]) =>
+    new VersionedTransaction(new TransactionMessage({ payerKey: payer.publicKey, recentBlockhash: buildTransaction({ payer, signWith: [] }).message.recentBlockhash,
+      instructions: [...instructions] }).compileToV0Message());
+  const needsMint = (tx: VersionedTransaction) => tx.message.staticAccountKeys.slice(0, tx.message.header.numRequiredSignatures).some((key) => key.equals(mint.publicKey));
+  /** Phantom without signAndSend for the test: sign-then-relay, so our client check and this route both run. */
+  const phantom = (extra: TransactionInstruction[] = []): TxWallet => ({
+    address: payer.publicKey.toBase58(),
+    signTransaction: async (tx) => {
+      let returned = phantomMainnetReturn(tx, userToken);
+      if (extra.length) {
+        const message = TransactionMessage.decompile(returned.message);
+        returned = new VersionedTransaction(new TransactionMessage({ ...message, instructions: [...message.instructions, ...extra] }).compileToV0Message());
+      }
+      returned.sign([payer]);
+      return returned;
+    },
+  });
+  const relayThroughRoute = vi.fn(async (signed: VersionedTransaction, context: { prepared: VersionedTransaction; sendPermit?: string }) => {
+    const { json } = await call(relayBody(context.prepared, signed, context.sendPermit));
+    if (typeof json.signature !== "string") throw Object.assign(new Error(String(json.error)), { sent: json.sent });
+    return json.signature;
+  });
+  const sendFlow = (prepared: VersionedTransaction, wallet: TxWallet) => sendWithWallet(wallet, prepared, {
+    sendPermit: permitOf(prepared), sendRaw: relayThroughRoute,
+    ...(needsMint(prepared) ? { cosign: (walletSigned: VersionedTransaction) => { walletSigned.sign([mint]); return walletSigned; } } : {}),
+  });
+  beforeEach(() => {
+    relayThroughRoute.mockClear();
+    connection.sendRawTransaction.mockImplementation(async (bytes: unknown) => signatureOf(VersionedTransaction.deserialize(bytes as Uint8Array)));
+  });
+
+  it("pins Lighthouse to its mainnet program id (L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95)", () => {
+    expect(LIGHTHOUSE_PROGRAM_ID.toBase58()).toBe("L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95");
+  });
+  it.each(Object.entries(flows))("%s: Phantom's Lighthouse-guarded return passes the client check and is relayed", async (_flow, instructions) => {
+    const prepared = prepare(instructions);
+    const result = await sendFlow(prepared, phantom());
+    expect(result.via).toBe("relay");
+    expect(connection.sendRawTransaction).toHaveBeenCalledTimes(1);
+    const sent = VersionedTransaction.deserialize(connection.sendRawTransaction.mock.calls[0]![0] as Uint8Array);
+    expect(sent.message.compiledInstructions.map((compiled) => sent.message.staticAccountKeys[compiled.programIdIndex]!.toBase58()))
+      .toContain("L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95");
+    expect(signatureOf(sent)).toBe(result.signature);
+  });
+  it.each(Object.entries(flows))("%s: an inserted SystemProgram.transfer next to Phantom's Lighthouse is refused by the client check and by tx-send", async (_flow, instructions) => {
+    const prepared = prepare(instructions);
+    const drain = SystemProgram.transfer({ fromPubkey: payer.publicKey, toPubkey: attacker, lamports: 1_000_000_000 });
+    await expect(sendFlow(prepared, phantom([drain]))).rejects.toThrow(/Wallet added an instruction from a program that is not allowed/);
+    expect(relayThroughRoute).not.toHaveBeenCalled();
+    const drained = await phantom([drain]).signTransaction(VersionedTransaction.deserialize(prepared.serialize()));
+    if (needsMint(prepared)) drained.sign([mint]);
+    const { status, json } = await call(relayBody(prepared, drained));
+    expect(status).toBe(400); expect(json.sent).toBe(false);
+    expect(connection.sendRawTransaction).not.toHaveBeenCalled();
+  });
+  it("still refuses the lookalike id the allow-list used before (L2TExMF…GsqqY is not Lighthouse)", async () => {
+    const prepared = prepare(flows["open (mint cosign)"]);
+    const lookalike = new TransactionInstruction({ programId: new PublicKey("L2TExMFKdjpN9kozasaurPPf4nCVfRTb7cTZo5GsqqY"), keys: [], data: Buffer.from([1]) });
+    await expect(sendFlow(prepared, phantom([lookalike]))).rejects.toThrow(/not allowed/);
     expect(connection.sendRawTransaction).not.toHaveBeenCalled();
   });
 });
