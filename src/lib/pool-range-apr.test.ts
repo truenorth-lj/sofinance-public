@@ -145,7 +145,7 @@ describe("fetchPoolRangeApr", () => {
     expect(payload.presets.every((preset) => preset.estimate.status === "ok")).toBe(true);
   });
 
-  it("the cron gate never retries a GeckoTerminal call (a retry would skip its 2.5 s spacing); Raydium still retries", async () => {
+  it("the cron gate never retries a GeckoTerminal call (a retry would skip its 12 s spacing); Raydium still retries", async () => {
     let hourCalls = 0, idsCalls = 0;
     const healthy = fetcher().impl;
     const impl: typeof fetch = async (input, init) => {

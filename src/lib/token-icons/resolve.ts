@@ -113,6 +113,13 @@ export async function resolveTokenIcons(chain: IconChain, addresses: readonly st
 
 export const solanaIconSources = (fetcher?: typeof fetch): IconSources =>
   [{ source: "jupiter", lookup: jupiterIcons(fetcher) }, { source: "raydium", lookup: raydiumIcons(fetcher) }];
-/** `gate`: the cron run's GeckoTerminal gate (the daily icon pass), so its call is spaced and stops after a 429. */
+/**
+ * The cron icon pass for Robinhood Chain tokens: DexScreener only. The run's GeckoTerminal budget (~5 calls/min per
+ * shared IP, see `CRON_GECKO_SPACING_MS`) goes to the APR price histories. Tokens DexScreener does not list return no
+ * row, so the icons already saved for them (21 of 22 from GeckoTerminal, 10/31) are left as they are.
+ */
+export const rhcCronIconSources = (fetcher?: typeof fetch): IconSources =>
+  [{ source: "dexscreener", lookup: dexScreenerIcons(fetcher) }];
+/** `gate`: a GeckoTerminal gate, so the call is spaced and stops after a 429. Not used by the cron (see above). */
 export const rhcIconSources = (fetcher?: typeof fetch, gate?: ThrottleGate): IconSources =>
   [{ source: "dexscreener", lookup: dexScreenerIcons(fetcher) }, { source: "geckoterminal", lookup: geckoTerminalIcons(fetcher, gate) }];

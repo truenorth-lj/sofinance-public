@@ -346,9 +346,13 @@ describe.skipIf(!url)("RWA PostgreSQL snapshots and fencing", () => {
     await store!.request({ op: "saveTokenIcons", lease, data: [row("https://img-v1.raydium.io/icon/a.png", "raydium"),
       { chain: "robinhood", address: rhc, image: "https://coin-images.coingecko.com/coins/images/1/large/a.png", source: "geckoterminal" }] });
     await store!.request({ op: "saveTokenIcons", lease, data: [row("https://static.jup.ag/a.png", "jupiter")] });
-    const stored = await db!`SELECT chain,address,image,source FROM rwa_token_icon ORDER BY chain`;
+    // The cron's DexScreener-only RHC pass: a save for another token leaves the saved GeckoTerminal icon as it is.
+    const rhcNvda = "0x" + "b".repeat(40);
+    await store!.request({ op: "saveTokenIcons", lease, data: [{ chain: "robinhood", address: rhcNvda, image: "https://dd.dexscreener.com/ds-data/tokens/robinhood/b.png", source: "dexscreener" }] });
+    const stored = await db!`SELECT chain,address,image,source FROM rwa_token_icon ORDER BY chain, address`;
     expect(stored).toEqual([
       { chain: "robinhood", address: rhc, image: "https://coin-images.coingecko.com/coins/images/1/large/a.png", source: "geckoterminal" },
+      { chain: "robinhood", address: rhcNvda, image: "https://dd.dexscreener.com/ds-data/tokens/robinhood/b.png", source: "dexscreener" },
       { chain: "solana", address: spcxx, image: "https://static.jup.ag/a.png", source: "jupiter" },
     ]);
     await expect(db!`INSERT INTO rwa_token_icon(chain,address,image,source) VALUES('robinhood','0xABC','http://x','manual')`).rejects.toThrow();

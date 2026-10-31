@@ -166,14 +166,21 @@ What changed:
   minute), 10 s at the CDN, 8 s in the browser; the browser re-asks 4 times, 20 s apart. The last good price history of the pool (< 48 h) still stands in
   for a failed fetch (stale-if-error, flagged in `sample.issues` and `sample.priceHistoryStale`, shown "Data delayed").
 * **Cron: one oldest-first queue, a 429 ends the run (10/31 incident: 14 of 18 Solana pools lost their history).** The cron
-  (`vercel.json`, `15 */4 * * *`: every 4 h) refreshes the `APR_POOLS_PER_RUN` (22) pools whose 7d APR was refreshed or attempted
-  longest ago, Solana and RHC in ONE queue, **one pool at a time** on one run-wide gate (`createCronGeckoGate`, calls ≥ 2.5 s apart =
-  ≤ 24/min, under GeckoTerminal's ~30/min). On a 429 the run ends at once: the pool that hit it is not saved and, with the pools not
-  reached, goes first next run. A non-429 failure is saved from the pool's saved price history (≤ 48 h old) as a stale estimate ("Data
-  delayed"). N = 22 comes from measurements: the invocation is budgeted to 80% of `maxDuration` (240 s of 300 s); discovery is capped at
-  90 s, leaving ≥ 150 s; ~15 s fixed (RHC `pools/multi`, state multicalls, roster) and ≤ 6 s per pool (2 calls 2.5 s apart, latency
-  ≤ 0.7 s, RPC beside them, one save) give (150 − 15) / 6 = 22. With 29 active pools every pool is refreshed every ≤ 2 runs (8 h), and
-  within 24 h even when 3 runs in a row end on a 429 (tested). A pool is never started with less than 6 s + 10 s reserve left.
+  (`vercel.json`, `15 */4 * * *`: every 4 h) refreshes up to `APR_POOLS_PER_RUN` (12) pools whose 7d APR was refreshed or attempted
+  longest ago, Solana and RHC in ONE queue, **one pool at a time** on one run-wide gate (`createCronGeckoGate`, calls ≥ 12 s apart =
+  ≤ 5/min). On a 429 the run ends at once: the pools saved before it stay saved (one save per pool, tested); the pool that hit it is not
+  saved and, with the pools not reached, goes first next run. A non-429 failure is saved from the pool's saved price history (≤ 48 h old)
+  as a stale estimate ("Data delayed").
+  Why 12 s (11/1): the keyless GeckoTerminal API has one rate pool per source IP, documented as "~5 calls/min, dynamic, varies by server
+  load" (CoinGecko "Keyless Public API" page; the older ~10/min and ~30/min pages are out of date), and Vercel functions share egress IPs
+  with other tenants. The 11/1 00:15 Taipei run made 8 calls ~2.5 s apart (icon `tokens/multi`, RHC `pools/multi`, 3 pools × 2 candle
+  calls) in ~25 s with nothing else of ours in flight; the 9th got a 429. So the limit is a small burst then ~5/min, not ~30/min. The
+  cron icon pass no longer calls GeckoTerminal (DexScreener only; tokens it does not list keep their saved icon), so every call of the
+  run goes to price histories.
+  Capacity: the APR job gets 180 s (discovery ~47 s of the 240 s budget); minus ~15 s fixed and the start guard that is ~12 candle calls
+  per run = ~6 Solana pools (2 calls) or ~11 RHC pools (1 call); the time guard, not N, ends a run. 29 active pools need ~47 calls, so
+  every pool is refreshed about every 4 runs (16 h) and within 24 h when one run ends on a 429 (tested). A pool is never started with less
+  than 32 s (its slowest case) + 10 s reserve left.
 * **Gaps are handled as zero volume.** Volume per hour comes from the daily totals, hourly candles only place it on price bins, so absent hours
   are no-trade hours. Few candles are fine; fewer than 12 in the window just flags the estimate low confidence (`*`). Only a pool with no
   usable candles *and* real volume is degraded. A pool with no candles and **zero** volume in the window is an honest 0%, not "unavailable".

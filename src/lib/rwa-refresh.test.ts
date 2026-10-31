@@ -21,8 +21,8 @@ const rhcFlag = vi.hoisted(() => ({ enabled: false }));
 vi.mock("./protocol-flags", async (load) => ({ ...await load<typeof import("./protocol-flags")>(), isRhcApr7dEnabled: () => rhcFlag.enabled }));
 const rhcRun = vi.hoisted(() => ({ prepare: vi.fn() }));
 vi.mock("./rhc-apr-refresh", async (load) => ({ ...await load<object>(), prepareRhcRun: rhcRun.prepare }));
-import { activePoolRefreshedAt, APR_POOL_MAX_MS, APR_POOLS_PER_RUN, APR_SAVE_RESERVE_MS, orderAprQueue, refreshProfile, runJob } from "./rwa-refresh";
-import { createCronGeckoGate } from "./pool-metrics/gecko";
+import { activePoolRefreshedAt, APR_POOL_MAX_MS, APR_POOLS_PER_RUN, APR_QUEUE_FIXED_MS, APR_SAVE_RESERVE_MS, orderAprQueue, refreshProfile, runJob } from "./rwa-refresh";
+import { createCronGeckoGate, CRON_GECKO_SPACING_MS } from "./pool-metrics/gecko";
 import { ThrottleGate } from "./range-apr/throttle-gate";
 import type { RwaStore } from "./rwa-store-types";
 import { ALGORITHM_VERSION, type ActivePool } from "./rwa-store-types";
@@ -209,6 +209,23 @@ describe("APR queue: one oldest-first queue, one pool at a time", () => {
     expect(result).toMatchObject({ queue: { done: 0, stoppedBy: "429" }, rhc: { deferred: 1 } });
   });
 
+  it("keeps the progress made before a 429: pools saved earlier in the run stay saved (11/1 00:15: 3 saved, 4th 429)", async () => {
+    const { store, saved, ops } = memoryStore(solanaPools([["poolA", hours(9)], ["poolB", hours(8)], ["poolC", hours(7)], ["poolD", hours(6)], ["poolE", hours(5)]]));
+    const gate = openGate();
+    loadProfile.mockImplementation(async (poolId: string) => {
+      if (poolId !== "poolD") return goodProfile;
+      gate.block(20_000);
+      return throttledProfile;
+    });
+    const result = await run(store, { geckoGate: gate });
+    // Each pool is its own saveApr request, sent before the next pool starts: the 429 cannot undo them.
+    expect(saved.map((row) => row.poolId)).toEqual(["poolA", "poolB", "poolC"]);
+    expect(ops.filter((op) => op === "saveApr")).toHaveLength(3);
+    expect(ops.lastIndexOf("saveApr")).toBeLessThan(ops.length - 1);
+    expect(result).toMatchObject({ status: "partial", processed: 3, queue: { done: 3, stoppedBy: "429" } });
+    expect(result.issues).toContain("GeckoTerminal 429: run ended after 3 of 5 pools; the rest go first next run");
+  });
+
   it("a non-429 failure still saves from saved price history (≤ 48h, stale) and the run goes on", async () => {
     const { store, saved } = memoryStore(solanaPools([["poolA", hours(9)], ["poolB", hours(8)]]));
     loadProfile.mockImplementation(async (poolId: string) => (poolId === "poolA" ? { ...goodProfile, candles: null, issues: ["GeckoTerminal hourly candles: HTTP 500"] } : goodProfile));
@@ -218,8 +235,8 @@ describe("APR queue: one oldest-first queue, one pool at a time", () => {
     expect(result).toMatchObject({ status: "partial", processed: 2, issues: ["poolA: Using previously saved price history"] });
   });
 
-  it("starts no pool without the slowest single-pool time (~21 s) plus the save reserve left", async () => {
-    expect(APR_POOL_MAX_MS).toBeGreaterThanOrEqual(21_000);
+  it("starts no pool without the slowest single-pool time (~32 s at 12 s spacing) plus the save reserve left", async () => {
+    expect(APR_POOL_MAX_MS).toBeGreaterThanOrEqual(2 * CRON_GECKO_SPACING_MS + 5_000);
     const { store } = memoryStore(solanaPools([["poolA", hours(9)]]));
     loadProfile.mockResolvedValue(goodProfile);
     const result = await run(store, { deadlineMs: now + APR_POOL_MAX_MS + APR_SAVE_RESERVE_MS - 1 });
@@ -280,27 +297,33 @@ describe("APR queue: one oldest-first queue, one pool at a time", () => {
     expect(calls[0]).toMatchObject({ includeRhc: false });
   });
 
-  it("refreshes every pool at least once per 24h at 6 runs/day, even when 3 runs in a row end at once on a 429", () => {
-    // 10/31: 18 Solana + 11 RHC active pools. Simulate 3 days of the 4-hourly cron with the real queue order.
-    const pools = Array.from({ length: 29 }, (_, i) => ({ poolId: `p${i}`, refreshedAt: null as string | null }));
+  it("refreshes every pool within 24h at 6 runs/day at 12 s spacing, also when one run ends at once on a 429", () => {
+    // 10/31: 18 Solana (2 GeckoTerminal calls) + 11 RHC (1 call) active pools. A run fits ~12 candle calls at 12 s
+    // spacing in the APR job (180 s − 15 s fixed − the start guard); model that budget with the real queue order.
+    const callsPerRun = Math.floor((180_000 - APR_QUEUE_FIXED_MS - APR_SAVE_RESERVE_MS) / CRON_GECKO_SPACING_MS);
+    expect(callsPerRun).toBe(12);
+    const pools = Array.from({ length: 29 }, (_, i) => ({ poolId: `p${i}`, calls: i < 18 ? 2 : 1, refreshedAt: null as string | null }));
+    const runPools = (at: number) => {
+      let budget = callsPerRun;
+      for (const pool of orderAprQueue(pools).slice(0, APR_POOLS_PER_RUN)) {
+        if (pool.calls > budget) break;
+        budget -= pool.calls;
+        pool.refreshedAt = new Date(at).toISOString();
+        if (last.has(pool.poolId)) worstGapMs = Math.max(worstGapMs, at - last.get(pool.poolId)!);
+        last.set(pool.poolId, at);
+      }
+    };
     const last = new Map<string, number>();
     let worstGapMs = 0;
     const start = Date.parse("2026-11-01T00:15:00Z");
-    for (let runIndex = 0; runIndex < 18; runIndex++) {
+    for (let runIndex = 0; runIndex < 24; runIndex++) {
       const at = start + runIndex * 4 * 3_600_000;
-      const aborted = runIndex >= 7 && runIndex <= 9; // three runs in a row refresh nothing (429 at once)
-      if (!aborted) {
-        for (const pool of orderAprQueue(pools).slice(0, APR_POOLS_PER_RUN)) {
-          pool.refreshedAt = new Date(at).toISOString();
-          if (last.has(pool.poolId)) worstGapMs = Math.max(worstGapMs, at - last.get(pool.poolId)!);
-          last.set(pool.poolId, at);
-        }
-      }
-      if (runIndex >= 2) for (const pool of pools) expect(at - last.get(pool.poolId)!).toBeLessThan(24 * 3_600_000);
+      if (runIndex !== 10) runPools(at); // one run refreshes nothing (429 at once)
+      if (runIndex >= 6) for (const pool of pools) expect(at - last.get(pool.poolId)!).toBeLessThan(24 * 3_600_000);
     }
     expect(last.size).toBe(29);
     expect(worstGapMs).toBeLessThanOrEqual(20 * 3_600_000);
-    // Without 429s: every pool at most every ceil(29 / N) runs = 8 h.
-    expect(Math.ceil(29 / APR_POOLS_PER_RUN) * 4).toBe(8);
+    // The cap never binds before the time budget does: 12 one-call RHC pools are the most a run can fit.
+    expect(APR_POOLS_PER_RUN).toBeGreaterThanOrEqual(callsPerRun);
   });
 });

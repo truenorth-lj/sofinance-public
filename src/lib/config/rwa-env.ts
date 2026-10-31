@@ -42,7 +42,7 @@ export function getRwaConfig() {
   if (leaseMs < jobTimeoutMs + 20_000)
     throw new Error("RWA lease must outlive the job deadline");
   // The APR job renews its lease after its prepare phase and before every pool (`refreshAprPools`), so the lease
-  // must outlive the longest unrenewed stretch (one pool ≤ ~21 s, prepare ≤ ~30 s), not `aprJobTimeoutMs` itself.
+  // must outlive the longest unrenewed stretch (one pool ≤ ~32 s, prepare ≤ ~30 s), not `aprJobTimeoutMs` itself.
   if (leaseMs < 60_000 + 20_000)
     throw new Error("RWA lease must outlive one APR job step");
   return {

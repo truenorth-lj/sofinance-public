@@ -23,7 +23,7 @@ import { prepareRhcRun, type RhcAprRunStats, type RhcRun } from "./rhc-apr-refre
 import { discoverRhcRegistryPools, rhcDiscoveryFindings, type RhcDiscoveryResult } from "./pool-metrics/rhc-discovery";
 import { rhcStateClient } from "./rhc-range-apr";
 import { captureRhcDiscoveryFindings } from "./sentry/capture";
-import { resolveTokenIcons, rhcIconSources, solanaIconSources } from "./token-icons/resolve";
+import { resolveTokenIcons, rhcCronIconSources, solanaIconSources } from "./token-icons/resolve";
 import type { RwaPairRow } from "./rwa-pairs";
 import {
   ALGORITHM_VERSION,
@@ -58,32 +58,36 @@ export const RWA_REFRESH_DEADLINE_SLACK_MS = 60_000;
 /** No pool is started inside this last part of the APR job: `prepareDaily`, `finish` and the response. */
 export const APR_SAVE_RESERVE_MS = 10_000;
 /**
- * Worst-case time for one queued pool, measured. Solana: 2 GeckoTerminal calls (day + hour candles) started 2.5 s
- * apart on the cron gate (`CRON_GECKO_SPACING_MS`), latency 0.41 s median / 0.69 s max (10/31, local), beside one
- * RPC liquidity read, then one save: ~5 s per pool (prod 10/30: 18 pools saved in 43 s at 2 lanes ≈ 4.8 s/pool/
- * lane). RHC: 1 call (2 without a token price) + two multicalls + save: ≤ 5 s. Budget 6 s.
+ * Typical time for one queued pool. GeckoTerminal calls are the long pole: they start ≥ 12 s apart on the cron gate
+ * (`CRON_GECKO_SPACING_MS`), latency 0.41 s median / 0.69 s max (10/31). Solana: 2 calls (day + hour candles) ≈ 24 s,
+ * beside one RPC liquidity read, then one save. RHC: 1 call (2 without a token price) + two multicalls + save ≈ 12 s
+ * (0 calls when the pool is rolled forward). Budget 25 s (the 2-call case).
  */
-export const APR_POOL_BUDGET_MS = 6_000;
+export const APR_POOL_BUDGET_MS = 25_000;
 /**
  * Longest time one pool can take (the run's start guard), all in parallel then the save: Raydium economics (3
- * attempts × 5 s timeout + backoff ≈ 17 s), 2 gated GeckoTerminal calls (one attempt each on the cron gate, 2.5 s
- * apart, 5 s timeout: ≤ 10 s), the RPC liquidity read (8 s retry budget); plus renew + save ≈ 21 s. A pool is
- * started only when this plus `APR_SAVE_RESERVE_MS` is left, so the job timeout does not cut one in normal runs
- * (if it still does, the run stops cleanly with `stoppedBy: "time"`).
+ * attempts × 5 s timeout + backoff ≈ 17 s); 2 gated GeckoTerminal calls (one attempt each, the first waits ≤ 12 s for
+ * its slot after the previous pool's last call, the second 12 s after the first, 5 s timeout: ≤ 29 s); the RPC
+ * liquidity read (10 s cap); plus renew + save ≈ 32 s. A pool is started only when this plus `APR_SAVE_RESERVE_MS` is
+ * left, so the job timeout does not cut one in normal runs (if it still does, the run stops cleanly with `stoppedBy:
+ * "time"`).
  */
-export const APR_POOL_MAX_MS = 21_000;
+export const APR_POOL_MAX_MS = 32_000;
 /** Fixed APR-job time before the queue, measured 10/31: RHC pools/multi + state multicalls + roster ≈ 10 s. */
 export const APR_QUEUE_FIXED_MS = 15_000;
 /**
- * Pools refreshed per cron run (Solana + RHC, one oldest-first queue, one GeckoTerminal call at a time).
- * Time: the invocation is budgeted to 80% of maxDuration = 240 s; discovery is capped at its 90 s job timeout, so
- * the APR job has ≥ 150 s; minus the fixed 15 s that leaves 135 s / 6 s per pool = 22 pools.
- * Rate: 22 pools × ≤ 2 calls + 1 pools/multi = ≤ 45 calls, started ≥ 2.5 s apart = ≤ 24 calls/min < ~30/min.
- * Coverage: 29 active pools (18 Solana + 11 RHC, 10/31) at 22 per run, 6 runs/day (every 4 h): every pool is
- * refreshed at least every ceil(29 / 22) = 2 runs = 8 h, and still within 24 h after up to 3 runs in a row end
- * early on a 429 (5 runs = 20 h); tested. The time guard (`APR_POOL_BUDGET_MS`) stops earlier if a run is slower.
+ * Most pools started per cron run (Solana + RHC, one oldest-first queue, one GeckoTerminal call at a time). The
+ * time guard (`APR_POOL_MAX_MS`), not this cap, is what normally ends a run.
+ * Time: the APR job gets its 180 s timeout (discovery took 47 s on 11/1, so the 240 s invocation budget leaves 193 s).
+ * At 12 s per GeckoTerminal call that is ~13 calls: 1 pools/multi + ~12 candle calls, i.e. ~6 Solana pools (2 calls)
+ * or ~11 RHC pools (1 call) per run. Measured 11/1 00:15 Taipei: only 3 pools fit before the 429 at 2.5 s spacing.
+ * N = 12 is the 1-call case rounded up, so the cap never cuts a run the time guard would let finish.
+ * Coverage: 29 active pools (18 Solana × 2 calls + 11 RHC × 1 call = 47 calls), 6 runs/day (every 4 h), ~12 calls per
+ * run: every pool is refreshed about every 4 runs = 16 h, within 24 h with one run in a row lost to a 429 (tested).
+ * Pools past 24 h show "Data delayed" with the saved estimate (up to 48 h of saved history); nothing is cleared.
+ * Rate: ≤ 5 calls/min, the documented keyless limit (was 2.5 s / ≤ 24 per min, which hit 429 after 8 calls).
  */
-export const APR_POOLS_PER_RUN = 22;
+export const APR_POOLS_PER_RUN = 12;
 
 /** fresh: today's price history; stale: computed from saved history; degraded/error: no estimate saved; throttled: 429, nothing saved. */
 type PoolOutcome = "fresh" | "stale" | "degraded" | "error" | "throttled";
@@ -218,7 +222,7 @@ export async function runJob(job: JobName, options: Options): Promise<JobResult>
       await store.request({ op: "publishDiscovery", lease, data });
       processed = result.pairs.length;
       // Best effort: a missing table or an indexer outage leaves the snapshot published and the old icons in place.
-      await refreshTokenIcons(store, lease, result.pairs, options.fetcher, signal, options.geckoGate).catch(() => {
+      await refreshTokenIcons(store, lease, result.pairs, options.fetcher, signal).catch(() => {
         issues.push("Token icons not saved");
       });
       // Best effort, state reads only (one multicall): reported here and to Sentry, never published.
@@ -435,16 +439,17 @@ async function refreshSolanaPool(input: {
 }
 
 /**
- * Daily token icon pass, run inside the rwa-discovery job after the pool scan: Solana pool tokens (Jupiter → Raydium
- * → manual) and the allowlisted Robinhood Chain pool tokens (DexScreener → GeckoTerminal → manual). Only links that
- * pass `ICON_HOSTS` are written.
+ * Token icon pass, run inside the rwa-discovery job after the pool scan: Solana pool tokens (Jupiter → Raydium →
+ * manual) and the allowlisted Robinhood Chain pool tokens (DexScreener only: no GeckoTerminal call in the cron, and
+ * no manual rows, so a token DexScreener does not list keeps its saved icon; reads still fall back to the manual
+ * list). Writes are upserts of the found rows only; nothing is deleted. Only links that pass `ICON_HOSTS` are written.
  */
 
 export async function refreshTokenIcons(store: RwaStore, lease: Lease, pairs: readonly Pick<RwaPairRow, "mintA" | "mintB">[],
-  fetcher: typeof fetch | undefined, signal: AbortSignal, gate?: ThrottleGate) {
+  fetcher: typeof fetch | undefined, signal: AbortSignal) {
   const solana = await resolveTokenIcons("solana", pairs.flatMap((pair) => [pair.mintA, pair.mintB]), solanaIconSources(fetcher), { signal });
   const rhc = await resolveTokenIcons("robinhood",
-    UNIV4_RHC_ALLOWLISTED_POOLS.flatMap((pool) => [pool.currency0.address, pool.currency1.address]), rhcIconSources(fetcher, gate), { signal });
+    UNIV4_RHC_ALLOWLISTED_POOLS.flatMap((pool) => [pool.currency0.address, pool.currency1.address]), rhcCronIconSources(fetcher), { signal, manual: [] });
   signal.throwIfAborted();
   await store.request({ op: "renew", lease });
   return store.request({ op: "saveTokenIcons", lease, data: [...solana, ...rhc] });

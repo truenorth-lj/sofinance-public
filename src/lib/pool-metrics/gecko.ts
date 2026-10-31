@@ -26,16 +26,21 @@ export const geckoGate = new ThrottleGate({ minSpacingMs: 250, defaultCooldownMs
 
 /**
  * Cron (`rwa-apr-refresh`): GeckoTerminal calls start at least this far apart for the whole run (Solana and RHC
- * pools share one sequential queue), i.e. at most 24 calls/min, under GeckoTerminal's ~30/min per IP. The 250 ms
- * page spacing let the Solana pass burst ~36 calls in ~10 s beside RHC and the run hit 429 (10/31 incident).
+ * pools share one sequential queue), i.e. at most 5 calls/min.
+ * Why 12 s: the keyless API we call has one rate pool per source IP, documented at "~5 calls/min, dynamic, varies by
+ * server load" (docs.coingecko.com/docs/keyless-public-api, read 11/1; the older ~10/min and ~30/min pages are out of
+ * date). Vercel functions leave from shared egress IPs, so other tenants draw on the same pool. Measured 11/1 00:15
+ * Taipei run: 8 calls at 2.5 s spacing (1 icon tokens/multi, 1 pools/multi, 3 pools × 2 candle calls) went through
+ * in ~25 s, the 9th got a 429 with no other request of ours in flight. That is a burst allowance (~8) used up at
+ * ~24/min, not a long-run per-minute count, so the fix is to stay at the documented refill rate, not to retry.
  */
-export const CRON_GECKO_SPACING_MS = 2_500;
+export const CRON_GECKO_SPACING_MS = 12_000;
 
 /**
  * One GeckoTerminal gate per cron run, used by every pool in the queue. A 429 sets its sticky `hit429` flag and
  * blocks it for the rest of the run (`stickyBlock`: it never reopens after the cooldown), which ends the run:
  * nothing waits out a cooldown, the remaining pools go first next run. One attempt per call (`maxAttempts: 1`), so
- * no retry ever starts inside a slot without the 2.5 s spacing.
+ * no retry ever starts inside a slot without the 12 s spacing.
  */
 export function createCronGeckoGate(options: { now?: () => number; sleep?: (ms: number) => Promise<void> } = {}): ThrottleGate {
   return new ThrottleGate({
