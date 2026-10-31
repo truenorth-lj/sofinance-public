@@ -79,8 +79,8 @@ describe("compound failure mapping", () => {
       .toMatch(/6017/);
     expect(mapKnownChainError("custom program error: 0x1781")).toMatch(/6017/);
     expect(mapKnownChainError("Transfer: insufficient funds")).toMatch(/Insufficient tokens/);
-    expect(mapKnownChainError("Blockhash not found")).toMatch(/blockhash expired/i);
-    expect(mapKnownChainError("Compound blockhash expired")).toMatch(/blockhash expired/i);
+    expect(mapKnownChainError("Blockhash not found")).toMatch(/expired before Solana included it/i);
+    expect(mapKnownChainError("Compound blockhash expired")).toMatch(/expired before Solana included it/i);
   });
 
   it("returns a truncated sanitized reason instead of dropping long simulation logs", () => {

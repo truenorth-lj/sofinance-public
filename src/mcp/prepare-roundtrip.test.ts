@@ -1,4 +1,5 @@
-// Real MCP adapters -> real token verification route -> real HTTP submit handlers.
+// Real MCP adapters -> real token verification route -> wallet-signable bytes for the sign page.
+// The sign page sends through the shared wallet pipeline (no per-flow HTTP submit routes).
 // Only builders, chain reads/simulation and physical RPC are disposable offline fixtures.
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -25,10 +26,6 @@ vi.mock("@sofinance/engine/open-simulation", () => ({ simulateAndVerifyOpenTrans
 vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: backend.rpc }));
 import { POST as mcp } from "@/app/api/mcp/route";
 import { POST as verify } from "@/app/api/verify-sign-token/route";
-import { POST as selectedSubmit } from "@/app/api/selected-broadcast/route";
-import { POST as compoundSubmit } from "@/app/api/compound-broadcast/route";
-import { POST as openSubmit } from "@/app/api/open-broadcast/route";
-import { POST as withdrawSubmit } from "@/app/api/withdraw-broadcast/route";
 import { createMcpServer } from "./create-server";
 import { generateMcpToken } from "@/lib/mcp-auth";
 import { withdrawPermit } from "@sofinance/engine/withdraw/permit";
@@ -65,13 +62,13 @@ beforeEach(async () => {
 });
 afterEach(async () => { await client?.close(); await server?.close(); vi.useRealTimers(); vi.unstubAllEnvs(); vi.restoreAllMocks(); });
 const operations = [
-  { name: "prepare_transaction", kind: "add-liquidity", submit: selectedSubmit, sim: backend.selectedSim },
-  { name: "prepare_compound_transaction", kind: "compound", submit: compoundSubmit, sim: backend.compoundSim },
-  { name: "prepare_open_position", kind: "open-position", submit: openSubmit, sim: backend.openSim },
-  { name: "prepare_withdraw", kind: "withdraw", submit: withdrawSubmit, sim: backend.withdrawSim },
+  { name: "prepare_transaction", kind: "add-liquidity", sim: backend.selectedSim },
+  { name: "prepare_compound_transaction", kind: "compound", sim: backend.compoundSim },
+  { name: "prepare_open_position", kind: "open-position", sim: backend.openSim },
+  { name: "prepare_withdraw", kind: "withdraw", sim: backend.withdrawSim },
 ] as const;
 for (const surface of ["http", "stdio"] as const) for (const c of operations) {
-  it(`${surface} ${c.kind} prepare -> verified token -> HTTP submit preserves full authorization and signed bytes`, async () => {
+  it(`${surface} ${c.kind} prepare -> verified token preserves full authorization and signable bytes`, async () => {
     const params = { name: c.name, arguments: VALID_ARGS[c.name] };
     const result = surface === "stdio" ? await client.request({ method: "tools/call", params }, CallToolResultSchema) : CallToolResultSchema.parse((await (await mcp(new NextRequest("http://localhost/api/mcp", { method: "POST", headers: { Authorization: `Bearer ${generateMcpToken(wallet, SIGNING_SECRET)}` }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params }) }))).json()).result);
     expect(result.isError).toBeUndefined(); const first = result.content[0];
@@ -88,18 +85,6 @@ for (const surface of ["http", "stdio"] as const) for (const c of operations) {
     const originalMessage = messageBase64(tx); const partial = tx.signatures[1]?.slice(); tx.sign([payer]);
     expect(messageBase64(tx)).toBe(originalMessage);
     if (c.kind === "open-position") { expect(partial).toEqual(openTransaction.signatures[1]); expect(tx.signatures[1]).toEqual(partial); }
-    const response = await c.submit(jsonRequest("http://localhost/api/submit", { ...payload.submitArgs, signedTransaction: toBase64(tx) }));
-    const body = await response.json(); expect({ status: response.status, body }).toMatchSnapshot();
-    expect(response.status).toBe(200); expect(body.signature).toBe(signatureOf(tx));
-    expect(backend.send).toHaveBeenCalledOnce(); expect(backend.send.mock.calls[0]?.[0]).toEqual(tx.serialize());
-    expect(c.sim).toHaveBeenCalledOnce(); expect(c.sim.mock.invocationCallOrder[0]!).toBeLessThan(backend.send.mock.invocationCallOrder[0]!);
-    if (c.kind === "withdraw") expect(c.sim.mock.calls[0]?.[3]).toBe(true);
-    else expect(c.sim.mock.calls[0]?.[0].sigVerify).toBe(true);
-    backend.send.mockClear();
-    for (const change of [{ permit: "forged" }, { wallet: testKeypair(99).publicKey.toBase58() }]) {
-      const rejected = await c.submit(jsonRequest("http://localhost/api/submit", { ...payload.submitArgs, signedTransaction: toBase64(tx), ...change }));
-      expect(rejected.status).not.toBe(200); expect(backend.send).not.toHaveBeenCalled();
-    }
     for (const token of [`A${prepared.signToken}`, prepared.signToken]) {
       if (token === prepared.signToken) vi.setSystemTime(payload.expiresAt + 1);
       expect((await verify(jsonRequest("http://localhost/api/verify-sign-token", { token }))).status).not.toBe(200);

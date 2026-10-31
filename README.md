@@ -370,7 +370,7 @@ Optional. Local dev, forks, and tests stay a no-op until the PostHog key is set.
 | `wallet_connected` | Wallet connects (also on auto-reconnect after a hard load) | none (identify uses `wallet:<sha256>`, not the address) |
 | `performance_view` | Performance tab shown in `/app` (tab click or `?view=performance` deep link); the URL doesn't change, so `$pageview` can't see it | none |
 | `open_position_started` | User starts an open (prepare/sign) | `pool`, `pair` when known |
-| `open_position_success` | Open confirmed on-chain via `/api/open-status` | `pool`, `pair` |
+| `open_position_success` | Open confirmed on-chain (shared tx pipeline signature polling) | `pool`, `pair` |
 | `open_position_failed` | Open failed before send, or on-chain failed/expired | `error_class` only (never raw error text) |
 
 ## Architecture

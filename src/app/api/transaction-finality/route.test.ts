@@ -39,12 +39,27 @@ describe("POST /api/transaction-finality", () => {
     ["finalized without error", { confirmationStatus: "finalized", err: null }, "finalized"],
     ["finalized with error", { confirmationStatus: "finalized", err: { X: 1 } }, "failed"],
     ["confirmed", { confirmationStatus: "confirmed", err: null }, "pending"],
-    ["QUIRK: confirmed with an error stays pending until finalized", { confirmationStatus: "confirmed", err: { X: 1 } }, "pending"],
+    ["confirmed with an error fails early", { confirmationStatus: "confirmed", err: { X: 1 } }, "failed"],
   ])("observed %s => %s", async (_name, observed, status) => {
     connection.getSignatureStatuses.mockResolvedValue({ value: [observed] });
     const { response, json } = await call({ signature, lastValidBlockHeight: 150 });
     expect(response.headers.get("Cache-Control")).toBe("no-store");
     expect(json).toEqual({ status });
+  });
+
+  it.each([
+    ["confirmed", { confirmationStatus: "confirmed", err: null }, "confirmed"],
+    ["processed", { confirmationStatus: "processed", err: null }, "pending"],
+    ["finalized", { confirmationStatus: "finalized", err: null }, "finalized"],
+  ])("with commitment confirmed, observed %s => %s", async (_name, observed, status) => {
+    connection.getSignatureStatuses.mockResolvedValue({ value: [observed] });
+    const { json } = await call({ signature, lastValidBlockHeight: 150, commitment: "confirmed" });
+    expect(json).toEqual({ status });
+  });
+
+  it("rejects an unknown commitment", async () => {
+    const { response } = await call({ signature, lastValidBlockHeight: 150, commitment: "processed" });
+    expect(response.status).toBe(400);
   });
 
   it("not found: pending until the CONFIRMED height is strictly greater than lastValidBlockHeight, then expired", async () => {

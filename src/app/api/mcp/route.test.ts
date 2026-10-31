@@ -382,7 +382,7 @@ describe("tools/call dispatch and wallet binding", () => {
 
   it("STEP 2a: known chain errors get the same public wording as the web routes; rate limits hide the upstream", async () => {
     toolFns.listRwaPairs!.mockRejectedValue(new Error("Transaction simulation failed: Blockhash not found"));
-    expect(JSON.parse((await callTool("list_rwa_pairs", {})).json.result.content[0].text).error).toContain("Transaction blockhash expired.");
+    expect(JSON.parse((await callTool("list_rwa_pairs", {})).json.result.content[0].text).error).toContain("expired before Solana included it");
     toolFns.listRwaPairs!.mockRejectedValue(new Error("429 Too Many Requests from https://rpc.example/?api-key=SECRET123"));
     const text = (await callTool("list_rwa_pairs", {})).json.result.content[0].text as string;
     expect(text).not.toContain("SECRET123");

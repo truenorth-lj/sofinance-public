@@ -14,6 +14,7 @@ import { instruction } from "./transaction-helpers";
 import { EXIT_JUPITER_CONCURRENCY, mapPool } from "./jupiter";
 import { buildExitSwapLeg, type ExitSwapRoute } from "./swap/exit";
 import { atomicComputeUnitLimitInstruction, exceedsTxSizeLimit } from "./transaction-limits";
+import { withContextSlotRetry } from "./rpc/context-slot";
 const USDC="EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",SOL="So11111111111111111111111111111111111111112";
 export const EXIT_PREVIEW_TTL_MS=8_000;
 export function exitPreviewCacheKey(positionId:string,nftAccount?:string,convertRent=true){return `exit-preview:${positionId}:${nftAccount??""}:${convertRent?"1":"0"}`;}
@@ -53,7 +54,7 @@ async function readFullExitPreviewUnlocked(positionId:string,nftAccount?:string,
  const prefix=[atomicComputeUnitLimitInstruction(),...setup,...exitInstructions];
  const baseline=new VersionedTransaction(new TransactionMessage({payerKey:owner,recentBlockhash:blockhash.blockhash,instructions:prefix}).compileToV0Message());
  if(exceedsTxSizeLimit(versionedTransactionSize(baseline)))throw new Error("Withdrawal/close packet size exceeded");
- const withdrawSimulation=await connection.simulateTransaction(baseline,{sigVerify:false,replaceRecentBlockhash:true,minContextSlot:before.context.slot,accounts:{encoding:"base64",addresses:addresses.map(a=>a.toBase58())}});
+ const withdrawSimulation=await withContextSlotRetry(()=>connection.simulateTransaction(baseline,{sigVerify:false,replaceRecentBlockhash:true,minContextSlot:before.context.slot,accounts:{encoding:"base64",addresses:addresses.map(a=>a.toBase58())}}));
  if(withdrawSimulation.value.err||!withdrawSimulation.value.accounts)throw new Error(`Withdrawal simulation failed: ${JSON.stringify(withdrawSimulation.value.err)}`);
 
  const received=mints.map((mint,i)=>{const after=withdrawSimulation.value.accounts![i+4],prior=before.value[i+4];if(!after)throw new Error("Simulation recipient missing");const amount=verifiedTokenAmount(after.data[0],owner,mint,after.owner)-(prior?prior.data.readBigUInt64LE(64):0n);if(amount<0n)throw new Error("Withdrawal consumed wallet inventory");return {mint:mint.toBase58(),amountAtomic:amount.toString()};});
@@ -81,7 +82,7 @@ async function readFullExitPreviewUnlocked(positionId:string,nftAccount?:string,
  let fee:number|null=null;
  try{fee=await estimateFeeForMessage(connection,compiled.transaction.message,"confirmed",{fallback:defaultRpcConnection});}
  catch{fee=null;}
- const simulation=await connection.simulateTransaction(compiled.transaction,{sigVerify:false,replaceRecentBlockhash:true,minContextSlot:before.context.slot,accounts:{encoding:"base64",addresses:finalAddresses.map(a=>a.toBase58())}});
+ const simulation=await withContextSlotRetry(()=>connection.simulateTransaction(compiled.transaction,{sigVerify:false,replaceRecentBlockhash:true,minContextSlot:before.context.slot,accounts:{encoding:"base64",addresses:finalAddresses.map(a=>a.toBase58())}}));
  if(simulation.value.err||!simulation.value.accounts)throw new Error(`Combined exit simulation failed: ${JSON.stringify(simulation.value.err)}`);
  const actual=simulation.value.accounts;
  const tokenDeltas=recipients.map((_,i)=>{const prior=finalBefore.value[i+4];if(!actual[i+4])throw new Error("Final recipient missing");return (verifiedTokenAmount(actual[i+4]!.data[0],owner,mints[i]!,actual[i+4]!.owner)-(prior?prior.data.readBigUInt64LE(64):0n)).toString();});

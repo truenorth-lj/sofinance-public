@@ -3,23 +3,22 @@
 import { useEffect, useRef } from "react";
 import { ArrowUpRight, CheckCircle2, CircleAlert, Clock3, LoaderCircle, X } from "lucide-react";
 import type { AtomicStatus } from "@/lib/attempt-status";
-import type { SelectedAttempt } from "@/lib/selected-attempt";
 
 const short = (value: string) => `${value.slice(0, 5)}…${value.slice(-5)}`;
 
 export function transactionStatusCopy(status: AtomicStatus) {
   switch (status) {
-    case "success": return { title: "Position increased successfully", detail: "Transaction confirmed on-chain and selected NFT liquidity increment verified." };
-    case "failed": return { title: "On-chain transaction failed", detail: "Transaction submitted on-chain but execution failed. Please check transaction history; verify wallet balance before retrying." };
-    case "expired": return { title: "Transaction not on-chain and expired", detail: "Transaction not found and valid block height has passed. Check transaction history before deciding to retry." };
+    case "success": return { title: "Liquidity added", detail: "Confirmed on Solana. Balances refreshed." };
+    case "failed": return { title: "Add liquidity failed on-chain", detail: "Solana ran it but a safety check (such as the price limit) stopped it, so nothing changed except the network fee." };
+    case "expired": return { title: "Transaction expired", detail: "This transaction expired before Solana included it, so nothing changed. Tap Try again to sign a fresh one." };
     case "manual-review": return { title: "Transaction result requires manual verification", detail: "Verify this transaction and position before starting again. New operations are available; an unconfirmed transaction may still succeed." };
-    case "pending": return { title: "Transaction confirming", detail: "This transaction may still succeed. Starting again may add liquidity twice. It will not be automatically resent." };
+    case "pending": return { title: "Confirming on Solana…", detail: "Your wallet sent it. Waiting for Solana to confirm it; starting again now could add liquidity twice." };
   }
 }
 
 export function TransactionStatusDialog({ attempt, status, error, open, onOpenChange, onRetry }: {
-  attempt: SelectedAttempt | null; status: AtomicStatus | null; error: string;
-  open: boolean; onOpenChange: (open: boolean) => void; onRetry: () => void;
+  attempt: { signature: string; positionMint: string } | null; status: AtomicStatus | null; error: string;
+  open: boolean; onOpenChange: (open: boolean) => void; onRetry?: () => void;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -49,17 +48,17 @@ export function TransactionStatusDialog({ attempt, status, error, open, onOpenCh
         <h2 id="transaction-status-title" className="mt-5 text-2xl font-semibold">{copy.title}</h2>
         <p id="transaction-status-detail" className="mt-2 text-sm leading-6 text-cream/80">{copy.detail}</p>
       </div>
-      {error && (phase === "pending" || phase === "manual-review") &&
-        <p role="alert" className="mt-4 rounded-2xl border border-lemon/25 bg-lemon/10 p-3 text-sm text-lemon">Verification message: {error}</p>}
+      {error && phase === "manual-review" &&
+        <p role="alert" className="mt-4 rounded-2xl border border-lemon/25 bg-lemon/10 p-3 text-sm text-lemon">{error}</p>}
       <div className="mt-6 rounded-2xl border border-white/10 bg-char p-4">
         <p className="text-xs text-smoke">Transaction hash</p>
         <a href={`https://solscan.io/tx/${attempt.signature}`} target="_blank" rel="noreferrer"
           className="mt-2 block break-all font-mono text-sm leading-6 text-lilac underline underline-offset-4 hover:text-lilac">{attempt.signature} <ArrowUpRight className="inline h-4 w-4" /></a>
-        <p className="mt-3 text-xs text-smoke">Destination NFT: {short(attempt.selection.positionMint)}</p>
+        <p className="mt-3 text-xs text-smoke">Destination NFT: {short(attempt.positionMint)}</p>
       </div>
       <div className="mt-6 flex flex-wrap gap-3">
-        {(phase === "pending" || phase === "manual-review") && <button type="button" onClick={onRetry}
-          className="rounded-full border border-lilac/30 px-4 py-2 text-sm font-semibold text-lilac hover:bg-lilac/10">Requery on-chain status</button>}
+        {(phase === "expired" || phase === "failed") && onRetry && <button type="button" onClick={onRetry}
+          className="rounded-full border border-lilac/30 px-4 py-2 text-sm font-semibold text-lilac hover:bg-lilac/10">Try again</button>}
         <button type="button" onClick={() => onOpenChange(false)}
           className="rounded-full border border-white/15 px-4 py-2 text-sm font-semibold text-cream/90 hover:bg-white/10">Close</button>
       </div>

@@ -1,8 +1,9 @@
+import bs58 from "bs58";
 // @vitest-environment happy-dom
 import { act, Activity, StrictMode, Suspense, useEffect, useLayoutEffect, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { VersionedTransaction } from "@solana/web3.js";
+import { VersionedTransaction } from "@solana/web3.js";
 import { WithdrawPanel } from "./withdraw-panel";
 import { withdrawCheckpoint, withdrawKey, withdrawPosition, withdrawPrepared, withdrawSigner, withdrawWallet, signedWithdraw } from "@/lib/test-support/withdraw-checkpoint-fixtures";
 
@@ -67,13 +68,13 @@ it.each(["atomic", "swap"] as const)("expiry message describes only the expired 
  const normal=network;network=async(p,b)=>p==="status"&&(b.prepared as {summary:{stage:string}}).summary.stage===stage?Response.json({status:"expired"}):normal(p,b);
  await start();
  if(stage==="atomic"){
-  expect(raw()).toBeNull();expect(mocks.notify).not.toHaveBeenCalled();expect(button("Retry withdrawal")?.disabled).toBe(false);
-  expect(container.textContent).toContain("no funds moved");
+  expect(raw()).toBeNull();expect(mocks.notify).not.toHaveBeenCalled();expect(button("Try again")?.disabled).toBe(false);
+  expect(container.textContent).toContain("nothing moved");
  }else{
   expect(mocks.notify).toHaveBeenCalledWith(withdrawPosition,signedWithdraw(first).signature);
   const saved=JSON.parse(raw()!);expect(saved.signature).toBe(signedWithdraw(first).signature);expect(saved.prepared).toEqual(first);
-  expect(container.textContent).not.toContain("no funds moved");expect(container.textContent).toContain("Conversion expired. Resume to verify the original withdrawal and retry conversion.");
-  expect(button("Resume withdrawal")?.disabled).toBe(false);expect(button("Retry withdrawal")).toBeUndefined();
+  expect(container.textContent).not.toContain("nothing moved");expect(container.textContent).toContain("Conversion expired. Resume to verify the original withdrawal and retry conversion.");
+  expect(button("Resume withdrawal")?.disabled).toBe(false);expect(button("Try again")).toBeUndefined();
   network=normal;await click("Resume withdrawal");
   expect(calls("prepare").map(e=>(e.value as {stage?:string}).stage)).toEqual([undefined,"swap","swap"]);
   expect(mocks.confirmed).toHaveBeenCalledOnce();expect(raw()).toBeNull();
@@ -87,18 +88,18 @@ beforeEach(() => {
  (globalThis as unknown as Record<string,unknown>).IS_REACT_ACT_ENVIRONMENT=true;
  vi.spyOn(HTMLDialogElement.prototype,"showModal").mockImplementation(function(this:HTMLDialogElement){this.setAttribute("open","");});
  vi.spyOn(HTMLDialogElement.prototype,"close").mockImplementation(function(this:HTMLDialogElement){this.removeAttribute("open");});
- vi.spyOn(localStorage,"setItem").mockImplementation((k,v)=>{record("set",{key:k,raw:v});rawSet.call(localStorage,k,v);});
- vi.spyOn(localStorage,"removeItem").mockImplementation(k=>{record("remove",k);rawRemove.call(localStorage,k);});
+ vi.spyOn(localStorage,"setItem").mockImplementation((k,v)=>{if(!k.startsWith("sofinance:tx-attempts"))record("set",{key:k,raw:v});rawSet.call(localStorage,k,v);});
+ vi.spyOn(localStorage,"removeItem").mockImplementation(k=>{if(!k.startsWith("sofinance:tx-attempts"))record("remove",k);rawRemove.call(localStorage,k);});
  mocks.sign.mockImplementation(async (tx:VersionedTransaction)=>{record("sign",Array.from(tx.message.serialize()));tx.sign([withdrawSigner]);return tx;});
  mocks.notify.mockImplementation((...args)=>record("notify",args));mocks.confirmed.mockImplementation(()=>record("confirmed"));
  network=async (phase,b)=>{
   if(phase==="quote")return Response.json((b.stage==="swap"?second:first).summary);
   if(phase==="prepare")return Response.json(b.stage==="swap"?second:first);
-  if(phase==="broadcast")return Response.json({accepted:true});
+  if(phase==="broadcast")return Response.json({signature:bs58.encode(VersionedTransaction.deserialize(Buffer.from(b.signedTransaction as string,"base64")).signatures[0]!)});
   if(phase==="status")return Response.json({status:"success"});
   throw new Error(`Unexpected request ${phase}`);
  };
- vi.stubGlobal("fetch",vi.fn(async (url:string,init:RequestInit)=>{expect(url).toMatch(/^\/api\/withdraw-(quote|prepare|broadcast|status)$/);const phase=url.slice("/api/withdraw-".length),body=JSON.parse(init.body as string);record(phase,body);return network(phase,body);}));
+ vi.stubGlobal("fetch",vi.fn(async (url:string,init:RequestInit)=>{expect(url).toMatch(/^\/api\/(withdraw-(quote|prepare|status)|tx-send)$/);const phase=url==="/api/tx-send"?"broadcast":url.slice("/api/withdraw-".length),body=JSON.parse(init.body as string);record(phase,body);return network(phase,body);}));
 });
 afterEach(async context=>{
  await unmount();await act(async()=>{cleanupDeferred.forEach(reject=>reject());});container.remove();
@@ -135,11 +136,11 @@ it.each(["prepare","sign","status"])("live paired %s wait completes with exact o
  expect(calls("broadcast")).toHaveLength(phase==="status"?2:1);
  const saved=JSON.parse((calls("set")[0]!.value as {raw:string}).raw);
  expect(saved.prepared).toEqual(first);expect(saved.signature).toBe(signedWithdraw(first).signature);
- expect(events.indexOf(calls("set")[0]!)).toBeLessThan(events.indexOf(calls("broadcast")[0]!));
+ expect(events.indexOf(calls("set")[0]!)).toBeGreaterThan(events.indexOf(calls("broadcast")[0]!));
  expect(mocks.notify).toHaveBeenCalledWith(withdrawPosition,saved.signature);
 });
 
-const boundaries=["quote", "quote-body", "prepare-body", "refresh", "refresh-body", "swap-quote", "swap-quote-body", "swap-prepare", "swap-prepare-body", "swap-refresh", "swap-refresh-body", "swap-sign", "swap-broadcast", "swap-broadcast-body", "broadcast", "broadcast-body"] as const;
+const boundaries=["quote", "quote-body", "prepare-body", "swap-quote", "swap-quote-body", "swap-prepare", "swap-prepare-body", "swap-sign", "swap-broadcast", "swap-broadcast-body", "broadcast", "broadcast-body"] as const;
 type Boundary=typeof boundaries[number];
 async function boundaryStart(boundary: Boundary) {
  if(boundary.startsWith("swap"))twoStage();
@@ -150,21 +151,19 @@ async function boundaryStart(boundary: Boundary) {
   await start();return {release:()=>settle(wallet,signedWithdraw(second).transaction)};
  }
  const phase=boundary.replace("swap-","").replace("-body","");
- let gate:ReturnType<typeof hold>;
- if(phase==="refresh") {
-  const isSwap=boundary.startsWith("swap"), ordinal=isSwap?3:2;
-  gate=hold("prepare",()=>calls("prepare").length===ordinal,boundary.endsWith("body"));
-  const normal=network; const stale=withdrawPrepared(isSwap?"swap":"atomic",{expiresAt:Date.now()-1,...(isSwap?{tx1Signature:signedWithdraw(first).signature}:{})});
-  network=async (p,b)=>p==="prepare"&&calls("prepare").length===ordinal-1?Response.json(stale):normal(p,b);
- }else gate=hold(phase,b=>!boundary.startsWith("swap")||b.stage==="swap"||(b.summary as {stage?:string}|undefined)?.stage==="swap",boundary.endsWith("body"));
+ const gate=hold(phase,b=>phase==="broadcast"?calls("broadcast").length===(boundary.startsWith("swap")?2:1):!boundary.startsWith("swap")||b.stage==="swap"||(b.summary as {stage?:string}|undefined)?.stage==="swap",boundary.endsWith("body"));
  if(boundary.startsWith("swap"))prepared=second;
  await start();
  return { release:()=>gate.release(phase==="quote"?prepared.summary:phase==="broadcast"?{accepted:true}:prepared) };
 }
 it.each(boundaries)("unmount at %s stops every later command; explicit remount recovers",async boundary=>{
- const gate=await boundaryStart(boundary),before=count(),original=raw();
+ const gate=await boundaryStart(boundary),before=count(),previous=raw();
  await unmount();expect(vi.getTimerCount()).toBe(0);await gate.release();
- expect(count()).toEqual(before);expect(raw()).toBe(original);
+ // Once the send returned, its signature is saved even though the panel is gone, so Resume checks it.
+ const sent=boundary.includes("broadcast");
+ expect(count()).toEqual(sent?{...before,set:before.set!+1}:before);
+ if(sent)expect(JSON.parse(raw()!).signature).toBe(signedWithdraw(boundary.startsWith("swap")?second:first).signature);else expect(raw()).toBe(previous);
+ const original=raw();
  await remount();
  // Discarded preview has to be requested explicitly; persisted work only queries the old signature.
  if(original)await click("Resume withdrawal");else {await click("Preview");await click("Withdraw");}
@@ -255,14 +254,17 @@ it.each(retainedCases)("$kind $phase $outcome settles $settlement reconnect: no 
 });
 it.each((["activity","suspense"] as const).flatMap(kind=>(["before","after"] as const).flatMap(settlement=>(["atomic","swap"] as const).map(stage=>({kind,settlement,stage})))))("$kind durable $stage unknown settles $settlement reconnect: Resume queries original signature, zero resend",async({kind,settlement,stage})=>{
  if(stage==="swap")twoStage();
- const view=await retained(kind),gate=hold("broadcast",b=>(b.summary as {stage:string}).stage===stage);
- await click("Preview");await click("Withdraw");const original=raw()!,saved=JSON.parse(original),before=count();
- expect(saved.prepared.summary.stage).toBe(stage);if(stage==="swap")expect(saved.root).toEqual({prepared:first,signature:signedWithdraw(first).signature});
+ const view=await retained(kind),gate=hold("broadcast",()=>calls("broadcast").length===(stage==="swap"?2:1));
+ await click("Preview");await click("Withdraw");const before=count();
  await view.draw(true);
  if(settlement==="before")await act(async()=>gate.reject(new Error("lost response")));
  await view.draw(false);await view.release();
- if(settlement==="after"){expect(button("Resume withdrawal")!.disabled).toBe(true);await act(async()=>gate.reject(new Error("lost response")));}
- expect(count()).toEqual(before);expect(raw()).toBe(original);expect(button("Resume withdrawal")!.disabled).toBe(false);
+ if(settlement==="after")await act(async()=>gate.reject(new Error("lost response")));
+ // A lost relay response may still have landed: the signed signature is saved, never resent.
+ const saved=JSON.parse(raw()!);
+ expect(saved.prepared.summary.stage).toBe(stage);expect(saved.signature).toBe(signedWithdraw(stage==="swap"?second:first).signature);
+ if(stage==="swap")expect(saved.root).toEqual({prepared:first,signature:signedWithdraw(first).signature});
+ expect(button("Resume withdrawal")!.disabled).toBe(false);
  await click("Resume withdrawal");expect(calls("broadcast")).toHaveLength(before.broadcast!);expect(calls("sign")).toHaveLength(before.sign!);
  expect(calls("status").at(-1)!.value).toEqual({signature:saved.signature,prepared:saved.prepared});expect(raw()).toBeNull();expect(mocks.confirmed).toHaveBeenCalledOnce();
 });
@@ -291,22 +293,6 @@ it("current connection identity is checked after prepare, before any wallet prom
 });
 it("unrelated rerenders and new callback/connection object identities do not invalidate healthy work",async()=>{
  const gate=hold("prepare");await start();await render();await render();await gate.release(first);expect(mocks.confirmed).toHaveBeenCalledOnce();expect(calls("prepare")).toHaveLength(1);
-});
-it.each(["atomic","swap"] as const)("%s wallet expiry is checked after approval without re-signing; healthy wait still completes",async stage=>{
- if(stage==="swap")twoStage();
- const wallet=deferred<VersionedTransaction>();let signed=0;
- mocks.sign.mockImplementation(async tx=>{record("sign",Array.from(tx.message.serialize()));if(++signed===(stage==="swap"?2:1))return wallet.promise;tx.sign([withdrawSigner]);return tx;});
- await start();const original=raw(),before=count();
- await act(async()=>vi.advanceTimersByTimeAsync(60_000));await settle(wallet,signedWithdraw(stage==="swap"?second:first).transaction);
- expect(count()).toEqual(before);expect(raw()).toBe(original);expect(container.textContent).toContain("expired while awaiting wallet approval");
- expect(container.textContent).not.toContain("no funds moved");
- // New explicit user action may prepare a fresh transaction; original principal is never repeated for swap.
- first=withdrawPrepared(stage==="swap"?"withdraw":"atomic");second=withdrawPrepared("swap",{tx1Signature:signedWithdraw(first).signature});
- const valid=deferred<VersionedTransaction>();mocks.sign.mockImplementation(tx=>{record("sign",Array.from(tx.message.serialize()));return valid.promise;});
- if(stage==="swap")await click("Resume withdrawal");else {await click("Preview");await click("Withdraw");}
- await act(async()=>vi.advanceTimersByTimeAsync(50_000));await settle(valid,signedWithdraw(stage==="swap"?second:first).transaction);
- expect(mocks.confirmed).toHaveBeenCalledOnce();expect(raw()).toBeNull();
- if(stage==="swap")expect(calls("prepare").map(e=>(e.value as {stage?:string}).stage)).toEqual([undefined,"swap","swap"]);
 });
 it.each(["atomic","swap"] as const)("high-impact %s dialog cancel and reconnect keep consent explicit",async stage=>{
  if(stage==="swap")twoStage();
@@ -339,16 +325,16 @@ it("healthy run uses the latest committed wallet callback and completion callbac
  await render(<WithdrawPanel wallet={withdrawWallet} positionMint={withdrawPosition} mintA={withdrawPosition} mintB={withdrawWallet} label={m=>m} onClose={vi.fn()} onConfirmed={confirmed} onBusyChange={vi.fn()}/>);
  await gate.release(first);expect(newerSigner).toHaveBeenCalledOnce();expect(confirmed).toHaveBeenCalledOnce();expect(mocks.confirmed).not.toHaveBeenCalled();
 });
-it("explicit Resume preserves target-only historical request with receive omitted across full swap refresh and checkpoint",async()=>{
+it("explicit Resume preserves target-only historical request with receive omitted across the swap step and checkpoint",async()=>{
  const request={wallet:withdrawWallet,positionMint:withdrawPosition,targetUSDC:12.34};
  const saved=withdrawCheckpoint("withdraw",request);rawSet.call(localStorage,withdrawKey,JSON.stringify(saved));
  first=saved.prepared;second=withdrawPrepared("swap",{tx1Signature:saved.signature});
- const normal=network;network=async(p,b)=>p==="prepare"&&calls("prepare").length===1?Response.json(withdrawPrepared("swap",{expiresAt:Date.now()-1,tx1Signature:saved.signature})):normal(p,b);
  const sent=hold("broadcast");await render();await click("Resume withdrawal");
- expect(calls("prepare")).toHaveLength(2);
+ expect(calls("prepare")).toHaveLength(1);
  for(const e of [...calls("quote"),...calls("prepare")]){const body=e.value as Record<string,unknown>;expect(body).toMatchObject({...request,stage:"swap",previous:saved.prepared,tx1Signature:saved.signature});expect(body).not.toHaveProperty("receive");expect(body).not.toHaveProperty("percent");}
- const checkpoint=JSON.parse(raw()!);expect(checkpoint.request).toEqual(request);expect(checkpoint.root).toEqual({prepared:saved.prepared,signature:saved.signature});expect(checkpoint.prepared).toEqual(second);
- await sent.release({accepted:true});expect(mocks.confirmed).toHaveBeenCalledOnce();expect(raw()).toBeNull();
+ await sent.release({accepted:true});
+ const checkpoint=JSON.parse((calls("set").at(-1)!.value as {raw:string}).raw);expect(checkpoint.request).toEqual(request);expect(checkpoint.root).toEqual({prepared:saved.prepared,signature:saved.signature});expect(checkpoint.prepared).toEqual(second);
+ expect(mocks.confirmed).toHaveBeenCalledOnce();expect(raw()).toBeNull();
 });
 it("retained position prop change invalidates the old run and loads that position's own history",async()=>{
  const gate=hold("prepare");await start();

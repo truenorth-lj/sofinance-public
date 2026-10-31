@@ -426,7 +426,7 @@ export async function submitSignedTransaction(input: SubmitSignedTransactionInpu
     prepared: prepared !== transaction ? prepared : undefined,
   }, MCP_SELECTED_SUBMIT);
 
-  // Same response as /api/selected-broadcast.
+  // Same response shape the app relay (/api/tx-send) returns.
   return { signature };
 }
 

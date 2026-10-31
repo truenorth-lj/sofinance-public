@@ -14,10 +14,10 @@ import { PublicKey, VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
 import { OPEN_PREPARE_TIMEOUT_MS, useOpenPositionController, type OpenPositionPair } from "./use-open-position-controller";
 import { NATIVE_SOL_MINT } from "@sofinance/engine/ids";
-import { openAttemptKey, persistOpenAttempt } from "@/lib/open-attempt";
+import { noticeIdFor, resetTxNotices, settleTxNotice } from "@/lib/tx-pipeline";
 import { appendWalletExtraInstruction, buildTransaction, openSummaryFixture, testKeypair, toBase64 } from "@/lib/test-support/send-fixtures";
-const mocks = vi.hoisted(() => ({ address: "", sign: vi.fn() }));
-vi.mock("./wallet-connection", () => ({ useWalletConnection: () => ({ address: mocks.address, connected: true, signTransaction: mocks.sign }) }));
+const mocks = vi.hoisted(() => ({ address: "", sign: vi.fn(), signAndSend: undefined as undefined | ReturnType<typeof vi.fn> }));
+vi.mock("./wallet-connection", () => ({ useWalletConnection: () => ({ address: mocks.address, connected: true, signTransaction: mocks.sign, signAndSendTransaction: mocks.signAndSend }) }));
 const payer = testKeypair(1), nft = testKeypair(2);
 const wallet = payer.publicKey.toBase58();
 const poolId = testKeypair(42).publicKey.toBase58();
@@ -27,8 +27,7 @@ let currentPair: OpenPositionPair;
 let ledger: unknown[];
 let controller: ReturnType<typeof useOpenPositionController>;
 let root: Root, container: HTMLDivElement;
-let chainStatus: string, sendMode: "ok" | "lost" | "unsent" | "mismatch";
-let verificationError: boolean;
+let sendMode: "ok" | "lost" | "unsent";
 let preparedOverride: ((value: ReturnType<typeof prepared>) => void) | null;
 let prepareWait: Promise<Response> | null;
 let fetchMock: ReturnType<typeof vi.fn>;
@@ -68,7 +67,7 @@ beforeEach(() => {
     get length() { return storage.length; }, key: storage.key.bind(storage),
   };
   vi.spyOn(window, "localStorage", "get").mockReturnValue(new Proxy(storage, { get: (target, key) => key in wrappedStorage ? wrappedStorage[key as keyof typeof wrappedStorage] : Reflect.get(target, key) }));
-  chainStatus = "pending"; sendMode = "ok"; verificationError = false; preparedOverride = null; prepareWait = null;
+  sendMode = "ok"; preparedOverride = null; prepareWait = null; mocks.signAndSend = undefined; resetTxNotices();
   mocks.sign.mockImplementation(async (tx: VersionedTransaction) => { ledger.push([Date.now(), "sign", toBase64(tx)]); tx.sign([payer]); ledger.push([Date.now(), "signed", toBase64(tx)]); return tx; });
   fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     ledger.push([Date.now(), "fetch", url, init?.body ?? null]);
@@ -90,18 +89,14 @@ beforeEach(() => {
       const value = prepared(new PublicKey(body.nftMint));
       preparedOverride?.(value); return Response.json(value);
     }
-    if (url === "/api/open-broadcast") {
-      expect(window.localStorage.getItem(openAttemptKey(wallet))).toContain('"signature"');
+    if (url === "/api/tx-send") {
       if (sendMode === "lost") throw new Error("socket hang up");
-      if (sendMode === "unsent") return Response.json({ error: "preflight rejected", sent: false }, { status: 400 });
+      if (sendMode === "unsent") return Response.json({ error: "Simulation failed: insufficient funds", sent: false }, { status: 400 });
       const tx = VersionedTransaction.deserialize(Buffer.from(body.signedTransaction, "base64"));
+      // Phantom signs first; the new position mint co-signs the wallet-returned bytes.
       expect(tx.signatures[0]?.some((byte: number) => byte !== 0)).toBe(true);
       expect(tx.signatures[1]?.some((byte: number) => byte !== 0)).toBe(true);
-      return Response.json({ signature: sendMode === "mismatch" ? "wrong" : bs58.encode(tx.signatures[0]!), positionMint: tx.message.staticAccountKeys[1]!.toBase58() });
-    }
-    if (url === "/api/open-status") {
-      if (verificationError) throw new Error("RPC unavailable");
-      return Response.json({ signature: body.attempt.signature, status: chainStatus });
+      return Response.json({ signature: bs58.encode(tx.signatures[0]!) });
     }
     throw new Error(`Unexpected request: ${url}`);
   });
@@ -113,92 +108,47 @@ afterEach(async context => { await act(async () => root.unmount()); container.re
   // eslint-disable-next-line no-console -- Raw before/after characterization evidence.
   console.log("OPEN_CONSUMER_LEDGER " + JSON.stringify({ name: context.task.name, ledger }));
   vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers(); });
-describe("open-position transaction lifecycle", () => {
-  it("persists before send and stays pending until finalized position verification", async () => {
+const settle = async (status: "confirmed" | "failed" | "expired") => {
+  await act(async () => { settleTxNotice(noticeIdFor(controller.signature), status); }); await advance(1);
+};
+describe("open-position transaction lifecycle (shared pipeline)", () => {
+  it("signs, relays once with the mint co-signature, and stays pending until the signature confirms", async () => {
     await mount(); expect(controller.actionDisabled).toBe(false);
     await act(async () => controller.signAndSend()); await advance(1);
-    expect(controller.submitStage).toBe("pending"); expect(controller.signature).not.toBe("");
-    expect(controller.actionDisabled).toBe(true);
-    chainStatus = "confirmed"; await advance(3000);
+    expect(calls("/api/tx-send")).toHaveLength(1);
+    expect(controller.submitStage).toBe("pending"); expect(controller.signature).not.toBe(""); expect(controller.actionDisabled).toBe(true);
+    await settle("confirmed");
     expect(controller.submitStage).toBe("confirmed"); expect(controller.error).toBe("");
     await act(async () => controller.createAnother()); await advance(450);
     expect(controller.actionDisabled).toBe(false);
   });
-  it("keeps wallet-level lock across pools and same-pool position projection", async () => {
+  it("never uses wallet signAndSend for open, because the mint must co-sign after the wallet", async () => {
+    mocks.signAndSend = vi.fn(async () => bs58.encode(new Uint8Array(64).fill(9)));
     await mount(); await act(async () => controller.signAndSend()); await advance(1);
-    const original = controller.signature; currentPair = { ...pair, poolAddress: pair.mintA };
-    await act(async () => root.render(createElement(Harness)));
-    expect(controller.actionDisabled).toBe(true); expect(controller.submitStage).toBe("pending");
-    expect(controller.signature).toBe(original); expect(controller.positionMint).toBe("");
-    chainStatus = "confirmed"; await advance(3000); expect(controller.submitStage).toBeNull();
-    currentPair = pair; await act(async () => root.render(createElement(Harness)));
-    expect(controller.submitStage).toBe("confirmed"); expect(controller.positionMint).toBe(JSON.parse(window.localStorage.getItem(openAttemptKey(wallet))!).nftMint);
+    expect(mocks.signAndSend).not.toHaveBeenCalled(); expect(calls("/api/tx-send")).toHaveLength(1);
   });
-  it("createAnother retains receipt after confirmation while preparing a new quote", async () => {
+  it.each(["failed", "expired"] as const)("reports %s in plain words and offers a fresh try", async status => {
     await mount(); await act(async () => controller.signAndSend()); await advance(1);
-    chainStatus = "confirmed"; await advance(3000);
-    expect(controller.submitStage).toBe("confirmed"); const raw = window.localStorage.getItem(openAttemptKey(wallet));
-    await act(async () => controller.createAnother()); expect(controller.signature).toBe("");
-    expect(controller.positionMint).toBe(JSON.parse(raw!).nftMint);
-    expect(window.localStorage.getItem(openAttemptKey(wallet))).toBe(raw); await advance(450); expect(controller.actionDisabled).toBe(false);
-    chainStatus = "pending"; await act(async () => controller.signAndSend()); expect(mocks.sign).toHaveBeenCalledTimes(2);
+    await settle(status); await advance(450);
+    expect(controller.submitStage).toBe(status); expect(controller.actionDisabled).toBe(false); expect(controller.signature).not.toBe("");
   });
-  it("keeps mismatched broadcast and manual-review locked without re-signing", async () => {
-    await mount(); sendMode = "mismatch"; await act(async () => controller.signAndSend()); await advance(1);
-    expect(controller.error).toContain("unconfirmed"); const signature = controller.signature;
-    chainStatus = "manual-review"; await advance(3000); expect(controller.error).toContain("manual verification");
-    await act(async () => { controller.createAnother(); void controller.signAndSend(); });
-    expect(controller.signature).toBe(signature); expect(controller.actionDisabled).toBe(true); expect(mocks.sign).toHaveBeenCalledOnce();
-  });
-  it("retains a lost submission response and recovers it after remount without re-signing", async () => {
-    await mount(); sendMode = "lost";
-    await act(async () => controller.signAndSend()); await advance(1);
-    const signature = controller.signature;
-    expect(controller.submitStage).toBe("pending"); expect(controller.actionDisabled).toBe(true);
-    await act(async () => root.unmount()); root = createRoot(container);
-    await mount();
-    expect(controller.signature).toBe(signature); expect(controller.submitStage).toBe("pending");
-    expect(calls("/api/open-prepare")).toHaveLength(1); expect(mocks.sign).toHaveBeenCalledOnce();
-    chainStatus = "confirmed"; await advance(3000); expect(controller.submitStage).toBe("confirmed");
-  });
-  it.each(["failed", "expired"])("reports %s and allows retry while retaining the signature", async status => {
-    await mount(); await act(async () => controller.signAndSend());
-    chainStatus = status; await advance(1); await advance(450);
-    expect(controller.submitStage).toBe(status); expect(controller.error).toContain(status);
-    expect(controller.actionDisabled).toBe(false); expect(controller.signature).not.toBe("");
-  });
-  it("releases only a definite unsent rejection, preserving its archive", async () => {
+  it("a definite unsent refusal frees the button and never tracks a signature", async () => {
     await mount(); sendMode = "unsent";
     await act(async () => controller.signAndSend()); await advance(450);
-    expect(controller.error).toContain("safe to retry"); expect(controller.actionDisabled).toBe(false);
-    expect(window.localStorage.getItem(openAttemptKey(wallet))).toBeNull();
-    expect(Object.keys(window.localStorage).some(key => key.includes(":unsent:"))).toBe(true);
+    expect(controller.error).toMatch(/nothing was sent|insufficient/i); expect(controller.actionDisabled).toBe(false);
+    expect(controller.submitStage).not.toBe("pending");
   });
-  it("keeps unknown confirmation errors locked and the original record intact", async () => {
-    await mount(); await act(async () => controller.signAndSend()); verificationError = true; await advance(1);
-    expect(controller.actionDisabled).toBe(true); expect(controller.error).toContain("RPC unavailable");
-    expect(window.localStorage.getItem(openAttemptKey(wallet))).toContain(controller.signature);
-  });
-  it("blocks corrupted history instead of deleting it", async () => {
-    window.localStorage.setItem(openAttemptKey(wallet), "broken"); await mount();
-    expect(controller.actionDisabled).toBe(true); expect(controller.error).toContain("cannot be verified");
-    expect(window.localStorage.getItem(openAttemptKey(wallet))).toBe("broken");
-    expect(mocks.sign).not.toHaveBeenCalled();
-  });
-  it("never broadcasts when storage silently drops the signed record", async () => {
-    await mount(); const actual = window.localStorage;
-    const spy = vi.spyOn(window, "localStorage", "get").mockReturnValue({
-      getItem: actual.getItem.bind(actual), setItem: vi.fn(), removeItem: actual.removeItem.bind(actual),
-    } as unknown as Storage);
-    try {
-      await act(async () => controller.signAndSend());
-      expect(calls("/api/open-broadcast")).toHaveLength(0); expect(controller.error).toContain("Unable to save");
-    } finally { spy.mockRestore(); }
+  it("a lost relay response is tracked by signature, not re-signed", async () => {
+    await mount(); sendMode = "lost";
+    await act(async () => controller.signAndSend()); await advance(1);
+    expect(controller.submitStage).toBe("pending"); expect(controller.actionDisabled).toBe(true);
+    await act(async () => controller.signAndSend());
+    expect(mocks.sign).toHaveBeenCalledOnce();
   });
   it("rejects a mismatched prepared selection before wallet signing", async () => {
     await mount(); preparedOverride = value => { value.summary.poolId = pair.mintA; };
     await act(async () => controller.signAndSend());
-    expect(mocks.sign).not.toHaveBeenCalled(); expect(calls("/api/open-broadcast")).toHaveLength(0);
+    expect(mocks.sign).not.toHaveBeenCalled(); expect(calls("/api/tx-send")).toHaveLength(0);
   });
   it("surfaces a prepare timeout instead of spinning forever", async () => {
     vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
@@ -212,7 +162,7 @@ describe("open-position transaction lifecycle", () => {
     expect(controller.submitStage).toBe("preparing");
     await advance(OPEN_PREPARE_TIMEOUT_MS);
     expect(controller.submitStage).toBe(null);
-    expect(controller.error).toMatch(/timed out|retry/i);
+    expect(controller.error).toMatch(/timed out|retry|try again/i);
     expect(mocks.sign).not.toHaveBeenCalled();
   });
   it("ignores a late prepare response after the wallet switches", async () => {
@@ -223,17 +173,9 @@ describe("open-position transaction lifecycle", () => {
     mocks.address = testKeypair(3).publicKey.toBase58();
     await act(async () => root.render(createElement(Harness)));
     await act(async () => { release(Response.json(prepared())); await signing; });
-    expect(mocks.sign).not.toHaveBeenCalled(); expect(calls("/api/open-broadcast")).toHaveLength(0);
+    expect(mocks.sign).not.toHaveBeenCalled(); expect(calls("/api/tx-send")).toHaveLength(0);
   });
-  it("preserves an unresolved record belonging to another tab", async () => {
-    await mount();
-    persistOpenAttempt(window.localStorage, { version: 1, wallet, signature: bs58.encode(new Uint8Array(64).fill(3)),
-      nftMint: nft.publicKey.toBase58(), positionAccount: pair.mintA, poolId, tickLower: -60, tickUpper: 60,
-      liquidity: "777", blockhash: prepared().summary.blockhash, lastValidBlockHeight: 150, createdAt: Date.now() });
-    await act(async () => controller.signAndSend());
-    expect(calls("/api/open-broadcast")).toHaveLength(0); expect(controller.error).toContain("history changed");
-  });
-  it("does not broadcast a signing result after the modal unmounts", async () => {
+  it("does not relay a signature approved after the modal unmounts", async () => {
     await mount(); let release!: (tx: VersionedTransaction) => void;
     let signed!: VersionedTransaction;
     mocks.sign.mockImplementation((tx: VersionedTransaction) => { tx.sign([payer]); signed = tx; return new Promise(resolve => { release = resolve; }); });
@@ -241,10 +183,9 @@ describe("open-position transaction lifecycle", () => {
     await act(async () => { sending = controller.signAndSend(); });
     await act(async () => root.unmount()); root = createRoot(container);
     await act(async () => { release(signed); await sending; });
-    expect(calls("/api/open-broadcast")).toHaveLength(0);
-    expect(window.localStorage.getItem(openAttemptKey(wallet))).toBeNull();
+    expect(calls("/api/tx-send")).toHaveLength(0);
   });
-  it("aborts when the wallet modifies the message and never mint-signs or broadcasts", async () => {
+  it("aborts when the wallet modifies the message and never mint-signs or relays", async () => {
     await mount();
     mocks.sign.mockImplementation(async (tx: VersionedTransaction) => {
       tx.message.recentBlockhash = "11111111111111111111111111111111";
@@ -252,10 +193,10 @@ describe("open-position transaction lifecycle", () => {
       return tx;
     });
     await act(async () => controller.signAndSend());
-    expect(calls("/api/open-broadcast")).toHaveLength(0);
-    expect(controller.error).toContain("Wallet changed the transaction blockhash");
+    expect(calls("/api/tx-send")).toHaveLength(0);
+    expect(controller.error).not.toBe("");
   });
-  it("broadcasts after the wallet appends a Lighthouse instruction", async () => {
+  it("relays after the wallet appends a Lighthouse instruction", async () => {
     await mount();
     mocks.sign.mockImplementation(async (tx: VersionedTransaction) => {
       const extra = appendWalletExtraInstruction(tx);
@@ -263,34 +204,7 @@ describe("open-position transaction lifecycle", () => {
       return extra;
     });
     await act(async () => controller.signAndSend());
-    expect(calls("/api/open-broadcast")).toHaveLength(1);
+    expect(calls("/api/tx-send")).toHaveLength(1);
     expect(controller.error).toBe("");
   });
-});
-
-
-it.each([false, true])("late unsent keeps newer receipt locked before another sign (storage event: %s)", async event => {
-  await mount(); const originalFetch = fetchMock.getMockImplementation()! as (url: string, init?: RequestInit) => Promise<Response>;
-  let release!: (value: Response) => void;
-  const waiting = new Promise<Response>(resolve => { release = resolve; });
-  fetchMock.mockImplementation((url: string, init?: RequestInit) => url === "/api/open-broadcast" ? waiting : originalFetch(url, init));
-  let sending!: Promise<void>; await act(async () => { sending = controller.signAndSend(); });
-  const key = openAttemptKey(wallet), raw = window.localStorage.getItem(key)!;
-  const original = JSON.parse(raw), newer = { ...original, signature: bs58.encode(new Uint8Array(64).fill(44)) };
-  persistOpenAttempt(window.localStorage, newer);
-  if (event) window.dispatchEvent(new StorageEvent("storage", { key, oldValue: raw, newValue: JSON.stringify(newer) }));
-  await act(async () => { release(Response.json({ error: "preflight", sent: false }, { status: 400 })); await sending; });
-  await advance(450);
-  expect(controller.actionDisabled).toBe(true); expect(controller.signature).toBe(newer.signature);
-  expect(controller.error).not.toContain("safe to retry");
-  expect(window.localStorage.getItem(key)).toBe(JSON.stringify(newer));
-  expect(window.localStorage.getItem(key + ":history:" + original.signature)).toBe(raw);
-  await act(async () => controller.signAndSend());
-  expect(mocks.sign).toHaveBeenCalledTimes(1); expect(calls("/api/open-prepare")).toHaveLength(1);
-  expect(calls("/api/open-broadcast")).toHaveLength(1);
-  fetchMock.mockImplementation(originalFetch); chainStatus = "expired";
-  await act(async () => controller.retryConfirmation()); await advance(450);
-  expect(controller.actionDisabled).toBe(false);
-  chainStatus = "pending"; await act(async () => controller.signAndSend());
-  expect(mocks.sign).toHaveBeenCalledTimes(2); expect(calls("/api/open-broadcast")).toHaveLength(2);
 });

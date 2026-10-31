@@ -37,7 +37,7 @@ beforeEach(() => {
   vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
     const body = JSON.parse(String(init?.body));
     if (url === "/api/verify-sign-token") return Response.json(payload);
-    if (url === "/api/open-status") return Response.json({ signature: body.attempt.signature, status: "pending" });
+    if (url === "/api/transaction-finality") return Response.json({ status: "pending" });
     if (url === "/api/sign-open-prepare") {
       events.push("prepare"); prepareBodies.push(body);
       if (prepareFails) return Response.json({ error: "Jupiter unavailable" }, { status: 503 });
@@ -46,7 +46,7 @@ beforeEach(() => {
       reprepared = { unsignedTransaction: toBase64(tx), permit: "fresh-permit", summary: openSummaryFixture({ wallet, nftMint: mint.toBase58(), blockhash: tx.message.recentBlockhash }) };
       return Response.json(reprepared);
     }
-    if (url === "/api/open-broadcast") {
+    if (url === "/api/tx-send") {
       events.push("broadcast"); broadcastBody = body;
       const signed = VersionedTransaction.deserialize(Buffer.from(body.signedTransaction, "base64"));
       return Response.json({ signature: (await import("bs58")).default.encode(signed.signatures[0]!) });
@@ -73,8 +73,10 @@ it("generates the NFT mint in the browser, wallet signs first, mint signs the wa
   const message = signed.message.serialize();
   expect(nacl.sign.detached.verify(message, signed.signatures[0]!, payer.publicKey.toBytes())).toBe(true);
   expect(nacl.sign.detached.verify(message, signed.signatures[1]!, new PublicKey(prepareBodies[0]!.nftMint).toBytes())).toBe(true);
-  expect(broadcastBody).toMatchObject({ unsignedTransaction: reprepared!.unsignedTransaction, permit: "fresh-permit", wallet });
-  expect((broadcastBody!.summary as { nftMint: string }).nftMint).toBe(prepareBodies[0]!.nftMint);
+  // The relay only carries signed bytes; the position mint in them is the browser-generated one.
+  expect(Object.keys(broadcastBody!)).toEqual(["signedTransaction"]);
+  expect(signed.message.staticAccountKeys[1]!.toBase58()).toBe(prepareBodies[0]!.nftMint);
+  expect(reprepared).toBeDefined();
   expect(container.textContent).toContain("Transaction submitted successfully");
 });
 

@@ -12,6 +12,7 @@ import { rpcConnection } from "./rpc";
 import { inputMintReason } from "./wallet-discovery";
 import { fetchJupiterPricesUsd, fetchRaydiumPoolUsdPrices } from "./token-prices";
 import { getJupiterApiKey } from "./config/server-env";
+import { withContextSlotRetry } from "./rpc/context-slot";
 
 export type PositionSelection = { positionMint: string; inputMint: string; inputKind: "native" | "token" };
 const tokenPrograms = [TOKEN_PROGRAM_ID.toBase58(), TOKEN_2022_PROGRAM_ID.toBase58()];
@@ -58,7 +59,7 @@ export async function readSelectedPositionState(
   // Slot-context reads bypass the general account cache on execution paths.
   let slot = 0;
   const read = async (keys: PublicKey[]) => {
-    const snapshot = await connection.getMultipleAccountsInfoAndContext(keys, { commitment: "confirmed", minContextSlot: slot });
+    const snapshot = await withContextSlotRetry(() => connection.getMultipleAccountsInfoAndContext(keys, { commitment: "confirmed", minContextSlot: slot }));
     slot = Math.max(slot, snapshot.context.slot);
     return snapshot;
   };

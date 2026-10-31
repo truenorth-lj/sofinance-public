@@ -117,18 +117,20 @@ export function OpenPositionModal({
     : c.openStep && (c.submitStage === "preparing" || c.submitStage === "wallet" || c.submitStage === "broadcasting")
       ? `${stepPrefix}${c.submitStage === "preparing" ? "Preparing open position…" : c.submitStage === "wallet" ? "Sign the open position in your wallet…" : "Sending open position…"}`
     : c.submitStage === "preparing" ? "Preparing latest transaction…"
-    : c.submitStage === "wallet" ? "Waiting for wallet signature…"
+    : c.submitStage === "wallet" ? "Confirm in your wallet…"
       : c.submitStage === "broadcasting" ? "Sending transaction…"
         : c.submitStage === "pending" ? "Waiting for on-chain confirmation…"
-          : c.submitStage === "failed" ? "Transaction failed on-chain"
-            : c.submitStage === "expired" ? "Transaction expired"
+          : c.submitStage === "failed" ? "A safety check stopped it on-chain, so nothing changed except the network fee."
+            : c.submitStage === "expired" ? "It expired before Solana included it, so nothing changed."
         : c.submitStage === "confirmed" ? "Position opened"
           : c.quoteLoading && !quote ? "Fetching quote…"
             : c.actionBlockedReason || "Ready to sign";
 
+  // While signing or sending, a stray backdrop tap must not hide the result.
+  const requestClose = () => { if (!c.closeLocked) onClose(); };
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center" role="dialog" aria-modal="true" aria-labelledby="open-position-title">
-      <button className="absolute inset-0 bg-black/70" aria-label="Close create position" onClick={onClose} />
+      <button className="absolute inset-0 bg-black/70" aria-label="Close create position" onClick={requestClose} disabled={c.closeLocked} />
       <div className="relative z-10 max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-[20px] border border-white/12 bg-char p-5 sm:rounded-[28px] sm:p-6">
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
@@ -136,7 +138,8 @@ export function OpenPositionModal({
             <p className="mt-1 text-xs leading-5 text-smoke">{label}</p>
             <p className="mt-2 text-xs leading-5 text-smoke">Choose a wallet asset and price range. We swap into the pool tokens as needed, then create a new LP position and add liquidity in one transaction.</p>
           </div>
-          <button onClick={onClose} className="rounded-lg p-1 text-smoke hover:text-cream/90" aria-label="Close">
+          <button onClick={requestClose} disabled={c.closeLocked} title={c.closeLocked ? "Wait until the transaction is sent" : undefined}
+            className="rounded-lg p-1 text-smoke hover:text-cream/90 disabled:cursor-not-allowed disabled:opacity-40" aria-label="Close">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -279,12 +282,19 @@ export function OpenPositionModal({
           </div>
         )}
 
-        {(c.quoteError || c.error) && (
+        {(c.quoteError || c.error || c.reprepare) && (
           <div className="mt-3 space-y-2 text-xs leading-5 text-smoke">
             {c.quoteError && <p role="alert" className="text-coral">{c.quoteError}</p>}
             {c.error && <p role="alert" className="text-coral">{c.error}</p>}
+            {c.reprepare && (
+              <button type="button" onClick={() => void c.signAndSend()} disabled={c.actionDisabled} data-testid="open-reprepare"
+                className="rounded-full bg-lemon px-3 py-1.5 text-xs font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-40">
+                {c.actionDisabled && !c.busy ? "Getting a fresh quote…" : "Try again"}
+              </button>
+            )}
           </div>
         )}
+        {c.closeLocked && <p className="mt-3 text-[11px] leading-5 text-smoke" role="status">Keep this window open until the transaction is sent.</p>}
 
         {c.canRefreshQuote && (c.quoteError || (quote && !c.fresh)) && (
           <button type="button" onClick={c.refreshQuote} disabled={c.quoteLoading}
@@ -296,7 +306,7 @@ export function OpenPositionModal({
         {c.signature && c.submitStage !== "confirmed" && <div className="mt-3 space-y-2 text-sm" role="status">
           <p>{status}</p>
           <a className="block text-cream/90 underline" href={`https://solscan.io/tx/${c.signature}`} target="_blank" rel="noreferrer">View original transaction on Solscan</a>
-          <button type="button" onClick={c.retryConfirmation} className="text-cream/90 underline">Check transaction status</button>
+          {c.retryConfirmation && <button type="button" onClick={c.retryConfirmation} className="text-cream/90 underline">Check transaction status</button>}
         </div>}
         {c.unconfirmedSwap && (
           <div className="mt-4 rounded-xl border border-amber-300/40 p-3 text-sm text-cream" role="status">

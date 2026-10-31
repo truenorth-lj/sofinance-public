@@ -1,7 +1,7 @@
 "use client";
 import "@/lib/engine-host";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatAmount, parseTokenAmount, toleranceFromPercent } from "@sofinance/engine/amount";
 import type { PositionSelection, SelectedPositionState } from "@sofinance/engine/selected-state";
 import type { WalletDiscovery } from "@sofinance/engine/wallet-discovery";
@@ -9,10 +9,11 @@ import { DEFAULT_RESALE_FLOOR_BPS, USDC_MINT } from "@sofinance/engine/ids";
 import { INPUT_ASSET_NOT_HELD_CODE, INPUT_ASSET_NOT_HELD_MESSAGE } from "@/lib/selected-input-asset-not-held";
 import { useWalletConnection } from "./wallet-connection";
 import { createJupiterRelayStore } from "@/lib/jupiter/browser-relay";
-import { useSelectedAttempt, useSelectedAttemptEffects } from "./transactions/selected/use-selected-attempt";
 import { useSelectedPreview, useSelectedPreviewEffect } from "./transactions/selected/use-selected-preview";
 import { selectionKey } from "./transactions/selected/selected-preview-model";
-import { useSelectedSubmission } from "./transactions/selected/use-selected-submission";
+import { BALANCES_REFRESH_EVENT } from "@/lib/tx-pipeline";
+import { useTxPipeline } from "./transactions/use-tx-pipeline";
+import { addLiquidityAdapter } from "./transactions/adapters/add";
 
 export { RELAY_DEADLINE_MS } from "./transactions/selected/selected-preview-model";
 
@@ -20,7 +21,7 @@ type ApiError = { error: string; code?: string; inputMint?: string; outputMint?:
 
 export function useSelectedController() {
   const { address: wallet, connected, connect, disconnect, isMobile, walletsCount,
-    connectionError, signTransaction } = useWalletConnection();
+    connectionError, signTransaction, signAndSendTransaction } = useWalletConnection();
   const [discovery, setDiscovery] = useState<WalletDiscovery | null>(null);
   const [selection, setSelection] = useState<PositionSelection | null>(null);
   const [selectedState, setSelectedState] = useState<SelectedPositionState | null>(null);
@@ -30,8 +31,13 @@ export function useSelectedController() {
   const { preview, quoteError, quoteErrorCode, quoteErrorOutputMint, quoteLoading,
     invalidate: invalidatePreview, invalidateForInput: invalidateInputPreview,
     clear: clearPreview, clearErrors: clearQuoteErrors,
-    adopt: adoptPreview, retryCalculation, showQuoteRecalculate } = previewController;
-  const { error, submitStage, busy, clearError, getLifetime, isSubmitting, submit } = useSelectedSubmission();
+    retryCalculation, showQuoteRecalculate } = previewController;
+  const txWallet = useMemo(() => wallet ? { address: wallet, signTransaction, signAndSendTransaction } : null,
+    [wallet, signTransaction, signAndSendTransaction]);
+  const tx = useTxPipeline(addLiquidityAdapter, txWallet);
+  const { busy, reset: clearError } = tx;
+  const submitStage = tx.status === "preparing" || tx.status === "wallet" ? tx.status : null;
+  const error = tx.status === "failed" ? tx.error ?? "" : "";
   const [stateError, setStateError] = useState("");
   const [loadingDiscovery, setLoadingDiscovery] = useState(false);
   const [loadingState, setLoadingState] = useState(false);
@@ -44,12 +50,6 @@ export function useSelectedController() {
   const jupiterStoreRef = useRef(createJupiterRelayStore());
   const getPreviewRelayStore = useCallback(() => jupiterStoreRef.current, []);
   const inputRevisionRef = useRef(0);
-  const getInputRevision = useCallback(() => inputRevisionRef.current, []);
-  const getSelectionKey = useCallback(() => selectionRef.current, []);
-  const isWalletCurrent = useCallback((address: string) => walletRef.current === address, []);
-  const attemptController = useSelectedAttempt({ wallet, busy, getLifetime, isWalletCurrent, isSubmitting });
-  const { attempt, attemptStatus, history, verificationError, obsoletePending, historyWarning,
-    beginSubmission, restoreSignature, publishPersisted, reconcileAttempt, retryReconcile, retryObsoleteReconcile } = attemptController;
   const previewResult = preview.kind === "idle" ? null : preview.result;
   const result = previewResult && previewResult.quote.wallet === wallet &&
     selectionKey(previewResult.quote) === selectionKey(selection) ? previewResult : null;
@@ -134,7 +134,12 @@ export function useSelectedController() {
   useEffect(() => { const timer = window.setTimeout(() => { void refreshState(); }, 0); return () => window.clearTimeout(timer); }, [refreshState]);
   useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 1_000); return () => window.clearInterval(timer); }, []);
 
-  useSelectedAttemptEffects({ wallet, busy }, attemptController);
+  // A transaction notice finished (possibly from a closed panel): refresh balances and position.
+  useEffect(() => {
+    const refresh = () => { void refreshState(); };
+    window.addEventListener(BALANCES_REFRESH_EVENT, refresh);
+    return () => window.removeEventListener(BALANCES_REFRESH_EVENT, refresh);
+  }, [refreshState]);
 
   const visibleState = selectedState?.wallet === wallet && selectionKey(selectedState) === selectionKey(selection)
     ? selectedState : null;
@@ -174,7 +179,6 @@ export function useSelectedController() {
     if (quoteError) return quoteError;
     if (submitStage === "preparing") return "Preparing and checking your transaction…";
     if (submitStage === "wallet") return "Confirm in your wallet";
-    if (submitStage === "broadcasting") return "Sending and checking confirmation…";
     if (calculating) return "Estimating liquidity…";
     if (quote && fresh) return "Preview ready. Final checks run when you add liquidity.";
     if (visibleState.rangeSide === "above") return "Above upper bound: will add single-sided position; no trading fees earned outside range";
@@ -185,14 +189,18 @@ export function useSelectedController() {
   useSelectedPreviewEffect({ wallet, selection, amount, rawAmount, floorBps, toleranceBps, ready, busy,
     getRelayStore: getPreviewRelayStore, isCurrent: isPreviewCurrent, setNow }, previewController);
 
-  const signAndSend = () => submit({ ready, quoteLoading, quote, fresh, wallet, selection, visibleState,
-    amount, rawAmount, floorBps, toleranceBps, attempt, signTransaction,
-    isWalletCurrent, getSelectionKey, getInputRevision, getRelayStore: getPreviewRelayStore,
-    beginSubmission, restoreSignature, publishPersisted, reconcileAttempt,
-    adoptPreview, clearPreview, setNow, refreshState });
+  const signAndSend = async () => {
+    if (!ready || busy || quoteLoading || !quote || !fresh || !wallet || !selection || toleranceBps === null) return;
+    const sent = await tx.run({ selection, amount, rawAmount, floorBps, toleranceBps, relayStore: getPreviewRelayStore() });
+    if (sent && walletRef.current === wallet) { clearPreview(); void refreshState(); }
+  };
+  // The add panel's own view of the shared pipeline: the signature it sent and how it settled.
+  const attempt = tx.signature && wallet && selection ? { signature: tx.signature, wallet, positionMint: selection.positionMint } : null;
+  const attemptStatus = tx.status === "confirming" ? "pending" as const : tx.status === "success" ? "success" as const
+    : tx.signature && tx.status === "failed" ? (tx.kind === "expired" ? "expired" as const : "failed" as const) : null;
 
   const actionLabel = submitStage === "preparing" ? "Preparing latest transaction…" : submitStage === "wallet" ?
-    "Confirming in wallet…" : submitStage === "broadcasting" ? "Sending and verifying…" : "Add liquidity";
+    "Confirm in your wallet…" : "Add liquidity";
   const actionDisabled = busy || !ready || quoteLoading || !quote || !fresh;
   const walletBlocked = busy;
   const primaryAction = () => { void signAndSend(); };
@@ -208,11 +216,10 @@ export function useSelectedController() {
   const choosePosition = (positionMint: string) => setSelection((current) => current ? { ...current, positionMint } : null);
   const chooseAsset = (kind: "native" | "token", mint: string) => setSelection((current) => current ? { ...current, inputKind: kind, inputMint: mint } : null);
   return { wallet, connected, connect, disconnect, isMobile, walletsCount, connectionError,
-    discovery, selection, state: visibleState, amount, tolerancePercent, result: displayedResult, attempt,
-    attemptStatus, obsoletePending, history: history.filter(item => item.wallet === wallet), historyWarning, verificationError,
-    error: error || quoteError, quoteError, quoteErrorCode, quoteErrorOutputMint, showQuoteRecalculate,
+    discovery, selection, state: visibleState, amount, tolerancePercent, result: displayedResult, attempt, attemptStatus,
+    error: error || quoteError, reprepare: tx.status === "failed" && !!tx.retryable, quoteError, quoteErrorCode, quoteErrorOutputMint, showQuoteRecalculate,
     busy, calculating, now, floorBps, quote, fresh, status,
     actionLabel, actionDisabled, walletBlocked, primaryAction, changeAmount, changeTolerance, fillMax,
-    choosePosition, chooseAsset, refreshDiscovery, refreshState, retryCalculation, retryReconcile, retryObsoleteReconcile,
+    choosePosition, chooseAsset, refreshDiscovery, refreshState, retryCalculation,
     loadingDiscovery, loadingState, stateError };
 }

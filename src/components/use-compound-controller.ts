@@ -4,10 +4,9 @@ import "@/lib/engine-host";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { VersionedTransaction } from "@solana/web3.js";
 import { clearsSubmitError, mayStartAnotherAttempt, type AtomicStatus } from "@/lib/attempt-status";
-import { prepareIsStale } from "@sofinance/engine/fresh-blockhash";
+import { sendAndTrack, TxNotSentError } from "@/lib/tx-pipeline";
 import { ApiRequestError, resolveCompoundBroadcastFailure } from "@/lib/public-error";
 import { abandonUnsentCompoundAttempt, compoundAttemptKey, compoundReceiptsKey, loadCompoundAttempt, loadCompoundReceipts, persistCompoundAttempt, persistCompoundReceipt,
-  signedCompoundTransaction,
   type CompoundAttempt, type CompoundPrepared, type CompoundReceipt, type RecoveryPrepared } from "@sofinance/engine/compound-attempt";
 import type { CompoundChainStatus, CompoundPositionState, CompoundSummary } from "@sofinance/engine/compound-types";
 import type { CompoundRecoverySummary } from "@sofinance/engine/compound-recovery-types";
@@ -15,7 +14,6 @@ import { useWalletConnection } from "./wallet-connection";
 import { useCleanupBatchController } from "./use-cleanup-batch-controller";
 import { loadCleanupBatch, cleanupBatchKey } from "@/lib/compound-cleanup-batch-attempt";
 import { notifyPositionHistoryChange } from "@/lib/position-history-refresh";
-import { captureWalletReturnedTxFailure } from "@/lib/sentry/capture";
 import { apiErrorCode, post } from "./transactions/compound/compound-client";
 import { INSUFFICIENT_SOL_CODE } from "@/lib/public-error";
 import { useCompoundPositionSnapshot } from "./transactions/compound/use-compound-position-snapshot";
@@ -289,16 +287,15 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
         if (!current() || externalBlockedRef.current) throw new Error("Wallet or position changed; transaction not yet signed");
         verifyRecoveryAttempt();
         const summary = prepared.summary;
-        if (!prepared.permit || !summary.simulated || Date.now() >= summary.expiresAt ||
+        if (!prepared.permit || !summary.simulated ||
           (receipt ? summary.operation !== "recovery" || (summary as CompoundRecoverySummary).wallet !== wallet :
             summary.operation !== "compound" || (summary as CompoundSummary).state.wallet !== wallet ||
             (summary as CompoundSummary).positionMint !== positionMint)) throw new Error("Simulation result and selection mismatch or expired");
         const unsigned = VersionedTransaction.deserialize(Uint8Array.from(atob(prepared.unsignedTransaction), (item) => item.charCodeAt(0)));
-        const preparedSnapshot = VersionedTransaction.deserialize(unsigned.serialize());
         if (unsigned.message.staticAccountKeys[0]?.toBase58() !== wallet || unsigned.message.recentBlockhash !== summary.blockhash) {
           throw new Error("Transaction payer or blockhash and preparation result mismatch");
         }
-        return { prepared, summary, unsigned, preparedSnapshot };
+        return { prepared, summary, unsigned };
       };
       const acceptClosed = (response: CompoundPrepared | RecoveryPrepared | AlreadyClosedRecovery) => {
         if (!("alreadyClosed" in response)) return false;
@@ -318,31 +315,33 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
         setReceipts(loadCompoundReceipts(window.localStorage, submittedWallet).receipts);
         return true;
       };
-      let response = await requestPrepare();
+      const response = await requestPrepare();
       if (acceptClosed(response)) return "success";
-      let loaded = acceptPrepared(response as CompoundPrepared | RecoveryPrepared);
-      if (prepareIsStale(loaded.summary)) {
-        response = await requestPrepare();
-        if (acceptClosed(response)) return "success";
-        loaded = acceptPrepared(response as CompoundPrepared | RecoveryPrepared);
-      }
+      const loaded = acceptPrepared(response as CompoundPrepared | RecoveryPrepared);
       if (!receipt) setPreview(loaded.summary as CompoundSummary);
-      const { prepared, summary, unsigned, preparedSnapshot } = loaded;
-      setStage("wallet");
-      const signed = await connectionRef.current.signTransaction(unsigned);
-      let signedResult: ReturnType<typeof signedCompoundTransaction>;
-      try {
-        signedResult = signedCompoundTransaction(signed, preparedSnapshot, submittedWallet);
-      } catch (error) {
-        captureWalletReturnedTxFailure(error);
-        throw error;
-      }
-      if (!current() || Date.now() >= summary.expiresAt || externalBlockedRef.current) {
-        throw new Error("Wallet, position, or authorization changed during signing; transaction not broadcast");
-      }
+      const { summary, unsigned } = loaded;
+      if (window.localStorage.getItem(cleanupBatchKey(wallet)) !== cleanupBatchRecord) throw new Error("Cleanup transaction changed in another tab; verify original signatures before continuing.");
       verifyRecoveryAttempt();
+      setStage("wallet");
+      // Shared pipeline send stage: the wallet sends (or signs and we relay once). The
+      // compound record is saved right after send, keyed by the returned signature.
+      const { signature } = await sendAndTrack({
+        flow: "compound", successTitle: receipt ? "Cleanup confirmed" : "Compound confirmed", storage: window.localStorage,
+        wallet: { address: submittedWallet, signTransaction: connectionRef.current.signTransaction,
+          signAndSendTransaction: connectionRef.current.signAndSendTransaction },
+        prepared: { transaction: unsigned, lastValidBlockHeight: summary.lastValidBlockHeight, positionMint: receipt?.positionMint || submittedMint },
+        isCurrent: () => current() && !externalBlockedRef.current && (() => {
+          try { verifyRecoveryAttempt(); } catch (error) {
+            throw new TxNotSentError(error instanceof Error ? error.message : "Transaction record changed, so nothing was sent.");
+          }
+          if (window.localStorage.getItem(cleanupBatchKey(submittedWallet)) !== cleanupBatchRecord) {
+            throw new TxNotSentError("Cleanup transaction changed in another tab, so nothing was sent. Verify the original signatures before continuing.");
+          }
+          return true;
+        })(),
+      });
       const base = { version: 1 as const, wallet: submittedWallet, positionMint: receipt?.positionMint || submittedMint,
-        signature: signedResult.signature, createdAt: Date.now() };
+        signature, createdAt: Date.now() };
       const created: CompoundAttempt = receipt
         ? { ...base, kind: "recovery", summary: summary as CompoundRecoverySummary, sourceSignature: receipt.sourceSignature }
         : { ...base, kind: "compound", summary: summary as CompoundSummary };
@@ -358,12 +357,6 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
       setStage("broadcasting");
       if (!receipt) setFeedback({ phase: "submitting", signature: created.signature, message: "" });
       if (receipt) recoveryWait.current = { signature: created.signature, controller: new AbortController() };
-      if (window.localStorage.getItem(cleanupBatchKey(wallet)) !== cleanupBatchRecord) throw new Error("Cleanup transaction changed in another tab; verify original signatures before continuing.");
-      const broadcast = await post<{ signature: string }>(receipt ? "/api/compound-recover-broadcast" : "/api/compound-broadcast", {
-        wallet: submittedWallet, positionMint: created.positionMint, summary, permit: prepared.permit,
-        unsignedTransaction: prepared.unsignedTransaction, signedTransaction: signedResult.signedTransaction,
-      }, AbortSignal.timeout(15_000));
-      if (broadcast.signature !== created.signature) throw new Error("Broadcast returned inconsistent signature; retain original signature and check on-chain result");
       if (!receipt) updateFeedback(created.signature, { phase: "confirming", message: "" });
       if (receipt) {
         const waiting = recoveryWait.current!;

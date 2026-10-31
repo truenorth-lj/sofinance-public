@@ -1,16 +1,14 @@
 "use client";
 // Step 1/2 of a two-transaction SOL deposit (browser side): prepare the
-// SOL -> pool-token swap, have the wallet sign it, broadcast, and wait for the
+// SOL -> pool-token swap, have the wallet sign and send it, and wait for the
 // amount the swap ACTUALLY delivered (read from the confirmed transaction's
 // token balances by the server, never from the quote).
 import { VersionedTransaction } from "@solana/web3.js";
-import bs58 from "bs58";
-import nacl from "tweetnacl";
 import { assertSolSwapAttempt, clearSolSwapAttempt, completeSolSwapAttempt, persistSolSwapAttempt,
   readSolSwapAttempt, requireSolSwapStorage, SolSwapStorageError, type SolSwapAttempt, type SolSwapStorage } from "./sol-swap-attempt-store";
 import type { PendingSolSwapReceipt } from "./sol-swap-receipt-store";
 import type { SolSwapStepSummary } from "@sofinance/engine/sol-swap-step";
-import { assertWalletReturnedTransaction } from "@/lib/open-signatures";
+import { sendWithWallet, trackTxSignature, TxSendUnknownError, type SendRaw, type TxWallet } from "@/lib/tx-pipeline";
 import { postWithJupiterRelay, type JupiterRelayStore } from "@/lib/jupiter/browser-relay";
 
 export type SolSwapStage = "swap-preparing" | "swap-wallet" | "swap-broadcasting" | "swap-pending";
@@ -51,13 +49,14 @@ export class SolSwapStepError extends Error {
 }
 
 export async function runSolSwapStep(input: {
-  wallet: string; poolId: string; amount: string; requested: string; store: JupiterRelayStore; timeoutMs: number;
-  signTransaction: (transaction: VersionedTransaction) => Promise<VersionedTransaction>;
+  poolId: string; amount: string; requested: string; store: JupiterRelayStore; timeoutMs: number;
+  wallet: TxWallet; sendRaw?: SendRaw;
   setStage: (stage: SolSwapStage) => void; current: () => boolean;
   storage?: SolSwapStorage;
   sleep?: (ms: number) => Promise<void>;
 }): Promise<PendingSolSwapReceipt> {
-  const { wallet, poolId } = input;
+  const wallet = input.wallet.address;
+  const { poolId } = input;
   const storage = input.storage ?? requireSolSwapStorage();
   const pending = readSolSwapAttempt(storage, wallet);
   if (pending) throw new SolSwapStepError("Check the original SOL swap before opening again.", pending.signature);
@@ -70,48 +69,31 @@ export async function runSolSwapStep(input: {
   const summary = prepared.summary;
   if (!input.current() || !prepared.unsignedTransaction || !prepared.permit || !summary ||
     summary.operation !== "sol-swap-step" || summary.wallet !== wallet || summary.poolId !== poolId ||
-    summary.requested !== input.requested || Date.now() >= summary.expiresAt) {
-    throw new Error("Prepared SOL swap expired or incomplete");
+    summary.requested !== input.requested) {
+    throw new Error("Prepared SOL swap is incomplete. Nothing was sent.");
   }
   const unsigned = VersionedTransaction.deserialize(Uint8Array.from(atob(prepared.unsignedTransaction), (c) => c.charCodeAt(0)));
-  const snapshot = VersionedTransaction.deserialize(unsigned.serialize());
   if (unsigned.message.staticAccountKeys[0]?.toBase58() !== wallet || unsigned.message.header.numRequiredSignatures !== 1 ||
     unsigned.message.recentBlockhash !== summary.blockhash) {
     throw new Error("SOL swap transaction payer mismatch");
   }
   if (readSolSwapAttempt(storage, wallet)) throw new Error("SOL swap history changed; check the original transaction.");
   input.setStage("swap-wallet");
-  const signed = await input.signTransaction(unsigned);
-  assertWalletReturnedTransaction(snapshot, signed, wallet);
-  if (!input.current() || Date.now() >= summary.expiresAt) throw new Error("Wallet or input changed during signing; swap not sent");
-  if (!nacl.sign.detached.verify(signed.message.serialize(), signed.signatures[0]!, signed.message.staticAccountKeys[0]!.toBytes())) {
-    throw new Error("Wallet returned an invalid SOL swap signature");
+  // Shared send stage: the wallet broadcasts (or signs and we send once). The attempt is
+  // saved with the returned signature so a reload keeps polling it; nothing is resent.
+  let signature: string;
+  try {
+    signature = (await sendWithWallet(input.wallet, unsigned, { sendRaw: input.sendRaw })).signature;
+  } catch (error) {
+    if (!(error instanceof TxSendUnknownError)) throw error;
+    signature = error.signature;
   }
-  const signature = bs58.encode(signed.signatures[0]!);
   const attempt: SolSwapAttempt = { version: 1, wallet, poolId, signature, outputMint: summary.outputMint,
     outputSymbol: summary.outputSymbol, lastValidBlockHeight: summary.lastValidBlockHeight, createdAt: Date.now() };
   persistSolSwapAttempt(storage, attempt);
-  // A storage subscriber may synchronously invalidate the command. Nothing has been sent yet.
-  if (!input.current()) { clearSolSwapAttempt(storage, attempt); throw new Error("Wallet or input changed; swap not sent"); }
   input.setStage("swap-broadcasting");
-  assertSolSwapAttempt(storage, attempt);
-  let rejection: string | null = null;
-  try {
-    const sent = await fetch("/api/sol-swap-broadcast", {
-      method: "POST", headers: { "Content-Type": "application/json" }, cache: "no-store", signal: AbortSignal.timeout(15_000),
-      body: JSON.stringify({
-        signedTransaction: btoa(String.fromCharCode(...signed.serialize())),
-        unsignedTransaction: prepared.unsignedTransaction, permit: prepared.permit, wallet, summary,
-      }),
-    });
-    const broadcast = await sent.json() as { signature?: string; error?: string; sent?: boolean } | null;
-    if (!sent.ok && broadcast?.sent === false) rejection = broadcast.error || "SOL swap was not sent";
-    // Even a successful response with a mismatching signature is uncertain. Always query our own signature.
-  } catch { /* HTTP failures and invalid JSON cannot prove that the signed transaction was not sent. */ }
-  if (rejection !== null) {
-    clearSolSwapAttempt(storage, attempt);
-    throw new SolSwapStepError(rejection, signature);
-  }
+  trackTxSignature({ flow: "swap", signature, lastValidBlockHeight: summary.lastValidBlockHeight, wallet,
+    successTitle: "Step 1/2 swap confirmed" });
   input.setStage("swap-pending");
   return reconcileSolSwapStep(attempt, { storage, current: input.current, sleep: input.sleep });
 }

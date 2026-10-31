@@ -10,6 +10,7 @@ import {
   APPKIT_THEME_VARIABLES,
   FEATURED_SOLANA_WALLET_IDS,
   appKitSignAllTransactions,
+  appKitSignAndSendTransaction,
   appKitSignMessage,
   signAppKitTransaction,
   type AppKitSolanaWalletProvider,
@@ -18,6 +19,7 @@ import { captureGrowthEvent } from "@/lib/analytics/client";
 import { GROWTH_EVENTS } from "@/lib/analytics/events";
 import { WalletGrowthAnalytics } from "./wallet-growth-analytics";
 import { WalletConnectionContext } from "./wallet-connection";
+import { TxNoticeHost } from "./transactions/tx-notice-host";
 
 const projectId = process.env.NEXT_PUBLIC_REOWN_PROJECT_ID?.trim();
 
@@ -73,7 +75,8 @@ export function MobileWalletProvider({ children }: { children: React.ReactNode }
     walletsCount: FEATURED_SOLANA_WALLET_IDS.length,
     connectionError,
     signTransaction: (transaction) => signAppKitTransaction(walletProvider, transaction),
+    signAndSendTransaction: appKitSignAndSendTransaction(walletProvider),
     signAllTransactions: appKitSignAllTransactions(walletProvider),
     signMessage: appKitSignMessage(walletProvider),
-  }}><WalletGrowthAnalytics />{children}</WalletConnectionContext.Provider>;
+  }}><WalletGrowthAnalytics />{children}<TxNoticeHost wallet={account.address} /></WalletConnectionContext.Provider>;
 }

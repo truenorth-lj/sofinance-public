@@ -86,7 +86,7 @@ beforeEach(() => {
     if (path === "/api/compound-state") return read(body);
     if (path === "/api/compound-confirm") return confirm();
     if (path === "/api/compound-prepare") return prepare();
-    if (path === "/api/compound-broadcast") return broadcast();
+    if (path === "/api/tx-send") return broadcast();
     throw new Error(`Unexpected request ${path}`);
   }));
   container = document.createElement("div"); document.body.append(container); root = createRoot(container);
@@ -240,7 +240,7 @@ describe("compound snapshot preservation through the real controller and panel",
       mocks.sign.mockImplementation(async (tx: VersionedTransaction) => { tx.sign([testKeypair(1)]); return tx; });
     }
     await start(); await act(async () => controller.compound());
-    const error = phase === "prepare" ? "prepare failed" : "broadcast unsent Transaction was not sent, safe to retry.";
+    const error = phase === "prepare" ? "prepare failed" : "broadcast unsent. Nothing was sent.";
     expect(controller.error).toBe(error);
     read = () => Response.json(snapshot("100")); await act(async () => { await controller.refreshState(); });
     expect(controller.state?.fees.a).toBe("100"); expect(controller.error).toBe(error);
@@ -248,7 +248,7 @@ describe("compound snapshot preservation through the real controller and panel",
     expect(controller.state?.fees.a).toBe("100"); expect(controller.error).toBe(error); expect(controller.loading).toBe(false);
     await advance(5_000);
     expect(calls.filter(c => c.path === "/api/compound-prepare")).toHaveLength(1);
-    expect(calls.filter(c => c.path === "/api/compound-broadcast")).toHaveLength(phase === "broadcast" ? 1 : 0);
+    expect(calls.filter(c => c.path === "/api/tx-send")).toHaveLength(phase === "broadcast" ? 1 : 0);
     expect(mocks.sign).toHaveBeenCalledTimes(phase === "broadcast" ? 1 : 0);
     expect(onConfirmed).not.toHaveBeenCalled(); expect(notify).not.toHaveBeenCalled();
   });

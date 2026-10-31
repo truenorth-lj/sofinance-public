@@ -10,6 +10,7 @@ import {
 } from "@sofinance/engine/jupiter/errors";
 import { isJupiterNoRouteError, JupiterNoRouteError } from "@sofinance/engine/swap/jupiter";
 import { RPC_UNAVAILABLE_MESSAGE } from "@sofinance/engine/rpc/errors";
+import { RPC_BEHIND_CODE, RPC_BEHIND_MESSAGE } from "@sofinance/engine/rpc/context-slot";
 import { formatSelectedNoRouteMessage, SelectedNoRouteError } from "./selected-no-route";
 import { scrubCredentialText, scrubSensitiveText } from "./sentry/scrub";
 import {
@@ -25,6 +26,11 @@ const PUBLIC_ERROR_LIMIT = 220;
 
 /** Compound prepare/broadcast: wallet SOL cannot cover fees, temporary rent and the 0.01 SOL reserve. */
 export const INSUFFICIENT_SOL_CODE = "insufficient_sol";
+
+/** Solana dropped the transaction once its blockhash aged out (about a minute); it never landed. */
+export const TX_EXPIRED_CODE = "tx_expired";
+export const TX_EXPIRED_MESSAGE =
+  "This transaction expired before Solana included it, so nothing changed. Try again to sign a fresh one.";
 
 /** Prepare/quote rejected a size that would walk the pool through a tick where liquidity changes. */
 export const CROSS_TICK_USER_MESSAGE =
@@ -71,8 +77,9 @@ export function mapKnownChainError(text: string): string | null {
   if (/insufficient funds|insufficient lamports|custom program error:\s*0x1\b/i.test(text)) {
     return "Insufficient tokens or SOL after swap slippage or fees.";
   }
+  if (/minimum context slot has not been reached|-32016\b/i.test(text) || text.includes(RPC_BEHIND_MESSAGE)) return RPC_BEHIND_MESSAGE;
   if (/blockhash not found|blockhash expired|transaction has expired|blockhashNotFound/i.test(text)) {
-    return "Transaction blockhash expired.";
+    return TX_EXPIRED_MESSAGE;
   }
   if (/already in use|already exist/i.test(text)) return "Yield accounts already exist; please reprepare.";
   if (/account not found/i.test(text)) return "Required account was not found on-chain.";
@@ -114,7 +121,10 @@ export function publicErrorCode(error: unknown): string | undefined {
   if (error instanceof JupiterUnavailableError || isJupiterUpstreamError(error)) {
     return JUPITER_UNAVAILABLE_CODE;
   }
+  if (error instanceof Error && (error as { code?: unknown }).code === RPC_BEHIND_CODE) return RPC_BEHIND_CODE;
   const mapped = mapKnownChainError(errorText(error));
+  if (mapped === RPC_BEHIND_MESSAGE) return RPC_BEHIND_CODE;
+  if (mapped === TX_EXPIRED_MESSAGE) return TX_EXPIRED_CODE;
   if (mapped === JUPITER_UNAVAILABLE_MESSAGE) return JUPITER_UNAVAILABLE_CODE;
   if (mapped === RPC_UNAVAILABLE_MESSAGE) return RPC_UNAVAILABLE_CODE;
   return undefined;
@@ -141,7 +151,8 @@ export function sanitizePublicError(error: unknown, fallback: string): string {
     console.info("cross-tick", sanitizeDetail(scrubSensitiveText(raw)).slice(0, 300));
     return mapped;
   }
-  if (mapped === RPC_UNAVAILABLE_MESSAGE || mapped === JUPITER_UNAVAILABLE_MESSAGE) return mapped;
+  if (mapped === RPC_UNAVAILABLE_MESSAGE || mapped === JUPITER_UNAVAILABLE_MESSAGE ||
+    mapped === RPC_BEHIND_MESSAGE || mapped === TX_EXPIRED_MESSAGE) return mapped;
   const detail = sanitizeDetail(raw);
   if (mapped && detail) {
     const combined = detail.toLowerCase().includes(mapped.toLowerCase().slice(0, 24)) ? mapped : `${mapped} ${detail}`;
@@ -153,6 +164,7 @@ export function sanitizePublicError(error: unknown, fallback: string): string {
 }
 
 export function notSentRetryMessage(reason: string) {
+  if (/nothing was sent/i.test(reason)) return reason;
   if (/not sent/i.test(reason) && /safe to retry/i.test(reason)) return reason;
   if (/not sent/i.test(reason)) return `${reason} Safe to retry.`;
   return `${reason} Transaction was not sent, safe to retry.`;

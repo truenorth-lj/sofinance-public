@@ -6,6 +6,7 @@ import { MIN_SOL_LAMPORTS, NATIVE_SOL_MINT } from "./ids";
 import { walletPriorityFeeAllowance } from "./wallet-priority-fee";
 import { simulatedInputSpendMatches } from "./amount";
 import type { OpenPoolState } from "./open-state";
+import { withContextSlotRetry } from "./rpc/context-slot";
 
 type VerifyInput = {
   connection: Connection;
@@ -77,9 +78,9 @@ export async function simulateAndVerifyOpenTransaction(input: VerifyInput) {
   // as simulateTransaction, which then runs at or after that slot. Separate read-route calls could
   // land on a provider that lags the simulator, so SOL "before" and "after" came from different
   // slots and anything confirmed in between (a step-1 swap) was billed to this open.
-  const snapshot = await connection.getMultipleAccountsInfoAndContext([...keys, wallet], {
+  const snapshot = await withContextSlotRetry(() => connection.getMultipleAccountsInfoAndContext([...keys, wallet], {
     commitment: "confirmed", ...(input.minContextSlot ? { minContextSlot: input.minContextSlot } : {}),
-  });
+  }));
   const beforeInfos = snapshot.value;
   const before = new Map(keys.map((key, index) => [key.toBase58(), beforeInfos[index] ?? null] as const));
   const tokenBefore = (key: PublicKey, program: string, mint: string) =>
@@ -101,9 +102,9 @@ export async function simulateAndVerifyOpenTransaction(input: VerifyInput) {
   }
   const intermediate = await transactionIntermediateAccounts(connection, transaction, wallet, keys.map(key => key.toBase58()));
   const addresses = [positionAccount.toBase58(), ...keys.map((key) => key.toBase58()), ...intermediate.accounts.map(account => account.address), wallet.toBase58()];
-  const simulation = await connection.simulateTransaction(transaction, {
+  const simulation = await withContextSlotRetry(() => connection.simulateTransaction(transaction, {
     sigVerify, commitment: "confirmed", minContextSlot: Math.max(snapshot.context.slot, intermediate.slot, input.minContextSlot ?? 0), accounts: { encoding: "base64", addresses },
-  });
+  }));
   if (simulation.value.err) {
     throw new Error(`Open-position simulation failed: ${JSON.stringify(simulation.value.err)}; ${simulation.value.logs?.slice(-5).join(" | ") || "no logs"}`);
   }

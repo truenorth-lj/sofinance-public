@@ -4,6 +4,7 @@ import { unpackAccount } from "@solana/spl-token";
 import { Connection, PublicKey, SystemProgram, VersionedTransaction, type AccountInfo } from "@solana/web3.js";
 import { MIN_SOL_LAMPORTS } from "./ids";
 import { walletPriorityFeeAllowance } from "./wallet-priority-fee";
+import { withContextSlotRetry } from "./rpc/context-slot";
 import type { CompoundAccount, CompoundPositionState, CompoundPriorSource } from "./compound-types";
 
 export type CompoundSimulationInput = {
@@ -89,7 +90,7 @@ export async function simulateAndVerifyCompound(input: CompoundSimulationInput) 
     }
   }
   const solBefore = BigInt(before.get(state.wallet)?.lamports ?? 0);
-  const result = await connection.simulateTransaction(transaction, { sigVerify, commitment: "confirmed", minContextSlot: intermediate.slot, accounts: { encoding: "base64", addresses } });
+  const result = await withContextSlotRetry(() => connection.simulateTransaction(transaction, { sigVerify, commitment: "confirmed", minContextSlot: intermediate.slot, accounts: { encoding: "base64", addresses } }));
   if (result.value.err) {
     // A wallet too poor to pay rent fails inside the runtime before our balance check can run.
     const failure = `${JSON.stringify(result.value.err)} ${result.value.logs?.join(" ") ?? ""}`;
