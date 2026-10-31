@@ -246,7 +246,7 @@ describe("fresh compound ownership and historical evidence", () => {
       if (url === "/api/compound-state") return Response.json({ ...fixture.state, positionMint: selectedMint });
       if (url === "/api/compound-confirm") return confirm.promise;
       if (url === "/api/compound-prepare") return prepare.promise;
-      if (url === "/api/compound-broadcast") {
+      if (url === "/api/tx-send") {
         expect(JSON.parse(String(init?.body)).positionMint).toBe(selectedMint);
         return Response.json({ signature: newSignature });
       }
@@ -295,20 +295,22 @@ it("a broadcast timeout unlocks fresh operations while preserving the signature 
     if (url === "/api/compound-state") return Response.json({ ...fixture.state, positionMint: selectedMint });
     if (url === "/api/compound-confirm") return confirm.promise;
     if (url === "/api/compound-prepare") return prepare.promise;
-    if (url === "/api/compound-broadcast") return new Promise<Response>((_, reject) => {
+    if (url === "/api/tx-send") return new Promise<Response>((_, reject) => {
       init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
     });
     throw new Error(`Unexpected request ${url}`);
   });
   await render("compound"); await act(async () => controller.compound());
   await act(async () => prepare.resolve(Response.json(freshPrepared())));
-  const signature = controller.attempt!.signature;
   expect(controller.busy).toBe(true); expect(AbortSignal.timeout).toHaveBeenCalledWith(15_000);
   await advance(15_000); expect(controller.busy).toBe(false); expect(controller.walletBlocked).toBe(false);
-  expect(controller.attempt?.signature).toBe(signature); expect(controller.historyWarning).toContain("unresolved");
+  // A timed-out relay may still have landed: the signed signature is kept and tracked, not resent.
+  const signed = mocks.sign.mock.calls[0]![0] as VersionedTransaction;
+  const signature = bs58.encode(signed.signatures[0]!);
+  expect(controller.attempt?.signature).toBe(signature);
   expect(JSON.parse(window.localStorage.getItem(compoundAttemptKey(fixture.wallet))!).signature).toBe(signature);
   await advance(60_000);
-  expect(fetchMock.mock.calls.filter(([url]) => url === "/api/compound-broadcast")).toHaveLength(1);
+  expect(fetchMock.mock.calls.filter(([url]) => url === "/api/tx-send")).toHaveLength(1);
   expect(mocks.sign).toHaveBeenCalledOnce();
   await act(async () => confirm.resolve(Response.json({ signature, status: "pending", state: null })));
 });
@@ -354,7 +356,7 @@ describe("one-click compound submit dialog", () => {
       if (url === "/api/compound-state") return Response.json({ ...fixture.state, positionMint: selectedMint });
       if (url === "/api/compound-confirm") return confirmReply();
       if (url === "/api/compound-prepare") return Response.json(freshPrepared());
-      if (url === "/api/compound-broadcast") return broadcast.promise;
+      if (url === "/api/tx-send") return broadcast.promise;
       throw new Error(`Unexpected request ${url}`);
     });
     await render("compound");
@@ -364,15 +366,15 @@ describe("one-click compound submit dialog", () => {
   const dialog = () => container.querySelector<HTMLDialogElement>("dialog[aria-labelledby='compound-submit-title']");
   const button = (label: string) => [...dialog()!.querySelectorAll("button")].find(b => b.textContent === label);
 
-  it("shows submitting → confirming → confirmed with Solscan, and OK refreshes the position", async () => {
+  it("shows confirming → confirmed with Solscan, and OK refreshes the position", async () => {
     let status: "pending" | "success" = "pending"; let sig = "";
     const run = await submitWith(() => Response.json({ signature: sig, status, chainStatus: status, state: null }));
     sig = run.signature();
-    expect(controller.feedback).toMatchObject({ phase: "submitting", signature: sig });
-    expect(dialog()?.textContent).toContain("Submitting…"); expect(button("OK")).toBeUndefined(); expect(button("Close")).toBeUndefined();
-    expect(dialog()!.querySelector("a")!.getAttribute("href")).toBe(`https://solscan.io/tx/${sig}`);
+    // The record is written once the send returns a signature, so the dialog opens at "Confirming".
+    expect(controller.feedback).toBeNull();
     await act(async () => run.broadcast.resolve(Response.json({ signature: sig }))); await advance(1);
-    expect(dialog()?.textContent).toContain("Confirming…"); expect(controller.busy).toBe(false);
+    expect(dialog()?.textContent).toContain("Confirming…"); expect(button("OK")).toBeUndefined();
+    expect(dialog()!.querySelector("a")!.getAttribute("href")).toBe(`https://solscan.io/tx/${sig}`); expect(controller.busy).toBe(false);
     status = "success"; await advance(4_000);
     expect(controller.feedback?.phase).toBe("success");
     expect(dialog()?.textContent).toContain("Compound confirmed");
@@ -382,7 +384,7 @@ describe("one-click compound submit dialog", () => {
     expect(controller.feedback).toBeNull(); expect(dialog()).toBeNull();
     expect(fetchMock.mock.calls.filter(([url]) => url === "/api/compound-state").length).toBeGreaterThan(statesBefore);
     expect(mocks.refresh.mock.calls.length).toBeGreaterThan(refreshBefore);
-    expect(fetchMock.mock.calls.filter(([url]) => url === "/api/compound-broadcast")).toHaveLength(1);
+    expect(fetchMock.mock.calls.filter(([url]) => url === "/api/tx-send")).toHaveLength(1);
   });
 
   it("shows the chain failure with a Solscan link and a Close button", async () => {

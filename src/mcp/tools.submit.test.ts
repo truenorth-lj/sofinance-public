@@ -228,7 +228,7 @@ describe("submitCompoundTransaction (MCP compound submit)", () => {
 
   it("a state-changed CompoundSendError(sent:false) is sanitized and carries the retry hint", async () => {
     connection.getBlockHeight.mockResolvedValue(151);
-    await expect(submitCompoundTransaction(input())).rejects.toThrow("Transaction blockhash expired. Compound blockhash expired Transaction was not sent, safe to retry.");
+    await expect(submitCompoundTransaction(input())).rejects.toThrow(/expired before Solana included it.*safe to retry/);
   });
 
   it("an unknown-sent failure (signature mismatch) has NO retry hint and is sanitized", async () => {

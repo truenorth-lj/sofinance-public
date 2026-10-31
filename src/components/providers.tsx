@@ -1,6 +1,6 @@
 "use client";
 import "@/lib/engine-host";
-import { ConnectionProvider, WalletProvider, useWallet } from "@solana/wallet-adapter-react";
+import { ConnectionProvider, WalletProvider, useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { WalletModalProvider, useWalletModal } from "@solana/wallet-adapter-react-ui";
 import "@solana/wallet-adapter-react-ui/styles.css";
 import dynamic from "next/dynamic";
@@ -12,6 +12,7 @@ import { WalletGrowthAnalytics } from "./wallet-growth-analytics";
 import { WalletConnectionContext } from "./wallet-connection";
 import { TermsGate } from "./terms-gate";
 import { EvmWalletProvider } from "./evm-wallet-connection";
+import { TxNoticeHost } from "./transactions/tx-notice-host";
 
 const MobileWalletProvider = dynamic(() => import("./mobile-wallet-provider").then((module) => module.MobileWalletProvider), { ssr: false });
 
@@ -33,19 +34,32 @@ function BrowserWalletProvider({ children }: { children: React.ReactNode }) {
 }
 
 function BrowserWalletConnection({ children }: { children: React.ReactNode }) {
-  const { publicKey, connected, disconnect, wallets, signTransaction, signAllTransactions, signMessage } = useWallet();
+  const { publicKey, connected, disconnect, wallets, wallet, signTransaction, sendTransaction, signAllTransactions, signMessage } = useWallet();
+  const { connection } = useConnection();
+  const address = publicKey?.toBase58();
+  // Phantom and other Wallet Standard wallets broadcast themselves (and rebroadcast until expiry).
+  const canSignAndSend = walletSupportsSignAndSend(wallet?.adapter);
   const { setVisible } = useWalletModal();
   return <WalletConnectionContext.Provider value={{
-    address: publicKey?.toBase58(), connected, connect: () => { captureGrowthEvent(GROWTH_EVENTS.walletConnectClicked); setVisible(true); },
+    address, connected, connect: () => { captureGrowthEvent(GROWTH_EVENTS.walletConnectClicked); setVisible(true); },
     disconnect: () => { void disconnect(); }, isMobile: false, walletsCount: wallets.length, connectionError: "",
     signTransaction: async (transaction) => {
       if (!signTransaction) throw new Error("This wallet does not support transaction signing");
       return signTransaction(transaction);
     },
+    signAndSendTransaction: canSignAndSend
+      ? (transaction) => sendTransaction(transaction, connection, { preflightCommitment: "confirmed" })
+      : undefined,
     signAllTransactions: signAllTransactions ? (transactions) => signAllTransactions(transactions) : undefined,
     signMessage: signMessage ? async (message) => {
       const signature = await signMessage(message);
       return signature;
     } : undefined,
-  }}><WalletGrowthAnalytics />{children}</WalletConnectionContext.Provider>;
+  }}><WalletGrowthAnalytics />{children}<TxNoticeHost wallet={address} /></WalletConnectionContext.Provider>;
+}
+
+/** True only for Wallet Standard wallets that expose `solana:signAndSendTransaction`. */
+export function walletSupportsSignAndSend(adapter: unknown): boolean {
+  const standard = adapter as { wallet?: { features?: Record<string, unknown> } } | undefined;
+  return !!standard?.wallet?.features?.["solana:signAndSendTransaction"];
 }

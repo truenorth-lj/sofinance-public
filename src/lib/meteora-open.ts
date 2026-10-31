@@ -22,6 +22,7 @@ import type { BuildRoute } from "@sofinance/engine/swap/jupiter";
 import { JUPITER_ROUTE_ATTEMPTS, isTxOversizeError, type JupiterRouteConstraints } from "@sofinance/engine/jupiter-route-retry";
 import { assertOpenTransactionSize, compactAtaInstructions, compileCompactOpenTransaction, openLookupTableReader, versionedTransactionSize } from "@sofinance/engine/open-transaction";
 import { ATOMIC_COMPUTE_UNIT_LIMIT, measuredComputeUnitLimit } from "@sofinance/engine/transaction-limits";
+import { withContextSlotRetry } from "@sofinance/engine/rpc/context-slot";
 
 /**
  * Meteora DLMM open flow (design PR12): BUILD + SIMULATE only. Two transactions:
@@ -242,9 +243,9 @@ function cuLimit(units: number) {
 }
 
 async function simulate(connection: Connection, transaction: VersionedTransaction, addresses: PublicKey[], minContextSlot: number) {
-  const result = await connection.simulateTransaction(transaction, {
+  const result = await withContextSlotRetry(() => connection.simulateTransaction(transaction, {
     sigVerify: false, commitment: "confirmed", minContextSlot, accounts: { encoding: "base64", addresses: addresses.map((a) => a.toBase58()) },
-  });
+  }));
   if (result.value.err) {
     throw new Error(`Meteora simulation failed: ${JSON.stringify(result.value.err)}; ${result.value.logs?.slice(-6).join(" | ") || "no logs"}`);
   }

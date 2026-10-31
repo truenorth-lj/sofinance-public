@@ -8,6 +8,8 @@ import nacl from "tweetnacl";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
+// The relay permit has its own tests (tx-send route); here only the prepare permit issuer is observed.
+vi.mock("@/lib/tx-send/permit", () => ({ sendPermitFor: vi.fn(() => "send-permit") }));
 vi.mock("@sofinance/engine/api-input", () => ({ parseSelectedQuoteRequest: vi.fn(), parseWallet: vi.fn((w: string) => w) }));
 vi.mock("@/lib/open-api", () => ({ parseOpenQuoteRequest: vi.fn(), parseOpenPrepareRequest: vi.fn() }));
 vi.mock("@/lib/compound-api", () => ({ parseCompoundSelection: vi.fn(), readCompoundBody: vi.fn() }));

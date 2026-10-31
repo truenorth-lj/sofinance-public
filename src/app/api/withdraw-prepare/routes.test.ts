@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
+vi.mock("@/lib/tx-send/permit", () => ({ sendPermitFor: vi.fn(() => "send-permit") }));
 const mocks = vi.hoisted(() => ({ build: vi.fn(), send: vi.fn(), status: vi.fn() }));
 vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: () => ({}) }));
 vi.mock("@sofinance/engine/withdraw/build", () => ({ buildWithdraw: mocks.build }));
@@ -7,7 +8,6 @@ vi.mock("@/lib/withdraw/send", () => ({ submitWithdraw: mocks.send }));
 vi.mock("@/lib/withdraw/status", () => ({ withdrawStatus: mocks.status }));
 import { POST as quote } from "../withdraw-quote/route";
 import { POST as prepare } from "./route";
-import { POST as broadcast } from "../withdraw-broadcast/route";
 import { POST as status } from "../withdraw-status/route";
 const request = (body: unknown) => new Request("http://localhost/api/withdraw", { method: "POST", body: JSON.stringify(body) });
 describe("withdraw routes", () => {
@@ -25,17 +25,12 @@ describe("withdraw routes", () => {
         expect(await result.json()).toHaveProperty("permit", "permit");
         expect(mocks.build).toHaveBeenCalledWith({ percent: 100 });
     });
-    it("delegates signed broadcast and status verification", async () => {
-        mocks.send.mockResolvedValue({ signature: "signature" });
+    it("delegates status verification", async () => {
         mocks.status.mockResolvedValue({ status: "pending" });
-        expect(await (await broadcast(request({ permit: "permit" }))).json()).toEqual({ signature: "signature" });
-        expect(mocks.send).toHaveBeenCalledWith({ permit: "permit" });
         expect(await (await status(request({ signature: "signature" }))).json()).toEqual({ status: "pending" });
     });
-    it("fails closed on high impact preparation and invalid signed authorization", async () => {
+    it("fails closed on high impact preparation", async () => {
         mocks.build.mockRejectedValue(new Error("Confirm the high price impact before continuing"));
-        mocks.send.mockRejectedValue(new Error("Withdrawal authorization does not match transaction"));
         expect((await prepare(request({}))).ok).toBe(false);
-        expect((await broadcast(request({}))).ok).toBe(false);
     });
 });

@@ -41,8 +41,8 @@ it.each(["manual-review","failed","expired"])("does not notify history for withd
 it("offers a one-click retry after an expired first send that never landed",async()=>{
  checkpoint("atomic");vi.stubGlobal("fetch",vi.fn(async()=>Response.json({status:"expired"})));
  await render();await click("Resume withdrawal");
- expect(container.textContent).toContain("expired before it landed");
- expect(Array.from(container.querySelectorAll("button")).some(b=>b.textContent==="Retry withdrawal")).toBe(true);
+ expect(container.textContent).toContain("expired before Solana included it");
+ expect(Array.from(container.querySelectorAll("button")).some(b=>b.textContent==="Try again")).toBe(true);
 });
 it("Withdraw without a preview fetches one and shows loading, then a visible error",async()=>{
  let resolve:(r:Response)=>void=()=>{};

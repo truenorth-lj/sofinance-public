@@ -18,7 +18,8 @@ import { selectedNoRouteError } from "./selected-no-route";
 import { withSelectedRouteRetries } from "./selected-route-retry";
 import { simulateAndVerifySelectedTransaction } from "./selected-simulation";
 import { readSelectedPositionState, type PositionSelection, type SelectedPositionState } from "@sofinance/engine/selected-state";
-import { atomicComputeUnitLimitInstruction, exceedsTxSizeLimit } from "@sofinance/engine/transaction-limits";
+import { atomicComputeUnitLimitInstruction, exceedsTxSizeLimit, measuredComputeUnitLimit } from "@sofinance/engine/transaction-limits";
+import { restampVersionedTransaction } from "@sofinance/engine/fresh-blockhash";
 import { estimateFeeForMessage } from "./rpc-fee-estimate";
 
 export async function buildAndSimulateSelectedZap(
@@ -105,12 +106,12 @@ async function buildAndSimulateSelectedZapOnce(
     ? [createCloseAccountInstruction(nativeAta, wallet, wallet)] : [];
   const tables = [...new Map([...routeTables, ...raydiumTables]
     .map((table) => [table.key.toBase58(), table])).values()];
-  const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+  const { blockhash: simulationBlockhash } = await connection.getLatestBlockhash("confirmed");
   const baseInstructions = await compactAtaInstructions(connection, [atomicComputeUnitLimitInstruction(),
     ...wrapInstructions, ...routeInstructions, ...createAtaInstructions, ...raydiumInstructions, ...cleanupInstructions]);
   assertNoDirectFeeWalletInstructions(baseInstructions, feeConfig.wallet);
   const compile = (instructions: TransactionInstruction[]) => new VersionedTransaction(new TransactionMessage({
-    payerKey: wallet, recentBlockhash: blockhash, instructions,
+    payerKey: wallet, recentBlockhash: simulationBlockhash, instructions,
   }).compileToV0Message(tables));
   try { if (exceedsTxSizeLimit(compile(baseInstructions).serialize().length)) throw new RangeError(); }
   catch { throw new Error("Complete swap + add transaction exceeds 1,232 byte limit, please select simpler route or other asset"); }
@@ -138,13 +139,26 @@ async function buildAndSimulateSelectedZapOnce(
   }
   if (exceedsTxSizeLimit(sizeBytes)) throw new Error(`Complete swap + add transaction ${sizeBytes} bytes, exceeds 1,232 byte limit`);
   if (Date.now() >= quote.expiresAt) throw new Error("Quote expired while constructing transaction, please resimulate");
-  const [verified, fee] = await Promise.all([simulateAndVerifySelectedTransaction({
+  const verified = await simulateAndVerifySelectedTransaction({
     connection, transaction, wallet, state, requested: BigInt(quote.requested),
     expectedLiquidity: BigInt(quote.liquidity), sigVerify: false, useStateSnapshot: true,
-  }), estimateFeeForMessage(connection, transaction.message)]);
+  });
+  // Simulated with the 1.4M ceiling; ship the measured limit (same as open) so a wallet-added
+  // priority fee, priced per requested CU, stays small. The fresh blockhash is fetched after
+  // simulation so the wallet gets the full validity window. Broadcast re-simulates the signed
+  // message, so a too-tight limit is rejected there instead of failing on-chain.
+  const latest = await connection.getLatestBlockhash("confirmed");
+  const { blockhash, lastValidBlockHeight } = latest;
+  const shipped = restampVersionedTransaction(transaction, blockhash, tables,
+    { computeUnitLimit: measuredComputeUnitLimit(verified.unitsConsumed ?? 0) });
+  assertNoDirectFeeWalletInstructions(TransactionMessage.decompile(shipped.message, { addressLookupTableAccounts: tables }).instructions,
+    feeConfig.wallet);
+  const shippedBytes = shipped.serialize().length;
+  if (exceedsTxSizeLimit(shippedBytes)) throw new Error(`Complete swap + add transaction ${shippedBytes} bytes, exceeds 1,232 byte limit`);
+  const fee = await estimateFeeForMessage(connection, shipped.message);
   const timestamp = Date.now();
   const summary = {
-    simulated: true, quote, sizeBytes, unitsConsumed: verified.unitsConsumed,
+    simulated: true, quote, sizeBytes: shippedBytes, unitsConsumed: verified.unitsConsumed,
     feeLamports: fee, lastValidBlockHeight, blockhash,
     positionMint: state.positionMint, positionAccount: state.positionAccount, poolId: state.poolId,
     inputMint: state.inputMint, inputKind: state.inputKind, startingLiquidity: state.liquidity,
@@ -153,5 +167,5 @@ async function buildAndSimulateSelectedZapOnce(
     simulatedDustB: verified.dustB, simulatedSolDebitLamports: verified.solDebitLamports,
     simulatedAt: timestamp, expiresAt: timestamp + QUOTE_TTL_MS,
   };
-  return { summary, transaction };
+  return { summary, transaction: shipped };
 }

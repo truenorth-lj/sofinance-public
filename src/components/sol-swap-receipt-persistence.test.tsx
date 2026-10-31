@@ -15,7 +15,7 @@ import { PublicKey, VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
 import { useOpenPositionController, type OpenPositionPair } from "./use-open-position-controller";
 import { NATIVE_SOL_MINT } from "@sofinance/engine/ids";
-import { openAttemptKey, persistOpenAttempt } from "@/lib/open-attempt";
+import { noticeIdFor, resetTxNotices, settleTxNotice } from "@/lib/tx-pipeline";
 import { buildTransaction, openSummaryFixture, testKeypair, toBase64 } from "@/lib/test-support/send-fixtures";
 import { SOL_SWAP_RECEIPT_TTL_MS, solSwapReceiptKey, type PendingSolSwapReceipt } from "./transactions/open/sol-swap-receipt-store";
 
@@ -37,7 +37,6 @@ const swapSignature = bs58.encode(new Uint8Array(64).fill(7));
 let currentPair: OpenPositionPair;
 let controller: ReturnType<typeof useOpenPositionController>;
 let root: Root, container: HTMLDivElement;
-let chainStatus: string;
 let prepareFails: boolean;
 let swapPrepareFails: boolean;
 let fetchMock: ReturnType<typeof vi.fn>;
@@ -63,6 +62,10 @@ function Harness() {
   return null;
 }
 const calls = (url: string) => fetchMock.mock.calls.filter(([path]) => path === url);
+// Both steps relay signed bytes through /api/tx-send: the step-1 swap has one signer, the open has two (wallet + mint).
+const sends = (signers: number) => calls("/api/tx-send").filter(call =>
+  VersionedTransaction.deserialize(Buffer.from(bodyOf(call).signedTransaction as string, "base64")).signatures.length === signers);
+const swapSends = () => sends(1);
 const bodyOf = (call: unknown[]) => JSON.parse((call[1] as RequestInit).body as string) as Record<string, unknown>;
 async function advance(ms: number) { await act(async () => { await vi.advanceTimersByTimeAsync(ms); }); }
 async function mount() {
@@ -78,7 +81,7 @@ async function reload() {
 
 beforeEach(() => {
   vi.useFakeTimers(); vi.setSystemTime(1700000000000); currentPair = pair; vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  window.localStorage.clear(); mocks.address = wallet; chainStatus = "pending"; prepareFails = false; swapPrepareFails = false;
+  window.localStorage.clear(); mocks.address = wallet; resetTxNotices(); prepareFails = false; swapPrepareFails = false;
   mocks.sign.mockReset(); mocks.growth.mockReset();
   mocks.sign.mockImplementation(async (tx: VersionedTransaction) => { tx.sign([payer]); return tx; });
   fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
@@ -97,7 +100,7 @@ beforeEach(() => {
         requested: "2000000", outputMint: pair.mintA, outputSymbol: "AAA", blockhash: tx.message.recentBlockhash,
         lastValidBlockHeight: 9, expiresAt: Date.now() + 60_000 } });
     }
-    if (url === "/api/sol-swap-broadcast") {
+    if (url === "/api/tx-send") {
       const tx = VersionedTransaction.deserialize(Buffer.from(body.signedTransaction, "base64"));
       return Response.json({ signature: bs58.encode(tx.signatures[0]!) });
     }
@@ -106,11 +109,6 @@ beforeEach(() => {
       if (prepareFails) return Response.json({ error: "Jupiter route unavailable" }, { status: 502 });
       return Response.json(preparedOpen(new PublicKey(body.nftMint), body));
     }
-    if (url === "/api/open-broadcast") {
-      const tx = VersionedTransaction.deserialize(Buffer.from(body.signedTransaction, "base64"));
-      return Response.json({ signature: bs58.encode(tx.signatures[0]!), positionMint: tx.message.staticAccountKeys[1]!.toBase58() });
-    }
-    if (url === "/api/open-status") return Response.json({ signature: body.attempt.signature, status: chainStatus });
     throw new Error(`Unexpected request: ${url}`);
   });
   vi.stubGlobal("fetch", fetchMock);
@@ -128,7 +126,7 @@ describe("step 1/2 receipt persistence", () => {
     await act(async () => controller.changeAmount("0.002")); await advance(450);
     prepareFails = true;
     await act(async () => controller.signAndSend()); await advance(1);
-    expect(calls("/api/sol-swap-broadcast")).toHaveLength(1);
+    expect(swapSends()).toHaveLength(1);
     expect(controller.error).toContain("Step 1/2 done");
     expect(controller.pendingSwap?.delivered).toBe("695");
     expect(stored()).toMatchObject({ wallet, poolId, delivered: "695", outputMint: pair.mintA });
@@ -179,25 +177,12 @@ describe("step 1/2 receipt persistence", () => {
     await act(async () => controller.signAndSend()); await advance(1);
     expect(controller.submitStage).toBe("pending");
     expect(stored()?.openSignature).toBe(controller.signature);
-    chainStatus = "confirmed"; await advance(3000);
+    await act(async () => { settleTxNotice(noticeIdFor(controller.signature), "confirmed"); }); await advance(1);
     expect(controller.submitStage).toBe("confirmed");
     expect(controller.pendingSwap).toBeNull();
     expect(stored()).toBeNull();
     await reload();
     expect(controller.pendingSwap).toBeNull();
-  });
-
-  it("is not consumed by an older confirmed open on the same pool", async () => {
-    const older = preparedOpen(testKeypair(5).publicKey, { inputMint: pair.mintB, inputKind: "token" }).summary;
-    persistOpenAttempt(window.localStorage, { version: 1, wallet, signature: bs58.encode(new Uint8Array(64).fill(9)), nftMint: older.nftMint,
-      positionAccount: older.positionAccount, poolId, tickLower: -60, tickUpper: 60, liquidity: "777", blockhash: older.blockhash,
-      lastValidBlockHeight: 150, createdAt: Date.now() - 60_000 });
-    chainStatus = "confirmed";
-    window.localStorage.setItem(solSwapReceiptKey(wallet, poolId), JSON.stringify(receipt()));
-    await mount(); await advance(3000);
-    expect(window.localStorage.getItem(openAttemptKey(wallet))).not.toBeNull();
-    expect(controller.pendingSwap?.signature).toBe(swapSignature);
-    expect(stored()).not.toBeNull();
   });
 
   it("is never offered for another wallet or another pool, and a wallet switch drops it", async () => {
@@ -250,7 +235,7 @@ describe("step 1/2 receipt persistence", () => {
     await act(async () => controller.signAndSend()); await advance(1);
     expect(failed()).toHaveLength(3);
     expect(failed()[2]).toMatchObject({ open_step: 2, open_resumed: true });
-    expect(calls("/api/sol-swap-broadcast")).toHaveLength(1);
+    expect(swapSends()).toHaveLength(1);
   });
 });
 
@@ -311,12 +296,14 @@ describe("unconfirmed step 1 recovery", () => {
   it("reconciles a lost broadcast response before advancing step 2", async () => {
     const original = fetchMock.getMockImplementation() as (url: string, init?: RequestInit) => Promise<Response>;
     fetchMock.mockImplementation(async (url, init) => {
-      if (url === "/api/sol-swap-broadcast") throw new TypeError("Failed to fetch");
+      if (url === "/api/tx-send" && VersionedTransaction.deserialize(Buffer.from(JSON.parse(String(init?.body)).signedTransaction, "base64")).signatures.length === 1) {
+        throw new TypeError("Failed to fetch");
+      }
       return original(url, init);
     });
     await mount(); await act(async () => controller.chooseAsset("native", NATIVE_SOL_MINT)); await advance(450);
     await act(async () => controller.signAndSend());
-    expect(calls("/api/sol-swap-broadcast")).toHaveLength(1);
+    expect(swapSends()).toHaveLength(1);
     expect(calls("/api/sol-swap-status")).toHaveLength(1);
     expect(calls("/api/open-prepare")).toHaveLength(1);
     expect(localStorage.getItem(solSwapAttemptKey(wallet))).toBeNull();

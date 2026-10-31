@@ -11,7 +11,7 @@ async function fillReadyInput(page: Page) {
   await expect(input).toHaveValue("1");
 }
 
-async function setup(page: Page, wallet: FakeWallet, options: { selectedStateGate?: () => Promise<void>; connectOnly?: boolean; prepareFails?: boolean; uncertainSend?: boolean; previewGate?: Promise<void>; previewFails?: boolean; skipPreviewWait?: boolean; historyStatus?: "pending" | "manual-review" | "invalid" | "legacy"; nativeSol?: boolean } = {}) {
+async function setup(page: Page, wallet: FakeWallet, options: { selectedStateGate?: () => Promise<void>; connectOnly?: boolean; prepareFails?: boolean; uncertainSend?: boolean; previewGate?: Promise<void>; previewFails?: boolean; skipPreviewWait?: boolean; historyStatus?: "pending" | "manual-review" | "invalid" | "legacy"; nativeSol?: boolean; finality?: () => string } = {}) {
   const positionMint = randomAddress(), mintA = randomAddress(), mintB = randomAddress();
   const inputMint = options.nativeSol ? "So11111111111111111111111111111111111111112" : "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
   const poolId = randomAddress(), positionAccount = randomAddress();
@@ -58,15 +58,14 @@ async function setup(page: Page, wallet: FakeWallet, options: { selectedStateGat
         lastValidBlockHeight: 1000, startingLiquidity: state.liquidity, startingBalances: state.balances,
         simulatedSolDebitLamports: "5000" };
     }
-    if (pathname === "/api/selected-broadcast") {
+    if (pathname === "/api/tx-send") {
       if (options.uncertainSend) return route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "Uncertain send" }) });
       const tx = await import("@solana/web3.js").then(({ VersionedTransaction }) =>
         VersionedTransaction.deserialize(Buffer.from(body.signedTransaction, "base64")));
       const bs58 = (await import("bs58")).default;
       value = { signature: bs58.encode(tx.signatures[0]!) };
     }
-    if (pathname === "/api/selected-status") value = { status: options.historyStatus === "manual-review" ? "manual-review" : "pending", state: null, signature: body.signature };
-    if (pathname === "/api/transaction-finality") value = { status: "pending" };
+    if (pathname === "/api/transaction-finality") value = { status: options.finality?.() ?? "pending" };
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(value) });
   });
   if (options.historyStatus) {
@@ -124,7 +123,7 @@ for (const historyStatus of [undefined, "legacy"] as const) {
         ]);
         expect(calls).not.toContain("/api/selected-preflight");
         expect(calls).not.toContain("/api/selected-prepare");
-        expect(calls).not.toContain("/api/selected-broadcast");
+        expect(calls).not.toContain("/api/tx-send");
         expect(wallet.ledger).toEqual([]);
       } finally { release(); }
     });
@@ -154,33 +153,97 @@ test("input enables Add after a lightweight preview; no automatic simulation or 
 test("one Add prepares once, signs the same message, broadcasts once and persists pending", async ({ page, wallet }) => {
   const { calls, add } = await setup(page, wallet);
   await add.click();
-  await expect.poll(() => calls.filter((p) => p === "/api/selected-broadcast").length).toBe(1);
+  await expect.poll(() => calls.filter((p) => p === "/api/tx-send").length).toBe(1);
   expect(calls.filter((p) => p === "/api/selected-prepare")).toHaveLength(1);
   expect(wallet.ledger).toHaveLength(1);
   await expect(page.getByText("Transaction status: pending", { exact: true })).toBeVisible();
   await page.screenshot({ path: test.info().outputPath("add-pending.png") });
 });
 
+for (const viewport of [{ name: "desktop", width: 1280, height: 900 }, { name: "375", width: 375, height: 812 }] as const) {
+  test(`expired add: status dialog offers Try again, which re-prepares and signs a fresh transaction (${viewport.name})`, async ({ page, wallet }) => {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    let finality = "expired";
+    const { calls, add } = await setup(page, wallet, { finality: () => finality });
+    await add.click();
+    await expect.poll(() => calls.filter((p) => p === "/api/tx-send").length).toBe(1);
+    await expect(page.getByText("Transaction status: expired", { exact: true })).toBeVisible();
+    // On a phone the expiry toast overlaps the aside, so open the status dialog from the keyboard.
+    const statusButton = page.getByRole("button", { name: "View transaction status and tx hash" });
+    await statusButton.focus();
+    await page.keyboard.press("Enter");
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByRole("heading", { name: "Transaction expired" })).toBeVisible();
+    const retry = dialog.getByRole("button", { name: "Try again", exact: true });
+    await expect(retry).toBeVisible();
+    await page.screenshot({ path: test.info().outputPath(`add-dialog-expired-try-again-${viewport.name}.png`), animations: "disabled" });
+    finality = "pending";
+    await retry.click();
+    await expect(dialog).toBeHidden();
+    await expect.poll(() => calls.filter((p) => p === "/api/selected-prepare").length).toBe(2);
+    await expect.poll(() => calls.filter((p) => p === "/api/tx-send").length).toBe(2);
+    expect(wallet.ledger).toHaveLength(2);
+  });
+
+  test(`confirmed add: status dialog still shows success after the success toast auto-closes (${viewport.name})`, async ({ page, wallet }) => {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    const { calls, add } = await setup(page, wallet, { finality: () => "confirmed" });
+    await add.click();
+    await expect.poll(() => calls.filter((p) => p === "/api/tx-send").length).toBe(1);
+    await expect(page.getByText("Transaction status: success", { exact: true })).toBeVisible();
+    // SUCCESS_NOTICE_MS is 8 s: wait past it so the success toast has closed on its own.
+    await page.waitForTimeout(9_000);
+    await expect(page.getByRole("button", { name: "Dismiss notice" })).toHaveCount(0);
+    await expect(page.getByText("Transaction status: success", { exact: true })).toBeVisible();
+    const statusButton = page.getByRole("button", { name: "View transaction status and tx hash" });
+    await statusButton.focus();
+    await page.keyboard.press("Enter");
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByRole("heading", { name: "Liquidity added" })).toBeVisible();
+    await expect(dialog.getByRole("heading", { name: "Confirming on Solana…" })).toHaveCount(0);
+    await page.screenshot({ path: test.info().outputPath(`add-dialog-success-after-toast-${viewport.name}.png`), animations: "disabled" });
+  });
+
+  test(`expired add: dismissing the expiry toast keeps the dialog on expired with Try again (${viewport.name})`, async ({ page, wallet }) => {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    const { calls, add } = await setup(page, wallet, { finality: () => "expired" });
+    await add.click();
+    await expect.poll(() => calls.filter((p) => p === "/api/tx-send").length).toBe(1);
+    await expect(page.getByText("Transaction status: expired", { exact: true })).toBeVisible();
+    const dismiss = page.getByRole("button", { name: "Dismiss notice" });
+    await dismiss.first().click();
+    await expect(dismiss).toHaveCount(0);
+    await expect(page.getByText("Transaction status: expired", { exact: true })).toBeVisible();
+    const statusButton = page.getByRole("button", { name: "View transaction status and tx hash" });
+    await statusButton.focus();
+    await page.keyboard.press("Enter");
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByRole("heading", { name: "Transaction expired" })).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "Try again", exact: true })).toBeVisible();
+    await page.screenshot({ path: test.info().outputPath(`add-dialog-expired-toast-dismissed-${viewport.name}.png`), animations: "disabled" });
+  });
+}
+
 test("failed prepare never calls the wallet or broadcast", async ({ page, wallet, guards }) => {
   guards.allowConsole(/^Failed to load resource: the server responded with a status of 400/);
   const { calls, add } = await setup(page, wallet, { prepareFails: true });
-  await add.click(); await expect(page.getByRole("alert").filter({ hasText: "Simulation failed" })).toBeVisible();
-  expect(wallet.ledger).toEqual([]); expect(calls).not.toContain("/api/selected-broadcast");
+  await add.click(); await expect(page.getByRole("alert").filter({ hasText: "Simulation failed" }).first()).toBeVisible();
+  expect(wallet.ledger).toEqual([]); expect(calls).not.toContain("/api/tx-send");
 });
 
 test("wallet instruction-data mutation blocks broadcast", async ({ page, wallet, guards }) => {
   guards.allowConsole(/Wallet removed or changed a required instruction/);
   wallet.mode = "tweak-bytes";
   const { calls, add } = await setup(page, wallet);
-  await add.click(); await expect(page.getByRole("alert").filter({ hasText: "Wallet removed or changed a required instruction" })).toBeVisible();
-  expect(calls).not.toContain("/api/selected-broadcast");
+  await add.click(); await expect(page.getByRole("alert").filter({ hasText: "Wallet removed or changed a required instruction" }).first()).toBeVisible();
+  expect(calls).not.toContain("/api/tx-send");
 });
 
 test("wallet Lighthouse extra instruction still broadcasts", async ({ page, wallet }) => {
   wallet.mode = "lighthouse";
   const { calls, add } = await setup(page, wallet);
   await add.click();
-  await expect.poll(() => calls.filter((p) => p === "/api/selected-broadcast").length).toBe(1);
+  await expect.poll(() => calls.filter((p) => p === "/api/tx-send").length).toBe(1);
   expect(wallet.ledger[0]).toMatchObject({ outcome: "signed", mode: "lighthouse" });
 });
 
@@ -188,21 +251,22 @@ test("wallet raised ComputeBudget priority fee still broadcasts", async ({ page,
   wallet.mode = "priority-fee";
   const { calls, add } = await setup(page, wallet);
   await add.click();
-  await expect.poll(() => calls.filter((p) => p === "/api/selected-broadcast").length).toBe(1);
+  await expect.poll(() => calls.filter((p) => p === "/api/tx-send").length).toBe(1);
   expect(wallet.ledger[0]).toMatchObject({ outcome: "signed", mode: "priority-fee" });
 });
 
 test("ambiguous send warns after reload without locking or automatically resending", async ({ page, wallet }) => {
   const { calls, add } = await setup(page, wallet, { uncertainSend: true });
   await add.click();
-  await expect.poll(() => calls.filter((p) => p === "/api/selected-broadcast").length).toBe(1);
+  await expect.poll(() => calls.filter((p) => p === "/api/tx-send").length).toBe(1);
   await expect(page.getByText("Transaction status: pending", { exact: true })).toBeVisible();
   await page.reload();
-  await expect(page.getByText(/Previous transaction is unconfirmed or needs verification/).first()).toBeVisible();
+  // The shared notice host resumes the saved signature and only polls its status; it never resends.
+  await expect(page.getByText("Checking a previous transaction…", { exact: true }).first()).toBeVisible();
   await fillReadyInput(page);
   await expect(add).toBeEnabled();
   expect(wallet.ledger).toHaveLength(1);
-  expect(calls.filter((p) => p === "/api/selected-broadcast")).toHaveLength(1);
+  expect(calls.filter((p) => p === "/api/tx-send")).toHaveLength(1);
 });
 
 test("mobile shows the same ready preview without overflow or signing", async ({ page, wallet }) => {
@@ -217,13 +281,14 @@ test("mobile shows the same ready preview without overflow or signing", async ({
 for (const historyStatus of ["pending", "manual-review", "invalid", "legacy"] as const) {
   test(`old ${historyStatus} history allows Add and survives reload without signing`, async ({ page, wallet }) => {
     const { calls, add } = await setup(page, wallet, { historyStatus });
-    if (historyStatus !== "legacy") await expect(page.getByText(/Previous transaction is unconfirmed or needs verification/).first()).toBeVisible();
+    // Records from the removed per-flow attempt store are ignored: no blocking banner, no dialog.
+    await expect(page.getByText(/Previous transaction is unconfirmed or needs verification/)).toHaveCount(0);
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await page.reload();
     await fillReadyInput(page);
     await expect(add).toBeEnabled();
     expect(calls).not.toContain("/api/selected-prepare");
-    expect(calls).not.toContain("/api/selected-broadcast");
+    expect(calls).not.toContain("/api/tx-send");
     expect(wallet.ledger).toEqual([]);
     await page.screenshot({ path: test.info().outputPath(`history-${historyStatus}.png`) });
   });

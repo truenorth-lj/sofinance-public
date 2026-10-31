@@ -4,12 +4,12 @@ import "@/lib/engine-host";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { VersionedTransaction } from "@solana/web3.js";
-import bs58 from "bs58";
 import { LoaderCircle, CircleAlert, CheckCircle2 } from "lucide-react";
 import { InkHero, InkShell, InkCard, InkNav } from "@/components/ink";
 import { useWalletConnection } from "@/components/wallet-connection";
 import { notSentRetryMessage } from "@/lib/public-error";
-import { addMintSignature, assertWalletReturnedTransaction, preserveExtraSignatures } from "@/lib/open-signatures";
+import { addMintSignature, preserveExtraSignatures } from "@/lib/open-signatures";
+import { plainTxError, sendAndTrack, TxNotSentError, TxRunError } from "@/lib/tx-pipeline";
 import { createEphemeralMint, type EphemeralMint } from "@/lib/ephemeral-mint";
 import type { PendingSignPayload } from "@/lib/pending-sign-token";
 import { openAttemptFromSummary, type OpenAttempt } from "@/lib/open-attempt";
@@ -26,7 +26,7 @@ const short = (value: string) => `${value.slice(0, 5)}…${value.slice(-5)}`;
 export default function SignPage() {
   const params = useParams<{ token: string }>();
   const router = useRouter();
-  const { address: wallet, connected, connect, disconnect, signTransaction } = useWalletConnection();
+  const { address: wallet, connected, connect, disconnect, signTransaction, signAndSendTransaction } = useWalletConnection();
   
   const [payload, setPayload] = useState<PendingSignPayload | null>(null);
   const open = useOpenAttempt(payload?.kind === "open-position" ? wallet : undefined);
@@ -53,6 +53,7 @@ export default function SignPage() {
   const [signStatus, setSignStatus] = useState<"idle" | "signing" | "submitting" | "success">("idle");
   const [error, setError] = useState("");
   const [signature, setSignature] = useState("");
+  const [uncertain, setUncertain] = useState("");
 
   const verificationSignature = payload?.kind === "open-position" ? open.attempt?.signature || signature : signature;
 
@@ -108,11 +109,11 @@ export default function SignPage() {
     if (!payload || !wallet || wallet !== payload.wallet) return;
     if (payload.kind === "open-position" && (!open.loaded || open.pending)) return;
     let openAttempt: OpenAttempt | null = null;
-    let unsent = false;
     let mint: EphemeralMint | undefined;
     
     setSignStatus("signing");
     setError("");
+    setUncertain("");
     const openProperties = payload.kind === "open-position"
       ? openEventProperties({
         poolAddress: (payload.submitArgs.summary as OpenPositionSummary).poolId,
@@ -123,10 +124,11 @@ export default function SignPage() {
     if (payload.kind === "open-position") captureGrowthEvent(GROWTH_EVENTS.openStarted, openProperties);
     
     try {
-      let prepared = {
+      let prepared: { unsignedTransaction: string; permit: unknown; summary: unknown; sendPermit?: string } = {
         unsignedTransaction: payload.unsignedTransaction,
         permit: payload.submitArgs.permit,
         summary: payload.submitArgs.summary,
+        sendPermit: (payload as { sendPermit?: string }).sendPermit,
       };
       if (payload.kind === "open-position" && payload.openRequest) {
         // MCP open without nftMint: the mint is created here, the server re-prepares with
@@ -138,13 +140,13 @@ export default function SignPage() {
           body: JSON.stringify({ token: signToken, nftMint: mint.publicKey.toBase58() }),
           cache: "no-store",
         });
-        const data = await response.json() as { unsignedTransaction?: string; permit?: string; summary?: OpenPositionSummary; error?: string };
+        const data = await response.json() as { unsignedTransaction?: string; permit?: string; sendPermit?: string; summary?: OpenPositionSummary; error?: string };
         if (!response.ok) throw new Error(notSentRetryMessage(data.error || "Open-position preparation failed"));
         if (identityRef.current !== identity || !data.unsignedTransaction || !data.permit || !data.summary ||
-          data.summary.wallet !== wallet || data.summary.nftMint !== mint.publicKey.toBase58() || Date.now() >= data.summary.expiresAt) {
-          throw new Error("Prepared open-position transaction expired or incomplete");
+          data.summary.wallet !== wallet || data.summary.nftMint !== mint.publicKey.toBase58()) {
+          throw new TxNotSentError("Prepared open-position transaction is incomplete. Nothing was sent.");
         }
-        prepared = { unsignedTransaction: data.unsignedTransaction, permit: data.permit, summary: data.summary };
+        prepared = { unsignedTransaction: data.unsignedTransaction, permit: data.permit, summary: data.summary, sendPermit: data.sendPermit };
       }
       const bytes = Uint8Array.from(atob(prepared.unsignedTransaction), (c) => c.charCodeAt(0));
       const unsigned = VersionedTransaction.deserialize(bytes);
@@ -153,92 +155,45 @@ export default function SignPage() {
         throw new Error("Transaction payer mismatch");
       }
       
-      const preparedSnapshot = VersionedTransaction.deserialize(unsigned.serialize());
-      const signedByWallet = await signTransaction(unsigned);
-      assertWalletReturnedTransaction(preparedSnapshot, signedByWallet, wallet);
-
-      let signed = signedByWallet;
-      if (payload.kind === "open-position") {
-        try {
-          // Browser mint signs after the wallet; legacy links may already carry a mint signature.
-          signed = mint ? addMintSignature(signedByWallet, mint) : preserveExtraSignatures(unsigned, signedByWallet);
-        } finally {
-          mint?.dispose();
-        }
-      }
-      
-      const signatureBytes = signed.signatures[0];
-      if (!signatureBytes || signatureBytes.every((byte) => byte === 0)) {
-        throw new Error("Invalid signature from wallet");
-      }
-      if (payload.kind === "open-position" &&
-        (!signed.signatures[1] || signed.signatures[1].every((byte) => byte === 0))) {
-        throw new Error("Position NFT mint partial signature missing after wallet sign");
-      }
-      
-      const txSignature = bs58.encode(signatureBytes);
-      const signedTransaction = btoa(String.fromCharCode(...signed.serialize()));
+      // Shared pipeline send stage: the wallet sends; a new position mint co-signs after the wallet.
+      const summaryBlockHeight = (prepared.summary as { lastValidBlockHeight?: unknown } | undefined)?.lastValidBlockHeight;
+      const lastValidBlockHeight = Number(payload.submitArgs.lastValidBlockHeight ?? summaryBlockHeight);
       if (payload.kind === "open-position") {
         const summary = prepared.summary as OpenPositionSummary;
-        if (identityRef.current !== identity || Date.now() >= (payload.openRequest ? summary.expiresAt : payload.expiresAt)) throw new Error("Wallet or signing authorization changed; transaction not sent");
-        if (summary.wallet !== wallet || summary.blockhash !== signed.message.recentBlockhash ||
-          signed.message.staticAccountKeys[1]?.toBase58() !== summary.nftMint) throw new Error("Open-position authorization mismatch");
-        openAttempt = openAttemptFromSummary(txSignature, summary);
-        open.track(openAttempt);
-        setSignature(txSignature);
+        if (identityRef.current !== identity) throw new TxNotSentError("Wallet or signing authorization changed. Nothing was sent.");
+        if (summary.wallet !== wallet || summary.blockhash !== unsigned.message.recentBlockhash ||
+          unsigned.message.staticAccountKeys[1]?.toBase58() !== summary.nftMint) throw new TxNotSentError("Open-position authorization mismatch. Nothing was sent.");
       }
-      
-      setSignStatus("submitting");
-      
-      const submitPath = payload.kind === "add-liquidity"
-        ? "/api/selected-broadcast"
-        : payload.kind === "withdraw" ? "/api/withdraw-broadcast"
-        : payload.kind === "open-position"
-          ? "/api/open-broadcast"
-          : "/api/compound-broadcast";
-      
-      const submitBody = payload.kind === "add-liquidity"
-        ? { signedTransaction, unsignedTransaction: prepared.unsignedTransaction, ...payload.submitArgs }
-        : {
-            signedTransaction,
-            unsignedTransaction: prepared.unsignedTransaction,
-            confirmHighImpact: payload.submitArgs.confirmHighImpact,
-            permit: prepared.permit,
-            wallet: payload.submitArgs.wallet,
-            summary: prepared.summary,
-          };
-      
-      const response = await fetch(submitPath, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(submitBody),
-        cache: "no-store",
+      const flow = payload.kind === "add-liquidity" ? "add" : payload.kind === "withdraw" ? "withdraw"
+        : payload.kind === "open-position" ? "open" : "compound";
+      const result = await sendAndTrack({
+        flow, wallet: { address: wallet, signTransaction, signAndSendTransaction },
+        successTitle: flow === "add" ? "Liquidity added" : flow === "withdraw" ? "Withdrawal confirmed"
+          : flow === "open" ? "Position opened" : "Compound confirmed",
+        storage: window.localStorage,
+        prepared: {
+          transaction: unsigned, lastValidBlockHeight: Number.isSafeInteger(lastValidBlockHeight) && lastValidBlockHeight > 0 ? lastValidBlockHeight : Number.MAX_SAFE_INTEGER,
+          sendPermit: prepared.sendPermit,
+          positionMint: payload.kind === "open-position" ? (prepared.summary as OpenPositionSummary).nftMint : undefined,
+          cosign: payload.kind === "open-position"
+            ? (walletSigned) => mint ? addMintSignature(walletSigned, mint) : preserveExtraSignatures(unsigned, walletSigned)
+            : undefined,
+          dispose: () => mint?.dispose(),
+        },
       });
-      
-      const result = await response.json();
-      
-      if (!response.ok) {
-        const reason = result.error || "Transaction submission failed";
-        if (openAttempt && result.sent === false) {
-          open.markUnsent(openAttempt);
-          unsent = true;
-        }
-        throw new Error(result.sent === false ? notSentRetryMessage(reason) : reason);
+      const txSignature = result.signature;
+      if (payload.kind === "open-position") {
+        openAttempt = openAttemptFromSummary(txSignature, prepared.summary as OpenPositionSummary);
+        open.track(openAttempt);
       }
-      
-      if (result.signature !== txSignature) {
-        throw new Error("RPC returned signature mismatch");
-      }
-      
       setSignature(txSignature);
+      setUncertain(result.uncertain ?? "");
       setSignStatus("success");
-      
-      setTimeout(() => {
-        router.push("/app");
-      }, 5000);
+      // An uncertain send stays on this page so the explorer link and the "could not confirm" note remain visible.
+      if (!result.uncertain) setTimeout(() => { router.push("/app"); }, 5000);
     } catch (caught) {
       mint?.dispose();
-      if (payload.kind === "open-position" && (!openAttempt || unsent)) {
+      if (payload.kind === "open-position" && !openAttempt && !(caught instanceof TxRunError && caught.kind === "rejected")) {
         captureGrowthEvent(GROWTH_EVENTS.openFailed, {
           ...openProperties,
           ...openFailureProperties(caught),
@@ -246,7 +201,7 @@ export default function SignPage() {
       }
       setSignStatus("idle");
       setLoadStatus("error");
-      setError(caught instanceof Error ? caught.message : "Signing failed");
+      setError(caught instanceof TxRunError ? caught.message : plainTxError(caught));
     }
   };
 
@@ -267,7 +222,7 @@ export default function SignPage() {
       case "submitting":
         return "Broadcasting transaction to Solana...";
       case "success":
-        return "Transaction submitted successfully! Redirecting to the app...";
+        return uncertain || "Transaction submitted successfully! Redirecting to the app...";
       case "error":
         return error || "An error occurred";
     }

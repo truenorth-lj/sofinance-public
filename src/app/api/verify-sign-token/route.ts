@@ -2,6 +2,7 @@ import "@/lib/engine-host";
 import { verifySignToken } from "@/lib/pending-sign-token";
 import { apiError } from "@/lib/api-response";
 import { getSigningSecret } from "@sofinance/engine/config/server-env";
+import { sendPermitFor } from "@/lib/tx-send/permit";
 
 export async function POST(request: Request) {
   try {
@@ -23,7 +24,10 @@ export async function POST(request: Request) {
       return apiError(new Error("Token invalid, expired, or malformed"), "Token invalid, expired, or malformed");
     }
     
-    return Response.json(payload, {
+    // Relay permit for the prepared transaction (the sign page's fallback send through /api/tx-send).
+    const sendPermit = typeof payload.unsignedTransaction === "string" && payload.unsignedTransaction
+      ? sendPermitFor(payload.wallet, payload.unsignedTransaction, secret) : undefined;
+    return Response.json({ ...payload, ...(sendPermit ? { sendPermit } : {}) }, {
       headers: { "Cache-Control": "no-store" },
     });
   } catch (error) {

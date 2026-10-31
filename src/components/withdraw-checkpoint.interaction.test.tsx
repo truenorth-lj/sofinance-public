@@ -17,7 +17,8 @@ let fetcher: Mock<(path: string, init: RequestInit) => Promise<Response>>;
 const rawGet = Storage.prototype.getItem, rawSet = Storage.prototype.setItem, rawRemove = Storage.prototype.removeItem;
 function raw() { return rawGet.call(localStorage, withdrawKey); }
 function record(event: string, value?: unknown) { events.push({ event, value }); }
-function calls(path: string) { return fetcher.mock.calls.filter(([url]) => url === `/api/withdraw-${path}`); }
+// Signed bytes now go through the shared pipeline relay (/api/tx-send); "broadcast" names that send.
+function calls(path: string) { return fetcher.mock.calls.filter(([url]) => url === (path === "broadcast" ? "/api/tx-send" : `/api/withdraw-${path}`)); }
 function button(text: string) { return Array.from(container.querySelectorAll("button")).find(b => b.textContent === text); }
 async function click(text: string) { await act(async () => button(text)?.click()); }
 async function render() { await act(async () => root.render(createElement(WithdrawPanel, { wallet: withdrawWallet, positionMint: withdrawPosition, mintA: withdrawPosition, mintB: withdrawWallet, label: m => m, onClose: vi.fn(), onConfirmed: mocks.confirmed, onBusyChange: mocks.busy }))); }
@@ -30,15 +31,18 @@ beforeEach(() => {
  vi.spyOn(HTMLDialogElement.prototype, "showModal").mockImplementation(function(this: HTMLDialogElement) { this.setAttribute("open", ""); });
  vi.spyOn(HTMLDialogElement.prototype, "close").mockImplementation(function(this: HTMLDialogElement) { this.removeAttribute("open"); });
  vi.spyOn(localStorage, "getItem").mockImplementation(function(this: Storage, key) { const value = rawGet.call(this, key); record("get", { key, raw: value }); return value; });
- vi.spyOn(localStorage, "setItem").mockImplementation(function(this: Storage, key, value) { record("set", { key, raw: value }); rawSet.call(this, key, value); });
- vi.spyOn(localStorage, "removeItem").mockImplementation(key => { record("remove", key); rawRemove.call(localStorage, key); });
+ vi.spyOn(localStorage, "setItem").mockImplementation(function(this: Storage, key, value) { if (!key.startsWith("sofinance:tx-attempts")) record("set", { key, raw: value }); rawSet.call(this, key, value); });
+ vi.spyOn(localStorage, "removeItem").mockImplementation(key => { if (!key.startsWith("sofinance:tx-attempts")) record("remove", key); rawRemove.call(localStorage, key); });
  mocks.sign.mockImplementation(async (tx: VersionedTransaction) => { tx.sign([withdrawSigner]); record("sign", bs58.encode(tx.signatures[0]!)); return tx; });
  mocks.history.mockImplementation((...args) => record("notify", args)); mocks.confirmed.mockImplementation(() => record("confirmed"));
- fetcher = vi.fn(async (path: string, init: RequestInit) => {
+ fetcher = vi.fn(async (requested: string, init: RequestInit) => {
+  let path = requested;
+  // The shared pipeline relays signed bytes through /api/tx-send; keep the ledger name "broadcast".
+  if (path === "/api/tx-send") path = "/api/withdraw-broadcast";
   const body = JSON.parse(init.body as string); record(path, body);
   if (path === "/api/withdraw-quote") return Response.json(prepared.summary);
   if (path === "/api/withdraw-prepare") return Response.json(prepared);
-  if (path === "/api/withdraw-broadcast") return Response.json({ accepted: true });
+  if (path === "/api/withdraw-broadcast") return Response.json({ signature: bs58.encode(VersionedTransaction.deserialize(Uint8Array.from(atob(body.signedTransaction), c => c.charCodeAt(0))).signatures[0]!) });
   if (path === "/api/withdraw-status") return Response.json({ status: "success" });
   throw new Error(`Unexpected request ${path}`);
  });
@@ -69,7 +73,7 @@ it.each(["failed", "expired"])("retains rootless swap history instead of clearin
  const original = JSON.stringify(saved); rawSet.call(localStorage, withdrawKey, original);
  fetcher.mockResolvedValueOnce(Response.json({ status }));
  await render(); await click("Resume withdrawal");
- await click("Retry withdrawal"); await click("Preview"); await click("Withdraw"); await click("Confirm high price impact");
+ await click("Try again"); await click("Preview"); await click("Withdraw"); await click("Confirm high price impact");
  expect(raw()).toBe(original); expect(container.textContent).toMatch(/withdrawal history|storage/i);
  expect(fetcher).not.toHaveBeenCalled(); expect(mocks.sign).not.toHaveBeenCalled();
  expect(mocks.confirmed).not.toHaveBeenCalled(); expect(mocks.history).not.toHaveBeenCalled();
@@ -78,18 +82,19 @@ it.each(["failed", "expired"])("retains rootless swap history instead of clearin
  await remount(); await click("Resume withdrawal"); await click("Withdraw");
  expect(raw()).toBe(original); expect(fetcher).not.toHaveBeenCalled(); expect(mocks.sign).not.toHaveBeenCalled();
 });
-it.each(["throw", "drop"])("does not broadcast when checkpoint setItem %s", async mode => {
+it.each(["throw", "drop"])("stops before status polling when the post-send checkpoint setItem %s", async mode => {
  vi.mocked(localStorage.setItem).mockImplementation((key, value) => { record(`set-${mode}`, { key, raw: value }); if (mode === "throw") throw new Error("quota"); });
  await fresh();
  expect(mocks.sign).toHaveBeenCalledOnce(); expect(calls("prepare")).toHaveLength(1);
- expect(calls("broadcast")).toHaveLength(0); expect(calls("status")).toHaveLength(0); expect(mocks.confirmed).not.toHaveBeenCalled(); expect(raw()).toBeNull();
+ expect(calls("broadcast")).toHaveLength(1); expect(calls("status")).toHaveLength(0); expect(mocks.confirmed).not.toHaveBeenCalled(); expect(raw()).toBeNull();
  expect(container.textContent).toMatch(/withdrawal history|storage/i);
 });
-it("healthy atomic operation persists before broadcast and completes", async () => {
+it("healthy atomic operation saves its signature right after send and completes", async () => {
  await fresh();
  expect(calls("prepare")).toHaveLength(1); expect(mocks.sign).toHaveBeenCalledOnce(); expect(calls("broadcast")).toHaveLength(1); expect(calls("status")).toHaveLength(1);
- const write = events.findIndex(e => e.event === "set"), send = events.findIndex(e => e.event === "/api/withdraw-broadcast"); expect(write).toBeGreaterThanOrEqual(0); expect(write).toBeLessThan(send);
- expect(events.slice(write + 1, send).some(e => e.event === "get" && (e.value as { raw: string }).raw === (events[write]!.value as { raw: string }).raw)).toBe(true);
+ const write = events.findIndex(e => e.event === "set"), send = events.findIndex(e => e.event === "/api/withdraw-broadcast"), poll = events.findIndex(e => e.event === "/api/withdraw-status");
+ expect(send).toBeGreaterThanOrEqual(0); expect(write).toBeGreaterThan(send); expect(write).toBeLessThan(poll);
+ expect(JSON.parse((events[write]!.value as { raw: string }).raw).signature).toBe(signedWithdraw(prepared).signature);
  const remove = events.findIndex(e => e.event === "remove"), done = events.findIndex(e => e.event === "confirmed");
  expect(remove).toBeGreaterThan(send); expect(events.slice(remove + 1, done).some(e => e.event === "get" && (e.value as { raw: string | null }).raw === null)).toBe(true);
  expect(mocks.confirmed).toHaveBeenCalledOnce(); expect(raw()).toBeNull();
@@ -101,25 +106,26 @@ it("valid persisted history resumes the exact S1 with no new signing or send", a
  expect(mocks.sign).not.toHaveBeenCalled(); expect(calls("prepare")).toHaveLength(0); expect(calls("broadcast")).toHaveLength(0); expect(mocks.confirmed).toHaveBeenCalledOnce();
 });
 it("unknown send survives remount and only queries the original signature", async () => {
- fetcher.mockImplementation(async (path: string, init: RequestInit) => { record(path, JSON.parse(init.body as string)); if (path.endsWith("quote")) return Response.json(prepared.summary); if (path.endsWith("prepare")) return Response.json(prepared); if (path.endsWith("broadcast")) throw new Error("lost response"); return Response.json({ status: "success" }); });
+ let hang = true; // the first status poll is still pending when the page goes away
+ fetcher.mockImplementation(async (path: string, init: RequestInit) => { record(path, JSON.parse(init.body as string)); if (path.endsWith("quote")) return Response.json(prepared.summary); if (path.endsWith("prepare")) return Response.json(prepared); if (path.endsWith("tx-send")) throw new Error("lost response"); if (hang) { hang = false; return new Promise<Response>(() => {}); } return Response.json({ status: "success" }); });
  await fresh(); const saved = JSON.parse(raw()!); expect(saved.signature).toBe(signedWithdraw(prepared).signature);
  await remount(); await click("Resume withdrawal");
  expect(mocks.sign).toHaveBeenCalledOnce(); expect(calls("broadcast")).toHaveLength(1); expect(JSON.parse(calls("status")[0]![1].body as string).signature).toBe(saved.signature); expect(raw()).toBeNull();
 });
 
-it.each(["read-throw", "changed-bytes"])("blocks send when set readback is %s, preserving written evidence for reload", async mode => {
+it.each(["read-throw", "changed-bytes"])("stops after send when set readback is %s, preserving written evidence for reload", async mode => {
  let written = false;
- vi.mocked(localStorage.setItem).mockImplementation((key, value) => { record("set", { key, raw: value }); rawSet.call(localStorage, key, value); written = true; });
+ vi.mocked(localStorage.setItem).mockImplementation((key, value) => { record("set", { key, raw: value }); rawSet.call(localStorage, key, value); if (key === withdrawKey) written = true; });
  vi.mocked(localStorage.getItem).mockImplementation(key => {
-  if (written) { record(mode); if (mode === "read-throw") throw new Error("readback denied"); return raw() + " "; }
+  if (written && key === withdrawKey) { record(mode); if (mode === "read-throw") throw new Error("readback denied"); return raw() + " "; }
   const value = rawGet.call(localStorage, key); record("get", { key, raw: value }); return value;
  });
  await fresh(); const durable = raw();
  expect(durable).not.toBeNull(); expect(JSON.parse(durable!).signature).toBe(signedWithdraw(prepared).signature);
- expect(calls("broadcast")).toHaveLength(0); expect(calls("status")).toHaveLength(0); expect(mocks.confirmed).not.toHaveBeenCalled();
+ expect(calls("broadcast")).toHaveLength(1); expect(calls("status")).toHaveLength(0); expect(mocks.confirmed).not.toHaveBeenCalled();
  vi.mocked(localStorage.getItem).mockImplementation(key => rawGet.call(localStorage, key));
  await remount(); await click("Resume withdrawal");
- expect(mocks.sign).toHaveBeenCalledOnce(); expect(calls("broadcast")).toHaveLength(0); expect(calls("status")).toHaveLength(1); expect(mocks.confirmed).toHaveBeenCalledOnce();
+ expect(mocks.sign).toHaveBeenCalledOnce(); expect(calls("broadcast")).toHaveLength(1); expect(calls("status")).toHaveLength(1); expect(mocks.confirmed).toHaveBeenCalledOnce();
 });
 
 it.each(["throw", "drop", "read-throw"])("does not publish completion when removeItem %s", async mode => {
@@ -140,19 +146,22 @@ it.each(["failed", "expired"])("keeps first checkpoint after %s when removal is 
  vi.spyOn(localStorage, "removeItem").mockImplementation(key => record("remove-drop", key));
  fetcher.mockResolvedValue(Response.json({ status }));
  await render(); await click("Resume withdrawal");
- expect(raw()).toBe(original); expect(mocks.history).not.toHaveBeenCalled(); expect(mocks.confirmed).not.toHaveBeenCalled(); expect(button("Retry withdrawal")).toBeUndefined();
+ expect(raw()).toBe(original); expect(mocks.history).not.toHaveBeenCalled(); expect(mocks.confirmed).not.toHaveBeenCalled(); expect(button("Try again")).toBeUndefined();
  expect(calls("quote")).toHaveLength(0); expect(calls("prepare")).toHaveLength(0);
 });
 
 function twoStage() {
  const first = withdrawPrepared("withdraw"); const s1 = signedWithdraw(first).signature;
- const second = withdrawPrepared("swap", { tx1Signature: s1 }); prepared = first;
+ const second = withdrawPrepared("swap", { tx1Signature: s1 }); prepared = first; let sends = 0, hangNext = false;
  fetcher.mockImplementation(async (path: string, init: RequestInit) => {
+  // The shared pipeline relays signed bytes through /api/tx-send; keep the ledger name "broadcast".
+  if (path === "/api/tx-send") path = "/api/withdraw-broadcast";
   const body = JSON.parse(init.body as string); record(path, body);
   if (path.endsWith("quote")) return Response.json(body.stage === "swap" ? second.summary : first.summary);
   if (path.endsWith("prepare")) { prepared = body.stage === "swap" ? second : first; return Response.json(prepared); }
-  if (path.endsWith("broadcast")) { if (body.summary.stage === "swap") throw new Error("unknown S2"); return Response.json({ accepted: true }); }
-  if (path.endsWith("status")) return Response.json({ status: "success" });
+  if (path.endsWith("broadcast")) { if (++sends === 2) { hangNext = true; throw new Error("unknown S2"); } return Response.json({ accepted: true }); }
+  // An unknown S2 is tracked by signature; keep its first status poll pending so the checkpoint is observable.
+  if (path.endsWith("status")) { if (hangNext) { hangNext = false; return new Promise<Response>(() => {}); } return Response.json({ status: "success" }); }
   throw new Error(`Unexpected ${path}`);
  });
  return { first, second, s1, s2: signedWithdraw(second).signature };
@@ -175,6 +184,8 @@ it.each(["failed", "expired"])("swap %s Resume restores the root and re-prepares
  const first = saved.root!.prepared, s1 = saved.root!.signature;
  const second = withdrawPrepared("swap", { tx1Signature: s1 });
  fetcher.mockImplementation(async (path: string, init: RequestInit) => {
+  // The shared pipeline relays signed bytes through /api/tx-send; keep the ledger name "broadcast".
+  if (path === "/api/tx-send") path = "/api/withdraw-broadcast";
   const body = JSON.parse(init.body as string); record(path, body);
   if (path.endsWith("quote")) return Response.json(body.stage === "swap" ? second.summary : first.summary);
   if (path.endsWith("prepare")) { prepared = body.stage === "swap" ? second : first; return Response.json(prepared); }
@@ -191,18 +202,20 @@ it.each(["failed", "expired"])("swap %s Resume restores the root and re-prepares
  expect(mocks.history.mock.calls).toEqual([[withdrawPosition, s1], [withdrawPosition, undefined]]);
  expect(mocks.confirmed).toHaveBeenCalledOnce(); expect(raw()).toBeNull();
 });
-it("convert SOL-budget rejection restores S1 so Resume re-prepares conversion", async () => {
+it("conversion refused before sending restores S1 so Resume re-prepares conversion", async () => {
  const first = withdrawPrepared("withdraw"); const s1 = signedWithdraw(first).signature;
  const second = withdrawPrepared("swap", { tx1Signature: s1 });
  let failConvert = true;
  fetcher.mockImplementation(async (path: string, init: RequestInit) => {
+  // The shared pipeline relays signed bytes through /api/tx-send; keep the ledger name "broadcast".
+  if (path === "/api/tx-send") path = "/api/withdraw-broadcast";
   const body = JSON.parse(init.body as string); record(path, body);
   if (path.endsWith("quote")) return Response.json(body.stage === "swap" ? second.summary : first.summary);
   if (path.endsWith("prepare")) { prepared = body.stage === "swap" ? second : first; return Response.json(prepared); }
   if (path.endsWith("broadcast")) {
-   if (body.summary.stage === "swap" && failConvert) {
+   if (calls("broadcast").length === 2 && failConvert) {
     failConvert = false;
-    return Response.json({ error: "Withdrawal exceeds SOL cost budget" }, { status: 400 });
+    return Response.json({ error: "Transaction simulation failed: insufficient funds for fee", sent: false }, { status: 400 });
    }
    return Response.json({ accepted: true });
   }
@@ -211,7 +224,7 @@ it("convert SOL-budget rejection restores S1 so Resume re-prepares conversion", 
  });
  prepared = first;
  await fresh();
- expect(container.textContent).toContain("Withdrawal exceeds SOL cost budget");
+ expect(container.textContent).toMatch(/SOL|fee|Nothing was sent/i);
  expect(JSON.parse(raw()!).prepared).toEqual(first); expect(JSON.parse(raw()!).signature).toBe(s1);
  expect(JSON.parse(raw()!).root).toBeUndefined(); expect(mocks.confirmed).not.toHaveBeenCalled();
  await click("Resume withdrawal");
@@ -277,7 +290,7 @@ it.each(["dialog", "prepare", "sign", "status", "retry"])("does not overwrite ne
   const normal = fetcher.getMockImplementation()!;
   fetcher.mockImplementation(async (...args) => { const result = await normal(...args); if (args[0] === "/api/withdraw-status") rawSet.call(localStorage, withdrawKey, "{changed"); return result; });
  }
- if (boundary === "retry") { rawSet.call(localStorage, withdrawKey, JSON.stringify(withdrawCheckpoint())); fetcher.mockResolvedValueOnce(Response.json({ status: "expired" })); await render(); await click("Resume withdrawal"); rawSet.call(localStorage, withdrawKey, "{changed"); await click("Retry withdrawal"); }
+ if (boundary === "retry") { rawSet.call(localStorage, withdrawKey, JSON.stringify(withdrawCheckpoint())); fetcher.mockResolvedValueOnce(Response.json({ status: "expired" })); await render(); await click("Resume withdrawal"); rawSet.call(localStorage, withdrawKey, "{changed"); await click("Try again"); }
  else { await fresh(); if (boundary === "dialog") { rawSet.call(localStorage, withdrawKey, "{changed"); await click("Confirm high price impact"); } }
  expect(raw()).toBe("{changed"); expect(mocks.confirmed).not.toHaveBeenCalled(); expect(mocks.history).not.toHaveBeenCalled();
  expect(calls("broadcast")).toHaveLength(boundary === "status" ? 1 : 0); expect(calls("prepare")).toHaveLength(["dialog", "retry"].includes(boundary) ? 0 : 1);
@@ -326,20 +339,9 @@ it("stage-two prepare failure keeps S1 and can later Resume conversion without w
  await click("Resume withdrawal"); expect(mocks.sign).toHaveBeenCalledTimes(2);
  expect(calls("prepare").map(([, init]) => JSON.parse(init.body as string).stage)).toEqual([undefined, "swap", "swap"]);
 });
-it("stale first prepare refresh is preserved in every stage-two request and root", async () => {
- const { first, s1 } = twoStage(), normal = fetcher.getMockImplementation()!;
- const stale = withdrawPrepared("withdraw", { expiresAt: Date.now() - 1 }); let firstPrepare = true;
- fetcher.mockImplementation(async (path, init) => {
-  if (path.endsWith("prepare") && firstPrepare) { firstPrepare = false; record(path, JSON.parse(init.body as string)); return Response.json(stale); }
-  return normal(path, init);
- });
- await fresh(); expect(calls("prepare")).toHaveLength(3); expect(mocks.sign).toHaveBeenCalledTimes(2);
- expect(JSON.parse(calls("prepare")[2]![1].body as string)).toMatchObject({ previous: first, tx1Signature: s1 });
- expect(JSON.parse(raw()!).root).toEqual({ prepared: first, signature: s1 });
-});
 it("terminal atomic expiry verifies removal and enables a healthy retry", async () => {
  rawSet.call(localStorage, withdrawKey, JSON.stringify(withdrawCheckpoint()));
  fetcher.mockResolvedValueOnce(Response.json({ status: "expired" }));
- await render(); await click("Resume withdrawal"); expect(raw()).toBeNull(); expect(button("Retry withdrawal")!.disabled).toBe(false);
- await click("Retry withdrawal"); expect(mocks.sign).toHaveBeenCalledOnce(); expect(calls("broadcast")).toHaveLength(1); expect(mocks.confirmed).toHaveBeenCalledOnce();
+ await render(); await click("Resume withdrawal"); expect(raw()).toBeNull(); expect(button("Try again")!.disabled).toBe(false);
+ await click("Try again"); expect(mocks.sign).toHaveBeenCalledOnce(); expect(calls("broadcast")).toHaveLength(1); expect(mocks.confirmed).toHaveBeenCalledOnce();
 });

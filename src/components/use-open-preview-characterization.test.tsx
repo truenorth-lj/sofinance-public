@@ -14,7 +14,6 @@ import { PublicKey } from "@solana/web3.js";
 import { OPEN_QUOTE_TIMEOUT_MS, useOpenPositionController, type OpenPositionPair } from "./use-open-position-controller";
 import { NATIVE_SOL_MINT, USDC_MINT } from "@sofinance/engine/ids";
 import { parseTokenAmount } from "@sofinance/engine/amount";
-import { openAttemptKey } from "@/lib/open-attempt";
 import { JUPITER_BROWSER_ORIGIN, resetJupiterBrowserGate } from "@/lib/jupiter/browser-relay";
 import { buildTransaction, openSummaryFixture, testKeypair, toBase64 } from "@/lib/test-support/send-fixtures";
 
@@ -130,10 +129,10 @@ afterEach(async context => {
   await act(async () => root.unmount());
   await act(async () => { for (const p of pending) p.reject(new Error("Owned teardown")); });
   const count = calls().length; await advance(Math.max(31_000, OPEN_QUOTE_TIMEOUT_MS + 1_000)); expect(calls()).toHaveLength(count);
-  note("cleanup", { timers: vi.getTimerCount(), sign: boundary.sign.mock.calls.length, prepare: calls("/api/open-prepare").length, broadcast: calls("/api/open-broadcast").length });
+  note("cleanup", { timers: vi.getTimerCount(), sign: boundary.sign.mock.calls.length, prepare: calls("/api/open-prepare").length, broadcast: calls("/api/tx-send").length });
   expect(vi.getTimerCount()).toBe(0);
   if (!signed) { expect(calls("/api/open-prepare")).toHaveLength(0); expect(boundary.sign).not.toHaveBeenCalled(); }
-  expect(calls("/api/open-broadcast")).toHaveLength(0);
+  expect(calls("/api/tx-send")).toHaveLength(0);
   expect(ledger.filter(x => Array.isArray(x) && x[1] === "storage-write" && String(x[2]).startsWith("sofinance:open"))).toEqual([]);
   } finally {
   // eslint-disable-next-line no-console -- Complete raw baseline/extracted/overlay evidence, never goldens.
@@ -274,11 +273,6 @@ describe("accepted Open preview characterization", () => {
     else if (lifecycle === "suspense") { suspend = false; await render(); await advance(3000); }
     else { await ready(); }
     expect(c.quote).not.toBeNull(); expect(c.actionDisabled).toBe(false);
-  });
-  it("retains wallet-level invalid-history lock and error priority without quote work", async () => {
-    window.localStorage.setItem(openAttemptKey(wallet), "broken"); note("fixture-seeded", ledger.pop()); await mount(); await command("amount", () => c.changeAmount("oops")); await advance(450);
-    expect(c.busy).toBe(true); expect(c.error).toContain("cannot be verified"); expect(c.actionBlockedReason).toContain("original open-position");
-    await command("blocked commands", () => { c.refreshQuote(); c.createAnother(); }); expect(calls()).toHaveLength(0);
   });
   it("shares the real relay cache with prepare and adopts its quote at the wallet boundary", async () => {
     // Single-transaction prepare is token input only (native SOL opens in two steps).

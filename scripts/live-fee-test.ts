@@ -228,7 +228,7 @@ async function main() {
       let finalizedSignature = "";
       const current = prepared;
       await execute(current.unsignedTransaction, current.summary, current.summary.assets.map(a => a.mint),
-        signedTransaction => api("withdraw-broadcast", {wallet, signedTransaction, permit:current.permit, summary:current.summary}, true),
+        signedTransaction => api("tx-send", {signedTransaction}, true),
         async signature => { finalizedSignature = signature; await poll("withdraw-status", {signature,prepared:current}); });
       if (!send) {
         if (current.summary.stage === "withdraw") console.log("Dry-run: step 2 requires an actual finalized step 1; no conversion transaction prepared.");
@@ -270,7 +270,7 @@ async function main() {
     try {
       const prepared = await api<Prepared<OpenPositionSummary>>("open-prepare", { ...body, nftMint: mint.publicKey.toBase58() });
       await execute(prepared.unsignedTransaction, prepared.summary, [inputMint, pair.mintA, pair.mintB],
-        (signedTransaction) => api("open-broadcast", { wallet, signedTransaction, permit: prepared.permit, summary: prepared.summary }, true),
+        (signedTransaction) => api("tx-send", { signedTransaction }, true),
         (signature) => poll("transaction-finality", { signature, lastValidBlockHeight: prepared.summary.lastValidBlockHeight }), [mint]);
     } finally {
       mint.secretKey.fill(0);
@@ -291,18 +291,15 @@ async function main() {
     // simulation and is intentionally not called (prepare itself simulates).
     const p = await api<SelectedPrepared>("selected-prepare", body);
     if (!p.simulated) throw new Error("App did not simulate add");
-    const common = { wallet, selection, requested: p.quote.requested, floorBps: p.quote.floorBps,
-      expiresAt: p.expiresAt, lastValidBlockHeight: p.lastValidBlockHeight, startingLiquidity: p.startingLiquidity,
-      expectedLiquidity: p.quote.liquidity, rangeSide: p.quote.rangeSide, startingBalances: p.startingBalances };
     await execute(p.unsignedTransaction, p, [inputMint, position.mintA, position.mintB],
-      (signedTransaction) => api("selected-broadcast", { ...common, signedTransaction, permit: p.permit }, true),
-      (signature) => poll("selected-status", { ...common, signature, poolId: p.quote.poolId, positionAccount: p.quote.positionAccount }));
+      (signedTransaction) => api("tx-send", { signedTransaction }, true),
+      (signature) => poll("transaction-finality", { signature, lastValidBlockHeight: p.lastValidBlockHeight }));
   } else if (command === "compound") {
     const positionMint = required("position");
     await api("compound-state", { wallet, positionMint });
     const p = await api<Prepared<CompoundSummary>>("compound-prepare", { wallet, positionMint, sourceSignatures: [] });
     await execute(p.unsignedTransaction, p.summary, [p.summary.state.mintA, p.summary.state.mintB, ...p.summary.state.rewards.map((r) => r.mint)],
-      (signedTransaction) => api("compound-broadcast", { wallet, positionMint, summary: p.summary, permit: p.permit, signedTransaction }, true),
+      (signedTransaction) => api("tx-send", { signedTransaction }, true),
       (signature) => poll("compound-confirm", { wallet, attempt: { version: 1, kind: "compound", wallet, positionMint, signature, createdAt: Date.now(), summary: p.summary } }));
   } else if (command === "swap") {
     if (required("from") !== "usdc") throw new Error("Swap helper only accepts --from usdc");

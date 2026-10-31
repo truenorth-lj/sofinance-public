@@ -17,7 +17,6 @@ import type { CompoundRecoverySummary } from "@sofinance/engine/compound-recover
 import { issueCompoundPermit } from "./compound-permit";
 import { issueCleanupBatchPermit, simulateAndVerifyCleanupBatch } from "./compound-cleanup-batch";
 import { resolveCompoundBroadcastFailure } from "./public-error";
-import { POST as recover } from "@/app/api/compound-recover-broadcast/route";
 import { POST as cleanup } from "@/app/api/compound-cleanup-broadcast/route";
 import {
   BLOCKHASH, SIGNING_SECRET, fakeConnection, jsonRequest, messageBase64, signatureOf, testKeypair, toBase64,
@@ -62,7 +61,6 @@ async function fixture(issuePermit: typeof issueCompoundPermit) {
 }
 
 describe.each([
-  { name: "recovery", submit: recover, issuePermit: issueCompoundPermit, simulate: simulateAndVerifyRecovery },
   { name: "cleanup", submit: cleanup, issuePermit: issueCleanupBatchPermit, simulate: simulateAndVerifyCleanupBatch },
 ])("$name send boundary", ({ name, submit, issuePermit, simulate }) => {
   it.each([false, true])("keeps preflight rejection pending (earlier timeout: %s)", async timeoutFirst => {

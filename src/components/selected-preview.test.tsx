@@ -54,7 +54,7 @@ function Harness() {
       error: c.error, quoteError: c.quoteError, code: c.quoteErrorCode, outputMint: c.quoteErrorOutputMint,
       recalculate: c.showQuoteRecalculate, busy: c.busy, calculating: c.calculating,
       fresh: c.fresh, disabled: c.actionDisabled, action: c.actionLabel, status: c.status,
-      attempt: c.attempt, attemptStatus: c.attemptStatus, history: c.history, warning: c.historyWarning,
+      attempt: c.attempt, attemptStatus: c.attemptStatus,
       loadingDiscovery: c.loadingDiscovery, loadingState: c.loadingState });
   });
   return null;
@@ -66,7 +66,7 @@ async function fresh(value = "1") { await input(value); await advance(450); expe
 async function settle() { await advance(10); await advance(10); }
 async function retry() { quoteHandler = good; await act(async () => c.retryCalculation()); await advance(450); expect(c.actionDisabled).toBe(false); }
 function pure() {
-  expect(count("/api/selected-prepare")).toBe(0); expect(count("/api/selected-broadcast")).toBe(0);
+  expect(count("/api/selected-prepare")).toBe(0); expect(count("/api/tx-send")).toBe(0);
   expect(mocks.sign).not.toHaveBeenCalled(); expect(writes).not.toHaveBeenCalled(); expect(removes).not.toHaveBeenCalled();
   expect(notifications).toBe(0);
 }
@@ -243,8 +243,8 @@ it("busy pauses quoting; prepare failure resumes preview and submission error wi
   await advance(2000); expect(count("/api/selected-quote")).toBe(1);
   await act(async () => prepare.resolve(Response.json({ error: "Submit error" }, { status: 400 })));
   expect(c.busy).toBe(false); quoteHandler = async () => Response.json({ error: "Quote error", code: "upstream", outputMint: otherMint }, { status: 400 });
-  await advance(450); expect(c.error).toBe("Submit error"); expect(c.quoteError).toBe("Quote error"); expect(c.status).toBe("Quote error");
-  await retry(); expect(c.error).toBe("Submit error"); await input("2"); expect(c.error).toBe(""); await advance(450);
+  await advance(450); expect(c.error).toBe("Submit error. Nothing was sent."); expect(c.quoteError).toBe("Quote error"); expect(c.status).toBe("Quote error");
+  await retry(); expect(c.error).toBe("Submit error. Nothing was sent."); await input("2"); expect(c.error).toBe(""); await advance(450);
   expect(c.actionDisabled).toBe(false); expect(count("/api/selected-prepare")).toBe(1);
   expect(mocks.sign).not.toHaveBeenCalled(); expect(writes).not.toHaveBeenCalled();
 });
@@ -291,10 +291,10 @@ it.each([1000, 1005])("panel relay cache is shared by explicit prepare at near a
     return Response.json({ error: "Stopped at HTTP prepare boundary" }, { status: 400 });
   };
   await fresh(); expect(requests.filter(r => r.url.startsWith(JUPITER_BROWSER_ORIGIN + "/"))).toHaveLength(1);
-  await act(async () => c.primaryAction()); expect(c.error).toBe("Stopped at HTTP prepare boundary");
+  await act(async () => c.primaryAction()); expect(c.error).toBe("Stopped at HTTP prepare boundary. Nothing was sent.");
   expect(requests.filter(r => r.url.startsWith(JUPITER_BROWSER_ORIGIN + "/"))).toHaveLength(1);
   expect(count("/api/selected-prepare")).toBe(amount === 1000 ? 2 : 3);
-  expect(mocks.sign).not.toHaveBeenCalled(); expect(writes).not.toHaveBeenCalled(); expect(count("/api/selected-broadcast")).toBe(0);
+  expect(mocks.sign).not.toHaveBeenCalled(); expect(writes).not.toHaveBeenCalled(); expect(count("/api/tx-send")).toBe(0);
 });
 
 // Resolve before React flushes effect cleanup: the input command itself must revoke ownership.

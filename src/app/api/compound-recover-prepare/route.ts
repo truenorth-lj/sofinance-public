@@ -7,6 +7,7 @@ import { apiError } from "@/lib/api-response";
 import { getSigningSecret } from "@sofinance/engine/config/server-env";
 import { PublicKey } from "@solana/web3.js";
 import { rpcConnection } from "@sofinance/engine/rpc";
+import { sendPermitFor } from "@/lib/tx-send/permit";
 
 async function sourcesAlreadyClosed(wallet: string, descriptors: unknown, error: unknown) {
   // The builder has already checked each wallet-derived source descriptor.
@@ -31,9 +32,11 @@ export async function POST(request: Request) {
     });
     if ("alreadyClosed" in prepared) return Response.json(prepared, { headers: { "Cache-Control": "no-store" } });
     const { summary, transaction } = prepared;
-    const permit = issueCompoundPermit(getSigningSecret(), { wallet, summary,
+    const secret = getSigningSecret();
+    const permit = issueCompoundPermit(secret, { wallet, summary,
       message: Buffer.from(transaction.message.serialize()).toString("base64") });
-    return Response.json({ summary, permit, unsignedTransaction: Buffer.from(transaction.serialize()).toString("base64") },
+    return Response.json({ summary, permit, unsignedTransaction: Buffer.from(transaction.serialize()).toString("base64"),
+      sendPermit: sendPermitFor(wallet, Buffer.from(transaction.serialize()).toString("base64"), secret) },
       { headers: { "Cache-Control": "no-store" } });
   } catch (error) { return apiError(error, "Remaining yield recovery preparation failed"); }
 }

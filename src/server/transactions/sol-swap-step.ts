@@ -1,18 +1,13 @@
 import "@/lib/engine-host";
 import "server-only";
 import bs58 from "bs58";
-import nacl from "tweetnacl";
-import { PublicKey, VersionedTransaction } from "@solana/web3.js";
-import { buildAndSimulateSolSwapStep, readSolSwapDelivery, type SolSwapStepSummary } from "@sofinance/engine/sol-swap-step";
+import { buildAndSimulateSolSwapStep, readSolSwapDelivery } from "@sofinance/engine/sol-swap-step";
 import { parseTokenAmount } from "@sofinance/engine/amount";
-import { rpcConnection } from "@sofinance/engine/rpc";
-import { exceedsTxSizeLimit, isZeroSignature } from "@sofinance/engine/transaction-limits";
 import { getSigningSecret } from "@sofinance/engine/config/server-env";
-import { issueSolSwapPermit, verifySolSwapPermit } from "@/lib/sol-swap-permit";
+import { issueSolSwapPermit } from "@/lib/sol-swap-permit";
 import { assertSolInputAllowed } from "@/lib/sol-input-policy";
-import { assertWalletReturnedTransaction } from "@/lib/wallet-returned-guard";
-import { CompoundSendError } from "@/lib/public-error";
 import { withFeeEstimateRetry } from "@/lib/rpc-fee-estimate";
+import { sendPermitFor } from "@/lib/tx-send/permit";
 
 /** How long after step 1 lands a step-2 open may still skip the (already paid) fee. */
 export const SOL_SWAP_FEE_CREDIT_MS = 30 * 60_000;
@@ -20,51 +15,11 @@ export const SOL_SWAP_FEE_CREDIT_MS = 30 * 60_000;
 export async function prepareSolSwapStep(wallet: string, poolId: string, amount: string) {
   assertSolInputAllowed({ inputKind: "native" });
   const { summary, transaction } = await withFeeEstimateRetry(() => buildAndSimulateSolSwapStep(wallet, poolId, amount));
-  const permit = issueSolSwapPermit(getSigningSecret(), {
+  const secret = getSigningSecret();
+  const permit = issueSolSwapPermit(secret, {
     wallet, message: Buffer.from(transaction.message.serialize()).toString("base64"), summary,
   });
-  return { summary, permit, unsignedTransaction: Buffer.from(transaction.serialize()).toString("base64") };
-}
-
-export async function sendSignedSolSwapStep(input: {
-  signedTransaction: string; unsignedTransaction: string; permit: string; wallet: string; summary: SolSwapStepSummary;
-}) {
-  const connection = rpcConnection();
-  let signed: VersionedTransaction;
-  try {
-    signed = VersionedTransaction.deserialize(Buffer.from(input.signedTransaction, "base64"));
-    const prepared = VersionedTransaction.deserialize(Buffer.from(input.unsignedTransaction, "base64"));
-    const { summary, wallet } = input;
-    if (!verifySolSwapPermit(getSigningSecret(), {
-      wallet, message: Buffer.from(prepared.message.serialize()).toString("base64"), summary,
-    }, input.permit)) throw new Error("Transaction does not match the simulated SOL swap authorization");
-    if (summary.operation !== "sol-swap-step" || summary.wallet !== wallet || summary.expiresAt <= Date.now() ||
-      summary.blockhash !== signed.message.recentBlockhash) {
-      throw new Error("SOL swap authorization type, wallet, or expiry mismatch");
-    }
-    assertWalletReturnedTransaction(prepared, signed, wallet);
-    const walletKey = new PublicKey(wallet);
-    const signature = signed.signatures[0];
-    if (signed.message.header.numRequiredSignatures !== 1 || signed.message.staticAccountKeys[0]?.toBase58() !== wallet ||
-      exceedsTxSizeLimit(signed.serialize().length) || isZeroSignature(signature) ||
-      !nacl.sign.detached.verify(signed.message.serialize(), signature!, walletKey.toBytes())) {
-      throw new Error("SOL swap payer, signature, or transaction size mismatch");
-    }
-    if (await connection.getBlockHeight("confirmed") > summary.lastValidBlockHeight) throw new Error("Transaction blockhash expired");
-  } catch (error) {
-    throw new CompoundSendError(error, false);
-  }
-  const expected = bs58.encode(signed.signatures[0]!);
-  try {
-    const sent = await connection.sendRawTransaction(signed.serialize(), {
-      skipPreflight: false, preflightCommitment: "confirmed", maxRetries: 3,
-    });
-    if (sent !== expected) throw new Error("RPC returned transaction signature mismatch");
-  } catch (error) {
-    // A lost response may follow an accepted send; the client keeps polling the signature.
-    throw new CompoundSendError(error);
-  }
-  return { signature: expected };
+  return { summary, permit, unsignedTransaction: Buffer.from(transaction.serialize()).toString("base64"), sendPermit: sendPermitFor(wallet, Buffer.from(transaction.serialize()).toString("base64"), secret) };
 }
 
 export async function readSolSwapStepStatus(wallet: string, signature: string, outputMint: string, lastValidBlockHeight?: number) {

@@ -6,7 +6,6 @@ import { SelectedApp } from "./selected-app";
 import { WalletConnectionContext, type WalletConnection } from "./wallet-connection";
 import { testKeypair } from "@/lib/test-support/send-fixtures";
 import { PublicKey, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
-import bs58 from "bs58";
 import { USDC_MINT } from "@sofinance/engine/ids";
 
 // Framework routing boundary only. SelectedApp and both controllers are real.
@@ -100,7 +99,7 @@ afterEach(async context => {
     expect(calls.filter(c => /broadcast/.test(c.path))).toHaveLength(0);
   }
   // eslint-disable-next-line no-console -- Raw actual-caller preservation ledger.
-  console.log("SELECTED_CALLER_LEDGER " + JSON.stringify({ name: context.task.name, calls, views, writes: writes.mock.calls, sign: vi.mocked(connection.signTransaction).mock.calls.length, send: count("/api/selected-broadcast") }));
+  console.log("SELECTED_CALLER_LEDGER " + JSON.stringify({ name: context.task.name, calls, views, writes: writes.mock.calls, sign: vi.mocked(connection.signTransaction).mock.calls.length, send: count("/api/tx-send") }));
   container.remove(); vi.clearAllTimers(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals();
 });
 it("real Add busy blocks compound, then healthy preview resumes after HTTP failure", async () => {
@@ -133,23 +132,7 @@ it.each(["jupiter_no_route", "upstream"])("real caller preserves %s presentation
   expect(count("/api/selected-prepare")).toBe(0);
 });
 
-it("attempt: invalid retained history warns in actual caller without locking fresh Add", async () => {
-  await act(async () => root.unmount());
-  const key = `sofinance:selected-atomic:v2:${wallet}`;
-  localStorage.setItem(key, "invalid retained record"); writes.mockClear();
-  root = createRoot(container);
-  await act(async () => root.render(<WalletConnectionContext.Provider value={connection}><SelectedApp initialView="deposit" /></WalletConnectionContext.Provider>));
-  await advance(30); await advance(30); await advance(30);
-  expect(container.textContent).toContain("starting again may add liquidity twice");
-  await ready(); await click("View add liquidity transaction");
-  await click("Add liquidity"); expect(count("/api/selected-prepare")).toBe(1);
-  await act(async () => release(Response.json({error:"Preparation rejected"},{status:400})));
-  expect(localStorage.getItem(key)).toBe("invalid retained record");
-  expect(button("Add liquidity").disabled).toBe(false); snapshot("history retained after prepare failure");
-});
-
-
-it("submission caller: wallet and broadcast stages lock compound and preserve an uncertain visible receipt", async () => {
+it("submission caller: wallet and send stages lock compound; a refused send frees both in plain words", async () => {
   submissionCase = true;
   let finishSign!: (tx: VersionedTransaction) => void, finishSend!: (r: Response) => void;
   let unsigned!: VersionedTransaction;
@@ -158,10 +141,7 @@ it("submission caller: wallet and broadcast stages lock compound and preserve an
   const handler = vi.mocked(fetch).getMockImplementation()!;
   vi.mocked(fetch).mockImplementation((input, init) => {
     const path = String(input);
-    if (path === "/api/selected-broadcast" || path === "/api/selected-status") {
-      calls.push({path, body: init?.body as string, at: Date.now()});
-      return path.endsWith("broadcast") ? sending : Promise.resolve(Response.json({signature:bs58.encode(new Uint8Array(64).fill(1)),status:"manual-review"}));
-    }
+    if (path === "/api/tx-send") { calls.push({path, body: init?.body as string, at: Date.now()}); return sending; }
     return handler(input, init);
   });
   await ready(); await click("Add liquidity");
@@ -171,16 +151,11 @@ it("submission caller: wallet and broadcast stages lock compound and preserve an
   await act(async () => release(Response.json({quote:{...state,...quoteBody,spendA:"0",spendB:"0",roundtripCostInput:null,requested:"1000000",liquidity:"100",expiresAt:Date.now()+75000},
     simulated:true, permit:"synthetic-permit",startingLiquidity:state.liquidity,startingBalances:{input:"1000000",a:"1000000",b:"1000000000"},
     expiresAt:Date.now()+75000,blockhash:wallet,lastValidBlockHeight:100,unsignedTransaction:btoa(String.fromCharCode(...tx.serialize()))})));
-  expect(button("Confirming in wallet…").disabled).toBe(true); expect(button("One-click compound").disabled).toBe(true); snapshot("wallet waiting");
+  expect(button("Confirm in your wallet…").disabled).toBe(true); expect(button("One-click compound").disabled).toBe(true); snapshot("wallet waiting");
   await act(async () => { unsigned.signatures[0]=new Uint8Array(64).fill(1); finishSign(unsigned); });
-  expect(button("Sending and verifying…").disabled).toBe(true); expect(button("One-click compound").disabled).toBe(true); snapshot("broadcast waiting");
-  const raw = localStorage.getItem(`sofinance:selected-atomic:v2:${wallet}`);
-  expect(JSON.parse(raw!).signature).toBe(bs58.encode(new Uint8Array(64).fill(1)));
-  await act(async () => finishSend(Response.json({error:"uncertain send",sent:false},{status:503})));
+  expect(button("One-click compound").disabled).toBe(true); expect(count("/api/tx-send")).toBe(1); snapshot("send waiting");
+  await act(async () => finishSend(Response.json({error:"Simulation failed",sent:false},{status:503})));
   await advance(450); expect(button("Add liquidity").disabled).toBe(false); expect(button("One-click compound").disabled).toBe(false);
-  await click("View transaction status and tx hash"); snapshot("visible receipt");
-  expect(container.textContent).toContain("uncertain send");
-  expect(container.querySelector(`a[href*="${bs58.encode(new Uint8Array(64).fill(1))}"]`)).not.toBeNull();
-  expect(localStorage.getItem(`sofinance:selected-atomic:v2:${wallet}`)).toBe(raw);
-  expect(connection.signTransaction).toHaveBeenCalledOnce(); expect(count("/api/selected-broadcast")).toBe(1);
+  expect(container.textContent).toContain("Nothing was sent");
+  expect(connection.signTransaction).toHaveBeenCalledOnce(); expect(count("/api/tx-send")).toBe(1);
 });

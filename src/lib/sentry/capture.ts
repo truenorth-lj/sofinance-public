@@ -85,14 +85,18 @@ export function resolveApiRoute(options: {
 
 export function captureApiRouteError(
   error: unknown,
-  options: { route?: string; request?: { url: string }; fallback?: string; status?: number; quotePath?: string } = {},
+  options: { route?: string; request?: { url: string }; fallback?: string; status?: number; quotePath?: string;
+    transaction?: boolean; sent?: boolean } = {},
 ): void {
   try {
     if (!isSentryEnabled()) return;
-    if (!shouldCaptureApiError(error, options.status ?? 500)) return;
+    const status = options.status ?? 500;
+    // Ordinary 4xx (bad input, refused relay, rate limit) never reach Sentry, so abuse cannot burn the quota.
+    if (!shouldCaptureApiError(error, status)) return;
     const route = resolveApiRoute(options);
     Sentry.withScope((scope) => {
       if (route) scope.setTag("route", route);
+      if (options.transaction) scope.setTag("tx_sent", options.sent === false ? "no" : "unknown");
       scope.setTag("error_class", sentryErrorClass(error));
       if (options.quotePath) scope.setTag("quote_path", options.quotePath);
       scope.setExtra("public_message", sanitizePublicError(error, options.fallback ?? "API route error"));

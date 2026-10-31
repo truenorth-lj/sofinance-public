@@ -8,6 +8,7 @@ import { Connection, PublicKey, VersionedTransaction, type AccountInfo } from "@
 import { MIN_SOL_LAMPORTS, NATIVE_SOL_MINT } from "@sofinance/engine/ids";
 import { simulatedInputSpendMatches } from "@sofinance/engine/amount";
 import { walletPriorityFeeAllowance } from "@sofinance/engine/wallet-priority-fee";
+import { withContextSlotRetry } from "@sofinance/engine/rpc/context-slot";
 import type { SelectedPositionState } from "@sofinance/engine/selected-state";
 
 type VerifyInput = {
@@ -54,9 +55,9 @@ export async function simulateAndVerifySelectedTransaction(input: VerifyInput) {
   }
   const intermediate = await transactionIntermediateAccounts(connection, transaction, wallet, keys.map(key => key.toBase58()));
   const addresses = [state.positionAccount, ...keys.map((key) => key.toBase58()), ...intermediate.accounts.map(account => account.address), wallet.toBase58()];
-  const simulation = await connection.simulateTransaction(transaction, {
+  const simulation = await withContextSlotRetry(() => connection.simulateTransaction(transaction, {
     sigVerify, commitment: "confirmed", minContextSlot: Math.max(state.slot, intermediate.slot), accounts: { encoding: "base64", addresses },
-  });
+  }));
   if (simulation.value.err) {
     throw new Error(`Complete swap + add simulation failed: ${JSON.stringify(simulation.value.err)}; ${simulation.value.logs?.slice(-5).join(" | ") || "no logs"}`);
   }

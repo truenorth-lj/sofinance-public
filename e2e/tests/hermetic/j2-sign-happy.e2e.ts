@@ -38,20 +38,15 @@ test.describe("J2 sign link, happy path", () => {
       expect(wallet.ledger).toHaveLength(1);
       expect(wallet.ledger[0]).toMatchObject({ kind: "signTransaction", outcome: "signed", chain: EXPECTED_CHAIN, signerIndex: 0 });
 
-      // Exactly one broadcast, to the route of this kind, with the documented body.
+      // Exactly one relay of the signed bytes; every safety check already ran at prepare time.
       expect(sign.broadcasts).toHaveLength(1);
       const call = sign.broadcasts[0]!;
       expect(call.kind).toBe(kind);
-      expect(call.body.unsignedTransaction).toBe(scenario.payload.unsignedTransaction);
-      if (kind === "add-liquidity") {
-        expect(Object.keys(call.body).sort()).toEqual(["signedTransaction", "unsignedTransaction", ...Object.keys(scenario.submitArgs)].sort());
-        expect(call.body.selection).toEqual(scenario.submitArgs.selection);
-      } else {
-        expect(Object.keys(call.body).sort()).toEqual(["permit", "signedTransaction", "summary", "unsignedTransaction", "wallet"]);
-        expect(call.body.summary).toEqual(scenario.submitArgs.summary);
-      }
-      expect(call.body.permit).toBe(scenario.submitArgs.permit);
-      expect(call.body.wallet).toBe(wallet.address);
+      // The relay is permit-bound: signed bytes + the prepared message + the HMAC permit verify-sign-token issued for it.
+      expect(Object.keys(call.body)).toEqual(["signedTransaction", "unsignedTransaction", "sendPermit"]);
+      expect(String(call.body.sendPermit)).toMatch(/^[0-9a-f]{64}$/);
+      const relayedPrepared = VersionedTransaction.deserialize(Buffer.from(String(call.body.unsignedTransaction), "base64"));
+      expect(Buffer.from(relayedPrepared.message.serialize()).equals(Buffer.from(scenario.built.tx.message.serialize()))).toBe(true);
 
       // The posted transaction carries a valid wallet signature over the UNMODIFIED message.
       const posted = VersionedTransaction.deserialize(Buffer.from(String(call.body.signedTransaction), "base64"));
@@ -96,16 +91,15 @@ test.describe("J2 sign link, happy path", () => {
     expect(wallet.signedTransactions).toHaveLength(1);
   });
 
-  test("each kind posts to its own broadcast route only", async ({ page, wallet }) => {
+  test("a sign link relays only through the shared send route", async ({ page, wallet }) => {
     const scenario = makeScenario("add-liquidity", wallet.address);
     const hits: string[] = [];
-    for (const [kind, pattern] of Object.entries(BROADCAST_PATH)) {
-      await page.route(pattern, (route) => { hits.push(kind); return route.fulfill({ status: 500, body: JSON.stringify({ error: "x" }), contentType: "application/json" }); });
-    }
+    await page.route("**/api/*-broadcast", (route) => { hits.push(new URL(route.request().url()).pathname); return route.abort(); });
+    await page.route(BROADCAST_PATH["add-liquidity"], (route) => { hits.push("/api/tx-send"); return route.fulfill({ status: 400, body: JSON.stringify({ error: "x", sent: false }), contentType: "application/json" }); });
     await page.goto(`/app/sign/${scenario.token}`, { waitUntil: "domcontentloaded" });
     await new ConnectModal(page, wallet).connect();
     await page.getByRole("button", { name: "Sign and submit" }).click();
-    await expect(page.getByText("x", { exact: true })).toBeVisible();
-    expect(hits).toEqual(["add-liquidity"]);
+    await expect(page.getByText("x. Nothing was sent.", { exact: true }).first()).toBeVisible();
+    expect(hits).toEqual(["/api/tx-send"]);
   });
 });

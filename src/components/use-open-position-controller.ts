@@ -1,7 +1,7 @@
 "use client";
 import "@/lib/engine-host";
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { formatAmount, parseTokenAmount } from "@sofinance/engine/amount";
 import { NATIVE_SOL_MINT, USDC_MINT } from "@sofinance/engine/ids";
 import { quoteIsFresh } from "@sofinance/engine/quote-math";
@@ -10,6 +10,7 @@ import { createJupiterRelayStore } from "@/lib/jupiter/browser-relay";
 import type { WalletAsset, WalletDiscovery } from "@sofinance/engine/wallet-discovery";
 import { useWalletConnection } from "./wallet-connection";
 import { notifyPositionHistoryChange } from "@/lib/position-history-refresh";
+import { BALANCES_REFRESH_EVENT } from "@/lib/tx-pipeline";
 import { useOpenAttempt } from "./use-open-attempt";
 import { captureGrowthEventOnce } from "@/lib/analytics/client";
 import { GROWTH_EVENTS, openEventProperties } from "@/lib/analytics/events";
@@ -54,7 +55,9 @@ export { QUOTE_ERROR_POLL_PAUSE_MS, QUOTE_POLL_MS, RELAY_QUOTE_POLL_MS, OPEN_QUO
 export { OPEN_PREPARE_TIMEOUT_MS } from "./transactions/open/use-open-submission";
 
 export function useOpenPositionController(pair: OpenPositionPair | null) {
-  const { address: wallet, connected, connect, signTransaction } = useWalletConnection();
+  const { address: wallet, connected, connect, signTransaction, signAndSendTransaction } = useWalletConnection();
+  const txWallet = useMemo(() => ({ address: wallet ?? "", signTransaction, signAndSendTransaction }),
+    [wallet, signTransaction, signAndSendTransaction]);
   const open = useOpenAttempt(wallet);
   const confirmedMint = open.status === "confirmed" ? open.attempt?.nftMint ?? null : null;
   useEffect(() => {
@@ -110,6 +113,8 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
   const samePool = open.attempt?.poolId === pair?.poolAddress;
   const submitStage: OpenSubmitStage = operationStage ?? (open.pending && open.loaded ? "pending"
     : samePool && open.status !== "unsent" ? open.status : null);
+  const retryRef = useRef<() => void>(() => {});
+  const retryOpen = useCallback(() => retryRef.current(), []);
   const signature = open.status ? open.attempt?.signature ?? "" : "";
   const positionMint = samePool ? open.attempt?.nftMint ?? "" : "";
 
@@ -212,6 +217,19 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
     };
   }, [wallet, pair]);
 
+  // A transaction notice finished (possibly after this modal's own send): re-read balances only.
+  useEffect(() => {
+    if (!wallet) return;
+    const refresh = () => {
+      void fetch(`/api/wallet?wallet=${encodeURIComponent(wallet)}`, { cache: "no-store" })
+        .then(async (response) => response.ok ? await response.json() as WalletDiscovery : null)
+        .then((found) => { if (found && walletRef.current === wallet) setDiscovery(found); })
+        .catch(() => { /* The previous balances stay visible. */ });
+    };
+    window.addEventListener(BALANCES_REFRESH_EVENT, refresh);
+    return () => window.removeEventListener(BALANCES_REFRESH_EVENT, refresh);
+  }, [wallet]);
+
   useOpenPreviewEffect({ amount, busy, formError, inputKind, inputMint, maxPrice, minPrice,
     pair, parsedAmount, rangePreset, selectedAsset, submitStage, wallet, walletRef, jupiterStoreRef, setNow }, preview);
 
@@ -257,8 +275,9 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
   };
 
   const signAndSend = useOpenSubmissionCommand({ pair, wallet, inputMint, inputKind, amount, rangePreset,
-    minPrice, maxPrice, parsedAmount, quote, fresh, busy, identity, open, signTransaction,
+    minPrice, maxPrice, parsedAmount, quote, fresh, busy, identity, open, txWallet, retry: retryOpen,
     activeRef, walletRef, identityRef, lifetimeRef, jupiterStoreRef, setError, setNow, setQuote, setQuoteLoading }, submission);
+  useEffect(() => { retryRef.current = () => { void signAndSend(); }; }, [signAndSend]);
 
   const walletBlockedReason = !connected
     ? "Connect a wallet to create a position"
@@ -282,6 +301,9 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
             : !fresh ? "Quote expired, refreshing…"
               : null);
   const actionDisabled = busy || swapRecovery.checking || Boolean(actionBlockedReason);
+  // Signing or sending is in progress: closing now would hide the result, so the modal stays open.
+  const closeLocked = operationStage === "preparing" || operationStage === "wallet" || operationStage === "broadcasting" ||
+    operationStage === "swap-preparing" || operationStage === "swap-wallet" || operationStage === "swap-broadcasting";
   // Keep retry admission/preparation errors separate from errors awaiting chain verification.
   const retryError = (open.status === "failed" || open.status === "expired") &&
     submission.retryError?.signature === open.attempt?.signature ? submission.retryError?.message : "";
@@ -294,7 +316,7 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
     unconfirmedSwap: swapRecovery.attempt, checkingSwap: swapRecovery.checking,
     recheckSwap: swapRecovery.recheck,
     solTwoStep: inputKind === "native" || Boolean(pendingSwap),
-    presets: OPEN_RANGE_UI_PRESETS, fresh, busy,
+    presets: OPEN_RANGE_UI_PRESETS, fresh, busy, closeLocked, reprepare: (submission.reprepare || (samePool && (open.status === "expired" || open.status === "failed"))) && !busy,
     actionDisabled, actionBlockedReason, walletBlockedReason, changeAmount, chooseAsset, choosePreset,
     setMinPrice: changeMinPrice, setMaxPrice: changeMaxPrice, fillMax, signAndSend,
     now, refreshQuote, canRefreshQuote, retryConfirmation: open.retry,

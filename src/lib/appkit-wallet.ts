@@ -36,6 +36,7 @@ export const APPKIT_THEME_VARIABLES = {
 export type AppKitSolanaWalletProvider = {
   signTransaction?: (transaction: VersionedTransaction) => Promise<VersionedTransaction>;
   signAllTransactions?: (transactions: VersionedTransaction[]) => Promise<VersionedTransaction[]>;
+  signAndSendTransaction?: (transaction: VersionedTransaction, options?: { preflightCommitment?: "confirmed"; maxRetries?: number }) => Promise<string>;
   session?: { namespaces?: { solana?: { methods?: string[] } } };
   signMessage?: (message: Uint8Array) => Promise<Uint8Array>;
 };
@@ -78,4 +79,15 @@ export function appKitSignAllTransactions(
     }
     return walletProvider.signAllTransactions(transactions);
   };
+}
+
+/** Wallet-side broadcast when the extension or WalletConnect session supports it. */
+export function appKitSignAndSendTransaction(
+  walletProvider: AppKitSolanaWalletProvider | undefined,
+): ((transaction: VersionedTransaction) => Promise<string>) | undefined {
+  const send = walletProvider?.signAndSendTransaction;
+  if (!send) return undefined;
+  const methods = walletProvider.session?.namespaces?.solana?.methods;
+  if (walletProvider.session && !methods?.includes("solana_signAndSendTransaction")) return undefined;
+  return (transaction) => send.call(walletProvider, transaction, { preflightCommitment: "confirmed" });
 }

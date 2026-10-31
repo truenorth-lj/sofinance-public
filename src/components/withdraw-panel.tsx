@@ -3,7 +3,6 @@ import "@/lib/engine-host";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { LoaderCircle } from "lucide-react";
 import { VersionedTransaction } from "@solana/web3.js";
-import bs58 from "bs58";
 import { useWalletConnection } from "./wallet-connection";
 import { NATIVE_SOL_MINT } from "@sofinance/engine/ids";
 import { formatAmount } from "@sofinance/engine/amount";
@@ -11,10 +10,9 @@ import { notifyPositionHistoryChange } from "@/lib/position-history-refresh";
 import { createJupiterRelayStore, postWithJupiterRelay } from "@/lib/jupiter/browser-relay";
 import type { WithdrawPrepared, WithdrawSummary, WithdrawRequest } from "@sofinance/engine/withdraw/types";
 import { assertWithdrawHistory, readWithdrawHistory, writeWithdrawHistory, withdrawCheckpointKey, WithdrawHistoryError, WITHDRAW_HISTORY_ERROR, type WithdrawHistory, type WithdrawCheckpoint as Checkpoint } from "@/lib/withdraw-checkpoint";
-import { prepareIsStale } from "@sofinance/engine/fresh-blockhash";
-import { assertWalletReturnedTransaction } from "@/lib/wallet-returned-guard";
+import { sendAndTrack, TxRunError } from "@/lib/tx-pipeline";
 
-export const WITHDRAW_EXPIRED_MESSAGE = "Transaction expired before it landed. Retry to prepare a fresh transaction — no funds moved.";
+export const WITHDRAW_EXPIRED_MESSAGE = "This withdrawal expired before Solana included it, so nothing moved. Tap Try again to sign a fresh one.";
 
 const REQUEST_TIMEOUT_MS=45_000;
 const RELAYED_PATHS=new Set(["withdraw-quote","withdraw-prepare"]);
@@ -152,6 +150,18 @@ export function WithdrawPanel({wallet,positionMint,mintA,mintB,label,onClose,onB
   const verified=writeWithdrawHistory(wallet,positionMint,historyRef.current,value);
   historyRef.current=verified;setCheckpoint(value);
  }
+ // A broadcast signature must survive unmount/wallet switch so Resume checks it instead of re-signing.
+ function persistSent(run:WithdrawRun,value:Checkpoint){
+  try{save(run,value);return;}catch(error){
+   if(owns(run) && !(error instanceof WithdrawCancelled) && historyIdentity.current.wallet===wallet && historyIdentity.current.positionMint===positionMint)throw error;
+  }
+  try{
+   const verified=writeWithdrawHistory(wallet,positionMint,readWithdrawHistory(wallet,positionMint),value);
+   // A retained (Activity/Suspense) instance reconnects without re-reading history.
+   if(historyIdentity.current.wallet===wallet && historyIdentity.current.positionMint===positionMint){historyRef.current=verified;setCheckpoint(value);}
+  }catch{/* reported by the next history read */}
+  throw new WithdrawCancelled();
+ }
  async function waitFor(run:WithdrawRun,saved:Checkpoint){
   for(let i=0;i<60;i++){
    guardRun(run);
@@ -168,36 +178,30 @@ export function WithdrawPanel({wallet,positionMint,mintA,mintB,label,onClose,onB
   }
   throw new Error("Confirmation is taking longer. Resume to check the same transaction.");
  }
- async function signAndSend(run:WithdrawRun,prepared:WithdrawPrepared,confirmed:boolean,originalRequest:WithdrawRequest,root?:Checkpoint["root"]){
+ async function signAndSend(run:WithdrawRun,response:WithdrawPrepared&{sendPermit?:string},confirmed:boolean,originalRequest:WithdrawRequest,root?:Checkpoint["root"]){
   guardRun(run);
-  if(Date.now()>=prepared.summary.expiresAt || prepareIsStale(prepared.summary)){
-   setProgress("Refreshing transaction…");
-   prepared=await post<WithdrawPrepared>(run,"withdraw-prepare",prepared.summary.stage==="swap"&&root
-    ?{...originalRequest,confirmHighImpact:confirmed,stage:"swap",previous:root.prepared,tx1Signature:root.signature}
-    :{...originalRequest,confirmHighImpact:confirmed});
-  }
-  guardRun(run);
+  // The relay permit is used for this send only; the checkpoint keeps the server's WithdrawPrepared shape.
+  const {sendPermit,...prepared}=response;
   setProgress(prepared.summary.stage==="swap"?"Step 2 of 2: approve conversion in your wallet":"Approve withdrawal in your wallet");
   const unsigned=VersionedTransaction.deserialize(Uint8Array.from(atob(prepared.unsignedTransaction),c=>c.charCodeAt(0)));
-  const preparedSnapshot=VersionedTransaction.deserialize(unsigned.serialize());
-  const signed=await currentConnection.current.signTransaction(unsigned);
-  guardRun(run);
-  if(Date.now()>=prepared.summary.expiresAt)throw new Error("Prepared transaction expired while awaiting wallet approval. Review and retry; no new transaction was submitted.");
-  assertWalletReturnedTransaction(preparedSnapshot,signed,wallet);
-  const saved:Checkpoint={prepared,signature:bs58.encode(signed.signatures[0]!),request:originalRequest,confirmHighImpact:confirmed,root};
-  // Persist before broadcasting: an interrupted HTTP request can still land.
-  save(run,saved);setProgress("Submitting withdrawal…");
+  // Shared pipeline send stage: the wallet sends (or signs and we relay once). The
+  // checkpoint is saved right after send, keyed by the returned signature.
+  const isSwap=prepared.summary.stage==="swap";
   try{
-   await post(run,"withdraw-broadcast",{wallet,summary:prepared.summary,permit:prepared.permit,confirmHighImpact:confirmed,unsignedTransaction:prepared.unsignedTransaction,signedTransaction:btoa(String.fromCharCode(...signed.serialize()))});
+   const {signature}=await sendAndTrack({flow:"withdraw",wallet:{address:wallet,signTransaction:currentConnection.current.signTransaction,signAndSendTransaction:currentConnection.current.signAndSendTransaction},
+    successTitle:isSwap?"Conversion confirmed":"Withdrawal confirmed",storage:window.localStorage,
+    prepared:{transaction:unsigned,lastValidBlockHeight:prepared.summary.lastValidBlockHeight,positionMint:prepared.summary.positionMint,sendPermit},
+    isCurrent:()=>{try{guardRun(run);return true;}catch{return false;}}});
+   const saved:Checkpoint={prepared,signature,request:originalRequest,confirmHighImpact:confirmed,root};
+   persistSent(run,saved);setProgress("Submitting withdrawal…");
+   return saved;
   }catch(error){
-   // Pre-send 4xx (budget, simulation) never reached the RPC. Restore the first-stage
-   // checkpoint so Resume re-prepares conversion instead of waiting on a never-sent sig.
-   if(root && /exceeds SOL cost budget|priority fee exceeds|simulation failed|authorization|Invalid or expired|Invalid wallet signature|blockhash expired|required instruction|Wallet (?:changed|dropped|removed)|Confirm|balance changed|below simulated|existing wallet inventory|output below/i.test(error instanceof Error?error.message:"")){
-    save(run,{prepared:root.prepared,signature:root.signature,request:originalRequest,confirmHighImpact:confirmed});
-   }
+   // Storage changed elsewhere while signing: report that in its own words and write nothing.
+   if(error instanceof TxRunError && error.kind!=="unknown")guardHistory();
+   // Nothing was sent on step 2: keep the first-stage checkpoint so Resume re-prepares conversion.
+   if(root && error instanceof TxRunError && error.kind!=="unknown")save(run,{prepared:root.prepared,signature:root.signature,request:originalRequest,confirmHighImpact:confirmed});
    throw error;
   }
-  return saved;
  }
  async function run(confirmed=false){
   const run=begin();if(!run)return;setBusy(true);setError("");setConfirmation(false);
@@ -267,7 +271,7 @@ export function WithdrawPanel({wallet,positionMint,mintA,mintB,label,onClose,onB
   </div>}
   {(historyError || error) && <p role="alert" className="mt-3 rounded-2xl border border-lemon/60 bg-lemon/10 p-3 text-sm text-lemon">{historyError || error}</p>}
   <p role="status" aria-live="polite" className="mt-3 text-sm text-smoke">{busy && <LoaderCircle aria-hidden className="mr-2 inline h-4 w-4 animate-spin" />}{progress}</p>
-  {checkpoint ? <button disabled={busy || !!historyError} onClick={()=>{if(checkpoint.prepared.summary.requiresSecondConfirmation)setConfirmation(true);else void run();}} className="mt-3 rounded-full bg-lemon px-5 py-3 text-ink">Resume withdrawal</button> : error===WITHDRAW_EXPIRED_MESSAGE ? <button disabled={busy || !!historyError} onClick={()=>void run()} className="mt-3 rounded-full bg-lemon px-5 py-3 text-ink">Retry withdrawal</button> : <>
+  {checkpoint ? <button disabled={busy || !!historyError} onClick={()=>{if(checkpoint.prepared.summary.requiresSecondConfirmation)setConfirmation(true);else void run();}} className="mt-3 rounded-full bg-lemon px-5 py-3 text-ink">Resume withdrawal</button> : error===WITHDRAW_EXPIRED_MESSAGE ? <button disabled={busy || !!historyError} onClick={()=>void run()} className="mt-3 rounded-full bg-lemon px-5 py-3 text-ink">Try again</button> : <>
    <button type="button" disabled={busy || !!historyError} aria-busy={previewing} onClick={()=>void showPreview()} className="mt-3 rounded-full border px-5 py-3 disabled:opacity-50">{previewing?"Calculating…":"Preview"}</button>
    {/* Without a preview, Withdraw fetches one first so the tap is never silent; a second tap confirms. */}
    <button type="button" disabled={busy || !!historyError} aria-busy={busy && !previewing} onClick={()=>{if(!preview)void showPreview();else if(preview.requiresSecondConfirmation)setConfirmation(true);else void run();}} className="ml-3 rounded-full bg-lemon px-5 py-3 text-ink disabled:opacity-50">{busy && !previewing?"Withdrawing…":"Withdraw"}</button>

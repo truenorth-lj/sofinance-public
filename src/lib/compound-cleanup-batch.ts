@@ -13,6 +13,7 @@ import { confirmedRecovery } from "./compound-receipt";
 import { estimateFeeForMessage } from "./rpc-fee-estimate";
 import nacl from "tweetnacl";
 import { z } from "zod";
+import { withContextSlotRetry } from "@sofinance/engine/rpc/context-slot";
 
 export const MAX_CLEANUP_SOURCES = 64;
 const noSources = "No recoverable yield accounts; please verify original compound transaction status first";
@@ -129,7 +130,7 @@ async function simulateCleanupBatchSnapshot(input: CleanupSimulationInput) {
   const before = snapshot.value;
   if (before.length !== destinations.length + 1 || !before.at(-1)) throw new Error("Cleanup missing wallet readback");
   const addresses = [...accounts.map(account => account.address), ...destinations, summary.wallet];
-  const result = await connection.simulateTransaction(transaction, { sigVerify, commitment: "confirmed", minContextSlot: snapshot.context.slot, accounts: { encoding: "base64", addresses } });
+  const result = await withContextSlotRetry(() => connection.simulateTransaction(transaction, { sigVerify, commitment: "confirmed", minContextSlot: snapshot.context.slot, accounts: { encoding: "base64", addresses } }));
   if (result.value.err) throw new Error("Cleanup transaction simulation failed");
   const after = result.value.accounts;
   if (!after || after.length !== addresses.length) throw new Error("Cleanup simulation missing account readback");

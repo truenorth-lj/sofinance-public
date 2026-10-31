@@ -12,6 +12,11 @@ export type WalletConnection = {
   walletsCount: number;
   connectionError: string;
   signTransaction: (transaction: VersionedTransaction) => Promise<VersionedTransaction>;
+  /**
+   * Present when the wallet can broadcast for us (Wallet Standard `solana:signAndSendTransaction`,
+   * Phantom's preferred path). Returns the base58 signature. Absent: sign, then we send once.
+   */
+  signAndSendTransaction?: (transaction: VersionedTransaction) => Promise<string>;
   signAllTransactions?: (transactions: VersionedTransaction[]) => Promise<VersionedTransaction[]>;
   signMessage?: (message: Uint8Array) => Promise<Uint8Array>;
 };

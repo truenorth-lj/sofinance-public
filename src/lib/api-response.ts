@@ -27,14 +27,19 @@ export function apiError(error: unknown, fallback: string, status = 400, extra?:
   sent?: boolean;
   route?: string;
   request?: { url: string };
+  /** Transaction route: tag 5xx reports with the send outcome. 4xx is never reported. */
+  transaction?: boolean;
 }) {
   // Expected 409 protocol step: the browser still needs to fetch Jupiter. Do not
   // log it as a route failure — `withJupiterRelay` turns this into `jupiter_relay_needed`.
   if (isUpstreamRelayPending(error)) throw error;
+  const transaction = extra?.transaction === true;
   if (shouldCaptureApiError(error, status)) {
+    const sentFlag = extra?.sent === false || error instanceof CompoundSendError && error.sent === false ? false : undefined;
     captureApiRouteError(error, {
       fallback, route: extra?.route, request: extra?.request, status,
       quotePath: upstreamQuotePath(),
+      ...(transaction ? { transaction: true, sent: sentFlag } : {}),
     });
   }
   logSafeError(fallback, error);

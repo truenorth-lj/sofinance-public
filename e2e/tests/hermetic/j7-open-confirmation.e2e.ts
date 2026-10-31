@@ -51,19 +51,17 @@ async function setup(page: Page, wallet: FakeWallet, mode: "ok" | "unknown" | "u
           blockhash: built.tx.message.recentBlockhash, lastValidBlockHeight: 1000, expiresAt: Date.now() + 75000,
           tickLower: -60, tickUpper: 60, quote } };
     }
-    if (path === "/api/open-broadcast") {
+    if (path === "/api/tx-send") {
       const tx = VersionedTransaction.deserialize(Buffer.from(body.signedTransaction, "base64"));
       sentSignature = bs58.encode(tx.signatures[0]!);
       expect(FakeWallet.verify(wallet.address, tx.message.serialize(), tx.signatures[0]!)).toBe(true);
       const mintIndex = tx.message.staticAccountKeys.findIndex((key) => key.toBase58() === built.nftMint);
       expect(mintIndex).toBeGreaterThanOrEqual(1);
       expect(FakeWallet.verify(built.nftMint, tx.message.serialize(), tx.signatures[mintIndex]!)).toBe(true);
-      const saved = await page.evaluate(address => localStorage.getItem(`sofinance:open-position:v1:${address}`), wallet.address);
-      expect(saved).toContain(sentSignature);
       if (mode !== "ok") return route.fulfill({ status: 503, json: { error: "E2E submission unavailable", ...(mode === "unsent" ? { sent: false } : {}) } });
-      value = { signature: sentSignature, positionMint: built.nftMint };
+      value = { signature: sentSignature };
     }
-    if (path === "/api/open-status") value = { signature: body.attempt.signature, status: chainStatus };
+    if (path === "/api/transaction-finality") value = { status: chainStatus };
     await route.fulfill({ json: value });
   });
   await page.goto(`/app/rwa-pairs?pool=${poolId}&open=1`, { waitUntil: "domcontentloaded" });
@@ -75,7 +73,9 @@ async function setup(page: Page, wallet: FakeWallet, mode: "ok" | "unknown" | "u
   return { calls, create, setStatus: (status: string) => { chainStatus = status; }, signature: () => sentSignature };
 }
 
-test("RPC acceptance remains pending; reload tracks the same signature before showing Position opened", async ({ page, wallet, guards }) => {
+const short = (value: string) => `${value.slice(0, 5)}…${value.slice(-5)}`;
+
+test("RPC acceptance remains pending; reload resumes the same signature by polling before showing Position opened", async ({ page, wallet, guards }) => {
   guards.allowConsole(/^Failed to load resource: the server responded with a status of 503/);
   const flow = await setup(page, wallet);
   await flow.create.click();
@@ -85,25 +85,29 @@ test("RPC acceptance remains pending; reload tracks the same signature before sh
   await page.reload();
   await expect(page.getByRole("dialog", { name: "Create position" })).toBeVisible();
   await connectInModal(page, wallet);
-  await expect(page.getByRole("link", { name: "View original transaction on Solscan" })).toHaveAttribute("href", `https://solscan.io/tx/${signature}`);
+  // The shared notice host resumes the saved signature (signature polling only, never a resend).
+  await expect(page.getByText("Checking a previous transaction…", { exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: `View ${short(signature)} on Solscan` })).toHaveAttribute("href", `https://solscan.io/tx/${signature}`);
   expect(wallet.ledger).toHaveLength(1); expect(flow.calls.filter(path => path === "/api/open-prepare")).toHaveLength(1);
+  expect(flow.calls.filter(path => path === "/api/tx-send")).toHaveLength(1);
   flow.setStatus("confirmed");
-  await page.getByRole("button", { name: "Check transaction status" }).click();
-  await expect(page.getByRole("button", { name: "Create another position" })).toBeVisible();
-  await expect(page.getByText("Position opened", { exact: true })).toBeVisible();
+  await expect(page.getByText("Position opened", { exact: true }).first()).toBeVisible({ timeout: 15_000 });
+  expect(flow.calls.filter(path => path === "/api/tx-send")).toHaveLength(1);
   await page.screenshot({ path: test.info().outputPath("open-confirmed.png") });
 });
 
-test("unknown send retains the original signature, blocks another open and can report finalized failure", async ({ page, wallet, guards }) => {
+test("unknown send retains the original signature, blocks another open and reports an on-chain failure", async ({ page, wallet, guards }) => {
   guards.allowConsole(/^Failed to load resource: the server responded with a status of 503/);
   const flow = await setup(page, wallet, "unknown");
   await flow.create.click();
   await expect(page.getByRole("link", { name: "View original transaction on Solscan" })).toBeVisible();
   await expect(page.getByText("Position opened", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("dialog").getByRole("button", { name: "Create position", exact: true })).toHaveCount(0);
-  flow.setStatus("failed"); await page.getByRole("button", { name: "Check transaction status" }).click();
-  await expect(page.getByText("Open-position transaction failed on-chain. You can prepare a new transaction.")).toBeVisible();
-  await expect(flow.create).toBeEnabled(); expect(wallet.ledger).toHaveLength(1);
+  flow.setStatus("failed");
+  await expect(page.getByText("Create position failed on-chain", { exact: true })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText("A safety check stopped it on-chain, so nothing changed except the network fee.").first()).toBeVisible();
+  expect(wallet.ledger).toHaveLength(1);
+  expect(flow.calls.filter(path => path === "/api/tx-send")).toHaveLength(1);
 });
 
 test("wallet Lighthouse extra instruction still mint-signs and broadcasts", async ({ page, wallet, guards }) => {
@@ -113,7 +117,7 @@ test("wallet Lighthouse extra instruction still mint-signs and broadcasts", asyn
   await flow.create.click();
   await expect(page.getByText("Waiting for on-chain confirmation…", { exact: true }).first()).toBeVisible();
   expect(wallet.ledger[0]).toMatchObject({ outcome: "signed", mode: "lighthouse" });
-  expect(flow.calls.filter((path) => path === "/api/open-broadcast")).toHaveLength(1);
+  expect(flow.calls.filter((path) => path === "/api/tx-send")).toHaveLength(1);
 });
 
 test("wallet raised ComputeBudget priority fee still mint-signs and broadcasts", async ({ page, wallet, guards }) => {
@@ -123,5 +127,5 @@ test("wallet raised ComputeBudget priority fee still mint-signs and broadcasts",
   await flow.create.click();
   await expect(page.getByText("Waiting for on-chain confirmation…", { exact: true }).first()).toBeVisible();
   expect(wallet.ledger[0]).toMatchObject({ outcome: "signed", mode: "priority-fee" });
-  expect(flow.calls.filter((path) => path === "/api/open-broadcast")).toHaveLength(1);
+  expect(flow.calls.filter((path) => path === "/api/tx-send")).toHaveLength(1);
 });

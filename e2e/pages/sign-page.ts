@@ -4,10 +4,11 @@ import { VersionedTransaction } from "@solana/web3.js";
 import { FakeWallet } from "../fake-wallet/node-signer";
 import type { SignKind } from "../support/sign-token";
 
+/** Every kind relays through the shared pipeline's one-shot send route (the fake wallet has no signAndSend). */
 export const BROADCAST_PATH: Record<SignKind, string> = {
-  "add-liquidity": "**/api/selected-broadcast",
-  "open-position": "**/api/open-broadcast",
-  compound: "**/api/compound-broadcast",
+  "add-liquidity": "**/api/tx-send",
+  "open-position": "**/api/tx-send",
+  compound: "**/api/tx-send",
 };
 
 export type BroadcastCall = { kind: SignKind; body: Record<string, unknown> };

@@ -1,138 +1,52 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useReducer, useRef } from "react";
-import { abandonUnsentOpenAttempt, loadOpenAttempt, persistOpenAttempt,
-  type OpenAttempt, type OpenAttemptStatus } from "@/lib/open-attempt";
-import { openAttemptReducer, openAttemptPending, UNLOADED_OPEN_ATTEMPT, visibleOpenAttempt } from "./transactions/open/open-attempt-model";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { OpenAttempt, OpenAttemptStatus } from "@/lib/open-attempt";
+import { noticeIdFor, useTxNotices, type TxNotice } from "@/lib/tx-pipeline";
 
-const statuses: OpenAttemptStatus[] = ["pending", "confirmed", "failed", "expired", "manual-review"];
+/** The open modal's view of its last sent signature, read from the shared pipeline's notices. */
+export function openStatusFromNotice(notice: TxNotice | undefined): OpenAttemptStatus | null {
+  if (!notice) return null;
+  if (notice.state === "loading") return "pending";
+  if (notice.state === "success") return "confirmed";
+  if (notice.kind === "expired") return "expired";
+  if (notice.kind === "failed") return "failed";
+  return "manual-review";
+}
 
+/**
+ * Signature-based tracking for the open flow. The shared pipeline saves and polls the
+ * signature (and clears it once it settles); this hook only remembers which signature this
+ * modal sent so it can show its outcome. No per-flow storage, no status endpoint.
+ */
 export function useOpenAttempt(wallet: string | undefined) {
-  const [state, dispatch] = useReducer(openAttemptReducer, UNLOADED_OPEN_ATTEMPT);
-  const walletRef = useRef(wallet);
-  const attemptRef = useRef<OpenAttempt | null>(null);
-  const checkingRef = useRef<string | null>(null);
-  const activeRef = useRef(false);
-  // Open's command checks this live gate; SIGN retains its independent command policy.
-  // Close synchronously on track/reload, reopen only after a committed eligible state.
-  const submissionReadyRef = useRef(false);
-  useLayoutEffect(() => { activeRef.current = true; return () => { activeRef.current = false; }; }, []);
-  useLayoutEffect(() => {
-    // Suspense reconnects layout effects without replaying the history loader.
-    // Preserve the synchronous owner (including an unsent null) for the same wallet.
-    if (walletRef.current !== wallet) {
-      submissionReadyRef.current = false;
-      walletRef.current = wallet;
-      attemptRef.current = null;
-    }
-  }, [wallet]);
-
+  const [attempt, setAttempt] = useState<OpenAttempt | null>(null);
+  const [settled, setSettled] = useState<OpenAttemptStatus | null>(null);
+  const notices = useTxNotices();
+  const visible = attempt && attempt.wallet === wallet ? attempt : null;
+  const notice = visible ? notices.find((item) => item.id === noticeIdFor(visible.signature)) : undefined;
+  const live = openStatusFromNotice(notice);
+  const status = live ?? (visible ? settled : null);
+  const pending = status === "pending";
+  const pendingRef = useRef(pending);
+  useLayoutEffect(() => { pendingRef.current = pending; }, [pending]);
+  // Keep the settled outcome after its toast is dismissed.
   useEffect(() => {
-    if (!wallet) return;
-    // Activity replays this loader; old replies cannot own history being revalidated.
-    // Same-wallet Suspense only reconnects layout effects and retains its owner.
-    submissionReadyRef.current = false;
-    attemptRef.current = null;
-    const timer = window.setTimeout(() => {
-      try {
-        const saved = loadOpenAttempt(window.localStorage, wallet);
-        attemptRef.current = saved.attempt;
-        dispatch({ type: "historyLoaded", wallet, attempt: saved.attempt, invalid: saved.invalid });
-      } catch {
-        attemptRef.current = null;
-        dispatch({ type: "historyUnavailable", wallet });
-      }
-    }, 0);
+    if (!live || live === "pending") return;
+    const timer = window.setTimeout(() => setSettled(live), 0);
+    return () => window.clearTimeout(timer);
+  }, [live]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => { setAttempt(null); setSettled(null); }, 0);
     return () => window.clearTimeout(timer);
   }, [wallet]);
-
-  const reconcile = useCallback(async (attempt: OpenAttempt, signal?: AbortSignal) => {
-    if (checkingRef.current === attempt.signature) return;
-    checkingRef.current = attempt.signature;
-    const current = () => activeRef.current && !signal?.aborted && walletRef.current === attempt.wallet && attemptRef.current?.signature === attempt.signature;
-    try {
-      const response = await fetch("/api/open-status", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ wallet: attempt.wallet, attempt }), cache: "no-store",
-        signal: AbortSignal.any([AbortSignal.timeout(10_000), ...(signal ? [signal] : [])]) });
-      const result = await response.json() as { signature?: string; status?: OpenAttemptStatus; error?: string };
-      if (!current()) return;
-      if (!response.ok) throw new Error(result.error || "Unable to verify open-position transaction");
-      if (result.signature !== attempt.signature || !result.status || !statuses.includes(result.status)) throw new Error("Open-position verification signature or status mismatch");
-      const status = result.status;
-      dispatch({ type: "statusObserved", attempt, status });
-    } catch (error) {
-      if (current()) dispatch({ type: "verificationFailed",
-        error: error instanceof Error ? error.message : "Unable to verify the original open-position signature" });
-    } finally {
-      if (checkingRef.current === attempt.signature) checkingRef.current = null;
-    }
-  }, []);
-
-  const visible = visibleOpenAttempt(state, wallet);
-  const pending = openAttemptPending(visible, wallet);
-  useLayoutEffect(() => {
-    submissionReadyRef.current = Boolean(visible && !pending);
-  }, [visible, pending]);
-
-  const canSubmit = () => {
-    if (!activeRef.current || !wallet || walletRef.current !== wallet || !submissionReadyRef.current) return false;
-    try {
-      const saved = loadOpenAttempt(window.localStorage, wallet);
-      // Missing/replaced history also revokes a known owner. This read is not a CAS.
-      return !saved.invalid && (saved.attempt?.signature ?? null) === (attemptRef.current?.signature ?? null);
-    } catch { return false; }
+  const track = useCallback((next: OpenAttempt) => { setSettled("pending"); setAttempt(next); }, []);
+  return {
+    attempt: visible, status, error: status === "manual-review" ? notice?.detail ?? "" : "",
+    pending, loaded: true,
+    canSubmit: () => !pendingRef.current,
+    track,
+    dismissTerminal: () => { if (!pendingRef.current) { setAttempt(null); setSettled(null); } },
+    retry: undefined as (() => void) | undefined,
   };
-  useEffect(() => {
-    if (!visible?.attempt || !pending) return;
-    const attempt = visible.attempt;
-    const aborter = new AbortController();
-    const timer = window.setTimeout(() => void reconcile(attempt, aborter.signal), 0);
-    const interval = window.setInterval(() => void reconcile(attempt, aborter.signal), 3_000);
-    return () => { aborter.abort(); window.clearTimeout(timer); window.clearInterval(interval); };
-  }, [visible?.attempt, pending, reconcile]);
-
-  const track = (attempt: OpenAttempt) => {
-    if (!activeRef.current || walletRef.current !== attempt.wallet) throw new Error("Wallet or signing page changed; transaction not sent");
-    const saved = loadOpenAttempt(window.localStorage, attempt.wallet);
-    if (saved.invalid || saved.attempt && saved.attempt.signature !== attemptRef.current?.signature) {
-      throw new Error("Open-position history changed. Reload to verify the original signature before opening again.");
-    }
-    persistOpenAttempt(window.localStorage, attempt);
-    submissionReadyRef.current = false;
-    attemptRef.current = attempt;
-    dispatch({ type: "attemptTracked", attempt });
-  };
-  const markUnsent = (attempt: OpenAttempt) => {
-    const current = () => activeRef.current && walletRef.current === attempt.wallet && attemptRef.current?.signature === attempt.signature;
-    try {
-      if (!abandonUnsentOpenAttempt(window.localStorage, attempt)) {
-        throw new Error("Open-position history changed. Verify the saved signature before opening again.");
-      }
-    } catch (error) {
-      if (current()) {
-        // Detach old queries before adopting a replacement or locking unreadable/missing history.
-        submissionReadyRef.current = false;
-        attemptRef.current = null;
-        try {
-          const saved = loadOpenAttempt(window.localStorage, attempt.wallet);
-          attemptRef.current = saved.attempt;
-          dispatch({ type: "historyLoaded", wallet: attempt.wallet, attempt: saved.attempt,
-            invalid: saved.invalid || !saved.attempt });
-        } catch {
-          dispatch({ type: "historyUnavailable", wallet: attempt.wallet });
-        }
-      }
-      // Both consumers must avoid projecting the old response as safe to retry.
-      throw error;
-    }
-    if (!current()) return;
-    attemptRef.current = null;
-    dispatch({ type: "markedUnsent", attempt });
-  };
-  return { attempt: visible?.attempt ?? null, status: visible?.status ?? null, error: visible?.error ?? "",
-    pending, loaded: !wallet || visible !== null, canSubmit, track, markUnsent,
-    dismissTerminal: () => {
-      if (!pending && visible && visible.kind !== "invalid") dispatch({ type: "terminalDismissed", snapshot: visible });
-    },
-    retry: () => { if (visible?.attempt) void reconcile(visible.attempt); } };
 }

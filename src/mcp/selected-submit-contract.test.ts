@@ -23,14 +23,13 @@ vi.mock("@/lib/selected-simulation", async original => {
 });
 import { createResilientConnection } from "@sofinance/engine/rpc/connection";
 import type { SelectedPositionState } from "@sofinance/engine/selected-state";
-import { POST as app } from "@/app/api/selected-broadcast/route";
 import { POST as http } from "@/app/api/mcp/route";
 import { createMcpServer } from "./create-server";
 import { generateMcpToken } from "@/lib/mcp-auth";
 import { issueSelectedPermit, type SelectedPermitInput } from "@/lib/selected-permit";
-import { SIGNING_SECRET, buildTransaction, testKeypair, signatureOf, messageBase64, toBase64, oversizedSignedBase64, jsonRequest } from "@/lib/test-support/send-fixtures";
+import { SIGNING_SECRET, buildTransaction, testKeypair, signatureOf, messageBase64, toBase64, oversizedSignedBase64 } from "@/lib/test-support/send-fixtures";
 
-type Surface = "app" | "http-mcp" | "sdk";
+type Surface = "http-mcp" | "sdk";
 const NOW = 1793100000000;
 const context = new AsyncLocalStorage<string>();
 let trace: unknown[], client: Client, server: ReturnType<typeof createMcpServer>;
@@ -120,10 +119,6 @@ function install(f: Fixture, connection = f.connection) {
   });
 }
 async function call(surface: Surface, body: unknown, tokenWallet = testKeypair(1).publicKey.toBase58(), signal?: AbortSignal) {
-  if (surface === "app") {
-    const response = await app(jsonRequest("http://localhost/api/selected-broadcast", body, { signal }));
-    return { status: response.status, headers: Object.fromEntries(response.headers), body: await response.json() };
-  }
   const params = { name: "submit_signed_transaction", arguments: body };
   if (surface === "sdk") return { result: await client.request({ method: "tools/call", params }, CallToolResultSchema) };
   const response = await http(new NextRequest("http://localhost/api/mcp", { method: "POST", signal,
@@ -185,7 +180,7 @@ const cases: Case[] = [
     positionMint: testKeypair(70).publicKey.toBase58(), inputMint: testKeypair(71).publicKey.toBase58(), inputKind: "native", liquidity: "11", rangeSide: "above",
     balances: { input: "999", a: "10", b: "5" } }).map(([key, value]) => ({ name: `state ${key}`, change: (f: Fixture) => { Object.assign(f.state, { [key]: value }); } })),
 ];
-for (const surface of ["app", "http-mcp", "sdk"] as const) describe(surface, () => {
+for (const surface of ["http-mcp", "sdk"] as const) describe(surface, () => {
   for (const c of cases) it(c.name, async () => {
     const f = fixture(1, c.native); install(f); c.change?.(f);
     const result = await call(surface, f.body);
@@ -242,12 +237,4 @@ it("HTTP MCP schema still precedes token binding, which precedes handler", async
   const invalid = await call("http-mcp", { ...f.body, floorBps: 1 }, tokenWallet);
   const mismatch = await call("http-mcp", f.body, tokenWallet);
   expect({ invalid, mismatch, trace }).toMatchSnapshot(); expect(backend.rpc).not.toHaveBeenCalled();
-});
-it("HTTP abort during fresh read does not introduce a prepare deadline or discard async context", async () => {
-  const f = fixture(); install(f); const controller = new AbortController();
-  backend.state.mockImplementation(async () => { record("state-abort"); controller.abort(); await Promise.resolve(); return f.state; });
-  const result = await context.run("request-context", () => call("app", f.body, f.wallet, controller.signal));
-  expect(JSON.stringify(result)).toContain(signatureOf(f.tx)); expect(f.send).toHaveBeenCalledOnce();
-  expect(contexts.every(value => value === "request-context")).toBe(true);
-  expect({ result, trace }).toMatchSnapshot();
 });
