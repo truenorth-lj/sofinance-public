@@ -11,10 +11,10 @@ export async function POST(request: Request) {
   return withJupiterRelay(request, () => withSelectedDeadline(request, async (signal, budget) => {
   try {
     const { wallet, selection, amount, floorBps, toleranceBps } = await parseSelectedQuoteRequest(request);
-    const { summary, permit, unsignedTransaction, sendPermit } = await prepareSelected(
+    const { summary, permit, unsignedTransaction, sendPermit, landedPermit } = await prepareSelected(
       { wallet, selection, amount, floorBps, toleranceBps }, getSigningSecret, APP_SELECTED_PREPARE, { signal, budget },
     );
-    return Response.json({ ...summary, permit, unsignedTransaction, sendPermit }, {
+    return Response.json({ ...summary, permit, unsignedTransaction, sendPermit, landedPermit }, {
       headers: { "Cache-Control": "no-store" },
     });
   } catch (error) {

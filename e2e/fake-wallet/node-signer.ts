@@ -36,6 +36,12 @@ export type FakeWalletOptions = {
   slowMs?: number;
   /** Hard budget: refuse to sign more than this many transactions (soft spend cap for live lanes). */
   maxSignatures?: number;
+  /**
+   * Opt-in `solana:signAndSendTransaction`: the wallet signs (recorded in the ledger; nothing is broadcast in the
+   * hermetic lane) and then THROWS this message, the way Phantom threw `{"code":400,…"rejected by user"}` after sending.
+   * Off by default, so every other journey keeps the sign + relay path.
+   */
+  signAndSendError?: { message: string; code?: number };
 };
 
 export class FakeWallet {
@@ -45,6 +51,7 @@ export class FakeWallet {
   mode: WalletMode;
   slowMs: number;
   readonly ledger: LedgerEntry[] = [];
+  readonly signAndSendError: { message: string; code?: number } | null;
   readonly #secretKey: Uint8Array;
   readonly #maxSignatures: number;
 
@@ -57,6 +64,7 @@ export class FakeWallet {
     this.mode = options.mode ?? "normal";
     this.slowMs = options.slowMs ?? 2000;
     this.#maxSignatures = options.maxSignatures ?? 3;
+    this.signAndSendError = options.signAndSendError ?? null;
   }
 
   /** Never expose the key: keep JSON.stringify / util.inspect / console.log of the wallet free of it. */

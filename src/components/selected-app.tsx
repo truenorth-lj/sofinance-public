@@ -1,5 +1,6 @@
 "use client";
 import "@/lib/engine-host";
+import { notEnoughBalanceMessage } from "@sofinance/engine/balance-message";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowDown, ArrowUp, ArrowUpRight, ChartNoAxesCombined, CircleAlert, LoaderCircle, Sprout } from "lucide-react";
@@ -59,7 +60,7 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
   const { wallet, connected, connect, disconnect, connectionError,
     discovery, selection, state, amount, tolerancePercent, result, attempt, attemptStatus,
     error, reprepare, quoteError, quoteErrorCode, quoteErrorOutputMint, showQuoteRecalculate,
-    busy: addBusy, retryAdd, calculating, now, quote, fresh, status,
+    busy: addBusy, retryAdd, calculating, now, quote, fresh, status, insufficientInput,
     actionLabel, actionDisabled: addDisabled, primaryAction: addAction, changeAmount, changeTolerance, fillMax,
     choosePosition, chooseAsset, refreshDiscovery, refreshState, retryCalculation,
     loadingDiscovery, loadingState, stateError } = controller;
@@ -79,7 +80,6 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
   const buttonLabel = !connected ? "Connect wallet" : compound.busy ? "Another operation in progress…" :
     calculating ? "Estimating liquidity…" : actionLabel;
   const buttonClass = `inline-flex w-full items-center justify-center gap-2 rounded-full bg-lemon px-5 py-4 text-sm font-semibold text-ink transition-colors hover:bg-[#fff27f] ${actionLoading ? "cursor-wait disabled:opacity-100" : "disabled:cursor-not-allowed disabled:opacity-40"}`;
-  const addStatus = compound.busy ? "A compound or recovery operation is in progress." : status;
   const primaryAction = () => { if (!connected) { connect(); return; } if (!compound.busy) addAction(); };
   const metadataMints = [
     ...(discovery?.assets.map((asset) => asset.mint) || []),
@@ -119,6 +119,8 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
   }, [wallet]);
   const selectedAsset = discovery?.assets.find((asset) => asset.kind === selection?.inputKind && asset.mint === selection?.inputMint);
   const inputLabel = selectedAsset ? assetSymbol(selectedAsset, assetMetadata(selectedAsset, metadata)) : "Input asset";
+  const addStatus = compound.busy ? "A compound or recovery operation is in progress."
+    : insufficientInput && selectedAsset ? notEnoughBalanceMessage({ ...insufficientInput, symbol: inputLabel }) : status;
   const positionOptions = discovery?.positions || [];
   const assetOptions = discovery?.assets || [];
   const poolLabel = (mint: string) => {
@@ -216,7 +218,7 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
           <div className="mt-6 hidden sm:block"><button className={buttonClass} disabled={actionDisabled} aria-busy={actionLoading} onClick={primaryAction}>{actionLoading ? <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin motion-reduce:animate-none" /> : <ArrowDown aria-hidden="true" className="h-4 w-4" />}{buttonLabel}</button></div>
           {connected && <div role="status" className="mt-3 min-h-5 text-xs text-smoke">{addStatus}</div>}
           {connectionError && <div role="alert" className="mt-4 flex gap-2 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80"><CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />{connectionError}</div>}
-          {displayError && <div role="alert" className="mt-4 flex gap-2 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80"><CircleAlert className="mt-0.5 h-4 w-4 shrink-0" /><span className="flex-1">{displayError}</span>{showQuoteRecalculate && <button type="button" onClick={retryCalculation} className="shrink-0 font-semibold underline">Recalculate</button>}{reprepare && !showQuoteRecalculate && <button type="button" onClick={primaryAction} disabled={actionDisabled} data-testid="add-reprepare" className="shrink-0 font-semibold underline disabled:opacity-40">{actionDisabled ? "Getting a fresh quote…" : "Try again"}</button>}</div>}
+          {displayError && <div role="alert" className="mt-4 flex gap-2 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80"><CircleAlert className="mt-0.5 h-4 w-4 shrink-0" /><span className="flex-1">{displayError}</span>{showQuoteRecalculate && <button type="button" onClick={retryCalculation} data-testid="add-recalculate" className="shrink-0 font-semibold underline">Recalculate</button>}{reprepare && !showQuoteRecalculate && <button type="button" onClick={primaryAction} disabled={actionDisabled} data-testid="add-reprepare" className="shrink-0 font-semibold underline disabled:opacity-40">{actionDisabled ? "Getting a fresh quote…" : "Try again"}</button>}</div>}
         </section>
 
         <aside className="min-w-0 space-y-3"><section className="rounded-[28px] border border-white/12 bg-char p-5 sm:p-7"><h2 className="text-lg font-semibold text-cream">Add liquidity preview</h2><p className="mt-2 text-xs leading-5 text-smoke">{calculating ? <span role="status" className="inline-flex items-center gap-2 text-cream/80"><LoaderCircle className="h-3.5 w-3.5 animate-spin" />Estimating liquidity…</span> : quote ? fresh ? `Preview valid for approximately ${Math.max(0, Math.ceil(((result?.expiresAt ?? quote.expiresAt) - now) / 1000))} seconds` : "Preview expired, updating" : "Auto-calculate after selecting position and asset, entering amount"}</p>{quote && <>{totalCostPercent !== null && <p className="mt-2 text-xs leading-5 text-smoke/70">Total cost uses the conservative swap outputs (liquidity added plus the price-tolerance reserve left in your wallet), estimates immediate swap back to original input asset; not actual sale, also does not represent dollar value.</p>}<div className="mt-7 space-y-4 text-sm"><Row title="Input limit" value={quote ? `${money(quote.requested, quote.inputDecimals)} ${inputLabel}` : "—"} />{quote.feeBps > 0 && <Row title={`Protocol fee (${(quote.feeBps / 100).toFixed(2)}%)`} value={`${money(quote.feeAmount, quote.inputDecimals)} ${inputLabel}`} />}<div className="border-t border-white/10" /><Row title={`Swap to ${state ? poolLabel(state.mintA) : "Pool A"} · minOut`} value={quote ? quote.spendA === "0" ? "no swap needed" : money(quote.minOutA, quote.decimalsA) : "—"} /><Row title={`Swap to ${state ? poolLabel(state.mintB) : "Pool B"} · minOut`} value={quote ? quote.spendB === "0" ? "no swap needed" : money(quote.minOutB, quote.decimalsB) : "—"} /><Row title="Estimated liquidity added" value={quote?.liquidity || "—"} /><div className="border-t border-white/10" />{totalCostPercent !== null && <Row title="Total cost" value={`~${totalCostPercent}%`} emphasize />}<Row title="Jupiter transaction slippage" value="0.5%(fixed)" /><Row title="Simulated SOL total debit" value={result?.simulatedSolDebitLamports ? `${money(result.simulatedSolDebitLamports, 9, 9)} SOL(including input and possible rent)` : "Checked when you add liquidity"} /></div>{totalCostPercent !== null && <p className="mt-6 rounded-2xl border border-white/10 bg-white/[0.03] p-3 text-xs leading-5 text-smoke">Estimated round-trip cost: about {totalCostPercent ?? "—"}% (assuming you add liquidity, immediately withdraw, and swap back to {inputLabel}). This conservative estimate includes swap fees, price impact, and slippage tolerance. It does not block signing. Network fees and account rent are separate. This value is not a guarantee of execution or future value.</p>}</>}</section>

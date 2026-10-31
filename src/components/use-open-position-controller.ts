@@ -10,7 +10,7 @@ import { createJupiterRelayStore } from "@/lib/jupiter/browser-relay";
 import type { WalletAsset, WalletDiscovery } from "@sofinance/engine/wallet-discovery";
 import { useWalletConnection } from "./wallet-connection";
 import { notifyPositionHistoryChange } from "@/lib/position-history-refresh";
-import { BALANCES_REFRESH_EVENT } from "@/lib/tx-pipeline";
+import { BALANCES_REFRESH_EVENT, CANCEL_CHECK_PENDING_COPY, useCancelCheckPending } from "@/lib/tx-pipeline";
 import { useOpenAttempt } from "./use-open-attempt";
 import { captureGrowthEventOnce } from "@/lib/analytics/client";
 import { GROWTH_EVENTS, openEventProperties } from "@/lib/analytics/events";
@@ -126,8 +126,9 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
 
   const selectedAsset = inputAssets.find((item) => item.mint === inputMint && item.kind === inputKind) ?? null;
   const fresh = quote ? quoteIsFresh(quote.expiresAt, now) : false;
-  const busy = operationStage === "preparing" || operationStage === "wallet" || operationStage === "broadcasting" ||
-    operationStage === "swap-preparing" || operationStage === "swap-wallet" || operationStage === "swap-broadcasting" ||
+  // "checking" / "swap-checking": the wallet threw and we are looking for the transaction on-chain; nothing may be resent.
+  const busy = operationStage === "preparing" || operationStage === "wallet" || operationStage === "checking" || operationStage === "broadcasting" ||
+    operationStage === "swap-preparing" || operationStage === "swap-wallet" || operationStage === "swap-checking" || operationStage === "swap-broadcasting" ||
     operationStage === "swap-pending" || open.pending;
   const swapRecovery = useSolSwapRecovery({ wallet, connected, blocked: busy, onReceipt: (receipt) => {
     if (receipt.wallet === wallet && receipt.poolId === pair?.poolAddress) setSwapReceipt(receipt, { persist: false });
@@ -289,7 +290,10 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
         ? (selectedAsset.reason || "Selected asset is not eligible")
         : null;
 
+  // A cancelled open (or its SOL swap step) on this pool is still being checked on Solana: no second one yet.
+  const cancelPending = useCancelCheckPending("open", pair?.poolAddress);
   const actionBlockedReason = swapRecovery.invalid ? swapRecovery.error
+    : cancelPending ? CANCEL_CHECK_PENDING_COPY
     : swapRecovery.attempt ? "Check the original SOL swap before opening again"
     : open.pending ? "Checking the original open-position transaction before opening again"
     : pendingSwap ? (!connected ? "Connect a wallet to create a position" : rangePreset === "custom" && (!minPrice || !maxPrice) ? formError : null)

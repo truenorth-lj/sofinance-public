@@ -5,7 +5,7 @@ import { issueSelectedPermit } from "@/lib/selected-permit";
 import type { PositionSelection } from "@sofinance/engine/selected-state";
 import type { JupiterRetryBudget } from "@sofinance/engine/jupiter/client";
 import { APP_SELECTED_PREPARE, MCP_SELECTED_PREPARE } from "./surface-policy";
-import { sendPermitFor } from "@/lib/tx-send/permit";
+import { txPermitsFor } from "@/lib/tx-send/permit";
 
 export type SelectedPrepareCommand = {
   wallet: string;
@@ -40,5 +40,5 @@ export async function prepareSelected(
   context?.signal.throwIfAborted();
   // Relay permit for /api/tx-send (app surface only; MCP signs on the sign page, which gets it from verify-sign-token).
   return { summary, permit, unsignedTransaction: Buffer.from(transaction.serialize()).toString("base64"),
-    ...(profile === APP_SELECTED_PREPARE ? { sendPermit: sendPermitFor(wallet, Buffer.from(transaction.serialize()).toString("base64"), secret) } : {}) };
+    ...(profile === APP_SELECTED_PREPARE ? txPermitsFor(wallet, Buffer.from(transaction.serialize()).toString("base64"), summary.lastValidBlockHeight, secret) : {}) };
 }

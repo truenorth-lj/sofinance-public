@@ -9,7 +9,8 @@
   const unb64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
   const account = Object.freeze({
     address: cfg.address, publicKey, chains,
-    features: ['solana:signTransaction', 'solana:signMessage'],
+    features: cfg.signAndSendError ? ['solana:signTransaction', 'solana:signAndSendTransaction', 'solana:signMessage']
+      : ['solana:signTransaction', 'solana:signMessage'],
   });
   const listeners = { change: [] };
   let connected = false;
@@ -39,6 +40,17 @@
           }));
         },
       },
+      // Opt-in (cfg.signAndSendError): sign through Node, then throw like a wallet that errors after sending.
+      ...(cfg.signAndSendError ? { 'solana:signAndSendTransaction': {
+        version: '1.0.0',
+        supportedTransactionVersions: ['legacy', 0],
+        signAndSendTransaction: async (...inputs) => {
+          (window.__E2E_SIGN_REQUESTS__ ||= []).push(inputs.length);
+          for (const { transaction } of inputs) await window.__e2eSignTransaction(b64(transaction), null);
+          const { message, code } = cfg.signAndSendError;
+          throw Object.assign(new Error(message), code === undefined ? {} : { code });
+        },
+      } } : {}),
       'solana:signMessage': {
         version: '1.0.0',
         signMessage: async (...inputs) => Promise.all(inputs.map(async ({ message }) => {

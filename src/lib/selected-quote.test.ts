@@ -67,7 +67,7 @@ describe("selected quote", () => {
 
   it("rejects an amount larger than the selected asset balance", async () => {
     const selection = { positionMint, inputMint: mintA, inputKind: "token" as const };
-    await expect(getSelectedQuoteBundle(wallet, selection, "1001", 9_900)).rejects.toThrow(/balance.*insufficient|insufficient.*balance/i);
+    await expect(getSelectedQuoteBundle(wallet, selection, "1001", 9_900)).rejects.toThrow(/^Not enough USDC \(you have [0-9.,]+, entered [0-9.,]+\)$/);
   });
 
   it("sizes liquidity below the swap output and pads amountMax by the tolerance", async () => {

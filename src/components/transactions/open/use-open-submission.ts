@@ -5,7 +5,7 @@ import { useCallback, useLayoutEffect, useRef, useState, type RefObject } from "
 import type { OpenPositionQuote } from "@sofinance/engine/open-types";
 import type { OpenRangePreset } from "@sofinance/engine/open-range-presets";
 import { jupiterRelayFailureMessage, type JupiterRelayStore } from "@/lib/jupiter/browser-relay";
-import { reportTxFailure, runTx, TxNotSentError, TxRunError, type TxWallet } from "@/lib/tx-pipeline";
+import { plainTxError, reportTxFailure, runTx, TxLandedUnknownError, TxNotSentError, TxRunError, TxCancelCheckPendingError, TxSendUnknownError, TxWalletCancelledError, type TxWallet } from "@/lib/tx-pipeline";
 import { OPEN_PREPARE_TIMEOUT_MS, openPositionAdapter } from "../adapters/open";
 import { openAttemptFromSummary, type OpenAttempt } from "@/lib/open-attempt";
 import { captureGrowthEvent } from "@/lib/analytics/client";
@@ -13,11 +13,11 @@ import { openFailureProperties } from "@/lib/analytics/errors";
 import { GROWTH_EVENTS, openEventProperties } from "@/lib/analytics/events";
 import { readSolSwapAttempt, requireSolSwapStorage } from "./sol-swap-attempt-store";
 import { formatAmount } from "@sofinance/engine/amount";
-import { rawToDecimalString, runSolSwapStep, SolSwapStepError, type SolSwapReceipt, type SolSwapStage } from "./sol-swap-step-client";
+import { rawToDecimalString, runSolSwapStep, solSwapFailureContext, SolSwapStepError, type SolSwapReceipt, type SolSwapStage } from "./sol-swap-step-client";
 import { clearSolSwapReceipt, isSolSwapReceiptExpired, receiptStorage, saveSolSwapReceipt,
   type PendingSolSwapReceipt } from "./sol-swap-receipt-store";
 
-export type OpenSubmitStage = SolSwapStage | "preparing" | "wallet" | "broadcasting" | "pending" | "confirmed" | "failed" | "expired" | "manual-review" | null;
+export type OpenSubmitStage = SolSwapStage | "preparing" | "wallet" | "checking" | "broadcasting" | "pending" | "confirmed" | "failed" | "expired" | "manual-review" | null;
 
 /** Two-transaction SOL deposit: 1 = SOL -> pool token swap, 2 = token-input open. */
 export type OpenStep = 1 | 2 | null;
@@ -200,16 +200,22 @@ export function useOpenSubmissionCommand({ pair, wallet, inputMint, inputKind, a
       if (receipt) setSwapReceipt({ ...receipt, openSignature: result.signature });
     } catch (caught) {
       const failure = caught instanceof TxRunError ? caught : null;
-      if (failure?.kind !== "rejected") {
+      // A wallet cancel (step 1/2 swap or step 2/2): the toast says so and the form unlocks; no inline error.
+      // (Not a refusal because an earlier cancel is still being checked on Solana: that one says so inline.)
+      const cancelled = (failure?.kind === "rejected" && !(failure instanceof TxCancelCheckPendingError)) || caught instanceof TxWalletCancelledError;
+      if (!cancelled) {
         captureGrowthEvent(GROWTH_EVENTS.openFailed, {
           ...openEventProperties(pair, { wallet, inputKind }),
           ...openFailureProperties(failure?.cause ?? caught),
           ...(failedStep ? { open_step: failedStep, open_resumed: resume !== null } : {}),
         });
       }
-      if (!failure) reportTxFailure({ flow: failedStep === 1 ? "swap" : "open", error: caught, retry });
-      const reason = failure ? failure.message : jupiterRelayFailureMessage(caught, "Preparing the transaction timed out. Please retry.");
-      if (walletRef.current === wallet && failure?.kind !== "rejected") {
+      if (!failure) reportTxFailure({ flow: failedStep === 1 ? "swap" : "open", error: caught, retry, context: solSwapFailureContext(caught) });
+      // Pipeline errors (incl. the on-chain check after a wallet error) already carry plain words; never show raw wallet JSON.
+      const reason = failure ? failure.message
+        : caught instanceof TxNotSentError || caught instanceof TxLandedUnknownError || caught instanceof TxSendUnknownError ? plainTxError(caught)
+          : jupiterRelayFailureMessage(caught, "Preparing the transaction timed out. Please retry.");
+      if (walletRef.current === wallet && !cancelled) {
         const message = receipt
           ? `Step 1/2 done: ${solSwapReceiptLabel(receipt)} are in your wallet. Step 2/2 (open position) failed: ${reason} Use "Continue open (2/2)" to try step 2/2 again.`
           : caught instanceof SolSwapStepError && caught.signature

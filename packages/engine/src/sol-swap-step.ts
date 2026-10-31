@@ -5,6 +5,7 @@
 // swap (into the fee wallet's pre-created wSOL ATA); there is no direct
 // transfer to the fee wallet and no Raydium instruction here. Step 2/2 is a
 // normal token-input open sized from what this swap actually delivered.
+import { notEnoughBalanceMessage } from "./balance-message";
 import {
   createAssociatedTokenAccountIdempotentInstruction, createCloseAccountInstruction, getAssociatedTokenAddressSync,
   TOKEN_PROGRAM_ID, unpackAccount,
@@ -139,7 +140,9 @@ export async function buildAndSimulateSolSwapStep(walletAddress: string, poolId:
   }
   const requested = parseTokenAmount(amount, 9);
   if (requested <= 0n) throw new Error("Input amount too small to obtain route");
-  if (BigInt(state.inputBalance) < requested) throw new Error("Insufficient input asset balance or SOL reserve");
+  if (BigInt(state.inputBalance) < requested) {
+    throw new Error(notEnoughBalanceMessage({ decimals: 9, balance: state.inputBalance, requested, native: true }));
+  }
   let built: Awaited<ReturnType<typeof buildForOutput>> | undefined;
   let lastNoRoute: unknown;
   for (const outputMint of [state.mintA, state.mintB]) {

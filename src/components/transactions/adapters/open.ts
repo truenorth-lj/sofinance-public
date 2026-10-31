@@ -30,6 +30,7 @@ export type OpenPrepared = PreparedTx & { summary: OpenPositionSummary };
 export const openPositionAdapter: TxAdapter<OpenInput, OpenPrepared> = {
   flow: "open",
   successTitle: "Position opened",
+  scope: (input) => input.poolId,
   async prepare(input, { wallet }) {
     const mint = createEphemeralMint();
     try {
@@ -39,7 +40,7 @@ export const openPositionAdapter: TxAdapter<OpenInput, OpenPrepared> = {
         rangePreset: input.rangePreset, minPrice: input.minPrice, maxPrice: input.maxPrice, nftMint,
         ...(input.solSwapSignature ? { solSwapSignature: input.solSwapSignature } : {}),
       }, { store: input.relayStore, signal: AbortSignal.timeout(OPEN_PREPARE_TIMEOUT_MS) });
-      const data = await response.json() as { unsignedTransaction?: string; sendPermit?: string; summary?: OpenPositionSummary; error?: string; code?: string };
+      const data = await response.json() as { unsignedTransaction?: string; sendPermit?: string; landedPermit?: string; summary?: OpenPositionSummary; error?: string; code?: string };
       if (!response.ok) throw Object.assign(new TxNotSentError(data.error || "Preparation failed. Nothing was sent."), { code: data.code });
       const summary = data.summary;
       if (!data.unsignedTransaction || !summary || summary.wallet !== wallet || summary.poolId !== input.poolId ||
@@ -53,7 +54,7 @@ export const openPositionAdapter: TxAdapter<OpenInput, OpenPrepared> = {
       }
       input.beforeWallet?.();
       return {
-        transaction, summary, lastValidBlockHeight: summary.lastValidBlockHeight, positionMint: nftMint, sendPermit: data.sendPermit,
+        transaction, summary, lastValidBlockHeight: summary.lastValidBlockHeight, positionMint: nftMint, sendPermit: data.sendPermit, landedPermit: data.landedPermit,
         cosign: (walletSigned) => {
           const signed = addMintSignature(walletSigned, mint);
           if (missingRequiredSignatures(signed).length) throw new TxNotSentError("A required signature is missing, so nothing was sent.");

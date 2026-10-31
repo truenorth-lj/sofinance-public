@@ -92,7 +92,7 @@ describe("open-position quote validation", () => {
       { poolId, inputMint: mintA, inputKind: "token" },
       "1001",
       { preset: "standard" },
-    )).rejects.toThrow(/balance/i);
+    )).rejects.toThrow(/^Not enough USDC \(you have [0-9.,]+, entered [0-9.,]+\)$/);
   });
 
   it("rejects currently charged transfer fees", async () => {

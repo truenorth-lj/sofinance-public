@@ -1,11 +1,11 @@
-import { expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   AddressLookupTableAccount, ComputeBudgetProgram, Keypair, PublicKey, SystemProgram,
   TransactionInstruction, TransactionMessage, VersionedTransaction,
 } from "@solana/web3.js";
 import {
-  LIGHTHOUSE_PROGRAM_ID, assertWalletReturnedTransaction, landedTransactionMatchesPrepared,
-  walletReturnedTransactionMatches, walletReturnedTxDiagnostic,
+  LIGHTHOUSE_PROGRAM_ID, assertWalletReturnedTransaction, landedInstructionsMatchPrepared, landedReceiptIsPrepared,
+  landedTransactionMatchesPrepared, walletReturnedTransactionMatches, walletReturnedTxDiagnostic,
 } from "./wallet-returned-tx";
 
 function transferTx(payer: Keypair, dest = Keypair.generate().publicKey) {
@@ -228,4 +228,48 @@ it("refuses an inserted SystemProgram.transfer or an unlisted program next to Ph
     expect(walletReturnedTxDiagnostic(prepared, signed)).toMatchObject({ kind: "extra", unmatchedProgramId: extra.programId.toBase58() });
     expect(() => assertWalletReturnedTransaction(prepared, signed, payer.publicKey.toBase58())).toThrow(/Wallet added an instruction from a program that is not allowed/);
   }
+});
+
+describe("post-landing match: our instructions present and in order, extras tolerated", () => {
+  const receipt = (tx: VersionedTransaction, err: unknown = null) => ({ transaction: { message: tx.message }, meta: { err } });
+  it("matches a landed tx with wallet-added instructions from any program, while pre-send checks still refuse it", () => {
+    const payer = Keypair.generate(), mint = Keypair.generate();
+    const unlisted = new TransactionInstruction({ programId: Keypair.generate().publicKey, keys: [], data: Buffer.from([9]) });
+    const { prepared, signed } = phantomMainnetOpen(payer, mint, [unlisted]);
+    const wallet = payer.publicKey.toBase58();
+    expect(walletReturnedTransactionMatches(prepared, signed, wallet)).toBe(false);
+    expect(() => assertWalletReturnedTransaction(prepared, signed, wallet)).toThrow();
+    expect(landedInstructionsMatchPrepared(prepared, signed, wallet)).toBe(true);
+    expect(landedTransactionMatchesPrepared(prepared, receipt(signed), wallet)).toBe(true);
+  });
+  it("matches Phantom's mainnet ComputeBudget + Lighthouse rewrite", () => {
+    const payer = Keypair.generate(), mint = Keypair.generate();
+    const { prepared, signed } = phantomMainnetOpen(payer, mint);
+    expect(landedTransactionMatchesPrepared(prepared, receipt(signed), payer.publicKey.toBase58())).toBe(true);
+  });
+  it("refuses a landed tx that is missing, reorders or changes one of our instructions", () => {
+    const payer = Keypair.generate();
+    const wallet = payer.publicKey.toBase58();
+    const blockhash = Keypair.generate().publicKey.toBase58();
+    const a = SystemProgram.transfer({ fromPubkey: payer.publicKey, toPubkey: Keypair.generate().publicKey, lamports: 1 });
+    const b = new TransactionInstruction({ programId: Keypair.generate().publicKey, keys: [], data: Buffer.from([1, 2]) });
+    const compile = (instructions: TransactionInstruction[], hash = blockhash, payerKey = payer.publicKey) => new VersionedTransaction(
+      new TransactionMessage({ payerKey, recentBlockhash: hash, instructions }).compileToV0Message());
+    const prepared = compile([a, b]);
+    const extra = new TransactionInstruction({ programId: LIGHTHOUSE_PROGRAM_ID, keys: [], data: Buffer.from([3]) });
+    expect(landedInstructionsMatchPrepared(prepared, compile([extra, a, extra, b, extra]), wallet)).toBe(true);
+    expect(landedInstructionsMatchPrepared(prepared, compile([a]), wallet)).toBe(false);
+    expect(landedInstructionsMatchPrepared(prepared, compile([b, a]), wallet)).toBe(false);
+    const changed = new TransactionInstruction({ programId: b.programId, keys: [], data: Buffer.from([1, 3]) });
+    expect(landedInstructionsMatchPrepared(prepared, compile([a, changed]), wallet)).toBe(false);
+    expect(landedInstructionsMatchPrepared(prepared, compile([a, b], Keypair.generate().publicKey.toBase58()), wallet)).toBe(false);
+  });
+  it("finds a landed-but-failed tx for lookup, while the success matcher still refuses it", () => {
+    const payer = Keypair.generate(), mint = Keypair.generate();
+    const { prepared, signed } = phantomMainnetOpen(payer, mint);
+    const wallet = payer.publicKey.toBase58();
+    expect(landedReceiptIsPrepared(prepared, receipt(signed, { InstructionError: [0, "Custom"] }), wallet)).toBe(true);
+    expect(landedTransactionMatchesPrepared(prepared, receipt(signed, { InstructionError: [0, "Custom"] }), wallet)).toBe(false);
+    expect(landedReceiptIsPrepared(prepared, null, wallet)).toBe(false);
+  });
 });

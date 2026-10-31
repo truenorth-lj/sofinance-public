@@ -1,11 +1,12 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import { captureTxClientFailure } from "@/lib/sentry/client-tx";
+import { captureTxClientFailure, type TxReportContext } from "@/lib/sentry/client-tx";
 import { notifyPositionHistoryChange } from "@/lib/position-history-refresh";
 import { clearTxAttempt } from "./attempts";
 import { pollSignature, type TxChainStatus } from "./confirm";
-import { canRetry, FLOW_LABEL, plainTxError, txFailureKind, type TxFailureKind, type TxFlow } from "./errors";
+import { canRetry, FLOW_LABEL, plainTxError, txFailureKind, TxWalletCancelledError, type TxFailureKind, type TxFlow } from "./errors";
+import { LANDED_MAX_WAIT_COPY } from "./landed";
 
 export { solscanTxUrl } from "./confirm";
 
@@ -67,14 +68,38 @@ export function requestBalancesRefresh(detail: { flow: TxFlow; signature?: strin
 }
 
 export const noticeIdFor = (signature: string) => `tx-${signature}`;
+/** One cancel toast per attempt: a resubmit gets its own, and a later "it landed" replaces only this one. */
+export const cancelNoticeIdFor = (error: TxWalletCancelledError) => `tx-cancel-${error.attemptId}`;
 
-/** A failure before or during send: plain words, Sentry for anything but a wallet rejection. */
-export function reportTxFailure(input: { flow: TxFlow; error: unknown; id?: string; signature?: string; retry?: () => void }) {
+/**
+ * The wallet threw after a sign-and-send request: a loading notice while we check Solana for it.
+ * Nothing in it says "nothing was sent"; that only follows once the blockhash expired with no match.
+ */
+/** Short inline status while that check runs (status lines and buttons; the toast carries the full text). */
+export const CHECKING_SOLANA_COPY = "Wallet returned an error. Checking Solana…";
+
+export function showTxCheckingNotice(flow: TxFlow) {
+  return showTxNotice({ flow, state: "loading", title: "Checking Solana…",
+    detail: `Your wallet returned an error, but the transaction may still have gone through. Checking Solana before anything else; please don't submit again yet (this can take up to ${LANDED_MAX_WAIT_COPY}).` });
+}
+
+/**
+ * A failure before or during send: plain words, Sentry for anything but a wallet rejection, and a
+ * balances refresh (a wallet-stage failure may still have moved funds; the screen must not show stale balances).
+ */
+export function reportTxFailure(input: { flow: TxFlow; error: unknown; id?: string; signature?: string; retry?: () => void; context?: TxReportContext }) {
   const kind = txFailureKind(input.error);
   const message = plainTxError(input.error, kind);
-  captureTxClientFailure(input.flow, kind, message);
+  captureTxClientFailure(input.flow, kind, message, input.context);
+  requestBalancesRefresh({ flow: input.flow, signature: input.signature });
   if (kind === "rejected") {
     if (input.id) dismissTxNotice(input.id);
+    // Cancelled after a sign-and-send request: say so now (the form unlocks). Not "nothing was sent": a background
+    // lookup still checks Solana and replaces this toast with the success toast if the wallet broadcast anyway.
+    if (input.error instanceof TxWalletCancelledError) {
+      showTxNotice({ id: cancelNoticeIdFor(input.error), flow: input.flow, state: "failure", kind: "rejected",
+        title: `${FLOW_LABEL[input.flow]} cancelled`, detail: message });
+    }
     return { kind, message, retryable: false };
   }
   const retryable = canRetry(kind);

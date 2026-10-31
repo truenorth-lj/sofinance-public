@@ -10,7 +10,7 @@ export type AddInput = {
   selection: PositionSelection; amount: string; rawAmount: bigint; floorBps: number; toleranceBps: number;
   relayStore: JupiterRelayStore;
 };
-type AddPrepareResponse = Preflight & { unsignedTransaction: string; sendPermit?: string; blockhash: string; lastValidBlockHeight: number;
+type AddPrepareResponse = Preflight & { unsignedTransaction: string; sendPermit?: string; landedPermit?: string; blockhash: string; lastValidBlockHeight: number;
   startingLiquidity: string; startingBalances: SelectedPositionState["balances"] };
 export type AddPrepared = PreparedTx & { preflight: AddPrepareResponse };
 
@@ -21,6 +21,7 @@ export type AddPrepared = PreparedTx & { preflight: AddPrepareResponse };
 export const addLiquidityAdapter: TxAdapter<AddInput, AddPrepared> = {
   flow: "add",
   successTitle: "Liquidity added",
+  scope: (input) => input.selection.positionMint,
   async prepare(input, { wallet }) {
     const signal = AbortSignal.timeout(RELAY_DEADLINE_MS);
     const response = await postWithJupiterRelay("/api/selected-prepare", { wallet, ...input.selection, amount: input.amount,
@@ -35,7 +36,7 @@ export const addLiquidityAdapter: TxAdapter<AddInput, AddPrepared> = {
     return {
       transaction: decodePreparedTransaction(data.unsignedTransaction, wallet, data.blockhash),
       lastValidBlockHeight: data.lastValidBlockHeight, positionMint: input.selection.positionMint, preflight: data,
-      sendPermit: data.sendPermit,
+      sendPermit: data.sendPermit, landedPermit: data.landedPermit,
     };
   },
 };

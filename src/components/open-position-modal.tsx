@@ -111,13 +111,16 @@ export function OpenPositionModal({
   const stepPrefix = c.openStep ? `Step ${c.openStep}/2 · ` : "";
   const swapStatus = c.submitStage === "swap-preparing" ? "Preparing SOL swap…"
     : c.submitStage === "swap-wallet" ? "Sign the SOL swap in your wallet…"
+      : c.submitStage === "swap-checking" ? "Your wallet returned an error. Checking Solana in case the swap went through…"
       : c.submitStage === "swap-broadcasting" ? "Sending SOL swap…"
         : c.submitStage === "swap-pending" ? "Waiting for the swap to confirm…" : null;
   const status = swapStatus ? `${stepPrefix}${swapStatus}`
-    : c.openStep && (c.submitStage === "preparing" || c.submitStage === "wallet" || c.submitStage === "broadcasting")
-      ? `${stepPrefix}${c.submitStage === "preparing" ? "Preparing open position…" : c.submitStage === "wallet" ? "Sign the open position in your wallet…" : "Sending open position…"}`
+    : c.openStep && (c.submitStage === "preparing" || c.submitStage === "wallet" || c.submitStage === "checking" || c.submitStage === "broadcasting")
+      ? `${stepPrefix}${c.submitStage === "preparing" ? "Preparing open position…" : c.submitStage === "wallet" ? "Sign the open position in your wallet…"
+        : c.submitStage === "checking" ? "Your wallet returned an error. Checking Solana in case it went through…" : "Sending open position…"}`
     : c.submitStage === "preparing" ? "Preparing latest transaction…"
     : c.submitStage === "wallet" ? "Confirm in your wallet…"
+      : c.submitStage === "checking" ? "Your wallet returned an error. Checking Solana in case it went through; please wait…"
       : c.submitStage === "broadcasting" ? "Sending transaction…"
         : c.submitStage === "pending" ? "Waiting for on-chain confirmation…"
           : c.submitStage === "failed" ? "A safety check stopped it on-chain, so nothing changed except the network fee."

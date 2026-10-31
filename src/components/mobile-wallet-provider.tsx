@@ -3,7 +3,7 @@
 import { SolanaAdapter } from "@reown/appkit-adapter-solana/react";
 import { solana } from "@reown/appkit/networks";
 import { createAppKit, useAppKit, useAppKitAccount, useAppKitProvider, useDisconnect } from "@reown/appkit/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   APPKIT_FEATURES,
   APPKIT_THEME_MODE,
@@ -20,6 +20,7 @@ import { GROWTH_EVENTS } from "@/lib/analytics/events";
 import { WalletGrowthAnalytics } from "./wallet-growth-analytics";
 import { WalletConnectionContext } from "./wallet-connection";
 import { TxNoticeHost } from "./transactions/tx-notice-host";
+import { setTxWalletTags } from "@/lib/sentry/client-tx";
 
 const projectId = process.env.NEXT_PUBLIC_REOWN_PROJECT_ID?.trim();
 
@@ -51,6 +52,11 @@ export function MobileWalletProvider({ children }: { children: React.ReactNode }
   const { open } = useAppKit();
   const { disconnect } = useDisconnect();
   const [connectionError, setConnectionError] = useState("");
+  // Sentry: which wallet a transaction report came from, when the AppKit provider names it.
+  const walletName = account.isConnected ? (walletProvider as { name?: unknown } | undefined)?.name : undefined;
+  useEffect(() => {
+    setTxWalletTags(typeof walletName === "string" && walletName ? { name: `appkit:${walletName}` } : null);
+  }, [walletName]);
 
   function openWalletModal() {
     captureGrowthEvent(GROWTH_EVENTS.walletConnectClicked);

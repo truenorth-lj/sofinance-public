@@ -4,7 +4,7 @@ import { ConnectionProvider, WalletProvider, useConnection, useWallet } from "@s
 import { WalletModalProvider, useWalletModal } from "@solana/wallet-adapter-react-ui";
 import "@solana/wallet-adapter-react-ui/styles.css";
 import dynamic from "next/dynamic";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { PUBLIC_SOLANA_RPC_URL } from "@sofinance/engine/rpc/urls";
 import { captureGrowthEvent } from "@/lib/analytics/client";
 import { GROWTH_EVENTS } from "@/lib/analytics/events";
@@ -13,6 +13,7 @@ import { WalletConnectionContext } from "./wallet-connection";
 import { TermsGate } from "./terms-gate";
 import { EvmWalletProvider } from "./evm-wallet-connection";
 import { TxNoticeHost } from "./transactions/tx-notice-host";
+import { setTxWalletTags } from "@/lib/sentry/client-tx";
 
 const MobileWalletProvider = dynamic(() => import("./mobile-wallet-provider").then((module) => module.MobileWalletProvider), { ssr: false });
 
@@ -40,6 +41,12 @@ function BrowserWalletConnection({ children }: { children: React.ReactNode }) {
   // Phantom and other Wallet Standard wallets broadcast themselves (and rebroadcast until expiry).
   const canSignAndSend = walletSupportsSignAndSend(wallet?.adapter);
   const { setVisible } = useWalletModal();
+  // Sentry: which wallet a transaction report came from (name, and the Wallet Standard version when exposed).
+  const walletName = connected ? wallet?.adapter.name : undefined;
+  const walletVersion = connected ? (wallet?.adapter as { wallet?: { version?: unknown } } | undefined)?.wallet?.version : undefined;
+  useEffect(() => {
+    setTxWalletTags(walletName ? { name: walletName, version: typeof walletVersion === "string" ? walletVersion : undefined } : null);
+  }, [walletName, walletVersion]);
   return <WalletConnectionContext.Provider value={{
     address, connected, connect: () => { captureGrowthEvent(GROWTH_EVENTS.walletConnectClicked); setVisible(true); },
     disconnect: () => { void disconnect(); }, isMobile: false, walletsCount: wallets.length, connectionError: "",

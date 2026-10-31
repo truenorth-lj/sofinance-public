@@ -1,3 +1,4 @@
+import { knownTokenSymbol, notEnoughBalanceMessage } from "./balance-message";
 import BN from "bn.js";
 import { LiquidityMathUtil, SqrtPriceMath, TickUtil } from "@raydium-io/raydium-sdk-v2";
 import {
@@ -136,7 +137,8 @@ export async function getOpenPositionQuoteBundle(
   const requested = deposit.swapAmount;
   const swapFeeBps = deposit.legBps;
   if (BigInt(state.inputBalance) < grossRequested) {
-    throw new Error("Insufficient input asset balance or SOL reserve");
+    throw new Error(notEnoughBalanceMessage({ symbol: knownTokenSymbol(state.inputMint, state.inputKind), decimals: state.inputDecimals,
+      balance: state.inputBalance, requested: grossRequested, native: state.inputKind === "native" }));
   }
   if (requested <= 0n) throw new Error("Input amount too small to obtain route");
   let spendA = 0n;
