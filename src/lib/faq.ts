@@ -41,7 +41,7 @@ export const FAQ_SECTIONS: readonly FaqSection[] = [
       {
         question: "What is impermanent loss, and does it apply to same-stock pools?",
         answer:
-          "Impermanent loss is the gap between holding two tokens and providing them as liquidity: as the relative price moves, the pool shifts your position toward the token that got cheaper. In a same-stock pool such as MSTR/MSTRx both tokens track the same share, so the relative price usually stays near 1:1, but the two issuers' tokens can still trade at a premium or discount to each other. That gap, plus issuer controls and smart contract risk, means LP in a same-stock pool can still lose money compared with holding.",
+          "Impermanent loss is the gap between holding two tokens and providing them as liquidity: as the relative price moves, the pool shifts your position toward the token that got cheaper. In a same-stock pool such as MSTR/MSTRx both tokens track the same share, so the relative price usually stays near 1:1, but the two issuers' tokens can still trade at a premium or discount to each other. That gap, plus smart contract risk, means LP in a same-stock pool can still lose money compared with holding.",
       },
       {
         question: "What is a same-stock pool, like MSTR/MSTRx or SPCX/SPCXx?",
@@ -81,7 +81,7 @@ export const FAQ_SECTIONS: readonly FaqSection[] = [
       {
         question: "Is SoFinance custodial? What if the site goes offline?",
         answer:
-          "SoFinance is self-custodial. It never holds your private keys or tokens; every action is a transaction you sign in your own wallet and can check on a block explorer: Solscan (solscan.io) for Solana and the Robinhood Chain Blockscout explorer (robinhoodchain.blockscout.com) for Robinhood Chain. On Solana your position is a standard Raydium position NFT, and on Robinhood Chain a standard Uniswap v4 position NFT, so you could still manage or withdraw it directly with the underlying protocol. Self-custodial does not mean risk-free: issuer controls such as freezing, smart contract risk and market risk still apply.",
+          "SoFinance is self-custodial. It never holds your private keys or tokens; every action is a transaction you sign in your own wallet and can check on a block explorer: Solscan (solscan.io) for Solana and the Robinhood Chain Blockscout explorer (robinhoodchain.blockscout.com) for Robinhood Chain. On Solana your position is a standard Raydium position NFT, and on Robinhood Chain a standard Uniswap v4 position NFT, so you could still manage or withdraw it directly with the underlying protocol. Self-custodial does not mean risk-free: smart contract risk and market risk still apply.",
       },
       {
         question: "How much does SoFinance cost?",

@@ -59,10 +59,6 @@ export default function DocsRisksPage() {
           A busy Solana network or poor swap prices can make the result differ from the preview.
         </li>
       </ul>
-      <p>
-        The create-position UI surfaces Token-2022 and freeze-risk flags when discovery detects them.
-        Read them before you sign.
-      </p>
     </DocsArticle>
   );
 }
