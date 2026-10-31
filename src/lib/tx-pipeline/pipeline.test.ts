@@ -139,6 +139,18 @@ describe("wallet send", () => {
     const result = await sendWithWallet(wallet, unsigned(), { sendRaw });
     expect(result.via).toBe("relay"); expect(sendRaw).toHaveBeenCalledTimes(1); expect(result.signature).toBe(sigOf(wallet.signed[0]!));
   });
+  it("falls back to sign + relay when the connector exposes signAndSend but the wallet lacks the feature", async () => {
+    const wallet = { ...signingWallet(), signAndSendTransaction: vi.fn(async () => { throw new Error('The wallet does not support the "solana:signAndSendTransaction" feature'); }) };
+    const sendRaw = vi.fn(async (tx: VersionedTransaction) => sigOf(tx));
+    const result = await sendWithWallet(wallet, unsigned(), { sendRaw });
+    expect(result.via).toBe("relay"); expect(wallet.signTransaction).toHaveBeenCalledTimes(1); expect(sendRaw).toHaveBeenCalledTimes(1);
+  });
+  it("does not fall back when the user rejects a signAndSend prompt", async () => {
+    const wallet = { ...signingWallet(), signAndSendTransaction: vi.fn(async () => { throw new Error("User rejected the request."); }) };
+    const sendRaw = vi.fn();
+    await expect(sendWithWallet(wallet, unsigned(), { sendRaw })).rejects.toThrow("User rejected");
+    expect(wallet.signTransaction).not.toHaveBeenCalled(); expect(sendRaw).not.toHaveBeenCalled();
+  });
   it("uses sign-then-send when a cosigner must sign after the wallet, even if signAndSend exists", async () => {
     const wallet = signingWallet({ signAndSend: true });
     const cosign = vi.fn((tx: VersionedTransaction) => { tx.sign([cosigner]); return tx; });

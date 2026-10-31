@@ -43,7 +43,11 @@ export type RunTxOptions = {
   retry?: () => void;
 };
 
-export type RunTxResult<Prepared> = { signature: string; prepared: Prepared; noticeId: string };
+export type RunTxResult<Prepared> = {
+  signature: string; prepared: Prepared; noticeId: string;
+  /** The relay response was lost (timeout, network): the signature is tracked but may not have reached Solana. */
+  uncertain?: string;
+};
 
 export class TxRunError extends Error {
   constructor(readonly kind: ReturnType<typeof reportTxFailure>["kind"], message: string, readonly retryable: boolean, readonly cause: unknown) {
@@ -62,6 +66,7 @@ export async function runTx<Input, Prepared extends PreparedTx>(
   const { wallet } = options;
   let prepared: Prepared | undefined;
   let signature: string | undefined;
+  let uncertain: string | undefined;
   try {
     options.onStage?.("preparing");
     prepared = await adapter.prepare(input, { wallet: wallet.address });
@@ -75,10 +80,11 @@ export async function runTx<Input, Prepared extends PreparedTx>(
     } catch (error) {
       if (!(error instanceof TxSendUnknownError)) throw error;
       signature = error.signature; // Possibly sent: track it rather than guess.
+      uncertain = error.message;
     }
     const noticeId = record(adapter, input, prepared, signature, options);
     options.onStage?.("confirming", { signature });
-    return { signature, prepared, noticeId };
+    return { signature, prepared, noticeId, ...(uncertain ? { uncertain } : {}) };
   } catch (error) {
     const reported = reportTxFailure({ flow: adapter.flow, error, retry: options.retry });
     throw new TxRunError(reported.kind, reported.message, reported.retryable, error);

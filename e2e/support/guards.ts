@@ -45,7 +45,7 @@ export async function attachGuards(context: BrowserContext, page: Page, baseOrig
     // The browser logs every 4xx/5xx fetch response as a console error. The negative journeys provoke those on purpose
     // for the verify/broadcast routes (real 401 for bad tokens, mocked 4xx/5xx for broadcast); anything else still fails.
     if (/^Failed to load resource: the server responded with a status of [45]\d\d/.test(text) &&
-      /\/api\/(verify-sign-token|(selected|open|compound)-broadcast)$/.test(new URL(message.location().url || "http://x/").pathname)) return;
+      /\/api\/(verify-sign-token|tx-send)$/.test(new URL(message.location().url || "http://x/").pathname)) return;
     if (allowed.some((pattern) => pattern.test(text))) return;
     consoleErrors.push(text.slice(0, 300));
   });
@@ -70,10 +70,7 @@ export async function stubWalletApis(context: BrowserContext, address?: string, 
   });
   await context.route("**/api/token-metadata", (route) =>
     route.fulfill({ status: 200, contentType: "application/json", headers, body: "{}" }));
-  // Sign-link and modal open attempts now reconcile after submission. Keep
+  // Every sent signature is polled by the shared pipeline. Keep
   // synthetic signatures off the server's RPC; journey tests may override this.
-  await context.route("**/api/open-status", route => {
-    const body = route.request().postDataJSON();
-    return route.fulfill({ headers, json: { signature: body.attempt.signature, status: "pending" } });
-  });
+  await context.route("**/api/transaction-finality", route => route.fulfill({ headers, json: { status: "pending" } }));
 }

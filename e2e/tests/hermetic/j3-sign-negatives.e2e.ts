@@ -94,7 +94,7 @@ test.describe("J3 sign link, wallet / transaction guards", () => {
     const scenario = makeScenario("compound", wallet.address);
     const sign = await openAndConnect(page, wallet, scenario.token);
     await sign.signButton.click();
-    await sign.expectStatus(/User rejected the request/);
+    await sign.expectStatus("You cancelled in your wallet. Nothing was sent.");
     await page.screenshot({ path: test.info().outputPath("j3-rejected.png") });
     expect(wallet.ledger).toHaveLength(1);
     expect(wallet.ledger[0]).toMatchObject({ outcome: "rejected" });
@@ -118,7 +118,8 @@ test.describe("J3 sign link, wallet / transaction guards", () => {
     expect(wallet.ledger).toHaveLength(1);
     expect(wallet.ledger[0]).toMatchObject({ outcome: "signed", mode: "mutate-message" });
     expect(sign.broadcasts).toHaveLength(1);
-    expect(sign.broadcasts[0]?.body.unsignedTransaction).toBe(scenario.payload.unsignedTransaction);
+    // The shared send route carries only the signed bytes (the wallet's added Memo included).
+    expect(Object.keys(sign.broadcasts[0]!.body)).toEqual(["signedTransaction"]);
   });
 
   test("wallet changes instruction data: required-instruction guard, nothing broadcast", async ({ page, wallet, guards }) => {
@@ -135,7 +136,7 @@ test.describe("J3 sign link, wallet / transaction guards", () => {
     expect(sign.broadcasts).toEqual([]);
   });
 
-  test("wallet returns an unsigned transaction (all-zero signature): 'Invalid signature from wallet', nothing broadcast", async ({ page, wallet }) => {
+  test("wallet returns an unsigned transaction (all-zero signature): 'required signature is missing', nothing broadcast", async ({ page, wallet }) => {
     wallet.mode = "no-signature";
     const scenario = makeScenario("compound", wallet.address);
     const sign = new SignPage(page);
@@ -143,12 +144,12 @@ test.describe("J3 sign link, wallet / transaction guards", () => {
     await sign.goto(scenario.token);
     await new ConnectModal(page, wallet).connect();
     await sign.signButton.click();
-    await sign.expectStatus("Invalid signature from wallet");
+    await sign.expectStatus("A required signature is missing, so nothing was sent.");
     expect(sign.broadcasts).toEqual([]);
   });
 
   for (const kind of ["compound", "add-liquidity", "open-position"] as const) {
-    test(`${kind}: a Lighthouse-style guard instruction added by the wallet is posted with unsignedTransaction`, async ({ page, wallet }) => {
+    test(`${kind}: a Lighthouse-style guard instruction added by the wallet is relayed as signed bytes`, async ({ page, wallet }) => {
       wallet.mode = "lighthouse";
       const scenario = makeScenario(kind, wallet.address);
       const sign = new SignPage(page);
@@ -159,7 +160,7 @@ test.describe("J3 sign link, wallet / transaction guards", () => {
       await sign.expectStatus(SUCCESS);
       expect(wallet.ledger[0]!.programIds).toContain("L2TExMFKdjpN9kozasaurPPf4nCVfRTb7cTZo5GsqqY");
       expect(sign.broadcasts).toHaveLength(1);
-      expect(sign.broadcasts[0]?.body.unsignedTransaction).toBe(scenario.payload.unsignedTransaction);
+      expect(Object.keys(sign.broadcasts[0]!.body)).toEqual(["signedTransaction"]);
     });
   }
 
@@ -170,47 +171,48 @@ test.describe("J3 sign link, wallet / transaction guards", () => {
     await sign.goto(scenario.token);
     await new ConnectModal(page, wallet).connect();
     await sign.signButton.click();
-    await sign.expectStatus(/Position NFT mint partial signature missing after wallet sign/);
+    await sign.expectStatus("A required signature is missing, so nothing was sent.");
     expect(wallet.ledger).toHaveLength(1);
     expect(sign.broadcasts).toEqual([]);
   });
 });
 
 test.describe("J3 sign link, broadcast failures", () => {
-  test("sent:false from the server: the error carries the 'not sent, safe to retry' hint", async ({ page, wallet }) => {
+  test("sent:false from the server: the error says nothing was sent", async ({ page, wallet }) => {
     const scenario = makeScenario("compound", wallet.address);
     const sign = new SignPage(page);
     await sign.mockBroadcast("compound", "sent-false");
     await sign.goto(scenario.token);
     await new ConnectModal(page, wallet).connect();
     await sign.signButton.click();
-    await sign.expectStatus("E2E mock: blocked Transaction was not sent, safe to retry.");
+    await sign.expectStatus("E2E mock: blocked. Nothing was sent.");
     expect(sign.broadcasts).toHaveLength(1);
     expect(wallet.ledger).toHaveLength(1);
   });
 
-  test("a server error without sent:false is shown verbatim (no retry hint) and is never retried", async ({ page, wallet }) => {
+  test("a server error without sent:false may have reached the network: tracked as uncertain with a Solscan link, never retried", async ({ page, wallet }) => {
     const scenario = makeScenario("compound", wallet.address);
     const sign = new SignPage(page);
     await sign.mockBroadcast("compound", "server-error");
     await sign.goto(scenario.token);
     await new ConnectModal(page, wallet).connect();
     await sign.signButton.click();
-    await sign.expectStatus("E2E mock: upstream exploded");
-    await expect(page.getByText(/safe to retry/)).toHaveCount(0);
+    await sign.expectStatus(/We could not confirm the send/);
+    await expect(page.getByRole("link", { name: /View on Solscan/ }).first()).toBeVisible();
+    await expect(page.getByText(SUCCESS)).toHaveCount(0);
     await page.waitForTimeout(1500);                       // a (forbidden) retry loop would show up as a 2nd POST
     expect(sign.broadcasts).toHaveLength(1);
   });
 
-  test("the server answers with a different signature: 'RPC returned signature mismatch', no success state", async ({ page, wallet }) => {
+  test("the server answers with a different signature: tracked by our own signature as uncertain, no success state", async ({ page, wallet }) => {
     const scenario = makeScenario("compound", wallet.address);
     const sign = new SignPage(page);
     await sign.mockBroadcast("compound", "wrong-signature");
     await sign.goto(scenario.token);
     await new ConnectModal(page, wallet).connect();
     await sign.signButton.click();
-    await sign.expectStatus("RPC returned signature mismatch");
-    await expect(page.getByRole("link", { name: /View on Solscan/ })).toHaveCount(0);
+    await sign.expectStatus(/We could not confirm the send/);
+    await expect(page.getByRole("link", { name: /View on Solscan/ }).first()).toBeVisible();
     await expect(page.getByText(SUCCESS)).toHaveCount(0);
   });
 });

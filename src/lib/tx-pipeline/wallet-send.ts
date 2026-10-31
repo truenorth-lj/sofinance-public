@@ -26,6 +26,12 @@ const toBase64 = (bytes: Uint8Array) => {
   return btoa(binary);
 };
 
+/** A wallet/connector saying it cannot signAndSend at all (nothing was prompted or signed). */
+export function isUnsupportedFeatureError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
+  return /signAndSendTransaction/i.test(message) && /(does not support|not supported|unsupported|not implemented|method not found)/i.test(message);
+}
+
 export const RELAY_TIMEOUT_MS = 15_000;
 
 /** Plain sendRawTransaction through our RPC (`/api/tx-send`). One shot: no resend loop. */
@@ -58,9 +64,18 @@ export async function sendWithWallet(wallet: TxWallet, transaction: VersionedTra
   const payer = transaction.message.staticAccountKeys[0]?.toBase58();
   if (payer !== wallet.address) throw new TxNotSentError("This transaction was prepared for a different wallet. Nothing was sent.");
   if (!options.cosign && wallet.signAndSendTransaction) {
-    const signature = await wallet.signAndSendTransaction(transaction);
-    if (!SIGNATURE.test(signature)) throw new TxNotSentError("Your wallet did not return a transaction signature.");
-    return { signature, via: "wallet" };
+    let signature: string | undefined;
+    try {
+      signature = await wallet.signAndSendTransaction(transaction);
+    } catch (error) {
+      // Some connectors (AppKit, injected wallets) expose signAndSend but the wallet itself lacks
+      // the feature; that refusal happens before any prompt, so fall back to sign-then-relay.
+      if (!isUnsupportedFeatureError(error)) throw error;
+    }
+    if (signature !== undefined) {
+      if (!SIGNATURE.test(signature)) throw new TxNotSentError("Your wallet did not return a transaction signature.");
+      return { signature, via: "wallet" };
+    }
   }
   const snapshot = VersionedTransaction.deserialize(transaction.serialize());
   const walletSigned = await wallet.signTransaction(transaction);

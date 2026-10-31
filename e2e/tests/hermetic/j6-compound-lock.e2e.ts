@@ -64,7 +64,7 @@ async function setup(page: Page, wallet: FakeWallet, reply: Reply, otherWalletRe
       value = { quote, simulated: true, expiresAt: quote.expiresAt, permit: "test-permit", unsignedTransaction: built.b64,
         blockhash: built.tx.message.recentBlockhash, lastValidBlockHeight: 1000, startingLiquidity: state.liquidity, startingBalances: state.balances };
     }
-    if (/broadcast$/.test(path)) throw new Error("This journey must never broadcast");
+    if (/(broadcast|tx-send)$/.test(path)) throw new Error("This journey must never broadcast");
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(value) });
   });
   await page.goto("/app?view=deposit");
@@ -96,7 +96,7 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 
       return route.fulfill({ json: { permit: "test-permit", unsignedTransaction: built.b64,
         summary: { ...flow.attempt.summary, blockhash: built.tx.message.recentBlockhash, expiresAt: Date.now() + 75000 } } });
     });
-    await page.route("**/api/compound-broadcast", route => {
+    await page.route("**/api/tx-send", route => {
       const tx = VersionedTransaction.deserialize(Buffer.from(route.request().postDataJSON().signedTransaction, "base64"));
       compounded = true;
       return route.fulfill({ json: { signature: bs58.encode(tx.signatures[0]!) } });
@@ -139,7 +139,7 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 
     expect(await alert.evaluate(node => node.closest("details")?.querySelector("summary")?.textContent)).toBe("Other positions (1 records)");
     expect(JSON.parse((await page.evaluate(key => localStorage.getItem(key), flow.receiptsKey))!)).toHaveLength(1);
     expect(wallet.ledger).toEqual([]);
-    expect(flow.calls.some(path => /broadcast$/.test(path))).toBe(false);
+    expect(flow.calls.some(path => /(broadcast|tx-send)$/.test(path))).toBe(false);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   });
   test(`compound history and recovery records stay scoped to the selected NFT at ${viewport.width}px`, async ({ page, wallet, guards }) => {
@@ -158,7 +158,7 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 
     await expect(compoundPanel.getByRole("alert")).toContainText("1268 bytes");
     await expect(success).toBeHidden();
     expect(wallet.ledger).toEqual([]);
-    expect(flow.calls.some(path => /broadcast$/.test(path))).toBe(false);
+    expect(flow.calls.some(path => /(broadcast|tx-send)$/.test(path))).toBe(false);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.screenshot({ path: test.info().outputPath(`compound-error-scoped-${viewport.width}.png`), fullPage: true });
     await management.click();
@@ -188,10 +188,13 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.screenshot({ path: test.info().outputPath(`compound-unlocked-${viewport.width}.png`) });
     await flow.add.click();
-    await expect(page.getByRole("alert").filter({ hasText: "User rejected" })).toBeVisible();
+    // A wallet cancel quietly returns the panel to idle (no failure toast), like other dapps.
+    await expect.poll(() => wallet.ledger.length).toBe(1);
+    await expect(flow.add).toBeEnabled();
+    await expect(page.locator("[data-tx-notice=failure]")).toHaveCount(0);
     expect(flow.calls.filter((p) => p === "/api/selected-prepare")).toHaveLength(1);
     expect(wallet.ledger).toMatchObject([{ outcome: "rejected" }]);
-    expect(flow.calls.some((p) => /broadcast$/.test(p))).toBe(false);
+    expect(flow.calls.some((p) => /(broadcast|tx-send)$/.test(p))).toBe(false);
     expect(await page.evaluate((key) => localStorage.getItem(key), flow.attemptKey)).toBe(JSON.stringify(flow.attempt));
     expect(JSON.parse((await page.evaluate((key) => localStorage.getItem(key), flow.receiptsKey))!)).toHaveLength(1);
     await page.reload(); await expect(warning).toBeVisible();

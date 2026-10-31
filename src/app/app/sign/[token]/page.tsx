@@ -53,6 +53,7 @@ export default function SignPage() {
   const [signStatus, setSignStatus] = useState<"idle" | "signing" | "submitting" | "success">("idle");
   const [error, setError] = useState("");
   const [signature, setSignature] = useState("");
+  const [uncertain, setUncertain] = useState("");
 
   const verificationSignature = payload?.kind === "open-position" ? open.attempt?.signature || signature : signature;
 
@@ -112,6 +113,7 @@ export default function SignPage() {
     
     setSignStatus("signing");
     setError("");
+    setUncertain("");
     const openProperties = payload.kind === "open-position"
       ? openEventProperties({
         poolAddress: (payload.submitArgs.summary as OpenPositionSummary).poolId,
@@ -161,7 +163,6 @@ export default function SignPage() {
         if (summary.wallet !== wallet || summary.blockhash !== unsigned.message.recentBlockhash ||
           unsigned.message.staticAccountKeys[1]?.toBase58() !== summary.nftMint) throw new TxNotSentError("Open-position authorization mismatch. Nothing was sent.");
       }
-      setSignStatus("submitting");
       const flow = payload.kind === "add-liquidity" ? "add" : payload.kind === "withdraw" ? "withdraw"
         : payload.kind === "open-position" ? "open" : "compound";
       const result = await sendAndTrack({
@@ -184,11 +185,10 @@ export default function SignPage() {
         open.track(openAttempt);
       }
       setSignature(txSignature);
+      setUncertain(result.uncertain ?? "");
       setSignStatus("success");
-      
-      setTimeout(() => {
-        router.push("/app");
-      }, 5000);
+      // An uncertain send stays on this page so the explorer link and the "could not confirm" note remain visible.
+      if (!result.uncertain) setTimeout(() => { router.push("/app"); }, 5000);
     } catch (caught) {
       mint?.dispose();
       if (payload.kind === "open-position" && !openAttempt && !(caught instanceof TxRunError && caught.kind === "rejected")) {
@@ -220,7 +220,7 @@ export default function SignPage() {
       case "submitting":
         return "Broadcasting transaction to Solana...";
       case "success":
-        return "Transaction submitted successfully! Redirecting to the app...";
+        return uncertain || "Transaction submitted successfully! Redirecting to the app...";
       case "error":
         return error || "An error occurred";
     }

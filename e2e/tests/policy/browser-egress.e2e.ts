@@ -142,7 +142,7 @@ local("financial, provider proxy, unknown APIs and non-smoke tokens abort and fa
   const policy = await installReadonlyPolicy(context, app.origin);
   try {
     const page = await context.newPage(); await page.goto(app.origin);
-    const paths = ["selected-prepare", "selected-broadcast", "open-status", "rpc", "mcp", "new-financial-route", "verify-sign-token"];
+    const paths = ["selected-prepare", "tx-send", "selected-broadcast", "rpc", "mcp", "new-financial-route", "verify-sign-token"];
     await page.evaluate(async paths => {
       for (const path of paths) await fetch("/api/" + path, { method: "POST", body: '{"token":"not-authorized"}' }).catch(() => {});
       await fetch("/api/selected-prepare").catch(() => {});
