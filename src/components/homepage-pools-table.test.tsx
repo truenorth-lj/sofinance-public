@@ -3,7 +3,6 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { HIGHEST_RANGE_APR_7D_LABEL, HOMEPAGE_POOL_APR_LABEL } from "@/lib/apr-labels/copy";
 import { payloadWithAprs } from "@/lib/range-apr/payload.fixture";
 import { RWA_PAIRS_LIST_PATH } from "@/lib/rwa-pairs-list";
 import { UNIV4_RHC_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/uniswap-v4/constants";
@@ -114,46 +113,56 @@ const rhcSummary = (index: number, tvlUsd: number): RhcPoolSummary => {
   } as unknown as RhcPoolSummary;
 };
 
+const rowsOf = () => [...container.querySelectorAll('[data-testid="homepage-pools-table"] tbody tr')];
+const keysOf = () => rowsOf().map((row) => row.getAttribute("data-pool"));
+const aprOf = (row: Element) => row.querySelector("[data-testid='apr7d']")!;
+const sol = (address: string) => `solana:${address}`;
+const rhcKey = (index: number) => `robinhood:${UNIV4_RHC_ALLOWLISTED_POOLS[index]!.poolId.toLowerCase()}`;
+const ready = (aprs: Parameters<typeof payloadWithAprs>[0]): PoolRangeAprState => ({ status: "ready", data: payloadWithAprs(aprs) });
+
 describe("HomepagePoolsTable", () => {
-  it("loads the shared /api/rwa-pairs cache, sorts by TVL, and deep-links Open position", async () => {
-    mocks.aprFor.mockImplementation((poolId) =>
-      poolId === "spcx-pool" ? { status: "ready", data: payloadWithAprs({ micro: 10, tight: 81, standard: 20, wide: 5 }) } : { status: "loading" });
-    jsonOk({
-      pairs: [
-        pair({
-          poolAddress: "sndk-pool",
-          wrappedSymbol: "SNDKx",
-          plainSymbol: "SNDK",
-          tvlUsd: 953,
-          estimatedFeeAprPct: 428.8,
-        }),
-        pair({ poolAddress: "spcx-pool" }),
-      ],
-      freshness: { snapshotAt: new Date().toISOString(), stale: false },
-    });
+  it("renders the /app/rwa-pairs list view (same PoolTable), loads the shared /api/rwa-pairs cache and deep-links Open", async () => {
+    mocks.aprFor.mockImplementation((poolId) => (poolId === "spcx-pool" ? ready({ micro: 10, tight: 81, standard: 20, wide: 5 }) : { status: "loading" }));
+    jsonOk({ pairs: [pair({ poolAddress: "spcx-pool" })], freshness: { snapshotAt: new Date().toISOString(), stale: false } });
     await mount();
 
-    expect(fetchMock).toHaveBeenCalledWith(RWA_PAIRS_LIST_PATH, expect.objectContaining({
-      headers: { Accept: "application/json" },
-    }));
-    const table = container.querySelector('[data-testid="homepage-pools-table"]')!;
-    const rows = [...table.querySelectorAll("tbody tr")];
-    expect(rows[0]!.getAttribute("data-pool")).toBe("spcx-pool");
-    expect(rows[0]!.textContent).toContain("SPCXx/SPCX");
-    expect(rows[0]!.textContent).toContain("$256.9k");
-    expect(rows[0]!.querySelector("[data-testid='homepage-apr']")!.textContent).toBe("81.00%");
-    expect(rows[0]!.textContent).not.toContain("12.60%");
-    expect(HOMEPAGE_POOL_APR_LABEL).toBe(HIGHEST_RANGE_APR_7D_LABEL);
-    expect(table.querySelector("thead")!.textContent).toContain("Est. highest range APR · 7d avg · not guaranteed");
-    expect(table.querySelector("thead button[aria-label='About Est. highest range APR']")).not.toBeNull();
-    const docsLink = table.querySelector("thead a[href='/docs/fee-apr']")!;
-    expect(docsLink.textContent).toBe("APR details");
-    expect(rows[0]!.querySelector("a[href^='/app/rwa-pairs']")!.getAttribute("href")).toBe(
-      "/app/rwa-pairs?pool=spcx-pool&open=1",
-    );
-    expect(rows.some((row) => row.getAttribute("data-pool") === "sndk-pool")).toBe(false);
-    expect(container.textContent).toContain("See all pools");
+    expect(fetchMock).toHaveBeenCalledWith(RWA_PAIRS_LIST_PATH, expect.objectContaining({ headers: { Accept: "application/json" } }));
+    const table = container.querySelector('[data-testid="homepage-pools-table"] table')!;
+    expect(table.getAttribute("data-testid")).toBe("homepage-pools-list");
+    const [row] = rowsOf();
+    expect(row!.getAttribute("data-pool")).toBe(sol("spcx-pool"));
+    expect(row!.textContent).toContain("SPCXx/SPCX");
+    expect(row!.textContent).toContain("$256.9k");
+    expect(aprOf(row!).textContent).toBe("81.00%");
+    expect(row!.querySelector("[data-testid='chain-badge']")!.textContent).toBe("Solana");
+    // Same columns as the /app/rwa-pairs list view, as fixed labels (no sort buttons on the homepage).
+    const headers = [...table.querySelectorAll("thead th")].map((th) => th.textContent);
+    expect(headers.slice(0, 8)).toEqual(["Pool", "Chain", "Protocol", "Est. APR 7d", "Est. fee APR 24h", "TVL", "24h vol", "Risk"]);
+    expect(table.querySelector("thead [aria-sort='descending']")!.textContent).toBe("Est. APR 7d");
+    expect(table.querySelectorAll("thead button:not([aria-label^='About'])")).toHaveLength(0);
+    expect(row!.querySelector("a[aria-label='Open position in SPCXx/SPCX']")!.getAttribute("href")).toBe("/app/rwa-pairs?pool=spcx-pool&open=1");
+    const viewAll = container.querySelector("[data-testid='homepage-view-all']")!;
+    expect(viewAll.getAttribute("href")).toBe("/app/rwa-pairs");
+    expect(viewAll.textContent).toBe("View all pools →");
+    expect(container.querySelector("a[href='/docs/fee-apr']")!.textContent).toBe("APR details");
     expect(container.textContent).not.toMatch(/\byield\b|\bearn\b|make your money|strateg|recipe|open[- ]source|\bMIT\b/i);
+  });
+
+  it("merges both chains, sorts by 7-day APR (high to low) and shows at most 5 pools", async () => {
+    const solanaApr: Record<string, number> = { "a-pool": 103.5, "b-pool": 31.85, "c-pool": 15.27, "d-pool": 0.004, "e-pool": 4.72 };
+    mocks.aprFor.mockImplementation((poolId, protocol) => {
+      if (protocol === "uniswap-v4-rhc") return poolId === UNIV4_RHC_ALLOWLISTED_POOLS[1]!.poolId ? ready({ micro: 20 }) : ready({ micro: 0.5 });
+      return solanaApr[poolId] !== undefined ? ready({ micro: solanaApr[poolId]! }) : { status: "error", message: "down" };
+    });
+    jsonOk(
+      { pairs: ["a", "b", "c", "d", "e", "f"].map((id, i) => pair({ poolAddress: `${id}-pool`, symbolA: `${id.toUpperCase()}x`, symbolB: id.toUpperCase(), tvlUsd: 900_000 - i * 1000 })) },
+      { pools: [rhcSummary(0, 1_000_000), rhcSummary(1, 10_000)] },
+    );
+    await mount();
+    expect(keysOf()).toEqual([sol("a-pool"), sol("b-pool"), rhcKey(1), sol("c-pool"), sol("e-pool")]);
+    expect(rowsOf().map((row) => row.getAttribute("data-chain"))).toEqual(["solana", "solana", "robinhood", "solana", "solana"]);
+    expect(rowsOf().map((row) => aprOf(row).textContent)).toEqual(["103.50%", "31.85%", "20.00%", "15.27%", "4.72%"]);
+    expect(rowsOf()[2]!.querySelector("[data-testid='chain-badge']")!.textContent).toBe("Robinhood Chain");
   });
 
   it("shows the paired token logos stored in the database (tokenIcons), wrapped token first, with the Raydium fallback", async () => {
@@ -162,21 +171,9 @@ describe("HomepagePoolsTable", () => {
     await mount();
     // No per-request Jupiter lookup any more: the icons ride along with /api/rwa-pairs.
     expect(fetchMock.mock.calls.some(([url]) => String(url).startsWith("/api/token-metadata"))).toBe(false);
-    const row = container.querySelector('[data-testid="homepage-pools-table"] tbody tr')!;
-    expect([...row.querySelectorAll("img")].map((img) => img.getAttribute("src"))).toEqual([
+    const [row] = rowsOf();
+    expect([...row!.querySelectorAll("img")].map((img) => img.getAttribute("src"))).toEqual([
       "https://static.jup.ag/spcxx.png",
-      "https://img-v1.raydium.io/icon/mint-plain.png",
-    ]);
-    const card = container.querySelector('[data-testid="homepage-pools-cards"] li')!;
-    expect(card.querySelectorAll("img")).toHaveLength(2);
-  });
-
-  it("shows Raydium icons when the response has no tokenIcons (store not migrated / older gateway)", async () => {
-    jsonOk({ pairs: [pair({ poolAddress: "spcx-pool" })] });
-    await mount();
-    const row = container.querySelector('[data-testid="homepage-pools-table"] tbody tr')!;
-    expect([...row.querySelectorAll("img")].map((img) => img.getAttribute("src"))).toEqual([
-      "https://img-v1.raydium.io/icon/mint-wrapped.png",
       "https://img-v1.raydium.io/icon/mint-plain.png",
     ]);
   });
@@ -185,42 +182,25 @@ describe("HomepagePoolsTable", () => {
     jsonOk({ pairs: [pair({ poolAddress: "spcx-pool", mintA: "mint-plain", mintB: "mint-wrapped", symbolA: "SPCX", symbolB: "SPCXx" })],
       tokenIcons: { solana: { "mint-wrapped": "https://static.jup.ag/w.png", "mint-plain": "https://static.jup.ag/p.png" }, robinhood: {} } });
     await mount();
-    const row = container.querySelector('[data-testid="homepage-pools-table"] tbody tr')!;
-    expect([...row.querySelectorAll("img")].map((img) => img.getAttribute("src"))).toEqual([
+    expect([...rowsOf()[0]!.querySelectorAll("img")].map((img) => img.getAttribute("src"))).toEqual([
       "https://static.jup.ag/w.png",
       "https://static.jup.ag/p.png",
     ]);
   });
 
-  it("shows … while the range APR loads and — when it is missing, in both layouts", async () => {
+  it("shows … while the range APR loads and — when it is missing", async () => {
     mocks.aprFor.mockImplementation((poolId) => {
       if (poolId === "loading-pool") return { status: "loading" };
       if (poolId === "error-pool") return { status: "error", message: "down" };
-      return { status: "ready", data: payloadWithAprs({ micro: null, tight: null, standard: null, wide: null }) };
+      return ready({ micro: null, tight: null, standard: null, wide: null });
     });
-    jsonOk({
-      pairs: [
-        pair({ poolAddress: "loading-pool", tvlUsd: 300_000 }),
-        pair({ poolAddress: "error-pool", tvlUsd: 200_000 }),
-        pair({ poolAddress: "unpriced-pool", tvlUsd: 100_000 }),
-      ],
-    });
+    jsonOk({ pairs: [
+      pair({ poolAddress: "loading-pool", tvlUsd: 300_000 }),
+      pair({ poolAddress: "error-pool", tvlUsd: 200_000 }),
+      pair({ poolAddress: "unpriced-pool", tvlUsd: 100_000 }),
+    ] });
     await mount();
-    const values = (selector: string) =>
-      [...container.querySelectorAll(`${selector} [data-testid='homepage-apr']`)].map((node) => node.textContent);
-    expect(values('[data-testid="homepage-pools-table"]')).toEqual(["…", "—", "—"]);
-    expect(values('[data-testid="homepage-pools-cards"]')).toEqual(["…", "—", "—"]);
-  });
-
-  it("keeps ranking by TVL regardless of APR", async () => {
-    mocks.aprFor.mockImplementation((poolId) => ({
-      status: "ready",
-      data: payloadWithAprs(poolId === "small-pool" ? { standard: 300 } : { standard: 4 }),
-    }));
-    jsonOk({ pairs: [pair({ poolAddress: "small-pool", tvlUsd: 20_000 }), pair({ poolAddress: "big-pool", tvlUsd: 500_000 })] });
-    await mount();
-    const rows = [...container.querySelectorAll('[data-testid="homepage-pools-table"] tbody tr')];
-    expect(rows.map((row) => row.getAttribute("data-pool"))).toEqual(["big-pool", "small-pool"]);
+    expect(rowsOf().map((row) => aprOf(row).textContent)).toEqual(["…", "—", "—"]);
   });
 
   it("shows a loading status before pairs arrive", async () => {
@@ -232,10 +212,7 @@ describe("HomepagePoolsTable", () => {
   });
 
   it("surfaces an error with a retry control", async () => {
-    fetchMock.mockResolvedValue({
-      ok: false,
-      json: async () => ({ error: "Snapshot unavailable" }),
-    });
+    fetchMock.mockResolvedValue({ ok: false, json: async () => ({ error: "Snapshot unavailable" }) });
     await mount();
     expect(container.querySelector("[role='alert']")!.textContent).toContain("Snapshot unavailable");
     expect(container.querySelector("button")!.textContent).toBe("Try again");
@@ -244,18 +221,21 @@ describe("HomepagePoolsTable", () => {
   it("handles an empty pair list", async () => {
     jsonOk({ pairs: [] });
     await mount();
-    expect(container.textContent).toMatch(/No same-asset pools/);
-    expect(container.querySelector(`a[href='/app/rwa-pairs']`)).not.toBeNull();
+    expect(container.textContent).toMatch(/No pools to show/);
+    expect(container.querySelector("[data-testid='homepage-view-all']")!.getAttribute("href")).toBe("/app/rwa-pairs");
   });
 
-  it("marks a highlighted pool from a tweet deep link", async () => {
-    jsonOk({
-      pairs: [pair({ poolAddress: "spcx-pool" }), pair({ poolAddress: "hood-pool", wrappedSymbol: "HOODx", plainSymbol: "HOOD", tvlUsd: 80_000 })],
-    });
+  it("marks a highlighted pool from a tweet deep link, swapping it into the last slot", async () => {
+    mocks.aprFor.mockImplementation((poolId) => (poolId === "hood-pool" ? { status: "error", message: "down" } : ready({ micro: 5 })));
+    jsonOk({ pairs: [
+      ...["a", "b", "c", "d", "e"].map((id) => pair({ poolAddress: `${id}-pool` })),
+      pair({ poolAddress: "hood-pool", wrappedSymbol: "HOODx", plainSymbol: "HOOD", tvlUsd: 80_000 }),
+    ] });
     await mount("hood-pool");
+    expect(keysOf()).toHaveLength(5);
+    expect(keysOf().at(-1)).toBe(sol("hood-pool"));
     const marked = container.querySelectorAll('[data-highlighted="true"]');
-    expect(marked.length).toBeGreaterThan(0);
-    expect([...marked].every((node) => node.getAttribute("data-pool") === "hood-pool")).toBe(true);
+    expect([...marked].map((node) => node.getAttribute("data-pool"))).toEqual([sol("hood-pool")]);
   });
 
   it("renders the server snapshot at once, refreshes it from the API, and keeps it when the refresh fails", async () => {
@@ -292,46 +272,33 @@ describe("HomepagePoolsTable", () => {
     expect(container.textContent).toContain("Updated 2026-10-30 11:02 UTC");
   });
 
-  it("lists Robinhood Chain pools next to Solana ones, with chain tags, protocol, Uniswap v4 APR and the RHC open link", async () => {
-    mocks.aprFor.mockImplementation((_poolId, protocol) =>
-      protocol === "uniswap-v4-rhc" ? { status: "ready", data: payloadWithAprs({ micro: 5, tight: 33, standard: 9, wide: 2 }) } : { status: "loading" });
+  it("lists Robinhood Chain pools next to Solana ones, with chain badges, protocol, Uniswap v4 APR and the RHC open link", async () => {
+    mocks.aprFor.mockImplementation((_poolId, protocol) => (protocol === "uniswap-v4-rhc" ? ready({ micro: 5, tight: 33, standard: 9, wide: 2 }) : { status: "loading" }));
     jsonOk(
       { pairs: [pair({ poolAddress: "spcx-pool", tvlUsd: 256_900 })], fetchedAt: "2026-10-30T11:02:46.419Z", freshness: { snapshotAt: "2026-10-30T11:02:46.419Z", stale: false } },
       { pools: [rhcSummary(0, 52_000), rhcSummary(1, 300_000)], fetchedAt: "2026-10-29T11:05:00.000Z", snapshot: { stale: false } },
     );
     await mount();
-    const rows = [...container.querySelectorAll('[data-testid="homepage-pools-table"] tbody tr')];
+    const rows = rowsOf();
     const nvda = UNIV4_RHC_ALLOWLISTED_POOLS[1]!;
-    expect(rows.map((row) => row.getAttribute("data-chain"))).toEqual(["robinhood", "solana", "robinhood"]);
-    expect(rows[0]!.textContent).toContain(`${nvda.currency0.symbol}/${nvda.currency1.symbol}`);
-    expect(rows[0]!.querySelector("[data-testid='homepage-chain']")!.textContent).toBe("Robinhood Chain");
-    expect(rows[1]!.querySelector("[data-testid='homepage-chain']")!.textContent).toBe("Solana");
-    expect(rows[0]!.textContent).toContain("Uniswap v4 · dynamic fee");
-    expect(rows[1]!.textContent).toContain("Raydium · 1 bps");
-    expect(rows[0]!.querySelector("[data-testid='homepage-apr']")!.textContent).toBe("33.00%");
+    // Both RHC pools have a 7-day APR (33%), the Solana one is still loading: RHC first (tie → TVL), Solana last.
+    expect(rows.map((row) => row.getAttribute("data-chain"))).toEqual(["robinhood", "robinhood", "solana"]);
+    expect(rows[0]!.textContent).toContain("NVDA/NVDAon");
+    // No stored icon for these tokens: the first-letter placeholder, never a blank circle.
+    expect([...rows[0]!.querySelectorAll("[data-testid='token-icon-fallback']")].map((node) => node.textContent)).toEqual(["N", "N"]);
+    expect(rows[0]!.querySelector("[data-testid='chain-badge']")!.textContent).toBe("Robinhood Chain");
+    expect(rows[2]!.querySelector("[data-testid='chain-badge']")!.textContent).toBe("Solana");
+    expect(rows[0]!.textContent).toContain("Uniswap v4");
+    expect(rows[2]!.textContent).toContain("Raydium");
+    expect(aprOf(rows[0]!).textContent).toBe("33.00%");
     expect(mocks.aprFor).toHaveBeenCalledWith(nvda.poolId, "uniswap-v4-rhc");
     expect(mocks.aprFor).toHaveBeenCalledWith("spcx-pool", "raydium-clmm");
     expect(rows[0]!.querySelector("a[href^='/app/rwa-pairs']")!.getAttribute("href")).toBe(`/app/rwa-pairs?openPool=${nvda.poolId}`);
-    expect(rows[1]!.querySelector("a[href^='/app/rwa-pairs']")!.getAttribute("href")).toBe("/app/rwa-pairs?pool=spcx-pool&open=1");
+    expect(rows[2]!.querySelector("a[href^='/app/rwa-pairs']")!.getAttribute("href")).toBe("/app/rwa-pairs?pool=spcx-pool&open=1");
     // Different minutes per chain: each chain gets its own time.
     expect(container.querySelector("[data-testid='homepage-pools-updated']")!.textContent).toBe(
       "Updated 2026-10-30 11:02 UTC (Solana) · 2026-10-29 11:05 UTC (Robinhood Chain)",
     );
-  });
-
-  it("lists the USDC/USDT stablecoin pool after every same-stock pool, even with the highest TVL", async () => {
-    jsonOk(
-      { pairs: [
-        pair({ poolAddress: "usdc-usdt", wrappedSymbol: "USDC", plainSymbol: "USDT", symbolA: "USDC", symbolB: "USDT", mintA: "usdc", mintB: "usdt", tvlUsd: 1_800_000, wrapKind: "stable" }),
-        pair({ poolAddress: "spcx-pool", wrapKind: "suffix-x" }),
-      ] },
-      { pools: [rhcSummary(2, 45_000)] },
-    );
-    await mount();
-    const rows = [...container.querySelectorAll('[data-testid="homepage-pools-table"] tbody tr')];
-    expect(rows.map((row) => row.getAttribute("data-pool"))).toEqual(["spcx-pool", UNIV4_RHC_ALLOWLISTED_POOLS[2]!.poolId, "usdc-usdt"]);
-    expect(rows[2]!.textContent).toContain("Stablecoins");
-    expect(container.textContent).toContain("Stablecoin pools (USDC/USDT) are listed last");
   });
 
   it("keeps showing the Solana rows when only the Robinhood Chain request fails", async () => {
@@ -340,46 +307,44 @@ describe("HomepagePoolsTable", () => {
       : { ok: true, json: async () => ({ pairs: [pair({ poolAddress: "spcx-pool" })] }) });
     await mount();
     expect(container.querySelector("[role='alert']")).toBeNull();
-    expect(container.querySelectorAll('[data-testid="homepage-pools-table"] tbody tr')).toHaveLength(1);
+    expect(rowsOf()).toHaveLength(1);
   });
 
   it("keeps the /app/rwa-pairs pick per pair: the highest 7-day APR pool, even with less TVL, and shows tiny APRs as <0.01%", async () => {
     mocks.aprFor.mockImplementation((poolId) =>
-      poolId === "spcx-small" ? { status: "ready", data: payloadWithAprs({ micro: 30, tight: 25, standard: 2, wide: 1 }) }
-        : poolId === "spcx-pool" ? { status: "ready", data: payloadWithAprs({ micro: 4, tight: 3, standard: 2, wide: 1 }) }
-        : poolId === "tiny-pool" ? { status: "ready", data: payloadWithAprs({ micro: 0.004, tight: 0.003, standard: 0.002, wide: 0.001 }) }
+      poolId === "spcx-small" ? ready({ micro: 30, tight: 25, standard: 2, wide: 1 })
+        : poolId === "spcx-pool" ? ready({ micro: 4, tight: 3, standard: 2, wide: 1 })
+        : poolId === "tiny-pool" ? ready({ micro: 0.004, tight: 0.003, standard: 0.002, wide: 0.001 })
+        : poolId === "zero-pool" ? ready({ micro: 0, tight: 0, standard: 0, wide: 0 })
         : { status: "error", message: "down" });
     jsonOk({ pairs: [
       pair({ poolAddress: "spcx-pool", tvlUsd: 256_900 }),
       pair({ poolAddress: "spcx-small", tvlUsd: 40_000, mintA: "mint-wrapped", mintB: "mint-plain" }),
       pair({ poolAddress: "tiny-pool", wrappedSymbol: "MSTRx", plainSymbol: "MSTR", symbolA: "MSTRx", symbolB: "MSTR", tvlUsd: 30_000 }),
+      pair({ poolAddress: "zero-pool", wrappedSymbol: "GMEx", plainSymbol: "GME", symbolA: "GMEx", symbolB: "GME", tvlUsd: 25_000 }),
       pair({ poolAddress: "none-pool", wrappedSymbol: "TSLAx", plainSymbol: "TSLA", symbolA: "TSLAx", symbolB: "TSLA", tvlUsd: 20_000 }),
     ] });
     await mount();
-    const rows = [...container.querySelectorAll('[data-testid="homepage-pools-table"] tbody tr')];
-    expect(rows.map((row) => row.getAttribute("data-pool"))).toEqual(["spcx-small", "tiny-pool", "none-pool"]);
-    const apr = rows.map((row) => row.querySelector("[data-testid='homepage-apr']")!);
-    expect(apr.map((cell) => cell.textContent)).toEqual(["30.00%", "<0.01%", "—"]);
-    expect(apr[1]!.getAttribute("title")).toBe("≈0.0040%");
+    expect(keysOf()).toEqual([sol("spcx-small"), sol("tiny-pool"), sol("zero-pool"), sol("none-pool")]);
+    const apr = rowsOf().map(aprOf);
+    expect(apr.map((cell) => cell.textContent)).toEqual(["30.00%", "<0.01%", "0.00%", "—"]);
   });
 
-  it("uses the server snapshot's 7-day APRs to pick pools until the client estimates load, without printing them", async () => {
+  it("uses the server snapshot's 7-day APRs to pick and order pools until the client estimates load, without printing them", async () => {
     const pairs = [
       pair({ poolAddress: "spcx-pool", tvlUsd: 256_900 }) as HomepageSolanaRow,
       pair({ poolAddress: "spcx-small", tvlUsd: 40_000, mintA: "mint-wrapped", mintB: "mint-plain" }) as HomepageSolanaRow,
+      pair({ poolAddress: "mstr-pool", symbolA: "MSTRx", symbolB: "MSTR", tvlUsd: 90_000 }) as HomepageSolanaRow,
     ];
     const initial = toHomepagePoolsSnapshot({
       solana: { pairs, fetchedAt: "2026-10-30T11:02:00.000Z", stale: false },
-      apr7d: { "solana:spcx-small": 30, "solana:spcx-pool": 4 },
+      apr7d: { "solana:spcx-small": 30, "solana:spcx-pool": 4, "solana:mstr-pool": 0.004 },
     });
-    expect(Object.keys(initial.apr7d)).toHaveLength(2);
     fetchMock.mockImplementation(() => new Promise(() => {}));
     await act(async () => {
       root.render(createElement(HomepagePoolsView, { initial }));
     });
-    const rows = [...container.querySelectorAll('[data-testid="homepage-pools-table"] tbody tr')];
-    expect(rows.map((row) => row.getAttribute("data-pool"))).toEqual(["spcx-small"]);
-    expect(rows[0]!.querySelector("[data-testid='homepage-apr']")!.textContent).toBe("…");
+    expect(keysOf()).toEqual([sol("spcx-small"), sol("mstr-pool")]);
+    expect(rowsOf().map((row) => aprOf(row).textContent)).toEqual(["…", "…"]);
   });
 });
-

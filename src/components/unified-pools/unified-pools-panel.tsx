@@ -3,9 +3,9 @@ import "@/lib/engine-host";
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { ArrowDown, ArrowUp, ArrowUpDown, ArrowUpRight, LayoutGrid, List, LoaderCircle, RefreshCw, Search } from "lucide-react";
-import { HIGHEST_RANGE_APR_7D_HELP, POOL_FEE_APR_24H_HELP, POOL_FEE_APR_24H_SHORT } from "@/lib/apr-labels/copy";
-import { exactAprTitle, formatAprPct } from "@/lib/apr-labels/format-apr";
+import { LayoutGrid, List, LoaderCircle, RefreshCw, Search } from "lucide-react";
+import { HIGHEST_RANGE_APR_7D_HELP, POOL_FEE_APR_24H_HELP } from "@/lib/apr-labels/copy";
+import { exactAprTitle } from "@/lib/apr-labels/format-apr";
 import { cn } from "@/lib/cn";
 import { buildPlanPath, DOCS_ROUTES } from "@/lib/public-urls";
 import { volumeDivergenceNote } from "@/lib/apr-labels/volume-divergence";
@@ -17,7 +17,7 @@ import { fetchRwaPairsList } from "@/lib/rwa-pairs-list";
 import { updatedLabel, type SnapshotSourceTime } from "@/lib/snapshot-updated";
 import {
   CHAIN_LABELS, DEFAULT_FILTERS, DEFAULT_SORT, FIRST_CLICK_DIR, PROTOCOL_LABELS, RISK_LABELS, selectPools,
-  type PoolChain, type PoolFilters, type RiskFilter, type SortDir, type SortKey, type UnifiedPool, type UnifiedProtocol,
+  type PoolChain, type PoolFilters, type RiskFilter, type SortKey, type UnifiedPool, type UnifiedProtocol,
 } from "@/lib/unified-pools/model";
 import { rhcPool, rhcPoolView, solanaPool, type RhcPoolSummary, type SolanaPoolRow } from "@/lib/unified-pools/rows";
 import { InfoTip } from "../info-tip";
@@ -28,6 +28,7 @@ import type { RhcPoolView } from "../rhc-univ4-open-panel";
 import type { OpenPositionPair } from "../use-open-position-controller";
 import { useWalletConnection } from "../wallet-connection";
 import { usePoolsApr7d, type Apr7dState } from "./use-pools-apr7d";
+import { APR24H_SHORT, APR7D_SHORT, Apr7dValue, ChainBadge, chip, COLUMNS, iconPair, money, OpenButton, PoolTable, pct, RiskChips, type OpenAction } from "./pool-list";
 
 /** Which sources this deployment may show; computed from the code flags on the server and passed down. */
 export type UnifiedPoolFlags = {
@@ -57,61 +58,9 @@ async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
   return body;
 }
 
-const money = (value: number | null) => {
-  if (value === null || !Number.isFinite(value)) return "—";
-  if (Math.abs(value) >= 1_000_000) return `$${(value / 1_000_000).toFixed(2)}M`;
-  if (Math.abs(value) >= 1_000) return `$${(value / 1_000).toFixed(1)}k`;
-  return `$${value.toFixed(2)}`;
-};
-/** Missing APR is "—"; a real but tiny APR is "<0.01%" (never a misleading "0.00%"). */
-const pct = formatAprPct;
-
-const APR7D_SHORT = "Est. APR · 7d";
-const APR24H_SHORT = POOL_FEE_APR_24H_SHORT;
 const NOT_GUARANTEED = "Estimates, not guaranteed.";
-const chip = "inline-flex h-6 items-center whitespace-nowrap rounded-full px-2.5 font-data text-[10px] uppercase tracking-[0.12em]";
-
-function ChainBadge({ chain, tone = "light" }: { chain: PoolChain; tone?: "light" | "dark" }) {
-  return <span data-testid="chain-badge" className={cn(chip, chain === "robinhood"
-    ? tone === "light" ? "bg-mint text-ink" : "bg-mint/90 text-ink"
-    : tone === "light" ? "bg-lilac text-ink" : "bg-lilac/90 text-ink")}>{CHAIN_LABELS[chain]}</span>;
-}
-
-function RiskChips({ pool, tone = "light" }: { pool: UnifiedPool; tone?: "light" | "dark" }) {
-  if (!pool.risks.length) return <span className={cn("text-xs", tone === "light" ? "text-ink/55" : "text-smoke")}>No flags</span>;
-  return <span className="flex flex-wrap gap-1.5">{pool.risks.map((risk) => (
-    <span key={risk} className={cn(chip, risk === "freeze" ? "bg-coral text-ink" : tone === "light" ? "bg-white text-ink" : "border border-white/25 text-cream/80")}>{RISK_LABELS[risk]}</span>
-  ))}</span>;
-}
-
-function Apr7dValue({ state, size = "lg" }: { state: Apr7dState | undefined; size?: "lg" | "sm" }) {
-  const text = state?.status === "ready" ? pct(state.aprPct) : state?.status === "missing" ? "—" : "…";
-  return <span data-testid="apr7d" data-apr-status={state?.status ?? "loading"} title={state?.status === "missing" ? state.reason : undefined}
-    className={cn("inline-flex items-center justify-center whitespace-nowrap rounded-full font-semibold tabular-nums",
-      size === "lg" ? "h-10 px-4 text-xl" : "h-7 min-w-[3.5rem] px-2.5 text-sm",
-      state?.status === "ready" ? "bg-lemon text-ink" : size === "lg" ? "bg-ink/10 text-ink/70" : "bg-white/[0.06] text-cream/70")}>{text}</span>;
-}
-
-type OpenAction = { kind: "open"; onOpen: () => void } | { kind: "link"; href: string } | { kind: "none"; reason: string };
-
-function OpenButton({ action, label, compact }: { action: OpenAction; label: string; compact?: boolean }) {
-  const cls = cn("group inline-flex shrink-0 items-center whitespace-nowrap justify-between gap-3 rounded-full bg-ink pl-4 pr-1.5 text-sm font-semibold text-cream outline-none transition-transform hover:-translate-y-px focus-visible:shadow-[0_0_0_3px_var(--color-lilac)]",
-    compact ? "h-9 bg-lemon text-ink" : "h-11");
-  const icon = <span className={cn("flex items-center justify-center rounded-full transition-transform group-hover:rotate-45", compact ? "h-6 w-6 bg-ink text-lemon" : "h-8 w-8 bg-lemon text-ink")}>
-    <ArrowUpRight className="h-4 w-4" aria-hidden="true" /></span>;
-  if (action.kind === "open") return <button type="button" className={cls} onClick={action.onOpen} aria-label={`Open position in ${label}`}>{compact ? "Open" : "Open position"}{icon}</button>;
-  if (action.kind === "link") return <Link href={action.href} className={cls} aria-label={`Open position in ${label}`}>{compact ? "Open" : "Open position"}{icon}</Link>;
-  return <span className={cn("text-xs", compact ? "text-smoke" : "text-ink/60")}>{action.reason}</span>;
-}
-
 const raydiumPoolUrl = (poolId: string) => `https://raydium.io/clmm/create-position/?pool_id=${poolId}`;
 const cardEyebrow = "font-data text-[10px] uppercase tracking-[0.12em] text-ink/60";
-
-/** Wrapped / plain symbols for the token icons, from the "SPCXx/SPCX" pair label (wrapped side first). */
-const iconPair = (pool: UnifiedPool) => {
-  const [wrappedSymbol = pool.symbolA, plainSymbol = pool.symbolB] = pool.pairLabel.split("/");
-  return { mintA: pool.mintA, mintB: pool.mintB, symbolA: pool.symbolA, wrappedSymbol, plainSymbol };
-};
 
 /**
  * One pool as a cream card (the `/app/rwa-pairs` card fields, now for both chains): token icons and issuer names, the
@@ -182,56 +131,6 @@ function PoolCard({ pool, apr, action, icons }: {
         : <span className="ml-auto font-data text-[10px] tracking-[0.08em] text-ink/55" title={pool.poolAddress}>{pool.poolAddress.slice(0, 4)}…{pool.poolAddress.slice(-4)}</span>}
     </div>
   </li>;
-}
-
-const COLUMNS: { key: SortKey; label: string; short?: string; help?: string; numeric?: boolean }[] = [
-  { key: "name", label: "Pool" },
-  { key: "chain", label: "Chain" },
-  { key: "protocol", label: "Protocol" },
-  { key: "apr7d", label: APR7D_SHORT, short: "Est. APR 7d", help: HIGHEST_RANGE_APR_7D_HELP, numeric: true },
-  { key: "apr24h", label: APR24H_SHORT, short: "Est. fee APR 24h", help: POOL_FEE_APR_24H_HELP, numeric: true },
-  { key: "tvl", label: "TVL", numeric: true },
-  { key: "volume", label: "24h vol", numeric: true },
-  { key: "risk", label: "Risk" },
-];
-
-function PoolTable({ pools, apr, actionFor, sort, onSort }: {
-  pools: UnifiedPool[]; apr: Record<string, Apr7dState>; actionFor: (pool: UnifiedPool) => OpenAction;
-  sort: { key: SortKey; dir: SortDir }; onSort: (key: SortKey) => void;
-}) {
-  return <div className="mt-3 overflow-x-auto rounded-[28px] border border-white/12 bg-char">
-    <table className="w-full min-w-[980px] text-left text-sm" data-testid="pools-table">
-      <thead><tr className="border-b border-white/10">
-        {COLUMNS.map((column) => {
-          const active = sort.key === column.key;
-          const Icon = !active ? ArrowUpDown : sort.dir === "asc" ? ArrowUp : ArrowDown;
-          return <th key={column.key} scope="col" aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}
-            className={cn("px-3 py-3 font-data text-[10px] font-normal uppercase tracking-[0.12em] text-smoke", column.numeric && "text-right")}>
-            <span className={cn("inline-flex items-center gap-1 whitespace-nowrap", column.numeric && "justify-end")}>
-              <button type="button" onClick={() => onSort(column.key)} title={column.label} className={cn("inline-flex items-center gap-1 whitespace-nowrap hover:text-cream", active && "text-cream")}>
-                {column.short ?? column.label}<Icon className="h-3 w-3" aria-hidden="true" />
-              </button>
-              {column.help && <InfoTip label={`About ${column.label}`}>{column.help}</InfoTip>}
-            </span>
-          </th>;
-        })}
-        <th scope="col" className="px-3 py-3"><span className="sr-only">Open</span></th>
-      </tr></thead>
-      <tbody>{pools.map((pool) => (
-        <tr key={pool.key} data-pool={pool.key} className="border-b border-white/[0.06] last:border-0">
-          <td className="px-3 py-3"><p className="font-medium text-cream">{pool.pairLabel}</p><p className="max-w-[12rem] truncate text-xs text-smoke">{pool.nameA} / {pool.nameB}</p></td>
-          <td className="px-3 py-3"><ChainBadge chain={pool.chain} tone="dark" /></td>
-          <td className="px-3 py-3 text-cream/80">{PROTOCOL_LABELS[pool.protocol]}</td>
-          <td className="px-3 py-3 text-right"><Apr7dValue state={apr[pool.key]} size="sm" /></td>
-          <td className="px-3 py-3 text-right tabular-nums text-cream/80" title={exactAprTitle(pool.poolFeeApr24hPct)}>{pct(pool.poolFeeApr24hPct)}</td>
-          <td className="px-3 py-3 text-right tabular-nums text-cream/80">{money(pool.tvlUsd)}</td>
-          <td className="px-3 py-3 text-right tabular-nums text-cream/80">{money(pool.volume24hUsd)}</td>
-          <td className="px-3 py-3"><RiskChips pool={pool} tone="dark" /></td>
-          <td className="px-3 py-3 text-right"><OpenButton action={actionFor(pool)} label={pool.pairLabel} compact /></td>
-        </tr>
-      ))}</tbody>
-    </table>
-  </div>;
 }
 
 function Select<T extends string>({ label, value, onChange, options }: {
@@ -454,7 +353,7 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", header 
       ? <ul className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3" data-testid="pools-cards">
           {selected.pools.map((pool) => <PoolCard key={pool.key} pool={pool} apr={apr[pool.key]} action={actionFor(pool)} icons={loaded.icons} />)}
         </ul>
-      : <PoolTable pools={selected.pools} apr={apr} actionFor={actionFor} sort={sort} onSort={onSort} />)}
+      : <PoolTable pools={selected.pools} apr={apr} actionFor={actionFor} sort={sort} onSort={onSort} icons={loaded.icons} />)}
 
     {openPair && <OpenPositionModal pair={openPair} onClose={() => setOpenPair(null)} />}
   </section>;

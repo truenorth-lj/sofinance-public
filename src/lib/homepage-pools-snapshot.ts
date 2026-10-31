@@ -4,7 +4,6 @@ import { getPoolAprSnapshot, getRwaPairs } from "@/lib/rwa-store";
 import { getRhcAprSnapshot, getRhcPoolsSnapshot } from "@/lib/rhc-snapshot";
 import { isRhcApr7dEnabled, isRhcUniv4DiscoveryEnabled } from "@/lib/protocol-flags";
 import { summarizeApr7d } from "@/lib/unified-pools/apr7d";
-import { samePairKey } from "@/lib/unified-pools/model";
 import { RWA_PAIRS_LIST_QUERY } from "@/lib/rwa-pairs-list";
 import type { TokenIconMap } from "@/lib/token-icons/map";
 import type { RhcPoolSummary } from "@/lib/unified-pools/rows";
@@ -67,7 +66,7 @@ const cachedRhc = unstable_cache(readRhc, ["homepage-pools-rhc-v1"], {
   tags: ["homepage-pools"],
 });
 
-const cachedApr7d = unstable_cache(readApr7d, ["homepage-pools-apr7d-v1"], {
+const cachedApr7d = unstable_cache(readApr7d, ["homepage-pools-apr7d-v2"], {
   revalidate: HOMEPAGE_POOLS_REVALIDATE_SECONDS,
   tags: ["homepage-pools"],
 });
@@ -103,15 +102,13 @@ export async function loadHomepagePoolsSnapshot(): Promise<HomepagePoolsSnapshot
     solana: solana.status === "fulfilled" ? solana.value : null,
     rhc: rhc.status === "fulfilled" ? rhc.value : null,
   };
-  // The 7-day APR only decides between pools of the same chain and pair, so only those pools are read. Only Solana
-  // pools and (with RHC_APR7D_ENABLED) Robinhood Chain pools have a 7-day APR, as on `/app/rwa-pairs`.
+  // The homepage ranks every pool by its 7-day APR (top 5 of `/app/rwa-pairs`), so every candidate's APR is read:
+  // Solana pools always, Robinhood Chain pools with RHC_APR7D_ENABLED, as on `/app/rwa-pairs`.
   const candidates = buildHomepagePools({ solana: input.solana?.pairs, rhc: input.rhc?.pools });
-  const perPair = new Map<string, number>();
-  for (const pool of candidates) perPair.set(samePairKey(pool), (perPair.get(samePairKey(pool)) ?? 0) + 1);
   const refs: AprRef[] = candidates
-    .filter((pool) => (perPair.get(samePairKey(pool)) ?? 0) > 1 && (pool.chain === "solana" || isRhcApr7dEnabled()))
+    .filter((pool) => pool.chain === "solana" || isRhcApr7dEnabled())
     .map(({ key, chain, protocol, poolAddress }) => ({ key, chain, protocol, poolAddress }));
-  // Without the APRs the duplicate rule falls back to TVL; the client re-applies it once it has loaded them.
+  // Without the APRs the order falls back to TVL; the client re-ranks once it has loaded them.
   const apr7d = await withTimeout(cachedApr7d(refs)).catch(() => ({}));
   return toHomepagePoolsSnapshot({ ...input, apr7d });
 }

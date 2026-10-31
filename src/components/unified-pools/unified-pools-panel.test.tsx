@@ -238,7 +238,7 @@ describe("UnifiedPoolsPanel cards (the RWA pairs card fields)", () => {
     expect(rhc.textContent).not.toMatch(/Raydium|Phantom/);
   });
 
-  it("shows the Robinhood Chain card's stored icons (no Raydium fallback; letter avatars without one) and no icons in the list view", async () => {
+  it("shows the Robinhood Chain card's stored icons (no Raydium fallback; letter avatars without one), in the card and list views", async () => {
     const [a, b] = [rhcSpec.currency0.address.toLowerCase(), rhcSpec.currency1.address.toLowerCase()];
     mocks.icons = { solana: {}, robinhood: { [a]: "https://coin-images.coingecko.com/a.png", [b]: "https://coin-images.coingecko.com/b.png" } };
     await render();
@@ -252,7 +252,10 @@ describe("UnifiedPoolsPanel cards (the RWA pairs card fields)", () => {
     expect(bare.querySelector("img")).toBeNull();
     expect(bare.querySelector("[data-testid=pair-token-icons]")!.textContent).toBe("SS"); // first letters of SPCX / SPCXon
     await act(async () => { button("List").click(); });
-    expect(container.querySelector("table img")).toBeNull();
+    // The list view (also the homepage table) shows the same icons / first-letter placeholders.
+    const row = container.querySelector(`tr[data-pool="robinhood:${rhcSpec.poolId.toLowerCase()}"]`)!;
+    expect(row.querySelector("img")).toBeNull();
+    expect(row.querySelector("[data-testid=pair-token-icons]")!.textContent).toBe("SS");
   });
 
   it("shows a real tiny RHC 24h APR as <0.01% and a missing 7d APR as — on the card (never 0.00%)", async () => {

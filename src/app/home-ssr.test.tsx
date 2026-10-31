@@ -74,7 +74,13 @@ beforeEach(() => {
 });
 
 describe("homepage server render", () => {
-  it("prerenders both chains' pools with chain tags and the saved list time, not 'Loading pool data…', and no APR number", async () => {
+  const tableRows = (html: string) => {
+    const table = html.slice(html.indexOf('data-testid="homepage-pools-list"'));
+    return [...table.matchAll(/<tr[^>]*data-pool="([^"]+)"/g)].map((match) => match[1]);
+  };
+  const rhcKey = (index: number) => `robinhood:${UNIV4_RHC_ALLOWLISTED_POOLS[index]!.poolId.toLowerCase()}`;
+
+  it("prerenders the top 5 pools of both chains in the /app/rwa-pairs list view, with chain badges, the saved list time and View all", async () => {
     mocks.getRwaPairs.mockResolvedValue(storeResult);
     mocks.getRhcPoolsSnapshot.mockResolvedValue(rhcResult);
     const { default: Home, revalidate } = await import("./page");
@@ -83,31 +89,32 @@ describe("homepage server render", () => {
 
     expect(mocks.getRwaPairs).toHaveBeenCalledWith({ minTvl: 0, maxPages: 10, sortBy: "estimatedFeeApr" });
     expect(mocks.getRhcPoolsSnapshot).toHaveBeenCalled();
+    // Every candidate's 7-day APR is read (both chains), since the homepage ranks by it.
+    expect(mocks.getPoolAprSnapshot).toHaveBeenCalledTimes(storeResult.pairs.length);
+    expect(mocks.getRhcAprSnapshot).toHaveBeenCalledTimes(UNIV4_RHC_ALLOWLISTED_POOLS.length);
     expect(html).not.toContain("Loading pool data");
-    for (const name of ["SPCXx/SPCX", "MSTRx/MSTR", "TSLAx/TSLA", "SPCX/SPCXon", "NVDA/NVDAon", "GME/GMEon"]) expect(html).toContain(name);
+    // No saved APR at all: the /app/rwa-pairs order falls back to TVL. At most 5 rows, both chains in one list.
+    expect(tableRows(html)).toEqual(["solana:usdc-usdt", "solana:spcx-pool", "solana:mstr-pool", "solana:tsla-pool", rhcKey(10)]);
+    for (const name of ["USDC/USDT", "SPCXx/SPCX", "MSTRx/MSTR", "TSLAx/TSLA"]) expect(html).toContain(name);
     expect(html).toContain("$250.0k");
     expect(html).toContain('data-chain="solana"');
     expect(html).toContain('data-chain="robinhood"');
     expect(html).toContain("Robinhood Chain");
-    expect(html).toContain("Uniswap v4 · dynamic fee");
-    expect(html).toContain("Raydium · 1 bps");
+    expect(html).toContain("Uniswap v4");
+    expect(html).toContain("Raydium");
+    expect(html).toContain("Top pools on Solana and Robinhood Chain, by est. 7-day APR");
     // Same minute on both chains: one "Updated" time, from the lists' fetchedAt.
     expect(html).toContain("Updated 2026-10-30 11:02 UTC");
-    // USDC/USDT is not a same-stock pair: listed after every same-stock pool.
-    const cards = html.slice(html.indexOf('data-testid="homepage-pools-cards"'), html.indexOf('data-testid="homepage-pools-table"'));
-    const order = [...cards.matchAll(/data-pool="([^"]+)"/g)].map((match) => match[1]);
-    expect(order).toHaveLength(4 + UNIV4_RHC_ALLOWLISTED_POOLS.length);
-    expect(order.at(-1)).toBe("usdc-usdt");
-    expect(order.slice(0, 2)).toEqual(["spcx-pool", "mstr-pool"]);
+    expect(html).toMatch(/<a[^>]*href="\/app\/rwa-pairs"[^>]*>View all pools →<\/a>/);
     // Robinhood Chain rows open their dialog on /app/rwa-pairs.
-    expect(html).toContain(`/app/rwa-pairs?openPool=${UNIV4_RHC_ALLOWLISTED_POOLS[0]!.poolId}`);
-    // The range APR loads on the client; the cached HTML never states an APR figure.
-    expect(html).not.toMatch(/\d+(\.\d+)?%\s*<\/span>|87\.5/);
+    expect(html).toContain(`/app/rwa-pairs?openPool=${UNIV4_RHC_ALLOWLISTED_POOLS[10]!.poolId}`);
+    // APRs load on the client; the cached HTML never states an APR figure (7d or 24h).
+    expect(html).not.toMatch(/\d+(\.\d+)?%\s*<\/(span|td)>|87\.5/);
     expect(html).toContain('"@type":"Organization"');
     expect(html).toContain('"@type":"WebSite"');
   });
 
-  it("prerenders the /app/rwa-pairs pick for a duplicated pair (highest saved 7-day APR, not TVL) and the Robinhood / Ondo order", async () => {
+  it("prerenders the /app/rwa-pairs top 5 by saved 7-day APR (both chains, duplicates by APR) in Robinhood / Ondo order", async () => {
     mocks.getRwaPairs.mockResolvedValue({
       ...storeResult,
       pairs: [...storeResult.pairs, pool("SPCXx", "SPCX", 60_000, { poolAddress: "spcx-hot" })],
@@ -115,19 +122,20 @@ describe("homepage server render", () => {
     mocks.getRhcPoolsSnapshot.mockResolvedValue(rhcResult);
     mocks.getPoolAprSnapshot.mockImplementation(async (poolId: string) =>
       payloadWithAprs(poolId === "spcx-hot" ? { micro: 40, tight: 30, standard: 5, wide: 1 } : { micro: 2, tight: 1, standard: 1, wide: 1 }));
+    mocks.getRhcAprSnapshot.mockImplementation(async (poolId: string) => {
+      if (poolId.toLowerCase() === UNIV4_RHC_ALLOWLISTED_POOLS[3]!.poolId.toLowerCase()) return payloadWithAprs({ micro: 7.5 });
+      throw new Error("not tracked");
+    });
     const { default: Home } = await import("./page");
     const html = renderToString(await Home());
-    // Only pools that share a pair with another pool need their APR read.
-    expect(mocks.getPoolAprSnapshot.mock.calls.map(([id]) => id).sort()).toEqual(["spcx-hot", "spcx-pool"]);
-    expect(mocks.getRhcAprSnapshot).not.toHaveBeenCalled();
-    const cards = html.slice(html.indexOf('data-testid="homepage-pools-cards"'), html.indexOf('data-testid="homepage-pools-table"'));
-    const order = [...cards.matchAll(/data-pool="([^"]+)"/g)].map((match) => match[1]);
-    expect(order).toContain("spcx-hot");
-    expect(order).not.toContain("spcx-pool");
-    for (const name of ["MSTR/MSTRon", "AAPL/AAPLon", "TSLA/TSLAon"]) expect(html).toContain(name);
-    expect(html).not.toContain("MSTRon/MSTR");
+    // spcx-hot beats the bigger spcx-pool (LJ's rule); then by APR, ties by TVL.
+    expect(tableRows(html)).toEqual(["solana:spcx-hot", rhcKey(3), "solana:usdc-usdt", "solana:mstr-pool", "solana:tsla-pool"]);
+    const spec = UNIV4_RHC_ALLOWLISTED_POOLS[3]!;
+    const robinhood = spec.currency0.symbol.endsWith("on") ? spec.currency1.symbol : spec.currency0.symbol;
+    expect(html).toContain(`${robinhood}/${robinhood}on`);
+    expect(html).not.toContain(`${robinhood}on/${robinhood}`);
     // Still no APR figure in the cached HTML.
-    expect(html).not.toMatch(/\d+(\.\d+)?%\s*<\/span>/);
+    expect(html).not.toMatch(/\d+(\.\d+)?%\s*<\/(span|td)>/);
   });
 
   it("still prerenders the other chain when one chain's snapshot read fails", async () => {
@@ -136,7 +144,7 @@ describe("homepage server render", () => {
     const { default: Home } = await import("./page");
     const html = renderToString(await Home());
     expect(html).not.toContain("Loading pool data");
-    expect(html).toContain("SPCX/SPCXon");
+    expect(tableRows(html)).toEqual([10, 9, 8, 7, 6].map(rhcKey));
     expect(html).not.toContain("SPCXx/SPCX");
     expect(html).toContain("Updated 2026-10-30 11:02 UTC");
   });

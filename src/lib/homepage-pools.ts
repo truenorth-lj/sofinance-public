@@ -1,31 +1,24 @@
 import type { TokenIconMap } from "@/lib/token-icons/map";
 import type { SnapshotSourceTime as HomepageSourceTime } from "@/lib/snapshot-updated";
-import { DEFAULT_FILTERS, selectPools, type Apr7dLookup, type PoolChain, type UnifiedPool } from "@/lib/unified-pools/model";
+import { DEFAULT_FILTERS, DEFAULT_SORT, selectPools, type Apr7dLookup, type PoolChain, type UnifiedPool } from "@/lib/unified-pools/model";
 import { rhcPool, solanaPool, type RhcPoolSummary, type SolanaPoolRow } from "@/lib/unified-pools/rows";
 
-/**
- * Same-stock pools shown on the homepage (both chains together). Today that is every Robinhood Chain StablePair pool
- * (11) plus the Solana pairs above the TVL floor, so nothing is clipped; the cap only guards against a much longer list.
- */
-export const HOMEPAGE_POOL_LIMIT = 16;
-/** Tiny pools can print 100%+ est. APR; keep them off the homepage headline when larger ones exist. */
-export const HOMEPAGE_TVL_FLOOR_USD = 10_000;
+/** The homepage shows the top pools of `/app/rwa-pairs` (LJ, 2026-10-31: at most 5), with a "View all pools" link. */
+export const HOMEPAGE_POOL_LIMIT = 5;
 
-/** A Solana row from `/api/rwa-pairs` (or its saved snapshot). `wrapKind: "stable"` marks the curated USDC/USDT pool. */
+/** A Solana row from `/api/rwa-pairs` (or its saved snapshot). */
 export type HomepageSolanaRow = SolanaPoolRow & { wrapKind?: string };
 
-/**
- * One homepage row, either chain: the `/app/rwa-pairs` pool shape (chain, protocol, pair label, risks) plus the icon
- * order and whether both sides are the same stock. The curated stablecoin pool (USDC/USDT) is not, so it is listed last.
- */
-export type HomepagePool = UnifiedPool & { wrappedSymbol: string; plainSymbol: string; sameAsset: boolean };
+/** One homepage row: the `/app/rwa-pairs` pool shape (either chain), built by the same `solanaPool` / `rhcPool`. */
+export type HomepagePool = UnifiedPool;
 
 export { updatedLabel, utcMinuteLabel, type SnapshotSourceTime as HomepageSourceTime } from "@/lib/snapshot-updated";
 
 /**
  * Server snapshot for the homepage table. `pools` are all candidate pools of both chains (before the duplicate rule),
  * `apr7d` the estimated highest range APR (7-day) per pool key from the same saved APR snapshots `/app/rwa-pairs`
- * reads, so the server picks the same pool per pair as `/app/rwa-pairs` does; `homepageRows` turns them into rows.
+ * reads (Solana: the 7-day range backtest; Robinhood Chain: Est. APR · 7d), so the server HTML lists the same top
+ * pools as `/app/rwa-pairs`; `homepageRows` picks them.
  */
 export type HomepagePoolsSnapshot = {
   pools: HomepagePool[];
@@ -34,44 +27,43 @@ export type HomepagePoolsSnapshot = {
   updated: HomepageSourceTime[];
 };
 
-export function homepageSolanaPool(row: HomepageSolanaRow): HomepagePool {
-  return { ...solanaPool(row), wrappedSymbol: row.wrappedSymbol, plainSymbol: row.plainSymbol, sameAsset: row.wrapKind !== "stable" };
-}
-
-/** Robinhood Chain StablePair pool (Robinhood token / Ondo token of one stock); null when not listed (same rule as `/app/rwa-pairs`). */
-export function homepageRhcPool(summary: RhcPoolSummary): HomepagePool | null {
-  const pool = rhcPool(summary);
-  if (!pool) return null;
-  const [wrappedSymbol = pool.symbolA, plainSymbol = pool.symbolB] = pool.pairLabel.split("/");
-  return { ...pool, wrappedSymbol, plainSymbol, sameAsset: true };
-}
-
-/** Both chains' candidate pools in one list (each pool once; the per-pair duplicate rule is applied by `homepageRows`). */
+/** Both chains' candidate pools in one list, exactly as `/app/rwa-pairs` builds them (each pool once). */
 export function buildHomepagePools(input: {
   solana?: readonly HomepageSolanaRow[] | null;
   rhc?: readonly RhcPoolSummary[] | null;
 }): HomepagePool[] {
   const seen = new Set<string>();
   return [
-    ...(input.solana ?? []).map(homepageSolanaPool),
-    ...(input.rhc ?? []).map(homepageRhcPool).filter((pool): pool is HomepagePool => pool !== null),
+    ...(input.solana ?? []).map(solanaPool),
+    ...(input.rhc ?? []).map(rhcPool).filter((pool): pool is HomepagePool => pool !== null),
   ].filter((pool) => (seen.has(pool.key) ? false : (seen.add(pool.key), true)));
 }
 
-/** `/app/rwa-pairs`'s default view, sorted by TVL instead of 7-day APR. */
-const HOMEPAGE_SELECT = { filters: DEFAULT_FILTERS, hideDuplicates: true, sort: { key: "tvl", dir: "desc" } } as const;
+/** `/app/rwa-pairs`'s default view: no filters, "Hide duplicate pools" on, sorted by Est. APR · 7d (high to low). */
+export const RWA_PAIRS_DEFAULT_SELECT = { filters: DEFAULT_FILTERS, hideDuplicates: true, sort: DEFAULT_SORT } as const;
 
 /**
- * One pool per chain and token pair, chosen exactly as `/app/rwa-pairs` chooses it (LJ's rule: the highest estimated
- * 7-day range APR; pools without one rank below, then TVL, 24h volume, address), through the same `selectPools`.
+ * Every pool in `/app/rwa-pairs`'s default order, through the same `selectPools`: one pool per chain and token pair
+ * (LJ's rule: the highest estimated 7-day APR wins), both chains merged, by 7-day APR from high to low (pools without
+ * one last, ties by TVL).
  */
-export function dedupeLikeRwaPairs<T extends UnifiedPool>(pools: readonly T[], apr7d: Apr7dLookup): T[] {
-  return selectPools(pools, { ...HOMEPAGE_SELECT, apr7d }).pools as T[];
+export function rwaPairsDefaultOrder<T extends UnifiedPool>(pools: readonly T[], apr7d: Apr7dLookup): T[] {
+  return selectPools(pools, { ...RWA_PAIRS_DEFAULT_SELECT, apr7d }).pools as T[];
 }
 
-/** Homepage rows: the `/app/rwa-pairs` duplicate rule, then the homepage's TVL ranking, floor, cap and stablecoin-last rule. */
-export function homepageRows(pools: readonly HomepagePool[], apr7d: Apr7dLookup, highlightPool?: string): HomepagePool[] {
-  return selectHomepagePools(dedupeLikeRwaPairs(pools, apr7d), highlightPool);
+const samePool = (a: string, b: string) => a === b || a.toLowerCase() === b.toLowerCase();
+
+/**
+ * Homepage rows: the first HOMEPAGE_POOL_LIMIT pools of `/app/rwa-pairs`'s default view. If a shared link's pool
+ * (`?pool=`) is listed there but not in the top rows, it takes the last slot.
+ */
+export function homepageRows<T extends UnifiedPool>(pools: readonly T[], apr7d: Apr7dLookup, highlightPool?: string): T[] {
+  const ranked = rwaPairsDefaultOrder(pools, apr7d);
+  const top = ranked.slice(0, HOMEPAGE_POOL_LIMIT);
+  const highlight = highlightPool?.trim();
+  if (!highlight || top.some((pool) => samePool(pool.poolAddress, highlight))) return top;
+  const extra = ranked.find((pool) => samePool(pool.poolAddress, highlight));
+  return extra ? [...ranked.slice(0, Math.max(HOMEPAGE_POOL_LIMIT - 1, 0)), extra] : top;
 }
 
 /** `Apr7dLookup` over a `{ poolKey: aprPct }` record (missing key → no 7-day APR). */
@@ -104,41 +96,6 @@ export function toHomepagePoolsSnapshot(input: {
   if (input.solana) updated.push({ chain: "solana", fetchedAt: input.solana.fetchedAt, stale: input.solana.stale });
   if (input.rhc) updated.push({ chain: "robinhood", fetchedAt: input.rhc.fetchedAt, stale: input.rhc.stale });
   return { pools, apr7d, tokenIcons, updated };
-}
-
-export function sortPoolsByTvl<T extends { tvlUsd: number | null }>(pairs: readonly T[]): T[] {
-  return [...pairs].sort((a, b) => (b.tvlUsd ?? -1) - (a.tvlUsd ?? -1));
-}
-
-const samePool = (a: string, b: string) => a === b || a.toLowerCase() === b.toLowerCase();
-
-/**
- * Homepage rows: same-stock pools by TVL descending (sub-floor pools dropped when anything qualifies, capped at
- * HOMEPAGE_POOL_LIMIT), then pools that are not same-stock pairs (the curated USDC/USDT pool) at the end. If a tweet
- * deep-link pool is missing from that set, swap it in.
- */
-export function selectHomepagePools<T extends { tvlUsd: number | null; poolAddress: string; sameAsset?: boolean }>(
-  pairs: readonly T[],
-  highlightPool?: string,
-): T[] {
-  const sorted = sortPoolsByTvl(pairs);
-  const sameAsset = sorted.filter((row) => row.sameAsset !== false);
-  const others = sorted.filter((row) => row.sameAsset === false && (row.tvlUsd ?? 0) >= HOMEPAGE_TVL_FLOOR_USD);
-  const aboveFloor = sameAsset.filter((row) => (row.tvlUsd ?? 0) >= HOMEPAGE_TVL_FLOOR_USD);
-  const ranked = aboveFloor.length > 0 ? aboveFloor : sameAsset;
-  const picked = [...ranked.slice(0, HOMEPAGE_POOL_LIMIT), ...others];
-  const highlight = highlightPool?.trim();
-  if (!highlight || picked.some((row) => samePool(row.poolAddress, highlight))) return picked;
-  const extra = sorted.find((row) => samePool(row.poolAddress, highlight));
-  if (!extra) return picked;
-  return [...ranked.slice(0, Math.max(HOMEPAGE_POOL_LIMIT - 1, 0)), extra, ...others];
-}
-
-export function formatUsd(value: number | null, digits = 2): string {
-  if (value === null || !Number.isFinite(value)) return "—";
-  if (Math.abs(value) >= 1_000_000) return `$${(value / 1_000_000).toFixed(2)}M`;
-  if (Math.abs(value) >= 1_000) return `$${(value / 1_000).toFixed(1)}k`;
-  return `$${value.toFixed(digits)}`;
 }
 
 /** The `/app/rwa-pairs` APR formatter: "—" when missing, "<0.01%" for a real but tiny APR, otherwise two decimals. */
