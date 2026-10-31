@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
-  detachTxRetry, noticeIdFor, runTx, TxRunError, useTxNotices,
+  detachTxRetry, noticeIdFor, runTx, TxRunError, useCancelCheckPending, useTxNotices,
   type PreparedTx, type TxAdapter, type TxFailureKind, type TxStage, type TxWallet,
 } from "@/lib/tx-pipeline";
 
@@ -16,8 +16,13 @@ export type TxPipelineState = {
  * a plain error, a one-tap retry, `closeLocked` (true while preparing or in the wallet,
  * so a stray backdrop click cannot abandon a signature request) and `locked` (also true while
  * checking Solana after a wallet error and while confirming: no second send, no re-quote).
+ *
+ * `scope` (e.g. the selected position mint) feeds `cancelPending`: true while a cancelled send of this flow on this
+ * position is still being checked on-chain in the background; the form shows `CANCEL_CHECK_PENDING_COPY` and
+ * keeps its submit disabled (runTx refuses that send anyway).
  */
-export function useTxPipeline<Input, Prepared extends PreparedTx>(adapter: TxAdapter<Input, Prepared>, wallet: TxWallet | null) {
+export function useTxPipeline<Input, Prepared extends PreparedTx>(adapter: TxAdapter<Input, Prepared>, wallet: TxWallet | null,
+  options: { scope?: string } = {}) {
   const [owned, setOwned] = useState<{ wallet?: string; state: TxPipelineState }>({ state: { status: "idle" } });
   const generation = useRef(0);
   const mounted = useRef(true);
@@ -91,8 +96,11 @@ export function useTxPipeline<Input, Prepared extends PreparedTx>(adapter: TxAda
   // Confirming locks only while its notice is still tracking the signature (a dismissed toast must not lock the form forever).
   const locked = busyNow || (view.status === "confirming" && notice?.state === "loading");
   useLayoutEffect(() => { lockedRef.current = locked; });
+  const cancelPending = useCancelCheckPending(adapter.flow, options.scope);
   return {
     ...view, run, reset, retry,
+    /** A cancelled send of this flow + scope is still being checked on Solana: no resubmit yet. */
+    cancelPending,
     busy: busyNow,
     /** No new send and no re-quote: in flight, checking Solana after a wallet error, or confirming. */
     locked,

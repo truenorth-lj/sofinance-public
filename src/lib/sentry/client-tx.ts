@@ -12,13 +12,17 @@ export type TxReportContext = {
   walletErrorCode?: number;
   /** What the on-chain lookup after a wallet error decided. */
   landedCheck?: "landed" | "failed" | "not-landed" | "unknown";
+  /** True when the wallet reported a cancel (code 4001) and the lookup ran in the background. */
+  afterCancel?: boolean;
 };
 
 function applyContext(scope: Sentry.Scope, context: TxReportContext | undefined) {
   if (!context) return;
-  if (context.blockhash) scope.setTag("tx_blockhash", context.blockhash);
+  // Extra, not a tag: one value per attempt would only bloat the tag index.
+  if (context.blockhash) scope.setExtra("tx_blockhash", context.blockhash);
   if (context.walletErrorCode !== undefined) scope.setTag("wallet_error_code", String(context.walletErrorCode));
   if (context.landedCheck) scope.setTag("tx_landed_check", context.landedCheck);
+  if (context.afterCancel) scope.setTag("tx_after_cancel", "true");
 }
 
 /**
@@ -62,8 +66,10 @@ export function captureTxWalletErrorLanded(flow: TxFlow, context: TxReportContex
       scope.setLevel("info");
       scope.setTag("tx_flow", flow);
       applyContext(scope, context);
-      scope.setFingerprint(["tx-wallet-error-landed", flow]);
-      Sentry.captureMessage(`Transaction ${flow} landed after a wallet error`);
+      scope.setFingerprint(["tx-wallet-error-landed", flow, context.afterCancel ? "4001" : "error"]);
+      Sentry.captureMessage(context.afterCancel
+        ? `Transaction ${flow} 4001 but landed`
+        : `Transaction ${flow} landed after a wallet error`);
     });
   } catch { /* Telemetry must never break the transaction UI. */ }
 }

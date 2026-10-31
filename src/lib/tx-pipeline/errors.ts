@@ -1,4 +1,5 @@
 import { errorText, mapKnownChainError, sanitizePublicError, TX_EXPIRED_MESSAGE } from "@/lib/public-error";
+import type { LandedOutcome } from "./landed";
 
 /**
  * Stage 4 (status): one classification for every Solana flow.
@@ -60,6 +61,22 @@ export class TxLandedUnknownError extends Error {
   }
 }
 
+let cancelSequence = 0;
+
+/**
+ * The person cancelled in the wallet (code 4001, or explicit cancel wording with no code) after we asked it to
+ * sign AND send. We say so at once and unlock the form, but a wallet can broadcast and still report a cancel, so
+ * `landed` keeps checking Solana silently until the blockhash expires (see `watchCancelledSend`). It never says
+ * "nothing was sent": that is not known yet. `attemptId` keys this attempt's toast, so a resubmit never overwrites it.
+ */
+export class TxWalletCancelledError extends Error {
+  readonly attemptId = `${Date.now().toString(36)}-${++cancelSequence}`;
+  constructor(readonly cause: unknown, readonly landed: Promise<LandedOutcome>) {
+    super("You cancelled in your wallet.");
+    this.name = "TxWalletCancelledError";
+  }
+}
+
 export type WalletErrorInfo = { code?: number; message: string };
 
 /**
@@ -105,6 +122,7 @@ function walletReason(error: unknown) {
 export function txFailureKind(error: unknown): TxFailureKind {
   if (error instanceof TxNotLandedError) return "not-sent";
   if (error instanceof TxLandedUnknownError) return "unknown";
+  if (error instanceof TxWalletCancelledError) return "rejected";
   const text = errorText(error);
   if (isWalletRejection(error)) return "rejected";
   if (EXPIRED.test(text) || text.includes(TX_EXPIRED_MESSAGE)) return "expired";
@@ -124,7 +142,7 @@ export const canRetry = (kind: TxFailureKind) => kind === "expired" || kind === 
 
 /** Plain words for the person in front of the wallet. Never raw RPC text, never secrets. */
 export function plainTxError(error: unknown, kind = txFailureKind(error)): string {
-  if (error instanceof TxNotLandedError || error instanceof TxLandedUnknownError) return error.message;
+  if (error instanceof TxNotLandedError || error instanceof TxLandedUnknownError || error instanceof TxWalletCancelledError) return error.message;
   if (kind === "rejected") return "You cancelled in your wallet. Nothing was sent.";
   if (kind === "expired") return TX_EXPIRED_MESSAGE;
   if (error instanceof TxSendUnknownError) return error.message;

@@ -8,8 +8,10 @@ import { assertSolSwapAttempt, clearSolSwapAttempt, completeSolSwapAttempt, pers
   readSolSwapAttempt, requireSolSwapStorage, SolSwapStorageError, type SolSwapAttempt, type SolSwapStorage } from "./sol-swap-attempt-store";
 import type { PendingSolSwapReceipt } from "./sol-swap-receipt-store";
 import type { SolSwapStepSummary } from "@sofinance/engine/sol-swap-step";
-import { dismissTxNotice, sendWithWallet, showTxCheckingNotice, trackTxSignature, TxSendUnknownError, type FindLanded, type SendRaw,
+import { CANCEL_CHECK_PENDING_COPY, cancelCheckKey, dismissTxNotice, isCancelCheckPending, holdCancelCheck, sendWithWallet, showTxCheckingNotice, trackTxSignature, TxLandedUnknownError,
+  TxNotLandedError, TxSendUnknownError, TxWalletCancelledError, walletErrorInfo, watchCancelledSend, type FindLanded, type SendRaw,
   type TxWallet } from "@/lib/tx-pipeline";
+import { captureTxWalletErrorLanded, type TxReportContext } from "@/lib/sentry/client-tx";
 import { postWithJupiterRelay, type JupiterRelayStore } from "@/lib/jupiter/browser-relay";
 
 /** "swap-checking": the wallet threw after the sign-and-send request; looking for the swap on-chain before anything else. */
@@ -27,7 +29,7 @@ export type SolSwapReceipt = {
   decimals: number;
 };
 
-type Prepared = { unsignedTransaction: string; permit: string; sendPermit?: string; summary: SolSwapStepSummary };
+type Prepared = { unsignedTransaction: string; permit: string; sendPermit?: string; landedPermit?: string; summary: SolSwapStepSummary };
 type Delivery = { status: "pending" | "expired" | "failed" } | { status: "confirmed"; delivered: string; decimals: number };
 
 export const SOL_SWAP_POLL_MS = 1_500;
@@ -50,6 +52,12 @@ export class SolSwapStepError extends Error {
   }
 }
 
+/** Public Sentry context of a failed step 1/2 send (blockhash, wallet error code, landed check), for the caller's report. */
+const failureContexts = new WeakMap<object, TxReportContext>();
+export function solSwapFailureContext(error: unknown): TxReportContext | undefined {
+  return error && typeof error === "object" ? failureContexts.get(error) : undefined;
+}
+
 export async function runSolSwapStep(input: {
   poolId: string; amount: string; requested: string; store: JupiterRelayStore; timeoutMs: number;
   wallet: TxWallet; sendRaw?: SendRaw;
@@ -64,6 +72,7 @@ export async function runSolSwapStep(input: {
   const storage = input.storage ?? requireSolSwapStorage();
   const pending = readSolSwapAttempt(storage, wallet);
   if (pending) throw new SolSwapStepError("Check the original SOL swap before opening again.", pending.signature);
+  if (isCancelCheckPending(cancelCheckKey("open", poolId))) throw new SolSwapStepError(CANCEL_CHECK_PENDING_COPY);
   input.setStage("swap-preparing");
   const response = await postWithJupiterRelay("/api/sol-swap-prepare", { wallet, poolId, amount: input.amount },
     { store: input.store, signal: AbortSignal.timeout(input.timeoutMs) });
@@ -87,15 +96,34 @@ export async function runSolSwapStep(input: {
   // saved with the returned signature so a reload keeps polling it; nothing is resent.
   let signature: string;
   let checkingId: string | undefined;
+  const context: TxReportContext = { blockhash: summary.blockhash };
   try {
-    signature = (await sendWithWallet(input.wallet, unsigned, {
-      sendRaw: input.sendRaw, sendPermit: prepared.sendPermit, lastValidBlockHeight: summary.lastValidBlockHeight,
-      findLanded: input.findLanded,
-      onChecking: () => { checkingId = showTxCheckingNotice("swap"); input.setStage("swap-checking"); },
-    })).signature;
+    const sent = await sendWithWallet(input.wallet, unsigned, {
+      sendRaw: input.sendRaw, sendPermit: prepared.sendPermit, landedPermit: prepared.landedPermit,
+      lastValidBlockHeight: summary.lastValidBlockHeight, findLanded: input.findLanded,
+      knownSignatures: () => { const saved = readSolSwapAttempt(storage, wallet); return saved ? [saved.signature] : []; },
+      onChecking: (walletError) => {
+        context.walletErrorCode = walletErrorInfo(walletError).code;
+        checkingId = showTxCheckingNotice("swap"); input.setStage("swap-checking");
+      },
+    });
+    signature = sent.signature;
+    if (sent.walletError !== undefined) captureTxWalletErrorLanded("swap", { ...context, landedCheck: "landed" });
   } catch (error) {
     if (checkingId) dismissTxNotice(checkingId);
-    if (!(error instanceof TxSendUnknownError)) throw error;
+    if (error instanceof TxNotLandedError) context.landedCheck = "not-landed";
+    else if (error instanceof TxLandedUnknownError) context.landedCheck = "unknown";
+    // Cancelled in the wallet: the caller reports it now; if the swap landed anyway, track it (toast + balances).
+    // Until that background check ends, this pool's open (step 1 and 2) cannot be sent again.
+    if (error instanceof TxWalletCancelledError) {
+      context.walletErrorCode = walletErrorInfo(error.cause).code;
+      holdCancelCheck(cancelCheckKey("open", poolId), watchCancelledSend(error, { flow: "swap", successTitle: "Step 1/2 swap confirmed", wallet,
+        lastValidBlockHeight: summary.lastValidBlockHeight, context: { ...context } }));
+    }
+    if (!(error instanceof TxSendUnknownError)) {
+      if (error && typeof error === "object") failureContexts.set(error, { ...context });
+      throw error;
+    }
     signature = error.signature;
   }
   if (checkingId) dismissTxNotice(checkingId);

@@ -11,7 +11,7 @@ import { useWalletConnection } from "./wallet-connection";
 import { createJupiterRelayStore } from "@/lib/jupiter/browser-relay";
 import { useSelectedPreview, useSelectedPreviewEffect } from "./transactions/selected/use-selected-preview";
 import { selectionKey } from "./transactions/selected/selected-preview-model";
-import { BALANCES_REFRESH_EVENT } from "@/lib/tx-pipeline";
+import { BALANCES_REFRESH_EVENT, CANCEL_CHECK_PENDING_COPY } from "@/lib/tx-pipeline";
 import { knownTokenSymbol, NOT_ENOUGH_SOL_FOR_FEES_MESSAGE, notEnoughBalanceMessage } from "@sofinance/engine/balance-message";
 import { useTxPipeline } from "./transactions/use-tx-pipeline";
 import { addLiquidityAdapter } from "./transactions/adapters/add";
@@ -35,7 +35,7 @@ export function useSelectedController() {
     retryCalculation, showQuoteRecalculate } = previewController;
   const txWallet = useMemo(() => wallet ? { address: wallet, signTransaction, signAndSendTransaction } : null,
     [wallet, signTransaction, signAndSendTransaction]);
-  const tx = useTxPipeline(addLiquidityAdapter, txWallet);
+  const tx = useTxPipeline(addLiquidityAdapter, txWallet, { scope: selection?.positionMint });
   // `locked` also covers checking Solana after a wallet error and confirming: no second send, no re-quote.
   const { locked: busy, reset: clearError } = tx;
   const submitStage = tx.status === "preparing" || tx.status === "wallet" || tx.status === "checking" || tx.status === "confirming" ? tx.status : null;
@@ -210,8 +210,10 @@ export function useSelectedController() {
     : tx.signature && tx.status === "failed" ? (tx.kind === "expired" ? "expired" as const : "failed" as const) : null;
 
   const actionLabel = submitStage === "preparing" ? "Preparing latest transaction…" : submitStage === "wallet" ?
-    "Confirm in your wallet…" : submitStage === "checking" ? "Checking Solana…" : submitStage === "confirming" ? "Confirming on Solana…" : "Add liquidity";
-  const actionDisabled = busy || !ready || quoteLoading || !quote || !fresh;
+    "Confirm in your wallet…" : submitStage === "checking" ? "Checking Solana…" : submitStage === "confirming" ? "Confirming on Solana…"
+    // Cancelled in the wallet, still checked on Solana in the background: this position cannot be added to again yet.
+    : tx.cancelPending ? CANCEL_CHECK_PENDING_COPY : "Add liquidity";
+  const actionDisabled = busy || tx.cancelPending || !ready || quoteLoading || !quote || !fresh;
   const walletBlocked = busy;
   const primaryAction = () => { void signAndSend(); };
   /** Status dialog "Try again": re-prepare and re-sign the same add (only once the last one expired or failed). */

@@ -27,3 +27,34 @@ export function verifyTxSendPermit(secret: string, wallet: string, prepared: Uin
 export function sendPermitFor(wallet: string, unsignedTransaction: string, secret = getSigningSecret()) {
   return issueTxSendPermit(secret, wallet, Buffer.from(unsignedTransaction, "base64"));
 }
+
+/**
+ * Check permit for `/api/tx-landed`: a separate HMAC (its own domain) over the same prepared bytes AND the
+ * prepare-time `lastValidBlockHeight`, so the lookup window cannot be stretched by a client-chosen height.
+ */
+function landedPayload(wallet: string, prepared: Uint8Array, lastValidBlockHeight: number) {
+  return `sofinance:tx-landed:v1:${wallet}:${createHash("sha256").update(prepared).digest("hex")}:${lastValidBlockHeight}`;
+}
+
+export function issueTxLandedPermit(secret: string, wallet: string, prepared: Uint8Array, lastValidBlockHeight: number) {
+  if (!secret) throw new Error("Missing server signing key");
+  if (!Number.isSafeInteger(lastValidBlockHeight) || lastValidBlockHeight <= 0) throw new Error("Invalid last valid block height");
+  return createHmac("sha256", secret).update(landedPayload(wallet, prepared, lastValidBlockHeight)).digest("hex");
+}
+
+export function verifyTxLandedPermit(secret: string, wallet: string, prepared: Uint8Array, lastValidBlockHeight: unknown, permit: unknown) {
+  if (!secret || typeof permit !== "string" || !/^[0-9a-f]{64}$/.test(permit) ||
+    !Number.isSafeInteger(lastValidBlockHeight) || (lastValidBlockHeight as number) <= 0) return false;
+  const expected = Buffer.from(issueTxLandedPermit(secret, wallet, prepared, lastValidBlockHeight as number), "hex");
+  return timingSafeEqual(expected, Buffer.from(permit, "hex"));
+}
+
+/** Both permits for an app prepare response: `sendPermit` (relay) and `landedPermit` (on-chain check after a wallet error). */
+export function txPermitsFor(wallet: string, unsignedTransaction: string, lastValidBlockHeight: number | undefined, secret = getSigningSecret()) {
+  const bytes = Buffer.from(unsignedTransaction, "base64");
+  return {
+    sendPermit: issueTxSendPermit(secret, wallet, bytes),
+    ...(Number.isSafeInteger(lastValidBlockHeight) && (lastValidBlockHeight as number) > 0
+      ? { landedPermit: issueTxLandedPermit(secret, wallet, bytes, lastValidBlockHeight as number) } : {}),
+  };
+}

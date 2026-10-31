@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
-vi.mock("@/lib/tx-send/permit", () => ({ sendPermitFor: vi.fn(() => "send-permit") }));
+vi.mock("@/lib/tx-send/permit", () => ({ sendPermitFor: vi.fn(() => "send-permit"), txPermitsFor: vi.fn(() => ({ sendPermit: "send-permit", landedPermit: "landed-permit" })) }));
 vi.mock("@sofinance/engine/open-atomic", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@sofinance/engine/open-atomic")>()),
   buildAndSimulateOpenPosition: vi.fn(),

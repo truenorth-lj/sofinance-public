@@ -8,7 +8,7 @@ import { buildTransaction, testKeypair } from "@/lib/test-support/send-fixtures"
 vi.mock("@/lib/sentry/client-tx", () => ({ captureTxClientFailure: vi.fn(), captureTxWalletErrorLanded: vi.fn() }));
 vi.mock("@/lib/position-history-refresh", () => ({ notifyPositionHistoryChange: vi.fn() }));
 
-import { dismissTxNotice, findTxNotice, getTxNotices, noticeIdFor, resetTxNotices, settleTxNotice, SUCCESS_NOTICE_MS, TxNotSentError, type TxAdapter, type TxWallet } from "@/lib/tx-pipeline";
+import { CANCEL_CHECK_PENDING_COPY, resetCancelChecks, dismissTxNotice, findTxNotice, getTxNotices, noticeIdFor, resetTxNotices, settleTxNotice, SUCCESS_NOTICE_MS, TxNotSentError, type TxAdapter, type TxWallet } from "@/lib/tx-pipeline";
 import { TxNoticeHost } from "./tx-notice-host";
 import { openStatusFromNotice } from "@/components/use-open-attempt";
 import { useTxPipeline } from "./use-tx-pipeline";
@@ -20,16 +20,19 @@ const deferred = <T,>() => { let resolve!: (v: T) => void, reject!: (e: unknown)
 const wallet = (address = payer.publicKey.toBase58(), send = vi.fn(async () => SIG)): TxWallet => ({ address, signTransaction: vi.fn(), signAndSendTransaction: send });
 
 let root: Root; let container: HTMLElement; const box = {} as { current: ReturnType<typeof useTxPipeline<number, never>> };
-function Harness(props: { adapter: TxAdapter<number>; wallet: TxWallet | null }) {
-  const value = useTxPipeline(props.adapter as never, props.wallet) as never;
+function Harness(props: { adapter: TxAdapter<number>; wallet: TxWallet | null; scope?: string }) {
+  const value = useTxPipeline(props.adapter as never, props.wallet, { scope: props.scope }) as never;
   useLayoutEffect(() => { box.current = value; });
   return null;
 }
-const render = async (adapter: TxAdapter<number>, w: TxWallet | null) => act(async () => root.render(createElement(Harness, { adapter, wallet: w })));
-const adapter = (prepare: TxAdapter<number>["prepare"]): TxAdapter<number> => ({ flow: "add", successTitle: "Liquidity added", prepare });
+const render = async (adapter: TxAdapter<number>, w: TxWallet | null, scope?: string) =>
+  act(async () => root.render(createElement(Harness, { adapter, wallet: w, scope })));
+/** Input n is "position pos-n". */
+const adapter = (prepare: TxAdapter<number>["prepare"]): TxAdapter<number> =>
+  ({ flow: "add", successTitle: "Liquidity added", prepare, scope: (n) => `pos-${n}` });
 const prepared = () => ({ transaction: buildTransaction({ payer, signWith: [] }), lastValidBlockHeight: 1 });
 
-beforeEach(() => { resetTxNotices(); window.localStorage.clear(); container = document.createElement("div"); root = createRoot(container); });
+beforeEach(() => { resetTxNotices(); resetCancelChecks(); window.localStorage.clear(); container = document.createElement("div"); root = createRoot(container); });
 afterEach(async () => { await act(async () => root.unmount()); });
 
 describe("useTxPipeline", () => {
@@ -102,7 +105,7 @@ describe("useTxPipeline", () => {
     const lookup = deferred<Response>();
     const fetchMock = vi.fn((url: string) => url === "/api/tx-landed" ? lookup.promise : Promise.resolve(Response.json({ status: "pending" })));
     vi.stubGlobal("fetch", fetchMock);
-    const prepare = vi.fn(async () => ({ ...prepared(), sendPermit: "permit" }));
+    const prepare = vi.fn(async () => ({ ...prepared(), sendPermit: "permit", landedPermit: "check" }));
     const w = wallet(undefined, vi.fn(async () => { throw new Error('{"code":400,"message":"Request ab12cd34ef rejected by user"}'); }));
     await render(adapter(prepare), w);
     let first!: Promise<unknown>;
@@ -117,6 +120,42 @@ describe("useTxPipeline", () => {
     expect(prepare).toHaveBeenCalledTimes(1);
     await act(async () => { settleTxNotice(noticeIdFor(SIG), "confirmed"); });
     expect(box.current).toMatchObject({ status: "success", locked: false });
+    vi.unstubAllGlobals();
+  });
+  it("4001 after a sign-and-send request: cancelled at once; the same position waits for the background check, another position does not", async () => {
+    const lookup = deferred<Response>();
+    const fetchMock = vi.fn((url: string) => url === "/api/tx-landed" ? lookup.promise : Promise.resolve(Response.json({ status: "pending" })));
+    vi.stubGlobal("fetch", fetchMock);
+    const prepare = vi.fn(async () => ({ ...prepared(), sendPermit: "permit", landedPermit: "check" }));
+    const send = vi.fn(async (): Promise<string> => { throw Object.assign(new Error("User rejected the request."), { code: 4001 }); });
+    const w = wallet(undefined, send);
+    await render(adapter(prepare), w, "pos-1");
+    await act(async () => { await box.current.run(1); });
+    // No "checking" hold: idle, not busy, and the cancel toast is up while the lookup is still pending.
+    expect(box.current).toMatchObject({ status: "idle", busy: false, locked: false, cancelPending: true });
+    expect(getTxNotices()).toMatchObject([{ state: "failure", kind: "rejected", detail: "You cancelled in your wallet." }]);
+    expect(fetchMock).toHaveBeenCalledWith("/api/tx-landed", expect.objectContaining({ method: "POST" }));
+    expect(CANCEL_CHECK_PENDING_COPY).toBe("Cancelled — you can retry in about a minute");
+    // Same position: refused before preparing (the form shows the copy and keeps its button disabled).
+    await act(async () => { await box.current.run(1); });
+    expect(prepare).toHaveBeenCalledTimes(1); expect(send).toHaveBeenCalledTimes(1);
+    expect(box.current).toMatchObject({ status: "idle", cancelPending: true });
+    // Another position of the same flow is not held.
+    const SECOND = bs58.encode(new Uint8Array(64).fill(6));
+    send.mockImplementationOnce(async () => SECOND);
+    await act(async () => { await box.current.run(2); });
+    expect(prepare).toHaveBeenCalledTimes(2);
+    expect(box.current).toMatchObject({ status: "confirming", signature: SECOND, locked: true });
+    // The first attempt turns out to have landed: tracked on its own, the other position's state is untouched.
+    await act(async () => { lookup.resolve(Response.json({ status: "landed", signature: SIG })); await new Promise((r) => setTimeout(r, 0)); });
+    expect(findTxNotice(noticeIdFor(SIG))).toMatchObject({ state: "loading", signature: SIG });
+    expect(getTxNotices().some((n) => n.kind === "rejected")).toBe(false);
+    expect(box.current).toMatchObject({ status: "confirming", signature: SECOND, cancelPending: false });
+    await act(async () => { settleTxNotice(noticeIdFor(SIG), "confirmed"); });
+    expect(findTxNotice(noticeIdFor(SIG))).toMatchObject({ state: "success" });
+    expect(box.current).toMatchObject({ status: "confirming", signature: SECOND, locked: true });
+    await act(async () => { settleTxNotice(noticeIdFor(SECOND), "confirmed"); });
+    expect(box.current).toMatchObject({ status: "success", signature: SECOND, locked: false });
     vi.unstubAllGlobals();
   });
   it("ignores a second run while busy", async () => {

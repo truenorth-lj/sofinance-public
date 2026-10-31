@@ -8,6 +8,7 @@ import { CompoundSubmitDialog } from "./compound-submit-dialog";
 import { useSolUsdcPrices } from "./use-sol-usdc-price";
 import { formatAmount } from "@sofinance/engine/amount";
 import type { CompoundController } from "./use-compound-controller";
+import { CANCEL_CHECK_PENDING_COPY, CHECKING_SOLANA_COPY } from "@/lib/tx-pipeline";
 
 const short = (value: string) => `${value.slice(0, 5)}…${value.slice(-5)}`;
 
@@ -30,11 +31,11 @@ export function CompoundPanel({ controller: c, tokenLabel = short, onConnect }: 
   const displaySummary = summary?.positionMint === c.positionMint ? summary : preview;
   const amount = (value: string, decimals: number) => formatAmount(value, decimals, Math.min(decimals, 9));
   const action = c.cleanup?.running ? c.stage === "preparing" ? "Preparing cleanup…" :
-    c.stage === "wallet" ? "Approve cleanup in wallet…" : c.stage === "broadcasting" ? "Sending cleanup…" : "Verifying cleanup…"
+    c.stage === "wallet" ? "Approve cleanup in wallet…" : c.stage === "checking" ? CHECKING_SOLANA_COPY : c.stage === "broadcasting" ? "Sending cleanup…" : "Verifying cleanup…"
     : c.stage === "preparing" ? "Verifying yield and simulating transaction…" :
-    c.stage === "wallet" ? "Confirming in wallet…" : c.stage === "broadcasting" ? "Sending and verifying…" : "One-click compound";
+    c.stage === "wallet" ? "Confirming in wallet…" : c.stage === "checking" ? CHECKING_SOLANA_COPY : c.stage === "broadcasting" ? "Sending and verifying…" : "One-click compound";
   const blockedText = !c.wallet ? null : !c.positionMint ? "Please select existing position first" :
-    c.externalBlocked ? "Another operation is in progress." : state && !state.eligible ? state.reason :
+    c.externalBlocked ? "Another operation is in progress." : c.cancelPending ? CANCEL_CHECK_PENDING_COPY : state && !state.eligible ? state.reason :
         state && !c.hasFees ? "Currently no yield available to compound" : null;
   const positionReceipts = c.receipts.filter(receipt => receipt.positionMint === c.positionMint);
   const otherReceipts = c.receipts.filter(receipt => receipt.positionMint !== c.positionMint);

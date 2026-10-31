@@ -4,7 +4,7 @@ import "@/lib/engine-host";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { VersionedTransaction } from "@solana/web3.js";
 import { clearsSubmitError, mayStartAnotherAttempt, type AtomicStatus } from "@/lib/attempt-status";
-import { sendAndTrack, TxNotSentError } from "@/lib/tx-pipeline";
+import { sendAndTrack, TxNotSentError, useCancelCheckPending } from "@/lib/tx-pipeline";
 import { ApiRequestError, resolveCompoundBroadcastFailure } from "@/lib/public-error";
 import { abandonUnsentCompoundAttempt, compoundAttemptKey, compoundReceiptsKey, loadCompoundAttempt, loadCompoundReceipts, persistCompoundAttempt, persistCompoundReceipt,
   type CompoundAttempt, type CompoundPrepared, type CompoundReceipt, type RecoveryPrepared } from "@sofinance/engine/compound-attempt";
@@ -84,7 +84,7 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
     setErrorState({ message, identity, signature, receiptSignature }), []);
   const clearError = useCallback((identity: string, signature: string | null = null) => setErrorState(previous =>
     previous.identity === identity && previous.signature === signature ? emptyError : previous), []);
-  const [stage, setStage] = useState<"preparing" | "wallet" | "broadcasting" | null>(null);
+  const [stage, setStage] = useState<"preparing" | "wallet" | "checking" | "broadcasting" | null>(null);
   const [feedback, setFeedback] = useState<CompoundSubmitFeedback | null>(null);
   const updateFeedback = useCallback((signature: string, next: Omit<CompoundSubmitFeedback, "signature">) =>
     setFeedback(previous => previous?.signature === signature ? { ...next, signature } : previous), []);
@@ -237,7 +237,9 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
     .map((receipt) => receipt.sourceSignature))];
   const hasFees = (visibleState ? BigInt(visibleState.fees.a) > 0n || BigInt(visibleState.fees.b) > 0n ||
     visibleState.rewards.some((reward) => BigInt(reward.estimatedAmount) > 0n) : false) || sourceSignatures.length > 0;
-  const canCompound = !!wallet && !!positionMint && connection.connected &&
+  // A cancelled compound of this position is still being checked on-chain: no second one yet.
+  const cancelPending = useCancelCheckPending("compound", positionMint ?? undefined);
+  const canCompound = !!wallet && !!positionMint && connection.connected && !cancelPending &&
     !!visibleState?.eligible && hasFees && !externalBlocked && !walletBlocked && !batchCleanup.unresolved && !batchCleanup.invalid;
 
   async function submit(receipt?: CompoundReceipt, batch = false): Promise<RecoveryOutcome> {
@@ -330,7 +332,10 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
         wallet: { address: submittedWallet, signTransaction: connectionRef.current.signTransaction,
           signAndSendTransaction: connectionRef.current.signAndSendTransaction },
         prepared: { transaction: unsigned, lastValidBlockHeight: summary.lastValidBlockHeight, positionMint: receipt?.positionMint || submittedMint,
-          sendPermit: (loaded.prepared as { sendPermit?: string }).sendPermit },
+          sendPermit: (loaded.prepared as { sendPermit?: string }).sendPermit,
+          landedPermit: (loaded.prepared as { landedPermit?: string }).landedPermit },
+        scope: receipt?.positionMint || submittedMint,
+        onStage: (pipelineStage) => { if (pipelineStage === "checking" && current()) setStage("checking"); },
         isCurrent: () => current() && !externalBlockedRef.current && (() => {
           try { verifyRecoveryAttempt(); } catch (error) {
             throw new TxNotSentError(error instanceof Error ? error.message : "Transaction record changed, so nothing was sent.");
@@ -548,7 +553,7 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
       : transactionUnresolved ? "A previous compound transaction is unresolved. Verify its signature before repeating that operation; new transactions are available."
       : receiptReviewRequired ? "A previous compound transaction finalized, but its yield details need verification. New transactions are available." : "",
     receiptReviewRequired, confirmationSlow: confirmationSlow && transactionUnresolved,
-    canCompound, hasFees, priorReceipts, importing, canImport, importReceipt,
+    canCompound, cancelPending, hasFees, priorReceipts, importing, canImport, importReceipt,
     scan: loadedWallet === wallet ? scan : emptyScan, scanWallet, cleanup: (loadedWallet === wallet ? cleanup : null) || batchCleanup.progress,
     cleanupBatch: batchCleanup.attempt, cleanupAll: async () => {
       if (cleanupRunning.current || submitting.current || busy) return;

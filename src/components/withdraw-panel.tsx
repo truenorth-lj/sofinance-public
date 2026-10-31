@@ -10,7 +10,7 @@ import { notifyPositionHistoryChange } from "@/lib/position-history-refresh";
 import { createJupiterRelayStore, postWithJupiterRelay } from "@/lib/jupiter/browser-relay";
 import type { WithdrawPrepared, WithdrawSummary, WithdrawRequest } from "@sofinance/engine/withdraw/types";
 import { assertWithdrawHistory, readWithdrawHistory, writeWithdrawHistory, withdrawCheckpointKey, WithdrawHistoryError, WITHDRAW_HISTORY_ERROR, type WithdrawHistory, type WithdrawCheckpoint as Checkpoint } from "@/lib/withdraw-checkpoint";
-import { sendAndTrack, TxRunError } from "@/lib/tx-pipeline";
+import { CANCEL_CHECK_PENDING_COPY, CHECKING_SOLANA_COPY, sendAndTrack, TxRunError, useCancelCheckPending } from "@/lib/tx-pipeline";
 
 export const WITHDRAW_EXPIRED_MESSAGE = "This withdrawal expired before Solana included it, so nothing moved. Tap Try again to sign a fresh one.";
 
@@ -178,10 +178,10 @@ export function WithdrawPanel({wallet,positionMint,mintA,mintB,label,onClose,onB
   }
   throw new Error("Confirmation is taking longer. Resume to check the same transaction.");
  }
- async function signAndSend(run:WithdrawRun,response:WithdrawPrepared&{sendPermit?:string},confirmed:boolean,originalRequest:WithdrawRequest,root?:Checkpoint["root"]){
+ async function signAndSend(run:WithdrawRun,response:WithdrawPrepared&{sendPermit?:string;landedPermit?:string},confirmed:boolean,originalRequest:WithdrawRequest,root?:Checkpoint["root"]){
   guardRun(run);
   // The relay permit is used for this send only; the checkpoint keeps the server's WithdrawPrepared shape.
-  const {sendPermit,...prepared}=response;
+  const {sendPermit,landedPermit,...prepared}=response;
   setProgress(prepared.summary.stage==="swap"?"Step 2 of 2: approve conversion in your wallet":"Approve withdrawal in your wallet");
   const unsigned=VersionedTransaction.deserialize(Uint8Array.from(atob(prepared.unsignedTransaction),c=>c.charCodeAt(0)));
   // Shared pipeline send stage: the wallet sends (or signs and we relay once). The
@@ -190,7 +190,10 @@ export function WithdrawPanel({wallet,positionMint,mintA,mintB,label,onClose,onB
   try{
    const {signature}=await sendAndTrack({flow:"withdraw",wallet:{address:wallet,signTransaction:currentConnection.current.signTransaction,signAndSendTransaction:currentConnection.current.signAndSendTransaction},
     successTitle:isSwap?"Conversion confirmed":"Withdrawal confirmed",storage:window.localStorage,
-    prepared:{transaction:unsigned,lastValidBlockHeight:prepared.summary.lastValidBlockHeight,positionMint:prepared.summary.positionMint,sendPermit},
+    prepared:{transaction:unsigned,lastValidBlockHeight:prepared.summary.lastValidBlockHeight,positionMint:prepared.summary.positionMint,sendPermit,landedPermit},
+    scope:prepared.summary.positionMint,
+    // Inline text follows the pipeline: "checking Solana" after a wallet error, then submitting.
+    onStage:(stage)=>{try{guardRun(run);}catch{return;}if(stage==="checking")setProgress(CHECKING_SOLANA_COPY);},
     isCurrent:()=>{try{guardRun(run);return true;}catch{return false;}}});
    const saved:Checkpoint={prepared,signature,request:originalRequest,confirmHighImpact:confirmed,root};
    persistSent(run,saved);setProgress("Submitting withdrawal…");
@@ -246,6 +249,8 @@ export function WithdrawPanel({wallet,positionMint,mintA,mintB,label,onClose,onB
   finally{finish(run);}
  }
  const disabled=busy || !!checkpoint || !!historyError;
+ // A cancelled withdrawal of this position is still being checked on-chain: no second one yet.
+ const cancelPending=useCancelCheckPending("withdraw",positionMint);
  return <section aria-label="Withdraw from position" className="mt-4 rounded-3xl border border-white/20 bg-char p-5 text-cream">
   <div className="flex justify-between"><h2>Withdraw from position</h2><button disabled={disabled} onClick={onClose}>Close</button></div>
   <label className="mt-4 block">Withdraw {percent}%<input type="range" min="1" max="100" step="1" value={percent} disabled={disabled} onChange={e=>{setPercent(Number(e.target.value));setTarget("");invalidate();}} className="block w-full" /></label>
@@ -270,11 +275,11 @@ export function WithdrawPanel({wallet,positionMint,mintA,mintB,label,onClose,onB
    {preview.warning && <p role="alert" className="mt-2 text-lemon">This conversion may reduce what you receive by more than 2%.</p>}
   </div>}
   {(historyError || error) && <p role="alert" className="mt-3 rounded-2xl border border-lemon/60 bg-lemon/10 p-3 text-sm text-lemon">{historyError || error}</p>}
-  <p role="status" aria-live="polite" className="mt-3 text-sm text-smoke">{busy && <LoaderCircle aria-hidden className="mr-2 inline h-4 w-4 animate-spin" />}{progress}</p>
+  <p role="status" aria-live="polite" className="mt-3 text-sm text-smoke">{busy && <LoaderCircle aria-hidden className="mr-2 inline h-4 w-4 animate-spin" />}{!busy && cancelPending ? CANCEL_CHECK_PENDING_COPY : progress}</p>
   {checkpoint ? <button disabled={busy || !!historyError} onClick={()=>{if(checkpoint.prepared.summary.requiresSecondConfirmation)setConfirmation(true);else void run();}} className="mt-3 rounded-full bg-lemon px-5 py-3 text-ink">Resume withdrawal</button> : error===WITHDRAW_EXPIRED_MESSAGE ? <button disabled={busy || !!historyError} onClick={()=>void run()} className="mt-3 rounded-full bg-lemon px-5 py-3 text-ink">Try again</button> : <>
    <button type="button" disabled={busy || !!historyError} aria-busy={previewing} onClick={()=>void showPreview()} className="mt-3 rounded-full border px-5 py-3 disabled:opacity-50">{previewing?"Calculating…":"Preview"}</button>
    {/* Without a preview, Withdraw fetches one first so the tap is never silent; a second tap confirms. */}
-   <button type="button" disabled={busy || !!historyError} aria-busy={busy && !previewing} onClick={()=>{if(!preview)void showPreview();else if(preview.requiresSecondConfirmation)setConfirmation(true);else void run();}} className="ml-3 rounded-full bg-lemon px-5 py-3 text-ink disabled:opacity-50">{busy && !previewing?"Withdrawing…":"Withdraw"}</button>
+   <button type="button" disabled={busy || !!historyError || cancelPending} aria-busy={busy && !previewing} onClick={()=>{if(!preview)void showPreview();else if(preview.requiresSecondConfirmation)setConfirmation(true);else void run();}} className="ml-3 rounded-full bg-lemon px-5 py-3 text-ink disabled:opacity-50">{busy && !previewing?"Withdrawing…":"Withdraw"}</button>
   </>}
   <dialog ref={confirmationRef} role="alertdialog" aria-label="Confirm high price impact" onCancel={event=>{event.preventDefault();setConfirmation(false);}} onClose={()=>setConfirmation(false)} className="fixed left-1/2 top-1/2 m-0 w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-lemon bg-char p-5 text-cream backdrop:bg-black/70"><p>Price impact exceeds 5%. You may receive substantially less. Continue with this conversion?</p><button disabled={busy || !!historyError} onClick={()=>void run(true)} className="mt-3 rounded bg-lemon p-2 text-ink">Confirm high price impact</button><button onClick={()=>setConfirmation(false)} className="ml-3">Cancel</button></dialog>
  </section>;

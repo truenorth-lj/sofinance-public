@@ -4,7 +4,7 @@ import { getProtocolAdapter } from "@sofinance/engine/protocols/registry";
 import { issueCompoundPermit } from "@/lib/compound-permit";
 import { withFeeEstimateRetry } from "@/lib/rpc-fee-estimate";
 import { APP_COMPOUND_PREPARE, MCP_COMPOUND_PREPARE } from "./surface-policy";
-import { sendPermitFor } from "@/lib/tx-send/permit";
+import { txPermitsFor } from "@/lib/tx-send/permit";
 
 export type CompoundPrepareCommand = {
   wallet: string;
@@ -29,5 +29,5 @@ export async function prepareCompound(
   });
   // Relay permit for /api/tx-send (app surface only; MCP signs on the sign page, which gets it from verify-sign-token).
   return { summary, permit, unsignedTransaction: Buffer.from(transaction.serialize()).toString("base64"),
-    ...(profile === APP_COMPOUND_PREPARE ? { sendPermit: sendPermitFor(wallet, Buffer.from(transaction.serialize()).toString("base64"), secret) } : {}) };
+    ...(profile === APP_COMPOUND_PREPARE ? txPermitsFor(wallet, Buffer.from(transaction.serialize()).toString("base64"), summary.lastValidBlockHeight, secret) : {}) };
 }

@@ -1,7 +1,9 @@
 import type { VersionedTransaction } from "@solana/web3.js";
-import { saveTxAttempt } from "./attempts";
+import { loadTxAttempts, saveTxAttempt } from "./attempts";
+import { cancelCheckKey, CANCEL_CHECK_PENDING_COPY, holdCancelCheck, isCancelCheckPending } from "./cancel-guard";
 import { captureTxWalletErrorLanded, type TxReportContext } from "@/lib/sentry/client-tx";
-import { TxLandedUnknownError, TxNotLandedError, TxNotSentError, TxSendUnknownError, walletErrorInfo, type TxFlow } from "./errors";
+import { watchCancelledSend } from "./cancelled";
+import { TxLandedUnknownError, TxNotLandedError, TxNotSentError, TxSendUnknownError, TxWalletCancelledError, walletErrorInfo, type TxFlow } from "./errors";
 import type { FindLanded } from "./landed";
 import { dismissTxNotice, noticeIdFor, reportTxFailure, showTxCheckingNotice, trackTxSignature } from "./notices";
 import { sendWithWallet, type SendRaw, type TxWallet } from "./wallet-send";
@@ -10,7 +12,8 @@ import { sendWithWallet, type SendRaw, type TxWallet } from "./wallet-send";
  * The shared Solana transaction pipeline:
  *   1. prepare  – the flow's adapter builds, simulates and safety-checks a transaction (server side)
  *   2. send     – the wallet signs and sends it (signAndSendTransaction), or signs and we send once;
- *                 if the wallet throws after a sign-and-send request, "checking" looks for it on-chain first
+ *                 if the wallet throws after a sign-and-send request, "checking" looks for it on-chain first;
+ *                 a real cancel (4001) is reported at once and that lookup runs silently in the background
  *   3. confirm  – the notice host polls the signature, then links Solscan and refreshes balances
  *   4. status   – one error classification, toast, Sentry report and signature-keyed saved attempt
  * Flows only supply an adapter: how to prepare, and the words to show.
@@ -22,6 +25,8 @@ export type PreparedTx = {
   cosign?: (walletSigned: VersionedTransaction) => VersionedTransaction;
   /** Prepare-issued HMAC permit that `/api/tx-send` requires on the relay path. */
   sendPermit?: string;
+  /** Prepare-issued check permit for `/api/tx-landed` (covers these bytes and `lastValidBlockHeight`). */
+  landedPermit?: string;
   /** Release secrets held for cosigning; always called once the run ends. */
   dispose?: () => void;
   positionMint?: string;
@@ -32,6 +37,8 @@ export type TxAdapter<Input, Prepared extends PreparedTx = PreparedTx> = {
   /** Toast title once Solana confirms it, e.g. "Liquidity added". */
   successTitle: string;
   prepare: (input: Input, context: { wallet: string }) => Promise<Prepared>;
+  /** What one "same send" is, for blocking a resubmit after a cancel (position mint, pool id). */
+  scope?: (input: Input) => string | undefined;
   /** Flow-specific bookkeeping right after the network has the signature. Must not throw. */
   onSent?: (signature: string, prepared: Prepared, input: Input) => void;
 };
@@ -49,6 +56,8 @@ export type RunTxOptions = {
   retry?: () => void;
   /** Test hook for the on-chain lookup after a wallet error. */
   findLanded?: FindLanded;
+  /** Overrides `adapter.scope` (flows driven through `sendAndTrack`). */
+  scope?: string;
 };
 
 export type RunTxResult<Prepared> = {
@@ -66,6 +75,14 @@ export class TxRunError extends Error {
   }
 }
 
+/** runTx refused before preparing: a cancelled send of this flow + scope is still being checked on-chain. */
+export class TxCancelCheckPendingError extends TxRunError {
+  constructor() {
+    super("rejected", CANCEL_CHECK_PENDING_COPY, false, null);
+    this.name = "TxCancelCheckPendingError";
+  }
+}
+
 export async function runTx<Input, Prepared extends PreparedTx>(
   adapter: TxAdapter<Input, Prepared>, input: Input,
   options: RunTxOptions & {
@@ -74,6 +91,9 @@ export async function runTx<Input, Prepared extends PreparedTx>(
   },
 ): Promise<RunTxResult<Prepared>> {
   const { wallet } = options;
+  const guardKey = cancelCheckKey(adapter.flow, options.scope ?? adapter.scope?.(input));
+  // A cancelled send of this same flow + position is still being checked on-chain: refuse before preparing.
+  if (isCancelCheckPending(guardKey)) throw new TxCancelCheckPendingError();
   let prepared: Prepared | undefined;
   let signature: string | undefined;
   let uncertain: string | undefined;
@@ -89,9 +109,10 @@ export async function runTx<Input, Prepared extends PreparedTx>(
     options.onStage?.("wallet");
     try {
       const sent = await sendWithWallet(wallet, prepared.transaction, {
-        cosign: prepared.cosign, sendPermit: prepared.sendPermit,
+        cosign: prepared.cosign, sendPermit: prepared.sendPermit, landedPermit: prepared.landedPermit,
         sendRaw: options.sendRaw, stillWanted: options.isCurrent,
         lastValidBlockHeight: prepared.lastValidBlockHeight, findLanded: options.findLanded,
+        knownSignatures: () => options.storage ? loadTxAttempts(options.storage as Storage, wallet.address).map((item) => item.signature) : [],
         onChecking: (walletError) => {
           context.walletErrorCode = walletErrorInfo(walletError).code;
           checkingId = showTxCheckingNotice(adapter.flow);
@@ -115,7 +136,13 @@ export async function runTx<Input, Prepared extends PreparedTx>(
   } catch (error) {
     if (error instanceof TxNotLandedError) context.landedCheck = "not-landed";
     else if (error instanceof TxLandedUnknownError) context.landedCheck = "unknown";
+    if (error instanceof TxWalletCancelledError) context.walletErrorCode = walletErrorInfo(error.cause).code;
     const reported = reportTxFailure({ flow: adapter.flow, error, id: checkingId, retry: options.retry, context });
+    if (error instanceof TxWalletCancelledError && prepared) {
+      holdCancelCheck(guardKey, watchCancelledSend(error, { flow: adapter.flow, successTitle: adapter.successTitle, wallet: wallet.address,
+        lastValidBlockHeight: prepared.lastValidBlockHeight, storage: options.storage, positionMint: prepared.positionMint,
+        retry: options.retry, context: { ...context } }));
+    }
     throw new TxRunError(reported.kind, reported.message, reported.retryable, error);
   } finally {
     prepared?.dispose?.();
@@ -140,8 +167,10 @@ export async function sendAndTrack(input: {
   flow: TxFlow; successTitle: string; wallet: TxWallet; prepared: PreparedTx;
   storage?: RunTxOptions["storage"]; sendRaw?: SendRaw; retry?: () => void; isCurrent?: () => boolean;
   onStage?: RunTxOptions["onStage"]; findLanded?: FindLanded;
+  /** Position mint (or other id) for the after-cancel resubmit block. */
+  scope?: string;
 }) {
   return runTx({ flow: input.flow, successTitle: input.successTitle, prepare: async () => input.prepared }, undefined,
     { wallet: input.wallet, storage: input.storage, sendRaw: input.sendRaw, retry: input.retry, isCurrent: input.isCurrent,
-      onStage: input.onStage, findLanded: input.findLanded });
+      onStage: input.onStage, findLanded: input.findLanded, scope: input.scope });
 }

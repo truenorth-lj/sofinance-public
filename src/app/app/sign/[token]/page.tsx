@@ -19,7 +19,7 @@ import { captureGrowthEvent, captureGrowthEventOnce } from "@/lib/analytics/clie
 import { openFailureProperties, openOutcomeFailureProperties } from "@/lib/analytics/errors";
 import { GROWTH_EVENTS, openEventProperties } from "@/lib/analytics/events";
 
-type Status = "loading" | "expired" | "wallet-mismatch" | "ready" | "signing" | "submitting" | "success" | "error";
+type Status = "loading" | "expired" | "wallet-mismatch" | "ready" | "signing" | "checking" | "submitting" | "success" | "error";
 
 const short = (value: string) => `${value.slice(0, 5)}…${value.slice(-5)}`;
 
@@ -50,7 +50,7 @@ export default function SignPage() {
     }
   }, [open.attempt, open.status, payload]);
   const [loadStatus, setLoadStatus] = useState<"loading" | "expired" | "error" | "loaded">("loading");
-  const [signStatus, setSignStatus] = useState<"idle" | "signing" | "submitting" | "success">("idle");
+  const [signStatus, setSignStatus] = useState<"idle" | "signing" | "checking" | "submitting" | "success">("idle");
   const [error, setError] = useState("");
   const [signature, setSignature] = useState("");
   const [uncertain, setUncertain] = useState("");
@@ -67,6 +67,7 @@ export default function SignPage() {
     if (loadStatus === "expired") return "expired";
     if (loadStatus === "error") return "error";
     if (signStatus === "signing") return "signing";
+    if (signStatus === "checking") return "checking";
     if (signStatus === "submitting") return "submitting";
     if (signStatus === "success") return "success";
     
@@ -172,6 +173,8 @@ export default function SignPage() {
           : flow === "open" ? "Position opened" : "Compound confirmed",
         storage: window.localStorage,
         prepared: {
+          // No check permit here (agent tokens carry no prepare-time block height): after a wallet error the
+          // on-chain lookup answers "unknown" at once instead of polling against an unbounded height.
           transaction: unsigned, lastValidBlockHeight: Number.isSafeInteger(lastValidBlockHeight) && lastValidBlockHeight > 0 ? lastValidBlockHeight : Number.MAX_SAFE_INTEGER,
           sendPermit: prepared.sendPermit,
           positionMint: payload.kind === "open-position" ? (prepared.summary as OpenPositionSummary).nftMint : undefined,
@@ -179,6 +182,12 @@ export default function SignPage() {
             ? (walletSigned) => mint ? addMintSignature(walletSigned, mint) : preserveExtraSignatures(unsigned, walletSigned)
             : undefined,
           dispose: () => mint?.dispose(),
+        },
+        scope: `sign:${signToken}`,
+        onStage: (stage) => {
+          if (identityRef.current !== identity) return;
+          if (stage === "checking") setSignStatus("checking");
+          else if (stage === "confirming") setSignStatus("submitting");
         },
       });
       const txSignature = result.signature;
@@ -219,6 +228,8 @@ export default function SignPage() {
           : "Connect your wallet to continue.";
       case "signing":
         return "Waiting for wallet signature...";
+      case "checking":
+        return "Your wallet returned an error. Checking Solana before anything else...";
       case "submitting":
         return "Broadcasting transaction to Solana...";
       case "success":
@@ -237,7 +248,7 @@ export default function SignPage() {
   const showSign = status === "ready" && connected && wallet === payload?.wallet &&
     (payload?.kind !== "open-position" || open.loaded && !open.pending);
   const showConnect = status === "ready" && !connected;
-  const isBusy = status === "signing" || status === "submitting";
+  const isBusy = status === "signing" || status === "checking" || status === "submitting";
 
   return (
     <InkShell>
@@ -255,7 +266,7 @@ export default function SignPage() {
             {status === "expired" && <CircleAlert className="mt-1 h-5 w-5 text-lemon" />}
             {status === "error" && <CircleAlert className="mt-1 h-5 w-5 text-coral" />}
             {status === "success" && <CheckCircle2 className="mt-1 h-5 w-5 text-mint" />}
-            {["wallet-mismatch", "ready", "signing", "submitting"].includes(status) && (
+            {["wallet-mismatch", "ready", "signing", "checking", "submitting"].includes(status) && (
               <div className="mt-1 h-5 w-5 rounded-full border-2 border-white/40" />
             )}
             
@@ -348,7 +359,7 @@ export default function SignPage() {
                 {isBusy ? (
                   <span className="inline-flex items-center gap-2">
                     <LoaderCircle className="h-4 w-4 animate-spin" />
-                    {status === "signing" ? "Signing..." : "Submitting..."}
+                    {status === "signing" ? "Signing..." : status === "checking" ? "Checking Solana..." : "Submitting..."}
                   </span>
                 ) : (
                   "Sign and submit"

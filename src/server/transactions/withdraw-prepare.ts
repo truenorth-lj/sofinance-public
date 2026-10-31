@@ -6,15 +6,15 @@ import { rpcConnection } from "@sofinance/engine/rpc";
 import { withTransientRetry } from "@/lib/withdraw/retry";
 import { refreshWithdrawBlockhash } from "@/lib/withdraw/fresh-prepare";
 import { APP_WITHDRAW_PREPARE, MCP_WITHDRAW_PREPARE } from "./surface-policy";
-import { sendPermitFor } from "@/lib/tx-send/permit";
+import { txPermitsFor } from "@/lib/tx-send/permit";
 
 // HTTP passes raw JSON; this annotation is not validation. buildWithdraw retains
 // its original parser and previous/receipt checks. MCP has already parsed input.
 export async function prepareWithdrawal(input: WithdrawPrepareRequest,
-  profile: typeof APP_WITHDRAW_PREPARE | typeof MCP_WITHDRAW_PREPARE): Promise<WithdrawPrepared & { sendPermit?: string }> {
+  profile: typeof APP_WITHDRAW_PREPARE | typeof MCP_WITHDRAW_PREPARE): Promise<WithdrawPrepared & { sendPermit?: string; landedPermit?: string }> {
   if (profile === MCP_WITHDRAW_PREPARE) return buildWithdraw(input);
   const prepared = await withTransientRetry(() => buildWithdraw(input));
   const fresh = await refreshWithdrawBlockhash(rpcConnection(), prepared);
   // Permit for the pipeline relay (`/api/tx-send`), over the exact transaction the wallet will see.
-  return { ...fresh, sendPermit: sendPermitFor(input.wallet, fresh.unsignedTransaction) };
+  return { ...fresh, ...txPermitsFor(input.wallet, fresh.unsignedTransaction, fresh.summary.lastValidBlockHeight) };
 }
