@@ -2,14 +2,14 @@ import "@/lib/engine-host";
 import "server-only";
 import type { PublicClient } from "viem";
 import { getRwaConfig } from "./config/rwa-env";
-import { discoverRwaPairs } from "./rwa-pairs";
 import {
   assemblePoolRangeApr,
   hasPriceHistory,
-  loadVolumeProfile,
   type VolumeProfile,
 } from "./pool-range-apr";
-import { readOnchainPoolLiquidity } from "./range-apr/onchain-liquidity";
+import { poolSourceFor } from "./pool-sources/registry";
+import { raydiumPoolSource } from "./pool-sources/raydium";
+import type { PoolSource } from "./pool-sources/types";
 import type { ThrottleGate } from "./range-apr/throttle-gate";
 import { createCronGeckoGate } from "./pool-metrics/gecko";
 import { SAVED_PRICE_HISTORY_MAX_AGE_MS } from "./rwa-freshness";
@@ -23,7 +23,7 @@ import { prepareRhcRun, type RhcAprRunStats, type RhcRun } from "./rhc-apr-refre
 import { discoverRhcRegistryPools, rhcDiscoveryFindings, type RhcDiscoveryResult } from "./pool-metrics/rhc-discovery";
 import { rhcStateClient } from "./rhc-range-apr";
 import { captureRhcDiscoveryFindings } from "./sentry/capture";
-import { resolveTokenIcons, rhcCronIconSources, solanaIconSources } from "./token-icons/resolve";
+import { resolveTokenIcons, rhcCronIconSources } from "./token-icons/resolve";
 import type { RwaPairRow } from "./rwa-pairs";
 import {
   ALGORITHM_VERSION,
@@ -106,13 +106,17 @@ type JobResult = {
 };
 export type AprQueueStats = { pools: number; selected: number; done: number; stoppedBy: "429" | "time" | null };
 
-/** Profile timestamps survive instance recycling; new UTC windows cannot reuse yesterday's volume sample. */
+/**
+ * Profile timestamps survive instance recycling; new UTC windows cannot reuse yesterday's volume sample. The pool's
+ * `PoolSource` (by its stored protocol) loads a fresh profile.
+ */
 export async function refreshProfile(
   pool: ActivePool,
   fetcher: typeof fetch,
   now: number,
   signal: AbortSignal,
   upstream: { gate?: ThrottleGate } = {},
+  source: PoolSource = poolSourceFor(pool.pair.protocol),
 ): Promise<StoredProfile> {
   const config = getRwaConfig(),
     cached = pool.profile;
@@ -129,7 +133,7 @@ export async function refreshProfile(
     now - Date.parse(cached.observedAt) < config.profileTtlMs
   )
     return cached;
-  const fresh = await loadVolumeProfile(
+  const fresh = await source.loadProfile(
     pool.pair.poolAddress,
     fetcher,
     Math.floor(now / 1000),
@@ -208,7 +212,8 @@ export async function runJob(job: JobName, options: Options): Promise<JobResult>
     queue: AprQueueStats | undefined;
   try {
     if (job === "rwa-discovery") {
-      const result = await discoverRwaPairs({
+      // One source today (Raydium); the multi-feed publish lands with the store change (SCAN_DESIGN.md §3).
+      const result = await raydiumPoolSource.discover({
         minTvl: 0,
         maxPages: config.maxPages,
         sortBy: "estimatedFeeApr",
@@ -362,19 +367,20 @@ async function refreshAprPools(input: {
   return { processed, issues, rhcStats, queue };
 }
 
-/** One Solana pool: price history (gated) and liquidity, then one saved snapshot. Never throws. */
+/** One Solana pool, through its `PoolSource`: price history (gated) and liquidity, then one saved snapshot. Never throws. */
 async function refreshSolanaPool(input: {
   store: RwaStore; lease: Lease; pool: ActivePool; fetcher: typeof fetch; clock: () => number; signal: AbortSignal;
   gate: ThrottleGate; throttled: () => boolean;
 }): Promise<{ outcome: PoolOutcome; issue: string | null }> {
   const { store, lease, pool, clock, signal } = input;
   const poolId = pool.pair.poolAddress;
+  const source = poolSourceFor(pool.pair.protocol);
   try {
     signal.throwIfAborted();
     await store.request({ op: "renew", lease });
     const [profile, chainSnapshot] = await Promise.all([
-      refreshProfile(pool, input.fetcher, clock(), signal, { gate: input.gate }),
-      readOnchainPoolLiquidity(
+      refreshProfile(pool, input.fetcher, clock(), signal, { gate: input.gate }, source),
+      source.readLiquidity(
         poolId,
         rpcConnection(undefined, { signal, retry: { budgetMs: 8000 } }),
       ).then((chain) => ({
@@ -392,11 +398,13 @@ async function refreshSolanaPool(input: {
       chain.mintB !== profile.profile.economics.mintB
     )
       throw new Error("On-chain pool mint identity mismatch");
+    const presets = source.presets?.(chain);
     const payload = assemblePoolRangeApr(
       poolId,
       profile.profile,
       chain,
       Math.floor(clock() / 1000),
+      presets ? { presets } : {},
     );
     payload.sample.windowEndUtc = profile.windowEndUtc;
     payload.sample.windowStartUtc = new Date(
@@ -447,7 +455,7 @@ async function refreshSolanaPool(input: {
 
 export async function refreshTokenIcons(store: RwaStore, lease: Lease, pairs: readonly Pick<RwaPairRow, "mintA" | "mintB">[],
   fetcher: typeof fetch | undefined, signal: AbortSignal) {
-  const solana = await resolveTokenIcons("solana", pairs.flatMap((pair) => [pair.mintA, pair.mintB]), solanaIconSources(fetcher), { signal });
+  const solana = await resolveTokenIcons("solana", pairs.flatMap((pair) => [pair.mintA, pair.mintB]), raydiumPoolSource.iconSources(fetcher), { signal });
   const rhc = await resolveTokenIcons("robinhood",
     UNIV4_RHC_ALLOWLISTED_POOLS.flatMap((pool) => [pool.currency0.address, pool.currency1.address]), rhcCronIconSources(fetcher), { signal, manual: [] });
   signal.throwIfAborted();
