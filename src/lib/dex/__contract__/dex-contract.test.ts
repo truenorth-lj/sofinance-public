@@ -1,22 +1,23 @@
 import { describeDexContract } from "./dex-contract";
-import { FAKE_EVM_OWNER, FAKE_SOLANA_OWNER, fakeEvmModule, fakeSolanaModule } from "./testing/fake-dex";
+import { FAKE_EVM_OWNER, FAKE_EVM_TARGET, FAKE_SOLANA_OWNER, fakeEvmModule, fakeSolanaModule } from "./testing/fake-dex";
 
 // The suite run against the in-memory DEXes: proves the harness end to end. Real DEXes register the same way.
 describeDexContract(fakeSolanaModule, {
   owner: FAKE_SOLANA_OWNER,
   expectedPositionKeys: ["meteora-dlmm:Pos1"],
-  open: { request: { poolId: "FakePool", owner: FAKE_SOLANA_OWNER, range: { kind: "preset", presetId: "standard" }, input: { token: "USDC", amountRaw: "1000000" }, slippageBps: 50 }, expectedSteps: 2 },
+  open: {
+    request: { poolId: "FakePool", owner: FAKE_SOLANA_OWNER, range: { kind: "preset", presetId: "standard" }, input: { token: "USDC", amountRaw: "1000000" }, slippageBps: 50 },
+    expectedSteps: 2,
+    expectedFeeBaseRaw: "1000000",
+  },
+  blockedOpens: [{ poolId: "FakePool", owner: FAKE_SOLANA_OWNER, range: { kind: "preset", presetId: "wide" }, input: { token: "USDC", amountRaw: "1000000" }, slippageBps: 50 }],
   positionKey: "meteora-dlmm:Pos1",
-});
-
-describeDexContract(fakeSolanaModule, {
-  owner: FAKE_SOLANA_OWNER,
-  expectedPositionKeys: ["meteora-dlmm:Pos1"],
-  open: { request: { poolId: "FakePool", owner: FAKE_SOLANA_OWNER, range: { kind: "preset", presetId: "wide" }, input: { token: "USDC", amountRaw: "1000000" }, slippageBps: 50 }, expectedSteps: 2, blocked: true },
+  feeWallet: "11111111111111111111111111111112",
 });
 
 describeDexContract(fakeEvmModule, {
   owner: FAKE_EVM_OWNER,
-  expectedPositionKeys: ["rhc-uniswap-v4:42"],
-  positionKey: "rhc-uniswap-v4:42",
+  expectedPositionKeys: ["uniswap-v4-rhc:42"],
+  positionKey: "uniswap-v4-rhc:42",
+  evmAllowedTargets: [FAKE_EVM_TARGET],
 });

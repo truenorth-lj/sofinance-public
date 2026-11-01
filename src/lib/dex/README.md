@@ -36,6 +36,18 @@ errors (4001/5000), confirmation and status stay in the shared transaction pipel
 1. L0 builders under `packages/engine/src/protocols/<id>/`.
 2. `src/lib/dex/<id>/{descriptor,adapter.server,pool-source,module}.ts`.
 3. One line in `descriptors.ts` and one in `modules.ts`.
-4. Recorded fixtures plus `<id>.contract.test.ts` calling `describeDexContract`.
+4. Recorded fixtures plus `<id>.contract.test.ts` calling `describeDexContract` (`registry.test.ts` fails if a
+   registered DEX has none).
+
+## Contract suite rules
+
+- Offline: the suite stubs `fetch`; any request the fixtures' `fetch` replay does not answer fails the test.
+- Nothing supported is skipped: `open` needs `fixtures.open`; add / withdraw / claim / compound / performance need
+  `fixtures.positionKey`. Every step of open, add, full and partial withdraw, claim and compound is prepared and checked.
+- `position.source` must be the canonical id (aliases are only for old URLs / localStorage via `normalizeDexId`).
+- Step checks: ≤ 1232 bytes, compute limit ≤ 1.4M, owner pays and signs, at most one declared cosigner, no direct
+  fee-wallet instruction (`assertNoDirectFeeWalletInstructions`), ATAs on the mint's token program, quoted open fee =
+  `fees.feeFor("open", base)`, EVM `to` in the allowlist and `approve` only to Permit2; anything thrown is a `DexError`.
+- Still per-PR review items: full withdraw ends with a close refunding rent to the owner (PR6), EVM `value` rules (PR11).
 
 No component, API route, cron job or the transaction pipeline changes.

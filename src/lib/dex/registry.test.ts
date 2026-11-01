@@ -1,3 +1,7 @@
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { UnifiedPosition } from "@/lib/unified-positions/model";
 import { fakeEvmDescriptor, fakeEvmModule, fakeSolanaDescriptor, fakeSolanaModule } from "./__contract__/testing/fake-dex";
@@ -17,9 +21,40 @@ describe("DEX ids", () => {
   });
 });
 
+const DEX_DIR = fileURLToPath(new URL(".", import.meta.url));
+
+/** Every registered DEX must run the shared contract suite from `src/lib/dex/<id>/<id>.contract.test.ts`. */
+function missingContractSuites(ids: readonly string[], dir = DEX_DIR): string[] {
+  return ids.flatMap((id) => {
+    const file = join(dir, id, `${id}.contract.test.ts`);
+    if (!existsSync(file)) return [`${id}: missing src/lib/dex/${id}/${id}.contract.test.ts`];
+    const source = readFileSync(file, "utf8");
+    const imports = /from\s+["'](?:\.\.\/__contract__\/dex-contract|@\/lib\/dex\/__contract__\/dex-contract)["']/.test(source);
+    return imports && /\bdescribeDexContract\s*\(/.test(source) ? [] : [`${id}: ${id}.contract.test.ts does not call describeDexContract`];
+  });
+}
+
 describe("DEX registry", () => {
   it("client descriptors and server modules name the same DEXes", () => {
     expect(DEX_DESCRIPTORS.map((descriptor) => descriptor.id)).toEqual(DEX_MODULES.map((entry) => entry.descriptor.id));
+  });
+
+  it("runs the shared contract suite for every registered DEX", () => {
+    expect(missingContractSuites(DEX_MODULES.map((entry) => entry.descriptor.id))).toEqual([]);
+  });
+
+  it("reports a registered DEX without a contract suite", () => {
+    expect(missingContractSuites(["orca-whirlpool"])).toEqual(["orca-whirlpool: missing src/lib/dex/orca-whirlpool/orca-whirlpool.contract.test.ts"]);
+    const dir = mkdtempSync(join(tmpdir(), "dex-contract-"));
+    try {
+      mkdirSync(join(dir, "meteora-dlmm"));
+      writeFileSync(join(dir, "meteora-dlmm", "meteora-dlmm.contract.test.ts"), "import { it } from \"vitest\";\nit.skip(\"later\", () => {});\n");
+      expect(missingContractSuites(["meteora-dlmm"], dir)).toEqual(["meteora-dlmm: meteora-dlmm.contract.test.ts does not call describeDexContract"]);
+      writeFileSync(join(dir, "meteora-dlmm", "meteora-dlmm.contract.test.ts"), "import { describeDexContract } from \"../__contract__/dex-contract\";\ndescribeDexContract(meteoraModule, fixtures);\n");
+      expect(missingContractSuites(["meteora-dlmm"], dir)).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("looks DEXes up by canonical or legacy id and merges per-position overrides", async () => {

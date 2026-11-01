@@ -3,7 +3,7 @@
  * open, refundable rent, a range cap) and one EVM DEX shaped like Uniswap v4 on Robinhood Chain (full withdraw only,
  * no compound / add / claim). Neither touches the network.
  */
-import { Keypair, PublicKey, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
+import { ComputeBudgetProgram, Keypair, PublicKey, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
 import { NOT_AVAILABLE_MESSAGE, SUPPORTED, unsupported, type PositionKey, type UnifiedPosition } from "@/lib/unified-positions/model";
 import type { DexAdapter, OpenQuote, OpenRequest, StepContext, StepResult } from "../../adapter";
 import { DexError, DexUnsupportedError } from "../../errors";
@@ -13,6 +13,8 @@ import type { DexDescriptor, FeePolicy } from "../../types";
 
 export const FAKE_SOLANA_OWNER = Keypair.fromSeed(new Uint8Array(32).fill(7)).publicKey.toBase58();
 export const FAKE_EVM_OWNER = "0x00000000000000000000000000000000000000aa";
+/** The only contract the fake EVM DEX calls (stands in for the PositionManager). */
+export const FAKE_EVM_TARGET = `0x${"2".repeat(40)}` as const;
 
 const swapFee: FeePolicy = Object.freeze({
   ...NO_FEE_POLICY,
@@ -55,7 +57,8 @@ export const fakeEvmDescriptor: DexDescriptor = Object.freeze({
 } satisfies DexDescriptor);
 
 function emptySolanaTx(owner: string): string {
-  const message = new TransactionMessage({ payerKey: new PublicKey(owner), recentBlockhash: PublicKey.default.toBase58(), instructions: [] }).compileToV0Message();
+  const instructions = [ComputeBudgetProgram.setComputeUnitLimit({ units: 200_000 })];
+  const message = new TransactionMessage({ payerKey: new PublicKey(owner), recentBlockhash: PublicKey.default.toBase58(), instructions }).compileToV0Message();
   return Buffer.from(new VersionedTransaction(message).serialize()).toString("base64");
 }
 
@@ -110,7 +113,7 @@ export function fakeSolanaAdapter(): DexAdapter {
 
 export function fakeEvmAdapter(): DexAdapter {
   const position: UnifiedPosition = {
-    key: "rhc-uniswap-v4:42", source: "rhc-uniswap-v4", chain: "robinhood-chain", nativeId: "42", poolId: `0x${"1".repeat(64)}`,
+    key: "uniswap-v4-rhc:42", source: "uniswap-v4-rhc", chain: "robinhood-chain", nativeId: "42", poolId: `0x${"1".repeat(64)}`,
     tokenA: { id: "0xa", symbol: "A", decimals: 18 }, tokenB: { id: "0xb", symbol: "B", decimals: 6 },
     range: { mode: "tick", tickLower: -60, tickUpper: 60, currentTick: 0 }, rangeStatus: "in", liquidity: "5", native: {},
   };
@@ -127,7 +130,7 @@ export function fakeEvmAdapter(): DexAdapter {
     prepareAdd: no,
     async prepareWithdraw(_key, request, context) {
       if (request.fraction !== 1) throw new DexUnsupportedError("Partial withdraw isn't available for this pool yet");
-      return { step: context.step, of: 1, label: "Close position", done: true, prepared: { kind: "evm-tx", chainId: 4663, to: `0x${"2".repeat(40)}`, data: "0x", value: "0" } };
+      return { step: context.step, of: 1, label: "Close position", done: true, prepared: { kind: "evm-tx", chainId: 4663, to: FAKE_EVM_TARGET, data: "0x", value: "0" } };
     },
     prepareClaim: no,
     prepareCompound: no,

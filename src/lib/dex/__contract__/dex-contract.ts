@@ -4,52 +4,134 @@
  *   // src/lib/dex/<id>/<id>.contract.test.ts
  *   describeDexContract(meteoraModule, meteoraFixtures);
  *
- * Fixtures are hermetic: `setup` installs the DEX's recorded RPC / HTTP replays (captured from public endpoints, no keys
- * or RPC URLs), so the suite never touches the network and never sends a transaction.
+ * Every registered DEX must have that file (registry.test.ts enforces it). Fixtures are hermetic: `setup` installs the
+ * DEX's recorded RPC replays and `fetch` answers recorded HTTP calls (captured from public endpoints, no keys or RPC
+ * URLs). Any fetch the fixtures do not answer fails the test, so the suite never touches the network and never sends a
+ * transaction.
+ *
+ * A capability marked supported must come with the fixture that exercises it (open → `open`; add / withdraw / claim /
+ * compound / performance → `positionKey`), otherwise the suite fails: nothing supported is silently skipped.
  */
+import type { AddressLookupTableAccount } from "@solana/web3.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PositionKey } from "@/lib/unified-positions/model";
-import type { DexAdapter, OpenRequest, StepContext } from "../adapter";
+import type { DexAdapter, DexDepositInput, OpenRequest, StepContext, StepResult } from "../adapter";
 import { DexError, DexUnsupportedError } from "../errors";
 import type { DexModule } from "../registry";
 import {
   adapterContractProblems, descriptorContractProblems, forbiddenFetchProblems, positionContractProblems,
-  quoteContractProblems, stepContractProblems,
+  quoteContractProblems, stepContractProblems, thrownErrorProblems, type StepCheckOptions,
 } from "./checks";
 
 export type DexContractFixtures = {
   /** Wallet whose recorded positions the fixtures replay. */
   owner: string;
-  /** Installs recorded replays (vi.mock / fetch stubs); returns an optional teardown. */
+  /** Installs recorded replays (vi.mock / RPC stubs); returns an optional teardown. */
   setup?: () => void | (() => void) | Promise<void | (() => void)>;
+  /**
+   * Recorded HTTP replays. Return a Response for a recorded request, or undefined: an unanswered request fails the
+   * test (it is never passed to the real network).
+   */
+  fetch?: (url: string, init?: RequestInit) => Response | Promise<Response> | undefined;
   /** Keys `listPositions(owner)` must return, in order. */
   expectedPositionKeys: readonly PositionKey[];
-  /** An open the DEX can quote and prepare from the fixtures. */
-  open?: { request: OpenRequest; expectedSteps: number; blocked?: boolean };
-  /** A position to run withdraw / claim / compound / performance against. */
+  /**
+   * An open the DEX can quote and prepare from the fixtures (required when `capabilities.open` is supported).
+   * `expectedFeeBaseRaw`: the amount the open fee rule applies to (e.g. the swapped part of the input); when set, the
+   * quoted platform fee must equal `adapter.fees.feeFor("open", base)`.
+   */
+  open?: { request: OpenRequest; expectedSteps: number; expectedFeeBaseRaw?: string };
+  /** Opens the DEX must refuse with a plain-English `blockedReason` and a DexError (e.g. wider than one position). */
+  blockedOpens?: readonly OpenRequest[];
+  /** A position to run add / withdraw / claim / compound / performance against. */
   positionKey?: PositionKey;
+  /** Deposit used for `prepareAdd`; defaults to `open.request.input`. */
+  addInput?: DexDepositInput;
+  /** Instruction-level facts for the step checks (fee wallet, lookup tables, mint programs, EVM allowlist). */
+  feeWallet?: string;
+  addressLookupTables?: readonly AddressLookupTableAccount[];
+  mintPrograms?: StepCheckOptions["mintPrograms"];
+  evmAllowedTargets?: readonly string[];
+  evmApproveSpender?: string;
 };
 
 const FIRST_STEP: StepContext = Object.freeze({ step: 1, priorSignatures: [] });
+/** Safety bound on how many steps the suite walks for one operation. */
+const MAX_WALKED_STEPS = 16;
 
-async function expectUnsupported(call: () => Promise<unknown>) {
-  await expect(call()).rejects.toBeInstanceOf(DexUnsupportedError);
+function urlOf(input: RequestInfo | URL): string {
+  return typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+}
+
+function hostOf(url: string): string {
+  try { return new URL(url).host; } catch { return "(invalid url)"; }
+}
+
+/** What each supported capability needs from the fixtures; non-empty = the suite fails. */
+export function missingFixtureProblems(entry: DexModule, fixtures: DexContractFixtures): string[] {
+  const caps = entry.descriptor.capabilities;
+  const problems: string[] = [];
+  if (!entry.adapter) problems.push("no server adapter registered");
+  if (caps.open.supported && !fixtures.open) problems.push("open is supported but fixtures.open is missing");
+  const keyed = (["deposit", "withdraw", "claim", "compound", "performance"] as const).filter((cap) => caps[cap].supported);
+  if (keyed.length && !fixtures.positionKey) problems.push(`${keyed.join(", ")} supported but fixtures.positionKey is missing`);
+  if (caps.deposit.supported && !fixtures.addInput && !fixtures.open) problems.push("deposit is supported but fixtures.addInput (or fixtures.open) is missing");
+  return problems;
 }
 
 export function describeDexContract(entry: DexModule, fixtures: DexContractFixtures): void {
   const { descriptor } = entry;
+  const caps = descriptor.capabilities;
+  const stepOptions: StepCheckOptions = {
+    feeWallet: fixtures.feeWallet,
+    addressLookupTables: fixtures.addressLookupTables,
+    mintPrograms: fixtures.mintPrograms,
+    evmAllowedTargets: fixtures.evmAllowedTargets,
+    evmApproveSpender: fixtures.evmApproveSpender,
+  };
+
   describe(`DEX contract: ${descriptor.id}`, () => {
     let adapter: DexAdapter;
     let teardown: void | (() => void);
     const fetched: string[] = [];
+    const unanswered: string[] = [];
+
+    /** Runs an adapter call; anything it throws must be a DexError. */
+    async function call<T>(run: () => Promise<T>): Promise<T> {
+      try {
+        return await run();
+      } catch (error) {
+        expect(thrownErrorProblems(error)).toEqual([]);
+        throw error;
+      }
+    }
+
+    /** Prepares every step of an operation (step N gets the fake signatures of 1..N-1) and checks each one. */
+    async function walkSteps(prepare: (context: StepContext) => Promise<StepResult>, expectedSteps?: { min: number; max: number }) {
+      const results: StepResult[] = [];
+      let context: StepContext = FIRST_STEP;
+      for (let i = 0; i < MAX_WALKED_STEPS; i += 1) {
+        const result = await call(() => prepare(context));
+        expect(result.step).toBe(context.step);
+        expect(stepContractProblems(descriptor, result, fixtures.owner, { ...stepOptions, expectedSteps })).toEqual([]);
+        results.push(result);
+        if (result.done) return results;
+        context = { step: context.step + 1, priorSignatures: [...context.priorSignatures, `fixture-signature-${context.step}`], planToken: result.planToken };
+      }
+      throw new Error(`${descriptor.id}: no step reported done within ${MAX_WALKED_STEPS} steps`);
+    }
 
     beforeEach(async () => {
       fetched.length = 0;
+      unanswered.length = 0;
       teardown = await fixtures.setup?.();
-      const realFetch = globalThis.fetch;
-      vi.spyOn(globalThis, "fetch").mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
-        fetched.push(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
-        return realFetch(input, init);
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = urlOf(input);
+        fetched.push(url);
+        const replay = await fixtures.fetch?.(url, init);
+        if (replay) return replay;
+        unanswered.push(hostOf(url));
+        throw new Error(`Unmocked fetch to ${hostOf(url)}: the DEX contract suite is offline; record a fixture replay`);
       });
       if (!entry.adapter) throw new Error(`${descriptor.id} has no server adapter registered`);
       adapter = await entry.adapter();
@@ -57,6 +139,12 @@ export function describeDexContract(entry: DexModule, fixtures: DexContractFixtu
     afterEach(() => {
       vi.restoreAllMocks();
       if (typeof teardown === "function") teardown();
+      // Fails the test even if the adapter swallowed the rejection.
+      expect(unanswered, "fetches not answered by fixtures (the suite must be offline)").toEqual([]);
+    });
+
+    it("has a fixture for every supported capability", () => {
+      expect(missingFixtureProblems(entry, fixtures)).toEqual([]);
     });
 
     it("declares a consistent descriptor and wires it into its adapter", () => {
@@ -66,59 +154,94 @@ export function describeDexContract(entry: DexModule, fixtures: DexContractFixtu
     });
 
     it("lists the owner's positions in the unified shape, without GeckoTerminal", async () => {
-      const positions = await adapter.listPositions(fixtures.owner);
+      const positions = await call(() => adapter.listPositions(fixtures.owner));
       expect(positions.map((position) => position.key)).toEqual(fixtures.expectedPositionKeys);
       expect(positions.flatMap((position) => positionContractProblems(descriptor, position))).toEqual([]);
       expect(forbiddenFetchProblems(fetched)).toEqual([]);
     });
 
     it("throws DexUnsupportedError for every unsupported capability", async () => {
-      const caps = descriptor.capabilities;
       const key = fixtures.positionKey ?? fixtures.expectedPositionKeys[0] ?? (`${descriptor.id}:fixture` as PositionKey);
       const request = fixtures.open?.request ?? { poolId: "fixture", owner: fixtures.owner, range: { kind: "preset", presetId: "standard" }, input: { token: "fixture", amountRaw: "1" }, slippageBps: 50 } satisfies OpenRequest;
-      if (!caps.open.supported) await expectUnsupported(() => adapter.prepareOpen(request, FIRST_STEP));
-      if (!caps.deposit.supported) await expectUnsupported(() => adapter.prepareAdd(key, request.input, FIRST_STEP));
-      if (!caps.withdraw.supported) await expectUnsupported(() => adapter.prepareWithdraw(key, { fraction: 1, output: "pool-tokens" }, FIRST_STEP));
-      if (caps.withdraw.supported && !caps.withdraw.partial) await expectUnsupported(() => adapter.prepareWithdraw(key, { fraction: 0.5, output: "pool-tokens" }, FIRST_STEP));
-      if (!caps.claim.supported) await expectUnsupported(() => adapter.prepareClaim(key, FIRST_STEP));
-      if (!caps.compound.supported) await expectUnsupported(() => adapter.prepareCompound(key, FIRST_STEP));
-      if (!caps.performance.supported) await expectUnsupported(() => adapter.performance(key));
+      const unsupported = async (run: () => Promise<unknown>) => expect(run()).rejects.toBeInstanceOf(DexUnsupportedError);
+      if (!caps.open.supported) await unsupported(() => adapter.prepareOpen(request, FIRST_STEP));
+      if (!caps.deposit.supported) await unsupported(() => adapter.prepareAdd(key, request.input, FIRST_STEP));
+      if (!caps.withdraw.supported) await unsupported(() => adapter.prepareWithdraw(key, { fraction: 1, output: "pool-tokens" }, FIRST_STEP));
+      if (caps.withdraw.supported && !caps.withdraw.partial) await unsupported(() => adapter.prepareWithdraw(key, { fraction: 0.5, output: "pool-tokens" }, FIRST_STEP));
+      if (!caps.claim.supported) await unsupported(() => adapter.prepareClaim(key, FIRST_STEP));
+      if (!caps.compound.supported) await unsupported(() => adapter.prepareCompound(key, FIRST_STEP));
+      if (!caps.performance.supported) await unsupported(() => adapter.performance(key));
     });
 
     const open = fixtures.open;
-    if (open && descriptor.capabilities.open.supported) {
-      it("quotes an open within the declared steps, rent and range cap", async () => {
-        const quote = await adapter.quoteOpen(open.request);
+    if (open && caps.open.supported) {
+      it("quotes an open deterministically, within the declared steps, rent, range cap and fee policy", async () => {
+        const quote = await call(() => adapter.quoteOpen(open.request));
         expect(quoteContractProblems(descriptor, quote)).toEqual([]);
-        expect(Boolean(quote.blockedReason)).toBe(Boolean(open.blocked));
-        if (!open.blocked) expect(quote.steps).toBe(open.expectedSteps);
+        expect(quote.blockedReason).toBeUndefined();
+        expect(quote.steps).toBe(open.expectedSteps);
+        expect(await call(() => adapter.quoteOpen(open.request))).toEqual(quote);
+        if (open.expectedFeeBaseRaw !== undefined) expect(quote.platformFeeRaw).toBe(adapter.fees.feeFor("open", BigInt(open.expectedFeeBaseRaw)).toString());
       });
 
-      it(open.blocked ? "refuses the blocked open with a DexError" : "prepares the first open step for the owner", async () => {
-        if (open.blocked) {
-          await expect(adapter.prepareOpen(open.request, FIRST_STEP)).rejects.toBeInstanceOf(DexError);
+      it("prepares every open step for the owner", async () => {
+        const steps = await walkSteps((context) => adapter.prepareOpen(open.request, context), descriptor.meta.openSteps);
+        expect(steps).toHaveLength(open.expectedSteps);
+      });
+    }
+
+    for (const [index, request] of (fixtures.blockedOpens ?? []).entries()) {
+      it(`refuses blocked open #${index + 1} with a plain-English reason and a DexError`, async () => {
+        if (!caps.open.supported) {
+          await expect(adapter.prepareOpen(request, FIRST_STEP)).rejects.toBeInstanceOf(DexUnsupportedError);
           return;
         }
-        const result = await adapter.prepareOpen(open.request, FIRST_STEP);
-        expect(stepContractProblems(descriptor, result, fixtures.owner, descriptor.meta.openSteps)).toEqual([]);
-        expect(result.of).toBe(open.expectedSteps);
+        const quote = await call(() => adapter.quoteOpen(request));
+        expect(quoteContractProblems(descriptor, quote)).toEqual([]);
+        expect(quote.blockedReason?.trim()).toBeTruthy();
+        await expect(adapter.prepareOpen(request, FIRST_STEP)).rejects.toBeInstanceOf(DexError);
       });
     }
 
     const positionKey = fixtures.positionKey;
     if (positionKey) {
-      it("prepares a full withdraw for the owner", async () => {
-        if (!descriptor.capabilities.withdraw.supported) return;
-        const result = await adapter.prepareWithdraw(positionKey, { fraction: 1, output: "pool-tokens" }, FIRST_STEP);
-        expect(stepContractProblems(descriptor, result, fixtures.owner)).toEqual([]);
-      });
+      if (caps.withdraw.supported) {
+        it("prepares a full withdraw for the owner", async () => {
+          await walkSteps((context) => adapter.prepareWithdraw(positionKey, { fraction: 1, output: "pool-tokens" }, context));
+        });
+        if (caps.withdraw.partial) {
+          it("prepares a partial withdraw for the owner", async () => {
+            await walkSteps((context) => adapter.prepareWithdraw(positionKey, { fraction: 0.5, output: "pool-tokens" }, context));
+          });
+        }
+      }
 
-      it("reads performance without GeckoTerminal", async () => {
-        if (!descriptor.capabilities.performance.supported) return;
-        const performance = await adapter.performance(positionKey);
-        expect(performance.key).toBe(positionKey);
-        expect(forbiddenFetchProblems(fetched)).toEqual([]);
-      });
+      const addInput = fixtures.addInput ?? open?.request.input;
+      if (caps.deposit.supported && addInput) {
+        it("prepares an add for the owner", async () => {
+          await walkSteps((context) => adapter.prepareAdd(positionKey, addInput, context));
+        });
+      }
+
+      if (caps.claim.supported) {
+        it("prepares a claim for the owner", async () => {
+          await walkSteps((context) => adapter.prepareClaim(positionKey, context));
+        });
+      }
+
+      if (caps.compound.supported) {
+        it("prepares a compound for the owner", async () => {
+          await walkSteps((context) => adapter.prepareCompound(positionKey, context));
+        });
+      }
+
+      if (caps.performance.supported) {
+        it("reads performance without GeckoTerminal", async () => {
+          const performance = await call(() => adapter.performance(positionKey));
+          expect(performance.key).toBe(positionKey);
+          expect(forbiddenFetchProblems(fetched)).toEqual([]);
+        });
+      }
     }
   });
 }
