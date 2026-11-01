@@ -4,7 +4,12 @@
  * Sources: Raydium CLMM (Solana) and Uniswap v4 on Robinhood Chain.
  */
 export type ChainId = "solana" | "robinhood-chain";
-export type PositionSourceId = "raydium-clmm" | "orca-whirlpool" | "meteora-dlmm" | "rhc-uniswap-v4";
+/**
+ * `"uniswap-v4-rhc"` is the canonical DEX id (`src/lib/dex/types.ts`) that DEX adapters emit; `"rhc-uniswap-v4"` is
+ * the legacy spelling the current Robinhood Chain source still uses. Type-only widening, no runtime change.
+ * TODO(PR11): drop "rhc-uniswap-v4" together with LEGACY_DEX_ID_ALIASES.
+ */
+export type PositionSourceId = "raydium-clmm" | "orca-whirlpool" | "meteora-dlmm" | "rhc-uniswap-v4" | "uniswap-v4-rhc";
 export type ToolId = "compound" | "performance" | "deposit" | "withdraw";
 export const TOOL_IDS: readonly ToolId[] = Object.freeze(["compound", "performance", "deposit", "withdraw"]);
 
