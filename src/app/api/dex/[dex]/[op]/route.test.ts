@@ -162,7 +162,13 @@ describe("POST /api/dex/[dex]/[op]", () => {
       { ...common, extra: 1 },
     ]) expect((await call("claim", body)).status).toBe(400);
     for (const fraction of [0, -0.1, 1.01]) expect((await call("withdraw", { ...common, fraction, output: "pool-tokens" })).status).toBe(400);
-    expect((await call("withdraw", { ...common, fraction: 1, output: "sol" })).status).toBe(400);
+    expect((await call("withdraw", { ...common, fraction: 1, output: "bogus" })).status).toBe(400);
+    // A known output the DEX does not list in capabilities.withdrawOutputs (Meteora: pool tokens only) is refused before the adapter.
+    for (const output of ["usdc", "sol"]) {
+      const refused = await call("withdraw", { ...common, fraction: 1, output });
+      expect(refused.status).toBe(422);
+      expect(await refused.json()).toMatchObject({ code: "UNSUPPORTED", error: expect.stringMatching(/isn't available for this pool yet/) });
+    }
     expect(prepareWithdraw).not.toHaveBeenCalled();
     expect(prepareClaim).not.toHaveBeenCalled();
   });

@@ -26,6 +26,10 @@ const BIN_ARRAY_HEADER_LEN = 56;
 /** 8 disc + 8 index + 1 version + 7 padding + 32 lb_pair + 70 × 144. */
 export const BIN_ARRAY_ACCOUNT_LEN = BIN_ARRAY_HEADER_LEN + METEORA_BINS_PER_ARRAY * BIN_LEN;
 
+/** `LbPair.reward_infos`: two `RewardInfo` (mint, vault, funder, duration, duration end, rate u128, last update, empty-liquidity seconds). */
+export const METEORA_REWARD_INFOS_OFFSET = 264;
+export const METEORA_REWARD_INFO_LEN = 144;
+
 export type LbPairState = {
   /** bps per bin. */
   binStep: number;
@@ -48,6 +52,11 @@ export type LbPairState = {
   reserveY: string;
   /** Bin array indexes in [-512, 511] the pool marks as holding liquidity (`bin_array_bitmap`). */
   bitmapBinArrays: number[];
+  /**
+   * Farming reward mints set up on the pool (`reward_infos[2]`, 144 bytes each from offset 264; the mint is the first
+   * field). An uninitialized slot (default pubkey) is left out, so `[]` means the pool has never had farming rewards.
+   */
+  rewardMints: string[];
   /** 0 = SPL Token, 1 = Token-2022. */
   tokenProgramFlagX: number;
   tokenProgramFlagY: number;
@@ -98,6 +107,8 @@ export function decodeLbPair(data: Uint8Array): LbPairState {
     reserveX: key(data, 152),
     reserveY: key(data, 184),
     bitmapBinArrays,
+    rewardMints: [0, 1].map((slot) => key(data, METEORA_REWARD_INFOS_OFFSET + slot * METEORA_REWARD_INFO_LEN))
+      .filter((mint) => mint !== PublicKey.default.toBase58()),
     tokenProgramFlagX: data[880]!,
     tokenProgramFlagY: data[881]!,
   };

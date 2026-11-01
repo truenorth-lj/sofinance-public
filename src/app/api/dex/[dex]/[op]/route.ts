@@ -7,7 +7,7 @@ import { dexRouteRateLimited } from "@/lib/dex-route-rate-limit";
 import { withJupiterRelay } from "@/lib/jupiter-relay-route";
 import { isDexTxRouteEnabled } from "@/lib/protocol-flags";
 import { txPermitsFor } from "@/lib/tx-send/permit";
-import type { PositionKey } from "@/lib/unified-positions/model";
+import { WITHDRAW_OUTPUTS, type PositionKey } from "@/lib/unified-positions/model";
 
 /**
  * POST /api/dex/[dex]/[op] — the one API entry for every DEX (DESIGN.md §1.2). Validates the body, resolves the
@@ -76,7 +76,7 @@ const positionOpBody = (adapter: DexAdapter) => {
       ...common,
       /** Share of the position, (0, 1]; 1 = everything (and close the position when the DEX allows it). */
       fraction: z.number().gt(0).max(1),
-      output: z.enum(["pool-tokens", "usdc"]),
+      output: z.enum(WITHDRAW_OUTPUTS),
     }).strict(),
     claim: z.object(common).strict(),
   } as const;
@@ -156,6 +156,9 @@ async function run(adapter: DexAdapter, op: Op, body: unknown): Promise<Response
     }
     case "withdraw": {
       const input = positionOpBody(adapter).withdraw.parse(body);
+      if (!adapter.descriptor.capabilities.withdrawOutputs.includes(input.output)) {
+        throw new DexError("UNSUPPORTED", "Withdrawing to that token isn't available for this pool yet. Choose one of the outputs the Withdraw panel offers.");
+      }
       const request = { fraction: input.fraction, output: input.output };
       return json(withPermits(await adapter.prepareWithdraw(input.positionKey as PositionKey, input.owner, request, stepContext(input)), input.owner));
     }

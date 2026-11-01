@@ -30,10 +30,10 @@ export const fakeSolanaDescriptor: DexDescriptor = Object.freeze({
   meta: {
     rangeUnit: "bin", maxRangeUnitsPerPosition: 70, rangeUnitBounds: { min: -443_636, max: 443_636 }, openSteps: { min: 2, max: 2 },
     rent: { refundableOnClose: true, disclosure: "about 0.042 SOL, refunded when you fully withdraw" },
-    approvals: "none", positionCosigner: "ephemeral-keypair", addressCase: "exact", feePolicy: swapFee,
+    approvals: "none", positionCosigner: "ephemeral-keypair", addressCase: "exact", feePolicy: swapFee, depositInputs: { poolTokens: true, extra: [{ id: "USDC", symbol: "USDC", decimals: 6 }] },
   },
   capabilities: {
-    compound: SUPPORTED, performance: SUPPORTED, deposit: SUPPORTED, withdraw: { supported: true, partial: true },
+    compound: SUPPORTED, performance: SUPPORTED, deposit: SUPPORTED, withdraw: { supported: true, partial: true }, withdrawOutputs: ["pool-tokens"],
     exitPreview: { supported: true, output: "pool-tokens" }, rangeDisplay: "price", manualAdd: false, signer: "solana-wallet",
     open: SUPPORTED, claim: SUPPORTED,
   },
@@ -46,11 +46,11 @@ export const fakeEvmDescriptor: DexDescriptor = Object.freeze({
   meta: {
     rangeUnit: "tick", maxRangeUnitsPerPosition: null, rangeUnitBounds: { min: -443_636, max: 443_636 }, openSteps: { min: 1, max: 3 }, rent: null,
     approvals: "erc20-permit2", positionCosigner: "none", addressCase: "lowercase",
-    feePolicy: { ...NO_FEE_POLICY, open: { kind: "swap-output-bps", bps: 10 } },
+    feePolicy: { ...NO_FEE_POLICY, open: { kind: "swap-output-bps", bps: 10 } }, depositInputs: { poolTokens: true, extra: [] },
   },
   capabilities: {
     compound: unsupported(NOT_AVAILABLE_MESSAGE), performance: unsupported(NOT_AVAILABLE_MESSAGE),
-    deposit: unsupported(NOT_AVAILABLE_MESSAGE), withdraw: { supported: true, partial: false },
+    deposit: unsupported(NOT_AVAILABLE_MESSAGE), withdraw: { supported: true, partial: false }, withdrawOutputs: ["pool-tokens"],
     exitPreview: { supported: true, output: "pool-tokens" }, rangeDisplay: "tick", manualAdd: true, signer: "evm-wallet",
     open: unsupported(NOT_AVAILABLE_MESSAGE), claim: unsupported(NOT_AVAILABLE_MESSAGE),
   },
@@ -111,7 +111,11 @@ export function fakeSolanaAdapter(): DexAdapter {
       return step(request.owner, context, 2, context.step === 1 ? "Create position" : "Deposit");
     },
     async prepareAdd(key, owner, _input, context) { return step(holder(key, owner), context, 1, "Add liquidity"); },
-    async prepareWithdraw(key, owner, _request, context) { return step(holder(key, owner), context, 1, "Withdraw"); },
+    async prepareWithdraw(key, owner, request, context) {
+      const held = holder(key, owner);
+      if (request.output !== "pool-tokens") throw new DexUnsupportedError("Withdrawing to that token isn't available for this pool yet");
+      return step(held, context, 1, "Withdraw");
+    },
     async prepareClaim(key, owner, context) { return step(holder(key, owner), context, 1, "Claim fees"); },
     async prepareCompound(key, owner, context) { return step(holder(key, owner), context, 1, "Compound"); },
   };
@@ -137,6 +141,7 @@ export function fakeEvmAdapter(): DexAdapter {
     async prepareWithdraw(key, owner, request, context) {
       if (key !== position.key || owner.toLowerCase() !== FAKE_EVM_OWNER) throw new DexError("POSITION_NOT_FOUND", "That position belongs to another wallet.");
       if (request.fraction !== 1) throw new DexUnsupportedError("Partial withdraw isn't available for this pool yet");
+      if (request.output !== "pool-tokens") throw new DexUnsupportedError("Withdrawing to that token isn't available for this pool yet");
       return { step: context.step, of: 1, label: "Close position", done: true, prepared: { kind: "evm-tx", chainId: 4663, to: FAKE_EVM_TARGET, data: "0x", value: "0" } };
     },
     prepareClaim: no,

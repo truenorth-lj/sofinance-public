@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { isToolSupported, NOT_AVAILABLE_MESSAGE, parsePositionKey, positionKey, SUPPORTED, toolUnavailableReason, unsupported, type SourceCapabilities } from "./model";
 
 const caps = (over: Partial<SourceCapabilities> = {}): SourceCapabilities => ({
-  compound: SUPPORTED, performance: SUPPORTED, deposit: SUPPORTED, withdraw: { supported: true, partial: true },
+  compound: SUPPORTED, performance: SUPPORTED, deposit: SUPPORTED, withdraw: { supported: true, partial: true }, withdrawOutputs: ["pool-tokens"],
   exitPreview: SUPPORTED, rangeDisplay: "price", manualAdd: false, signer: "solana-wallet", ...over,
 });
 

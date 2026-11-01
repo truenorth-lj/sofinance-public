@@ -8,7 +8,7 @@
  *
  * Nothing here imports a DEX SDK or a protocol module, so this file is safe in client bundles.
  */
-import type { Capability, ChainId, SourceCapabilities, UnifiedPosition } from "@/lib/unified-positions/model";
+import type { Capability, ChainId, SourceCapabilities, TokenRef, UnifiedPosition } from "@/lib/unified-positions/model";
 
 /** The single canonical spelling of each DEX id (PM decision 8: "uniswap-v4-rhc", matching pool/feed/DB ids). */
 export const DEX_IDS = ["raydium-clmm", "orca-whirlpool", "meteora-dlmm", "uniswap-v4-rhc"] as const;
@@ -91,6 +91,11 @@ export type DexMeta = {
   /** Address comparison rule for this chain's token ids. */
   addressCase: "exact" | "lowercase";
   feePolicy: FeePolicy;
+  /**
+   * Tokens an Add (deposit into an existing position) accepts: the pool's own two (`poolTokens`) plus any other token
+   * the adapter swaps in (`extra`, e.g. USDC on Solana). The Add panel offers exactly these.
+   */
+  depositInputs: { poolTokens: boolean; extra: readonly TokenRef[] };
 };
 
 /** Unified-positions capabilities plus the two this contract adds. */

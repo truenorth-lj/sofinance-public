@@ -2,10 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { dexDescriptors, dexPositionLabel, dexPositionRangeText, dexRangeStatusText, fetchDexPositions, positionDescriptorsFor,
-  type DexDescriptor, type DexSigner } from "@/lib/dex/client";
+  type DexCapabilities, type DexDescriptor, type DexSigner } from "@/lib/dex/client";
 import { tokenSymbol, type PositionLabelMetadata } from "@/lib/position-label";
 import { isDexTxRouteEnabled } from "@/lib/protocol-flags";
-import { NOT_AVAILABLE_MESSAGE, type PositionSourceId, type SourceCapabilities, type UnifiedPosition } from "@/lib/unified-positions/model";
+import { iconFor, type IconChain, type TokenIconMap } from "@/lib/token-icons/map";
+import { NOT_AVAILABLE_MESSAGE, type ChainId, type PositionSourceId, type UnifiedPosition } from "@/lib/unified-positions/model";
 import { PositionAssetRow } from "../position-asset-row";
 
 /**
@@ -25,19 +26,22 @@ export type RegistryPositions = {
   /** Plain per-DEX failures (one DEX failing never hides another's positions). */
   errors: string[];
   owns(position: UnifiedPosition | null | undefined): boolean;
-  capabilities(position: UnifiedPosition): SourceCapabilities | null;
+  /** What the panel offers for a row: the descriptor's capabilities, minus the tools the registry panel has no UI for. */
+  capabilities(position: UnifiedPosition): DexCapabilities | null;
+  /** The row's DEX descriptor (tools read meta from it: rent, fee policy, deposit inputs). */
+  descriptor(position: UnifiedPosition): DexDescriptor | null;
   /** The `{ displayName, label }` pair `positionOptionLabel` (rows.ts) needs for a registry row. */
   optionSource(position: UnifiedPosition, metadata?: PositionLabelMetadata): { displayName: string; label: (position: UnifiedPosition) => string };
 };
 
 /**
- * The registry panel has no tool UI yet (selected-app binds `tool: () => null`), so every tool tab of a registry position
- * stays greyed with the generic reason, whatever the adapter can already prepare (PR6 ships Meteora add / withdraw /
- * claim server-side; the panels that drive them come in a later PR). Generic: no DEX id is checked.
+ * The registry panel draws Add (deposit), Withdraw and Claim fees (`registry-tools.tsx`, PR7) from the descriptor's
+ * capabilities. Compound and Performance have no registry panel yet, so those tabs stay greyed with the generic reason,
+ * whatever the adapter declares. Generic: no DEX id is checked.
  */
 const NO_PANEL = Object.freeze({ supported: false as const, reason: NOT_AVAILABLE_MESSAGE });
-export function registryPanelCapabilities(capabilities: SourceCapabilities): SourceCapabilities {
-  return { ...capabilities, compound: NO_PANEL, performance: NO_PANEL, deposit: NO_PANEL, withdraw: NO_PANEL };
+export function registryPanelCapabilities(capabilities: DexCapabilities): DexCapabilities {
+  return { ...capabilities, compound: NO_PANEL, performance: NO_PANEL };
 }
 
 type Loaded = { owner: string; refresh: number; served: PositionSourceId[]; positions: UnifiedPosition[]; errors: string[] };
@@ -75,18 +79,22 @@ export function useRegistryPositions({ owner, signer, exclude, refresh }: {
       const capabilities = byId(position) ? dexDescriptors.capabilitiesFor(position) : null;
       return capabilities ? registryPanelCapabilities(capabilities) : null;
     },
+    descriptor: (position) => byId(position),
     optionSource: (position, metadata) => ({ displayName: byId(position)?.displayName ?? "", label: (item) => dexPositionLabel(item, metadata) }),
   };
 }
 
 type AssetMetadata = Record<string, { symbol?: string | null; icon?: string | null } | undefined>;
+/** Icon map chain for a position's chain. */
+const ICON_CHAIN: Record<ChainId, IconChain> = { solana: "solana", "robinhood-chain": "robinhood" };
 
 /**
  * Under the dropdown for a selected registry position: range status, range, and the shared Liquidity / Unclaimed fees
  * rows (same component and rule as Raydium and Robinhood Chain: a value that was not read is a dash, never zero; no USD
- * until the DEX reports a price). Tools arrive with PR6/PR7.
+ * until the DEX reports a price). Token icons come from the stored icon map first (same source as the pairs list), then
+ * token metadata.
  */
-export function RegistryPositionHeader({ position, metadata = {} }: { position: UnifiedPosition; metadata?: AssetMetadata }) {
+export function RegistryPositionHeader({ position, metadata = {}, icons }: { position: UnifiedPosition; metadata?: AssetMetadata; icons?: Partial<TokenIconMap> }) {
   const status = dexRangeStatusText(position);
   const tokens = [position.tokenA, position.tokenB] as const;
   const sides = ["a", "b"] as const;
@@ -96,7 +104,7 @@ export function RegistryPositionHeader({ position, metadata = {} }: { position: 
       <span className="rounded-full border border-white/20 bg-white/[0.05] px-2.5 py-1 text-cream/80">{dexPositionRangeText(position).replace(/^range/, "Range").replace(/^ticks/, "Ticks")}</span>
     </div>
     <div aria-label="Position assets" className="mt-5 divide-y divide-white/10" data-testid="registry-position-assets">
-      {tokens.map((token, i) => <PositionAssetRow key={token.id} symbol={tokenSymbol(token.id, metadata, token.symbol)} icon={metadata[token.id]?.icon ?? null}
+      {tokens.map((token, i) => <PositionAssetRow key={token.id} symbol={tokenSymbol(token.id, metadata, token.symbol)} icon={iconFor(icons, ICON_CHAIN[position.chain], token.id) ?? metadata[token.id]?.icon ?? null}
         decimals={token.decimals} liquidityRaw={position.holdings?.liquidityRaw?.[sides[i]!] ?? null}
         unclaimedFeesRaw={position.holdings?.unclaimedFeesRaw?.[sides[i]!] ?? null} priceUsd={null} />)}
     </div>

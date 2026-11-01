@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { AccountInfo, PublicKey } from "@solana/web3.js";
 import { describe, expect, it } from "vitest";
-import { decodeLbPair, decodeMintDecimals, meteoraBinArrayAddress, meteoraBinArrayIndex } from "./accounts";
+import { decodeLbPair, decodeMintDecimals, METEORA_REWARD_INFOS_OFFSET, METEORA_REWARD_INFO_LEN, meteoraBinArrayAddress, meteoraBinArrayIndex } from "./accounts";
 import { METEORA_DLMM_PROGRAM_ID, SPL_TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID } from "./constants";
 import { meteoraClaimFee2Instruction, meteoraRemoveLiquidityByRange2Instruction } from "./liquidity";
 import { meteoraAddLiquidityByStrategy2Instruction, meteoraBitmapExtensionAddress, meteoraRangeNeedsBitmapExtension } from "./open";
@@ -201,5 +201,22 @@ describe("builders on the captured Token-2022 pool", () => {
     expect(() => meteoraAddLiquidityByStrategy2Instruction({
       ...accounts, amountX: 1n, amountY: 1n, activeId: state.activeId, maxActiveBinSlippage: 5, minBinId: state.activeId - 2, maxBinId: state.activeId + 1,
     })).toThrow(/bitmap extension/);
+  });
+});
+
+describe("farming rewards (LbPair.reward_infos)", () => {
+  it("neither RWA pool has a farming reward set up in the capture (both slots are the default key)", () => {
+    expect(pair(TSLA_POOL).rewardMints).toEqual([]);
+    expect(pair(SPCX_POOL).rewardMints).toEqual([]);
+  });
+
+  it("reads a reward mint written into either slot (the oracle right after the two slots stays in place)", () => {
+    const data = Buffer.from(capture.pools[TSLA_POOL]!.data, "base64");
+    const oracle = new PublicKey(data.subarray(552, 584)).toBase58();
+    const [oraclePda] = PublicKey.findProgramAddressSync([Buffer.from("oracle"), new PublicKey(TSLA_POOL).toBuffer()], new PublicKey(METEORA_DLMM_PROGRAM_ID));
+    expect(oracle).toBe(oraclePda.toBase58()); // layout check: reward_infos end exactly at the oracle
+    const reward = new PublicKey(TOKEN_2022_PROGRAM_ID);
+    reward.toBuffer().copy(data, METEORA_REWARD_INFOS_OFFSET + METEORA_REWARD_INFO_LEN);
+    expect(decodeLbPair(data).rewardMints).toEqual([reward.toBase58()]);
   });
 });
