@@ -135,7 +135,7 @@ function PoolCard({ pool, apr, action, icons }: {
     </dl>
     <div className="mt-auto flex flex-wrap items-center gap-3 pt-5">
       <OpenButton action={action} label={pool.pairLabel} />
-      {plan?.supported && <Link href={buildPlanPath({ poolId: pool.poolAddress, pair: pool.pairLabel })}
+      {plan?.supported && <Link href={buildPlanPath({ poolId: pool.poolAddress, pair: pool.pairLabel, protocol: pool.protocol })}
         className="inline-flex h-11 items-center rounded-full border border-ink/40 px-4 text-sm font-semibold outline-none transition-colors hover:border-ink focus-visible:shadow-[0_0_0_3px_var(--color-lilac)]">
         Plan this pool
       </Link>}

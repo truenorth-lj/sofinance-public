@@ -351,6 +351,56 @@ describe("PlanApp", () => {
     expect([...node.querySelectorAll("a")].some((a) => a.textContent?.includes("Create a position in this pool"))).toBe(false);
   });
 
+  it("the APY explanation sits on its own line under the label and value", async () => {
+    await render(`pool=${POOL}`);
+    await waitForText("Est. best APY used · not guaranteed");
+    const note = node.querySelector('[data-testid="plan-apy-note"]');
+    expect(note?.textContent).toMatch(/compounded daily, over/);
+    expect(note?.tagName).toBe("DD");
+    expect(note?.className).toContain("w-full");
+    expect(note?.previousElementSibling?.textContent).toMatch(/est\. APY$/);
+  });
+
+  it("Meteora link while the pool list is still loading: Meteora terms from `protocol`, no Create link yet", async () => {
+    fetcher.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/rwa-pairs")) return new Promise(() => {});
+      if (url.includes("/api/pool-daily-apr")) return { ok: true, json: async () => aprPayload() };
+      throw new Error(`unexpected ${url}`);
+    });
+    await render(`pool=${METEORA}&protocol=meteora-dlmm`);
+    await waitForText("Est. best APY used · not guaranteed");
+    expect(text()).toMatch(/Opening cost, day 0\s*−1\.00 USDC \(0\.1% platform fee on the swap\)/);
+    expect(node.querySelector('[data-testid="plan-open-rent"]')).not.toBeNull();
+    expect(text()).not.toContain("USDC, plus a small SOL refund");
+    expect([...node.querySelectorAll("a")].some((a) => a.textContent?.includes("Create a position in this pool"))).toBe(false);
+    expect(node.querySelector('[data-testid="plan-open-reason"]')?.textContent).toBe("Reading the SoFinance pool list.");
+  });
+
+  it("Meteora link for a pool the list no longer has: Meteora terms, and it can't be opened from here", async () => {
+    const unlisted = "5pw5tNUaZJpUCnYjZ1V3gd7XkLbrb4zA9pir4LFph2mj";
+    await render(`pool=${unlisted}&protocol=meteora-dlmm`);
+    await waitForText("Est. best APY used · not guaranteed");
+    expect(text()).toMatch(/Opening cost, day 0\s*−1\.00 USDC \(0\.1% platform fee on the swap\)/);
+    expect(text()).not.toContain("about 1%");
+    expect([...node.querySelectorAll("a")].some((a) => a.textContent?.includes("Create a position in this pool"))).toBe(false);
+  });
+
+  it("a pool the list doesn't have and no `protocol`: no Create link, and the reason says why", async () => {
+    const unlisted = "5pw5tNUaZJpUCnYjZ1V3gd7XkLbrb4zA9pir4LFph2mj";
+    await render(`pool=${unlisted}`);
+    await waitForText("Est. best APY used · not guaranteed");
+    expect([...node.querySelectorAll("a")].some((a) => a.textContent?.includes("Create a position in this pool"))).toBe(false);
+    expect(node.querySelector('[data-testid="plan-open-reason"]')?.textContent).toBe("This pool isn't on the SoFinance pool list, so it can't be opened from here.");
+  });
+
+  it("keeps the pool's DEX in the page URL", async () => {
+    window.history.replaceState(null, "", "/app/plan");
+    await render(`pool=${METEORA}`);
+    await waitForText("Est. best APY used · not guaranteed");
+    expect(new URLSearchParams(window.location.search).get("protocol")).toBe("meteora-dlmm");
+  });
+
   it("Raydium pool (no descriptor): the original ~1% cost, USDC exit and Create link", async () => {
     await render(`pool=${POOL}`);
     await waitForText("Est. best APY used · not guaranteed");

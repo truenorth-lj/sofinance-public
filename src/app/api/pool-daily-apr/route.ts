@@ -36,9 +36,10 @@ function parsePoolId(raw: string | null) {
  * The series comes from the registered DEX that lists the pool (DEX registry, e.g. Meteora DLMM); pools no registered
  * DEX lists keep the existing Raydium path unchanged (pinned by route.test.ts).
  *
- * When a DEX could not tell whether it lists the pool (its pool list is down), Raydium is still asked: a Raydium pool is
- * served as before; otherwise (Raydium has no such pool, or is down too) that DEX's error is rethrown (5xx, uncached)
- * instead of a Raydium-shaped series of nulls. Nothing is cached on any error path.
+ * When a DEX could not tell whether it lists the pool (its pool list is down), Raydium is still asked, but its series is
+ * served only if Raydium's pool info answered with this pool's row (`requireRaydiumPool`, checked before any cache
+ * write). Otherwise (Raydium has no such pool, its pool info is down, or anything else fails) that DEX's error is
+ * rethrown: 5xx, no-store, and neither the in-memory cache nor `unstable_cache` keeps anything.
  */
 async function loadPoolDailyApr(poolId: string) {
   let registryFailure: { error: unknown } | null = null;
@@ -48,10 +49,11 @@ async function loadPoolDailyApr(poolId: string) {
   } catch (error) {
     registryFailure = { error };
   }
+  if (!registryFailure) return fetchPoolDailyApr(poolId);
   try {
-    return await fetchPoolDailyApr(poolId);
-  } catch (error) {
-    throw registryFailure ? registryFailure.error : error;
+    return await fetchPoolDailyApr(poolId, { requireRaydiumPool: true });
+  } catch {
+    throw registryFailure.error;
   }
 }
 
