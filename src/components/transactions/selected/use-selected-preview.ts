@@ -7,7 +7,9 @@ import { postWithJupiterRelay, type JupiterRelayStore } from "@/lib/jupiter/brow
 import { quoteErrorHidesRecalculate } from "@/lib/selected-amount-error";
 import { RELAY_DEADLINE_MS, selectionKey, type Preflight, type Preview } from "./selected-preview-model";
 
-type ApiError = { error: string; code?: string; outputMint?: string };
+type ApiError = { error: string; code?: string; outputMint?: string; minimumInput?: string; majorityMint?: string };
+/** Extra facts for a genuine amount-too-small error, so the panel can name the tokens and the minimum. */
+export type QuoteErrorAmount = { minimumInput: string; majorityMint?: string };
 type SelectedPreviewOptions = {
   wallet?: string;
   selection: PositionSelection | null;
@@ -30,6 +32,7 @@ export function useSelectedPreview() {
   const [quoteError, setQuoteError] = useState("");
   const [quoteErrorCode, setQuoteErrorCode] = useState("");
   const [quoteErrorOutputMint, setQuoteErrorOutputMint] = useState("");
+  const [quoteErrorAmount, setQuoteErrorAmount] = useState<QuoteErrorAmount | null>(null);
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [quoteRevision, setQuoteRevision] = useState(0);
   const quoteRequestRef = useRef(0);
@@ -43,11 +46,11 @@ export function useSelectedPreview() {
   }, [invalidate]);
   const clear = useCallback(() => { setPreview({ kind: "idle" }); }, []);
   const clearErrors = useCallback(() => {
-    setQuoteError(""); setQuoteErrorCode(""); setQuoteErrorOutputMint("");
+    setQuoteError(""); setQuoteErrorCode(""); setQuoteErrorOutputMint(""); setQuoteErrorAmount(null);
   }, []);
   const adopt = useCallback((result: Preflight) => { setPreview({ kind: "quoted", result }); }, []);
   const retryCalculation = () => {
-    setQuoteError(""); setQuoteErrorCode(""); setQuoteErrorOutputMint(""); setPreview({ kind: "idle" });
+    setQuoteError(""); setQuoteErrorCode(""); setQuoteErrorOutputMint(""); setQuoteErrorAmount(null); setPreview({ kind: "idle" });
     setQuoteRevision((current) => current + 1);
   };
 
@@ -74,7 +77,7 @@ export function useSelectedPreview() {
       isCurrent(wallet, key);
     const timer = window.setTimeout(() => {
       const load = async () => {
-        setQuoteLoading(true); setPreview({ kind: "idle" }); setQuoteError(""); setQuoteErrorCode(""); setQuoteErrorOutputMint("");
+        setQuoteLoading(true); setPreview({ kind: "idle" }); setQuoteError(""); setQuoteErrorCode(""); setQuoteErrorOutputMint(""); setQuoteErrorAmount(null);
         deadline = window.setTimeout(() => aborter.abort(new Error("Preview took too long. Please retry.")), RELAY_DEADLINE_MS);
         try {
           const response = await postWithJupiterRelay("/api/selected-quote", { wallet, ...selection, amount, floorBps, toleranceBps },
@@ -86,6 +89,8 @@ export function useSelectedPreview() {
             const failure = new Error(failed.error);
             (failure as Error & { code?: string; outputMint?: string }).code = failed.code;
             (failure as Error & { code?: string; outputMint?: string }).outputMint = failed.outputMint;
+            if (failed.minimumInput) (failure as Error & { amount?: QuoteErrorAmount }).amount =
+              { minimumInput: failed.minimumInput, ...(failed.majorityMint ? { majorityMint: failed.majorityMint } : {}) };
             throw failure;
           }
           const currentQuote = data as SelectedQuote;
@@ -105,6 +110,8 @@ export function useSelectedPreview() {
             const outputMint = caught instanceof Error ? (caught as Error & { outputMint?: string }).outputMint : undefined;
             setQuoteErrorCode(aborter.signal.aborted ? "" : code ?? "");
             setQuoteErrorOutputMint(aborter.signal.aborted ? "" : outputMint ?? "");
+            const amount = caught instanceof Error ? (caught as Error & { amount?: QuoteErrorAmount }).amount : undefined;
+            setQuoteErrorAmount(aborter.signal.aborted ? null : amount ?? null);
           }
         } finally {
           window.clearTimeout(deadline);
@@ -121,7 +128,7 @@ export function useSelectedPreview() {
   }, []);
 
   const showQuoteRecalculate = Boolean(quoteError) && !quoteErrorHidesRecalculate(quoteErrorCode);
-  return { preview, quoteError, quoteErrorCode, quoteErrorOutputMint, quoteLoading,
+  return { preview, quoteError, quoteErrorCode, quoteErrorOutputMint, quoteErrorAmount, quoteLoading,
     invalidate, invalidateForInput, clear, clearErrors, adopt, retryCalculation, showQuoteRecalculate,
     quoteRevision, start };
 }

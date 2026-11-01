@@ -8,11 +8,36 @@ export const AMOUNT_TOO_SMALL_MESSAGE =
   "Amount too small to swap into this position — try a larger amount";
 export const JUPITER_CLIENT_ERROR_CODE = "jupiter_client_error";
 
+/** What the server knows about a genuine too-small amount; the UI turns it into a sentence with token names. */
+export type AmountTooSmallDetail = {
+  /** Smallest input (raw units of the input asset) that can cover every swap leg this position needs. */
+  minimumInput: string;
+  inputDecimals: number;
+  /** Pool token whose swap leg is too small to quote. */
+  minorityMint: string;
+  /** Pool token the position needs almost all of (set when the position is nearly one-sided). */
+  majorityMint?: string;
+};
+
+export type AmountTooSmallLabels = { input: string; minority: string; majority?: string; minimum: string };
+
+/** Plain-English real cause for a genuine too-small amount, with the computed minimum. */
+export function formatAmountTooSmallMessage(labels: AmountTooSmallLabels): string {
+  const enter = `Enter at least ${labels.minimum} ${labels.input}.`;
+  if (labels.majority) {
+    return `This position's price range is narrow and the pool price sits at its edge, so it needs almost only ${labels.majority}. ` +
+      `The ${labels.minority} part of this amount is below the smallest swap Jupiter can quote. ${enter}`;
+  }
+  return `This amount is below the smallest swap Jupiter can quote for the ${labels.minority} part. ${enter}`;
+}
+
 export class AmountTooSmallError extends Error {
   readonly code = AMOUNT_TOO_SMALL_CODE;
-  constructor() {
-    super(AMOUNT_TOO_SMALL_MESSAGE);
+  readonly detail?: AmountTooSmallDetail;
+  constructor(detail?: AmountTooSmallDetail, message = AMOUNT_TOO_SMALL_MESSAGE) {
+    super(message);
     this.name = "AmountTooSmallError";
+    this.detail = detail;
   }
 }
 

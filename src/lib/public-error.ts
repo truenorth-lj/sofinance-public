@@ -16,6 +16,7 @@ import { scrubCredentialText, scrubSensitiveText } from "./sentry/scrub";
 import {
   AMOUNT_TOO_SMALL_CODE,
   AMOUNT_TOO_SMALL_MESSAGE,
+  AmountTooSmallError,
   isAmountTooSmallError,
   JUPITER_CLIENT_ERROR_CODE,
   jupiterClientErrorMessage,
@@ -136,6 +137,7 @@ export function sanitizePublicError(error: unknown, fallback: string): string {
   if (error instanceof JupiterNoRouteError || isJupiterNoRouteError(error)) {
     return formatSelectedNoRouteMessage("this input asset", "the pool tokens");
   }
+  if (error instanceof AmountTooSmallError && error.detail) return truncate(sanitizeDetail(error.message), 400);
   if (isAmountTooSmallError(error)) return AMOUNT_TOO_SMALL_MESSAGE;
   if (error instanceof JupiterHttpError && error.status === 400) {
     return truncate(sanitizeDetail(jupiterClientErrorMessage(error)));

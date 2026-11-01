@@ -2,7 +2,7 @@
 import { Activity, StrictMode, act, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi, type MockInstance } from "vitest";
-import { RELAY_DEADLINE_MS, useSelectedController } from "./use-selected-controller";
+import { QUOTE_ERROR_STATUS, RELAY_DEADLINE_MS, useSelectedController } from "./use-selected-controller";
 import { JUPITER_BROWSER_ORIGIN, resetJupiterBrowserGate } from "@/lib/jupiter/browser-relay";
 
 // Real facade/relay/storage. Only wallet and HTTP are replaced; keys and time are deterministic.
@@ -174,11 +174,19 @@ it.each(["bad json", "transport", "null", "string throw"])("malformed/error %s r
   expect(c.actionDisabled).toBe(true); await retry(); pure();
 });
 
-it.each([["jupiter_no_route", false], ["amount_too_small", false], ["upstream", true]] as const)("error metadata and Recalculate for %s", async (code, recalculate) => {
+it("passes the computed minimum and the majority token of a genuine amount-too-small error to the panel", async () => {
+  quoteHandler = async () => Response.json({ error: "Too small", code: "amount_too_small", outputMint: otherMint,
+    minimumInput: "201", majorityMint: "So11111111111111111111111111111111111111112" }, { status: 400 });
+  await input(); await advance(450);
+  expect(c.quoteErrorAmount).toEqual({ minimumInput: "201", majorityMint: "So11111111111111111111111111111111111111112" });
+  await retry(); expect(c.quoteErrorAmount).toBeNull(); pure();
+});
+
+it.each([["jupiter_no_route", false], ["amount_too_small", false], ["upstream", true]] as const)("error metadata and Recalculate for %s; the error shows once (alert), the status only points to it", async (code, recalculate) => {
   quoteHandler = async () => Response.json({ error: "Exact preview error", code, outputMint: otherMint }, { status: 400 });
   await input(); await advance(450);
   expect([c.error, c.status, c.quoteError, c.quoteErrorCode, c.quoteErrorOutputMint, c.showQuoteRecalculate])
-    .toEqual(["Exact preview error", "Exact preview error", "Exact preview error", code, otherMint, recalculate]);
+    .toEqual(["Exact preview error", QUOTE_ERROR_STATUS, "Exact preview error", code, otherMint, recalculate]);
   await retry(); expect(c.quoteErrorCode).toBe(""); expect(c.quoteErrorOutputMint).toBe(""); pure();
 });
 

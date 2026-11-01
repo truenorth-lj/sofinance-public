@@ -45,6 +45,26 @@ export async function tolerantTokenIcons(query: () => Promise<TokenIconRow[]>): 
 type Database = PostgresJsDatabase<typeof schema>;
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 const nowSql = sql`clock_timestamp()`;
+const POOL_UPDATE_KEYS = ["mintA", "mintB", "symbolA", "symbolB", "tvlUsd", "volume24hUsd", "fees24hUsd", "feeRate",
+  "poolFeeAprPct", "details", "sourcePage", "lastSeenGeneration", "metricsObservedAt"] as const;
+const RHC_POOL_UPDATE_KEYS = ["chain", "protocol", ...POOL_UPDATE_KEYS] as const;
+/** Rows per multi-row upsert: far below Postgres' 65,535 bind-parameter limit at ~15 columns per row. */
+const POOL_UPSERT_CHUNK = 500;
+
+type PoolInsert = typeof pool.$inferInsert;
+type PoolUpdateKey = Exclude<keyof PoolInsert, "poolAddress" | "feedKey" | "firstSeenAt" | "lastSeenAt">;
+
+/**
+ * Upsert many rwa_pool_latest rows in one statement per chunk (was one INSERT per pool: Sentry N+1). On conflict each
+ * row takes its own new values via EXCLUDED.<column>, for exactly the columns the per-row upsert used to set.
+ */
+async function upsertPools(tx: Pick<PostgresJsDatabase<typeof schema>, "insert">, rows: PoolInsert[], updateKeys: readonly PoolUpdateKey[]) {
+  const set = Object.fromEntries(updateKeys.map((key) => [key, sql.raw(`excluded."${pool[key].name}"`)])) as Partial<Record<PoolUpdateKey, unknown>>;
+  for (let start = 0; start < rows.length; start += POOL_UPSERT_CHUNK) {
+    await tx.insert(pool).values(rows.slice(start, start + POOL_UPSERT_CHUNK))
+      .onConflictDoUpdate({ target: pool.poolAddress, set: { ...set, lastSeenAt: nowSql } as never });
+  }
+}
 const iso = (value: string) => new Date(value).toISOString();
 const interval = (ms: number) => sql`(${ms}::integer * interval '1 millisecond')`;
 // The scheduler probes on wall-clock boundaries (default every 15 minutes) while a
@@ -212,6 +232,8 @@ export class PostgresRwaStore implements RwaStore {
           publishedAt: nowSql as unknown as string, pairingRuleVersion: "uniswap-v4-rhc-allowlist-v1",
         },
       });
+      // Keyed by pool address: one statement cannot upsert the same row twice (last one wins, as the old loop did).
+      const roster = new Map<string, PoolInsert>();
       for (const row of rows) {
         const spec = allowed.get(row.poolId.toLowerCase())!;
         const market = row.summary.estimatedApr;
@@ -225,9 +247,9 @@ export class PostgresRwaStore implements RwaStore {
           details: row.summary as unknown as Record<string, unknown>, sourcePage: 1, lastSeenGeneration: generation,
           metricsObservedAt: nowSql as unknown as string,
         };
-        await tx.insert(pool).values({ poolAddress: spec.poolId.toLowerCase(), feedKey: FEED_KEY_RHC, ...values })
-          .onConflictDoUpdate({ target: pool.poolAddress, set: { ...values, lastSeenAt: nowSql as unknown as string } });
+        roster.set(spec.poolId.toLowerCase(), { poolAddress: spec.poolId.toLowerCase(), feedKey: FEED_KEY_RHC, ...values });
       }
+      await upsertPools(tx, [...roster.values()], RHC_POOL_UPDATE_KEYS);
       const saved = await tx.select({ poolAddress: apr.poolAddress, profile: apr.profileCache, refreshedAt: refreshedAtSql }).from(apr)
         .where(inArray(apr.poolAddress, rows.map((row) => row.poolId.toLowerCase())));
       const profiles = Object.fromEntries(rows.map((row) => [row.poolId.toLowerCase(), null])) as Record<string, StoredProfile | null>;
@@ -295,6 +317,7 @@ export class PostgresRwaStore implements RwaStore {
     const generation = randomUUID();
     return this.guarded(lease, async (tx) => {
       await tx.insert(feed).values({ feedKey: FEED_KEY, pairingRuleVersion: PAIRING_VERSION }).onConflictDoNothing();
+      const rows: PoolInsert[] = [];
       for (const row of data.result.pairs) {
         const page = data.sourcePages[row.poolAddress], observed = data.poolObservedAt[row.poolAddress];
         if (!page || page > data.result.pagesFetched || !observed) throw new RwaStoreError("INVALID_DISCOVERY");
@@ -302,9 +325,9 @@ export class PostgresRwaStore implements RwaStore {
           tvlUsd: row.tvlUsd, volume24hUsd: row.volume24hUsd, fees24hUsd: row.fees24hUsd,
           feeRate: row.feeRate, poolFeeAprPct: row.estimatedFeeAprPct, details: row, sourcePage: page,
           lastSeenGeneration: generation, metricsObservedAt: observed };
-        await tx.insert(pool).values({ poolAddress: row.poolAddress, feedKey: FEED_KEY, ...values })
-          .onConflictDoUpdate({ target: pool.poolAddress, set: { ...values, lastSeenAt: nowSql } });
+        rows.push({ poolAddress: row.poolAddress, feedKey: FEED_KEY, ...values });
       }
+      await upsertPools(tx, rows, POOL_UPDATE_KEYS);
       await tx.update(feed).set({ generationId: generation, scanMaxPages: getRwaConfig().maxPages,
         pagesFetched: data.result.pagesFetched, scannedPools: data.result.scannedPools, pagePoolCounts: data.pageCounts,
         publishedAt: data.result.fetchedAt, qualificationObservedAt: data.qualificationObservedAt,

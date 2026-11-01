@@ -132,6 +132,9 @@ describe.skipIf(!url)("RWA PostgreSQL snapshots and fencing", () => {
       lease: discovery,
       data: discoveryData(),
     });
+    // One multi-row upsert writes every pool with its own values (was one INSERT per pool).
+    const written = await db!`SELECT pool_address, source_page, last_seen_at >= first_seen_at AS ordered FROM rwa_pool_latest ORDER BY pool_address`;
+    expect(written.map((row) => [row.pool_address, row.source_page, row.ordered])).toEqual([[poolId, 1, true], [poolB, 2, true], [poolC, 2, true]]);
     const first = (await store!.request({
       op: "pairs",
       minTvl: 0,
