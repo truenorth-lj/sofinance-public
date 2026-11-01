@@ -6,7 +6,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  * the Raydium output fails here. Upstreams are fixed fixtures; the clock is frozen so ageSeconds / fetchedAt are stable.
  */
 vi.mock("server-only", () => ({}));
-vi.mock("next/cache", () => ({ unstable_cache: (fn: () => unknown) => fn }));
+// unstable_cache keeps only resolved values (as Next does); `nextCache` records what it would have kept.
+const nextCache = vi.hoisted(() => new Map<string, unknown>());
+vi.mock("next/cache", () => ({
+  unstable_cache: (fn: () => Promise<unknown>, keys: string[]) => async () => {
+    const value = await fn();
+    nextCache.set(keys.join("|"), value);
+    return value;
+  },
+}));
 vi.mock("next/server", () => ({ after: () => {} }));
 const store = vi.hoisted(() => ({ enabled: false, fail: false }));
 vi.mock("@/lib/config/rwa-env", async (importOriginal) => {
@@ -57,6 +65,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
   store.enabled = false;
   store.fail = false;
+  nextCache.clear();
   (await import("@/lib/pool-daily-apr")).clearPoolDailyAprCache();
   (await import("@/lib/meteora-daily-apr")).clearMeteoraPoolDailyAprCache();
   (await import("@/lib/dex/meteora-dlmm/pools.server")).clearMeteoraPoolListCache();
@@ -187,6 +196,31 @@ describe("GET /api/pool-daily-apr (pool not on Raydium)", () => {
     expect(recovered.status).toBe(200);
     expect((await recovered.json()).assumptions).toMatch(/no daily TVL history/);
     expect(getCachedPoolDailyApr(METEORA_TSLA)).toBeNull();
+  });
+
+  it("store down, Raydium pool info 502, GeckoTerminal fine: the store's 502, no-store, neither cache written", async () => {
+    Object.assign(store, { enabled: true, fail: true });
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input instanceof Request ? input.url : input);
+      if (url.includes("/pools/info/ids")) return new Response("bad gateway", { status: 502 });
+      if (url.includes("/pools/line/liquidity")) return json({ success: false, msg: "pool not found" });
+      if (url.includes("geckoterminal.com")) return json({ data: { attributes: { ohlcv_list: [[D3, 1, 1, 1, 1, 12_000], [D2, 1, 1, 1, 1, 87_654.32]] } } });
+      return new Response("not found", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetcher);
+    const { GET } = await import("./route");
+    const { getCachedPoolDailyApr } = await import("@/lib/pool-daily-apr");
+    const response = await GET(new Request(`http://localhost/api/pool-daily-apr?poolId=${METEORA_TSLA}`));
+    expect(fetcher.mock.calls.some(([input]) => String(input).includes("geckoterminal.com"))).toBe(true);
+    expect(response.status).toBe(502);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("cdn-cache-control")).toBeNull();
+    expect(response.headers.get("vercel-cdn-cache-control")).toBeNull();
+    const body = await response.json();
+    expect(body.error).toMatch(/Meteora pool list could not be read/);
+    expect(body).not.toHaveProperty("points");
+    expect(getCachedPoolDailyApr(METEORA_TSLA)).toBeNull();
+    expect(nextCache.size).toBe(0);
   });
 
   it("an address no DEX lists and Raydium does not have: 404 no-store, nothing cached", async () => {
