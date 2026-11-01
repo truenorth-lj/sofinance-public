@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import fixture from "../../fixtures/meteora-dlmm-pool-cbbtc-wbtc.json";
 import { CBBTC_MINT, METEORA_ALLOWLISTED_POOLS, METEORA_DLMM_DATAPI, SPL_TOKEN_PROGRAM_ID, WBTC_WORMHOLE_MINT } from "./constants";
-import { fetchMeteoraPools, parseMeteoraPool } from "./discovery";
+import { fetchMeteoraPools, fetchMeteoraPoolsByMint, fetchMeteoraPoolsByQuery, meteoraScanSpec, parseMeteoraPool, parseMeteoraScanPool } from "./discovery";
 
 const POOL = "53oyyjgybx6dH7i5aGeKfBUi3xPJQDeBkaENPri57x2H";
 type Obj = Record<string, unknown>;
@@ -104,5 +104,46 @@ describe("fetchMeteoraPools", () => {
     await expect(fetchMeteoraPools({ signal: controller.signal, fetcher: (async (_u: string, init?: RequestInit) => {
       init?.signal?.throwIfAborted(); return Response.json(fixture);
     }) as typeof fetch })).rejects.toThrow();
+  });
+});
+
+describe("Meteora pool list by mint (scan)", () => {
+  const list = (data: unknown[], pages = 1, total = data.length) => Response.json({ total, pages, current_page: 1, page_size: 1000, data });
+  it("asks one side per request with a URL-safe && and the blacklist filter, following pages", async () => {
+    const fetcher = vi.fn(async () => list([fixture], 2, 2));
+    const result = await fetchMeteoraPoolsByMint(CBBTC_MINT, "token_x", { fetcher: fetcher as unknown as typeof fetch });
+    expect((fetcher.mock.calls as unknown as [string][]).map(([url]) => String(url))).toEqual([1, 2].map((page) =>
+      `${METEORA_DLMM_DATAPI}/pools?filter_by=token_x=${CBBTC_MINT}%26%26is_blacklisted=false&page_size=1000&page=${page}`));
+    expect(result).toMatchObject({ total: 2, truncated: false });
+    expect(result.pools).toHaveLength(2);
+  });
+  it("the text search (xStock) is one URL-encoded query with the blacklist filter", async () => {
+    const fetcher = vi.fn(async () => list([fixture]));
+    await fetchMeteoraPoolsByQuery("xStock", { fetcher: fetcher as unknown as typeof fetch });
+    expect((fetcher.mock.calls as unknown as [string][]).map(([url]) => String(url)))
+      .toEqual([`${METEORA_DLMM_DATAPI}/pools?query=xStock&filter_by=is_blacklisted=false&page_size=1000&page=1`]);
+  });
+  it("stops at the page cap and reports the rest as cut off", async () => {
+    const fetcher = vi.fn(async () => list([fixture], 9, 9));
+    const result = await fetchMeteoraPoolsByMint(CBBTC_MINT, "token_y", { fetcher: fetcher as unknown as typeof fetch, maxPages: 2 });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(result).toMatchObject({ total: 9, truncated: true });
+  });
+  it("throws on an HTTP error (429 included), a malformed body, or a timeout", async () => {
+    await expect(fetchMeteoraPoolsByMint(CBBTC_MINT, "token_x", { fetcher: (async () => new Response("", { status: 429 })) as typeof fetch }))
+      .rejects.toMatchObject({ name: "MeteoraPoolListError", status: 429 });
+    await expect(fetchMeteoraPoolsByMint(CBBTC_MINT, "token_x", { fetcher: (async () => Response.json({ data: [] })) as typeof fetch }))
+      .rejects.toMatchObject({ status: "malformed" });
+    const hang = ((_url: string, init?: RequestInit) => new Promise((_, reject) =>
+      init?.signal?.addEventListener("abort", () => reject(init.signal!.reason)))) as typeof fetch;
+    await expect(fetchMeteoraPoolsByMint(CBBTC_MINT, "token_x", { fetcher: hang, timeoutMs: 10 })).rejects.toMatchObject({ status: "timeout" });
+  });
+  it("a scan-found pool is parsed with its own spec; a malformed bin step or mint is rejected", () => {
+    expect(meteoraScanSpec(fixture)).toEqual({ poolAddress: POOL, mintX: CBBTC_MINT, mintY: WBTC_WORMHOLE_MINT, binStep: 1 });
+    expect(parseMeteoraScanPool(fixture)).toMatchObject({ poolAddress: POOL, binStep: 1, createdAt: "2024-11-07T14:28:59.000Z" });
+    const bad = raw(); bad.pool_config.bin_step = 1.5;
+    expect(parseMeteoraScanPool(bad)).toBeNull();
+    const noMint = raw(); delete noMint.token_y.address;
+    expect(parseMeteoraScanPool(noMint)).toBeNull();
   });
 });

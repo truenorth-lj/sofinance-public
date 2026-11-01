@@ -143,3 +143,98 @@ export async function fetchMeteoraPools(options: FetchMeteoraPoolsOptions = {}):
   }));
   return results.filter((summary): summary is MeteoraPoolSummary => summary !== null);
 }
+
+/**
+ * The spec a scan-found pool is read with: its own id, X/Y mints and bin step as datapi reports them (token
+ * programs are left to the on-chain read). Null when any of them is missing or malformed.
+ */
+export function meteoraScanSpec(raw: unknown): MeteoraPoolSpec | null {
+  const pool = record(raw);
+  if (!pool) return null;
+  const poolAddress = text(pool.address);
+  const mintX = text(record(pool.token_x)?.address), mintY = text(record(pool.token_y)?.address);
+  const binStep = num(record(pool.pool_config)?.bin_step);
+  if (!poolAddress || !mintX || !mintY || binStep === null || !Number.isInteger(binStep) || binStep < 1) return null;
+  return { poolAddress, mintX, mintY, binStep };
+}
+
+/** `parseMeteoraPool` for a pool the scan found (no allowlist): same checks, spec from the pool itself. */
+export function parseMeteoraScanPool(raw: unknown): MeteoraPoolSummary<MeteoraPoolSpec> | null {
+  const spec = meteoraScanSpec(raw);
+  return spec ? parseMeteoraPool(raw, spec) : null;
+}
+
+/** datapi list page size (its maximum). */
+export const METEORA_POOL_LIST_PAGE_SIZE = 1000;
+
+export class MeteoraPoolListError extends Error {
+  constructor(readonly status: number | "timeout" | "malformed", message: string) {
+    super(message);
+    this.name = "MeteoraPoolListError";
+  }
+}
+
+export type FetchMeteoraPoolsByMintOptions = {
+  fetcher?: typeof fetch;
+  signal?: AbortSignal;
+  apiBase?: string;
+  pageSize?: number;
+  /** Page cap per query (a mint in more pools than this is a stablecoin-sized seed and is cut off, flagged). */
+  maxPages?: number;
+  /** Per-request timeout (ms). */
+  timeoutMs?: number;
+};
+
+/**
+ * Every non-blacklisted DLMM pool holding `mint` on one side (`filter_by=token_x=<mint>` or `token_y`), all pages.
+ * datapi ignores multi-value filters (`=[a|b]` returns nothing), so the scan asks once per mint and side.
+ * Raw pool objects are returned; parsing and the pairing rule happen in the scan. Throws `MeteoraPoolListError`
+ * on an HTTP error (429 included), a timeout or a malformed body, so a partial scan is never published.
+ */
+export function fetchMeteoraPoolsByMint(
+  mint: string, side: "token_x" | "token_y", options: FetchMeteoraPoolsByMintOptions = {},
+): Promise<{ pools: unknown[]; total: number; truncated: boolean }> {
+  return fetchMeteoraPoolPages(`filter_by=${side}=${encodeURIComponent(mint)}%26%26is_blacklisted=false`, side, options);
+}
+
+/**
+ * Every non-blacklisted DLMM pool datapi's text search returns for `query` (it matches token names and symbols:
+ * `xStock` returns every pool with a Backed xStocks token, one request instead of one per xStocks mint).
+ * Same paging and errors as `fetchMeteoraPoolsByMint`.
+ */
+export function fetchMeteoraPoolsByQuery(
+  query: string, options: FetchMeteoraPoolsByMintOptions = {},
+): Promise<{ pools: unknown[]; total: number; truncated: boolean }> {
+  return fetchMeteoraPoolPages(`query=${encodeURIComponent(query)}&filter_by=is_blacklisted=false`, "query", options);
+}
+
+async function fetchMeteoraPoolPages(
+  filter: string, label: string, options: FetchMeteoraPoolsByMintOptions,
+): Promise<{ pools: unknown[]; total: number; truncated: boolean }> {
+  const fetcher = options.fetcher ?? fetch;
+  const base = options.apiBase ?? METEORA_DLMM_DATAPI;
+  const pageSize = options.pageSize ?? METEORA_POOL_LIST_PAGE_SIZE;
+  const maxPages = options.maxPages ?? 3;
+  const pools: unknown[] = [];
+  let total = 0;
+  for (let page = 1; page <= maxPages; page += 1) {
+    const url = `${base}/pools?${filter}&page_size=${pageSize}&page=${page}`;
+    const timeout = AbortSignal.timeout(options.timeoutMs ?? 10_000);
+    const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout;
+    let response: Response;
+    try {
+      response = await fetcher(url, { headers: { accept: "application/json" }, signal });
+    } catch (error) {
+      if (timeout.aborted && !options.signal?.aborted) throw new MeteoraPoolListError("timeout", `datapi pools ${label} timed out`);
+      throw error;
+    }
+    if (!response.ok) throw new MeteoraPoolListError(response.status, `datapi pools ${label} HTTP ${response.status}`);
+    const body = record(await response.json());
+    const data = body?.data, pageTotal = num(body?.total), pages = num(body?.pages);
+    if (!Array.isArray(data) || pageTotal === null || pages === null) throw new MeteoraPoolListError("malformed", "datapi pools: malformed list");
+    total = pageTotal;
+    pools.push(...data);
+    if (page >= pages || data.length === 0) return { pools, total, truncated: false };
+  }
+  return { pools, total, truncated: pools.length < total };
+}

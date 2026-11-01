@@ -18,7 +18,8 @@ import { volumeWindowEnd } from "./rwa-daily";
 import { sanitizePublicError } from "./public-error";
 import { getRwaStore } from "./rwa-store";
 import { UNIV4_RHC_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/uniswap-v4/constants";
-import { isRhcApr7dEnabled } from "./protocol-flags";
+import { isMeteoraRwaScanEnabled, isRhcApr7dEnabled } from "./protocol-flags";
+import { discoverMeteoraRwaPairs, METEORA_SCAN_MIN_TVL_USD, type MeteoraScanStats } from "./meteora-rwa-scan";
 import { prepareRhcRun, type RhcAprRunStats, type RhcRun } from "./rhc-apr-refresh";
 import { discoverRhcRegistryPools, rhcDiscoveryFindings, type RhcDiscoveryResult } from "./pool-metrics/rhc-discovery";
 import { rhcStateClient } from "./rhc-range-apr";
@@ -27,6 +28,7 @@ import { resolveTokenIcons, rhcCronIconSources } from "./token-icons/resolve";
 import type { RwaPairRow } from "./rwa-pairs";
 import {
   ALGORITHM_VERSION,
+  FEED_KEY_METEORA,
   type ActivePool,
   type DiscoveryWrite,
   type JobName,
@@ -46,6 +48,8 @@ type Options = {
   deadlineMs?: number;
   /** The run's shared GeckoTerminal gate (tests pass one with a fake clock). */
   geckoGate?: ThrottleGate;
+  /** Meteora scan: deploy-target override of `METEORA_RWA_SCAN_ENABLED` (tests). */
+  meteoraScan?: boolean;
 };
 
 /**
@@ -104,6 +108,8 @@ type JobResult = {
   rhc?: RhcAprRunStats;
   /** rwa-apr-refresh: the oldest-first queue (all active pools, how many this run selected / finished). */
   queue?: AprQueueStats;
+  /** rwa-discovery: the Meteora DLMM scan (only when `METEORA_RWA_SCAN_ENABLED`). */
+  meteora?: (MeteoraScanStats & { published: number }) | { error: string };
 };
 export type AprQueueStats = { pools: number; selected: number; done: number; stoppedBy: "429" | "time" | null };
 
@@ -209,6 +215,7 @@ export async function runJob(job: JobName, options: Options): Promise<JobResult>
   let processed = 0,
     status: "ok" | "partial" | "error" = "ok",
     rhcDiscovery: JobResult["rhcDiscovery"],
+    meteora: JobResult["meteora"],
     rhcStats: RhcAprRunStats | undefined,
     queue: AprQueueStats | undefined,
     // Counted in `consecutive_failures` (and keeps `last_success_at`). The APR job counts only a GeckoTerminal 429 or
@@ -217,7 +224,7 @@ export async function runJob(job: JobName, options: Options): Promise<JobResult>
     failure = false;
   try {
     if (job === "rwa-discovery") {
-      // One source today (Raydium); the multi-feed publish lands with the store change (SCAN_DESIGN.md §3).
+      // Raydium first (the feed the site lists today), then Meteora into its own feed (SCAN_DESIGN.md §3).
       const result = await raydiumPoolSource.discover({
         minTvl: 0,
         maxPages: config.maxPages,
@@ -231,6 +238,13 @@ export async function runJob(job: JobName, options: Options): Promise<JobResult>
       const data: DiscoveryWrite = { result, ...result.discovery };
       await store.request({ op: "publishDiscovery", lease, data });
       processed = result.pairs.length;
+      // Meteora DLMM (code flag): its own feed and generation, after Raydium's publish, so a Meteora failure keeps
+      // its last generation and never touches Raydium's. Reported as an issue, not counted as a job failure.
+      if (options.meteoraScan ?? isMeteoraRwaScanEnabled()) {
+        meteora = await publishMeteoraFeed(store, lease, result.pairs, options.fetcher, signal)
+          .catch((error) => ({ error: sanitizePublicError(error, "Meteora scan failed").slice(0, 200) }));
+        if ("error" in meteora) { issues.push(`Meteora: ${meteora.error}`); status = "partial"; }
+      }
       // Best effort: a missing table or an indexer outage leaves the snapshot published and the old icons in place.
       await refreshTokenIcons(store, lease, result.pairs, options.fetcher, signal).catch(() => {
         issues.push("Token icons not saved");
@@ -248,7 +262,7 @@ export async function runJob(job: JobName, options: Options): Promise<JobResult>
       failure = result.failed;
       if (issues.length) status = "partial";
     }
-    if (job === "rwa-discovery") failure = status !== "ok";
+    // Discovery fails only when the Raydium scan or publish threw (the catch below); a Meteora issue leaves it "partial".
   } catch (error) {
     status = "error";
     failure = true;
@@ -269,8 +283,29 @@ export async function runJob(job: JobName, options: Options): Promise<JobResult>
   }
   return {
     job, status, processed, issues: issues.slice(0, 20), elapsedMs: clock() - startedAt,
-    ...(rhcDiscovery ? { rhcDiscovery } : {}), ...(rhcStats ? { rhc: rhcStats } : {}), ...(queue ? { queue } : {}),
+    ...(rhcDiscovery ? { rhcDiscovery } : {}), ...(meteora ? { meteora } : {}), ...(rhcStats ? { rhc: rhcStats } : {}), ...(queue ? { queue } : {}),
   };
+}
+
+/**
+ * The Meteora DLMM scan, published as the `meteora-dlmm-rwa-v1` generation. Seeds include the Raydium feed's mints.
+ * The summary carries the scan counts (bin steps above 10 left out, SCAN_DESIGN.md §12 Q5).
+ */
+/** Time the Meteora scan may take inside discovery (~2 × seeds requests at 5 at a time, then one RPC batch), so a slow
+ * datapi leaves time for the icons and the RHC check. */
+export const METEORA_SCAN_BUDGET_MS = 30_000;
+
+async function publishMeteoraFeed(store: RwaStore, lease: Lease, raydiumPairs: readonly RwaPairRow[],
+  fetcher: typeof fetch | undefined, signal: AbortSignal): Promise<MeteoraScanStats & { published: number }> {
+  const result = await discoverMeteoraRwaPairs({
+    minTvl: METEORA_SCAN_MIN_TVL_USD, sortBy: "estimatedFeeApr", fetcher, signal: AbortSignal.any([signal, AbortSignal.timeout(METEORA_SCAN_BUDGET_MS)]),
+    seedMints: raydiumPairs.flatMap((pair) => [pair.mintA, pair.mintB]),
+  });
+  signal.throwIfAborted();
+  const { meteora, discovery, ...rest } = result;
+  if (!discovery) throw new Error("Discovery coverage metadata missing");
+  await store.request({ op: "publishDiscovery", lease, data: { feedKey: FEED_KEY_METEORA, result: { ...rest, scanStats: meteora }, ...discovery } });
+  return { ...meteora, published: result.pairs.length };
 }
 
 export async function refreshRwaSnapshots(options: Options = {}) {

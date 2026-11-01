@@ -93,6 +93,10 @@ export type RwaPairRow = {
    * the pool is kept in the snapshot but never listed (`listablePairs`). A freeze authority alone never blocks.
    */
   blocked?: { reasons: MintBlockReason[]; mints: string[] };
+  /** Bin-based pools found by the scan: bin step (bps per bin), what the range-APR read is checked against. */
+  binStep?: number;
+  /** Pools whose source publishes it: pool creation time, so history before it is not read. */
+  poolCreatedAt?: string | null;
 };
 
 
@@ -112,6 +116,8 @@ export type DiscoverRwaPairsResult = {
   ageSeconds?: number;
   /** Where row freeze risk came from: every mint read from chain, Raydium's `hasFreeze` tags only (RPC down), or a mix. */
   freezeRiskSource?: "onchain" | "tags" | "mixed";
+  /** Per-source scan counts kept in the feed summary (e.g. pools left out by a rule), for review. */
+  scanStats?: Record<string, number>;
   discovery?: { sourcePages: Record<string, number>; poolObservedAt: Record<string, string>; pageCounts: number[]; qualificationObservedAt: Record<string, string | null> };
 };
 

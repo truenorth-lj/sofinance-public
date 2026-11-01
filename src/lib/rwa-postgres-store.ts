@@ -365,7 +365,8 @@ export class PostgresRwaStore implements RwaStore {
         pagesFetched: data.result.pagesFetched, scannedPools: data.result.scannedPools, pagePoolCounts: data.pageCounts,
         publishedAt: data.result.fetchedAt, qualificationObservedAt: data.qualificationObservedAt,
         pairingRuleVersion: PAIRING_VERSION, summary: { source: data.result.source,
-          pairingRuleSummary: data.result.pairingRuleSummary, estimatedFeeAprLabel: data.result.estimatedFeeAprLabel },
+          pairingRuleSummary: data.result.pairingRuleSummary, estimatedFeeAprLabel: data.result.estimatedFeeAprLabel,
+          ...(data.result.scanStats ? { scanStats: data.result.scanStats } : {}) },
       }).where(eq(feed.feedKey, feedKey));
       return { generation, pools: data.result.pairs.length };
     });

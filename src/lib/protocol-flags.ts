@@ -164,3 +164,18 @@ export const METEORA_DLMM_WALLET_SIGNING_ENABLED: Readonly<Record<DeployTarget, 
 export function isMeteoraDlmmWalletSigningEnabled(target: DeployTarget = deployTarget()): boolean {
   return METEORA_DLMM_WALLET_SIGNING_ENABLED[target];
 }
+
+/**
+ * Meteora DLMM in the RWA pool scan (SCAN_DESIGN.md §8): the cron's Meteora discovery and its datapi APR lane, which
+ * write the `meteora-dlmm-rwa-v1` feed. OFF in production until the scan is verified; nothing is listed from that
+ * feed unless `METEORA_RWA_LIST_ENABLED` is on too. Turning it off stops the writes; no DB change is needed.
+ */
+export const METEORA_RWA_SCAN_ENABLED: Readonly<Record<DeployTarget, boolean>> = Object.freeze({
+  production: false,
+  preview: true,
+  development: true,
+});
+
+export function isMeteoraRwaScanEnabled(target: DeployTarget = deployTarget()): boolean {
+  return METEORA_RWA_SCAN_ENABLED[target];
+}

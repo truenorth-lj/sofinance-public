@@ -16,6 +16,8 @@ export function mintDataHasFreezeAuthority(data: Uint8Array): boolean {
 }
 
 /** On-chain facts of one mint the RWA scan uses: freeze authority (shown as risk only) and block reasons. */
+const MAX_KEYS_PER_CALL = 100;
+
 export type MintSafety = { freezeAuthority: boolean; blockReasons: MintBlockReason[] };
 
 /**
@@ -27,7 +29,10 @@ export async function readMintSafety(connection: Connection, mints: readonly str
   const unique = [...new Set(mints)];
   const result = new Map<string, MintSafety>();
   if (unique.length === 0) return result;
-  const infos = await connection.getMultipleAccountsInfo(unique.map((mint) => new PublicKey(mint)), "confirmed");
+  // getMultipleAccounts takes at most 100 keys per call.
+  const infos: Awaited<ReturnType<Connection["getMultipleAccountsInfo"]>> = [];
+  for (let start = 0; start < unique.length; start += MAX_KEYS_PER_CALL)
+    infos.push(...await connection.getMultipleAccountsInfo(unique.slice(start, start + MAX_KEYS_PER_CALL).map((mint) => new PublicKey(mint)), "confirmed"));
   infos.forEach((info, index) => {
     if (!info || !TOKEN_PROGRAMS.has(info.owner.toBase58())) return;
     let freezeAuthority: boolean;

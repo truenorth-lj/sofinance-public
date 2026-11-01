@@ -65,3 +65,13 @@ describe("readMintSafety", () => {
     expect([...(await readMintFreezeAuthorities(conn, [WBTC]))]).toEqual([[WBTC, false]]);
   });
 });
+
+describe("readMintSafety batching", () => {
+  it("reads at most 100 mints per getMultipleAccounts call (the RPC limit)", async () => {
+    const sizes: number[] = [];
+    const conn = { getMultipleAccountsInfo: async (keys: PublicKey[]) => { sizes.push(keys.length); return keys.map(() => null); } } as unknown as Connection;
+    const mints = Array.from({ length: 230 }, () => PublicKey.unique().toBase58());
+    await readMintSafety(conn, mints);
+    expect(sizes).toEqual([100, 100, 30]);
+  });
+});
