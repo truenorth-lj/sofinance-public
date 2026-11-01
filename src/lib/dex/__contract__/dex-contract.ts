@@ -7,20 +7,22 @@
  * Every registered DEX must have that file (registry.test.ts enforces it). Fixtures are hermetic: `setup` installs the
  * DEX's recorded RPC replays and `fetch` answers recorded HTTP calls (captured from public endpoints, no keys or RPC
  * URLs). Any fetch the fixtures do not answer fails the test, so the suite never touches the network and never sends a
- * transaction.
+ * transaction. The block sits in the vitest setup file `src/lib/test-support/offline-fetch.ts`, installed before any
+ * module loads, so it also covers libraries that captured `fetch` at load time (@solana/web3.js `Connection`).
  *
  * A capability marked supported must come with the fixture that exercises it (open → `open`; add / withdraw / claim /
  * compound / performance → `positionKey`), otherwise the suite fails: nothing supported is silently skipped.
  */
 import type { AddressLookupTableAccount } from "@solana/web3.js";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { setFetchReplay } from "@/lib/test-support/offline-fetch";
 import type { PositionKey } from "@/lib/unified-positions/model";
 import type { DexAdapter, DexDepositInput, OpenRequest, StepContext, StepResult } from "../adapter";
 import { DexError, DexUnsupportedError } from "../errors";
 import type { DexModule } from "../registry";
 import {
   adapterContractProblems, descriptorContractProblems, forbiddenFetchProblems, positionContractProblems,
-  quoteContractProblems, stepContractProblems, thrownErrorProblems, type StepCheckOptions,
+  feePolicyCharges, quoteContractProblems, stepContractProblems, thrownErrorProblems, type StepCheckOptions,
 } from "./checks";
 
 export type DexContractFixtures = {
@@ -37,8 +39,8 @@ export type DexContractFixtures = {
   expectedPositionKeys: readonly PositionKey[];
   /**
    * An open the DEX can quote and prepare from the fixtures (required when `capabilities.open` is supported).
-   * `expectedFeeBaseRaw`: the amount the open fee rule applies to (e.g. the swapped part of the input); when set, the
-   * quoted platform fee must equal `adapter.fees.feeFor("open", base)`.
+   * `expectedFeeBaseRaw`: the amount the open fee rule applies to (e.g. the swapped part of the input); the quoted
+   * platform fee must equal `adapter.fees.feeFor("open", base)`. Required whenever the open fee rule is not "none".
    */
   open?: { request: OpenRequest; expectedSteps: number; expectedFeeBaseRaw?: string };
   /** Opens the DEX must refuse with a plain-English `blockedReason` and a DexError (e.g. wider than one position). */
@@ -47,10 +49,14 @@ export type DexContractFixtures = {
   positionKey?: PositionKey;
   /** Deposit used for `prepareAdd`; defaults to `open.request.input`. */
   addInput?: DexDepositInput;
-  /** Instruction-level facts for the step checks (fee wallet, lookup tables, mint programs, EVM allowlist). */
+  /**
+   * Instruction-level facts for the step checks. `feeWallet` is required whenever the fee policy charges anything;
+   * `mintPrograms` is required for every Solana DEX (see `missingFixtureProblems`).
+   */
   feeWallet?: string;
   addressLookupTables?: readonly AddressLookupTableAccount[];
   mintPrograms?: StepCheckOptions["mintPrograms"];
+  systemTransferRecipients?: readonly string[];
   evmAllowedTargets?: readonly string[];
   evmApproveSpender?: string;
 };
@@ -76,6 +82,12 @@ export function missingFixtureProblems(entry: DexModule, fixtures: DexContractFi
   const keyed = (["deposit", "withdraw", "claim", "compound", "performance"] as const).filter((cap) => caps[cap].supported);
   if (keyed.length && !fixtures.positionKey) problems.push(`${keyed.join(", ")} supported but fixtures.positionKey is missing`);
   if (caps.deposit.supported && !fixtures.addInput && !fixtures.open) problems.push("deposit is supported but fixtures.addInput (or fixtures.open) is missing");
+  const { feePolicy } = entry.descriptor.meta;
+  if (feePolicyCharges(feePolicy) && !fixtures.feeWallet) problems.push("the fee policy charges a fee but fixtures.feeWallet is missing");
+  if (caps.open.supported && feePolicy.open.kind !== "none" && fixtures.open && fixtures.open.expectedFeeBaseRaw === undefined) {
+    problems.push(`the open fee rule is ${feePolicy.open.kind} but fixtures.open.expectedFeeBaseRaw is missing`);
+  }
+  if (entry.descriptor.chain === "solana" && !fixtures.mintPrograms) problems.push("Solana DEX without fixtures.mintPrograms (token program of every mint the steps touch)");
   return problems;
 }
 
@@ -86,6 +98,7 @@ export function describeDexContract(entry: DexModule, fixtures: DexContractFixtu
     feeWallet: fixtures.feeWallet,
     addressLookupTables: fixtures.addressLookupTables,
     mintPrograms: fixtures.mintPrograms,
+    systemTransferRecipients: fixtures.systemTransferRecipients,
     evmAllowedTargets: fixtures.evmAllowedTargets,
     evmApproveSpender: fixtures.evmApproveSpender,
   };
@@ -93,6 +106,7 @@ export function describeDexContract(entry: DexModule, fixtures: DexContractFixtu
   describe(`DEX contract: ${descriptor.id}`, () => {
     let adapter: DexAdapter;
     let teardown: void | (() => void);
+    let restoreFetch: (() => void) | undefined;
     const fetched: string[] = [];
     const unanswered: string[] = [];
 
@@ -125,7 +139,8 @@ export function describeDexContract(entry: DexModule, fixtures: DexContractFixtu
       fetched.length = 0;
       unanswered.length = 0;
       teardown = await fixtures.setup?.();
-      vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      // Routes every fetch that reaches the offline guard, including copies captured at load time, to the fixtures.
+      restoreFetch = setFetchReplay(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = urlOf(input);
         fetched.push(url);
         const replay = await fixtures.fetch?.(url, init);
@@ -137,7 +152,8 @@ export function describeDexContract(entry: DexModule, fixtures: DexContractFixtu
       adapter = await entry.adapter();
     });
     afterEach(() => {
-      vi.restoreAllMocks();
+      restoreFetch?.();
+      restoreFetch = undefined;
       if (typeof teardown === "function") teardown();
       // Fails the test even if the adapter swallowed the rejection.
       expect(unanswered, "fetches not answered by fixtures (the suite must be offline)").toEqual([]);
@@ -182,6 +198,7 @@ export function describeDexContract(entry: DexModule, fixtures: DexContractFixtu
         expect(quote.steps).toBe(open.expectedSteps);
         expect(await call(() => adapter.quoteOpen(open.request))).toEqual(quote);
         if (open.expectedFeeBaseRaw !== undefined) expect(quote.platformFeeRaw).toBe(adapter.fees.feeFor("open", BigInt(open.expectedFeeBaseRaw)).toString());
+        else expect(descriptor.meta.feePolicy.open.kind, "open charges a fee: set fixtures.open.expectedFeeBaseRaw").toBe("none");
       });
 
       it("prepares every open step for the owner", async () => {

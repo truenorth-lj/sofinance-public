@@ -81,6 +81,7 @@ export function positionKey(source: PositionSourceId, nativeId: string): Positio
   return `${source}:${nativeId}`;
 }
 
+// TODO(PR11): add the canonical "uniswap-v4-rhc" here when the RHC adapter emits it (and drop "rhc-uniswap-v4").
 const SOURCE_IDS: readonly PositionSourceId[] = ["raydium-clmm", "orca-whirlpool", "meteora-dlmm", "rhc-uniswap-v4"];
 
 export function parsePositionKey(value: string | null | undefined): { source: PositionSourceId; nativeId: string } | null {
