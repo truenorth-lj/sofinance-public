@@ -66,6 +66,8 @@ export async function runSolSwapStep(input: {
   sleep?: (ms: number) => Promise<void>;
   /** Test hook for the on-chain lookup after a wallet error. */
   findLanded?: FindLanded;
+  /** Test hook: the foreground "checking" window (default 20 s). */
+  checkingWindowMs?: number;
 }): Promise<PendingSolSwapReceipt> {
   const wallet = input.wallet.address;
   const { poolId } = input;
@@ -100,7 +102,7 @@ export async function runSolSwapStep(input: {
   try {
     const sent = await sendWithWallet(input.wallet, unsigned, {
       sendRaw: input.sendRaw, sendPermit: prepared.sendPermit, landedPermit: prepared.landedPermit,
-      lastValidBlockHeight: summary.lastValidBlockHeight, findLanded: input.findLanded,
+      lastValidBlockHeight: summary.lastValidBlockHeight, findLanded: input.findLanded, checkingWindowMs: input.checkingWindowMs,
       knownSignatures: () => { const saved = readSolSwapAttempt(storage, wallet); return saved ? [saved.signature] : []; },
       onChecking: (walletError) => {
         context.walletErrorCode = walletErrorInfo(walletError).code;

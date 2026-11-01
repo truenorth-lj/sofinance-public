@@ -100,9 +100,11 @@ function solanaPools(rows: Array<[string, string | null]>): ActivePool[] {
 function memoryStore(active: ActivePool[]) {
   const saved: Array<{ poolId: string; payload: { sample: { degraded: boolean; priceHistoryStale?: boolean } } | null }> = [];
   const ops: string[] = [];
+  const finishes: Array<{ outcome: string; failure?: boolean }> = [];
   const store = {
     request: async (input: { op: string; data?: unknown }) => {
       ops.push(input.op);
+      if (input.op === "finish") finishes.push(input as unknown as (typeof finishes)[number]);
       switch (input.op) {
         case "claim": return { job: "rwa-apr-refresh", token: "t" };
         case "activePools": return active;
@@ -111,7 +113,7 @@ function memoryStore(active: ActivePool[]) {
       }
     },
   } as unknown as RwaStore;
-  return { store, saved, ops };
+  return { store, saved, ops, finishes };
 }
 const openGate = () => new ThrottleGate({ minSpacingMs: 0 });
 const run = (store: RwaStore, extra: { deadlineMs?: number; geckoGate?: ThrottleGate } = {}) =>
@@ -260,6 +262,49 @@ describe("APR queue: one oldest-first queue, one pool at a time", () => {
       expect(saved).toHaveLength(0);
       expect(result.issues.at(-1)).toBe("Time budget: run ended after 0 of 2 pools; the rest go first next run");
     } finally { vi.useRealTimers(); }
+  });
+
+  describe("consecutive_failures: only a 429 or an error counts", () => {
+    it("a run that only ran out of its time budget is a success for failure counting (status stays 'partial')", async () => {
+      const { store, finishes } = memoryStore(solanaPools([["poolA", hours(9)], ["poolB", hours(8)]]));
+      // Room for exactly one pool: poolA is saved (taking its slowest-case time), then poolB no longer fits.
+      let t = now;
+      loadProfile.mockImplementation(async () => { t += APR_POOL_MAX_MS; return goodProfile; });
+      const result = await runJob("rwa-apr-refresh", { store, clock: () => t, geckoGate: openGate(),
+        deadlineMs: now + APR_POOL_MAX_MS + APR_SAVE_RESERVE_MS + 1_000 });
+      expect(result).toMatchObject({ status: "partial", queue: { stoppedBy: "time" } });
+      expect(result.issues.every((issue) => issue.startsWith("Time budget"))).toBe(true);
+      expect(finishes).toEqual([expect.objectContaining({ outcome: "partial", failure: false })]);
+    });
+
+    it("a stale estimate from saved price history is not a failure", async () => {
+      const { store, finishes } = memoryStore(solanaPools([["poolA", hours(9)]]));
+      loadProfile.mockResolvedValue({ ...goodProfile, candles: null, issues: ["GeckoTerminal hourly candles: HTTP 500"] });
+      expect(await run(store)).toMatchObject({ status: "partial" });
+      expect(finishes[0]).toMatchObject({ outcome: "partial", failure: false });
+    });
+
+    it("a 429 counts as a failure", async () => {
+      const { store, finishes } = memoryStore(solanaPools([["poolA", hours(9)], ["poolB", hours(8)]]));
+      const gate = openGate();
+      loadProfile.mockImplementation(async (poolId: string) => {
+        if (poolId !== "poolB") return goodProfile;
+        gate.block(20_000);
+        return throttledProfile;
+      });
+      expect(await run(store, { geckoGate: gate })).toMatchObject({ queue: { stoppedBy: "429" } });
+      expect(finishes[0]).toMatchObject({ outcome: "partial", failure: true });
+    });
+
+    it("a pool that saved no estimate (price history unavailable) counts as a failure", async () => {
+      loadProfile.mockResolvedValue({ ...goodProfile, candles: null, issues: ["GeckoTerminal hourly candles: HTTP 500"] });
+      const pool = solanaPools([["poolA", hours(9)]])[0]!;
+      pool.profile!.observedAt = hours(72); // saved price history too old to reuse
+      const { store, saved, finishes } = memoryStore([pool]);
+      await run(store);
+      expect(saved[0]!.payload?.sample.degraded).toBe(true);
+      expect(finishes[0]).toMatchObject({ failure: true });
+    });
   });
 
   it("a 429 is sticky: the run ends even when the gate's cooldown has already passed by the check", async () => {

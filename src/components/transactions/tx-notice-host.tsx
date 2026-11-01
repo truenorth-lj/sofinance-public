@@ -3,8 +3,8 @@
 import { useEffect, useRef } from "react";
 import { ArrowUpRight, CheckCircle2, CircleAlert, LoaderCircle, RotateCcw, X } from "lucide-react";
 import {
-  dismissTxNotice, findTxNotice, getTxNotices, loadTxAttempts, noticeIdFor, showTxNotice, solscanTxUrl,
-  SUCCESS_NOTICE_MS, useTxNotices, watchTxNotice, type TxNotice,
+  dismissTxNotice, findTxNotice, loadTxAttempts, noticeIdFor, showTxNotice, solscanTxUrl,
+  useTxNotices, watchTxNotice, type TxNotice,
 } from "@/lib/tx-pipeline";
 
 const short = (value: string) => `${value.slice(0, 5)}…${value.slice(-5)}`;
@@ -35,12 +35,10 @@ export function TxNoticeHost({ wallet }: { wallet?: string }) {
   useResumeTxAttempts(wallet);
   const notices = useTxNotices();
   const watched = useRef(new Set<string>());
-  const dismissals = useRef(new Map<string, number>());
   const unmounted = useRef(false);
   useEffect(() => {
     unmounted.current = false;
-    const timers = dismissals.current;
-    return () => { unmounted.current = true; for (const timer of timers.values()) window.clearTimeout(timer); };
+    return () => { unmounted.current = true; };
   }, []);
   useEffect(() => {
     for (const notice of notices) {
@@ -49,16 +47,11 @@ export function TxNoticeHost({ wallet }: { wallet?: string }) {
         void watchTxNotice(notice.id, { storage: window.localStorage, isCancelled: () => unmounted.current })
           .finally(() => watched.current.delete(notice.id));
       }
-      if (notice.state === "success" && !dismissals.current.has(notice.id)) {
-        dismissals.current.set(notice.id, window.setTimeout(() => {
-          dismissals.current.delete(notice.id);
-          if (getTxNotices().find((item) => item.id === notice.id)?.state === "success") dismissTxNotice(notice.id);
-        }, SUCCESS_NOTICE_MS));
-      }
+      // Success notices stay until the user closes them (X), so the Solscan link is always reachable.
     }
   }, [notices]);
   if (!notices.length) return null;
-  return <div className="pointer-events-none fixed inset-x-3 bottom-3 z-[60] flex flex-col gap-2 sm:inset-x-auto sm:right-5 sm:bottom-5 sm:w-[380px]"
+  return <div className="pointer-events-none fixed inset-x-3 bottom-[calc(var(--tx-notice-bottom-offset,0px)+0.75rem)] z-[60] flex flex-col gap-2 sm:inset-x-auto sm:right-5 sm:bottom-5 sm:w-[380px]"
     aria-live="polite">
     {notices.map((notice) => <div key={notice.id} role={notice.state === "failure" ? "alert" : "status"}
       data-tx-notice={notice.state}

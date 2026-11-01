@@ -87,7 +87,7 @@ export function useTxPipeline<Input, Prepared extends PreparedTx>(adapter: TxAda
       : { status: "failed", signature: state.signature, error: notice.detail, kind: notice.kind,
         retryable: notice.kind === "expired" || notice.kind === "failed" };
   }
-  // The notice is only a toast: it auto-closes after success and the user can dismiss it. Keep the
+  // The notice is only a toast: the user can dismiss it (success stays until they do). Keep the
   // settled result in this hook's own state, so the status dialog does not fall back to
   // "Confirming…" and an expired/failed run keeps its Try again once the toast is gone.
   // (Adjusting state during render, React's pattern for state derived from an external store.)

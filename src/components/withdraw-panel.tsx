@@ -10,7 +10,7 @@ import { notifyPositionHistoryChange } from "@/lib/position-history-refresh";
 import { createJupiterRelayStore, postWithJupiterRelay } from "@/lib/jupiter/browser-relay";
 import type { WithdrawPrepared, WithdrawSummary, WithdrawRequest } from "@sofinance/engine/withdraw/types";
 import { assertWithdrawHistory, readWithdrawHistory, writeWithdrawHistory, withdrawCheckpointKey, WithdrawHistoryError, WITHDRAW_HISTORY_ERROR, type WithdrawHistory, type WithdrawCheckpoint as Checkpoint } from "@/lib/withdraw-checkpoint";
-import { CANCEL_CHECK_PENDING_COPY, CHECKING_SOLANA_COPY, sendAndTrack, TxRunError, useCancelCheckPending } from "@/lib/tx-pipeline";
+import { CANCEL_CHECK_PENDING_COPY, CHECKING_SOLANA_COPY, sendAndTrack, solscanTxUrl, TxRunError, useCancelCheckPending } from "@/lib/tx-pipeline";
 
 export const WITHDRAW_EXPIRED_MESSAGE = "This withdrawal expired before Solana included it, so nothing moved. Tap Try again to sign a fresh one.";
 
@@ -61,6 +61,8 @@ export function WithdrawPanel({wallet,positionMint,mintA,mintB,label,onClose,onB
  const [percent,setPercent]=useState(100),[target,setTarget]=useState(""),[receive,setReceive]=useState("usdc");
  const [preview,setPreview]=useState<WithdrawSummary|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(""),[progress,setProgress]=useState("");
  const [confirmation,setConfirmation]=useState(false),[previewing,setPreviewing]=useState(false);
+ // Confirmed signatures of the last completed withdrawal: a lasting Solscan link (the toast can be closed).
+ const [completed,setCompleted]=useState<string[]>([]);
  const [initialHistory]=useState(()=>readWithdrawHistory(wallet,positionMint));
  const historyRef=useRef(initialHistory);
  const blockedHistories=useRef(new Map<string,{history:WithdrawHistory;error:string}>(
@@ -135,7 +137,7 @@ export function WithdrawPanel({wallet,positionMint,mintA,mintB,label,onClose,onB
  }
  useEffect(()=>{onBusyChange(busy || !!checkpoint || !!historyError);return()=>onBusyChange(false);},[busy,checkpoint,historyError,onBusyChange]);
  const request:WithdrawRequest={wallet,positionMint,...(target?{targetUSDC:Number(target)}:{percent}),receive:receive==="usdc"?"usdc":receive==="original"?"original":"token",...(receive!=="usdc" && receive!=="original"?{outputMint:receive}:{})};
- function invalidate(){setPreview(null);setError("");setConfirmation(false);}
+ function invalidate(){setPreview(null);setError("");setConfirmation(false);setCompleted([]);}
  const targetInvalid=target!=="" && !(Number.isFinite(Number(target)) && Number(target)>0);
  async function showPreview(){
   if(runningRef.current)return;
@@ -207,21 +209,25 @@ export function WithdrawPanel({wallet,positionMint,mintA,mintB,label,onClose,onB
   }
  }
  async function run(confirmed=false){
-  const run=begin();if(!run)return;setBusy(true);setError("");setConfirmation(false);
+  const run=begin();if(!run)return;setBusy(true);setError("");setConfirmation(false);setCompleted([]);
+  const signatures:string[]=[];
+  const track=(signature:string|undefined)=>{if(signature && !signatures.includes(signature))signatures.push(signature);};
   try{
    guardRun(run);
    const resuming=!!checkpoint;
    let saved=checkpoint;
-   if(!saved){const prepared=await post<WithdrawPrepared>(run,"withdraw-prepare",{...request,confirmHighImpact:confirmed});saved=await signAndSend(run,prepared,confirmed,request);}
+   track(saved?.root?.signature);track(saved?.signature);
+   if(!saved){const prepared=await post<WithdrawPrepared>(run,"withdraw-prepare",{...request,confirmHighImpact:confirmed});saved=await signAndSend(run,prepared,confirmed,request);track(saved.signature);}
    if(resuming && saved.prepared.summary.stage==="swap" && saved.root){
     const result=await post<{status:string}>(run,"withdraw-status",{signature:saved.signature,prepared:saved.prepared});
     guardRun(run);
     if(result.status==="success"){
      notifyPositionHistoryChange(saved.prepared.summary.positionMint,undefined);
-     save(run,null);setProgress("Withdrawal complete");setPreview(null);currentOnConfirmed.current();return;
+     save(run,null);setProgress("Withdrawal complete");setPreview(null);setCompleted([...signatures]);currentOnConfirmed.current();return;
     }
     if(result.status==="failed" || result.status==="expired"){
      const restored={...saved,prepared:saved.root.prepared,signature:saved.root.signature,root:undefined};
+     const failedStep=signatures.indexOf(saved.signature);if(failedStep>=0)signatures.splice(failedStep,1);
      save(run,restored);
      notifyPositionHistoryChange(restored.prepared.summary.positionMint,restored.signature);
      saved=restored;
@@ -242,9 +248,10 @@ export function WithdrawPanel({wallet,positionMint,mintA,mintB,label,onClose,onB
     if(nextPreview.requiresSecondConfirmation && !nextRequest.confirmHighImpact){setConfirmation(true);setProgress("Confirm the conversion price impact to continue");return;}
     const prepared=await post<WithdrawPrepared>(run,"withdraw-prepare",nextRequest);
     saved=await signAndSend(run,prepared,confirmed || saved.confirmHighImpact,saved.request,{prepared:saved.prepared,signature:saved.signature});
+    track(saved.signature);
     await waitFor(run,saved);
    }
-   save(run,null);setProgress("Withdrawal complete");setPreview(null);currentOnConfirmed.current();
+   save(run,null);setProgress("Withdrawal complete");setPreview(null);setCompleted([...signatures]);currentOnConfirmed.current();
   }catch(caught){if(owns(run)){setProgress("");showError(caught,"Withdrawal failed");}}
   finally{finish(run);}
  }
@@ -276,6 +283,7 @@ export function WithdrawPanel({wallet,positionMint,mintA,mintB,label,onClose,onB
   </div>}
   {(historyError || error) && <p role="alert" className="mt-3 rounded-2xl border border-lemon/60 bg-lemon/10 p-3 text-sm text-lemon">{historyError || error}</p>}
   <p role="status" aria-live="polite" className="mt-3 text-sm text-smoke">{busy && <LoaderCircle aria-hidden className="mr-2 inline h-4 w-4 animate-spin" />}{!busy && cancelPending ? CANCEL_CHECK_PENDING_COPY : progress}</p>
+  {!busy && completed.length>0 && <p data-testid="withdraw-solscan" className="mt-1 flex flex-wrap gap-x-3 text-sm text-cream/80">{completed.map((signature,i)=><a key={signature} href={solscanTxUrl(signature)} target="_blank" rel="noreferrer" className="underline">{completed.length>1?`View step ${i+1} on Solscan`:"View on Solscan"} ({signature.slice(0,5)}…{signature.slice(-5)})</a>)}</p>}
   {checkpoint ? <button disabled={busy || !!historyError} onClick={()=>{if(checkpoint.prepared.summary.requiresSecondConfirmation)setConfirmation(true);else void run();}} className="mt-3 rounded-full bg-lemon px-5 py-3 text-ink">Resume withdrawal</button> : error===WITHDRAW_EXPIRED_MESSAGE ? <button disabled={busy || !!historyError} onClick={()=>void run()} className="mt-3 rounded-full bg-lemon px-5 py-3 text-ink">Try again</button> : <>
    <button type="button" disabled={busy || !!historyError} aria-busy={previewing} onClick={()=>void showPreview()} className="mt-3 rounded-full border px-5 py-3 disabled:opacity-50">{previewing?"Calculating…":"Preview"}</button>
    {/* Without a preview, Withdraw fetches one first so the tap is never silent; a second tap confirms. */}

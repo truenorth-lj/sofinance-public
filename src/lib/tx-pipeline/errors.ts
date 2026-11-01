@@ -64,16 +64,22 @@ export class TxLandedUnknownError extends Error {
 let cancelSequence = 0;
 
 /**
- * The person cancelled in the wallet (an exact code 4001 only; cancel wording without that code, or any other code
- * such as Phantom's 400 "rejected by user", is checked on Solana first instead) after we asked it to
- * sign AND send. We say so at once and unlock the form, but a wallet can broadcast and still report a cancel, so
- * `landed` keeps checking Solana silently until the blockhash expires (see `watchCancelledSend`). It never says
- * "nothing was sent": that is not known yet. `attemptId` keys this attempt's toast, so a resubmit never overwrites it.
+ * The wallet threw (a cancel, or another wallet error) after we asked it to sign, and Solana had not shown the
+ * transaction within the 20 s "checking" window. A wallet can broadcast and still report a cancel (Jupiter Mobile:
+ * its own "Sign this message" prompt after the broadcast; Phantom: code 400 "rejected by user"), so this never says
+ * "nothing was sent" or "failed": the form unlocks, the same flow + position stays locked, and `landed` keeps
+ * checking Solana until the blockhash expires (see `watchCancelledSend`, which turns a late landing into success).
+ * `attemptId` keys this attempt's toast, so a resubmit never overwrites it.
  */
 export class TxWalletCancelledError extends Error {
   readonly attemptId = `${Date.now().toString(36)}-${++cancelSequence}`;
+  readonly walletRejected: boolean;
   constructor(readonly cause: unknown, readonly landed: Promise<LandedOutcome>) {
-    super("You cancelled in your wallet.");
+    const rejected = isWalletRejection(cause);
+    super(rejected
+      ? "You cancelled in your wallet. We are still checking Solana in case it went through; you can retry in about a minute."
+      : `Your wallet reported a problem${walletReason(cause)}. It has not shown up on Solana yet; we keep checking, and you can retry in about a minute.`);
+    this.walletRejected = rejected;
     this.name = "TxWalletCancelledError";
   }
 }
@@ -106,10 +112,14 @@ export function walletErrorInfo(error: unknown): WalletErrorInfo {
   return read(error);
 }
 
-/** Only an explicit rejection: code 4001, or rejection wording on an error with no other code. */
+/**
+ * Only an explicit rejection: code 4001 (EIP-1193 / Phantom), 5000 (WalletConnect USER_REJECTED), or rejection wording
+ * on an error with no other code. Never proof that nothing was sent: after a sign request, Solana is checked first.
+ */
+export const WALLET_REJECTION_CODES: readonly number[] = [4001, 5000];
 export function isWalletRejection(error: unknown): boolean {
   const info = walletErrorInfo(error);
-  if (info.code !== undefined) return info.code === 4001;
+  if (info.code !== undefined) return WALLET_REJECTION_CODES.includes(info.code);
   return REJECTED.test(info.message);
 }
 

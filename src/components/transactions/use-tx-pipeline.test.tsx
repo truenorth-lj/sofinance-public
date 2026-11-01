@@ -8,7 +8,7 @@ import { buildTransaction, testKeypair } from "@/lib/test-support/send-fixtures"
 vi.mock("@/lib/sentry/client-tx", () => ({ captureTxClientFailure: vi.fn(), captureTxWalletErrorLanded: vi.fn() }));
 vi.mock("@/lib/position-history-refresh", () => ({ notifyPositionHistoryChange: vi.fn() }));
 
-import { CANCEL_CHECK_PENDING_COPY, resetCancelChecks, dismissTxNotice, findTxNotice, getTxNotices, noticeIdFor, resetTxNotices, settleTxNotice, SUCCESS_NOTICE_MS, TxNotSentError, type TxAdapter, type TxWallet } from "@/lib/tx-pipeline";
+import { CANCEL_CHECK_PENDING_COPY, resetCancelChecks, dismissTxNotice, findTxNotice, getTxNotices, noticeIdFor, resetTxNotices, settleTxNotice, TxNotSentError, type TxAdapter, type TxWallet } from "@/lib/tx-pipeline";
 import { TxNoticeHost } from "./tx-notice-host";
 import { openStatusFromNotice } from "@/components/use-open-attempt";
 import { useTxPipeline } from "./use-tx-pipeline";
@@ -43,13 +43,15 @@ describe("useTxPipeline", () => {
     beforeEach(() => { vi.useFakeTimers(); vi.stubGlobal("fetch", vi.fn(async () => Response.json({ status: "pending" }))); });
     afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
-    it("still shows success after the success toast auto-closes (SUCCESS_NOTICE_MS)", async () => {
+    it("keeps the success toast until dismissed, and still shows success after the user closes it", async () => {
       await withHost(adapter(async () => prepared()), wallet());
       await act(async () => { await box.current.run(1); });
       expect(box.current.status).toBe("confirming");
       await act(async () => { settleTxNotice(noticeIdFor(SIG), "confirmed"); });
       expect(box.current).toMatchObject({ status: "success", kind: "landed", signature: SIG });
-      await act(async () => { await vi.advanceTimersByTimeAsync(SUCCESS_NOTICE_MS + 10); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+      expect(findTxNotice(noticeIdFor(SIG))?.state).toBe("success");
+      await act(async () => { dismissTxNotice(noticeIdFor(SIG)); });
       expect(findTxNotice(noticeIdFor(SIG))).toBeUndefined();
       expect(box.current).toMatchObject({ status: "success", kind: "landed", signature: SIG });
     });
@@ -122,7 +124,8 @@ describe("useTxPipeline", () => {
     expect(box.current).toMatchObject({ status: "success", locked: false });
     vi.unstubAllGlobals();
   });
-  it("4001 after a sign-and-send request: cancelled at once; the same position waits for the background check, another position does not", async () => {
+  it("4001 after a sign-and-send request: 'checking' for up to 20 s, then cancelled; the same position waits for the background check, another position does not", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const lookup = deferred<Response>();
     const fetchMock = vi.fn((url: string) => url === "/api/tx-landed" ? lookup.promise : Promise.resolve(Response.json({ status: "pending" })));
     vi.stubGlobal("fetch", fetchMock);
@@ -130,10 +133,17 @@ describe("useTxPipeline", () => {
     const send = vi.fn(async (): Promise<string> => { throw Object.assign(new Error("User rejected the request."), { code: 4001 }); });
     const w = wallet(undefined, send);
     await render(adapter(prepare), w, "pos-1");
-    await act(async () => { await box.current.run(1); });
-    // No "checking" hold: idle, not busy, and the cancel toast is up while the lookup is still pending.
+    let first!: Promise<unknown>;
+    await act(async () => { first = box.current.run(1); await vi.advanceTimersByTimeAsync(10); });
+    // Checking first: locked, never "failed" or "cancelled" yet.
+    expect(box.current).toMatchObject({ status: "checking", locked: true });
+    expect(getTxNotices()).toMatchObject([{ state: "loading", title: "Checking Solana…" }]);
+    await act(async () => { await vi.advanceTimersByTimeAsync(20_000); await first; });
+    vi.useRealTimers();
+    // Window over, nothing seen yet: idle, not busy, and the cancel toast is up while the lookup is still pending.
     expect(box.current).toMatchObject({ status: "idle", busy: false, locked: false, cancelPending: true });
-    expect(getTxNotices()).toMatchObject([{ state: "failure", kind: "rejected", detail: "You cancelled in your wallet." }]);
+    expect(getTxNotices()).toMatchObject([{ state: "failure", kind: "rejected", title: "Add liquidity cancelled",
+      detail: "You cancelled in your wallet. We are still checking Solana in case it went through; you can retry in about a minute." }]);
     expect(fetchMock).toHaveBeenCalledWith("/api/tx-landed", expect.objectContaining({ method: "POST" }));
     expect(CANCEL_CHECK_PENDING_COPY).toBe("Cancelled — you can retry in about a minute");
     // Same position: refused before preparing (the form shows the copy and keeps its button disabled).
