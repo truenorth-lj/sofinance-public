@@ -31,7 +31,8 @@ export type SampleConfidence = "ok" | "low";
  * Where the average daily volume came from: GeckoTerminal daily candles, or the protocol's published 7-day
  * volume (`sample.volumeProtocol` names it). "raydium-7d" is the pre-fix label kept for stored snapshots.
  */
-export type VolumeSource = "geckoterminal-daily" | "protocol-7d" | "raydium-7d";
+/** Observed daily series (GeckoTerminal, Meteora datapi) or a protocol-published 7-day total. */
+export type VolumeSource = "geckoterminal-daily" | "meteora-datapi-daily" | "protocol-7d" | "raydium-7d";
 export type OccupancySource = "hourly-candles" | "current-price";
 
 export type PoolRangeAprPayload = {

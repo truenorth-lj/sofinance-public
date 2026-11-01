@@ -16,6 +16,7 @@ import { parseRaydiumPoolEconomics, type PoolEconomics } from "./range-apr/raydi
 import { exactTickFromSqrtPriceX64, sqrtPriceX64ToNumber } from "@sofinance/engine/range-apr/tick-math";
 import type { ThrottleGate } from "./range-apr/throttle-gate";
 import { fetchJsonOnce } from "./range-apr/upstream-http";
+import { feeTotals, invertCandles, type FeeTotals, type PoolHistory, type PoolHistorySource } from "./range-apr/pool-history";
 import { SAVED_PRICE_HISTORY_MAX_AGE_MS } from "./rwa-freshness";
 import { isRetryableFailure, retryJson, type JsonResult, type RetryOptions } from "./range-apr/upstream-retry";
 import type { OccupancySource, PoolRangeAprPayload, VolumeSource } from "./range-apr/types";
@@ -61,13 +62,16 @@ export type VolumeProfile = {
   economics: PoolEconomics;
   /** Protocol whose published economics back the `protocol-7d` volume fallback (e.g. "raydium-clmm"). */
   protocol?: string;
-  daily: { avgDailyVolumeUsd: number; days: number } | null;
+  /** `source` defaults to GeckoTerminal daily candles. */
+  daily: { avgDailyVolumeUsd: number; days: number; source?: VolumeSource } | null;
   candles: RawCandle[] | null;
   sources: string[];
   /** Why upstream pieces were missing (diagnosis; shown in the payload). */
   issues: string[];
   /** Built from an earlier good fetch because the latest one failed. */
   stale?: boolean;
+  /** Volume and fees over the window from a history source that publishes fees, for cross-checks. */
+  feeTotals?: FeeTotals;
 };
 
 /**
@@ -142,6 +146,11 @@ type UpstreamOptions = Pick<FetchPoolRangeAprOptions, "retry" | "gate"> & {
    * (see `dailyVolumesFromHourly`; same-value pairs only). Robinhood Chain uses it to fit its call budget.
    */
   dailyFromHourly?: { tokenPriceUsd: number; createdAtSeconds?: number };
+  /**
+   * Volume and hourly price history from somewhere other than GeckoTerminal. When set, no
+   * GeckoTerminal call is made; a loader error (e.g. HTTP 429) fails the whole profile.
+   */
+  history?: PoolHistorySource;
 };
 
 /** Next's Data Cache hint; ignored by injected test fetchers. */
@@ -186,6 +195,11 @@ export async function loadVolumeProfile(
     const ids = await getRaydium(economicsSource.url(encodeURIComponent(poolId)));
     return { economics: ids.ok ? economicsSource.parse(ids.body) : null, observedAt: ids.observedAt };
   };
+  if (upstream.history) {
+    const [ids, history] = await Promise.all([loadEconomics(), upstream.history.load(poolId, fetcher, nowSeconds, signal)]);
+    if (!ids.economics) throw new Error(`Pool economics unavailable from ${economicsSource.name}`);
+    return profileFromHistory(ids.economics, ids.observedAt, economicsSource, history);
+  }
   const fromHourly = upstream.dailyFromHourly;
   const [ids, daily, hourly] = await Promise.all([
     loadEconomics(),
@@ -214,6 +228,25 @@ export async function loadVolumeProfile(
     issues.push(`GeckoTerminal hourly candles: ${hourly.reason}`);
   }
   return { economics, protocol: economicsSource.protocol, daily: dailySample, candles, sources, issues, observedAt: { economics: ids.observedAt, daily: dailyObservedAt, hourly: candles?.length ? hourly.observedAt : null } };
+}
+
+/** A profile from an injected history source: candles oriented to the economics' B per A, plus the window's fee totals. */
+export function profileFromHistory(
+  economics: PoolEconomics, economicsObservedAt: string, economicsSource: Pick<PoolEconomicsSource, "source" | "protocol">, history: PoolHistory,
+): VolumeProfile {
+  const issues = [...history.issues];
+  let candles = history.candles;
+  if (candles) {
+    if (history.baseMint === economics.mintA && history.quoteMint === economics.mintB) { /* already B per A */ }
+    else if (history.baseMint === economics.mintB && history.quoteMint === economics.mintA) candles = invertCandles(candles);
+    else { candles = null; issues.push("hourly candles: mints do not match the pool"); }
+  }
+  return {
+    economics, protocol: economicsSource.protocol, daily: history.daily, candles,
+    ...(history.dailyPoints.length ? { feeTotals: feeTotals(history.dailyPoints) } : {}),
+    sources: [economicsSource.source, ...history.sources], issues,
+    observedAt: { economics: economicsObservedAt, daily: history.observedAt.daily, hourly: candles?.length ? history.observedAt.hourly : null },
+  };
 }
 
 /**
@@ -249,7 +282,7 @@ type Volume = { avgDailyVolumeUsd: number; days: number; source: VolumeSource; p
  * the protocol's own published 7-day volume. Snapshots saved before this label fix say "raydium-7d".
  */
 export function pickVolume(profile: Pick<VolumeProfile, "daily" | "economics" | "protocol">): Volume | null {
-  if (profile.daily) return { ...profile.daily, source: "geckoterminal-daily" };
+  if (profile.daily) return { avgDailyVolumeUsd: profile.daily.avgDailyVolumeUsd, days: profile.daily.days, source: profile.daily.source ?? "geckoterminal-daily" };
   const week = profile.economics.weekVolumeUsd;
   return week === null ? null : { avgDailyVolumeUsd: week / 7, days: 7, source: "protocol-7d", protocol: profile.protocol ?? "raydium-clmm" };
 }

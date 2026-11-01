@@ -1,13 +1,13 @@
-import { METEORA_ALLOWLISTED_POOLS, METEORA_DLMM_DATAPI, METEORA_NO_REWARD_MINT, type MeteoraAllowlistedPool } from "./constants";
+import { METEORA_ALLOWLISTED_POOLS, METEORA_DLMM_DATAPI, METEORA_NO_REWARD_MINT, type MeteoraAllowlistedPool, type MeteoraPoolSpec } from "./constants";
 
 /**
  * Read-only Meteora DLMM pool discovery (Meteora datapi). Nothing here builds
  * or signs transactions; it only turns allowlisted pools into display data.
  */
 
-export type MeteoraPoolSummary = {
+export type MeteoraPoolSummary<Spec extends MeteoraPoolSpec = MeteoraAllowlistedPool> = {
   poolAddress: string;
-  spec: MeteoraAllowlistedPool;
+  spec: Spec;
   mintX: string;
   mintY: string;
   symbolX: string;
@@ -56,15 +56,18 @@ const nonNegative = (value: number | null) => (value !== null && value >= 0 ? va
 const ALLOWLIST_BY_ID = new Map(METEORA_ALLOWLISTED_POOLS.map(spec => [spec.poolAddress, spec]));
 
 /**
- * Parse one Meteora datapi pool and apply the gate: allowlisted id, exact X/Y mint
+ * Parse one Meteora datapi pool and apply the gate: allowlisted id (or the given spec), exact X/Y mint
  * order, expected bin step, sane fee config and not blacklisted. Returns null for
  * anything else.
  */
-export function parseMeteoraPool(raw: unknown): MeteoraPoolSummary | null {
+export function parseMeteoraPool(raw: unknown): MeteoraPoolSummary | null;
+export function parseMeteoraPool<Spec extends MeteoraPoolSpec>(raw: unknown, expected: Spec | undefined): MeteoraPoolSummary<Spec | MeteoraAllowlistedPool> | null;
+export function parseMeteoraPool(raw: unknown, expected?: MeteoraPoolSpec): MeteoraPoolSummary<MeteoraPoolSpec> | null {
   const pool = record(raw);
   if (!pool) return null;
   const poolAddress = text(pool.address);
-  const spec = ALLOWLIST_BY_ID.get(poolAddress);
+  // An explicit spec (a pool the scan found) replaces the allowlist; it must still name this pool.
+  const spec: MeteoraPoolSpec | undefined = expected ? (expected.poolAddress === poolAddress ? expected : undefined) : ALLOWLIST_BY_ID.get(poolAddress);
   if (!spec) return null;
   const tokenX = record(pool.token_x) ?? {}, tokenY = record(pool.token_y) ?? {};
   const mintX = text(tokenX.address), mintY = text(tokenY.address);
