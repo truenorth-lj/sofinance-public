@@ -186,3 +186,28 @@ describe("automatic estimate", () => {
     expect(new URL(fetcher.mock.calls[0]?.[0], "http://localhost").searchParams.get("nftAccount")).toBe(ACCOUNT_B);
   });
 });
+
+describe("direct-USDC pools (known limit, not an error)", () => {
+  const USDC = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+  const USDT = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB";
+  it("does not auto-fetch for a pool holding USDC and explains it in plain English, with no retry button", async () => {
+    vi.useFakeTimers();
+    const fetcher = vi.fn();
+    vi.stubGlobal("fetch", fetcher);
+    await render({ autoExit: true, nftAccount: ACCOUNT_A, poolMints: [USDC, USDT] });
+    await flush(100);
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(node.querySelector("[data-testid=exit-estimate-unsupported]")?.textContent).toContain("aren't available yet for pools that hold USDC directly");
+    expect(node.querySelector("[role=alert]")).toBeNull();
+    expect(buttons().some((b) => /Preview exit|Recalculate/.test(b.textContent ?? ""))).toBe(false);
+  });
+  it("shows the server's typed unsupported answer (e.g. a USDC reward mint) as a notice, not an error", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ status: "unsupported", reason: "direct_usdc",
+      message: "Exit estimates aren't available yet for pools that hold USDC directly. You can still withdraw from the Withdraw tab, which shows its own preview.",
+      netRecoveryUSDC: null, executable: false, sent: false })));
+    await act(async () => click("Preview exit"));
+    expect(node.querySelector("[data-testid=exit-estimate-unsupported]")?.textContent).toContain("hold USDC directly");
+    expect(node.textContent).not.toContain("Exit data incomplete");
+    expect(node.querySelector("[role=alert]")).toBeNull();
+  });
+});

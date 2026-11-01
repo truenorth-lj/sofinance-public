@@ -15,6 +15,7 @@ import { EXIT_JUPITER_CONCURRENCY, mapPool } from "./jupiter";
 import { buildExitSwapLeg, type ExitSwapRoute } from "./swap/exit";
 import { atomicComputeUnitLimitInstruction, exceedsTxSizeLimit } from "./transaction-limits";
 import { withContextSlotRetry } from "./rpc/context-slot";
+import { directUsdcExitPreview, holdsUsdcDirectly } from "./exit-preview-support";
 const USDC="EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",SOL="So11111111111111111111111111111111111111112";
 export const EXIT_PREVIEW_TTL_MS=8_000;
 export function exitPreviewCacheKey(positionId:string,nftAccount?:string,convertRent=true){return `exit-preview:${positionId}:${nftAccount??""}:${convertRent?"1":"0"}`;}
@@ -39,7 +40,8 @@ async function readFullExitPreviewUnlocked(positionId:string,nftAccount?:string,
  const pool=PoolInfoLayout.decode(checked(poolInfo,"PoolState"));
  const nftKey=nftAccount?new PublicKey(nftAccount):new PublicKey(largest?.value.find(v=>v.amount==="1")?.address??"");
  const rewards=pool.rewardInfos.filter(r=>!r.mint.equals(PublicKey.default)),mints=[pool.mintA,pool.mintB,...rewards.map(r=>r.mint)];
- if(mints.some(m=>m.toBase58()===USDC))throw new Error("Direct-USDC pool/reward accounting is not supported by this exit preview");
+ // Known limit, not a failure: typed "unsupported" result (200), never an error/503/Sentry event.
+ if(holdsUsdcDirectly(mints.map(m=>m.toBase58())))return directUsdcExitPreview();
  const [nftRaw,...mintInfos]=await connection.getMultipleAccountsInfo([nftKey,...mints]);
  if(!nftRaw||![TOKEN_PROGRAM_ID,TOKEN_2022_PROGRAM_ID].some(p=>p.equals(nftRaw.owner)))throw new Error("NFT account missing/token program invalid");
  const nft=unpackAccount(nftKey,nftRaw,nftRaw.owner);
