@@ -257,6 +257,26 @@ describe("RHC pools in the APR queue (prepareRhcRun + refreshPool)", () => {
     return { run, saves, urls, ohlcv: () => urls.filter((url) => url.includes("/ohlcv/")) };
   }
 
+  it("saves each pool's token USD prices with the roster from the same pools/multi call (no extra call)", async () => {
+    const { discoverUniv4RhcPools, evaluatePool } = await import("@sofinance/engine/protocols/uniswap-v4/discovery");
+    // The real summary builder, so the roster row carries exactly what evaluatePool keeps from the market read.
+    vi.mocked(discoverUniv4RhcPools).mockImplementationOnce(async (options) => Promise.all(POOLS.map(async (spec) => ({
+      ...evaluatePool(spec, { slot0: null, liquidity: null, dynamicFee: null, feeConfig: null, implementation: null,
+        token0: null, token1: null, blockNumber: 1n, blockTimestamp: 1 } as never, await options!.marketData!(spec)) }))));
+    const calls: { op: string; data?: { poolId: string; summary: { tokenPricesUsd?: unknown } }[] }[] = [];
+    const urls: string[] = [];
+    const store: RwaStore = { request: (async (input: never) => { calls.push(input);
+      return (input as { op: string }).op === "ensureRhcRoster" ? { pools: [], profiles: {}, refreshedAt: {} } : {}; }) as never };
+    const fetcher = (async (url: string) => { urls.push(url); return json(pricedGecko()); }) as unknown as typeof fetch;
+    await prepareRhcRun({ store, lease: { job: "rwa-apr-refresh", owner: "00000000-0000-4000-8000-000000000001", epoch: 1 },
+      fetcher, clock: () => NOW, signal: new AbortController().signal, client: {} as never, gate: gate() });
+    expect(urls).toHaveLength(1);
+    expect(urls[0]).toContain("/pools/multi/");
+    const roster = calls.find((call) => call.op === "ensureRhcRoster")!.data!;
+    expect(roster).toHaveLength(POOLS.length);
+    for (const row of roster) expect(row.summary.tokenPricesUsd).toEqual({ token0: expect.any(Number), token1: expect.any(Number) });
+  });
+
   it("makes one hourly OHLCV call per due pool on the run's gate and saves every pool", async () => {
     const h = harness({});
     const result = await h.run();

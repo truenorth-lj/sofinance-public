@@ -5,8 +5,9 @@ import { logSafeError } from "@/lib/safe-error-log";
 
 /**
  * GET /api/rhc-univ4-position-values?ids=4014633,4072237 — liquidity amounts and unclaimed fees (atomic token units)
- * of Robinhood Chain Uniswap v4 position NFTs, with USD prices per token when a public indexer has them. Public
- * data, read on the official public RPC (two multicalls), cached 30s. Shares the per-IP limit with the holdings
+ * of Robinhood Chain Uniswap v4 position NFTs, with USD prices per token from the APR cron's saved pool data (no
+ * indexer call here; older than 48h or missing: null). Public data, read on the official public RPC (two
+ * multicalls), cached 30s. Shares the per-IP limit with the holdings
  * scan. A failed read answers 503; the page then shows a dash in each amount, never a zero.
  */
 const NO_STORE = { "Cache-Control": "no-store" } as const;

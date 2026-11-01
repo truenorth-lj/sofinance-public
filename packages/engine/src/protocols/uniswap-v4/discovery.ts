@@ -112,6 +112,12 @@ export type Univ4PoolSummary = {
   /** fee rate × 24h volume / TVL from DexScreener (GeckoTerminal fallback); null when neither has the pool. */
   /** Labelled 「估計」/"Estimated" wherever shown. */
   estimatedApr: Univ4PoolApr | null;
+  /**
+   * USD price of one whole token0 / token1 as the same indexer read that gave TVL / 24h volume reported it (no extra
+   * call). The cron stores it with the summary, so pages can value positions without calling an indexer. Absent on
+   * summaries saved before this field existed.
+   */
+  tokenPricesUsd?: { token0: number; token1: number } | null;
   warnings: string[];
 };
 
@@ -183,6 +189,7 @@ export function evaluatePool(spec: Univ4AllowlistedPool, state: RawPoolState, ma
     referencePrice,
     priceVsReferenceBps: price !== null && referencePrice ? (price / referencePrice - 1) * 10_000 : null,
     estimatedApr,
+    tokenPricesUsd: market?.priceUsd ?? null,
     warnings,
   };
 }
