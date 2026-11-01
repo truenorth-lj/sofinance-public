@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { VersionedTransaction } from "@solana/web3.js";
+import { ComputeBudgetProgram, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
 import { buildTransaction, testKeypair } from "@/lib/test-support/send-fixtures";
 
@@ -165,6 +165,34 @@ describe("wallet send", () => {
     const wallet = { ...signingWallet({ signAndSend: true }), address: testKeypair(99).publicKey.toBase58() };
     await expect(sendWithWallet(wallet, unsigned())).rejects.toThrow("different wallet");
     expect(wallet.signAndSendTransaction).not.toHaveBeenCalled();
+  });
+  describe("a priority fee the wallet adds on the relay path", () => {
+    /** Phantom's rewrite of a transaction with no CU price: its own SetComputeUnitPrice in front (as on the 2026-11-01 Meteora setup). */
+    const pricedBy = (microLamports: number) => {
+      const wallet = signingWallet();
+      wallet.signTransaction = vi.fn(async (tx: VersionedTransaction) => {
+        const message = TransactionMessage.decompile(tx.message);
+        const out = new VersionedTransaction(new TransactionMessage({ payerKey: message.payerKey, recentBlockhash: message.recentBlockhash,
+          instructions: [ComputeBudgetProgram.setComputeUnitPrice({ microLamports }), ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }),
+            ...message.instructions.filter((ix) => !ix.programId.equals(ComputeBudgetProgram.programId))] }).compileToV0Message());
+        out.sign([payer]);
+        return out;
+      });
+      return wallet;
+    };
+    it("relays a wallet-chosen network fee up to the 0.01 SOL ceiling", async () => {
+      const sendRaw = vi.fn(async (tx: VersionedTransaction) => sigOf(tx));
+      // 955,644 µlamports/CU: Phantom's price on the Meteora setup (97,502 lamports there).
+      await expect(sendWithWallet(pricedBy(955_644), unsigned(), { sendRaw })).resolves.toMatchObject({ via: "relay" });
+    });
+    it("refuses, before relaying, a wallet-raised fee above 0.01 SOL", async () => {
+      const sendRaw = vi.fn(async (tx: VersionedTransaction) => sigOf(tx));
+      // 30 µSOL/CU × 400k CU = 0.012 SOL.
+      const error = await sendWithWallet(pricedBy(30_000_000), unsigned(), { sendRaw }).catch((e) => e);
+      expect(error).toBeInstanceOf(TxNotSentError);
+      expect(error.message).toBe("Your wallet raised the network fee above 0.01 SOL, so nothing was sent. Lower the priority fee in your wallet and try again.");
+      expect(sendRaw).not.toHaveBeenCalled();
+    });
   });
   it("falls back to sign + one relay send", async () => {
     const wallet = signingWallet(); const sendRaw = vi.fn(async (tx: VersionedTransaction) => sigOf(tx));

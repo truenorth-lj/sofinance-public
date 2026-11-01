@@ -2,7 +2,8 @@
  * Client half of the shared DEX route (DESIGN.md §1.2): one `TxAdapter` per operation that prepares a single step by
  * POSTing to `/api/dex/[dex]/[op]` and hands it to the existing `runTx` pipeline, so the wallet send, the on-chain
  * check after a wallet error (4001 / 5000) and confirmation apply to every step. A multi-step operation is one `runTx`
- * per step, in order, passing each result's `planToken` and landed signature to the next.
+ * per step through `useTxPipeline().runSteps`, which prepares the next step (with this result's `planToken` and the
+ * signatures so far) only after the previous step is confirmed on Solana.
  *
  * When a DEX's descriptor declares an ephemeral position cosigner, step 1 of an open creates that keypair here, sends
  * only its public key, and signs after the wallet; the secret never leaves the browser and is wiped when the run ends.
