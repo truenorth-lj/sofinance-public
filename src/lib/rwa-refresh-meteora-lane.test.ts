@@ -12,7 +12,7 @@ vi.mock("./pool-sources/meteora", async (load) => {
 import { MeteoraDatapiError } from "./range-apr/meteora-datapi-history";
 import { METEORA_APR_POOL_TIMEOUT_MS, METEORA_APR_POOLS_PER_RUN, runJob } from "./rwa-refresh";
 import { ThrottleGate } from "./range-apr/throttle-gate";
-import { ALGORITHM_VERSION, FEED_KEY, FEED_KEY_METEORA, type ActivePool, type RwaStore } from "./rwa-store-types";
+import { FEED_KEY, FEED_KEY_METEORA, type ActivePool, type RwaStore } from "./rwa-store-types";
 
 const now = Date.parse("2026-11-01T04:00:00Z");
 const profile = { economics: { mintA: "x", mintB: "y" }, candles: [{ timestamp: 1 }], stale: false, daily: null, issues: [],
