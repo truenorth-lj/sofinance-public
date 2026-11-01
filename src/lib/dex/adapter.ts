@@ -39,6 +39,12 @@ export type RentQuote = {
   refundableLamports: string;
   /** Spent for good (e.g. a new shared on-chain account). */
   nonRefundableLamports: string;
+  /**
+   * Rent of the wallet token accounts the open creates, sized per mint (program and extensions). Not returned when the
+   * position closes: it stays in the token account, refundable only if that account is closed. Omitted when the
+   * adapter does not price it separately.
+   */
+  tokenAccountLamports?: string;
 };
 
 export type OpenQuote = {

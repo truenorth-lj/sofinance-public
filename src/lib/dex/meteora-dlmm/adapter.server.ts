@@ -17,8 +17,8 @@ import { bpsFeeStrategy } from "../fees";
 import { meteoraDlmmDescriptor } from "./descriptor";
 import type { PositionPerformanceReport } from "@/lib/position-performance-report";
 import {
-  buildMeteoraCloseRefund, buildMeteoraDeposit, buildMeteoraSetup, meteoraBinUiPrice, meteoraRequestRange, planMeteoraOpen, readMeteoraPool,
-  assertEmptyOwnedPosition, type MeteoraOpenDeps, type MeteoraPoolState,
+  buildMeteoraCloseRefund, buildMeteoraDeposit, buildMeteoraSetup, meteoraBinUiPrice, meteoraOpenRent, meteoraRequestRange, ownerPoolTokenAccountsExist,
+  planMeteoraOpen, readMeteoraPool, assertEmptyOwnedPosition, type MeteoraOpenDeps, type MeteoraPoolState,
 } from "./open.server";
 import { buildMeteoraAdd, buildMeteoraClaim, buildMeteoraCompound, buildMeteoraWithdraw } from "./manage.server";
 import { listedMeteoraPool, type MeteoraPoolList } from "./pools.server";
@@ -153,6 +153,8 @@ export function createMeteoraDlmmAdapter(options: MeteoraDlmmAdapterOptions = {}
       pool = await readMeteoraPool(d, request.poolId);
       range = meteoraRequestRange(request, pool);
       const plan = await planMeteoraOpen(d, request, pool, range);
+      // Same figure the setup step caps its simulated SOL debit with (meteoraOpenRent), so quote and cap agree.
+      const rent = await meteoraOpenRent(d.connection, plan, await ownerPoolTokenAccountsExist(d.connection, pool, request.owner));
       const { binStep } = pool.lbPair;
       return {
         poolId: request.poolId,
@@ -162,7 +164,7 @@ export function createMeteoraDlmmAdapter(options: MeteoraDlmmAdapterOptions = {}
           units: plan.width,
         },
         steps: 2,
-        rent: { refundableLamports: plan.positionRentLamports.toString(), nonRefundableLamports: "0" },
+        rent: { refundableLamports: rent.positionLamports.toString(), nonRefundableLamports: "0", tokenAccountLamports: rent.tokenAccountLamports.toString() },
         platformFeeRaw: plan.platformFeeRaw.toString(),
       };
     } catch (error) {
@@ -191,10 +193,12 @@ export function createMeteoraDlmmAdapter(options: MeteoraDlmmAdapterOptions = {}
       const position = cosignerOf(request);
       const pool = await readMeteoraPool(d, request.poolId);
       const plan = await planMeteoraOpen(d, request, pool, meteoraRequestRange(request, pool));
-      const built = await buildMeteoraSetup(d, plan, request.owner, position);
+      const { rent, ...built } = await buildMeteoraSetup(d, plan, request.owner, position);
       return {
         step: 1, of: 2, label: "Create the position account (step 1 of 2)", done: false, planToken: position,
         prepared: { kind: "solana-tx", ...built, cosignRef: position, positionMint: position },
+        ...(rent.tokenAccounts.length
+          ? { createsTokenAccounts: rent.tokenAccounts.map((item) => ({ mint: item.mint, rentLamports: item.rentLamports.toString() })) } : {}),
       };
     }
     if (context.step === 2) {

@@ -1,4 +1,5 @@
-import { Keypair, VersionedTransaction } from "@solana/web3.js";
+import { AccountLayout, getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { Keypair, PublicKey, VersionedTransaction } from "@solana/web3.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { USDC_MINT, NATIVE_SOL_MINT } from "@sofinance/engine/ids";
 import { meteoraSpotSplit } from "@sofinance/engine/protocols/meteora/open";
@@ -9,10 +10,11 @@ import { describeDexContract } from "../__contract__/dex-contract";
 import { DexError } from "../errors";
 import { FEE_WALLET_MISSING_MESSAGE } from "../fee-wallet.server";
 import { NO_FEE_POLICY } from "../fees";
+import { openRentLines } from "@/components/unified-positions/registry-tools";
 import { createMeteoraDlmmAdapter } from "./adapter.server";
 import { clearMeteoraPoolListCache } from "./pools.server";
 import {
-  capture, createFakeChain, DEPOSIT_RAW, FEE_WALLET, jupiterReplay, OWNER, POSITION, SPCX_POOL, TSLA, TSLA_POOL, TSLAX,
+  capture, createFakeChain, DEPOSIT_RAW, FEE_WALLET, jupiterReplay, OWNER, POSITION, rentFor, RWA_TOKEN_ACCOUNT_SPACE, SPCX_POOL, tokenAccount, TSLA, TSLA_POOL, TSLAX,
   ata, positionAccount, type FakeChain,
 } from "./meteora-dlmm.fixtures";
 import { meteoraDlmmModule } from "./module";
@@ -173,8 +175,68 @@ describe("Meteora DLMM adapter specifics", () => {
   it("discloses the refundable 0.0419 SOL position rent for a 60-bin position", async () => {
     const quote = await createMeteoraDlmmAdapter().quoteOpen(request);
     expect(quote.blockedReason).toBeUndefined();
-    expect(quote.rent).toEqual({ refundableLamports: "41899840", nonRefundableLamports: "0" });
+    // OWNER already holds TSLA; the TSLAx account is new: 179 bytes on chain (Token-2022 extensions), not 165.
+    expect(quote.rent).toEqual({ refundableLamports: "41899840", nonRefundableLamports: "0", tokenAccountLamports: String(rentFor(RWA_TOKEN_ACCOUNT_SPACE)) });
     expect(quote.range.units).toBe(60);
+  });
+
+  describe("Token-2022 token-account rent: the quote and the setup SOL cap agree (PR9.2)", () => {
+    const POSITION_RENT = 41_899_840n;
+    const T22_RENT = BigInt(rentFor(RWA_TOKEN_ACCOUNT_SPACE));
+    /** OWNER's USDC (SPL) account holding the deposit: with USDC as the input, neither pool-token account is needed up front. */
+    function holdUsdc() {
+      const data = Buffer.alloc(AccountLayout.span);
+      AccountLayout.encode({
+        mint: new PublicKey(USDC_MINT), owner: new PublicKey(OWNER), amount: BigInt(DEPOSIT_RAW), delegateOption: 0, delegate: PublicKey.default, state: 1,
+        isNativeOption: 0, isNative: 0n, delegatedAmount: 0n, closeAuthorityOption: 0, closeAuthority: PublicKey.default,
+      }, data);
+      const usdcAta = getAssociatedTokenAddressSync(new PublicKey(USDC_MINT), new PublicKey(OWNER), true, TOKEN_PROGRAM_ID).toBase58();
+      chain.current.set(usdcAta, { owner: TOKEN_PROGRAM_ID, data, lamports: rentFor(AccountLayout.span), executable: false, rentEpoch: 0 });
+    }
+    const cases = [
+      { name: "neither pool-token account exists", missing: [TSLA, TSLAX], setup: () => { holdUsdc(); chain.current.set(ata(TSLA, OWNER), null); }, input: USDC_MINT },
+      { name: "one side is missing (TSLAx)", missing: [TSLAX], setup: () => {}, input: TSLA },
+      { name: "both exist", missing: [], setup: () => chain.current.set(ata(TSLAX, OWNER), tokenAccount(TSLAX, OWNER, 0n)), input: TSLA },
+    ];
+
+    for (const { name, missing, setup, input } of cases) {
+      it(`${name}: quote shows position rent and new token-account rent separately, and step 1 is capped at exactly their sum`, async () => {
+        setup();
+        const adapter = createMeteoraDlmmAdapter({ feePolicy: NO_FEE_POLICY });
+        const open = { ...request, input: { token: input, amountRaw: DEPOSIT_RAW } };
+        const quote = await adapter.quoteOpen(open);
+        expect(quote.blockedReason).toBeUndefined();
+        const tokenAccountRent = T22_RENT * BigInt(missing.length);
+        expect(quote.rent).toEqual({ refundableLamports: String(POSITION_RENT), nonRefundableLamports: "0", tokenAccountLamports: String(tokenAccountRent) });
+        const { lines, totalLamports } = openRentLines(quote.rent);
+        expect(totalLamports).toBe(POSITION_RENT + tokenAccountRent);
+        expect(lines[0]).toBe("Position rent: about 0.0419 SOL, refunded when you close the position.");
+        if (missing.length) {
+          expect(lines).toEqual([lines[0], `New token-account rent: about ${(Number(tokenAccountRent) / 1e9).toFixed(4)} SOL. Stays in your token account; refundable only if you close that account.`]);
+        } else {
+          expect(lines).toHaveLength(1);
+        }
+
+        // The real chain charges exactly the quoted rent: step 1 passes its SOL cap and names the accounts it creates.
+        const step1 = await adapter.prepareOpen(open, { step: 1, priorSignatures: [] });
+        expect(step1.createsTokenAccounts ?? []).toEqual(missing.map((mint) => ({ mint, rentLamports: String(T22_RENT) })));
+        expect(step1.createsTokenAccounts?.reduce((sum, item) => sum + BigInt(item.rentLamports), 0n) ?? 0n).toBe(BigInt(quote.rent!.tokenAccountLamports!));
+        // No fixed SPL size was used for a Token-2022 account.
+        expect(chain.current.rentQueries).not.toContain(AccountLayout.span);
+
+        // The cap is the quoted total plus the 15,000-lamport network allowance and nothing else; the fake chain's
+        // step 1 pays 10,000 in fees, so created accounts may carry 5,000 lamports more in total, and not one more.
+        if (missing.length) {
+          const slack = 5_000 / missing.length;
+          chain.current.skewTokenAccountRent(slack);
+          await expect(adapter.prepareOpen(open, { step: 1, priorSignatures: [] })).resolves.toMatchObject({ step: 1 });
+          chain.current.skewTokenAccountRent(slack + 1);
+          await expect(adapter.prepareOpen(open, { step: 1, priorSignatures: [] }))
+            .rejects.toMatchObject({ code: "UPSTREAM", message: expect.stringMatching(/spends more SOL than the rent and fees shown/) });
+        }
+      });
+    }
+
   });
 
   it("blocks the wide preset with RANGE_UNSUPPORTED and a missing bin array with NEEDS_NEW_SHARED_ACCOUNT", async () => {
@@ -433,7 +495,7 @@ describe("Meteora DLMM adapter specifics", () => {
       const programs = new Set(tx.message.compiledInstructions.map((ix) => keys[ix.programIdIndex]));
       expect([...programs].sort()).toEqual(["ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL", "ComputeBudget111111111111111111111111111111", METEORA].sort());
       // That created account's rent is returned with the step, so the panel states it before the wallet signs.
-      expect(step.createsTokenAccounts).toEqual([{ mint: TSLAX, rentLamports: expect.stringMatching(/^[1-9]\d*$/) }]);
+      expect(step.createsTokenAccounts).toEqual([{ mint: TSLAX, rentLamports: String(rentFor(RWA_TOKEN_ACCOUNT_SPACE)) }]);
     });
 
     it("leaves the wallet's own pool tokens untouched when it lands (only the claimed fees go back in)", async () => {

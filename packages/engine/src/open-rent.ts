@@ -2,7 +2,7 @@ import {
   getPdaTickArrayAddress, PersonalPositionLayout, TickArrayLayout, TickArrayUtil,
 } from "@raydium-io/raydium-sdk-v2";
 import { PublicKey, type AccountInfo, type Connection } from "@solana/web3.js";
-import { ExtensionType, getAccountLen, getAccountTypeOfMintType, getExtensionTypes, TOKEN_2022_PROGRAM_ID, unpackMint } from "@solana/spl-token";
+import { associatedTokenAccountSpace } from "./token-account-rent";
 
 // Token-2022 NFT from open_position_with_token22_nft + withMetadata "no-create":
 // mintCloseAuthority only. Live mint space is 202, not a 698-byte metadata mint.
@@ -83,17 +83,8 @@ export async function estimateWalletTokenAccountRent(
   if (!missing.length) return 0n;
   const mints = await connection.getMultipleAccountsInfo(missing.map(account => new PublicKey(account.mint)), "confirmed");
   const rents = await Promise.all(missing.map(async (account, index) => {
-    const program = new PublicKey(account.program);
-    const mint = unpackMint(new PublicKey(account.mint), mints[index] ?? null, program);
-    // Match Token-2022's required_init_account_extensions, rather than the
-    // SDK's broader mapping (confidential accounts require a separate opt-in).
-    // https://github.com/solana-program/token-2022/blob/main/interface/src/extension/mod.rs
-    const required = new Set([ExtensionType.TransferFeeConfig, ExtensionType.NonTransferable,
-      ExtensionType.TransferHook, ExtensionType.PausableConfig]);
-    const extensions = getExtensionTypes(mint.tlvData).filter(type => required.has(type)).map(getAccountTypeOfMintType);
-    // Associated Token Program always initializes ImmutableOwner for Token-2022.
-    if (program.equals(TOKEN_2022_PROGRAM_ID)) extensions.push(ExtensionType.ImmutableOwner);
-    return BigInt(await connection.getMinimumBalanceForRentExemption(getAccountLen(extensions), "confirmed"));
+    const space = associatedTokenAccountSpace(new PublicKey(account.mint), mints[index] ?? null, new PublicKey(account.program));
+    return BigInt(await connection.getMinimumBalanceForRentExemption(space, "confirmed"));
   }));
   return rents.reduce((sum, rent) => sum + rent, 0n);
 }

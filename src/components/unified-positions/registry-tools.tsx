@@ -11,7 +11,7 @@
 import { CircleAlert, LoaderCircle } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { formatAmount, parseTokenAmount } from "@sofinance/engine/amount";
-import { dexTxAdapter, type DexCapabilities, type DexPreparedStep, type DexDescriptor, type DexStepInput, type DexStepOp, type FeeRule } from "@/lib/dex/client";
+import { dexTxAdapter, type DexCapabilities, type DexPreparedStep, type DexDescriptor, type DexStepInput, type DexStepOp, type FeeRule, type RentQuote } from "@/lib/dex/client";
 import { createJupiterRelayStore } from "@/lib/jupiter/browser-relay";
 import { CANCEL_CHECK_PENDING_COPY, CHECKING_SOLANA_COPY, solscanTxUrl } from "@/lib/tx-pipeline";
 import type { ToolId, TokenRef, UnifiedPosition, WithdrawOutput } from "@/lib/unified-positions/model";
@@ -86,6 +86,25 @@ export function tokenAccountRentLine(created: DexPreparedStep["result"]["creates
   const names = created.map((item) => symbolFor(item.mint)).join(" and ");
   const noun = created.length === 1 ? "token account" : "token accounts";
   return `This also creates your ${names} ${noun} in your wallet: about ${(lamports / LAMPORTS_PER_SOL).toFixed(4)} SOL rent, which comes back if you close ${created.length === 1 ? "that account" : "them"}.`;
+}
+
+const lamportsOf = (value: string | undefined) => (value && /^\d+$/.test(value) ? BigInt(value) : 0n);
+const solText = (lamports: bigint) => (Number(lamports) / LAMPORTS_PER_SOL).toFixed(4);
+
+/**
+ * An open quote's rent as separate lines (PR9.2): the position rent, refunded when the position closes, and the rent of
+ * new wallet token accounts, which is not (it stays in the token account). `totalLamports` is the sum the setup step's
+ * SOL safety check caps the simulation at (plus network fees).
+ */
+export function openRentLines(rent: RentQuote | null | undefined): { lines: string[]; totalLamports: bigint } {
+  if (!rent) return { lines: [], totalLamports: 0n };
+  const position = lamportsOf(rent.refundableLamports);
+  const tokenAccounts = lamportsOf(rent.tokenAccountLamports);
+  const spent = lamportsOf(rent.nonRefundableLamports);
+  const lines = [`Position rent: about ${solText(position)} SOL, refunded when you close the position.`];
+  if (tokenAccounts > 0n) lines.push(`New token-account rent: about ${solText(tokenAccounts)} SOL. Stays in your token account; refundable only if you close that account.`);
+  if (spent > 0n) lines.push(`Shared account rent: about ${solText(spent)} SOL, not refunded.`);
+  return { lines, totalLamports: position + tokenAccounts + spent };
 }
 
 /**

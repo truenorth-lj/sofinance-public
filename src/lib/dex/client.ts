@@ -10,6 +10,6 @@ export const dexDescriptors = createDexDescriptorRegistry(DEX_DESCRIPTORS);
 export type * from "./types";
 export { DEX_IDS, isDexId, normalizeDexId, feeRuleBps } from "./types";
 export type { DexDescriptorRegistry } from "./registry";
-export type { PositionPerformance } from "./adapter";
+export type { PositionPerformance, RentQuote } from "./adapter";
 export { dexTxAdapter, DEX_PREPARE_TIMEOUT_MS, type DexPreparedStep, type DexStepInput, type DexStepOp } from "./tx-adapter";
 export { dexPositionLabel, dexPositionRangeText, dexRangeStatusText, fetchDexPerformance, fetchDexPositions, positionDescriptorsFor } from "./positions-client";
