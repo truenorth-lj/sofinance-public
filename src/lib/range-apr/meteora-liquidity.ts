@@ -8,7 +8,10 @@ import {
   meteoraBinArrayIndex, meteoraBinArrayIndexesForRange, meteoraBinPrice, meteoraVariableFeeRate, mintHasFreezeAuthority,
   METEORA_BINS_PER_ARRAY, METEORA_FEE_PRECISION,
 } from "@sofinance/engine/protocols/meteora/accounts";
-import { METEORA_ALLOWLISTED_POOLS, METEORA_DLMM_PROGRAM_ID } from "@sofinance/engine/protocols/meteora/constants";
+import {
+  METEORA_ALLOWLISTED_POOLS, METEORA_DLMM_PROGRAM_ID, METEORA_RANGE_APR_MAX_BIN_STEP, SPL_TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID,
+  type MeteoraPoolSpec,
+} from "@sofinance/engine/protocols/meteora/constants";
 import { sqrtPriceAtTick } from "@sofinance/engine/range-apr/tick-math";
 import { windowBounds, type LiquidityBin } from "./liquidity-bins";
 import { halfWindowBinsFor, type OnchainPoolLiquidity } from "./onchain-liquidity";
@@ -61,14 +64,24 @@ const PROGRAM = new PublicKey(METEORA_DLMM_PROGRAM_ID);
 const Q64 = 2 ** 64;
 
 /**
- * Shared-model liquidity for one DLMM bin. With bin step 1 a bin's price (1.0001^binId) is exactly tick `binId`,
- * so the bin is mapped onto tick bin [binId, binId + 1): its value in raw Y (x × price + y) divided by the
- * sqrt-price width of that tick is the concentrated-liquidity L holding the same value there. Own and other
- * liquidity are then compared in the same units (`estimateRangeApr`).
+ * Bin → tick of the shared 1.0001-tick model: bin `binId` is tick bin [binId × binStep, (binId + 1) × binStep).
+ *
+ * With bin step 1 this is exact (a bin's price 1.0001^binId is tick `binId`). With bin step s > 1 a bin is really
+ * ln(1 + s/1e4) / ln(1.0001) ticks wide (s = 10: 9.9955), slightly less than s. The model only uses distances
+ * relative to the active bin (candles are re-based onto the current tick every day, presets are a few bins
+ * either side), so the mapping is exact in bins and off by < 0.05% of a distance in price (s ≤ 10). Absolute
+ * virtual prices drift from the real ones far from bin 0; the payload's `pool.currentPrice` stays the datapi one.
+ */
+export const binTick = (binId: number, binStep: number) => binId * binStep;
+
+/**
+ * Shared-model liquidity for one DLMM bin: its value in raw Y (x × bin price + y) divided by the sqrt-price
+ * width of its tick bin (see `binTick`) is the concentrated-liquidity L holding the same value there. Own and
+ * other liquidity are then compared in the same units (`estimateRangeApr`).
  */
 export function dlmmBinLiquidity(amountX: bigint, amountY: bigint, binId: number, binStep: number): number {
   const valueY = Number(amountX) * meteoraBinPrice(binId, binStep) + Number(amountY);
-  const width = sqrtPriceAtTick(binId + 1) - sqrtPriceAtTick(binId);
+  const width = sqrtPriceAtTick(binTick(binId + 1, binStep)) - sqrtPriceAtTick(binTick(binId, binStep));
   return valueY > 0 && width > 0 ? valueY / width : 0;
 }
 
@@ -77,27 +90,36 @@ export function binSqrtPriceX64(binId: number, binStep: number): string {
   return BigInt(Math.round(Math.sqrt(meteoraBinPrice(binId, binStep)) * Q64)).toString();
 }
 
+/** The active bin's sqrt price on the shared tick grid (`binTick`); equals `binSqrtPriceX64` for bin step 1. */
+export const binTickSqrtPriceX64 = (binId: number, binStep: number) => binSqrtPriceX64(binTick(binId, binStep), 1);
+
+const SPL_TOKEN_PROGRAMS = new Set([SPL_TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID]);
+
 /**
  * One LbPair read, then one batched read of both mints and the bin arrays covering the analysed window.
- * Allowlisted pools only; any owner, mint, bin step, status or bin-array mismatch throws. Bin step 1 only
- * (a bin is then exactly one tick of the shared model).
+ * Allowlisted pools, or a scan-found pool passed as `expected`; any owner, mint, bin step, status or bin-array
+ * mismatch throws. Bin steps 1..`METEORA_RANGE_APR_MAX_BIN_STEP` (see `binTick`).
  */
 export async function readMeteoraPoolLiquidity(
-  poolId: string, connection: Connection = rpcConnection(),
+  poolId: string, connection: Connection = rpcConnection(), expected?: MeteoraPoolSpec,
 ): Promise<MeteoraPoolLiquidity> {
-  const spec = METEORA_ALLOWLISTED_POOLS.find((pool) => pool.poolAddress === poolId);
+  const spec: MeteoraPoolSpec | undefined = expected
+    ? (expected.poolAddress === poolId ? expected : undefined)
+    : METEORA_ALLOWLISTED_POOLS.find((pool) => pool.poolAddress === poolId);
   if (!spec) throw new Error("Meteora pool is not allowlisted");
+  if (!Number.isInteger(spec.binStep) || spec.binStep < 1 || spec.binStep > METEORA_RANGE_APR_MAX_BIN_STEP) {
+    throw new Error(`Meteora range APR supports bin step 1-${METEORA_RANGE_APR_MAX_BIN_STEP} only`);
+  }
   const poolInfo = await connection.getAccountInfo(new PublicKey(poolId), "confirmed");
   if (!poolInfo || !poolInfo.owner.equals(PROGRAM)) throw new Error("Meteora DLMM pool account does not exist");
   const state = decodeLbPair(poolInfo.data);
   if (state.tokenXMint !== spec.mintX || state.tokenYMint !== spec.mintY) throw new Error("Meteora DLMM mint mismatch");
   if (state.binStep !== spec.binStep) throw new Error("Meteora DLMM bin step mismatch");
-  if (state.binStep !== 1) throw new Error("Meteora range APR supports bin step 1 only");
   if (state.status !== 0) throw new Error("Meteora DLMM pool is disabled");
   const { activeId, binStep } = state;
   const half = halfWindowBinsFor(binStep);
-  const { firstTick: firstBin, endTick } = windowBounds(activeId, binStep, half);
-  const lastBin = endTick - 1;
+  const { firstTick, endTick } = windowBounds(binTick(activeId, binStep), binStep, half);
+  const firstBin = firstTick / binStep, lastBin = endTick / binStep - 1;
   const indexes = meteoraBinArrayIndexesForRange(firstBin, lastBin);
   const arrayKeys = indexes.map((index) => meteoraBinArrayAddress(poolId, index));
   const { context, value: infos } = await connection.getMultipleAccountsInfoAndContext(
@@ -106,7 +128,8 @@ export async function readMeteoraPoolLiquidity(
   );
   const [mintX, mintY, ...arrays] = infos;
   if (!mintX || !mintY) throw new Error("Meteora pool mint account missing");
-  if (mintX.owner.toBase58() !== spec.tokenProgramX || mintY.owner.toBase58() !== spec.tokenProgramY) {
+  const programOk = (owner: string, pinned: string | undefined) => (pinned ? owner === pinned : SPL_TOKEN_PROGRAMS.has(owner));
+  if (!programOk(mintX.owner.toBase58(), spec.tokenProgramX) || !programOk(mintY.owner.toBase58(), spec.tokenProgramY)) {
     throw new Error("Meteora pool token program mismatch");
   }
   const bitmap = new Set(state.bitmapBinArrays);
@@ -132,7 +155,7 @@ export async function readMeteoraPoolLiquidity(
   for (let binId = firstBin; binId <= lastBin; binId++) {
     const reserve = reserves.get(binId);
     if (reserve) { windowReserveX += reserve.x; windowReserveY += reserve.y; }
-    bins.push({ tick: binId, liquidity: reserve ? dlmmBinLiquidity(reserve.x, reserve.y, binId, binStep) : 0 });
+    bins.push({ tick: binTick(binId, binStep), liquidity: reserve ? dlmmBinLiquidity(reserve.x, reserve.y, binId, binStep) : 0 });
   }
   return {
     poolId,
@@ -141,8 +164,8 @@ export async function readMeteoraPoolLiquidity(
     decimalsA: decodeMintDecimals(mintX.data),
     decimalsB: decodeMintDecimals(mintY.data),
     tickSpacing: binStep,
-    tickCurrent: activeId,
-    sqrtPriceX64: binSqrtPriceX64(activeId, binStep),
+    tickCurrent: binTick(activeId, binStep),
+    sqrtPriceX64: binTickSqrtPriceX64(activeId, binStep),
     bins,
     state: {
       binStep,

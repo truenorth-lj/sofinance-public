@@ -15,6 +15,7 @@ import { CompoundSendError, notSentRetryMessage, sanitizePublicError } from "../
 import { getSigningSecret } from "@sofinance/engine/config/server-env";
 import type { CompoundSummary } from "@sofinance/engine/compound-types";
 import { getRwaPairs } from "../lib/rwa-store";
+import { FEED_KEY } from "../lib/rwa-store-types";
 import { getPositionPerformance as readPositionPerformance } from "../lib/position-performance";
 import { createSignToken } from "../lib/pending-sign-token";
 import { buildOpenPositionUrl, buildSignUrl } from "../lib/public-urls";
@@ -501,7 +502,8 @@ export async function submitCompoundTransaction(input: SubmitCompoundTransaction
  * Safety: Read-only; uses public Raydium / Jupiter / xStocks APIs. No wallet or private keys.
  */
 export async function listRwaPairs(input: ListRwaPairsInput) {
-  const result = await getRwaPairs({ minTvl: input.minTvl, maxPages: input.maxPages, sortBy: input.sortBy });
+  // Raydium feed only: every row here has a Raydium `openPositionUrl`.
+  const result = await getRwaPairs({ minTvl: input.minTvl, maxPages: input.maxPages, sortBy: input.sortBy, feedKeys: [FEED_KEY] });
 
   return {
     pairingRule: result.pairingRuleSummary,

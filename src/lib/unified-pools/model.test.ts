@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  DEFAULT_FILTERS, DEFAULT_SORT, TVL_FILTER_PRESETS, compareDuplicateRank, filterPools, hideDuplicatePools, meetsMinTvl, samePairKey,
+  DEFAULT_FILTERS, DEFAULT_SORT, TVL_FILTER_PRESETS, compareDuplicateRank, filterPools, hideDuplicatePools, meetsMinTvl, openUnavailableReason, samePairKey,
   selectPools, sortPools,
   type UnifiedPool,
 } from "./model";
@@ -23,6 +23,20 @@ describe("samePairKey", () => {
     expect(samePairKey(pool({ poolAddress: "a", chain: "robinhood", mintA: "0xAB", mintB: "0xcd" })))
       .toBe(samePairKey(pool({ poolAddress: "b", chain: "robinhood", mintA: "0xab", mintB: "0xCD" })));
     expect(samePairKey(pool({ poolAddress: "a", mintA: "Ab" }))).not.toBe(samePairKey(pool({ poolAddress: "b", mintA: "ab" })));
+  });
+});
+
+describe("same-protocol duplicates (PM 2026-11-01)", () => {
+  it("keys include the protocol, so the same pair on Raydium and Meteora is two rows", () => {
+    const ray = pool({ poolAddress: "ray" }), met = pool({ poolAddress: "met", protocol: "meteora-dlmm" });
+    expect(samePairKey(ray)).not.toBe(samePairKey(met));
+    expect(hideDuplicatePools([ray, met], aprs({ ray: 1, met: 2 })).map((p) => p.poolAddress)).toEqual(["ray", "met"]);
+    expect(hideDuplicatePools([met, pool({ poolAddress: "met2", protocol: "meteora-dlmm" })], aprs({ met: 1, met2: 2 }))
+      .map((p) => p.poolAddress)).toEqual(["met2"]);
+  });
+  it("Meteora pools cannot be opened from the list, with the reason shown", () => {
+    expect(openUnavailableReason({ protocol: "meteora-dlmm" })).toBe("Opening Meteora positions isn't available yet");
+    for (const protocol of ["raydium-clmm", "orca-whirlpool", "uniswap-v4-rhc"] as const) expect(openUnavailableReason({ protocol })).toBeNull();
   });
 });
 

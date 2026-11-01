@@ -20,7 +20,7 @@ import {
 import { isRhcUniv4DiscoveryEnabled } from "@/lib/protocol-flags";
 import { fetchRwaPairsList } from "@/lib/rwa-pairs-list";
 import { APP_ROUTES, DOCS_ROUTES, buildOpenPositionPath } from "@/lib/public-urls";
-import { DEFAULT_SORT, type PoolChain, type UnifiedPool } from "@/lib/unified-pools/model";
+import { DEFAULT_SORT, openUnavailableReason, type PoolChain, type UnifiedPool } from "@/lib/unified-pools/model";
 import type { RhcPoolSummary } from "@/lib/unified-pools/rows";
 import { PoolTable, type OpenAction } from "./unified-pools/pool-list";
 import { usePoolsApr7d } from "./unified-pools/use-pools-apr7d";
@@ -43,7 +43,11 @@ export function openPoolHref(pool: Pick<HomepagePool, "chain" | "poolAddress">) 
     : buildOpenPositionPath(pool.poolAddress);
 }
 
-const openAction = (pool: UnifiedPool): OpenAction => ({ kind: "link", href: openPoolHref(pool) });
+/** Meteora pools: a greyed Open with its reason (no link out). */
+const openAction = (pool: UnifiedPool): OpenAction => {
+  const unavailable = openUnavailableReason(pool);
+  return unavailable ? { kind: "disabled", reason: unavailable } : { kind: "link", href: openPoolHref(pool) };
+};
 
 /** Reads the `?pool=` tweet deep link, then renders the table (client-only: inside the landing page's Suspense). */
 export function HomepagePoolsTable({ initial }: { initial?: HomepagePoolsSnapshot | null }) {

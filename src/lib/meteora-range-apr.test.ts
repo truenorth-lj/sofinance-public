@@ -3,9 +3,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 
 import fixture from "../../packages/engine/src/fixtures/meteora-dlmm-pool-cbbtc-wbtc.json";
-import { clearMeteoraRangeAprCache, fetchMeteoraRangeApr, METEORA_RANGE_APR_ASSUMPTIONS, METEORA_RANGE_APR_LABEL, presetBins } from "./meteora-range-apr";
+import { clearMeteoraRangeAprCache, dedupePresetsByWidth, fetchMeteoraRangeApr, METEORA_RANGE_APR_ASSUMPTIONS, METEORA_RANGE_APR_LABEL, meteoraPresetRanges, presetBins } from "./meteora-range-apr";
 import { clearPoolRangeAprCache } from "./pool-range-apr";
-import { METEORA_POOL, fakeMeteoraConnection } from "./range-apr/meteora-chain.fixture";
+import { METEORA_POOL, fakeMeteoraConnection, meteoraAccounts } from "./range-apr/meteora-chain.fixture";
+import { meteoraDatapiHistory, MeteoraDatapiError } from "./range-apr/meteora-datapi-history";
+import { binTick, binTickSqrtPriceX64 } from "./range-apr/meteora-liquidity";
 import { parseMeteoraPoolEconomics } from "./range-apr/meteora-economics";
 import { ThrottleGate } from "./range-apr/throttle-gate";
 
@@ -132,5 +134,130 @@ describe("presetBins", () => {
     expect(presetBins([{ id: "wide", tickLower: -211, tickUpper: 40 }], existing)[0]!.withinExistingBinArrays).toBe(false);
     expect(presetBins([{ id: "wide", tickLower: 0, tickUpper: 351 }], existing)[0]!.withinExistingBinArrays).toBe(false);
     expect(presetBins([{ id: "micro", tickLower: 15, tickUpper: 17 }], null)[0]!.withinExistingBinArrays).toBe(false);
+  });
+});
+
+describe("Meteora presets by bin step (bin grid, deduplicated by width)", () => {
+  const table = (binStep: number, activeId = 16, decimalsA = 8, decimalsB = 8) => {
+    const chain = { tickCurrent: binTick(activeId, binStep), sqrtPriceX64: binTickSqrtPriceX64(activeId, binStep), decimalsA, decimalsB, tickSpacing: binStep };
+    return Object.fromEntries(presetBins(meteoraPresetRanges(chain), null, binStep).map((p) => [p.id, [p.lowerBinId - activeId, p.upperBinId - activeId]]));
+  };
+
+  it("bin step 1 keeps the four shared presets (unchanged)", () => {
+    expect(table(1)).toEqual({ micro: [-2, 1], tight: [-6, 3], standard: [-31, 28], wide: [-101, 98] });
+  });
+
+  it("bin steps 2 / 5 / 10 price the same percent ranges in whole bins and drop a preset narrower than Micro", () => {
+    expect(table(2)).toEqual({ micro: [-2, 1], tight: [-3, 1], standard: [-16, 14], wide: [-51, 49] });
+    expect(table(5)).toEqual({ micro: [-2, 1], standard: [-7, 5], wide: [-21, 19] });
+    expect(table(10)).toEqual({ micro: [-2, 1], standard: [-4, 2], wide: [-11, 9] });
+  });
+
+  it("does not depend on where the active bin is or on the token decimals (anchored mapping)", () => {
+    for (const binStep of [1, 2, 5, 10]) {
+      expect(table(binStep, -6911, 8, 6)).toEqual(table(binStep));
+      expect(table(binStep, 2500, 6, 9)).toEqual(table(binStep));
+    }
+  });
+
+  it("dedupes by width: an equal width keeps the wider id, a narrower one is dropped", () => {
+    const range = (id: "micro" | "tight" | "standard" | "wide", width: number) => ({ id, tickLower: -width, tickUpper: width });
+    expect(dedupePresetsByWidth([range("wide", 9), range("micro", 2), range("tight", 2), range("standard", 1)]).map((p) => p.id))
+      .toEqual(["tight", "wide"]);
+    expect(dedupePresetsByWidth([range("micro", 2), range("tight", 3), range("standard", 4), range("wide", 5)])).toHaveLength(4);
+  });
+
+  it("presetBins converts tick bounds back to bins for bin step > 1", () => {
+    expect(presetBins([{ id: "standard", tickLower: 120, tickUpper: 230 }], { lowerBinId: -70, upperBinId: 69 }, 10)).toEqual([
+      { id: "standard", lowerBinId: 12, upperBinId: 22, binCount: 11, binArrayIndexes: [0], withinExistingBinArrays: true },
+    ]);
+  });
+});
+
+describe("fetchMeteoraRangeApr for a scan-found pool (spec + Meteora datapi history)", () => {
+  const D0 = 1_793_145_600 - 0; // 2026-10-28T00:00Z is the open day
+  const binStep = 10;
+  const spec = { poolAddress: METEORA_POOL, mintX: CBBTC, mintY: WBTC, binStep };
+  // The on-chain base fee scales with the bin step (base factor × bin step): 0.1% here.
+  const datapiPool = { ...fixture, pool_config: { ...fixture.pool_config, bin_step: binStep, base_fee_pct: 0.1 } };
+  const connection = () => {
+    const data = Buffer.from(meteoraAccounts()[METEORA_POOL]!.data, "base64");
+    data.writeUInt16LE(binStep, 80);
+    return fakeMeteoraConnection(meteoraAccounts({ [METEORA_POOL]: { ...meteoraAccounts()[METEORA_POOL]!, data: data.toString("base64") } })).connection;
+  };
+  const datapi = (status: { volume?: number } = {}) => {
+    const calls: string[] = [];
+    const impl: typeof fetch = async (input) => {
+      const url = new URL(String(input));
+      calls.push(url.toString());
+      const json = (body: unknown, code = 200) => new Response(JSON.stringify(body), { status: code, headers: { "Content-Type": "application/json" } });
+      if (url.pathname === `/pools/${METEORA_POOL}`) return json(datapiPool);
+      if (url.pathname.endsWith("/volume/history")) {
+        return json({ data: [1, 2, 3, 4, 5, 6, 7].map((back) => ({ timestamp: D0 - back * DAY, volume: 40_000, fees: 40, protocol_fees: 4 })) }, status.volume ?? 200);
+      }
+      if (url.pathname.endsWith("/ohlcv")) {
+        const start = Number(url.searchParams.get("start_time")), end = Number(url.searchParams.get("end_time"));
+        const data = [];
+        for (let time = start; time < end; time += 6 * 3_600) {
+          const price = 1.0016 * (1 + ((time / 3_600) % 24 - 11) * 0.00002);
+          data.push({ timestamp: time, open: price, high: price * 1.00005, low: price * 0.99995, close: price, volume: 1_000 });
+        }
+        return json({ data });
+      }
+      return json({}, 404);
+    };
+    return { impl, calls };
+  };
+  const runSpec = (f = datapi()) => fetchMeteoraRangeApr(METEORA_POOL, {
+    fetcher: f.impl, connection: connection(), nowSeconds: NOW, retry: NO_WAIT, gate: gate(), spec,
+    history: meteoraDatapiHistory({ mintX: CBBTC, mintY: WBTC }),
+  });
+
+  it("prices bin step 10 with datapi volume and candles only (no GeckoTerminal call)", async () => {
+    const f = datapi();
+    const payload = await runSpec(f);
+    expect(f.calls.every((url) => url.startsWith("https://dlmm.datapi.meteora.ag/"))).toBe(true);
+    expect(f.calls.filter((url) => url.includes("/ohlcv"))).toHaveLength(2);
+    expect(payload).toMatchObject({
+      pool: { tickSpacing: 10, tickCurrent: 160 },
+      sample: { days: 7, volumeSource: "meteora-datapi-daily", occupancySource: "hourly-candles", degraded: false, confidence: "ok" },
+      state: { binStep: 10, activeId: 16 },
+    });
+    expect(payload.model.avgDailyVolumeUsd).toBe(40_000);
+    expect(payload.assumptions).toMatch(/\(Meteora, current day excluded\)/);
+    expect(payload.presets.map((preset) => preset.id)).toEqual(["micro", "standard", "wide"]);
+    expect(payload.presets.every((preset) => preset.estimate.status === "ok")).toBe(true);
+    expect(payload.presetBins.map((bins) => [bins.id, bins.lowerBinId, bins.upperBinId])).toEqual([
+      ["micro", 14, 17], ["standard", 12, 18], ["wide", 5, 25]]);
+    expect(payload.sources.join(" ")).toMatch(/volume\/history/);
+    expect(payload.sources.join(" ")).not.toMatch(/geckoterminal/i);
+    // datapi fees match the on-chain config (0.1%, 10% protocol); only the datapi 5% vs on-chain 10% note.
+    expect(payload.dataNotes).toEqual(["protocol share: datapi 5%, on-chain 10%"]);
+  });
+
+  it("notes datapi fees that disagree with the on-chain config", async () => {
+    const f = datapi();
+    const impl: typeof fetch = async (input, init) => {
+      const url = new URL(String(input));
+      if (!url.pathname.endsWith("/volume/history")) return f.impl(input, init);
+      return new Response(JSON.stringify({ data: [1, 2, 3, 4, 5, 6, 7].map((back) => ({ timestamp: D0 - back * DAY, volume: 40_000, fees: 2, protocol_fees: 1 })) }), { status: 200 });
+    };
+    const payload = await runSpec({ impl, calls: f.calls });
+    expect(payload.dataNotes.slice(1)).toEqual([
+      "datapi 7d fees 0.0050% of volume, below the 0.1000% on-chain base fee",
+      "datapi 7d protocol fees 50.0% of fees, on-chain share 10.0%",
+    ]);
+  });
+
+  it("fails the pool on a datapi 429 (the cron skips it; no retry, no fallback)", async () => {
+    const f = datapi({ volume: 429 });
+    await expect(runSpec(f)).rejects.toBeInstanceOf(MeteoraDatapiError);
+    expect(f.calls.filter((url) => url.includes("/volume/history"))).toHaveLength(1);
+  });
+
+  it("refuses a spec for another pool, and an unlisted bin step in the datapi body", async () => {
+    await expect(fetchMeteoraRangeApr("8k2c9Kiavx5pbWc2dmzhL7vFp11sLgMcKFfSueq8haAh", { spec })).rejects.toThrow(/allowlisted/);
+    expect(parseMeteoraPoolEconomics(fixture, spec)).toBeNull(); // datapi says bin step 1
+    expect(parseMeteoraPoolEconomics(datapiPool, spec)).toMatchObject({ mintA: CBBTC, mintB: WBTC });
   });
 });

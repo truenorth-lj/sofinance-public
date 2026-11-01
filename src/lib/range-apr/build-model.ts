@@ -50,13 +50,16 @@ export const LOW_CONFIDENCE_MAX_UNPLACED_PCT = 30;
  */
 export const LOW_CONFIDENCE_MIN_CANDLES = 12;
 
+/** Daily volume observed day by day (not a published 7-day total). */
+const OBSERVED_DAILY_SOURCES: ReadonlySet<VolumeSource> = new Set(["geckoterminal-daily", "meteora-datapi-daily"]);
+
 export function sampleConfidence(sample: {
   days: number; volumeSource: VolumeSource; occupancySource: OccupancySource; unplacedVolumePct: number;
   /** Hourly candles in the window; omitted = not checked. */
   candleCount?: number;
 }): SampleConfidence {
   return sample.days < LOW_CONFIDENCE_MIN_DAYS ||
-    (sample.candleCount !== undefined && sample.occupancySource === "hourly-candles" && sample.candleCount < LOW_CONFIDENCE_MIN_CANDLES) || sample.volumeSource !== "geckoterminal-daily" ||
+    (sample.candleCount !== undefined && sample.occupancySource === "hourly-candles" && sample.candleCount < LOW_CONFIDENCE_MIN_CANDLES) || !OBSERVED_DAILY_SOURCES.has(sample.volumeSource) ||
     sample.occupancySource !== "hourly-candles" || sample.unplacedVolumePct > LOW_CONFIDENCE_MAX_UNPLACED_PCT
     ? "low" : "ok";
 }

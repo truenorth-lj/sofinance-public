@@ -14,7 +14,8 @@ import { sortPairs, type DiscoverRwaPairsResult, type RwaPairRow } from "./rwa-p
 import { pickHighestAprPreset } from "./range-apr/preset-list";
 import { RWA_PAIRS_STALE_MS, aprSnapshotDelayed } from "./rwa-freshness";
 import {
-  ALGORITHM_VERSION, FEED_KEY, FEED_KEY_RHC, PAIRING_VERSION, RwaStoreError, storeRequestSchema,
+  ALGORITHM_VERSION, FEED_KEY, FEED_KEY_RHC, PAIRING_VERSION, RwaStoreError, SOLANA_FEED_PROTOCOL, storeRequestSchema,
+  type SnapshotPairs, type SolanaFeedKey,
   type AprWrite, type DiscoveryWrite, type Lease, type RwaStore, type SnapshotApr, type StoreRequest, type StoreOperation, type RhcRosterRow, type StoredProfile, type StoreResultMap, type StoreHandlers,
 } from "./rwa-store-types";
 
@@ -47,6 +48,8 @@ type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 const nowSql = sql`clock_timestamp()`;
 const POOL_UPDATE_KEYS = ["mintA", "mintB", "symbolA", "symbolB", "tvlUsd", "volume24hUsd", "fees24hUsd", "feeRate",
   "poolFeeAprPct", "details", "sourcePage", "lastSeenGeneration", "metricsObservedAt"] as const;
+/** Solana discovery rows also (re)state their protocol: the feed's, so a Meteora row is never stored as Raydium. */
+const SOLANA_POOL_UPDATE_KEYS = ["protocol", ...POOL_UPDATE_KEYS] as const;
 const RHC_POOL_UPDATE_KEYS = ["chain", "protocol", ...POOL_UPDATE_KEYS] as const;
 /** Rows per multi-row upsert: far below Postgres' 65,535 bind-parameter limit at ~15 columns per row. */
 const POOL_UPSERT_CHUNK = 500;
@@ -58,11 +61,13 @@ type PoolUpdateKey = Exclude<keyof PoolInsert, "poolAddress" | "feedKey" | "firs
  * Upsert many rwa_pool_latest rows in one statement per chunk (was one INSERT per pool: Sentry N+1). On conflict each
  * row takes its own new values via EXCLUDED.<column>, for exactly the columns the per-row upsert used to set.
  */
-async function upsertPools(tx: Pick<PostgresJsDatabase<typeof schema>, "insert">, rows: PoolInsert[], updateKeys: readonly PoolUpdateKey[]) {
+async function upsertPools(tx: Pick<PostgresJsDatabase<typeof schema>, "insert">, rows: PoolInsert[], updateKeys: readonly PoolUpdateKey[],
+  ownFeedKey?: string) {
   const set = Object.fromEntries(updateKeys.map((key) => [key, sql.raw(`excluded."${pool[key].name}"`)])) as Partial<Record<PoolUpdateKey, unknown>>;
   for (let start = 0; start < rows.length; start += POOL_UPSERT_CHUNK) {
     await tx.insert(pool).values(rows.slice(start, start + POOL_UPSERT_CHUNK))
-      .onConflictDoUpdate({ target: pool.poolAddress, set: { ...set, lastSeenAt: nowSql } as never });
+      .onConflictDoUpdate({ target: pool.poolAddress, set: { ...set, lastSeenAt: nowSql } as never,
+        ...(ownFeedKey ? { setWhere: eq(pool.feedKey, ownFeedKey) } : {}) });
   }
 }
 const iso = (value: string) => new Date(value).toISOString();
@@ -113,7 +118,7 @@ export class PostgresRwaStore implements RwaStore {
   }
 
   private readonly handlers: StoreHandlers = {
-    pairs: input => this.readPairs(input.minTvl, input.maxPages, input.sortBy),
+    pairs: input => this.readPairs(input.minTvl, input.maxPages, input.sortBy, input.feedKeys ?? [FEED_KEY]),
     apr: input => this.readApr(input.poolId),
     history: async input => {
       validateHistoryRange(input.from, input.to);
@@ -126,10 +131,10 @@ export class PostgresRwaStore implements RwaStore {
         algorithmVersion: row.algorithmVersion, sample: row.sample, reason: row.failureReason,
       })) };
     },
-    activePools: async () => {
+    activePools: async input => {
       const rows = await this.orm.select({ pool, profile: apr.profileCache, refreshedAt: refreshedAtSql }).from(pool)
         .innerJoin(feed, and(eq(feed.feedKey, pool.feedKey), eq(feed.generationId, pool.lastSeenGeneration)))
-        .leftJoin(apr, eq(apr.poolAddress, pool.poolAddress)).where(eq(feed.feedKey, FEED_KEY))
+        .leftJoin(apr, eq(apr.poolAddress, pool.poolAddress)).where(inArray(feed.feedKey, [...(input.feedKeys ?? [FEED_KEY])]))
         .orderBy(asc(pool.poolAddress));
       return rows.map((row) => ({ pair: pair(row.pool), metricsObservedAt: iso(row.pool.metricsObservedAt), profile: row.profile,
         refreshedAt: row.refreshedAt ? iso(row.refreshedAt) : null }));
@@ -173,30 +178,49 @@ export class PostgresRwaStore implements RwaStore {
       return result;
     }),
     publishDiscovery: input => this.publish(input.lease, input.data),
-    prepareDaily: input => this.prepareDaily(input.lease, input.includeRhc ?? true),
+    prepareDaily: input => this.prepareDaily(input.lease, input.includeRhc ?? true, input.feedKeys ?? [FEED_KEY]),
     saveApr: input => this.saveApr(input.lease, input.data),
     saveTokenIcons: input => this.saveTokenIcons(input.lease, input.data),
     ensureRhcRoster: input => this.ensureRhcRoster(input.lease, input.data as RhcRosterRow[]),
     rhcPools: () => this.readRhcPools(),
   };
 
-  private async readPairs(minTvl: number, maxPages: number, sortBy: "estimatedFeeApr" | "tvl" | "volume24h") {
-    // One statement gives feed and pools the same MVCC snapshot during generation publication.
+  /**
+   * The published pairs of the given Solana feeds (Raydium first). The Raydium feed is the primary: it must be
+   * published and sets the summary, page coverage and freshness, exactly as with one feed. A secondary feed (Meteora)
+   * adds its rows when it has published a generation and is skipped otherwise; it has no pages (every row page 1).
+   */
+  private async readPairs(minTvl: number, maxPages: number, sortBy: "estimatedFeeApr" | "tvl" | "volume24h",
+    feedKeys: readonly SolanaFeedKey[]): Promise<SnapshotPairs> {
+    // One statement gives feeds and pools the same MVCC snapshot during generation publication.
     const rows = await this.orm.select({ feed, pool }).from(feed).leftJoin(pool, and(
       eq(pool.feedKey, feed.feedKey), eq(pool.lastSeenGeneration, feed.generationId),
       lte(pool.sourcePage, maxPages), sql`COALESCE(${pool.tvlUsd},0)>=${minTvl}`,
-    )).where(eq(feed.feedKey, FEED_KEY));
-    const state = rows[0]?.feed;
+    )).where(inArray(feed.feedKey, [...feedKeys]));
+    const state = rows.find((row) => row.feed.feedKey === FEED_KEY)?.feed;
     if (!state?.generationId || !state.publishedAt) throw new RwaStoreError("SNAPSHOT_UNAVAILABLE");
     if (maxPages > state.scanMaxPages) throw new RwaStoreError("SNAPSHOT_COVERAGE_UNAVAILABLE");
     const published = iso(state.publishedAt), ageMs = this.clock() - Date.parse(published);
     const pages = Math.min(maxPages, state.pagesFetched);
-    return { ...(state.summary as Omit<DiscoverRwaPairsResult, "pairs">),
-      pairs: sortPairs(rows.flatMap((row) => row.pool ? [pair(row.pool)] : []), sortBy),
+    const live = rows.filter((row) => row.feed.generationId && row.feed.publishedAt);
+    const result: SnapshotPairs = { ...(state.summary as Omit<DiscoverRwaPairsResult, "pairs">),
+      pairs: sortPairs(live.flatMap((row) => row.pool ? [pair(row.pool)] : []), sortBy),
       pagesFetched: pages, scannedPools: state.pagePoolCounts.slice(0, pages).reduce((sum, n) => sum + n, 0),
       fetchedAt: published, cachedAt: published, stale: ageMs > RWA_PAIRS_STALE_MS, ageSeconds: Math.floor(ageMs / 1000),
       freshness: { snapshotAt: published, stale: ageMs > RWA_PAIRS_STALE_MS },
       tokenIcons: tokenIconMap(await this.readTokenIcons()) };
+    if (feedKeys.length > 1) {
+      const feeds: NonNullable<SnapshotPairs["feeds"]> = {};
+      for (const key of feedKeys) {
+        const own = live.filter((row) => row.feed.feedKey === key);
+        if (!own.length) continue;
+        const at = iso(own[0]!.feed.publishedAt!);
+        feeds[key] = { publishedAt: at, stale: this.clock() - Date.parse(at) > RWA_PAIRS_STALE_MS,
+          pools: own.filter((row) => row.pool).length };
+      }
+      result.feeds = feeds;
+    }
+    return result;
   }
 
   /**
@@ -312,14 +336,19 @@ export class PostgresRwaStore implements RwaStore {
       lastAttemptStatus: row.lastAttemptStatus } };
   }
 
+  /**
+   * Replace one Solana feed's generation (Raydium unless `data.feedKey` says otherwise). Only that feed's state row
+   * and its pools change: another feed's last generation stays published even when this one fails.
+   */
   private async publish(lease: Lease, data: DiscoveryWrite) {
+    const feedKey = data.feedKey ?? FEED_KEY, protocol = SOLANA_FEED_PROTOCOL[feedKey];
     if (lease.job !== "rwa-discovery" || data.pageCounts.length !== data.result.pagesFetched ||
       data.pageCounts.reduce((a, b) => a + b, 0) !== data.result.scannedPools ||
       new Set(data.result.pairs.map((p) => p.poolAddress)).size !== data.result.pairs.length)
       throw new RwaStoreError("INVALID_DISCOVERY");
     const generation = randomUUID();
     return this.guarded(lease, async (tx) => {
-      await tx.insert(feed).values({ feedKey: FEED_KEY, pairingRuleVersion: PAIRING_VERSION }).onConflictDoNothing();
+      await tx.insert(feed).values({ feedKey, pairingRuleVersion: PAIRING_VERSION }).onConflictDoNothing();
       const rows: PoolInsert[] = [];
       for (const row of data.result.pairs) {
         const page = data.sourcePages[row.poolAddress], observed = data.poolObservedAt[row.poolAddress];
@@ -328,15 +357,17 @@ export class PostgresRwaStore implements RwaStore {
           tvlUsd: row.tvlUsd, volume24hUsd: row.volume24hUsd, fees24hUsd: row.fees24hUsd,
           feeRate: row.feeRate, poolFeeAprPct: row.estimatedFeeAprPct, details: row, sourcePage: page,
           lastSeenGeneration: generation, metricsObservedAt: observed };
-        rows.push({ poolAddress: row.poolAddress, feedKey: FEED_KEY, ...values });
+        rows.push({ poolAddress: row.poolAddress, feedKey, chain: "solana", protocol, ...values });
       }
-      await upsertPools(tx, rows, POOL_UPDATE_KEYS);
+      // A pool address another feed already owns is not taken over (its row keeps that feed and generation).
+      await upsertPools(tx, rows, SOLANA_POOL_UPDATE_KEYS, feedKey);
       await tx.update(feed).set({ generationId: generation, scanMaxPages: getRwaConfig().maxPages,
         pagesFetched: data.result.pagesFetched, scannedPools: data.result.scannedPools, pagePoolCounts: data.pageCounts,
         publishedAt: data.result.fetchedAt, qualificationObservedAt: data.qualificationObservedAt,
         pairingRuleVersion: PAIRING_VERSION, summary: { source: data.result.source,
-          pairingRuleSummary: data.result.pairingRuleSummary, estimatedFeeAprLabel: data.result.estimatedFeeAprLabel },
-      }).where(eq(feed.feedKey, FEED_KEY));
+          pairingRuleSummary: data.result.pairingRuleSummary, estimatedFeeAprLabel: data.result.estimatedFeeAprLabel,
+          ...(data.result.scanStats ? { scanStats: data.result.scanStats } : {}) },
+      }).where(eq(feed.feedKey, feedKey));
       return { generation, pools: data.result.pairs.length };
     });
   }
@@ -347,7 +378,9 @@ export class PostgresRwaStore implements RwaStore {
    * Every active pool gets a row every day the cron runs: without a successful update it ends `missing` /
    * `failed` / `degraded`, so the history has no silent gaps.
    */
-  private async seedDaily(tx: Transaction, day: { date: string; start: number }, poolId?: string, includeRhc = true) {
+  private async seedDaily(tx: Transaction, day: { date: string; start: number }, poolId?: string, includeRhc = true,
+    solanaFeeds: readonly string[] = [FEED_KEY]) {
+    const feeds = [...solanaFeeds, ...(includeRhc ? [FEED_KEY_RHC] : [])];
     await tx.execute(sql`INSERT INTO ${daily}
       (pool_address,chain,protocol,snapshot_date,scheduled_for,mint_a,mint_b,symbol_a,symbol_b,
        tvl_usd,volume_24h_usd,fees_24h_usd,pool_fee_apr_pct,pool_metrics_observed_at,algorithm_version)
@@ -355,7 +388,7 @@ export class PostgresRwaStore implements RwaStore {
         ${pool.mintA},${pool.mintB},${pool.symbolA},${pool.symbolB},${pool.tvlUsd},
         ${pool.volume24hUsd},${pool.fees24hUsd},${pool.poolFeeAprPct},${pool.metricsObservedAt},${ALGORITHM_VERSION}
       FROM ${pool} JOIN ${feed} ON ${feed.feedKey}=${pool.feedKey} AND ${feed.generationId}=${pool.lastSeenGeneration}
-      WHERE ${feed.feedKey} IN (${FEED_KEY},${includeRhc ? FEED_KEY_RHC : FEED_KEY}) ${poolId ? sql`AND ${pool.poolAddress}=${poolId}` : sql``}
+      WHERE ${feed.feedKey} IN (${sql.join(feeds.map((key) => sql`${key}`), sql`,`)}) ${poolId ? sql`AND ${pool.poolAddress}=${poolId}` : sql``}
       ON CONFLICT DO NOTHING`);
   }
 
@@ -364,7 +397,7 @@ export class PostgresRwaStore implements RwaStore {
    * (failed / degraded / missing, value NULL) and seed today's pending rows. A row turns `ok` on the pool's first
    * successful update of the Taipei day (`saveApr`), whichever 4-hourly run that is; there is no capture window.
    */
-  private async prepareDaily(lease: Lease, includeRhc: boolean) {
+  private async prepareDaily(lease: Lease, includeRhc: boolean, solanaFeeds: readonly SolanaFeedKey[]) {
     if (lease.job !== "rwa-apr-refresh") throw new RwaStoreError("INVALID_JOB");
     const day = taipeiDay(this.clock());
     return this.guarded(lease, async (tx) => {
@@ -372,7 +405,7 @@ export class PostgresRwaStore implements RwaStore {
         WHEN ${daily.failureReason} IS NOT NULL THEN 'failed' ELSE 'missing' END`, finalizedAt: nowSql })
         .where(and(eq(daily.status, "pending"), sql`${daily.snapshotDate}<${day.date}::date`));
       // RHC rows only when the RHC 7d APR flag is on (otherwise nothing would ever fill them).
-      await this.seedDaily(tx, day, undefined, includeRhc);
+      await this.seedDaily(tx, day, undefined, includeRhc, solanaFeeds);
       return { date: day.date };
     });
   }
@@ -392,7 +425,8 @@ export class PostgresRwaStore implements RwaStore {
       const isRhc = /^0x[0-9a-f]{64}$/i.test(data.poolId);
       await tx.insert(apr).values({
         poolAddress: data.poolId, algorithmVersion: ALGORITHM_VERSION, lastAttemptStatus: status,
-        ...(isRhc ? { chain: "robinhood", protocol: "uniswap-v4-rhc" } : {}),
+        ...(isRhc ? { chain: "robinhood", protocol: "uniswap-v4-rhc" }
+          : data.protocol && data.protocol !== DEFAULT_PROTOCOL ? { protocol: data.protocol } : {}),
       }).onConflictDoNothing();
       await tx.update(apr).set({ lastAttemptAt: nowSql, lastAttemptStatus: status, lastAttemptIssues: data.issues,
         profileCache: profile }).where(eq(apr.poolAddress, data.poolId));
@@ -416,7 +450,8 @@ export class PostgresRwaStore implements RwaStore {
       if (successToday && data.payload && winner?.estimate.status === "ok") {
         // First success of the day: the row (seeded by prepareDaily, or now for a pool that joined since) turns
         // ok exactly once; later successes find no pending row and change nothing (no duplicates, no overwrite).
-        await this.seedDaily(tx, day, data.poolId);
+        // The pool's own feed seeds it (any Solana feed): a pool that joined since today's prepareDaily.
+        await this.seedDaily(tx, day, data.poolId, true, Object.keys(SOLANA_FEED_PROTOCOL));
         const metrics = (column: string) => sql`(SELECT ${sql.raw(column)} FROM ${pool} p WHERE p.pool_address=${data.poolId})`;
         await tx.update(daily).set({ status: "ok", capturedAt: data.payload.fetchedAt, finalizedAt: nowSql,
           highestRangeAprPct: winner.estimate.aprPct, highestRangeId: winner.id, tickLower: winner.tickLower,

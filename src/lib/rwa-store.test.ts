@@ -47,14 +47,23 @@ describe("saved RWA foreground reads", () => {
     config();
     const fetcher = vi.fn(async (url: RequestInfo | URL) => {
       expect(String(url)).toBe("https://rwa.example.com/v1/rwa");
-      return Response.json({ stored: true });
+      return Response.json({ stored: true, pairs: [{ poolAddress: "ok" }, { poolAddress: "paused", blocked: { reasons: ["paused"], mints: ["m"] } }] });
     });
     vi.stubGlobal("fetch", fetcher);
-    // A gateway without `tokenIcons` (older store build) gets the manual icon list added, nothing else.
+    // A gateway without `tokenIcons` (older store build) gets the manual icon list added; scan-blocked pools are not listed.
     const pairs = await getRwaPairs({ minTvl: 0, maxPages: 10, sortBy: "tvl" });
-    expect(pairs).toEqual({ stored: true, tokenIcons: expect.objectContaining({ solana: expect.any(Object), robinhood: expect.any(Object) }) });
-    expect(await getPoolAprSnapshot("1".repeat(32))).toEqual({ stored: true });
+    expect(pairs).toEqual({ stored: true, pairs: [{ poolAddress: "ok" }],
+      tokenIcons: expect.objectContaining({ solana: expect.any(Object), robinhood: expect.any(Object) }) });
+    expect(await getPoolAprSnapshot("1".repeat(32))).toMatchObject({ stored: true });
     expect(fetcher).toHaveBeenCalledTimes(2);
+    // A Raydium-only read (production: Meteora listing off) sends no feedKeys: the same request as before.
+    const [, init] = fetcher.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(String(init.body))).toMatchObject({ op: "pairs" });
+    expect(JSON.parse(String(init.body))).not.toHaveProperty("feedKeys");
+    // Listing the Meteora scan feed too (METEORA_RWA_LIST_ENABLED) asks for both feeds.
+    await getRwaPairs({ minTvl: 0, maxPages: 10, sortBy: "tvl", feedKeys: ["raydium-clmm-rwa-v1", "meteora-dlmm-rwa-v1"] });
+    const [, both] = fetcher.mock.calls[2] as unknown as [string, RequestInit];
+    expect(JSON.parse(String(both.body))).toMatchObject({ op: "pairs", feedKeys: ["raydium-clmm-rwa-v1", "meteora-dlmm-rwa-v1"] });
     expect(String(fetcher.mock.calls[0]?.[0])).toBe(
       "https://rwa.example.com/v1/rwa",
     );

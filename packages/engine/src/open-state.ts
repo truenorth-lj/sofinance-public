@@ -1,7 +1,7 @@
 import { ClmmConfigLayout, CLMM_PROGRAM_ID, PoolInfoLayout, TickUtil } from "@raydium-io/raydium-sdk-v2";
 import {
   AccountState, ExtensionType, getAssociatedTokenAddressSync, getDefaultAccountState, getExtensionTypes,
-  getPausableConfig, getScaledUiAmountConfig, getTransferFeeConfig, getTransferHook,
+  getScaledUiAmountConfig, getTransferHook,
   TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID, unpackAccount, unpackMint,
 } from "@solana/spl-token";
 import { Connection, PublicKey, type AccountInfo } from "@solana/web3.js";
@@ -9,6 +9,7 @@ import { MIN_SOL_LAMPORTS, NATIVE_SOL_MINT, USDC_MINT } from "./ids";
 import { rpcConnection } from "./rpc";
 import { resolveMintSymbols } from "./mint-symbols";
 import { discoverWallet } from "./wallet-discovery";
+import { mintHasTransferFee, mintIsPaused } from "./token-safety";
 
 const tokenPrograms = [TOKEN_PROGRAM_ID.toBase58(), TOKEN_2022_PROGRAM_ID.toBase58()];
 const supportedPoolExtensions = new Set([
@@ -104,11 +105,8 @@ export async function readOpenPoolState(
   const [ataAInfo, ataBInfo] = await connection.getMultipleAccountsInfo([ataA, ataB], "confirmed");
   const balanceA = tokenAmount(ataAInfo ?? null, ataA, mintA.program, wallet, pool.mintA);
   const balanceB = tokenAmount(ataBInfo ?? null, ataB, mintB.program, wallet, pool.mintB);
-  const paused = [mintA.mint, mintB.mint].some((mint) => getPausableConfig(mint)?.paused);
-  const transferFee = [mintA.mint, mintB.mint].some((mint) => {
-    const config = getTransferFeeConfig(mint);
-    return config && (config.newerTransferFee.transferFeeBasisPoints > 0 || config.olderTransferFee.transferFeeBasisPoints > 0);
-  });
+  const paused = [mintA.mint, mintB.mint].some(mintIsPaused);
+  const transferFee = [mintA.mint, mintB.mint].some(mintHasTransferFee);
   const unsupportedExtensions = [...new Set([mintA.mint, mintB.mint].flatMap(poolMintIssues))];
   const frozen = vaultA.isFrozen || vaultB.isFrozen || balanceA.frozen || balanceB.frozen;
   const freezeRiskA = mintA.mint.freezeAuthority !== null;

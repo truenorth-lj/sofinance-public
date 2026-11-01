@@ -4,9 +4,10 @@
  * Solana rows (Raydium CLMM, plus Orca / Meteora when their discovery flag is on) and Robinhood Chain Uniswap v4
  * rows share one shape so search, filters, sorting and "Hide duplicate pools" work the same for every card and row.
  *
- * Duplicate rule (PM / LJ 2026-10-30): on the same chain, pools of the same token pair (order-insensitive, by mint /
- * token address) collapse to the one with the highest estimated 7-day range APR; there is no TVL threshold, and pools
- * on different chains are never merged. A pool without a 7-day APR (not published for its protocol, still loading, or
+ * Duplicate rule (PM / LJ 2026-10-30; same-protocol scope: PM 2026-11-01): on the same chain and protocol, pools of the
+ * same token pair (order-insensitive, by mint / token address) collapse to the one with the highest estimated 7-day
+ * range APR; there is no TVL threshold. Pools on different chains or protocols are never merged: the same pair on
+ * Raydium and Meteora is two rows, told apart by their protocol badge. A pool without a 7-day APR (not published for its protocol, still loading, or
  * unavailable) ranks below every pool that has one; between pools that both lack it, the higher TVL wins, then the
  * higher 24h volume, then the pool address (so the choice is stable).
  */
@@ -46,11 +47,22 @@ export type UnifiedPool = {
 /** Estimated highest range APR (7-day average), percent; null when the pool has none (yet). */
 export type Apr7dLookup = (pool: UnifiedPool) => number | null;
 
-/** Same-pair key on one chain: mints sorted, so A/B and B/A match. EVM addresses are case-insensitive; Solana mints are not. */
-export function samePairKey(pool: Pick<UnifiedPool, "chain" | "mintA" | "mintB">): string {
+/**
+ * Same-pair key on one chain and protocol: mints sorted, so A/B and B/A match. EVM addresses are case-insensitive;
+ * Solana mints are not.
+ */
+export function samePairKey(pool: Pick<UnifiedPool, "chain" | "protocol" | "mintA" | "mintB">): string {
   const norm = (mint: string) => (pool.chain === "robinhood" ? mint.toLowerCase() : mint);
   const [a, b] = [norm(pool.mintA), norm(pool.mintB)].sort();
-  return `${pool.chain}:${a}|${b}`;
+  return `${pool.chain}:${pool.protocol}:${a}|${b}`;
+}
+
+/** Shown (on a greyed Open button) where the list cannot open a position in the pool's protocol. */
+export const METEORA_OPEN_UNAVAILABLE = "Opening Meteora positions isn't available yet";
+
+/** Why the list cannot open this pool, or null when it can (Meteora DLMM: not from the list, PM 2026-11-01). */
+export function openUnavailableReason(pool: Pick<UnifiedPool, "protocol">): string | null {
+  return pool.protocol === "meteora-dlmm" ? METEORA_OPEN_UNAVAILABLE : null;
 }
 
 const finite = (value: number | null | undefined): value is number => typeof value === "number" && Number.isFinite(value);
@@ -67,7 +79,7 @@ export function compareDuplicateRank(a: UnifiedPool, b: UnifiedPool, apr7d: Apr7
   return a.poolAddress < b.poolAddress ? -1 : a.poolAddress > b.poolAddress ? 1 : 0;
 }
 
-/** Keeps one pool per (chain, token pair): the best by `compareDuplicateRank`. Input order is preserved. */
+/** Keeps one pool per (chain, protocol, token pair): the best by `compareDuplicateRank`. Input order is preserved. */
 export function hideDuplicatePools(pools: readonly UnifiedPool[], apr7d: Apr7dLookup): UnifiedPool[] {
   const best = new Map<string, UnifiedPool>();
   for (const pool of pools) {

@@ -1,12 +1,20 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
-const freezeMock = vi.hoisted(() => ({ read: vi.fn<(connection: unknown, mints: string[]) => Promise<Map<string, boolean>>>(async () => new Map()) }));
-vi.mock("./onchain-mint-freeze", () => ({ readMintFreezeAuthorities: freezeMock.read }));
+const freezeMock = vi.hoisted(() => ({ read: vi.fn<(connection: unknown, mints: string[]) => Promise<Map<string, boolean | { freezeAuthority: boolean; blockReasons: string[] }>>>(async () => new Map()) }));
+// Tests give a freeze-authority boolean (no block) or a full MintSafety per mint.
+vi.mock("./onchain-mint-freeze", () => ({
+  readMintSafety: async (connection: unknown, mints: string[]) => {
+    const read = (await freezeMock.read(connection, mints)) as Map<string, boolean | object>;
+    return new Map([...read].map(([mint, value]) => [mint, typeof value === "boolean" ? { freezeAuthority: value, blockReasons: [] } : value]));
+  },
+}));
 vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: () => ({}) }));
 
+import { listablePairs } from "./rwa-listable";
 import {
   applyOnchainFreezeRisk,
+  blockOf,
   clearRwaPairsCache,
   discoverRwaPairs,
   getCachedRwaPairs,
@@ -613,6 +621,30 @@ describe("applyOnchainFreezeRisk (Raydium rows)", () => {
     const skipped = await applyOnchainFreezeRisk([base], null);
     expect(skipped.source).toBe("tags");
     expect(freezeMock.read).not.toHaveBeenCalled();
+  });
+
+  it("flags a pool blocked by a paused / transfer-fee / frozen mint, never by a freeze authority alone", async () => {
+    const base = row();
+    freezeMock.read.mockResolvedValueOnce(new Map([[MINT_A, true], [MINT_B, false]]));
+    const free = await applyOnchainFreezeRisk([base], {} as never);
+    expect(free.pairs[0]!.blocked).toBeUndefined();
+    expect("blocked" in free.pairs[0]!).toBe(false); // unblocked rows serialize exactly as before
+    freezeMock.read.mockResolvedValueOnce(new Map([
+      [MINT_A, { freezeAuthority: true, blockReasons: ["transfer_fee"] }],
+      [MINT_B, { freezeAuthority: false, blockReasons: ["paused", "transfer_fee"] }],
+    ]));
+    const blocked = await applyOnchainFreezeRisk([base], {} as never);
+    expect(blocked.pairs[0]).toMatchObject({ freezeRiskA: true, freezeRiskB: false,
+      blocked: { reasons: ["paused", "transfer_fee"], mints: [MINT_A, MINT_B] } });
+    expect(listablePairs(blocked.pairs)).toEqual([]);
+    expect(listablePairs(free.pairs)).toEqual(free.pairs);
+  });
+
+  it("blockOf: unknown mints (RPC miss) do not block; reasons keep a fixed order", () => {
+    expect(blockOf([[MINT_A, undefined], [MINT_B, undefined]])).toBeUndefined();
+    expect(blockOf([[MINT_A, { freezeAuthority: true, blockReasons: [] }], [MINT_B, undefined]])).toBeUndefined();
+    expect(blockOf([[MINT_A, { freezeAuthority: false, blockReasons: ["frozen"] }], [MINT_B, { freezeAuthority: false, blockReasons: ["paused"] }]]))
+      .toEqual({ reasons: ["paused", "frozen"], mints: [MINT_A, MINT_B] });
   });
 
   it("discoverRwaPairs applies the chain read to discovered rows", async () => {

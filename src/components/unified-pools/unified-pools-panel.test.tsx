@@ -106,10 +106,41 @@ describe("UnifiedPoolsPanel", () => {
     expect(shown().some((key) => key?.startsWith("robinhood:"))).toBe(false);
   });
 
-  it("shows Meteora pools with a link to their open flow when the flags are on", async () => {
+  it("shows Meteora pools with a greyed Open and its reason: no open flow, no link out, no Plan", async () => {
     await render({ orca: false, meteora: true, meteoraOpen: true, rhc: true });
     expect(shown()).toContain("solana:met1");
-    expect(container.querySelector<HTMLAnchorElement>("a[aria-label='Open position in NVDAx/NVDA']")!.getAttribute("href")).toBe("/app/meteora");
+    const card = container.querySelector('[data-pool="solana:met1"]')!;
+    const open = card.querySelector<HTMLButtonElement>("[data-testid=open-disabled] button")!;
+    expect(open.disabled).toBe(true);
+    expect(open.className).toContain("opacity-45");
+    expect(card.querySelector("[data-testid=open-disabled]")!.textContent).toContain("Opening Meteora positions isn't available yet");
+    expect(card.querySelectorAll("a")).toHaveLength(0);
+    expect(card.textContent).not.toContain("Plan this pool");
+    await act(async () => { open.click(); });
+    expect(mocks.modal).not.toHaveBeenCalled();
+    expect(mocks.connect).not.toHaveBeenCalled();
+  });
+
+  it("the same pair on Raydium and Meteora is two rows with their protocol badges; duplicates collapse within a protocol", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      requested.push(url);
+      const body = url.startsWith("/api/rwa-pairs") ? { pairs: [
+        row("ray-tsla", "TSLAx", "TSLA", "t1", "t2"),
+        row("met-tsla", "TSLA", "TSLAx", "t2", "t1", { protocol: "meteora-dlmm", tvlUsd: 34_000 }),
+        row("met-tsla-small", "TSLA", "TSLAx", "t2", "t1", { protocol: "meteora-dlmm", tvlUsd: 2_000 }),
+      ] } : { pools: [] };
+      return { ok: true, json: async () => body };
+    }));
+    mocks.apr = { "ray-tsla": 20, "met-tsla": 30, "met-tsla-small": 10 };
+    await render({ ...PROD, rhc: false });
+    expect(shown()).toEqual(["solana:met-tsla", "solana:ray-tsla"]);
+    expect(container.textContent).toContain("Show all pools (1 hidden)");
+    const badges = (key: string) => container.querySelector(`[data-pool="${key}"]`)!.textContent;
+    expect(badges("solana:met-tsla")).toContain("Meteora");
+    expect(badges("solana:ray-tsla")).toContain("Raydium");
+    await act(async () => { button("List").click(); });
+    expect([...container.querySelectorAll("[data-testid=protocol-badge]")].map((el) => el.textContent)).toEqual(["Meteora", "Raydium"]);
+    expect([...container.querySelectorAll("[data-testid=protocol-badge-narrow]")].map((el) => el.textContent)).toEqual(["Meteora", "Raydium"]);
   });
 
   it("switches to a sortable list", async () => {
