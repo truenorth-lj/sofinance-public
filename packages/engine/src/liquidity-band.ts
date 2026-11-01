@@ -29,5 +29,12 @@ export function staysInLiquidityBand(
   return projected.gte(TickUtil.getSqrtPriceAtTick(lower)) && projected.lt(TickUtil.getSqrtPriceAtTick(upper));
 }
 
+/** The quoted swap would move the pool price past a point where the pool's liquidity can change. */
 export const CROSS_LIQUIDITY_BAND_MESSAGE =
-  "Swap may move the pool price past a tick-spacing boundary where liquidity can change; cross-tick depth estimation not currently supported";
+  "The swap for this amount would move the pool price past a point where the pool's liquidity changes, so the app " +
+  "can't predict the result safely. Try a smaller amount, a wider range, or refresh the quote.";
+
+/** The quoted swap would move the pool price out of the position's own range, so the deposit would no longer fit it. */
+export const CROSS_POSITION_RANGE_MESSAGE =
+  "The swap for this amount would move the pool price outside this position's price range, so the deposit would no " +
+  "longer fit the position. Try a smaller amount, or refresh the quote.";

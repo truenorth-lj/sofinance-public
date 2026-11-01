@@ -13,8 +13,10 @@ import { readSelectedPositionState, type SelectedPositionState } from "@sofinanc
 import { buildRoute, quoteRoute } from "@sofinance/engine/swap/jupiter";
 import { JupiterHttpError } from "@sofinance/engine/jupiter/errors";
 import { allocateSpend } from "@sofinance/engine/quote-math";
-import { clampInsideSpend, getSelectedQuoteBundle, minorityLegFloor } from "./selected-quote";
-import { AMOUNT_TOO_SMALL_CODE, AmountTooSmallError, formatAmountTooSmallMessage } from "./selected-amount-error";
+import { clampInsideSpend, getSelectedQuoteBundle, minorityLegFloor, smallLegFloorSteps } from "./selected-quote";
+import { AMOUNT_TOO_SMALL_CODE, AmountTooSmallError, formatAmountTooSmallMessage, SMALL_LEG_MOVES_PRICE_CODE,
+  SmallLegMovesPriceError, formatSmallLegMovesPriceMessage } from "./selected-amount-error";
+import { sanitizePublicError } from "./public-error";
 
 // Mainnet snapshot (read-only, public RPC) of LJ's INTCx/INTCy position: a 1-tick range with the
 // pool price sitting at its lower edge, so the position needs ~99.99% INTCx and ~0.01% INTCy.
@@ -110,6 +112,57 @@ describe("dust minority leg on a 1-tick range at its edge", () => {
     expect((failure as Error).message).toMatch(/price range is narrow and the pool price sits at its edge/);
     expect((failure as Error).message).toMatch(/Enter at least 0\.00000201 /);
     expect(quoteRoute).not.toHaveBeenCalled();
+  });
+});
+
+describe("bumped leg on a thin 1-tick pool (Jupiter routes it through the target pool)", () => {
+  // The INTCx -> INTCy leg pushes the price down; the price sits just above the band's (and range's) lower edge.
+  const room = BigInt(SQRT) - BigInt(LOWER);
+  /** Pool liquidity at which `units` raw INTCx swapped through the pool moves the sqrt price by about `share` of `room`. */
+  const liquidityFor = (units: bigint, share: number) =>
+    units * BigInt(SQRT) ** 2n * 1000n / ((room * BigInt(Math.round(share * 1000))) << 64n);
+  function thinPool(poolLiquidity: bigint) {
+    vi.mocked(readSelectedPositionState).mockResolvedValue({ ...edgeState(), poolLiquidity: poolLiquidity.toString() });
+    vi.mocked(quoteRoute).mockImplementation(async (input, output, amount) => priced(input, output, amount, POOL) as never);
+  }
+
+  it("the 1 bps bump (a 1502-unit INTCy leg) crosses the 1-tick band, so it falls back to a smaller quotable leg", async () => {
+    // 200 units would use 40% of the room to the band edge: 1502 and 767 units cross it, 392 units fit.
+    thinPool(liquidityFor(200n, 0.4));
+    const steps = smallLegFloorSteps(15_020_418n);
+    expect(steps).toEqual([1_502n, 767n, 392n, 200n]);
+    const { quote } = await quoteIntcx("0.15020418");
+    expect(quote.spendB).toBe("392");
+    expect(BigInt(quote.spendA) + BigInt(quote.spendB)).toBe(15_020_418n);
+    expect(BigInt(quote.liquidity)).toBeGreaterThan(0n);
+    // First the 1502-unit bump was quoted, then the 200-unit fallback.
+    const intcyLegs = vi.mocked(quoteRoute).mock.calls.filter((call) => call[1] === INTCY).map((call) => call[2]);
+    expect(intcyLegs[0]).toBe(1_502n);
+    expect(intcyLegs).toContain(767n);
+    expect(intcyLegs.at(-1)).toBe(392n);
+  });
+
+  it("explains in plain English what to do when no smaller quotable bump fits inside the band", async () => {
+    // Even a 200-unit leg (Jupiter's minimum) would move the price twice the room to the band edge.
+    thinPool(liquidityFor(200n, 2));
+    const failure = await quoteIntcx("0.15020418").catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(SmallLegMovesPriceError);
+    expect(failure).toMatchObject({ code: SMALL_LEG_MOVES_PRICE_CODE, detail: { minorityMint: INTCY, majorityMint: INTCX } });
+    const message = sanitizePublicError(failure, "fallback");
+    // The server message is complete (not truncated); the app re-renders it with its own token labels.
+    expect(message).toBe((failure as Error).message);
+    expect(message).toMatch(/Try again after the price moves further inside the range, or use a position with a wider range\.$/);
+    expect(message).not.toMatch(/tick|re-quote|boundary|estimation/i);
+    expect(formatSmallLegMovesPriceMessage({ minority: "INTCy", majority: "INTCx" })).toMatch(
+      /needs almost only INTCx\. The pool is so thin there that even the smallest INTCy swap Jupiter can quote/);
+  });
+
+  it("keeps a genuine large-amount crossing (no bump involved) as the plain cross-depth error", async () => {
+    vi.mocked(readSelectedPositionState).mockResolvedValue(edgeState(INTCY));
+    vi.mocked(quoteRoute).mockImplementation(async (input, output, amount) => priced(input, output, amount, POOL) as never);
+    await expect(getSelectedQuoteBundle(wallet, { positionMint, inputMint: INTCY, inputKind: "token" },
+      "50000", 9900, 100, { maxAccounts: 24 }, { buildTransactions: false, includeResale: false }))
+      .rejects.toThrow(/outside this position's price range|where the pool's liquidity changes/);
   });
 });
 

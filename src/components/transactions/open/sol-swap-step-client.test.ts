@@ -164,4 +164,28 @@ describe("runSolSwapStep with a Phantom-shaped transaction", () => {
     expect(readSolSwapAttempt(storage, WALLET)).toBeNull();
     expect(JSON.parse(storage.map.get(solSwapReceiptKey(WALLET, POOL))!)).toMatchObject({ signature: LANDED_SIG, delivered: "123456", decimals: 6 });
   });
+
+  it("a step 1/2 swap that landed but failed on-chain lets the user swap again (attempt cleared, no lock left)", async () => {
+    const sent: string[] = [];
+    const wallet: TxWallet = { address: WALLET, signTransaction: vi.fn(), signAndSendTransaction: vi.fn(async (tx: VersionedTransaction) => {
+      tx.sign([payer]); const signature = bs58.encode(tx.signatures[0]!); sent.push(signature); return signature;
+    }) };
+    const storage = memoryStorage();
+    const status = vi.fn(async () => Response.json({ status: "failed" }));
+    vi.stubGlobal("fetch", status);
+    const run = () => runSolSwapStep({ poolId: POOL, amount: "0.001", requested: "1000000", store: {} as never, timeoutMs: 5_000,
+      wallet, setStage: () => {}, current: () => true, storage, sleep: async () => undefined });
+    const failure = await run().catch((error: unknown) => error);
+    expect(failure).toMatchObject({ name: "SolSwapStepError", signature: sent[0],
+      message: "Step 1/2 swap failed on-chain. Your SOL was not swapped; nothing was opened." });
+    // Nothing blocks a new attempt: no saved step 1/2 attempt, no cancel-check hold for this pool.
+    expect(readSolSwapAttempt(storage, WALLET)).toBeNull();
+    expect(isCancelCheckPending(cancelCheckKey("open", POOL))).toBe(false);
+    // The retry prepares and asks the wallet again, and this time the swap confirms.
+    status.mockImplementation(async () => Response.json({ status: "confirmed", delivered: "123456", decimals: 6 }));
+    const receipt = await run();
+    expect(relay.post).toHaveBeenCalledTimes(2);
+    expect(wallet.signAndSendTransaction).toHaveBeenCalledTimes(2);
+    expect(receipt).toMatchObject({ signature: sent[1], delivered: "123456", decimals: 6 });
+  });
 });

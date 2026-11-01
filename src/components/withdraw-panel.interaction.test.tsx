@@ -33,6 +33,14 @@ it("uses a force-only refresh for the finalized conversion rather than waiting f
  expect(mocks.historyChange).toHaveBeenCalledWith(withdrawPosition,undefined);
  expect(container.textContent).toContain("Withdrawal complete");expect(mocks.sign).not.toHaveBeenCalled();
 });
+it("keeps Solscan links for both steps in the panel's status area after the withdrawal completes",async()=>{
+ checkpoint("swap");vi.stubGlobal("fetch",vi.fn(async()=>Response.json({status:"success"})));
+ await render();await click("Resume withdrawal");
+ const saved=withdrawCheckpoint("swap");
+ const links=Array.from(container.querySelectorAll('[data-testid="withdraw-solscan"] a')).map(a=>a.getAttribute("href"));
+ expect(links).toEqual([saved.root?.signature,saved.signature].filter(Boolean).map(s=>`https://solscan.io/tx/${s}`));
+ expect(links.length).toBeGreaterThan(0);
+});
 it.each(["manual-review","failed","expired"])("does not notify history for withdrawal status %s",async(status)=>{
  checkpoint("atomic");vi.stubGlobal("fetch",vi.fn(async()=>Response.json({status})));
  await render();await click("Resume withdrawal");

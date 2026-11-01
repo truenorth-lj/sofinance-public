@@ -20,6 +20,7 @@ import {
   isAmountTooSmallError,
   JUPITER_CLIENT_ERROR_CODE,
   jupiterClientErrorMessage,
+  SmallLegMovesPriceError,
 } from "./selected-amount-error";
 import { SolInputDisabledError } from "./sol-input-policy";
 
@@ -69,7 +70,7 @@ export function errorText(error: unknown): string {
 }
 
 export function mapKnownChainError(text: string): string | null {
-  if (/tick-spacing boundary|cross-tick depth|cross position boundary|cross the selected range/i.test(text)) {
+  if (/tick-spacing boundary|cross-tick depth|cross position boundary|cross the selected range|where the pool's liquidity changes|outside (?:this position's|the selected) price range/i.test(text)) {
     return CROSS_TICK_USER_MESSAGE;
   }
   if (looksLikeJupiterPublicError(text)) return JUPITER_UNAVAILABLE_MESSAGE;
@@ -115,6 +116,7 @@ export function publicErrorCode(error: unknown): string | undefined {
     return JUPITER_NO_ROUTE_CODE;
   }
   if (isAmountTooSmallError(error)) return AMOUNT_TOO_SMALL_CODE;
+  if (error instanceof SmallLegMovesPriceError) return error.code;
   if (error instanceof SolInputDisabledError) return error.code;
   // Engine CompoundInsufficientSolError; matched by code so client bundles need not load the simulator.
   if (error instanceof Error && (error as { code?: unknown }).code === INSUFFICIENT_SOL_CODE) return INSUFFICIENT_SOL_CODE;
@@ -139,6 +141,8 @@ export function sanitizePublicError(error: unknown, fallback: string): string {
   }
   if (error instanceof AmountTooSmallError && error.detail) return truncate(sanitizeDetail(error.message), 400);
   if (isAmountTooSmallError(error)) return AMOUNT_TOO_SMALL_MESSAGE;
+  // Already plain English with token names and the next step.
+  if (error instanceof SmallLegMovesPriceError) return truncate(sanitizeDetail(error.message), 400);
   if (error instanceof JupiterHttpError && error.status === 400) {
     return truncate(sanitizeDetail(jupiterClientErrorMessage(error)));
   }

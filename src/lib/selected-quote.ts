@@ -16,10 +16,11 @@ import { jupiterRelayHint, setJupiterRelayHint, type JupiterRetryBudget } from "
 import { isJupiterNoRouteError } from "@sofinance/engine/swap/jupiter";
 import { readSelectedPositionState, type PositionSelection, type SelectedPositionState } from "@sofinance/engine/selected-state";
 import { selectedNoRouteError } from "./selected-no-route";
-import { AmountTooSmallError, formatAmountTooSmallMessage, isJupiterAmountTooSmallHttp, minJupiterSwapAmount } from "./selected-amount-error";
+import { AmountTooSmallError, formatAmountTooSmallMessage, formatSmallLegMovesPriceMessage, isJupiterAmountTooSmallHttp,
+  minJupiterSwapAmount, SmallLegMovesPriceError } from "./selected-amount-error";
 import { tokenSymbol } from "./position-label";
 import { withSelectedRouteRetries } from "./selected-route-retry";
-import { CROSS_LIQUIDITY_BAND_MESSAGE, staysInLiquidityBand } from "@sofinance/engine/liquidity-band";
+import { CROSS_LIQUIDITY_BAND_MESSAGE, CROSS_POSITION_RANGE_MESSAGE, staysInLiquidityBand } from "@sofinance/engine/liquidity-band";
 
 const MIN_JUPITER_SWAP = minJupiterSwapAmount(SLIPPAGE_BPS);
 /**
@@ -43,8 +44,8 @@ export function minorityLegFloor(requested: bigint): bigint {
 type InsideFloors = { a: bigint; b: bigint; quoteA: boolean; quoteB: boolean };
 
 /** Per-side minimum spend for an in-range add: each side needs some of its token; a swapped side needs a quotable leg. */
-function insideFloors(inputMint: string, mintA: string, mintB: string, requested: bigint): InsideFloors {
-  const floor = minorityLegFloor(requested);
+function insideFloors(inputMint: string, mintA: string, mintB: string, requested: bigint,
+  floor = minorityLegFloor(requested)): InsideFloors {
   const quoteA = inputMint !== mintA, quoteB = inputMint !== mintB;
   return { a: quoteA ? floor : 1n, b: quoteB ? floor : 1n, quoteA, quoteB };
 }
@@ -81,6 +82,13 @@ function insideTooSmall(state: SelectedPositionState, requested: bigint, natural
     nearlyOneSided ? (minorityIsA ? state.mintB : state.mintA) : undefined);
 }
 
+/** Even Jupiter's smallest quotable minority leg moves this thin pool's price too far: plain-English cause and next step. */
+function smallLegMovesPrice(state: SelectedPositionState, minorityIsA: boolean): SmallLegMovesPriceError {
+  const minorityMint = minorityIsA ? state.mintA : state.mintB, majorityMint = minorityIsA ? state.mintB : state.mintA;
+  return new SmallLegMovesPriceError({ minorityMint, majorityMint }, formatSmallLegMovesPriceMessage({
+    minority: tokenSymbol(minorityMint), majority: tokenSymbol(majorityMint) }));
+}
+
 type SwapLeg = { inputMint: string; outputMint: string; spend: bigint; feeAmount: bigint; feeInRoute?: boolean; minOut: bigint; route: QuoteRoute | null };
 
 function projectedSqrt(state: SelectedPositionState, routes: QuoteRoute[]): BN {
@@ -97,11 +105,36 @@ function projectedSqrt(state: SelectedPositionState, routes: QuoteRoute[]): BN {
     price = SqrtPriceMath.getNextSqrtPriceFromInput(price, liquidity, new BN(leg.swapInfo.inAmount), zeroForOne);
   }
   if (positionSide(BigInt(price.toString()), BigInt(state.lowerSqrtX64), BigInt(state.upperSqrtX64)) !== state.rangeSide) {
-    throw new Error("Swap may cause target pool price to cross position boundary, please re-quote");
+    throw new PoolPriceMoveError(CROSS_POSITION_RANGE_MESSAGE);
   }
   // Liquidity is constant only inside the current tick-spacing band (initialized ticks sit on its edges).
-  if (!staysInLiquidityBand(state.sqrtPriceX64, price, state.tickCurrent, state.tickSpacing)) throw new Error(CROSS_LIQUIDITY_BAND_MESSAGE);
+  if (!staysInLiquidityBand(state.sqrtPriceX64, price, state.tickCurrent, state.tickSpacing)) {
+    throw new PoolPriceMoveError(CROSS_LIQUIDITY_BAND_MESSAGE);
+  }
   return price;
+}
+
+/** The quoted swaps would move this pool's price out of the position range or the current liquidity band. */
+class PoolPriceMoveError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PoolPriceMoveError";
+  }
+}
+
+/**
+ * Minority-leg floors to try, largest first: the 1 bps floor, then three geometric steps down to Jupiter's 200-unit
+ * minimum (e.g. 1502 → 767 → 392 → 200). A smaller bump is tried only when the larger one moves the pool price too far.
+ */
+export function smallLegFloorSteps(requested: bigint): bigint[] {
+  const first = minorityLegFloor(requested);
+  const steps = [first];
+  const ratio = Number(MIN_JUPITER_SWAP) / Number(first);
+  for (const k of [1, 2, 3]) {
+    const next = k === 3 ? MIN_JUPITER_SWAP : BigInt(Math.max(Number(MIN_JUPITER_SWAP), Math.round(Number(first) * ratio ** (k / 3))));
+    if (next < steps[steps.length - 1]!) steps.push(next);
+  }
+  return steps;
 }
 
 function amountsAt(state: SelectedPositionState, sqrt: BN, liquidity: BN) {
@@ -210,27 +243,52 @@ async function getSelectedQuoteBundleOnce(
     // in the browser) so pool-price drift between rounds does not force fresh quotes every round.
     const hintKey = `selected:${state.positionMint}:${state.inputMint}:${requested}:${JSON.stringify(jupiter ?? null)}`;
     const hinted = jupiterRelayHint(hintKey);
-    const floors = insideFloors(state.inputMint, state.mintA, state.mintB, requested);
     // Unclamped pool-price allocation; a side may round to 0 when the price sits at the range edge.
     const natural = allocateSpend(requested, BigInt(base.amountA.toString()), BigInt(base.amountB.toString()), rates.rateA, rates.rateB, 0n);
-    if (requested < floors.a + floors.b) throw insideTooSmall(state, requested, natural, floors);
-    spendA = clampInsideSpend(requested, hinted !== undefined && hinted > 0n && hinted < requested ? hinted : natural, floors);
-    for (let index = 0; index < 5; index++) {
-      setJupiterRelayHint(hintKey, spendA);
-      const [actualA, actualB] = await Promise.all([
-        actualLeg(state.mintA, spendA), actualLeg(state.mintB, requested - spendA),
-      ]);
-      legs = [actualA, actualB];
-      // A quotable leg whose guaranteed output still rounds to zero tokens cannot fund that side.
-      if (actualA.minOut <= 0n || actualB.minOut <= 0n) throw new AmountTooSmallError();
-      projected = projectedSqrt(state, legs.flatMap((item) => item.route ? [item.route] : []));
-      const desired = amountsAt(state, projected, new BN("1000000000000000000"));
-      const next = clampInsideSpend(requested, allocateSpend(requested, BigInt(desired.amountA.toString()), BigInt(desired.amountB.toString()),
-        { spend: spendA, out: actualA.minOut }, { spend: requested - spendA, out: actualB.minOut }, 0n), floors);
-      const difference = next > spendA ? next - spendA : spendA - next;
-      if (difference * 1_000n <= requested * 2n) break;
-      if (index === 4) throw new Error("Pool price and swap ratio did not converge, please retry later");
-      spendA = next;
+    const minimumFloors = insideFloors(state.inputMint, state.mintA, state.mintB, requested, MIN_JUPITER_SWAP);
+    if (requested < minimumFloors.a + minimumFloors.b) throw insideTooSmall(state, requested, natural, minimumFloors);
+    // Size both legs from `start` (converges within 5 quote rounds). Writes spendA / legs / projected as it goes.
+    const sizeInside = async (start: bigint, floors: InsideFloors) => {
+      spendA = start;
+      for (let index = 0; index < 5; index++) {
+        setJupiterRelayHint(hintKey, spendA);
+        const [actualA, actualB] = await Promise.all([
+          actualLeg(state.mintA, spendA), actualLeg(state.mintB, requested - spendA),
+        ]);
+        legs = [actualA, actualB];
+        // A quotable leg whose guaranteed output still rounds to zero tokens cannot fund that side.
+        if (actualA.minOut <= 0n || actualB.minOut <= 0n) throw new AmountTooSmallError();
+        projected = projectedSqrt(state, legs.flatMap((item) => item.route ? [item.route] : []));
+        const desired = amountsAt(state, projected, new BN("1000000000000000000"));
+        const next = clampInsideSpend(requested, allocateSpend(requested, BigInt(desired.amountA.toString()), BigInt(desired.amountB.toString()),
+          { spend: spendA, out: actualA.minOut }, { spend: requested - spendA, out: actualB.minOut }, 0n), floors);
+        const difference = next > spendA ? next - spendA : spendA - next;
+        if (difference * 1_000n <= requested * 2n) break;
+        if (index === 4) throw new Error("Pool price and swap ratio did not converge, please retry later");
+        spendA = next;
+      }
+    };
+    const steps = smallLegFloorSteps(requested);
+    for (let step = 0; ; step++) {
+      const floors = insideFloors(state.inputMint, state.mintA, state.mintB, requested, steps[step]);
+      if (requested < floors.a + floors.b) continue;
+      // Fallback steps start from the pool-price split: the relay hint is an allocation sized for a larger bump.
+      const useHint = step === 0 && hinted !== undefined && hinted > 0n && hinted < requested;
+      const start = clampInsideSpend(requested, useHint ? hinted : natural, floors);
+      // A leg raised to its floor (the small-leg bump) can be what pushes a thin pool's price too far.
+      const bumped = (current: bigint) => (floors.quoteA && current <= floors.a && natural < floors.a) ||
+        (floors.quoteB && requested - current <= floors.b && requested - natural < floors.b);
+      try {
+        await sizeInside(start, floors);
+        break;
+      } catch (error) {
+        const minorityIsA = floors.quoteA && spendA <= floors.a;
+        // A smaller fallback bump whose swap output rounds to zero cannot fund that side, and smaller ones are worse.
+        if (step > 0 && error instanceof AmountTooSmallError && bumped(spendA)) throw smallLegMovesPrice(state, minorityIsA);
+        if (!(error instanceof PoolPriceMoveError) || !bumped(spendA)) throw error;
+        // Fall back to a smaller bump; at Jupiter's minimum there is nothing smaller to try.
+        if (step === steps.length - 1) throw smallLegMovesPrice(state, minorityIsA);
+      }
     }
     legs = await Promise.all(legs.map(buildLeg));
   }

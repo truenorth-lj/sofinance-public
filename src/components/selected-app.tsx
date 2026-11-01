@@ -19,11 +19,12 @@ import { InkHero, InkNav } from "./ink";
 import { PositionPerformancePanel } from "./position-performance-panel";
 import { ConnectWalletPrompt } from "./connect-wallet-prompt";
 import { WithdrawPanel } from "./withdraw-panel";
+import { useNoticeBottomOffset } from "./transactions/notice-offset";
 import { ActionSelector } from "./action-selector";
 import { AssetRisksDialog } from "./asset-risks-dialog";
 import { APP_ROUTES, DOCS_ROUTES } from "@/lib/public-urls";
 import { formatSelectedNoRouteMessage, JUPITER_NO_ROUTE_CODE } from "@/lib/selected-no-route";
-import { AMOUNT_TOO_SMALL_CODE, formatAmountTooSmallMessage } from "@/lib/selected-amount-error";
+import { AMOUNT_TOO_SMALL_CODE, formatAmountTooSmallMessage, formatSmallLegMovesPriceMessage, SMALL_LEG_MOVES_PRICE_CODE } from "@/lib/selected-amount-error";
 import Link from "next/link";
 import { captureGrowthEvent } from "@/lib/analytics/client";
 import { GROWTH_EVENTS } from "@/lib/analytics/events";
@@ -101,6 +102,9 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
   const [statusDialogOpen, setStatusDialogOpen] = useState(false);
   const [assetRisksOpen, setAssetRisksOpen] = useState(false);
   const [activeView, setActiveView] = useState<"compound" | "performance" | "deposit" | "withdraw">(initialView);
+  // Toasts sit above the phone-only bottom action bar instead of covering its button.
+  const actionBarRef = useRef<HTMLDivElement | null>(null);
+  useNoticeBottomOffset(actionBarRef, activeView === "deposit");
   // Performance is a tab inside /app (the URL does not change), so $pageview cannot see it.
   useEffect(() => {
     if (activeView === "performance") captureGrowthEvent(GROWTH_EVENTS.performanceView);
@@ -146,7 +150,10 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
       ? formatAmountTooSmallMessage({ input: inputLabel, minority: poolLabel(quoteErrorOutputMint),
         majority: quoteErrorAmount.majorityMint ? poolLabel(quoteErrorAmount.majorityMint) : undefined,
         minimum: money(quoteErrorAmount.minimumInput, state.inputDecimals, state.inputDecimals) })
-      : error;
+      : quoteErrorCode === SMALL_LEG_MOVES_PRICE_CODE && quoteErrorOutputMint && state && error === quoteError
+        ? formatSmallLegMovesPriceMessage({ minority: poolLabel(quoteErrorOutputMint),
+          majority: poolLabel(quoteErrorOutputMint === state.mintA ? state.mintB : state.mintA) })
+        : error;
   // "Rescan wallet": the Solana scan (unchanged) plus, on /app, the Robinhood Chain scan via the parent's refresh counter.
   const rescan = () => { if (wallet) void refreshDiscovery(); onRescan?.(); };
   return <div className="min-h-screen bg-canvas text-cream">
@@ -251,7 +258,7 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
     <TransactionStatusDialog attempt={visibleAttempt} status={attemptStatus} error={error} open={statusDialogOpen}
       onOpenChange={setStatusDialogOpen}
       onRetry={retryAdd ? () => { setStatusDialogOpen(false); retryAdd(); } : undefined} />
-    {activeView === "deposit" && <div className="fixed inset-x-0 bottom-0 z-10 border-t border-white/12 bg-canvas/95 p-4 backdrop-blur sm:hidden"><button className={buttonClass} disabled={actionDisabled} aria-busy={actionLoading} onClick={primaryAction}>{actionLoading ? <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin motion-reduce:animate-none" /> : <ArrowDown aria-hidden="true" className="h-4 w-4" />}{buttonLabel}</button></div>}
+    {activeView === "deposit" && <div ref={actionBarRef} data-testid="mobile-action-bar" className="fixed inset-x-0 bottom-0 z-10 border-t border-white/12 bg-canvas/95 p-4 backdrop-blur sm:hidden"><button className={buttonClass} disabled={actionDisabled} aria-busy={actionLoading} onClick={primaryAction}>{actionLoading ? <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin motion-reduce:animate-none" /> : <ArrowDown aria-hidden="true" className="h-4 w-4" />}{buttonLabel}</button></div>}
   </div>;
 }
 

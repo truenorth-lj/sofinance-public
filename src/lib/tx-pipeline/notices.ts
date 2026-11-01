@@ -12,7 +12,8 @@ export { solscanTxUrl } from "./confirm";
 /**
  * Stage 4 (status + toast): one notice store for every flow. Notices live outside React, so
  * a transaction keeps reporting after its modal closes. The store owns no timers; the mounted
- * TxNoticeHost polls watched signatures and auto-dismisses successes.
+ * TxNoticeHost polls watched signatures. Success notices stay until the user dismisses them (X),
+ * so the Solscan link stays reachable.
  */
 export type TxNoticeState = "loading" | "success" | "failure";
 export type TxNotice = {
@@ -25,7 +26,6 @@ export type TxNotice = {
 };
 
 export const BALANCES_REFRESH_EVENT = "sofinance:balances-refresh";
-export const SUCCESS_NOTICE_MS = 8_000;
 
 const EMPTY: TxNotice[] = [];
 let notices: TxNotice[] = EMPTY;

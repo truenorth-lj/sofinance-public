@@ -83,8 +83,9 @@ export const APR_QUEUE_FIXED_MS = 15_000;
  * or ~11 RHC pools (1 call) per run. Measured 11/1 00:15 Taipei: only 3 pools fit before the 429 at 2.5 s spacing.
  * N = 12 is the 1-call case rounded up, so the cap never cuts a run the time guard would let finish.
  * Coverage: 29 active pools (18 Solana × 2 calls + 11 RHC × 1 call = 47 calls), 6 runs/day (every 4 h), ~12 calls per
- * run: every pool is refreshed about every 4 runs = 16 h, within 24 h with one run in a row lost to a 429 (tested).
- * Pools past 24 h show "Data delayed" with the saved estimate (up to 48 h of saved history); nothing is cleared.
+ * run: every pool is refreshed about every 4 runs = 16 h, within 24 h with one run in a row lost to a 429 (tested),
+ * so inside the 26 h `APR_SNAPSHOT_MAX_AGE_MS` limit. Pools past 26 h show "Data delayed" with the saved estimate (up to
+ * 48 h of saved history); nothing is cleared.
  * Rate: ≤ 5 calls/min, the documented keyless limit (was 2.5 s / ≤ 24 per min, which hit 429 after 8 calls).
  */
 export const APR_POOLS_PER_RUN = 12;
@@ -205,7 +206,11 @@ export async function runJob(job: JobName, options: Options): Promise<JobResult>
     status: "ok" | "partial" | "error" = "ok",
     rhcDiscovery: JobResult["rhcDiscovery"],
     rhcStats: RhcAprRunStats | undefined,
-    queue: AprQueueStats | undefined;
+    queue: AprQueueStats | undefined,
+    // Counted in `consecutive_failures` (and keeps `last_success_at`). The APR job counts only a GeckoTerminal 429 or
+    // an error (a failed step, or a pool that saved no estimate); a run that only ran out of its time budget, or saved
+    // stale estimates from saved price history, is not a failure.
+    failure = false;
   try {
     if (job === "rwa-discovery") {
       const result = await discoverRwaPairs({
@@ -235,10 +240,13 @@ export async function runJob(job: JobName, options: Options): Promise<JobResult>
       issues.push(...result.issues);
       rhcStats = result.rhcStats;
       queue = result.queue;
+      failure = result.failed;
       if (issues.length) status = "partial";
     }
+    if (job === "rwa-discovery") failure = status !== "ok";
   } catch (error) {
     status = "error";
+    failure = true;
     issues.push(sanitizePublicError(error, "Refresh failed").slice(0, 400));
   }
   try {
@@ -247,6 +255,7 @@ export async function runJob(job: JobName, options: Options): Promise<JobResult>
       lease,
       processed,
       outcome: status,
+      failure,
       issues: issues.slice(0, 20),
     });
   } catch {
@@ -286,6 +295,10 @@ export function activePoolRefreshedAt(pool: Pick<ActivePool, "refreshedAt" | "pr
 /**
  * The APR queue order: pools never refreshed first, then the oldest last refresh or attempt (`refreshedAt`), then
  * pool id (stable). Solana and RHC pools in one list.
+ * `refreshedAt` is `GREATEST(payload_snapshot_at, last_attempt_at)` from the store (`refreshedAtSql`), so in practice
+ * it is the pool's last attempt: every save (ok, degraded or error) sets `last_attempt_at`, and a snapshot is never
+ * newer than the attempt that wrote it. A pool cut by a 429 or the time budget saves nothing, keeps its old key and
+ * goes first next run; a failing pool still rotates to the back instead of blocking the queue.
  */
 export function orderAprQueue<T extends { poolId: string; refreshedAt?: string | null }>(items: readonly T[]): T[] {
   const at = (item: T) => {
@@ -303,7 +316,7 @@ export function orderAprQueue<T extends { poolId: string; refreshedAt?: string |
  */
 async function refreshAprPools(input: {
   store: RwaStore; lease: Lease; options: Options; signal: AbortSignal; clock: () => number; jobDeadline: number;
-}): Promise<{ processed: number; issues: string[]; rhcStats?: RhcAprRunStats; queue: AprQueueStats }> {
+}): Promise<{ processed: number; issues: string[]; rhcStats?: RhcAprRunStats; queue: AprQueueStats; failed: boolean }> {
   const { store, lease, options, signal, clock, jobDeadline } = input;
   const fetcher = options.fetcher ?? fetch;
   const gate = options.geckoGate ?? createCronGeckoGate();
@@ -313,11 +326,16 @@ async function refreshAprPools(input: {
   // Finalizes earlier days' history rows and seeds today's (idempotent).
   await store.request({ op: "prepareDaily", lease, includeRhc: isRhcApr7dEnabled() });
   let rhc: RhcRun | null = null;
+  // A 429 or an error anywhere in the run (not a time-budget stop, not a degraded / stale estimate).
+  let failed = false;
   if (isRhcApr7dEnabled()) {
     rhc = await prepareRhcRun({ store, lease, fetcher, clock, signal, gate }).catch((error) => {
       issues.push(`RHC: ${sanitizePublicError(error, "RHC APR refresh failed").slice(0, 200)}`);
+      failed = true;
       return null;
     });
+    // After prepare, the RHC issues are only the market batch's HTTP errors / 429 cooldown.
+    if (rhc?.issues.length) failed = true;
   }
   // Renewed here and before every pool, so the lease (120 s) only has to outlive one pool or the prepare phase,
   // never the whole APR job timeout (`aprJobTimeoutMs`, up to 240 s).
@@ -349,6 +367,8 @@ async function refreshAprPools(input: {
     if (signal.aborted) { queue.stoppedBy = "time"; break; }
     queue.done += 1;
     if (outcome !== "error") processed += 1;
+    // No estimate saved (error, or degraded: price history unavailable). A stale estimate from saved history is not.
+    if (outcome === "error" || outcome === "degraded") failed = true;
     if (throttled()) { queue.stoppedBy = "429"; break; }
   }
   if (queue.stoppedBy === "429") issues.push(`GeckoTerminal 429: run ended after ${queue.done} of ${queue.selected} pools; the rest go first next run`);
@@ -359,7 +379,8 @@ async function refreshAprPools(input: {
     const done = new Set(selected.slice(0, queue.done).map((item) => item.poolId));
     rhcStats = { ...rhc.stats, deferred: rhc.pools.filter((pool) => !done.has(pool.poolId)).length };
   }
-  return { processed, issues, rhcStats, queue };
+  if (queue.stoppedBy === "429" || throttled()) failed = true;
+  return { processed, issues, rhcStats, queue, failed };
 }
 
 /** One Solana pool: price history (gated) and liquidity, then one saved snapshot. Never throws. */

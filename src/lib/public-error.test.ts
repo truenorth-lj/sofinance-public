@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 import { apiError } from "./api-response";
-import { CROSS_LIQUIDITY_BAND_MESSAGE } from "@sofinance/engine/liquidity-band";
+import { CROSS_LIQUIDITY_BAND_MESSAGE, CROSS_POSITION_RANGE_MESSAGE } from "@sofinance/engine/liquidity-band";
 import { SelectedNoRouteError } from "./selected-no-route";
 import { JupiterHttpError, JUPITER_UNAVAILABLE_CODE, JUPITER_UNAVAILABLE_MESSAGE } from "@sofinance/engine/jupiter/errors";
 import {
@@ -150,13 +150,13 @@ describe("compound failure mapping", () => {
     const logged = vi.spyOn(console, "info").mockImplementation(() => undefined);
     expect(sanitizePublicError(new Error(CROSS_LIQUIDITY_BAND_MESSAGE), "Open-position quote failed"))
       .toBe(CROSS_TICK_USER_MESSAGE);
-    expect(sanitizePublicError(new Error("Swap may cause target pool price to cross position boundary, please re-quote"), "failed"))
+    expect(sanitizePublicError(new Error(CROSS_POSITION_RANGE_MESSAGE), "failed"))
       .toBe(CROSS_TICK_USER_MESSAGE);
-    expect(sanitizePublicError(new Error("Swap may cause target pool price to cross the selected range, please re-quote"), "failed"))
+    expect(sanitizePublicError(new Error("The swap for this amount would move the pool price outside the selected price range"), "failed"))
       .toBe(CROSS_TICK_USER_MESSAGE);
     expect(sanitizePublicError(new Error(CROSS_LIQUIDITY_BAND_MESSAGE), "failed")).not.toMatch(/tick-spacing|cross-tick depth/i);
     expect(logged).toHaveBeenCalled();
-    expect(String(logged.mock.calls[0])).toMatch(/tick-spacing boundary|cross-tick depth/);
+    expect(String(logged.mock.calls[0])).toMatch(/liquidity changes/);
   });
 
   it("treats simulation and known program errors as not-sent preflight failures", () => {

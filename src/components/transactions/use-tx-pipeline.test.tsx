@@ -8,7 +8,7 @@ import { buildTransaction, testKeypair } from "@/lib/test-support/send-fixtures"
 vi.mock("@/lib/sentry/client-tx", () => ({ captureTxClientFailure: vi.fn(), captureTxWalletErrorLanded: vi.fn() }));
 vi.mock("@/lib/position-history-refresh", () => ({ notifyPositionHistoryChange: vi.fn() }));
 
-import { CANCEL_CHECK_PENDING_COPY, resetCancelChecks, dismissTxNotice, findTxNotice, getTxNotices, noticeIdFor, resetTxNotices, settleTxNotice, SUCCESS_NOTICE_MS, TxNotSentError, type TxAdapter, type TxWallet } from "@/lib/tx-pipeline";
+import { CANCEL_CHECK_PENDING_COPY, resetCancelChecks, dismissTxNotice, findTxNotice, getTxNotices, noticeIdFor, resetTxNotices, settleTxNotice, TxNotSentError, type TxAdapter, type TxWallet } from "@/lib/tx-pipeline";
 import { TxNoticeHost } from "./tx-notice-host";
 import { openStatusFromNotice } from "@/components/use-open-attempt";
 import { useTxPipeline } from "./use-tx-pipeline";
@@ -43,13 +43,15 @@ describe("useTxPipeline", () => {
     beforeEach(() => { vi.useFakeTimers(); vi.stubGlobal("fetch", vi.fn(async () => Response.json({ status: "pending" }))); });
     afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
-    it("still shows success after the success toast auto-closes (SUCCESS_NOTICE_MS)", async () => {
+    it("keeps the success toast until dismissed, and still shows success after the user closes it", async () => {
       await withHost(adapter(async () => prepared()), wallet());
       await act(async () => { await box.current.run(1); });
       expect(box.current.status).toBe("confirming");
       await act(async () => { settleTxNotice(noticeIdFor(SIG), "confirmed"); });
       expect(box.current).toMatchObject({ status: "success", kind: "landed", signature: SIG });
-      await act(async () => { await vi.advanceTimersByTimeAsync(SUCCESS_NOTICE_MS + 10); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+      expect(findTxNotice(noticeIdFor(SIG))?.state).toBe("success");
+      await act(async () => { dismissTxNotice(noticeIdFor(SIG)); });
       expect(findTxNotice(noticeIdFor(SIG))).toBeUndefined();
       expect(box.current).toMatchObject({ status: "success", kind: "landed", signature: SIG });
     });
