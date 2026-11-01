@@ -1,7 +1,9 @@
 import "@/lib/engine-host";
 import "server-only";
 
+import { unpackMint } from "@solana/spl-token";
 import { PublicKey, type Connection } from "@solana/web3.js";
+import { mintBlockReasons, type MintBlockReason } from "@sofinance/engine/token-safety";
 
 const TOKEN_PROGRAMS = new Set(["TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"]);
 
@@ -13,18 +15,32 @@ export function mintDataHasFreezeAuthority(data: Uint8Array): boolean {
   return tag === 1;
 }
 
+/** On-chain facts of one mint the RWA scan uses: freeze authority (shown as risk only) and block reasons. */
+export type MintSafety = { freezeAuthority: boolean; blockReasons: MintBlockReason[] };
+
 /**
- * Freeze authority of each mint, read from chain in one batched call (read-only). A mint that is missing, not
- * owned by a token program or malformed is left out, so callers can fall back to their API-reported value.
+ * Freeze authority and Token-2022 block reasons (paused / transfer fee / default-frozen) of each mint, read from
+ * chain in one batched call (read-only). A mint that is missing, not owned by a token program or malformed is left
+ * out, so callers can fall back to their API-reported value (and treat it as not blocked).
  */
-export async function readMintFreezeAuthorities(connection: Connection, mints: readonly string[]): Promise<Map<string, boolean>> {
+export async function readMintSafety(connection: Connection, mints: readonly string[]): Promise<Map<string, MintSafety>> {
   const unique = [...new Set(mints)];
-  const result = new Map<string, boolean>();
+  const result = new Map<string, MintSafety>();
   if (unique.length === 0) return result;
   const infos = await connection.getMultipleAccountsInfo(unique.map((mint) => new PublicKey(mint)), "confirmed");
   infos.forEach((info, index) => {
     if (!info || !TOKEN_PROGRAMS.has(info.owner.toBase58())) return;
-    try { result.set(unique[index]!, mintDataHasFreezeAuthority(info.data)); } catch { /* left out */ }
+    let freezeAuthority: boolean;
+    try { freezeAuthority = mintDataHasFreezeAuthority(info.data); } catch { return; /* left out */ }
+    let blockReasons: MintBlockReason[] = [];
+    try { blockReasons = mintBlockReasons(unpackMint(new PublicKey(unique[index]!), info, info.owner)); } catch { /* base layout only */ }
+    result.set(unique[index]!, { freezeAuthority, blockReasons });
   });
   return result;
+}
+
+/** Freeze authority of each mint (see `readMintSafety`; same single batched read). */
+export async function readMintFreezeAuthorities(connection: Connection, mints: readonly string[]): Promise<Map<string, boolean>> {
+  const safety = await readMintSafety(connection, mints);
+  return new Map([...safety].map(([mint, value]) => [mint, value.freezeAuthority]));
 }

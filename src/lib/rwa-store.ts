@@ -1,6 +1,7 @@
 import "server-only";
 import { getRwaConfig } from "./config/rwa-env";
 import { discoverRwaPairs, getCachedRwaPairs } from "./rwa-pairs";
+import { listablePairs } from "./rwa-listable";
 import { fetchPoolRangeApr } from "./pool-range-apr";
 import { PostgresRwaStore } from "./rwa-postgres-store";
 import { getRwaDatabase, runRwaDatabaseRequest } from "./rwa-database";
@@ -86,18 +87,18 @@ export function getRwaStore(): RwaStore {
   return direct.store;
 }
 
+/** Listed pairs (list page and home top-5): scan-blocked pools (paused / transfer fee / frozen mint) are dropped. */
 export async function getRwaPairs(options: PairOptions) {
-  if (!getRwaConfig().enabled)
-    return (
-      getCachedRwaPairs(options.minTvl, options.maxPages, options.sortBy) ??
-      discoverRwaPairs(options)
-    );
+  if (!getRwaConfig().enabled) {
+    const live = await (getCachedRwaPairs(options.minTvl, options.maxPages, options.sortBy) ?? discoverRwaPairs(options));
+    return { ...live, pairs: listablePairs(live.pairs) };
+  }
   const snapshot = await getRwaStore().request({
     op: "pairs",
     ...options,
   });
   // A gateway running an older store build returns no `tokenIcons`; keep the manual list in that case.
-  return snapshot.tokenIcons ? snapshot : { ...snapshot, tokenIcons: tokenIconMap([]) };
+  return { ...snapshot, pairs: listablePairs(snapshot.pairs), tokenIcons: snapshot.tokenIcons ?? tokenIconMap([]) };
 }
 export async function getPoolAprSnapshot(poolId: string) {
   if (!getRwaConfig().enabled) return fetchPoolRangeApr(poolId);
