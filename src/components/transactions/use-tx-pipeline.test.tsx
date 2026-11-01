@@ -122,7 +122,8 @@ describe("useTxPipeline", () => {
     expect(box.current).toMatchObject({ status: "success", locked: false });
     vi.unstubAllGlobals();
   });
-  it("4001 after a sign-and-send request: cancelled at once; the same position waits for the background check, another position does not", async () => {
+  it("4001 after a sign-and-send request: 'checking' for up to 20 s, then cancelled; the same position waits for the background check, another position does not", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const lookup = deferred<Response>();
     const fetchMock = vi.fn((url: string) => url === "/api/tx-landed" ? lookup.promise : Promise.resolve(Response.json({ status: "pending" })));
     vi.stubGlobal("fetch", fetchMock);
@@ -130,10 +131,17 @@ describe("useTxPipeline", () => {
     const send = vi.fn(async (): Promise<string> => { throw Object.assign(new Error("User rejected the request."), { code: 4001 }); });
     const w = wallet(undefined, send);
     await render(adapter(prepare), w, "pos-1");
-    await act(async () => { await box.current.run(1); });
-    // No "checking" hold: idle, not busy, and the cancel toast is up while the lookup is still pending.
+    let first!: Promise<unknown>;
+    await act(async () => { first = box.current.run(1); await vi.advanceTimersByTimeAsync(10); });
+    // Checking first: locked, never "failed" or "cancelled" yet.
+    expect(box.current).toMatchObject({ status: "checking", locked: true });
+    expect(getTxNotices()).toMatchObject([{ state: "loading", title: "Checking Solana…" }]);
+    await act(async () => { await vi.advanceTimersByTimeAsync(20_000); await first; });
+    vi.useRealTimers();
+    // Window over, nothing seen yet: idle, not busy, and the cancel toast is up while the lookup is still pending.
     expect(box.current).toMatchObject({ status: "idle", busy: false, locked: false, cancelPending: true });
-    expect(getTxNotices()).toMatchObject([{ state: "failure", kind: "rejected", detail: "You cancelled in your wallet." }]);
+    expect(getTxNotices()).toMatchObject([{ state: "failure", kind: "rejected", title: "Add liquidity cancelled",
+      detail: "You cancelled in your wallet. We are still checking Solana in case it went through; you can retry in about a minute." }]);
     expect(fetchMock).toHaveBeenCalledWith("/api/tx-landed", expect.objectContaining({ method: "POST" }));
     expect(CANCEL_CHECK_PENDING_COPY).toBe("Cancelled — you can retry in about a minute");
     // Same position: refused before preparing (the form shows the copy and keeps its button disabled).

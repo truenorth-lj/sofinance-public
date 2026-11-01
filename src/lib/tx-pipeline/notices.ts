@@ -5,8 +5,7 @@ import { captureTxClientFailure, type TxReportContext } from "@/lib/sentry/clien
 import { notifyPositionHistoryChange } from "@/lib/position-history-refresh";
 import { clearTxAttempt } from "./attempts";
 import { pollSignature, type TxChainStatus } from "./confirm";
-import { canRetry, FLOW_LABEL, plainTxError, txFailureKind, TxWalletCancelledError, type TxFailureKind, type TxFlow } from "./errors";
-import { LANDED_MAX_WAIT_COPY } from "./landed";
+import { canRetry, FLOW_LABEL, plainTxError, txFailureKind, TxLandedUnknownError, TxSendUnknownError, TxWalletCancelledError, type TxFailureKind, type TxFlow } from "./errors";
 
 export { solscanTxUrl } from "./confirm";
 
@@ -80,7 +79,7 @@ export const CHECKING_SOLANA_COPY = "Wallet returned an error. Checking Solanaâ€
 
 export function showTxCheckingNotice(flow: TxFlow) {
   return showTxNotice({ flow, state: "loading", title: "Checking Solanaâ€¦",
-    detail: `Your wallet returned an error, but the transaction may still have gone through. Checking Solana before anything else; please don't submit again yet (this can take up to ${LANDED_MAX_WAIT_COPY}).` });
+    detail: "Your wallet returned an error, but the transaction may still have gone through. Checking Solana before anything else (up to 20 seconds); please don't submit again yet." });
 }
 
 /**
@@ -98,14 +97,17 @@ export function reportTxFailure(input: { flow: TxFlow; error: unknown; id?: stri
     // lookup still checks Solana and replaces this toast with the success toast if the wallet broadcast anyway.
     if (input.error instanceof TxWalletCancelledError) {
       showTxNotice({ id: cancelNoticeIdFor(input.error), flow: input.flow, state: "failure", kind: "rejected",
-        title: `${FLOW_LABEL[input.flow]} cancelled`, detail: message });
+        title: input.error.walletRejected ? `${FLOW_LABEL[input.flow]} cancelled` : `${FLOW_LABEL[input.flow]}: not on Solana yet`, detail: message });
     }
     return { kind, message, retryable: false };
   }
   const retryable = canRetry(kind);
   showTxNotice({ id: input.id, flow: input.flow, state: "failure", kind, signature: input.signature,
     title: kind === "expired" ? `${FLOW_LABEL[input.flow]}: transaction expired`
-      : kind === "not-sent" ? `${FLOW_LABEL[input.flow]}: nothing was sent` : `${FLOW_LABEL[input.flow]} failed`,
+      : kind === "not-sent" ? `${FLOW_LABEL[input.flow]}: nothing was sent`
+      // Possibly sent (wallet error with no answer from Solana, or a lost relay response): never "failed".
+      : input.error instanceof TxLandedUnknownError || input.error instanceof TxSendUnknownError ? `${FLOW_LABEL[input.flow]}: not confirmed yet`
+      : `${FLOW_LABEL[input.flow]} failed`,
     detail: message, retry: retryable ? input.retry : undefined });
   return { kind, message, retryable };
 }
