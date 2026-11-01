@@ -45,10 +45,12 @@ describe("toolOptions", () => {
       ]);
     }
   });
-  it("disables unsupported tools regardless of UI guards", () => {
+  it("greys unsupported tools (still clickable, so the reason can show inline) regardless of UI guards", () => {
     const caps = { ...raydiumPositionSource.capabilities, compound: unsupported(NOT_AVAILABLE_MESSAGE), withdraw: { supported: false as const, reason: "x" } };
     const opts = toolOptions(caps, meta, { withdraw: false });
-    expect(opts.find((o) => o.value === "compound")!.disabled).toBe(true);
-    expect(opts.find((o) => o.value === "withdraw")!.disabled).toBe(true);
+    expect(opts.find((o) => o.value === "compound")).toMatchObject({ unavailable: true });
+    expect(opts.find((o) => o.value === "compound")!.disabled).toBeUndefined();
+    expect(opts.find((o) => o.value === "withdraw")).toMatchObject({ unavailable: true });
+    expect(opts.find((o) => o.value === "performance")!.unavailable).toBeUndefined();
   });
 });

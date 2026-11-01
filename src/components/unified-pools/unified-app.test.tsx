@@ -9,10 +9,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const seen = vi.hoisted(() => ({ accounts: vi.fn<() => Promise<unknown>>(), panel: vi.fn() }));
 vi.mock("../selected-app", () => ({
   SelectedApp: (props: Record<string, unknown>) => createElement("div", { "data-testid": "selected-app",
-    "data-props": Object.keys(props).sort().join(","), "data-has-rhc": String(Boolean(props.extraPositions)) }),
+    "data-props": Object.keys(props).sort().join(","), "data-has-rhc": String(Boolean(props.external)) }),
 }));
 vi.mock("./unified-pools-panel", () => ({ UnifiedPoolsPanel: () => { seen.panel(); return null; } }));
-vi.mock("./rhc-positions-section", () => ({ RhcPositionsSection: () => null }));
+vi.mock("../unified-positions/rhc-positions", () => ({ useRhcPositions: ({ wallet }: { wallet: unknown }) => (wallet ? { chain: "robinhood-chain", positions: [] } : undefined) }));
 
 import { UnifiedApp } from "./unified-app";
 import { EvmWalletProvider } from "../evm-wallet-connection";

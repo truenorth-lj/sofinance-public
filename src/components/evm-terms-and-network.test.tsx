@@ -9,14 +9,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("next/navigation", () => ({ usePathname: () => "/app" }));
 const panels = vi.hoisted(() => ({ open: vi.fn(), positions: vi.fn() }));
 vi.mock("./rhc-univ4-open-panel", () => ({ RhcUniv4OpenPanel: (props: unknown) => { panels.open(props); return createElement("div", { "data-testid": "rhc-open-panel" }); } }));
-vi.mock("./rhc-univ4-positions-panel", () => ({ RhcUniv4PositionsPanel: (props: unknown) => { panels.positions(props); return createElement("div", { "data-testid": "rhc-positions-panel" }); } }));
+vi.mock("./rhc-close", async (importOriginal) => ({ ...await importOriginal<typeof import("./rhc-close")>(),
+  fetchPositions: (...args: unknown[]) => { panels.positions(args); return Promise.resolve({ lookups: [], error: null }); },
+  fetchScan: () => Promise.resolve({ positions: [], error: null }) }));
 
 import { InkNav } from "./ink/InkNav";
 import { TermsGate } from "./terms-gate";
 import { EvmWalletProvider, useEvmWalletConnection, type EvmWalletConnection } from "./evm-wallet-connection";
 import { useWalletConnection, WalletConnectionContext, type WalletConnection } from "./wallet-connection";
 import { RhcOpenDialog } from "./unified-pools/rhc-open-dialog";
-import { RhcPositionsSection } from "./unified-pools/rhc-positions-section";
+import { useRhcPositions } from "./unified-positions/rhc-positions";
 import { createEvmSession, type EvmSession } from "@/lib/rhc-wallet/evm-session";
 import type { Eip1193Provider } from "@/lib/rhc-wallet/eip1193";
 import { recordTermsAcceptance, TERMS_ATTESTATION, TERMS_STORAGE_KEY } from "@/lib/terms-acceptance";
@@ -200,14 +202,15 @@ describe("wrong network", () => {
   it("My positions (Robinhood Chain) shows the switch prompt instead of the positions, and the positions after switching", async () => {
     await onOtherNetwork(createElement(() => {
       const { wallet: w } = useEvmWalletConnection();
-      return createElement(RhcPositionsSection, { wallet: w, signingEnabled: false, refreshKey: 0 });
+      return createElement("div", null, useRhcPositions({ wallet: w, signingEnabled: false, refreshKey: 0 })?.status);
     }));
     expect(q("[data-testid=rhc-wrong-network]")!.textContent).toContain("Switch to Robinhood Chain to see and manage your positions");
-    expect(q("[data-testid=rhc-positions-panel]")).toBeNull();
+    expect(q("[aria-label='Position NFT number']")).toBeNull();
     expect(panels.positions).not.toHaveBeenCalled();
     await click(q("[data-testid=rhc-wrong-network] button"));
     expect(q("[data-testid=rhc-wrong-network]")).toBeNull();
-    expect(q("[data-testid=rhc-positions-panel]")).not.toBeNull();
+    expect(q("[aria-label='Position NFT number']")).not.toBeNull();
+    expect(panels.positions).toHaveBeenCalled();
   });
 
   it("the Open position dialog shows the switch prompt instead of the open panel, and the panel after switching", async () => {

@@ -1,4 +1,5 @@
 import type { WalletDiscovery, WalletPosition } from "@sofinance/engine/wallet-discovery";
+import { formatPositionLabel } from "@/lib/position-label";
 import { positionKey, SUPPORTED, type PositionSource, type RangeStatus, type UnifiedPosition } from "../model";
 
 const STATUS: Readonly<Record<WalletPosition["rangeSide"], RangeStatus>> = { inside: "in", below: "below", above: "above" };
@@ -35,4 +36,5 @@ export const raydiumPositionSource: PositionSource<WalletPosition, Pick<WalletDi
     signer: "solana-wallet",
   }),
   fromDiscovery: (discovery) => (discovery?.positions ?? []).map(raydiumUnifiedPosition),
+  label: (position, metadata) => formatPositionLabel(position.native, metadata),
 });
