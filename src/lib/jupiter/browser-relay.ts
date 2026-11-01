@@ -30,8 +30,13 @@ export const RELAY_AMOUNT_CHURN_LIMIT = 3;
 export const RELAY_AMOUNT_CONVERGE_BPS = 100;
 /** Extra rounds after churn/round limit, used to binary-search a conservative spend. */
 export const RELAY_BINARY_SEARCH_LIMIT = 8;
+/**
+ * Real cause: each sizing pass changed the swap amounts and Jupiter's quotes for the new amounts kept moving, so no
+ * stable split was found within the round limit. Nothing is signed or sent at this stage.
+ */
 export const RELAY_DID_NOT_SETTLE_MESSAGE =
-  "Quote did not settle. Try a smaller amount, a wider range, or refresh the quote.";
+  "Jupiter's quotes kept changing while we sized the swaps, so we could not lock in a price. Nothing was sent. " +
+  "Wait a few seconds and try again; a smaller amount or a wider range settles faster.";
 /** Browser IP quota is exhausted; the caller should fall back to the server key. */
 export const JUPITER_RATE_LIMIT_MESSAGE =
   "Jupiter is rate-limiting quotes from this browser. Wait a few seconds and retry.";

@@ -186,6 +186,17 @@ it("returns a coded amount-too-small body for dust Jupiter 400s", async () => {
   });
 });
 
+it("returns the real cause, minimum and token mints for a genuine amount-too-small error", async () => {
+  const message = "This position's price range is narrow and the pool price sits at its edge, so it needs almost only XshP…mArM. " +
+    "The iNTC…FaF part of this amount is below the smallest swap Jupiter can quote. Enter at least 0.00000201 XshP…mArM.";
+  const response = selectedApiError(new AmountTooSmallError({ minimumInput: "201", inputDecimals: 8,
+    minorityMint: "iNTCy1qTsUEZQe3DSocLz1ZXXai34Gdw8THQh5rxFaF", majorityMint: "XshPgPdXFRWB8tP1j82rebb2Q9rPgGX37RuqzohmArM" }, message), "Quote failed");
+  expect(response.status).toBe(400);
+  expect(await response.json()).toEqual({ error: message, code: "amount_too_small",
+    outputMint: "iNTCy1qTsUEZQe3DSocLz1ZXXai34Gdw8THQh5rxFaF", minimumInput: "201",
+    majorityMint: "XshPgPdXFRWB8tP1j82rebb2Q9rPgGX37RuqzohmArM" });
+});
+
 it("returns Jupiter's 400 body instead of bare HTTP 400", async () => {
   const response = selectedApiError(
     new JupiterHttpError(400, "/swap/v1/quote", null, "Token not tradable"), "Quote failed");

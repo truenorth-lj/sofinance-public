@@ -1,15 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { captureException, setTag, setExtra } = vi.hoisted(() => ({
+const { captureException, setTag, setExtra, setLevel } = vi.hoisted(() => ({
   captureException: vi.fn(),
   setTag: vi.fn(),
   setExtra: vi.fn(),
+  setLevel: vi.fn(),
 }));
 
 vi.mock("@sentry/nextjs", () => ({
   captureException,
-  withScope: (callback: (scope: { setTag: typeof setTag; setExtra: typeof setExtra }) => void) => {
-    callback({ setTag, setExtra });
+  withScope: (callback: (scope: { setTag: typeof setTag; setExtra: typeof setExtra; setLevel: typeof setLevel }) => void) => {
+    callback({ setTag, setExtra, setLevel });
   },
   getCurrentScope: () => ({ getScopeData: () => ({}) }),
   getActiveSpan: () => undefined,
@@ -19,6 +20,7 @@ vi.mock("@sentry/nextjs", () => ({
 import { JupiterHttpError, JupiterUnavailableError } from "@sofinance/engine/jupiter/errors";
 import { JupiterNoRouteError } from "@sofinance/engine/swap/jupiter";
 import { RpcUnavailableError } from "@sofinance/engine/rpc/errors";
+import { RpcBehindError } from "@sofinance/engine/rpc/context-slot";
 import { CompoundSendError } from "../public-error";
 import { AmountTooSmallError } from "../selected-amount-error";
 import { SelectedNoRouteError } from "../selected-no-route";
@@ -26,6 +28,7 @@ import {
   captureApiRouteError,
   captureQuoteSettleFailure,
   captureWalletReturnedTxFailure,
+  isRpcBehindError,
   isUserFacingSelectedError,
   isUserRejectedError,
   resolveApiRoute,
@@ -37,6 +40,7 @@ beforeEach(() => {
   captureException.mockReset();
   setTag.mockReset();
   setExtra.mockReset();
+  setLevel.mockReset();
 });
 
 afterEach(() => {
@@ -157,6 +161,8 @@ describe("captureQuoteSettleFailure", () => {
     expect(setExtra).toHaveBeenCalledWith("rounds", 6);
     expect(setTag).toHaveBeenCalledWith("quote_path", "browser");
     expect(setExtra.mock.calls.map((call) => call[0])).not.toContain("wallet");
+    // Quotes moving is expected market behaviour with a retry message, not an application error.
+    expect(setLevel).toHaveBeenCalledWith("warning");
   });
 });
 
@@ -178,5 +184,29 @@ describe("captureWalletReturnedTxFailure", () => {
     vi.stubEnv("SENTRY_DSN", "https://key@o1.ingest.us.sentry.io/1");
     captureWalletReturnedTxFailure(new Error("User rejected the request"));
     expect(captureException).not.toHaveBeenCalled();
+  });
+});
+
+describe("RPC node behind the read slot", () => {
+  const raw = new Error("failed to get info for accounts: Minimum context slot has not been reached");
+  it("recognises the wrapped error and the raw JSON-RPC text", () => {
+    expect(isRpcBehindError(new RpcBehindError(raw))).toBe(true);
+    expect(isRpcBehindError(raw)).toBe(true);
+    expect(isRpcBehindError(new Error("Simulation failed: custom program error"))).toBe(false);
+  });
+  it("is still reported at 503 but as a warning, with the plain public message", () => {
+    vi.stubEnv("SENTRY_DSN", "https://key@o1.ingest.us.sentry.io/1");
+    const error = new RpcBehindError(raw);
+    captureApiRouteError(error, { route: "/api/selected-state", status: 503 });
+    expect(captureException).toHaveBeenCalledWith(error);
+    expect(setLevel).toHaveBeenCalledWith("warning");
+    expect(setTag).toHaveBeenCalledWith("rpc_behind", "true");
+    expect(setExtra).toHaveBeenCalledWith("public_message", expect.stringMatching(/a few seconds behind the network.*Nothing was sent/));
+  });
+  it("leaves other 5xx errors at error level", () => {
+    vi.stubEnv("SENTRY_DSN", "https://key@o1.ingest.us.sentry.io/1");
+    captureApiRouteError(new Error("boom"), { route: "/api/selected-state", status: 503 });
+    expect(captureException).toHaveBeenCalled();
+    expect(setLevel).not.toHaveBeenCalled();
   });
 });

@@ -4,6 +4,7 @@ import "server-only";
 import { CompoundSendError, publicErrorCode, sanitizePublicError } from "./public-error";
 import { isAvailabilityErrorCode, isUpstreamRelayPending, UPSTREAM_UNAVAILABLE_MESSAGE, upstreamQuotePath, upstreamUnavailable } from "./upstream-errors";
 import { SelectedNoRouteError } from "./selected-no-route";
+import { AmountTooSmallError } from "./selected-amount-error";
 import { captureApiRouteError, shouldCaptureApiError } from "./sentry/capture";
 import { logSafeError } from "./safe-error-log";
 
@@ -44,7 +45,8 @@ export function apiError(error: unknown, fallback: string, status = 400, extra?:
   }
   logSafeError(fallback, error);
   const source = error instanceof CompoundSendError && error.cause !== undefined ? error.cause : error;
-  const body: { error: string; sent?: boolean; code?: string; inputMint?: string; outputMint?: string } = {
+  const body: { error: string; sent?: boolean; code?: string; inputMint?: string; outputMint?: string;
+    minimumInput?: string; majorityMint?: string } = {
     error: sanitizePublicError(source, fallback),
   };
   const code = publicErrorCode(source);
@@ -52,6 +54,11 @@ export function apiError(error: unknown, fallback: string, status = 400, extra?:
   if (source instanceof SelectedNoRouteError) {
     body.inputMint = source.inputMint;
     body.outputMint = source.outputMint;
+  }
+  if (source instanceof AmountTooSmallError && source.detail) {
+    body.outputMint = source.detail.minorityMint;
+    body.minimumInput = source.detail.minimumInput;
+    if (source.detail.majorityMint) body.majorityMint = source.detail.majorityMint;
   }
   const sent = extra?.sent === false || error instanceof CompoundSendError && error.sent === false ? false : extra?.sent;
   if (sent === false) body.sent = false;

@@ -11,7 +11,7 @@ describe("withContextSlotRetry", () => {
     expect(sleep).not.toHaveBeenCalled();
   });
 
-  it("retries exactly once when the node is behind, then succeeds", async () => {
+  it("retries when the node is behind, then succeeds", async () => {
     const run = vi.fn().mockRejectedValueOnce(behind()).mockResolvedValueOnce("ok");
     const sleep = vi.fn(noSleep);
     await expect(withContextSlotRetry(run, { sleep })).resolves.toBe("ok");
@@ -19,10 +19,18 @@ describe("withContextSlotRetry", () => {
     expect(sleep).toHaveBeenCalledTimes(1);
   });
 
-  it("gives a plain-language error after the single retry", async () => {
+  it("retries a second time when the node is still behind", async () => {
+    const run = vi.fn().mockRejectedValueOnce(behind()).mockRejectedValueOnce(behind()).mockResolvedValueOnce("ok");
+    const sleep = vi.fn(noSleep);
+    await expect(withContextSlotRetry(run, { sleep })).resolves.toBe("ok");
+    expect(run).toHaveBeenCalledTimes(3);
+    expect(sleep).toHaveBeenCalledTimes(2);
+  });
+
+  it("gives a plain-language error after the retries", async () => {
     const run = vi.fn().mockRejectedValue(behind());
     const error = await withContextSlotRetry(run, { sleep: noSleep }).catch((caught: unknown) => caught);
-    expect(run).toHaveBeenCalledTimes(2);
+    expect(run).toHaveBeenCalledTimes(3);
     expect(error).toBeInstanceOf(RpcBehindError);
     expect((error as RpcBehindError).message).toBe(RPC_BEHIND_MESSAGE);
     expect((error as RpcBehindError).code).toBe(RPC_BEHIND_CODE);

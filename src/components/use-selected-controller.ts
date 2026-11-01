@@ -19,6 +19,8 @@ import { addLiquidityAdapter } from "./transactions/adapters/add";
 export { RELAY_DEADLINE_MS } from "./transactions/selected/selected-preview-model";
 
 type ApiError = { error: string; code?: string; inputMint?: string; outputMint?: string };
+/** Status line while a quote error is shown in the alert (avoids printing the same error twice). */
+export const QUOTE_ERROR_STATUS = "Preview unavailable. See the message below.";
 
 export function useSelectedController() {
   const { address: wallet, connected, connect, disconnect, isMobile, walletsCount,
@@ -29,7 +31,7 @@ export function useSelectedController() {
   const [amount, setAmount] = useState("");
   const [tolerancePercent, setTolerancePercent] = useState("1.0");
   const previewController = useSelectedPreview();
-  const { preview, quoteError, quoteErrorCode, quoteErrorOutputMint, quoteLoading,
+  const { preview, quoteError, quoteErrorCode, quoteErrorOutputMint, quoteErrorAmount, quoteLoading,
     invalidate: invalidatePreview, invalidateForInput: invalidateInputPreview,
     clear: clearPreview, clearErrors: clearQuoteErrors,
     retryCalculation, showQuoteRecalculate } = previewController;
@@ -186,7 +188,9 @@ export function useSelectedController() {
         native: visibleState.inputKind === "native" };
       return notEnoughBalanceMessage({ ...insufficientInput, symbol: knownTokenSymbol(visibleState.inputMint, visibleState.inputKind) });
     }
-    if (quoteError) return quoteError;
+    // The alert carries the quote error unless a submission error takes it; then the status line keeps the quote
+    // error, otherwise it only points to the alert, so the same message is never shown twice.
+    if (quoteError && !busy) return error ? quoteError : QUOTE_ERROR_STATUS;
     if (submitStage === "preparing") return "Preparing and checking your transaction…";
     if (submitStage === "wallet") return "Confirm in your wallet";
     if (calculating) return "Estimating liquidity…";
@@ -233,7 +237,7 @@ export function useSelectedController() {
     discovery, selection, state: visibleState, amount, tolerancePercent, result: displayedResult, attempt, attemptStatus,
     // While locked a quote error is stale (it was computed before the send settled): hide it and its Recalculate.
     error: error || (busy ? "" : quoteError), reprepare: tx.status === "failed" && !!tx.retryable, quoteError: busy ? "" : quoteError,
-    quoteErrorCode, quoteErrorOutputMint, showQuoteRecalculate: showQuoteRecalculate && !busy,
+    quoteErrorCode, quoteErrorOutputMint, quoteErrorAmount: busy ? null : quoteErrorAmount, showQuoteRecalculate: showQuoteRecalculate && !busy,
     busy, retryAdd, calculating, now, floorBps, quote, fresh, status, insufficientInput,
     actionLabel, actionDisabled, walletBlocked, primaryAction, changeAmount, changeTolerance, fillMax,
     choosePosition, chooseAsset, refreshDiscovery, refreshState,

@@ -23,6 +23,7 @@ import { ActionSelector } from "./action-selector";
 import { AssetRisksDialog } from "./asset-risks-dialog";
 import { APP_ROUTES, DOCS_ROUTES } from "@/lib/public-urls";
 import { formatSelectedNoRouteMessage, JUPITER_NO_ROUTE_CODE } from "@/lib/selected-no-route";
+import { AMOUNT_TOO_SMALL_CODE, formatAmountTooSmallMessage } from "@/lib/selected-amount-error";
 import Link from "next/link";
 import { captureGrowthEvent } from "@/lib/analytics/client";
 import { GROWTH_EVENTS } from "@/lib/analytics/events";
@@ -59,7 +60,7 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
   const controller = useSelectedController();
   const { wallet, connected, connect, disconnect, connectionError,
     discovery, selection, state, amount, tolerancePercent, result, attempt, attemptStatus,
-    error, reprepare, quoteError, quoteErrorCode, quoteErrorOutputMint, showQuoteRecalculate,
+    error, reprepare, quoteError, quoteErrorCode, quoteErrorOutputMint, quoteErrorAmount, showQuoteRecalculate,
     busy: addBusy, retryAdd, calculating, now, quote, fresh, status, insufficientInput,
     actionLabel, actionDisabled: addDisabled, primaryAction: addAction, changeAmount, changeTolerance, fillMax,
     choosePosition, chooseAsset, refreshDiscovery, refreshState, retryCalculation,
@@ -130,7 +131,11 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
   const noRouteOutput = quoteErrorOutputMint || state?.mintA || "";
   const displayError = quoteErrorCode === JUPITER_NO_ROUTE_CODE && noRouteOutput
     ? formatSelectedNoRouteMessage(inputLabel, poolLabel(noRouteOutput))
-    : error;
+    : quoteErrorCode === AMOUNT_TOO_SMALL_CODE && quoteErrorAmount && quoteErrorOutputMint && state && error === quoteError
+      ? formatAmountTooSmallMessage({ input: inputLabel, minority: poolLabel(quoteErrorOutputMint),
+        majority: quoteErrorAmount.majorityMint ? poolLabel(quoteErrorAmount.majorityMint) : undefined,
+        minimum: money(quoteErrorAmount.minimumInput, state.inputDecimals, state.inputDecimals) })
+      : error;
   // "Rescan wallet": the Solana scan (unchanged) plus, on /app, the Robinhood Chain scan via the parent's refresh counter.
   const rescan = () => { if (wallet) void refreshDiscovery(); onRescan?.(); };
   return <div className="min-h-screen bg-canvas text-cream">

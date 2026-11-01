@@ -1,6 +1,7 @@
 import * as Sentry from "@sentry/nextjs";
 import { isJupiterUpstreamError, JupiterHttpError, JupiterUnavailableError, JUPITER_NO_ROUTE_CODE } from "@sofinance/engine/jupiter/errors";
-import { RpcHttpError, RpcUnavailableError } from "@sofinance/engine/rpc/errors";
+import { isMinContextSlotError, RpcHttpError, RpcUnavailableError } from "@sofinance/engine/rpc/errors";
+import { RPC_BEHIND_CODE } from "@sofinance/engine/rpc/context-slot";
 import { publicErrorCode, CompoundSendError, sanitizePublicError } from "../public-error";
 import { AMOUNT_TOO_SMALL_CODE, JUPITER_CLIENT_ERROR_CODE } from "../selected-amount-error";
 import { isSentryEnabled } from "./runtime";
@@ -51,6 +52,15 @@ export function isUpstreamAvailabilityError(error: unknown): boolean {
   return code === "jupiter_unavailable" || code === "rpc_unavailable" || code === "jupiter_rate_limited";
 }
 
+/**
+ * Our RPC node lagged the slot we had just read (JSON-RPC -32016), even after the automatic retries. Transient
+ * infrastructure, not a user error and not a code bug: still reported so a spike is visible, but at warning level.
+ */
+export function isRpcBehindError(error: unknown): boolean {
+  if (error instanceof CompoundSendError && error.cause !== undefined) return isRpcBehindError(error.cause);
+  return publicErrorCode(error) === RPC_BEHIND_CODE || isMinContextSlotError(error);
+}
+
 /** 5xx / Jupiter+RPC upstream only. Never validation 4xx or user-rejected. */
 export function shouldCaptureApiError(error: unknown, status = 500): boolean {
   if (isUserRejectedError(error)) return false;
@@ -96,6 +106,10 @@ export function captureApiRouteError(
     const route = resolveApiRoute(options);
     Sentry.withScope((scope) => {
       if (route) scope.setTag("route", route);
+      if (isRpcBehindError(error)) {
+        scope.setLevel("warning");
+        scope.setTag("rpc_behind", "true");
+      }
       if (options.transaction) scope.setTag("tx_sent", options.sent === false ? "no" : "unknown");
       scope.setTag("error_class", sentryErrorClass(error));
       if (options.quotePath) scope.setTag("quote_path", options.quotePath);
@@ -137,6 +151,8 @@ export function captureQuoteSettleFailure(error: unknown, extras: QuoteSettleFai
   try {
     if (!isSentryEnabled()) return;
     Sentry.withScope((scope) => {
+      // Jupiter's quotes kept moving while sizing; the user sees a retry message and nothing was sent.
+      scope.setLevel("warning");
       scope.setTag("error_class", sentryErrorClass(error));
       scope.setTag("quote_settle", "did_not_settle");
       if (extras.quotePath) scope.setTag("quote_path", extras.quotePath);
