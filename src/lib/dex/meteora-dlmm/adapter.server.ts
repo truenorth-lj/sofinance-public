@@ -3,7 +3,6 @@ import "server-only";
 
 import { PublicKey, type Connection } from "@solana/web3.js";
 import { decodeLbPair, decodeMintDecimals } from "@sofinance/engine/protocols/meteora/accounts";
-import { meteoraPositionAccountSize } from "@sofinance/engine/protocols/meteora/rent";
 import { METEORA_DLMM_PROGRAM_ID } from "@sofinance/engine/protocols/meteora/constants";
 import { decodeMeteoraPosition, isMeteoraPositionAccount, meteoraPositionLiquidity, meteoraRangeSide } from "@sofinance/engine/protocols/meteora/position";
 import { rpcConnection } from "@sofinance/engine/rpc";
@@ -20,7 +19,7 @@ import {
   buildMeteoraCloseRefund, buildMeteoraDeposit, buildMeteoraSetup, meteoraBinUiPrice, meteoraRequestRange, planMeteoraOpen, readMeteoraPool,
   assertEmptyOwnedPosition, type MeteoraOpenDeps, type MeteoraPoolState,
 } from "./open.server";
-import { buildMeteoraAdd, buildMeteoraClaim, buildMeteoraWithdraw } from "./manage.server";
+import { buildMeteoraAdd, buildMeteoraClaim, buildMeteoraCompound, buildMeteoraWithdraw } from "./manage.server";
 import { listedMeteoraPool, type MeteoraPoolList } from "./pools.server";
 
 /** What a Meteora `UnifiedPosition.native` carries: the existing positions row (same shape the legacy UI reads). */
@@ -210,18 +209,24 @@ export function createMeteoraDlmmAdapter(options: MeteoraDlmmAdapterOptions = {}
         const info = pools[index];
         return info ? [[id, decodeLbPair(info.data).binStep] as const] : [];
       }));
-      // Close refund shown before a full withdraw: a position account holds exactly the rent-exempt minimum for its
-      // width (one read per distinct width). Best effort: an unread amount leaves the field out (the panel says "rent").
-      const refunds = new Map<number, string>();
-      for (const width of new Set(rows.map((row) => row.upperBinId - row.lowerBinId + 1))) {
-        try { refunds.set(width, String(await connection.getMinimumBalanceForRentExemption(meteoraPositionAccountSize(width)))); } catch { /* left out */ }
-      }
+      // Close refund shown before a full withdraw: closing returns the position account's own lamports, so read them
+      // (PM review of #289: not the rent-exempt minimum for its width, which misses any extra lamports). Best effort:
+      // an unread account leaves the field out (the panel then says "rent" without an amount).
+      const refunds = new Map<string, string>();
+      try {
+        const accounts = rows.map((row) => row.positionAccount);
+        for (let start = 0; start < accounts.length; start += 100) {
+          const slice = accounts.slice(start, start + 100);
+          const infos = await connection.getMultipleAccountsInfo(slice.map((id) => new PublicKey(id)), "confirmed");
+          slice.forEach((id, index) => { const info = infos[index]; if (info && info.lamports > 0) refunds.set(id, String(info.lamports)); });
+        }
+      } catch { /* left out */ }
       return rows.map((row) => {
         const step = binStep.get(row.poolId);
         if (step === undefined) throw new DexError("UPSTREAM", `The Meteora pool ${row.poolId} was not found on chain.`);
         const position = unified(row, step, decimals.get(row.mintA)!, decimals.get(row.mintB)!,
           { liquidityRaw: { ...row.amountsRaw }, unclaimedFeesRaw: { ...row.uncollectedFeesRaw } });
-        const refund = refunds.get(row.upperBinId - row.lowerBinId + 1);
+        const refund = refunds.get(row.positionAccount);
         return refund ? { ...position, closeRefundLamports: refund } : position;
       });
     }),
@@ -269,7 +274,20 @@ export function createMeteoraDlmmAdapter(options: MeteoraDlmmAdapterOptions = {}
       const built = await buildMeteoraClaim(deps(), position, owner);
       return { step: 1, of: 1, label: "Claim unclaimed fees to your wallet", done: true, prepared: { kind: "solana-tx", ...built, positionMint: position } };
     }),
-    prepareCompound: async () => { throw notYet(descriptor.capabilities.compound); },
+    // PR8: claim + deposit the claimed fees back into the same range, one step, no swap and no fee.
+    prepareCompound: (key: PositionKey, owner: string, context: StepContext) => guarded(async () => {
+      singleStep(context, "A Meteora compound");
+      const position = nativeIdOf(key);
+      const built = await buildMeteoraCompound(deps(), position, owner);
+      const leftover = built.leftoverX > 0n || built.leftoverY > 0n
+        ? " The price is outside the position's range, so fees in the token it can't hold right now go to your wallet instead." : "";
+      return {
+        step: 1, of: 1, label: `Claim the position's fees and add them back into it. No platform fee.${leftover}`, done: true,
+        ...(built.createdTokenAccounts.length
+          ? { createsTokenAccounts: built.createdTokenAccounts.map((item) => ({ mint: item.mint, rentLamports: item.rentLamports.toString() })) } : {}),
+        prepared: { kind: "solana-tx", transaction: built.transaction, lastValidBlockHeight: built.lastValidBlockHeight, positionMint: position },
+      };
+    }),
     prepareRecovery: (key: PositionKey, owner: string, context: StepContext) => guarded(async () => {
       if (context.step !== 1) throw new DexError("INVALID_REQUEST", "Closing an empty Meteora position is a single step.");
       const position = nativeIdOf(key);

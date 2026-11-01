@@ -81,6 +81,8 @@ const FEED_POSITION = Keypair.fromSeed(new Uint8Array(32).fill(21)).publicKey.to
 const UNLISTED_POSITION = Keypair.fromSeed(new Uint8Array(32).fill(22)).publicKey.toBase58();
 /** Liquidity share held in FEED_POSITION's first bin (so partial withdraw and claim have something to act on). */
 const FEED_SHARE = 1_000_000n;
+/** FEED_POSITION's unclaimed swap fees (raw TSLA / TSLAx) that claim_fee2 pays out in the fake chain. */
+const FEED_FEES = { x: 1_500n, y: 2_500n };
 const STRANGER = Keypair.fromSeed(new Uint8Array(32).fill(23)).publicKey.toBase58();
 const STRANGER_POSITION = Keypair.fromSeed(new Uint8Array(32).fill(24)).publicKey.toBase58();
 
@@ -88,6 +90,8 @@ function installHeldPositions() {
   chain.current.set(FEED_POSITION, positionAccount(TSLA_POOL, OWNER, 46031, 60, FEED_SHARE));
   chain.current.set(UNLISTED_POSITION, positionAccount(SPCX_POOL, OWNER, 46031, 60, 5n));
   chain.current.set(STRANGER_POSITION, positionAccount(TSLA_POOL, STRANGER, 46031, 60, 5n));
+  chain.current.setClaimable(FEED_POSITION, FEED_FEES.x, FEED_FEES.y);
+  chain.current.setClaimable(UNLISTED_POSITION, 7n, 9n);
 }
 
 describeDexContract(meteoraDlmmModule, {
@@ -131,7 +135,8 @@ describe("Meteora DLMM adapter specifics", () => {
     // The shared panel's Liquidity / Unclaimed fees rows read these (raw atomic strings from the position's bins).
     expect(listed[0]!.holdings).toEqual({ liquidityRaw: { a: expect.stringMatching(/^\d+$/), b: expect.stringMatching(/^\d+$/) },
       unclaimedFeesRaw: { a: expect.stringMatching(/^\d+$/), b: expect.stringMatching(/^\d+$/) } });
-    // The rent a full withdraw pays back, stated before signing (60-bin position: 0.0419 SOL, as disclosed at open).
+    // The rent a full withdraw pays back, stated before signing: the position account's own lamports (60-bin position:
+    // 0.0419 SOL, as disclosed at open).
     expect(listed[0]!.closeRefundLamports).toBe("41899840");
     vi.stubEnv("SOFINANCE_RWA_DB_ENABLED", "false");
     clearMeteoraPoolListCache();
@@ -264,6 +269,7 @@ describe("Meteora DLMM adapter specifics", () => {
         () => adapter.prepareWithdraw(key, STRANGER, { fraction: 1, output: "pool-tokens" }, first),
         () => adapter.prepareWithdraw(key, STRANGER, { fraction: 0.5, output: "pool-tokens" }, first),
         () => adapter.prepareClaim(key, STRANGER, first),
+        () => adapter.prepareCompound(key, STRANGER, first),
       ]) await expect(run()).rejects.toMatchObject({ code: "POSITION_NOT_FOUND", message: expect.stringMatching(/another wallet/) });
       // The stranger's own position cannot be driven by OWNER either.
       await expect(adapter.prepareClaim(`meteora-dlmm:${STRANGER_POSITION}`, OWNER, first)).rejects.toMatchObject({ code: "POSITION_NOT_FOUND" });
@@ -334,6 +340,7 @@ describe("Meteora DLMM adapter specifics", () => {
       await expect(adapter.prepareAdd(key, OWNER, { token: TSLA, amountRaw: DEPOSIT_RAW }, first)).rejects.toMatchObject({ code: "TOKEN_RESTRICTED" });
       await expect(adapter.prepareWithdraw(key, OWNER, { fraction: 1, output: "pool-tokens" }, first)).rejects.toMatchObject({ code: "TOKEN_RESTRICTED" });
       await expect(adapter.prepareClaim(key, OWNER, first)).rejects.toMatchObject({ code: "TOKEN_RESTRICTED" });
+      await expect(adapter.prepareCompound(key, OWNER, first)).rejects.toMatchObject({ code: "TOKEN_RESTRICTED" });
       expect(chain.current.simulations).toEqual([]);
     });
 
@@ -366,6 +373,88 @@ describe("Meteora DLMM adapter specifics", () => {
       const adapter = createMeteoraDlmmAdapter();
       await expect(adapter.prepareWithdraw(unlisted, OWNER, { fraction: 1, output: "pool-tokens" }, first)).resolves.toMatchObject({ done: true });
       await expect(adapter.prepareAdd(unlisted, OWNER, { token: TSLA, amountRaw: DEPOSIT_RAW }, first)).rejects.toBeInstanceOf(DexError);
+      // Compound deposits too, so it follows add: listed pools only (the fees can still be claimed).
+      await expect(adapter.prepareCompound(unlisted, OWNER, first)).rejects.toMatchObject({ code: "UNSUPPORTED" });
+      await expect(adapter.prepareClaim(unlisted, OWNER, first)).resolves.toMatchObject({ done: true });
+    });
+  });
+
+  describe("compound (PR8: claim + deposit back, no swap, no fee)", () => {
+    const key = `meteora-dlmm:${FEED_POSITION}` as const;
+    const first = { step: 1, priorSignatures: [] };
+    const METEORA = "LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo";
+    /** The amounts (X, Y) encoded in the transaction's add_liquidity_by_strategy2, and its static keys. */
+    function compoundTx(prepared: { kind: string; transaction?: string }) {
+      if (prepared.kind !== "solana-tx" || !prepared.transaction) throw new Error("expected a Solana step");
+      const tx = VersionedTransaction.deserialize(Buffer.from(prepared.transaction, "base64"));
+      const keys = tx.message.staticAccountKeys.map((k) => k.toBase58());
+      const meteora = tx.message.compiledInstructions.filter((ix) => keys[ix.programIdIndex] === METEORA).map((ix) => Buffer.from(ix.data));
+      return { tx, keys, meteora };
+    }
+    beforeEach(() => installHeldPositions());
+
+    it("claims and deposits exactly the claimed fees back into the position in one step, with no swap, no fee and no transfer", async () => {
+      const step = await createMeteoraDlmmAdapter().prepareCompound(key, OWNER, first);
+      expect(step).toMatchObject({ step: 1, of: 1, done: true, label: expect.stringMatching(/add them back into it\. No platform fee\.$/) });
+      // The claim alone (to measure it), then claim + deposit.
+      expect(chain.current.simulations).toEqual(["claim_fee2", "claim_fee2", "add_liquidity_by_strategy2"]);
+      const { tx, keys, meteora } = compoundTx(step.prepared);
+      expect(keys[0]).toBe(OWNER);
+      expect(tx.message.header.numRequiredSignatures).toBe(1);
+      expect(meteora).toHaveLength(2);
+      const add = meteora[1]!;
+      expect([add.readBigUInt64LE(8), add.readBigUInt64LE(16)]).toEqual([FEED_FEES.x, FEED_FEES.y]);
+      expect([add.readInt32LE(32), add.readInt32LE(36)]).toEqual([46031, 46090]); // the position's own range
+      expect(keys).not.toContain(FEE_WALLET);
+      expect(keys).not.toContain(ata(TSLA, FEE_WALLET));
+      expect(keys).not.toContain("JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4");
+      // Only the compute budget, the owner's own missing token account (TSLAx) and Meteora: no transfer of any kind.
+      const programs = new Set(tx.message.compiledInstructions.map((ix) => keys[ix.programIdIndex]));
+      expect([...programs].sort()).toEqual(["ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL", "ComputeBudget111111111111111111111111111111", METEORA].sort());
+      // That created account's rent is returned with the step, so the panel states it before the wallet signs.
+      expect(step.createsTokenAccounts).toEqual([{ mint: TSLAX, rentLamports: expect.stringMatching(/^[1-9]\d*$/) }]);
+    });
+
+    it("leaves the wallet's own pool tokens untouched when it lands (only the claimed fees go back in)", async () => {
+      const before = [chain.current.get(ata(TSLA, OWNER)), chain.current.get(ata(TSLAX, OWNER))];
+      const step = await createMeteoraDlmmAdapter().prepareCompound(key, OWNER, first);
+      chain.current.land(compoundTx(step.prepared).tx);
+      const after = [chain.current.get(ata(TSLA, OWNER)), chain.current.get(ata(TSLAX, OWNER))];
+      expect(after[0]!.data.equals(before[0]!.data)).toBe(true);
+      expect(after[1]!.data.readBigUInt64LE(64)).toBe(0n); // created by the claim, emptied by the deposit
+      expect(before[1]).toBeNull();
+      // Nothing left to compound now.
+      await expect(createMeteoraDlmmAdapter().prepareCompound(key, OWNER, first)).rejects.toMatchObject({ code: "INVALID_REQUEST", message: expect.stringMatching(/no unclaimed fees/) });
+    });
+
+    it("refuses in plain words when there are no fees yet, building nothing", async () => {
+      chain.current.setClaimable(FEED_POSITION, 0n, 0n);
+      await expect(createMeteoraDlmmAdapter().prepareCompound(key, OWNER, first))
+        .rejects.toMatchObject({ code: "INVALID_REQUEST", message: "This position has no unclaimed fees yet, so there is nothing to compound." });
+      expect(chain.current.simulations).toEqual(["claim_fee2"]); // the measuring simulation only
+    });
+
+    it("out of range, deposits only the token the range can hold and says the rest goes to the wallet", async () => {
+      // 46070..46089 sits above the active bin (46062): it can only hold TSLA (X).
+      chain.current.set(FEED_POSITION, positionAccount(TSLA_POOL, OWNER, 46070, 20, FEED_SHARE));
+      const step = await createMeteoraDlmmAdapter().prepareCompound(key, OWNER, first);
+      const add = compoundTx(step.prepared).meteora[1]!;
+      expect([add.readBigUInt64LE(8), add.readBigUInt64LE(16)]).toEqual([FEED_FEES.x, 0n]);
+      expect(step.label).toMatch(/outside the position's range.*go to your wallet instead/);
+    });
+
+    it("refuses when an out-of-range position's fees are all in the token it can't hold (claim instead)", async () => {
+      // 46031..46050 sits below the active bin: it can only hold TSLAx (Y); the fees are all TSLA.
+      chain.current.set(FEED_POSITION, positionAccount(TSLA_POOL, OWNER, 46031, 20, FEED_SHARE));
+      chain.current.setClaimable(FEED_POSITION, 900n, 0n);
+      await expect(createMeteoraDlmmAdapter().prepareCompound(key, OWNER, first))
+        .rejects.toMatchObject({ code: "INVALID_REQUEST", message: expect.stringMatching(/Claim them to your wallet instead/) });
+    });
+
+    it("declares compound with no fee rule (PM 11/1)", () => {
+      const { descriptor } = createMeteoraDlmmAdapter();
+      expect(descriptor.capabilities.compound).toEqual({ supported: true });
+      expect(descriptor.meta.feePolicy.compound).toEqual({ kind: "none" });
     });
   });
 
@@ -401,7 +490,9 @@ describe("Meteora DLMM adapter specifics", () => {
         expect(BigInt(DEPOSIT_RAW) - ySpend).toBeGreaterThan(0n); // part of the deposit stays TSLA
         expect(quote.platformFeeRaw).toBe(tenBps(ySpend).toString());
         expect(adapter.fees.feeFor("open", ySpend)).toBe(tenBps(ySpend));
-        await adapter.prepareOpen(request, first).catch(() => undefined); // step 1 builds no swap
+        const setup = await adapter.prepareOpen(request, first); // step 1 builds no swap: it must succeed, not be swallowed
+        expect(setup).toMatchObject({ step: 1, done: false });
+        expect(quotes.length).toBeGreaterThan(0);
         for (const q of quotes) expect(q).toMatchObject({ inputMint: TSLA, outputMint: TSLAX, amount: ySpend, platformFeeBps: 10 });
       } finally { restore(); }
     });

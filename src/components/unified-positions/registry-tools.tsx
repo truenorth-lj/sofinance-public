@@ -1,9 +1,9 @@
 "use client";
 
 /**
- * Tool panels (Add / Withdraw / Claim fees) for "My positions" rows served through the DEX registry (PR7). Everything
- * here is decided from the registry: the descriptor's capabilities and meta (withdraw outputs, partial withdraw, claim,
- * deposit inputs, fee policy, rent model). No layer here knows which DEX a position belongs to.
+ * Tool panels (Add / Withdraw / Claim fees, PR7; Compound, PR8) for "My positions" rows served through the DEX registry.
+ * Everything here is decided from the registry: the descriptor's capabilities and meta (withdraw outputs, partial
+ * withdraw, claim, compound, deposit inputs, fee policy, rent model). No layer here knows which DEX a position belongs to.
  *
  * Every send goes through the shared tx pipeline (`useTxPipeline` + `dexTxAdapter`): wallet signAndSend, loading →
  * success / failure with a Solscan link, balances refresh; the pipeline's success notice stays until dismissed.
@@ -11,12 +11,13 @@
 import { CircleAlert, LoaderCircle } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { formatAmount, parseTokenAmount } from "@sofinance/engine/amount";
-import { dexTxAdapter, type DexCapabilities, type DexDescriptor, type DexStepInput, type DexStepOp, type FeeRule } from "@/lib/dex/client";
+import { dexTxAdapter, type DexCapabilities, type DexPreparedStep, type DexDescriptor, type DexStepInput, type DexStepOp, type FeeRule } from "@/lib/dex/client";
 import { createJupiterRelayStore } from "@/lib/jupiter/browser-relay";
-import { CHECKING_SOLANA_COPY, solscanTxUrl } from "@/lib/tx-pipeline";
+import { CANCEL_CHECK_PENDING_COPY, CHECKING_SOLANA_COPY, solscanTxUrl } from "@/lib/tx-pipeline";
 import type { ToolId, TokenRef, UnifiedPosition, WithdrawOutput } from "@/lib/unified-positions/model";
 import { useTxPipeline } from "../transactions/use-tx-pipeline";
 import { useWalletConnection } from "../wallet-connection";
+import { beginPositionOp, trackPositionSignature, usePositionOpLock } from "./position-op-lock";
 
 /** A wallet balance the Add panel can check against (raw atomic string). */
 export type ToolBalance = { balance: string; decimals: number };
@@ -41,6 +42,7 @@ const LAMPORTS_PER_SOL = 1_000_000_000;
 
 export function RegistryPositionTool(props: RegistryToolProps) {
   if (props.view === "deposit" && props.capabilities.deposit.supported) return <RegistryAddPanel {...props} />;
+  if (props.view === "compound" && props.capabilities.compound.supported) return <RegistryCompoundPanel {...props} />;
   if (props.view === "withdraw" && props.capabilities.withdraw.supported) return <>
     <RegistryWithdrawPanel {...props} />
     {props.capabilities.claim.supported ? <RegistryClaimPanel {...props} /> : null}
@@ -52,7 +54,8 @@ export function RegistryPositionTool(props: RegistryToolProps) {
 export function feeLine(rule: FeeRule, swapNoun: string): string {
   if (rule.kind === "none") return "No platform fee.";
   const percent = `${rule.bps / 100}%`;
-  if (rule.kind === "swap-input-bps") return `A ${percent} platform fee applies only to the part we swap ${swapNoun}; nothing is charged on the rest.`;
+  const swapped = swapNoun ? `the part we swap ${swapNoun}` : "the part we swap";
+  if (rule.kind === "swap-input-bps") return `A ${percent} platform fee applies only to ${swapped}; nothing is charged on the rest.`;
   if (rule.kind === "swap-output-bps") return `A ${percent} platform fee applies only to the swapped output.`;
   return `A ${percent} platform fee applies to the harvested fees.`;
 }
@@ -74,7 +77,20 @@ export function partialWithdrawFeesLine(capabilities: DexCapabilities): string |
   return capabilities.claim.supported ? "Unclaimed fees stay in the position. Use Claim fees below." : "Unclaimed fees stay in the position.";
 }
 
-/** One shared send per panel: the pipeline for `op`, scoped to this position, with multi-step plans run in order. */
+/** "This also creates your SPCX token account: about 0.0020 SOL rent…" for the accounts a prepared step creates. */
+export function tokenAccountRentLine(created: DexPreparedStep["result"]["createsTokenAccounts"], symbolFor: (mint: string) => string): string | null {
+  if (!created?.length) return null;
+  const lamports = created.reduce((sum, item) => sum + (/^\d+$/.test(item.rentLamports) ? Number(item.rentLamports) : 0), 0);
+  const names = created.map((item) => symbolFor(item.mint)).join(" and ");
+  const noun = created.length === 1 ? "token account" : "token accounts";
+  return `This also creates your ${names} ${noun} in your wallet: about ${(lamports / LAMPORTS_PER_SOL).toFixed(4)} SOL rent, which comes back if you close ${created.length === 1 ? "that account" : "them"}.`;
+}
+
+/**
+ * One send per panel through the shared pipeline, scoped to this position, with multi-step plans run in order. Every
+ * op on the same position shares one lock (`position-op-lock`): while any of them is preparing, in the wallet, being
+ * checked or confirming, all panels of that position are locked, and a tab switch does not release it.
+ */
 function usePositionTx<Op extends DexStepOp>(op: Op, position: UnifiedPosition, onConfirmed: () => void) {
   const { address: wallet, signTransaction, signAndSendTransaction } = useWalletConnection();
   const txWallet = useMemo(() => wallet ? { address: wallet, signTransaction, signAndSendTransaction } : null,
@@ -82,6 +98,8 @@ function usePositionTx<Op extends DexStepOp>(op: Op, position: UnifiedPosition, 
   const adapter = useMemo(() => dexTxAdapter(op), [op]);
   // Errors show inline under the panel's button (with Try again), so no failure toast covers that button at 375 px.
   const tx = useTxPipeline(adapter, txWallet, { scope: position.key, inlineErrors: true });
+  const shared = usePositionOpLock(position.key);
+  const [prepared, setPrepared] = useState<DexPreparedStep["result"] | null>(null);
   const relayStore = useRef(createJupiterRelayStore());
   const confirmed = useRef<string | null>(null);
   const settled = tx.status === "success" ? tx.signature ?? "" : null;
@@ -92,30 +110,55 @@ function usePositionTx<Op extends DexStepOp>(op: Op, position: UnifiedPosition, 
     confirmed.current = settled;
     latestConfirmed.current();
   }, [settled]);
-  const send = async (fields: Omit<DexStepInput<Op>, "context" | "relayStore">) => {
+  const send = async (fields: Omit<DexStepInput<Op>, "context" | "relayStore" | "beforeWallet">) => {
+    const release = beginPositionOp(position.key);
+    if (!release) return; // another op on this position is in flight (the panel is greyed; this closes the race)
     const priorSignatures: string[] = [];
     let planToken: string | undefined;
-    for (let step = 1; step <= 8; step++) {
-      const input = { ...fields, relayStore: relayStore.current,
-        context: { step, priorSignatures: [...priorSignatures], ...(planToken ? { planToken } : {}) } } as unknown as DexStepInput<Op>;
-      const result = await tx.run(input);
-      if (!result) return;
-      priorSignatures.push(result.signature);
-      if (result.prepared.result.done) return;
-      planToken = result.prepared.result.planToken;
+    try {
+      for (let step = 1; step <= 8; step++) {
+        setPrepared(null);
+        const input = { ...fields, relayStore: relayStore.current, beforeWallet: setPrepared,
+          context: { step, priorSignatures: [...priorSignatures], ...(planToken ? { planToken } : {}) } } as unknown as DexStepInput<Op>;
+        const result = await tx.run(input);
+        if (!result) return;
+        trackPositionSignature(position.key, result.signature);
+        priorSignatures.push(result.signature);
+        if (result.prepared.result.done) return;
+        planToken = result.prepared.result.planToken;
+      }
+    } finally {
+      release();
     }
   };
-  return { tx, send, connected: Boolean(wallet) };
+  // The panel's own send is shown by its own status; another op's send (or a cancelled one still being checked) greys it.
+  const lockedByOther = !tx.locked && (shared.busy || shared.cancelPending);
+  return {
+    tx, send, connected: Boolean(wallet), prepared: tx.status === "wallet" ? prepared : null,
+    locked: tx.locked || shared.busy || shared.cancelPending, lockedByOther, cancelPending: shared.cancelPending,
+  };
 }
 
 type PositionTx = Pick<ReturnType<typeof usePositionTx>["tx"], "status" | "signature" | "error" | "retryable" | "retry">;
+type PositionLock = Pick<ReturnType<typeof usePositionTx>, "lockedByOther" | "cancelPending">;
 
-function TxStatus({ tx, successText }: { tx: PositionTx; successText: string }) {
+/** Why a panel is greyed while another send on the same position runs (or a cancelled one is still being checked). */
+function LockNote({ lock }: { lock: PositionLock }) {
+  if (!lock.lockedByOther) return null;
+  return <p role="status" data-testid="registry-position-locked" className="mt-3 text-sm text-cream/80">
+    {lock.cancelPending ? CANCEL_CHECK_PENDING_COPY : "Another transaction on this position is still in progress. This unlocks when it finishes."}
+  </p>;
+}
+
+function TxStatus({ tx, successText, walletNote }: { tx: PositionTx; successText: string; walletNote?: string | null }) {
   const stage = tx.status === "preparing" ? "Preparing the transaction…"
     : tx.status === "wallet" ? "Confirm in your wallet…"
     : tx.status === "checking" ? CHECKING_SOLANA_COPY
     : tx.status === "confirming" ? "Confirming on Solana…" : null;
-  if (stage) return <p role="status" className="mt-3 flex items-center gap-2 text-sm text-cream/80"><LoaderCircle aria-hidden="true" className="size-4 animate-spin" />{stage}</p>;
+  if (stage) return <>
+    <p role="status" className="mt-3 flex items-center gap-2 text-sm text-cream/80"><LoaderCircle aria-hidden="true" className="size-4 animate-spin" />{stage}</p>
+    {tx.status === "wallet" && walletNote ? <p data-testid="registry-wallet-note" className="mt-2 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80">{walletNote}</p> : null}
+  </>;
   if (tx.status === "success") return <p role="status" className="mt-3 text-sm text-cream/80">
     {successText}{tx.signature ? <> · <a href={solscanTxUrl(tx.signature)} target="_blank" rel="noreferrer" className="underline">View on Solscan</a></> : null}
   </p>;
@@ -134,7 +177,8 @@ function NotConnected() {
 }
 
 function RegistryAddPanel({ position, descriptor, balances, symbolOf, onConfirmed }: RegistryToolProps) {
-  const { tx, send, connected } = usePositionTx("add", position, onConfirmed);
+  const op = usePositionTx("add", position, onConfirmed);
+  const { tx, send, connected, locked } = op;
   const tokens = useMemo(() => {
     const list: TokenRef[] = [];
     const { poolTokens, extra } = descriptor.meta.depositInputs;
@@ -166,19 +210,20 @@ function RegistryAddPanel({ position, descriptor, balances, symbolOf, onConfirme
     <p className="mt-2 text-xs leading-5 text-smoke">Adds liquidity to this position at its current price range. We swap part of your input into {pair} as needed. {feeLine(descriptor.meta.feePolicy.add, "into the pool tokens")}</p>
     {!connected ? <NotConnected /> : <>
       <label htmlFor="registry-add-token" className={LABEL}>Token to add</label>
-      <select id="registry-add-token" disabled={tx.locked} value={token?.id ?? ""} onChange={(event) => { setTokenId(event.target.value); setAmount(""); }} className={`mt-2 ${FIELD}`}>
+      <select id="registry-add-token" disabled={locked} value={token?.id ?? ""} onChange={(event) => { setTokenId(event.target.value); setAmount(""); }} className={`mt-2 ${FIELD}`}>
         {tokens.map((item) => <option key={item.id} value={item.id}>{symbolOf(item)}</option>)}
       </select>
       <div className="mt-5 flex items-center justify-between">
         <label htmlFor="registry-add-amount" className="text-xs font-medium uppercase tracking-[0.16em] text-smoke">Amount</label>
-        {balance && token ? <button type="button" disabled={tx.locked} onClick={() => setAmount(formatAmount(balance.balance, token.decimals, token.decimals).replace(/,/g, ""))} className="text-xs text-smoke underline">
+        {balance && token ? <button type="button" disabled={locked} onClick={() => setAmount(formatAmount(balance.balance, token.decimals, token.decimals).replace(/,/g, ""))} className="text-xs text-smoke underline">
           Wallet: {formatAmount(balance.balance, token.decimals)} · Max</button> : null}
       </div>
-      <input id="registry-add-amount" disabled={tx.locked} inputMode="decimal" placeholder="0.00" value={amount} onChange={(event) => setAmount(event.target.value)} className={`mt-2 ${FIELD}`} />
+      <input id="registry-add-amount" disabled={locked} inputMode="decimal" placeholder="0.00" value={amount} onChange={(event) => setAmount(event.target.value)} className={`mt-2 ${FIELD}`} />
       {problem ? <p role="alert" className="mt-2 text-xs text-cream/80">{problem}</p> : null}
-      <button type="button" disabled={tx.locked || raw === null} onClick={submit} className={BUTTON}>
+      <button type="button" disabled={locked || raw === null} onClick={submit} className={BUTTON}>
         {tx.locked ? <LoaderCircle aria-hidden="true" className="size-4 animate-spin" /> : null}Add liquidity
       </button>
+      <LockNote lock={op} />
       <TxStatus tx={tx} successText="Liquidity added." />
     </>}
   </section>;
@@ -191,7 +236,8 @@ const OUTPUT_LABEL: Record<WithdrawOutput, (pair: string) => string> = {
 };
 
 function RegistryWithdrawPanel({ position, descriptor, capabilities, symbolOf, onConfirmed }: RegistryToolProps) {
-  const { tx, send, connected } = usePositionTx("withdraw", position, onConfirmed);
+  const op = usePositionTx("withdraw", position, onConfirmed);
+  const { tx, send, connected, locked } = op;
   const partial = capabilities.withdraw.supported && capabilities.withdraw.partial;
   const outputs = capabilities.withdrawOutputs;
   const [percent, setPercent] = useState(100);
@@ -205,30 +251,32 @@ function RegistryWithdrawPanel({ position, descriptor, capabilities, symbolOf, o
     {!connected ? <NotConnected /> : <>
       {partial ? <>
         <label htmlFor="registry-withdraw-percent" className={LABEL}>Amount to withdraw: {percent}%</label>
-        <input id="registry-withdraw-percent" type="range" min={1} max={100} step={1} disabled={tx.locked} value={percent}
+        <input id="registry-withdraw-percent" type="range" min={1} max={100} step={1} disabled={locked} value={percent}
           onChange={(event) => setPercent(Number(event.target.value))} className="mt-3 w-full accent-[#fff27f]" />
-        <div className="mt-2 flex gap-2">{[25, 50, 75, 100].map((value) => <button key={value} type="button" disabled={tx.locked} onClick={() => setPercent(value)}
+        <div className="mt-2 flex gap-2">{[25, 50, 75, 100].map((value) => <button key={value} type="button" disabled={locked} onClick={() => setPercent(value)}
           className={`rounded-full border px-3 py-1 text-xs font-semibold ${percent === value ? "border-white/60 text-cream" : "border-white/20 text-smoke"}`}>{value}%</button>)}</div>
       </> : <p className="mt-4 text-sm text-cream/80">This position can only be withdrawn in full.</p>}
       {outputs.length > 1 ? <>
         <label htmlFor="registry-withdraw-output" className={LABEL}>Receive</label>
-        <select id="registry-withdraw-output" disabled={tx.locked} value={output} onChange={(event) => setOutput(event.target.value as WithdrawOutput)} className={`mt-2 ${FIELD}`}>
+        <select id="registry-withdraw-output" disabled={locked} value={output} onChange={(event) => setOutput(event.target.value as WithdrawOutput)} className={`mt-2 ${FIELD}`}>
           {outputs.map((item) => <option key={item} value={item}>{OUTPUT_LABEL[item](pair)}</option>)}
         </select>
       </> : <p className="mt-4 text-sm text-cream/80">You receive {output === "pool-tokens" ? pair : OUTPUT_LABEL[output](pair)} in your wallet.</p>}
       {output !== "pool-tokens" ? <p className="mt-2 text-xs leading-5 text-smoke">{feeLine(descriptor.meta.feePolicy.withdrawUsdc, "")}</p> : null}
       {feesLine ? <p data-testid="registry-withdraw-fees" className="mt-4 text-sm text-cream/80">{feesLine}</p> : null}
       {rentLine ? <p data-testid="registry-withdraw-rent" className="mt-4 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80">{rentLine}</p> : null}
-      <button type="button" disabled={tx.locked} onClick={submit} className={BUTTON}>
+      <button type="button" disabled={locked} onClick={submit} className={BUTTON}>
         {tx.locked ? <LoaderCircle aria-hidden="true" className="size-4 animate-spin" /> : null}{percent === 100 ? "Withdraw all and close" : `Withdraw ${percent}%`}
       </button>
+      <LockNote lock={op} />
       <TxStatus tx={tx} successText="Withdrawal confirmed." />
     </>}
   </section>;
 }
 
 function RegistryClaimPanel({ position, descriptor, symbolOf, onConfirmed }: RegistryToolProps) {
-  const { tx, send, connected } = usePositionTx("claim", position, onConfirmed);
+  const op = usePositionTx("claim", position, onConfirmed);
+  const { tx, send, connected, locked } = op;
   const fees = position.holdings?.unclaimedFeesRaw ?? null;
   const nothing = fees !== null && BigInt(fees.a) === 0n && BigInt(fees.b) === 0n;
   const submit = () => void send({ descriptor, positionKey: position.key });
@@ -237,10 +285,69 @@ function RegistryClaimPanel({ position, descriptor, symbolOf, onConfirmed }: Reg
     <p className="mt-2 text-xs leading-5 text-smoke">Sends the unclaimed swap fees to your wallet; your liquidity stays in the position. {feeLine(descriptor.meta.feePolicy.claim, "")}</p>
     {fees ? <p className="mt-3 text-sm text-cream/80">Unclaimed: {formatAmount(fees.a, position.tokenA.decimals)} {symbolOf(position.tokenA)} · {formatAmount(fees.b, position.tokenB.decimals)} {symbolOf(position.tokenB)}</p> : null}
     {!connected ? <NotConnected /> : <>
-      <button type="button" disabled={tx.locked || nothing} onClick={submit} className={BUTTON}>
+      <button type="button" disabled={locked || nothing} onClick={submit} className={BUTTON}>
         {tx.locked ? <LoaderCircle aria-hidden="true" className="size-4 animate-spin" /> : null}{nothing ? "No fees to claim yet" : "Claim fees"}
       </button>
+      <LockNote lock={op} />
       <TxStatus tx={tx} successText="Fees claimed." />
+    </>}
+  </section>;
+}
+
+/**
+ * Which raw fee amounts a compound can put back: in range both sides; out of range only the token the range holds at
+ * the current price (price below the range → all token A, above → all token B: how every concentrated-liquidity
+ * range works, so no DEX branch). Null when the fees were not read.
+ */
+export function compoundableFees(position: UnifiedPosition): { a: bigint; b: bigint; leftA: bigint; leftB: bigint } | null {
+  const fees = position.holdings?.unclaimedFeesRaw ?? null;
+  if (!fees || !/^\d+$/.test(fees.a) || !/^\d+$/.test(fees.b)) return null;
+  const a = BigInt(fees.a);
+  const b = BigInt(fees.b);
+  if (position.rangeStatus === "below") return { a, b: 0n, leftA: 0n, leftB: b };
+  if (position.rangeStatus === "above") return { a: 0n, b, leftA: a, leftB: 0n };
+  return { a, b, leftA: 0n, leftB: 0n };
+}
+
+/** Out of range, only one side of the fees can go back in: name both tokens (PM review of #289). */
+export function compoundRangeLine(position: UnifiedPosition, symbolOf: (token: TokenRef) => string): string | null {
+  if (position.rangeStatus !== "below" && position.rangeStatus !== "above") return null;
+  const [kept, sent] = position.rangeStatus === "below" ? [position.tokenA, position.tokenB] : [position.tokenB, position.tokenA];
+  return `The price is outside this position's range. Only ${symbolOf(kept)} fees go back into the position; ${symbolOf(sent)} fees go to your wallet.`;
+}
+
+/** Why Compound is greyed before anything is sent: nothing it could put back (null when it can run). */
+export function compoundBlockedReason(position: UnifiedPosition, symbolOf: (token: TokenRef) => string): string | null {
+  const fees = compoundableFees(position);
+  if (!fees || fees.a > 0n || fees.b > 0n) return null;
+  if (fees.leftA === 0n && fees.leftB === 0n) return "This position has no unclaimed fees yet, so there is nothing to compound.";
+  const [kept, other] = position.rangeStatus === "below" ? [position.tokenA, position.tokenB] : [position.tokenB, position.tokenA];
+  return `There are no ${symbolOf(kept)} fees to put back while the price is outside the range. Claim the ${symbolOf(other)} fees to your wallet instead.`;
+}
+
+function RegistryCompoundPanel({ position, descriptor, symbolOf, onConfirmed }: RegistryToolProps) {
+  const op = usePositionTx("compound", position, onConfirmed);
+  const { tx, send, connected, locked } = op;
+  const fees = position.holdings?.unclaimedFeesRaw ?? null;
+  const blocked = compoundBlockedReason(position, symbolOf);
+  const rangeLine = compoundRangeLine(position, symbolOf);
+  const poolFeeLine = position.rangeStatus === "in" ? descriptor.meta.inRangeDepositPoolFee ?? null : null;
+  const tokenFor = (mint: string) => [position.tokenA, position.tokenB].find((token) => token.id === mint);
+  const rentLine = tokenAccountRentLine(op.prepared?.createsTokenAccounts, (mint) => { const token = tokenFor(mint); return token ? symbolOf(token) : "pool token"; });
+  const submit = () => void send({ descriptor, positionKey: position.key });
+  return <section className={CARD} data-testid="registry-compound" aria-labelledby="registry-compound-heading">
+    <h2 id="registry-compound-heading" className="text-lg font-semibold text-cream">Compound fees</h2>
+    <p className="mt-2 text-xs leading-5 text-smoke">Claims the unclaimed swap fees and adds them back into this position at its current price range, in one transaction. No swap is needed. {feeLine(descriptor.meta.feePolicy.compound, "")}</p>
+    {fees ? <p className="mt-3 text-sm text-cream/80">Unclaimed: {formatAmount(fees.a, position.tokenA.decimals)} {symbolOf(position.tokenA)} · {formatAmount(fees.b, position.tokenB.decimals)} {symbolOf(position.tokenB)}</p> : null}
+    {rangeLine ? <p data-testid="registry-compound-range" className="mt-4 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80">{rangeLine}</p> : null}
+    {poolFeeLine ? <p data-testid="registry-compound-pool-fee" className="mt-3 text-xs leading-5 text-smoke">{poolFeeLine}</p> : null}
+    {!connected ? <NotConnected /> : <>
+      {blocked ? <p data-testid="registry-compound-blocked" className="mt-4 text-sm text-cream/80">{blocked}</p> : null}
+      <button type="button" disabled={locked || blocked !== null} onClick={submit} className={BUTTON}>
+        {tx.locked ? <LoaderCircle aria-hidden="true" className="size-4 animate-spin" /> : null}{blocked ? "Nothing to compound" : "Compound fees"}
+      </button>
+      <LockNote lock={op} />
+      <TxStatus tx={tx} successText="Fees compounded." walletNote={rentLine} />
     </>}
   </section>;
 }

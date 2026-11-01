@@ -20,10 +20,11 @@ import type { DexDescriptor } from "./types";
 /** Hard cap so a prepare cannot spin past a Jupiter 429 wait with no UI error. */
 export const DEX_PREPARE_TIMEOUT_MS = 45_000;
 
-/** `add` / `withdraw` / `claim` act on an existing position (PR7 panels); `recovery` closes a half-made open. */
-export type DexStepOp = "open" | "recovery" | "add" | "withdraw" | "claim";
+/** `add` / `withdraw` / `claim` / `compound` act on an existing position (PR7–PR8 panels); `recovery` closes a half-made open. */
+export type DexStepOp = "open" | "recovery" | "add" | "withdraw" | "claim" | "compound";
 
-type Common = { descriptor: DexDescriptor; context: StepContext; relayStore: JupiterRelayStore; beforeWallet?: () => void };
+/** `beforeWallet` runs once the step is prepared and checked, just before the wallet is asked (it may throw to stop). */
+type Common = { descriptor: DexDescriptor; context: StepContext; relayStore: JupiterRelayStore; beforeWallet?: (result: StepResult) => void };
 type OnPosition = Common & { positionKey: PositionKey };
 export type DexStepInput<Op extends DexStepOp> = Op extends "open"
   ? Common & { request: Omit<OpenRequest, "owner" | "cosigner"> }
@@ -34,9 +35,9 @@ export type DexStepInput<Op extends DexStepOp> = Op extends "open"
 /** The prepared step plus what the next step needs (`result.planToken`, `result.done`). */
 export type DexPreparedStep = PreparedTx & { result: StepResult };
 
-const FLOW: Record<DexStepOp, TxFlow> = { open: "open", recovery: "withdraw", add: "add", withdraw: "withdraw", claim: "claim" };
+const FLOW: Record<DexStepOp, TxFlow> = { open: "open", recovery: "withdraw", add: "add", withdraw: "withdraw", claim: "claim", compound: "compound" };
 const SUCCESS: Record<DexStepOp, string> = {
-  open: "Position step confirmed", recovery: "Position closed", add: "Liquidity added", withdraw: "Withdrawal confirmed", claim: "Fees claimed",
+  open: "Position step confirmed", recovery: "Position closed", add: "Liquidity added", withdraw: "Withdrawal confirmed", claim: "Fees claimed", compound: "Fees compounded",
 };
 
 /** The route body's op-specific fields: recovery names the `wallet`, the position ops the `owner` (checked on chain). */
@@ -81,7 +82,7 @@ export function dexTxAdapter<Op extends DexStepOp>(op: Op): TxAdapter<DexStepInp
         const extra = signers.slice(1);
         const cosignerKey = cosigner?.publicKey.toBase58();
         if (extra.length > 1 || (extra.length === 1 && (extra[0] !== cosignerKey || prepared.cosignRef !== cosignerKey))) throw new TxNotSentError(MISMATCH);
-        input.beforeWallet?.();
+        input.beforeWallet?.(result);
         return {
           transaction, result, lastValidBlockHeight: prepared.lastValidBlockHeight, sendPermit: prepared.sendPermit, landedPermit: prepared.landedPermit,
           ...(prepared.positionMint ? { positionMint: prepared.positionMint } : {}),

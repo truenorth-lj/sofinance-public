@@ -35,13 +35,13 @@ export type RegistryPositions = {
 };
 
 /**
- * The registry panel draws Add (deposit), Withdraw and Claim fees (`registry-tools.tsx`, PR7) from the descriptor's
- * capabilities. Compound and Performance have no registry panel yet, so those tabs stay greyed with the generic reason,
+ * The registry panel draws Add (deposit), Withdraw, Claim fees (PR7) and Compound (PR8) (`registry-tools.tsx`) from the
+ * descriptor's capabilities. Performance has no registry panel yet, so that tab stays greyed with the generic reason,
  * whatever the adapter declares. Generic: no DEX id is checked.
  */
 const NO_PANEL = Object.freeze({ supported: false as const, reason: NOT_AVAILABLE_MESSAGE });
 export function registryPanelCapabilities(capabilities: DexCapabilities): DexCapabilities {
-  return { ...capabilities, compound: NO_PANEL, performance: NO_PANEL };
+  return { ...capabilities, performance: NO_PANEL };
 }
 
 type Loaded = { owner: string; refresh: number; served: PositionSourceId[]; positions: UnifiedPosition[]; errors: string[] };

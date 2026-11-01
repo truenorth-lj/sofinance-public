@@ -18,7 +18,7 @@ export const METEORA_DLMM_FEE_POLICY: FeePolicy = Object.freeze({
 });
 
 /**
- * Shown until the PR that ships each tool (PR7 compound / performance / exit preview). The shared generic
+ * Shown until the PR that ships each tool (performance / exit preview). The shared generic
  * text, never a DEX name: the UI only renders the capability's reason (PM 11/1).
  */
 const NOT_YET = NOT_AVAILABLE_MESSAGE;
@@ -46,6 +46,8 @@ export const meteoraDlmmDescriptor: DexDescriptor = Object.freeze({
     feePolicy: METEORA_DLMM_FEE_POLICY,
     /** Same inputs as opening (SOL is refused). */
     depositInputs: Object.freeze({ poolTokens: true, extra: Object.freeze([{ id: USDC_MINT, symbol: "USDC", decimals: 6 }]) }),
+    /** DLMM charges a composition fee when a deposit changes the active bin's token mix (PM review of #289). */
+    inRangeDepositPoolFee: "While the price is inside the range, the pool may charge its own composition fee on the part that goes into the bin at the current price. That fee goes to the pool, not to us.",
   }),
   capabilities: Object.freeze({
     open: SUPPORTED,
@@ -60,7 +62,8 @@ export const meteoraDlmmDescriptor: DexDescriptor = Object.freeze({
     withdrawOutputs: Object.freeze(["pool-tokens"] as const),
     /** PR6: claim accrued swap fees without changing liquidity (no fee). */
     claim: SUPPORTED,
-    compound: unsupported(NOT_YET),
+    /** PR8: claim fees and deposit them back into the same range in one transaction (no swap, no fee). */
+    compound: SUPPORTED,
     performance: unsupported(NOT_YET),
     exitPreview: unsupported(NOT_YET),
     rangeDisplay: "price",
