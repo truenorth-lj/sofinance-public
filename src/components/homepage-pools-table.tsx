@@ -145,7 +145,9 @@ export function HomepagePoolsView({
   // the server HTML and the first client render pick the same pool per pair.
   // Only pools above the homepage TVL floor can be listed, so only their 7-day APRs are loaded.
   const candidates = useMemo(() => homepageCandidates(pools ?? NO_POOLS), [pools]);
-  const apr = usePoolsApr7d(candidates);
+  // Every Solana pool here comes from `/api/rwa-pairs`, so its Meteora pools read their saved APR snapshot.
+  const rwaListKeys = useMemo(() => new Set(candidates.filter((pool) => pool.chain === "solana").map((pool) => pool.key)), [candidates]);
+  const apr = usePoolsApr7d(candidates, 0, rwaListKeys);
   // The prerendered HTML (and the first client render) prints no APR figure; the 24h column fills in after mount.
   const [mounted, setMounted] = useState(false);
   useEffect(() => {

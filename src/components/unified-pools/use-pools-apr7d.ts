@@ -14,22 +14,26 @@ export const NO_7D_APR_RHC = "No 7-day estimate for this pool yet; see the 24h e
 /**
  * Estimated highest range APR (7-day average) for every pool in the list (Solana + RHC when the flag is on),
  * through the shared cached client (`pool-range-apr-client`), resolved with the same `highestRangeSummary`
- * the cards and the Create position modal use.
+ * the cards and the Create position modal use. `rwaListKeys`: keys of the pools listed by `/api/rwa-pairs`; its Meteora
+ * pools (feed `meteora-dlmm-rwa-v1`) read their saved APR snapshot (see `rangeAprUrl`).
  */
-export function usePoolsApr7d(pools: readonly UnifiedPool[], refreshKey = 0): Record<string, Apr7dState> {
+export function usePoolsApr7d(pools: readonly UnifiedPool[], refreshKey = 0,
+  rwaListKeys?: ReadonlySet<string>): Record<string, Apr7dState> {
   const [settled, setSettled] = useState<Record<string, Apr7dState>>({});
   const wanted = useMemo(
     () => pools.filter((pool) => pool.chain === "solana" || (pool.chain === "robinhood" && isRhcApr7dEnabled()))
-      .map((pool) => ({ key: pool.key, poolAddress: pool.poolAddress, protocol: pool.protocol as RangeAprProtocol })),
-    [pools],
+      .map((pool) => ({ key: pool.key, poolAddress: pool.poolAddress, protocol: pool.protocol as RangeAprProtocol,
+        rwaList: rwaListKeys?.has(pool.key) ?? false })),
+    [pools, rwaListKeys],
   );
-  const wantedKey = wanted.map((entry) => entry.key).join(",");
+  const wantedKey = wanted.map((entry) => (entry.rwaList ? `${entry.key}#rwa` : entry.key)).join(",");
 
   useEffect(() => {
     let cancelled = false;
     const timer = window.setTimeout(() => {
       for (const entry of wanted) {
-        loadPoolRangeApr(entry.poolAddress, entry.protocol).then(
+        (entry.rwaList ? loadPoolRangeApr(entry.poolAddress, entry.protocol, { rwaList: true })
+          : loadPoolRangeApr(entry.poolAddress, entry.protocol)).then(
           (payload) => {
             if (cancelled) return;
             setSettled((previous) => ({ ...previous, [entry.key]: summarizeApr7d(payload, entry.protocol, Date.now()) }));

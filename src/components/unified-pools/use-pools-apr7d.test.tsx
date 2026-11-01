@@ -9,8 +9,8 @@ import { buildPresetList } from "@/lib/range-apr/preset-list";
 import type { UnifiedPool } from "@/lib/unified-pools/model";
 import { usePoolsApr7d, type Apr7dState } from "./use-pools-apr7d";
 
-const mocks = vi.hoisted(() => ({ payload: null as unknown }));
-vi.mock("../range-apr/pool-range-apr-client", () => ({ loadPoolRangeApr: async () => mocks.payload }));
+const mocks = vi.hoisted(() => ({ payload: null as unknown, calls: [] as unknown[][] }));
+vi.mock("../range-apr/pool-range-apr-client", () => ({ loadPoolRangeApr: async (...args: unknown[]) => { mocks.calls.push(args); return mocks.payload; } }));
 
 const pool = { key: "solana:p1", chain: "solana", protocol: "raydium-clmm", poolAddress: "p1" } as UnifiedPool;
 let out: Record<string, Apr7dState> = {};
@@ -60,5 +60,21 @@ describe("usePoolsApr7d", () => {
     const at = new Date().toISOString();
     expect(await run({ ...data, freshness: { snapshotAt: at, chainObservedAt: at, stale: false, lastAttemptStatus: "error" } }))
       .toMatchObject({ freshness: { delayed: true } });
+  });
+});
+
+describe("usePoolsApr7d RWA-list Meteora pools", () => {
+  it("asks for the saved snapshot only for Meteora pools listed by /api/rwa-pairs", async () => {
+    mocks.calls = []; mocks.payload = payloadWithAprs({ micro: 23.1, tight: 18, standard: 3, wide: 1 });
+    const pools = [
+      { key: "solana:m1", chain: "solana", protocol: "meteora-dlmm", poolAddress: "m1" },
+      { key: "solana:m2", chain: "solana", protocol: "meteora-dlmm", poolAddress: "m2" },
+      { key: "solana:p1", chain: "solana", protocol: "raydium-clmm", poolAddress: "p1" },
+    ] as UnifiedPool[];
+    const rwa = new Set(["solana:m1", "solana:p1"]);
+    function Many() { usePoolsApr7d(pools, 0, rwa); return null; }
+    await act(async () => { root.render(createElement(Many)); });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 5)); });
+    expect(mocks.calls).toEqual([["m1", "meteora-dlmm", { rwaList: true }], ["m2", "meteora-dlmm"], ["p1", "raydium-clmm", { rwaList: true }]]);
   });
 });

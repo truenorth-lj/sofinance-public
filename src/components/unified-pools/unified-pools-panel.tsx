@@ -49,7 +49,8 @@ const SOURCE_ERROR: Record<Source, string> = {
 
 /** `icons`: token icon links stored by the daily refresh, served with `/api/rwa-pairs` (`tokenIcons`). */
 /** `updated`: when each chain's saved list was written (`fetchedAt`), for the "Updated … UTC" line. */
-type Loaded = { rows: SolanaPoolRow[]; rhc: RhcPoolSummary[]; icons?: TokenIconMap; updated: SnapshotSourceTime[] };
+/** `rwaList`: pool keys from `/api/rwa-pairs` (its Meteora rows are feed `meteora-dlmm-rwa-v1`, with a saved APR snapshot). */
+type Loaded = { rows: SolanaPoolRow[]; rhc: RhcPoolSummary[]; icons?: TokenIconMap; updated: SnapshotSourceTime[]; rwaList?: string[] };
 
 async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
   const response = await fetch(url, { signal, headers: { Accept: "application/json" } });
@@ -222,6 +223,7 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", header 
       { source: "raydium", run: async () => {
         const body = await fetchRwaPairsList<{ pairs: SolanaPoolRow[]; tokenIcons?: TokenIconMap; fetchedAt?: string; freshness?: { stale?: boolean } }>(signal);
         return { rows: body.pairs, icons: body.tokenIcons,
+          rwaList: (Array.isArray(body.pairs) ? body.pairs : []).map((row) => `solana:${row.poolAddress}`),
           updated: body.fetchedAt ? [{ chain: "solana" as const, fetchedAt: body.fetchedAt, stale: body.freshness?.stale ?? false }] : [] };
       } },
       ...(flags.orca ? [{ source: "orca" as const, run: async () => ({ rows: (await getJson<{ pairs: SolanaPoolRow[] }>("/api/protocol-pools?protocol=orca-whirlpool", signal)).pairs }) }] : []),
@@ -241,6 +243,7 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", header 
         next.rows.push(...(Array.isArray(result.value.rows) ? result.value.rows : []));
         next.rhc.push(...(Array.isArray(result.value.rhc) ? result.value.rhc : []));
         if (result.value.icons) next.icons = result.value.icons;
+        if (result.value.rwaList) next.rwaList = result.value.rwaList;
         next.updated.push(...(result.value.updated ?? []));
       } else nextErrors[sources[index]!.source] = SOURCE_ERROR[sources[index]!.source];
     });
@@ -270,7 +273,8 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", header 
   const rowsByKey = useMemo(() => new Map(loaded.rows.map((row) => [`solana:${row.poolAddress}`, row])), [loaded.rows]);
   const rhcByKey = useMemo(() => new Map(loaded.rhc.map((summary) => [`robinhood:${summary.poolId.toLowerCase()}`, summary])), [loaded.rhc]);
 
-  const apr = usePoolsApr7d(pools, refreshKey);
+  const rwaListKeys = useMemo(() => new Set(loaded.rwaList ?? []), [loaded.rwaList]);
+  const apr = usePoolsApr7d(pools, refreshKey, rwaListKeys);
   const apr7d = useCallback((pool: UnifiedPool) => { const state = apr[pool.key]; return state?.status === "ready" ? state.aprPct : null; }, [apr]);
   const selected = useMemo(() => selectPools(pools, { filters, hideDuplicates: !showAll, sort, apr7d }), [pools, filters, showAll, sort, apr7d]);
 
