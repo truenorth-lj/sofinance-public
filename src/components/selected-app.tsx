@@ -27,6 +27,16 @@ import { AMOUNT_TOO_SMALL_CODE, formatAmountTooSmallMessage } from "@/lib/select
 import Link from "next/link";
 import { captureGrowthEvent } from "@/lib/analytics/client";
 import { GROWTH_EVENTS } from "@/lib/analytics/events";
+import { raydiumPositionSource as positionSource } from "@/lib/unified-positions/sources/raydium";
+import { toolOptions, type ToolMeta } from "@/lib/unified-positions/capabilities";
+import type { ToolId } from "@/lib/unified-positions/model";
+
+const TOOL_META: Readonly<Record<ToolId, ToolMeta>> = Object.freeze({
+  compound: { label: "Yield Compound", icon: Sprout, controls: "compound-view" },
+  performance: { label: "Performance", icon: ChartNoAxesCombined, controls: "performance-view" },
+  deposit: { label: "Add to position", icon: ArrowDown, controls: "deposit-view" },
+  withdraw: { label: "Withdraw", icon: ArrowUp, controls: "withdraw-view" },
+});
 
 const short = (value: string) => `${value.slice(0, 5)}…${value.slice(-5)}`;
 const money = (value: string, decimals: number, digits = 6) => formatAmount(value, decimals, digits);
@@ -122,7 +132,8 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
   const inputLabel = selectedAsset ? assetSymbol(selectedAsset, assetMetadata(selectedAsset, metadata)) : "Input asset";
   const addStatus = compound.busy ? "A compound or recovery operation is in progress."
     : insufficientInput && selectedAsset ? notEnoughBalanceMessage({ ...insufficientInput, symbol: inputLabel }) : status;
-  const positionOptions = discovery?.positions || [];
+  // Positions are read through the Raydium position source (unified-positions PR-A); same list and order as the scan.
+  const positionOptions = positionSource.fromDiscovery(discovery).map((position) => position.native);
   const assetOptions = discovery?.assets || [];
   const poolLabel = (mint: string) => {
     const asset = assetOptions.find((item) => item.mint === mint);
@@ -183,12 +194,8 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
       </section>
       </div>
 
-      <ActionSelector value={activeView} onChange={setActiveView} options={[
-        { value: "compound", label: "Yield Compound", icon: Sprout, controls: "compound-view" },
-        { value: "performance", label: "Performance", icon: ChartNoAxesCombined, controls: "performance-view" },
-        { value: "deposit", label: "Add to position", icon: ArrowDown, controls: "deposit-view" },
-        { value: "withdraw", label: "Withdraw", icon: ArrowUp, controls: "withdraw-view", disabled: !state || !wallet || (busy && activeView !== "withdraw") },
-      ]} />
+      <ActionSelector value={activeView} onChange={setActiveView} options={toolOptions(positionSource.capabilities, TOOL_META,
+        { withdraw: !state || !wallet || (busy && activeView !== "withdraw") })} />
       {activeView === "withdraw" && <div id="withdraw-view">{state && wallet ? <WithdrawPanel key={`${wallet}:${state.positionMint}`} wallet={wallet} positionMint={state.positionMint} mintA={state.mintA} mintB={state.mintB} label={poolLabel} onClose={()=>setActiveView("compound")} onBusyChange={setWithdrawBusy} onConfirmed={()=>{void refreshState();void refreshDiscovery();}} /> : <p className="mt-4 text-sm text-smoke">Connect your wallet and choose a position to withdraw.</p>}</div>}
       {compound.historyWarning && <div role="status" className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-xs text-cream/80"><span>{compound.historyWarning}</span><button type="button" className="font-semibold underline" onClick={() => setActiveView("compound")}>View compound status</button></div>}
       <main>
