@@ -86,7 +86,9 @@ export function showTxCheckingNotice(flow: TxFlow) {
  * A failure before or during send: plain words, Sentry for anything but a wallet rejection, and a
  * balances refresh (a wallet-stage failure may still have moved funds; the screen must not show stale balances).
  */
-export function reportTxFailure(input: { flow: TxFlow; error: unknown; id?: string; signature?: string; retry?: () => void; context?: TxReportContext }) {
+export function reportTxFailure(input: { flow: TxFlow; error: unknown; id?: string; signature?: string; retry?: () => void; context?: TxReportContext;
+  /** The caller shows the failure inline: no failure toast (a "checking" toast under `id` is cleared). */
+  silent?: boolean }) {
   const kind = txFailureKind(input.error);
   const message = plainTxError(input.error, kind);
   captureTxClientFailure(input.flow, kind, message, input.context);
@@ -102,6 +104,10 @@ export function reportTxFailure(input: { flow: TxFlow; error: unknown; id?: stri
     return { kind, message, retryable: false };
   }
   const retryable = canRetry(kind);
+  if (input.silent) {
+    if (input.id) dismissTxNotice(input.id);
+    return { kind, message, retryable };
+  }
   showTxNotice({ id: input.id, flow: input.flow, state: "failure", kind, signature: input.signature,
     title: kind === "expired" ? `${FLOW_LABEL[input.flow]}: transaction expired`
       : kind === "not-sent" ? `${FLOW_LABEL[input.flow]}: nothing was sent`
