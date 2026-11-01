@@ -276,6 +276,11 @@ describe("notices", () => {
     expect(reportTxFailure({ flow: "add", error: new Error("User rejected the request") }).kind).toBe("rejected");
     expect(getTxNotices()).toEqual([]);
   });
+  it("silent: a panel that shows the error inline gets the plain message back and no failure toast", () => {
+    const result = reportTxFailure({ flow: "withdraw", error: new TxNotSentError("Pool is paused"), retry: vi.fn(), silent: true });
+    expect(result).toMatchObject({ kind: "not-sent", message: "Pool is paused. Nothing was sent." });
+    expect(getTxNotices()).toEqual([]);
+  });
   it("watches a notice through the finality endpoint", async () => {
     trackTxSignature({ flow: "withdraw", signature: SIG, lastValidBlockHeight: 5, wallet: WALLET, successTitle: "Withdrawn" });
     const fetchImpl = vi.fn(async () => Response.json({ status: "confirmed" }));

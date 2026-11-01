@@ -68,13 +68,20 @@ export function closeRentLine(position: UnifiedPosition, descriptor: DexDescript
   return "Withdrawing 100% closes the position. Its rent comes back to your wallet.";
 }
 
+/** The line shown before a partial withdraw when the DEX leaves the unclaimed fees in the position (capability only). */
+export function partialWithdrawFeesLine(capabilities: DexCapabilities): string | null {
+  if (!capabilities.withdraw.supported || !capabilities.withdraw.partial || !capabilities.withdraw.partialLeavesFees) return null;
+  return capabilities.claim.supported ? "Unclaimed fees stay in the position. Use Claim fees below." : "Unclaimed fees stay in the position.";
+}
+
 /** One shared send per panel: the pipeline for `op`, scoped to this position, with multi-step plans run in order. */
 function usePositionTx<Op extends DexStepOp>(op: Op, position: UnifiedPosition, onConfirmed: () => void) {
   const { address: wallet, signTransaction, signAndSendTransaction } = useWalletConnection();
   const txWallet = useMemo(() => wallet ? { address: wallet, signTransaction, signAndSendTransaction } : null,
     [wallet, signTransaction, signAndSendTransaction]);
   const adapter = useMemo(() => dexTxAdapter(op), [op]);
-  const tx = useTxPipeline(adapter, txWallet, { scope: position.key });
+  // Errors show inline under the panel's button (with Try again), so no failure toast covers that button at 375 px.
+  const tx = useTxPipeline(adapter, txWallet, { scope: position.key, inlineErrors: true });
   const relayStore = useRef(createJupiterRelayStore());
   const confirmed = useRef<string | null>(null);
   const settled = tx.status === "success" ? tx.signature ?? "" : null;
@@ -191,6 +198,7 @@ function RegistryWithdrawPanel({ position, descriptor, capabilities, symbolOf, o
   const [output, setOutput] = useState<WithdrawOutput>(outputs[0] ?? "pool-tokens");
   const pair = `${symbolOf(position.tokenA)} and ${symbolOf(position.tokenB)}`;
   const rentLine = percent === 100 ? closeRentLine(position, descriptor) : null;
+  const feesLine = percent < 100 ? partialWithdrawFeesLine(capabilities) : null;
   const submit = () => void send({ descriptor, positionKey: position.key, fraction: percent / 100, output });
   return <section className={CARD} data-testid="registry-withdraw" aria-labelledby="registry-withdraw-heading">
     <h2 id="registry-withdraw-heading" className="text-lg font-semibold text-cream">Withdraw</h2>
@@ -209,6 +217,7 @@ function RegistryWithdrawPanel({ position, descriptor, capabilities, symbolOf, o
         </select>
       </> : <p className="mt-4 text-sm text-cream/80">You receive {output === "pool-tokens" ? pair : OUTPUT_LABEL[output](pair)} in your wallet.</p>}
       {output !== "pool-tokens" ? <p className="mt-2 text-xs leading-5 text-smoke">{feeLine(descriptor.meta.feePolicy.withdrawUsdc, "")}</p> : null}
+      {feesLine ? <p data-testid="registry-withdraw-fees" className="mt-4 text-sm text-cream/80">{feesLine}</p> : null}
       {rentLine ? <p data-testid="registry-withdraw-rent" className="mt-4 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80">{rentLine}</p> : null}
       <button type="button" disabled={tx.locked} onClick={submit} className={BUTTON}>
         {tx.locked ? <LoaderCircle aria-hidden="true" className="size-4 animate-spin" /> : null}{percent === 100 ? "Withdraw all and close" : `Withdraw ${percent}%`}

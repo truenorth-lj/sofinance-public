@@ -57,6 +57,24 @@ const request: OpenRequest = { ...base, range: { kind: "preset", presetId: "stan
 // Spot split: TSLA (X) funds the bins from the active bin up and is kept; the TSLAx (Y) side is swapped and charged.
 const ySpend = meteoraSpotSplit(BigInt(DEPOSIT_RAW), 46062, 46031, 46090).y;
 
+const JUPITER_PROGRAM = "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4";
+const ATA_PROGRAM = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL";
+/**
+ * The instructions of a prepared Solana step with their program and account addresses. Every account must resolve from
+ * the static keys (the fixtures use no lookup tables), so an instruction account can never hide behind an index.
+ */
+function compiledInstructions(prepared: { kind: string; transaction?: string }) {
+  if (prepared.kind !== "solana-tx" || !prepared.transaction) throw new Error("expected a Solana step");
+  const message = VersionedTransaction.deserialize(Buffer.from(prepared.transaction, "base64")).message;
+  const keys = message.staticAccountKeys.map((k) => k.toBase58());
+  const at = (index: number) => {
+    const key = keys[index];
+    if (!key) throw new Error(`instruction account ${index} is not a static key (lookup tables are not expected here)`);
+    return key;
+  };
+  return message.compiledInstructions.map((ix) => ({ program: at(ix.programIdIndex), accounts: ix.accountKeyIndexes.map(at) }));
+}
+
 /** An existing position of OWNER in the feed-listed 8k2c pool (listed through the RWA feed, not the static allowlist). */
 const FEED_POSITION = Keypair.fromSeed(new Uint8Array(32).fill(21)).publicKey.toBase58();
 /** OWNER's position in 5pw5, which the stubbed feed does not list: never shown. */
@@ -403,10 +421,22 @@ describe("Meteora DLMM adapter specifics", () => {
       const { quotes, restore } = recordQuotes();
       try {
         const adapter = createMeteoraDlmmAdapter();
-        await adapter.prepareAdd(`meteora-dlmm:${FEED_POSITION}`, OWNER, { token: TSLA, amountRaw: DEPOSIT_RAW }, first);
+        const step = await adapter.prepareAdd(`meteora-dlmm:${FEED_POSITION}`, OWNER, { token: TSLA, amountRaw: DEPOSIT_RAW }, first);
         expect(quotes.length).toBeGreaterThan(0);
         for (const q of quotes) expect(q).toMatchObject({ inputMint: TSLA, outputMint: TSLAX, amount: ySpend, platformFeeBps: 10 });
         expect(adapter.fees.feeFor("add", ySpend)).toBe(tenBps(ySpend));
+        // The fee lands in the fee wallet's existing TSLA account, as an account of the Jupiter swap instruction itself,
+        // and nothing in the transaction creates an associated token account for the fee wallet.
+        const feeAta = ata(TSLA, FEE_WALLET);
+        const instructions = compiledInstructions(step.prepared);
+        const jupiter = instructions.filter((ix) => ix.program === JUPITER_PROGRAM);
+        expect(jupiter.length).toBeGreaterThan(0);
+        expect(jupiter.some((ix) => ix.accounts.includes(feeAta))).toBe(true);
+        const ataCreates = instructions.filter((ix) => ix.program === ATA_PROGRAM);
+        for (const ix of ataCreates) {
+          expect(ix.accounts).not.toContain(feeAta);
+          expect(ix.accounts).not.toContain(FEE_WALLET);
+        }
       } finally { restore(); }
     });
 

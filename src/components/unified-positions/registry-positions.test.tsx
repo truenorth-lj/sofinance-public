@@ -9,6 +9,7 @@ import { SelectedApp } from "../selected-app";
 import { testKeypair } from "@/lib/test-support/send-fixtures";
 import { dexDescriptors } from "@/lib/dex/client";
 import { registryPanelCapabilities } from "./registry-positions";
+import { getTxNotices, resetTxNotices } from "@/lib/tx-pipeline";
 import { RegistryPositionTool } from "./registry-tools";
 
 const WALLET = testKeypair(91).publicKey.toBase58();
@@ -41,7 +42,7 @@ const raydiumRow = { positionMint: RAYDIUM_MINT, positionAccount: "p", poolId: P
 
 let container: HTMLDivElement; let root: Root;
 beforeEach(() => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true); localStorage.clear();
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true); localStorage.clear(); resetTxNotices();
   state.dex = { status: 200, body: { positions: [meteoraRow()] } }; state.raydium = []; state.dexCalls = []; state.routeOn = true; state.icons = null;
   state.op = { status: 422, body: { error: "This pool pays farming rewards, and claiming them isn't available here yet.", code: "UNSUPPORTED" } };
   window.history.replaceState(null, "", "/app");
@@ -85,7 +86,7 @@ describe("/app My positions with registry DEXes", () => {
 
   it("greys only the tools the registry panel has no UI for (compound, performance); Add / Withdraw / Claim follow the descriptor", () => {
     const meteora = dexDescriptors.descriptorFor("meteora-dlmm")!.capabilities;
-    expect(meteora.withdraw).toEqual({ supported: true, partial: true });
+    expect(meteora.withdraw).toEqual({ supported: true, partial: true, partialLeavesFees: true });
     expect(meteora.deposit.supported).toBe(true);
     const shown = registryPanelCapabilities(meteora);
     for (const tool of ["compound", "performance"] as const) expect(shown[tool]).toEqual({ supported: false, reason: "Not available for this pool yet" });
@@ -113,6 +114,11 @@ describe("/app My positions with registry DEXes", () => {
     expect(slider.value).toBe("50");
     expect(container.querySelector("[data-testid=registry-withdraw-rent]")).toBeNull();
     expect([...panel.querySelectorAll("button")].some((b) => b.textContent === "Withdraw 50%")).toBe(true);
+    // A partial withdraw leaves the fees in the position (descriptor capability), and says so before signing.
+    expect(container.querySelector("[data-testid=registry-withdraw-fees]")?.textContent).toBe("Unclaimed fees stay in the position. Use Claim fees below.");
+    const hundred = [...panel.querySelectorAll("button")].find((b) => b.textContent === "100%")!;
+    await act(async () => hundred.click());
+    expect(container.querySelector("[data-testid=registry-withdraw-fees]")).toBeNull();
     // Claim fees sits under Withdraw when the descriptor supports it.
     expect(container.querySelector("[data-testid=registry-claim]")?.textContent).toContain("Unclaimed: 0.0015 TSLA · 0.0023 TSLAx");
   });
@@ -125,6 +131,8 @@ describe("/app My positions with registry DEXes", () => {
     await settle();
     expect(state.dexCalls.at(-1)).toEqual(["/api/dex/meteora-dlmm/withdraw", expect.objectContaining({ owner: WALLET, positionKey: `meteora-dlmm:${POSITION}`, fraction: 1, output: "pool-tokens", step: 1, priorSignatures: [] })]);
     expect(container.querySelector("[data-testid=registry-withdraw] [role=alert]")?.textContent).toContain("This pool pays farming rewards, and claiming them isn't available here yet.");
+    // The error is shown inline under the button, so no failure toast is raised on top of it (375 px).
+    expect(getTxNotices().filter((notice) => notice.state === "failure")).toEqual([]);
   });
 
   it("Add offers the pool tokens and USDC (descriptor deposit inputs), states the swap fee, and posts the raw amount", async () => {
@@ -165,19 +173,20 @@ describe("/app My positions with registry DEXes", () => {
     await render();
     const rows = [...container.querySelectorAll("[data-testid=registry-position-assets] dl")].map((row) => [...row.querySelectorAll("dt, dd")].map((cell) => cell.textContent));
     expect(rows).toHaveLength(2);
-    expect(rows[0]![0]).toBe("Liquidity");
-    expect(rows[0]![1]).toMatch(/^1\.25\s*TSLA—$/);
-    expect(rows[0]![2]).toBe("Unclaimed fees");
-    expect(rows[0]![3]).toMatch(/^0\.0015 TSLA—$/);
-    expect(rows[1]![1]).toMatch(/^0\.987\s*TSLAx—$/);
-    expect(rows[1]![3]).toMatch(/^0\.0023 TSLAx—$/);
+    // One grid per token: label | amount + symbol | USD, each cell exactly one value (PM 11/1: no wrapped second dash).
+    expect(rows[0]!.map((cell) => cell?.replace(/\s+/g, " "))).toEqual(["Liquidity", "1.25 TSLA", "—", "Unclaimed fees", "0.0015 TSLA", "—"]);
+    expect(rows[1]!.map((cell) => cell?.replace(/\s+/g, " "))).toEqual(["Liquidity", "0.987 TSLAx", "—", "Unclaimed fees", "0.0023 TSLAx", "—"]);
+    // The USD cells sit in the grid's own fixed column for both lines (same template for every token), so they align.
+    const grids = [...container.querySelectorAll("[data-testid=registry-position-assets] dl")].map((row) => row.className);
+    expect(new Set(grids).size).toBe(1);
+    expect(grids[0]).toContain("grid-cols-[auto_minmax(0,1fr)_4.75rem]");
   });
 
   it("a registry position whose amounts were not read shows a dash on both rows, never zero (same rule as Robinhood Chain)", async () => {
     state.dex = { status: 200, body: { positions: [meteoraRow("5000", "omit")] } };
     await render();
     const values = [...container.querySelectorAll("[data-testid=registry-position-assets] dd")].map((cell) => cell.textContent);
-    expect(values).toEqual(["—TSLA—", "— TSLA—", "—TSLAx—", "— TSLAx—"]);
+    expect(values.map((cell) => cell?.replace(/\s+/g, " "))).toEqual(["— TSLA", "—", "— TSLA", "—", "— TSLAx", "—", "— TSLAx", "—"]);
     state.dex = { status: 200, body: { positions: [meteoraRow("5000", { liquidityRaw: null, unclaimedFeesRaw: null })] } };
     await act(async () => root.unmount()); root = createRoot(container);
     await render();

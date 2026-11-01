@@ -51,8 +51,11 @@ export const meteoraDlmmDescriptor: DexDescriptor = Object.freeze({
     open: SUPPORTED,
     /** PR6: add to an existing position (same input tokens and fee rule as opening). */
     deposit: SUPPORTED,
-    /** PR6: partial (remove a share) and full (remove all, claim, close, rent back), to the pool's two tokens. */
-    withdraw: Object.freeze({ supported: true, partial: true }),
+    /**
+     * PR6: partial (remove a share; the unclaimed fees stay in the position) and full (remove all, claim, close, rent
+     * back), to the pool's two tokens.
+     */
+    withdraw: Object.freeze({ supported: true, partial: true, partialLeavesFees: true }),
     /** v1 pays out the pool's two tokens only (no "withdraw to USDC"; PM 11/1). */
     withdrawOutputs: Object.freeze(["pool-tokens"] as const),
     /** PR6: claim accrued swap fees without changing liquidity (no fee). */

@@ -167,10 +167,12 @@ describe("/app shared detail panel for a Robinhood Chain position (PM review of 
     // One read for the allowlisted positions only (#7 is in an unlisted pool).
     expect(state.valueCalls).toEqual(["8,9"]);
     const assets = container.querySelector("[data-testid=rhc-position-assets]")!;
-    const rows = [...assets.querySelectorAll("dl")].map((dl) => [...dl.querySelectorAll("dt")].map((dt) => [dt.textContent, dt.nextElementSibling!.textContent]));
+    // label | amount + symbol | USD: one value per cell.
+    const rows = [...assets.querySelectorAll("dl")].map((dl) => [...dl.querySelectorAll("dt")].map((dt) =>
+      [dt.textContent, dt.nextElementSibling!.textContent, dt.nextElementSibling!.nextElementSibling!.textContent]));
     expect(rows).toEqual([
-      [["Liquidity", `166.993982${POOL.currency0.symbol}$333.99`], ["Unclaimed fees", `0.000028 ${POOL.currency0.symbol}$0.00`]],
-      [["Liquidity", `171.866848${POOL.currency1.symbol}—`], ["Unclaimed fees", `0.000007 ${POOL.currency1.symbol}—`]],
+      [["Liquidity", `166.993982 ${POOL.currency0.symbol}`, "$333.99"], ["Unclaimed fees", `0.000028 ${POOL.currency0.symbol}`, "$0.00"]],
+      [["Liquidity", `171.866848 ${POOL.currency1.symbol}`, "—"], ["Unclaimed fees", `0.000007 ${POOL.currency1.symbol}`, "—"]],
     ]);
   });
 
@@ -179,13 +181,13 @@ describe("/app shared detail panel for a Robinhood Chain position (PM review of 
     const assets = container.querySelector("[data-testid=rhc-position-assets]")!;
     expect([...assets.querySelectorAll("dt")].map((dt) => dt.textContent)).toEqual(["Liquidity", "Unclaimed fees", "Liquidity", "Unclaimed fees"]);
     expect([...assets.querySelectorAll("dd")].map((dd) => dd.textContent)).toEqual([
-      `—${POOL.currency0.symbol}—`, `— ${POOL.currency0.symbol}—`, `—${POOL.currency1.symbol}—`, `— ${POOL.currency1.symbol}—`]);
+      `— ${POOL.currency0.symbol}`, "—", `— ${POOL.currency0.symbol}`, "—", `— ${POOL.currency1.symbol}`, "—", `— ${POOL.currency1.symbol}`, "—"]);
   });
 
   it("a position outside the allowlist keeps both token rows, all dashes", async () => {
     state.values = [];
     await render({ initialPositionKey: "rhc-uniswap-v4:7" });
     const assets = container.querySelector("[data-testid=rhc-position-assets]")!;
-    expect([...assets.querySelectorAll("dd")].map((dd) => dd.textContent)).toEqual(["—Token 0—", "— Token 0—", "—Token 1—", "— Token 1—"]);
+    expect([...assets.querySelectorAll("dd")].map((dd) => dd.textContent)).toEqual(["— Token 0", "—", "— Token 0", "—", "— Token 1", "—", "— Token 1", "—"]);
   });
 });

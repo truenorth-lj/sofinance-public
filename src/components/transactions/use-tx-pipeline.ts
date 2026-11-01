@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
-  detachTxRetry, noticeIdFor, runTx, TxRunError, useCancelCheckPending, useTxNotices,
+  detachTxRetry, dismissTxNotice, noticeIdFor, runTx, TxRunError, useCancelCheckPending, useTxNotices,
   type PreparedTx, type TxAdapter, type TxFailureKind, type TxStage, type TxWallet,
 } from "@/lib/tx-pipeline";
 
@@ -22,7 +22,7 @@ export type TxPipelineState = {
  * keeps its submit disabled (runTx refuses that send anyway).
  */
 export function useTxPipeline<Input, Prepared extends PreparedTx>(adapter: TxAdapter<Input, Prepared>, wallet: TxWallet | null,
-  options: { scope?: string } = {}) {
+  options: { scope?: string; inlineErrors?: boolean } = {}) {
   const [owned, setOwned] = useState<{ wallet?: string; state: TxPipelineState }>({ state: { status: "idle" } });
   const generation = useRef(0);
   const mounted = useRef(true);
@@ -30,6 +30,8 @@ export function useTxPipeline<Input, Prepared extends PreparedTx>(adapter: TxAda
   const lockedRef = useRef(false);
   const lastInput = useRef<{ value: Input } | null>(null);
   const latest = useRef({ adapter, wallet });
+  const latestInline = useRef(options.inlineErrors ?? false);
+  useLayoutEffect(() => { latestInline.current = options.inlineErrors ?? false; });
   useLayoutEffect(() => { latest.current = { adapter, wallet }; });
   const runRef = useRef<(input: Input) => Promise<unknown>>(async () => null);
   const retry = useCallback(() => { if (lastInput.current && !busy.current) void runRef.current(lastInput.current.value); }, []);
@@ -48,7 +50,7 @@ export function useTxPipeline<Input, Prepared extends PreparedTx>(adapter: TxAda
     try {
       const result = await runTx(current.adapter, input, {
         wallet: current.wallet, storage: typeof window === "undefined" ? undefined : window.localStorage,
-        isCurrent: isOwner, retry,
+        isCurrent: isOwner, retry, inlineFailure: latestInline.current,
         onStage: (status, detail) => { if (isOwner()) setState({ status, signature: detail?.signature }); },
       });
       return result;
@@ -92,6 +94,9 @@ export function useTxPipeline<Input, Prepared extends PreparedTx>(adapter: TxAda
   // "Confirming…" and an expired/failed run keeps its Try again once the toast is gone.
   // (Adjusting state during render, React's pattern for state derived from an external store.)
   if (view !== state && owned.state === state) setOwned({ ...owned, state: view });
+  // Inline errors: a send that failed on Solana after it was sent also drops its failure toast (the panel shows it).
+  const failedSignature = options.inlineErrors && owned.state.status === "failed" ? owned.state.signature : undefined;
+  useEffect(() => { if (failedSignature) dismissTxNotice(noticeIdFor(failedSignature)); }, [failedSignature]);
   const busyNow = view.status === "preparing" || view.status === "wallet" || view.status === "checking";
   // Confirming locks only while its notice is still tracking the signature (a dismissed toast must not lock the form forever).
   const locked = busyNow || (view.status === "confirming" && notice?.state === "loading");

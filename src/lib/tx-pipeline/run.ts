@@ -60,6 +60,12 @@ export type RunTxOptions = {
   checkingWindowMs?: number;
   /** Overrides `adapter.scope` (flows driven through `sendAndTrack`). */
   scope?: string;
+  /**
+   * The caller shows the failure inline next to its button (with its own Try again), so no failure toast is shown for
+   * it (a toast at 375 px would sit on top of that button). Wallet-cancel notices still show (a background check can
+   * still turn them into a success).
+   */
+  inlineFailure?: boolean;
 };
 
 export type RunTxResult<Prepared> = {
@@ -139,7 +145,7 @@ export async function runTx<Input, Prepared extends PreparedTx>(
     if (error instanceof TxNotLandedError) context.landedCheck = "not-landed";
     else if (error instanceof TxLandedUnknownError) context.landedCheck = "unknown";
     if (error instanceof TxWalletCancelledError) context.walletErrorCode = walletErrorInfo(error.cause).code;
-    const reported = reportTxFailure({ flow: adapter.flow, error, id: checkingId, retry: options.retry, context });
+    const reported = reportTxFailure({ flow: adapter.flow, error, id: checkingId, retry: options.retry, context, silent: options.inlineFailure });
     if (error instanceof TxWalletCancelledError && prepared) {
       holdCancelCheck(guardKey, watchCancelledSend(error, { flow: adapter.flow, successTitle: adapter.successTitle, wallet: wallet.address,
         lastValidBlockHeight: prepared.lastValidBlockHeight, storage: options.storage, positionMint: prepared.positionMint,
