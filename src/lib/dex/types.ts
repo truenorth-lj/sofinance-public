@@ -76,6 +76,11 @@ export type DexMeta = {
   rangeUnit: "tick" | "bin";
   /** Most ticks/bins one position may span in one open; null = no protocol cap. */
   maxRangeUnitsPerPosition: number | null;
+  /**
+   * The protocol's legal tick / bin id range (inclusive). The generic route refuses a `units` range outside it with 400
+   * before any adapter work, so no route code needs to know which DEX counts in ticks or bins.
+   */
+  rangeUnitBounds: { min: number; max: number };
   /** How many signed steps an open takes (Raydium 1; Meteora setup + deposit; Uniswap v4 approve/permit/execute). */
   openSteps: { min: number; max: number };
   rent: DexRentModel | null;

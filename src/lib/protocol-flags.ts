@@ -135,6 +135,21 @@ export function isMeteoraDlmmDiscoveryEnabled(target: DeployTarget = deployTarge
 }
 
 /**
+ * The shared DEX route `/api/dex/[dex]/[op]` (DESIGN.md §1.2, PR4): quotes and prepares (unsigned, simulated)
+ * transactions through the DEX registry for every registered DEX. OFF in production until the UI ships (PR8).
+ * Preparing never signs or sends.
+ */
+export const DEX_TX_ROUTE_ENABLED: Readonly<Record<DeployTarget, boolean>> = Object.freeze({
+  production: false,
+  preview: true,
+  development: true,
+});
+
+export function isDexTxRouteEnabled(target: DeployTarget = deployTarget()): boolean {
+  return DEX_TX_ROUTE_ENABLED[target];
+}
+
+/**
  * Meteora DLMM open flow: build + simulate the 1/2 setup (position account, user ATAs) and 2/2 deposit
  * (Jupiter legs with the 10 bps platform fee on the swapped portion + add_liquidity_by_strategy2), and
  * the close-and-refund transaction (`/api/meteora-open`, `/app/meteora`). OFF in production.

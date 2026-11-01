@@ -13,8 +13,9 @@
  * Known blind spots (reviewers still check these by hand):
  * - a branch that compares through a constant, `.includes`, a lookup map or `startsWith`;
  * - a DEX call wrapped in a function (or object) that a non-DEX module exports, e.g. `export const run = () => dexCall()`;
- *   only `export … from`, `export { imported }` and `export default imported` re-exports are followed, and type-only
- *   re-exports are not (they are erased at runtime).
+ *   only `export … from`, `export { imported }` and `export default imported` re-exports are followed;
+ * - type-only re-exports (`export type … from`) are intentionally not followed, since they are erased at runtime; direct
+ *   type imports of DEX modules (`import type … from` a DEX SDK or `protocols/<dex>/`) still count as violations.
  *
  * Auto-classification resolves `@sofinance/engine/*` to `packages/engine/src` inside this repo (the pnpm workspace
  * link); if the engine ever resolved outside the repo (a published package, a symlink to another checkout), engine

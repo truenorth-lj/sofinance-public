@@ -37,6 +37,8 @@ export function descriptorContractProblems(descriptor: DexDescriptor): string[] 
   const cap = meta.maxRangeUnitsPerPosition;
   if (cap !== null && !(Number.isInteger(cap) && cap > 0)) problems.push("maxRangeUnitsPerPosition must be null or a positive integer");
   if (meta.rangeUnit === "bin" && cap === null) problems.push("bin-based DEXes must declare maxRangeUnitsPerPosition");
+  const bounds = meta.rangeUnitBounds;
+  if (!bounds || !(Number.isInteger(bounds.min) && Number.isInteger(bounds.max) && bounds.min < bounds.max)) problems.push("rangeUnitBounds must be integers with min < max");
   for (const key of ["compound", "performance", "deposit", "withdraw", "open", "claim", "exitPreview"] as const) {
     const value = caps[key];
     if (!value.supported && !value.reason.trim()) problems.push(`${key}: an unsupported capability needs a reason`);

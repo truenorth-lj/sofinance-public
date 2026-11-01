@@ -2,7 +2,7 @@ import { PublicKey } from "@solana/web3.js";
 import { describe, expect, it } from "vitest";
 import { meteoraBinArrayAddress } from "./accounts";
 import { METEORA_DLMM_PROGRAM_ID } from "./constants";
-import { meteoraClaimFee2Instruction, meteoraRemoveLiquidityByRange2Instruction, METEORA_MEMO_PROGRAM_ID } from "./liquidity";
+import { meteoraClaimFee2Instruction, meteoraRemoveLiquidityByRange2Instruction, METEORA_MEMO_PROGRAM_ID, METEORA_REMOVE_NEEDS_BITMAP_MESSAGE } from "./liquidity";
 import { meteoraAddLiquidityByStrategy2Instruction, meteoraBitmapExtensionAddress } from "./open";
 
 // Vectors from the SDK's Anchor coder and `program.methods.*.accountsPartial(...).instruction()`
@@ -50,11 +50,24 @@ describe("Meteora DLMM withdraw / claim instructions (SDK byte + account parity)
     ]);
   });
 
-  it("remove_liquidity_by_range2 partial share; absent bitmap extension is the program-id placeholder", () => {
-    const ix = meteoraRemoveLiquidityByRange2Instruction({ ...accounts, fromBinId: 46031, toBinId: 46090, bps: 5_000 });
+  it("remove_liquidity_by_range2 partial share past bin array 511 carries the bitmap extension", () => {
+    const bitmapExtension = meteoraBitmapExtensionAddress(POOL.toBase58());
+    const ix = meteoraRemoveLiquidityByRange2Instruction({ ...accounts, fromBinId: 46031, toBinId: 46090, bps: 5_000, bitmapExtension });
     expect(ix.data.toString("hex")).toBe(SDK.remove5000);
-    expect(rows([ix.keys[2]!])).toEqual([[METEORA_DLMM_PROGRAM_ID, false, false]]);
+    expect(rows([ix.keys[2]!])).toEqual([[bitmapExtension.toBase58(), false, true]]);
     expect(ix.keys.slice(15).map((m) => m.pubkey.toBase58())).toEqual([657, 658].map((index) => meteoraBinArrayAddress(POOL.toBase58(), index)));
+  });
+
+  it("remove_liquidity_by_range2 refuses a range past bin array 511 without the bitmap extension (clear error)", () => {
+    expect(() => meteoraRemoveLiquidityByRange2Instruction({ ...accounts, fromBinId: 46031, toBinId: 46090, bps: 5_000 }))
+      .toThrow(METEORA_REMOVE_NEEDS_BITMAP_MESSAGE);
+    expect(() => meteoraRemoveLiquidityByRange2Instruction({ ...accounts, fromBinId: -35_910, toBinId: -35_900, bps: 1 }))
+      .toThrow(/bitmap extension/);
+  });
+
+  it("remove_liquidity_by_range2 inside [-512, 511]: absent bitmap extension is the program-id placeholder", () => {
+    const ix = meteoraRemoveLiquidityByRange2Instruction({ ...accounts, fromBinId: -35, toBinId: 34, bps: 10_000 });
+    expect(rows([ix.keys[2]!])).toEqual([[METEORA_DLMM_PROGRAM_ID, false, false]]);
   });
 
   it("rejects invalid shares and ranges", () => {

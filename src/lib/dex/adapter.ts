@@ -26,6 +26,11 @@ export type OpenRequest = {
   range: DexRangeRequest;
   input: DexDepositInput;
   slippageBps: number;
+  /**
+   * Public key of the browser-created cosigner (position keypair / NFT mint) when
+   * `descriptor.meta.positionCosigner` is "ephemeral-keypair". Only the public key: the secret never leaves the browser.
+   */
+  cosigner?: string;
 };
 
 export type RentQuote = {
@@ -67,7 +72,10 @@ export type PreparedStep =
     /** Base64 unsigned v0 transaction. */
     transaction: string;
     lastValidBlockHeight: number;
-    /** Opaque reference to a server-held cosigner (position keypair / NFT mint); never a secret. */
+    /**
+     * Public key of the cosigner that must sign after the wallet (the browser-held position keypair / NFT mint named by
+     * `OpenRequest.cosigner`); never a secret. Absent when the wallet is the only signer.
+     */
     cosignRef?: string;
     sendPermit?: string;
     landedPermit?: string;
@@ -112,6 +120,9 @@ export interface DexAdapter<N = unknown> {
   prepareWithdraw(key: PositionKey, request: WithdrawRequest, context: StepContext): Promise<StepResult>;
   prepareClaim(key: PositionKey, context: StepContext): Promise<StepResult>;
   prepareCompound(key: PositionKey, context: StepContext): Promise<StepResult>;
-  /** Recover from a half-finished multi-step open (e.g. close an empty position and refund its rent). */
-  prepareRecovery?(key: PositionKey, context: StepContext): Promise<StepResult>;
+  /**
+   * Recover from a half-finished multi-step open (e.g. close an empty position and refund its rent). `owner` is the
+   * requesting wallet: the adapter must refuse a position that wallet does not own, and pay any refund only to it.
+   */
+  prepareRecovery?(key: PositionKey, owner: string, context: StepContext): Promise<StepResult>;
 }
