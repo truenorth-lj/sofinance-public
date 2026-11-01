@@ -86,7 +86,14 @@ export type PreparedStep =
 
 /** Multi-step operations are prepared one step at a time; step N may depend on step N-1 having landed. */
 export type StepContext = { step: number; priorSignatures: readonly string[]; planToken?: string };
-export type StepResult = { step: number; of: number; label: string; prepared: PreparedStep; done: boolean; planToken?: string };
+export type StepResult = {
+  step: number; of: number; label: string; prepared: PreparedStep; done: boolean; planToken?: string;
+  /**
+   * Wallet token accounts this step creates and the rent each one sets aside (lamports, decimal string), so the UI can
+   * state it before the wallet asks to sign. Omitted when the step creates none.
+   */
+  createsTokenAccounts?: { mint: string; rentLamports: string }[];
+};
 
 export type WithdrawRequest = {
   /** Share of the position to remove, (0, 1]; 1 = everything, and close the position when the DEX allows it. */

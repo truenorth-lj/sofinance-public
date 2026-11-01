@@ -123,10 +123,11 @@ function simulatedAmount(data: Buffer | null, address: PublicKey, program: strin
   return unpackAccount(address, { data, owner, lamports: 0, executable: false }, owner).amount;
 }
 
-/** Withdraw share in bps: (0, 1] → 1..10,000, rounded down, never 0. */
+/** Withdraw share in bps: (0, 1] → 1..10,000, rounded to the nearest bps; only exactly 1 is 10,000 (close), never 0. */
 export function meteoraWithdrawBps(fraction: number) {
   if (!Number.isFinite(fraction) || fraction <= 0 || fraction > 1) throw new DexError("INVALID_REQUEST", "The withdraw share must be above 0 and at most 100%.");
-  return fraction === 1 ? METEORA_BPS_MAX : Math.max(1, Math.min(METEORA_BPS_MAX - 1, Math.floor(fraction * METEORA_BPS_MAX)));
+  // Rounded, not floored: 0.57 * 10,000 is 5699.999… in floating point, and the user asked for 57% (PM review of #289).
+  return fraction === 1 ? METEORA_BPS_MAX : Math.max(1, Math.min(METEORA_BPS_MAX - 1, Math.round(fraction * METEORA_BPS_MAX)));
 }
 
 /** Single-step builds share this: simulate, check the owner's tokens and SOL, then recompile with the measured CU limit. */
@@ -278,6 +279,11 @@ export async function buildMeteoraAdd(deps: MeteoraOpenDeps, position: string, o
 export type MeteoraCompoundBuilt = BuiltStep & {
   /** Raw fee amounts put back into the position. */
   compoundX: bigint; compoundY: bigint;
+  /**
+   * Wallet token accounts this step creates (the claim pays into them) and their rent, read from the simulated accounts
+   * (exact lamports, Token-2022 sizes included). Stated to the user before signing (PM review of #289).
+   */
+  createdTokenAccounts: { mint: string; rentLamports: bigint }[];
   /** Raw fee amounts that go to the wallet instead: the side an out-of-range position cannot hold at the current price. */
   leftoverX: bigint; leftoverY: bigint;
 };
@@ -310,6 +316,10 @@ export async function buildMeteoraCompound(deps: MeteoraOpenDeps, position: stri
   const probe = await simulate(deps.connection, compileV0(tokens.wallet, latest.blockhash, claimOnly), [tokens.ataX, tokens.ataY], tokens.slot, "fee claim");
   const claimedX = simulatedAmount(accountData(probe.accounts?.[0]), tokens.ataX, pool.tokenProgramX) - tokens.balanceX;
   const claimedY = simulatedAmount(accountData(probe.accounts?.[1]), tokens.ataY, pool.tokenProgramY) - tokens.balanceY;
+  const createdTokenAccounts = [
+    ...(tokens.ataXExists ? [] : [{ mint: pool.lbPair.tokenXMint, rentLamports: BigInt(probe.accounts?.[0]?.lamports ?? Number(TOKEN_ACCOUNT_RENT_BOUND)) }]),
+    ...(tokens.ataYExists ? [] : [{ mint: pool.lbPair.tokenYMint, rentLamports: BigInt(probe.accounts?.[1]?.lamports ?? Number(TOKEN_ACCOUNT_RENT_BOUND)) }]),
+  ];
   if (claimedX <= 0n && claimedY <= 0n) throw new DexError("INVALID_REQUEST", "This position has no unclaimed fees yet, so there is nothing to compound.");
 
   // 2. What the range can hold at the current price (bins above the active bin hold X, below hold Y).
@@ -334,5 +344,5 @@ export async function buildMeteoraCompound(deps: MeteoraOpenDeps, position: stri
     }
   });
   const positive = (value: bigint) => (value > 0n ? value : 0n);
-  return { ...built, compoundX, compoundY, leftoverX: positive(claimedX) - compoundX, leftoverY: positive(claimedY) - compoundY };
+  return { ...built, compoundX, compoundY, leftoverX: positive(claimedX) - compoundX, leftoverY: positive(claimedY) - compoundY, createdTokenAccounts };
 }

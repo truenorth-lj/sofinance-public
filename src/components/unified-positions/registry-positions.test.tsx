@@ -9,7 +9,9 @@ import { SelectedApp } from "../selected-app";
 import { testKeypair } from "@/lib/test-support/send-fixtures";
 import { dexDescriptors } from "@/lib/dex/client";
 import { registryPanelCapabilities } from "./registry-positions";
+import { getTxNotices, resetTxNotices } from "@/lib/tx-pipeline";
 import { RegistryPositionTool } from "./registry-tools";
+import { resetPositionOpLocks } from "./position-op-lock";
 
 const WALLET = testKeypair(91).publicKey.toBase58();
 const RAYDIUM_MINT = testKeypair(92).publicKey.toBase58();
@@ -18,7 +20,7 @@ const POOL = "8k2c9Kiavx5pbWc2dmzhL7vFp11sLgMcKFfSueq8haAh";
 const POSITION = testKeypair(94).publicKey.toBase58();
 const MINT_A = "TSLAqBbv4CNCnzWFeB7LmydAyEiNMJtve7DYKLpdK4S";
 const MINT_B = "XsDoVfqeBukxuZHWhdvWHBhgEHjGNst4MLodqsJHzoB";
-const state = vi.hoisted(() => ({ dex: { status: 200, body: {} as unknown }, op: { status: 422, body: {} as unknown }, raydium: [] as unknown[], dexCalls: [] as unknown[], routeOn: true, icons: null as unknown }));
+const state = vi.hoisted(() => ({ dex: { status: 200, body: {} as unknown }, op: { status: 422, body: {} as unknown }, raydium: [] as unknown[], dexCalls: [] as [string, unknown][], routeOn: true, icons: null as unknown, hold: null as Promise<void> | null }));
 
 vi.mock("@/lib/protocol-flags", async (importOriginal) => ({ ...await importOriginal<typeof import("@/lib/protocol-flags")>(),
   isDexTxRouteEnabled: () => state.routeOn }));
@@ -41,8 +43,8 @@ const raydiumRow = { positionMint: RAYDIUM_MINT, positionAccount: "p", poolId: P
 
 let container: HTMLDivElement; let root: Root;
 beforeEach(() => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true); localStorage.clear();
-  state.dex = { status: 200, body: { positions: [meteoraRow()] } }; state.raydium = []; state.dexCalls = []; state.routeOn = true; state.icons = null;
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true); localStorage.clear(); resetTxNotices();
+  state.dex = { status: 200, body: { positions: [meteoraRow()] } }; state.raydium = []; state.dexCalls = []; state.routeOn = true; state.icons = null; state.hold = null; resetPositionOpLocks();
   state.op = { status: 422, body: { error: "This pool pays farming rewards, and claiming them isn't available here yet.", code: "UNSUPPORTED" } };
   window.history.replaceState(null, "", "/app");
   vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
@@ -51,7 +53,10 @@ beforeEach(() => {
     if (url.pathname === "/api/rwa-pairs" && state.icons) return Response.json({ pairs: [], tokenIcons: state.icons });
     if (url.pathname.startsWith("/api/dex/")) {
       state.dexCalls.push([url.pathname, JSON.parse(String(init?.body))]);
-      if (!url.pathname.endsWith("/positions")) return Response.json(state.op.body, { status: state.op.status });
+      if (!url.pathname.endsWith("/positions")) {
+        if (state.hold) await state.hold; // a prepare still in flight
+        return Response.json(state.op.body, { status: state.op.status });
+      }
       return state.dex.status === 404 ? new Response(null, { status: 404 }) : Response.json(state.dex.body, { status: state.dex.status });
     }
     return Response.json({ error: "not in this test" }, { status: 503 });
@@ -85,7 +90,7 @@ describe("/app My positions with registry DEXes", () => {
 
   it("greys only the tool the registry panel has no UI for (performance); Add / Withdraw / Claim / Compound follow the descriptor", () => {
     const meteora = dexDescriptors.descriptorFor("meteora-dlmm")!.capabilities;
-    expect(meteora.withdraw).toEqual({ supported: true, partial: true });
+    expect(meteora.withdraw).toEqual({ supported: true, partial: true, partialLeavesFees: true });
     expect(meteora.deposit.supported).toBe(true);
     const shown = registryPanelCapabilities(meteora);
     expect(shown.performance).toEqual({ supported: false, reason: "Not available for this pool yet" });
@@ -115,6 +120,11 @@ describe("/app My positions with registry DEXes", () => {
     expect(slider.value).toBe("50");
     expect(container.querySelector("[data-testid=registry-withdraw-rent]")).toBeNull();
     expect([...panel.querySelectorAll("button")].some((b) => b.textContent === "Withdraw 50%")).toBe(true);
+    // A partial withdraw leaves the fees in the position (descriptor capability), and says so before signing.
+    expect(container.querySelector("[data-testid=registry-withdraw-fees]")?.textContent).toBe("Unclaimed fees stay in the position. Use Claim fees below.");
+    const hundred = [...panel.querySelectorAll("button")].find((b) => b.textContent === "100%")!;
+    await act(async () => hundred.click());
+    expect(container.querySelector("[data-testid=registry-withdraw-fees]")).toBeNull();
     // Claim fees sits under Withdraw when the descriptor supports it.
     expect(container.querySelector("[data-testid=registry-claim]")?.textContent).toContain("Unclaimed: 0.0015 TSLA · 0.0023 TSLAx");
   });
@@ -127,6 +137,8 @@ describe("/app My positions with registry DEXes", () => {
     await settle();
     expect(state.dexCalls.at(-1)).toEqual(["/api/dex/meteora-dlmm/withdraw", expect.objectContaining({ owner: WALLET, positionKey: `meteora-dlmm:${POSITION}`, fraction: 1, output: "pool-tokens", step: 1, priorSignatures: [] })]);
     expect(container.querySelector("[data-testid=registry-withdraw] [role=alert]")?.textContent).toContain("This pool pays farming rewards, and claiming them isn't available here yet.");
+    // The error is shown inline under the button, so no failure toast is raised on top of it (375 px).
+    expect(getTxNotices().filter((notice) => notice.state === "failure")).toEqual([]);
   });
 
   it("Compound: shows the unclaimed fees and 'No platform fee', posts to the generic route and shows the server's plain refusal", async () => {
@@ -136,6 +148,9 @@ describe("/app My positions with registry DEXes", () => {
     expect(panel.textContent).toContain("adds them back into this position at its current price range, in one transaction. No swap is needed. No platform fee.");
     expect(panel.textContent).toContain("Unclaimed: 0.0015 TSLA · 0.0023 TSLAx");
     expect(container.querySelector("[data-testid=registry-compound-range]")).toBeNull(); // in range
+    // In range the pool's own composition fee is stated (descriptor meta, not a DEX branch).
+    expect(container.querySelector("[data-testid=registry-compound-pool-fee]")?.textContent).toContain("composition fee");
+    expect(container.querySelector("[data-testid=registry-compound-blocked]")).toBeNull();
     const button = [...panel.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent === "Compound fees")!;
     await act(async () => button.click());
     await settle();
@@ -143,13 +158,65 @@ describe("/app My positions with registry DEXes", () => {
     expect(container.querySelector("[data-testid=registry-compound] [role=alert]")?.textContent).toContain("This position has no unclaimed fees yet, so there is nothing to compound.");
   });
 
-  it("Compound: out of range it says only one side goes back in; with no fees the button is disabled", async () => {
-    state.dex = { status: 200, body: { positions: [{ ...meteoraRow("5000", { liquidityRaw: HOLDINGS.liquidityRaw, unclaimedFeesRaw: { a: "0", b: "0" } }), rangeStatus: "below" }] } };
+  it("Compound with no unclaimed fees is disabled up front with a plain reason, and nothing is requested", async () => {
+    state.dex = { status: 200, body: { positions: [meteoraRow("5000", { liquidityRaw: HOLDINGS.liquidityRaw, unclaimedFeesRaw: { a: "0", b: "0" } })] } };
+    await render();
+    expect(container.querySelector("[data-testid=registry-compound-blocked]")?.textContent).toBe("This position has no unclaimed fees yet, so there is nothing to compound.");
+    const button = [...container.querySelectorAll<HTMLButtonElement>("[data-testid=registry-compound] button")].find((b) => b.textContent === "Nothing to compound")!;
+    expect(button.disabled).toBe(true);
+    await act(async () => button.click());
+    await settle();
+    expect((state.dexCalls as [string, unknown][]).filter(([path]) => path.endsWith("/compound"))).toEqual([]);
+    expect(container.querySelector("[data-testid=registry-compound] [role=alert]")).toBeNull(); // no submit-then-error, no Try again
+  });
+
+  it("Compound out of range names the tokens: which fees go back in and which go to the wallet", async () => {
+    state.dex = { status: 200, body: { positions: [{ ...meteoraRow(), rangeStatus: "below" }] } };
     await render();
     expect(container.querySelector("[data-testid=registry-compound-range]")?.textContent)
-      .toBe("The price is outside this position's range, so only the fees in the token the range holds right now go back in. The rest goes to your wallet.");
-    const button = [...container.querySelectorAll<HTMLButtonElement>("[data-testid=registry-compound] button")].find((b) => b.textContent === "No fees to compound yet")!;
-    expect(button.disabled).toBe(true);
+      .toBe("The price is outside this position's range. Only TSLA fees go back into the position; TSLAx fees go to your wallet.");
+    expect(container.querySelector("[data-testid=registry-compound-pool-fee]")).toBeNull(); // out of range: no active-bin deposit
+    const enabled = [...container.querySelectorAll<HTMLButtonElement>("[data-testid=registry-compound] button")].find((b) => b.textContent === "Compound fees")!;
+    expect(enabled.disabled).toBe(false);
+  });
+
+  it("Compound out of range with fees only in the token the range can't hold is disabled and points to Claim", async () => {
+    state.dex = { status: 200, body: { positions: [{ ...meteoraRow("5000", { liquidityRaw: HOLDINGS.liquidityRaw, unclaimedFeesRaw: { a: "0", b: "230000" } }), rangeStatus: "below" }] } };
+    await render();
+    expect(container.querySelector("[data-testid=registry-compound-blocked]")?.textContent)
+      .toBe("There are no TSLA fees to put back while the price is outside the range. Claim the TSLAx fees to your wallet instead.");
+    expect([...container.querySelectorAll<HTMLButtonElement>("[data-testid=registry-compound] button")].find((b) => b.textContent === "Nothing to compound")!.disabled).toBe(true);
+  });
+
+  it("one lock per position across ops: a Claim in flight locks Add / Withdraw / Compound, and switching tabs does not unlock", async () => {
+    let finish!: () => void;
+    state.hold = new Promise<void>((resolve) => { finish = resolve; });
+    await render();
+    await act(async () => tab("Withdraw").click());
+    const claim = [...container.querySelectorAll<HTMLButtonElement>("[data-testid=registry-claim] button")].find((b) => b.textContent === "Claim fees")!;
+    await act(async () => claim.click());
+    await settle();
+    expect(state.dexCalls.at(-1)?.[0]).toBe("/api/dex/meteora-dlmm/claim");
+    // Same tab: the Withdraw panel is greyed and says why.
+    const withdraw = [...container.querySelectorAll<HTMLButtonElement>("[data-testid=registry-withdraw] button")].find((b) => b.textContent === "Withdraw all and close")!;
+    expect(withdraw.disabled).toBe(true);
+    expect(container.querySelector("[data-testid=registry-withdraw] [data-testid=registry-position-locked]")?.textContent).toContain("Another transaction on this position is still in progress");
+    // Another tab (the Claim panel unmounts): Compound and Add stay locked; nothing else is requested.
+    await act(async () => tab("Yield Compound").click());
+    const compound = [...container.querySelectorAll<HTMLButtonElement>("[data-testid=registry-compound] button")].find((b) => b.textContent === "Compound fees")!;
+    expect(compound.disabled).toBe(true);
+    await act(async () => compound.click());
+    await act(async () => tab("Add to position").click());
+    const add = [...container.querySelectorAll<HTMLButtonElement>("[data-testid=registry-add] button")].find((b) => b.textContent === "Add liquidity")!;
+    expect(add.disabled).toBe(true);
+    expect(container.querySelector<HTMLInputElement>("input#registry-add-amount")!.disabled).toBe(true);
+    expect((state.dexCalls as [string, unknown][]).filter(([path]) => path.endsWith("/compound"))).toEqual([]);
+    // The claim's prepare ends (refused here): the lock is released for every op.
+    await act(async () => finish());
+    await settle();
+    await act(async () => tab("Yield Compound").click());
+    expect([...container.querySelectorAll<HTMLButtonElement>("[data-testid=registry-compound] button")].find((b) => b.textContent === "Compound fees")!.disabled).toBe(false);
+    expect(container.querySelector("[data-testid=registry-position-locked]")).toBeNull();
   });
 
   it("Add offers the pool tokens and USDC (descriptor deposit inputs), states the swap fee, and posts the raw amount", async () => {
@@ -193,19 +260,20 @@ describe("/app My positions with registry DEXes", () => {
     await render();
     const rows = [...container.querySelectorAll("[data-testid=registry-position-assets] dl")].map((row) => [...row.querySelectorAll("dt, dd")].map((cell) => cell.textContent));
     expect(rows).toHaveLength(2);
-    expect(rows[0]![0]).toBe("Liquidity");
-    expect(rows[0]![1]).toMatch(/^1\.25\s*TSLA—$/);
-    expect(rows[0]![2]).toBe("Unclaimed fees");
-    expect(rows[0]![3]).toMatch(/^0\.0015 TSLA—$/);
-    expect(rows[1]![1]).toMatch(/^0\.987\s*TSLAx—$/);
-    expect(rows[1]![3]).toMatch(/^0\.0023 TSLAx—$/);
+    // One grid per token: label | amount + symbol | USD, each cell exactly one value (PM 11/1: no wrapped second dash).
+    expect(rows[0]!.map((cell) => cell?.replace(/\s+/g, " "))).toEqual(["Liquidity", "1.25 TSLA", "—", "Unclaimed fees", "0.0015 TSLA", "—"]);
+    expect(rows[1]!.map((cell) => cell?.replace(/\s+/g, " "))).toEqual(["Liquidity", "0.987 TSLAx", "—", "Unclaimed fees", "0.0023 TSLAx", "—"]);
+    // The USD cells sit in the grid's own fixed column for both lines (same template for every token), so they align.
+    const grids = [...container.querySelectorAll("[data-testid=registry-position-assets] dl")].map((row) => row.className);
+    expect(new Set(grids).size).toBe(1);
+    expect(grids[0]).toContain("grid-cols-[auto_minmax(0,1fr)_4.75rem]");
   });
 
   it("a registry position whose amounts were not read shows a dash on both rows, never zero (same rule as Robinhood Chain)", async () => {
     state.dex = { status: 200, body: { positions: [meteoraRow("5000", "omit")] } };
     await render();
     const values = [...container.querySelectorAll("[data-testid=registry-position-assets] dd")].map((cell) => cell.textContent);
-    expect(values).toEqual(["—TSLA—", "— TSLA—", "—TSLAx—", "— TSLAx—"]);
+    expect(values.map((cell) => cell?.replace(/\s+/g, " "))).toEqual(["— TSLA", "—", "— TSLA", "—", "— TSLAx", "—", "— TSLAx", "—"]);
     state.dex = { status: 200, body: { positions: [meteoraRow("5000", { liquidityRaw: null, unclaimedFeesRaw: null })] } };
     await act(async () => root.unmount()); root = createRoot(container);
     await render();

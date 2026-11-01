@@ -60,7 +60,11 @@ export type UnifiedPosition<N = unknown> = {
 export const NOT_AVAILABLE_MESSAGE = "Not available for this pool yet";
 
 export type Capability = { supported: true } | { supported: false; reason: string };
-export type WithdrawCapability = { supported: true; partial: boolean } | { supported: false; reason: string };
+/**
+ * `partialLeavesFees`: a partial withdraw removes only the liquidity share and leaves the unclaimed fees in the position
+ * (they are claimed separately), so the Withdraw panel says so before signing.
+ */
+export type WithdrawCapability = { supported: true; partial: boolean; partialLeavesFees?: boolean } | { supported: false; reason: string };
 
 /** What a withdraw can pay out: the pool's own tokens, or everything swapped to USDC or to SOL. */
 export type WithdrawOutput = "pool-tokens" | "usdc" | "sol";

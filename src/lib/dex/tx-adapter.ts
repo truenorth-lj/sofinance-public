@@ -23,7 +23,8 @@ export const DEX_PREPARE_TIMEOUT_MS = 45_000;
 /** `add` / `withdraw` / `claim` / `compound` act on an existing position (PR7–PR8 panels); `recovery` closes a half-made open. */
 export type DexStepOp = "open" | "recovery" | "add" | "withdraw" | "claim" | "compound";
 
-type Common = { descriptor: DexDescriptor; context: StepContext; relayStore: JupiterRelayStore; beforeWallet?: () => void };
+/** `beforeWallet` runs once the step is prepared and checked, just before the wallet is asked (it may throw to stop). */
+type Common = { descriptor: DexDescriptor; context: StepContext; relayStore: JupiterRelayStore; beforeWallet?: (result: StepResult) => void };
 type OnPosition = Common & { positionKey: PositionKey };
 export type DexStepInput<Op extends DexStepOp> = Op extends "open"
   ? Common & { request: Omit<OpenRequest, "owner" | "cosigner"> }
@@ -81,7 +82,7 @@ export function dexTxAdapter<Op extends DexStepOp>(op: Op): TxAdapter<DexStepInp
         const extra = signers.slice(1);
         const cosignerKey = cosigner?.publicKey.toBase58();
         if (extra.length > 1 || (extra.length === 1 && (extra[0] !== cosignerKey || prepared.cosignRef !== cosignerKey))) throw new TxNotSentError(MISMATCH);
-        input.beforeWallet?.();
+        input.beforeWallet?.(result);
         return {
           transaction, result, lastValidBlockHeight: prepared.lastValidBlockHeight, sendPermit: prepared.sendPermit, landedPermit: prepared.landedPermit,
           ...(prepared.positionMint ? { positionMint: prepared.positionMint } : {}),
