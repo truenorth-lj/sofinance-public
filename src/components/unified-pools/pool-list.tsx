@@ -54,7 +54,9 @@ function Apr7dPill({ state, size, text }: { state: Apr7dState | undefined; size:
       state?.status === "ready" ? "bg-lemon text-ink" : size === "lg" ? "bg-ink/10 text-ink/70" : "bg-white/[0.06] text-cream/70")}>{text}</span>;
 }
 
-export type OpenAction = { kind: "open"; onOpen: () => void } | { kind: "link"; href: string } | { kind: "none"; reason: string };
+export type OpenAction = { kind: "open"; onOpen: () => void } | { kind: "link"; href: string } | { kind: "none"; reason: string }
+  /** A greyed, disabled Open button with the reason shown next to it (e.g. Meteora pools). */
+  | { kind: "disabled"; reason: string };
 
 export function OpenButton({ action, label, compact, iconOnlyBelowMd }: {
   action: OpenAction; label: string; compact?: boolean;
@@ -68,6 +70,11 @@ export function OpenButton({ action, label, compact, iconOnlyBelowMd }: {
     <ArrowUpRight className="h-4 w-4" aria-hidden="true" /></span>;
   if (action.kind === "open") return <button type="button" className={cls} onClick={action.onOpen} aria-label={`Open position in ${label}`}>{text(compact ? "Open" : "Open position")}{icon}</button>;
   if (action.kind === "link") return <Link href={action.href} className={cls} aria-label={`Open position in ${label}`}>{text(compact ? "Open" : "Open position")}{icon}</Link>;
+  if (action.kind === "disabled") return <span className={cn("inline-flex gap-1.5", compact ? "flex-col items-end" : "flex-wrap items-center gap-x-3")} data-testid="open-disabled">
+    <button type="button" disabled aria-disabled="true" title={action.reason} aria-label={`Open position in ${label}: ${action.reason}`}
+      className={cn(cls, "cursor-not-allowed opacity-45 hover:translate-y-0")}>{text(compact ? "Open" : "Open position")}{icon}</button>
+    <span className={cn("text-xs", compact ? "max-w-[11rem] text-right text-[11px] leading-tight text-smoke max-md:max-w-[6.5rem] max-md:text-[10px]" : "text-ink/65")}>{action.reason}</span>
+  </span>;
   return <span className={cn("text-xs", compact ? "text-smoke" : "text-ink/60")}>{action.reason}</span>;
 }
 
@@ -153,11 +160,13 @@ export function PoolTable({ pools, apr, actionFor, sort, onSort, icons, highligh
                 <p className="whitespace-nowrap font-medium text-cream max-md:whitespace-normal max-md:leading-tight">{pairWithBreak(pool.pairLabel)}</p>
                 <p className="hidden max-w-[8rem] truncate text-xs text-smoke sm:block max-md:hidden" title={`${pool.nameA} / ${pool.nameB}`}>{pool.nameA} / {pool.nameB}</p>
                 <p className="mt-0.5 whitespace-nowrap text-xs tabular-nums text-smoke md:hidden" data-testid="tvl-narrow">TVL {money(pool.tvlUsd)}</p>
+                {/* Below 768px the Protocol column is hidden: the badge tells the same pair on two protocols apart. */}
+                <span className="mt-1 inline-flex h-5 items-center rounded-full border border-white/25 px-2 font-data text-[9px] uppercase tracking-[0.1em] text-cream/80 md:hidden" data-testid="protocol-badge-narrow">{PROTOCOL_LABELS[pool.protocol]}</span>
               </div>
             </div>
           </td>
           <td className={cn("px-3 py-3", narrow)}><ChainBadge chain={pool.chain} tone="dark" wrapBelowMd /></td>
-          <td className={cn("px-3 py-3 text-cream/80", wideOnly)}>{PROTOCOL_LABELS[pool.protocol]}</td>
+          <td className={cn("px-3 py-3 text-cream/80", wideOnly)}><span className={cn(chip, "border border-white/25")} data-testid="protocol-badge">{PROTOCOL_LABELS[pool.protocol]}</span></td>
           <td className={cn("px-3 py-3 text-right", narrow)}><Apr7dValue state={apr[pool.key]} size="sm" /></td>
           <td className={cn("px-3 py-3 text-right tabular-nums text-cream/80", wideOnly)} data-testid="apr24h"
             title={apr24hPending ? undefined : exactAprTitle(pool.poolFeeApr24hPct)}>{apr24hPending ? "…" : pct(pool.poolFeeApr24hPct)}</td>

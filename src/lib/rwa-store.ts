@@ -2,13 +2,16 @@ import "server-only";
 import { getRwaConfig } from "./config/rwa-env";
 import { discoverRwaPairs, getCachedRwaPairs } from "./rwa-pairs";
 import { listablePairs } from "./rwa-listable";
+import { listedSolanaFeedKeys } from "./rwa-listed-feeds";
 import { fetchPoolRangeApr } from "./pool-range-apr";
 import { PostgresRwaStore } from "./rwa-postgres-store";
 import { getRwaDatabase, runRwaDatabaseRequest } from "./rwa-database";
 import { tokenIconMap } from "./token-icons/map";
 import {
+  FEED_KEY,
   RwaStoreError,
   type PairOptions,
+  type SolanaFeedKey,
   type RwaStore,
   type StoreRequest,
   type StoreOperation,
@@ -88,7 +91,11 @@ export function getRwaStore(): RwaStore {
 }
 
 /** Listed pairs (list page and home top-5): scan-blocked pools (paused / transfer fee / frozen mint) are dropped. */
-export async function getRwaPairs(options: PairOptions) {
+export async function getRwaPairs(input: PairOptions & {
+  /** Default: the listed feeds (`listedSolanaFeedKeys`). */
+  feedKeys?: readonly SolanaFeedKey[];
+}) {
+  const { feedKeys = listedSolanaFeedKeys(), ...options } = input;
   if (!getRwaConfig().enabled) {
     const live = await (getCachedRwaPairs(options.minTvl, options.maxPages, options.sortBy) ?? discoverRwaPairs(options));
     return { ...live, pairs: listablePairs(live.pairs) };
@@ -96,6 +103,8 @@ export async function getRwaPairs(options: PairOptions) {
   const snapshot = await getRwaStore().request({
     op: "pairs",
     ...options,
+    // Only a second feed is sent: a Raydium-only read is the same request as before.
+    ...(feedKeys.length > 1 || feedKeys[0] !== FEED_KEY ? { feedKeys: [...feedKeys] } : {}),
   });
   // A gateway running an older store build returns no `tokenIcons`; keep the manual list in that case.
   return { ...snapshot, pairs: listablePairs(snapshot.pairs), tokenIcons: snapshot.tokenIcons ?? tokenIconMap([]) };

@@ -179,3 +179,18 @@ export const METEORA_RWA_SCAN_ENABLED: Readonly<Record<DeployTarget, boolean>> =
 export function isMeteoraRwaScanEnabled(target: DeployTarget = deployTarget()): boolean {
   return METEORA_RWA_SCAN_ENABLED[target];
 }
+
+/**
+ * Meteora DLMM pools of the scan feed (`meteora-dlmm-rwa-v1`) in the listed pools: `/api/rwa-pairs`, `/app/rwa-pairs`
+ * and the homepage top-5 candidates (SCAN_DESIGN.md §8). Turned on together with `METEORA_RWA_SCAN_ENABLED` (it has
+ * no effect without it: nothing writes the feed). Opening a Meteora position from the list stays unavailable.
+ */
+export const METEORA_RWA_LIST_ENABLED: Readonly<Record<DeployTarget, boolean>> = Object.freeze({
+  production: false,
+  preview: false,
+  development: false,
+});
+
+export function isMeteoraRwaListEnabled(target: DeployTarget = deployTarget()): boolean {
+  return METEORA_RWA_LIST_ENABLED[target] && isMeteoraRwaScanEnabled(target);
+}

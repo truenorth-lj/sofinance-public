@@ -150,6 +150,18 @@ describe("HomepagePoolsTable", () => {
     expect(container.textContent).not.toMatch(/\byield\b|\bearn\b|make your money|strateg|recipe|open[- ]source|\bMIT\b/i);
   });
 
+  it("lists a Meteora pool as a top-5 candidate with a greyed Open and its reason, never a link", async () => {
+    mocks.aprFor.mockImplementation((poolId) => (poolId === "met-pool" ? ready({ micro: 10, tight: 30, standard: 20, wide: 5 }) : { status: "loading" }));
+    jsonOk({ pairs: [pair({ poolAddress: "met-pool", protocol: "meteora-dlmm" })], freshness: { snapshotAt: new Date().toISOString(), stale: false } });
+    await mount();
+    const [row] = rowsOf();
+    expect(row!.getAttribute("data-pool")).toBe(sol("met-pool"));
+    expect(row!.querySelector("[data-testid=protocol-badge]")!.textContent).toBe("Meteora");
+    expect(row!.querySelector<HTMLButtonElement>("[data-testid=open-disabled] button")!.disabled).toBe(true);
+    expect(row!.textContent).toContain("Opening Meteora positions isn't available yet");
+    expect(row!.querySelectorAll("a")).toHaveLength(0);
+  });
+
   it("merges both chains, sorts by 7-day APR (high to low) and shows at most 5 pools", async () => {
     const solanaApr: Record<string, number> = { "a-pool": 103.5, "b-pool": 31.85, "c-pool": 15.27, "d-pool": 0.004, "e-pool": 4.72 };
     mocks.aprFor.mockImplementation((poolId, protocol) => {
