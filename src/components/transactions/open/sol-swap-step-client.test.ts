@@ -15,7 +15,7 @@ vi.mock("@/lib/jupiter/browser-relay", () => ({ postWithJupiterRelay: relay.post
 import { buildTransaction, phantomMainnetReturn, testKeypair, toBase64 } from "@/lib/test-support/send-fixtures";
 import { findLandedTransaction, LANDED_EXPIRY_MARGIN_BLOCKS } from "@/lib/tx-landed/lookup";
 import { CANCEL_CHECK_PENDING_COPY, cancelCheckKey, getTxNotices, isCancelCheckPending, noticeIdFor, resetCancelChecks, resetTxNotices,
-  TxWalletCancelledError, type FindLanded, type TxWallet } from "@/lib/tx-pipeline";
+  TxNotLandedError, TxWalletCancelledError, type FindLanded, type TxWallet } from "@/lib/tx-pipeline";
 import { readSolSwapAttempt, type SolSwapStorage } from "./sol-swap-attempt-store";
 import { solSwapReceiptKey } from "./sol-swap-receipt-store";
 import { reconcileSolSwapStep, runSolSwapStep, solSwapFailureContext, type SolSwapStage } from "./sol-swap-step-client";
@@ -85,38 +85,63 @@ describe("runSolSwapStep with a Phantom-shaped transaction", () => {
     // Counted in Sentry with its public context (blockhash, the wallet's code), like the shared pipeline.
     expect(sentry.landed).toHaveBeenCalledWith("swap", { blockhash: unsigned.message.recentBlockhash, walletErrorCode: 400, landedCheck: "landed" });
   });
-  it("4001 cancel: throws 'You cancelled in your wallet' at once (no checking stage, nothing saved); silent if nothing landed", async () => {
-    const wallet: TxWallet = { address: WALLET, signTransaction: vi.fn(),
-      signAndSendTransaction: vi.fn(async () => { throw Object.assign(new Error("User rejected the request."), { code: 4001 }); }) };
-    const storage = memoryStorage(); const stages: SolSwapStage[] = [];
+  const cancelling = (): TxWallet => ({ address: WALLET, signTransaction: vi.fn(),
+    signAndSendTransaction: vi.fn(async () => { throw Object.assign(new Error("User rejected the request."), { code: 4001 }); }) });
+  it("genuine 4001 cancel: checks Solana first, and once it has expired unseen says cancelled, nothing was sent (no lock left)", async () => {
+    const wallet = cancelling(); const storage = memoryStorage(); const stages: SolSwapStage[] = [];
     const error = await runSolSwapStep({ poolId: POOL, amount: "0.001", requested: "1000000", store: {} as never, timeoutMs: 5_000,
       wallet, setStage: (s) => stages.push(s), current: () => true, storage,
       findLanded: chainLookup(() => [], LVBH + LANDED_EXPIRY_MARGIN_BLOCKS + 1) }).catch((e) => e);
-    expect(error).toBeInstanceOf(TxWalletCancelledError);
-    expect(error.message).toBe("You cancelled in your wallet.");
-    expect(stages).toEqual(["swap-preparing", "swap-wallet"]);
+    expect(error).toBeInstanceOf(TxNotLandedError);
+    expect(error.message).toBe("You cancelled in your wallet. We checked Solana and it did not go through. Nothing was sent, safe to retry.");
+    expect(stages).toEqual(["swap-preparing", "swap-wallet", "swap-checking"]);
     expect(storage.map.size).toBe(0);
+    expect(isCancelCheckPending(cancelCheckKey("open", POOL))).toBe(false);
+    expect(getTxNotices()).toEqual([]);
+  });
+  it("4001 with no answer inside the window: cancelled, retry in about a minute; the pool stays locked until the background check ends", async () => {
+    const wallet = cancelling(); const storage = memoryStorage();
+    let finish!: (outcome: Awaited<ReturnType<FindLanded>>) => void;
+    const findLanded: FindLanded = () => new Promise((resolve) => { finish = resolve; });
+    const error = await runSolSwapStep({ poolId: POOL, amount: "0.001", requested: "1000000", store: {} as never, timeoutMs: 5_000,
+      wallet, setStage: () => {}, current: () => true, storage, findLanded, checkingWindowMs: 10 }).catch((e) => e);
+    expect(error).toBeInstanceOf(TxWalletCancelledError);
+    expect(error.message).toBe("You cancelled in your wallet. We are still checking Solana in case it went through; you can retry in about a minute.");
     expect(solSwapFailureContext(error)).toEqual({ blockhash: unsigned.message.recentBlockhash, walletErrorCode: 4001 });
-    // This pool's open (step 1 and 2) waits for the background check; a second step 1 is refused before preparing.
     expect(isCancelCheckPending(cancelCheckKey("open", POOL))).toBe(true);
     relay.post.mockClear();
     await expect(runSolSwapStep({ poolId: POOL, amount: "0.001", requested: "1000000", store: {} as never, timeoutMs: 5_000,
       wallet, setStage: () => {}, current: () => true, storage })).rejects.toThrow(CANCEL_CHECK_PENDING_COPY);
     expect(relay.post).not.toHaveBeenCalled();
-    await error.landed; await new Promise((resolve) => setTimeout(resolve, 0));
+    finish({ status: "not-landed" }); await error.landed; await new Promise((resolve) => setTimeout(resolve, 0));
     expect(getTxNotices()).toEqual([]);
     expect(sentry.landed).not.toHaveBeenCalled();
     expect(isCancelCheckPending(cancelCheckKey("open", POOL))).toBe(false);
   });
-  it("4001 after Phantom already broadcast: the background lookup finds the swap and tracks it (success toast + refresh path)", async () => {
+  it("4001 after the wallet already broadcast, found inside the window → tracked as a normal send (never cancelled, never signMessage)", async () => {
+    const broadcast: VersionedTransaction[] = [];
+    const wallet: TxWallet & { signMessage: ReturnType<typeof vi.fn> } = { address: WALLET, signTransaction: vi.fn(), signMessage: vi.fn(), signAndSendTransaction: vi.fn(async (tx: VersionedTransaction) => {
+      const rebuilt = phantomMainnetReturn(tx, testKeypair(84).publicKey); rebuilt.sign([payer]); broadcast.push(rebuilt);
+      throw Object.assign(new Error("User rejected the request."), { code: 4001 });
+    }) };
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ status: "confirmed", delivered: "123456", decimals: 6 })));
+    const receipt = await runSolSwapStep({ poolId: POOL, amount: "0.001", requested: "1000000", store: {} as never, timeoutMs: 5_000,
+      wallet, setStage: () => {}, current: () => true, storage: memoryStorage(), sleep: async () => undefined, findLanded: chainLookup(() => broadcast) });
+    expect(receipt).toMatchObject({ signature: LANDED_SIG, delivered: "123456" });
+    expect(sentry.landed).toHaveBeenCalledWith("swap", expect.objectContaining({ walletErrorCode: 4001, landedCheck: "landed" }));
+    expect((wallet as TxWallet & { signMessage: ReturnType<typeof vi.fn> }).signMessage).not.toHaveBeenCalled();
+  });
+  it("late landing: 4001, window ends, then the background lookup finds the swap and tracks it (success toast + refresh path)", async () => {
     const broadcast: VersionedTransaction[] = [];
     const wallet: TxWallet = { address: WALLET, signTransaction: vi.fn(), signAndSendTransaction: vi.fn(async (tx: VersionedTransaction) => {
       const rebuilt = phantomMainnetReturn(tx, testKeypair(84).publicKey); rebuilt.sign([payer]); broadcast.push(rebuilt);
       throw Object.assign(new Error("User rejected the request."), { code: 4001 });
     }) };
+    const real = chainLookup(() => broadcast);
+    const slowLookup: FindLanded = (check, options) => new Promise((resolve) => setTimeout(() => resolve(real(check, options)), 40));
     const storage = memoryStorage();
     const error = await runSolSwapStep({ poolId: POOL, amount: "0.001", requested: "1000000", store: {} as never, timeoutMs: 5_000,
-      wallet, setStage: () => {}, current: () => true, storage, findLanded: chainLookup(() => broadcast) }).catch((e) => e);
+      wallet, setStage: () => {}, current: () => true, storage, findLanded: slowLookup, checkingWindowMs: 10 }).catch((e) => e);
     expect(error).toBeInstanceOf(TxWalletCancelledError);
     await error.landed; await new Promise((resolve) => setTimeout(resolve, 0));
     expect(getTxNotices()).toMatchObject([{ id: noticeIdFor(LANDED_SIG), flow: "swap", state: "loading", signature: LANDED_SIG,
