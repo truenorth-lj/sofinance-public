@@ -12,12 +12,12 @@ import { meteoraAddLiquidityByStrategy2Instruction, meteoraMaxActiveBinSlippage 
 import { MIN_SOL_LAMPORTS, SLIPPAGE_BPS } from "@sofinance/engine/ids";
 import { assertOpenTransactionSize, compileCompactOpenTransaction } from "@sofinance/engine/open-transaction";
 import { ATOMIC_COMPUTE_UNIT_LIMIT, measuredComputeUnitLimit } from "@sofinance/engine/transaction-limits";
-import { assertMeteoraFeeRule, DEPOSIT_INTERMEDIATE_RENT_ALLOWANCE } from "@/lib/meteora-open";
+import { assertMeteoraFeeRule } from "@/lib/meteora-open";
 import type { DexDepositInput, WithdrawRequest } from "../adapter";
 import { DexError, DexUnsupportedError } from "../errors";
 import {
-  accountData, compileDeposit, compileV0, cuLimit, encode, planMeteoraOpen, publicKey, readMeteoraPool, readWallet, simulate, sol,
-  SIGNATURE_LAMPORTS, tokenAccount, type BuiltStep, type MeteoraOpenDeps, type MeteoraPoolState,
+  accountData, compileDeposit, compileV0, cuLimit, depositIntermediateRentAllowance, encode, missingPoolTokenAccounts, planMeteoraOpen, publicKey,
+  readMeteoraPool, readWallet, simulate, sol, SIGNATURE_LAMPORTS, sumRent, tokenAccount, type BuiltStep, type MeteoraOpenDeps, type MeteoraPoolState,
 } from "./open.server";
 
 /**
@@ -155,14 +155,10 @@ async function simulateAndFinish(
   return { transaction: encode(transaction), lastValidBlockHeight: latest.lastValidBlockHeight };
 }
 
-/**
- * Upper bound on the rent of the owner's missing pool-token accounts. A Token-2022 account carries extensions
- * (ImmutableOwner, and per mint e.g. PausableAccount), so it is larger than a 165-byte SPL account; 300 bytes covers
- * them. The simulated SOL debit is checked against this bound, never trusted from it.
- */
-const TOKEN_ACCOUNT_RENT_BOUND = 3_000_000n;
-function tokenAccountRent(tokens: OwnerTokens) {
-  return TOKEN_ACCOUNT_RENT_BOUND * BigInt(Number(!tokens.ataXExists) + Number(!tokens.ataYExists));
+/** Rent of the owner's missing pool-token accounts, per mint's program and extensions (PR9.2: no fixed per-account bound). */
+async function tokenAccountRent(deps: MeteoraOpenDeps, pool: MeteoraPoolState, tokens: OwnerTokens) {
+  const created = await missingPoolTokenAccounts(deps.connection, pool, tokens);
+  return { created, lamports: sumRent(created) };
 }
 
 export type MeteoraWithdrawBuilt = BuiltStep & { full: boolean; bps: number; rentRefundLamports: bigint };
@@ -195,7 +191,7 @@ export async function buildMeteoraWithdraw(deps: MeteoraOpenDeps, position: stri
       meteoraClosePosition2Instruction({ position: accounts.position, sender: tokens.wallet, rentReceiver: tokens.wallet }),
     ] : []),
   ];
-  const ataRent = tokenAccountRent(tokens);
+  const { lamports: ataRent } = await tokenAccountRent(deps, pool, tokens);
   const maxDebit = ataRent + SIGNATURE_LAMPORTS;
   if (tokens.walletLamports < maxDebit) throw new DexError("INSUFFICIENT_FUNDS", `Not enough SOL for the network fee${ataRent ? " and token accounts" : ""}: add about ${sol(maxDebit - tokens.walletLamports)} SOL.`);
   const rentRefundLamports = full ? BigInt(owned.info.lamports) : 0n;
@@ -222,7 +218,7 @@ export async function buildMeteoraClaim(deps: MeteoraOpenDeps, position: string,
   const accounts = poolAccounts(pool, tokens, position);
   const creates = ataCreates(pool, tokens);
   const body = (units: number) => [cuLimit(units), ...creates, meteoraClaimFee2Instruction({ ...accounts, minBinId: lowerBinId, maxBinId: upperBinId })];
-  const ataRent = tokenAccountRent(tokens);
+  const { lamports: ataRent } = await tokenAccountRent(deps, pool, tokens);
   const maxDebit = ataRent + SIGNATURE_LAMPORTS;
   if (tokens.walletLamports < maxDebit) throw new DexError("INSUFFICIENT_FUNDS", `Not enough SOL for the network fee${ataRent ? " and token accounts" : ""}: add about ${sol(maxDebit - tokens.walletLamports)} SOL.`);
   return simulateAndFinish(deps, pool, tokens, position, body, "claim", maxDebit, (after) => {
@@ -248,8 +244,9 @@ export async function buildMeteoraAdd(deps: MeteoraOpenDeps, position: string, o
   }
   const tokens = await readOwnerTokens(deps, pool, owner);
   const creates = ataCreates(pool, tokens);
-  const ataRent = tokenAccountRent(tokens);
-  const need = BigInt(DEPOSIT_INTERMEDIATE_RENT_ALLOWANCE) + ataRent + SIGNATURE_LAMPORTS + BigInt(MIN_SOL_LAMPORTS);
+  const { lamports: ataRent } = await tokenAccountRent(deps, pool, tokens);
+  const allowance = await depositIntermediateRentAllowance(deps.connection);
+  const need = allowance + ataRent + SIGNATURE_LAMPORTS + BigInt(MIN_SOL_LAMPORTS);
   if (state.walletLamports < need) {
     throw new DexError("INSUFFICIENT_FUNDS", `Not enough SOL: this add needs about ${sol(need)} SOL (network fees, temporary swap accounts and a ${sol(BigInt(MIN_SOL_LAMPORTS))} SOL reserve); your wallet has ${sol(state.walletLamports)} SOL.`);
   }
@@ -263,7 +260,7 @@ export async function buildMeteoraAdd(deps: MeteoraOpenDeps, position: string, o
     throw new DexError("UPSTREAM", "The add simulation added no liquidity to the position, so nothing was sent.");
   }
   const solDebit = state.walletLamports - BigInt(sim.accounts?.[1]?.lamports ?? 0);
-  if (solDebit > BigInt(DEPOSIT_INTERMEDIATE_RENT_ALLOWANCE) + ataRent) throw new DexError("UPSTREAM", "The add simulation spends more SOL than allowed, so nothing was sent.");
+  if (solDebit > allowance + ataRent) throw new DexError("UPSTREAM", "The add simulation spends more SOL than allowed, so nothing was sent.");
   const inputAfter = accountData(sim.accounts?.[2]);
   const inputProgram = new PublicKey(plan.inputProgram);
   const remaining = inputAfter ? unpackAccount(state.inputAta, { data: inputAfter, owner: inputProgram, lamports: 0, executable: false }, inputProgram).amount : 0n;
@@ -280,8 +277,8 @@ export type MeteoraCompoundBuilt = BuiltStep & {
   /** Raw fee amounts put back into the position. */
   compoundX: bigint; compoundY: bigint;
   /**
-   * Wallet token accounts this step creates (the claim pays into them) and their rent, read from the simulated accounts
-   * (exact lamports, Token-2022 sizes included). Stated to the user before signing (PM review of #289).
+   * Wallet token accounts this step creates (the claim pays into them) and their rent, per mint's program and
+   * extensions (Token-2022 sizes included); the same figure caps the simulated SOL debit. Stated to the user before signing (PM review of #289).
    */
   createdTokenAccounts: { mint: string; rentLamports: bigint }[];
   /** Raw fee amounts that go to the wallet instead: the side an out-of-range position cannot hold at the current price. */
@@ -304,7 +301,7 @@ export async function buildMeteoraCompound(deps: MeteoraOpenDeps, position: stri
   const tokens = await readOwnerTokens(deps, pool, owner);
   const accounts = poolAccounts(pool, tokens, position);
   const creates = ataCreates(pool, tokens);
-  const ataRent = tokenAccountRent(tokens);
+  const { created, lamports: ataRent } = await tokenAccountRent(deps, pool, tokens);
   const maxDebit = ataRent + SIGNATURE_LAMPORTS;
   if (tokens.walletLamports < maxDebit) throw new DexError("INSUFFICIENT_FUNDS", `Not enough SOL for the network fee${ataRent ? " and token accounts" : ""}: add about ${sol(maxDebit - tokens.walletLamports)} SOL.`);
   const claim = meteoraClaimFee2Instruction({ ...accounts, minBinId: lowerBinId, maxBinId: upperBinId });
@@ -316,10 +313,7 @@ export async function buildMeteoraCompound(deps: MeteoraOpenDeps, position: stri
   const probe = await simulate(deps.connection, compileV0(tokens.wallet, latest.blockhash, claimOnly), [tokens.ataX, tokens.ataY], tokens.slot, "fee claim");
   const claimedX = simulatedAmount(accountData(probe.accounts?.[0]), tokens.ataX, pool.tokenProgramX) - tokens.balanceX;
   const claimedY = simulatedAmount(accountData(probe.accounts?.[1]), tokens.ataY, pool.tokenProgramY) - tokens.balanceY;
-  const createdTokenAccounts = [
-    ...(tokens.ataXExists ? [] : [{ mint: pool.lbPair.tokenXMint, rentLamports: BigInt(probe.accounts?.[0]?.lamports ?? Number(TOKEN_ACCOUNT_RENT_BOUND)) }]),
-    ...(tokens.ataYExists ? [] : [{ mint: pool.lbPair.tokenYMint, rentLamports: BigInt(probe.accounts?.[1]?.lamports ?? Number(TOKEN_ACCOUNT_RENT_BOUND)) }]),
-  ];
+  const createdTokenAccounts = created;
   if (claimedX <= 0n && claimedY <= 0n) throw new DexError("INVALID_REQUEST", "This position has no unclaimed fees yet, so there is nothing to compound.");
 
   // 2. What the range can hold at the current price (bins above the active bin hold X, below hold Y).

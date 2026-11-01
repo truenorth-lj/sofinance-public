@@ -43,7 +43,15 @@ export const BLOCKHASH = seeded(4).toBase58();
 export const OWNER_LAMPORTS = 2_000_000_000n;
 export const OWNER_TSLA_RAW = 10_000_000n;
 export const DEPOSIT_RAW = "1000000";
-const TOKEN_ACCOUNT_RENT = 2_039_280;
+/** Mainnet rent rate at the capture (every `rentExemptMinimum` entry is (128 + size) × 5,080). */
+export const rentFor = (size: number) => (128 + size) * 5_080;
+/**
+ * Data size mainnet gives the wallet's associated token account for the RWA mints (TransferHookAccount + PausableAccount
+ * + ImmutableOwner; read from created accounts 11/1). The adapter must arrive at it from the mint, never from a constant.
+ */
+export const RWA_TOKEN_ACCOUNT_SPACE = 179;
+/** Extra lamports the fake chain charges per created token account, to prove the SOL cap is not loose (0 = the real rent). */
+let tokenAccountRentSkew = 0;
 const PAUSABLE_CONFIG = 26;
 const SLOT = capture.slot;
 
@@ -53,13 +61,16 @@ export const ata = (mint: string, owner: string) => getAssociatedTokenAddressSyn
 type Account = AccountInfo<Buffer>;
 const account = (owner: string, data: Buffer, lamports = 1_000_000): Account => ({ owner: new PublicKey(owner), data, lamports, executable: false, rentEpoch: 0 });
 
-function tokenAccount(mint: string, owner: string, amount: bigint): Account {
-  const data = Buffer.alloc(AccountLayout.span);
+/** A Token-2022 token account as mainnet creates it for the RWA mints (179 bytes, rent-exempt). */
+export function tokenAccount(mint: string, owner: string, amount: bigint): Account {
+  // Token-2022 layout: the base account, the AccountType byte (2 = Account) at 165, then the TLV extensions (zeroed here).
+  const data = Buffer.alloc(RWA_TOKEN_ACCOUNT_SPACE);
+  data[AccountLayout.span] = 2;
   AccountLayout.encode({
     mint: new PublicKey(mint), owner: new PublicKey(owner), amount, delegateOption: 0, delegate: PublicKey.default, state: 1,
     isNativeOption: 0, isNative: 0n, delegatedAmount: 0n, closeAuthorityOption: 0, closeAuthority: PublicKey.default,
   }, data);
-  return account(T22.toBase58(), data, TOKEN_ACCOUNT_RENT);
+  return account(T22.toBase58(), data, rentFor(RWA_TOKEN_ACCOUNT_SPACE) + tokenAccountRentSkew);
 }
 
 /** A PositionV2 account (8120 bytes) for `owner` in `pool` over [lower, lower + width - 1], with `share` in its first bin. */
@@ -91,6 +102,7 @@ export type FakeChain = ReturnType<typeof createFakeChain>;
 
 /** `autoLand`: a simulated `initialize_position` lands right away (the contract suite walks step 2 straight after 1). */
 export function createFakeChain(options: { autoLand?: boolean } = {}) {
+  tokenAccountRentSkew = 0;
   const accounts = new Map<string, Account>();
   for (const pool of Object.entries(capture.pools)) {
     const [address, recorded] = pool;
@@ -105,6 +117,8 @@ export function createFakeChain(options: { autoLand?: boolean } = {}) {
 
   const get = (key: PublicKey) => accounts.get(key.toBase58()) ?? null;
   const simulations: string[] = [];
+  /** Sizes the code asked rent for (tests assert no fixed 165-byte figure is used for Token-2022 accounts). */
+  const rentQueries: number[] = [];
   /** Unclaimed swap fees per position (raw X / Y) that `claim_fee2` pays out; landing a claim zeroes them. */
   const claimable = new Map<string, { x: bigint; y: bigint }>();
   const held = (map: Map<string, Account>, address: string) => (map.has(address) ? AccountLayout.decode(map.get(address)!.data).amount : 0n);
@@ -182,10 +196,8 @@ export function createFakeChain(options: { autoLand?: boolean } = {}) {
     async getAccountInfo(key: PublicKey) { return get(key); },
     async getAccountInfoAndContext(key: PublicKey) { return { context: { slot: SLOT }, value: get(key) }; },
     async getMinimumBalanceForRentExemption(size: number) {
-      if (size === AccountLayout.span) return TOKEN_ACCOUNT_RENT;
-      const lamports = capture.rentExemptMinimum[String(size)];
-      if (lamports === undefined) throw new Error(`fake chain has no rent for ${size} bytes`);
-      return lamports;
+      rentQueries.push(size);
+      return rentFor(size);
     },
     // Performance reads a position's signature history; the recorded chain has none (fresh positions only).
     async getSignaturesForAddress() { return []; },
@@ -220,6 +232,9 @@ export function createFakeChain(options: { autoLand?: boolean } = {}) {
   return {
     connection,
     simulations,
+    rentQueries,
+    /** Charge `lamports` more than the real rent for each token account created from now on (cap tests). */
+    skewTokenAccountRent(lamports: number) { tokenAccountRentSkew = lamports; },
     /** Lands what the transaction would do (the wallet signed and sent it). */
     land(tx: VersionedTransaction) {
       const claimed: string[] = [];

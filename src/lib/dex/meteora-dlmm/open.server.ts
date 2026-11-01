@@ -1,7 +1,7 @@
 import "@/lib/engine-host";
 import "server-only";
 
-import { ACCOUNT_SIZE, createAssociatedTokenAccountIdempotentInstruction, getAssociatedTokenAddressSync, unpackAccount } from "@solana/spl-token";
+import { createAssociatedTokenAccountIdempotentInstruction, getAssociatedTokenAddressSync, unpackAccount } from "@solana/spl-token";
 import { ComputeBudgetProgram, PublicKey, TransactionMessage, VersionedTransaction, type AccountInfo, type Connection, type TransactionInstruction } from "@solana/web3.js";
 import { decodeLbPair, type LbPairState } from "@sofinance/engine/protocols/meteora/accounts";
 import { METEORA_DLMM_PROGRAM_ID, SPL_TOKEN_PROGRAM_ID } from "@sofinance/engine/protocols/meteora/constants";
@@ -20,9 +20,10 @@ import { JUPITER_ROUTE_ATTEMPTS, isTxOversizeError, type JupiterRouteConstraints
 import { assertOpenTransactionSize, compactAtaInstructions, compileCompactOpenTransaction, openLookupTableReader } from "@sofinance/engine/open-transaction";
 import { ATOMIC_COMPUTE_UNIT_LIMIT, measuredComputeUnitLimit } from "@sofinance/engine/transaction-limits";
 import { withContextSlotRetry } from "@sofinance/engine/rpc/context-slot";
+import { associatedTokenAccountRents, maxAssociatedTokenAccountSpace } from "@sofinance/engine/token-account-rent";
 import { binTickSqrtPriceX64 } from "@/lib/range-apr/meteora-liquidity";
 import { meteoraPresetRanges } from "@/lib/meteora-range-apr";
-import { assertMeteoraFeeRule, DEPOSIT_INTERMEDIATE_RENT_ALLOWANCE } from "@/lib/meteora-open";
+import { assertMeteoraFeeRule } from "@/lib/meteora-open";
 import type { DexFeeStrategy, OpenRequest } from "../adapter";
 import { DexError } from "../errors";
 import { assertFeeWalletConfigured } from "../fee-wallet.server";
@@ -234,6 +235,63 @@ export async function planMeteoraOpen(
   };
 }
 
+/** A wallet token account a step creates, and its rent (lamports) for that mint's program and extensions. */
+export type NewTokenAccount = { mint: string; rentLamports: bigint };
+
+/**
+ * Rent of the owner's missing pool-token accounts, per mint: each mint's owner program and extensions are read on chain
+ * (a Token-2022 RWA account is 179 bytes, not 165; PR9.2). Shared by the open quote, the setup step's SOL cap, and
+ * withdraw / claim / add / compound.
+ */
+export async function missingPoolTokenAccounts(connection: Connection, pool: MeteoraPoolState, exists: { ataXExists: boolean; ataYExists: boolean }): Promise<NewTokenAccount[]> {
+  const mints = [...(exists.ataXExists ? [] : [pool.lbPair.tokenXMint]), ...(exists.ataYExists ? [] : [pool.lbPair.tokenYMint])];
+  try {
+    return (await associatedTokenAccountRents(connection, mints)).map(({ mint, rentLamports }) => ({ mint, rentLamports }));
+  } catch (error) {
+    if (error instanceof DexError) throw error;
+    throw new DexError("UPSTREAM", `The rent for your new token account could not be read from chain: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+export const sumRent = (accounts: NewTokenAccount[]) => accounts.reduce((sum, item) => sum + item.rentLamports, 0n);
+
+/**
+ * What an open sets aside: the position rent (refunded when the position is closed) and the rent of the wallet token
+ * accounts it creates (stays in those accounts). The quote shows exactly these two lines and the setup step caps its
+ * simulated SOL debit at their sum plus network fees, so the two cannot disagree.
+ */
+export type MeteoraOpenRent = { positionLamports: bigint; tokenAccounts: NewTokenAccount[]; tokenAccountLamports: bigint; totalLamports: bigint };
+
+export async function meteoraOpenRent(connection: Connection, plan: MeteoraOpenPlan, exists: { ataXExists: boolean; ataYExists: boolean }): Promise<MeteoraOpenRent> {
+  const tokenAccounts = await missingPoolTokenAccounts(connection, plan.pool, exists);
+  const tokenAccountLamports = sumRent(tokenAccounts);
+  return { positionLamports: plan.positionRentLamports, tokenAccounts, tokenAccountLamports, totalLamports: plan.positionRentLamports + tokenAccountLamports };
+}
+
+/** Whether `owner` already holds the pool's two token accounts (the quote has no position key yet). */
+export async function ownerPoolTokenAccountsExist(connection: Connection, pool: MeteoraPoolState, owner: string) {
+  const wallet = publicKey(owner, "wallet");
+  const ataX = getAssociatedTokenAddressSync(new PublicKey(pool.lbPair.tokenXMint), wallet, false, new PublicKey(pool.tokenProgramX));
+  const ataY = getAssociatedTokenAddressSync(new PublicKey(pool.lbPair.tokenYMint), wallet, false, new PublicKey(pool.tokenProgramY));
+  const [x, y] = await connection.getMultipleAccountsInfo([ataX, ataY], "confirmed");
+  return {
+    ataXExists: tokenAccount(x ?? null, ataX, wallet, pool.lbPair.tokenXMint, pool.tokenProgramX).exists,
+    ataYExists: tokenAccount(y ?? null, ataY, wallet, pool.lbPair.tokenYMint, pool.tokenProgramY).exists,
+  };
+}
+
+/** Swap-route temporary accounts a deposit may open and close (Jupiter setup / wrapped SOL). */
+const DEPOSIT_INTERMEDIATE_ACCOUNTS = 2n;
+
+/**
+ * SOL a deposit's swap legs may hold in temporary token accounts: their mints are not known before routing, so each is
+ * priced at the largest account the Associated Token Program can create (every required Token-2022 account extension),
+ * at the live rent rate.
+ */
+export async function depositIntermediateRentAllowance(connection: Connection): Promise<bigint> {
+  return DEPOSIT_INTERMEDIATE_ACCOUNTS * BigInt(await connection.getMinimumBalanceForRentExemption(maxAssociatedTokenAccountSpace(), "confirmed"));
+}
+
 export type WalletState = {
   walletLamports: bigint;
   ataX: PublicKey; ataY: PublicKey; inputAta: PublicKey;
@@ -361,26 +419,25 @@ export async function compileDeposit(deps: MeteoraOpenDeps, plan: MeteoraOpenPla
 }
 
 export type BuiltStep = { transaction: string; lastValidBlockHeight: number };
+export type MeteoraSetupBuilt = BuiltStep & { rent: MeteoraOpenRent };
 export const encode = (transaction: VersionedTransaction) => Buffer.from(transaction.serialize()).toString("base64");
 
 /** 1/2: the wallet's own ATAs + initialize_position, simulated; 2/2 is drafted first so rent is never paid for a dead end. */
-export async function buildMeteoraSetup(deps: MeteoraOpenDeps, plan: MeteoraOpenPlan, owner: string, position: string): Promise<BuiltStep> {
+export async function buildMeteoraSetup(deps: MeteoraOpenDeps, plan: MeteoraOpenPlan, owner: string, position: string): Promise<MeteoraSetupBuilt> {
   const { connection } = deps;
   const state = await readWallet(connection, plan, owner, position);
   if (state.positionInfo) throw new DexError("INVALID_REQUEST", "That position key is already in use on chain. Start the open again so a fresh one is created.");
   assertInputBalance(plan, state);
   const wallet = new PublicKey(owner);
-  const [tokenRent, latest] = await Promise.all([
-    connection.getMinimumBalanceForRentExemption(ACCOUNT_SIZE, "confirmed").then(BigInt),
-    connection.getLatestBlockhash("confirmed"),
+  const [rent, allowance, latest] = await Promise.all([
+    meteoraOpenRent(connection, plan, state), depositIntermediateRentAllowance(connection), connection.getLatestBlockhash("confirmed"),
   ]);
   await compileDeposit(deps, plan, state, owner, position, latest.blockhash, false);
-  const ataCount = BigInt(Number(!state.ataXExists) + Number(!state.ataYExists));
   const networkFee = 3n * SIGNATURE_LAMPORTS; // 1/2: wallet + position; 2/2: wallet
-  const rentTotal = plan.positionRentLamports + tokenRent * ataCount;
-  const required = BigInt(MIN_SOL_LAMPORTS) + rentTotal + networkFee + BigInt(DEPOSIT_INTERMEDIATE_RENT_ALLOWANCE);
+  const rentTotal = rent.totalLamports;
+  const required = BigInt(MIN_SOL_LAMPORTS) + rentTotal + networkFee + allowance;
   if (state.walletLamports < required) {
-    throw new DexError("INSUFFICIENT_FUNDS", `Not enough SOL: this open needs about ${sol(required)} SOL (position rent ${sol(plan.positionRentLamports)} SOL, refunded when you fully withdraw, plus token accounts, network fees and a ${sol(BigInt(MIN_SOL_LAMPORTS))} SOL reserve); your wallet has ${sol(state.walletLamports)} SOL.`);
+    throw new DexError("INSUFFICIENT_FUNDS", `Not enough SOL: this open needs about ${sol(required)} SOL (position rent ${sol(plan.positionRentLamports)} SOL, refunded when you fully withdraw, plus ${sol(rent.tokenAccountLamports)} SOL for new token accounts, network fees and a ${sol(BigInt(MIN_SOL_LAMPORTS))} SOL reserve); your wallet has ${sol(state.walletLamports)} SOL.`);
   }
   const instructions = setupInstructions(plan, state, owner, position);
   assertMeteoraFeeRule(instructions, deps.feeConfig());
@@ -398,7 +455,7 @@ export async function buildMeteoraSetup(deps: MeteoraOpenDeps, plan: MeteoraOpen
   const final = setupInstructions(plan, state, owner, position, measuredComputeUnitLimit(sim.unitsConsumed ?? 0));
   const transaction = compileV0(wallet, latest.blockhash, final);
   assertOpenTransactionSize(transaction);
-  return { transaction: encode(transaction), lastValidBlockHeight: latest.lastValidBlockHeight };
+  return { transaction: encode(transaction), lastValidBlockHeight: latest.lastValidBlockHeight, rent };
 }
 
 /** Reads the position 1/2 created: a Meteora position owned by `owner` in `poolId`, still empty. */
@@ -421,7 +478,8 @@ export async function buildMeteoraDeposit(deps: MeteoraOpenDeps, plan: MeteoraOp
   assertEmptyOwnedPosition(state.positionInfo, owner, plan.pool.poolId);
   assertInputBalance(plan, state);
   if (!state.ataXExists || !state.ataYExists) throw new DexError("POSITION_NOT_FOUND", "Your pool token accounts from step 1 of 2 are missing. Wait for step 1 to confirm and try again.");
-  const depositNeed = BigInt(DEPOSIT_INTERMEDIATE_RENT_ALLOWANCE) + SIGNATURE_LAMPORTS;
+  const allowance = await depositIntermediateRentAllowance(connection);
+  const depositNeed = allowance + SIGNATURE_LAMPORTS;
   if (state.walletLamports < depositNeed) {
     throw new DexError("INSUFFICIENT_FUNDS", `Not enough SOL to finish step 2 of 2: add about ${sol(depositNeed - state.walletLamports)} SOL, or close the empty position to get its rent back.`);
   }
@@ -435,7 +493,7 @@ export async function buildMeteoraDeposit(deps: MeteoraOpenDeps, plan: MeteoraOp
     throw new DexError("UPSTREAM", "The deposit simulation added no liquidity to the position, so nothing was sent.");
   }
   const solDebit = state.walletLamports - BigInt(sim.accounts?.[1]?.lamports ?? 0);
-  if (solDebit > BigInt(DEPOSIT_INTERMEDIATE_RENT_ALLOWANCE)) throw new DexError("UPSTREAM", "The deposit simulation spends more SOL than allowed, so nothing was sent.");
+  if (solDebit > allowance) throw new DexError("UPSTREAM", "The deposit simulation spends more SOL than allowed, so nothing was sent.");
   const inputAfter = accountData(sim.accounts?.[2]);
   const inputProgram = new PublicKey(plan.inputProgram);
   const remaining = inputAfter ? unpackAccount(state.inputAta, { data: inputAfter, owner: inputProgram, lamports: 0, executable: false }, inputProgram).amount : 0n;
