@@ -65,6 +65,14 @@ describe("event firing when the key is set", () => {
     vi.stubEnv("NEXT_PUBLIC_POSTHOG_HOST", "https://us.i.posthog.com");
   });
 
+  it("concurrent callers share one in-flight init, so posthog.init runs exactly once", async () => {
+    const results = await Promise.all([initGrowthAnalytics(), initGrowthAnalytics("?ref=a")]);
+    expect(results).toEqual([true, true]);
+    expect(posthog.init).toHaveBeenCalledTimes(1);
+    expect(await initGrowthAnalytics()).toBe(true);
+    expect(posthog.init).toHaveBeenCalledTimes(1);
+  });
+
   it("inits once, captures pageviews, and keeps first-touch ref on later events", async () => {
     window.history.replaceState({}, "", "/app/rwa-pairs?ref=x-launch&utm_source=twitter");
     expect(await initGrowthAnalytics(window.location.search)).toBe(true);

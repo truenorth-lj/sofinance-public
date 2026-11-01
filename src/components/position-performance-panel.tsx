@@ -504,7 +504,7 @@ export function PositionPerformancePanel({
 
 
       {data && decisionMint && <PositionExitEstimate key={decisionMint} positionId={decisionMint} nftAccount={decisionMint === selectedMint ? selectedNftAccount : undefined}
-        nftAccountPending={decisionMint === selectedMint && nftAccountPending} autoExit={embedded} className="mt-5" />}
+        nftAccountPending={decisionMint === selectedMint && nftAccountPending} autoExit={embedded} poolMints={[data.mintA, data.mintB]} className="mt-5" />}
 
       {(data?.poolId || previewPoolId) && (
         <div className="mt-6">

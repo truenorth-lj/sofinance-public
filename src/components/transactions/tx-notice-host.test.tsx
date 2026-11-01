@@ -7,7 +7,7 @@ import bs58 from "bs58";
 vi.mock("@/lib/sentry/client-tx", () => ({ captureTxClientFailure: vi.fn() }));
 vi.mock("@/lib/position-history-refresh", () => ({ notifyPositionHistoryChange: vi.fn() }));
 
-import { getTxNotices, loadTxAttempts, reportTxFailure, resetTxNotices, saveTxAttempt, SUCCESS_NOTICE_MS, TxNotSentError } from "@/lib/tx-pipeline";
+import { getTxNotices, loadTxAttempts, reportTxFailure, resetTxNotices, saveTxAttempt, TxNotSentError } from "@/lib/tx-pipeline";
 import { TransactionStatusDialog } from "@/components/transaction-status-dialog";
 import { TxNoticeHost } from "./tx-notice-host";
 
@@ -26,7 +26,7 @@ afterEach(async () => { await act(async () => root.unmount()); container.remove(
 const advance = async (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
 
 describe("TxNoticeHost", () => {
-  it("resumes a saved signature after reload, confirms it, clears it (no stale banner) and auto-dismisses", async () => {
+  it("resumes a saved signature after reload, confirms it, clears it (no stale banner) and keeps the success toast until X", async () => {
     saveTxAttempt(window.localStorage, { version: 1, flow: "add", wallet: WALLET, signature: SIG, lastValidBlockHeight: 9,
       createdAt: Date.now(), successTitle: "Liquidity added" });
     await act(async () => root.render(createElement(TxNoticeHost, { wallet: WALLET })));
@@ -35,7 +35,9 @@ describe("TxNoticeHost", () => {
     status = "confirmed"; await advance(2_100);
     expect(container.querySelector("[data-tx-notice=success]")?.textContent).toContain("Liquidity added");
     expect(loadTxAttempts(window.localStorage, WALLET)).toEqual([]);
-    await advance(SUCCESS_NOTICE_MS + 10);
+    await advance(60_000);
+    expect(container.querySelector("[data-tx-notice=success] a")?.getAttribute("href")).toBe(`https://solscan.io/tx/${SIG}`);
+    await act(async () => (container.querySelector("[aria-label='Dismiss notice']") as HTMLButtonElement).click());
     expect(getTxNotices()).toEqual([]); expect(container.textContent).toBe("");
   });
   it("offers a one-tap retry on a not-sent failure", async () => {

@@ -16,11 +16,12 @@ export type TokenMetadata = {
  * HTTPS hosts a token icon link may point at. Every icon from Jupiter, and every icon the daily refresh stores in the
  * database (Jupiter → Raydium for Solana; DexScreener → GeckoTerminal → manual list for Robinhood Chain), must pass
  * `trustedIcon` first. The last four hosts serve the Raydium, DexScreener and GeckoTerminal (CoinGecko) fallbacks.
+ * `ipfs.filebase.io` is the public gateway the browser loads ipfs.io icons from (`displayIconUrl` in the web app).
  */
 export const ICON_HOSTS: ReadonlySet<string> = new Set([
   "static.jup.ag", "raw.githubusercontent.com", "ipfs.io", "upload.wikimedia.org",
   "storage.googleapis.com", "s3-symbol-logo.tradingview.com", "xstocks-metadata.backed.fi",
-  "arweave.net", "gateway.pinata.cloud", "backpack.exchange",
+  "arweave.net", "gateway.pinata.cloud", "ipfs.filebase.io", "backpack.exchange",
   "img-v1.raydium.io", "dd.dexscreener.com", "cdn.dexscreener.com", "coin-images.coingecko.com", "assets.coingecko.com",
 ]);
 

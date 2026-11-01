@@ -21,6 +21,8 @@ export type GrowthClient = {
 type Status = "unset" | "off" | "on";
 
 let status: Status = "unset";
+/** One shared init: concurrent callers (instrumentation-client, AnalyticsRoot, first events) await the same promise. */
+let inflight: Promise<boolean> | null = null;
 let client: GrowthClient | null = null;
 const queue: Array<{ event: string; properties?: Record<string, unknown> }> = [];
 const once = new Set<string>();
@@ -43,6 +45,7 @@ export function posthogUiHost(): string {
 
 export function resetGrowthAnalyticsForTests() {
   status = "unset";
+  inflight = null;
   client = null;
   queue.length = 0;
   once.clear();
@@ -97,6 +100,20 @@ export async function initGrowthAnalytics(search?: string): Promise<boolean> {
     return true;
   }
   if (status === "off") return false;
+  if (inflight) {
+    const enabled = await inflight;
+    if (enabled && search && typeof window !== "undefined") applyAttribution(readAndStoreFirstTouch(search, window.localStorage));
+    return enabled;
+  }
+  inflight = startGrowthAnalytics(search);
+  try {
+    return await inflight;
+  } finally {
+    inflight = null;
+  }
+}
+
+async function startGrowthAnalytics(search?: string): Promise<boolean> {
   const key = posthogProjectKey();
   if (!key || typeof window === "undefined" || doNotTrack()) {
     status = "off";

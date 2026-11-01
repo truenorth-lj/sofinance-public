@@ -4,7 +4,7 @@ import "server-only";
 import { CompoundSendError, publicErrorCode, sanitizePublicError } from "./public-error";
 import { isAvailabilityErrorCode, isUpstreamRelayPending, UPSTREAM_UNAVAILABLE_MESSAGE, upstreamQuotePath, upstreamUnavailable } from "./upstream-errors";
 import { SelectedNoRouteError } from "./selected-no-route";
-import { AmountTooSmallError } from "./selected-amount-error";
+import { AmountTooSmallError, SmallLegMovesPriceError } from "./selected-amount-error";
 import { captureApiRouteError, shouldCaptureApiError } from "./sentry/capture";
 import { logSafeError } from "./safe-error-log";
 
@@ -59,6 +59,10 @@ export function apiError(error: unknown, fallback: string, status = 400, extra?:
     body.outputMint = source.detail.minorityMint;
     body.minimumInput = source.detail.minimumInput;
     if (source.detail.majorityMint) body.majorityMint = source.detail.majorityMint;
+  }
+  if (source instanceof SmallLegMovesPriceError) {
+    body.outputMint = source.detail.minorityMint;
+    body.majorityMint = source.detail.majorityMint;
   }
   const sent = extra?.sent === false || error instanceof CompoundSendError && error.sent === false ? false : extra?.sent;
   if (sent === false) body.sent = false;
