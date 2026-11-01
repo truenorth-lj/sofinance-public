@@ -1,5 +1,6 @@
 import type { PoolDailyAprResult } from "@/lib/pool-daily-apr";
 import type { PoolSource } from "@/lib/pool-sources/types";
+import type { Lease, RwaStore } from "@/lib/rwa-store-types";
 import type { UnifiedPosition } from "@/lib/unified-positions/model";
 import type { DexAdapter } from "./adapter";
 import { feePolicyProblems } from "./fees";
@@ -15,7 +16,19 @@ export type DexModule = {
    * null when the pool is not this DEX's. Lazy, like the adapter.
    */
   poolDailyApr?: (poolId: string) => Promise<PoolDailyAprResult | null>;
+  /**
+   * Saves today's (UTC) TVL for this DEX's listed pools, for DEXes whose upstream keeps no TVL history. Called by the APR
+   * refresh (cron); must be idempotent within a UTC day (a saved day is never overwritten). Lazy, like the adapter.
+   */
+  recordDailyTvl?: (input: DailyTvlRecordInput) => Promise<DailyTvlRecord>;
 };
+
+/** What the APR refresh hands a DEX's daily TVL record: the store under the job's lease, and the job's fetch/clock/abort. */
+export type DailyTvlRecordInput = {
+  store: RwaStore; lease: Lease; fetcher: typeof fetch; clock: () => number; signal: AbortSignal;
+};
+export type DailyTvlStats = { date: string; pools: number; alreadySaved: number; saved: number; failed: number };
+export type DailyTvlRecord = { stats: DailyTvlStats; issues: string[] };
 
 /** Client-safe lookups over descriptors only. */
 export type DexDescriptorRegistry = {
@@ -34,6 +47,13 @@ export type DexRegistry = DexDescriptorRegistry & {
    * existing Raydium path for those pools).
    */
   poolDailyApr(poolId: string): Promise<PoolDailyAprResult | null>;
+  /**
+   * Runs every registered DEX's daily TVL record. A DEX that throws is listed in `failures` (raw error: the caller
+   * sanitizes it for its own output); the others still run. Never throws.
+   */
+  recordDailyTvl(input: DailyTvlRecordInput): Promise<{
+    stats: Partial<Record<DexId, DailyTvlStats>>; issues: string[]; failures: { dex: DexId; displayName: string; error: unknown }[];
+  }>;
 };
 
 /** Problems with a set of descriptors (duplicate ids, an invalid fee policy, impossible open-step bounds). */
@@ -107,6 +127,22 @@ export function createDexRegistry(modules: readonly DexModule[]): DexRegistry {
       }
       if (failure) throw failure.error;
       return null;
+    },
+    async recordDailyTvl(input: DailyTvlRecordInput) {
+      const stats: Partial<Record<DexId, DailyTvlStats>> = {};
+      const issues: string[] = [];
+      const failures: { dex: DexId; displayName: string; error: unknown }[] = [];
+      for (const entry of modules) {
+        if (!entry.recordDailyTvl) continue;
+        try {
+          const result = await entry.recordDailyTvl(input);
+          stats[entry.descriptor.id] = result.stats;
+          issues.push(...result.issues);
+        } catch (error) {
+          failures.push({ dex: entry.descriptor.id, displayName: entry.descriptor.displayName, error });
+        }
+      }
+      return { stats, issues, failures };
     },
   });
 }

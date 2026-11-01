@@ -14,4 +14,4 @@ export { DEX_IDS, LEGACY_DEX_ID_ALIASES, isDexId, normalizeDexId, feeRuleBps, NO
 export { DexError, DexUnsupportedError, type DexErrorCode } from "./errors";
 export { NO_FEE_POLICY, bpsFeeStrategy } from "./fees";
 export { publicDexMessage } from "./public-message";
-export type { DexModule, DexRegistry } from "./registry";
+export type { DailyTvlStats, DexModule, DexRegistry } from "./registry";
