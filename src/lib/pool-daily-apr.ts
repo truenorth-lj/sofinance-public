@@ -44,6 +44,25 @@ export type FetchPoolDailyAprOptions = {
   bypassCache?: boolean;
 };
 
+/**
+ * Raydium's pool info answered and has no pool at this address (`data: [null]`). Thrown before anything is cached, so a
+ * pool another DEX lists (or a mistyped address) never gets a Raydium-shaped series of nulls.
+ */
+export class NotRaydiumPoolError extends Error {
+  constructor(readonly poolId: string) {
+    super("No supported pool has that address.");
+    this.name = "NotRaydiumPoolError";
+  }
+}
+
+/** True when the /pools/info/ids answer is a successful lookup with no pool in it. */
+function raydiumHasNoPool(body: unknown): boolean {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return false;
+  const envelope = body as { success?: unknown; data?: unknown };
+  if (envelope.success !== true || !Array.isArray(envelope.data)) return false;
+  return !envelope.data.some((row) => row && typeof row === "object");
+}
+
 type CacheEntry = { key: string; value: PoolDailyAprResult; createdAt: number };
 let cache: CacheEntry | null = null;
 const refreshLocks = new Map<string, Promise<PoolDailyAprResult>>();
@@ -127,6 +146,8 @@ export async function fetchPoolDailyApr(
         safeJson(fetcher, lineUrl, 20_000),
         geckoJson(fetcher, geckoUrl),
       ]);
+
+      if (ids.ok && raydiumHasNoPool(ids.body)) throw new NotRaydiumPoolError(poolId);
 
       const sources: string[] = [];
       let snapshot: RaydiumPoolSnapshot = {

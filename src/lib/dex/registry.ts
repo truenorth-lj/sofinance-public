@@ -93,10 +93,19 @@ export function createDexRegistry(modules: readonly DexModule[]): DexRegistry {
     },
     poolSources: () => sources,
     async poolDailyApr(poolId: string) {
+      // A DEX that cannot tell whether it lists the pool (its pool list is down) throws; the others still get asked,
+      // and the first such error is rethrown only when no DEX answered, so the caller never reads it as "unlisted".
+      let failure: { error: unknown } | null = null;
       for (const entry of modules) {
-        const result = entry.poolDailyApr ? await entry.poolDailyApr(poolId) : null;
-        if (result) return result;
+        if (!entry.poolDailyApr) continue;
+        try {
+          const result = await entry.poolDailyApr(poolId);
+          if (result) return result;
+        } catch (error) {
+          failure ??= { error };
+        }
       }
+      if (failure) throw failure.error;
       return null;
     },
   });

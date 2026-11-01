@@ -135,11 +135,68 @@ describe("GET /api/pool-daily-apr (listed Meteora pools, recorded datapi)", () =
     expect(day.aprPct).toBeCloseTo((row.fees / DATAPI_POOL_TSLA_TSLAX.tvl) * 365 * 100, 10);
   });
 
-  it("a datapi outage is a plain 400, not a Raydium series", async () => {
+  it("a datapi outage is an uncached 502, not a Raydium series", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("bad gateway", { status: 502 })));
     const { GET } = await import("./route");
     const response = await GET(new Request(`http://localhost/api/pool-daily-apr?poolId=${METEORA_TSLA}`));
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(502);
+    expect(response.headers.get("cache-control")).toBe("no-store");
     expect((await response.json()).error).toMatch(/Meteora datapi did not answer for this pool \(pool: Upstream request failed \(502\)/);
+  });
+});
+
+/**
+ * A pool list outage must not turn a listed Meteora pool into a Raydium pool: the Raydium loader finds no pool at that
+ * address (`data: [null]`, what Raydium answers for 8k2c), so the route answers the store's 502, uncached, and nothing
+ * lands in the Raydium in-memory cache that the route checks before the registry.
+ */
+describe("GET /api/pool-daily-apr (pool not on Raydium)", () => {
+  const raydiumWithoutPool = vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input instanceof Request ? input.url : input);
+    if (url.includes("/pools/info/ids")) return json({ success: true, data: [null] });
+    if (url.includes("/pools/line/liquidity")) return json({ success: false, msg: "pool not found" });
+    if (url.includes("dlmm.datapi.meteora.ag")) {
+      const address = new URL(url).pathname.split("/")[2];
+      if (address !== METEORA_TSLA) return new Response("not found", { status: 404 });
+      return json(url.includes("/volume/") ? DATAPI_VOLUME_TSLA_TSLAX : DATAPI_POOL_TSLA_TSLAX);
+    }
+    return new Response("not found", { status: 404 });
+  });
+  beforeEach(() => {
+    vi.setSystemTime(RECORDED_AT * 1000);
+    vi.stubGlobal("fetch", raydiumWithoutPool);
+  });
+
+  it("feed-listed Meteora pool with the store failing: 502 no-store, not a Raydium-shaped 200, nothing cached", async () => {
+    Object.assign(store, { enabled: true, fail: true });
+    const { GET } = await import("./route");
+    const { getCachedPoolDailyApr } = await import("@/lib/pool-daily-apr");
+    const response = await GET(new Request(`http://localhost/api/pool-daily-apr?poolId=${METEORA_TSLA}`));
+    expect(response.status).toBe(502);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("cdn-cache-control")).toBeNull();
+    const body = await response.json();
+    expect(body.error).toMatch(/Meteora pool list could not be read/);
+    expect(body).not.toHaveProperty("points");
+    expect(body).not.toHaveProperty("assumptions");
+    expect(getCachedPoolDailyApr(METEORA_TSLA)).toBeNull();
+
+    // Store back: the same pool gets its Meteora series at once (no stale Raydium entry in front of the registry).
+    store.fail = false;
+    const recovered = await GET(new Request(`http://localhost/api/pool-daily-apr?poolId=${METEORA_TSLA}`));
+    expect(recovered.status).toBe(200);
+    expect((await recovered.json()).assumptions).toMatch(/no daily TVL history/);
+    expect(getCachedPoolDailyApr(METEORA_TSLA)).toBeNull();
+  });
+
+  it("an address no DEX lists and Raydium does not have: 404 no-store, nothing cached", async () => {
+    const { GET } = await import("./route");
+    const { getCachedPoolDailyApr } = await import("@/lib/pool-daily-apr");
+    const unknown = "Unk1111111111111111111111111111111111111111";
+    const response = await GET(new Request(`http://localhost/api/pool-daily-apr?poolId=${unknown}`));
+    expect(response.status).toBe(404);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect((await response.json()).error).toBe("No supported pool has that address.");
+    expect(getCachedPoolDailyApr(unknown)).toBeNull();
   });
 });

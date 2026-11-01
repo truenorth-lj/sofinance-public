@@ -17,14 +17,15 @@ describe("meteoraPoolDailyApr", () => {
     expect(await meteoraPoolDailyApr("Q", { listedPool: listed, load })).toBeNull();
     expect(load).toHaveBeenCalledTimes(1);
   });
-  it("an unreadable pool list means not Meteora's (Raydium pools keep working)", async () => {
+  it("an unreadable pool list is UPSTREAM, never null (null would mean \"not Meteora's\")", async () => {
     const load = vi.fn(async () => series);
-    expect(await meteoraPoolDailyApr("P", { listedPool: async () => { throw new Error("store down"); }, load })).toBeNull();
+    await expect(meteoraPoolDailyApr("P", { listedPool: async () => { throw new Error("store down"); }, load }))
+      .rejects.toMatchObject({ code: "UPSTREAM", message: expect.stringMatching(/Meteora pool list could not be read/) });
     expect(load).not.toHaveBeenCalled();
   });
-  it("loader errors reach the caller", async () => {
+  it("loader errors reach the caller as UPSTREAM with the cause", async () => {
     await expect(meteoraPoolDailyApr("P", { listedPool: listed, load: async () => { throw new Error("Meteora datapi did not answer"); } }))
-      .rejects.toThrow("Meteora datapi did not answer");
+      .rejects.toMatchObject({ code: "UPSTREAM", message: "Meteora datapi did not answer" });
   });
 });
 
@@ -34,5 +35,13 @@ describe("dexRegistry.poolDailyApr", () => {
     expect(await registry.poolDailyApr("P")).toBe(series);
     expect(await registry.poolDailyApr("Q")).toBeNull();
     expect(await createDexRegistry([{ descriptor: meteoraDlmmDescriptor }]).poolDailyApr("P")).toBeNull();
+  });
+  it("a module that cannot tell rethrows only when no other module answers", async () => {
+    const down = { descriptor: meteoraDlmmDescriptor, poolDailyApr: async () => { throw new Error("list down"); } };
+    const other = { descriptor: { ...meteoraDlmmDescriptor, id: "other-dex" as typeof meteoraDlmmDescriptor.id, aliases: [] },
+      poolDailyApr: async (id: string) => (id === "P" ? series : null) };
+    const registry = createDexRegistry([down, other]);
+    expect(await registry.poolDailyApr("P")).toBe(series);
+    await expect(registry.poolDailyApr("Q")).rejects.toThrow("list down");
   });
 });
