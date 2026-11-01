@@ -36,6 +36,11 @@ export type PoolDailyAprResult = {
   cachedAt?: string;
   stale?: boolean;
   ageSeconds?: number;
+  /**
+   * Why this answer is incomplete (a source did not answer, so a fallback was used), when it is. A degraded answer is
+   * cached only briefly (route and loader) so it is replaced as soon as the source is back. Absent on a full answer.
+   */
+  degraded?: string;
 };
 
 export type FetchPoolDailyAprOptions = {

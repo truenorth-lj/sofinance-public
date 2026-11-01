@@ -283,7 +283,7 @@ export const rwaTokenIcon = pgTable("rwa_token_icon", {
 /**
  * Meteora DLMM pool TVL, once per UTC day (`snapshot_date`): what the Meteora datapi pool endpoint reported at the first
  * APR refresh of that day. Meteora publishes no TVL history, so the daily APR divides each day's fees by that day's row
- * here and falls back to today's TVL for older days. The first write of a day wins (insert, no update).
+ * here and falls back to today's TVL for other days. The first write of a day wins (insert, no update).
  */
 export const rwaMeteoraTvlDaily = pgTable("rwa_meteora_tvl_daily", {
   poolAddress: text("pool_address").notNull(),

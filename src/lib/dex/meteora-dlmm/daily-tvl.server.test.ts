@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+
+vi.mock("server-only", () => ({}));
 import { METEORA_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/meteora/constants";
 import { recordMeteoraDailyTvl } from "./daily-tvl.server";
 import { storeRequestSchema, type RwaStore } from "@/lib/rwa-store-types";
@@ -10,7 +12,7 @@ const RAYDIUM = "Ray1111111111111111111111111111111111111111";
 const ALLOWLISTED = METEORA_ALLOWLISTED_POOLS.map((pool) => pool.poolAddress);
 const lease = { job: "rwa-apr-refresh" as const, owner: "00000000-0000-4000-8000-000000000000", epoch: 1 };
 
-function store(savedToday: string[] = []) {
+function store(savedToday: string[] = [], extraFeed: string[] = []) {
   const calls: { op: string; date?: string; data?: { date: string; rows: { poolId: string; tvlUsd: number }[] } }[] = [];
   const s = { request: async (input: (typeof calls)[number]) => {
     storeRequestSchema.parse(input); // the real store's request contract
@@ -20,6 +22,7 @@ function store(savedToday: string[] = []) {
       { pair: { poolAddress: SPCX, protocol: "meteora-dlmm" } },
       { pair: { poolAddress: BLOCKED, protocol: "meteora-dlmm", blocked: { reasons: ["freeze"], mints: [] } } },
       { pair: { poolAddress: RAYDIUM, protocol: "raydium-clmm" } },
+      ...extraFeed.map((poolAddress) => ({ pair: { poolAddress, protocol: "meteora-dlmm" } })),
     ];
     if (input.op === "meteoraTvlDay") return { pools: savedToday };
     if (input.op === "saveMeteoraTvl") return { saved: input.data!.rows.length };
@@ -71,5 +74,26 @@ describe("recordMeteoraDailyTvl (inside the APR refresh)", () => {
     expect(calls.find((call) => call.op === "saveMeteoraTvl")!.data!.rows).toEqual([{ poolId: TSLA, tvlUsd: 34_627.8 }]);
     expect(stats).toMatchObject({ saved: 1, failed: 1 });
     expect(issues).toEqual([expect.stringMatching(/^Meteora TVL: 1 of 2 pools not read for 2026-10-31 \(Upstream request failed \(502\)\); retried next run$/)]);
+  });
+
+  it("stops on a datapi 429: no new reads after it, and says so", async () => {
+    const extra = Array.from({ length: 12 }, (_, i) => `Me${"1".repeat(39)}${"ABCDEFGHJKLM"[i]}`);
+    const { s: st, calls } = store([], extra);
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const id = new URL(String(input)).pathname.split("/").at(-1)!;
+      if (id === TSLA) return new Response("slow down", { status: 429 });
+      return new Response(JSON.stringify({ address: id, tvl: 1_000 }), { status: 200 });
+    });
+    const firstOrder = [...new Set([...ALLOWLISTED, TSLA, SPCX, ...extra])];
+    const result = await run(st, fetcher as unknown as typeof fetch);
+    // Reads already started when the 429 came back may finish; nothing starts after it.
+    const tslaAt = firstOrder.indexOf(TSLA);
+    expect(fetcher.mock.calls.length).toBeLessThanOrEqual(tslaAt + 4);
+    expect(fetcher.mock.calls.length).toBeLessThan(firstOrder.length);
+    expect(result.stats).toMatchObject({ stoppedBy: "429", pools: firstOrder.length });
+    expect(result.stats.failed).toBe(firstOrder.length - result.stats.saved);
+    expect(result.issues).toEqual([expect.stringMatching(/^Meteora TVL: datapi answered 429 \(rate limited\), so the run stopped; \d+ of \d+ pools not read for 2026-10-31; retried next run$/)]);
+    // What was read before the stop is still saved.
+    expect(calls.filter((call) => call.op === "saveMeteoraTvl")).toHaveLength(result.stats.saved ? 1 : 0);
   });
 });

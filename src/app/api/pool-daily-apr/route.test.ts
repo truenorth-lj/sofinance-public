@@ -6,9 +6,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  * the Raydium output fails here. Upstreams are fixed fixtures; the clock is frozen so ageSeconds / fetchedAt are stable.
  */
 vi.mock("server-only", () => ({}));
-vi.mock("next/cache", () => ({ unstable_cache: (fn: () => unknown) => fn }));
+// unstable_cache keeps only resolved values (as Next does); `nextCache` records what it would have kept.
+const nextCache = vi.hoisted(() => new Map<string, unknown>());
+vi.mock("next/cache", () => ({
+  unstable_cache: (fn: () => Promise<unknown>, keys: string[]) => async () => {
+    const value = await fn();
+    nextCache.set(keys.join("|"), value);
+    return value;
+  },
+}));
 vi.mock("next/server", () => ({ after: () => {} }));
-const store = vi.hoisted(() => ({ enabled: false, fail: false, tvl: {} as Record<string, { date: string; tvlUsd: number }[]> }));
+const store = vi.hoisted(() => ({ enabled: false, fail: false, tvlFail: false, tvl: {} as Record<string, { date: string; tvlUsd: number }[]> }));
 vi.mock("@/lib/config/rwa-env", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/config/rwa-env")>();
   return { ...actual, getRwaConfig: () => ({ ...actual.getRwaConfig(), enabled: store.enabled }) };
@@ -17,6 +25,7 @@ vi.mock("@/lib/rwa-store", () => ({
   getRwaStore: () => ({
     request: async (input: { op: string; poolId?: string }) => {
       if (store.fail) throw new Error("store down");
+      if (input.op === "meteoraTvlHistory" && store.tvlFail) throw new Error("store down");
       if (input.op === "meteoraTvlHistory") return { points: store.tvl[input.poolId!] ?? [] };
       return [METEORA_TSLA, METEORA_SPCX].map((poolAddress) => ({ pair: { poolAddress, protocol: "meteora-dlmm", mintA: "MintA", mintB: "MintB", blocked: false } }));
     },
@@ -59,6 +68,8 @@ afterEach(async () => {
   store.enabled = false;
   store.fail = false;
   store.tvl = {};
+  store.tvlFail = false;
+  nextCache.clear();
   (await import("@/lib/pool-daily-apr")).clearPoolDailyAprCache();
   (await import("@/lib/meteora-daily-apr")).clearMeteoraPoolDailyAprCache();
   (await import("@/lib/dex/meteora-dlmm/pools.server")).clearMeteoraPoolListCache();
@@ -113,7 +124,7 @@ describe("GET /api/pool-daily-apr (listed Meteora pools, recorded datapi)", () =
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.poolId).toBe(poolId);
-    expect(body.assumptions).toMatch(/Older days use today's TVL/);
+    expect(body.assumptions).toMatch(/Other days use today's TVL/);
     expect(body.feeRate).toBeCloseTo(0.0001, 10);
     expect(body.published.dayFeeApr).toBeGreaterThan(0);
     expect(body.points).toHaveLength(count);
@@ -148,8 +159,29 @@ describe("GET /api/pool-daily-apr (listed Meteora pools, recorded datapi)", () =
     const other = body.points.find((point: { date: string }) => point.date === "2026-10-31");
     expect(other.tvlUsd).toBe(DATAPI_POOL_TSLA_TSLAX.tvl);
     expect(other.aprPct).toBeCloseTo((row("2026-10-31").fees / DATAPI_POOL_TSLA_TSLAX.tvl) * 365 * 100, 10);
-    expect(body.assumptions).toMatch(/1 of 3 days use that day's stored TVL\. Older days use today's TVL/);
+    expect(body.assumptions).toMatch(/1 of 3 days use that day's stored TVL\. Other days use today's TVL/);
     expect(body.sources).toContain("SoFinance store: the Meteora datapi pool TVL saved once per UTC day (1 day)");
+  });
+
+  it("a degraded answer (stored daily TVL unreadable) is a 200 kept one minute at the CDN and never in unstable_cache", async () => {
+    store.tvlFail = true;
+    const { GET } = await import("./route");
+    const degraded = await GET(new Request(`http://localhost/api/pool-daily-apr?poolId=${METEORA_TSLA}`));
+    expect(degraded.status).toBe(200);
+    const body = await degraded.json();
+    expect(body.degraded).toBe("the stored daily TVL could not be read");
+    expect(body.points.every((point: { tvlUsd: number | null }) => point.tvlUsd === DATAPI_POOL_TSLA_TSLAX.tvl)).toBe(true);
+    expect(degraded.headers.get("cdn-cache-control")).toBe("public, s-maxage=60");
+    expect(degraded.headers.get("vercel-cdn-cache-control")).toBe("public, s-maxage=60");
+    expect(nextCache.size).toBe(0);
+
+    // Store back after the loader's one-minute reuse: the full answer, cached as before.
+    vi.setSystemTime((RECORDED_AT + 61) * 1000);
+    store.tvlFail = false;
+    const full = await GET(new Request(`http://localhost/api/pool-daily-apr?poolId=${METEORA_TSLA}`));
+    expect((await full.json()).degraded).toBeUndefined();
+    expect(full.headers.get("cdn-cache-control")).toBe("public, s-maxage=3600, stale-while-revalidate=86400");
+    expect(nextCache.size).toBe(1);
   });
 
   it("a datapi outage is an uncached 502, not a Raydium series", async () => {
@@ -202,7 +234,7 @@ describe("GET /api/pool-daily-apr (pool not on Raydium)", () => {
     store.fail = false;
     const recovered = await GET(new Request(`http://localhost/api/pool-daily-apr?poolId=${METEORA_TSLA}`));
     expect(recovered.status).toBe(200);
-    expect((await recovered.json()).assumptions).toMatch(/Older days use today's TVL/);
+    expect((await recovered.json()).assumptions).toMatch(/Other days use today's TVL/);
     expect(getCachedPoolDailyApr(METEORA_TSLA)).toBeNull();
   });
 
