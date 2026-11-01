@@ -10,6 +10,10 @@ export type DexErrorCode =
   | "NEEDS_NEW_SHARED_ACCOUNT"
   | "INPUT_TOKEN_UNSUPPORTED"
   | "POSITION_NOT_FOUND"
+  /** The wallet lacks the tokens or SOL this action needs. */
+  | "INSUFFICIENT_FUNDS"
+  /** The request itself is malformed (bad address, zero amount, missing cosigner key). */
+  | "INVALID_REQUEST"
   | "UPSTREAM";
 
 /** Every error a DEX adapter throws; `message` is plain English safe to show the user. */

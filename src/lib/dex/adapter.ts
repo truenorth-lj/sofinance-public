@@ -26,6 +26,11 @@ export type OpenRequest = {
   range: DexRangeRequest;
   input: DexDepositInput;
   slippageBps: number;
+  /**
+   * Public key of the browser-created cosigner (position keypair / NFT mint) when
+   * `descriptor.meta.positionCosigner` is "ephemeral-keypair". Only the public key: the secret never leaves the browser.
+   */
+  cosigner?: string;
 };
 
 export type RentQuote = {
@@ -67,7 +72,10 @@ export type PreparedStep =
     /** Base64 unsigned v0 transaction. */
     transaction: string;
     lastValidBlockHeight: number;
-    /** Opaque reference to a server-held cosigner (position keypair / NFT mint); never a secret. */
+    /**
+     * Public key of the cosigner that must sign after the wallet (the browser-held position keypair / NFT mint named by
+     * `OpenRequest.cosigner`); never a secret. Absent when the wallet is the only signer.
+     */
     cosignRef?: string;
     sendPermit?: string;
     landedPermit?: string;

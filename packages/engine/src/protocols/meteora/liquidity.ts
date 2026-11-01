@@ -1,7 +1,7 @@
 import { PublicKey, TransactionInstruction } from "@solana/web3.js";
 import { meteoraBinArrayAddress, meteoraBinArrayIndexesForRange } from "./accounts";
 import { METEORA_DLMM_PROGRAM_ID } from "./constants";
-import { assertMeteoraBinRange, meteoraBitmapExtensionMeta, meteoraEventAuthority } from "./open";
+import { assertMeteoraBinRange, meteoraBitmapExtensionMeta, meteoraEventAuthority, meteoraRangeNeedsBitmapExtension } from "./open";
 
 /**
  * Meteora DLMM withdraw and claim instructions (`remove_liquidity_by_range2`, `claim_fee2`), hand-encoded from
@@ -54,10 +54,16 @@ export type MeteoraPoolTokenAccounts = {
   programId?: string;
 };
 
+/** Thrown when a withdraw range sits outside bin arrays [-512, 511] and the caller did not pass the bitmap extension. */
+export const METEORA_REMOVE_NEEDS_BITMAP_MESSAGE =
+  "This withdraw covers bins past the pool's default bin-array bitmap, so it needs the pool's bitmap extension account, which was not supplied. Nothing was built.";
+
 /**
  * `remove_liquidity_by_range2(from, to, bps)`: withdraws `bps`/10,000 of the position's liquidity in
  * `[fromBinId, toBinId]` to the owner's token accounts. A full exit is bps = 10,000 over the whole position,
- * followed by `claim_fee2` and `close_position2` (rent back to the owner).
+ * followed by `claim_fee2` and `close_position2` (rent back to the owner). A range whose bin arrays sit outside
+ * [-512, 511] must pass the pool's `bitmapExtension`; without it the program would reject the transaction, so this
+ * throws `METEORA_REMOVE_NEEDS_BITMAP_MESSAGE` instead of building it.
  */
 export function meteoraRemoveLiquidityByRange2Instruction(input: MeteoraPoolTokenAccounts & {
   fromBinId: number; toBinId: number; bps: number; bitmapExtension?: PublicKey;
@@ -65,6 +71,7 @@ export function meteoraRemoveLiquidityByRange2Instruction(input: MeteoraPoolToke
   const programId = input.programId ?? METEORA_DLMM_PROGRAM_ID;
   assertMeteoraBinRange(input.fromBinId, input.toBinId);
   if (!Number.isInteger(input.bps) || input.bps < 1 || input.bps > METEORA_BPS_MAX) throw new Error("Withdraw share must be between 1 and 10,000 bps");
+  if (!input.bitmapExtension && meteoraRangeNeedsBitmapExtension(input.fromBinId, input.toBinId)) throw new Error(METEORA_REMOVE_NEEDS_BITMAP_MESSAGE);
   return new TransactionInstruction({
     programId: program(programId),
     keys: [
