@@ -10,6 +10,7 @@ vi.mock("@/lib/dex", async (importOriginal) => {
 
 import { DexError } from "@/lib/dex";
 import { dexDescriptors } from "@/lib/dex/client";
+import { DEX_POSITIONS_REQUESTS_PER_IP_PER_MINUTE, DEX_ROUTE_REQUESTS_PER_IP_PER_MINUTE, resetDexRouteRateLimit } from "@/lib/dex-route-rate-limit";
 import { POST } from "./route";
 
 const owner = Keypair.fromSeed(new Uint8Array(32).fill(1)).publicKey;
@@ -19,13 +20,14 @@ const tx = (payer = owner) => Buffer.from(new VersionedTransaction(new Transacti
   instructions: [ComputeBudgetProgram.setComputeUnitLimit({ units: 1000 })],
 }).compileToV0Message()).serialize()).toString("base64");
 const openRequest = { poolId: "Pool1111111111111111111111111111111111111111", owner: owner.toBase58(), range: { kind: "preset", presetId: "standard" }, input: { token: "Mint111111111111111111111111111111111111111", amountRaw: "100" }, slippageBps: 50 };
-const call = (op: string, body: unknown, dex = "some-dex") => POST(
-  new Request(`http://localhost/api/dex/${dex}/${op}`, { method: "POST", body: JSON.stringify(body), headers: { "content-type": "application/json" } }),
+const call = (op: string, body: unknown, dex = "some-dex", ip = "203.0.113.1") => POST(
+  new Request(`http://localhost/api/dex/${dex}/${op}`, { method: "POST", body: JSON.stringify(body), headers: { "content-type": "application/json", "x-real-ip": ip } }),
   { params: Promise.resolve({ dex, op }) },
 );
 
 describe("POST /api/dex/[dex]/[op]", () => {
   beforeEach(() => {
+    resetDexRouteRateLimit();
     vi.stubEnv("NEXT_PUBLIC_SOFI_DEPLOY_ENV", "development");
     vi.stubEnv("JUPITER_API_KEY", "route-test-secret");
     fake.ids = ["some-dex"];
@@ -164,5 +166,57 @@ describe("POST /api/dex/[dex]/[op]", () => {
     const failed = await call("positions", { owner: owner.toBase58() });
     expect(failed.status).toBe(502);
     expect(JSON.stringify(await failed.json())).not.toContain("rpc.example");
+  });
+
+  it("400s a positions owner that is not a base58 Solana public key (the DEX's signer is a Solana wallet), before any read", async () => {
+    const listPositions = vi.fn(async () => []);
+    fake.adapter = { ...fake.adapter, listPositions };
+    for (const bad of [
+      "0x" + "ab".repeat(20), // an EVM address
+      "0OIl" + owner.toBase58().slice(4), // characters outside base58
+      "1".repeat(31), // too short
+      Keypair.generate().secretKey.reduce((text, byte) => text + "123456789A"[byte % 10], "").slice(0, 64), // 64 chars, not 32 bytes
+      owner.toBase58() + "1", // decodes to 33 bytes
+      "",
+    ]) {
+      const response = await call("positions", { owner: bad });
+      expect(response.status, bad).toBe(400);
+      expect(await response.json()).toMatchObject({ error: "Invalid request", issues: [{ path: "owner" }] });
+    }
+    expect((await call("positions", { owner: 42 })).status).toBe(400);
+    expect(listPositions).not.toHaveBeenCalled();
+    expect((await call("positions", { owner: ` ${owner.toBase58()} ` })).status).toBe(200);
+    expect(listPositions).toHaveBeenCalledWith(owner.toBase58());
+  });
+
+  it("rate limits positions per IP (429 with Retry-After) without touching other IPs", async () => {
+    const listPositions = vi.fn(async () => []);
+    fake.adapter = { ...fake.adapter, listPositions };
+    for (let i = 0; i < DEX_POSITIONS_REQUESTS_PER_IP_PER_MINUTE; i++) expect((await call("positions", { owner: owner.toBase58() })).status).toBe(200);
+    const limited = await call("positions", { owner: owner.toBase58() });
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get("retry-after")).toBe("60");
+    expect(await limited.json()).toEqual({ error: "Too many requests. Please wait a minute.", code: "RATE_LIMITED" });
+    expect(listPositions).toHaveBeenCalledTimes(DEX_POSITIONS_REQUESTS_PER_IP_PER_MINUTE);
+    expect((await call("positions", { owner: owner.toBase58() }, "some-dex", "203.0.113.2")).status).toBe(200);
+    // Other ops still have the route-wide budget left.
+    expect((await call("quote-open", { request: openRequest })).status).toBe(200);
+  });
+
+  it("rate limits every op on the route per IP, before reading the body or resolving the DEX", async () => {
+    for (let i = 0; i < DEX_ROUTE_REQUESTS_PER_IP_PER_MINUTE; i++) expect((await call("quote-open", { request: openRequest })).status).toBe(200);
+    expect((await call("quote-open", { request: openRequest })).status).toBe(429);
+    expect((await call("open", { request: openRequest, step: 1, priorSignatures: [] })).status).toBe(429);
+    expect((await call("quote-open", { request: openRequest }, "nope")).status).toBe(429);
+    expect(fake.adapter!.quoteOpen).toHaveBeenCalledTimes(DEX_ROUTE_REQUESTS_PER_IP_PER_MINUTE);
+    expect((await call("quote-open", { request: openRequest }, "some-dex", "203.0.113.9")).status).toBe(200);
+  });
+
+  it("does not count requests while the route is off (production 404, no limiter state)", async () => {
+    vi.stubEnv("NEXT_PUBLIC_SOFI_DEPLOY_ENV", "production");
+    for (let i = 0; i <= DEX_ROUTE_REQUESTS_PER_IP_PER_MINUTE; i++) expect((await call("positions", { owner: owner.toBase58() })).status).toBe(404);
+    vi.stubEnv("NEXT_PUBLIC_SOFI_DEPLOY_ENV", "development");
+    fake.adapter = { ...fake.adapter, listPositions: vi.fn(async () => []) };
+    expect((await call("positions", { owner: owner.toBase58() })).status).toBe(200);
   });
 });

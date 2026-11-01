@@ -10,10 +10,11 @@ import { testKeypair } from "@/lib/test-support/send-fixtures";
 
 const WALLET = testKeypair(91).publicKey.toBase58();
 const RAYDIUM_MINT = testKeypair(92).publicKey.toBase58();
-const POOL = testKeypair(93).publicKey.toBase58();
+// A real listed pool (Meteora TSLA/TSLAx, 8k2c…haAh) and its mints: TSLA (6 decimals) is token X, TSLAx (8) is token Y.
+const POOL = "8k2c9Kiavx5pbWc2dmzhL7vFp11sLgMcKFfSueq8haAh";
 const POSITION = testKeypair(94).publicKey.toBase58();
-const MINT_A = testKeypair(95).publicKey.toBase58();
-const MINT_B = testKeypair(96).publicKey.toBase58();
+const MINT_A = "TSLAqBbv4CNCnzWFeB7LmydAyEiNMJtve7DYKLpdK4S";
+const MINT_B = "XsDoVfqeBukxuZHWhdvWHBhgEHjGNst4MLodqsJHzoB";
 const state = vi.hoisted(() => ({ dex: { status: 200, body: {} as unknown }, raydium: [] as unknown[], dexCalls: [] as unknown[], routeOn: true }));
 
 vi.mock("@/lib/protocol-flags", async (importOriginal) => ({ ...await importOriginal<typeof import("@/lib/protocol-flags")>(),
@@ -27,9 +28,11 @@ vi.mock("../wallet-connection", async (importOriginal) => ({ ...await importOrig
   useWalletConnection: () => ({ address: WALLET, connected: true, connect: vi.fn(), disconnect: vi.fn(), isMobile: false, walletsCount: 1,
     connectionError: "", signTransaction: vi.fn() }) }));
 
-const meteoraRow = (liquidity = "5000") => ({ key: `meteora-dlmm:${POSITION}`, source: "meteora-dlmm", chain: "solana", nativeId: POSITION, poolId: POOL,
-  tokenA: { id: MINT_A, symbol: "TSLAx", decimals: 8 }, tokenB: { id: MINT_B, symbol: "TSLA", decimals: 8 },
-  range: { mode: "price", lower: 0.98, upper: 1.02, current: 1 }, rangeStatus: "in", liquidity, valueUsd: null, native: { position: POSITION } });
+const HOLDINGS = { liquidityRaw: { a: "1250000", b: "98700000" }, unclaimedFeesRaw: { a: "1500", b: "230000" } };
+const meteoraRow = (liquidity = "5000", holdings: unknown = HOLDINGS) => ({ key: `meteora-dlmm:${POSITION}`, source: "meteora-dlmm", chain: "solana", nativeId: POSITION, poolId: POOL,
+  tokenA: { id: MINT_A, symbol: "TSLA", decimals: 6 }, tokenB: { id: MINT_B, symbol: "TSLAx", decimals: 8 },
+  range: { mode: "price", lower: 0.98, upper: 1.02, current: 1 }, rangeStatus: "in", liquidity, valueUsd: null,
+  ...(holdings === "omit" ? {} : { holdings }), native: { position: POSITION } });
 const raydiumRow = { positionMint: RAYDIUM_MINT, positionAccount: "p", poolId: POOL, mintA: MINT_A, mintB: MINT_B, symbolA: "A", symbolB: "B",
   decimalsA: 8, decimalsB: 6, feeTierBps: 1, tickLower: -10, tickUpper: 10, tickCurrent: 0, rangeSide: "inside", liquidity: "1" };
 
@@ -64,13 +67,37 @@ describe("/app My positions with registry DEXes", () => {
   it("lists the wallet's served-DEX positions in the Solana group and selects one when the scan has none", async () => {
     await render();
     expect(state.dexCalls).toEqual([["/api/dex/meteora-dlmm/positions", { owner: WALLET }]]);
-    expect(groups()).toEqual([["Solana", [`Meteora · TSLAx/TSLA · range 0.9800–1.0200 · In range · #${POSITION.slice(0, 4)}…${POSITION.slice(-4)}`]]]);
+    expect(groups()).toEqual([["Solana", [`Meteora · TSLA/TSLAx · range 0.9800–1.0200 · In range · #${POSITION.slice(0, 4)}…${POSITION.slice(-4)}`]]]);
     expect(select().value).toBe(`meteora-dlmm:${POSITION}`);
     expect(container.querySelector("[data-testid=registry-position-header]")?.textContent).toBe("In rangeRange 0.9800–1.0200");
     // Every tool is unavailable for this DEX today: greyed tabs and the descriptor's reason, never the Raydium panels.
-    expect(container.querySelector("#compound-view")?.textContent).toContain("Not available for Meteora positions yet");
+    expect(container.querySelector("#compound-view")?.textContent).toContain("Not available for this pool yet");
+    expect(container.querySelector("#compound-view")?.textContent).not.toContain("Meteora");
     expect(container.querySelector("#withdraw-view, #deposit-view")).toBeNull();
     expect(tab("Withdraw")).toBeTruthy();
+  });
+
+  it("shows the shared Liquidity and Unclaimed fees rows for the selected registry position (no USD until priced)", async () => {
+    await render();
+    const rows = [...container.querySelectorAll("[data-testid=registry-position-assets] dl")].map((row) => [...row.querySelectorAll("dt, dd")].map((cell) => cell.textContent));
+    expect(rows).toHaveLength(2);
+    expect(rows[0]![0]).toBe("Liquidity");
+    expect(rows[0]![1]).toMatch(/^1\.25\s*TSLA—$/);
+    expect(rows[0]![2]).toBe("Unclaimed fees");
+    expect(rows[0]![3]).toMatch(/^0\.0015 TSLA—$/);
+    expect(rows[1]![1]).toMatch(/^0\.987\s*TSLAx—$/);
+    expect(rows[1]![3]).toMatch(/^0\.0023 TSLAx—$/);
+  });
+
+  it("a registry position whose amounts were not read shows a dash on both rows, never zero (same rule as Robinhood Chain)", async () => {
+    state.dex = { status: 200, body: { positions: [meteoraRow("5000", "omit")] } };
+    await render();
+    const values = [...container.querySelectorAll("[data-testid=registry-position-assets] dd")].map((cell) => cell.textContent);
+    expect(values).toEqual(["—TSLA—", "— TSLA—", "—TSLAx—", "— TSLAx—"]);
+    state.dex = { status: 200, body: { positions: [meteoraRow("5000", { liquidityRaw: null, unclaimedFeesRaw: null })] } };
+    await act(async () => root.unmount()); root = createRoot(container);
+    await render();
+    expect([...container.querySelectorAll("[data-testid=registry-position-assets] dd")].map((cell) => cell.textContent)).toEqual(values);
   });
 
   it("a ?position= deep link to a registry position selects it over the scanned positions", async () => {
@@ -112,6 +139,6 @@ describe("/app My positions with registry DEXes", () => {
     state.dex = { status: 200, body: { positions: [{ ...meteoraRow(), source: "raydium-clmm" }] } };
     await render();
     expect(container.querySelector("[data-testid=registry-positions-error]")?.textContent).toBe("Meteora: Meteora returned positions in an unexpected shape.");
-    expect(container.textContent).not.toContain("TSLAx/TSLA");
+    expect(container.textContent).not.toContain("TSLA/TSLAx");
   });
 });

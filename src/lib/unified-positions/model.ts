@@ -22,6 +22,9 @@ export type RangeView =
   | { mode: "price"; lower: number; upper: number; current: number | null }
   | { mode: "tick"; tickLower: number; tickUpper: number; currentTick: number | null };
 
+export type TokenPairRaw = { a: string; b: string };
+export type PositionHoldings = { liquidityRaw: TokenPairRaw | null; unclaimedFeesRaw: TokenPairRaw | null };
+
 export type RangeStatus = "in" | "below" | "above" | "unknown";
 
 export type UnifiedPosition<N = unknown> = {
@@ -37,6 +40,12 @@ export type UnifiedPosition<N = unknown> = {
   /** Raw liquidity; "0" = closed. */
   liquidity: string;
   valueUsd?: number | null;
+  /**
+   * Token amounts as raw atomic strings, for sources whose rows the shared panel draws (registry DEXes): what sits in
+   * liquidity and the unclaimed fees, per pool token. `null` = could not be read (shown as a dash, never as zero).
+   * Sources that draw their own rows (Raydium inline, RHC) leave it out.
+   */
+  holdings?: PositionHoldings;
   /** The source's own record, passed unchanged to that source's tools. */
   native: N;
 };
