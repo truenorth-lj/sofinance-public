@@ -7,6 +7,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SelectedApp } from "../selected-app";
 import { testKeypair } from "@/lib/test-support/send-fixtures";
+import { dexDescriptors } from "@/lib/dex/client";
+import { registryPanelCapabilities } from "./registry-positions";
 
 const WALLET = testKeypair(91).publicKey.toBase58();
 const RAYDIUM_MINT = testKeypair(92).publicKey.toBase58();
@@ -75,6 +77,15 @@ describe("/app My positions with registry DEXes", () => {
     expect(container.querySelector("#compound-view")?.textContent).not.toContain("Meteora");
     expect(container.querySelector("#withdraw-view, #deposit-view")).toBeNull();
     expect(tab("Withdraw")).toBeTruthy();
+  });
+
+  it("keeps every tool greyed for a registry position even where the adapter can prepare it (no registry tool panel yet)", () => {
+    const meteora = dexDescriptors.descriptorFor("meteora-dlmm")!.capabilities;
+    expect(meteora.withdraw).toEqual({ supported: true, partial: true });
+    expect(meteora.deposit.supported).toBe(true);
+    const shown = registryPanelCapabilities(meteora);
+    for (const tool of ["compound", "performance", "deposit", "withdraw"] as const) expect(shown[tool]).toEqual({ supported: false, reason: "Not available for this pool yet" });
+    expect(shown.signer).toBe(meteora.signer);
   });
 
   it("shows the shared Liquidity and Unclaimed fees rows for the selected registry position (no USD until priced)", async () => {

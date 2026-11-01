@@ -16,6 +16,11 @@ import type { PositionKey } from "@/lib/unified-positions/model";
  *   open        { request, step, priorSignatures, planToken? } → StepResult (one unsigned, simulated step)
  *   recovery    { wallet, positionKey, step, priorSignatures, planToken? } → StepResult
  *   positions   { owner }                                      → { positions: UnifiedPosition[] } (read-only)
+ *   add         { owner, positionKey, input, step, priorSignatures, planToken? }           → StepResult
+ *   withdraw    { owner, positionKey, fraction, output, step, priorSignatures, planToken? } → StepResult
+ *   claim       { owner, positionKey, step, priorSignatures, planToken? }                  → StepResult
+ * Position ops: the owner is validated per wallet type here and checked against the position's on-chain owner inside
+ * the adapter (a stranger gets 404 POSITION_NOT_FOUND).
  * Solana steps come back with the tx-send permits for the requesting wallet (relay send + on-chain check after a
  * wallet error). Jupiter goes through the browser relay when the body carries `jupiterRelay`. Nothing is signed or
  * sent here. Behind DEX_TX_ROUTE_ENABLED (off in production → 404). Per-IP rate limited (all ops, plus a tighter
@@ -61,6 +66,21 @@ const OWNER: Record<DexSigner, z.ZodType<string>> = {
   "evm-wallet": z.string().trim().regex(/^0x[0-9a-fA-F]{40}$/, "owner must be an EVM wallet address (0x…)"),
 };
 const positionsBody = (adapter: DexAdapter) => z.object({ owner: OWNER[adapter.descriptor.capabilities.signer] }).strict();
+const PositionKeySchema = z.string().min(3).max(160);
+/** add / withdraw / claim: the requesting wallet (checked per wallet type here, and against the position's on-chain owner in the adapter). */
+const positionOpBody = (adapter: DexAdapter) => {
+  const common = { owner: OWNER[adapter.descriptor.capabilities.signer], positionKey: PositionKeySchema, ...StepSchema, jupiterRelay: z.unknown().optional() };
+  return {
+    add: z.object({ ...common, input: z.object({ token: z.string().trim().min(1).max(64), amountRaw: rawAmount }).strict() }).strict(),
+    withdraw: z.object({
+      ...common,
+      /** Share of the position, (0, 1]; 1 = everything (and close the position when the DEX allows it). */
+      fraction: z.number().gt(0).max(1),
+      output: z.enum(["pool-tokens", "usdc"]),
+    }).strict(),
+    claim: z.object(common).strict(),
+  } as const;
+};
 
 const BODY = {
   "quote-open": z.object({ request: OpenRequestSchema, jupiterRelay: z.unknown().optional() }).strict(),
@@ -69,6 +89,10 @@ const BODY = {
    * checked per wallet type by `positionsBody`; this entry only names the op. */
   positions: z.object({ owner: z.string() }).strict(),
   recovery: z.object({ wallet: solanaOrEvmAddress, positionKey: z.string().min(3).max(160), ...StepSchema, jupiterRelay: z.unknown().optional() }).strict(),
+  /** Position ops; the owner is checked per wallet type by `positionOpBody`, these entries only name the ops. */
+  add: z.object({ owner: z.string() }).passthrough(),
+  withdraw: z.object({ owner: z.string() }).passthrough(),
+  claim: z.object({ owner: z.string() }).passthrough(),
 } as const;
 type Op = keyof typeof BODY;
 const isOp = (op: string): op is Op => Object.hasOwn(BODY, op);
@@ -125,6 +149,19 @@ async function run(adapter: DexAdapter, op: Op, body: unknown): Promise<Response
     case "positions": {
       const { owner } = positionsBody(adapter).parse(body);
       return json({ positions: await adapter.listPositions(owner) });
+    }
+    case "add": {
+      const input = positionOpBody(adapter).add.parse(body);
+      return json(withPermits(await adapter.prepareAdd(input.positionKey as PositionKey, input.owner, input.input, stepContext(input)), input.owner));
+    }
+    case "withdraw": {
+      const input = positionOpBody(adapter).withdraw.parse(body);
+      const request = { fraction: input.fraction, output: input.output };
+      return json(withPermits(await adapter.prepareWithdraw(input.positionKey as PositionKey, input.owner, request, stepContext(input)), input.owner));
+    }
+    case "claim": {
+      const input = positionOpBody(adapter).claim.parse(body);
+      return json(withPermits(await adapter.prepareClaim(input.positionKey as PositionKey, input.owner, stepContext(input)), input.owner));
     }
     case "recovery": {
       const input = BODY[op].parse(body);

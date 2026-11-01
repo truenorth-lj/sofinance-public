@@ -17,7 +17,7 @@ export const METEORA_DLMM_FEE_POLICY: FeePolicy = Object.freeze({
 });
 
 /**
- * Shown until the PR that ships each tool (PR6 add / withdraw / claim, PR7 compound / performance). The shared generic
+ * Shown until the PR that ships each tool (PR7 compound / performance / exit preview). The shared generic
  * text, never a DEX name: the UI only renders the capability's reason (PM 11/1).
  */
 const NOT_YET = NOT_AVAILABLE_MESSAGE;
@@ -46,9 +46,12 @@ export const meteoraDlmmDescriptor: DexDescriptor = Object.freeze({
   }),
   capabilities: Object.freeze({
     open: SUPPORTED,
-    deposit: unsupported(NOT_YET),
-    withdraw: Object.freeze({ supported: false, reason: NOT_YET }),
-    claim: unsupported(NOT_YET),
+    /** PR6: add to an existing position (same input tokens and fee rule as opening). */
+    deposit: SUPPORTED,
+    /** PR6: partial (remove a share) and full (remove all, claim, close, rent back), to the pool's two tokens. */
+    withdraw: Object.freeze({ supported: true, partial: true }),
+    /** PR6: claim accrued swap fees without changing liquidity (no fee). */
+    claim: SUPPORTED,
     compound: unsupported(NOT_YET),
     performance: unsupported(NOT_YET),
     exitPreview: unsupported(NOT_YET),

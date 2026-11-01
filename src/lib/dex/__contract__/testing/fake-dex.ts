@@ -85,6 +85,12 @@ export function fakeSolanaAdapter(): DexAdapter {
   };
   const fees = bpsFeeStrategy(fakeSolanaDescriptor.meta.feePolicy);
   const owned = new Map<PositionKey, string>();
+  /** The position's recorded owner, which must be the requesting wallet. */
+  const holder = (key: PositionKey, owner: string) => {
+    const recorded = owned.get(key) ?? FAKE_SOLANA_OWNER;
+    if (recorded !== owner) throw new DexError("POSITION_NOT_FOUND", "That position belongs to another wallet.");
+    return recorded;
+  };
   return {
     descriptor: fakeSolanaDescriptor,
     fees,
@@ -104,10 +110,10 @@ export function fakeSolanaAdapter(): DexAdapter {
       if (q.blockedReason) throw new DexError("RANGE_UNSUPPORTED", q.blockedReason);
       return step(request.owner, context, 2, context.step === 1 ? "Create position" : "Deposit");
     },
-    async prepareAdd(key, _input, context) { return step(owned.get(key) ?? FAKE_SOLANA_OWNER, context, 1, "Add liquidity"); },
-    async prepareWithdraw(key, _request, context) { return step(owned.get(key) ?? FAKE_SOLANA_OWNER, context, 1, "Withdraw"); },
-    async prepareClaim(key, context) { return step(owned.get(key) ?? FAKE_SOLANA_OWNER, context, 1, "Claim fees"); },
-    async prepareCompound(key, context) { return step(owned.get(key) ?? FAKE_SOLANA_OWNER, context, 1, "Compound"); },
+    async prepareAdd(key, owner, _input, context) { return step(holder(key, owner), context, 1, "Add liquidity"); },
+    async prepareWithdraw(key, owner, _request, context) { return step(holder(key, owner), context, 1, "Withdraw"); },
+    async prepareClaim(key, owner, context) { return step(holder(key, owner), context, 1, "Claim fees"); },
+    async prepareCompound(key, owner, context) { return step(holder(key, owner), context, 1, "Compound"); },
   };
 }
 
@@ -128,7 +134,8 @@ export function fakeEvmAdapter(): DexAdapter {
     async previewWithdraw() { return { outputs: [], platformFeeRaw: "0" }; },
     prepareOpen: no,
     prepareAdd: no,
-    async prepareWithdraw(_key, request, context) {
+    async prepareWithdraw(key, owner, request, context) {
+      if (key !== position.key || owner.toLowerCase() !== FAKE_EVM_OWNER) throw new DexError("POSITION_NOT_FOUND", "That position belongs to another wallet.");
       if (request.fraction !== 1) throw new DexUnsupportedError("Partial withdraw isn't available for this pool yet");
       return { step: context.step, of: 1, label: "Close position", done: true, prepared: { kind: "evm-tx", chainId: 4663, to: FAKE_EVM_TARGET, data: "0x", value: "0" } };
     },

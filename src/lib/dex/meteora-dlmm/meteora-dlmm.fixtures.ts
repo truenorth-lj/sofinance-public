@@ -6,7 +6,8 @@
  *
  * `simulateTransaction` plays the Meteora program: `initialize_position` creates the position (and the step is then
  * treated as landed, with the wallet's missing pool-token account created), `add_liquidity_by_strategy2` fills it and
- * `close_position2` closes it and refunds the rent. Jupiter is answered by `jupiterReplay` (quote + swap-instructions).
+ * `remove_liquidity_by_range2` takes its bps share out of the position's first bin (and pays it to the wallet's TSLA
+ * account), `claim_fee2` leaves the liquidity alone, and `close_position2` closes it and refunds the rent. Jupiter is answered by `jupiterReplay` (quote + swap-instructions).
  */
 import { readFileSync } from "node:fs";
 import bs58 from "bs58";
@@ -14,6 +15,7 @@ import { AccountLayout, getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID } f
 import { Keypair, PublicKey, SystemProgram, type AccountInfo, type VersionedTransaction } from "@solana/web3.js";
 import { BIN_ARRAY_DISCRIMINATOR, decodeLbPair } from "@sofinance/engine/protocols/meteora/accounts";
 import { METEORA_DLMM_PROGRAM_ID } from "@sofinance/engine/protocols/meteora/constants";
+import { METEORA_LIQUIDITY_IX_DISCRIMINATOR } from "@sofinance/engine/protocols/meteora/liquidity";
 import { METEORA_IX_DISCRIMINATOR } from "@sofinance/engine/protocols/meteora/open";
 import { METEORA_POSITION_V2_DISCRIMINATOR } from "@sofinance/engine/protocols/meteora/position";
 import { JUPITER_API_HOST } from "@sofinance/engine/jupiter/urls";
@@ -126,11 +128,25 @@ export function createFakeChain(options: { autoLand?: boolean } = {}) {
         simulations.push("add_liquidity_by_strategy2");
         const before = next.get(at(0))!;
         const filled = Buffer.from(before.data);
-        filled.writeBigUInt64LE(1_000_000n, 72);
+        filled.writeBigUInt64LE(before.data.readBigUInt64LE(72) + 1_000_000n, 72);
         next.set(at(0), { ...before, data: filled });
         const input = ata(TSLA, payer);
         const held = AccountLayout.decode(next.get(input)!.data).amount;
         next.set(input, tokenAccount(TSLA, payer, held - BigInt(DEPOSIT_RAW)));
+        next.set(payer, { ...next.get(payer)!, lamports: next.get(payer)!.lamports - 5_000 });
+      } else if (tag === METEORA_LIQUIDITY_IX_DISCRIMINATOR.removeLiquidityByRange2) {
+        simulations.push("remove_liquidity_by_range2");
+        const before = next.get(at(0))!;
+        const drained = Buffer.from(before.data);
+        const share = drained.readBigUInt64LE(72);
+        const removed = share * BigInt(data.readUInt16LE(16)) / 10_000n;
+        drained.writeBigUInt64LE(share - removed, 72);
+        next.set(at(0), { ...before, data: drained });
+        const output = ata(TSLA, payer);
+        if (next.has(output)) next.set(output, tokenAccount(TSLA, payer, AccountLayout.decode(next.get(output)!.data).amount + removed));
+        next.set(payer, { ...next.get(payer)!, lamports: next.get(payer)!.lamports - 5_000 });
+      } else if (tag === METEORA_LIQUIDITY_IX_DISCRIMINATOR.claimFee2) {
+        simulations.push("claim_fee2");
         next.set(payer, { ...next.get(payer)!, lamports: next.get(payer)!.lamports - 5_000 });
       } else if (tag === METEORA_IX_DISCRIMINATOR.closePosition2) {
         simulations.push("close_position2");

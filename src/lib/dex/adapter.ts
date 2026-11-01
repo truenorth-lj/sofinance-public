@@ -116,10 +116,14 @@ export interface DexAdapter<N = unknown> {
   previewWithdraw(key: PositionKey, request: WithdrawRequest): Promise<ExitPreview>;
   // preparation (no signing, no sending). A method whose capability is unsupported throws DexUnsupportedError.
   prepareOpen(request: OpenRequest, context: StepContext): Promise<StepResult>;
-  prepareAdd(key: PositionKey, input: DexDepositInput, context: StepContext): Promise<StepResult>;
-  prepareWithdraw(key: PositionKey, request: WithdrawRequest, context: StepContext): Promise<StepResult>;
-  prepareClaim(key: PositionKey, context: StepContext): Promise<StepResult>;
-  prepareCompound(key: PositionKey, context: StepContext): Promise<StepResult>;
+  /**
+   * Position ops take the requesting wallet (`owner`). The adapter itself must read the position and refuse
+   * (POSITION_NOT_FOUND) when its on-chain owner is not that wallet: the route is not the only caller (MCP, cron).
+   */
+  prepareAdd(key: PositionKey, owner: string, input: DexDepositInput, context: StepContext): Promise<StepResult>;
+  prepareWithdraw(key: PositionKey, owner: string, request: WithdrawRequest, context: StepContext): Promise<StepResult>;
+  prepareClaim(key: PositionKey, owner: string, context: StepContext): Promise<StepResult>;
+  prepareCompound(key: PositionKey, owner: string, context: StepContext): Promise<StepResult>;
   /**
    * Recover from a half-finished multi-step open (e.g. close an empty position and refund its rent). `owner` is the
    * requesting wallet: the adapter must refuse a position that wallet does not own, and pay any refund only to it.
