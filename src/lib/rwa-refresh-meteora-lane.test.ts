@@ -12,7 +12,7 @@ vi.mock("./pool-sources/meteora", async (load) => {
 import { MeteoraDatapiError } from "./range-apr/meteora-datapi-history";
 import { METEORA_APR_POOL_TIMEOUT_MS, METEORA_APR_POOLS_PER_RUN, runJob } from "./rwa-refresh";
 import { ThrottleGate } from "./range-apr/throttle-gate";
-import { FEED_KEY, FEED_KEY_METEORA, type ActivePool, type RwaStore } from "./rwa-store-types";
+import { FEED_KEY, FEED_KEY_METEORA, storeRequestSchema, type ActivePool, type RwaStore } from "./rwa-store-types";
 
 const now = Date.parse("2026-11-01T04:00:00Z");
 const profile = { economics: { mintA: "x", mintB: "y" }, candles: [{ timestamp: 1 }], stale: false, daily: null, issues: [],
@@ -28,7 +28,11 @@ function store(meteora: ActivePool[]) {
     calls.push(input);
     if (input.op === "finish") finishes.push(input as unknown as (typeof finishes)[number]);
     if (input.op === "claim") return { job: "rwa-apr-refresh", token: "t" };
-    if (input.op === "activePools") return input.feedKeys?.includes(FEED_KEY_METEORA) ? meteora : [];
+    if (input.op === "activePools") {
+      storeRequestSchema.parse(input); // the real store's request contract (feed lists are Raydium-first)
+      const raydium = { ...pool("ray-in-both-feeds", 1e9, null), pair: { poolAddress: "ray-in-both-feeds", protocol: "raydium-clmm", tvlUsd: 1e9 } };
+      return input.feedKeys?.includes(FEED_KEY_METEORA) ? [raydium, ...meteora] : [];
+    }
     return null;
   } } as unknown as RwaStore;
   const saved = () => calls.filter((c) => c.op === "saveApr").map((c) => c.data!);
