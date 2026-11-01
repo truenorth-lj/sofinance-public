@@ -189,8 +189,10 @@ export function createMeteoraDlmmAdapter(options: MeteoraDlmmAdapterOptions = {}
     descriptor,
     fees,
     listPositions: (owner: string) => guarded(async () => {
-      const connection = deps().connection;
-      const rows = await listMeteoraPositions(owner, { connection: connection as unknown as NonNullable<MeteoraReadOptions["connection"]> });
+      const { connection, listedPool } = deps();
+      // Same pool list as opening: the static allowlist plus the current RWA feed generation, and only the static
+      // allowlist when the RWA store is off (fail closed). A store read error fails the whole list (never a partial one).
+      const rows = await listMeteoraPositions(owner, { connection: connection as unknown as NonNullable<MeteoraReadOptions["connection"]>, listedPool });
       if (!rows.length) return [];
       const decimals = await decimalsFor(connection, rows.flatMap((row) => [row.mintA, row.mintB]));
       const poolIds = [...new Set(rows.map((row) => row.poolId))];

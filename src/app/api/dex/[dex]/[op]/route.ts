@@ -14,6 +14,7 @@ import type { PositionKey } from "@/lib/unified-positions/model";
  *   quote-open  { request }                                    → OpenQuote
  *   open        { request, step, priorSignatures, planToken? } → StepResult (one unsigned, simulated step)
  *   recovery    { wallet, positionKey, step, priorSignatures, planToken? } → StepResult
+ *   positions   { owner }                                      → { positions: UnifiedPosition[] } (read-only)
  * Solana steps come back with the tx-send permits for the requesting wallet (relay send + on-chain check after a
  * wallet error). Jupiter goes through the browser relay when the body carries `jupiterRelay`. Nothing is signed or
  * sent here. Behind DEX_TX_ROUTE_ENABLED (off in production → 404).
@@ -47,6 +48,8 @@ const StepSchema = {
 const BODY = {
   "quote-open": z.object({ request: OpenRequestSchema, jupiterRelay: z.unknown().optional() }).strict(),
   open: z.object({ request: OpenRequestSchema, ...StepSchema, jupiterRelay: z.unknown().optional() }).strict(),
+  /** Read-only: the wallet's positions in this DEX (the pools it lists), for My positions. Builds nothing. */
+  positions: z.object({ owner: solanaOrEvmAddress }).strict(),
   recovery: z.object({ wallet: solanaOrEvmAddress, positionKey: z.string().min(3).max(160), ...StepSchema, jupiterRelay: z.unknown().optional() }).strict(),
 } as const;
 type Op = keyof typeof BODY;
@@ -100,6 +103,10 @@ async function run(adapter: DexAdapter, op: Op, body: unknown): Promise<Response
       const input = BODY[op].parse(body);
       const request = checkedOpen(adapter, input.request as OpenRequest);
       return json(withPermits(await adapter.prepareOpen(request, stepContext(input)), request.owner));
+    }
+    case "positions": {
+      const { owner } = BODY[op].parse(body);
+      return json({ positions: await adapter.listPositions(owner) });
     }
     case "recovery": {
       const input = BODY[op].parse(body);

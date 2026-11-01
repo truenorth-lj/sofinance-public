@@ -29,10 +29,11 @@ import { captureGrowthEvent } from "@/lib/analytics/client";
 import { GROWTH_EVENTS } from "@/lib/analytics/events";
 import { raydiumPositionSource as positionSource } from "@/lib/unified-positions/sources/raydium";
 import { toolOptions, type ToolMeta } from "@/lib/unified-positions/capabilities";
-import { capabilitiesFor, firstSupportedTool, positionKey, toolUnavailableReason, type ToolId, type UnifiedPosition } from "@/lib/unified-positions/model";
+import { capabilitiesFor, firstSupportedTool, parsePositionKey, positionKey, toolUnavailableReason, type ToolId, type UnifiedPosition } from "@/lib/unified-positions/model";
 import { CLOSED_LABEL, groupPositions, isClosed, positionOptionLabel, SOLANA_CONNECT_EMPTY_OPTION, type PositionGroup } from "@/lib/unified-positions/rows";
 import type { ExternalPositions } from "./unified-positions/external-positions";
 import { GroupedPositionSelect } from "./unified-positions/grouped-position-select";
+import { RegistryPositionDetails, RegistryPositionHeader, useRegistryPositions } from "./unified-positions/registry-positions";
 import { UnavailableTool } from "./unified-positions/unavailable-tool";
 
 const TOOL_META: Readonly<Record<ToolId, ToolMeta>> = Object.freeze({
@@ -60,18 +61,23 @@ function calculateInputUsd(amount: string, priceUsd: number | null): string | nu
   }
 }
 
-export function SelectedApp({ initialView = "compound", initialMint = "", initialWallet = "", previewPoolId = "", initialPositionKey = "", external, onRescan }: {
+export function SelectedApp({ initialView = "compound", initialMint: initialMintProp = "", initialWallet = "", previewPoolId = "", initialPositionKey: initialKeyProp = "", external, onRescan }: {
   initialView?: "compound" | "performance" | "deposit" | "withdraw";
   initialMint?: string;
   initialWallet?: string;
   previewPoolId?: string;
-  /** `?position=<key>` of another chain's position (`/app`: Robinhood Chain); Solana keys arrive as `initialMint`. */
+  /** `?position=<key>` (any source). A key of the inline Solana source selects through `initialMint`, as before. */
   initialPositionKey?: string;
   /** Other chains' positions, in the same "My positions" dropdown under their own group (`/app`: Robinhood Chain). */
   external?: ExternalPositions;
   /** Called by "Rescan wallet" alongside the Solana rescan, so the other chains' positions in "My positions" rescan too. */
   onRescan?: () => void;
 } = {}) {
+  // The inline (scanned) Solana source keeps its `?mint=` path; every other source's key selects through the shared dropdown.
+  const linkedKey = parsePositionKey(initialKeyProp);
+  const linksInline = linkedKey?.source === positionSource.id;
+  const initialMint = linksInline ? linkedKey.nativeId : initialMintProp;
+  const initialPositionKey = linksInline ? "" : initialKeyProp;
   const [withdrawBusy,setWithdrawBusy]=useState(false);
   const controller = useSelectedController();
   const { wallet, connected, connect, disconnect, connectionError,
@@ -81,6 +87,9 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
     actionLabel, actionDisabled: addDisabled, primaryAction: addAction, changeAmount, changeTolerance, fillMax,
     choosePosition, chooseAsset, refreshDiscovery, refreshState, retryCalculation,
     loadingDiscovery, loadingState, stateError } = controller;
+  // My positions from DEXes served through the registry (PR5): every Solana-wallet DEX except the inline source above.
+  const [registryRefresh, setRegistryRefresh] = useState(0);
+  const registry = useRegistryPositions({ owner: connected ? wallet || null : null, signer: "solana-wallet", exclude: [positionSource.id], refresh: registryRefresh });
   const totalCostPercent = quote && typeof quote.roundtripCostInput === "string" && BigInt(quote.requested) > 0n
     ? (Number(quote.roundtripCostInput) / Number(quote.requested) * 100).toFixed(2)
     : null;
@@ -102,6 +111,7 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
     ...(discovery?.assets.map((asset) => asset.mint) || []),
     ...(discovery?.positions.flatMap((item) => [item.mintA, item.mintB]) || []),
     ...(state ? [state.mintA, state.mintB] : []),
+    ...registry.positions.flatMap((item) => [item.tokenA.id, item.tokenB.id]),
   ];
   const metadata = useTokenMetadata(metadataMints);
   const [statusDialogOpen, setStatusDialogOpen] = useState(false);
@@ -145,19 +155,26 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
   const solanaPositions = positionSource.fromDiscovery(discovery);
   const positionOptions = solanaPositions.map((position) => position.native);
   // One dropdown for every chain (unified positions). Tools and header come from the selected position's source.
+  // "Other" positions are everything not read by the inline scan: registry DEXes on Solana and the other chain's binding.
   const externalPositions = external?.positions ?? [];
-  const allPositions: UnifiedPosition[] = [...(connected ? solanaPositions : []), ...externalPositions];
-  const groups = groupPositions(allPositions, { solana: [positionSource.id], ...(external ? { [external.chain]: external.sourceIds } : {}) },
+  const otherPositions: UnifiedPosition[] = [...(connected ? registry.positions : []), ...externalPositions];
+  const allPositions: UnifiedPosition[] = [...(connected ? solanaPositions : []), ...otherPositions];
+  const groups = groupPositions(allPositions, { solana: [positionSource.id, ...registry.sourceIds], ...(external ? { [external.chain]: external.sourceIds } : {}) },
     external ? ["solana" as const, external.chain] : []);
-  const [externalKey, setExternalKey] = useState(initialPositionKey);
+  const [otherKey, setOtherKey] = useState(initialPositionKey);
   const solanaEmpty = !connected || (discovery !== null && !loadingDiscovery && positionOptions.length === 0);
-  // A picked (or linked) other-chain position; without one, the first other-chain position when Solana has none.
-  const externalSelected = externalPositions.find((item) => item.key === externalKey)
-    ?? (!externalKey && solanaEmpty && !initialMint ? externalPositions[0] ?? null : null);
+  // A picked (or linked) non-inline position; without one, the first of them when the inline scan has none.
+  const otherSelected = otherPositions.find((item) => item.key === otherKey)
+    ?? (!otherKey && solanaEmpty && !initialMint ? otherPositions[0] ?? null : null);
+  const otherBinding = otherSelected && registry.owns(otherSelected)
+    ? { header: (item: UnifiedPosition) => <RegistryPositionHeader position={item} />, details: (item: UnifiedPosition) => <RegistryPositionDetails position={item} />,
+      tool: () => null, capabilities: registry.capabilities(otherSelected)! }
+    : otherSelected && external ? { header: external.header, details: external.details, tool: external.tool, capabilities: capabilitiesFor(external.source, otherSelected) }
+      : null;
   const selectedSolana = selection ? solanaPositions.find((item) => item.nativeId === selection.positionMint) ?? null : null;
-  const capabilities = externalSelected && external ? capabilitiesFor(external.source, externalSelected) : capabilitiesFor(positionSource, selectedSolana);
+  const capabilities = otherSelected && otherBinding ? otherBinding.capabilities : capabilitiesFor(positionSource, selectedSolana);
   const unavailableReason = toolUnavailableReason(capabilities, activeView);
-  const selectedKey = externalSelected?.key ?? (selection ? positionKey(positionSource.id, selection.positionMint) : "");
+  const selectedKey = otherSelected?.key ?? (selection ? positionKey(positionSource.id, selection.positionMint) : "");
   // Landing on a position whose current tool is unavailable opens its first available tool (a greyed tab clicked later stays).
   const [viewCheckedFor, setViewCheckedFor] = useState(selectedKey);
   if (viewCheckedFor !== selectedKey) {
@@ -175,12 +192,12 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
   const pickKey = (key: string) => {
     const found = allPositions.find((item) => item.key === key);
     if (!found) return;
-    if (found.source === positionSource.id) { setExternalKey(""); pickPosition(found.nativeId); } else setExternalKey(found.key);
+    if (found.source === positionSource.id) { setOtherKey(""); pickPosition(found.nativeId); } else setOtherKey(found.key);
     writeUrl(found.key, activeView);
   };
   const changeView = (view: ToolId) => { setActiveView(view); writeUrl(selectedKey, view); };
   const optionLabel = (item: UnifiedPosition, group: PositionGroup) =>
-    positionOptionLabel(item.source === positionSource.id ? positionSource : external!.source as never, item as never, { showSourceName: group.showSourceName, metadata });
+    positionOptionLabel(item.source === positionSource.id ? positionSource : registry.owns(item) ? registry.optionSource(item, metadata) : external!.source as never, item as never, { showSourceName: group.showSourceName, metadata });
   const anyBusy = busy || Boolean(external?.busy);
   const assetOptions = discovery?.assets || [];
   const poolLabel = (mint: string) => {
@@ -199,7 +216,7 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
           majority: poolLabel(quoteErrorOutputMint === state.mintA ? state.mintB : state.mintA) })
         : error;
   // "Rescan wallet": the Solana scan (unchanged) plus, on /app, the Robinhood Chain scan via the parent's refresh counter.
-  const rescan = () => { if (wallet) void refreshDiscovery(); onRescan?.(); };
+  const rescan = () => { if (wallet) { void refreshDiscovery(); setRegistryRefresh((value) => value + 1); } onRescan?.(); };
   return <div className="min-h-screen bg-canvas text-cream">
     <div className="relative mx-auto max-w-[1280px] px-3 pb-32 pt-3 sm:px-5 sm:pt-5">
       <InkNav wallet={wallet} connected={connected} onConnect={connect} onDisconnect={disconnect} />
@@ -223,10 +240,10 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
           className="mt-3 w-full rounded-2xl border border-white/20 bg-white/[0.06] px-3 py-3 text-sm text-cream outline-none focus:border-white/40"
         /> : null}
         {/* The Solana connect prompt belongs to Solana: with another chain's position selected it lives in the dropdown's empty Solana group instead. */}
-        {!connected && !externalSelected && <div className="mt-3"><ConnectWalletPrompt onConnect={connect} /></div>}
-        {connected && discovery && positionOptions.length === 0 && !externalSelected && <a href={APP_ROUTES.rwaPairs} className="mt-3 text-sm font-semibold text-cream underline underline-offset-4">Explore pools to open a position</a>}
-        {(externalSelected ?? selectedSolana) && isClosed((externalSelected ?? selectedSolana)!) && <p className="mt-3 w-fit rounded-full border border-white/20 px-2.5 py-1 text-xs font-semibold text-smoke" data-testid="position-closed">{CLOSED_LABEL}: no liquidity left</p>}
-        {externalSelected && external ? external.header(externalSelected) : <>
+        {!connected && !otherSelected && <div className="mt-3"><ConnectWalletPrompt onConnect={connect} /></div>}
+        {connected && discovery && positionOptions.length === 0 && !otherSelected && <a href={APP_ROUTES.rwaPairs} className="mt-3 text-sm font-semibold text-cream underline underline-offset-4">Explore pools to open a position</a>}
+        {(otherSelected ?? selectedSolana) && isClosed((otherSelected ?? selectedSolana)!) && <p className="mt-3 w-fit rounded-full border border-white/20 px-2.5 py-1 text-xs font-semibold text-smoke" data-testid="position-closed">{CLOSED_LABEL}: no liquidity left</p>}
+        {otherSelected && otherBinding ? otherBinding.header(otherSelected) : <>
         {state && <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs">
           <span className={`rounded-full border px-2.5 py-1 ${state.inRange ? "border-white/40 bg-white/[0.07] text-cream/80" : "border-white/20 bg-white/[0.05] text-smoke"}`}>{state.rangeSide === "above" ? "Above range · single-sided" : state.rangeSide === "below" ? "Below range · single-sided" : "Price within range"}</span>
 
@@ -238,9 +255,11 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
             liquidityRaw={assets.currentAmounts.b} unclaimedFeesRaw={feeState?.fees.b ?? null} priceUsd={assets.pricing?.priceUsdB ?? null} />
         </div>}
         </>}
+        {registry.loadingNames.length ? <p role="status" className="mt-2 text-xs text-smoke" data-testid="registry-positions-loading">Loading {registry.loadingNames.join(", ")} positions…</p> : null}
+        {registry.errors.map((message) => <p key={message} role="alert" className="mt-2 text-xs text-cream/80" data-testid="registry-positions-error">{message}</p>)}
         {external?.status}
         </div>
-        {(connected || externalSelected) && <div className="mt-6 border-t border-white/10 pt-5 text-sm leading-relaxed">
+        {(connected || otherSelected) && <div className="mt-6 border-t border-white/10 pt-5 text-sm leading-relaxed">
           <button type="button" aria-haspopup="dialog" onClick={() => setAssetRisksOpen(true)}
             className="text-xs font-semibold text-cream/80 transition-opacity hover:opacity-70 disabled:opacity-40">
             Learn more details
@@ -250,9 +269,9 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
       </div>
 
       <ActionSelector value={activeView} onChange={changeView} options={toolOptions(capabilities, TOOL_META,
-        externalSelected ? {} : { withdraw: !state || !wallet || (busy && activeView !== "withdraw") })} />
+        otherSelected ? {} : { withdraw: !state || !wallet || (busy && activeView !== "withdraw") })} />
       {unavailableReason ? <UnavailableTool id={`${activeView}-view`} reason={unavailableReason} />
-        : externalSelected && external ? <div id={`${activeView}-view`}>{external.tool(externalSelected, activeView)}</div> : <>
+        : otherSelected && otherBinding ? <div id={`${activeView}-view`}>{otherBinding.tool(otherSelected, activeView)}</div> : <>
       {activeView === "withdraw" && <div id="withdraw-view">{state && wallet ? <WithdrawPanel key={`${wallet}:${state.positionMint}`} wallet={wallet} positionMint={state.positionMint} mintA={state.mintA} mintB={state.mintB} label={poolLabel} onClose={()=>setActiveView("compound")} onBusyChange={setWithdrawBusy} onConfirmed={()=>{void refreshState();void refreshDiscovery();}} /> : <p className="mt-4 text-sm text-smoke">Connect your wallet and choose a position to withdraw.</p>}</div>}
       {compound.historyWarning && <div role="status" className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-xs text-cream/80"><span>{compound.historyWarning}</span><button type="button" className="font-semibold underline" onClick={() => setActiveView("compound")}>View compound status</button></div>}
       <main>
@@ -299,17 +318,17 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
         </div>
       </main>
       </>}
-      {connectionError && activeView === "compound" && !externalSelected && <div role="alert" className="mt-4 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80">{connectionError}</div>}
-      {error && !quoteError && activeView === "compound" && !externalSelected && <div role="alert" className="mt-4 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80">{error}</div>}
+      {connectionError && activeView === "compound" && !otherSelected && <div role="alert" className="mt-4 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80">{connectionError}</div>}
+      {error && !quoteError && activeView === "compound" && !otherSelected && <div role="alert" className="mt-4 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80">{error}</div>}
     </div>
-    <AssetRisksDialog open={Boolean(connected || externalSelected) && assetRisksOpen} onOpenChange={setAssetRisksOpen}>
-      {externalSelected && external ? external.details(externalSelected) : state && <><p>Real-time pool price: {Number(state.price).toPrecision(8)} · ticks {state.tickLower}–{state.tickUpper} · slot {state.slot}</p><p>Wallet pool asset balance: {money(state.balances.a, state.decimalsA)} {poolLabel(state.mintA)}  +  {money(state.balances.b, state.decimalsB)} {poolLabel(state.mintB)} · SOL {money(String(state.solLamports), 9)}</p><button type="button" onClick={() => void refreshState()} disabled={busy} className="text-cream/80 underline disabled:opacity-40">Reload on-chain</button><p>Pool: <a className="text-cream/80 underline" href={`https://solscan.io/account/${state.poolId}`} target="_blank" rel="noreferrer">{state.poolId} <ArrowUpRight className="inline h-3 w-3" /></a></p><p>Position NFT: {state.positionMint}</p><p>Pool A mint: {state.mintA}</p><p>Pool B mint: {state.mintB}</p><p>Input mint: {selection?.inputMint}</p></>}<p>Different tokens may have issuer, transfer restrictions, or routing liquidity risks. APR does not represent this position&apos;s realizable returns; no trading fees earned for this range while outside.</p>
+    <AssetRisksDialog open={Boolean(connected || otherSelected) && assetRisksOpen} onOpenChange={setAssetRisksOpen}>
+      {otherSelected && otherBinding ? otherBinding.details(otherSelected) : state && <><p>Real-time pool price: {Number(state.price).toPrecision(8)} · ticks {state.tickLower}–{state.tickUpper} · slot {state.slot}</p><p>Wallet pool asset balance: {money(state.balances.a, state.decimalsA)} {poolLabel(state.mintA)}  +  {money(state.balances.b, state.decimalsB)} {poolLabel(state.mintB)} · SOL {money(String(state.solLamports), 9)}</p><button type="button" onClick={() => void refreshState()} disabled={busy} className="text-cream/80 underline disabled:opacity-40">Reload on-chain</button><p>Pool: <a className="text-cream/80 underline" href={`https://solscan.io/account/${state.poolId}`} target="_blank" rel="noreferrer">{state.poolId} <ArrowUpRight className="inline h-3 w-3" /></a></p><p>Position NFT: {state.positionMint}</p><p>Pool A mint: {state.mintA}</p><p>Pool B mint: {state.mintB}</p><p>Input mint: {selection?.inputMint}</p></>}<p>Different tokens may have issuer, transfer restrictions, or routing liquidity risks. APR does not represent this position&apos;s realizable returns; no trading fees earned for this range while outside.</p>
       <p><Link href={DOCS_ROUTES.risks} className="text-lemon underline underline-offset-2 hover:text-[#fff27f]">Read the Risks docs</Link> before adding liquidity.</p>
     </AssetRisksDialog>
     <TransactionStatusDialog attempt={visibleAttempt} status={attemptStatus} error={error} open={statusDialogOpen}
       onOpenChange={setStatusDialogOpen}
       onRetry={retryAdd ? () => { setStatusDialogOpen(false); retryAdd(); } : undefined} />
-    {activeView === "deposit" && !externalSelected && !unavailableReason && <div ref={actionBarRef} data-testid="mobile-action-bar" className="fixed inset-x-0 bottom-0 z-10 border-t border-white/12 bg-canvas/95 p-4 backdrop-blur sm:hidden"><button className={buttonClass} disabled={actionDisabled} aria-busy={actionLoading} onClick={primaryAction}>{actionLoading ? <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin motion-reduce:animate-none" /> : <ArrowDown aria-hidden="true" className="h-4 w-4" />}{buttonLabel}</button></div>}
+    {activeView === "deposit" && !otherSelected && !unavailableReason && <div ref={actionBarRef} data-testid="mobile-action-bar" className="fixed inset-x-0 bottom-0 z-10 border-t border-white/12 bg-canvas/95 p-4 backdrop-blur sm:hidden"><button className={buttonClass} disabled={actionDisabled} aria-busy={actionLoading} onClick={primaryAction}>{actionLoading ? <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin motion-reduce:animate-none" /> : <ArrowDown aria-hidden="true" className="h-4 w-4" />}{buttonLabel}</button></div>}
   </div>;
 }
 

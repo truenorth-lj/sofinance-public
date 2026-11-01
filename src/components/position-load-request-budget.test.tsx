@@ -57,6 +57,7 @@ function serve(confirmation: Record<string, unknown>) {
       assets: [{ kind: "token", mint: USDC_MINT, tokenProgram: null, decimals: 6, balance: "1", totalBalance: "1", account: "a", eligible: true, reason: null }] });
     if (url.pathname === "/api/selected-state") return Response.json(selectedState(positionMint));
     if (url.pathname === "/api/compound-state") return Response.json(compoundState(positionMint));
+    if (url.pathname.startsWith("/api/dex/")) return new Response(null, { status: 404 });
     if (url.pathname === "/api/compound-confirm") return Response.json({ signature: fixture.attempt.signature, ...confirmation });
     return Response.json({});
   }));
@@ -79,7 +80,9 @@ describe("opening the Yield Compound tab reads each position source once", () =>
   it("without a saved compound: one wallet scan, one selected read and one compound read", async () => {
     serve({ status: "pending", chainStatus: "pending", state: null });
     await open(fixture.state.positionMint);
-    expect(paths).toEqual(["/api/wallet", "/api/selected-state", "/api/compound-state"]);
+    // Plus one My positions read per registry DEX (`/api/dex/<id>/positions`, 404 without RPC where the route is off).
+    expect(paths.filter((path) => !path.startsWith("/api/dex/"))).toEqual(["/api/wallet", "/api/selected-state", "/api/compound-state"]);
+    expect(paths.filter((path) => path.startsWith("/api/dex/"))).toEqual(["/api/dex/meteora-dlmm/positions"]);
   });
 
   it("a saved compound that already finalized is checked once, and its fresh position read replaces a second compound read", async () => {

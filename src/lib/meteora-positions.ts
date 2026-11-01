@@ -48,9 +48,24 @@ const DEFAULT_MAX_SIGNATURES = 100;
 type MeteoraConnection = Pick<Connection, "getAccountInfo" | "getMultipleAccountsInfo"> & {
   getProgramAccounts(programId: PublicKey, config: GetProgramAccountsConfig): Promise<ReadonlyArray<{ pubkey: PublicKey; account: { data: Uint8Array } }>>;
 };
-export type MeteoraReadOptions = { connection?: MeteoraConnection };
+/** How a pool is listed for SoFinance: its two mints (any order) and, for static allowlist entries, a pinned bin step. */
+export type MeteoraPoolListing = { mints: readonly [string, string]; binStep: number | null };
+export type MeteoraPoolListingLookup = (poolId: string) => Promise<MeteoraPoolListing | null>;
+
+export type MeteoraReadOptions = {
+  connection?: MeteoraConnection;
+  /**
+   * Which pools count as listed. Default: the static allowlist only (MCP and the legacy UI). The DEX adapter passes the
+   * RWA-feed-aware list (`src/lib/dex/meteora-dlmm/pools.server.ts`), which fails closed when the RWA store is off.
+   */
+  listedPool?: MeteoraPoolListingLookup;
+};
 
 const allowlisted = (poolId: string) => METEORA_ALLOWLISTED_POOLS.find((pool) => pool.poolAddress === poolId);
+const staticListing: MeteoraPoolListingLookup = async (poolId) => {
+  const pool = allowlisted(poolId);
+  return pool ? { mints: [pool.mintX, pool.mintY], binStep: pool.binStep } : null;
+};
 
 export type MeteoraPositionSnapshot = {
   positionAccount: string;
@@ -72,21 +87,26 @@ export async function readMeteoraPositionSnapshot(positionAccount: string, conne
   return snapshotFromData(address, info.data, connection);
 }
 
-async function snapshotFromData(positionAccount: string, data: Uint8Array, connection: MeteoraConnection): Promise<MeteoraPositionSnapshot> {
+async function snapshotFromData(positionAccount: string, data: Uint8Array, connection: MeteoraConnection,
+  listing?: MeteoraPoolListing | null): Promise<MeteoraPositionSnapshot> {
   const position = decodeMeteoraPosition(data);
-  const allow = allowlisted(position.lbPair);
+  const allow = listing === undefined ? await staticListing(position.lbPair) : listing;
   if (!allow) throw new Error(METEORA_POOL_NOT_SUPPORTED);
+  const [listedA, listedB] = allow.mints;
   const indexes = meteoraBinArrayIndexesForRange(position.lowerBinId, position.upperBinId);
   // One batch: pool, both mints, and every bin array the position spans.
   const infos = await connection.getMultipleAccountsInfo(
-    [position.lbPair, allow.mintX, allow.mintY, ...indexes.map((index) => meteoraBinArrayAddress(position.lbPair, index))]
+    [position.lbPair, listedA, listedB, ...indexes.map((index) => meteoraBinArrayAddress(position.lbPair, index))]
       .map((key) => new PublicKey(key)), "confirmed");
-  const [poolInfo, mintXInfo, mintYInfo, ...arrayInfos] = infos;
+  const [poolInfo, mintAInfo, mintBInfo, ...arrayInfos] = infos;
   if (!poolInfo || poolInfo.owner.toBase58() !== METEORA_DLMM_PROGRAM_ID) throw new Error("Meteora LbPair account missing");
   const pool = decodeLbPair(poolInfo.data);
-  if (pool.tokenXMint !== allow.mintX || pool.tokenYMint !== allow.mintY || pool.binStep !== allow.binStep) {
+  // Static allowlist entries are in X / Y order with a pinned bin step; feed rows give the two mints in either order.
+  const sameMints = pool.tokenXMint === listedA ? pool.tokenYMint === listedB : pool.tokenXMint === listedB && pool.tokenYMint === listedA;
+  if (!sameMints || (allow.binStep !== null && (pool.tokenXMint !== listedA || pool.binStep !== allow.binStep))) {
     throw new Error("Meteora LbPair does not match the allowlist");
   }
+  const [mintXInfo, mintYInfo] = pool.tokenXMint === listedA ? [mintAInfo, mintBInfo] : [mintBInfo, mintAInfo];
   if (!mintXInfo || !mintYInfo) throw new Error("Meteora pool mint account missing");
   const arrays = new Map<number, Uint8Array>();
   arrayInfos.forEach((arrayInfo, i) => {
@@ -167,9 +187,9 @@ function listedRow(snapshot: MeteoraPositionSnapshot): MeteoraListedPosition {
 }
 
 /**
- * Meteora positions owned by the wallet in allowlisted pools: one getProgramAccounts by
- * discriminator + owner (head bytes only), then a batched getMultipleAccounts for the
- * allowlisted ones and one batch per position for its pool, mints and bin arrays.
+ * Meteora positions owned by the wallet in listed pools (`options.listedPool`, default the static allowlist): one
+ * getProgramAccounts by discriminator + owner (head bytes only), one listing lookup per distinct pool, then a batched
+ * getMultipleAccounts for the listed ones and one batch per position for its pool, mints and bin arrays.
  */
 export async function listMeteoraPositions(wallet: string, options: MeteoraReadOptions = {}): Promise<MeteoraListedPosition[]> {
   const owner = new PublicKey(wallet).toBase58();
@@ -183,13 +203,17 @@ export async function listMeteoraPositions(wallet: string, options: MeteoraReadO
       { memcmp: { offset: METEORA_POSITION_OWNER_OFFSET, bytes: owner } },
     ],
   });
-  const candidates = heads.flatMap(({ pubkey, account }) => {
+  const owned = heads.flatMap(({ pubkey, account }) => {
     const data = Buffer.from(account.data);
     if (data.length < POSITION_HEAD_LEN || data.subarray(0, 8).toString("hex") !== METEORA_POSITION_V2_DISCRIMINATOR) return [];
     const lbPair = new PublicKey(data.subarray(METEORA_POSITION_LB_PAIR_OFFSET, METEORA_POSITION_LB_PAIR_OFFSET + 32)).toBase58();
     const holder = new PublicKey(data.subarray(METEORA_POSITION_OWNER_OFFSET, METEORA_POSITION_OWNER_OFFSET + 32)).toBase58();
-    return holder === owner && allowlisted(lbPair) ? [pubkey.toBase58()] : [];
-  }).sort().slice(0, LIST_MAX_POSITIONS);
+    return holder === owner ? [{ key: pubkey.toBase58(), lbPair }] : [];
+  });
+  const listedPool = options.listedPool ?? staticListing;
+  const listings = new Map<string, MeteoraPoolListing | null>();
+  for (const lbPair of new Set(owned.map((head) => head.lbPair))) listings.set(lbPair, await listedPool(lbPair));
+  const candidates = owned.filter((head) => listings.get(head.lbPair)).map((head) => head.key).sort().slice(0, LIST_MAX_POSITIONS);
   if (!candidates.length) return [];
   const infos: Array<AccountInfo<Buffer> | null> = [];
   for (let start = 0; start < candidates.length; start += MULTIPLE_ACCOUNTS_BATCH) {
@@ -200,8 +224,9 @@ export async function listMeteoraPositions(wallet: string, options: MeteoraReadO
   for (const [index, info] of infos.entries()) {
     if (!info || info.owner.toBase58() !== METEORA_DLMM_PROGRAM_ID || !isMeteoraPositionAccount(info.data)) continue;
     const position = decodeMeteoraPosition(info.data);
-    if (position.owner !== owner || !allowlisted(position.lbPair)) continue;
-    out.push(listedRow(await snapshotFromData(candidates[index]!, info.data, connection)));
+    const listing = listings.get(position.lbPair);
+    if (position.owner !== owner || !listing) continue;
+    out.push(listedRow(await snapshotFromData(candidates[index]!, info.data, connection, listing)));
   }
   return out;
 }

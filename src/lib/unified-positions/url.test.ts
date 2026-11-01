@@ -2,11 +2,12 @@ import { describe, expect, it } from "vitest";
 import { initialSelectionFromQuery } from "./url";
 
 describe("initialSelectionFromQuery (/app URL state)", () => {
-  it("?position= picks a Solana position by key", () => {
+  it("?position= passes any valid key through unchanged (no source is special-cased here)", () => {
     expect(initialSelectionFromQuery({ position: "raydium-clmm:Mint111", view: "withdraw" }))
-      .toEqual({ initialView: "withdraw", initialMint: "Mint111", initialPositionKey: "" });
+      .toEqual({ initialView: "withdraw", initialMint: "", initialPositionKey: "raydium-clmm:Mint111" });
   });
-  it("?position= picks a Robinhood Chain position by key", () => {
+  it("?position= picks a Robinhood Chain or Meteora position by key", () => {
+    expect(initialSelectionFromQuery({ position: "meteora-dlmm:Pos111" }).initialPositionKey).toBe("meteora-dlmm:Pos111");
     expect(initialSelectionFromQuery({ position: "rhc-uniswap-v4:4077059", view: "compound" }))
       .toEqual({ initialView: "compound", initialMint: "", initialPositionKey: "rhc-uniswap-v4:4077059" });
   });

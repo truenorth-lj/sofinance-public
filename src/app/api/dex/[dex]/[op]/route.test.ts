@@ -150,4 +150,19 @@ describe("POST /api/dex/[dex]/[op]", () => {
     expect(fake.adapter!.prepareOpen).not.toHaveBeenCalled();
     expect((await call("quote-open", units(-443_636, 443_636))).status).toBe(200);
   });
+
+  it("lists a wallet's positions through the registry adapter (read-only, strict body)", async () => {
+    const position = { key: "some-dex:abc", source: "meteora-dlmm", chain: "solana", nativeId: "abc", liquidity: "0" };
+    const listPositions = vi.fn(async () => [position]);
+    fake.adapter = { ...fake.adapter, listPositions };
+    const response = await call("positions", { owner: owner.toBase58() });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ positions: [position] });
+    expect(listPositions).toHaveBeenCalledWith(owner.toBase58());
+    expect((await call("positions", { owner: owner.toBase58(), extra: 1 })).status).toBe(400);
+    listPositions.mockRejectedValueOnce(new DexError("UPSTREAM", "The Meteora request could not be completed: fetch failed at https://rpc.example/key"));
+    const failed = await call("positions", { owner: owner.toBase58() });
+    expect(failed.status).toBe(502);
+    expect(JSON.stringify(await failed.json())).not.toContain("rpc.example");
+  });
 });

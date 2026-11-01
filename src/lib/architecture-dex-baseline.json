@@ -63,7 +63,6 @@
     "src/lib/unified-pools/apr7d.ts": 1,
     "src/lib/unified-pools/model.ts": 2,
     "src/lib/unified-pools/rows.ts": 2,
-    "src/lib/unified-positions/rows.ts": 1,
-    "src/lib/unified-positions/url.ts": 1
+    "src/lib/unified-positions/rows.ts": 1
   }
 }

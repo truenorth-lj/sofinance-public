@@ -11,3 +11,4 @@ export type * from "./types";
 export { DEX_IDS, isDexId, normalizeDexId, feeRuleBps } from "./types";
 export type { DexDescriptorRegistry } from "./registry";
 export { dexTxAdapter, DEX_PREPARE_TIMEOUT_MS, type DexPreparedStep, type DexStepInput, type DexStepOp } from "./tx-adapter";
+export { dexPositionLabel, dexPositionRangeText, dexRangeStatusText, fetchDexPositions, positionDescriptorsFor } from "./positions-client";
