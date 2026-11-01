@@ -11,6 +11,20 @@ const CDN_HEADERS = {
   "CDN-Cache-Control": "public, s-maxage=3600, stale-while-revalidate=86400",
   "Vercel-CDN-Cache-Control": "public, s-maxage=3600, stale-while-revalidate=86400",
 };
+/** A degraded answer (`degraded` set): one minute at the CDN, never in `unstable_cache`. */
+const DEGRADED_HEADERS = {
+  "Cache-Control": "public, max-age=0, must-revalidate",
+  "CDN-Cache-Control": "public, s-maxage=60",
+  "Vercel-CDN-Cache-Control": "public, s-maxage=60",
+};
+const headersFor = (result: { degraded?: string }) => (result.degraded ? DEGRADED_HEADERS : CDN_HEADERS);
+
+/** Carries a degraded answer out of `unstable_cache`, which keeps only values its function returns. */
+class DegradedAnswer extends Error {
+  constructor(readonly result: Awaited<ReturnType<typeof loadPoolDailyApr>>) {
+    super("degraded pool daily APR answer");
+  }
+}
 
 function parsePoolId(raw: string | null) {
   if (!raw) throw new Error("poolId is required");
@@ -22,9 +36,10 @@ function parsePoolId(raw: string | null) {
  * The series comes from the registered DEX that lists the pool (DEX registry, e.g. Meteora DLMM); pools no registered
  * DEX lists keep the existing Raydium path unchanged (pinned by route.test.ts).
  *
- * When a DEX could not tell whether it lists the pool (its pool list is down), Raydium is still asked: a Raydium pool is
- * served as before; otherwise (Raydium has no such pool, or is down too) that DEX's error is rethrown (5xx, uncached)
- * instead of a Raydium-shaped series of nulls. Nothing is cached on any error path.
+ * When a DEX could not tell whether it lists the pool (its pool list is down), Raydium is still asked, but its series is
+ * served only if Raydium's pool info answered with this pool's row (`requireRaydiumPool`, checked before any cache
+ * write). Otherwise (Raydium has no such pool, its pool info is down, or anything else fails) that DEX's error is
+ * rethrown: 5xx, no-store, and neither the in-memory cache nor `unstable_cache` keeps anything.
  */
 async function loadPoolDailyApr(poolId: string) {
   let registryFailure: { error: unknown } | null = null;
@@ -34,10 +49,11 @@ async function loadPoolDailyApr(poolId: string) {
   } catch (error) {
     registryFailure = { error };
   }
+  if (!registryFailure) return fetchPoolDailyApr(poolId);
   try {
-    return await fetchPoolDailyApr(poolId);
-  } catch (error) {
-    throw registryFailure ? registryFailure.error : error;
+    return await fetchPoolDailyApr(poolId, { requireRaydiumPool: true });
+  } catch {
+    throw registryFailure.error;
   }
 }
 
@@ -49,9 +65,22 @@ function errorStatus(error: unknown) {
   return 400;
 }
 
-function getCachedDiscovery(poolId: string) {
+async function getCachedDiscovery(poolId: string) {
+  try {
+    return await cachedDiscovery(poolId);
+  } catch (error) {
+    if (error instanceof DegradedAnswer) return error.result;
+    throw error;
+  }
+}
+
+function cachedDiscovery(poolId: string) {
   return unstable_cache(
-    async () => loadPoolDailyApr(poolId),
+    async () => {
+      const result = await loadPoolDailyApr(poolId);
+      if (result.degraded) throw new DegradedAnswer(result);
+      return result;
+    },
     [`pool-daily-apr-${poolId}`],
     {
       revalidate: 3600,
@@ -88,7 +117,7 @@ export async function GET(request: Request) {
           }
         });
       }
-      return Response.json(inMemory, { headers: CDN_HEADERS });
+      return Response.json(inMemory, { headers: headersFor(inMemory) });
     }
 
     const result = withAge(await getCachedDiscovery(poolId));
@@ -101,7 +130,7 @@ export async function GET(request: Request) {
         }
       });
     }
-    return Response.json(result, { headers: CDN_HEADERS });
+    return Response.json(result, { headers: headersFor(result) });
   } catch (error) {
     // apiError answers `Cache-Control: no-store`; the CDN headers are only ever set on a 200.
     return apiError(error, "Pool daily APR lookup failed", errorStatus(error));

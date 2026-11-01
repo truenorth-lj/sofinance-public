@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { buildMeteoraDailyAprPoints, clearMeteoraPoolDailyAprCache, fetchMeteoraPoolDailyApr, parseMeteoraPoolSnapshot } from "./meteora-daily-apr";
+import { buildMeteoraDailyAprPoints, clearMeteoraPoolDailyAprCache, DEGRADED_CACHE_TTL_MS, fetchMeteoraPoolDailyApr, parseMeteoraPoolSnapshot } from "./meteora-daily-apr";
 
 const DAY = 86_400;
 const D0 = 1_793_145_600; // 2026-10-28 00:00 UTC
@@ -40,7 +40,7 @@ describe("fetchMeteoraPoolDailyApr", () => {
     const fetcher = vi.fn(async (url: string | URL | Request) => (String(url).includes("/volume/history") ? json(history) : json({}, 503)));
     const result = await fetchMeteoraPoolDailyApr("P", { fetcher: fetcher as typeof fetch, nowSeconds: D0 + 2 * DAY, bypassCache: true });
     expect(result.points).toEqual([{ time: D0, date: "2026-10-28", aprPct: null, volumeUsd: 10_000, tvlUsd: null }]);
-    expect(result.sources).toEqual(["https://dlmm.datapi.meteora.ag/pools/{address}/volume/history (daily USD volume and fees)"]);
+    expect(result.sources).toEqual(["https://dlmm.datapi.meteora.ag/pools/{address}/volume/history (daily USD volume and fees)"]);    expect(result.degraded).toBe("the Meteora datapi pool endpoint did not answer (Upstream request failed (503))");
   });
   it("throws a plain error when both endpoints fail", async () => {
     const fetcher = vi.fn(async () => json({}, 429));
@@ -53,11 +53,11 @@ describe("fetchMeteoraPoolDailyApr", () => {
     const stored = await fetchMeteoraPoolDailyApr("P", { fetcher: fetcher as typeof fetch, nowSeconds: D0 + 2 * DAY, bypassCache: true, storedTvl: reader });
     expect(reader).toHaveBeenCalledWith("P", "2026-08-01", "2026-10-29");
     expect(stored.points).toEqual([{ time: D0, date: "2026-10-28", aprPct: expect.closeTo(3.65, 10), volumeUsd: 10_000, tvlUsd: 10_000 }]);
-    expect(stored.assumptions).toMatch(/1 of 1 days use that day's stored TVL\. Older days use today's TVL/);
+    expect(stored.assumptions).toMatch(/1 of 1 days use that day's stored TVL\. Other days use today's TVL/);
     const failing = await fetchMeteoraPoolDailyApr("P", { fetcher: fetcher as typeof fetch, nowSeconds: D0 + 2 * DAY, bypassCache: true,
       storedTvl: async () => { throw new Error("store down"); } });
     expect(failing.points[0]).toMatchObject({ tvlUsd: 36_500, aprPct: expect.closeTo(1, 10) });
-    expect(failing.assumptions).toMatch(/no stored daily TVL covers these days \(the stored daily TVL could not be read\)\. Older days use today's TVL/);
+    expect(failing.assumptions).toMatch(/no stored daily TVL covers these days \(the stored daily TVL could not be read\)\. Other days use today's TVL/);
   });
   it("caches per pool for an hour", async () => {
     const fetcher = vi.fn(async (url: string | URL | Request) => (String(url).includes("/volume/history") ? json(history) : json(pool)));
@@ -66,5 +66,27 @@ describe("fetchMeteoraPoolDailyApr", () => {
     expect(await fetchMeteoraPoolDailyApr("P", options)).toBe(first);
     expect(fetcher).toHaveBeenCalledTimes(2);
     expect(first.published).toEqual({ dayFeeApr: 0.365, weekFeeApr: null, monthFeeApr: null });
+  });
+  it("reuses a degraded answer for one minute only, then asks again", async () => {
+    vi.useFakeTimers({ now: Date.parse("2026-11-01T00:00:00Z") });
+    try {
+      let storeUp = false;
+      const fetcher = vi.fn(async (url: string | URL | Request) => (String(url).includes("/volume/history") ? json(history) : json(pool)));
+      const options = { fetcher: fetcher as typeof fetch, nowSeconds: D0 + 2 * DAY,
+        storedTvl: async () => { if (!storeUp) throw new Error("store down"); return new Map([["2026-10-28", 10_000]]); } };
+      const degraded = await fetchMeteoraPoolDailyApr("Q", options);
+      expect(degraded.degraded).toBe("the stored daily TVL could not be read");
+      expect(await fetchMeteoraPoolDailyApr("Q", options)).toBe(degraded);
+      vi.advanceTimersByTime(DEGRADED_CACHE_TTL_MS);
+      storeUp = true;
+      const full = await fetchMeteoraPoolDailyApr("Q", options);
+      expect(full).not.toBe(degraded);
+      expect(full.degraded).toBeUndefined();
+      expect(full.points[0]!.tvlUsd).toBe(10_000);
+      vi.advanceTimersByTime(DEGRADED_CACHE_TTL_MS);
+      expect(await fetchMeteoraPoolDailyApr("Q", options)).toBe(full);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

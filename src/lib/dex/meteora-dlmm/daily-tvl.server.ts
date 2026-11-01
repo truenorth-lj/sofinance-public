@@ -1,3 +1,4 @@
+import "server-only";
 import { METEORA_ALLOWLISTED_POOLS, METEORA_DLMM_DATAPI } from "@sofinance/engine/protocols/meteora/constants";
 import { utcDate } from "@/lib/apr-series";
 import { parseMeteoraPoolSnapshot } from "@/lib/meteora-daily-apr";
@@ -13,6 +14,7 @@ import type { DailyTvlRecord, DailyTvlRecordInput, DailyTvlStats } from "../regi
  * fill pools that have no row yet (a failed read is retried next run); a stored row is never overwritten.
  * Listed = the engine allowlist plus the Meteora RWA feed's unblocked pools (as `listedMeteoraPool`). The feed's own
  * `tvl_usd` is not reused: it is the discovery scan's value, refreshed on its own cadence.
+ * A datapi 429 stops the run at once (no new requests; reads already in flight finish); the rest wait for the next run.
  */
 export const METEORA_TVL_BUDGET_MS = 15_000;
 const METEORA_TVL_CONCURRENCY = 4;
@@ -41,19 +43,24 @@ export async function recordMeteoraDailyTvl(input: DailyTvlRecordInput & { apiBa
   const rows: { poolId: string; tvlUsd: number }[] = [];
   const problems: string[] = [];
   let next = 0;
+  let throttled = false;
   const worker = async () => {
-    while (next < missing.length && !budget.aborted) {
+    while (next < missing.length && !budget.aborted && !throttled) {
       const poolId = missing[next++]!;
       const result = await fetchJsonOnce(fetcher, `${base}/pools/${encodeURIComponent(poolId)}`, METEORA_TVL_TIMEOUT_MS, { signal: budget, cache: "no-store" });
       const tvlUsd = result.ok ? parseMeteoraPoolSnapshot(result.body).tvlUsd : null;
       if (tvlUsd !== null) rows.push({ poolId, tvlUsd });
       else problems.push(result.ok ? "no TVL in the answer" : result.reason);
+      if (!result.ok && result.status === 429) throttled = true;
     }
   };
   await Promise.all(Array.from({ length: Math.min(METEORA_TVL_CONCURRENCY, missing.length) }, worker));
   const unread = missing.length - rows.length;
   stats.failed = unread;
-  if (unread) issues.push(`Meteora TVL: ${unread} of ${missing.length} pools not read for ${date} (${sanitizePublicError(new Error(problems[0] ?? "time budget"), "datapi error").slice(0, 120)}); retried next run`);
+  if (throttled) {
+    stats.stoppedBy = "429";
+    issues.push(`Meteora TVL: datapi answered 429 (rate limited), so the run stopped; ${unread} of ${missing.length} pools not read for ${date}; retried next run`);
+  } else if (unread) issues.push(`Meteora TVL: ${unread} of ${missing.length} pools not read for ${date} (${sanitizePublicError(new Error(problems[0] ?? "time budget"), "datapi error").slice(0, 120)}); retried next run`);
   if (rows.length) stats.saved = (await store.request({ op: "saveMeteoraTvl", lease, data: { date, rows } })).saved;
   return { stats, issues };
 }

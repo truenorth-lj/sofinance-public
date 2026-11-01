@@ -26,8 +26,8 @@ export type MeteoraTvlBasis = { storedDays: number; days: number; storeProblem?:
 
 export function meteoraDailyAprAssumptions(basis: MeteoraTvlBasis = { storedDays: 0, days: 0 }): string {
   const tvl = basis.storedDays > 0
-    ? `TVL: Meteora publishes no TVL history, so SoFinance stores the Meteora datapi pool TVL once per UTC day (at that day's first APR refresh); ${basis.storedDays} of ${basis.days} days use that day's stored TVL. Older days use today's TVL, so their APR is off by however much TVL has changed since.`
-    : `TVL: Meteora publishes no TVL history, and no stored daily TVL covers these days${basis.storeProblem ? ` (${basis.storeProblem})` : ""}. Older days use today's TVL from the Meteora datapi pool endpoint, so a day's APR is off by however much TVL has changed since.`;
+    ? `TVL: Meteora publishes no TVL history, so SoFinance stores the Meteora datapi pool TVL once per UTC day (at that day's first APR refresh); ${basis.storedDays} of ${basis.days} days use that day's stored TVL. Other days use today's TVL, so their APR is off by however much TVL has changed since.`
+    : `TVL: Meteora publishes no TVL history, and no stored daily TVL covers these days${basis.storeProblem ? ` (${basis.storeProblem})` : ""}. Other days use today's TVL from the Meteora datapi pool endpoint, so a day's APR is off by however much TVL has changed since.`;
   return [
     "Each point is (that UTC day's fees ÷ that day's stored TVL, or today's TVL when none is stored) × 365 × 100.",
     ASSUMPTION_FEES, tvl, ...ASSUMPTION_TAIL,
@@ -39,6 +39,8 @@ export const METEORA_DAILY_APR_ASSUMPTIONS = meteoraDailyAprAssumptions();
 export const METEORA_DAILY_APR_DAYS = 90;
 const TIMEOUT_MS = 10_000;
 const CACHE_TTL_MS = 3_600_000;
+/** A degraded answer (`PoolDailyAprResult.degraded`) is reused for a minute only. */
+export const DEGRADED_CACHE_TTL_MS = 60_000;
 const CACHE_MAX = 64;
 
 export type FetchMeteoraPoolDailyAprOptions = {
@@ -128,7 +130,7 @@ export function clearMeteoraPoolDailyAprCache() {
 export async function fetchMeteoraPoolDailyApr(poolId: string, options: FetchMeteoraPoolDailyAprOptions = {}): Promise<PoolDailyAprResult> {
   if (!options.bypassCache) {
     const hit = cache.get(poolId);
-    if (hit && Date.now() - hit.createdAt < CACHE_TTL_MS) return hit.value;
+    if (hit && Date.now() - hit.createdAt < (hit.value.degraded ? DEGRADED_CACHE_TTL_MS : CACHE_TTL_MS)) return hit.value;
     const running = inflight.get(poolId);
     if (running) return running;
   }
@@ -164,6 +166,11 @@ async function load(poolId: string, options: FetchMeteoraPoolDailyAprOptions): P
     storedTvl: stored.tvl });
   const storedDays = points.filter((point) => stored.tvl.has(point.date)).length;
   if (storedDays) sources.push(`SoFinance store: the Meteora datapi pool TVL saved once per UTC day (${storedDays} ${storedDays === 1 ? "day" : "days"})`);
+  const degraded = [
+    !pool.ok && `the Meteora datapi pool endpoint did not answer (${pool.reason})`,
+    !days && `the Meteora datapi volume history did not answer (${history.ok ? "unusable response" : history.reason})`,
+    stored.problem,
+  ].filter((reason): reason is string => Boolean(reason));
   const result: PoolDailyAprResult = {
     poolId,
     label: POOL_DAILY_APR_LABEL,
@@ -173,6 +180,7 @@ async function load(poolId: string, options: FetchMeteoraPoolDailyAprOptions): P
     points,
     sources,
     fetchedAt: new Date(nowSeconds * 1000).toISOString(),
+    ...(degraded.length ? { degraded: degraded.join("; ") } : {}),
   };
   if (!options.bypassCache) {
     if (cache.size >= CACHE_MAX) cache.delete(cache.keys().next().value!);

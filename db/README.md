@@ -79,7 +79,7 @@ schedule of its own: inside the existing APR refresh (`rwa-apr-refresh`, Meteora
 reads every listed Meteora pool (engine allowlist plus the Meteora feed's unblocked pools) and inserts its row; later
 runs that day only fill pools still missing (insert, `ON CONFLICT DO NOTHING`, so the first value of the day wins). The
 feed's `tvl_usd` is not reused. `/api/pool-daily-apr` divides a day's fees by that day's row and uses today's TVL for
-older days (the details say how many days had a stored TVL). Until the migration is applied, the cron reports
+other days (the details say how many days had a stored TVL). Until the migration is applied, the cron reports
 `Meteora TVL: METEORA_TVL_UNAVAILABLE` as an issue and the daily APR keeps using today's TVL.
 
 Position performance uses two additional tables: `position_history_state` for

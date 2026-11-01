@@ -27,7 +27,11 @@ export type DexModule = {
 export type DailyTvlRecordInput = {
   store: RwaStore; lease: Lease; fetcher: typeof fetch; clock: () => number; signal: AbortSignal;
 };
-export type DailyTvlStats = { date: string; pools: number; alreadySaved: number; saved: number; failed: number };
+export type DailyTvlStats = {
+  date: string; pools: number; alreadySaved: number; saved: number; failed: number;
+  /** Set when the upstream rate-limited the run and it stopped early (the rest are retried next run). */
+  stoppedBy?: "429";
+};
 export type DailyTvlRecord = { stats: DailyTvlStats; issues: string[] };
 
 /** Client-safe lookups over descriptors only. */

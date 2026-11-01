@@ -32,13 +32,15 @@ function fieldFromParam(raw: string | null): IntentField {
   return FIELDS.find((field) => field === raw) ?? DEFAULT_FIELD;
 }
 
-function syncPlanUrl(path: string, selection: { poolId?: string; pair?: string }) {
+function syncPlanUrl(path: string, selection: { poolId?: string; pair?: string; protocol?: string }) {
   if (typeof window === "undefined") return;
   const next = new URLSearchParams(window.location.search);
   if (selection.poolId) next.set("pool", selection.poolId);
   else next.delete("pool");
   if (selection.pair) next.set("pair", selection.pair);
   else next.delete("pair");
+  if (selection.protocol) next.set("protocol", selection.protocol);
+  else next.delete("protocol");
   const qs = next.toString();
   window.history.replaceState(null, "", qs ? `${path}?${qs}` : path);
 }
@@ -66,19 +68,29 @@ export function PlanApp() {
   const pair = selection.pair;
   const poolYield = usePoolYield(poolId);
   const row = poolId ? pairRows.find((candidate) => candidate.poolAddress === poolId) : undefined;
+  // The pool's DEX: the pool list's row, else the link's `protocol` (still loading, or a pool the list no longer has).
+  const urlProtocol = poolId && poolId === urlPool ? params.get("protocol") ?? undefined : undefined;
+  const protocol = row?.protocol ?? urlProtocol;
   // Per-DEX terms (opening cost, exits, whether the pool opens) come from the pool's descriptor; no protocol branches.
+  // Only a pool on the loaded list opens from here.
   const terms = useMemo(() => planPoolTerms({
-    descriptor: row?.protocol ? dexDescriptors.descriptorFor(row.protocol) : null,
-    listOpenReason: row?.protocol ? openUnavailableReason({ protocol: row.protocol as UnifiedProtocol }) : null,
+    descriptor: protocol ? dexDescriptors.descriptorFor(protocol) : null,
+    listOpenReason: row
+      ? (row.protocol ? openUnavailableReason({ protocol: row.protocol as UnifiedProtocol }) : null)
+      : pairs.status === "loading"
+        ? "Reading the SoFinance pool list."
+        : pairs.status === "ready"
+          ? "This pool isn't on the SoFinance pool list, so it can't be opened from here."
+          : "The SoFinance pool list could not be read, so this pool can't be opened from here.",
     symbols: row ? [row.wrappedSymbol, row.plainSymbol] : undefined,
-  }), [row]);
+  }), [row, protocol, pairs.status]);
   const shownSetup = useMemo(() => ({ ...setup, exitAsset: effectiveExit(setup.exitAsset, terms.exits) }), [setup, terms.exits]);
   const best = poolYield.status === "ready" ? poolYield.best : null;
 
   useEffect(() => {
     if (!poolId) return;
-    syncPlanUrl(pathname, { poolId, pair });
-  }, [pathname, poolId, pair]);
+    syncPlanUrl(pathname, { poolId, pair, protocol });
+  }, [pathname, poolId, pair, protocol]);
 
   const change = (patch: Partial<PlanSetup>) => setSetup((current) => applyPlanChange(current, patch));
 
@@ -106,7 +118,7 @@ export function PlanApp() {
   const choosePool = (nextId: string) => {
     const resolved = resolvePlanSelection({ poolId: nextId, pairs: pairRows });
     setChosen(resolved);
-    syncPlanUrl(pathname, resolved);
+    syncPlanUrl(pathname, { ...resolved, protocol: pairRows.find((candidate) => candidate.poolAddress === resolved.poolId)?.protocol });
   };
 
   return (
