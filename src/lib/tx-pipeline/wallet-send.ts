@@ -1,5 +1,6 @@
 import bs58 from "bs58";
 import { VersionedTransaction } from "@solana/web3.js";
+import { WALLET_PRIORITY_FEE_CEILING_LAMPORTS, walletPriorityFeeAllowance } from "@sofinance/engine/wallet-priority-fee";
 import { assertWalletReturnedTransaction } from "@/lib/wallet-returned-guard";
 import { isWalletRejection, TxLandedUnknownError, TxNotLandedError, TxNotSentError, TxSendUnknownError, TxWalletCancelledError, walletErrorInfo } from "./errors";
 import { waitForLanded, type FindLanded, type LandedOutcome } from "./landed";
@@ -49,6 +50,21 @@ const toBase64 = (bytes: Uint8Array) => {
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary);
 };
+
+/**
+ * Wallets add their own priority fee (Phantom inserts a SetComputeUnitPrice when the transaction has none: 97,502
+ * lamports on a Meteora setup step, 2026-11-01). It is a network fee the wallet shows and the user approves, but it is
+ * not in any prepared quote or SOL check, so on the path where we relay the signed bytes it is held to the same
+ * ceiling as the engine's simulations (`WALLET_PRIORITY_FEE_CEILING_LAMPORTS`, which the SOL reserve covers).
+ */
+export const WALLET_PRIORITY_FEE_TOO_HIGH = `Your wallet raised the network fee above ${Number(WALLET_PRIORITY_FEE_CEILING_LAMPORTS) / 1e9} SOL, so nothing was sent. Lower the priority fee in your wallet and try again.`;
+function assertWalletPriorityFee(prepared: VersionedTransaction, walletSigned: VersionedTransaction) {
+  try {
+    walletPriorityFeeAllowance(prepared, walletSigned);
+  } catch (error) {
+    throw new TxNotSentError(WALLET_PRIORITY_FEE_TOO_HIGH, error);
+  }
+}
 
 /** A wallet/connector saying it cannot signAndSend at all (nothing was prompted or signed). */
 export function isUnsupportedFeatureError(error: unknown): boolean {
@@ -143,6 +159,7 @@ export async function sendWithWallet(wallet: TxWallet, transaction: VersionedTra
     return checkLanded(error, signAskedAt);
   }
   assertWalletReturnedTransaction(prepared, walletSigned, wallet.address);
+  assertWalletPriorityFee(prepared, walletSigned);
   const signed = options.cosign ? options.cosign(walletSigned) : walletSigned;
   if (signed.signatures.some((signature) => !signature || signature.every((byte) => byte === 0))) {
     throw new TxNotSentError("A required signature is missing, so nothing was sent.");

@@ -193,6 +193,119 @@ describe("useTxPipeline", () => {
   });
 });
 
+describe("useTxPipeline runSteps (multi-step plans)", () => {
+  // Two-step plan shaped like a DEX open: step 1 creates an account, step 2 needs it confirmed (planToken + prior sigs).
+  type Step = { step: number; planToken?: string; prior: string[] };
+  type StepPrepared = ReturnType<typeof prepared> & { result: { step: number; of: number; done: boolean; planToken?: string } };
+  const SIG2 = bs58.encode(new Uint8Array(64).fill(7));
+  const stepAdapter = (prepare: (input: Step) => Promise<StepPrepared>) =>
+    ({ flow: "open", successTitle: "Position step confirmed", prepare, scope: (input: Step) => `pool:${input.step}` }) as unknown as TxAdapter<number>;
+  const stepPrepared = (step: number): StepPrepared => ({ ...prepared(), result: { step, of: 2, done: step === 2, ...(step === 1 ? { planToken: "position-1" } : {}) } });
+  const plan = {
+    progress: (p: StepPrepared) => ({ step: p.result.step, of: p.result.of }),
+    next: (sent: { signature: string; prepared: StepPrepared }, earlier: readonly { signature: string }[]): Step | null =>
+      sent.prepared.result.done ? null : { step: sent.prepared.result.step + 1, planToken: sent.prepared.result.planToken, prior: [...earlier, sent].map((s) => s.signature) },
+  };
+  type StepsBox = { runSteps: (first: Step, p: typeof plan) => Promise<unknown>; retry: () => void; status: string; error?: string; signature?: string; retryable?: boolean; step?: unknown; locked: boolean };
+  const steps = () => box.current as unknown as StepsBox;
+  /** /api/transaction-finality answers for step 1's signature; anything else stays pending. */
+  const finality = (status: string) => vi.fn(async (url: string, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body ?? "{}")) as { signature?: string };
+    return Response.json({ status: url === "/api/transaction-finality" && body.signature === SIG ? status : "pending" });
+  });
+  const twoSends = () => wallet(undefined, vi.fn<() => Promise<string>>().mockResolvedValueOnce(SIG).mockResolvedValueOnce(SIG2));
+  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
+
+  it("prepares step 2 only after step 1 is confirmed, with its planToken and signature, and succeeds only when step 2 confirms", async () => {
+    const confirm = deferred<Response>();
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { signature?: string };
+      return body.signature === SIG ? confirm.promise : Response.json({ status: "pending" });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const prepare = vi.fn(async (input: Step) => stepPrepared(input.step));
+    await render(stepAdapter(prepare), twoSends());
+    let running!: Promise<unknown>;
+    await act(async () => { running = steps().runSteps({ step: 1, prior: [] }, plan); });
+    // Step 1 sent and confirming: step 2 is not prepared yet, the run stays busy, and nothing says success.
+    expect(prepare).toHaveBeenCalledTimes(1);
+    expect(steps()).toMatchObject({ status: "confirming", signature: SIG, locked: true, step: { step: 1, of: 2 } });
+    await act(async () => { settleTxNotice(noticeIdFor(SIG), "confirmed"); });
+    expect(steps().status).toBe("confirming"); // step 1's own toast settling is not the run's success
+    await act(async () => { confirm.resolve(Response.json({ status: "confirmed" })); await running; });
+    expect(prepare).toHaveBeenCalledTimes(2);
+    expect(prepare).toHaveBeenLastCalledWith({ step: 2, planToken: "position-1", prior: [SIG] }, expect.anything());
+    expect(steps()).toMatchObject({ status: "confirming", signature: SIG2, step: { step: 2, of: 2 } });
+    await act(async () => { settleTxNotice(noticeIdFor(SIG2), "confirmed"); });
+    expect(steps()).toMatchObject({ status: "success", signature: SIG2, locked: false });
+  });
+
+  it("step 2 refused: says step 1 is on Solana and why step 2 stopped, never success; Try again resumes step 2 only", async () => {
+    vi.stubGlobal("fetch", finality("confirmed"));
+    const prepare = vi.fn(async (input: Step) => {
+      if (input.step === 2 && prepare.mock.calls.length === 2) throw new TxNotSentError("Jupiter has no route right now");
+      return stepPrepared(input.step);
+    });
+    await render(stepAdapter(prepare), twoSends());
+    await act(async () => { await steps().runSteps({ step: 1, prior: [] }, plan); });
+    expect(steps()).toMatchObject({ status: "failed", retryable: true, step: { step: 2, of: 2 },
+      error: "Step 1 of 2 is confirmed on Solana, but step 2 of 2 did not go through: Jupiter has no route right now. Nothing was sent." });
+    await act(async () => { steps().retry(); });
+    await act(async () => {});
+    expect(prepare).toHaveBeenCalledTimes(3);
+    expect(prepare.mock.calls.map(([input]) => input.step)).toEqual([1, 2, 2]);
+    expect(prepare).toHaveBeenLastCalledWith({ step: 2, planToken: "position-1", prior: [SIG] }, expect.anything());
+    expect(steps()).toMatchObject({ status: "confirming", signature: SIG2 });
+  });
+
+  it("step 2 cancelled in the wallet after step 1 landed: a failure that says so, not a silent idle", async () => {
+    vi.stubGlobal("fetch", finality("confirmed"));
+    const send = vi.fn<() => Promise<string>>().mockResolvedValueOnce(SIG)
+      .mockRejectedValueOnce(Object.assign(new Error("User rejected the request."), { code: 4001 }));
+    const w: TxWallet = { address: payer.publicKey.toBase58(), signTransaction: vi.fn(async () => { throw Object.assign(new Error("User rejected the request."), { code: 4001 }); }), signAndSendTransaction: send };
+    await render(stepAdapter(async (input) => stepPrepared(input.step)), w);
+    await act(async () => { await steps().runSteps({ step: 1, prior: [] }, plan); });
+    expect(steps().status).toBe("failed");
+    expect(steps().error).toMatch(/^Step 1 of 2 is confirmed on Solana, but step 2 of 2 did not go through: /);
+  });
+
+  it("step 1 not confirmed: step 2 is never prepared and the run stops with 'still unconfirmed' (no Try again)", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    vi.stubGlobal("fetch", finality("pending"));
+    const prepare = vi.fn(async (input: Step) => stepPrepared(input.step));
+    await render(stepAdapter(prepare), twoSends());
+    let running!: Promise<unknown>;
+    await act(async () => { running = steps().runSteps({ step: 1, prior: [] }, plan); await vi.advanceTimersByTimeAsync(10); });
+    expect(steps()).toMatchObject({ status: "confirming", signature: SIG, locked: true });
+    await act(async () => { await vi.advanceTimersByTimeAsync(200_000); await running; });
+    expect(prepare).toHaveBeenCalledTimes(1);
+    expect(steps()).toMatchObject({ status: "failed", signature: SIG, retryable: false,
+      error: "Step 1 of 2 is still unconfirmed, so step 2 of 2 was not started. Check it on Solscan before trying again; it may still land." });
+  });
+
+  it("step 1 failed on Solana: step 2 is never prepared, the failure is plain, and Try again restarts from step 1", async () => {
+    vi.stubGlobal("fetch", finality("failed"));
+    const prepare = vi.fn(async (input: Step) => stepPrepared(input.step));
+    await render(stepAdapter(prepare), twoSends());
+    await act(async () => { await steps().runSteps({ step: 1, prior: [] }, plan); });
+    expect(prepare).toHaveBeenCalledTimes(1);
+    expect(steps()).toMatchObject({ status: "failed", signature: SIG, retryable: true,
+      error: "Step 1 of 2 failed on Solana, so step 2 of 2 was not started. Nothing changed except the network fee." });
+    await act(async () => { steps().retry(); });
+    await act(async () => {});
+    expect(prepare.mock.calls.map(([input]) => input.step)).toEqual([1, 1]);
+  });
+
+  it("step 2 lands but fails on-chain: the failure names step 1 as confirmed", async () => {
+    vi.stubGlobal("fetch", finality("confirmed"));
+    await render(stepAdapter(async (input) => stepPrepared(input.step)), twoSends());
+    await act(async () => { await steps().runSteps({ step: 1, prior: [] }, plan); });
+    await act(async () => { settleTxNotice(noticeIdFor(SIG2), "failed"); });
+    expect(steps()).toMatchObject({ status: "failed", signature: SIG2, retryable: true });
+    expect(steps().error).toMatch(/^Step 1 of 2 is confirmed on Solana, but step 2 of 2 did not go through: Solana ran it/);
+  });
+});
+
 describe("openStatusFromNotice", () => {
   it("maps the shared notice to the open modal status", () => {
     expect(openStatusFromNotice(undefined)).toBeNull();

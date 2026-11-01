@@ -108,7 +108,8 @@ export function openRentLines(rent: RentQuote | null | undefined): { lines: stri
 }
 
 /**
- * One send per panel through the shared pipeline, scoped to this position, with multi-step plans run in order. Every
+ * One send per panel through the shared pipeline, scoped to this position; a multi-step plan runs through
+ * `useTxPipeline().runSteps`, which waits for each step to confirm before preparing the next. Every
  * op on the same position shares one lock (`position-op-lock`): while any of them is preparing, in the wallet, being
  * checked or confirming, all panels of that position are locked, and a tab switch does not release it.
  */
@@ -134,20 +135,20 @@ function usePositionTx<Op extends DexStepOp>(op: Op, position: UnifiedPosition, 
   const send = async (fields: Omit<DexStepInput<Op>, "context" | "relayStore" | "beforeWallet">) => {
     const release = beginPositionOp(position.key);
     if (!release) return; // another op on this position is in flight (the panel is greyed; this closes the race)
-    const priorSignatures: string[] = [];
-    let planToken: string | undefined;
+    const inputFor = (step: number, priorSignatures: string[], planToken?: string) => ({ ...fields, relayStore: relayStore.current, beforeWallet: setPrepared,
+      context: { step, priorSignatures, ...(planToken ? { planToken } : {}) } }) as unknown as DexStepInput<Op>;
+    setPrepared(null);
     try {
-      for (let step = 1; step <= 8; step++) {
-        setPrepared(null);
-        const input = { ...fields, relayStore: relayStore.current, beforeWallet: setPrepared,
-          context: { step, priorSignatures: [...priorSignatures], ...(planToken ? { planToken } : {}) } } as unknown as DexStepInput<Op>;
-        const result = await tx.run(input);
-        if (!result) return;
-        trackPositionSignature(position.key, result.signature);
-        priorSignatures.push(result.signature);
-        if (result.prepared.result.done) return;
-        planToken = result.prepared.result.planToken;
-      }
+      // The pipeline prepares each next step only once the previous one is confirmed, and reports a stop in plain words.
+      await tx.runSteps(inputFor(1, []), {
+        progress: (step) => ({ step: step.result.step, of: step.result.of }),
+        next: (sent, earlier) => {
+          trackPositionSignature(position.key, sent.signature);
+          setPrepared(null);
+          const { done, step, planToken } = sent.prepared.result;
+          return done ? null : inputFor(step + 1, [...earlier, sent].map((item) => item.signature), planToken);
+        },
+      });
     } finally {
       release();
     }
