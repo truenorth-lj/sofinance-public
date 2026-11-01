@@ -35,12 +35,15 @@ const EXITS: Record<ExitAsset, { label: string; title: string; detail: string }>
  */
 export function IntentSentence({
   setup,
+  exits = ["usdc", "tokens"],
   now,
   active,
   onActiveChange,
   onChange,
 }: {
   setup: PlanSetup;
+  /** Exit choices the pool's DEX pays out (its `withdrawOutputs`); others are not offered. */
+  exits?: readonly ExitAsset[];
   now: number;
   active: IntentField;
   onActiveChange: (field: IntentField) => void;
@@ -157,7 +160,7 @@ export function IntentSentence({
         {active === "exitAsset" && (
           <Editor eyebrow="What you'd take back" note="Optional, and it does not change the projection.">
             <div role="radiogroup" aria-label="What you'd take back" className="mt-4 grid gap-3 sm:grid-cols-2">
-              {(Object.keys(EXITS) as ExitAsset[]).map((key) => (
+              {exits.map((key) => (
                 <OptionCard
                   key={key}
                   selected={setup.exitAsset === key}

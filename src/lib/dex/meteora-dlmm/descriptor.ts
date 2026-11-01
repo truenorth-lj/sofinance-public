@@ -38,6 +38,8 @@ export const meteoraDlmmDescriptor: DexDescriptor = Object.freeze({
     rent: Object.freeze({
       refundableOnClose: true,
       disclosure: "Opening sets aside about 0.042 SOL as position rent. You get it back when you fully withdraw.",
+      /** 41,899,840 lamports: the refundable rent the adapter quotes for a 60-bin position (contract suite; PM review of #290). */
+      planEstimateSol: "0.0419",
     }),
     approvals: "none",
     /** The new position account is a fresh keypair the browser creates and signs with (never sent to the server). */

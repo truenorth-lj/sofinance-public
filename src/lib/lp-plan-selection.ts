@@ -29,6 +29,8 @@ export type PlanPairOption = {
   plainSymbol: string;
   feeTierBps?: number | null;
   tvlUsd?: number | null;
+  /** The pool's DEX id from the pairs list (e.g. "raydium-clmm", "meteora-dlmm"); the Plan page reads its descriptor. */
+  protocol?: string;
 };
 
 /** `SPCXx/SPCX · 0.01% fee · $1.2M · DUzB…TJro` — distinguishes same-symbol pools. */

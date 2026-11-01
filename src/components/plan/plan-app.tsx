@@ -10,6 +10,9 @@ import {
 } from "@/lib/lp-plan-intent";
 import { parsePairLabel, parseSolanaAddress, resolvePlanSelection } from "@/lib/lp-plan-selection";
 import { buildPlanComparison, planEntryCost } from "@/lib/lp-plan-yield";
+import { effectiveExit, planPoolTerms } from "@/lib/lp-plan-pool-terms";
+import { dexDescriptors } from "@/lib/dex/client";
+import { openUnavailableReason, type UnifiedProtocol } from "@/lib/unified-pools/model";
 import { APP_ROUTES } from "@/lib/public-urls";
 import { InkNav } from "@/components/ink";
 import { useWalletConnection } from "@/components/wallet-connection";
@@ -62,6 +65,14 @@ export function PlanApp() {
   const poolId = selection.poolId;
   const pair = selection.pair;
   const poolYield = usePoolYield(poolId);
+  const row = poolId ? pairRows.find((candidate) => candidate.poolAddress === poolId) : undefined;
+  // Per-DEX terms (opening cost, exits, whether the pool opens) come from the pool's descriptor; no protocol branches.
+  const terms = useMemo(() => planPoolTerms({
+    descriptor: row?.protocol ? dexDescriptors.descriptorFor(row.protocol) : null,
+    listOpenReason: row?.protocol ? openUnavailableReason({ protocol: row.protocol as UnifiedProtocol }) : null,
+    symbols: row ? [row.wrappedSymbol, row.plainSymbol] : undefined,
+  }), [row]);
+  const shownSetup = useMemo(() => ({ ...setup, exitAsset: effectiveExit(setup.exitAsset, terms.exits) }), [setup, terms.exits]);
   const best = poolYield.status === "ready" ? poolYield.best : null;
 
   useEffect(() => {
@@ -79,9 +90,9 @@ export function PlanApp() {
       aprPct: best.aprPct,
       sampleDays: best.sampleDays,
       aprWindowDays: best.windowDays,
-      entryCost: planEntryCost(setup.amount),
+      entryCost: planEntryCost(setup.amount, terms.openCost.bps),
     });
-  }, [setup.amount, setup.days, best]);
+  }, [setup.amount, setup.days, best, terms.openCost.bps]);
 
   const resolvingPair = Boolean(!poolId && pair && pairs.status === "loading");
   const status = resolvingPair ? "loading" : poolYield.status === "idle" ? "idle" : poolYield.status;
@@ -129,11 +140,12 @@ export function PlanApp() {
                 />
               )}
             </div>
-            <IntentSentence setup={setup} now={now} active={active} onActiveChange={setActive} onChange={change} />
+            <IntentSentence setup={shownSetup} exits={terms.exits} now={now} active={active} onActiveChange={setActive} onChange={change} />
           </section>
 
           <OutcomePanel
-            setup={setup}
+            setup={shownSetup}
+            terms={terms}
             status={status}
             reason={reason}
             comparison={comparison}
@@ -141,7 +153,7 @@ export function PlanApp() {
             poolId={poolId}
           />
 
-          <ComparisonChart status={status} reason={reason} comparison={comparison} />
+          <ComparisonChart status={status} reason={reason} comparison={comparison} openCostCopy={terms.openCost.chart} />
         </main>
 
         <p className="mt-5 max-w-3xl px-2 text-xs leading-relaxed text-smoke">

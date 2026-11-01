@@ -68,6 +68,11 @@ export type DexRentModel = {
   refundableOnClose: boolean;
   /** Plain-English line shown before signing, e.g. "about 0.042 SOL, refunded when you fully withdraw". */
   disclosure: string;
+  /**
+   * Typical rent of one new position in SOL, for planning copy only (the Plan page's opening-cost note); real opens use
+   * `OpenQuote.rent`. Omitted when there is no fixed typical figure.
+   */
+  planEstimateSol?: string;
 };
 
 /** Protocol facts the UI may need, as data, so no layer above the registry branches on a protocol id. */
