@@ -135,7 +135,8 @@ describe("Meteora DLMM adapter specifics", () => {
     // The shared panel's Liquidity / Unclaimed fees rows read these (raw atomic strings from the position's bins).
     expect(listed[0]!.holdings).toEqual({ liquidityRaw: { a: expect.stringMatching(/^\d+$/), b: expect.stringMatching(/^\d+$/) },
       unclaimedFeesRaw: { a: expect.stringMatching(/^\d+$/), b: expect.stringMatching(/^\d+$/) } });
-    // The rent a full withdraw pays back, stated before signing (60-bin position: 0.0419 SOL, as disclosed at open).
+    // The rent a full withdraw pays back, stated before signing: the position account's own lamports (60-bin position:
+    // 0.0419 SOL, as disclosed at open).
     expect(listed[0]!.closeRefundLamports).toBe("41899840");
     vi.stubEnv("SOFINANCE_RWA_DB_ENABLED", "false");
     clearMeteoraPoolListCache();
@@ -410,6 +411,8 @@ describe("Meteora DLMM adapter specifics", () => {
       // Only the compute budget, the owner's own missing token account (TSLAx) and Meteora: no transfer of any kind.
       const programs = new Set(tx.message.compiledInstructions.map((ix) => keys[ix.programIdIndex]));
       expect([...programs].sort()).toEqual(["ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL", "ComputeBudget111111111111111111111111111111", METEORA].sort());
+      // That created account's rent is returned with the step, so the panel states it before the wallet signs.
+      expect(step.createsTokenAccounts).toEqual([{ mint: TSLAX, rentLamports: expect.stringMatching(/^[1-9]\d*$/) }]);
     });
 
     it("leaves the wallet's own pool tokens untouched when it lands (only the claimed fees go back in)", async () => {
@@ -487,7 +490,9 @@ describe("Meteora DLMM adapter specifics", () => {
         expect(BigInt(DEPOSIT_RAW) - ySpend).toBeGreaterThan(0n); // part of the deposit stays TSLA
         expect(quote.platformFeeRaw).toBe(tenBps(ySpend).toString());
         expect(adapter.fees.feeFor("open", ySpend)).toBe(tenBps(ySpend));
-        await adapter.prepareOpen(request, first).catch(() => undefined); // step 1 builds no swap
+        const setup = await adapter.prepareOpen(request, first); // step 1 builds no swap: it must succeed, not be swallowed
+        expect(setup).toMatchObject({ step: 1, done: false });
+        expect(quotes.length).toBeGreaterThan(0);
         for (const q of quotes) expect(q).toMatchObject({ inputMint: TSLA, outputMint: TSLAX, amount: ySpend, platformFeeBps: 10 });
       } finally { restore(); }
     });

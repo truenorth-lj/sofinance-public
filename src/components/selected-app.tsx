@@ -174,7 +174,8 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
     ?? (!otherKey && solanaEmpty && !initialMint ? otherPositions[0] ?? null : null);
   const otherBinding = otherSelected && registry.owns(otherSelected)
     ? { header: (item: UnifiedPosition) => <RegistryPositionHeader position={item} metadata={metadata} icons={storedIcons} />, details: (item: UnifiedPosition) => <RegistryPositionDetails position={item} />,
-      tool: (item: UnifiedPosition, view: ToolId) => <RegistryPositionTool key={`${item.key}:${view}`} position={item} descriptor={registry.descriptor(item)!}
+      // Keyed by the position only: the cross-op lock is per position and must not depend on the open tab (PM review of #289).
+      tool: (item: UnifiedPosition, view: ToolId) => <RegistryPositionTool key={item.key} position={item} descriptor={registry.descriptor(item)!}
         capabilities={registry.capabilities(item)!} view={view} balances={walletBalances} symbolOf={(token) => tokenSymbol(token.id, metadata, token.symbol)}
         onConfirmed={() => { setOtherKey(item.key); setRegistryRefresh((value) => value + 1); void refreshDiscovery(); }} />,
       capabilities: registry.capabilities(otherSelected)! }

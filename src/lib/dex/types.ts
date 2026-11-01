@@ -96,6 +96,11 @@ export type DexMeta = {
    * the adapter swaps in (`extra`, e.g. USDC on Solana). The Add panel offers exactly these.
    */
   depositInputs: { poolTokens: boolean; extra: readonly TokenRef[] };
+  /**
+   * A fee the pool itself may take when tokens are added while the price is inside the range (not ours), as the plain
+   * line the Compound panel shows before signing; omitted when the protocol has none.
+   */
+  inRangeDepositPoolFee?: string;
 };
 
 /** Unified-positions capabilities plus the two this contract adds. */

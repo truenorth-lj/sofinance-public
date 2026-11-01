@@ -46,6 +46,8 @@ export const meteoraDlmmDescriptor: DexDescriptor = Object.freeze({
     feePolicy: METEORA_DLMM_FEE_POLICY,
     /** Same inputs as opening (SOL is refused). */
     depositInputs: Object.freeze({ poolTokens: true, extra: Object.freeze([{ id: USDC_MINT, symbol: "USDC", decimals: 6 }]) }),
+    /** DLMM charges a composition fee when a deposit changes the active bin's token mix (PM review of #289). */
+    inRangeDepositPoolFee: "While the price is inside the range, the pool may charge its own composition fee on the part that goes into the bin at the current price. That fee goes to the pool, not to us.",
   }),
   capabilities: Object.freeze({
     open: SUPPORTED,
