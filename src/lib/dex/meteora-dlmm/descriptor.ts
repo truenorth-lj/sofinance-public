@@ -1,4 +1,4 @@
-import { SUPPORTED, unsupported } from "@/lib/unified-positions/model";
+import { NOT_AVAILABLE_MESSAGE, SUPPORTED, unsupported } from "@/lib/unified-positions/model";
 import { NO_FEE_POLICY } from "../fees";
 import type { DexDescriptor, FeePolicy } from "../types";
 
@@ -16,8 +16,11 @@ export const METEORA_DLMM_FEE_POLICY: FeePolicy = Object.freeze({
   withdrawUsdc: Object.freeze({ kind: "swap-output-bps", bps: 10 }),
 });
 
-/** Shown until the PR that ships each tool (PR6 add / withdraw / claim, PR7 compound / performance). */
-const NOT_YET = "Not available for Meteora positions yet";
+/**
+ * Shown until the PR that ships each tool (PR6 add / withdraw / claim, PR7 compound / performance). The shared generic
+ * text, never a DEX name: the UI only renders the capability's reason (PM 11/1).
+ */
+const NOT_YET = NOT_AVAILABLE_MESSAGE;
 
 export const meteoraDlmmDescriptor: DexDescriptor = Object.freeze({
   id: "meteora-dlmm",

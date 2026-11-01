@@ -104,6 +104,9 @@ describe("Meteora DLMM adapter specifics", () => {
     const listed = await createMeteoraDlmmAdapter().listPositions(OWNER);
     expect(listed.map((position) => position.key)).toEqual([`meteora-dlmm:${FEED_POSITION}`]);
     expect(listed[0]).toMatchObject({ source: "meteora-dlmm", chain: "solana", poolId: TSLA_POOL, tokenA: { id: TSLA }, tokenB: { id: TSLAX } });
+    // The shared panel's Liquidity / Unclaimed fees rows read these (raw atomic strings from the position's bins).
+    expect(listed[0]!.holdings).toEqual({ liquidityRaw: { a: expect.stringMatching(/^\d+$/), b: expect.stringMatching(/^\d+$/) },
+      unclaimedFeesRaw: { a: expect.stringMatching(/^\d+$/), b: expect.stringMatching(/^\d+$/) } });
     vi.stubEnv("SOFINANCE_RWA_DB_ENABLED", "false");
     clearMeteoraPoolListCache();
     expect(await createMeteoraDlmmAdapter().listPositions(OWNER)).toEqual([]);

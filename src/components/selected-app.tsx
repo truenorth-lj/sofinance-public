@@ -167,7 +167,7 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
   const otherSelected = otherPositions.find((item) => item.key === otherKey)
     ?? (!otherKey && solanaEmpty && !initialMint ? otherPositions[0] ?? null : null);
   const otherBinding = otherSelected && registry.owns(otherSelected)
-    ? { header: (item: UnifiedPosition) => <RegistryPositionHeader position={item} />, details: (item: UnifiedPosition) => <RegistryPositionDetails position={item} />,
+    ? { header: (item: UnifiedPosition) => <RegistryPositionHeader position={item} metadata={metadata} />, details: (item: UnifiedPosition) => <RegistryPositionDetails position={item} />,
       tool: () => null, capabilities: registry.capabilities(otherSelected)! }
     : otherSelected && external ? { header: external.header, details: external.details, tool: external.tool, capabilities: capabilitiesFor(external.source, otherSelected) }
       : null;

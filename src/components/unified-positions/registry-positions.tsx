@@ -3,9 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { dexDescriptors, dexPositionLabel, dexPositionRangeText, dexRangeStatusText, fetchDexPositions, positionDescriptorsFor,
   type DexDescriptor, type DexSigner } from "@/lib/dex/client";
-import type { PositionLabelMetadata } from "@/lib/position-label";
+import { tokenSymbol, type PositionLabelMetadata } from "@/lib/position-label";
 import { isDexTxRouteEnabled } from "@/lib/protocol-flags";
 import type { PositionSourceId, SourceCapabilities, UnifiedPosition } from "@/lib/unified-positions/model";
+import { PositionAssetRow } from "../position-asset-row";
 
 /**
  * My positions from DEXes served through the registry (PR5): every descriptor whose signer is the connected wallet's,
@@ -65,13 +66,28 @@ export function useRegistryPositions({ owner, signer, exclude, refresh }: {
   };
 }
 
-/** Under the dropdown for a selected registry position: range status and range (amounts and tools arrive with PR6/PR7). */
-export function RegistryPositionHeader({ position }: { position: UnifiedPosition }) {
+type AssetMetadata = Record<string, { symbol?: string | null; icon?: string | null } | undefined>;
+
+/**
+ * Under the dropdown for a selected registry position: range status, range, and the shared Liquidity / Unclaimed fees
+ * rows (same component and rule as Raydium and Robinhood Chain: a value that was not read is a dash, never zero; no USD
+ * until the DEX reports a price). Tools arrive with PR6/PR7.
+ */
+export function RegistryPositionHeader({ position, metadata = {} }: { position: UnifiedPosition; metadata?: AssetMetadata }) {
   const status = dexRangeStatusText(position);
-  return <div className="mt-3 flex flex-wrap items-center gap-2 text-xs" data-testid="registry-position-header">
-    {status ? <span className={`rounded-full border px-2.5 py-1 ${position.rangeStatus === "in" ? "border-white/40 bg-white/[0.07] text-cream/80" : "border-white/20 bg-white/[0.05] text-smoke"}`}>{status}</span> : null}
-    <span className="rounded-full border border-white/20 bg-white/[0.05] px-2.5 py-1 text-cream/80">{dexPositionRangeText(position).replace(/^range/, "Range").replace(/^ticks/, "Ticks")}</span>
-  </div>;
+  const tokens = [position.tokenA, position.tokenB] as const;
+  const sides = ["a", "b"] as const;
+  return <>
+    <div className="mt-3 flex flex-wrap items-center gap-2 text-xs" data-testid="registry-position-header">
+      {status ? <span className={`rounded-full border px-2.5 py-1 ${position.rangeStatus === "in" ? "border-white/40 bg-white/[0.07] text-cream/80" : "border-white/20 bg-white/[0.05] text-smoke"}`}>{status}</span> : null}
+      <span className="rounded-full border border-white/20 bg-white/[0.05] px-2.5 py-1 text-cream/80">{dexPositionRangeText(position).replace(/^range/, "Range").replace(/^ticks/, "Ticks")}</span>
+    </div>
+    <div aria-label="Position assets" className="mt-5 divide-y divide-white/10" data-testid="registry-position-assets">
+      {tokens.map((token, i) => <PositionAssetRow key={token.id} symbol={tokenSymbol(token.id, metadata, token.symbol)} icon={metadata[token.id]?.icon ?? null}
+        decimals={token.decimals} liquidityRaw={position.holdings?.liquidityRaw?.[sides[i]!] ?? null}
+        unclaimedFeesRaw={position.holdings?.unclaimedFeesRaw?.[sides[i]!] ?? null} priceUsd={null} />)}
+    </div>
+  </>;
 }
 
 /** "Learn more details" lines for a selected registry position. */

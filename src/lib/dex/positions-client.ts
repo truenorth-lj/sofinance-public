@@ -4,7 +4,7 @@
  * and its capabilities, never a DEX id.
  */
 import { shortMint, tokenSymbol, type PositionLabelMetadata } from "@/lib/position-label";
-import type { UnifiedPosition } from "@/lib/unified-positions/model";
+import type { PositionHoldings, UnifiedPosition } from "@/lib/unified-positions/model";
 import type { DexDescriptor, DexSigner } from "./types";
 
 /** DEXes whose positions this wallet type can list, minus sources the page already reads another way (`exclude`). */
@@ -12,23 +12,33 @@ export function positionDescriptorsFor(descriptors: readonly DexDescriptor[], si
   return descriptors.filter((descriptor) => descriptor.capabilities.signer === signer && !exclude.includes(descriptor.id));
 }
 
+const isRawPair = (value: unknown) => value === null
+  || Boolean(value && typeof value === "object" && ["a", "b"].every((side) => {
+    const raw = (value as Record<string, unknown>)[side];
+    return typeof raw === "string" && /^\d{1,80}$/.test(raw);
+  }));
+const isHoldings = (value: unknown) => value === undefined
+  || Boolean(value && typeof value === "object" && isRawPair((value as PositionHoldings).liquidityRaw) && isRawPair((value as PositionHoldings).unclaimedFeesRaw));
+
 const isPosition = (value: unknown, descriptor: DexDescriptor): value is UnifiedPosition => {
   const item = value as Partial<UnifiedPosition> | null;
   return Boolean(item && typeof item.key === "string" && item.source === descriptor.id && item.chain === descriptor.chain
-    && typeof item.nativeId === "string" && typeof item.liquidity === "string" && item.tokenA && item.tokenB && item.range);
+    && typeof item.nativeId === "string" && typeof item.liquidity === "string" && item.tokenA && item.tokenB && item.range
+    && isHoldings(item.holdings));
 };
 
 /**
- * The wallet's positions in one DEX, or `null` when this deployment does not serve the DEX (404: the route is off, as in
- * production today, or the DEX is not registered); the page then treats the DEX as not enabled. Any other failure throws
- * with the server's plain message.
+ * The wallet's positions in one DEX, or `null` when this deployment does not serve the DEX: only a 404 whose body has no
+ * error `code` (the route is off, as in production today, or the DEX / op is not registered); the page then treats the
+ * DEX as not enabled. A coded 404 (e.g. `POSITION_NOT_FOUND` from the adapter) and every other failure throw with the
+ * server's plain message.
  */
 export async function fetchDexPositions(descriptor: DexDescriptor, owner: string, init: { signal?: AbortSignal; fetch?: typeof fetch } = {}): Promise<UnifiedPosition[] | null> {
   const response = await (init.fetch ?? fetch)(`/api/dex/${encodeURIComponent(descriptor.id)}/positions`, {
     method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ owner }), signal: init.signal, cache: "no-store",
   });
-  if (response.status === 404) return null;
-  const body = await response.json().catch(() => null) as { positions?: unknown; error?: unknown } | null;
+  const body = await response.json().catch(() => null) as { positions?: unknown; error?: unknown; code?: unknown } | null;
+  if (response.status === 404 && (body?.code === undefined || body?.code === null)) return null;
   if (!response.ok) {
     throw new Error(typeof body?.error === "string" && body.error ? body.error : `${descriptor.displayName} positions could not be loaded.`);
   }

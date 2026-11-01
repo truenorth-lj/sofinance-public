@@ -2,7 +2,8 @@ import "@/lib/engine-host";
 import { PublicKey, VersionedTransaction } from "@solana/web3.js";
 import { z } from "zod";
 import { apiError } from "@/lib/api-response";
-import { dexRegistry, DexError, publicDexMessage, type DexAdapter, type DexErrorCode, type OpenRequest, type StepContext, type StepResult } from "@/lib/dex";
+import { dexRegistry, DexError, publicDexMessage, type DexAdapter, type DexErrorCode, type DexSigner, type OpenRequest, type StepContext, type StepResult } from "@/lib/dex";
+import { dexRouteRateLimited } from "@/lib/dex-route-rate-limit";
 import { withJupiterRelay } from "@/lib/jupiter-relay-route";
 import { isDexTxRouteEnabled } from "@/lib/protocol-flags";
 import { txPermitsFor } from "@/lib/tx-send/permit";
@@ -17,7 +18,8 @@ import type { PositionKey } from "@/lib/unified-positions/model";
  *   positions   { owner }                                      → { positions: UnifiedPosition[] } (read-only)
  * Solana steps come back with the tx-send permits for the requesting wallet (relay send + on-chain check after a
  * wallet error). Jupiter goes through the browser relay when the body carries `jupiterRelay`. Nothing is signed or
- * sent here. Behind DEX_TX_ROUTE_ENABLED (off in production → 404).
+ * sent here. Behind DEX_TX_ROUTE_ENABLED (off in production → 404). Per-IP rate limited (all ops, plus a tighter
+ * `positions` limit; in-memory per instance, see dex-route-rate-limit.ts) → 429.
  */
 const NO_STORE = { "Cache-Control": "no-store" } as const;
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: NO_STORE });
@@ -45,11 +47,27 @@ const StepSchema = {
   priorSignatures: z.array(z.string().min(1).max(128)).max(16),
   planToken: z.string().min(1).max(512).optional(),
 };
+/**
+ * The `positions` owner, by the DEX's wallet type (descriptor `capabilities.signer`, never a DEX id): a Solana wallet is
+ * a base58 public key that decodes to 32 bytes; an EVM wallet is a 0x address. Anything else is a 400 before any read.
+ */
+const BASE58_PUBKEY = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+const isSolanaPublicKey = (value: string) => {
+  if (!BASE58_PUBKEY.test(value)) return false;
+  try { return new PublicKey(value).toBase58() === value; } catch { return false; }
+};
+const OWNER: Record<DexSigner, z.ZodType<string>> = {
+  "solana-wallet": z.string().trim().refine(isSolanaPublicKey, "owner must be a Solana wallet address (base58 public key)"),
+  "evm-wallet": z.string().trim().regex(/^0x[0-9a-fA-F]{40}$/, "owner must be an EVM wallet address (0x…)"),
+};
+const positionsBody = (adapter: DexAdapter) => z.object({ owner: OWNER[adapter.descriptor.capabilities.signer] }).strict();
+
 const BODY = {
   "quote-open": z.object({ request: OpenRequestSchema, jupiterRelay: z.unknown().optional() }).strict(),
   open: z.object({ request: OpenRequestSchema, ...StepSchema, jupiterRelay: z.unknown().optional() }).strict(),
-  /** Read-only: the wallet's positions in this DEX (the pools it lists), for My positions. Builds nothing. */
-  positions: z.object({ owner: solanaOrEvmAddress }).strict(),
+  /** Read-only: the wallet's positions in this DEX (the pools it lists), for My positions. Builds nothing. The owner is
+   * checked per wallet type by `positionsBody`; this entry only names the op. */
+  positions: z.object({ owner: z.string() }).strict(),
   recovery: z.object({ wallet: solanaOrEvmAddress, positionKey: z.string().min(3).max(160), ...StepSchema, jupiterRelay: z.unknown().optional() }).strict(),
 } as const;
 type Op = keyof typeof BODY;
@@ -105,7 +123,7 @@ async function run(adapter: DexAdapter, op: Op, body: unknown): Promise<Response
       return json(withPermits(await adapter.prepareOpen(request, stepContext(input)), request.owner));
     }
     case "positions": {
-      const { owner } = BODY[op].parse(body);
+      const { owner } = positionsBody(adapter).parse(body);
       return json({ positions: await adapter.listPositions(owner) });
     }
     case "recovery": {
@@ -119,6 +137,9 @@ async function run(adapter: DexAdapter, op: Op, body: unknown): Promise<Response
 export async function POST(request: Request, { params }: { params: Promise<{ dex: string; op: string }> }) {
   if (!isDexTxRouteEnabled()) return notFound();
   const { dex, op } = await params;
+  if (dexRouteRateLimited(request, op)) {
+    return Response.json({ error: "Too many requests. Please wait a minute.", code: "RATE_LIMITED" }, { status: 429, headers: { ...NO_STORE, "Retry-After": "60" } });
+  }
   if (!isOp(op)) return notFound();
   const adapter = await dexRegistry.adapterFor(dex);
   if (!adapter) return notFound();

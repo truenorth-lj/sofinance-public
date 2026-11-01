@@ -63,6 +63,16 @@ export function positionContractProblems(descriptor: DexDescriptor, position: Un
   if (position.range.mode !== descriptor.capabilities.rangeDisplay) problems.push(`${where}: range mode ${position.range.mode} does not match rangeDisplay`);
   if (!/^\d+$/.test(position.liquidity)) problems.push(`${where}: liquidity must be a base-10 integer string`);
   if (!position.poolId) problems.push(`${where}: missing poolId`);
+  // Optional; when present the shared panel draws Liquidity / Unclaimed fees from it, so raw digits or null only.
+  if (position.holdings !== undefined) {
+    const pairOk = (pair: unknown) => pair === null || (typeof pair === "object" && ["a", "b"].every((side) => {
+      const raw = (pair as Record<string, unknown>)[side];
+      return typeof raw === "string" && /^\d+$/.test(raw);
+    }));
+    if (!position.holdings || !pairOk(position.holdings.liquidityRaw) || !pairOk(position.holdings.unclaimedFeesRaw)) {
+      problems.push(`${where}: holdings must hold raw base-10 integer strings or null`);
+    }
+  }
   return problems;
 }
 

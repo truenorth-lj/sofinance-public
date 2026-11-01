@@ -9,7 +9,7 @@ import { rpcConnection } from "@sofinance/engine/rpc";
 import { isJupiterUpstreamError, asJupiterUserError } from "@sofinance/engine/jupiter";
 import { readSwapFeeConfig, type SwapFeeConfig } from "@sofinance/engine/swap/fee";
 import { listMeteoraPositions, type MeteoraListedPosition, type MeteoraReadOptions } from "@/lib/meteora-positions";
-import { positionKey, type PositionKey, type RangeStatus, type UnifiedPosition } from "@/lib/unified-positions/model";
+import { positionKey, type PositionKey, type PositionHoldings, type RangeStatus, type UnifiedPosition } from "@/lib/unified-positions/model";
 import type { DexAdapter, OpenQuote, OpenRequest, StepContext, StepResult } from "../adapter";
 import type { FeePolicy } from "../types";
 import { DexError, DexUnsupportedError } from "../errors";
@@ -85,7 +85,8 @@ function cosignerOf(request: OpenRequest) {
   return cosigner;
 }
 
-function unified(row: MeteoraDlmmNative, binStep: number, decimalsX: number, decimalsY: number): UnifiedPosition<MeteoraDlmmNative> {
+function unified(row: MeteoraDlmmNative, binStep: number, decimalsX: number, decimalsY: number,
+  holdings: PositionHoldings = { liquidityRaw: null, unclaimedFeesRaw: null }): UnifiedPosition<MeteoraDlmmNative> {
   const price = (bin: number) => meteoraBinUiPrice(bin, binStep, decimalsX, decimalsY);
   return {
     key: positionKey(SOURCE, row.positionAccount), source: SOURCE, chain: "solana", nativeId: row.positionAccount, poolId: row.poolId,
@@ -93,7 +94,7 @@ function unified(row: MeteoraDlmmNative, binStep: number, decimalsX: number, dec
     tokenB: { id: row.mintB, symbol: null, decimals: decimalsY },
     range: { mode: "price", lower: price(row.lowerBinId), upper: price(row.upperBinId + 1), current: price(row.activeBinId) },
     rangeStatus: STATUS[meteoraRangeSide(row.activeBinId, row.lowerBinId, row.upperBinId)],
-    liquidity: row.liquidity, native: row,
+    liquidity: row.liquidity, holdings, native: row,
   };
 }
 
@@ -204,7 +205,8 @@ export function createMeteoraDlmmAdapter(options: MeteoraDlmmAdapterOptions = {}
       return rows.map((row) => {
         const step = binStep.get(row.poolId);
         if (step === undefined) throw new DexError("UPSTREAM", `The Meteora pool ${row.poolId} was not found on chain.`);
-        return unified(row, step, decimals.get(row.mintA)!, decimals.get(row.mintB)!);
+        return unified(row, step, decimals.get(row.mintA)!, decimals.get(row.mintB)!,
+          { liquidityRaw: { ...row.amountsRaw }, unclaimedFeesRaw: { ...row.uncollectedFeesRaw } });
       });
     }),
     readPosition: (key: PositionKey) => guarded(async () => {
