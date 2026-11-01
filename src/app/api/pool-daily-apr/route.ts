@@ -1,6 +1,7 @@
 import { after } from "next/server";
 import { unstable_cache } from "next/cache";
 import { apiError } from "@/lib/api-response";
+import { dexRegistry } from "@/lib/dex";
 import { fetchPoolDailyApr, getCachedPoolDailyApr } from "@/lib/pool-daily-apr";
 
 export const revalidate = 3600;
@@ -17,9 +18,17 @@ function parsePoolId(raw: string | null) {
   return raw;
 }
 
+/**
+ * The series comes from the registered DEX that lists the pool (DEX registry, e.g. Meteora DLMM); pools no registered
+ * DEX lists keep the existing Raydium path unchanged (pinned by route.test.ts).
+ */
+async function loadPoolDailyApr(poolId: string) {
+  return (await dexRegistry.poolDailyApr(poolId)) ?? fetchPoolDailyApr(poolId);
+}
+
 function getCachedDiscovery(poolId: string) {
   return unstable_cache(
-    async () => fetchPoolDailyApr(poolId),
+    async () => loadPoolDailyApr(poolId),
     [`pool-daily-apr-${poolId}`],
     {
       revalidate: 3600,
@@ -50,7 +59,7 @@ export async function GET(request: Request) {
       if (inMemory.stale) {
         after(async () => {
           try {
-            await fetchPoolDailyApr(poolId);
+            await loadPoolDailyApr(poolId);
           } catch {
             /* stale payload already returned */
           }
@@ -63,7 +72,7 @@ export async function GET(request: Request) {
     if (result.stale) {
       after(async () => {
         try {
-          await fetchPoolDailyApr(poolId);
+          await loadPoolDailyApr(poolId);
         } catch {
           /* stale payload already returned */
         }

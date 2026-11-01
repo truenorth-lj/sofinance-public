@@ -8,4 +8,5 @@ import { meteoraDlmmDescriptor } from "./descriptor";
 export const meteoraDlmmModule: DexModule = Object.freeze({
   descriptor: meteoraDlmmDescriptor,
   adapter: async () => (await import("./adapter.server")).createMeteoraDlmmAdapter(),
+  poolDailyApr: async (poolId) => (await import("./daily-apr.server")).meteoraPoolDailyApr(poolId),
 });

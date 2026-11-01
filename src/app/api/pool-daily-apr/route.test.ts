@@ -8,9 +8,25 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 vi.mock("next/cache", () => ({ unstable_cache: (fn: () => unknown) => fn }));
 vi.mock("next/server", () => ({ after: () => {} }));
-vi.mock("@/lib/rwa-store", () => ({ getRwaStore: () => ({ request: async () => [] }) }));
+const store = vi.hoisted(() => ({ enabled: false, fail: false }));
+vi.mock("@/lib/config/rwa-env", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/config/rwa-env")>();
+  return { ...actual, getRwaConfig: () => ({ ...actual.getRwaConfig(), enabled: store.enabled }) };
+});
+vi.mock("@/lib/rwa-store", () => ({
+  getRwaStore: () => ({
+    request: async () => {
+      if (store.fail) throw new Error("store down");
+      return [METEORA_TSLA, METEORA_SPCX].map((poolAddress) => ({ pair: { poolAddress, protocol: "meteora-dlmm", mintA: "MintA", mintB: "MintB", blocked: false } }));
+    },
+  }),
+}));
+
+import { DATAPI_POOL_SPCX, DATAPI_POOL_TSLA_TSLAX, DATAPI_VOLUME_SPCX, DATAPI_VOLUME_TSLA_TSLAX, RECORDED_AT } from "@/lib/meteora-daily-apr.fixture";
 
 const RAYDIUM_POOL = "Ray1111111111111111111111111111111111111111";
+const METEORA_TSLA = "8k2c9Kiavx5pbWc2dmzhL7vFp11sLgMcKFfSueq8haAh";
+const METEORA_SPCX = "5pw5tNUaZJpUCnYjZ1V3gd7XkLbrb4zA9pir4LFph2mj";
 const D1 = 1_791_331_200;
 const D2 = 1_791_417_600;
 const D3 = 1_791_504_000;
@@ -39,10 +55,19 @@ beforeEach(() => {
 afterEach(async () => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  store.enabled = false;
+  store.fail = false;
   (await import("@/lib/pool-daily-apr")).clearPoolDailyAprCache();
+  (await import("@/lib/meteora-daily-apr")).clearMeteoraPoolDailyAprCache();
+  (await import("@/lib/dex/meteora-dlmm/pools.server")).clearMeteoraPoolListCache();
 });
 
-describe("GET /api/pool-daily-apr (Raydium pool)", () => {
+describe.each([
+  ["store off", { enabled: false, fail: false }],
+  ["store on (Meteora feed listed)", { enabled: true, fail: false }],
+  ["store on but unreadable", { enabled: true, fail: true }],
+])("GET /api/pool-daily-apr (Raydium pool, %s)", (_name, state) => {
+  beforeEach(() => Object.assign(store, state));
   it("returns byte-identical output to the pre-registry route", async () => {
     const { GET } = await import("./route");
     const response = await GET(new Request(`http://localhost/api/pool-daily-apr?poolId=${RAYDIUM_POOL}`));
@@ -52,5 +77,69 @@ describe("GET /api/pool-daily-apr (Raydium pool)", () => {
     // Second call is served from the in-memory fast path; pinned too.
     const again = await GET(new Request(`http://localhost/api/pool-daily-apr?poolId=${RAYDIUM_POOL}`));
     await expect(`${again.status}\n${await again.text()}\n`).toMatchFileSnapshot("./__snapshots__/raydium-response-cached.txt");
+  });
+});
+
+/**
+ * Contract: the two listed Meteora RWA pools get a Meteora series through the DEX registry, with non-null daily TVL
+ * and APR on every complete day after creation. Upstream bodies are the datapi responses recorded on 2026-11-01.
+ */
+describe("GET /api/pool-daily-apr (listed Meteora pools, recorded datapi)", () => {
+  const recorded: Record<string, { pool: unknown; volume: unknown }> = {
+    [METEORA_TSLA]: { pool: DATAPI_POOL_TSLA_TSLAX, volume: DATAPI_VOLUME_TSLA_TSLAX },
+    [METEORA_SPCX]: { pool: DATAPI_POOL_SPCX, volume: DATAPI_VOLUME_SPCX },
+  };
+  beforeEach(() => {
+    store.enabled = true;
+    vi.setSystemTime(RECORDED_AT * 1000);
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input instanceof Request ? input.url : input));
+      if (url.host !== "dlmm.datapi.meteora.ag") throw new Error(`Meteora pool must not reach ${url.host}`);
+      const [, , address, kind] = url.pathname.split("/");
+      const entry = recorded[address];
+      if (!entry) return new Response("not found", { status: 404 });
+      return json(kind === "volume" ? entry.volume : entry.pool);
+    }));
+  });
+
+  it.each([
+    [METEORA_TSLA, "2026-10-29", 3],
+    [METEORA_SPCX, "2026-08-03", 90],
+  ])("%s: every point has tvlUsd and aprPct", async (poolId, firstDate, count) => {
+    const { GET } = await import("./route");
+    const response = await GET(new Request(`http://localhost/api/pool-daily-apr?poolId=${poolId}`));
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.poolId).toBe(poolId);
+    expect(body.assumptions).toMatch(/no daily TVL history/);
+    expect(body.feeRate).toBeCloseTo(0.0001, 10);
+    expect(body.published.dayFeeApr).toBeGreaterThan(0);
+    expect(body.points).toHaveLength(count);
+    expect(body.points[0].date).toBe(firstDate);
+    expect(body.points.at(-1).date).toBe("2026-10-31");
+    for (const point of body.points) {
+      expect(point.tvlUsd).toBeGreaterThan(0);
+      expect(point.aprPct).not.toBeNull();
+      expect(point.aprPct).toBeGreaterThanOrEqual(0);
+    }
+    expect(body.sources.every((source: string) => source.startsWith("https://dlmm.datapi.meteora.ag/"))).toBe(true);
+  });
+
+  it("8k2c 2026-10-30: datapi fees ÷ current TVL × 365", async () => {
+    const { GET } = await import("./route");
+    const body = await (await GET(new Request(`http://localhost/api/pool-daily-apr?poolId=${METEORA_TSLA}`))).json();
+    const day = body.points.find((point: { date: string }) => point.date === "2026-10-30");
+    const row = DATAPI_VOLUME_TSLA_TSLAX.data.find((item) => item.timestamp_str.startsWith("2026-10-30"))!;
+    expect(day.volumeUsd).toBe(row.volume);
+    expect(day.tvlUsd).toBe(DATAPI_POOL_TSLA_TSLAX.tvl);
+    expect(day.aprPct).toBeCloseTo((row.fees / DATAPI_POOL_TSLA_TSLAX.tvl) * 365 * 100, 10);
+  });
+
+  it("a datapi outage is a plain 400, not a Raydium series", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("bad gateway", { status: 502 })));
+    const { GET } = await import("./route");
+    const response = await GET(new Request(`http://localhost/api/pool-daily-apr?poolId=${METEORA_TSLA}`));
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toMatch(/Meteora datapi did not answer for this pool \(pool: Upstream request failed \(502\)/);
   });
 });
