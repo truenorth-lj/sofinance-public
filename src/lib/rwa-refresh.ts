@@ -23,6 +23,7 @@ import { discoverMeteoraRwaPairs, METEORA_SCAN_MIN_TVL_USD, type MeteoraScanStat
 import { prepareRhcRun, type RhcAprRunStats, type RhcRun } from "./rhc-apr-refresh";
 import { discoverRhcRegistryPools, rhcDiscoveryFindings, type RhcDiscoveryResult } from "./pool-metrics/rhc-discovery";
 import { rhcStateClient } from "./rhc-range-apr";
+import { dexRegistry, type DailyTvlStats, type DexId } from "@/lib/dex";
 import { captureRhcDiscoveryFindings } from "./sentry/capture";
 import { resolveTokenIcons, rhcCronIconSources } from "./token-icons/resolve";
 import type { RwaPairRow } from "./rwa-pairs";
@@ -114,6 +115,8 @@ type JobResult = {
   queue?: AprQueueStats;
   /** rwa-apr-refresh: the Meteora lane (only when `METEORA_RWA_SCAN_ENABLED`). */
   meteoraQueue?: MeteoraAprQueueStats;
+  /** rwa-apr-refresh: each DEX's daily TVL record, by DEX id (registry `recordDailyTvl`; only when `METEORA_RWA_SCAN_ENABLED`). */
+  dailyTvl?: Partial<Record<DexId, DailyTvlStats>>;
   /** rwa-discovery: the Meteora DLMM scan (only when `METEORA_RWA_SCAN_ENABLED`). */
   meteora?: (MeteoraScanStats & { published: number }) | { error: string };
 };
@@ -239,6 +242,7 @@ export async function runJob(job: JobName, options: Options): Promise<JobResult>
     rhcStats: RhcAprRunStats | undefined,
     queue: AprQueueStats | undefined,
     meteoraQueue: MeteoraAprQueueStats | undefined,
+    dailyTvl: Partial<Record<DexId, DailyTvlStats>> | undefined,
     // Counted in `consecutive_failures` (and keeps `last_success_at`). The APR job counts only a GeckoTerminal 429 or
     // an error (a failed step, or a pool that saved no estimate); a run that only ran out of its time budget, or saved
     // stale estimates from saved price history, is not a failure.
@@ -281,6 +285,7 @@ export async function runJob(job: JobName, options: Options): Promise<JobResult>
       rhcStats = result.rhcStats;
       queue = result.queue;
       meteoraQueue = result.meteoraQueue;
+      dailyTvl = result.dailyTvl;
       failure = result.failed;
       if (issues.length) status = "partial";
     }
@@ -306,6 +311,7 @@ export async function runJob(job: JobName, options: Options): Promise<JobResult>
   return {
     job, status, processed, issues: issues.slice(0, 20), elapsedMs: clock() - startedAt,
     ...(rhcDiscovery ? { rhcDiscovery } : {}), ...(meteora ? { meteora } : {}), ...(rhcStats ? { rhc: rhcStats } : {}), ...(queue ? { queue } : {}), ...(meteoraQueue ? { meteoraQueue } : {}),
+    ...(dailyTvl ? { dailyTvl } : {}),
   };
 }
 
@@ -379,7 +385,7 @@ export function orderAprQueue<T extends { poolId: string; refreshedAt?: string |
 async function refreshAprPools(input: {
   store: RwaStore; lease: Lease; options: Options; signal: AbortSignal; clock: () => number; jobDeadline: number;
 }): Promise<{ processed: number; issues: string[]; rhcStats?: RhcAprRunStats; queue: AprQueueStats; failed: boolean;
-  meteoraQueue?: MeteoraAprQueueStats }> {
+  meteoraQueue?: MeteoraAprQueueStats; dailyTvl?: Partial<Record<DexId, DailyTvlStats>> }> {
   const { store, lease, options, signal, clock, jobDeadline } = input;
   const fetcher = options.fetcher ?? fetch;
   const gate = options.geckoGate ?? createCronGeckoGate();
@@ -413,13 +419,23 @@ async function refreshAprPools(input: {
   const selected = all.slice(0, APR_POOLS_PER_RUN);
   const queue: AprQueueStats = { pools: all.length, selected: selected.length, done: 0, stoppedBy: null };
   let processed = 0;
-  // Started before the GeckoTerminal queue and awaited after it: the two lanes share only the job deadline.
+  // Started before the GeckoTerminal queue and awaited after it: the two lanes share only the job deadline. The Meteora
+  // lane first runs the registry's daily TVL record (Meteora: datapi, first run of the UTC day; later runs only fill gaps),
+  // then refreshes.
+  let dailyTvl: Partial<Record<DexId, DailyTvlStats>> | undefined;
   const meteoraLane = meteoraOn
-    ? refreshMeteoraLane({ store, lease, fetcher, clock, signal, gate, jobDeadline,
-      poolTimeoutMs: options.meteoraPoolTimeoutMs ?? METEORA_APR_POOL_TIMEOUT_MS }).catch((error) => {
-      issues.push(`Meteora: ${sanitizePublicError(error, "Meteora APR lane failed").slice(0, 200)}`);
-      return undefined;
-    })
+    ? dexRegistry.recordDailyTvl({ store, lease, fetcher, clock, signal })
+      .then((result) => {
+        if (Object.keys(result.stats).length) dailyTvl = result.stats;
+        issues.push(...result.issues, ...result.failures.map(({ displayName, error }) =>
+          `${displayName} TVL: ${sanitizePublicError(error, "daily TVL not saved").slice(0, 200)}`));
+      })
+      .then(() => refreshMeteoraLane({ store, lease, fetcher, clock, signal, gate, jobDeadline,
+        poolTimeoutMs: options.meteoraPoolTimeoutMs ?? METEORA_APR_POOL_TIMEOUT_MS }))
+      .catch((error) => {
+        issues.push(`Meteora: ${sanitizePublicError(error, "Meteora APR lane failed").slice(0, 200)}`);
+        return undefined;
+      })
     : undefined;
   // The RHC pools/multi call already hit a 429: end the run before any pool.
   if (throttled()) queue.stoppedBy = "429";
@@ -459,7 +475,7 @@ async function refreshAprPools(input: {
     processed += meteora.processed;
     issues.push(...meteora.issues);
   }
-  return { processed, issues, rhcStats, queue, failed, ...(meteora ? { meteoraQueue: meteora.stats } : {}) };
+  return { processed, issues, rhcStats, queue, failed, ...(meteora ? { meteoraQueue: meteora.stats } : {}), ...(dailyTvl ? { dailyTvl } : {}) };
 }
 
 async function refreshMeteoraLane(input: {

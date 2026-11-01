@@ -42,13 +42,6 @@ export type FetchPoolDailyAprOptions = {
   fetcher?: typeof fetch;
   nowSeconds?: number;
   bypassCache?: boolean;
-  /**
-   * Serve only a pool Raydium's pool info confirmed (`/pools/info/ids` answered with this pool's row); anything else
-   * throws `RaydiumPoolUnconfirmedError` before any cache write. Used when a registered DEX could not say whether it
-   * lists the pool, so an outage there never becomes a cached Raydium-shaped series. Never joins or leaves an in-flight
-   * refresh (another caller's run may have accepted a failed pool-info read).
-   */
-  requireRaydiumPool?: boolean;
 };
 
 /**
@@ -63,22 +56,6 @@ export class NotRaydiumPoolError extends Error {
 }
 
 /** True when the /pools/info/ids answer is a successful lookup with no pool in it. */
-/** Raydium's pool info could not confirm this pool (no answer, or no row for it). Thrown before anything is cached. */
-export class RaydiumPoolUnconfirmedError extends Error {
-  constructor(poolId: string) {
-    super(`Raydium pool info did not confirm pool ${poolId}`);
-    this.name = "RaydiumPoolUnconfirmedError";
-  }
-}
-
-/** `/pools/info/ids` answered with a row for this pool (its `id`, when present, must be this address). */
-function raydiumHasPool(body: unknown, poolId: string): boolean {
-  if (!body || typeof body !== "object" || Array.isArray(body)) return false;
-  const envelope = body as { success?: unknown; data?: unknown };
-  if (envelope.success !== true || !Array.isArray(envelope.data)) return false;
-  return envelope.data.some((row) => row && typeof row === "object" && ((row as { id?: unknown }).id ?? poolId) === poolId);
-}
-
 function raydiumHasNoPool(body: unknown): boolean {
   if (!body || typeof body !== "object" || Array.isArray(body)) return false;
   const envelope = body as { success?: unknown; data?: unknown };
@@ -154,8 +131,7 @@ export async function fetchPoolDailyApr(
   const fetcher = options.fetcher ?? fetch;
   const nowSeconds = options.nowSeconds ?? Math.floor(Date.now() / 1000);
 
-  const shared = !options.bypassCache && !options.requireRaydiumPool;
-  if (shared && refreshLocks.has(poolId)) {
+  if (!options.bypassCache && refreshLocks.has(poolId)) {
     return refreshLocks.get(poolId)!;
   }
 
@@ -172,7 +148,6 @@ export async function fetchPoolDailyApr(
       ]);
 
       if (ids.ok && raydiumHasNoPool(ids.body)) throw new NotRaydiumPoolError(poolId);
-      if (options.requireRaydiumPool && !(ids.ok && raydiumHasPool(ids.body, poolId))) throw new RaydiumPoolUnconfirmedError(poolId);
 
       const sources: string[] = [];
       let snapshot: RaydiumPoolSnapshot = {
@@ -221,10 +196,10 @@ export async function fetchPoolDailyApr(
       cache = { key: poolId, value: result, createdAt: Date.now() };
       return result;
     } finally {
-      if (shared) refreshLocks.delete(poolId);
+      refreshLocks.delete(poolId);
     }
   })();
 
-  if (shared) refreshLocks.set(poolId, work);
+  if (!options.bypassCache) refreshLocks.set(poolId, work);
   return work;
 }

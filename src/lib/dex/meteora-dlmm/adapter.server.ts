@@ -23,6 +23,7 @@ import {
 import { buildMeteoraAdd, buildMeteoraClaim, buildMeteoraCompound, buildMeteoraWithdraw } from "./manage.server";
 import { listedMeteoraPool, type MeteoraPoolList } from "./pools.server";
 
+/** What a Meteora `UnifiedPosition.native` carries: the existing positions row (same shape the legacy UI reads). */
 /**
  * The report fields the Performance tab draws (`PositionPerformanceReport`), and nothing else: the raw event history,
  * fetch metrics and timings of the legacy route stay on the server (PM review of #290).
@@ -40,7 +41,6 @@ function uiReport(report: NonNullable<Awaited<ReturnType<typeof getMeteoraPositi
   };
 }
 
-/** What a Meteora `UnifiedPosition.native` carries: the existing positions row (same shape the legacy UI reads). */
 export type MeteoraDlmmNative = Pick<MeteoraListedPosition, "positionAccount" | "poolId" | "mintA" | "mintB" | "lowerBinId" | "upperBinId" | "activeBinId" | "liquidity">;
 
 export type MeteoraDlmmAdapterOptions = {

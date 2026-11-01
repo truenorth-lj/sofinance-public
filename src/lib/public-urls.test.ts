@@ -87,7 +87,5 @@ describe("public app URLs", () => {
     expect(
       buildPlanPath({ poolId: "Pool1111111111111111111111111111111111111", pair: "SPCXx/SPCX" }),
     ).toBe("/app/plan?pool=Pool1111111111111111111111111111111111111&pair=SPCXx%2FSPCX");
-    expect(buildPlanPath({ poolId: "Pool1111111111111111111111111111111111111", pair: "TSLAx/TSLA", protocol: "meteora-dlmm" }))
-      .toBe("/app/plan?pool=Pool1111111111111111111111111111111111111&pair=TSLAx%2FTSLA&protocol=meteora-dlmm");
   });
 });

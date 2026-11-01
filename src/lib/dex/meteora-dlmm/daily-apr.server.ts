@@ -3,6 +3,7 @@ import { fetchMeteoraPoolDailyApr } from "@/lib/meteora-daily-apr";
 import type { PoolDailyAprResult } from "@/lib/pool-daily-apr";
 import { DexError } from "../errors";
 import { listedMeteoraPool, type MeteoraPoolList } from "./pools.server";
+import { storedMeteoraTvl } from "./tvl.server";
 
 /**
  * /api/pool-daily-apr for Meteora DLMM: only pools SoFinance lists (static allowlist, plus the RWA feed when the store
@@ -14,7 +15,7 @@ import { listedMeteoraPool, type MeteoraPoolList } from "./pools.server";
  */
 export async function meteoraPoolDailyApr(
   poolId: string,
-  deps: { listedPool?: MeteoraPoolList; load?: typeof fetchMeteoraPoolDailyApr } = {},
+  deps: { listedPool?: MeteoraPoolList; load?: typeof fetchMeteoraPoolDailyApr; storedTvl?: typeof storedMeteoraTvl } = {},
 ): Promise<PoolDailyAprResult | null> {
   let listed;
   try {
@@ -24,7 +25,8 @@ export async function meteoraPoolDailyApr(
   }
   if (!listed) return null;
   try {
-    return await (deps.load ?? fetchMeteoraPoolDailyApr)(poolId);
+    // Each day's stored TVL where the APR refresh saved one (`dex/meteora-dlmm/daily-tvl.server.ts`), today's TVL otherwise.
+    return await (deps.load ?? fetchMeteoraPoolDailyApr)(poolId, { storedTvl: deps.storedTvl ?? storedMeteoraTvl });
   } catch (error) {
     throw new DexError("UPSTREAM", error instanceof Error && error.message ? error.message : "Meteora did not answer for this pool.");
   }

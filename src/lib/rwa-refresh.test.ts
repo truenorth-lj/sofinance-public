@@ -21,6 +21,7 @@ const rhcFlag = vi.hoisted(() => ({ enabled: false }));
 vi.mock("./protocol-flags", async (load) => ({ ...await load<typeof import("./protocol-flags")>(), isRhcApr7dEnabled: () => rhcFlag.enabled }));
 const rhcRun = vi.hoisted(() => ({ prepare: vi.fn() }));
 vi.mock("./rhc-apr-refresh", async (load) => ({ ...await load<object>(), prepareRhcRun: rhcRun.prepare }));
+import { METEORA_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/meteora/constants";
 import { activePoolRefreshedAt, APR_POOL_MAX_MS, APR_POOLS_PER_RUN, APR_QUEUE_FIXED_MS, APR_SAVE_RESERVE_MS, orderAprQueue, refreshProfile, runJob } from "./rwa-refresh";
 import { createCronGeckoGate, CRON_GECKO_SPACING_MS } from "./pool-metrics/gecko";
 import { ThrottleGate } from "./range-apr/throttle-gate";
@@ -109,6 +110,8 @@ function memoryStore(active: ActivePool[]) {
         case "claim": return { job: "rwa-apr-refresh", token: "t" };
         case "activePools": return active;
         case "saveApr": saved.push(input.data as (typeof saved)[number]); return null;
+        // Today's Meteora TVL is already stored (dex/meteora-dlmm/daily-tvl.server.test.ts covers the record itself).
+        case "meteoraTvlDay": return { pools: METEORA_ALLOWLISTED_POOLS.map((pool) => pool.poolAddress) };
         default: return null;
       }
     },

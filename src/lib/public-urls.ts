@@ -65,14 +65,10 @@ export function buildOpenPositionUrl(poolId: string): string {
   return base ? `${base}${path}` : path;
 }
 
-/**
- * Plan page for a specific pool. `pair` is a display label only; `protocol` (the pool's DEX id) lets the page show that
- * DEX's terms before the pool list loads, or for a pool the list no longer carries.
- */
-export function buildPlanPath(input: { poolId: string; pair?: string; protocol?: string }): string {
+/** Plan page for a specific pool. `pair` is a display label only. */
+export function buildPlanPath(input: { poolId: string; pair?: string }): string {
   const params = new URLSearchParams({ pool: input.poolId });
   if (input.pair) params.set("pair", input.pair);
-  if (input.protocol) params.set("protocol", input.protocol);
   return `${APP_ROUTES.plan}?${params}`;
 }
 

@@ -507,6 +507,25 @@ describe.skipIf(!url)("RWA PostgreSQL snapshots and fencing", () => {
     await store!.request({ op: "finish", lease: aprLease, outcome: "ok", processed: 1, issues: [] });
   });
 
+  it("0004: stores a Meteora pool's TVL once per UTC day (first write wins) and reads it back by day range", async () => {
+    const lease = await store!.request({ op: "claim", job: "rwa-apr-refresh", force: true }) as Lease;
+    const tsla = "8k2c9Kiavx5pbWc2dmzhL7vFp11sLgMcKFfSueq8haAh", spcx = "5pw5tNUaZJpUCnYjZ1V3gd7XkLbrb4zA9pir4LFph2mj";
+    expect(await store!.request({ op: "meteoraTvlDay", date: "2026-10-30" })).toEqual({ pools: [] });
+    expect(await store!.request({ op: "saveMeteoraTvl", lease, data: { date: "2026-10-30", rows: [{ poolId: tsla, tvlUsd: 30_000.5 }, { poolId: spcx, tvlUsd: 20_000 }] } }))
+      .toEqual({ saved: 2 });
+    // A second run the same day keeps the first value; a new pool that day is added.
+    expect(await store!.request({ op: "saveMeteoraTvl", lease, data: { date: "2026-10-30", rows: [{ poolId: tsla, tvlUsd: 1 }] } })).toEqual({ saved: 0 });
+    await store!.request({ op: "saveMeteoraTvl", lease, data: { date: "2026-10-31", rows: [{ poolId: tsla, tvlUsd: 31_000 }] } });
+    expect((await store!.request({ op: "meteoraTvlDay", date: "2026-10-30" })).pools.sort()).toEqual([spcx, tsla].sort());
+    expect(await store!.request({ op: "meteoraTvlHistory", poolId: tsla, from: "2026-10-01", to: "2026-10-31" }))
+      .toEqual({ points: [{ date: "2026-10-30", tvlUsd: 30_000.5 }, { date: "2026-10-31", tvlUsd: 31_000 }] });
+    expect(await store!.request({ op: "meteoraTvlHistory", poolId: tsla, from: "2026-10-31", to: "2026-10-31" }))
+      .toEqual({ points: [{ date: "2026-10-31", tvlUsd: 31_000 }] });
+    await expect(db!`INSERT INTO rwa_meteora_tvl_daily(pool_address,snapshot_date,tvl_usd) VALUES(${tsla},'2026-11-01',-1)`).rejects.toThrow();
+    await expect(store!.request({ op: "saveMeteoraTvl", lease, data: { date: "2026-11-01", rows: [{ poolId: "0xnot-solana", tvlUsd: 1 }] } })).rejects.toThrow();
+    await store!.request({ op: "finish", lease, outcome: "ok", processed: 0, issues: [] });
+  });
+
   it("counts only failures in consecutive_failures: a partial run marked failure:false is a success", async () => {
     const state = async () => (await db!`SELECT consecutive_failures,last_success_at,last_status FROM background_job_state WHERE job_key='rwa-apr-refresh'`)[0]!;
     const finish = async (outcome: "ok" | "partial" | "error", failure?: boolean) => {

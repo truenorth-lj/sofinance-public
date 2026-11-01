@@ -17,16 +17,11 @@ import type { ChartStatus } from "./comparison-chart";
 const labelPill =
   "inline-flex h-6 items-center whitespace-nowrap rounded-full border px-2.5 font-data text-[10px] uppercase tracking-[0.14em]";
 
-/**
- * A label/value row. `note` is small print on its own full-width line under both, so it never squeezes the value; such a
- * row may also wrap its value under a long label (right-aligned) instead of running past the card at 375.
- */
-function Row({ label, children, note, noteTestId }: { label: string; children: ReactNode; note?: ReactNode; noteTestId?: string }) {
+function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className={cn("flex items-baseline justify-between gap-x-4 border-t border-white/10 py-3", note && "flex-wrap")}>
+    <div className="flex items-baseline justify-between gap-4 border-t border-white/10 py-3">
       <dt className="shrink-0 font-data text-[10px] uppercase tracking-[0.14em] text-smoke">{label}</dt>
-      <dd className="ml-auto min-w-0 text-right text-sm text-cream">{children}</dd>
-      {note ? <dd className="mt-1 w-full text-xs leading-relaxed text-smoke" data-testid={noteTestId}>{note}</dd> : null}
+      <dd className="min-w-0 text-right text-sm text-cream">{children}</dd>
     </div>
   );
 }
@@ -131,12 +126,11 @@ export function OutcomePanel({
               <span className="block">{`−${formatCents(comparison.entryCost)} USDC (${terms.openCost.rowLabel})`}</span>
               {terms.openCost.rowNote && <span className="block text-xs text-smoke" data-testid="plan-open-rent">{terms.openCost.rowNote}</span>}
             </Row>
-            <Row
-              label="Est. best APY used · not guaranteed"
-              note={<>{bestAprCopy(best)} compounded daily, over {completeDaysCopy(best.sampleDays)}</>}
-              noteTestId="plan-apy-note"
-            >
-              {formatPct(comparison.apyPct)} est. APY
+            <Row label="Est. best APY used · not guaranteed">
+              <span className="block">{formatPct(comparison.apyPct)} est. APY</span>
+              <span className="block text-xs text-smoke">
+                {bestAprCopy(best)} compounded daily, over {completeDaysCopy(best.sampleDays)}
+              </span>
             </Row>
             <Row label="Windows checked">
               {best.windows.map((window, index) => (

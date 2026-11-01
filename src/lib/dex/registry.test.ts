@@ -72,6 +72,21 @@ describe("DEX registry", () => {
     expect(registry.poolSources()).toEqual([]);
   });
 
+  it("runs each DEX's daily TVL record and keeps going past one that throws", async () => {
+    const stats = { date: "2026-11-01", pools: 2, alreadySaved: 0, saved: 2, failed: 0 };
+    const input = { lease: { job: "rwa-apr-refresh", owner: "o", epoch: 1 } } as never;
+    const down = new Error("store down");
+    const registry = createDexRegistry([
+      { ...fakeEvmModule, recordDailyTvl: async () => { throw down; } },
+      { ...fakeSolanaModule, recordDailyTvl: async (arg) => { expect(arg).toBe(input); return { stats, issues: ["1 pool late"] }; } },
+    ]);
+    expect(await registry.recordDailyTvl(input)).toEqual({
+      stats: { "meteora-dlmm": stats }, issues: ["1 pool late"],
+      failures: [{ dex: fakeEvmDescriptor.id, displayName: fakeEvmDescriptor.displayName, error: down }],
+    });
+    expect(await createDexRegistry([fakeSolanaModule]).recordDailyTvl(input)).toEqual({ stats: {}, issues: [], failures: [] });
+  });
+
   it("refuses duplicate ids, invalid fee policies and mismatched pool sources", () => {
     expect(() => createDexDescriptorRegistry([fakeSolanaDescriptor, fakeSolanaDescriptor])).toThrow(/registered twice/);
     const badFees = { ...fakeEvmDescriptor, meta: { ...fakeEvmDescriptor.meta, feePolicy: { ...NO_FEE_POLICY, open: { kind: "swap-input-bps", bps: 101 } } } } as typeof fakeEvmDescriptor;
