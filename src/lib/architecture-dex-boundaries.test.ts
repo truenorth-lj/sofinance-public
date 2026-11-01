@@ -32,7 +32,7 @@ const config = ts.readConfigFile(path.join(root, "tsconfig.json"), ts.sys.readFi
 const options = ts.parseJsonConfigFileContent(config.config, ts.sys, root).options;
 
 /** Ceiling on the baseline totals; lower these together with the JSON whenever a PR removes violations. */
-const BASELINE_CEILING = { imports: 94, branches: 36 } as const;
+const BASELINE_CEILING = { imports: 94, branches: 35 } as const;
 
 /** Every DEX id spelling (canonical + legacy) and chain string that must not drive a branch outside src/lib/dex. */
 const DEX_BRANCH_LITERALS: ReadonlySet<string> = new Set([
@@ -297,14 +297,17 @@ function ratchet(kind: string, findings: Finding[], frozen: Record<string, numbe
   return problems;
 }
 
+const SCAN_TIMEOUT_MS = 30_000;
+
 describe("DEX boundaries (shrink-only baseline)", () => {
   const files = sourceFiles(path.join(root, "src"));
   const classify = dexClassifier(disk);
 
+  // Whole-repo scans: ~1.7 s alone, but over vitest's 5 s default when CI runs the full suite in parallel.
   it("adds no direct DEX import to UI, routes, server, MCP or cron", () => {
     const findings = files.flatMap((file) => dexImportFindings(file, disk, classify));
     expect(ratchet("import", findings, baseline.imports)).toEqual([]);
-  });
+  }, SCAN_TIMEOUT_MS);
 
   it("adds no DEX-id or chain-string branch outside src/lib/dex", () => {
     const findings = files.flatMap((file) => dexBranchFindings(file, readFileSync(path.join(root, file), "utf8")));

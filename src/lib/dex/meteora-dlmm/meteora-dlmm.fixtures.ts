@@ -9,9 +9,10 @@
  * `close_position2` closes it and refunds the rent. Jupiter is answered by `jupiterReplay` (quote + swap-instructions).
  */
 import { readFileSync } from "node:fs";
+import bs58 from "bs58";
 import { AccountLayout, getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID } from "@solana/spl-token";
 import { Keypair, PublicKey, SystemProgram, type AccountInfo, type VersionedTransaction } from "@solana/web3.js";
-import { decodeLbPair } from "@sofinance/engine/protocols/meteora/accounts";
+import { BIN_ARRAY_DISCRIMINATOR, decodeLbPair } from "@sofinance/engine/protocols/meteora/accounts";
 import { METEORA_DLMM_PROGRAM_ID } from "@sofinance/engine/protocols/meteora/constants";
 import { METEORA_IX_DISCRIMINATOR } from "@sofinance/engine/protocols/meteora/open";
 import { METEORA_POSITION_V2_DISCRIMINATOR } from "@sofinance/engine/protocols/meteora/position";
@@ -71,6 +72,15 @@ export function positionAccount(pool: string, owner: string, lower: number, widt
   return account(METEORA_DLMM_PROGRAM_ID, data, capture.rentExemptMinimum["8120"]!);
 }
 
+/** An empty BinArray account (header + 70 zeroed bins): enough for reads that value a position (all amounts 0). */
+function emptyBinArray(pool: string, index: number): Account {
+  const data = Buffer.alloc(56 + 70 * 144);
+  Buffer.from(BIN_ARRAY_DISCRIMINATOR, "hex").copy(data, 0);
+  data.writeBigInt64LE(BigInt(index), 8);
+  new PublicKey(pool).toBuffer().copy(data, 24);
+  return account(METEORA_DLMM_PROGRAM_ID, data);
+}
+
 const encoded = (info: Account | null | undefined) => info
   ? { data: [info.data.toString("base64"), "base64"], owner: info.owner.toBase58(), lamports: info.lamports, executable: false, rentEpoch: 0 }
   : null;
@@ -84,7 +94,7 @@ export function createFakeChain(options: { autoLand?: boolean } = {}) {
     const [address, recorded] = pool;
     accounts.set(address, account(recorded.owner, Buffer.from(recorded.data, "base64")));
     if (recorded.bitmapExtension.exists) accounts.set(recorded.bitmapExtension.address, account(METEORA_DLMM_PROGRAM_ID, Buffer.alloc(8)));
-    for (const array of Object.values(recorded.binArrays)) if (array.exists) accounts.set(array.address, account(METEORA_DLMM_PROGRAM_ID, Buffer.alloc(8)));
+    for (const [index, array] of Object.entries(recorded.binArrays)) if (array.exists) accounts.set(array.address, emptyBinArray(address, Number(index)));
   }
   for (const [mint, recorded] of Object.entries(capture.mints)) accounts.set(mint, account(recorded.owner, Buffer.from(recorded.data, "base64")));
   accounts.set(OWNER, account(SystemProgram.programId.toBase58(), Buffer.alloc(0), Number(OWNER_LAMPORTS)));
@@ -144,7 +154,19 @@ export function createFakeChain(options: { autoLand?: boolean } = {}) {
       return lamports;
     },
     async getLatestBlockhash() { return { blockhash: BLOCKHASH, lastValidBlockHeight: 1_000 }; },
-    async getProgramAccounts() { return []; },
+    /** Meteora position heads by discriminator + owner memcmp, with the requested data slice (what listing uses). */
+    async getProgramAccounts(program: PublicKey, config?: { dataSlice?: { offset: number; length: number }; filters?: { memcmp: { offset: number; bytes: string } }[] }) {
+      const matches = (data: Buffer) => (config?.filters ?? []).every(({ memcmp }) => {
+        const want = Buffer.from(bs58.decode(memcmp.bytes));
+        return data.subarray(memcmp.offset, memcmp.offset + want.length).equals(want);
+      });
+      return [...accounts.entries()]
+        .filter(([, info]) => info.owner.equals(program) && matches(info.data))
+        .map(([address, info]) => ({
+          pubkey: new PublicKey(address),
+          account: { ...info, data: config?.dataSlice ? info.data.subarray(config.dataSlice.offset, config.dataSlice.offset + config.dataSlice.length) : info.data },
+        }));
+    },
     async getAddressLookupTable() { return { context: { slot: SLOT }, value: null }; },
     async simulateTransaction(tx: VersionedTransaction, config?: { accounts?: { addresses: string[] } }) {
       const before = simulations.length;

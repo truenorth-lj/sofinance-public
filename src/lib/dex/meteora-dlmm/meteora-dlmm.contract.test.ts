@@ -56,11 +56,24 @@ const request: OpenRequest = { ...base, range: { kind: "preset", presetId: "stan
 // Spot split: TSLA (X) funds the bins from the active bin up and is kept; the TSLAx (Y) side is swapped and charged.
 const ySpend = meteoraSpotSplit(BigInt(DEPOSIT_RAW), 46062, 46031, 46090).y;
 
+/** An existing position of OWNER in the feed-listed 8k2c pool (listed through the RWA feed, not the static allowlist). */
+const FEED_POSITION = Keypair.fromSeed(new Uint8Array(32).fill(21)).publicKey.toBase58();
+/** OWNER's position in 5pw5, which the stubbed feed does not list: never shown. */
+const UNLISTED_POSITION = Keypair.fromSeed(new Uint8Array(32).fill(22)).publicKey.toBase58();
+const STRANGER = Keypair.fromSeed(new Uint8Array(32).fill(23)).publicKey.toBase58();
+const STRANGER_POSITION = Keypair.fromSeed(new Uint8Array(32).fill(24)).publicKey.toBase58();
+
+function installHeldPositions() {
+  chain.current.set(FEED_POSITION, positionAccount(TSLA_POOL, OWNER, 46031, 60));
+  chain.current.set(UNLISTED_POSITION, positionAccount(SPCX_POOL, OWNER, 0, 10, 5n));
+  chain.current.set(STRANGER_POSITION, positionAccount(TSLA_POOL, STRANGER, 46031, 60, 5n));
+}
+
 describeDexContract(meteoraDlmmModule, {
   owner: OWNER,
-  setup: () => installChain(),
+  setup: () => { const restore = installChain(); installHeldPositions(); return restore; },
   fetch: jupiterReplay,
-  expectedPositionKeys: [],
+  expectedPositionKeys: [`meteora-dlmm:${FEED_POSITION}`],
   open: { request, expectedSteps: 2, expectedFeeBaseRaw: ySpend.toString() },
   blockedOpens: [
     { ...base, range: { kind: "preset", presetId: "wide" } }, // 200 bins > 70: not available to open yet
@@ -85,6 +98,22 @@ describe("Meteora DLMM adapter specifics", () => {
     teardown = () => { restoreFetch(); restoreEnv(); };
   });
   afterEach(() => teardown());
+
+  it("lists the owner's positions in feed pools only, and only the static allowlist when the RWA store is off", async () => {
+    installHeldPositions();
+    const listed = await createMeteoraDlmmAdapter().listPositions(OWNER);
+    expect(listed.map((position) => position.key)).toEqual([`meteora-dlmm:${FEED_POSITION}`]);
+    expect(listed[0]).toMatchObject({ source: "meteora-dlmm", chain: "solana", poolId: TSLA_POOL, tokenA: { id: TSLA }, tokenB: { id: TSLAX } });
+    vi.stubEnv("SOFINANCE_RWA_DB_ENABLED", "false");
+    clearMeteoraPoolListCache();
+    expect(await createMeteoraDlmmAdapter().listPositions(OWNER)).toEqual([]);
+  });
+
+  it("fails the whole list (never a partial one) when the feed cannot be read", async () => {
+    installHeldPositions();
+    const listedPool = async () => { throw new Error("feed read failed at https://db.example/secret"); };
+    await expect(createMeteoraDlmmAdapter({ listedPool }).listPositions(OWNER)).rejects.toBeInstanceOf(DexError);
+  });
 
   it("discloses the refundable 0.0419 SOL position rent for a 60-bin position", async () => {
     const quote = await createMeteoraDlmmAdapter().quoteOpen(request);
