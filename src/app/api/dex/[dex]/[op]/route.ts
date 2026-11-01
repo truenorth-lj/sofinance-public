@@ -2,7 +2,7 @@ import "@/lib/engine-host";
 import { PublicKey, VersionedTransaction } from "@solana/web3.js";
 import { z } from "zod";
 import { apiError } from "@/lib/api-response";
-import { dexRegistry, DexError, type DexAdapter, type DexErrorCode, type OpenRequest, type StepContext, type StepResult } from "@/lib/dex";
+import { dexRegistry, DexError, publicDexMessage, type DexAdapter, type DexErrorCode, type OpenRequest, type StepContext, type StepResult } from "@/lib/dex";
 import { withJupiterRelay } from "@/lib/jupiter-relay-route";
 import { isDexTxRouteEnabled } from "@/lib/protocol-flags";
 import { txPermitsFor } from "@/lib/tx-send/permit";
@@ -31,26 +31,30 @@ const OpenRequestSchema = z.object({
     z.object({ kind: z.literal("preset"), presetId: z.string().min(1).max(32) }),
     z.object({ kind: z.literal("units"), lower: z.number().int(), upper: z.number().int() }),
   ]),
-  input: z.object({ token: z.string().trim().min(1).max(64), amountRaw: rawAmount }),
+  input: z.object({ token: z.string().trim().min(1).max(64), amountRaw: rawAmount }).strict(),
   slippageBps: z.number().int().min(0).max(10_000),
-  cosigner: solanaOrEvmAddress.optional(),
-});
+  /**
+   * Public key only (32-44 base58 chars). The server never accepts a cosigner secret: a 64-byte secret key does not fit,
+   * a byte array is not a string, and unknown fields (e.g. `cosignerSecret`) are rejected by `.strict()`.
+   */
+  cosigner: z.string().regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/, "cosigner must be a public key").optional(),
+}).strict();
 const StepSchema = {
   step: z.number().int().min(1).max(16),
   priorSignatures: z.array(z.string().min(1).max(128)).max(16),
   planToken: z.string().min(1).max(512).optional(),
 };
 const BODY = {
-  "quote-open": z.object({ request: OpenRequestSchema }),
-  open: z.object({ request: OpenRequestSchema, ...StepSchema }),
-  recovery: z.object({ wallet: solanaOrEvmAddress, positionKey: z.string().min(3).max(160), ...StepSchema }),
+  "quote-open": z.object({ request: OpenRequestSchema, jupiterRelay: z.unknown().optional() }).strict(),
+  open: z.object({ request: OpenRequestSchema, ...StepSchema, jupiterRelay: z.unknown().optional() }).strict(),
+  recovery: z.object({ wallet: solanaOrEvmAddress, positionKey: z.string().min(3).max(160), ...StepSchema, jupiterRelay: z.unknown().optional() }).strict(),
 } as const;
 type Op = keyof typeof BODY;
 const isOp = (op: string): op is Op => Object.hasOwn(BODY, op);
 
 const STATUS: Record<DexErrorCode, number> = {
   UNSUPPORTED: 422, TOKEN_RESTRICTED: 422, RANGE_UNSUPPORTED: 422, NEEDS_NEW_SHARED_ACCOUNT: 422, INPUT_TOKEN_UNSUPPORTED: 422,
-  INSUFFICIENT_FUNDS: 422, POSITION_NOT_FOUND: 404, INVALID_REQUEST: 400, UPSTREAM: 502,
+  INSUFFICIENT_FUNDS: 422, POSITION_NOT_FOUND: 404, INVALID_REQUEST: 400, UPSTREAM: 502, MISCONFIGURED: 503,
 };
 
 /** A Solana step must be paid by the requesting wallet; it then carries that wallet's send / landed permits. */
@@ -80,7 +84,7 @@ async function run(adapter: DexAdapter, op: Op, body: unknown): Promise<Response
     case "recovery": {
       const input = BODY[op].parse(body);
       if (!adapter.prepareRecovery) throw new DexError("UNSUPPORTED", "This DEX has no recovery step.");
-      return json(withPermits(await adapter.prepareRecovery(input.positionKey as PositionKey, stepContext(input)), input.wallet));
+      return json(withPermits(await adapter.prepareRecovery(input.positionKey as PositionKey, input.wallet, stepContext(input)), input.wallet));
     }
   }
 }
@@ -100,8 +104,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ dex
       if (error instanceof z.ZodError) {
         return json({ error: "Invalid request", issues: error.issues.map((issue) => ({ path: issue.path.join("."), message: issue.message })) }, 400);
       }
-      if (error instanceof DexError) return json({ error: error.message, code: error.code }, STATUS[error.code]);
-      return apiError(error, "DEX request failed", 503);
+      if (error instanceof DexError) return json({ error: publicDexMessage(error.message), code: error.code }, STATUS[error.code]);
+      // apiError rethrows the Jupiter relay round-trip, reports to Sentry and maps known upstream errors; its message is
+      // then put through the same public filter (a thrown message can embed a stack frame or a URL).
+      const response = apiError(error, "DEX request failed", 503);
+      const body = await response.json() as { error?: string } & Record<string, unknown>;
+      return json({ ...body, error: publicDexMessage(body.error ?? "") }, response.status);
     }
   });
 }

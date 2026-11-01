@@ -25,7 +25,9 @@ import { meteoraPresetRanges } from "@/lib/meteora-range-apr";
 import { assertMeteoraFeeRule, DEPOSIT_INTERMEDIATE_RENT_ALLOWANCE } from "@/lib/meteora-open";
 import type { DexFeeStrategy, OpenRequest } from "../adapter";
 import { DexError } from "../errors";
+import { assertFeeWalletConfigured } from "../fee-wallet.server";
 import { feeRuleBps } from "../types";
+import { meteoraDlmmDescriptor } from "./descriptor";
 import type { ListedMeteoraPool } from "./pools.server";
 
 /**
@@ -215,8 +217,11 @@ export async function planMeteoraOpen(
     { side: "x", mint: pool.lbPair.tokenXMint, spend: split.x },
     { side: "y", mint: pool.lbPair.tokenYMint, spend: split.y },
   ] as const).filter((item) => item.spend > 0n).map((item) => ({ ...item, swapped: item.mint !== request.input.token }));
-  // The rate comes from the descriptor's fee policy only; with no fee wallet configured nothing is charged.
-  const legBps = deps.feeConfig().wallet ? feeRuleBps(deps.fees.policy.open) : 0;
+  // The rate comes from the descriptor's fee policy only. No fee wallet configured: refused outside tests and local dev
+  // (never a silent 0 fee in a deployment); in tests / local dev nothing is charged.
+  const feeWallet = deps.feeConfig().wallet;
+  assertFeeWalletConfigured({ dexId: meteoraDlmmDescriptor.id, op: "open", charges: feeRuleBps(deps.fees.policy.open) > 0, feeWallet: feeWallet?.toBase58() ?? null });
+  const legBps = feeWallet ? feeRuleBps(deps.fees.policy.open) : 0;
   const platformFeeRaw = legBps ? sides.filter((s) => s.swapped).reduce((sum, s) => sum + deps.fees.feeFor("open", s.spend), 0n) : 0n;
   return {
     pool, ...range, width, bitmapExtension, positionRentLamports: rent.lamports, amount, inputMint: request.input.token,
@@ -436,13 +441,16 @@ export async function buildMeteoraDeposit(deps: MeteoraOpenDeps, plan: MeteoraOp
   return { transaction: encode(transaction), lastValidBlockHeight: latest.lastValidBlockHeight };
 }
 
-/** Recovery: close an empty position (2/2 failed or was abandoned) with close_position2; rent goes back to the owner. */
-export async function buildMeteoraCloseRefund(deps: Pick<MeteoraOpenDeps, "connection" | "feeConfig">, position: string): Promise<BuiltStep & { owner: string; refundLamports: bigint }> {
+/**
+ * Recovery: close an empty position (2/2 failed or was abandoned) with close_position2. Only the requesting wallet's own
+ * position, only when it holds no liquidity, and the rent goes back to that wallet (sender = rent receiver = owner).
+ */
+export async function buildMeteoraCloseRefund(deps: Pick<MeteoraOpenDeps, "connection" | "feeConfig">, position: string, owner: string): Promise<BuiltStep & { owner: string; refundLamports: bigint }> {
   const { connection } = deps;
   const positionKey = publicKey(position, "position");
+  const wallet = publicKey(owner, "wallet");
   const { context, value: [info] } = await connection.getMultipleAccountsInfoAndContext([positionKey], "confirmed");
-  const decoded = assertEmptyOwnedPosition(info ?? null, null, null);
-  const wallet = new PublicKey(decoded.owner);
+  const decoded = assertEmptyOwnedPosition(info ?? null, wallet.toBase58(), null);
   const walletInfo = await connection.getAccountInfo(wallet, "confirmed");
   const latest = await connection.getLatestBlockhash("confirmed");
   const close = (units: number) => [cuLimit(units), meteoraClosePosition2Instruction({ position: positionKey, sender: wallet, rentReceiver: wallet })];

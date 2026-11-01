@@ -13,4 +13,5 @@ export type * from "./adapter";
 export { DEX_IDS, LEGACY_DEX_ID_ALIASES, isDexId, normalizeDexId, feeRuleBps, NO_FEE } from "./types";
 export { DexError, DexUnsupportedError, type DexErrorCode } from "./errors";
 export { NO_FEE_POLICY, bpsFeeStrategy } from "./fees";
+export { publicDexMessage } from "./public-message";
 export type { DexModule, DexRegistry } from "./registry";

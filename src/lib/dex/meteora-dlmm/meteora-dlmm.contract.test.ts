@@ -1,4 +1,4 @@
-import { VersionedTransaction } from "@solana/web3.js";
+import { Keypair, VersionedTransaction } from "@solana/web3.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { USDC_MINT, NATIVE_SOL_MINT } from "@sofinance/engine/ids";
 import { meteoraSpotSplit } from "@sofinance/engine/protocols/meteora/open";
@@ -6,6 +6,7 @@ import { setFetchReplay } from "@/lib/test-support/offline-fetch";
 import type { OpenRequest } from "../adapter";
 import { describeDexContract } from "../__contract__/dex-contract";
 import { DexError } from "../errors";
+import { FEE_WALLET_MISSING_MESSAGE } from "../fee-wallet.server";
 import { createMeteoraDlmmAdapter } from "./adapter.server";
 import { clearMeteoraPoolListCache } from "./pools.server";
 import {
@@ -20,11 +21,16 @@ import { meteoraDlmmModule } from "./module";
  * from a stubbed RWA feed. fetch itself is blocked by the vitest setup file before any module loads.
  */
 const chain = vi.hoisted(() => ({ current: undefined as unknown as FakeChain }));
+const sentry = vi.hoisted(() => ({ misconfigured: [] as unknown[][] }));
 
 vi.mock("server-only", () => ({}));
 vi.mock("@sofinance/engine/rpc", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@sofinance/engine/rpc")>()),
   rpcConnection: () => chain.current.connection,
+}));
+vi.mock("@/lib/sentry/capture", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/sentry/capture")>()),
+  captureDexMisconfiguration: (...args: unknown[]) => { sentry.misconfigured.push(args); },
 }));
 vi.mock("@/lib/rwa-store", () => ({
   getRwaStore: () => ({
@@ -127,14 +133,51 @@ describe("Meteora DLMM adapter specifics", () => {
     expect(keys).toContain(ata(TSLA, FEE_WALLET));
     expect(keys).not.toContain(FEE_WALLET);
 
-    const recovery = await adapter.prepareRecovery!(`meteora-dlmm:${POSITION}`, { step: 1, priorSignatures: [] });
+    const recovery = await adapter.prepareRecovery!(`meteora-dlmm:${POSITION}`, OWNER, { step: 1, priorSignatures: [] });
     expect(recovery).toMatchObject({ step: 1, of: 1, done: true });
     expect(chain.current.simulations.at(-1)).toBe("close_position2");
+    if (recovery.prepared.kind !== "solana-tx") throw new Error("expected a Solana step");
+    // Paid and signed by the owner, and the rent receiver of close_position2 is the owner.
+    const close = VersionedTransaction.deserialize(Buffer.from(recovery.prepared.transaction, "base64"));
+    const accounts = close.message.staticAccountKeys.map((key) => key.toBase58());
+    expect(accounts[0]).toBe(OWNER);
+    expect(close.message.header.numRequiredSignatures).toBe(1);
+    const closeIx = close.message.compiledInstructions.at(-1)!;
+    expect(closeIx.accountKeyIndexes.map((index) => accounts[index])).toEqual(expect.arrayContaining([POSITION, OWNER]));
+    expect(accounts[closeIx.accountKeyIndexes[1]!]).toBe(OWNER); // sender
+    expect(accounts[closeIx.accountKeyIndexes[2]!]).toBe(OWNER); // rent receiver
+  });
+
+  it("closes only the requesting wallet's own position", async () => {
+    chain.current.set(POSITION, positionAccount(TSLA_POOL, OWNER, 46031, 60));
+    const stranger = Keypair.fromSeed(new Uint8Array(32).fill(9)).publicKey.toBase58();
+    await expect(createMeteoraDlmmAdapter().prepareRecovery!(`meteora-dlmm:${POSITION}`, stranger, { step: 1, priorSignatures: [] }))
+      .rejects.toMatchObject({ code: "POSITION_NOT_FOUND", message: expect.stringMatching(/another wallet/) });
+    expect(chain.current.simulations).not.toContain("close_position2");
+  });
+
+  it("refuses to open with a 0 fee in production when no fee wallet is configured, and reports it", async () => {
+    vi.stubEnv("SOFINANCE_FEE_WALLET", "");
+    vi.stubEnv("VERCEL_ENV", "production");
+    sentry.misconfigured.length = 0;
+    const adapter = createMeteoraDlmmAdapter();
+    await expect(adapter.quoteOpen(request)).rejects.toMatchObject({ code: "MISCONFIGURED", message: FEE_WALLET_MISSING_MESSAGE });
+    await expect(adapter.prepareOpen(request, { step: 1, priorSignatures: [] })).rejects.toMatchObject({ code: "MISCONFIGURED" });
+    expect(sentry.misconfigured).toEqual([["meteora-dlmm", "open", "fee_wallet_missing"], ["meteora-dlmm", "open", "fee_wallet_missing"]]);
+  });
+
+  it("allows a 0 fee without a fee wallet only in tests and local dev", async () => {
+    vi.stubEnv("SOFINANCE_FEE_WALLET", "");
+    sentry.misconfigured.length = 0;
+    const quote = await createMeteoraDlmmAdapter().quoteOpen(request); // NODE_ENV=test, no VERCEL_ENV
+    expect(quote.platformFeeRaw).toBe("0");
+    expect(quote.blockedReason).toBeUndefined();
+    expect(sentry.misconfigured).toEqual([]);
   });
 
   it("does not close a position that holds liquidity", async () => {
     chain.current.set(POSITION, positionAccount(TSLA_POOL, OWNER, 46031, 60, 5n));
-    await expect(createMeteoraDlmmAdapter().prepareRecovery!(`meteora-dlmm:${POSITION}`, { step: 1, priorSignatures: [] }))
+    await expect(createMeteoraDlmmAdapter().prepareRecovery!(`meteora-dlmm:${POSITION}`, OWNER, { step: 1, priorSignatures: [] }))
       .rejects.toMatchObject({ code: "INVALID_REQUEST" });
   });
 

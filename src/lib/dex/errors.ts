@@ -14,7 +14,9 @@ export type DexErrorCode =
   | "INSUFFICIENT_FUNDS"
   /** The request itself is malformed (bad address, zero amount, missing cosigner key). */
   | "INVALID_REQUEST"
-  | "UPSTREAM";
+  | "UPSTREAM"
+  /** The deployment is missing required configuration (e.g. no fee wallet where the fee policy charges); nothing was prepared. */
+  | "MISCONFIGURED";
 
 /** Every error a DEX adapter throws; `message` is plain English safe to show the user. */
 export class DexError extends Error {

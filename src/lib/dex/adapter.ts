@@ -120,6 +120,9 @@ export interface DexAdapter<N = unknown> {
   prepareWithdraw(key: PositionKey, request: WithdrawRequest, context: StepContext): Promise<StepResult>;
   prepareClaim(key: PositionKey, context: StepContext): Promise<StepResult>;
   prepareCompound(key: PositionKey, context: StepContext): Promise<StepResult>;
-  /** Recover from a half-finished multi-step open (e.g. close an empty position and refund its rent). */
-  prepareRecovery?(key: PositionKey, context: StepContext): Promise<StepResult>;
+  /**
+   * Recover from a half-finished multi-step open (e.g. close an empty position and refund its rent). `owner` is the
+   * requesting wallet: the adapter must refuse a position that wallet does not own, and pay any refund only to it.
+   */
+  prepareRecovery?(key: PositionKey, owner: string, context: StepContext): Promise<StepResult>;
 }

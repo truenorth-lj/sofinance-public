@@ -87,4 +87,52 @@ describe("POST /api/dex/[dex]/[op]", () => {
     expect(response.status).toBe(422);
     expect((await response.json()).code).toBe("UNSUPPORTED");
   });
+
+  it("never returns a stack trace, an RPC URL or a credential in an error response", async () => {
+    const leaky = "RPC failed at https://rpc.example-node.invalid/?api-key=sk_live_abcdef0123456789 token=abcdef0123456789abcdef\n    at Connection.send (/var/task/node_modules/@solana/web3.js/lib/index.cjs.js:1:2)";
+    const quote = fake.adapter!.quoteOpen as ReturnType<typeof vi.fn>;
+    const leakyStack = Object.assign(new Error(leaky), { stack: `Error: ${leaky}\n    at run (/var/task/route.js:9:9)` });
+    quote.mockRejectedValueOnce(new DexError("UPSTREAM", leaky)).mockRejectedValueOnce(leakyStack);
+    for (const expected of [502, 503]) {
+      const response = await call("quote-open", { request: openRequest });
+      expect(response.status).toBe(expected);
+      const text = await response.text();
+      expect(text).not.toMatch(/https?:\/\//);
+      expect(text).not.toMatch(/example-node|api-key|sk_live|abcdef0123456789/);
+      expect(text).not.toMatch(/\bat \S+ \(|node_modules|\.js:\d+|\/var\/task/);
+      expect(JSON.parse(text).error).toEqual(expect.any(String));
+    }
+  });
+
+  it("never accepts a cosigner secret: only a public key, and no extra fields", async () => {
+    const secret = Keypair.generate().secretKey;
+    const bodies = [
+      { request: { ...openRequest, cosigner: Buffer.from(secret).toString("base64") } },
+      { request: { ...openRequest, cosigner: Array.from(secret) } },
+      { request: { ...openRequest, cosignerSecret: Array.from(secret) } },
+      { request: openRequest, secretKey: Array.from(secret) },
+    ];
+    for (const body of bodies) {
+      expect((await call("open", { ...body, step: 1, priorSignatures: [] })).status).toBe(400);
+    }
+    expect(fake.adapter!.prepareOpen).not.toHaveBeenCalled();
+    const cosigner = Keypair.generate().publicKey.toBase58();
+    expect((await call("open", { request: { ...openRequest, cosigner }, step: 1, priorSignatures: [] })).status).toBe(200);
+    expect((fake.adapter!.prepareOpen as ReturnType<typeof vi.fn>).mock.calls[0]![0]).toMatchObject({ cosigner });
+  });
+
+  it("passes the requesting wallet to recovery as the owner", async () => {
+    const prepareRecovery = vi.fn(async () => ({ step: 1, of: 1, label: "Close", done: true, prepared: { kind: "solana-tx", transaction: tx(), lastValidBlockHeight: 50 } }));
+    fake.adapter = { ...fake.adapter, prepareRecovery };
+    const response = await call("recovery", { wallet: owner.toBase58(), positionKey: "some-dex:abc", step: 1, priorSignatures: [] });
+    expect(response.status).toBe(200);
+    expect(prepareRecovery).toHaveBeenCalledWith("some-dex:abc", owner.toBase58(), { step: 1, priorSignatures: [] });
+  });
+
+  it("returns 503 with a plain message when the deployment is misconfigured", async () => {
+    (fake.adapter!.quoteOpen as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new DexError("MISCONFIGURED", "Opening positions is temporarily unavailable."));
+    const response = await call("quote-open", { request: openRequest });
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: "Opening positions is temporarily unavailable.", code: "MISCONFIGURED" });
+  });
 });

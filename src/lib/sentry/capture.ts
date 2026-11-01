@@ -185,3 +185,22 @@ export function captureRhcDiscoveryFindings(findings: readonly string[]): void {
     // Monitoring must never fail the cron.
   }
 }
+
+/**
+ * A DEX operation was refused because the deployment is misconfigured (e.g. the fee policy charges but no fee wallet is
+ * set). Error level: users cannot open until ops fixes the config. DEX id and operation only, no addresses or secrets.
+ */
+export function captureDexMisconfiguration(dexId: string, op: string, problem: string): void {
+  try {
+    if (!isSentryEnabled()) return;
+    Sentry.withScope((scope) => {
+      scope.setLevel("error");
+      scope.setTag("dex_config", problem);
+      scope.setTag("dex", dexId);
+      scope.setTag("dex_op", op);
+      Sentry.captureMessage(`DEX misconfigured: ${problem} (${dexId} ${op})`, "error");
+    });
+  } catch {
+    // Monitoring must never change the response.
+  }
+}

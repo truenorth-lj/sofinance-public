@@ -222,10 +222,10 @@ export function createMeteoraDlmmAdapter(options: MeteoraDlmmAdapterOptions = {}
     prepareWithdraw: async () => { throw notYet(descriptor.capabilities.withdraw); },
     prepareClaim: async () => { throw notYet(descriptor.capabilities.claim); },
     prepareCompound: async () => { throw notYet(descriptor.capabilities.compound); },
-    prepareRecovery: (key: PositionKey, context: StepContext) => guarded(async () => {
+    prepareRecovery: (key: PositionKey, owner: string, context: StepContext) => guarded(async () => {
       if (context.step !== 1) throw new DexError("INVALID_REQUEST", "Closing an empty Meteora position is a single step.");
       const position = nativeIdOf(key);
-      const built = await buildMeteoraCloseRefund(deps(), position);
+      const built = await buildMeteoraCloseRefund(deps(), position, owner);
       return {
         step: 1, of: 1, label: "Close the empty position and get its rent back", done: true,
         prepared: { kind: "solana-tx", transaction: built.transaction, lastValidBlockHeight: built.lastValidBlockHeight, positionMint: position },
