@@ -11,7 +11,8 @@ import { sendWithWallet, type SendRaw, type TxWallet } from "./wallet-send";
 /**
  * The shared Solana transaction pipeline:
  *   1. prepare  – the flow's adapter builds, simulates and safety-checks a transaction (server side)
- *   2. send     – the wallet signs and sends it (signAndSendTransaction), or signs and we send once;
+ *   2. send     – the wallet signs and sends it (signAndSendTransaction), or signs and we send once (never when the
+ *                 prepared step says `walletSends`, e.g. every DEX-route step);
  *                 if the wallet throws (any error, even a 4001 cancel), "checking" looks for it on-chain for up to
  *                 20 s; still unseen → "cancelled, retry in about a minute" while that lookup runs on in the background
  *   3. confirm  – the notice host polls the signature, then links Solscan and refreshes balances
@@ -21,8 +22,12 @@ import { sendWithWallet, type SendRaw, type TxWallet } from "./wallet-send";
 export type PreparedTx = {
   transaction: VersionedTransaction;
   lastValidBlockHeight: number;
-  /** Signers that must sign after the wallet (e.g. a new position's mint keypair). */
+  /** Signers that must sign after the wallet (e.g. a new position's mint keypair). Forces sign-then-relay. */
   cosign?: (walletSigned: VersionedTransaction) => VersionedTransaction;
+  /** Signers that sign BEFORE the wallet, which then signs and sends it itself (implies `walletSends`). */
+  presign?: (unsigned: VersionedTransaction) => VersionedTransaction;
+  /** Only the wallet may send this (signAndSendTransaction): never relayed through `/api/tx-send`. */
+  walletSends?: boolean;
   /** Prepare-issued HMAC permit that `/api/tx-send` requires on the relay path. */
   sendPermit?: string;
   /** Prepare-issued check permit for `/api/tx-landed` (covers these bytes and `lastValidBlockHeight`). */
@@ -117,7 +122,7 @@ export async function runTx<Input, Prepared extends PreparedTx>(
     options.onStage?.("wallet");
     try {
       const sent = await sendWithWallet(wallet, prepared.transaction, {
-        cosign: prepared.cosign, sendPermit: prepared.sendPermit, landedPermit: prepared.landedPermit,
+        cosign: prepared.cosign, presign: prepared.presign, walletSends: prepared.walletSends, sendPermit: prepared.sendPermit, landedPermit: prepared.landedPermit,
         sendRaw: options.sendRaw, stillWanted: options.isCurrent,
         lastValidBlockHeight: prepared.lastValidBlockHeight, findLanded: options.findLanded, checkingWindowMs: options.checkingWindowMs,
         knownSignatures: () => options.storage ? loadTxAttempts(options.storage as Storage, wallet.address).map((item) => item.signature) : [],
