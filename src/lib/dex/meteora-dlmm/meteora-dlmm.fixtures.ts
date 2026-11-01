@@ -105,10 +105,14 @@ export function createFakeChain(options: { autoLand?: boolean } = {}) {
 
   const get = (key: PublicKey) => accounts.get(key.toBase58()) ?? null;
   const simulations: string[] = [];
+  /** Unclaimed swap fees per position (raw X / Y) that `claim_fee2` pays out; landing a claim zeroes them. */
+  const claimable = new Map<string, { x: bigint; y: bigint }>();
+  const held = (map: Map<string, Account>, address: string) => (map.has(address) ? AccountLayout.decode(map.get(address)!.data).amount : 0n);
 
   /** Applies the Meteora instruction of `tx` to a copy of the state; returns that copy. */
-  function execute(tx: VersionedTransaction): Map<string, Account> {
+  function execute(tx: VersionedTransaction, claimed: string[] = []): Map<string, Account> {
     const next = new Map(accounts);
+    let claimedInTx = false;
     const keys = tx.message.staticAccountKeys.map((key) => key.toBase58());
     const payer = keys[0]!;
     for (const ix of tx.message.compiledInstructions) {
@@ -130,9 +134,15 @@ export function createFakeChain(options: { autoLand?: boolean } = {}) {
         const filled = Buffer.from(before.data);
         filled.writeBigUInt64LE(before.data.readBigUInt64LE(72) + 1_000_000n, 72);
         next.set(at(0), { ...before, data: filled });
-        const input = ata(TSLA, payer);
-        const held = AccountLayout.decode(next.get(input)!.data).amount;
-        next.set(input, tokenAccount(TSLA, payer, held - BigInt(DEPOSIT_RAW)));
+        if (claimedInTx) {
+          // A compound deposits exactly the encoded amounts out of the owner's two pool-token accounts.
+          const [mintX, mintY] = [at(7), at(8)];
+          next.set(ata(mintX, payer), tokenAccount(mintX, payer, held(next, ata(mintX, payer)) - data.readBigUInt64LE(8)));
+          next.set(ata(mintY, payer), tokenAccount(mintY, payer, held(next, ata(mintY, payer)) - data.readBigUInt64LE(16)));
+        } else {
+          const input = ata(TSLA, payer);
+          next.set(input, tokenAccount(TSLA, payer, held(next, input) - BigInt(DEPOSIT_RAW)));
+        }
         next.set(payer, { ...next.get(payer)!, lamports: next.get(payer)!.lamports - 5_000 });
       } else if (tag === METEORA_LIQUIDITY_IX_DISCRIMINATOR.removeLiquidityByRange2) {
         simulations.push("remove_liquidity_by_range2");
@@ -147,6 +157,14 @@ export function createFakeChain(options: { autoLand?: boolean } = {}) {
         next.set(payer, { ...next.get(payer)!, lamports: next.get(payer)!.lamports - 5_000 });
       } else if (tag === METEORA_LIQUIDITY_IX_DISCRIMINATOR.claimFee2) {
         simulations.push("claim_fee2");
+        claimedInTx = true;
+        const fees = claimable.get(at(1));
+        if (fees) {
+          const [mintX, mintY] = [at(7), at(8)];
+          next.set(ata(mintX, payer), tokenAccount(mintX, payer, held(next, ata(mintX, payer)) + fees.x));
+          next.set(ata(mintY, payer), tokenAccount(mintY, payer, held(next, ata(mintY, payer)) + fees.y));
+          claimed.push(at(1));
+        }
         next.set(payer, { ...next.get(payer)!, lamports: next.get(payer)!.lamports - 5_000 });
       } else if (tag === METEORA_IX_DISCRIMINATOR.closePosition2) {
         simulations.push("close_position2");
@@ -201,7 +219,9 @@ export function createFakeChain(options: { autoLand?: boolean } = {}) {
     simulations,
     /** Lands what the transaction would do (the wallet signed and sent it). */
     land(tx: VersionedTransaction) {
-      const next = execute(tx);
+      const claimed: string[] = [];
+      const next = execute(tx, claimed);
+      for (const position of claimed) claimable.delete(position);
       accounts.clear();
       for (const [key, value] of next) accounts.set(key, value);
     },
@@ -209,6 +229,8 @@ export function createFakeChain(options: { autoLand?: boolean } = {}) {
       if (info) accounts.set(address, info); else accounts.delete(address);
     },
     get: (address: string) => accounts.get(address) ?? null,
+    /** Sets the unclaimed fees `claim_fee2` pays for `position` (raw X / Y). */
+    setClaimable(position: string, x: bigint, y: bigint) { claimable.set(position, { x, y }); },
     /** Sets the recorded Token-2022 PausableConfig of `mint` to paused (TLV entries start at byte 166). */
     pauseMint(mint: string) {
       const info = accounts.get(mint)!;

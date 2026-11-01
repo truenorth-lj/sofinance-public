@@ -133,12 +133,13 @@ describe("POST /api/dex/[dex]/[op]", () => {
     expect(prepareRecovery).toHaveBeenCalledWith("some-dex:abc", owner.toBase58(), { step: 1, priorSignatures: [] });
   });
 
-  it("routes add / withdraw / claim to the adapter with the requesting wallet as owner, returning permitted steps", async () => {
+  it("routes add / withdraw / claim / compound to the adapter with the requesting wallet as owner, returning permitted steps", async () => {
     const step = async () => ({ step: 1, of: 1, label: "Op", done: true, prepared: { kind: "solana-tx", transaction: tx(), lastValidBlockHeight: 50 } });
     const prepareAdd = vi.fn(step);
     const prepareWithdraw = vi.fn(step);
     const prepareClaim = vi.fn(step);
-    fake.adapter = { ...fake.adapter, prepareAdd, prepareWithdraw, prepareClaim };
+    const prepareCompound = vi.fn(step);
+    fake.adapter = { ...fake.adapter, prepareAdd, prepareWithdraw, prepareClaim, prepareCompound };
     const common = { owner: owner.toBase58(), positionKey: "some-dex:abc", step: 1, priorSignatures: [] };
     const context = { step: 1, priorSignatures: [] };
     const added = await call("add", { ...common, input: { token: "Mint111111111111111111111111111111111111111", amountRaw: "100" } });
@@ -149,6 +150,10 @@ describe("POST /api/dex/[dex]/[op]", () => {
     expect(prepareWithdraw).toHaveBeenCalledWith("some-dex:abc", owner.toBase58(), { fraction: 0.5, output: "pool-tokens" }, context);
     expect((await call("claim", common)).status).toBe(200);
     expect(prepareClaim).toHaveBeenCalledWith("some-dex:abc", owner.toBase58(), context);
+    const compounded = await call("compound", common);
+    expect(compounded.status).toBe(200);
+    expect((await compounded.json()).prepared).toMatchObject({ sendPermit: expect.any(String), landedPermit: expect.any(String) });
+    expect(prepareCompound).toHaveBeenCalledWith("some-dex:abc", owner.toBase58(), context);
   });
 
   it("400s a position op with a non-base58 owner, a bad share or an extra field, before the adapter runs", async () => {
@@ -160,7 +165,10 @@ describe("POST /api/dex/[dex]/[op]", () => {
       { ...common, owner: "0x" + "ab".repeat(20) },
       { ...common, owner: owner.toBase58() + "1" },
       { ...common, extra: 1 },
-    ]) expect((await call("claim", body)).status).toBe(400);
+    ]) {
+      expect((await call("claim", body)).status).toBe(400);
+      expect((await call("compound", body)).status).toBe(400);
+    }
     for (const fraction of [0, -0.1, 1.01]) expect((await call("withdraw", { ...common, fraction, output: "pool-tokens" })).status).toBe(400);
     expect((await call("withdraw", { ...common, fraction: 1, output: "bogus" })).status).toBe(400);
     // A known output the DEX does not list in capabilities.withdrawOutputs (Meteora: pool tokens only) is refused before the adapter.

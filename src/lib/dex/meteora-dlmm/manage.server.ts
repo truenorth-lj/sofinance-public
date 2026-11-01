@@ -7,7 +7,8 @@ import { METEORA_DLMM_PROGRAM_ID } from "@sofinance/engine/protocols/meteora/con
 import { meteoraBinArrayAddress, meteoraBinArrayIndexesForRange } from "@sofinance/engine/protocols/meteora/accounts";
 import { meteoraClaimFee2Instruction, meteoraRemoveLiquidityByRange2Instruction, METEORA_BPS_MAX } from "@sofinance/engine/protocols/meteora/liquidity";
 import { meteoraBitmapExtensionAddress, meteoraClosePosition2Instruction, meteoraRangeNeedsBitmapExtension } from "@sofinance/engine/protocols/meteora/open";
-import { decodeMeteoraPosition, isMeteoraPositionAccount, meteoraPositionLiquidity, type MeteoraPosition } from "@sofinance/engine/protocols/meteora/position";
+import { decodeMeteoraPosition, isMeteoraPositionAccount, meteoraPositionLiquidity, meteoraRangeSide, type MeteoraPosition } from "@sofinance/engine/protocols/meteora/position";
+import { meteoraAddLiquidityByStrategy2Instruction, meteoraMaxActiveBinSlippage } from "@sofinance/engine/protocols/meteora/open";
 import { MIN_SOL_LAMPORTS, SLIPPAGE_BPS } from "@sofinance/engine/ids";
 import { assertOpenTransactionSize, compileCompactOpenTransaction } from "@sofinance/engine/open-transaction";
 import { ATOMIC_COMPUTE_UNIT_LIMIT, measuredComputeUnitLimit } from "@sofinance/engine/transaction-limits";
@@ -28,6 +29,9 @@ import {
  *             full:    remove 100% + `claim_fee2` + `close_position2` (the position rent comes back to the owner).
  *             Pool tokens only (no fee, the `withdrawPoolTokens` rule); to-USDC is refused.
  *   claim     `claim_fee2` over the position's range (no fee, the `claim` rule).
+ *   compound  (PR8) `claim_fee2` then `add_liquidity_by_strategy2` (SpotImBalanced, no swap) of exactly the claimed amounts
+ *             over the position's own range, in one transaction. No swap, so no fee (the `compound` rule is none, PM 11/1)
+ *             and no transfer instruction. Listed pools only (it deposits, like add).
  * Every op: the position is read fresh and its decoded owner must equal the requesting wallet (here, not only in the
  * route: MCP and other callers reach the adapter directly). Add and withdraw run `assertMeteoraPoolMintsUsable` (via
  * readMeteoraPool), and claim does too (it moves the same tokens). Nothing creates a bin array or the bitmap extension:
@@ -270,3 +274,65 @@ export async function buildMeteoraAdd(deps: MeteoraOpenDeps, position: string, o
   return { transaction: encode(transaction), lastValidBlockHeight: latest.lastValidBlockHeight };
 }
 
+
+export type MeteoraCompoundBuilt = BuiltStep & {
+  /** Raw fee amounts put back into the position. */
+  compoundX: bigint; compoundY: bigint;
+  /** Raw fee amounts that go to the wallet instead: the side an out-of-range position cannot hold at the current price. */
+  leftoverX: bigint; leftoverY: bigint;
+};
+
+/**
+ * Compound (PR8): claim the position's fees and deposit them back into the same range, in one transaction. The claimed
+ * amounts are measured by simulating the claim alone first; fees only grow, so the real claim pays at least that much
+ * and the deposit never draws on tokens the wallet already held (the final simulation checks the wallet's pool-token
+ * balances do not fall). Out of range, a Spot deposit can only hold one token (X above the price, Y below): the other
+ * side's fees stay in the wallet, and the label says so.
+ */
+export async function buildMeteoraCompound(deps: MeteoraOpenDeps, position: string, owner: string): Promise<MeteoraCompoundBuilt> {
+  const owned = await readOwned(deps, position, owner);
+  // It deposits, so the same rule as add: listed pools only, and the Token-2022 mint guard.
+  const pool = await readMeteoraPool(deps, owned.decoded.lbPair);
+  const { lowerBinId, upperBinId } = owned.decoded;
+  const bitmapExtension = await existingRangeAccounts(deps, pool, lowerBinId, upperBinId);
+  const tokens = await readOwnerTokens(deps, pool, owner);
+  const accounts = poolAccounts(pool, tokens, position);
+  const creates = ataCreates(pool, tokens);
+  const ataRent = tokenAccountRent(tokens);
+  const maxDebit = ataRent + SIGNATURE_LAMPORTS;
+  if (tokens.walletLamports < maxDebit) throw new DexError("INSUFFICIENT_FUNDS", `Not enough SOL for the network fee${ataRent ? " and token accounts" : ""}: add about ${sol(maxDebit - tokens.walletLamports)} SOL.`);
+  const claim = meteoraClaimFee2Instruction({ ...accounts, minBinId: lowerBinId, maxBinId: upperBinId });
+
+  // 1. What the claim pays right now.
+  const latest = await deps.connection.getLatestBlockhash("confirmed");
+  const claimOnly = [cuLimit(ATOMIC_COMPUTE_UNIT_LIMIT), ...creates, claim];
+  assertMeteoraFeeRule(claimOnly, deps.feeConfig());
+  const probe = await simulate(deps.connection, compileV0(tokens.wallet, latest.blockhash, claimOnly), [tokens.ataX, tokens.ataY], tokens.slot, "fee claim");
+  const claimedX = simulatedAmount(accountData(probe.accounts?.[0]), tokens.ataX, pool.tokenProgramX) - tokens.balanceX;
+  const claimedY = simulatedAmount(accountData(probe.accounts?.[1]), tokens.ataY, pool.tokenProgramY) - tokens.balanceY;
+  if (claimedX <= 0n && claimedY <= 0n) throw new DexError("INVALID_REQUEST", "This position has no unclaimed fees yet, so there is nothing to compound.");
+
+  // 2. What the range can hold at the current price (bins above the active bin hold X, below hold Y).
+  const side = meteoraRangeSide(pool.lbPair.activeId, lowerBinId, upperBinId);
+  const compoundX = side === "above" ? 0n : claimedX > 0n ? claimedX : 0n;
+  const compoundY = side === "below" ? 0n : claimedY > 0n ? claimedY : 0n;
+  if (compoundX === 0n && compoundY === 0n) {
+    throw new DexError("INVALID_REQUEST", "The price is outside this position's range, and its fees are all in the token the range can't hold right now, so they can't be compounded. Claim them to your wallet instead.");
+  }
+  const add = meteoraAddLiquidityByStrategy2Instruction({
+    ...accounts, amountX: compoundX, amountY: compoundY,
+    activeId: pool.lbPair.activeId, maxActiveBinSlippage: meteoraMaxActiveBinSlippage(SLIPPAGE_BPS, pool.lbPair.binStep),
+    minBinId: lowerBinId, maxBinId: upperBinId, ...(bitmapExtension ? { bitmapExtension } : {}),
+  });
+
+  // 3. Claim + deposit, simulated: liquidity must grow and the wallet's pool-token balances must not fall.
+  const body = (units: number) => [cuLimit(units), ...creates, claim, add];
+  const built = await simulateAndFinish(deps, pool, tokens, position, body, "compound", maxDebit, (after) => {
+    if (!after.position || !isMeteoraPositionAccount(after.position)) throw new DexError("UPSTREAM", "The compound simulation removed the position account, so nothing was sent.");
+    if (meteoraPositionLiquidity(decodeMeteoraPosition(after.position)) <= owned.liquidity) {
+      throw new DexError("UPSTREAM", "The compound simulation added no liquidity to the position, so nothing was sent.");
+    }
+  });
+  const positive = (value: bigint) => (value > 0n ? value : 0n);
+  return { ...built, compoundX, compoundY, leftoverX: positive(claimedX) - compoundX, leftoverY: positive(claimedY) - compoundY };
+}

@@ -76,19 +76,21 @@ describe("/app My positions with registry DEXes", () => {
     expect(groups()).toEqual([["Solana", [`Meteora · TSLA/TSLAx · range 0.9800–1.0200 · In range · #${POSITION.slice(0, 4)}…${POSITION.slice(-4)}`]]]);
     expect(select().value).toBe(`meteora-dlmm:${POSITION}`);
     expect(container.querySelector("[data-testid=registry-position-header]")?.textContent).toBe("In rangeRange 0.9800–1.0200");
-    // Compound has no registry panel: the page opens the first tool the descriptor supports (Add), never a Raydium panel.
-    expect(container.querySelector("[data-testid=registry-add]")).toBeTruthy();
-    expect(container.querySelector("#deposit-view")?.textContent).not.toContain("Meteora");
-    await act(async () => tab("Yield Compound").click());
-    expect(container.querySelector("#compound-view")?.textContent).toContain("Not available for this pool yet");
+    // PR8: the page's default tool (Compound) now has a registry panel, never the Raydium one.
+    expect(container.querySelector("[data-testid=registry-compound]")).toBeTruthy();
+    expect(container.querySelector("#compound-view")?.textContent).not.toContain("Meteora");
+    await act(async () => tab("Performance").click());
+    expect(container.querySelector("#performance-view")?.textContent).toContain("Not available for this pool yet");
   });
 
-  it("greys only the tools the registry panel has no UI for (compound, performance); Add / Withdraw / Claim follow the descriptor", () => {
+  it("greys only the tool the registry panel has no UI for (performance); Add / Withdraw / Claim / Compound follow the descriptor", () => {
     const meteora = dexDescriptors.descriptorFor("meteora-dlmm")!.capabilities;
     expect(meteora.withdraw).toEqual({ supported: true, partial: true });
     expect(meteora.deposit.supported).toBe(true);
     const shown = registryPanelCapabilities(meteora);
-    for (const tool of ["compound", "performance"] as const) expect(shown[tool]).toEqual({ supported: false, reason: "Not available for this pool yet" });
+    expect(shown.performance).toEqual({ supported: false, reason: "Not available for this pool yet" });
+    expect(shown.compound).toEqual(meteora.compound);
+    expect(meteora.compound).toEqual({ supported: true });
     expect(shown.deposit).toEqual(meteora.deposit);
     expect(shown.withdraw).toEqual(meteora.withdraw);
     expect(shown.claim).toEqual(meteora.claim);
@@ -127,8 +129,32 @@ describe("/app My positions with registry DEXes", () => {
     expect(container.querySelector("[data-testid=registry-withdraw] [role=alert]")?.textContent).toContain("This pool pays farming rewards, and claiming them isn't available here yet.");
   });
 
+  it("Compound: shows the unclaimed fees and 'No platform fee', posts to the generic route and shows the server's plain refusal", async () => {
+    state.op = { status: 400, body: { error: "This position has no unclaimed fees yet, so there is nothing to compound.", code: "INVALID_REQUEST" } };
+    await render();
+    const panel = container.querySelector("[data-testid=registry-compound]")!;
+    expect(panel.textContent).toContain("adds them back into this position at its current price range, in one transaction. No swap is needed. No platform fee.");
+    expect(panel.textContent).toContain("Unclaimed: 0.0015 TSLA · 0.0023 TSLAx");
+    expect(container.querySelector("[data-testid=registry-compound-range]")).toBeNull(); // in range
+    const button = [...panel.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent === "Compound fees")!;
+    await act(async () => button.click());
+    await settle();
+    expect(state.dexCalls.at(-1)).toEqual(["/api/dex/meteora-dlmm/compound", { owner: WALLET, positionKey: `meteora-dlmm:${POSITION}`, step: 1, priorSignatures: [] }]);
+    expect(container.querySelector("[data-testid=registry-compound] [role=alert]")?.textContent).toContain("This position has no unclaimed fees yet, so there is nothing to compound.");
+  });
+
+  it("Compound: out of range it says only one side goes back in; with no fees the button is disabled", async () => {
+    state.dex = { status: 200, body: { positions: [{ ...meteoraRow("5000", { liquidityRaw: HOLDINGS.liquidityRaw, unclaimedFeesRaw: { a: "0", b: "0" } }), rangeStatus: "below" }] } };
+    await render();
+    expect(container.querySelector("[data-testid=registry-compound-range]")?.textContent)
+      .toBe("The price is outside this position's range, so only the fees in the token the range holds right now go back in. The rest goes to your wallet.");
+    const button = [...container.querySelectorAll<HTMLButtonElement>("[data-testid=registry-compound] button")].find((b) => b.textContent === "No fees to compound yet")!;
+    expect(button.disabled).toBe(true);
+  });
+
   it("Add offers the pool tokens and USDC (descriptor deposit inputs), states the swap fee, and posts the raw amount", async () => {
     await render();
+    await act(async () => tab("Add to position").click());
     const panel = container.querySelector("[data-testid=registry-add]")!;
     expect([...panel.querySelectorAll("option")].map((o) => o.textContent)).toEqual(["TSLA", "TSLAx", "USDC"]);
     expect(panel.textContent).toContain("A 0.1% platform fee applies only to the part we swap into the pool tokens");
@@ -159,6 +185,8 @@ describe("/app My positions with registry DEXes", () => {
     expect(container.querySelector("[data-testid=registry-claim]")).toBeNull();
     await act(async () => root.render(createElement(RegistryPositionTool, { ...props, view: "deposit" })));
     expect(container.querySelector("[data-testid=registry-add]")).toBeNull();
+    await act(async () => root.render(createElement(RegistryPositionTool, { ...props, capabilities: { ...capabilities, compound: { supported: false as const, reason: "no" } }, view: "compound" })));
+    expect(container.querySelector("[data-testid=registry-compound]")).toBeNull();
   });
 
   it("shows the shared Liquidity and Unclaimed fees rows for the selected registry position (no USD until priced)", async () => {

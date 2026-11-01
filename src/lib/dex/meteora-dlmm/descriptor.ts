@@ -18,7 +18,7 @@ export const METEORA_DLMM_FEE_POLICY: FeePolicy = Object.freeze({
 });
 
 /**
- * Shown until the PR that ships each tool (PR7 compound / performance / exit preview). The shared generic
+ * Shown until the PR that ships each tool (performance / exit preview). The shared generic
  * text, never a DEX name: the UI only renders the capability's reason (PM 11/1).
  */
 const NOT_YET = NOT_AVAILABLE_MESSAGE;
@@ -57,7 +57,8 @@ export const meteoraDlmmDescriptor: DexDescriptor = Object.freeze({
     withdrawOutputs: Object.freeze(["pool-tokens"] as const),
     /** PR6: claim accrued swap fees without changing liquidity (no fee). */
     claim: SUPPORTED,
-    compound: unsupported(NOT_YET),
+    /** PR8: claim fees and deposit them back into the same range in one transaction (no swap, no fee). */
+    compound: SUPPORTED,
     performance: unsupported(NOT_YET),
     exitPreview: unsupported(NOT_YET),
     rangeDisplay: "price",

@@ -20,7 +20,7 @@ import {
   buildMeteoraCloseRefund, buildMeteoraDeposit, buildMeteoraSetup, meteoraBinUiPrice, meteoraRequestRange, planMeteoraOpen, readMeteoraPool,
   assertEmptyOwnedPosition, type MeteoraOpenDeps, type MeteoraPoolState,
 } from "./open.server";
-import { buildMeteoraAdd, buildMeteoraClaim, buildMeteoraWithdraw } from "./manage.server";
+import { buildMeteoraAdd, buildMeteoraClaim, buildMeteoraCompound, buildMeteoraWithdraw } from "./manage.server";
 import { listedMeteoraPool, type MeteoraPoolList } from "./pools.server";
 
 /** What a Meteora `UnifiedPosition.native` carries: the existing positions row (same shape the legacy UI reads). */
@@ -269,7 +269,18 @@ export function createMeteoraDlmmAdapter(options: MeteoraDlmmAdapterOptions = {}
       const built = await buildMeteoraClaim(deps(), position, owner);
       return { step: 1, of: 1, label: "Claim unclaimed fees to your wallet", done: true, prepared: { kind: "solana-tx", ...built, positionMint: position } };
     }),
-    prepareCompound: async () => { throw notYet(descriptor.capabilities.compound); },
+    // PR8: claim + deposit the claimed fees back into the same range, one step, no swap and no fee.
+    prepareCompound: (key: PositionKey, owner: string, context: StepContext) => guarded(async () => {
+      singleStep(context, "A Meteora compound");
+      const position = nativeIdOf(key);
+      const built = await buildMeteoraCompound(deps(), position, owner);
+      const leftover = built.leftoverX > 0n || built.leftoverY > 0n
+        ? " The price is outside the position's range, so fees in the token it can't hold right now go to your wallet instead." : "";
+      return {
+        step: 1, of: 1, label: `Claim the position's fees and add them back into it. No platform fee.${leftover}`, done: true,
+        prepared: { kind: "solana-tx", transaction: built.transaction, lastValidBlockHeight: built.lastValidBlockHeight, positionMint: position },
+      };
+    }),
     prepareRecovery: (key: PositionKey, owner: string, context: StepContext) => guarded(async () => {
       if (context.step !== 1) throw new DexError("INVALID_REQUEST", "Closing an empty Meteora position is a single step.");
       const position = nativeIdOf(key);

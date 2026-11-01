@@ -67,7 +67,7 @@ const OWNER: Record<DexSigner, z.ZodType<string>> = {
 };
 const positionsBody = (adapter: DexAdapter) => z.object({ owner: OWNER[adapter.descriptor.capabilities.signer] }).strict();
 const PositionKeySchema = z.string().min(3).max(160);
-/** add / withdraw / claim: the requesting wallet (checked per wallet type here, and against the position's on-chain owner in the adapter). */
+/** add / withdraw / claim / compound: the requesting wallet (checked per wallet type here, and against the position's on-chain owner in the adapter). */
 const positionOpBody = (adapter: DexAdapter) => {
   const common = { owner: OWNER[adapter.descriptor.capabilities.signer], positionKey: PositionKeySchema, ...StepSchema, jupiterRelay: z.unknown().optional() };
   return {
@@ -79,6 +79,7 @@ const positionOpBody = (adapter: DexAdapter) => {
       output: z.enum(WITHDRAW_OUTPUTS),
     }).strict(),
     claim: z.object(common).strict(),
+    compound: z.object(common).strict(),
   } as const;
 };
 
@@ -93,6 +94,7 @@ const BODY = {
   add: z.object({ owner: z.string() }).passthrough(),
   withdraw: z.object({ owner: z.string() }).passthrough(),
   claim: z.object({ owner: z.string() }).passthrough(),
+  compound: z.object({ owner: z.string() }).passthrough(),
 } as const;
 type Op = keyof typeof BODY;
 const isOp = (op: string): op is Op => Object.hasOwn(BODY, op);
@@ -165,6 +167,10 @@ async function run(adapter: DexAdapter, op: Op, body: unknown): Promise<Response
     case "claim": {
       const input = positionOpBody(adapter).claim.parse(body);
       return json(withPermits(await adapter.prepareClaim(input.positionKey as PositionKey, input.owner, stepContext(input)), input.owner));
+    }
+    case "compound": {
+      const input = positionOpBody(adapter).compound.parse(body);
+      return json(withPermits(await adapter.prepareCompound(input.positionKey as PositionKey, input.owner, stepContext(input)), input.owner));
     }
     case "recovery": {
       const input = BODY[op].parse(body);

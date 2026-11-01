@@ -1,9 +1,9 @@
 "use client";
 
 /**
- * Tool panels (Add / Withdraw / Claim fees) for "My positions" rows served through the DEX registry (PR7). Everything
- * here is decided from the registry: the descriptor's capabilities and meta (withdraw outputs, partial withdraw, claim,
- * deposit inputs, fee policy, rent model). No layer here knows which DEX a position belongs to.
+ * Tool panels (Add / Withdraw / Claim fees, PR7; Compound, PR8) for "My positions" rows served through the DEX registry.
+ * Everything here is decided from the registry: the descriptor's capabilities and meta (withdraw outputs, partial
+ * withdraw, claim, compound, deposit inputs, fee policy, rent model). No layer here knows which DEX a position belongs to.
  *
  * Every send goes through the shared tx pipeline (`useTxPipeline` + `dexTxAdapter`): wallet signAndSend, loading →
  * success / failure with a Solscan link, balances refresh; the pipeline's success notice stays until dismissed.
@@ -41,6 +41,7 @@ const LAMPORTS_PER_SOL = 1_000_000_000;
 
 export function RegistryPositionTool(props: RegistryToolProps) {
   if (props.view === "deposit" && props.capabilities.deposit.supported) return <RegistryAddPanel {...props} />;
+  if (props.view === "compound" && props.capabilities.compound.supported) return <RegistryCompoundPanel {...props} />;
   if (props.view === "withdraw" && props.capabilities.withdraw.supported) return <>
     <RegistryWithdrawPanel {...props} />
     {props.capabilities.claim.supported ? <RegistryClaimPanel {...props} /> : null}
@@ -232,6 +233,32 @@ function RegistryClaimPanel({ position, descriptor, symbolOf, onConfirmed }: Reg
         {tx.locked ? <LoaderCircle aria-hidden="true" className="size-4 animate-spin" /> : null}{nothing ? "No fees to claim yet" : "Claim fees"}
       </button>
       <TxStatus tx={tx} successText="Fees claimed." />
+    </>}
+  </section>;
+}
+
+/** Out of range, only one side of the fees can go back in (the server measures and says so in the step label too). */
+export function compoundRangeLine(position: UnifiedPosition): string | null {
+  if (position.rangeStatus !== "below" && position.rangeStatus !== "above") return null;
+  return "The price is outside this position's range, so only the fees in the token the range holds right now go back in. The rest goes to your wallet.";
+}
+
+function RegistryCompoundPanel({ position, descriptor, symbolOf, onConfirmed }: RegistryToolProps) {
+  const { tx, send, connected } = usePositionTx("compound", position, onConfirmed);
+  const fees = position.holdings?.unclaimedFeesRaw ?? null;
+  const nothing = fees !== null && BigInt(fees.a) === 0n && BigInt(fees.b) === 0n;
+  const rangeLine = compoundRangeLine(position);
+  const submit = () => void send({ descriptor, positionKey: position.key });
+  return <section className={CARD} data-testid="registry-compound" aria-labelledby="registry-compound-heading">
+    <h2 id="registry-compound-heading" className="text-lg font-semibold text-cream">Compound fees</h2>
+    <p className="mt-2 text-xs leading-5 text-smoke">Claims the unclaimed swap fees and adds them back into this position at its current price range, in one transaction. No swap is needed. {feeLine(descriptor.meta.feePolicy.compound, "")}</p>
+    {fees ? <p className="mt-3 text-sm text-cream/80">Unclaimed: {formatAmount(fees.a, position.tokenA.decimals)} {symbolOf(position.tokenA)} · {formatAmount(fees.b, position.tokenB.decimals)} {symbolOf(position.tokenB)}</p> : null}
+    {rangeLine ? <p data-testid="registry-compound-range" className="mt-4 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80">{rangeLine}</p> : null}
+    {!connected ? <NotConnected /> : <>
+      <button type="button" disabled={tx.locked || nothing} onClick={submit} className={BUTTON}>
+        {tx.locked ? <LoaderCircle aria-hidden="true" className="size-4 animate-spin" /> : null}{nothing ? "No fees to compound yet" : "Compound fees"}
+      </button>
+      <TxStatus tx={tx} successText="Fees compounded." />
     </>}
   </section>;
 }
