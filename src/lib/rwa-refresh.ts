@@ -30,6 +30,7 @@ import {
   ALGORITHM_VERSION,
   FEED_KEY,
   FEED_KEY_METEORA,
+  SOLANA_FEED_PROTOCOL,
   type ActivePool,
   type DiscoveryWrite,
   type JobName,
@@ -466,8 +467,9 @@ async function refreshMeteoraLane(input: {
   poolTimeoutMs: number;
 }): Promise<{ processed: number; issues: string[]; stats: MeteoraAprQueueStats }> {
   const { store, clock, signal, jobDeadline } = input;
-  const pools = (await store.request({ op: "activePools", feedKeys: [FEED_KEY_METEORA] }))
-    .filter((pool) => (pool.pair.tvlUsd ?? 0) >= METEORA_SCAN_MIN_TVL_USD);
+  // Feed lists are Raydium-first (store contract), so read both Solana feeds and keep the Meteora rows.
+  const pools = (await store.request({ op: "activePools", feedKeys: [FEED_KEY, FEED_KEY_METEORA] }))
+    .filter((pool) => pool.pair.protocol === SOLANA_FEED_PROTOCOL[FEED_KEY_METEORA] && (pool.pair.tvlUsd ?? 0) >= METEORA_SCAN_MIN_TVL_USD);
   const selected = orderAprQueue(pools.map((pool) => ({ poolId: pool.pair.poolAddress, refreshedAt: activePoolRefreshedAt(pool), pool })))
     .slice(0, METEORA_APR_POOLS_PER_RUN);
   const stats: MeteoraAprQueueStats = { pools: pools.length, selected: selected.length, done: 0, stoppedBy: null, failed: 0 };
