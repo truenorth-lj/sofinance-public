@@ -2,21 +2,27 @@
  * Pure checks behind the shared DEX contract suite. Each returns a list of problems (empty = passes), so the suite
  * (`dex-contract.ts`) stays declarative and the checks themselves are unit-tested against deliberately broken input.
  */
-import { ASSOCIATED_TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { ASSOCIATED_TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync, NATIVE_MINT, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import {
-  ComputeBudgetProgram, PublicKey, TransactionMessage, VersionedTransaction, type AddressLookupTableAccount,
+  ComputeBudgetProgram, PublicKey, SystemInstruction, SystemProgram, TransactionMessage, VersionedTransaction,
+  type AddressLookupTableAccount, type TransactionInstruction,
 } from "@solana/web3.js";
 import { assertNoDirectFeeWalletInstructions } from "@sofinance/engine/swap/fee";
 import type { UnifiedPosition } from "@/lib/unified-positions/model";
 import type { DexAdapter, OpenQuote, StepResult } from "../adapter";
 import { DexError } from "../errors";
 import { dexDescriptorProblems } from "../registry";
-import { isDexId, type DexDescriptor } from "../types";
+import { feeRuleBps, isDexId, type DexDescriptor, type FeePolicy } from "../types";
 
 /** Solana's packet limit for one serialized transaction. */
 export const SOLANA_MAX_TX_BYTES = 1232;
 /** Highest compute-unit limit a transaction may request. */
 export const SOLANA_MAX_COMPUTE_UNITS = 1_400_000;
+
+/** True when any operation of the policy charges a platform fee. */
+export function feePolicyCharges(policy: FeePolicy): boolean {
+  return Object.values(policy).some((rule) => rule.kind !== "none" && feeRuleBps(rule) > 0);
+}
 
 export function descriptorContractProblems(descriptor: DexDescriptor): string[] {
   const problems = dexDescriptorProblems([descriptor]);
@@ -73,12 +79,20 @@ export function quoteContractProblems(descriptor: DexDescriptor, quote: OpenQuot
 /** Extra facts a step check needs that only the fixtures know. */
 export type StepCheckOptions = {
   expectedSteps?: { min: number; max: number };
-  /** Fee wallet the DEX collects into; when set, no instruction may pay or create accounts for it directly. */
+  /**
+   * Fee wallet the DEX collects into; no instruction may pay or create accounts for it directly. Required (the check
+   * fails without it) whenever the descriptor's fee policy charges anything.
+   */
   feeWallet?: string;
   /** Lookup tables the prepared transactions reference (recorded with the fixtures). */
   addressLookupTables?: readonly AddressLookupTableAccount[];
-  /** Token program owning each mint the fixtures touch: Token-2022 mints must get Token-2022 ATAs. */
+  /**
+   * Token program owning each mint the fixtures touch: Token-2022 mints must get Token-2022 ATAs. Required for every
+   * Solana DEX, and every ATA a step creates must name a mint listed here.
+   */
   mintPrograms?: Readonly<Record<string, "spl-token" | "token-2022">>;
+  /** Accounts other than the owner, its ATAs and accounts created in the same tx that a SystemProgram transfer may pay. */
+  systemTransferRecipients?: readonly string[];
   /** EVM contracts a step may call (Universal Router, PositionManager, Permit2, …), any case. */
   evmAllowedTargets?: readonly string[];
   /** The only spender an EVM `approve` may name (Permit2). */
@@ -98,12 +112,15 @@ function solanaInstructionProblems(descriptor: DexDescriptor, tx: VersionedTrans
   if (!signers.includes(owner)) problems.push("the owner must sign");
   if (cosigners.length > allowedCosigners) problems.push(`${cosigners.length} signer(s) besides the owner; ${descriptor.meta.positionCosigner} allows ${allowedCosigners}`);
 
+  let computeLimits = 0;
   for (const ix of message.compiledInstructions) {
     const program = keys[ix.programIdIndex];
     if (!program?.equals(ComputeBudgetProgram.programId) || ix.data[0] !== 2 || ix.data.length < 5) continue;
+    computeLimits += 1;
     const units = Buffer.from(ix.data).readUInt32LE(1);
     if (units > SOLANA_MAX_COMPUTE_UNITS) problems.push(`compute unit limit ${units} > ${SOLANA_MAX_COMPUTE_UNITS}`);
   }
+  if (computeLimits === 0) problems.push("missing a ComputeBudget setComputeUnitLimit instruction");
 
   let instructions;
   try {
@@ -118,11 +135,15 @@ function solanaInstructionProblems(descriptor: DexDescriptor, tx: VersionedTrans
       problems.push("an instruction pays or creates an account for the fee wallet directly");
     }
   }
+  if (!options.mintPrograms) problems.push("mintPrograms is required for a Solana DEX (token program of every mint the steps touch)");
+  const created = new Set<string>();
   for (const ix of instructions) {
     if (!ix.programId.equals(ASSOCIATED_TOKEN_PROGRAM_ID)) continue;
     const [, ata, wallet, mint, , tokenProgram] = ix.keys.map((meta) => meta.pubkey);
     if (!ata || !wallet || !mint || !tokenProgram) continue;
+    created.add(ata.toBase58());
     const expectedProgram = options.mintPrograms?.[mint.toBase58()];
+    if (options.mintPrograms && !expectedProgram) problems.push(`ATA for ${mint.toBase58()}: mint has no declared token program in mintPrograms`);
     if (expectedProgram && !tokenProgram.equals(expectedProgram === "token-2022" ? TOKEN_2022_PROGRAM_ID : TOKEN_PROGRAM_ID)) {
       problems.push(`ATA for ${mint.toBase58()} uses the wrong token program (mint is ${expectedProgram})`);
     }
@@ -130,12 +151,40 @@ function solanaInstructionProblems(descriptor: DexDescriptor, tx: VersionedTrans
       problems.push(`ATA ${ata.toBase58()} is not derived from its owner, mint and token program`);
     }
   }
+  problems.push(...systemTransferProblems(instructions, owner, created, options));
   return problems;
+}
+
+/** SystemProgram transfers may only pay the owner, its wSOL ATA, accounts created in the same tx, or declared recipients. */
+function systemTransferProblems(instructions: readonly TransactionInstruction[], owner: string, createdAtas: ReadonlySet<string>, options: StepCheckOptions): string[] {
+  const ownerKey = new PublicKey(owner);
+  const recognised = new Set<string>([
+    owner,
+    getAssociatedTokenAddressSync(NATIVE_MINT, ownerKey, true, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID).toBase58(),
+    ...createdAtas,
+    ...(options.systemTransferRecipients ?? []),
+  ]);
+  const transfers: string[] = [];
+  for (const ix of instructions) {
+    if (!ix.programId.equals(SystemProgram.programId)) continue;
+    let type: string;
+    try { type = SystemInstruction.decodeInstructionType(ix); } catch { continue; }
+    if (type === "Create" || type === "CreateWithSeed") {
+      const created = type === "Create" ? SystemInstruction.decodeCreateAccount(ix).newAccountPubkey : SystemInstruction.decodeCreateWithSeed(ix).newAccountPubkey;
+      recognised.add(created.toBase58());
+    } else if (type === "Transfer") {
+      transfers.push(SystemInstruction.decodeTransfer(ix).toPubkey.toBase58());
+    } else if (type === "TransferWithSeed") {
+      transfers.push(SystemInstruction.decodeTransferWithSeed(ix).toPubkey.toBase58());
+    }
+  }
+  return transfers.filter((to) => !recognised.has(to)).map((to) => `SystemProgram transfer to unrecognised account ${to}`);
 }
 
 function evmStepProblems(prepared: Exclude<StepResult["prepared"], { kind: "solana-tx" }>, options: StepCheckOptions): string[] {
   if (prepared.kind !== "evm-tx") return [];
   const problems: string[] = [];
+  if (options.feeWallet && prepared.to.toLowerCase() === options.feeWallet.toLowerCase()) problems.push("evm-tx pays the fee wallet directly");
   const allowed = (options.evmAllowedTargets ?? []).map((target) => target.toLowerCase());
   if (!allowed.includes(prepared.to.toLowerCase())) problems.push(`evm-tx calls ${prepared.to}, which is not an allowlisted contract`);
   if (!/^\d+$/.test(prepared.value)) problems.push("evm-tx value must be a base-10 integer string");
@@ -155,6 +204,7 @@ export function stepContractProblems(descriptor: DexDescriptor, result: StepResu
   if (result.of < bounds.min || result.of > bounds.max) problems.push(`${result.of} steps outside ${bounds.min}..${bounds.max}`);
   if (result.done !== (result.step === result.of)) problems.push("done must be true exactly on the last step");
   if (!result.label.trim()) problems.push("each step needs a label for the wallet prompt");
+  if (!options.feeWallet && feePolicyCharges(descriptor.meta.feePolicy)) problems.push("the fee policy charges a fee but no feeWallet was given to check against");
   const { prepared } = result;
   if (descriptor.chain === "solana") {
     if (prepared.kind !== "solana-tx") return [...problems, `a Solana DEX prepared a ${prepared.kind} step`];
