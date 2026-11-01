@@ -14,7 +14,10 @@ const POOL = testKeypair(93).publicKey.toBase58();
 const POSITION = testKeypair(94).publicKey.toBase58();
 const MINT_A = testKeypair(95).publicKey.toBase58();
 const MINT_B = testKeypair(96).publicKey.toBase58();
-const state = vi.hoisted(() => ({ dex: { status: 200, body: {} as unknown }, raydium: [] as unknown[], dexCalls: [] as unknown[] }));
+const state = vi.hoisted(() => ({ dex: { status: 200, body: {} as unknown }, raydium: [] as unknown[], dexCalls: [] as unknown[], routeOn: true }));
+
+vi.mock("@/lib/protocol-flags", async (importOriginal) => ({ ...await importOriginal<typeof import("@/lib/protocol-flags")>(),
+  isDexTxRouteEnabled: () => state.routeOn }));
 
 vi.mock("next/navigation", () => ({ usePathname: () => "/app" }));
 vi.mock("../use-sol-usdc-price", () => ({ useSolUsdcPrices: () => ({ rate: null, usdcUsd: null }) }));
@@ -33,7 +36,7 @@ const raydiumRow = { positionMint: RAYDIUM_MINT, positionAccount: "p", poolId: P
 let container: HTMLDivElement; let root: Root;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true); localStorage.clear();
-  state.dex = { status: 200, body: { positions: [meteoraRow()] } }; state.raydium = []; state.dexCalls = [];
+  state.dex = { status: 200, body: { positions: [meteoraRow()] } }; state.raydium = []; state.dexCalls = []; state.routeOn = true;
   window.history.replaceState(null, "", "/app");
   vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(String(input), "http://x");
@@ -82,6 +85,16 @@ describe("/app My positions with registry DEXes", () => {
     await render();
     const [[label, options]] = groups() as [[string, string[]]];
     expect(label).toBe("Solana");
+    expect(options).toHaveLength(1);
+    expect(options[0]).not.toMatch(/Raydium|Meteora/);
+    expect(container.textContent).not.toContain("Meteora");
+  });
+
+  it("where the dex route is off (production today) nothing is requested and the page is the Raydium-only page", async () => {
+    state.routeOn = false; state.raydium = [raydiumRow];
+    await render();
+    expect(state.dexCalls).toEqual([]);
+    const [[, options]] = groups() as [[string, string[]]];
     expect(options).toHaveLength(1);
     expect(options[0]).not.toMatch(/Raydium|Meteora/);
     expect(container.textContent).not.toContain("Meteora");
