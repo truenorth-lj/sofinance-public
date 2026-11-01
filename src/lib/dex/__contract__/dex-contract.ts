@@ -16,7 +16,7 @@
 import type { AddressLookupTableAccount } from "@solana/web3.js";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { setFetchReplay } from "@/lib/test-support/offline-fetch";
-import type { PositionKey } from "@/lib/unified-positions/model";
+import { WITHDRAW_OUTPUTS, type PositionKey } from "@/lib/unified-positions/model";
 import type { DexAdapter, DexDepositInput, OpenRequest, StepContext, StepResult } from "../adapter";
 import { DexError, DexUnsupportedError } from "../errors";
 import type { DexModule } from "../registry";
@@ -192,6 +192,12 @@ export function describeDexContract(entry: DexModule, fixtures: DexContractFixtu
       if (!caps.deposit.supported) await unsupported(() => adapter.prepareAdd(key, owner, request.input, FIRST_STEP));
       if (!caps.withdraw.supported) await unsupported(() => adapter.prepareWithdraw(key, owner, { fraction: 1, output: "pool-tokens" }, FIRST_STEP));
       if (caps.withdraw.supported && !caps.withdraw.partial) await unsupported(() => adapter.prepareWithdraw(key, owner, { fraction: 0.5, output: "pool-tokens" }, FIRST_STEP));
+      // An output the DEX does not list in withdrawOutputs is refused (the panel never offers it; the route checks too).
+      if (caps.withdraw.supported) {
+        for (const output of WITHDRAW_OUTPUTS.filter((item) => !caps.withdrawOutputs.includes(item))) {
+          await unsupported(() => adapter.prepareWithdraw(key, owner, { fraction: 1, output }, FIRST_STEP));
+        }
+      }
       if (!caps.claim.supported) await unsupported(() => adapter.prepareClaim(key, owner, FIRST_STEP));
       if (!caps.compound.supported) await unsupported(() => adapter.prepareCompound(key, owner, FIRST_STEP));
       if (!caps.performance.supported) await unsupported(() => adapter.performance(key));

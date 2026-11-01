@@ -57,6 +57,7 @@ const CAPABILITIES: SourceCapabilities = Object.freeze({
   performance: unsupported(NOT_AVAILABLE_MESSAGE),
   deposit: unsupported(NOT_AVAILABLE_MESSAGE),
   withdraw: Object.freeze({ supported: true, partial: false }),
+  withdrawOutputs: Object.freeze(["pool-tokens"] as const),
   exitPreview: Object.freeze({ supported: true, output: "pool-tokens" }),
   rangeDisplay: "price",
   manualAdd: true,

@@ -1,3 +1,4 @@
+import { USDC_MINT } from "@sofinance/engine/ids";
 import { NOT_AVAILABLE_MESSAGE, SUPPORTED, unsupported } from "@/lib/unified-positions/model";
 import { NO_FEE_POLICY } from "../fees";
 import type { DexDescriptor, FeePolicy } from "../types";
@@ -43,13 +44,20 @@ export const meteoraDlmmDescriptor: DexDescriptor = Object.freeze({
     positionCosigner: "ephemeral-keypair",
     addressCase: "exact",
     feePolicy: METEORA_DLMM_FEE_POLICY,
+    /** Same inputs as opening (SOL is refused). */
+    depositInputs: Object.freeze({ poolTokens: true, extra: Object.freeze([{ id: USDC_MINT, symbol: "USDC", decimals: 6 }]) }),
   }),
   capabilities: Object.freeze({
     open: SUPPORTED,
     /** PR6: add to an existing position (same input tokens and fee rule as opening). */
     deposit: SUPPORTED,
-    /** PR6: partial (remove a share) and full (remove all, claim, close, rent back), to the pool's two tokens. */
-    withdraw: Object.freeze({ supported: true, partial: true }),
+    /**
+     * PR6: partial (remove a share; the unclaimed fees stay in the position) and full (remove all, claim, close, rent
+     * back), to the pool's two tokens.
+     */
+    withdraw: Object.freeze({ supported: true, partial: true, partialLeavesFees: true }),
+    /** v1 pays out the pool's two tokens only (no "withdraw to USDC"; PM 11/1). */
+    withdrawOutputs: Object.freeze(["pool-tokens"] as const),
     /** PR6: claim accrued swap fees without changing liquidity (no fee). */
     claim: SUPPORTED,
     compound: unsupported(NOT_YET),

@@ -13,25 +13,41 @@ import { createEphemeralMint, type EphemeralMint } from "@/lib/ephemeral-mint";
 import { postWithJupiterRelay, type JupiterRelayStore } from "@/lib/jupiter/browser-relay";
 import { addMintSignature, missingRequiredSignatures } from "@/lib/open-signatures";
 import { TxNotSentError, type PreparedTx, type TxAdapter, type TxFlow } from "@/lib/tx-pipeline";
-import type { PositionKey } from "@/lib/unified-positions/model";
+import type { PositionKey, WithdrawOutput } from "@/lib/unified-positions/model";
 import type { OpenRequest, StepContext, StepResult } from "./adapter";
 import type { DexDescriptor } from "./types";
 
 /** Hard cap so a prepare cannot spin past a Jupiter 429 wait with no UI error. */
 export const DEX_PREPARE_TIMEOUT_MS = 45_000;
 
-export type DexStepOp = "open" | "recovery";
+/** `add` / `withdraw` / `claim` act on an existing position (PR7 panels); `recovery` closes a half-made open. */
+export type DexStepOp = "open" | "recovery" | "add" | "withdraw" | "claim";
 
 type Common = { descriptor: DexDescriptor; context: StepContext; relayStore: JupiterRelayStore; beforeWallet?: () => void };
+type OnPosition = Common & { positionKey: PositionKey };
 export type DexStepInput<Op extends DexStepOp> = Op extends "open"
   ? Common & { request: Omit<OpenRequest, "owner" | "cosigner"> }
-  : Common & { positionKey: PositionKey };
+  : Op extends "add" ? OnPosition & { input: { token: string; amountRaw: string } }
+  : Op extends "withdraw" ? OnPosition & { fraction: number; output: WithdrawOutput }
+  : OnPosition;
 
 /** The prepared step plus what the next step needs (`result.planToken`, `result.done`). */
 export type DexPreparedStep = PreparedTx & { result: StepResult };
 
-const FLOW: Record<DexStepOp, TxFlow> = { open: "open", recovery: "withdraw" };
-const SUCCESS: Record<DexStepOp, string> = { open: "Position step confirmed", recovery: "Position closed" };
+const FLOW: Record<DexStepOp, TxFlow> = { open: "open", recovery: "withdraw", add: "add", withdraw: "withdraw", claim: "claim" };
+const SUCCESS: Record<DexStepOp, string> = {
+  open: "Position step confirmed", recovery: "Position closed", add: "Liquidity added", withdraw: "Withdrawal confirmed", claim: "Fees claimed",
+};
+
+/** The route body's op-specific fields: recovery names the `wallet`, the position ops the `owner` (checked on chain). */
+function positionBody(op: DexStepOp, input: OnPosition & Partial<{ input: { token: string; amountRaw: string }; fraction: number; output: WithdrawOutput }>, wallet: string) {
+  if (op === "recovery") return { wallet, positionKey: input.positionKey };
+  return {
+    owner: wallet, positionKey: input.positionKey,
+    ...(op === "add" ? { input: input.input } : {}),
+    ...(op === "withdraw" ? { fraction: input.fraction, output: input.output } : {}),
+  };
+}
 const MISMATCH = "The prepared step does not match your request. Nothing was sent; please try again.";
 
 function decode(base64: string): VersionedTransaction {
@@ -50,7 +66,7 @@ export function dexTxAdapter<Op extends DexStepOp>(op: Op): TxAdapter<DexStepInp
       try {
         const step = { step: context.step, priorSignatures: [...context.priorSignatures], ...(context.planToken ? { planToken: context.planToken } : {}) };
         const body = "positionKey" in input
-          ? { wallet, positionKey: input.positionKey, ...step }
+          ? { ...positionBody(op, input, wallet), ...step }
           : { request: { ...input.request, owner: wallet, ...(cosigner ? { cosigner: cosigner.publicKey.toBase58() } : {}) }, ...step };
         const response = await postWithJupiterRelay(`/api/dex/${encodeURIComponent(descriptor.id)}/${op}`, body,
           { store: input.relayStore, signal: AbortSignal.timeout(DEX_PREPARE_TIMEOUT_MS) });

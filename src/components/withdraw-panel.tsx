@@ -11,6 +11,7 @@ import { createJupiterRelayStore, postWithJupiterRelay } from "@/lib/jupiter/bro
 import type { WithdrawPrepared, WithdrawSummary, WithdrawRequest } from "@sofinance/engine/withdraw/types";
 import { assertWithdrawHistory, readWithdrawHistory, writeWithdrawHistory, withdrawCheckpointKey, WithdrawHistoryError, WITHDRAW_HISTORY_ERROR, type WithdrawHistory, type WithdrawCheckpoint as Checkpoint } from "@/lib/withdraw-checkpoint";
 import { CANCEL_CHECK_PENDING_COPY, CHECKING_SOLANA_COPY, sendAndTrack, solscanTxUrl, TxRunError, useCancelCheckPending } from "@/lib/tx-pipeline";
+import { WITHDRAW_OUTPUTS, type WithdrawOutput } from "@/lib/unified-positions/model";
 
 export const WITHDRAW_EXPIRED_MESSAGE = "This withdrawal expired before Solana included it, so nothing moved. Tap Try again to sign a fresh one.";
 
@@ -56,9 +57,10 @@ function waitForNextStatus(run:WithdrawRun){
   signal.addEventListener("abort",cancel,{once:true});
  });
 }
-export function WithdrawPanel({wallet,positionMint,mintA,mintB,label,onClose,onBusyChange,onConfirmed}:{wallet:string;positionMint:string;mintA:string;mintB:string;label:(mint:string)=>string;onClose:()=>void;onBusyChange:(busy:boolean)=>void;onConfirmed:()=>void}) {
+/** `outputs`: the source's `capabilities.withdrawOutputs`; the Receive choices offered are exactly these (default: all). */
+export function WithdrawPanel({wallet,positionMint,mintA,mintB,label,onClose,onBusyChange,onConfirmed,outputs=WITHDRAW_OUTPUTS}:{wallet:string;positionMint:string;mintA:string;mintB:string;label:(mint:string)=>string;onClose:()=>void;onBusyChange:(busy:boolean)=>void;onConfirmed:()=>void;outputs?:readonly WithdrawOutput[]}) {
  const connection=useWalletConnection();
- const [percent,setPercent]=useState(100),[target,setTarget]=useState(""),[receive,setReceive]=useState("usdc");
+ const [percent,setPercent]=useState(100),[target,setTarget]=useState(""),[receive,setReceive]=useState(()=>outputs.includes("usdc")?"usdc":outputs.includes("sol")?NATIVE_SOL_MINT:"original");
  const [preview,setPreview]=useState<WithdrawSummary|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(""),[progress,setProgress]=useState("");
  const [confirmation,setConfirmation]=useState(false),[previewing,setPreviewing]=useState(false);
  // Confirmed signatures of the last completed withdrawal: a lasting Solscan link (the toast can be closed).
@@ -263,9 +265,11 @@ export function WithdrawPanel({wallet,positionMint,mintA,mintB,label,onClose,onB
   <label className="mt-4 block">Withdraw {percent}%<input type="range" min="1" max="100" step="1" value={percent} disabled={disabled} onChange={e=>{setPercent(Number(e.target.value));setTarget("");invalidate();}} className="block w-full" /></label>
   <label className="mt-3 block">Target USDC estimate<input aria-label="Target USDC estimate" type="number" min="0" value={target} disabled={disabled} onChange={e=>{setTarget(e.target.value);invalidate();}} className="ml-3 rounded bg-canvas p-2" /></label>
   <label className="mt-3 block">Receive<select value={receive} disabled={disabled} onChange={e=>{setReceive(e.target.value);invalidate();}} className="ml-3 rounded bg-canvas p-2">
-   <option value="usdc">USDC</option><option value={NATIVE_SOL_MINT}>SOL</option>
+   {outputs.includes("usdc") && <option value="usdc">USDC</option>}{outputs.includes("sol") && <option value={NATIVE_SOL_MINT}>SOL</option>}
+   {outputs.includes("pool-tokens") && <>
    {[...new Set([mintA,mintB])].filter(m=>m!==NATIVE_SOL_MINT).map(m=><option key={m} value={m}>{label(m)}</option>)}
    <option value="original">Original tokens</option>
+   </>}
   </select></label>
   <p className="mt-3 text-sm">Withdrawing 100% closes your position and returns its account deposit in SOL.</p>
   {preview && <div className="mt-4 text-sm">

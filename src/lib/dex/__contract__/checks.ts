@@ -8,7 +8,7 @@ import {
   type AddressLookupTableAccount, type TransactionInstruction,
 } from "@solana/web3.js";
 import { assertNoDirectFeeWalletInstructions } from "@sofinance/engine/swap/fee";
-import type { UnifiedPosition } from "@/lib/unified-positions/model";
+import { WITHDRAW_OUTPUTS, type UnifiedPosition } from "@/lib/unified-positions/model";
 import type { DexAdapter, OpenQuote, StepResult } from "../adapter";
 import { DexError } from "../errors";
 import { dexDescriptorProblems } from "../registry";
@@ -39,6 +39,13 @@ export function descriptorContractProblems(descriptor: DexDescriptor): string[] 
   if (meta.rangeUnit === "bin" && cap === null) problems.push("bin-based DEXes must declare maxRangeUnitsPerPosition");
   const bounds = meta.rangeUnitBounds;
   if (!bounds || !(Number.isInteger(bounds.min) && Number.isInteger(bounds.max) && bounds.min < bounds.max)) problems.push("rangeUnitBounds must be integers with min < max");
+  const outputs = caps.withdrawOutputs;
+  if (caps.withdraw.supported && !outputs.length) problems.push("withdraw is supported but withdrawOutputs is empty");
+  if (new Set(outputs).size !== outputs.length) problems.push("withdrawOutputs lists an output twice");
+  for (const output of outputs) if (!(WITHDRAW_OUTPUTS as readonly string[]).includes(output)) problems.push(`withdrawOutputs: unknown output ${output}`);
+  const inputs = meta.depositInputs;
+  if (caps.deposit.supported && !inputs.poolTokens && !inputs.extra.length) problems.push("deposit is supported but depositInputs lists no token");
+  for (const token of inputs.extra) if (!token.id || !Number.isInteger(token.decimals) || token.decimals < 0) problems.push(`depositInputs: bad extra token ${token.id}`);
   for (const key of ["compound", "performance", "deposit", "withdraw", "open", "claim", "exitPreview"] as const) {
     const value = caps[key];
     if (!value.supported && !value.reason.trim()) problems.push(`${key}: an unsupported capability needs a reason`);
@@ -63,6 +70,8 @@ export function positionContractProblems(descriptor: DexDescriptor, position: Un
   if (position.range.mode !== descriptor.capabilities.rangeDisplay) problems.push(`${where}: range mode ${position.range.mode} does not match rangeDisplay`);
   if (!/^\d+$/.test(position.liquidity)) problems.push(`${where}: liquidity must be a base-10 integer string`);
   if (!position.poolId) problems.push(`${where}: missing poolId`);
+  if (position.closeRefundLamports !== undefined && !/^\d+$/.test(position.closeRefundLamports)) problems.push(`${where}: closeRefundLamports must be a base-10 integer string`);
+  if (position.closeRefundLamports !== undefined && !descriptor.meta.rent?.refundableOnClose) problems.push(`${where}: closeRefundLamports set, but the DEX does not refund rent on close`);
   // Optional; when present the shared panel draws Liquidity / Unclaimed fees from it, so raw digits or null only.
   if (position.holdings !== undefined) {
     const pairOk = (pair: unknown) => pair === null || (typeof pair === "object" && ["a", "b"].every((side) => {

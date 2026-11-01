@@ -6,7 +6,7 @@
  * (`src/lib/tx-pipeline/run.ts`: wallet send, the on-chain check after a wallet error such as 4001/5000, confirmation,
  * status) and the EVM wallet flow stay outside this interface and consume `PreparedStep`s.
  */
-import type { PositionKey, UnifiedPosition } from "@/lib/unified-positions/model";
+import type { PositionKey, UnifiedPosition, WithdrawOutput } from "@/lib/unified-positions/model";
 import type { DexDescriptor, FeeOp, FeePolicy } from "./types";
 
 export type DexRangeRequest =
@@ -91,7 +91,8 @@ export type StepResult = { step: number; of: number; label: string; prepared: Pr
 export type WithdrawRequest = {
   /** Share of the position to remove, (0, 1]; 1 = everything, and close the position when the DEX allows it. */
   fraction: number;
-  output: "pool-tokens" | "usdc";
+  /** One of the DEX's `capabilities.withdrawOutputs`; any other is refused (the route checks first). */
+  output: WithdrawOutput;
 };
 
 /**

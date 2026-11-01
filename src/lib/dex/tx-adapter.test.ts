@@ -75,4 +75,24 @@ describe("dexTxAdapter", () => {
     expect(seen[0]!.body).toMatchObject({ wallet: wallet.publicKey.toBase58(), positionKey: "some-dex:abc" });
     expect(prepared.cosign).toBeUndefined();
   });
+
+  it("prepares add / withdraw / claim with the owner and only that op's fields (the route's strict bodies), with their own flow and toast", async () => {
+    const seen = serve(() => ({ body: { step: 1, of: 1, label: "x", done: true, prepared: { kind: "solana-tx", transaction: tx(wallet.publicKey), lastValidBlockHeight: 9 } } }));
+    const owner = wallet.publicKey.toBase58();
+    const base = { descriptor: descriptor("ephemeral-keypair"), context: { step: 1, priorSignatures: [] }, relayStore: createJupiterRelayStore(), positionKey: "some-dex:abc" as never };
+    const add = dexTxAdapter("add");
+    const withdraw = dexTxAdapter("withdraw");
+    const claim = dexTxAdapter("claim");
+    await add.prepare({ ...base, input: { token: "Mint111111111111111111111111111111111111111", amountRaw: "100" } }, { wallet: owner });
+    await withdraw.prepare({ ...base, fraction: 0.25, output: "pool-tokens" }, { wallet: owner });
+    const claimed = await claim.prepare(base, { wallet: owner });
+    expect(seen.map((item) => item.url)).toEqual(["/api/dex/some-dex/add", "/api/dex/some-dex/withdraw", "/api/dex/some-dex/claim"]);
+    const step = { step: 1, priorSignatures: [] };
+    expect(seen[0]!.body).toEqual({ owner, positionKey: "some-dex:abc", input: { token: "Mint111111111111111111111111111111111111111", amountRaw: "100" }, ...step });
+    expect(seen[1]!.body).toEqual({ owner, positionKey: "some-dex:abc", fraction: 0.25, output: "pool-tokens", ...step });
+    expect(seen[2]!.body).toEqual({ owner, positionKey: "some-dex:abc", ...step });
+    expect(claimed.cosign).toBeUndefined(); // only step 1 of an open makes a cosigner
+    expect([add.flow, withdraw.flow, claim.flow]).toEqual(["add", "withdraw", "claim"]);
+    expect([add.successTitle, withdraw.successTitle, claim.successTitle]).toEqual(["Liquidity added", "Withdrawal confirmed", "Fees claimed"]);
+  });
 });

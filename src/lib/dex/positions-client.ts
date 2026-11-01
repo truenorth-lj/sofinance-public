@@ -24,7 +24,7 @@ const isPosition = (value: unknown, descriptor: DexDescriptor): value is Unified
   const item = value as Partial<UnifiedPosition> | null;
   return Boolean(item && typeof item.key === "string" && item.source === descriptor.id && item.chain === descriptor.chain
     && typeof item.nativeId === "string" && typeof item.liquidity === "string" && item.tokenA && item.tokenB && item.range
-    && isHoldings(item.holdings));
+    && isHoldings(item.holdings) && (item.closeRefundLamports === undefined || (typeof item.closeRefundLamports === "string" && /^\d{1,20}$/.test(item.closeRefundLamports))));
 };
 
 /**

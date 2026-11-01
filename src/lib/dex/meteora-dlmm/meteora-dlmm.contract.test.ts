@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { USDC_MINT, NATIVE_SOL_MINT } from "@sofinance/engine/ids";
 import { meteoraSpotSplit } from "@sofinance/engine/protocols/meteora/open";
 import { setFetchReplay } from "@/lib/test-support/offline-fetch";
+import { METEORA_REWARD_INFOS_OFFSET } from "@sofinance/engine/protocols/meteora/accounts";
 import type { OpenRequest } from "../adapter";
 import { describeDexContract } from "../__contract__/dex-contract";
 import { DexError } from "../errors";
@@ -55,6 +56,24 @@ const request: OpenRequest = { ...base, range: { kind: "preset", presetId: "stan
 // Standard preset on 8k2c: bins 46031..46090 (60 bins, arrays 657–658, both recorded as existing; active bin 46062).
 // Spot split: TSLA (X) funds the bins from the active bin up and is kept; the TSLAx (Y) side is swapped and charged.
 const ySpend = meteoraSpotSplit(BigInt(DEPOSIT_RAW), 46062, 46031, 46090).y;
+
+const JUPITER_PROGRAM = "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4";
+const ATA_PROGRAM = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL";
+/**
+ * The instructions of a prepared Solana step with their program and account addresses. Every account must resolve from
+ * the static keys (the fixtures use no lookup tables), so an instruction account can never hide behind an index.
+ */
+function compiledInstructions(prepared: { kind: string; transaction?: string }) {
+  if (prepared.kind !== "solana-tx" || !prepared.transaction) throw new Error("expected a Solana step");
+  const message = VersionedTransaction.deserialize(Buffer.from(prepared.transaction, "base64")).message;
+  const keys = message.staticAccountKeys.map((k) => k.toBase58());
+  const at = (index: number) => {
+    const key = keys[index];
+    if (!key) throw new Error(`instruction account ${index} is not a static key (lookup tables are not expected here)`);
+    return key;
+  };
+  return message.compiledInstructions.map((ix) => ({ program: at(ix.programIdIndex), accounts: ix.accountKeyIndexes.map(at) }));
+}
 
 /** An existing position of OWNER in the feed-listed 8k2c pool (listed through the RWA feed, not the static allowlist). */
 const FEED_POSITION = Keypair.fromSeed(new Uint8Array(32).fill(21)).publicKey.toBase58();
@@ -112,6 +131,8 @@ describe("Meteora DLMM adapter specifics", () => {
     // The shared panel's Liquidity / Unclaimed fees rows read these (raw atomic strings from the position's bins).
     expect(listed[0]!.holdings).toEqual({ liquidityRaw: { a: expect.stringMatching(/^\d+$/), b: expect.stringMatching(/^\d+$/) },
       unclaimedFeesRaw: { a: expect.stringMatching(/^\d+$/), b: expect.stringMatching(/^\d+$/) } });
+    // The rent a full withdraw pays back, stated before signing (60-bin position: 0.0419 SOL, as disclosed at open).
+    expect(listed[0]!.closeRefundLamports).toBe("41899840");
     vi.stubEnv("SOFINANCE_RWA_DB_ENABLED", "false");
     clearMeteoraPoolListCache();
     expect(await createMeteoraDlmmAdapter().listPositions(OWNER)).toEqual([]);
@@ -327,11 +348,110 @@ describe("Meteora DLMM adapter specifics", () => {
       expect(chain.current.simulations).toEqual([]);
     });
 
+    it("refuses a full withdraw (close) in plain words if the pool has farming rewards set up; partial still works", async () => {
+      // Neither RWA pool has rewards today (mainnet check 11/1); this covers a pool that adds them later.
+      const pool = chain.current.get(TSLA_POOL)!;
+      const data = Buffer.from(pool.data);
+      new Keypair().publicKey.toBuffer().copy(data, METEORA_REWARD_INFOS_OFFSET);
+      chain.current.set(TSLA_POOL, { ...pool, data });
+      const adapter = createMeteoraDlmmAdapter();
+      await expect(adapter.prepareWithdraw(key, OWNER, { fraction: 1, output: "pool-tokens" }, first))
+        .rejects.toMatchObject({ code: "UNSUPPORTED", message: expect.stringMatching(/farming rewards.*nothing was built/) });
+      expect(chain.current.simulations).toEqual([]);
+      await expect(adapter.prepareWithdraw(key, OWNER, { fraction: 0.5, output: "pool-tokens" }, first)).resolves.toMatchObject({ done: true });
+    });
+
     it("lets withdraw and claim reach a position in a pool the feed no longer lists (funds never trapped); add refuses", async () => {
       const unlisted = `meteora-dlmm:${UNLISTED_POSITION}` as const;
       const adapter = createMeteoraDlmmAdapter();
       await expect(adapter.prepareWithdraw(unlisted, OWNER, { fraction: 1, output: "pool-tokens" }, first)).resolves.toMatchObject({ done: true });
       await expect(adapter.prepareAdd(unlisted, OWNER, { token: TSLA, amountRaw: DEPOSIT_RAW }, first)).rejects.toBeInstanceOf(DexError);
+    });
+  });
+
+  describe("fee amounts (PM: exactly 10 bps on the swap leg, 0 with no swap)", () => {
+    const first = { step: 1, priorSignatures: [] };
+    /** Records every Jupiter quote the adapter asks for (amount and fee bps), answering from the replay. */
+    function recordQuotes() {
+      const quotes: { inputMint: string; outputMint: string; amount: bigint; platformFeeBps: number }[] = [];
+      const restore = setFetchReplay(async (input, init) => {
+        const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+        const parsed = new URL(url);
+        if (parsed.pathname.endsWith("/quote")) {
+          quotes.push({ inputMint: parsed.searchParams.get("inputMint")!, outputMint: parsed.searchParams.get("outputMint")!,
+            amount: BigInt(parsed.searchParams.get("amount")!), platformFeeBps: Number(parsed.searchParams.get("platformFeeBps") ?? 0) });
+        }
+        const replay = jupiterReplay(url, init);
+        if (!replay) throw new Error(`no fixture replay for ${parsed.host}`);
+        return replay;
+      });
+      return { quotes, restore };
+    }
+    const tenBps = (amount: bigint) => amount * 10n / 10_000n;
+    /** Standard 60-bin range wholly above the active bin 46062: only TSLA (X) is needed, so a TSLA deposit swaps nothing. */
+    const ABOVE = { kind: "units", lower: 46063, upper: 46090 } as const;
+    const ABOVE_POSITION = Keypair.fromSeed(new Uint8Array(32).fill(25)).publicKey.toBase58();
+
+    it("open: the quoted fee is exactly 10 bps of the swapped TSLAx leg; the kept TSLA side is neither swapped nor charged", async () => {
+      const { quotes, restore } = recordQuotes();
+      try {
+        const adapter = createMeteoraDlmmAdapter();
+        const quote = await adapter.quoteOpen(request);
+        expect(ySpend).toBeGreaterThan(0n);
+        expect(BigInt(DEPOSIT_RAW) - ySpend).toBeGreaterThan(0n); // part of the deposit stays TSLA
+        expect(quote.platformFeeRaw).toBe(tenBps(ySpend).toString());
+        expect(adapter.fees.feeFor("open", ySpend)).toBe(tenBps(ySpend));
+        await adapter.prepareOpen(request, first).catch(() => undefined); // step 1 builds no swap
+        for (const q of quotes) expect(q).toMatchObject({ inputMint: TSLA, outputMint: TSLAX, amount: ySpend, platformFeeBps: 10 });
+      } finally { restore(); }
+    });
+
+    it("open: no swap leg means a fee of exactly 0 and no fee account", async () => {
+      const { quotes, restore } = recordQuotes();
+      try {
+        const quote = await createMeteoraDlmmAdapter().quoteOpen({ ...base, range: ABOVE });
+        expect(quote.blockedReason).toBeUndefined();
+        expect(quote.platformFeeRaw).toBe("0");
+        expect(quotes).toEqual([]);
+      } finally { restore(); }
+    });
+
+    it("add: the Jupiter leg carries 10 bps of the swapped amount only (fee = floor(swapped × 10 / 10000))", async () => {
+      installHeldPositions();
+      const { quotes, restore } = recordQuotes();
+      try {
+        const adapter = createMeteoraDlmmAdapter();
+        const step = await adapter.prepareAdd(`meteora-dlmm:${FEED_POSITION}`, OWNER, { token: TSLA, amountRaw: DEPOSIT_RAW }, first);
+        expect(quotes.length).toBeGreaterThan(0);
+        for (const q of quotes) expect(q).toMatchObject({ inputMint: TSLA, outputMint: TSLAX, amount: ySpend, platformFeeBps: 10 });
+        expect(adapter.fees.feeFor("add", ySpend)).toBe(tenBps(ySpend));
+        // The fee lands in the fee wallet's existing TSLA account, as an account of the Jupiter swap instruction itself,
+        // and nothing in the transaction creates an associated token account for the fee wallet.
+        const feeAta = ata(TSLA, FEE_WALLET);
+        const instructions = compiledInstructions(step.prepared);
+        const jupiter = instructions.filter((ix) => ix.program === JUPITER_PROGRAM);
+        expect(jupiter.length).toBeGreaterThan(0);
+        expect(jupiter.some((ix) => ix.accounts.includes(feeAta))).toBe(true);
+        const ataCreates = instructions.filter((ix) => ix.program === ATA_PROGRAM);
+        for (const ix of ataCreates) {
+          expect(ix.accounts).not.toContain(feeAta);
+          expect(ix.accounts).not.toContain(FEE_WALLET);
+        }
+      } finally { restore(); }
+    });
+
+    it("add: no swap leg means no Jupiter call, no fee account, fee 0", async () => {
+      chain.current.set(ABOVE_POSITION, positionAccount(TSLA_POOL, OWNER, ABOVE.lower, ABOVE.upper - ABOVE.lower + 1, 5n));
+      const { quotes, restore } = recordQuotes();
+      try {
+        const step = await createMeteoraDlmmAdapter().prepareAdd(`meteora-dlmm:${ABOVE_POSITION}`, OWNER, { token: TSLA, amountRaw: DEPOSIT_RAW }, first);
+        expect(quotes).toEqual([]);
+        if (step.prepared.kind !== "solana-tx") throw new Error("expected a Solana step");
+        const keys = VersionedTransaction.deserialize(Buffer.from(step.prepared.transaction, "base64")).message.staticAccountKeys.map((k) => k.toBase58());
+        expect(keys).not.toContain("JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4");
+        expect(keys).not.toContain(ata(TSLA, FEE_WALLET));
+        expect(keys).not.toContain(FEE_WALLET);
+      } finally { restore(); }
     });
   });
 });

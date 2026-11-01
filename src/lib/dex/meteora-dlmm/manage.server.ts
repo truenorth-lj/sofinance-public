@@ -13,7 +13,7 @@ import { assertOpenTransactionSize, compileCompactOpenTransaction } from "@sofin
 import { ATOMIC_COMPUTE_UNIT_LIMIT, measuredComputeUnitLimit } from "@sofinance/engine/transaction-limits";
 import { assertMeteoraFeeRule, DEPOSIT_INTERMEDIATE_RENT_ALLOWANCE } from "@/lib/meteora-open";
 import type { DexDepositInput, WithdrawRequest } from "../adapter";
-import { DexError } from "../errors";
+import { DexError, DexUnsupportedError } from "../errors";
 import {
   accountData, compileDeposit, compileV0, cuLimit, encode, planMeteoraOpen, publicKey, readMeteoraPool, readWallet, simulate, sol,
   SIGNATURE_LAMPORTS, tokenAccount, type BuiltStep, type MeteoraOpenDeps, type MeteoraPoolState,
@@ -164,13 +164,19 @@ export type MeteoraWithdrawBuilt = BuiltStep & { full: boolean; bps: number; ren
 
 export async function buildMeteoraWithdraw(deps: MeteoraOpenDeps, position: string, owner: string, request: WithdrawRequest): Promise<MeteoraWithdrawBuilt> {
   if (request.output !== "pool-tokens") {
-    throw new DexError("UNSUPPORTED", "Withdrawing straight to USDC isn't available for this pool yet. Withdraw to the pool's two tokens instead.");
+    throw new DexUnsupportedError(`Withdrawing straight to ${request.output === "sol" ? "SOL" : "USDC"} isn't available for this pool yet. Withdraw to the pool's two tokens instead.`);
   }
   const bps = meteoraWithdrawBps(request.fraction);
   const full = bps === METEORA_BPS_MAX;
   const owned = await readOwned(deps, position, owner);
   const pool = await readMeteoraPool(deps, owned.decoded.lbPair, { requireListed: false });
   const { lowerBinId, upperBinId } = owned.decoded;
+  // Farming rewards: closing a position needs its rewards claimed first, and this build has no reward claim. Neither RWA
+  // pool has rewards set up (checked on mainnet 11/1, DESIGN.md), so this only fires if a pool adds them later: refuse
+  // the close in plain words rather than build a transaction that would fail on chain.
+  if (full && pool.lbPair.rewardMints.length) {
+    throw new DexError("UNSUPPORTED", "This pool pays farming rewards, and claiming them isn't available here yet. A position must have its rewards claimed before it can be closed, so nothing was built. You can still withdraw part of the position.");
+  }
   if (!full && owned.liquidity === 0n) throw new DexError("INVALID_REQUEST", "This position holds no liquidity, so there is nothing to withdraw. Withdraw 100% to close it and get its rent back.");
   const bitmapExtension = await existingRangeAccounts(deps, pool, lowerBinId, upperBinId);
   const tokens = await readOwnerTokens(deps, pool, owner);

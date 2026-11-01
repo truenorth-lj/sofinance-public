@@ -3,6 +3,7 @@ import "server-only";
 
 import { PublicKey, type Connection } from "@solana/web3.js";
 import { decodeLbPair, decodeMintDecimals } from "@sofinance/engine/protocols/meteora/accounts";
+import { meteoraPositionAccountSize } from "@sofinance/engine/protocols/meteora/rent";
 import { METEORA_DLMM_PROGRAM_ID } from "@sofinance/engine/protocols/meteora/constants";
 import { decodeMeteoraPosition, isMeteoraPositionAccount, meteoraPositionLiquidity, meteoraRangeSide } from "@sofinance/engine/protocols/meteora/position";
 import { rpcConnection } from "@sofinance/engine/rpc";
@@ -209,11 +210,19 @@ export function createMeteoraDlmmAdapter(options: MeteoraDlmmAdapterOptions = {}
         const info = pools[index];
         return info ? [[id, decodeLbPair(info.data).binStep] as const] : [];
       }));
+      // Close refund shown before a full withdraw: a position account holds exactly the rent-exempt minimum for its
+      // width (one read per distinct width). Best effort: an unread amount leaves the field out (the panel says "rent").
+      const refunds = new Map<number, string>();
+      for (const width of new Set(rows.map((row) => row.upperBinId - row.lowerBinId + 1))) {
+        try { refunds.set(width, String(await connection.getMinimumBalanceForRentExemption(meteoraPositionAccountSize(width)))); } catch { /* left out */ }
+      }
       return rows.map((row) => {
         const step = binStep.get(row.poolId);
         if (step === undefined) throw new DexError("UPSTREAM", `The Meteora pool ${row.poolId} was not found on chain.`);
-        return unified(row, step, decimals.get(row.mintA)!, decimals.get(row.mintB)!,
+        const position = unified(row, step, decimals.get(row.mintA)!, decimals.get(row.mintB)!,
           { liquidityRaw: { ...row.amountsRaw }, unclaimedFeesRaw: { ...row.uncollectedFeesRaw } });
+        const refund = refunds.get(row.upperBinId - row.lowerBinId + 1);
+        return refund ? { ...position, closeRefundLamports: refund } : position;
       });
     }),
     readPosition: (key: PositionKey) => guarded(async () => {

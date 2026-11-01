@@ -46,6 +46,12 @@ export type UnifiedPosition<N = unknown> = {
    * Sources that draw their own rows (Raydium inline, RHC) leave it out.
    */
   holdings?: PositionHoldings;
+  /**
+   * Rent (lamports, base-10 string) a full withdraw that closes the position pays back to the wallet, for DEXes whose
+   * descriptor says rent is refunded on close. The Withdraw panel states it before the user signs; the step label then
+   * repeats the exact amount. Absent when it was not read.
+   */
+  closeRefundLamports?: string;
   /** The source's own record, passed unchanged to that source's tools. */
   native: N;
 };
@@ -54,13 +60,26 @@ export type UnifiedPosition<N = unknown> = {
 export const NOT_AVAILABLE_MESSAGE = "Not available for this pool yet";
 
 export type Capability = { supported: true } | { supported: false; reason: string };
-export type WithdrawCapability = { supported: true; partial: boolean } | { supported: false; reason: string };
+/**
+ * `partialLeavesFees`: a partial withdraw removes only the liquidity share and leaves the unclaimed fees in the position
+ * (they are claimed separately), so the Withdraw panel says so before signing.
+ */
+export type WithdrawCapability = { supported: true; partial: boolean; partialLeavesFees?: boolean } | { supported: false; reason: string };
+
+/** What a withdraw can pay out: the pool's own tokens, or everything swapped to USDC or to SOL. */
+export type WithdrawOutput = "pool-tokens" | "usdc" | "sol";
+export const WITHDRAW_OUTPUTS = ["pool-tokens", "usdc", "sol"] as const satisfies readonly WithdrawOutput[];
 
 export type SourceCapabilities = {
   compound: Capability;
   performance: Capability;
   deposit: Capability;
   withdraw: WithdrawCapability;
+  /**
+   * Outputs a withdraw can pay out in (PM 11/1). The Withdraw panel offers only these (e.g. "Withdraw to USDC" only when
+   * "usdc" is listed); the route refuses any other. Read only while withdraw is supported.
+   */
+  withdrawOutputs: readonly WithdrawOutput[];
   exitPreview: Capability & { output?: "usdc+sol" | "pool-tokens" };
   rangeDisplay: "price" | "tick";
   manualAdd: boolean;

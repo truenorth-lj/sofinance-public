@@ -10,10 +10,10 @@ import type { LandedOutcome } from "./landed";
  * - unknown:  anything else; check the explorer before retrying.
  */
 export type TxFailureKind = "rejected" | "expired" | "not-sent" | "failed" | "unknown";
-export type TxFlow = "add" | "open" | "compound" | "withdraw" | "swap";
+export type TxFlow = "add" | "open" | "compound" | "withdraw" | "claim" | "swap";
 
 export const FLOW_LABEL: Record<TxFlow, string> = {
-  add: "Add liquidity", open: "Create position", compound: "Compound", withdraw: "Withdraw", swap: "Swap to tokens",
+  add: "Add liquidity", open: "Create position", compound: "Compound", withdraw: "Withdraw", claim: "Claim fees", swap: "Swap to tokens",
 };
 
 /**

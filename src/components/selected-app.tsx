@@ -34,6 +34,9 @@ import { CLOSED_LABEL, groupPositions, isClosed, positionOptionLabel, SOLANA_CON
 import type { ExternalPositions } from "./unified-positions/external-positions";
 import { GroupedPositionSelect } from "./unified-positions/grouped-position-select";
 import { RegistryPositionDetails, RegistryPositionHeader, useRegistryPositions } from "./unified-positions/registry-positions";
+import { RegistryPositionTool, type ToolBalance } from "./unified-positions/registry-tools";
+import { useStoredTokenIcons } from "./use-stored-token-icons";
+import { tokenSymbol } from "@/lib/position-label";
 import { UnavailableTool } from "./unified-positions/unavailable-tool";
 
 const TOOL_META: Readonly<Record<ToolId, ToolMeta>> = Object.freeze({
@@ -114,6 +117,9 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
     ...registry.positions.flatMap((item) => [item.tokenA.id, item.tokenB.id]),
   ];
   const metadata = useTokenMetadata(metadataMints);
+  // Registry rows: token icons from the stored icon map (the pairs list's source), fetched only when such a row is listed.
+  const storedIcons = useStoredTokenIcons(connected && registry.positions.length > 0);
+  const walletBalances: Record<string, ToolBalance> = Object.fromEntries((discovery?.assets ?? []).map((asset) => [asset.mint, { balance: asset.balance, decimals: asset.decimals }]));
   const [statusDialogOpen, setStatusDialogOpen] = useState(false);
   const [assetRisksOpen, setAssetRisksOpen] = useState(false);
   const [activeView, setActiveView] = useState<ToolId>(initialView);
@@ -167,8 +173,11 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
   const otherSelected = otherPositions.find((item) => item.key === otherKey)
     ?? (!otherKey && solanaEmpty && !initialMint ? otherPositions[0] ?? null : null);
   const otherBinding = otherSelected && registry.owns(otherSelected)
-    ? { header: (item: UnifiedPosition) => <RegistryPositionHeader position={item} metadata={metadata} />, details: (item: UnifiedPosition) => <RegistryPositionDetails position={item} />,
-      tool: () => null, capabilities: registry.capabilities(otherSelected)! }
+    ? { header: (item: UnifiedPosition) => <RegistryPositionHeader position={item} metadata={metadata} icons={storedIcons} />, details: (item: UnifiedPosition) => <RegistryPositionDetails position={item} />,
+      tool: (item: UnifiedPosition, view: ToolId) => <RegistryPositionTool key={`${item.key}:${view}`} position={item} descriptor={registry.descriptor(item)!}
+        capabilities={registry.capabilities(item)!} view={view} balances={walletBalances} symbolOf={(token) => tokenSymbol(token.id, metadata, token.symbol)}
+        onConfirmed={() => { setOtherKey(item.key); setRegistryRefresh((value) => value + 1); void refreshDiscovery(); }} />,
+      capabilities: registry.capabilities(otherSelected)! }
     : otherSelected && external ? { header: external.header, details: external.details, tool: external.tool, capabilities: capabilitiesFor(external.source, otherSelected) }
       : null;
   const selectedSolana = selection ? solanaPositions.find((item) => item.nativeId === selection.positionMint) ?? null : null;
@@ -272,7 +281,7 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
         otherSelected ? {} : { withdraw: !state || !wallet || (busy && activeView !== "withdraw") })} />
       {unavailableReason ? <UnavailableTool id={`${activeView}-view`} reason={unavailableReason} />
         : otherSelected && otherBinding ? <div id={`${activeView}-view`}>{otherBinding.tool(otherSelected, activeView)}</div> : <>
-      {activeView === "withdraw" && <div id="withdraw-view">{state && wallet ? <WithdrawPanel key={`${wallet}:${state.positionMint}`} wallet={wallet} positionMint={state.positionMint} mintA={state.mintA} mintB={state.mintB} label={poolLabel} onClose={()=>setActiveView("compound")} onBusyChange={setWithdrawBusy} onConfirmed={()=>{void refreshState();void refreshDiscovery();}} /> : <p className="mt-4 text-sm text-smoke">Connect your wallet and choose a position to withdraw.</p>}</div>}
+      {activeView === "withdraw" && <div id="withdraw-view">{state && wallet ? <WithdrawPanel key={`${wallet}:${state.positionMint}`} wallet={wallet} positionMint={state.positionMint} mintA={state.mintA} mintB={state.mintB} label={poolLabel} outputs={capabilities.withdrawOutputs} onClose={()=>setActiveView("compound")} onBusyChange={setWithdrawBusy} onConfirmed={()=>{void refreshState();void refreshDiscovery();}} /> : <p className="mt-4 text-sm text-smoke">Connect your wallet and choose a position to withdraw.</p>}</div>}
       {compound.historyWarning && <div role="status" className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-xs text-cream/80"><span>{compound.historyWarning}</span><button type="button" className="font-semibold underline" onClick={() => setActiveView("compound")}>View compound status</button></div>}
       <main>
         <div id="compound-view" hidden={activeView !== "compound"}>
