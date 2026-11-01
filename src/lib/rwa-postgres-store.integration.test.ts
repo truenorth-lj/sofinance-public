@@ -10,6 +10,7 @@ import {
   ALGORITHM_VERSION,
   type AprWrite,
   type DiscoveryWrite,
+  FEED_KEY_METEORA,
   type Lease,
   type StoredProfile,
 } from "./rwa-store-types";
@@ -427,6 +428,83 @@ describe.skipIf(!url)("RWA PostgreSQL snapshots and fencing", () => {
     const again = await store!.request({ op: "ensureRhcRoster", lease, data: [{ poolId: spcxId, summary: summary(spcx, 48_000) }] });
     expect(again.profiles[spcxId]).toMatchObject({ fetchState: { failures: 1 }, profile: { stale: false, daily: { avgDailyVolumeUsd: 42 } } });
     await store!.request({ op: "finish", lease, outcome: "ok", processed: 2, issues: [] });
+  });
+  it("multi-feed: a Meteora generation lives beside Raydium, never unpublishes it, and merges into pairs on request", async () => {
+    now = Date.parse("2026-10-15T00:40:00Z");
+    const metA = "6".repeat(32), metB = "7".repeat(32);
+    const meteora = (ids: string[]): DiscoveryWrite => {
+      const data = discoveryData(ids);
+      data.feedKey = FEED_KEY_METEORA;
+      data.result.pairs = data.result.pairs.map((row) => ({ ...row, protocol: "meteora-dlmm" }));
+      data.sourcePages = Object.fromEntries(ids.map((id) => [id, 1]));
+      data.pageCounts = [ids.length];
+      data.result.pagesFetched = 1;
+      data.result.scannedPools = ids.length;
+      return data;
+    };
+    const raydiumOnly = await store!.request({ op: "pairs", minTvl: 0, maxPages: 2, sortBy: "tvl" });
+    await db!`UPDATE background_job_state SET lease_expires_at=clock_timestamp()-interval '1 second' WHERE job_key='rwa-discovery'`;
+    const lease = (await store!.request({ op: "claim", job: "rwa-discovery", force: true })) as Lease;
+    expect(lease).not.toBeNull();
+    // Before Meteora ever publishes, a multi-feed read is the Raydium read (the missing feed is skipped).
+    const early = await store!.request({ op: "pairs", minTvl: 0, maxPages: 2, sortBy: "tvl", feedKeys: ["raydium-clmm-rwa-v1", FEED_KEY_METEORA] });
+    expect(early.pairs).toEqual(raydiumOnly.pairs);
+    expect(Object.keys(early.feeds!)).toEqual(["raydium-clmm-rwa-v1"]);
+    // A row whose protocol is not the feed's is rejected (no Raydium row can land in the Meteora feed, or vice versa).
+    const wrong = meteora([metA]);
+    wrong.result.pairs = wrong.result.pairs.map((row) => ({ ...row, protocol: "raydium-clmm" }));
+    await expect(store!.request({ op: "publishDiscovery", lease, data: wrong })).rejects.toThrow(/"data"/);
+    await store!.request({ op: "publishDiscovery", lease, data: meteora([metA, metB]) });
+    const rows = await db!`SELECT pool_address,feed_key,chain,protocol FROM rwa_pool_latest WHERE pool_address IN (${metA},${metB}) ORDER BY pool_address`;
+    expect(rows.map((r) => [r.feed_key, r.chain, r.protocol])).toEqual([
+      [FEED_KEY_METEORA, "solana", "meteora-dlmm"], [FEED_KEY_METEORA, "solana", "meteora-dlmm"]]);
+    // Raydium-only reads (today's callers) are unchanged.
+    expect((await store!.request({ op: "pairs", minTvl: 0, maxPages: 2, sortBy: "tvl" })).pairs).toEqual(raydiumOnly.pairs);
+    expect((await store!.request({ op: "activePools" })).map((r) => r.pair.poolAddress).sort())
+      .toEqual(raydiumOnly.pairs.map((p) => p.poolAddress).sort());
+    const merged = await store!.request({ op: "pairs", minTvl: 0, maxPages: 2, sortBy: "tvl", feedKeys: ["raydium-clmm-rwa-v1", FEED_KEY_METEORA] });
+    expect(merged.pairs.map((p) => p.poolAddress).sort()).toEqual([...raydiumOnly.pairs.map((p) => p.poolAddress), metA, metB].sort());
+    expect(merged.pairs.filter((p) => p.protocol === "meteora-dlmm").map((p) => p.poolAddress).sort()).toEqual([metA, metB]);
+    // Summary and page coverage stay the primary (Raydium) feed's.
+    expect(merged.scannedPools).toBe(raydiumOnly.scannedPools);
+    expect(merged.freshness).toEqual(raydiumOnly.freshness);
+    expect(merged.feeds![FEED_KEY_METEORA]).toMatchObject({ pools: 2, stale: false });
+    // A failed Meteora publish rolls back and leaves both feeds' last generations published.
+    const broken = meteora([metA, "8".repeat(32)]);
+    delete broken.poolObservedAt["8".repeat(32)];
+    await expect(store!.request({ op: "publishDiscovery", lease, data: broken })).rejects.toMatchObject({ code: "INVALID_DISCOVERY" });
+    const after = await store!.request({ op: "pairs", minTvl: 0, maxPages: 2, sortBy: "tvl", feedKeys: ["raydium-clmm-rwa-v1", FEED_KEY_METEORA] });
+    expect(after.pairs).toEqual(merged.pairs);
+    // A Meteora generation dropping a pool does not touch Raydium; a Raydium publish does not unpublish Meteora.
+    await store!.request({ op: "publishDiscovery", lease, data: meteora([metA]) });
+    await store!.request({ op: "publishDiscovery", lease, data: discoveryData() });
+    const final = await store!.request({ op: "pairs", minTvl: 0, maxPages: 2, sortBy: "tvl", feedKeys: ["raydium-clmm-rwa-v1", FEED_KEY_METEORA] });
+    expect(final.pairs.map((p) => p.poolAddress).sort()).toEqual([...raydiumOnly.pairs.map((p) => p.poolAddress), metA].sort());
+    // A Meteora publish can not take over a pool address the Raydium feed owns.
+    await store!.request({ op: "publishDiscovery", lease, data: meteora([metA, poolId]) });
+    const [owned] = await db!`SELECT feed_key,protocol FROM rwa_pool_latest WHERE pool_address=${poolId}`;
+    expect(owned).toMatchObject({ feed_key: "raydium-clmm-rwa-v1", protocol: "raydium-clmm" });
+    expect((await store!.request({ op: "pairs", minTvl: 0, maxPages: 2, sortBy: "tvl" })).pairs.map((p) => p.poolAddress)).toContain(poolId);
+    await store!.request({ op: "finish", lease, outcome: "ok", processed: 2, issues: [] });
+    // The daily roster includes Meteora pools only when asked; saveApr stores their protocol (1-4 presets).
+    const aprLease = (await store!.request({ op: "claim", job: "rwa-apr-refresh", force: true })) as Lease;
+    expect(aprLease).not.toBeNull();
+    await store!.request({ op: "prepareDaily", lease: aprLease });
+    expect((await db!`SELECT count(*)::int AS n FROM rwa_apr_daily WHERE pool_address=${metA}`)[0]!.n).toBe(0);
+    await store!.request({ op: "prepareDaily", lease: aprLease, feedKeys: ["raydium-clmm-rwa-v1", FEED_KEY_METEORA] });
+    const [seeded] = await db!`SELECT chain,protocol,status FROM rwa_apr_daily WHERE pool_address=${metA}`;
+    expect(seeded).toMatchObject({ chain: "solana", protocol: "meteora-dlmm", status: "pending" });
+    const two = aprData(metA);
+    two.protocol = "meteora-dlmm";
+    two.payload!.presets = two.payload!.presets.slice(0, 2);
+    await store!.request({ op: "saveApr", lease: aprLease, data: two });
+    const [saved] = await db!`SELECT chain,protocol FROM rwa_apr_latest WHERE pool_address=${metA}`;
+    expect(saved).toMatchObject({ chain: "solana", protocol: "meteora-dlmm" });
+    // Raydium still needs all 4 presets.
+    const short = aprData(poolB);
+    short.payload!.presets = short.payload!.presets.slice(0, 2);
+    await expect(store!.request({ op: "saveApr", lease: aprLease, data: short })).rejects.toThrow(/"data"/);
+    await store!.request({ op: "finish", lease: aprLease, outcome: "ok", processed: 1, issues: [] });
   });
 
   it("counts only failures in consecutive_failures: a partial run marked failure:false is a success", async () => {

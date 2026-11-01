@@ -23,7 +23,8 @@ import { fetchJupiterTagsByMint, getJupiterTagsObservedAt } from "./rwa-jupiter-
 import { fetchXstocksSolanaMintSet, getXstocksObservedAt } from "./rwa-xstocks-whitelist";
 import type { Connection } from "@solana/web3.js";
 import { rpcConnection } from "@sofinance/engine/rpc";
-import { readMintFreezeAuthorities } from "./onchain-mint-freeze";
+import { readMintSafety, type MintSafety } from "./onchain-mint-freeze";
+import type { MintBlockReason } from "@sofinance/engine/token-safety";
 
 export const RAYDIUM_API_V3 = "https://api-v3.raydium.io";
 const DEFAULT_PAGE_SIZE = 1000;
@@ -87,7 +88,17 @@ export type RwaPairRow = {
   freezeRiskA: boolean;
   freezeRiskB: boolean;
   freezeRisk: boolean;
+  /**
+   * Set only when a mint is paused, charges a transfer fee or starts accounts frozen (Token-2022, read on chain):
+   * the pool is kept in the snapshot but never listed (`listablePairs`). A freeze authority alone never blocks.
+   */
+  blocked?: { reasons: MintBlockReason[]; mints: string[] };
+  /** Bin-based pools found by the scan: bin step (bps per bin), what the range-APR read is checked against. */
+  binStep?: number;
+  /** Pools whose source publishes it: pool creation time, so history before it is not read. */
+  poolCreatedAt?: string | null;
 };
+
 
 export type DiscoverRwaPairsResult = {
   pairs: RwaPairRow[];
@@ -105,6 +116,8 @@ export type DiscoverRwaPairsResult = {
   ageSeconds?: number;
   /** Where row freeze risk came from: every mint read from chain, Raydium's `hasFreeze` tags only (RPC down), or a mix. */
   freezeRiskSource?: "onchain" | "tags" | "mixed";
+  /** Per-source scan counts kept in the feed summary (e.g. pools left out by a rule), for review. */
+  scanStats?: Record<string, number>;
   discovery?: { sourcePages: Record<string, number>; poolObservedAt: Record<string, string>; pageCounts: number[]; qualificationObservedAt: Record<string, string | null> };
 };
 
@@ -574,17 +587,18 @@ export async function discoverRwaPairs(
 const FREEZE_READ_TIMEOUT_MS = 8_000;
 
 /**
- * Freeze risk from each mint's on-chain freeze authority (one batched read). A mint the chain read could not
- * resolve (RPC down, timeout, malformed) keeps Raydium's `hasFreeze` tag value.
+ * Freeze risk from each mint's on-chain freeze authority, plus the Token-2022 block (paused / transfer fee /
+ * default-frozen), from one batched read. A mint the chain read could not resolve (RPC down, timeout, malformed)
+ * keeps Raydium's `hasFreeze` tag value and is not blocked.
  */
 export async function applyOnchainFreezeRisk(pairs: RwaPairRow[], connection?: Connection | null) {
   if (pairs.length === 0) return { pairs, source: "onchain" as const };
-  let chain = new Map<string, boolean>();
+  let chain = new Map<string, MintSafety>();
   if (connection !== null) {
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       chain = await Promise.race([
-        readMintFreezeAuthorities(connection ?? rpcConnection(), pairs.flatMap((pair) => [pair.mintA, pair.mintB])),
+        readMintSafety(connection ?? rpcConnection(), pairs.flatMap((pair) => [pair.mintA, pair.mintB])),
         new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("freeze read timeout")), FREEZE_READ_TIMEOUT_MS); }),
       ]);
     } catch { /* RPC down: keep the tags */ } finally { if (timer) clearTimeout(timer); }
@@ -594,12 +608,24 @@ export async function applyOnchainFreezeRisk(pairs: RwaPairRow[], connection?: C
     const a = chain.get(pair.mintA);
     const b = chain.get(pair.mintB);
     known += Number(a !== undefined) + Number(b !== undefined);
-    const freezeRiskA = a ?? pair.freezeRiskA;
-    const freezeRiskB = b ?? pair.freezeRiskB;
-    return { ...pair, freezeRiskA, freezeRiskB, freezeRisk: freezeRiskA || freezeRiskB };
+    const freezeRiskA = a?.freezeAuthority ?? pair.freezeRiskA;
+    const freezeRiskB = b?.freezeAuthority ?? pair.freezeRiskB;
+    const row: RwaPairRow = { ...pair, freezeRiskA, freezeRiskB, freezeRisk: freezeRiskA || freezeRiskB };
+    const blocked = blockOf([[pair.mintA, a], [pair.mintB, b]]);
+    if (blocked) row.blocked = blocked;
+    return row;
   });
   const source: "onchain" | "tags" | "mixed" = known === pairs.length * 2 ? "onchain" : known === 0 ? "tags" : "mixed";
   return { pairs: updated, source };
+}
+
+/** The pool's block from its two mints' reasons (deduplicated, fixed order), or undefined when neither blocks. */
+export function blockOf(mints: [string, MintSafety | undefined][]): RwaPairRow["blocked"] {
+  const order: MintBlockReason[] = ["paused", "transfer_fee", "frozen"];
+  const hit = mints.filter(([, safety]) => safety?.blockReasons.length);
+  if (!hit.length) return undefined;
+  const reasons = new Set(hit.flatMap(([, safety]) => safety!.blockReasons));
+  return { reasons: order.filter((reason) => reasons.has(reason)), mints: [...new Set(hit.map(([mint]) => mint))] };
 }
 
 /** Test helper to clear the module cache. */

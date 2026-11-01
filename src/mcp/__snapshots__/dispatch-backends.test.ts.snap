@@ -110,6 +110,9 @@ exports[`http real read/prepare handlers > list_rwa_pairs preserves backend argu
     {
       "args": [
         {
+          "feedKeys": [
+            "raydium-clmm-rwa-v1",
+          ],
           "maxPages": 3,
           "minTvl": 0,
           "sortBy": "estimatedFeeApr",
@@ -631,6 +634,9 @@ exports[`stdio real read/prepare handlers > list_rwa_pairs preserves backend arg
     {
       "args": [
         {
+          "feedKeys": [
+            "raydium-clmm-rwa-v1",
+          ],
           "maxPages": 3,
           "minTvl": 0,
           "sortBy": "estimatedFeeApr",

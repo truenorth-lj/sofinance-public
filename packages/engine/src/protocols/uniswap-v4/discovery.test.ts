@@ -68,4 +68,12 @@ describe("uniswap-v4-rhc discovery (mock RPC replaying the 2026-10-29 capture)",
     const state = await readPoolState(clientsFor(chain).state, SPCX);
     expect(evaluatePool(SPCX, state, null).delistReasons).toEqual(["initialized", "token-metadata"]);
   });
+
+  it("keeps the indexer's token USD prices from the same market read (stored by the cron; no extra call)", async () => {
+    const state = await readPoolState(clientsFor(mockRhcChain()).state, SPCX);
+    const market = { source: "geckoterminal" as const, volume24hUsd: 10, tvlUsd: 100, txns24h: null, reserves: null, priceUsd: { token0: 140.32, token1: 140.33 } };
+    expect(evaluatePool(SPCX, state, market).tokenPricesUsd).toEqual({ token0: 140.32, token1: 140.33 });
+    expect(evaluatePool(SPCX, state, { ...market, priceUsd: null }).tokenPricesUsd).toBeNull();
+    expect(evaluatePool(SPCX, state, null).tokenPricesUsd).toBeNull();
+  });
 });

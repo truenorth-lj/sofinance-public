@@ -8,6 +8,25 @@ export const WBTC_WORMHOLE_MINT = "3NZ9JMVBmGAqocybic2c7LQCJScmgsAZ6vQqTDzcqmJh"
 export const METEORA_NO_REWARD_MINT = "11111111111111111111111111111111";
 export const SPL_TOKEN_PROGRAM_ID = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
 
+/** Token-2022 program id (scan-discovered pools may hold Token-2022 mints such as xStocks). */
+export const TOKEN_2022_PROGRAM_ID = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb";
+
+/** Largest DLMM bin step the range-APR model reads (bins of at most 0.1%). */
+export const METEORA_RANGE_APR_MAX_BIN_STEP = 10;
+
+/**
+ * What a pool must match to be read: id, X/Y mint order and bin step. Allowlisted pools pin the token programs
+ * too; a pool found by the scan leaves them out and any SPL token program is accepted.
+ */
+export type MeteoraPoolSpec = {
+  poolAddress: string;
+  mintX: string;
+  mintY: string;
+  binStep: number;
+  tokenProgramX?: string;
+  tokenProgramY?: string;
+};
+
 export type MeteoraAllowlistedPool = {
   poolAddress: string;
   /** Meteora token X / token Y (order matters: bins above the active bin hold X, bins below hold Y). */

@@ -37,3 +37,17 @@ describe("groupPositions", () => {
     expect(groupPositions([p({})], { solana: ["raydium-clmm", "orca-whirlpool"] })[0]!.showSourceName).toBe(true);
   });
 });
+
+describe("groupPositions keepEmpty and option labels", () => {
+  it("keeps an empty chain group when asked (Solana + Robinhood Chain wallet with no RHC positions)", () => {
+    const groups = groupPositions([p({ nativeId: "a" })], { solana: ["raydium-clmm"], "robinhood-chain": ["rhc-uniswap-v4"] }, ["solana", "robinhood-chain"]);
+    expect(groups.map((g) => [g.label, g.positions.length])).toEqual([["Solana", 1], ["Robinhood Chain", 0]]);
+    expect(groupPositions([], {}, ["robinhood-chain"]).map((g) => g.chain)).toEqual(["robinhood-chain"]);
+  });
+  it("labels liquidity-0 Solana rows Closed and adds the source name only when asked", async () => {
+    const { positionOptionLabel } = await import("./rows");
+    const source = { displayName: "Raydium CLMM", label: (x: UnifiedPosition) => `pos ${x.nativeId}` };
+    expect(positionOptionLabel(source, p({ nativeId: "z", liquidity: "0" }))).toBe("pos z · Closed");
+    expect(positionOptionLabel(source, p({ nativeId: "y" }), { showSourceName: true })).toBe("Raydium CLMM · pos y");
+  });
+});

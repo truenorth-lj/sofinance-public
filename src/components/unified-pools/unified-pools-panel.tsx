@@ -16,7 +16,7 @@ import type { TokenIconMap } from "@/lib/token-icons/map";
 import { fetchRwaPairsList } from "@/lib/rwa-pairs-list";
 import { updatedLabel, type SnapshotSourceTime } from "@/lib/snapshot-updated";
 import {
-  CHAIN_LABELS, DEFAULT_FILTERS, DEFAULT_SORT, FIRST_CLICK_DIR, PROTOCOL_LABELS, selectPools, TVL_FILTER_PRESETS,
+  CHAIN_LABELS, DEFAULT_FILTERS, DEFAULT_SORT, FIRST_CLICK_DIR, openUnavailableReason, PROTOCOL_LABELS, selectPools, TVL_FILTER_PRESETS,
   type PoolChain, type PoolFilters, type SortKey, type UnifiedPool, type UnifiedProtocol,
 } from "@/lib/unified-pools/model";
 import { rhcPool, rhcPoolView, solanaPool, type RhcPoolSummary, type SolanaPoolRow } from "@/lib/unified-pools/rows";
@@ -292,9 +292,11 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", header 
 
   const actionFor = useCallback((pool: UnifiedPool): OpenAction => {
     if (pool.protocol === "raydium-clmm" || pool.protocol === "uniswap-v4-rhc") return { kind: "open", onOpen: () => openPool(pool) };
-    if (pool.protocol === "meteora-dlmm" && flags.meteoraOpen) return { kind: "link", href: "/app/meteora" };
+    // Meteora: greyed out with its reason; the list never links out to a Meteora open flow (PM 2026-11-01).
+    const unavailable = openUnavailableReason(pool);
+    if (unavailable) return { kind: "disabled", reason: unavailable };
     return { kind: "none", reason: "Opening is not available yet" };
-  }, [flags.meteoraOpen, openPool]);
+  }, [openPool]);
 
   // Deep link (`/app/rwa-pairs?openPool=…`, where `/app/rhc` and old `/app?openPool=` links redirect): open that pool once it is listed.
   const [deepLinked, setDeepLinked] = useState(false);
@@ -372,8 +374,8 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", header 
             <input type="checkbox" role="switch" aria-checked={!showAll} checked={!showAll} onChange={(event) => setShowAll(!event.target.checked)} className="h-4 w-4 accent-lemon" />
             Hide duplicate pools
             <InfoTip label="About Hide duplicate pools">
-              When one chain has several pools for the same two tokens, only the one with the highest estimated 7-day APR is shown.
-              Pools without a 7-day estimate rank below those with one (then by TVL). Pools on different chains are never merged. Pools under the Min TVL filter are left out first, so they never hide a bigger pool.
+              When one protocol on one chain has several pools for the same two tokens, only the one with the highest estimated 7-day APR is shown.
+              Pools without a 7-day estimate rank below those with one (then by TVL). Pools on different chains or protocols are never merged. Pools under the Min TVL filter are left out first, so they never hide a bigger pool.
             </InfoTip>
           </label>
           {!showAll && selected.hiddenDuplicates > 0 && (

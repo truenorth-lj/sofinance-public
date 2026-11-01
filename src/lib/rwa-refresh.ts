@@ -2,14 +2,14 @@ import "@/lib/engine-host";
 import "server-only";
 import type { PublicClient } from "viem";
 import { getRwaConfig } from "./config/rwa-env";
-import { discoverRwaPairs } from "./rwa-pairs";
 import {
   assemblePoolRangeApr,
   hasPriceHistory,
-  loadVolumeProfile,
   type VolumeProfile,
 } from "./pool-range-apr";
-import { readOnchainPoolLiquidity } from "./range-apr/onchain-liquidity";
+import { poolSourceFor } from "./pool-sources/registry";
+import { raydiumPoolSource } from "./pool-sources/raydium";
+import type { PoolSource } from "./pool-sources/types";
 import type { ThrottleGate } from "./range-apr/throttle-gate";
 import { createCronGeckoGate } from "./pool-metrics/gecko";
 import { SAVED_PRICE_HISTORY_MAX_AGE_MS } from "./rwa-freshness";
@@ -18,15 +18,19 @@ import { volumeWindowEnd } from "./rwa-daily";
 import { sanitizePublicError } from "./public-error";
 import { getRwaStore } from "./rwa-store";
 import { UNIV4_RHC_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/uniswap-v4/constants";
-import { isRhcApr7dEnabled } from "./protocol-flags";
+import { isMeteoraRwaScanEnabled, isRhcApr7dEnabled } from "./protocol-flags";
+import { discoverMeteoraRwaPairs, METEORA_SCAN_MIN_TVL_USD, type MeteoraScanStats } from "./meteora-rwa-scan";
 import { prepareRhcRun, type RhcAprRunStats, type RhcRun } from "./rhc-apr-refresh";
 import { discoverRhcRegistryPools, rhcDiscoveryFindings, type RhcDiscoveryResult } from "./pool-metrics/rhc-discovery";
 import { rhcStateClient } from "./rhc-range-apr";
 import { captureRhcDiscoveryFindings } from "./sentry/capture";
-import { resolveTokenIcons, rhcCronIconSources, solanaIconSources } from "./token-icons/resolve";
+import { resolveTokenIcons, rhcCronIconSources } from "./token-icons/resolve";
 import type { RwaPairRow } from "./rwa-pairs";
 import {
   ALGORITHM_VERSION,
+  FEED_KEY,
+  FEED_KEY_METEORA,
+  SOLANA_FEED_PROTOCOL,
   type ActivePool,
   type DiscoveryWrite,
   type JobName,
@@ -46,6 +50,10 @@ type Options = {
   deadlineMs?: number;
   /** The run's shared GeckoTerminal gate (tests pass one with a fake clock). */
   geckoGate?: ThrottleGate;
+  /** Meteora scan: deploy-target override of `METEORA_RWA_SCAN_ENABLED` (tests). */
+  meteoraScan?: boolean;
+  /** Per-pool limit of the Meteora APR lane (tests); default `METEORA_APR_POOL_TIMEOUT_MS`. */
+  meteoraPoolTimeoutMs?: number;
 };
 
 /**
@@ -104,16 +112,37 @@ type JobResult = {
   rhc?: RhcAprRunStats;
   /** rwa-apr-refresh: the oldest-first queue (all active pools, how many this run selected / finished). */
   queue?: AprQueueStats;
+  /** rwa-apr-refresh: the Meteora lane (only when `METEORA_RWA_SCAN_ENABLED`). */
+  meteoraQueue?: MeteoraAprQueueStats;
+  /** rwa-discovery: the Meteora DLMM scan (only when `METEORA_RWA_SCAN_ENABLED`). */
+  meteora?: (MeteoraScanStats & { published: number }) | { error: string };
 };
 export type AprQueueStats = { pools: number; selected: number; done: number; stoppedBy: "429" | "time" | null };
+/** The Meteora lane's queue (datapi, not GeckoTerminal): its own oldest-first queue and stop reason. */
+export type MeteoraAprQueueStats = Omit<AprQueueStats, "stoppedBy"> & { stoppedBy: "datapi-429" | "time" | null; failed: number };
 
-/** Profile timestamps survive instance recycling; new UTC windows cannot reuse yesterday's volume sample. */
+/**
+ * Meteora DLMM lane of the APR job (`METEORA_RWA_SCAN_ENABLED`): pools of the `meteora-dlmm-rwa-v1` feed with TVL ≥
+ * $5k, oldest first, `METEORA_APR_POOLS_PER_RUN` per run, `METEORA_APR_CONCURRENCY` at a time, each within
+ * `METEORA_APR_POOL_TIMEOUT_MS`. Price history comes from Meteora's datapi (no GeckoTerminal call), so the lane runs
+ * beside the GeckoTerminal queue on the same job deadline. A datapi 429 ends the lane (that pool saves nothing).
+ * Datapi cost per pool: 1 pool + 1 daily volume + 3 hourly OHLCV spans = 5 requests (8 pools ≈ 40 per run).
+ */
+export const METEORA_APR_POOLS_PER_RUN = 8;
+export const METEORA_APR_CONCURRENCY = 3;
+export const METEORA_APR_POOL_TIMEOUT_MS = 10_000;
+
+/**
+ * Profile timestamps survive instance recycling; new UTC windows cannot reuse yesterday's volume sample. The pool's
+ * `PoolSource` (by its stored protocol) loads a fresh profile.
+ */
 export async function refreshProfile(
   pool: ActivePool,
   fetcher: typeof fetch,
   now: number,
   signal: AbortSignal,
   upstream: { gate?: ThrottleGate } = {},
+  source: PoolSource = poolSourceFor(pool.pair.protocol),
 ): Promise<StoredProfile> {
   const config = getRwaConfig(),
     cached = pool.profile;
@@ -130,11 +159,12 @@ export async function refreshProfile(
     now - Date.parse(cached.observedAt) < config.profileTtlMs
   )
     return cached;
-  const fresh = await loadVolumeProfile(
+  const fresh = await source.loadProfile(
     pool.pair.poolAddress,
     fetcher,
     Math.floor(now / 1000),
-    { retry: { signal }, ...upstream },
+    // The stored row too: a source that reads the pool by its own spec (Meteora's bin step) needs it.
+    { retry: { signal }, ...upstream, pair: pool.pair },
   );
   if (!sameMints(fresh)) throw new Error("Pool profile mint identity mismatch");
   const timestamps = [
@@ -205,15 +235,18 @@ export async function runJob(job: JobName, options: Options): Promise<JobResult>
   let processed = 0,
     status: "ok" | "partial" | "error" = "ok",
     rhcDiscovery: JobResult["rhcDiscovery"],
+    meteora: JobResult["meteora"],
     rhcStats: RhcAprRunStats | undefined,
     queue: AprQueueStats | undefined,
+    meteoraQueue: MeteoraAprQueueStats | undefined,
     // Counted in `consecutive_failures` (and keeps `last_success_at`). The APR job counts only a GeckoTerminal 429 or
     // an error (a failed step, or a pool that saved no estimate); a run that only ran out of its time budget, or saved
     // stale estimates from saved price history, is not a failure.
     failure = false;
   try {
     if (job === "rwa-discovery") {
-      const result = await discoverRwaPairs({
+      // Raydium first (the feed the site lists today), then Meteora into its own feed (SCAN_DESIGN.md §3).
+      const result = await raydiumPoolSource.discover({
         minTvl: 0,
         maxPages: config.maxPages,
         sortBy: "estimatedFeeApr",
@@ -226,6 +259,13 @@ export async function runJob(job: JobName, options: Options): Promise<JobResult>
       const data: DiscoveryWrite = { result, ...result.discovery };
       await store.request({ op: "publishDiscovery", lease, data });
       processed = result.pairs.length;
+      // Meteora DLMM (code flag): its own feed and generation, after Raydium's publish, so a Meteora failure keeps
+      // its last generation and never touches Raydium's. Reported as an issue, not counted as a job failure.
+      if (options.meteoraScan ?? isMeteoraRwaScanEnabled()) {
+        meteora = await publishMeteoraFeed(store, lease, result.pairs, options.fetcher, signal)
+          .catch((error) => ({ error: sanitizePublicError(error, "Meteora scan failed").slice(0, 200) }));
+        if ("error" in meteora) { issues.push(`Meteora: ${meteora.error}`); status = "partial"; }
+      }
       // Best effort: a missing table or an indexer outage leaves the snapshot published and the old icons in place.
       await refreshTokenIcons(store, lease, result.pairs, options.fetcher, signal).catch(() => {
         issues.push("Token icons not saved");
@@ -240,10 +280,11 @@ export async function runJob(job: JobName, options: Options): Promise<JobResult>
       issues.push(...result.issues);
       rhcStats = result.rhcStats;
       queue = result.queue;
+      meteoraQueue = result.meteoraQueue;
       failure = result.failed;
       if (issues.length) status = "partial";
     }
-    if (job === "rwa-discovery") failure = status !== "ok";
+    // Discovery fails only when the Raydium scan or publish threw (the catch below); a Meteora issue leaves it "partial".
   } catch (error) {
     status = "error";
     failure = true;
@@ -264,8 +305,29 @@ export async function runJob(job: JobName, options: Options): Promise<JobResult>
   }
   return {
     job, status, processed, issues: issues.slice(0, 20), elapsedMs: clock() - startedAt,
-    ...(rhcDiscovery ? { rhcDiscovery } : {}), ...(rhcStats ? { rhc: rhcStats } : {}), ...(queue ? { queue } : {}),
+    ...(rhcDiscovery ? { rhcDiscovery } : {}), ...(meteora ? { meteora } : {}), ...(rhcStats ? { rhc: rhcStats } : {}), ...(queue ? { queue } : {}), ...(meteoraQueue ? { meteoraQueue } : {}),
   };
+}
+
+/**
+ * The Meteora DLMM scan, published as the `meteora-dlmm-rwa-v1` generation. Seeds include the Raydium feed's mints.
+ * The summary carries the scan counts (bin steps above 10 left out, SCAN_DESIGN.md §12 Q5).
+ */
+/** Time the Meteora scan may take inside discovery (~2 × seeds requests at 5 at a time, then one RPC batch), so a slow
+ * datapi leaves time for the icons and the RHC check. */
+export const METEORA_SCAN_BUDGET_MS = 30_000;
+
+async function publishMeteoraFeed(store: RwaStore, lease: Lease, raydiumPairs: readonly RwaPairRow[],
+  fetcher: typeof fetch | undefined, signal: AbortSignal): Promise<MeteoraScanStats & { published: number }> {
+  const result = await discoverMeteoraRwaPairs({
+    minTvl: METEORA_SCAN_MIN_TVL_USD, sortBy: "estimatedFeeApr", fetcher, signal: AbortSignal.any([signal, AbortSignal.timeout(METEORA_SCAN_BUDGET_MS)]),
+    seedMints: raydiumPairs.flatMap((pair) => [pair.mintA, pair.mintB]),
+  });
+  signal.throwIfAborted();
+  const { meteora, discovery, ...rest } = result;
+  if (!discovery) throw new Error("Discovery coverage metadata missing");
+  await store.request({ op: "publishDiscovery", lease, data: { feedKey: FEED_KEY_METEORA, result: { ...rest, scanStats: meteora }, ...discovery } });
+  return { ...meteora, published: result.pairs.length };
 }
 
 export async function refreshRwaSnapshots(options: Options = {}) {
@@ -316,7 +378,8 @@ export function orderAprQueue<T extends { poolId: string; refreshedAt?: string |
  */
 async function refreshAprPools(input: {
   store: RwaStore; lease: Lease; options: Options; signal: AbortSignal; clock: () => number; jobDeadline: number;
-}): Promise<{ processed: number; issues: string[]; rhcStats?: RhcAprRunStats; queue: AprQueueStats; failed: boolean }> {
+}): Promise<{ processed: number; issues: string[]; rhcStats?: RhcAprRunStats; queue: AprQueueStats; failed: boolean;
+  meteoraQueue?: MeteoraAprQueueStats }> {
   const { store, lease, options, signal, clock, jobDeadline } = input;
   const fetcher = options.fetcher ?? fetch;
   const gate = options.geckoGate ?? createCronGeckoGate();
@@ -324,7 +387,9 @@ async function refreshAprPools(input: {
   const throttled = () => gate.hit429;
   const issues: string[] = [];
   // Finalizes earlier days' history rows and seeds today's (idempotent).
-  await store.request({ op: "prepareDaily", lease, includeRhc: isRhcApr7dEnabled() });
+  const meteoraOn = options.meteoraScan ?? isMeteoraRwaScanEnabled();
+  await store.request({ op: "prepareDaily", lease, includeRhc: isRhcApr7dEnabled(),
+    ...(meteoraOn ? { feedKeys: [FEED_KEY, FEED_KEY_METEORA] } : {}) });
   let rhc: RhcRun | null = null;
   // A 429 or an error anywhere in the run (not a time-budget stop, not a degraded / stale estimate).
   let failed = false;
@@ -348,6 +413,14 @@ async function refreshAprPools(input: {
   const selected = all.slice(0, APR_POOLS_PER_RUN);
   const queue: AprQueueStats = { pools: all.length, selected: selected.length, done: 0, stoppedBy: null };
   let processed = 0;
+  // Started before the GeckoTerminal queue and awaited after it: the two lanes share only the job deadline.
+  const meteoraLane = meteoraOn
+    ? refreshMeteoraLane({ store, lease, fetcher, clock, signal, gate, jobDeadline,
+      poolTimeoutMs: options.meteoraPoolTimeoutMs ?? METEORA_APR_POOL_TIMEOUT_MS }).catch((error) => {
+      issues.push(`Meteora: ${sanitizePublicError(error, "Meteora APR lane failed").slice(0, 200)}`);
+      return undefined;
+    })
+    : undefined;
   // The RHC pools/multi call already hit a 429: end the run before any pool.
   if (throttled()) queue.stoppedBy = "429";
   for (const item of queue.stoppedBy ? [] : selected) {
@@ -380,24 +453,72 @@ async function refreshAprPools(input: {
     rhcStats = { ...rhc.stats, deferred: rhc.pools.filter((pool) => !done.has(pool.poolId)).length };
   }
   if (queue.stoppedBy === "429" || throttled()) failed = true;
-  return { processed, issues, rhcStats, queue, failed };
+  // Meteora lane outcomes are issues (the run is "partial"), not failures of the job (like its discovery).
+  const meteora = await meteoraLane;
+  if (meteora) {
+    processed += meteora.processed;
+    issues.push(...meteora.issues);
+  }
+  return { processed, issues, rhcStats, queue, failed, ...(meteora ? { meteoraQueue: meteora.stats } : {}) };
 }
 
-/** One Solana pool: price history (gated) and liquidity, then one saved snapshot. Never throws. */
+async function refreshMeteoraLane(input: {
+  store: RwaStore; lease: Lease; fetcher: typeof fetch; clock: () => number; signal: AbortSignal; gate: ThrottleGate; jobDeadline: number;
+  poolTimeoutMs: number;
+}): Promise<{ processed: number; issues: string[]; stats: MeteoraAprQueueStats }> {
+  const { store, clock, signal, jobDeadline } = input;
+  // Feed lists are Raydium-first (store contract), so read both Solana feeds and keep the Meteora rows.
+  const pools = (await store.request({ op: "activePools", feedKeys: [FEED_KEY, FEED_KEY_METEORA] }))
+    .filter((pool) => pool.pair.protocol === SOLANA_FEED_PROTOCOL[FEED_KEY_METEORA] && (pool.pair.tvlUsd ?? 0) >= METEORA_SCAN_MIN_TVL_USD);
+  const selected = orderAprQueue(pools.map((pool) => ({ poolId: pool.pair.poolAddress, refreshedAt: activePoolRefreshedAt(pool), pool })))
+    .slice(0, METEORA_APR_POOLS_PER_RUN);
+  const stats: MeteoraAprQueueStats = { pools: pools.length, selected: selected.length, done: 0, stoppedBy: null, failed: 0 };
+  const issues: string[] = [];
+  let processed = 0, next = 0;
+  const worker = async () => {
+    while (!stats.stoppedBy && next < selected.length) {
+      // Start a pool only if its whole time limit plus the save reserve still fits.
+      if (signal.aborted || jobDeadline - clock() < METEORA_APR_POOL_TIMEOUT_MS + APR_SAVE_RESERVE_MS) { stats.stoppedBy = "time"; break; }
+      const item = selected[next++]!;
+      const result = await refreshSolanaPool({ store, lease: input.lease, pool: item.pool, fetcher: input.fetcher, clock, signal,
+        gate: input.gate, throttled: () => false, poolTimeoutMs: input.poolTimeoutMs });
+      if (result.outcome === "throttled") { stats.stoppedBy = "datapi-429"; break; }
+      if (signal.aborted) { stats.stoppedBy = "time"; break; }
+      stats.done += 1;
+      if (result.outcome !== "error") processed += 1;
+      if (result.outcome === "error" || result.outcome === "degraded") stats.failed += 1;
+      if (result.issue) issues.push(`Meteora ${result.issue}`);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(METEORA_APR_CONCURRENCY, selected.length) }, worker));
+  if (stats.stoppedBy === "datapi-429") issues.push(`Meteora datapi 429: lane ended after ${stats.done} of ${stats.selected} pools; the rest go first next run`);
+  if (stats.stoppedBy === "time") issues.push(`Meteora time budget: lane ended after ${stats.done} of ${stats.selected} pools`);
+  return { processed, issues, stats };
+}
+
+/** One Solana pool, through its `PoolSource`: price history (gated) and liquidity, then one saved snapshot. Never throws. */
 async function refreshSolanaPool(input: {
   store: RwaStore; lease: Lease; pool: ActivePool; fetcher: typeof fetch; clock: () => number; signal: AbortSignal;
   gate: ThrottleGate; throttled: () => boolean;
+  /** Per-pool time limit (the Meteora lane); a pool that hits it saves an error and rotates to the back. */
+  poolTimeoutMs?: number;
 }): Promise<{ outcome: PoolOutcome; issue: string | null }> {
   const { store, lease, pool, clock, signal } = input;
   const poolId = pool.pair.poolAddress;
+  const source = poolSourceFor(pool.pair.protocol);
+  // The job signal, or the job signal plus the per-pool limit (same object when there is no limit).
+  const poolSignal = input.poolTimeoutMs ? AbortSignal.any([signal, AbortSignal.timeout(input.poolTimeoutMs)]) : signal;
+  // Saved under its own protocol (rows without one are Raydium CLMM, as before).
+  const protocol = source === raydiumPoolSource ? {} : { protocol: source.id };
   try {
-    signal.throwIfAborted();
+    poolSignal.throwIfAborted();
     await store.request({ op: "renew", lease });
     const [profile, chainSnapshot] = await Promise.all([
-      refreshProfile(pool, input.fetcher, clock(), signal, { gate: input.gate }),
-      readOnchainPoolLiquidity(
+      refreshProfile(pool, input.fetcher, clock(), poolSignal, { gate: input.gate }, source),
+      source.readLiquidity(
         poolId,
-        rpcConnection(undefined, { signal, retry: { budgetMs: 8000 } }),
+        rpcConnection(undefined, { signal: poolSignal, retry: { budgetMs: 8000 } }),
+        pool.pair,
       ).then((chain) => ({
         chain,
         observedAt: new Date(clock()).toISOString(),
@@ -413,22 +534,28 @@ async function refreshSolanaPool(input: {
       chain.mintB !== profile.profile.economics.mintB
     )
       throw new Error("On-chain pool mint identity mismatch");
-    const payload = assemblePoolRangeApr(
-      poolId,
-      profile.profile,
-      chain,
-      Math.floor(clock() / 1000),
-    );
+    // A source with its own assembly (Meteora) derives its presets there; the shared assembly takes them here.
+    const presets = source.assemble ? undefined : source.presets?.(chain);
+    const payload = source.assemble
+      ? source.assemble(poolId, profile.profile, chain, Math.floor(clock() / 1000))
+      : assemblePoolRangeApr(
+        poolId,
+        profile.profile,
+        chain,
+        Math.floor(clock() / 1000),
+        presets ? { presets } : {},
+      );
     payload.sample.windowEndUtc = profile.windowEndUtc;
     payload.sample.windowStartUtc = new Date(
       Date.parse(profile.windowEndUtc) - payload.sample.days * 86_400_000,
     ).toISOString();
-    signal.throwIfAborted();
+    poolSignal.throwIfAborted();
     await store.request({
       op: "saveApr",
       lease,
       data: {
         poolId,
+        ...protocol,
         payload,
         profile,
         chainObservedAt,
@@ -439,16 +566,22 @@ async function refreshSolanaPool(input: {
     if (payload.sample.priceHistoryStale) return { outcome: "stale", issue: `${poolId}: Using previously saved price history` };
     return { outcome: "fresh", issue: null };
   } catch (error) {
-    const message = sanitizePublicError(
-      error,
-      "APR refresh failed",
-    ).slice(0, 400);
+    // The source's own rate limit (Meteora datapi 429): save nothing, the pool keeps its place, its lane stops.
+    if (source.isThrottleError?.(error)) return { outcome: "throttled", issue: null };
+    const timedOut = poolSignal !== signal && poolSignal.aborted && !signal.aborted;
+    const message = timedOut
+      ? `Pool refresh timed out after ${Math.round(input.poolTimeoutMs! / 1000)} s`
+      : sanitizePublicError(
+        error,
+        "APR refresh failed",
+      ).slice(0, 400);
     if (!signal.aborted)
       await store.request({
         op: "saveApr",
         lease,
         data: {
           poolId,
+          ...protocol,
           payload: null,
           profile: null,
           chainObservedAt: null,
@@ -468,7 +601,7 @@ async function refreshSolanaPool(input: {
 
 export async function refreshTokenIcons(store: RwaStore, lease: Lease, pairs: readonly Pick<RwaPairRow, "mintA" | "mintB">[],
   fetcher: typeof fetch | undefined, signal: AbortSignal) {
-  const solana = await resolveTokenIcons("solana", pairs.flatMap((pair) => [pair.mintA, pair.mintB]), solanaIconSources(fetcher), { signal });
+  const solana = await resolveTokenIcons("solana", pairs.flatMap((pair) => [pair.mintA, pair.mintB]), raydiumPoolSource.iconSources(fetcher), { signal });
   const rhc = await resolveTokenIcons("robinhood",
     UNIV4_RHC_ALLOWLISTED_POOLS.flatMap((pool) => [pool.currency0.address, pool.currency1.address]), rhcCronIconSources(fetcher), { signal, manual: [] });
   signal.throwIfAborted();

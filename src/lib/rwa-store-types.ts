@@ -8,10 +8,21 @@ import type { PoolRangeAprPayload } from "./range-apr/types";
 import type { VolumeProfile } from "./pool-range-apr";
 import type { Univ4PoolSummary } from "@sofinance/engine/protocols/uniswap-v4/discovery";
 import { trustedIcon } from "@sofinance/engine/token-metadata";
+import { DEFAULT_PROTOCOL, POOL_PROTOCOL_IDS, type PoolProtocolId } from "@sofinance/engine/protocols/types";
 import { iconAddress, validIconAddress, type TokenIconMap, type TokenIconRow } from "./token-icons/map";
 
 export const FEED_KEY = "raydium-clmm-rwa-v1";
 export const FEED_KEY_RHC = "uniswap-v4-rhc-v1";
+/** Meteora DLMM RWA pools (SCAN_DESIGN.md): its own generation, so one source failing never unpublishes another. */
+export const FEED_KEY_METEORA = "meteora-dlmm-rwa-v1";
+/** Solana discovery feeds, Raydium first (the primary feed: `pairs` needs it published, the others are optional). */
+export const SOLANA_FEED_KEYS = [FEED_KEY, FEED_KEY_METEORA] as const;
+export type SolanaFeedKey = (typeof SOLANA_FEED_KEYS)[number];
+/** The protocol every row of a Solana feed must carry (`publishDiscovery` rejects a mismatch). */
+export const SOLANA_FEED_PROTOCOL: Readonly<Record<SolanaFeedKey, PoolProtocolId>> = Object.freeze({
+  [FEED_KEY]: "raydium-clmm",
+  [FEED_KEY_METEORA]: "meteora-dlmm",
+});
 export const PAIRING_VERSION = "rwa-pairing-v1";
 export const ALGORITHM_VERSION = "range-apr-v1";
 export const SOLANA_POOL_ID = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
@@ -60,12 +71,16 @@ export type ActivePool = {
 };
 export type AprWrite = {
   poolId: string;
+  /** Owning protocol of a Solana pool (default Raydium CLMM; RHC pools are told apart by their 0x id). */
+  protocol?: PoolProtocolId;
   payload: PoolRangeAprPayload | null;
   profile: StoredProfile | null;
   chainObservedAt: string | null;
   issues: string[];
 };
 export type DiscoveryWrite = {
+  /** Feed this generation replaces (default the Raydium feed, as before). */
+  feedKey?: SolanaFeedKey;
   result: DiscoverRwaPairsResult;
   sourcePages: Record<string, number>;
   poolObservedAt: Record<string, string>;
@@ -102,6 +117,7 @@ const pairSchema = z
   .passthrough();
 const timestamp = z.iso.datetime();
 const discoverySchema = z.object({
+  feedKey: z.enum(SOLANA_FEED_KEYS).optional(),
   result: z
     .object({
       pairs: z.array(pairSchema).max(1000),
@@ -120,9 +136,15 @@ const discoverySchema = z.object({
   poolObservedAt: z.record(solanaPoolSchema, timestamp),
   pageCounts: z.array(z.number().int().min(0).max(1000)).max(30),
   qualificationObservedAt: z.record(z.string(), timestamp.nullable()),
-});
+}).refine(
+  // Every row belongs to the feed's protocol (rows written before `protocol` existed are Raydium).
+  (value) => value.result.pairs.every((pair) =>
+    ((pair as { protocol?: string }).protocol ?? DEFAULT_PROTOCOL) === SOLANA_FEED_PROTOCOL[value.feedKey ?? FEED_KEY]),
+  "Pair protocol does not match its feed",
+);
 const aprSchema = z.object({
   poolId: poolSchema,
+  protocol: z.enum(POOL_PROTOCOL_IDS).optional(),
   payload: z
     .object({
       poolId: poolSchema,
@@ -150,7 +172,7 @@ const aprSchema = z.object({
             ]),
           }),
         )
-        .min(3)
+        .min(1)
         .max(4),
       referenceCapitalUsd: z.number().positive(),
       model: z.object({ bins: z.array(z.unknown()).max(5000) }).passthrough(),
@@ -174,10 +196,23 @@ const aprSchema = z.object({
   chainObservedAt: timestamp.nullable(),
   issues: z.array(z.string().max(500)).max(20),
 }).refine(
-  // Raydium serves 4 presets (micro/tight/standard/wide); RHC omits Tight (below the ±10-tick minimum).
-  (value) => !value.payload || value.payload.presets.length === (/^0x/.test(value.poolId) ? 3 : 4),
+  (value) => !value.payload || presetCountAllowed(value.poolId, value.protocol, value.payload.presets.length),
   "Unexpected preset count",
+).refine(
+  // A protocol, when given, matches the pool id's chain.
+  (value) => !value.protocol || (value.protocol === "uniswap-v4-rhc") === /^0x/.test(value.poolId),
+  "Protocol does not match pool id",
 );
+
+/**
+ * Raydium serves 4 presets (micro/tight/standard/wide); RHC omits Tight (below the ±10-tick minimum); Meteora DLMM
+ * serves 1–4, because presets that collapse to the same bin width on a wide bin step are dropped (SCAN_DESIGN.md §5).
+ */
+export function presetCountAllowed(poolId: string, protocol: PoolProtocolId | undefined, count: number): boolean {
+  if (/^0x/.test(poolId)) return count === 3;
+  if (protocol === "meteora-dlmm") return count >= 1 && count <= 4;
+  return count === 4;
+}
 
 /** Icon rows from the daily refresh. Re-checked against `ICON_HOSTS` here so no caller can store an off-list link. */
 export const tokenIconWriteSchema = z.array(z.object({
@@ -199,12 +234,18 @@ const rhcRosterSchema = z.array(z.object({
   summary: z.object({ protocol: z.literal("uniswap-v4-rhc"), poolId: z.string().regex(RHC_POOL_ID) }).passthrough(),
 }).refine((row) => row.poolId.toLowerCase() === row.summary.poolId.toLowerCase(), "Pool id mismatch")).min(1).max(32);
 
+/** Feed list of a read: distinct, Raydium first. */
+const solanaFeedKeysSchema = z.array(z.enum(SOLANA_FEED_KEYS)).min(1).max(SOLANA_FEED_KEYS.length)
+  .refine((keys) => keys[0] === FEED_KEY && new Set(keys).size === keys.length, "Raydium feed first, no duplicates");
+
 export const storeRequestSchema = z.discriminatedUnion("op", [
   z.object({
     op: z.literal("pairs"),
     minTvl: z.number().finite().min(0).max(1e12),
     maxPages: z.number().int().min(1).max(30),
     sortBy: z.enum(["estimatedFeeApr", "tvl", "volume24h"]),
+    /** Solana feeds to merge, primary first (default the Raydium feed only, as before). */
+    feedKeys: solanaFeedKeysSchema.optional(),
   }),
   z.object({ op: z.literal("apr"), poolId: poolSchema }),
   z.object({
@@ -235,13 +276,14 @@ export const storeRequestSchema = z.discriminatedUnion("op", [
       (value) => discoverySchema.safeParse(value).success,
     ),
   }),
-  z.object({ op: z.literal("activePools") }),
+  z.object({ op: z.literal("activePools"), feedKeys: solanaFeedKeysSchema.optional() }),
   z.object({
     op: z.literal("saveApr"),
     lease: leaseSchema,
     data: z.custom<AprWrite>((value) => aprSchema.safeParse(value).success),
   }),
-  z.object({ op: z.literal("prepareDaily"), lease: leaseSchema, includeRhc: z.boolean().optional() }),
+  z.object({ op: z.literal("prepareDaily"), lease: leaseSchema, includeRhc: z.boolean().optional(),
+    feedKeys: solanaFeedKeysSchema.optional() }),
   z.object({ op: z.literal("ensureRhcRoster"), lease: leaseSchema, data: rhcRosterSchema }),
   z.object({ op: z.literal("rhcPools") }),
   z.object({ op: z.literal("saveTokenIcons"), lease: leaseSchema, data: tokenIconWriteSchema }),
@@ -258,7 +300,12 @@ export type PairOptions = {
   sortBy: RwaPairSortBy;
 };
 /** `tokenIcons` is absent from stores that predate it; readers fall back (see `iconFor`). */
-export type SnapshotPairs = DiscoverRwaPairsResult & { freshness: Freshness; tokenIcons?: TokenIconMap };
+export type SnapshotPairs = DiscoverRwaPairsResult & {
+  freshness: Freshness;
+  tokenIcons?: TokenIconMap;
+  /** Per-feed publish time when more than one feed was read (a secondary feed that never published is absent). */
+  feeds?: Partial<Record<SolanaFeedKey, { publishedAt: string; stale: boolean; pools: number }>>;
+};
 export type SnapshotApr = PoolRangeAprPayload & { freshness: Freshness };
 
 export type SnapshotHistory = {

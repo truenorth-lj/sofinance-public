@@ -6,7 +6,7 @@ import { meteoraBinArrayAddress } from "@sofinance/engine/protocols/meteora/acco
 import { CBBTC_MINT, WBTC_WORMHOLE_MINT } from "@sofinance/engine/protocols/meteora/constants";
 import { amountsPerLiquidity } from "./clmm-liquidity";
 import { METEORA_POOL, fakeMeteoraConnection, meteoraAccounts } from "./meteora-chain.fixture";
-import { binSqrtPriceX64, dlmmBinLiquidity, existingBinRange, readMeteoraPoolLiquidity } from "./meteora-liquidity";
+import { binSqrtPriceX64, binTick, binTickSqrtPriceX64, dlmmBinLiquidity, existingBinRange, readMeteoraPoolLiquidity } from "./meteora-liquidity";
 import { sqrtPriceAtTick } from "@sofinance/engine/range-apr/tick-math";
 
 const poolBytes = () => Buffer.from(meteoraAccounts()[METEORA_POOL]!.data, "base64");
@@ -93,5 +93,59 @@ describe("readMeteoraPoolLiquidity (captured mainnet cbBTC/WBTC accounts)", () =
     const t22 = { ...accounts[CBBTC_MINT]!, owner: "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb" };
     await expect(readMeteoraPoolLiquidity(METEORA_POOL, fakeMeteoraConnection(meteoraAccounts({ [CBBTC_MINT]: t22 })).connection))
       .rejects.toThrow(/token program mismatch/);
+  });
+
+  describe("bin steps above 1 (scan-found pools passed with their spec)", () => {
+    const spec = (binStep: number) => ({ poolAddress: METEORA_POOL, mintX: CBBTC_MINT, mintY: WBTC_WORMHOLE_MINT, binStep });
+    const withStep = (binStep: number) => { const data = poolBytes(); data.writeUInt16LE(binStep, 80); return withPool(data); };
+
+    it("maps bin b onto tick bin [b*s, (b+1)*s) around the active bin, with the window in bins", async () => {
+      const chain = await readMeteoraPoolLiquidity(METEORA_POOL, withStep(10), spec(10));
+      expect(chain).toMatchObject({ tickSpacing: 10, tickCurrent: 160, state: { binStep: 10, activeId: 16 } });
+      // max(6, ceil(300 / 10)) = 30 bins either side of the active bin.
+      expect(chain.bins).toHaveLength(61);
+      expect(chain.bins[0]!.tick).toBe(binTick(16 - 30, 10));
+      expect(chain.bins.at(-1)!.tick).toBe(binTick(16 + 30, 10));
+      expect(chain.bins.every((bin) => bin.tick % 10 === 0)).toBe(true);
+      expect(chain.sqrtPriceX64).toBe(binTickSqrtPriceX64(16, 10));
+      expect(chain.bins.find((bin) => bin.tick === 160)!.liquidity).toBeCloseTo(dlmmBinLiquidity(350n, 6_535_090n, 16, 10), 0);
+      expect(chain.state.binArrays.map((array) => array.index)).toEqual([-1, 0]);
+    });
+
+    it("keeps the bin's value: L over its s-tick width holds the same raw Y", () => {
+      for (const binStep of [2, 5, 10]) {
+        const L = dlmmBinLiquidity(0n, 1_000_000n, 5, binStep);
+        const { b } = amountsPerLiquidity(sqrtPriceAtTick(1_000), sqrtPriceAtTick(binTick(5, binStep)), sqrtPriceAtTick(binTick(6, binStep)));
+        expect(L * b).toBeCloseTo(1_000_000, 3);
+      }
+      // Bin step 1 is unchanged: tick == bin and the sqrt price is the bin's own.
+      expect(binTick(-7, 1)).toBe(-7);
+      expect(binTickSqrtPriceX64(1234, 1)).toBe(binSqrtPriceX64(1234, 1));
+    });
+
+    it("keeps the anchored error small: a bin's real width vs its s ticks differs by < 0.05% for s <= 10", () => {
+      for (const binStep of [2, 5, 10]) {
+        const realTicks = Math.log(1 + binStep / 10_000) / Math.log(1.0001);
+        expect(Math.abs(realTicks - binStep) / binStep).toBeLessThan(0.0005);
+      }
+    });
+
+    it("refuses bin step > 10 and a spec for another pool without any RPC call", async () => {
+      const { connection, calls } = fakeMeteoraConnection();
+      await expect(readMeteoraPoolLiquidity(METEORA_POOL, connection, spec(80))).rejects.toThrow(/bin step 1-10 only/);
+      await expect(readMeteoraPoolLiquidity(METEORA_POOL, connection, { ...spec(1), poolAddress: "8k2c9Kiavx5pbWc2dmzhL7vFp11sLgMcKFfSueq8haAh" })).rejects.toThrow(/allowlisted/);
+      expect(calls).toHaveLength(0);
+    });
+
+    it("checks the spec's bin step against the chain, and accepts Token-2022 mints when the spec pins no program", async () => {
+      await expect(readMeteoraPoolLiquidity(METEORA_POOL, withStep(5), spec(10))).rejects.toThrow(/bin step mismatch/);
+      const accounts = meteoraAccounts();
+      const t22 = { ...accounts[CBBTC_MINT]!, owner: "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb" };
+      const chain = await readMeteoraPoolLiquidity(METEORA_POOL, fakeMeteoraConnection(meteoraAccounts({ [CBBTC_MINT]: t22 })).connection, spec(1));
+      expect(chain.tickCurrent).toBe(16);
+      const foreign = { ...accounts[CBBTC_MINT]!, owner: "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK" };
+      await expect(readMeteoraPoolLiquidity(METEORA_POOL, fakeMeteoraConnection(meteoraAccounts({ [CBBTC_MINT]: foreign })).connection, spec(1)))
+        .rejects.toThrow(/token program mismatch/);
+    });
   });
 });

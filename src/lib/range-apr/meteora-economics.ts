@@ -1,5 +1,5 @@
-/** Pool-level economics from the Meteora datapi `/pools/{address}` (pure parser, allowlisted pools only). */
-import { METEORA_DLMM_DATAPI } from "@sofinance/engine/protocols/meteora/constants";
+/** Pool-level economics from the Meteora datapi `/pools/{address}` (pure parser; allowlisted pools or an explicit spec). */
+import { METEORA_DLMM_DATAPI, type MeteoraPoolSpec } from "@sofinance/engine/protocols/meteora/constants";
 import { parseMeteoraPool } from "@sofinance/engine/protocols/meteora/discovery";
 import type { HttpPoolEconomicsSource } from "../pool-range-apr";
 import type { PoolEconomics } from "./raydium-economics";
@@ -19,8 +19,8 @@ function num(value: unknown): number | null {
  * - mintAmountA/B: UI token amounts; weekVolumeUsd: null (datapi only publishes up to 24h).
  * - dayFeeApr: gross whole-pool 24h fee APR in percent; weekFeeApr: null.
  */
-export function parseMeteoraPoolEconomics(body: unknown): PoolEconomics | null {
-  const summary = parseMeteoraPool(body);
+export function parseMeteoraPoolEconomics(body: unknown, spec?: MeteoraPoolSpec): PoolEconomics | null {
+  const summary = parseMeteoraPool(body, spec);
   if (!summary || summary.decimalsX <= 0 || summary.decimalsY <= 0) return null;
   const pool = body as Record<string, unknown>;
   const amountX = num(pool.token_x_amount), amountY = num(pool.token_y_amount);
@@ -39,10 +39,15 @@ export function parseMeteoraPoolEconomics(body: unknown): PoolEconomics | null {
   };
 }
 
-export const METEORA_ECONOMICS_SOURCE: HttpPoolEconomicsSource = {
-  name: "Meteora",
-  protocol: "meteora-dlmm",
-  url: (id) => `${METEORA_DLMM_DATAPI}/pools/${id}`,
-  parse: parseMeteoraPoolEconomics,
-  source: `${METEORA_DLMM_DATAPI}/pools/{address} (TVL, price, token amounts)`,
-};
+/** Economics source gated by the allowlist (no spec) or by one scan-found pool's spec. */
+export function meteoraEconomicsSource(spec?: MeteoraPoolSpec): HttpPoolEconomicsSource {
+  return {
+    name: "Meteora",
+    protocol: "meteora-dlmm",
+    url: (id) => `${METEORA_DLMM_DATAPI}/pools/${id}`,
+    parse: (body) => parseMeteoraPoolEconomics(body, spec),
+    source: `${METEORA_DLMM_DATAPI}/pools/{address} (TVL, price, token amounts)`,
+  };
+}
+
+export const METEORA_ECONOMICS_SOURCE: HttpPoolEconomicsSource = meteoraEconomicsSource();

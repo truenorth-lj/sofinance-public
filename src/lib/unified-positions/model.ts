@@ -1,7 +1,7 @@
 /**
  * Unified "My positions" model (design: unified-positions ADAPTER_DESIGN, PR-A). One `PositionSource` per protocol/chain;
  * the UI reads positions and decides which tools to show only from a source's capabilities, never from chain checks.
- * PR-A: types + the Raydium CLMM source only; `/app` behaves exactly as before.
+ * Sources: Raydium CLMM (Solana) and Uniswap v4 on Robinhood Chain.
  */
 export type ChainId = "solana" | "robinhood-chain";
 export type PositionSourceId = "raydium-clmm" | "orca-whirlpool" | "meteora-dlmm" | "rhc-uniswap-v4";
@@ -60,6 +60,13 @@ export type PositionSource<N = unknown, D = unknown> = {
   capabilities: SourceCapabilities;
   /** Map the source's discovery result to unified positions, keeping the source's order. */
   fromDiscovery(discovery: D | null | undefined): UnifiedPosition<N>[];
+  /** Dropdown label without the source name or "Closed" (rows.ts adds those). */
+  label(position: UnifiedPosition<N>, metadata?: Record<string, { symbol?: string | null } | undefined>): string;
+  /**
+   * Per-position override (e.g. one pool supports a tool, another does not; a position owned by another wallet cannot be
+   * closed). Merged over `capabilities` by `capabilitiesFor`; the UI only ever reads the merged result.
+   */
+  positionCapabilities?(position: UnifiedPosition<N>): Partial<SourceCapabilities>;
 };
 
 export const SUPPORTED: Capability = Object.freeze({ supported: true });
@@ -88,4 +95,16 @@ export function isToolSupported(capabilities: SourceCapabilities, tool: ToolId):
 export function toolUnavailableReason(capabilities: SourceCapabilities, tool: ToolId): string | null {
   const cap = capabilities[tool];
   return cap.supported ? null : cap.reason;
+}
+
+/** The capabilities the UI uses for one position: the source's, with that position's overrides on top. */
+export function capabilitiesFor<N>(source: Pick<PositionSource<N>, "capabilities" | "positionCapabilities">, position: UnifiedPosition<N> | null | undefined): SourceCapabilities {
+  if (!position || !source.positionCapabilities) return source.capabilities;
+  const override = source.positionCapabilities(position);
+  return Object.keys(override).length ? { ...source.capabilities, ...override } : source.capabilities;
+}
+
+/** First supported tool, in tab order (where a selection lands when its current tool is unavailable). */
+export function firstSupportedTool(capabilities: SourceCapabilities): ToolId | null {
+  return TOOL_IDS.find((tool) => capabilities[tool].supported) ?? null;
 }
