@@ -28,7 +28,7 @@ export const fakeSolanaDescriptor: DexDescriptor = Object.freeze({
   chain: "solana",
   displayName: "Fake bin DEX",
   meta: {
-    rangeUnit: "bin", maxRangeUnitsPerPosition: 70, openSteps: { min: 2, max: 2 },
+    rangeUnit: "bin", maxRangeUnitsPerPosition: 70, rangeUnitBounds: { min: -443_636, max: 443_636 }, openSteps: { min: 2, max: 2 },
     rent: { refundableOnClose: true, disclosure: "about 0.042 SOL, refunded when you fully withdraw" },
     approvals: "none", positionCosigner: "ephemeral-keypair", addressCase: "exact", feePolicy: swapFee,
   },
@@ -44,7 +44,7 @@ export const fakeEvmDescriptor: DexDescriptor = Object.freeze({
   chain: "robinhood-chain",
   displayName: "Fake EVM DEX",
   meta: {
-    rangeUnit: "tick", maxRangeUnitsPerPosition: null, openSteps: { min: 1, max: 3 }, rent: null,
+    rangeUnit: "tick", maxRangeUnitsPerPosition: null, rangeUnitBounds: { min: -443_636, max: 443_636 }, openSteps: { min: 1, max: 3 }, rent: null,
     approvals: "erc20-permit2", positionCosigner: "none", addressCase: "lowercase",
     feePolicy: { ...NO_FEE_POLICY, open: { kind: "swap-output-bps", bps: 10 } },
   },

@@ -7,6 +7,7 @@ import type { OpenRequest } from "../adapter";
 import { describeDexContract } from "../__contract__/dex-contract";
 import { DexError } from "../errors";
 import { FEE_WALLET_MISSING_MESSAGE } from "../fee-wallet.server";
+import { NO_FEE_POLICY } from "../fees";
 import { createMeteoraDlmmAdapter } from "./adapter.server";
 import { clearMeteoraPoolListCache } from "./pools.server";
 import {
@@ -156,20 +157,20 @@ describe("Meteora DLMM adapter specifics", () => {
     expect(chain.current.simulations).not.toContain("close_position2");
   });
 
-  it("refuses to open with a 0 fee in production when no fee wallet is configured, and reports it", async () => {
-    vi.stubEnv("SOFINANCE_FEE_WALLET", "");
-    vi.stubEnv("VERCEL_ENV", "production");
+  it("refuses to open without a fee wallet in every environment (no VERCEL_ENV involved), builds nothing, and reports it", async () => {
+    vi.stubEnv("SOFINANCE_FEE_WALLET", ""); // NODE_ENV=test, no VERCEL_ENV: still refused
     sentry.misconfigured.length = 0;
     const adapter = createMeteoraDlmmAdapter();
     await expect(adapter.quoteOpen(request)).rejects.toMatchObject({ code: "MISCONFIGURED", message: FEE_WALLET_MISSING_MESSAGE });
     await expect(adapter.prepareOpen(request, { step: 1, priorSignatures: [] })).rejects.toMatchObject({ code: "MISCONFIGURED" });
+    expect(chain.current.simulations).toEqual([]);
     expect(sentry.misconfigured).toEqual([["meteora-dlmm", "open", "fee_wallet_missing"], ["meteora-dlmm", "open", "fee_wallet_missing"]]);
   });
 
-  it("allows a 0 fee without a fee wallet only in tests and local dev", async () => {
+  it("charges nothing only with an explicit \"none\" fee policy", async () => {
     vi.stubEnv("SOFINANCE_FEE_WALLET", "");
     sentry.misconfigured.length = 0;
-    const quote = await createMeteoraDlmmAdapter().quoteOpen(request); // NODE_ENV=test, no VERCEL_ENV
+    const quote = await createMeteoraDlmmAdapter({ feePolicy: NO_FEE_POLICY }).quoteOpen(request);
     expect(quote.platformFeeRaw).toBe("0");
     expect(quote.blockedReason).toBeUndefined();
     expect(sentry.misconfigured).toEqual([]);

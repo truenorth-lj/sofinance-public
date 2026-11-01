@@ -25,6 +25,12 @@ export type ListedMeteoraPool = {
 
 export type MeteoraPoolList = (poolId: string) => Promise<ListedMeteoraPool | null>;
 
+/**
+ * The feed's pool list is cached in memory for 60 s per server instance (per warm serverless function). A pool the RWA
+ * scan adds or blocks therefore takes up to a minute to be listed or refused here; every open still re-reads the LbPair
+ * and both mints on chain, so the cache can only delay a listing change, never skip the on-chain checks. Turning the
+ * store off (SOFINANCE_RWA_DB_ENABLED) takes effect at once: the cache is not read then.
+ */
 const FEED_TTL_MS = 60_000;
 let feedCache: { at: number; pools: Map<string, ListedMeteoraPool> } | undefined;
 

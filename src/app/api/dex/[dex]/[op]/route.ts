@@ -70,15 +70,35 @@ function stepContext(body: { step: number; priorSignatures: string[]; planToken?
   return { step: body.step, priorSignatures: body.priorSignatures, ...(body.planToken ? { planToken: body.planToken } : {}) };
 }
 
+/**
+ * A `units` range must lie inside the DEX's legal tick / bin id range (`descriptor.meta.rangeUnitBounds`, e.g. Meteora's
+ * ±443,636 bin ids) with lower <= upper; otherwise 400 before the adapter reads anything.
+ */
+function rangeProblem(adapter: DexAdapter, request: OpenRequest): string | null {
+  if (request.range.kind !== "units") return null;
+  const { lower, upper } = request.range;
+  const { min, max } = adapter.descriptor.meta.rangeUnitBounds;
+  const unit = adapter.descriptor.meta.rangeUnit;
+  if (lower < min || lower > max || upper < min || upper > max) return `The range must use ${unit} ids between ${min} and ${max}.`;
+  if (lower > upper) return `The lower ${unit} id must not be above the upper ${unit} id.`;
+  return null;
+}
+
+function checkedOpen(adapter: DexAdapter, request: OpenRequest): OpenRequest {
+  const problem = rangeProblem(adapter, request);
+  if (problem) throw new DexError("INVALID_REQUEST", problem);
+  return request;
+}
+
 async function run(adapter: DexAdapter, op: Op, body: unknown): Promise<Response> {
   switch (op) {
     case "quote-open": {
       const { request } = BODY[op].parse(body);
-      return json(await adapter.quoteOpen(request as OpenRequest));
+      return json(await adapter.quoteOpen(checkedOpen(adapter, request as OpenRequest)));
     }
     case "open": {
       const input = BODY[op].parse(body);
-      const request = input.request as OpenRequest;
+      const request = checkedOpen(adapter, input.request as OpenRequest);
       return json(withPermits(await adapter.prepareOpen(request, stepContext(input)), request.owner));
     }
     case "recovery": {

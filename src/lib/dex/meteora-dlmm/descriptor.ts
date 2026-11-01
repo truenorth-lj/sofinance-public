@@ -27,6 +27,8 @@ export const meteoraDlmmDescriptor: DexDescriptor = Object.freeze({
     rangeUnit: "bin",
     /** One position account (8,120 bytes) holds at most 70 bins; wider ranges are refused, never split. */
     maxRangeUnitsPerPosition: 70,
+    /** lb_clmm `MIN_BIN_ID` / `MAX_BIN_ID` (±443,636). A pool's bin step can narrow this further; the adapter checks that on chain. */
+    rangeUnitBounds: Object.freeze({ min: -443_636, max: 443_636 }),
     /** 1/2 setup (create the position account), 2/2 deposit (swap legs + add liquidity). */
     openSteps: Object.freeze({ min: 2, max: 2 }),
     rent: Object.freeze({

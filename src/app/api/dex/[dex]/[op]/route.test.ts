@@ -9,6 +9,7 @@ vi.mock("@/lib/dex", async (importOriginal) => {
 });
 
 import { DexError } from "@/lib/dex";
+import { dexDescriptors } from "@/lib/dex/client";
 import { POST } from "./route";
 
 const owner = Keypair.fromSeed(new Uint8Array(32).fill(1)).publicKey;
@@ -29,6 +30,7 @@ describe("POST /api/dex/[dex]/[op]", () => {
     vi.stubEnv("JUPITER_API_KEY", "route-test-secret");
     fake.ids = ["some-dex"];
     fake.adapter = {
+      descriptor: dexDescriptors.descriptorFor("meteora-dlmm"),
       quoteOpen: vi.fn(async () => ({ poolId: openRequest.poolId, range: { lowerPrice: 1, upperPrice: 2, units: 10 }, steps: 2, rent: null, platformFeeRaw: "0" })),
       prepareOpen: vi.fn(async (_request: unknown, context: { step: number }) => ({
         step: context.step, of: 2, label: "Step", done: context.step === 2, planToken: "plan",
@@ -134,5 +136,18 @@ describe("POST /api/dex/[dex]/[op]", () => {
     const response = await call("quote-open", { request: openRequest });
     expect(response.status).toBe(503);
     expect(await response.json()).toEqual({ error: "Opening positions is temporarily unavailable.", code: "MISCONFIGURED" });
+  });
+
+  it("refuses a units range outside the DEX's legal bin ids with 400, before the adapter runs", async () => {
+    const units = (lower: number, upper: number) => ({ request: { ...openRequest, range: { kind: "units", lower, upper } } });
+    for (const [lower, upper] of [[-443_637, 0], [0, 443_637], [10, 9]]) {
+      const response = await call("quote-open", units(lower!, upper!));
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({ code: "INVALID_REQUEST" });
+      expect((await call("open", { ...units(lower!, upper!), step: 1, priorSignatures: [] })).status).toBe(400);
+    }
+    expect(fake.adapter!.quoteOpen).not.toHaveBeenCalled();
+    expect(fake.adapter!.prepareOpen).not.toHaveBeenCalled();
+    expect((await call("quote-open", units(-443_636, 443_636))).status).toBe(200);
   });
 });

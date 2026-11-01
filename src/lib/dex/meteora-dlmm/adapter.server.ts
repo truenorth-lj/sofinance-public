@@ -11,6 +11,7 @@ import { readSwapFeeConfig, type SwapFeeConfig } from "@sofinance/engine/swap/fe
 import { listMeteoraPositions, type MeteoraListedPosition, type MeteoraReadOptions } from "@/lib/meteora-positions";
 import { positionKey, type PositionKey, type RangeStatus, type UnifiedPosition } from "@/lib/unified-positions/model";
 import type { DexAdapter, OpenQuote, OpenRequest, StepContext, StepResult } from "../adapter";
+import type { FeePolicy } from "../types";
 import { DexError, DexUnsupportedError } from "../errors";
 import { bpsFeeStrategy } from "../fees";
 import { meteoraDlmmDescriptor } from "./descriptor";
@@ -27,6 +28,11 @@ export type MeteoraDlmmAdapterOptions = {
   connection?: () => Connection;
   feeConfig?: () => SwapFeeConfig;
   listedPool?: MeteoraPoolList;
+  /**
+   * Overrides the descriptor's fee policy. Only for tests and local setups that want no fee: pass an explicit
+   * policy whose open rule is "none". A charging policy without a fee wallet is always refused.
+   */
+  feePolicy?: FeePolicy;
 };
 
 const SOURCE = meteoraDlmmDescriptor.id;
@@ -93,7 +99,7 @@ function unified(row: MeteoraDlmmNative, binStep: number, decimalsX: number, dec
 
 export function createMeteoraDlmmAdapter(options: MeteoraDlmmAdapterOptions = {}): DexAdapter<MeteoraDlmmNative> {
   const descriptor = meteoraDlmmDescriptor;
-  const fees = bpsFeeStrategy(descriptor.meta.feePolicy);
+  const fees = bpsFeeStrategy(options.feePolicy ?? descriptor.meta.feePolicy);
   if (!["none", "swap-input-bps"].includes(fees.policy.open.kind)) throw new Error("Meteora deposits charge on the swapped input only");
   const deps = (): MeteoraOpenDeps => ({
     connection: (options.connection ?? rpcConnection)(), fees, feeConfig: options.feeConfig ?? readSwapFeeConfig, listedPool: options.listedPool ?? listedMeteoraPool,

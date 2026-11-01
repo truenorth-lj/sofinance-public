@@ -77,7 +77,7 @@ export type MeteoraOpenPlan = {
   inputProgram: string;
   /** Spend per pool side; a side equal to the input mint is kept, the other is swapped (and charged). */
   sides: { side: "x" | "y"; mint: string; spend: bigint; swapped: boolean }[];
-  /** Fee bps per swap leg (0 when no fee wallet is configured: nothing is charged then). */
+  /** Fee bps per swap leg, from the fee policy (0 only for a policy of "none"; a charging policy without a fee wallet throws). */
   legBps: number;
   platformFeeRaw: bigint;
 };
@@ -217,11 +217,11 @@ export async function planMeteoraOpen(
     { side: "x", mint: pool.lbPair.tokenXMint, spend: split.x },
     { side: "y", mint: pool.lbPair.tokenYMint, spend: split.y },
   ] as const).filter((item) => item.spend > 0n).map((item) => ({ ...item, swapped: item.mint !== request.input.token }));
-  // The rate comes from the descriptor's fee policy only. No fee wallet configured: refused outside tests and local dev
-  // (never a silent 0 fee in a deployment); in tests / local dev nothing is charged.
-  const feeWallet = deps.feeConfig().wallet;
-  assertFeeWalletConfigured({ dexId: meteoraDlmmDescriptor.id, op: "open", charges: feeRuleBps(deps.fees.policy.open) > 0, feeWallet: feeWallet?.toBase58() ?? null });
-  const legBps = feeWallet ? feeRuleBps(deps.fees.policy.open) : 0;
+  // The rate comes from the fee policy only. A charging policy with no fee wallet configured throws MISCONFIGURED (and
+  // reports to Sentry) in every environment before anything is built: there is no silent 0 fee. Tests / local setups
+  // that want no fee pass an explicit "none" policy (`createMeteoraDlmmAdapter({ feePolicy })`).
+  const legBps = feeRuleBps(deps.fees.policy.open);
+  assertFeeWalletConfigured({ dexId: meteoraDlmmDescriptor.id, op: "open", charges: legBps > 0, feeWallet: deps.feeConfig().wallet?.toBase58() ?? null });
   const platformFeeRaw = legBps ? sides.filter((s) => s.swapped).reduce((sum, s) => sum + deps.fees.feeFor("open", s.spend), 0n) : 0n;
   return {
     pool, ...range, width, bitmapExtension, positionRentLamports: rent.lamports, amount, inputMint: request.input.token,
@@ -450,7 +450,9 @@ export async function buildMeteoraCloseRefund(deps: Pick<MeteoraOpenDeps, "conne
   const positionKey = publicKey(position, "position");
   const wallet = publicKey(owner, "wallet");
   const { context, value: [info] } = await connection.getMultipleAccountsInfoAndContext([positionKey], "confirmed");
+  // The adapter checks ownership itself (not only the route): MCP and other callers reach prepareRecovery directly.
   const decoded = assertEmptyOwnedPosition(info ?? null, wallet.toBase58(), null);
+  if (decoded.owner !== wallet.toBase58()) throw new DexError("POSITION_NOT_FOUND", "That Meteora position belongs to another wallet.");
   const walletInfo = await connection.getAccountInfo(wallet, "confirmed");
   const latest = await connection.getLatestBlockhash("confirmed");
   const close = (units: number) => [cuLimit(units), meteoraClosePosition2Instruction({ position: positionKey, sender: wallet, rentReceiver: wallet })];
