@@ -41,6 +41,26 @@ export class AmountTooSmallError extends Error {
   }
 }
 
+export const SMALL_LEG_MOVES_PRICE_CODE = "small_leg_moves_price";
+
+/**
+ * Plain-English cause and next step when the in-range add needs a tiny swap into one pool token and even the smallest
+ * swap Jupiter can quote would move this pool's price too far (out of the range, or past where its liquidity changes).
+ */
+export function formatSmallLegMovesPriceMessage(labels: { minority: string; majority: string }): string {
+  return `This position's price range is narrow and the pool price sits at its edge, so it needs almost only ${labels.majority}. ` +
+    `The pool is so thin there that even the smallest ${labels.minority} swap Jupiter can quote would push its price out of ` +
+    `that spot. Nothing was sent. Try again after the price moves further inside the range, or use a position with a wider range.`;
+}
+
+export class SmallLegMovesPriceError extends Error {
+  readonly code = SMALL_LEG_MOVES_PRICE_CODE;
+  constructor(readonly detail: { minorityMint: string; majorityMint: string }, message: string) {
+    super(message);
+    this.name = "SmallLegMovesPriceError";
+  }
+}
+
 /** Smallest ExactIn size Jupiter can threshold at `slippageBps` (integer `amount * bps / 10000`). */
 export function minJupiterSwapAmount(slippageBps = SLIPPAGE_BPS): bigint {
   if (!Number.isInteger(slippageBps) || slippageBps <= 0) return 1n;

@@ -81,6 +81,14 @@ describe("UnifiedPoolsPanel", () => {
     expect(container.textContent).toContain("Show all pools (1 hidden)");
   });
 
+  it("card pair names can break after the slash and cut each half, so a long name never runs under the APR at 375 px", async () => {
+    await render();
+    const name = container.querySelector<HTMLElement>('[data-pool="solana:spcxA"] [data-testid=pool-card-name]')!;
+    expect(name.getAttribute("title")).toBe("SPCXx/SPCX");
+    expect([...name.children].map((part) => [part.textContent, part.className])).toEqual([
+      ["SPCXx/", "inline-block max-w-full truncate align-bottom"], ["SPCX", "inline-block max-w-full truncate align-bottom"]]);
+  });
+
   it("shows hidden duplicates after Show all pools and the toggle", async () => {
     await render();
     await act(async () => { container.querySelector<HTMLButtonElement>("[data-testid=show-all-pools]")!.click(); });

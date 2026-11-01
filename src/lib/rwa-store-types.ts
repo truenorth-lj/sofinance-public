@@ -265,6 +265,8 @@ export const storeRequestSchema = z.discriminatedUnion("op", [
     lease: leaseSchema,
     processed: z.number().int().min(0).max(1000).default(0),
     outcome: z.enum(["ok", "partial", "error"]),
+    /** Counts toward `consecutive_failures` (and keeps `last_success_at`); default: any outcome other than "ok". */
+    failure: z.boolean().optional(),
     issues: z.array(z.string().max(500)).max(20),
   }),
   z.object({

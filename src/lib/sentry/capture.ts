@@ -3,7 +3,7 @@ import { isJupiterUpstreamError, JupiterHttpError, JupiterUnavailableError, JUPI
 import { isMinContextSlotError, RpcHttpError, RpcUnavailableError } from "@sofinance/engine/rpc/errors";
 import { RPC_BEHIND_CODE } from "@sofinance/engine/rpc/context-slot";
 import { publicErrorCode, CompoundSendError, sanitizePublicError } from "../public-error";
-import { AMOUNT_TOO_SMALL_CODE, JUPITER_CLIENT_ERROR_CODE } from "../selected-amount-error";
+import { AMOUNT_TOO_SMALL_CODE, JUPITER_CLIENT_ERROR_CODE, SMALL_LEG_MOVES_PRICE_CODE } from "../selected-amount-error";
 import { isSentryEnabled } from "./runtime";
 import { pathnameFromUrl, routeFromRequest, routeFromTransaction } from "./route";
 import { logSafeError } from "../safe-error-log";
@@ -29,6 +29,7 @@ const USER_FACING_SELECTED_CODES = new Set([
   JUPITER_NO_ROUTE_CODE,
   AMOUNT_TOO_SMALL_CODE,
   JUPITER_CLIENT_ERROR_CODE,
+  SMALL_LEG_MOVES_PRICE_CODE,
 ]);
 
 /** Coded 4xx user-facing selected errors — never report these. */

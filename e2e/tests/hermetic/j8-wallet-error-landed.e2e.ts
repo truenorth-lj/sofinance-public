@@ -1,9 +1,10 @@
 // The wallet signs and sends, then throws (seen on mainnet: Phantom `{"code":400,"message":"Request … rejected by user"}`
 // after the INTC add had landed). The app must check Solana before saying anything, lock Add and Recalculate while it
 // checks, then show success with a Solscan link, or "Nothing was sent, safe to retry" only once the lookup says the
-// blockhash expired and nothing landed. A real cancel (code 4001) says "You cancelled" at once (no Checking state); the
-// lookup then runs silently and only speaks up if it landed anyway. Until it finishes, Add on that same position reads
-// "Cancelled — you can retry in about a minute" and stays disabled (no second send of the same thing). Nothing is broadcast: /api/tx-landed and finality are mocked.
+// blockhash expired and nothing landed. A 4001 is checked too (Jupiter Mobile pops its own "Sign this message" prompt after
+// broadcasting; cancelling it rejects signAndSendTransaction with 4001 although the tx landed): Checking for up to 20 s,
+// success if it is seen, otherwise "You cancelled" while the same lookup keeps running and only speaks up if it lands.
+// Until it finishes, Add on that same position reads "Cancelled — you can retry in about a minute" and stays disabled. Nothing is broadcast: /api/tx-landed and finality are mocked.
 import bs58 from "bs58";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
@@ -133,54 +134,70 @@ for (const [width, label] of [[1280, "desktop"], [375, "375"]] as const) {
       });
     });
 
-    test.describe("4001 cancel in the wallet", () => {
-      test.use({ signAndSendError: { message: "User rejected the request.", code: 4001 } });
-      test("says cancelled at once (no Checking); Add on this position waits for the background check, which stays silent when nothing landed", async ({ page, wallet, guards }) => {
-        guards.allowConsole(/rejected the request|WalletSendTransactionError/i);
+    test.describe("4001 in the wallet (a genuine cancel, or Jupiter's own post-broadcast prompt cancelled)", () => {
+      test.use({ signAndSendError: { message: "Request rejected by user", code: 4001 } });
+      test.setTimeout(90_000);
+      const CANCELLED = "You cancelled in your wallet. We are still checking Solana in case it went through; you can retry in about a minute.";
+
+      test("Jupiter case: the tx had landed, so Checking turns into success (never 'cancelled' or 'failed')", async ({ page, wallet, guards }) => {
+        guards.allowConsole(/rejected by user|WalletSendTransactionError/i);
+        let release!: () => void;
+        const gate = new Promise<void>((resolve) => { release = resolve; });
+        const { calls, landedChecks, add, confirm } = await setup(page, wallet, { outcome: "landed", gate });
+        await add.click();
+        await expect.poll(landedChecks).toBeGreaterThan(0);
+        await expectCheckingLocked(page, `4001-checking-${label}`);
+        confirm(); release();
+        await expect(page.getByRole("link", { name: /on Solscan/ }).first()).toHaveAttribute("href", `https://solscan.io/tx/${LANDED_SIG}`);
+        await expect(page.getByText("Liquidity added", { exact: true }).filter({ visible: true }).first()).toBeVisible();
+        await expect(page.getByText(/cancelled|failed/i)).toHaveCount(0);
+        await page.screenshot({ path: shot(`4001-landed-success-${label}`) });
+        expect(calls).not.toContain("/api/tx-send");
+        expect(wallet.signedTransactions).toHaveLength(1);
+      });
+
+      test("nothing seen within 20 s: Checking, then cancelled (retry in about a minute) with Add locked; silent when it never landed", async ({ page, wallet, guards }) => {
+        guards.allowConsole(/rejected by user|WalletSendTransactionError/i);
         let release!: () => void;
         const gate = new Promise<void>((resolve) => { release = resolve; });
         const { calls, landedChecks, add } = await setup(page, wallet, { outcome: "not-landed", gate });
         await add.click();
-        // While the on-chain lookup is still held open: cancelled, no "Checking Solana…"; this position's Add waits.
-        await expect(page.getByText("You cancelled in your wallet.", { exact: true }).first()).toBeVisible();
         await expect.poll(landedChecks).toBeGreaterThan(0);
+        await expectCheckingLocked(page, `4001-checking-genuine-${label}`);
+        await expect(page.getByText(CANCELLED, { exact: true }).first()).toBeVisible({ timeout: 30_000 });
         await expect(page.getByText("Checking Solana…")).toHaveCount(0);
+        await expect(page.getByText(/failed/i)).toHaveCount(0);
         const waiting = page.getByRole("button", { name: CANCEL_PENDING, exact: true });
         await expect(waiting).toBeVisible(); await expect(waiting).toBeDisabled();
-        await expect(page.getByText(/nothing was sent|safe to retry/i)).toHaveCount(0);
-        await page.screenshot({ path: shot(`cancelled-${label}`) });
+        await page.screenshot({ path: shot(`4001-20s-cancelled-${label}`) });
         if (width < 640) {
           // On phones the toast sits over the sticky action bar: close it to show the disabled button too.
           await page.getByRole("button", { name: "Dismiss notice" }).first().click();
           await expect(waiting).toBeDisabled();
-          await page.screenshot({ path: shot(`cancelled-${label}-button`) });
+          await page.screenshot({ path: shot(`4001-20s-cancelled-${label}-button`) });
         }
         release();
-        // Nothing landed: silent, and Add is usable again.
         await expect(add).toBeEnabled();
-        // (At 375 the cancel toast was closed above; nothing new may appear in its place.)
-        if (width >= 640) await expect(page.getByText("You cancelled in your wallet.", { exact: true }).first()).toBeVisible();
-        await expect(page.getByText(/nothing was sent|safe to retry/i)).toHaveCount(0);
         await expect(page.getByText("Liquidity added", { exact: true })).toHaveCount(0);
         expect(calls).not.toContain("/api/tx-send");
         expect(wallet.signedTransactions).toHaveLength(1);
       });
 
-      test("if it landed anyway, the background check replaces the cancel with success, a Solscan link and fresh balances", async ({ page, wallet, guards }) => {
-        guards.allowConsole(/rejected the request|WalletSendTransactionError/i);
+      test("late landing: after the 20 s cancel, the background check finds it and switches to success, a Solscan link and fresh balances", async ({ page, wallet, guards }) => {
+        guards.allowConsole(/rejected by user|WalletSendTransactionError/i);
         let release!: () => void;
         const gate = new Promise<void>((resolve) => { release = resolve; });
         const { calls, landedChecks, add, confirm } = await setup(page, wallet, { outcome: "landed", gate });
         await add.click();
-        await expect(page.getByText("You cancelled in your wallet.", { exact: true }).first()).toBeVisible();
         await expect.poll(landedChecks).toBeGreaterThan(0);
+        await expect(page.getByText(CANCELLED, { exact: true }).first()).toBeVisible({ timeout: 30_000 });
         await expect(page.getByRole("button", { name: CANCEL_PENDING, exact: true })).toBeDisabled();
         const refreshesBefore = calls.filter((p) => p === "/api/selected-state").length;
         confirm(); release();
         await expect(page.getByRole("link", { name: /on Solscan/ }).first()).toHaveAttribute("href", `https://solscan.io/tx/${LANDED_SIG}`);
         await expect(page.getByText("Liquidity added", { exact: true }).filter({ visible: true }).first()).toBeVisible();
-        await expect(page.getByText("You cancelled in your wallet.", { exact: true })).toHaveCount(0);
-        await page.screenshot({ path: shot(`cancelled-then-landed-${label}`) });
+        await expect(page.getByText(CANCELLED, { exact: true })).toHaveCount(0);
+        await page.screenshot({ path: shot(`4001-late-landed-success-${label}`) });
         await expect.poll(() => calls.filter((p) => p === "/api/selected-state").length).toBeGreaterThan(refreshesBefore);
         expect(calls).not.toContain("/api/tx-send");
         expect(wallet.signedTransactions).toHaveLength(1);

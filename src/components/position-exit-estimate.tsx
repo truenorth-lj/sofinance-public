@@ -3,10 +3,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Decimal from "decimal.js";
 import { DecisionSession } from "@/lib/lp-decision-session";
+import { EXIT_PREVIEW_DIRECT_USDC_MESSAGE, EXIT_PREVIEW_UNSUPPORTED_STATUS, holdsUsdcDirectly } from "@sofinance/engine/exit-preview-support";
 
 type Exit = {
   status: string;
   error?: string;
+  /** Plain-English explanation on a typed `unsupported` result. */
+  message?: string;
   errorCode?: string;
   reason?: string;
   recoveryUSDCAtomic?: string;
@@ -49,8 +52,10 @@ const pillButton =
  *   most ACCOUNT_WAIT_MS. If the account is not available (no wallet, wallet does not hold this position, state read
  *   failed) it never spins: it explains why and offers the manual preview, which lets the server look the holder up.
  */
-export function PositionExitEstimate({ positionId, nftAccount, nftAccountPending = false, autoExit = false, className = "" }: {
+export function PositionExitEstimate({ positionId, nftAccount, nftAccountPending = false, autoExit = false, poolMints, className = "" }: {
   positionId: string;
+  /** Pool token mints. A pool that holds USDC directly has no exit estimate yet, so nothing is fetched. */
+  poolMints?: readonly string[];
   nftAccount?: string;
   nftAccountPending?: boolean;
   autoExit?: boolean;
@@ -144,8 +149,9 @@ export function PositionExitEstimate({ positionId, nftAccount, nftAccountPending
     }
   }, [positionId, nftAccount]);
 
+  const directUsdc = holdsUsdcDirectly(poolMints ?? []);
   useEffect(() => {
-    if (!autoExit || !nftAccount) return;
+    if (!autoExit || !nftAccount || directUsdc) return;
     const timer = setTimeout(() => {
       setExit(null);
       setError(null);
@@ -153,12 +159,13 @@ export function PositionExitEstimate({ positionId, nftAccount, nftAccountPending
       void run();
     }, 0);
     return () => clearTimeout(timer);
-  }, [autoExit, nftAccount, run]);
+  }, [autoExit, nftAccount, run, directUsdc]);
 
   const expired = !!exit?.localExpiresAt && now >= Date.parse(exit.localExpiresAt);
   const waitingText = waitingForAccount && !waitExpired;
   const manualButton = !autoExit || (!nftAccount && !waitingText);
-  const showButton = manualButton || (!busy && (error || expired || (exit && exit.status !== "verified-preview")));
+  const unsupported = directUsdc || exit?.status === EXIT_PREVIEW_UNSUPPORTED_STATUS;
+  const showButton = !unsupported && (manualButton || (!busy && (error || expired || (exit && exit.status !== "verified-preview"))));
 
   return (
     <section aria-label="Exit estimates" className={`border-t border-white/10 pt-5 ${className}`}>
@@ -190,7 +197,13 @@ export function PositionExitEstimate({ positionId, nftAccount, nftAccountPending
         </div>
       </div>
 
-      {autoExit && !exit && !error && (
+      {unsupported && (
+        <p role="status" data-testid="exit-estimate-unsupported" className="mt-5 rounded-2xl border border-white/15 bg-white/[0.04] px-4 py-3 text-sm text-cream/80">
+          {exit?.message || EXIT_PREVIEW_DIRECT_USDC_MESSAGE}
+        </p>
+      )}
+
+      {!unsupported && autoExit && !exit && !error && (
         <p role="status" className="mt-4 flex items-center gap-2 text-sm text-smoke">
           {waitingText || busy || nftAccount ? <span className="h-3 w-3 animate-pulse rounded-full bg-lemon/70" aria-hidden /> : null}
           {waitingText
@@ -208,7 +221,7 @@ export function PositionExitEstimate({ positionId, nftAccount, nftAccountPending
         </p>
       )}
 
-      {exit && (
+      {exit && !unsupported && (
         <div className="mt-6" aria-label="Split-asset exit result">
           {(expired || exit.status !== "verified-preview") && <p className={`mt-2 text-sm font-medium ${expired || oversizedExit(exit) ? "text-lemon" : "text-cream"}`}>
             {expired

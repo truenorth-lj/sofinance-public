@@ -314,7 +314,7 @@ describe("runTx", () => {
     expect(result.signature).toBe(sigOf(wallet.signed[0]!)); expect(sendRaw).toHaveBeenCalledTimes(1);
     expect(loadTxAttempts(storage, WALLET)).toHaveLength(1);
   });
-  it("is quiet and not retryable when the user rejects signing (the sign-only path never broadcasts)", async () => {
+  it("is quiet and not retryable when the user rejects signing with no check permit (nothing to look up)", async () => {
     const wallet = { ...signingWallet(), signTransaction: vi.fn(async () => { throw USER_4001(); }) };
     const sendRaw = vi.fn();
     await expect(runTx(adapter(async () => prepared()), {}, { wallet, sendRaw })).rejects.toMatchObject({ kind: "rejected", retryable: false });
@@ -368,23 +368,27 @@ describe("landed check after a wallet error", () => {
   const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
   const cancelNotices = () => getTxNotices().filter((item) => item.id.startsWith("tx-cancel-"));
 
-  it("4001 → 'You cancelled in your wallet' at once, no checking stage; the background lookup stays silent when nothing landed", async () => {
+  const CANCELLED_COPY = "You cancelled in your wallet. We are still checking Solana in case it went through; you can retry in about a minute.";
+  const W = 15; // test checking window (production: CHECKING_WINDOW_MS = 20 s)
+
+  it("4001 → 'Checking Solana…' first (never 'failed'), then after the window 'cancelled, retry in about a minute'; silent if nothing landed", async () => {
     const refresh = vi.fn(); window.addEventListener(BALANCES_REFRESH_EVENT, refresh);
     const lookup = deferred(); const stages: string[] = [];
-    const findLanded = vi.fn<FindLanded>(() => lookup.promise);
-    // runTx settles while the lookup is still pending: the form is not held for 60–90 s.
-    const error = await runTx(adapter, {}, { wallet: throwingWallet(USER_4001), findLanded, retry: vi.fn(), onStage: (s) => stages.push(s) })
+    const findLanded = vi.fn<FindLanded>(() => {
+      expect(getTxNotices()).toMatchObject([{ state: "loading", title: "Checking Solana…" }]);
+      return lookup.promise;
+    });
+    const error = await runTx(adapter, {}, { wallet: throwingWallet(USER_4001), findLanded, retry: vi.fn(), onStage: (s) => stages.push(s), checkingWindowMs: W })
       .catch((e) => e);
-    expect(stages).toEqual(["preparing", "wallet"]);
-    expect(error).toMatchObject({ kind: "rejected", retryable: false, message: "You cancelled in your wallet." });
+    expect(stages).toEqual(["preparing", "wallet", "checking"]);
+    expect(error).toMatchObject({ kind: "rejected", retryable: false, message: CANCELLED_COPY });
     expect(findLanded).toHaveBeenCalledTimes(1);
     expect(findLanded.mock.calls[0]![0]).toMatchObject({ landedPermit: "check", lastValidBlockHeight: 77 });
-    expect(findLanded.mock.calls[0]![1]).toEqual({ background: true });
-    expect(getTxNotices()).toMatchObject([{ state: "failure", kind: "rejected", title: "Add liquidity cancelled", detail: "You cancelled in your wallet." }]);
+    expect(getTxNotices()).toMatchObject([{ state: "failure", kind: "rejected", title: "Add liquidity cancelled", detail: CANCELLED_COPY }]);
     expect(getTxNotices()[0]!.retry).toBeUndefined();
-    expect(JSON.stringify(getTxNotices())).not.toMatch(/nothing was sent|safe to retry|Checking Solana/i);
+    expect(JSON.stringify(getTxNotices())).not.toMatch(/nothing was sent|safe to retry|failed/i);
+    expect(isCancelCheckPending(cancelCheckKey("add"))).toBe(true);
     expect(refresh).toHaveBeenCalled();
-    // Only as "rejected", which captureTxClientFailure drops (a cancel is not an error report).
     expect(sentry.capture.mock.calls.map((call) => call[1])).toEqual(["rejected"]);
     lookup.resolve({ status: "not-landed" }); await flush();
     expect(getTxNotices()).toMatchObject([{ kind: "rejected", title: "Add liquidity cancelled" }]);
@@ -393,10 +397,61 @@ describe("landed check after a wallet error", () => {
     window.removeEventListener(BALANCES_REFRESH_EVENT, refresh);
   });
 
-  it("4001, then the background lookup finds it landed → the cancel toast becomes the tracked success (Solscan link + balance refresh)", async () => {
+  it("the cancelled state appears at the end of the 20 s window, not before (fake timers)", async () => {
+    vi.useFakeTimers();
+    const lookup = deferred(); const stages: string[] = [];
+    const settled = vi.fn();
+    const run = runTx(adapter, {}, { wallet: throwingWallet(USER_4001), findLanded: () => lookup.promise, onStage: (s) => stages.push(s) })
+      .catch((e) => { settled(); return e; });
+    await vi.advanceTimersByTimeAsync(19_900);
+    expect(settled).not.toHaveBeenCalled();
+    expect(stages.at(-1)).toBe("checking");
+    expect(getTxNotices()).toMatchObject([{ state: "loading", title: "Checking Solana…" }]);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(await run).toMatchObject({ kind: "rejected", message: CANCELLED_COPY });
+    expect(getTxNotices()).toMatchObject([{ state: "failure", kind: "rejected", title: "Add liquidity cancelled" }]);
+    lookup.resolve({ status: "not-landed" }); await vi.advanceTimersByTimeAsync(0);
+  });
+
+  it("Jupiter case: 4001 AFTER the wallet broadcast, found within the window → success, never 'cancelled' or 'failed'", async () => {
+    const refresh = vi.fn(); window.addEventListener(BALANCES_REFRESH_EVENT, refresh);
+    const stages: string[] = []; const wallet = throwingWallet(USER_4001);
+    const findLanded = vi.fn<FindLanded>(async () => ({ status: "landed", signature: LANDED }));
+    const result = await runTx(adapter, {}, { wallet, storage: memoryStorage(), findLanded, onStage: (s) => stages.push(s), checkingWindowMs: 5_000 });
+    expect(stages).toEqual(["preparing", "wallet", "checking", "confirming"]);
+    expect(result).toMatchObject({ signature: LANDED, landedAfterWalletError: true });
+    expect(JSON.stringify(getTxNotices())).not.toMatch(/cancelled|failed/i);
+    const fetchImpl = vi.fn(async () => Response.json({ status: "confirmed" }));
+    expect(await watchTxNotice(result.noticeId, { fetchImpl, sleep: async () => undefined })).toBe("confirmed");
+    expect(getTxNotices()).toMatchObject([{ state: "success", title: "Liquidity added", signature: LANDED }]);
+    expect(refresh).toHaveBeenCalled();
+    window.removeEventListener(BALANCES_REFRESH_EVENT, refresh);
+  });
+
+  it("a genuine cancel before signing (expired, not found) says cancelled in plain words, safe to retry", async () => {
+    const findLanded = vi.fn<FindLanded>(async () => ({ status: "not-landed" }));
+    const error = await runTx(adapter, {}, { wallet: throwingWallet(USER_4001), findLanded, retry: vi.fn(), checkingWindowMs: 5_000 }).catch((e) => e);
+    expect(error).toMatchObject({ kind: "not-sent", retryable: true,
+      message: "You cancelled in your wallet. We checked Solana and it did not go through. Nothing was sent, safe to retry." });
+    expect(JSON.stringify(getTxNotices())).not.toMatch(/ failed/i);
+  });
+
+  it("WalletConnect sign-only path (Jupiter Mobile): the wallet broadcast, then its own prompt was cancelled (code 5000) → checked, landed → success", async () => {
+    const WC_5000 = () => Object.assign(new Error("Request rejected by user"), { code: 5000 });
+    const wallet = { ...signingWallet(), signTransaction: vi.fn(async (): Promise<VersionedTransaction> => { throw WC_5000(); }) };
+    const sendRaw = vi.fn();
+    const findLanded = vi.fn<FindLanded>(async () => ({ status: "landed", signature: LANDED }));
+    const result = await runTx(adapter, {}, { wallet, sendRaw, storage: memoryStorage(), findLanded, checkingWindowMs: 5_000 });
+    expect(result).toMatchObject({ signature: LANDED, landedAfterWalletError: true });
+    expect(sendRaw).not.toHaveBeenCalled();
+    expect(findTxNotice(noticeIdFor(LANDED))).toMatchObject({ state: "loading", title: "Confirming on Solana…" });
+    expect(JSON.stringify(getTxNotices())).not.toMatch(/failed|cancelled/i);
+  });
+
+  it("late landing: 4001, window ends (cancelled), then the background lookup finds it → the cancel toast becomes the tracked success (Solscan link + balance refresh)", async () => {
     const refresh = vi.fn(); window.addEventListener(BALANCES_REFRESH_EVENT, refresh);
     const lookup = deferred(); const storage = memoryStorage();
-    const error = await runTx(adapter, {}, { wallet: throwingWallet(USER_4001), storage, findLanded: () => lookup.promise }).catch((e) => e);
+    const error = await runTx(adapter, {}, { wallet: throwingWallet(USER_4001), storage, findLanded: () => lookup.promise, checkingWindowMs: W }).catch((e) => e);
     expect(error).toMatchObject({ kind: "rejected" });
     expect(cancelNotices()).toHaveLength(1);
     refresh.mockClear();
@@ -419,7 +474,7 @@ describe("landed check after a wallet error", () => {
   it("until the background check ends, the same flow + position cannot be resent; other positions and flows can", async () => {
     const lookup = deferred();
     const wallet = throwingWallet(USER_4001);
-    await runTx(adapter, { mint: "POS-1" }, { wallet, findLanded: () => lookup.promise }).catch(() => undefined);
+    await runTx(adapter, { mint: "POS-1" }, { wallet, findLanded: () => lookup.promise, checkingWindowMs: W }).catch(() => undefined);
     expect(isCancelCheckPending(cancelCheckKey("add", "POS-1"))).toBe(true);
     const prepare = vi.spyOn(adapter, "prepare");
     const blocked = await runTx(adapter, { mint: "POS-1" }, { wallet, findLanded: () => lookup.promise }).catch((e) => e);
@@ -452,7 +507,7 @@ describe("landed check after a wallet error", () => {
 
   it("a background lookup that finds a signature another attempt already tracks never resets it", async () => {
     const lookup = deferred();
-    await runTx(adapter, {}, { wallet: throwingWallet(USER_4001), findLanded: () => lookup.promise }).catch(() => undefined);
+    await runTx(adapter, {}, { wallet: throwingWallet(USER_4001), findLanded: () => lookup.promise, checkingWindowMs: W }).catch(() => undefined);
     trackTxSignature({ flow: "add", signature: LANDED, lastValidBlockHeight: 77, wallet: WALLET, successTitle: "Liquidity added" });
     settleTxNotice(noticeIdFor(LANDED), "confirmed");
     lookup.resolve({ status: "landed", signature: LANDED }); await flush();

@@ -323,7 +323,7 @@ describe("open-position quote validation", () => {
     it("rejects a hop that leaves the spacing band while still inside the selected range", async () => {
       await expect(getOpenPositionQuoteBundle(wallet,
         { poolId, inputMint: mintA, inputKind: "token" }, "0.1", { preset: "standard" }, 9900, 100, 24, snapshot("20000000"), "sequential"))
-        .rejects.toThrow(/tick-spacing boundary/);
+        .rejects.toThrow(/where the pool.s liquidity changes/);
     });
   });
 

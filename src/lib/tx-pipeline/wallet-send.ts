@@ -16,11 +16,19 @@ import { waitForLanded, type FindLanded, type LandedOutcome } from "./landed";
  * confirm stage reports it in plain words.
  *
  * If the wallet throws (or returns no usable signature) after we asked it to sign AND send, it may
- * already have broadcast. We then look the transaction up on-chain (`waitForLanded`) before saying
- * anything: landed → continue as sent; expired and not found → `TxNotLandedError` (safe to retry);
- * undecided → `TxLandedUnknownError` (check Solscan first). A real cancel (EIP-1193 code 4001 exactly; never
- * wording, since Phantom's broadcast-then-throw says "rejected by user" with code 400) is the exception: it throws
- * `TxWalletCancelledError` at once and the same lookup continues in the background (every ~5 s).
+ * already have broadcast. The same holds for a wallet error on the sign-only path when nothing else must co-sign:
+ * Jupiter Mobile (WalletConnect, 2026-11-01) broadcast the add, then showed its own "Sign this message to approve
+ * your transaction." prompt; cancelling that prompt returned "Request rejected by user" although the add had landed.
+ * So a wallet error is never taken as "nothing was sent" or "cancelled" at once, not even an exact 4001:
+ * `checkLanded` shows "checking" and looks the transaction up on-chain (`waitForLanded`, server-issued permit) for at
+ * most `CHECKING_WINDOW_MS`:
+ *   landed (or landed-but-failed) → continue as sent (tracked, success toast, balances refresh);
+ *   expired and not found         → `TxNotLandedError` (safe to retry);
+ *   still undecided after 20 s    → `TxWalletCancelledError` ("Cancelled — you can retry in about a minute"): the form
+ *                                   unlocks, the same flow + position stays locked, and the SAME lookup keeps running
+ *                                   in the background until expiry (`watchCancelledSend` turns a late landing into success);
+ *   no answer possible (no permit) → cancelled at once for an explicit rejection, otherwise `TxLandedUnknownError`.
+ * Nothing in this module (or the pipeline) ever asks the wallet to sign a message.
  */
 export type TxWallet = {
   address: string;
@@ -49,6 +57,19 @@ export function isUnsupportedFeatureError(error: unknown): boolean {
 }
 
 export const RELAY_TIMEOUT_MS = 15_000;
+/** The longest "Checking Solana…" holds the form after a wallet error before it switches to the cancelled state. */
+export const CHECKING_WINDOW_MS = 20_000;
+
+/**
+ * A sign-only wallet error worth an on-chain check: a wallet's own answer (a numeric code, or cancel wording), not a
+ * local refusal before any prompt ("does not support", not connected), which never reached the wallet.
+ */
+function maySignOnlyHaveBroadcast(error: unknown) {
+  if (isUnsupportedFeatureError(error)) return false;
+  const message = error instanceof Error ? error.message : "";
+  if (/(does not support|not supported|unsupported|not connected|method not found|MethodNotSupported)/i.test(message)) return false;
+  return walletErrorInfo(error).code !== undefined || isWalletRejection(error);
+}
 
 /** Plain sendRawTransaction through our RPC (`/api/tx-send`). One shot: no resend loop. */
 export const relaySignedTransaction: SendRaw = async (signed, { prepared, sendPermit }) => {
@@ -90,6 +111,8 @@ export async function sendWithWallet(wallet: TxWallet, transaction: VersionedTra
   onChecking?: (walletError: unknown) => void;
   /** Test hook; defaults to polling `/api/tx-landed`. */
   findLanded?: FindLanded;
+  /** Test hook; defaults to `CHECKING_WINDOW_MS`. */
+  checkingWindowMs?: number;
 } = {}): Promise<{ signature: string; via: "wallet" | "relay"; walletError?: unknown }> {
   const payer = transaction.message.staticAccountKeys[0]?.toBase58();
   if (payer !== wallet.address) throw new TxNotSentError("This transaction was prepared for a different wallet. Nothing was sent.");
@@ -110,7 +133,15 @@ export async function sendWithWallet(wallet: TxWallet, transaction: VersionedTra
       return { signature, via: "wallet" };
     }
   }
-  const walletSigned = await wallet.signTransaction(clone(prepared));
+  let walletSigned: VersionedTransaction;
+  const signAskedAt = Date.now();
+  try {
+    walletSigned = await wallet.signTransaction(clone(prepared));
+  } catch (error) {
+    // A co-signed transaction cannot land without our co-signature, and without a check permit there is nothing to ask.
+    if (options.cosign || !options.landedPermit || !maySignOnlyHaveBroadcast(error)) throw error;
+    return checkLanded(error, signAskedAt);
+  }
   assertWalletReturnedTransaction(prepared, walletSigned, wallet.address);
   const signed = options.cosign ? options.cosign(walletSigned) : walletSigned;
   if (signed.signatures.some((signature) => !signature || signature.every((byte) => byte === 0))) {
@@ -132,20 +163,27 @@ export async function sendWithWallet(wallet: TxWallet, transaction: VersionedTra
   return { signature: expected, via: "relay" };
 
   async function checkLanded(walletError: unknown, askedAt: number) {
-    const lookup = (background: boolean) => {
-      const check = { prepared, landedPermit: options.landedPermit, lastValidBlockHeight: options.lastValidBlockHeight,
-        preparedAt: askedAt, exclude: options.knownSignatures?.() ?? [] };
-      return options.findLanded ? options.findLanded(check, { background }) : waitForLanded(check, { background });
-    };
-    if (walletErrorInfo(walletError).code === 4001) {
-      // Unlock now; keep looking quietly (the caller attaches `watchCancelledSend`). A lookup error is just "unknown".
-      const landed = Promise.resolve().then(() => lookup(true)).catch((): LandedOutcome => ({ status: "unknown" }));
-      throw new TxWalletCancelledError(walletError, landed);
+    const check = { prepared, landedPermit: options.landedPermit, lastValidBlockHeight: options.lastValidBlockHeight,
+      preparedAt: askedAt, exclude: options.knownSignatures?.() ?? [] };
+    const rejected = isWalletRejection(walletError);
+    // No permit: nothing to ask, so no "checking" either (e.g. the agent sign page).
+    if (!check.landedPermit || !Number.isSafeInteger(check.lastValidBlockHeight) || !check.lastValidBlockHeight) {
+      if (rejected) throw new TxWalletCancelledError(walletError, Promise.resolve({ status: "unknown" }));
+      throw new TxLandedUnknownError(walletError);
     }
     options.onChecking?.(walletError);
-    const outcome = await lookup(false);
-    if (outcome.status === "landed" || outcome.status === "failed") return { signature: outcome.signature, via: "wallet" as const, walletError };
-    if (outcome.status === "not-landed") throw new TxNotLandedError(isWalletRejection(walletError), walletError);
+    // One lookup for the whole blockhash lifetime: the first 20 s in front of the user, the rest in the background.
+    const lookup: Promise<LandedOutcome> = Promise.resolve()
+      .then(() => options.findLanded ? options.findLanded(check, { background: false }) : waitForLanded(check, { background: false }))
+      .catch((): LandedOutcome => ({ status: "unknown" }));
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const windowEnded = new Promise<"window-ended">((resolve) => { timer = setTimeout(() => resolve("window-ended"), options.checkingWindowMs ?? CHECKING_WINDOW_MS); });
+    const first = await Promise.race([lookup, windowEnded]);
+    clearTimeout(timer);
+    if (first === "window-ended") throw new TxWalletCancelledError(walletError, lookup);
+    if (first.status === "landed" || first.status === "failed") return { signature: first.signature, via: "wallet" as const, walletError };
+    if (first.status === "not-landed") throw new TxNotLandedError(rejected, walletError);
+    if (rejected) throw new TxWalletCancelledError(walletError, Promise.resolve(first));
     throw new TxLandedUnknownError(walletError);
   }
 }

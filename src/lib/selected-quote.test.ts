@@ -158,7 +158,7 @@ describe("bounded selected allocation", () => {
       expect(tick).toBeLessThan(60);
     });
     it("rejects a swap that leaves the tick-spacing band even inside the position range", async () => {
-      await expect(quoteWithLiquidity("14000000000")).rejects.toThrow(/tick-spacing boundary/);
+      await expect(quoteWithLiquidity("14000000000")).rejects.toThrow(/where the pool.s liquidity changes/);
     });
   });
   it("preview sizes from the pool price: one quote per leg, no probes, builds or reverse resale", async () => {
