@@ -7,6 +7,8 @@ import { LayoutGrid, List, LoaderCircle, RefreshCw, Search } from "lucide-react"
 import { HIGHEST_RANGE_APR_7D_HELP, POOL_FEE_APR_24H_HELP } from "@/lib/apr-labels/copy";
 import { exactAprTitle } from "@/lib/apr-labels/format-apr";
 import { cn } from "@/lib/cn";
+import { dexDescriptors } from "@/lib/dex/client";
+import { SUPPORTED } from "@/lib/unified-positions/model";
 import { buildPlanPath, DOCS_ROUTES } from "@/lib/public-urls";
 import { volumeDivergenceNote } from "@/lib/apr-labels/volume-divergence";
 import { HIGHEST_RANGE_COLUMN_LABEL, HIGHEST_RANGE_HELP } from "@/lib/range-apr/copy";
@@ -67,7 +69,8 @@ const cardEyebrow = "font-data text-[10px] uppercase tracking-[0.12em] text-ink/
  * One pool as a cream card (the `/app/rwa-pairs` card fields, now for both chains): token icons and issuer names, the
  * estimated highest range APR (7-day) with the range it comes from ("Highest range", the same range the Create position
  * modal calls Best), when the data was updated, confidence and volume notes in the tooltip, then TVL, volume, fee and
- * 24h pool fee APR. Solana Raydium pools also link "Plan this pool" and the pool on Raydium.
+ * 24h pool fee APR. "Plan this pool" follows the DEX's `plan` capability (greyed with its reason when unsupported;
+ * Raydium, not in the DEX registry yet, keeps its link); Raydium pools also link the pool on Raydium.
  */
 /**
  * Card pair name: it may break after the "/" and each half is cut with "…" if it alone is too wide, so a long pair
@@ -87,6 +90,8 @@ function PoolCard({ pool, apr, action, icons }: {
   const withVolumeNote = (text: string) => (volumeNote ? `${text} ${volumeNote}` : text);
   const freshness = apr && apr.status !== "loading" ? apr.freshness : undefined;
   const raydium = pool.protocol === "raydium-clmm";
+  // Registered DEXes say through their `plan` capability; Raydium (not in the DEX registry yet) keeps its link.
+  const plan = dexDescriptors.descriptorFor(pool.protocol)?.capabilities.plan ?? (raydium ? SUPPORTED : null);
   return <li className="flex min-w-0 flex-col rounded-[28px] bg-cream p-6 text-ink" data-pool={pool.key}>
     <div className="flex flex-wrap items-center gap-1.5"><ChainBadge chain={pool.chain} /><span className={cn(chip, "border border-ink/25")}>{PROTOCOL_LABELS[pool.protocol]}</span></div>
     <div className="mt-4 flex items-start justify-between gap-3">
@@ -130,10 +135,14 @@ function PoolCard({ pool, apr, action, icons }: {
     </dl>
     <div className="mt-auto flex flex-wrap items-center gap-3 pt-5">
       <OpenButton action={action} label={pool.pairLabel} />
-      {raydium && <Link href={buildPlanPath({ poolId: pool.poolAddress, pair: pool.pairLabel })}
+      {plan?.supported && <Link href={buildPlanPath({ poolId: pool.poolAddress, pair: pool.pairLabel, protocol: pool.protocol })}
         className="inline-flex h-11 items-center rounded-full border border-ink/40 px-4 text-sm font-semibold outline-none transition-colors hover:border-ink focus-visible:shadow-[0_0_0_3px_var(--color-lilac)]">
         Plan this pool
       </Link>}
+      {plan && !plan.supported && <span aria-disabled="true" title={plan.reason} data-testid="plan-unavailable"
+        className="inline-flex h-11 cursor-not-allowed items-center rounded-full border border-ink/15 px-4 text-sm font-semibold text-ink/40">
+        Plan this pool<span className="sr-only">: {plan.reason}</span>
+      </span>}
       {raydium
         ? <a href={raydiumPoolUrl(pool.poolAddress)} target="_blank" rel="noreferrer" title={`Open pool ${pool.poolAddress} on Raydium`}
           className="ml-auto font-data text-[10px] tracking-[0.08em] text-ink/60 underline underline-offset-2 outline-none hover:text-ink focus-visible:text-ink">

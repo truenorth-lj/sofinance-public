@@ -7,7 +7,8 @@ import { clientIp, slidingWindowLimiter } from "@/lib/tx-send/rate-limit";
  * - Every op: DEX_ROUTE_REQUESTS_PER_IP_PER_MINUTE. A real open is a few quotes plus 2 steps (and a recovery if it
  *   stops halfway), far below this.
  * - `positions` also: DEX_POSITIONS_REQUESTS_PER_IP_PER_MINUTE. It is the costly read (one getProgramAccounts per pool
- *   list plus bin arrays), and the page asks once per load or rescan.
+ *   list plus bin arrays), and the page asks once per load or rescan. `performance` (PR9) shares this budget: it reads the
+ *   position's signature history and parsed transactions, the other costly read, once per Performance tab open.
  *
  * Limits of this design (documented on purpose):
  * - Per server instance, not global: each warm instance keeps its own counts, so with N instances an IP can make up to
@@ -26,7 +27,7 @@ const positions = slidingWindowLimiter(DEX_POSITIONS_REQUESTS_PER_IP_PER_MINUTE)
 export function dexRouteRateLimited(request: Request, op: string, now = Date.now()): boolean {
   const ip = clientIp(request);
   if (route.limited(ip, now)) return true;
-  return op === "positions" ? positions.limited(ip, now) : false;
+  return op === "positions" || op === "performance" ? positions.limited(ip, now) : false;
 }
 
 /** Test hook. */

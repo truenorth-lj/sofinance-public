@@ -68,6 +68,11 @@ export type DexRentModel = {
   refundableOnClose: boolean;
   /** Plain-English line shown before signing, e.g. "about 0.042 SOL, refunded when you fully withdraw". */
   disclosure: string;
+  /**
+   * Typical rent of one new position in SOL, for planning copy only (the Plan page's opening-cost note); real opens use
+   * `OpenQuote.rent`. Omitted when there is no fixed typical figure.
+   */
+  planEstimateSol?: string;
 };
 
 /** Protocol facts the UI may need, as data, so no layer above the registry branches on a protocol id. */
@@ -109,6 +114,11 @@ export type DexCapabilities = SourceCapabilities & {
   open: Capability;
   /** Claiming accrued fees without changing liquidity. */
   claim: Capability;
+  /**
+   * "Plan this pool" on the pools list: /app/plan for this DEX's pools (the daily fee APR series of
+   * /api/pool-daily-apr, served through `DexModule.poolDailyApr`). Unsupported = the link is greyed with the reason.
+   */
+  plan: Capability;
 };
 
 /** UI-safe description of one DEX: the registry element the UI reads (extends the unified-positions source). */

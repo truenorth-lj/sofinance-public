@@ -8,19 +8,37 @@ import { decodeMeteoraPosition, isMeteoraPositionAccount, meteoraPositionLiquidi
 import { rpcConnection } from "@sofinance/engine/rpc";
 import { isJupiterUpstreamError, asJupiterUserError } from "@sofinance/engine/jupiter";
 import { readSwapFeeConfig, type SwapFeeConfig } from "@sofinance/engine/swap/fee";
-import { listMeteoraPositions, type MeteoraListedPosition, type MeteoraReadOptions } from "@/lib/meteora-positions";
+import { getMeteoraPositionPerformance, listMeteoraPositions, METEORA_POOL_NOT_SUPPORTED, type MeteoraListedPosition, type MeteoraPerformanceOptions, type MeteoraReadOptions } from "@/lib/meteora-positions";
 import { positionKey, type PositionKey, type PositionHoldings, type RangeStatus, type UnifiedPosition } from "@/lib/unified-positions/model";
-import type { DexAdapter, DexDepositInput, OpenQuote, OpenRequest, StepContext, StepResult, WithdrawRequest } from "../adapter";
+import type { DexAdapter, DexDepositInput, OpenQuote, OpenRequest, PositionPerformance, StepContext, StepResult, WithdrawRequest } from "../adapter";
 import type { FeePolicy } from "../types";
 import { DexError, DexUnsupportedError } from "../errors";
 import { bpsFeeStrategy } from "../fees";
 import { meteoraDlmmDescriptor } from "./descriptor";
+import type { PositionPerformanceReport } from "@/lib/position-performance-report";
 import {
   buildMeteoraCloseRefund, buildMeteoraDeposit, buildMeteoraSetup, meteoraBinUiPrice, meteoraRequestRange, planMeteoraOpen, readMeteoraPool,
   assertEmptyOwnedPosition, type MeteoraOpenDeps, type MeteoraPoolState,
 } from "./open.server";
 import { buildMeteoraAdd, buildMeteoraClaim, buildMeteoraCompound, buildMeteoraWithdraw } from "./manage.server";
 import { listedMeteoraPool, type MeteoraPoolList } from "./pools.server";
+
+/**
+ * The report fields the Performance tab draws (`PositionPerformanceReport`), and nothing else: the raw event history,
+ * fetch metrics and timings of the legacy route stay on the server (PM review of #290).
+ */
+function uiReport(report: NonNullable<Awaited<ReturnType<typeof getMeteoraPositionPerformance>>>): PositionPerformanceReport {
+  return {
+    positionMint: report.positionMint, poolId: report.poolId, mintA: report.mintA, mintB: report.mintB,
+    decimalsA: report.decimalsA, decimalsB: report.decimalsB, tickLower: report.tickLower, tickUpper: report.tickUpper,
+    tickCurrent: report.tickCurrent, rangeSide: report.rangeSide, liquidity: report.liquidity,
+    openedAtIso: report.openedAtIso, evaluatedAtIso: report.evaluatedAtIso, truncated: report.truncated,
+    signatureCount: report.signatureCount, ownsNft: report.ownsNft,
+    cashflows: { openCount: report.cashflows.openCount, increaseCount: report.cashflows.increaseCount, decreaseCount: report.cashflows.decreaseCount },
+    metrics: report.metrics, tokenNative: report.tokenNative, pricing: report.pricing,
+    assumptions: report.assumptions, method: report.method, realizedFeeAprSeries: report.realizedFeeAprSeries,
+  };
+}
 
 /** What a Meteora `UnifiedPosition.native` carries: the existing positions row (same shape the legacy UI reads). */
 export type MeteoraDlmmNative = Pick<MeteoraListedPosition, "positionAccount" | "poolId" | "mintA" | "mintB" | "lowerBinId" | "upperBinId" | "activeBinId" | "liquidity">;
@@ -34,6 +52,8 @@ export type MeteoraDlmmAdapterOptions = {
    * policy whose open rule is "none". A charging policy without a fee wallet is always refused.
    */
   feePolicy?: FeePolicy;
+  /** Reads a position's performance report (default `getMeteoraPositionPerformance`: chain history + Jupiter prices). */
+  readPerformance?: typeof getMeteoraPositionPerformance;
 };
 
 const SOURCE = meteoraDlmmDescriptor.id;
@@ -51,6 +71,7 @@ export function toMeteoraDexError(error: unknown): unknown {
   // The Jupiter browser relay collects missing responses from this throw; it must pass through unchanged.
   if (error instanceof Error && error.name === "JupiterRelayMissingError") return error;
   if (error instanceof Error && error.name === "SwapFeeAccountMissingError") return new DexError("INPUT_TOKEN_UNSUPPORTED", error.message);
+  if (error instanceof Error && error.message === METEORA_POOL_NOT_SUPPORTED) return new DexError("UNSUPPORTED", error.message);
   if (isJupiterUpstreamError(error)) return new DexError("UPSTREAM", asJupiterUserError(error).message);
   const message = error instanceof Error ? error.message : String(error);
   return new DexError("UPSTREAM", scrub(`The Meteora request could not be completed: ${message}`));
@@ -245,7 +266,25 @@ export function createMeteoraDlmmAdapter(options: MeteoraDlmmAdapterOptions = {}
         lowerBinId: position.lowerBinId, upperBinId: position.upperBinId, activeBinId: lbPair.activeId, liquidity: meteoraPositionLiquidity(position).toString(),
       }, lbPair.binStep, decimals.get(lbPair.tokenXMint)!, decimals.get(lbPair.tokenYMint)!);
     }),
-    performance: async () => { throw notYet(descriptor.capabilities.performance); },
+    // PR9: the same report as /api/position-performance (cashflows from the position's own history, current prices),
+    // for a position in a listed pool; the summary fields are lifted from its metrics.
+    performance: (key: PositionKey) => guarded(async (): Promise<PositionPerformance> => {
+      if (!descriptor.capabilities.performance.supported) throw notYet(descriptor.capabilities.performance);
+      const id = nativeIdOf(key);
+      const { connection, listedPool } = deps();
+      const report = await (options.readPerformance ?? getMeteoraPositionPerformance)(id, {
+        connection: connection as unknown as NonNullable<MeteoraPerformanceOptions["connection"]>, listedPool,
+      });
+      if (!report) throw new DexError("POSITION_NOT_FOUND", "No Meteora position exists at that address.");
+      const { metrics } = report;
+      return {
+        key, depositedUsd: metrics.depositedUsd, withdrawnUsd: metrics.withdrawnPrincipalUsd, feesClaimedUsd: metrics.feesCollectedUsd,
+        feesUnclaimedUsd: metrics.uncollectedFeesUsd, currentValueUsd: metrics.currentEquityUsd, pnlUsd: metrics.pnlUsd,
+        // No open found in the read history: deposits may be missing, so the numbers are partial too.
+        partial: report.truncated || report.openedAtIso === null,
+        report: uiReport(report),
+      };
+    }),
     quoteOpen: (request: OpenRequest) => guarded(() => quote(request)),
     previewWithdraw: async () => { throw notYet(descriptor.capabilities.exitPreview); },
     prepareOpen: (request: OpenRequest, context: StepContext) => guarded(() => open(request, context)),

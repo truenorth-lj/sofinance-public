@@ -223,6 +223,42 @@ describe("POST /api/dex/[dex]/[op]", () => {
     expect(JSON.stringify(await failed.json())).not.toContain("rpc.example");
   });
 
+  it("reads one position's performance through the registry adapter (read-only, strict body, shared costly-read budget)", async () => {
+    const summary = { key: "some-dex:abc", depositedUsd: 10, withdrawnUsd: 0, feesClaimedUsd: 0, feesUnclaimedUsd: 0.1, currentValueUsd: 10.2, pnlUsd: 0.2, partial: false };
+    const performance = vi.fn(async () => summary);
+    fake.adapter = { ...fake.adapter, performance };
+    const response = await call("performance", { positionKey: "some-dex:abc" });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(summary);
+    expect(performance).toHaveBeenCalledWith("some-dex:abc");
+    for (const bad of [{ positionKey: "some-dex:abc", owner: owner.toBase58() }, { positionKey: "x" }, {}]) {
+      expect((await call("performance", bad)).status).toBe(400);
+    }
+    performance.mockRejectedValueOnce(new DexError("POSITION_NOT_FOUND", "No Meteora position exists at that address."));
+    const missing = await call("performance", { positionKey: "some-dex:gone" });
+    expect(missing.status).toBe(404);
+    expect(await missing.json()).toEqual({ error: "No Meteora position exists at that address.", code: "POSITION_NOT_FOUND" });
+    expect(performance).toHaveBeenCalledTimes(2);
+    // Shares the positions budget (both are the costly reads): one performance read, the rest positions, then 429.
+    const listPositions = vi.fn(async () => []);
+    fake.adapter = { ...fake.adapter, listPositions };
+    const ip = "203.0.113.9";
+    expect((await call("performance", { positionKey: "some-dex:abc" }, "some-dex", ip)).status).toBe(200);
+    for (let i = 1; i < DEX_POSITIONS_REQUESTS_PER_IP_PER_MINUTE; i++) expect((await call("positions", { owner: owner.toBase58() }, "some-dex", ip)).status).toBe(200);
+    expect((await call("performance", { positionKey: "some-dex:abc" }, "some-dex", ip)).status).toBe(429);
+  });
+
+  it("422s performance for a DEX whose descriptor does not support it, with the capability's reason, before any read", async () => {
+    const descriptor = dexDescriptors.descriptorFor("meteora-dlmm")!;
+    const reason = "Not available for this pool yet.";
+    const performance = vi.fn();
+    fake.adapter = { ...fake.adapter, performance, descriptor: { ...descriptor, capabilities: { ...descriptor.capabilities, performance: { supported: false, reason } } } };
+    const response = await call("performance", { positionKey: "some-dex:abc" });
+    expect(response.status).toBe(422);
+    expect(await response.json()).toEqual({ error: reason, code: "UNSUPPORTED" });
+    expect(performance).not.toHaveBeenCalled();
+  });
+
   it("400s a positions owner that is not a base58 Solana public key (the DEX's signer is a Solana wallet), before any read", async () => {
     const listPositions = vi.fn(async () => []);
     fake.adapter = { ...fake.adapter, listPositions };

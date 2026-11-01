@@ -10,6 +10,7 @@ type RwaPairRow = {
   plainSymbol: string;
   feeTierBps?: number | null;
   tvlUsd?: number | null;
+  protocol?: string;
 };
 
 type RwaPairsResponse = {
@@ -34,6 +35,7 @@ async function loadRwaPairs(signal: AbortSignal): Promise<PlanPairOption[]> {
       plainSymbol: row.plainSymbol,
       feeTierBps: row.feeTierBps ?? null,
       tvlUsd: row.tvlUsd ?? null,
+      ...(typeof row.protocol === "string" && row.protocol ? { protocol: row.protocol } : {}),
     }));
 }
 

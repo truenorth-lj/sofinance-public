@@ -16,6 +16,7 @@ import { WITHDRAW_OUTPUTS, type PositionKey } from "@/lib/unified-positions/mode
  *   open        { request, step, priorSignatures, planToken? } → StepResult (one unsigned, simulated step)
  *   recovery    { wallet, positionKey, step, priorSignatures, planToken? } → StepResult
  *   positions   { owner }                                      → { positions: UnifiedPosition[] } (read-only)
+ *   performance { positionKey }                                → PositionPerformance (read-only; public chain data)
  *   add         { owner, positionKey, input, step, priorSignatures, planToken? }           → StepResult
  *   withdraw    { owner, positionKey, fraction, output, step, priorSignatures, planToken? } → StepResult
  *   claim       { owner, positionKey, step, priorSignatures, planToken? }                  → StepResult
@@ -89,6 +90,8 @@ const BODY = {
   /** Read-only: the wallet's positions in this DEX (the pools it lists), for My positions. Builds nothing. The owner is
    * checked per wallet type by `positionsBody`; this entry only names the op. */
   positions: z.object({ owner: z.string() }).strict(),
+  /** Read-only: one position's performance report (its own history and current prices). Builds nothing. */
+  performance: z.object({ positionKey: PositionKeySchema }).strict(),
   recovery: z.object({ wallet: solanaOrEvmAddress, positionKey: z.string().min(3).max(160), ...StepSchema, jupiterRelay: z.unknown().optional() }).strict(),
   /** Position ops; the owner is checked per wallet type by `positionOpBody`, these entries only name the ops. */
   add: z.object({ owner: z.string() }).passthrough(),
@@ -151,6 +154,11 @@ async function run(adapter: DexAdapter, op: Op, body: unknown): Promise<Response
     case "positions": {
       const { owner } = positionsBody(adapter).parse(body);
       return json({ positions: await adapter.listPositions(owner) });
+    }
+    case "performance": {
+      const { positionKey } = BODY[op].parse(body);
+      if (!adapter.descriptor.capabilities.performance.supported) throw new DexError("UNSUPPORTED", adapter.descriptor.capabilities.performance.reason);
+      return json(await adapter.performance(positionKey as PositionKey));
     }
     case "add": {
       const input = positionOpBody(adapter).add.parse(body);

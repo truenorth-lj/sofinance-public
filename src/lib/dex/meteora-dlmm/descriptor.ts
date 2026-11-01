@@ -18,7 +18,7 @@ export const METEORA_DLMM_FEE_POLICY: FeePolicy = Object.freeze({
 });
 
 /**
- * Shown until the PR that ships each tool (performance / exit preview). The shared generic
+ * Shown until the PR that ships the tool (exit preview). The shared generic
  * text, never a DEX name: the UI only renders the capability's reason (PM 11/1).
  */
 const NOT_YET = NOT_AVAILABLE_MESSAGE;
@@ -38,6 +38,8 @@ export const meteoraDlmmDescriptor: DexDescriptor = Object.freeze({
     rent: Object.freeze({
       refundableOnClose: true,
       disclosure: "Opening sets aside about 0.042 SOL as position rent. You get it back when you fully withdraw.",
+      /** 41,899,840 lamports: the refundable rent the adapter quotes for a 60-bin position (contract suite; PM review of #290). */
+      planEstimateSol: "0.0419",
     }),
     approvals: "none",
     /** The new position account is a fresh keypair the browser creates and signs with (never sent to the server). */
@@ -64,7 +66,10 @@ export const meteoraDlmmDescriptor: DexDescriptor = Object.freeze({
     claim: SUPPORTED,
     /** PR8: claim fees and deposit them back into the same range in one transaction (no swap, no fee). */
     compound: SUPPORTED,
-    performance: unsupported(NOT_YET),
+    /** PR9: /app/plan from the Meteora daily fee APR series (datapi fees ÷ current TVL; module `poolDailyApr`). */
+    plan: SUPPORTED,
+    /** PR9: the Performance tab (adapter `performance`: the position's own history, current prices; no paid API). */
+    performance: SUPPORTED,
     exitPreview: unsupported(NOT_YET),
     rangeDisplay: "price",
     manualAdd: false,

@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { breakEvenInPeriod, formatAxisUsdc } from "@/lib/lp-plan-chart";
-import { isThinPlanSample, planOpenCostPctLabel, type PlanYieldComparison } from "@/lib/lp-plan-yield";
+import { isThinPlanSample, type PlanYieldComparison } from "@/lib/lp-plan-yield";
+import { LEGACY_PLAN_TERMS } from "@/lib/lp-plan-pool-terms";
 import { layoutChart, type ChartBox } from "./chart-layout";
 import { bestAprCopy, completeDaysCopy, daysWord, formatPct, formatSigned } from "./format";
 
@@ -18,10 +19,13 @@ export function ComparisonChart({
   status,
   reason,
   comparison,
+  openCostCopy = LEGACY_PLAN_TERMS.openCost.chart,
 }: {
   status: ChartStatus;
   reason?: string;
   comparison: PlanYieldComparison | null;
+  /** The pool's DEX opening-cost sentence (`planPoolTerms`); defaults to the original ~1% assumption. */
+  openCostCopy?: string;
 }) {
   return (
     <section
@@ -36,7 +40,7 @@ export function ComparisonChart({
         </p>
       </div>
       {status === "ready" && comparison ? (
-        <ReadyChart comparison={comparison} />
+        <ReadyChart comparison={comparison} openCostCopy={openCostCopy} />
       ) : (
         <p className="mt-auto max-w-xl pt-8 text-sm leading-relaxed text-ink/65">
           {status === "loading"
@@ -52,12 +56,11 @@ export function ComparisonChart({
   );
 }
 
-function ReadyChart({ comparison }: { comparison: PlanYieldComparison }) {
+function ReadyChart({ comparison, openCostCopy }: { comparison: PlanYieldComparison; openCostCopy: string }) {
   const { ref, box } = useChartBox();
   const chart = useMemo(() => layoutChart(comparison, box), [comparison, box]);
   const vsHold = formatSigned(comparison.vsHold);
   const endLabel = formatSigned(comparison.endSofinance);
-  const openCostPct = planOpenCostPctLabel();
   const thin = isThinPlanSample(comparison.sampleDays);
   const beInPeriod = breakEvenInPeriod(comparison.breakEvenDay, comparison.days);
 
@@ -196,7 +199,7 @@ function ReadyChart({ comparison }: { comparison: PlanYieldComparison }) {
         </span>
       </div>
       <p className="mt-3 text-[13px] leading-snug text-ink/65">
-        {`Best case from fee income only, with daily auto-compounding and a flat hold for a two-sided same-asset pair. Creating the position and adding liquidity typically costs around ${openCostPct}%, and Day 0 subtracts that from the deposit; network fees are ignored. This is not a probability and not a promise.`}
+        {`Best case from fee income only, with daily auto-compounding and a flat hold for a two-sided same-asset pair. ${openCostCopy} This is not a probability and not a promise.`}
       </p>
     </div>
   );

@@ -143,6 +143,27 @@ describe("Meteora DLMM adapter specifics", () => {
     expect(await createMeteoraDlmmAdapter().listPositions(OWNER)).toEqual([]);
   });
 
+  it("reads performance for a feed-listed position (the Performance tab's report), and refuses an unlisted pool", async () => {
+    installHeldPositions();
+    const adapter = createMeteoraDlmmAdapter();
+    const key = `meteora-dlmm:${FEED_POSITION}` as const;
+    const performance = await adapter.performance(key);
+    // The recorded chain has no history for this position (no deposit records) and its bins hold no recorded
+    // reserves: every amount is 0 and PnL, which needs deposits, stays null. Prices and names come from Jupiter. No open
+    // was found in that history, so the summary is marked partial even though the read was not truncated.
+    expect(performance).toMatchObject({ key, depositedUsd: 0, withdrawnUsd: 0, feesClaimedUsd: 0, feesUnclaimedUsd: 0, currentValueUsd: 0, pnlUsd: null, partial: true });
+    // Only the fields the Performance tab draws: no raw history, fetch metrics or timings.
+    for (const field of ["history", "historyFetch", "timings", "wallet", "maxSignatures", "positionAccount"]) expect(performance.report).not.toHaveProperty(field);
+    expect(performance.report?.cashflows).toEqual({ openCount: 0, increaseCount: 0, decreaseCount: 0 });
+    expect(performance.report).toMatchObject({
+      positionMint: FEED_POSITION, poolId: TSLA_POOL, mintA: TSLA, mintB: TSLAX, truncated: false,
+      pricing: { priceUsdA: 400.10567118198486, priceUsdB: 399.6496888563945 },
+      tokenNative: { symbolA: "TSLA", symbolB: "TSLAx" },
+    });
+    await expect(adapter.performance(`meteora-dlmm:${UNLISTED_POSITION}`)).rejects.toMatchObject({ code: "UNSUPPORTED" });
+    await expect(adapter.performance(`meteora-dlmm:${STRANGER}`)).rejects.toMatchObject({ code: "POSITION_NOT_FOUND" });
+  });
+
   it("fails the whole list (never a partial one) when the feed cannot be read", async () => {
     installHeldPositions();
     const listedPool = async () => { throw new Error("feed read failed at https://db.example/secret"); };

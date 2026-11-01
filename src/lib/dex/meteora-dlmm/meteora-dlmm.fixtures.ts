@@ -187,6 +187,9 @@ export function createFakeChain(options: { autoLand?: boolean } = {}) {
       if (lamports === undefined) throw new Error(`fake chain has no rent for ${size} bytes`);
       return lamports;
     },
+    // Performance reads a position's signature history; the recorded chain has none (fresh positions only).
+    async getSignaturesForAddress() { return []; },
+    async getParsedTransaction() { return null; },
     async getLatestBlockhash() { return { blockhash: BLOCKHASH, lastValidBlockHeight: 1_000 }; },
     /** Meteora position heads by discriminator + owner memcmp, with the requested data slice (what listing uses). */
     async getProgramAccounts(program: PublicKey, config?: { dataSlice?: { offset: number; length: number }; filters?: { memcmp: { offset: number; bytes: string } }[] }) {
@@ -287,6 +290,20 @@ export function jupiterReplay(url: string, init?: RequestInit): Response | undef
       },
       prioritizationFeeLamports: 0,
     });
+  }
+  // Performance (PR9): USD prices and token names, values from the datapi pool read of 8k2c on 2026-11-01.
+  if (parsed.pathname.endsWith("/price/v3")) {
+    const prices: Record<string, number> = { [TSLA]: 400.10567118198486, [TSLAX]: 399.6496888563945 };
+    const ids = (parsed.searchParams.get("ids") ?? "").split(",");
+    return Response.json(Object.fromEntries(ids.filter((id) => id in prices).map((id) => [id, { usdPrice: prices[id], decimals: id === TSLA ? 6 : 8 }])));
+  }
+  if (parsed.pathname.endsWith("/tokens/v2/search")) {
+    const tokens = [
+      { id: TSLA, name: "Tesla - Backpack Securities", symbol: "TSLA", decimals: 6, isVerified: true },
+      { id: TSLAX, name: "Tesla xStock", symbol: "TSLAx", decimals: 8, isVerified: true },
+    ];
+    const query = (parsed.searchParams.get("query") ?? "").split(",");
+    return Response.json(tokens.filter((token) => query.includes(token.id)));
   }
   return undefined;
 }

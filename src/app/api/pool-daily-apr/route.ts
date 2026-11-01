@@ -1,7 +1,8 @@
 import { after } from "next/server";
 import { unstable_cache } from "next/cache";
 import { apiError } from "@/lib/api-response";
-import { fetchPoolDailyApr, getCachedPoolDailyApr } from "@/lib/pool-daily-apr";
+import { dexRegistry, DexError } from "@/lib/dex";
+import { fetchPoolDailyApr, getCachedPoolDailyApr, NotRaydiumPoolError } from "@/lib/pool-daily-apr";
 
 export const revalidate = 3600;
 
@@ -17,9 +18,42 @@ function parsePoolId(raw: string | null) {
   return raw;
 }
 
+/**
+ * The series comes from the registered DEX that lists the pool (DEX registry, e.g. Meteora DLMM); pools no registered
+ * DEX lists keep the existing Raydium path unchanged (pinned by route.test.ts).
+ *
+ * When a DEX could not tell whether it lists the pool (its pool list is down), Raydium is still asked, but its series is
+ * served only if Raydium's pool info answered with this pool's row (`requireRaydiumPool`, checked before any cache
+ * write). Otherwise (Raydium has no such pool, its pool info is down, or anything else fails) that DEX's error is
+ * rethrown: 5xx, no-store, and neither the in-memory cache nor `unstable_cache` keeps anything.
+ */
+async function loadPoolDailyApr(poolId: string) {
+  let registryFailure: { error: unknown } | null = null;
+  try {
+    const listed = await dexRegistry.poolDailyApr(poolId);
+    if (listed) return listed;
+  } catch (error) {
+    registryFailure = { error };
+  }
+  if (!registryFailure) return fetchPoolDailyApr(poolId);
+  try {
+    return await fetchPoolDailyApr(poolId, { requireRaydiumPool: true });
+  } catch {
+    throw registryFailure.error;
+  }
+}
+
+const DEX_ERROR_STATUS: Partial<Record<DexError["code"], number>> = { UPSTREAM: 502, MISCONFIGURED: 503 };
+
+function errorStatus(error: unknown) {
+  if (error instanceof NotRaydiumPoolError) return 404;
+  if (error instanceof DexError) return DEX_ERROR_STATUS[error.code] ?? 400;
+  return 400;
+}
+
 function getCachedDiscovery(poolId: string) {
   return unstable_cache(
-    async () => fetchPoolDailyApr(poolId),
+    async () => loadPoolDailyApr(poolId),
     [`pool-daily-apr-${poolId}`],
     {
       revalidate: 3600,
@@ -50,7 +84,7 @@ export async function GET(request: Request) {
       if (inMemory.stale) {
         after(async () => {
           try {
-            await fetchPoolDailyApr(poolId);
+            await loadPoolDailyApr(poolId);
           } catch {
             /* stale payload already returned */
           }
@@ -63,7 +97,7 @@ export async function GET(request: Request) {
     if (result.stale) {
       after(async () => {
         try {
-          await fetchPoolDailyApr(poolId);
+          await loadPoolDailyApr(poolId);
         } catch {
           /* stale payload already returned */
         }
@@ -71,6 +105,7 @@ export async function GET(request: Request) {
     }
     return Response.json(result, { headers: CDN_HEADERS });
   } catch (error) {
-    return apiError(error, "Pool daily APR lookup failed", 400);
+    // apiError answers `Cache-Control: no-store`; the CDN headers are only ever set on a 200.
+    return apiError(error, "Pool daily APR lookup failed", errorStatus(error));
   }
 }

@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Tool panels (Add / Withdraw / Claim fees, PR7; Compound, PR8) for "My positions" rows served through the DEX registry.
+ * Tool panels (Add / Withdraw / Claim fees, PR7; Compound, PR8; Performance, PR9 in `registry-performance.tsx`) for "My positions" rows served through the DEX registry.
  * Everything here is decided from the registry: the descriptor's capabilities and meta (withdraw outputs, partial
  * withdraw, claim, compound, deposit inputs, fee policy, rent model). No layer here knows which DEX a position belongs to.
  *
@@ -17,6 +17,7 @@ import { CANCEL_CHECK_PENDING_COPY, CHECKING_SOLANA_COPY, solscanTxUrl } from "@
 import type { ToolId, TokenRef, UnifiedPosition, WithdrawOutput } from "@/lib/unified-positions/model";
 import { useTxPipeline } from "../transactions/use-tx-pipeline";
 import { useWalletConnection } from "../wallet-connection";
+import { RegistryPerformancePanel } from "./registry-performance";
 import { beginPositionOp, trackPositionSignature, usePositionOpLock } from "./position-op-lock";
 
 /** A wallet balance the Add panel can check against (raw atomic string). */
@@ -41,6 +42,7 @@ const LABEL = "mt-5 block text-xs font-medium uppercase tracking-[0.16em] text-s
 const LAMPORTS_PER_SOL = 1_000_000_000;
 
 export function RegistryPositionTool(props: RegistryToolProps) {
+  if (props.view === "performance" && props.capabilities.performance.supported) return <RegistryPerformancePanel {...props} />;
   if (props.view === "deposit" && props.capabilities.deposit.supported) return <RegistryAddPanel {...props} />;
   if (props.view === "compound" && props.capabilities.compound.supported) return <RegistryCompoundPanel {...props} />;
   if (props.view === "withdraw" && props.capabilities.withdraw.supported) return <>

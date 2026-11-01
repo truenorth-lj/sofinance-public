@@ -35,7 +35,7 @@ export const fakeSolanaDescriptor: DexDescriptor = Object.freeze({
   capabilities: {
     compound: SUPPORTED, performance: SUPPORTED, deposit: SUPPORTED, withdraw: { supported: true, partial: true }, withdrawOutputs: ["pool-tokens"],
     exitPreview: { supported: true, output: "pool-tokens" }, rangeDisplay: "price", manualAdd: false, signer: "solana-wallet",
-    open: SUPPORTED, claim: SUPPORTED,
+    open: SUPPORTED, claim: SUPPORTED, plan: SUPPORTED,
   },
 } satisfies DexDescriptor);
 
@@ -52,7 +52,7 @@ export const fakeEvmDescriptor: DexDescriptor = Object.freeze({
     compound: unsupported(NOT_AVAILABLE_MESSAGE), performance: unsupported(NOT_AVAILABLE_MESSAGE),
     deposit: unsupported(NOT_AVAILABLE_MESSAGE), withdraw: { supported: true, partial: false }, withdrawOutputs: ["pool-tokens"],
     exitPreview: { supported: true, output: "pool-tokens" }, rangeDisplay: "tick", manualAdd: true, signer: "evm-wallet",
-    open: unsupported(NOT_AVAILABLE_MESSAGE), claim: unsupported(NOT_AVAILABLE_MESSAGE),
+    open: unsupported(NOT_AVAILABLE_MESSAGE), claim: unsupported(NOT_AVAILABLE_MESSAGE), plan: unsupported(NOT_AVAILABLE_MESSAGE),
   },
 } satisfies DexDescriptor);
 
