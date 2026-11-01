@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
+import { displayIconUrl } from "@/lib/token-icons/gateway";
 
 /** The fallback avatar text: the token's first letter (LJ's rule), e.g. "S" for SNDKx, "U" for USDC. */
 export const tokenInitial = (symbol: string) => symbol.trim().slice(0, 1).toUpperCase() || "?";
@@ -33,9 +34,9 @@ export function TokenIcon({ symbol, icon, className }: { symbol: string; icon: s
   return <span className={cn("relative flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/12 bg-white/[0.06] text-sm font-bold text-cream", className)}>
     {!loaded && <span data-testid="token-icon-fallback">{tokenInitial(symbol)}</span>}
     {showImage && <>
-      {/* Icons come from a bounded list of HTTPS hosts validated by the server. */}
+      {/* Icons come from a bounded list of HTTPS hosts validated by the server; ipfs.io links load via a public gateway. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img ref={imgRef} src={icon!} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer"
+      <img ref={imgRef} src={displayIconUrl(icon!)} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer"
         onLoad={() => setLoadedIcon(icon)} onError={() => setFailedIcon(icon)}
         className={cn("absolute inset-0 h-full w-full object-cover", loaded ? "opacity-100" : "opacity-0")} />
     </>}

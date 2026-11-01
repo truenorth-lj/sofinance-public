@@ -60,7 +60,8 @@ function projectedSqrt(
     price = SqrtPriceMath.getNextSqrtPriceFromInput(price, liquidity, new BN(leg.swapInfo.inAmount), zeroForOne);
   }
   if (positionSide(BigInt(price.toString()), BigInt(lowerSqrtX64), BigInt(upperSqrtX64)) !== rangeSide) {
-    throw new TargetPoolProjectionError("Swap may cause target pool price to cross the selected range, please re-quote");
+    throw new TargetPoolProjectionError("The swap for this amount would move the pool price outside the selected price range, " +
+      "so the deposit would no longer fit it. Try a smaller amount, or refresh the quote.");
   }
   // Liquidity is constant only inside the current tick-spacing band (initialized ticks sit on its edges).
   if (!staysInLiquidityBand(state.sqrtPriceX64, price, state.tickCurrent, state.tickSpacing)) {

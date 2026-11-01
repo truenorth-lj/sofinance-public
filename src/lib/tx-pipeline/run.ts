@@ -12,8 +12,8 @@ import { sendWithWallet, type SendRaw, type TxWallet } from "./wallet-send";
  * The shared Solana transaction pipeline:
  *   1. prepare  – the flow's adapter builds, simulates and safety-checks a transaction (server side)
  *   2. send     – the wallet signs and sends it (signAndSendTransaction), or signs and we send once;
- *                 if the wallet throws after a sign-and-send request, "checking" looks for it on-chain first;
- *                 a real cancel (4001) is reported at once and that lookup runs silently in the background
+ *                 if the wallet throws (any error, even a 4001 cancel), "checking" looks for it on-chain for up to
+ *                 20 s; still unseen → "cancelled, retry in about a minute" while that lookup runs on in the background
  *   3. confirm  – the notice host polls the signature, then links Solscan and refreshes balances
  *   4. status   – one error classification, toast, Sentry report and signature-keyed saved attempt
  * Flows only supply an adapter: how to prepare, and the words to show.
@@ -56,6 +56,8 @@ export type RunTxOptions = {
   retry?: () => void;
   /** Test hook for the on-chain lookup after a wallet error. */
   findLanded?: FindLanded;
+  /** Test hook: the foreground "checking" window (default 20 s). */
+  checkingWindowMs?: number;
   /** Overrides `adapter.scope` (flows driven through `sendAndTrack`). */
   scope?: string;
 };
@@ -111,7 +113,7 @@ export async function runTx<Input, Prepared extends PreparedTx>(
       const sent = await sendWithWallet(wallet, prepared.transaction, {
         cosign: prepared.cosign, sendPermit: prepared.sendPermit, landedPermit: prepared.landedPermit,
         sendRaw: options.sendRaw, stillWanted: options.isCurrent,
-        lastValidBlockHeight: prepared.lastValidBlockHeight, findLanded: options.findLanded,
+        lastValidBlockHeight: prepared.lastValidBlockHeight, findLanded: options.findLanded, checkingWindowMs: options.checkingWindowMs,
         knownSignatures: () => options.storage ? loadTxAttempts(options.storage as Storage, wallet.address).map((item) => item.signature) : [],
         onChecking: (walletError) => {
           context.walletErrorCode = walletErrorInfo(walletError).code;

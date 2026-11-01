@@ -506,4 +506,24 @@ describe.skipIf(!url)("RWA PostgreSQL snapshots and fencing", () => {
     await expect(store!.request({ op: "saveApr", lease: aprLease, data: short })).rejects.toThrow(/"data"/);
     await store!.request({ op: "finish", lease: aprLease, outcome: "ok", processed: 1, issues: [] });
   });
+
+  it("counts only failures in consecutive_failures: a partial run marked failure:false is a success", async () => {
+    const state = async () => (await db!`SELECT consecutive_failures,last_success_at,last_status FROM background_job_state WHERE job_key='rwa-apr-refresh'`)[0]!;
+    const finish = async (outcome: "ok" | "partial" | "error", failure?: boolean) => {
+      const lease = await store!.request({ op: "claim", job: "rwa-apr-refresh", force: true }) as Lease;
+      await store!.request({ op: "finish", lease, outcome, processed: 1, issues: outcome === "ok" ? [] : ["x"],
+        ...(failure === undefined ? {} : { failure }) });
+    };
+    await finish("ok");
+    const success = (await state()).last_success_at;
+    await finish("partial", true); // a 429
+    expect(await state()).toMatchObject({ consecutive_failures: 1, last_status: "partial", last_success_at: success });
+    await finish("partial"); // no flag: any non-ok outcome is still a failure (discovery, older callers)
+    expect((await state()).consecutive_failures).toBe(2);
+    await finish("partial", false); // time budget only
+    const after = await state();
+    expect(after).toMatchObject({ consecutive_failures: 0, last_status: "partial" });
+    expect(after.last_success_at).not.toBeNull();
+    expect(new Date(after.last_success_at).getTime()).toBeGreaterThanOrEqual(new Date(success).getTime());
+  });
 });

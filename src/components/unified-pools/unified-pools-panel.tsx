@@ -68,6 +68,16 @@ const cardEyebrow = "font-data text-[10px] uppercase tracking-[0.12em] text-ink/
  * modal calls Best), when the data was updated, confidence and volume notes in the tooltip, then TVL, volume, fee and
  * 24h pool fee APR. Solana Raydium pools also link "Plan this pool" and the pool on Raydium.
  */
+/**
+ * Card pair name: it may break after the "/" and each half is cut with "…" if it alone is too wide, so a long pair
+ * never runs under the APR pill on a 375 px card (the full name is the title).
+ */
+function cardPairName(label: string) {
+  const slash = label.indexOf("/");
+  const parts = slash < 0 ? [label] : [label.slice(0, slash + 1), label.slice(slash + 1)];
+  return parts.map((part, index) => <span key={index} className="inline-block max-w-full truncate align-bottom">{part}</span>);
+}
+
 function PoolCard({ pool, apr, action, icons }: {
   pool: UnifiedPool; apr: Apr7dState | undefined; action: OpenAction; icons: TokenIconMap | undefined;
 }) {
@@ -82,7 +92,7 @@ function PoolCard({ pool, apr, action, icons }: {
       <div className="flex min-w-0 items-center gap-3">
         <PairTokenIcons pair={iconPair(pool)} icons={icons} chain={pool.chain} iconClassName="h-10 w-10" />
         <div className="min-w-0">
-          <h3 className="text-xl font-medium tracking-[-0.02em]">{pool.pairLabel}</h3>
+          <h3 className="text-xl font-medium leading-tight tracking-[-0.02em]" title={pool.pairLabel} data-testid="pool-card-name">{cardPairName(pool.pairLabel)}</h3>
           <p className="truncate text-xs text-ink/65" title={`${pool.nameA} / ${pool.nameB}`}>{pairIssuerLabel(pool.nameA, pool.nameB)}</p>
         </div>
       </div>

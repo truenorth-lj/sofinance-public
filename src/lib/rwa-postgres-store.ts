@@ -160,10 +160,13 @@ export class PostgresRwaStore implements RwaStore {
     finish: input => this.guarded(input.lease, async (tx) => {
       const config = getRwaConfig();
       const cadence = input.lease.job === "rwa-discovery" ? config.discoveryIntervalMs : config.aprIntervalMs;
+      // A "partial" run the job does not call a failure (APR: time budget only, no 429 / error) still counts as a
+      // success: it resets `consecutive_failures` and sets `last_success_at`. `last_status` keeps "partial".
+      const failed = input.failure ?? input.outcome !== "ok";
       await tx.update(job).set({ lastCompletedAt: nowSql,
-        lastSuccessAt: input.outcome === "ok" ? nowSql : job.lastSuccessAt,
+        lastSuccessAt: failed ? job.lastSuccessAt : nowSql,
         nextDueAt: sql`GREATEST(${nowSql}+interval '10 seconds', ${job.lastStartedAt}+${interval(input.outcome === "error" ? Math.min(cadence, 300_000) : cadence)})`,
-        lastStatus: input.outcome, consecutiveFailures: input.outcome === "ok" ? 0 : sql`${job.consecutiveFailures}+1`,
+        lastStatus: input.outcome, consecutiveFailures: failed ? sql`${job.consecutiveFailures}+1` : 0,
         lastDurationMs: sql`GREATEST(0,round(extract(epoch FROM(${nowSql}-${job.lastStartedAt}))*1000)::integer)`,
         lastError: input.issues.length ? { issues: input.issues } : null,
         lastSummary: { processed: input.processed, issueCount: input.issues.length },

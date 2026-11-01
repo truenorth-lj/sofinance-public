@@ -3,7 +3,10 @@ vi.mock("server-only",()=>({}));
 const exit=vi.hoisted(()=>vi.fn());
 vi.mock("@sofinance/engine/lp-exit-data",()=>({readFullExitPreview:exit}));
 import { JupiterHttpError, JUPITER_UNAVAILABLE_CODE, JUPITER_UNAVAILABLE_MESSAGE } from "@sofinance/engine/jupiter/errors";
+const capture=vi.hoisted(()=>vi.fn());
+vi.mock("@/lib/sentry/capture",async(importOriginal)=>({...(await importOriginal<Record<string,unknown>>()),captureApiRouteError:capture}));
 import { GET as exitGET } from "./exit-preview/route";
+import { directUsdcExitPreview, EXIT_PREVIEW_DIRECT_USDC_MESSAGE } from "@sofinance/engine/exit-preview-support";
 const nft="DemoPosition1111111111111111111111111111111";
 it("validates read-only exit input, forwards cancellation and preserves no-send failure",async()=>{
  const logged=vi.spyOn(console,"info").mockImplementation(()=>undefined);
@@ -25,4 +28,18 @@ it("returns a distinct Jupiter error code instead of the Solana RPC text",async(
  expect(line).toContain("JupiterHttpError");
  expect(line).toContain("Jupiter HTTP 429");
  expect(line).not.toMatch(/secret|api[_-]?key/i);
+});
+it("answers a direct-USDC pool with a typed 200 'unsupported' result, never 503 and never Sentry",async()=>{
+ capture.mockClear();
+ exit.mockResolvedValueOnce(directUsdcExitPreview());
+ const response=await exitGET(new Request(`http://local?positionId=${nft}&convertRent=0`));
+ expect(response.status).toBe(200);
+ expect(await response.json()).toEqual({status:"unsupported",reason:"direct_usdc",message:EXIT_PREVIEW_DIRECT_USDC_MESSAGE,netRecoveryUSDC:null,executable:false,sent:false});
+ expect(capture).not.toHaveBeenCalled();
+});
+it("still reports a real failure as 503 and to Sentry",async()=>{
+ vi.spyOn(console,"info").mockImplementation(()=>undefined);capture.mockClear();
+ exit.mockRejectedValueOnce(new Error("Combined exit simulation failed: {}"));
+ const failed=await exitGET(new Request(`http://local?positionId=${nft}`));
+ expect(failed.status).toBe(503);expect(capture).toHaveBeenCalledTimes(1);
 });
