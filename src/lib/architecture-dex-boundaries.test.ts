@@ -10,8 +10,15 @@
  * relative paths, follows `export … from` chains, auto-classifies any lib/engine module with a runtime DEX SDK or
  * `protocols/<dex>/` import, and checks the layering inside `src/lib/dex` (including what client.ts can reach).
  *
- * Known blind spot: a branch that compares through a constant, `.includes`, a lookup map or `startsWith` is not
- * detected; reviewers still check those by hand.
+ * Known blind spots (reviewers still check these by hand):
+ * - a branch that compares through a constant, `.includes`, a lookup map or `startsWith`;
+ * - a DEX call wrapped in a function (or object) that a non-DEX module exports, e.g. `export const run = () => dexCall()`;
+ *   only `export … from`, `export { imported }` and `export default imported` re-exports are followed, and type-only
+ *   re-exports are not (they are erased at runtime).
+ *
+ * Auto-classification resolves `@sofinance/engine/*` to `packages/engine/src` inside this repo (the pnpm workspace
+ * link); if the engine ever resolved outside the repo (a published package, a symlink to another checkout), engine
+ * DEX modules would no longer be classified by path.
  */
 import { readdirSync, readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
@@ -75,13 +82,24 @@ const rel = (absolute: string) => path.relative(root, absolute).split(path.sep).
 function moduleSpecifiers(file: string, source: string): Specifier[] {
   const ast = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
   const found: Specifier[] = [];
+  // Local import bindings, so a two-step re-export (`import { x } from "./m"; export { x };`) counts as re-exporting "./m".
+  const bindings = new Map<string, Specifier>();
+  const reexportedLocals: string[] = [];
   const visit = (node: ts.Node) => {
     if (ts.isImportDeclaration(node) && ts.isStringLiteralLike(node.moduleSpecifier)) {
       const clause = node.importClause;
       const named = clause?.namedBindings && ts.isNamedImports(clause.namedBindings) ? clause.namedBindings.elements : null;
       const typeOnly = Boolean(clause && (clause.isTypeOnly || (!clause.name && named && named.length > 0 && named.every((element) => element.isTypeOnly))));
-      found.push({ text: node.moduleSpecifier.text, typeOnly, reexport: false });
+      const specifier: Specifier = { text: node.moduleSpecifier.text, typeOnly, reexport: false };
+      found.push(specifier);
+      if (clause?.name) bindings.set(clause.name.text, specifier);
+      if (clause?.namedBindings && ts.isNamespaceImport(clause.namedBindings)) bindings.set(clause.namedBindings.name.text, specifier);
+      for (const element of named ?? []) bindings.set(element.name.text, specifier);
     }
+    if (ts.isExportDeclaration(node) && !node.moduleSpecifier && node.exportClause && ts.isNamedExports(node.exportClause)) {
+      for (const element of node.exportClause.elements) reexportedLocals.push((element.propertyName ?? element.name).text);
+    }
+    if (ts.isExportAssignment(node) && ts.isIdentifier(node.expression)) reexportedLocals.push(node.expression.text);
     if (ts.isExportDeclaration(node) && node.moduleSpecifier && ts.isStringLiteralLike(node.moduleSpecifier)) {
       const named = node.exportClause && ts.isNamedExports(node.exportClause) ? node.exportClause.elements : null;
       const typeOnly = node.isTypeOnly || Boolean(named && named.length > 0 && named.every((element) => element.isTypeOnly));
@@ -94,6 +112,10 @@ function moduleSpecifiers(file: string, source: string): Specifier[] {
     ts.forEachChild(node, visit);
   };
   visit(ast);
+  for (const local of reexportedLocals) {
+    const specifier = bindings.get(local);
+    if (specifier) specifier.reexport = true;
+  }
   return found;
 }
 
@@ -127,7 +149,8 @@ function dexClassifier(host: Host) {
     let source: string;
     try { source = host.read(absolute); } catch { return null; }
     for (const specifier of moduleSpecifiers(absolute, source)) {
-      if (!specifier.reexport) continue;
+      // Type-only re-exports are erased at runtime (a direct type import of a DEX module is still counted).
+      if (!specifier.reexport || specifier.typeOnly) continue;
       if (DEX_PACKAGE.test(specifier.text)) return [specifier.text];
       const target = host.resolve(specifier.text, absolute);
       if (!target) continue;
@@ -327,6 +350,13 @@ const PROBE_TREE: Readonly<Record<string, string>> = {
   "src/lib/uses-protocol.ts": 'import { open } from "../../packages/engine/src/protocols/meteora/open"; export const o = open;',
   "src/lib/barrel.ts": 'export * from "./meteora-positions";',
   "src/lib/barrel-of-barrel.ts": 'export { x as y } from "./barrel";',
+  "src/lib/two-step.ts": 'import { x } from "./meteora-positions"; export { x };',
+  "src/lib/two-step-alias.ts": 'import { x as local } from "./meteora-positions"; export { local as z };',
+  "src/lib/two-step-namespace.ts": 'import * as positions from "./meteora-positions"; export { positions };',
+  "src/lib/two-step-default.ts": 'import positions from "./meteora-positions"; export default positions;',
+  "src/lib/two-step-of-barrel.ts": 'import { x } from "./barrel"; export { x };',
+  "src/lib/type-reexport.ts": 'import type { X } from "./meteora-positions"; export type { X };',
+  "src/lib/wraps-dex.ts": 'import { x } from "./meteora-positions"; export const wrapped = () => x;',
   "src/lib/unrelated.ts": "export const ok = 1;",
   "src/lib/test-support/dex.ts": 'export * from "../meteora-positions";',
 };
@@ -372,6 +402,12 @@ describe("DEX boundary guard negative controls", () => {
     // Barrels: re-exports are followed transitively.
     ["src/components/probe.tsx", 'import { x } from "@/lib/barrel";'],
     ["src/app/api/probe/route.ts", 'import { y } from "@/lib/barrel-of-barrel";'],
+    // Two-step re-exports: import a binding, then export it.
+    ["src/components/probe.tsx", 'import { x } from "@/lib/two-step";'],
+    ["src/components/probe.tsx", 'import { z } from "@/lib/two-step-alias";'],
+    ["src/server/transactions/probe.ts", 'import { positions } from "@/lib/two-step-namespace";'],
+    ["src/mcp/probe.ts", 'import positions from "@/lib/two-step-default";'],
+    ["src/app/api/probe/route.ts", 'import { x } from "@/lib/two-step-of-barrel";'],
     // test-support/ is not a test file.
     ["src/components/probe.tsx", 'import { x } from "@/lib/test-support/dex";'],
     ["src/components/test-support/probe.tsx", 'import { x } from "@/lib/meteora-positions";'],
@@ -391,6 +427,11 @@ describe("DEX boundary guard negative controls", () => {
     expect(probe("src/lib/dex/meteora-dlmm/module.ts", 'import { x } from "@/lib/meteora-positions";')).toEqual([]);
     expect(probe("src/lib/unrelated-two.ts", 'import { x } from "@/lib/meteora-positions";')).toEqual([]);
     expect(probe("src/components/probe.test.tsx", 'import { x } from "@/lib/meteora-positions";')).toEqual([]);
+  });
+
+  it("documents the known blind spot: a DEX call wrapped in a function is not followed", () => {
+    expect(probe("src/components/probe.tsx", 'import { wrapped } from "@/lib/wraps-dex";')).toEqual([]);
+    expect(probe("src/components/probe.tsx", 'import type { X } from "@/lib/type-reexport";')).toEqual([]);
   });
 
   it.each([
