@@ -66,6 +66,7 @@ describe("ORCA_DISCOVERY_ENABLED", () => {
     expect(Object.isFrozen(METEORA_RWA_LIST_ENABLED)).toBe(true);
     expect(METEORA_RWA_LIST_ENABLED.production).toBe(false);
     for (const target of ["production", "preview", "development"] as const) {
+      expect(METEORA_RWA_LIST_ENABLED[target], `${target}: SCAN and LIST ship together`).toBe(METEORA_RWA_SCAN_ENABLED[target]);
       expect(isMeteoraRwaListEnabled(target)).toBe(METEORA_RWA_LIST_ENABLED[target] && METEORA_RWA_SCAN_ENABLED[target]);
     }
   });

@@ -187,8 +187,8 @@ export function isMeteoraRwaScanEnabled(target: DeployTarget = deployTarget()): 
  */
 export const METEORA_RWA_LIST_ENABLED: Readonly<Record<DeployTarget, boolean>> = Object.freeze({
   production: false,
-  preview: false,
-  development: false,
+  preview: true,
+  development: true,
 });
 
 export function isMeteoraRwaListEnabled(target: DeployTarget = deployTarget()): boolean {
