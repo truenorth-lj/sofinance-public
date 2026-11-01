@@ -55,16 +55,16 @@ describe("ORCA_DISCOVERY_ENABLED", () => {
     expect(isRhcApr7dEnabled("production")).toBe(true);
   });
 
-  it("METEORA_RWA_SCAN_ENABLED (Meteora in the RWA pool scan) is a frozen code constant that is OFF in production", () => {
-    expect(METEORA_RWA_SCAN_ENABLED).toEqual({ production: false, preview: true, development: true });
+  it("METEORA_RWA_SCAN_ENABLED (Meteora in the RWA pool scan) is a frozen code constant that is ON in every target", () => {
+    expect(METEORA_RWA_SCAN_ENABLED).toEqual({ production: true, preview: true, development: true });
     expect(Object.isFrozen(METEORA_RWA_SCAN_ENABLED)).toBe(true);
-    expect(isMeteoraRwaScanEnabled("production")).toBe(false);
+    expect(isMeteoraRwaScanEnabled("production")).toBe(true);
     expect(isMeteoraRwaScanEnabled("development")).toBe(true);
   });
 
-  it("METEORA_RWA_LIST_ENABLED is frozen, OFF in production, and only ever on together with the scan", () => {
+  it("METEORA_RWA_LIST_ENABLED is frozen, ON in production, and only ever on together with the scan", () => {
     expect(Object.isFrozen(METEORA_RWA_LIST_ENABLED)).toBe(true);
-    expect(METEORA_RWA_LIST_ENABLED.production).toBe(false);
+    expect(METEORA_RWA_LIST_ENABLED.production).toBe(true);
     for (const target of ["production", "preview", "development"] as const) {
       expect(METEORA_RWA_LIST_ENABLED[target], `${target}: SCAN and LIST ship together`).toBe(METEORA_RWA_SCAN_ENABLED[target]);
       expect(isMeteoraRwaListEnabled(target)).toBe(METEORA_RWA_LIST_ENABLED[target] && METEORA_RWA_SCAN_ENABLED[target]);

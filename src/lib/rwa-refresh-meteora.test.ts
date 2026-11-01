@@ -33,7 +33,7 @@ const RAYDIUM = [{ poolAddress: "ray1", mintA: "MSTRx", mintB: "MSTR" }];
 
 afterEach(() => vi.clearAllMocks());
 describe("rwa-discovery with the Meteora scan", () => {
-  it("off (production flag): only the Raydium feed is published, the Meteora scan never runs", async () => {
+  it("off (flag off): only the Raydium feed is published, the Meteora scan never runs", async () => {
     mocks.raydium.mockResolvedValue(discovery(RAYDIUM));
     const { store, calls } = fakeStore();
     const result = await runJob("rwa-discovery", { store, meteoraScan: false });
