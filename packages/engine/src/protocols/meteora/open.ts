@@ -55,14 +55,38 @@ function u64(value: bigint) {
   return buffer;
 }
 
-export function assertMeteoraOpenRange(lowerBinId: number, upperBinId: number) {
+/**
+ * Validates a v1 open range (at most 70 bins). A range whose bin arrays sit outside [-512, 511] is accepted only
+ * when the caller passes the pool's bitmap extension (`withBitmapExtension`); without it the program would reject it.
+ */
+export function assertMeteoraOpenRange(lowerBinId: number, upperBinId: number, options: { withBitmapExtension?: boolean } = {}) {
   if (!Number.isSafeInteger(lowerBinId) || !Number.isSafeInteger(upperBinId) || upperBinId < lowerBinId) {
     throw new Error("Invalid Meteora bin range");
   }
   const width = upperBinId - lowerBinId + 1;
   if (width > METEORA_OPEN_MAX_WIDTH) throw new Error(`Meteora v1 positions span at most ${METEORA_OPEN_MAX_WIDTH} bins`);
-  if (meteoraRangeNeedsBitmapExtension(lowerBinId, upperBinId)) throw new Error("Meteora v1 does not open ranges that need the bitmap extension");
+  if (!options.withBitmapExtension && meteoraRangeNeedsBitmapExtension(lowerBinId, upperBinId)) {
+    throw new Error("Meteora v1 does not open ranges that need the bitmap extension");
+  }
   return width;
+}
+
+/** Validates any inclusive bin range (withdraw / claim cover the position's own bins). */
+export function assertMeteoraBinRange(lowerBinId: number, upperBinId: number) {
+  if (!Number.isSafeInteger(lowerBinId) || !Number.isSafeInteger(upperBinId) || upperBinId < lowerBinId) {
+    throw new Error("Invalid Meteora bin range");
+  }
+  return upperBinId - lowerBinId + 1;
+}
+
+/**
+ * The optional `bin_array_bitmap_extension` account of liquidity instructions: the pool's ["bitmap", lb_pair] PDA
+ * (writable) when given, otherwise Anchor's "absent" placeholder (the program id, read-only).
+ */
+export function meteoraBitmapExtensionMeta(bitmapExtension: PublicKey | undefined, programId = METEORA_DLMM_PROGRAM_ID) {
+  return bitmapExtension
+    ? { pubkey: bitmapExtension, isSigner: false, isWritable: true }
+    : { pubkey: program(programId), isSigner: false, isWritable: false };
 }
 
 /**
@@ -96,15 +120,18 @@ export type MeteoraAddLiquidityInput = {
   tokenXMint: PublicKey; tokenYMint: PublicKey; tokenXProgram: PublicKey; tokenYProgram: PublicKey;
   amountX: bigint; amountY: bigint; activeId: number; maxActiveBinSlippage: number;
   minBinId: number; maxBinId: number; programId?: string;
+  /** The pool's bitmap extension PDA; required when the range's bin arrays sit outside [-512, 511]. */
+  bitmapExtension?: PublicKey;
 };
 
 /**
  * `add_liquidity_by_strategy2` with Spot (SpotImBalanced) over `[minBinId, maxBinId]`. Remaining accounts:
- * no transfer-hook slices (SPL mints only), then every bin array covering the range (writable).
+ * no transfer-hook slices (mints with a transfer hook program are refused upstream, see token.ts), then every
+ * bin array covering the range (writable). Token programs come from the LbPair flags (SPL or Token-2022).
  */
 export function meteoraAddLiquidityByStrategy2Instruction(input: MeteoraAddLiquidityInput) {
   const programId = input.programId ?? METEORA_DLMM_PROGRAM_ID;
-  assertMeteoraOpenRange(input.minBinId, input.maxBinId);
+  assertMeteoraOpenRange(input.minBinId, input.maxBinId, { withBitmapExtension: !!input.bitmapExtension });
   if (!Number.isInteger(input.maxActiveBinSlippage) || input.maxActiveBinSlippage < 0) throw new Error("Invalid active bin slippage");
   if (input.amountX === 0n && input.amountY === 0n) throw new Error("Meteora deposit is empty");
   const lbPair = input.lbPair.toBase58();
@@ -121,8 +148,7 @@ export function meteoraAddLiquidityByStrategy2Instruction(input: MeteoraAddLiqui
     keys: [
       { pubkey: input.position, isSigner: false, isWritable: true },
       { pubkey: input.lbPair, isSigner: false, isWritable: true },
-      // Optional bitmap extension absent: Anchor's placeholder is the program id.
-      { pubkey: program(programId), isSigner: false, isWritable: false },
+      meteoraBitmapExtensionMeta(input.bitmapExtension, programId),
       { pubkey: input.userTokenX, isSigner: false, isWritable: true },
       { pubkey: input.userTokenY, isSigner: false, isWritable: true },
       { pubkey: input.reserveX, isSigner: false, isWritable: true },

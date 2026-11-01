@@ -67,6 +67,8 @@ describe("Meteora DLMM open instructions (SDK byte parity)", () => {
     expect(() => assertMeteoraOpenRange(0, 70)).toThrow(/at most 70/);
     expect(() => assertMeteoraOpenRange(5, 4)).toThrow(/Invalid/);
     expect(() => assertMeteoraOpenRange(512 * 70, 512 * 70 + 1)).toThrow(/bitmap extension/);
+    expect(assertMeteoraOpenRange(512 * 70, 512 * 70 + 1, { withBitmapExtension: true })).toBe(2);
+    expect(() => assertMeteoraOpenRange(512 * 70, 512 * 70 + 70, { withBitmapExtension: true })).toThrow(/at most 70/);
   });
 
   it("Spot split and active-bin slippage", () => {
