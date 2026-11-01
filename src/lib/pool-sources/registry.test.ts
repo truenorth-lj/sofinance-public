@@ -12,15 +12,17 @@ import { POOL_SOURCES, poolSourceFor, scanPoolSources } from "./registry";
 import { raydiumPoolSource } from "./raydium";
 
 describe("pool source registry", () => {
-  it("registers Raydium only, under the existing feed key", () => {
-    expect(POOL_SOURCES.map((source) => source.id)).toEqual(["raydium-clmm"]);
+  it("registers Raydium (existing feed key) and Meteora (its own feed)", () => {
+    expect(POOL_SOURCES.map((source) => source.id)).toEqual(["raydium-clmm", "meteora-dlmm"]);
+    expect(POOL_SOURCES[1]).toMatchObject({ feedKey: "meteora-dlmm-rwa-v1", displayName: "Meteora" });
     expect(scanPoolSources()).toBe(POOL_SOURCES);
     expect(raydiumPoolSource).toMatchObject({ chain: "solana", feedKey: FEED_KEY, displayName: "Raydium", economics: RAYDIUM_ECONOMICS_SOURCE });
     expect(raydiumPoolSource.presets).toBeUndefined();
   });
 
-  it("refreshes every stored protocol (and rows without one) on the Raydium path, as the cron did before", () => {
-    for (const protocol of [...POOL_PROTOCOL_IDS, undefined]) expect(poolSourceFor(protocol)).toBe(raydiumPoolSource);
+  it("refreshes Meteora rows on the Meteora path, every other protocol (and rows without one) on the Raydium path", () => {
+    expect(poolSourceFor("meteora-dlmm").id).toBe("meteora-dlmm");
+    for (const protocol of [...POOL_PROTOCOL_IDS.filter((id) => id !== "meteora-dlmm"), undefined]) expect(poolSourceFor(protocol)).toBe(raydiumPoolSource);
   });
 });
 

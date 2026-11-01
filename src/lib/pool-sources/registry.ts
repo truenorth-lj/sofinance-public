@@ -1,11 +1,12 @@
 import type { PoolProtocolId } from "@sofinance/engine/protocols/types";
+import { meteoraPoolSource } from "./meteora";
 import { raydiumPoolSource } from "./raydium";
 import type { PoolSource } from "./types";
 
 /** Every Solana pool source the RWA scan knows, in discovery order. Add a protocol here (SCAN_DESIGN.md §9). */
-export const POOL_SOURCES: readonly PoolSource[] = Object.freeze([raydiumPoolSource]);
+export const POOL_SOURCES: readonly PoolSource[] = Object.freeze([raydiumPoolSource, meteoraPoolSource]);
 
-/** Sources whose discovery runs in the cron (all registered ones; a new source gates itself with a code flag). */
+/** Every registered source (Meteora's discovery and APR lane are gated in the cron by `METEORA_RWA_SCAN_ENABLED`). */
 export function scanPoolSources(): readonly PoolSource[] {
   return POOL_SOURCES;
 }
