@@ -109,6 +109,11 @@ export type DexCapabilities = SourceCapabilities & {
   open: Capability;
   /** Claiming accrued fees without changing liquidity. */
   claim: Capability;
+  /**
+   * "Plan this pool" on the pools list: /app/plan for this DEX's pools (the daily fee APR series of
+   * /api/pool-daily-apr, served through `DexModule.poolDailyApr`). Unsupported = the link is greyed with the reason.
+   */
+  plan: Capability;
 };
 
 /** UI-safe description of one DEX: the registry element the UI reads (extends the unified-positions source). */

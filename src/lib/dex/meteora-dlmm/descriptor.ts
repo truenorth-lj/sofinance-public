@@ -64,6 +64,8 @@ export const meteoraDlmmDescriptor: DexDescriptor = Object.freeze({
     claim: SUPPORTED,
     /** PR8: claim fees and deposit them back into the same range in one transaction (no swap, no fee). */
     compound: SUPPORTED,
+    /** PR9: /app/plan from the Meteora daily fee APR series (datapi fees ÷ current TVL; module `poolDailyApr`). */
+    plan: SUPPORTED,
     performance: unsupported(NOT_YET),
     exitPreview: unsupported(NOT_YET),
     rangeDisplay: "price",

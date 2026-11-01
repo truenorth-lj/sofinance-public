@@ -17,7 +17,15 @@ const mocks = vi.hoisted(() => ({
   connect: vi.fn(),
   connected: false,
   modal: vi.fn(),
+  planOverride: null as null | { supported: false; reason: string },
 }));
+vi.mock("@/lib/dex/client", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/dex/client")>();
+  return { ...actual, dexDescriptors: { ...actual.dexDescriptors, descriptorFor: (id: string) => {
+    const descriptor = actual.dexDescriptors.descriptorFor(id);
+    return descriptor && mocks.planOverride ? { ...descriptor, capabilities: { ...descriptor.capabilities, plan: mocks.planOverride } } : descriptor;
+  } } };
+});
 vi.mock("./use-pools-apr7d", () => ({
   usePoolsApr7d: (pools: UnifiedPool[]) => Object.fromEntries(pools.map((pool): [string, Apr7dState] => [pool.key,
     mocks.state[pool.poolAddress] ?? (pool.poolAddress in mocks.apr ? { status: "ready", aprPct: mocks.apr[pool.poolAddress]!, rangeLabel: "Standard", lowConfidence: false, avgDailyVolumeUsd: null } : { status: "missing", reason: "No 7-day estimate" })])),
@@ -46,6 +54,7 @@ beforeEach(() => {
   mocks.connected = false;
   mocks.state = {};
   mocks.icons = undefined;
+  mocks.planOverride = null;
   mocks.connect.mockReset();
   mocks.modal.mockReset();
   container = document.createElement("div");
@@ -106,7 +115,7 @@ describe("UnifiedPoolsPanel", () => {
     expect(shown().some((key) => key?.startsWith("robinhood:"))).toBe(false);
   });
 
-  it("shows Meteora pools with a greyed Open and its reason: no open flow, no link out, no Plan", async () => {
+  it("shows Meteora pools with a greyed Open and its reason: no open flow, no link out; Plan follows the plan capability", async () => {
     await render({ orca: false, meteora: true, meteoraOpen: true, rhc: true });
     expect(shown()).toContain("solana:met1");
     const card = container.querySelector('[data-pool="solana:met1"]')!;
@@ -114,11 +123,27 @@ describe("UnifiedPoolsPanel", () => {
     expect(open.disabled).toBe(true);
     expect(open.className).toContain("opacity-45");
     expect(card.querySelector("[data-testid=open-disabled]")!.textContent).toContain("Opening Meteora positions isn't available yet");
-    expect(card.querySelectorAll("a")).toHaveLength(0);
-    expect(card.textContent).not.toContain("Plan this pool");
+    // The only link is "Plan this pool" (descriptor `plan: SUPPORTED`); nothing links out to Meteora.
+    const links = [...card.querySelectorAll<HTMLAnchorElement>("a")];
+    expect(links.map((link) => link.textContent)).toEqual(["Plan this pool"]);
+    expect(links[0]!.getAttribute("href")).toMatch(/^\/app\/plan\?.*pool=met1/);
+    expect(card.querySelector("a[target='_blank']")).toBeNull();
     await act(async () => { open.click(); });
     expect(mocks.modal).not.toHaveBeenCalled();
     expect(mocks.connect).not.toHaveBeenCalled();
+  });
+
+  it("an unsupported plan capability greys \"Plan this pool\" with its reason (no link)", async () => {
+    mocks.planOverride = { supported: false, reason: "Planning needs a paid data feed for this pool." };
+    await render({ orca: false, meteora: true, meteoraOpen: true, rhc: true });
+    const card = container.querySelector('[data-pool="solana:met1"]')!;
+    expect(card.querySelector("a[href^='/app/plan']")).toBeNull();
+    const greyed = card.querySelector<HTMLElement>("[data-testid=plan-unavailable]")!;
+    expect(greyed.getAttribute("aria-disabled")).toBe("true");
+    expect(greyed.getAttribute("title")).toBe("Planning needs a paid data feed for this pool.");
+    expect(greyed.textContent).toContain("Planning needs a paid data feed for this pool.");
+    // Raydium pools (not in the DEX registry) keep their link.
+    expect(container.querySelector('[data-pool="solana:spcxA"] a[href^="/app/plan"]')).not.toBeNull();
   });
 
   it("the same pair on Raydium and Meteora is two rows with their protocol badges; duplicates collapse within a protocol", async () => {

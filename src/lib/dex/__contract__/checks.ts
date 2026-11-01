@@ -46,7 +46,7 @@ export function descriptorContractProblems(descriptor: DexDescriptor): string[] 
   const inputs = meta.depositInputs;
   if (caps.deposit.supported && !inputs.poolTokens && !inputs.extra.length) problems.push("deposit is supported but depositInputs lists no token");
   for (const token of inputs.extra) if (!token.id || !Number.isInteger(token.decimals) || token.decimals < 0) problems.push(`depositInputs: bad extra token ${token.id}`);
-  for (const key of ["compound", "performance", "deposit", "withdraw", "open", "claim", "exitPreview"] as const) {
+  for (const key of ["compound", "performance", "deposit", "withdraw", "open", "claim", "plan", "exitPreview"] as const) {
     const value = caps[key];
     if (!value.supported && !value.reason.trim()) problems.push(`${key}: an unsupported capability needs a reason`);
   }

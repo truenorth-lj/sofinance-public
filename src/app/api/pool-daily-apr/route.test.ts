@@ -96,7 +96,7 @@ describe("GET /api/pool-daily-apr (listed Meteora pools, recorded datapi)", () =
       const url = new URL(String(input instanceof Request ? input.url : input));
       if (url.host !== "dlmm.datapi.meteora.ag") throw new Error(`Meteora pool must not reach ${url.host}`);
       const [, , address, kind] = url.pathname.split("/");
-      const entry = recorded[address];
+      const entry = address ? recorded[address] : undefined;
       if (!entry) return new Response("not found", { status: 404 });
       return json(kind === "volume" ? entry.volume : entry.pool);
     }));
