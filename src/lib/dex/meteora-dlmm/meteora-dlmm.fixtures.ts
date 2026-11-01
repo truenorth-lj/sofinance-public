@@ -15,6 +15,7 @@ import { decodeLbPair } from "@sofinance/engine/protocols/meteora/accounts";
 import { METEORA_DLMM_PROGRAM_ID } from "@sofinance/engine/protocols/meteora/constants";
 import { METEORA_IX_DISCRIMINATOR } from "@sofinance/engine/protocols/meteora/open";
 import { METEORA_POSITION_V2_DISCRIMINATOR } from "@sofinance/engine/protocols/meteora/position";
+import { JUPITER_API_HOST } from "@sofinance/engine/jupiter/urls";
 
 type Capture = {
   slot: number;
@@ -195,7 +196,7 @@ export function createFakeChain(options: { autoLand?: boolean } = {}) {
  */
 export function jupiterReplay(url: string, init?: RequestInit): Response | undefined {
   const parsed = new URL(url);
-  if (parsed.host !== "api.jup.ag") return undefined;
+  if (parsed.host !== JUPITER_API_HOST) return undefined;
   if (parsed.pathname.endsWith("/quote")) {
     const params = parsed.searchParams;
     const amount = BigInt(params.get("amount")!);
