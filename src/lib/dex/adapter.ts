@@ -7,6 +7,7 @@
  * status) and the EVM wallet flow stay outside this interface and consume `PreparedStep`s.
  */
 import type { PositionKey, UnifiedPosition, WithdrawOutput } from "@/lib/unified-positions/model";
+import type { PositionPerformanceReport } from "@/lib/position-performance-report";
 import type { DexDescriptor, FeeOp, FeePolicy } from "./types";
 
 export type DexRangeRequest =
@@ -63,6 +64,11 @@ export type PositionPerformance = {
   pnlUsd: number | null;
   /** True when some history could not be read (the numbers are a lower bound). */
   partial: boolean;
+  /**
+   * The full report the Performance panel draws (same shape as the `/api/position-performance` body: per-side
+   * cashflows, token-native metrics, realized fee APR series). Optional: an adapter may only have the summary.
+   */
+  report?: PositionPerformanceReport;
 };
 
 /** One wallet action. A Solana step maps 1:1 onto the tx pipeline's `PreparedTx` after deserialization. */

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { dexDescriptors } from "./client";
-import { fetchDexPositions } from "./positions-client";
+import { fetchDexPerformance, fetchDexPositions } from "./positions-client";
 
 const descriptor = dexDescriptors.descriptorFor("meteora-dlmm")!;
 const row = { key: "meteora-dlmm:P", source: descriptor.id, chain: descriptor.chain, nativeId: "P", poolId: "L", liquidity: "5",
@@ -33,6 +33,29 @@ describe("fetchDexPositions", () => {
     for (const bad of [{ liquidityRaw: { a: "1.5", b: "0" }, unclaimedFeesRaw: null }, { liquidityRaw: { a: 1, b: 2 }, unclaimedFeesRaw: null }, "x", null]) {
       await expect(fetchDexPositions(descriptor, "W", { fetch: reply(200, { positions: [{ ...row, holdings: bad }] }) }))
         .rejects.toThrow(`${descriptor.displayName} returned positions in an unexpected shape.`);
+    }
+  });
+});
+
+describe("fetchDexPerformance", () => {
+  const summary = { key: "meteora-dlmm:P", depositedUsd: 10, withdrawnUsd: 0, feesClaimedUsd: 0, feesUnclaimedUsd: null, currentValueUsd: 10.5, pnlUsd: 0.5, partial: false };
+  const report = { poolId: "L", mintA: "A", mintB: "B", metrics: { depositedUsd: 10 } };
+
+  it("posts the position key and returns the summary with its report", async () => {
+    const fetch = reply(200, { ...summary, report });
+    await expect(fetchDexPerformance(descriptor, "meteora-dlmm:P", { fetch })).resolves.toEqual({ ...summary, report });
+    expect(fetch).toHaveBeenCalledWith("/api/dex/meteora-dlmm/performance", expect.objectContaining({ method: "POST", body: JSON.stringify({ positionKey: "meteora-dlmm:P" }) }));
+  });
+
+  it("throws the server's plain message, or a plain fallback", async () => {
+    await expect(fetchDexPerformance(descriptor, "meteora-dlmm:P", { fetch: reply(404, { error: "No Meteora position exists at that address.", code: "POSITION_NOT_FOUND" }) }))
+      .rejects.toThrow("No Meteora position exists at that address.");
+    await expect(fetchDexPerformance(descriptor, "meteora-dlmm:P", { fetch: reply(404) })).rejects.toThrow(`${descriptor.displayName} performance could not be loaded.`);
+  });
+
+  it("rejects another position's answer or a malformed body", async () => {
+    for (const body of [{ ...summary, key: "meteora-dlmm:Q" }, { ...summary, pnlUsd: "1" }, { ...summary, partial: undefined }, { ...summary, report: { poolId: 1 } }]) {
+      await expect(fetchDexPerformance(descriptor, "meteora-dlmm:P", { fetch: reply(200, body) })).rejects.toThrow(`${descriptor.displayName} returned performance in an unexpected shape.`);
     }
   });
 });

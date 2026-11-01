@@ -6,7 +6,7 @@ import { dexDescriptors, dexPositionLabel, dexPositionRangeText, dexRangeStatusT
 import { tokenSymbol, type PositionLabelMetadata } from "@/lib/position-label";
 import { isDexTxRouteEnabled } from "@/lib/protocol-flags";
 import { iconFor, type IconChain, type TokenIconMap } from "@/lib/token-icons/map";
-import { NOT_AVAILABLE_MESSAGE, type ChainId, type PositionSourceId, type UnifiedPosition } from "@/lib/unified-positions/model";
+import type { ChainId, PositionSourceId, UnifiedPosition } from "@/lib/unified-positions/model";
 import { PositionAssetRow } from "../position-asset-row";
 
 /**
@@ -33,16 +33,6 @@ export type RegistryPositions = {
   /** The `{ displayName, label }` pair `positionOptionLabel` (rows.ts) needs for a registry row. */
   optionSource(position: UnifiedPosition, metadata?: PositionLabelMetadata): { displayName: string; label: (position: UnifiedPosition) => string };
 };
-
-/**
- * The registry panel draws Add (deposit), Withdraw, Claim fees (PR7) and Compound (PR8) (`registry-tools.tsx`) from the
- * descriptor's capabilities. Performance has no registry panel yet, so that tab stays greyed with the generic reason,
- * whatever the adapter declares. Generic: no DEX id is checked.
- */
-const NO_PANEL = Object.freeze({ supported: false as const, reason: NOT_AVAILABLE_MESSAGE });
-export function registryPanelCapabilities(capabilities: DexCapabilities): DexCapabilities {
-  return { ...capabilities, performance: NO_PANEL };
-}
 
 type Loaded = { owner: string; refresh: number; served: PositionSourceId[]; positions: UnifiedPosition[]; errors: string[] };
 
@@ -75,10 +65,9 @@ export function useRegistryPositions({ owner, signer, exclude, refresh }: {
     positions: current?.positions ?? [],
     errors: current?.errors ?? [],
     owns: (position) => Boolean(byId(position)),
-    capabilities: (position) => {
-      const capabilities = byId(position) ? dexDescriptors.capabilitiesFor(position) : null;
-      return capabilities ? registryPanelCapabilities(capabilities) : null;
-    },
+    // Every tab follows the descriptor: Add / Withdraw / Claim (PR7), Compound (PR8) and Performance (PR9) all have a
+    // registry panel (`registry-tools.tsx`); an unsupported one is greyed with its reason. No DEX id is checked.
+    capabilities: (position) => (byId(position) ? dexDescriptors.capabilitiesFor(position) : null),
     descriptor: (position) => byId(position),
     optionSource: (position, metadata) => ({ displayName: byId(position)?.displayName ?? "", label: (item) => dexPositionLabel(item, metadata) }),
   };

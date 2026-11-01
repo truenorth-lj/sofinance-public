@@ -5,6 +5,7 @@
  */
 import { shortMint, tokenSymbol, type PositionLabelMetadata } from "@/lib/position-label";
 import type { PositionHoldings, UnifiedPosition } from "@/lib/unified-positions/model";
+import type { PositionPerformance } from "./adapter";
 import type { DexDescriptor, DexSigner } from "./types";
 
 /** DEXes whose positions this wallet type can list, minus sources the page already reads another way (`exclude`). */
@@ -46,6 +47,31 @@ export async function fetchDexPositions(descriptor: DexDescriptor, owner: string
     throw new Error(`${descriptor.displayName} returned positions in an unexpected shape.`);
   }
   return body.positions;
+}
+
+const isUsd = (value: unknown) => value === null || (typeof value === "number" && Number.isFinite(value));
+const isReport = (value: unknown) => value === undefined || Boolean(value && typeof value === "object"
+  && typeof (value as Record<string, unknown>).poolId === "string" && typeof (value as Record<string, unknown>).mintA === "string"
+  && typeof (value as Record<string, unknown>).mintB === "string" && (value as Record<string, unknown>).metrics
+  && typeof (value as Record<string, unknown>).metrics === "object");
+
+/**
+ * One position's performance (`POST /api/dex/<id>/performance`, PR9). Read-only. Throws with the server's plain message
+ * on any failure (a disabled route included: the Performance tab is only offered where positions were listed).
+ */
+export async function fetchDexPerformance(descriptor: DexDescriptor, positionKey: string, init: { signal?: AbortSignal; fetch?: typeof fetch } = {}): Promise<PositionPerformance> {
+  const response = await (init.fetch ?? fetch)(`/api/dex/${encodeURIComponent(descriptor.id)}/performance`, {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ positionKey }), signal: init.signal, cache: "no-store",
+  });
+  const body = await response.json().catch(() => null) as (Partial<PositionPerformance> & { error?: unknown }) | null;
+  if (!response.ok) {
+    throw new Error(typeof body?.error === "string" && body.error ? body.error : `${descriptor.displayName} performance could not be loaded.`);
+  }
+  const fields = ["depositedUsd", "withdrawnUsd", "feesClaimedUsd", "feesUnclaimedUsd", "currentValueUsd", "pnlUsd"] as const;
+  if (!body || body.key !== positionKey || typeof body.partial !== "boolean" || !fields.every((field) => isUsd(body[field])) || !isReport(body.report)) {
+    throw new Error(`${descriptor.displayName} returned performance in an unexpected shape.`);
+  }
+  return body as PositionPerformance;
 }
 
 const EN_DASH = "–";

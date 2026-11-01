@@ -5,6 +5,12 @@ import accounts from "../../packages/engine/src/fixtures/meteora-positions-cbbtc
 import fixtures from "./fixtures/meteora-position-history-cbbtc-wbtc.json";
 
 vi.mock("server-only", () => ({}));
+// `hideAllowlist`: read the pool as a feed-listed one (absent from the static allowlist).
+const allowlistState = vi.hoisted(() => ({ hideAllowlist: false }));
+vi.mock("@sofinance/engine/protocols/meteora/constants", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@sofinance/engine/protocols/meteora/constants")>();
+  return { ...real, get METEORA_ALLOWLISTED_POOLS() { return allowlistState.hideAllowlist ? [] : real.METEORA_ALLOWLISTED_POOLS; } };
+});
 vi.mock("./position-performance-history", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./position-performance-history")>()),
   fetchPositionHistoryTransactions: vi.fn(),
@@ -13,7 +19,7 @@ vi.mock("./position-performance-history", async (importOriginal) => ({
 const { fetchPositionHistoryTransactions } = await import("./position-performance-history");
 const { METEORA_EVENT, METEORA_EVENT_AUTHORITY, METEORA_EVENT_IX_TAG, parseMeteoraPositionCashflowEvents } = await import("./meteora-position-events");
 const { aggregateCashflowsForPosition } = await import("./position-performance-events");
-const { getMeteoraPositionPerformance } = await import("./meteora-positions");
+const { getMeteoraPositionPerformance, METEORA_POOL_NOT_SUPPORTED } = await import("./meteora-positions");
 
 const POOL = accounts.pool;
 const CBBTC = "cbbtcf3aa214zXHbiAZQwf4122FBYbraNdFqgw4iMij";
@@ -130,6 +136,27 @@ describe("getMeteoraPositionPerformance", () => {
       fetcher: vi.fn(async () => { throw new Error("offline"); }) as never }))!;
     expect(partial.assumptions).toMatch(/incomplete/);
     expect(partial.metrics.feeOnlyAprPct).toBeNull();
+  });
+
+  it("reads a feed-listed pool missing from the static allowlist (symbols fall back to token metadata, then none)", async () => {
+    allowlistState.hideAllowlist = true;
+    try {
+      vi.mocked(fetchPositionHistoryTransactions).mockResolvedValue({ items, truncated: false, signatureCount: items.length, metric: { elapsedMs: 1 } as never });
+      const listedPool = vi.fn(async () => ({ mints: [CBBTC, WBTC] as const, binStep: null }));
+      const result = (await getMeteoraPositionPerformance(EMPTY, { connection, listedPool, skipPricing: true, nowSeconds: 1_800_000_000,
+        fetcher: vi.fn(async () => { throw new Error("offline"); }) as never }))!;
+      expect(result).toMatchObject({ poolId: POOL, mintA: CBBTC, mintB: WBTC });
+      expect(result.tokenNative).toMatchObject({ symbolA: null, symbolB: null });
+    } finally {
+      allowlistState.hideAllowlist = false;
+    }
+  });
+
+  it("a position in a pool the listing lookup does not list is refused before any history is read", async () => {
+    const listedPool = vi.fn(async () => null);
+    await expect(getMeteoraPositionPerformance(EMPTY, { connection, listedPool, skipPricing: true })).rejects.toThrow(METEORA_POOL_NOT_SUPPORTED);
+    expect(listedPool).toHaveBeenCalledWith(POOL);
+    expect(fetchPositionHistoryTransactions).not.toHaveBeenCalled();
   });
 
   it("is null for non-Meteora addresses and never reads the open log or the signature history for provenance", async () => {

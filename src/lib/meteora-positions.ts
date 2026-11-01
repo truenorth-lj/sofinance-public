@@ -79,12 +79,17 @@ export type MeteoraPositionSnapshot = {
   uncollected: { x: bigint; y: bigint };
 };
 
-/** Live state of a position account, or null when the address is not a Meteora position. Throws for non-allowlisted pools. */
-export async function readMeteoraPositionSnapshot(positionAccount: string, connection: MeteoraConnection): Promise<MeteoraPositionSnapshot | null> {
+/**
+ * Live state of a position account, or null when the address is not a Meteora position. Throws
+ * `METEORA_POOL_NOT_SUPPORTED` for a pool `listedPool` does not list (default: the static allowlist).
+ */
+export async function readMeteoraPositionSnapshot(positionAccount: string, connection: MeteoraConnection,
+  listedPool?: MeteoraPoolListingLookup): Promise<MeteoraPositionSnapshot | null> {
   const address = new PublicKey(positionAccount).toBase58();
   const info = await connection.getAccountInfo(new PublicKey(address), "confirmed");
   if (!info || info.owner.toBase58() !== METEORA_DLMM_PROGRAM_ID || !isMeteoraPositionAccount(info.data)) return null;
-  return snapshotFromData(address, info.data, connection);
+  const listing = listedPool ? await listedPool(decodeMeteoraPosition(info.data).lbPair) : undefined;
+  return snapshotFromData(address, info.data, connection, listing);
 }
 
 async function snapshotFromData(positionAccount: string, data: Uint8Array, connection: MeteoraConnection,
@@ -138,7 +143,7 @@ export async function meteoraPositionFirstSignature(connection: Pick<Connection,
 /** Live snapshot for a position account: null when it is not a Meteora position, throws for a pool SoFinance does not support. */
 export async function readMeteoraPosition(positionAccount: string, options: MeteoraReadOptions = {}) {
   const connection = options.connection ?? rpcConnection();
-  const snapshot = await readMeteoraPositionSnapshot(positionAccount, connection);
+  const snapshot = await readMeteoraPositionSnapshot(positionAccount, connection, options.listedPool);
   return snapshot ? { snapshot, connection } : null;
 }
 
@@ -287,10 +292,15 @@ export type MeteoraPerformanceOptions = {
   nowSeconds?: number;
   provider?: RpcProvider;
   fallbackConnection?: HistoryConnection;
+  /**
+   * Which pools count as listed (default: the static allowlist); a position in another pool throws
+   * `METEORA_POOL_NOT_SUPPORTED` before any history is read. The DEX adapter passes its RWA-feed-aware list.
+   */
+  listedPool?: MeteoraPoolListingLookup;
 };
 
 /**
- * Holding-period / realized fee metrics for a Meteora position in an allowlisted pool, from its
+ * Holding-period / realized fee metrics for a Meteora position in a listed pool, from its
  * landed receipts (DLMM self-CPI events checked against reserve transfers) and
  * live on-chain state. Token X/Y are reported as A/B. Returns null when the
  * address is not a Meteora position.
@@ -299,7 +309,7 @@ export async function getMeteoraPositionPerformance(positionAccount: string, opt
   const started = Date.now();
   const signal = AbortSignal.timeout(50_000);
   const connection = options.connection ?? rpcConnection(undefined, { signal });
-  const read = await readMeteoraPosition(positionAccount, { connection });
+  const read = await readMeteoraPosition(positionAccount, { connection, listedPool: options.listedPool });
   if (!read) return null;
   const { snapshot } = read;
   const accountsMs = Date.now() - started;
@@ -354,9 +364,10 @@ export async function getMeteoraPositionPerformance(positionAccount: string, opt
     decimalsA: snapshot.decimalsX, decimalsB: snapshot.decimalsY });
 
   const metadataStarted = Date.now();
-  const allow = allowlisted(snapshot.poolId)!;
-  let symbolA: string | null = allow.mintX === pool.tokenXMint ? allow.wrappedSymbol : null;
-  let symbolB: string | null = allow.mintY === pool.tokenYMint ? allow.plainSymbol : null;
+  // Static allowlist symbols are a fallback only: feed-listed pools are not in it, and token metadata names them.
+  const allow = allowlisted(snapshot.poolId);
+  let symbolA: string | null = allow?.mintX === pool.tokenXMint ? allow.wrappedSymbol : null;
+  let symbolB: string | null = allow?.mintY === pool.tokenYMint ? allow.plainSymbol : null;
   try {
     const meta = await getTokenMetadata([pool.tokenXMint, pool.tokenYMint], fetcher, options.jupiterApiKey ?? getJupiterApiKey());
     symbolA = meta[pool.tokenXMint]?.symbol ?? symbolA;

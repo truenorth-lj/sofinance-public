@@ -8,7 +8,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SelectedApp } from "../selected-app";
 import { testKeypair } from "@/lib/test-support/send-fixtures";
 import { dexDescriptors } from "@/lib/dex/client";
-import { registryPanelCapabilities } from "./registry-positions";
 import { getTxNotices, resetTxNotices } from "@/lib/tx-pipeline";
 import { RegistryPositionTool } from "./registry-tools";
 import { resetPositionOpLocks } from "./position-op-lock";
@@ -20,7 +19,8 @@ const POOL = "8k2c9Kiavx5pbWc2dmzhL7vFp11sLgMcKFfSueq8haAh";
 const POSITION = testKeypair(94).publicKey.toBase58();
 const MINT_A = "TSLAqBbv4CNCnzWFeB7LmydAyEiNMJtve7DYKLpdK4S";
 const MINT_B = "XsDoVfqeBukxuZHWhdvWHBhgEHjGNst4MLodqsJHzoB";
-const state = vi.hoisted(() => ({ dex: { status: 200, body: {} as unknown }, op: { status: 422, body: {} as unknown }, raydium: [] as unknown[], dexCalls: [] as [string, unknown][], routeOn: true, icons: null as unknown, hold: null as Promise<void> | null }));
+const state = vi.hoisted(() => ({ dex: { status: 200, body: {} as unknown }, op: { status: 422, body: {} as unknown }, raydium: [] as unknown[], dexCalls: [] as [string, unknown][], routeOn: true, icons: null as unknown, hold: null as Promise<void> | null,
+  performance: { status: 200, body: {} as unknown } }));
 
 vi.mock("@/lib/protocol-flags", async (importOriginal) => ({ ...await importOriginal<typeof import("@/lib/protocol-flags")>(),
   isDexTxRouteEnabled: () => state.routeOn }));
@@ -28,6 +28,8 @@ vi.mock("@/lib/protocol-flags", async (importOriginal) => ({ ...await importOrig
 vi.mock("next/navigation", () => ({ usePathname: () => "/app" }));
 vi.mock("../use-sol-usdc-price", () => ({ useSolUsdcPrices: () => ({ rate: null, usdcUsd: null }) }));
 vi.mock("../use-token-metadata", () => ({ useTokenMetadata: () => ({}) }));
+vi.mock("../pool-daily-apr-panel", () => ({ PoolDailyAprChart: ({ poolId, overlay }: { poolId: string; overlay?: { points: unknown[] } }) =>
+  createElement("div", { "data-testid": "pool-daily-apr-chart", "data-pool": poolId, "data-overlay": overlay ? String(overlay.points.length) : "none" }) }));
 vi.mock("../transaction-status-dialog", () => ({ TransactionStatusDialog: () => null }));
 vi.mock("../wallet-connection", async (importOriginal) => ({ ...await importOriginal<typeof import("../wallet-connection")>(),
   useWalletConnection: () => ({ address: WALLET, connected: true, connect: vi.fn(), disconnect: vi.fn(), isMobile: false, walletsCount: 1,
@@ -38,6 +40,18 @@ const meteoraRow = (liquidity = "5000", holdings: unknown = HOLDINGS) => ({ key:
   tokenA: { id: MINT_A, symbol: "TSLA", decimals: 6 }, tokenB: { id: MINT_B, symbol: "TSLAx", decimals: 8 },
   range: { mode: "price", lower: 0.98, upper: 1.02, current: 1 }, rangeStatus: "in", liquidity, valueUsd: null,
   ...(holdings === "omit" ? {} : { holdings }), native: { position: POSITION } });
+/** The Meteora adapter's performance answer: summary fields plus the `/api/position-performance`-shaped report. */
+const performanceBody = () => ({ key: `meteora-dlmm:${POSITION}`, depositedUsd: 500, withdrawnUsd: 0, feesClaimedUsd: 1.25, feesUnclaimedUsd: 0.75,
+  currentValueUsd: 502, pnlUsd: 4, partial: false,
+  report: { positionMint: POSITION, poolId: POOL, mintA: MINT_A, mintB: MINT_B, decimalsA: 6, decimalsB: 8, tickCurrent: 0, rangeSide: "inside",
+    liquidity: "5000", openedAtIso: "2026-10-01T00:00:00.000Z", evaluatedAtIso: "2026-11-01T00:00:00.000Z", truncated: false, signatureCount: 3, ownsNft: null,
+    cashflows: { openCount: 1, increaseCount: 0, decreaseCount: 0 },
+    metrics: { holdingDays: 31, depositedUsd: 500, currentEquityUsd: 502, liquidityUsd: 501.25, uncollectedFeesUsd: 0.75, feesEarnedUsd: 2, pnlUsd: 4,
+      holdingPeriodReturnPct: 0.8, annualizedReturnPct: 9.42, feeOnlyAprPct: 4.71, depositedRaw: { a: "1250000", b: "0" }, currentEquityRaw: { a: "1", b: "1" },
+      liquidityAmountsRaw: { a: "1", b: "1" }, feesEarnedRaw: { a: "1", b: "1" }, uncollectedFeesRaw: { a: "1", b: "1" }, feesCollectedRaw: { a: "1", b: "1" } },
+    pricing: { source: "jupiter", label: "Jupiter Price API v3", priceUsdA: 400, priceUsdB: 400 }, assumptions: "a", method: "m",
+    realizedFeeAprSeries: { label: "Realized fee APR", assumptions: "r", points: [{ time: 1, date: "2026-10-02", aprPct: 4, kind: "collect" }] } },
+});
 const raydiumRow = { positionMint: RAYDIUM_MINT, positionAccount: "p", poolId: POOL, mintA: MINT_A, mintB: MINT_B, symbolA: "A", symbolB: "B",
   decimalsA: 8, decimalsB: 6, feeTierBps: 1, tickLower: -10, tickUpper: 10, tickCurrent: 0, rangeSide: "inside", liquidity: "1" };
 
@@ -45,6 +59,7 @@ let container: HTMLDivElement; let root: Root;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true); localStorage.clear(); resetTxNotices();
   state.dex = { status: 200, body: { positions: [meteoraRow()] } }; state.raydium = []; state.dexCalls = []; state.routeOn = true; state.icons = null; state.hold = null; resetPositionOpLocks();
+  state.performance = { status: 200, body: performanceBody() };
   state.op = { status: 422, body: { error: "This pool pays farming rewards, and claiming them isn't available here yet.", code: "UNSUPPORTED" } };
   window.history.replaceState(null, "", "/app");
   vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
@@ -53,6 +68,7 @@ beforeEach(() => {
     if (url.pathname === "/api/rwa-pairs" && state.icons) return Response.json({ pairs: [], tokenIcons: state.icons });
     if (url.pathname.startsWith("/api/dex/")) {
       state.dexCalls.push([url.pathname, JSON.parse(String(init?.body))]);
+      if (url.pathname.endsWith("/performance")) return Response.json(state.performance.body, { status: state.performance.status });
       if (!url.pathname.endsWith("/positions")) {
         if (state.hold) await state.hold; // a prepare still in flight
         return Response.json(state.op.body, { status: state.op.status });
@@ -84,23 +100,52 @@ describe("/app My positions with registry DEXes", () => {
     // PR8: the page's default tool (Compound) now has a registry panel, never the Raydium one.
     expect(container.querySelector("[data-testid=registry-compound]")).toBeTruthy();
     expect(container.querySelector("#compound-view")?.textContent).not.toContain("Meteora");
+    // PR9: Performance has a registry panel too (never the Raydium one).
     await act(async () => tab("Performance").click());
-    expect(container.querySelector("#performance-view")?.textContent).toContain("Not available for this pool yet");
+    await settle();
+    expect(container.querySelector("#performance-view [data-testid=registry-performance]")).toBeTruthy();
   });
 
-  it("greys only the tool the registry panel has no UI for (performance); Add / Withdraw / Claim / Compound follow the descriptor", () => {
+  it("Performance: the adapter's report in the shared summary, the pool chart with the realized fee overlay, and the exit estimate greyed with its reason", async () => {
+    const meteora = dexDescriptors.descriptorFor("meteora-dlmm")!.capabilities;
+    expect(meteora.performance).toEqual({ supported: true });
+    expect(meteora.exitPreview).toEqual({ supported: false, reason: "Not available for this pool yet" });
+    await render({ initialView: "performance" });
+    expect(state.dexCalls).toContainEqual(["/api/dex/meteora-dlmm/performance", { positionKey: `meteora-dlmm:${POSITION}` }]);
+    const panel = container.querySelector("[data-testid=registry-performance]")!;
+    expect(panel.textContent).toContain("Est. fee-only APR (USD) · not guaranteed4.71%");
+    expect(panel.textContent).toContain("Current equity (USD)$502.0000");
+    expect(panel.textContent).toContain("Fees earned (USD)$2.0000");
+    const chart = panel.querySelector("[data-testid=pool-daily-apr-chart]")!;
+    expect(chart.getAttribute("data-pool")).toBe(POOL);
+    expect(chart.getAttribute("data-overlay")).toBe("1");
+    const exit = panel.querySelector("[data-testid=exit-preview-unavailable]")!;
+    expect(exit.getAttribute("aria-disabled")).toBe("true");
+    expect(exit.textContent).toBe("Exit estimateNot available for this pool yet");
+    expect(panel.textContent).not.toContain("Meteora");
+  });
+
+  it("Performance: a failed read shows the server's plain message and retries on request", async () => {
+    state.performance = { status: 404, body: { error: "No Meteora position exists at that address.", code: "POSITION_NOT_FOUND" } };
+    await render({ initialView: "performance" });
+    const panel = () => container.querySelector("[data-testid=registry-performance]")!;
+    expect(panel().querySelector("[role=alert]")?.textContent).toBe("No Meteora position exists at that address.");
+    expect(panel().querySelector("[data-testid=exit-preview-unavailable]")).toBeNull();
+    state.performance = { status: 200, body: performanceBody() };
+    const retry = [...panel().querySelectorAll("button")].find((button) => button.textContent === "Retry performance")!;
+    await act(async () => retry.click());
+    await settle();
+    expect(panel().querySelector("[role=alert]")).toBeNull();
+    expect(panel().textContent).toContain("4.71%");
+    expect(state.dexCalls.filter(([path]) => path.endsWith("/performance"))).toHaveLength(2);
+  });
+
+  it("every registry tab follows the descriptor (no panel-level overrides)", () => {
     const meteora = dexDescriptors.descriptorFor("meteora-dlmm")!.capabilities;
     expect(meteora.withdraw).toEqual({ supported: true, partial: true, partialLeavesFees: true });
     expect(meteora.deposit.supported).toBe(true);
-    const shown = registryPanelCapabilities(meteora);
-    expect(shown.performance).toEqual({ supported: false, reason: "Not available for this pool yet" });
-    expect(shown.compound).toEqual(meteora.compound);
     expect(meteora.compound).toEqual({ supported: true });
-    expect(shown.deposit).toEqual(meteora.deposit);
-    expect(shown.withdraw).toEqual(meteora.withdraw);
-    expect(shown.claim).toEqual(meteora.claim);
-    expect(shown.withdrawOutputs).toEqual(["pool-tokens"]);
-    expect(shown.signer).toBe(meteora.signer);
+    expect(meteora.withdrawOutputs).toEqual(["pool-tokens"]);
   });
 
   it("Withdraw: partial slider, the outputs the descriptor lists, and the rent refund stated before signing at 100%", async () => {
