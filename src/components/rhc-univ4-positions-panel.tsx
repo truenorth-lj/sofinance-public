@@ -1,16 +1,15 @@
 "use client";
 
-import { UNIV4_RHC_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/uniswap-v4/constants";
-import type { ExitFlowResult, PositionLookup, RhcPositionView } from "@sofinance/engine/protocols/uniswap-v4/exit-flow";
+import type { PositionLookup, RhcPositionView } from "@sofinance/engine/protocols/uniswap-v4/exit-flow";
 import type { ScannedPosition } from "@sofinance/engine/protocols/uniswap-v4/position-scan";
 import { useEffect, useState } from "react";
 import { formatUnits } from "viem";
-import { type Eip1193Provider, guardedWalletRequest } from "@/lib/rhc-wallet/eip1193";
-import {
-  checkExitTx, EXIT_EXPIRED_MESSAGE, isDeadlinePassed, trackedPositionIds, trackPositionId, untrackPositionId,
-} from "@/lib/rhc-wallet/exit-execute";
-import { explorerTxUrl, requireRobinhoodChain, waitForReceipt, walletTxParams } from "@/lib/rhc-wallet/open-execute";
+import { trackedPositionIds, trackPositionId, untrackPositionId } from "@/lib/rhc-wallet/exit-execute";
+import { explorerTxUrl } from "@/lib/rhc-wallet/open-execute";
 import { rhcPairLabel } from "@/lib/unified-pools/rows";
+import {
+  fetchPositions, fetchScan, poolOf, useRhcClose, type RhcCloseReady, type RhcCloseSent, type RhcWalletRef, type Scan,
+} from "./rhc-close";
 
 /**
  * Robinhood Chain (4663) Uniswap v4 positions + Close (PR7), inside the `/app/rhc` panel (same flags: page behind
@@ -22,16 +21,15 @@ import { rhcPairLabel } from "@/lib/unified-pools/rows";
  * receipt → refresh positions and balances. No fee on exit.
  */
 
-type Wallet = { provider: Eip1193Provider; address: `0x${string}` };
-type Ready = Extract<ExitFlowResult, { state: "ready" }>;
-type CloseSent = { tokenId: string; hash: string; status: "pending" | "success" | "reverted" | "timeout"; expected: Ready["expected"] };
+type Wallet = RhcWalletRef;
+type Ready = RhcCloseReady;
+type CloseSent = RhcCloseSent;
 
 const fmt = (raw: string | bigint, decimals = 18, digits = 6) => {
   const [i, f = ""] = formatUnits(BigInt(raw), decimals).split(".");
   const frac = f.slice(0, digits).replace(/0+$/, "");
   return frac ? `${i}.${frac}` : i!;
 };
-const poolOf = (p: RhcPositionView) => UNIV4_RHC_ALLOWLISTED_POOLS.find(x => x.poolId.toLowerCase() === p.poolId?.toLowerCase()) ?? null;
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 
 export function ClosePreview({ ready }: { ready: Ready }) {
@@ -57,36 +55,8 @@ export function CloseStatus({ sent, symbols }: { sent: CloseSent; symbols: [stri
   </p>;
 }
 
-async function postExit<T>(body: unknown): Promise<T> {
-  const response = await fetch("/api/rhc-univ4-exit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-  const json = await response.json().catch(() => null) as (T & { state?: string }) | { error?: string } | null;
-  if (json && "state" in json && json.state) return json as T;
-  if (response.status === 404) throw new Error("Closing positions is not available on this deployment.");
-  throw new Error(json && "error" in json && json.error ? json.error : "SoFinance could not reach Robinhood Chain right now. Please try again in a moment.");
-}
-
-async function fetchPositions(address: string, ids: string[]): Promise<{ lookups: PositionLookup[]; error: string | null }> {
-  if (!ids.length) return { lookups: [], error: null };
-  try {
-    const body = await postExit<{ state: "positions"; positions: PositionLookup[] }>({ action: "positions", user: address, tokenIds: ids });
-    return { lookups: Array.isArray(body.positions) ? body.positions : [], error: null };
-  } catch (e) { return { lookups: [], error: e instanceof Error ? e.message : "Could not load positions" }; }
-}
-
-type Scan = { positions: ScannedPosition[]; error: string | null };
-const SCAN_ERROR = "Couldn't check this wallet's Robinhood Chain positions right now. Positions saved in this browser and added by number are still shown.";
-
-async function fetchScan(address: string, fresh = false): Promise<Scan> {
-  try {
-    const response = await fetch(`/api/rhc-univ4-positions?wallet=${address}${fresh ? "&fresh=1" : ""}`, { cache: "no-store" });
-    const json = await response.json().catch(() => null) as { state?: string; positions?: ScannedPosition[]; error?: string } | null;
-    if (response.ok && json?.state === "scan" && Array.isArray(json.positions)) return { positions: json.positions, error: null };
-    return { positions: [], error: response.status === 429 ? "Too many checks from this browser. Try again in a minute." : json?.error || SCAN_ERROR };
-  } catch { return { positions: [], error: SCAN_ERROR }; }
-}
-
 /** A held position outside SoFinance's allowlist: labelled, view only. */
-const otherPoolNote = (s: ScannedPosition | undefined) => s?.stablePair
+export const otherPoolNote = (s: ScannedPosition | undefined) => s?.stablePair
   ? "StablePair pool that SoFinance does not list yet: view only."
   : "Another Uniswap v4 pool, not supported by SoFinance: view only.";
 
@@ -98,10 +68,6 @@ export function RhcUniv4PositionsPanel({ wallet, signingEnabled, refreshKey = 0,
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [addId, setAddId] = useState("");
-  const [busy, setBusy] = useState<string | null>(null);
-  const [ready, setReady] = useState<Ready | null>(null);
-  const [error, setError] = useState<{ tokenId: string; message: string } | null>(null);
-  const [sent, setSent] = useState<CloseSent | null>(null);
   const address = wallet?.address ?? null;
 
   /** User-triggered refresh (add / remove / after a close). */
@@ -120,6 +86,9 @@ export function RhcUniv4PositionsPanel({ wallet, signingEnabled, refreshKey = 0,
     return () => { live = false; setScan(null); };
   }, [address, refreshKey]);
 
+  const { busy, ready, setReady, error, sent, preview, confirm } = useRhcClose({ wallet, receiptPoll,
+    onClosed: async () => { onChanged?.(); await load(); } });
+
   if (!wallet) return null;
 
   const add = () => {
@@ -129,35 +98,6 @@ export function RhcUniv4PositionsPanel({ wallet, signingEnabled, refreshKey = 0,
     void load(trackPositionId(wallet.address, id));
   };
   const remove = (id: string) => { void load(untrackPositionId(wallet.address, id)); if (ready?.position.tokenId === id) setReady(null); };
-
-  const preview = async (tokenId: string) => {
-    setBusy(tokenId); setError(null); setReady(null); setSent(null);
-    try {
-      const body = await postExit<ExitFlowResult>({ action: "prepare", user: wallet.address, tokenId });
-      if (body.state === "failed") throw new Error(body.message);
-      setReady(body);
-    } catch (e) { setError({ tokenId, message: e instanceof Error ? e.message : "Close preview failed" }); } finally { setBusy(null); }
-  };
-
-  const confirm = async () => {
-    if (!ready) return;
-    const tokenId = ready.position.tokenId;
-    setBusy(tokenId); setError(null);
-    try {
-      if (isDeadlinePassed(ready.deadline)) { setReady(null); throw new Error(EXIT_EXPIRED_MESSAGE); }
-      checkExitTx(ready.tx, wallet.address, tokenId, poolOf(ready.position)!);
-      await requireRobinhoodChain(wallet.provider);
-      const hash = await guardedWalletRequest(wallet.provider, "eth_sendTransaction", [walletTxParams(ready.tx)]);
-      if (typeof hash !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(hash)) throw new Error("Your wallet did not return a transaction hash. Check the wallet's activity before trying again.");
-      const expected = ready.expected;
-      setReady(null);
-      setSent({ tokenId, hash, status: "pending", expected });
-      const receipt = await waitForReceipt(wallet.provider, hash, receiptPoll);
-      const status: CloseSent["status"] = !receipt ? "timeout" : receipt.status === "0x1" ? "success" : "reverted";
-      setSent({ tokenId, hash, status, expected });
-      if (status !== "timeout") { onChanged?.(); await load(); }
-    } catch (e) { setError({ tokenId, message: e instanceof Error ? e.message : "Close failed" }); } finally { setBusy(null); }
-  };
 
   const symbols = (p: RhcPositionView | null): [string, string] => { const pool = p && poolOf(p); return pool ? [pool.currency0.symbol, pool.currency1.symbol] : ["token0", "token1"]; };
 

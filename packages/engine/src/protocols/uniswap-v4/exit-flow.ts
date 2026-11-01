@@ -88,7 +88,7 @@ export async function readPosition(client: PublicClient, tokenId: bigint): Promi
 }
 
 /** A contract revert (vs. a transport failure): viem wraps it as ContractFunctionRevertedError / execution reverted. */
-function isRevert(error: unknown): boolean {
+export function isRevert(error: unknown): boolean {
   let e: unknown = error;
   for (let i = 0; i < 8 && e && typeof e === "object"; i++) {
     const name = (e as { name?: string }).name ?? "";

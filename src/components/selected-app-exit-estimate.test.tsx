@@ -137,9 +137,9 @@ describe("Performance deep link /app?view=performance&mint=X: the exit estimate 
   it("choosing another position in the selector replaces the deep link", async () => {
     await mount({ wallet: OWN_WALLET, positions: [OTHER_OWNED_MINT, OWNED_MINT], stateOk: true, initialMint: OWNED_MINT });
     await settle();
-    const select = [...container.querySelectorAll("select")].find((item) => [...item.options].some((option) => option.value === OTHER_OWNED_MINT))!;
+    const select = [...container.querySelectorAll("select")].find((item) => [...item.options].some((option) => option.value === `raydium-clmm:${OTHER_OWNED_MINT}`))!;
     await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!.call(select, OTHER_OWNED_MINT);
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!.call(select, `raydium-clmm:${OTHER_OWNED_MINT}`);
       select.dispatchEvent(new Event("change", { bubbles: true }));
     });
     await settle();

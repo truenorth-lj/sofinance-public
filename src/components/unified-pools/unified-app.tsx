@@ -3,15 +3,15 @@
 import { useCallback, useState } from "react";
 import { useEvmWalletConnection } from "../evm-wallet-connection";
 import { SelectedApp } from "../selected-app";
-import { RhcPositionsSection } from "./rhc-positions-section";
+import { useRhcPositions } from "../unified-positions/rhc-positions";
 import type { UnifiedPoolFlags } from "./unified-pools-panel";
 
 type SelectedAppProps = Parameters<typeof SelectedApp>[0];
 
 /**
- * `/app` (Positions): only "My positions" and the tools for the selected Solana position. The pool list lives on
- * `/app/rwa-pairs`. Robinhood Chain positions join "My positions" only while the nav's EVM wallet is connected (restored on
- * load from the account the wallet already shares, `eth_accounts`, no prompt); nothing shows without it.
+ * `/app` (Positions): "My positions" (one dropdown, grouped Solana / Robinhood Chain) and the tools for the selected position.
+ * The pool list lives on `/app/rwa-pairs`. Robinhood Chain positions join "My positions" only while the nav's EVM wallet is
+ * connected (restored on load from the account the wallet already shares, `eth_accounts`, no prompt); nothing shows without it.
  */
 export function UnifiedApp({ selected, flags, rhcSigningEnabled }: {
   selected: SelectedAppProps;
@@ -27,8 +27,9 @@ export function UnifiedApp({ selected, flags, rhcSigningEnabled }: {
   const rescan = useCallback(() => setRescans((current) =>
     ({ address, count: (current.address === address ? current.count : 0) + 1 })), [address]);
 
-  const rhc = flags.rhc && evmWallet;
+  const rhc = flags.rhc && evmWallet ? evmWallet : null;
+  const external = useRhcPositions({ wallet: rhc, signingEnabled: rhcSigningEnabled, refreshKey: rescanKey });
   return <SelectedApp {...selected}
     onRescan={rhc ? rescan : undefined}
-    extraPositions={rhc ? <RhcPositionsSection wallet={evmWallet} signingEnabled={rhcSigningEnabled} refreshKey={rescanKey} /> : undefined} />;
+    external={rhc ? external : undefined} />;
 }

@@ -2,12 +2,11 @@
 import "@/lib/engine-host";
 import { notEnoughBalanceMessage } from "@sofinance/engine/balance-message";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, ArrowUpRight, ChartNoAxesCombined, CircleAlert, LoaderCircle, Sprout } from "lucide-react";
 import { assetMetadata, assetSymbol, TokenPicker } from "./token-picker";
 import { formatAmount } from "@sofinance/engine/amount";
 import { NATIVE_SOL_MINT, USDC_MINT } from "@sofinance/engine/ids";
-import { PositionSelect } from "./position-select";
 import { PositionAssetRow } from "./position-asset-row";
 import { resolveNftAccountLookup } from "@/lib/exit-account-lookup";
 import { useTokenMetadata } from "./use-token-metadata";
@@ -30,7 +29,11 @@ import { captureGrowthEvent } from "@/lib/analytics/client";
 import { GROWTH_EVENTS } from "@/lib/analytics/events";
 import { raydiumPositionSource as positionSource } from "@/lib/unified-positions/sources/raydium";
 import { toolOptions, type ToolMeta } from "@/lib/unified-positions/capabilities";
-import type { ToolId } from "@/lib/unified-positions/model";
+import { capabilitiesFor, firstSupportedTool, positionKey, toolUnavailableReason, type ToolId, type UnifiedPosition } from "@/lib/unified-positions/model";
+import { CLOSED_LABEL, groupPositions, isClosed, positionOptionLabel, SOLANA_CONNECT_EMPTY_OPTION, type PositionGroup } from "@/lib/unified-positions/rows";
+import type { ExternalPositions } from "./unified-positions/external-positions";
+import { GroupedPositionSelect } from "./unified-positions/grouped-position-select";
+import { UnavailableTool } from "./unified-positions/unavailable-tool";
 
 const TOOL_META: Readonly<Record<ToolId, ToolMeta>> = Object.freeze({
   compound: { label: "Yield Compound", icon: Sprout, controls: "compound-view" },
@@ -57,13 +60,15 @@ function calculateInputUsd(amount: string, priceUsd: number | null): string | nu
   }
 }
 
-export function SelectedApp({ initialView = "compound", initialMint = "", initialWallet = "", previewPoolId = "", extraPositions, onRescan }: {
+export function SelectedApp({ initialView = "compound", initialMint = "", initialWallet = "", previewPoolId = "", initialPositionKey = "", external, onRescan }: {
   initialView?: "compound" | "performance" | "deposit" | "withdraw";
   initialMint?: string;
   initialWallet?: string;
   previewPoolId?: string;
-  /** Other chains' positions, shown under the Solana ones in "My positions" (`/app`: Robinhood Chain). */
-  extraPositions?: ReactNode;
+  /** `?position=<key>` of another chain's position (`/app`: Robinhood Chain); Solana keys arrive as `initialMint`. */
+  initialPositionKey?: string;
+  /** Other chains' positions, in the same "My positions" dropdown under their own group (`/app`: Robinhood Chain). */
+  external?: ExternalPositions;
   /** Called by "Rescan wallet" alongside the Solana rescan, so the other chains' positions in "My positions" rescan too. */
   onRescan?: () => void;
 } = {}) {
@@ -101,7 +106,7 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
   const metadata = useTokenMetadata(metadataMints);
   const [statusDialogOpen, setStatusDialogOpen] = useState(false);
   const [assetRisksOpen, setAssetRisksOpen] = useState(false);
-  const [activeView, setActiveView] = useState<"compound" | "performance" | "deposit" | "withdraw">(initialView);
+  const [activeView, setActiveView] = useState<ToolId>(initialView);
   // Toasts sit above the phone-only bottom action bar instead of covering its button.
   const actionBarRef = useRef<HTMLDivElement | null>(null);
   useNoticeBottomOffset(actionBarRef, activeView === "deposit");
@@ -137,7 +142,46 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
   const addStatus = compound.busy ? "A compound or recovery operation is in progress."
     : insufficientInput && selectedAsset ? notEnoughBalanceMessage({ ...insufficientInput, symbol: inputLabel }) : status;
   // Positions are read through the Raydium position source (unified-positions PR-A); same list and order as the scan.
-  const positionOptions = positionSource.fromDiscovery(discovery).map((position) => position.native);
+  const solanaPositions = positionSource.fromDiscovery(discovery);
+  const positionOptions = solanaPositions.map((position) => position.native);
+  // One dropdown for every chain (unified positions). Tools and header come from the selected position's source.
+  const externalPositions = external?.positions ?? [];
+  const allPositions: UnifiedPosition[] = [...(connected ? solanaPositions : []), ...externalPositions];
+  const groups = groupPositions(allPositions, { solana: [positionSource.id], ...(external ? { [external.chain]: external.sourceIds } : {}) },
+    external ? ["solana" as const, external.chain] : []);
+  const [externalKey, setExternalKey] = useState(initialPositionKey);
+  const solanaEmpty = !connected || (discovery !== null && !loadingDiscovery && positionOptions.length === 0);
+  // A picked (or linked) other-chain position; without one, the first other-chain position when Solana has none.
+  const externalSelected = externalPositions.find((item) => item.key === externalKey)
+    ?? (!externalKey && solanaEmpty && !initialMint ? externalPositions[0] ?? null : null);
+  const selectedSolana = selection ? solanaPositions.find((item) => item.nativeId === selection.positionMint) ?? null : null;
+  const capabilities = externalSelected && external ? capabilitiesFor(external.source, externalSelected) : capabilitiesFor(positionSource, selectedSolana);
+  const unavailableReason = toolUnavailableReason(capabilities, activeView);
+  const selectedKey = externalSelected?.key ?? (selection ? positionKey(positionSource.id, selection.positionMint) : "");
+  // Landing on a position whose current tool is unavailable opens its first available tool (a greyed tab clicked later stays).
+  const [viewCheckedFor, setViewCheckedFor] = useState(selectedKey);
+  if (viewCheckedFor !== selectedKey) {
+    setViewCheckedFor(selectedKey);
+    const first = firstSupportedTool(capabilities);
+    if (unavailableReason && first) setActiveView(first);
+  }
+  const writeUrl = (key: string, view: ToolId) => {
+    if (!key || typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    url.searchParams.delete("mint"); url.searchParams.delete("positionMint");
+    url.searchParams.set("position", key); url.searchParams.set("view", view);
+    window.history.replaceState(window.history.state, "", url);
+  };
+  const pickKey = (key: string) => {
+    const found = allPositions.find((item) => item.key === key);
+    if (!found) return;
+    if (found.source === positionSource.id) { setExternalKey(""); pickPosition(found.nativeId); } else setExternalKey(found.key);
+    writeUrl(found.key, activeView);
+  };
+  const changeView = (view: ToolId) => { setActiveView(view); writeUrl(selectedKey, view); };
+  const optionLabel = (item: UnifiedPosition, group: PositionGroup) =>
+    positionOptionLabel(item.source === positionSource.id ? positionSource : external!.source as never, item as never, { showSourceName: group.showSourceName, metadata });
+  const anyBusy = busy || Boolean(external?.busy);
   const assetOptions = discovery?.assets || [];
   const poolLabel = (mint: string) => {
     const asset = assetOptions.find((item) => item.mint === mint);
@@ -165,21 +209,24 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
 
       <section aria-labelledby="position-heading" className="flex flex-col rounded-[28px] border border-white/12 bg-char p-6 sm:p-9 lg:col-span-5">
         <div className="flex flex-1 flex-col justify-center">
-        <div className="flex items-center justify-between gap-3"><h2 id="position-heading" className="text-base font-semibold text-cream">My positions</h2><button type="button" disabled={(!wallet && !(extraPositions && onRescan)) || busy} onClick={rescan} className="text-xs font-semibold text-cream/80 transition-opacity hover:opacity-70 disabled:opacity-40">Rescan wallet</button></div>
-        {extraPositions && <p className="mt-3 text-sm font-semibold text-cream">Solana</p>}
-        {connected ? <PositionSelect
+        <div className="flex items-center justify-between gap-3"><h2 id="position-heading" className="text-base font-semibold text-cream">My positions</h2><button type="button" disabled={(!wallet && !(external && onRescan)) || anyBusy} onClick={rescan} className="text-xs font-semibold text-cream/80 transition-opacity hover:opacity-70 disabled:opacity-40">Rescan wallet</button></div>
+        {connected || external ? <GroupedPositionSelect
           id="position"
-          label="Select Raydium position"
-          labelSrOnly
-          value={selection?.positionMint || ""}
-          disabled={!positionOptions.length || busy}
-          onChange={pickPosition}
-          positions={positionOptions}
-          metadata={metadata}
-          placeholder={!positionOptions.length ? (connected ? "No identifiable position found" : "Connect wallet to view positions") : undefined}
+          label="Select position"
+          value={selectedKey}
+          disabled={!allPositions.length || anyBusy}
+          onChange={pickKey}
+          groups={groups}
+          optionLabel={optionLabel}
+          emptyOption={(group) => group.chain === external?.chain ? external.emptyOption : connected ? "No positions found" : SOLANA_CONNECT_EMPTY_OPTION}
+          placeholder={!allPositions.length ? (connected ? "No identifiable position found" : "Connect wallet to view positions") : undefined}
           className="mt-3 w-full rounded-2xl border border-white/20 bg-white/[0.06] px-3 py-3 text-sm text-cream outline-none focus:border-white/40"
-        /> : <div className="mt-3"><ConnectWalletPrompt onConnect={connect} /></div>}
-        {connected && discovery && positionOptions.length === 0 && <a href={APP_ROUTES.rwaPairs} className="mt-3 text-sm font-semibold text-cream underline underline-offset-4">Explore pools to open a position</a>}
+        /> : null}
+        {/* The Solana connect prompt belongs to Solana: with another chain's position selected it lives in the dropdown's empty Solana group instead. */}
+        {!connected && !externalSelected && <div className="mt-3"><ConnectWalletPrompt onConnect={connect} /></div>}
+        {connected && discovery && positionOptions.length === 0 && !externalSelected && <a href={APP_ROUTES.rwaPairs} className="mt-3 text-sm font-semibold text-cream underline underline-offset-4">Explore pools to open a position</a>}
+        {(externalSelected ?? selectedSolana) && isClosed((externalSelected ?? selectedSolana)!) && <p className="mt-3 w-fit rounded-full border border-white/20 px-2.5 py-1 text-xs font-semibold text-smoke" data-testid="position-closed">{CLOSED_LABEL}: no liquidity left</p>}
+        {externalSelected && external ? external.header(externalSelected) : <>
         {state && <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs">
           <span className={`rounded-full border px-2.5 py-1 ${state.inRange ? "border-white/40 bg-white/[0.07] text-cream/80" : "border-white/20 bg-white/[0.05] text-smoke"}`}>{state.rangeSide === "above" ? "Above range · single-sided" : state.rangeSide === "below" ? "Below range · single-sided" : "Price within range"}</span>
 
@@ -190,9 +237,10 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
           <PositionAssetRow symbol={poolLabel(assets.mintB)} icon={metadata[assets.mintB]?.icon ?? null} decimals={assets.decimalsB}
             liquidityRaw={assets.currentAmounts.b} unclaimedFeesRaw={feeState?.fees.b ?? null} priceUsd={assets.pricing?.priceUsdB ?? null} />
         </div>}
-        {extraPositions}
+        </>}
+        {external?.status}
         </div>
-        {connected && <div className="mt-6 border-t border-white/10 pt-5 text-sm leading-relaxed">
+        {(connected || externalSelected) && <div className="mt-6 border-t border-white/10 pt-5 text-sm leading-relaxed">
           <button type="button" aria-haspopup="dialog" onClick={() => setAssetRisksOpen(true)}
             className="text-xs font-semibold text-cream/80 transition-opacity hover:opacity-70 disabled:opacity-40">
             Learn more details
@@ -201,8 +249,10 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
       </section>
       </div>
 
-      <ActionSelector value={activeView} onChange={setActiveView} options={toolOptions(positionSource.capabilities, TOOL_META,
-        { withdraw: !state || !wallet || (busy && activeView !== "withdraw") })} />
+      <ActionSelector value={activeView} onChange={changeView} options={toolOptions(capabilities, TOOL_META,
+        externalSelected ? {} : { withdraw: !state || !wallet || (busy && activeView !== "withdraw") })} />
+      {unavailableReason ? <UnavailableTool id={`${activeView}-view`} reason={unavailableReason} />
+        : externalSelected && external ? <div id={`${activeView}-view`}>{external.tool(externalSelected, activeView)}</div> : <>
       {activeView === "withdraw" && <div id="withdraw-view">{state && wallet ? <WithdrawPanel key={`${wallet}:${state.positionMint}`} wallet={wallet} positionMint={state.positionMint} mintA={state.mintA} mintB={state.mintB} label={poolLabel} onClose={()=>setActiveView("compound")} onBusyChange={setWithdrawBusy} onConfirmed={()=>{void refreshState();void refreshDiscovery();}} /> : <p className="mt-4 text-sm text-smoke">Connect your wallet and choose a position to withdraw.</p>}</div>}
       {compound.historyWarning && <div role="status" className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-xs text-cream/80"><span>{compound.historyWarning}</span><button type="button" className="font-semibold underline" onClick={() => setActiveView("compound")}>View compound status</button></div>}
       <main>
@@ -248,17 +298,18 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
         </div>
         </div>
       </main>
-      {connectionError && activeView === "compound" && <div role="alert" className="mt-4 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80">{connectionError}</div>}
-      {error && !quoteError && activeView === "compound" && <div role="alert" className="mt-4 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80">{error}</div>}
+      </>}
+      {connectionError && activeView === "compound" && !externalSelected && <div role="alert" className="mt-4 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80">{connectionError}</div>}
+      {error && !quoteError && activeView === "compound" && !externalSelected && <div role="alert" className="mt-4 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80">{error}</div>}
     </div>
-    <AssetRisksDialog open={connected && assetRisksOpen} onOpenChange={setAssetRisksOpen}>
-      {state && <><p>Real-time pool price: {Number(state.price).toPrecision(8)} · ticks {state.tickLower}–{state.tickUpper} · slot {state.slot}</p><p>Wallet pool asset balance: {money(state.balances.a, state.decimalsA)} {poolLabel(state.mintA)}  +  {money(state.balances.b, state.decimalsB)} {poolLabel(state.mintB)} · SOL {money(String(state.solLamports), 9)}</p><button type="button" onClick={() => void refreshState()} disabled={busy} className="text-cream/80 underline disabled:opacity-40">Reload on-chain</button><p>Pool: <a className="text-cream/80 underline" href={`https://solscan.io/account/${state.poolId}`} target="_blank" rel="noreferrer">{state.poolId} <ArrowUpRight className="inline h-3 w-3" /></a></p><p>Position NFT: {state.positionMint}</p><p>Pool A mint: {state.mintA}</p><p>Pool B mint: {state.mintB}</p><p>Input mint: {selection?.inputMint}</p></>}<p>Different tokens may have issuer, transfer restrictions, or routing liquidity risks. APR does not represent this position&apos;s realizable returns; no trading fees earned for this range while outside.</p>
+    <AssetRisksDialog open={Boolean(connected || externalSelected) && assetRisksOpen} onOpenChange={setAssetRisksOpen}>
+      {externalSelected && external ? external.details(externalSelected) : state && <><p>Real-time pool price: {Number(state.price).toPrecision(8)} · ticks {state.tickLower}–{state.tickUpper} · slot {state.slot}</p><p>Wallet pool asset balance: {money(state.balances.a, state.decimalsA)} {poolLabel(state.mintA)}  +  {money(state.balances.b, state.decimalsB)} {poolLabel(state.mintB)} · SOL {money(String(state.solLamports), 9)}</p><button type="button" onClick={() => void refreshState()} disabled={busy} className="text-cream/80 underline disabled:opacity-40">Reload on-chain</button><p>Pool: <a className="text-cream/80 underline" href={`https://solscan.io/account/${state.poolId}`} target="_blank" rel="noreferrer">{state.poolId} <ArrowUpRight className="inline h-3 w-3" /></a></p><p>Position NFT: {state.positionMint}</p><p>Pool A mint: {state.mintA}</p><p>Pool B mint: {state.mintB}</p><p>Input mint: {selection?.inputMint}</p></>}<p>Different tokens may have issuer, transfer restrictions, or routing liquidity risks. APR does not represent this position&apos;s realizable returns; no trading fees earned for this range while outside.</p>
       <p><Link href={DOCS_ROUTES.risks} className="text-lemon underline underline-offset-2 hover:text-[#fff27f]">Read the Risks docs</Link> before adding liquidity.</p>
     </AssetRisksDialog>
     <TransactionStatusDialog attempt={visibleAttempt} status={attemptStatus} error={error} open={statusDialogOpen}
       onOpenChange={setStatusDialogOpen}
       onRetry={retryAdd ? () => { setStatusDialogOpen(false); retryAdd(); } : undefined} />
-    {activeView === "deposit" && <div ref={actionBarRef} data-testid="mobile-action-bar" className="fixed inset-x-0 bottom-0 z-10 border-t border-white/12 bg-canvas/95 p-4 backdrop-blur sm:hidden"><button className={buttonClass} disabled={actionDisabled} aria-busy={actionLoading} onClick={primaryAction}>{actionLoading ? <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin motion-reduce:animate-none" /> : <ArrowDown aria-hidden="true" className="h-4 w-4" />}{buttonLabel}</button></div>}
+    {activeView === "deposit" && !externalSelected && !unavailableReason && <div ref={actionBarRef} data-testid="mobile-action-bar" className="fixed inset-x-0 bottom-0 z-10 border-t border-white/12 bg-canvas/95 p-4 backdrop-blur sm:hidden"><button className={buttonClass} disabled={actionDisabled} aria-busy={actionLoading} onClick={primaryAction}>{actionLoading ? <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin motion-reduce:animate-none" /> : <ArrowDown aria-hidden="true" className="h-4 w-4" />}{buttonLabel}</button></div>}
   </div>;
 }
 
