@@ -71,7 +71,29 @@ export async function fetchDexPerformance(descriptor: DexDescriptor, positionKey
   if (!body || body.key !== positionKey || typeof body.partial !== "boolean" || !fields.every((field) => isUsd(body[field])) || !isReport(body.report)) {
     throw new Error(`${descriptor.displayName} returned performance in an unexpected shape.`);
   }
-  return body as PositionPerformance;
+  return { ...body, report: body.report ? withFiniteMetrics(body.report) : undefined } as PositionPerformance;
+}
+
+const REPORT_METRICS = ["holdingDays", "depositedUsd", "currentEquityUsd", "liquidityUsd", "uncollectedFeesUsd", "feesEarnedUsd", "pnlUsd",
+  "holdingPeriodReturnPct", "annualizedReturnPct", "feeOnlyAprPct"] as const;
+const TE_METRICS = ["deposited", "equity", "liquidity", "uncollectedFees", "feesEarned", "withdrawnPrincipal", "pnl",
+  "holdingPeriodReturnPct", "annualizedReturnPct", "feeOnlyAprPct"] as const;
+const finiteOrNull = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : null);
+
+/**
+ * The report's numeric metrics as finite numbers or null: a missing, non-numeric or non-finite field becomes null, which
+ * the Performance tab draws as "—" (never NaN).
+ */
+function withFiniteMetrics(report: NonNullable<PositionPerformance["report"]>): NonNullable<PositionPerformance["report"]> {
+  const metrics = { ...report.metrics } as Record<string, unknown>;
+  for (const field of REPORT_METRICS) metrics[field] = finiteOrNull(metrics[field]);
+  const checked = { ...report, metrics: metrics as typeof report.metrics };
+  const te = report.tokenNative?.tokenEquivalent;
+  if (report.tokenNative && te && typeof te === "object") {
+    const teMetrics = Object.fromEntries(TE_METRICS.map((field) => [field, finiteOrNull((te.metrics as Record<string, unknown> | undefined)?.[field])]));
+    checked.tokenNative = { ...report.tokenNative, tokenEquivalent: { ...te, metrics: teMetrics as typeof te.metrics } };
+  }
+  return checked;
 }
 
 const EN_DASH = "–";

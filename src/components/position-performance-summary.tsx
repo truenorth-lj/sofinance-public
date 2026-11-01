@@ -93,7 +93,7 @@ export function PerformanceSummary({ data, embedded, metadata, loadingRemaining 
           </div>
 
           <p className="text-xs leading-5 text-smoke">
-            Estimated APR annualizes the trading fees earned so far (collected plus unclaimed) over recorded deposits and holding time, at current prices. Additional deposits are not time-weighted, and future fees can be higher or lower: it is not a promised return.
+            Estimated APR annualizes the trading fees earned so far (collected plus unclaimed) over recorded deposits and holding time, at current prices. Additional deposits are not time-weighted, and future fees can be higher or lower: it is not a promised return. Compounded fees count as new deposits, so after a compound this APR reads slightly low.
             {data.truncated && " Earlier transactions may be missing, so the estimate may be incomplete."}
           </p>
           {data.truncated && data.historyFetch?.canContinue && onLoadRemaining && (

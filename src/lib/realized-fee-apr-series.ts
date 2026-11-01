@@ -10,6 +10,7 @@ export const REALIZED_FEE_APR_SERIES_ASSUMPTIONS = [
   "APR = cumulative fees ÷ deposited × 365 ÷ holding days, using current USD prices (not tx-time prices).",
   "Uncollected fees are included only on the evaluation day. Earlier days use collected fees only.",
   "Days without an event are gaps — values are not interpolated.",
+  "Compounded fees count as new deposits, so after a compound this APR reads slightly low.",
 ].join(" ");
 
 export type RealizedFeeAprKind = "event" | "evaluation";

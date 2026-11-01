@@ -15,6 +15,7 @@ import type { FeePolicy } from "../types";
 import { DexError, DexUnsupportedError } from "../errors";
 import { bpsFeeStrategy } from "../fees";
 import { meteoraDlmmDescriptor } from "./descriptor";
+import type { PositionPerformanceReport } from "@/lib/position-performance-report";
 import {
   buildMeteoraCloseRefund, buildMeteoraDeposit, buildMeteoraSetup, meteoraBinUiPrice, meteoraRequestRange, planMeteoraOpen, readMeteoraPool,
   assertEmptyOwnedPosition, type MeteoraOpenDeps, type MeteoraPoolState,
@@ -23,6 +24,23 @@ import { buildMeteoraAdd, buildMeteoraClaim, buildMeteoraCompound, buildMeteoraW
 import { listedMeteoraPool, type MeteoraPoolList } from "./pools.server";
 
 /** What a Meteora `UnifiedPosition.native` carries: the existing positions row (same shape the legacy UI reads). */
+/**
+ * The report fields the Performance tab draws (`PositionPerformanceReport`), and nothing else: the raw event history,
+ * fetch metrics and timings of the legacy route stay on the server (PM review of #290).
+ */
+function uiReport(report: NonNullable<Awaited<ReturnType<typeof getMeteoraPositionPerformance>>>): PositionPerformanceReport {
+  return {
+    positionMint: report.positionMint, poolId: report.poolId, mintA: report.mintA, mintB: report.mintB,
+    decimalsA: report.decimalsA, decimalsB: report.decimalsB, tickLower: report.tickLower, tickUpper: report.tickUpper,
+    tickCurrent: report.tickCurrent, rangeSide: report.rangeSide, liquidity: report.liquidity,
+    openedAtIso: report.openedAtIso, evaluatedAtIso: report.evaluatedAtIso, truncated: report.truncated,
+    signatureCount: report.signatureCount, ownsNft: report.ownsNft,
+    cashflows: { openCount: report.cashflows.openCount, increaseCount: report.cashflows.increaseCount, decreaseCount: report.cashflows.decreaseCount },
+    metrics: report.metrics, tokenNative: report.tokenNative, pricing: report.pricing,
+    assumptions: report.assumptions, method: report.method, realizedFeeAprSeries: report.realizedFeeAprSeries,
+  };
+}
+
 export type MeteoraDlmmNative = Pick<MeteoraListedPosition, "positionAccount" | "poolId" | "mintA" | "mintB" | "lowerBinId" | "upperBinId" | "activeBinId" | "liquidity">;
 
 export type MeteoraDlmmAdapterOptions = {
@@ -262,7 +280,9 @@ export function createMeteoraDlmmAdapter(options: MeteoraDlmmAdapterOptions = {}
       return {
         key, depositedUsd: metrics.depositedUsd, withdrawnUsd: metrics.withdrawnPrincipalUsd, feesClaimedUsd: metrics.feesCollectedUsd,
         feesUnclaimedUsd: metrics.uncollectedFeesUsd, currentValueUsd: metrics.currentEquityUsd, pnlUsd: metrics.pnlUsd,
-        partial: report.truncated, report,
+        // No open found in the read history: deposits may be missing, so the numbers are partial too.
+        partial: report.truncated || report.openedAtIso === null,
+        report: uiReport(report),
       };
     }),
     quoteOpen: (request: OpenRequest) => guarded(() => quote(request)),
