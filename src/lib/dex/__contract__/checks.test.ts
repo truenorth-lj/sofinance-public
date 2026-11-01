@@ -163,18 +163,20 @@ describe("contract checks catch broken implementations", () => {
     expect(missingFixtureProblems(fakeSolanaModule, { owner, expectedPositionKeys: [] })).toEqual([
       "open is supported but fixtures.open is missing",
       "deposit, withdraw, claim, compound, performance supported but fixtures.positionKey is missing",
+      "deposit, withdraw, claim, compound supported but fixtures.stranger (a non-owner wallet) is missing",
       "deposit is supported but fixtures.addInput (or fixtures.open) is missing",
       "the fee policy charges a fee but fixtures.feeWallet is missing",
       "Solana DEX without fixtures.mintPrograms (token program of every mint the steps touch)",
     ]);
     const open = { request: { poolId: "p", owner, range: { kind: "preset", presetId: "standard" }, input: { token: "USDC", amountRaw: "1" }, slippageBps: 50 }, expectedSteps: 2 } as const;
-    expect(missingFixtureProblems(fakeSolanaModule, { owner, expectedPositionKeys: [], open, positionKey: "meteora-dlmm:Pos1", ...SOLANA_FACTS }))
+    expect(missingFixtureProblems(fakeSolanaModule, { owner, expectedPositionKeys: [], open, positionKey: "meteora-dlmm:Pos1", stranger: "11111111111111111111111111111113", ...SOLANA_FACTS }))
       .toEqual(["the open fee rule is swap-input-bps but fixtures.open.expectedFeeBaseRaw is missing"]);
     expect(missingFixtureProblems(fakeEvmModule, { owner, expectedPositionKeys: [] })).toEqual([
       "withdraw supported but fixtures.positionKey is missing",
+      "withdraw supported but fixtures.stranger (a non-owner wallet) is missing",
       "the fee policy charges a fee but fixtures.feeWallet is missing",
     ]);
-    expect(missingFixtureProblems({ descriptor: fakeEvmDescriptor }, { owner, expectedPositionKeys: [], positionKey: "uniswap-v4-rhc:1", feeWallet: EVM_FEE_WALLET })).toEqual(["no server adapter registered"]);
+    expect(missingFixtureProblems({ descriptor: fakeEvmDescriptor }, { owner, expectedPositionKeys: [], positionKey: "uniswap-v4-rhc:1", stranger: `0x${"b".repeat(40)}`, feeWallet: EVM_FEE_WALLET })).toEqual(["no server adapter registered"]);
   });
 
   it("flags GeckoTerminal reads", () => {

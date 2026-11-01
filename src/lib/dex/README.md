@@ -45,7 +45,9 @@ errors (4001/5000), confirmation and status stay in the shared transaction pipel
   copies captured at load time (`@solana/web3.js` `Connection`) are blocked too; inside the suite every request goes to
   the fixtures' `fetch` replay, and one it does not answer fails the test.
 - Nothing supported is skipped: `open` needs `fixtures.open`; add / withdraw / claim / compound / performance need
-  `fixtures.positionKey`. `feeWallet` is required whenever the fee policy charges anything, `open.expectedFeeBaseRaw`
+  `fixtures.positionKey`, and any supported position op needs `fixtures.stranger`: add / withdraw / claim / compound take
+  the requesting wallet (`owner`) and must refuse a non-owner with `POSITION_NOT_FOUND` (the adapter checks the
+  position's on-chain owner itself; the route is not the only caller). `feeWallet` is required whenever the fee policy charges anything, `open.expectedFeeBaseRaw`
   whenever the open fee is not `none`, and `mintPrograms` for every Solana DEX. Every step of open, add, full and partial withdraw, claim and compound is prepared and checked.
 - `position.source` must be the canonical id (aliases are only for old URLs / localStorage via `normalizeDexId`).
 - Step checks: ≤ 1232 bytes, a compute-unit limit instruction ≤ 1.4M, owner pays and signs, at most one declared
@@ -53,6 +55,7 @@ errors (4001/5000), confirmation and status stay in the shared transaction pipel
   the mint's token program, SystemProgram transfers only to the owner, its wSOL ATA, accounts created in the same tx or
   `fixtures.systemTransferRecipients`, quoted open fee =
   `fees.feeFor("open", base)`, EVM `to` in the allowlist and `approve` only to Permit2; anything thrown is a `DexError`.
-- Still per-PR review items: full withdraw ends with a close refunding rent to the owner (PR6), EVM `value` rules (PR11).
+- Still per-PR review items: EVM `value` rules (PR11). Meteora's full withdraw closing with rent to the owner is pinned
+  in its own specifics test (PR6).
 
 No component, API route, cron job or the transaction pipeline changes.

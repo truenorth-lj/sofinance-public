@@ -45,7 +45,7 @@ import type { ListedMeteoraPool } from "./pools.server";
  * `assertMeteoraFeeRule` (no instruction touching the fee wallet, no bare SOL transfer). Nothing here signs or sends.
  */
 
-const SIGNATURE_LAMPORTS = 5_000n;
+export const SIGNATURE_LAMPORTS = 5_000n;
 const MAX_OPEN_BINS = 70;
 
 export type MeteoraOpenDeps = {
@@ -82,10 +82,10 @@ export type MeteoraOpenPlan = {
   platformFeeRaw: bigint;
 };
 
-const short = (address: string) => `${address.slice(0, 4)}…${address.slice(-4)}`;
-const sol = (lamports: bigint) => (Number(lamports) / 1e9).toFixed(4);
+export const short = (address: string) => `${address.slice(0, 4)}…${address.slice(-4)}`;
+export const sol = (lamports: bigint) => (Number(lamports) / 1e9).toFixed(4);
 
-function publicKey(value: string, what: string) {
+export function publicKey(value: string, what: string) {
   try {
     return new PublicKey(value);
   } catch {
@@ -129,18 +129,21 @@ export function assertMeteoraPoolMintsUsable(
 }
 
 /** Pool (listed + on-chain LbPair) and both mints, one batched read. */
-export async function readMeteoraPool(deps: Pick<MeteoraOpenDeps, "connection" | "listedPool">, poolId: string): Promise<MeteoraPoolState> {
+export async function readMeteoraPool(
+  deps: Pick<MeteoraOpenDeps, "connection" | "listedPool">, poolId: string, options: { requireListed: boolean } = { requireListed: true },
+): Promise<MeteoraPoolState> {
   const poolKey = publicKey(poolId, "pool id");
-  const listed = await deps.listedPool(poolId);
-  if (!listed) throw new DexError("UNSUPPORTED", "This Meteora pool is not on SoFinance's pool list, so it can't be opened here yet.");
+  // Opening and adding need a listed pool. Withdraw and claim do not (PR6): a pool dropped from the list must never trap funds.
+  const listed = options.requireListed ? await deps.listedPool(poolId) : null;
+  if (options.requireListed && !listed) throw new DexError("UNSUPPORTED", "This Meteora pool is not on SoFinance's pool list, so it can't be opened here yet.");
   const { context, value: [info] } = await deps.connection.getMultipleAccountsInfoAndContext([poolKey], "confirmed");
   if (!info || info.owner.toBase58() !== METEORA_DLMM_PROGRAM_ID) throw new DexError("UPSTREAM", "This Meteora pool account was not found on chain.");
   const lbPair = decodeLbPair(info.data);
   const mints = [lbPair.tokenXMint, lbPair.tokenYMint];
-  if (!listed.mints.every((mint) => mints.includes(mint)) || (listed.binStep !== null && listed.binStep !== lbPair.binStep)) {
+  if (listed && (!listed.mints.every((mint) => mints.includes(mint)) || (listed.binStep !== null && listed.binStep !== lbPair.binStep))) {
     throw new DexError("UPSTREAM", "This Meteora pool on chain no longer matches SoFinance's pool list, so nothing was built.");
   }
-  if (lbPair.status !== 0) throw new DexError("UNSUPPORTED", "This Meteora pool is disabled by Meteora right now.");
+  if (options.requireListed && lbPair.status !== 0) throw new DexError("UNSUPPORTED", "This Meteora pool is disabled by Meteora right now.");
   const [mintX, mintY] = await deps.connection.getMultipleAccountsInfo([new PublicKey(lbPair.tokenXMint), new PublicKey(lbPair.tokenYMint)], "confirmed");
   const usable = assertMeteoraPoolMintsUsable(lbPair, mintX ?? null, mintY ?? null);
   return { poolId, lbPair, ...usable, slot: context.slot };
@@ -206,6 +209,7 @@ export function assertMeteoraOpenInput(request: OpenRequest, pool: MeteoraPoolSt
 /** Everything quote and both steps share; throws a DexError when the open cannot proceed. */
 export async function planMeteoraOpen(
   deps: MeteoraOpenDeps, request: OpenRequest, pool: MeteoraPoolState, range: { lowerBinId: number; upperBinId: number },
+  op: "open" | "add" = "open",
 ): Promise<MeteoraOpenPlan> {
   publicKey(request.owner, "wallet");
   assertMeteoraOpenInput(request, pool);
@@ -220,16 +224,17 @@ export async function planMeteoraOpen(
   // The rate comes from the fee policy only. A charging policy with no fee wallet configured throws MISCONFIGURED (and
   // reports to Sentry) in every environment before anything is built: there is no silent 0 fee. Tests / local setups
   // that want no fee pass an explicit "none" policy (`createMeteoraDlmmAdapter({ feePolicy })`).
-  const legBps = feeRuleBps(deps.fees.policy.open);
-  assertFeeWalletConfigured({ dexId: meteoraDlmmDescriptor.id, op: "open", charges: legBps > 0, feeWallet: deps.feeConfig().wallet?.toBase58() ?? null });
-  const platformFeeRaw = legBps ? sides.filter((s) => s.swapped).reduce((sum, s) => sum + deps.fees.feeFor("open", s.spend), 0n) : 0n;
+  // Open and add share one rule shape (swap-input-bps on the swapped part only); each reads its own policy entry.
+  const legBps = feeRuleBps(deps.fees.policy[op]);
+  assertFeeWalletConfigured({ dexId: meteoraDlmmDescriptor.id, op, charges: legBps > 0, feeWallet: deps.feeConfig().wallet?.toBase58() ?? null });
+  const platformFeeRaw = legBps ? sides.filter((s) => s.swapped).reduce((sum, s) => sum + deps.fees.feeFor(op, s.spend), 0n) : 0n;
   return {
     pool, ...range, width, bitmapExtension, positionRentLamports: rent.lamports, amount, inputMint: request.input.token,
     inputProgram: inputProgramFor(pool, request.input.token), sides, legBps, platformFeeRaw,
   };
 }
 
-type WalletState = {
+export type WalletState = {
   walletLamports: bigint;
   ataX: PublicKey; ataY: PublicKey; inputAta: PublicKey;
   ataXExists: boolean; ataYExists: boolean;
@@ -238,7 +243,7 @@ type WalletState = {
   slot: number;
 };
 
-function tokenAccount(info: AccountInfo<Buffer> | null, address: PublicKey, owner: PublicKey, mint: string, program: string) {
+export function tokenAccount(info: AccountInfo<Buffer> | null, address: PublicKey, owner: PublicKey, mint: string, program: string) {
   if (!info) return { exists: false, amount: 0n };
   if (info.owner.toBase58() !== program) throw new DexError("UPSTREAM", `Your token account ${short(address.toBase58())} is owned by an unexpected program.`);
   const account = unpackAccount(address, info, info.owner);
@@ -247,7 +252,7 @@ function tokenAccount(info: AccountInfo<Buffer> | null, address: PublicKey, owne
   return { exists: true, amount: account.amount };
 }
 
-async function readWallet(connection: Connection, plan: MeteoraOpenPlan, owner: string, position: string): Promise<WalletState> {
+export async function readWallet(connection: Connection, plan: MeteoraOpenPlan, owner: string, position: string): Promise<WalletState> {
   const wallet = new PublicKey(owner);
   const { lbPair } = plan.pool;
   const ataX = getAssociatedTokenAddressSync(new PublicKey(lbPair.tokenXMint), wallet, false, new PublicKey(plan.pool.tokenProgramX));
@@ -270,11 +275,11 @@ function assertInputBalance(plan: MeteoraOpenPlan, state: WalletState) {
   }
 }
 
-const cuLimit = (units: number) => ComputeBudgetProgram.setComputeUnitLimit({ units });
-const compileV0 = (payer: PublicKey, blockhash: string, instructions: TransactionInstruction[]) =>
+export const cuLimit = (units: number) => ComputeBudgetProgram.setComputeUnitLimit({ units });
+export const compileV0 = (payer: PublicKey, blockhash: string, instructions: TransactionInstruction[]) =>
   new VersionedTransaction(new TransactionMessage({ payerKey: payer, recentBlockhash: blockhash, instructions }).compileToV0Message());
 
-async function simulate(connection: Connection, transaction: VersionedTransaction, addresses: PublicKey[], minContextSlot: number, what: string) {
+export async function simulate(connection: Connection, transaction: VersionedTransaction, addresses: PublicKey[], minContextSlot: number, what: string) {
   const result = await withContextSlotRetry(() => connection.simulateTransaction(transaction, {
     sigVerify: false, commitment: "confirmed", minContextSlot, accounts: { encoding: "base64", addresses: addresses.map((a) => a.toBase58()) },
   }));
@@ -284,7 +289,7 @@ async function simulate(connection: Connection, transaction: VersionedTransactio
   return result.value;
 }
 
-const accountData = (account: { data: string[] } | null | undefined) => (account?.data?.[0] ? Buffer.from(account.data[0], "base64") : null);
+export const accountData = (account: { data: string[] } | null | undefined) => (account?.data?.[0] ? Buffer.from(account.data[0], "base64") : null);
 
 function setupInstructions(plan: MeteoraOpenPlan, state: WalletState, owner: string, position: string, units = ATOMIC_COMPUTE_UNIT_LIMIT) {
   const wallet = new PublicKey(owner);
@@ -319,7 +324,7 @@ async function swapLegs(plan: MeteoraOpenPlan, owner: string, constraints: Jupit
   };
 }
 
-function addInstruction(plan: MeteoraOpenPlan, state: WalletState, owner: string, position: string, amountX: bigint, amountY: bigint) {
+export function addInstruction(plan: MeteoraOpenPlan, state: WalletState, owner: string, position: string, amountX: bigint, amountY: bigint) {
   const { lbPair } = plan.pool;
   return meteoraAddLiquidityByStrategy2Instruction({
     position: new PublicKey(position), lbPair: new PublicKey(plan.pool.poolId), sender: new PublicKey(owner),
@@ -332,13 +337,14 @@ function addInstruction(plan: MeteoraOpenPlan, state: WalletState, owner: string
 }
 
 /** Assembles 2/2. `compactAtas`: drop Jupiter ATA creates for accounts that already exist (once 1/2 has landed). */
-async function compileDeposit(deps: MeteoraOpenDeps, plan: MeteoraOpenPlan, state: WalletState, owner: string, position: string, blockhash: string, compactAtas: boolean) {
+export async function compileDeposit(deps: MeteoraOpenDeps, plan: MeteoraOpenPlan, state: WalletState, owner: string, position: string, blockhash: string, compactAtas: boolean,
+  prefix: TransactionInstruction[] = []) {
   let lastError: unknown;
   const lookupTables = openLookupTableReader(deps.connection);
   const wallet = new PublicKey(owner);
   for (const constraints of JUPITER_ROUTE_ATTEMPTS) {
     const legs = await swapLegs(plan, owner, constraints);
-    const body = [...swapRouteInstructions(legs.routes, wallet), addInstruction(plan, state, owner, position, legs.amountX, legs.amountY)];
+    const body = [...prefix, ...swapRouteInstructions(legs.routes, wallet), addInstruction(plan, state, owner, position, legs.amountX, legs.amountY)];
     const instructions = compactAtas ? await compactAtaInstructions(deps.connection, [cuLimit(ATOMIC_COMPUTE_UNIT_LIMIT), ...body]) : [cuLimit(ATOMIC_COMPUTE_UNIT_LIMIT), ...body];
     assertMeteoraFeeRule(instructions, deps.feeConfig());
     const tables = await lookupTables(legs.routes.flatMap((route) => Object.keys(route.addressesByLookupTableAddress ?? {}).map((key) => new PublicKey(key))));
@@ -355,7 +361,7 @@ async function compileDeposit(deps: MeteoraOpenDeps, plan: MeteoraOpenPlan, stat
 }
 
 export type BuiltStep = { transaction: string; lastValidBlockHeight: number };
-const encode = (transaction: VersionedTransaction) => Buffer.from(transaction.serialize()).toString("base64");
+export const encode = (transaction: VersionedTransaction) => Buffer.from(transaction.serialize()).toString("base64");
 
 /** 1/2: the wallet's own ATAs + initialize_position, simulated; 2/2 is drafted first so rent is never paid for a dead end. */
 export async function buildMeteoraSetup(deps: MeteoraOpenDeps, plan: MeteoraOpenPlan, owner: string, position: string): Promise<BuiltStep> {

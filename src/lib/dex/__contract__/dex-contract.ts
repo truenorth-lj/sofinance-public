@@ -47,6 +47,11 @@ export type DexContractFixtures = {
   blockedOpens?: readonly OpenRequest[];
   /** A position to run add / withdraw / claim / compound / performance against. */
   positionKey?: PositionKey;
+  /**
+   * A wallet that does not own `positionKey` (required when any position op is supported). Every supported position op
+   * called with it must reject with POSITION_NOT_FOUND before building anything.
+   */
+  stranger?: string;
   /** Deposit used for `prepareAdd`; defaults to `open.request.input`. */
   addInput?: DexDepositInput;
   /**
@@ -81,6 +86,8 @@ export function missingFixtureProblems(entry: DexModule, fixtures: DexContractFi
   if (caps.open.supported && !fixtures.open) problems.push("open is supported but fixtures.open is missing");
   const keyed = (["deposit", "withdraw", "claim", "compound", "performance"] as const).filter((cap) => caps[cap].supported);
   if (keyed.length && !fixtures.positionKey) problems.push(`${keyed.join(", ")} supported but fixtures.positionKey is missing`);
+  const ops = (["deposit", "withdraw", "claim", "compound"] as const).filter((cap) => caps[cap].supported);
+  if (ops.length && !fixtures.stranger) problems.push(`${ops.join(", ")} supported but fixtures.stranger (a non-owner wallet) is missing`);
   if (caps.deposit.supported && !fixtures.addInput && !fixtures.open) problems.push("deposit is supported but fixtures.addInput (or fixtures.open) is missing");
   const { feePolicy } = entry.descriptor.meta;
   if (feePolicyCharges(feePolicy) && !fixtures.feeWallet) problems.push("the fee policy charges a fee but fixtures.feeWallet is missing");
@@ -181,11 +188,12 @@ export function describeDexContract(entry: DexModule, fixtures: DexContractFixtu
       const request = fixtures.open?.request ?? { poolId: "fixture", owner: fixtures.owner, range: { kind: "preset", presetId: "standard" }, input: { token: "fixture", amountRaw: "1" }, slippageBps: 50 } satisfies OpenRequest;
       const unsupported = async (run: () => Promise<unknown>) => expect(run()).rejects.toBeInstanceOf(DexUnsupportedError);
       if (!caps.open.supported) await unsupported(() => adapter.prepareOpen(request, FIRST_STEP));
-      if (!caps.deposit.supported) await unsupported(() => adapter.prepareAdd(key, request.input, FIRST_STEP));
-      if (!caps.withdraw.supported) await unsupported(() => adapter.prepareWithdraw(key, { fraction: 1, output: "pool-tokens" }, FIRST_STEP));
-      if (caps.withdraw.supported && !caps.withdraw.partial) await unsupported(() => adapter.prepareWithdraw(key, { fraction: 0.5, output: "pool-tokens" }, FIRST_STEP));
-      if (!caps.claim.supported) await unsupported(() => adapter.prepareClaim(key, FIRST_STEP));
-      if (!caps.compound.supported) await unsupported(() => adapter.prepareCompound(key, FIRST_STEP));
+      const owner = fixtures.owner;
+      if (!caps.deposit.supported) await unsupported(() => adapter.prepareAdd(key, owner, request.input, FIRST_STEP));
+      if (!caps.withdraw.supported) await unsupported(() => adapter.prepareWithdraw(key, owner, { fraction: 1, output: "pool-tokens" }, FIRST_STEP));
+      if (caps.withdraw.supported && !caps.withdraw.partial) await unsupported(() => adapter.prepareWithdraw(key, owner, { fraction: 0.5, output: "pool-tokens" }, FIRST_STEP));
+      if (!caps.claim.supported) await unsupported(() => adapter.prepareClaim(key, owner, FIRST_STEP));
+      if (!caps.compound.supported) await unsupported(() => adapter.prepareCompound(key, owner, FIRST_STEP));
       if (!caps.performance.supported) await unsupported(() => adapter.performance(key));
     });
 
@@ -224,11 +232,11 @@ export function describeDexContract(entry: DexModule, fixtures: DexContractFixtu
     if (positionKey) {
       if (caps.withdraw.supported) {
         it("prepares a full withdraw for the owner", async () => {
-          await walkSteps((context) => adapter.prepareWithdraw(positionKey, { fraction: 1, output: "pool-tokens" }, context));
+          await walkSteps((context) => adapter.prepareWithdraw(positionKey, fixtures.owner, { fraction: 1, output: "pool-tokens" }, context));
         });
         if (caps.withdraw.partial) {
           it("prepares a partial withdraw for the owner", async () => {
-            await walkSteps((context) => adapter.prepareWithdraw(positionKey, { fraction: 0.5, output: "pool-tokens" }, context));
+            await walkSteps((context) => adapter.prepareWithdraw(positionKey, fixtures.owner, { fraction: 0.5, output: "pool-tokens" }, context));
           });
         }
       }
@@ -236,19 +244,34 @@ export function describeDexContract(entry: DexModule, fixtures: DexContractFixtu
       const addInput = fixtures.addInput ?? open?.request.input;
       if (caps.deposit.supported && addInput) {
         it("prepares an add for the owner", async () => {
-          await walkSteps((context) => adapter.prepareAdd(positionKey, addInput, context));
+          await walkSteps((context) => adapter.prepareAdd(positionKey, fixtures.owner, addInput, context));
         });
       }
 
       if (caps.claim.supported) {
         it("prepares a claim for the owner", async () => {
-          await walkSteps((context) => adapter.prepareClaim(positionKey, context));
+          await walkSteps((context) => adapter.prepareClaim(positionKey, fixtures.owner, context));
+        });
+      }
+
+      const stranger = fixtures.stranger;
+      if (stranger) {
+        it("refuses every supported position op for a wallet that does not own the position", async () => {
+          const refused = async (run: () => Promise<unknown>) => {
+            const error = await run().then(() => null, (thrown: unknown) => thrown);
+            expect(error, "a non-owner got a prepared step").toBeInstanceOf(DexError);
+            expect((error as DexError).code).toBe("POSITION_NOT_FOUND");
+          };
+          if (caps.withdraw.supported) await refused(() => adapter.prepareWithdraw(positionKey, stranger, { fraction: 1, output: "pool-tokens" }, FIRST_STEP));
+          if (caps.deposit.supported && addInput) await refused(() => adapter.prepareAdd(positionKey, stranger, addInput, FIRST_STEP));
+          if (caps.claim.supported) await refused(() => adapter.prepareClaim(positionKey, stranger, FIRST_STEP));
+          if (caps.compound.supported) await refused(() => adapter.prepareCompound(positionKey, stranger, FIRST_STEP));
         });
       }
 
       if (caps.compound.supported) {
         it("prepares a compound for the owner", async () => {
-          await walkSteps((context) => adapter.prepareCompound(positionKey, context));
+          await walkSteps((context) => adapter.prepareCompound(positionKey, fixtures.owner, context));
         });
       }
 

@@ -5,7 +5,7 @@ import { dexDescriptors, dexPositionLabel, dexPositionRangeText, dexRangeStatusT
   type DexDescriptor, type DexSigner } from "@/lib/dex/client";
 import { tokenSymbol, type PositionLabelMetadata } from "@/lib/position-label";
 import { isDexTxRouteEnabled } from "@/lib/protocol-flags";
-import type { PositionSourceId, SourceCapabilities, UnifiedPosition } from "@/lib/unified-positions/model";
+import { NOT_AVAILABLE_MESSAGE, type PositionSourceId, type SourceCapabilities, type UnifiedPosition } from "@/lib/unified-positions/model";
 import { PositionAssetRow } from "../position-asset-row";
 
 /**
@@ -29,6 +29,16 @@ export type RegistryPositions = {
   /** The `{ displayName, label }` pair `positionOptionLabel` (rows.ts) needs for a registry row. */
   optionSource(position: UnifiedPosition, metadata?: PositionLabelMetadata): { displayName: string; label: (position: UnifiedPosition) => string };
 };
+
+/**
+ * The registry panel has no tool UI yet (selected-app binds `tool: () => null`), so every tool tab of a registry position
+ * stays greyed with the generic reason, whatever the adapter can already prepare (PR6 ships Meteora add / withdraw /
+ * claim server-side; the panels that drive them come in a later PR). Generic: no DEX id is checked.
+ */
+const NO_PANEL = Object.freeze({ supported: false as const, reason: NOT_AVAILABLE_MESSAGE });
+export function registryPanelCapabilities(capabilities: SourceCapabilities): SourceCapabilities {
+  return { ...capabilities, compound: NO_PANEL, performance: NO_PANEL, deposit: NO_PANEL, withdraw: NO_PANEL };
+}
 
 type Loaded = { owner: string; refresh: number; served: PositionSourceId[]; positions: UnifiedPosition[]; errors: string[] };
 
@@ -61,7 +71,10 @@ export function useRegistryPositions({ owner, signer, exclude, refresh }: {
     positions: current?.positions ?? [],
     errors: current?.errors ?? [],
     owns: (position) => Boolean(byId(position)),
-    capabilities: (position) => (byId(position) ? dexDescriptors.capabilitiesFor(position) : null),
+    capabilities: (position) => {
+      const capabilities = byId(position) ? dexDescriptors.capabilitiesFor(position) : null;
+      return capabilities ? registryPanelCapabilities(capabilities) : null;
+    },
     optionSource: (position, metadata) => ({ displayName: byId(position)?.displayName ?? "", label: (item) => dexPositionLabel(item, metadata) }),
   };
 }

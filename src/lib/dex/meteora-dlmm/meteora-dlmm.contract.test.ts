@@ -60,12 +60,14 @@ const ySpend = meteoraSpotSplit(BigInt(DEPOSIT_RAW), 46062, 46031, 46090).y;
 const FEED_POSITION = Keypair.fromSeed(new Uint8Array(32).fill(21)).publicKey.toBase58();
 /** OWNER's position in 5pw5, which the stubbed feed does not list: never shown. */
 const UNLISTED_POSITION = Keypair.fromSeed(new Uint8Array(32).fill(22)).publicKey.toBase58();
+/** Liquidity share held in FEED_POSITION's first bin (so partial withdraw and claim have something to act on). */
+const FEED_SHARE = 1_000_000n;
 const STRANGER = Keypair.fromSeed(new Uint8Array(32).fill(23)).publicKey.toBase58();
 const STRANGER_POSITION = Keypair.fromSeed(new Uint8Array(32).fill(24)).publicKey.toBase58();
 
 function installHeldPositions() {
-  chain.current.set(FEED_POSITION, positionAccount(TSLA_POOL, OWNER, 46031, 60));
-  chain.current.set(UNLISTED_POSITION, positionAccount(SPCX_POOL, OWNER, 0, 10, 5n));
+  chain.current.set(FEED_POSITION, positionAccount(TSLA_POOL, OWNER, 46031, 60, FEED_SHARE));
+  chain.current.set(UNLISTED_POSITION, positionAccount(SPCX_POOL, OWNER, 46031, 60, 5n));
   chain.current.set(STRANGER_POSITION, positionAccount(TSLA_POOL, STRANGER, 46031, 60, 5n));
 }
 
@@ -75,6 +77,9 @@ describeDexContract(meteoraDlmmModule, {
   fetch: jupiterReplay,
   expectedPositionKeys: [`meteora-dlmm:${FEED_POSITION}`],
   open: { request, expectedSteps: 2, expectedFeeBaseRaw: ySpend.toString() },
+  positionKey: `meteora-dlmm:${FEED_POSITION}`,
+  stranger: STRANGER,
+  addInput: { token: TSLA, amountRaw: DEPOSIT_RAW },
   blockedOpens: [
     { ...base, range: { kind: "preset", presetId: "wide" } }, // 200 bins > 70: not available to open yet
     { ...base, range: { kind: "units", lower: 45980, upper: 46000 } }, // needs bin array 656, which does not exist
@@ -219,5 +224,114 @@ describe("Meteora DLMM adapter specifics", () => {
     const sol = await adapter.quoteOpen({ ...request, input: { token: NATIVE_SOL_MINT, amountRaw: "1" } });
     expect(sol.blockedReason).toMatch(/SOL/);
     await expect(adapter.quoteOpen({ ...request, slippageBps: 100 })).rejects.toMatchObject({ code: "INVALID_REQUEST" });
+  });
+
+  describe("add / withdraw / claim (PR6)", () => {
+    const key = `meteora-dlmm:${FEED_POSITION}` as const;
+    const first = { step: 1, priorSignatures: [] };
+    const decoded = (prepared: { kind: string; transaction?: string }) => {
+      if (prepared.kind !== "solana-tx" || !prepared.transaction) throw new Error("expected a Solana step");
+      const tx = VersionedTransaction.deserialize(Buffer.from(prepared.transaction, "base64"));
+      return { tx, keys: tx.message.staticAccountKeys.map((k) => k.toBase58()) };
+    };
+    beforeEach(() => installHeldPositions());
+
+    it("refuses every op for a wallet that does not own the position (decoded on-chain owner), building nothing", async () => {
+      const adapter = createMeteoraDlmmAdapter();
+      for (const run of [
+        () => adapter.prepareAdd(key, STRANGER, { token: TSLA, amountRaw: DEPOSIT_RAW }, first),
+        () => adapter.prepareWithdraw(key, STRANGER, { fraction: 1, output: "pool-tokens" }, first),
+        () => adapter.prepareWithdraw(key, STRANGER, { fraction: 0.5, output: "pool-tokens" }, first),
+        () => adapter.prepareClaim(key, STRANGER, first),
+      ]) await expect(run()).rejects.toMatchObject({ code: "POSITION_NOT_FOUND", message: expect.stringMatching(/another wallet/) });
+      // The stranger's own position cannot be driven by OWNER either.
+      await expect(adapter.prepareClaim(`meteora-dlmm:${STRANGER_POSITION}`, OWNER, first)).rejects.toMatchObject({ code: "POSITION_NOT_FOUND" });
+      expect(chain.current.simulations).toEqual([]);
+    });
+
+    it("partial withdraw removes the share only (fees stay), paid by the owner, no fee", async () => {
+      const step = await createMeteoraDlmmAdapter().prepareWithdraw(key, OWNER, { fraction: 0.25, output: "pool-tokens" }, first);
+      expect(step).toMatchObject({ step: 1, of: 1, done: true, label: expect.stringMatching(/Withdraw 25% of the position/) });
+      expect(chain.current.simulations).toEqual(["remove_liquidity_by_range2"]);
+      const { tx, keys } = decoded(step.prepared);
+      expect(keys[0]).toBe(OWNER);
+      expect(tx.message.header.numRequiredSignatures).toBe(1);
+      expect(keys).not.toContain(FEE_WALLET);
+      expect(keys).not.toContain(ata(TSLA, FEE_WALLET));
+      expect(keys).not.toContain("JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4");
+    });
+
+    it("full withdraw removes everything, claims fees and closes the position with the rent back to the owner (and says so)", async () => {
+      const rent = chain.current.get(FEED_POSITION)!.lamports;
+      const step = await createMeteoraDlmmAdapter().prepareWithdraw(key, OWNER, { fraction: 1, output: "pool-tokens" }, first);
+      expect(chain.current.simulations).toEqual(["remove_liquidity_by_range2", "claim_fee2", "close_position2"]);
+      expect(step.label).toContain(`rent (about ${(rent / 1e9).toFixed(4)} SOL) comes back to your wallet`);
+      const { tx, keys } = decoded(step.prepared);
+      const close = tx.message.compiledInstructions.at(-1)!;
+      expect(keys[close.accountKeyIndexes[2]!]).toBe(OWNER); // rent receiver
+      expect(keys).not.toContain(FEE_WALLET);
+    });
+
+    it("full withdraw of an emptied position skips the remove and still claims and closes", async () => {
+      chain.current.set(FEED_POSITION, positionAccount(TSLA_POOL, OWNER, 46031, 60));
+      await createMeteoraDlmmAdapter().prepareWithdraw(key, OWNER, { fraction: 1, output: "pool-tokens" }, first);
+      expect(chain.current.simulations).toEqual(["claim_fee2", "close_position2"]);
+      await expect(createMeteoraDlmmAdapter().prepareWithdraw(key, OWNER, { fraction: 0.5, output: "pool-tokens" }, first))
+        .rejects.toMatchObject({ code: "INVALID_REQUEST" });
+    });
+
+    it("refuses withdraw to USDC and an out-of-range share", async () => {
+      const adapter = createMeteoraDlmmAdapter();
+      await expect(adapter.prepareWithdraw(key, OWNER, { fraction: 1, output: "usdc" }, first)).rejects.toMatchObject({ code: "UNSUPPORTED" });
+      await expect(adapter.prepareWithdraw(key, OWNER, { fraction: 0, output: "pool-tokens" }, first)).rejects.toMatchObject({ code: "INVALID_REQUEST" });
+      await expect(adapter.prepareWithdraw(key, OWNER, { fraction: 1.5, output: "pool-tokens" }, first)).rejects.toMatchObject({ code: "INVALID_REQUEST" });
+      expect(chain.current.simulations).toEqual([]);
+    });
+
+    it("claims fees without touching liquidity, and charges no fee", async () => {
+      const step = await createMeteoraDlmmAdapter().prepareClaim(key, OWNER, first);
+      expect(chain.current.simulations).toEqual(["claim_fee2"]);
+      const { keys } = decoded(step.prepared);
+      expect(keys[0]).toBe(OWNER);
+      expect(keys).not.toContain(FEE_WALLET);
+    });
+
+    it("adds to the position with the 10 bps paid inside the Jupiter swap into the fee wallet's existing account", async () => {
+      const step = await createMeteoraDlmmAdapter().prepareAdd(key, OWNER, { token: TSLA, amountRaw: DEPOSIT_RAW }, first);
+      expect(step).toMatchObject({ step: 1, of: 1, done: true });
+      expect(chain.current.simulations).toContain("add_liquidity_by_strategy2");
+      const { keys } = decoded(step.prepared);
+      expect(keys[0]).toBe(OWNER);
+      expect(keys).toContain("JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4");
+      expect(keys).toContain(ata(TSLA, FEE_WALLET));
+      expect(keys).not.toContain(FEE_WALLET);
+    });
+
+    it("runs the Token-2022 mint guard on add, withdraw and claim", async () => {
+      chain.current.pauseMint(TSLA);
+      const adapter = createMeteoraDlmmAdapter();
+      await expect(adapter.prepareAdd(key, OWNER, { token: TSLA, amountRaw: DEPOSIT_RAW }, first)).rejects.toMatchObject({ code: "TOKEN_RESTRICTED" });
+      await expect(adapter.prepareWithdraw(key, OWNER, { fraction: 1, output: "pool-tokens" }, first)).rejects.toMatchObject({ code: "TOKEN_RESTRICTED" });
+      await expect(adapter.prepareClaim(key, OWNER, first)).rejects.toMatchObject({ code: "TOKEN_RESTRICTED" });
+      expect(chain.current.simulations).toEqual([]);
+    });
+
+    it("never creates a bin array: a missing one refuses withdraw, claim and add", async () => {
+      const [index, array] = Object.entries(capture.pools[TSLA_POOL]!.binArrays).find(([i, a]) => a.exists && Number(i) === 657)!;
+      expect(index).toBe("657");
+      chain.current.set(array.address, null);
+      const adapter = createMeteoraDlmmAdapter();
+      await expect(adapter.prepareWithdraw(key, OWNER, { fraction: 1, output: "pool-tokens" }, first)).rejects.toMatchObject({ code: "UPSTREAM", message: expect.stringMatching(/bin array/) });
+      await expect(adapter.prepareClaim(key, OWNER, first)).rejects.toMatchObject({ code: "UPSTREAM" });
+      await expect(adapter.prepareAdd(key, OWNER, { token: TSLA, amountRaw: DEPOSIT_RAW }, first)).rejects.toMatchObject({ code: "NEEDS_NEW_SHARED_ACCOUNT" });
+      expect(chain.current.simulations).toEqual([]);
+    });
+
+    it("lets withdraw and claim reach a position in a pool the feed no longer lists (funds never trapped); add refuses", async () => {
+      const unlisted = `meteora-dlmm:${UNLISTED_POSITION}` as const;
+      const adapter = createMeteoraDlmmAdapter();
+      await expect(adapter.prepareWithdraw(unlisted, OWNER, { fraction: 1, output: "pool-tokens" }, first)).resolves.toMatchObject({ done: true });
+      await expect(adapter.prepareAdd(unlisted, OWNER, { token: TSLA, amountRaw: DEPOSIT_RAW }, first)).rejects.toBeInstanceOf(DexError);
+    });
   });
 });

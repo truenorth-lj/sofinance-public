@@ -133,6 +133,47 @@ describe("POST /api/dex/[dex]/[op]", () => {
     expect(prepareRecovery).toHaveBeenCalledWith("some-dex:abc", owner.toBase58(), { step: 1, priorSignatures: [] });
   });
 
+  it("routes add / withdraw / claim to the adapter with the requesting wallet as owner, returning permitted steps", async () => {
+    const step = async () => ({ step: 1, of: 1, label: "Op", done: true, prepared: { kind: "solana-tx", transaction: tx(), lastValidBlockHeight: 50 } });
+    const prepareAdd = vi.fn(step);
+    const prepareWithdraw = vi.fn(step);
+    const prepareClaim = vi.fn(step);
+    fake.adapter = { ...fake.adapter, prepareAdd, prepareWithdraw, prepareClaim };
+    const common = { owner: owner.toBase58(), positionKey: "some-dex:abc", step: 1, priorSignatures: [] };
+    const context = { step: 1, priorSignatures: [] };
+    const added = await call("add", { ...common, input: { token: "Mint111111111111111111111111111111111111111", amountRaw: "100" } });
+    expect(added.status).toBe(200);
+    expect((await added.json()).prepared).toMatchObject({ sendPermit: expect.any(String), landedPermit: expect.any(String) });
+    expect(prepareAdd).toHaveBeenCalledWith("some-dex:abc", owner.toBase58(), { token: "Mint111111111111111111111111111111111111111", amountRaw: "100" }, context);
+    expect((await call("withdraw", { ...common, fraction: 0.5, output: "pool-tokens" })).status).toBe(200);
+    expect(prepareWithdraw).toHaveBeenCalledWith("some-dex:abc", owner.toBase58(), { fraction: 0.5, output: "pool-tokens" }, context);
+    expect((await call("claim", common)).status).toBe(200);
+    expect(prepareClaim).toHaveBeenCalledWith("some-dex:abc", owner.toBase58(), context);
+  });
+
+  it("400s a position op with a non-base58 owner, a bad share or an extra field, before the adapter runs", async () => {
+    const prepareWithdraw = vi.fn();
+    const prepareClaim = vi.fn();
+    fake.adapter = { ...fake.adapter, prepareWithdraw, prepareClaim };
+    const common = { owner: owner.toBase58(), positionKey: "some-dex:abc", step: 1, priorSignatures: [] };
+    for (const body of [
+      { ...common, owner: "0x" + "ab".repeat(20) },
+      { ...common, owner: owner.toBase58() + "1" },
+      { ...common, extra: 1 },
+    ]) expect((await call("claim", body)).status).toBe(400);
+    for (const fraction of [0, -0.1, 1.01]) expect((await call("withdraw", { ...common, fraction, output: "pool-tokens" })).status).toBe(400);
+    expect((await call("withdraw", { ...common, fraction: 1, output: "sol" })).status).toBe(400);
+    expect(prepareWithdraw).not.toHaveBeenCalled();
+    expect(prepareClaim).not.toHaveBeenCalled();
+  });
+
+  it("returns 404 POSITION_NOT_FOUND when the adapter says the position belongs to another wallet", async () => {
+    fake.adapter = { ...fake.adapter, prepareClaim: vi.fn(async () => { throw new DexError("POSITION_NOT_FOUND", "That Meteora position belongs to another wallet."); }) };
+    const response = await call("claim", { owner: other.toBase58(), positionKey: "some-dex:abc", step: 1, priorSignatures: [] });
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: "That Meteora position belongs to another wallet.", code: "POSITION_NOT_FOUND" });
+  });
+
   it("returns 503 with a plain message when the deployment is misconfigured", async () => {
     (fake.adapter!.quoteOpen as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new DexError("MISCONFIGURED", "Opening positions is temporarily unavailable."));
     const response = await call("quote-open", { request: openRequest });

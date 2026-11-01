@@ -10,7 +10,7 @@ import { isJupiterUpstreamError, asJupiterUserError } from "@sofinance/engine/ju
 import { readSwapFeeConfig, type SwapFeeConfig } from "@sofinance/engine/swap/fee";
 import { listMeteoraPositions, type MeteoraListedPosition, type MeteoraReadOptions } from "@/lib/meteora-positions";
 import { positionKey, type PositionKey, type PositionHoldings, type RangeStatus, type UnifiedPosition } from "@/lib/unified-positions/model";
-import type { DexAdapter, OpenQuote, OpenRequest, StepContext, StepResult } from "../adapter";
+import type { DexAdapter, DexDepositInput, OpenQuote, OpenRequest, StepContext, StepResult, WithdrawRequest } from "../adapter";
 import type { FeePolicy } from "../types";
 import { DexError, DexUnsupportedError } from "../errors";
 import { bpsFeeStrategy } from "../fees";
@@ -19,6 +19,7 @@ import {
   buildMeteoraCloseRefund, buildMeteoraDeposit, buildMeteoraSetup, meteoraBinUiPrice, meteoraRequestRange, planMeteoraOpen, readMeteoraPool,
   assertEmptyOwnedPosition, type MeteoraOpenDeps, type MeteoraPoolState,
 } from "./open.server";
+import { buildMeteoraAdd, buildMeteoraClaim, buildMeteoraWithdraw } from "./manage.server";
 import { listedMeteoraPool, type MeteoraPoolList } from "./pools.server";
 
 /** What a Meteora `UnifiedPosition.native` carries: the existing positions row (same shape the legacy UI reads). */
@@ -72,6 +73,12 @@ function nativeIdOf(key: PositionKey) {
     throw new DexError("INVALID_REQUEST", "That Meteora position key is not a valid Solana address.");
   }
 }
+
+function singleStep(context: StepContext, what: string) {
+  if (context.step !== 1) throw new DexError("INVALID_REQUEST", `${what} is a single step; step ${context.step} does not exist.`);
+}
+
+const solText = (lamports: bigint) => (Number(lamports) / 1e9).toFixed(4);
 
 function cosignerOf(request: OpenRequest) {
   if (!request.cosigner) throw new DexError("INVALID_REQUEST", "Opening a Meteora position needs the public key of a fresh position keypair created in your browser.");
@@ -228,9 +235,31 @@ export function createMeteoraDlmmAdapter(options: MeteoraDlmmAdapterOptions = {}
     quoteOpen: (request: OpenRequest) => guarded(() => quote(request)),
     previewWithdraw: async () => { throw notYet(descriptor.capabilities.exitPreview); },
     prepareOpen: (request: OpenRequest, context: StepContext) => guarded(() => open(request, context)),
-    prepareAdd: async () => { throw notYet(descriptor.capabilities.deposit); },
-    prepareWithdraw: async () => { throw notYet(descriptor.capabilities.withdraw); },
-    prepareClaim: async () => { throw notYet(descriptor.capabilities.claim); },
+    // Position ops (PR6): one wallet step each; the builders check the decoded on-chain owner against `owner`.
+    prepareAdd: (key: PositionKey, owner: string, input: DexDepositInput, context: StepContext) => guarded(async () => {
+      singleStep(context, "Adding to a Meteora position");
+      const position = nativeIdOf(key);
+      const built = await buildMeteoraAdd(deps(), position, owner, input);
+      return { step: 1, of: 1, label: "Add to the position", done: true, prepared: { kind: "solana-tx", ...built, positionMint: position } };
+    }),
+    prepareWithdraw: (key: PositionKey, owner: string, request: WithdrawRequest, context: StepContext) => guarded(async () => {
+      singleStep(context, "A Meteora withdraw");
+      const position = nativeIdOf(key);
+      const built = await buildMeteoraWithdraw(deps(), position, owner, request);
+      const label = built.full
+        ? `Withdraw everything, claim fees and close the position. Its rent (about ${solText(built.rentRefundLamports)} SOL) comes back to your wallet.`
+        : `Withdraw ${(built.bps / 100).toLocaleString("en-US", { maximumFractionDigits: 2 })}% of the position. Unclaimed fees stay in the position.`;
+      return {
+        step: 1, of: 1, label, done: true,
+        prepared: { kind: "solana-tx", transaction: built.transaction, lastValidBlockHeight: built.lastValidBlockHeight, positionMint: position },
+      };
+    }),
+    prepareClaim: (key: PositionKey, owner: string, context: StepContext) => guarded(async () => {
+      singleStep(context, "A Meteora fee claim");
+      const position = nativeIdOf(key);
+      const built = await buildMeteoraClaim(deps(), position, owner);
+      return { step: 1, of: 1, label: "Claim unclaimed fees to your wallet", done: true, prepared: { kind: "solana-tx", ...built, positionMint: position } };
+    }),
     prepareCompound: async () => { throw notYet(descriptor.capabilities.compound); },
     prepareRecovery: (key: PositionKey, owner: string, context: StepContext) => guarded(async () => {
       if (context.step !== 1) throw new DexError("INVALID_REQUEST", "Closing an empty Meteora position is a single step.");
