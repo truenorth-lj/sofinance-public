@@ -79,6 +79,16 @@ function marketDataFor(fetcher?: typeof fetch) {
   }));
 }
 
+/**
+ * USD price of one whole currency0 / currency1 of an allowlisted pool, from the same cached public-indexer read the
+ * pools list uses (DexScreener, GeckoTerminal fallback; no RPC). Null when neither indexer reports it.
+ */
+export async function rhcPoolTokenPricesUsd(poolId: string, fetcher?: typeof fetch): Promise<{ token0: number; token1: number } | null> {
+  const spec = UNIV4_RHC_ALLOWLISTED_POOLS.find(p => p.poolId.toLowerCase() === poolId.toLowerCase());
+  if (!spec) return null;
+  try { return (await marketDataFor(fetcher)(spec))?.priceUsd ?? null; } catch { return null; }
+}
+
 export async function discoverRhcUniv4Pools(options: {
   clients?: { state: PublicClient }; fetcher?: typeof fetch; bypassCache?: boolean;
   /** Override the allowlist (tests pass the SPCX-only fixture). */

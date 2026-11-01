@@ -9,11 +9,12 @@ import { UNIV4_RHC_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/uniswap
 import { UnifiedApp } from "./unified-app";
 import { EvmWalletProvider } from "../evm-wallet-connection";
 import { createEvmSession } from "@/lib/rhc-wallet/evm-session";
+import { SOLANA_CONNECT_EMPTY_OPTION } from "@/lib/unified-positions/rows";
 
 const SOL_WALLET = "EweTgJ6vaQDZyH5nk5uaK5iD7n1qr7BXTaxewcjQNEjb";
 const EVM_WALLET = "0xb95b77e9429643cbafde865fa2a9f687e8d21b04";
 const POOL = UNIV4_RHC_ALLOWLISTED_POOLS[0]!;
-const state = vi.hoisted(() => ({ solWallet: "", scan: [] as unknown[] }));
+const state = vi.hoisted(() => ({ solWallet: "", scan: [] as unknown[], values: null as unknown[] | null, valueCalls: [] as string[] }));
 
 vi.mock("next/navigation", () => ({ usePathname: () => "/app" }));
 vi.mock("../use-sol-usdc-price", () => ({ useSolUsdcPrices: () => ({ rate: null, usdcUsd: null }) }));
@@ -32,12 +33,16 @@ const held = (tokenId: string, liquidity = "1000", poolId: string = POOL.poolId)
 let container: HTMLDivElement; let root: Root;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true); localStorage.clear();
-  state.solWallet = ""; state.scan = [held("9"), held("8", "0"), held("7", "1000", "0xdead")];
+  state.solWallet = ""; state.scan = [held("9"), held("8", "0"), held("7", "1000", "0xdead")]; state.values = null; state.valueCalls = [];
   window.history.replaceState(null, "", "/app");
   vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
     const url = new URL(String(input), "http://x");
     if (url.pathname === "/api/wallet") return Response.json({ wallet: SOL_WALLET, slot: 1, fetchedAt: 1, positions: [], assets: [] });
     if (url.pathname === "/api/rhc-univ4-positions") return Response.json({ state: "scan", positions: state.scan });
+    if (url.pathname === "/api/rhc-univ4-position-values") {
+      state.valueCalls.push(url.searchParams.get("ids") ?? "");
+      return state.values ? Response.json({ state: "values", values: state.values, checkedAt: 1 }) : Response.json({ error: "down" }, { status: 503 });
+    }
     return Response.json({});
   }));
   container = document.createElement("div"); document.body.append(container); root = createRoot(container);
@@ -64,9 +69,9 @@ async function choose(value: string) {
 }
 
 describe("/app unified My positions", () => {
-  it("EVM wallet only: one Robinhood Chain group, Closed last, first position selected on its Withdraw (full Close)", async () => {
+  it("EVM wallet only: Solana group says connect, Robinhood Chain group with Closed last, first position selected on its Withdraw", async () => {
     await render();
-    expect(groups()).toEqual([["Robinhood Chain", [
+    expect(groups()).toEqual([["Solana", [SOLANA_CONNECT_EMPTY_OPTION]], ["Robinhood Chain", [
       expect.stringMatching(/^#9 · .+ · range 0\.98778–1\.0077 SPCXon per SPCX$/),
       "#7 · ticks -123 to 77",
       expect.stringMatching(/^#8 · .+ · Closed$/)]]]);
@@ -137,5 +142,50 @@ describe("/app Closed positions", () => {
     expect(container.querySelector("[data-testid=position-closed]")!.textContent).toBe("Closed: no liquidity left");
     await choose("rhc-uniswap-v4:9");
     expect(container.querySelector("[data-testid=position-closed]")).toBeNull();
+  });
+});
+
+describe("/app shared detail panel for a Robinhood Chain position (PM review of #270)", () => {
+  it("no Solana connect prompt inside the panel while a Robinhood Chain position is selected; it is the Solana group's empty row", async () => {
+    await render();
+    expect(select().value).toBe("rhc-uniswap-v4:9");
+    expect(container.textContent).not.toContain("Connect your Solana wallet to find your Solana liquidity positions");
+    const solana = select().querySelector("optgroup[label='Solana']")!;
+    expect([...solana.querySelectorAll("option")].map((o) => [o.textContent, o.disabled])).toEqual([[SOLANA_CONNECT_EMPTY_OPTION, true]]);
+  });
+
+  it("with nothing selected (no Robinhood Chain positions) the Solana connect prompt still shows", async () => {
+    state.scan = [];
+    await render();
+    expect(container.textContent).toContain("Connect your Solana wallet to find your Solana liquidity positions");
+  });
+
+  it("Liquidity and Unclaimed fees rows in Solana's format with amounts and USD when the read and indexer have them", async () => {
+    state.values = [{ tokenId: "9", poolId: POOL.poolId, amount0: "166993982055046672578", amount1: "171866848980666712441",
+      fees0: "28588329131852", fees1: "7703474624138", priceUsd0: 2, priceUsd1: null }];
+    await render();
+    // One read for the allowlisted positions only (#7 is in an unlisted pool).
+    expect(state.valueCalls).toEqual(["8,9"]);
+    const assets = container.querySelector("[data-testid=rhc-position-assets]")!;
+    const rows = [...assets.querySelectorAll("dl")].map((dl) => [...dl.querySelectorAll("dt")].map((dt) => [dt.textContent, dt.nextElementSibling!.textContent]));
+    expect(rows).toEqual([
+      [["Liquidity", `166.993982${POOL.currency0.symbol}$333.99`], ["Unclaimed fees", `0.000028 ${POOL.currency0.symbol}$0.00`]],
+      [["Liquidity", `171.866848${POOL.currency1.symbol}—`], ["Unclaimed fees", `0.000007 ${POOL.currency1.symbol}—`]],
+    ]);
+  });
+
+  it("a field it cannot read shows a dash and keeps the row (values read failed)", async () => {
+    await render();
+    const assets = container.querySelector("[data-testid=rhc-position-assets]")!;
+    expect([...assets.querySelectorAll("dt")].map((dt) => dt.textContent)).toEqual(["Liquidity", "Unclaimed fees", "Liquidity", "Unclaimed fees"]);
+    expect([...assets.querySelectorAll("dd")].map((dd) => dd.textContent)).toEqual([
+      `—${POOL.currency0.symbol}—`, `— ${POOL.currency0.symbol}—`, `—${POOL.currency1.symbol}—`, `— ${POOL.currency1.symbol}—`]);
+  });
+
+  it("a position outside the allowlist keeps both token rows, all dashes", async () => {
+    state.values = [];
+    await render({ initialPositionKey: "rhc-uniswap-v4:7" });
+    const assets = container.querySelector("[data-testid=rhc-position-assets]")!;
+    expect([...assets.querySelectorAll("dd")].map((dd) => dd.textContent)).toEqual(["—Token 0—", "— Token 0—", "—Token 1—", "— Token 1—"]);
   });
 });

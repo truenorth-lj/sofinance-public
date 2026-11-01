@@ -11,7 +11,9 @@ import type { RhcWallet } from "../rhc-univ4-open-panel";
 import { fetchPositions, fetchScan, poolOf, useRhcClose, type Scan } from "../rhc-close";
 import { ClosePreview, CloseStatus } from "../rhc-univ4-positions-panel";
 import { RhcWrongNetworkPrompt } from "../unified-pools/rhc-wrong-network-prompt";
+import { PositionAssetRow } from "../position-asset-row";
 import type { ExternalPositions } from "./external-positions";
+import { fetchPositionValues, type RhcPositionValueRow } from "./rhc-values";
 
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 const nativeOf = (position: UnifiedPosition) => position.native as RhcNative;
@@ -49,6 +51,16 @@ export function useRhcPositions({ wallet, signingEnabled, refreshKey, receiptPol
   }, [address, refreshKey]);
 
   const positions = useMemo(() => rhcPositionSource.fromDiscovery({ scanned: scan?.positions ?? [], lookups }), [scan, lookups]);
+  // Liquidity amounts + unclaimed fees for the detail panel (same rows as Solana); a dash while loading or when unread.
+  const valueIds = positions.filter((p) => { const view = nativeOf(p).lookup.position; return view ? poolOf(view) !== null : false; }).map((p) => p.nativeId).sort().join(",");
+  const [values, setValues] = useState<{ ids: string; rows: Map<string, RhcPositionValueRow> } | null>(null);
+  useEffect(() => {
+    if (!valueIds) return;
+    let live = true;
+    void fetchPositionValues(valueIds.split(",")).then((rows) => { if (live) setValues({ ids: valueIds, rows }); });
+    return () => { live = false; };
+  }, [valueIds, refreshKey]);
+  const valueOf = (tokenId: string) => values?.rows.get(tokenId) ?? null;
   if (!wallet) return undefined;
 
   const add = () => {
@@ -102,6 +114,7 @@ export function useRhcPositions({ wallet, signingEnabled, refreshKey, receiptPol
           {!held && (!p || !p.ownedByUser) ? <button type="button" onClick={() => remove(lookup.tokenId)} className="text-xs text-smoke underline">Remove</button> : null}
         </div>
         {p && p.ownedByUser && p.liquidity === "0" ? <p className="text-smoke">No liquidity left; closing burns the NFT and collects any remaining fees.</p> : null}
+        <RhcAssetRows position={p} value={valueOf(lookup.tokenId)} />
       </div>;
     },
     details: (position) => {
@@ -140,4 +153,22 @@ export function useRhcPositions({ wallet, signingEnabled, refreshKey, receiptPol
       </section>;
     },
   };
+}
+
+/**
+ * The shared detail-panel token rows (Liquidity + Unclaimed fees, USD when an indexer prices the token), same component and
+ * format as Solana. A field that could not be read shows a dash; a position outside the allowlist has no known tokens.
+ */
+function RhcAssetRows({ position, value }: { position: PositionLookup["position"]; value: RhcPositionValueRow | null }) {
+  const pool = position ? poolOf(position) : null;
+  const tokens = pool ? [pool.currency0, pool.currency1] as const : null;
+  return <div aria-label="Position assets" className="!mt-5 divide-y divide-white/10" data-testid="rhc-position-assets">
+    {[0, 1].map((i) => {
+      const token = tokens?.[i];
+      return <PositionAssetRow key={i} symbol={token?.symbol ?? `Token ${i}`} icon={null} decimals={token?.decimals ?? 18}
+        liquidityRaw={token ? (i === 0 ? value?.amount0 : value?.amount1) ?? null : null}
+        unclaimedFeesRaw={token ? (i === 0 ? value?.fees0 : value?.fees1) ?? null : null}
+        priceUsd={token ? (i === 0 ? value?.priceUsd0 : value?.priceUsd1) ?? null : null} />;
+    })}
+  </div>;
 }

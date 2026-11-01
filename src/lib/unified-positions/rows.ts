@@ -31,6 +31,9 @@ export type PositionGroup = { chain: ChainId; label: string; positions: UnifiedP
  * Dropdown optgroups: Solana, then Robinhood Chain. A chain with no positions is dropped unless listed in `keepEmpty` (its
  * group then shows a disabled "No positions found" row). The source name shows only when the chain has 2+ enabled sources.
  */
+/** Empty-state option under the Solana group when no Solana wallet is connected (the prompt stays out of other chains' panels). */
+export const SOLANA_CONNECT_EMPTY_OPTION = "Connect a Solana wallet to see Solana positions";
+
 export function groupPositions(positions: UnifiedPosition[], enabledSources: Partial<Record<ChainId, readonly PositionSourceId[]>> = {},
   keepEmpty: readonly ChainId[] = []): PositionGroup[] {
   return CHAIN_ORDER.flatMap((chain) => {

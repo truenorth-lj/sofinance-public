@@ -30,7 +30,7 @@ import { GROWTH_EVENTS } from "@/lib/analytics/events";
 import { raydiumPositionSource as positionSource } from "@/lib/unified-positions/sources/raydium";
 import { toolOptions, type ToolMeta } from "@/lib/unified-positions/capabilities";
 import { capabilitiesFor, firstSupportedTool, positionKey, toolUnavailableReason, type ToolId, type UnifiedPosition } from "@/lib/unified-positions/model";
-import { CLOSED_LABEL, groupPositions, isClosed, positionOptionLabel, type PositionGroup } from "@/lib/unified-positions/rows";
+import { CLOSED_LABEL, groupPositions, isClosed, positionOptionLabel, SOLANA_CONNECT_EMPTY_OPTION, type PositionGroup } from "@/lib/unified-positions/rows";
 import type { ExternalPositions } from "./unified-positions/external-positions";
 import { GroupedPositionSelect } from "./unified-positions/grouped-position-select";
 import { UnavailableTool } from "./unified-positions/unavailable-tool";
@@ -148,7 +148,7 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
   const externalPositions = external?.positions ?? [];
   const allPositions: UnifiedPosition[] = [...(connected ? solanaPositions : []), ...externalPositions];
   const groups = groupPositions(allPositions, { solana: [positionSource.id], ...(external ? { [external.chain]: external.sourceIds } : {}) },
-    external ? [...(connected ? ["solana" as const] : []), external.chain] : []);
+    external ? ["solana" as const, external.chain] : []);
   const [externalKey, setExternalKey] = useState(initialPositionKey);
   const solanaEmpty = !connected || (discovery !== null && !loadingDiscovery && positionOptions.length === 0);
   // A picked (or linked) other-chain position; without one, the first other-chain position when Solana has none.
@@ -218,11 +218,12 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
           onChange={pickKey}
           groups={groups}
           optionLabel={optionLabel}
-          emptyOption={(group) => group.chain === external?.chain ? external.emptyOption : "No positions found"}
+          emptyOption={(group) => group.chain === external?.chain ? external.emptyOption : connected ? "No positions found" : SOLANA_CONNECT_EMPTY_OPTION}
           placeholder={!allPositions.length ? (connected ? "No identifiable position found" : "Connect wallet to view positions") : undefined}
           className="mt-3 w-full rounded-2xl border border-white/20 bg-white/[0.06] px-3 py-3 text-sm text-cream outline-none focus:border-white/40"
         /> : null}
-        {!connected && <div className="mt-3"><ConnectWalletPrompt onConnect={connect} /></div>}
+        {/* The Solana connect prompt belongs to Solana: with another chain's position selected it lives in the dropdown's empty Solana group instead. */}
+        {!connected && !externalSelected && <div className="mt-3"><ConnectWalletPrompt onConnect={connect} /></div>}
         {connected && discovery && positionOptions.length === 0 && !externalSelected && <a href={APP_ROUTES.rwaPairs} className="mt-3 text-sm font-semibold text-cream underline underline-offset-4">Explore pools to open a position</a>}
         {(externalSelected ?? selectedSolana) && isClosed((externalSelected ?? selectedSolana)!) && <p className="mt-3 w-fit rounded-full border border-white/20 px-2.5 py-1 text-xs font-semibold text-smoke" data-testid="position-closed">{CLOSED_LABEL}: no liquidity left</p>}
         {externalSelected && external ? external.header(externalSelected) : <>

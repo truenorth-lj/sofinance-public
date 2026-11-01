@@ -19,7 +19,8 @@ export function PositionAssetRow({ symbol, icon, decimals, liquidityRaw, unclaim
   symbol: string;
   icon: string | null;
   decimals: number;
-  liquidityRaw: string;
+  /** null while the amounts are loading or could not be read (shown as a dash, never as zero). */
+  liquidityRaw: string | null;
   /** null/undefined while the fee read is loading or unavailable (shown as a dash, never as zero). */
   unclaimedFeesRaw?: string | null;
   priceUsd: number | null;
