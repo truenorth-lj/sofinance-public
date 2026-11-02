@@ -185,7 +185,7 @@ test.describe("J3 sign link, broadcast failures", () => {
     await sign.goto(scenario.token);
     await new ConnectModal(page, wallet).connect();
     await sign.signButton.click();
-    await sign.expectStatus("E2E mock: blocked. Nothing was sent.");
+    await sign.expectStatus("Couldn't send the transaction: the network refused it (“E2E mock: blocked”). Nothing was sent, safe to retry.");
     expect(sign.broadcasts).toHaveLength(1);
     expect(wallet.ledger).toHaveLength(1);
   });

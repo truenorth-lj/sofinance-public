@@ -99,7 +99,7 @@ test.describe("J2 sign link, happy path", () => {
     await page.goto(`/app/sign/${scenario.token}`, { waitUntil: "domcontentloaded" });
     await new ConnectModal(page, wallet).connect();
     await page.getByRole("button", { name: "Sign and submit" }).click();
-    await expect(page.getByText("x. Nothing was sent.", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Couldn't send the transaction: the network refused it (“x”). Nothing was sent, safe to retry.", { exact: true }).first()).toBeVisible();
     expect(hits).toEqual(["/api/tx-send"]);
   });
 });
