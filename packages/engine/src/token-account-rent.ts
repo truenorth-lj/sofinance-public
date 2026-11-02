@@ -4,13 +4,19 @@ import {
 } from "@solana/spl-token";
 
 /**
- * Mint extensions whose account-side extension Token-2022 adds when it initializes a token account
- * (`required_init_account_extensions`). The SDK's `getAccountLenForMint` maps every mint extension instead, including
- * ConfidentialTransferMint → ConfidentialTransferAccount, which an Associated Token Program create does not add (a
- * confidential account needs its own opt-in): for the RWA mints it returns 478 bytes where the chain creates 179.
+ * Mint extensions for which Token-2022's `InitializeAccount` requires account-side extensions
+ * (`ExtensionType::required_init_account_extensions` in token-2022 interface/src/extension/mod.rs):
+ *   TransferFeeConfig → TransferFeeAmount, NonTransferable → NonTransferableAccount + ImmutableOwner,
+ *   TransferHook → TransferHookAccount, Pausable (`PausableConfig` in @solana/spl-token) → PausableAccount.
+ * Every other mint extension adds nothing. ImmutableOwner is pushed separately below: the Associated Token Program
+ * initializes it on every Token-2022 account, so NonTransferable's ImmutableOwner is already covered.
+ * The SDK's `getAccountLenForMint` cannot be used: it maps every mint extension through `getAccountTypeOfMintType`,
+ * including ConfidentialTransferMint → ConfidentialTransferAccount, which an associated-account create does not add
+ * (a confidential account needs its own opt-in); for the RWA mints it returns 478 bytes where the chain creates 179.
+ * The list is pinned by token-account-rent.test.ts.
  * https://github.com/solana-program/token-2022/blob/main/interface/src/extension/mod.rs
  */
-const REQUIRED_INIT_MINT_EXTENSIONS = new Set([
+export const REQUIRED_INIT_MINT_EXTENSIONS = new Set([
   ExtensionType.TransferFeeConfig, ExtensionType.NonTransferable, ExtensionType.TransferHook, ExtensionType.PausableConfig,
 ]);
 
