@@ -125,7 +125,7 @@ for (const [width, label] of [[1280, "desktop"], [375, "375"]] as const) {
         await expect.poll(landedChecks).toBeGreaterThan(0);
         await expect(page.getByRole("button", { name: "Checking Solana…", exact: true })).toBeDisabled();
         release();
-        const message = "Your wallet reported a problem (“Request rejected by user”). We checked Solana and it did not go through. Nothing was sent, safe to retry.";
+        const message = "Couldn't send the transaction: your wallet said “Request rejected by user”. We checked Solana and it did not go through. Nothing was sent, safe to retry.";
         await expect(page.getByText(message).first()).toBeVisible();
         await expect(page.getByText(/"code"|\{"/)).toHaveCount(0);
         await page.screenshot({ path: shot(`not-landed-safe-to-retry-${label}`) });

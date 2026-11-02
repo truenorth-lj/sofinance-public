@@ -153,6 +153,24 @@ describe("RegistryOpenModal", () => {
     expect(openButton().disabled).toBe(true);
   });
 
+  it("an amount that would round to 0 in the range's steps greys Open and says the minimum (same rule as Add)", async () => {
+    quoteBody = { ...quoteBody, depositMinimum: { token: USDC_MINT, tooSmall: true, minimumRaw: "48336" } };
+    await render();
+    const select = container.querySelector<HTMLSelectElement>("#registry-open-token")!;
+    await act(async () => { select.value = USDC_MINT; select.dispatchEvent(new Event("change", { bubbles: true })); });
+    await type("0.015");
+    expect(container.querySelector("[data-testid=registry-open-too-small]")!.textContent)
+      .toBe("This amount is too small to add to every price step in this range. Try at least about 0.054 USDC.");
+    expect(openButton().disabled).toBe(true);
+    await act(async () => { openButton().click(); });
+    expect(mocks.runSteps).not.toHaveBeenCalled();
+    // A big enough amount (the quote says so) opens normally.
+    quoteBody = { ...quoteBody, depositMinimum: { token: USDC_MINT, tooSmall: false, minimumRaw: null } };
+    await type("0.06");
+    expect(container.querySelector("[data-testid=registry-open-too-small]")).toBeNull();
+    expect(openButton().disabled).toBe(false);
+  });
+
   it("a refused quote shows the server's plain reason", async () => {
     vi.stubGlobal("fetch", vi.fn(async (url: string) => url.startsWith("/api/wallet") ? Response.json({ assets: [] })
       : Response.json({ error: "This range spans 200 bins, but one Meteora position holds at most 70, so it's not available to open yet." }, { status: 400 })));

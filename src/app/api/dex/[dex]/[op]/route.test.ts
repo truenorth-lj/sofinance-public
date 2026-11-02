@@ -170,6 +170,27 @@ describe("POST /api/dex/[dex]/[op]", () => {
     expect(prepareCompound).toHaveBeenCalledWith("some-dex:abc", owner.toBase58(), context);
   });
 
+  it("quote-add returns the adapter's add check (no transaction), {} for a DEX without one, and is strict", async () => {
+    const input = { token: "Mint111111111111111111111111111111111111111", amountRaw: "15000" };
+    const body = { owner: owner.toBase58(), positionKey: "some-dex:abc", input };
+    const minimum = { depositMinimum: { token: input.token, tooSmall: true, minimumRaw: "48336" } };
+    const quoteAdd = vi.fn(async () => minimum);
+    fake.adapter = { ...fake.adapter, quoteAdd };
+    const quoted = await call("quote-add", body);
+    expect(quoted.status).toBe(200);
+    expect(await quoted.json()).toEqual(minimum);
+    expect(quoteAdd).toHaveBeenCalledWith("some-dex:abc", owner.toBase58(), input);
+    expect((await call("quote-add", { ...body, step: 1 })).status).toBe(400);
+    expect((await call("quote-add", { ...body, owner: "not-base58!" })).status).toBe(400);
+    expect(quoteAdd).toHaveBeenCalledTimes(1);
+    const without: Record<string, unknown> = { ...fake.adapter };
+    delete without.quoteAdd;
+    fake.adapter = without;
+    const none = await call("quote-add", body);
+    expect(none.status).toBe(200);
+    expect(await none.json()).toEqual({});
+  });
+
   it("400s a position op with a non-base58 owner, a bad share or an extra field, before the adapter runs", async () => {
     const prepareWithdraw = vi.fn();
     const prepareClaim = vi.fn();

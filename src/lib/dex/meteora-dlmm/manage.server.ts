@@ -13,7 +13,8 @@ import { MIN_SOL_LAMPORTS, SLIPPAGE_BPS } from "@sofinance/engine/ids";
 import { assertOpenTransactionSize, compileCompactOpenTransaction } from "@sofinance/engine/open-transaction";
 import { ATOMIC_COMPUTE_UNIT_LIMIT, measuredComputeUnitLimit } from "@sofinance/engine/transaction-limits";
 import { assertMeteoraFeeRule } from "@/lib/meteora-open";
-import type { DexDepositInput, WithdrawRequest } from "../adapter";
+import type { AddQuote, DexDepositInput, WithdrawRequest } from "../adapter";
+import { meteoraDepositMinimum, type MeteoraLegQuote } from "./minimum.server";
 import { DexError, DexUnsupportedError } from "../errors";
 import {
   accountData, compileDeposit, compileV0, cuLimit, depositIntermediateRentAllowance, encode, missingPoolTokenAccounts, planMeteoraOpen, publicKey,
@@ -229,7 +230,8 @@ export async function buildMeteoraClaim(deps: MeteoraOpenDeps, position: string,
   });
 }
 
-export async function buildMeteoraAdd(deps: MeteoraOpenDeps, position: string, owner: string, input: DexDepositInput): Promise<BuiltStep> {
+/** The plan an Add of `input` into `position` would use (same range rules and fee rule as the build). */
+async function planMeteoraAdd(deps: MeteoraOpenDeps, position: string, owner: string, input: DexDepositInput) {
   const owned = await readOwned(deps, position, owner);
   // Listed pools only (same list as opening), and the Token-2022 mint guard.
   const pool = await readMeteoraPool(deps, owned.decoded.lbPair);
@@ -237,7 +239,18 @@ export async function buildMeteoraAdd(deps: MeteoraOpenDeps, position: string, o
   const request = { poolId: pool.poolId, owner, input, slippageBps: SLIPPAGE_BPS, range: { kind: "units", lower: lowerBinId, upper: upperBinId } } as const;
   // planMeteoraOpen runs the range rules (≤70 bins, existing bin arrays, existing bitmap extension: no new shared accounts)
   // and prices the platform fee from the `add` rule.
-  const plan = await planMeteoraOpen(deps, request, pool, { lowerBinId, upperBinId }, "add");
+  return { owned, pool, plan: await planMeteoraOpen(deps, request, pool, { lowerBinId, upperBinId }, "add") };
+}
+
+/** Quote-time check of an Add: whether the amount reaches every bin of the position's range (see `meteoraDepositMinimum`). */
+export async function quoteMeteoraAdd(deps: MeteoraOpenDeps, position: string, owner: string, input: DexDepositInput, quoteLeg?: MeteoraLegQuote): Promise<AddQuote> {
+  const { plan } = await planMeteoraAdd(deps, position, owner, input);
+  const depositMinimum = await meteoraDepositMinimum(plan, owner, quoteLeg);
+  return depositMinimum ? { depositMinimum } : {};
+}
+
+export async function buildMeteoraAdd(deps: MeteoraOpenDeps, position: string, owner: string, input: DexDepositInput): Promise<BuiltStep> {
+  const { owned, pool, plan } = await planMeteoraAdd(deps, position, owner, input);
   const state = await readWallet(deps.connection, plan, owner, position);
   if (state.inputBalance < plan.amount) {
     throw new DexError("INSUFFICIENT_FUNDS", `Your wallet holds ${state.inputBalance} raw units of the input token but this add needs ${plan.amount}. Lower the amount or add more.`);

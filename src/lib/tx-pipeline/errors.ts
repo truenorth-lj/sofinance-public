@@ -1,4 +1,5 @@
 import { errorText, mapKnownChainError, sanitizePublicError, TX_EXPIRED_MESSAGE } from "@/lib/public-error";
+import { scrubCredentialText } from "@/lib/sentry/scrub";
 import type { LandedOutcome } from "./landed";
 
 /**
@@ -40,6 +41,14 @@ export class TxNotSentError extends Error {
   }
 }
 
+/** The relay's preflight refused the signed transaction: it never reached the network. The message is plain words only. */
+export class TxRelayRefusedError extends TxNotSentError {
+  constructor(cause: unknown) {
+    super(`${couldntSendLine(cause, "network")} Nothing was sent, safe to retry.`, cause);
+    this.name = "TxRelayRefusedError";
+  }
+}
+
 /**
  * The wallet threw after we asked it to sign and send, and the chain lookup then confirmed the transaction
  * did not land before its blockhash expired. Only this error may say "Nothing was sent, safe to retry".
@@ -48,7 +57,7 @@ export class TxNotLandedError extends TxNotSentError {
   constructor(readonly walletRejected: boolean, cause: unknown) {
     super(walletRejected
       ? "You cancelled in your wallet. We checked Solana and it did not go through. Nothing was sent, safe to retry."
-      : `Your wallet reported a problem${walletReason(cause)}. We checked Solana and it did not go through. Nothing was sent, safe to retry.`, cause);
+      : `${couldntSendLine(cause)} We checked Solana and it did not go through. Nothing was sent, safe to retry.`, cause);
     this.name = "TxNotLandedError";
   }
 }
@@ -56,7 +65,7 @@ export class TxNotLandedError extends TxNotSentError {
 /** The wallet threw after we asked it to send, and we could not tell whether it landed. Never safe to retry blindly. */
 export class TxLandedUnknownError extends Error {
   constructor(readonly cause: unknown) {
-    super(`Your wallet reported a problem${walletReason(cause)}, and we could not confirm whether the transaction went through. Check your wallet activity on Solscan before trying again.`);
+    super(`${couldntSendLine(cause)} We could not confirm whether it went through anyway, so check your wallet activity on Solscan before trying again.`);
     this.name = "TxLandedUnknownError";
   }
 }
@@ -138,7 +147,7 @@ export class TxWalletCancelledError extends Error {
     const rejected = isWalletRejection(cause);
     super(rejected
       ? "You cancelled in your wallet. We are still checking Solana in case it went through; you can retry in about a minute."
-      : `Your wallet reported a problem${walletReason(cause)}. It has not shown up on Solana yet; we keep checking, and you can retry in about a minute.`);
+      : `${couldntSendLine(cause)} It has not shown up on Solana; we keep checking in case it went through, and you can retry in about a minute.`);
     this.walletRejected = rejected;
     this.name = "TxWalletCancelledError";
   }
@@ -183,11 +192,75 @@ export function isWalletRejection(error: unknown): boolean {
   return REJECTED.test(info.message);
 }
 
-/** " (“…”)" with the wallet's own words, request ids and JSON stripped; empty when there is nothing readable. */
+/** Title of every send failure that is not the user saying no in the wallet (PM 2026-11-03). */
+export const COULDNT_SEND_TITLE = "Couldn't send the transaction";
+
+/** URLs (an RPC endpoint can carry an API key in its path or query) and bare host names never reach the screen. */
+const URL_RE = /\b(?:https?|wss?):\/\/\S+/gi;
+const HOST_RE = /\b[\w-]+(?:\.[\w-]+)*\.(?:com|io|xyz|net|org|dev|app|cloud|network|rpc)(?::\d+)?(?:\/\S*)?/gi;
+
+/** The wallet's own words, stripped of URLs, host names, credentials, request ids and JSON; empty when nothing readable is left. */
+export function walletWords(error: unknown): string {
+  return scrubCredentialText(walletErrorInfo(error).message)
+    .replace(URL_RE, "").replace(HOST_RE, "").replace(/\[redacted[^\]]*\]/gi, "")
+    .replace(/\b(request)\s+[0-9a-f-]{8,}\s*/gi, "$1 ").replace(/[{}"[\]]/g, "").replace(/\s+/g, " ").replace(/\s+\)/g, ")").replace(/\(\)/g, "").replace(/\s+/g, " ").trim()
+    .replace(/[\s:;,(-]+$/, "").slice(0, 120).replace(/[.\s]+$/, "");
+}
+
+/** " (“…”)" with the wallet's own (cleaned) words; empty when there is nothing readable. */
 function walletReason(error: unknown) {
-  const message = walletErrorInfo(error).message
-    .replace(/\b(request)\s+[0-9a-f-]{8,}\s*/gi, "$1 ").replace(/[{}"[\]]/g, "").replace(/\s+/g, " ").trim().slice(0, 120);
-  return message ? ` (“${message.replace(/[.\s]+$/, "")}”)` : "";
+  const message = walletWords(error);
+  return message ? ` (“${message}”)` : "";
+}
+
+const SIGNATURE_FAILURE = /signature ?(verification )?fail|SignatureFailure|invalid signature|missing signature/i;
+
+/**
+ * Why a send failed, in plain English, from a fixed list (the wallet's category, see `walletErrorCategory`); only an
+ * unrecognised error quotes the wallet's own cleaned words. Never an RPC URL, JSON or a stack frame.
+ */
+export function sendFailureReason(error: unknown, source: "wallet" | "network" = "wallet"): string {
+  const { message } = walletErrorInfo(error);
+  if (SIGNATURE_FAILURE.test(message)) return "Solana did not accept the transaction's signature";
+  const words = walletWords(error);
+  const quoted = source === "network"
+    ? (words ? `the network refused it (“${words}”)` : "the network refused it without saying why")
+    : (words ? `your wallet said “${words}”` : "your wallet did not say why");
+  switch (walletErrorCategory(error)) {
+    case "simulation-failed": return "Solana's pre-check says it would fail right now (a price or balance may have changed)";
+    case "blockhash": return "it expired before it reached Solana";
+    case "insufficient-funds": return "there is not enough SOL or tokens in your wallet to pay for it";
+    case "timeout": return source === "network" ? "the network timed out" : "your wallet timed out";
+    case "unsupported": return source === "network" ? quoted : "your wallet does not support this request";
+    case "disconnected": return source === "network" ? quoted : "your wallet is disconnected or locked";
+    case "network": return source === "network" ? "it could not reach the Solana network" : "your wallet could not reach the Solana network";
+    // "user-rejected" here is wording only (not an explicit rejection, or it would say cancelled): quote it.
+    default: return quoted;
+  }
+}
+
+/** "Couldn't send the transaction: <reason>." */
+export const couldntSendLine = (error: unknown, source: "wallet" | "network" = "wallet") => `${COULDNT_SEND_TITLE}: ${sendFailureReason(error, source)}.`;
+
+/**
+ * The toast body under the "Couldn't send the transaction" title: the same text without the repeated prefix,
+ * so it starts with the reason. Inline alerts (no title) keep the full line.
+ */
+export function withoutCouldntSendPrefix(message: string): string {
+  const prefix = `${COULDNT_SEND_TITLE}: `;
+  if (!message.startsWith(prefix)) return message;
+  const rest = message.slice(prefix.length);
+  return rest.charAt(0).toUpperCase() + rest.slice(1);
+}
+
+/**
+ * Whether a failure is a send failure that is not a wallet rejection: these get the "Couldn't send the transaction"
+ * title. Only an explicit rejection (`isWalletRejection`) may say "cancelled".
+ */
+export function isCouldntSend(error: unknown): boolean {
+  if (error instanceof TxWalletCancelledError || error instanceof TxNotLandedError) return !error.walletRejected;
+  if (error instanceof TxVoidUnconfirmedError) return false;
+  return error instanceof TxLandedUnknownError || error instanceof TxRelayRefusedError;
 }
 
 export function txFailureKind(error: unknown): TxFailureKind {

@@ -2,7 +2,7 @@ import bs58 from "bs58";
 import { VersionedTransaction } from "@solana/web3.js";
 import { WALLET_PRIORITY_FEE_CEILING_LAMPORTS, walletPriorityFeeAllowance } from "@sofinance/engine/wallet-priority-fee";
 import { assertWalletReturnedTransaction } from "@/lib/wallet-returned-guard";
-import { isWalletRejection, TxLandedUnknownError, TxNotLandedError, TxNotSentError, TxPromptExpiredError, TxSendUnknownError, TxWalletCancelledError, walletErrorInfo } from "./errors";
+import { isWalletRejection, TxLandedUnknownError, TxNotLandedError, TxNotSentError, TxPromptExpiredError, TxRelayRefusedError, TxSendUnknownError, TxWalletCancelledError, walletErrorInfo } from "./errors";
 import { waitForLanded, type FindLanded, type LandedOutcome } from "./landed";
 
 /**
@@ -209,7 +209,7 @@ export async function sendWithWallet(wallet: TxWallet, transaction: VersionedTra
     returned = await (options.sendRaw ?? relaySignedTransaction)(signed, { prepared, sendPermit: options.sendPermit });
   } catch (error) {
     // Preflight refusals never reached the network; anything else may have, so track it.
-    if ((error as { sent?: unknown } | null)?.sent === false) throw new TxNotSentError(error instanceof Error ? error.message : "Nothing was sent.", error);
+    if ((error as { sent?: unknown } | null)?.sent === false) throw new TxRelayRefusedError(error);
     throw new TxSendUnknownError(expected, error);
   }
   if (returned !== expected) throw new TxSendUnknownError(expected, new Error("RPC returned a different signature"));

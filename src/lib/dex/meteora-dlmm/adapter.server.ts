@@ -10,7 +10,7 @@ import { isJupiterUpstreamError, asJupiterUserError } from "@sofinance/engine/ju
 import { readSwapFeeConfig, type SwapFeeConfig } from "@sofinance/engine/swap/fee";
 import { getMeteoraPositionPerformance, listMeteoraPositions, METEORA_POOL_NOT_SUPPORTED, type MeteoraListedPosition, type MeteoraPerformanceOptions, type MeteoraReadOptions } from "@/lib/meteora-positions";
 import { positionKey, type PositionKey, type PositionHoldings, type RangeStatus, type UnifiedPosition } from "@/lib/unified-positions/model";
-import type { DexAdapter, DexDepositInput, OpenQuote, OpenRanges, OpenRequest, PositionPerformance, StepContext, StepResult, WithdrawRequest } from "../adapter";
+import type { AddQuote, DexAdapter, DexDepositInput, OpenQuote, OpenRanges, OpenRequest, PositionPerformance, StepContext, StepResult, WithdrawRequest } from "../adapter";
 import type { FeePolicy } from "../types";
 import { DexError, DexUnsupportedError } from "../errors";
 import { bpsFeeStrategy } from "../fees";
@@ -20,7 +20,8 @@ import {
   buildMeteoraCloseRefund, buildMeteoraDeposit, buildMeteoraSetup, meteoraBinUiPrice, meteoraOpenRent, meteoraRequestRange, ownerPoolTokenAccountsExist,
   depositIntermediateRentAllowance, meteoraOpenPresets, meteoraOpenSolParts, planMeteoraOpen, readMeteoraPool, assertEmptyOwnedPosition, type MeteoraOpenDeps, type MeteoraPoolState,
 } from "./open.server";
-import { buildMeteoraAdd, buildMeteoraClaim, buildMeteoraCompound, buildMeteoraWithdraw } from "./manage.server";
+import { buildMeteoraAdd, buildMeteoraClaim, buildMeteoraCompound, buildMeteoraWithdraw, quoteMeteoraAdd } from "./manage.server";
+import { meteoraDepositMinimum, type MeteoraLegQuote } from "./minimum.server";
 import { listedMeteoraPool, type MeteoraPoolList } from "./pools.server";
 
 /**
@@ -54,6 +55,8 @@ export type MeteoraDlmmAdapterOptions = {
   feePolicy?: FeePolicy;
   /** Reads a position's performance report (default `getMeteoraPositionPerformance`: chain history + Jupiter prices). */
   readPerformance?: typeof getMeteoraPositionPerformance;
+  /** Prices one swap leg for the quote-time "too small for this range" check (default: a Jupiter quote, no build). */
+  quoteLeg?: MeteoraLegQuote;
 };
 
 const SOURCE = meteoraDlmmDescriptor.id;
@@ -154,9 +157,11 @@ export function createMeteoraDlmmAdapter(options: MeteoraDlmmAdapterOptions = {}
       range = meteoraRequestRange(request, pool);
       const plan = await planMeteoraOpen(d, request, pool, range);
       // Same figure the setup step caps its simulated SOL debit with (meteoraOpenRent), so quote and cap agree.
-      const [rent, allowance] = await Promise.all([
-        meteoraOpenRent(d.connection, plan, await ownerPoolTokenAccountsExist(d.connection, pool, request.owner)),
+      // The "too small for this range" check prices the swap legs alongside (best effort; never blocks the quote).
+      const [rent, allowance, depositMinimum] = await Promise.all([
+        ownerPoolTokenAccountsExist(d.connection, pool, request.owner).then((exists) => meteoraOpenRent(d.connection, plan, exists)),
         depositIntermediateRentAllowance(d.connection),
+        meteoraDepositMinimum(plan, request.owner, options.quoteLeg),
       ]);
       const parts = meteoraOpenSolParts(rent.totalLamports, allowance);
       const { binStep } = pool.lbPair;
@@ -171,6 +176,7 @@ export function createMeteoraDlmmAdapter(options: MeteoraDlmmAdapterOptions = {}
         rent: { refundableLamports: rent.positionLamports.toString(), nonRefundableLamports: "0", tokenAccountLamports: rent.tokenAccountLamports.toString() },
         platformFeeRaw: plan.platformFeeRaw.toString(),
         sol: { networkFeeLamports: parts.networkFeeLamports.toString(), swapAccountsLamports: parts.swapAccountsLamports.toString(), reserveLamports: parts.reserveLamports.toString() },
+        ...(depositMinimum ? { depositMinimum } : {}),
       };
     } catch (error) {
       if (!(error instanceof DexError) || !QUOTE_BLOCKING.has(error.code)) throw error;
@@ -309,6 +315,7 @@ export function createMeteoraDlmmAdapter(options: MeteoraDlmmAdapterOptions = {}
       const built = await buildMeteoraAdd(deps(), position, owner, input);
       return { step: 1, of: 1, label: "Add to the position", done: true, prepared: { kind: "solana-tx", ...built, positionMint: position } };
     }),
+    quoteAdd: (key: PositionKey, owner: string, input: DexDepositInput) => guarded((): Promise<AddQuote> => quoteMeteoraAdd(deps(), nativeIdOf(key), owner, input, options.quoteLeg)),
     prepareWithdraw: (key: PositionKey, owner: string, request: WithdrawRequest, context: StepContext) => guarded(async () => {
       singleStep(context, "A Meteora withdraw");
       const position = nativeIdOf(key);
