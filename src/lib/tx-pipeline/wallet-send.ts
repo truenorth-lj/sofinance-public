@@ -2,7 +2,7 @@ import bs58 from "bs58";
 import { VersionedTransaction } from "@solana/web3.js";
 import { WALLET_PRIORITY_FEE_CEILING_LAMPORTS, walletPriorityFeeAllowance } from "@sofinance/engine/wallet-priority-fee";
 import { assertWalletReturnedTransaction } from "@/lib/wallet-returned-guard";
-import { isWalletRejection, TxLandedUnknownError, TxNotLandedError, TxNotSentError, TxSendUnknownError, TxWalletCancelledError, walletErrorInfo } from "./errors";
+import { isWalletRejection, TxLandedUnknownError, TxNotLandedError, TxNotSentError, TxPromptExpiredError, TxSendUnknownError, TxWalletCancelledError, walletErrorInfo } from "./errors";
 import { waitForLanded, type FindLanded, type LandedOutcome } from "./landed";
 
 /**
@@ -17,8 +17,10 @@ import { waitForLanded, type FindLanded, type LandedOutcome } from "./landed";
  * signAndSend (LJ 2026-10-31: Phantom flags a transaction it signed that someone else sends): the extra signer signs
  * first, then the wallet signs and sends. Only a sign-only wallet (or one whose signAndSend is unsupported) relays it,
  * wallet-first with `cosign`, under the same 0.01 SOL priority-fee ceiling as every other relay (PM, 2026-11-02).
- * No client blockhash/TTL gate here: Solana itself rejects an expired transaction, and the
- * confirm stage reports it in plain words.
+ * No client blockhash/TTL gate here, except `promptDeadlineAt` for flows that opt into the pre-wallet guard
+ * (`TxAdapter.preflight`, PM 2026-11-02): a prompt still unsigned at that time is voided with `TxPromptExpiredError`.
+ * A sign-only wallet's late signature is then never relayed; a wallet that signs AND sends late has broadcast by
+ * itself, so its signature goes to `onLateSignature` to be tracked (never hidden, never resent).
  *
  * If the wallet throws (or returns no usable signature) after we asked it to sign AND send, it may
  * already have broadcast. The same holds for a wallet error on the sign-only path when nothing else must co-sign:
@@ -140,6 +142,10 @@ export async function sendWithWallet(wallet: TxWallet, transaction: VersionedTra
   findLanded?: FindLanded;
   /** Test hook; defaults to `CHECKING_WINDOW_MS`. */
   checkingWindowMs?: number;
+  /** Epoch ms: a wallet prompt still open then is voided (`TxPromptExpiredError`). Absent: wait as long as the wallet does. */
+  promptDeadlineAt?: number;
+  /** A sign-and-send wallet returned a signature after the prompt was voided: it broadcast it itself. */
+  onLateSignature?: (signature: string) => void;
 } = {}): Promise<{ signature: string; via: "wallet" | "relay"; walletError?: unknown }> {
   const payer = transaction.message.staticAccountKeys[0]?.toBase58();
   if (payer !== wallet.address) throw new TxNotSentError("This transaction was prepared for a different wallet. Nothing was sent.");
@@ -157,8 +163,11 @@ export async function sendWithWallet(wallet: TxWallet, transaction: VersionedTra
     }
     const askedAt = Date.now();
     try {
-      signature = await wallet.signAndSendTransaction(outgoing);
+      signature = await beforeDeadline(wallet.signAndSendTransaction(outgoing), (late) => {
+        if (typeof late === "string" && SIGNATURE.test(late)) options.onLateSignature?.(late);
+      });
     } catch (error) {
+      if (error instanceof TxPromptExpiredError) throw error;
       // Some connectors (AppKit, injected wallets) expose signAndSend but the wallet itself lacks
       // the feature; that refusal happens before any prompt, so fall back to sign-then-relay (under the fee ceiling).
       if (!isUnsupportedFeatureError(error)) return checkLanded(error, askedAt);
@@ -181,8 +190,10 @@ export async function sendWithWallet(wallet: TxWallet, transaction: VersionedTra
     }
   }
   try {
-    walletSigned = await wallet.signTransaction(toSign);
+    // A late signature after the deadline is dropped: this transaction is void and is never relayed.
+    walletSigned = await beforeDeadline(wallet.signTransaction(toSign));
   } catch (error) {
+    if (error instanceof TxPromptExpiredError) throw error;
     // A co-signed transaction cannot land without our co-signature, and without a check permit there is nothing to ask.
     if (options.cosign || presignForRelay || !options.landedPermit || !maySignOnlyHaveBroadcast(error)) throw error;
     return checkLanded(error, signAskedAt);
@@ -207,6 +218,18 @@ export async function sendWithWallet(wallet: TxWallet, transaction: VersionedTra
   }
   if (returned !== expected) throw new TxSendUnknownError(expected, new Error("RPC returned a different signature"));
   return { signature: expected, via: "relay" };
+
+  async function beforeDeadline<T>(request: Promise<T>, onLate?: (value: T) => void): Promise<T> {
+    if (options.promptDeadlineAt === undefined) return request;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const expired = new Promise<"expired">((resolve) => { timer = setTimeout(() => resolve("expired"), Math.max(0, options.promptDeadlineAt! - Date.now())); });
+    const answered = request.then((value) => ({ value }));
+    const first = await Promise.race([answered, expired]).finally(() => clearTimeout(timer));
+    if (first !== "expired") return first.value;
+    answered.catch(() => { /* handled below */ });
+    request.then((value) => onLate?.(value), () => { /* a late error after the void changes nothing */ });
+    throw new TxPromptExpiredError();
+  }
 
   async function checkLanded(walletError: unknown, askedAt: number) {
     const check = { prepared, landedPermit: options.landedPermit, lastValidBlockHeight: options.lastValidBlockHeight,

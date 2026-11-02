@@ -73,3 +73,25 @@ export function captureTxWalletErrorLanded(flow: TxFlow, context: TxReportContex
     });
   } catch { /* Telemetry must never break the transaction UI. */ }
 }
+
+/**
+ * Pre-wallet guard counts (tx pipeline preflight, PM 2026-11-02): how often our own simulation fails before the wallet
+ * is asked, a quote is too old, a wallet prompt expires unsigned, or the user rejects in the wallet (the visible end of
+ * a wallet's own "Failed to simulate" warning). Counts only: tags are the flow, the event and the attempt; never a
+ * wallet address, signature, blockhash or amount.
+ */
+export type TxPreflightEvent = "sim-failed" | "sim-unavailable" | "stale-quote" | "prompt-expired" | "wallet-rejected";
+export function captureTxPreflightEvent(flow: TxFlow, event: TxPreflightEvent, detail: { attempt?: number; walletErrorCode?: number } = {}) {
+  try {
+    if (!isSentryEnabled()) return;
+    Sentry.withScope((scope) => {
+      scope.setLevel("info");
+      scope.setTag("tx_flow", flow);
+      scope.setTag("tx_preflight", event);
+      if (detail.attempt !== undefined) scope.setTag("tx_preflight_attempt", String(detail.attempt));
+      if (detail.walletErrorCode !== undefined) scope.setTag("wallet_error_code", String(detail.walletErrorCode));
+      scope.setFingerprint(["tx-preflight", flow, event]);
+      Sentry.captureMessage(`Transaction ${flow} preflight ${event}`);
+    });
+  } catch { /* Telemetry must never break the transaction UI. */ }
+}

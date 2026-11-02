@@ -1,9 +1,10 @@
 import type { VersionedTransaction } from "@solana/web3.js";
 import { loadTxAttempts, saveTxAttempt } from "./attempts";
 import { cancelCheckKey, CANCEL_CHECK_PENDING_COPY, holdCancelCheck, isCancelCheckPending } from "./cancel-guard";
-import { captureTxWalletErrorLanded, type TxReportContext } from "@/lib/sentry/client-tx";
+import { captureTxPreflightEvent, captureTxWalletErrorLanded, type TxReportContext } from "@/lib/sentry/client-tx";
 import { watchCancelledSend } from "./cancelled";
-import { TxLandedUnknownError, TxNotLandedError, TxNotSentError, TxSendUnknownError, TxWalletCancelledError, walletErrorInfo, type TxFlow } from "./errors";
+import { isWalletRejection, TxLandedUnknownError, TxNotLandedError, TxNotSentError, TxPreflightError, TxPromptExpiredError, TxSendUnknownError, TxWalletCancelledError, walletErrorInfo, type TxFlow } from "./errors";
+import { simulatePreparedOnServer, type SimulatePrepared, type TxPreflightPolicy } from "./preflight";
 import type { FindLanded } from "./landed";
 import { dismissTxNotice, noticeIdFor, reportTxFailure, showTxCheckingNotice, trackTxSignature } from "./notices";
 import { sendWithWallet, type SendRaw, type TxWallet } from "./wallet-send";
@@ -44,7 +45,12 @@ export type TxAdapter<Input, Prepared extends PreparedTx = PreparedTx> = {
   scope?: (input: Input) => string | undefined;
   /** Flow-specific bookkeeping right after the network has the signature. Must not throw. */
   onSent?: (signature: string, prepared: Prepared, input: Input) => void;
+  /** Opt into the pre-wallet guard (see `preflight.ts`): simulate, quote age and prompt expiry. Absent: unchanged. */
+  preflight?: TxPreflightPolicy;
 };
+
+/** Shown when even a fresh prepare is older than the policy allows by the time the wallet would be asked. */
+export const STALE_QUOTE_MESSAGE = "Getting a fresh price took too long, so nothing was sent. Try again.";
 
 /** "checking": the wallet threw after a sign-and-send request and we are looking for the transaction on-chain. */
 export type TxStage = "preparing" | "wallet" | "checking" | "confirming";
@@ -61,6 +67,8 @@ export type RunTxOptions = {
   findLanded?: FindLanded;
   /** Test hook: the foreground "checking" window (default 20 s). */
   checkingWindowMs?: number;
+  /** Test hook: the pre-wallet simulation (default `/api/tx-simulate`). Only used when the adapter has `preflight`. */
+  simulate?: SimulatePrepared;
   /** Overrides `adapter.scope` (flows driven through `sendAndTrack`). */
   scope?: string;
   /**
@@ -116,16 +124,50 @@ export async function runTx<Input, Prepared extends PreparedTx>(
   const context: TxReportContext = {};
   try {
     options.onStage?.("preparing");
+    const policy = adapter.preflight;
+    let quotedAt = Date.now();
     prepared = await adapter.prepare(input, { wallet: wallet.address });
+    let preparedAt = Date.now();
+    // Pre-wallet guard: one re-prepare (fresh quote and blockhash) for a failed simulation or a stale quote, then stop.
+    for (let attempt = 1; policy; attempt++) {
+      const sim = await (options.simulate ?? simulatePreparedOnServer)(prepared.transaction,
+        { landedPermit: prepared.landedPermit, lastValidBlockHeight: prepared.lastValidBlockHeight });
+      let stop: string | null = null;
+      if (sim.ok === false) {
+        captureTxPreflightEvent(adapter.flow, "sim-failed", { attempt });
+        stop = sim.cause;
+      } else {
+        // Could not ask Solana (public RPC busy): not a verdict; prepare already simulated these bytes, so go on.
+        if (sim.ok === null) captureTxPreflightEvent(adapter.flow, "sim-unavailable", { attempt });
+        if (Date.now() - quotedAt > policy.maxQuoteAgeMs) {
+          captureTxPreflightEvent(adapter.flow, "stale-quote", { attempt });
+          stop = STALE_QUOTE_MESSAGE;
+        }
+      }
+      if (stop === null) break;
+      if (attempt >= 2) throw new TxPreflightError(stop);
+      if (options.isCurrent && !options.isCurrent()) throw new TxNotSentError("Your wallet or inputs changed, so nothing was sent.");
+      prepared.dispose?.();
+      prepared = undefined;
+      quotedAt = Date.now();
+      prepared = await adapter.prepare(input, { wallet: wallet.address });
+      preparedAt = Date.now();
+    }
     context.blockhash = prepared.transaction.message.recentBlockhash;
     if (options.isCurrent && !options.isCurrent()) throw new TxNotSentError("Your wallet or inputs changed, so nothing was sent.");
     options.onPrepared?.(prepared);
     options.onStage?.("wallet");
+    const sentPrepared: Prepared = prepared;
     try {
       const sent = await sendWithWallet(wallet, prepared.transaction, {
         cosign: prepared.cosign, presign: prepared.presign, sendPermit: prepared.sendPermit, landedPermit: prepared.landedPermit,
         sendRaw: options.sendRaw, stillWanted: options.isCurrent,
         lastValidBlockHeight: prepared.lastValidBlockHeight, findLanded: options.findLanded, checkingWindowMs: options.checkingWindowMs,
+        ...(policy ? {
+          promptDeadlineAt: Math.min(Date.now() + policy.maxPromptMs, preparedAt + policy.blockhashSafeMs),
+          // Voided, but this wallet broadcast it anyway: track it so a landing is never hidden (and never resent).
+          onLateSignature: (late: string) => { if (sentPrepared) record(adapter, input, sentPrepared, late, options); },
+        } : {}),
         knownSignatures: () => options.storage ? loadTxAttempts(options.storage as Storage, wallet.address).map((item) => item.signature) : [],
         onChecking: (walletError) => {
           context.walletErrorCode = walletErrorInfo(walletError).code;
@@ -152,6 +194,7 @@ export async function runTx<Input, Prepared extends PreparedTx>(
     if (error instanceof TxNotLandedError) context.landedCheck = "not-landed";
     else if (error instanceof TxLandedUnknownError) context.landedCheck = "unknown";
     if (error instanceof TxWalletCancelledError) context.walletErrorCode = walletErrorInfo(error.cause).code;
+    if (adapter.preflight) countWalletOutcome(adapter.flow, error);
     const reported = reportTxFailure({ flow: adapter.flow, error, id: checkingId, retry: options.retry, context, silent: options.inlineFailure });
     if (error instanceof TxWalletCancelledError && prepared) {
       holdCancelCheck(guardKey, watchCancelledSend(error, { flow: adapter.flow, successTitle: adapter.successTitle, wallet: wallet.address,
@@ -162,6 +205,16 @@ export async function runTx<Input, Prepared extends PreparedTx>(
   } finally {
     prepared?.dispose?.();
   }
+}
+
+/** (c) Counts only: a voided prompt, or the user rejecting in the wallet (no address, signature or amount). */
+function countWalletOutcome(flow: TxFlow, error: unknown) {
+  if (error instanceof TxPromptExpiredError) { captureTxPreflightEvent(flow, "prompt-expired"); return; }
+  const walletError = error instanceof TxWalletCancelledError || error instanceof TxNotLandedError ? error.cause : error;
+  const rejected = error instanceof TxWalletCancelledError ? error.walletRejected
+    : error instanceof TxNotLandedError ? error.walletRejected
+    : !(error instanceof TxNotSentError) && isWalletRejection(error);
+  if (rejected) captureTxPreflightEvent(flow, "wallet-rejected", { walletErrorCode: walletErrorInfo(walletError).code });
 }
 
 function record<Input, Prepared extends PreparedTx>(adapter: TxAdapter<Input, Prepared>, input: Input, prepared: Prepared,
