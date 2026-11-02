@@ -3,7 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NATIVE_SOL_MINT, USDC_MINT } from "@sofinance/engine/ids";
-import { dexDescriptors } from "@/lib/dex/client";
+import { dexDescriptors, SOL_NEED_UNKNOWN_COPY } from "@/lib/dex/client";
 import type { OpenRanges } from "@/lib/dex/client";
 import type { PoolRangeAprPayload } from "@/lib/range-apr/types";
 import type { UnifiedPool } from "@/lib/unified-pools/model";
@@ -130,6 +130,19 @@ describe("RegistryOpenModal", () => {
       "Not enough SOL: this open needs about 0.0582 SOL (rent, network fees, temporary swap accounts and a small reserve), and your wallet has 0.0566 SOL. Add about 0.0016 SOL to open.");
     expect(openButton().disabled).toBe(true);
     expect(calls.some((call) => call.url.endsWith("/open"))).toBe(false);
+  });
+
+  it("a quote without SOL parts blocks Open with the plain reason instead of counting the rent only", async () => {
+    delete quoteBody.sol;
+    await render();
+    const select = container.querySelector<HTMLSelectElement>("#registry-open-token")!;
+    await act(async () => { select.value = USDC_MINT; select.dispatchEvent(new Event("change", { bubbles: true })); });
+    await type("1");
+    expect(container.querySelector("[data-testid=registry-open-sol-unknown]")!.textContent).toBe(SOL_NEED_UNKNOWN_COPY);
+    expect(container.querySelector("[data-testid=registry-open-sol-short]")).toBeNull();
+    expect(openButton().disabled).toBe(true);
+    await act(async () => { openButton().click(); });
+    expect(mocks.runSteps).not.toHaveBeenCalled();
   });
 
   it("a quote that needs a new shared account is blocked with its reason and no Open", async () => {

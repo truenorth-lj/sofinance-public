@@ -172,8 +172,11 @@ export function RegistryOpenModal({ pool, descriptor, ranges, apr = null, onClos
   const quoted = current?.value ?? null;
   const rent = openRentLines(quoted?.rent);
   // Same parts the server's INSUFFICIENT_FUNDS check adds (openSolNeed): rent + network fees + swap accounts + reserve.
-  const solNeed = quoted ? openSolNeed(openSolPartsFromQuote(rent.totalLamports, quoted.sol)) : 0n;
-  const solShort = Boolean(quoted && !quoted.blockedReason && balances?.sol !== null && balances?.sol !== undefined && balances.sol < solNeed);
+  // A quote without those parts can't be priced: block Open with the reason instead of counting the rent only.
+  const solParts = quoted ? openSolPartsFromQuote(rent.totalLamports, quoted.sol) : null;
+  const solUnknown = solParts && !solParts.ok && !quoted?.blockedReason ? solParts.reason : null;
+  const solNeed = solParts?.ok ? openSolNeed(solParts.parts) : 0n;
+  const solShort = Boolean(solParts?.ok && !quoted?.blockedReason && balances?.sol !== null && balances?.sol !== undefined && balances.sol < solNeed);
 
   const [prepared, setPrepared] = useState<DexPreparedStep["result"] | null>(null);
   const submit = async () => {
@@ -194,7 +197,7 @@ export function RegistryOpenModal({ pool, descriptor, ranges, apr = null, onClos
   };
 
   const blocked = quoted?.blockedReason ?? null;
-  const ready = Boolean(connected && request && quoted && !blocked && !solShort && !tx.locked && tx.status !== "success");
+  const ready = Boolean(connected && request && quoted && !blocked && !solUnknown && !solShort && !tx.locked && tx.status !== "success");
   const steps = quoted?.steps ?? descriptor.meta.openSteps.max;
   const walletNote = tx.status === "wallet" && prepared ? tokenAccountRentLine(prepared.createsTokenAccounts, (mint) => tokens.find((item) => item.id === mint)?.symbol ?? "token") : null;
   const stepText = tx.step?.of && tx.step.of > 1 && tx.locked ? `Step ${tx.step.step} of ${tx.step.of}` : null;
@@ -252,6 +255,7 @@ export function RegistryOpenModal({ pool, descriptor, ranges, apr = null, onClos
             <p>{feeLine(descriptor.meta.feePolicy.open, "into the pool tokens")}{quoted && token && /^\d+$/.test(quoted.platformFeeRaw) && quoted.platformFeeRaw !== "0" ? ` About ${formatAmount(quoted.platformFeeRaw, token.decimals)} ${token.symbol} on this open.` : ""}</p>
             <p>{NETWORK_FEE_COPY} {SOL_RESERVE_COPY}</p>
             {steps > 1 ? <p>Your wallet asks you to approve {steps} transactions, one after the other.</p> : null}
+            {solUnknown ? <p role="alert" data-testid="registry-open-sol-unknown">{solUnknown}</p> : null}
             {solShort ? <p role="alert" data-testid="registry-open-sol-short">{solShortCopy(solNeed, balances!.sol!)}</p> : null}
             {blocked ? <p role="alert" data-testid="registry-open-blocked">{blocked}</p> : null}
           </div>

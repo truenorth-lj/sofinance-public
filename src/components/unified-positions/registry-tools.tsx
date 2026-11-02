@@ -36,7 +36,7 @@ export type RegistryToolProps = {
 };
 
 const CARD = "mt-3 rounded-[28px] border border-white/12 bg-char p-5 sm:p-8";
-export const BUTTON = "mt-5 inline-flex w-full items-center justify-center gap-2 rounded-full bg-lemon px-5 py-4 text-sm font-semibold text-ink transition-colors hover:bg-[#fff27f] disabled:cursor-not-allowed disabled:opacity-40";
+export const BUTTON = "mt-5 inline-flex w-full items-center justify-center gap-2 rounded-full bg-lemon px-5 py-4 text-sm font-semibold text-ink transition-colors hover:bg-[#fff27f] disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-cream/40 disabled:hover:bg-white/10";
 export const FIELD = "w-full rounded-2xl border border-white/20 bg-white/10 px-4 py-3 text-sm font-semibold text-cream outline-none focus:border-white/40 disabled:opacity-60";
 export const LABEL = "mt-5 block text-xs font-medium uppercase tracking-[0.16em] text-smoke";
 const LAMPORTS_PER_SOL = 1_000_000_000;
