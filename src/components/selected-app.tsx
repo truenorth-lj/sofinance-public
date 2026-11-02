@@ -2,7 +2,7 @@
 import "@/lib/engine-host";
 import { notEnoughBalanceMessage } from "@sofinance/engine/balance-message";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, ArrowUpRight, ChartNoAxesCombined, CircleAlert, LoaderCircle, Sprout } from "lucide-react";
 import { assetMetadata, assetSymbol, TokenPicker } from "./token-picker";
 import { formatAmount } from "@sofinance/engine/amount";
@@ -123,6 +123,22 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
   const [statusDialogOpen, setStatusDialogOpen] = useState(false);
   const [assetRisksOpen, setAssetRisksOpen] = useState(false);
   const [activeView, setActiveView] = useState<ToolId>(initialView);
+  // Step 1 of a 100% withdrawal closes the position, and its confirmation's balances refresh then reads no
+  // position (`state` becomes null). Unmounting the Withdraw panel then aborted its run before step 2 (convert)
+  // was prepared. So while a withdrawal is running or partly done (busy, or a checkpoint/Resume is pending),
+  // the panel stays pinned to its position, but only while that position is still the one selected.
+  const liveWithdraw = state && wallet && state.positionMint === selection?.positionMint ? { wallet, positionMint: state.positionMint, mintA: state.mintA, mintB: state.mintB } : null;
+  const liveWithdrawRef = useRef(liveWithdraw);
+  useLayoutEffect(() => { liveWithdrawRef.current = liveWithdraw; });
+  const [withdrawTarget, setWithdrawTarget] = useState<typeof liveWithdraw>(null);
+  // Stable: the panel re-reports busy whenever its own state changes; the pin only moves to a live position.
+  const onWithdrawBusy = useCallback((next: boolean) => {
+    setWithdrawBusy(next);
+    if (next && liveWithdrawRef.current) setWithdrawTarget(liveWithdrawRef.current);
+  }, []);
+  const pinnedWithdraw = withdrawBusy && withdrawTarget && withdrawTarget.wallet === wallet
+    && withdrawTarget.positionMint === selection?.positionMint ? withdrawTarget : null;
+  const shownWithdraw = liveWithdraw ?? pinnedWithdraw;
   // Toasts sit above the phone-only bottom action bar instead of covering its button.
   const actionBarRef = useRef<HTMLDivElement | null>(null);
   useNoticeBottomOffset(actionBarRef, activeView === "deposit");
@@ -282,7 +298,7 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
         otherSelected ? {} : { withdraw: !state || !wallet || (busy && activeView !== "withdraw") })} />
       {unavailableReason ? <UnavailableTool id={`${activeView}-view`} reason={unavailableReason} />
         : otherSelected && otherBinding ? <div id={`${activeView}-view`}>{otherBinding.tool(otherSelected, activeView)}</div> : <>
-      {activeView === "withdraw" && <div id="withdraw-view">{state && wallet ? <WithdrawPanel key={`${wallet}:${state.positionMint}`} wallet={wallet} positionMint={state.positionMint} mintA={state.mintA} mintB={state.mintB} label={poolLabel} outputs={capabilities.withdrawOutputs} onClose={()=>setActiveView("compound")} onBusyChange={setWithdrawBusy} onConfirmed={()=>{void refreshState();void refreshDiscovery();}} /> : <p className="mt-4 text-sm text-smoke">Connect your wallet and choose a position to withdraw.</p>}</div>}
+      {activeView === "withdraw" && <div id="withdraw-view">{shownWithdraw ? <WithdrawPanel key={`${shownWithdraw.wallet}:${shownWithdraw.positionMint}`} wallet={shownWithdraw.wallet} positionMint={shownWithdraw.positionMint} mintA={shownWithdraw.mintA} mintB={shownWithdraw.mintB} label={poolLabel} outputs={capabilities.withdrawOutputs} onClose={()=>setActiveView("compound")} onBusyChange={onWithdrawBusy} onConfirmed={()=>{void refreshState();void refreshDiscovery();}} /> : <p className="mt-4 text-sm text-smoke">Connect your wallet and choose a position to withdraw.</p>}</div>}
       {compound.historyWarning && <div role="status" className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-xs text-cream/80"><span>{compound.historyWarning}</span><button type="button" className="font-semibold underline" onClick={() => setActiveView("compound")}>View compound status</button></div>}
       <main>
         <div id="compound-view" hidden={activeView !== "compound"}>
