@@ -48,6 +48,27 @@ export type RentQuote = {
   tokenAccountLamports?: string;
 };
 
+/**
+ * Whether a deposit is big enough to reach every price step (tick / bin) of its range. Some DEXes split a deposit evenly
+ * over the range's steps in whole raw units (Meteora DLMM: floor(amount / bins) per bin), so a small amount rounds to
+ * 0 in every step and adds nothing. Worked out at quote time by the adapter; the UI blocks the button and shows
+ * `depositTooSmallMessage`. The build's simulation check stays the final backstop.
+ */
+export type DepositMinimum = {
+  /** Input token id the figures are in. */
+  token: string;
+  /** The quoted amount would round to 0 in some step of the range. */
+  tooSmall: boolean;
+  /** Estimated smallest amount (raw units of `token`) that reaches every step; null when it could not be estimated. */
+  minimumRaw: string | null;
+};
+
+/** What an Add would do before anything is built (no transaction). */
+export type AddQuote = {
+  /** Omitted when the adapter has no minimum rule or could not work it out (the build's simulation still checks). */
+  depositMinimum?: DepositMinimum;
+};
+
 export type OpenQuote = {
   poolId: string;
   range: { lowerPrice: number; upperPrice: number; units: number };
@@ -59,6 +80,8 @@ export type OpenQuote = {
   sol?: OpenSolQuote;
   /** Present when this open cannot proceed, in plain English (e.g. it would need a new shared account). */
   blockedReason?: string;
+  /** Omitted when the adapter has no minimum rule or could not work it out (see `DepositMinimum`). */
+  depositMinimum?: DepositMinimum;
 };
 
 /** One preset range an open can use, as the server works it out from the pool's current state (no APR data needed). */
@@ -161,6 +184,8 @@ export interface DexAdapter<N = unknown> {
    * (POSITION_NOT_FOUND) when its on-chain owner is not that wallet: the route is not the only caller (MCP, cron).
    */
   prepareAdd(key: PositionKey, owner: string, input: DexDepositInput, context: StepContext): Promise<StepResult>;
+  /** Pre-build check of an Add (e.g. the amount is too small for the range). Optional: without it the panel has no minimum. */
+  quoteAdd?(key: PositionKey, owner: string, input: DexDepositInput): Promise<AddQuote>;
   prepareWithdraw(key: PositionKey, owner: string, request: WithdrawRequest, context: StepContext): Promise<StepResult>;
   prepareClaim(key: PositionKey, owner: string, context: StepContext): Promise<StepResult>;
   prepareCompound(key: PositionKey, owner: string, context: StepContext): Promise<StepResult>;

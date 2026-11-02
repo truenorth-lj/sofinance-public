@@ -18,6 +18,7 @@ import { WITHDRAW_OUTPUTS, type PositionKey } from "@/lib/unified-positions/mode
  *   recovery    { wallet, positionKey, step, priorSignatures, planToken? } → StepResult
  *   positions   { owner }                                      → { positions: UnifiedPosition[] } (read-only)
  *   performance { positionKey }                                → PositionPerformance (read-only; public chain data)
+ *   quote-add   { owner, positionKey, input }                  → AddQuote (no transaction; `{}` when the DEX has no check)
  *   add         { owner, positionKey, input, step, priorSignatures, planToken? }           → StepResult
  *   withdraw    { owner, positionKey, fraction, output, step, priorSignatures, planToken? } → StepResult
  *   claim       { owner, positionKey, step, priorSignatures, planToken? }                  → StepResult
@@ -74,6 +75,8 @@ const positionOpBody = (adapter: DexAdapter) => {
   const common = { owner: OWNER[adapter.descriptor.capabilities.signer], positionKey: PositionKeySchema, ...StepSchema, jupiterRelay: z.unknown().optional() };
   return {
     add: z.object({ ...common, input: z.object({ token: z.string().trim().min(1).max(64), amountRaw: rawAmount }).strict() }).strict(),
+    "quote-add": z.object({ owner: common.owner, positionKey: PositionKeySchema, input: z.object({ token: z.string().trim().min(1).max(64), amountRaw: rawAmount }).strict(),
+      jupiterRelay: z.unknown().optional() }).strict(),
     withdraw: z.object({
       ...common,
       /** Share of the position, (0, 1]; 1 = everything (and close the position when the DEX allows it). */
@@ -98,6 +101,7 @@ const BODY = {
   recovery: z.object({ wallet: solanaOrEvmAddress, positionKey: z.string().min(3).max(160), ...StepSchema, jupiterRelay: z.unknown().optional() }).strict(),
   /** Position ops; the owner is checked per wallet type by `positionOpBody`, these entries only name the ops. */
   add: z.object({ owner: z.string() }).passthrough(),
+  "quote-add": z.object({ owner: z.string() }).passthrough(),
   withdraw: z.object({ owner: z.string() }).passthrough(),
   claim: z.object({ owner: z.string() }).passthrough(),
   compound: z.object({ owner: z.string() }).passthrough(),
@@ -172,6 +176,11 @@ async function run(adapter: DexAdapter, op: Op, body: unknown): Promise<Response
     case "add": {
       const input = positionOpBody(adapter).add.parse(body);
       return json(withPermits(await adapter.prepareAdd(input.positionKey as PositionKey, input.owner, input.input, stepContext(input)), input.owner));
+    }
+    case "quote-add": {
+      const input = positionOpBody(adapter)["quote-add"].parse(body);
+      if (!adapter.descriptor.capabilities.deposit.supported) throw new DexError("UNSUPPORTED", adapter.descriptor.capabilities.deposit.reason);
+      return json(adapter.quoteAdd ? await adapter.quoteAdd(input.positionKey as PositionKey, input.owner, input.input) : {});
     }
     case "withdraw": {
       const input = positionOpBody(adapter).withdraw.parse(body);

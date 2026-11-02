@@ -5,7 +5,7 @@ import { captureTxClientFailure, type TxReportContext } from "@/lib/sentry/clien
 import { notifyPositionHistoryChange } from "@/lib/position-history-refresh";
 import { clearTxAttempt } from "./attempts";
 import { pollSignature, type TxChainStatus } from "./confirm";
-import { canRetry, FLOW_LABEL, plainTxError, txFailureKind, TxLandedUnknownError, TxSendUnknownError, TxWalletCancelledError, type TxFailureKind, type TxFlow } from "./errors";
+import { canRetry, COULDNT_SEND_TITLE, FLOW_LABEL, isCouldntSend, plainTxError, txFailureKind, TxLandedUnknownError, TxSendUnknownError, TxWalletCancelledError, type TxFailureKind, type TxFlow } from "./errors";
 
 export { solscanTxUrl } from "./confirm";
 
@@ -99,7 +99,7 @@ export function reportTxFailure(input: { flow: TxFlow; error: unknown; id?: stri
     // lookup still checks Solana and replaces this toast with the success toast if the wallet broadcast anyway.
     if (input.error instanceof TxWalletCancelledError) {
       showTxNotice({ id: cancelNoticeIdFor(input.error), flow: input.flow, state: "failure", kind: "rejected",
-        title: input.error.walletRejected ? `${FLOW_LABEL[input.flow]} cancelled` : `${FLOW_LABEL[input.flow]}: not on Solana yet`, detail: message });
+        title: input.error.walletRejected ? `${FLOW_LABEL[input.flow]} cancelled` : COULDNT_SEND_TITLE, detail: message });
     }
     return { kind, message, retryable: false };
   }
@@ -109,7 +109,9 @@ export function reportTxFailure(input: { flow: TxFlow; error: unknown; id?: stri
     return { kind, message, retryable };
   }
   showTxNotice({ id: input.id, flow: input.flow, state: "failure", kind, signature: input.signature,
-    title: kind === "expired" ? `${FLOW_LABEL[input.flow]}: transaction expired`
+    // Only a wallet rejection says "cancelled"; every other send failure says it could not be sent, with the reason.
+    title: isCouldntSend(input.error) ? COULDNT_SEND_TITLE
+      : kind === "expired" ? `${FLOW_LABEL[input.flow]}: transaction expired`
       : kind === "not-sent" ? `${FLOW_LABEL[input.flow]}: nothing was sent`
       // Possibly sent (wallet error with no answer from Solana, or a lost relay response): never "failed".
       : input.error instanceof TxLandedUnknownError || input.error instanceof TxSendUnknownError ? `${FLOW_LABEL[input.flow]}: not confirmed yet`

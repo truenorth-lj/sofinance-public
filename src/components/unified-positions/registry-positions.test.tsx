@@ -20,7 +20,7 @@ const POSITION = testKeypair(94).publicKey.toBase58();
 const MINT_A = "TSLAqBbv4CNCnzWFeB7LmydAyEiNMJtve7DYKLpdK4S";
 const MINT_B = "XsDoVfqeBukxuZHWhdvWHBhgEHjGNst4MLodqsJHzoB";
 const state = vi.hoisted(() => ({ dex: { status: 200, body: {} as unknown }, op: { status: 422, body: {} as unknown }, raydium: [] as unknown[], dexCalls: [] as [string, unknown][], routeOn: true, icons: null as unknown, hold: null as Promise<void> | null,
-  performance: { status: 200, body: {} as unknown } }));
+  performance: { status: 200, body: {} as unknown }, quoteAdd: { status: 200, body: {} as unknown } }));
 
 vi.mock("@/lib/protocol-flags", async (importOriginal) => ({ ...await importOriginal<typeof import("@/lib/protocol-flags")>(),
   isDexTxRouteEnabled: () => state.routeOn }));
@@ -60,6 +60,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true); localStorage.clear(); resetTxNotices();
   state.dex = { status: 200, body: { positions: [meteoraRow()] } }; state.raydium = []; state.dexCalls = []; state.routeOn = true; state.icons = null; state.hold = null; resetPositionOpLocks();
   state.performance = { status: 200, body: performanceBody() };
+  state.quoteAdd = { status: 200, body: {} };
   state.op = { status: 422, body: { error: "This pool pays farming rewards, and claiming them isn't available here yet.", code: "UNSUPPORTED" } };
   window.history.replaceState(null, "", "/app");
   vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
@@ -69,6 +70,7 @@ beforeEach(() => {
     if (url.pathname.startsWith("/api/dex/")) {
       state.dexCalls.push([url.pathname, JSON.parse(String(init?.body))]);
       if (url.pathname.endsWith("/performance")) return Response.json(state.performance.body, { status: state.performance.status });
+      if (url.pathname.endsWith("/quote-add")) return Response.json(state.quoteAdd.body, { status: state.quoteAdd.status });
       if (!url.pathname.endsWith("/positions")) {
         if (state.hold) await state.hold; // a prepare still in flight
         return Response.json(state.op.body, { status: state.op.status });
@@ -81,6 +83,8 @@ beforeEach(() => {
 });
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.unstubAllGlobals(); localStorage.clear(); });
 
+/** Past the Add panel's 400 ms quote-add debounce, then settle. */
+const afterAddCheck = async () => { await act(async () => { await new Promise((resolve) => setTimeout(resolve, 450)); }); await settle(); };
 const settle = async () => { for (let i = 0; i < 8; i++) await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); }); };
 async function render(props: Record<string, unknown> = {}) {
   await act(async () => root.render(createElement(SelectedApp as FunctionComponent<Record<string, unknown>>, props)));
@@ -274,10 +278,44 @@ describe("/app My positions with registry DEXes", () => {
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
     await act(async () => { setter.call(input, "1.5"); input.dispatchEvent(new Event("input", { bubbles: true })); });
     const add = [...panel.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent === "Add liquidity")!;
+    // Greyed while the amount is checked against the range (quote-add), then enabled.
+    expect(add.disabled).toBe(true);
+    await afterAddCheck();
+    expect(state.dexCalls).toContainEqual(["/api/dex/meteora-dlmm/quote-add", { owner: WALLET, positionKey: `meteora-dlmm:${POSITION}`, input: { token: MINT_A, amountRaw: "1500000" } }]);
     expect(add.disabled).toBe(false);
     await act(async () => add.click());
     await settle();
     expect(state.dexCalls.at(-1)).toEqual(["/api/dex/meteora-dlmm/add", expect.objectContaining({ owner: WALLET, input: { token: MINT_A, amountRaw: "1500000" }, step: 1 })]);
+  });
+
+  it("Add: an amount that would round to 0 in the range's steps greys Add and says the minimum (from quote-add)", async () => {
+    state.quoteAdd = { status: 200, body: { depositMinimum: { token: MINT_A, tooSmall: true, minimumRaw: "48336" } } };
+    await render();
+    await act(async () => tab("Add to position").click());
+    const panel = container.querySelector("[data-testid=registry-add]")!;
+    const input = panel.querySelector<HTMLInputElement>("input#registry-add-amount")!;
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    await act(async () => { setter.call(input, "0.015"); input.dispatchEvent(new Event("input", { bubbles: true })); });
+    await afterAddCheck();
+    const add = [...panel.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent === "Add liquidity")!;
+    expect(add.disabled).toBe(true);
+    expect(panel.querySelector("[data-testid=registry-add-too-small]")?.textContent)
+      .toBe("This amount is too small to add to every price step in this range. Try at least about 0.054 TSLA.");
+    await act(async () => add.click());
+    expect((state.dexCalls as [string, unknown][]).filter(([path]) => path.endsWith("/add"))).toEqual([]);
+  });
+
+  it("Add: a failed quote-add check does not block (the build's simulation is the backstop)", async () => {
+    state.quoteAdd = { status: 503, body: { error: "Jupiter is busy" } };
+    await render();
+    await act(async () => tab("Add to position").click());
+    const panel = container.querySelector("[data-testid=registry-add]")!;
+    const input = panel.querySelector<HTMLInputElement>("input#registry-add-amount")!;
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    await act(async () => { setter.call(input, "1"); input.dispatchEvent(new Event("input", { bubbles: true })); });
+    await afterAddCheck();
+    expect([...panel.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent === "Add liquidity")!.disabled).toBe(false);
+    expect(panel.querySelector("[data-testid=registry-add-too-small]")).toBeNull();
   });
 
   it("the header uses the stored token icons (same source as the pairs list) instead of the first-letter placeholder", async () => {

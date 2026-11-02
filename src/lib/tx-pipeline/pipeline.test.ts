@@ -90,7 +90,7 @@ describe("errors", () => {
       expect(text).not.toMatch(/[{}"]|code"?:|ce8e2677/);
     }
     expect(plainTxError(new TxNotLandedError(false, PHANTOM_400()))).toBe(
-      "Your wallet reported a problem (“Request rejected by user”). We checked Solana and it did not go through. Nothing was sent, safe to retry.");
+      "Couldn't send the transaction: your wallet said “Request rejected by user”. We checked Solana and it did not go through. Nothing was sent, safe to retry.");
     expect(txFailureKind(new TxNotLandedError(true, USER_4001()))).toBe("not-sent");
     expect(txFailureKind(new TxLandedUnknownError(PHANTOM_400()))).toBe("unknown");
   });
@@ -600,8 +600,8 @@ describe("landed check after a wallet error", () => {
     const error = await runTx(adapter, {}, { wallet: throwingWallet(PHANTOM_400), findLanded, retry, onStage: (s) => stages.push(s) }).catch((e) => e);
     expect(stages).toEqual(["preparing", "wallet", "checking"]);
     expect(error).toMatchObject({ kind: "not-sent", retryable: true,
-      message: "Your wallet reported a problem (“Request rejected by user”). We checked Solana and it did not go through. Nothing was sent, safe to retry." });
-    expect(getTxNotices()).toMatchObject([{ state: "failure", kind: "not-sent", retry }]);
+      message: "Couldn't send the transaction: your wallet said “Request rejected by user”. We checked Solana and it did not go through. Nothing was sent, safe to retry." });
+    expect(getTxNotices()).toMatchObject([{ state: "failure", kind: "not-sent", title: "Couldn't send the transaction", retry }]);
     expect(refresh).toHaveBeenCalled();
     expect(sentry.capture).toHaveBeenCalledWith("add", "not-sent", expect.any(String),
       expect.objectContaining({ walletErrorCode: 400, landedCheck: "not-landed" }));

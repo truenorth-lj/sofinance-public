@@ -276,7 +276,8 @@ export function MeteoraOpenPanel({ view, signingEnabled }: { view: MeteoraOpenPo
       const unsigned = VersionedTransaction.deserialize(Buffer.from(prepared.transaction, "base64"));
       const snapshot = VersionedTransaction.deserialize(unsigned.serialize());
       if (unsigned.message.staticAccountKeys[0]?.toBase58() !== wallet || unsigned.message.recentBlockhash !== summary.blockhash) throw new Error("Prepared transaction payer or blockhash mismatch");
-      let signed = await signTransaction(unsigned);
+      // A wallet error is never shown raw (it can carry an RPC address): cancelled only for an explicit "no".
+      let signed = await signTransaction(unsigned).catch((error: unknown) => { throw new Error(meteoraPlainError(error, "sign")); });
       current(); assertMeteoraPending(wallet, expected); checkSummary();
       assertWalletReturnedTransaction(snapshot, signed, wallet);
       if (kind === "setup") {

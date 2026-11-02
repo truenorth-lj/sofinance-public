@@ -11,7 +11,7 @@
 import { CircleAlert, LoaderCircle } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { formatAmount, parseTokenAmount } from "@sofinance/engine/amount";
-import { dexTxAdapter, type DexCapabilities, type DexPreparedStep, type DexDescriptor, type DexStepInput, type DexStepOp, type FeeRule, type RentQuote } from "@/lib/dex/client";
+import { depositTooSmallMessage, dexTxAdapter, fetchAddQuote, type AddQuote, type DexCapabilities, type DexPreparedStep, type DexDescriptor, type DexStepInput, type DexStepOp, type FeeRule, type RentQuote } from "@/lib/dex/client";
 import { createJupiterRelayStore } from "@/lib/jupiter/browser-relay";
 import { CANCEL_CHECK_PENDING_COPY, CHECKING_SOLANA_COPY, solscanTxUrl, TX_WAITING_PREVIOUS_EXPIRY_COPY, txInterruptionMessage, type TxInterruption } from "@/lib/tx-pipeline";
 import type { ToolId, TokenRef, UnifiedPosition, WithdrawOutput } from "@/lib/unified-positions/model";
@@ -213,7 +213,33 @@ function NotConnected() {
   return <p className="mt-4 text-sm text-smoke">Connect your wallet to use this position.</p>;
 }
 
+const ADD_CHECK_DEBOUNCE_MS = 400;
+
+/**
+ * Quote-time check of an Add (POST /api/dex/[dex]/quote-add), debounced like the open quote. `pending` while the
+ * current amount is being checked. A failed check does not block: the build's simulation still refuses an add that
+ * adds no liquidity.
+ */
+function useAddCheck(dexId: string, positionKey: string, owner: string | null, input: { token: string; amountRaw: string } | null, paused: boolean) {
+  const key = owner && input ? JSON.stringify({ owner, positionKey, input }) : "";
+  const [check, setCheck] = useState<{ key: string; value?: AddQuote; failed?: boolean } | null>(null);
+  useEffect(() => {
+    if (!key || paused) return;
+    const aborter = new AbortController();
+    const timer = window.setTimeout(() => {
+      setCheck({ key });
+      fetchAddQuote(dexId, JSON.parse(key) as Parameters<typeof fetchAddQuote>[1], aborter.signal)
+        .then((value) => setCheck({ key, value }))
+        .catch(() => { if (!aborter.signal.aborted) setCheck({ key, failed: true }); });
+    }, ADD_CHECK_DEBOUNCE_MS);
+    return () => { aborter.abort(); window.clearTimeout(timer); };
+  }, [key, dexId, paused]);
+  const current = check?.key === key ? check : null;
+  return { pending: Boolean(key) && !paused && (!current || (!current.value && !current.failed)), quote: current?.value ?? null };
+}
+
 function RegistryAddPanel({ position, descriptor, balances, symbolOf, onConfirmed }: RegistryToolProps) {
+  const { address: owner } = useWalletConnection();
   const op = usePositionTx("add", position, onConfirmed);
   const { tx, send, connected, locked } = op;
   const tokens = useMemo(() => {
@@ -238,8 +264,11 @@ function RegistryAddPanel({ position, descriptor, balances, symbolOf, onConfirme
     }
   }
   const pair = `${symbolOf(position.tokenA)} and ${symbolOf(position.tokenB)}`;
+  const input = token && raw !== null ? { token: token.id, amountRaw: raw.toString() } : null;
+  const check = useAddCheck(descriptor.id, position.key, connected ? owner || null : null, input, locked);
+  const tooSmall = token ? depositTooSmallMessage(check.quote?.depositMinimum, { id: token.id, decimals: token.decimals, symbol: symbolOf(token) }) : null;
   const submit = () => {
-    if (!token || raw === null) return;
+    if (!token || raw === null || tooSmall || check.pending) return;
     void send({ descriptor, positionKey: position.key, input: { token: token.id, amountRaw: raw.toString() } });
   };
   return <section className={CARD} data-testid="registry-add" aria-labelledby="registry-add-heading">
@@ -257,7 +286,9 @@ function RegistryAddPanel({ position, descriptor, balances, symbolOf, onConfirme
       </div>
       <input id="registry-add-amount" disabled={locked} inputMode="decimal" placeholder="0.00" value={amount} onChange={(event) => setAmount(event.target.value)} className={`mt-2 ${FIELD}`} />
       {problem ? <p role="alert" className="mt-2 text-xs text-cream/80">{problem}</p> : null}
-      <button type="button" disabled={locked || raw === null} onClick={submit} className={BUTTON}>
+      {check.pending && !tx.locked ? <p role="status" className="mt-2 flex items-center gap-2 text-xs text-smoke"><LoaderCircle aria-hidden="true" className="size-3 animate-spin" />Checking this amount…</p> : null}
+      {tooSmall ? <p role="alert" data-testid="registry-add-too-small" className="mt-2 text-xs text-cream/80">{tooSmall}</p> : null}
+      <button type="button" disabled={locked || raw === null || Boolean(tooSmall) || check.pending} onClick={submit} className={BUTTON}>
         {tx.locked ? <LoaderCircle aria-hidden="true" className="size-4 animate-spin" /> : null}Add liquidity
       </button>
       <LockNote lock={op} />

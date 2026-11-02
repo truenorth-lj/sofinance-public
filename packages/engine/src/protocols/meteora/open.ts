@@ -207,3 +207,56 @@ export function meteoraSpotSplit(amount: bigint, activeId: number, lowerBinId: n
   const x = amount * share.numerator / share.denominator;
   return { x, y: amount - x };
 }
+
+/**
+ * Bins each side of a SpotImBalanced deposit (`add_liquidity_by_strategy2`) fills: token X goes to every bin from the
+ * active bin up to the upper bin, token Y to every bin below the active bin. Out of range: one side fills the whole range.
+ */
+export function meteoraSpotBinCounts(activeId: number, lowerBinId: number, upperBinId: number): { x: number; y: number } {
+  const width = upperBinId - lowerBinId + 1;
+  if (!(width > 0)) throw new Error("Invalid bin range");
+  if (lowerBinId > activeId) return { x: width, y: 0 };
+  if (upperBinId < activeId) return { x: 0, y: width };
+  const x = upperBinId - activeId + 1;
+  return { x, y: width - x };
+}
+
+/**
+ * SpotImBalanced puts floor(amount / bins) raw units into each bin of a side, so a side whose amount is smaller than
+ * its bin count adds nothing at all. True when any side that has bins would get 0 per bin.
+ */
+export function meteoraSpotRoundsToZero(amountX: bigint, amountY: bigint, bins: { x: number; y: number }): boolean {
+  return (bins.x > 0 && amountX / BigInt(bins.x) < 1n) || (bins.y > 0 && amountY / BigInt(bins.y) < 1n);
+}
+
+/** One side's observed conversion: `spend` input raw units bought `out` pool-token raw units (after fees and slippage). */
+export type MeteoraSideRate = { spend: bigint; out: bigint };
+
+const ceilDiv = (a: bigint, b: bigint) => (a + b - 1n) / b;
+
+/**
+ * Smallest input (raw units) for which every bin of the range gets at least 1 raw unit of its side, assuming each side's
+ * output scales linearly with its spend (`rates`, e.g. from a Jupiter quote; a side kept as-is has out = spend). Uses the
+ * same X/Y split as `meteoraSpotSplit`. Null when a side with bins has no usable rate (out = 0).
+ */
+export function meteoraSpotMinimumInput(input: {
+  activeId: number; lowerBinId: number; upperBinId: number; rates: { x?: MeteoraSideRate; y?: MeteoraSideRate };
+}): bigint | null {
+  const bins = meteoraSpotBinCounts(input.activeId, input.lowerBinId, input.upperBinId);
+  const share = meteoraSpotXShare(input.activeId, input.lowerBinId, input.upperBinId);
+  let minimum = 1n;
+  for (const side of ["x", "y"] as const) {
+    const count = BigInt(bins[side]);
+    if (count === 0n) continue;
+    const rate = input.rates[side];
+    if (!rate || rate.out <= 0n || rate.spend <= 0n) return null;
+    // Spend on this side so that its output reaches `count` raw units (1 per bin).
+    const sideSpend = ceilDiv(count * rate.spend, rate.out);
+    const sideShare = side === "x" ? share.numerator : share.denominator - share.numerator;
+    if (sideShare <= 0n) return null;
+    // X takes floor(amount * num / den) and Y the rest; +1 covers the floor on either side.
+    const total = ceilDiv(sideSpend * share.denominator, sideShare) + 1n;
+    if (total > minimum) minimum = total;
+  }
+  return minimum;
+}

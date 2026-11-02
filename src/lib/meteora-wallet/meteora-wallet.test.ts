@@ -25,4 +25,19 @@ describe("meteora wallet helpers", () => {
     expect(meteoraFailedOnChainMessage("deposit")).toMatch(/close the empty position/);
     expect(solscanTxUrl("abc")).toBe("https://solscan.io/tx/abc");
   });
+
+  it("only an explicit wallet rejection says cancelled; other wallet or relay failures say Couldn't send, never a URL", () => {
+    // The adapter's class name wraps every wallet failure: not a cancel by itself (it was, before 2026-11-03).
+    const wrapped = Object.assign(new Error("Unexpected error"), { name: "WalletSignTransactionError" });
+    expect(meteoraPlainError(wrapped, "sign")).toBe("Couldn't send the transaction: your wallet said “Unexpected error”. Nothing was sent.");
+    expect(meteoraPlainError(Object.assign(new Error("x"), { code: 4001 }), "sign")).toBe("You cancelled the request in your wallet. Nothing was sent.");
+    const rpc = "failed: 503 from https://mainnet.example-rpc.com/?api-key=SECRET123";
+    for (const context of ["sign", "send", "prepare"] as const) {
+      const text = meteoraPlainError(new Error(rpc), context);
+      expect(text).not.toMatch(/https?:|example-rpc|SECRET123|api-key/);
+      if (context !== "prepare") expect(text).toMatch(/^Couldn't send the transaction: /);
+    }
+    expect(meteoraPlainError("rpc_unavailable", "send")).toBe("Couldn't send the transaction: it could not reach the Solana network. Nothing was sent.");
+    expect(solscanTxUrl("abc")).toBe("https://solscan.io/tx/abc");
+  });
 });

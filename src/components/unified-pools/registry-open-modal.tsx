@@ -14,7 +14,7 @@ import { LoaderCircle, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { formatAmount, parseTokenAmount } from "@sofinance/engine/amount";
 import { NATIVE_SOL_MINT } from "@sofinance/engine/ids";
-import { dexTxAdapter, openSolNeed, openSolPartsFromQuote, type DexDescriptor, type DexPreparedStep, type DexStepInput, type OpenQuote, type OpenRangePreset, type OpenRanges } from "@/lib/dex/client";
+import { depositTooSmallMessage, dexTxAdapter, openSolNeed, openSolPartsFromQuote, type DexDescriptor, type DexPreparedStep, type DexStepInput, type OpenQuote, type OpenRangePreset, type OpenRanges } from "@/lib/dex/client";
 import { createJupiterRelayStore } from "@/lib/jupiter/browser-relay";
 import { BALANCES_REFRESH_EVENT } from "@/lib/tx-pipeline";
 import { formatAprPct } from "@/lib/range-apr/format";
@@ -197,7 +197,9 @@ export function RegistryOpenModal({ pool, descriptor, ranges, apr = null, onClos
   };
 
   const blocked = quoted?.blockedReason ?? null;
-  const ready = Boolean(connected && request && quoted && !blocked && !solUnknown && !solShort && !tx.locked && tx.status !== "success");
+  // Shared "too small for this range" rule (same as Add): the quote says the amount would round to 0 in some step.
+  const tooSmall = blocked ? null : depositTooSmallMessage(quoted?.depositMinimum, token);
+  const ready = Boolean(connected && request && quoted && !blocked && !tooSmall && !solUnknown && !solShort && !tx.locked && tx.status !== "success");
   const steps = quoted?.steps ?? descriptor.meta.openSteps.max;
   const walletNote = tx.status === "wallet" && prepared ? tokenAccountRentLine(prepared.createsTokenAccounts, (mint) => tokens.find((item) => item.id === mint)?.symbol ?? "token") : null;
   const stepText = tx.step?.of && tx.step.of > 1 && tx.locked ? `Step ${tx.step.step} of ${tx.step.of}` : null;
@@ -258,6 +260,7 @@ export function RegistryOpenModal({ pool, descriptor, ranges, apr = null, onClos
             {solUnknown ? <p role="alert" data-testid="registry-open-sol-unknown">{solUnknown}</p> : null}
             {solShort ? <p role="alert" data-testid="registry-open-sol-short">{solShortCopy(solNeed, balances!.sol!)}</p> : null}
             {blocked ? <p role="alert" data-testid="registry-open-blocked">{blocked}</p> : null}
+            {tooSmall ? <p role="alert" data-testid="registry-open-too-small">{tooSmall}</p> : null}
           </div>
 
           <button type="button" disabled={!ready} onClick={() => void submit()} className={BUTTON}>
