@@ -10,7 +10,7 @@ import { isJupiterUpstreamError, asJupiterUserError } from "@sofinance/engine/ju
 import { readSwapFeeConfig, type SwapFeeConfig } from "@sofinance/engine/swap/fee";
 import { getMeteoraPositionPerformance, listMeteoraPositions, METEORA_POOL_NOT_SUPPORTED, type MeteoraListedPosition, type MeteoraPerformanceOptions, type MeteoraReadOptions } from "@/lib/meteora-positions";
 import { positionKey, type PositionKey, type PositionHoldings, type RangeStatus, type UnifiedPosition } from "@/lib/unified-positions/model";
-import type { DexAdapter, DexDepositInput, OpenQuote, OpenRequest, PositionPerformance, StepContext, StepResult, WithdrawRequest } from "../adapter";
+import type { DexAdapter, DexDepositInput, OpenQuote, OpenRanges, OpenRequest, PositionPerformance, StepContext, StepResult, WithdrawRequest } from "../adapter";
 import type { FeePolicy } from "../types";
 import { DexError, DexUnsupportedError } from "../errors";
 import { bpsFeeStrategy } from "../fees";
@@ -18,7 +18,7 @@ import { meteoraDlmmDescriptor } from "./descriptor";
 import type { PositionPerformanceReport } from "@/lib/position-performance-report";
 import {
   buildMeteoraCloseRefund, buildMeteoraDeposit, buildMeteoraSetup, meteoraBinUiPrice, meteoraOpenRent, meteoraRequestRange, ownerPoolTokenAccountsExist,
-  planMeteoraOpen, readMeteoraPool, assertEmptyOwnedPosition, type MeteoraOpenDeps, type MeteoraPoolState,
+  depositIntermediateRentAllowance, meteoraOpenPresets, meteoraOpenSolParts, planMeteoraOpen, readMeteoraPool, assertEmptyOwnedPosition, type MeteoraOpenDeps, type MeteoraPoolState,
 } from "./open.server";
 import { buildMeteoraAdd, buildMeteoraClaim, buildMeteoraCompound, buildMeteoraWithdraw } from "./manage.server";
 import { listedMeteoraPool, type MeteoraPoolList } from "./pools.server";
@@ -154,7 +154,11 @@ export function createMeteoraDlmmAdapter(options: MeteoraDlmmAdapterOptions = {}
       range = meteoraRequestRange(request, pool);
       const plan = await planMeteoraOpen(d, request, pool, range);
       // Same figure the setup step caps its simulated SOL debit with (meteoraOpenRent), so quote and cap agree.
-      const rent = await meteoraOpenRent(d.connection, plan, await ownerPoolTokenAccountsExist(d.connection, pool, request.owner));
+      const [rent, allowance] = await Promise.all([
+        meteoraOpenRent(d.connection, plan, await ownerPoolTokenAccountsExist(d.connection, pool, request.owner)),
+        depositIntermediateRentAllowance(d.connection),
+      ]);
+      const parts = meteoraOpenSolParts(rent.totalLamports, allowance);
       const { binStep } = pool.lbPair;
       return {
         poolId: request.poolId,
@@ -166,6 +170,7 @@ export function createMeteoraDlmmAdapter(options: MeteoraDlmmAdapterOptions = {}
         steps: 2,
         rent: { refundableLamports: rent.positionLamports.toString(), nonRefundableLamports: "0", tokenAccountLamports: rent.tokenAccountLamports.toString() },
         platformFeeRaw: plan.platformFeeRaw.toString(),
+        sol: { networkFeeLamports: parts.networkFeeLamports.toString(), swapAccountsLamports: parts.swapAccountsLamports.toString(), reserveLamports: parts.reserveLamports.toString() },
       };
     } catch (error) {
       if (!(error instanceof DexError) || !QUOTE_BLOCKING.has(error.code)) throw error;
@@ -290,6 +295,11 @@ export function createMeteoraDlmmAdapter(options: MeteoraDlmmAdapterOptions = {}
       };
     }),
     quoteOpen: (request: OpenRequest) => guarded(() => quote(request)),
+    // On-chain only (pool + both mints): works when the volume / APR feed is down, so opening never depends on it.
+    openRanges: (poolId: string) => guarded(async (): Promise<OpenRanges> => {
+      const pool = await readMeteoraPool(deps(), poolId);
+      return { poolId, decimals: { [pool.lbPair.tokenXMint]: pool.decimalsX, [pool.lbPair.tokenYMint]: pool.decimalsY }, presets: meteoraOpenPresets(pool) };
+    }),
     previewWithdraw: async () => { throw notYet(descriptor.capabilities.exitPreview); },
     prepareOpen: (request: OpenRequest, context: StepContext) => guarded(() => open(request, context)),
     // Position ops (PR6): one wallet step each; the builders check the decoded on-chain owner against `owner`.

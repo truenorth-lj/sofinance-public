@@ -17,13 +17,18 @@ const mocks = vi.hoisted(() => ({
   connect: vi.fn(),
   connected: false,
   modal: vi.fn(),
+  registryModal: vi.fn(),
+  routeEnabled: true,
+  openOverride: null as null | { supported: false; reason: string },
   planOverride: null as null | { supported: false; reason: string },
 }));
 vi.mock("@/lib/dex/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/dex/client")>();
   return { ...actual, dexDescriptors: { ...actual.dexDescriptors, descriptorFor: (id: string) => {
     const descriptor = actual.dexDescriptors.descriptorFor(id);
-    return descriptor && mocks.planOverride ? { ...descriptor, capabilities: { ...descriptor.capabilities, plan: mocks.planOverride } } : descriptor;
+    if (!descriptor) return descriptor;
+    return { ...descriptor, capabilities: { ...descriptor.capabilities,
+      ...(mocks.planOverride ? { plan: mocks.planOverride } : {}), ...(mocks.openOverride ? { open: mocks.openOverride } : {}) } };
   } } };
 });
 vi.mock("./use-pools-apr7d", () => ({
@@ -31,6 +36,9 @@ vi.mock("./use-pools-apr7d", () => ({
     mocks.state[pool.poolAddress] ?? (pool.poolAddress in mocks.apr ? { status: "ready", aprPct: mocks.apr[pool.poolAddress]!, rangeLabel: "Standard", lowConfidence: false, avgDailyVolumeUsd: null } : { status: "missing", reason: "No 7-day estimate" })])),
 }));
 vi.mock("../wallet-connection", () => ({ useWalletConnection: () => ({ connected: mocks.connected, connect: mocks.connect }) }));
+vi.mock("@/lib/protocol-flags", async (importOriginal) => ({ ...await importOriginal<typeof import("@/lib/protocol-flags")>(), isDexTxRouteEnabled: () => mocks.routeEnabled }));
+vi.mock("./registry-open-modal", () => ({ RegistryOpenModal: (props: { pool: { poolAddress: string }; descriptor: { id: string } }) => {
+  mocks.registryModal(props.pool.poolAddress, props.descriptor.id); return null; } }));
 vi.mock("../open-position-modal", () => ({ OpenPositionModal: (props: { pair: { poolAddress: string } }) => { mocks.modal(props.pair.poolAddress); return null; } }));
 
 const rhcSpec = UNIV4_RHC_ALLOWLISTED_POOLS[0]!;
@@ -55,6 +63,9 @@ beforeEach(() => {
   mocks.state = {};
   mocks.icons = undefined;
   mocks.planOverride = null;
+  mocks.openOverride = null;
+  mocks.routeEnabled = true;
+  mocks.registryModal.mockReset();
   mocks.connect.mockReset();
   mocks.modal.mockReset();
   container = document.createElement("div");
@@ -115,21 +126,40 @@ describe("UnifiedPoolsPanel", () => {
     expect(shown().some((key) => key?.startsWith("robinhood:"))).toBe(false);
   });
 
-  it("shows Meteora pools with a greyed Open and its reason: no open flow, no link out; Plan follows the plan capability", async () => {
+  it("Meteora pools open the registry dialog from their open capability (no grey button, no Raydium modal, no link out)", async () => {
     await render({ orca: false, meteora: true, meteoraOpen: true, rhc: true });
     expect(shown()).toContain("solana:met1");
     const card = container.querySelector('[data-pool="solana:met1"]')!;
-    const open = card.querySelector<HTMLButtonElement>("[data-testid=open-disabled] button")!;
-    expect(open.disabled).toBe(true);
-    expect(open.className).toContain("opacity-45");
-    expect(card.querySelector("[data-testid=open-disabled]")!.textContent).toContain("Opening Meteora positions isn't available yet");
-    // The only link is "Plan this pool" (descriptor `plan: SUPPORTED`); nothing links out to Meteora.
+    expect(card.querySelector("[data-testid=open-disabled]")).toBeNull();
     const links = [...card.querySelectorAll<HTMLAnchorElement>("a")];
     expect(links.map((link) => link.textContent)).toEqual(["Plan this pool"]);
     expect(links[0]!.getAttribute("href")).toMatch(/^\/app\/plan\?.*pool=met1/);
     expect(card.querySelector("a[target='_blank']")).toBeNull();
+    const open = card.querySelector<HTMLButtonElement>("button[aria-label^='Open position in']")!;
     await act(async () => { open.click(); });
+    expect(mocks.registryModal).toHaveBeenCalledWith("met1", "meteora-dlmm");
     expect(mocks.modal).not.toHaveBeenCalled();
+    expect(mocks.connect).toHaveBeenCalledTimes(1); // not connected: the wallet prompt opens with the dialog
+  });
+
+  it("an unsupported open capability shows its reason and no button; the dex route off shows no button either", async () => {
+    mocks.openOverride = { supported: false, reason: "Opening needs a newer pool version." };
+    await render({ orca: false, meteora: true, meteoraOpen: true, rhc: true });
+    let card = container.querySelector('[data-pool="solana:met1"]')!;
+    expect(card.querySelector("button[aria-label^='Open position in']")).toBeNull();
+    expect(card.textContent).toContain("Opening needs a newer pool version.");
+    mocks.openOverride = null; mocks.routeEnabled = false;
+    await act(async () => root.unmount()); root = createRoot(container);
+    await render({ orca: false, meteora: true, meteoraOpen: true, rhc: true });
+    card = container.querySelector('[data-pool="solana:met1"]')!;
+    expect(card.querySelector("button[aria-label^='Open position in']")).toBeNull();
+    expect(card.textContent).toContain("Opening is not available yet");
+    expect(mocks.registryModal).not.toHaveBeenCalled();
+  });
+
+  it("a deep link to a Meteora pool opens the registry dialog without asking the wallet to connect", async () => {
+    await render({ orca: false, meteora: true, meteoraOpen: true, rhc: true }, { deepLinkPool: "met1" });
+    await vi.waitFor(() => expect(mocks.registryModal).toHaveBeenCalledWith("met1", "meteora-dlmm"));
     expect(mocks.connect).not.toHaveBeenCalled();
   });
 

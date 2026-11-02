@@ -101,6 +101,8 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
     onConfirmed: () => { void refreshState(); } });
   // Unclaimed fees come from the compound reader (same accrual formula as the Performance card); its snapshot also carries the
   // liquidity amounts, so rows show liquidity and unclaimed fees from one consistent read when it is available.
+  // Duplicates the visibleState filter in use-compound-controller.ts:223 (it already drops another wallet's or position's state):
+  // kept as a second guard so a stale fee read of the previous position can never render beside this one.
   const feeState = state && compound.state?.positionMint === state.positionMint ? compound.state : null;
   const assets = feeState ?? state;
   const busy = addBusy || compound.busy || withdrawBusy;

@@ -114,11 +114,14 @@ export const relaySignedTransaction: SendRaw = async (signed, { prepared, sendPe
 const clone = (transaction: VersionedTransaction) => VersionedTransaction.deserialize(transaction.serialize());
 
 export async function sendWithWallet(wallet: TxWallet, transaction: VersionedTransaction, options: {
-  /** Signers that must sign after the wallet (Phantom requires wallet-first). Forces sign-then-send. */
+  /**
+   * Signers that sign after the wallet (Phantom requires wallet-first) on the relay path. Alone it forces
+   * sign-then-relay; with `presign` it is only the sign-only wallet's fallback (a signAndSend wallet sends itself).
+   */
   cosign?: (walletSigned: VersionedTransaction) => VersionedTransaction;
   /**
-   * Signers that sign before the wallet, used when the wallet can signAndSend (it then sends itself, even when `cosign`
-   * is also set). A sign-only wallet relays instead: wallet-first with `cosign` when given, else presigned.
+   * Signers that sign before the wallet, used only when the wallet can signAndSend (it then sends itself). Every caller
+   * pairs it with `cosign` (`dexTxAdapter`): a sign-only wallet relays wallet-first with `cosign`, never presigned.
    */
   presign?: (unsigned: VersionedTransaction) => VersionedTransaction;
   /** Prepare-issued permit for our relay (`/api/tx-send` refuses transactions without one). */
@@ -181,23 +184,14 @@ export async function sendWithWallet(wallet: TxWallet, transaction: VersionedTra
   }
   let walletSigned: VersionedTransaction;
   const signAskedAt = Date.now();
-  // Relay: wallet-first with `cosign`; a step offering only `presign` gets its extra signature before the wallet's.
-  let toSign = clone(prepared);
-  const presignForRelay = !options.cosign && options.presign;
-  if (presignForRelay) {
-    try {
-      toSign = presignForRelay(toSign);
-    } catch (error) {
-      throw new TxNotSentError("A required signature could not be added, so nothing was sent.", error);
-    }
-  }
+  // Relay: the wallet signs first, then `cosign` (if any). `presign` is never used here (see its option doc).
   try {
     // A late signature after the deadline is dropped: this transaction is void and is never relayed.
-    walletSigned = await beforeDeadline(wallet.signTransaction(toSign));
+    walletSigned = await beforeDeadline(wallet.signTransaction(clone(prepared)));
   } catch (error) {
     if (error instanceof TxPromptExpiredError) throw error;
     // A co-signed transaction cannot land without our co-signature, and without a check permit there is nothing to ask.
-    if (options.cosign || presignForRelay || !options.landedPermit || !maySignOnlyHaveBroadcast(error)) throw error;
+    if (options.cosign || !options.landedPermit || !maySignOnlyHaveBroadcast(error)) throw error;
     return checkLanded(error, signAskedAt);
   }
   assertWalletReturnedTransaction(prepared, walletSigned, wallet.address);

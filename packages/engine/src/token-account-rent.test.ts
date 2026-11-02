@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { Keypair, PublicKey, type AccountInfo } from "@solana/web3.js";
-import { getAccountLenForMint, MINT_SIZE, MintLayout, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID, unpackMint } from "@solana/spl-token";
+import { ExtensionType, getAccountLen, getAccountTypeOfMintType, getAccountLenForMint, MINT_SIZE, MintLayout, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID, unpackMint } from "@solana/spl-token";
 import capture from "./fixtures/meteora-dlmm-rwa-t22.json";
-import { associatedTokenAccountRents, associatedTokenAccountSpace, maxAssociatedTokenAccountSpace } from "./token-account-rent";
+import { associatedTokenAccountRents, associatedTokenAccountSpace, maxAssociatedTokenAccountSpace, REQUIRED_INIT_MINT_EXTENSIONS } from "./token-account-rent";
 
 /** Mainnet rate at the capture: every recorded rent-exempt minimum is (128 + size) × 5,080. */
 const rentFor = (size: number) => (128 + size) * 5_080;
@@ -69,5 +69,21 @@ describe("associated token account rent per mint (PR9.2)", () => {
 
   it("bounds an unknown mint's account by every required Token-2022 account extension", () => {
     expect(maxAssociatedTokenAccountSpace()).toBeGreaterThanOrEqual(179);
+  });
+});
+
+describe("required-init extension list (PR10 pin)", () => {
+  // Mirrors token-2022 `required_init_account_extensions`; a change here must be a deliberate one.
+  it("is exactly TransferFeeConfig, NonTransferable, TransferHook, PausableConfig", () => {
+    expect([...REQUIRED_INIT_MINT_EXTENSIONS].map((type) => ExtensionType[type]).sort())
+      .toEqual(["NonTransferable", "PausableConfig", "TransferFeeConfig", "TransferHook"]);
+  });
+  it("maps each to its account extension", () => {
+    expect([...REQUIRED_INIT_MINT_EXTENSIONS].map((type) => [ExtensionType[type], ExtensionType[getAccountTypeOfMintType(type)]]).sort())
+      .toEqual([["NonTransferable", "NonTransferableAccount"], ["PausableConfig", "PausableAccount"], ["TransferFeeConfig", "TransferFeeAmount"], ["TransferHook", "TransferHookAccount"]]);
+  });
+  it("max space = those four account extensions plus ImmutableOwner", () => {
+    expect(maxAssociatedTokenAccountSpace()).toBe(getAccountLen([ExtensionType.TransferFeeAmount, ExtensionType.NonTransferableAccount,
+      ExtensionType.TransferHookAccount, ExtensionType.PausableAccount, ExtensionType.ImmutableOwner]));
   });
 });

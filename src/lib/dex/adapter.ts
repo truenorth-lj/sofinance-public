@@ -6,6 +6,7 @@
  * (`src/lib/tx-pipeline/run.ts`: wallet send, the on-chain check after a wallet error such as 4001/5000, confirmation,
  * status) and the EVM wallet flow stay outside this interface and consume `PreparedStep`s.
  */
+import type { OpenSolQuote } from "./sol-need";
 import type { PositionKey, UnifiedPosition, WithdrawOutput } from "@/lib/unified-positions/model";
 import type { PositionPerformanceReport } from "@/lib/position-performance-report";
 import type { DexDescriptor, FeeOp, FeePolicy } from "./types";
@@ -54,9 +55,26 @@ export type OpenQuote = {
   rent: RentQuote | null;
   /** Fee the platform takes on this open, in the input token's raw units. */
   platformFeeRaw: string;
+  /** The other SOL parts the open needs beyond `rent` (see `openSolNeed`); omitted when the adapter does not price them. */
+  sol?: OpenSolQuote;
   /** Present when this open cannot proceed, in plain English (e.g. it would need a new shared account). */
   blockedReason?: string;
 };
+
+/** One preset range an open can use, as the server works it out from the pool's current state (no APR data needed). */
+export type OpenRangePreset = {
+  id: "micro" | "tight" | "standard" | "wide";
+  /** Range bounds in the DEX's range unit (`descriptor.meta.rangeUnit`), inclusive; `units` = how many it spans. */
+  lowerUnit: number;
+  upperUnit: number;
+  units: number;
+  /** UI prices (B per 1 A) of the bounds. */
+  priceLower: number;
+  priceUpper: number;
+};
+
+/** The preset ranges of a pool for opening, plus the pool tokens' decimals (keyed by mint). */
+export type OpenRanges = { poolId: string; decimals: Record<string, number>; presets: OpenRangePreset[] };
 
 export type ExitPreview = { outputs: { token: string; amountRaw: string }[]; platformFeeRaw: string };
 
@@ -133,6 +151,8 @@ export interface DexAdapter<N = unknown> {
   performance(key: PositionKey): Promise<PositionPerformance>;
   // quotes and previews (no transaction)
   quoteOpen(request: OpenRequest): Promise<OpenQuote>;
+  /** The preset ranges `quoteOpen` / `prepareOpen` resolve a `preset` range to, from on-chain state only (no volume or APR). */
+  openRanges?(poolId: string): Promise<OpenRanges>;
   previewWithdraw(key: PositionKey, request: WithdrawRequest): Promise<ExitPreview>;
   // preparation (no signing, no sending). A method whose capability is unsupported throws DexUnsupportedError.
   prepareOpen(request: OpenRequest, context: StepContext): Promise<StepResult>;
