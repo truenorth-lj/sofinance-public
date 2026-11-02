@@ -36,9 +36,9 @@ export type RegistryToolProps = {
 };
 
 const CARD = "mt-3 rounded-[28px] border border-white/12 bg-char p-5 sm:p-8";
-const BUTTON = "mt-5 inline-flex w-full items-center justify-center gap-2 rounded-full bg-lemon px-5 py-4 text-sm font-semibold text-ink transition-colors hover:bg-[#fff27f] disabled:cursor-not-allowed disabled:opacity-40";
-const FIELD = "w-full rounded-2xl border border-white/20 bg-white/10 px-4 py-3 text-sm font-semibold text-cream outline-none focus:border-white/40 disabled:opacity-60";
-const LABEL = "mt-5 block text-xs font-medium uppercase tracking-[0.16em] text-smoke";
+export const BUTTON = "mt-5 inline-flex w-full items-center justify-center gap-2 rounded-full bg-lemon px-5 py-4 text-sm font-semibold text-ink transition-colors hover:bg-[#fff27f] disabled:cursor-not-allowed disabled:opacity-40";
+export const FIELD = "w-full rounded-2xl border border-white/20 bg-white/10 px-4 py-3 text-sm font-semibold text-cream outline-none focus:border-white/40 disabled:opacity-60";
+export const LABEL = "mt-5 block text-xs font-medium uppercase tracking-[0.16em] text-smoke";
 const LAMPORTS_PER_SOL = 1_000_000_000;
 
 export function RegistryPositionTool(props: RegistryToolProps) {
@@ -161,7 +161,7 @@ function usePositionTx<Op extends DexStepOp>(op: Op, position: UnifiedPosition, 
   };
 }
 
-type PositionTx = Pick<ReturnType<typeof usePositionTx>["tx"], "status" | "signature" | "error" | "retryable" | "retry" | "secondsLeft">
+export type PositionTx = Pick<ReturnType<typeof usePositionTx>["tx"], "status" | "signature" | "error" | "retryable" | "retry" | "secondsLeft">
   & Partial<Pick<ReturnType<typeof usePositionTx>["tx"], "interrupted" | "dismissInterrupted">>;
 type PositionLock = Pick<ReturnType<typeof usePositionTx>, "lockedByOther" | "cancelPending">;
 
@@ -173,7 +173,7 @@ function LockNote({ lock }: { lock: PositionLock }) {
   </p>;
 }
 
-function TxStatus({ tx, successText, walletNote }: { tx: PositionTx; successText: string; walletNote?: string | null }) {
+export function TxStatus({ tx, successText, walletNote }: { tx: PositionTx; successText: string; walletNote?: string | null }) {
   const stage = tx.status === "preparing" ? "Preparing the transaction…"
     : tx.status === "wallet" ? "Confirm in your wallet…"
     : tx.status === "checking" ? CHECKING_SOLANA_COPY

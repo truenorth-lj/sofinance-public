@@ -1,0 +1,241 @@
+"use client";
+
+/**
+ * Open a new position on a DEX served through the registry (PR10; DESIGN.md §8.y), from the unified pools panel.
+ * Everything comes from the descriptor: deposit inputs, the per-position range cap (`meta.maxRangeUnitsPerPosition`),
+ * the rent model, the open fee rule and the number of steps. No layer here knows which DEX the pool belongs to.
+ *
+ * Flow: pick a token (the pool's two or the descriptor's extra inputs; never native SOL) → amount → a preset range
+ * (wider than the cap: shown as "not available to open yet") → POST /api/dex/[dex]/quote-open (rent, fee, blocked
+ * reason) → each step through `dexTxAdapter("open")` + `useTxPipeline().runSteps`: loading → success / failure with a
+ * Solscan link → balances refresh (the pipeline's notice asks every panel to re-read).
+ */
+import { LoaderCircle, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { formatAmount, parseTokenAmount } from "@sofinance/engine/amount";
+import { NATIVE_SOL_MINT } from "@sofinance/engine/ids";
+import { dexTxAdapter, type DexDescriptor, type DexPreparedStep, type DexStepInput, type OpenQuote } from "@/lib/dex/client";
+import { createJupiterRelayStore } from "@/lib/jupiter/browser-relay";
+import { BALANCES_REFRESH_EVENT } from "@/lib/tx-pipeline";
+import type { RangeAprPresetEstimate, RangeAprPresetId, PoolRangeAprPayload } from "@/lib/range-apr/types";
+import type { UnifiedPool } from "@/lib/unified-pools/model";
+import type { TokenRef } from "@/lib/unified-positions/model";
+import { useTxPipeline } from "../transactions/use-tx-pipeline";
+import { BUTTON, feeLine, FIELD, LABEL, openRentLines, TxStatus, tokenAccountRentLine } from "../unified-positions/registry-tools";
+import { useWalletConnection } from "../wallet-connection";
+
+/** Slippage for the swap legs of an open (code constant; PR10 rule: no new env flags). */
+export const OPEN_SLIPPAGE_BPS = 50;
+/** Wait after the last keystroke before asking for a quote. */
+const QUOTE_DEBOUNCE_MS = 400;
+const PRESET_LABEL: Record<RangeAprPresetId, string> = { micro: "Micro", tight: "Tight", standard: "Standard", wide: "Wide" };
+
+export const NETWORK_FEE_COPY = "Network fee is set by your wallet.";
+export const SOL_RESERVE_COPY = "Keep some SOL beyond the rent: your wallet adds its own priority fee to each step (Phantom added about 0.0015 SOL on step 2 in our test), and that fee must also fit in your SOL.";
+export const SOL_REFUSED_COPY = "SOL can't be used to open a position. Use one of the listed tokens.";
+export const RANGE_TOO_WIDE_COPY = (units: number, max: number, unit: string) =>
+  `Not available to open yet: this range spans ${units} ${unit}s, and one position holds at most ${max}.`;
+
+export type PresetOption = { id: RangeAprPresetId; units: number; priceLower: number; priceUpper: number; available: boolean; reason: string | null };
+
+/** The pool's preset ranges with their width in the DEX's range unit, and whether one position can hold them. */
+export function presetOptions(presets: readonly Pick<RangeAprPresetEstimate, "id" | "tickLower" | "tickUpper" | "priceLower" | "priceUpper">[],
+  tickSpacing: number, descriptor: Pick<DexDescriptor, "meta">): PresetOption[] {
+  const max = descriptor.meta.maxRangeUnitsPerPosition;
+  return presets.map((preset) => {
+    const units = Math.round((preset.tickUpper - preset.tickLower) / Math.max(1, tickSpacing));
+    const available = max === null || units <= max;
+    return { id: preset.id, units, priceLower: preset.priceLower, priceUpper: preset.priceUpper, available,
+      reason: available ? null : RANGE_TOO_WIDE_COPY(units, max!, descriptor.meta.rangeUnit) };
+  });
+}
+
+/** Tokens the open accepts: the pool's two plus the descriptor's extra inputs, never native SOL. */
+export function openInputs(pool: Pick<UnifiedPool, "mintA" | "mintB" | "symbolA" | "symbolB">, descriptor: Pick<DexDescriptor, "meta">,
+  decimals: { a: number; b: number } | null): TokenRef[] {
+  const list: TokenRef[] = [];
+  const { poolTokens, extra } = descriptor.meta.depositInputs;
+  if (poolTokens && decimals) list.push({ id: pool.mintA, symbol: pool.symbolA, decimals: decimals.a }, { id: pool.mintB, symbol: pool.symbolB, decimals: decimals.b });
+  for (const token of extra) if (!list.some((item) => item.id === token.id)) list.push(token);
+  return list.filter((token) => token.id !== NATIVE_SOL_MINT);
+}
+
+type Balances = { sol: bigint | null; byMint: Record<string, string> };
+type WalletAssets = { assets?: { mint: string; kind: string; balance: string }[] };
+const solText = (lamports: bigint) => (Number(lamports) / 1e9).toFixed(4);
+const price = (value: number) => (value >= 1 ? value.toPrecision(6) : value.toPrecision(4));
+
+function useWalletBalances(wallet: string | null): Balances | null {
+  const [balances, setBalances] = useState<{ wallet: string; value: Balances } | null>(null);
+  useEffect(() => {
+    if (!wallet) return;
+    let live = true;
+    const read = () => void fetch(`/api/wallet?wallet=${encodeURIComponent(wallet)}`, { cache: "no-store" })
+      .then(async (response) => (response.ok ? await response.json() as WalletAssets : null))
+      .then((found) => {
+        if (!live || !found?.assets) return;
+        const byMint: Record<string, string> = {};
+        let sol: bigint | null = null;
+        for (const asset of found.assets) {
+          if (asset.kind === "native") sol = /^\d+$/.test(asset.balance) ? BigInt(asset.balance) : null;
+          else byMint[asset.mint] = asset.balance;
+        }
+        setBalances({ wallet, value: { sol, byMint } });
+      })
+      .catch(() => { /* balances stay unknown; the server still checks */ });
+    read();
+    window.addEventListener(BALANCES_REFRESH_EVENT, read);
+    return () => { live = false; window.removeEventListener(BALANCES_REFRESH_EVENT, read); };
+  }, [wallet]);
+  return balances && balances.wallet === wallet ? balances.value : null;
+}
+
+export type RegistryOpenModalProps = {
+  pool: UnifiedPool;
+  descriptor: DexDescriptor;
+  /** The pool's range APR payload (preset ranges, decimals); null while it loads, an Error when it failed. */
+  ranges: PoolRangeAprPayload | Error | null;
+  onClose: () => void;
+};
+
+export function RegistryOpenModal({ pool, descriptor, ranges, onClose }: RegistryOpenModalProps) {
+  const { address: wallet, connected, connect, signTransaction, signAndSendTransaction } = useWalletConnection();
+  const txWallet = useMemo(() => (wallet ? { address: wallet, signTransaction, signAndSendTransaction } : null), [wallet, signTransaction, signAndSendTransaction]);
+  const adapter = useMemo(() => dexTxAdapter("open"), []);
+  const tx = useTxPipeline(adapter, txWallet, { scope: `open:${pool.key}`, inlineErrors: true });
+  const relayStore = useRef(createJupiterRelayStore());
+  const balances = useWalletBalances(wallet || null);
+  const payload = ranges instanceof Error ? null : ranges;
+  const tokens = useMemo(() => openInputs(pool, descriptor, payload ? { a: payload.pool.decimalsA, b: payload.pool.decimalsB } : null), [pool, descriptor, payload]);
+  const solIsPoolToken = descriptor.meta.depositInputs.poolTokens && (pool.mintA === NATIVE_SOL_MINT || pool.mintB === NATIVE_SOL_MINT);
+  const presets = useMemo(() => (payload ? presetOptions(payload.presets, payload.pool.tickSpacing, descriptor) : []), [payload, descriptor]);
+  const [tokenId, setTokenId] = useState("");
+  const [presetId, setPresetId] = useState<RangeAprPresetId | "">("");
+  const [amount, setAmount] = useState("");
+  const token = tokens.find((item) => item.id === tokenId) ?? tokens[0];
+  const preset = presets.find((item) => item.id === presetId && item.available) ?? presets.find((item) => item.available && item.id === "standard") ?? presets.find((item) => item.available);
+
+  let raw: bigint | null = null;
+  let problem = "";
+  if (token && amount.trim()) {
+    try { raw = parseTokenAmount(amount.trim(), token.decimals); } catch { problem = `Enter an amount with at most ${token.decimals} decimals.`; }
+    if (raw !== null && raw <= 0n) { problem = "Enter an amount above zero."; raw = null; }
+    const have = balances?.byMint[token.id];
+    if (raw !== null && have !== undefined && raw > BigInt(have)) { problem = `Not enough ${token.symbol}: your wallet has ${formatAmount(have, token.decimals)}.`; raw = null; }
+  }
+
+  const request = token && preset && raw !== null
+    ? { poolId: pool.poolAddress, range: { kind: "preset" as const, presetId: preset.id }, input: { token: token.id, amountRaw: raw.toString() }, slippageBps: OPEN_SLIPPAGE_BPS }
+    : null;
+  const requestKey = request ? JSON.stringify(request) : "";
+  const [quote, setQuote] = useState<{ key: string; value?: OpenQuote; error?: string } | null>(null);
+  useEffect(() => {
+    if (!requestKey || !wallet || tx.locked) return;
+    const aborter = new AbortController();
+    const timer = window.setTimeout(() => {
+      setQuote({ key: requestKey });
+      void fetch(`/api/dex/${encodeURIComponent(descriptor.id)}/quote-open`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, signal: aborter.signal,
+        body: JSON.stringify({ request: { ...JSON.parse(requestKey), owner: wallet } }),
+      }).then(async (response) => {
+        const body = await response.json().catch(() => null) as (OpenQuote & { error?: string }) | null;
+        if (!response.ok || !body) throw new Error(body?.error || `The quote could not be loaded (server error ${response.status}). Try again in a moment.`);
+        setQuote({ key: requestKey, value: body });
+      }).catch((error: unknown) => {
+        if (aborter.signal.aborted) return;
+        setQuote({ key: requestKey, error: error instanceof Error ? error.message : "The quote could not be loaded. Try again in a moment." });
+      });
+    }, QUOTE_DEBOUNCE_MS);
+    return () => { aborter.abort(); window.clearTimeout(timer); };
+  }, [requestKey, wallet, descriptor.id, tx.locked]);
+  const current = quote && quote.key === requestKey ? quote : null;
+  const quoted = current?.value ?? null;
+  const rent = openRentLines(quoted?.rent);
+  const solShort = quoted && balances?.sol !== null && balances?.sol !== undefined && balances.sol < rent.totalLamports;
+
+  const [prepared, setPrepared] = useState<DexPreparedStep["result"] | null>(null);
+  const submit = async () => {
+    if (!request) return;
+    const inputFor = (step: number, priorSignatures: string[], planToken?: string) => ({
+      descriptor, request, relayStore: relayStore.current, beforeWallet: setPrepared,
+      context: { step, priorSignatures, ...(planToken ? { planToken } : {}) },
+    }) as DexStepInput<"open">;
+    setPrepared(null);
+    await tx.runSteps(inputFor(1, []), {
+      progress: (step) => ({ step: step.result.step, of: step.result.of }),
+      next: (sent, earlier) => {
+        setPrepared(null);
+        const { done, step, planToken } = sent.prepared.result;
+        return done ? null : inputFor(step + 1, [...earlier, sent].map((item) => item.signature), planToken);
+      },
+    });
+  };
+
+  const blocked = quoted?.blockedReason ?? null;
+  const ready = Boolean(connected && request && quoted && !blocked && !solShort && !tx.locked && tx.status !== "success");
+  const steps = quoted?.steps ?? descriptor.meta.openSteps.max;
+  const walletNote = tx.status === "wallet" && prepared ? tokenAccountRentLine(prepared.createsTokenAccounts, (mint) => tokens.find((item) => item.id === mint)?.symbol ?? "token") : null;
+  const stepText = tx.step?.of && tx.step.of > 1 && tx.locked ? `Step ${tx.step.step} of ${tx.step.of}` : null;
+
+  return <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 sm:items-center" data-testid="registry-open-modal">
+    <section role="dialog" aria-modal="true" aria-labelledby="registry-open-heading"
+      className="max-h-[100dvh] w-full overflow-y-auto rounded-t-[28px] border border-white/12 bg-char p-5 text-cream sm:max-w-lg sm:rounded-[28px] sm:p-8">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 id="registry-open-heading" className="text-lg font-semibold">Open a position</h2>
+          <p className="mt-1 text-sm text-smoke">{pool.pairLabel} · {descriptor.displayName}</p>
+        </div>
+        <button type="button" aria-label="Close" disabled={tx.closeLocked} onClick={onClose} className="rounded-full p-2 text-cream/80 hover:text-cream disabled:opacity-40"><X className="size-5" aria-hidden="true" /></button>
+      </div>
+      {!connected ? <>
+        <p className="mt-4 text-sm text-smoke">Connect your wallet to open a position.</p>
+        <button type="button" onClick={connect} className={BUTTON}>Connect wallet</button>
+      </> : ranges instanceof Error ? <p role="alert" className="mt-4 text-sm text-cream/80">This pool&apos;s ranges could not be loaded: {ranges.message}</p>
+        : !payload ? <p role="status" className="mt-4 flex items-center gap-2 text-sm text-cream/80"><LoaderCircle aria-hidden="true" className="size-4 animate-spin" />Loading this pool&apos;s ranges…</p>
+        : <>
+          <label htmlFor="registry-open-token" className={LABEL}>Token to deposit</label>
+          <select id="registry-open-token" disabled={tx.locked} value={token?.id ?? ""} onChange={(event) => { setTokenId(event.target.value); setAmount(""); }} className={`mt-2 ${FIELD}`}>
+            {tokens.map((item) => <option key={item.id} value={item.id}>{item.symbol}</option>)}
+          </select>
+          {solIsPoolToken ? <p data-testid="registry-open-sol" className="mt-2 text-xs text-smoke">{SOL_REFUSED_COPY}</p> : null}
+          <div className="mt-5 flex items-center justify-between">
+            <label htmlFor="registry-open-amount" className="text-xs font-medium uppercase tracking-[0.16em] text-smoke">Amount</label>
+            {token && balances?.byMint[token.id] ? <button type="button" disabled={tx.locked} className="text-xs text-smoke underline"
+              onClick={() => setAmount(formatAmount(balances.byMint[token.id]!, token.decimals, token.decimals).replace(/,/g, ""))}>
+              Wallet: {formatAmount(balances.byMint[token.id]!, token.decimals)} · Max</button> : null}
+          </div>
+          <input id="registry-open-amount" disabled={tx.locked} inputMode="decimal" placeholder="0.00" value={amount} onChange={(event) => setAmount(event.target.value)} className={`mt-2 ${FIELD}`} />
+          {problem ? <p role="alert" className="mt-2 text-xs text-cream/80">{problem}</p> : null}
+
+          <p className={LABEL}>Price range</p>
+          <div role="radiogroup" aria-label="Price range" className="mt-2 grid gap-2">
+            {presets.map((item) => <button key={item.id} type="button" role="radio" aria-checked={preset?.id === item.id} disabled={!item.available || tx.locked}
+              data-testid={`registry-open-preset-${item.id}`} onClick={() => setPresetId(item.id)}
+              className={`rounded-2xl border px-4 py-3 text-left text-sm ${preset?.id === item.id ? "border-white/60" : "border-white/20"} disabled:cursor-not-allowed disabled:opacity-50`}>
+              <span className="flex justify-between gap-2 font-semibold"><span>{PRESET_LABEL[item.id]}</span><span className="font-normal text-smoke">{item.units} {descriptor.meta.rangeUnit}s</span></span>
+              <span className="block text-xs text-smoke">{price(item.priceLower)} – {price(item.priceUpper)}</span>
+              {item.reason ? <span className="mt-1 block text-xs text-cream/80">{item.reason}</span> : null}
+            </button>)}
+          </div>
+          {!presets.some((item) => item.available) ? <p role="alert" className="mt-2 text-sm text-cream/80">No range of this pool fits one position, so it is not available to open yet.</p> : null}
+
+          <div className="mt-5 space-y-2 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80" data-testid="registry-open-costs">
+            {current && !current.value && !current.error ? <p role="status" className="flex items-center gap-2"><LoaderCircle aria-hidden="true" className="size-4 animate-spin" />Getting a quote…</p> : null}
+            {current?.error ? <p role="alert">{current.error}</p> : null}
+            {quoted ? <p>Range: {price(quoted.range.lowerPrice)} – {price(quoted.range.upperPrice)} ({quoted.range.units} {descriptor.meta.rangeUnit}s)</p> : null}
+            {rent.lines.length ? rent.lines.map((line) => <p key={line}>{line}</p>) : descriptor.meta.rent ? <p>{descriptor.meta.rent.disclosure}</p> : null}
+            <p>{feeLine(descriptor.meta.feePolicy.open, "into the pool tokens")}{quoted && token && /^\d+$/.test(quoted.platformFeeRaw) && quoted.platformFeeRaw !== "0" ? ` About ${formatAmount(quoted.platformFeeRaw, token.decimals)} ${token.symbol} on this open.` : ""}</p>
+            <p>{NETWORK_FEE_COPY} {SOL_RESERVE_COPY}</p>
+            {steps > 1 ? <p>Your wallet asks you to approve {steps} transactions, one after the other.</p> : null}
+            {solShort ? <p role="alert">Not enough SOL: this open sets aside about {solText(rent.totalLamports)} SOL, but your wallet has {solText(balances!.sol!)} SOL.</p> : null}
+            {blocked ? <p role="alert" data-testid="registry-open-blocked">{blocked}</p> : null}
+          </div>
+
+          <button type="button" disabled={!ready} onClick={() => void submit()} className={BUTTON}>
+            {tx.locked ? <LoaderCircle aria-hidden="true" className="size-4 animate-spin" /> : null}{stepText ? `${stepText}…` : "Open position"}
+          </button>
+          <TxStatus tx={tx} walletNote={walletNote} successText="Position opened. It shows under My positions." />
+        </>}
+    </section>
+  </div>;
+}

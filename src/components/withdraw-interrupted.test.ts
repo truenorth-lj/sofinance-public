@@ -8,8 +8,8 @@ describe("interrupted withdraw marker (PR10)", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     warnWithdrawInterrupted("mintX", ["sig1"]);
     expect(warn).toHaveBeenCalledTimes(1);
-    expect(warn.mock.calls[0][0]).toBe("[withdraw-interrupted]");
-    expect(JSON.parse(String(warn.mock.calls[0][1]))).toMatchObject({ positionMint: "mintX", signatures: ["sig1"] });
+    expect(warn.mock.calls[0]?.[0]).toBe("[withdraw-interrupted]");
+    expect(JSON.parse(String(warn.mock.calls[0]?.[1]))).toMatchObject({ positionMint: "mintX", signatures: ["sig1"] });
   });
   it("names the step that was interrupted in plain words", () => {
     expect(interruptedWithdrawMessage("withdraw")).toMatch(/after step 1 of 2: your tokens were withdrawn but not converted yet/);
