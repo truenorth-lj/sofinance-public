@@ -42,5 +42,33 @@ export const txLandedRateLimited = (ip: string, now = Date.now()) => txLanded.li
 export const txLandedCheckRateLimited = (permit: string, wallet: string, now = Date.now()) =>
   txLandedCheck.limited(permit, now) || txLandedWallet.limited(wallet, now);
 
+/**
+ * `/api/tx-simulate` (pre-wallet guard): a step simulates at most twice per prepare (each prepare has its own permit),
+ * so a permit needs few; per wallet leaves room for a multi-step run plus Try again.
+ */
+export const TX_SIMULATE_REQUESTS_PER_IP_PER_MINUTE = 20;
+export const TX_SIMULATE_REQUESTS_PER_CHECK_PER_MINUTE = 4;
+export const TX_SIMULATE_REQUESTS_PER_WALLET_PER_MINUTE = 12;
+/** `/api/tx-expiry`: one voided prompt is polled every 4 s until its blockhash has expired (~1–2 min). */
+export const TX_EXPIRY_REQUESTS_PER_IP_PER_MINUTE = 30;
+export const TX_EXPIRY_REQUESTS_PER_CHECK_PER_MINUTE = 20;
+export const TX_EXPIRY_REQUESTS_PER_WALLET_PER_MINUTE = 30;
+const txSimulate = slidingWindowLimiter(TX_SIMULATE_REQUESTS_PER_IP_PER_MINUTE);
+const txSimulateCheck = slidingWindowLimiter(TX_SIMULATE_REQUESTS_PER_CHECK_PER_MINUTE);
+const txSimulateWallet = slidingWindowLimiter(TX_SIMULATE_REQUESTS_PER_WALLET_PER_MINUTE);
+const txExpiry = slidingWindowLimiter(TX_EXPIRY_REQUESTS_PER_IP_PER_MINUTE);
+const txExpiryCheck = slidingWindowLimiter(TX_EXPIRY_REQUESTS_PER_CHECK_PER_MINUTE);
+const txExpiryWallet = slidingWindowLimiter(TX_EXPIRY_REQUESTS_PER_WALLET_PER_MINUTE);
+export const txSimulateRateLimited = (ip: string, now = Date.now()) => txSimulate.limited(ip, now);
+/** Like `txLandedCheckRateLimited`: only after the permit is verified. */
+export const txSimulateCheckRateLimited = (permit: string, wallet: string, now = Date.now()) =>
+  txSimulateCheck.limited(permit, now) || txSimulateWallet.limited(wallet, now);
+export const txExpiryRateLimited = (ip: string, now = Date.now()) => txExpiry.limited(ip, now);
+export const txExpiryCheckRateLimited = (permit: string, wallet: string, now = Date.now()) =>
+  txExpiryCheck.limited(permit, now) || txExpiryWallet.limited(wallet, now);
+
 /** Test hook. */
-export function resetTxSendRateLimit() { txSend.reset(); txLanded.reset(); txLandedCheck.reset(); txLandedWallet.reset(); }
+export function resetTxSendRateLimit() {
+  txSend.reset(); txLanded.reset(); txLandedCheck.reset(); txLandedWallet.reset();
+  txSimulate.reset(); txSimulateCheck.reset(); txSimulateWallet.reset(); txExpiry.reset(); txExpiryCheck.reset(); txExpiryWallet.reset();
+}

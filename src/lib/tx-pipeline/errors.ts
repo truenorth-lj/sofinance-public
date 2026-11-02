@@ -61,6 +61,66 @@ export class TxLandedUnknownError extends Error {
   }
 }
 
+/** A voided prompt whose old transaction we could not settle (landed or expired): the wallet reported nothing wrong. */
+export const TX_VOID_UNCONFIRMED_MESSAGE = "We couldn't confirm whether the previous request went through. Check Solscan before trying again.";
+export class TxVoidUnconfirmedError extends TxLandedUnknownError {
+  constructor(cause: unknown) {
+    super(cause);
+    this.message = TX_VOID_UNCONFIRMED_MESSAGE;
+    this.name = "TxVoidUnconfirmedError";
+  }
+}
+
+/** Copy for a wallet prompt left unsigned past the pre-wallet guard's deadline (PM 2026-11-02). */
+export const TX_PROMPT_EXPIRED_MESSAGE = "This request expired.";
+/** Shown while a voided prompt's transaction could still land: Try again stays disabled until its blockhash has expired. */
+export const TX_WAITING_PREVIOUS_EXPIRY_COPY = "Waiting for the previous request to expire…";
+
+/**
+ * The wallet prompt stayed unsigned past its deadline (about 60 s, or sooner when the blockhash is near expiry), so the
+ * pipeline stopped waiting and voided this transaction: a sign-only wallet's late signature is never relayed. Try again
+ * prepares a fresh one; nothing is ever resent automatically.
+ */
+export class TxPromptExpiredError extends Error {
+  constructor() {
+    super(TX_PROMPT_EXPIRED_MESSAGE);
+    this.name = "TxPromptExpiredError";
+  }
+}
+
+/**
+ * Fixed categories for a wallet error's message (PM 2026-11-02): counted instead of the raw text, which can carry
+ * addresses, amounts or signatures. Order matters: the first match wins.
+ */
+export const WALLET_ERROR_CATEGORIES = ["user-rejected", "simulation-failed", "blockhash", "insufficient-funds", "timeout",
+  "unsupported", "disconnected", "network", "empty", "other"] as const;
+export type WalletErrorCategory = typeof WALLET_ERROR_CATEGORIES[number];
+const CATEGORY_PATTERNS: [Exclude<WalletErrorCategory, "empty" | "other">, RegExp][] = [
+  ["user-rejected", /reject|denied|declin|cancel/i],
+  ["simulation-failed", /simulat/i],
+  ["blockhash", /blockhash|expired|block height/i],
+  ["insufficient-funds", /insufficient|not enough|balance/i],
+  ["timeout", /time(d)?\s*out|timeout/i],
+  ["unsupported", /unsupported|not supported|not implemented/i],
+  ["disconnected", /disconnect|not connected|locked/i],
+  ["network", /network|fetch|rpc|connection/i],
+];
+export function walletErrorCategory(error: unknown): WalletErrorCategory {
+  const { code, message } = walletErrorInfo(error);
+  // A wallet's rejection code wins over an adapter's wrapper text ("WalletSendTransactionError").
+  if (code !== undefined && WALLET_REJECTION_CODES.includes(code)) return "user-rejected";
+  if (!message) return "empty";
+  return CATEGORY_PATTERNS.find(([, pattern]) => pattern.test(message))?.[0] ?? "other";
+}
+
+/** The pre-wallet guard stopped before the wallet was asked; the message is the real cause in plain words. */
+export class TxPreflightError extends TxNotSentError {
+  constructor(message: string) {
+    super(message);
+    this.name = "TxPreflightError";
+  }
+}
+
 let cancelSequence = 0;
 
 /**
@@ -131,6 +191,8 @@ function walletReason(error: unknown) {
 }
 
 export function txFailureKind(error: unknown): TxFailureKind {
+  if (error instanceof TxPromptExpiredError) return "expired";
+  if (error instanceof TxPreflightError) return "not-sent";
   if (error instanceof TxNotLandedError) return "not-sent";
   if (error instanceof TxLandedUnknownError) return "unknown";
   if (error instanceof TxWalletCancelledError) return "rejected";
@@ -153,7 +215,8 @@ export const canRetry = (kind: TxFailureKind) => kind === "expired" || kind === 
 
 /** Plain words for the person in front of the wallet. Never raw RPC text, never secrets. */
 export function plainTxError(error: unknown, kind = txFailureKind(error)): string {
-  if (error instanceof TxNotLandedError || error instanceof TxLandedUnknownError || error instanceof TxWalletCancelledError) return error.message;
+  if (error instanceof TxNotLandedError || error instanceof TxLandedUnknownError || error instanceof TxWalletCancelledError ||
+    error instanceof TxPromptExpiredError || error instanceof TxPreflightError) return error.message;
   if (kind === "rejected") return "You cancelled in your wallet. Nothing was sent.";
   if (kind === "expired") return TX_EXPIRED_MESSAGE;
   if (error instanceof TxSendUnknownError) return error.message;

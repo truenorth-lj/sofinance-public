@@ -13,7 +13,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { formatAmount, parseTokenAmount } from "@sofinance/engine/amount";
 import { dexTxAdapter, type DexCapabilities, type DexPreparedStep, type DexDescriptor, type DexStepInput, type DexStepOp, type FeeRule, type RentQuote } from "@/lib/dex/client";
 import { createJupiterRelayStore } from "@/lib/jupiter/browser-relay";
-import { CANCEL_CHECK_PENDING_COPY, CHECKING_SOLANA_COPY, solscanTxUrl } from "@/lib/tx-pipeline";
+import { CANCEL_CHECK_PENDING_COPY, CHECKING_SOLANA_COPY, solscanTxUrl, TX_WAITING_PREVIOUS_EXPIRY_COPY } from "@/lib/tx-pipeline";
 import type { ToolId, TokenRef, UnifiedPosition, WithdrawOutput } from "@/lib/unified-positions/model";
 import { useTxPipeline } from "../transactions/use-tx-pipeline";
 import { useWalletConnection } from "../wallet-connection";
@@ -161,7 +161,7 @@ function usePositionTx<Op extends DexStepOp>(op: Op, position: UnifiedPosition, 
   };
 }
 
-type PositionTx = Pick<ReturnType<typeof usePositionTx>["tx"], "status" | "signature" | "error" | "retryable" | "retry">;
+type PositionTx = Pick<ReturnType<typeof usePositionTx>["tx"], "status" | "signature" | "error" | "retryable" | "retry" | "secondsLeft">;
 type PositionLock = Pick<ReturnType<typeof usePositionTx>, "lockedByOther" | "cancelPending">;
 
 /** Why a panel is greyed while another send on the same position runs (or a cancelled one is still being checked). */
@@ -176,6 +176,8 @@ function TxStatus({ tx, successText, walletNote }: { tx: PositionTx; successText
   const stage = tx.status === "preparing" ? "Preparing the transaction…"
     : tx.status === "wallet" ? "Confirm in your wallet…"
     : tx.status === "checking" ? CHECKING_SOLANA_COPY
+    // A voided prompt's transaction could still land: no Try again until it has expired (or it landed: step done).
+    : tx.status === "expiring" ? `${TX_WAITING_PREVIOUS_EXPIRY_COPY}${tx.secondsLeft ? ` About ${tx.secondsLeft} s left.` : ""}`
     : tx.status === "confirming" ? "Confirming on Solana…" : null;
   if (stage) return <>
     <p role="status" className="mt-3 flex items-center gap-2 text-sm text-cream/80"><LoaderCircle aria-hidden="true" className="size-4 animate-spin" />{stage}</p>

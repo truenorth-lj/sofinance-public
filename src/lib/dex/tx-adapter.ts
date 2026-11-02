@@ -12,6 +12,8 @@
  * only its public key, and signs BEFORE the wallet (`presign`), which then signs and sends; on the sign-only relay path it
  * signs after the wallet instead (`cosign`). The secret never leaves the browser and is wiped when the run ends. A presigned transaction is one the wallet leaves unchanged (Phantom adds no
  * priority fee to it), so the step's fee is the base fee our SOL check counts.
+ * Every step opts into the pipeline's pre-wallet guard (`TX_PREFLIGHT_POLICY`: server simulation with one re-prepare,
+ * quote age, prompt expiry, counts), so each registered DEX gets it without a DEX-specific branch.
  * Nothing in this file names a DEX.
  */
 import { VersionedTransaction } from "@solana/web3.js";
@@ -19,7 +21,7 @@ import { createEphemeralMint, type EphemeralMint } from "@/lib/ephemeral-mint";
 import { postWithJupiterRelay, type JupiterRelayStore } from "@/lib/jupiter/browser-relay";
 import { addMintSignature, missingRequiredSignatures } from "@/lib/open-signatures";
 import { isZeroSignature } from "@sofinance/engine/transaction-limits";
-import { TxNotSentError, type PreparedTx, type TxAdapter, type TxFlow } from "@/lib/tx-pipeline";
+import { TX_PREFLIGHT_POLICY, TxNotSentError, type PreparedTx, type TxAdapter, type TxFlow } from "@/lib/tx-pipeline";
 import type { PositionKey, WithdrawOutput } from "@/lib/unified-positions/model";
 import type { OpenRequest, StepContext, StepResult } from "./adapter";
 import type { DexDescriptor } from "./types";
@@ -66,6 +68,7 @@ export function dexTxAdapter<Op extends DexStepOp>(op: Op): TxAdapter<DexStepInp
   return {
     flow: FLOW[op],
     successTitle: SUCCESS[op],
+    preflight: TX_PREFLIGHT_POLICY,
     scope: (input) => ("positionKey" in input ? input.positionKey : `${input.descriptor.id}:${input.request.poolId}:${input.context.step}`),
     async prepare(input, { wallet }) {
       const { descriptor, context } = input;

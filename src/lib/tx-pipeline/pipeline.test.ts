@@ -6,7 +6,7 @@ import { buildTransaction, testKeypair } from "@/lib/test-support/send-fixtures"
 
 const sentry = vi.hoisted(() => ({ capture: vi.fn(), landed: vi.fn() }));
 const history = vi.hoisted(() => ({ notify: vi.fn() }));
-vi.mock("@/lib/sentry/client-tx", () => ({ captureTxClientFailure: sentry.capture, captureTxWalletErrorLanded: sentry.landed }));
+vi.mock("@/lib/sentry/client-tx", () => ({ captureTxClientFailure: sentry.capture, captureTxWalletErrorLanded: sentry.landed, captureTxPreflightEvent: vi.fn() }));
 vi.mock("@/lib/position-history-refresh", () => ({ notifyPositionHistoryChange: history.notify }));
 
 import {
