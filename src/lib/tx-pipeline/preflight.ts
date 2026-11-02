@@ -52,3 +52,64 @@ export const simulatePreparedOnServer: SimulatePrepared = async (transaction, { 
     return { ok: null, unavailable: true };
   }
 };
+
+/**
+ * After a voided prompt (PM 2026-11-02, no double-landing): the old transaction could still land until its blockhash
+ * expires, so Try again waits for one of
+ *   - "landed" / "failed": it reached Solana after all (the wallet's late signature, or the fee payer's history
+ *     matched against the prepared transaction): that step is done and is never sent again;
+ *   - "expired": the block height (public RPC) is past its `lastValidBlockHeight` and nothing landed: Try again;
+ *   - "unknown": we could not tell (no permit and nothing to ask, or the page went away).
+ */
+export type VoidedOutcome = { status: "landed" | "failed"; signature: string } | { status: "expired" } | { status: "unknown" };
+export type WaitVoided = (transaction: VersionedTransaction, check: {
+  landedPermit?: string; lastValidBlockHeight: number; preparedAt: number;
+  /** The wallet's late signature, once its signAndSend resolves after the void. */
+  signature: () => string | undefined;
+  /** Seconds left until Try again can be enabled (estimated from the blocks left). */
+  onWaiting?: (secondsLeft: number | undefined) => void;
+  signal?: AbortSignal;
+}) => Promise<VoidedOutcome>;
+
+export const VOIDED_POLL_INTERVAL_MS = 4_000;
+/** Stop waiting (answer "unknown") after this; a blockhash expires in ~1 min, so this is only for a stuck RPC. */
+export const VOIDED_MAX_WAIT_MS = 5 * 60_000;
+const SLOT_MS = 400;
+
+const sleepFor = (ms: number, signal?: AbortSignal) => new Promise<void>((resolve) => {
+  const timer = setTimeout(done, ms);
+  signal?.addEventListener("abort", done, { once: true });
+  function done() { clearTimeout(timer); signal?.removeEventListener("abort", done); resolve(); }
+});
+
+export const waitForVoidedExpiry: WaitVoided = async (transaction, check) => {
+  // Without a check permit there is nothing to ask: never claim it expired (Try again would risk a double add).
+  if (!check.landedPermit) return { status: "unknown" };
+  const unsignedTransaction = toBase64(transaction.serialize());
+  const startedAt = Date.now();
+  let checked: string[] | undefined;
+  for (let poll = 0; ; poll++) {
+    if (check.signal?.aborted) return { status: "unknown" };
+    if (poll > 0) await sleepFor(VOIDED_POLL_INTERVAL_MS, check.signal);
+    if (check.signal?.aborted) return { status: "unknown" };
+    if (Date.now() - startedAt > VOIDED_MAX_WAIT_MS) return { status: "unknown" };
+    const signature = check.signature();
+    try {
+      const response = await fetch("/api/tx-expiry", {
+        method: "POST", headers: { "Content-Type": "application/json" }, cache: "no-store", signal: AbortSignal.timeout(PREFLIGHT_SIM_TIMEOUT_MS),
+        body: JSON.stringify({ unsignedTransaction, landedPermit: check.landedPermit, lastValidBlockHeight: check.lastValidBlockHeight,
+          preparedAt: check.preparedAt, ...(signature ? { signature } : {}), ...(checked?.length ? { checked } : {}) }),
+      });
+      if (response.status === 400) return { status: "unknown" };
+      const body = await response.json().catch(() => null) as { status?: unknown; signature?: unknown; blocksLeft?: unknown; checked?: unknown } | null;
+      if (response.ok && body) {
+        if ((body.status === "landed" || body.status === "failed") && typeof body.signature === "string" && body.signature) {
+          return { status: body.status, signature: body.signature };
+        }
+        if (body.status === "expired") return { status: "expired" };
+        if (Array.isArray(body.checked)) checked = body.checked.filter((item): item is string => typeof item === "string").slice(-200);
+        if (typeof body.blocksLeft === "number") check.onWaiting?.(Math.ceil(body.blocksLeft * SLOT_MS / 1000));
+      }
+    } catch { /* offline or timed out: keep waiting, never "expired" */ }
+  }
+};

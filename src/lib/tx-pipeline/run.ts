@@ -3,8 +3,8 @@ import { loadTxAttempts, saveTxAttempt } from "./attempts";
 import { cancelCheckKey, CANCEL_CHECK_PENDING_COPY, holdCancelCheck, isCancelCheckPending } from "./cancel-guard";
 import { captureTxPreflightEvent, captureTxWalletErrorLanded, type TxReportContext } from "@/lib/sentry/client-tx";
 import { watchCancelledSend } from "./cancelled";
-import { isWalletRejection, TxLandedUnknownError, TxNotLandedError, TxNotSentError, TxPreflightError, TxPromptExpiredError, TxSendUnknownError, TxWalletCancelledError, walletErrorInfo, type TxFlow } from "./errors";
-import { simulatePreparedOnServer, type SimulatePrepared, type TxPreflightPolicy } from "./preflight";
+import { isWalletRejection, walletErrorCategory, TxLandedUnknownError, TxNotLandedError, TxNotSentError, TxPreflightError, TxPromptExpiredError, TxSendUnknownError, TxWalletCancelledError, walletErrorInfo, type TxFlow } from "./errors";
+import { simulatePreparedOnServer, waitForVoidedExpiry, type SimulatePrepared, type TxPreflightPolicy, type WaitVoided } from "./preflight";
 import type { FindLanded } from "./landed";
 import { dismissTxNotice, noticeIdFor, reportTxFailure, showTxCheckingNotice, trackTxSignature } from "./notices";
 import { sendWithWallet, type SendRaw, type TxWallet } from "./wallet-send";
@@ -53,13 +53,14 @@ export type TxAdapter<Input, Prepared extends PreparedTx = PreparedTx> = {
 export const STALE_QUOTE_MESSAGE = "Getting a fresh price took too long, so nothing was sent. Try again.";
 
 /** "checking": the wallet threw after a sign-and-send request and we are looking for the transaction on-chain. */
-export type TxStage = "preparing" | "wallet" | "checking" | "confirming";
+/** "expiring": a voided wallet prompt's transaction could still land; Try again waits until its blockhash expires. */
+export type TxStage = "preparing" | "wallet" | "checking" | "expiring" | "confirming";
 
 export type RunTxOptions = {
   wallet: TxWallet;
   storage?: Pick<Storage, "getItem" | "setItem" | "removeItem">;
   sendRaw?: SendRaw;
-  onStage?: (stage: TxStage, detail?: { signature?: string }) => void;
+  onStage?: (stage: TxStage, detail?: { signature?: string; secondsLeft?: number }) => void;
   /** Return false once the wallet, inputs or component changed: stop before asking the wallet, and before relaying. */
   isCurrent?: () => boolean;
   retry?: () => void;
@@ -69,6 +70,10 @@ export type RunTxOptions = {
   checkingWindowMs?: number;
   /** Test hook: the pre-wallet simulation (default `/api/tx-simulate`). Only used when the adapter has `preflight`. */
   simulate?: SimulatePrepared;
+  /** Test hook: after a voided prompt, wait for the old transaction to land or expire (default `/api/tx-expiry`). */
+  waitVoided?: WaitVoided;
+  /** Aborted when the caller goes away (unmount): the prompt deadline timer and the expiry wait stop. */
+  signal?: AbortSignal;
   /** Overrides `adapter.scope` (flows driven through `sendAndTrack`). */
   scope?: string;
   /**
@@ -130,8 +135,11 @@ export async function runTx<Input, Prepared extends PreparedTx>(
     let preparedAt = Date.now();
     // Pre-wallet guard: one re-prepare (fresh quote and blockhash) for a failed simulation or a stale quote, then stop.
     for (let attempt = 1; policy; attempt++) {
+      const simStartedAt = Date.now();
       const sim = await (options.simulate ?? simulatePreparedOnServer)(prepared.transaction,
         { landedPermit: prepared.landedPermit, lastValidBlockHeight: prepared.lastValidBlockHeight });
+      // The quote's age excludes our own simulation (a slow public RPC must not force a re-prepare).
+      quotedAt += Date.now() - simStartedAt;
       let stop: string | null = null;
       if (sim.ok === false) {
         captureTxPreflightEvent(adapter.flow, "sim-failed", { attempt });
@@ -158,6 +166,7 @@ export async function runTx<Input, Prepared extends PreparedTx>(
     options.onPrepared?.(prepared);
     options.onStage?.("wallet");
     const sentPrepared: Prepared = prepared;
+    let lateSignature: string | undefined;
     try {
       const sent = await sendWithWallet(wallet, prepared.transaction, {
         cosign: prepared.cosign, presign: prepared.presign, sendPermit: prepared.sendPermit, landedPermit: prepared.landedPermit,
@@ -165,8 +174,9 @@ export async function runTx<Input, Prepared extends PreparedTx>(
         lastValidBlockHeight: prepared.lastValidBlockHeight, findLanded: options.findLanded, checkingWindowMs: options.checkingWindowMs,
         ...(policy ? {
           promptDeadlineAt: Math.min(Date.now() + policy.maxPromptMs, preparedAt + policy.blockhashSafeMs),
-          // Voided, but this wallet broadcast it anyway: track it so a landing is never hidden (and never resent).
-          onLateSignature: (late: string) => { if (sentPrepared) record(adapter, input, sentPrepared, late, options); },
+          // Voided, but this wallet broadcast it anyway: the expiry wait below checks this signature's status.
+          onLateSignature: (late: string) => { lateSignature = late; },
+          signal: options.signal,
         } : {}),
         knownSignatures: () => options.storage ? loadTxAttempts(options.storage as Storage, wallet.address).map((item) => item.signature) : [],
         onChecking: (walletError) => {
@@ -182,9 +192,27 @@ export async function runTx<Input, Prepared extends PreparedTx>(
         captureTxWalletErrorLanded(adapter.flow, { ...context, landedCheck: "landed" });
       }
     } catch (error) {
-      if (!(error instanceof TxSendUnknownError)) throw error;
-      signature = error.signature; // Possibly sent: track it rather than guess.
-      uncertain = error.message;
+      if (policy && error instanceof TxPromptExpiredError) {
+        // No double-landing (PM 2026-11-02): the voided transaction can still land until its blockhash expires.
+        // Wait for that (Try again stays disabled); if it lands, this step is done and nothing else is sent.
+        captureTxPreflightEvent(adapter.flow, "prompt-expired");
+        options.onStage?.("expiring");
+        const outcome = await (options.waitVoided ?? waitForVoidedExpiry)(sentPrepared.transaction, {
+          landedPermit: sentPrepared.landedPermit, lastValidBlockHeight: sentPrepared.lastValidBlockHeight, preparedAt,
+          signature: () => lateSignature, signal: options.signal,
+          onWaiting: (secondsLeft) => options.onStage?.("expiring", secondsLeft === undefined ? undefined : { secondsLeft }),
+        });
+        if (outcome.status === "expired") { captureTxPreflightEvent(adapter.flow, "void-expired"); throw error; }
+        if (outcome.status === "unknown") throw new TxLandedUnknownError(error);
+        captureTxPreflightEvent(adapter.flow, "void-landed");
+        signature = outcome.signature;
+        via = "wallet";
+        landedAfterWalletError = true;
+      } else {
+        if (!(error instanceof TxSendUnknownError)) throw error;
+        signature = error.signature; // Possibly sent: track it rather than guess.
+        uncertain = error.message;
+      }
     }
     if (checkingId) dismissTxNotice(checkingId);
     const noticeId = record(adapter, input, prepared, signature, options);
@@ -207,14 +235,18 @@ export async function runTx<Input, Prepared extends PreparedTx>(
   }
 }
 
-/** (c) Counts only: a voided prompt, or the user rejecting in the wallet (no address, signature or amount). */
+/**
+ * (c) Counts only: the user rejecting in the wallet, with the wallet's code and a fixed category of its message
+ * (never the text, which can hold an address, amount or signature). Voided prompts are counted where they happen.
+ */
 function countWalletOutcome(flow: TxFlow, error: unknown) {
-  if (error instanceof TxPromptExpiredError) { captureTxPreflightEvent(flow, "prompt-expired"); return; }
+  if (error instanceof TxPromptExpiredError) return;
   const walletError = error instanceof TxWalletCancelledError || error instanceof TxNotLandedError ? error.cause : error;
   const rejected = error instanceof TxWalletCancelledError ? error.walletRejected
     : error instanceof TxNotLandedError ? error.walletRejected
     : !(error instanceof TxNotSentError) && isWalletRejection(error);
-  if (rejected) captureTxPreflightEvent(flow, "wallet-rejected", { walletErrorCode: walletErrorInfo(walletError).code });
+  if (rejected) captureTxPreflightEvent(flow, "wallet-rejected",
+    { walletErrorCode: walletErrorInfo(walletError).code ?? "none", walletErrorCategory: walletErrorCategory(walletError) });
 }
 
 function record<Input, Prepared extends PreparedTx>(adapter: TxAdapter<Input, Prepared>, input: Input, prepared: Prepared,

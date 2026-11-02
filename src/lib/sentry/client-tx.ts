@@ -80,8 +80,16 @@ export function captureTxWalletErrorLanded(flow: TxFlow, context: TxReportContex
  * a wallet's own "Failed to simulate" warning). Counts only: tags are the flow, the event and the attempt; never a
  * wallet address, signature, blockhash or amount.
  */
-export type TxPreflightEvent = "sim-failed" | "sim-unavailable" | "stale-quote" | "prompt-expired" | "wallet-rejected";
-export function captureTxPreflightEvent(flow: TxFlow, event: TxPreflightEvent, detail: { attempt?: number; walletErrorCode?: number } = {}) {
+export type TxPreflightEvent = "sim-failed" | "sim-unavailable" | "stale-quote" | "prompt-expired" | "wallet-rejected"
+  /** After a voided prompt: the old transaction landed anyway (step done, not resent) / its blockhash expired unseen. */
+  | "void-landed" | "void-expired";
+export function captureTxPreflightEvent(flow: TxFlow, event: TxPreflightEvent, detail: {
+  attempt?: number;
+  /** The wallet's own numeric code exactly as reported (nested adapter codes included); "none" when it gave none. */
+  walletErrorCode?: number | "none";
+  /** A fixed category of the wallet's message (`walletErrorCategory`); never the message text itself. */
+  walletErrorCategory?: string;
+} = {}) {
   try {
     if (!isSentryEnabled()) return;
     Sentry.withScope((scope) => {
@@ -90,6 +98,7 @@ export function captureTxPreflightEvent(flow: TxFlow, event: TxPreflightEvent, d
       scope.setTag("tx_preflight", event);
       if (detail.attempt !== undefined) scope.setTag("tx_preflight_attempt", String(detail.attempt));
       if (detail.walletErrorCode !== undefined) scope.setTag("wallet_error_code", String(detail.walletErrorCode));
+      if (detail.walletErrorCategory !== undefined) scope.setTag("wallet_error_category", detail.walletErrorCategory);
       scope.setFingerprint(["tx-preflight", flow, event]);
       Sentry.captureMessage(`Transaction ${flow} preflight ${event}`);
     });

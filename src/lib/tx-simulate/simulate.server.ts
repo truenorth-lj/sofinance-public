@@ -14,12 +14,20 @@ export type PreWalletSimulation = { ok: true; unitsConsumed?: number } | { ok: f
 export const PRE_WALLET_SIM_TIMEOUT_MS = 8_000;
 
 /** Empty env on purpose: the pool then resolves to public mainnet only, whatever paid providers the server has. */
-const publicConnection = () => rpcConnection({}, { env: {}, retry: null });
+export const publicConnection = () => rpcConnection({}, { env: {}, retry: null });
 
-export async function simulateBeforeWallet(transaction: VersionedTransaction,
-  connection: Pick<Connection, "simulateTransaction"> = publicConnection()): Promise<PreWalletSimulation> {
+export async function simulateBeforeWallet(transaction: VersionedTransaction, options: {
+  /** The prepare-time height the permit signs: past it, the blockhash is dead and the answer is "expired" (re-prepare). */
+  lastValidBlockHeight?: number;
+  connection?: Pick<Connection, "simulateTransaction" | "getBlockHeight">;
+} = {}): Promise<PreWalletSimulation> {
+  const connection = options.connection ?? publicConnection();
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
+    if (options.lastValidBlockHeight !== undefined) {
+      const height = await connection.getBlockHeight("confirmed");
+      if (height > options.lastValidBlockHeight) return { ok: false, cause: plainSimulationCause("BlockhashNotFound", null) };
+    }
     const result = await Promise.race([
       connection.simulateTransaction(transaction, { sigVerify: false, replaceRecentBlockhash: false, commitment: "confirmed" }),
       new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("simulation timed out")), PRE_WALLET_SIM_TIMEOUT_MS); }),

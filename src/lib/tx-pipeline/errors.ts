@@ -62,7 +62,9 @@ export class TxLandedUnknownError extends Error {
 }
 
 /** Copy for a wallet prompt left unsigned past the pre-wallet guard's deadline (PM 2026-11-02). */
-export const TX_PROMPT_EXPIRED_MESSAGE = "This request expired. Try again";
+export const TX_PROMPT_EXPIRED_MESSAGE = "This request expired.";
+/** Shown while a voided prompt's transaction could still land: Try again stays disabled until its blockhash has expired. */
+export const TX_WAITING_PREVIOUS_EXPIRY_COPY = "Waiting for the previous request to expire…";
 
 /**
  * The wallet prompt stayed unsigned past its deadline (about 60 s, or sooner when the blockhash is near expiry), so the
@@ -74,6 +76,31 @@ export class TxPromptExpiredError extends Error {
     super(TX_PROMPT_EXPIRED_MESSAGE);
     this.name = "TxPromptExpiredError";
   }
+}
+
+/**
+ * Fixed categories for a wallet error's message (PM 2026-11-02): counted instead of the raw text, which can carry
+ * addresses, amounts or signatures. Order matters: the first match wins.
+ */
+export const WALLET_ERROR_CATEGORIES = ["user-rejected", "simulation-failed", "blockhash", "insufficient-funds", "timeout",
+  "unsupported", "disconnected", "network", "empty", "other"] as const;
+export type WalletErrorCategory = typeof WALLET_ERROR_CATEGORIES[number];
+const CATEGORY_PATTERNS: [Exclude<WalletErrorCategory, "empty" | "other">, RegExp][] = [
+  ["user-rejected", /reject|denied|declin|cancel/i],
+  ["simulation-failed", /simulat/i],
+  ["blockhash", /blockhash|expired|block height/i],
+  ["insufficient-funds", /insufficient|not enough|balance/i],
+  ["timeout", /time(d)?\s*out|timeout/i],
+  ["unsupported", /unsupported|not supported|not implemented/i],
+  ["disconnected", /disconnect|not connected|locked/i],
+  ["network", /network|fetch|rpc|connection/i],
+];
+export function walletErrorCategory(error: unknown): WalletErrorCategory {
+  const { code, message } = walletErrorInfo(error);
+  // A wallet's rejection code wins over an adapter's wrapper text ("WalletSendTransactionError").
+  if (code !== undefined && WALLET_REJECTION_CODES.includes(code)) return "user-rejected";
+  if (!message) return "empty";
+  return CATEGORY_PATTERNS.find(([, pattern]) => pattern.test(message))?.[0] ?? "other";
 }
 
 /** The pre-wallet guard stopped before the wallet was asked; the message is the real cause in plain words. */

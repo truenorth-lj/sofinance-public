@@ -146,6 +146,8 @@ export async function sendWithWallet(wallet: TxWallet, transaction: VersionedTra
   promptDeadlineAt?: number;
   /** A sign-and-send wallet returned a signature after the prompt was voided: it broadcast it itself. */
   onLateSignature?: (signature: string) => void;
+  /** Aborted on unmount: the deadline timer is cleared and the prompt is then simply awaited (no void). */
+  signal?: AbortSignal;
 } = {}): Promise<{ signature: string; via: "wallet" | "relay"; walletError?: unknown }> {
   const payer = transaction.message.staticAccountKeys[0]?.toBase58();
   if (payer !== wallet.address) throw new TxNotSentError("This transaction was prepared for a different wallet. Nothing was sent.");
@@ -221,10 +223,20 @@ export async function sendWithWallet(wallet: TxWallet, transaction: VersionedTra
 
   async function beforeDeadline<T>(request: Promise<T>, onLate?: (value: T) => void): Promise<T> {
     if (options.promptDeadlineAt === undefined) return request;
+    if (options.signal?.aborted) return request;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const expired = new Promise<"expired">((resolve) => { timer = setTimeout(() => resolve("expired"), Math.max(0, options.promptDeadlineAt! - Date.now())); });
+    let stopTimer = () => {};
+    const expired = new Promise<"expired" | "aborted">((resolve) => {
+      timer = setTimeout(() => resolve("expired"), Math.max(0, options.promptDeadlineAt! - Date.now()));
+      stopTimer = () => { clearTimeout(timer); resolve("aborted"); };
+      options.signal?.addEventListener("abort", stopTimer, { once: true });
+    });
     const answered = request.then((value) => ({ value }));
-    const first = await Promise.race([answered, expired]).finally(() => clearTimeout(timer));
+    const first = await Promise.race([answered, expired]).finally(() => {
+      clearTimeout(timer);
+      options.signal?.removeEventListener("abort", stopTimer);
+    });
+    if (first === "aborted") return request;
     if (first !== "expired") return first.value;
     answered.catch(() => { /* handled below */ });
     request.then((value) => onLate?.(value), () => { /* a late error after the void changes nothing */ });

@@ -11,6 +11,8 @@ export type TxPipelineStatus = "idle" | TxStage | "success" | "failed";
 export type TxStepProgress = { step: number; of?: number };
 export type TxPipelineState = {
   status: TxPipelineStatus; signature?: string; error?: string; kind?: TxFailureKind | "landed"; retryable?: boolean;
+  /** "expiring": seconds until the voided request's blockhash should have expired (an estimate for the countdown). */
+  secondsLeft?: number;
   /** Set on multi-step runs. */
   step?: TxStepProgress;
   /** Confirming a step that is not the last: its confirmation is not the run's success. */
@@ -65,6 +67,8 @@ export function useTxPipeline<Input, Prepared extends PreparedTx>(adapter: TxAda
   const [owned, setOwned] = useState<{ wallet?: string; state: TxPipelineState }>({ state: { status: "idle" } });
   const generation = useRef(0);
   const mounted = useRef(true);
+  /** Aborted on unmount: stops a run's wallet-prompt deadline timer and its expiry wait. */
+  const aborter = useRef(new AbortController());
   const busy = useRef(false);
   const lockedRef = useRef(false);
   const latest = useRef({ adapter, wallet });
@@ -103,9 +107,10 @@ export function useTxPipeline<Input, Prepared extends PreparedTx>(adapter: TxAda
         try {
           result = await runTx(current.adapter, input, {
             wallet: current.wallet, storage: typeof window === "undefined" ? undefined : window.localStorage,
-            isCurrent: isOwner, retry, inlineFailure: latestInline.current,
+            isCurrent: isOwner, retry, inlineFailure: latestInline.current, signal: aborter.current.signal,
             onPrepared: (prepared) => { of = plan.progress?.(prepared).of ?? of; },
-            onStage: (status, detail) => { if (isOwner()) setState({ status, signature: detail?.signature, step: progress() }); },
+            onStage: (status, detail) => { if (isOwner()) setState({ status, signature: detail?.signature, step: progress(),
+              ...(detail?.secondsLeft !== undefined ? { secondsLeft: detail.secondsLeft } : {}) }); },
           });
         } catch (error) {
           if (isOwner()) {
@@ -164,7 +169,9 @@ export function useTxPipeline<Input, Prepared extends PreparedTx>(adapter: TxAda
 
   useEffect(() => {
     mounted.current = true;
-    return () => { mounted.current = false; detachTxRetry(retry); };
+    if (aborter.current.signal.aborted) aborter.current = new AbortController();
+    const current = aborter.current;
+    return () => { mounted.current = false; current.abort(); detachTxRetry(retry); };
   }, [retry]);
 
   // Wallet switch: forget the previous wallet's in-flight UI state (its notice keeps tracking).
@@ -191,7 +198,7 @@ export function useTxPipeline<Input, Prepared extends PreparedTx>(adapter: TxAda
   const failedSignature = options.inlineErrors && owned.state.status === "failed" ? owned.state.signature : undefined;
   useEffect(() => { if (failedSignature) dismissTxNotice(noticeIdFor(failedSignature)); }, [failedSignature]);
   // Waiting for a step that is not the last to confirm is part of the run: busy until the next step starts.
-  const busyNow = view.status === "preparing" || view.status === "wallet" || view.status === "checking" || Boolean(view.intermediate);
+  const busyNow = view.status === "preparing" || view.status === "wallet" || view.status === "checking" || view.status === "expiring" || Boolean(view.intermediate);
   // Confirming locks only while its notice is still tracking the signature (a dismissed toast must not lock the form forever).
   const locked = busyNow || (view.status === "confirming" && notice?.state === "loading");
   useLayoutEffect(() => { lockedRef.current = locked; });
