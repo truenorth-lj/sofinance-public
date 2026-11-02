@@ -107,6 +107,14 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
   const [statusDialogOpen, setStatusDialogOpen] = useState(false);
   const [assetRisksOpen, setAssetRisksOpen] = useState(false);
   const [activeView, setActiveView] = useState<ToolId>(initialView);
+  // The Withdraw panel stays pinned to the position it was opened on. Step 1 of a 100% withdrawal closes the
+  // position, and the confirmation's balances refresh then reads no position (`state` becomes null). Unmounting
+  // the panel at that moment aborted its run before step 2 (convert) was prepared, so the wallet never prompted.
+  const liveWithdraw = state && wallet ? { wallet, positionMint: state.positionMint, mintA: state.mintA, mintB: state.mintB } : null;
+  const [withdrawTarget, setWithdrawTarget] = useState(liveWithdraw);
+  if (liveWithdraw && (withdrawTarget?.wallet !== liveWithdraw.wallet || withdrawTarget.positionMint !== liveWithdraw.positionMint
+    || withdrawTarget.mintA !== liveWithdraw.mintA || withdrawTarget.mintB !== liveWithdraw.mintB)) setWithdrawTarget(liveWithdraw);
+  const shownWithdraw = liveWithdraw ?? (withdrawTarget && withdrawTarget.wallet === wallet ? withdrawTarget : null);
   // Toasts sit above the phone-only bottom action bar instead of covering its button.
   const actionBarRef = useRef<HTMLDivElement | null>(null);
   useNoticeBottomOffset(actionBarRef, activeView === "deposit");
@@ -253,7 +261,7 @@ export function SelectedApp({ initialView = "compound", initialMint = "", initia
         externalSelected ? {} : { withdraw: !state || !wallet || (busy && activeView !== "withdraw") })} />
       {unavailableReason ? <UnavailableTool id={`${activeView}-view`} reason={unavailableReason} />
         : externalSelected && external ? <div id={`${activeView}-view`}>{external.tool(externalSelected, activeView)}</div> : <>
-      {activeView === "withdraw" && <div id="withdraw-view">{state && wallet ? <WithdrawPanel key={`${wallet}:${state.positionMint}`} wallet={wallet} positionMint={state.positionMint} mintA={state.mintA} mintB={state.mintB} label={poolLabel} onClose={()=>setActiveView("compound")} onBusyChange={setWithdrawBusy} onConfirmed={()=>{void refreshState();void refreshDiscovery();}} /> : <p className="mt-4 text-sm text-smoke">Connect your wallet and choose a position to withdraw.</p>}</div>}
+      {activeView === "withdraw" && <div id="withdraw-view">{shownWithdraw ? <WithdrawPanel key={`${shownWithdraw.wallet}:${shownWithdraw.positionMint}`} wallet={shownWithdraw.wallet} positionMint={shownWithdraw.positionMint} mintA={shownWithdraw.mintA} mintB={shownWithdraw.mintB} label={poolLabel} onClose={()=>setActiveView("compound")} onBusyChange={setWithdrawBusy} onConfirmed={()=>{void refreshState();void refreshDiscovery();}} /> : <p className="mt-4 text-sm text-smoke">Connect your wallet and choose a position to withdraw.</p>}</div>}
       {compound.historyWarning && <div role="status" className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-xs text-cream/80"><span>{compound.historyWarning}</span><button type="button" className="font-semibold underline" onClick={() => setActiveView("compound")}>View compound status</button></div>}
       <main>
         <div id="compound-view" hidden={activeView !== "compound"}>
