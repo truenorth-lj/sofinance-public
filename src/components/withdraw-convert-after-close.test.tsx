@@ -8,11 +8,13 @@ import { SelectedApp } from "./selected-app";
 import { withdrawCheckpoint, withdrawKey, withdrawPosition, withdrawPrepared, withdrawWallet } from "@/lib/test-support/withdraw-checkpoint-fixtures";
 
 const mocks = vi.hoisted(() => {
-  let state: unknown = null; const listeners = new Set<() => void>();
+  const listeners = new Set<() => void>();
+  let current: { state: unknown; selection: unknown } = { state: null, selection: null };
   return {
+    getSnapshot: () => current,
+    select(next: { state?: unknown; selection?: unknown }) { current = { ...current, ...next }; listeners.forEach((l) => l()); },
     sign: vi.fn(), historyChange: vi.fn(),
-    getState: () => state,
-    setState(next: unknown) { state = next; listeners.forEach((l) => l()); },
+    setState(next: unknown) { current = { ...current, state: next }; listeners.forEach((l) => l()); },
     subscribe(l: () => void) { listeners.add(l); return () => listeners.delete(l); },
   };
 });
@@ -22,8 +24,8 @@ vi.mock("./use-token-metadata", () => ({ useTokenMetadata: () => ({}) }));
 vi.mock("@/lib/position-history-refresh", () => ({ notifyPositionHistoryChange: mocks.historyChange }));
 vi.mock("./wallet-connection", () => ({ useWalletConnection: () => ({ address: withdrawWallet, connected: true, signTransaction: mocks.sign, connect: vi.fn() }) }));
 vi.mock("./use-selected-controller", () => ({ useSelectedController: () => {
-  const state = useSyncExternalStore(mocks.subscribe, mocks.getState);
-  return { connected: true, wallet: withdrawWallet, connect: vi.fn(), disconnect: vi.fn(), discovery: null, state, selection: null,
+  const { state, selection } = useSyncExternalStore(mocks.subscribe, mocks.getSnapshot);
+  return { connected: true, wallet: withdrawWallet, connect: vi.fn(), disconnect: vi.fn(), discovery: null, state, selection,
     quote: null, fresh: true, now: Date.now(), amount: "", tolerancePercent: "1", busy: false, calculating: false,
     status: "", actionLabel: "Add liquidity", actionDisabled: true, primaryAction: vi.fn(), choosePosition: vi.fn(),
     refreshState: vi.fn(), refreshDiscovery: vi.fn(), error: "", connectionError: "" };
@@ -42,7 +44,7 @@ const position = { positionMint: withdrawPosition, mintA: "mint-a", mintB: "mint
   price: 1, pricing: { priceUsdInput: null }, slot: 1, solLamports: "0", tickLower: 0, tickUpper: 1 };
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  localStorage.clear(); mocks.sign.mockReset(); mocks.historyChange.mockReset(); mocks.setState(position);
+  localStorage.clear(); mocks.sign.mockReset(); mocks.historyChange.mockReset(); mocks.select({ state: position, selection: { positionMint: withdrawPosition, inputMint: "mint-a", inputKind: "token" } });
   container = document.createElement("div"); document.body.append(container); root = createRoot(container);
 });
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
@@ -83,7 +85,33 @@ it("prepares and prompts step 2 after step 1 confirms, even though the closed po
 });
 
 it("still shows the connect/choose prompt when no position was ever selected", async () => {
-  mocks.setState(null);
+  mocks.select({ state: null, selection: null });
   await act(async () => root.render(<SelectedApp initialView="withdraw" />));
   expect(container.querySelector("#withdraw-view")?.textContent).toContain("Connect your wallet and choose a position to withdraw");
+});
+
+it("does not keep the old position's Withdraw panel when another position is selected and still loading", async () => {
+  // Position A has a withdrawal in progress (step 1 sent, Resume pending): the panel is pinned to A.
+  localStorage.setItem(withdrawKey, JSON.stringify(withdrawCheckpoint("withdraw")));
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ status: "pending" })));
+  await act(async () => root.render(<SelectedApp initialView="withdraw" />));
+  const view = container.querySelector("#withdraw-view")!;
+  expect(view.querySelector('section[aria-label="Withdraw from position"]')).not.toBeNull();
+  // Switch to position B: its state is still loading (null).
+  await act(async () => mocks.select({ state: null, selection: { positionMint: "position-b", inputMint: "mint-a", inputKind: "token" } }));
+  expect(view.querySelector('section[aria-label="Withdraw from position"]')).toBeNull();
+  expect(view.textContent).toContain("Connect your wallet and choose a position to withdraw");
+});
+
+it("releases the pinned panel once the withdrawal finishes", async () => {
+  // Step 2 was sent; confirming it completes the withdrawal of the (now closed) position.
+  localStorage.setItem(withdrawKey, JSON.stringify(withdrawCheckpoint("swap")));
+  vi.stubGlobal("fetch", vi.fn(async () => { mocks.setState(null); return Response.json({ status: "success" }); }));
+  await act(async () => root.render(<SelectedApp initialView="withdraw" />));
+  const view = container.querySelector("#withdraw-view")!;
+  await click("Resume withdrawal", view);
+  await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
+  expect(localStorage.getItem(withdrawKey)).toBeNull();
+  expect(view.querySelector('section[aria-label="Withdraw from position"]')).toBeNull();
+  expect(view.textContent).toContain("Connect your wallet and choose a position to withdraw");
 });
