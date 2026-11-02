@@ -13,6 +13,7 @@ import { WITHDRAW_OUTPUTS, type PositionKey } from "@/lib/unified-positions/mode
  * POST /api/dex/[dex]/[op] — the one API entry for every DEX (DESIGN.md §1.2). Validates the body, resolves the
  * adapter through the registry and calls it; no DEX is named here.
  *   quote-open  { request }                                    → OpenQuote
+ *   open-ranges { poolId }                                     → OpenRanges (read-only; the presets quote/open resolve to)
  *   open        { request, step, priorSignatures, planToken? } → StepResult (one unsigned, simulated step)
  *   recovery    { wallet, positionKey, step, priorSignatures, planToken? } → StepResult
  *   positions   { owner }                                      → { positions: UnifiedPosition[] } (read-only)
@@ -86,6 +87,8 @@ const positionOpBody = (adapter: DexAdapter) => {
 
 const BODY = {
   "quote-open": z.object({ request: OpenRequestSchema, jupiterRelay: z.unknown().optional() }).strict(),
+  /** Read-only: the pool's preset ranges from on-chain state (no volume / APR feed). Builds nothing. */
+  "open-ranges": z.object({ poolId: z.string().trim().min(1).max(64) }).strict(),
   open: z.object({ request: OpenRequestSchema, ...StepSchema, jupiterRelay: z.unknown().optional() }).strict(),
   /** Read-only: the wallet's positions in this DEX (the pools it lists), for My positions. Builds nothing. The owner is
    * checked per wallet type by `positionsBody`; this entry only names the op. */
@@ -145,6 +148,12 @@ async function run(adapter: DexAdapter, op: Op, body: unknown): Promise<Response
     case "quote-open": {
       const { request } = BODY[op].parse(body);
       return json(await adapter.quoteOpen(checkedOpen(adapter, request as OpenRequest)));
+    }
+    case "open-ranges": {
+      const { poolId } = BODY[op].parse(body);
+      if (!adapter.descriptor.capabilities.open.supported) throw new DexError("UNSUPPORTED", adapter.descriptor.capabilities.open.reason);
+      if (!adapter.openRanges) throw new DexError("UNSUPPORTED", "This DEX can't list its open ranges yet.");
+      return json(await adapter.openRanges(poolId));
     }
     case "open": {
       const input = BODY[op].parse(body);

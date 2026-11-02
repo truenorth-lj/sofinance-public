@@ -7,7 +7,7 @@ import { LayoutGrid, List, LoaderCircle, RefreshCw, Search } from "lucide-react"
 import { HIGHEST_RANGE_APR_7D_HELP, POOL_FEE_APR_24H_HELP } from "@/lib/apr-labels/copy";
 import { exactAprTitle } from "@/lib/apr-labels/format-apr";
 import { cn } from "@/lib/cn";
-import { dexDescriptors } from "@/lib/dex/client";
+import { dexDescriptors, fetchOpenRanges, type OpenRanges } from "@/lib/dex/client";
 import { SUPPORTED } from "@/lib/unified-positions/model";
 import { buildPlanPath, DOCS_ROUTES } from "@/lib/public-urls";
 import { volumeDivergenceNote } from "@/lib/apr-labels/volume-divergence";
@@ -434,16 +434,23 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", header 
 /** The registry open dialog with its pool's preset ranges (the same range APR payload the cards read). */
 function RegistryOpenDialog({ pool, rwaList, onClose }: { pool: UnifiedPool; rwaList: boolean; onClose: () => void }) {
   const descriptor = dexDescriptors.descriptorFor(pool.protocol);
-  const [ranges, setRanges] = useState<PoolRangeAprPayload | Error | null>(null);
+  const [ranges, setRanges] = useState<OpenRanges | Error | null>(null);
+  const [apr, setApr] = useState<PoolRangeAprPayload | Error | null>(null);
+  const dexId = descriptor?.id ?? "";
   useEffect(() => {
+    if (!dexId) return;
     let live = true;
+    const fail = (fallback: string) => (error: unknown) => (error instanceof Error ? error : new Error(fallback));
+    // Ranges come from the server's own calculation (on-chain only); the APR feed is optional and may be down.
+    fetchOpenRanges(dexId, pool.poolAddress).then((value) => { if (live) setRanges(value); },
+      (error: unknown) => { if (live) setRanges(fail("The server could not work out this pool's ranges.")(error)); });
     const protocol = pool.protocol as RangeAprProtocol;
     (rwaList ? loadPoolRangeApr(pool.poolAddress, protocol, { rwaList: true }) : loadPoolRangeApr(pool.poolAddress, protocol)).then(
-      (payload) => { if (live) setRanges(payload); },
-      (error: unknown) => { if (live) setRanges(error instanceof Error ? error : new Error("Range data is unavailable right now.")); },
+      (payload) => { if (live) setApr(payload); },
+      (error: unknown) => { if (live) setApr(fail("APR data is unavailable right now.")(error)); },
     );
     return () => { live = false; };
-  }, [pool.poolAddress, pool.protocol, rwaList]);
+  }, [dexId, pool.poolAddress, pool.protocol, rwaList]);
   if (!descriptor) return null;
-  return <RegistryOpenModal pool={pool} descriptor={descriptor} ranges={ranges} onClose={onClose} />;
+  return <RegistryOpenModal pool={pool} descriptor={descriptor} ranges={ranges} apr={apr} onClose={onClose} />;
 }

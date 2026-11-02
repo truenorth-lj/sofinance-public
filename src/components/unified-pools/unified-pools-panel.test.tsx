@@ -159,7 +159,7 @@ describe("UnifiedPoolsPanel", () => {
 
   it("a deep link to a Meteora pool opens the registry dialog without asking the wallet to connect", async () => {
     await render({ orca: false, meteora: true, meteoraOpen: true, rhc: true }, { deepLinkPool: "met1" });
-    expect(mocks.registryModal).toHaveBeenCalledWith("met1", "meteora-dlmm");
+    await vi.waitFor(() => expect(mocks.registryModal).toHaveBeenCalledWith("met1", "meteora-dlmm"));
     expect(mocks.connect).not.toHaveBeenCalled();
   });
 

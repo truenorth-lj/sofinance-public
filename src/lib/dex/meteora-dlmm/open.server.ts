@@ -24,8 +24,9 @@ import { associatedTokenAccountRents, maxAssociatedTokenAccountSpace } from "@so
 import { binTickSqrtPriceX64 } from "@/lib/range-apr/meteora-liquidity";
 import { meteoraPresetRanges } from "@/lib/meteora-range-apr";
 import { assertMeteoraFeeRule } from "@/lib/meteora-open";
-import type { DexFeeStrategy, OpenRequest } from "../adapter";
+import type { DexFeeStrategy, OpenRangePreset, OpenRequest } from "../adapter";
 import { DexError } from "../errors";
+import { openSolNeed, type OpenSolParts } from "../sol-need";
 import { assertFeeWalletConfigured } from "../fee-wallet.server";
 import { feeRuleBps } from "../types";
 import { meteoraDlmmDescriptor } from "./descriptor";
@@ -157,6 +158,18 @@ export async function readMeteoraPool(
   return { poolId, lbPair, ...usable, slot: context.slot };
 }
 
+/** The shared presets on this pool's bin grid, as bin ids (inclusive). The same list `meteoraRequestRange` resolves against. */
+export function meteoraOpenPresets(pool: MeteoraPoolState): OpenRangePreset[] {
+  const { activeId, binStep } = pool.lbPair;
+  return meteoraPresetRanges({
+    tickCurrent: activeId * binStep, sqrtPriceX64: binTickSqrtPriceX64(activeId, binStep),
+    decimalsA: pool.decimalsX, decimalsB: pool.decimalsY, tickSpacing: binStep,
+  }).map((preset) => {
+    const lowerUnit = preset.tickLower / binStep, upperUnit = preset.tickUpper / binStep - 1;
+    return { id: preset.id, lowerUnit, upperUnit, units: upperUnit - lowerUnit + 1, priceLower: preset.priceLower, priceUpper: preset.priceUpper };
+  });
+}
+
 /** Bin range of a request: a shared preset on this pool's bin grid, or raw bins. */
 export function meteoraRequestRange(request: OpenRequest, pool: MeteoraPoolState): { lowerBinId: number; upperBinId: number } {
   const { range } = request;
@@ -166,14 +179,9 @@ export function meteoraRequestRange(request: OpenRequest, pool: MeteoraPoolState
     }
     return { lowerBinId: range.lower, upperBinId: range.upper };
   }
-  const { activeId, binStep } = pool.lbPair;
-  const presets = meteoraPresetRanges({
-    tickCurrent: activeId * binStep, sqrtPriceX64: binTickSqrtPriceX64(activeId, binStep),
-    decimalsA: pool.decimalsX, decimalsB: pool.decimalsY, tickSpacing: binStep,
-  });
-  const preset = presets.find((item) => item.id === range.presetId);
+  const preset = meteoraOpenPresets(pool).find((item) => item.id === range.presetId);
   if (!preset) throw new DexError("RANGE_UNSUPPORTED", `The "${range.presetId}" range is not offered for this pool.`);
-  return { lowerBinId: preset.tickLower / binStep, upperBinId: preset.tickUpper / binStep - 1 };
+  return { lowerBinId: preset.lowerUnit, upperBinId: preset.upperUnit };
 }
 
 /** Range rules shared by quote and every step: ≤70 bins, existing bin arrays, bitmap extension when needed. */
@@ -286,6 +294,14 @@ export async function ownerPoolTokenAccountsExist(connection: Connection, pool: 
     ataYExists: tokenAccount(y ?? null, ataY, wallet, pool.lbPair.tokenYMint, pool.tokenProgramY).exists,
   };
 }
+
+/** Signatures across the two open steps: 1/2 wallet + position, 2/2 wallet. */
+export const OPEN_NETWORK_FEE_LAMPORTS = 3n * SIGNATURE_LAMPORTS;
+
+/** The SOL parts of an open; the setup check and the quote (so the dialog) both use this. */
+export const meteoraOpenSolParts = (rentLamports: bigint, swapAccountsLamports: bigint): OpenSolParts => ({
+  rentLamports, networkFeeLamports: OPEN_NETWORK_FEE_LAMPORTS, swapAccountsLamports, reserveLamports: BigInt(MIN_SOL_LAMPORTS),
+});
 
 /** Swap-route temporary accounts a deposit may open and close (Jupiter setup / wrapped SOL). */
 const DEPOSIT_INTERMEDIATE_ACCOUNTS = 2n;
@@ -440,9 +456,7 @@ export async function buildMeteoraSetup(deps: MeteoraOpenDeps, plan: MeteoraOpen
     meteoraOpenRent(connection, plan, state), depositIntermediateRentAllowance(connection), connection.getLatestBlockhash("confirmed"),
   ]);
   await compileDeposit(deps, plan, state, owner, position, latest.blockhash, false);
-  const networkFee = 3n * SIGNATURE_LAMPORTS; // 1/2: wallet + position; 2/2: wallet
-  const rentTotal = rent.totalLamports;
-  const required = BigInt(MIN_SOL_LAMPORTS) + rentTotal + networkFee + allowance;
+  const required = openSolNeed(meteoraOpenSolParts(rent.totalLamports, allowance));
   if (state.walletLamports < required) {
     throw new DexError("INSUFFICIENT_FUNDS", `Not enough SOL: this open needs about ${sol(required)} SOL (position rent ${sol(plan.positionRentLamports)} SOL, refunded when you fully withdraw, plus ${sol(rent.tokenAccountLamports)} SOL for new token accounts, network fees and a ${sol(BigInt(MIN_SOL_LAMPORTS))} SOL reserve); your wallet has ${sol(state.walletLamports)} SOL.`);
   }
@@ -458,7 +472,7 @@ export async function buildMeteoraSetup(deps: MeteoraOpenDeps, plan: MeteoraOpen
     throw new DexError("UPSTREAM", "The simulated position does not match your wallet, pool or range, so nothing was sent.");
   }
   const solDebit = state.walletLamports - BigInt(sim.accounts?.[1]?.lamports ?? 0);
-  if (solDebit > rentTotal + networkFee) throw new DexError("UPSTREAM", "The setup simulation spends more SOL than the rent and fees shown, so nothing was sent.");
+  if (solDebit > rent.totalLamports + OPEN_NETWORK_FEE_LAMPORTS) throw new DexError("UPSTREAM", "The setup simulation spends more SOL than the rent and fees shown, so nothing was sent.");
   const final = setupInstructions(plan, state, owner, position, measuredComputeUnitLimit(sim.unitsConsumed ?? 0));
   const transaction = compileV0(wallet, latest.blockhash, final);
   assertOpenTransactionSize(transaction);

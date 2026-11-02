@@ -14,10 +14,11 @@ import { LoaderCircle, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { formatAmount, parseTokenAmount } from "@sofinance/engine/amount";
 import { NATIVE_SOL_MINT } from "@sofinance/engine/ids";
-import { dexTxAdapter, type DexDescriptor, type DexPreparedStep, type DexStepInput, type OpenQuote } from "@/lib/dex/client";
+import { dexTxAdapter, openSolNeed, openSolPartsFromQuote, type DexDescriptor, type DexPreparedStep, type DexStepInput, type OpenQuote, type OpenRangePreset, type OpenRanges } from "@/lib/dex/client";
 import { createJupiterRelayStore } from "@/lib/jupiter/browser-relay";
 import { BALANCES_REFRESH_EVENT } from "@/lib/tx-pipeline";
-import type { RangeAprPresetEstimate, RangeAprPresetId, PoolRangeAprPayload } from "@/lib/range-apr/types";
+import { formatAprPct } from "@/lib/range-apr/format";
+import type { RangeAprPresetId, PoolRangeAprPayload } from "@/lib/range-apr/types";
 import type { UnifiedPool } from "@/lib/unified-pools/model";
 import type { TokenRef } from "@/lib/unified-positions/model";
 import { useTxPipeline } from "../transactions/use-tx-pipeline";
@@ -31,22 +32,35 @@ const QUOTE_DEBOUNCE_MS = 400;
 const PRESET_LABEL: Record<RangeAprPresetId, string> = { micro: "Micro", tight: "Tight", standard: "Standard", wide: "Wide" };
 
 export const NETWORK_FEE_COPY = "Network fee is set by your wallet.";
-export const SOL_RESERVE_COPY = "Keep some SOL beyond the rent: your wallet adds its own priority fee to each step (Phantom added about 0.0015 SOL on step 2 in our test), and that fee must also fit in your SOL.";
+export const SOL_RESERVE_COPY = "Keep some SOL beyond the rent. Your wallet may add a priority fee to each step (often about 0.001–0.002 SOL), and that fee must also fit in your SOL.";
 export const SOL_REFUSED_COPY = "SOL can't be used to open a position. Use one of the listed tokens.";
 export const RANGE_TOO_WIDE_COPY = (units: number, max: number, unit: string) =>
   `Not available to open yet: this range spans ${units} ${unit}s, and one position holds at most ${max}.`;
 
-export type PresetOption = { id: RangeAprPresetId; units: number; priceLower: number; priceUpper: number; available: boolean; reason: string | null };
+/** Exact text of a preset's APR when the volume / APR feed has no estimate for it (never 0% or a guess). */
+export const APR_UNAVAILABLE = "APR unavailable";
 
-/** The pool's preset ranges with their width in the DEX's range unit, and whether one position can hold them. */
-export function presetOptions(presets: readonly Pick<RangeAprPresetEstimate, "id" | "tickLower" | "tickUpper" | "priceLower" | "priceUpper">[],
-  tickSpacing: number, descriptor: Pick<DexDescriptor, "meta">): PresetOption[] {
+export type PresetOption = { id: RangeAprPresetId; units: number; priceLower: number; priceUpper: number; available: boolean; reason: string | null; apr: string };
+
+/**
+ * APR of one server-worked-out preset from the range APR payload: the same preset id over the same bounds (payload ticks
+ * are unit × tick spacing; the upper bound is exclusive) with an "ok" estimate from a non-degraded sample. Anything
+ * else is APR_UNAVAILABLE.
+ */
+export function presetApr(preset: OpenRangePreset, apr: PoolRangeAprPayload | Error | null): string {
+  if (!apr || apr instanceof Error || apr.sample?.degraded) return APR_UNAVAILABLE;
+  const spacing = Math.max(1, apr.pool.tickSpacing);
+  const match = apr.presets?.find((item) => item.id === preset.id && item.tickLower / spacing === preset.lowerUnit && item.tickUpper / spacing - 1 === preset.upperUnit);
+  return match?.estimate.status === "ok" && Number.isFinite(match.estimate.aprPct) ? `Est. APR ${formatAprPct(match.estimate.aprPct)}` : APR_UNAVAILABLE;
+}
+
+/** The server's preset ranges with their width, whether one position can hold them, and their APR (or APR_UNAVAILABLE). */
+export function presetOptions(presets: readonly OpenRangePreset[], descriptor: Pick<DexDescriptor, "meta">, apr: PoolRangeAprPayload | Error | null = null): PresetOption[] {
   const max = descriptor.meta.maxRangeUnitsPerPosition;
   return presets.map((preset) => {
-    const units = Math.round((preset.tickUpper - preset.tickLower) / Math.max(1, tickSpacing));
-    const available = max === null || units <= max;
-    return { id: preset.id, units, priceLower: preset.priceLower, priceUpper: preset.priceUpper, available,
-      reason: available ? null : RANGE_TOO_WIDE_COPY(units, max!, descriptor.meta.rangeUnit) };
+    const available = max === null || preset.units <= max;
+    return { id: preset.id, units: preset.units, priceLower: preset.priceLower, priceUpper: preset.priceUpper, available,
+      reason: available ? null : RANGE_TOO_WIDE_COPY(preset.units, max!, descriptor.meta.rangeUnit), apr: presetApr(preset, apr) };
   });
 }
 
@@ -63,6 +77,9 @@ export function openInputs(pool: Pick<UnifiedPool, "mintA" | "mintB" | "symbolA"
 type Balances = { sol: bigint | null; byMint: Record<string, string> };
 type WalletAssets = { assets?: { mint: string; kind: string; balance: string }[] };
 const solText = (lamports: bigint) => (Number(lamports) / 1e9).toFixed(4);
+/** The SOL-short message: what the open needs (rent, network fees, temporary swap accounts, reserve), what the wallet has, and what is missing. */
+export const solShortCopy = (need: bigint, have: bigint) =>
+  `Not enough SOL: this open needs about ${solText(need)} SOL (rent, network fees, temporary swap accounts and a small reserve), and your wallet has ${solText(have)} SOL. Add about ${solText(need - have)} SOL to open.`;
 const price = (value: number) => (value >= 1 ? value.toPrecision(6) : value.toPrecision(4));
 
 function useWalletBalances(wallet: string | null): Balances | null {
@@ -93,12 +110,14 @@ function useWalletBalances(wallet: string | null): Balances | null {
 export type RegistryOpenModalProps = {
   pool: UnifiedPool;
   descriptor: DexDescriptor;
-  /** The pool's range APR payload (preset ranges, decimals); null while it loads, an Error when it failed. */
-  ranges: PoolRangeAprPayload | Error | null;
+  /** The server's preset ranges (POST /api/dex/[dex]/open-ranges); null while they load, an Error when they could not be worked out. */
+  ranges: OpenRanges | Error | null;
+  /** Optional APR estimates for those ranges; null / Error → every preset reads APR_UNAVAILABLE and opening still works. */
+  apr?: PoolRangeAprPayload | Error | null;
   onClose: () => void;
 };
 
-export function RegistryOpenModal({ pool, descriptor, ranges, onClose }: RegistryOpenModalProps) {
+export function RegistryOpenModal({ pool, descriptor, ranges, apr = null, onClose }: RegistryOpenModalProps) {
   const { address: wallet, connected, connect, signTransaction, signAndSendTransaction } = useWalletConnection();
   const txWallet = useMemo(() => (wallet ? { address: wallet, signTransaction, signAndSendTransaction } : null), [wallet, signTransaction, signAndSendTransaction]);
   const adapter = useMemo(() => dexTxAdapter("open"), []);
@@ -106,9 +125,10 @@ export function RegistryOpenModal({ pool, descriptor, ranges, onClose }: Registr
   const relayStore = useRef(createJupiterRelayStore());
   const balances = useWalletBalances(wallet || null);
   const payload = ranges instanceof Error ? null : ranges;
-  const tokens = useMemo(() => openInputs(pool, descriptor, payload ? { a: payload.pool.decimalsA, b: payload.pool.decimalsB } : null), [pool, descriptor, payload]);
+  const tokens = useMemo(() => openInputs(pool, descriptor, payload && payload.decimals[pool.mintA] !== undefined && payload.decimals[pool.mintB] !== undefined
+    ? { a: payload.decimals[pool.mintA]!, b: payload.decimals[pool.mintB]! } : null), [pool, descriptor, payload]);
   const solIsPoolToken = descriptor.meta.depositInputs.poolTokens && (pool.mintA === NATIVE_SOL_MINT || pool.mintB === NATIVE_SOL_MINT);
-  const presets = useMemo(() => (payload ? presetOptions(payload.presets, payload.pool.tickSpacing, descriptor) : []), [payload, descriptor]);
+  const presets = useMemo(() => (payload ? presetOptions(payload.presets, descriptor, apr) : []), [payload, descriptor, apr]);
   const [tokenId, setTokenId] = useState("");
   const [presetId, setPresetId] = useState<RangeAprPresetId | "">("");
   const [amount, setAmount] = useState("");
@@ -151,7 +171,9 @@ export function RegistryOpenModal({ pool, descriptor, ranges, onClose }: Registr
   const current = quote && quote.key === requestKey ? quote : null;
   const quoted = current?.value ?? null;
   const rent = openRentLines(quoted?.rent);
-  const solShort = quoted && balances?.sol !== null && balances?.sol !== undefined && balances.sol < rent.totalLamports;
+  // Same parts the server's INSUFFICIENT_FUNDS check adds (openSolNeed): rent + network fees + swap accounts + reserve.
+  const solNeed = quoted ? openSolNeed(openSolPartsFromQuote(rent.totalLamports, quoted.sol)) : 0n;
+  const solShort = Boolean(quoted && !quoted.blockedReason && balances?.sol !== null && balances?.sol !== undefined && balances.sol < solNeed);
 
   const [prepared, setPrepared] = useState<DexPreparedStep["result"] | null>(null);
   const submit = async () => {
@@ -190,7 +212,10 @@ export function RegistryOpenModal({ pool, descriptor, ranges, onClose }: Registr
       {!connected ? <>
         <p className="mt-4 text-sm text-smoke">Connect your wallet to open a position.</p>
         <button type="button" onClick={connect} className={BUTTON}>Connect wallet</button>
-      </> : ranges instanceof Error ? <p role="alert" className="mt-4 text-sm text-cream/80">This pool&apos;s ranges could not be loaded: {ranges.message}</p>
+      </> : ranges instanceof Error ? <>
+          <p role="alert" data-testid="registry-open-ranges-error" className="mt-4 text-sm text-cream/80">This pool&apos;s price ranges could not be worked out, so it can&apos;t be opened right now: {ranges.message}</p>
+          <button type="button" disabled className={BUTTON}>Open position</button>
+        </>
         : !payload ? <p role="status" className="mt-4 flex items-center gap-2 text-sm text-cream/80"><LoaderCircle aria-hidden="true" className="size-4 animate-spin" />Loading this pool&apos;s ranges…</p>
         : <>
           <label htmlFor="registry-open-token" className={LABEL}>Token to deposit</label>
@@ -213,7 +238,7 @@ export function RegistryOpenModal({ pool, descriptor, ranges, onClose }: Registr
               data-testid={`registry-open-preset-${item.id}`} onClick={() => setPresetId(item.id)}
               className={`rounded-2xl border px-4 py-3 text-left text-sm ${preset?.id === item.id ? "border-white/60" : "border-white/20"} disabled:cursor-not-allowed disabled:opacity-50`}>
               <span className="flex justify-between gap-2 font-semibold"><span>{PRESET_LABEL[item.id]}</span><span className="font-normal text-smoke">{item.units} {descriptor.meta.rangeUnit}s</span></span>
-              <span className="block text-xs text-smoke">{price(item.priceLower)} – {price(item.priceUpper)}</span>
+              <span className="flex justify-between gap-2 text-xs text-smoke"><span>{price(item.priceLower)} – {price(item.priceUpper)}</span><span data-testid={`registry-open-apr-${item.id}`}>{item.apr}</span></span>
               {item.reason ? <span className="mt-1 block text-xs text-cream/80">{item.reason}</span> : null}
             </button>)}
           </div>
@@ -227,7 +252,7 @@ export function RegistryOpenModal({ pool, descriptor, ranges, onClose }: Registr
             <p>{feeLine(descriptor.meta.feePolicy.open, "into the pool tokens")}{quoted && token && /^\d+$/.test(quoted.platformFeeRaw) && quoted.platformFeeRaw !== "0" ? ` About ${formatAmount(quoted.platformFeeRaw, token.decimals)} ${token.symbol} on this open.` : ""}</p>
             <p>{NETWORK_FEE_COPY} {SOL_RESERVE_COPY}</p>
             {steps > 1 ? <p>Your wallet asks you to approve {steps} transactions, one after the other.</p> : null}
-            {solShort ? <p role="alert">Not enough SOL: this open sets aside about {solText(rent.totalLamports)} SOL, but your wallet has {solText(balances!.sol!)} SOL.</p> : null}
+            {solShort ? <p role="alert" data-testid="registry-open-sol-short">{solShortCopy(solNeed, balances!.sol!)}</p> : null}
             {blocked ? <p role="alert" data-testid="registry-open-blocked">{blocked}</p> : null}
           </div>
 

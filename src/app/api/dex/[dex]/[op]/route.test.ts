@@ -52,6 +52,20 @@ describe("POST /api/dex/[dex]/[op]", () => {
     expect((await call("drain", {})).status).toBe(404);
   });
 
+  it("open-ranges returns the adapter's server-worked-out presets, refuses a DEX without them in plain words", async () => {
+    const ranges = { poolId: openRequest.poolId, decimals: {}, presets: [{ id: "standard", lowerUnit: -30, upperUnit: 29, units: 60, priceLower: 0.9, priceUpper: 1.1 }] };
+    fake.adapter!.openRanges = vi.fn(async () => ranges);
+    const response = await call("open-ranges", { poolId: openRequest.poolId });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(ranges);
+    expect(fake.adapter!.openRanges).toHaveBeenCalledWith(openRequest.poolId);
+    delete fake.adapter!.openRanges;
+    const refused = await call("open-ranges", { poolId: openRequest.poolId });
+    expect(refused.status).toBe(422);
+    expect((await refused.json()).error).toBe("This DEX can't list its open ranges yet.");
+    expect((await call("open-ranges", { poolId: openRequest.poolId, extra: 1 })).status).toBe(400);
+  });
+
   it("quotes through the registry adapter", async () => {
     const response = await call("quote-open", { request: openRequest });
     expect(response.status).toBe(200);
