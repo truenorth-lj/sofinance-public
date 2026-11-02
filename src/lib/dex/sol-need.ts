@@ -26,10 +26,20 @@ export const openSolShortfall = (walletLamports: bigint, parts: OpenSolParts): b
   return walletLamports < need ? need - walletLamports : 0n;
 };
 
-const lamports = (value: string | undefined) => (value && /^\d+$/.test(value) ? BigInt(value) : 0n);
+/** Plain-English reason the dialog shows (and blocks Open) when the quote lacks the SOL parts. */
+export const SOL_NEED_UNKNOWN_COPY =
+  "Can't work out how much SOL this open needs (the quote did not include network fees, temporary swap accounts and the reserve), so it is blocked to avoid running out of SOL midway. Try again in a moment.";
 
-/** The quote's parts with the rent the dialog shows. */
-export const openSolPartsFromQuote = (rentLamports: bigint, sol: OpenSolQuote | undefined): OpenSolParts => ({
-  rentLamports, networkFeeLamports: lamports(sol?.networkFeeLamports),
-  swapAccountsLamports: lamports(sol?.swapAccountsLamports), reserveLamports: lamports(sol?.reserveLamports),
-});
+/** Either every part of the open's SOL need, or why it can't be computed (never a partial, underestimated sum). */
+export type OpenSolPartsResult = { ok: true; parts: OpenSolParts } | { ok: false; reason: string };
+
+const lamports = (value: string | undefined): bigint | null => (typeof value === "string" && /^\d+$/.test(value) ? BigInt(value) : null);
+
+/** The quote's parts with the rent the dialog shows; a missing or malformed part means "cannot compute", not 0. */
+export const openSolPartsFromQuote = (rentLamports: bigint, sol: OpenSolQuote | undefined): OpenSolPartsResult => {
+  const networkFeeLamports = lamports(sol?.networkFeeLamports);
+  const swapAccountsLamports = lamports(sol?.swapAccountsLamports);
+  const reserveLamports = lamports(sol?.reserveLamports);
+  if (networkFeeLamports === null || swapAccountsLamports === null || reserveLamports === null) return { ok: false, reason: SOL_NEED_UNKNOWN_COPY };
+  return { ok: true, parts: { rentLamports, networkFeeLamports, swapAccountsLamports, reserveLamports } };
+};

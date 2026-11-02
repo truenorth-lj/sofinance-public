@@ -458,7 +458,7 @@ export async function buildMeteoraSetup(deps: MeteoraOpenDeps, plan: MeteoraOpen
   await compileDeposit(deps, plan, state, owner, position, latest.blockhash, false);
   const required = openSolNeed(meteoraOpenSolParts(rent.totalLamports, allowance));
   if (state.walletLamports < required) {
-    throw new DexError("INSUFFICIENT_FUNDS", `Not enough SOL: this open needs about ${sol(required)} SOL (position rent ${sol(plan.positionRentLamports)} SOL, refunded when you fully withdraw, plus ${sol(rent.tokenAccountLamports)} SOL for new token accounts, network fees and a ${sol(BigInt(MIN_SOL_LAMPORTS))} SOL reserve); your wallet has ${sol(state.walletLamports)} SOL.`);
+    throw new DexError("INSUFFICIENT_FUNDS", `Not enough SOL: this open needs about ${sol(required)} SOL (position rent ${sol(plan.positionRentLamports)} SOL, refunded when you fully withdraw, plus ${sol(rent.tokenAccountLamports)} SOL for new token accounts, ${sol(allowance)} SOL for temporary swap accounts, network fees and a ${sol(BigInt(MIN_SOL_LAMPORTS))} SOL reserve), and your wallet has ${sol(state.walletLamports)} SOL. Add about ${sol(required - state.walletLamports)} SOL to open. Your wallet may also add a priority fee to each step, which must fit in your SOL.`);
   }
   const instructions = setupInstructions(plan, state, owner, position);
   assertMeteoraFeeRule(instructions, deps.feeConfig());

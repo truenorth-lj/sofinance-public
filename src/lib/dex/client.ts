@@ -12,7 +12,7 @@ export { DEX_IDS, isDexId, normalizeDexId, feeRuleBps } from "./types";
 export type { DexDescriptorRegistry } from "./registry";
 export type { OpenQuote, OpenRangePreset, OpenRanges, PositionPerformance, RentQuote } from "./adapter";
 import type { OpenRanges } from "./adapter";
-export { openSolNeed, openSolPartsFromQuote, openSolShortfall, type OpenSolParts, type OpenSolQuote } from "./sol-need";
+export { openSolNeed, openSolPartsFromQuote, openSolShortfall, SOL_NEED_UNKNOWN_COPY, type OpenSolParts, type OpenSolPartsResult, type OpenSolQuote } from "./sol-need";
 
 /**
  * The preset ranges a pool can be opened with, worked out by the server from on-chain state (POST
