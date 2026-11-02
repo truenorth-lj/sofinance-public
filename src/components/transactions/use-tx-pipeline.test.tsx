@@ -9,7 +9,6 @@ vi.mock("@/lib/sentry/client-tx", () => ({ captureTxClientFailure: vi.fn(), capt
 vi.mock("@/lib/position-history-refresh", () => ({ notifyPositionHistoryChange: vi.fn() }));
 
 import { VersionedTransaction } from "@solana/web3.js";
-import { WALLET_MUST_SEND } from "@/lib/tx-pipeline/wallet-send";
 import { CANCEL_CHECK_PENDING_COPY, resetCancelChecks, dismissTxNotice, findTxNotice, getTxNotices, noticeIdFor, resetTxNotices, settleTxNotice, TxNotSentError, type TxAdapter, type TxWallet } from "@/lib/tx-pipeline";
 import { TxNoticeHost } from "./tx-notice-host";
 import { openStatusFromNotice } from "@/components/use-open-attempt";
@@ -308,18 +307,19 @@ describe("useTxPipeline runSteps (multi-step plans)", () => {
   });
 });
 
-describe("useTxPipeline runSteps: wallet-sent steps (DEX route: walletSends, cosigner presigns)", () => {
+describe("useTxPipeline runSteps: wallet-sent steps (DEX route: signAndSend wallets send, cosigner presigns; sign-only wallets relay)", () => {
   type Step = { step: number; planToken?: string; prior: string[] };
-  type StepPrepared = ReturnType<typeof prepared> & { walletSends: true; presign?: (tx: VersionedTransaction) => VersionedTransaction; landedPermit?: string;
+  type StepPrepared = ReturnType<typeof prepared> & { presign?: (tx: VersionedTransaction) => VersionedTransaction; cosign?: (tx: VersionedTransaction) => VersionedTransaction; landedPermit?: string;
     result: { step: number; of: number; done: boolean; planToken?: string } };
   const cosigner = testKeypair(42);
   const SIG2 = bs58.encode(new Uint8Array(64).fill(7));
   const stepAdapter = (prepare: (input: Step) => Promise<StepPrepared>) =>
     ({ flow: "open", successTitle: "Position step confirmed", prepare, scope: (input: Step) => `pool:${input.step}` }) as unknown as TxAdapter<number>;
-  /** Step 1 carries the position cosigner (signs before the wallet); step 2 is wallet-only. Both: only the wallet sends. */
+  /** Step 1 carries the position cosigner (presign before a sending wallet, cosign after a sign-only one); step 2 is wallet-only. */
   const walletStep = (step: number, extra: Partial<StepPrepared> = {}): StepPrepared => ({
-    transaction: buildTransaction({ payer, extraSigners: step === 1 ? [cosigner] : [], signWith: [] }), lastValidBlockHeight: 1, walletSends: true,
-    ...(step === 1 ? { presign: (tx: VersionedTransaction) => { tx.sign([cosigner]); return tx; } } : {}),
+    transaction: buildTransaction({ payer, extraSigners: step === 1 ? [cosigner] : [], signWith: [] }), lastValidBlockHeight: 1,
+    ...(step === 1 ? { presign: (tx: VersionedTransaction) => { tx.sign([cosigner]); return tx; },
+      cosign: (tx: VersionedTransaction) => { tx.sign([cosigner]); return tx; } } : {}),
     result: { step, of: 2, done: step === 2, ...(step === 1 ? { planToken: "position-1" } : {}) }, ...extra,
   });
   const plan = {
@@ -399,17 +399,28 @@ describe("useTxPipeline runSteps: wallet-sent steps (DEX route: walletSends, cos
     expect(urls(fetchMock)).not.toContain("/api/tx-send");
   });
 
-  it("a wallet that cannot send itself is refused before any prompt: nothing signed, nothing relayed", async () => {
-    const fetchMock = network("confirmed");
+  it("a sign-only wallet relays each step (cosigner signs after the wallet), still one step at a time", async () => {
+    const relayed: { signed: VersionedTransaction }[] = [];
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/tx-send") {
+        const body = JSON.parse(String(init?.body)) as { signedTransaction: string };
+        const signed = VersionedTransaction.deserialize(Uint8Array.from(atob(body.signedTransaction), (c) => c.charCodeAt(0)));
+        relayed.push({ signed });
+        return Response.json({ signature: bs58.encode(signed.signatures[0]!) });
+      }
+      return Response.json({ status: url === "/api/transaction-finality" ? "confirmed" : "unknown" });
+    });
     vi.stubGlobal("fetch", fetchMock);
-    const signOnly: TxWallet = { address: payer.publicKey.toBase58(), signTransaction: vi.fn() };
+    const signOnly: TxWallet = { address: payer.publicKey.toBase58(), signTransaction: vi.fn(async (tx: VersionedTransaction) => { tx.sign([payer]); return tx; }) as never };
     const prepare = vi.fn(async (input: Step) => walletStep(input.step));
     await render(stepAdapter(prepare), signOnly);
     await act(async () => { await steps().runSteps({ step: 1, prior: [] }, plan); });
-    expect(steps()).toMatchObject({ status: "failed", error: WALLET_MUST_SEND });
-    expect(signOnly.signTransaction).not.toHaveBeenCalled();
-    expect(urls(fetchMock)).not.toContain("/api/tx-send");
-    expect(prepare).toHaveBeenCalledTimes(1);
+    expect(signOnly.signTransaction).toHaveBeenCalledTimes(2);
+    // The relayed bytes carry the wallet's and the position key's signatures (cosign ran after the wallet).
+    expect(relayed).toHaveLength(2);
+    expect(relayed[0]!.signed.signatures.every((sig) => sig.some((byte) => byte !== 0))).toBe(true);
+    expect(prepare).toHaveBeenCalledTimes(2);
+    expect(steps().status).toBe("confirming");
   });
 
   it("no confirmation for step 1: step 2 is never prepared", async () => {

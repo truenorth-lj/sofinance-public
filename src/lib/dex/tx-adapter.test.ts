@@ -42,8 +42,8 @@ describe("dexTxAdapter", () => {
     expect(seen[0]!.url).toBe("/api/dex/some-dex/open");
     expect(seen[0]!.body).toMatchObject({ step: 1, priorSignatures: [], request: { owner: wallet.publicKey.toBase58() } });
     expect(JSON.stringify(seen[0]!.body)).not.toMatch(/secret/i);
-    expect(prepared).toMatchObject({ lastValidBlockHeight: 9, sendPermit: "s", landedPermit: "l", walletSends: true, result: { planToken: "p" } });
-    expect(prepared.cosign).toBeUndefined(); // never sign-then-relay on the DEX route
+    expect(prepared).toMatchObject({ lastValidBlockHeight: 9, sendPermit: "s", landedPermit: "l", result: { planToken: "p" } });
+    expect(prepared.cosign).toBeTypeOf("function"); // sign-only wallets: the position key signs after the wallet, then relay
     const presigned = prepared.presign!(VersionedTransaction.deserialize(prepared.transaction.serialize()));
     expect(presigned.signatures[0]!.every((byte) => byte === 0)).toBe(true); // the wallet's slot is left to the wallet
     expect(presigned.signatures[1]!.some((byte) => byte !== 0)).toBe(true);
@@ -76,7 +76,6 @@ describe("dexTxAdapter", () => {
     const prepared = await adapter.prepare({ descriptor: descriptor("ephemeral-keypair"), context: { step: 1, priorSignatures: [] }, relayStore: createJupiterRelayStore(), positionKey: "some-dex:abc" as never }, { wallet: wallet.publicKey.toBase58() });
     expect(seen[0]!.url).toBe("/api/dex/some-dex/recovery");
     expect(seen[0]!.body).toMatchObject({ wallet: wallet.publicKey.toBase58(), positionKey: "some-dex:abc" });
-    expect(prepared).toMatchObject({ walletSends: true });
     expect(prepared.cosign).toBeUndefined();
     expect(prepared.presign).toBeUndefined();
   });
@@ -93,8 +92,8 @@ describe("dexTxAdapter", () => {
     const withdrawn = await withdraw.prepare({ ...base, fraction: 0.25, output: "pool-tokens" }, { wallet: owner });
     const claimed = await claim.prepare(base, { wallet: owner });
     const compounded = await compound.prepare(base, { wallet: owner });
-    // Every DEX-route step is sent by the wallet itself (signAndSendTransaction), never relayed.
-    expect([added, withdrawn, claimed, compounded].map((p) => p.walletSends)).toEqual([true, true, true, true]);
+    // No extra signer: the pipeline's default applies (a signAndSend wallet sends; a sign-only wallet relays).
+    expect([added, withdrawn, claimed, compounded].map((p) => [p.cosign, p.presign])).toEqual([[undefined, undefined], [undefined, undefined], [undefined, undefined], [undefined, undefined]]);
     expect(seen.map((item) => item.url)).toEqual(["/api/dex/some-dex/add", "/api/dex/some-dex/withdraw", "/api/dex/some-dex/claim", "/api/dex/some-dex/compound"]);
     const step = { step: 1, priorSignatures: [] };
     expect(seen[0]!.body).toEqual({ owner, positionKey: "some-dex:abc", input: { token: "Mint111111111111111111111111111111111111111", amountRaw: "100" }, ...step });
