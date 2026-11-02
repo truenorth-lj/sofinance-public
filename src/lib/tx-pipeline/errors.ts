@@ -243,6 +243,17 @@ export function sendFailureReason(error: unknown, source: "wallet" | "network" =
 export const couldntSendLine = (error: unknown, source: "wallet" | "network" = "wallet") => `${COULDNT_SEND_TITLE}: ${sendFailureReason(error, source)}.`;
 
 /**
+ * The toast body under the "Couldn't send the transaction" title: the same text without the repeated prefix,
+ * so it starts with the reason. Inline alerts (no title) keep the full line.
+ */
+export function withoutCouldntSendPrefix(message: string): string {
+  const prefix = `${COULDNT_SEND_TITLE}: `;
+  if (!message.startsWith(prefix)) return message;
+  const rest = message.slice(prefix.length);
+  return rest.charAt(0).toUpperCase() + rest.slice(1);
+}
+
+/**
  * Whether a failure is a send failure that is not a wallet rejection: these get the "Couldn't send the transaction"
  * title. Only an explicit rejection (`isWalletRejection`) may say "cancelled".
  */

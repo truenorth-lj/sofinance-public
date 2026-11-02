@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   COULDNT_SEND_TITLE, isCouldntSend, sendFailureReason, TxLandedUnknownError, TxNotLandedError, TxRelayRefusedError, TxWalletCancelledError, walletWords,
 } from "./errors";
+import { withoutCouldntSendPrefix } from "./errors";
 import { getTxNotices, reportTxFailure, resetTxNotices } from "./notices";
 
 /** A wallet / RPC error that embeds an endpoint with an API key: the address must never reach the screen. */
@@ -26,7 +27,7 @@ describe("send failure copy (PM 2026-11-03): only a wallet rejection says cancel
       const [notice] = getTxNotices();
       expect(notice).toMatchObject({ state: "failure", title: COULDNT_SEND_TITLE });
       expect(notice!.title).not.toMatch(/cancel/i);
-      expect(notice!.detail).toMatch(/^Couldn't send the transaction: your wallet said “Unexpected error”\./);
+      expect(notice!.detail).toMatch(/^Your wallet said “Unexpected error”\./);
     }
   });
 
@@ -39,7 +40,7 @@ describe("send failure copy (PM 2026-11-03): only a wallet rejection says cancel
       expect(notice?.title).toBe(COULDNT_SEND_TITLE);
       const text = `${notice!.title} ${notice!.detail}`;
       expect(text).not.toMatch(/https?:|example-rpc|helius|api-key|SECRET123|abcdef0123456789|\.com/i);
-      expect(text).toMatch(/^Couldn't send the transaction Couldn't send the transaction: /);
+      expect(notice!.detail).not.toMatch(/Couldn't send the transaction/);
     }
     expect(walletWords(RPC_ERROR())).toBe("failed to send transaction: fetch failed at (node)");
   });
@@ -61,5 +62,26 @@ describe("send failure copy (PM 2026-11-03): only a wallet rejection says cancel
     expect(isCouldntSend(new TxLandedUnknownError(RPC_ERROR()))).toBe(true);
     expect(isCouldntSend(new TxRelayRefusedError("rpc_unavailable"))).toBe(true);
     expect(isCouldntSend(new Error("prepare failed"))).toBe(false);
+  });
+
+  it("the toast body starts with the reason (the title already says Couldn't send); inline text keeps the prefix", () => {
+    const error = new TxWalletCancelledError(new Error("Transaction simulation failed: custom program error 0x1771"), pending());
+    reportTxFailure({ flow: "add", error });
+    const [notice] = getTxNotices();
+    expect(notice!.title).toBe(COULDNT_SEND_TITLE);
+    expect(notice!.detail).toBe("Solana's pre-check says it would fail right now (a price or balance may have changed). It has not shown up on Solana; we keep checking in case it went through, and you can retry in about a minute.");
+    // Inline alerts have no title, so the error's own message keeps the full line.
+    expect(error.message).toMatch(/^Couldn't send the transaction: Solana's pre-check/);
+
+    resetTxNotices();
+    reportTxFailure({ flow: "add", error: new TxRelayRefusedError(Object.assign(new Error("blocked"), { sent: false })) });
+    expect(getTxNotices()[0]!.detail).toBe("The network refused it (“blocked”). Nothing was sent, safe to retry.");
+
+    resetTxNotices();
+    reportTxFailure({ flow: "add", error: new TxWalletCancelledError(REJECTED(), pending()) });
+    expect(getTxNotices()[0]!.detail).toMatch(/^You cancelled in your wallet/);
+
+    expect(withoutCouldntSendPrefix("Couldn't send the transaction: it expired before it reached Solana.")).toBe("It expired before it reached Solana.");
+    expect(withoutCouldntSendPrefix("Something else.")).toBe("Something else.");
   });
 });
