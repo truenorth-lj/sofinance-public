@@ -12,7 +12,7 @@ import { VersionedTransaction } from "@solana/web3.js";
 import { CANCEL_CHECK_PENDING_COPY, resetCancelChecks, dismissTxNotice, findTxNotice, getTxNotices, noticeIdFor, resetTxNotices, settleTxNotice, TxNotSentError, type TxAdapter, type TxWallet } from "@/lib/tx-pipeline";
 import { TxNoticeHost } from "./tx-notice-host";
 import { openStatusFromNotice } from "@/components/use-open-attempt";
-import { useTxPipeline } from "./use-tx-pipeline";
+import { logStepTiming, useTxPipeline } from "./use-tx-pipeline";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const payer = testKeypair(41);
@@ -241,6 +241,29 @@ describe("useTxPipeline runSteps (multi-step plans)", () => {
     expect(steps()).toMatchObject({ status: "success", signature: SIG2, locked: false });
   });
 
+  it("PR10 marker: unmounted between steps leaves a console line and a stored note the next mount shows; finishing clears it", async () => {
+    const confirm = deferred<Response>();
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { signature?: string };
+      return body.signature === SIG ? confirm.promise : Response.json({ status: "pending" });
+    }));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const a = stepAdapter(vi.fn(async (input: Step) => stepPrepared(input.step)));
+    await render(a, twoSends(), "pos-x");
+    let running!: Promise<unknown>;
+    await act(async () => { running = steps().runSteps({ step: 1, prior: [] }, plan); });
+    await act(async () => root.render(null)); // the panel goes away while step 1 confirms
+    await act(async () => { confirm.resolve(Response.json({ status: "confirmed" })); await running; });
+    expect(warn).toHaveBeenCalledWith("[tx-interrupted]", expect.stringContaining(SIG));
+    await render(a, twoSends(), "pos-x");
+    await act(async () => { await new Promise((r) => setTimeout(r, 5)); });
+    const marked = box.current as unknown as { interrupted: { step: number; of: number; signatures: string[] } | null; dismissInterrupted: () => void };
+    expect(marked.interrupted).toMatchObject({ step: 2, of: 2, signatures: [SIG] });
+    await act(async () => { marked.dismissInterrupted(); });
+    expect((box.current as unknown as { interrupted: unknown }).interrupted).toBeNull();
+    warn.mockRestore();
+  });
+
   it("step 2 refused: says step 1 is on Solana and why step 2 stopped, never success; Try again resumes step 2 only", async () => {
     vi.stubGlobal("fetch", finality("confirmed"));
     const prepare = vi.fn(async (input: Step) => {
@@ -448,5 +471,22 @@ describe("openStatusFromNotice", () => {
     expect(openStatusFromNotice({ ...base, state: "failure", kind: "failed" })).toBe("failed");
     expect(openStatusFromNotice({ ...base, state: "failure", kind: "unknown" })).toBe("manual-review");
     expect(findTxNotice("none")).toBeUndefined();
+  });
+});
+
+describe("per-step timing log (PR10: dev builds only)", () => {
+  afterEach(() => { vi.unstubAllEnvs(); vi.restoreAllMocks(); });
+  const entry = { phase: "sent", step: 1, of: 2, signature: "sig" };
+  it("logs nothing in a production build", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    logStepTiming(entry);
+    expect(info).not.toHaveBeenCalled();
+  });
+  it("logs one line in next dev", () => {
+    vi.stubEnv("NODE_ENV", "development");
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    logStepTiming(entry);
+    expect(info).toHaveBeenCalledWith("[tx-step-timing]", expect.stringContaining('"step":1'));
   });
 });

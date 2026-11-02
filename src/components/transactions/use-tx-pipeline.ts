@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
-  detachTxRetry, dismissTxNotice, noticeIdFor, pollSignature, runTx, TxCancelCheckPendingError, TxRunError, useCancelCheckPending, useTxNotices,
-  type PreparedTx, type RunTxResult, type TxAdapter, type TxChainStatus, type TxFailureKind, type TxStage, type TxWallet,
+  clearTxInterruption, detachTxRetry, dismissTxNotice, noticeIdFor, pollSignature, readTxInterruption, recordTxInterruption, runTx, TxCancelCheckPendingError,
+  TxRunError, useCancelCheckPending, useTxNotices, type PreparedTx, type TxInterruption, type RunTxResult, type TxAdapter, type TxChainStatus, type TxFailureKind, type TxStage, type TxWallet,
 } from "@/lib/tx-pipeline";
 
 export type TxPipelineStatus = "idle" | TxStage | "success" | "failed";
@@ -74,6 +74,18 @@ export function useTxPipeline<Input, Prepared extends PreparedTx>(adapter: TxAda
   const latest = useRef({ adapter, wallet });
   const latestInline = useRef(options.inlineErrors ?? false);
   useLayoutEffect(() => { latestInline.current = options.inlineErrors ?? false; });
+  const latestScope = useRef(options.scope);
+  useLayoutEffect(() => { latestScope.current = options.scope; });
+  // A run of this flow + scope that an earlier mount left half-way (read after mount: storage is browser-only).
+  const [interrupted, setInterrupted] = useState<TxInterruption | null>(null);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setInterrupted(options.scope ? readTxInterruption(adapter.flow, options.scope) : null), 0);
+    return () => window.clearTimeout(timer);
+  }, [adapter.flow, options.scope]);
+  const dismissInterrupted = useCallback(() => {
+    if (latestScope.current) clearTxInterruption(latest.current.adapter.flow, latestScope.current);
+    setInterrupted(null);
+  }, []);
   useLayoutEffect(() => { latest.current = { adapter, wallet }; });
   const planRef = useRef<(plan: PlanRun<Input, Prepared>) => Promise<unknown>>(async () => null);
   const lastPlan = useRef<PlanRun<Input, Prepared> | null>(null);
@@ -92,6 +104,12 @@ export function useTxPipeline<Input, Prepared extends PreparedTx>(adapter: TxAda
     const sent = [...plan.earlier];
     const start = { ...plan };
     let { input, index, of } = plan;
+    const scope = latestScope.current;
+    /** The run lost its owner (unmount, wallet switch) after `sent` reached Solana and before `nextStep` was sent. */
+    const markInterrupted = (nextStep: number) => {
+      if (!sent.length || !scope) return;
+      recordTxInterruption({ flow: current.adapter.flow, scope, step: nextStep, ...(of ? { of } : {}), signatures: sent.map((item) => item.signature) });
+    };
     try {
       for (;;) {
         lastPlan.current = { ...plan, input, index, of, earlier: [...sent] };
@@ -113,6 +131,7 @@ export function useTxPipeline<Input, Prepared extends PreparedTx>(adapter: TxAda
               ...(detail?.secondsLeft !== undefined ? { secondsLeft: detail.secondsLeft } : {}) }); },
           });
         } catch (error) {
+          if (!isOwner()) markInterrupted(index);
           if (isOwner()) {
             const failure = error instanceof TxRunError ? error : null;
             const message = failure?.message ?? "The transaction could not be completed.";
@@ -133,13 +152,17 @@ export function useTxPipeline<Input, Prepared extends PreparedTx>(adapter: TxAda
         const following = plan.next(result, [...sent]);
         sent.push(result);
         // The last step: confirming → success / failure follows its notice, like a single send.
-        if (following === null) return sent;
-        if (!isOwner()) return null;
+        if (following === null) {
+          if (scope) clearTxInterruption(current.adapter.flow, scope);
+          if (isOwner()) setInterrupted(null);
+          return sent;
+        }
+        if (!isOwner()) { markInterrupted(index + 1); return null; }
         const stepNow = { step: index, of };
         setState({ status: "confirming", signature: result.signature, step: stepNow, intermediate: true });
         const status = await confirmStep(result, isOwner);
         logStepTiming({ phase: status, step: index, of, via: result.via, signature: result.signature, confirmMs: Date.now() - sentAt });
-        if (!isOwner()) return null;
+        if (!isOwner()) { markInterrupted(index + 1); return null; }
         if (status !== "confirmed") {
           setState({ status: "failed", signature: result.signature, step: stepNow, error: unconfirmedStepMessage(index, of, status),
             kind: status === "pending" ? "unknown" : status, retryable: status !== "pending" });
@@ -205,6 +228,8 @@ export function useTxPipeline<Input, Prepared extends PreparedTx>(adapter: TxAda
   const cancelPending = useCancelCheckPending(adapter.flow, options.scope);
   return {
     ...view, run, runSteps, reset, retry,
+    /** An earlier mount's multi-step run of this flow + scope stopped half-way (PR10 marker); null when none. */
+    interrupted, dismissInterrupted,
     /** A cancelled send of this flow + scope is still being checked on Solana: no resubmit yet. */
     cancelPending,
     busy: busyNow,
@@ -214,13 +239,16 @@ export function useTxPipeline<Input, Prepared extends PreparedTx>(adapter: TxAda
   };
 }
 
-/** Code constant (no env flag): per-step send / confirm timing in the browser console, for local multi-step tests. */
-const LOG_STEP_TIMING = true;
+/**
+ * Per-step send / confirm timing in the browser console, for local multi-step tests: dev builds only (`next dev`), never
+ * in a production build (PM, PR10). No env flag of our own: Next.js sets NODE_ENV.
+ */
+export const logStepTimingEnabled = () => process.env.NODE_ENV === "development";
 
 /** One console line per step: `sendMs` = prepare → wallet/relay returned a signature, `confirmMs` = sent → confirmed. */
-function logStepTiming(entry: { phase: string; step: number; of?: number; via?: "wallet" | "relay"; signature: string; sendMs?: number; confirmMs?: number }) {
-  if (!LOG_STEP_TIMING) return;
-  // eslint-disable-next-line no-console -- deliberate: per-step timing for local multi-step tests (PM 2b)
+export function logStepTiming(entry: { phase: string; step: number; of?: number; via?: "wallet" | "relay"; signature: string; sendMs?: number; confirmMs?: number }) {
+  if (!logStepTimingEnabled()) return;
+  // eslint-disable-next-line no-console -- deliberate: per-step timing for local multi-step tests (PM 2b), dev builds only
   console.info("[tx-step-timing]", JSON.stringify({ ...entry, at: new Date().toISOString() }));
 }
 

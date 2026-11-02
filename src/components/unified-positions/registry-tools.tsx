@@ -13,7 +13,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { formatAmount, parseTokenAmount } from "@sofinance/engine/amount";
 import { dexTxAdapter, type DexCapabilities, type DexPreparedStep, type DexDescriptor, type DexStepInput, type DexStepOp, type FeeRule, type RentQuote } from "@/lib/dex/client";
 import { createJupiterRelayStore } from "@/lib/jupiter/browser-relay";
-import { CANCEL_CHECK_PENDING_COPY, CHECKING_SOLANA_COPY, solscanTxUrl, TX_WAITING_PREVIOUS_EXPIRY_COPY } from "@/lib/tx-pipeline";
+import { CANCEL_CHECK_PENDING_COPY, CHECKING_SOLANA_COPY, solscanTxUrl, TX_WAITING_PREVIOUS_EXPIRY_COPY, txInterruptionMessage, type TxInterruption } from "@/lib/tx-pipeline";
 import type { ToolId, TokenRef, UnifiedPosition, WithdrawOutput } from "@/lib/unified-positions/model";
 import { useTxPipeline } from "../transactions/use-tx-pipeline";
 import { useWalletConnection } from "../wallet-connection";
@@ -161,7 +161,8 @@ function usePositionTx<Op extends DexStepOp>(op: Op, position: UnifiedPosition, 
   };
 }
 
-type PositionTx = Pick<ReturnType<typeof usePositionTx>["tx"], "status" | "signature" | "error" | "retryable" | "retry" | "secondsLeft">;
+type PositionTx = Pick<ReturnType<typeof usePositionTx>["tx"], "status" | "signature" | "error" | "retryable" | "retry" | "secondsLeft">
+  & Partial<Pick<ReturnType<typeof usePositionTx>["tx"], "interrupted" | "dismissInterrupted">>;
 type PositionLock = Pick<ReturnType<typeof usePositionTx>, "lockedByOther" | "cancelPending">;
 
 /** Why a panel is greyed while another send on the same position runs (or a cancelled one is still being checked). */
@@ -193,7 +194,19 @@ function TxStatus({ tx, successText, walletNote }: { tx: PositionTx; successText
       {tx.retryable ? <button type="button" onClick={tx.retry} className="mt-2 block text-xs font-semibold underline">Try again</button> : null}
     </div>
   </div>;
+  if (tx.interrupted) return <InterruptedNote entry={tx.interrupted} onDismiss={tx.dismissInterrupted} />;
   return null;
+}
+
+/** PR10 marker: an earlier multi-step run of this panel stopped half-way (the panel went away between steps). */
+export function InterruptedNote({ entry, onDismiss }: { entry: TxInterruption; onDismiss?: () => void }) {
+  return <div role="status" data-testid="tx-interrupted" className="mt-3 flex gap-2 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80">
+    <CircleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+    <div><p>{txInterruptionMessage(entry)}</p>
+      {entry.signatures.map((signature, index) => <a key={signature} href={solscanTxUrl(signature)} target="_blank" rel="noreferrer" className="mt-1 mr-3 inline-block underline">Step {index + 1} on Solscan</a>)}
+      {onDismiss ? <button type="button" onClick={onDismiss} className="mt-2 block text-xs font-semibold underline">Dismiss</button> : null}
+    </div>
+  </div>;
 }
 
 function NotConnected() {

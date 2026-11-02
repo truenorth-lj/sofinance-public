@@ -192,11 +192,11 @@ describe("wallet send", () => {
       expect((await sendWithWallet(lacking, unsigned(true), { presign: presign(), cosign: cosign(), sendRaw })).via).toBe("relay");
       expect(lacking.signTransaction).toHaveBeenCalledTimes(1); expect(sendRaw).toHaveBeenCalledTimes(1);
     });
-    it("a step with only presign on a sign-only wallet presigns, then the wallet signs, then we relay", async () => {
+    it("presign is never used on the relay path: a presign-only step on a sign-only wallet sends nothing (no caller does this; dexTxAdapter pairs it with cosign)", async () => {
       const wallet = signingWallet(); const before = presign();
       const sendRaw = vi.fn<SendRaw>(async (signed) => bs58.encode(signed.signatures[0]!));
-      expect((await sendWithWallet(wallet, unsigned(true), { presign: before, sendRaw })).via).toBe("relay");
-      expect(before).toHaveBeenCalledTimes(1);
+      await expect(sendWithWallet(wallet, unsigned(true), { presign: before, sendRaw })).rejects.toThrow("A required signature is missing, so nothing was sent.");
+      expect(before).not.toHaveBeenCalled(); expect(sendRaw).not.toHaveBeenCalled();
     });
     it("cosign without presign (Raydium open, old Meteora panel, /sign) still forces sign-then-relay, even with signAndSend", async () => {
       const wallet = signingWallet({ signAndSend: true }); const after = cosign();
