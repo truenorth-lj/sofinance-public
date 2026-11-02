@@ -5,17 +5,19 @@
  * per step through `useTxPipeline().runSteps`, which prepares the next step (with this result's `planToken` and the
  * signatures so far) only after the previous step is confirmed on Solana.
  *
- * Every step is sent by the wallet itself (`walletSends`: signAndSendTransaction, never our `/api/tx-send` relay;
- * LJ 2026-10-31, because Phantom flags a transaction it signed that someone else broadcasts).
+ * A wallet that can signAndSendTransaction sends every step itself (LJ 2026-10-31: Phantom flags a transaction it
+ * signed that someone else broadcasts); only a sign-only wallet falls back to our `/api/tx-send` relay, under the
+ * 0.01 SOL wallet priority-fee ceiling (PM, 2026-11-02).
  * When a DEX's descriptor declares an ephemeral position cosigner, step 1 of an open creates that keypair here, sends
- * only its public key, and signs BEFORE the wallet (`presign`), which then signs and sends; the secret never leaves the
- * browser and is wiped when the run ends. A presigned transaction is one the wallet leaves unchanged (Phantom adds no
+ * only its public key, and signs BEFORE the wallet (`presign`), which then signs and sends; on the sign-only relay path it
+ * signs after the wallet instead (`cosign`). The secret never leaves the browser and is wiped when the run ends. A presigned transaction is one the wallet leaves unchanged (Phantom adds no
  * priority fee to it), so the step's fee is the base fee our SOL check counts.
  * Nothing in this file names a DEX.
  */
 import { VersionedTransaction } from "@solana/web3.js";
 import { createEphemeralMint, type EphemeralMint } from "@/lib/ephemeral-mint";
 import { postWithJupiterRelay, type JupiterRelayStore } from "@/lib/jupiter/browser-relay";
+import { addMintSignature, missingRequiredSignatures } from "@/lib/open-signatures";
 import { isZeroSignature } from "@sofinance/engine/transaction-limits";
 import { TxNotSentError, type PreparedTx, type TxAdapter, type TxFlow } from "@/lib/tx-pipeline";
 import type { PositionKey, WithdrawOutput } from "@/lib/unified-positions/model";
@@ -91,7 +93,6 @@ export function dexTxAdapter<Op extends DexStepOp>(op: Op): TxAdapter<DexStepInp
         return {
           transaction, result, lastValidBlockHeight: prepared.lastValidBlockHeight, sendPermit: prepared.sendPermit, landedPermit: prepared.landedPermit,
           ...(prepared.positionMint ? { positionMint: prepared.positionMint } : {}),
-          walletSends: true,
           ...(cosigner && extra.length === 1
             ? {
               presign: (unsigned: VersionedTransaction) => {
@@ -99,6 +100,11 @@ export function dexTxAdapter<Op extends DexStepOp>(op: Op): TxAdapter<DexStepInp
                 const index = signers.indexOf(cosignerKey!);
                 if (index < 1 || isZeroSignature(unsigned.signatures[index])) throw new TxNotSentError("A required signature is missing, so nothing was sent.");
                 return unsigned;
+              },
+              cosign: (walletSigned: VersionedTransaction) => {
+                const signed = addMintSignature(walletSigned, cosigner);
+                if (missingRequiredSignatures(signed).length) throw new TxNotSentError("A required signature is missing, so nothing was sent.");
+                return signed;
               },
             }
             : {}),

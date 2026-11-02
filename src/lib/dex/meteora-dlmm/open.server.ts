@@ -48,9 +48,10 @@ import type { ListedMeteoraPool } from "./pools.server";
 
 /**
  * Base fee per signature. Every SOL check and simulation cap here counts simulated rent plus this base fee only, never
- * the wallet's priority fee: every DEX-route step is sent by the wallet (signAndSendTransaction), which may add its own
+ * the wallet's priority fee: a wallet that can signAndSendTransaction sends every DEX-route step itself and may add its own
  * SetComputeUnitPrice (Phantom: 97,502 lamports on a 2026-11-01 setup step). That fee is shown and approved in the
- * wallet and is covered by the `MIN_SOL_LAMPORTS` (0.01 SOL) reserve each check keeps (PM, 2026-11-01).
+ * wallet and is covered by the `MIN_SOL_LAMPORTS` (0.01 SOL) reserve each check keeps (PM, 2026-11-01). A sign-only
+ * wallet's step is relayed instead, under the 0.01 SOL wallet priority-fee ceiling.
  */
 export const SIGNATURE_LAMPORTS = 5_000n;
 const MAX_OPEN_BINS = 70;

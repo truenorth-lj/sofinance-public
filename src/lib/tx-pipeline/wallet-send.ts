@@ -13,9 +13,10 @@ import { waitForLanded, type FindLanded, type LandedOutcome } from "./landed";
  * Wallets without signAndSend, and flows with a co-signer that must sign after the wallet
  * (a new position's mint keypair), sign first and we submit the raw bytes once through
  * `/api/tx-send`, which only accepts a transaction carrying the prepare-issued `sendPermit`.
- * A step marked `walletSends` (every DEX-route step, LJ 2026-10-31: Phantom flags a transaction it signed that someone
- * else sends) is never relayed: its extra signers `presign` before the wallet, the wallet signs and sends, and a wallet
- * without signAndSend gets `WALLET_MUST_SEND` with nothing sent.
+ * A step that also offers `presign` (every DEX-route open with a position key) is sent by the wallet whenever it can
+ * signAndSend (LJ 2026-10-31: Phantom flags a transaction it signed that someone else sends): the extra signer signs
+ * first, then the wallet signs and sends. Only a sign-only wallet (or one whose signAndSend is unsupported) relays it,
+ * wallet-first with `cosign`, under the same 0.01 SOL priority-fee ceiling as every other relay (PM, 2026-11-02).
  * No client blockhash/TTL gate here: Solana itself rejects an expired transaction, and the
  * confirm stage reports it in plain words.
  *
@@ -57,10 +58,10 @@ const toBase64 = (bytes: Uint8Array) => {
 /**
  * Wallets add their own priority fee (Phantom inserts a SetComputeUnitPrice when the transaction has none: 97,502
  * lamports on a Meteora setup step, 2026-11-01). It is a network fee the wallet shows and the user approves, but it is
- * not in any prepared quote or SOL check, so on the path where WE relay the signed bytes (non-DEX flows only, see
- * `relaySignedTransaction`) it is held to the same ceiling as the engine's simulations
- * (`WALLET_PRIORITY_FEE_CEILING_LAMPORTS`). A `walletSends` step never reaches it: the wallet sends, so the fee it adds
- * is the wallet's own choice, shown and approved in the wallet, and covered by the 0.01 SOL minimum reserve.
+ * not in any prepared quote or SOL check, so on every path where WE relay the signed bytes (sign-only wallets included,
+ * see `relaySignedTransaction`) it is held to the same ceiling as the engine's simulations
+ * (`WALLET_PRIORITY_FEE_CEILING_LAMPORTS`). A step the wallet sends itself never reaches it: the fee it adds is shown
+ * and approved in the wallet, and covered by the 0.01 SOL minimum reserve.
  */
 export const WALLET_PRIORITY_FEE_TOO_HIGH = `Your wallet raised the network fee above ${Number(WALLET_PRIORITY_FEE_CEILING_LAMPORTS) / 1e9} SOL, so nothing was sent. Lower the priority fee in your wallet and try again.`;
 function assertWalletPriorityFee(prepared: VersionedTransaction, walletSigned: VersionedTransaction) {
@@ -70,8 +71,6 @@ function assertWalletPriorityFee(prepared: VersionedTransaction, walletSigned: V
     throw new TxNotSentError(WALLET_PRIORITY_FEE_TOO_HIGH, error);
   }
 }
-
-export const WALLET_MUST_SEND = "Your wallet can't send this transaction itself, so nothing was sent. Connect a wallet that sends transactions directly, such as Phantom, and try again.";
 
 /** A wallet/connector saying it cannot signAndSend at all (nothing was prompted or signed). */
 export function isUnsupportedFeatureError(error: unknown): boolean {
@@ -115,10 +114,11 @@ const clone = (transaction: VersionedTransaction) => VersionedTransaction.deseri
 export async function sendWithWallet(wallet: TxWallet, transaction: VersionedTransaction, options: {
   /** Signers that must sign after the wallet (Phantom requires wallet-first). Forces sign-then-send. */
   cosign?: (walletSigned: VersionedTransaction) => VersionedTransaction;
-  /** Signers that sign before the wallet; the wallet then signs and sends (implies `walletSends`). */
+  /**
+   * Signers that sign before the wallet, used when the wallet can signAndSend (it then sends itself, even when `cosign`
+   * is also set). A sign-only wallet relays instead: wallet-first with `cosign` when given, else presigned.
+   */
   presign?: (unsigned: VersionedTransaction) => VersionedTransaction;
-  /** Only the wallet may send: never sign-then-relay. */
-  walletSends?: boolean;
   /** Prepare-issued permit for our relay (`/api/tx-send` refuses transactions without one). */
   sendPermit?: string;
   sendRaw?: SendRaw;
@@ -145,10 +145,7 @@ export async function sendWithWallet(wallet: TxWallet, transaction: VersionedTra
   if (payer !== wallet.address) throw new TxNotSentError("This transaction was prepared for a different wallet. Nothing was sent.");
   // Pristine prepared copy: the relay's permit covers these bytes; the wallet signs a fresh copy.
   const prepared = clone(transaction);
-  const walletMustSend = options.walletSends || !!options.presign;
-  if (walletMustSend && options.cosign) throw new TxNotSentError("This step needs a signature after the wallet's, which only a relay allows. Nothing was sent.");
-  if (walletMustSend && !wallet.signAndSendTransaction) throw new TxNotSentError(WALLET_MUST_SEND);
-  if (!options.cosign && wallet.signAndSendTransaction) {
+  if (wallet.signAndSendTransaction && (options.presign || !options.cosign)) {
     let signature: string | undefined;
     let outgoing = clone(prepared);
     if (options.presign) {
@@ -163,10 +160,8 @@ export async function sendWithWallet(wallet: TxWallet, transaction: VersionedTra
       signature = await wallet.signAndSendTransaction(outgoing);
     } catch (error) {
       // Some connectors (AppKit, injected wallets) expose signAndSend but the wallet itself lacks
-      // the feature; that refusal happens before any prompt, so fall back to sign-then-relay
-      // (or, when only the wallet may send, stop: nothing was sent).
+      // the feature; that refusal happens before any prompt, so fall back to sign-then-relay (under the fee ceiling).
       if (!isUnsupportedFeatureError(error)) return checkLanded(error, askedAt);
-      if (walletMustSend) throw new TxNotSentError(WALLET_MUST_SEND, error);
     }
     if (signature !== undefined) {
       if (!SIGNATURE.test(signature)) return checkLanded(new Error("Your wallet did not return a transaction signature"), askedAt);
@@ -175,11 +170,21 @@ export async function sendWithWallet(wallet: TxWallet, transaction: VersionedTra
   }
   let walletSigned: VersionedTransaction;
   const signAskedAt = Date.now();
+  // Relay: wallet-first with `cosign`; a step offering only `presign` gets its extra signature before the wallet's.
+  let toSign = clone(prepared);
+  const presignForRelay = !options.cosign && options.presign;
+  if (presignForRelay) {
+    try {
+      toSign = presignForRelay(toSign);
+    } catch (error) {
+      throw new TxNotSentError("A required signature could not be added, so nothing was sent.", error);
+    }
+  }
   try {
-    walletSigned = await wallet.signTransaction(clone(prepared));
+    walletSigned = await wallet.signTransaction(toSign);
   } catch (error) {
     // A co-signed transaction cannot land without our co-signature, and without a check permit there is nothing to ask.
-    if (options.cosign || !options.landedPermit || !maySignOnlyHaveBroadcast(error)) throw error;
+    if (options.cosign || presignForRelay || !options.landedPermit || !maySignOnlyHaveBroadcast(error)) throw error;
     return checkLanded(error, signAskedAt);
   }
   assertWalletReturnedTransaction(prepared, walletSigned, wallet.address);

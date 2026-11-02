@@ -11,8 +11,8 @@ import { sendWithWallet, type SendRaw, type TxWallet } from "./wallet-send";
 /**
  * The shared Solana transaction pipeline:
  *   1. prepare  – the flow's adapter builds, simulates and safety-checks a transaction (server side)
- *   2. send     – the wallet signs and sends it (signAndSendTransaction), or signs and we send once (never when the
- *                 prepared step says `walletSends`, e.g. every DEX-route step);
+ *   2. send     – the wallet signs and sends it (signAndSendTransaction), or signs and we send once (sign-only
+ *                 wallets; a step with `presign` is always wallet-sent when the wallet can signAndSend);
  *                 if the wallet throws (any error, even a 4001 cancel), "checking" looks for it on-chain for up to
  *                 20 s; still unseen → "cancelled, retry in about a minute" while that lookup runs on in the background
  *   3. confirm  – the notice host polls the signature, then links Solscan and refreshes balances
@@ -22,12 +22,10 @@ import { sendWithWallet, type SendRaw, type TxWallet } from "./wallet-send";
 export type PreparedTx = {
   transaction: VersionedTransaction;
   lastValidBlockHeight: number;
-  /** Signers that must sign after the wallet (e.g. a new position's mint keypair). Forces sign-then-relay. */
+  /** Signers that must sign after the wallet (e.g. a new position's mint keypair). Forces sign-then-relay unless `presign` is set. */
   cosign?: (walletSigned: VersionedTransaction) => VersionedTransaction;
-  /** Signers that sign BEFORE the wallet, which then signs and sends it itself (implies `walletSends`). */
+  /** Signers that sign BEFORE the wallet when it can signAndSend: the wallet then sends it itself (no relay). */
   presign?: (unsigned: VersionedTransaction) => VersionedTransaction;
-  /** Only the wallet may send this (signAndSendTransaction): never relayed through `/api/tx-send`. */
-  walletSends?: boolean;
   /** Prepare-issued HMAC permit that `/api/tx-send` requires on the relay path. */
   sendPermit?: string;
   /** Prepare-issued check permit for `/api/tx-landed` (covers these bytes and `lastValidBlockHeight`). */
@@ -79,6 +77,8 @@ export type RunTxResult<Prepared> = {
   uncertain?: string;
   /** The wallet threw, but the transaction was found on-chain. */
   landedAfterWalletError?: boolean;
+  /** Who broadcast it: the wallet (signAndSend) or our relay (sign-only wallets). Absent when the send is uncertain. */
+  via?: "wallet" | "relay";
 };
 
 export class TxRunError extends Error {
@@ -111,6 +111,7 @@ export async function runTx<Input, Prepared extends PreparedTx>(
   let signature: string | undefined;
   let uncertain: string | undefined;
   let landedAfterWalletError = false;
+  let via: "wallet" | "relay" | undefined;
   let checkingId: string | undefined;
   const context: TxReportContext = {};
   try {
@@ -122,7 +123,7 @@ export async function runTx<Input, Prepared extends PreparedTx>(
     options.onStage?.("wallet");
     try {
       const sent = await sendWithWallet(wallet, prepared.transaction, {
-        cosign: prepared.cosign, presign: prepared.presign, walletSends: prepared.walletSends, sendPermit: prepared.sendPermit, landedPermit: prepared.landedPermit,
+        cosign: prepared.cosign, presign: prepared.presign, sendPermit: prepared.sendPermit, landedPermit: prepared.landedPermit,
         sendRaw: options.sendRaw, stillWanted: options.isCurrent,
         lastValidBlockHeight: prepared.lastValidBlockHeight, findLanded: options.findLanded, checkingWindowMs: options.checkingWindowMs,
         knownSignatures: () => options.storage ? loadTxAttempts(options.storage as Storage, wallet.address).map((item) => item.signature) : [],
@@ -133,6 +134,7 @@ export async function runTx<Input, Prepared extends PreparedTx>(
         },
       });
       signature = sent.signature;
+      via = sent.via;
       if (sent.walletError !== undefined) {
         landedAfterWalletError = true;
         captureTxWalletErrorLanded(adapter.flow, { ...context, landedCheck: "landed" });
@@ -145,7 +147,7 @@ export async function runTx<Input, Prepared extends PreparedTx>(
     if (checkingId) dismissTxNotice(checkingId);
     const noticeId = record(adapter, input, prepared, signature, options);
     options.onStage?.("confirming", { signature });
-    return { signature, prepared, noticeId, ...(uncertain ? { uncertain } : {}), ...(landedAfterWalletError ? { landedAfterWalletError } : {}) };
+    return { signature, prepared, noticeId, ...(uncertain ? { uncertain } : {}), ...(landedAfterWalletError ? { landedAfterWalletError } : {}), ...(via ? { via } : {}) };
   } catch (error) {
     if (error instanceof TxNotLandedError) context.landedCheck = "not-landed";
     else if (error instanceof TxLandedUnknownError) context.landedCheck = "unknown";

@@ -99,6 +99,7 @@ export function useTxPipeline<Input, Prepared extends PreparedTx>(adapter: TxAda
         }
         setState({ status: "preparing", step });
         let result: RunTxResult<Prepared>;
+        const startedAt = Date.now();
         try {
           result = await runTx(current.adapter, input, {
             wallet: current.wallet, storage: typeof window === "undefined" ? undefined : window.localStorage,
@@ -121,6 +122,8 @@ export function useTxPipeline<Input, Prepared extends PreparedTx>(adapter: TxAda
           }
           return null;
         }
+        const sentAt = Date.now();
+        logStepTiming({ phase: "sent", step: index, of, via: result.via, signature: result.signature, sendMs: sentAt - startedAt });
         of = plan.progress?.(result.prepared).of ?? of;
         const following = plan.next(result, [...sent]);
         sent.push(result);
@@ -130,6 +133,7 @@ export function useTxPipeline<Input, Prepared extends PreparedTx>(adapter: TxAda
         const stepNow = { step: index, of };
         setState({ status: "confirming", signature: result.signature, step: stepNow, intermediate: true });
         const status = await confirmStep(result, isOwner);
+        logStepTiming({ phase: status, step: index, of, via: result.via, signature: result.signature, confirmMs: Date.now() - sentAt });
         if (!isOwner()) return null;
         if (status !== "confirmed") {
           setState({ status: "failed", signature: result.signature, step: stepNow, error: unconfirmedStepMessage(index, of, status),
@@ -201,6 +205,16 @@ export function useTxPipeline<Input, Prepared extends PreparedTx>(adapter: TxAda
     locked,
     closeLocked: view.status === "preparing" || view.status === "wallet",
   };
+}
+
+/** Code constant (no env flag): per-step send / confirm timing in the browser console, for local multi-step tests. */
+const LOG_STEP_TIMING = true;
+
+/** One console line per step: `sendMs` = prepare → wallet/relay returned a signature, `confirmMs` = sent → confirmed. */
+function logStepTiming(entry: { phase: string; step: number; of?: number; via?: "wallet" | "relay"; signature: string; sendMs?: number; confirmMs?: number }) {
+  if (!LOG_STEP_TIMING) return;
+  // eslint-disable-next-line no-console -- deliberate: per-step timing for local multi-step tests (PM 2b)
+  console.info("[tx-step-timing]", JSON.stringify({ ...entry, at: new Date().toISOString() }));
 }
 
 /** Waits for a sent step that is not the last (the notice host polls the same signature for the toast). */
