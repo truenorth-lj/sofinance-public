@@ -61,6 +61,16 @@ export class TxLandedUnknownError extends Error {
   }
 }
 
+/** A voided prompt whose old transaction we could not settle (landed or expired): the wallet reported nothing wrong. */
+export const TX_VOID_UNCONFIRMED_MESSAGE = "We couldn't confirm whether the previous request went through. Check Solscan before trying again.";
+export class TxVoidUnconfirmedError extends TxLandedUnknownError {
+  constructor(cause: unknown) {
+    super(cause);
+    this.message = TX_VOID_UNCONFIRMED_MESSAGE;
+    this.name = "TxVoidUnconfirmedError";
+  }
+}
+
 /** Copy for a wallet prompt left unsigned past the pre-wallet guard's deadline (PM 2026-11-02). */
 export const TX_PROMPT_EXPIRED_MESSAGE = "This request expired.";
 /** Shown while a voided prompt's transaction could still land: Try again stays disabled until its blockhash has expired. */

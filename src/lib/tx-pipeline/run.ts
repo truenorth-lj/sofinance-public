@@ -3,7 +3,7 @@ import { loadTxAttempts, saveTxAttempt } from "./attempts";
 import { cancelCheckKey, CANCEL_CHECK_PENDING_COPY, holdCancelCheck, isCancelCheckPending } from "./cancel-guard";
 import { captureTxPreflightEvent, captureTxWalletErrorLanded, type TxReportContext } from "@/lib/sentry/client-tx";
 import { watchCancelledSend } from "./cancelled";
-import { isWalletRejection, walletErrorCategory, TxLandedUnknownError, TxNotLandedError, TxNotSentError, TxPreflightError, TxPromptExpiredError, TxSendUnknownError, TxWalletCancelledError, walletErrorInfo, type TxFlow } from "./errors";
+import { isWalletRejection, walletErrorCategory, TxLandedUnknownError, TxNotLandedError, TxNotSentError, TxPreflightError, TxPromptExpiredError, TxSendUnknownError, TxVoidUnconfirmedError, TxWalletCancelledError, walletErrorInfo, type TxFlow } from "./errors";
 import { simulatePreparedOnServer, waitForVoidedExpiry, type SimulatePrepared, type TxPreflightPolicy, type WaitVoided } from "./preflight";
 import type { FindLanded } from "./landed";
 import { dismissTxNotice, noticeIdFor, reportTxFailure, showTxCheckingNotice, trackTxSignature } from "./notices";
@@ -167,6 +167,8 @@ export async function runTx<Input, Prepared extends PreparedTx>(
     options.onStage?.("wallet");
     const sentPrepared: Prepared = prepared;
     let lateSignature: string | undefined;
+    // Set once the expiry wait ended without an answer (e.g. unmount): a late signature is then tracked like any send.
+    let trackLate = false;
     try {
       const sent = await sendWithWallet(wallet, prepared.transaction, {
         cosign: prepared.cosign, presign: prepared.presign, sendPermit: prepared.sendPermit, landedPermit: prepared.landedPermit,
@@ -175,7 +177,10 @@ export async function runTx<Input, Prepared extends PreparedTx>(
         ...(policy ? {
           promptDeadlineAt: Math.min(Date.now() + policy.maxPromptMs, preparedAt + policy.blockhashSafeMs),
           // Voided, but this wallet broadcast it anyway: the expiry wait below checks this signature's status.
-          onLateSignature: (late: string) => { lateSignature = late; },
+          onLateSignature: (late: string) => {
+            lateSignature = late;
+            if (trackLate) record(adapter, input, sentPrepared, late, options);
+          },
           signal: options.signal,
         } : {}),
         knownSignatures: () => options.storage ? loadTxAttempts(options.storage as Storage, wallet.address).map((item) => item.signature) : [],
@@ -203,7 +208,13 @@ export async function runTx<Input, Prepared extends PreparedTx>(
           onWaiting: (secondsLeft) => options.onStage?.("expiring", secondsLeft === undefined ? undefined : { secondsLeft }),
         });
         if (outcome.status === "expired") { captureTxPreflightEvent(adapter.flow, "void-expired"); throw error; }
-        if (outcome.status === "unknown") throw new TxLandedUnknownError(error);
+        if (outcome.status === "unknown") {
+          // Not settled: hand the old transaction's signature (now or when it arrives) to the landed tracking and
+          // notice, so a landing is shown and a remounted form is blocked like any other in-flight send.
+          trackLate = true;
+          if (lateSignature) record(adapter, input, sentPrepared, lateSignature, options);
+          throw new TxVoidUnconfirmedError(error);
+        }
         captureTxPreflightEvent(adapter.flow, "void-landed");
         signature = outcome.signature;
         via = "wallet";

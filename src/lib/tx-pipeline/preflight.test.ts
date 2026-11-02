@@ -9,7 +9,7 @@ vi.mock("@/lib/position-history-refresh", () => ({ notifyPositionHistoryChange: 
 
 import {
   findTxNotice, noticeIdFor, resetCancelChecks, resetTxNotices, runTx, STALE_QUOTE_MESSAGE, TX_PREFLIGHT_POLICY, TX_PROMPT_EXPIRED_MESSAGE,
-  TX_WAITING_PREVIOUS_EXPIRY_COPY, VOIDED_POLL_INTERVAL_MS, WALLET_ERROR_CATEGORIES, waitForVoidedExpiry, walletErrorCategory,
+  TX_VOID_UNCONFIRMED_MESSAGE, TX_WAITING_PREVIOUS_EXPIRY_COPY, VOIDED_POLL_INTERVAL_MS, WALLET_ERROR_CATEGORIES, waitForVoidedExpiry, walletErrorCategory,
   type PreflightSimulation, type PreparedTx, type SimulatePrepared, type TxAdapter, type TxStage, type TxWallet, type VoidedOutcome, type WaitVoided,
 } from "./index";
 import { SIM_SLIPPAGE_CAUSE, plainSimulationCause } from "@/lib/tx-simulate/cause";
@@ -205,7 +205,46 @@ describe("pre-wallet guard (b): prompt expiry, no double-landing", () => {
     const run = runTx(adapter, {}, { wallet: wallet(vi.fn(() => new Promise<string>(() => undefined))), simulate: sims(),
       waitVoided: async () => ({ status: "unknown" }) }).catch((e) => e);
     await vi.advanceTimersByTimeAsync(TX_PREFLIGHT_POLICY.blockhashSafeMs + 1);
-    expect(await run).toMatchObject({ kind: "unknown", retryable: false });
+    const error = await run;
+    expect(error).toMatchObject({ kind: "unknown", retryable: false, message: TX_VOID_UNCONFIRMED_MESSAGE });
+    expect(error.message).toBe("We couldn't confirm whether the previous request went through. Check Solscan before trying again.");
+    expect(error.message).not.toMatch(/Your wallet reported a problem/);
+  });
+  it("unmount during the wait (unknown), then the old tx's signature arrives: it is recorded and its notice shows", async () => {
+    vi.useFakeTimers();
+    const { adapter, prepare } = adapterWith();
+    const controller = new AbortController();
+    const storage = new Map<string, string>();
+    const store = { getItem: (k: string) => storage.get(k) ?? null, setItem: (k: string, v: string) => { storage.set(k, v); }, removeItem: (k: string) => { storage.delete(k); } };
+    let resolveLate: (signature: string) => void = () => undefined;
+    const send = vi.fn(() => new Promise<string>((resolve) => { resolveLate = resolve; }));
+    // The default wait answers "unknown" once the signal is aborted.
+    const waitVoided: WaitVoided = (_tx, check) => new Promise((resolve) => check.signal?.addEventListener("abort", () => resolve({ status: "unknown" })));
+    const run = runTx(adapter, {}, { wallet: wallet(send), simulate: sims(), waitVoided, signal: controller.signal, storage: store }).catch((e) => e);
+    await vi.advanceTimersByTimeAsync(TX_PREFLIGHT_POLICY.blockhashSafeMs + 1);
+    controller.abort(); // the panel unmounts during the wait
+    expect(await run).toMatchObject({ message: TX_VOID_UNCONFIRMED_MESSAGE });
+    expect(findTxNotice(noticeIdFor(SIG))).toBeUndefined();
+    resolveLate(SIG);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(findTxNotice(noticeIdFor(SIG))?.state).toBe("loading");
+    expect([...storage.values()].join()).toContain(SIG);
+    expect(prepare).toHaveBeenCalledTimes(1); expect(send).toHaveBeenCalledTimes(1);
+  });
+  it("a late signature already in hand when the wait ends unknown is recorded at once", async () => {
+    vi.useFakeTimers();
+    const { adapter } = adapterWith();
+    let resolveLate: (signature: string) => void = () => undefined;
+    const send = vi.fn(() => new Promise<string>((resolve) => { resolveLate = resolve; }));
+    let finish: (outcome: VoidedOutcome) => void = () => undefined;
+    const run = runTx(adapter, {}, { wallet: wallet(send), simulate: sims(), waitVoided: () => new Promise((resolve) => { finish = resolve; }) }).catch((e) => e);
+    await vi.advanceTimersByTimeAsync(TX_PREFLIGHT_POLICY.blockhashSafeMs + 1);
+    resolveLate(SIG);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(findTxNotice(noticeIdFor(SIG))).toBeUndefined();
+    finish({ status: "unknown" });
+    expect(await run).toMatchObject({ message: TX_VOID_UNCONFIRMED_MESSAGE });
+    expect(findTxNotice(noticeIdFor(SIG))?.state).toBe("loading");
   });
   it("a sign-only wallet's late signature after the void is never relayed", async () => {
     vi.useFakeTimers();
