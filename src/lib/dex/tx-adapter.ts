@@ -5,14 +5,18 @@
  * per step through `useTxPipeline().runSteps`, which prepares the next step (with this result's `planToken` and the
  * signatures so far) only after the previous step is confirmed on Solana.
  *
+ * Every step is sent by the wallet itself (`walletSends`: signAndSendTransaction, never our `/api/tx-send` relay;
+ * LJ 2026-10-31, because Phantom flags a transaction it signed that someone else broadcasts).
  * When a DEX's descriptor declares an ephemeral position cosigner, step 1 of an open creates that keypair here, sends
- * only its public key, and signs after the wallet; the secret never leaves the browser and is wiped when the run ends.
+ * only its public key, and signs BEFORE the wallet (`presign`), which then signs and sends; the secret never leaves the
+ * browser and is wiped when the run ends. A presigned transaction is one the wallet leaves unchanged (Phantom adds no
+ * priority fee to it), so the step's fee is the base fee our SOL check counts.
  * Nothing in this file names a DEX.
  */
 import { VersionedTransaction } from "@solana/web3.js";
 import { createEphemeralMint, type EphemeralMint } from "@/lib/ephemeral-mint";
 import { postWithJupiterRelay, type JupiterRelayStore } from "@/lib/jupiter/browser-relay";
-import { addMintSignature, missingRequiredSignatures } from "@/lib/open-signatures";
+import { isZeroSignature } from "@sofinance/engine/transaction-limits";
 import { TxNotSentError, type PreparedTx, type TxAdapter, type TxFlow } from "@/lib/tx-pipeline";
 import type { PositionKey, WithdrawOutput } from "@/lib/unified-positions/model";
 import type { OpenRequest, StepContext, StepResult } from "./adapter";
@@ -87,12 +91,14 @@ export function dexTxAdapter<Op extends DexStepOp>(op: Op): TxAdapter<DexStepInp
         return {
           transaction, result, lastValidBlockHeight: prepared.lastValidBlockHeight, sendPermit: prepared.sendPermit, landedPermit: prepared.landedPermit,
           ...(prepared.positionMint ? { positionMint: prepared.positionMint } : {}),
+          walletSends: true,
           ...(cosigner && extra.length === 1
             ? {
-              cosign: (walletSigned: VersionedTransaction) => {
-                const signed = addMintSignature(walletSigned, cosigner);
-                if (missingRequiredSignatures(signed).length) throw new TxNotSentError("A required signature is missing, so nothing was sent.");
-                return signed;
+              presign: (unsigned: VersionedTransaction) => {
+                unsigned.sign([cosigner]);
+                const index = signers.indexOf(cosignerKey!);
+                if (index < 1 || isZeroSignature(unsigned.signatures[index])) throw new TxNotSentError("A required signature is missing, so nothing was sent.");
+                return unsigned;
               },
             }
             : {}),

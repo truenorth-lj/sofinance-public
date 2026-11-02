@@ -18,7 +18,7 @@ import {
   LANDED_DEADLINE_MS, LANDED_BACKGROUND_POLL_INTERVAL_MS, LANDED_POLL_INTERVAL_MS, type FindLanded, type TxAdapter, type TxAttempt, type TxWallet,
 } from "./index";
 import { TX_EXPIRED_MESSAGE } from "@/lib/public-error";
-import type { SendRaw } from "./wallet-send";
+import { WALLET_MUST_SEND, type SendRaw } from "./wallet-send";
 
 const payer = testKeypair(11);
 const cosigner = testKeypair(12);
@@ -165,6 +165,30 @@ describe("wallet send", () => {
     const wallet = { ...signingWallet({ signAndSend: true }), address: testKeypair(99).publicKey.toBase58() };
     await expect(sendWithWallet(wallet, unsigned())).rejects.toThrow("different wallet");
     expect(wallet.signAndSendTransaction).not.toHaveBeenCalled();
+  });
+  describe("walletSends (DEX route): only the wallet sends", () => {
+    it("presigns, then the wallet signs and sends; never signTransaction, never relay", async () => {
+      const wallet = signingWallet({ signAndSend: true }); const sendRaw = vi.fn();
+      const presign = vi.fn((tx: VersionedTransaction) => { tx.sign([cosigner]); return tx; });
+      expect(await sendWithWallet(wallet, unsigned(true), { walletSends: true, presign, sendRaw })).toEqual({ signature: SIG, via: "wallet" });
+      const sent = (wallet.signAndSendTransaction as ReturnType<typeof vi.fn>).mock.calls[0]![0] as VersionedTransaction;
+      expect(sent.signatures[1]!.some((byte) => byte !== 0)).toBe(true);
+      expect(wallet.signTransaction).not.toHaveBeenCalled(); expect(sendRaw).not.toHaveBeenCalled();
+    });
+    it("refuses a wallet without signAndSend, or one whose wallet lacks the feature, instead of relaying", async () => {
+      const sendRaw = vi.fn();
+      const signOnly = signingWallet();
+      await expect(sendWithWallet(signOnly, unsigned(), { walletSends: true, sendRaw })).rejects.toThrow(WALLET_MUST_SEND);
+      const lacking = { ...signingWallet(), signAndSendTransaction: vi.fn(async () => { throw new Error('The wallet does not support the "solana:signAndSendTransaction" feature'); }) };
+      const error = await sendWithWallet(lacking, unsigned(), { walletSends: true, sendRaw }).catch((e) => e);
+      expect(error).toBeInstanceOf(TxNotSentError); expect(error.message).toBe(WALLET_MUST_SEND);
+      expect(signOnly.signTransaction).not.toHaveBeenCalled(); expect(lacking.signTransaction).not.toHaveBeenCalled(); expect(sendRaw).not.toHaveBeenCalled();
+    });
+    it("refuses a cosign-after-wallet step (it could only be relayed)", async () => {
+      const wallet = signingWallet({ signAndSend: true });
+      await expect(sendWithWallet(wallet, unsigned(true), { walletSends: true, cosign: (tx) => tx })).rejects.toBeInstanceOf(TxNotSentError);
+      expect(wallet.signAndSendTransaction).not.toHaveBeenCalled();
+    });
   });
   describe("a priority fee the wallet adds on the relay path", () => {
     /** Phantom's rewrite of a transaction with no CU price: its own SetComputeUnitPrice in front (as on the 2026-11-01 Meteora setup). */
