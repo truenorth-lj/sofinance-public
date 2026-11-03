@@ -21,7 +21,7 @@ import {
   depositIntermediateRentAllowance, meteoraOpenPresets, meteoraOpenSolParts, planMeteoraOpen, readMeteoraPool, assertEmptyOwnedPosition, type MeteoraOpenDeps, type MeteoraPoolState,
 } from "./open.server";
 import { buildMeteoraAdd, buildMeteoraClaim, buildMeteoraCompound, buildMeteoraWithdraw, quoteMeteoraAdd } from "./manage.server";
-import { meteoraDepositMinimum, type MeteoraLegQuote } from "./minimum.server";
+import { meteoraDepositMinimum, type MeteoraLegQuote, type MeteoraUsdPrices } from "./minimum.server";
 import { listedMeteoraPool, type MeteoraPoolList } from "./pools.server";
 
 /**
@@ -57,6 +57,8 @@ export type MeteoraDlmmAdapterOptions = {
   readPerformance?: typeof getMeteoraPositionPerformance;
   /** Prices one swap leg for the quote-time "too small for this range" check (default: a Jupiter quote, no build). */
   quoteLeg?: MeteoraLegQuote;
+  /** USD prices for the same check's quote-free rule when the input is USDC (default: Jupiter price v3). */
+  usdPrices?: MeteoraUsdPrices;
 };
 
 const SOURCE = meteoraDlmmDescriptor.id;
@@ -161,7 +163,7 @@ export function createMeteoraDlmmAdapter(options: MeteoraDlmmAdapterOptions = {}
       const [rent, allowance, depositMinimum] = await Promise.all([
         ownerPoolTokenAccountsExist(d.connection, pool, request.owner).then((exists) => meteoraOpenRent(d.connection, plan, exists)),
         depositIntermediateRentAllowance(d.connection),
-        meteoraDepositMinimum(plan, request.owner, options.quoteLeg),
+        meteoraDepositMinimum(plan, request.owner, options.quoteLeg, options.usdPrices),
       ]);
       const parts = meteoraOpenSolParts(rent.totalLamports, allowance);
       const { binStep } = pool.lbPair;
@@ -315,7 +317,7 @@ export function createMeteoraDlmmAdapter(options: MeteoraDlmmAdapterOptions = {}
       const built = await buildMeteoraAdd(deps(), position, owner, input);
       return { step: 1, of: 1, label: "Add to the position", done: true, prepared: { kind: "solana-tx", ...built, positionMint: position } };
     }),
-    quoteAdd: (key: PositionKey, owner: string, input: DexDepositInput) => guarded((): Promise<AddQuote> => quoteMeteoraAdd(deps(), nativeIdOf(key), owner, input, options.quoteLeg)),
+    quoteAdd: (key: PositionKey, owner: string, input: DexDepositInput) => guarded((): Promise<AddQuote> => quoteMeteoraAdd(deps(), nativeIdOf(key), owner, input, options.quoteLeg, options.usdPrices)),
     prepareWithdraw: (key: PositionKey, owner: string, request: WithdrawRequest, context: StepContext) => guarded(async () => {
       singleStep(context, "A Meteora withdraw");
       const position = nativeIdOf(key);

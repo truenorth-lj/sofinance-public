@@ -57,10 +57,14 @@ export type RentQuote = {
 export type DepositMinimum = {
   /** Input token id the figures are in. */
   token: string;
-  /** The quoted amount would round to 0 in some step of the range. */
+  /** The amount would round to 0 in some step of the range (or the check could not run: `unavailable`). */
   tooSmall: boolean;
-  /** Estimated smallest amount (raw units of `token`) that reaches every step; null when it could not be estimated. */
+  /** Smallest amount (raw units of `token`) that reaches every step; null only when the input could not be priced. */
   minimumRaw: string | null;
+  /** Whether a swap quote of this exact amount cross-checked the rule (false = quote failed; the rule decided alone). */
+  quoteChecked?: boolean;
+  /** Neither the rule nor a quote could price the input: Open / Add stay disabled with a plain "try again" line. */
+  unavailable?: boolean;
 };
 
 /** What an Add would do before anything is built (no transaction). */
