@@ -509,3 +509,15 @@ describe("temporary SOL input switch (SOL_INPUT_ENABLED = false)", () => {
     expect(mocks.controller!.inputMint).toBe(usdc);
   });
 });
+
+describe("closing", () => {
+  it("Escape closes the modal, like its Close button", async () => {
+    const onClose = vi.fn();
+    await act(async () => { root.render(createElement(OpenPositionModal, { pair, onClose })); });
+    await advance(1);
+    await act(async () => { document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    await act(async () => { document.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});

@@ -5,7 +5,7 @@
 //
 // LAYOUT_WIDTHS=360,375,390,1280 LAYOUT_SHOTS=/some/dir also saves a screenshot of each state (local review only);
 // LAYOUT_TEXT_SCALE=125 enlarges the root font like a phone's large-text setting.
-import { test, type Browser, type Page } from "@playwright/test";
+import { expect, test, type Browser, type Page } from "@playwright/test";
 import { installFakeWallet } from "../../fake-wallet/install";
 import { FakeWallet } from "../../fake-wallet/node-signer";
 import { ConnectModal } from "../../pages/connect-modal";
@@ -14,7 +14,8 @@ import { installLayoutMocks } from "../../support/layout-mocks";
 
 const widths = (process.env.LAYOUT_WIDTHS ?? "360").split(",").map(Number);
 const shots = process.env.LAYOUT_SHOTS;
-const PAGES = ["/", "/app", "/app/rwa-pairs", "/app/plan", "/app/ai", "/app/position-performance", "/app/meteora", "/app/rhc",
+// Only routes that exist in production: /app/meteora and /app/rhc are behind server flags (404 / redirect when off).
+const PAGES = ["/", "/app", "/app/rwa-pairs", "/app/plan", "/app/ai", "/app/position-performance",
   "/docs", "/docs/fees", "/docs/fee-apr", "/docs/risks", "/docs/security", "/docs/withdraw", "/blog", "/blog/dex-evolution",
   "/faq", "/terms"];
 
@@ -50,7 +51,8 @@ for (const width of widths) {
       const { context, page, phone } = await setup(browser, baseURL, width);
       const check = checker(page, width, phone);
       for (const path of PAGES) {
-        await page.goto(path, { waitUntil: "domcontentloaded" });
+        const response = await page.goto(path, { waitUntil: "domcontentloaded" });
+        expect.soft(response?.status(), `${path} should be a real page, not a 404`).toBeLessThan(400);
         await page.locator("main, h1").first().waitFor();
         await check(path === "/" ? "home" : path.slice(1).replaceAll("/", "-"));
       }
@@ -127,13 +129,15 @@ for (const width of widths) {
       await page.getByRole("navigation", { name: "App" }).getByRole("link", { name: "RWA pairs" }).click();
       await open.first().waitFor();
       // Raydium (INTC), both SPCX pools (Raydium and Meteora DLMM) and a Robinhood Chain pool (TSLA/TSLAon).
-      const targets: [string, number][] = [["INTCx/INTC", 0], ["SPCXx/SPCX", 0], ["SPCXx/SPCX", 1], ["TSLA/TSLAon", 0]];
-      for (const [pair, nth] of targets) {
+      // The Raydium modals must also close on Escape; the others use their Close button here.
+      const targets: [string, number, "Escape" | "Close"][] = [["INTCx/INTC", 0, "Escape"], ["SPCXx/SPCX", 0, "Escape"], ["SPCXx/SPCX", 1, "Close"], ["TSLA/TSLAon", 0, "Close"]];
+      for (const [pair, nth, close] of targets) {
         await page.getByRole("button", { name: `Open position in ${pair}`, exact: true }).nth(nth).click();
         const dialog = page.getByRole("dialog").first();
         await dialog.waitFor();
         await check(`open-modal-${pair.replace("/", "-")}-${nth + 1}`, { fullPage: false });
-        await dialog.getByRole("button", { name: "Close", exact: true }).click();
+        if (close === "Escape") await page.keyboard.press("Escape");
+        else await dialog.getByRole("button", { name: "Close", exact: true }).click();
         await dialog.waitFor({ state: "hidden" });
       }
       await context.close();
