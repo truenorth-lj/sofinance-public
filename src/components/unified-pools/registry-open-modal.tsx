@@ -14,7 +14,7 @@ import { LoaderCircle, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { formatAmount, parseTokenAmount } from "@sofinance/engine/amount";
 import { NATIVE_SOL_MINT } from "@sofinance/engine/ids";
-import { depositTooSmallMessage, dexTxAdapter, openSolNeed, openSolPartsFromQuote, type DexDescriptor, type DexPreparedStep, type DexStepInput, type OpenQuote, type OpenRangePreset, type OpenRanges } from "@/lib/dex/client";
+import { depositTooSmallMessage, dexTxAdapter, OPEN_RANGES_UNAVAILABLE, openSolNeed, openSolPartsFromQuote, type DexDescriptor, type DexPreparedStep, type DexStepInput, type OpenQuote, type OpenRangePreset, type OpenRanges } from "@/lib/dex/client";
 import { createJupiterRelayStore } from "@/lib/jupiter/browser-relay";
 import { BALANCES_REFRESH_EVENT } from "@/lib/tx-pipeline";
 import { formatAprPct } from "@/lib/range-apr/format";
@@ -218,7 +218,8 @@ export function RegistryOpenModal({ pool, descriptor, ranges, apr = null, onClos
         <p className="mt-4 text-sm text-smoke">Connect your wallet to open a position.</p>
         <button type="button" onClick={connect} className={BUTTON}>Connect wallet</button>
       </> : ranges instanceof Error ? <>
-          <p role="alert" data-testid="registry-open-ranges-error" className="mt-4 text-sm text-cream/80">This pool&apos;s price ranges could not be worked out, so it can&apos;t be opened right now: {ranges.message}</p>
+          <p role="alert" data-testid="registry-open-ranges-error" className="mt-4 text-sm text-cream/80">{ranges.message === OPEN_RANGES_UNAVAILABLE ? ranges.message
+            : <>This pool&apos;s price ranges could not be worked out, so it can&apos;t be opened right now: {ranges.message}</>}</p>
           <button type="button" disabled className={BUTTON}>Open position</button>
         </>
         : !payload ? <p role="status" className="mt-4 flex items-center gap-2 text-sm text-cream/80"><LoaderCircle aria-hidden="true" className="size-4 animate-spin" />Loading this pool&apos;s ranges…</p>

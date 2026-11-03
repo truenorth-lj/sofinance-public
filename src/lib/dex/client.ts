@@ -19,13 +19,17 @@ export { openSolNeed, openSolPartsFromQuote, openSolShortfall, SOL_NEED_UNKNOWN_
  * The preset ranges a pool can be opened with, worked out by the server from on-chain state (POST
  * /api/dex/[dex]/open-ranges). Independent of the volume / APR feed. Rejects with the server's plain reason.
  */
+/** Shown when the server could not load a pool's ranges (5xx / no answer): plain words, never an error code. */
+export const OPEN_RANGES_UNAVAILABLE = "We couldn't load this pool right now. Try again in a few minutes.";
+
 export async function fetchOpenRanges(dexId: string, poolId: string, signal?: AbortSignal): Promise<OpenRanges> {
   const response = await fetch(`/api/dex/${encodeURIComponent(dexId)}/open-ranges`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ poolId }), cache: "no-store", ...(signal ? { signal } : {}),
   });
   const body = await response.json().catch(() => null) as (OpenRanges & { error?: string }) | null;
   if (!response.ok || !body || !Array.isArray(body.presets)) {
-    throw new Error(body?.error || `The server could not work out this pool's ranges (error ${response.status}). Try again in a moment.`);
+    // A refusal (4xx) carries the server's plain reason; a server or upstream failure never shows its message or code.
+    throw new Error(response.status >= 400 && response.status < 500 && body?.error ? body.error : OPEN_RANGES_UNAVAILABLE);
   }
   return body;
 }

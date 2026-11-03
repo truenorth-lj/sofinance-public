@@ -2,7 +2,7 @@ import "server-only";
 import { METEORA_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/meteora/constants";
 import { getRwaConfig } from "@/lib/config/rwa-env";
 import { getRwaStore } from "@/lib/rwa-store";
-import { FEED_KEY_METEORA } from "@/lib/rwa-store-types";
+import { FEED_KEY, FEED_KEY_METEORA } from "@/lib/rwa-store-types";
 
 /**
  * Which Meteora DLMM pools SoFinance opens in (DESIGN.md §3 PR4: the allowlist is derived from the RWA feed, then the
@@ -36,7 +36,10 @@ let feedCache: { at: number; pools: Map<string, ListedMeteoraPool> } | undefined
 
 async function feedPools(now: number): Promise<Map<string, ListedMeteoraPool>> {
   if (feedCache && now - feedCache.at < FEED_TTL_MS) return feedCache.pools;
-  const rows = await getRwaStore().request({ op: "activePools", feedKeys: [FEED_KEY_METEORA] });
+  // The store contract (`storeRequestSchema`) only accepts feed keys with the Raydium feed first; a Meteora-only list
+  // is refused by the real store (prod 2026-11-03: every Meteora open failed with RWA_STORE_UNAVAILABLE). Raydium rows
+  // are dropped below by protocol.
+  const rows = await getRwaStore().request({ op: "activePools", feedKeys: [FEED_KEY, FEED_KEY_METEORA] });
   const pools = new Map<string, ListedMeteoraPool>();
   for (const { pair } of rows) {
     if (pair.protocol !== "meteora-dlmm" || pair.blocked) continue;

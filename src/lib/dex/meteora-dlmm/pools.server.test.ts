@@ -3,8 +3,14 @@ import { METEORA_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/meteora/c
 
 vi.mock("server-only", () => ({}));
 const store = vi.hoisted(() => ({ request: vi.fn() }));
-vi.mock("@/lib/rwa-store", () => ({ getRwaStore: () => store }));
+// The store the route really gets validates every request with `storeRequestSchema` before it runs (PostgresRwaStore and
+// the gateway service both do). The mock enforces the same contract, so a request only prod would refuse fails here too.
+vi.mock("@/lib/rwa-store", async () => {
+  const { storeRequestSchema } = await import("@/lib/rwa-store-types");
+  return { getRwaStore: () => ({ request: (raw: unknown) => { storeRequestSchema.parse(raw); return store.request(raw); } }) };
+});
 
+import { FEED_KEY, FEED_KEY_METEORA, storeRequestSchema } from "@/lib/rwa-store-types";
 import { clearMeteoraPoolListCache, listedMeteoraPool } from "./pools.server";
 
 const FEED_POOL = "8k2c9Kiavx5pbWc2dmzhL7vFp11sLgMcKFfSueq8haAh";
@@ -39,6 +45,14 @@ describe("listedMeteoraPool", () => {
     expect(await listedMeteoraPool(BLOCKED_POOL)).toBeNull();
     expect(await listedMeteoraPool("RaydiumPool")).toBeNull();
     expect(store.request).toHaveBeenCalledTimes(1);
-    expect(store.request).toHaveBeenCalledWith({ op: "activePools", feedKeys: ["meteora-dlmm-rwa-v1"] });
+    expect(store.request).toHaveBeenCalledWith({ op: "activePools", feedKeys: [FEED_KEY, FEED_KEY_METEORA] });
+  });
+
+  it("reads the feed with a request the real store contract accepts (Raydium feed first), so a listed pool opens on prod", async () => {
+    vi.stubEnv("SOFINANCE_RWA_DB_ENABLED", "true");
+    expect(await listedMeteoraPool(FEED_POOL)).toMatchObject({ poolId: FEED_POOL, source: "rwa-feed" });
+    expect(store.request).toHaveBeenCalledWith({ op: "activePools", feedKeys: [FEED_KEY, FEED_KEY_METEORA] });
+    // The prod regression: a Meteora-only feed list is refused by the contract (wrapped as RWA_STORE_UNAVAILABLE on prod).
+    expect(storeRequestSchema.safeParse({ op: "activePools", feedKeys: [FEED_KEY_METEORA] }).success).toBe(false);
   });
 });
