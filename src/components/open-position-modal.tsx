@@ -3,7 +3,7 @@ import "@/lib/engine-host";
 
 import Link from "next/link";
 
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { formatSolCost } from "@/lib/sol-cost";
 import { useSolUsdcPrice } from "./use-sol-usdc-price";
 import { formatAmount } from "@sofinance/engine/amount";
@@ -131,6 +131,13 @@ export function OpenPositionModal({
 
   // While signing or sending, a stray backdrop tap must not hide the result.
   const requestClose = () => { if (!c.closeLocked) onClose(); };
+  // Escape closes it like the other dialogs, under the same lock as the close button.
+  const closeLocked = c.closeLocked;
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape" && !event.defaultPrevented && !closeLocked) onClose(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [closeLocked, onClose]);
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center" role="dialog" aria-modal="true" aria-labelledby="open-position-title">
       <button className="absolute inset-0 bg-black/70" aria-label="Close create position" onClick={requestClose} disabled={c.closeLocked} />
