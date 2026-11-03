@@ -210,7 +210,7 @@ export function PositionPerformancePanel({
             <label className="block text-xs text-smoke">
               Position mint
               <input
-                className="mt-1 w-full rounded-2xl border border-white/20 bg-white/[0.06] px-3 py-2 text-sm text-cream focus:border-white/40 focus:outline-none"
+                className="mt-1 w-full rounded-2xl border border-white/20 bg-white/[0.06] px-3 py-2 text-base sm:text-sm text-cream focus:border-white/40 focus:outline-none"
                 value={positionMint}
                 onChange={(event) => changePositionMint(event.target.value)}
                 placeholder="Position NFT mint (base58)"
@@ -242,7 +242,7 @@ export function PositionPerformancePanel({
               </div>
               <input
                 id="perf-wallet"
-                className="mt-1 w-full rounded-2xl border border-white/20 bg-white/[0.06] px-3 py-2 text-sm text-cream focus:border-white/40 focus:outline-none"
+                className="mt-1 w-full rounded-2xl border border-white/20 bg-white/[0.06] px-3 py-2 text-base sm:text-sm text-cream focus:border-white/40 focus:outline-none"
                 value={wallet}
                 onChange={(event) => setManualWallet(event.target.value)}
                 placeholder="Defaults to the connected wallet"

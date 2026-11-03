@@ -25,22 +25,25 @@ export function PositionAssetRow({ symbol, icon, decimals, liquidityRaw, unclaim
   unclaimedFeesRaw?: string | null;
   priceUsd: number | null;
 }) {
-  // One grid for both lines: label | amount + symbol | USD. The columns are shared by both lines (and have the same
-  // template for every token), so the amounts and the USD values line up in one column each, at 375 px too; nothing
-  // wraps a value onto its own line, and each cell shows exactly one value (or one dash).
+  // One grid for both lines. The layout follows the row's own width (a container query), not the screen, because the
+  // same row sits in a full-width phone card and in the narrow My positions column on desktop:
+  // - narrow (below 28rem): each label on its own line, then amount + symbol (left) and USD (right) on the next one, so
+  //   the amount gets most of the width and never wraps a character at a time;
+  // - wide: label | amount + symbol | USD, the columns shared by both lines so amounts and USD values line up.
+  // Each cell shows exactly one value (or one dash).
   return (
-    <div className="flex items-center gap-3 py-4 first:pt-0 last:pb-0">
+    <div className="@container flex items-center gap-3 py-4 first:pt-0 last:pb-0">
       <TokenIcon symbol={symbol} icon={icon} />
-      <dl className="grid min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)_4.75rem] items-baseline gap-x-2 gap-y-1 sm:grid-cols-[auto_minmax(0,1fr)_6rem] sm:gap-x-3">
-        <dt className="text-[11px] text-smoke">Liquidity</dt>
-        <dd className="min-w-0 break-words text-right">
-          <span className="font-display text-sm font-semibold tabular-nums text-cream sm:text-base">{formatAmountDisplay(liquidityRaw, decimals)}</span>{" "}
+      <dl className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-3 gap-y-0.5 @md:grid-cols-[auto_minmax(0,1fr)_6rem] @md:gap-y-1">
+        <dt className="col-span-2 text-[11px] text-smoke @md:col-span-1">Liquidity</dt>
+        <dd className="min-w-0 break-words @md:text-right">
+          <span className="font-display text-base font-semibold tabular-nums text-cream">{formatAmountDisplay(liquidityRaw, decimals)}</span>{" "}
           <span className="font-display text-sm font-medium text-smoke">{symbol}</span>
         </dd>
-        <dd className="text-right font-display text-sm font-semibold tabular-nums text-cream sm:text-base" aria-label={`${symbol} liquidity value in USD`}>{usd(liquidityRaw, decimals, priceUsd)}</dd>
-        <dt className="text-[11px] text-smoke">Unclaimed fees</dt>
-        <dd className="min-w-0 break-words text-right text-[11px] tabular-nums text-smoke">{formatAmountDisplay(unclaimedFeesRaw, decimals)} {symbol}</dd>
-        <dd className="text-right text-[11px] tabular-nums text-smoke" aria-label={`${symbol} unclaimed fees value in USD`}>{usd(unclaimedFeesRaw, decimals, priceUsd)}</dd>
+        <dd className="whitespace-nowrap text-right font-display text-sm font-semibold tabular-nums text-cream @md:text-base" aria-label={`${symbol} liquidity value in USD`}>{usd(liquidityRaw, decimals, priceUsd)}</dd>
+        <dt className="col-span-2 mt-2 text-[11px] text-smoke @md:col-span-1 @md:mt-0">Unclaimed fees</dt>
+        <dd className="min-w-0 break-words text-[11px] tabular-nums text-smoke @md:text-right">{formatAmountDisplay(unclaimedFeesRaw, decimals)} {symbol}</dd>
+        <dd className="whitespace-nowrap text-right text-[11px] tabular-nums text-smoke" aria-label={`${symbol} unclaimed fees value in USD`}>{usd(unclaimedFeesRaw, decimals, priceUsd)}</dd>
       </dl>
     </div>
   );

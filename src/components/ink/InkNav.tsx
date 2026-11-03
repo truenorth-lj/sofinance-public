@@ -1,9 +1,10 @@
 "use client";
 
+import { useId, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { BrandMark } from "@/components/brand-mark";
-import { Wallet } from "lucide-react";
+import { Menu, Wallet, X as CloseIcon } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { APP_ROUTES, BLOG_ROUTES, DOCS_ROUTES } from "@/lib/public-urls";
 import { EXTERNAL_LINK_PROPS, SOCIAL_LINKS } from "@/lib/social-links";
@@ -42,10 +43,13 @@ export function InkNav({ wallet, connected, onConnect, onDisconnect }: InkNavPro
   const solanaConnected = Boolean(connected && wallet);
   const evmBusy = evm?.status === "connecting" || evm?.status === "restoring";
   const evmOnRhc = evm?.chainId === RHC_CHAIN_ID;
+  // Below sm the page links fold into a Menu button (six pills took three rows of a phone screen, PM 11/4).
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuId = useId();
 
   return (
-    // Below sm: brand + X on the first row, the two wallet buttons on the second, links below. sm–lg: brand, X and
-    // wallets share the first row. lg: one row.
+    // Below sm: brand, X and Menu on the first row, the two wallet buttons on the second; the links open under them from
+    // Menu. sm–lg: brand, X and wallets share the first row, links below. lg: one row.
     <header className="flex flex-wrap items-center justify-between gap-2">
       <Link
         href={APP_ROUTES.home}
@@ -57,7 +61,9 @@ export function InkNav({ wallet, connected, onConnect, onDisconnect }: InkNavPro
         SoFinance
       </Link>
 
-      <nav aria-label="App" className="order-5 flex w-full flex-wrap gap-2 lg:order-2 lg:w-auto lg:flex-1">
+      <nav aria-label="App" id={menuId}
+        onKeyDown={(event) => { if (event.key === "Escape") setMenuOpen(false); }}
+        className={cn("order-5 w-full gap-2 sm:flex sm:flex-wrap lg:order-2 lg:w-auto lg:flex-1", menuOpen ? "grid grid-cols-2" : "hidden")}>
         {NAV_LINKS.map((link) => {
           const isPrefixNav =
             link.href === DOCS_ROUTES.home || link.href === BLOG_ROUTES.home;
@@ -69,6 +75,7 @@ export function InkNav({ wallet, connected, onConnect, onDisconnect }: InkNavPro
               key={link.href}
               href={link.href}
               aria-current={isActive ? "page" : undefined}
+              onClick={() => setMenuOpen(false)}
               className={cn(
                 pill,
                 "min-w-fit flex-1",
@@ -90,11 +97,23 @@ export function InkNav({ wallet, connected, onConnect, onDisconnect }: InkNavPro
         title={SOCIAL_LINKS.x.ariaLabel}
         className={cn(
           pill,
-          "order-2 w-10 shrink-0 border-white/25 px-0 text-cream/85 hover:border-white/70 focus-visible:border-lemon sm:ml-auto lg:order-3 lg:ml-0",
+          "order-2 ml-auto w-10 shrink-0 border-white/25 px-0 text-cream/85 hover:border-white/70 focus-visible:border-lemon lg:order-3 lg:ml-0",
         )}
       >
         <XIcon className="h-3.5 w-3.5" />
       </a>
+
+      <button
+        type="button"
+        aria-expanded={menuOpen}
+        aria-controls={menuId}
+        onClick={() => setMenuOpen((open) => !open)}
+        data-testid="nav-menu"
+        className={cn(pill, "order-2 shrink-0 gap-1.5 px-3.5 sm:hidden", menuOpen ? "border-cream bg-cream text-ink" : "border-white/25 text-cream/85 focus-visible:border-lemon")}
+      >
+        {menuOpen ? <CloseIcon className="h-4 w-4" aria-hidden="true" /> : <Menu className="h-4 w-4" aria-hidden="true" />}
+        Menu
+      </button>
 
       {showSolana && (
         <div className="order-3 grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto lg:order-4" data-testid="nav-wallets">

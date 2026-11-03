@@ -112,7 +112,7 @@ export function RhcUniv4PositionsPanel({ wallet, signingEnabled, refreshKey = 0,
     <p className="text-xs text-smoke">Uniswap v4 positions this wallet holds on Robinhood Chain show up here automatically. Missing one? Add its position NFT number.</p>
     <div className="mt-2 flex flex-wrap gap-2">
       <input inputMode="numeric" value={addId} onChange={e => setAddId(e.target.value)} placeholder="Position NFT #" aria-label="Position NFT number"
-        className="w-40 rounded-lg bg-black/30 p-2 text-sm text-cream" />
+        className="w-40 rounded-lg bg-black/30 p-2 text-base sm:text-sm text-cream" />
       <button type="button" onClick={add} className="rounded-lg border border-white/25 px-3 py-1.5 text-xs font-semibold text-cream">Add</button>
     </div>
     {loading ? <p role="status" className="mt-2 text-xs text-smoke">Loading positions…</p> : null}

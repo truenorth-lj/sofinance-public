@@ -335,18 +335,18 @@ export function MeteoraOpenPanel({ view, signingEnabled }: { view: MeteoraOpenPo
       </p> : null}
       <div className="mt-3 grid gap-2 sm:grid-cols-2">
         <label className="flex flex-col text-xs text-smoke">Pay with
-          <select className="mt-1 rounded bg-black/30 p-2 text-cream" value={inputMint} onChange={(e) => { invalidateForm(); setInputMint(e.target.value); }}>
+          <select className="mt-1 rounded bg-black/30 p-2 text-cream max-sm:text-base" value={inputMint} onChange={(e) => { invalidateForm(); setInputMint(e.target.value); }}>
             <option value={USDC_MINT}>USDC</option><option value={view.mintX}>{view.symbolX}</option><option value={view.mintY}>{view.symbolY}</option>
           </select>
         </label>
         <label className="flex flex-col text-xs text-smoke">Amount
-          <input className="mt-1 rounded bg-black/30 p-2 text-cream" inputMode="decimal" value={amount} onChange={(e) => { invalidateForm(); setAmount(e.target.value); }} />
+          <input className="mt-1 rounded bg-black/30 p-2 text-cream max-sm:text-base" inputMode="decimal" value={amount} onChange={(e) => { invalidateForm(); setAmount(e.target.value); }} />
         </label>
         <label className="flex flex-col text-xs text-smoke">Bins below active
-          <input className="mt-1 rounded bg-black/30 p-2 text-cream" type="number" min={0} value={below} onChange={(e) => { invalidateForm(); setBelow(Number(e.target.value)); }} />
+          <input className="mt-1 rounded bg-black/30 p-2 text-cream max-sm:text-base" type="number" min={0} value={below} onChange={(e) => { invalidateForm(); setBelow(Number(e.target.value)); }} />
         </label>
         <label className="flex flex-col text-xs text-smoke">Bins above active
-          <input className="mt-1 rounded bg-black/30 p-2 text-cream" type="number" min={0} value={above} onChange={(e) => { invalidateForm(); setAbove(Number(e.target.value)); }} />
+          <input className="mt-1 rounded bg-black/30 p-2 text-cream max-sm:text-base" type="number" min={0} value={above} onChange={(e) => { invalidateForm(); setAbove(Number(e.target.value)); }} />
         </label>
       </div>
       <p className="mt-2 text-xs text-smoke">Range: bins {range.lowerBinId} to {range.upperBinId}. SOL cannot be used as input yet.</p>

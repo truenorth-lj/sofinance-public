@@ -27,7 +27,7 @@ export function PoolSelect({
         value={poolId ?? ""}
         disabled={loading && options.length === 0 && !poolId}
         onChange={(event) => onChange(event.target.value)}
-        className="normal-case min-w-0 max-w-[22rem] truncate rounded-full border border-ink/20 bg-transparent px-2.5 py-1 font-data text-[10px] tracking-[0.08em] text-ink outline-none focus-visible:border-ink"
+        className="normal-case min-w-0 max-w-[22rem] truncate rounded-full border border-ink/20 bg-transparent px-2.5 py-1 font-data text-base sm:text-[10px] tracking-[0.08em] text-ink outline-none focus-visible:border-ink"
       >
         {!poolId ? <option value="">Choose a pool</option> : null}
         {poolId && !known ? <option value={poolId}>{currentLabel}</option> : null}

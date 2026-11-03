@@ -443,15 +443,15 @@ export function RhcUniv4OpenPanel({ pool, signingEnabled, receiptPoll, initialWa
     {pool.status !== "listed" ? <p role="alert" className="mt-3 text-sm text-red-200">This pool is delisted; opening is disabled.</p> : null}
     <div className="mt-4 grid gap-3 sm:grid-cols-3">
       <label className="text-xs text-smoke">Deposit token
-        <select value={side} onChange={e => { setSide(Number(e.target.value) as 0 | 1); reset(); }} className="mt-1 block w-full rounded-lg bg-black/30 p-2 text-sm text-cream">
+        <select value={side} onChange={e => { setSide(Number(e.target.value) as 0 | 1); reset(); }} className="mt-1 block w-full rounded-lg bg-black/30 p-2 text-base sm:text-sm text-cream">
           <option value={0}>{pool.token0.symbol}</option><option value={1}>{pool.token1.symbol}</option>
         </select>
       </label>
       <label className="text-xs text-smoke">Amount
-        <input inputMode="decimal" value={amount} onChange={e => { setAmount(e.target.value); reset(); }} className="mt-1 block w-full rounded-lg bg-black/30 p-2 text-sm text-cream" />
+        <input inputMode="decimal" value={amount} onChange={e => { setAmount(e.target.value); reset(); }} className="mt-1 block w-full rounded-lg bg-black/30 p-2 text-base sm:text-sm text-cream" />
       </label>
       <label className="text-xs text-smoke">Range (minimum ±10 ticks)
-        <select value={halfWidth} onChange={e => { setHalfWidth(Number(e.target.value)); reset(); }} className="mt-1 block w-full rounded-lg bg-black/30 p-2 text-sm text-cream">
+        <select value={halfWidth} onChange={e => { setHalfWidth(Number(e.target.value)); reset(); }} className="mt-1 block w-full rounded-lg bg-black/30 p-2 text-base sm:text-sm text-cream">
           {RANGE_PRESETS.map(h => <option key={h} value={h}>±{h} ticks (≈±{((1.0001 ** h - 1) * 100).toFixed(2)}%)</option>)}
         </select>
       </label>
