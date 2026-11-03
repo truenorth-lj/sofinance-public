@@ -29,8 +29,11 @@ export function suggestedMinimum(raw: bigint, decimals: number): string {
  * The line to show (and a reason to disable Open / Add) when the quoted amount would round to 0 in some step of the
  * range; null when the amount is fine, the check is for another token, or the adapter has no minimum rule.
  */
+export const DEPOSIT_MINIMUM_UNAVAILABLE = "We couldn't check whether this amount is enough for every price step right now. Try again in a moment.";
+
 export function depositTooSmallMessage(minimum: DepositMinimum | null | undefined, token: { id: string; decimals: number; symbol: string | null } | null | undefined): string | null {
   if (!minimum?.tooSmall || !token || minimum.token !== token.id) return null;
+  if (minimum.unavailable) return DEPOSIT_MINIMUM_UNAVAILABLE;
   const raw = minimum.minimumRaw && /^\d+$/.test(minimum.minimumRaw) ? BigInt(minimum.minimumRaw) : null;
   return raw && raw > 0n
     ? `${DEPOSIT_TOO_SMALL_PREFIX} Try at least about ${suggestedMinimum(raw, token.decimals)}${token.symbol ? ` ${token.symbol}` : ""}.`

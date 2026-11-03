@@ -7,7 +7,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SelectedApp } from "../selected-app";
 import { testKeypair } from "@/lib/test-support/send-fixtures";
-import { dexDescriptors } from "@/lib/dex/client";
+import { DEPOSIT_MINIMUM_UNAVAILABLE, dexDescriptors } from "@/lib/dex/client";
 import { getTxNotices, resetTxNotices } from "@/lib/tx-pipeline";
 import { RegistryPositionTool } from "./registry-tools";
 import { resetPositionOpLocks } from "./position-op-lock";
@@ -305,7 +305,7 @@ describe("/app My positions with registry DEXes", () => {
     expect((state.dexCalls as [string, unknown][]).filter(([path]) => path.endsWith("/add"))).toEqual([]);
   });
 
-  it("Add: a failed quote-add check does not block (the build's simulation is the backstop)", async () => {
+  it("Add: a failed quote-add check is not skipped: Add stays disabled with a plain try-again line", async () => {
     state.quoteAdd = { status: 503, body: { error: "Jupiter is busy" } };
     await render();
     await act(async () => tab("Add to position").click());
@@ -314,8 +314,24 @@ describe("/app My positions with registry DEXes", () => {
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
     await act(async () => { setter.call(input, "1"); input.dispatchEvent(new Event("input", { bubbles: true })); });
     await afterAddCheck();
-    expect([...panel.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent === "Add liquidity")!.disabled).toBe(false);
-    expect(panel.querySelector("[data-testid=registry-add-too-small]")).toBeNull();
+    const add = [...panel.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent === "Add liquidity")!;
+    expect(add.disabled).toBe(true);
+    expect(panel.querySelector("[data-testid=registry-add-too-small]")?.textContent).toBe(DEPOSIT_MINIMUM_UNAVAILABLE);
+    await act(async () => add.click());
+    expect((state.dexCalls as [string, unknown][]).filter(([path]) => path.endsWith("/add"))).toEqual([]);
+  });
+
+  it("Add: the server could not price the input (unavailable) keeps Add disabled", async () => {
+    state.quoteAdd = { status: 200, body: { depositMinimum: { token: MINT_A, tooSmall: true, minimumRaw: null, quoteChecked: false, unavailable: true } } };
+    await render();
+    await act(async () => tab("Add to position").click());
+    const panel = container.querySelector("[data-testid=registry-add]")!;
+    const input = panel.querySelector<HTMLInputElement>("input#registry-add-amount")!;
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    await act(async () => { setter.call(input, "1"); input.dispatchEvent(new Event("input", { bubbles: true })); });
+    await afterAddCheck();
+    expect([...panel.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent === "Add liquidity")!.disabled).toBe(true);
+    expect(panel.querySelector("[data-testid=registry-add-too-small]")?.textContent).toBe(DEPOSIT_MINIMUM_UNAVAILABLE);
   });
 
   it("the header uses the stored token icons (same source as the pairs list) instead of the first-letter placeholder", async () => {

@@ -14,7 +14,7 @@ import { assertOpenTransactionSize, compileCompactOpenTransaction } from "@sofin
 import { ATOMIC_COMPUTE_UNIT_LIMIT, measuredComputeUnitLimit } from "@sofinance/engine/transaction-limits";
 import { assertMeteoraFeeRule } from "@/lib/meteora-open";
 import type { AddQuote, DexDepositInput, WithdrawRequest } from "../adapter";
-import { meteoraDepositMinimum, type MeteoraLegQuote } from "./minimum.server";
+import { meteoraDepositMinimum, type MeteoraLegQuote, type MeteoraUsdPrices } from "./minimum.server";
 import { DexError, DexUnsupportedError } from "../errors";
 import {
   accountData, compileDeposit, compileV0, cuLimit, depositIntermediateRentAllowance, encode, missingPoolTokenAccounts, planMeteoraOpen, publicKey,
@@ -243,10 +243,9 @@ async function planMeteoraAdd(deps: MeteoraOpenDeps, position: string, owner: st
 }
 
 /** Quote-time check of an Add: whether the amount reaches every bin of the position's range (see `meteoraDepositMinimum`). */
-export async function quoteMeteoraAdd(deps: MeteoraOpenDeps, position: string, owner: string, input: DexDepositInput, quoteLeg?: MeteoraLegQuote): Promise<AddQuote> {
+export async function quoteMeteoraAdd(deps: MeteoraOpenDeps, position: string, owner: string, input: DexDepositInput, quoteLeg?: MeteoraLegQuote, usdPrices?: MeteoraUsdPrices): Promise<AddQuote> {
   const { plan } = await planMeteoraAdd(deps, position, owner, input);
-  const depositMinimum = await meteoraDepositMinimum(plan, owner, quoteLeg);
-  return depositMinimum ? { depositMinimum } : {};
+  return { depositMinimum: await meteoraDepositMinimum(plan, owner, quoteLeg, usdPrices) };
 }
 
 export async function buildMeteoraAdd(deps: MeteoraOpenDeps, position: string, owner: string, input: DexDepositInput): Promise<BuiltStep> {

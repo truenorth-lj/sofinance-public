@@ -3,7 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NATIVE_SOL_MINT, USDC_MINT } from "@sofinance/engine/ids";
-import { dexDescriptors, SOL_NEED_UNKNOWN_COPY, OPEN_RANGES_UNAVAILABLE } from "@/lib/dex/client";
+import { dexDescriptors, SOL_NEED_UNKNOWN_COPY, OPEN_RANGES_UNAVAILABLE, DEPOSIT_MINIMUM_UNAVAILABLE } from "@/lib/dex/client";
 import type { OpenRanges } from "@/lib/dex/client";
 import type { PoolRangeAprPayload } from "@/lib/range-apr/types";
 import type { UnifiedPool } from "@/lib/unified-pools/model";
@@ -177,6 +177,16 @@ describe("RegistryOpenModal", () => {
     await type("0.06");
     expect(container.querySelector("[data-testid=registry-open-too-small]")).toBeNull();
     expect(openButton().disabled).toBe(false);
+  });
+
+  it("the minimum could not be checked (unavailable): Open stays disabled with a plain try-again line", async () => {
+    quoteBody = { ...quoteBody, depositMinimum: { token: USDC_MINT, tooSmall: true, minimumRaw: null, quoteChecked: false, unavailable: true } };
+    await render();
+    const select = container.querySelector<HTMLSelectElement>("#registry-open-token")!;
+    await act(async () => { select.value = USDC_MINT; select.dispatchEvent(new Event("change", { bubbles: true })); });
+    await type("1");
+    expect(container.querySelector("[data-testid=registry-open-too-small]")!.textContent).toBe(DEPOSIT_MINIMUM_UNAVAILABLE);
+    expect(openButton().disabled).toBe(true);
   });
 
   it("a refused quote shows the server's plain reason", async () => {

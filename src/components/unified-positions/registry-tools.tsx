@@ -11,7 +11,7 @@
 import { CircleAlert, LoaderCircle } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { formatAmount, parseTokenAmount } from "@sofinance/engine/amount";
-import { depositTooSmallMessage, dexTxAdapter, fetchAddQuote, type AddQuote, type DexCapabilities, type DexPreparedStep, type DexDescriptor, type DexStepInput, type DexStepOp, type FeeRule, type RentQuote } from "@/lib/dex/client";
+import { DEPOSIT_MINIMUM_UNAVAILABLE, depositTooSmallMessage, dexTxAdapter, fetchAddQuote, type AddQuote, type DexCapabilities, type DexPreparedStep, type DexDescriptor, type DexStepInput, type DexStepOp, type FeeRule, type RentQuote } from "@/lib/dex/client";
 import { createJupiterRelayStore } from "@/lib/jupiter/browser-relay";
 import { CANCEL_CHECK_PENDING_COPY, CHECKING_SOLANA_COPY, solscanTxUrl, TX_WAITING_PREVIOUS_EXPIRY_COPY, txInterruptionMessage, type TxInterruption } from "@/lib/tx-pipeline";
 import type { ToolId, TokenRef, UnifiedPosition, WithdrawOutput } from "@/lib/unified-positions/model";
@@ -235,7 +235,7 @@ function useAddCheck(dexId: string, positionKey: string, owner: string | null, i
     return () => { aborter.abort(); window.clearTimeout(timer); };
   }, [key, dexId, paused]);
   const current = check?.key === key ? check : null;
-  return { pending: Boolean(key) && !paused && (!current || (!current.value && !current.failed)), quote: current?.value ?? null };
+  return { pending: Boolean(key) && !paused && (!current || (!current.value && !current.failed)), quote: current?.value ?? null, failed: Boolean(current?.failed) };
 }
 
 function RegistryAddPanel({ position, descriptor, balances, symbolOf, onConfirmed }: RegistryToolProps) {
@@ -266,7 +266,9 @@ function RegistryAddPanel({ position, descriptor, balances, symbolOf, onConfirme
   const pair = `${symbolOf(position.tokenA)} and ${symbolOf(position.tokenB)}`;
   const input = token && raw !== null ? { token: token.id, amountRaw: raw.toString() } : null;
   const check = useAddCheck(descriptor.id, position.key, connected ? owner || null : null, input, locked);
-  const tooSmall = token ? depositTooSmallMessage(check.quote?.depositMinimum, { id: token.id, decimals: token.decimals, symbol: symbolOf(token) }) : null;
+  // A failed check is never skipped: Add stays disabled with a plain "try again" (Open already needs its quote).
+  const tooSmall = !token ? null : check.failed ? DEPOSIT_MINIMUM_UNAVAILABLE
+    : depositTooSmallMessage(check.quote?.depositMinimum, { id: token.id, decimals: token.decimals, symbol: symbolOf(token) });
   const submit = () => {
     if (!token || raw === null || tooSmall || check.pending) return;
     void send({ descriptor, positionKey: position.key, input: { token: token.id, amountRaw: raw.toString() } });

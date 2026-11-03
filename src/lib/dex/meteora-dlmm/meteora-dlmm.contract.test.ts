@@ -115,6 +115,8 @@ describeDexContract(meteoraDlmmModule, {
   mintPrograms: { [TSLA]: "token-2022", [TSLAX]: "token-2022", [USDC_MINT]: "spl-token" },
 });
 
+/** Rule minimum for USDC into the fixture range: X rate = 1/400.1057 × 0.974 TSLA raw per USDC raw → 29 bins need 11,913 raw on X → ceil(11,913·120/57) + 1. */
+const MIN_USDC_RULE = 25_081;
 describe("Meteora DLMM adapter specifics", () => {
   let teardown: () => void;
   beforeEach(() => {
@@ -332,35 +334,65 @@ describe("Meteora DLMM adapter specifics", () => {
     /** 1:1 legs (fee-free) so the per-bin math is easy to follow; records every leg priced. */
     const legs: { outputMint: string; spend: bigint }[] = [];
     const oneToOne = async ({ outputMint, spend }: { outputMint: string; spend: bigint }) => { legs.push({ outputMint, spend }); return spend; };
-    beforeEach(() => { legs.length = 0; installHeldPositions(); });
+    const failing = async (): Promise<bigint> => { throw new Error("Jupiter is busy"); };
+    /** Fixture USD prices (datapi read of 8k2c, 2026-11-01): what the rule uses for a USDC input. */
+    const prices = async () => new Map([[TSLA, 400.10567118198486], [TSLAX, 399.6496888563945]]);
+    const noPrices = async () => new Map<string, number>();
+    const usdc = (amountRaw: string) => ({ ...request, input: { token: USDC_MINT, amountRaw } });
+    let warn: ReturnType<typeof vi.spyOn>;
+    beforeEach(() => { legs.length = 0; installHeldPositions(); warn = vi.spyOn(console, "warn").mockImplementation(() => {}); });
+    afterEach(() => warn.mockRestore());
 
-    it("an open whose split rounds to 0 per bin (40 raw over 29 X / 31 Y bins) is too small, with the minimum (63 raw)", async () => {
-      const quote = await createMeteoraDlmmAdapter({ quoteLeg: oneToOne }).quoteOpen({ ...request, input: { token: TSLA, amountRaw: "40" } });
-      // X (TSLA, kept) gets 40·57/120 = 19 < 29 bins. Minimum: X needs 29 → ceil(29·120/57) + 1 = 63; Y needs 31 → 61.
-      expect(quote.depositMinimum).toEqual({ token: TSLA, tooSmall: true, minimumRaw: "63" });
-      // Only the swapped side (TSLAx) is priced; a kept side's output is its own spend.
+    it("an open whose split rounds to 0 per bin (40 raw over 29 X / 31 Y bins) is too small, with the rule's minimum (63 raw)", async () => {
+      const quote = await createMeteoraDlmmAdapter({ quoteLeg: oneToOne, usdPrices: prices }).quoteOpen({ ...request, input: { token: TSLA, amountRaw: "40" } });
+      // Rule: X (TSLA, kept 1:1) needs 29 → ceil(29·120/57) + 1 = 63; Y (TSLAx at the active bin price) needs far less.
+      expect(quote.depositMinimum).toEqual({ token: TSLA, tooSmall: true, minimumRaw: "63", quoteChecked: true });
       expect(legs.every((leg) => leg.outputMint === TSLAX)).toBe(true);
     });
 
-    it("a normal open is not too small", async () => {
-      const quote = await createMeteoraDlmmAdapter({ quoteLeg: oneToOne }).quoteOpen(request);
-      expect(quote.depositMinimum).toEqual({ token: TSLA, tooSmall: false, minimumRaw: null });
+    it("a normal open is not too small, and still carries the minimum", async () => {
+      const quote = await createMeteoraDlmmAdapter({ quoteLeg: oneToOne, usdPrices: prices }).quoteOpen(request);
+      expect(quote.depositMinimum).toEqual({ token: TSLA, tooSmall: false, minimumRaw: "63", quoteChecked: true });
     });
 
     it("quote-add runs the same check on the owner's position, and refuses a stranger", async () => {
-      const adapter = createMeteoraDlmmAdapter({ quoteLeg: oneToOne });
+      const adapter = createMeteoraDlmmAdapter({ quoteLeg: oneToOne, usdPrices: prices });
       const key = `meteora-dlmm:${FEED_POSITION}` as const;
-      expect(await adapter.quoteAdd!(key, OWNER, { token: TSLA, amountRaw: "40" })).toEqual({ depositMinimum: { token: TSLA, tooSmall: true, minimumRaw: "63" } });
-      expect(await adapter.quoteAdd!(key, OWNER, { token: TSLA, amountRaw: DEPOSIT_RAW })).toEqual({ depositMinimum: { token: TSLA, tooSmall: false, minimumRaw: null } });
+      expect(await adapter.quoteAdd!(key, OWNER, { token: TSLA, amountRaw: "40" })).toEqual({ depositMinimum: { token: TSLA, tooSmall: true, minimumRaw: "63", quoteChecked: true } });
+      expect(await adapter.quoteAdd!(key, OWNER, { token: TSLA, amountRaw: DEPOSIT_RAW })).toEqual({ depositMinimum: { token: TSLA, tooSmall: false, minimumRaw: "63", quoteChecked: true } });
       await expect(adapter.quoteAdd!(key, STRANGER, { token: TSLA, amountRaw: "40" })).rejects.toMatchObject({ code: "POSITION_NOT_FOUND" });
       expect(chain.current.simulations).toEqual([]);
     });
 
-    it("is best effort: a leg quote that fails leaves the quote without the check (the build's simulation still refuses)", async () => {
-      const failing = async () => { throw new Error("Jupiter is busy"); };
-      const quote = await createMeteoraDlmmAdapter({ quoteLeg: failing }).quoteOpen({ ...request, input: { token: TSLA, amountRaw: "40" } });
-      expect(quote.depositMinimum).toBeUndefined();
-      expect(quote.range.units).toBe(60);
+    it("a failed leg quote is not skipped: the on-chain rule still decides, and the failure is reported", async () => {
+      const adapter = createMeteoraDlmmAdapter({ quoteLeg: failing, usdPrices: prices });
+      const small = await adapter.quoteOpen({ ...request, input: { token: TSLA, amountRaw: "40" } });
+      expect(small.depositMinimum).toEqual({ token: TSLA, tooSmall: true, minimumRaw: "63", quoteChecked: false });
+      expect((await adapter.quoteOpen(request)).depositMinimum).toEqual({ token: TSLA, tooSmall: false, minimumRaw: "63", quoteChecked: false });
+      expect(warn).toHaveBeenCalledWith(expect.stringMatching(/deposit-minimum leg quote failed .*Jupiter is busy/));
+      expect(small.range.units).toBe(60);
+    });
+
+    it("USDC in: the minimum comes from one USD price and the active bin, with no quote (prod's 0.000001 USDC case)", async () => {
+      const adapter = createMeteoraDlmmAdapter({ quoteLeg: failing, usdPrices: prices });
+      const tiny = (await adapter.quoteOpen(usdc("1"))).depositMinimum!;
+      expect(tiny).toMatchObject({ token: USDC_MINT, tooSmall: true, quoteChecked: false });
+      // X: 29 bins ÷ (1/400.11 TSLA per USDC × (1 − fee 10 − slippage 50 − margin 200 bps)) → ~0.0251 USDC.
+      expect(Number(tiny.minimumRaw)).toBe(MIN_USDC_RULE);
+      expect((await adapter.quoteOpen(usdc(String(MIN_USDC_RULE)))).depositMinimum).toMatchObject({ tooSmall: false, minimumRaw: String(MIN_USDC_RULE) });
+      expect((await adapter.quoteOpen(usdc(String(MIN_USDC_RULE - 1)))).depositMinimum).toMatchObject({ tooSmall: true });
+    });
+
+    it("the quote supplement can only raise the bar: a route that rounds a side to 0 is too small even above the rule", async () => {
+      const zeroX = async ({ outputMint, spend }: { outputMint: string; spend: bigint }) => (outputMint === TSLA ? 0n : spend);
+      const quote = await createMeteoraDlmmAdapter({ quoteLeg: zeroX, usdPrices: prices }).quoteOpen(usdc(String(MIN_USDC_RULE)));
+      expect(quote.depositMinimum).toMatchObject({ tooSmall: true, quoteChecked: true });
+      expect(BigInt(quote.depositMinimum!.minimumRaw!)).toBeGreaterThan(BigInt(MIN_USDC_RULE));
+    });
+
+    it("no price and no quote: unavailable, which keeps Open disabled (never a silent pass)", async () => {
+      const quote = await createMeteoraDlmmAdapter({ quoteLeg: failing, usdPrices: noPrices }).quoteOpen(usdc("1000000"));
+      expect(quote.depositMinimum).toEqual({ token: USDC_MINT, tooSmall: true, minimumRaw: null, quoteChecked: false, unavailable: true });
     });
   });
 
