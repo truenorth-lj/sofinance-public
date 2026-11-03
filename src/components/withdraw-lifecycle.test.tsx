@@ -345,3 +345,12 @@ it("retained position prop change invalidates the old run and loads that positio
  await gate.release(first);expect(calls("sign")).toHaveLength(0);expect(rawGet.call(localStorage,key)).toBe(JSON.stringify(saved));expect(button("Resume withdrawal")!.disabled).toBe(false);
  await click("Resume withdrawal");expect(calls("status")[0]!.value).toEqual({signature:saved.signature,prepared});expect(rawGet.call(localStorage,key)).toBeNull();expect(mocks.confirmed).toHaveBeenCalledOnce();
 });
+it("offers exactly the source's withdrawOutputs as Receive choices (Raydium: all; pool tokens only: no USDC / SOL)",async()=>{
+ const options=()=>Array.from(container.querySelectorAll("select option")).map(o=>o.textContent);
+ await render();
+ expect(options()).toEqual(["USDC","SOL",withdrawPosition,withdrawWallet,"Original tokens"]);
+ await unmount();root=createRoot(container);mounted=true;
+ await render(<WithdrawPanel wallet={withdrawWallet} positionMint={withdrawPosition} mintA={withdrawPosition} mintB={withdrawWallet} label={m=>m} outputs={["pool-tokens"]} onClose={vi.fn()} onConfirmed={mocks.confirmed} onBusyChange={mocks.busy}/>);
+ expect(options()).toEqual([withdrawPosition,withdrawWallet,"Original tokens"]);
+ expect((container.querySelector("select") as HTMLSelectElement).value).toBe("original");
+});

@@ -82,3 +82,13 @@ but pending fees). `expected` holds amounts and uncollected fees computed offlin
 same bytes by `@meteora-ag/dlmm` 1.9.14 `DLMM.processPosition` (not a dependency). Public
 program state only (owner addresses are the positions' public on-chain owners); no RPC URL,
 key or credential is recorded.
+
+`meteora-dlmm-rwa-t22.json` is a read-only capture (mainnet, slot 464,010,023,
+2026-11-01 15:35 UTC+8) of the Meteora DLMM RWA pools 8k2c… (TSLA/TSLAx) and
+5pw5… (SPCX/SPCXx): both LbPair accounts, their four Token-2022 mints (raw,
+with extensions), whether each pool's bitmap extension PDA and the bin arrays
+at active index ±2 exist, and the cluster's rent-exempt minimum for 0, 8,120
+(position) and 10,136 (bin array) bytes. Produced by
+`scripts/capture-meteora-rwa-fixture.ts` against the public RPC. Public
+program state only; no wallets, signatures or credentials. The Meteora engine
+tests replay it through a fake RPC that fails on any key not in the capture.

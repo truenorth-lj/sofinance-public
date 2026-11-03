@@ -29,6 +29,13 @@
       "when": 1793341075058,
       "tag": "0003_rwa-multichain",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793537480561,
+      "tag": "0004_meteora-daily-tvl",
+      "breakpoints": true
     }
   ]
 }

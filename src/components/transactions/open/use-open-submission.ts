@@ -188,7 +188,8 @@ export function useOpenSubmissionCommand({ pair, wallet, inputMint, inputKind, a
         solSwapSignature: receipt?.signature, beforeWallet: blockedBeforeWallet,
       }, {
         wallet: txWallet, storage: window.localStorage, isCurrent: current, retry,
-        onStage: (stage) => setSubmitStage(stage === "confirming" ? "broadcasting" : stage),
+        // "expiring" is never emitted here (this adapter has no pre-wallet guard); typed as busy for completeness.
+        onStage: (stage) => setSubmitStage(stage === "confirming" ? "broadcasting" : stage === "expiring" ? "checking" : stage),
         // Show the exact quote the wallet is about to sign, even if the wallet then refuses.
         onPrepared: (prepared) => setQuote(prepared.summary.quote),
       });

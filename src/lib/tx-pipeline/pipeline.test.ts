@@ -1,12 +1,12 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { VersionedTransaction } from "@solana/web3.js";
+import { ComputeBudgetProgram, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
 import { buildTransaction, testKeypair } from "@/lib/test-support/send-fixtures";
 
 const sentry = vi.hoisted(() => ({ capture: vi.fn(), landed: vi.fn() }));
 const history = vi.hoisted(() => ({ notify: vi.fn() }));
-vi.mock("@/lib/sentry/client-tx", () => ({ captureTxClientFailure: sentry.capture, captureTxWalletErrorLanded: sentry.landed }));
+vi.mock("@/lib/sentry/client-tx", () => ({ captureTxClientFailure: sentry.capture, captureTxWalletErrorLanded: sentry.landed, captureTxPreflightEvent: vi.fn() }));
 vi.mock("@/lib/position-history-refresh", () => ({ notifyPositionHistoryChange: history.notify }));
 
 import {
@@ -18,7 +18,7 @@ import {
   LANDED_DEADLINE_MS, LANDED_BACKGROUND_POLL_INTERVAL_MS, LANDED_POLL_INTERVAL_MS, type FindLanded, type TxAdapter, type TxAttempt, type TxWallet,
 } from "./index";
 import { TX_EXPIRED_MESSAGE } from "@/lib/public-error";
-import type { SendRaw } from "./wallet-send";
+import { type SendRaw } from "./wallet-send";
 
 const payer = testKeypair(11);
 const cosigner = testKeypair(12);
@@ -90,7 +90,7 @@ describe("errors", () => {
       expect(text).not.toMatch(/[{}"]|code"?:|ce8e2677/);
     }
     expect(plainTxError(new TxNotLandedError(false, PHANTOM_400()))).toBe(
-      "Your wallet reported a problem (“Request rejected by user”). We checked Solana and it did not go through. Nothing was sent, safe to retry.");
+      "Couldn't send the transaction: your wallet said “Request rejected by user”. We checked Solana and it did not go through. Nothing was sent, safe to retry.");
     expect(txFailureKind(new TxNotLandedError(true, USER_4001()))).toBe("not-sent");
     expect(txFailureKind(new TxLandedUnknownError(PHANTOM_400()))).toBe("unknown");
   });
@@ -165,6 +165,80 @@ describe("wallet send", () => {
     const wallet = { ...signingWallet({ signAndSend: true }), address: testKeypair(99).publicKey.toBase58() };
     await expect(sendWithWallet(wallet, unsigned())).rejects.toThrow("different wallet");
     expect(wallet.signAndSendTransaction).not.toHaveBeenCalled();
+  });
+  describe("presign + cosign (DEX route): the wallet sends when it can, sign-only wallets relay", () => {
+    const presign = () => vi.fn((tx: VersionedTransaction) => { tx.sign([cosigner]); return tx; });
+    const cosign = () => vi.fn((tx: VersionedTransaction) => { tx.sign([cosigner]); return tx; });
+    it("signAndSend wallet: presigns, then the wallet signs and sends; cosign unused, never signTransaction, never relay", async () => {
+      const wallet = signingWallet({ signAndSend: true }); const sendRaw = vi.fn(); const after = cosign();
+      expect(await sendWithWallet(wallet, unsigned(true), { presign: presign(), cosign: after, sendRaw })).toEqual({ signature: SIG, via: "wallet" });
+      const sent = (wallet.signAndSendTransaction as ReturnType<typeof vi.fn>).mock.calls[0]![0] as VersionedTransaction;
+      expect(sent.signatures[1]!.some((byte) => byte !== 0)).toBe(true);
+      expect(sent.signatures[0]!.every((byte) => byte === 0)).toBe(true);
+      expect(after).not.toHaveBeenCalled(); expect(wallet.signTransaction).not.toHaveBeenCalled(); expect(sendRaw).not.toHaveBeenCalled();
+    });
+    it("sign-only wallet: no early refusal; wallet signs first, cosign adds the position key, we relay once", async () => {
+      const wallet = signingWallet(); const before = presign(); const after = cosign();
+      const sendRaw = vi.fn<SendRaw>(async (signed) => bs58.encode(signed.signatures[0]!));
+      const result = await sendWithWallet(wallet, unsigned(true), { presign: before, cosign: after, sendRaw, sendPermit: "permit" });
+      expect(result.via).toBe("relay");
+      expect(before).not.toHaveBeenCalled(); expect(after).toHaveBeenCalledTimes(1);
+      expect(wallet.signTransaction).toHaveBeenCalledTimes(1); expect(sendRaw).toHaveBeenCalledTimes(1);
+      expect(sendRaw.mock.calls[0]![1]).toMatchObject({ sendPermit: "permit" });
+    });
+    it("a connector whose wallet lacks signAndSend falls back to the relay instead of refusing", async () => {
+      const lacking = { ...signingWallet(), signAndSendTransaction: vi.fn(async () => { throw new Error('The wallet does not support the "solana:signAndSendTransaction" feature'); }) };
+      const sendRaw = vi.fn<SendRaw>(async (signed) => bs58.encode(signed.signatures[0]!));
+      expect((await sendWithWallet(lacking, unsigned(true), { presign: presign(), cosign: cosign(), sendRaw })).via).toBe("relay");
+      expect(lacking.signTransaction).toHaveBeenCalledTimes(1); expect(sendRaw).toHaveBeenCalledTimes(1);
+    });
+    it("presign is never used on the relay path: a presign-only step on a sign-only wallet sends nothing (no caller does this; dexTxAdapter pairs it with cosign)", async () => {
+      const wallet = signingWallet(); const before = presign();
+      const sendRaw = vi.fn<SendRaw>(async (signed) => bs58.encode(signed.signatures[0]!));
+      await expect(sendWithWallet(wallet, unsigned(true), { presign: before, sendRaw })).rejects.toThrow("A required signature is missing, so nothing was sent.");
+      expect(before).not.toHaveBeenCalled(); expect(sendRaw).not.toHaveBeenCalled();
+    });
+    it("cosign without presign (Raydium open, old Meteora panel, /sign) still forces sign-then-relay, even with signAndSend", async () => {
+      const wallet = signingWallet({ signAndSend: true }); const after = cosign();
+      const sendRaw = vi.fn<SendRaw>(async (signed) => bs58.encode(signed.signatures[0]!));
+      expect((await sendWithWallet(wallet, unsigned(true), { cosign: after, sendRaw })).via).toBe("relay");
+      expect(wallet.signAndSendTransaction).not.toHaveBeenCalled(); expect(after).toHaveBeenCalledTimes(1);
+    });
+  });
+  describe("a priority fee the wallet adds on the relay path", () => {
+    /** Phantom's rewrite of a transaction with no CU price: its own SetComputeUnitPrice in front (as on the 2026-11-01 Meteora setup). */
+    const pricedBy = (microLamports: number) => {
+      const wallet = signingWallet();
+      wallet.signTransaction = vi.fn(async (tx: VersionedTransaction) => {
+        const message = TransactionMessage.decompile(tx.message);
+        const out = new VersionedTransaction(new TransactionMessage({ payerKey: message.payerKey, recentBlockhash: message.recentBlockhash,
+          instructions: [ComputeBudgetProgram.setComputeUnitPrice({ microLamports }), ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }),
+            ...message.instructions.filter((ix) => !ix.programId.equals(ComputeBudgetProgram.programId))] }).compileToV0Message());
+        out.sign([payer]);
+        return out;
+      });
+      return wallet;
+    };
+    it("relays a wallet-chosen network fee up to the 0.01 SOL ceiling", async () => {
+      const sendRaw = vi.fn(async (tx: VersionedTransaction) => sigOf(tx));
+      // 955,644 µlamports/CU: Phantom's price on the Meteora setup (97,502 lamports there).
+      await expect(sendWithWallet(pricedBy(955_644), unsigned(), { sendRaw })).resolves.toMatchObject({ via: "relay" });
+    });
+    it("refuses, before relaying, a wallet-raised fee above 0.01 SOL", async () => {
+      const sendRaw = vi.fn(async (tx: VersionedTransaction) => sigOf(tx));
+      // 30 µSOL/CU × 400k CU = 0.012 SOL.
+      const error = await sendWithWallet(pricedBy(30_000_000), unsigned(), { sendRaw }).catch((e) => e);
+      expect(error).toBeInstanceOf(TxNotSentError);
+      expect(error.message).toBe("Your wallet raised the network fee above 0.01 SOL, so nothing was sent. Lower the priority fee in your wallet and try again.");
+      expect(sendRaw).not.toHaveBeenCalled();
+    });
+    it("holds a sign-only wallet on a DEX step (presign + cosign offered) to the same 0.01 SOL ceiling", async () => {
+      const sendRaw = vi.fn(async (tx: VersionedTransaction) => sigOf(tx));
+      const passthrough = (tx: VersionedTransaction) => tx;
+      const error = await sendWithWallet(pricedBy(30_000_000), unsigned(), { presign: passthrough, cosign: passthrough, sendRaw }).catch((e) => e);
+      expect(error).toBeInstanceOf(TxNotSentError); expect(error.message).toMatch(/above 0\.01 SOL/);
+      expect(sendRaw).not.toHaveBeenCalled();
+    });
   });
   it("falls back to sign + one relay send", async () => {
     const wallet = signingWallet(); const sendRaw = vi.fn(async (tx: VersionedTransaction) => sigOf(tx));
@@ -274,6 +348,11 @@ describe("notices", () => {
   });
   it("stays quiet on a wallet rejection", () => {
     expect(reportTxFailure({ flow: "add", error: new Error("User rejected the request") }).kind).toBe("rejected");
+    expect(getTxNotices()).toEqual([]);
+  });
+  it("silent: a panel that shows the error inline gets the plain message back and no failure toast", () => {
+    const result = reportTxFailure({ flow: "withdraw", error: new TxNotSentError("Pool is paused"), retry: vi.fn(), silent: true });
+    expect(result).toMatchObject({ kind: "not-sent", message: "Pool is paused. Nothing was sent." });
     expect(getTxNotices()).toEqual([]);
   });
   it("watches a notice through the finality endpoint", async () => {
@@ -521,8 +600,8 @@ describe("landed check after a wallet error", () => {
     const error = await runTx(adapter, {}, { wallet: throwingWallet(PHANTOM_400), findLanded, retry, onStage: (s) => stages.push(s) }).catch((e) => e);
     expect(stages).toEqual(["preparing", "wallet", "checking"]);
     expect(error).toMatchObject({ kind: "not-sent", retryable: true,
-      message: "Your wallet reported a problem (“Request rejected by user”). We checked Solana and it did not go through. Nothing was sent, safe to retry." });
-    expect(getTxNotices()).toMatchObject([{ state: "failure", kind: "not-sent", retry }]);
+      message: "Couldn't send the transaction: your wallet said “Request rejected by user”. We checked Solana and it did not go through. Nothing was sent, safe to retry." });
+    expect(getTxNotices()).toMatchObject([{ state: "failure", kind: "not-sent", title: "Couldn't send the transaction", retry }]);
     expect(refresh).toHaveBeenCalled();
     expect(sentry.capture).toHaveBeenCalledWith("add", "not-sent", expect.any(String),
       expect.objectContaining({ walletErrorCode: 400, landedCheck: "not-landed" }));

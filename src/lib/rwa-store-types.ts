@@ -224,6 +224,18 @@ export const tokenIconWriteSchema = z.array(z.object({
   && trustedIcon(row.image) === row.image, "Untrusted token icon")).max(500);
 export type TokenIconWrite = TokenIconRow[];
 
+/** A UTC calendar day, `YYYY-MM-DD`. */
+const utcDaySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+/**
+ * Meteora DLMM pool TVL as the Meteora datapi reported it at the first APR refresh of a UTC day (one row per pool and
+ * day, the first write of the day wins). Meteora publishes no TVL history, so these rows are the daily APR's TVL.
+ */
+export type MeteoraTvlWrite = { date: string; rows: { poolId: string; tvlUsd: number }[] };
+const meteoraTvlWriteSchema = z.object({
+  date: utcDaySchema,
+  rows: z.array(z.object({ poolId: solanaPoolSchema, tvlUsd: z.number().finite().min(0).max(1e12) })).min(1).max(200),
+});
+
 /**
  * One row per allowlisted RHC pool from the cron: the full read-only pool summary (StateView/hook checks + one
  * batched indexer call for TVL / 24h volume). Served back by `rhcPools` so the page never calls RPC or indexers.
@@ -287,6 +299,11 @@ export const storeRequestSchema = z.discriminatedUnion("op", [
   z.object({ op: z.literal("ensureRhcRoster"), lease: leaseSchema, data: rhcRosterSchema }),
   z.object({ op: z.literal("rhcPools") }),
   z.object({ op: z.literal("saveTokenIcons"), lease: leaseSchema, data: tokenIconWriteSchema }),
+  /** Meteora pools that already have a stored TVL for that UTC day. */
+  z.object({ op: z.literal("meteoraTvlDay"), date: utcDaySchema }),
+  z.object({ op: z.literal("saveMeteoraTvl"), lease: leaseSchema, data: meteoraTvlWriteSchema }),
+  /** One pool's stored daily TVL between two UTC days (inclusive). */
+  z.object({ op: z.literal("meteoraTvlHistory"), poolId: solanaPoolSchema, from: utcDaySchema, to: utcDaySchema }),
 ]);
 type ParsedStoreRequest = z.infer<typeof storeRequestSchema>;
 export type StoreOperation = ParsedStoreRequest["op"];
@@ -330,6 +347,10 @@ export type StoreResultMap = {
   prepareDaily: { date: string };
   saveApr: { poolId: string; status: "ok" | "degraded" | "error" };
   saveTokenIcons: { saved: number };
+  meteoraTvlDay: { pools: string[] };
+  /** `saved`: rows written; a pool that already had that day's row keeps it (first write of the day wins). */
+  saveMeteoraTvl: { saved: number };
+  meteoraTvlHistory: { points: { date: string; tvlUsd: number }[] };
   /** `refreshedAt`: per pool, as `ActivePool.refreshedAt`. */
   ensureRhcRoster: { pools: number; profiles: Record<string, StoredProfile | null>; refreshedAt: Record<string, string | null> };
   rhcPools: SnapshotRhcPools;

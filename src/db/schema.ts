@@ -279,3 +279,19 @@ export const rwaTokenIcon = pgTable("rwa_token_icon", {
   check("rwa_token_icon_image_check", sql`image ~ '^https://' AND length(image) <= 1024`),
   check("rwa_token_icon_source_check", sql`source IN ('jupiter', 'raydium', 'dexscreener', 'geckoterminal', 'manual')`),
 ]);
+
+/**
+ * Meteora DLMM pool TVL, once per UTC day (`snapshot_date`): what the Meteora datapi pool endpoint reported at the first
+ * APR refresh of that day. Meteora publishes no TVL history, so the daily APR divides each day's fees by that day's row
+ * here and falls back to today's TVL for other days. The first write of a day wins (insert, no update).
+ */
+export const rwaMeteoraTvlDaily = pgTable("rwa_meteora_tvl_daily", {
+  poolAddress: text("pool_address").notNull(),
+  snapshotDate: date("snapshot_date").notNull(),
+  tvlUsd: numeric("tvl_usd", { mode: "number" }).notNull(),
+  capturedAt: timestamp("captured_at", { withTimezone: true, mode: "string" }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.poolAddress, table.snapshotDate], name: "rwa_meteora_tvl_daily_pkey" }),
+  check("rwa_meteora_tvl_daily_pool_address_check", sql`pool_address ~ '^[1-9A-HJ-NP-Za-km-z]{32,44}$'`),
+  check("rwa_meteora_tvl_daily_tvl_usd_check", sql`tvl_usd >= 0`),
+]);

@@ -240,7 +240,7 @@ describe("compound snapshot preservation through the real controller and panel",
       mocks.sign.mockImplementation(async (tx: VersionedTransaction) => { tx.sign([testKeypair(1)]); return tx; });
     }
     await start(); await act(async () => controller.compound());
-    const error = phase === "prepare" ? "prepare failed" : "broadcast unsent. Nothing was sent.";
+    const error = phase === "prepare" ? "prepare failed" : "Couldn't send the transaction: the network refused it (“broadcast unsent”). Nothing was sent, safe to retry.";
     expect(controller.error).toBe(error);
     read = () => Response.json(snapshot("100")); await act(async () => { await controller.refreshState(); });
     expect(controller.state?.fees.a).toBe("100"); expect(controller.error).toBe(error);

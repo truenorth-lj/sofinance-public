@@ -9,6 +9,7 @@ vi.mock("./pool-sources/meteora", async (load) => {
   return { ...actual, meteoraPoolSource: { ...actual.meteoraPoolSource, loadProfile: fake.loadProfile, readLiquidity: fake.readLiquidity,
     assemble: (poolId: string) => payloadFixture({ poolId }) } };
 });
+import { METEORA_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/meteora/constants";
 import { MeteoraDatapiError } from "./range-apr/meteora-datapi-history";
 import { METEORA_APR_POOL_TIMEOUT_MS, METEORA_APR_POOLS_PER_RUN, runJob } from "./rwa-refresh";
 import { ThrottleGate } from "./range-apr/throttle-gate";
@@ -33,6 +34,8 @@ function store(meteora: ActivePool[]) {
       const raydium = { ...pool("ray-in-both-feeds", 1e9, null), pair: { poolAddress: "ray-in-both-feeds", protocol: "raydium-clmm", tvlUsd: 1e9 } };
       return input.feedKeys?.includes(FEED_KEY_METEORA) ? [raydium, ...meteora] : [];
     }
+    // Today's Meteora TVL is already stored (dex/meteora-dlmm/daily-tvl.server.test.ts covers the record itself).
+    if (input.op === "meteoraTvlDay") return { pools: METEORA_ALLOWLISTED_POOLS.map((pool) => pool.poolAddress) };
     return null;
   } } as unknown as RwaStore;
   const saved = () => calls.filter((c) => c.op === "saveApr").map((c) => c.data!);

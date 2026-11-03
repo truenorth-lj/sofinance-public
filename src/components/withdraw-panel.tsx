@@ -11,6 +11,7 @@ import { createJupiterRelayStore, postWithJupiterRelay } from "@/lib/jupiter/bro
 import type { WithdrawPrepared, WithdrawSummary, WithdrawRequest } from "@sofinance/engine/withdraw/types";
 import { assertWithdrawHistory, readWithdrawHistory, writeWithdrawHistory, withdrawCheckpointKey, WithdrawHistoryError, WITHDRAW_HISTORY_ERROR, type WithdrawHistory, type WithdrawCheckpoint as Checkpoint } from "@/lib/withdraw-checkpoint";
 import { CANCEL_CHECK_PENDING_COPY, CHECKING_SOLANA_COPY, sendAndTrack, solscanTxUrl, TxRunError, useCancelCheckPending } from "@/lib/tx-pipeline";
+import { WITHDRAW_OUTPUTS, type WithdrawOutput } from "@/lib/unified-positions/model";
 
 export const WITHDRAW_EXPIRED_MESSAGE = "This withdrawal expired before Solana included it, so nothing moved. Tap Try again to sign a fresh one.";
 
@@ -19,6 +20,19 @@ const RELAYED_PATHS=new Set(["withdraw-quote","withdraw-prepare"]);
 const withdrawJupiterStore=createJupiterRelayStore();
 type WithdrawRun = { lifetime: object; controller: AbortController };
 class WithdrawCancelled extends Error {}
+
+/** PR10: one console line when a withdraw run stops after a transaction was sent, so a partly finished withdraw is visible in logs. */
+export function warnWithdrawInterrupted(positionMint:string,signatures:readonly string[]){
+ // eslint-disable-next-line no-console -- deliberate marker for a partly finished withdraw
+ console.warn("[withdraw-interrupted]",JSON.stringify({positionMint,signatures,at:Date.now()}));
+}
+
+/** PR10: plain words next to Resume for a saved (interrupted) withdraw, by the stage that was sent last. */
+export function interruptedWithdrawMessage(stage:"atomic"|"withdraw"|"swap"):string{
+ if(stage==="withdraw")return "A withdrawal was interrupted after step 1 of 2: your tokens were withdrawn but not converted yet. Resume to finish the conversion.";
+ if(stage==="swap")return "A withdrawal was interrupted while step 2 of 2 (the conversion) was confirming. Resume to check it on Solana before anything is sent again.";
+ return "A withdrawal was interrupted after it was sent. Resume to check it on Solana before anything is sent again.";
+}
 
 // The run owns both the fetch deadline and cancellation listener through body parsing.
 async function post<T>(run: WithdrawRun, path: string, body: unknown): Promise<T> {
@@ -56,20 +70,22 @@ function waitForNextStatus(run:WithdrawRun){
   signal.addEventListener("abort",cancel,{once:true});
  });
 }
-export function WithdrawPanel({wallet,positionMint,mintA,mintB,label,onClose,onBusyChange,onConfirmed}:{wallet:string;positionMint:string;mintA:string;mintB:string;label:(mint:string)=>string;onClose:()=>void;onBusyChange:(busy:boolean)=>void;onConfirmed:()=>void}) {
+/** `outputs`: the source's `capabilities.withdrawOutputs`; the Receive choices offered are exactly these (default: all). */
+export function WithdrawPanel({wallet,positionMint,mintA,mintB,label,onClose,onBusyChange,onConfirmed,outputs=WITHDRAW_OUTPUTS}:{wallet:string;positionMint:string;mintA:string;mintB:string;label:(mint:string)=>string;onClose:()=>void;onBusyChange:(busy:boolean)=>void;onConfirmed:()=>void;outputs?:readonly WithdrawOutput[]}) {
  const connection=useWalletConnection();
- const [percent,setPercent]=useState(100),[target,setTarget]=useState(""),[receive,setReceive]=useState("usdc");
+ const [percent,setPercent]=useState(100),[target,setTarget]=useState(""),[receive,setReceive]=useState(()=>outputs.includes("usdc")?"usdc":outputs.includes("sol")?NATIVE_SOL_MINT:"original");
  const [preview,setPreview]=useState<WithdrawSummary|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(""),[progress,setProgress]=useState("");
  const [confirmation,setConfirmation]=useState(false),[previewing,setPreviewing]=useState(false);
  // Confirmed signatures of the last completed withdrawal: a lasting Solscan link (the toast can be closed).
  const [completed,setCompleted]=useState<string[]>([]);
- const [initialHistory]=useState(()=>readWithdrawHistory(wallet,positionMint));
- const historyRef=useRef(initialHistory);
- const blockedHistories=useRef(new Map<string,{history:WithdrawHistory;error:string}>(
-  initialHistory.kind==="invalid" || initialHistory.kind==="unavailable"
-   ?[[withdrawCheckpointKey(wallet,positionMint),{history:initialHistory,error:WITHDRAW_HISTORY_ERROR}]]:[]));
- const [checkpoint,setCheckpoint]=useState<Checkpoint|null>(initialHistory.kind==="valid"?initialHistory.checkpoint:null);
- const [historyError,setHistoryError]=useState(initialHistory.kind==="invalid" || initialHistory.kind==="unavailable"?WITHDRAW_HISTORY_ERROR:"");
+ // Browser storage is read after mount (layout effect below, before paint), never during render: the server has no
+ // storage, so a render-time read made the server and client HTML differ (hydration warning on the mock page, PR10).
+ // Until it is read, nothing can be signed: `historyRef` starts as "unavailable", which every guard refuses.
+ const historyRef=useRef<WithdrawHistory>({kind:"unavailable"});
+ const [historyRead,setHistoryRead]=useState(false);
+ const blockedHistories=useRef(new Map<string,{history:WithdrawHistory;error:string}>());
+ const [checkpoint,setCheckpoint]=useState<Checkpoint|null>(null);
+ const [historyError,setHistoryError]=useState("");
  // Latch uncertain storage mutations until reload; keep the last verified in-memory checkpoint.
  function guardHistory(){
   if(historyError || blockedHistories.current.has(withdrawCheckpointKey(wallet,positionMint)))throw new WithdrawHistoryError();
@@ -92,7 +108,8 @@ export function WithdrawPanel({wallet,positionMint,mintA,mintB,label,onClose,onB
  const runningRef=useRef<WithdrawRun|null>(null);
  const currentConnection=useRef(connection);
  const currentOnConfirmed=useRef(onConfirmed);
- const historyIdentity=useRef({wallet,positionMint});
+ // Null until the first read after mount, so that read goes through the same path as an identity change.
+ const historyIdentity=useRef<{wallet:string;positionMint:string}|null>(null);
  // Only committed identity changes invalidate a run. Callback/object churn does not.
  useLayoutEffect(()=>{currentConnection.current=connection;currentOnConfirmed.current=onConfirmed;});
  useLayoutEffect(()=>{
@@ -101,7 +118,7 @@ export function WithdrawPanel({wallet,positionMint,mintA,mintB,label,onClose,onB
   // Reset ephemeral approval/preview, never the durable checkpoint or pending lock.
   // eslint-disable-next-line react-hooks/set-state-in-effect -- Reconcile retained UI before it becomes actionable again.
   setPreview(null);setConfirmation(false);setProgress("");
-  if(historyIdentity.current.wallet!==wallet || historyIdentity.current.positionMint!==positionMint){
+  if(historyIdentity.current?.wallet!==wallet || historyIdentity.current?.positionMint!==positionMint){
    // A different identity may proceed, but returning to this one is not a reload.
    const key=withdrawCheckpointKey(wallet,positionMint),blocked=blockedHistories.current.get(key);
    const history=blocked?.history ?? readWithdrawHistory(wallet,positionMint);
@@ -109,7 +126,7 @@ export function WithdrawPanel({wallet,positionMint,mintA,mintB,label,onClose,onB
    historyIdentity.current={wallet,positionMint};historyRef.current=history;
    setCheckpoint(history.kind==="valid"?history.checkpoint:null);
    setHistoryError(blocked?.error ?? (history.kind==="invalid" || history.kind==="unavailable"?WITHDRAW_HISTORY_ERROR:""));
-   setError("");
+   setError("");setHistoryRead(true);
   }
   return()=>{
    lifetimeRef.current=null;
@@ -155,12 +172,12 @@ export function WithdrawPanel({wallet,positionMint,mintA,mintB,label,onClose,onB
  // A broadcast signature must survive unmount/wallet switch so Resume checks it instead of re-signing.
  function persistSent(run:WithdrawRun,value:Checkpoint){
   try{save(run,value);return;}catch(error){
-   if(owns(run) && !(error instanceof WithdrawCancelled) && historyIdentity.current.wallet===wallet && historyIdentity.current.positionMint===positionMint)throw error;
+   if(owns(run) && !(error instanceof WithdrawCancelled) && historyIdentity.current?.wallet===wallet && historyIdentity.current?.positionMint===positionMint)throw error;
   }
   try{
    const verified=writeWithdrawHistory(wallet,positionMint,readWithdrawHistory(wallet,positionMint),value);
    // A retained (Activity/Suspense) instance reconnects without re-reading history.
-   if(historyIdentity.current.wallet===wallet && historyIdentity.current.positionMint===positionMint){historyRef.current=verified;setCheckpoint(value);}
+   if(historyIdentity.current?.wallet===wallet && historyIdentity.current?.positionMint===positionMint){historyRef.current=verified;setCheckpoint(value);}
   }catch{/* reported by the next history read */}
   throw new WithdrawCancelled();
  }
@@ -252,10 +269,14 @@ export function WithdrawPanel({wallet,positionMint,mintA,mintB,label,onClose,onB
     await waitFor(run,saved);
    }
    save(run,null);setProgress("Withdrawal complete");setPreview(null);setCompleted([...signatures]);currentOnConfirmed.current();
-  }catch(caught){if(owns(run)){setProgress("");showError(caught,"Withdrawal failed");}}
+  }catch(caught){
+   // PR10 marker: the run stopped (unmount, wallet switch, cancel) after something was sent; the checkpoint keeps it for Resume.
+   if((!owns(run) || caught instanceof WithdrawCancelled) && signatures.length)warnWithdrawInterrupted(positionMint,signatures);
+   if(owns(run)){setProgress("");showError(caught,"Withdrawal failed");}
+  }
   finally{finish(run);}
  }
- const disabled=busy || !!checkpoint || !!historyError;
+ const disabled=busy || !!checkpoint || !!historyError || !historyRead;
  // A cancelled withdrawal of this position is still being checked on-chain: no second one yet.
  const cancelPending=useCancelCheckPending("withdraw",positionMint);
  return <section aria-label="Withdraw from position" className="mt-4 rounded-3xl border border-white/20 bg-char p-5 text-cream">
@@ -263,9 +284,11 @@ export function WithdrawPanel({wallet,positionMint,mintA,mintB,label,onClose,onB
   <label className="mt-4 block">Withdraw {percent}%<input type="range" min="1" max="100" step="1" value={percent} disabled={disabled} onChange={e=>{setPercent(Number(e.target.value));setTarget("");invalidate();}} className="block w-full" /></label>
   <label className="mt-3 block">Target USDC estimate<input aria-label="Target USDC estimate" type="number" min="0" value={target} disabled={disabled} onChange={e=>{setTarget(e.target.value);invalidate();}} className="ml-3 rounded bg-canvas p-2" /></label>
   <label className="mt-3 block">Receive<select value={receive} disabled={disabled} onChange={e=>{setReceive(e.target.value);invalidate();}} className="ml-3 rounded bg-canvas p-2">
-   <option value="usdc">USDC</option><option value={NATIVE_SOL_MINT}>SOL</option>
+   {outputs.includes("usdc") && <option value="usdc">USDC</option>}{outputs.includes("sol") && <option value={NATIVE_SOL_MINT}>SOL</option>}
+   {outputs.includes("pool-tokens") && <>
    {[...new Set([mintA,mintB])].filter(m=>m!==NATIVE_SOL_MINT).map(m=><option key={m} value={m}>{label(m)}</option>)}
    <option value="original">Original tokens</option>
+   </>}
   </select></label>
   <p className="mt-3 text-sm">Withdrawing 100% closes your position and returns its account deposit in SOL.</p>
   {preview && <div className="mt-4 text-sm">
@@ -284,11 +307,12 @@ export function WithdrawPanel({wallet,positionMint,mintA,mintB,label,onClose,onB
   {(historyError || error) && <p role="alert" className="mt-3 rounded-2xl border border-lemon/60 bg-lemon/10 p-3 text-sm text-lemon">{historyError || error}</p>}
   <p role="status" aria-live="polite" className="mt-3 text-sm text-smoke">{busy && <LoaderCircle aria-hidden className="mr-2 inline h-4 w-4 animate-spin" />}{!busy && cancelPending ? CANCEL_CHECK_PENDING_COPY : progress}</p>
   {!busy && completed.length>0 && <p data-testid="withdraw-solscan" className="mt-1 flex flex-wrap gap-x-3 text-sm text-cream/80">{completed.map((signature,i)=><a key={signature} href={solscanTxUrl(signature)} target="_blank" rel="noreferrer" className="underline">{completed.length>1?`View step ${i+1} on Solscan`:"View on Solscan"} ({signature.slice(0,5)}…{signature.slice(-5)})</a>)}</p>}
-  {checkpoint ? <button disabled={busy || !!historyError} onClick={()=>{if(checkpoint.prepared.summary.requiresSecondConfirmation)setConfirmation(true);else void run();}} className="mt-3 rounded-full bg-lemon px-5 py-3 text-ink">Resume withdrawal</button> : error===WITHDRAW_EXPIRED_MESSAGE ? <button disabled={busy || !!historyError} onClick={()=>void run()} className="mt-3 rounded-full bg-lemon px-5 py-3 text-ink">Try again</button> : <>
-   <button type="button" disabled={busy || !!historyError} aria-busy={previewing} onClick={()=>void showPreview()} className="mt-3 rounded-full border px-5 py-3 disabled:opacity-50">{previewing?"Calculating…":"Preview"}</button>
+  {checkpoint && !busy && <p data-testid="withdraw-interrupted" role="status" className="mt-3 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80">{interruptedWithdrawMessage(checkpoint.prepared.summary.stage)}</p>}
+  {checkpoint ? <button disabled={busy || !!historyError || !historyRead} onClick={()=>{if(checkpoint.prepared.summary.requiresSecondConfirmation)setConfirmation(true);else void run();}} className="mt-3 rounded-full bg-lemon px-5 py-3 text-ink">Resume withdrawal</button> : error===WITHDRAW_EXPIRED_MESSAGE ? <button disabled={busy || !!historyError || !historyRead} onClick={()=>void run()} className="mt-3 rounded-full bg-lemon px-5 py-3 text-ink">Try again</button> : <>
+   <button type="button" disabled={busy || !!historyError || !historyRead} aria-busy={previewing} onClick={()=>void showPreview()} className="mt-3 rounded-full border px-5 py-3 disabled:opacity-50">{previewing?"Calculating…":"Preview"}</button>
    {/* Without a preview, Withdraw fetches one first so the tap is never silent; a second tap confirms. */}
-   <button type="button" disabled={busy || !!historyError || cancelPending} aria-busy={busy && !previewing} onClick={()=>{if(!preview)void showPreview();else if(preview.requiresSecondConfirmation)setConfirmation(true);else void run();}} className="ml-3 rounded-full bg-lemon px-5 py-3 text-ink disabled:opacity-50">{busy && !previewing?"Withdrawing…":"Withdraw"}</button>
+   <button type="button" disabled={busy || !!historyError || !historyRead || cancelPending} aria-busy={busy && !previewing} onClick={()=>{if(!preview)void showPreview();else if(preview.requiresSecondConfirmation)setConfirmation(true);else void run();}} className="ml-3 rounded-full bg-lemon px-5 py-3 text-ink disabled:opacity-50">{busy && !previewing?"Withdrawing…":"Withdraw"}</button>
   </>}
-  <dialog ref={confirmationRef} role="alertdialog" aria-label="Confirm high price impact" onCancel={event=>{event.preventDefault();setConfirmation(false);}} onClose={()=>setConfirmation(false)} className="fixed left-1/2 top-1/2 m-0 w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-lemon bg-char p-5 text-cream backdrop:bg-black/70"><p>Price impact exceeds 5%. You may receive substantially less. Continue with this conversion?</p><button disabled={busy || !!historyError} onClick={()=>void run(true)} className="mt-3 rounded bg-lemon p-2 text-ink">Confirm high price impact</button><button onClick={()=>setConfirmation(false)} className="ml-3">Cancel</button></dialog>
+  <dialog ref={confirmationRef} role="alertdialog" aria-label="Confirm high price impact" onCancel={event=>{event.preventDefault();setConfirmation(false);}} onClose={()=>setConfirmation(false)} className="fixed left-1/2 top-1/2 m-0 w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-lemon bg-char p-5 text-cream backdrop:bg-black/70"><p>Price impact exceeds 5%. You may receive substantially less. Continue with this conversion?</p><button disabled={busy || !!historyError || !historyRead} onClick={()=>void run(true)} className="mt-3 rounded bg-lemon p-2 text-ink">Confirm high price impact</button><button onClick={()=>setConfirmation(false)} className="ml-3">Cancel</button></dialog>
  </section>;
 }

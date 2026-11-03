@@ -9,18 +9,24 @@ import { APP_ROUTES, buildOpenPositionPath } from "@/lib/public-urls";
 import type { BestPlanApr } from "@/lib/lp-plan-best-apr";
 import { breakEvenInPeriod } from "@/lib/lp-plan-chart";
 import type { PlanSetup } from "@/lib/lp-plan-intent";
-import { isThinPlanSample, planOpenCostPctLabel, type PlanYieldComparison } from "@/lib/lp-plan-yield";
+import { isThinPlanSample, type PlanYieldComparison } from "@/lib/lp-plan-yield";
+import { LEGACY_PLAN_TERMS, type PlanPoolTerms } from "@/lib/lp-plan-pool-terms";
 import { bestAprCopy, completeDaysCopy, daysWord, formatAmount, formatCents, formatPct, formatSigned, formatSignedPct } from "./format";
 import type { ChartStatus } from "./comparison-chart";
 
 const labelPill =
   "inline-flex h-6 items-center whitespace-nowrap rounded-full border px-2.5 font-data text-[10px] uppercase tracking-[0.14em]";
 
-function Row({ label, children }: { label: string; children: ReactNode }) {
+/**
+ * A label/value row. `note` is small print on its own full-width line under both, so it never squeezes the value; such a
+ * row may also wrap its value under a long label (right-aligned) instead of running past the card at 375.
+ */
+function Row({ label, children, note, noteTestId }: { label: string; children: ReactNode; note?: ReactNode; noteTestId?: string }) {
   return (
-    <div className="flex items-baseline justify-between gap-4 border-t border-white/10 py-3">
+    <div className={cn("flex items-baseline justify-between gap-x-4 border-t border-white/10 py-3", note && "flex-wrap")}>
       <dt className="shrink-0 font-data text-[10px] uppercase tracking-[0.14em] text-smoke">{label}</dt>
-      <dd className="min-w-0 text-right text-sm text-cream">{children}</dd>
+      <dd className="ml-auto min-w-0 text-right text-sm text-cream">{children}</dd>
+      {note ? <dd className="mt-1 w-full text-xs leading-relaxed text-smoke" data-testid={noteTestId}>{note}</dd> : null}
     </div>
   );
 }
@@ -40,13 +46,13 @@ function headline(comparison: PlanYieldComparison): string {
   return `${formatCents(comparison.exitValue)} USDC`;
 }
 
-function summary(setup: PlanSetup, comparison: PlanYieldComparison): string {
+function summary(setup: PlanSetup, comparison: PlanYieldComparison, terms: PlanPoolTerms): string {
   const gain = `${formatSigned(comparison.endSofinance)} USDC (${formatSignedPct(comparison.endGainPct)})`;
   const horizon = `${setup.days} ${daysWord(setup.days)}`;
   if (isThinPlanSample(comparison.sampleDays)) {
     return `The best past average is ${formatPct(comparison.aprPct)} a year over only ${completeDaysCopy(comparison.sampleDays)}, which would be ${gain} in ${horizon}. That sample is too short to treat as a forecast.`;
   }
-  return `Best case after ${horizon}: ${gain} net, once about ${planOpenCostPctLabel()}% of the deposit is spent opening the position on day 0.`;
+  return `Best case after ${horizon}: ${gain} net, once ${terms.openCost.summary}.`;
 }
 
 export function OutcomePanel({
@@ -56,8 +62,11 @@ export function OutcomePanel({
   comparison,
   best,
   poolId,
+  terms = LEGACY_PLAN_TERMS,
 }: {
   setup: PlanSetup;
+  /** The pool's DEX terms (`planPoolTerms`): opening cost, exit assets, whether it opens from SoFinance. */
+  terms?: PlanPoolTerms;
   status: ChartStatus;
   reason?: string;
   comparison: PlanYieldComparison | null;
@@ -111,7 +120,7 @@ export function OutcomePanel({
           <h2 className="mt-2 text-[clamp(1.6rem,2.3vw,2.1rem)] font-medium leading-[1.12] tracking-[-0.03em]">
             {headline(comparison)}
           </h2>
-          <p className="mt-4 text-sm leading-relaxed text-smoke">{summary(setup, comparison)}</p>
+          <p className="mt-4 text-sm leading-relaxed text-smoke">{summary(setup, comparison, terms)}</p>
 
           <dl className="mt-6">
             <Row label="Projected final value">{formatCents(comparison.exitValue)} USDC</Row>
@@ -119,13 +128,15 @@ export function OutcomePanel({
               {formatSigned(comparison.endSofinance)} USDC · {formatSignedPct(comparison.endGainPct)}
             </Row>
             <Row label="Opening cost, day 0">
-              {`−${formatCents(comparison.entryCost)} USDC (about ${planOpenCostPctLabel()}%)`}
+              <span className="block">{`−${formatCents(comparison.entryCost)} USDC (${terms.openCost.rowLabel})`}</span>
+              {terms.openCost.rowNote && <span className="block text-xs text-smoke" data-testid="plan-open-rent">{terms.openCost.rowNote}</span>}
             </Row>
-            <Row label="Est. best APY used · not guaranteed">
-              <span className="block">{formatPct(comparison.apyPct)} est. APY</span>
-              <span className="block text-xs text-smoke">
-                {bestAprCopy(best)} compounded daily, over {completeDaysCopy(best.sampleDays)}
-              </span>
+            <Row
+              label="Est. best APY used · not guaranteed"
+              note={<>{bestAprCopy(best)} compounded daily, over {completeDaysCopy(best.sampleDays)}</>}
+              noteTestId="plan-apy-note"
+            >
+              {formatPct(comparison.apyPct)} est. APY
             </Row>
             <Row label="Windows checked">
               {best.windows.map((window, index) => (
@@ -142,23 +153,36 @@ export function OutcomePanel({
               {`−${formatAmount(setup.lossAlert)} USDC (${formatPct(pctOf(setup.lossAlert, setup.amount))})`}
             </Row>
             <Row label="Exit to">
-              {setup.exitAsset === "usdc" ? "USDC, plus a small SOL refund" : "The tokens, price exposure stays"}
+              {setup.exitAsset === "usdc"
+                ? "USDC, plus a small SOL refund"
+                : terms.tokensExitLabel ? `${terms.tokensExitLabel}; price exposure stays` : "The tokens, price exposure stays"}
             </Row>
           </dl>
 
           <div className="mt-auto pt-6">
             <p className="mb-4 text-xs leading-relaxed text-smoke">
-              {`Best case, not a probability or a promise. "Best APY" is the highest of this pool's 7, 30 and 90-day average fee yields (complete UTC days only), compounded daily with no price-shock path. Break-even is the first day the projection covers the typical cost of creating the position and adding liquidity (around ${planOpenCostPctLabel()}% of the deposit). Network fees are ignored. Read-only: nothing here prepares, signs or sends a transaction.`}
+              {`Best case, not a probability or a promise. "Best APY" is the highest of this pool's 7, 30 and 90-day average fee yields (complete UTC days only), compounded daily with no price-shock path. Break-even is the first day the projection covers ${terms.openCost.breakEven}. Network fees are ignored. Read-only: nothing here prepares, signs or sends a transaction.`}
             </p>
-            <Link
-              href={poolId ? buildOpenPositionPath(poolId) : APP_ROUTES.rwaPairs}
-              className="group flex h-12 items-center justify-between rounded-full border border-white/30 pl-5 pr-1.5 text-sm font-medium text-cream outline-none transition-colors hover:border-cream focus-visible:border-lemon"
-            >
-              {poolId ? "Create a position in this pool" : "Choose a pool for this plan"}
-              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-cream text-ink transition-transform group-hover:rotate-45">
-                <ArrowUpRight className="h-4 w-4" aria-hidden="true" />
-              </span>
-            </Link>
+            {poolId && !terms.open.supported ? (
+              <div aria-disabled="true" data-testid="plan-open-unavailable" title={terms.open.reason}
+                className="flex h-12 cursor-not-allowed items-center justify-between rounded-full border border-white/10 pl-5 pr-1.5 text-sm font-medium text-cream/40">
+                <span>Create a position in this pool<span className="sr-only">: {terms.open.reason}</span></span>
+                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-cream/40">
+                  <ArrowUpRight className="h-4 w-4" aria-hidden="true" />
+                </span>
+              </div>
+            ) : (
+              <Link
+                href={poolId ? buildOpenPositionPath(poolId) : APP_ROUTES.rwaPairs}
+                className="group flex h-12 items-center justify-between rounded-full border border-white/30 pl-5 pr-1.5 text-sm font-medium text-cream outline-none transition-colors hover:border-cream focus-visible:border-lemon"
+              >
+                {poolId ? "Create a position in this pool" : "Choose a pool for this plan"}
+                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-cream text-ink transition-transform group-hover:rotate-45">
+                  <ArrowUpRight className="h-4 w-4" aria-hidden="true" />
+                </span>
+              </Link>
+            )}
+            {poolId && !terms.open.supported && <p className="mt-2 text-xs text-smoke" data-testid="plan-open-reason">{terms.open.reason}</p>}
           </div>
         </div>
       )}

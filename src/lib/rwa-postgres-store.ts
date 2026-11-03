@@ -23,7 +23,7 @@ import { tokenIconMap, type TokenIconRow } from "./token-icons/map";
 import { logSafeError } from "./safe-error-log";
 
 const { backgroundJobState: job, rwaFeedState: feed, rwaPoolLatest: pool,
-  rwaAprLatest: apr, rwaAprDaily: daily, rwaTokenIcon: tokenIcon } = schema;
+  rwaAprLatest: apr, rwaAprDaily: daily, rwaTokenIcon: tokenIcon, rwaMeteoraTvlDaily: meteoraTvl } = schema;
 
 /** Postgres undefined_table / undefined_column: `drizzle/0002_token-icons.sql` not applied yet. */
 export function isMissingRelation(error: unknown): boolean {
@@ -181,6 +181,13 @@ export class PostgresRwaStore implements RwaStore {
     prepareDaily: input => this.prepareDaily(input.lease, input.includeRhc ?? true, input.feedKeys ?? [FEED_KEY]),
     saveApr: input => this.saveApr(input.lease, input.data),
     saveTokenIcons: input => this.saveTokenIcons(input.lease, input.data),
+    meteoraTvlDay: input => this.meteoraTvlRead(async () => ({ pools: (await this.orm.select({ poolId: meteoraTvl.poolAddress })
+      .from(meteoraTvl).where(eq(meteoraTvl.snapshotDate, input.date))).map((row) => row.poolId) })),
+    saveMeteoraTvl: input => this.saveMeteoraTvl(input.lease, input.data),
+    meteoraTvlHistory: input => this.meteoraTvlRead(async () => ({ points: (await this.orm
+      .select({ date: meteoraTvl.snapshotDate, tvlUsd: meteoraTvl.tvlUsd }).from(meteoraTvl)
+      .where(and(eq(meteoraTvl.poolAddress, input.poolId), between(meteoraTvl.snapshotDate, input.from, input.to)))
+      .orderBy(asc(meteoraTvl.snapshotDate))).map((row) => ({ date: String(row.date), tvlUsd: Number(row.tvlUsd) })) })),
     ensureRhcRoster: input => this.ensureRhcRoster(input.lease, input.data as RhcRosterRow[]),
     rhcPools: () => this.readRhcPools(),
   };
@@ -318,6 +325,32 @@ export class PostgresRwaStore implements RwaStore {
       });
     } catch (error) {
       if (isMissingRelation(error)) throw new RwaStoreError("TOKEN_ICONS_UNAVAILABLE");
+      throw error;
+    }
+  }
+
+  /** Meteora daily TVL reads: a missing table (migration 0004 not applied) is a plain store error the callers report. */
+  private async meteoraTvlRead<T>(query: () => Promise<T>): Promise<T> {
+    try {
+      return await query();
+    } catch (error) {
+      if (isMissingRelation(error)) throw new RwaStoreError("METEORA_TVL_UNAVAILABLE");
+      throw error;
+    }
+  }
+
+  /** The first APR refresh of a UTC day stores each Meteora pool's TVL; a row already there for that day is kept. */
+  private async saveMeteoraTvl(lease: Lease, data: { date: string; rows: { poolId: string; tvlUsd: number }[] }) {
+    try {
+      return await this.guarded(lease, async (tx) => {
+        const written = await tx.insert(meteoraTvl)
+          .values(data.rows.map((row) => ({ poolAddress: row.poolId, snapshotDate: data.date, tvlUsd: row.tvlUsd })))
+          .onConflictDoNothing({ target: [meteoraTvl.poolAddress, meteoraTvl.snapshotDate] })
+          .returning({ poolId: meteoraTvl.poolAddress });
+        return { saved: written.length };
+      });
+    } catch (error) {
+      if (isMissingRelation(error)) throw new RwaStoreError("METEORA_TVL_UNAVAILABLE");
       throw error;
     }
   }

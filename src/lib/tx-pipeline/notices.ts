@@ -5,7 +5,7 @@ import { captureTxClientFailure, type TxReportContext } from "@/lib/sentry/clien
 import { notifyPositionHistoryChange } from "@/lib/position-history-refresh";
 import { clearTxAttempt } from "./attempts";
 import { pollSignature, type TxChainStatus } from "./confirm";
-import { canRetry, FLOW_LABEL, plainTxError, txFailureKind, TxLandedUnknownError, TxSendUnknownError, TxWalletCancelledError, type TxFailureKind, type TxFlow } from "./errors";
+import { canRetry, COULDNT_SEND_TITLE, FLOW_LABEL, isCouldntSend, plainTxError, withoutCouldntSendPrefix, txFailureKind, TxLandedUnknownError, TxSendUnknownError, TxWalletCancelledError, type TxFailureKind, type TxFlow } from "./errors";
 
 export { solscanTxUrl } from "./confirm";
 
@@ -86,7 +86,9 @@ export function showTxCheckingNotice(flow: TxFlow) {
  * A failure before or during send: plain words, Sentry for anything but a wallet rejection, and a
  * balances refresh (a wallet-stage failure may still have moved funds; the screen must not show stale balances).
  */
-export function reportTxFailure(input: { flow: TxFlow; error: unknown; id?: string; signature?: string; retry?: () => void; context?: TxReportContext }) {
+export function reportTxFailure(input: { flow: TxFlow; error: unknown; id?: string; signature?: string; retry?: () => void; context?: TxReportContext;
+  /** The caller shows the failure inline: no failure toast (a "checking" toast under `id` is cleared). */
+  silent?: boolean }) {
   const kind = txFailureKind(input.error);
   const message = plainTxError(input.error, kind);
   captureTxClientFailure(input.flow, kind, message, input.context);
@@ -97,18 +99,27 @@ export function reportTxFailure(input: { flow: TxFlow; error: unknown; id?: stri
     // lookup still checks Solana and replaces this toast with the success toast if the wallet broadcast anyway.
     if (input.error instanceof TxWalletCancelledError) {
       showTxNotice({ id: cancelNoticeIdFor(input.error), flow: input.flow, state: "failure", kind: "rejected",
-        title: input.error.walletRejected ? `${FLOW_LABEL[input.flow]} cancelled` : `${FLOW_LABEL[input.flow]}: not on Solana yet`, detail: message });
+        title: input.error.walletRejected ? `${FLOW_LABEL[input.flow]} cancelled` : COULDNT_SEND_TITLE,
+        detail: input.error.walletRejected ? message : withoutCouldntSendPrefix(message) });
     }
     return { kind, message, retryable: false };
   }
   const retryable = canRetry(kind);
+  if (input.silent) {
+    if (input.id) dismissTxNotice(input.id);
+    return { kind, message, retryable };
+  }
+  const couldntSend = isCouldntSend(input.error);
   showTxNotice({ id: input.id, flow: input.flow, state: "failure", kind, signature: input.signature,
-    title: kind === "expired" ? `${FLOW_LABEL[input.flow]}: transaction expired`
+    // Only a wallet rejection says "cancelled"; every other send failure says it could not be sent, with the reason.
+    title: couldntSend ? COULDNT_SEND_TITLE
+      : kind === "expired" ? `${FLOW_LABEL[input.flow]}: transaction expired`
       : kind === "not-sent" ? `${FLOW_LABEL[input.flow]}: nothing was sent`
       // Possibly sent (wallet error with no answer from Solana, or a lost relay response): never "failed".
       : input.error instanceof TxLandedUnknownError || input.error instanceof TxSendUnknownError ? `${FLOW_LABEL[input.flow]}: not confirmed yet`
       : `${FLOW_LABEL[input.flow]} failed`,
-    detail: message, retry: retryable ? input.retry : undefined });
+    // The title already says "Couldn't send the transaction": the body starts with the reason.
+    detail: couldntSend ? withoutCouldntSendPrefix(message) : message, retry: retryable ? input.retry : undefined });
   return { kind, message, retryable };
 }
 

@@ -7,6 +7,8 @@ import { LayoutGrid, List, LoaderCircle, RefreshCw, Search } from "lucide-react"
 import { HIGHEST_RANGE_APR_7D_HELP, POOL_FEE_APR_24H_HELP } from "@/lib/apr-labels/copy";
 import { exactAprTitle } from "@/lib/apr-labels/format-apr";
 import { cn } from "@/lib/cn";
+import { dexDescriptors, fetchOpenRanges, type OpenRanges } from "@/lib/dex/client";
+import { SUPPORTED } from "@/lib/unified-positions/model";
 import { buildPlanPath, DOCS_ROUTES } from "@/lib/public-urls";
 import { volumeDivergenceNote } from "@/lib/apr-labels/volume-divergence";
 import { HIGHEST_RANGE_COLUMN_LABEL, HIGHEST_RANGE_HELP } from "@/lib/range-apr/copy";
@@ -16,14 +18,17 @@ import type { TokenIconMap } from "@/lib/token-icons/map";
 import { fetchRwaPairsList } from "@/lib/rwa-pairs-list";
 import { updatedLabel, type SnapshotSourceTime } from "@/lib/snapshot-updated";
 import {
-  CHAIN_LABELS, DEFAULT_FILTERS, DEFAULT_SORT, FIRST_CLICK_DIR, openUnavailableReason, PROTOCOL_LABELS, selectPools, TVL_FILTER_PRESETS,
+  CHAIN_LABELS, DEFAULT_FILTERS, DEFAULT_SORT, FIRST_CLICK_DIR, PROTOCOL_LABELS, selectPools, TVL_FILTER_PRESETS,
   type PoolChain, type PoolFilters, type SortKey, type UnifiedPool, type UnifiedProtocol,
 } from "@/lib/unified-pools/model";
 import { rhcPool, rhcPoolView, solanaPool, type RhcPoolSummary, type SolanaPoolRow } from "@/lib/unified-pools/rows";
 import { InfoTip } from "../info-tip";
 import { PairTokenIcons } from "../pair-token-icons";
 import { OpenPositionModal } from "../open-position-modal";
-import { clearPoolRangeAprClientCache } from "../range-apr/pool-range-apr-client";
+import { clearPoolRangeAprClientCache, loadPoolRangeApr, type RangeAprProtocol } from "../range-apr/pool-range-apr-client";
+import type { PoolRangeAprPayload } from "@/lib/range-apr/types";
+import { isDexTxRouteEnabled } from "@/lib/protocol-flags";
+import { RegistryOpenModal } from "./registry-open-modal";
 import type { RhcPoolView } from "../rhc-univ4-open-panel";
 import type { OpenPositionPair } from "../use-open-position-controller";
 import { useWalletConnection } from "../wallet-connection";
@@ -67,7 +72,8 @@ const cardEyebrow = "font-data text-[10px] uppercase tracking-[0.12em] text-ink/
  * One pool as a cream card (the `/app/rwa-pairs` card fields, now for both chains): token icons and issuer names, the
  * estimated highest range APR (7-day) with the range it comes from ("Highest range", the same range the Create position
  * modal calls Best), when the data was updated, confidence and volume notes in the tooltip, then TVL, volume, fee and
- * 24h pool fee APR. Solana Raydium pools also link "Plan this pool" and the pool on Raydium.
+ * 24h pool fee APR. "Plan this pool" follows the DEX's `plan` capability (greyed with its reason when unsupported;
+ * Raydium, not in the DEX registry yet, keeps its link); Raydium pools also link the pool on Raydium.
  */
 /**
  * Card pair name: it may break after the "/" and each half is cut with "…" if it alone is too wide, so a long pair
@@ -87,6 +93,8 @@ function PoolCard({ pool, apr, action, icons }: {
   const withVolumeNote = (text: string) => (volumeNote ? `${text} ${volumeNote}` : text);
   const freshness = apr && apr.status !== "loading" ? apr.freshness : undefined;
   const raydium = pool.protocol === "raydium-clmm";
+  // Registered DEXes say through their `plan` capability; Raydium (not in the DEX registry yet) keeps its link.
+  const plan = dexDescriptors.descriptorFor(pool.protocol)?.capabilities.plan ?? (raydium ? SUPPORTED : null);
   return <li className="flex min-w-0 flex-col rounded-[28px] bg-cream p-6 text-ink" data-pool={pool.key}>
     <div className="flex flex-wrap items-center gap-1.5"><ChainBadge chain={pool.chain} /><span className={cn(chip, "border border-ink/25")}>{PROTOCOL_LABELS[pool.protocol]}</span></div>
     <div className="mt-4 flex items-start justify-between gap-3">
@@ -130,10 +138,14 @@ function PoolCard({ pool, apr, action, icons }: {
     </dl>
     <div className="mt-auto flex flex-wrap items-center gap-3 pt-5">
       <OpenButton action={action} label={pool.pairLabel} />
-      {raydium && <Link href={buildPlanPath({ poolId: pool.poolAddress, pair: pool.pairLabel })}
+      {plan?.supported && <Link href={buildPlanPath({ poolId: pool.poolAddress, pair: pool.pairLabel, protocol: pool.protocol })}
         className="inline-flex h-11 items-center rounded-full border border-ink/40 px-4 text-sm font-semibold outline-none transition-colors hover:border-ink focus-visible:shadow-[0_0_0_3px_var(--color-lilac)]">
         Plan this pool
       </Link>}
+      {plan && !plan.supported && <span aria-disabled="true" title={plan.reason} data-testid="plan-unavailable"
+        className="inline-flex h-11 cursor-not-allowed items-center rounded-full border border-ink/15 px-4 text-sm font-semibold text-ink/40">
+        Plan this pool<span className="sr-only">: {plan.reason}</span>
+      </span>}
       {raydium
         ? <a href={raydiumPoolUrl(pool.poolAddress)} target="_blank" rel="noreferrer" title={`Open pool ${pool.poolAddress} on Raydium`}
           className="ml-auto font-data text-[10px] tracking-[0.08em] text-ink/60 underline underline-offset-2 outline-none hover:text-ink focus-visible:text-ink">
@@ -294,13 +306,18 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", header 
       token2022B: row.token2022B, freezeRisk: row.freezeRisk });
   }, [connected, connect, onOpenRhc, rhcByKey, rowsByKey]);
 
+  const [registryOpen, setRegistryOpen] = useState<UnifiedPool | null>(null);
   const actionFor = useCallback((pool: UnifiedPool): OpenAction => {
+    // Registered DEXes say through their `open` capability and open in the registry dialog (PR10); the shared DEX route
+    // is off on some deployments (DEX_TX_ROUTE_ENABLED), and then they offer no Open button at all.
+    const open = dexDescriptors.descriptorFor(pool.protocol)?.capabilities.open;
+    if (open) {
+      if (!open.supported || !isDexTxRouteEnabled()) return { kind: "none", reason: open.supported ? "Opening is not available yet" : open.reason };
+      return { kind: "open", onOpen: () => { if (!connected) connect(); setRegistryOpen(pool); } };
+    }
     if (pool.protocol === "raydium-clmm" || pool.protocol === "uniswap-v4-rhc") return { kind: "open", onOpen: () => openPool(pool) };
-    // Meteora: greyed out with its reason; the list never links out to a Meteora open flow (PM 2026-11-01).
-    const unavailable = openUnavailableReason(pool);
-    if (unavailable) return { kind: "disabled", reason: unavailable };
     return { kind: "none", reason: "Opening is not available yet" };
-  }, [openPool]);
+  }, [openPool, connected, connect]);
 
   // Deep link (`/app/rwa-pairs?openPool=…`, where `/app/rhc` and old `/app?openPool=` links redirect): open that pool once it is listed.
   const [deepLinked, setDeepLinked] = useState(false);
@@ -309,7 +326,10 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", header 
     const pool = pools.find((item) => item.poolAddress === deepLinkPool || item.poolAddress.toLowerCase() === deepLinkPool.toLowerCase());
     const timer = window.setTimeout(() => {
       setDeepLinked(true);
-      if (pool && actionFor(pool).kind === "open") openPool(pool, false);
+      if (!pool || actionFor(pool).kind !== "open") return;
+      // No auto-connect for a deep link: each dialog shows its own Connect wallet button.
+      if (dexDescriptors.descriptorFor(pool.protocol)) setRegistryOpen(pool);
+      else openPool(pool, false);
     }, 0);
     return () => window.clearTimeout(timer);
   }, [deepLinkPool, deepLinked, loading, pools, actionFor, openPool]);
@@ -407,5 +427,30 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", header 
       : <PoolTable pools={selected.pools} apr={apr} actionFor={actionFor} sort={sort} onSort={onSort} icons={loaded.icons} />)}
 
     {openPair && <OpenPositionModal pair={openPair} onClose={() => setOpenPair(null)} />}
+    {registryOpen && <RegistryOpenDialog key={registryOpen.key} pool={registryOpen} rwaList={rwaListKeys.has(registryOpen.key)} onClose={() => setRegistryOpen(null)} />}
   </section>;
+}
+
+/** The registry open dialog with its pool's preset ranges (the same range APR payload the cards read). */
+function RegistryOpenDialog({ pool, rwaList, onClose }: { pool: UnifiedPool; rwaList: boolean; onClose: () => void }) {
+  const descriptor = dexDescriptors.descriptorFor(pool.protocol);
+  const [ranges, setRanges] = useState<OpenRanges | Error | null>(null);
+  const [apr, setApr] = useState<PoolRangeAprPayload | Error | null>(null);
+  const dexId = descriptor?.id ?? "";
+  useEffect(() => {
+    if (!dexId) return;
+    let live = true;
+    const fail = (fallback: string) => (error: unknown) => (error instanceof Error ? error : new Error(fallback));
+    // Ranges come from the server's own calculation (on-chain only); the APR feed is optional and may be down.
+    fetchOpenRanges(dexId, pool.poolAddress).then((value) => { if (live) setRanges(value); },
+      (error: unknown) => { if (live) setRanges(fail("The server could not work out this pool's ranges.")(error)); });
+    const protocol = pool.protocol as RangeAprProtocol;
+    (rwaList ? loadPoolRangeApr(pool.poolAddress, protocol, { rwaList: true }) : loadPoolRangeApr(pool.poolAddress, protocol)).then(
+      (payload) => { if (live) setApr(payload); },
+      (error: unknown) => { if (live) setApr(fail("APR data is unavailable right now.")(error)); },
+    );
+    return () => { live = false; };
+  }, [dexId, pool.poolAddress, pool.protocol, rwaList]);
+  if (!descriptor) return null;
+  return <RegistryOpenModal pool={pool} descriptor={descriptor} ranges={ranges} apr={apr} onClose={onClose} />;
 }

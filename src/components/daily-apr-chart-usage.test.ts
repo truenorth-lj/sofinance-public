@@ -5,8 +5,10 @@ import { describe, expect, it } from "vitest";
 describe("daily APR chart wiring", () => {
   it("mounts the pool daily APR chart on position performance after lookup", () => {
     const src = readFileSync(resolve("src/components/position-performance-panel.tsx"), "utf8");
-    expect(src).toContain("PoolDailyAprChart");
-    expect(src).toContain("realizedFeeAprSeries");
+    const summary = readFileSync(resolve("src/components/position-performance-summary.tsx"), "utf8");
+    expect(summary).toContain("PoolDailyAprChart");
+    expect(summary).toContain("realizedFeeAprSeries");
+    expect(src).toContain("PerformancePoolChart");
     expect(src).toContain("previewPoolId");
     expect(src).toContain("data?.poolId || previewPoolId");
   });

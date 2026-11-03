@@ -30,6 +30,8 @@ export const raydiumPositionSource: PositionSource<WalletPosition, Pick<WalletDi
     performance: SUPPORTED,
     deposit: SUPPORTED,
     withdraw: Object.freeze({ supported: true, partial: true }),
+    /** Today's Raydium Withdraw panel: original tokens, USDC or SOL. */
+    withdrawOutputs: Object.freeze(["pool-tokens", "usdc", "sol"] as const),
     exitPreview: Object.freeze({ supported: true, output: "usdc+sol" }),
     rangeDisplay: "price",
     manualAdd: false,

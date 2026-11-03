@@ -3,6 +3,7 @@ import "@/lib/engine-host";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatAmount, parseTokenAmount, toleranceFromPercent } from "@sofinance/engine/amount";
+import { addAmountGuidance, CLOSED_POSITION_ADD_MESSAGE } from "@/lib/selected-amount-guidance";
 import type { PositionSelection, SelectedPositionState } from "@sofinance/engine/selected-state";
 import type { WalletDiscovery } from "@sofinance/engine/wallet-discovery";
 import { DEFAULT_RESALE_FLOOR_BPS, USDC_MINT } from "@sofinance/engine/ids";
@@ -157,7 +158,7 @@ export function useSelectedController() {
   const affordable = visibleState && rawAmount <= BigInt(visibleState.inputBalance);
   const ready = connected && !!visibleState && visibleState.ownsNft &&
     !visibleState.paused && !visibleState.frozen && !visibleState.transferFee &&
-    !visibleState.unsupportedExtensions.length && visibleState.sufficientSol && rawAmount > 0n &&
+    !visibleState.unsupportedExtensions.length && visibleState.liquidity !== "0" && visibleState.sufficientSol && rawAmount > 0n &&
     affordable && toleranceBps !== null;
   const quote = result && result.quote.wallet === wallet && selectionKey(result.quote) === selectionKey(selection) &&
     BigInt(result.quote.requested) === rawAmount && result.quote.floorBps === floorBps &&
@@ -178,11 +179,13 @@ export function useSelectedController() {
     if (!selection) return "Please select position and input asset";
     if (loadingState || !visibleState) return "Verifying selected position";
     if (!visibleState.ownsNft) return "Selected NFT not available in this wallet ATA";
+    if (visibleState.liquidity === "0") return CLOSED_POSITION_ADD_MESSAGE;
     if (visibleState.paused || visibleState.frozen || visibleState.transferFee ||
       visibleState.unsupportedExtensions.length) return "Selected pool asset settings not yet supported";
     if (!visibleState.sufficientSol) return NOT_ENOUGH_SOL_FOR_FEES_MESSAGE;
     if (toleranceBps === null) return "Price tolerance must be 0–5%, adjust by 0.1% each time";
-    if (rawAmount <= 0n) return "Please enter input amount matching asset precision";
+    const amountProblem = rawAmount > 0n ? null : addAmountGuidance(amount, visibleState.inputDecimals);
+    if (amountProblem) return amountProblem;
     if (!affordable) {
       insufficientInput = { balance: visibleState.inputBalance, requested: rawAmount.toString(), decimals: visibleState.inputDecimals,
         native: visibleState.inputKind === "native" };
