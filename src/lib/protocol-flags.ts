@@ -136,11 +136,12 @@ export function isMeteoraDlmmDiscoveryEnabled(target: DeployTarget = deployTarge
 
 /**
  * The shared DEX route `/api/dex/[dex]/[op]` (DESIGN.md §1.2, PR4): quotes and prepares (unsigned, simulated)
- * transactions through the DEX registry for every registered DEX. OFF in production until the UI ships (PR8).
+ * transactions through the DEX registry for every registered DEX. ON by default in every deploy target, production
+ * included, with no env (LJ 2026-11-01: Meteora goes live without a feature flag). Raydium never goes through this route.
  * Preparing never signs or sends.
  */
 export const DEX_TX_ROUTE_ENABLED: Readonly<Record<DeployTarget, boolean>> = Object.freeze({
-  production: false,
+  production: true,
   preview: true,
   development: true,
 });
@@ -198,7 +199,7 @@ export function isMeteoraRwaScanEnabled(target: DeployTarget = deployTarget()): 
 /**
  * Meteora DLMM pools of the scan feed (`meteora-dlmm-rwa-v1`) in the listed pools: `/api/rwa-pairs`, `/app/rwa-pairs`
  * and the homepage top-5 candidates (SCAN_DESIGN.md §8). Turned on together with `METEORA_RWA_SCAN_ENABLED` (it has
- * no effect without it: nothing writes the feed). Opening a Meteora position from the list stays unavailable.
+ * no effect without it: nothing writes the feed). Opening goes through the dex route (`DEX_TX_ROUTE_ENABLED`).
  */
 export const METEORA_RWA_LIST_ENABLED: Readonly<Record<DeployTarget, boolean>> = Object.freeze({
   production: true,

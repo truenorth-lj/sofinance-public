@@ -183,7 +183,10 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
   const externalPositions = external?.positions ?? [];
   const otherPositions: UnifiedPosition[] = [...(connected ? registry.positions : []), ...externalPositions];
   const allPositions: UnifiedPosition[] = [...(connected ? solanaPositions : []), ...otherPositions];
-  const groups = groupPositions(allPositions, { solana: [positionSource.id, ...registry.sourceIds], ...(external ? { [external.chain]: external.sourceIds } : {}) },
+  // A registry DEX only names the sources ("Raydium CLMM · …") once it returned a position: with none, the Solana
+  // options read exactly as on a Raydium-only page.
+  const registryListed = registry.sourceIds.filter((id) => registry.positions.some((item) => item.source === id));
+  const groups = groupPositions(allPositions, { solana: [positionSource.id, ...registryListed], ...(external ? { [external.chain]: external.sourceIds } : {}) },
     external ? ["solana" as const, external.chain] : []);
   const [otherKey, setOtherKey] = useState(initialPositionKey);
   const solanaEmpty = !connected || (discovery !== null && !loadingDiscovery && positionOptions.length === 0);

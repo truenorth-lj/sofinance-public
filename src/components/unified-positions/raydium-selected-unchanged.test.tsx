@@ -15,7 +15,7 @@ const LINKED = testKeypair(73).publicKey.toBase58();
 const POOL = testKeypair(74).publicKey.toBase58();
 const MINT_A = testKeypair(75).publicKey.toBase58();
 const MINT_B = testKeypair(76).publicKey.toBase58();
-const state = vi.hoisted(() => ({ routeOn: false, dexCalls: 0 }));
+const state = vi.hoisted(() => ({ routeOn: false, dexCalls: 0, dex: "404" as "404" | "empty" | "hang" | "500" }));
 
 vi.mock("@/lib/protocol-flags", async (importOriginal) => ({ ...await importOriginal<typeof import("@/lib/protocol-flags")>(),
   isDexTxRouteEnabled: () => state.routeOn }));
@@ -34,14 +34,20 @@ const raydiumRow = (positionMint: string, tickLower: number, tickUpper: number) 
 let container: HTMLDivElement; let root: Root;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true); localStorage.clear();
-  state.routeOn = false; state.dexCalls = 0;
+  state.routeOn = false; state.dexCalls = 0; state.dex = "404";
   window.history.replaceState(null, "", "/app");
   vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
     const url = new URL(String(input), "http://x");
     if (url.pathname === "/api/wallet") {
       return Response.json({ wallet: WALLET, slot: 1, fetchedAt: 1, positions: [raydiumRow(FIRST, -20, 20), raydiumRow(LINKED, -10, 10)], assets: [] });
     }
-    if (url.pathname.startsWith("/api/dex/")) { state.dexCalls += 1; return new Response(null, { status: 404 }); }
+    if (url.pathname.startsWith("/api/dex/")) {
+      state.dexCalls += 1;
+      if (state.dex === "empty") return Response.json({ positions: [] });
+      if (state.dex === "hang") return new Promise<Response>(() => {});
+      if (state.dex === "500") return Response.json({ error: "Meteora is down" }, { status: 500 });
+      return new Response(null, { status: 404 });
+    }
     return Response.json({ error: "not in this test" }, { status: 503 });
   }));
   container = document.createElement("div"); document.body.append(container); root = createRoot(container);
@@ -73,5 +79,38 @@ describe("/app Raydium selected state (unchanged by the registry DEXes)", () => 
     state.routeOn = true;
     const on = await renderLinked();
     expect(on).toBe(off);
+  });
+
+  const remount = async () => {
+    await act(async () => root.unmount());
+    container.remove(); container = document.createElement("div"); document.body.append(container); root = createRoot(container);
+  };
+
+  it("with the dex route on by default and Meteora serving 0 positions, the Raydium markup is identical to today (no source prefix)", async () => {
+    const off = await renderLinked();
+    expect(state.dexCalls).toBe(0);
+    await remount();
+    state.routeOn = true; state.dex = "empty";
+    const on = await renderLinked();
+    expect(state.dexCalls).toBe(1);
+    expect(on).toBe(off);
+    expect([...select().querySelectorAll("option")].map((option) => option.textContent).join("\n")).not.toMatch(/Raydium|Meteora/);
+    expect(on).toMatchSnapshot();
+  });
+
+  it("a hanging Meteora positions read does not hold back the Raydium list or selection", async () => {
+    state.routeOn = true; state.dex = "hang";
+    await renderLinked();
+    expect(state.dexCalls).toBe(1);
+    expect(select().value).toBe(`raydium-clmm:${LINKED}`);
+    expect([...select().querySelectorAll("option")].map((option) => option.value).sort()).toEqual([`raydium-clmm:${FIRST}`, `raydium-clmm:${LINKED}`].sort());
+  });
+
+  it("a failing (500) Meteora positions read leaves the Raydium list in place and only adds its plain error", async () => {
+    state.routeOn = true; state.dex = "500";
+    await renderLinked();
+    expect(select().value).toBe(`raydium-clmm:${LINKED}`);
+    expect([...select().querySelectorAll("option")].map((option) => option.value).sort()).toEqual([`raydium-clmm:${FIRST}`, `raydium-clmm:${LINKED}`].sort());
+    expect(container.textContent).toContain("Meteora is down");
   });
 });

@@ -48,6 +48,10 @@ beforeEach(() => {
   container = document.createElement("div"); document.body.append(container); root = createRoot(container);
 });
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+// Mocks answer by URL, never by call order: the page also reads the registry DEX positions (Meteora, on by default) while
+// the Raydium withdrawal runs, and that read must not consume or trigger a Raydium response.
+const DEX_POSITIONS = "/api/dex/meteora-dlmm/positions";
+const urlOf = (input: unknown) => new URL(String(input), "http://x").pathname;
 const click = async (text: string, scope: Element = container) => {
   const b = Array.from(scope.querySelectorAll("button")).find((x) => x.textContent?.trim() === text);
   expect(b, text).toBeDefined(); await act(async () => b!.click());
@@ -57,8 +61,10 @@ it("prepares and prompts step 2 after step 1 confirms, even though the closed po
   // Step 1 was sent; the panel is waiting for its confirmation.
   localStorage.setItem(withdrawKey, JSON.stringify(withdrawCheckpoint("withdraw")));
   const calls: string[] = [];
-  vi.stubGlobal("fetch", vi.fn(async (path: string) => {
+  vi.stubGlobal("fetch", vi.fn(async (input: string) => {
+    const path = urlOf(input);
     calls.push(path);
+    if (path === DEX_POSITIONS) return Response.json({ positions: [] });
     if (path === "/api/withdraw-status") {
       // Step 1 confirmed: the balances refresh now reads the burned position NFT as gone.
       mocks.setState(null);
@@ -74,7 +80,8 @@ it("prepares and prompts step 2 after step 1 confirms, even though the closed po
   await click("Resume withdrawal", view);
   await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
 
-  expect(calls).toEqual(["/api/withdraw-status", "/api/withdraw-quote", "/api/withdraw-prepare"]);
+  expect(calls.filter((path) => path !== DEX_POSITIONS)).toEqual(["/api/withdraw-status", "/api/withdraw-quote", "/api/withdraw-prepare"]);
+  expect(calls).toContain(DEX_POSITIONS);
   // Step 2 reached the wallet.
   expect(mocks.sign).toHaveBeenCalledOnce();
   // The panel is still there and states the real failure, not the "choose a position" fallback.
@@ -106,12 +113,45 @@ it("does not keep the old position's Withdraw panel when another position is sel
 it("releases the pinned panel once the withdrawal finishes", async () => {
   // Step 2 was sent; confirming it completes the withdrawal of the (now closed) position.
   localStorage.setItem(withdrawKey, JSON.stringify(withdrawCheckpoint("swap")));
-  vi.stubGlobal("fetch", vi.fn(async () => { mocks.setState(null); return Response.json({ status: "success" }); }));
+  const calls: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (input: string) => {
+    const path = urlOf(input);
+    calls.push(path);
+    if (path === DEX_POSITIONS) return Response.json({ positions: [] });
+    if (path === "/api/withdraw-status") { mocks.setState(null); return Response.json({ status: "success" }); }
+    return Response.json({ error: `unexpected ${path}` }, { status: 500 });
+  }));
   await act(async () => root.render(<SelectedApp initialView="withdraw" />));
   const view = container.querySelector("#withdraw-view")!;
+  // The Meteora read already happened, and Resume withdrawal (#297) is still offered.
+  expect(calls).toContain(DEX_POSITIONS);
   await click("Resume withdrawal", view);
   await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
+  expect(calls).toContain("/api/withdraw-status");
   expect(localStorage.getItem(withdrawKey)).toBeNull();
   expect(view.querySelector('section[aria-label="Withdraw from position"]')).toBeNull();
   expect(view.textContent).toContain("Connect your wallet and choose a position to withdraw");
 });
+
+it.each([["hangs", () => new Promise<Response>(() => {})], ["fails (500)", () => Response.json({ error: "Meteora is down" }, { status: 500 })]] as const)(
+  "the Raydium withdrawal resumes and prompts step 2 while the Meteora positions read %s", async (_label, meteora) => {
+    localStorage.setItem(withdrawKey, JSON.stringify(withdrawCheckpoint("withdraw")));
+    const calls: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: string) => {
+      const path = urlOf(input);
+      calls.push(path);
+      if (path === DEX_POSITIONS) return meteora();
+      if (path === "/api/withdraw-status") { mocks.setState(null); return Response.json({ status: "success" }); }
+      if (path === "/api/withdraw-quote") return Response.json(withdrawPrepared("swap").summary);
+      if (path === "/api/withdraw-prepare") return Response.json(withdrawPrepared("swap"));
+      return Response.json({ error: `unexpected ${path}` }, { status: 500 });
+    }));
+    mocks.sign.mockRejectedValue(new Error("User rejected the request."));
+    await act(async () => root.render(<SelectedApp initialView="withdraw" />));
+    const view = container.querySelector("#withdraw-view")!;
+    expect(calls).toContain(DEX_POSITIONS);
+    await click("Resume withdrawal", view);
+    await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
+    expect(calls.filter((path) => path !== DEX_POSITIONS)).toEqual(["/api/withdraw-status", "/api/withdraw-quote", "/api/withdraw-prepare"]);
+    expect(mocks.sign).toHaveBeenCalledOnce();
+  });

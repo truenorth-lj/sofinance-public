@@ -42,9 +42,11 @@ describe("POST /api/dex/[dex]/[op]", () => {
   });
   afterEach(() => vi.unstubAllEnvs());
 
-  it("is off in production", async () => {
+  it("is on by default in production, with no deploy env set", async () => {
     vi.stubEnv("NEXT_PUBLIC_SOFI_DEPLOY_ENV", "production");
-    expect((await call("quote-open", { request: openRequest })).status).toBe(404);
+    expect((await call("quote-open", { request: openRequest })).status).toBe(200);
+    vi.stubEnv("NEXT_PUBLIC_SOFI_DEPLOY_ENV", ""); vi.stubEnv("VERCEL_ENV", "");
+    expect((await call("quote-open", { request: openRequest })).status).toBe(200);
   });
 
   it("404s an unknown DEX or operation", async () => {
@@ -338,11 +340,10 @@ describe("POST /api/dex/[dex]/[op]", () => {
     expect((await call("quote-open", { request: openRequest }, "some-dex", "203.0.113.9")).status).toBe(200);
   });
 
-  it("does not count requests while the route is off (production 404, no limiter state)", async () => {
+  it("is on by default in production: positions are served and rate limited like any other target", async () => {
     vi.stubEnv("NEXT_PUBLIC_SOFI_DEPLOY_ENV", "production");
-    for (let i = 0; i <= DEX_ROUTE_REQUESTS_PER_IP_PER_MINUTE; i++) expect((await call("positions", { owner: owner.toBase58() })).status).toBe(404);
-    vi.stubEnv("NEXT_PUBLIC_SOFI_DEPLOY_ENV", "development");
     fake.adapter = { ...fake.adapter, listPositions: vi.fn(async () => []) };
     expect((await call("positions", { owner: owner.toBase58() })).status).toBe(200);
+    expect((await call("positions", { owner: owner.toBase58() }, "nope")).status).toBe(404);
   });
 });
