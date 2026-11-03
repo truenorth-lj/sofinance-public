@@ -11,7 +11,7 @@ export type * from "./types";
 export { DEX_IDS, isDexId, normalizeDexId, feeRuleBps } from "./types";
 export type { DexDescriptorRegistry } from "./registry";
 export type { AddQuote, DepositMinimum, OpenQuote, OpenRangePreset, OpenRanges, PositionPerformance, RentQuote } from "./adapter";
-export { DEPOSIT_MINIMUM_UNAVAILABLE, DEPOSIT_TOO_SMALL_PREFIX, depositTooSmallMessage, suggestedMinimum } from "./deposit-minimum";
+export { DEPOSIT_MINIMUM_UNAVAILABLE, DEPOSIT_TOO_SMALL_PREFIX, depositTooSmallMessage, minimumDisplay } from "./deposit-minimum";
 import type { AddQuote, OpenRanges } from "./adapter";
 export { openSolNeed, openSolPartsFromQuote, openSolShortfall, SOL_NEED_UNKNOWN_COPY, type OpenSolParts, type OpenSolPartsResult, type OpenSolQuote } from "./sol-need";
 

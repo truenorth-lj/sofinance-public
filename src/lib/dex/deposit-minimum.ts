@@ -6,22 +6,23 @@ import type { DepositMinimum } from "./adapter";
 
 export const DEPOSIT_TOO_SMALL_PREFIX = "This amount is too small to add to every price step in this range.";
 
-/** Headroom over the estimate: quotes move between the check and the build, and the build re-checks in simulation. */
-const HEADROOM_PERCENT = 10n;
+/** Significant figures of the shown minimum. */
+const MINIMUM_SIGNIFICANT_FIGURES = 3;
 
 /**
- * `raw` plus 10% headroom, rounded UP to two significant figures in whole tokens (e.g. 48,336 raw USDC → "0.054").
- * Never rounds below the estimate.
+ * The threshold itself, shown in whole tokens: `raw` rounded UP to 3 significant figures (e.g. 25,119 raw USDC → "0.0252",
+ * 48,336 → "0.0484"; 3 digits or fewer are exact). No headroom on top: any buffer belongs in the threshold (the rule's
+ * margin). The shown number is the smallest 3-significant-figure amount ≥ the threshold, so entering it always passes
+ * the same check (`amount < minimumRaw` is false).
  */
-export function suggestedMinimum(raw: bigint, decimals: number): string {
+export function minimumDisplay(raw: bigint, decimals: number): string {
   if (raw <= 0n) return "0";
-  const padded = (raw * (100n + HEADROOM_PERCENT) + 99n) / 100n;
-  const digits = padded.toString().length;
-  const step = digits > 2 ? 10n ** BigInt(digits - 2) : 1n;
-  const rounded = ((padded + step - 1n) / step) * step;
+  const digits = raw.toString().length;
+  const step = digits > MINIMUM_SIGNIFICANT_FIGURES ? 10n ** BigInt(digits - MINIMUM_SIGNIFICANT_FIGURES) : 1n;
+  const rounded = ((raw + step - 1n) / step) * step;
   const scale = 10n ** BigInt(decimals);
   const whole = rounded / scale;
-  const fraction = (rounded % scale).toString().padStart(decimals, "0").replace(/0+$/, "");
+  const fraction = decimals > 0 ? (rounded % scale).toString().padStart(decimals, "0").replace(/0+$/, "") : "";
   return fraction ? `${whole}.${fraction}` : whole.toString();
 }
 
@@ -36,6 +37,6 @@ export function depositTooSmallMessage(minimum: DepositMinimum | null | undefine
   if (minimum.unavailable) return DEPOSIT_MINIMUM_UNAVAILABLE;
   const raw = minimum.minimumRaw && /^\d+$/.test(minimum.minimumRaw) ? BigInt(minimum.minimumRaw) : null;
   return raw && raw > 0n
-    ? `${DEPOSIT_TOO_SMALL_PREFIX} Try at least about ${suggestedMinimum(raw, token.decimals)}${token.symbol ? ` ${token.symbol}` : ""}.`
+    ? `${DEPOSIT_TOO_SMALL_PREFIX} Try at least ${minimumDisplay(raw, token.decimals)}${token.symbol ? ` ${token.symbol}` : ""}.`
     : `${DEPOSIT_TOO_SMALL_PREFIX} Try a larger amount.`;
 }

@@ -11,6 +11,8 @@ import { DexError } from "../errors";
 import { FEE_WALLET_MISSING_MESSAGE } from "../fee-wallet.server";
 import { NO_FEE_POLICY } from "../fees";
 import { openRentLines } from "@/components/unified-positions/registry-tools";
+import { parseTokenAmount } from "@sofinance/engine/amount";
+import { DEPOSIT_TOO_SMALL_PREFIX, depositTooSmallMessage } from "../deposit-minimum";
 import { createMeteoraDlmmAdapter } from "./adapter.server";
 import { clearMeteoraPoolListCache } from "./pools.server";
 import {
@@ -381,6 +383,16 @@ describe("Meteora DLMM adapter specifics", () => {
       expect(Number(tiny.minimumRaw)).toBe(MIN_USDC_RULE);
       expect((await adapter.quoteOpen(usdc(String(MIN_USDC_RULE)))).depositMinimum).toMatchObject({ tooSmall: false, minimumRaw: String(MIN_USDC_RULE) });
       expect((await adapter.quoteOpen(usdc(String(MIN_USDC_RULE - 1)))).depositMinimum).toMatchObject({ tooSmall: true });
+    });
+
+    it("the hint is the threshold: entering the shown minimum passes the same check (Open and Add share it)", async () => {
+      const adapter = createMeteoraDlmmAdapter({ quoteLeg: failing, usdPrices: prices });
+      const tiny = (await adapter.quoteOpen(usdc("20000"))).depositMinimum!;
+      const message = depositTooSmallMessage(tiny, { id: USDC_MINT, decimals: 6, symbol: "USDC" })!;
+      expect(message).toBe(`${DEPOSIT_TOO_SMALL_PREFIX} Try at least 0.0251 USDC.`);
+      const shown = parseTokenAmount(message.match(/Try at least ([\d.]+)/)![1]!, 6);
+      expect(shown).toBeGreaterThanOrEqual(BigInt(tiny.minimumRaw!));
+      expect((await adapter.quoteOpen(usdc(shown.toString()))).depositMinimum).toMatchObject({ tooSmall: false, minimumRaw: tiny.minimumRaw });
     });
 
     it("the quote supplement can only raise the bar: a route that rounds a side to 0 is too small even above the rule", async () => {

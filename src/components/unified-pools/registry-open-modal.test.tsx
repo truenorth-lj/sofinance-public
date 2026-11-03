@@ -168,7 +168,7 @@ describe("RegistryOpenModal", () => {
     await act(async () => { select.value = USDC_MINT; select.dispatchEvent(new Event("change", { bubbles: true })); });
     await type("0.015");
     expect(container.querySelector("[data-testid=registry-open-too-small]")!.textContent)
-      .toBe("This amount is too small to add to every price step in this range. Try at least about 0.054 USDC.");
+      .toBe("This amount is too small to add to every price step in this range. Try at least 0.0484 USDC.");
     expect(openButton().disabled).toBe(true);
     await act(async () => { openButton().click(); });
     expect(mocks.runSteps).not.toHaveBeenCalled();

@@ -300,7 +300,7 @@ describe("/app My positions with registry DEXes", () => {
     const add = [...panel.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent === "Add liquidity")!;
     expect(add.disabled).toBe(true);
     expect(panel.querySelector("[data-testid=registry-add-too-small]")?.textContent)
-      .toBe("This amount is too small to add to every price step in this range. Try at least about 0.054 TSLA.");
+      .toBe("This amount is too small to add to every price step in this range. Try at least 0.0484 TSLA.");
     await act(async () => add.click());
     expect((state.dexCalls as [string, unknown][]).filter(([path]) => path.endsWith("/add"))).toEqual([]);
   });
