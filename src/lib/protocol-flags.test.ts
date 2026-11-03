@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { deployTarget, isOrcaDiscoveryEnabled, isOrcaPositionsEnabled, isRhcUniv4DiscoveryEnabled, isRhcUniv4TxBuildEnabled, ORCA_DISCOVERY_ENABLED, ORCA_POSITIONS_ENABLED, RHC_UNIV4_DISCOVERY_ENABLED, RHC_UNIV4_TX_BUILD_ENABLED, isRhcUniv4TradingEnabled, RHC_UNIV4_TRADING_ENABLED, isRhcUniv4WalletSigningEnabled, RHC_UNIV4_WALLET_SIGNING_ENABLED, isRhcApr7dEnabled, RHC_APR7D_ENABLED, isMeteoraDlmmDiscoveryEnabled, METEORA_DLMM_DISCOVERY_ENABLED, isMeteoraDlmmTxBuildEnabled, METEORA_DLMM_TX_BUILD_ENABLED, isMeteoraDlmmWalletSigningEnabled, METEORA_DLMM_WALLET_SIGNING_ENABLED, isMeteoraRwaScanEnabled, METEORA_RWA_SCAN_ENABLED, isMeteoraRwaListEnabled, METEORA_RWA_LIST_ENABLED } from "./protocol-flags";
+import { deployTarget, isOrcaDiscoveryEnabled, isOrcaPositionsEnabled, isRhcUniv4DiscoveryEnabled, isRhcUniv4TxBuildEnabled, ORCA_DISCOVERY_ENABLED, ORCA_POSITIONS_ENABLED, RHC_UNIV4_DISCOVERY_ENABLED, RHC_UNIV4_TX_BUILD_ENABLED, isRhcUniv4TradingEnabled, RHC_UNIV4_TRADING_ENABLED, isRhcUniv4WalletSigningEnabled, RHC_UNIV4_WALLET_SIGNING_ENABLED, isRhcApr7dEnabled, RHC_APR7D_ENABLED, isMeteoraDlmmDiscoveryEnabled, METEORA_DLMM_DISCOVERY_ENABLED, isMeteoraDlmmTxBuildEnabled, METEORA_DLMM_TX_BUILD_ENABLED, isMeteoraDlmmWalletSigningEnabled, METEORA_DLMM_WALLET_SIGNING_ENABLED, isMeteoraRwaScanEnabled, METEORA_RWA_SCAN_ENABLED, isMeteoraRwaListEnabled, METEORA_RWA_LIST_ENABLED, isDexTxRouteEnabled, DEX_TX_ROUTE_ENABLED } from "./protocol-flags";
 
 describe("ORCA_DISCOVERY_ENABLED", () => {
   it("is a code constant that is OFF in production", () => {
@@ -157,5 +157,17 @@ describe("deployTarget env resolution", () => {
     vi.stubEnv("NEXT_PUBLIC_SOFI_DEPLOY_ENV", ""); vi.stubEnv("VERCEL_ENV", "");
     expect(deployTarget()).toBe("production");
     vi.unstubAllEnvs();
+  });
+  it("DEX_TX_ROUTE_ENABLED is a frozen code constant, on by default in production with no env (Meteora live, LJ 2026-11-01)", () => {
+    expect(DEX_TX_ROUTE_ENABLED).toEqual({ production: true, preview: true, development: true });
+    expect(Object.isFrozen(DEX_TX_ROUTE_ENABLED)).toBe(true);
+    vi.stubEnv("NEXT_PUBLIC_SOFI_DEPLOY_ENV", ""); vi.stubEnv("VERCEL_ENV", "");
+    expect(isDexTxRouteEnabled()).toBe(true);
+    vi.unstubAllEnvs();
+  });
+  it("the legacy Meteora flags stay off in production", () => {
+    expect(METEORA_DLMM_DISCOVERY_ENABLED.production).toBe(false);
+    expect(METEORA_DLMM_TX_BUILD_ENABLED.production).toBe(false);
+    expect(METEORA_DLMM_WALLET_SIGNING_ENABLED.production).toBe(false);
   });
 });

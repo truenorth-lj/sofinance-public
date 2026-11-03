@@ -57,6 +57,7 @@ function serve(confirmation: Record<string, unknown>) {
       assets: [{ kind: "token", mint: USDC_MINT, tokenProgram: null, decimals: 6, balance: "1", totalBalance: "1", account: "a", eligible: true, reason: null }] });
     if (url.pathname === "/api/selected-state") return Response.json(selectedState(positionMint));
     if (url.pathname === "/api/compound-state") return Response.json(compoundState(positionMint));
+    if (url.pathname === "/api/dex/meteora-dlmm/positions") return Response.json({ positions: [] });
     if (url.pathname === "/api/compound-confirm") return Response.json({ signature: fixture.attempt.signature, ...confirmation });
     return Response.json({});
   }));
@@ -76,10 +77,12 @@ beforeEach(() => {
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe("opening the Yield Compound tab reads each position source once", () => {
-  it("without a saved compound: one wallet scan, one selected read and one compound read", async () => {
+  it("without a saved compound: one wallet scan, one selected read, one compound read and one Meteora positions read", async () => {
     serve({ status: "pending", chainStatus: "pending", state: null });
     await open(fixture.state.positionMint);
-    expect(paths).toEqual(["/api/wallet", "/api/selected-state", "/api/compound-state"]);
+    // The registry DEX (Meteora, dex route on by default) is read exactly once per wallet; the Raydium reads are unchanged.
+    expect([...paths].sort()).toEqual(["/api/compound-state", "/api/dex/meteora-dlmm/positions", "/api/selected-state", "/api/wallet"]);
+    expect(paths.filter((path) => !path.startsWith("/api/dex/"))).toEqual(["/api/wallet", "/api/selected-state", "/api/compound-state"]);
   });
 
   it("a saved compound that already finalized is checked once, and its fresh position read replaces a second compound read", async () => {

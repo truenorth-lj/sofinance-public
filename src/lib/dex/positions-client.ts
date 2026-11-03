@@ -30,7 +30,7 @@ const isPosition = (value: unknown, descriptor: DexDescriptor): value is Unified
 
 /**
  * The wallet's positions in one DEX, or `null` when this deployment does not serve the DEX: only a 404 whose body has no
- * error `code` (the route is off, as in production today, or the DEX / op is not registered); the page then treats the
+ * error `code` (the route is off, or the DEX / op is not registered); the page then treats the
  * DEX as not enabled. A coded 404 (e.g. `POSITION_NOT_FOUND` from the adapter) and every other failure throw with the
  * server's plain message.
  */

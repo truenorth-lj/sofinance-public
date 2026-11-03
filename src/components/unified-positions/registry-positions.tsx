@@ -13,7 +13,7 @@ import { PositionAssetRow } from "../position-asset-row";
  * My positions from DEXes served through the registry (PR5): every descriptor whose signer is the connected wallet's,
  * except the sources the page already reads another way (`exclude`, today the inline Raydium scan). The panel renders
  * these rows, their header and details only from the unified shape and the descriptor; it never checks a DEX id.
- * Nothing is requested where the dex route is off (`DEX_TX_ROUTE_ENABLED`, production today): the page is unchanged there
+ * Nothing is requested where the dex route is off (`DEX_TX_ROUTE_ENABLED`, on by default): the page is unchanged there
  * and makes no extra request.
  */
 export type RegistryPositions = {
