@@ -157,7 +157,7 @@ export function OpenPositionModal({
         <div className="relative mt-1">
           <select
             id="open-input-asset"
-            className="w-full min-w-0 max-w-full appearance-none truncate rounded-2xl border border-white/20 bg-white/[0.06] py-2 pl-3 pr-12 text-sm text-cream"
+            className="w-full min-w-0 max-w-full appearance-none truncate rounded-2xl border border-white/20 bg-white/[0.06] py-2 pl-3 pr-12 text-base sm:text-sm text-cream"
             value={c.inputMint ? `${c.inputKind}:${c.inputMint}` : ""}
             onChange={(event) => {
               const [kind, mint] = event.target.value.split(":");
@@ -193,7 +193,7 @@ export function OpenPositionModal({
             <label className="block text-xs text-smoke" htmlFor="open-amount">Amount</label>
             <input
               id="open-amount"
-              className="mt-1 w-full rounded-2xl border border-white/20 bg-white/[0.06] px-3 py-2 text-sm text-cream"
+              className="mt-1 w-full rounded-2xl border border-white/20 bg-white/[0.06] px-3 py-2 text-base sm:text-sm text-cream"
               value={c.amount}
               onChange={(event) => c.changeAmount(event.target.value)}
               inputMode="decimal"

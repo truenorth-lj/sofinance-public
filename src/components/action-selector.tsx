@@ -14,7 +14,7 @@ export function ActionSelector<T extends string>({ options, value, onChange, lab
     <div className="mt-3 sm:hidden">
       <label htmlFor="position-action" className="sr-only">{label}</label>
       <select id="position-action" value={value} onChange={event => onChange(event.target.value as T)} style={SELECT_CHEVRON_STYLE}
-        className="w-full rounded-full border border-white/12 bg-char px-5 py-3.5 text-sm font-semibold text-cream outline-none focus:border-lemon">
+        className="w-full rounded-full border border-white/12 bg-char px-5 py-3.5 text-base sm:text-sm font-semibold text-cream outline-none focus:border-lemon">
         {options.map(option => <option key={option.value} value={option.value} disabled={option.disabled}>{option.unavailable ? `${option.label} (not available)` : option.label}</option>)}
       </select>
     </div>

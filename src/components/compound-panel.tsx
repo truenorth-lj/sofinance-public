@@ -115,7 +115,7 @@ export function CompoundPanel({ controller: c, tokenLabel = short, onConnect }: 
       <p className="mt-2 leading-5">When switching devices or local records are lost, enter the original compound transaction signature to find and retrieve remaining yield balances. Query only reads on-chain records, moving assets still requires wallet signature.</p>
       <label htmlFor="compound-import-signature" className="mt-3 block">Original compound transaction signature</label>
       <input id="compound-import-signature" value={importSignature} onChange={(event) => setImportSignature(event.target.value)}
-        className="mt-2 w-full rounded-lg border border-white/20 bg-white/[0.06] px-3 py-2 text-xs text-cream focus:border-white/40 focus:outline-none" autoComplete="off" />
+        className="mt-2 w-full rounded-lg border border-white/20 bg-white/[0.06] px-3 py-2 text-base sm:text-xs text-cream focus:border-white/40 focus:outline-none" autoComplete="off" />
       <button disabled={!c.canImport || !importSignature.trim()} onClick={() => void c.importReceipt(importSignature)}
         className="mt-3 inline-flex items-center justify-center gap-2 rounded-full border border-white/20 bg-transparent px-3 py-2 text-xs font-semibold text-cream/80 transition-colors hover:border-white/40 hover:bg-white/[0.04] disabled:cursor-not-allowed disabled:opacity-40">{c.importing ? "Querying on-chain records…" : "Recover yield account records"}</button>
     </details>

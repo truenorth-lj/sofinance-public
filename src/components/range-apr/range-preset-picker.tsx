@@ -215,14 +215,14 @@ export function RangePresetPicker({
         <div className="mt-2 grid grid-cols-2 gap-2">
           <input
             aria-label="Minimum price"
-            className="rounded-2xl border border-white/20 bg-white/[0.06] px-3 py-2 text-sm text-cream"
+            className="rounded-2xl border border-white/20 bg-white/[0.06] px-3 py-2 text-base sm:text-sm text-cream"
             value={minPrice}
             onChange={(event) => onMinPrice(event.target.value)}
             placeholder="Min"
           />
           <input
             aria-label="Maximum price"
-            className="rounded-2xl border border-white/20 bg-white/[0.06] px-3 py-2 text-sm text-cream"
+            className="rounded-2xl border border-white/20 bg-white/[0.06] px-3 py-2 text-base sm:text-sm text-cream"
             value={maxPrice}
             onChange={(event) => onMaxPrice(event.target.value)}
             placeholder="Max"

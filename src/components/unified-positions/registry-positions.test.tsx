@@ -362,10 +362,12 @@ describe("/app My positions with registry DEXes", () => {
     // One grid per token: label | amount + symbol | USD, each cell exactly one value (PM 11/1: no wrapped second dash).
     expect(rows[0]!.map((cell) => cell?.replace(/\s+/g, " "))).toEqual(["Liquidity", "1.25 TSLA", "—", "Unclaimed fees", "0.0015 TSLA", "—"]);
     expect(rows[1]!.map((cell) => cell?.replace(/\s+/g, " "))).toEqual(["Liquidity", "0.987 TSLAx", "—", "Unclaimed fees", "0.0023 TSLAx", "—"]);
-    // The USD cells sit in the grid's own fixed column for both lines (same template for every token), so they align.
+    // The USD cells sit in the grid's own column for both lines (same template for every token), so they align. A narrow
+    // row (a phone) puts each label above its values so the amount keeps most of the width (container query, not screen).
     const grids = [...container.querySelectorAll("[data-testid=registry-position-assets] dl")].map((row) => row.className);
     expect(new Set(grids).size).toBe(1);
-    expect(grids[0]).toContain("grid-cols-[auto_minmax(0,1fr)_4.75rem]");
+    expect(grids[0]).toContain("grid-cols-[minmax(0,1fr)_auto]");
+    expect(grids[0]).toContain("@md:grid-cols-[auto_minmax(0,1fr)_6rem]");
   });
 
   it("a registry position whose amounts were not read shows a dash on both rows, never zero (same rule as Robinhood Chain)", async () => {

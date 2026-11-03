@@ -160,7 +160,7 @@ function Select<T extends string>({ label, value, onChange, options }: {
 }) {
   return <label className="flex flex-col gap-1 text-[11px] text-smoke">{label}
     <select value={value} onChange={(event) => onChange(event.target.value as T)}
-      className="rounded-xl border border-white/20 bg-white/[0.06] px-3 py-2 text-sm text-cream outline-none focus:border-white/40">
+      className="rounded-xl border border-white/20 bg-white/[0.06] px-3 py-2 text-base sm:text-sm text-cream outline-none focus:border-white/40">
       {options.map((option) => <option key={option.value} value={option.value} className="bg-char">{option.label}</option>)}
     </select>
   </label>;
@@ -187,7 +187,7 @@ function TvlFilter({ onChange }: { onChange: (minTvl: number | null) => void }) 
         const next = event.target.value as TvlChoice;
         setChoice(next);
         onChange(next === "any" ? null : next === "custom" ? customValue(custom) : Number(next));
-      }} className={cn("rounded-xl border bg-white/[0.06] px-3 py-2 text-sm text-cream outline-none focus:border-white/40",
+      }} className={cn("rounded-xl border bg-white/[0.06] px-3 py-2 text-base text-cream outline-none focus:border-white/40 sm:text-sm",
         choice === "any" ? "border-white/20" : "border-lemon/70")}>
         <option value="any" className="bg-char">Any TVL</option>
         {TVL_FILTER_PRESETS.map((usd) => <option key={usd} value={String(usd)} className="bg-char">{`≥ ${tvlPresetLabel(usd)}`}</option>)}
@@ -199,7 +199,7 @@ function TvlFilter({ onChange }: { onChange: (minTvl: number | null) => void }) 
       <span aria-hidden="true">≥ $</span>
       <input type="number" inputMode="numeric" min={0} step={1000} value={custom} placeholder="e.g. 25000" data-testid="tvl-filter-custom"
         onChange={(event) => { setCustom(event.target.value); onChange(customValue(event.target.value)); }}
-        className="w-full rounded-xl border border-lemon/70 bg-white/[0.06] px-3 py-1.5 text-sm text-cream outline-none placeholder:text-smoke/70 focus:border-white/40" />
+        className="w-full rounded-xl border border-lemon/70 bg-white/[0.06] px-3 py-1.5 text-base sm:text-sm text-cream outline-none placeholder:text-smoke/70 focus:border-white/40" />
     </label>}
   </div>;
 }
@@ -374,7 +374,7 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", header 
           <span className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-smoke" aria-hidden="true" />
             <input type="search" value={filters.query} onChange={(event) => setFilter("query", event.target.value)} placeholder="Name or symbol, e.g. SPCX or Tesla"
-              className="w-full rounded-xl border border-white/20 bg-white/[0.06] py-2 pl-9 pr-3 text-sm text-cream outline-none placeholder:text-smoke/70 focus:border-white/40" />
+              className="w-full rounded-xl border border-white/20 bg-white/[0.06] py-2 pl-9 pr-3 text-base sm:text-sm text-cream outline-none placeholder:text-smoke/70 focus:border-white/40" />
           </span>
         </label>
         <Select label="Chain" value={filters.chain} onChange={(value) => setFilter("chain", value)}

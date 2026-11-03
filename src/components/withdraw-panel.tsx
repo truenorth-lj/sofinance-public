@@ -282,8 +282,8 @@ export function WithdrawPanel({wallet,positionMint,mintA,mintB,label,onClose,onB
  return <section aria-label="Withdraw from position" className="mt-4 rounded-3xl border border-white/20 bg-char p-5 text-cream">
   <div className="flex justify-between"><h2>Withdraw from position</h2><button disabled={disabled} onClick={onClose}>Close</button></div>
   <label className="mt-4 block">Withdraw {percent}%<input type="range" min="1" max="100" step="1" value={percent} disabled={disabled} onChange={e=>{setPercent(Number(e.target.value));setTarget("");invalidate();}} className="block w-full" /></label>
-  <label className="mt-3 block">Target USDC estimate<input aria-label="Target USDC estimate" type="number" min="0" value={target} disabled={disabled} onChange={e=>{setTarget(e.target.value);invalidate();}} className="ml-3 rounded bg-canvas p-2" /></label>
-  <label className="mt-3 block">Receive<select value={receive} disabled={disabled} onChange={e=>{setReceive(e.target.value);invalidate();}} className="ml-3 rounded bg-canvas p-2">
+  <label className="mt-3 block">Target USDC estimate<input aria-label="Target USDC estimate" type="number" min="0" value={target} disabled={disabled} onChange={e=>{setTarget(e.target.value);invalidate();}} className="ml-3 rounded bg-canvas p-2 max-sm:text-base" /></label>
+  <label className="mt-3 block">Receive<select value={receive} disabled={disabled} onChange={e=>{setReceive(e.target.value);invalidate();}} className="ml-3 rounded bg-canvas p-2 max-sm:text-base">
    {outputs.includes("usdc") && <option value="usdc">USDC</option>}{outputs.includes("sol") && <option value={NATIVE_SOL_MINT}>SOL</option>}
    {outputs.includes("pool-tokens") && <>
    {[...new Set([mintA,mintB])].filter(m=>m!==NATIVE_SOL_MINT).map(m=><option key={m} value={m}>{label(m)}</option>)}

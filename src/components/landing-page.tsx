@@ -10,8 +10,9 @@ import { XIcon } from "@/components/x-icon";
 
 const navPill =
   "flex h-10 items-center justify-center rounded-full border border-white/25 px-4 text-[13px] font-medium text-cream/85 outline-none transition-colors hover:border-white/70 focus-visible:border-lemon";
+// Below sm: tighter tracking, and a long label may wrap inside the pill instead of pushing past a 360 px screen.
 const labelPill =
-  "inline-flex h-6 items-center whitespace-nowrap rounded-full border px-2.5 font-data text-[10px] uppercase tracking-[0.14em]";
+  "inline-flex min-h-6 max-w-full items-center rounded-full border px-2.5 py-0.5 font-data text-[10px] uppercase leading-4 tracking-[0.1em] sm:whitespace-nowrap sm:tracking-[0.14em]";
 const darkCard = "rounded-[28px] border border-white/12 bg-char p-6 sm:p-7";
 
 function ArrowCta({

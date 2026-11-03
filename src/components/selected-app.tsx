@@ -142,6 +142,7 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
     && withdrawTarget.positionMint === selection?.positionMint ? withdrawTarget : null;
   const shownWithdraw = liveWithdraw ?? pinnedWithdraw;
   // Toasts sit above the phone-only bottom action bar instead of covering its button.
+  // The same measured height (incl. the iPhone home-bar inset) pads the page bottom on phones, so the bar never hides content.
   const actionBarRef = useRef<HTMLDivElement | null>(null);
   useNoticeBottomOffset(actionBarRef, activeView === "deposit");
   // Performance is a tab inside /app (the URL does not change), so $pageview cannot see it.
@@ -249,7 +250,7 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
   // "Rescan wallet": the Solana scan (unchanged) plus, on /app, the Robinhood Chain scan via the parent's refresh counter.
   const rescan = () => { if (wallet) { void refreshDiscovery(); setRegistryRefresh((value) => value + 1); } onRescan?.(); };
   return <div className="min-h-screen bg-canvas text-cream">
-    <div className="relative mx-auto max-w-[1280px] px-3 pb-32 pt-3 sm:px-5 sm:pt-5">
+    <div className="relative mx-auto max-w-[1280px] px-3 pb-32 pt-3 max-sm:pb-[max(8rem,calc(var(--tx-notice-bottom-offset,0px)+2rem))] sm:px-5 sm:pt-5">
       <InkNav wallet={wallet} connected={connected} onConnect={connect} onDisconnect={disconnect} />
 
       <div className="mt-3 grid gap-3 lg:grid-cols-12">
@@ -268,7 +269,7 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
           optionLabel={optionLabel}
           emptyOption={(group) => group.chain === external?.chain ? external.emptyOption : connected ? "No positions found" : SOLANA_CONNECT_EMPTY_OPTION}
           placeholder={!allPositions.length ? (connected ? "No identifiable position found" : "Connect wallet to view positions") : undefined}
-          className="mt-3 w-full rounded-2xl border border-white/20 bg-white/[0.06] px-3 py-3 text-sm text-cream outline-none focus:border-white/40"
+          className="mt-3 w-full rounded-2xl border border-white/20 bg-white/[0.06] px-3 py-3 text-base text-cream outline-none focus:border-white/40 sm:text-sm"
         /> : null}
         {/* The Solana connect prompt belongs to Solana: with another chain's position selected it lives in the dropdown's empty Solana group instead. */}
         {!connected && !otherSelected && <div className="mt-3"><ConnectWalletPrompt onConnect={connect} /></div>}
@@ -331,7 +332,7 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
           })()}
           <div className="mt-3 flex items-center justify-between text-xs text-smoke"><span>Available for input balance: {state ? `${money(state.inputBalance, state.inputDecimals, state.inputDecimals)} ${inputLabel}` : "—"}</span><button type="button" className="font-semibold text-cream/80 hover:text-cream disabled:opacity-40" onClick={fillMax} disabled={busy || !state}>MAX</button></div>
           <details className="mt-5 text-xs text-smoke"><summary className="cursor-pointer font-semibold">Advanced settings · Price tolerance {tolerancePercent}%</summary>
-          <div className="mt-3 flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-white/[0.06] px-4 py-3"><div><label htmlFor="tolerance" className="text-sm font-medium text-cream/80">Add-liquidity price tolerance</label><p className="mt-1 text-xs leading-5 text-smoke">Room for the pool price to move before execution; 0–5%, by 0.1%. The unused reserve stays in your wallet as pool assets.</p></div><div className="flex shrink-0 items-center gap-1"><input id="tolerance" disabled={busy} type="number" inputMode="decimal" min="0" max="5" step="0.1" value={tolerancePercent} onChange={(event) => changeTolerance(event.target.value)} className="w-16 rounded-lg border border-white/20 bg-white/10 px-2 py-1.5 text-right text-sm font-semibold text-cream outline-none focus:border-white/40" /><span className="text-sm text-cream/80">%</span></div></div>
+          <div className="mt-3 flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-white/[0.06] px-4 py-3"><div><label htmlFor="tolerance" className="text-sm font-medium text-cream/80">Add-liquidity price tolerance</label><p className="mt-1 text-xs leading-5 text-smoke">Room for the pool price to move before execution; 0–5%, by 0.1%. The unused reserve stays in your wallet as pool assets.</p></div><div className="flex shrink-0 items-center gap-1"><input id="tolerance" disabled={busy} type="number" inputMode="decimal" min="0" max="5" step="0.1" value={tolerancePercent} onChange={(event) => changeTolerance(event.target.value)} className="w-16 rounded-lg border border-white/20 bg-white/10 px-2 py-1.5 text-right text-base sm:text-sm font-semibold text-cream outline-none focus:border-white/40" /><span className="text-sm text-cream/80">%</span></div></div>
           </details>
           <p className="mt-5 text-xs leading-5 text-smoke">Preview updates after entering an amount. Add liquidity runs the final checks before wallet confirmation.</p>
           <div className="mt-6 hidden sm:block"><button className={buttonClass} disabled={actionDisabled} aria-busy={actionLoading} onClick={primaryAction}>{actionLoading ? <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin motion-reduce:animate-none" /> : <ArrowDown aria-hidden="true" className="h-4 w-4" />}{buttonLabel}</button></div>
@@ -359,7 +360,7 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
     <TransactionStatusDialog attempt={visibleAttempt} status={attemptStatus} error={error} open={statusDialogOpen}
       onOpenChange={setStatusDialogOpen}
       onRetry={retryAdd ? () => { setStatusDialogOpen(false); retryAdd(); } : undefined} />
-    {activeView === "deposit" && !otherSelected && !unavailableReason && <div ref={actionBarRef} data-testid="mobile-action-bar" className="fixed inset-x-0 bottom-0 z-10 border-t border-white/12 bg-canvas/95 p-4 backdrop-blur sm:hidden"><button className={buttonClass} disabled={actionDisabled} aria-busy={actionLoading} onClick={primaryAction}>{actionLoading ? <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin motion-reduce:animate-none" /> : <ArrowDown aria-hidden="true" className="h-4 w-4" />}{buttonLabel}</button></div>}
+    {activeView === "deposit" && !otherSelected && !unavailableReason && <div ref={actionBarRef} data-testid="mobile-action-bar" className="fixed inset-x-0 bottom-0 z-10 border-t border-white/12 bg-canvas/95 p-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] backdrop-blur sm:hidden"><button className={buttonClass} disabled={actionDisabled} aria-busy={actionLoading} onClick={primaryAction}>{actionLoading ? <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin motion-reduce:animate-none" /> : <ArrowDown aria-hidden="true" className="h-4 w-4" />}{buttonLabel}</button></div>}
   </div>;
 }
 
