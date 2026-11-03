@@ -3,7 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NATIVE_SOL_MINT, USDC_MINT } from "@sofinance/engine/ids";
-import { dexDescriptors, SOL_NEED_UNKNOWN_COPY } from "@/lib/dex/client";
+import { dexDescriptors, SOL_NEED_UNKNOWN_COPY, OPEN_RANGES_UNAVAILABLE } from "@/lib/dex/client";
 import type { OpenRanges } from "@/lib/dex/client";
 import type { PoolRangeAprPayload } from "@/lib/range-apr/types";
 import type { UnifiedPool } from "@/lib/unified-pools/model";
@@ -111,6 +111,14 @@ describe("RegistryOpenModal", () => {
     expect(openButton().disabled).toBe(false);
     await act(async () => { openButton().click(); });
     expect(mocks.runSteps).toHaveBeenCalledTimes(1);
+  });
+
+  it("ranges the server could not load (5xx): plain words only, no error code, Open disabled", async () => {
+    await render({ ranges: new Error(OPEN_RANGES_UNAVAILABLE) });
+    const text = container.querySelector("[data-testid=registry-open-ranges-error]")!.textContent;
+    expect(text).toBe("We couldn't load this pool right now. Try again in a few minutes.");
+    expect(text).not.toMatch(/[A-Z]{2,}_[A-Z_]+/);
+    expect(openButton().disabled).toBe(true);
   });
 
   it("ranges the server can't work out: Open is disabled and the plain reason shows", async () => {
