@@ -44,10 +44,17 @@ function StockRow({ row, rank, option, unsupported, onBuy, showMcap }: { row: Ro
       aria-label={`Buy ${row.company} with USDC`}
       className="shrink-0 rounded-full bg-lemon px-3 py-1.5 text-xs font-semibold text-ink outline-none transition-colors hover:bg-[#fff27f] focus-visible:shadow-[0_0_0_2px_var(--color-lilac)]">
       Buy
-    </button> : unsupported ? <span data-testid={`stock-unsupported-${row.underlying}`} aria-disabled="true" title={unsupported}
-      className="inline-flex min-h-8 shrink-0 cursor-not-allowed items-center gap-1 whitespace-nowrap rounded-full border border-white/20 px-2.5 text-xs font-semibold text-cream/60 max-sm:px-2 max-sm:text-[11px]">
-      <span>{NOT_SUPPORTED_LABEL}</span>
-      <InfoTip label={`Why ${row.company} is not supported yet`} tone="dark" placement="below">{unsupported}</InfoTip>
+    </button> : unsupported ? <span data-testid={`stock-unsupported-${row.underlying}`} aria-disabled="true" title={unsupported} className="inline-flex shrink-0 items-center">
+      {/* Below 640px: a greyed Buy the same width as the real one, plus an ⓘ with the reason, so the name keeps its room. */}
+      <span className="inline-flex items-center gap-0.5 sm:hidden" data-testid={`stock-unsupported-narrow-${row.underlying}`}>
+        <button type="button" disabled aria-label={`Buy ${row.company}: ${unsupported}`}
+          className="cursor-not-allowed rounded-full bg-white/10 px-3 py-1.5 text-xs font-semibold text-cream/45">Buy</button>
+        <InfoTip label={`Why ${row.company} is not supported yet: ${unsupported}`} tone="dark" placement="below">{unsupported}</InfoTip>
+      </span>
+      <span className="hidden min-h-8 cursor-not-allowed items-center gap-1 whitespace-nowrap rounded-full border border-white/20 px-2.5 text-xs font-semibold text-cream/60 sm:inline-flex">
+        <span>{NOT_SUPPORTED_LABEL}</span>
+        <InfoTip label={`Why ${row.company} is not supported yet: ${unsupported}`} tone="dark" placement="below">{unsupported}</InfoTip>
+      </span>
     </span> : null}
   </li>;
 }

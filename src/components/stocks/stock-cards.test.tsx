@@ -37,6 +37,12 @@ describe("StockCardsView", () => {
     expect(unsupported.getAttribute("aria-disabled")).toBe("true");
     expect(unsupported.getAttribute("title")).toBe("This token uses a balance multiplier, which we don't support yet.");
     expect(gainers.querySelector('[data-testid="stock-unsupported-TSLA"]')).toBeNull();
+    const narrow = gainers.querySelector('[data-testid="stock-unsupported-narrow-NFLX"]')!;
+    const greyBuy = narrow.querySelector("button[disabled]")!;
+    expect(greyBuy.textContent).toBe("Buy");
+    expect(greyBuy.getAttribute("aria-label")).toContain("balance multiplier");
+    const info = [...narrow.querySelectorAll("button")].find((button) => !button.disabled)!;
+    expect(info.getAttribute("aria-label")).toContain("This token uses a balance multiplier, which we don't support yet.");
     act(() => (gainers.querySelector('[data-testid="stock-buy-TSLA"]') as HTMLButtonElement).click());
     expect(onBuy).toHaveBeenCalledWith(stocks.buy.TSLA);
   });
