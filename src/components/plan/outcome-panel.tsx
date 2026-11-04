@@ -11,7 +11,7 @@ import { breakEvenInPeriod } from "@/lib/lp-plan-chart";
 import type { PlanSetup } from "@/lib/lp-plan-intent";
 import { isThinPlanSample, type PlanYieldComparison } from "@/lib/lp-plan-yield";
 import { LEGACY_PLAN_TERMS, type PlanPoolTerms } from "@/lib/lp-plan-pool-terms";
-import { bestAprCopy, completeDaysCopy, daysWord, formatAmount, formatCents, formatPct, formatSigned, formatSignedPct } from "./format";
+import { bestAprCopy, completeDaysCopy, daysWord, formatAmount, formatCents, formatCost, formatPct, formatSigned, formatSignedPct } from "./format";
 import type { ChartStatus } from "./comparison-chart";
 
 const labelPill =
@@ -128,11 +128,11 @@ export function OutcomePanel({
               {formatSigned(comparison.endSofinance)} USDC · {formatSignedPct(comparison.endGainPct)}
             </Row>
             <Row label="Opening cost, day 0">
-              <span className="block">{`−${formatCents(comparison.entryCost)} USDC (${terms.openCost.rowLabel})`}</span>
+              <span className="block">{`${formatCost(comparison.entryCost)} USDC (${terms.openCost.rowLabel})`}</span>
               {terms.openCost.rowNote && <span className="block text-xs text-smoke" data-testid="plan-open-rent">{terms.openCost.rowNote}</span>}
             </Row>
             <Row label="Closing cost, at exit">
-              {`−${formatCents(comparison.exitCost)} USDC (${terms.exitCost[setup.exitAsset].label})`}
+              {`${formatCost(comparison.exitCost)} USDC (${terms.exitCost[setup.exitAsset].label})`}
             </Row>
             <Row
               label="Est. best APY used · not guaranteed"

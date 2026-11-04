@@ -20,6 +20,21 @@ export function formatCents(value: string | number): string {
   return grouped(new Decimal(value).abs(), 2, false);
 }
 
+/**
+ * "−11.00" / "0.00": a cost paid out of the position, to the cent, with the minus sign only when it rounds to at least
+ * a cent, so a free step reads "0.00" rather than "−0.00". The sign of the input is ignored (costs are sizes).
+ */
+export function formatCost(value: string | number): string {
+  const cents = formatCents(value);
+  return new Decimal(value).abs().toDecimalPlaces(2).isZero() ? cents : `${MINUS}${cents}`;
+}
+
+/** "−$11.00" / "$0.00": `formatCost` in dollars. */
+export function formatCostUsd(value: string | number): string {
+  const cost = formatCost(value);
+  return cost.startsWith(MINUS) ? `${MINUS}$${cost.slice(MINUS.length)}` : `$${cost}`;
+}
+
 /** "+2.65" / "−257.24" / "0" — a result, always to the cent. */
 export function formatSigned(value: string | number): string {
   const amount = new Decimal(value).toDecimalPlaces(2);

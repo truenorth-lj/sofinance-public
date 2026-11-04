@@ -12,7 +12,7 @@ import { lowPlanApr, pairLabelSymbols, planShareSymbol } from "@/lib/lp-plan-sha
 import { dexDescriptors } from "@/lib/dex/client";
 import { cn } from "@/lib/cn";
 import { HodlVsPool } from "../plan/hodl-vs-pool";
-import { formatCents, formatPct, formatSignedPct, formatSignedUsd } from "../plan/format";
+import { formatCents, formatCostUsd, formatPct, formatSignedPct, formatSignedUsd } from "../plan/format";
 import { usePoolYield } from "../plan/use-pool-yield";
 import type { OpenAction } from "./pool-list";
 import { ProjectionChart } from "./projection-chart";
@@ -162,8 +162,8 @@ export function ShareCalcDialog({ pool, open, onClose }: { pool: ShareCalcPool; 
             <InfoRow label={`Est. LP APY · ${aprWindowAvgLabel(best)}`}>{formatPct(plan.apyPct)}</InfoRow>
             <InfoRow label="Fees collected">${formatCents(plan.feesEarned)}</InfoRow>
             <InfoRow label="Protocol cut of fees">{`${Math.round((1 - terms.lpFeeShare) * 100)}%`}</InfoRow>
-            <InfoRow label="Opening cost">{`−$${formatCents(plan.entryCost)}`}</InfoRow>
-            <InfoRow label={exit === "usdc" ? "Closing cost (to USDC)" : "Closing cost"}>{`−$${formatCents(plan.exitCost)}`}</InfoRow>
+            <InfoRow label="Opening cost">{formatCostUsd(plan.entryCost)}</InfoRow>
+            <InfoRow label={exit === "usdc" ? "Closing cost (to USDC)" : "Closing cost"}>{formatCostUsd(plan.exitCost)}</InfoRow>
             {projection.low && projection.lowWindow ? (
               <InfoRow label={`At the ${aprWindowAvgLabel(projection.lowWindow, "pool avg")}`}>{`${formatSignedUsd(projection.low.vsHold)} vs HODL`}</InfoRow>
             ) : null}

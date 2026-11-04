@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bestAprCopy, completeDaysCopy, daysWord, formatSignedPct } from "./format";
+import { bestAprCopy, completeDaysCopy, daysWord, formatCost, formatCostUsd, formatSignedPct } from "./format";
 
 describe("daysWord", () => {
   it("uses the singular for one day", () => {
@@ -21,5 +21,21 @@ describe("plan copy helpers", () => {
     expect(completeDaysCopy(1)).toBe("1 complete UTC day");
     expect(completeDaysCopy(29)).toBe("29 complete UTC days");
     expect(bestAprCopy({ windowDays: 7, aprPct: "19.21034" })).toBe("7-day average fee APR of 19.2%");
+  });
+});
+
+describe("formatCost", () => {
+  it("puts the minus sign on a cost of at least a cent", () => {
+    expect(formatCost("11")).toBe("−11.00");
+    expect(formatCost("1234.567")).toBe("−1,234.57");
+    expect(formatCost("0.005")).toBe("−0.01");
+    expect(formatCostUsd("11.9147")).toBe("−$11.91");
+  });
+
+  it("shows a cost that rounds to zero without a sign", () => {
+    for (const zero of ["0", 0, "0.004", "-0", "-0.004"]) {
+      expect(formatCost(zero)).toBe("0.00");
+      expect(formatCostUsd(zero)).toBe("$0.00");
+    }
   });
 });
