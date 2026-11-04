@@ -1,6 +1,6 @@
 import Decimal from "decimal.js";
 import { isIncompleteUtcDay, SECONDS_PER_DAY } from "./apr-series";
-import { averageCompleteDayAprPct, isThinPlanSample } from "./lp-plan-yield";
+import { averageCompleteDayAprPct, isThinPlanSample, PLAN_YIELD_DAYS_PER_YEAR } from "./lp-plan-yield";
 
 const D = Decimal.clone({ precision: 60 });
 
@@ -12,6 +12,8 @@ export type DatedAprSample = {
   /** Unix seconds at 00:00 UTC of the day. */
   time: number;
   aprPct: number | null;
+  /** That day's pool TVL in USD, when known. With it, the window also reports the pool's USD fees per day. */
+  tvlUsd?: number | null;
 };
 
 export type AprWindowAverage = {
@@ -20,6 +22,12 @@ export type AprWindowAverage = {
   aprPct: string;
   /** Finite days that went into `aprPct` (gaps inside the window are skipped, never filled). */
   sampleDays: number;
+  /**
+   * USD fees the whole pool took per finite day of the window (each day's APR × that day's TVL ÷ 36,500), before any
+   * protocol cut. Set only when every finite day has a TVL. This is the real money behind `aprPct`: a launch day of
+   * $8k volume on a $248 pool averages to a huge APR but only ~$21 of fees, and projections are capped by it.
+   */
+  poolFeesPerDayUsd?: string;
 };
 
 export type BestPlanApr = AprWindowAverage & {
@@ -47,8 +55,22 @@ export function trailingWindowAverage(
   const inWindow = complete.filter((point) => point.time >= oldest && point.time <= newest);
   const aprPct = averageCompleteDayAprPct(inWindow);
   if (aprPct === null) return null;
-  const sampleDays = inWindow.filter((point) => point.aprPct !== null && Number.isFinite(point.aprPct)).length;
-  return { windowDays, aprPct, sampleDays };
+  const finite = inWindow.filter((point) => point.aprPct !== null && Number.isFinite(point.aprPct));
+  const sampleDays = finite.length;
+  const poolFeesPerDayUsd = poolFeesPerDay(finite);
+  return poolFeesPerDayUsd === null ? { windowDays, aprPct, sampleDays } : { windowDays, aprPct, sampleDays, poolFeesPerDayUsd };
+}
+
+/** Mean USD pool fees per day of `days` (APR × TVL ÷ 36,500 each), or null when any day lacks a usable TVL. */
+function poolFeesPerDay(days: readonly DatedAprSample[]): string | null {
+  if (days.length === 0) return null;
+  let sum = new D(0);
+  for (const day of days) {
+    const tvl = day.tvlUsd;
+    if (tvl === undefined || tvl === null || !Number.isFinite(tvl) || tvl < 0) return null;
+    sum = sum.add(new D(day.aprPct ?? 0).mul(tvl).div(100).div(PLAN_YIELD_DAYS_PER_YEAR));
+  }
+  return sum.div(days.length).toFixed();
 }
 
 /**

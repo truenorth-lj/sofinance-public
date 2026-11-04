@@ -342,6 +342,34 @@ describe("UnifiedPoolsPanel TVL filter", () => {
 describe("UnifiedPoolsPanel cards (the RWA pairs card fields)", () => {
   const card = (key: string) => container.querySelector<HTMLLIElement>(`[data-pool='${key}']`)!;
 
+  it("a new pool (under 7 days of data) shows 'New pool · N days of data', no APR figure, and ranks after every pool with an APR", async () => {
+    mocks.apr = { spcxA: 40, tsla: 20 };
+    mocks.state = { spcxA: { status: "new", days: 6 } };
+    await render();
+    expect(shown()[0]).toBe("solana:tsla");
+    expect(shown().indexOf("solana:spcxA")).toBeGreaterThan(shown().indexOf("solana:tsla"));
+    const amzn = card("solana:spcxA");
+    expect(amzn.querySelector("[data-testid=apr7d]")!.textContent).toBe("New pool");
+    expect(amzn.querySelector("[data-testid=apr7d-label]")!.textContent).toBe("6 days of data");
+    expect(amzn.querySelector("[data-testid=apr7d-new-note]")!.textContent).toContain("7 days of data");
+    expect(amzn.querySelector("[data-testid=highest-range]")!.textContent).toBe("—");
+    expect(amzn.querySelector("[data-testid=pool-fee-apr]")).toBeNull();
+    expect(amzn.textContent).not.toMatch(/\d%/);
+    // The list view, sorted by the 7d APR column in either direction, keeps it last too.
+    await act(async () => { button("List").click(); });
+    const rows = () => [...container.querySelectorAll("[data-testid=pools-table] tbody tr")].map((row) => row.getAttribute("data-pool"));
+    const header = (text: string) => [...container.querySelectorAll<HTMLButtonElement>("[data-testid=pools-table] th button")].find((el) => el.textContent?.includes(text))!;
+    expect(rows().at(-1)).toBe("solana:spcxA");
+    for (const column of ["APR 7d", "APR 7d"]) {
+      await act(async () => { header(column).click(); });
+      expect(rows().at(-1)).toBe("solana:spcxA");
+    }
+    const row = container.querySelector("[data-testid=pools-table] tr[data-pool='solana:spcxA']")!;
+    expect(row.querySelector("[data-testid=apr7d]")!.textContent).toBe("New pool");
+    expect(row.querySelector("[data-testid=apr7d-new-days]")!.textContent).toBe("6 days of data");
+    expect(row.querySelector("[data-testid=apr24h]")).toBeNull();
+  });
+
   it("shows the highest range next to its 7d APR, when the data was updated, and a delayed note", async () => {
     mocks.state = {
       spcxA: { status: "ready", aprPct: 38, rangeLabel: "Tight (±0.05%)", lowConfidence: true, avgDailyVolumeUsd: 100,

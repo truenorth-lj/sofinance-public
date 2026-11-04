@@ -155,7 +155,8 @@ export function HomepagePoolsView({
   const apr7d = useCallback((pool: UnifiedPool) => {
     const state = apr[pool.key];
     if (state?.status === "ready") return state.aprPct;
-    if (state?.status === "missing") return null;
+    // Missing, or a new pool (too few days of data): no APR, so it is left out of the ranking.
+    if (state && state.status !== "loading") return null;
     const saved = serverApr?.[pool.key];
     return typeof saved === "number" && Number.isFinite(saved) ? saved : null;
   }, [apr, serverApr]);

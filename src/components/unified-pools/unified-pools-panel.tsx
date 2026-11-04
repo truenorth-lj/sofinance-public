@@ -33,6 +33,8 @@ import type { OpenPositionPair } from "../use-open-position-controller";
 import { useWalletConnection } from "../wallet-connection";
 import { usePoolsApr7d, type Apr7dState } from "./use-pools-apr7d";
 import { APR7D_SHORT, Apr7dValue, rangeApr7dLabel, ChainBadge, chip, COLUMNS, iconPair, money, OpenButton, PoolTable, type OpenAction } from "./pool-list";
+import { dataDaysLabel, MIN_DATA_DAYS } from "@/lib/min-data-days";
+import { withoutNewPoolAprs } from "@/lib/unified-pools/apr7d";
 
 /** Which sources this deployment may show; computed from the code flags on the server and passed down. */
 export type UnifiedPoolFlags = {
@@ -112,7 +114,7 @@ function PoolCard({ pool, apr, action, icons, onCalculate }: {
       <div className="shrink-0 text-right max-sm:max-w-[8.5rem]">
         <Apr7dValue state={apr} />
         <p className={cn("mt-1.5 flex items-center justify-end gap-1", cardEyebrow)}>
-          <span data-testid="apr7d-label">{ready ? rangeApr7dLabel(ready.rangeLabel) : APR7D_SHORT}</span>
+          <span data-testid="apr7d-label">{ready ? rangeApr7dLabel(ready.rangeLabel) : apr?.status === "new" ? dataDaysLabel(apr.days) : APR7D_SHORT}</span>
           {ready && <InfoTip label="About Est. highest range APR" tone="light">
             {withVolumeNote(HIGHEST_RANGE_APR_7D_HELP)}{ready.lowConfidence ? " Low confidence for this pool: thin or patchy recent trading." : ""}
           </InfoTip>}
@@ -121,6 +123,8 @@ function PoolCard({ pool, apr, action, icons, onCalculate }: {
       </div>
     </div>
     {apr?.status === "missing" && <p className="mt-2 text-xs text-ink/60">{apr.reason}</p>}
+    {apr?.status === "new" && <p className="mt-2 text-xs text-ink/60" data-testid="apr7d-new-note">
+      Too new for an APR: it shows once the pool has {MIN_DATA_DAYS} days of data.</p>}
     {freshness && <p className="mt-2 text-xs text-ink/60" data-testid="apr-freshness">
       Updated {new Date(freshness.snapshotAt).toLocaleString()}{freshness.delayed && " · Data delayed"}
     </p>}
@@ -130,7 +134,7 @@ function PoolCard({ pool, apr, action, icons, onCalculate }: {
         {ready && <InfoTip label="About Highest range" placement="above" tone="light">{HIGHEST_RANGE_HELP}</InfoTip>}
       </p>
       <span data-testid="highest-range" className={cn("mt-1.5 inline-block max-w-full truncate rounded-full px-3 py-1 align-top text-sm font-medium", ready ? "bg-lilac" : "bg-ink/10")}>
-        {ready ? ready.rangeLabel : apr?.status === "missing" ? "—" : "…"}
+        {ready ? ready.rangeLabel : apr?.status === "missing" || apr?.status === "new" ? "—" : "…"}
       </span>
     </div>}
     <dl className="mt-5 grid grid-cols-3 gap-x-4 gap-y-4 border-t border-ink/20 pt-4">
@@ -296,7 +300,9 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", header 
   const rwaListKeys = useMemo(() => new Set(loaded.rwaList ?? []), [loaded.rwaList]);
   const apr = usePoolsApr7d(pools, refreshKey, rwaListKeys);
   const apr7d = useCallback((pool: UnifiedPool) => { const state = apr[pool.key]; return state?.status === "ready" ? state.aprPct : null; }, [apr]);
-  const selected = useMemo(() => selectPools(pools, { filters, hideDuplicates: !showAll, sort, apr7d }), [pools, filters, showAll, sort, apr7d]);
+  // A new pool (too few days of data) shows no APR at all and ranks after every pool with one.
+  const rankable = useMemo(() => withoutNewPoolAprs(pools, apr), [pools, apr]);
+  const selected = useMemo(() => selectPools(rankable, { filters, hideDuplicates: !showAll, sort, apr7d }), [rankable, filters, showAll, sort, apr7d]);
 
   /** `connectWallet: false` for deep links: the Create position dialog opens with its own Connect wallet button. */
   const openPool = useCallback((pool: UnifiedPool, connectWallet = true) => {

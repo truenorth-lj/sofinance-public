@@ -1,6 +1,7 @@
 import Decimal from "decimal.js";
 import { validNumber } from "./lp-accounting";
 import { MAX_PLAN_DAYS } from "./lp-intent";
+import { MIN_DATA_DAYS } from "./min-data-days";
 
 const D = Decimal.clone({ precision: 60 });
 
@@ -27,7 +28,7 @@ export function planOpenCostPctLabel(bps: number = PLAN_OPEN_COST_BPS): string {
 }
 
 /** Complete UTC days needed before the average is shown as a normal headline. */
-export const PLAN_MIN_RELIABLE_SAMPLE_DAYS = 7;
+export const PLAN_MIN_RELIABLE_SAMPLE_DAYS = MIN_DATA_DAYS;
 
 export function isThinPlanSample(sampleDays: number): boolean {
   return sampleDays < PLAN_MIN_RELIABLE_SAMPLE_DAYS;
@@ -68,6 +69,8 @@ export type PlanYieldComparison = {
   exitCost: string;
   /** Fees the position earned over the period, before the opening and closing costs. */
   feesEarned: string;
+  /** True when the pool's real fees (`PlanYieldInput.feeCap`) held the projection below the average APR on some day. */
+  feeCapped: boolean;
   sampleDays: number;
   points: PlanYieldPoint[];
   breakEvenDay: number | null;
@@ -95,6 +98,19 @@ export type PlanYieldInput = {
    * the curve is "if you closed on that day", so break-even waits until fees cover both costs. Defaults to 0.
    */
   exitCostBps?: number;
+  /**
+   * The pool's real fee income, so the projection never collects more than the pool paid out. Each day the position
+   * takes the smaller of its APR share and `poolLpFeesPerDayUsd × value ÷ (poolTvlUsd + value)`: what the LPs got per day,
+   * split with everyone already in the pool. Omitted, the APR compounds unchecked (the old behaviour).
+   */
+  feeCap?: PlanFeeCap;
+};
+
+export type PlanFeeCap = {
+  /** USD fees the pool's LPs (after the DEX's cut) took per day over the averaged window. */
+  poolLpFeesPerDayUsd: string;
+  /** Pool TVL in USD before your deposit; 0 when unknown, which caps at the pool's whole fee income. */
+  poolTvlUsd: string;
 };
 
 /**
@@ -166,6 +182,30 @@ export function breakEvenDay(capital: string, dailyRate: Decimal, entryCost = "0
   return firstDayAtLeast(capital, dailyRate, "0", entryCost, maxDays, exitCostBps);
 }
 
+/**
+ * Gross position value (before the opening and closing costs) on each day 0–`days`, compounding daily but never taking
+ * more fees in a day than `cap` allows: the pool's LP fees per day × your share of the pool after your deposit. Same
+ * basis as `compoundedProfit` (capital grows, the entry cost is subtracted after).
+ */
+export function cappedGrowthPath(capital: string, dailyRate: Decimal, days: number, cap: PlanFeeCap): { values: Decimal[]; cappedFromDay: number | null } {
+  requireDayCount(days, "days", 0);
+  const fees = requireDecimal(cap.poolLpFeesPerDayUsd, "poolLpFeesPerDayUsd", "0");
+  const tvl = requireDecimal(cap.poolTvlUsd, "poolTvlUsd", "0");
+  let value = requireDecimal(capital, "capital", "0");
+  if (value.lte(0)) throw new Error("capital must be greater than zero");
+  const values = [value];
+  let cappedFromDay: number | null = null;
+  for (let day = 1; day <= days; day++) {
+    const byApr = value.mul(dailyRate);
+    const byPool = fees.mul(value).div(tvl.add(value));
+    const capped = byPool.lt(byApr);
+    if (capped && cappedFromDay === null) cappedFromDay = day;
+    value = value.add(capped ? byPool : byApr);
+    values.push(value);
+  }
+  return { values, cappedFromDay };
+}
+
 export function buildPlanComparison(input: PlanYieldInput): PlanYieldComparison {
   const days = input.days;
   requireDayCount(days, "days", 1);
@@ -178,41 +218,53 @@ export function buildPlanComparison(input: PlanYieldInput): PlanYieldComparison 
   const rate = dailyRateFromAprPct(input.aprPct);
   const entryCost = input.entryCost ?? "0";
   const exitCostBps = requireExitBps(input.exitCostBps ?? 0);
+  const capital = requireDecimal(input.capital, "capital", "0");
+  const entry = requireDecimal(entryCost, "entryCost", "0");
+  // With a fee cap the growth is a day-by-day path (to a full year, for break-even and the one-year rate); without it,
+  // the closed form `capital × (1 + rate)^day` as before.
+  const path = input.feeCap ? cappedGrowthPath(input.capital, rate, MAX_PLAN_DAYS, input.feeCap) : null;
+  const grownOn = (day: number) => (path ? path.values[day]! : capital.mul(rate.add(1).pow(day)));
+  const profitOn = (day: number) => path
+    ? grownOn(day).sub(entry).mul(new D(10_000).sub(exitCostBps).div(10_000)).sub(capital)
+    : compoundedProfit(input.capital, rate, day, entryCost, exitCostBps);
   const points: PlanYieldPoint[] = [];
   for (let day = 0; day <= days; day++) {
-    points.push({
-      day,
-      sofinance: compoundedProfit(input.capital, rate, day, entryCost, exitCostBps).toFixed(),
-      hold: "0",
-    });
+    points.push({ day, sofinance: profitOn(day).toFixed(), hold: "0" });
   }
   const endSofinance = points[days]!.sofinance;
   const endHold = "0";
   const vsHold = new D(endSofinance).sub(endHold).toFixed();
   const exitValue = new D(input.capital).add(endSofinance).toFixed();
-  const capital = requireDecimal(input.capital, "capital", "0");
-  const entry = requireDecimal(entryCost, "entryCost", "0");
-  const grown = capital.mul(rate.add(1).pow(days));
+  const grown = grownOn(days);
   return {
     days,
     capital: capital.toFixed(),
     aprPct: requireDecimal(input.aprPct, "aprPct").toFixed(),
-    apyPct: aprToApyPct(input.aprPct),
+    // Capped: what a year of the capped path actually grows by, not the uncapped APR compounded.
+    apyPct: path ? grownOn(PLAN_YIELD_DAYS_PER_YEAR).div(capital).sub(1).mul(100).toFixed() : aprToApyPct(input.aprPct),
     aprWindowDays: input.aprWindowDays,
     dailyRate: rate.toFixed(),
     entryCost: entry.toFixed(),
     exitCostBps,
     exitCost: grown.sub(entry).mul(exitCostBps).div(10_000).toFixed(),
     feesEarned: grown.sub(capital).toFixed(),
+    feeCapped: path !== null && path.cappedFromDay !== null && path.cappedFromDay <= days,
     sampleDays: input.sampleDays,
     points,
-    breakEvenDay: breakEvenDay(input.capital, rate, entryCost, MAX_PLAN_DAYS, exitCostBps),
+    breakEvenDay: path
+      ? firstDayWhere((day) => profitOn(day).gte(0), MAX_PLAN_DAYS)
+      : breakEvenDay(input.capital, rate, entryCost, MAX_PLAN_DAYS, exitCostBps),
     endSofinance,
     endHold,
     vsHold,
     exitValue,
     endGainPct: new D(endSofinance).div(capital).mul(100).toFixed(),
   };
+}
+
+function firstDayWhere(test: (day: number) => boolean, maxDays: number): number | null {
+  for (let day = 0; day <= maxDays; day++) if (test(day)) return day;
+  return null;
 }
 
 function firstDayAtLeast(

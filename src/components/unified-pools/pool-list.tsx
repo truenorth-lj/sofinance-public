@@ -10,6 +10,7 @@ import type { Apr7dState } from "@/lib/unified-pools/apr7d";
 import { CHAIN_LABELS, PROTOCOL_LABELS, type PoolChain, type SortDir, type SortKey, type UnifiedPool } from "@/lib/unified-pools/model";
 import { InfoTip } from "../info-tip";
 import { PairTokenIcons } from "../pair-token-icons";
+import { dataDaysLabel, MIN_DATA_DAYS } from "@/lib/min-data-days";
 
 /* Pool list pieces shared by `/app/rwa-pairs` and the homepage, so both render pools with the same component. */
 
@@ -43,9 +44,24 @@ export function ChainBadge({ chain, tone = "light", wrapBelowMd }: { chain: Pool
  * The 7d APR value. In the table (`sm`) a delayed snapshot that still shows its number (under 48h old) gets a small
  * "Data delayed" line under it; the cards (`lg`) already say it in their "Updated … · Data delayed" line.
  */
+/** Shown instead of an APR for a pool with fewer than `MIN_DATA_DAYS` days of data. */
+export const NEW_POOL_LABEL = "New pool";
+
+/** "New pool · 6 days of data. An APR shows once it has 7 days." */
+export function newPoolTitle(days: number): string {
+  return `${NEW_POOL_LABEL} · ${dataDaysLabel(days)}. An APR shows once it has ${MIN_DATA_DAYS} days.`;
+}
+
 export function Apr7dValue({ state, size = "lg" }: { state: Apr7dState | undefined; size?: "lg" | "sm" }) {
-  const text = state?.status === "ready" ? pct(state.aprPct) : state?.status === "missing" ? "—" : "…";
+  const text = state?.status === "ready" ? pct(state.aprPct) : state?.status === "new" ? NEW_POOL_LABEL
+    : state?.status === "missing" ? "—" : "…";
   const value = <Apr7dPill state={state} size={size} text={text} />;
+  // Table rows have no label line under the value, so a new pool's day count goes here.
+  if (size === "sm" && state?.status === "new") return <span className="inline-flex flex-col items-end gap-0.5">
+    {value}
+    <span data-testid="apr7d-new-days" className="whitespace-nowrap font-data text-[10px] uppercase tracking-[0.08em] text-cream/60 max-md:text-[9px]">
+      {dataDaysLabel(state.days)}</span>
+  </span>;
   if (size !== "sm" || state?.status !== "ready" || !state.freshness?.delayed) return value;
   return <span className="inline-flex flex-col items-end gap-0.5">
     {value}
@@ -55,7 +71,7 @@ export function Apr7dValue({ state, size = "lg" }: { state: Apr7dState | undefin
 }
 
 function Apr7dPill({ state, size, text }: { state: Apr7dState | undefined; size: "lg" | "sm"; text: string }) {
-  return <span data-testid="apr7d" data-apr-status={state?.status ?? "loading"} title={state?.status === "missing" ? state.reason : undefined}
+  return <span data-testid="apr7d" data-apr-status={state?.status ?? "loading"} title={state?.status === "missing" ? state.reason : state?.status === "new" ? newPoolTitle(state.days) : undefined}
     className={cn("inline-flex items-center justify-center whitespace-nowrap rounded-full font-semibold tabular-nums",
       size === "lg" ? "h-10 px-4 text-xl" : "h-7 min-w-[3.5rem] px-2.5 text-sm max-md:min-w-0 max-md:px-2 max-md:text-[13px]",
       state?.status === "ready" ? "bg-lemon text-ink" : size === "lg" ? "bg-ink/10 text-ink/70" : "bg-white/[0.06] text-cream/70")}>{text}</span>;

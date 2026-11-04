@@ -91,6 +91,7 @@ describe("landing page copy and routes", () => {
       "src/components/open-position-modal.tsx",
       "src/components/plan/hodl-vs-pool.tsx",
       "src/components/unified-pools/share-calc-dialog.tsx",
+      "src/lib/lp-plan-notice.ts",
     ];
     // Local variable names (e.g. `earn` in hodl-vs-pool) are code, not copy.
     const code = (text: string) => text.replace(/import .*$/gm, "").replace(/(const |\$?\{)earn\b/g, "$1_");

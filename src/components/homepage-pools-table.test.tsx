@@ -369,6 +369,35 @@ describe("HomepagePoolsTable", () => {
     expect(apr.map((cell) => cell.textContent)).toEqual(["30.00%", "<0.01%", "0.00%", "—"]);
   });
 
+  it("a new pool (under 7 days of data) shows no APR, says how many days it has, and ranks last even with a high server APR", async () => {
+    const young = payloadWithAprs({ micro: 122.84 });
+    young.sample = { ...young.sample, days: 6 };
+    mocks.aprFor.mockImplementation((poolId) => (poolId === "amzn-pool" ? { status: "ready", data: young }
+      : ready({ micro: poolId === "b-pool" ? 31.85 : 15.27 })));
+    const pairs = [
+      pair({ poolAddress: "amzn-pool", symbolA: "AMZNx", symbolB: "AMZN", tvlUsd: 900_000 }),
+      pair({ poolAddress: "b-pool", symbolA: "Bx", symbolB: "B", tvlUsd: 800_000 }),
+      pair({ poolAddress: "c-pool", symbolA: "Cx", symbolB: "C", tvlUsd: 700_000 }),
+    ];
+    jsonOk({ pairs });
+    const initial = toHomepagePoolsSnapshot({
+      solana: { pairs: pairs as HomepageSolanaRow[], fetchedAt: "2026-10-30T11:02:00.000Z", stale: false },
+      apr7d: { "solana:amzn-pool": 500, "solana:b-pool": 31.85, "solana:c-pool": 15.27 },
+    });
+    await act(async () => {
+      root.render(createElement(HomepagePoolsView, { initial }));
+    });
+    for (let round = 0; round < 4; round += 1) {
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 5)); });
+    }
+    expect(keysOf()).toEqual([sol("b-pool"), sol("c-pool"), sol("amzn-pool")]);
+    const amzn = rowsOf()[2]!;
+    expect(aprOf(amzn).textContent).toBe("New pool");
+    expect(aprOf(amzn).getAttribute("data-apr-status")).toBe("new");
+    expect(amzn.querySelector("[data-testid='apr7d-new-days']")!.textContent).toBe("6 days of data");
+    expect(amzn.textContent).not.toMatch(/122\.84|500/);
+  });
+
   it("uses the server snapshot's 7-day APRs to pick and order pools until the client estimates load, without printing them", async () => {
     const pairs = [
       pair({ poolAddress: "spcx-pool", tvlUsd: 256_900 }) as HomepageSolanaRow,
