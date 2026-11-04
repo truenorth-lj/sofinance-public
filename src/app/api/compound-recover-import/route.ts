@@ -16,5 +16,5 @@ export async function POST(request: Request) {
     if (!transaction) throw new Error("Confirmed original compound transaction not yet found");
     const receipt = await importVerifiedCompoundReceipt(connection, transaction, wallet, body.signature);
     return Response.json({ receipt }, { headers: { "Cache-Control": "no-store" } });
-  } catch (error) { return apiError(error, "Failed to recover yield accounts from chain"); }
+  } catch (error) { return apiError(error, "Failed to recover harvest accounts from chain"); }
 }

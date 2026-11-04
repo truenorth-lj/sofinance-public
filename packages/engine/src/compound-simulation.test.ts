@@ -63,7 +63,7 @@ async function fixture() {
   const transaction = new VersionedTransaction(new TransactionMessage({ payerKey: new PublicKey(state.wallet), recentBlockhash: key(), instructions: [] }).compileToV0Message());
   return { input: { connection, transaction, state, compoundAccounts: accounts, expectedLiquidity: 5n, maxSolDebitLamports: 5_100_000n, sigVerify: false }, before, after, positionData };
 }
-it("keeps NFT ownership, exact ticks and existing wallet A/B while adding only isolated yield", async () => {
+it("keeps NFT ownership, exact ticks and existing wallet A/B while adding only isolated harvest", async () => {
   const { input } = await fixture();
   expect(await simulateAndVerifyCompound(input)).toMatchObject({ endingLiquidity: "105", endingA: "2", endingB: "3", solDebitLamports: "5000000" });
 });
@@ -83,9 +83,9 @@ it("rejects a changed range or withdrawn liquidity and an existing wallet debit"
   after.set(input.state.ataA, info(tokenData(input.state.mintA, input.state.wallet, 76n), TOKEN_PROGRAM_ID));
   await expect(simulateAndVerifyCompound(input)).rejects.toThrow("existing wallet");
 });
-it("fails when harvested yield no longer funds the add, rather than accepting a wallet-funded fallback", async () => {
+it("fails when harvested fees no longer funds the add, rather than accepting a wallet-funded fallback", async () => {
   const { input } = await fixture();
-  vi.mocked(input.connection.simulateTransaction).mockResolvedValueOnce({ value: { err: { InstructionError: [6, "InsufficientFunds"] }, logs: ["yield source insufficient"] } } as never);
+  vi.mocked(input.connection.simulateTransaction).mockResolvedValueOnce({ value: { err: { InstructionError: [6, "InsufficientFunds"] }, logs: ["harvest source insufficient"] } } as never);
   await expect(simulateAndVerifyCompound(input)).rejects.toThrow("InsufficientFunds");
 });
 it("counts a shared reward ATA credit only once when two reward vaults use the same mint", async () => {
@@ -96,7 +96,7 @@ it("counts a shared reward ATA credit only once when two reward vaults use the s
   after.set(account, info(tokenData(mint, input.state.wallet, 30n), TOKEN_PROGRAM_ID));
   expect((await simulateAndVerifyCompound(input)).rewards).toEqual([{ mint, amount: "10", compounded: false }]);
 });
-it("rejects changed prior-yield balance before simulating and requires its atomic closure", async () => {
+it("rejects changed prior-harvest balance before simulating and requires its atomic closure", async () => {
   const { input, before, after } = await fixture();
   const address = key();
   const source: CompoundPriorSource = { address, mint: input.state.mintB, program: input.state.programB,

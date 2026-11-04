@@ -148,12 +148,12 @@ export function ShareCalcDialog({ pool, open, onClose }: { pool: ShareCalcPool; 
 
           <div className={cn(panel, "p-4")}>
             <div className="flex items-center justify-between text-[12px] text-smoke">
-              <span>After {rangeLabel(days)}, HODL + {shareSymbol ? "earned shares" : "fees"}</span>
+              <span>After {rangeLabel(days)}, HODL + {shareSymbol ? "more shares" : "fees"}</span>
             </div>
             <p className={cn("mt-1 text-2xl font-medium tabular-nums", plan ? (ahead ? "text-mint" : "text-coral") : "text-cream/40")}>
               {plan ? `$${formatCents(plan.exitValue)}` : "—"}
             </p>
-            <p className="text-[12px] text-smoke">{holdLabel}{shareSymbol ? ` + earned ${shareSymbol}` : ""}</p>
+            <p className="text-[12px] text-smoke">{holdLabel}{shareSymbol ? ` + more ${shareSymbol}` : ""}</p>
           </div>
 
           <OpenCta action={openFromHere} label={pool.pairLabel} />

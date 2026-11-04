@@ -1,16 +1,33 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { OPEN_RANGE_PRESETS } from "@sofinance/engine/open-range-presets";
 import {
   HIGHEST_RANGE_APR_7D_HELP,
   HOMEPAGE_APR_DOCS_LINK_LABEL,
 } from "@/lib/apr-labels/copy";
+import { LANDING_RANGES } from "./landing/ranges-section";
+import { SAMPLE, SAMPLE_FOOTNOTE, SAMPLE_ROWS } from "./landing/landing-sample";
+
+/** Source with comments removed, so the checks read only what can reach the page. */
+const copyOf = (file: string) =>
+  readFileSync(resolve(file), "utf8")
+    .replace(/\{\/\*[\s\S]*?\*\/\}/g, "")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
+/** Words the public site must not use (the standing copy rules). */
+const FORBIDDEN = /back-?test|\bearn(s|ed|ing|ings)?\b|\byield|auto-?rebalanc|guarantee/i;
 
 describe("landing page copy and routes", () => {
   const src = readFileSync(resolve("src/components/landing-page.tsx"), "utf8");
   const table = readFileSync(resolve("src/components/homepage-pools-table.tsx"), "utf8");
   const copyFiles = [
     "src/components/landing-page.tsx",
+    "src/components/landing/pair-section.tsx",
+    "src/components/landing/returns-section.tsx",
+    "src/components/landing/ranges-section.tsx",
+    "src/components/landing/section-heading.tsx",
+    "src/components/landing/landing-sample.ts",
     "src/components/homepage-pools-table.tsx",
     "src/lib/homepage-pools.ts",
     "src/lib/homepage-pools-snapshot.ts",
@@ -20,23 +37,67 @@ describe("landing page copy and routes", () => {
     "src/app/manifest.ts",
   ];
 
-  it("leads with the option B hero (hold the stock, collect the fees), not a yield product", () => {
-    expect(src).toContain("Hold the stock. Collect the fees.");
-    expect(src).toContain(
-      "Your $TSLA, $MSTR or $SPCX tokens can collect trading fees from swaps in Raydium (Solana) and Uniswap v4 (Robinhood Chain) pools. We show the estimated fee APR before you sign, plus a 7-day backtested range on Solana. Not guaranteed; risks apply.",
-    );
+  it("leads with the same-stock hero: headline, plain subhead and View pools to the pools list", () => {
+    expect(src).toContain("Hold your stocks. Collect fees.");
+    expect(src).not.toContain("Hold the stock. Collect the fees.");
+    expect(src).toContain("Pair two tokens of the same stock in one pool.");
     expect(src).not.toContain("LP tokenized stocks on Raydium — in one signature.");
     expect(src).toContain("You sign every transaction");
-    expect(src).not.toMatch(/estimated APR/);
     expect(src).toContain("Self-custodial · Solana + Robinhood Chain");
     expect(src).not.toContain("Raydium CLMM · Tokenized stocks");
-    expect(src).toContain("Browse pools");
-    expect(src).toContain("Already have a position? Manage it");
+    // "View pools" goes straight to the pools list, never to an on-page anchor.
+    expect(src).toMatch(/<ArrowCta href=\{APP_ROUTES\.rwaPairs\} tone="ink">\s*View pools\s*<\/ArrowCta>/);
+    expect(src).not.toContain("Browse pools");
+    const hero = src.slice(src.indexOf('data-testid="landing-hero"'), src.indexOf("<PairSection"));
+    expect(hero).not.toMatch(/href="#pools"/);
+    expect(hero).toContain("APP_ROUTES.rwaPairs");
     expect(src).toMatch(/non-custodial/i);
     expect(src).toContain("verifiable on Solscan and Blockscout");
     expect(src).not.toMatch(/audited|trustless|risk-free|fully automated|autonomous/i);
-    // "trading" is allowed only as "trading fees" (approved option B subhead), never as a trading product.
+    expect(src).not.toContain("Next: range re-centering, rebalancing.");
+    // "trading" is allowed only as "trading fees", never as a trading product.
     expect(src.replace(/trading fees/g, "")).not.toMatch(/\btrading\b/i);
+  });
+
+  it("orders the new explainer sections right after the hero, before the live pools", () => {
+    const order = ["<PairSection", "<ReturnsSection", "<RangesSection", "<HomepagePoolsTable"].map((tag) => src.indexOf(tag));
+    expect(order.every((index) => index > src.indexOf("</h1>"))).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+  });
+
+  it("uses none of the forbidden words in any landing copy", () => {
+    for (const file of copyFiles) expect(copyOf(file), file).not.toMatch(FORBIDDEN);
+  });
+
+  it("keeps the forbidden words out of the public pages, blog and app copy", () => {
+    const files = [
+      "src/app/page.tsx",
+      "src/app/terms/page.tsx",
+      "src/app/docs/fee-apr/page.tsx",
+      "src/app/docs/risks/page.tsx",
+      "src/components/blog/blog-shell.tsx",
+      "content/blog/dex-evolution.md",
+      "content/blog/xstocks-xpoints.md",
+      "src/lib/apr-labels/copy.ts",
+      "src/lib/range-apr/copy.ts",
+      "src/components/selected-app.tsx",
+      "src/components/compound-panel.tsx",
+      "src/components/position-performance-summary.tsx",
+      "src/components/open-position-modal.tsx",
+      "src/components/plan/hodl-vs-pool.tsx",
+      "src/components/unified-pools/share-calc-dialog.tsx",
+    ];
+    // Local variable names (e.g. `earn` in hodl-vs-pool) are code, not copy.
+    const code = (text: string) => text.replace(/import .*$/gm, "").replace(/(const |\$?\{)earn\b/g, "$1_");
+    for (const file of files) expect(code(copyOf(file)), file).not.toMatch(FORBIDDEN);
+  });
+
+  it("mentions APR nowhere in the landing's own copy (the pools table keeps its one estimate column)", () => {
+    for (const file of copyFiles.filter((file) => file.includes("landing"))) {
+      expect(copyOf(file).replace(/\b\w*Apr\w*\b|\b[A-Z_]*APR[A-Z_0-9]*\b/g, ""), file).not.toMatch(/APR|APY/);
+    }
+    expect(copyOf("src/app/page.tsx")).not.toMatch(/\bAPR\b/);
+    expect(table).toContain("hideApr24h");
   });
 
   it("has no yield or strategy headlines", () => {
@@ -85,7 +146,9 @@ describe("landing page copy and routes", () => {
 
   it("replaces the four-step technical flow with three user steps and drops engine jargon", () => {
     expect(src).toContain("Pick a pool");
-    expect(src).toContain("On Solana the app suggests the best backtest range; you can override it.");
+    expect(src).toContain("On Solana the app suggests a range picked from the past 7 days of fee data; you can change it.");
+    // One signature only for a Raydium USDC open; SOL and Meteora take two.
+    expect(src).toContain("Raydium: opening with USDC takes one signature; with SOL it takes two. Meteora: two transactions.");
     expect(src).toContain("Review the preview");
     expect(src).toContain("Sign in your wallet");
     expect(src).not.toContain("The problem");
@@ -95,12 +158,12 @@ describe("landing page copy and routes", () => {
     expect(table).not.toMatch(/HMAC|v0 tx|signUrl|permit/i);
   });
 
-  it("ranks homepage pools by the /app/rwa-pairs Est. APR · 7d with the not-guaranteed help and APR details link", () => {
-    expect(HOMEPAGE_APR_DOCS_LINK_LABEL).toBe("APR details");
-    expect(`${HIGHEST_RANGE_APR_7D_HELP} ${HOMEPAGE_APR_DOCS_LINK_LABEL}`).not.toMatch(
-      /\byield\b|\bearn\b|make your money|strateg|recipe|open[- ]source|\bMIT\b/i,
-    );
-    expect(table).toContain("Ranked by Est. APR · 7d, high to low (on Solana, from a 7-day backtest of candidate ranges).");
+  it("ranks homepage pools by the /app/rwa-pairs 7-day estimate with a plain help and docs link", () => {
+    expect(HOMEPAGE_APR_DOCS_LINK_LABEL).toBe("How estimates work");
+    expect(`${HIGHEST_RANGE_APR_7D_HELP} ${HOMEPAGE_APR_DOCS_LINK_LABEL}`).not.toMatch(FORBIDDEN);
+    expect(table).toContain("Ranked by the 7-day estimate, high to low (on Solana, for a range picked from the past 7 days of fee data).");
+    expect(table).toContain("Top pools on Solana and Robinhood Chain");
+    expect(table).not.toContain("by est. 7-day APR");
     expect(table).toContain("HIGHEST_RANGE_APR_7D_HELP");
     expect(table).toContain("DOCS_ROUTES.feeApr");
     expect(table).toContain("usePoolsApr7d"); // the /app/rwa-pairs APR state
@@ -109,9 +172,10 @@ describe("landing page copy and routes", () => {
     expect(table).not.toContain("POOL_FEE_APR_24H_HELP");
   });
 
-  it("claims the 7-day backtest for Solana only, in every public page, the metadata, docs, llms.txt and FAQ", () => {
+  it("describes Solana ranges as picked from the past 7 days of fee data, never as backtested", () => {
     const files = [
       "src/components/landing-page.tsx",
+      "src/components/landing/ranges-section.tsx",
       "src/app/page.tsx",
       "src/components/blog/blog-shell.tsx",
       "src/app/docs/fee-apr/page.tsx",
@@ -119,14 +183,8 @@ describe("landing page copy and routes", () => {
       "src/lib/faq.ts",
       "content/blog/dex-evolution.md",
     ];
-    for (const file of files) {
-      const text = readFileSync(resolve(file), "utf8").replace(/\s+/g, " ");
-      // Each sentence that mentions a backtest also names Solana (or Raydium, which is Solana-only here).
-      for (const sentence of text.split(/(?<=[.!?])\s/)) {
-        if (/backtest/i.test(sentence)) expect(sentence, `${file}: ${sentence}`).toMatch(/Solana|Raydium/);
-      }
-    }
-    expect(readFileSync(resolve("src/app/page.tsx"), "utf8")).toContain("plus a 7-day backtested range on Solana");
+    for (const file of files) expect(copyOf(file), file).not.toMatch(/back-?test/i);
+    expect(copyOf("src/components/landing/ranges-section.tsx")).toContain("picked from the past 7");
   });
 
   it("covers both chains in the position, explorer and risk copy", () => {
@@ -138,8 +196,8 @@ describe("landing page copy and routes", () => {
     expect(src).not.toContain("Self-custodial Raydium CLMM tool");
     // "One signature" is Solana-only: Robinhood Chain needs a one-time approval, a signature and a transaction.
     expect(src).not.toMatch(/1 signature ·|You sign once|Sign once\./);
-    expect(src).toContain("Est. fee APR is not guaranteed.");
-    expect(src).not.toMatch(/guaranteed (yield|return|apr)|will earn|risk-free/i);
+    expect(src).toContain("Fee estimates are not a prediction.");
+    expect(src).not.toMatch(/guaranteed|will earn|risk-free/i);
   });
 
   it("keeps public copy free of repo, location, education, prototype, Turnkey and 0-SOL wording", () => {
@@ -148,6 +206,7 @@ describe("landing page copy and routes", () => {
       expect(text, file).not.toMatch(/\brepo(sitory)?\b|github|open[- ]source|sofinance-public/i);
       expect(text, file).not.toMatch(/Turnkey|prototype|0[- ]SOL|zero SOL|fee wallet/i);
       expect(text, file).not.toMatch(/\b(Taipei|Taiwan|university|student|education)\b/i);
+      expect(copyOf(file), file).not.toMatch(/\b(LJ|Lin)\b/);
     }
   });
 
@@ -157,5 +216,29 @@ describe("landing page copy and routes", () => {
     expect(risks.match(/<li\b/g)).toHaveLength(3);
     expect(risks).toContain('<li className="sm:col-span-2">');
     expect(risks).toContain("Read the full list in");
+  });
+
+  it("shows the 24h hold vs pool sample from the real HOODx/HOOD series, with the exact footnote and no SOL chart", () => {
+    const returns = readFileSync(resolve("src/components/landing/returns-section.tsx"), "utf8");
+    expect(SAMPLE_FOOTNOTE).toBe("Simulated $1,000 position on real pool data, not a prediction. One 24h sample.");
+    expect(returns).toContain("SAMPLE_FOOTNOTE");
+    expect(SAMPLE).toMatchObject({ holdEndUsd: 1026.72, poolEndUsd: 1032.17, holdPct: 2.67, poolPct: 3.22, diffUsd: 5.45, feesUsd: 5.43 });
+    const last = SAMPLE_ROWS.at(-1)!;
+    expect([last[2], last[3], last[4]]).toEqual([SAMPLE.holdEndUsd, SAMPLE.poolEndUsd, SAMPLE.feesUsd]);
+    expect(Number((SAMPLE.poolEndUsd - SAMPLE.holdEndUsd).toFixed(2))).toBe(SAMPLE.diffUsd);
+    expect(Number(((SAMPLE.holdEndUsd / SAMPLE.depositUsd - 1) * 100).toFixed(2))).toBe(SAMPLE.holdPct);
+    expect(Number(((SAMPLE.poolEndUsd / SAMPLE.depositUsd - 1) * 100).toFixed(2))).toBe(SAMPLE.poolPct);
+    for (const file of copyFiles.filter((file) => file.includes("landing"))) {
+      const text = copyOf(file);
+      expect(text, file).not.toMatch(/\b711\b|SOL\/USDC|SOLUSDC/);
+    }
+    expect(copyOf("src/components/landing/returns-section.tsx")).toContain("Low is not zero");
+  });
+
+  it("names the range cards after the app's real presets, Standard as the default", () => {
+    const presets = OPEN_RANGE_PRESETS.map((preset) => [preset.label.replace(/\s*\(.*\)$/, ""), `±${preset.percentBps / 100}%`]);
+    expect(LANDING_RANGES.map((range) => [range.name, range.band])).toEqual(presets);
+    expect(LANDING_RANGES.map((range) => range.name)).toEqual(["Tight", "Standard", "Wide"]);
+    expect(LANDING_RANGES.find((range) => range.isDefault)?.name).toBe("Standard");
   });
 });

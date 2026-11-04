@@ -275,11 +275,11 @@ export async function prepareTransaction(input: PrepareTransactionInput) {
 }
 
 /**
- * Get a quote for compounding (harvesting and reinvesting) a position's yield.
+ * Get a quote for compounding (harvesting and reinvesting) a position's fees.
  * Includes swap plan, expected liquidity increase, and simulation results.
  * 
  * Safety: Read-only, verifies position eligibility, simulates harvest+swap+add.
- * Failure modes: Ineligible position, third reward token, insufficient yield.
+ * Failure modes: Ineligible position, third reward token, insufficient harvested fees.
  */
 export async function quoteCompound(input: QuoteCompoundInput) {
   const { summary } = await buildAndSimulateCompound(

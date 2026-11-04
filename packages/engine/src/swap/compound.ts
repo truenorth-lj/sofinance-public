@@ -32,7 +32,7 @@ export async function buildCompoundSwapPlan(input: {
   const configInfo = ClmmConfigLayout.decode(configAccount.data);
   if (configInfo.tradeFeeRate !== computePoolInfo.ammConfig.tradeFeeRate || configInfo.tickSpacing !== state.tickSpacing) throw new Error("Compound swap config has changed");
   const blockTimestamp = await readRecentBlockTime(connection, slot);
-  if (blockTimestamp === null) throw new Error("Unable to get on-chain time for yield swap");
+  if (blockTimestamp === null) throw new Error("Unable to get on-chain time for harvest swap");
   // The SDK mutates dynamicFeeInfo while quoting. Every candidate must start
   // from the same chain snapshot, including the final minimal-account quote.
   const poolSnapshot = () => ({ ...computePoolInfo.accInfo, dynamicFeeInfo: { ...computePoolInfo.accInfo.dynamicFeeInfo,
@@ -44,7 +44,7 @@ export async function buildCompoundSwapPlan(input: {
     const result = PoolUtils.computeAmountOut({ poolInfo: { ...computePoolInfo, accInfo: poolSnapshot() }, tickarrayBitmapExtension: computePoolInfo.exBitmapInfo,
       tickArrayCache: tickData[state.poolId] ?? {}, baseMint: new PublicKey(direction === "a-to-b" ? state.mintA : state.mintB),
       epochInfo, amountIn: new BN(amount.toString()), slippage: 0, catchLiquidityInsufficient: false, blockTimestamp });
-    if (!result.allTrade || result.realAmountIn.fee?.gt(new BN(0)) || result.amountOut.fee?.gt(new BN(0))) throw new Error("Yield swap cannot fully execute or contains unsupported transfer fee");
+    if (!result.allTrade || result.realAmountIn.fee?.gt(new BN(0)) || result.amountOut.fee?.gt(new BN(0))) throw new Error("Harvest swap cannot fully execute or contains unsupported transfer fee");
     quoteCache.set(key, result);
     return { output: BigInt(result.amountOut.amount.toString()), sqrtPriceX64: BigInt(result.executionPriceX64.toString()) };
   };
@@ -57,7 +57,7 @@ export async function buildCompoundSwapPlan(input: {
   const planned = optimizeCompoundSwap({ price: BigInt(computePoolInfo.sqrtPriceX64.toString()), lower: BigInt(state.lowerSqrtX64),
     upper: BigInt(state.upperSqrtX64), amountA, amountB, startingLiquidity: BigInt(state.liquidity), quote });
   if (!planned.direction) return { instructions: [], route: null, swap: null, quotedBalances: planned.balances, sqrtPriceAfterX64: planned.sqrtPriceX64 };
-  if (state.status & 16) throw new Error("Pool has disabled yield swapping");
+  if (state.status & 16) throw new Error("Pool has disabled harvest swapping");
   const { feeAmount, swapAmount } = netSwapInput(planned.input, feeConfig.bps);
   const result = quoteCache.get(`${planned.direction}:${swapAmount}`)!;
   const slippageMinimum = planned.output * BigInt(10_000 - SLIPPAGE_BPS) / 10_000n;

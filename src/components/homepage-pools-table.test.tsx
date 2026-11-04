@@ -137,7 +137,8 @@ describe("HomepagePoolsTable", () => {
     expect(row!.querySelector("[data-testid='chain-badge']")!.textContent).toBe("Solana");
     // Same columns as the /app/rwa-pairs list view, as fixed labels (no sort buttons on the homepage).
     const headers = [...table.querySelectorAll("thead th")].map((th) => th.textContent);
-    expect(headers.slice(0, 7)).toEqual(["Pool", "Chain", "Protocol", "Est. APR 7d", "Est. fee APR 24h", "TVL", "24h vol"]);
+    // The homepage shows one estimate column (no 24h fee APR); /app/rwa-pairs keeps both.
+    expect(headers.slice(0, 6)).toEqual(["Pool", "Chain", "Protocol", "Est. APR 7d", "TVL", "24h vol"]);
     expect(headers).not.toContain("Risk");
     expect(table.textContent).not.toMatch(/Freeze risk|Token-2022|No flags/);
     expect(table.querySelector("thead [aria-sort='descending']")!.textContent).toBe("Est. APR 7d");
@@ -146,7 +147,7 @@ describe("HomepagePoolsTable", () => {
     const viewAll = container.querySelector("[data-testid='homepage-view-all']")!;
     expect(viewAll.getAttribute("href")).toBe("/app/rwa-pairs");
     expect(viewAll.textContent).toBe("View all pools →");
-    expect(container.querySelector("a[href='/docs/fee-apr']")!.textContent).toBe("APR details");
+    expect(container.querySelector("a[href='/docs/fee-apr']")!.textContent).toBe("How estimates work");
     expect(container.textContent).not.toMatch(/\byield\b|\bearn\b|make your money|strateg|recipe|open[- ]source|\bMIT\b/i);
   });
 

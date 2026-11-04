@@ -72,7 +72,7 @@ beforeEach(() => {
 });
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
-describe("wallet-wide leftover yield cleanup", () => {
+describe("wallet-wide leftover fees cleanup", () => {
   it.each(["write throws", "silent drop", "readback throws", "readback differs"])("keeps recovery cleanup pending after %s and rechecks without signing", async (fault) => {
     const source = receipt(), unrelated = receipt(1);
     persistCompoundReceipt(localStorage, source);

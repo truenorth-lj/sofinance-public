@@ -53,7 +53,7 @@ export function ComparisonChart({
           {shareSymbol ? <UnitToggle unit={unit} symbol={shareSymbol} onChange={setPicked} /> : null}
         </div>
         <p className="font-data text-[10px] uppercase tracking-[0.14em] text-ink/60">
-          Best case from past yield, not a forecast
+          Best case from past fee data, not a forecast
         </p>
       </div>
       {status === "ready" && comparison ? (
@@ -61,12 +61,12 @@ export function ComparisonChart({
       ) : (
         <p className="mt-auto max-w-xl pt-8 text-sm leading-relaxed text-ink/65">
           {status === "loading"
-            ? "Reading this pool's complete UTC-day yield. The chart will update here — nothing is invented while that loads."
+            ? "Reading this pool's complete UTC-day fee data. The chart will update here — nothing is invented while that loads."
             : reason
               ? reason
               : status === "unavailable"
-                ? "Past average yield is unavailable for this pool."
-                : "Choose a pool to estimate SoFinance against simply holding the same capital. Until a pool is chosen, there is no yield to plot."}
+                ? "Past average fee rate is unavailable for this pool."
+                : "Choose a pool to estimate SoFinance against simply holding the same capital. Until a pool is chosen, there is no fee rate to plot."}
         </p>
       )}
     </section>
@@ -277,7 +277,7 @@ function ReadyChart({
           </span>
         ) : null}
         {bare ? null : <span>
-          Est. best APY {formatPct(comparison.apyPct)} (not guaranteed) · {bestAprCopy({ windowDays: comparison.aprWindowDays, aprPct: comparison.aprPct })} ·{" "}
+          Est. best APY {formatPct(comparison.apyPct)} (not a prediction) · {bestAprCopy({ windowDays: comparison.aprWindowDays, aprPct: comparison.aprPct })} ·{" "}
           {completeDaysCopy(comparison.sampleDays)}
           {thin ? " · unreliable sample" : ""}
         </span>}

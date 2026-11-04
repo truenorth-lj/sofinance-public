@@ -53,7 +53,7 @@ describe("owner-controlled leftover recovery", () => {
     expect(summary.compoundAccounts[0]).toMatchObject({ amount: "20000000", sourceLamports: rent + 20_000_000, rentLamports: rent });
     await expect(simulateAndVerifyRecovery({ connection, transaction, summary, sigVerify: false })).resolves.toEqual({ unitsConsumed: 2000 });
   });
-  it("closes a zero-yield account without allocating a new ATA", async () => {
+  it("closes a zero-harvest account without allocating a new ATA", async () => {
     const { connection, transaction, summary, simulateTransaction } = await fixture(0n);
     await simulateAndVerifyRecovery({ connection, transaction, summary, sigVerify: false });
     expect(simulateTransaction.mock.calls[0]![1].accounts.addresses).toEqual([summary.compoundAccounts[0]!.address, summary.wallet]);

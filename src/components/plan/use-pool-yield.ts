@@ -54,7 +54,7 @@ export function usePoolYield(poolId: string | undefined): PoolYieldState {
             setLoaded({
               status: "unavailable",
               poolId,
-              reason: "No complete UTC days with both volume and TVL, so there is no average yield to show.",
+              reason: "No complete UTC days with both volume and TVL, so there is no average fee rate to show.",
             });
             return;
           }

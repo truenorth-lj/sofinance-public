@@ -217,6 +217,6 @@ export function useCleanupBatchController(options: Options) {
       : stage === "preparing" ? "Preparing and simulating all selected accounts…" : stage === "broadcasting" ? "Sending signed cleanup transactions…"
       : needsReview ? "Some cleanup results need verification. Use Requery cleanup results before continuing."
       : unresolved ? "Checking signed cleanup transactions. Temporary connection errors retry automatically; no further signature is needed."
-      : progress.completed === progress.total ? "All selected yield accounts cleaned up. Balances and account rent returned to your wallet."
+      : progress.completed === progress.total ? "All selected harvest accounts cleaned up. Balances and account rent returned to your wallet."
       : "Some cleanup transactions did not complete. Scan again to retry only the remaining accounts." } };
 }

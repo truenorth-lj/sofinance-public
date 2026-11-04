@@ -76,8 +76,8 @@ export default function DocsRisksPage() {
         </li>
         <li>
           <strong className="font-medium text-cream">Dynamic fee</strong> — pools use the StablePairHook, which
-          sets the trading fee on each swap. Fees you earn later can differ from what any estimate shows. The
-          7-day backtest in the create-position flow is Solana-only; see{" "}
+          sets the trading fee on each swap. Fees you collect later can differ from what any estimate shows. The
+          7-day range estimate in the create-position flow is Solana-only; see{" "}
           <Link href={DOCS_ROUTES.feeApr}>Fee APR</Link>.
         </li>
         <li>

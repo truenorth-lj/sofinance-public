@@ -26,7 +26,7 @@ function transferred(transaction: ParsedTransactionWithMeta, parent: number, sou
     if (!info || info.source !== source || info.destination !== destination) continue;
     const tokenAmount = info.tokenAmount as { amount?: unknown } | undefined;
     const amount = tokenAmount?.amount ?? info.amount;
-    if (typeof amount !== "string" || !/^\d+$/.test(amount)) throw new Error("On-chain yield transfer amount cannot be verified");
+    if (typeof amount !== "string" || !/^\d+$/.test(amount)) throw new Error("On-chain harvest transfer amount cannot be verified");
     total += BigInt(amount);
   }
   return total;

@@ -69,11 +69,11 @@ for (const scenario of ["packed", "chunked", "interrupted-confirmation"] as cons
     await page.route("**/api/protocol-pools**", route => route.fulfill({ json: { pairs: [], pools: [] } }));
     await page.goto("/app", { waitUntil: "domcontentloaded" });
     await new ConnectModal(page, wallet).connect();
-    await expect(page.getByRole("heading", { name: "Clean up leftover yield" })).toBeVisible();
-    await page.getByRole("button", { name: "Find leftover yield" }).click();
+    await expect(page.getByRole("heading", { name: "Clean up leftover fees" })).toBeVisible();
+    await page.getByRole("button", { name: "Find leftover fees" }).click();
     await expect(page.getByText(/Wallet scan complete/)).toBeVisible();
     await page.getByRole("button", { name: /Clean up all balances \(3\)/ }).click();
-    await expect(page.getByText(/All selected yield accounts cleaned up/)).toBeVisible({ timeout: 40_000 });
+    await expect(page.getByText(/All selected harvest accounts cleaned up/)).toBeVisible({ timeout: 40_000 });
     await expect(page.getByRole("button", { name: /Clean up all balances \(0\)/ })).toBeDisabled();
     expect(broadcasts).toHaveLength(scenario === "chunked" ? 2 : 1);
     expect(new Set(broadcasts).size).toBe(broadcasts.length);

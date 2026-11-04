@@ -165,7 +165,7 @@ export const tslaPayload: PoolRangeAprPayload = {
     "dayFeeApr": 2.15,
     "weekFeeApr": 0.18
   },
-  "assumptions": "Estimate, not a guarantee. Back-tests the last 7 complete UTC days of pool volume (GeckoTerminal, current day excluded) against the pool's liquidity right now (on-chain tick arrays). Fees = volume that traded inside your range \u00d7 pool fee rate \u00d7 the share LPs keep (Raydium keeps protocol + fund cuts) \u00d7 your share of the liquidity in each price bin. Volume only counts while the price is inside your range, using hourly price history; time out of range earns nothing. Assumes volume, other LPs' liquidity and prices behave like the recent past. Excludes impermanent loss, rewards, swap and rent costs. Rate shown for a ~$100 deposit; larger deposits dilute their own share of the fees.",
+  "assumptions": "Estimate, not a prediction. Uses the last 7 complete UTC days of pool volume (GeckoTerminal, current day excluded) against the pool's liquidity right now (on-chain tick arrays). Fees = volume that traded inside your range \u00d7 pool fee rate \u00d7 the share LPs keep (Raydium keeps protocol + fund cuts) \u00d7 your share of the liquidity in each price bin. Volume only counts while the price is inside your range, using hourly price history; time out of range collects nothing. Assumes volume, other LPs' liquidity and prices behave like the recent past. Excludes impermanent loss, rewards, swap and rent costs. Rate shown for a ~$100 deposit; larger deposits dilute their own share of the fees.",
   "referenceCapitalUsd": 100,
   "freshness": {
     "snapshotAt": "2026-10-21T12:02:30.000Z",

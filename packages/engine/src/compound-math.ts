@@ -17,7 +17,7 @@ export function accruedFee(input: {
   const above = input.tickCurrent < input.tickUpper ? input.upperOutside : wrappingSub128(input.global, input.upperOutside);
   const inside = wrappingSub128(wrappingSub128(input.global, below), above);
   const result = input.owed + input.liquidity * wrappingSub128(inside, input.lastInside) / Q64;
-  if (result < 0n || result > MAX_U64) throw new Error("Yield exceeds u64 range");
+  if (result < 0n || result > MAX_U64) throw new Error("Harvested amount exceeds u64 range");
   return result;
 }
 function ceilDivide(a: bigint, b: bigint) { return (a + b - 1n) / b; }
@@ -32,7 +32,7 @@ export function amountsForCompoundLiquidity(price: bigint, lower: bigint, upper:
 /** Exact rounded-up token requirements; no USD, APR or profitability threshold. */
 export function sizeCompoundLiquidity(price: bigint, lower: bigint, upper: bigint, a: bigint, b: bigint, startingLiquidity = 0n) {
   if (a < 0n || b < 0n || a > MAX_U64 || b > MAX_U64 || startingLiquidity < 0n || startingLiquidity > MAX_U128) {
-    throw new Error("Compound yield or liquidity exceeds range");
+    throw new Error("Compound harvest or liquidity exceeds range");
   }
   amountsForCompoundLiquidity(price, lower, upper, 0n);
   let low = 0n;

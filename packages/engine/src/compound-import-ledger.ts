@@ -10,7 +10,7 @@ export type CompoundImportOptions = { verifyYield?: boolean; verifyPriorCredit?:
 function checkedAmount(instruction: ParsedInstruction) {
   const info = instruction.parsed.info as Record<string, unknown> | undefined;
   const amount = (info?.tokenAmount as { amount?: unknown } | undefined)?.amount ?? info?.amount;
-  if (typeof amount !== "string" || !/^\d+$/.test(amount)) throw new Error("Yield transfer amount cannot be verified");
+  if (typeof amount !== "string" || !/^\d+$/.test(amount)) throw new Error("Harvest transfer amount cannot be verified");
   return BigInt(amount);
 }
 
@@ -20,17 +20,17 @@ export async function verifyImportedYieldLedger(transaction: ParsedTransactionWi
   const harvest = protocol[0]!, add = protocol[protocol.length - 1]!, swap = protocol.length === 3 ? protocol[1] : undefined;
   const accounts = receipt.compoundAccounts;
   const rewardStart = harvest.instruction.accounts.length % 3 === 1 ? 16 : 17;
-  if (harvest.instruction.accounts.length < rewardStart || (harvest.instruction.accounts.length - rewardStart) % 3 !== 0) throw new Error("Yield reward accounts mismatch");
+  if (harvest.instruction.accounts.length < rewardStart || (harvest.instruction.accounts.length - rewardStart) % 3 !== 0) throw new Error("Harvest reward accounts mismatch");
   const incoming = [0n, 0n], outgoing = [0n, 0n];
   const records = transaction.meta!.postTokenBalances;
   for (const [index, account] of accounts.entries()) {
     const addressIndex = transaction.transaction.message.accountKeys.findIndex((key) => key.pubkey.toBase58() === account.address);
     const before = transaction.meta!.preTokenBalances?.find((record) => record.accountIndex === addressIndex);
-    if (before && before.uiTokenAmount.amount !== "0") throw new Error("New yield account already has existing assets");
+    if (before && before.uiTokenAmount.amount !== "0") throw new Error("New harvest account already has existing assets");
     const after = records?.find((record) => record.accountIndex === addressIndex);
-    if (!after || after.owner !== receipt.wallet || after.mint !== account.mint || after.programId !== account.program || !/^\d+$/.test(after.uiTokenAmount.amount)) throw new Error("Yield post balance identity cannot be verified");
+    if (!after || after.owner !== receipt.wallet || after.mint !== account.mint || after.programId !== account.program || !/^\d+$/.test(after.uiTokenAmount.amount)) throw new Error("Harvest post-balance identity cannot be verified");
     const vault = harvest.instruction.accounts[5 + index]?.toBase58();
-    if (!vault || add.instruction.accounts[9 + index]?.toBase58() !== vault || harvest.instruction.accounts[14 + index]?.toBase58() !== account.mint || add.instruction.accounts[13 + index]?.toBase58() !== account.mint) throw new Error("Yield vault or mint mismatch");
+    if (!vault || add.instruction.accounts[9 + index]?.toBase58() !== vault || harvest.instruction.accounts[14 + index]?.toBase58() !== account.mint || add.instruction.accounts[13 + index]?.toBase58() !== account.mint) throw new Error("Harvest vault or mint mismatch");
   }
   if (swap) {
     const ix = swap.instruction, bytes = Buffer.from(bs58.decode(ix.data));
@@ -39,7 +39,7 @@ export async function verifyImportedYieldLedger(transaction: ParsedTransactionWi
     if (bytes.length !== 41 || bytes[40] !== 1 || bytes.readBigUInt64LE(8) === 0n || bytes.readBigUInt64LE(16) === 0n || input < 0 || output < 0 || input === output ||
       ix.accounts[0]?.toBase58() !== receipt.wallet || ix.accounts[2]?.toBase58() !== harvest.instruction.accounts[3]?.toBase58() ||
       ix.accounts[5]?.toBase58() !== harvest.instruction.accounts[5 + input]?.toBase58() || ix.accounts[6]?.toBase58() !== harvest.instruction.accounts[5 + output]?.toBase58() ||
-      ix.accounts[11]?.toBase58() !== accounts[input]!.mint || ix.accounts[12]?.toBase58() !== accounts[output]!.mint) throw new Error("Yield swap not restricted to original pool and isolated yield accounts");
+      ix.accounts[11]?.toBase58() !== accounts[input]!.mint || ix.accounts[12]?.toBase58() !== accounts[output]!.mint) throw new Error("Harvest swap not restricted to original pool and isolated harvest accounts");
   }
   const transfers = [
     ...transaction.transaction.message.instructions.map((instruction, parent) => ({ instruction, parent, topLevel: true })),
@@ -52,9 +52,9 @@ export async function verifyImportedYieldLedger(transaction: ParsedTransactionWi
     const from = accounts.findIndex((account) => account.address === info.source), to = accounts.findIndex((account) => account.address === info.destination);
     if (from < 0 && to < 0) continue;
     const amount = checkedAmount(instruction);
-    if (from >= 0 && to >= 0) throw new Error("Cannot treat inter-yield-account transfers as new yield");
+    if (from >= 0 && to >= 0) throw new Error("Cannot treat inter-harvest-account transfers as new harvest");
     const index = from >= 0 ? from : to, account = accounts[index]!;
-    if (instruction.programId.toBase58() !== account.program || instruction.parsed.type === "transferChecked" && info.mint !== account.mint) throw new Error("Yield transfer program or mint mismatch");
+    if (instruction.programId.toBase58() !== account.program || instruction.parsed.type === "transferChecked" && info.mint !== account.mint) throw new Error("Harvest transfer program or mint mismatch");
     let proven = false;
     if (!topLevel && parent === harvest.index && to >= 0) {
       const vaults = [harvest.instruction.accounts[5 + index]!.toBase58()];
@@ -81,21 +81,21 @@ export async function verifyImportedYieldLedger(transaction: ParsedTransactionWi
         amount > 0n && amount <= computeSwapFee(inputAmount + amount, MAX_SWAP_FEE_BPS);
       if (proven) protocolFeePaid = true;
     } else if (topLevel && parent < harvest.index && to >= 0 && instruction.parsed.type === "transferChecked" && info.authority === receipt.wallet) {
-      if (!options.verifyPriorCredit || typeof info.source !== "string") throw new Error("Original yield import lacks provable historical source");
+      if (!options.verifyPriorCredit || typeof info.source !== "string") throw new Error("Original harvest import lacks provable historical source");
       const sourceIndex = transaction.transaction.message.accountKeys.findIndex((key) => key.pubkey.toBase58() === info.source);
       const before = transaction.meta!.preTokenBalances?.find((record) => record.accountIndex === sourceIndex);
-      if (!before || before.owner !== receipt.wallet || before.mint !== account.mint || before.programId !== account.program || !/^\d+$/.test(before.uiTokenAmount.amount) || BigInt(before.uiTokenAmount.amount) !== amount) throw new Error("Original yield import does not match source pre balance");
+      if (!before || before.owner !== receipt.wallet || before.mint !== account.mint || before.programId !== account.program || !/^\d+$/.test(before.uiTokenAmount.amount) || BigInt(before.uiTokenAmount.amount) !== amount) throw new Error("Original harvest import does not match source pre balance");
       await options.verifyPriorCredit({ address: info.source, mint: account.mint, program: account.program, amount, preAmount: BigInt(before.uiTokenAmount.amount),
         positionMint: receipt.positionMint, poolId: harvest.instruction.accounts[3]!.toBase58(), positionAccount: harvest.instruction.accounts[2]!.toBase58() });
       proven = true;
     }
-    if (!proven) throw new Error("Yield account contains unprovable existing asset transfer");
+    if (!proven) throw new Error("Harvest account contains unprovable existing asset transfer");
     if (to >= 0) incoming[to]! += amount;
     if (from >= 0) outgoing[from]! += amount;
   }
   for (const [index, account] of accounts.entries()) {
     const addressIndex = transaction.transaction.message.accountKeys.findIndex((key) => key.pubkey.toBase58() === account.address);
     const remaining = BigInt(records!.find((record) => record.accountIndex === addressIndex)!.uiTokenAmount.amount);
-    if (incoming[index]! - outgoing[index]! !== remaining) throw new Error("Yield source does not match original transaction remaining amount");
+    if (incoming[index]! - outgoing[index]! !== remaining) throw new Error("Harvest source does not match original transaction remaining amount");
   }
 }

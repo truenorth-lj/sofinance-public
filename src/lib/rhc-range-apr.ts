@@ -32,9 +32,9 @@ export { resolveRhcPresetRanges, sqrtPriceX96ToX64 } from "./rhc-range-apr-prese
  */
 
 export const RHC_RANGE_APR_ASSUMPTIONS = [
-  `Estimate, not a guarantee. Back-tests the last ${VOLUME_WINDOW_DAYS} complete UTC days of pool volume (GeckoTerminal, current day excluded) against the pool's liquidity right now (StateView tick bitmap).`,
+  `Estimate, not a prediction. Uses the last ${VOLUME_WINDOW_DAYS} complete UTC days of pool volume (GeckoTerminal, current day excluded) against the pool's liquidity right now (StateView tick bitmap).`,
   "Fees = volume that traded inside your range × the StablePairHook's current fee rate × your share of the liquidity in each price bin. The hook fee is dynamic; this uses the live value (same as the 24h estimate).",
-  "Volume only counts while the price is inside your range, using hourly price history; time out of range earns nothing.",
+  "Volume only counts while the price is inside your range, using hourly price history; time out of range collects nothing.",
   "Assumes volume, other LPs' liquidity and prices behave like the recent past. Excludes impermanent loss, rewards and gas.",
   `Rate shown for a ~$${RANGE_APR_REFERENCE_CAPITAL_USD} deposit; larger deposits dilute their own share of the fees.`,
 ].join(" ");

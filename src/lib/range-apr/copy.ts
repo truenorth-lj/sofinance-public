@@ -1,5 +1,5 @@
 /** User-facing strings for the range APR estimate (shared by the modal and the pair cards). */
-export const APR_ESTIMATE_LABEL = "Est. fee APR · not guaranteed";
+export const APR_ESTIMATE_LABEL = "Est. fee APR · not a prediction";
 export const BEST_LABEL = "Best";
 /** Shown instead of the ranges when the typed amount fits none of them. */
 export const LOWER_AMOUNT_TO_OPEN = "Lower the amount to open a position.";
@@ -8,7 +8,7 @@ export const HIGHEST_RANGE_APR_LABEL = "Est. highest range APR";
 
 /** Short caveat shown in tooltips; the long form is `assumptions` in the API payload. */
 export const APR_ESTIMATE_CAVEAT =
-  "Estimate, not a guarantee. Based on the last 7 complete days of pool volume and today's liquidity in each price bin. " +
+  "Estimate, not a prediction. Based on the last 7 complete days of pool volume and today's liquidity in each price bin. " +
   "Assumes volume and prices behave like the recent past and counts fees only while price is inside the range; " +
   "ignores impermanent loss and costs. Sized to the amount you enter (~$100 until you enter one); larger deposits " +
   "dilute their own share of fees, so the rate drops. Narrower ranges collect more fees per dollar but go out of range sooner.";

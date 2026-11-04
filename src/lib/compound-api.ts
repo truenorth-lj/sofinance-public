@@ -27,7 +27,7 @@ export async function parseCompoundSelection(request: Request) {
   const sourceSignatures = body.sourceSignatures ?? [];
   if (!Array.isArray(sourceSignatures) || sourceSignatures.length > 3 || sourceSignatures.some((signature) =>
     typeof signature !== "string" || !/^[1-9A-HJ-NP-Za-km-z]{80,90}$/.test(signature)) ||
-    new Set(sourceSignatures).size !== sourceSignatures.length) throw new Error("Invalid yield source transactions; maximum three merges per attempt");
+    new Set(sourceSignatures).size !== sourceSignatures.length) throw new Error("Invalid harvest source transactions; maximum three merges per attempt");
   return { wallet, positionMint: body.positionMint, sourceSignatures: sourceSignatures as string[] };
 }
 

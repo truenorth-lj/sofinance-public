@@ -78,6 +78,8 @@ describe("homepage server render", () => {
     const table = html.slice(html.indexOf('data-testid="homepage-pools-list"'));
     return [...table.matchAll(/<tr[^>]*data-pool="([^"]+)"/g)].map((match) => match[1]);
   };
+  // The pools section only: the explainer sections above it print the sample's (non-APR) percentages.
+  const poolsHtml = (html: string) => html.slice(html.indexOf('id="pools"'), html.indexOf('id="how"'));
   const rhcKey = (index: number) => `robinhood:${UNIV4_RHC_ALLOWLISTED_POOLS[index]!.poolId.toLowerCase()}`;
 
   it("prerenders the top 5 pools of both chains in the /app/rwa-pairs list view, with chain badges, the saved list time and View all", async () => {
@@ -102,14 +104,15 @@ describe("homepage server render", () => {
     expect(html).toContain("Robinhood Chain");
     expect(html).toContain("Uniswap v4");
     expect(html).toContain("Raydium");
-    expect(html).toContain("Top pools on Solana and Robinhood Chain, by est. 7-day APR");
+    expect(html).toContain("Top pools on Solana and Robinhood Chain");
+    expect(html).not.toContain("by est. 7-day APR");
     // Same minute on both chains: one "Updated" time, from the lists' fetchedAt.
     expect(html).toContain("Updated 2026-10-30 11:02 UTC");
     expect(html).toMatch(/<a[^>]*href="\/app\/rwa-pairs"[^>]*>View all pools →<\/a>/);
     // Robinhood Chain rows open their dialog on /app/rwa-pairs.
     expect(html).toContain(`/app/rwa-pairs?openPool=${UNIV4_RHC_ALLOWLISTED_POOLS[10]!.poolId}`);
     // APRs load on the client; the cached HTML never states an APR figure (7d or 24h).
-    expect(html).not.toMatch(/\d+(\.\d+)?%\s*<\/(span|td)>|87\.5/);
+    expect(poolsHtml(html)).not.toMatch(/\d+(\.\d+)?%\s*<\/(span|td)>|87\.5/);
     expect(html).toContain('"@type":"Organization"');
     expect(html).toContain('"@type":"WebSite"');
   });
@@ -135,7 +138,7 @@ describe("homepage server render", () => {
     expect(html).toContain(`${robinhood}/${robinhood}on`);
     expect(html).not.toContain(`${robinhood}on/${robinhood}`);
     // Still no APR figure in the cached HTML.
-    expect(html).not.toMatch(/\d+(\.\d+)?%\s*<\/(span|td)>/);
+    expect(poolsHtml(html)).not.toMatch(/\d+(\.\d+)?%\s*<\/(span|td)>/);
   });
 
   it("still prerenders the other chain when one chain's snapshot read fails", async () => {

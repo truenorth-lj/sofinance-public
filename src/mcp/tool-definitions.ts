@@ -179,7 +179,7 @@ const TOOL_DEFINITIONS = {
     },
     quote_compound: {
         name: "quote_compound",
-        description: "Get a quote for compounding a position (harvest fees/rewards, swap to ratio, reinvest). Returns expected liquidity increase, swap plan, simulation results. Verifies position eligibility. Read-only. Phase one: rejects third reward tokens (no verifiable swap path). Failure modes: ineligible position, third reward token, insufficient yield for minimum liquidity unit, swap plan failure.",
+        description: "Get a quote for compounding a position (harvest fees/rewards, swap to ratio, reinvest). Returns expected liquidity increase, swap plan, simulation results. Verifies position eligibility. Read-only. Phase one: rejects third reward tokens (no verifiable swap path). Failure modes: ineligible position, third reward token, insufficient harvested fees for minimum liquidity unit, swap plan failure.",
         inputSchema: {
             type: "object",
             properties: {
@@ -194,7 +194,7 @@ const TOOL_DEFINITIONS = {
                 sourceSignatures: {
                     type: "array",
                     items: { type: "string" },
-                    description: "Optional: prior yield transaction signatures to merge (max 3)",
+                    description: "Optional: prior harvest transaction signatures to merge (max 3)",
                     maxItems: 3,
                 },
             },
@@ -218,7 +218,7 @@ const TOOL_DEFINITIONS = {
                 sourceSignatures: {
                     type: "array",
                     items: { type: "string" },
-                    description: "Optional: prior yield signatures (max 3)",
+                    description: "Optional: prior harvest signatures (max 3)",
                     maxItems: 3,
                 },
             },

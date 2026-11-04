@@ -35,7 +35,7 @@ const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 export function ClosePreview({ ready }: { ready: Ready }) {
   const pool = poolOf(ready.position)!;
   return <div className="mt-2 space-y-1 rounded-lg border border-white/12 p-2 text-xs text-cream/90" data-testid="close-preview">
-    <p>You receive ≈ {fmt(ready.expected.amount0, pool.currency0.decimals)} {pool.currency0.symbol} + {fmt(ready.expected.amount1, pool.currency1.decimals)} {pool.currency1.symbol} (includes earned pool fees)</p>
+    <p>You receive ≈ {fmt(ready.expected.amount0, pool.currency0.decimals)} {pool.currency0.symbol} + {fmt(ready.expected.amount1, pool.currency1.decimals)} {pool.currency1.symbol} (includes accrued pool fees)</p>
     <p className="text-cream/70">At least {fmt(ready.min.amount0, pool.currency0.decimals)} {pool.currency0.symbol} + {fmt(ready.min.amount1, pool.currency1.decimals)} {pool.currency1.symbol} ({ready.slippageBps / 100}% price protection). No SoFinance fee on closing.</p>
     <p className="text-cream/70">Network fee at most ≈ {Number(formatUnits(BigInt(ready.gas.maxCostWei), 18)).toPrecision(2)} ETH. Simulated at block {ready.blockNumber}; the position NFT is burned.</p>
   </div>;

@@ -79,7 +79,7 @@ async function setup(page: Page, wallet: FakeWallet, reply: Reply, otherWalletRe
 async function showCompound(page: Page) {
   const mobileView = page.getByRole("combobox", { name: "Position operations", exact: true });
   if (await mobileView.isVisible()) await mobileView.selectOption("compound");
-  else await page.getByRole("button", { name: "Yield Compound", exact: true }).click();
+  else await page.getByRole("button", { name: "Compound fees", exact: true }).click();
 }
 
 for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
@@ -111,7 +111,7 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 
       await route.fulfill({ status: 400, json: { error: "Cleanup stopped for test" } });
     });
     await showCompound(page);
-    const panel = page.getByRole("region", { name: "Yield Compound", exact: true });
+    const panel = page.getByRole("region", { name: "Compound fees", exact: true });
     const harvest = panel.getByRole("region", { name: "Harvest", exact: true }).first();
     await expect(harvest).toContainText(/0\.00001 \S+ \+ 0\.00002 \S+/);
     await panel.getByRole("button", { name: "One-click compound", exact: true }).click();
@@ -131,10 +131,10 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 
     await page.route("**/api/compound-recover-prepare", route => route.fulfill({ status: 400, contentType: "application/json",
       body: JSON.stringify({ error: "Recovery simulation failed" }) }));
     await showCompound(page);
-    await page.locator("summary").filter({ hasText: "Yield account management" }).click();
+    await page.locator("summary").filter({ hasText: "Harvest account management" }).click();
     await page.locator("summary").filter({ hasText: "Other positions (1 records)" }).click();
     await page.getByRole("button", { name: "Retrieve this balance", exact: true }).click();
-    const alert = page.getByRole("region", { name: "Yield Compound", exact: true }).getByRole("alert");
+    const alert = page.getByRole("region", { name: "Compound fees", exact: true }).getByRole("alert");
     await expect(alert).toBeVisible(); await expect(alert).toHaveText("Recovery simulation failed");
     expect(await alert.evaluate(node => node.closest("details")?.querySelector("summary")?.textContent)).toBe("Other positions (1 records)");
     expect(JSON.parse((await page.evaluate(key => localStorage.getItem(key), flow.receiptsKey))!)).toHaveLength(1);
@@ -149,8 +149,8 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 
     await page.route("**/api/compound-prepare", route => route.fulfill({ status: 400, contentType: "application/json",
       body: JSON.stringify({ error: "Complete compound transaction 1268 bytes, exceeds 1,232 byte limit; no transaction was sent" }) }));
     await showCompound(page);
-    const compoundPanel = page.getByRole("region", { name: "Yield Compound", exact: true });
-    const management = page.locator("summary").filter({ hasText: "Yield account management" });
+    const compoundPanel = page.getByRole("region", { name: "Compound fees", exact: true });
+    const management = page.locator("summary").filter({ hasText: "Harvest account management" });
     const success = page.getByText("Compound confirmed on-chain", { exact: true });
     await expect(management).toContainText("0 records for this position");
     await expect(success).toBeHidden();
@@ -183,7 +183,7 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 
     await page.setViewportSize(viewport); wallet.mode = "reject";
     const flow = await setup(page, wallet, { status: "manual-review", chainStatus: "success" });
     await expect(flow.add).toBeEnabled();
-    const warning = page.getByText(/yield details need verification/);
+    const warning = page.getByText(/harvest details need verification/);
     await expect(warning).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.screenshot({ path: test.info().outputPath(`compound-unlocked-${viewport.width}.png`) });

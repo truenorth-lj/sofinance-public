@@ -7,6 +7,9 @@ import { ArrowUpRight } from "lucide-react";
 import { APP_ROUTES, BLOG_ROUTES, DOCS_ROUTES, FAQ_ROUTE, LEGAL_ROUTES, LLMS_TXT_ROUTE } from "@/lib/public-urls";
 import { EXTERNAL_LINK_PROPS, SOCIAL_LINKS } from "@/lib/social-links";
 import { XIcon } from "@/components/x-icon";
+import { PairSection } from "@/components/landing/pair-section";
+import { RangesSection } from "@/components/landing/ranges-section";
+import { ReturnsSection } from "@/components/landing/returns-section";
 
 const navPill =
   "flex h-10 items-center justify-center rounded-full border border-white/25 px-4 text-[13px] font-medium text-cream/85 outline-none transition-colors hover:border-white/70 focus-visible:border-lemon";
@@ -106,31 +109,42 @@ export function LandingPage({ initialPools = null }: { initialPools?: HomepagePo
         </header>
 
         <main>
-          <section className="mt-3 animate-rise rounded-[28px] bg-cream p-6 text-ink motion-reduce:animate-none sm:p-10">
+          <section data-testid="landing-hero" className="mt-3 animate-rise rounded-[28px] bg-cream p-6 text-ink motion-reduce:animate-none sm:p-10">
             <span className={`${labelPill} border-ink/70`}>Self-custodial · Solana + Robinhood Chain</span>
             <h1 className="mt-6 max-w-[18ch] text-[clamp(2.1rem,5.4vw,4.4rem)] font-medium leading-[1.02] tracking-[-0.045em]">
-              Hold the stock. Collect the fees.
+              Hold your stocks. Collect fees.
             </h1>
             <div className="mt-6 border-t border-ink/20 pt-5">
               <p className="max-w-2xl text-base leading-7 text-ink/70 sm:text-lg">
-                Your $TSLA, $MSTR or $SPCX tokens can collect trading fees from swaps in Raydium (Solana) and Uniswap v4 (Robinhood Chain) pools. We show the estimated fee APR before you sign, plus a 7-day backtested range on Solana. Not guaranteed; risks apply.
+                Pair two tokens of the same stock in one pool. They trade close to 1:1, so the stock can move while the pair
+                barely does. Swappers pay fees, and your position collects a share while price stays in your range.
               </p>
+              <div className="mt-7 flex flex-wrap items-center gap-x-5 gap-y-3">
+                <ArrowCta href={APP_ROUTES.rwaPairs} tone="ink">
+                  View pools
+                </ArrowCta>
+                <a
+                  href="#pair"
+                  className="border-b border-current pb-px text-sm text-ink/80 hover:text-ink"
+                >
+                  Why same-stock pairs?
+                </a>
+              </div>
               <p className="mt-4 font-data text-[11px] uppercase tracking-[0.12em] text-ink/55">
                 0 keys on our servers · verifiable on Solscan and Blockscout
               </p>
-              <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-3">
-                <ArrowCta href="#pools" tone="ink">
-                  Browse pools
-                </ArrowCta>
-                <Link
-                  href={APP_ROUTES.home}
-                  className="text-sm font-semibold text-ink/70 underline-offset-2 hover:text-ink hover:underline"
-                >
-                  Already have a position? Manage it →
-                </Link>
-              </div>
             </div>
           </section>
+
+          <PairSection />
+          <ReturnsSection />
+          <RangesSection
+            cta={
+              <ArrowCta href={APP_ROUTES.rwaPairs} tone="lemon">
+                View pools and ranges
+              </ArrowCta>
+            }
+          />
 
           {/* The fallback is what prerendered HTML contains (useSearchParams bails out to the client), so it renders
               the server snapshot: crawlers see pool names and stats, not "Loading pool data…". */}
@@ -145,7 +159,7 @@ export function LandingPage({ initialPools = null }: { initialPools?: HomepagePo
                 {
                   n: "01",
                   title: "Pick a pool",
-                  body: "Choose a same-stock pool on Solana or Robinhood Chain and a price range. On Solana the app suggests the best backtest range; you can override it. Est. fee APR is shown before you sign — not guaranteed.",
+                  body: "Choose a same-stock pool on Solana or Robinhood Chain and a price range. On Solana the app suggests a range picked from the past 7 days of fee data; you can change it.",
                 },
                 {
                   n: "02",
@@ -155,7 +169,7 @@ export function LandingPage({ initialPools = null }: { initialPools?: HomepagePo
                 {
                   n: "03",
                   title: "Sign in your wallet",
-                  body: "Solana: one signature opens the position; later you can add, compound fees or exit. Robinhood Chain: a one-time token approval, a signature, then one transaction; you can close it here later.",
+                  body: "Raydium: opening with USDC takes one signature; with SOL it takes two. Meteora: two transactions. Later you can add, compound fees or close. Robinhood Chain: a one-time token approval, a signature, then one transaction; you can close it here later.",
                 },
               ].map((step) => (
                 <li key={step.n} className={`${darkCard} flex flex-col`}>
@@ -202,9 +216,9 @@ export function LandingPage({ initialPools = null }: { initialPools?: HomepagePo
             <article className={`${darkCard} sm:p-8`}>
               <ul className="grid gap-4 text-sm leading-6 text-smoke sm:grid-cols-2">
                 <li>
-                  <strong className="font-medium text-cream">Est. fee APR is not guaranteed.</strong> It is
-                  recent pool fees divided by TVL, annualized (last 24h; on Solana, also a 7-day backtest for a range) — not
-                  LP return.
+                  <strong className="font-medium text-cream">Fee estimates are not a prediction.</strong> They come
+                  from recent pool fees and liquidity (on Solana, the past 7 days of fee data for each range), not from
+                  your own return.
                 </li>
                 <li>
                   <strong className="font-medium text-cream">Out of range means no fees.</strong> If the
@@ -241,19 +255,19 @@ export function LandingPage({ initialPools = null }: { initialPools?: HomepagePo
             </article>
           </section>
 
-          <p className="mt-10 px-2 text-sm text-smoke">Next: range re-centering, rebalancing.</p>
-
           <section className="mt-8 rounded-[28px] bg-cream p-8 text-ink sm:mt-12 sm:p-12">
             <h2 className="max-w-[16ch] text-[clamp(2rem,5vw,3.6rem)] font-medium leading-[1.02] tracking-[-0.04em]">
-              Pick a pool. Your wallet signs.
+              Hold your stocks.
+              <br />
+              Collect fees.
             </h2>
             <div className="mt-8 flex flex-col gap-6 border-t border-ink/20 pt-6 md:flex-row md:items-center md:justify-between">
               <p className="max-w-xl text-sm leading-6 text-ink/70 sm:text-base">
-                Browse live tokenized-stock pools on Solana and Robinhood Chain, or manage a position you already hold. Self-custodial throughout.
+                Browse live same-stock pools on Solana and Robinhood Chain, pick a range, and open a position from your own wallet.
               </p>
               <div className="flex flex-wrap items-center gap-3">
-                <ArrowCta href="#pools" tone="ink">
-                  Browse pools
+                <ArrowCta href={APP_ROUTES.rwaPairs} tone="ink">
+                  View pools
                 </ArrowCta>
                 <ArrowCta href={APP_ROUTES.home} tone="outline-ink">
                   Manage a position

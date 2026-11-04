@@ -179,7 +179,7 @@ export function HomepagePoolsView({
           id="homepage-pools-heading"
           className="max-w-3xl text-[clamp(1.7rem,3.4vw,2.75rem)] font-medium leading-[1.08] tracking-[-0.035em]"
         >
-          Top pools on Solana and Robinhood Chain, by est. 7-day APR
+          Top pools on Solana and Robinhood Chain
         </h2>
         {updatedText && (
           <p data-testid="homepage-pools-updated" className="font-data text-[11px] uppercase tracking-[0.12em] text-smoke">
@@ -219,7 +219,7 @@ export function HomepagePoolsView({
       {rows.length > 0 && (
         <div data-testid="homepage-pools-table">
           <PoolTable pools={rows} apr={apr} actionFor={openAction} sort={DEFAULT_SORT} icons={icons} highlightKey={highlightKey}
-            testId="homepage-pools-list" apr24hPending={!mounted} />
+            testId="homepage-pools-list" apr24hPending={!mounted} hideApr24h />
         </div>
       )}
 
@@ -230,7 +230,7 @@ export function HomepagePoolsView({
               {HOMEPAGE_MIN_TVL_NOTE}
               {pools && rows.length < HOMEPAGE_POOL_LIMIT && ` ${rows.length} ${rows.length === 1 ? "pool qualifies" : "pools qualify"} right now.`}
             </span>
-            Ranked by Est. APR · 7d, high to low (on Solana, from a 7-day backtest of candidate ranges). {HIGHEST_RANGE_APR_7D_HELP}{" "}
+            Ranked by the 7-day estimate, high to low (on Solana, for a range picked from the past 7 days of fee data). {HIGHEST_RANGE_APR_7D_HELP}{" "}
             Not LP return; ignores IL and rewards. Data: Raydium API (Solana); GeckoTerminal / DexScreener (Robinhood
             Chain), updated every few hours{updatedText ? ` · ${updatedText}` : ""}.
           </p>

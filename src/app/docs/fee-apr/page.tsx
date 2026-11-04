@@ -23,7 +23,7 @@ export default function DocsFeeAprPage() {
       </p>
 
       <h2>How fee APR is computed</h2>
-      <p>The App shows several related estimates. None of them is a guaranteed return.</p>
+      <p>The App shows several related estimates. None of them is a prediction of your return.</p>
       <ul>
         <li>
           <strong className="font-medium text-cream">Est. pool fee APR · 24h</strong> — based on the last
@@ -33,11 +33,11 @@ export default function DocsFeeAprPage() {
         <li>
           <strong className="font-medium text-cream">Est. highest range APR · 7d avg</strong> — estimated
           from recent trading volume and fees, for a sample deposit (about $100) in a candidate
-          range (Micro / Tight / Standard / Wide). Not guaranteed.
+          range (Micro / Tight / Standard / Wide). Not a prediction.
         </li>
         <li>
           <strong className="font-medium text-cream">Est. fee APR</strong> on the Solana
-          create-position flow is a 7-day backtest: it uses the last 7 full days of trading volume and how much liquidity sits near each price today. It assumes recent volume/price behavior continues, counts fees only while price is
+          create-position flow is picked from the past 7 days of fee data: it uses the last 7 full days of trading volume and how much liquidity sits near each price today. It assumes recent volume/price behavior continues, counts fees only while price is
           inside the range, and ignores impermanent loss and your trading costs.
         </li>
       </ul>

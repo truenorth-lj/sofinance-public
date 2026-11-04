@@ -137,7 +137,7 @@ export function useRhcPositions({ wallet, signingEnabled, refreshKey, receiptPol
       const mine = ready && ready.position.tokenId === lookup.tokenId ? ready : null;
       return <section className="mt-3 rounded-[28px] border border-white/12 bg-char p-5 sm:p-8" data-testid="rhc-withdraw" data-position={lookup.tokenId}>
         <h2 className="text-lg font-semibold text-cream">Withdraw · full close</h2>
-        <p className="mt-2 text-xs leading-5 text-smoke">Closing removes all liquidity, collects earned pool fees and burns the position NFT. Partial withdraw is not available on Robinhood Chain yet.</p>
+        <p className="mt-2 text-xs leading-5 text-smoke">Closing removes all liquidity, collects accrued pool fees and burns the position NFT. Partial withdraw is not available on Robinhood Chain yet.</p>
         <button type="button" disabled={busy !== null} onClick={() => preview(lookup.tokenId)}
           className="mt-4 rounded-lg border border-white/25 px-3 py-1.5 text-xs font-semibold text-cream disabled:opacity-40">{busy === lookup.tokenId && !ready ? "Simulating…" : "Close"}</button>
         {mine ? <>

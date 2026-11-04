@@ -133,7 +133,7 @@ export function IntentSentence({
         {active === "lossAlert" && (
           <Editor
             eyebrow="Loss that should get your attention"
-            note={`${formatPct(lossPct)} of what you put in. Optional, and it does not change the projection. A line to act on, not a guaranteed floor: gaps and thin liquidity can overshoot it.`}
+            note={`${formatPct(lossPct)} of what you put in. Optional, and it does not change the projection. A line to act on, not a hard floor: gaps and thin liquidity can overshoot it.`}
           >
             <ValueField
               label="Loss alert, in USDC"

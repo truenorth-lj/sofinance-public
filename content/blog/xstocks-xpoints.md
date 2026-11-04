@@ -39,9 +39,9 @@ In crypto, a live points program that scores real onchain usage and talks about 
 What is on the record:
 
 - xStocks’ own launch post (10 Mar 2026) frames xPoints as incentives so **“the community helping build it should grow with it.”**
-- The points UI copy says earned points **“will be used to determine your share of future rewards.”**
+- The points UI copy says your points **“will be used to determine your share of future rewards.”**
 - CoinDesk coverage the same week called it a points program **hinting at a possible ecosystem token**, while noting **no official token announcement**.
-- The program is live (wallet registration, daily updates, LP as highest tier, referral boosts, anti-sybil cleanup). Partner writeups (e.g. Solflare) still stress points **have no monetary value** and **don’t guarantee** a future reward.
+- The program is live (wallet registration, daily updates, LP as highest tier, referral boosts, anti-sybil cleanup). Partner writeups (e.g. Solflare) still stress points **have no monetary value** and **carry no promise** of a future reward.
 
 **Bottom line for readers:** there is a **strong chance** — and the market **widely expects** — that xPoints convert into a **future airdrop**. **Not confirmed by xStocks.** No amount, date, or token is promised.
 
@@ -85,7 +85,7 @@ Open **RWA pairs**. Type **SPCX** in **Search token** (or scroll) to find **SPCX
 
 ## 5. Optional: Plan this pool
 
-Click **Plan this pool** to see an estimate for your amount and days (based on historical data, not a guarantee). When ready, click **Create a position in this pool**.
+Click **Plan this pool** to see an estimate for your amount and days (based on historical data, not a prediction). When ready, click **Create a position in this pool**.
 
 ![Plan — amount and days](/blog/xstocks-xpoints/steps/step10_plan_amount_input_and_chart.png)
 
@@ -93,7 +93,7 @@ Click **Plan this pool** to see an estimate for your amount and days (based on h
 
 Or click **Create position** on the pair card. Choose an input asset (**SOL**, **USDC**, or a pool token), an amount, and a range (**Best** is the suggested default — here **Micro ±0.02%**). Then continue.
 
-![Create position — SPCXx/SPCX, Best = Micro ±0.02%, ~36% est. fee APR (not guaranteed; one pool snapshot)](/blog/xstocks-xpoints/steps/step08_create_position_modal_spcx.png)
+![Create position — SPCXx/SPCX, Best = Micro ±0.02%, ~36% est. fee APR (not a prediction; one pool snapshot)](/blog/xstocks-xpoints/steps/step08_create_position_modal_spcx.png)
 
 ## 7. Approve once in your wallet
 
@@ -114,7 +114,7 @@ Numbers below are **this one position’s figures only** (not a promise or forec
 
 Return to [https://defi.xstocks.fi/points](https://defi.xstocks.fi/points) and confirm your activity.
 
-![Your xPoints dashboard shows points earned.](/blog/xstocks-xpoints/steps/step15_xpoints_balance.png)
+![Your xPoints dashboard shows your points.](/blog/xstocks-xpoints/steps/step15_xpoints_balance.png)
 
 ---
 

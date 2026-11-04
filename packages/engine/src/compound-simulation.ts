@@ -26,7 +26,7 @@ export function formatSolShortfall(lamports: bigint) {
   return `${units / 10_000n}.${(units % 10_000n).toString().padStart(4, "0")}`;
 }
 /**
- * The wallet cannot cover this compound's network fee, temporary yield-account rent and the
+ * The wallet cannot cover this compound's network fee, temporary harvest-account rent and the
  * {@link MIN_SOL_LAMPORTS} reserve. Same limits as before; only the user-facing copy is specific.
  */
 export class CompoundInsufficientSolError extends Error {
@@ -57,7 +57,7 @@ export async function simulateAndVerifyCompound(input: CompoundSimulationInput) 
   for (let index = 0; index < compoundAccounts.length; index++) {
     const account = compoundAccounts[index]!;
     if (!/^(?:[0-9a-f]{32}|[A-Za-z0-9_-]{22})$/.test(account.seed) || (await PublicKey.createWithSeed(wallet, account.seed, new PublicKey(account.program))).toBase58() !== account.address ||
-      account.mint !== (index === 0 ? state.mintA : state.mintB) || account.program !== (index === 0 ? state.programA : state.programB)) throw new Error("Isolated yield account seed, address, or mint mismatch");
+      account.mint !== (index === 0 ? state.mintA : state.mintB) || account.program !== (index === 0 ? state.programA : state.programB)) throw new Error("Isolated harvest account seed, address, or mint mismatch");
   }
   const isolated = compoundAccounts.map((account) => account.address);
   const tokens = [
@@ -77,7 +77,7 @@ export async function simulateAndVerifyCompound(input: CompoundSimulationInput) 
   if (!startPositionInfo || startPositionInfo.owner.toBase58() !== state.programId) throw new Error("Compound position account does not exist");
   const start = PersonalPositionLayout.decode(startPositionInfo.data);
   if (start.nftMint.toBase58() !== state.positionMint || start.poolId.toBase58() !== state.poolId || start.tickLower !== state.tickLower || start.tickUpper !== state.tickUpper || start.liquidity.toString() !== state.liquidity) throw new Error("Pre-compound position identity or liquidity has changed");
-  if (isolated.some((address) => before.get(address))) throw new Error("This round's isolated yield accounts already exist, please reprepare transaction");
+  if (isolated.some((address) => before.get(address))) throw new Error("This round's isolated harvest accounts already exist, please reprepare transaction");
   const beforeAmount = (address: string) => {
     const token = unique.find((item) => item.address === address)!;
     return compoundTokenAmount(before.get(address) ?? null, address, token.program, state.wallet, token.mint);
@@ -86,7 +86,7 @@ export async function simulateAndVerifyCompound(input: CompoundSimulationInput) 
   for (const source of priorSources) {
     if (beforeAmount(source.address) !== BigInt(source.amount) ||
       !compoundAccounts.some((account) => account.address === source.destination && account.mint === source.mint && account.program === source.program)) {
-      throw new Error("Prior yield account balance or restoration destination has changed");
+      throw new Error("Prior harvest account balance or restoration destination has changed");
     }
   }
   const solBefore = BigInt(before.get(state.wallet)?.lamports ?? 0);
@@ -123,7 +123,7 @@ export async function simulateAndVerifyCompound(input: CompoundSimulationInput) 
     // Simulation may expose a just-closed account as an empty zero-lamport
     // system account until the bank purges it, rather than returning null.
     if (closed && (closed.lamports !== 0 || closed.data.length !== 0 || !closed.owner.equals(SystemProgram.programId))) {
-      throw new Error("Compound did not fully transfer and close prior yield account");
+      throw new Error("Compound did not fully transfer and close prior harvest account");
     }
   }
   const walletRead = after.get(state.wallet);

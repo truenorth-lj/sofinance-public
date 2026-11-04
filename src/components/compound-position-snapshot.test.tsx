@@ -132,7 +132,7 @@ describe("compound snapshot preservation through the real controller and panel",
   it.each(["wallet", "positionMint"])("rejects wrong %s reply, retains snapshot, and accepts the next correct read", async field => {
     await start(); read = () => Response.json({ ...snapshot("99"), [field]: testKeypair(90).publicKey.toBase58() });
     await act(async () => { await controller.refreshState(); });
-    expect(controller.state?.fees.a).toBe("10"); expect(controller.error).toBe("Yield reading does not match selected position");
+    expect(controller.state?.fees.a).toBe("10"); expect(controller.error).toBe("Harvested fee reading does not match selected position");
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(controller.error);
     read = () => Response.json(snapshot("20")); await act(async () => { await controller.refreshState(); });
     expect(controller.state?.fees.a).toBe("20"); expect(controller.error).toBe(""); noTransactions();
@@ -188,7 +188,7 @@ describe("compound snapshot preservation through the real controller and panel",
     for (let i = 0; i < 3; i++) { onConfirmed = vi.fn(); await render(true); await advance(1); }
     expect(stateCalls()).toHaveLength(1); expect(controller.refreshState).toBe(refresh);
     read = () => Response.json(snapshot("66"));
-    const reload = [...container.querySelectorAll("button")].find(button => button.textContent?.includes("Reload yield"))!;
+    const reload = [...container.querySelectorAll("button")].find(button => button.textContent?.includes("Reload fees"))!;
     expect(reload.disabled).toBe(false); await act(async () => reload.click());
     expect(controller.state?.fees.a).toBe("66"); expect(stateCalls()).toHaveLength(2); noTransactions();
   });

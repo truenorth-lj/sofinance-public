@@ -168,7 +168,7 @@ afterEach(async () => {
 describe("PlanApp", () => {
   it("opens on \"I'll put in 1,000 USDC for 365 days\" for the default SPCXx/SPCX pool", async () => {
     await render();
-    await waitForText("Est. best APY used · not guaranteed");
+    await waitForText("Est. best APY used · not a prediction");
     expect(text()).toContain("I'll put in 1,000 USDC for 365 days.");
     expect(node.querySelector<HTMLSelectElement>('select[aria-label="Pool"]')?.value).toBe(POOL);
     expect(fetcher.mock.calls.some((call) => String(call[0]).includes("/api/rwa-pairs"))).toBe(true);
@@ -181,7 +181,7 @@ describe("PlanApp", () => {
 
   it("no longer asks for a net-gain aim", async () => {
     await render();
-    await waitForText("Est. best APY used · not guaranteed");
+    await waitForText("Est. best APY used · not a prediction");
     expect(text()).not.toMatch(/I want|to net|net gain you're aiming|your aim|aim \+|Pace to your aim|Aim for/i);
     expect(node.querySelector('[aria-label="Target gain as a share of the amount"]')).toBeNull();
     expect([...node.querySelectorAll("button")].some((b) => /net|take profit|beat holding/i.test(b.textContent ?? ""))).toBe(false);
@@ -189,14 +189,14 @@ describe("PlanApp", () => {
 
   it("projects the final value, net gain, % and break-even from the best APY", async () => {
     await render(`pool=${POOL}&days=30`);
-    await waitForText("Est. best APY used · not guaranteed");
+    await waitForText("Est. best APY used · not a prediction");
     // 36.5% pool APR × 84% (after Raydium's 16% cut) = 30.66% to LPs; 1,000 × (1 + 0.3066/365)^30 = 1,025.51;
     // minus the 10.00 opening cost = 1,015.51; minus 1% to swap back to USDC = 1,005.35.
     expect(text()).toMatch(/Projected final value\s*1,005\.35 USDC/);
     expect(text()).toMatch(/Net gain\s*\+5\.35 USDC · \+0\.5\d%/);
     expect(text()).toMatch(/Opening cost, day 0\s*−10\.00 USDC \(about 1%\)/);
     expect(text()).toMatch(/Closing cost, at exit\s*−10\.16 USDC \(about 1% to swap back to USDC\)/);
-    expect(text()).toMatch(/Est. best APY used · not guaranteed\s*35\.9% est. APY/);
+    expect(text()).toMatch(/Est. best APY used · not a prediction\s*35\.9% est. APY/);
     expect(text()).toContain("30.7% to LPs after Raydium's 16% cut");
     expect(text()).toMatch(/Break-even\s*Day 24/);
     expect(text()).toContain("SoFinance vs hold");
@@ -211,12 +211,12 @@ describe("PlanApp", () => {
   it("uses the highest of the 7, 30 and 90-day averages and says which one", async () => {
     mockApr(aprPayload([...Array.from({ length: 33 }, () => 10), ...Array.from({ length: 7 }, () => 50)]));
     await render(`pool=${POOL}`);
-    await waitForText("Est. best APY used · not guaranteed");
+    await waitForText("Est. best APY used · not a prediction");
     expect(text()).toContain("7-day average fee APR of 50%");
     expect(text()).toContain("over 7 complete UTC days");
     expect(text()).toMatch(/Windows checked\s*7d 50% · 30d 19\.3% · 90d 17%/);
     // The best window's 50% pool APR is 42% to LPs after Raydium's 16% cut, compounded daily.
-    expect(text()).toContain("Est. best APY 52.2% (not guaranteed)");
+    expect(text()).toContain("Est. best APY 52.2% (not a prediction)");
   });
 
   it("warns instead of headlining a number when the sample is under 7 days", async () => {
@@ -229,7 +229,7 @@ describe("PlanApp", () => {
 
   it("resolves a pair-only link from the cached RWA list", async () => {
     await render("pair=MSTRx%2FMSTR");
-    await waitForText("Est. best APY used · not guaranteed");
+    await waitForText("Est. best APY used · not a prediction");
     expect(node.querySelector<HTMLSelectElement>('select[aria-label="Pool"]')?.value).toBe(OTHER);
     expect(
       fetcher.mock.calls.some((call) => String(call[0]).includes(`/api/pool-daily-apr?poolId=${OTHER}`)),
@@ -239,13 +239,13 @@ describe("PlanApp", () => {
   it("explains an unknown pair-only link instead of fabricating a pool", async () => {
     await render("pair=NVDAx%2FNVDA");
     await waitForText("This link names a pair but has no pool id");
-    expect(text()).not.toContain("Est. best APY used · not guaranteed");
+    expect(text()).not.toContain("Est. best APY used · not a prediction");
     expect(fetcher.mock.calls.some((call) => String(call[0]).includes("/api/pool-daily-apr"))).toBe(false);
   });
 
   it("opens the chart in SPCX shares and switches to USDC", async () => {
     await render(`pool=${POOL}`);
-    await waitForText("Est. best APY used · not guaranteed");
+    await waitForText("Est. best APY used · not a prediction");
     // 30.66% LP APR over 365 days, minus 1% to open and 1% to swap back to USDC: +33.51 per 100 held.
     expect(text()).toContain("+33.51 SPCX per 100 held vs hold");
     const usdc = [...node.querySelectorAll<HTMLButtonElement>('[aria-label="Chart unit"] button')].find((b) => b.textContent === "USDC")!;
@@ -257,7 +257,7 @@ describe("PlanApp", () => {
 
   it("updates the amount from the ruler without refetching", async () => {
     await render(`pool=${POOL}&days=30`);
-    await waitForText("Est. best APY used · not guaranteed");
+    await waitForText("Est. best APY used · not a prediction");
     const before = aprFetches();
     const slider = node.querySelector<HTMLElement>('[role="slider"]')!;
     expect(slider.getAttribute("aria-label")).toBe("Amount to put in");
@@ -271,7 +271,7 @@ describe("PlanApp", () => {
 
   it("lets a click on the far right of the ruler reach the last stop", async () => {
     await render(`pool=${POOL}`);
-    await waitForText("Est. best APY used · not guaranteed");
+    await waitForText("Est. best APY used · not a prediction");
     const slider = node.querySelector<HTMLElement>('[role="slider"]')!;
     const wrapper = slider.parentElement!;
     slider.getBoundingClientRect = () =>
@@ -284,7 +284,7 @@ describe("PlanApp", () => {
 
   it("takes any number of days and re-projects over that horizon", async () => {
     await render(`pool=${POOL}`);
-    await waitForText("Est. best APY used · not guaranteed");
+    await waitForText("Est. best APY used · not a prediction");
     await setDays("45");
     expect(text()).toContain("for 45 days.");
     expect(text()).toContain("Projected value after 45 days");
@@ -299,7 +299,7 @@ describe("PlanApp", () => {
 
   it("keeps the loss alert and exit asset as optional secondary controls", async () => {
     await render(`pool=${POOL}`);
-    await waitForText("Est. best APY used · not guaranteed");
+    await waitForText("Est. best APY used · not a prediction");
     expect(text()).toMatch(/Optional\s*Warn me if I'm down 50 USDC, and exit to USDC\./);
     expect(text()).toMatch(/Warn me if down\s*−50 USDC \(5%\)/);
     const exitPill = [...node.querySelectorAll("button")].find((b) => b.textContent?.trim() === "USDC");
@@ -310,7 +310,7 @@ describe("PlanApp", () => {
 
   it("rescales the loss alert when the amount goes 1 → 10,000", async () => {
     await render(`pool=${POOL}`);
-    await waitForText("Est. best APY used · not guaranteed");
+    await waitForText("Est. best APY used · not a prediction");
     expect(text()).toContain("50 USDC");
     await setAmount("1");
     expect(text()).toContain("0.05 USDC");
@@ -321,7 +321,7 @@ describe("PlanApp", () => {
 
   it("opens with a plan carried in the link", async () => {
     await render(`pool=${POOL}&amount=5000&days=90&alert=250&exit=tokens&edit=days`);
-    await waitForText("Est. best APY used · not guaranteed");
+    await waitForText("Est. best APY used · not a prediction");
     expect(text()).toContain("I'll put in 5,000 USDC for 90 days.");
     expect(text()).toContain("250 USDC");
     expect(node.querySelector('input[aria-label="Days it stays in"]')).not.toBeNull();
@@ -330,7 +330,7 @@ describe("PlanApp", () => {
 
   it("still opens from old goal-first links without crashing", async () => {
     await render(`pool=${POOL}&amount=5000&days=90&goal=beat-holding&target=500&aim=500&edit=target`);
-    await waitForText("Est. best APY used · not guaranteed");
+    await waitForText("Est. best APY used · not a prediction");
     expect(text()).toContain("I'll put in 5,000 USDC for 90 days.");
     expect(text()).not.toMatch(/beat holding|your aim|aim \+/i);
     expect(node.querySelector('input[aria-label="Amount to put in, in USDC"]')).not.toBeNull();
@@ -340,13 +340,13 @@ describe("PlanApp", () => {
     mockApr(aprPayload(null));
     await render(`pool=${POOL}`);
     await waitForText("No complete UTC days");
-    expect(text()).not.toContain("Est. best APY used · not guaranteed");
-    expect(text()).toContain("No average yield for this pool.");
+    expect(text()).not.toContain("Est. best APY used · not a prediction");
+    expect(text()).toContain("No average fee rate for this pool.");
   });
 
   it("Meteora pool: exit, opening cost and the Create link follow the DEX descriptor", async () => {
     await render(`pool=${METEORA}&exit=usdc`);
-    await waitForText("Est. best APY used · not guaranteed");
+    await waitForText("Est. best APY used · not a prediction");
     // withdrawOutputs is pool tokens only: no USDC exit, even from an exit=usdc link.
     expect(text()).toMatch(/Exit to\s*TSLAx and TSLA, the pool tokens; price exposure stays/);
     expect(text()).not.toContain("USDC, plus a small SOL refund");
@@ -370,7 +370,7 @@ describe("PlanApp", () => {
 
   it("the APY explanation sits on its own line under the label and value", async () => {
     await render(`pool=${POOL}`);
-    await waitForText("Est. best APY used · not guaranteed");
+    await waitForText("Est. best APY used · not a prediction");
     const note = node.querySelector('[data-testid="plan-apy-note"]');
     expect(note?.textContent).toMatch(/compounded daily, over/);
     expect(note?.tagName).toBe("DD");
@@ -386,7 +386,7 @@ describe("PlanApp", () => {
       throw new Error(`unexpected ${url}`);
     });
     await render(`pool=${METEORA}&protocol=meteora-dlmm`);
-    await waitForText("Est. best APY used · not guaranteed");
+    await waitForText("Est. best APY used · not a prediction");
     expect(text()).toMatch(/Opening cost, day 0\s*−11\.00 USDC \(about 1% swap cost plus the 0\.1% platform fee\)/);
     expect(node.querySelector('[data-testid="plan-open-rent"]')).not.toBeNull();
     expect(text()).not.toContain("USDC, plus a small SOL refund");
@@ -397,7 +397,7 @@ describe("PlanApp", () => {
   it("Meteora link for a pool the list no longer has: Meteora terms, and it can't be opened from here", async () => {
     const unlisted = "5pw5tNUaZJpUCnYjZ1V3gd7XkLbrb4zA9pir4LFph2mj";
     await render(`pool=${unlisted}&protocol=meteora-dlmm`);
-    await waitForText("Est. best APY used · not guaranteed");
+    await waitForText("Est. best APY used · not a prediction");
     expect(text()).toMatch(/Opening cost, day 0\s*−11\.00 USDC \(about 1% swap cost plus the 0\.1% platform fee\)/);
     expect(text()).not.toContain("(about 1%)");
     expect([...node.querySelectorAll("a")].some((a) => a.textContent?.includes("Create a position in this pool"))).toBe(false);
@@ -406,7 +406,7 @@ describe("PlanApp", () => {
   it("a pool the list doesn't have and no `protocol`: no Create link, and the reason says why", async () => {
     const unlisted = "5pw5tNUaZJpUCnYjZ1V3gd7XkLbrb4zA9pir4LFph2mj";
     await render(`pool=${unlisted}`);
-    await waitForText("Est. best APY used · not guaranteed");
+    await waitForText("Est. best APY used · not a prediction");
     expect([...node.querySelectorAll("a")].some((a) => a.textContent?.includes("Create a position in this pool"))).toBe(false);
     expect(node.querySelector('[data-testid="plan-open-reason"]')?.textContent).toBe("This pool isn't on the SoFinance pool list, so it can't be opened from here.");
   });
@@ -414,13 +414,13 @@ describe("PlanApp", () => {
   it("keeps the pool's DEX in the page URL", async () => {
     window.history.replaceState(null, "", "/app/plan");
     await render(`pool=${METEORA}`);
-    await waitForText("Est. best APY used · not guaranteed");
+    await waitForText("Est. best APY used · not a prediction");
     expect(new URLSearchParams(window.location.search).get("protocol")).toBe("meteora-dlmm");
   });
 
   it("Raydium pool (no descriptor): the original ~1% cost, USDC exit and Create link", async () => {
     await render(`pool=${POOL}`);
-    await waitForText("Est. best APY used · not guaranteed");
+    await waitForText("Est. best APY used · not a prediction");
     expect(text()).toMatch(/Opening cost, day 0\s*−10\.00 USDC \(about 1%\)/);
     expect(text()).toMatch(/Exit to\s*USDC, plus a small SOL refund/);
     expect(node.querySelector('[data-testid="plan-open-rent"]')).toBeNull();

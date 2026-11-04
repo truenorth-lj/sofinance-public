@@ -50,7 +50,7 @@ export function persistCleanupBatch(storage: Pick<Storage, "getItem" | "setItem"
 }
 export function pruneCleanedReceipts(storage: Pick<Storage, "getItem" | "setItem">, attempt: CleanupBatchAttempt) {
   const saved = loadCompoundReceipts(storage, attempt.wallet);
-  if (saved.invalid) throw new Error("Local yield records require verification");
+  if (saved.invalid) throw new Error("Local harvest records require verification");
   const closed = new Set([...attempt.alreadyClosed, ...attempt.transactions.filter(tx => tx.status === "success")
     .flatMap(tx => tx.summary.compoundAccounts.map(account => account.address))]);
   const receipts = saved.receipts.filter(item => !item.compoundAccounts.every(account => closed.has(account.address)));

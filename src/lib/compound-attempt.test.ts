@@ -160,7 +160,7 @@ describe("compound signature and recovery persistence", () => {
     removeUnconfirmedCompoundReceipt(storage, recovery);
     expect(loadCompoundReceipts(storage, current.wallet).receipts).toHaveLength(1);
     expect(() => removeUnconfirmedCompoundReceipt({ getItem: storage.getItem, setItem: () => undefined }, current))
-      .toThrow("Unable to clear unconfirmed yield account record");
+      .toThrow("Unable to clear unconfirmed harvest account record");
     expect(loadCompoundReceipts(storage, current.wallet).receipts[0]?.sourceSignature).toBe(current.signature);
     storage.setItem(compoundReceiptsKey(current.wallet), "{corrupt");
     expect(() => removeUnconfirmedCompoundReceipt(storage, current)).toThrow("need verification");

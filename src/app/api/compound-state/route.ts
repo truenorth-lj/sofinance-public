@@ -18,11 +18,11 @@ export async function POST(request: Request) {
     if (error instanceof RpcUnavailableError || publicErrorCode(error) === RPC_UNAVAILABLE_CODE) {
       // Transient provider limit on a read-only call: answer 503 + code so the browser can retry
       // quietly instead of treating it as a 400 the user caused.
-      const body = await apiError(error, "Yield reading failed", 503).json() as Record<string, unknown>;
+      const body = await apiError(error, "Reading harvested fees failed", 503).json() as Record<string, unknown>;
       return Response.json({ ...body, code: RPC_UNAVAILABLE_CODE }, { status: 503, headers: {
         "Cache-Control": "no-store", "Retry-After": String(COMPOUND_STATE_RETRY_AFTER_SECONDS),
       } });
     }
-    return apiError(error, "Yield reading failed");
+    return apiError(error, "Reading harvested fees failed");
   }
 }

@@ -16,7 +16,7 @@ import { z } from "zod";
 import { withContextSlotRetry } from "@sofinance/engine/rpc/context-slot";
 
 export const MAX_CLEANUP_SOURCES = 64;
-const noSources = "No recoverable yield accounts; please verify original compound transaction status first";
+const noSources = "No recoverable harvest accounts; please verify original compound transaction status first";
 const permit = createPermit("sofinance:cleanup-batch:v1");
 export const issueCleanupBatchPermit = permit.issue;
 export const verifyCleanupBatchPermit = permit.verify;

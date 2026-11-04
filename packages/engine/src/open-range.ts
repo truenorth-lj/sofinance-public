@@ -161,7 +161,7 @@ export function resolveOpenRange(input: {
   const upperSqrt = TickUtil.getSqrtPriceAtTick(tickUpper);
   const rangeSide = positionSide(BigInt(sqrtPriceX64), BigInt(lowerSqrt.toString()), BigInt(upperSqrt.toString()));
   if (narrow && !warning) {
-    warning = "Narrow ranges go out of range quickly and stop earning fees.";
+    warning = "Narrow ranges go out of range quickly and stop collecting fees.";
   }
   return {
     preset,

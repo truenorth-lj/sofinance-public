@@ -10,7 +10,7 @@ export function compoundSubmitCopy(feedback: CompoundSubmitFeedback, slow = fals
     case "confirming": return { title: "Confirming…", detail: slow
       ? "Still waiting for Solana to confirm. You can close this window; we keep checking and the result will show on this page. Do not compound again until it settles."
       : "Waiting for Solana to confirm the transaction. This usually takes a few seconds." };
-    case "success": return { title: "Compound confirmed", detail: "Your yield was added back to the position. Press OK to refresh the remaining Harvest." };
+    case "success": return { title: "Compound confirmed", detail: "Your harvested fees were added back to the position. Press OK to refresh the remaining Harvest." };
     case "failed": return { title: "Compound failed", detail: feedback.message || "The transaction did not complete." };
   }
 }

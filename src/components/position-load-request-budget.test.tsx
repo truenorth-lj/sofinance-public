@@ -76,7 +76,7 @@ beforeEach(() => {
 });
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
-describe("opening the Yield Compound tab reads each position source once", () => {
+describe("opening the Compound fees tab reads each position source once", () => {
   it("without a saved compound: one wallet scan, one selected read, one compound read and one Meteora positions read", async () => {
     serve({ status: "pending", chainStatus: "pending", state: null });
     await open(fixture.state.positionMint);
@@ -94,7 +94,7 @@ describe("opening the Yield Compound tab reads each position source once", () =>
     expect(count("/api/wallet")).toBe(1);
     // The finalized compound changed balances, so the selected reader refreshes once (it has no copy in the confirmation).
     expect(count("/api/selected-state")).toBe(2);
-    expect(container.textContent).not.toContain("Yield reading failed");
+    expect(container.textContent).not.toContain("Reading harvested fees failed");
   });
 
   it("a finalized confirmation without a position read still refreshes the compound read", async () => {

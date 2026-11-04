@@ -123,7 +123,7 @@ const wideOnly = "max-md:hidden";
  * pinned while the table scrolls sideways if needed; below 768px only Pool (with TVL as a small line), Chain,
  * Est. APR · 7d and an icon-only Open are shown, so the table fits the screen with no horizontal scroll.
  */
-export function PoolTable({ pools, apr, actionFor, sort, onSort, icons, highlightKey, testId = "pools-table", apr24hPending = false }: {
+export function PoolTable({ pools, apr, actionFor, sort, onSort, icons, highlightKey, testId = "pools-table", apr24hPending = false, hideApr24h = false }: {
   pools: readonly UnifiedPool[]; apr: Readonly<Record<string, Apr7dState | undefined>>; actionFor: (pool: UnifiedPool) => OpenAction;
   sort: { key: SortKey; dir: SortDir };
   /** Omit for a fixed order: headers are plain labels instead of sort buttons. */
@@ -134,12 +134,15 @@ export function PoolTable({ pools, apr, actionFor, sort, onSort, icons, highligh
   testId?: string;
   /** Show "…" in the 24h APR column (the homepage's prerendered HTML, which never states an APR figure). */
   apr24hPending?: boolean;
+  /** Leave out the 24h fee APR column (the homepage shows a single estimate column). */
+  hideApr24h?: boolean;
 }) {
+  const columns = hideApr24h ? COLUMNS.filter((column) => column.key !== "apr24h") : COLUMNS;
   // `relative` keeps the absolutely positioned sr-only labels inside this scroller (else they widen the page on phones).
   return <div className="relative mt-3 overflow-x-auto rounded-[28px] border border-white/12 bg-char">
     <table className="w-full min-w-[980px] text-left text-sm max-md:min-w-0" data-testid={testId}>
       <thead><tr className="border-b border-white/10">
-        {COLUMNS.map((column) => {
+        {columns.map((column) => {
           const active = sort.key === column.key;
           const Icon = !active ? ArrowUpDown : sort.dir === "asc" ? ArrowUp : ArrowDown;
           return <th key={column.key} scope="col" aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}
@@ -177,8 +180,8 @@ export function PoolTable({ pools, apr, actionFor, sort, onSort, icons, highligh
           <td className={cn("px-3 py-3", narrow)}><ChainBadge chain={pool.chain} tone="dark" wrapBelowMd /></td>
           <td className={cn("px-3 py-3 text-cream/80", wideOnly)}><span className={cn(chip, "border border-white/25")} data-testid="protocol-badge">{PROTOCOL_LABELS[pool.protocol]}</span></td>
           <td className={cn("px-3 py-3 text-right", narrow)}><Apr7dValue state={apr[pool.key]} size="sm" /></td>
-          <td className={cn("px-3 py-3 text-right tabular-nums text-cream/80", wideOnly)} data-testid="apr24h"
-            title={apr24hPending ? undefined : exactAprTitle(pool.poolFeeApr24hPct)}>{apr24hPending ? "…" : pct(pool.poolFeeApr24hPct)}</td>
+          {!hideApr24h && <td className={cn("px-3 py-3 text-right tabular-nums text-cream/80", wideOnly)} data-testid="apr24h"
+            title={apr24hPending ? undefined : exactAprTitle(pool.poolFeeApr24hPct)}>{apr24hPending ? "…" : pct(pool.poolFeeApr24hPct)}</td>}
           <td className={cn("px-3 py-3 text-right tabular-nums text-cream/80", wideOnly)}>{money(pool.tvlUsd)}</td>
           <td className={cn("px-3 py-3 text-right tabular-nums text-cream/80", wideOnly)}>{money(pool.volume24hUsd)}</td>
           <td className={cn("px-3 py-3 text-right", narrow)}><OpenButton action={actionFor(pool)} label={pool.pairLabel} compact iconOnlyBelowMd /></td>

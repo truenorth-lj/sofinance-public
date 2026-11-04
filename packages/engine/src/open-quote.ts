@@ -258,7 +258,7 @@ export async function getOpenPositionQuoteBundle(
   if (!passesFloor) warnings.push(floorAdvice.warning);
   if (resolved.warning) warnings.push(resolved.warning);
   if (!resolved.inRange) {
-    warnings.push("Selected range is out of the current pool price; the position will be single-sided and will not earn fees until price re-enters.");
+    warnings.push("Selected range is out of the current pool price; the position will be single-sided and will not collect fees until price re-enters.");
   }
   if (rent.tickArrayInitRequired) {
     const sol = Number(rent.tickArrayLamports) / 1e9;

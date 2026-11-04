@@ -32,7 +32,7 @@ export async function reverifySignedCompound(
     compoundAccounts: summary.compoundAccounts, priorSources: summary.priorSources, expectedLiquidity: BigInt(summary.liquidity),
     maxSolDebitLamports: BigInt(summary.maxSolDebitLamports), sigVerify: true, prepared });
   if (verified.rewards.some((reward) => BigInt(reward.amount) > 0n)) {
-    throw new Error("Third reward yield appeared with no isolated swap path, cannot fully reinvest; transaction not sent");
+    throw new Error("Third reward harvest appeared with no isolated swap path, cannot fully reinvest; transaction not sent");
   }
   if (Date.now() >= summary.expiresAt || await connection.getBlockHeight("confirmed") > summary.lastValidBlockHeight) {
     throw new Error("Compound transaction expired before broadcast");
