@@ -108,7 +108,8 @@ function PoolCard({ pool, apr, action, icons, onCalculate }: {
           <p className="truncate text-xs text-ink/65" title={`${pool.nameA} / ${pool.nameB}`}>{pairIssuerLabel(pool.nameA, pool.nameB)}</p>
         </div>
       </div>
-      <div className="shrink-0 text-right">
+      {/* Capped on phones so a long range label ("Standard-range APR · 7d") wraps instead of squeezing the pair name. */}
+      <div className="shrink-0 text-right max-sm:max-w-[8.5rem]">
         <Apr7dValue state={apr} />
         <p className={cn("mt-1.5 flex items-center justify-end gap-1", cardEyebrow)}>
           <span data-testid="apr7d-label">{ready ? rangeApr7dLabel(ready.rangeLabel) : APR7D_SHORT}</span>
