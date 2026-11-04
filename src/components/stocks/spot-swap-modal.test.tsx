@@ -58,16 +58,31 @@ describe("SpotSwapModal", () => {
     expect(text("spot-swap-connect")).toBe("Connect wallet to buy");
   });
 
-  it("shows the quote: received, minimum, our 0.1% fee and the refundable deposit", async () => {
+  it("shows the quote compact: received and one summary row; details (minimum, our 0.1% fee, deposit) only when expanded", async () => {
     fetchSpotSwapQuote.mockImplementation(async () => quote);
     await typeAmount("2");
     expect(fetchSpotSwapQuote).toHaveBeenCalledWith(expect.objectContaining({ underlying: "TSLA", amount: "2", wallet: null }));
     expect(text("spot-swap-quoted")).toContain("TSLAx");
+    const summary = document.querySelector('[data-testid="spot-swap-summary"]') as HTMLButtonElement;
+    expect(summary.tagName).toBe("BUTTON");
+    expect(summary.getAttribute("aria-expanded")).toBe("false");
+    expect(summary.textContent).toContain("Price impact 0.12% · Fee 0.1%");
+    expect(summary.dataset.highImpact).toBeUndefined();
+    expect(document.querySelector('[data-testid="spot-swap-min"]')).toBeNull();
+    expect(document.querySelector('[data-testid="spot-swap-fee"]')).toBeNull();
+    await act(async () => summary.click());
+    expect(summary.getAttribute("aria-expanded")).toBe("true");
     expect(text("spot-swap-min")).toContain("TSLAx");
     expect(text("spot-swap-quote")).toContain("SoFinance fee (0.1%)");
     expect(text("spot-swap-fee")).toContain("0.002");
     expect(text("spot-swap-deposit")).toContain("SOL");
     expect(text("spot-swap-quote")).toContain("refundable");
+  });
+
+  it("turns the summary row warning-coloured when price impact is high", async () => {
+    fetchSpotSwapQuote.mockImplementation(async () => ({ ...quote, quote: { ...quote.quote, priceImpactPct: "0.007" } }));
+    await typeAmount("2");
+    expect((document.querySelector('[data-testid="spot-swap-summary"]') as HTMLElement).dataset.highImpact).toBe("true");
   });
 
   it("refuses with the engine's price-impact words, with no error codes", async () => {

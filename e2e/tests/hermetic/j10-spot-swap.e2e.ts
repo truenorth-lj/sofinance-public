@@ -63,6 +63,11 @@ test.describe("J10 homepage stock cards and Buy", () => {
     await expect(modal.getByTestId("spot-swap-issuer")).toHaveText("xStocks · XsDo…oB");
     await modal.getByTestId("spot-swap-amount").fill("25");
     await expect(modal.getByTestId("spot-swap-quoted")).toContainText("TSLAx");
+    const summary = modal.getByTestId("spot-swap-summary");
+    await expect(summary).toHaveAttribute("aria-expanded", "false");
+    await expect(modal.getByTestId("spot-swap-min")).toHaveCount(0);
+    await summary.click();
+    await expect(summary).toHaveAttribute("aria-expanded", "true");
     await expect(modal.getByTestId("spot-swap-min")).toContainText("TSLAx");
     await expect(modal.getByTestId("spot-swap-fee")).toContainText("0.025");
     await expect(modal.getByTestId("spot-swap-deposit")).toContainText("SOL");

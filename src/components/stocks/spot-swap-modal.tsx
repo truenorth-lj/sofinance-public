@@ -2,11 +2,12 @@
 
 /**
  * Buy a stock token with USDC (homepage). Amount → read-only quote (`/api/spot-swap-quote`, through the browser relay):
- * issuer and short mint, our 0.1% fee, quoted and minimum received, price impact (over 1% is refused with the
+ * issuer and short mint and quoted amount up front, plus one summary row (price impact · fee) that expands to our
+ * 0.1% fee, minimum received, price impact (over 1% is refused with the
  * engine's words), the slippage limit, the one-time deposit for a new token account and the network fee, and SOL /
  * USDC checks. Buy → `spotSwapTxAdapter` through the shared pipeline: the user's wallet signs.
  */
-import { LoaderCircle, X } from "lucide-react";
+import { ChevronRight, LoaderCircle, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createJupiterRelayStore } from "@/lib/jupiter/browser-relay";
 import { formatPriceImpact, formatSol, formatTokenRaw, formatUsdc, STOCK_NOTICE_TEXT } from "@/lib/stock-market/format";
@@ -18,6 +19,8 @@ import { useWalletConnection } from "@/components/wallet-connection";
 
 const QUOTE_DEBOUNCE_MS = 500;
 const ROW = "flex items-start justify-between gap-3";
+/** Price impact (fraction) from which the summary row turns warning-coloured; over 1% is refused outright. */
+const HIGH_IMPACT = 0.005;
 
 export const DEPOSIT_COPY = "A one-time deposit opens the token account in your wallet. You get it back if you close that account later.";
 export const SOL_LOW_COPY = (need: string, have: string) =>
@@ -63,6 +66,7 @@ export function SpotSwapModal({ option, onClose }: { option: StockBuyOption; onC
     return () => { aborter.abort(); window.clearTimeout(timer); };
   }, [key, parsed, option.underlying, wallet, tx.locked]);
 
+  const [expanded, setExpanded] = useState(false);
   const current = quote && quote.key === key ? quote : null;
   const quoted = current?.value?.quote ?? null;
   const check = current?.value?.wallet ?? null;
@@ -87,6 +91,7 @@ export function SpotSwapModal({ option, onClose }: { option: StockBuyOption; onC
   const rentLamports = quoted ? BigInt(quoted.newAccountRentLamports) : 0n;
   const networkLamports = quoted ? BigInt(quoted.baseNetworkFeeLamports) : 0n;
   const needsDeposit = check ? !check.outputAccountExists : true;
+  const highImpact = quoted ? Number(quoted.priceImpactPct) >= HIGH_IMPACT : false;
 
   return <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 sm:items-center" data-testid="spot-swap-modal" onClick={(event) => { if (event.target === event.currentTarget) close(); }}>
     <section role="dialog" aria-modal="true" aria-labelledby="spot-swap-heading"
@@ -110,21 +115,29 @@ export function SpotSwapModal({ option, onClose }: { option: StockBuyOption; onC
         {current?.error ? <p role="alert" data-testid={current.refused ? "spot-swap-refused" : "spot-swap-quote-error"}>{current.error}</p> : null}
         {quoted ? <>
           <p className={ROW}><span>You receive (quoted)</span><span className="text-right font-data text-cream" data-testid="spot-swap-quoted">{formatTokenRaw(quoted.quotedOut, quoted.outputDecimals, symbol)}</span></p>
-          <p className={ROW}><span>Minimum received</span><span className="text-right font-data" data-testid="spot-swap-min">{formatTokenRaw(quoted.minOut, quoted.outputDecimals, symbol)}</span></p>
-          <p className={ROW}><span>Price impact</span><span className="text-right font-data">{formatPriceImpact(quoted.priceImpactPct)}</span></p>
-          <p className={ROW}><span>Slippage limit</span><span className="text-right font-data">{(quoted.slippageBps / 100).toFixed(1)}%</span></p>
-          <p className={ROW}><span>SoFinance fee (0.1%)</span><span className="text-right font-data" data-testid="spot-swap-fee">{formatUsdc(quoted.feeAmount)}</span></p>
-          <p className="text-xs text-smoke">The fee is included in the amount you pay.</p>
-          {needsDeposit ? <p className={ROW}><span>Token account deposit (refundable)</span><span className="text-right font-data" data-testid="spot-swap-deposit">~{formatSol(rentLamports)}</span></p> : null}
-          {needsDeposit ? <p className="text-xs text-smoke">{DEPOSIT_COPY}</p> : null}
-          <p className={ROW}><span>Network fee</span><span className="text-right font-data">~{formatSol(networkLamports)}</span></p>
-          <p className="text-xs text-smoke">Your wallet may add a small priority fee.</p>
+          <button type="button" aria-expanded={expanded} aria-controls="spot-swap-details" onClick={() => setExpanded((value) => !value)} data-testid="spot-swap-summary"
+            data-high-impact={highImpact ? "true" : undefined}
+            className={`flex w-full items-center justify-between gap-2 rounded-xl py-1 text-left text-xs outline-none focus-visible:shadow-[0_0_0_2px_var(--color-lilac)] ${highImpact ? "text-[#ffb86b]" : "text-smoke hover:text-cream"}`}>
+            <span>Price impact {formatPriceImpact(quoted.priceImpactPct)} · Fee {(quoted.feeBps / 100).toFixed(1)}%</span>
+            <ChevronRight aria-hidden="true" className={`size-4 shrink-0 transition-transform ${expanded ? "rotate-90" : ""}`} />
+            <span className="sr-only">{expanded ? "Hide details" : "Show details"}</span>
+          </button>
+          {expanded ? <div id="spot-swap-details" data-testid="spot-swap-details" className="space-y-2 border-t border-white/10 pt-2">
+            <p className={ROW}><span>Minimum received</span><span className="text-right font-data" data-testid="spot-swap-min">{formatTokenRaw(quoted.minOut, quoted.outputDecimals, symbol)}</span></p>
+            <p className={ROW}><span>Slippage limit</span><span className="text-right font-data">{(quoted.slippageBps / 100).toFixed(1)}%</span></p>
+            <p className={ROW}><span>SoFinance fee (0.1%)</span><span className="text-right font-data" data-testid="spot-swap-fee">{formatUsdc(quoted.feeAmount)}</span></p>
+            <p className="text-xs text-smoke">Included in the amount you pay.</p>
+            {needsDeposit ? <p className={ROW}><span>Token account deposit (refundable)</span><span className="text-right font-data" data-testid="spot-swap-deposit">~{formatSol(rentLamports)}</span></p> : null}
+            {needsDeposit ? <p className="text-xs text-smoke">{DEPOSIT_COPY}</p> : null}
+            <p className={ROW}><span>Network fee</span><span className="text-right font-data">~{formatSol(networkLamports)}</span></p>
+            <p className="text-xs text-smoke">Your wallet may add a small priority fee.</p>
+          </div> : null}
         </> : null}
         {solLow && check ? <p role="alert" data-testid="spot-swap-sol-low">{SOL_LOW_COPY(formatSol(check.requiredLamports), formatSol(check.walletLamports))}</p> : null}
         {usdcLow && check ? <p role="alert" data-testid="spot-swap-usdc-low">Not enough USDC: your wallet has {formatUsdc(check.usdcBalance)}.</p> : null}
       </div>
 
-      <p className="mt-3 text-xs leading-5 text-smoke" data-testid="spot-swap-notice">{STOCK_NOTICE_TEXT}</p>
+      <p className="mt-3 text-[11px] leading-4 text-smoke" data-testid="spot-swap-notice">{STOCK_NOTICE_TEXT}</p>
 
       {!connected ? <button type="button" onClick={connect} className={BUTTON} data-testid="spot-swap-connect">Connect wallet to buy</button>
         : <button type="button" disabled={!ready} onClick={() => void submit()} className={BUTTON} data-testid="spot-swap-submit">
