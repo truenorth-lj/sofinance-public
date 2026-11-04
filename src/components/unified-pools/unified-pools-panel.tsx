@@ -155,7 +155,7 @@ function PoolCard({ pool, apr, action, icons }: {
 }
 
 /** Filter-bar pills (11/4 redesign): a rounded dropdown; lemon border once it narrows the list. */
-const pillBase = "h-10 rounded-full border bg-white/[0.06] text-[13px] font-semibold text-cream outline-none transition-colors focus-visible:border-white/60";
+const pillBase = "h-10 rounded-full border bg-white/[0.06] text-base font-semibold sm:text-[13px] text-cream outline-none transition-colors focus-visible:border-white/60";
 const pillIdle = "border-white/12 hover:border-white/30";
 const pillOn = "border-lemon/70";
 
