@@ -96,6 +96,14 @@ describe("ShareCalcDialog", () => {
     expect(node.querySelector('[aria-label="Difference"]')!.textContent).toContain("+$3,351.36");
   });
 
+  it("shows a free closing step as $0.00, not −$0.00 (Meteora, keeping the pool tokens)", async () => {
+    await render({ poolAddress: POOL, pairLabel: "TSLAx/TSLA", protocol: "meteora-dlmm" }, { kind: "open", onOpen: vi.fn() });
+    const rows = node.querySelector("[data-testid=share-calc-assumptions]")!.textContent!;
+    expect(rows).toContain("Opening cost−$11.00");
+    expect(rows).toContain("Closing cost$0.00");
+    expect(rows).not.toContain("−$0.00");
+  });
+
   it("greys the open button with its reason when the pool cannot be opened", async () => {
     await render(SPCX, { kind: "disabled", reason: "Opening is not available yet" });
     const cta = node.querySelector<HTMLButtonElement>("button[aria-label^='Open position in SPCXx/SPCX']")!;
