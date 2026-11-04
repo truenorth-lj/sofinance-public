@@ -113,6 +113,17 @@ for (const width of widths) {
       const open = page.getByRole("button", { name: /^Open position in / });
       await open.first().waitFor();
       await check("rwa-pairs-cards");
+      // "Calculate shares" dialog (PR #312): fits the screen and every field is 16 px+ on phones, also scrolled to the end.
+      const calc = page.getByRole("button", { name: /^Calculate( shares)? for / }).first();
+      await calc.waitFor();
+      await calc.click();
+      const calcDialog = page.getByRole("dialog", { name: /^Calculate( shares)? for / });
+      await calcDialog.waitFor();
+      await check("calc-shares-dialog", { fullPage: false });
+      await calcDialog.evaluate((el) => { el.scrollTop = el.scrollHeight; el.querySelectorAll("*").forEach((c) => { c.scrollTop = c.scrollHeight; }); });
+      await check("calc-shares-dialog-bottom", { fullPage: false });
+      await calcDialog.getByRole("button", { name: "Close", exact: true }).click();
+      await calcDialog.waitFor({ state: "hidden" });
       const list = page.getByRole("button", { name: "List", exact: true });
       if (await list.count()) {
         await list.first().click();
