@@ -3,8 +3,7 @@ import "@/lib/engine-host";
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { ArrowDownUp, ChevronDown, LayoutGrid, List, LoaderCircle, RefreshCw, Search } from "lucide-react";
-import { HIGHEST_RANGE_APR_7D_HELP, POOL_FEE_APR_24H_HELP } from "@/lib/apr-labels/copy";
-import { exactAprTitle } from "@/lib/apr-labels/format-apr";
+import { HIGHEST_RANGE_APR_7D_HELP } from "@/lib/apr-labels/copy";
 import { cn } from "@/lib/cn";
 import { dexDescriptors, fetchOpenRanges, type OpenRanges } from "@/lib/dex/client";
 import { SUPPORTED } from "@/lib/unified-positions/model";
@@ -33,7 +32,7 @@ import type { RhcPoolView } from "../rhc-univ4-open-panel";
 import type { OpenPositionPair } from "../use-open-position-controller";
 import { useWalletConnection } from "../wallet-connection";
 import { usePoolsApr7d, type Apr7dState } from "./use-pools-apr7d";
-import { APR24H_SHORT, APR7D_SHORT, Apr7dValue, rangeApr7dLabel, ChainBadge, chip, COLUMNS, iconPair, money, OpenButton, PoolTable, pct, type OpenAction } from "./pool-list";
+import { APR7D_SHORT, Apr7dValue, rangeApr7dLabel, ChainBadge, chip, COLUMNS, iconPair, money, OpenButton, PoolTable, type OpenAction } from "./pool-list";
 
 /** Which sources this deployment may show; computed from the code flags on the server and passed down. */
 export type UnifiedPoolFlags = {
@@ -71,7 +70,7 @@ const cardEyebrow = "font-data text-[10px] uppercase tracking-[0.12em] text-ink/
  * One pool as a cream card (the `/app/rwa-pairs` card fields, now for both chains): token icons and issuer names, the
  * estimated highest range APR (7-day) with the range it comes from ("Highest range", the same range the Create position
  * modal calls Best), when the data was updated, confidence and volume notes in the tooltip, then TVL, volume, fee and
- * 24h pool fee APR. "Plan this pool" follows the DEX's `plan` capability (greyed with its reason when unsupported;
+ * fee tier (no 24h APR: the 7-day estimate is the only APR shown). "Plan this pool" follows the DEX's `plan` capability (greyed with its reason when unsupported;
  * Raydium, not in the DEX registry yet, keeps its link); Raydium pools also link the pool on Raydium.
  */
 /**
@@ -134,9 +133,7 @@ function PoolCard({ pool, apr, action, icons, onCalculate }: {
         {ready ? ready.rangeLabel : apr?.status === "missing" ? "—" : "…"}
       </span>
     </div>}
-    <dl className="mt-5 grid grid-cols-2 gap-x-4 gap-y-4 border-t border-ink/20 pt-4">
-      <div><dt className={cn("flex items-center gap-1", cardEyebrow)}>{APR24H_SHORT}<InfoTip label="About Est. pool fee APR" placement="above" tone="light">{withVolumeNote(POOL_FEE_APR_24H_HELP)}</InfoTip></dt>
-        <dd className="mt-1 font-semibold tabular-nums" data-testid="pool-fee-apr" title={exactAprTitle(pool.poolFeeApr24hPct)}>{pct(pool.poolFeeApr24hPct)}</dd></div>
+    <dl className="mt-5 grid grid-cols-3 gap-x-4 gap-y-4 border-t border-ink/20 pt-4">
       <div><dt className={cardEyebrow}>TVL</dt><dd className="mt-1 font-semibold tabular-nums">{money(pool.tvlUsd)}</dd></div>
       <div><dt className={cardEyebrow}>24h vol</dt><dd className="mt-1 font-semibold tabular-nums">{money(pool.volume24hUsd)}</dd></div>
       <div><dt className={cardEyebrow}>Fee</dt><dd className="mt-1 font-semibold tabular-nums">{pool.feeTierBps === null ? pool.chain === "robinhood" ? "Dynamic" : "—" : `${pool.feeTierBps} bps`}</dd></div>

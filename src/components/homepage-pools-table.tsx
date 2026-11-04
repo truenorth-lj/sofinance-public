@@ -148,12 +148,6 @@ export function HomepagePoolsView({
   // Every Solana pool here comes from `/api/rwa-pairs`, so its Meteora pools read their saved APR snapshot.
   const rwaListKeys = useMemo(() => new Set(candidates.filter((pool) => pool.chain === "solana").map((pool) => pool.key)), [candidates]);
   const apr = usePoolsApr7d(candidates, 0, rwaListKeys);
-  // The prerendered HTML (and the first client render) prints no APR figure; the 24h column fills in after mount.
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => {
-    const timer = window.setTimeout(() => setMounted(true), 0);
-    return () => window.clearTimeout(timer);
-  }, []);
   const serverApr = initial?.apr7d;
   // Until a pool's estimate loads on the client, the server snapshot's value ranks it, so the server HTML and the first
   // client render list the same pools in the same order. The figures themselves are only printed once loaded here
@@ -219,7 +213,7 @@ export function HomepagePoolsView({
       {rows.length > 0 && (
         <div data-testid="homepage-pools-table">
           <PoolTable pools={rows} apr={apr} actionFor={openAction} sort={DEFAULT_SORT} icons={icons} highlightKey={highlightKey}
-            testId="homepage-pools-list" apr24hPending={!mounted} hideApr24h />
+            testId="homepage-pools-list" />
         </div>
       )}
 

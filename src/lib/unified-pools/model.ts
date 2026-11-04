@@ -121,18 +121,17 @@ export function filterPools(pools: readonly UnifiedPool[], filters: PoolFilters)
   });
 }
 
-export type SortKey = "apr7d" | "apr24h" | "tvl" | "volume" | "name" | "chain" | "protocol";
+export type SortKey = "apr7d" | "tvl" | "volume" | "name" | "chain" | "protocol";
 export type SortDir = "asc" | "desc";
 export const DEFAULT_SORT: { key: SortKey; dir: SortDir } = { key: "apr7d", dir: "desc" };
 /** Direction a column sorts in on its first click: numbers high→low, text A→Z. */
 export const FIRST_CLICK_DIR: Readonly<Record<SortKey, SortDir>> = {
-  apr7d: "desc", apr24h: "desc", tvl: "desc", volume: "desc", name: "asc", chain: "asc", protocol: "asc",
+  apr7d: "desc", tvl: "desc", volume: "desc", name: "asc", chain: "asc", protocol: "asc",
 };
 
 function sortValue(pool: UnifiedPool, key: SortKey, apr7d: Apr7dLookup): number | string | null {
   switch (key) {
     case "apr7d": return apr7d(pool);
-    case "apr24h": return pool.poolFeeApr24hPct;
     case "tvl": return pool.tvlUsd;
     case "volume": return pool.volume24hUsd;
     case "name": return pool.pairLabel.toLowerCase();

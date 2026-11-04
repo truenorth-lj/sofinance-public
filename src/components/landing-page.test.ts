@@ -102,7 +102,7 @@ describe("landing page copy and routes", () => {
       expect(copyOf(file).replace(/\b\w*Apr\w*\b|\b[A-Z_]*APR[A-Z_0-9]*\b/g, ""), file).not.toMatch(/APR|APY/);
     }
     expect(copyOf("src/app/page.tsx")).not.toMatch(/\bAPR\b/);
-    expect(table).toContain("hideApr24h");
+    expect(table).not.toMatch(/apr24h|hideApr24h|APR · 24h/i); // one APR site-wide: the 7-day estimate
   });
 
   it("has no yield or strategy headlines", () => {

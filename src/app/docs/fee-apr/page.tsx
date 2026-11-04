@@ -26,11 +26,6 @@ export default function DocsFeeAprPage() {
       <p>The App shows several related estimates. None of them is a prediction of your return.</p>
       <ul>
         <li>
-          <strong className="font-medium text-cream">Est. pool fee APR · 24h</strong> — based on the last
-          24 hours of pool fees ÷ TVL, annualized. Labeled as a gross fee figure before Raydium&apos;s
-          protocol cut on fees.
-        </li>
-        <li>
           <strong className="font-medium text-cream">Est. highest range APR · 7d avg</strong> — estimated
           from recent trading volume and fees, for a sample deposit (about $100) in a candidate
           range (Micro / Tight / Standard / Wide). Not a prediction.
@@ -42,11 +37,8 @@ export default function DocsFeeAprPage() {
         </li>
       </ul>
       <p>
-        A simple published pool estimate also appears as{" "}
-        <code className="rounded-md bg-white/10 px-1.5 py-0.5 font-data text-xs text-cream/90">
-          (24h fees ÷ TVL) × 365 × 100
-        </code>
-        . That is a pool-level fee APR label, not your personal LP return.
+        The pools list shows one APR per pool: the 7-day estimate. Single-day figures swing too much to
+        compare pools, so they are not shown.
       </p>
 
       <h2>What fee APR does not mean</h2>

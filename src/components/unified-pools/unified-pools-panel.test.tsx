@@ -354,7 +354,10 @@ describe("UnifiedPoolsPanel cards (the RWA pairs card fields)", () => {
     expect(spcx.querySelector("[data-testid=highest-range]")!.textContent).toBe("Tight (±0.05%)");
     expect(spcx.querySelector("[data-testid=highest-range]")!.textContent).not.toMatch(/%\s*APR|~/);
     expect(spcx.querySelector("[data-testid=apr-freshness]")!.textContent).toMatch(/^Updated .+ · Data delayed$/);
-    expect(spcx.querySelector("[data-testid=pool-fee-apr]")!.textContent).toBe("5.00%");
+    // One APR on the card: the 7-day estimate. No 24h pool fee APR field; TVL, 24h vol and fee stay.
+    expect(spcx.querySelector("[data-testid=pool-fee-apr]")).toBeNull();
+    expect(spcx.textContent).not.toMatch(/APR · 24h/i);
+    expect([...spcx.querySelectorAll("dt")].map((dt) => dt.textContent)).toEqual(["TVL", "24h vol", "Fee"]);
     expect(spcx.querySelector("button[aria-label='About Est. highest range APR']")).not.toBeNull();
     expect(card("solana:tsla").querySelector("[data-testid=highest-range]")!.textContent).toBe("—");
     expect(card("solana:tsla").querySelector("button[aria-label='About Est. highest range APR']")).not.toBeNull();
@@ -415,12 +418,13 @@ describe("UnifiedPoolsPanel cards (the RWA pairs card fields)", () => {
     expect(row.querySelector("[data-testid=pair-token-icons]")!.textContent).toBe("SS");
   });
 
-  it("shows a real tiny RHC 24h APR as <0.01% and a missing 7d APR as — on the card (never 0.00%)", async () => {
+  it("shows no 24h APR on an RHC card, even a real tiny one, and a missing 7d APR as — (never 0.00%)", async () => {
     rhcSummary.estimatedApr = { tvlUsd: 48795, volume24hUsd: 14.76, estimatedPoolFeeAprPct: 0.0005575645952321763 };
     try {
       await render();
       const rhc = card(`robinhood:${rhcSpec.poolId.toLowerCase()}`);
-      expect(rhc.textContent).toContain("<0.01%");
+      expect(rhc.textContent).not.toContain("<0.01%");
+      expect(rhc.querySelector("[data-testid=pool-fee-apr]")).toBeNull();
       expect(rhc.textContent).not.toContain("0.00%");
       expect(rhc.querySelector("[data-testid=apr7d]")?.textContent ?? rhc.textContent).toContain("—");
     } finally {

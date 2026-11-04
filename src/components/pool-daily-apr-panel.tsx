@@ -95,8 +95,7 @@ export function PoolDailyAprChart({
 
   const published = data
     ? [
-        data.published.dayFeeApr !== null ? `Raydium 24h feeApr ${data.published.dayFeeApr.toFixed(2)}%` : null,
-        data.published.weekFeeApr !== null ? `7d ${data.published.weekFeeApr.toFixed(2)}%` : null,
+        data.published.weekFeeApr !== null ? `Raydium 7d feeApr ${data.published.weekFeeApr.toFixed(2)}%` : null,
         data.published.monthFeeApr !== null ? `30d ${data.published.monthFeeApr.toFixed(2)}%` : null,
       ]
         .filter(Boolean)
