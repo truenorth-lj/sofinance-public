@@ -114,7 +114,7 @@ export function OpenButton({ action, label, compact, iconOnlyBelowMd }: {
   </span>;
   if (action.kind === "unsupported") return <span data-testid="open-unsupported" aria-disabled="true" title={action.reason}
     className={cn("inline-flex shrink-0 cursor-not-allowed items-center gap-1.5 rounded-full border text-sm font-semibold",
-      compact ? "min-h-9 border-white/20 px-3 text-cream/60 max-md:px-2 max-md:text-[11px] max-md:leading-tight" : "h-11 border-ink/20 px-4 text-ink/45")}>
+      compact ? "min-h-9 whitespace-nowrap border-white/20 px-3 text-cream/60 max-md:px-2 max-md:text-[11px] max-md:leading-tight" : "h-11 border-ink/20 px-4 text-ink/45")}>
     <span>{NOT_SUPPORTED_LABEL}</span>
     <InfoTip label={`Why ${label} is not supported yet`} tone={compact ? "dark" : "light"} placement={compact ? "below" : "above"}>{action.reason}</InfoTip>
   </span>;
