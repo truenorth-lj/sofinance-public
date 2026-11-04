@@ -33,7 +33,7 @@ import type { RhcPoolView } from "../rhc-univ4-open-panel";
 import type { OpenPositionPair } from "../use-open-position-controller";
 import { useWalletConnection } from "../wallet-connection";
 import { usePoolsApr7d, type Apr7dState } from "./use-pools-apr7d";
-import { APR24H_SHORT, APR7D_SHORT, Apr7dValue, ChainBadge, chip, COLUMNS, iconPair, money, OpenButton, PoolTable, pct, type OpenAction } from "./pool-list";
+import { APR24H_SHORT, APR7D_SHORT, Apr7dValue, rangeApr7dLabel, ChainBadge, chip, COLUMNS, iconPair, money, OpenButton, PoolTable, pct, type OpenAction } from "./pool-list";
 
 /** Which sources this deployment may show; computed from the code flags on the server and passed down. */
 export type UnifiedPoolFlags = {
@@ -111,7 +111,7 @@ function PoolCard({ pool, apr, action, icons, onCalculate }: {
       <div className="shrink-0 text-right">
         <Apr7dValue state={apr} />
         <p className={cn("mt-1.5 flex items-center justify-end gap-1", cardEyebrow)}>
-          {APR7D_SHORT}
+          <span data-testid="apr7d-label">{ready ? rangeApr7dLabel(ready.rangeLabel) : APR7D_SHORT}</span>
           {ready && <InfoTip label="About Est. highest range APR" tone="light">
             {withVolumeNote(HIGHEST_RANGE_APR_7D_HELP)}{ready.lowConfidence ? " Low confidence for this pool: thin or patchy recent trading." : ""}
           </InfoTip>}

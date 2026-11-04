@@ -53,8 +53,21 @@ describe("LP share and closing cost", () => {
     const terms = planPoolTerms({ descriptor: meteoraDlmmDescriptor, listOpenReason: null });
     expect(terms.lpFeeShare).toBe(0.9);
     expect(terms.lpShareLabel).toBe("after Meteora's 10% cut");
-    expect(terms.exitCost.usdc).toEqual({ bps: 10, label: "0.1% platform fee to swap back to USDC" });
+    // Close to USDC: the shared 1% swap-cost estimate (same as Raydium's) plus Meteora's 0.1% platform fee.
+    expect(terms.exitCost.usdc).toEqual({ bps: 110, label: "about 1% to swap back to USDC plus the 0.1% platform fee" });
     expect(terms.exitCost.tokens).toEqual({ bps: 0, label: "no platform fee to take the pool tokens" });
+  });
+
+  it("Meteora's close to USDC costs the shared swap estimate plus its platform fee ($1,000, 1Y, 10% pool APR)", () => {
+    const terms = planPoolTerms({ descriptor: meteoraDlmmDescriptor, listOpenReason: null });
+    const window = { aprPct: "10", sampleDays: 90, windowDays: 90 };
+    const plan = projectPoolPlan({ capital: "1000", days: 365, window, terms, exit: "usdc" });
+    // 10% x 0.9 LP share = 9% APR -> 9.4162% APY; open fee 0.1% = $1.00; value before close $1,093.16.
+    expect(Number(plan.aprPct)).toBeCloseTo(9, 9);
+    expect(plan.exitCostBps).toBe(110);
+    expect(Number(plan.exitCost)).toBeCloseTo(12.02, 2); // 1.1% of $1,093.16 (was $1.09 at 0.1%)
+    expect(Number(plan.vsHold)).toBeCloseTo(81.14, 2); // was +$92.07 with the platform fee alone
+    expect(plan.breakEvenDay).toBe(49); // was day 9
   });
 
   it("projects with the LP share of the APR and the chosen exit's closing cost", () => {
