@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { InkHero, InkNav, InkShell } from "../ink";
+import { InkFooter, InkHero, InkNav, InkShell } from "../ink";
 import type { RhcPoolView } from "../rhc-univ4-open-panel";
 import { useWalletConnection } from "../wallet-connection";
 import { RhcOpenDialog } from "./rhc-open-dialog";
@@ -20,13 +20,9 @@ export function PoolsPage({ flags, rhcSigningEnabled, deepLinkPool }: {
   const [rhcOpen, setRhcOpen] = useState<RhcPoolView | null>(null);
   return <InkShell>
     <InkNav wallet={address} connected={connected} onConnect={connect} onDisconnect={disconnect} />
-    <InkHero label="RWA pairs" title="RWA pairs on Solana and Robinhood Chain">
-      <p>
-        Same-asset RWA pools (for example SPCXx/SPCX) and the curated USDC/USDT pool, on Solana and Robinhood Chain, in one list.
-        Create a position from any wallet asset: we swap into the pool tokens as needed and open the position in one transaction.
-      </p>
-    </InkHero>
+    <InkHero label="Pools" title="RWA pairs on Solana and Robinhood Chain" />
     <UnifiedPoolsPanel flags={flags} deepLinkPool={deepLinkPool} onOpenRhc={({ pool }) => setRhcOpen(pool)} />
     {rhcOpen && <RhcOpenDialog pool={rhcOpen} signingEnabled={rhcSigningEnabled} onClose={() => setRhcOpen(null)} />}
+    <InkFooter />
   </InkShell>;
 }

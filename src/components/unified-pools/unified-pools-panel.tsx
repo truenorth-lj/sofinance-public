@@ -3,20 +3,20 @@ import "@/lib/engine-host";
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { LayoutGrid, List, LoaderCircle, RefreshCw, Search } from "lucide-react";
+import { ArrowDownUp, ChevronDown, LayoutGrid, List, LoaderCircle, RefreshCw, Search } from "lucide-react";
 import { HIGHEST_RANGE_APR_7D_HELP, POOL_FEE_APR_24H_HELP } from "@/lib/apr-labels/copy";
 import { exactAprTitle } from "@/lib/apr-labels/format-apr";
 import { cn } from "@/lib/cn";
 import { dexDescriptors, fetchOpenRanges, type OpenRanges } from "@/lib/dex/client";
 import { SUPPORTED } from "@/lib/unified-positions/model";
-import { buildPlanPath, DOCS_ROUTES } from "@/lib/public-urls";
+import { buildPlanPath } from "@/lib/public-urls";
 import { volumeDivergenceNote } from "@/lib/apr-labels/volume-divergence";
 import { HIGHEST_RANGE_COLUMN_LABEL, HIGHEST_RANGE_HELP } from "@/lib/range-apr/copy";
 import { unavailableReasonText } from "@/lib/range-apr/format";
 import { pairIssuerLabel } from "@/lib/rwa-pair-names";
 import type { TokenIconMap } from "@/lib/token-icons/map";
 import { fetchRwaPairsList } from "@/lib/rwa-pairs-list";
-import { updatedLabel, type SnapshotSourceTime } from "@/lib/snapshot-updated";
+import type { SnapshotSourceTime } from "@/lib/snapshot-updated";
 import {
   CHAIN_LABELS, DEFAULT_FILTERS, DEFAULT_SORT, FIRST_CLICK_DIR, PROTOCOL_LABELS, selectPools, TVL_FILTER_PRESETS,
   type PoolChain, type PoolFilters, type SortKey, type UnifiedPool, type UnifiedProtocol,
@@ -64,7 +64,6 @@ async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
   return body;
 }
 
-const NOT_GUARANTEED = "Estimates, not guaranteed.";
 const raydiumPoolUrl = (poolId: string) => `https://raydium.io/clmm/create-position/?pool_id=${poolId}`;
 const cardEyebrow = "font-data text-[10px] uppercase tracking-[0.12em] text-ink/60";
 
@@ -155,14 +154,23 @@ function PoolCard({ pool, apr, action, icons }: {
   </li>;
 }
 
-function Select<T extends string>({ label, value, onChange, options }: {
+/** Filter-bar pills (11/4 redesign): a rounded dropdown; lemon border once it narrows the list. */
+const pillBase = "h-10 rounded-full border bg-white/[0.06] text-base font-semibold sm:text-[13px] text-cream outline-none transition-colors focus-visible:border-white/60";
+const pillIdle = "border-white/12 hover:border-white/30";
+const pillOn = "border-lemon/70";
+
+function PillSelect<T extends string>({ label, value, onChange, options, active = false, icon, testId }: {
   label: string; value: T; onChange: (value: T) => void; options: { value: T; label: string }[];
+  active?: boolean; icon?: ReactNode; testId?: string;
 }) {
-  return <label className="flex flex-col gap-1 text-[11px] text-smoke">{label}
-    <select value={value} onChange={(event) => onChange(event.target.value as T)}
-      className="rounded-xl border border-white/20 bg-white/[0.06] px-3 py-2 text-base sm:text-sm text-cream outline-none focus:border-white/40">
+  return <label className="relative inline-flex">
+    <span className="sr-only">{label}</span>
+    {icon && <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-cream/70" aria-hidden="true">{icon}</span>}
+    <select value={value} data-testid={testId} onChange={(event) => onChange(event.target.value as T)}
+      className={cn(pillBase, "appearance-none pr-10 [field-sizing:content]", icon ? "pl-10" : "pl-5", active ? pillOn : pillIdle)}>
       {options.map((option) => <option key={option.value} value={option.value} className="bg-char">{option.label}</option>)}
     </select>
+    <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-cream/70" aria-hidden="true" />
   </label>;
 }
 
@@ -181,25 +189,21 @@ function TvlFilter({ onChange }: { onChange: (minTvl: number | null) => void }) 
     const value = Number(text.replace(/[$,\s]/g, ""));
     return text.trim() && Number.isFinite(value) && value >= 0 ? value : null;
   };
-  return <div className="flex flex-col gap-1 text-[11px] text-smoke">
-    <label className="flex flex-col gap-1">Min TVL
-      <select value={choice} data-testid="tvl-filter" onChange={(event) => {
-        const next = event.target.value as TvlChoice;
-        setChoice(next);
-        onChange(next === "any" ? null : next === "custom" ? customValue(custom) : Number(next));
-      }} className={cn("rounded-xl border bg-white/[0.06] px-3 py-2 text-base text-cream outline-none focus:border-white/40 sm:text-sm",
-        choice === "any" ? "border-white/20" : "border-lemon/70")}>
-        <option value="any" className="bg-char">Any TVL</option>
-        {TVL_FILTER_PRESETS.map((usd) => <option key={usd} value={String(usd)} className="bg-char">{`≥ ${tvlPresetLabel(usd)}`}</option>)}
-        <option value="custom" className="bg-char">Custom…</option>
-      </select>
-    </label>
-    {choice === "custom" && <label className="flex items-center gap-2">
+  return <div className="flex items-center gap-2">
+    <PillSelect<TvlChoice> label="Min TVL" value={choice} testId="tvl-filter" active={choice !== "any"} onChange={(next) => {
+      setChoice(next);
+      onChange(next === "any" ? null : next === "custom" ? customValue(custom) : Number(next));
+    }} options={[
+      { value: "any", label: "TVL" },
+      ...TVL_FILTER_PRESETS.map((usd) => ({ value: `${usd}` as TvlChoice, label: `TVL ≥ ${tvlPresetLabel(usd)}` })),
+      { value: "custom", label: "Custom TVL…" },
+    ]} />
+    {choice === "custom" && <label className="relative inline-flex">
       <span className="sr-only">Custom minimum TVL in USD</span>
-      <span aria-hidden="true">≥ $</span>
-      <input type="number" inputMode="numeric" min={0} step={1000} value={custom} placeholder="e.g. 25000" data-testid="tvl-filter-custom"
+      <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[13px] text-smoke" aria-hidden="true">≥ $</span>
+      <input type="number" inputMode="numeric" min={0} step={1000} value={custom} placeholder="25000" data-testid="tvl-filter-custom"
         onChange={(event) => { setCustom(event.target.value); onChange(customValue(event.target.value)); }}
-        className="w-full rounded-xl border border-lemon/70 bg-white/[0.06] px-3 py-1.5 text-base sm:text-sm text-cream outline-none placeholder:text-smoke/70 focus:border-white/40" />
+        className={cn(pillBase, pillOn, "w-32 pl-10 pr-4 text-base placeholder:text-smoke/70 sm:text-[13px]")} />
     </label>}
   </div>;
 }
@@ -347,70 +351,53 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", header 
   const chains = [...new Set(pools.map((pool) => pool.chain))];
   const protocols = [...new Set(pools.map((pool) => pool.protocol))];
   const errorList = Object.values(errors);
-  const updatedText = updatedLabel(loaded.updated);
 
   return <section id="pools" className="mt-3 scroll-mt-4" aria-labelledby="pools-heading">
-    <div className="rounded-[28px] border border-white/12 bg-char p-6 sm:p-8">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 id="pools-heading" className="text-base font-semibold text-cream">Pools</h2>
-          <p className="mt-2 max-w-2xl text-xs leading-5 text-smoke">
-            Solana and Robinhood Chain pools in one list. The two wallets are separate (top bar): a Solana wallet such as Phantom
-            for Solana pools, an EVM wallet such as MetaMask for Robinhood Chain. Opening a pool asks for its chain&apos;s wallet
-            if it is not connected yet. {NOT_GUARANTEED}{" "}
-            <Link href={DOCS_ROUTES.feeApr} className="text-cream/80 underline underline-offset-2 hover:text-cream">Fee APR</Link>
-          </p>
-          {updatedText ? <p data-testid="pools-updated" className="mt-2 font-data text-[11px] uppercase tracking-[0.12em] text-smoke">{updatedText}</p> : null}
-          {header}
-        </div>
-        <button type="button" onClick={refresh} disabled={loading}
-          className="inline-flex items-center gap-2 rounded-full border border-white/20 px-3 py-2 text-xs font-semibold text-cream/80 hover:border-white/40 disabled:cursor-not-allowed disabled:opacity-40">
-          {loading ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}Refresh
-        </button>
-      </div>
-
-      <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,2fr)_repeat(3,minmax(0,1fr))]">
-        <label className="flex flex-col gap-1 text-[11px] text-smoke">Search token
-          <span className="relative">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-smoke" aria-hidden="true" />
-            <input type="search" value={filters.query} onChange={(event) => setFilter("query", event.target.value)} placeholder="Name or symbol, e.g. SPCX or Tesla"
-              className="w-full rounded-xl border border-white/20 bg-white/[0.06] py-2 pl-9 pr-3 text-base sm:text-sm text-cream outline-none placeholder:text-smoke/70 focus:border-white/40" />
-          </span>
-        </label>
-        <Select label="Chain" value={filters.chain} onChange={(value) => setFilter("chain", value)}
-          options={[{ value: "all", label: "All chains" }, ...chains.map((chain) => ({ value: chain, label: CHAIN_LABELS[chain] }))] as { value: PoolChain | "all"; label: string }[]} />
-        <Select label="Protocol" value={filters.protocol} onChange={(value) => setFilter("protocol", value)}
-          options={[{ value: "all", label: "All protocols" }, ...protocols.map((protocol) => ({ value: protocol, label: PROTOCOL_LABELS[protocol] }))] as { value: UnifiedProtocol | "all"; label: string }[]} />
-        <TvlFilter onChange={(minTvl) => setFilter("minTvl", minTvl)} />
-      </div>
-
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-3">
-          <div role="group" aria-label="View" className="inline-flex rounded-full border border-white/20 p-0.5">
-            {([["cards", "Cards", LayoutGrid], ["list", "List", List]] as const).map(([value, label, Icon]) => (
-              <button key={value} type="button" aria-pressed={view === value} onClick={() => setView(value)}
-                className={cn("inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold", view === value ? "bg-cream text-ink" : "text-cream/80 hover:text-cream")}>
-                <Icon className="h-3.5 w-3.5" aria-hidden="true" />{label}
-              </button>
-            ))}
-          </div>
-          <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-cream/80">
-            <input type="checkbox" role="switch" aria-checked={!showAll} checked={!showAll} onChange={(event) => setShowAll(!event.target.checked)} className="h-4 w-4 accent-lemon" />
-            Hide duplicate pools
-            <InfoTip label="About Hide duplicate pools">
-              When one protocol on one chain has several pools for the same two tokens, only the one with the highest estimated 7-day APR is shown.
-              Pools without a 7-day estimate rank below those with one (then by TVL). Pools on different chains or protocols are never merged. Pools under the Min TVL filter are left out first, so they never hide a bigger pool.
-            </InfoTip>
-          </label>
-          {!showAll && selected.hiddenDuplicates > 0 && (
-            <button type="button" onClick={() => setShowAll(true)} className="text-xs text-smoke underline underline-offset-2 hover:text-cream" data-testid="show-all-pools">
-              Show all pools ({selected.hiddenDuplicates} hidden)
+    <div className="rounded-[28px] border border-white/12 bg-char p-4 sm:p-5">
+      <h2 id="pools-heading" className="sr-only">Pools</h2>
+      {header}
+      {/* 11/4 redesign: one row of pill filters (left) with sort, view and refresh (right), then a full-width search. */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <PillSelect label="Chain" value={filters.chain} active={filters.chain !== "all"} onChange={(value) => setFilter("chain", value)}
+            options={[{ value: "all", label: "Chain" }, ...chains.map((chain) => ({ value: chain, label: CHAIN_LABELS[chain] }))] as { value: PoolChain | "all"; label: string }[]} />
+          <PillSelect label="Protocol" value={filters.protocol} active={filters.protocol !== "all"} onChange={(value) => setFilter("protocol", value)}
+            options={[{ value: "all", label: "Protocol" }, ...protocols.map((protocol) => ({ value: protocol, label: PROTOCOL_LABELS[protocol] }))] as { value: UnifiedProtocol | "all"; label: string }[]} />
+          <TvlFilter onChange={(minTvl) => setFilter("minTvl", minTvl)} />
+          {(showAll || selected.hiddenDuplicates > 0) && (
+            <button type="button" aria-pressed={showAll} onClick={() => setShowAll((value) => !value)} data-testid="show-all-pools"
+              title="When one protocol on one chain has several pools for the same two tokens, only the one with the highest estimated 7-day APR is shown."
+              className={cn(pillBase, "px-5", showAll ? "border-cream bg-cream text-ink" : pillIdle)}>
+              {showAll ? "Showing duplicates" : `Show duplicates (${selected.hiddenDuplicates})`}
             </button>
           )}
         </div>
-        {view === "cards" && <Select<SortKey> label="Sort by" value={sort.key} onChange={(key) => setSort({ key, dir: FIRST_CLICK_DIR[key] })}
-          options={COLUMNS.map((column) => ({ value: column.key, label: column.label }))} />}
+        <div className="flex items-center gap-2">
+          <PillSelect<SortKey> label="Sort by" value={sort.key} icon={<ArrowDownUp className="h-4 w-4" />}
+            onChange={(key) => setSort({ key, dir: FIRST_CLICK_DIR[key] })}
+            options={COLUMNS.map((column) => ({ value: column.key, label: column.label }))} />
+          <div role="group" aria-label="View" className="inline-flex h-10 items-center rounded-full border border-white/12 bg-white/[0.06] p-0.5">
+            {([["cards", "Cards", LayoutGrid], ["list", "List", List]] as const).map(([value, label, Icon]) => (
+              <button key={value} type="button" aria-pressed={view === value} onClick={() => setView(value)} title={`${label} view`}
+                className={cn("flex h-9 w-9 items-center justify-center rounded-full outline-none transition-colors focus-visible:shadow-[0_0_0_2px_var(--color-lemon)]",
+                  view === value ? "bg-lilac text-ink" : "text-cream/70 hover:text-cream")}>
+                <Icon className="h-4 w-4" aria-hidden="true" /><span className="sr-only">{label}</span>
+              </button>
+            ))}
+          </div>
+          <button type="button" onClick={refresh} disabled={loading} aria-label="Refresh" title="Refresh"
+            className={cn(pillBase, pillIdle, "flex w-10 items-center justify-center disabled:cursor-not-allowed disabled:opacity-40")}>
+            {loading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+          </button>
+        </div>
       </div>
+
+      <label className="relative mt-3 block">
+        <span className="sr-only">Search token</span>
+        <Search className="pointer-events-none absolute left-5 top-1/2 h-4 w-4 -translate-y-1/2 text-smoke" aria-hidden="true" />
+        <input type="search" value={filters.query} onChange={(event) => setFilter("query", event.target.value)} placeholder="Search tokens, e.g. SPCX or Tesla"
+          className="h-12 w-full rounded-full border border-white/12 bg-white/[0.03] pl-12 pr-5 text-base text-cream outline-none placeholder:text-smoke/70 focus:border-white/40 sm:text-sm" />
+      </label>
 
       {errorList.length > 0 && <div role="alert" className="mt-4 space-y-1 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80">
         {errorList.map((message) => <p key={message}>{message}</p>)}

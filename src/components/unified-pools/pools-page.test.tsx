@@ -9,6 +9,7 @@ const seen = vi.hoisted(() => ({ openRhc: null as null | ((r: { pool: unknown })
 vi.mock("../ink", () => ({
   InkShell: ({ children }: { children: unknown }) => createElement("main", null, children as never),
   InkNav: () => null,
+  InkFooter: () => null,
   InkHero: ({ title }: { title: string }) => createElement("h1", null, title),
 }));
 vi.mock("../wallet-connection", () => ({ useWalletConnection: () => ({ address: null, connected: false, connect: vi.fn(), disconnect: vi.fn() }) }));

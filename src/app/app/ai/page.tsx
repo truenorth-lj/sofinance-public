@@ -1,6 +1,6 @@
 "use client";
 
-import { InkHero, InkShell, InkNav, InkCard } from "@/components/ink";
+import { InkHero, InkShell, InkNav, InkCard, InkFooter } from "@/components/ink";
 import { useWalletConnection } from "@/components/wallet-connection";
 import { McpConnectionCard } from "@/components/mcp-connection-card";
 import { Wallet, Sparkles, Code, Link as LinkIcon } from "lucide-react";
@@ -185,6 +185,7 @@ export default function AIManagementPage() {
           </InkCard>
         </div>
       )}
+      <InkFooter />
     </InkShell>
   );
 }
