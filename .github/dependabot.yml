@@ -14,6 +14,10 @@ updates:
       - dependency-name: "*"
         update-types:
           - "version-update:semver-major"
+      # postgres is pinned at 3.4.7: 3.4.9 breaks the TransactionSql typing in
+      # src/db/migrations.ts and hangs the transaction-timeout abort/reconnect
+      # integration test. Revisit before unpinning (see #303).
+      - dependency-name: "postgres"
     groups:
       npm-minor-and-patch:
         patterns:
