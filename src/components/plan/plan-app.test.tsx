@@ -166,10 +166,10 @@ afterEach(async () => {
 });
 
 describe("PlanApp", () => {
-  it("opens on \"I'll put in 1,000 USDC for 30 days\" for the default SPCXx/SPCX pool", async () => {
+  it("opens on \"I'll put in 1,000 USDC for 365 days\" for the default SPCXx/SPCX pool", async () => {
     await render();
     await waitForText("Est. best APY used · not guaranteed");
-    expect(text()).toContain("I'll put in 1,000 USDC for 30 days.");
+    expect(text()).toContain("I'll put in 1,000 USDC for 365 days.");
     expect(node.querySelector<HTMLSelectElement>('select[aria-label="Pool"]')?.value).toBe(POOL);
     expect(fetcher.mock.calls.some((call) => String(call[0]).includes("/api/rwa-pairs"))).toBe(true);
     expect(fetcher.mock.calls.some((call) => String(call[0]).includes(`/api/pool-daily-apr?poolId=${POOL}`))).toBe(true);
@@ -188,16 +188,20 @@ describe("PlanApp", () => {
   });
 
   it("projects the final value, net gain, % and break-even from the best APY", async () => {
-    await render(`pool=${POOL}`);
+    await render(`pool=${POOL}&days=30`);
     await waitForText("Est. best APY used · not guaranteed");
-    // 36.5% APR → 0.1%/day; 1,000 × 1.001^30 − 1,000 − 10 (1% open cost) = +20.44.
-    expect(text()).toMatch(/Projected final value\s*1,020\.44 USDC/);
-    expect(text()).toMatch(/Net gain\s*\+20\.44 USDC · \+2\.04%/);
+    // 36.5% pool APR × 84% (after Raydium's 16% cut) = 30.66% to LPs; 1,000 × (1 + 0.3066/365)^30 = 1,025.51;
+    // minus the 10.00 opening cost = 1,015.51; minus 1% to swap back to USDC = 1,005.35.
+    expect(text()).toMatch(/Projected final value\s*1,005\.35 USDC/);
+    expect(text()).toMatch(/Net gain\s*\+5\.35 USDC · \+0\.5\d%/);
     expect(text()).toMatch(/Opening cost, day 0\s*−10\.00 USDC \(about 1%\)/);
-    expect(text()).toMatch(/Est. best APY used · not guaranteed\s*44% est. APY/);
-    expect(text()).toMatch(/Break-even\s*Day 10/);
+    expect(text()).toMatch(/Closing cost, at exit\s*−10\.16 USDC \(about 1% to swap back to USDC\)/);
+    expect(text()).toMatch(/Est. best APY used · not guaranteed\s*35\.9% est. APY/);
+    expect(text()).toContain("30.7% to LPs after Raydium's 16% cut");
+    expect(text()).toMatch(/Break-even\s*Day 24/);
     expect(text()).toContain("SoFinance vs hold");
-    expect(text()).toContain("break-even day 10");
+    expect(text()).toContain("break-even day 24");
+    expect(text()).toContain("plus the closing cost of the exit you chose");
     expect(text()).toContain("Best case, not a probability or a promise");
     expect(text()).toContain("Network fees are ignored");
     expect(text()).not.toMatch(/bps|swap fee/i);
@@ -211,7 +215,8 @@ describe("PlanApp", () => {
     expect(text()).toContain("7-day average fee APR of 50%");
     expect(text()).toContain("over 7 complete UTC days");
     expect(text()).toMatch(/Windows checked\s*7d 50% · 30d 19\.3% · 90d 17%/);
-    expect(text()).toContain("Est. best APY 64.8% (not guaranteed)");
+    // The best window's 50% pool APR is 42% to LPs after Raydium's 16% cut, compounded daily.
+    expect(text()).toContain("Est. best APY 52.2% (not guaranteed)");
   });
 
   it("warns instead of headlining a number when the sample is under 7 days", async () => {
@@ -238,8 +243,20 @@ describe("PlanApp", () => {
     expect(fetcher.mock.calls.some((call) => String(call[0]).includes("/api/pool-daily-apr"))).toBe(false);
   });
 
-  it("updates the amount from the ruler without refetching", async () => {
+  it("opens the chart in SPCX shares and switches to USDC", async () => {
     await render(`pool=${POOL}`);
+    await waitForText("Est. best APY used · not guaranteed");
+    // 30.66% LP APR over 365 days, minus 1% to open and 1% to swap back to USDC: +33.51 per 100 held.
+    expect(text()).toContain("+33.51 SPCX per 100 held vs hold");
+    const usdc = [...node.querySelectorAll<HTMLButtonElement>('[aria-label="Chart unit"] button')].find((b) => b.textContent === "USDC")!;
+    await act(async () => usdc.click());
+    expect(usdc.getAttribute("aria-pressed")).toBe("true");
+    expect(text()).toContain("+335.14 USDC vs hold");
+    expect(text()).not.toContain("per 100 held vs hold");
+  });
+
+  it("updates the amount from the ruler without refetching", async () => {
+    await render(`pool=${POOL}&days=30`);
     await waitForText("Est. best APY used · not guaranteed");
     const before = aprFetches();
     const slider = node.querySelector<HTMLElement>('[role="slider"]')!;
@@ -248,7 +265,7 @@ describe("PlanApp", () => {
       slider.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
     });
     expect(text()).toContain("I'll put in 750 USDC for 30 days.");
-    expect(text()).toMatch(/Projected final value\s*765\.33 USDC/);
+    expect(text()).toMatch(/Projected final value\s*754\.02 USDC/);
     expect(aprFetches()).toBe(before);
   });
 
@@ -271,8 +288,8 @@ describe("PlanApp", () => {
     await setDays("45");
     expect(text()).toContain("for 45 days.");
     expect(text()).toContain("Projected value after 45 days");
-    // 1,000 × 1.001^45 − 1,000 − 10 = +36.0
-    expect(text()).toMatch(/Net gain\s*\+3\d\.\d\d USDC/);
+    // 30.66% LP APR over 45 days, after 1% to open and 1% to close: +18.22.
+    expect(text()).toMatch(/Net gain\s*\+18\.22 USDC/);
     expect(node.querySelector('svg[role="img"]')?.getAttribute("aria-label")).toContain("after 45 days");
     await setDays("1");
     expect(text()).toContain("for 1 day.");
@@ -342,7 +359,7 @@ describe("PlanApp", () => {
     expect(node.querySelector('[data-testid="plan-open-rent"]')?.textContent).toBe("Plus about 0.0419 SOL position rent, refunded on full close");
     expect(text()).not.toContain("around 1%");
     expect(text()).not.toContain("about 1%");
-    expect(text()).toContain("covers the opening cost: the 0.1% platform fee on the swapped part (all of a USDC deposit); about 0.0419 SOL of position rent is set aside on top and refunded when you fully withdraw, so it is not subtracted.");
+    expect(text()).toContain("covers the opening cost: the 0.1% platform fee on the swapped part (all of a USDC deposit); about 0.0419 SOL of position rent is set aside on top and refunded when you fully withdraw, so it is not subtracted, plus the closing cost of the exit you chose.");
     // Open: the pools list cannot open Meteora pools, so the CTA is greyed with the same reason as the card.
     const cta = node.querySelector('[data-testid="plan-open-unavailable"]');
     expect(cta?.getAttribute("aria-disabled")).toBe("true");

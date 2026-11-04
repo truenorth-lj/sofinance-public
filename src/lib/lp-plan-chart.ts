@@ -193,3 +193,10 @@ function nudgeUntilFree(
   }
   return { ...clampSeat({ x, y }, w, h, bounds), w, h };
 }
+
+/** Share-view axis: shares per 100 held, "100" / "105" / "99.5". `value` is the change vs hold. */
+export function formatAxisShares(value: number, basis = 100): string {
+  const n = basis + normalizeTick(value);
+  const rounded = Number(n.toFixed(1));
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+}

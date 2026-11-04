@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { meteoraDlmmDescriptor } from "./dex/meteora-dlmm/descriptor";
 import type { DexDescriptor } from "./dex/types";
-import { effectiveExit, LEGACY_PLAN_TERMS, planPoolTerms } from "./lp-plan-pool-terms";
+import { effectiveExit, LEGACY_PLAN_TERMS, planPoolTerms, projectPoolPlan } from "./lp-plan-pool-terms";
 import { planEntryCost } from "./lp-plan-yield";
 
 describe("planPoolTerms", () => {
@@ -38,5 +38,37 @@ describe("planPoolTerms", () => {
     expect(terms.openCost.bps).toBe(0);
     expect(terms.openCost.rowNote).toBeNull();
     expect(terms.exits).toEqual(["usdc", "tokens"]);
+  });
+});
+
+describe("LP share and closing cost", () => {
+  it("Raydium pools keep 84% of the pool fee after the usual 16% cut; closing to USDC is assumed at about 1%", () => {
+    expect(LEGACY_PLAN_TERMS.lpFeeShare).toBeCloseTo(0.84, 12);
+    expect(LEGACY_PLAN_TERMS.lpShareLabel).toBe("after Raydium's 16% cut");
+    expect(LEGACY_PLAN_TERMS.exitCost.usdc).toEqual({ bps: 100, label: "about 1% to swap back to USDC" });
+    expect(LEGACY_PLAN_TERMS.exitCost.tokens).toEqual({ bps: 0, label: "no swap when you take the pool tokens" });
+  });
+
+  it("a registered DEX takes its LP share and closing fees from its descriptor", () => {
+    const terms = planPoolTerms({ descriptor: meteoraDlmmDescriptor, listOpenReason: null });
+    expect(terms.lpFeeShare).toBe(0.9);
+    expect(terms.lpShareLabel).toBe("after Meteora's 10% cut");
+    expect(terms.exitCost.usdc).toEqual({ bps: 10, label: "0.1% platform fee to swap back to USDC" });
+    expect(terms.exitCost.tokens).toEqual({ bps: 0, label: "no platform fee to take the pool tokens" });
+  });
+
+  it("projects with the LP share of the APR and the chosen exit's closing cost", () => {
+    const window = { aprPct: "36.5", sampleDays: 30, windowDays: 30 };
+    const usdc = projectPoolPlan({ capital: "1000", days: 365, window, terms: LEGACY_PLAN_TERMS, exit: "usdc" });
+    const tokens = projectPoolPlan({ capital: "1000", days: 365, window, terms: LEGACY_PLAN_TERMS, exit: "tokens" });
+    expect(Number(usdc.aprPct)).toBeCloseTo(30.66, 9);
+    expect(usdc.exitCostBps).toBe(100);
+    expect(tokens.exitCostBps).toBe(0);
+    // Same fees either way; the USDC exit pays 1% of the closing value on top.
+    expect(usdc.feesEarned).toBe(tokens.feesEarned);
+    expect(Number(tokens.endSofinance) - Number(usdc.endSofinance)).toBeCloseTo(Number(usdc.exitCost), 9);
+    expect(Number(usdc.exitValue)).toBeCloseTo(1335.14, 2);
+    expect(usdc.breakEvenDay).toBe(24);
+    expect(tokens.breakEvenDay).toBeLessThan(24);
   });
 });

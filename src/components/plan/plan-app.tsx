@@ -9,8 +9,8 @@ import {
   type PlanSetup,
 } from "@/lib/lp-plan-intent";
 import { parsePairLabel, parseSolanaAddress, resolvePlanSelection } from "@/lib/lp-plan-selection";
-import { buildPlanComparison, planEntryCost } from "@/lib/lp-plan-yield";
-import { effectiveExit, planPoolTerms } from "@/lib/lp-plan-pool-terms";
+import { effectiveExit, planPoolTerms, projectPoolPlan } from "@/lib/lp-plan-pool-terms";
+import { lowPlanApr, pairLabelSymbols, planShareSymbol } from "@/lib/lp-plan-shares";
 import { dexDescriptors } from "@/lib/dex/client";
 import { openUnavailableReason, type UnifiedProtocol } from "@/lib/unified-pools/model";
 import { APP_ROUTES } from "@/lib/public-urls";
@@ -94,17 +94,22 @@ export function PlanApp() {
 
   const change = (patch: Partial<PlanSetup>) => setSetup((current) => applyPlanChange(current, patch));
 
+  // LP share of the pool fee APR, the DEX's opening cost and the closing cost of the chosen exit (`projectPoolPlan`).
+  const exit = shownSetup.exitAsset;
   const comparison = useMemo(() => {
     if (!best) return null;
-    return buildPlanComparison({
-      capital: setup.amount,
-      days: setup.days,
-      aprPct: best.aprPct,
-      sampleDays: best.sampleDays,
-      aprWindowDays: best.windowDays,
-      entryCost: planEntryCost(setup.amount, terms.openCost.bps),
-    });
-  }, [setup.amount, setup.days, best, terms.openCost.bps]);
+    return projectPoolPlan({ capital: setup.amount, days: setup.days, window: best, terms, exit });
+  }, [setup.amount, setup.days, best, terms, exit]);
+
+  // The same plan at the lowest recent window's APR, so the chart shows the spread of 7 / 30 / 90-day history.
+  const lowComparison = useMemo(() => {
+    if (!best) return null;
+    const low = lowPlanApr(best, best.windows);
+    if (!low) return null;
+    return projectPoolPlan({ capital: setup.amount, days: setup.days, window: low, terms, exit });
+  }, [setup.amount, setup.days, best, terms, exit]);
+  // Shares are counted in the pool's stock; from the URL pair label while the pool list is still loading.
+  const shareSymbol = planShareSymbol(row ?? pairLabelSymbols(pair));
 
   const resolvingPair = Boolean(!poolId && pair && pairs.status === "loading");
   const status = resolvingPair ? "loading" : poolYield.status === "idle" ? "idle" : poolYield.status;
@@ -165,11 +170,19 @@ export function PlanApp() {
             poolId={poolId}
           />
 
-          <ComparisonChart status={status} reason={reason} comparison={comparison} openCostCopy={terms.openCost.chart} />
+          <ComparisonChart
+            status={status}
+            reason={reason}
+            comparison={comparison}
+            openCostCopy={terms.openCost.chart}
+            shareSymbol={shareSymbol}
+            low={lowComparison}
+          />
         </main>
 
         <p className="mt-5 max-w-3xl px-2 text-xs leading-relaxed text-smoke">
-          Planning is read-only and priced in USDC. The projection uses the best of this pool’s 7, 30 and 90-day
+          Planning is read-only. Amounts are in USDC; for a same-stock pool the chart also counts shares per 100 held,
+          which leaves the stock’s own price out. The projection uses the best of this pool’s 7, 30 and 90-day
           average complete-UTC-day yields with daily auto-compounding. That is the optimistic end of recent
           history, not a forecast.{" "}
           <Link href={APP_ROUTES.positionPerformance} className="text-cream/80 underline underline-offset-2 hover:text-cream">

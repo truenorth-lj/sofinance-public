@@ -54,13 +54,19 @@ export type PlanYieldComparison = {
   aprWindowDays: number;
   dailyRate: string;
   entryCost: string;
+  /** Closing cost as basis points of what the position is worth when you exit (0 when none is assumed). */
+  exitCostBps: number;
+  /** That closing cost in USDC at the end of the period. */
+  exitCost: string;
+  /** Fees the position earned over the period, before the opening and closing costs. */
+  feesEarned: string;
   sampleDays: number;
   points: PlanYieldPoint[];
   breakEvenDay: number | null;
   endSofinance: string;
   endHold: string;
   vsHold: string;
-  /** Capital plus `endSofinance`: what the position is worth at the end, after the day-0 entry cost. */
+  /** Capital plus `endSofinance`: what you walk away with at the end, after the opening and closing costs. */
   exitValue: string;
   /** `endSofinance` as a percent of `capital`. */
   endGainPct: string;
@@ -76,6 +82,11 @@ export type PlanYieldInput = {
   aprWindowDays: number;
   /** Paid at day 0 and not compounded. Defaults to 0 (network fees ignored). */
   entryCost?: string;
+  /**
+   * Paid when you exit, as basis points of what the position is worth then (e.g. swapping back to USDC). Every point of
+   * the curve is "if you closed on that day", so break-even waits until fees cover both costs. Defaults to 0.
+   */
+  exitCostBps?: number;
 };
 
 /**
@@ -108,29 +119,43 @@ export function aprToApyPct(aprPct: string): string {
     .toFixed();
 }
 
+function requireExitBps(exitCostBps: number): number {
+  if (!Number.isInteger(exitCostBps) || exitCostBps < 0 || exitCostBps > 10_000) throw new Error("exitCostBps is invalid");
+  return exitCostBps;
+}
+
 /**
- * Cumulative profit after `days` of daily auto-compounding, minus an optional
- * day-0 entry cost. Hold of a two-sided same-asset RWA pair is treated as 0.
+ * What the position is worth on `day` before closing it: capital compounded daily, minus the day-0 entry cost.
  */
-export function compoundedProfit(capital: string, dailyRate: Decimal, days: number, entryCost = "0"): Decimal {
+function valueBeforeExit(cap: Decimal, dailyRate: Decimal, days: number, cost: Decimal): Decimal {
+  return cap.mul(dailyRate.add(1).pow(days)).sub(cost);
+}
+
+/**
+ * Cumulative profit after `days` of daily auto-compounding if you closed then: minus the day-0 entry cost and the
+ * closing cost (`exitCostBps` of what the position is worth on that day). Hold of a two-sided same-asset RWA pair is
+ * treated as 0.
+ */
+export function compoundedProfit(capital: string, dailyRate: Decimal, days: number, entryCost = "0", exitCostBps = 0): Decimal {
   requireDayCount(days, "days", 0);
   const cap = requireDecimal(capital, "capital", "0");
   if (cap.lte(0)) throw new Error("capital must be greater than zero");
   const cost = requireDecimal(entryCost, "entryCost", "0");
   if (!dailyRate.isFinite()) throw new Error("dailyRate is invalid");
-  return cap.mul(dailyRate.add(1).pow(days)).sub(cap).sub(cost);
+  const value = valueBeforeExit(cap, dailyRate, days, cost);
+  return value.mul(new D(10_000).sub(requireExitBps(exitCostBps)).div(10_000)).sub(cap);
 }
 
 /**
- * First whole day (0–maxDays) at which SoFinance profit is ≥ 0, or null when
- * it never gets there. Zero entry cost and a non-negative rate break even on day 0.
+ * First whole day (0–maxDays) at which SoFinance profit, after the opening and closing costs, is ≥ 0, or null when it
+ * never gets there. With no costs at all, a non-negative rate breaks even on day 0.
  */
-export function breakEvenDay(capital: string, dailyRate: Decimal, entryCost = "0", maxDays = MAX_PLAN_DAYS): number | null {
+export function breakEvenDay(capital: string, dailyRate: Decimal, entryCost = "0", maxDays = MAX_PLAN_DAYS, exitCostBps = 0): number | null {
   requireDayCount(maxDays, "maxDays", 1);
   const cost = requireDecimal(entryCost, "entryCost", "0");
-  if (cost.lte(0)) return dailyRate.gte(0) ? 0 : null;
+  if (cost.lte(0) && requireExitBps(exitCostBps) === 0) return dailyRate.gte(0) ? 0 : null;
   if (dailyRate.lte(0)) return null;
-  return firstDayAtLeast(capital, dailyRate, "0", entryCost, maxDays);
+  return firstDayAtLeast(capital, dailyRate, "0", entryCost, maxDays, exitCostBps);
 }
 
 export function buildPlanComparison(input: PlanYieldInput): PlanYieldComparison {
@@ -144,11 +169,12 @@ export function buildPlanComparison(input: PlanYieldInput): PlanYieldComparison 
   }
   const rate = dailyRateFromAprPct(input.aprPct);
   const entryCost = input.entryCost ?? "0";
+  const exitCostBps = requireExitBps(input.exitCostBps ?? 0);
   const points: PlanYieldPoint[] = [];
   for (let day = 0; day <= days; day++) {
     points.push({
       day,
-      sofinance: compoundedProfit(input.capital, rate, day, entryCost).toFixed(),
+      sofinance: compoundedProfit(input.capital, rate, day, entryCost, exitCostBps).toFixed(),
       hold: "0",
     });
   }
@@ -157,6 +183,8 @@ export function buildPlanComparison(input: PlanYieldInput): PlanYieldComparison 
   const vsHold = new D(endSofinance).sub(endHold).toFixed();
   const exitValue = new D(input.capital).add(endSofinance).toFixed();
   const capital = requireDecimal(input.capital, "capital", "0");
+  const entry = requireDecimal(entryCost, "entryCost", "0");
+  const grown = capital.mul(rate.add(1).pow(days));
   return {
     days,
     capital: capital.toFixed(),
@@ -164,10 +192,13 @@ export function buildPlanComparison(input: PlanYieldInput): PlanYieldComparison 
     apyPct: aprToApyPct(input.aprPct),
     aprWindowDays: input.aprWindowDays,
     dailyRate: rate.toFixed(),
-    entryCost: requireDecimal(entryCost, "entryCost", "0").toFixed(),
+    entryCost: entry.toFixed(),
+    exitCostBps,
+    exitCost: grown.sub(entry).mul(exitCostBps).div(10_000).toFixed(),
+    feesEarned: grown.sub(capital).toFixed(),
     sampleDays: input.sampleDays,
     points,
-    breakEvenDay: breakEvenDay(input.capital, rate, entryCost, MAX_PLAN_DAYS),
+    breakEvenDay: breakEvenDay(input.capital, rate, entryCost, MAX_PLAN_DAYS, exitCostBps),
     endSofinance,
     endHold,
     vsHold,
@@ -182,10 +213,11 @@ function firstDayAtLeast(
   target: string,
   entryCost: string,
   maxDays: number,
+  exitCostBps = 0,
 ): number | null {
   const goal = requireDecimal(target, "target", "0");
   for (let day = 0; day <= maxDays; day++) {
-    if (compoundedProfit(capital, dailyRate, day, entryCost).gte(goal)) return day;
+    if (compoundedProfit(capital, dailyRate, day, entryCost, exitCostBps).gte(goal)) return day;
   }
   return null;
 }

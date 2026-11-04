@@ -1,7 +1,8 @@
 import Decimal from "decimal.js";
 import { parseDays, parseUsdc, type ExitAsset } from "./lp-intent";
 
-export const DEFAULT_PLAN_DAYS = 30;
+/** A year: with a ~1% opening cost, most pools only break even after several weeks, so 30 days hid the gain. */
+export const DEFAULT_PLAN_DAYS = 365;
 export const DEFAULT_PLAN_AMOUNT = "1000";
 export const DEFAULT_PLAN_LOSS_ALERT_PCT = 5;
 export const DEFAULT_PLAN_LOSS_ALERT = "50";

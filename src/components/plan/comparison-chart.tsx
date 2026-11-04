@@ -1,16 +1,19 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { breakEvenInPeriod, formatAxisUsdc } from "@/lib/lp-plan-chart";
+import { breakEvenInPeriod, formatAxisShares, formatAxisUsdc } from "@/lib/lp-plan-chart";
 import { isThinPlanSample, type PlanYieldComparison } from "@/lib/lp-plan-yield";
 import { LEGACY_PLAN_TERMS } from "@/lib/lp-plan-pool-terms";
-import { layoutChart, type ChartBox } from "./chart-layout";
-import { bestAprCopy, completeDaysCopy, daysWord, formatPct, formatSigned } from "./format";
+import { PLAN_SHARE_BASIS, endShares, profitToShareDelta } from "@/lib/lp-plan-shares";
+import { aprWindowLabel } from "@/lib/lp-plan-best-apr";
+import { layoutChart, type ChartBox, type ChartView } from "./chart-layout";
+import { bestAprCopy, completeDaysCopy, daysWord, formatCents, formatPct, formatSigned } from "./format";
 
 const labelPill =
   "inline-flex h-6 items-center whitespace-nowrap rounded-full border border-ink/70 px-2.5 font-data text-[10px] font-normal uppercase tracking-[0.14em]";
 
 export type ChartStatus = "idle" | "loading" | "ready" | "unavailable";
+export type ChartUnit = "shares" | "usdc";
 
 const CORAL = "#ff9c85";
 const INK = "#0d0d0c";
@@ -20,13 +23,24 @@ export function ComparisonChart({
   reason,
   comparison,
   openCostCopy = LEGACY_PLAN_TERMS.openCost.chart,
+  shareSymbol = null,
+  low = null,
+  bare = false,
 }: {
   status: ChartStatus;
   reason?: string;
   comparison: PlanYieldComparison | null;
   /** The pool's DEX opening-cost sentence (`planPoolTerms`); defaults to the original ~1% assumption. */
   openCostCopy?: string;
+  /** Stock symbol of a same-stock pair (`planShareSymbol`). When set, the chart opens in shares per 100 held. */
+  shareSymbol?: string | null;
+  /** The same plan at the lowest recent window's APR; drawn as the bottom of a range band. */
+  low?: PlanYieldComparison | null;
+  /** Chart and line legend only: no summary row, APY line or method paragraph (the caller states those). */
+  bare?: boolean;
 }) {
+  const [picked, setPicked] = useState<ChartUnit | null>(null);
+  const unit: ChartUnit = shareSymbol ? picked ?? "shares" : "usdc";
   return (
     <section
       aria-label="SoFinance versus hold"
@@ -34,13 +48,16 @@ export function ComparisonChart({
       className="flex min-h-[21rem] animate-rise flex-col rounded-[28px] bg-cream p-4 text-ink motion-reduce:animate-none sm:p-6 lg:col-span-8 lg:col-start-1 lg:row-start-2"
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className={labelPill}>SoFinance vs hold</h2>
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className={labelPill}>SoFinance vs hold</h2>
+          {shareSymbol ? <UnitToggle unit={unit} symbol={shareSymbol} onChange={setPicked} /> : null}
+        </div>
         <p className="font-data text-[10px] uppercase tracking-[0.14em] text-ink/60">
           Best case from past yield, not a forecast
         </p>
       </div>
       {status === "ready" && comparison ? (
-        <ReadyChart comparison={comparison} openCostCopy={openCostCopy} />
+        <ReadyChart comparison={comparison} openCostCopy={openCostCopy} unit={unit} shareSymbol={shareSymbol} low={low} bare={bare} />
       ) : (
         <p className="mt-auto max-w-xl pt-8 text-sm leading-relaxed text-ink/65">
           {status === "loading"
@@ -56,11 +73,65 @@ export function ComparisonChart({
   );
 }
 
-function ReadyChart({ comparison, openCostCopy }: { comparison: PlanYieldComparison; openCostCopy: string }) {
+function UnitToggle({ unit, symbol, onChange }: { unit: ChartUnit; symbol: string; onChange: (unit: ChartUnit) => void }) {
+  const option = (value: ChartUnit, label: string) => (
+    <button
+      type="button"
+      aria-pressed={unit === value}
+      onClick={() => onChange(value)}
+      className={`h-6 rounded-full px-2.5 font-data text-[10px] uppercase tracking-[0.14em] outline-none transition-colors focus-visible:shadow-[0_0_0_2px_#0d0d0c] ${
+        unit === value ? "bg-ink text-cream" : "text-ink/70 hover:text-ink"
+      }`}
+    >
+      {label}
+    </button>
+  );
+  return (
+    <div role="group" aria-label="Chart unit" className="inline-flex items-center rounded-full border border-ink/70 p-0.5">
+      {option("shares", `${symbol} shares`)}
+      {option("usdc", "USDC")}
+    </div>
+  );
+}
+
+/** "110.78" shares per 100 held. */
+const sharesText = (value: string) => formatCents(value);
+
+function ReadyChart({
+  comparison,
+  openCostCopy,
+  unit,
+  shareSymbol,
+  low,
+  bare,
+}: {
+  comparison: PlanYieldComparison;
+  openCostCopy: string;
+  unit: ChartUnit;
+  shareSymbol: string | null;
+  low: PlanYieldComparison | null;
+  bare: boolean;
+}) {
   const { ref, box } = useChartBox();
-  const chart = useMemo(() => layoutChart(comparison, box), [comparison, box]);
-  const vsHold = formatSigned(comparison.vsHold);
-  const endLabel = formatSigned(comparison.endSofinance);
+  const shares = unit === "shares" && shareSymbol !== null;
+  const view = useMemo<ChartView>(
+    () =>
+      shares
+        ? {
+            toDisplay: (profit) => Number(profitToShareDelta(profit, comparison.capital)),
+            endText: `${sharesText(endShares(comparison))} ${shareSymbol}`,
+            holdText: `hold ${PLAN_SHARE_BASIS} ${shareSymbol}`,
+            low,
+          }
+        : { low },
+    [shares, comparison, shareSymbol, low],
+  );
+  const chart = useMemo(() => layoutChart(comparison, box, view), [comparison, box, view]);
+  const shareGain = shares ? formatSigned(profitToShareDelta(comparison.vsHold, comparison.capital)) : null;
+  const vsHold = shares ? `${shareGain} ${shareSymbol} per ${PLAN_SHARE_BASIS} held` : `${formatSigned(comparison.vsHold)} USDC`;
+  const endLabel = shares ? `${sharesText(endShares(comparison))} ${shareSymbol}` : formatSigned(comparison.endSofinance);
+  const axisLabel = shares ? (value: number) => formatAxisShares(value, PLAN_SHARE_BASIS) : formatAxisUsdc;
+  const lowInRange = low && low.days === comparison.days ? low : null;
   const thin = isThinPlanSample(comparison.sampleDays);
   const beInPeriod = breakEvenInPeriod(comparison.breakEvenDay, comparison.days);
 
@@ -81,7 +152,11 @@ function ReadyChart({ comparison, openCostCopy }: { comparison: PlanYieldCompari
           height={box.height}
           className="h-auto max-w-full"
           role="img"
-          aria-label={`SoFinance estimated ${endLabel} USDC versus hold after ${comparison.days} ${daysWord(comparison.days)}`}
+          aria-label={
+            shares
+              ? `SoFinance estimated ${endLabel} per ${PLAN_SHARE_BASIS} held versus hold after ${comparison.days} ${daysWord(comparison.days)}`
+              : `SoFinance estimated ${endLabel} USDC versus hold after ${comparison.days} ${daysWord(comparison.days)}`
+          }
         >
           <line x1={chart.pad.l} y1={chart.pad.t} x2={chart.pad.l} y2={box.height - chart.pad.b} stroke={INK} strokeOpacity="0.28" />
           <line x1={chart.pad.l} y1={box.height - chart.pad.b} x2={box.width - chart.pad.r} y2={box.height - chart.pad.b} stroke={INK} strokeOpacity="0.28" />
@@ -103,16 +178,17 @@ function ReadyChart({ comparison, openCostCopy }: { comparison: PlanYieldCompari
                 fontSize={chart.font}
                 fontFamily="ui-monospace, SFMono-Regular, monospace"
               >
-                {formatAxisUsdc(value)}
+                {axisLabel(value)}
               </text>
             </g>
           ))}
           {chart.xTicks.map((day) => (
             <text
               key={day}
-              x={chart.xAt(day)}
+              // The last tick ("365d") ends at the plot edge so the narrow right padding cannot clip it.
+              x={day === comparison.days ? box.width - 2 : chart.xAt(day)}
               y={box.height - 8}
-              textAnchor="middle"
+              textAnchor={day === comparison.days ? "end" : "middle"}
               fill="#6b6760"
               fontSize={chart.font}
               fontFamily="ui-monospace, SFMono-Regular, monospace"
@@ -129,6 +205,7 @@ function ReadyChart({ comparison, openCostCopy }: { comparison: PlanYieldCompari
             strokeWidth="1.75"
             strokeDasharray="5 4"
           />
+          {chart.bandPath ? <path d={chart.bandPath} fill={INK} fillOpacity="0.09" stroke="none" /> : null}
           <path d={chart.sofinancePath} fill="none" stroke={INK} strokeWidth="2.25" strokeLinejoin="round" strokeLinecap="round" />
           {chart.breakEven !== null && chart.breakEven > 0 && chart.breakEven < comparison.days ? (
             <circle cx={chart.xAt(chart.breakEven)} cy={chart.yAt(0)} r="4" fill={CORAL} stroke={INK} strokeWidth="1.25" />
@@ -161,7 +238,8 @@ function ReadyChart({ comparison, openCostCopy }: { comparison: PlanYieldCompari
         </svg>
       </div>
 
-      {box.compact ? (
+      {/* `bare` (the pools-page calculator, whose cards already state the outcome): the chart and its legend only. */}
+      {box.compact && !bare ? (
         <ul className="mt-3 space-y-1 font-data text-[12px] text-ink/80">
           <li>End {endLabel}</li>
           <li>
@@ -174,15 +252,15 @@ function ReadyChart({ comparison, openCostCopy }: { comparison: PlanYieldCompari
         </ul>
       ) : null}
 
-      <div className="mt-4 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
+      {bare ? null : <div className="mt-4 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
         <p className="font-data text-[11px] uppercase tracking-[0.14em] text-ink">
-          {vsHold} USDC vs hold
+          {vsHold} vs hold
         </p>
         <p className="font-data text-[10px] uppercase tracking-[0.14em] text-ink/60">
           End {endLabel} · {comparison.days} {daysWord(comparison.days)}
           {beInPeriod === null ? " · break-even not within this period" : ` · break-even day ${beInPeriod}`}
         </p>
-      </div>
+      </div>}
       <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 font-data text-[10px] uppercase tracking-[0.14em] text-ink/60">
         <span className="inline-flex items-center gap-1.5">
           <span className="h-px w-5 bg-ink" />
@@ -192,15 +270,24 @@ function ReadyChart({ comparison, openCostCopy }: { comparison: PlanYieldCompari
           <span className="h-px w-5 border-t border-dashed border-[#6b6760]" />
           Hold
         </span>
-        <span>
+        {lowInRange ? (
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-2.5 w-5 bg-ink/[0.09]" />
+            Range down to the {aprWindowLabel(lowInRange.aprWindowDays)} average ({formatPct(lowInRange.aprPct)} APR)
+          </span>
+        ) : null}
+        {bare ? null : <span>
           Est. best APY {formatPct(comparison.apyPct)} (not guaranteed) · {bestAprCopy({ windowDays: comparison.aprWindowDays, aprPct: comparison.aprPct })} ·{" "}
           {completeDaysCopy(comparison.sampleDays)}
           {thin ? " · unreliable sample" : ""}
-        </span>
+        </span>}
       </div>
-      <p className="mt-3 text-[13px] leading-snug text-ink/65">
+      {bare ? null : <p className="mt-3 text-[13px] leading-snug text-ink/65">
+        {shares
+          ? `Counted per ${PLAN_SHARE_BASIS} ${shareSymbol} held. Both tokens in this pool are the same stock, so fees on either side add to one share count; the stock's price moves both lines alike and is left out. `
+          : ""}
         {`Best case from fee income only, with daily auto-compounding and a flat hold for a two-sided same-asset pair. ${openCostCopy} This is not a probability and not a promise.`}
-      </p>
+      </p>}
     </div>
   );
 }

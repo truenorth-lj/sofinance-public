@@ -24,12 +24,22 @@ describe("daily APR chart wiring", () => {
     const chart = readFileSync(resolve("src/components/plan/comparison-chart.tsx"), "utf8");
     const pairs = readFileSync(resolve("src/components/unified-pools/unified-pools-panel.tsx"), "utf8");
     expect(app).toContain("usePoolYield");
-    expect(app).toContain("buildPlanComparison");
+    expect(app).toContain("projectPoolPlan");
     expect(app).not.toContain("evaluateIntent");
     expect(app).not.toContain("ScenarioCards");
     expect(chart).toContain("Best case from past yield, not a forecast");
-    expect(pairs).toContain("buildPlanPath");
-    expect(pairs).toContain("poolId: pool.poolAddress");
+    // The pool cards plan through the share calculator dialog, which reads the same series and links the full plan.
+    const calc = readFileSync(resolve("src/components/unified-pools/share-calc-dialog.tsx"), "utf8");
+    expect(pairs).toContain("ShareCalcDialog");
+    expect(calc).toContain("usePoolYield(pool.poolAddress)");
+    expect(calc).toContain("projectPoolPlan");
+    // Both project through the pool terms, which build the comparison from the daily series' best window.
+    const terms = readFileSync(resolve("src/lib/lp-plan-pool-terms.ts"), "utf8");
+    expect(terms).toContain("buildPlanComparison");
+    // With the Plan page off (it redirects to the pools list), the dialog is the only planner and links nowhere else.
+    expect(calc).not.toContain("buildPlanPath");
+    const planRoute = readFileSync(resolve("src/app/app/plan/page.tsx"), "utf8");
+    expect(planRoute).toContain("redirect(APP_ROUTES.rwaPairs)");
   });
 
   it("exposes the sparse realized series on get_position_performance MCP output", () => {
