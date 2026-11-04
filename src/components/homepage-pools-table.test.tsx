@@ -3,7 +3,7 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { payloadWithAprs } from "@/lib/range-apr/payload.fixture";
+import { cardPayloadWithAprs } from "@/lib/range-apr/payload.fixture";
 import { RWA_PAIRS_LIST_PATH } from "@/lib/rwa-pairs-list";
 import { UNIV4_RHC_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/uniswap-v4/constants";
 import { toHomepagePoolsSnapshot, type HomepageSolanaRow } from "@/lib/homepage-pools";
@@ -118,7 +118,7 @@ const keysOf = () => rowsOf().map((row) => row.getAttribute("data-pool"));
 const aprOf = (row: Element) => row.querySelector("[data-testid='apr7d']")!;
 const sol = (address: string) => `solana:${address}`;
 const rhcKey = (index: number) => `robinhood:${UNIV4_RHC_ALLOWLISTED_POOLS[index]!.poolId.toLowerCase()}`;
-const ready = (aprs: Parameters<typeof payloadWithAprs>[0]): PoolRangeAprState => ({ status: "ready", data: payloadWithAprs(aprs) });
+const ready = (aprs: Parameters<typeof cardPayloadWithAprs>[0]): PoolRangeAprState => ({ status: "ready", data: cardPayloadWithAprs(aprs) });
 
 describe("HomepagePoolsTable", () => {
   it("renders the /app/rwa-pairs list view (same PoolTable), loads the shared /api/rwa-pairs cache and deep-links Open", async () => {
@@ -161,6 +161,23 @@ describe("HomepagePoolsTable", () => {
     expect(row!.querySelector<HTMLButtonElement>("[data-testid=open-disabled] button")!.disabled).toBe(true);
     expect(row!.textContent).toContain("Opening Meteora positions isn't available yet");
     expect(row!.querySelectorAll("a")).toHaveLength(0);
+  });
+
+  it("a pool whose token is not supported yet (NVDAx, ScaledUiAmount) shows a disabled Not supported yet with the reason and ranks last", async () => {
+    mocks.aprFor.mockImplementation((poolId) => (poolId === "nvda-pool" ? ready({ micro: 300, tight: 300, standard: 300, wide: 300 })
+      : poolId === "spcx-pool" ? ready({ micro: 10, tight: 10, standard: 10, wide: 10 }) : { status: "loading" }));
+    jsonOk({ pairs: [
+      pair({ poolAddress: "nvda-pool", symbolA: "NVDAx", symbolB: "NVDA", wrappedSymbol: "NVDAx", plainSymbol: "NVDA", tvlUsd: 10_500,
+        unsupported: { issues: ["ScaledUiAmount multiplier not 1"], mints: ["nvdax"] } }),
+      pair({ poolAddress: "spcx-pool", tvlUsd: 20_000 }),
+    ], freshness: { snapshotAt: new Date().toISOString(), stale: false } });
+    await mount();
+    expect(keysOf()).toEqual([sol("spcx-pool"), sol("nvda-pool")]);
+    const nvda = rowsOf()[1]!;
+    const action = nvda.querySelector("[data-testid=open-unsupported]")!;
+    expect(action.textContent).toContain("Not supported yet");
+    expect(action.getAttribute("title")).toBe("This token uses a balance multiplier, which we don't support yet.");
+    expect(nvda.querySelectorAll("a[href*='open']")).toHaveLength(0);
   });
 
   it("merges both chains, sorts by 7-day APR (high to low) and shows at most 5 pools", async () => {
@@ -367,6 +384,35 @@ describe("HomepagePoolsTable", () => {
     expect(keysOf()).toEqual([sol("spcx-small"), sol("tiny-pool"), sol("zero-pool"), sol("none-pool")]);
     const apr = rowsOf().map(aprOf);
     expect(apr.map((cell) => cell.textContent)).toEqual(["30.00%", "<0.01%", "0.00%", "—"]);
+  });
+
+  it("a new pool (under 7 days of data) shows no APR, says how many days it has, and ranks last even with a high server APR", async () => {
+    const young = cardPayloadWithAprs({ micro: 122.84 });
+    young.sample = { ...young.sample, days: 6 };
+    mocks.aprFor.mockImplementation((poolId) => (poolId === "amzn-pool" ? { status: "ready", data: young }
+      : ready({ micro: poolId === "b-pool" ? 31.85 : 15.27 })));
+    const pairs = [
+      pair({ poolAddress: "amzn-pool", symbolA: "AMZNx", symbolB: "AMZN", tvlUsd: 900_000 }),
+      pair({ poolAddress: "b-pool", symbolA: "Bx", symbolB: "B", tvlUsd: 800_000 }),
+      pair({ poolAddress: "c-pool", symbolA: "Cx", symbolB: "C", tvlUsd: 700_000 }),
+    ];
+    jsonOk({ pairs });
+    const initial = toHomepagePoolsSnapshot({
+      solana: { pairs: pairs as HomepageSolanaRow[], fetchedAt: "2026-10-30T11:02:00.000Z", stale: false },
+      apr7d: { "solana:amzn-pool": 500, "solana:b-pool": 31.85, "solana:c-pool": 15.27 },
+    });
+    await act(async () => {
+      root.render(createElement(HomepagePoolsView, { initial }));
+    });
+    for (let round = 0; round < 4; round += 1) {
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 5)); });
+    }
+    expect(keysOf()).toEqual([sol("b-pool"), sol("c-pool"), sol("amzn-pool")]);
+    const amzn = rowsOf()[2]!;
+    expect(aprOf(amzn).textContent).toBe("New pool");
+    expect(aprOf(amzn).getAttribute("data-apr-status")).toBe("new");
+    expect(amzn.querySelector("[data-testid='apr7d-new-days']")!.textContent).toBe("6 days of data");
+    expect(amzn.textContent).not.toMatch(/122\.84|500/);
   });
 
   it("uses the server snapshot's 7-day APRs to pick and order pools until the client estimates load, without printing them", async () => {

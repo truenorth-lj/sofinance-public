@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { OPEN_RANGE_PRESETS } from "@sofinance/engine/open-range-presets";
-import { SAMPLE } from "./landing-sample";
+import { SAMPLE, SAMPLE_SWAP_COST_PCT } from "./landing-sample";
 import { LandingSectionHeading } from "./section-heading";
 import { usd, useInView, useReducedMotion } from "./use-landing-motion";
 
@@ -246,12 +246,12 @@ function RangeCard({ range }: { range: (typeof LANDING_RANGES)[number] }) {
               </div>
               <div>
                 <b className="block text-2xl font-medium tracking-[-0.03em]">+{usd(SAMPLE.diffUsd)}</b>
-                <span className="text-xs opacity-65">vs just holding</span>
+                <span className="text-xs opacity-65">vs just holding, before costs</span>
               </div>
             </div>
             <p className="mt-2.5 text-[11.5px] leading-[1.45] opacity-60">
-              Oct 28–29, 2026. No real deposit. Includes the 0.1% entry fee; slippage, network and closing costs not
-              modelled. Not a prediction.
+              Oct 28–29, 2026. No real deposit. Fees vs holding only: opening and closing costs (about{" "}
+              {SAMPLE_SWAP_COST_PCT}% each way to and from USDC) are not included. Not a prediction.
             </p>
           </div>
         </div>

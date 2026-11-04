@@ -11,6 +11,14 @@ function series(values: Array<number | null>) {
 const repeat = (value: number | null, count: number) => Array.from({ length: count }, () => value);
 
 describe("trailingWindowAverage", () => {
+  it("counts a day only with both volume and TVL (isDataDay, the cards' New pool count)", () => {
+    const points = [
+      ...series(repeat(10, 5)).map((point) => ({ ...point, volumeUsd: 100, tvlUsd: 1_000 })),
+      { time: START + 5 * DAY, aprPct: 90, volumeUsd: null, tvlUsd: 1_000 }, // no volume record
+      { time: START + 6 * DAY, aprPct: 90, volumeUsd: 100, tvlUsd: 0 }, // no TVL
+    ];
+    expect(trailingWindowAverage(points, 7)).toMatchObject({ aprPct: "10", sampleDays: 5 });
+  });
   it("averages only the last N UTC days that end on the newest point", () => {
     const points = series([...repeat(100, 3), ...repeat(10, 7)]);
     expect(trailingWindowAverage(points, 7)).toEqual({ windowDays: 7, aprPct: "10", sampleDays: 7 });

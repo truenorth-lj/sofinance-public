@@ -20,10 +20,10 @@ export const DOCS_PAGES = [
     slug: "fee-apr",
     label: "Fee APR",
     title: "Fee APR",
-    description: "Where trading fees come from and how 24h / 7d fee APR estimates are computed.",
+    description: "Where trading fees come from and how the 7-day fee APR estimate is computed.",
     metaTitle: "Fee APR estimates: how LP trading fees are estimated",
     metaDescription:
-      "Where liquidity providers' trading fees come from, how SoFinance computes 24h and 7-day fee APR estimates, and why an estimate is not a promised return.",
+      "Where liquidity providers' trading fees come from, how SoFinance computes its 7-day fee APR estimate, and why an estimate is not a promised return.",
   },
   {
     href: DOCS_ROUTES.risks,

@@ -86,9 +86,10 @@ describe("Meteora datapi history", () => {
     const result = await history.load(POOL, impl, NOW);
     expect(calls.map((url) => `${url.pathname}?${url.searchParams.get("timeframe")}`)).toEqual([
       `/pools/${POOL}/volume/history?24h`, `/pools/${POOL}/ohlcv?1h`, `/pools/${POOL}/ohlcv?1h`]);
-    expect(calls[0]!.searchParams.get("start_time")).toBe(String(D0 - 7 * DAY));
+    // The volume history reaches back 30 days (`DATA_DAYS_LOOKBACK`) for the day count; the average still uses 7.
+    expect(calls[0]!.searchParams.get("start_time")).toBe(String(D0 - 30 * DAY));
     // Created on D0-4: 4 complete days (D0-4 .. D0-1), 200k total; the zero rows before creation do not count.
-    expect(result.daily).toEqual({ avgDailyVolumeUsd: 50_000, days: 4, source: "meteora-datapi-daily" });
+    expect(result.daily).toMatchObject({ avgDailyVolumeUsd: 50_000, days: 4, source: "meteora-datapi-daily" });
     expect(result.candles).toHaveLength(4);
     expect(result.candles!.map((c) => c.time)).toEqual([...result.candles!.map((c) => c.time)].sort((a, b) => a - b));
     expect(result).toMatchObject({ baseMint: X, quoteMint: Y, issues: [] });
@@ -99,7 +100,7 @@ describe("Meteora datapi history", () => {
   it("without a creation time, averages from the first traded day (like GeckoTerminal's first candle)", async () => {
     const { impl } = fakeFetch((url) => (url.pathname.endsWith("/volume/history") ? { body: volumeBody } : { body: { data: [] } }));
     const result = await meteoraDatapiHistory({ mintX: X, mintY: Y }).load(POOL, impl, NOW);
-    expect(result.daily).toEqual({ avgDailyVolumeUsd: 50_000, days: 4, source: "meteora-datapi-daily" });
+    expect(result.daily).toMatchObject({ avgDailyVolumeUsd: 50_000, days: 4, source: "meteora-datapi-daily" });
     expect(result.candles).toEqual([]);
   });
 

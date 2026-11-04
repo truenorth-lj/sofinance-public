@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  DEFAULT_FILTERS, DEFAULT_SORT, TVL_FILTER_PRESETS, compareDuplicateRank, filterPools, hideDuplicatePools, meetsMinTvl, openUnavailableReason, samePairKey,
-  selectPools, sortPools,
+  DEFAULT_FILTERS, DEFAULT_SORT, TVL_FILTER_PRESETS, compareDuplicateRank, filterPools, hideDuplicatePools, isLowTvl, LOW_TVL_USD, meetsMinTvl, openUnavailableReason,
+  poolRankGroup, poolRankGroupOf, samePairKey, selectPools, sortPools, unsupportedTokenReason,
   type UnifiedPool,
 } from "./model";
 
@@ -137,10 +137,10 @@ describe("TVL filter (minTvl)", () => {
   const select = (minTvl: number | null, hideDuplicates = true) =>
     selectPools(list, { filters: { ...DEFAULT_FILTERS, minTvl }, hideDuplicates, sort: DEFAULT_SORT, apr7d });
 
-  it("defaults to Any, so the default view is unchanged (the tiny META pool wins its pair)", () => {
+  it("defaults to Any: the tiny META pool still wins its pair, and ranks after the $5k+ pools (Low TVL)", () => {
     expect(DEFAULT_FILTERS.minTvl).toBeNull();
     const out = select(null);
-    expect(out.pools.map((p) => p.poolAddress)).toEqual(["metaTiny", "spcx"]);
+    expect(out.pools.map((p) => p.poolAddress)).toEqual(["spcx", "metaTiny"]);
     expect(out.hiddenDuplicates).toBe(1);
   });
   it("filters by TVL before the duplicate rule: the tiny META pool never hides the big META pool", () => {
@@ -166,5 +166,48 @@ describe("TVL filter (minTvl)", () => {
     expect(meetsMinTvl({ tvlUsd: null }, 5_000)).toBe(false);
     expect(meetsMinTvl({ tvlUsd: null }, null)).toBe(true);
     expect(meetsMinTvl({ tvlUsd: 5_000 }, 5_000)).toBe(true);
+  });
+});
+
+describe("APR rank groups: normal, Low TVL, New pool, Not supported yet (PM 2026-11-04)", () => {
+  // Real figures: NVDAx FjUo…KKS $10.5k (balance multiplier), INTCx 9Ur3 $1,884 (new by the strict count), GOOGLx $1,932, SKHYx $126.
+  const big = pool({ poolAddress: "big", pairLabel: "SPCXx/SPCX", tvlUsd: 262_029 });
+  const bigNoApr = pool({ poolAddress: "bigNoApr", pairLabel: "USDC/USDT", mintA: "u1", mintB: "u2", tvlUsd: 1_800_000 });
+  const googl = pool({ poolAddress: "googl", pairLabel: "GOOGLx/GOOGL", mintA: "g1", mintB: "g2", tvlUsd: 1_932 });
+  const skhy = pool({ poolAddress: "skhy", pairLabel: "SKHYx/SKHY", mintA: "s1", mintB: "s2", tvlUsd: 126 });
+  const intc = pool({ poolAddress: "intc", pairLabel: "INTCx/INTC", mintA: "i1", mintB: "i2", tvlUsd: 1_884 });
+  const nvda = pool({ poolAddress: "nvda", pairLabel: "NVDAx/NVDA", mintA: "n1", mintB: "n2", tvlUsd: 10_500,
+    unsupportedIssues: ["ScaledUiAmount multiplier not 1"] });
+  const all = [nvda, intc, skhy, googl, bigNoApr, big];
+  const apr7d = aprs({ big: 12, googl: 40, skhy: 90, nvda: 500 });
+  const group = (p: UnifiedPool) => poolRankGroup(p, p.poolAddress === "intc");
+
+  it("Low TVL is under $5k; a pool with unknown TVL is not tagged", () => {
+    expect(LOW_TVL_USD).toBe(5_000);
+    expect(isLowTvl(googl)).toBe(true);
+    expect(isLowTvl(pool({ poolAddress: "x", tvlUsd: 5_000 }))).toBe(false);
+    expect(isLowTvl(pool({ poolAddress: "x", tvlUsd: null }))).toBe(false);
+  });
+  it("orders the groups the same way in both APR directions; inside a group by APR, then TVL", () => {
+    expect(sortPools(all, "apr7d", "desc", apr7d, group).map((p) => p.poolAddress)).toEqual(["big", "bigNoApr", "skhy", "googl", "intc", "nvda"]);
+    expect(sortPools(all, "apr7d", "asc", apr7d, group).map((p) => p.poolAddress)).toEqual(["big", "bigNoApr", "googl", "skhy", "intc", "nvda"]);
+    expect(selectPools(all, { filters: DEFAULT_FILTERS, hideDuplicates: true, sort: DEFAULT_SORT, apr7d, group }).pools.map((p) => p.poolAddress))
+      .toEqual(["big", "bigNoApr", "skhy", "googl", "intc", "nvda"]);
+  });
+  it("other columns keep their plain order (no groups)", () => {
+    expect(sortPools(all, "tvl", "desc", apr7d, group).map((p) => p.poolAddress)).toEqual(["bigNoApr", "big", "nvda", "googl", "intc", "skhy"]);
+  });
+  it("without APR states, Not supported yet and Low TVL still apply (poolRankGroupOf)", () => {
+    expect(all.map(poolRankGroupOf)).toEqual([3, 1, 1, 1, 0, 0]);
+    expect(poolRankGroup(skhy, true)).toBe(2);
+    expect(poolRankGroup(nvda, true)).toBe(3);
+  });
+  it("names the reason in plain words", () => {
+    expect(unsupportedTokenReason(nvda)).toBe("This token uses a balance multiplier, which we don't support yet.");
+    expect(unsupportedTokenReason(pool({ poolAddress: "h", unsupportedIssues: ["TransferHook enabled"] })))
+      .toBe("This token runs extra checks on every transfer, which we don't support yet.");
+    expect(unsupportedTokenReason(pool({ poolAddress: "e", unsupportedIssues: ["Unsupported extension 23"] }))).toBe("This token uses a setting we don't support yet.");
+    expect(unsupportedTokenReason(big)).toBeNull();
+    expect(unsupportedTokenReason(pool({ poolAddress: "z", unsupportedIssues: [] }))).toBeNull();
   });
 });

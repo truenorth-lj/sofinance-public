@@ -10,9 +10,9 @@ describe("volumeRatio", () => {
 
 describe("volumeDivergenceNote", () => {
   it("runs hot above 2x", () =>
-    expect(volumeDivergenceNote(345, 100)).toBe("Today's volume is 3.5× the 7-day average, so the 24h number runs hot."));
+    expect(volumeDivergenceNote(345, 100)).toBe("Today's volume is 3.5× the 7-day average, so today's fees run hot next to this 7-day estimate."));
   it("runs cold below 0.5x", () =>
-    expect(volumeDivergenceNote(30, 100)).toBe("Today's volume is 0.3× the 7-day average, so the 24h number runs cold."));
+    expect(volumeDivergenceNote(30, 100)).toBe("Today's volume is 0.3× the 7-day average, so today's fees run cold next to this 7-day estimate."));
   it("is silent within 2x either way, including the boundaries", () => {
     expect(volumeDivergenceNote(200, 100)).toBeNull();
     expect(volumeDivergenceNote(50, 100)).toBeNull();

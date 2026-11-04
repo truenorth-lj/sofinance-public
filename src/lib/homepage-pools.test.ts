@@ -139,7 +139,8 @@ describe("buildHomepagePools / two chains", () => {
     // A pool with any 7-day APR outranks one without, whatever its TVL.
     const onlySmall = rwaPairsDefaultOrder(pools, aprLookupFrom({ [key("spcx-small")]: 0.001 }));
     expect(onlySmall.filter((row) => row.pairLabel === "SPCXx/SPCX").map((row) => row.poolAddress)).toEqual(["spcx-small"]);
-    expect(onlySmall[0]!.poolAddress).toBe("spcx-small");
+    // It is under $5k (Low TVL), so it ranks after every pool of $5k or more, even ones without an APR.
+    expect(onlySmall.at(-1)!.poolAddress).toBe("spcx-small");
   });
 
   it("leaves out pools under the $5k TVL floor before the duplicate rule, and shows fewer rows when fewer qualify", () => {
@@ -154,8 +155,8 @@ describe("buildHomepagePools / two chains", () => {
     const key = (address: string) => small.find((row) => row.poolAddress === address)!.key;
     const apr7d = aprLookupFrom({ [key("meta-tiny")]: 673.66, [key("meta-tinier")]: 300, [key("spcx-pool")]: 31.85, [key("nvda-pool")]: 89.14 });
     expect(homepageRows(small, apr7d).map((row) => row.poolAddress)).toEqual(["nvda-pool", "spcx-pool"]);
-    // /app/rwa-pairs' default view (TVL: Any) is unchanged.
-    expect(rwaPairsDefaultOrder(small, apr7d).map((row) => row.poolAddress)).toEqual(["meta-tiny", "nvda-pool", "spcx-pool"]);
+    // /app/rwa-pairs' default view (TVL: Any) still lists the tiny META pool (it wins its pair), after the $5k+ pools (Low TVL).
+    expect(rwaPairsDefaultOrder(small, apr7d).map((row) => row.poolAddress)).toEqual(["nvda-pool", "spcx-pool", "meta-tiny"]);
     expect(homepageCandidates(small).map((row) => row.poolAddress)).toEqual(["spcx-pool", "nvda-pool"]);
     // A shared link to a pool under the floor does not bring it back.
     expect(homepageRows(small, apr7d, "meta-tiny").map((row) => row.poolAddress)).toEqual(["nvda-pool", "spcx-pool"]);

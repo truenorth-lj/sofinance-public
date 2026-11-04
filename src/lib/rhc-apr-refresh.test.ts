@@ -114,7 +114,7 @@ describe("RHC cron profile planning (backoff, roll-forward)", () => {
     const created = rhcPoolCreatedAtSeconds(SPCX), createdDay = created - (created % 86_400);
     const days = Math.min(7, (today - 86_400 - createdDay) / 86_400 + 1);
     expect(days).toBeGreaterThanOrEqual(2);
-    expect(rolled.profile.daily).toEqual({ avgDailyVolumeUsd: 40 / days, days });
+    expect(rolled.profile.daily).toMatchObject({ avgDailyVolumeUsd: 40 / days, days });
   });
 
   it("ignores a saved profile for another token pair or algorithm", () => {

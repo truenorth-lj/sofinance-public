@@ -220,7 +220,7 @@ export function LandingPage({ initialPools = null, initialStocks = null }: { ini
             <article className={`${darkCard} sm:p-8`}>
               <ul className="grid gap-4 text-sm leading-6 text-smoke sm:grid-cols-2">
                 <li>
-                  <strong className="font-medium text-cream">Fee estimates are not a prediction.</strong> They come
+                  <strong className="font-medium text-cream">Fees not guaranteed. Fee estimates are not a prediction.</strong> They come
                   from recent pool fees and liquidity (on Solana, the past 7 days of fee data for each range), not from
                   your own return.
                 </li>

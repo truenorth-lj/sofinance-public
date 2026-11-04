@@ -20,10 +20,11 @@ import {
 import { isRhcUniv4DiscoveryEnabled } from "@/lib/protocol-flags";
 import { fetchRwaPairsList } from "@/lib/rwa-pairs-list";
 import { APP_ROUTES, DOCS_ROUTES, buildOpenPositionPath } from "@/lib/public-urls";
-import { DEFAULT_SORT, openUnavailableReason, type PoolChain, type UnifiedPool } from "@/lib/unified-pools/model";
+import { DEFAULT_SORT, openUnavailableReason, unsupportedTokenReason, type PoolChain, type UnifiedPool } from "@/lib/unified-pools/model";
 import type { RhcPoolSummary } from "@/lib/unified-pools/rows";
 import { PoolTable, type OpenAction } from "./unified-pools/pool-list";
 import { usePoolsApr7d } from "./unified-pools/use-pools-apr7d";
+import { rankGroupLookup } from "@/lib/unified-pools/apr7d";
 import type { TokenIconMap } from "@/lib/token-icons/map";
 
 type PairsResponse = {
@@ -43,8 +44,10 @@ export function openPoolHref(pool: Pick<HomepagePool, "chain" | "poolAddress">) 
     : buildOpenPositionPath(pool.poolAddress);
 }
 
-/** Meteora pools: a greyed Open with its reason (no link out). */
+/** Meteora pools: a greyed Open with its reason (no link out); pools whose tokens are not supported yet say so. */
 const openAction = (pool: UnifiedPool): OpenAction => {
+  const unsupported = unsupportedTokenReason(pool);
+  if (unsupported) return { kind: "unsupported", reason: unsupported };
   const unavailable = openUnavailableReason(pool);
   return unavailable ? { kind: "disabled", reason: unavailable } : { kind: "link", href: openPoolHref(pool) };
 };
@@ -148,12 +151,6 @@ export function HomepagePoolsView({
   // Every Solana pool here comes from `/api/rwa-pairs`, so its Meteora pools read their saved APR snapshot.
   const rwaListKeys = useMemo(() => new Set(candidates.filter((pool) => pool.chain === "solana").map((pool) => pool.key)), [candidates]);
   const apr = usePoolsApr7d(candidates, 0, rwaListKeys);
-  // The prerendered HTML (and the first client render) prints no APR figure; the 24h column fills in after mount.
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => {
-    const timer = window.setTimeout(() => setMounted(true), 0);
-    return () => window.clearTimeout(timer);
-  }, []);
   const serverApr = initial?.apr7d;
   // Until a pool's estimate loads on the client, the server snapshot's value ranks it, so the server HTML and the first
   // client render list the same pools in the same order. The figures themselves are only printed once loaded here
@@ -161,11 +158,13 @@ export function HomepagePoolsView({
   const apr7d = useCallback((pool: UnifiedPool) => {
     const state = apr[pool.key];
     if (state?.status === "ready") return state.aprPct;
-    if (state?.status === "missing") return null;
+    // Missing, or a new pool (too few days of data): no APR, so it is left out of the ranking.
+    if (state && state.status !== "loading") return null;
     const saved = serverApr?.[pool.key];
     return typeof saved === "number" && Number.isFinite(saved) ? saved : null;
   }, [apr, serverApr]);
-  const rows = useMemo(() => (pools ? homepageRows(pools, apr7d, highlightPool) : []), [pools, apr7d, highlightPool]);
+  const group = useMemo(() => rankGroupLookup(apr), [apr]);
+  const rows = useMemo(() => (pools ? homepageRows(pools, apr7d, highlightPool, group) : []), [pools, apr7d, highlightPool, group]);
   const updatedText = updatedLabel(updated);
   const highlightKey = highlightPool ? rows.find((pool) => pool.poolAddress.toLowerCase() === highlightPool.trim().toLowerCase())?.key : undefined;
 
@@ -219,7 +218,7 @@ export function HomepagePoolsView({
       {rows.length > 0 && (
         <div data-testid="homepage-pools-table">
           <PoolTable pools={rows} apr={apr} actionFor={openAction} sort={DEFAULT_SORT} icons={icons} highlightKey={highlightKey}
-            testId="homepage-pools-list" apr24hPending={!mounted} hideApr24h />
+            testId="homepage-pools-list" />
         </div>
       )}
 
