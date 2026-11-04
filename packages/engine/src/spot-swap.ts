@@ -40,17 +40,27 @@ export const SPOT_SWAP_SOL_HEADROOM_LAMPORTS = 5_000_000n;
 export const SPOT_SWAP_ROUTE_PROBE_USDC = 1_000_000n;
 const STATE_READ_ATTEMPTS = 3;
 
+/** Jupiter token metadata for one mint, fetched by the caller (server-side,
+ * cached, Jupiter token search API). The engine makes no metadata calls. */
+export type SpotSwapJupiterMetadata = {
+  /** Jupiter token name, e.g. "Tesla (Issuer) Tokenized Stock". */
+  name?: string | null;
+  /** Jupiter tags, e.g. ["verified", "stocks"]. */
+  tags?: readonly string[];
+};
+
 /** One buyable token. Built by the caller from the token registry (xStocks list,
- * Jupiter tags); matched by exact mint, never by symbol. */
+ * Jupiter metadata); matched by exact mint, never by symbol. */
 export type SpotSwapToken = {
   mint: string;
   symbol: string;
   /** Underlying ticker, upper case (e.g. "TSLA"). */
   underlying: string;
-  /** Issuer name the UI shows next to the short mint. */
-  issuerName: string;
-  /** On the Backed xStocks list (preferred issuer). */
+  /** On the Backed xStocks list (preferred issuer, shown as "xStocks"). */
   xstocks: boolean;
+  /** Required for non-xStocks tokens: they are eligible only with Jupiter's
+   * "verified" tag and a non-empty Jupiter name (shown as the issuer name). */
+  jupiter?: SpotSwapJupiterMetadata;
 };
 export type SpotSwapAllowlist = readonly SpotSwapToken[];
 
@@ -90,6 +100,7 @@ export type SpotSwapSummary = {
   outputProgram: string;
   outputAccount: string;
   issuerName: string;
+  outputMintShort: string;
   xstocks: boolean;
   /** USDC raw the wallet spends, fee included. */
   amount: string;
@@ -145,14 +156,19 @@ export function assertSpotSwapAllowlist(allowlist: SpotSwapAllowlist): void {
   }
 }
 
-/** The allowlisted token for this exact mint. A look-alike mint (same symbol or
- * name, different address) is refused. */
-export function spotSwapTokenFor(allowlist: SpotSwapAllowlist, mint: string): SpotSwapToken {
+/** The allowlisted token for this exact mint, with its issuer name. A look-alike
+ * mint (same symbol or name, different address) is refused, and so is a
+ * non-xStocks token without Jupiter's "verified" tag and name. */
+export function spotSwapTokenFor(allowlist: SpotSwapAllowlist, mint: string): SpotSwapToken & { issuerName: string } {
   assertSpotSwapAllowlist(allowlist);
   const canonical = canonicalMint(mint);
   const token = canonical ? allowlist.find((item) => item.mint === canonical) : undefined;
   if (!token) throw new SpotSwapError("spot_swap_token_not_allowed", "This token is not on the SoFinance stock token list");
-  return token;
+  const issuer = spotSwapIssuer(token);
+  if ("reason" in issuer) {
+    throw new SpotSwapError("spot_swap_token_not_allowed", "This token is not verified for buying", { reason: issuer.reason });
+  }
+  return { ...token, issuerName: issuer.issuerName };
 }
 
 /** True when Jupiter quotes USDC -> mint with the protocol fee; false on "no route". */
@@ -167,21 +183,54 @@ export async function spotSwapRouteExists(outputMint: string, probeUsdc = SPOT_S
   }
 }
 
+export type SpotSwapIneligibleReason = "unverified" | "no_name";
+
+/** Issuer name the UI shows next to the short mint: "xStocks" for xStocks tokens;
+ * for other issuers the Jupiter name, only when Jupiter tags the token "verified".
+ * Otherwise the reason the token is not eligible. */
+export function spotSwapIssuer(token: SpotSwapToken): { issuerName: string } | { reason: SpotSwapIneligibleReason } {
+  if (token.xstocks) return { issuerName: "xStocks" };
+  if (!token.jupiter?.tags?.includes("verified")) return { reason: "unverified" };
+  const name = token.jupiter.name?.trim();
+  return name ? { issuerName: name } : { reason: "no_name" };
+}
+
+export type SpotSwapSkipReason = SpotSwapIneligibleReason | "no_route";
+export type SpotSwapSkipped = { mint: string; mintShort: string; reason: SpotSwapSkipReason };
+export type SpotSwapSelection =
+  | { status: "selected"; underlying: string; token: SpotSwapToken; mint: string; mintShort: string;
+      issuerName: string; xstocks: boolean; skipped: SpotSwapSkipped[] }
+  /** Nothing buyable for this stock (no eligible token, or none with a Jupiter
+   * route): the UI shows no Buy button. Not an error. */
+  | { status: "no_route"; underlying: string; skipped: SpotSwapSkipped[] };
+
 /**
- * Which issuer's token a stock row buys (PM rule): the xStocks token when the
- * stock has one; otherwise the first allowlisted issuer token (list order) that
- * has a Jupiter route. Null when none qualifies.
+ * Which issuer's token a stock row buys (PM rule): the xStocks token when it has a
+ * Jupiter route; otherwise the next eligible issuer token (list order) with a
+ * route. Non-xStocks tokens need Jupiter's "verified" tag and a Jupiter name,
+ * and are skipped without a route probe otherwise.
+ *
+ * "No route" is returned as `{ status: "no_route" }`, not thrown: it is an expected
+ * UI state (no Buy button). Quote/build keep the existing pattern of throwing
+ * `JupiterNoRouteError`. Other probe failures (Jupiter down, rate limit) still throw,
+ * so an outage is not mistaken for "not buyable". Probes run one at a time and stop
+ * at the first route (Jupiter free tier).
  */
 export async function selectSpotSwapToken(allowlist: SpotSwapAllowlist, underlying: string,
-  hasRoute: (mint: string) => Promise<boolean> = (mint) => spotSwapRouteExists(mint)): Promise<SpotSwapToken | null> {
+  hasRoute: (mint: string) => Promise<boolean> = (mint) => spotSwapRouteExists(mint)): Promise<SpotSwapSelection> {
   assertSpotSwapAllowlist(allowlist);
-  const candidates = allowlist.filter((token) => token.underlying === underlying.toUpperCase());
-  const xstocks = candidates.find((token) => token.xstocks);
-  if (xstocks) return xstocks;
-  for (const token of candidates) {
-    if (await hasRoute(token.mint)) return token;
+  const ticker = underlying.toUpperCase();
+  const candidates = allowlist.filter((token) => token.underlying === ticker);
+  const ordered = [...candidates.filter((token) => token.xstocks), ...candidates.filter((token) => !token.xstocks)];
+  const skipped: SpotSwapSkipped[] = [];
+  for (const token of ordered) {
+    const mintShort = shortAddress(token.mint);
+    const issuer = spotSwapIssuer(token);
+    if ("reason" in issuer) { skipped.push({ mint: token.mint, mintShort, reason: issuer.reason }); continue; }
+    if (!(await hasRoute(token.mint))) { skipped.push({ mint: token.mint, mintShort, reason: "no_route" }); continue; }
+    return { status: "selected", underlying: ticker, token, mint: token.mint, mintShort, issuerName: issuer.issuerName, xstocks: token.xstocks, skipped };
   }
-  return null;
+  return { status: "no_route", underlying: ticker, skipped };
 }
 
 /** Why this mint cannot be bought now (empty = ok). Same Token-2022 rules as open:
@@ -419,7 +468,7 @@ export async function buildAndSimulateSpotSwap(walletAddress: string, outputMint
   const summary: SpotSwapSummary = {
     operation: "spot-swap", wallet: walletAddress, inputMint: USDC_MINT,
     outputMint: token.mint, outputSymbol: token.symbol, outputDecimals: mint.decimals, outputProgram: mint.program.toBase58(),
-    outputAccount: outputAta.toBase58(), issuerName: token.issuerName, xstocks: token.xstocks,
+    outputAccount: outputAta.toBase58(), issuerName: token.issuerName, outputMintShort: shortAddress(token.mint), xstocks: token.xstocks,
     amount: amount.toString(), feeBps: feeConfig.bps, feeAmount: feeAmount.toString(),
     feeWalletShort: shortAddress(feeConfig.wallet.toBase58()),
     quotedOut: built.route.outAmount, minOut: built.leg.minOut.toString(), priceImpactPct: built.route.priceImpactPct ?? null,
@@ -430,7 +479,7 @@ export async function buildAndSimulateSpotSwap(walletAddress: string, outputMint
 }
 
 export type SpotSwapQuote = {
-  outputMint: string; outputSymbol: string; issuerName: string; xstocks: boolean;
+  outputMint: string; outputMintShort: string; outputSymbol: string; issuerName: string; xstocks: boolean;
   amount: string; feeBps: number; feeAmount: string; feeWalletShort: string;
   quotedOut: string; minOut: string; priceImpactPct: string | null;
   /** Refundable deposit if the wallet has no account for this token yet. */
@@ -460,7 +509,7 @@ export async function quoteSpotSwap(outputMintAddress: string, usdcAmount: strin
   if (!leg.route || leg.feeAmount !== feeAmount) throw new SpotSwapError("spot_swap_fee_mismatch", "Swap quote fee does not match the protocol fee");
   const rent = (await associatedTokenAccountRents(connection, [token.mint]))[0]!.rentLamports;
   return {
-    outputMint: token.mint, outputSymbol: token.symbol, issuerName: token.issuerName, xstocks: token.xstocks,
+    outputMint: token.mint, outputMintShort: shortAddress(token.mint), outputSymbol: token.symbol, issuerName: token.issuerName, xstocks: token.xstocks,
     amount: amount.toString(), feeBps: feeConfig.bps, feeAmount: feeAmount.toString(), feeWalletShort: shortAddress(feeConfig.wallet.toBase58()),
     quotedOut: leg.route.outAmount, minOut: leg.minOut.toString(), priceImpactPct: leg.route.priceImpactPct ?? null,
     newAccountRentLamports: rent.toString(), baseNetworkFeeLamports: SPOT_SWAP_BASE_FEE_LAMPORTS,

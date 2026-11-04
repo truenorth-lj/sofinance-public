@@ -8,7 +8,7 @@ import { JupiterNoRouteError } from "./swap/jupiter";
 import { swapFeeRecipientAta } from "./swap/fee";
 import { USDC_MINT } from "./ids";
 import {
-  assertSpotSwapAllowlist, buildAndSimulateSpotSwap, quoteSpotSwap, selectSpotSwapToken, spotSwapMintIssues, spotSwapTokenFor,
+  assertSpotSwapAllowlist, buildAndSimulateSpotSwap, quoteSpotSwap, selectSpotSwapToken, spotSwapIssuer, spotSwapMintIssues, spotSwapTokenFor,
   verifySpotSwapSimulation, SpotSwapError, type SpotSwapAllowlist,
 } from "./spot-swap";
 
@@ -22,9 +22,9 @@ const feeAta = swapFeeRecipientAta(feeWallet, usdc, TOKEN_PROGRAM_ID);
 const RENT = 2_074_080;
 
 const allowlist: SpotSwapAllowlist = [
-  { mint: tslaOther.toBase58(), symbol: "TSLA", underlying: "TSLA", issuerName: "Other issuer", xstocks: false },
-  { mint: tsla.toBase58(), symbol: "TSLAx", underlying: "TSLA", issuerName: "xStocks", xstocks: true },
-  { mint: nvda.toBase58(), symbol: "NVDA", underlying: "NVDA", issuerName: "Other issuer", xstocks: false },
+  { mint: tslaOther.toBase58(), symbol: "TSLAon", underlying: "TSLA", xstocks: false, jupiter: { name: "Tesla Issuer B", tags: ["verified", "stocks"] } },
+  { mint: tsla.toBase58(), symbol: "TSLAx", underlying: "TSLA", xstocks: true },
+  { mint: nvda.toBase58(), symbol: "NVDAon", underlying: "NVDA", xstocks: false, jupiter: { name: "NVIDIA Issuer B", tags: ["verified"] } },
 ];
 
 const info = (data: Buffer, owner: PublicKey = TOKEN_PROGRAM_ID, lamports = 2_039_280): AccountInfo<Buffer> => ({ data, owner, executable: false, lamports, rentEpoch: 0 });
@@ -125,17 +125,56 @@ describe("token allowlist (exact mint, never symbol)", () => {
 });
 
 describe("issuer selection (PM rule)", () => {
-  it("defaults to the xStocks token even when another issuer is listed first", async () => {
+  const unverified = key(), nameless = key(), third = key();
+  const list: SpotSwapAllowlist = [
+    { mint: unverified.toBase58(), symbol: "TSLAu", underlying: "TSLA", xstocks: false, jupiter: { name: "Unverified Tesla", tags: ["stocks"] } },
+    { mint: nameless.toBase58(), symbol: "TSLAn", underlying: "TSLA", xstocks: false, jupiter: { name: "  ", tags: ["verified"] } },
+    { mint: tslaOther.toBase58(), symbol: "TSLAon", underlying: "TSLA", xstocks: false, jupiter: { name: "Tesla Issuer B", tags: ["verified", "stocks"] } },
+    { mint: third.toBase58(), symbol: "TSLAz", underlying: "TSLA", xstocks: false, jupiter: { name: "Tesla Issuer C", tags: ["verified"] } },
+    { mint: tsla.toBase58(), symbol: "TSLAx", underlying: "TSLA", xstocks: true },
+  ];
+  it("prefers the xStocks token when it has a route, even when listed last", async () => {
     const hasRoute = vi.fn(async () => true);
-    expect((await selectSpotSwapToken(allowlist, "tsla", hasRoute))?.mint).toBe(tsla.toBase58());
-    expect(hasRoute).not.toHaveBeenCalled();
+    const selection = await selectSpotSwapToken(list, "tsla", hasRoute);
+    expect(selection).toMatchObject({ status: "selected", mint: tsla.toBase58(), issuerName: "xStocks", xstocks: true, skipped: [] });
+    expect(selection.status === "selected" && selection.mintShort).toMatch(/^.{4}….{2}$/);
+    expect(hasRoute).toHaveBeenCalledTimes(1);
   });
-  it("otherwise picks the first issuer token that has a Jupiter route", async () => {
-    const second = key();
-    const list = [allowlist[2]!, { mint: second.toBase58(), symbol: "NVDAz", underlying: "NVDA", issuerName: "Issuer B", xstocks: false }];
-    expect((await selectSpotSwapToken(list, "NVDA", async (m) => m === second.toBase58()))?.issuerName).toBe("Issuer B");
-    expect(await selectSpotSwapToken(list, "NVDA", async () => false)).toBeNull();
-    expect(await selectSpotSwapToken(list, "AAPL", async () => true)).toBeNull();
+  it("falls back to the next verified issuer when xStocks has no route", async () => {
+    const hasRoute = vi.fn(async (m: string) => m !== tsla.toBase58());
+    const selection = await selectSpotSwapToken(list, "TSLA", hasRoute);
+    expect(selection).toMatchObject({ status: "selected", mint: tslaOther.toBase58(), issuerName: "Tesla Issuer B", xstocks: false });
+    expect(selection.skipped.map((s) => [s.mint, s.reason])).toEqual([
+      [tsla.toBase58(), "no_route"], [unverified.toBase58(), "unverified"], [nameless.toBase58(), "no_name"],
+    ]);
+    // Ineligible tokens are never probed (Jupiter free tier).
+    expect(hasRoute.mock.calls.map(([m]) => m)).toEqual([tsla.toBase58(), tslaOther.toBase58()]);
+  });
+  it("skips unverified issuers and verified issuers without a name", async () => {
+    const only = list.slice(0, 2);
+    const hasRoute = vi.fn(async () => true);
+    const selection = await selectSpotSwapToken(only, "TSLA", hasRoute);
+    expect(selection).toEqual({ status: "no_route", underlying: "TSLA", skipped: [
+      { mint: unverified.toBase58(), mintShort: expect.any(String), reason: "unverified" },
+      { mint: nameless.toBase58(), mintShort: expect.any(String), reason: "no_name" },
+    ] });
+    expect(hasRoute).not.toHaveBeenCalled();
+    expect(spotSwapIssuer({ ...only[0]!, jupiter: undefined })).toEqual({ reason: "unverified" });
+    expect(spotSwapIssuer({ ...only[1]!, jupiter: { tags: ["verified"] } })).toEqual({ reason: "no_name" });
+  });
+  it("returns a no-route result (not an error) when nothing is routable", async () => {
+    const selection = await selectSpotSwapToken(list, "TSLA", async () => false);
+    expect(selection.status).toBe("no_route");
+    expect(selection.skipped.filter((s) => s.reason === "no_route").map((s) => s.mint)).toEqual([tsla.toBase58(), tslaOther.toBase58(), third.toBase58()]);
+    expect(await selectSpotSwapToken(list, "AAPL", async () => true)).toEqual({ status: "no_route", underlying: "AAPL", skipped: [] });
+  });
+  it("still throws when the route probe itself fails (outage is not 'no route')", async () => {
+    await expect(selectSpotSwapToken(list, "TSLA", async () => { throw new Error("Jupiter 429"); })).rejects.toThrow("Jupiter 429");
+  });
+  it("refuses to build or quote an ineligible issuer token", () => {
+    expect(() => spotSwapTokenFor(list, unverified.toBase58())).toThrow(expect.objectContaining({ code: "spot_swap_token_not_allowed", detail: { reason: "unverified" } }));
+    expect(() => spotSwapTokenFor(list, nameless.toBase58())).toThrow(expect.objectContaining({ detail: { reason: "no_name" } }));
+    expect(spotSwapTokenFor(list, tslaOther.toBase58()).issuerName).toBe("Tesla Issuer B");
   });
 });
 
@@ -184,7 +223,7 @@ describe("buildAndSimulateSpotSwap", () => {
     expect(transaction.message.header.numRequiredSignatures).toBe(1);
     expect(transaction.message.staticAccountKeys[0]!.equals(wallet)).toBe(true);
     expect(summary).toMatchObject({
-      operation: "spot-swap", outputMint: tsla.toBase58(), outputSymbol: "TSLAx", issuerName: "xStocks", xstocks: true,
+      operation: "spot-swap", outputMint: tsla.toBase58(), outputMintShort: expect.stringMatching(/^.{4}….{2}$/), outputSymbol: "TSLAx", issuerName: "xStocks", xstocks: true,
       amount: "2000000", feeBps: 10, feeAmount: "2000", quotedOut: "522844", minOut: "520230", simulatedOut: "522844",
       outputProgram: TOKEN_2022_PROGRAM_ID.toBase58(), outputAccount: outputAta.toBase58(),
     });
