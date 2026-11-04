@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ExtensionType, getAssociatedTokenAddressSync, getTypeLen, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { ExtensionType, getAssociatedTokenAddressSync, getExtensionTypes, getTypeLen, unpackMint, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { Keypair, PublicKey, SystemProgram, type AccountInfo, type Connection } from "@solana/web3.js";
 vi.mock("./swap/leg", () => ({ feeSwapLeg: vi.fn() }));
 vi.mock("./rpc/fee-estimate", () => ({ estimateFeeForMessage: vi.fn(async () => 5_000), OPEN_FEE_ESTIMATE_MESSAGE: "x" }));
@@ -7,9 +7,11 @@ import { feeSwapLeg } from "./swap/leg";
 import { JupiterNoRouteError } from "./swap/jupiter";
 import { swapFeeRecipientAta } from "./swap/fee";
 import { USDC_MINT } from "./ids";
+import mainnetMints from "./fixtures/spot-swap-mints-mainnet.json";
 import {
   assertSpotSwapAllowlist, buildAndSimulateSpotSwap, quoteSpotSwap, selectSpotSwapToken, spotSwapIssuer, spotSwapMintIssues, spotSwapTokenFor,
-  verifySpotSwapSimulation, SpotSwapError, type SpotSwapAllowlist,
+  verifySpotSwapSimulation, SpotSwapError, assertSpotSwapPriceImpact, spotSwapRouteCheck, SPOT_SWAP_MAX_PRICE_IMPACT_BPS,
+  type SpotSwapAllowlist, type SpotSwapRouteCheck,
 } from "./spot-swap";
 
 const key = () => Keypair.generate().publicKey;
@@ -68,10 +70,11 @@ const connection = {
   }),
 } as unknown as Connection;
 
+let routeImpact = "0.0003";
 function route(amount: bigint) {
   return {
     inputMint: USDC_MINT, outputMint: tsla.toBase58(), inAmount: amount.toString(), outAmount: "522844", otherAmountThreshold: "520230",
-    swapMode: "ExactIn", slippageBps: 50, priceImpactPct: "0.0003", platformFee: { amount: "523", feeBps: 10 },
+    swapMode: "ExactIn", slippageBps: 50, priceImpactPct: routeImpact, platformFee: { amount: "523", feeBps: 10 },
     routePlan: [{ percent: 100, bps: 10_000, swapInfo: { ammKey: key().toBase58(), inputMint: USDC_MINT, outputMint: tsla.toBase58(), inAmount: "1", outAmount: "1" } }],
     computeBudgetInstructions: [], setupInstructions: [], cleanupInstruction: null, otherInstructions: [], tipInstruction: null,
     addressesByLookupTableAddress: {},
@@ -95,7 +98,7 @@ const code = async (promise: Promise<unknown>) => { try { await promise; } catch
 
 beforeEach(() => {
   vi.stubEnv("SOFINANCE_FEE_WALLET", feeWallet.toBase58()); vi.stubEnv("SOFINANCE_FEE_BPS", "10");
-  vi.clearAllMocks(); accounts.clear(); slot = 100; feeMovesDuringSimulation = 0; feeBalance = 7_000n;
+  vi.clearAllMocks(); accounts.clear(); slot = 100; feeMovesDuringSimulation = 0; feeBalance = 7_000n; routeImpact = "0.0003";
   accounts.set(wallet.toBase58(), info(Buffer.alloc(0), SystemProgram.programId, 50_000_000));
   accounts.set(tsla.toBase58(), info(mint(), TOKEN_2022_PROGRAM_ID));
   accounts.set(usdcAta.toBase58(), info(token(usdc, wallet, 5_000_000n)));
@@ -134,15 +137,15 @@ describe("issuer selection (PM rule)", () => {
     { mint: tsla.toBase58(), symbol: "TSLAx", underlying: "TSLA", xstocks: true },
   ];
   it("prefers the xStocks token when it has a route, even when listed last", async () => {
-    const hasRoute = vi.fn(async () => true);
-    const selection = await selectSpotSwapToken(list, "tsla", hasRoute);
+    const hasRoute = vi.fn(async (): Promise<SpotSwapRouteCheck> => "ok");
+    const selection = await selectSpotSwapToken(list, "tsla", { checkRoute: hasRoute });
     expect(selection).toMatchObject({ status: "selected", mint: tsla.toBase58(), issuerName: "xStocks", xstocks: true, skipped: [] });
     expect(selection.status === "selected" && selection.mintShort).toMatch(/^.{4}….{2}$/);
     expect(hasRoute).toHaveBeenCalledTimes(1);
   });
   it("falls back to the next verified issuer when xStocks has no route", async () => {
-    const hasRoute = vi.fn(async (m: string) => m !== tsla.toBase58());
-    const selection = await selectSpotSwapToken(list, "TSLA", hasRoute);
+    const hasRoute = vi.fn(async (m: string): Promise<SpotSwapRouteCheck> => m === tsla.toBase58() ? "no_route" : "ok");
+    const selection = await selectSpotSwapToken(list, "TSLA", { checkRoute: hasRoute });
     expect(selection).toMatchObject({ status: "selected", mint: tslaOther.toBase58(), issuerName: "Tesla Issuer B", xstocks: false });
     expect(selection.skipped.map((s) => [s.mint, s.reason])).toEqual([
       [tsla.toBase58(), "no_route"], [unverified.toBase58(), "unverified"], [nameless.toBase58(), "no_name"],
@@ -152,8 +155,8 @@ describe("issuer selection (PM rule)", () => {
   });
   it("skips unverified issuers and verified issuers without a name", async () => {
     const only = list.slice(0, 2);
-    const hasRoute = vi.fn(async () => true);
-    const selection = await selectSpotSwapToken(only, "TSLA", hasRoute);
+    const hasRoute = vi.fn(async (): Promise<SpotSwapRouteCheck> => "ok");
+    const selection = await selectSpotSwapToken(only, "TSLA", { checkRoute: hasRoute });
     expect(selection).toEqual({ status: "no_route", underlying: "TSLA", skipped: [
       { mint: unverified.toBase58(), mintShort: expect.any(String), reason: "unverified" },
       { mint: nameless.toBase58(), mintShort: expect.any(String), reason: "no_name" },
@@ -163,13 +166,13 @@ describe("issuer selection (PM rule)", () => {
     expect(spotSwapIssuer({ ...only[1]!, jupiter: { tags: ["verified"] } })).toEqual({ reason: "no_name" });
   });
   it("returns a no-route result (not an error) when nothing is routable", async () => {
-    const selection = await selectSpotSwapToken(list, "TSLA", async () => false);
+    const selection = await selectSpotSwapToken(list, "TSLA", { checkRoute: async () => "no_route" });
     expect(selection.status).toBe("no_route");
     expect(selection.skipped.filter((s) => s.reason === "no_route").map((s) => s.mint)).toEqual([tsla.toBase58(), tslaOther.toBase58(), third.toBase58()]);
-    expect(await selectSpotSwapToken(list, "AAPL", async () => true)).toEqual({ status: "no_route", underlying: "AAPL", skipped: [] });
+    expect(await selectSpotSwapToken(list, "AAPL", { checkRoute: async () => "ok" })).toEqual({ status: "no_route", underlying: "AAPL", skipped: [] });
   });
   it("still throws when the route probe itself fails (outage is not 'no route')", async () => {
-    await expect(selectSpotSwapToken(list, "TSLA", async () => { throw new Error("Jupiter 429"); })).rejects.toThrow("Jupiter 429");
+    await expect(selectSpotSwapToken(list, "TSLA", { checkRoute: async () => { throw new Error("Jupiter 429"); } })).rejects.toThrow("Jupiter 429");
   });
   it("refuses to build or quote an ineligible issuer token", () => {
     expect(() => spotSwapTokenFor(list, unverified.toBase58())).toThrow(expect.objectContaining({ code: "spot_swap_token_not_allowed", detail: { reason: "unverified" } }));
@@ -318,5 +321,95 @@ describe("quoteSpotSwap", () => {
   it("maps a missing route to the Jupiter no-route error", async () => {
     vi.mocked(feeSwapLeg).mockRejectedValue(new JupiterNoRouteError());
     await expect(quoteSpotSwap(tsla.toBase58(), "2", { allowlist, connection })).rejects.toBeInstanceOf(JupiterNoRouteError);
+  });
+});
+
+// PM data, 2026-11-04 (sofi_home_v2/data/jupiter_route_check.json). Jupiter
+// priceImpactPct is a fraction: "0.0062" = 0.62%.
+const ONDO = {
+  TSLAon100: "0.0061505463635080278887952126", // 0.62%: ok
+  TSLAon1000: "0.3255911454201397510204206334", // 32.6%: refused
+  MSTRon100: "0.9359201969087175779707873446", // 93.6%: refused
+  SLVon100: "0.0171336121852215936126448778", // 1.71%: refused
+};
+
+describe("1% price-impact cap", () => {
+  it("allows up to 1% and refuses above it, with a plain reason", () => {
+    expect(SPOT_SWAP_MAX_PRICE_IMPACT_BPS).toBe(100);
+    for (const ok of ["0", "0.0099", "0.01", ONDO.TSLAon100]) expect(() => assertSpotSwapPriceImpact(ok)).not.toThrow();
+    for (const bad of ["0.0101", ONDO.TSLAon1000, ONDO.MSTRon100, ONDO.SLVon100]) {
+      expect(() => assertSpotSwapPriceImpact(bad)).toThrow(expect.objectContaining({ code: "spot_swap_price_impact", message: expect.stringMatching(/liquidity.*1%.*smaller amount/) }));
+    }
+  });
+  it("fails closed when Jupiter reports no or an invalid price impact", () => {
+    for (const bad of [undefined, null, "", "NaN", "-0.001", "abc"]) {
+      expect(() => assertSpotSwapPriceImpact(bad)).toThrow(expect.objectContaining({ code: "spot_swap_price_impact" }));
+    }
+  });
+  it("refuses to build or quote above 1%, and allows 0.99%", async () => {
+    routeImpact = "0.0101";
+    expect(await code(build())).toBe("spot_swap_price_impact");
+    expect(await code(quoteSpotSwap(tsla.toBase58(), "2", { allowlist, connection }))).toBe("spot_swap_price_impact");
+    expect(connection.simulateTransaction).not.toHaveBeenCalled();
+    routeImpact = "0.0099";
+    expect((await build()).summary.priceImpactPct).toBe("0.0099");
+    expect((await quoteSpotSwap(tsla.toBase58(), "2", { allowlist, connection })).priceImpactPct).toBe("0.0099");
+  });
+  it("route check reports price_impact and no_route for the requested amount", async () => {
+    routeImpact = ONDO.TSLAon1000;
+    expect(await spotSwapRouteCheck(tsla.toBase58(), 1_000_000_000n)).toBe("price_impact");
+    expect(vi.mocked(feeSwapLeg)).toHaveBeenLastCalledWith(expect.objectContaining({ spend: 1_000_000_000n, build: false, inputFee: true }));
+    routeImpact = ONDO.TSLAon100;
+    expect(await spotSwapRouteCheck(tsla.toBase58(), 100_000_000n)).toBe("ok");
+    vi.mocked(feeSwapLeg).mockRejectedValueOnce(new JupiterNoRouteError());
+    expect(await spotSwapRouteCheck(tsla.toBase58())).toBe("no_route");
+    vi.mocked(feeSwapLeg).mockRejectedValueOnce(new Error("Jupiter 503"));
+    await expect(spotSwapRouteCheck(tsla.toBase58())).rejects.toThrow("Jupiter 503");
+  });
+  it("issuer fallback treats an issuer above 1% for the amount as not routable", async () => {
+    const mstrX = key(), mstrOn = key(), mstrB = key();
+    const list: SpotSwapAllowlist = [
+      { mint: mstrX.toBase58(), symbol: "MSTRx", underlying: "MSTR", xstocks: true },
+      { mint: mstrOn.toBase58(), symbol: "MSTRon", underlying: "MSTR", xstocks: false, jupiter: { name: "MicroStrategy (Ondo Tokenized)", tags: ["verified"] } },
+      { mint: mstrB.toBase58(), symbol: "MSTR", underlying: "MSTR", xstocks: false, jupiter: { name: "MicroStrategy - Backpack Securities", tags: ["verified"] } },
+    ];
+    const impacts = new Map([[mstrX.toBase58(), "no_route"], [mstrOn.toBase58(), ONDO.MSTRon100], [mstrB.toBase58(), "0.0099"]]);
+    const checkRoute = vi.fn<(mint: string, amount: bigint) => Promise<SpotSwapRouteCheck>>(async (mint) => {
+      const value = impacts.get(mint)!;
+      if (value === "no_route") return "no_route";
+      try { assertSpotSwapPriceImpact(value); return "ok"; } catch { return "price_impact"; }
+    });
+    const selection = await selectSpotSwapToken(list, "MSTR", { usdcRaw: 100_000_000n, checkRoute });
+    expect(selection).toMatchObject({ status: "selected", mint: mstrB.toBase58(), issuerName: "MicroStrategy - Backpack Securities" });
+    expect(selection.skipped.map((s) => s.reason)).toEqual(["no_route", "price_impact"]);
+    expect(checkRoute.mock.calls.every(([, amount]) => amount === 100_000_000n)).toBe(true);
+    impacts.set(mstrB.toBase58(), "0.0101");
+    expect(await selectSpotSwapToken(list, "MSTR", { usdcRaw: 100_000_000n, checkRoute })).toMatchObject({ status: "no_route" });
+  });
+});
+
+describe("real mainnet stock-token mints (fixtures/spot-swap-mints-mainnet.json)", () => {
+  const issuesFor = (symbol: string, issuer?: string) => {
+    const m = mainnetMints.mints.find((item) => item.symbol === symbol && (!issuer || item.issuer === issuer))!;
+    return spotSwapMintIssues(new PublicKey(m.mint), info(Buffer.from(m.data, "base64"), new PublicKey(m.owner))).issues;
+  };
+  it("refuses exactly the five tokens whose ScaledUiAmount multiplier is not 1", () => {
+    const refused = mainnetMints.mints.filter((m) => issuesFor(m.symbol, m.issuer).length).map((m) => `${m.issuer} ${m.symbol}`);
+    expect(refused).toEqual(["xStocks NVDAx", "xStocks SPYx", "Backpack MU", "Ondo NVDAon", "Ondo SPYon"]);
+    for (const name of refused) expect(issuesFor(name.split(" ")[1]!, name.split(" ")[0])).toEqual(["ScaledUiAmount multiplier not 1"]);
+  });
+  it("accepts permanent delegate and confidential transfer (every xStocks and Backpack token has them)", () => {
+    for (const m of mainnetMints.mints.filter((item) => item.issuer !== "Ondo")) {
+      const mintInfo = info(Buffer.from(m.data, "base64"), new PublicKey(m.owner));
+      const types = getExtensionTypes(unpackMint(new PublicKey(m.mint), mintInfo, mintInfo.owner).tlvData);
+      expect(types).toEqual(expect.arrayContaining([ExtensionType.PermanentDelegate, ExtensionType.ConfidentialTransferMint]));
+    }
+    for (const symbol of ["TSLAx", "SPCXx", "MSTRx", "SPCX", "TSLA", "TTWO", "SKHY", "TSLAon", "SLVon", "MSTRon"]) expect(issuesFor(symbol)).toEqual([]);
+  });
+  it("accepts synthetic permanent-delegate and confidential-transfer mints", () => {
+    const pd = extendedMint(ExtensionType.PermanentDelegate, (p) => key().toBuffer().copy(p));
+    const ct = extendedMint(ExtensionType.ConfidentialTransferMint, (p) => key().toBuffer().copy(p));
+    expect(spotSwapMintIssues(tsla, info(pd, TOKEN_2022_PROGRAM_ID)).issues).toEqual([]);
+    expect(spotSwapMintIssues(tsla, info(ct, TOKEN_2022_PROGRAM_ID)).issues).toEqual([]);
   });
 });

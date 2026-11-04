@@ -38,6 +38,12 @@ export const SPOT_SWAP_BASE_FEE_LAMPORTS = 5_000;
 export const SPOT_SWAP_SOL_HEADROOM_LAMPORTS = 5_000_000n;
 /** USDC amount used to probe whether a mint has a Jupiter route (1 USDC). */
 export const SPOT_SWAP_ROUTE_PROBE_USDC = 1_000_000n;
+/** PM cap: refuse to quote, build or select an issuer when Jupiter's reported
+ * price impact is above 1%. Jupiter `priceImpactPct` is a fraction ("0.01" = 1%). */
+export const SPOT_SWAP_MAX_PRICE_IMPACT_BPS = 100;
+/** Jupiter-layer cap is opened up so the spot-swap check below (stricter) gives
+ * the user a clear reason instead of the generic 5% error. */
+const JUPITER_LAYER_IMPACT_BPS = 10_000;
 const STATE_READ_ATTEMPTS = 3;
 
 /** Jupiter token metadata for one mint, fetched by the caller (server-side,
@@ -69,7 +75,7 @@ export type SpotSwapErrorCode =
   | "spot_swap_fee_not_configured" | "spot_swap_amount_too_small" | "spot_swap_insufficient_usdc"
   | "spot_swap_insufficient_sol" | "spot_swap_fee_mismatch" | "spot_swap_usdc_mismatch"
   | "spot_swap_min_out" | "spot_swap_signer" | "spot_swap_sol_debit" | "spot_swap_state_changed"
-  | "spot_swap_simulation_failed";
+  | "spot_swap_simulation_failed" | "spot_swap_price_impact";
 
 export class SpotSwapError extends Error {
   constructor(readonly code: SpotSwapErrorCode, message: string, readonly detail?: unknown) {
@@ -171,14 +177,43 @@ export function spotSwapTokenFor(allowlist: SpotSwapAllowlist, mint: string): Sp
   return { ...token, issuerName: issuer.issuerName };
 }
 
-/** True when Jupiter quotes USDC -> mint with the protocol fee; false on "no route". */
-export async function spotSwapRouteExists(outputMint: string, probeUsdc = SPOT_SWAP_ROUTE_PROBE_USDC): Promise<boolean> {
+/** Price impact in basis points from Jupiter's fraction, or null when missing/invalid. */
+export function spotSwapPriceImpactBps(priceImpactPct: unknown): number | null {
+  if (typeof priceImpactPct !== "string" && typeof priceImpactPct !== "number") return null;
+  if (typeof priceImpactPct === "string" && !priceImpactPct.trim()) return null;
+  const impact = Number(priceImpactPct);
+  return Number.isFinite(impact) && impact >= 0 ? impact * 10_000 : null;
+}
+
+/** Refuse a route whose reported price impact is above 1% (or not reported). */
+export function assertSpotSwapPriceImpact(priceImpactPct: unknown): void {
+  const bps = spotSwapPriceImpactBps(priceImpactPct);
+  if (bps === null) {
+    throw new SpotSwapError("spot_swap_price_impact", "We couldn't confirm a fair price for this amount, so nothing was prepared. Please try again.",
+      { priceImpactPct: priceImpactPct ?? null });
+  }
+  if (bps > SPOT_SWAP_MAX_PRICE_IMPACT_BPS) {
+    throw new SpotSwapError("spot_swap_price_impact",
+      "There isn't enough trading liquidity to buy this amount without moving the price more than 1%. Try a smaller amount.",
+      { priceImpactPct: String(priceImpactPct), maxBps: SPOT_SWAP_MAX_PRICE_IMPACT_BPS });
+  }
+}
+
+export type SpotSwapRouteCheck = "ok" | "no_route" | "price_impact";
+
+/** Whether Jupiter can fill USDC -> mint for `usdcRaw` with the protocol fee and
+ * price impact at most 1%. Other Jupiter failures (outage, rate limit) throw. */
+export async function spotSwapRouteCheck(outputMint: string, usdcRaw: bigint = SPOT_SWAP_ROUTE_PROBE_USDC): Promise<SpotSwapRouteCheck> {
   const { bps } = readSwapFeeConfig();
   try {
-    await feeSwapLeg({ wallet: "", inputMint: USDC_MINT, outputMint, spend: probeUsdc, feeBps: bps, inputFee: true, build: false });
-    return true;
+    const leg = await feeSwapLeg({ wallet: "", inputMint: USDC_MINT, outputMint, spend: usdcRaw, feeBps: bps, inputFee: true, build: false,
+      maxPriceImpactBps: JUPITER_LAYER_IMPACT_BPS });
+    if (!leg.route) return "no_route";
+    assertSpotSwapPriceImpact(leg.route.priceImpactPct);
+    return "ok";
   } catch (error) {
-    if (error instanceof JupiterNoRouteError) return false;
+    if (error instanceof JupiterNoRouteError) return "no_route";
+    if (error instanceof SpotSwapError && error.code === "spot_swap_price_impact") return "price_impact";
     throw error;
   }
 }
@@ -195,7 +230,7 @@ export function spotSwapIssuer(token: SpotSwapToken): { issuerName: string } | {
   return name ? { issuerName: name } : { reason: "no_name" };
 }
 
-export type SpotSwapSkipReason = SpotSwapIneligibleReason | "no_route";
+export type SpotSwapSkipReason = SpotSwapIneligibleReason | "no_route" | "price_impact";
 export type SpotSwapSkipped = { mint: string; mintShort: string; reason: SpotSwapSkipReason };
 export type SpotSwapSelection =
   | { status: "selected"; underlying: string; token: SpotSwapToken; mint: string; mintShort: string;
@@ -207,7 +242,9 @@ export type SpotSwapSelection =
 /**
  * Which issuer's token a stock row buys (PM rule): the xStocks token when it has a
  * Jupiter route; otherwise the next eligible issuer token (list order) with a
- * route. Non-xStocks tokens need Jupiter's "verified" tag and a Jupiter name,
+ * route. "Has a route" means Jupiter fills `usdcRaw` (the amount the user wants;
+ * default 1 USDC) with price impact at most 1%; a quote above 1% is skipped as
+ * "price_impact". Non-xStocks tokens need Jupiter's "verified" tag and a Jupiter name,
  * and are skipped without a route probe otherwise.
  *
  * "No route" is returned as `{ status: "no_route" }`, not thrown: it is an expected
@@ -217,7 +254,9 @@ export type SpotSwapSelection =
  * at the first route (Jupiter free tier).
  */
 export async function selectSpotSwapToken(allowlist: SpotSwapAllowlist, underlying: string,
-  hasRoute: (mint: string) => Promise<boolean> = (mint) => spotSwapRouteExists(mint)): Promise<SpotSwapSelection> {
+  options: { usdcRaw?: bigint; checkRoute?: (mint: string, usdcRaw: bigint) => Promise<SpotSwapRouteCheck> } = {}): Promise<SpotSwapSelection> {
+  const usdcRaw = options.usdcRaw ?? SPOT_SWAP_ROUTE_PROBE_USDC;
+  const checkRoute = options.checkRoute ?? spotSwapRouteCheck;
   assertSpotSwapAllowlist(allowlist);
   const ticker = underlying.toUpperCase();
   const candidates = allowlist.filter((token) => token.underlying === ticker);
@@ -227,7 +266,8 @@ export async function selectSpotSwapToken(allowlist: SpotSwapAllowlist, underlyi
     const mintShort = shortAddress(token.mint);
     const issuer = spotSwapIssuer(token);
     if ("reason" in issuer) { skipped.push({ mint: token.mint, mintShort, reason: issuer.reason }); continue; }
-    if (!(await hasRoute(token.mint))) { skipped.push({ mint: token.mint, mintShort, reason: "no_route" }); continue; }
+    const route = await checkRoute(token.mint, usdcRaw);
+    if (route !== "ok") { skipped.push({ mint: token.mint, mintShort, reason: route }); continue; }
     return { status: "selected", underlying: ticker, token, mint: token.mint, mintShort, issuerName: issuer.issuerName, xstocks: token.xstocks, skipped };
   }
   return { status: "no_route", underlying: ticker, skipped };
@@ -413,10 +453,11 @@ export async function buildAndSimulateSpotSwap(walletAddress: string, outputMint
   const built = await withJupiterRouteRetries(async (constraints: JupiterRouteConstraints) => {
     const leg = await feeSwapLeg({
       wallet: walletAddress, inputMint: USDC_MINT, outputMint: token.mint, spend: amount, feeBps: feeConfig.bps,
-      native: false, inputFee: true, build: true, constraints,
+      native: false, inputFee: true, build: true, constraints, maxPriceImpactBps: JUPITER_LAYER_IMPACT_BPS,
     });
     if (!leg.route || !("swapInstruction" in leg.route)) throw new Error("Spot swap route is missing");
     const route = leg.route as BuildRoute;
+    assertSpotSwapPriceImpact(route.priceImpactPct);
     // The fee the route charges is the fee we quote: input mint USDC, floor(amount * bps / 10,000).
     if (!leg.feeInRoute || leg.feeAmount !== feeAmount || BigInt(route.inAmount) !== amount) {
       throw new SpotSwapError("spot_swap_fee_mismatch", "Swap route fee does not match the quoted fee");
@@ -504,9 +545,10 @@ export async function quoteSpotSwap(outputMintAddress: string, usdcAmount: strin
   if (mint.issues.length) throw new SpotSwapError("spot_swap_token_unavailable", "This token cannot be bought right now", { issues: mint.issues });
   const leg = await feeSwapLeg({
     wallet: "", inputMint: USDC_MINT, outputMint: token.mint, spend: amount, feeBps: feeConfig.bps, inputFee: true, build: false,
-    constraints: { maxAccounts: JUPITER_MAX_ACCOUNTS.wide },
+    constraints: { maxAccounts: JUPITER_MAX_ACCOUNTS.wide }, maxPriceImpactBps: JUPITER_LAYER_IMPACT_BPS,
   });
   if (!leg.route || leg.feeAmount !== feeAmount) throw new SpotSwapError("spot_swap_fee_mismatch", "Swap quote fee does not match the protocol fee");
+  assertSpotSwapPriceImpact(leg.route.priceImpactPct);
   const rent = (await associatedTokenAccountRents(connection, [token.mint]))[0]!.rentLamports;
   return {
     outputMint: token.mint, outputMintShort: shortAddress(token.mint), outputSymbol: token.symbol, issuerName: token.issuerName, xstocks: token.xstocks,
