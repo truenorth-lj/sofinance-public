@@ -1,0 +1,168 @@
+{
+ "snapshotAt": "2026-11-04T12:41:21.401Z",
+ "gainers": [
+  {
+   "underlying": "MSFT",
+   "company": "Microsoft",
+   "mint": "XspzcW1PRtgf6Wj92HCiZdjzKCyFekVD8P5Ueh3dRMX",
+   "symbol": "MSFTx",
+   "icon": null,
+   "priceUsd": 530.8958137499081,
+   "change24hPct": 5.278259539465953
+  },
+  {
+   "underlying": "AMZN",
+   "company": "Amazon",
+   "mint": "Xs3eBt7uRfJX8QUs4suhyU8p2M6DoUDrJyWBa8LLZsg",
+   "symbol": "AMZNx",
+   "icon": null,
+   "priceUsd": 259.2164423010229,
+   "change24hPct": 5.195297195466033
+  },
+  {
+   "underlying": "COIN",
+   "company": "Coinbase",
+   "mint": "Xs7ZdzSHLU9ftNJsii5fCeJhoRWSC32SQGzGQtePxNu",
+   "symbol": "COINx",
+   "icon": null,
+   "priceUsd": 145.9467949528163,
+   "change24hPct": 4.839376798860451
+  },
+  {
+   "underlying": "MSTR",
+   "company": "MicroStrategy",
+   "mint": "XsP7xzNPvEHS1m6qfanPUGjNmdnmsLKEoNAnHjdxxyZ",
+   "symbol": "MSTRx",
+   "icon": null,
+   "priceUsd": 136.77487115469842,
+   "change24hPct": 3.903018477370627
+  },
+  {
+   "underlying": "AAPL",
+   "company": "Apple",
+   "mint": "XsbEhLAtcf6HdfpFZ5xEMdqW8nfAvcsP5bdudRLJzJp",
+   "symbol": "AAPLx",
+   "icon": null,
+   "priceUsd": 336.18221616164493,
+   "change24hPct": 3.632624455882836
+  }
+ ],
+ "stocks": [
+  {
+   "underlying": "SPCX",
+   "company": "SpaceX",
+   "mint": "Xs3oZwbHvqis4NYcf4YKWmEia2eC84wSiVrcYcTqpH8",
+   "symbol": "SPCXx",
+   "icon": null,
+   "priceUsd": 132.81480262507324,
+   "change24hPct": -3.2241821965574826,
+   "mcapUsd": 87039553.45617197
+  },
+  {
+   "underlying": "TSLA",
+   "company": "Tesla",
+   "mint": "XsDoVfqeBukxuZHWhdvWHBhgEHjGNst4MLodqsJHzoB",
+   "symbol": "TSLAx",
+   "icon": null,
+   "priceUsd": 376.4573098998088,
+   "change24hPct": -6.741728454382577,
+   "mcapUsd": 86447279.540132
+  },
+  {
+   "underlying": "MSTR",
+   "company": "MicroStrategy",
+   "mint": "XsP7xzNPvEHS1m6qfanPUGjNmdnmsLKEoNAnHjdxxyZ",
+   "symbol": "MSTRx",
+   "icon": null,
+   "priceUsd": 136.77487115469842,
+   "change24hPct": 3.903018477370627,
+   "mcapUsd": 82229160.70309095
+  },
+  {
+   "underlying": "SPY",
+   "company": "SP500",
+   "mint": "XsoCS1TfEyfFhfvj8EtZ528L3CaKBDBRqRapnBbDF2W",
+   "symbol": "SPYx",
+   "icon": null,
+   "priceUsd": 761.3398292913386,
+   "change24hPct": 1.2747936870312309,
+   "mcapUsd": 73044659.02926308
+  },
+  {
+   "underlying": "NVDA",
+   "company": "NVIDIA",
+   "mint": "Xsc9qvGR1efVDFGLrVsmkzv3qi45LTBjeUKSPmx9qEh",
+   "symbol": "NVDAx",
+   "icon": null,
+   "priceUsd": 206.92568286184718,
+   "change24hPct": 0.6895733453120998,
+   "mcapUsd": 66589786.92424291
+  }
+ ],
+ "buy": {
+  "MSFT": {
+   "underlying": "MSFT",
+   "company": "Microsoft",
+   "mint": "XspzcW1PRtgf6Wj92HCiZdjzKCyFekVD8P5Ueh3dRMX",
+   "mintShort": "Xspz…MX",
+   "issuerName": "xStocks",
+   "symbol": "MSFTx"
+  },
+  "AMZN": {
+   "underlying": "AMZN",
+   "company": "Amazon",
+   "mint": "Xs3eBt7uRfJX8QUs4suhyU8p2M6DoUDrJyWBa8LLZsg",
+   "mintShort": "Xs3e…sg",
+   "issuerName": "xStocks",
+   "symbol": "AMZNx"
+  },
+  "COIN": {
+   "underlying": "COIN",
+   "company": "Coinbase",
+   "mint": "Xs7ZdzSHLU9ftNJsii5fCeJhoRWSC32SQGzGQtePxNu",
+   "mintShort": "Xs7Z…Nu",
+   "issuerName": "xStocks",
+   "symbol": "COINx"
+  },
+  "AAPL": {
+   "underlying": "AAPL",
+   "company": "Apple",
+   "mint": "XsbEhLAtcf6HdfpFZ5xEMdqW8nfAvcsP5bdudRLJzJp",
+   "mintShort": "XsbE…Jp",
+   "issuerName": "xStocks",
+   "symbol": "AAPLx"
+  },
+  "SPCX": {
+   "underlying": "SPCX",
+   "company": "SpaceX",
+   "mint": "Xs3oZwbHvqis4NYcf4YKWmEia2eC84wSiVrcYcTqpH8",
+   "mintShort": "Xs3o…H8",
+   "issuerName": "xStocks",
+   "symbol": "SPCXx"
+  },
+  "TSLA": {
+   "underlying": "TSLA",
+   "company": "Tesla",
+   "mint": "XsDoVfqeBukxuZHWhdvWHBhgEHjGNst4MLodqsJHzoB",
+   "mintShort": "XsDo…oB",
+   "issuerName": "xStocks",
+   "symbol": "TSLAx"
+  },
+  "SPY": {
+   "underlying": "SPY",
+   "company": "SP500",
+   "mint": "XsoCS1TfEyfFhfvj8EtZ528L3CaKBDBRqRapnBbDF2W",
+   "mintShort": "XsoC…2W",
+   "issuerName": "xStocks",
+   "symbol": "SPYx"
+  },
+  "NVDA": {
+   "underlying": "NVDA",
+   "company": "NVIDIA",
+   "mint": "Xsc9qvGR1efVDFGLrVsmkzv3qi45LTBjeUKSPmx9qEh",
+   "mintShort": "Xsc9…Eh",
+   "issuerName": "xStocks",
+   "symbol": "NVDAx"
+  }
+ }
+}

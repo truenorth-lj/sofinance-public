@@ -3,6 +3,8 @@ import { Suspense, type ReactNode } from "react";
 import { BrandMark } from "@/components/brand-mark";
 import { HomepagePoolsTable, HomepagePoolsView } from "@/components/homepage-pools-table";
 import type { HomepagePoolsSnapshot } from "@/lib/homepage-pools";
+import type { HomepageStocks } from "@/lib/stock-market/public";
+import { StockCards } from "@/components/stocks/stock-cards";
 import { ArrowUpRight } from "lucide-react";
 import { APP_ROUTES, BLOG_ROUTES, DOCS_ROUTES, FAQ_ROUTE, LEGAL_ROUTES, LLMS_TXT_ROUTE } from "@/lib/public-urls";
 import { EXTERNAL_LINK_PROPS, SOCIAL_LINKS } from "@/lib/social-links";
@@ -75,7 +77,7 @@ function SectionHeading({ label, children }: { label: string; children: string }
   );
 }
 
-export function LandingPage({ initialPools = null }: { initialPools?: HomepagePoolsSnapshot | null } = {}) {
+export function LandingPage({ initialPools = null, initialStocks = null }: { initialPools?: HomepagePoolsSnapshot | null; initialStocks?: HomepageStocks | null } = {}) {
   return (
     <div className="min-h-screen overflow-x-clip bg-canvas text-cream">
       <div className="mx-auto max-w-[1280px] px-3 pb-10 pt-3 sm:px-5 sm:pt-5">
@@ -135,6 +137,8 @@ export function LandingPage({ initialPools = null }: { initialPools?: HomepagePo
               </p>
             </div>
           </section>
+
+          <StockCards initial={initialStocks} />
 
           <PairSection />
           <ReturnsSection />

@@ -1,5 +1,6 @@
 import { LandingPage } from "@/components/landing-page";
 import { loadHomepagePoolsSnapshot } from "@/lib/homepage-pools-snapshot";
+import { loadHomepageStocks } from "@/lib/stock-market/homepage";
 import { homeJsonLd, serializeJsonLd } from "@/lib/json-ld";
 import { pageMetadata } from "@/lib/seo";
 
@@ -19,11 +20,11 @@ export const metadata = pageMetadata({
 });
 
 export default async function Home() {
-  const initialPools = await loadHomepagePoolsSnapshot();
+  const [initialPools, initialStocks] = await Promise.all([loadHomepagePoolsSnapshot(), loadHomepageStocks()]);
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(homeJsonLd()) }} />
-      <LandingPage initialPools={initialPools} />
+      <LandingPage initialPools={initialPools} initialStocks={initialStocks} />
     </>
   );
 }

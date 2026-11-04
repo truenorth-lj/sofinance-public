@@ -66,7 +66,7 @@ blob workers, cannot start. This lane does not exercise workers or WalletConnect
 The same-origin scope is explicit, not a blanket permission:
 
 - GET the five smoke pages, their listed public navigation/prefetch destinations, `/_next/static/` assets and favicon.
-- GET `/api/rwa-pairs`, `/api/sol-usdc-price`, `/api/pool-range-apr`, `/api/pool-daily-apr`.
+- GET `/api/rwa-pairs`, `/api/sol-usdc-price`, `/api/pool-range-apr`, `/api/pool-daily-apr`, `/api/stock-market`.
 - POST `/api/verify-sign-token` only with the two fixed malformed tokens (expected HTTP400).
 - Wallet scan GET and token-metadata POST retain their disclosed synthetic empty stubs; no balance/RPC success is fabricated.
 - `/lumen` telemetry is aborted. Other operations, including unknown APIs, prepare, quote, sign/broadcast,

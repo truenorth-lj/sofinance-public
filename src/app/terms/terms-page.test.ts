@@ -25,6 +25,10 @@ describe("/terms page", () => {
     }
   });
 
+  it("charges the in-app spot swap the same 0.10%, only on the swapped USDC", () => {
+    expect(page).toContain("Buying a stock token with USDC in the app (spot swap) is also charged <strong>10 basis points (0.10%)</strong>, in USDC and only on the part that is swapped, the same as opening or adding to a position.");
+  });
+
   it("does not claim to be open source and shows no draft banner", () => {
     expect(page).not.toMatch(/open[- ]source/i);
     expect(page).not.toMatch(/draft|lawyer|pending review/i);
