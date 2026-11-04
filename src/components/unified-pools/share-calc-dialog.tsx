@@ -9,6 +9,7 @@ import { DEFAULT_PLAN_AMOUNT, DEFAULT_PLAN_DAYS } from "@/lib/lp-plan-intent";
 import { aprWindowAvgLabel } from "@/lib/lp-plan-best-apr";
 import { planPoolTerms, projectPoolPlan } from "@/lib/lp-plan-pool-terms";
 import { lowPlanApr, pairLabelSymbols, planShareSymbol } from "@/lib/lp-plan-shares";
+import { planDataNotice } from "@/lib/lp-plan-notice";
 import { dexDescriptors } from "@/lib/dex/client";
 import { cn } from "@/lib/cn";
 import { HodlVsPool } from "../plan/hodl-vs-pool";
@@ -26,7 +27,11 @@ const presetLabel = (value: string) => (value === "100" ? "$100" : `$${Number(va
 
 const panel = "rounded-xl border border-white/10 bg-white/[0.03]";
 
-export type ShareCalcPool = { poolAddress: string; pairLabel: string; protocol: string };
+export type ShareCalcPool = {
+  poolAddress: string; pairLabel: string; protocol: string;
+  /** Pool TVL from the list, used to split the pool's fees with your deposit; the daily data's newest TVL otherwise. */
+  tvlUsd?: number | null;
+};
 
 /** A label / value row of the side panel. */
 function InfoRow({ label, children }: { label: string; children: ReactNode }) {
@@ -53,8 +58,9 @@ function OpenCta({ action, label }: { action: OpenAction; label: string }) {
  * "Calculate shares" from a pool card: HODL vs HODL + earned shares for this one pool, in a dialog over the pools list.
  * Laid out like a vault page: stat tiles and a projection chart with a range switch on the left, the amount, the open
  * button and the assumptions on the right (stacked on phones, amount first). The only planning surface while
- * `/app/plan` is off (it redirects here): best of the 7 / 30 / 90-day averages, the LP's share of fees, daily
- * compounding, the DEX's opening and closing costs (`projectPoolPlan`); read-only.
+ * `/app/plan` is off (it redirects here): best of the 7 / 30 / 90-day averages, the LP's share of fees capped at what
+ * the pool really paid and split with the deposit, daily compounding, the DEX's opening and closing costs
+ * (`projectPoolPlan`); read-only. Too few days of data hides the numbers; a small pool gets a warning (`planDataNotice`).
  */
 export function ShareCalcDialog({ pool, open, onClose }: { pool: ShareCalcPool; open: OpenAction; onClose: () => void }) {
   const [amountText, setAmountText] = useState(DEFAULT_PLAN_AMOUNT);
@@ -63,7 +69,12 @@ export function ShareCalcDialog({ pool, open, onClose }: { pool: ShareCalcPool; 
   const amount = parseUsdc(amountText);
   const closeRef = useRef<HTMLButtonElement>(null);
   const poolYield = usePoolYield(pool.poolAddress);
-  const best = poolYield.status === "ready" ? poolYield.best : null;
+  const ready = poolYield.status === "ready" ? poolYield : null;
+  const poolTvlUsd = pool.tvlUsd !== undefined && pool.tvlUsd !== null && Number.isFinite(pool.tvlUsd) && pool.tvlUsd > 0
+    ? pool.tvlUsd : ready?.latestTvlUsd ?? null;
+  const notice = ready ? planDataNotice({ sampleDays: ready.best.sampleDays, poolTvlUsd }) : null;
+  // Too few days of data: no numbers at all (see `planDataNotice`).
+  const best = ready && notice?.kind !== "hide" ? ready.best : null;
   const symbols = useMemo(() => pairLabelSymbols(pool.pairLabel), [pool.pairLabel]);
   const shareSymbol = planShareSymbol(symbols);
   const holdLabel = shareSymbol ?? (symbols ? `${symbols.wrappedSymbol} + ${symbols.plainSymbol}` : pool.pairLabel);
@@ -80,8 +91,8 @@ export function ShareCalcDialog({ pool, open, onClose }: { pool: ShareCalcPool; 
   const exit = terms.exits.includes("usdc") ? "usdc" : terms.exits[0] ?? "tokens";
   const projection = useMemo(() => {
     if (!best || !amount) return null;
-    const at = (window: { aprPct: string; sampleDays: number; windowDays: number }, horizon: number) =>
-      projectPoolPlan({ capital: amount, days: horizon, window, terms, exit });
+    const at = (window: { aprPct: string; sampleDays: number; windowDays: number; poolFeesPerDayUsd?: string }, horizon: number) =>
+      projectPoolPlan({ capital: amount, days: horizon, window, terms, exit, poolTvlUsd });
     const lowWindow = lowPlanApr(best, best.windows);
     return {
       best: at(best, days),
@@ -93,7 +104,7 @@ export function ShareCalcDialog({ pool, open, onClose }: { pool: ShareCalcPool; 
         return { days: horizon, pct: new Decimal(plan.vsHold).div(plan.capital).mul(100).toFixed() };
       }),
     };
-  }, [best, amount, days, terms, exit]);
+  }, [best, amount, days, terms, exit, poolTvlUsd]);
 
   useEffect(() => {
     closeRef.current?.focus();
@@ -104,7 +115,9 @@ export function ShareCalcDialog({ pool, open, onClose }: { pool: ShareCalcPool; 
 
   const waiting = !amount
     ? "Enter an amount in USDC to see the projection."
-    : poolYield.status === "unavailable"
+    : notice?.kind === "hide"
+      ? notice.message
+      : poolYield.status === "unavailable"
       ? poolYield.reason
       : "Reading this pool's past fees…";
   // Opening from here closes this dialog first, so the open flow is never stacked under it.
@@ -158,6 +171,9 @@ export function ShareCalcDialog({ pool, open, onClose }: { pool: ShareCalcPool; 
 
           <OpenCta action={openFromHere} label={pool.pairLabel} />
 
+          {plan && notice?.kind === "warn" ? <p role="note" data-testid="share-calc-warning"
+            className="rounded-xl border border-lemon/30 bg-lemon/10 px-4 py-3 text-[12px] leading-relaxed text-cream">{notice.message}</p> : null}
+
           {plan && projection && best ? <dl className={cn(panel, "px-4 py-2.5")} data-testid="share-calc-assumptions">
             <InfoRow label={`Est. LP APY · ${aprWindowAvgLabel(best)}`}>{formatPct(plan.apyPct)}</InfoRow>
             <InfoRow label="Fees collected">${formatCents(plan.feesEarned)}</InfoRow>
@@ -169,7 +185,7 @@ export function ShareCalcDialog({ pool, open, onClose }: { pool: ShareCalcPool; 
             ) : null}
           </dl> : null}
           <p className="px-1 text-[11px] leading-relaxed text-smoke" data-testid="share-calc-footnote">
-            {`Best case from the pool's past fees, compounded daily: fees ${terms.lpShareLabel}, ${terms.openCost.rowLabel} to open, ${terms.exitCost[exit].label}. The stock's own price moves both sides alike and is left out. Network fees are ignored. Not a forecast.`}
+            {`Best case from the pool's past fees, compounded daily: fees ${terms.lpShareLabel}, ${terms.openCost.rowLabel} to open, ${terms.exitCost[exit].label}.${best?.poolFeesPerDayUsd !== undefined ? " Fees are capped at what the pool actually paid, shared with your deposit." : ""} The stock's own price moves both sides alike and is left out. Network fees are ignored. Not a forecast.`}
           </p>
         </aside>
 

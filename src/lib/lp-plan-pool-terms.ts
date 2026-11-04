@@ -164,15 +164,22 @@ export function planPoolTerms(input: {
 /**
  * The plan for one pool and one exit: the window's pool fee APR scaled to the LP's share, the DEX's opening cost on day
  * 0 and its closing cost for that exit. The Plan page and the pools-page calculator both project through here.
+ *
+ * When the window knows the pool's real fees (`poolFeesPerDayUsd`), each day's fees are capped at what the pool's LPs
+ * actually took per day, split by your share of the pool once your deposit is in (`poolTvlUsd` is the TVL before it).
+ * An average APR inflated by one busy day on a nearly empty pool cannot then project more than the pool ever paid.
  */
 export function projectPoolPlan(input: {
   capital: string;
   days: number;
-  window: { aprPct: string; sampleDays: number; windowDays: number };
+  window: { aprPct: string; sampleDays: number; windowDays: number; poolFeesPerDayUsd?: string };
   terms: PlanPoolTerms;
   exit: ExitAsset;
+  /** Pool TVL in USD today; missing or unknown caps at the pool's whole fee income. */
+  poolTvlUsd?: number | null;
 }): PlanYieldComparison {
-  const { capital, days, window, terms, exit } = input;
+  const { capital, days, window, terms, exit, poolTvlUsd } = input;
+  const tvl = poolTvlUsd !== undefined && poolTvlUsd !== null && Number.isFinite(poolTvlUsd) && poolTvlUsd > 0 ? poolTvlUsd : 0;
   return buildPlanComparison({
     capital,
     days,
@@ -181,6 +188,10 @@ export function projectPoolPlan(input: {
     aprWindowDays: window.windowDays,
     entryCost: planEntryCost(capital, terms.openCost.bps),
     exitCostBps: terms.exitCost[exit].bps,
+    feeCap: window.poolFeesPerDayUsd === undefined ? undefined : {
+      poolLpFeesPerDayUsd: new Decimal(window.poolFeesPerDayUsd).mul(terms.lpFeeShare).toFixed(),
+      poolTvlUsd: new Decimal(tvl).toFixed(),
+    },
   });
 }
 

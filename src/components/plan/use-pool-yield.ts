@@ -14,7 +14,11 @@ export type PoolDailyAprPayload = {
 export type PoolYieldState =
   | { status: "idle" }
   | { status: "loading"; poolId: string }
-  | { status: "ready"; poolId: string; best: BestPlanApr; fetchedAt: string }
+  | {
+    status: "ready"; poolId: string; best: BestPlanApr; fetchedAt: string;
+    /** TVL of the newest day that has one, in USD; null when no day does. */
+    latestTvlUsd: number | null;
+  }
   | { status: "unavailable"; poolId: string; reason: string };
 
 type LoadedYield = Extract<PoolYieldState, { status: "ready" | "unavailable" }>;
@@ -27,6 +31,14 @@ async function loadPoolDailyApr(poolId: string, signal: AbortSignal): Promise<Po
   const body = (await response.json()) as PoolDailyAprPayload;
   if (!response.ok) throw new Error(body.error || "Failed to load pool daily APR");
   return body;
+}
+
+function latestTvl(points: readonly DailyAprPoint[]): number | null {
+  for (let index = points.length - 1; index >= 0; index--) {
+    const tvl = points[index]!.tvlUsd;
+    if (tvl !== null && Number.isFinite(tvl) && tvl > 0) return tvl;
+  }
+  return null;
 }
 
 /**
@@ -63,6 +75,7 @@ export function usePoolYield(poolId: string | undefined): PoolYieldState {
             poolId,
             best,
             fetchedAt: payload.fetchedAt,
+            latestTvlUsd: latestTvl(payload.points),
           });
         } catch (error) {
           if (aborter.signal.aborted) return;
