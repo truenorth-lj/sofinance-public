@@ -16,25 +16,48 @@ export const MIN_LABEL_PX = 11;
 
 export type ChartBox = { width: number; height: number; compact: boolean };
 
+/**
+ * How the chart reads the USDC projection. The default plots USDC profit; the share view passes `toDisplay` (profit →
+ * shares gained per 100 held), its own end / hold labels, and optionally a lower projection drawn as a range band.
+ */
+export type ChartView = {
+  toDisplay?: (profit: string) => number;
+  endText?: string;
+  holdText?: string;
+  /** A second projection (the lowest recent window) whose curve bounds the band under the best case. */
+  low?: PlanYieldComparison | null;
+};
+
 /** Pure geometry for the SoFinance-vs-hold chart: scales, ticks, the curve and non-overlapping labels. */
 export function layoutChart(
   comparison: PlanYieldComparison,
   box: ChartBox,
+  view: ChartView = {},
 ) {
+  const toDisplay = view.toDisplay ?? ((profit: string) => new Decimal(profit).toNumber());
   const font = MIN_LABEL_PX;
   const pad = box.compact
     ? { l: 40, r: 10, t: 20, b: 26 }
     : { l: 52, r: 16, t: 28, b: 34 };
-  const end = new Decimal(comparison.endSofinance).toNumber();
-  const sofinance = comparison.points.map((point) => new Decimal(point.sofinance).toNumber());
-  const { yMin, yMax } = planChartScale(sofinance);
+  const end = toDisplay(comparison.endSofinance);
+  const sofinance = comparison.points.map((point) => toDisplay(point.sofinance));
+  const low = view.low && view.low.days === comparison.days ? view.low.points.map((point) => toDisplay(point.sofinance)) : null;
+  const { yMin, yMax } = planChartScale(low ? [...sofinance, ...low] : sofinance);
   const innerW = box.width - pad.l - pad.r;
   const innerH = box.height - pad.t - pad.b;
   const xAt = (day: number) => pad.l + (comparison.days <= 0 ? 0 : (day / comparison.days) * innerW);
   const yAt = (value: number) => pad.t + (1 - (value - yMin) / (yMax - yMin)) * innerH;
   const sofinancePath = comparison.points
-    .map((point, index) => `${index === 0 ? "M" : "L"}${xAt(point.day)} ${yAt(new Decimal(point.sofinance).toNumber())}`)
+    .map((point, index) => `${index === 0 ? "M" : "L"}${xAt(point.day)} ${yAt(sofinance[index]!)}`)
     .join(" ");
+  // Closed area from the best curve back along the low curve: the spread of recent windows, not a probability.
+  const bandPath = low
+    ? `${sofinancePath} ${low
+        .map((value, index) => ({ day: comparison.points[index]!.day, value }))
+        .reverse()
+        .map((point) => `L${xAt(point.day)} ${yAt(point.value)}`)
+        .join(" ")} Z`
+    : null;
   const holdY = holdPlotY(yAt(0), box.height - pad.b);
   const breakEven = breakEvenInPeriod(comparison.breakEvenDay, comparison.days);
   // Label the curve late in the period, where it has pulled well clear of the hold line.
@@ -51,17 +74,19 @@ export function layoutChart(
   }> = [
     {
       id: "hold",
-      text: "hold",
-      ax: pad.l + 10,
+      text: view.holdText ?? "hold",
+      // A longer hold label ("hold 100 SPCX") at the left edge runs into the curve as it crosses near break-even;
+      // mid-chart, under the dashed line, it sits where neither the curve nor the band reaches.
+      ax: view.holdText ? xAt(comparison.days * 0.5) : pad.l + 10,
       ay: holdY,
-      prefer: "above" as const,
-      ...estimateLabelSize("hold", font),
+      prefer: view.holdText ? ("below" as const) : ("above" as const),
+      ...estimateLabelSize(view.holdText ?? "hold", font),
     },
     {
       id: "sofinance",
       text: "SoFinance",
       ax: xAt(labelPoint.day),
-      ay: yAt(new Decimal(labelPoint.sofinance).toNumber()),
+      ay: yAt(sofinance[labelPoint.day]!),
       prefer: "above-left" as const,
       ...estimateLabelSize("SoFinance", font),
     },
@@ -78,13 +103,14 @@ export function layoutChart(
         ...estimateLabelSize(text, font),
       });
     }
+    const endText = view.endText ?? formatSigned(comparison.endSofinance);
     candidates.push({
       id: "end",
-      text: formatSigned(comparison.endSofinance),
+      text: endText,
       ax: xAt(comparison.days),
       ay: yAt(end),
       prefer: "left",
-      ...estimateLabelSize(formatSigned(comparison.endSofinance), font),
+      ...estimateLabelSize(endText, font),
     });
   }
 
@@ -101,6 +127,7 @@ export function layoutChart(
     xAt,
     yAt,
     sofinancePath,
+    bandPath,
     xTicks: xTicksForDays(comparison.days, innerW),
     yTicks: yTicksForScale(yMin, yMax, [0, end, sofinance[0] ?? 0], innerH),
     end,

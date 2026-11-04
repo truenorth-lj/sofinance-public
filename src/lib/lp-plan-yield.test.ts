@@ -208,3 +208,27 @@ describe("buildPlanComparison", () => {
     expect(() => buildPlanComparison({ ...base, aprWindowDays: 7.5 })).toThrow(/aprWindowDays/);
   });
 });
+
+describe("closing cost", () => {
+  it("takes the closing cost off what the position is worth on the day you exit", () => {
+    // 1,000 at 0.1% a day for 30 days = 1,030.44; minus 10 to open = 1,020.44; minus 1% (10.20) to close = 1,010.23.
+    const profit = compoundedProfit("1000", new Decimal("0.001"), 30, "10", 100);
+    expect(profit.toDecimalPlaces(2).toFixed()).toBe("10.23");
+  });
+
+  it("waits for fees to cover both the opening and the closing cost before breaking even", () => {
+    const rate = new Decimal("0.001");
+    expect(breakEvenDay("1000", rate, "10")).toBe(10);
+    expect(breakEvenDay("1000", rate, "10", 365, 100)).toBe(20);
+    // A closing cost alone still has to be earned back.
+    expect(breakEvenDay("1000", rate, "0", 365, 100)).toBe(11);
+  });
+
+  it("reports the fees earned and the closing cost in the comparison", () => {
+    const comparison = buildPlanComparison({ capital: "1000", days: 30, aprPct: "36.5", sampleDays: 30, aprWindowDays: 30, entryCost: "10", exitCostBps: 100 });
+    expect(new Decimal(comparison.feesEarned).toDecimalPlaces(2).toFixed()).toBe("30.44");
+    expect(new Decimal(comparison.exitCost).toDecimalPlaces(2).toFixed()).toBe("10.2");
+    expect(new Decimal(comparison.exitValue).toDecimalPlaces(2).toFixed()).toBe("1010.23");
+    expect(() => buildPlanComparison({ capital: "1000", days: 30, aprPct: "36.5", sampleDays: 30, aprWindowDays: 30, exitCostBps: -1 })).toThrow("exitCostBps is invalid");
+  });
+});

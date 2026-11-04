@@ -2,14 +2,13 @@
 import "@/lib/engine-host";
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import Link from "next/link";
 import { ArrowDownUp, ChevronDown, LayoutGrid, List, LoaderCircle, RefreshCw, Search } from "lucide-react";
 import { HIGHEST_RANGE_APR_7D_HELP, POOL_FEE_APR_24H_HELP } from "@/lib/apr-labels/copy";
 import { exactAprTitle } from "@/lib/apr-labels/format-apr";
 import { cn } from "@/lib/cn";
 import { dexDescriptors, fetchOpenRanges, type OpenRanges } from "@/lib/dex/client";
 import { SUPPORTED } from "@/lib/unified-positions/model";
-import { buildPlanPath } from "@/lib/public-urls";
+import { pairLabelSymbols, planShareSymbol } from "@/lib/lp-plan-shares";
 import { volumeDivergenceNote } from "@/lib/apr-labels/volume-divergence";
 import { HIGHEST_RANGE_COLUMN_LABEL, HIGHEST_RANGE_HELP } from "@/lib/range-apr/copy";
 import { unavailableReasonText } from "@/lib/range-apr/format";
@@ -29,6 +28,7 @@ import { clearPoolRangeAprClientCache, loadPoolRangeApr, type RangeAprProtocol }
 import type { PoolRangeAprPayload } from "@/lib/range-apr/types";
 import { isDexTxRouteEnabled } from "@/lib/protocol-flags";
 import { RegistryOpenModal } from "./registry-open-modal";
+import { ShareCalcDialog } from "./share-calc-dialog";
 import type { RhcPoolView } from "../rhc-univ4-open-panel";
 import type { OpenPositionPair } from "../use-open-position-controller";
 import { useWalletConnection } from "../wallet-connection";
@@ -84,8 +84,10 @@ function cardPairName(label: string) {
   return parts.map((part, index) => <span key={index} className="inline-block max-w-full truncate align-bottom">{part}</span>);
 }
 
-function PoolCard({ pool, apr, action, icons }: {
+function PoolCard({ pool, apr, action, icons, onCalculate }: {
   pool: UnifiedPool; apr: Apr7dState | undefined; action: OpenAction; icons: TokenIconMap | undefined;
+  /** Opens the share calculator over the list (only offered where the DEX's `plan` capability is supported). */
+  onCalculate: () => void;
 }) {
   const ready = apr?.status === "ready" ? apr : null;
   const volumeNote = ready ? volumeDivergenceNote(pool.volume24hUsd, ready.avgDailyVolumeUsd) : null;
@@ -94,6 +96,8 @@ function PoolCard({ pool, apr, action, icons }: {
   const raydium = pool.protocol === "raydium-clmm";
   // Registered DEXes say through their `plan` capability; Raydium (not in the DEX registry yet) keeps its link.
   const plan = dexDescriptors.descriptorFor(pool.protocol)?.capabilities.plan ?? (raydium ? SUPPORTED : null);
+  // Stock pools count shares; the stablecoin pool has no stock, so its button just says Calculate.
+  const calcLabel = planShareSymbol(pairLabelSymbols(pool.pairLabel)) ? "Calculate shares" : "Calculate";
   return <li className="flex min-w-0 flex-col rounded-[28px] bg-cream p-6 text-ink" data-pool={pool.key}>
     <div className="flex flex-wrap items-center gap-1.5"><ChainBadge chain={pool.chain} /><span className={cn(chip, "border border-ink/25")}>{PROTOCOL_LABELS[pool.protocol]}</span></div>
     <div className="mt-4 flex items-start justify-between gap-3">
@@ -137,13 +141,14 @@ function PoolCard({ pool, apr, action, icons }: {
     </dl>
     <div className="mt-auto flex flex-wrap items-center gap-3 pt-5">
       <OpenButton action={action} label={pool.pairLabel} />
-      {plan?.supported && <Link href={buildPlanPath({ poolId: pool.poolAddress, pair: pool.pairLabel, protocol: pool.protocol })}
-        className="inline-flex h-11 items-center rounded-full border border-ink/40 px-4 text-sm font-semibold outline-none transition-colors hover:border-ink focus-visible:shadow-[0_0_0_3px_var(--color-lilac)]">
-        Plan this pool
-      </Link>}
+      {/* `border-beam` (globals.css): a quiet streak of light circling the border; still for reduced motion. */}
+      {plan?.supported && <button type="button" onClick={onCalculate} aria-haspopup="dialog" aria-label={`${calcLabel} for ${pool.pairLabel}`}
+        className="border-beam inline-flex h-11 items-center rounded-full border border-ink/25 px-4 text-sm font-semibold outline-none transition-colors hover:border-ink/60 focus-visible:shadow-[0_0_0_3px_var(--color-lilac)]">
+        {calcLabel}
+      </button>}
       {plan && !plan.supported && <span aria-disabled="true" title={plan.reason} data-testid="plan-unavailable"
         className="inline-flex h-11 cursor-not-allowed items-center rounded-full border border-ink/15 px-4 text-sm font-semibold text-ink/40">
-        Plan this pool<span className="sr-only">: {plan.reason}</span>
+        {calcLabel}<span className="sr-only">: {plan.reason}</span>
       </span>}
       {raydium
         ? <a href={raydiumPoolUrl(pool.poolAddress)} target="_blank" rel="noreferrer" title={`Open pool ${pool.poolAddress} on Raydium`}
@@ -311,6 +316,8 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", header 
   }, [connected, connect, onOpenRhc, rhcByKey, rowsByKey]);
 
   const [registryOpen, setRegistryOpen] = useState<UnifiedPool | null>(null);
+  const [calcPool, setCalcPool] = useState<UnifiedPool | null>(null);
+  const closeCalc = useCallback(() => setCalcPool(null), []);
   const actionFor = useCallback((pool: UnifiedPool): OpenAction => {
     // Registered DEXes say through their `open` capability and open in the registry dialog (PR10); the shared DEX route
     // is off on some deployments (DEX_TX_ROUTE_ENABLED), and then they offer no Open button at all.
@@ -409,10 +416,12 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", header 
 
     {selected.pools.length > 0 && (view === "cards"
       ? <ul className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3" data-testid="pools-cards">
-          {selected.pools.map((pool) => <PoolCard key={pool.key} pool={pool} apr={apr[pool.key]} action={actionFor(pool)} icons={loaded.icons} />)}
+          {selected.pools.map((pool) => <PoolCard key={pool.key} pool={pool} apr={apr[pool.key]} action={actionFor(pool)} icons={loaded.icons}
+            onCalculate={() => setCalcPool(pool)} />)}
         </ul>
       : <PoolTable pools={selected.pools} apr={apr} actionFor={actionFor} sort={sort} onSort={onSort} icons={loaded.icons} />)}
 
+    {calcPool && <ShareCalcDialog key={calcPool.key} pool={calcPool} open={actionFor(calcPool)} onClose={closeCalc} />}
     {openPair && <OpenPositionModal pair={openPair} onClose={() => setOpenPair(null)} />}
     {registryOpen && <RegistryOpenDialog key={registryOpen.key} pool={registryOpen} rwaList={rwaListKeys.has(registryOpen.key)} onClose={() => setRegistryOpen(null)} />}
   </section>;

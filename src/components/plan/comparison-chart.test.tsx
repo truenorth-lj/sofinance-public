@@ -75,4 +75,40 @@ describe("ComparisonChart", () => {
     expect(markup).toContain("Until a pool is chosen, there is no yield to plot");
     expect(markup).not.toContain("<path");
   });
+
+  it("counts a same-stock pool in shares per 100 held, with USDC one click away", () => {
+    const markup = renderToStaticMarkup(
+      createElement(ComparisonChart, { status: "ready", comparison: plan({ days: 365, aprPct: "11.2", windowDays: 90 }), shareSymbol: "SPCX" }),
+    );
+    // 1,000 × (1 + 0.112/365)^365 − 1,000 − 10 → +10.85 per 100 held.
+    expect(markup).toContain("110.85 SPCX");
+    expect(markup).toContain("+10.85 SPCX per 100 held vs hold");
+    expect(markup).toContain("hold 100 SPCX");
+    expect(markup).toContain("Counted per 100 SPCX held");
+    expect(markup).toMatch(/aria-pressed="true"[^>]*>SPCX shares/);
+    expect(markup).toMatch(/aria-pressed="false"[^>]*>USDC/);
+    expect(markup).not.toContain("USDC vs hold");
+  });
+
+  it("stays in USDC with no unit toggle when the pool has no stock", () => {
+    const markup = renderToStaticMarkup(
+      createElement(ComparisonChart, { status: "ready", comparison: plan({ days: 30 }), shareSymbol: null }),
+    );
+    expect(markup).toContain("USDC vs hold");
+    expect(markup).not.toContain("Chart unit");
+    expect(markup).not.toContain("per 100 held");
+  });
+
+  it("draws the range down to the lowest recent window", () => {
+    const markup = renderToStaticMarkup(
+      createElement(ComparisonChart, {
+        status: "ready",
+        comparison: plan({ days: 365, aprPct: "11.2", windowDays: 90 }),
+        low: plan({ days: 365, aprPct: "7.7", windowDays: 7, sampleDays: 7 }),
+        shareSymbol: "SPCX",
+      }),
+    );
+    expect(markup).toContain('fill-opacity="0.09"');
+    expect(markup).toContain("Range down to the 7-day average (7.7% APR)");
+  });
 });

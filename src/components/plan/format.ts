@@ -27,6 +27,13 @@ export function formatSigned(value: string | number): string {
   return `${amount.isNegative() ? MINUS : "+"}${grouped(amount.abs(), 2, false)}`;
 }
 
+/** "+$3.12" / "−$0.73" / "$0.00" — a dollar gain or loss, always to the cent. */
+export function formatSignedUsd(value: string | number): string {
+  const amount = new Decimal(value).toDecimalPlaces(2);
+  if (amount.isZero()) return "$0.00";
+  return `${amount.isNegative() ? MINUS : "+"}$${grouped(amount.abs(), 2, false)}`;
+}
+
 /** "+2.04%" / "−0.5%" / "0%" — a gain or loss as a percent, to two places. */
 export function formatSignedPct(value: string | number): string {
   const amount = new Decimal(value).toDecimalPlaces(2);

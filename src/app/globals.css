@@ -42,3 +42,42 @@ html { background: #0b0b0b; }
 body { margin: 0; }
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; }
+
+/*
+ * Border beam: a short streak of light that travels around an element's border (the pool card's "Calculate shares").
+ * The conic gradient is masked down to a `--beam-width` ring; only `--beam-angle` animates. Still for reduced motion.
+ */
+@property --beam-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+@keyframes beam-spin {
+  to { --beam-angle: 360deg; }
+}
+.border-beam {
+  position: relative;
+  isolation: isolate;
+}
+.border-beam::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: var(--beam-width, 1.5px);
+  pointer-events: none;
+  background: conic-gradient(
+    from var(--beam-angle),
+    transparent 0deg 250deg,
+    color-mix(in srgb, var(--beam-color, #0d0d0c) 35%, transparent) 300deg,
+    var(--beam-color, #0d0d0c) 345deg,
+    transparent 360deg
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  animation: beam-spin 3.6s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .border-beam::before { animation: none; opacity: 0; }
+}

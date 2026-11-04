@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   connected: false,
   modal: vi.fn(),
   registryModal: vi.fn(),
+  calc: vi.fn(),
   routeEnabled: true,
   openOverride: null as null | { supported: false; reason: string },
   planOverride: null as null | { supported: false; reason: string },
@@ -39,6 +40,8 @@ vi.mock("../wallet-connection", () => ({ useWalletConnection: () => ({ connected
 vi.mock("@/lib/protocol-flags", async (importOriginal) => ({ ...await importOriginal<typeof import("@/lib/protocol-flags")>(), isDexTxRouteEnabled: () => mocks.routeEnabled }));
 vi.mock("./registry-open-modal", () => ({ RegistryOpenModal: (props: { pool: { poolAddress: string }; descriptor: { id: string } }) => {
   mocks.registryModal(props.pool.poolAddress, props.descriptor.id); return null; } }));
+vi.mock("./share-calc-dialog", () => ({ ShareCalcDialog: (props: { pool: { poolAddress: string }; open: { kind: string } }) => {
+  mocks.calc(props.pool.poolAddress, props.open.kind); return null; } }));
 vi.mock("../open-position-modal", () => ({ OpenPositionModal: (props: { pair: { poolAddress: string } }) => { mocks.modal(props.pair.poolAddress); return null; } }));
 
 const rhcSpec = UNIV4_RHC_ALLOWLISTED_POOLS[0]!;
@@ -68,6 +71,7 @@ beforeEach(() => {
   mocks.registryModal.mockReset();
   mocks.connect.mockReset();
   mocks.modal.mockReset();
+  mocks.calc.mockReset();
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -132,10 +136,11 @@ describe("UnifiedPoolsPanel", () => {
     expect(shown()).toContain("solana:met1");
     const card = container.querySelector('[data-pool="solana:met1"]')!;
     expect(card.querySelector("[data-testid=open-disabled]")).toBeNull();
-    const links = [...card.querySelectorAll<HTMLAnchorElement>("a")];
-    expect(links.map((link) => link.textContent)).toEqual(["Plan this pool"]);
-    expect(links[0]!.getAttribute("href")).toMatch(/^\/app\/plan\?.*pool=met1/);
-    expect(card.querySelector("a[target='_blank']")).toBeNull();
+    expect(card.querySelectorAll("a")).toHaveLength(0);
+    const calculate = card.querySelector<HTMLButtonElement>("button[aria-haspopup=dialog]")!;
+    expect(calculate.textContent).toMatch(/^Calculate/);
+    await act(async () => { calculate.click(); });
+    expect(mocks.calc).toHaveBeenCalledWith("met1", "open");
     const open = card.querySelector<HTMLButtonElement>("button[aria-label^='Open position in']")!;
     await act(async () => { open.click(); });
     expect(mocks.registryModal).toHaveBeenCalledWith("met1", "meteora-dlmm");
@@ -164,17 +169,17 @@ describe("UnifiedPoolsPanel", () => {
     expect(mocks.connect).not.toHaveBeenCalled();
   });
 
-  it("an unsupported plan capability greys \"Plan this pool\" with its reason (no link)", async () => {
+  it("an unsupported plan capability greys the calculator button with its reason", async () => {
     mocks.planOverride = { supported: false, reason: "Planning needs a paid data feed for this pool." };
     await render({ orca: false, meteora: true, meteoraOpen: true, rhc: true });
     const card = container.querySelector('[data-pool="solana:met1"]')!;
-    expect(card.querySelector("a[href^='/app/plan']")).toBeNull();
+    expect(card.querySelector("button[aria-haspopup=dialog]")).toBeNull();
     const greyed = card.querySelector<HTMLElement>("[data-testid=plan-unavailable]")!;
     expect(greyed.getAttribute("aria-disabled")).toBe("true");
     expect(greyed.getAttribute("title")).toBe("Planning needs a paid data feed for this pool.");
     expect(greyed.textContent).toContain("Planning needs a paid data feed for this pool.");
-    // Raydium pools (not in the DEX registry) keep their link.
-    expect(container.querySelector('[data-pool="solana:spcxA"] a[href^="/app/plan"]')).not.toBeNull();
+    // Raydium pools (not in the DEX registry) keep their calculator.
+    expect(container.querySelector('[data-pool="solana:spcxA"] button[aria-haspopup=dialog]')).not.toBeNull();
   });
 
   it("the same pair on Raydium and Meteora is two rows with their protocol badges; duplicates collapse within a protocol", async () => {
@@ -355,7 +360,7 @@ describe("UnifiedPoolsPanel cards (the RWA pairs card fields)", () => {
     expect(card("solana:tsla").querySelector("button[aria-label='About Est. highest range APR']")).not.toBeNull();
   });
 
-  it("shows token icons from the database (wrapped first, Raydium fallback), short issuer names, a Plan link and the pool on Raydium", async () => {
+  it("shows token icons from the database (wrapped first, Raydium fallback), short issuer names, the share calculator and the pool on Raydium", async () => {
     mocks.icons = { solana: { x1: "https://static.jup.ag/x1.png" }, robinhood: {} };
     await render();
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
@@ -363,8 +368,13 @@ describe("UnifiedPoolsPanel cards (the RWA pairs card fields)", () => {
     const spcx = card("solana:spcxA");
     expect([...spcx.querySelectorAll("img")].map((img) => img.getAttribute("src"))).toEqual(["https://static.jup.ag/x1.png", "https://img-v1.raydium.io/icon/s1.png"]);
     expect(spcx.querySelector("h3 + p")!.getAttribute("title")).toBe("SPCXx name / SPCX name");
-    expect(spcx.querySelector<HTMLAnchorElement>("a[href^='/app/plan']")!.textContent).toBe("Plan this pool");
-    expect(spcx.querySelector<HTMLAnchorElement>("a[href^='/app/plan']")!.getAttribute("href")).toContain("pool=spcxA");
+    const calculate = spcx.querySelector<HTMLButtonElement>("button[aria-haspopup=dialog]")!;
+    expect(calculate.textContent).toBe("Calculate shares");
+    expect(calculate.getAttribute("aria-label")).toBe("Calculate shares for SPCXx/SPCX");
+    // A streak of light circles its border (globals.css `border-beam`, still for reduced motion).
+    expect(calculate.className).toContain("border-beam");
+    await act(async () => { calculate.click(); });
+    expect(mocks.calc).toHaveBeenLastCalledWith("spcxA", "open");
     const raydium = spcx.querySelector<HTMLAnchorElement>("a[target='_blank']")!;
     expect(raydium.getAttribute("href")).toBe("https://raydium.io/clmm/create-position/?pool_id=spcxA");
     expect(raydium.getAttribute("rel")).toBe("noreferrer");

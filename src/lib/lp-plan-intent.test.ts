@@ -11,7 +11,7 @@ import {
 } from "./lp-plan-intent";
 
 const base: PlanSetup = {
-  days: 30,
+  days: 365,
   amount: "1000",
   lossAlert: DEFAULT_PLAN_LOSS_ALERT,
   exitAsset: "usdc",
@@ -50,7 +50,7 @@ describe("applyPlanChange", () => {
 describe("parsePlanSetup", () => {
   const parse = (query: string) => parsePlanSetup(new URLSearchParams(query));
 
-  it("defaults to 1,000 USDC for 30 days with a 5% alert and a USDC exit", () => {
+  it("defaults to 1,000 USDC for 365 days with a 5% alert and a USDC exit", () => {
     expect(parse("")).toEqual(DEFAULT_PLAN_SETUP);
     expect(DEFAULT_PLAN_SETUP).toEqual(base);
   });
@@ -75,7 +75,7 @@ describe("parsePlanSetup", () => {
 
   it("falls back to defaults for invalid values", () => {
     expect(parse("amount=abc&days=0&alert=-1&exit=weird")).toEqual(DEFAULT_PLAN_SETUP);
-    expect(parse("days=400").days).toBe(30);
+    expect(parse("days=400").days).toBe(365);
     expect(parse("amount=100&alert=500").lossAlert).toBe("5");
   });
 });

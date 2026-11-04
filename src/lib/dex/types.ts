@@ -97,6 +97,11 @@ export type DexMeta = {
   addressCase: "exact" | "lowercase";
   feePolicy: FeePolicy;
   /**
+   * Share of a swap's gross fee the pool pays its LPs after the protocol's own cut (0–1), for planning only: the Plan
+   * page scales the pool fee APR by it. Omitted = the pool fee APR is already what LPs keep.
+   */
+  planLpFeeShare?: number;
+  /**
    * Tokens an Add (deposit into an existing position) accepts: the pool's own two (`poolTokens`) plus any other token
    * the adapter swaps in (`extra`, e.g. USDC on Solana). The Add panel offers exactly these.
    */

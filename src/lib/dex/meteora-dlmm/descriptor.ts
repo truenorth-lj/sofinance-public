@@ -45,6 +45,8 @@ export const meteoraDlmmDescriptor: DexDescriptor = Object.freeze({
     /** The new position account is a fresh keypair the browser creates and signs with (never sent to the server). */
     positionCosigner: "ephemeral-keypair",
     addressCase: "exact",
+    /** datapi `pool_config.protocol_fee_pct` is 10 on the listed pools: LPs keep 90% of each swap fee. */
+    planLpFeeShare: 0.9,
     feePolicy: METEORA_DLMM_FEE_POLICY,
     /** Same inputs as opening (SOL is refused). */
     depositInputs: Object.freeze({ poolTokens: true, extra: Object.freeze([{ id: USDC_MINT, symbol: "USDC", decimals: 6 }]) }),
