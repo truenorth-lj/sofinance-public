@@ -57,7 +57,7 @@ export function validateCompoundRaydiumInstructions(instructions: TransactionIns
     !equal(harvest, 9, accounts[0].address) || !equal(harvest, 10, accounts[1].address) || !equal(add, 7, accounts[0].address) || !equal(add, 8, accounts[1].address) ||
     !equal(harvest, 14, state.mintA) || !equal(harvest, 15, state.mintB) || !equal(add, 13, state.mintA) || !equal(add, 14, state.mintB) ||
     !equal(harvest, 4, protocol) || !equal(add, 3, protocol) || !equal(harvest, 7, lower) || !equal(add, 5, lower) || !equal(harvest, 8, upper) || !equal(add, 6, upper) ||
-    !equal(harvest, 5, state.vaultA) || !equal(add, 9, state.vaultA) || !equal(harvest, 6, state.vaultB) || !equal(add, 10, state.vaultB)) throw new Error("Compound instruction NFT, pool, or isolated yield account mismatch");
+    !equal(harvest, 5, state.vaultA) || !equal(add, 9, state.vaultA) || !equal(harvest, 6, state.vaultB) || !equal(add, 10, state.vaultB)) throw new Error("Compound instruction NFT, pool, or isolated harvest account mismatch");
   const allowedWrites = new Set([state.poolId, state.positionAccount, state.vaultA, state.vaultB, lower, upper, bitmap, accounts[0].address, accounts[1].address,
     ...state.rewards.flatMap((reward) => [reward.vault, reward.compounded ? (reward.mint === state.mintA ? accounts[0].address : accounts[1].address) : reward.account])]);
   for (const ix of instructions) if (ix.keys.some((key) => key.isSigner && key.pubkey.toBase58() !== state.wallet ||
@@ -195,7 +195,7 @@ export async function buildAndSimulateCompound(walletAddress: string, positionMi
   });
   const sized = sizeBufferedCompoundLiquidity(BigInt(swapped.sqrtPriceX64), BigInt(state.lowerSqrtX64), BigInt(state.upperSqrtX64),
     conservative.a, conservative.b, BigInt(state.liquidity));
-  if (sized.liquidity === 0n) throw new Error("After yield swap still insufficient for minimum liquidity unit, cannot reinvest");
+  if (sized.liquidity === 0n) throw new Error("After harvest swap still insufficient for minimum liquidity unit, cannot reinvest");
   const add = ClmmInstrument.increasePositionFromLiquidityInstructions({ ...common, liquidity: new BN(sized.liquidity.toString()),
     amountMaxA: new BN(sized.amountMaxA.toString()), amountMaxB: new BN(sized.amountMaxB.toString()) });
   if (add.signers.length || add.instructions.length !== 1) throw new Error("Compound increase instruction mismatch");
@@ -203,7 +203,7 @@ export async function buildAndSimulateCompound(walletAddress: string, positionMi
   const simulated = build([...harvest.instructions, ...swapInstructions, ...add.instructions]);
   const sizeBytes = assertCompoundTransactionSize(simulated);
   const verified = await simulateWithFee(simulated, sized.liquidity);
-  if (verified.rewards.some((reward) => BigInt(reward.amount) > 0n)) throw new Error("Simulation found unswapped third reward yield, cannot fully reinvest; please reprepare");
+  if (verified.rewards.some((reward) => BigInt(reward.amount) > 0n)) throw new Error("Simulation found unswapped third reward harvest, cannot fully reinvest; please reprepare");
   const creditedPrior = (mint: string) => prior.sources.filter((source) => source.mint === mint).reduce((sum, source) => sum + BigInt(source.amount), 0n);
   const swap = plan.swap ? { ...plan.swap, sqrtPriceAfterX64: swapped.sqrtPriceX64, simulatedOutputAmount } : null;
   const latest = await connection.getLatestBlockhash("confirmed");

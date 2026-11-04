@@ -25,7 +25,7 @@ describe("/docs/risks Robinhood Chain section", () => {
   });
 
   it("states only code- or chain-backed facts and defers issuer powers to issuer terms", () => {
-    expect(section).toContain("7-day backtest in the create-position flow is Solana-only");
+    expect(section).toContain("7-day range estimate in the create-position flow is Solana-only");
     expect(section).toContain(`${OPEN_FEE_BPS} bps of the tokens the swap returns`);
     expect(section).toContain("no SoFinance fee");
     expect(section).toContain("single externally owned wallet");

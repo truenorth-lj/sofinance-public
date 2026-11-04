@@ -117,9 +117,9 @@ describe("/app My positions with registry DEXes", () => {
     await render({ initialView: "performance" });
     expect(state.dexCalls).toContainEqual(["/api/dex/meteora-dlmm/performance", { positionKey: `meteora-dlmm:${POSITION}` }]);
     const panel = container.querySelector("[data-testid=registry-performance]")!;
-    expect(panel.textContent).toContain("Est. fee-only APR (USD) · not guaranteed4.71%");
+    expect(panel.textContent).toContain("Est. fee-only APR (USD) · not a prediction4.71%");
     expect(panel.textContent).toContain("Current equity (USD)$502.0000");
-    expect(panel.textContent).toContain("Fees earned (USD)$2.0000");
+    expect(panel.textContent).toContain("Fees accrued (USD)$2.0000");
     const chart = panel.querySelector("[data-testid=pool-daily-apr-chart]")!;
     expect(chart.getAttribute("data-pool")).toBe(POOL);
     expect(chart.getAttribute("data-overlay")).toBe("1");
@@ -251,7 +251,7 @@ describe("/app My positions with registry DEXes", () => {
     expect(withdraw.disabled).toBe(true);
     expect(container.querySelector("[data-testid=registry-withdraw] [data-testid=registry-position-locked]")?.textContent).toContain("Another transaction on this position is still in progress");
     // Another tab (the Claim panel unmounts): Compound and Add stay locked; nothing else is requested.
-    await act(async () => tab("Yield Compound").click());
+    await act(async () => tab("Compound fees").click());
     const compound = [...container.querySelectorAll<HTMLButtonElement>("[data-testid=registry-compound] button")].find((b) => b.textContent === "Compound fees")!;
     expect(compound.disabled).toBe(true);
     await act(async () => compound.click());
@@ -263,7 +263,7 @@ describe("/app My positions with registry DEXes", () => {
     // The claim's prepare ends (refused here): the lock is released for every op.
     await act(async () => finish());
     await settle();
-    await act(async () => tab("Yield Compound").click());
+    await act(async () => tab("Compound fees").click());
     expect([...container.querySelectorAll<HTMLButtonElement>("[data-testid=registry-compound] button")].find((b) => b.textContent === "Compound fees")!.disabled).toBe(false);
     expect(container.querySelector("[data-testid=registry-position-locked]")).toBeNull();
   });

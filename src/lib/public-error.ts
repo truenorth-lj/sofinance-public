@@ -83,7 +83,7 @@ export function mapKnownChainError(text: string): string | null {
   if (/blockhash not found|blockhash expired|transaction has expired|blockhashNotFound/i.test(text)) {
     return TX_EXPIRED_MESSAGE;
   }
-  if (/already in use|already exist/i.test(text)) return "Yield accounts already exist; please reprepare.";
+  if (/already in use|already exist/i.test(text)) return "Harvest accounts already exist; please reprepare.";
   if (/account not found/i.test(text)) return "Required account was not found on-chain.";
   if (/custom program error:\s*0x1785|Custom":6021\b/i.test(text)) return "Raydium rejected the liquidity change.";
   return null;

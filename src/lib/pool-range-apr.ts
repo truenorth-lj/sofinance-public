@@ -26,9 +26,9 @@ export const RANGE_APR_LABEL = "Est. fee APR";
 export const SOLANA_CLMM_CHAIN_SOURCE = "Solana RPC: CLMM pool account + tick arrays (liquidity per price bin)";
 
 export const RANGE_APR_ASSUMPTIONS = [
-  `Estimate, not a guarantee. Back-tests the last ${VOLUME_WINDOW_DAYS} complete UTC days of pool volume (GeckoTerminal, current day excluded) against the pool's liquidity right now (on-chain tick arrays).`,
+  `Estimate, not a prediction. Uses the last ${VOLUME_WINDOW_DAYS} complete UTC days of pool volume (GeckoTerminal, current day excluded) against the pool's liquidity right now (on-chain tick arrays).`,
   "Fees = volume that traded inside your range × pool fee rate × the share LPs keep (Raydium keeps protocol + fund cuts) × your share of the liquidity in each price bin.",
-  "Volume only counts while the price is inside your range, using hourly price history; time out of range earns nothing.",
+  "Volume only counts while the price is inside your range, using hourly price history; time out of range collects nothing.",
   "Assumes volume, other LPs' liquidity and prices behave like the recent past. Excludes impermanent loss, rewards, swap and rent costs.",
   `Rate shown for a ~$${RANGE_APR_REFERENCE_CAPITAL_USD} deposit; larger deposits dilute their own share of the fees.`,
 ].join(" ");

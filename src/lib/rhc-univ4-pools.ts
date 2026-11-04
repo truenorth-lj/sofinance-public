@@ -41,7 +41,7 @@ export function rhcPoolsResult(pools: Univ4PoolSummary[], fetchedAt: string, sna
     fetchedAt,
     source: snapshot ? SNAPSHOT_SOURCE : LIVE_SOURCE,
     aprLabel: ESTIMATED_APR_LABEL,
-    aprNote: "Estimated (估計) pool fee APR = hook's current fee rate × 24h volume / TVL × 365 (USD, from public indexers). The StablePairHook fee is dynamic; an estimate, not a guarantee.",
+    aprNote: "Estimated (估計) pool fee APR = hook's current fee rate × 24h volume / TVL × 365 (USD, from public indexers). The StablePairHook fee is dynamic; an estimate, not a prediction.",
     ...(snapshot ? { snapshot: { stale: snapshot.stale } } : {}),
   };
 }

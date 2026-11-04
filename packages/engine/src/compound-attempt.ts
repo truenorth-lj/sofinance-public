@@ -117,7 +117,7 @@ function archiveRaw(storage: StorageWrite, key: string, suffix: string) {
 export function persistCompoundReceipt(storage: StorageWrite, receipt: CompoundReceipt, archiveInvalid = false) {
   if (!publicKey(receipt.wallet) || !publicKey(receipt.positionMint) || !signature(receipt.sourceSignature) ||
     !accounts(receipt.compoundAccounts) || receipt.compoundAccounts.length !== 2) {
-    throw new Error("Yield account record cannot be verified");
+    throw new Error("Harvest account record cannot be verified");
   }
   const previous = loadCompoundReceipts(storage, receipt.wallet);
   if (previous.invalid) {
@@ -127,7 +127,7 @@ export function persistCompoundReceipt(storage: StorageWrite, receipt: CompoundR
   const serialized = JSON.stringify([...previous.receipts.filter((item) => receiptId(item) !== receiptId(receipt)), receipt]);
   storage.setItem(compoundReceiptsKey(receipt.wallet), serialized);
   if (storage.getItem(compoundReceiptsKey(receipt.wallet)) !== serialized) {
-    throw new Error("Unable to save yield account record; transaction not broadcast");
+    throw new Error("Unable to save harvest account record; transaction not broadcast");
   }
 }
 
@@ -156,7 +156,7 @@ export function removeRecoveredReceipt(storage: StorageWrite, attempt: CompoundA
       !item.compoundAccounts.every((account) => recoveredAddresses.includes(account.address))));
   storage.setItem(compoundReceiptsKey(attempt.wallet), serialized);
   if (storage.getItem(compoundReceiptsKey(attempt.wallet)) !== serialized) {
-    throw new Error("Balance recovered, but unable to update local yield account records");
+    throw new Error("Balance recovered, but unable to update local harvest account records");
   }
 }
 
@@ -177,13 +177,13 @@ export function abandonUnsentCompoundAttempt(storage: StorageWrite, attempt: Com
 export function removeUnconfirmedCompoundReceipt(storage: StorageWrite, attempt: CompoundAttempt) {
   if (attempt.kind !== "compound") return;
   const saved = loadCompoundReceipts(storage, attempt.wallet);
-  if (saved.invalid) throw new Error("Compound did not complete, but local yield account records need verification");
+  if (saved.invalid) throw new Error("Compound did not complete, but local harvest account records need verification");
   const remaining = saved.receipts.filter((receipt) => receipt.sourceSignature !== attempt.signature);
   if (remaining.length === saved.receipts.length) return;
   const serialized = JSON.stringify(remaining);
   storage.setItem(compoundReceiptsKey(attempt.wallet), serialized);
   if (storage.getItem(compoundReceiptsKey(attempt.wallet)) !== serialized) {
-    throw new Error("Unable to clear unconfirmed yield account record");
+    throw new Error("Unable to clear unconfirmed harvest account record");
   }
 }
 
@@ -193,13 +193,13 @@ export function removeConsumedCompoundReceipts(storage: StorageWrite, attempt: C
   const sources = attempt.summary.priorSources || [];
   if (sources.length === 0) return;
   const saved = loadCompoundReceipts(storage, attempt.wallet);
-  if (saved.invalid) throw new Error("Compound confirmed, but prior yield account records need verification");
+  if (saved.invalid) throw new Error("Compound confirmed, but prior harvest account records need verification");
   const serialized = JSON.stringify(saved.receipts.filter((receipt) =>
     receipt.sourceSignature === attempt.signature || !receipt.compoundAccounts.every((account) =>
       sources.some((source) => source.sourceSignature === receipt.sourceSignature && source.address === account.address))));
   storage.setItem(compoundReceiptsKey(attempt.wallet), serialized);
   if (storage.getItem(compoundReceiptsKey(attempt.wallet)) !== serialized) {
-    throw new Error("Compound confirmed, but unable to update prior yield account records");
+    throw new Error("Compound confirmed, but unable to update prior harvest account records");
   }
 }
 

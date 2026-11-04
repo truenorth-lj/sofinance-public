@@ -97,7 +97,7 @@ describe("sendSignedCompoundTransaction: pre-broadcast failures claim sent:false
   it("a positive third-reward amount blocks the send ('cannot fully reinvest')", async () => {
     vi.mocked(simulateAndVerifyCompound).mockResolvedValue({ rewards: [{ amount: "0" }, { amount: "1" }] } as never);
     const error = await failure(sendSignedCompoundTransaction(wallet, transaction, summaryFor()));
-    expect(String((error.cause as Error).message)).toContain("Third reward yield appeared");
+    expect(String((error.cause as Error).message)).toContain("Third reward harvest appeared");
     expect(error.sent).toBe(false);
     expect(connection.sendRawTransaction).not.toHaveBeenCalled();
   });

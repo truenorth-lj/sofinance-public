@@ -38,7 +38,7 @@ export function optimizeCompoundSwap(input: SwapContext) {
   const cache = new Map<bigint, ReturnType<typeof evaluate>>();
   function evaluate(amount: bigint) {
     const q = amount === 0n ? { output: 0n, sqrtPriceX64: price } : quote(direction, amount);
-    if (q.output < 0n || q.output > MAX_U64 || q.sqrtPriceX64 <= 0n) throw new Error("Invalid yield swap quote");
+    if (q.output < 0n || q.output > MAX_U64 || q.sqrtPriceX64 <= 0n) throw new Error("Invalid harvest swap quote");
     const a = direction === "a-to-b" ? amountA - amount : amountA + q.output;
     const b = direction === "a-to-b" ? amountB + q.output : amountB - amount;
     const difference = ratioDifference(q.sqrtPriceX64, lower, upper, a, b);
@@ -66,10 +66,10 @@ export function optimizeCompoundSwap(input: SwapContext) {
   if (best.input === 0n) {
     // A positive balance on the unusable side must not silently become a
     // reported successful full compound when no protected swap can use it.
-    if (baseline.liquidity === 0n && budget > 0n) throw new Error("After yield swap still cannot form reinvestable liquidity");
+    if (baseline.liquidity === 0n && budget > 0n) throw new Error("After harvest swap still cannot form reinvestable liquidity");
     return empty;
   }
-  if (best.output === 0n) throw new Error("Yield swap below minimum output unit, cannot protect full reinvestment");
+  if (best.output === 0n) throw new Error("Harvest swap below minimum output unit, cannot protect full reinvestment");
   return best;
 }
 

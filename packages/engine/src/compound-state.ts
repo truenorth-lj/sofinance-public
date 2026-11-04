@@ -102,7 +102,7 @@ export async function readCompoundPositionState(wallet: string, positionMint: st
       scaled && (scaled.multiplier !== 1 || scaled.newMultiplier !== 1) ||
       extensions.includes(ExtensionType.DefaultAccountState) && getDefaultAccountState(mint)?.state !== AccountState.Initialized) issues.push(`Reward ${reward.mint.toBase58()} contains unsupported or disabled token features`);
     const estimated = estimatedRewards[index]!;
-    if (estimated.gt(new BN(MAX_U64.toString()))) throw new Error("Reward yield exceeds u64 range");
+    if (estimated.gt(new BN(MAX_U64.toString()))) throw new Error("Reward harvest exceeds u64 range");
     rewards.push({ index, mint: reward.mint.toBase58(), vault: reward.vault.toBase58(), program: mintInfo.owner.toBase58(),
       decimals: mint.decimals, account: getAssociatedTokenAddressSync(reward.mint, new PublicKey(wallet), false, mintInfo.owner).toBase58(),
       estimatedAmount: estimated.toString(), compounded: reward.mint.toBase58() === selected.mintA || reward.mint.toBase58() === selected.mintB });

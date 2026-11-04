@@ -42,14 +42,14 @@ export function HodlVsPool({
   const breakEven = breakEvenInPeriod(comparison.breakEvenDay, comparison.days);
   const period = `${comparison.days} ${daysWord(comparison.days)}`;
   // Stock pools grow the share count; the stablecoin pool has no stock, so it just earns fees.
-  const earn = shareSymbol ? "earn more shares" : "earn fees";
+  const earn = shareSymbol ? "more shares" : "fees";
 
   return <div data-testid="hodl-vs-pool">
     <h2 id="hodl-vs-pool-heading" className="text-lg font-semibold tracking-[-0.01em] text-cream">
       HODL vs. HODL <span className="text-lemon">+ {earn}</span>
     </h2>
     <p className="mt-0.5 text-[13px] text-smoke">
-      {shareSymbol ? `Earn more ${shareSymbol} while you hold ${shareSymbol}` : `Earn swap fees while you hold ${holdLabel}`}
+      {shareSymbol ? `Collect more ${shareSymbol} while you hold ${shareSymbol}` : `Collect swap fees while you hold ${holdLabel}`}
       {` · $${formatAmount(capital.toFixed())} for ${period}`}
     </p>
 

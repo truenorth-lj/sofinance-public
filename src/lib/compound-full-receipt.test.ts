@@ -77,7 +77,7 @@ async function fixture() {
 }
 
 describe("full compound historical ledger", () => {
-  it("proves that all prior yield is swapped and reinvested, independently of newer balances", async () => {
+  it("proves that all prior harvest is swapped and reinvested, independently of newer balances", async () => {
     const { transaction, summary, wallet } = await fixture();
     expect(confirmedCompoundReceipt(transaction, wallet, summary)).toMatchObject({
       harvestedA: "0", harvestedB: "0", priorYieldA: "0", priorYieldB: "1198201",

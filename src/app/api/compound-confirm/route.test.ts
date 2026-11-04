@@ -80,12 +80,12 @@ describe("POST /api/compound-confirm", () => {
       expect((await call()).json).toEqual({ signature, state: null, status: "pending", chainStatus: "pending" });
       expect(connection.getBlockHeight).toHaveBeenCalledWith("finalized");
     });
-    it("compound: expired when every isolated yield account is still absent", async () => {
+    it("compound: expired when every isolated harvest account is still absent", async () => {
       connection.getBlockHeight.mockResolvedValue(151);
       connection.getMultipleAccountsInfo.mockResolvedValue([null, null]);
       expect((await call()).json).toMatchObject({ status: "expired" });
     });
-    it("compound: manual-review when an isolated yield account exists without transaction evidence", async () => {
+    it("compound: manual-review when an isolated harvest account exists without transaction evidence", async () => {
       connection.getBlockHeight.mockResolvedValue(151);
       connection.getMultipleAccountsInfo.mockResolvedValue([null, { lamports: 1 }]);
       expect((await call()).json).toMatchObject({ status: "manual-review", chainStatus: "unknown" });
@@ -107,7 +107,7 @@ describe("POST /api/compound-confirm", () => {
       expect(confirmedCompoundReceipt).not.toHaveBeenCalled();
       expect(invalidatePositionHistoryCache).not.toHaveBeenCalled();
     });
-    it("recovery: expired only when every yield account is STILL present (inverse of compound)", async () => {
+    it("recovery: expired only when every harvest account is STILL present (inverse of compound)", async () => {
       vi.mocked(parseCompoundAttempt).mockReturnValue(attemptFor("recovery") as never);
       connection.getBlockHeight.mockResolvedValue(151);
       connection.getMultipleAccountsInfo.mockResolvedValue([{ lamports: 1 }, { lamports: 1 }]);

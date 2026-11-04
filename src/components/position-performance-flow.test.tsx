@@ -254,7 +254,7 @@ describe("position performance workflow", () => {
     await compute();
     expectReturnCardsRemoved();
     const labels = cardLabels().join("|");
-    for (const kept of ["Holding days", "Range", "Est. trading-fee APR · not guaranteed", "Fees earned", "Current position value"]) expect(labels).toContain(kept);
+    for (const kept of ["Holding days", "Range", "Est. trading-fee APR · not a prediction", "Fees accrued", "Current position value"]) expect(labels).toContain(kept);
     // 5 top-level cards: the emphasised APR card spans both columns so the 2-col grid has no hole.
     const grid = container.querySelector('[aria-label="Performance results"] .grid.sm\\:grid-cols-2')!;
     expect(grid.children).toHaveLength(5);
@@ -267,7 +267,7 @@ describe("position performance workflow", () => {
     await compute();
     expectReturnCardsRemoved();
     const labels = cardLabels().join("|");
-    for (const kept of ["Holding days", "Range", "Est. fee-only APR (USD) · not guaranteed", "Current equity (USD)", "Fees earned (USD)"]) expect(labels).toContain(kept);
+    for (const kept of ["Holding days", "Range", "Est. fee-only APR (USD) · not a prediction", "Current equity (USD)", "Fees accrued (USD)"]) expect(labels).toContain(kept);
     const grid = container.querySelector('[aria-label="Performance results"] .grid.sm\\:grid-cols-2')!;
     expect(grid.children).toHaveLength(5);
   });
@@ -277,7 +277,7 @@ describe("position performance workflow", () => {
     await scan();
     await compute();
     const results = container.querySelector('[aria-label="Performance results"]')!;
-    expect(cardLabels().filter((label) => label.includes("APR"))).toEqual(["Est. trading-fee APR · not guaranteed"]);
+    expect(cardLabels().filter((label) => label.includes("APR"))).toEqual(["Est. trading-fee APR · not a prediction"]);
     expect(results.textContent).toContain("$0.1250 USD");
     expect(results.textContent).toContain("In range");
     const exit = results.querySelector('[aria-label="Exit estimates"]')!;

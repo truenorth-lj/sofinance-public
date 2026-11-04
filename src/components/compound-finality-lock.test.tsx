@@ -72,7 +72,7 @@ describe("compound history warnings in the real SelectedApp", () => {
     expect(controller.receiptReviewRequired).toBe(true);
     expect(addButton().disabled).toBe(false);
     expect(container.querySelector("#deposit-view")!.textContent).toContain("Estimation complete, ready to send to wallet for signing");
-    expect(container.textContent).toContain("A previous compound transaction finalized, but its yield details need verification. New transactions are available.");
+    expect(container.textContent).toContain("A previous compound transaction finalized, but its harvest details need verification. New transactions are available.");
     expect(controller.canCompound).toBe(true); expect(controller.ready).toBe(true);
     expect(window.localStorage.getItem(compoundAttemptKey(fixture.wallet))).toBe(JSON.stringify(fixture.attempt));
     expect(JSON.parse(window.localStorage.getItem(compoundReceiptsKey(fixture.wallet))!)).toHaveLength(1);

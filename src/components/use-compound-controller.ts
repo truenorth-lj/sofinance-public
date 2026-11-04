@@ -25,7 +25,7 @@ type Options = { wallet?: string; positionMint?: string; externalBlocked: boolea
 type CompoundErrorState = { message: string; identity: string | null; signature: string | null; receiptSignature: string | null };
 /** Submit feedback for a signed one-click compound: shown as a dialog until the user dismisses it. */
 export type CompoundSubmitFeedback = { phase: "submitting" | "confirming" | "success" | "failed"; signature: string; message: string };
-const CLEANUP_RENT_HINT = "Tip: \u201cClean up all balances\u201d below returns SOL rent held by earlier yield accounts.";
+const CLEANUP_RENT_HINT = "Tip: \u201cClean up all balances\u201d below returns SOL rent held by earlier harvest accounts.";
 const emptyError: CompoundErrorState = { message: "", identity: null, signature: null, receiptSignature: null };
 type AlreadyClosedRecovery = { alreadyClosed: true; wallet: string; accounts: string[] };
 const recoveryConfirmationMs = 90_000;
@@ -196,7 +196,7 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
     if (current.kind === "compound") {
       if (executed) updateFeedback(current.signature, { phase: "success", message: "" });
       else updateFeedback(current.signature, { phase: "failed", message: checked.status === "expired"
-        ? "The transaction did not land before it expired. No yield was moved; you can try again."
+        ? "The transaction did not land before it expired. No fees were moved; you can try again."
         : "The transaction reached the chain but failed. Check it on Solscan before trying again." });
     }
     if (executed) notifyPositionHistoryChange(current.positionMint, current.kind === "compound" ? current.signature : undefined);
@@ -305,10 +305,10 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
         if (!receipt || response.alreadyClosed !== true || response.wallet !== submittedWallet || !current() ||
           !Array.isArray(response.accounts) || response.accounts.length !== receipt.compoundAccounts.length ||
           [...response.accounts].sort().join(":") !== receipt.compoundAccounts.map(account => account.address).sort().join(":")) {
-          throw new Error("Closed account verification does not match the selected yield accounts");
+          throw new Error("Closed account verification does not match the selected harvest accounts");
         }
         const saved = loadCompoundReceipts(window.localStorage, submittedWallet);
-        if (saved.invalid) throw new Error("Local yield account records need verification before cleanup can continue");
+        if (saved.invalid) throw new Error("Local harvest account records need verification before cleanup can continue");
         const key = compoundReceiptsKey(submittedWallet);
         const serialized = JSON.stringify(saved.receipts.filter(item => item.sourceSignature !== receipt.sourceSignature ||
           item.compoundAccounts.map(account => account.address).sort().join(":") !== [...response.accounts].sort().join(":")));
@@ -440,7 +440,7 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
         const response = await post<DiscoveryPage>("/api/compound-recover-discover", { wallet: requestedWallet, ...(cursor ? { cursor } : {}) });
         if (!mounted.current || walletRef.current !== requestedWallet || requestId !== scanRequest.current) return;
         if (response.wallet !== requestedWallet || !Array.isArray(response.receipts) || response.receipts.some(item => item.wallet !== requestedWallet)) {
-          throw new Error("Yield account query does not match connected wallet");
+          throw new Error("Harvest account query does not match connected wallet");
         }
         for (const receipt of response.receipts) persistCompoundReceipt(window.localStorage, receipt);
         setReceipts(loadCompoundReceipts(window.localStorage, requestedWallet).receipts);
@@ -457,7 +457,7 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
     } catch (caught) {
       if (mounted.current && walletRef.current === requestedWallet && requestId === scanRequest.current) {
         setScan(previous => ({ ...previous, scanning: false, incomplete: true,
-          error: caught instanceof Error ? caught.message : "Unable to scan yield accounts. Please retry." }));
+          error: caught instanceof Error ? caught.message : "Unable to scan harvest accounts. Please retry." }));
       }
     } finally { scanRunning.current = false; }
   }
@@ -484,7 +484,7 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
         setCleanup({ completed, total: items.length, running: true, compoundSignature, message: "Balance merged and account rent recovered." });
       }
       if (current()) setCleanup({ completed, total: items.length, running: false, compoundSignature,
-        message: "All selected yield accounts cleaned up. Balances were merged into your wallet and account rent returned." });
+        message: "All selected harvest accounts cleaned up. Balances were merged into your wallet and account rent returned." });
     } catch (caught) {
       if (current()) setCleanup({ completed, total: items.length, running: false, compoundSignature,
         message: caught instanceof Error ? caught.message : "Cleanup paused. Check the last transaction before retrying." });
@@ -532,12 +532,12 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
       });
       if (!mounted.current || walletRef.current !== requestedWallet || operationRequest.current !== requestedOperation) return;
       if (response.receipt.wallet !== requestedWallet || response.receipt.sourceSignature !== requestedSignature) {
-        throw new Error("Yield account and query wallet or transaction signature mismatch");
+        throw new Error("Harvest account and query wallet or transaction signature mismatch");
       }
       persistCompoundReceipt(window.localStorage, response.receipt);
       setReceipts(loadCompoundReceipts(window.localStorage, requestedWallet).receipts);
     } catch (caught) {
-      if (mounted.current && walletRef.current === requestedWallet && operationRequest.current === requestedOperation) setError(caught instanceof Error ? caught.message : "Yield account query failed", requestedIdentity);
+      if (mounted.current && walletRef.current === requestedWallet && operationRequest.current === requestedOperation) setError(caught instanceof Error ? caught.message : "Harvest account query failed", requestedIdentity);
     } finally { if (mounted.current && walletRef.current === requestedWallet) setImporting(false); }
   }
   return { wallet, positionMint, state: visibleState, preview: visiblePreview, attempt: visibleAttempt, attemptStatus,
@@ -551,7 +551,7 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
     loading, busy, stage: stage || batchCleanup.stage, walletBlocked, externalBlocked,
     historyWarning: storageInvalid ? "Local compound history cannot be verified. Check previous signatures and balance accounts before repeating an earlier operation."
       : transactionUnresolved ? "A previous compound transaction is unresolved. Verify its signature before repeating that operation; new transactions are available."
-      : receiptReviewRequired ? "A previous compound transaction finalized, but its yield details need verification. New transactions are available." : "",
+      : receiptReviewRequired ? "A previous compound transaction finalized, but its harvest details need verification. New transactions are available." : "",
     receiptReviewRequired, confirmationSlow: confirmationSlow && transactionUnresolved,
     canCompound, cancelPending, hasFees, priorReceipts, importing, canImport, importReceipt,
     scan: loadedWallet === wallet ? scan : emptyScan, scanWallet, cleanup: (loadedWallet === wallet ? cleanup : null) || batchCleanup.progress,

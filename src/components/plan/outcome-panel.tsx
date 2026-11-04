@@ -88,15 +88,15 @@ export function OutcomePanel({
         <div className="mt-8 flex flex-1 flex-col">
           <h2 className="text-[clamp(1.6rem,2.3vw,2.1rem)] font-medium leading-[1.12] tracking-[-0.03em]">
             {status === "loading"
-              ? "Reading this pool's past yield."
+              ? "Reading this pool's past fee data."
               : status === "unavailable"
-                ? "No average yield for this pool."
+                ? "No average fee rate for this pool."
                 : "No pool chosen, so there is no estimate yet."}
           </h2>
           <p className="mt-4 text-sm leading-relaxed text-smoke">
             {reason
               ? reason
-              : "SoFinance projects from the best of this pool's 7, 30 and 90-day average yields (complete UTC days only), with daily auto-compounding. That is the optimistic end of recent history, not a forecast, and it carries no probabilities."}
+              : "SoFinance projects from the best of this pool's 7, 30 and 90-day average fee rates (complete UTC days only), with daily auto-compounding. That is the optimistic end of recent history, not a forecast, and it carries no probabilities."}
           </p>
           <p className="mt-3 text-sm leading-relaxed text-smoke">
             Two-sided same-asset RWA pairs are compared with a flat hold of the same capital. Network fees
@@ -135,7 +135,7 @@ export function OutcomePanel({
               {`−${formatCents(comparison.exitCost)} USDC (${terms.exitCost[setup.exitAsset].label})`}
             </Row>
             <Row
-              label="Est. best APY used · not guaranteed"
+              label="Est. best APY used · not a prediction"
               note={<>{bestAprCopy(best)}, {formatPct(comparison.aprPct)} to LPs {terms.lpShareLabel}, compounded daily, over {completeDaysCopy(best.sampleDays)}</>}
               noteTestId="plan-apy-note"
             >
@@ -164,7 +164,7 @@ export function OutcomePanel({
 
           <div className="mt-auto pt-6">
             <p className="mb-4 text-xs leading-relaxed text-smoke">
-              {`Best case, not a probability or a promise. "Best APY" is the highest of this pool's 7, 30 and 90-day average fee yields (complete UTC days only), compounded daily with no price-shock path. Break-even is the first day the projection covers ${terms.openCost.breakEven}, plus the closing cost of the exit you chose. Network fees are ignored. Read-only: nothing here prepares, signs or sends a transaction.`}
+              {`Best case, not a probability or a promise. "Best APY" is the highest of this pool's 7, 30 and 90-day average fee rates (complete UTC days only), compounded daily with no price-shock path. Break-even is the first day the projection covers ${terms.openCost.breakEven}, plus the closing cost of the exit you chose. Network fees are ignored. Read-only: nothing here prepares, signs or sends a transaction.`}
             </p>
             {poolId && !terms.open.supported ? (
               <div aria-disabled="true" data-testid="plan-open-unavailable" title={terms.open.reason}

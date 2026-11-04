@@ -18,9 +18,9 @@ import type { PoolRangeAprPayload } from "./range-apr/types";
  */
 
 export const ORCA_RANGE_APR_ASSUMPTIONS = [
-  `Estimate, not a guarantee. Back-tests the last ${VOLUME_WINDOW_DAYS} complete UTC days of pool volume (GeckoTerminal, current day excluded) against the pool's liquidity right now (on-chain Whirlpool tick arrays).`,
+  `Estimate, not a prediction. Uses the last ${VOLUME_WINDOW_DAYS} complete UTC days of pool volume (GeckoTerminal, current day excluded) against the pool's liquidity right now (on-chain Whirlpool tick arrays).`,
   "Fees = volume that traded inside your range × pool fee rate × the share LPs keep (Orca keeps its protocol fee, 13% on this pool) × your share of the liquidity in each price bin.",
-  "Volume only counts while the price is inside your range, using hourly price history; time out of range earns nothing.",
+  "Volume only counts while the price is inside your range, using hourly price history; time out of range collects nothing.",
   "Assumes volume, other LPs' liquidity and prices behave like the recent past. Excludes impermanent loss, rewards, swap and rent costs.",
   `Rate shown for a ~$${RANGE_APR_REFERENCE_CAPITAL_USD} deposit; larger deposits dilute their own share of the fees.`,
 ].join(" ");

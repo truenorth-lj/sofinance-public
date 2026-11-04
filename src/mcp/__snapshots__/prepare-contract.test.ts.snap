@@ -465,7 +465,7 @@ exports[`compound HTTP deduplicates sources by rejection while MCP preserves dup
   "io": [],
   "result": {
     "body": {
-      "error": "Invalid yield source transactions; maximum three merges per attempt",
+      "error": "Invalid harvest source transactions; maximum three merges per attempt",
     },
     "headers": {
       "cache-control": "no-store",

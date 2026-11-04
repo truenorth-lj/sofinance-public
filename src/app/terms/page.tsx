@@ -32,7 +32,7 @@ export default function TermsPage() {
         <ul>
           <li><strong>We do not take custody of your assets.</strong> SoFinance never holds your private keys and never receives, holds or controls your funds. Your assets stay in your wallet or in on-chain smart contracts that you interact with directly.</li>
           <li><strong>We do not issue any token.</strong> SoFinance has no token of its own.</li>
-          <li><strong>Tokenized stocks are issued by third parties.</strong> xStocks and other tokenized stock or real-world-asset tokens shown in the Interface are issued by third parties, not by SoFinance. We do not issue, sell, redeem or guarantee them.</li>
+          <li><strong>Tokenized stocks are issued by third parties.</strong> xStocks and other tokenized stock or real-world-asset tokens shown in the Interface are issued by third parties, not by SoFinance. We do not issue, sell, redeem or back them.</li>
           <li>SoFinance is not a broker, dealer, exchange, custodian, bank, fund or investment adviser, and it does not operate the Raydium protocol, Jupiter, the Solana network or any token.</li>
         </ul>
       </Section>
@@ -51,18 +51,18 @@ export default function TermsPage() {
         <p>Providing liquidity and holding digital assets is risky and you can lose some or all of the value you put in. Risks include, without limitation:</p>
         <ul>
           <li><strong>Impermanent loss.</strong> When the relative price of the two tokens in a pool changes, the value of your position can be lower than if you had simply held the tokens.</li>
-          <li><strong>Out-of-range positions earn no fees.</strong> A concentrated-liquidity position only earns trading fees while the pool price is inside the position&rsquo;s price range. When the price moves outside the range, the position earns no fees and is held entirely in one of the two tokens.</li>
+          <li><strong>Out-of-range positions collect no fees.</strong> A concentrated-liquidity position only collects trading fees while the pool price is inside the position&rsquo;s price range. When the price moves outside the range, the position collects no fees and is held entirely in one of the two tokens.</li>
           <li><strong>Smart-contract and software risk.</strong> Raydium, Jupiter, token programs, the Solana network and SoFinance&rsquo;s own software may contain bugs, be exploited, be upgraded or stop working, which can cause loss of funds or failed transactions.</li>
           <li><strong>Tokenized-stock risk.</strong> Tokenized stocks depend on their third-party issuer and its custodians. They may not track the underlying share price, may lack shareholder rights, may be paused, frozen, restricted or redeemed by the issuer, may trade while the underlying market is closed, and may be affected by legal or regulatory changes.</li>
           <li><strong>Market and execution risk.</strong> Prices can move quickly. Swaps can suffer price impact and slippage, and transactions can fail or land at a different price than the preview.</li>
-          <li><strong>APR figures are estimates.</strong> APR and return figures shown by SoFinance are estimates based on past on-chain data and stated assumptions. They are not guaranteed and are not a forecast of future returns.</li>
+          <li><strong>APR figures are estimates.</strong> APR and return figures shown by SoFinance are estimates based on past on-chain data and stated assumptions. They are not promises and are not a forecast of future returns.</li>
         </ul>
         <p>See also the <Link href={DOCS_ROUTES.risks}>Risks</Link> documentation.</p>
       </Section>
 
       <Section id="fees" title="6. Fees">
         <ul>
-          <li>SoFinance charges a protocol fee of <strong>10 basis points (0.10%)</strong> in the token you deposit when opening a position, adding to a position, when withdrawing or converting to another token, and when compounding (the harvested tokens being reinvested — not a performance fee on LP earnings). Withdraw-to-USDC is collected as a conversion fee in USDC; other deposit flows take 10 bps of the input token. The fee is included in the transaction you sign and is shown in the preview.</li>
+          <li>SoFinance charges a protocol fee of <strong>10 basis points (0.10%)</strong> in the token you deposit when opening a position, adding to a position, when withdrawing or converting to another token, and when compounding (the harvested tokens being reinvested — not a performance fee on LP fees). Withdraw-to-USDC is collected as a conversion fee in USDC; other deposit flows take 10 bps of the input token. The fee is included in the transaction you sign and is shown in the preview.</li>
           <li>Withdrawing as the two original pool tokens involves no swap and no SoFinance fee.</li>
           <li><strong>You pay Solana network fees</strong> and any account rent deposits required by the network, as well as third-party costs such as pool trading fees and swap-route costs.</li>
           <li>We may change the fee. Any change will be announced in advance and shown in the transaction preview.</li>

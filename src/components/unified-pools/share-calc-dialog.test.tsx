@@ -60,8 +60,8 @@ describe("ShareCalcDialog", () => {
     expect(dialog.getAttribute("aria-label")).toBe("Calculate shares for SPCXx/SPCX");
     expect(button("1Y").getAttribute("aria-pressed")).toBe("true");
     const cards = node.querySelector("[data-testid=hodl-vs-pool]")!;
-    expect(cards.querySelector("h2")!.textContent).toBe("HODL vs. HODL + earn more shares");
-    expect(cards.textContent).toContain("Earn more SPCX while you hold SPCX · $1,000 for 365 days");
+    expect(cards.querySelector("h2")!.textContent).toBe("HODL vs. HODL + more shares");
+    expect(cards.textContent).toContain("Collect more SPCX while you hold SPCX · $1,000 for 365 days");
     // 36.5% pool APR × 84% to LPs, one year, minus 1% to open and 1% to swap back to USDC = +335.14.
     expect(cards.querySelector('[aria-label="Difference"]')!.textContent).toContain("+$335.14");
     expect(node.querySelector("[data-testid=share-calc-footnote]")!.textContent)
@@ -128,6 +128,6 @@ describe("ShareCalcDialog", () => {
     await render(STABLE, { kind: "open", onOpen: vi.fn() });
     expect(node.querySelector('[role="dialog"]')!.getAttribute("aria-label")).toBe("Calculate for USDC/USDT");
     expect(node.querySelector('[aria-label="Chart unit"]')).toBeNull();
-    expect(node.querySelector("[data-testid=hodl-vs-pool] h2")!.textContent).toBe("HODL vs. HODL + earn fees");
+    expect(node.querySelector("[data-testid=hodl-vs-pool] h2")!.textContent).toBe("HODL vs. HODL + fees");
   });
 });

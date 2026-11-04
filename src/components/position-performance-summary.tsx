@@ -64,15 +64,15 @@ export function PerformanceSummary({ data, embedded, metadata, loadingRemaining 
             {preferTe ? (
               <>
                 <Stat
-                  label="Est. trading-fee APR · not guaranteed"
+                  label="Est. trading-fee APR · not a prediction"
                   value={pct(te!.metrics.feeOnlyAprPct)}
-                  description="Estimate: fees earned so far, annualized. Not a forecast or a promised return."
+                  description="Estimate: fees accrued so far, annualized. Not a forecast or a promised return."
                   unavailableReason={missingReturn(true)}
                   emphasize
                   wide
                 />
                 <Stat
-                  label={`Fees earned`}
+                  label={`Fees accrued`}
                   value={`${tok(te!.metrics.feesEarned)} ${te!.baseSymbol}`}
                   description={`${data.metrics.feesEarnedUsd !== null ? `${money(data.metrics.feesEarnedUsd)} USD at current prices · ` : ""}Collected plus unclaimed fees.`}
                 />
@@ -84,16 +84,16 @@ export function PerformanceSummary({ data, embedded, metadata, loadingRemaining 
               </>
             ) : (
               <>
-                <Stat label="Est. fee-only APR (USD) · not guaranteed" value={pct(data.metrics.feeOnlyAprPct)} description="Estimate: fees earned so far, annualized. Not a forecast or a promised return." unavailableReason={missingReturn(true)} emphasize wide />
+                <Stat label="Est. fee-only APR (USD) · not a prediction" value={pct(data.metrics.feeOnlyAprPct)} description="Estimate: fees accrued so far, annualized. Not a forecast or a promised return." unavailableReason={missingReturn(true)} emphasize wide />
                 <Stat label="Current equity (USD)" value={money(data.metrics.currentEquityUsd)}
                   description={data.metrics.liquidityUsd !== null && data.metrics.uncollectedFeesUsd !== null ? `Liquidity ${money(data.metrics.liquidityUsd)} + unclaimed fees ${money(data.metrics.uncollectedFeesUsd)}.` : "Liquidity plus unclaimed fees."} />
-                <Stat label="Fees earned (USD)" value={money(data.metrics.feesEarnedUsd)} description="Collected plus unclaimed fees." />
+                <Stat label="Fees accrued (USD)" value={money(data.metrics.feesEarnedUsd)} description="Collected plus unclaimed fees." />
               </>
             )}
           </div>
 
           <p className="text-xs leading-5 text-smoke">
-            Estimated APR annualizes the trading fees earned so far (collected plus unclaimed) over recorded deposits and holding time, at current prices. Additional deposits are not time-weighted, and future fees can be higher or lower: it is not a promised return. Compounded fees count as new deposits, so after a compound this APR reads slightly low.
+            Estimated APR annualizes the trading fees accrued so far (collected plus unclaimed) over recorded deposits and holding time, at current prices. Additional deposits are not time-weighted, and future fees can be higher or lower: it is not a promised return. Compounded fees count as new deposits, so after a compound this APR reads slightly low.
             {data.truncated && " Earlier transactions may be missing, so the estimate may be incomplete."}
           </p>
           {data.truncated && data.historyFetch?.canContinue && onLoadRemaining && (

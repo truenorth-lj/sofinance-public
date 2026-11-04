@@ -12,7 +12,7 @@ const wallet = Keypair.generate().publicKey.toBase58();
 const accounts = [{ address: Keypair.generate().publicKey.toBase58() }, { address: Keypair.generate().publicKey.toBase58() }];
 const request = () => new Request("http://localhost/api/compound-recover-prepare", { method: "POST",
   body: JSON.stringify({ wallet, compoundAccounts: accounts }) });
-const absent = () => new Error("No recoverable yield accounts; please verify original compound transaction status first");
+const absent = () => new Error("No recoverable harvest accounts; please verify original compound transaction status first");
 beforeEach(() => vi.resetAllMocks());
 
 it("skips a stale receipt only after builder validation and a finalized absence read", async () => {
@@ -24,7 +24,7 @@ it("skips a stale receipt only after builder validation and a finalized absence 
   expect(mocks.accounts).toHaveBeenCalledWith(expect.any(Array), "finalized");
   expect(response.headers.get("Cache-Control")).toBe("no-store");
 });
-it.each(["balance mismatch", "RPC unavailable", "Invalid yield account seed or program"])("never treats %s as already cleaned", async message => {
+it.each(["balance mismatch", "RPC unavailable", "Invalid harvest account seed or program"])("never treats %s as already cleaned", async message => {
   vi.mocked(buildAndSimulateCompoundRecovery).mockRejectedValue(new Error(message));
   expect((await POST(request())).status).toBe(400);
   expect(mocks.accounts).not.toHaveBeenCalled();

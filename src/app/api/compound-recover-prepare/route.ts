@@ -13,7 +13,7 @@ async function sourcesAlreadyClosed(wallet: string, descriptors: unknown, error:
   // The builder has already checked each wallet-derived source descriptor.
   // Only its explicit no-sources result can take this path; RPC/validation
   // errors must never be treated as a completed cleanup.
-  if (!(error instanceof Error) || error.message !== "No recoverable yield accounts; please verify original compound transaction status first" ||
+  if (!(error instanceof Error) || error.message !== "No recoverable harvest accounts; please verify original compound transaction status first" ||
     !Array.isArray(descriptors) || descriptors.length < 1 || descriptors.length > 2) return null;
   const accounts = descriptors.map((account: { address: string }) => account.address);
   const finalized = await rpcConnection().getMultipleAccountsInfo(accounts.map(address => new PublicKey(address)), "finalized");
@@ -38,5 +38,5 @@ export async function POST(request: Request) {
     return Response.json({ summary, permit, unsignedTransaction: Buffer.from(transaction.serialize()).toString("base64"),
       ...txPermitsFor(wallet, Buffer.from(transaction.serialize()).toString("base64"), summary.lastValidBlockHeight, secret) },
       { headers: { "Cache-Control": "no-store" } });
-  } catch (error) { return apiError(error, "Remaining yield recovery preparation failed"); }
+  } catch (error) { return apiError(error, "Remaining harvest recovery preparation failed"); }
 }

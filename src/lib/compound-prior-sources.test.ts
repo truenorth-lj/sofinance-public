@@ -74,7 +74,7 @@ async function fixture(amount = 1_198_201n) {
   return { connection, getParsedTransaction, state, wallet, transaction, old, fresh: fresh as [CompoundAccount, CompoundAccount], infos, vaults };
 }
 
-describe("verified previous yield sources", () => {
+describe("verified previous harvest sources", () => {
   it("moves exactly the old residual into fresh accounts and closes even the empty source", async () => {
     const { connection, state, fresh, wallet, old, getParsedTransaction } = await fixture();
     const result = await readCompoundPriorSources(connection, state, fresh, [signature, signature]);
@@ -168,7 +168,7 @@ describe("imported receipts prove yield rather than account ownership alone", ()
     transaction.transaction.message.instructions.splice(4, 1);
     await expect(importCompoundReceipt(transaction, wallet.toBase58(), signature)).rejects.toThrow("remaining amount");
   });
-  it("traces a compact-seed new receipt back to its finalized original yield source", async () => {
+  it("traces a compact-seed new receipt back to its finalized original harvest source", async () => {
     const { transaction: original, wallet, old, fresh, state } = await fixture();
     const newerSignature = bs58.encode(new Uint8Array(64).fill(6));
     const replace = (pubkey: PublicKey) => {

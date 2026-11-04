@@ -198,8 +198,8 @@ export function useSelectedController() {
     if (submitStage === "wallet") return "Confirm in your wallet";
     if (calculating) return "Estimating liquidity…";
     if (quote && fresh) return "Preview ready. Final checks run when you add liquidity.";
-    if (visibleState.rangeSide === "above") return "Above upper bound: will add single-sided position; no trading fees earned outside range";
-    if (visibleState.rangeSide === "below") return "Below lower bound: will add single-sided position; no trading fees earned outside range";
+    if (visibleState.rangeSide === "above") return "Above upper bound: will add single-sided position; no trading fees collected outside range";
+    if (visibleState.rangeSide === "below") return "Below lower bound: will add single-sided position; no trading fees collected outside range";
     return "Getting latest quote";
   })();
 

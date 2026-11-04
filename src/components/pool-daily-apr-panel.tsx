@@ -112,7 +112,7 @@ export function PoolDailyAprChart({
       )}
       <AprLineChart
         title="Est. daily fee APR"
-        subtitle="Estimated pool trading-fee APR by day. Not guaranteed."
+        subtitle="Estimated pool trading-fee APR by day. Not a prediction."
         series={series}
         nowSeconds={evaluatedAt}
         emptyLabel={data ? "No daily volume/TVL pair in this range." : "Loading pool daily APR…"}

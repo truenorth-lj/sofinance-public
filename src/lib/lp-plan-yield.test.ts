@@ -54,7 +54,7 @@ describe("daily compounding", () => {
     expect(compoundedProfit("1000", rate, 365).toFixed()).toBe(expected.toFixed());
   });
 
-  it("stays flat when the average yield is zero", () => {
+  it("stays flat when the average fee rate is zero", () => {
     const rate = dailyRateFromAprPct("0");
     expect(compoundedProfit("1000", rate, 1).toFixed()).toBe("0");
     expect(compoundedProfit("1000", rate, 365).toFixed()).toBe("0");

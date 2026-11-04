@@ -29,31 +29,31 @@ export async function importCompoundReceipt(transaction: ParsedTransactionWithMe
     u128(added, 8) === 0n || added[40] !== 0 || added[41] !== 0 ||
     harvest.accounts[0]?.toBase58() !== wallet || add.accounts[0]?.toBase58() !== wallet ||
     !harvest.accounts[1]?.equals(add.accounts[1]!) || !harvest.accounts[2]?.equals(add.accounts[4]!) ||
-    !harvest.accounts[3]?.equals(add.accounts[2]!)) throw new Error("Transaction original NFT, position, or yield operations do not match");
+    !harvest.accounts[3]?.equals(add.accounts[2]!)) throw new Error("Transaction original NFT, position, or harvest operations do not match");
   const nftIndex = message.accountKeys.findIndex((key) => key.pubkey.equals(add.accounts[1]!));
   const nft = transaction.meta.postTokenBalances?.find((balance) => balance.accountIndex === nftIndex);
   if (!nft || nft.owner !== wallet || nft.uiTokenAmount.amount !== "1") throw new Error("Unable to verify original compound NFT");
   const accounts: CompoundAccount[] = [];
   for (let index = 0; index < 2; index++) {
     const address = add.accounts[7 + index]?.toBase58(), mint = add.accounts[13 + index]?.toBase58();
-    if (!address || !mint || harvest.accounts[9 + index]?.toBase58() !== address) throw new Error("Transaction did not use dedicated yield accounts");
+    if (!address || !mint || harvest.accounts[9 + index]?.toBase58() !== address) throw new Error("Transaction did not use dedicated harvest accounts");
     const creation = message.instructions.find((instruction) => {
       if (!("parsed" in instruction) || !instruction.programId.equals(SystemProgram.programId)) return false;
       return instruction.parsed.type === "createAccountWithSeed" && instruction.parsed.info?.newAccount === address;
     });
-    if (!creation || !("parsed" in creation)) throw new Error("Missing yield account creation evidence");
+    if (!creation || !("parsed" in creation)) throw new Error("Missing harvest account creation evidence");
     const info = creation.parsed.info as Record<string, unknown>;
     if (info.source !== wallet || info.base !== wallet || typeof info.seed !== "string" || !/^(?:[0-9a-f]{32}|[A-Za-z0-9_-]{22})$/.test(info.seed) ||
       typeof info.owner !== "string" || ![TOKEN_PROGRAM_ID.toBase58(), TOKEN_2022_PROGRAM_ID.toBase58()].includes(info.owner) ||
       !Number.isSafeInteger(info.space) || !Number.isSafeInteger(info.lamports) ||
       (info.space as number) < 165 || (info.lamports as number) <= 0 ||
       (await PublicKey.createWithSeed(new PublicKey(wallet), info.seed, new PublicKey(info.owner))).toBase58() !== address) {
-      throw new Error("Yield account seed, creator, or token program mismatch");
+      throw new Error("Harvest account seed, creator, or token program mismatch");
     }
     const initialized = message.instructions.some((instruction) => "parsed" in instruction && instruction.programId.toBase58() === info.owner &&
       ["initializeAccount", "initializeAccount3"].includes(instruction.parsed.type) && instruction.parsed.info?.account === address &&
       instruction.parsed.info?.mint === mint && instruction.parsed.info?.owner === wallet);
-    if (!initialized) throw new Error("Yield account initialization owner mismatch");
+    if (!initialized) throw new Error("Harvest account initialization owner mismatch");
     accounts.push({ seed: info.seed, address, mint, program: info.owner,
       space: info.space as number, rentLamports: info.lamports as number });
   }
@@ -67,12 +67,12 @@ export async function importVerifiedCompoundReceipt(connection: Connection, tran
   const cache = new Map<string, Promise<CompoundReceipt>>();
   let reads = 0;
   const verify = (current: ParsedTransactionWithMeta, currentSignature: string, depth: number): Promise<CompoundReceipt> => {
-    if (depth > 3) throw new Error("Yield history exceeds three layers, cannot safely import");
+    if (depth > 3) throw new Error("Harvest history exceeds three layers, cannot safely import");
     return importCompoundReceipt(current, wallet, currentSignature, { verifyPriorCredit: async (credit) => {
       const history = await connection.getSignaturesForAddress(new PublicKey(credit.address), { limit: 12 }, "finalized");
       for (const previous of history) {
         if (previous.err || previous.slot >= current.slot) continue;
-        if (++reads > 24) throw new Error("Yield history verification exceeds limit");
+        if (++reads > 24) throw new Error("Harvest history verification exceeds limit");
         const prior = await connection.getParsedTransaction(previous.signature, { commitment: "finalized", maxSupportedTransactionVersion: 0 });
         if (!prior || prior.transaction.signatures[0] !== previous.signature || prior.slot >= current.slot) continue;
         let imported: CompoundReceipt;
@@ -88,7 +88,7 @@ export async function importVerifiedCompoundReceipt(connection: Connection, tran
         const balance = prior.meta?.postTokenBalances?.find((record) => record.accountIndex === index);
         if (balance && BigInt(balance.uiTokenAmount.amount) >= credit.preAmount && credit.amount <= credit.preAmount) return;
       }
-      throw new Error("Unable to verify imported original yield history source");
+      throw new Error("Unable to verify imported original harvest history source");
     } });
   };
   return verify(transaction, signature, 0);

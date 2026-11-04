@@ -78,7 +78,7 @@ describe("fetchMeteoraRangeApr (read-only, cbBTC/WBTC)", () => {
         freezeAuthorityX: true, freezeAuthorityY: false, existingBinRange: { lowerBinId: -210, upperBinId: 349 } },
     });
     expect(payload.label).toMatch(/^Estimated/);
-    expect(payload.assumptions).toMatch(/^Estimate, not a guarantee/);
+    expect(payload.assumptions).toMatch(/^Estimate, not a prediction/);
     // On-chain protocol share (10%) wins over datapi's 5%.
     expect(payload.pool.lpFeeFraction).toBeCloseTo(0.9, 12);
     expect(payload.dataNotes).toEqual(["protocol share: datapi 5%, on-chain 10%"]);

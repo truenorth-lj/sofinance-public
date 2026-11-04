@@ -43,13 +43,13 @@ export function useCompoundPositionSnapshot({ wallet, positionMint, isCurrent, o
         }
       }
       if (!isCurrent(requestedIdentity) || requestId !== stateRequest.current) return;
-      if (next.wallet !== requestedWallet || next.positionMint !== requestedMint) throw new Error("Yield reading does not match selected position");
+      if (next.wallet !== requestedWallet || next.positionMint !== requestedMint) throw new Error("Harvested fee reading does not match selected position");
       setState(next);
       onReadSuccess(requestedIdentity);
     } catch (caught) {
       if (isCurrent(requestedIdentity) && requestId === stateRequest.current) {
         // A failed read preserves the last snapshot. Error priority belongs to the facade.
-        onReadError(requestedIdentity, caught instanceof Error ? caught.message : "Yield reading failed");
+        onReadError(requestedIdentity, caught instanceof Error ? caught.message : "Reading harvested fees failed");
       }
     } finally {
       if (isCurrent(requestedIdentity) && requestId === stateRequest.current) setLoading(false);

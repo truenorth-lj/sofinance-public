@@ -26,7 +26,7 @@ const FIELD_HELP = {
   "Token A": "The conservative amount of token A available to open your LP position. The position may use less; any remaining tokens stay in your wallet.",
   "Token B": "The conservative amount of token B available to open your LP position. The position may use less; any remaining tokens stay in your wallet.",
   "Aligned range": "Your actual price range after alignment to the pool's supported ticks, expressed as token B per 1 token A.",
-  "Status": "In range means the current pool price is within your selected range and the position can earn trading fees. It stops earning trading fees while the price is outside the range.",
+  "Status": "In range means the current pool price is within your selected range and the position can collect trading fees. It stops collecting trading fees while the price is outside the range.",
   "Quote validity": "Time remaining before this quote expires. Quotes refresh every 3 seconds, and transaction preparation obtains a fresh quote. Expired quotes cannot be signed.",
   "Total cost": "",
   "Refundable rent (NFT)": "Estimated account deposits for the position NFT, its token account and your personal position account. You can recover the corresponding deposits when the position and accounts are closed.",
@@ -34,7 +34,7 @@ const FIELD_HELP = {
   "Non-refundable rent": "Estimated one-time cost to create shared protocol-position or tick-array accounts. These accounts remain after your position closes, so this cost is not returned to you.",
   "Network fee (est.)": "Estimated Solana transaction fee, confirmed during preparation. It is separate from your investment and account deposits.",
   "Wallet SOL": "Your wallet's total SOL balance. Keep enough SOL to cover account deposits and network fees in addition to your investment.",
-  "Protocol fee": "SoFinance takes 0.10% of the part of your deposit that is swapped, in the token you deposit, as the Jupiter platform fee inside that swap. Any part deposited without a swap is not charged. There is no separate transfer to the fee wallet. This is not a performance fee on LP earnings.",
+  "Protocol fee": "SoFinance takes 0.10% of the part of your deposit that is swapped, in the token you deposit, as the Jupiter platform fee inside that swap. Any part deposited without a swap is not charged. There is no separate transfer to the fee wallet. This is not a performance fee on LP fees.",
 } as const;
 
 function FieldLabel({ label, help }: { label: keyof typeof FIELD_HELP; help?: string }) {

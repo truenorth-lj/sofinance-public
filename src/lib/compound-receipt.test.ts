@@ -81,7 +81,7 @@ describe("historical compound proof", () => {
 });
 
 describe("recovering after browser storage is lost", () => {
-  it("reconstructs both original yield accounts from on-chain creation evidence", async () => {
+  it("reconstructs both original harvest accounts from on-chain creation evidence", async () => {
     const { wallet, transaction, summary } = await fixture();
     const signature = transaction.transaction.signatures[0]!;
     const receipt = await importCompoundReceipt(transaction, wallet, signature);

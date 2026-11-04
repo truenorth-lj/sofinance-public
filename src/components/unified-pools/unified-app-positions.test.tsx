@@ -86,10 +86,10 @@ describe("/app unified My positions", () => {
 
   it("greyed tabs stay clickable and say 'Not available for this pool yet' inline; the URL tracks position and view", async () => {
     await render();
-    for (const label of ["Yield Compound", "Performance", "Add to position"]) expect(tab(label).getAttribute("data-unavailable")).toBe("true");
+    for (const label of ["Compound fees", "Performance", "Add to position"]) expect(tab(label).getAttribute("data-unavailable")).toBe("true");
     expect(tab("Withdraw").getAttribute("data-unavailable")).toBeNull();
-    await click(tab("Yield Compound"));
-    expect(tab("Yield Compound").getAttribute("aria-pressed")).toBe("true");
+    await click(tab("Compound fees"));
+    expect(tab("Compound fees").getAttribute("aria-pressed")).toBe("true");
     expect(container.querySelector("[data-testid=tool-unavailable]")!.textContent).toBe("Not available for this pool yet");
     expect(container.querySelector("[data-testid=rhc-withdraw]")).toBeNull();
     const url = new URL(window.location.href);

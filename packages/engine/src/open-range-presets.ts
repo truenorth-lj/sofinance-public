@@ -8,7 +8,7 @@ export const OPEN_RANGE_PRESETS = [
     percentBps: 5,
     default: false,
     narrow: true,
-    warning: "Narrow ranges go out of range quickly and stop earning fees.",
+    warning: "Narrow ranges go out of range quickly and stop collecting fees.",
   },
   {
     id: "standard" as const,

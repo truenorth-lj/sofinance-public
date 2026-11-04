@@ -13,46 +13,46 @@ import { exceedsTxSizeLimit } from "./transaction-limits";
 
 function tokenBalance(info: AccountInfo<Buffer> | null, address: PublicKey, program: PublicKey, wallet: PublicKey, mint: PublicKey) {
   if (!info) return 0n;
-  if (!info.owner.equals(program)) throw new Error("Yield account token program mismatch");
+  if (!info.owner.equals(program)) throw new Error("Harvest account token program mismatch");
   const account = unpackAccount(address, info, program);
   if (!account.owner.equals(wallet) || !account.mint.equals(mint) || !account.isInitialized || account.isFrozen) {
-    throw new Error("Yield account owner, mint, or availability status mismatch");
+    throw new Error("Harvest account owner, mint, or availability status mismatch");
   }
   return account.amount;
 }
 
 export async function readRecoveryAccounts(connection: Connection, walletAddress: string, values: unknown) {
-  if (!Array.isArray(values) || values.length < 1 || values.length > 2) throw new Error("Maximum two yield accounts may be recovered per attempt");
+  if (!Array.isArray(values) || values.length < 1 || values.length > 2) throw new Error("Maximum two harvest accounts may be recovered per attempt");
   const wallet = new PublicKey(walletAddress);
   const accounts: CompoundRecoveryAccount[] = [];
   const seen = new Set<string>();
   for (const value of values) {
-    if (!value || typeof value !== "object") throw new Error("Invalid yield account data");
+    if (!value || typeof value !== "object") throw new Error("Invalid harvest account data");
     const descriptor = value as CompoundAccount;
     if (typeof descriptor.seed !== "string" || !/^[a-zA-Z0-9_-]{1,32}$/.test(descriptor.seed) ||
       typeof descriptor.address !== "string" || typeof descriptor.mint !== "string" ||
       ![TOKEN_PROGRAM_ID.toBase58(), TOKEN_2022_PROGRAM_ID.toBase58()].includes(descriptor.program)) {
-      throw new Error("Invalid yield account seed or program");
+      throw new Error("Invalid harvest account seed or program");
     }
     const program = new PublicKey(descriptor.program);
     const address = new PublicKey(descriptor.address);
     const mint = new PublicKey(descriptor.mint);
     const derived = await PublicKey.createWithSeed(wallet, descriptor.seed, program);
-    if (!derived.equals(address) || seen.has(descriptor.address)) throw new Error("Yield account derived address mismatch or duplicate");
+    if (!derived.equals(address) || seen.has(descriptor.address)) throw new Error("Harvest account derived address mismatch or duplicate");
     seen.add(descriptor.address);
     const [accountInfo, mintInfo] = await connection.getMultipleAccountsInfo([address, mint], "confirmed");
     if (!accountInfo) continue; // A failed atomic compound creates no accounts.
-    if (!mintInfo || !mintInfo.owner.equals(program)) throw new Error("Yield mint program mismatch");
+    if (!mintInfo || !mintInfo.owner.equals(program)) throw new Error("Harvest mint program mismatch");
     const mintData = unpackMint(mint, mintInfo, program);
     const fee = getTransferFeeConfig(mintData);
     const hook = getTransferHook(mintData);
     if (fee && (fee.newerTransferFee.transferFeeBasisPoints || fee.olderTransferFee.transferFeeBasisPoints) ||
       hook?.programId && !hook.programId.equals(PublicKey.default) || getPausableConfig(mintData)?.paused) {
-      throw new Error("Yield asset has transfer fee, hook, or is paused; cannot be directly recovered");
+      throw new Error("Harvested token has a transfer fee, hook, or is paused; cannot be directly recovered");
     }
     const amount = tokenBalance(accountInfo, address, program, wallet, mint);
     const decoded = unpackAccount(address, accountInfo, program);
-    if (decoded.closeAuthority && !decoded.closeAuthority.equals(wallet)) throw new Error("Yield account close authority has changed");
+    if (decoded.closeAuthority && !decoded.closeAuthority.equals(wallet)) throw new Error("Harvest account close authority has changed");
     // WSOL transfer also moves its backing lamports into the destination ATA;
     // only the remaining rent/donations return to the wallet on close.
     const refundableLamports = decoded.isNative ? BigInt(accountInfo.lamports) - amount : BigInt(accountInfo.lamports);
@@ -60,7 +60,7 @@ export async function readRecoveryAccounts(connection: Connection, walletAddress
       sourceLamports: accountInfo.lamports, amount: amount.toString(), decimals: mintData.decimals,
       destination: getAssociatedTokenAddressSync(mint, wallet, false, program).toBase58() });
   }
-  if (!accounts.length) throw new Error("No recoverable yield accounts; please verify original compound transaction status first");
+  if (!accounts.length) throw new Error("No recoverable harvest accounts; please verify original compound transaction status first");
   return accounts;
 }
 
@@ -74,14 +74,14 @@ export async function simulateAndVerifyRecovery(input: {
     const approved = summary.compoundAccounts[index];
     return !approved || account.address !== approved.address || account.amount !== approved.amount ||
       account.destination !== approved.destination || account.sourceLamports !== approved.sourceLamports;
-  })) throw new Error("Yield account balance or identity has changed, please reprepare recovery");
+  })) throw new Error("Harvest account balance or identity has changed, please reprepare recovery");
   const destinations = [...new Set(accounts.filter((account) => account.amount !== "0").map((account) => account.destination))];
   const before = await connection.getMultipleAccountsInfo(destinations.map((key) => new PublicKey(key)), "confirmed");
   const addresses = [...accounts.map((account) => account.address), ...destinations, summary.wallet];
   const result = await connection.simulateTransaction(transaction, {
     sigVerify, commitment: "confirmed", accounts: { encoding: "base64", addresses },
   });
-  if (result.value.err) throw new Error("Remaining yield recovery simulation failed");
+  if (result.value.err) throw new Error("Remaining harvest recovery simulation failed");
   const after = result.value.accounts;
   if (!after || after.length !== addresses.length) throw new Error("Recovery simulation missing account readback");
   for (let index = 0; index < accounts.length; index++) {
@@ -90,7 +90,7 @@ export async function simulateAndVerifyRecovery(input: {
     // Accept only that exact closed representation, or an explicit null.
     if (account !== null && (!account || account.lamports !== 0 || account.data[0] !== "" ||
       account.owner !== SystemProgram.programId.toBase58() || account.executable)) {
-      throw new Error("Simulation did not close yield account");
+      throw new Error("Simulation did not close harvest account");
     }
   }
   for (let index = 0; index < destinations.length; index++) {

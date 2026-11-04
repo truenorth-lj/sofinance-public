@@ -180,8 +180,8 @@ describe("unsent broadcast UX", () => {
   });
 
   it("does not duplicate an existing not-sent retry sentence", () => {
-    expect(notSentRetryMessage("Third reward yield appeared; transaction not sent")).toBe(
-      "Third reward yield appeared; transaction not sent Safe to retry.");
+    expect(notSentRetryMessage("Third reward harvest appeared; transaction not sent")).toBe(
+      "Third reward harvest appeared; transaction not sent Safe to retry.");
     expect(notSentRetryMessage("Compound blockhash expired. Transaction was not sent, safe to retry."))
       .toBe("Compound blockhash expired. Transaction was not sent, safe to retry.");
   });

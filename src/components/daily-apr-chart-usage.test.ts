@@ -27,7 +27,7 @@ describe("daily APR chart wiring", () => {
     expect(app).toContain("projectPoolPlan");
     expect(app).not.toContain("evaluateIntent");
     expect(app).not.toContain("ScenarioCards");
-    expect(chart).toContain("Best case from past yield, not a forecast");
+    expect(chart).toContain("Best case from past fee data, not a forecast");
     // The pool cards plan through the share calculator dialog, which reads the same series and links the full plan.
     const calc = readFileSync(resolve("src/components/unified-pools/share-calc-dialog.tsx"), "utf8");
     expect(pairs).toContain("ShareCalcDialog");
