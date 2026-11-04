@@ -2,7 +2,7 @@ import type { Capability } from "@/lib/unified-positions/model";
 import type { ExitAsset } from "./lp-intent";
 import { feeRuleBps, type DexDescriptor } from "./dex/types";
 import Decimal from "decimal.js";
-import { buildPlanComparison, PLAN_EXIT_SWAP_COST_BPS, PLAN_OPEN_COST_BPS, planEntryCost, planOpenCostPctLabel, type PlanYieldComparison } from "./lp-plan-yield";
+import { buildPlanComparison, PLAN_SWAP_COST_BPS, PLAN_OPEN_COST_BPS, planEntryCost, planOpenCostPctLabel, type PlanYieldComparison } from "./lp-plan-yield";
 import { lpFeeFraction } from "./range-apr/build-model";
 
 /**
@@ -64,18 +64,21 @@ const LEGACY_COST: PlanOpenCost = (() => {
 })();
 
 /**
- * Registered DEX: day 0 pays the platform fee of its `open` rule on the swapped part (the Plan deposit is USDC, so all of
- * it is swapped into the pool tokens). Rent set aside in SOL and refunded on a full withdraw is stated, not subtracted.
+ * Registered DEX: day 0 swaps the whole USDC deposit into the pool tokens, so it pays the shared swap-cost estimate
+ * (`PLAN_SWAP_COST_BPS`, the same one Raydium's open uses) plus the platform fee of its `open` rule. Rent set aside in
+ * SOL and refunded on a full withdraw is stated, not subtracted.
  */
 function descriptorCost(descriptor: DexDescriptor): PlanOpenCost {
   const rule = descriptor.meta.feePolicy.open;
-  const bps = feeRuleBps(rule);
-  const pct = planOpenCostPctLabel(bps);
-  const fee = bps === 0
-    ? "no platform fee"
+  const feeBps = feeRuleBps(rule);
+  const bps = feeBps + PLAN_SWAP_COST_BPS;
+  const pct = planOpenCostPctLabel(feeBps);
+  const swapPct = planOpenCostPctLabel(PLAN_SWAP_COST_BPS);
+  const fee = feeBps === 0
+    ? `about ${swapPct}% to swap the deposit into the pool tokens, with no platform fee`
     : rule.kind === "swap-input-bps"
-      ? `the ${pct}% platform fee on the swapped part (all of a USDC deposit)`
-      : `the ${pct}% platform fee`;
+      ? `about ${swapPct}% to swap the deposit into the pool tokens plus the ${pct}% platform fee on the swapped part (all of a USDC deposit)`
+      : `about ${swapPct}% to swap the deposit into the pool tokens plus the ${pct}% platform fee`;
   const rent = descriptor.meta.rent;
   const rentSol = rent?.planEstimateSol;
   const rentLine = rent && rentSol
@@ -84,11 +87,11 @@ function descriptorCost(descriptor: DexDescriptor): PlanOpenCost {
   const capitalized = rentLine ? rentLine.charAt(0).toUpperCase() + rentLine.slice(1) : null;
   return {
     bps,
-    rowLabel: bps === 0 ? "no platform fee" : `${pct}% platform fee on the swap`,
+    rowLabel: feeBps === 0 ? `about ${swapPct}% swap cost, no platform fee` : `about ${swapPct}% swap cost plus the ${pct}% platform fee`,
     rowNote: rent && rentSol ? `Plus about ${rentSol} SOL position rent${rent.refundableOnClose ? ", refunded on full close" : ""}` : null,
-    summary: bps === 0 ? "nothing is charged for opening on day 0" : `${fee} is paid on day 0`,
+    summary: `${fee} is paid on day 0`,
     breakEven: `the opening cost: ${fee}${rentLine ? `; ${rentLine}` : ""}`,
-    chart: `Opening costs ${fee}, and Day 0 subtracts that from the deposit.${capitalized ? ` ${capitalized}.` : ""} Network fees and swap price impact are ignored.`,
+    chart: `Opening costs ${fee}, and Day 0 subtracts that from the deposit.${capitalized ? ` ${capitalized}.` : ""} Network fees are ignored.`,
   };
 }
 
@@ -101,7 +104,7 @@ const LEGACY_EXITS: readonly ExitAsset[] = ["usdc", "tokens"];
  */
 const LEGACY_LP_FEE_SHARE = lpFeeFraction(null, null);
 const LEGACY_EXIT_COST: Readonly<Record<ExitAsset, PlanExitCost>> = {
-  usdc: { bps: PLAN_EXIT_SWAP_COST_BPS, label: `about ${planOpenCostPctLabel(PLAN_EXIT_SWAP_COST_BPS)}% to swap back to USDC` },
+  usdc: { bps: PLAN_SWAP_COST_BPS, label: `about ${planOpenCostPctLabel(PLAN_SWAP_COST_BPS)}% to swap back to USDC` },
   tokens: { bps: 0, label: "no swap when you take the pool tokens" },
 };
 
@@ -110,16 +113,16 @@ const cutLabel = (share: number, who: string) =>
 
 /**
  * Registered DEX: the platform fee of each withdraw rule. Closing to USDC also swaps both tokens back, so it adds the
- * shared swap-cost estimate (`PLAN_EXIT_SWAP_COST_BPS`, the same one Raydium's close uses); taking the pool tokens
+ * shared swap-cost estimate (`PLAN_SWAP_COST_BPS`, the same one Raydium's close uses); taking the pool tokens
  * needs no swap.
  */
 function descriptorExitCost(descriptor: DexDescriptor): Readonly<Record<ExitAsset, PlanExitCost>> {
   const usdcFee = feeRuleBps(descriptor.meta.feePolicy.withdrawUsdc);
   const tokens = feeRuleBps(descriptor.meta.feePolicy.withdrawPoolTokens);
   const label = (bps: number, what: string) => (bps === 0 ? `no platform fee ${what}` : `${planOpenCostPctLabel(bps)}% platform fee ${what}`);
-  const swap = `about ${planOpenCostPctLabel(PLAN_EXIT_SWAP_COST_BPS)}% to swap back to USDC`;
+  const swap = `about ${planOpenCostPctLabel(PLAN_SWAP_COST_BPS)}% to swap back to USDC`;
   return {
-    usdc: { bps: usdcFee + PLAN_EXIT_SWAP_COST_BPS, label: usdcFee === 0 ? swap : `${swap} plus the ${planOpenCostPctLabel(usdcFee)}% platform fee` },
+    usdc: { bps: usdcFee + PLAN_SWAP_COST_BPS, label: usdcFee === 0 ? swap : `${swap} plus the ${planOpenCostPctLabel(usdcFee)}% platform fee` },
     tokens: { bps: tokens, label: label(tokens, "to take the pool tokens") },
   };
 }

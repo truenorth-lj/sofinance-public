@@ -13,20 +13,20 @@ describe("planPoolTerms", () => {
     expect(planPoolTerms({ descriptor: null, listOpenReason: "No" }).open).toEqual({ supported: false, reason: "No" });
   });
 
-  it("Meteora: 10 bps on the swapped deposit, 0.0419 SOL rent stated not subtracted, pool tokens only", () => {
+  it("Meteora: the shared 1% swap estimate plus 10 bps on the swapped deposit, 0.0419 SOL rent stated not subtracted, pool tokens only", () => {
     const terms = planPoolTerms({ descriptor: meteoraDlmmDescriptor, listOpenReason: null, symbols: ["TSLAx", "TSLA"] });
-    expect(terms.openCost.bps).toBe(10);
-    expect(planEntryCost("1000", terms.openCost.bps)).toBe("1");
-    expect(terms.openCost.rowLabel).toBe("0.1% platform fee on the swap");
+    expect(terms.openCost.bps).toBe(110);
+    expect(planEntryCost("1000", terms.openCost.bps)).toBe("11");
+    expect(terms.openCost.rowLabel).toBe("about 1% swap cost plus the 0.1% platform fee");
     expect(terms.openCost.rowNote).toBe("Plus about 0.0419 SOL position rent, refunded on full close");
-    expect(terms.openCost.chart).toBe("Opening costs the 0.1% platform fee on the swapped part (all of a USDC deposit), and Day 0 subtracts that from the deposit. About 0.0419 SOL of position rent is set aside on top and refunded when you fully withdraw, so it is not subtracted. Network fees and swap price impact are ignored.");
+    expect(terms.openCost.chart).toBe("Opening costs about 1% to swap the deposit into the pool tokens plus the 0.1% platform fee on the swapped part (all of a USDC deposit), and Day 0 subtracts that from the deposit. About 0.0419 SOL of position rent is set aside on top and refunded when you fully withdraw, so it is not subtracted. Network fees are ignored.");
     expect(terms.exits).toEqual(["tokens"]);
     expect(terms.tokensExitLabel).toBe("TSLAx and TSLA, the pool tokens");
     expect(terms.open).toEqual({ supported: true });
     expect(effectiveExit("usdc", terms.exits)).toBe("tokens");
   });
 
-  it("the descriptor's open capability wins over the list; a fee-free DEX costs nothing on day 0", () => {
+  it("the descriptor's open capability wins over the list; a fee-free DEX still pays the shared swap estimate on day 0", () => {
     const closed: DexDescriptor = {
       ...meteoraDlmmDescriptor,
       meta: { ...meteoraDlmmDescriptor.meta, rent: null, feePolicy: { ...meteoraDlmmDescriptor.meta.feePolicy, open: { kind: "none" } } },
@@ -35,7 +35,8 @@ describe("planPoolTerms", () => {
     };
     const terms = planPoolTerms({ descriptor: closed, listOpenReason: null });
     expect(terms.open).toEqual({ supported: false, reason: "Not here yet." });
-    expect(terms.openCost.bps).toBe(0);
+    expect(terms.openCost.bps).toBe(100);
+    expect(terms.openCost.rowLabel).toBe("about 1% swap cost, no platform fee");
     expect(terms.openCost.rowNote).toBeNull();
     expect(terms.exits).toEqual(["usdc", "tokens"]);
   });
@@ -58,16 +59,20 @@ describe("LP share and closing cost", () => {
     expect(terms.exitCost.tokens).toEqual({ bps: 0, label: "no platform fee to take the pool tokens" });
   });
 
-  it("Meteora's close to USDC costs the shared swap estimate plus its platform fee ($1,000, 1Y, 10% pool APR)", () => {
+  it("Meteora's open and close each cost the shared swap estimate plus its platform fee ($1,000, 1Y, 10% pool APR)", () => {
     const terms = planPoolTerms({ descriptor: meteoraDlmmDescriptor, listOpenReason: null });
     const window = { aprPct: "10", sampleDays: 90, windowDays: 90 };
     const plan = projectPoolPlan({ capital: "1000", days: 365, window, terms, exit: "usdc" });
-    // 10% x 0.9 LP share = 9% APR -> 9.4162% APY; open fee 0.1% = $1.00; value before close $1,093.16.
+    // 10% x 0.9 LP share = 9% APR -> 9.4162% APY; open 1.1% = $11.00; value before close $1,083.16.
     expect(Number(plan.aprPct)).toBeCloseTo(9, 9);
+    expect(Number(plan.entryCost)).toBeCloseTo(11, 9); // was $1.00 with the platform fee alone
     expect(plan.exitCostBps).toBe(110);
-    expect(Number(plan.exitCost)).toBeCloseTo(12.02, 2); // 1.1% of $1,093.16 (was $1.09 at 0.1%)
-    expect(Number(plan.vsHold)).toBeCloseTo(81.14, 2); // was +$92.07 with the platform fee alone
-    expect(plan.breakEvenDay).toBe(49); // was day 9
+    expect(Number(plan.exitCost)).toBeCloseTo(11.91, 2); // 1.1% of $1,083.16 (was $12.02)
+    expect(Number(plan.vsHold)).toBeCloseTo(71.25, 2); // was +$81.14
+    expect(plan.breakEvenDay).toBe(89); // was day 49
+    const tokens = projectPoolPlan({ capital: "1000", days: 365, window, terms, exit: "tokens" });
+    expect(Number(tokens.vsHold)).toBeCloseTo(83.16, 2); // was +$93.16
+    expect(tokens.breakEvenDay).toBe(45);
   });
 
   it("projects with the LP share of the APR and the chosen exit's closing cost", () => {

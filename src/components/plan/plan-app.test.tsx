@@ -354,12 +354,12 @@ describe("PlanApp", () => {
     await click("the original tokens");
     expect([...node.querySelectorAll('[role="radiogroup"] [role="radio"], [role="radiogroup"] button')].map((el) => el.textContent))
       .toEqual([expect.stringContaining("Keep the tokens")]);
-    // Opening cost: the 0.1% platform fee on the swapped USDC (1,000 USDC → 1.00), rent stated and not subtracted.
-    expect(text()).toMatch(/Opening cost, day 0\s*−1\.00 USDC \(0\.1% platform fee on the swap\)/);
+    // Opening cost: the shared 1% swap estimate plus the 0.1% platform fee on the swapped USDC (1,000 USDC → 11.00), rent stated and not subtracted.
+    expect(text()).toMatch(/Opening cost, day 0\s*−11\.00 USDC \(about 1% swap cost plus the 0\.1% platform fee\)/);
     expect(node.querySelector('[data-testid="plan-open-rent"]')?.textContent).toBe("Plus about 0.0419 SOL position rent, refunded on full close");
     expect(text()).not.toContain("around 1%");
-    expect(text()).not.toContain("about 1%");
-    expect(text()).toContain("covers the opening cost: the 0.1% platform fee on the swapped part (all of a USDC deposit); about 0.0419 SOL of position rent is set aside on top and refunded when you fully withdraw, so it is not subtracted, plus the closing cost of the exit you chose.");
+    expect(text()).not.toContain("(about 1%)"); // not the legacy Raydium label
+    expect(text()).toContain("covers the opening cost: about 1% to swap the deposit into the pool tokens plus the 0.1% platform fee on the swapped part (all of a USDC deposit); about 0.0419 SOL of position rent is set aside on top and refunded when you fully withdraw, so it is not subtracted, plus the closing cost of the exit you chose.");
     // Open: the pools list cannot open Meteora pools, so the CTA is greyed with the same reason as the card.
     const cta = node.querySelector('[data-testid="plan-open-unavailable"]');
     expect(cta?.getAttribute("aria-disabled")).toBe("true");
@@ -387,7 +387,7 @@ describe("PlanApp", () => {
     });
     await render(`pool=${METEORA}&protocol=meteora-dlmm`);
     await waitForText("Est. best APY used · not guaranteed");
-    expect(text()).toMatch(/Opening cost, day 0\s*−1\.00 USDC \(0\.1% platform fee on the swap\)/);
+    expect(text()).toMatch(/Opening cost, day 0\s*−11\.00 USDC \(about 1% swap cost plus the 0\.1% platform fee\)/);
     expect(node.querySelector('[data-testid="plan-open-rent"]')).not.toBeNull();
     expect(text()).not.toContain("USDC, plus a small SOL refund");
     expect([...node.querySelectorAll("a")].some((a) => a.textContent?.includes("Create a position in this pool"))).toBe(false);
@@ -398,8 +398,8 @@ describe("PlanApp", () => {
     const unlisted = "5pw5tNUaZJpUCnYjZ1V3gd7XkLbrb4zA9pir4LFph2mj";
     await render(`pool=${unlisted}&protocol=meteora-dlmm`);
     await waitForText("Est. best APY used · not guaranteed");
-    expect(text()).toMatch(/Opening cost, day 0\s*−1\.00 USDC \(0\.1% platform fee on the swap\)/);
-    expect(text()).not.toContain("about 1%");
+    expect(text()).toMatch(/Opening cost, day 0\s*−11\.00 USDC \(about 1% swap cost plus the 0\.1% platform fee\)/);
+    expect(text()).not.toContain("(about 1%)");
     expect([...node.querySelectorAll("a")].some((a) => a.textContent?.includes("Create a position in this pool"))).toBe(false);
   });
 
