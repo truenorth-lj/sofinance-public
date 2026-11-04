@@ -5,6 +5,8 @@
  * Rows: [hours since start, HOODx price in USD, value if just holding HOODx, pool position value, fees collected].
  * The logger paused between about 8.3h and 13.2h; charts draw that stretch as a dashed straight line.
  */
+import { PLAN_SWAP_COST_BPS, planOpenCostPctLabel } from "@/lib/lp-plan-yield";
+
 export type SampleRow = readonly [h: number, hoodxUsd: number, holdUsd: number, poolUsd: number, feesUsd: number];
 
 export const SAMPLE_ROWS: readonly SampleRow[] = [
@@ -70,7 +72,6 @@ export const SAMPLE_ROWS: readonly SampleRow[] = [
 
 export const SAMPLE = {
   depositUsd: 1000,
-  entryFeeUsd: 1,
   holdEndUsd: 1026.72,
   poolEndUsd: 1032.17,
   holdPct: 2.67,
@@ -79,6 +80,17 @@ export const SAMPLE = {
   feesUsd: 5.43,
   windowLabel: "Oct 28–29, 2026",
 } as const;
+
+/**
+ * The calculator's swap-cost estimate (`PLAN_SWAP_COST_BPS`), the same figure it charges to open from USDC and to
+ * close back to USDC. The landing sample leaves those costs out, so it states the figure from the same constant.
+ */
+export const SAMPLE_SWAP_COST_PCT = planOpenCostPctLabel(PLAN_SWAP_COST_BPS);
+
+/** The sample is fees vs holding; opening and closing costs are left out and said so. */
+export const SAMPLE_COSTS_NOTE =
+  `Fees vs holding only. Opening and closing costs (about ${SAMPLE_SWAP_COST_PCT}% each way to and from USDC) are not included; ` +
+  "over this one day they would be more than the fees.";
 
 export const SAMPLE_FOOTNOTE = "Simulated $1,000 position on real pool data, not a prediction. One 24h sample.";
 

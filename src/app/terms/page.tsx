@@ -55,7 +55,7 @@ export default function TermsPage() {
           <li><strong>Smart-contract and software risk.</strong> Raydium, Jupiter, token programs, the Solana network and SoFinance&rsquo;s own software may contain bugs, be exploited, be upgraded or stop working, which can cause loss of funds or failed transactions.</li>
           <li><strong>Tokenized-stock risk.</strong> Tokenized stocks depend on their third-party issuer and its custodians. They may not track the underlying share price, may lack shareholder rights, may be paused, frozen, restricted or redeemed by the issuer, may trade while the underlying market is closed, and may be affected by legal or regulatory changes.</li>
           <li><strong>Market and execution risk.</strong> Prices can move quickly. Swaps can suffer price impact and slippage, and transactions can fail or land at a different price than the preview.</li>
-          <li><strong>APR figures are estimates.</strong> APR and return figures shown by SoFinance are estimates based on past on-chain data and stated assumptions. They are not promises and are not a forecast of future returns.</li>
+          <li><strong>APR figures are estimates.</strong> APR and return figures shown by SoFinance are estimates based on past on-chain data and stated assumptions. They are not promises and are not a forecast of future returns. Fees not guaranteed.</li>
         </ul>
         <p>See also the <Link href={DOCS_ROUTES.risks}>Risks</Link> documentation.</p>
       </Section>

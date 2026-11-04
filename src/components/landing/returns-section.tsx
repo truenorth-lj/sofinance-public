@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DOCS_ROUTES } from "@/lib/public-urls";
-import { SAMPLE, SAMPLE_FOOTNOTE, SAMPLE_GAP_H, SAMPLE_ROWS } from "./landing-sample";
+import { SAMPLE, SAMPLE_COSTS_NOTE, SAMPLE_FOOTNOTE, SAMPLE_GAP_H, SAMPLE_ROWS } from "./landing-sample";
 import { LandingSectionHeading } from "./section-heading";
 import { interpolate, signedPct, usd, useInView, useReducedMotion } from "./use-landing-motion";
 
@@ -161,7 +161,7 @@ export function ReturnsSection() {
 
       <div ref={cardRef} className="rounded-[28px] border border-white/12 bg-char p-5 sm:p-7" data-testid="returns-comparison">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h3 className="text-xl font-medium tracking-[-0.02em]">$1,000 for 24 hours: hold vs pool</h3>
+          <h3 className="text-xl font-medium tracking-[-0.02em]">$1,000 for 24 hours: pool fees vs just holding</h3>
           <span className="rounded-full bg-mint/15 px-2.5 py-1 font-data text-[10px] uppercase tracking-[0.12em] text-mint">
             HOODx/HOOD · Standard ±0.3%
           </span>
@@ -186,7 +186,7 @@ export function ReturnsSection() {
               {usd(pool)}
             </b>
             <span className="font-data text-[11px] text-smoke sm:text-xs">
-              {t > 0 ? `${signedPct((pool / SAMPLE.depositUsd - 1) * 100)} · ` : ""}after $1 entry fee
+              {t > 0 ? `${signedPct((pool / SAMPLE.depositUsd - 1) * 100)} · ` : ""}before opening and closing costs
             </span>
           </div>
         </div>
@@ -206,11 +206,14 @@ export function ReturnsSection() {
           <b className="font-semibold text-lemon">+{usd(SAMPLE.diffUsd)} vs holding</b>, of which{" "}
           <b className="font-semibold text-lemon">{usd(SAMPLE.feesUsd)}</b> is fees collected.
         </p>
+        <p className="mt-2.5 px-1 text-[13px] leading-snug text-cream/80" data-testid="returns-costs">
+          {SAMPLE_COSTS_NOTE}
+        </p>
       </div>
       <p className="mt-3.5 max-w-[110ch] px-2 text-[12.5px] leading-[1.6] text-smoke">
         <span data-testid="returns-footnote">{SAMPLE_FOOTNOTE}</span> Oct 28, 18:32 to Oct 29, 18:30, 2026 (UTC+8) ·
-        Raydium CLMM HOODx/HOOD, Standard ±0.3% range, price in range the whole window · includes the 0.1% entry fee; slippage,
-        network and closing costs not modelled · dashed: logging gap, drawn as a straight line.{" "}
+        Raydium CLMM HOODx/HOOD, Standard ±0.3% range, price in range the whole window · takes off only the 0.1% platform fee;
+        swap, network and closing costs not included · dashed: logging gap, drawn as a straight line.{" "}
         <button
           type="button"
           onClick={play}

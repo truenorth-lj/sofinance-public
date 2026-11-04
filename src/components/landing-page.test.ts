@@ -7,16 +7,21 @@ import {
   HOMEPAGE_APR_DOCS_LINK_LABEL,
 } from "@/lib/apr-labels/copy";
 import { LANDING_RANGES } from "./landing/ranges-section";
-import { SAMPLE, SAMPLE_FOOTNOTE, SAMPLE_ROWS } from "./landing/landing-sample";
+import { SAMPLE, SAMPLE_COSTS_NOTE, SAMPLE_FOOTNOTE, SAMPLE_ROWS, SAMPLE_SWAP_COST_PCT } from "./landing/landing-sample";
+import { PLAN_SWAP_COST_BPS, planOpenCostPctLabel } from "@/lib/lp-plan-yield";
 
-/** Source with comments removed, so the checks read only what can reach the page. */
+/** Source with comments and import lines removed, so the checks read only what can reach the page. */
 const copyOf = (file: string) =>
   readFileSync(resolve(file), "utf8")
+    .replace(/^import [\s\S]*?;$/gm, "")
     .replace(/\{\/\*[\s\S]*?\*\/\}/g, "")
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/^\s*\/\/.*$/gm, "");
 /** Words the public site must not use (the standing copy rules). */
 const FORBIDDEN = /back-?test|\bearn(s|ed|ing|ings)?\b|\byield|auto-?rebalanc|guarantee/i;
+/** The one allowed exception: risk lines keep exactly "Fees not guaranteed" (LJ via PM). */
+const ALLOWED_PHRASE = /\bFees not guaranteed\b/g;
+const withoutAllowed = (text: string) => text.replace(ALLOWED_PHRASE, "");
 
 describe("landing page copy and routes", () => {
   const src = readFileSync(resolve("src/components/landing-page.tsx"), "utf8");
@@ -66,7 +71,7 @@ describe("landing page copy and routes", () => {
   });
 
   it("uses none of the forbidden words in any landing copy", () => {
-    for (const file of copyFiles) expect(copyOf(file), file).not.toMatch(FORBIDDEN);
+    for (const file of copyFiles) expect(withoutAllowed(copyOf(file)), file).not.toMatch(FORBIDDEN);
   });
 
   it("keeps the forbidden words out of the public pages, blog and app copy", () => {
@@ -89,7 +94,7 @@ describe("landing page copy and routes", () => {
     ];
     // Local variable names (e.g. `earn` in hodl-vs-pool) are code, not copy.
     const code = (text: string) => text.replace(/import .*$/gm, "").replace(/(const |\$?\{)earn\b/g, "$1_");
-    for (const file of files) expect(code(copyOf(file)), file).not.toMatch(FORBIDDEN);
+    for (const file of files) expect(withoutAllowed(code(copyOf(file))), file).not.toMatch(FORBIDDEN);
   });
 
   it("mentions APR nowhere in the landing's own copy (the pools table keeps its one estimate column)", () => {
@@ -102,7 +107,7 @@ describe("landing page copy and routes", () => {
 
   it("has no yield or strategy headlines", () => {
     for (const file of copyFiles) {
-      expect(readFileSync(resolve(file), "utf8"), file).not.toMatch(
+      expect(copyOf(file), file).not.toMatch(
         /\byield\b|\bearn\b|make your money|strateg|recipe/i,
       );
     }
@@ -196,8 +201,8 @@ describe("landing page copy and routes", () => {
     expect(src).not.toContain("Self-custodial Raydium CLMM tool");
     // "One signature" is Solana-only: Robinhood Chain needs a one-time approval, a signature and a transaction.
     expect(src).not.toMatch(/1 signature ·|You sign once|Sign once\./);
-    expect(src).toContain("Fee estimates are not a prediction.");
-    expect(src).not.toMatch(/guaranteed|will earn|risk-free/i);
+    expect(src).toContain("Fees not guaranteed. Fee estimates are not a prediction.");
+    expect(withoutAllowed(src)).not.toMatch(/guaranteed|will earn|risk-free/i);
   });
 
   it("keeps public copy free of repo, location, education, prototype, Turnkey and 0-SOL wording", () => {
@@ -240,5 +245,31 @@ describe("landing page copy and routes", () => {
     expect(LANDING_RANGES.map((range) => [range.name, range.band])).toEqual(presets);
     expect(LANDING_RANGES.map((range) => range.name)).toEqual(["Tight", "Standard", "Wide"]);
     expect(LANDING_RANGES.find((range) => range.isDefault)?.name).toBe("Standard");
+  });
+
+  it("allows only the exact phrase \"Fees not guaranteed\", and only on risk lines", () => {
+    expect(withoutAllowed("Fees not guaranteed. Not a prediction.")).not.toMatch(FORBIDDEN);
+    for (const other of ["Returns not guaranteed", "fees not guaranteed", "guaranteed fees"]) {
+      expect(withoutAllowed(other), other).toMatch(FORBIDDEN);
+    }
+    const risks = src.slice(src.indexOf('label="Risks"'), src.indexOf('id="agents"'));
+    expect(risks).toContain("Fees not guaranteed.");
+    expect(src.split("Fees not guaranteed").length - 1).toBe(1);
+  });
+
+  it("labels the 24h sample as fees vs holding and states the calculator's open and close costs", () => {
+    const returns = readFileSync(resolve("src/components/landing/returns-section.tsx"), "utf8");
+    const ranges = readFileSync(resolve("src/components/landing/ranges-section.tsx"), "utf8");
+    expect(SAMPLE_SWAP_COST_PCT).toBe(planOpenCostPctLabel(PLAN_SWAP_COST_BPS));
+    expect(SAMPLE_COSTS_NOTE).toContain(`about ${SAMPLE_SWAP_COST_PCT}% each way to and from USDC`);
+    expect(SAMPLE_COSTS_NOTE).toContain("are not included");
+    expect(returns).toContain("pool fees vs just holding");
+    expect(returns).toContain("{SAMPLE_COSTS_NOTE}");
+    expect(ranges).toContain("{SAMPLE_SWAP_COST_PCT}% each way to and from USDC) are not included");
+    for (const text of [returns, ranges]) {
+      expect(text).not.toMatch(/\$1 entry fee|entry fee;|not modelled/);
+    }
+    // "Over this one day they would be more than the fees": both swaps together cost more than the sample's gain.
+    expect((2 * PLAN_SWAP_COST_BPS * SAMPLE.depositUsd) / 10_000).toBeGreaterThan(SAMPLE.diffUsd);
   });
 });
