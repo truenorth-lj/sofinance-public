@@ -92,3 +92,9 @@ at active index ±2 exist, and the cluster's rent-exempt minimum for 0, 8,120
 `scripts/capture-meteora-rwa-fixture.ts` against the public RPC. Public
 program state only; no wallets, signatures or credentials. The Meteora engine
 tests replay it through a fake RPC that fails on any key not in the capture.
+
+`spot-swap-mints-mainnet.json` holds the raw mint accounts (base64, public
+chain data) of 15 stock tokens (xStocks, Backpack, Ondo) read from Solana
+mainnet on 2026-11-04. Spot-swap tests run the mint checks on these exact
+bytes: the five tokens whose ScaledUiAmount multiplier is not 1 are refused,
+and permanent delegate / confidential transfer are accepted.

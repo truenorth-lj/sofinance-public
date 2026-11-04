@@ -33,7 +33,7 @@ function checkedMint(key: PublicKey, info: AccountInfo<Buffer> | null) {
   return { mint: unpackMint(key, info, info.owner), program: info.owner };
 }
 
-function poolMintIssues(mint: ReturnType<typeof unpackMint>) {
+export function poolMintIssues(mint: ReturnType<typeof unpackMint>) {
   const extensions = getExtensionTypes(mint.tlvData);
   const issues = extensions.filter((extension) => !supportedPoolExtensions.has(extension))
     .map((extension) => ExtensionType[extension] || String(extension));
