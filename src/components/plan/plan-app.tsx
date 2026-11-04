@@ -183,7 +183,7 @@ export function PlanApp() {
         <p className="mt-5 max-w-3xl px-2 text-xs leading-relaxed text-smoke">
           Planning is read-only. Amounts are in USDC; for a same-stock pool the chart also counts shares per 100 held,
           which leaves the stock’s own price out. The projection uses the best of this pool’s 7, 30 and 90-day
-          average complete-UTC-day fee datas with daily auto-compounding. That is the optimistic end of recent
+          average complete-UTC-day fee rates with daily auto-compounding. That is the optimistic end of recent
           history, not a forecast.{" "}
           <Link href={APP_ROUTES.positionPerformance} className="text-cream/80 underline underline-offset-2 hover:text-cream">
             See what is verified for an existing position
