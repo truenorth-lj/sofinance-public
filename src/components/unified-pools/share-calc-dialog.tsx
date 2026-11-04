@@ -159,7 +159,7 @@ export function ShareCalcDialog({ pool, open, onClose }: { pool: ShareCalcPool; 
           <OpenCta action={openFromHere} label={pool.pairLabel} />
 
           {plan && projection && best ? <dl className={cn(panel, "px-4 py-2.5")} data-testid="share-calc-assumptions">
-            <InfoRow label={`Est. LP APY (${aprWindowAvgLabel(best)})`}>{formatPct(plan.apyPct)}</InfoRow>
+            <InfoRow label={`Est. LP APY · ${aprWindowAvgLabel(best)}`}>{formatPct(plan.apyPct)}</InfoRow>
             <InfoRow label="Fees collected">${formatCents(plan.feesEarned)}</InfoRow>
             <InfoRow label="Protocol cut of fees">{`${Math.round((1 - terms.lpFeeShare) * 100)}%`}</InfoRow>
             <InfoRow label="Opening cost">{`−$${formatCents(plan.entryCost)}`}</InfoRow>
