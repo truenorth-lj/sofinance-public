@@ -79,6 +79,16 @@ export function selectBestPlanApr(
   return { ...best, windows };
 }
 
+/**
+ * "90-day avg", or "90-day avg (29 days of data)" when the window holds fewer finite days than its length (a young
+ * pool, or gaps), so a short history is not presented as a full 90 days.
+ */
+export function aprWindowAvgLabel(window: { windowDays: number; sampleDays: number }, avg = "avg"): string {
+  const base = `${aprWindowLabel(window.windowDays)} ${avg}`;
+  if (window.sampleDays >= window.windowDays) return base;
+  return `${base} (${window.sampleDays} ${window.sampleDays === 1 ? "day" : "days"} of data)`;
+}
+
 /** "7-day" / "30-day" wording used in the UI. */
 export function aprWindowLabel(windowDays: number): string {
   return `${windowDays}-day`;

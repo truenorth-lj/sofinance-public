@@ -23,6 +23,14 @@ export const money = (value: number | null) => {
 export const pct = formatAprPct;
 
 export const APR7D_SHORT = "Est. APR · 7d";
+/**
+ * Card headline label once the highest range is known: "Tight-range APR · 7d" for "Tight (±0.05%)", so the number reads
+ * as that range's APR, not the whole pool's fee yield. Falls back to `APR7D_SHORT` without a range name.
+ */
+export function rangeApr7dLabel(rangeLabel: string | null | undefined): string {
+  const name = rangeLabel?.replace(/\s*\(.*\)\s*$/, "").trim();
+  return name ? `${name}-range APR · 7d` : APR7D_SHORT;
+}
 export const APR24H_SHORT = POOL_FEE_APR_24H_SHORT;
 export const chip = "inline-flex h-6 items-center whitespace-nowrap rounded-full px-2.5 font-data text-[10px] uppercase tracking-[0.12em]";
 

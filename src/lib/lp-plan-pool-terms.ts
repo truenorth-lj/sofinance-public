@@ -2,7 +2,7 @@ import type { Capability } from "@/lib/unified-positions/model";
 import type { ExitAsset } from "./lp-intent";
 import { feeRuleBps, type DexDescriptor } from "./dex/types";
 import Decimal from "decimal.js";
-import { buildPlanComparison, PLAN_OPEN_COST_BPS, planEntryCost, planOpenCostPctLabel, type PlanYieldComparison } from "./lp-plan-yield";
+import { buildPlanComparison, PLAN_EXIT_SWAP_COST_BPS, PLAN_OPEN_COST_BPS, planEntryCost, planOpenCostPctLabel, type PlanYieldComparison } from "./lp-plan-yield";
 import { lpFeeFraction } from "./range-apr/build-model";
 
 /**
@@ -101,19 +101,25 @@ const LEGACY_EXITS: readonly ExitAsset[] = ["usdc", "tokens"];
  */
 const LEGACY_LP_FEE_SHARE = lpFeeFraction(null, null);
 const LEGACY_EXIT_COST: Readonly<Record<ExitAsset, PlanExitCost>> = {
-  usdc: { bps: PLAN_OPEN_COST_BPS, label: `about ${planOpenCostPctLabel(PLAN_OPEN_COST_BPS)}% to swap back to USDC` },
+  usdc: { bps: PLAN_EXIT_SWAP_COST_BPS, label: `about ${planOpenCostPctLabel(PLAN_EXIT_SWAP_COST_BPS)}% to swap back to USDC` },
   tokens: { bps: 0, label: "no swap when you take the pool tokens" },
 };
 
 const cutLabel = (share: number, who: string) =>
   share >= 1 ? "with no protocol cut" : `after ${who}'s ${planOpenCostPctLabel(Math.round((1 - share) * 10_000))}% cut`;
 
+/**
+ * Registered DEX: the platform fee of each withdraw rule. Closing to USDC also swaps both tokens back, so it adds the
+ * shared swap-cost estimate (`PLAN_EXIT_SWAP_COST_BPS`, the same one Raydium's close uses); taking the pool tokens
+ * needs no swap.
+ */
 function descriptorExitCost(descriptor: DexDescriptor): Readonly<Record<ExitAsset, PlanExitCost>> {
-  const usdc = feeRuleBps(descriptor.meta.feePolicy.withdrawUsdc);
+  const usdcFee = feeRuleBps(descriptor.meta.feePolicy.withdrawUsdc);
   const tokens = feeRuleBps(descriptor.meta.feePolicy.withdrawPoolTokens);
   const label = (bps: number, what: string) => (bps === 0 ? `no platform fee ${what}` : `${planOpenCostPctLabel(bps)}% platform fee ${what}`);
+  const swap = `about ${planOpenCostPctLabel(PLAN_EXIT_SWAP_COST_BPS)}% to swap back to USDC`;
   return {
-    usdc: { bps: usdc, label: label(usdc, "to swap back to USDC") },
+    usdc: { bps: usdcFee + PLAN_EXIT_SWAP_COST_BPS, label: usdcFee === 0 ? swap : `${swap} plus the ${planOpenCostPctLabel(usdcFee)}% platform fee` },
     tokens: { bps: tokens, label: label(tokens, "to take the pool tokens") },
   };
 }

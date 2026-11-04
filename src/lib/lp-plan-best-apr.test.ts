@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { aprWindowLabel, PLAN_APR_WINDOWS, selectBestPlanApr, trailingWindowAverage } from "./lp-plan-best-apr";
+import { aprWindowAvgLabel, aprWindowLabel, PLAN_APR_WINDOWS, selectBestPlanApr, trailingWindowAverage } from "./lp-plan-best-apr";
 
 const DAY = 86_400;
 const START = 1_784_000_000 - (1_784_000_000 % DAY); // 00:00 UTC
@@ -98,5 +98,14 @@ describe("selectBestPlanApr", () => {
   it("returns null when there is no finite day", () => {
     expect(selectBestPlanApr([])).toBeNull();
     expect(selectBestPlanApr(series(repeat(null, 10)))).toBeNull();
+  });
+});
+
+describe("aprWindowAvgLabel", () => {
+  it("keeps the plain label at full length and shows the real day count when short", () => {
+    expect(aprWindowAvgLabel({ windowDays: 90, sampleDays: 90 })).toBe("90-day avg");
+    expect(aprWindowAvgLabel({ windowDays: 90, sampleDays: 29 })).toBe("90-day avg (29 days of data)");
+    expect(aprWindowAvgLabel({ windowDays: 7, sampleDays: 1 }, "pool avg")).toBe("7-day pool avg (1 day of data)");
+    expect(aprWindowAvgLabel({ windowDays: 7, sampleDays: 7 }, "pool avg")).toBe("7-day pool avg");
   });
 });

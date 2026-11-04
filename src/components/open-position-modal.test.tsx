@@ -25,6 +25,8 @@ const POLL = RELAY_QUOTE_POLL_MS;
 const mocks = vi.hoisted(() => ({
   wallet: "wallet",
   controller: null as ReturnType<typeof useOpenPositionController> | null,
+  /** Forces the controller's `closeLocked` (a transaction in flight) when set. */
+  closeLocked: undefined as boolean | undefined,
 }));
 
 vi.mock("./wallet-connection", () => ({
@@ -34,7 +36,8 @@ vi.mock("./wallet-connection", () => ({
 vi.mock("./use-open-position-controller", async (importOriginal) => {
   const original = await importOriginal<typeof import("./use-open-position-controller")>();
   return { ...original, useOpenPositionController: (pair: OpenPositionPair) => {
-    mocks.controller = original.useOpenPositionController(pair);
+    const controller = original.useOpenPositionController(pair);
+    mocks.controller = mocks.closeLocked === undefined ? controller : { ...controller, closeLocked: mocks.closeLocked };
     return mocks.controller;
   } };
 });
@@ -519,5 +522,19 @@ describe("closing", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
     await act(async () => { document.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); });
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("Escape is ignored while the modal is locked (a transaction is in flight), like the disabled Close button", async () => {
+    const onClose = vi.fn();
+    mocks.closeLocked = true;
+    try {
+      await act(async () => { root.render(createElement(OpenPositionModal, { pair, onClose })); });
+      await advance(1);
+      await act(async () => { document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
+      expect(onClose).not.toHaveBeenCalled();
+      expect(container.querySelector<HTMLButtonElement>("button[aria-label='Close create position']")!.disabled).toBe(true);
+    } finally {
+      mocks.closeLocked = undefined;
+    }
   });
 });

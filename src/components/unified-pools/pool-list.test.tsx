@@ -5,7 +5,7 @@ import { renderToString } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { DEFAULT_SORT } from "@/lib/unified-pools/model";
 import { solanaPool, type SolanaPoolRow } from "@/lib/unified-pools/rows";
-import { PoolTable } from "./pool-list";
+import { PoolTable, rangeApr7dLabel } from "./pool-list";
 
 vi.mock("next/link", () => ({ default: ({ href, children, ...rest }: { href: string; children: unknown }) => createElement("a", { href, ...rest }, children as never) }));
 
@@ -62,5 +62,14 @@ describe("PoolTable responsive layout (shared by the homepage and /app/rwa-pairs
     expect(row.textContent).toContain("$10.0k");
     // No Risk column: a freeze-authority / Token-2022 pool shows no risk flags (the API rows still carry them).
     expect(row.textContent).not.toMatch(/Freeze risk|Token-2022|No flags|Pool warning/);
+  });
+});
+
+describe("rangeApr7dLabel", () => {
+  it("names the card's highest range instead of a generic APR", () => {
+    expect(rangeApr7dLabel("Tight (±0.05%)")).toBe("Tight-range APR · 7d");
+    expect(rangeApr7dLabel("Standard (±0.3%)")).toBe("Standard-range APR · 7d");
+    expect(rangeApr7dLabel("Micro")).toBe("Micro-range APR · 7d");
+    expect(rangeApr7dLabel(null)).toBe("Est. APR · 7d");
   });
 });

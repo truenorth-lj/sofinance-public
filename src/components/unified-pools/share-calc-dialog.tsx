@@ -6,7 +6,7 @@ import Decimal from "decimal.js";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { parseUsdc } from "@/lib/lp-intent";
 import { DEFAULT_PLAN_AMOUNT, DEFAULT_PLAN_DAYS } from "@/lib/lp-plan-intent";
-import { aprWindowLabel } from "@/lib/lp-plan-best-apr";
+import { aprWindowAvgLabel } from "@/lib/lp-plan-best-apr";
 import { planPoolTerms, projectPoolPlan } from "@/lib/lp-plan-pool-terms";
 import { lowPlanApr, pairLabelSymbols, planShareSymbol } from "@/lib/lp-plan-shares";
 import { dexDescriptors } from "@/lib/dex/client";
@@ -158,14 +158,14 @@ export function ShareCalcDialog({ pool, open, onClose }: { pool: ShareCalcPool; 
 
           <OpenCta action={openFromHere} label={pool.pairLabel} />
 
-          {plan && projection ? <dl className={cn(panel, "px-4 py-2.5")} data-testid="share-calc-assumptions">
-            <InfoRow label={`Est. LP APY (${aprWindowLabel(plan.aprWindowDays)} avg)`}>{formatPct(plan.apyPct)}</InfoRow>
+          {plan && projection && best ? <dl className={cn(panel, "px-4 py-2.5")} data-testid="share-calc-assumptions">
+            <InfoRow label={`Est. LP APY · ${aprWindowAvgLabel(best)}`}>{formatPct(plan.apyPct)}</InfoRow>
             <InfoRow label="Fees collected">${formatCents(plan.feesEarned)}</InfoRow>
             <InfoRow label="Protocol cut of fees">{`${Math.round((1 - terms.lpFeeShare) * 100)}%`}</InfoRow>
             <InfoRow label="Opening cost">{`−$${formatCents(plan.entryCost)}`}</InfoRow>
             <InfoRow label={exit === "usdc" ? "Closing cost (to USDC)" : "Closing cost"}>{`−$${formatCents(plan.exitCost)}`}</InfoRow>
             {projection.low && projection.lowWindow ? (
-              <InfoRow label={`At the ${aprWindowLabel(projection.lowWindow.windowDays)} avg`}>{`${formatSignedUsd(projection.low.vsHold)} vs HODL`}</InfoRow>
+              <InfoRow label={`At the ${aprWindowAvgLabel(projection.lowWindow, "pool avg")}`}>{`${formatSignedUsd(projection.low.vsHold)} vs HODL`}</InfoRow>
             ) : null}
           </dl> : null}
           <p className="px-1 text-[11px] leading-relaxed text-smoke" data-testid="share-calc-footnote">
