@@ -48,7 +48,8 @@ describe("docs routes and copy guards", () => {
     // 11/4: Docs left the app top bar for the app footer (InkFooter); the landing page keeps it in its footer.
     expect(nav).not.toContain("DOCS_ROUTES.home");
     expect(readFileSync(resolve("src/components/ink/InkFooter.tsx"), "utf8")).toContain("DOCS_ROUTES.home");
-    expect(nav).toContain("BLOG_ROUTES.home");
+    expect(nav).not.toContain("BLOG_ROUTES.home");
+    expect(readFileSync(resolve("src/components/site-header.tsx"), "utf8")).toContain("BLOG_ROUTES.home");
     expect(landing).toContain("DOCS_ROUTES.home");
     expect(landing).toContain("BLOG_ROUTES.home");
   });

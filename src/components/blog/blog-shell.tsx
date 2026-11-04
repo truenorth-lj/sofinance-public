@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
-import { InkNav, InkShell } from "@/components/ink";
+import { InkShell } from "@/components/ink";
+import { SiteHeader } from "@/components/site-header";
 import { APP_ROUTES, BLOG_ROUTES, DOCS_ROUTES } from "@/lib/public-urls";
 import { EXTERNAL_LINK_PROPS, SOCIAL_LINKS } from "@/lib/social-links";
 import { XIcon } from "@/components/x-icon";
@@ -32,7 +33,7 @@ export function BlogAppCta() {
 export function BlogShell({ children }: { children: ReactNode }) {
   return (
     <InkShell>
-      <InkNav />
+      <SiteHeader />
       {children}
       <footer className="mt-6 flex flex-col gap-4 px-2 py-6 font-data text-[11px] uppercase tracking-[0.12em] text-smoke sm:flex-row sm:items-center sm:justify-between">
         <p>SoFinance · Self-custodial Raydium CLMM tool</p>

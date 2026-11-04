@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { InkHero, InkNav, InkShell } from "@/components/ink";
+import { InkHero, InkShell } from "@/components/ink";
+import { SiteHeader } from "@/components/site-header";
 import { FAQ_RISK_LINE, FAQ_SECTIONS, faqJsonLd } from "@/lib/faq";
 import { serializeJsonLd } from "@/lib/json-ld";
 import { APP_ROUTES, CANONICAL_SITE_URL, DOCS_ROUTES, FAQ_ROUTE, LEGAL_ROUTES } from "@/lib/public-urls";
@@ -21,7 +22,7 @@ export default function FaqPage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: serializeJsonLd(faqJsonLd(`${CANONICAL_SITE_URL}${FAQ_ROUTE}`)) }}
       />
-      <InkNav />
+      <SiteHeader />
       <main className="mt-3">
         <InkHero label="FAQ" title="Questions about same-stock LP" stacked>
           <p>

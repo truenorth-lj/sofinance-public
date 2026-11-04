@@ -1,7 +1,8 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
-import { InkHero, InkNav, InkShell } from "@/components/ink";
+import { InkHero, InkShell } from "@/components/ink";
+import { SiteHeader } from "@/components/site-header";
 import { DOCS_ROUTES } from "@/lib/public-urls";
 import { SOCIAL_LINKS } from "@/lib/social-links";
 import { TERMS_JURISDICTION_EN, TERMS_LAST_UPDATED } from "@/lib/terms-content";
@@ -20,7 +21,7 @@ function Section({ id, title, children }: { id: string; title: string; children:
 
 export default function TermsPage() {
   return <InkShell>
-    <InkNav />
+    <SiteHeader />
     <InkHero label="Legal" title="Terms of Service">Last updated {TERMS_LAST_UPDATED}</InkHero>
     <article className="mt-3 space-y-6 rounded-[28px] border border-white/12 bg-char p-6 sm:p-9">
       <Section id="acceptance" title="1. Acceptance of these Terms">

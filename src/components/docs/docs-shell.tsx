@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import { InkNav, InkShell } from "@/components/ink";
+import { InkShell } from "@/components/ink";
+import { SiteHeader } from "@/components/site-header";
 import { DOCS_PAGES } from "@/lib/docs-nav";
 import { DOCS_ROUTES, FAQ_ROUTE, LEGAL_ROUTES } from "@/lib/public-urls";
 import { cn } from "@/lib/cn";
@@ -20,7 +21,7 @@ export function DocsShell({ children }: { children: ReactNode }) {
 
   return (
     <InkShell>
-      <InkNav />
+      <SiteHeader />
       <div className="mt-3 grid gap-3 lg:grid-cols-12">
         <nav
           aria-label="Documentation"
