@@ -17,6 +17,9 @@ const copyOf = (file: string) =>
     .replace(/^\s*\/\/.*$/gm, "");
 /** Words the public site must not use (the standing copy rules). */
 const FORBIDDEN = /back-?test|\bearn(s|ed|ing|ings)?\b|\byield|auto-?rebalanc|guarantee/i;
+/** The one allowed exception: risk lines keep exactly "Fees not guaranteed" (LJ via PM). */
+const ALLOWED_PHRASE = /\bFees not guaranteed\b/g;
+const withoutAllowed = (text: string) => text.replace(ALLOWED_PHRASE, "");
 
 describe("landing page copy and routes", () => {
   const src = readFileSync(resolve("src/components/landing-page.tsx"), "utf8");
@@ -86,10 +89,11 @@ describe("landing page copy and routes", () => {
       "src/components/open-position-modal.tsx",
       "src/components/plan/hodl-vs-pool.tsx",
       "src/components/unified-pools/share-calc-dialog.tsx",
+      "src/lib/lp-plan-notice.ts",
     ];
     // Local variable names (e.g. `earn` in hodl-vs-pool) are code, not copy.
     const code = (text: string) => text.replace(/import .*$/gm, "").replace(/(const |\$?\{)earn\b/g, "$1_");
-    for (const file of files) expect(code(copyOf(file)), file).not.toMatch(FORBIDDEN);
+    for (const file of files) expect(withoutAllowed(code(copyOf(file))), file).not.toMatch(FORBIDDEN);
   });
 
   it("mentions APR nowhere in the landing's own copy (the pools table keeps its one estimate column)", () => {
