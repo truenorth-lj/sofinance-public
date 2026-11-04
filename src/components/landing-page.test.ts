@@ -81,6 +81,7 @@ describe("landing page copy and routes", () => {
       "src/app/docs/fee-apr/page.tsx",
       "src/app/docs/risks/page.tsx",
       "src/components/blog/blog-shell.tsx",
+      "src/components/site-header.tsx",
       "content/blog/dex-evolution.md",
       "content/blog/xstocks-xpoints.md",
       "src/lib/apr-labels/copy.ts",
@@ -126,7 +127,11 @@ describe("landing page copy and routes", () => {
   });
 
   it("uses the inline C3 BrandMark, not the old square logo image", () => {
-    expect(src).toContain("BrandMark");
+    // The header moved to SiteHeader (shared with blog, docs, FAQ and terms).
+    expect(src).toContain("<SiteHeader onHomepage />");
+    const header = readFileSync(resolve("src/components/site-header.tsx"), "utf8");
+    expect(header).toContain("BrandMark");
+    expect(header).not.toContain("/logo.png");
     expect(src).not.toContain("/logo.png");
     expect(src).not.toContain("next/image");
   });
