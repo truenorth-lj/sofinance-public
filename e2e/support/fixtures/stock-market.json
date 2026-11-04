@@ -164,5 +164,8 @@
    "issuerName": "xStocks",
    "symbol": "NVDAx"
   }
+ },
+ "unsupported": {
+  "MSTR": "This token uses a balance multiplier, which we don't support yet."
  }
 }

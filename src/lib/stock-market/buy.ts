@@ -11,7 +11,11 @@
  */
 import { PublicKey, type AccountInfo } from "@solana/web3.js";
 import { selectSpotSwapToken, SpotSwapError, spotSwapMintIssues, type SpotSwapRouteCheck, type SpotSwapToken } from "@sofinance/engine/spot-swap";
+import { unsupportedTokenReason } from "@/lib/unified-pools/model";
 import type { StockMarket, StockToken } from "./build";
+
+/** Tooltip when no issuer token of a stock has a usable Jupiter route. */
+export const NO_ROUTE_REASON = "There's no trading route for this token right now.";
 
 /** A token the engine may buy for this stock (passed the filters and the mint checks). */
 export type StockBuyCandidate = {
@@ -30,6 +34,8 @@ export type StockBuyEligibility = {
   checkedAt: string;
   options: Record<string, StockBuyOption>;
   candidates: Record<string, StockBuyCandidate[]>;
+  /** Plain reason a checked stock has no Buy (tooltip of "Not supported yet"), by underlying. */
+  unsupported: Record<string, string>;
 };
 
 export type ReadMintAccounts = (mints: string[]) => Promise<(AccountInfo<Buffer> | null)[]>;
@@ -43,14 +49,16 @@ export function spotSwapAllowlistFor(candidates: readonly StockBuyCandidate[]): 
   }));
 }
 
-function candidateFor(token: StockToken, info: AccountInfo<Buffer> | null): StockBuyCandidate | null {
+type CandidateCheck = { candidate: StockBuyCandidate | null; issues: string[] };
+
+function candidateFor(token: StockToken, info: AccountInfo<Buffer> | null): CandidateCheck {
   try {
     const mint = spotSwapMintIssues(new PublicKey(token.mint), info);
-    if (mint.issues.length) return null;
-    return { mint: token.mint, symbol: token.symbol, underlying: token.underlying, xstocks: token.xstocks,
-      jupiter: { name: token.jupiterName, tags: token.jupiterTags }, decimals: mint.decimals, program: mint.program.toBase58() };
+    if (mint.issues.length) return { candidate: null, issues: mint.issues };
+    return { issues: [], candidate: { mint: token.mint, symbol: token.symbol, underlying: token.underlying, xstocks: token.xstocks,
+      jupiter: { name: token.jupiterName, tags: token.jupiterTags }, decimals: mint.decimals, program: mint.program.toBase58() } };
   } catch {
-    return null; // not an SPL / Token-2022 mint: never buyable
+    return { candidate: null, issues: ["not a token mint"] }; // not an SPL / Token-2022 mint: never buyable
   }
 }
 
@@ -70,15 +78,19 @@ export async function computeStockBuyEligibility(market: Pick<StockMarket, "toke
   }
   const options: Record<string, StockBuyOption> = {};
   const candidates: Record<string, StockBuyCandidate[]> = {};
+  const unsupported: Record<string, string> = {};
   for (const underlying of underlyings) {
-    const list = (market.tokensByUnderlying[underlying] ?? [])
-      .map((token) => candidateFor(token, infos.get(token.mint) ?? null))
-      .filter((candidate): candidate is StockBuyCandidate => candidate !== null);
-    if (!list.length) continue;
+    const checks = (market.tokensByUnderlying[underlying] ?? []).map((token) => candidateFor(token, infos.get(token.mint) ?? null));
+    const list = checks.map((check) => check.candidate).filter((candidate): candidate is StockBuyCandidate => candidate !== null);
+    if (!list.length) {
+      const issues = checks.flatMap((check) => check.issues);
+      unsupported[underlying] = issues.length ? unsupportedTokenReason({ unsupportedIssues: issues }) ?? NO_ROUTE_REASON : NO_ROUTE_REASON;
+      continue;
+    }
     candidates[underlying] = list;
     try {
       const selection = await selectSpotSwapToken(spotSwapAllowlistFor(list), underlying, { checkRoute: deps.checkRoute });
-      if (selection.status !== "selected") continue;
+      if (selection.status !== "selected") { unsupported[underlying] = NO_ROUTE_REASON; continue; }
       const company = market.tokensByUnderlying[underlying]?.find((token) => token.mint === selection.mint)?.company ?? underlying;
       options[underlying] = { underlying, company, mint: selection.mint, mintShort: selection.mintShort,
         issuerName: selection.issuerName, symbol: selection.token.symbol };
@@ -87,7 +99,8 @@ export async function computeStockBuyEligibility(market: Pick<StockMarket, "toke
       // anything unexpected (e.g. missing server config) rethrow, so the
       // failure is never cached as "not buyable" for the whole TTL.
       if (deps.isUnavailable(error) || !(error instanceof SpotSwapError)) throw error;
+      unsupported[underlying] = NO_ROUTE_REASON;
     }
   }
-  return { checkedAt: (deps.now ?? new Date()).toISOString(), options, candidates };
+  return { checkedAt: (deps.now ?? new Date()).toISOString(), options, candidates, unsupported };
 }

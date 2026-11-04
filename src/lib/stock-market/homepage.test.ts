@@ -14,8 +14,8 @@ beforeEach(() => { loadStockMarket.mockReset(); loadStockBuyEligibility.mockRese
 describe("loadHomepageStocks", () => {
   it("returns the cards with Buy options", async () => {
     loadStockMarket.mockImplementation(async () => market);
-    loadStockBuyEligibility.mockImplementation(async () => ({ options: { TSLA: option }, candidates: {} }));
-    await expect(loadHomepageStocks()).resolves.toEqual({ snapshotAt: market.snapshotAt, gainers: [], stocks: [], buy: { TSLA: option } });
+    loadStockBuyEligibility.mockImplementation(async () => ({ options: { TSLA: option }, candidates: {}, unsupported: {} }));
+    await expect(loadHomepageStocks()).resolves.toEqual({ snapshotAt: market.snapshotAt, gainers: [], stocks: [], buy: { TSLA: option }, unsupported: {} });
   });
 
   it("null when the market read fails (the client loads the cards later)", async () => {

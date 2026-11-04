@@ -14,7 +14,7 @@ vi.mock("@sofinance/engine/spot-swap", async (importOriginal) => {
 });
 
 import { SpotSwapError } from "@sofinance/engine/spot-swap";
-import { computeStockBuyEligibility, spotSwapAllowlistFor } from "./buy";
+import { computeStockBuyEligibility, NO_ROUTE_REASON, spotSwapAllowlistFor } from "./buy";
 import type { StockToken } from "./build";
 
 const TSLAX = "XsDoVfqeBukxuZHWhdvWHBhgEHjGNst4MLodqsJHzoB";
@@ -56,6 +56,22 @@ describe("computeStockBuyEligibility", () => {
   it("no route for any issuer -> no Buy", async () => {
     const result = await computeStockBuyEligibility(market, ["TSLA"], { readMints, checkRoute: async () => "no_route", isUnavailable: () => false });
     expect(result.options.TSLA).toBeUndefined();
+    expect(result.unsupported.TSLA).toBe(NO_ROUTE_REASON);
+  });
+
+  it("every issuer has a balance multiplier -> 'Not supported yet' with the multiplier reason, no route check", async () => {
+    issues.set(TSLAX, ["ScaledUiAmount multiplier not 1"]);
+    issues.set(TSLA_BP, ["ScaledUiAmount multiplier not 1"]);
+    const checkRoute = vi.fn(async () => "ok" as const);
+    const result = await computeStockBuyEligibility(market, ["TSLA"], { readMints, checkRoute, isUnavailable: () => false });
+    expect(result.options.TSLA).toBeUndefined();
+    expect(result.unsupported.TSLA).toBe("This token uses a balance multiplier, which we don't support yet.");
+    expect(checkRoute).not.toHaveBeenCalled();
+  });
+
+  it("a selected stock has no unsupported reason", async () => {
+    const result = await computeStockBuyEligibility(market, ["TSLA"], { readMints, checkRoute: async () => "ok", isUnavailable: () => false });
+    expect(result.unsupported).toEqual({});
   });
 
   it("drops a token whose mint has an issue (e.g. multiplier not 1): it is never bought", async () => {

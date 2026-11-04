@@ -48,6 +48,7 @@ async function openBuy(page: Page) {
   await expect(page.getByTestId("stock-card-stocks")).toContainText("Top Stocks");
   await expect(page.getByTestId("stock-cards-notice")).toContainText(NOTICE);
   await expect(page.getByTestId("stock-card-stocks").getByTestId("stock-buy-MSTR")).toHaveCount(0);   // no issuer selected -> no Buy
+  await expect(page.getByTestId("stock-card-stocks").getByTestId("stock-unsupported-MSTR")).toContainText("Not supported yet");
   await page.getByTestId("stock-card-stocks").getByTestId("stock-buy-TSLA").click();
   const modal = page.getByTestId("spot-swap-modal");
   await expect(modal.getByTestId("spot-swap-notice")).toHaveText(NOTICE);

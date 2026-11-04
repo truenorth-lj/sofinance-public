@@ -15,6 +15,7 @@ const stocks: HomepageStocks = {
   ],
   stocks: [{ underlying: "TSLA", company: "Tesla", priceUsd: 250.5, change24hPct: 4.2, icon: null, mcapUsd: 12_300_000 }],
   buy: { TSLA: { underlying: "TSLA", company: "Tesla", mint: "XsDoVfqeBukxuZHWhdvWHBhgEHjGNst4MLodqsJHzoB", mintShort: "XsDo…oB", issuerName: "xStocks", symbol: "TSLAx" } },
+  unsupported: { NFLX: "This token uses a balance multiplier, which we don't support yet." },
 } as unknown as HomepageStocks;
 
 let host: HTMLDivElement; let root: Root;
@@ -31,8 +32,19 @@ describe("StockCardsView", () => {
     expect(gainers.querySelector('[data-testid="stock-buy-TSLA"]')).not.toBeNull();
     expect(gainers.querySelector('[data-testid="stock-row-NFLX"]')).not.toBeNull();
     expect(gainers.querySelector('[data-testid="stock-buy-NFLX"]')).toBeNull();
+    const unsupported = gainers.querySelector('[data-testid="stock-unsupported-NFLX"]')!;
+    expect(unsupported.textContent).toContain("Not supported yet");
+    expect(unsupported.getAttribute("aria-disabled")).toBe("true");
+    expect(unsupported.getAttribute("title")).toBe("This token uses a balance multiplier, which we don't support yet.");
+    expect(gainers.querySelector('[data-testid="stock-unsupported-TSLA"]')).toBeNull();
     act(() => (gainers.querySelector('[data-testid="stock-buy-TSLA"]') as HTMLButtonElement).click());
     expect(onBuy).toHaveBeenCalledWith(stocks.buy.TSLA);
+  });
+
+  it("shows no button at all when the eligibility read failed (no reason sent)", () => {
+    act(() => root.render(<StockCardsView stocks={{ ...stocks, buy: {}, unsupported: {} }} onBuy={() => undefined} />));
+    expect(host.querySelector('[data-testid^="stock-buy-"]')).toBeNull();
+    expect(host.querySelector('[data-testid^="stock-unsupported-"]')).toBeNull();
   });
 
   it("shows the third-party notice and the UTC snapshot time", () => {
