@@ -76,7 +76,8 @@ const cardEyebrow = "font-data text-[10px] uppercase tracking-[0.12em] text-ink/
  */
 /**
  * Card pair name: it may break after the "/" and each half is cut with "…" if it alone is too wide, so a long pair
- * never runs under the APR pill on a 375 px card (the full name is the title).
+ * never runs under the APR pill on a 375 px card (the full name is the title). The narrowest cards (phones, and the
+ * three-column grid below 2xl) use a smaller name and icons so names like "GOOGLx/" fit whole.
  */
 function cardPairName(label: string) {
   const slash = label.indexOf("/");
@@ -101,10 +102,10 @@ function PoolCard({ pool, apr, action, icons, onCalculate }: {
   return <li className="flex min-w-0 flex-col rounded-[28px] bg-cream p-6 text-ink" data-pool={pool.key}>
     <div className="flex flex-wrap items-center gap-1.5"><ChainBadge chain={pool.chain} /><span className={cn(chip, "border border-ink/25")}>{PROTOCOL_LABELS[pool.protocol]}</span></div>
     <div className="mt-4 flex items-start justify-between gap-3">
-      <div className="flex min-w-0 items-center gap-3">
-        <PairTokenIcons pair={iconPair(pool)} icons={icons} chain={pool.chain} iconClassName="h-10 w-10" />
+      <div className="flex min-w-0 items-center gap-3 max-sm:gap-2 xl:max-2xl:gap-2">
+        <PairTokenIcons pair={iconPair(pool)} icons={icons} chain={pool.chain} iconClassName="h-10 w-10 max-sm:h-8 max-sm:w-8 xl:max-2xl:h-8 xl:max-2xl:w-8" />
         <div className="min-w-0">
-          <h3 className="text-xl font-medium leading-tight tracking-[-0.02em]" title={pool.pairLabel} data-testid="pool-card-name">{cardPairName(pool.pairLabel)}</h3>
+          <h3 className="text-xl font-medium max-sm:text-lg xl:max-2xl:text-lg leading-tight tracking-[-0.02em]" title={pool.pairLabel} data-testid="pool-card-name">{cardPairName(pool.pairLabel)}</h3>
           <p className="truncate text-xs text-ink/65" title={`${pool.nameA} / ${pool.nameB}`}>{pairIssuerLabel(pool.nameA, pool.nameB)}</p>
         </div>
       </div>

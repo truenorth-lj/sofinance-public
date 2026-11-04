@@ -14,11 +14,12 @@ export const PLAN_YIELD_DAYS_PER_YEAR = 365;
 export const PLAN_OPEN_COST_BPS = 100;
 
 /**
- * Assumed swap cost (price impact and slippage) of swapping a closed position's tokens back to USDC, in basis points of
- * what the position is worth then. The same 1% planning assumption Raydium's close-to-USDC has always used, shared by
- * every DEX so the closing cost is estimated one way; a DEX's own platform fee on the exit is added on top.
+ * Assumed swap cost (price impact and slippage) of one USDC swap through the pool, in basis points of the amount
+ * swapped: the USDC deposit into the pool tokens on day 0, and the tokens back to USDC on close. The same 1% planning
+ * assumption Raydium's open and close have always used, shared by every DEX so both are estimated one way; a DEX's own
+ * platform fee is added on top.
  */
-export const PLAN_EXIT_SWAP_COST_BPS = PLAN_OPEN_COST_BPS;
+export const PLAN_SWAP_COST_BPS = PLAN_OPEN_COST_BPS;
 
 /** `PLAN_OPEN_COST_BPS` as a percent string for display, e.g. "1". */
 export function planOpenCostPctLabel(bps: number = PLAN_OPEN_COST_BPS): string {
