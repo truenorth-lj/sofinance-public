@@ -59,8 +59,10 @@ for (const width of widths) {
       if (phone) {
         await page.goto("/app", { waitUntil: "domcontentloaded" });
         await page.getByTestId("nav-menu").click();
-        await page.getByRole("navigation", { name: "App" }).getByRole("link", { name: "Docs" }).waitFor();
+        await page.getByRole("navigation", { name: "App" }).getByRole("link").first().waitFor();
         await check("app-menu-open", { fullPage: false });
+        await page.keyboard.press("Escape");
+        await page.locator("footer").getByRole("link", { name: "Docs", exact: true }).waitFor({ state: "attached" });
       }
       await context.close();
     });
@@ -126,7 +128,7 @@ for (const width of widths) {
       await connect.navAddress.waitFor();
       // In-app navigation keeps the wallet session (a full reload may ask to connect again).
       if (phone) await page.getByTestId("nav-menu").click();
-      await page.getByRole("navigation", { name: "App" }).getByRole("link", { name: "RWA pairs" }).click();
+      await page.getByRole("navigation", { name: "App" }).getByRole("link", { name: "Pools" }).click();
       await open.first().waitFor();
       // Raydium (INTC), both SPCX pools (Raydium and Meteora DLMM) and a Robinhood Chain pool (TSLA/TSLAon).
       // The Raydium modals must also close on Escape; the others use their Close button here.

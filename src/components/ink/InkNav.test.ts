@@ -16,8 +16,11 @@ describe("InkNav app routes", () => {
     expect(src).not.toContain("APP_ROUTES.positionPerformance");
     expect(src).toContain("APP_ROUTES.rwaPairs");
     expect(src).toContain("APP_ROUTES.ai");
-    expect(src).toContain("DOCS_ROUTES.home");
     expect(src).toContain("BLOG_ROUTES.home");
+    // Plan and Docs left the top bar on 11/4; Docs lives in the app footer.
+    expect(src).not.toContain("APP_ROUTES.plan");
+    expect(src).not.toContain("DOCS_ROUTES.home");
+    expect(readFileSync(resolve("src/components/ink/InkFooter.tsx"), "utf8")).toContain("DOCS_ROUTES.home");
     expect(src).not.toContain('href: "/"');
     expect(src).not.toContain('href="/"');
   });

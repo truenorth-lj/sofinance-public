@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { BrandMark } from "@/components/brand-mark";
 import { Menu, Wallet, X as CloseIcon } from "lucide-react";
 import { cn } from "@/lib/cn";
-import { APP_ROUTES, BLOG_ROUTES, DOCS_ROUTES } from "@/lib/public-urls";
+import { APP_ROUTES, BLOG_ROUTES } from "@/lib/public-urls";
 import { EXTERNAL_LINK_PROPS, SOCIAL_LINKS } from "@/lib/social-links";
 import { XIcon } from "@/components/x-icon";
 import { useOptionalEvmWalletConnection } from "@/components/evm-wallet-connection";
@@ -24,10 +24,9 @@ const shortEvm = (value: string) => `${value.slice(0, 6)}…${value.slice(-4)}`;
 
 const NAV_LINKS = [
   { href: APP_ROUTES.home, label: "Positions" },
-  { href: APP_ROUTES.plan, label: "Plan" },
-  { href: APP_ROUTES.rwaPairs, label: "RWA pairs" },
+  // Plan and Docs left the bar on 11/4 (Docs is in the page footer, InkFooter).
+  { href: APP_ROUTES.rwaPairs, label: "Pools" },
   { href: APP_ROUTES.ai, label: "Use AI" },
-  { href: DOCS_ROUTES.home, label: "Docs" },
   { href: BLOG_ROUTES.home, label: "Blog" },
 ] as const;
 
@@ -65,8 +64,7 @@ export function InkNav({ wallet, connected, onConnect, onDisconnect }: InkNavPro
         onKeyDown={(event) => { if (event.key === "Escape") setMenuOpen(false); }}
         className={cn("order-5 w-full gap-2 sm:flex sm:flex-wrap lg:order-2 lg:w-auto lg:flex-1", menuOpen ? "grid grid-cols-2" : "hidden")}>
         {NAV_LINKS.map((link) => {
-          const isPrefixNav =
-            link.href === DOCS_ROUTES.home || link.href === BLOG_ROUTES.home;
+          const isPrefixNav = link.href === BLOG_ROUTES.home;
           const isActive = isPrefixNav
             ? pathname === link.href || pathname.startsWith(`${link.href}/`)
             : pathname === link.href;

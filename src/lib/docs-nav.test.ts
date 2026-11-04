@@ -45,7 +45,9 @@ describe("docs routes and copy guards", () => {
   it("wires Docs into InkNav and landing", () => {
     const nav = readFileSync(resolve("src/components/ink/InkNav.tsx"), "utf8");
     const landing = readFileSync(resolve("src/components/landing-page.tsx"), "utf8");
-    expect(nav).toContain("DOCS_ROUTES.home");
+    // 11/4: Docs left the app top bar for the app footer (InkFooter); the landing page keeps it in its footer.
+    expect(nav).not.toContain("DOCS_ROUTES.home");
+    expect(readFileSync(resolve("src/components/ink/InkFooter.tsx"), "utf8")).toContain("DOCS_ROUTES.home");
     expect(nav).toContain("BLOG_ROUTES.home");
     expect(landing).toContain("DOCS_ROUTES.home");
     expect(landing).toContain("BLOG_ROUTES.home");
@@ -53,11 +55,9 @@ describe("docs routes and copy guards", () => {
 
   it("links APR explanations and open confirm to docs pages", () => {
     const picker = readFileSync(resolve("src/components/range-apr/range-preset-picker.tsx"), "utf8");
-    const pairs = readFileSync(resolve("src/components/unified-pools/unified-pools-panel.tsx"), "utf8");
     const open = readFileSync(resolve("src/components/open-position-modal.tsx"), "utf8");
     const selected = readFileSync(resolve("src/components/selected-app.tsx"), "utf8");
     expect(picker).toContain("DOCS_ROUTES.feeApr");
-    expect(pairs).toContain("DOCS_ROUTES.feeApr");
     expect(open).toContain("DOCS_ROUTES.risks");
     expect(selected).toContain("DOCS_ROUTES.risks");
   });

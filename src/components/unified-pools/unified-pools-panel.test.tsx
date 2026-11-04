@@ -102,7 +102,7 @@ describe("UnifiedPoolsPanel", () => {
     await render();
     expect(shown()).toEqual(["solana:spcxA", "solana:tsla", `robinhood:${rhcSpec.poolId.toLowerCase()}`]);
     expect([...container.querySelectorAll("[data-testid=chain-badge]")].map((el) => el.textContent)).toEqual(["Solana", "Solana", "Robinhood Chain"]);
-    expect(container.textContent).toContain("Show all pools (1 hidden)");
+    expect(container.textContent).toContain("Show duplicates (1)");
   });
 
   it("card pair names can break after the slash and cut each half, so a long name never runs under the APR at 375 px", async () => {
@@ -113,13 +113,14 @@ describe("UnifiedPoolsPanel", () => {
       ["SPCXx/", "inline-block max-w-full truncate align-bottom"], ["SPCX", "inline-block max-w-full truncate align-bottom"]]);
   });
 
-  it("shows hidden duplicates after Show all pools and the toggle", async () => {
+  it("shows hidden duplicates with the Show duplicates pill and hides them again", async () => {
     await render();
-    await act(async () => { container.querySelector<HTMLButtonElement>("[data-testid=show-all-pools]")!.click(); });
+    const toggle = () => container.querySelector<HTMLButtonElement>("[data-testid=show-all-pools]")!;
+    expect(toggle().getAttribute("aria-pressed")).toBe("false");
+    await act(async () => { toggle().click(); });
     expect(shown()).toContain("solana:spcxB");
-    const toggle = container.querySelector<HTMLInputElement>("input[role=switch]")!;
-    expect(toggle.checked).toBe(false);
-    await act(async () => { toggle.click(); });
+    expect(toggle().getAttribute("aria-pressed")).toBe("true");
+    await act(async () => { toggle().click(); });
     expect(shown()).not.toContain("solana:spcxB");
   });
 
@@ -194,7 +195,7 @@ describe("UnifiedPoolsPanel", () => {
     mocks.apr = { "ray-tsla": 20, "met-tsla": 30, "met-tsla-small": 10 };
     await render({ ...PROD, rhc: false });
     expect(shown()).toEqual(["solana:met-tsla", "solana:ray-tsla"]);
-    expect(container.textContent).toContain("Show all pools (1 hidden)");
+    expect(container.textContent).toContain("Show duplicates (1)");
     const badges = (key: string) => container.querySelector(`[data-pool="${key}"]`)!.textContent;
     expect(badges("solana:met-tsla")).toContain("Meteora");
     expect(badges("solana:ray-tsla")).toContain("Raydium");
@@ -268,29 +269,15 @@ describe("UnifiedPoolsPanel", () => {
     expect(shown()).toEqual(["solana:tsla"]);
   });
 
-  it("shows when the saved pool lists were written (fetchedAt), one UTC time when both chains match", async () => {
+  it("shows only the filter bar above the pools: no intro copy, no updated time (11/4 redesign)", async () => {
     vi.stubGlobal("fetch", vi.fn(async (url: string) => ({ ok: true, json: async () => url.includes("uniswap-v4-rhc")
       ? { pools: [rhcSummary], fetchedAt: "2026-10-30T11:02:56.939Z", snapshot: { stale: false } }
-      : url.startsWith("/api/rwa-pairs")
-        ? { pairs: [row("tsla", "TSLAx", "TSLA", "t1", "t2")], fetchedAt: "2026-10-30T11:02:46.419Z", freshness: { snapshotAt: "2026-10-30T11:02:46.419Z", stale: false } }
-        : { pairs: [] } })));
-    await render();
-    expect(container.querySelector("[data-testid=pools-updated]")!.textContent).toBe("Updated 2026-10-30 11:02 UTC");
-  });
-
-  it("names each chain's time when they differ, flags a stale list, and omits the line without times", async () => {
-    vi.stubGlobal("fetch", vi.fn(async (url: string) => ({ ok: true, json: async () => url.includes("uniswap-v4-rhc")
-      ? { pools: [rhcSummary], fetchedAt: "2026-10-29T09:00:00.000Z", snapshot: { stale: true } }
       : { pairs: [row("tsla", "TSLAx", "TSLA", "t1", "t2")], fetchedAt: "2026-10-30T11:02:46.419Z" } })));
     await render();
-    expect(container.querySelector("[data-testid=pools-updated]")!.textContent)
-      .toBe("Updated 2026-10-30 11:02 UTC (Solana) · 2026-10-29 09:00 UTC (Robinhood Chain) · Data delayed");
-
-    act(() => root.unmount());
-    root = createRoot(container);
-    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ pairs: [], pools: [] }) })));
-    await render();
     expect(container.querySelector("[data-testid=pools-updated]")).toBeNull();
+    expect(container.textContent).not.toMatch(/Updated 2026|in one list|Estimates, not guaranteed/);
+    expect([...container.querySelectorAll("select")].map((select) => select.options[select.selectedIndex]!.textContent))
+      .toEqual(["Chain", "Protocol", "TVL", "Est. APR · 7d"]);
   });
 });
 
@@ -312,7 +299,7 @@ describe("UnifiedPoolsPanel TVL filter", () => {
 
   it("offers Any / $5k / $10k / $50k / Custom, defaulting to Any (results unchanged)", async () => {
     await render();
-    expect([...tvlSelect().options].map((option) => option.textContent)).toEqual(["Any TVL", "≥ $5k", "≥ $10k", "≥ $50k", "Custom…"]);
+    expect([...tvlSelect().options].map((option) => option.textContent)).toEqual(["TVL", "TVL ≥ $5k", "TVL ≥ $10k", "TVL ≥ $50k", "Custom TVL…"]);
     expect(tvlSelect().value).toBe("any");
     expect(shown()).toEqual(["solana:spcxA", "solana:tsla", `robinhood:${rhcSpec.poolId.toLowerCase()}`]);
   });
