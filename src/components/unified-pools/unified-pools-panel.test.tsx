@@ -308,7 +308,8 @@ describe("UnifiedPoolsPanel TVL filter", () => {
     mocks.apr = { metaTiny: 673.66, metaBig: 40, tsla: 20 };
     withMeta();
     await render();
-    expect(shown()).toEqual(["solana:metaTiny", "solana:tsla", `robinhood:${rhcSpec.poolId.toLowerCase()}`]);
+    // TVL: Any: the tiny META pool still wins its pair, but ranks after the $5k+ pools (Low TVL).
+    expect(shown()).toEqual(["solana:tsla", "solana:metaTiny", `robinhood:${rhcSpec.poolId.toLowerCase()}`]);
     await chooseTvl("5000");
     expect(shown()).toEqual(["solana:metaBig", "solana:tsla"]);
     expect(container.querySelector("[data-testid=show-all-pools]")).toBeNull();
@@ -319,7 +320,7 @@ describe("UnifiedPoolsPanel TVL filter", () => {
     expect(shown()).toEqual([]);
     expect(container.textContent).toContain("No pools match these filters.");
     await chooseTvl("any");
-    expect(shown()).toEqual(["solana:metaTiny", "solana:tsla", `robinhood:${rhcSpec.poolId.toLowerCase()}`]);
+    expect(shown()).toEqual(["solana:tsla", "solana:metaTiny", `robinhood:${rhcSpec.poolId.toLowerCase()}`]);
   });
 
   it("takes a custom minimum and works with the search", async () => {
@@ -458,5 +459,61 @@ describe("UnifiedPoolsPanel cards (the RWA pairs card fields)", () => {
     } finally {
       rhcSummary.estimatedApr = { tvlUsd: 2000, volume24hUsd: 300, estimatedPoolFeeAprPct: 9 };
     }
+  });
+});
+
+describe("UnifiedPoolsPanel: Low TVL and Not supported yet (PM 2026-11-04)", () => {
+  const NVDA_REASON = "This token uses a balance multiplier, which we don't support yet.";
+  beforeEach(() => {
+    mocks.apr = { big: 5, googl: 177, skhy: 13, nvda: 300 };
+    mocks.state = { intc: { status: "new", days: 5 } };
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => ({ ok: true, json: async () => (url.startsWith("/api/rwa-pairs") ? { pairs: [
+      row("nvda", "NVDAx", "NVDA", "n1", "n2", { tvlUsd: 10_500, unsupported: { issues: ["ScaledUiAmount multiplier not 1"], mints: ["n1"] } }),
+      row("intc", "INTCx", "INTC", "i1", "i2", { tvlUsd: 1_884 }),
+      row("skhy", "SKHYx", "SKHY", "k1", "k2", { tvlUsd: 126 }),
+      row("googl", "GOOGLx", "GOOGL", "g1", "g2", { tvlUsd: 1_932 }),
+      row("big", "SPCXx", "SPCX", "x1", "s1", { tvlUsd: 262_029 }),
+    ] } : { pairs: [] }) })));
+  });
+  const flags = { ...PROD, rhc: false };
+  const card = (key: string) => container.querySelector(`[data-testid=pools-cards] [data-pool='${key}']`)!;
+
+  it("orders normal, Low TVL, New pool, Not supported yet; tags Low TVL cards; NVDAx shows a disabled Not supported yet", async () => {
+    await render(flags);
+    expect(shown()).toEqual(["solana:big", "solana:googl", "solana:skhy", "solana:intc", "solana:nvda"]);
+    expect(card("solana:googl").querySelector("[data-testid=low-tvl-tag]")!.textContent).toContain("Low TVL");
+    expect(card("solana:googl").querySelector("[data-testid=apr7d]")!.textContent).toBe("177.00%");
+    expect(card("solana:big").querySelector("[data-testid=low-tvl-tag]")).toBeNull();
+    expect(card("solana:intc").querySelector("[data-testid=low-tvl-tag]")).toBeNull(); // a new pool says New pool instead
+    const nvda = card("solana:nvda");
+    const unsupported = nvda.querySelector("[data-testid=open-unsupported]")!;
+    expect(unsupported.textContent).toContain("Not supported yet");
+    expect(unsupported.getAttribute("title")).toBe(NVDA_REASON);
+    expect(unsupported.getAttribute("aria-disabled")).toBe("true");
+    expect(nvda.querySelector("[aria-label^='Open position']")).toBeNull();
+    expect(nvda.querySelector("[data-testid=low-tvl-tag]")).toBeNull(); // $10.5k
+  });
+
+  it("the list keeps that order by APR in both directions, with the Low TVL tag and Not supported yet in the rows", async () => {
+    await render(flags);
+    await act(async () => { button("List").click(); });
+    const rows = () => [...container.querySelectorAll("[data-testid=pools-table] tbody tr")].map((r) => r.getAttribute("data-pool"));
+    const header = () => [...container.querySelectorAll<HTMLButtonElement>("[data-testid=pools-table] th button")].find((el) => el.textContent?.includes("APR 7d"))!;
+    expect(rows()).toEqual(["solana:big", "solana:googl", "solana:skhy", "solana:intc", "solana:nvda"]);
+    await act(async () => { header().click(); });
+    expect(rows()).toEqual(["solana:big", "solana:skhy", "solana:googl", "solana:intc", "solana:nvda"]);
+    await act(async () => { header().click(); });
+    expect(rows()).toEqual(["solana:big", "solana:googl", "solana:skhy", "solana:intc", "solana:nvda"]);
+    const tr = (key: string) => container.querySelector(`[data-testid=pools-table] tr[data-pool='${key}']`)!;
+    expect(tr("solana:skhy").querySelector("[data-testid=low-tvl-tag]")).toBeTruthy();
+    expect(tr("solana:big").querySelector("[data-testid=low-tvl-tag]")).toBeNull();
+    expect(tr("solana:nvda").querySelector("[data-testid=open-unsupported]")!.getAttribute("title")).toBe(NVDA_REASON);
+    expect(tr("solana:nvda").querySelector("[aria-label^='Open position']")).toBeNull();
+  });
+
+  it("a deep link to the unsupported pool (/app/rwa-pairs?openPool=) does not open Create position", async () => {
+    await render(flags, { deepLinkPool: "nvda" });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
+    expect(mocks.modal).not.toHaveBeenCalled();
   });
 });

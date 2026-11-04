@@ -42,6 +42,11 @@ export type UnifiedPool = {
   volume24hUsd: number | null;
   /** Estimated pool fee APR from the last 24h, percent. */
   poolFeeApr24hPct: number | null;
+  /**
+   * Settings of the pool's tokens that opening does not handle yet (the engine's `poolMintIssues`, e.g. "ScaledUiAmount
+   * multiplier not 1"); absent or empty when it can be opened. Such a pool shows "Not supported yet" instead of Open.
+   */
+  unsupportedIssues?: readonly string[];
 };
 
 /** Estimated highest range APR (7-day average), percent; null when the pool has none (yet). */
@@ -66,6 +71,41 @@ export function openUnavailableReason(pool: Pick<UnifiedPool, "protocol">): stri
 }
 
 const finite = (value: number | null | undefined): value is number => typeof value === "number" && Number.isFinite(value);
+
+/** Pools under this TVL (USD) show a "Low TVL" tag and rank below every bigger pool by APR (also the homepage floor). */
+export const LOW_TVL_USD = 5_000;
+export const LOW_TVL_LABEL = "Low TVL";
+/** Shown in place of Open for a pool whose tokens use a setting opening does not handle yet. */
+export const NOT_SUPPORTED_LABEL = "Not supported yet";
+
+export function isLowTvl(pool: Pick<UnifiedPool, "tvlUsd">): boolean {
+  return finite(pool.tvlUsd) && pool.tvlUsd < LOW_TVL_USD;
+}
+
+/** Plain-language reason a pool's tokens cannot be opened yet (tooltip of "Not supported yet"), or null when they can. */
+export function unsupportedTokenReason(pool: Pick<UnifiedPool, "unsupportedIssues">): string | null {
+  const issues = pool.unsupportedIssues ?? [];
+  if (!issues.length) return null;
+  if (issues.some((issue) => issue.startsWith("ScaledUiAmount"))) return "This token uses a balance multiplier, which we don't support yet.";
+  if (issues.some((issue) => issue.startsWith("TransferHook"))) return "This token runs extra checks on every transfer, which we don't support yet.";
+  return "This token uses a setting we don't support yet.";
+}
+
+/**
+ * Where a pool ranks by APR, before its APR: 0 normal, 1 Low TVL (under `LOW_TVL_USD`), 2 New pool (too few days of
+ * data), 3 Not supported yet. Higher groups always come after lower ones, in either APR direction.
+ */
+export type RankGroup = 0 | 1 | 2 | 3;
+export type RankGroupLookup = (pool: UnifiedPool) => RankGroup;
+
+export function poolRankGroup(pool: UnifiedPool, isNewPool: boolean): RankGroup {
+  if (unsupportedTokenReason(pool)) return 3;
+  if (isNewPool) return 2;
+  return isLowTvl(pool) ? 1 : 0;
+}
+
+/** Rank groups without APR states (new pools unknown): Not supported yet, then Low TVL. */
+export const poolRankGroupOf: RankGroupLookup = (pool) => poolRankGroup(pool, false);
 
 /** Negative when `a` should be kept over `b` (higher 7d APR; no 7d APR ranks last; then TVL, 24h volume, address). */
 export function compareDuplicateRank(a: UnifiedPool, b: UnifiedPool, apr7d: Apr7dLookup): number {
@@ -140,12 +180,16 @@ function sortValue(pool: UnifiedPool, key: SortKey, apr7d: Apr7dLookup): number 
   }
 }
 
-/** Stable sort; missing numbers always go last whatever the direction; ties fall back to TVL (high first), then name. */
-export function sortPools(pools: readonly UnifiedPool[], key: SortKey, dir: SortDir, apr7d: Apr7dLookup): UnifiedPool[] {
+/**
+ * Stable sort; missing numbers always go last whatever the direction; ties fall back to TVL (high first), then name.
+ * By APR, rank groups come first in either direction (`RankGroup`: normal, Low TVL, New pool, Not supported yet).
+ */
+export function sortPools(pools: readonly UnifiedPool[], key: SortKey, dir: SortDir, apr7d: Apr7dLookup, group: RankGroupLookup = poolRankGroupOf): UnifiedPool[] {
   const sign = dir === "asc" ? 1 : -1;
   return pools
-    .map((pool, index) => ({ pool, index, value: sortValue(pool, key, apr7d) }))
+    .map((pool, index) => ({ pool, index, value: sortValue(pool, key, apr7d), group: key === "apr7d" ? group(pool) : 0 }))
     .sort((x, y) => {
+      if (x.group !== y.group) return x.group - y.group;
       const missingX = x.value === null || (typeof x.value === "number" && !Number.isFinite(x.value));
       const missingY = y.value === null || (typeof y.value === "number" && !Number.isFinite(y.value));
       if (missingX !== missingY) return missingX ? 1 : -1;
@@ -171,11 +215,14 @@ export function sortPools(pools: readonly UnifiedPool[], key: SortKey, dir: Sort
  */
 export function selectPools(pools: readonly UnifiedPool[], options: {
   filters: PoolFilters; hideDuplicates: boolean; sort: { key: SortKey; dir: SortDir }; apr7d: Apr7dLookup;
+  /** Rank groups (default: from the pool alone, `poolRankGroupOf`; pass one that knows new pools). */
+  group?: RankGroupLookup;
 }): { pools: UnifiedPool[]; hiddenDuplicates: number } {
+  const group = options.group ?? poolRankGroupOf;
   const minTvl = options.filters.minTvl ?? null;
   const eligible = minTvl === null ? [...pools] : pools.filter((pool) => meetsMinTvl(pool, minTvl));
   const deduped = options.hideDuplicates ? hideDuplicatePools(eligible, options.apr7d) : eligible;
   const visible = filterPools(deduped, options.filters);
   const hiddenDuplicates = options.hideDuplicates ? filterPools(eligible, options.filters).length - visible.length : 0;
-  return { pools: sortPools(visible, options.sort.key, options.sort.dir, options.apr7d), hiddenDuplicates };
+  return { pools: sortPools(visible, options.sort.key, options.sort.dir, options.apr7d, group), hiddenDuplicates };
 }

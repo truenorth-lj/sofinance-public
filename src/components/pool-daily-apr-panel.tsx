@@ -93,14 +93,8 @@ export function PoolDailyAprChart({
     });
   }
 
-  const published = data
-    ? [
-        data.published.weekFeeApr !== null ? `Raydium 7d feeApr ${data.published.weekFeeApr.toFixed(2)}%` : null,
-        data.published.monthFeeApr !== null ? `30d ${data.published.monthFeeApr.toFixed(2)}%` : null,
-      ]
-        .filter(Boolean)
-        .join(" · ")
-    : "";
+  // Raydium's 30-day feeApr is not shown (PM 2026-11-04): only the 7d vendor window stays next to the daily series.
+  const published = data && data.published.weekFeeApr !== null ? `Raydium 7d feeApr ${data.published.weekFeeApr.toFixed(2)}%` : "";
 
   return (
     <div className="space-y-2">

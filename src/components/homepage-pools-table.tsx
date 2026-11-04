@@ -20,10 +20,11 @@ import {
 import { isRhcUniv4DiscoveryEnabled } from "@/lib/protocol-flags";
 import { fetchRwaPairsList } from "@/lib/rwa-pairs-list";
 import { APP_ROUTES, DOCS_ROUTES, buildOpenPositionPath } from "@/lib/public-urls";
-import { DEFAULT_SORT, openUnavailableReason, type PoolChain, type UnifiedPool } from "@/lib/unified-pools/model";
+import { DEFAULT_SORT, openUnavailableReason, unsupportedTokenReason, type PoolChain, type UnifiedPool } from "@/lib/unified-pools/model";
 import type { RhcPoolSummary } from "@/lib/unified-pools/rows";
 import { PoolTable, type OpenAction } from "./unified-pools/pool-list";
 import { usePoolsApr7d } from "./unified-pools/use-pools-apr7d";
+import { rankGroupLookup } from "@/lib/unified-pools/apr7d";
 import type { TokenIconMap } from "@/lib/token-icons/map";
 
 type PairsResponse = {
@@ -43,8 +44,10 @@ export function openPoolHref(pool: Pick<HomepagePool, "chain" | "poolAddress">) 
     : buildOpenPositionPath(pool.poolAddress);
 }
 
-/** Meteora pools: a greyed Open with its reason (no link out). */
+/** Meteora pools: a greyed Open with its reason (no link out); pools whose tokens are not supported yet say so. */
 const openAction = (pool: UnifiedPool): OpenAction => {
+  const unsupported = unsupportedTokenReason(pool);
+  if (unsupported) return { kind: "unsupported", reason: unsupported };
   const unavailable = openUnavailableReason(pool);
   return unavailable ? { kind: "disabled", reason: unavailable } : { kind: "link", href: openPoolHref(pool) };
 };
@@ -160,7 +163,8 @@ export function HomepagePoolsView({
     const saved = serverApr?.[pool.key];
     return typeof saved === "number" && Number.isFinite(saved) ? saved : null;
   }, [apr, serverApr]);
-  const rows = useMemo(() => (pools ? homepageRows(pools, apr7d, highlightPool) : []), [pools, apr7d, highlightPool]);
+  const group = useMemo(() => rankGroupLookup(apr), [apr]);
+  const rows = useMemo(() => (pools ? homepageRows(pools, apr7d, highlightPool, group) : []), [pools, apr7d, highlightPool, group]);
   const updatedText = updatedLabel(updated);
   const highlightKey = highlightPool ? rows.find((pool) => pool.poolAddress.toLowerCase() === highlightPool.trim().toLowerCase())?.key : undefined;
 

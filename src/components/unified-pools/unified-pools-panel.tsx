@@ -16,7 +16,7 @@ import type { TokenIconMap } from "@/lib/token-icons/map";
 import { fetchRwaPairsList } from "@/lib/rwa-pairs-list";
 import type { SnapshotSourceTime } from "@/lib/snapshot-updated";
 import {
-  CHAIN_LABELS, DEFAULT_FILTERS, DEFAULT_SORT, FIRST_CLICK_DIR, PROTOCOL_LABELS, selectPools, TVL_FILTER_PRESETS,
+  CHAIN_LABELS, DEFAULT_FILTERS, DEFAULT_SORT, FIRST_CLICK_DIR, isLowTvl, PROTOCOL_LABELS, selectPools, TVL_FILTER_PRESETS, unsupportedTokenReason,
   type PoolChain, type PoolFilters, type SortKey, type UnifiedPool, type UnifiedProtocol,
 } from "@/lib/unified-pools/model";
 import { rhcPool, rhcPoolView, solanaPool, type RhcPoolSummary, type SolanaPoolRow } from "@/lib/unified-pools/rows";
@@ -32,9 +32,9 @@ import type { RhcPoolView } from "../rhc-univ4-open-panel";
 import type { OpenPositionPair } from "../use-open-position-controller";
 import { useWalletConnection } from "../wallet-connection";
 import { usePoolsApr7d, type Apr7dState } from "./use-pools-apr7d";
-import { APR7D_SHORT, Apr7dValue, rangeApr7dLabel, ChainBadge, chip, COLUMNS, iconPair, money, OpenButton, PoolTable, type OpenAction } from "./pool-list";
+import { APR7D_SHORT, Apr7dValue, rangeApr7dLabel, ChainBadge, chip, COLUMNS, iconPair, LowTvlTag, money, OpenButton, PoolTable, type OpenAction } from "./pool-list";
 import { dataDaysLabel, MIN_DATA_DAYS } from "@/lib/min-data-days";
-import { withoutNewPoolAprs } from "@/lib/unified-pools/apr7d";
+import { rankGroupLookup } from "@/lib/unified-pools/apr7d";
 
 /** Which sources this deployment may show; computed from the code flags on the server and passed down. */
 export type UnifiedPoolFlags = {
@@ -101,7 +101,8 @@ function PoolCard({ pool, apr, action, icons, onCalculate }: {
   // Stock pools count shares; the stablecoin pool has no stock, so its button just says Calculate.
   const calcLabel = planShareSymbol(pairLabelSymbols(pool.pairLabel)) ? "Calculate shares" : "Calculate";
   return <li className="flex min-w-0 flex-col rounded-[28px] bg-cream p-6 text-ink" data-pool={pool.key}>
-    <div className="flex flex-wrap items-center gap-1.5"><ChainBadge chain={pool.chain} /><span className={cn(chip, "border border-ink/25")}>{PROTOCOL_LABELS[pool.protocol]}</span></div>
+    <div className="flex flex-wrap items-center gap-1.5"><ChainBadge chain={pool.chain} /><span className={cn(chip, "border border-ink/25")}>{PROTOCOL_LABELS[pool.protocol]}</span>
+      {isLowTvl(pool) && apr?.status !== "new" && <LowTvlTag tone="light" />}</div>
     <div className="mt-4 flex items-start justify-between gap-3">
       <div className="flex min-w-0 items-center gap-3 max-sm:gap-2 xl:max-2xl:gap-2">
         <PairTokenIcons pair={iconPair(pool)} icons={icons} chain={pool.chain} iconClassName="h-10 w-10 max-sm:h-8 max-sm:w-8 xl:max-2xl:h-8 xl:max-2xl:w-8" />
@@ -300,9 +301,9 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", header 
   const rwaListKeys = useMemo(() => new Set(loaded.rwaList ?? []), [loaded.rwaList]);
   const apr = usePoolsApr7d(pools, refreshKey, rwaListKeys);
   const apr7d = useCallback((pool: UnifiedPool) => { const state = apr[pool.key]; return state?.status === "ready" ? state.aprPct : null; }, [apr]);
-  // A new pool (too few days of data) shows no APR at all and ranks after every pool with one.
-  const rankable = useMemo(() => withoutNewPoolAprs(pools, apr), [pools, apr]);
-  const selected = useMemo(() => selectPools(rankable, { filters, hideDuplicates: !showAll, sort, apr7d }), [rankable, filters, showAll, sort, apr7d]);
+  // By APR (either direction): normal pools, then Low TVL, then new pools (no APR yet), then pools not supported yet.
+  const group = useMemo(() => rankGroupLookup(apr), [apr]);
+  const selected = useMemo(() => selectPools(pools, { filters, hideDuplicates: !showAll, sort, apr7d, group }), [pools, filters, showAll, sort, apr7d, group]);
 
   /** `connectWallet: false` for deep links: the Create position dialog opens with its own Connect wallet button. */
   const openPool = useCallback((pool: UnifiedPool, connectWallet = true) => {
@@ -324,6 +325,8 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", header 
   const [calcPool, setCalcPool] = useState<UnifiedPool | null>(null);
   const closeCalc = useCallback(() => setCalcPool(null), []);
   const actionFor = useCallback((pool: UnifiedPool): OpenAction => {
+    const unsupported = unsupportedTokenReason(pool);
+    if (unsupported) return { kind: "unsupported", reason: unsupported };
     // Registered DEXes say through their `open` capability and open in the registry dialog (PR10); the shared DEX route
     // is off on some deployments (DEX_TX_ROUTE_ENABLED), and then they offer no Open button at all.
     const open = dexDescriptors.descriptorFor(pool.protocol)?.capabilities.open;

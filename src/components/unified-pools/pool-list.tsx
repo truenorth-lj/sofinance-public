@@ -7,7 +7,7 @@ import { formatAprPct } from "@/lib/apr-labels/format-apr";
 import { cn } from "@/lib/cn";
 import type { TokenIconMap } from "@/lib/token-icons/map";
 import type { Apr7dState } from "@/lib/unified-pools/apr7d";
-import { CHAIN_LABELS, PROTOCOL_LABELS, type PoolChain, type SortDir, type SortKey, type UnifiedPool } from "@/lib/unified-pools/model";
+import { CHAIN_LABELS, isLowTvl, LOW_TVL_LABEL, LOW_TVL_USD, NOT_SUPPORTED_LABEL, PROTOCOL_LABELS, type PoolChain, type SortDir, type SortKey, type UnifiedPool } from "@/lib/unified-pools/model";
 import { InfoTip } from "../info-tip";
 import { PairTokenIcons } from "../pair-token-icons";
 import { dataDaysLabel, MIN_DATA_DAYS } from "@/lib/min-data-days";
@@ -52,22 +52,34 @@ export function newPoolTitle(days: number): string {
   return `${NEW_POOL_LABEL} · ${dataDaysLabel(days)}. An APR shows once it has ${MIN_DATA_DAYS} days.`;
 }
 
-export function Apr7dValue({ state, size = "lg" }: { state: Apr7dState | undefined; size?: "lg" | "sm" }) {
+/** Tooltip of the "Low TVL" tag. */
+export const LOW_TVL_TITLE = `Under $${LOW_TVL_USD / 1_000}k in the pool: a few trades can move this APR a lot, so it ranks below bigger pools.`;
+
+/** "Low TVL" tag for a pool under `LOW_TVL_USD` (its APR still shows; it ranks below every bigger pool). */
+export function LowTvlTag({ tone }: { tone: "light" | "dark" }) {
+  return <span data-testid="low-tvl-tag" title={LOW_TVL_TITLE} className={cn(chip, tone === "light" ? "border border-ink/40 text-ink" : "h-5 border border-white/30 px-2 text-[9px] text-cream/80")}>
+    {LOW_TVL_LABEL}<span className="sr-only">: {LOW_TVL_TITLE}</span></span>;
+}
+
+export function Apr7dValue({ state, size = "lg", lowTvl = false }: {
+  state: Apr7dState | undefined; size?: "lg" | "sm";
+  /** Table rows (`sm`) only: add the "Low TVL" tag under the value (cards show it beside the chain badge). */
+  lowTvl?: boolean;
+}) {
   const text = state?.status === "ready" ? pct(state.aprPct) : state?.status === "new" ? NEW_POOL_LABEL
     : state?.status === "missing" ? "—" : "…";
   const value = <Apr7dPill state={state} size={size} text={text} />;
-  // Table rows have no label line under the value, so a new pool's day count goes here.
-  if (size === "sm" && state?.status === "new") return <span className="inline-flex flex-col items-end gap-0.5">
-    {value}
-    <span data-testid="apr7d-new-days" className="whitespace-nowrap font-data text-[10px] uppercase tracking-[0.08em] text-cream/60 max-md:text-[9px]">
-      {dataDaysLabel(state.days)}</span>
-  </span>;
-  if (size !== "sm" || state?.status !== "ready" || !state.freshness?.delayed) return value;
-  return <span className="inline-flex flex-col items-end gap-0.5">
-    {value}
-    <span data-testid="apr7d-delayed" className="whitespace-nowrap font-data text-[10px] uppercase tracking-[0.08em] text-cream/60 max-md:text-[9px]"
-      title={`Snapshot from ${new Date(state.freshness.snapshotAt).toLocaleString()}`}>Data delayed</span>
-  </span>;
+  if (size !== "sm") return value;
+  const line = "whitespace-nowrap font-data text-[10px] uppercase tracking-[0.08em] text-cream/60 max-md:text-[9px]";
+  // Table rows have no label line under the value, so a new pool's day count, "Data delayed" and "Low TVL" go here.
+  const notes = [
+    state?.status === "new" && <span key="new" data-testid="apr7d-new-days" className={line}>{dataDaysLabel(state.days)}</span>,
+    state?.status === "ready" && state.freshness?.delayed && <span key="delayed" data-testid="apr7d-delayed" className={line}
+      title={`Snapshot from ${new Date(state.freshness.snapshotAt).toLocaleString()}`}>Data delayed</span>,
+    lowTvl && state?.status !== "new" && <LowTvlTag key="low" tone="dark" />,
+  ].filter(Boolean);
+  if (!notes.length) return value;
+  return <span className="inline-flex flex-col items-end gap-0.5">{value}{notes}</span>;
 }
 
 function Apr7dPill({ state, size, text }: { state: Apr7dState | undefined; size: "lg" | "sm"; text: string }) {
@@ -79,7 +91,9 @@ function Apr7dPill({ state, size, text }: { state: Apr7dState | undefined; size:
 
 export type OpenAction = { kind: "open"; onOpen: () => void } | { kind: "link"; href: string } | { kind: "none"; reason: string }
   /** A greyed, disabled Open button with the reason shown next to it (e.g. Meteora pools). */
-  | { kind: "disabled"; reason: string };
+  | { kind: "disabled"; reason: string }
+  /** The pool's tokens use a setting opening does not handle yet: a greyed "Not supported yet" with the reason as its tooltip. */
+  | { kind: "unsupported"; reason: string };
 
 export function OpenButton({ action, label, compact, iconOnlyBelowMd }: {
   action: OpenAction; label: string; compact?: boolean;
@@ -97,6 +111,12 @@ export function OpenButton({ action, label, compact, iconOnlyBelowMd }: {
     <button type="button" disabled aria-disabled="true" title={action.reason} aria-label={`Open position in ${label}: ${action.reason}`}
       className={cn(cls, "cursor-not-allowed opacity-45 hover:translate-y-0")}>{text(compact ? "Open" : "Open position")}{icon}</button>
     <span className={cn("text-xs", compact ? "max-w-[11rem] text-right text-[11px] leading-tight text-smoke max-md:max-w-[6.5rem] max-md:text-[10px]" : "text-ink/65")}>{action.reason}</span>
+  </span>;
+  if (action.kind === "unsupported") return <span data-testid="open-unsupported" aria-disabled="true" title={action.reason}
+    className={cn("inline-flex shrink-0 cursor-not-allowed items-center gap-1.5 rounded-full border text-sm font-semibold",
+      compact ? "min-h-9 border-white/20 px-3 text-cream/60 max-md:px-2 max-md:text-[11px] max-md:leading-tight" : "h-11 border-ink/20 px-4 text-ink/45")}>
+    <span>{NOT_SUPPORTED_LABEL}</span>
+    <InfoTip label={`Why ${label} is not supported yet`} tone={compact ? "dark" : "light"} placement={compact ? "below" : "above"}>{action.reason}</InfoTip>
   </span>;
   return <span className={cn("text-xs", compact ? "text-smoke" : "text-ink/60")}>{action.reason}</span>;
 }
@@ -188,7 +208,7 @@ export function PoolTable({ pools, apr, actionFor, sort, onSort, icons, highligh
           </td>
           <td className={cn("px-3 py-3", narrow)}><ChainBadge chain={pool.chain} tone="dark" wrapBelowMd /></td>
           <td className={cn("px-3 py-3 text-cream/80", wideOnly)}><span className={cn(chip, "border border-white/25")} data-testid="protocol-badge">{PROTOCOL_LABELS[pool.protocol]}</span></td>
-          <td className={cn("px-3 py-3 text-right", narrow)}><Apr7dValue state={apr[pool.key]} size="sm" /></td>
+          <td className={cn("px-3 py-3 text-right", narrow)}><Apr7dValue state={apr[pool.key]} size="sm" lowTvl={isLowTvl(pool)} /></td>
           <td className={cn("px-3 py-3 text-right tabular-nums text-cream/80", wideOnly)}>{money(pool.tvlUsd)}</td>
           <td className={cn("px-3 py-3 text-right tabular-nums text-cream/80", wideOnly)}>{money(pool.volume24hUsd)}</td>
           <td className={cn("px-3 py-3 text-right", narrow)}><OpenButton action={actionFor(pool)} label={pool.pairLabel} compact iconOnlyBelowMd /></td>

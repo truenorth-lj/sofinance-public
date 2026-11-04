@@ -63,6 +63,11 @@ export type PoolRangeAprPayload = {
     windowStartUtc?: string;
     windowEndUtc?: string;
     days: number;
+    /**
+     * Complete UTC days in the last 30 on which the pool traded and had TVL (`countDataDays`, the same count the share
+     * calculator uses). The cards show "New pool" below `MIN_DATA_DAYS`. Absent on snapshots saved before it existed.
+     */
+    dataDays?: number;
     volumeSource: VolumeSource;
     /** Protocol of a `protocol-7d` volume (e.g. "raydium-clmm"). */
     volumeProtocol?: string;

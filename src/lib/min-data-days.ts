@@ -13,3 +13,21 @@ export function hasTooFewDataDays(days: number): boolean {
 export function dataDaysLabel(days: number): string {
   return `${days} ${days === 1 ? "day" : "days"} of data`;
 }
+
+/** One UTC day of a pool's history: its USD volume and TVL, null when unknown. */
+export type PoolDataDay = { volumeUsd: number | null | undefined; tvlUsd: number | null | undefined };
+
+/**
+ * Days of data: complete UTC days with both a volume figure and a TVL above zero (a day with no trades has no
+ * volume candle, so it does not count). The one count behind
+ * "New pool" on the cards and table and the share calculator's 7-day minimum, so both always agree.
+ */
+export function isDataDay(day: PoolDataDay): boolean {
+  const { volumeUsd, tvlUsd } = day;
+  return typeof volumeUsd === "number" && Number.isFinite(volumeUsd) && volumeUsd >= 0
+    && typeof tvlUsd === "number" && Number.isFinite(tvlUsd) && tvlUsd > 0;
+}
+
+export function countDataDays(days: readonly PoolDataDay[]): number {
+  return days.filter(isDataDay).length;
+}

@@ -57,7 +57,7 @@ async function readApr7d(refs: AprRef[]): Promise<Record<string, number>> {
  * the homepage into a per-request render. Inside `unstable_cache` the page stays a static ISR prerender. A failed
  * read throws and is never cached, so one chain being down never pins the other's rows out of the HTML.
  */
-const cachedSolana = unstable_cache(readSolana, ["homepage-pools-solana-v2"], {
+const cachedSolana = unstable_cache(readSolana, ["homepage-pools-solana-v3"], {
   revalidate: HOMEPAGE_POOLS_REVALIDATE_SECONDS,
   tags: ["homepage-pools"],
 });
@@ -66,7 +66,7 @@ const cachedRhc = unstable_cache(readRhc, ["homepage-pools-rhc-v1"], {
   tags: ["homepage-pools"],
 });
 
-const cachedApr7d = unstable_cache(readApr7d, ["homepage-pools-apr7d-v3"], {
+const cachedApr7d = unstable_cache(readApr7d, ["homepage-pools-apr7d-v4"], {
   revalidate: HOMEPAGE_POOLS_REVALIDATE_SECONDS,
   tags: ["homepage-pools"],
 });

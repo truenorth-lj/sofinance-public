@@ -187,6 +187,15 @@ export function breakEvenDay(capital: string, dailyRate: Decimal, entryCost = "0
  * more fees in a day than `cap` allows: the pool's LP fees per day × your share of the pool after your deposit. Same
  * basis as `compoundedProfit` (capital grows, the entry cost is subtracted after).
  */
+/**
+ * USD fees per day a deposit of `value` can take from a pool whose LPs took `poolLpFeesPerDayUsd` a day: its share of the
+ * pool once it is in, `fees × value ÷ (tvl + value)`. The one cap rule behind the calculator projection
+ * (`cappedGrowthPath`) and the card and table APR (`capAprAtPoolFees`).
+ */
+export function poolFeeSharePerDay(poolLpFeesPerDayUsd: Decimal, poolTvlUsd: Decimal, value: Decimal): Decimal {
+  return poolLpFeesPerDayUsd.mul(value).div(poolTvlUsd.add(value));
+}
+
 export function cappedGrowthPath(capital: string, dailyRate: Decimal, days: number, cap: PlanFeeCap): { values: Decimal[]; cappedFromDay: number | null } {
   requireDayCount(days, "days", 0);
   const fees = requireDecimal(cap.poolLpFeesPerDayUsd, "poolLpFeesPerDayUsd", "0");
@@ -197,7 +206,7 @@ export function cappedGrowthPath(capital: string, dailyRate: Decimal, days: numb
   let cappedFromDay: number | null = null;
   for (let day = 1; day <= days; day++) {
     const byApr = value.mul(dailyRate);
-    const byPool = fees.mul(value).div(tvl.add(value));
+    const byPool = poolFeeSharePerDay(fees, tvl, value);
     const capped = byPool.lt(byApr);
     if (capped && cappedFromDay === null) cappedFromDay = day;
     value = value.add(capped ? byPool : byApr);

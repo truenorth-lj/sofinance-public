@@ -6,7 +6,8 @@ import { RAYDIUM_POOL_IDS } from "./pool-daily-apr";
 import { geckoGate, geckoOhlcvUrl, geckoPoolsUrl, type GeckoNetwork } from "./pool-metrics/gecko";
 import { parseGeckoDailyVolumes } from "./pool-daily-apr-math";
 import { buildAprBins, lpFeeFraction, sampleConfidence, usdPerRawTokenB } from "./range-apr/build-model";
-import { candlesInWindow, averageDailyVolume, dailyVolumesFromHourly, VOLUME_WINDOW_DAYS } from "./range-apr/daily-volume";
+import { candlesInWindow, averageDailyVolume, dailyVolumesFromHourly, VOLUME_WINDOW_DAYS, type DailyVolumeSample } from "./range-apr/daily-volume";
+import { countDataDays } from "./min-data-days";
 import { orientCandles, parseGeckoHourlyCandles, type RawCandle } from "./range-apr/gecko-candles";
 import { binVolumeShares, candlesToTickCandles, type OccupancyResult } from "./range-apr/occupancy";
 import { readOnchainPoolLiquidity, type OnchainPoolLiquidity } from "./range-apr/onchain-liquidity";
@@ -63,7 +64,7 @@ export type VolumeProfile = {
   /** Protocol whose published economics back the `protocol-7d` volume fallback (e.g. "raydium-clmm"). */
   protocol?: string;
   /** `source` defaults to GeckoTerminal daily candles. */
-  daily: { avgDailyVolumeUsd: number; days: number; source?: VolumeSource } | null;
+  daily: { avgDailyVolumeUsd: number; days: number; source?: VolumeSource; dayVolumes?: DailyVolumeSample["dayVolumes"] } | null;
   candles: RawCandle[] | null;
   sources: string[];
   /** Why upstream pieces were missing (diagnosis; shown in the payload). */
@@ -275,14 +276,17 @@ export async function loadVolumeProfileResilient(
   };
 }
 
-type Volume = { avgDailyVolumeUsd: number; days: number; source: VolumeSource; protocol?: string };
+type Volume = { avgDailyVolumeUsd: number; days: number; source: VolumeSource; protocol?: string; dayVolumes?: DailyVolumeSample["dayVolumes"] };
 
 /**
  * Average daily volume, in order: GeckoTerminal daily candles (the complete days that exist, up to 7: D4), then
  * the protocol's own published 7-day volume. Snapshots saved before this label fix say "raydium-7d".
  */
 export function pickVolume(profile: Pick<VolumeProfile, "daily" | "economics" | "protocol">): Volume | null {
-  if (profile.daily) return { avgDailyVolumeUsd: profile.daily.avgDailyVolumeUsd, days: profile.daily.days, source: profile.daily.source ?? "geckoterminal-daily" };
+  if (profile.daily) {
+    const { avgDailyVolumeUsd, days, source, dayVolumes } = profile.daily;
+    return { avgDailyVolumeUsd, days, source: source ?? "geckoterminal-daily", ...(dayVolumes ? { dayVolumes } : {}) };
+  }
   const week = profile.economics.weekVolumeUsd;
   return week === null ? null : { avgDailyVolumeUsd: week / 7, days: 7, source: "protocol-7d", protocol: profile.protocol ?? "raydium-clmm" };
 }
@@ -356,7 +360,10 @@ export function assemblePoolRangeApr(
     },
     model: { bins, currentSqrt, usdPerRawB, avgDailyVolumeUsd: volume.avgDailyVolumeUsd },
     sample: {
-      days: volume.days, volumeSource: volume.source, ...(volume.protocol ? { volumeProtocol: volume.protocol } : {}), occupancySource,
+      days: volume.days,
+      // Days the pool traded and had TVL (`countDataDays`, the calculator's count): the cards' "New pool" test.
+      ...(volume.dayVolumes ? { dataDays: countDataDays(volume.dayVolumes.map((day) => ({ volumeUsd: day.volumeUsd, tvlUsd: economics.tvlUsd }))) } : {}),
+      volumeSource: volume.source, ...(volume.protocol ? { volumeProtocol: volume.protocol } : {}), occupancySource,
       candleCount: windowCandles.length,
       unplacedVolumePct,
       confidence: sampleConfidence({

@@ -2,7 +2,7 @@ import type { Capability } from "@/lib/unified-positions/model";
 import type { ExitAsset } from "./lp-intent";
 import { feeRuleBps, type DexDescriptor } from "./dex/types";
 import Decimal from "decimal.js";
-import { buildPlanComparison, PLAN_SWAP_COST_BPS, PLAN_OPEN_COST_BPS, planEntryCost, planOpenCostPctLabel, type PlanYieldComparison } from "./lp-plan-yield";
+import { buildPlanComparison, PLAN_YIELD_DAYS_PER_YEAR, poolFeeSharePerDay, PLAN_SWAP_COST_BPS, PLAN_OPEN_COST_BPS, planEntryCost, planOpenCostPctLabel, type PlanYieldComparison } from "./lp-plan-yield";
 import { lpFeeFraction } from "./range-apr/build-model";
 
 /**
@@ -193,6 +193,28 @@ export function projectPoolPlan(input: {
       poolTvlUsd: new Decimal(tvl).toFixed(),
     },
   });
+}
+
+/** Deposit the cards and the pools table price their APR at (the calculator's cap rule needs a deposit size). */
+export const CARD_APR_DEPOSIT_USD = 1_000;
+
+/**
+ * `aprPct` held to what the pool really paid: at most the LPs' fees per day split by the deposit's share of the pool once
+ * it is in (`poolFeeSharePerDay`, the calculator's cap), as a simple yearly percent of the deposit. Missing or unknown
+ * TVL caps at the pool's whole fee income; unknown fees leave the APR as is.
+ */
+export function capAprAtPoolFees(aprPct: number, pool: {
+  poolLpFeesPerDayUsd: number | null | undefined;
+  poolTvlUsd: number | null | undefined;
+  depositUsd?: number;
+}): number {
+  const { poolLpFeesPerDayUsd: fees, poolTvlUsd } = pool;
+  const deposit = pool.depositUsd ?? CARD_APR_DEPOSIT_USD;
+  if (typeof fees !== "number" || !Number.isFinite(fees) || fees < 0 || !(deposit > 0)) return aprPct;
+  const tvl = typeof poolTvlUsd === "number" && Number.isFinite(poolTvlUsd) && poolTvlUsd > 0 ? poolTvlUsd : 0;
+  const capPct = poolFeeSharePerDay(new Decimal(fees), new Decimal(tvl), new Decimal(deposit))
+    .mul(PLAN_YIELD_DAYS_PER_YEAR).div(deposit).mul(100).toNumber();
+  return Math.min(aprPct, capPct);
 }
 
 /** Terms for a pool with no registered DEX descriptor (and before the pairs list has loaded). */

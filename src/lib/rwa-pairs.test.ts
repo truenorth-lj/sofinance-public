@@ -640,10 +640,27 @@ describe("applyOnchainFreezeRisk (Raydium rows)", () => {
     expect(listablePairs(free.pairs)).toEqual(free.pairs);
   });
 
+  it("marks a pool whose mint uses a balance multiplier as not supported yet: still listed, not blocked (NVDAx FjUo…KKS)", async () => {
+    const base = row();
+    freezeMock.read.mockResolvedValueOnce(new Map([
+      [MINT_A, { freezeAuthority: false, blockReasons: [], unsupported: ["ScaledUiAmount multiplier not 1"] }],
+      [MINT_B, { freezeAuthority: false, blockReasons: [], unsupported: [] }],
+    ]));
+    const flagged = await applyOnchainFreezeRisk([base], {} as never);
+    expect(flagged.pairs[0]).toMatchObject({ unsupported: { issues: ["ScaledUiAmount multiplier not 1"], mints: [MINT_A] } });
+    expect(flagged.pairs[0]!.blocked).toBeUndefined();
+    expect(listablePairs(flagged.pairs)).toEqual(flagged.pairs);
+    // Both mints read fine later: the flag is cleared; one mint unread keeps it.
+    freezeMock.read.mockResolvedValueOnce(new Map([[MINT_A, false], [MINT_B, false]]));
+    expect("unsupported" in (await applyOnchainFreezeRisk(flagged.pairs, {} as never)).pairs[0]!).toBe(false);
+    freezeMock.read.mockResolvedValueOnce(new Map([[MINT_B, false]]));
+    expect((await applyOnchainFreezeRisk(flagged.pairs, {} as never)).pairs[0]!.unsupported).toEqual(flagged.pairs[0]!.unsupported);
+  });
+
   it("blockOf: unknown mints (RPC miss) do not block; reasons keep a fixed order", () => {
     expect(blockOf([[MINT_A, undefined], [MINT_B, undefined]])).toBeUndefined();
-    expect(blockOf([[MINT_A, { freezeAuthority: true, blockReasons: [] }], [MINT_B, undefined]])).toBeUndefined();
-    expect(blockOf([[MINT_A, { freezeAuthority: false, blockReasons: ["frozen"] }], [MINT_B, { freezeAuthority: false, blockReasons: ["paused"] }]]))
+    expect(blockOf([[MINT_A, { freezeAuthority: true, blockReasons: [], unsupported: [] }], [MINT_B, undefined]])).toBeUndefined();
+    expect(blockOf([[MINT_A, { freezeAuthority: false, blockReasons: ["frozen"], unsupported: [] }], [MINT_B, { freezeAuthority: false, blockReasons: ["paused"], unsupported: [] }]]))
       .toEqual({ reasons: ["paused", "frozen"], mints: [MINT_A, MINT_B] });
   });
 
