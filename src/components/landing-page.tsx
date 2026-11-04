@@ -90,15 +90,9 @@ export function LandingPage({ initialPools = null }: { initialPools?: HomepagePo
             <a href="#pools" className={`${navPill} flex-1`}>
               Pools
             </a>
-            <a href="#how" className={`${navPill} flex-1`}>
-              How it works
-            </a>
             <a href="#agents" className={`${navPill} hidden flex-1 sm:flex`}>
               AI agents
             </a>
-            <Link href={DOCS_ROUTES.home} className={`${navPill} flex-1`}>
-              Docs
-            </Link>
             <Link href={BLOG_ROUTES.home} className={`${navPill} flex-1`}>
               Blog
             </Link>
