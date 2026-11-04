@@ -9,7 +9,7 @@ import { DEFAULT_PLAN_AMOUNT, DEFAULT_PLAN_DAYS } from "@/lib/lp-plan-intent";
 import { aprWindowAvgLabel } from "@/lib/lp-plan-best-apr";
 import { planPoolTerms, projectPoolPlan } from "@/lib/lp-plan-pool-terms";
 import { lowPlanApr, pairLabelSymbols, planShareSymbol } from "@/lib/lp-plan-shares";
-import { planDataNotice } from "@/lib/lp-plan-notice";
+import { PLAN_HIDDEN_RISK_LINE, planDataNotice } from "@/lib/lp-plan-notice";
 import { dexDescriptors } from "@/lib/dex/client";
 import { cn } from "@/lib/cn";
 import { HodlVsPool } from "../plan/hodl-vs-pool";
@@ -184,9 +184,11 @@ export function ShareCalcDialog({ pool, open, onClose }: { pool: ShareCalcPool; 
               <InfoRow label={`At the ${aprWindowAvgLabel(projection.lowWindow, "pool avg")}`}>{`${formatSignedUsd(projection.low.vsHold)} vs HODL`}</InfoRow>
             ) : null}
           </dl> : null}
-          <p className="px-1 text-[11px] leading-relaxed text-smoke" data-testid="share-calc-footnote">
+          {notice?.kind === "hide" ? <p className="px-1 text-[11px] leading-relaxed text-smoke" data-testid="share-calc-risk">
+            {PLAN_HIDDEN_RISK_LINE}
+          </p> : <p className="px-1 text-[11px] leading-relaxed text-smoke" data-testid="share-calc-footnote">
             {`Best case from the pool's past fees, compounded daily: fees ${terms.lpShareLabel}, ${terms.openCost.rowLabel} to open, ${terms.exitCost[exit].label}.${best?.poolFeesPerDayUsd !== undefined ? " Fees are capped at what the pool actually paid, shared with your deposit." : ""} The stock's own price moves both sides alike and is left out. Network fees are ignored. Not a forecast.`}
-          </p>
+          </p>}
         </aside>
 
         {/* Main column: tiles, then the chart. */}

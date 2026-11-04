@@ -1,6 +1,7 @@
 import Decimal from "decimal.js";
 import { validNumber } from "./lp-accounting";
 import { MAX_PLAN_DAYS } from "./lp-intent";
+import { MIN_DATA_DAYS } from "./min-data-days";
 
 const D = Decimal.clone({ precision: 60 });
 
@@ -27,7 +28,7 @@ export function planOpenCostPctLabel(bps: number = PLAN_OPEN_COST_BPS): string {
 }
 
 /** Complete UTC days needed before the average is shown as a normal headline. */
-export const PLAN_MIN_RELIABLE_SAMPLE_DAYS = 7;
+export const PLAN_MIN_RELIABLE_SAMPLE_DAYS = MIN_DATA_DAYS;
 
 export function isThinPlanSample(sampleDays: number): boolean {
   return sampleDays < PLAN_MIN_RELIABLE_SAMPLE_DAYS;

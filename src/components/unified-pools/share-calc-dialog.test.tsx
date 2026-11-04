@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ShareCalcDialog, type ShareCalcPool } from "./share-calc-dialog";
 import type { OpenAction } from "./pool-list";
+import { PLAN_HIDDEN_RISK_LINE } from "@/lib/lp-plan-notice";
 import { AMZN_LAUNCH_POINTS, AMZN_LAUNCH_POOL, AMZN_LAUNCH_TVL_USD } from "@/lib/amzn-launch-daily-apr.fixture";
 
 vi.mock("next/link", () => ({
@@ -154,6 +155,10 @@ describe("ShareCalcDialog", () => {
     expect(node.querySelector("[data-testid=hodl-vs-pool]")).toBeNull();
     expect(node.querySelector("[data-testid=share-calc-assumptions]")).toBeNull();
     expect(text()).not.toMatch(/78,551|785,512|7,865|Break-even/);
+    // No "Best case … compounded daily" footnote for numbers that are not there: one risk line instead.
+    expect(node.querySelector("[data-testid=share-calc-footnote]")).toBeNull();
+    expect(text()).not.toMatch(/Best case|compounded daily/);
+    expect(node.querySelector("[data-testid=share-calc-risk]")!.textContent).toBe(PLAN_HIDDEN_RISK_LINE);
     // The open button stays.
     expect(node.querySelector("button[aria-label='Open position in AMZNx/AMZN']")).not.toBeNull();
   });

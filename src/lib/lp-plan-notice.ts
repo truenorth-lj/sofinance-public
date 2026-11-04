@@ -12,6 +12,12 @@ export const PLAN_SMALL_POOL_TVL_USD = HOMEPAGE_MIN_TVL_USD;
  *   fees and split with the deposit, with a plain warning that they swing a lot.
  * - null: nothing to say.
  */
+/**
+ * The one line kept under the calculator when its numbers are hidden (`hide`): the "Best case … compounded daily"
+ * footnote describes numbers that are not there, so only the risk is stated.
+ */
+export const PLAN_HIDDEN_RISK_LINE = "Fees are not promised: a pool can pay less than before, or nothing.";
+
 export type PlanDataNotice = { kind: "hide" | "warn"; message: string } | null;
 
 const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
