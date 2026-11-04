@@ -10,7 +10,18 @@ import type { GeckoVolumePoint } from "../pool-daily-apr-math";
 
 export const VOLUME_WINDOW_DAYS = 7;
 
-export type DailyVolumeSample = { avgDailyVolumeUsd: number; days: number };
+/** How far back the per-day volumes kept for the day count (`countDataDays`) reach. */
+export const DATA_DAYS_LOOKBACK = 30;
+
+export type DailyVolumeSample = {
+  avgDailyVolumeUsd: number;
+  days: number;
+  /**
+   * Complete UTC days (up to `DATA_DAYS_LOOKBACK`, oldest first) with their USD volume, for the day count the cards
+   * share with the calculator (`countDataDays`). Absent on samples saved before it existed.
+   */
+  dayVolumes?: { time: number; volumeUsd: number }[];
+};
 
 export function averageDailyVolume(
   points: readonly GeckoVolumePoint[],
@@ -31,7 +42,12 @@ export function averageDailyVolume(
   const total = complete
     .filter((point) => point.time >= start && point.time <= lastDay)
     .reduce((sum, point) => sum + point.volumeUsd, 0);
-  return { avgDailyVolumeUsd: total / days, days };
+  const lookbackStart = lastDay - (DATA_DAYS_LOOKBACK - 1) * SECONDS_PER_DAY;
+  const dayVolumes = complete
+    .filter((point) => point.time >= lookbackStart && point.time <= lastDay)
+    .sort((a, b) => a.time - b.time)
+    .map((point) => ({ time: point.time, volumeUsd: point.volumeUsd }));
+  return { avgDailyVolumeUsd: total / days, days, dayVolumes };
 }
 
 /** Hourly candles that belong to the same complete-UTC-day window as `averageDailyVolume`. */

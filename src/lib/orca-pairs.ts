@@ -4,16 +4,18 @@ import type { Connection } from "@solana/web3.js";
 import { rpcConnection } from "@sofinance/engine/rpc";
 import { fetchOrcaPools, type FetchOrcaPoolsOptions, type OrcaPoolSummary } from "@sofinance/engine/protocols/orca/discovery";
 import { estimateFeeAprPct, FEE_APR_ESTIMATE_LABEL, hasFreezeTag, isToken2022Program } from "./rwa-pairing";
-import { readMintFreezeAuthorities } from "./onchain-mint-freeze";
+import { readMintSafety, type MintSafety } from "./onchain-mint-freeze";
+import { unsupportedOf } from "./pool-mint-unsupported";
 import type { RwaPairRow } from "./rwa-pairs";
 
 /** Read-only Orca rows in the `/api/rwa-pairs` row shape (protocol "orca-whirlpool"). */
-export function orcaPairRow(pool: OrcaPoolSummary, onchainFreeze: ReadonlyMap<string, boolean> = new Map()): RwaPairRow {
+export function orcaPairRow(pool: OrcaPoolSummary, onchain: ReadonlyMap<string, MintSafety> = new Map()): RwaPairRow {
   const { spec } = pool;
   // Display order follows the allowlist (wrapped first), like Raydium allowlisted pools.
   // Freeze risk: the mint's on-chain freeze authority; Orca's API tags only when the chain read failed.
-  const freezeRiskA = onchainFreeze.get(pool.mintA) ?? hasFreezeTag(pool.tagsA);
-  const freezeRiskB = onchainFreeze.get(pool.mintB) ?? hasFreezeTag(pool.tagsB);
+  const freezeRiskA = onchain.get(pool.mintA)?.freezeAuthority ?? hasFreezeTag(pool.tagsA);
+  const freezeRiskB = onchain.get(pool.mintB)?.freezeAuthority ?? hasFreezeTag(pool.tagsB);
+  const unsupported = unsupportedOf([[pool.mintA, onchain.get(pool.mintA)], [pool.mintB, onchain.get(pool.mintB)]]);
   return {
     poolAddress: pool.poolAddress,
     protocol: "orca-whirlpool",
@@ -47,6 +49,7 @@ export function orcaPairRow(pool: OrcaPoolSummary, onchainFreeze: ReadonlyMap<st
     freezeRiskA,
     freezeRiskB,
     freezeRisk: freezeRiskA || freezeRiskB,
+    ...(unsupported ? { unsupported } : {}),
   };
 }
 
@@ -69,9 +72,9 @@ export async function discoverOrcaPairs(
   if (!options.bypassCache && cache && Date.now() - cache.at < CACHE_TTL_MS) return cache.result;
   const pools = await fetchOrcaPools(options);
   const mints = pools.flatMap((pool) => [pool.mintA, pool.mintB]);
-  let freeze = new Map<string, boolean>();
+  let freeze = new Map<string, MintSafety>();
   try {
-    if (mints.length > 0) freeze = await readMintFreezeAuthorities(options.connection ?? rpcConnection(), mints);
+    if (mints.length > 0) freeze = await readMintSafety(options.connection ?? rpcConnection(), mints);
   } catch { /* RPC down: fall back to API tags */ }
   const onchain = mints.every((mint) => freeze.has(mint));
   const result: OrcaPairsResult = {

@@ -6,7 +6,8 @@ import { METEORA_DLMM_PROGRAM_ID, SPL_TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID, t
 import { rpcConnection } from "@sofinance/engine/rpc";
 import { fetchMeteoraPools, type FetchMeteoraPoolsOptions, type MeteoraPoolSummary } from "@sofinance/engine/protocols/meteora/discovery";
 import { estimateFeeAprPct, FEE_APR_ESTIMATE_LABEL, isToken2022Program } from "./rwa-pairing";
-import { readMintFreezeAuthorities } from "./onchain-mint-freeze";
+import { readMintSafety, type MintSafety } from "./onchain-mint-freeze";
+import { unsupportedOf } from "./pool-mint-unsupported";
 import type { RwaPairRow } from "./rwa-pairs";
 
 /** On-chain facts that override Meteora's datapi in the rows. */
@@ -17,6 +18,8 @@ export type MeteoraOnchainFacts = {
   freezeAuthority: ReadonlyMap<string, boolean>;
   /** Token program owning each mint (scan-found pools, whose spec does not pin it). */
   tokenProgram?: ReadonlyMap<string, string>;
+  /** Each mint's on-chain safety read (for its unsupported settings, `unsupportedOf`). */
+  mintSafety?: ReadonlyMap<string, MintSafety>;
 };
 
 const NO_FACTS: MeteoraOnchainFacts = { protocolShareBps: new Map(), freezeAuthority: new Map() };
@@ -34,6 +37,7 @@ export function meteoraPairRow(pool: MeteoraPoolSummary<MeteoraPoolSpec>, facts:
   // Freeze risk: the mint's on-chain freeze authority; Meteora's datapi flag only when the chain read failed.
   const freezeRiskA = facts.freezeAuthority.get(pool.mintX) ?? pool.freezeAuthorityDisabledX === false;
   const freezeRiskB = facts.freezeAuthority.get(pool.mintY) ?? pool.freezeAuthorityDisabledY === false;
+  const unsupported = unsupportedOf([[pool.mintX, facts.mintSafety?.get(pool.mintX)], [pool.mintY, facts.mintSafety?.get(pool.mintY)]]);
   // LP share of the gross 24h fees with the on-chain protocol share; datapi's protocol fees only as a fallback.
   const shareBps = facts.protocolShareBps.get(pool.poolAddress);
   const lpFees24hUsd = shareBps !== undefined && pool.fees24hUsd !== null
@@ -72,6 +76,7 @@ export function meteoraPairRow(pool: MeteoraPoolSummary<MeteoraPoolSpec>, facts:
     freezeRiskA,
     freezeRiskB,
     freezeRisk: freezeRiskA || freezeRiskB,
+    ...(unsupported ? { unsupported } : {}),
     ...(identity ? { binStep: pool.binStep, poolCreatedAt: pool.createdAt } : {}),
   };
 }
@@ -109,10 +114,11 @@ export async function readMeteoraOnchainFacts(connection: Connection, pools: rea
       infos.push(...await connection.getMultipleAccountsInfo(pools.slice(start, start + 100).map((pool) => new PublicKey(pool.poolAddress)), "confirmed"));
     return infos;
   };
-  const [infos, freezeAuthority] = await Promise.all([
+  const [infos, mintSafety] = await Promise.all([
     readPools(),
-    readMintFreezeAuthorities(connection, pools.flatMap((pool) => [pool.mintX, pool.mintY])),
+    readMintSafety(connection, pools.flatMap((pool) => [pool.mintX, pool.mintY])),
   ]);
+  const freezeAuthority = new Map([...mintSafety].map(([mint, safety]) => [mint, safety.freezeAuthority]));
   infos.forEach((info, index) => {
     const pool = pools[index]!;
     if (!info || info.owner.toBase58() !== METEORA_DLMM_PROGRAM_ID) return;
@@ -127,7 +133,7 @@ export async function readMeteoraOnchainFacts(connection: Connection, pools: rea
       if (programY) tokenProgram.set(pool.mintY, programY);
     } catch { /* left out */ }
   });
-  return { protocolShareBps, freezeAuthority, tokenProgram };
+  return { protocolShareBps, freezeAuthority, tokenProgram, mintSafety };
 }
 
 const CACHE_TTL_MS = 60_000;

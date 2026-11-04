@@ -1,24 +1,15 @@
 import { ClmmConfigLayout, CLMM_PROGRAM_ID, PoolInfoLayout, TickUtil } from "@raydium-io/raydium-sdk-v2";
 import {
-  AccountState, ExtensionType, getAssociatedTokenAddressSync, getDefaultAccountState, getExtensionTypes,
-  getScaledUiAmountConfig, getTransferHook,
-  TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID, unpackAccount, unpackMint,
+  getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID, unpackAccount, unpackMint,
 } from "@solana/spl-token";
 import { Connection, PublicKey, type AccountInfo } from "@solana/web3.js";
 import { MIN_SOL_LAMPORTS, NATIVE_SOL_MINT, USDC_MINT } from "./ids";
 import { rpcConnection } from "./rpc";
 import { resolveMintSymbols } from "./mint-symbols";
 import { discoverWallet } from "./wallet-discovery";
-import { mintHasTransferFee, mintIsPaused } from "./token-safety";
+import { mintHasTransferFee, mintIsPaused, poolMintIssues } from "./token-safety";
 
 const tokenPrograms = [TOKEN_PROGRAM_ID.toBase58(), TOKEN_2022_PROGRAM_ID.toBase58()];
-const supportedPoolExtensions = new Set([
-  ExtensionType.MintCloseAuthority, ExtensionType.PermanentDelegate, ExtensionType.PausableConfig,
-  ExtensionType.MetadataPointer, ExtensionType.TokenMetadata, ExtensionType.GroupPointer,
-  ExtensionType.TokenGroup, ExtensionType.GroupMemberPointer, ExtensionType.TokenGroupMember,
-  ExtensionType.DefaultAccountState, ExtensionType.ConfidentialTransferMint,
-  ExtensionType.TransferHook, ExtensionType.ScaledUiAmountConfig,
-]);
 
 export type OpenPositionSelection = {
   poolId: string;
@@ -31,20 +22,6 @@ function checkedMint(key: PublicKey, info: AccountInfo<Buffer> | null) {
     throw new Error("Pool asset mint does not exist or token program mismatch");
   }
   return { mint: unpackMint(key, info, info.owner), program: info.owner };
-}
-
-function poolMintIssues(mint: ReturnType<typeof unpackMint>) {
-  const extensions = getExtensionTypes(mint.tlvData);
-  const issues = extensions.filter((extension) => !supportedPoolExtensions.has(extension))
-    .map((extension) => ExtensionType[extension] || String(extension));
-  if (extensions.includes(ExtensionType.DefaultAccountState) && getDefaultAccountState(mint)?.state !== AccountState.Initialized) {
-    issues.push("DefaultAccountState not Initialized");
-  }
-  const hook = getTransferHook(mint);
-  if (hook?.programId && !hook.programId.equals(PublicKey.default)) issues.push("TransferHook enabled");
-  const scaled = getScaledUiAmountConfig(mint);
-  if (scaled && (scaled.multiplier !== 1 || scaled.newMultiplier !== 1)) issues.push("ScaledUiAmount multiplier not 1");
-  return issues;
 }
 
 function tokenAmount(info: AccountInfo<Buffer> | null, key: PublicKey, program: PublicKey, wallet: PublicKey, mint: PublicKey) {

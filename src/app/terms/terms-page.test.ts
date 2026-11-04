@@ -18,7 +18,7 @@ describe("/terms page", () => {
   it("covers the required positioning, risks, fees and legal provisions", () => {
     for (const phrase of ["self-custodial software interface", "do not take custody", "never receives, holds or controls your funds",
       "do not issue any token", "issued by third parties", "investment, financial, legal, tax", "Impermanent loss",
-      "collects no fees", "Smart-contract", "Tokenized-stock risk", "not promises", "10 basis points (0.10%)",
+      "collects no fees", "Smart-contract", "Tokenized-stock risk", "not promises", "Fees not guaranteed.", "10 basis points (0.10%)",
       "opening a position", "withdrawing or converting", "compounding", "Solana network fees", "Raydium CLMM position NFTs",
       "directly on Raydium", "as is", "Limitation of liability", "Changes to these Terms"]) {
       expect(page, phrase).toContain(phrase);

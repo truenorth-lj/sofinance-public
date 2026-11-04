@@ -3,7 +3,7 @@ import "server-only";
 
 import { unpackMint } from "@solana/spl-token";
 import { PublicKey, type Connection } from "@solana/web3.js";
-import { mintBlockReasons, type MintBlockReason } from "@sofinance/engine/token-safety";
+import { mintBlockReasons, poolMintIssues, type MintBlockReason } from "@sofinance/engine/token-safety";
 
 const TOKEN_PROGRAMS = new Set(["TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"]);
 
@@ -18,10 +18,16 @@ export function mintDataHasFreezeAuthority(data: Uint8Array): boolean {
 /** On-chain facts of one mint the RWA scan uses: freeze authority (shown as risk only) and block reasons. */
 const MAX_KEYS_PER_CALL = 100;
 
-export type MintSafety = { freezeAuthority: boolean; blockReasons: MintBlockReason[] };
+export type MintSafety = {
+  freezeAuthority: boolean;
+  blockReasons: MintBlockReason[];
+  /** Mint settings the open path does not handle yet (the engine's `poolMintIssues`, its `unsupportedExtensions`). */
+  unsupported?: string[];
+};
 
 /**
- * Freeze authority and Token-2022 block reasons (paused / transfer fee / default-frozen) of each mint, read from
+ * Freeze authority, Token-2022 block reasons (paused / transfer fee / default-frozen) and unsupported settings of each
+ * mint, read from
  * chain in one batched call (read-only). A mint that is missing, not owned by a token program or malformed is left
  * out, so callers can fall back to their API-reported value (and treat it as not blocked).
  */
@@ -37,9 +43,13 @@ export async function readMintSafety(connection: Connection, mints: readonly str
     if (!info || !TOKEN_PROGRAMS.has(info.owner.toBase58())) return;
     let freezeAuthority: boolean;
     try { freezeAuthority = mintDataHasFreezeAuthority(info.data); } catch { return; /* left out */ }
-    let blockReasons: MintBlockReason[] = [];
-    try { blockReasons = mintBlockReasons(unpackMint(new PublicKey(unique[index]!), info, info.owner)); } catch { /* base layout only */ }
-    result.set(unique[index]!, { freezeAuthority, blockReasons });
+    let blockReasons: MintBlockReason[] = [], unsupported: string[] = [];
+    try {
+      const mint = unpackMint(new PublicKey(unique[index]!), info, info.owner);
+      blockReasons = mintBlockReasons(mint);
+      unsupported = poolMintIssues(mint);
+    } catch { /* base layout only */ }
+    result.set(unique[index]!, { freezeAuthority, blockReasons, unsupported });
   });
   return result;
 }

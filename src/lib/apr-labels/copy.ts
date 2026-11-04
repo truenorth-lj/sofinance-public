@@ -1,10 +1,4 @@
 /** Labels and tooltips for the APR figures on the /app/rwa-pairs cards. Copy only; no APR math here. */
-export const POOL_FEE_APR_24H_LABEL = "Est. pool fee APR · 24h · not a prediction";
-/** Short field name on the cards, also used for the 24h figure in the RHC open dialog (so it never reads as the 7d headline). */
-export const POOL_FEE_APR_24H_SHORT = "Est. pool fee APR · 24h";
-export const POOL_FEE_APR_24H_HELP =
-  "Estimate based on the last 24h of fees ÷ TVL, annualized. Gross fee (before Raydium's 16% protocol cut). Not a prediction.";
-
 export const HIGHEST_RANGE_APR_7D_LABEL = "Est. highest range APR · 7d avg · not a prediction";
 /** Homepage link text for the APR docs page (homepage copy avoids the word in the docs page title). */
 export const HOMEPAGE_APR_DOCS_LINK_LABEL = "How estimates work";
@@ -15,4 +9,4 @@ export const HIGHEST_RANGE_APR_7D_HELP =
 export const VOLUME_DIVERGENCE_THRESHOLD = 2;
 
 export const volumeDivergenceSentence = (ratioText: string, direction: "hot" | "cold") =>
-  `Today's volume is ${ratioText}× the 7-day average, so the 24h number runs ${direction}.`;
+  `Today's volume is ${ratioText}× the 7-day average, so today's fees run ${direction} next to this 7-day estimate.`;

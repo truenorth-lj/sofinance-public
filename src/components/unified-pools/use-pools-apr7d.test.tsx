@@ -4,7 +4,7 @@ import { act, createElement, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { OPEN_RANGE_UI_PRESETS } from "@sofinance/engine/open-range-presets";
-import { payloadWithAprs } from "@/lib/range-apr/payload.fixture";
+import { cardPayloadWithAprs } from "@/lib/range-apr/payload.fixture";
 import { buildPresetList } from "@/lib/range-apr/preset-list";
 import type { UnifiedPool } from "@/lib/unified-pools/model";
 import { usePoolsApr7d, type Apr7dState } from "./use-pools-apr7d";
@@ -34,7 +34,7 @@ async function run(payload: unknown) {
 
 describe("usePoolsApr7d", () => {
   it("names the same range and APR as the modal's Best, with confidence and freshness", async () => {
-    const data = payloadWithAprs({ micro: 3, tight: 4, standard: 61, wide: 5 });
+    const data = cardPayloadWithAprs({ micro: 3, tight: 4, standard: 61, wide: 5 });
     const snapshotAt = new Date().toISOString();
     const state = await run({ ...data, sample: { ...data.sample, confidence: "low" }, freshness: { snapshotAt, stale: true } });
     const best = buildPresetList(OPEN_RANGE_UI_PRESETS, data).best!;
@@ -43,7 +43,7 @@ describe("usePoolsApr7d", () => {
   });
 
   it("fresh under 26h; 26-48h keeps the number, delayed even if the server said fresh; over 48h it is gone", async () => {
-    const data = payloadWithAprs({ micro: 3, tight: 4, standard: 61, wide: 5 });
+    const data = cardPayloadWithAprs({ micro: 3, tight: 4, standard: 61, wide: 5 });
     const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString();
     const fresh = await run({ ...data, freshness: { snapshotAt: hoursAgo(20), chainObservedAt: hoursAgo(20), stale: false, lastAttemptStatus: "ok" } });
     expect(fresh).toMatchObject({ status: "ready", freshness: { delayed: false } });
@@ -56,7 +56,7 @@ describe("usePoolsApr7d", () => {
   });
 
   it("a failed last refresh still says delayed", async () => {
-    const data = payloadWithAprs({ micro: 3, tight: 4, standard: 61, wide: 5 });
+    const data = cardPayloadWithAprs({ micro: 3, tight: 4, standard: 61, wide: 5 });
     const at = new Date().toISOString();
     expect(await run({ ...data, freshness: { snapshotAt: at, chainObservedAt: at, stale: false, lastAttemptStatus: "error" } }))
       .toMatchObject({ freshness: { delayed: true } });
@@ -65,7 +65,7 @@ describe("usePoolsApr7d", () => {
 
 describe("usePoolsApr7d RWA-list Meteora pools", () => {
   it("asks for the saved snapshot only for Meteora pools listed by /api/rwa-pairs", async () => {
-    mocks.calls = []; mocks.payload = payloadWithAprs({ micro: 23.1, tight: 18, standard: 3, wide: 1 });
+    mocks.calls = []; mocks.payload = cardPayloadWithAprs({ micro: 23.1, tight: 18, standard: 3, wide: 1 });
     const pools = [
       { key: "solana:m1", chain: "solana", protocol: "meteora-dlmm", poolAddress: "m1" },
       { key: "solana:m2", chain: "solana", protocol: "meteora-dlmm", poolAddress: "m2" },

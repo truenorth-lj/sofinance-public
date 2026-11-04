@@ -1,8 +1,5 @@
 "use client";
 
-import type { Univ4PoolApr } from "@sofinance/engine/protocols/uniswap-v4/market-data";
-import { POOL_FEE_APR_24H_SHORT } from "@/lib/apr-labels/copy";
-import { exactAprTitle, formatAprPct } from "@/lib/apr-labels/format-apr";
 import type { OpenFlowResult, PermitJson } from "@sofinance/engine/protocols/uniswap-v4/open-flow";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { formatUnits, parseUnits } from "viem";
@@ -39,24 +36,6 @@ const fmt = (raw: string | bigint, decimals: number, digits = 6) => {
   const frac = f.slice(0, digits).replace(/0+$/, "");
   return frac ? `${i}.${frac}` : i!;
 };
-
-export function EstimatedAprBadge({ apr }: { apr: Univ4PoolApr | null }) {
-  // No market data (or TVL 0) is "—", never "0.00%"; a real but tiny APR is "<0.01%" with the exact value on hover.
-  const value = apr?.estimatedPoolFeeAprPct;
-  const label = apr?.label ?? { zh: "估計", en: "Estimated" };
-  const usd = (n: number) => `$${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
-  const basis = apr && Number.isFinite(value) && [apr.feeRatePct, apr.volume24hUsd, apr.tvlUsd].every(Number.isFinite)
-    ? `${Number(apr.feeRatePct.toPrecision(2))}% fee × ${usd(apr.volume24hUsd)} 24h vol / ${usd(apr.tvlUsd)} TVL` : null;
-  return <span className="inline-flex flex-wrap items-baseline gap-2" data-testid="estimated-apr" data-apr-status={Number.isFinite(value) ? "ready" : "missing"}>
-    <span className="text-sm font-semibold text-cream" title={Number.isFinite(value) ? exactAprTitle(value) : "No 24h volume / TVL from DexScreener or GeckoTerminal right now"}>{formatAprPct(value)}</span>
-    {/* The 24h pool figure, labelled like the card field so it is not read as the card's 7d range headline. */}
-    <span className="rounded border border-white/20 px-1.5 text-[11px] text-cream/80" title={`${label.zh} · ${label.en}`} data-testid="estimated-apr-label">{POOL_FEE_APR_24H_SHORT}</span>
-    {basis ? <span className="text-[11px] text-smoke" data-testid="estimated-apr-basis">{basis}</span> : null}
-    {apr?.attribution
-      ? <a href={apr.attribution.url} target="_blank" rel="noopener noreferrer" className="text-[11px] text-smoke underline">{apr.attribution.text}</a>
-      : null}
-  </span>;
-}
 
 export function StepList({ needsApproval, current, signingEnabled, onStep }: {
   needsApproval: boolean; current: OpenStepId | null; signingEnabled: boolean; onStep?: (id: OpenStepId) => void;
@@ -429,7 +408,6 @@ export function RhcUniv4OpenPanel({ pool, signingEnabled, receiptPoll, initialWa
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div>
         <p className="text-base font-semibold text-cream">{rhcPairLabel(pool.poolId, " / ") ?? `${pool.token0.symbol} / ${pool.token1.symbol}`} · Uniswap v4 · Robinhood Chain</p>
-        <EstimatedAprBadge apr={pool.estimatedApr} />
       </div>
       {wallet && !walletChanged
         ? <div className="text-right">

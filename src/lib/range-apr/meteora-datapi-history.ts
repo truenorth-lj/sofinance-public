@@ -12,7 +12,7 @@
  */
 import { METEORA_DLMM_DATAPI } from "@sofinance/engine/protocols/meteora/constants";
 import { SECONDS_PER_DAY, lastCompleteUtcDayStart } from "../apr-series";
-import { averageDailyVolume, VOLUME_WINDOW_DAYS } from "./daily-volume";
+import { averageDailyVolume, DATA_DAYS_LOOKBACK, VOLUME_WINDOW_DAYS } from "./daily-volume";
 import type { RawCandle } from "./gecko-candles";
 import { feeTotals, invertCandles, type DailyFeePoint, type FeeTotals, type PoolHistory, type PoolHistorySource } from "./pool-history";
 import { fetchJsonOnce } from "./upstream-http";
@@ -127,9 +127,12 @@ export function meteoraDatapiHistory(options: MeteoraDatapiHistoryOptions): Pool
         return { failure: result.reason };
       };
       const windowStart = lastCompleteUtcDayStart(nowSeconds) - (VOLUME_WINDOW_DAYS - 1) * SECONDS_PER_DAY;
+      // Volume history reaches back `DATA_DAYS_LOOKBACK` days (one request either way) for the day count; the average
+      // and the fee totals still use only the last `VOLUME_WINDOW_DAYS`.
+      const lookbackStart = lastCompleteUtcDayStart(nowSeconds) - (DATA_DAYS_LOOKBACK - 1) * SECONDS_PER_DAY;
       const spans = hourlySpans(nowSeconds);
       const [daily, ...hourly] = await Promise.all([
-        get(`${base}/pools/${id}/volume/history?timeframe=24h&start_time=${windowStart}&end_time=${nowSeconds}`),
+        get(`${base}/pools/${id}/volume/history?timeframe=24h&start_time=${lookbackStart}&end_time=${nowSeconds}`),
         ...spans.map((span) => get(`${base}/pools/${id}/ohlcv?timeframe=1h&start_time=${span.start}&end_time=${span.end}`)),
       ]);
       const sources: string[] = [], issues: string[] = [];

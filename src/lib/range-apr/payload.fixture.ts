@@ -57,3 +57,12 @@ export function degradedPayloadFixture(): PoolRangeAprPayload {
     presets: base.presets.map((preset) => ({ ...preset, estimate: { status: "unavailable", reason: "degraded-data" } })),
   };
 }
+
+/**
+ * `payloadWithAprs` as the pool cards read it: already priced for the cards' $1,000 deposit (so the set APRs are the
+ * card's range APRs) and with enough pool fees that the pool-fee cap does not bind (7d volume $1B a day on $1M TVL).
+ */
+export function cardPayloadWithAprs(...args: Parameters<typeof payloadWithAprs>): PoolRangeAprPayload {
+  const payload = payloadWithAprs(...args);
+  return { ...payload, referenceCapitalUsd: 1_000, model: { ...payload.model, avgDailyVolumeUsd: 1e9 } };
+}

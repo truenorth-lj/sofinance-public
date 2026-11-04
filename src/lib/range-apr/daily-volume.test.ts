@@ -9,23 +9,23 @@ const point = (day: number, volumeUsd: number) => ({ time: D0 + day * DAY, volum
 describe("averageDailyVolume", () => {
   it("averages the last 7 complete UTC days and excludes the open day", () => {
     const points = [point(2, 700), point(3, 100), point(4, 100), point(5, 100), point(6, 100), point(7, 100), point(8, 100), point(9, 100), point(10, 99_999)];
-    expect(averageDailyVolume(points, NOW)).toEqual({ avgDailyVolumeUsd: 100, days: 7 });
+    expect(averageDailyVolume(points, NOW)).toMatchObject({ avgDailyVolumeUsd: 100, days: 7 });
   });
 
   it("counts missing days inside the window as zero (no trades)", () => {
     const points = [point(3, 700)]; // first seen day 3; window = days 4..9? no: first seen is day 3 -> window starts at max(day 3, day 3)
-    expect(averageDailyVolume(points, NOW)).toEqual({ avgDailyVolumeUsd: 100, days: 7 });
+    expect(averageDailyVolume(points, NOW)).toMatchObject({ avgDailyVolumeUsd: 100, days: 7 });
   });
 
   it("only averages over the days a young pool has existed", () => {
     const points = [point(8, 300), point(9, 100)];
-    expect(averageDailyVolume(points, NOW)).toEqual({ avgDailyVolumeUsd: 200, days: 2 });
+    expect(averageDailyVolume(points, NOW)).toMatchObject({ avgDailyVolumeUsd: 200, days: 2 });
   });
 
   it("ignores volume older than the window", () => {
     const points = [point(0, 1_000_000), point(9, 70)];
     // first seen day 0 so the window is the 7 days 3..9: the old spike is outside it
-    expect(averageDailyVolume(points, NOW)).toEqual({ avgDailyVolumeUsd: 10, days: 7 });
+    expect(averageDailyVolume(points, NOW)).toMatchObject({ avgDailyVolumeUsd: 10, days: 7 });
   });
 
   it("returns null when there is nothing complete", () => {
@@ -34,7 +34,7 @@ describe("averageDailyVolume", () => {
   });
 
   it("supports another window length", () => {
-    expect(averageDailyVolume([point(8, 30), point(9, 90)], NOW, 2)).toEqual({ avgDailyVolumeUsd: 60, days: 2 });
+    expect(averageDailyVolume([point(8, 30), point(9, 90)], NOW, 2)).toMatchObject({ avgDailyVolumeUsd: 60, days: 2 });
   });
 });
 
@@ -48,10 +48,10 @@ describe("candlesInWindow", () => {
 describe("averageDailyVolume with the pool creation time", () => {
   it("counts quiet days after creation as zero and allows no candles at all", () => {
     expect(averageDailyVolume([], NOW)).toBeNull();
-    expect(averageDailyVolume([], NOW, 7, D0)).toEqual({ avgDailyVolumeUsd: 0, days: 7 });
+    expect(averageDailyVolume([], NOW, 7, D0)).toMatchObject({ avgDailyVolumeUsd: 0, days: 7 });
     // created on day 7, one trade day 8: days 7, 8, 9
-    expect(averageDailyVolume([point(8, 90)], NOW, 7, D0 + 7 * DAY + 5_000)).toEqual({ avgDailyVolumeUsd: 30, days: 3 });
-    expect(averageDailyVolume([point(8, 90)], NOW)).toEqual({ avgDailyVolumeUsd: 45, days: 2 });
+    expect(averageDailyVolume([point(8, 90)], NOW, 7, D0 + 7 * DAY + 5_000)).toMatchObject({ avgDailyVolumeUsd: 30, days: 3 });
+    expect(averageDailyVolume([point(8, 90)], NOW)).toMatchObject({ avgDailyVolumeUsd: 45, days: 2 });
   });
 });
 

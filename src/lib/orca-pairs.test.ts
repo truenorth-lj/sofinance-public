@@ -41,6 +41,6 @@ describe("Orca pair rows", () => {
     const result = await discoverOrcaPairs({ fetcher, bypassCache: true, connection: down });
     expect(result.freezeAuthoritySource).toBe("api-tags");
     expect(result.pairs[0]!.freezeRisk).toBe(false);
-    expect(orcaPairRow(parseOrcaPool(fixture.data)!, new Map([[CBBTC, true]])).freezeRiskA).toBe(true);
+    expect(orcaPairRow(parseOrcaPool(fixture.data)!, new Map([[CBBTC, { freezeAuthority: true, blockReasons: [], unsupported: [] }]])).freezeRiskA).toBe(true);
   });
 });

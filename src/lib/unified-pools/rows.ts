@@ -22,6 +22,8 @@ export type SolanaPoolRow = {
   token2022A: boolean;
   token2022B: boolean;
   freezeRisk: boolean;
+  /** Token settings opening does not handle yet (`/api/rwa-pairs` rows: `unsupported`). */
+  unsupported?: { issues: string[]; mints?: string[] };
 };
 
 const SOLANA_PROTOCOLS = new Set<UnifiedProtocol>(["raydium-clmm", "orca-whirlpool", "meteora-dlmm"]);
@@ -44,6 +46,7 @@ export function solanaPool(row: SolanaPoolRow): UnifiedPool {
     tvlUsd: row.tvlUsd,
     volume24hUsd: row.volume24hUsd,
     poolFeeApr24hPct: row.estimatedFeeAprPct,
+    ...(row.unsupported?.issues.length ? { unsupportedIssues: row.unsupported.issues } : {}),
   };
 }
 

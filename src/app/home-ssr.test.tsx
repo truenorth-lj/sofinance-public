@@ -2,7 +2,7 @@ import { renderToString } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { UNIV4_RHC_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/uniswap-v4/constants";
 import type { HomepageSolanaRow } from "@/lib/homepage-pools";
-import { payloadWithAprs } from "@/lib/range-apr/payload.fixture";
+import { cardPayloadWithAprs } from "@/lib/range-apr/payload.fixture";
 import type { RhcPoolSummary } from "@/lib/unified-pools/rows";
 
 // Server HTML must carry pool names (crawlers and AI fetchers do not run the client fetch).
@@ -124,9 +124,9 @@ describe("homepage server render", () => {
     });
     mocks.getRhcPoolsSnapshot.mockResolvedValue(rhcResult);
     mocks.getPoolAprSnapshot.mockImplementation(async (poolId: string) =>
-      payloadWithAprs(poolId === "spcx-hot" ? { micro: 40, tight: 30, standard: 5, wide: 1 } : { micro: 2, tight: 1, standard: 1, wide: 1 }));
+      cardPayloadWithAprs(poolId === "spcx-hot" ? { micro: 40, tight: 30, standard: 5, wide: 1 } : { micro: 2, tight: 1, standard: 1, wide: 1 }));
     mocks.getRhcAprSnapshot.mockImplementation(async (poolId: string) => {
-      if (poolId.toLowerCase() === UNIV4_RHC_ALLOWLISTED_POOLS[3]!.poolId.toLowerCase()) return payloadWithAprs({ micro: 7.5 });
+      if (poolId.toLowerCase() === UNIV4_RHC_ALLOWLISTED_POOLS[3]!.poolId.toLowerCase()) return cardPayloadWithAprs({ micro: 7.5 });
       throw new Error("not tracked");
     });
     const { default: Home } = await import("./page");

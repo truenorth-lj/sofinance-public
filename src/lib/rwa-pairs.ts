@@ -24,6 +24,7 @@ import { fetchXstocksSolanaMintSet, getXstocksObservedAt } from "./rwa-xstocks-w
 import type { Connection } from "@solana/web3.js";
 import { rpcConnection } from "@sofinance/engine/rpc";
 import { readMintSafety, type MintSafety } from "./onchain-mint-freeze";
+import { unsupportedOf, type PoolMintUnsupported } from "./pool-mint-unsupported";
 import type { MintBlockReason } from "@sofinance/engine/token-safety";
 
 export const RAYDIUM_API_V3 = "https://api-v3.raydium.io";
@@ -93,6 +94,8 @@ export type RwaPairRow = {
    * the pool is kept in the snapshot but never listed (`listablePairs`). A freeze authority alone never blocks.
    */
   blocked?: { reasons: MintBlockReason[]; mints: string[] };
+  /** A mint has settings opening does not handle yet (e.g. a balance multiplier): listed, but Open is greyed out. */
+  unsupported?: PoolMintUnsupported;
   /** Bin-based pools found by the scan: bin step (bps per bin), what the range-APR read is checked against. */
   binStep?: number;
   /** Pools whose source publishes it: pool creation time, so history before it is not read. */
@@ -613,6 +616,10 @@ export async function applyOnchainFreezeRisk(pairs: RwaPairRow[], connection?: C
     const row: RwaPairRow = { ...pair, freezeRiskA, freezeRiskB, freezeRisk: freezeRiskA || freezeRiskB };
     const blocked = blockOf([[pair.mintA, a], [pair.mintB, b]]);
     if (blocked) row.blocked = blocked;
+    const unsupported = unsupportedOf([[pair.mintA, a], [pair.mintB, b]]);
+    // A mint the read could not resolve keeps whatever the row already said.
+    if (unsupported) row.unsupported = unsupported;
+    else if (a && b) delete row.unsupported;
     return row;
   });
   const source: "onchain" | "tags" | "mixed" = known === pairs.length * 2 ? "onchain" : known === 0 ? "tags" : "mixed";

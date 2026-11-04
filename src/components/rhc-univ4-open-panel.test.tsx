@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const flags = vi.hoisted(() => ({ signing: false }));
 vi.mock("@/lib/protocol-flags", async importOriginal => ({ ...await importOriginal<typeof import("@/lib/protocol-flags")>(), isRhcUniv4WalletSigningEnabled: () => flags.signing }));
 
-import { EstimatedAprBadge, OpenPreview, type RhcPoolView, RhcUniv4OpenPanel, StepList } from "./rhc-univ4-open-panel";
+import { OpenPreview, type RhcPoolView, RhcUniv4OpenPanel, StepList } from "./rhc-univ4-open-panel";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -49,45 +49,6 @@ beforeEach(() => {
 afterEach(() => { flags.signing = false; localStorage.clear(); act(() => root.unmount()); container.remove(); vi.restoreAllMocks(); vi.unstubAllGlobals(); delete (window as unknown as { ethereum?: unknown }).ethereum; });
 const render = (el: Parameters<Root["render"]>[0]) => act(() => root.render(el));
 const text = () => container.textContent ?? "";
-
-describe("EstimatedAprBadge", () => {
-  it("labels the 24h figure like the card field (not as the 7d headline) and shows no attribution for DexScreener data", () => {
-    render(createElement(EstimatedAprBadge, { apr: apr("dexscreener") }));
-    expect(text()).toContain("7.50%");
-    const label = container.querySelector("[data-testid=estimated-apr-label]")!;
-    expect(label.textContent).toBe("Est. pool fee APR · 24h");
-    expect(label.getAttribute("title")).toBe("估計 · Estimated");
-    expect(text()).not.toContain("Estimated APR");
-    expect(container.querySelector("a")).toBeNull();
-    expect(text()).not.toContain("GeckoTerminal");
-  });
-  it("links Data: GeckoTerminal only when GeckoTerminal data is shown", () => {
-    render(createElement(EstimatedAprBadge, { apr: apr("geckoterminal") }));
-    const link = container.querySelector("a")!;
-    expect(link.textContent).toBe("Data: GeckoTerminal");
-    expect(link.getAttribute("href")).toBe("https://www.geckoterminal.com");
-    expect(link.getAttribute("rel")).toContain("noopener");
-  });
-  it("shows — (not 0.00%) without data", () => {
-    render(createElement(EstimatedAprBadge, { apr: null }));
-    expect(container.querySelector("[data-testid=estimated-apr]")!.firstElementChild!.textContent).toBe("—");
-    expect(text()).not.toContain("0.00%");
-  });
-  it("shows — (not 0.00%) when TVL is 0 or the value is missing", () => {
-    render(createElement(EstimatedAprBadge, { apr: { ...apr("dexscreener"), estimatedPoolFeeAprPct: null } as RhcPoolView["estimatedApr"] }));
-    expect(text()).toContain("—");
-    expect(text()).not.toContain("0.00%");
-    render(createElement(EstimatedAprBadge, { apr: { ...apr("dexscreener"), estimatedPoolFeeAprPct: undefined } as unknown as RhcPoolView["estimatedApr"] }));
-    expect(text()).not.toContain("0.00%");
-  });
-  it("shows a real but tiny APR as <0.01% with its basis (the 2026-10-30 prod SPCX/SPCXon case)", () => {
-    render(createElement(EstimatedAprBadge, { apr: { ...apr("dexscreener"), estimatedPoolFeeAprPct: 0.0005575645952321763,
-      feeRatePct: 0.005, volume24hUsd: 14.76, tvlUsd: 48795.01 } as RhcPoolView["estimatedApr"] }));
-    expect(text()).toContain("<0.01%");
-    expect(text()).not.toContain("0.00%");
-    expect(container.querySelector("[data-testid=estimated-apr-basis]")!.textContent).toBe("0.005% fee × $15 24h vol / $48,795 TVL");
-  });
-});
 
 describe("OpenPreview", () => {
   it("shows swap, fee and the leftover refund note (zh + en); no placeholder note", () => {
@@ -143,7 +104,9 @@ describe("RhcUniv4OpenPanel", () => {
     const fetchMock = vi.fn(async () => ({ ok: true, json: async () => needsSig(true) }));
     vi.stubGlobal("fetch", fetchMock);
     render(createElement(RhcUniv4OpenPanel, { pool: pool({ estimatedApr: apr("geckoterminal") }), signingEnabled: false }));
-    expect(text()).toContain("Data: GeckoTerminal");
+    // The dialog shows no 24h APR (the 7-day estimate on the card is the only APR).
+    expect(container.querySelector("[data-testid=estimated-apr]")).toBeNull();
+    expect(text()).not.toContain("APR · 24h");
     const button = (label: string) => [...container.querySelectorAll("button")].find(b => b.textContent === label)!;
     expect(button("Preview open (simulated)").disabled).toBe(true);
     await act(async () => { button("Connect MetaMask").click(); await new Promise(r => setTimeout(r, 300)); });
