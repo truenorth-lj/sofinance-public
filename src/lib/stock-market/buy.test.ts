@@ -13,6 +13,7 @@ vi.mock("@sofinance/engine/spot-swap", async (importOriginal) => {
   };
 });
 
+import { SpotSwapError } from "@sofinance/engine/spot-swap";
 import { computeStockBuyEligibility, spotSwapAllowlistFor } from "./buy";
 import type { StockToken } from "./build";
 
@@ -80,12 +81,15 @@ describe("computeStockBuyEligibility", () => {
     expect(result.options.MSTR).toBeUndefined();
   });
 
-  it("rethrows an outage so it is not cached as 'not buyable'; any other route error removes only that Buy", async () => {
+  it("rethrows an outage or unexpected error so it is not cached as 'not buyable'; a token refusal removes only that Buy", async () => {
     const outage = new Error("down");
     await expect(computeStockBuyEligibility(market, ["TSLA"], { readMints, checkRoute: async () => { throw outage; }, isUnavailable: (error) => error === outage }))
       .rejects.toBe(outage);
     const result = await computeStockBuyEligibility(market, ["MSTR", "TSLA"], { readMints,
-      checkRoute: async (mint) => { if (mint === MSTR_ON) throw new Error("bad"); return "ok"; }, isUnavailable: () => false });
+      checkRoute: async (mint) => { if (mint === MSTR_ON) throw new SpotSwapError("spot_swap_token_unavailable", "bad"); return "ok"; }, isUnavailable: () => false });
     expect(Object.keys(result.options)).toEqual(["TSLA"]);
+    const config = new Error("Server-side key not set");
+    await expect(computeStockBuyEligibility(market, ["TSLA"], { readMints, checkRoute: async () => { throw config; }, isUnavailable: () => false }))
+      .rejects.toBe(config);
   });
 });

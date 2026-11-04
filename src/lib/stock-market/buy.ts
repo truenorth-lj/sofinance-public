@@ -10,7 +10,7 @@
  * Pure apart from the injected chain read and route check.
  */
 import { PublicKey, type AccountInfo } from "@solana/web3.js";
-import { selectSpotSwapToken, spotSwapMintIssues, type SpotSwapRouteCheck, type SpotSwapToken } from "@sofinance/engine/spot-swap";
+import { selectSpotSwapToken, SpotSwapError, spotSwapMintIssues, type SpotSwapRouteCheck, type SpotSwapToken } from "@sofinance/engine/spot-swap";
 import type { StockMarket, StockToken } from "./build";
 
 /** A token the engine may buy for this stock (passed the filters and the mint checks). */
@@ -83,7 +83,10 @@ export async function computeStockBuyEligibility(market: Pick<StockMarket, "toke
       options[underlying] = { underlying, company, mint: selection.mint, mintShort: selection.mintShort,
         issuerName: selection.issuerName, symbol: selection.token.symbol };
     } catch (error) {
-      if (deps.isUnavailable(error)) throw error;
+      // Only a refusal about this token removes just its Buy. Outages and
+      // anything unexpected (e.g. missing server config) rethrow, so the
+      // failure is never cached as "not buyable" for the whole TTL.
+      if (deps.isUnavailable(error) || !(error instanceof SpotSwapError)) throw error;
     }
   }
   return { checkedAt: (deps.now ?? new Date()).toISOString(), options, candidates };
