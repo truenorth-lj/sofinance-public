@@ -171,7 +171,9 @@ describe("landing page copy and routes", () => {
 
   it("ranks homepage pools by the /app/rwa-pairs 7-day estimate with a plain help and docs link", () => {
     expect(HOMEPAGE_APR_DOCS_LINK_LABEL).toBe("How estimates work");
-    expect(`${HIGHEST_RANGE_APR_7D_HELP} ${HOMEPAGE_APR_DOCS_LINK_LABEL}`).not.toMatch(FORBIDDEN);
+    expect(withoutAllowed(`${HIGHEST_RANGE_APR_7D_HELP} ${HOMEPAGE_APR_DOCS_LINK_LABEL}`)).not.toMatch(FORBIDDEN);
+    expect(HIGHEST_RANGE_APR_7D_HELP).toContain("$1,000 deposit");
+    expect(HIGHEST_RANGE_APR_7D_HELP).not.toMatch(/\$100\b|APR/);
     expect(table).toContain("Ranked by the 7-day estimate, high to low (on Solana, for a range picked from the past 7 days of fee data).");
     expect(table).toContain("Top pools on Solana and Robinhood Chain");
     expect(table).not.toContain("by est. 7-day APR");

@@ -57,6 +57,7 @@ describe("summarizeApr7d: held to the pool's real fees at a $1,000 deposit (the 
     expect(uncapped).toBeGreaterThan(capPct);
     const state = summarizeApr7d(payload, "raydium-clmm", NOW);
     expect(state.status === "ready" && state.aprPct).toBeCloseTo(capPct, 9);
+    expect(state).toMatchObject({ status: "ready", capped: true });
     expect(capAprAtPoolFees(uncapped, { poolLpFeesPerDayUsd: fees, poolTvlUsd: 126 })).toBeCloseTo(capPct, 9);
   });
   it("never raises an APR under the cap, and leaves it when the pool's fees are unknown", () => {
@@ -76,6 +77,7 @@ describe("summarizeApr7d: held to the pool's real fees at a $1,000 deposit (the 
     const state = summarizeApr7d(payload, "raydium-clmm", NOW);
     expect(fees * 365 / CARD_APR_DEPOSIT_USD * 100).toBeGreaterThan(uncappedAt1000(payload));
     expect(state.status === "ready" && state.aprPct).toBeCloseTo(uncappedAt1000(payload), 9);
+    expect(state).toMatchObject({ status: "ready", capped: false });
   });
 });
 
@@ -95,7 +97,7 @@ describe("cardDataDays: the calculator's strict count (days with volume and TVL)
 describe("rankGroupLookup", () => {
   it("puts a pool whose APR state is new in the New pool group; Not supported yet still wins", () => {
     const pool = (key: string, over: Partial<UnifiedPool> = {}) => ({ key, tvlUsd: 20_000, ...over }) as UnifiedPool;
-    const apr: Record<string, Apr7dState> = { a: { status: "new", days: 3 }, b: { status: "ready", aprPct: 1, rangeLabel: "Tight", lowConfidence: false, avgDailyVolumeUsd: 1 } };
+    const apr: Record<string, Apr7dState> = { a: { status: "new", days: 3 }, b: { status: "ready", aprPct: 1, rangeLabel: "Tight", lowConfidence: false, capped: false, avgDailyVolumeUsd: 1 } };
     const group = rankGroupLookup(apr);
     expect(group(pool("a"))).toBe(2);
     expect(group(pool("b"))).toBe(0);
