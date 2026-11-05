@@ -99,6 +99,17 @@ export const APR_QUEUE_FIXED_MS = 15_000;
  */
 export const APR_POOLS_PER_RUN = 12;
 
+/**
+ * A pool whose price history is unavailable (degraded: no estimate saved) is a pool-level problem: its snapshot says so
+ * and the run is "partial", but the job only counts as failed when MORE than this share of the pools it finished
+ * were degraded (e.g. 1 of 7 is not a failure, 4 of 7 is). Errors, 429s and exceptions still fail the job on their own.
+ */
+export const APR_DEGRADED_FAILURE_SHARE = 0.5;
+/** True when the degraded pools are more than `APR_DEGRADED_FAILURE_SHARE` of the pools finished this run. */
+export function degradedIsSystemic(degraded: number, done: number): boolean {
+  return done > 0 && degraded > done * APR_DEGRADED_FAILURE_SHARE;
+}
+
 /** fresh: today's price history; stale: computed from saved history; degraded/error: no estimate saved; throttled: 429, nothing saved. */
 type PoolOutcome = "fresh" | "stale" | "degraded" | "error" | "throttled";
 type JobResult = {
@@ -244,7 +255,7 @@ export async function runJob(job: JobName, options: Options): Promise<JobResult>
     meteoraQueue: MeteoraAprQueueStats | undefined,
     dailyTvl: Partial<Record<DexId, DailyTvlStats>> | undefined,
     // Counted in `consecutive_failures` (and keeps `last_success_at`). The APR job counts only a GeckoTerminal 429 or
-    // an error (a failed step, or a pool that saved no estimate); a run that only ran out of its time budget, or saved
+    // an error (a failed step, a pool error, or more than half of the finished pools degraded); a run that only ran out of its time budget, or saved
     // stale estimates from saved price history, is not a failure.
     failure = false;
   try {
@@ -418,7 +429,7 @@ async function refreshAprPools(input: {
   ]);
   const selected = all.slice(0, APR_POOLS_PER_RUN);
   const queue: AprQueueStats = { pools: all.length, selected: selected.length, done: 0, stoppedBy: null };
-  let processed = 0;
+  let processed = 0, degraded = 0;
   // Started before the GeckoTerminal queue and awaited after it: the two lanes share only the job deadline. The Meteora
   // lane first runs the registry's daily TVL record (Meteora: datapi, first run of the UTC day; later runs only fill gaps),
   // then refreshes.
@@ -456,12 +467,15 @@ async function refreshAprPools(input: {
     if (signal.aborted) { queue.stoppedBy = "time"; break; }
     queue.done += 1;
     if (outcome !== "error") processed += 1;
-    // No estimate saved (error, or degraded: price history unavailable). A stale estimate from saved history is not.
-    if (outcome === "error" || outcome === "degraded") failed = true;
+    // A pool error is a failure. A degraded pool (price history unavailable, no estimate) only counts when most are
+    // (`degradedIsSystemic`, after the loop). A stale estimate from saved history is neither.
+    if (outcome === "error") failed = true;
+    if (outcome === "degraded") degraded += 1;
     if (throttled()) { queue.stoppedBy = "429"; break; }
   }
   if (queue.stoppedBy === "429") issues.push(`GeckoTerminal 429: run ended after ${queue.done} of ${queue.selected} pools; the rest go first next run`);
-  if (queue.stoppedBy === "time") issues.push(`Time budget: run ended after ${queue.done} of ${queue.selected} pools; the rest go first next run`);
+  // A time-budget stop is the normal end of a run (the guard, not APR_POOLS_PER_RUN, ends it): no issue, status stays
+  // "ok"; it stays visible in `queue` (done / selected / stoppedBy "time"). The rest go first next run.
   let rhcStats: RhcAprRunStats | undefined;
   if (rhc) {
     issues.push(...rhc.issues);
@@ -469,6 +483,7 @@ async function refreshAprPools(input: {
     rhcStats = { ...rhc.stats, deferred: rhc.pools.filter((pool) => !done.has(pool.poolId)).length };
   }
   if (queue.stoppedBy === "429" || throttled()) failed = true;
+  if (degradedIsSystemic(degraded, queue.done)) failed = true;
   // Meteora lane outcomes are issues (the run is "partial"), not failures of the job (like its discovery).
   const meteora = await meteoraLane;
   if (meteora) {
@@ -508,7 +523,7 @@ async function refreshMeteoraLane(input: {
   };
   await Promise.all(Array.from({ length: Math.min(METEORA_APR_CONCURRENCY, selected.length) }, worker));
   if (stats.stoppedBy === "datapi-429") issues.push(`Meteora datapi 429: lane ended after ${stats.done} of ${stats.selected} pools; the rest go first next run`);
-  if (stats.stoppedBy === "time") issues.push(`Meteora time budget: lane ended after ${stats.done} of ${stats.selected} pools`);
+  // A time-budget stop is expected here too: visible in `meteoraQueue` stats only, not an issue.
   return { processed, issues, stats };
 }
 
