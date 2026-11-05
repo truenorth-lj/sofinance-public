@@ -410,6 +410,11 @@ describe("UnifiedPoolsPanel cards (the RWA pairs card fields)", () => {
     const tsla = card("solana:tsla");
     expect(tsla.querySelector("[data-testid=apr7d]")!.textContent).toBe("8.95%");
     expect(tsla.querySelector("[data-testid=apr7d-label]")!.textContent).toBe("Pool avg APR · 7d");
+    // Narrow cards break only before "· 7d", and the ⓘ shares the tail's no-wrap line.
+    const parts = [...tsla.querySelectorAll("[data-testid=apr7d-label] > span")];
+    expect(parts.map((part) => part.firstChild?.textContent)).toEqual(["Pool avg APR", "· 7d"]);
+    expect(parts.every((part) => part.className.includes("whitespace-nowrap"))).toBe(true);
+    expect(parts[1]!.querySelector("button[aria-label='About Pool avg APR']")).not.toBeNull();
     expect(tsla.querySelector("[data-testid=highest-range]")).toBeNull();
     expect(tsla.textContent).not.toMatch(/Micro|Highest range/i);
     act(() => { tsla.querySelector<HTMLButtonElement>("button[aria-label='About Pool avg APR']")!.focus(); });

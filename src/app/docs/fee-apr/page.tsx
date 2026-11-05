@@ -26,9 +26,10 @@ export default function DocsFeeAprPage() {
       <p>The App shows several related estimates. None of them is a prediction of your return.</p>
       <ul>
         <li>
-          <strong className="font-medium text-cream">Est. highest range APR · 7d avg</strong> — estimated
-          from recent trading volume and fees, for a sample deposit (about $100) in a candidate
-          range (Micro / Tight / Standard / Wide). Not a prediction.
+          <strong className="font-medium text-cream">Range APR · 7d</strong> on the pool cards — estimated
+          from recent trading volume and fees, for a $1,000 deposit in the best candidate range (Micro / Tight /
+          Standard / Wide). When the pool&apos;s own average fee rate is lower, the card shows that instead and says
+          <strong className="font-medium text-cream"> Pool avg APR · 7d</strong>. Not a prediction.
         </li>
         <li>
           <strong className="font-medium text-cream">Est. fee APR</strong> on the Solana
@@ -45,7 +46,8 @@ export default function DocsFeeAprPage() {
       <ul>
         <li>It is an estimate from recent data, not a promise.</li>
         <li>Narrower ranges often show higher estimated APR and leave range sooner.</li>
-        <li>Larger deposits in the same range typically collect fees at a lower rate than the $100 reference.</li>
+        <li>Larger deposits in the same range typically collect fees at a lower rate than the ~$100 reference the
+          create-position estimate starts from.</li>
         <li>Your realized result also depends on price path, swaps, and fees — see{" "}
           <Link href={DOCS_ROUTES.fees}>Fees</Link>.</li>
       </ul>

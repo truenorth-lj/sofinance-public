@@ -2,8 +2,12 @@
 export const HIGHEST_RANGE_APR_7D_LABEL = "Est. highest range APR · 7d avg · not a prediction";
 /** Homepage link text for the APR docs page (homepage copy avoids the word in the docs page title). */
 export const HOMEPAGE_APR_DOCS_LINK_LABEL = "How estimates work";
+/**
+ * Pools table column and homepage help: one line for every row, capped or not (the card says which, see
+ * `CARD_POOL_AVG_APR_7D_HELP`). Same basis as the cards: a $1,000 deposit, held to the pool's own average fee rate.
+ */
 export const HIGHEST_RANGE_APR_7D_HELP =
-  "Estimated from the past 7 days' average volume, LP net fees, for a $100 position in this range. Not a prediction.";
+  "Estimated from the past 7 days' average volume and LP net fees, for a $1,000 deposit in the best range, capped at the pool's average fee rate where that is lower. Not a prediction. Fees not guaranteed.";
 
 /** Card label when the pool-fee cap sets the number: the pool's average, no range name. */
 export const POOL_AVG_APR_7D_LABEL = "Pool avg APR · 7d";
