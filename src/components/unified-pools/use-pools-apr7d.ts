@@ -5,6 +5,7 @@ import { summarizeApr7d, type Apr7dState } from "@/lib/unified-pools/apr7d";
 import type { UnifiedPool } from "@/lib/unified-pools/model";
 import { loadPoolRangeApr, type RangeAprProtocol } from "../range-apr/pool-range-apr-client";
 import { isRhcApr7dEnabled } from "@/lib/protocol-flags";
+import { POOL_NOT_TRACKED_MESSAGE } from "@/lib/range-apr/not-clmm-pool";
 
 export type { Apr7dState, AprFreshness } from "@/lib/unified-pools/apr7d";
 
@@ -38,7 +39,12 @@ export function usePoolsApr7d(pools: readonly UnifiedPool[], refreshKey = 0,
             if (cancelled) return;
             setSettled((previous) => ({ ...previous, [entry.key]: summarizeApr7d(payload, entry.protocol, Date.now()) }));
           },
-          () => { if (!cancelled) setSettled((previous) => ({ ...previous, [entry.key]: { status: "missing", reason: "APR data is temporarily unavailable." } })); },
+          (error: unknown) => {
+            if (cancelled) return;
+            // A pool the server does not track says so; anything else is an outage.
+            const reason = error instanceof Error && error.message === POOL_NOT_TRACKED_MESSAGE ? POOL_NOT_TRACKED_MESSAGE : "APR data is temporarily unavailable.";
+            setSettled((previous) => ({ ...previous, [entry.key]: { status: "missing", reason } }));
+          },
         );
       }
     }, 0);

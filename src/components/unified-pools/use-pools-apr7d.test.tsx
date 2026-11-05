@@ -7,10 +7,11 @@ import { OPEN_RANGE_UI_PRESETS } from "@sofinance/engine/open-range-presets";
 import { cardPayloadWithAprs } from "@/lib/range-apr/payload.fixture";
 import { buildPresetList } from "@/lib/range-apr/preset-list";
 import type { UnifiedPool } from "@/lib/unified-pools/model";
+import { POOL_NOT_TRACKED_MESSAGE } from "@/lib/range-apr/not-clmm-pool";
 import { usePoolsApr7d, type Apr7dState } from "./use-pools-apr7d";
 
 const mocks = vi.hoisted(() => ({ payload: null as unknown, calls: [] as unknown[][] }));
-vi.mock("../range-apr/pool-range-apr-client", () => ({ loadPoolRangeApr: async (...args: unknown[]) => { mocks.calls.push(args); return mocks.payload; } }));
+vi.mock("../range-apr/pool-range-apr-client", () => ({ loadPoolRangeApr: async (...args: unknown[]) => { mocks.calls.push(args); if (mocks.payload instanceof Error) throw mocks.payload; return mocks.payload; } }));
 
 const pool = { key: "solana:p1", chain: "solana", protocol: "raydium-clmm", poolAddress: "p1" } as UnifiedPool;
 let out: Record<string, Apr7dState> = {};
@@ -33,6 +34,12 @@ async function run(payload: unknown) {
 }
 
 describe("usePoolsApr7d", () => {
+  it("says a pool is not tracked when the server says so, and calls anything else an outage", async () => {
+    expect(await run(new Error(POOL_NOT_TRACKED_MESSAGE))).toEqual({ status: "missing", reason: POOL_NOT_TRACKED_MESSAGE });
+    await act(async () => root.unmount()); root = createRoot(container);
+    expect(await run(new Error("Range APR estimate unavailable"))).toEqual({ status: "missing", reason: "APR data is temporarily unavailable." });
+  });
+
   it("names the same range and APR as the modal's Best, with confidence and freshness", async () => {
     const data = cardPayloadWithAprs({ micro: 3, tight: 4, standard: 61, wide: 5 });
     const snapshotAt = new Date().toISOString();
