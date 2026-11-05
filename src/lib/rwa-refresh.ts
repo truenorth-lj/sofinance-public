@@ -474,7 +474,8 @@ async function refreshAprPools(input: {
     if (throttled()) { queue.stoppedBy = "429"; break; }
   }
   if (queue.stoppedBy === "429") issues.push(`GeckoTerminal 429: run ended after ${queue.done} of ${queue.selected} pools; the rest go first next run`);
-  if (queue.stoppedBy === "time") issues.push(`Time budget: run ended after ${queue.done} of ${queue.selected} pools; the rest go first next run`);
+  // A time-budget stop is the normal end of a run (the guard, not APR_POOLS_PER_RUN, ends it): no issue, status stays
+  // "ok"; it stays visible in `queue` (done / selected / stoppedBy "time"). The rest go first next run.
   let rhcStats: RhcAprRunStats | undefined;
   if (rhc) {
     issues.push(...rhc.issues);
@@ -522,7 +523,7 @@ async function refreshMeteoraLane(input: {
   };
   await Promise.all(Array.from({ length: Math.min(METEORA_APR_CONCURRENCY, selected.length) }, worker));
   if (stats.stoppedBy === "datapi-429") issues.push(`Meteora datapi 429: lane ended after ${stats.done} of ${stats.selected} pools; the rest go first next run`);
-  if (stats.stoppedBy === "time") issues.push(`Meteora time budget: lane ended after ${stats.done} of ${stats.selected} pools`);
+  // A time-budget stop is expected here too: visible in `meteoraQueue` stats only, not an issue.
   return { processed, issues, stats };
 }
 

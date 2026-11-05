@@ -261,23 +261,21 @@ describe("APR queue: one oldest-first queue, one pool at a time", () => {
       const pending = runJob("rwa-apr-refresh", { store, clock: () => now, deadlineMs: now + 1_000, geckoGate: openGate() });
       await vi.advanceTimersByTimeAsync(1_100);
       const result = await pending;
-      expect(result).toMatchObject({ status: "partial", queue: { done: 0, stoppedBy: "time" } });
+      expect(result).toMatchObject({ status: "ok", issues: [], queue: { done: 0, selected: 2, stoppedBy: "time" } });
       expect(saved).toHaveLength(0);
-      expect(result.issues.at(-1)).toBe("Time budget: run ended after 0 of 2 pools; the rest go first next run");
     } finally { vi.useRealTimers(); }
   });
 
   describe("consecutive_failures: only a 429 or an error counts", () => {
-    it("a run that only ran out of its time budget is a success for failure counting (status stays 'partial')", async () => {
+    it("a run that only ran out of its time budget is ok: no issue, no failure, the stop stays in the queue stats", async () => {
       const { store, finishes } = memoryStore(solanaPools([["poolA", hours(9)], ["poolB", hours(8)]]));
       // Room for exactly one pool: poolA is saved (taking its slowest-case time), then poolB no longer fits.
       let t = now;
       loadProfile.mockImplementation(async () => { t += APR_POOL_MAX_MS; return goodProfile; });
       const result = await runJob("rwa-apr-refresh", { store, clock: () => t, geckoGate: openGate(),
         deadlineMs: now + APR_POOL_MAX_MS + APR_SAVE_RESERVE_MS + 1_000 });
-      expect(result).toMatchObject({ status: "partial", queue: { stoppedBy: "time" } });
-      expect(result.issues.every((issue) => issue.startsWith("Time budget"))).toBe(true);
-      expect(finishes).toEqual([expect.objectContaining({ outcome: "partial", failure: false })]);
+      expect(result).toMatchObject({ status: "ok", issues: [], queue: { pools: 2, selected: 2, done: 1, stoppedBy: "time" } });
+      expect(finishes).toEqual([expect.objectContaining({ outcome: "ok", failure: false })]);
     });
 
     it("a stale estimate from saved price history is not a failure", async () => {
@@ -295,7 +293,9 @@ describe("APR queue: one oldest-first queue, one pool at a time", () => {
         gate.block(20_000);
         return throttledProfile;
       });
-      expect(await run(store, { geckoGate: gate })).toMatchObject({ queue: { stoppedBy: "429" } });
+      const result = await run(store, { geckoGate: gate });
+      expect(result).toMatchObject({ status: "partial", queue: { done: 1, selected: 2, stoppedBy: "429" } });
+      expect(result.issues).toContain("GeckoTerminal 429: run ended after 1 of 2 pools; the rest go first next run");
       expect(finishes[0]).toMatchObject({ outcome: "partial", failure: true });
     });
 
