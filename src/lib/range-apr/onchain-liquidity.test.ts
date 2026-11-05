@@ -2,6 +2,7 @@ import BN from "bn.js";
 import { CLMM_PROGRAM_ID, PoolInfoLayout, TickArrayLayout, TickUtil, getPdaTickArrayAddress } from "@raydium-io/raydium-sdk-v2";
 import { Keypair, PublicKey, type AccountInfo, type Connection } from "@solana/web3.js";
 import { describe, expect, it, vi } from "vitest";
+import { NotRaydiumClmmPoolError } from "./not-clmm-pool";
 
 vi.mock("server-only", () => ({}));
 
@@ -87,9 +88,9 @@ describe("readOnchainPoolLiquidity", () => {
   });
 
   it("rejects accounts that are not Raydium CLMM pools", async () => {
-    await expect(readOnchainPoolLiquidity(pool.toBase58(), connection(new Map()))).rejects.toThrow(/does not exist/);
+    await expect(readOnchainPoolLiquidity(pool.toBase58(), connection(new Map()))).rejects.toBeInstanceOf(NotRaydiumClmmPoolError);
     const foreign = account(poolAccount(0, 1, 1n).data, Keypair.generate().publicKey);
-    await expect(readOnchainPoolLiquidity(pool.toBase58(), connection(new Map([[pool.toBase58(), foreign]])))).rejects.toThrow(/does not exist/);
+    await expect(readOnchainPoolLiquidity(pool.toBase58(), connection(new Map([[pool.toBase58(), foreign]])))).rejects.toBeInstanceOf(NotRaydiumClmmPoolError);
   });
 
   it("rejects a tick array that belongs to another pool", async () => {

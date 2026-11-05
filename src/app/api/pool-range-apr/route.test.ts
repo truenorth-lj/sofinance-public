@@ -5,6 +5,7 @@ const fetchPoolRangeApr = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/pool-range-apr", () => ({ fetchPoolRangeApr }));
 
 import { GET } from "./route";
+import { NotRaydiumClmmPoolError, POOL_NOT_TRACKED_MESSAGE } from "@/lib/range-apr/not-clmm-pool";
 
 const POOL = "5MBpNcWTqiWy3pZX17pYfgP2ZxrSkok4naQWLj3XLDLY";
 const call = (query: string) => GET(new Request(`http://localhost/api/pool-range-apr${query}`));
@@ -54,5 +55,13 @@ describe("GET /api/pool-range-apr", () => {
     expect(response.status).toBe(503);
     expect(response.headers.get("Cache-Control")).toBe("no-store");
     expect(await response.json()).toEqual({ error: expect.stringMatching(/unavailable/i) });
+  });
+
+  it("answers 404 POOL_NOT_TRACKED (plain words, no-store) when the id is not a Raydium CLMM pool", async () => {
+    fetchPoolRangeApr.mockRejectedValue(new NotRaydiumClmmPoolError());
+    const response = await call(`?poolId=${POOL}`);
+    expect(response.status).toBe(404);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(await response.json()).toEqual({ error: POOL_NOT_TRACKED_MESSAGE, code: "POOL_NOT_TRACKED" });
   });
 });

@@ -1,6 +1,8 @@
 import { apiError } from "@/lib/api-response";
 import { getPoolAprSnapshot, snapshotError } from "@/lib/rwa-store";
 import { getRwaConfig } from "@/lib/config/rwa-env";
+import { NotRaydiumClmmPoolError } from "@/lib/range-apr/not-clmm-pool";
+import { RwaStoreError } from "@/lib/rwa-store-types";
 
 /**
  * One request per pool returns everything needed to price any range: the per-bin liquidity/volume model, the
@@ -34,6 +36,7 @@ export async function GET(request: Request) {
     return Response.json(payload, { headers: payload.sample.degraded ? DEGRADED_CDN_HEADERS : CDN_HEADERS });
   } catch (error) {
     if (getRwaConfig().enabled) return snapshotError(error);
+    if (error instanceof NotRaydiumClmmPoolError) return snapshotError(new RwaStoreError("POOL_NOT_TRACKED"));
     return apiError(error, "Range APR estimate unavailable", 503);
   }
 }
