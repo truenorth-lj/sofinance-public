@@ -22,7 +22,7 @@ vi.mock("./protocol-flags", async (load) => ({ ...await load<typeof import("./pr
 const rhcRun = vi.hoisted(() => ({ prepare: vi.fn() }));
 vi.mock("./rhc-apr-refresh", async (load) => ({ ...await load<object>(), prepareRhcRun: rhcRun.prepare }));
 import { METEORA_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/meteora/constants";
-import { activePoolRefreshedAt, APR_POOL_MAX_MS, APR_POOLS_PER_RUN, APR_QUEUE_FIXED_MS, APR_SAVE_RESERVE_MS, orderAprQueue, refreshProfile, runJob } from "./rwa-refresh";
+import { activePoolRefreshedAt, APR_POOL_MAX_MS, APR_POOLS_PER_RUN, APR_QUEUE_FIXED_MS, APR_SAVE_RESERVE_MS, degradedIsSystemic, orderAprQueue, refreshProfile, runJob } from "./rwa-refresh";
 import { createCronGeckoGate, CRON_GECKO_SPACING_MS } from "./pool-metrics/gecko";
 import { ThrottleGate } from "./range-apr/throttle-gate";
 import type { RwaStore } from "./rwa-store-types";
@@ -299,7 +299,39 @@ describe("APR queue: one oldest-first queue, one pool at a time", () => {
       expect(finishes[0]).toMatchObject({ outcome: "partial", failure: true });
     });
 
-    it("a pool that saved no estimate (price history unavailable) counts as a failure", async () => {
+    it("one pool with price history unavailable is pool-level degraded, not a job failure", async () => {
+      const pools = solanaPools([["poolA", hours(9)], ["poolB", hours(8)], ["poolC", hours(7)]]);
+      pools[1]!.profile!.observedAt = hours(72); // poolB: saved price history too old to reuse
+      loadProfile.mockImplementation(async (poolId: string) =>
+        poolId === "poolB" ? { ...goodProfile, candles: null, issues: ["GeckoTerminal hourly candles: HTTP 500"] } : goodProfile);
+      const { store, saved, finishes } = memoryStore(pools);
+      const result = await run(store);
+      expect(saved.find((row) => row.poolId === "poolB")!.payload?.sample.degraded).toBe(true);
+      expect(result).toMatchObject({ status: "partial", issues: expect.arrayContaining(["poolB: Price history unavailable"]) });
+      expect(finishes[0]).toMatchObject({ outcome: "partial", failure: false });
+    });
+
+    it("more than half of the finished pools degraded counts as a failure", async () => {
+      const pools = solanaPools([["poolA", hours(9)], ["poolB", hours(8)], ["poolC", hours(7)]]);
+      for (const pool of pools.slice(0, 2)) pool.profile!.observedAt = hours(72);
+      loadProfile.mockImplementation(async (poolId: string) =>
+        poolId === "poolC" ? goodProfile : { ...goodProfile, candles: null, issues: ["GeckoTerminal hourly candles: HTTP 500"] });
+      const { store, finishes } = memoryStore(pools);
+      await run(store);
+      expect(finishes[0]).toMatchObject({ outcome: "partial", failure: true });
+    });
+
+    it("exactly half degraded is not a failure; a pool error still is", async () => {
+      expect(degradedIsSystemic(1, 2)).toBe(false);
+      expect(degradedIsSystemic(2, 3)).toBe(true);
+      expect(degradedIsSystemic(0, 0)).toBe(false);
+      const { store, finishes } = memoryStore(solanaPools([["poolA", hours(9)], ["poolB", hours(8)]]));
+      loadProfile.mockImplementation(async (poolId: string) => { if (poolId === "poolB") throw new Error("boom"); return goodProfile; });
+      await run(store);
+      expect(finishes[0]).toMatchObject({ failure: true });
+    });
+
+    it("the only pool finished being degraded counts as a failure", async () => {
       loadProfile.mockResolvedValue({ ...goodProfile, candles: null, issues: ["GeckoTerminal hourly candles: HTTP 500"] });
       const pool = solanaPools([["poolA", hours(9)]])[0]!;
       pool.profile!.observedAt = hours(72); // saved price history too old to reuse
