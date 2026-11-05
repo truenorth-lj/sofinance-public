@@ -17,6 +17,11 @@ export type Apr7dState =
     rangeLabel: string;
     /** Thin or patchy recent trading behind the estimate. */
     lowConfidence: boolean;
+    /**
+     * The pool-fee cap (`capAprAtPoolFees`) lowered the range APR, so `aprPct` is the pool's average fee APR for the
+     * deposit, not a range's: the card names no range.
+     */
+    capped: boolean;
     /** 7-day average daily volume behind the estimate (for the volume divergence note). */
     avgDailyVolumeUsd: number | null;
     freshness?: AprFreshness;
@@ -89,9 +94,9 @@ export function summarizeApr7d(payload: PoolRangeAprPayload, protocol: UnifiedPr
       reason: payload.sample.degraded ? "Not enough recent trading data for a 7-day estimate." : "No 7-day estimate right now.",
     };
   }
+  const aprPct = capAprAtPoolFees(summary.aprPct, { poolLpFeesPerDayUsd: poolLpFeesPerDayUsd(payload), poolTvlUsd: payload.pool.tvlUsd, depositUsd: CARD_APR_DEPOSIT_USD });
   return {
-    status: "ready", freshness,
-    aprPct: capAprAtPoolFees(summary.aprPct, { poolLpFeesPerDayUsd: poolLpFeesPerDayUsd(payload), poolTvlUsd: payload.pool.tvlUsd, depositUsd: CARD_APR_DEPOSIT_USD }),
+    status: "ready", freshness, aprPct, capped: aprPct < summary.aprPct,
     rangeLabel: protocol === "uniswap-v4-rhc" && summary.id === "micro"
       ? "Min (±10 ticks)"
       : OPEN_RANGE_UI_PRESETS.find((preset) => preset.id === summary.id)?.label ?? summary.label,

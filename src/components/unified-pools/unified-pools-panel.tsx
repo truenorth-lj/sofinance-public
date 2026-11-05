@@ -3,7 +3,7 @@ import "@/lib/engine-host";
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { ArrowDownUp, ChevronDown, LayoutGrid, List, LoaderCircle, RefreshCw, Search } from "lucide-react";
-import { HIGHEST_RANGE_APR_7D_HELP } from "@/lib/apr-labels/copy";
+import { CARD_POOL_AVG_APR_7D_HELP, CARD_RANGE_APR_7D_HELP, POOL_AVG_APR_7D_LABEL } from "@/lib/apr-labels/copy";
 import { cn } from "@/lib/cn";
 import { dexDescriptors, fetchOpenRanges, type OpenRanges } from "@/lib/dex/client";
 import { SUPPORTED } from "@/lib/unified-positions/model";
@@ -115,9 +115,9 @@ function PoolCard({ pool, apr, action, icons, onCalculate }: {
       <div className="shrink-0 text-right max-sm:max-w-[8.5rem]">
         <Apr7dValue state={apr} />
         <p className={cn("mt-1.5 flex items-center justify-end gap-1", cardEyebrow)}>
-          <span data-testid="apr7d-label">{ready ? rangeApr7dLabel(ready.rangeLabel) : apr?.status === "new" ? dataDaysLabel(apr.days) : APR7D_SHORT}</span>
-          {ready && <InfoTip label="About Est. highest range APR" tone="light">
-            {withVolumeNote(HIGHEST_RANGE_APR_7D_HELP)}{ready.lowConfidence ? " Low confidence for this pool: thin or patchy recent trading." : ""}
+          <span data-testid="apr7d-label">{ready ? ready.capped ? POOL_AVG_APR_7D_LABEL : rangeApr7dLabel(ready.rangeLabel) : apr?.status === "new" ? dataDaysLabel(apr.days) : APR7D_SHORT}</span>
+          {ready && <InfoTip label={ready.capped ? "About Pool avg APR" : "About Est. highest range APR"} tone="light">
+            {withVolumeNote(ready.capped ? CARD_POOL_AVG_APR_7D_HELP : CARD_RANGE_APR_7D_HELP)}{ready.lowConfidence ? " Low confidence for this pool: thin or patchy recent trading." : ""}
           </InfoTip>}
           {apr?.status === "missing" && apr.degraded && <InfoTip label="About Est. highest range APR" tone="light">{unavailableReasonText("degraded-data")}.</InfoTip>}
         </p>
@@ -129,7 +129,7 @@ function PoolCard({ pool, apr, action, icons, onCalculate }: {
     {freshness && <p className="mt-2 text-xs text-ink/60" data-testid="apr-freshness">
       Updated {new Date(freshness.snapshotAt).toLocaleString()}{freshness.delayed && " · Data delayed"}
     </p>}
-    {pool.chain === "solana" && <div className="mt-4">
+    {pool.chain === "solana" && !ready?.capped && <div className="mt-4">
       <p className={cn("flex items-center gap-1", cardEyebrow)}>
         {HIGHEST_RANGE_COLUMN_LABEL}
         {ready && <InfoTip label="About Highest range" placement="above" tone="light">{HIGHEST_RANGE_HELP}</InfoTip>}
