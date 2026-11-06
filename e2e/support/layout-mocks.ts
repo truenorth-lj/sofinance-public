@@ -8,9 +8,11 @@ import { randomAddress } from "./tx";
  */
 const fixture = (name: string) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), "utf8");
 // Public read-only API answers captured from the live site on 2026-11-04 (token icon URLs removed: no third-party hosts).
+// stock-market.json: the homepage cards from a Jupiter search read the same day; its Buy options are illustrative.
 const PAIRS = fixture("rwa-pairs.json");
 const RHC_POOLS = fixture("protocol-pools-rhc.json");
 const SOL_PRICE = fixture("sol-usdc-price.json");
+const STOCKS = fixture("stock-market.json");
 const RANGE_APR = JSON.parse(fixture("pool-range-apr.json")) as Record<string, unknown>;
 const SPCX = "SPCXxcqXj6e5dJDVNovHN8744zkbhM2bYudU45BimGb";
 const SPCXX = "Xs3oZwbHvqis4NYcf4YKWmEia2eC84wSiVrcYcTqpH8";
@@ -50,6 +52,7 @@ export async function installLayoutMocks(context: BrowserContext, owner: string,
     if (path === "/api/selected-state" || path === "/api/compound-state") return route.fulfill(json(state));
     if (path === "/api/token-metadata") return route.fulfill(json({}));
     if (path === "/api/transaction-finality") return route.fulfill(json({ status: "pending" }));
+    if (path === "/api/stock-market") return route.fulfill({ status: 200, contentType: "application/json", body: STOCKS });
     if (path === "/api/sol-usdc-price") return route.fulfill({ status: 200, contentType: "application/json", body: SOL_PRICE });
     if (path === "/api/protocol-pools" && url.searchParams.get("protocol") === "uniswap-v4-rhc") return route.fulfill({ status: 200, contentType: "application/json", body: RHC_POOLS });
     // One captured Raydium range answer stands in for every Solana pool (the layout, not the numbers, is under test).
