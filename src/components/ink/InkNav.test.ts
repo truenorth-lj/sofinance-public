@@ -16,7 +16,9 @@ describe("InkNav app routes", () => {
     expect(src).not.toContain("APP_ROUTES.positionPerformance");
     expect(src).toContain("APP_ROUTES.rwaPairs");
     expect(src).toContain("APP_ROUTES.ai");
-    expect(src).toContain("BLOG_ROUTES.home");
+    // 11/4: Blog moved to the marketing header (SiteHeader); the app bar has no Blog tab.
+    expect(src).not.toContain("BLOG_ROUTES");
+    expect(src).not.toContain('label: "Blog"');
     // Plan and Docs left the top bar on 11/4; Docs lives in the app footer.
     expect(src).not.toContain("APP_ROUTES.plan");
     expect(src).not.toContain("DOCS_ROUTES.home");

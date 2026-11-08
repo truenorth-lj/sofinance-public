@@ -81,6 +81,7 @@ describe("landing page copy and routes", () => {
       "src/app/docs/fee-apr/page.tsx",
       "src/app/docs/risks/page.tsx",
       "src/components/blog/blog-shell.tsx",
+      "src/components/site-header.tsx",
       "content/blog/dex-evolution.md",
       "content/blog/xstocks-xpoints.md",
       "src/lib/apr-labels/copy.ts",
@@ -126,7 +127,11 @@ describe("landing page copy and routes", () => {
   });
 
   it("uses the inline C3 BrandMark, not the old square logo image", () => {
-    expect(src).toContain("BrandMark");
+    // The header moved to SiteHeader (shared with blog, docs, FAQ and terms).
+    expect(src).toContain("<SiteHeader onHomepage />");
+    const header = readFileSync(resolve("src/components/site-header.tsx"), "utf8");
+    expect(header).toContain("BrandMark");
+    expect(header).not.toContain("/logo.png");
     expect(src).not.toContain("/logo.png");
     expect(src).not.toContain("next/image");
   });
@@ -166,7 +171,9 @@ describe("landing page copy and routes", () => {
 
   it("ranks homepage pools by the /app/rwa-pairs 7-day estimate with a plain help and docs link", () => {
     expect(HOMEPAGE_APR_DOCS_LINK_LABEL).toBe("How estimates work");
-    expect(`${HIGHEST_RANGE_APR_7D_HELP} ${HOMEPAGE_APR_DOCS_LINK_LABEL}`).not.toMatch(FORBIDDEN);
+    expect(withoutAllowed(`${HIGHEST_RANGE_APR_7D_HELP} ${HOMEPAGE_APR_DOCS_LINK_LABEL}`)).not.toMatch(FORBIDDEN);
+    expect(HIGHEST_RANGE_APR_7D_HELP).toContain("$1,000 deposit");
+    expect(HIGHEST_RANGE_APR_7D_HELP).not.toMatch(/\$100\b|APR/);
     expect(table).toContain("Ranked by the 7-day estimate, high to low (on Solana, for a range picked from the past 7 days of fee data).");
     expect(table).toContain("Top pools on Solana and Robinhood Chain");
     expect(table).not.toContain("by est. 7-day APR");

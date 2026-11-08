@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { Suspense, type ReactNode } from "react";
-import { BrandMark } from "@/components/brand-mark";
 import { HomepagePoolsTable, HomepagePoolsView } from "@/components/homepage-pools-table";
 import type { HomepagePoolsSnapshot } from "@/lib/homepage-pools";
 import type { HomepageStocks } from "@/lib/stock-market/public";
@@ -9,12 +8,11 @@ import { ArrowUpRight } from "lucide-react";
 import { APP_ROUTES, BLOG_ROUTES, DOCS_ROUTES, FAQ_ROUTE, LEGAL_ROUTES, LLMS_TXT_ROUTE } from "@/lib/public-urls";
 import { EXTERNAL_LINK_PROPS, SOCIAL_LINKS } from "@/lib/social-links";
 import { XIcon } from "@/components/x-icon";
+import { SiteHeader } from "@/components/site-header";
 import { PairSection } from "@/components/landing/pair-section";
 import { RangesSection } from "@/components/landing/ranges-section";
 import { ReturnsSection } from "@/components/landing/returns-section";
 
-const navPill =
-  "flex h-10 items-center justify-center rounded-full border border-white/25 px-4 text-[13px] font-medium text-cream/85 outline-none transition-colors hover:border-white/70 focus-visible:border-lemon";
 // Below sm: tighter tracking, and a long label may wrap inside the pill instead of pushing past a 360 px screen.
 const labelPill =
   "inline-flex min-h-6 max-w-full items-center rounded-full border px-2.5 py-0.5 font-data text-[10px] uppercase leading-4 tracking-[0.1em] sm:whitespace-nowrap sm:tracking-[0.14em]";
@@ -81,34 +79,7 @@ export function LandingPage({ initialPools = null, initialStocks = null }: { ini
   return (
     <div className="min-h-screen overflow-x-clip bg-canvas text-cream">
       <div className="mx-auto max-w-[1280px] px-3 pb-10 pt-3 sm:px-5 sm:pt-5">
-        <header className="flex flex-wrap items-center justify-between gap-2">
-          <Link
-            href="/"
-            className="flex h-10 items-center gap-2 rounded-full bg-lemon pl-1.5 pr-4 text-[13px] font-semibold text-ink outline-none focus-visible:shadow-[0_0_0_2px_var(--color-cream)]"
-          >
-            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-ink">
-              <BrandMark className="h-5 w-5 text-lemon" />
-            </span>
-            SoFinance
-          </Link>
-          <nav aria-label="Sections" className="order-3 flex w-full flex-1 flex-wrap gap-2 md:order-none md:w-auto">
-            <a href="#pools" className={`${navPill} flex-1`}>
-              Pools
-            </a>
-            <a href="#agents" className={`${navPill} hidden flex-1 sm:flex`}>
-              AI agents
-            </a>
-            <Link href={BLOG_ROUTES.home} className={`${navPill} flex-1`}>
-              Blog
-            </Link>
-          </nav>
-          <Link
-            href={APP_ROUTES.home}
-            className="flex h-10 items-center justify-center rounded-full bg-cream px-5 text-[13px] font-semibold text-ink outline-none transition-colors hover:bg-white focus-visible:shadow-[0_0_0_2px_var(--color-lemon)]"
-          >
-            Open app
-          </Link>
-        </header>
+        <SiteHeader onHomepage />
 
         <main>
           <section data-testid="landing-hero" className="mt-3 animate-rise rounded-[28px] bg-cream p-6 text-ink motion-reduce:animate-none sm:p-10">

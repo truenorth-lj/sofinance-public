@@ -22,6 +22,7 @@ import { SAVED_PRICE_HISTORY_MAX_AGE_MS } from "./rwa-freshness";
 import { isRetryableFailure, retryJson, type JsonResult, type RetryOptions } from "./range-apr/upstream-retry";
 import type { OccupancySource, PoolRangeAprPayload, VolumeSource } from "./range-apr/types";
 import type { Connection } from "@solana/web3.js";
+import { NotRaydiumClmmPoolError } from "./range-apr/not-clmm-pool";
 
 export const RANGE_APR_LABEL = "Est. fee APR";
 export const SOLANA_CLMM_CHAIN_SOURCE = "Solana RPC: CLMM pool account + tick arrays (liquidity per price bin)";
@@ -387,9 +388,13 @@ export async function fetchPoolRangeApr(
   const nowSeconds = options.nowSeconds ?? Math.floor(Date.now() / 1000);
   const loadProfile = () => loadVolumeProfileResilient(poolId, fetcher, nowSeconds, { retry: options.retry, gate: options.gate });
   const loadChain = () => readOnchainPoolLiquidity(poolId, options.connection);
-  const [profile, chain] = options.bypassCache
-    ? await Promise.all([loadProfile(), loadChain()])
-    : await Promise.all([volumeCache.get(poolId, loadProfile), chainCache.get(poolId, loadChain)]);
-  return assemblePoolRangeApr(poolId, profile, chain, nowSeconds);
+  const [profile, chain] = await Promise.allSettled(options.bypassCache
+    ? [loadProfile(), loadChain()]
+    : [volumeCache.get(poolId, loadProfile), chainCache.get(poolId, loadChain)]);
+  // Not a Raydium CLMM pool wins over any volume failure: the caller answers "not tracked", not an outage.
+  if (chain.status === "rejected" && chain.reason instanceof NotRaydiumClmmPoolError) throw chain.reason;
+  if (profile.status === "rejected") throw profile.reason;
+  if (chain.status === "rejected") throw chain.reason;
+  return assemblePoolRangeApr(poolId, profile.value, chain.value, nowSeconds);
 }
 

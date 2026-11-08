@@ -16,6 +16,7 @@ import {
   snapshotError,
 } from "./rwa-store";
 import { RwaStoreError } from "./rwa-store-types";
+import { NotRaydiumClmmPoolError, POOL_NOT_TRACKED_MESSAGE } from "./range-apr/not-clmm-pool";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -42,6 +43,25 @@ describe("saved RWA foreground reads", () => {
       ordinaryPool: true,
     });
     expect(upstream.apr).toHaveBeenCalledWith("6".repeat(32));
+  });
+  it("answers 404 POOL_NOT_TRACKED for a pool outside the feed that is not a Raydium CLMM pool", async () => {
+    config();
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ code: "POOL_NOT_TRACKED" }, { status: 503 })));
+    upstream.apr.mockRejectedValue(new NotRaydiumClmmPoolError());
+    const error = await getPoolAprSnapshot("7".repeat(32)).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(RwaStoreError);
+    expect((error as RwaStoreError).code).toBe("POOL_NOT_TRACKED");
+    const response = snapshotError(error);
+    expect(response.status).toBe(404);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(await response.json()).toEqual({ error: POOL_NOT_TRACKED_MESSAGE, code: "POOL_NOT_TRACKED" });
+  });
+  it("keeps a failing Raydium fallback for an untracked pool as an outage (503)", async () => {
+    config();
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ code: "POOL_NOT_TRACKED" }, { status: 503 })));
+    upstream.apr.mockRejectedValue(new Error("Pool economics unavailable from Raydium"));
+    const error = await getPoolAprSnapshot("8".repeat(32)).catch((caught: unknown) => caught);
+    expect(snapshotError(error).status).toBe(503);
   });
   it("reads the gateway only, without upstream discovery or APR calculation", async () => {
     config();

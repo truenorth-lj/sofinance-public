@@ -4,6 +4,7 @@ import { discoverRwaPairs, getCachedRwaPairs } from "./rwa-pairs";
 import { listablePairs } from "./rwa-listable";
 import { listedSolanaFeedKeys } from "./rwa-listed-feeds";
 import { fetchPoolRangeApr } from "./pool-range-apr";
+import { NotRaydiumClmmPoolError, POOL_NOT_TRACKED_MESSAGE } from "./range-apr/not-clmm-pool";
 import { PostgresRwaStore } from "./rwa-postgres-store";
 import { getRwaDatabase, runRwaDatabaseRequest } from "./rwa-database";
 import { tokenIconMap } from "./token-icons/map";
@@ -116,8 +117,15 @@ export async function getPoolAprSnapshot(poolId: string) {
   } catch (error) {
     // This endpoint also serves ordinary CLMM positions. Only pools never in
     // the RWA feed keep that existing path; failed tracked snapshots fail closed.
-    if (error instanceof RwaStoreError && error.code === "POOL_NOT_TRACKED")
-      return fetchPoolRangeApr(poolId);
+    if (error instanceof RwaStoreError && error.code === "POOL_NOT_TRACKED") {
+      try {
+        return await fetchPoolRangeApr(poolId);
+      } catch (fallbackError) {
+        // Not in the RWA feed and not a Raydium CLMM pool (e.g. a pool from another protocol): nothing to serve.
+        if (fallbackError instanceof NotRaydiumClmmPoolError) throw new RwaStoreError("POOL_NOT_TRACKED");
+        throw fallbackError;
+      }
+    }
     throw error;
   }
 }
@@ -125,6 +133,8 @@ export async function getPoolAprSnapshot(poolId: string) {
 export function snapshotError(error: unknown) {
   const code =
     error instanceof RwaStoreError ? error.code : "RWA_STORE_UNAVAILABLE";
+  if (code === "POOL_NOT_TRACKED")
+    return Response.json({ error: POOL_NOT_TRACKED_MESSAGE, code }, { status: 404, headers: { "Cache-Control": "no-store" } });
   return Response.json(
     {
       error:

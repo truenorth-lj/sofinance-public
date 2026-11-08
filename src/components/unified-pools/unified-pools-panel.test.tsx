@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { UNIV4_RHC_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/uniswap-v4/constants";
 import type { UnifiedPool } from "@/lib/unified-pools/model";
+import { CARD_POOL_AVG_APR_7D_HELP, CARD_RANGE_APR_7D_HELP } from "@/lib/apr-labels/copy";
 import type { Apr7dState } from "./use-pools-apr7d";
 import { UnifiedPoolsPanel, type UnifiedPoolFlags } from "./unified-pools-panel";
 
@@ -34,7 +35,7 @@ vi.mock("@/lib/dex/client", async (importOriginal) => {
 });
 vi.mock("./use-pools-apr7d", () => ({
   usePoolsApr7d: (pools: UnifiedPool[]) => Object.fromEntries(pools.map((pool): [string, Apr7dState] => [pool.key,
-    mocks.state[pool.poolAddress] ?? (pool.poolAddress in mocks.apr ? { status: "ready", aprPct: mocks.apr[pool.poolAddress]!, rangeLabel: "Standard", lowConfidence: false, avgDailyVolumeUsd: null } : { status: "missing", reason: "No 7-day estimate" })])),
+    mocks.state[pool.poolAddress] ?? (pool.poolAddress in mocks.apr ? { status: "ready", aprPct: mocks.apr[pool.poolAddress]!, rangeLabel: "Standard", lowConfidence: false, capped: false, avgDailyVolumeUsd: null } : { status: "missing", reason: "No 7-day estimate" })])),
 }));
 vi.mock("../wallet-connection", () => ({ useWalletConnection: () => ({ connected: mocks.connected, connect: mocks.connect }) }));
 vi.mock("@/lib/protocol-flags", async (importOriginal) => ({ ...await importOriginal<typeof import("@/lib/protocol-flags")>(), isDexTxRouteEnabled: () => mocks.routeEnabled }));
@@ -373,7 +374,7 @@ describe("UnifiedPoolsPanel cards (the RWA pairs card fields)", () => {
 
   it("shows the highest range next to its 7d APR, when the data was updated, and a delayed note", async () => {
     mocks.state = {
-      spcxA: { status: "ready", aprPct: 38, rangeLabel: "Tight (±0.05%)", lowConfidence: true, avgDailyVolumeUsd: 100,
+      spcxA: { status: "ready", aprPct: 38, rangeLabel: "Tight (±0.05%)", lowConfidence: true, capped: false, avgDailyVolumeUsd: 100,
         freshness: { snapshotAt: "2026-10-30T00:15:00.000Z", delayed: true } },
       tsla: { status: "missing", reason: "Not enough recent trading data for a 7-day estimate.", degraded: true },
     };
@@ -390,6 +391,34 @@ describe("UnifiedPoolsPanel cards (the RWA pairs card fields)", () => {
     expect(spcx.querySelector("button[aria-label='About Est. highest range APR']")).not.toBeNull();
     expect(card("solana:tsla").querySelector("[data-testid=highest-range]")!.textContent).toBe("—");
     expect(card("solana:tsla").querySelector("button[aria-label='About Est. highest range APR']")).not.toBeNull();
+  });
+
+  it("names the range and its $1,000 basis when the pool-fee cap leaves the estimate alone", async () => {
+    mocks.state = { tsla: { status: "ready", aprPct: 11.4, rangeLabel: "Tight (±0.05%)", lowConfidence: false, capped: false, avgDailyVolumeUsd: null } };
+    await render();
+    const spcx = card("solana:tsla");
+    expect(spcx.querySelector("[data-testid=apr7d-label]")!.textContent).toBe("Tight-range APR · 7d");
+    expect(spcx.querySelector("[data-testid=highest-range]")!.textContent).toBe("Tight (±0.05%)");
+    const tip = spcx.querySelector("button[aria-label='About Est. highest range APR']");
+    act(() => { (tip as HTMLButtonElement).focus(); });
+    expect(spcx.querySelector("[role=tooltip]")!.textContent).toBe(CARD_RANGE_APR_7D_HELP);
+  });
+
+  it("says Pool avg APR · 7d with no range when the pool-fee cap lowered the estimate", async () => {
+    mocks.state = { tsla: { status: "ready", aprPct: 8.95, rangeLabel: "Micro", lowConfidence: false, capped: true, avgDailyVolumeUsd: null } };
+    await render();
+    const tsla = card("solana:tsla");
+    expect(tsla.querySelector("[data-testid=apr7d]")!.textContent).toBe("8.95%");
+    expect(tsla.querySelector("[data-testid=apr7d-label]")!.textContent).toBe("Pool avg APR · 7d");
+    // Narrow cards break only before "· 7d", and the ⓘ shares the tail's no-wrap line.
+    const parts = [...tsla.querySelectorAll("[data-testid=apr7d-label] > span")];
+    expect(parts.map((part) => part.firstChild?.textContent)).toEqual(["Pool avg APR", "· 7d"]);
+    expect(parts.every((part) => part.className.includes("whitespace-nowrap"))).toBe(true);
+    expect(parts[1]!.querySelector("button[aria-label='About Pool avg APR']")).not.toBeNull();
+    expect(tsla.querySelector("[data-testid=highest-range]")).toBeNull();
+    expect(tsla.textContent).not.toMatch(/Micro|Highest range/i);
+    act(() => { tsla.querySelector<HTMLButtonElement>("button[aria-label='About Pool avg APR']")!.focus(); });
+    expect(tsla.querySelector("[role=tooltip]")!.textContent).toBe(CARD_POOL_AVG_APR_7D_HELP);
   });
 
   it("shows token icons from the database (wrapped first, Raydium fallback), short issuer names, the share calculator and the pool on Raydium", async () => {

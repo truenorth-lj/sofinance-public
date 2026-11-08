@@ -54,6 +54,10 @@ for (const width of widths) {
         const response = await page.goto(path, { waitUntil: "domcontentloaded" });
         expect.soft(response?.status(), `${path} should be a real page, not a 404`).toBeLessThan(400);
         await page.locator("main, h1").first().waitFor();
+        // Marketing pages carry the homepage header; /app pages keep the app bar (InkNav, no Blog tab).
+        const marketing = path === "/" || /^\/(blog|docs|faq|terms)(\/|$)/.test(path);
+        if (marketing) await expect.soft(page.getByTestId("site-header"), `${path} uses SiteHeader`).toBeVisible();
+        else if (path.startsWith("/app")) await expect.soft(page.getByRole("navigation", { name: "App" }).getByRole("link", { name: "Blog" }), `${path} app bar has no Blog`).toHaveCount(0);
         await check(path === "/" ? "home" : path.slice(1).replaceAll("/", "-"));
       }
       if (phone) {

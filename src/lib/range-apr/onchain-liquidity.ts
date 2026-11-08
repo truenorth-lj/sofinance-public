@@ -5,6 +5,7 @@ import { CLMM_PROGRAM_ID, PoolInfoLayout, TickArrayLayout, getPdaTickArrayAddres
 import { PublicKey, type Connection } from "@solana/web3.js";
 import { rpcConnection } from "@sofinance/engine/rpc";
 import { buildLiquidityBins, tickArrayStartsForWindow, windowBounds, type LiquidityBin } from "./liquidity-bins";
+import { NotRaydiumClmmPoolError } from "./not-clmm-pool";
 
 /** Analysed price window: at least +-300 raw ticks (~3%) and at least +-6 bins on coarse pools. */
 export const WINDOW_MIN_TICKS = 300;
@@ -36,7 +37,7 @@ export async function readOnchainPoolLiquidity(
   const pool = new PublicKey(poolId);
   const poolInfo = await connection.getAccountInfo(pool, "confirmed");
   if (!poolInfo || !poolInfo.owner.equals(CLMM_PROGRAM_ID)) {
-    throw new Error("Raydium CLMM pool account does not exist");
+    throw new NotRaydiumClmmPoolError();
   }
   const state = PoolInfoLayout.decode(poolInfo.data);
   const tickSpacing = state.tickSpacing;
