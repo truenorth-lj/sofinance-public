@@ -125,9 +125,11 @@ async function buildForOutput(connection: Connection, walletAddress: string, sta
   if (limitIndex < 0) throw new Error("SOL swap step is missing its compute-unit limit");
   const sized = instructions.map((ix, index) => index === limitIndex
     ? ComputeBudgetProgram.setComputeUnitLimit({ units: measuredComputeUnitLimit(unitsConsumed) }) : ix);
-  const final = compileCompactOpenTransaction({ payerKey: wallet, recentBlockhash: simulationBlockhash, instructions: sized }, tables).transaction;
-  assertOpenTransactionSize(final);
-  return { leg, transaction: final, tables, outputAccount, simulatedOut, solDebit, unitsConsumed, feeConfig };
+  const final = compileCompactOpenTransaction({ payerKey: wallet, recentBlockhash: simulationBlockhash, instructions: sized }, tables);
+  assertOpenTransactionSize(final.transaction);
+  // Return the compact table subset, not every route table: the restamp recompiles with whatever tables it gets,
+  // and the full set can add lookups the compact compile left out, pushing a fitting transaction past 1,232 bytes.
+  return { leg, transaction: final.transaction, tables: final.tables, outputAccount, simulatedOut, solDebit, unitsConsumed, feeConfig };
 }
 
 export async function buildAndSimulateSolSwapStep(walletAddress: string, poolId: string, amount: string,
