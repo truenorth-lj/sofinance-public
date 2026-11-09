@@ -289,7 +289,7 @@ export function HomepagePoolsList({ data, query, onQueryChange, highlightPool }:
             {data.updatedText && <span data-testid="homepage-pools-updated" className="ml-2 font-data text-[11px] uppercase tracking-[0.12em]">{data.updatedText}</span>}
           </p>
         </div>
-        <PoolSearchInput id="pools-search" query={query} onQueryChange={onQueryChange} placeholder="Filter by stock or token" className="h-11 w-full rounded-full px-4 md:w-80" inputClassName="text-sm" />
+        <PoolSearchInput id="pools-search" query={query} onQueryChange={onQueryChange} placeholder="Filter by stock or token" className="h-11 w-full rounded-full px-4 md:w-80" inputClassName="text-base sm:text-sm" />
       </div>
 
       {data.loading && !data.pools && (

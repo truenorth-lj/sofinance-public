@@ -376,6 +376,9 @@ describe("homepage pools: Top Pools card and the full list", () => {
     }
     expect(container.querySelector("#hero-search")!.parentElement!.className).toMatch(/\brounded-full\b/);
     expect(container.querySelector("#pools-search")!.parentElement!.className).toMatch(/\brounded-full\b/);
+    // Both search fields keep 16px text on phones: iOS zooms the page in when a smaller field is focused.
+    expect(container.querySelector("#hero-search")!.className).toMatch(/(^|\s)text-base(\s|$)/);
+    expect(container.querySelector("#pools-search")!.className).toMatch(/(^|\s)text-base(\s|$)/);
   });
 
   it("Top Pools rows show the pair as one stacked 32 px icon, so names start where the stock names do", async () => {
