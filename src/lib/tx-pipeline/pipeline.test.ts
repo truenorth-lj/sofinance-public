@@ -13,7 +13,7 @@ import {
   BALANCES_REFRESH_EVENT, canRetry, clearTxAttempt, findTxNotice, getTxNotices, loadTxAttempts, noticeIdFor, plainTxError,
   pollSignature, readSignatureStatus, relaySignedTransaction, RELAY_TIMEOUT_MS, reportTxFailure, resetTxNotices, runTx,
   saveTxAttempt, sendAndTrack, sendWithWallet, settleTxNotice, solscanTxUrl, trackTxSignature, txAttemptsKey, txFailureKind,
-  TxLandedUnknownError, TxNotLandedError, TxNotSentError, TxRunError, TxSendUnknownError, waitForLanded, walletErrorInfo, watchTxNotice,
+  TxLandedUnknownError, TxNotLandedError, TxNotSentError, TxRunError, TxSendUnknownError, TxTermsChangedError, waitForLanded, walletErrorInfo, watchTxNotice,
   isWalletRejection, resetCancelChecks, isCancelCheckPending, cancelCheckKey, TxCancelCheckPendingError, CANCEL_CHECK_PENDING_COPY,
   LANDED_DEADLINE_MS, LANDED_BACKGROUND_POLL_INTERVAL_MS, LANDED_POLL_INTERVAL_MS, type FindLanded, type TxAdapter, type TxAttempt, type TxWallet,
 } from "./index";
@@ -398,6 +398,14 @@ describe("runTx", () => {
     const sendRaw = vi.fn();
     await expect(runTx(adapter(async () => prepared()), {}, { wallet, sendRaw })).rejects.toMatchObject({ kind: "rejected", retryable: false });
     expect(getTxNotices()).toEqual([]); expect(sendRaw).not.toHaveBeenCalled();
+  });
+  it("new terms from prepare stop the run quietly: no wallet prompt, no notice, no failure event", async () => {
+    const wallet = signingWallet(); const sendRaw = vi.fn();
+    const error = await runTx(adapter(async () => { throw new TxTermsChangedError(); }), {}, { wallet, sendRaw }).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(TxRunError);
+    expect(error).toMatchObject({ kind: "not-sent", retryable: false, cause: expect.any(TxTermsChangedError) });
+    expect(wallet.signed).toEqual([]); expect(sendRaw).not.toHaveBeenCalled();
+    expect(getTxNotices()).toEqual([]); expect(sentry.capture).not.toHaveBeenCalled();
   });
   it("sendAndTrack sends an already-prepared transaction once", async () => {
     const result = await sendAndTrack({ flow: "withdraw", successTitle: "Withdrawn", wallet: signingWallet({ signAndSend: true }), prepared: prepared() });

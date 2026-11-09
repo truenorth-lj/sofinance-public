@@ -31,11 +31,32 @@ export const STOCK_ROUTE_PROBE_TTL_MS = 30 * 60_000;
 const SEARCH_TIMEOUT_MS = 15_000;
 
 let lastJupiterCallAt = 0;
-async function paced<T>(call: () => Promise<T>): Promise<T> {
-  const wait = lastJupiterCallAt + STOCK_JUPITER_SPACING_MS - Date.now();
-  if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
-  lastJupiterCallAt = Date.now();
-  try { return await call(); } finally { lastJupiterCallAt = Date.now(); }
+/** Tail of the call queue: each call waits for the one before it to finish (a failure does not stop the queue). */
+let jupiterQueue: Promise<unknown> = Promise.resolve();
+/**
+ * One Jupiter call at a time, each started at least STOCK_JUPITER_SPACING_MS after the previous one ended. A shared
+ * timestamp alone is not enough: calls that wait at the same time would all start together.
+ */
+function paced<T>(call: () => Promise<T>): Promise<T> {
+  const run = jupiterQueue.then(async () => {
+    const wait = lastJupiterCallAt + STOCK_JUPITER_SPACING_MS - Date.now();
+    if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+    try { return await call(); } finally { lastJupiterCallAt = Date.now(); }
+  });
+  jupiterQueue = run.catch(() => undefined);
+  return run;
+}
+
+/** Concurrent callers of the same read share one in-flight promise (cleared when it settles, so a failure is not kept). */
+function sharedInFlight<K, T>(read: (key: K) => Promise<T>): (key: K) => Promise<T> {
+  const inFlight = new Map<K, Promise<T>>();
+  return (key) => {
+    const pending = inFlight.get(key);
+    if (pending) return pending;
+    const started = read(key).finally(() => inFlight.delete(key));
+    inFlight.set(key, started);
+    return started;
+  };
 }
 
 /** The universe's Jupiter rows: ceil(218 / 100) = 3 search calls, one at a time. */
@@ -59,24 +80,29 @@ export async function fetchJupiterStockRows(options: { fetcher?: typeof fetch } 
   return rows;
 }
 
-async function readStockMarket(): Promise<StockMarket> {
+/** One full refresh at a time: a second cache miss during a refresh waits for it instead of starting 3 more calls. */
+const readStockMarket = sharedInFlight(async (): Promise<StockMarket> => {
   const market = buildStockMarket(await fetchJupiterStockRows(), { icon: trustedIcon });
   if (!market.gainers.length && !market.stocks.length) throw new Error("No stock passed the filters"); // never cache an empty read
   return market;
-}
+});
 
-export const loadStockMarket = unstable_cache(readStockMarket, ["stock-market-v1"], {
+export const loadStockMarket = unstable_cache(() => readStockMarket("market"), ["stock-market-v1"], {
   revalidate: STOCK_MARKET_REVALIDATE_SECONDS, tags: ["stock-market"],
 });
 
 const probes = new Map<string, { result: SpotSwapRouteCheck; expiresAt: number }>();
-async function cachedRouteCheck(mint: string, usdcRaw: bigint): Promise<SpotSwapRouteCheck> {
+const probeRoute = sharedInFlight(async (key: string): Promise<SpotSwapRouteCheck> => {
+  const [mint, usdcRaw] = key.split(":") as [string, string];
+  const result = await paced(() => spotSwapRouteCheck(mint, BigInt(usdcRaw)));
+  probes.set(key, { result, expiresAt: Date.now() + STOCK_ROUTE_PROBE_TTL_MS });
+  return result;
+});
+export async function cachedRouteCheck(mint: string, usdcRaw: bigint): Promise<SpotSwapRouteCheck> {
   const key = `${mint}:${usdcRaw}`;
   const hit = probes.get(key);
   if (hit && hit.expiresAt > Date.now()) return hit.result;
-  const result = await paced(() => spotSwapRouteCheck(mint, usdcRaw));
-  probes.set(key, { result, expiresAt: Date.now() + STOCK_ROUTE_PROBE_TTL_MS });
-  return result;
+  return probeRoute(key);
 }
 
 /** An outage (Jupiter 429/5xx/timeout, RPC down): rethrown so it is never cached as "not buyable". */

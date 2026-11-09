@@ -5,12 +5,13 @@
  */
 import { VersionedTransaction } from "@solana/web3.js";
 import { postWithJupiterRelay, type JupiterRelayStore } from "@/lib/jupiter/browser-relay";
-import { TX_PREFLIGHT_POLICY, TxNotSentError, type PreparedTx, type TxAdapter } from "@/lib/tx-pipeline";
+import { TX_PREFLIGHT_POLICY, TxNotSentError, TxTermsChangedError, type PreparedTx, type TxAdapter } from "@/lib/tx-pipeline";
 
 export const SPOT_SWAP_PREPARE_TIMEOUT_MS = 45_000;
 export const SPOT_SWAP_QUOTE_TIMEOUT_MS = 30_000;
 const GENERIC_QUOTE_ERROR = "We couldn't get a price right now. Please try again in a moment.";
 const MISMATCH = "The prepared purchase does not match your request. Nothing was sent; please try again.";
+const NO_PRICE = "Wait for the price to load, then press Buy. Nothing was sent.";
 
 export type SpotSwapQuoteView = {
   outputMint: string; outputMintShort: string; outputSymbol: string; issuerName: string; xstocks: boolean;
@@ -40,8 +41,32 @@ export async function fetchSpotSwapQuote(input: { underlying: string; amount: st
   return body;
 }
 
-export type SpotSwapInput = { underlying: string; mint: string; amount: string; store: JupiterRelayStore };
+/** New route terms when the minimum fell below the confirmed one (nothing was prepared). */
+export type SpotSwapChangedTerms = { quotedOut: string; minOut: string; priceImpactPct: string | null };
+/** What one purchase confirms: the issuer token, the USDC amount and the minimum received (raw units) the user saw. */
+export type SpotSwapTerms = { mint: string; amount: string; minOut: string };
+/**
+ * `minOut` is the minimum received the user saw (raw units). The server builds nothing below it, and the prepared
+ * summary is checked against it again here. When the route moved below it, `onQuoteChanged` gets the new terms to show
+ * and the run stops quietly (`TxTermsChangedError`: no error message, the form asks the user to accept them).
+ *
+ * `shown` reads the terms on screen when prepare runs. The pipeline re-runs a saved input (Try again, a retry from a
+ * notice, its own re-prepare), and the price on screen may have refreshed since Buy; with `shown`, every prepare
+ * confirms what the user sees now, never the older terms. Null when no price is shown: nothing is prepared.
+ */
+export type SpotSwapInput = SpotSwapTerms & { underlying: string; store: JupiterRelayStore;
+  onQuoteChanged?: (terms: SpotSwapChangedTerms) => void; shown?: () => SpotSwapTerms | null };
 export type SpotSwapPrepared = PreparedTx & { summary: { outputMint: string; amount: string; quotedOut: string; minOut: string; outputDecimals: number; outputSymbol: string } };
+
+const RAW = /^\d{1,20}$/;
+const raw = (value: unknown): bigint | null => typeof value === "string" && RAW.test(value) ? BigInt(value) : null;
+
+function changedTerms(value: unknown): SpotSwapChangedTerms | null {
+  const terms = value as Partial<SpotSwapChangedTerms> | null;
+  if (!terms || raw(terms.quotedOut) === null || raw(terms.minOut) === null) return null;
+  const impact = typeof terms.priceImpactPct === "string" ? terms.priceImpactPct : null;
+  return { quotedOut: terms.quotedOut!, minOut: terms.minOut!, priceImpactPct: impact };
+}
 
 function decode(base64: string): VersionedTransaction {
   return VersionedTransaction.deserialize(Uint8Array.from(atob(base64), (character) => character.charCodeAt(0)));
@@ -53,13 +78,28 @@ export const spotSwapTxAdapter: TxAdapter<SpotSwapInput, SpotSwapPrepared> = {
   preflight: TX_PREFLIGHT_POLICY,
   scope: (input) => `buy:${input.mint}`,
   async prepare(input, { wallet }) {
-    const response = await postWithJupiterRelay("/api/spot-swap-prepare", { wallet, underlying: input.underlying, mint: input.mint, amount: input.amount },
+    const terms = input.shown ? input.shown() : input;
+    if (!terms) throw new TxNotSentError(NO_PRICE);
+    const confirmedMin = raw(terms.minOut);
+    if (confirmedMin === null) throw new TxNotSentError(MISMATCH);
+    const response = await postWithJupiterRelay("/api/spot-swap-prepare",
+      { wallet, underlying: input.underlying, mint: terms.mint, amount: terms.amount, minOut: terms.minOut },
       { store: input.store, signal: AbortSignal.timeout(SPOT_SWAP_PREPARE_TIMEOUT_MS) });
     const data = await response.json().catch(() => null) as { unsignedTransaction?: string; sendPermit?: string; landedPermit?: string;
-      summary?: SpotSwapPrepared["summary"] & { wallet: string; lastValidBlockHeight: number }; error?: string; code?: string } | null;
-    if (!response.ok || !data) throw Object.assign(new TxNotSentError(data?.error || "Couldn't prepare the purchase. Nothing was sent; please try again."), { code: data?.code });
+      summary?: SpotSwapPrepared["summary"] & { wallet: string; lastValidBlockHeight: number }; error?: string; code?: string; quote?: unknown } | null;
+    if (!response.ok || !data) {
+      const terms = data?.code === "spot_swap_quote_changed" ? changedTerms(data.quote) : null;
+      if (terms && input.onQuoteChanged) {
+        input.onQuoteChanged(terms);
+        throw new TxTermsChangedError(data?.error);
+      }
+      throw Object.assign(new TxNotSentError(data?.error || "Couldn't prepare the purchase. Nothing was sent; please try again."), { code: data?.code });
+    }
     const summary = data.summary;
-    if (!data.unsignedTransaction || !summary || summary.wallet !== wallet || summary.outputMint !== input.mint) throw new TxNotSentError(MISMATCH);
+    if (!data.unsignedTransaction || !summary || summary.wallet !== wallet || summary.outputMint !== terms.mint) throw new TxNotSentError(MISMATCH);
+    // Never hand the wallet a purchase whose minimum is below the one the user confirmed.
+    const preparedMin = raw(summary.minOut);
+    if (preparedMin === null || preparedMin < confirmedMin) throw new TxNotSentError(MISMATCH);
     const transaction = decode(data.unsignedTransaction);
     const message = transaction.message;
     const signers = message.staticAccountKeys.slice(0, message.header.numRequiredSignatures).map((key) => key.toBase58());

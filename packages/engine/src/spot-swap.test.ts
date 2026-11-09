@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ExtensionType, getAssociatedTokenAddressSync, getExtensionTypes, getTypeLen, unpackMint, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
-import { Keypair, PublicKey, SystemProgram, type AccountInfo, type Connection } from "@solana/web3.js";
+import { AddressLookupTableProgram, Keypair, PublicKey, SystemProgram, type AccountInfo, type Connection } from "@solana/web3.js";
 vi.mock("./swap/leg", () => ({ feeSwapLeg: vi.fn() }));
 vi.mock("./rpc/fee-estimate", () => ({ estimateFeeForMessage: vi.fn(async () => 5_000), OPEN_FEE_ESTIMATE_MESSAGE: "x" }));
 import { feeSwapLeg } from "./swap/leg";
@@ -9,7 +9,7 @@ import { swapFeeRecipientAta } from "./swap/fee";
 import { USDC_MINT } from "./ids";
 import mainnetMints from "./fixtures/spot-swap-mints-mainnet.json";
 import {
-  assertSpotSwapAllowlist, buildAndSimulateSpotSwap, quoteSpotSwap, selectSpotSwapToken, spotSwapIssuer, spotSwapMintIssues, spotSwapTokenFor,
+  assertSpotSwapAllowlist, buildAndSimulateSpotSwap, quoteSpotSwap, SPOT_SWAP_CONFIRM_SLIPPAGE_BPS, spotSwapConfirmMinOut, selectSpotSwapToken, spotSwapIssuer, spotSwapMintIssues, spotSwapTokenFor,
   verifySpotSwapSimulation, SpotSwapError, assertSpotSwapPriceImpact, spotSwapRouteCheck, SPOT_SWAP_MAX_PRICE_IMPACT_BPS,
   type SpotSwapAllowlist, type SpotSwapRouteCheck,
 } from "./spot-swap";
@@ -232,9 +232,10 @@ describe("buildAndSimulateSpotSwap", () => {
     });
     expect(summary.feeWalletShort).toMatch(/^.{4}….{2}$/);
     expect(JSON.stringify(summary)).not.toContain(feeWallet.toBase58());
+    // The simulated debit (rent + fee) already includes the network fee: counted once.
     expect(summary.solRequirement).toEqual({
       outputAccountExists: false, outputAccountRentLamports: String(RENT), networkFeeLamports: "5000",
-      requiredLamports: String(RENT + 5_000 + 5_000), walletLamports: "50000000", sufficient: true,
+      requiredLamports: String(RENT + 5_000), walletLamports: "50000000", sufficient: true,
     });
     expect(vi.mocked(feeSwapLeg)).toHaveBeenCalledWith(expect.objectContaining({ inputMint: USDC_MINT, spend: 2_000_000n, feeBps: 10, inputFee: true, build: true }));
   });
@@ -242,8 +243,53 @@ describe("buildAndSimulateSpotSwap", () => {
     accounts.set(outputAta.toBase58(), info(token(tsla, wallet, 10n), TOKEN_2022_PROGRAM_ID, RENT));
     post = { ...post, lamports: 50_000_000 - 5_000, output: 522_854n };
     const { summary } = await build("2");
-    expect(summary.solRequirement).toMatchObject({ outputAccountExists: true, outputAccountRentLamports: "0" });
+    expect(summary.solRequirement).toMatchObject({ outputAccountExists: true, outputAccountRentLamports: "0", requiredLamports: "5000" });
     expect(summary.simulatedOut).toBe("522844");
+  });
+  it("requires the simulated debit when the route spends more SOL than the deposit and fee", async () => {
+    post = { ...post, lamports: 50_000_000 - RENT - 5_000 - 2_039_280 }; // a temporary Jupiter account on top
+    const { summary } = await build("2");
+    expect(summary.solRequirement.requiredLamports).toBe(String(RENT + 5_000 + 2_039_280));
+  });
+  it("prepares when the route's minimum is at least the one the user confirmed", async () => {
+    const { summary } = await buildAndSimulateSpotSwap(wallet.toBase58(), tsla.toBase58(), "2", { allowlist, connection, minOutAtLeast: 520_230n });
+    expect(summary.minOut).toBe("520230");
+  });
+  it("refuses a route whose minimum is below the confirmed one and returns the new terms, before simulating", async () => {
+    await expect(buildAndSimulateSpotSwap(wallet.toBase58(), tsla.toBase58(), "2", { allowlist, connection, minOutAtLeast: 520_231n }))
+      .rejects.toMatchObject({ code: "spot_swap_quote_changed", detail: { quotedOut: "522844", minOut: "517615", priceImpactPct: "0.0003" } });
+    expect(connection.simulateTransaction).not.toHaveBeenCalled();
+  });
+  it("keeps the compact lookup tables in the final transaction, so a route that fit still fits", async () => {
+    // Table A covers ten route keys; table B covers one, which costs more as a lookup than inline. The compact compile
+    // drops B. Re-stamping with every route table would put B back (+3 bytes): 1,231 -> 1,234 bytes, over the limit.
+    const extra = Array.from({ length: 11 }, () => key());
+    const tableA = key(), tableB = key();
+    const lookupTable = (addresses: PublicKey[]) => {
+      const data = Buffer.alloc(56 + 32 * addresses.length);
+      data.writeUInt32LE(1, 0); data.writeBigUInt64LE(2n ** 64n - 1n, 4);
+      addresses.forEach((address, index) => address.toBuffer().copy(data, 56 + 32 * index));
+      return info(data, AddressLookupTableProgram.programId);
+    };
+    accounts.set(tableA.toBase58(), lookupTable(extra.slice(0, 10)));
+    accounts.set(tableB.toBase58(), lookupTable(extra.slice(10)));
+    let dataBytes = 0;
+    let withTableB = false;
+    vi.mocked(feeSwapLeg).mockImplementation(async (input) => {
+      const r = route(input.spend);
+      r.addressesByLookupTableAddress = { [tableA.toBase58()]: extra.slice(0, 10).map(String),
+        ...(withTableB ? { [tableB.toBase58()]: [extra[10]!.toBase58()] } : {}) } as never;
+      r.swapInstruction.accounts.push(...extra.map((pubkey) => ({ pubkey: pubkey.toBase58(), isSigner: false, isWritable: false })));
+      r.swapInstruction.data = Buffer.alloc(dataBytes).toString("base64");
+      return { inputMint: USDC_MINT, outputMint: input.outputMint, spend: input.spend, feeAmount: 2_000n, feeInRoute: true, minOut: 520_230n, route: r } as never;
+    });
+    // With table A only, pad the swap data so the transaction is 1 byte under the 1,232-byte limit (second pass: the
+    // data length prefix grows). Then the route also returns table B, which the compact compile leaves out.
+    for (let pass = 0; pass < 2; pass++) dataBytes += 1_231 - (await build("2")).summary.sizeBytes;
+    withTableB = true;
+    const { summary, transaction } = await build("2");
+    expect(summary.sizeBytes).toBe(1_231);
+    expect(transaction.message.addressTableLookups.map((lookup) => lookup.accountKey.toBase58())).toEqual([tableA.toBase58()]);
   });
   it("rejects a simulation whose fee differs from the quote", async () => {
     post = { ...post, fee: 9_001n };
@@ -312,10 +358,38 @@ describe("buildAndSimulateSpotSwap", () => {
   });
 });
 
+describe("price buffer between the quote and Buy", () => {
+  // The quote's 522,844 out is confirmed 1.0% lower (517,615); each route's own on-chain minimum is 0.5% below its output.
+  const moved = (outAmount: string, minOut: bigint) =>
+    mockLeg({ minOut, route: { ...route(2_000_000n), outAmount, otherAmountThreshold: minOut.toString() } });
+  const buy = (minOutAtLeast: bigint) => buildAndSimulateSpotSwap(wallet.toBase58(), tsla.toBase58(), "2", { allowlist, connection, minOutAtLeast });
+
+  it("confirms 1.0% below the quoted output, never above the route's own minimum", () => {
+    expect(SPOT_SWAP_CONFIRM_SLIPPAGE_BPS).toBe(100);
+    expect(spotSwapConfirmMinOut(522_844n, 520_230n)).toBe(517_615n);
+    expect(spotSwapConfirmMinOut(1_000n, 900n)).toBe(900n);
+  });
+  it("prepares without new terms when the price fell 0.5% since the quote", async () => {
+    const { minOut } = await quoteSpotSwap(tsla.toBase58(), "2", { allowlist, connection });
+    moved("520230", 517_629n);
+    const { summary } = await buy(BigInt(minOut));
+    expect(summary).toMatchObject({ quotedOut: "520230", minOut: "517629" });
+  });
+  it("returns new terms, with the same buffer, when the price fell 0.6%", async () => {
+    moved("519707", 517_109n);
+    await expect(buy(517_615n)).rejects.toMatchObject({ code: "spot_swap_quote_changed", detail: { quotedOut: "519707", minOut: "514509" } });
+  });
+  it("new terms the user accepted still prepare after another 0.5% move", async () => {
+    moved("517108", 514_523n);
+    const { summary } = await buy(514_509n);
+    expect(summary.minOut).toBe("514523");
+  });
+});
+
 describe("quoteSpotSwap", () => {
   it("previews fee, output and the new-account deposit without a wallet", async () => {
     const quote = await quoteSpotSwap(tsla.toBase58(), "2", { allowlist, connection });
-    expect(quote).toMatchObject({ feeAmount: "2000", feeBps: 10, quotedOut: "522844", minOut: "520230", newAccountRentLamports: String(RENT), issuerName: "xStocks" });
+    expect(quote).toMatchObject({ feeAmount: "2000", feeBps: 10, quotedOut: "522844", minOut: "517615", newAccountRentLamports: String(RENT), issuerName: "xStocks" });
     expect(vi.mocked(feeSwapLeg)).toHaveBeenCalledWith(expect.objectContaining({ build: false, inputFee: true }));
   });
   it("maps a missing route to the Jupiter no-route error", async () => {

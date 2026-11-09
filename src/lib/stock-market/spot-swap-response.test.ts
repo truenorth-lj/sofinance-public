@@ -35,6 +35,15 @@ describe("spotSwapErrorResponse", () => {
     expect(body).toMatchObject({ error: "Not enough SOL to cover the one-time deposit and the network fee.", sol });
   });
 
+  it("a route below the confirmed minimum carries the new terms and plain words", async () => {
+    const terms = { quotedOut: "2250000", minOut: "2238750", priceImpactPct: "0.0009" };
+    const message = "The price moved since your quote, so nothing was prepared. Check the new amount and press Buy again.";
+    const { status, body } = await read(spotSwapErrorResponse(new SpotSwapError("spot_swap_quote_changed", message, terms), "x", "/api/spot-swap-prepare"));
+    expect(status).toBe(400);
+    expect(body).toEqual({ error: message, code: "spot_swap_quote_changed", quote: terms });
+    expect(body.error).not.toMatch(CODE_LIKE);
+  });
+
   it("Jupiter outage is a 503, and the relay step is rethrown for withJupiterRelay", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     expect(spotSwapErrorResponse(new JupiterHttpError(503, "/swap/v1/quote"), "Quote failed.", "/api/spot-swap-quote").status).toBe(503);

@@ -2,7 +2,7 @@ import "@/lib/engine-host";
 import { parseWallet } from "@sofinance/engine/api-input";
 import { withJupiterRelay } from "@/lib/jupiter-relay-route";
 import { loadSpotSwapStockContext } from "@/lib/stock-market/source";
-import { parseSpotSwapAmount, parseUnderlying } from "@/lib/stock-market/public";
+import { jsonObject, parseSpotSwapAmount, parseUnderlying } from "@/lib/stock-market/public";
 import { SPOT_SWAP_UNAVAILABLE_MESSAGE, spotSwapErrorResponse } from "@/lib/stock-market/spot-swap-response";
 import { quoteSpotSwapForStock } from "@/server/transactions/spot-swap";
 
@@ -14,8 +14,9 @@ const INVALID = "Enter a USDC amount with up to 6 decimals.";
  * the fee come from the engine, and with a wallet the SOL / USDC readiness is checked. Nothing is built or signed.
  */
 export async function POST(request: Request) {
-  let body: Record<string, unknown>;
-  try { body = await request.clone().json() as Record<string, unknown>; } catch { return Response.json({ error: INVALID }, { status: 400, headers: NO_STORE }); }
+  let body: Record<string, unknown> | null;
+  try { body = jsonObject(await request.clone().json()); } catch { body = null; }
+  if (!body) return Response.json({ error: INVALID }, { status: 400, headers: NO_STORE });
   const underlying = parseUnderlying(body.underlying);
   const amount = parseSpotSwapAmount(body.amount);
   if (!underlying || !amount) return Response.json({ error: INVALID }, { status: 400, headers: NO_STORE });

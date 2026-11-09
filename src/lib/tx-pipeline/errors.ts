@@ -41,6 +41,18 @@ export class TxNotSentError extends Error {
   }
 }
 
+/**
+ * Prepare stopped before the wallet because the terms the user confirmed no longer hold (a swap's minimum moved). Not a
+ * failure: the adapter has already handed the new terms to the form, which shows them for the user to accept. runTx
+ * reports nothing (no toast, no failure event) and the pipeline returns to idle.
+ */
+export class TxTermsChangedError extends TxNotSentError {
+  constructor(message = "The terms changed, so nothing was prepared.") {
+    super(message);
+    this.name = "TxTermsChangedError";
+  }
+}
+
 /** The relay's preflight refused the signed transaction: it never reached the network. The message is plain words only. */
 export class TxRelayRefusedError extends TxNotSentError {
   constructor(cause: unknown) {

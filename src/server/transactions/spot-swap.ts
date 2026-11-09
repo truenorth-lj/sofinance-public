@@ -8,11 +8,11 @@ import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID, unpackAccount } from "
 import { PublicKey, type Connection } from "@solana/web3.js";
 import { parseTokenAmount } from "@sofinance/engine/amount";
 import { getSigningSecret } from "@sofinance/engine/config/server-env";
-import { USDC_MINT, SLIPPAGE_BPS } from "@sofinance/engine/ids";
+import { USDC_MINT } from "@sofinance/engine/ids";
 import { rpcConnection } from "@sofinance/engine/rpc";
 import { JupiterNoRouteError } from "@sofinance/engine/swap/jupiter";
 import {
-  buildAndSimulateSpotSwap, quoteSpotSwap, selectSpotSwapToken, SpotSwapError, SPOT_SWAP_BASE_FEE_LAMPORTS, USDC_DECIMALS,
+  buildAndSimulateSpotSwap, quoteSpotSwap, selectSpotSwapToken, SpotSwapError, SPOT_SWAP_BASE_FEE_LAMPORTS, SPOT_SWAP_CONFIRM_SLIPPAGE_BPS, USDC_DECIMALS,
   type SpotSwapQuote,
 } from "@sofinance/engine/spot-swap";
 import { issueSpotSwapPermit } from "@/lib/spot-swap-permit";
@@ -69,7 +69,8 @@ export async function quoteSpotSwapForStock(context: SpotSwapStockContext, amoun
   const walletCheck = wallet ? await checkSpotSwapWallet(wallet, candidate, quote, options.connection ?? rpcConnection()) : null;
   return {
     underlying: context.underlying,
-    quote: { ...quote, outputDecimals: candidate.decimals, slippageBps: SLIPPAGE_BPS },
+    // Shown as the slippage limit: what the user confirms, from this quote (the transaction's own 0.5% plus the buffer).
+    quote: { ...quote, outputDecimals: candidate.decimals, slippageBps: SPOT_SWAP_CONFIRM_SLIPPAGE_BPS },
     wallet: walletCheck,
   };
 }
@@ -94,10 +95,13 @@ export async function checkSpotSwapWallet(wallet: string, candidate: { mint: str
   };
 }
 
-/** Build + simulate for the user's wallet; returns the unsigned transaction and its permits. */
-export async function prepareSpotSwapForStock(context: SpotSwapStockContext, wallet: string, mint: string, amount: string) {
+/**
+ * Build + simulate for the user's wallet; returns the unsigned transaction and its permits. `minOut` (raw) is the
+ * minimum the user confirmed: a route below it throws `spot_swap_quote_changed` with the new terms.
+ */
+export async function prepareSpotSwapForStock(context: SpotSwapStockContext, wallet: string, mint: string, amount: string, minOut: bigint) {
   const allowlist = spotSwapAllowlistFor(context.candidates);
-  const { summary, transaction } = await withFeeEstimateRetry(() => buildAndSimulateSpotSwap(wallet, mint, amount, { allowlist }));
+  const { summary, transaction } = await withFeeEstimateRetry(() => buildAndSimulateSpotSwap(wallet, mint, amount, { allowlist, minOutAtLeast: minOut }));
   const secret = getSigningSecret();
   const unsignedTransaction = Buffer.from(transaction.serialize()).toString("base64");
   const permit = issueSpotSwapPermit(secret, { wallet, message: Buffer.from(transaction.message.serialize()).toString("base64"), summary });
