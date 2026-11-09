@@ -11,11 +11,11 @@
  * from the user; a bigger one comes back from prepare as new terms, shown in place with "Accept new price" (no error).
  */
 import { ChevronRight, LoaderCircle, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createJupiterRelayStore } from "@/lib/jupiter/browser-relay";
 import { formatPriceImpact, formatSol, formatTokenRaw, formatUsdc, STOCK_NOTICE_TEXT } from "@/lib/stock-market/format";
 import { parseSpotSwapAmount, SPOT_SWAP_MAX_USDC, type StockBuyOption } from "@/lib/stock-market/public";
-import { fetchSpotSwapQuote, spotSwapTxAdapter, type SpotSwapChangedTerms, type SpotSwapQuoteResult } from "@/lib/stock-market/spot-swap-client";
+import { fetchSpotSwapQuote, spotSwapTxAdapter, type SpotSwapChangedTerms, type SpotSwapQuoteResult, type SpotSwapTerms } from "@/lib/stock-market/spot-swap-client";
 import { useTxPipeline } from "@/components/transactions/use-tx-pipeline";
 import { BUTTON, FIELD, TxStatus } from "@/components/unified-positions/registry-tools";
 import { useWalletConnection } from "@/components/wallet-connection";
@@ -62,6 +62,9 @@ export function SpotSwapModal({ option, onClose }: { option: StockBuyOption; onC
   const current = quote && quote.key === key ? quote : null;
   const changed = Boolean(current?.updated);
   const [refreshes, setRefreshes] = useState(0);
+  /** Counts quote requests that finished (either way): the next refresh is scheduled from there. */
+  const [settled, setSettled] = useState(0);
+  const fetching = useRef(false);
 
   useEffect(() => {
     if (!key || !parsed || tx.locked || changed) return;
@@ -69,6 +72,7 @@ export function SpotSwapModal({ option, onClose }: { option: StockBuyOption; onC
     const timer = window.setTimeout(() => {
       // A refresh keeps the last price for this amount on screen (and Buy enabled) until the new one arrives.
       setQuote((last) => (last?.key === key && last.value ? last : { key }));
+      fetching.current = true;
       fetchSpotSwapQuote({ underlying: option.underlying, amount: parsed, wallet: wallet ?? null, store: relayStore.current, signal: aborter.signal })
         .then((value) => setQuote({ key, value }))
         .catch((error: unknown) => {
@@ -77,19 +81,34 @@ export function SpotSwapModal({ option, onClose }: { option: StockBuyOption; onC
           const code = (error as { code?: string | null }).code;
           setQuote((last) => (last?.key === key && last.value ? last
             : { key, error: error instanceof Error ? error.message : "We couldn't get a price right now. Please try again in a moment.", refused: code === "spot_swap_price_impact" }));
+        })
+        .finally(() => {
+          if (aborter.signal.aborted) return;
+          fetching.current = false;
+          setSettled((count) => count + 1);
         });
     }, QUOTE_DEBOUNCE_MS);
-    return () => { aborter.abort(); window.clearTimeout(timer); };
+    return () => { aborter.abort(); window.clearTimeout(timer); fetching.current = false; };
   }, [key, parsed, option.underlying, wallet, tx.locked, changed, refreshes]);
 
-  // Keep the shown price current: re-quote every QUOTE_REFRESH_MS while a price is shown, the tab is visible and no
-  // purchase is running (never over new terms waiting to be accepted).
+  // Keep the shown price current: QUOTE_REFRESH_MS after the last request finished, re-quote while a price is shown and
+  // no purchase is running (never over new terms waiting to be accepted). One request at a time: a slow one is never
+  // cancelled by the next period. A hidden tab waits, then refreshes as soon as it is shown again.
   const live = Boolean(current?.value) && !changed && !tx.locked && tx.status !== "success";
   useEffect(() => {
     if (!live) return;
-    const timer = window.setInterval(() => { if (document.visibilityState === "visible") setRefreshes((count) => count + 1); }, QUOTE_REFRESH_MS);
-    return () => window.clearInterval(timer);
-  }, [live, key]);
+    const refresh = () => { if (!fetching.current) setRefreshes((count) => count + 1); };
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      document.removeEventListener("visibilitychange", onVisible);
+      refresh();
+    };
+    const timer = window.setTimeout(() => {
+      if (document.visibilityState === "visible") refresh();
+      else document.addEventListener("visibilitychange", onVisible);
+    }, QUOTE_REFRESH_MS);
+    return () => { window.clearTimeout(timer); document.removeEventListener("visibilitychange", onVisible); };
+  }, [live, key, settled]);
 
   const [expanded, setExpanded] = useState(false);
   const quoted = current?.value?.quote ?? null;
@@ -106,13 +125,23 @@ export function SpotSwapModal({ option, onClose }: { option: StockBuyOption; onC
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose, tx.closeLocked]);
 
+  // The purchase on screen right now. Every prepare of a Buy run reads it (Buy, Try again, a retry from a notice, the
+  // pipeline's own re-prepare), so a retry confirms what the user sees, never terms saved before a refresh.
+  const screen = useRef<{ key: string; terms: SpotSwapTerms } | null>(null);
+  useLayoutEffect(() => {
+    screen.current = quoted && parsed ? { key, terms: { mint: quoted.outputMint, amount: parsed, minOut: quoted.minOut } } : null;
+  });
+
   const submit = async () => {
     if (!quoted || !parsed) return;
-    const runKey = key;
-    // New terms replace the shown ones for this amount + wallet; Accept new price then confirms exactly them.
-    const onQuoteChanged = (terms: SpotSwapChangedTerms) => setQuote((last) => (last?.key === runKey && last.value
-      ? { key: runKey, value: { ...last.value, quote: { ...last.value.quote, ...terms } }, updated: true } : last));
-    await tx.run({ underlying: option.underlying, mint: quoted.outputMint, amount: parsed, minOut: quoted.minOut, store: relayStore.current, onQuoteChanged });
+    // New terms replace the shown ones for the purchase on screen; Accept new price then confirms exactly them.
+    const onQuoteChanged = (terms: SpotSwapChangedTerms) => {
+      const at = screen.current?.key;
+      setQuote((last) => (at && last?.key === at && last.value
+        ? { key: at, value: { ...last.value, quote: { ...last.value.quote, ...terms } }, updated: true } : last));
+    };
+    await tx.run({ underlying: option.underlying, mint: quoted.outputMint, amount: parsed, minOut: quoted.minOut, store: relayStore.current,
+      onQuoteChanged, shown: () => screen.current?.terms ?? null });
   };
 
   const symbol = quoted?.outputSymbol ?? option.symbol;

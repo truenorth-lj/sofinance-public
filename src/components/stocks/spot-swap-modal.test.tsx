@@ -183,7 +183,31 @@ describe("SpotSwapModal", () => {
     const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
     await waitRefresh(); await waitRefresh();
     expect(fetchSpotSwapQuote).toHaveBeenCalledTimes(2);
+    // Shown again: the overdue refresh runs right away.
     visibility.mockRestore();
+    await act(async () => { document.dispatchEvent(new Event("visibilitychange")); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(600); });
+    expect(fetchSpotSwapQuote).toHaveBeenCalledTimes(3);
+  });
+
+  it("lets a slow refresh finish: the next one is scheduled only after it settles, never cancelling it", async () => {
+    fetchSpotSwapQuote.mockImplementation(async () => quote);
+    await typeAmount("2");
+    const signals: AbortSignal[] = [];
+    // Each refresh takes 25 s, longer than the 20 s refresh period.
+    fetchSpotSwapQuote.mockImplementation(({ signal }: { signal: AbortSignal }) => new Promise((resolve, reject) => {
+      signals.push(signal);
+      const timer = setTimeout(() => resolve({ ...quote, quote: { ...quote.quote, quotedOut: "4400000", minOut: "4356000" } }), 25_000);
+      signal.addEventListener("abort", () => { clearTimeout(timer); reject(new DOMException("aborted", "AbortError")); });
+    }));
+    await waitRefresh();
+    expect(fetchSpotSwapQuote).toHaveBeenCalledTimes(2);
+    await waitRefresh(); // a second period passes while the refresh is still running
+    expect(fetchSpotSwapQuote).toHaveBeenCalledTimes(2);
+    expect(signals[0]!.aborted).toBe(false);
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+    expect(text("spot-swap-quoted")).toBe("0.044 TSLAx");
+    // The next period starts from the moment it settled.
     await waitRefresh();
     expect(fetchSpotSwapQuote).toHaveBeenCalledTimes(3);
   });

@@ -47,6 +47,22 @@ describe("spotSwapTxAdapter.prepare: the confirmed minimum", () => {
     expect(plain).toMatchObject({ message: expect.stringMatching(/price moved/) });
   });
 
+  it("confirms the terms on screen when prepare runs, not the ones saved in the input (Try again after a refresh)", async () => {
+    post.mockResolvedValue(Response.json({ unsignedTransaction: unsigned, summary: summary("4500000") }));
+    await prepare(input({ minOut: "4477500", shown: () => ({ mint, amount: "2", minOut: "4500000" }) }));
+    expect(post).toHaveBeenCalledWith("/api/spot-swap-prepare", expect.objectContaining({ minOut: "4500000" }), expect.anything());
+  });
+
+  it("refuses a prepared minimum below the one on screen, even when it clears the saved one", async () => {
+    post.mockResolvedValue(Response.json({ unsignedTransaction: unsigned, summary: summary("4490000") }));
+    await expect(prepare(input({ minOut: "4477500", shown: () => ({ mint, amount: "2", minOut: "4500000" }) }))).rejects.toBeInstanceOf(TxNotSentError);
+  });
+
+  it("prepares nothing when no price is on screen", async () => {
+    await expect(prepare(input({ shown: () => null }))).rejects.toThrow(/Wait for the price/);
+    expect(post).not.toHaveBeenCalled();
+  });
+
   it("refuses to ask the server without a confirmed minimum", async () => {
     await expect(prepare(input({ minOut: "" }))).rejects.toBeInstanceOf(TxNotSentError);
     expect(post).not.toHaveBeenCalled();
