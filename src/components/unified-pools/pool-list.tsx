@@ -184,7 +184,7 @@ export function PoolTable({ pools, apr, actionFor, sort, onSort, icons, highligh
   testId?: string;
 }) {
   // `relative` keeps the absolutely positioned sr-only labels inside this scroller (else they widen the page on phones).
-  return <div className="relative mt-3 overflow-x-auto rounded-[28px] border border-white/12 bg-char">
+  return <div className="relative mt-3 overflow-x-auto rounded-surface border border-white/12 bg-char">
     <table className="w-full min-w-[980px] text-left text-sm max-md:min-w-0" data-testid={testId}>
       <thead><tr className="border-b border-white/10">
         {COLUMNS.map((column) => {

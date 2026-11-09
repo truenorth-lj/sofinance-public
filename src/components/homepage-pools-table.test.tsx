@@ -362,6 +362,22 @@ describe("homepage pools: Top Pools card and the full list", () => {
     expect(line().className).toContain("motion-safe:animate-emerge");
   });
 
+  it("nests the cards' corners from the outside in (28px card, 16px padding → 12px panel → 8px rows); both searches are pills", async () => {
+    jsonOk({ pairs: [pair({ poolAddress: "spcx-pool" })] });
+    await mount();
+    for (const id of ["stock-card-gainers", "stock-card-stocks", "top-pools-card"]) {
+      const card = container.querySelector<HTMLElement>(`[data-testid=${id}]`)!;
+      expect(card.className, id).toMatch(/\brounded-surface\b.*\bp-4\b.*\[--radius-inset:0\.75rem\]/);
+      expect(card.className, id).not.toMatch(/\bsm:p-/);
+      const panel = card.querySelector("ol")!;
+      expect(panel.className, id).toMatch(/\brounded-inset\b.*\bp-1\b/);
+      // The row frame (an <li>, or the link inside a Top Pools <li>), loaded or placeholder.
+      expect(panel.querySelector(".min-h-16")!.className, id).toMatch(/\brounded-lg\b.*\bpy-2\b/);
+    }
+    expect(container.querySelector("#hero-search")!.parentElement!.className).toMatch(/\brounded-full\b/);
+    expect(container.querySelector("#pools-search")!.parentElement!.className).toMatch(/\brounded-full\b/);
+  });
+
   it("Top Pools rows show the pair as one stacked 32 px icon, so names start where the stock names do", async () => {
     jsonOk({ pairs: [pair({ poolAddress: "spcx-pool" })] });
     await mount();

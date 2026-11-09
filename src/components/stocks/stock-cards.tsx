@@ -20,7 +20,7 @@ import type { HomepageStocks, StockBuyOption, StockGainerRow, StockMcapRow } fro
 
 const SpotSwapRoot = dynamic(() => import("./spot-swap-root").then((module) => module.SpotSwapRoot), { ssr: false });
 
-const labelPill = "inline-flex min-h-6 shrink-0 items-center whitespace-nowrap rounded-full border border-white/25 px-2.5 py-0.5 font-data text-[10px] uppercase leading-4 tracking-[0.12em] text-cream/75";
+const labelPill = "inline-flex min-h-6 shrink-0 items-center whitespace-nowrap rounded-full border border-white/25 px-3 py-1 font-data text-[10px] uppercase leading-4 tracking-[0.12em] text-cream/75";
 
 type Row = (StockGainerRow | StockMcapRow) & { mcapUsd?: number };
 
@@ -45,16 +45,16 @@ function StockRow({ row, rank, option, unsupported, onBuy, showMcap }: { row: Ro
     </span>
     {option ? <button type="button" onClick={() => onBuy(option)} data-testid={`stock-buy-${row.underlying}`}
       aria-label={`Buy ${row.company} with USDC`}
-      className="shrink-0 rounded-full bg-lemon px-3 py-1.5 text-xs font-semibold text-ink outline-none transition-colors hover:bg-[#fff27f] focus-visible:shadow-[0_0_0_2px_var(--color-lilac)]">
+      className="shrink-0 rounded-full bg-lemon px-3 py-2 text-xs font-semibold text-ink outline-none transition-colors hover:bg-[#fff27f] focus-visible:shadow-[0_0_0_2px_var(--color-lilac)]">
       Buy
     </button> : unsupported ? <span data-testid={`stock-unsupported-${row.underlying}`} aria-disabled="true" title={unsupported} className="inline-flex shrink-0 items-center">
       {/* Below 640px: a greyed Buy the same width as the real one, plus an ⓘ with the reason, so the name keeps its room. */}
-      <span className="inline-flex items-center gap-0.5 sm:hidden" data-testid={`stock-unsupported-narrow-${row.underlying}`}>
+      <span className="inline-flex items-center gap-1 sm:hidden" data-testid={`stock-unsupported-narrow-${row.underlying}`}>
         <button type="button" disabled aria-label={`Buy ${row.company}: ${unsupported}`}
-          className="cursor-not-allowed rounded-full bg-white/10 px-3 py-1.5 text-xs font-semibold text-cream/45">Buy</button>
+          className="cursor-not-allowed rounded-full bg-white/10 px-3 py-2 text-xs font-semibold text-cream/45">Buy</button>
         <InfoTip label={`Why ${row.company} is not supported yet: ${unsupported}`} tone="dark" placement="below">{unsupported}</InfoTip>
       </span>
-      <span className="hidden min-h-8 cursor-not-allowed items-center gap-1 whitespace-nowrap rounded-full border border-white/20 px-2.5 text-xs font-semibold text-cream/60 sm:inline-flex">
+      <span className="hidden min-h-8 cursor-not-allowed items-center gap-1 whitespace-nowrap rounded-full border border-white/20 px-3 text-xs font-semibold text-cream/60 sm:inline-flex">
         <span>{NOT_SUPPORTED_LABEL}</span>
         <InfoTip label={`Why ${row.company} is not supported yet: ${unsupported}`} tone="dark" placement="below">{unsupported}</InfoTip>
       </span>
@@ -62,11 +62,14 @@ function StockRow({ row, rank, option, unsupported, onBuy, showMcap }: { row: Ro
   </li>;
 }
 
-/** The card frame shared by the homepage's three market cards: title, one-line subtitle, a pill, then the rows. */
+/**
+ * The card frame shared by the homepage's three market cards: title, one-line subtitle, a pill, then the rows.
+ * Corners nest from the card in: card 28px with 16px padding → rows panel 12px → rows 8px (the panel's 4px padding).
+ */
 export function MarketCard({ testId, title, subtitle, pill, className, children }: {
   testId: string; title: string; subtitle: string; pill: string; className?: string; children: ReactNode;
 }) {
-  return <section data-testid={testId} className={cn("min-w-0 rounded-[28px] border border-white/12 bg-char p-4 sm:p-5", className)}>
+  return <section data-testid={testId} className={cn("min-w-0 rounded-surface border border-white/12 bg-char p-4 [--radius-inset:0.75rem]", className)}>
     <div className="flex items-start justify-between gap-3">
       <div>
         <h2 className="text-base font-semibold text-cream">{title}</h2>
@@ -79,9 +82,12 @@ export function MarketCard({ testId, title, subtitle, pill, className, children 
 }
 
 /** The rows' inset panel inside a `MarketCard`. */
-export const marketRowsPanel = "mt-3 rounded-2xl border border-white/10 bg-black/20 p-1";
-/** One row of a market card: the same height in every card, so cards side by side line up row for row. */
-export const marketRow = "flex min-h-16 items-center gap-2.5 rounded-2xl px-2 py-2.5 sm:gap-3 sm:px-3";
+export const marketRowsPanel = "mt-3 rounded-inset border border-white/10 bg-black/20 p-1";
+/**
+ * One row of a market card: the same height in every card, so cards side by side line up row for row. `min-h-16` sets
+ * that height; the 8px padding leaves room for the tallest column (a stock's price + 24h change, 44px) inside it.
+ */
+export const marketRow = "flex min-h-16 items-center gap-2 rounded-lg px-2 py-2 sm:gap-3 sm:px-3";
 
 /**
  * Loading state of a market card: five placeholder rows of the final row height, so the card (and everything below it)

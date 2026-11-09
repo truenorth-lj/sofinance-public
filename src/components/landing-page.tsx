@@ -14,7 +14,7 @@ import { SiteHeader } from "@/components/site-header";
  */
 export function LandingPage({ initialPools = null, initialStocks = null }: { initialPools?: HomepagePoolsSnapshot | null; initialStocks?: HomepageStocks | null } = {}) {
   return (
-    <div className="min-h-screen overflow-x-clip bg-canvas text-cream">
+    <div className="continuous-corners min-h-screen overflow-x-clip bg-canvas text-cream">
       <div className="mx-auto max-w-[1280px] px-3 pt-3 sm:px-5 sm:pt-5">
         <SiteHeader onHomepage />
       </div>
@@ -59,7 +59,7 @@ export function LandingPage({ initialPools = null, initialStocks = null }: { ini
               href={SOCIAL_LINKS.x.href}
               {...EXTERNAL_LINK_PROPS}
               aria-label={SOCIAL_LINKS.x.ariaLabel}
-              className="inline-flex items-center gap-1.5 transition-colors hover:text-cream"
+              className="inline-flex items-center gap-2 transition-colors hover:text-cream"
             >
               <XIcon className="h-3 w-3" />
               {SOCIAL_LINKS.x.label}

@@ -206,3 +206,24 @@ describe("landing page copy and routes", () => {
     }
   });
 });
+
+describe("continuous corners", () => {
+  const css = readFileSync(resolve("src/app/globals.css"), "utf8");
+
+  it("keeps the radius tokens: 28px surfaces, 16px inset boxes unless a surface sets its own", () => {
+    expect(css).toMatch(/--radius-surface: 1\.75rem;/);
+    expect(css).toMatch(/--radius-inset: 1rem;/);
+    // The shared input and status boxes read the inset token, so the Buy modal can set theirs to 8px.
+    const tools = readFileSync(resolve("src/components/unified-positions/registry-tools.tsx"), "utf8");
+    expect(tools).toMatch(/export const FIELD = "w-full rounded-inset /);
+    expect(tools.match(/rounded-inset border border-white\/20 bg-white\/\[0\.04\] p-3/g)).toHaveLength(3);
+  });
+
+  it("draws superellipse corners on the homepage only where supported, with pills and circles left round", () => {
+    const block = css.match(/@supports \(corner-shape: superellipse\(1\.25\)\) \{[\s\S]*?\n\}/)?.[0] ?? "";
+    expect(block).toContain(":where(.continuous-corners, .continuous-corners *) { corner-shape: superellipse(1.25); }");
+    expect(block).toContain(":where(.continuous-corners .rounded-full) { corner-shape: round; }");
+    expect(css.replace(block, "")).not.toContain("corner-shape");
+    expect(readFileSync(resolve("src/components/landing-page.tsx"), "utf8")).toContain('<div className="continuous-corners ');
+  });
+});

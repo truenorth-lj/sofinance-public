@@ -300,7 +300,7 @@ export function HomepagePoolsList({ data, query, onQueryChange, highlightPool }:
       )}
 
       {data.error && (
-        <div role="alert" className="mt-3 rounded-2xl border border-white/20 bg-white/[0.04] p-4 text-sm text-cream/80">
+        <div role="alert" className="mt-3 rounded-surface border border-white/20 bg-white/[0.04] p-4 text-sm text-cream/80">
           <p>{data.error}</p>
           <button
             type="button"

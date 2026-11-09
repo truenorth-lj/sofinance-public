@@ -12,7 +12,7 @@ import { ChangeText, StockCards, tickerRows, useHomepageStocks } from "./stocks/
 import { HomepagePoolsList, homepageListRows, PoolSearchInput, TopPoolsCard, useHomepagePools } from "./homepage-pools-table";
 
 const labelPill =
-  "inline-flex min-h-6 max-w-full items-center rounded-full border border-white/25 px-2.5 py-0.5 font-data text-[10px] uppercase leading-4 tracking-[0.1em] text-cream/75 sm:whitespace-nowrap sm:tracking-[0.14em]";
+  "inline-flex min-h-6 max-w-full items-center rounded-full border border-white/25 px-3 py-1 font-data text-[10px] uppercase leading-4 tracking-[0.1em] text-cream/75 sm:whitespace-nowrap sm:tracking-[0.14em]";
 
 /**
  * Full-width price strip under the header: every listed stock with its price and 24h change, scrolling sideways on a
@@ -26,7 +26,7 @@ function StockTicker({ rows }: { rows: StockGainerRow[] }) {
         <ul key={copy} aria-hidden={copy === 1 ? true : undefined} aria-label={copy === 0 ? "Stock prices, 24h change" : undefined}
           className={copy === 1 ? "flex shrink-0 motion-reduce:hidden" : "flex shrink-0"}>
           {rows.map((row) => (
-            <li key={row.underlying} className="flex items-center gap-2 whitespace-nowrap px-4 py-2.5 sm:px-5">
+            <li key={row.underlying} className="flex items-center gap-2 whitespace-nowrap px-4 py-3 sm:px-5">
               <TokenIcon symbol={row.underlying} icon={row.icon} className="h-6 w-6 text-[10px]" />
               <span className="text-sm font-semibold text-cream">{row.underlying}</span>
               <span className="font-data text-sm tabular-nums text-cream/60">{formatStockPrice(row.priceUsd)}</span>
@@ -97,14 +97,14 @@ export function HomepageMarketView({ initialPools = null, initialStocks = null, 
         </p>
         <form role="search" onSubmit={showPools} className="mx-auto mt-8 max-w-2xl">
           <PoolSearchInput id="hero-search" query={query} onQueryChange={onQueryChange} placeholder="Search SPCX, TSLA, AAPL…"
-            className="h-14 rounded-2xl bg-char/80 px-5 backdrop-blur sm:h-16" inputClassName="text-base sm:text-lg" />
+            className="h-14 rounded-full bg-char/80 px-5 backdrop-blur sm:h-16" inputClassName="text-base sm:text-lg" />
         </form>
         {/* Fixed height: the line under the search swaps without moving the cards below. The match count grows out of
             the search field (from above); the trust line comes back the same way. The count updates in place. */}
         <p className="mt-3 h-10 overflow-hidden font-data text-[11px] uppercase leading-5 sm:h-5 tracking-[0.12em] text-smoke" aria-live="polite">
           <span key={hint} className={typed ? "inline-block motion-safe:animate-emerge" : "inline-block"}>
             {hint === "matches"
-              ? <button type="button" onClick={() => showPools()} className="inline-flex items-center gap-1.5 text-cream/80 hover:text-cream" data-testid="hero-search-matches">
+              ? <button type="button" onClick={() => showPools()} className="inline-flex items-center gap-2 text-cream/80 hover:text-cream" data-testid="hero-search-matches">
                 <span className="tabular-nums">{matches}</span> {matches === 1 ? "pool matches" : "pools match"} · show <ArrowDown className="h-3 w-3" aria-hidden="true" />
               </button>
               : "0 keys on our servers · verifiable on Solscan and Blockscout"}
