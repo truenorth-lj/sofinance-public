@@ -1,9 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { Keypair, PublicKey, type Connection } from "@solana/web3.js";
-import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { AddressLookupTableProgram, ComputeBudgetProgram, Keypair, PublicKey, SystemProgram, type AccountInfo, type Connection } from "@solana/web3.js";
+import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from "@solana/spl-token";
+vi.mock("./open-state", () => ({ readOpenPoolState: vi.fn() }));
+vi.mock("./swap/leg", () => ({ feeSwapLeg: vi.fn() }));
+vi.mock("./rpc/fee-estimate", () => ({ estimateFeeForMessage: vi.fn(async () => 5_000), OPEN_FEE_ESTIMATE_MESSAGE: "x" }));
+import { readOpenPoolState } from "./open-state";
+import { feeSwapLeg } from "./swap/leg";
 import { NATIVE_SOL_MINT } from "./ids";
 import { swapFeeRecipientAta } from "./swap/fee";
-import { readSolSwapDelivery } from "./sol-swap-step";
+import { buildAndSimulateSolSwapStep, readSolSwapDelivery } from "./sol-swap-step";
 
 const wallet = Keypair.generate().publicKey, other = Keypair.generate().publicKey;
 const mint = Keypair.generate().publicKey.toBase58();
@@ -46,5 +51,85 @@ describe("readSolSwapDelivery", () => {
     await expect(read(connection({ keys: [other, feeAta] }))).rejects.toThrow("not paid by this wallet");
     await expect(read(connection({ post: [balance(wallet, "100")] }))).rejects.toThrow("did not deliver");
     await expect(read(connection({ post: [balance(wallet, "999", Keypair.generate().publicKey.toBase58())] }))).rejects.toThrow("did not deliver");
+  });
+});
+
+describe("buildAndSimulateSolSwapStep", () => {
+  const key = () => Keypair.generate().publicKey;
+  const outputMint = key(), otherMint = key(), poolId = key();
+  const outputAta = getAssociatedTokenAddressSync(outputMint, wallet, false, TOKEN_PROGRAM_ID);
+  const nativeAta = getAssociatedTokenAddressSync(new PublicKey(NATIVE_SOL_MINT), wallet, false, TOKEN_PROGRAM_ID);
+  const SOL = 10_000_000_000n;
+  const info = (data: Buffer, owner: PublicKey): AccountInfo<Buffer> => ({ data, owner, executable: false, lamports: 2_039_280, rentEpoch: 0 });
+  const tokenAccount = (tokenMint: PublicKey, owner: PublicKey, amount: bigint) => {
+    const data = Buffer.alloc(165); tokenMint.toBuffer().copy(data); owner.toBuffer().copy(data, 32);
+    data.writeBigUInt64LE(amount, 64); data[108] = 1; return data;
+  };
+  const lookupTable = (addresses: PublicKey[]) => {
+    const data = Buffer.alloc(56 + 32 * addresses.length);
+    data.writeUInt32LE(1, 0); data.writeBigUInt64LE(2n ** 64n - 1n, 4);
+    addresses.forEach((address, index) => address.toBuffer().copy(data, 56 + 32 * index));
+    return info(data, AddressLookupTableProgram.programId);
+  };
+  const accounts = new Map<string, AccountInfo<Buffer>>();
+  const swapConnection = {
+    getMultipleAccountsInfo: vi.fn(async (keys: PublicKey[]) => keys.map((k) => accounts.get(k.toBase58()) ?? null)),
+    getMultipleAccountsInfoAndContext: vi.fn(async (keys: PublicKey[]) => ({ context: { slot: 1 }, value: keys.map((k) => accounts.get(k.toBase58()) ?? null) })),
+    getLatestBlockhash: vi.fn(async () => ({ blockhash: key().toBase58(), lastValidBlockHeight: 999 })),
+    simulateTransaction: vi.fn(async () => ({ context: { slot: 2 }, value: { err: null, unitsConsumed: 90_000, accounts: [
+      { data: ["", "base64"], owner: SystemProgram.programId.toBase58(), lamports: Number(SOL - 1_000_000_000n - 2_039_280n - 5_000n), executable: false },
+      { data: [tokenAccount(outputMint, wallet, 1_000_000n).toString("base64"), "base64"], owner: TOKEN_PROGRAM_ID.toBase58(), lamports: 2_039_280, executable: false },
+    ] } })),
+  } as unknown as Connection;
+
+  beforeEach(() => {
+    accounts.clear();
+    vi.mocked(readOpenPoolState).mockResolvedValue({
+      poolId: poolId.toBase58(), mintA: outputMint.toBase58(), mintB: otherMint.toBase58(),
+      ataA: outputAta.toBase58(), ataB: getAssociatedTokenAddressSync(otherMint, wallet, false, TOKEN_PROGRAM_ID).toBase58(),
+      programA: TOKEN_PROGRAM_ID.toBase58(), programB: TOKEN_PROGRAM_ID.toBase58(), decimalsA: 6, decimalsB: 6, symbolA: "OUT", symbolB: "OTHER",
+      balances: { a: "0", b: "0" }, inputBalance: SOL.toString(), solLamports: SOL.toString(),
+      paused: false, frozen: false, transferFee: false, unsupportedExtensions: [],
+    } as never);
+  });
+
+  it("keeps the compact lookup tables in the restamped transaction, so a route that fit still fits", async () => {
+    // Table A covers ten route keys; table B covers one, which costs more as a lookup than inline. The compact compile
+    // drops B. Re-stamping with every route table would put B back (+3 bytes): 1,231 -> 1,234 bytes, over the limit.
+    const extra = Array.from({ length: 11 }, () => key());
+    const tableA = key(), tableB = key();
+    accounts.set(tableA.toBase58(), lookupTable(extra.slice(0, 10)));
+    accounts.set(tableB.toBase58(), lookupTable(extra.slice(10)));
+    let dataBytes = 0;
+    let withTableB = false;
+    vi.mocked(feeSwapLeg).mockImplementation(async (input) => ({
+      inputMint: input.inputMint, outputMint: input.outputMint, spend: input.spend,
+      feeAmount: input.spend * 10n / 10_000n, feeInRoute: true, minOut: 900_000n,
+      route: {
+        outAmount: "1000000", setupInstructions: [], cleanupInstruction: null, otherInstructions: [],
+        addressesByLookupTableAddress: { [tableA.toBase58()]: extra.slice(0, 10).map(String),
+          ...(withTableB ? { [tableB.toBase58()]: [extra[10]!.toBase58()] } : {}) },
+        swapInstruction: { programId: "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4", data: Buffer.alloc(dataBytes).toString("base64"), accounts: [
+          { pubkey: wallet.toBase58(), isSigner: true, isWritable: true },
+          { pubkey: nativeAta.toBase58(), isSigner: false, isWritable: true },
+          { pubkey: outputAta.toBase58(), isSigner: false, isWritable: true },
+          { pubkey: feeAta.toBase58(), isSigner: false, isWritable: true },
+          ...extra.map((pubkey) => ({ pubkey: pubkey.toBase58(), isSigner: false, isWritable: false })),
+        ] },
+      },
+    }) as never);
+    const build = () => buildAndSimulateSolSwapStep(wallet.toBase58(), poolId.toBase58(), "1", { connection: swapConnection });
+    // With table A only, pad the swap data so the transaction is 1 byte under the 1,232-byte limit (second pass: the
+    // data length prefix grows). Then the route also returns table B, which the compact compile leaves out.
+    for (let pass = 0; pass < 2; pass++) dataBytes += 1_231 - (await build()).summary.sizeBytes;
+    withTableB = true;
+    const { summary, transaction } = await build();
+    expect(summary.sizeBytes).toBe(1_231);
+    expect(transaction.message.addressTableLookups.map((lookup) => lookup.accountKey.toBase58())).toEqual([tableA.toBase58()]);
+    // The shipped limit is still the measured one (90,000 consumed -> 140,000), not the 1.4M simulation ceiling.
+    const budget = ComputeBudgetProgram.programId.toBase58();
+    const limit = transaction.message.compiledInstructions.find((ix) =>
+      transaction.message.staticAccountKeys[ix.programIdIndex]!.toBase58() === budget && ix.data[0] === 2);
+    expect(Buffer.from(limit!.data).readUInt32LE(1)).toBe(140_000);
   });
 });
