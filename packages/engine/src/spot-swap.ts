@@ -14,7 +14,7 @@ import {
 } from "@solana/spl-token";
 import { ComputeBudgetProgram, PublicKey, type AccountInfo, type Connection, type VersionedTransaction } from "@solana/web3.js";
 import { parseTokenAmount } from "./amount";
-import { NATIVE_SOL_MINT, USDC_MINT } from "./ids";
+import { NATIVE_SOL_MINT, SLIPPAGE_BPS, USDC_MINT } from "./ids";
 import { stampPreparedBlockhash } from "./fresh-blockhash";
 import { JUPITER_MAX_ACCOUNTS, withJupiterRouteRetries, type JupiterRouteConstraints } from "./jupiter-route-retry";
 import { assertOpenTransactionSize, compactAtaInstructions, compileCompactOpenTransaction, openLookupTableReader } from "./open-transaction";
@@ -40,6 +40,21 @@ export const SPOT_SWAP_ROUTE_PROBE_USDC = 1_000_000n;
 /** PM cap: refuse to quote, build or select an issuer when Jupiter's reported
  * price impact is above 1%. Jupiter `priceImpactPct` is a fraction ("0.01" = 1%). */
 export const SPOT_SWAP_MAX_PRICE_IMPACT_BPS = 100;
+/** Extra room between the quote the user sees and the minimum they confirm, on top of the transaction's own slippage
+ * (SLIPPAGE_BPS against the price when Buy is pressed). A price that moved less than this since the quote needs no new
+ * confirmation; the user still receives at least the minimum shown. */
+export const SPOT_SWAP_PRICE_BUFFER_BPS = 50;
+/** What the user confirms, measured from the quote they see: the transaction's slippage plus the buffer (1.0%). */
+export const SPOT_SWAP_CONFIRM_SLIPPAGE_BPS = SLIPPAGE_BPS + SPOT_SWAP_PRICE_BUFFER_BPS;
+
+/**
+ * The minimum shown with a route and confirmed by Buy: SPOT_SWAP_CONFIRM_SLIPPAGE_BPS below its quoted output, never
+ * above the route's own on-chain minimum. A later route passes while its on-chain minimum stays at or above this.
+ */
+export function spotSwapConfirmMinOut(quotedOut: bigint, routeMinOut: bigint): bigint {
+  const buffered = quotedOut * BigInt(10_000 - SPOT_SWAP_CONFIRM_SLIPPAGE_BPS) / 10_000n;
+  return buffered < routeMinOut ? buffered : routeMinOut;
+}
 /** Jupiter-layer cap is opened up so the spot-swap check below (stricter) gives
  * the user a clear reason instead of the generic 5% error. */
 const JUPITER_LAYER_IMPACT_BPS = 10_000;
@@ -494,7 +509,11 @@ export async function buildAndSimulateSpotSwap(walletAddress: string, outputMint
   // Bind to what the user confirmed: the route's on-chain minimum (Jupiter otherAmountThreshold) must not be below the
   // minimum shown with the quote. A lower one is returned as new terms for the user to confirm, never signed silently.
   if (options.minOutAtLeast !== undefined && built.leg.minOut < options.minOutAtLeast) {
-    const terms: SpotSwapChangedTerms = { quotedOut: built.route.outAmount, minOut: built.leg.minOut.toString(), priceImpactPct: built.route.priceImpactPct ?? null };
+    // The new terms carry the same buffer as a quote, so confirming them is not undone by the next small move.
+    const terms: SpotSwapChangedTerms = {
+      quotedOut: built.route.outAmount, minOut: spotSwapConfirmMinOut(BigInt(built.route.outAmount), built.leg.minOut).toString(),
+      priceImpactPct: built.route.priceImpactPct ?? null,
+    };
     throw new SpotSwapError("spot_swap_quote_changed",
       "The price moved since your quote, so nothing was prepared. Check the new amount and press Buy again.", terms);
   }
@@ -537,6 +556,7 @@ export async function buildAndSimulateSpotSwap(walletAddress: string, outputMint
 export type SpotSwapQuote = {
   outputMint: string; outputMintShort: string; outputSymbol: string; issuerName: string; xstocks: boolean;
   amount: string; feeBps: number; feeAmount: string; feeWalletShort: string;
+  /** `minOut`: the minimum shown and confirmed, SPOT_SWAP_CONFIRM_SLIPPAGE_BPS below `quotedOut` (see spotSwapConfirmMinOut). */
   quotedOut: string; minOut: string; priceImpactPct: string | null;
   /** Refundable deposit if the wallet has no account for this token yet. */
   newAccountRentLamports: string; baseNetworkFeeLamports: number;
@@ -568,7 +588,7 @@ export async function quoteSpotSwap(outputMintAddress: string, usdcAmount: strin
   return {
     outputMint: token.mint, outputMintShort: shortAddress(token.mint), outputSymbol: token.symbol, issuerName: token.issuerName, xstocks: token.xstocks,
     amount: amount.toString(), feeBps: feeConfig.bps, feeAmount: feeAmount.toString(), feeWalletShort: shortAddress(feeConfig.wallet.toBase58()),
-    quotedOut: leg.route.outAmount, minOut: leg.minOut.toString(), priceImpactPct: leg.route.priceImpactPct ?? null,
+    quotedOut: leg.route.outAmount, minOut: spotSwapConfirmMinOut(BigInt(leg.route.outAmount), leg.minOut).toString(), priceImpactPct: leg.route.priceImpactPct ?? null,
     newAccountRentLamports: rent.toString(), baseNetworkFeeLamports: SPOT_SWAP_BASE_FEE_LAMPORTS,
   };
 }

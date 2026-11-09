@@ -9,7 +9,7 @@ import { swapFeeRecipientAta } from "./swap/fee";
 import { USDC_MINT } from "./ids";
 import mainnetMints from "./fixtures/spot-swap-mints-mainnet.json";
 import {
-  assertSpotSwapAllowlist, buildAndSimulateSpotSwap, quoteSpotSwap, selectSpotSwapToken, spotSwapIssuer, spotSwapMintIssues, spotSwapTokenFor,
+  assertSpotSwapAllowlist, buildAndSimulateSpotSwap, quoteSpotSwap, SPOT_SWAP_CONFIRM_SLIPPAGE_BPS, spotSwapConfirmMinOut, selectSpotSwapToken, spotSwapIssuer, spotSwapMintIssues, spotSwapTokenFor,
   verifySpotSwapSimulation, SpotSwapError, assertSpotSwapPriceImpact, spotSwapRouteCheck, SPOT_SWAP_MAX_PRICE_IMPACT_BPS,
   type SpotSwapAllowlist, type SpotSwapRouteCheck,
 } from "./spot-swap";
@@ -257,7 +257,7 @@ describe("buildAndSimulateSpotSwap", () => {
   });
   it("refuses a route whose minimum is below the confirmed one and returns the new terms, before simulating", async () => {
     await expect(buildAndSimulateSpotSwap(wallet.toBase58(), tsla.toBase58(), "2", { allowlist, connection, minOutAtLeast: 520_231n }))
-      .rejects.toMatchObject({ code: "spot_swap_quote_changed", detail: { quotedOut: "522844", minOut: "520230", priceImpactPct: "0.0003" } });
+      .rejects.toMatchObject({ code: "spot_swap_quote_changed", detail: { quotedOut: "522844", minOut: "517615", priceImpactPct: "0.0003" } });
     expect(connection.simulateTransaction).not.toHaveBeenCalled();
   });
   it("keeps the compact lookup tables in the final transaction, so a route that fit still fits", async () => {
@@ -358,10 +358,38 @@ describe("buildAndSimulateSpotSwap", () => {
   });
 });
 
+describe("price buffer between the quote and Buy", () => {
+  // The quote's 522,844 out is confirmed 1.0% lower (517,615); each route's own on-chain minimum is 0.5% below its output.
+  const moved = (outAmount: string, minOut: bigint) =>
+    mockLeg({ minOut, route: { ...route(2_000_000n), outAmount, otherAmountThreshold: minOut.toString() } });
+  const buy = (minOutAtLeast: bigint) => buildAndSimulateSpotSwap(wallet.toBase58(), tsla.toBase58(), "2", { allowlist, connection, minOutAtLeast });
+
+  it("confirms 1.0% below the quoted output, never above the route's own minimum", () => {
+    expect(SPOT_SWAP_CONFIRM_SLIPPAGE_BPS).toBe(100);
+    expect(spotSwapConfirmMinOut(522_844n, 520_230n)).toBe(517_615n);
+    expect(spotSwapConfirmMinOut(1_000n, 900n)).toBe(900n);
+  });
+  it("prepares without new terms when the price fell 0.5% since the quote", async () => {
+    const { minOut } = await quoteSpotSwap(tsla.toBase58(), "2", { allowlist, connection });
+    moved("520230", 517_629n);
+    const { summary } = await buy(BigInt(minOut));
+    expect(summary).toMatchObject({ quotedOut: "520230", minOut: "517629" });
+  });
+  it("returns new terms, with the same buffer, when the price fell 0.6%", async () => {
+    moved("519707", 517_109n);
+    await expect(buy(517_615n)).rejects.toMatchObject({ code: "spot_swap_quote_changed", detail: { quotedOut: "519707", minOut: "514509" } });
+  });
+  it("new terms the user accepted still prepare after another 0.5% move", async () => {
+    moved("517108", 514_523n);
+    const { summary } = await buy(514_509n);
+    expect(summary.minOut).toBe("514523");
+  });
+});
+
 describe("quoteSpotSwap", () => {
   it("previews fee, output and the new-account deposit without a wallet", async () => {
     const quote = await quoteSpotSwap(tsla.toBase58(), "2", { allowlist, connection });
-    expect(quote).toMatchObject({ feeAmount: "2000", feeBps: 10, quotedOut: "522844", minOut: "520230", newAccountRentLamports: String(RENT), issuerName: "xStocks" });
+    expect(quote).toMatchObject({ feeAmount: "2000", feeBps: 10, quotedOut: "522844", minOut: "517615", newAccountRentLamports: String(RENT), issuerName: "xStocks" });
     expect(vi.mocked(feeSwapLeg)).toHaveBeenCalledWith(expect.objectContaining({ build: false, inputFee: true }));
   });
   it("maps a missing route to the Jupiter no-route error", async () => {

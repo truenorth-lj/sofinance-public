@@ -6,6 +6,9 @@
  * 0.1% fee, minimum received, price impact (over 1% is refused with the
  * engine's words), the slippage limit, the one-time deposit for a new token account and the network fee, and SOL /
  * USDC checks. Buy → `spotSwapTxAdapter` through the shared pipeline: the user's wallet signs.
+ *
+ * The price refreshes on its own while the modal is open. A move within the 0.5% buffer since the quote needs nothing
+ * from the user; a bigger one comes back from prepare as new terms, shown in place with "Accept new price" (no error).
  */
 import { ChevronRight, LoaderCircle, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -18,6 +21,9 @@ import { BUTTON, FIELD, TxStatus } from "@/components/unified-positions/registry
 import { useWalletConnection } from "@/components/wallet-connection";
 
 const QUOTE_DEBOUNCE_MS = 500;
+/** Re-quote this often while the modal is open and visible, so the price shown stays current. */
+export const QUOTE_REFRESH_MS = 20_000;
+export const PRICE_UPDATED_COPY = "Price updated. Check the new amount, then accept.";
 const ROW = "flex items-start justify-between gap-3";
 /** Price impact (fraction) from which the summary row turns warning-coloured; over 1% is refused outright. */
 const HIGH_IMPACT = 0.005;
@@ -26,7 +32,10 @@ export const DEPOSIT_COPY = "A one-time deposit opens the token account in your 
 export const SOL_LOW_COPY = (need: string, have: string) =>
   `Not enough SOL: this purchase needs about ${need} for the deposit and network fee, and your wallet has ${have}. Add SOL and try again.`;
 
-type QuoteState = { key: string; value?: SpotSwapQuoteResult; error?: string; refused?: boolean };
+type QuoteState = { key: string; value?: SpotSwapQuoteResult; error?: string; refused?: boolean;
+  /** The terms prepare built when the price moved past the buffer: kept (no refresh replaces them) until the user accepts
+   * them or changes the amount, so Accept confirms exactly what is shown. */
+  updated?: boolean };
 
 export function amountProblem(amount: string): string | null {
   const trimmed = amount.trim();
@@ -49,31 +58,40 @@ export function SpotSwapModal({ option, onClose }: { option: StockBuyOption; onC
   const parsed = problem ? null : parseSpotSwapAmount(amount);
   const key = parsed ? `${option.underlying}:${parsed}:${wallet ?? ""}` : "";
   const [quote, setQuote] = useState<QuoteState | null>(null);
+  const current = quote && quote.key === key ? quote : null;
+  const changed = Boolean(current?.updated);
+  const [refreshes, setRefreshes] = useState(0);
 
   useEffect(() => {
-    if (!key || !parsed || tx.locked) return;
+    if (!key || !parsed || tx.locked || changed) return;
     const aborter = new AbortController();
     const timer = window.setTimeout(() => {
-      setQuote({ key });
+      // A refresh keeps the last price for this amount on screen (and Buy enabled) until the new one arrives.
+      setQuote((last) => (last?.key === key && last.value ? last : { key }));
       fetchSpotSwapQuote({ underlying: option.underlying, amount: parsed, wallet: wallet ?? null, store: relayStore.current, signal: aborter.signal })
         .then((value) => setQuote({ key, value }))
         .catch((error: unknown) => {
           if (aborter.signal.aborted) return;
+          // A failed refresh keeps the last price: prepare checks route, price impact and minimum again before signing.
           const code = (error as { code?: string | null }).code;
-          setQuote({ key, error: error instanceof Error ? error.message : "We couldn't get a price right now. Please try again in a moment.", refused: code === "spot_swap_price_impact" });
+          setQuote((last) => (last?.key === key && last.value ? last
+            : { key, error: error instanceof Error ? error.message : "We couldn't get a price right now. Please try again in a moment.", refused: code === "spot_swap_price_impact" }));
         });
     }, QUOTE_DEBOUNCE_MS);
     return () => { aborter.abort(); window.clearTimeout(timer); };
-  }, [key, parsed, option.underlying, wallet, tx.locked]);
+  }, [key, parsed, option.underlying, wallet, tx.locked, changed, refreshes]);
+
+  // Keep the shown price current: re-quote every QUOTE_REFRESH_MS while a price is shown, the tab is visible and no
+  // purchase is running (never over new terms waiting to be accepted).
+  const live = Boolean(current?.value) && !changed && !tx.locked && tx.status !== "success";
+  useEffect(() => {
+    if (!live) return;
+    const timer = window.setInterval(() => { if (document.visibilityState === "visible") setRefreshes((count) => count + 1); }, QUOTE_REFRESH_MS);
+    return () => window.clearInterval(timer);
+  }, [live, key]);
 
   const [expanded, setExpanded] = useState(false);
-  // Terms of the route prepare actually built, when its minimum fell below the quoted one. They replace the quote's
-  // amounts for this amount + wallet (a later re-quote may differ from what prepare builds), so Buy confirms exactly them.
-  const [repriced, setRepriced] = useState<{ key: string; terms: SpotSwapChangedTerms } | null>(null);
-  const current = quote && quote.key === key ? quote : null;
-  const changed = repriced && repriced.key === key ? repriced.terms : null;
-  const fetched = current?.value?.quote ?? null;
-  const quoted = fetched && changed ? { ...fetched, ...changed } : fetched;
+  const quoted = current?.value?.quote ?? null;
   const check = current?.value?.wallet ?? null;
   const solLow = Boolean(check && !check.solSufficient);
   const usdcLow = Boolean(check && !check.usdcSufficient);
@@ -90,8 +108,10 @@ export function SpotSwapModal({ option, onClose }: { option: StockBuyOption; onC
   const submit = async () => {
     if (!quoted || !parsed) return;
     const runKey = key;
-    await tx.run({ underlying: option.underlying, mint: quoted.outputMint, amount: parsed, minOut: quoted.minOut, store: relayStore.current,
-      onQuoteChanged: (terms) => setRepriced({ key: runKey, terms }) });
+    // New terms replace the shown ones for this amount + wallet; Accept new price then confirms exactly them.
+    const onQuoteChanged = (terms: SpotSwapChangedTerms) => setQuote((last) => (last?.key === runKey && last.value
+      ? { key: runKey, value: { ...last.value, quote: { ...last.value.quote, ...terms } }, updated: true } : last));
+    await tx.run({ underlying: option.underlying, mint: quoted.outputMint, amount: parsed, minOut: quoted.minOut, store: relayStore.current, onQuoteChanged });
   };
 
   const symbol = quoted?.outputSymbol ?? option.symbol;
@@ -130,7 +150,7 @@ export function SpotSwapModal({ option, onClose }: { option: StockBuyOption; onC
             <span className="sr-only">{expanded ? "Hide details" : "Show details"}</span>
           </button>
           {expanded ? <div id="spot-swap-details" data-testid="spot-swap-details" className="space-y-2 border-t border-white/10 pt-2">
-            <p className={ROW}><span>Minimum received</span><span className="text-right font-data" data-testid="spot-swap-min">{formatTokenRaw(quoted.minOut, quoted.outputDecimals, symbol)}</span></p>
+            <p className={ROW}><span>Minimum received{changed ? " · updated" : ""}</span><span className="text-right font-data" data-testid="spot-swap-min">{formatTokenRaw(quoted.minOut, quoted.outputDecimals, symbol)}</span></p>
             <p className={ROW}><span>Slippage limit</span><span className="text-right font-data">{(quoted.slippageBps / 100).toFixed(1)}%</span></p>
             <p className={ROW}><span>SoFinance fee (0.1%)</span><span className="text-right font-data" data-testid="spot-swap-fee">{formatUsdc(quoted.feeAmount)}</span></p>
             <p className="text-xs text-smoke">Included in the amount you pay.</p>
@@ -144,11 +164,12 @@ export function SpotSwapModal({ option, onClose }: { option: StockBuyOption; onC
         {usdcLow && check ? <p role="alert" data-testid="spot-swap-usdc-low">Not enough USDC: your wallet has {formatUsdc(check.usdcBalance)}.</p> : null}
       </div>
 
+      {changed && !busy ? <p role="status" className="mt-3 text-sm text-cream/80" data-testid="spot-swap-updated">{PRICE_UPDATED_COPY}</p> : null}
       <p className="mt-3 text-[11px] leading-4 text-smoke" data-testid="spot-swap-notice">{STOCK_NOTICE_TEXT}</p>
 
       {!connected ? <button type="button" onClick={connect} className={BUTTON} data-testid="spot-swap-connect">Connect wallet to buy</button>
         : <button type="button" disabled={!ready} onClick={() => void submit()} className={BUTTON} data-testid="spot-swap-submit">
-          {busy ? <LoaderCircle aria-hidden="true" className="size-4 animate-spin" /> : null}Buy {symbol}
+          {busy ? <LoaderCircle aria-hidden="true" className="size-4 animate-spin" /> : null}{changed ? "Accept new price" : `Buy ${symbol}`}
         </button>}
       <TxStatus tx={tx} successText={`Bought ${symbol}. It shows in your wallet.`} />
     </section>

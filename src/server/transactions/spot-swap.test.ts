@@ -31,10 +31,10 @@ const impact = new SpotSwapError("spot_swap_price_impact", "There isn't enough t
 beforeEach(() => { quoteSpotSwap.mockReset(); });
 
 describe("quoteSpotSwapForStock", () => {
-  it("quotes the engine's issuer for this amount with its decimals and the 0.5% slippage limit", async () => {
+  it("quotes the engine's issuer for this amount with its decimals and the 1.0% slippage limit the user confirms", async () => {
     quoteSpotSwap.mockResolvedValue(quote(TSLAX));
     const result = await quoteSpotSwapForStock(context, "2", null);
-    expect(result.quote).toMatchObject({ outputMint: TSLAX, outputDecimals: 8, slippageBps: 50, feeAmount: "2000" });
+    expect(result.quote).toMatchObject({ outputMint: TSLAX, outputDecimals: 8, slippageBps: 100, feeAmount: "2000" });
     expect(result.wallet).toBeNull();
     expect(quoteSpotSwap).toHaveBeenCalledTimes(1);
   });

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   clearTxInterruption, detachTxRetry, dismissTxNotice, noticeIdFor, pollSignature, readTxInterruption, recordTxInterruption, runTx, TxCancelCheckPendingError,
-  TxRunError, useCancelCheckPending, useTxNotices, type PreparedTx, type TxInterruption, type RunTxResult, type TxAdapter, type TxChainStatus, type TxFailureKind, type TxStage, type TxWallet,
+  TxRunError, TxTermsChangedError, useCancelCheckPending, useTxNotices, type PreparedTx, type TxInterruption, type RunTxResult, type TxAdapter, type TxChainStatus, type TxFailureKind, type TxStage, type TxWallet,
 } from "@/lib/tx-pipeline";
 
 export type TxPipelineStatus = "idle" | TxStage | "success" | "failed";
@@ -135,10 +135,11 @@ export function useTxPipeline<Input, Prepared extends PreparedTx>(adapter: TxAda
           if (isOwner()) {
             const failure = error instanceof TxRunError ? error : null;
             const message = failure?.message ?? "The transaction could not be completed.";
-            // Before anything landed, a wallet cancel just returns the form to idle. After an earlier step landed it
-            // never does: the user must see that the run stopped half-way, and Try again resumes this step.
+            // Before anything landed, a wallet cancel just returns the form to idle, and so do new terms (the form shows
+            // them to accept). After an earlier step landed it never does: the user must see that the run stopped
+            // half-way, and Try again resumes this step.
             if (index === 1) {
-              setState(failure?.kind === "rejected" ? { status: "idle" } : { status: "failed", error: message, kind: failure?.kind, retryable: failure?.retryable, step: progress() });
+              setState(failure?.kind === "rejected" || failure?.cause instanceof TxTermsChangedError ? { status: "idle" } : { status: "failed", error: message, kind: failure?.kind, retryable: failure?.retryable, step: progress() });
             } else {
               setState({ status: "failed", error: laterStepFailureMessage(index, of, message), kind: failure?.kind, step: progress(),
                 retryable: !(error instanceof TxCancelCheckPendingError) && (failure?.kind === "rejected" || (failure?.retryable ?? false)) });

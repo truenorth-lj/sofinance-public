@@ -8,11 +8,11 @@ import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID, unpackAccount } from "
 import { PublicKey, type Connection } from "@solana/web3.js";
 import { parseTokenAmount } from "@sofinance/engine/amount";
 import { getSigningSecret } from "@sofinance/engine/config/server-env";
-import { USDC_MINT, SLIPPAGE_BPS } from "@sofinance/engine/ids";
+import { USDC_MINT } from "@sofinance/engine/ids";
 import { rpcConnection } from "@sofinance/engine/rpc";
 import { JupiterNoRouteError } from "@sofinance/engine/swap/jupiter";
 import {
-  buildAndSimulateSpotSwap, quoteSpotSwap, selectSpotSwapToken, SpotSwapError, SPOT_SWAP_BASE_FEE_LAMPORTS, USDC_DECIMALS,
+  buildAndSimulateSpotSwap, quoteSpotSwap, selectSpotSwapToken, SpotSwapError, SPOT_SWAP_BASE_FEE_LAMPORTS, SPOT_SWAP_CONFIRM_SLIPPAGE_BPS, USDC_DECIMALS,
   type SpotSwapQuote,
 } from "@sofinance/engine/spot-swap";
 import { issueSpotSwapPermit } from "@/lib/spot-swap-permit";
@@ -69,7 +69,8 @@ export async function quoteSpotSwapForStock(context: SpotSwapStockContext, amoun
   const walletCheck = wallet ? await checkSpotSwapWallet(wallet, candidate, quote, options.connection ?? rpcConnection()) : null;
   return {
     underlying: context.underlying,
-    quote: { ...quote, outputDecimals: candidate.decimals, slippageBps: SLIPPAGE_BPS },
+    // Shown as the slippage limit: what the user confirms, from this quote (the transaction's own 0.5% plus the buffer).
+    quote: { ...quote, outputDecimals: candidate.decimals, slippageBps: SPOT_SWAP_CONFIRM_SLIPPAGE_BPS },
     wallet: walletCheck,
   };
 }

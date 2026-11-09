@@ -19,7 +19,7 @@ vi.mock("@/lib/stock-market/spot-swap-client", async (importOriginal) => ({
   fetchSpotSwapQuote: (...args: unknown[]) => fetchSpotSwapQuote(...args),
 }));
 
-const { SpotSwapModal, amountProblem } = await import("./spot-swap-modal");
+const { SpotSwapModal, amountProblem, PRICE_UPDATED_COPY, QUOTE_REFRESH_MS } = await import("./spot-swap-modal");
 const { SpotSwapQuoteError } = await import("@/lib/stock-market/spot-swap-client");
 
 const option = { underlying: "TSLA", company: "Tesla", mint: "XsDoVfqeBukxuZHWhdvWHBhgEHjGNst4MLodqsJHzoB", mintShort: "XsDo…oB", issuerName: "xStocks", symbol: "TSLAx" };
@@ -27,9 +27,12 @@ const quote: SpotSwapQuoteResult = {
   underlying: "TSLA",
   quote: { outputMint: option.mint, outputMintShort: "XsDo…oB", outputSymbol: "TSLAx", issuerName: "xStocks", xstocks: true, amount: "2000000", feeBps: 10, feeAmount: "2000",
     feeWalletShort: "CS5C…AK", quotedOut: "4500000", minOut: "4477500", priceImpactPct: "0.0012", newAccountRentLamports: 2_039_280, baseNetworkFeeLamports: 5000,
-    outputDecimals: 8, slippageBps: 50 },
+    outputDecimals: 8, slippageBps: 100 },
   wallet: null,
 };
+
+const FUNDED = { walletLamports: "50000000", outputAccountExists: true, requiredLamports: "5000", solSufficient: true, usdcBalance: "5000000", usdcSufficient: true };
+const deferred = <T,>() => { let resolve!: (value: T) => void; const promise = new Promise<T>((done) => { resolve = done; }); return { promise, resolve }; };
 
 let host: HTMLDivElement; let root: Root;
 const text = (id: string) => host.querySelector(`[data-testid="${id}"]`)?.textContent ?? null;
@@ -39,6 +42,11 @@ async function typeAmount(value: string) {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
+  await act(async () => { await vi.advanceTimersByTimeAsync(600); });
+}
+/** One refresh period, then the quote debounce (separate acts, so React applies the tick in between). */
+async function waitRefresh() {
+  await act(async () => { await vi.advanceTimersByTimeAsync(QUOTE_REFRESH_MS); });
   await act(async () => { await vi.advanceTimersByTimeAsync(600); });
 }
 
@@ -115,22 +123,67 @@ describe("SpotSwapModal", () => {
     expect(run).toHaveBeenCalledWith(expect.objectContaining({ underlying: "TSLA", mint: option.mint, amount: "2", minOut: "4477500" }));
   });
 
-  it("when the price moved, shows the new amount on You receive (details stay closed) and the next Buy confirms exactly it", async () => {
+  it("when the price moved past the buffer, shows the new terms in place with Accept new price (no error) and Accept confirms exactly them", async () => {
     Object.assign(wallet, { address: "Wallet11111111111111111111111111111111111111", connected: true });
     act(() => root.render(<SpotSwapModal option={option} onClose={() => undefined} />));
-    fetchSpotSwapQuote.mockImplementation(async () => ({ ...quote, wallet: { walletLamports: "50000000", outputAccountExists: true, requiredLamports: "5000", solSufficient: true, usdcBalance: "5000000", usdcSufficient: true } }));
+    fetchSpotSwapQuote.mockImplementation(async () => ({ ...quote, wallet: FUNDED }));
     await typeAmount("2");
     const submit = host.querySelector('[data-testid="spot-swap-submit"]') as HTMLButtonElement;
+    expect(text("spot-swap-updated")).toBeNull();
     await act(async () => submit.click());
     const first = run.mock.calls[0]![0] as { onQuoteChanged: (terms: { quotedOut: string; minOut: string; priceImpactPct: string | null }) => void };
     await act(async () => first.onQuoteChanged({ quotedOut: "2250000", minOut: "2238750", priceImpactPct: "0.0009" }));
     expect(text("spot-swap-quote")).toContain("You receive (quoted) · updated");
     expect(text("spot-swap-quoted")).toBe("0.0225 TSLAx");
+    expect(text("spot-swap-updated")).toBe(PRICE_UPDATED_COPY);
+    expect(host.querySelector('[data-testid="spot-swap-updated"]')!.getAttribute("role")).toBe("status"); // not an alert
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+    expect(submit.textContent).toBe("Accept new price");
     expect(document.querySelector('[data-testid="spot-swap-details"]')).toBeNull(); // details stay closed
     await act(async () => (document.querySelector('[data-testid="spot-swap-summary"]') as HTMLButtonElement).click());
+    expect(text("spot-swap-quote")).toContain("Minimum received · updated");
     expect(text("spot-swap-min")).toBe("0.022387 TSLAx");
+    // No refresh replaces terms waiting to be accepted.
+    await waitRefresh(); await waitRefresh();
+    expect(fetchSpotSwapQuote).toHaveBeenCalledTimes(1);
+    expect(text("spot-swap-quoted")).toBe("0.0225 TSLAx");
     await act(async () => submit.click());
     expect(run).toHaveBeenLastCalledWith(expect.objectContaining({ minOut: "2238750" }));
+  });
+
+  it("refreshes the price every 20 seconds in place: the last price stays shown (and Buy enabled) until the new one arrives", async () => {
+    Object.assign(wallet, { address: "Wallet11111111111111111111111111111111111111", connected: true });
+    act(() => root.render(<SpotSwapModal option={option} onClose={() => undefined} />));
+    fetchSpotSwapQuote.mockImplementation(async () => ({ ...quote, wallet: FUNDED }));
+    await typeAmount("2");
+    expect(fetchSpotSwapQuote).toHaveBeenCalledTimes(1);
+    const later = deferred<SpotSwapQuoteResult>();
+    fetchSpotSwapQuote.mockImplementation(() => later.promise);
+    await waitRefresh();
+    expect(fetchSpotSwapQuote).toHaveBeenCalledTimes(2);
+    expect(host.textContent).not.toContain("Getting a price");
+    expect(text("spot-swap-quoted")).toBe("0.045 TSLAx");
+    expect((host.querySelector('[data-testid="spot-swap-submit"]') as HTMLButtonElement).disabled).toBe(false);
+    await act(async () => later.resolve({ ...quote, wallet: FUNDED, quote: { ...quote.quote, quotedOut: "4400000", minOut: "4356000" } }));
+    expect(text("spot-swap-quoted")).toBe("0.044 TSLAx");
+    await act(async () => (host.querySelector('[data-testid="spot-swap-submit"]') as HTMLButtonElement).click());
+    expect(run).toHaveBeenLastCalledWith(expect.objectContaining({ minOut: "4356000" }));
+  });
+
+  it("keeps the last price when a refresh fails, and does not refresh while the tab is hidden", async () => {
+    fetchSpotSwapQuote.mockImplementation(async () => quote);
+    await typeAmount("2");
+    fetchSpotSwapQuote.mockImplementation(async () => { throw new SpotSwapQuoteError("We couldn't get a price right now. Please try again in a moment.", null); });
+    await waitRefresh();
+    expect(fetchSpotSwapQuote).toHaveBeenCalledTimes(2);
+    expect(text("spot-swap-quoted")).toBe("0.045 TSLAx");
+    expect(text("spot-swap-quote-error")).toBeNull();
+    const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+    await waitRefresh(); await waitRefresh();
+    expect(fetchSpotSwapQuote).toHaveBeenCalledTimes(2);
+    visibility.mockRestore();
+    await waitRefresh();
+    expect(fetchSpotSwapQuote).toHaveBeenCalledTimes(3);
   });
 });
 

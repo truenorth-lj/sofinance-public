@@ -5,7 +5,7 @@
  */
 import { VersionedTransaction } from "@solana/web3.js";
 import { postWithJupiterRelay, type JupiterRelayStore } from "@/lib/jupiter/browser-relay";
-import { TX_PREFLIGHT_POLICY, TxNotSentError, type PreparedTx, type TxAdapter } from "@/lib/tx-pipeline";
+import { TX_PREFLIGHT_POLICY, TxNotSentError, TxTermsChangedError, type PreparedTx, type TxAdapter } from "@/lib/tx-pipeline";
 
 export const SPOT_SWAP_PREPARE_TIMEOUT_MS = 45_000;
 export const SPOT_SWAP_QUOTE_TIMEOUT_MS = 30_000;
@@ -44,7 +44,8 @@ export async function fetchSpotSwapQuote(input: { underlying: string; amount: st
 export type SpotSwapChangedTerms = { quotedOut: string; minOut: string; priceImpactPct: string | null };
 /**
  * `minOut` is the minimum received the user saw (raw units). The server builds nothing below it, and the prepared
- * summary is checked against it again here. When the route moved below it, `onQuoteChanged` gets the new terms to show.
+ * summary is checked against it again here. When the route moved below it, `onQuoteChanged` gets the new terms to show
+ * and the run stops quietly (`TxTermsChangedError`: no error message, the form asks the user to accept them).
  */
 export type SpotSwapInput = { underlying: string; mint: string; amount: string; minOut: string; store: JupiterRelayStore;
   onQuoteChanged?: (terms: SpotSwapChangedTerms) => void };
@@ -79,7 +80,10 @@ export const spotSwapTxAdapter: TxAdapter<SpotSwapInput, SpotSwapPrepared> = {
       summary?: SpotSwapPrepared["summary"] & { wallet: string; lastValidBlockHeight: number }; error?: string; code?: string; quote?: unknown } | null;
     if (!response.ok || !data) {
       const terms = data?.code === "spot_swap_quote_changed" ? changedTerms(data.quote) : null;
-      if (terms) input.onQuoteChanged?.(terms);
+      if (terms && input.onQuoteChanged) {
+        input.onQuoteChanged(terms);
+        throw new TxTermsChangedError(data?.error);
+      }
       throw Object.assign(new TxNotSentError(data?.error || "Couldn't prepare the purchase. Nothing was sent; please try again."), { code: data?.code });
     }
     const summary = data.summary;

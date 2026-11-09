@@ -5,7 +5,7 @@ const post = vi.fn();
 vi.mock("@/lib/jupiter/browser-relay", () => ({ postWithJupiterRelay: (...args: unknown[]) => post(...args) }));
 
 const { spotSwapTxAdapter } = await import("./spot-swap-client");
-const { TxNotSentError } = await import("@/lib/tx-pipeline");
+const { TxNotSentError, TxTermsChangedError } = await import("@/lib/tx-pipeline");
 
 const wallet = Keypair.generate().publicKey;
 const mint = Keypair.generate().publicKey.toBase58();
@@ -35,11 +35,16 @@ describe("spotSwapTxAdapter.prepare: the confirmed minimum", () => {
 
   it("hands the new terms to the modal when the server says the price moved, and sends nothing", async () => {
     const terms = { quotedOut: "2250000", minOut: "2238750", priceImpactPct: "0.0009" };
-    post.mockResolvedValue(Response.json({ error: "The price moved since your quote, so nothing was prepared. Check the new amount and press Buy again.",
+    post.mockImplementation(async () => Response.json({ error: "The price moved since your quote, so nothing was prepared. Check the new amount and press Buy again.",
       code: "spot_swap_quote_changed", quote: terms }, { status: 400 }));
     const onQuoteChanged = vi.fn();
-    await expect(prepare(input({ onQuoteChanged }))).rejects.toThrow(/price moved/);
+    // The quiet stop: the pipeline returns to idle with no error, the modal shows the terms to accept.
+    await expect(prepare(input({ onQuoteChanged }))).rejects.toBeInstanceOf(TxTermsChangedError);
     expect(onQuoteChanged).toHaveBeenCalledWith(terms);
+    // Without a form to show the terms, it is an ordinary "nothing was sent" with the server's words.
+    const plain = await prepare().catch((error: unknown) => error);
+    expect(plain).toBeInstanceOf(TxNotSentError); expect(plain).not.toBeInstanceOf(TxTermsChangedError);
+    expect(plain).toMatchObject({ message: expect.stringMatching(/price moved/) });
   });
 
   it("refuses to ask the server without a confirmed minimum", async () => {

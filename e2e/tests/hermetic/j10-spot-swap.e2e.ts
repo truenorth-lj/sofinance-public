@@ -12,8 +12,8 @@ const TSLAX = "XsDoVfqeBukxuZHWhdvWHBhgEHjGNst4MLodqsJHzoB";
 const NOTICE = "Not available to US persons or restricted regions. Tokens are issued by third parties.";
 const IMPACT = "There isn't enough trading liquidity to buy this amount without moving the price more than 1%. Try a smaller amount.";
 const quote = { outputMint: TSLAX, outputMintShort: "XsDo…oB", outputSymbol: "TSLAx", issuerName: "xStocks", xstocks: true, amount: "25000000", feeBps: 10,
-  feeAmount: "25000", feeWalletShort: "CS5C…AK", quotedOut: "6631000", minOut: "6597845", priceImpactPct: "0.0008", newAccountRentLamports: 2039280,
-  baseNetworkFeeLamports: 5000, outputDecimals: 8, slippageBps: 50 };
+  feeAmount: "25000", feeWalletShort: "CS5C…AK", quotedOut: "6631000", minOut: "6564690", priceImpactPct: "0.0008", newAccountRentLamports: 2039280,
+  baseNetworkFeeLamports: 5000, outputDecimals: 8, slippageBps: 100 };
 const shots = process.env.SPOT_SWAP_SHOTS;
 const shot = async (page: Page, name: string) => { if (shots) await page.getByRole("dialog").screenshot({ path: `${shots}/${name}.png` }); };
 
