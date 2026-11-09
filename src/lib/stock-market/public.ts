@@ -8,6 +8,8 @@ export type HomepageStocks = {
   snapshotAt: string;
   gainers: StockGainerRow[];
   stocks: StockMcapRow[];
+  /** Price ticker rows (every listed stock, largest first); absent in snapshots written before it existed. */
+  ticker?: StockMcapRow[];
   /** Rows with a Buy button, by underlying: only where the engine selected an issuer. */
   buy: Record<string, StockBuyOption>;
   /** Rows shown with a greyed "Not supported yet", by underlying: the plain reason (tooltip). */
@@ -16,7 +18,7 @@ export type HomepageStocks = {
 
 /** What the page and `/api/stock-market` send to the browser (no allowlist internals). */
 export function toHomepageStocks(market: StockMarket, eligibility: StockBuyEligibility | null): HomepageStocks {
-  return { snapshotAt: market.snapshotAt, gainers: market.gainers, stocks: market.stocks, buy: eligibility?.options ?? {}, unsupported: eligibility?.unsupported ?? {} };
+  return { snapshotAt: market.snapshotAt, gainers: market.gainers, stocks: market.stocks, ticker: market.ticker, buy: eligibility?.options ?? {}, unsupported: eligibility?.unsupported ?? {} };
 }
 
 /** USDC amount typed by the user: digits, optional dot, at most 6 decimals, above zero, at most 1,000,000. */

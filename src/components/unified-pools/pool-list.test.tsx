@@ -65,6 +65,34 @@ describe("PoolTable responsive layout (shared by the homepage and /app/rwa-pairs
   });
 });
 
+describe("PoolTable Open cell below 768px (a 360 px screen fits every row)", () => {
+  const renderWith = (action: Parameters<typeof PoolTable>[0]["actionFor"]) => new DOMParser().parseFromString(`<body>${renderToString(createElement(PoolTable, {
+    pools: [pool], apr: { [pool.key]: { status: "ready", aprPct: 31.85 } } as never, sort: DEFAULT_SORT, actionFor: action,
+  }))}</body>`, "text/html");
+  const REASON = "This token uses a balance multiplier, which we don't support yet.";
+
+  it("a token that is not supported yet shows a greyed arrow and an ⓘ below 768px, the pill from 768px up, and no Open action", () => {
+    const doc = renderWith(() => ({ kind: "unsupported", reason: REASON }));
+    const cell = doc.querySelector("[data-testid=open-unsupported]")!;
+    expect(cell.getAttribute("title")).toBe(REASON);
+    const narrow = cell.querySelector("[data-testid=open-unsupported-narrow]")!;
+    expect(cls(narrow)).toContain("md:hidden");
+    expect(narrow.querySelector("button[disabled]")!.getAttribute("aria-label")).toBe(`SPCXx/SPCX: Not supported yet. ${REASON}`);
+    expect(narrow.querySelector("[aria-label^='Why SPCXx/SPCX is not supported yet']")).toBeTruthy();
+    const pill = [...cell.children].find((child) => child.textContent?.includes("Not supported yet") && child !== narrow)!;
+    expect(cls(pill)).toContain("max-md:hidden");
+    expect(cell.querySelector("[aria-label^='Open position']")).toBeNull();
+  });
+
+  it("a pool that cannot be opened from the list hides its reason text below 768px behind an ⓘ", () => {
+    const doc = renderWith(() => ({ kind: "disabled", reason: "Opening Meteora positions isn't available yet" }));
+    const cell = doc.querySelector("[data-testid=open-disabled]")!;
+    const reason = [...cell.querySelectorAll("span")].find((span) => span.textContent === "Opening Meteora positions isn't available yet" && !span.querySelector("*"))!;
+    expect(cls(reason)).toContain("max-md:hidden");
+    expect(cell.querySelector(".md\\:hidden [aria-label^='Why SPCXx/SPCX cannot be opened here']")).toBeTruthy();
+  });
+});
+
 describe("rangeApr7dLabel", () => {
   it("names the card's highest range instead of a generic APR", () => {
     expect(rangeApr7dLabel("Tight (±0.05%)")).toBe("Tight-range APR · 7d");

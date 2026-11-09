@@ -3,9 +3,9 @@ import type { SnapshotSourceTime as HomepageSourceTime } from "@/lib/snapshot-up
 import { DEFAULT_FILTERS, DEFAULT_SORT, LOW_TVL_USD, meetsMinTvl, selectPools, type Apr7dLookup, type PoolChain, type RankGroupLookup, type UnifiedPool } from "@/lib/unified-pools/model";
 import { rhcPool, solanaPool, type RhcPoolSummary, type SolanaPoolRow } from "@/lib/unified-pools/rows";
 
-/** The homepage shows the top pools of `/app/rwa-pairs` (LJ, 2026-10-31: at most 5), with a "View all pools" link. */
+/** The homepage Top Pools card shows the top pools of `/app/rwa-pairs` (LJ, 2026-10-31: at most 5); the list under it shows every pool. */
 export const HOMEPAGE_POOL_LIMIT = 5;
-/** Homepage TVL floor in USD (LJ, 2026-10-31): smaller pools are left out before the duplicate rule and the ranking. */
+/** Top Pools TVL floor in USD (LJ, 2026-10-31): smaller pools are left out before the duplicate rule and the ranking. */
 export const HOMEPAGE_MIN_TVL_USD = LOW_TVL_USD;
 /** Homepage note for the TVL floor. */
 export const HOMEPAGE_MIN_TVL_NOTE = "Pools under $5k TVL are not shown.";
@@ -68,7 +68,7 @@ export function rwaPairsDefaultOrder<T extends UnifiedPool>(pools: readonly T[],
 const samePool = (a: string, b: string) => a === b || a.toLowerCase() === b.toLowerCase();
 
 /**
- * Homepage rows: the first HOMEPAGE_POOL_LIMIT pools of `/app/rwa-pairs`'s default view with its TVL filter set to
+ * Top Pools rows: the first HOMEPAGE_POOL_LIMIT pools of `/app/rwa-pairs`'s default view with its TVL filter set to
  * HOMEPAGE_MIN_TVL_USD (TVL filter → duplicate rule → Est. APR · 7d, high to low). Fewer rows when fewer pools
  * qualify. If a shared link's pool (`?pool=`) is listed there but not in the top rows, it takes the last slot.
  */

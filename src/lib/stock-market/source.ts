@@ -65,7 +65,7 @@ async function readStockMarket(): Promise<StockMarket> {
   return market;
 }
 
-export const loadStockMarket = unstable_cache(readStockMarket, ["stock-market-v1"], {
+export const loadStockMarket = unstable_cache(readStockMarket, ["stock-market-v2"], {
   revalidate: STOCK_MARKET_REVALIDATE_SECONDS, tags: ["stock-market"],
 });
 

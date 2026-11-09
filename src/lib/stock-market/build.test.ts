@@ -96,3 +96,19 @@ describe("buildStockMarket", () => {
     expect(displayedUnderlyings(market)).toEqual([...new Set([...market.gainers, ...market.stocks].map((item) => item.underlying))].sort());
   });
 });
+
+describe("buildStockMarket ticker", () => {
+  it("lists every passing stock once, largest Solana market cap first, beyond the cards' 5 rows", () => {
+    const market = buildStockMarket([
+      row(COINX, { mcap: 2_000_000 }),
+      row(NVDAX, { mcap: 9_000_000 }),
+      row(TSLAX, { mcap: 4_000_000 }),
+      row(TSLA_BP, { mcap: 3_000_000 }),
+    ], { universe, limit: 1 });
+    expect(market.stocks.map((stock) => stock.underlying)).toEqual(["NVDA"]);
+    // TSLA sums its two passing tokens (7M) and shows its xStocks token; the ticker is not cut to the cards' limit.
+    expect(market.ticker.map((stock) => [stock.underlying, stock.symbol, stock.mcapUsd])).toEqual([
+      ["NVDA", "NVDAx", 9_000_000], ["TSLA", "TSLAx", 7_000_000], ["COIN", "COINx", 2_000_000],
+    ]);
+  });
+});

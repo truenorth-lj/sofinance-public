@@ -15,12 +15,14 @@ import TermsPage from "@/app/terms/page";
 const hrefs = (html: string) => [...html.matchAll(/href="([^"]*)"/g)].map((m) => m[1]);
 
 describe("SiteHeader", () => {
-  it("uses in-page anchors on the homepage and homepage anchors elsewhere", () => {
+  it("links Pools to the homepage list (in-page on the homepage) and AI agents to the app's agent page", () => {
     const home = hrefs(renderToStaticMarkup(createElement(SiteHeader, { onHomepage: true })));
-    expect(home).toEqual(expect.arrayContaining(["/", "#pools", "#agents", "/blog", "/app"]));
+    expect(home).toEqual(expect.arrayContaining(["/", "#pools", "/app/ai", "/blog", "/app"]));
     const other = hrefs(renderToStaticMarkup(createElement(SiteHeader)));
-    expect(other).toEqual(expect.arrayContaining(["/", "/#pools", "/#agents", "/blog", "/app"]));
+    expect(other).toEqual(expect.arrayContaining(["/", "/#pools", "/app/ai", "/blog", "/app"]));
     expect(other).not.toContain("#pools");
+    // The homepage has no agents section any more.
+    expect([...home, ...other].some((href) => href?.endsWith("#agents"))).toBe(false);
   });
 
   it("is the header on the blog, docs, FAQ and terms pages, not the app bar", () => {

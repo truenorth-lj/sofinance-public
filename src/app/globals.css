@@ -15,6 +15,11 @@
   --animate-rise: rise 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
   --animate-settle: settle 0.35s cubic-bezier(0.2, 0.7, 0.2, 1) both;
   --animate-halo: halo 3.2s ease-in-out infinite;
+  /* Homepage price ticker: two copies side by side, moved one copy's width; the duration is set per page. */
+  --animate-ticker: ticker 80s linear infinite;
+  /* Content that appears because of an element (a tooltip from its ⓘ, a search hint from its field) grows out of it:
+     `--emerge-from` is the side it comes from (negative: from above). */
+  --animate-emerge: emerge 0.18s cubic-bezier(0.2, 0.7, 0.2, 1) both;
 
   @keyframes rise {
     from { opacity: 0; transform: translateY(16px); }
@@ -28,6 +33,14 @@
   @keyframes halo {
     0%, 100% { opacity: calc(var(--halo, 0.4) * 0.55); }
     50% { opacity: var(--halo, 0.4); }
+  }
+  @keyframes emerge {
+    from { opacity: 0; transform: translateY(var(--emerge-from, -4px)) scale(0.98); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes ticker {
+    from { transform: translateX(0); }
+    to { transform: translateX(-50%); }
   }
 }
 

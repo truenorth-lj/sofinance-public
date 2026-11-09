@@ -16,6 +16,8 @@ export const STOCK_MIN_MCAP_USD = 1_000_000;
 export const STOCK_MIN_LIQUIDITY_USD = 50_000;
 export const STOCK_MIN_VOLUME_24H_USD = 10_000;
 export const STOCK_CARD_ROWS = 5;
+/** Stocks in the homepage price ticker (one per stock, largest Solana market cap first). */
+export const STOCK_TICKER_ROWS = 30;
 
 /** The fields we read from one Jupiter Tokens V2 search row. */
 export type JupiterStockRow = {
@@ -39,6 +41,8 @@ export type StockMarket = {
   snapshotAt: string;
   gainers: StockGainerRow[];
   stocks: StockMcapRow[];
+  /** The homepage ticker: every listed stock (same rows as Top Stocks), largest first, at most `STOCK_TICKER_ROWS`. */
+  ticker: StockMcapRow[];
   /** Every token that passed the filters, by stock (allowlist source for Buy; xStocks first). */
   tokensByUnderlying: Record<string, StockToken[]>;
 };
@@ -120,12 +124,15 @@ export function buildStockMarket(rows: readonly JupiterStockRow[], options: {
   const gainers = [...bestGain.values()].sort((a, b) => b.change24hPct - a.change24hPct || a.underlying.localeCompare(b.underlying))
     .slice(0, limit).map(row);
 
-  const stocks = Object.entries(tokensByUnderlying).map(([, list]) => {
+  const byMcap = Object.entries(tokensByUnderlying).map(([, list]) => {
     const primary = list.find((token) => token.xstocks) ?? [...list].sort((a, b) => b.mcapUsd - a.mcapUsd)[0]!;
     return { ...row(primary), mcapUsd: list.reduce((sum, token) => sum + token.mcapUsd, 0) };
-  }).sort((a, b) => b.mcapUsd - a.mcapUsd || a.underlying.localeCompare(b.underlying)).slice(0, limit);
+  }).sort((a, b) => b.mcapUsd - a.mcapUsd || a.underlying.localeCompare(b.underlying));
 
-  return { snapshotAt: (options.now ?? new Date()).toISOString(), gainers, stocks, tokensByUnderlying };
+  return {
+    snapshotAt: (options.now ?? new Date()).toISOString(), gainers, stocks: byMcap.slice(0, limit),
+    ticker: byMcap.slice(0, STOCK_TICKER_ROWS), tokensByUnderlying,
+  };
 }
 
 /** Underlyings shown on either card (the only ones whose Buy eligibility is computed). */
