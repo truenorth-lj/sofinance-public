@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildStockMarket, displayedUnderlyings, isExcludedStockMint, parseJupiterStockRow, stockTokenRejection, type JupiterStockRow } from "./build";
+import { buildStockMarket, cardRankings, isExcludedStockMint, STOCK_CARD_ROWS, parseJupiterStockRow, stockTokenRejection, type JupiterStockRow } from "./build";
 import { STOCK_EXCLUDED_MINTS, STOCK_UNIVERSE, type StockUniverseRow } from "./universe";
 
 const TSLAX = "XsDoVfqeBukxuZHWhdvWHBhgEHjGNst4MLodqsJHzoB";
@@ -93,6 +93,14 @@ describe("buildStockMarket", () => {
     expect(market.tokensByUnderlying.TSLA![0]!.xstocks).toBe(false);
     expect(market.tokensByUnderlying.NVDA![0]!.xstocks).toBe(true);
     expect(market.gainers).toHaveLength(2);
-    expect(displayedUnderlyings(market)).toEqual([...new Set([...market.gainers, ...market.stocks].map((item) => item.underlying))].sort());
+    expect(cardRankings(market)).toEqual([market.gainers.map((item) => item.underlying), market.stocks.map((item) => item.underlying)]);
+  });
+
+  it("keeps every listed stock ranked, so the cards can skip unsupported ones and still show 5", () => {
+    expect(STOCK_CARD_ROWS).toBe(5);
+    const many: StockUniverseRow[] = Array.from({ length: 12 }, (_, index) => [`MINT${index}`, `S${index}x`, `S${index}`, "xstocks", `Company ${index}`]);
+    const market = buildStockMarket(many.map(([mint], index) => row(mint, { priceChange24h: index, mcap: 2_000_000 + index })), { universe: many, now });
+    expect(market.gainers.map((item) => item.underlying)).toEqual(["S11", "S10", "S9", "S8", "S7", "S6", "S5", "S4", "S3", "S2", "S1", "S0"]);
+    expect(market.stocks).toHaveLength(12);
   });
 });

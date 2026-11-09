@@ -9,13 +9,19 @@
  * Top Gainers: tokens ranked by Jupiter 24h price change, one row per stock (its best-performing token).
  * Top Stocks: Solana-only market cap (Jupiter `mcap` = circulating Solana supply x price), summed per stock over
  * the tokens that pass the filters; the row shows its primary token (xStocks when it passes, else the largest).
+ * Each list keeps every stock that passes the filters, in rank order; a card shows the first STOCK_CARD_ROWS of them
+ * that can be bought (`toHomepageStocks`), so a stock we do not support is skipped instead of shown greyed out. The
+ * whole ranking is kept because unsupported stocks cluster at the top: on 2026-11-09, 11 of the 26 listed stocks failed
+ * the mint check (ScaledUiAmount multiplier not 1, e.g. NVDA, AAPL, MSFT, SPY), and Top Stocks reached its 5th
+ * buyable stock at rank 11.
  */
+import { STOCK_CARD_ROWS } from "./public";
 import { STOCK_EXCLUDED_MINTS, STOCK_UNIVERSE, type StockIssuer, type StockUniverseRow } from "./universe";
 
 export const STOCK_MIN_MCAP_USD = 1_000_000;
 export const STOCK_MIN_LIQUIDITY_USD = 50_000;
 export const STOCK_MIN_VOLUME_24H_USD = 10_000;
-export const STOCK_CARD_ROWS = 5;
+export { STOCK_CARD_ROWS };
 
 /** The fields we read from one Jupiter Tokens V2 search row. */
 export type JupiterStockRow = {
@@ -37,6 +43,7 @@ export type StockMcapRow = StockGainerRow & { mcapUsd: number };
 export type StockMarket = {
   /** ISO time of the Jupiter read. */
   snapshotAt: string;
+  /** Every listed stock, ranked; the card shows the first STOCK_CARD_ROWS that can be bought. */
   gainers: StockGainerRow[];
   stocks: StockMcapRow[];
   /** Every token that passed the filters, by stock (allowlist source for Buy; xStocks first). */
@@ -87,7 +94,7 @@ export function buildStockMarket(rows: readonly JupiterStockRow[], options: {
 } = {}): StockMarket {
   const universe = options.universe ?? STOCK_UNIVERSE;
   const icon = options.icon ?? (() => null);
-  const limit = options.limit ?? STOCK_CARD_ROWS;
+  const limit = options.limit ?? Number.POSITIVE_INFINITY;
   const byMint = new Map<string, JupiterStockRow>();
   for (const row of rows) if (!byMint.has(row.id)) byMint.set(row.id, row);
 
@@ -128,7 +135,7 @@ export function buildStockMarket(rows: readonly JupiterStockRow[], options: {
   return { snapshotAt: (options.now ?? new Date()).toISOString(), gainers, stocks, tokensByUnderlying };
 }
 
-/** Underlyings shown on either card (the only ones whose Buy eligibility is computed). */
-export function displayedUnderlyings(market: Pick<StockMarket, "gainers" | "stocks">): string[] {
-  return [...new Set([...market.gainers, ...market.stocks].map((row) => row.underlying))].sort();
+/** Each card's ranked candidates (underlyings, best first): what Buy eligibility walks to fill the cards. */
+export function cardRankings(market: Pick<StockMarket, "gainers" | "stocks">): string[][] {
+  return [market.gainers.map((row) => row.underlying), market.stocks.map((row) => row.underlying)];
 }

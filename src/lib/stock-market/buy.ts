@@ -34,7 +34,7 @@ export type StockBuyEligibility = {
   checkedAt: string;
   options: Record<string, StockBuyOption>;
   candidates: Record<string, StockBuyCandidate[]>;
-  /** Plain reason a checked stock has no Buy (tooltip of "Not supported yet"), by underlying. */
+  /** Plain reason a checked stock has no Buy, by underlying (server-side only: such a stock is not listed). */
   unsupported: Record<string, string>;
 };
 
@@ -63,12 +63,16 @@ function candidateFor(token: StockToken, info: AccountInfo<Buffer> | null): Cand
 }
 
 /**
- * Eligibility for the given stocks. `isUnavailable` decides whether a route-check failure is an outage (rethrown, so
- * an outage is never cached as "not buyable") or a per-token refusal (that stock gets no Buy).
+ * Eligibility for the cards: `cards` are the cards' rankings (underlyings, best first). The mints of every ranked
+ * stock are read in one batch (cheap); route probes (paced Jupiter calls) then run in rank order, a position at a time
+ * across the cards, and a card stops once `rows` of its stocks can be bought. A stock on both cards is checked once.
+ * `isUnavailable` decides whether a route-check failure is an outage (rethrown, so an outage is never cached as
+ * "not buyable") or a per-token refusal (that stock gets no Buy).
  */
-export async function computeStockBuyEligibility(market: Pick<StockMarket, "tokensByUnderlying">, underlyings: readonly string[], deps: {
+export async function computeStockBuyEligibility(market: Pick<StockMarket, "tokensByUnderlying">, cards: readonly (readonly string[])[], deps: {
   readMints: ReadMintAccounts; checkRoute: CheckRoute; isUnavailable: (error: unknown) => boolean; now?: Date;
-}): Promise<StockBuyEligibility> {
+}, rows = Number.POSITIVE_INFINITY): Promise<StockBuyEligibility> {
+  const underlyings = [...new Set(cards.flat())];
   const tokens = underlyings.flatMap((underlying) => market.tokensByUnderlying[underlying] ?? []);
   const infos = new Map<string, AccountInfo<Buffer> | null>();
   for (let i = 0; i < tokens.length; i += 100) {
@@ -79,18 +83,18 @@ export async function computeStockBuyEligibility(market: Pick<StockMarket, "toke
   const options: Record<string, StockBuyOption> = {};
   const candidates: Record<string, StockBuyCandidate[]> = {};
   const unsupported: Record<string, string> = {};
-  for (const underlying of underlyings) {
+  const check = async (underlying: string) => {
     const checks = (market.tokensByUnderlying[underlying] ?? []).map((token) => candidateFor(token, infos.get(token.mint) ?? null));
-    const list = checks.map((check) => check.candidate).filter((candidate): candidate is StockBuyCandidate => candidate !== null);
+    const list = checks.map((item) => item.candidate).filter((candidate): candidate is StockBuyCandidate => candidate !== null);
     if (!list.length) {
-      const issues = checks.flatMap((check) => check.issues);
+      const issues = checks.flatMap((item) => item.issues);
       unsupported[underlying] = issues.length ? unsupportedTokenReason({ unsupportedIssues: issues }) ?? NO_ROUTE_REASON : NO_ROUTE_REASON;
-      continue;
+      return;
     }
     candidates[underlying] = list;
     try {
       const selection = await selectSpotSwapToken(spotSwapAllowlistFor(list), underlying, { checkRoute: deps.checkRoute });
-      if (selection.status !== "selected") { unsupported[underlying] = NO_ROUTE_REASON; continue; }
+      if (selection.status !== "selected") { unsupported[underlying] = NO_ROUTE_REASON; return; }
       const company = market.tokensByUnderlying[underlying]?.find((token) => token.mint === selection.mint)?.company ?? underlying;
       options[underlying] = { underlying, company, mint: selection.mint, mintShort: selection.mintShort,
         issuerName: selection.issuerName, symbol: selection.token.symbol };
@@ -100,6 +104,17 @@ export async function computeStockBuyEligibility(market: Pick<StockMarket, "toke
       // failure is never cached as "not buyable" for the whole TTL.
       if (deps.isUnavailable(error) || !(error instanceof SpotSwapError)) throw error;
       unsupported[underlying] = NO_ROUTE_REASON;
+    }
+  };
+  const checked = new Set<string>();
+  const filled = cards.map(() => 0);
+  const longest = Math.max(0, ...cards.map((ranking) => ranking.length));
+  for (let position = 0; position < longest && filled.some((count) => count < rows); position++) {
+    for (const [card, ranking] of cards.entries()) {
+      const underlying = ranking[position];
+      if (underlying === undefined || filled[card]! >= rows) continue;
+      if (!checked.has(underlying)) { checked.add(underlying); await check(underlying); }
+      if (options[underlying]) filled[card]! += 1;
     }
   }
   return { checkedAt: (deps.now ?? new Date()).toISOString(), options, candidates, unsupported };

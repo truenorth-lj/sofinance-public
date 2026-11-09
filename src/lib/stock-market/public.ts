@@ -4,19 +4,26 @@ import type { StockBuyEligibility, StockBuyOption } from "./buy";
 
 export type { StockBuyOption, StockGainerRow, StockMcapRow };
 
+/** Rows a card shows. */
+export const STOCK_CARD_ROWS = 5;
+
 export type HomepageStocks = {
   snapshotAt: string;
   gainers: StockGainerRow[];
   stocks: StockMcapRow[];
   /** Rows with a Buy button, by underlying: only where the engine selected an issuer. */
   buy: Record<string, StockBuyOption>;
-  /** Rows shown with a greyed "Not supported yet", by underlying: the plain reason (tooltip). */
-  unsupported?: Record<string, string>;
 };
 
-/** What the page and `/api/stock-market` send to the browser (no allowlist internals). */
+/**
+ * What the page and `/api/stock-market` send to the browser (no allowlist internals). Each card lists the first
+ * STOCK_CARD_ROWS of its ranking that can be bought, so a stock we do not support is skipped, never shown. When the
+ * eligibility read failed there is nothing to filter on: the first rows are shown without Buy (fail closed).
+ */
 export function toHomepageStocks(market: StockMarket, eligibility: StockBuyEligibility | null): HomepageStocks {
-  return { snapshotAt: market.snapshotAt, gainers: market.gainers, stocks: market.stocks, buy: eligibility?.options ?? {}, unsupported: eligibility?.unsupported ?? {} };
+  const pick = <Row extends { underlying: string }>(rows: Row[]) =>
+    (eligibility ? rows.filter((row) => eligibility.options[row.underlying]) : rows).slice(0, STOCK_CARD_ROWS);
+  return { snapshotAt: market.snapshotAt, gainers: pick(market.gainers), stocks: pick(market.stocks), buy: eligibility?.options ?? {} };
 }
 
 /** USDC amount typed by the user: digits, optional dot, at most 6 decimals, above zero, at most 1,000,000. */

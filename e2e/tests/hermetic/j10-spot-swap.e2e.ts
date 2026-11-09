@@ -47,8 +47,9 @@ async function openBuy(page: Page) {
   await expect(gainers).toContainText("Top Gainers");
   await expect(page.getByTestId("stock-card-stocks")).toContainText("Top Stocks");
   await expect(page.getByTestId("stock-cards-notice")).toContainText(NOTICE);
-  await expect(page.getByTestId("stock-card-stocks").getByTestId("stock-buy-MSTR")).toHaveCount(0);   // no issuer selected -> no Buy
-  await expect(page.getByTestId("stock-card-stocks").getByTestId("stock-unsupported-MSTR")).toContainText("Not supported yet");
+  // Only stocks that can be bought are listed: no greyed "Not supported yet" row (the server skips such a stock).
+  await expect(page.getByTestId("stock-card-stocks").getByTestId("stock-row-SPY")).toBeVisible();
+  await expect(page.getByText("Not supported yet")).toHaveCount(0);
   await page.getByTestId("stock-card-stocks").getByTestId("stock-buy-TSLA").click();
   const modal = page.getByTestId("spot-swap-modal");
   await expect(modal.getByTestId("spot-swap-notice")).toHaveText(NOTICE);

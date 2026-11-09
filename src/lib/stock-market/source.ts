@@ -5,8 +5,9 @@ import "server-only";
  *
  * Jupiter budget (free tier, 1 request/s per org): a full refresh is ONE pass over the fixed universe through the
  * Jupiter Tokens V2 search endpoint with up to 100 comma-separated mints per call: 218 mints = 3 calls, spaced at
- * least 1.1 s apart. Buy eligibility adds one Jupiter quote probe (1 USDC) per shown stock whose cached probe result
- * is older than 30 minutes (usually 0, at most one per shown stock) plus one RPC `getMultipleAccounts`.
+ * least 1.1 s apart. Buy eligibility adds one RPC `getMultipleAccounts` for the ranked candidates, then one Jupiter
+ * quote probe (1 USDC) per checked stock whose cached probe result is older than 30 minutes: stocks are checked in rank
+ * order until each card has its rows to buy (usually the shown stocks plus one per skipped stock).
  * Both results sit in the Next data cache for 10 minutes; a failed read throws and is never cached.
  * CoinGecko is not called here (cross-check only, offline).
  */
@@ -19,7 +20,7 @@ import { trustedIcon } from "@sofinance/engine/token-metadata";
 import { spotSwapRouteCheck, type SpotSwapRouteCheck } from "@sofinance/engine/spot-swap";
 import { PublicKey } from "@solana/web3.js";
 import { upstreamUnavailable } from "@/lib/upstream-errors";
-import { buildStockMarket, displayedUnderlyings, parseJupiterStockRow, type JupiterStockRow, type StockMarket } from "./build";
+import { buildStockMarket, cardRankings, parseJupiterStockRow, STOCK_CARD_ROWS, type JupiterStockRow, type StockMarket } from "./build";
 import { computeStockBuyEligibility, spotSwapAllowlistFor, type SpotSwapStockContext, type StockBuyEligibility } from "./buy";
 import { STOCK_UNIVERSE } from "./universe";
 
@@ -112,23 +113,24 @@ export function isStockSourceUnavailable(error: unknown): boolean {
   return error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
 }
 
-async function readStockBuyEligibility(underlyings: string[]): Promise<StockBuyEligibility> {
+/** `cards`: each card's ranked underlyings. Route probes stop once every card has STOCK_CARD_ROWS stocks to buy. */
+async function readStockBuyEligibility(cards: string[][]): Promise<StockBuyEligibility> {
   const market = await loadStockMarket();
   const connection = rpcConnection();
-  return computeStockBuyEligibility(market, underlyings, {
+  return computeStockBuyEligibility(market, cards, {
     readMints: (mints) => connection.getMultipleAccountsInfo(mints.map((mint) => new PublicKey(mint)), "confirmed"),
     checkRoute: cachedRouteCheck,
     isUnavailable: isStockSourceUnavailable,
-  });
+  }, STOCK_CARD_ROWS);
 }
 
 const cachedEligibility = unstable_cache(readStockBuyEligibility, ["stock-buy-eligibility-v1"], {
   revalidate: STOCK_MARKET_REVALIDATE_SECONDS, tags: ["stock-market"],
 });
 
-/** Buy eligibility for every stock shown on the cards (same key as the homepage, so routes reuse its cache). */
+/** Buy eligibility for the cards' rankings (same key as the homepage, so routes reuse its cache). */
 export async function loadStockBuyEligibility(market: StockMarket): Promise<StockBuyEligibility> {
-  return cachedEligibility(displayedUnderlyings(market));
+  return cachedEligibility(cardRankings(market));
 }
 
 
