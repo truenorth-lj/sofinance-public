@@ -19,7 +19,7 @@ vi.mock("@/lib/stock-market/spot-swap-client", async (importOriginal) => ({
   fetchSpotSwapQuote: (...args: unknown[]) => fetchSpotSwapQuote(...args),
 }));
 
-const { SpotSwapModal, amountProblem, PRICE_UPDATED_COPY, QUOTE_REFRESH_MS } = await import("./spot-swap-modal");
+const { SpotSwapModal, amountProblem, PRICE_UPDATED_COPY, QUOTE_REFRESH_MS, SLIPPAGE_NOTE_COPY } = await import("./spot-swap-modal");
 const { SpotSwapQuoteError } = await import("@/lib/stock-market/spot-swap-client");
 
 const option = { underlying: "TSLA", company: "Tesla", mint: "XsDoVfqeBukxuZHWhdvWHBhgEHjGNst4MLodqsJHzoB", mintShort: "XsDo…oB", issuerName: "xStocks", symbol: "TSLAx" };
@@ -81,6 +81,8 @@ describe("SpotSwapModal", () => {
     await act(async () => summary.click());
     expect(summary.getAttribute("aria-expanded")).toBe("true");
     expect(text("spot-swap-min")).toContain("TSLAx");
+    expect(text("spot-swap-quote")).toContain("Slippage limit1.0%");
+    expect(text("spot-swap-slippage-note")).toBe(SLIPPAGE_NOTE_COPY);
     expect(text("spot-swap-quote")).toContain("SoFinance fee (0.1%)");
     expect(text("spot-swap-fee")).toContain("0.002");
     expect(text("spot-swap-deposit")).toContain("SOL");

@@ -23,6 +23,7 @@ import { useWalletConnection } from "@/components/wallet-connection";
 const QUOTE_DEBOUNCE_MS = 500;
 /** Re-quote this often while the modal is open and visible, so the price shown stays current. */
 export const QUOTE_REFRESH_MS = 20_000;
+export const SLIPPAGE_NOTE_COPY = "Includes room for small price moves since this quote.";
 export const PRICE_UPDATED_COPY = "Price updated. Check the new amount, then accept.";
 const ROW = "flex items-start justify-between gap-3";
 /** Price impact (fraction) from which the summary row turns warning-coloured; over 1% is refused outright. */
@@ -152,6 +153,7 @@ export function SpotSwapModal({ option, onClose }: { option: StockBuyOption; onC
           {expanded ? <div id="spot-swap-details" data-testid="spot-swap-details" className="space-y-2 border-t border-white/10 pt-2">
             <p className={ROW}><span>Minimum received{changed ? " · updated" : ""}</span><span className="text-right font-data" data-testid="spot-swap-min">{formatTokenRaw(quoted.minOut, quoted.outputDecimals, symbol)}</span></p>
             <p className={ROW}><span>Slippage limit</span><span className="text-right font-data">{(quoted.slippageBps / 100).toFixed(1)}%</span></p>
+            <p className="text-xs text-smoke" data-testid="spot-swap-slippage-note">{SLIPPAGE_NOTE_COPY}</p>
             <p className={ROW}><span>SoFinance fee (0.1%)</span><span className="text-right font-data" data-testid="spot-swap-fee">{formatUsdc(quoted.feeAmount)}</span></p>
             <p className="text-xs text-smoke">Included in the amount you pay.</p>
             {needsDeposit ? <p className={ROW}><span>Token account deposit (refundable)</span><span className="text-right font-data" data-testid="spot-swap-deposit">~{formatSol(rentLamports)}</span></p> : null}
