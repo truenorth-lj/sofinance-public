@@ -94,10 +94,13 @@ export async function checkSpotSwapWallet(wallet: string, candidate: { mint: str
   };
 }
 
-/** Build + simulate for the user's wallet; returns the unsigned transaction and its permits. */
-export async function prepareSpotSwapForStock(context: SpotSwapStockContext, wallet: string, mint: string, amount: string) {
+/**
+ * Build + simulate for the user's wallet; returns the unsigned transaction and its permits. `minOut` (raw) is the
+ * minimum the user confirmed: a route below it throws `spot_swap_quote_changed` with the new terms.
+ */
+export async function prepareSpotSwapForStock(context: SpotSwapStockContext, wallet: string, mint: string, amount: string, minOut: bigint) {
   const allowlist = spotSwapAllowlistFor(context.candidates);
-  const { summary, transaction } = await withFeeEstimateRetry(() => buildAndSimulateSpotSwap(wallet, mint, amount, { allowlist }));
+  const { summary, transaction } = await withFeeEstimateRetry(() => buildAndSimulateSpotSwap(wallet, mint, amount, { allowlist, minOutAtLeast: minOut }));
   const secret = getSigningSecret();
   const unsignedTransaction = Buffer.from(transaction.serialize()).toString("base64");
   const permit = issueSpotSwapPermit(secret, { wallet, message: Buffer.from(transaction.message.serialize()).toString("base64"), summary });

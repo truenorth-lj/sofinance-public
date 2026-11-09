@@ -2,8 +2,13 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 vi.mock("next/cache", () => ({ unstable_cache: <T,>(fn: T) => fn }));
+const spotSwapRouteCheck = vi.fn();
+vi.mock("@sofinance/engine/spot-swap", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@sofinance/engine/spot-swap")>(),
+  spotSwapRouteCheck: (...args: unknown[]) => spotSwapRouteCheck(...args),
+}));
 
-import { fetchJupiterStockRows, isStockSourceUnavailable, STOCK_JUPITER_SPACING_MS } from "./source";
+import { cachedRouteCheck, fetchJupiterStockRows, isStockSourceUnavailable, loadStockMarket, STOCK_JUPITER_SPACING_MS } from "./source";
 import { STOCK_UNIVERSE } from "./universe";
 import { JupiterHttpError } from "@sofinance/engine/jupiter/errors";
 
@@ -28,10 +33,44 @@ describe("fetchJupiterStockRows", () => {
     expect(rows.map((row) => row.id).sort()).toEqual(STOCK_UNIVERSE.map(([mint]) => mint).sort());
   }, 15_000);
 
+  it("keeps every call 1.1 s apart when two refreshes run at the same time (one queue, not a shared timestamp)", async () => {
+    const starts: number[] = [];
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      starts.push(Date.now());
+      return Response.json(new URL(String(input)).searchParams.get("query")!.split(",").map((id) => ({ id, symbol: "X" })));
+    }) as unknown as typeof fetch;
+    await Promise.all([fetchJupiterStockRows({ fetcher }), fetchJupiterStockRows({ fetcher })]);
+    expect(starts).toHaveLength(6);
+    for (let index = 1; index < starts.length; index++) expect(starts[index]! - starts[index - 1]!).toBeGreaterThanOrEqual(STOCK_JUPITER_SPACING_MS - 5);
+  }, 20_000);
+
   it("throws on a non-array payload (never cached as an empty market)", async () => {
     const fetcher = vi.fn(async () => Response.json({ error: "nope" })) as unknown as typeof fetch;
     await expect(fetchJupiterStockRows({ fetcher })).rejects.toThrow(/unexpected payload/);
   }, 15_000);
+});
+
+describe("in-flight sharing", () => {
+  it("two market cache misses at once share one refresh (3 calls, not 6); a failed refresh is not kept", async () => {
+    // Rows that pass no filter: the refresh fails ("No stock passed the filters"), which must not be cached.
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) =>
+      Response.json(new URL(String(input)).searchParams.get("query")!.split(",").map((id) => ({ id, symbol: "X" }))));
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const results = await Promise.allSettled([loadStockMarket(), loadStockMarket()]);
+      expect(results.map((result) => result.status)).toEqual(["rejected", "rejected"]);
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+      await expect(loadStockMarket()).rejects.toThrow(/No stock passed/);
+      expect(fetchMock).toHaveBeenCalledTimes(6);
+    } finally { vi.unstubAllGlobals(); }
+  }, 20_000);
+
+  it("two route probes of the same mint and amount at once make one Jupiter quote", async () => {
+    spotSwapRouteCheck.mockReset().mockImplementation(async () => "ok");
+    const mint = STOCK_UNIVERSE[0]![0];
+    expect(await Promise.all([cachedRouteCheck(mint, 7_000_000n), cachedRouteCheck(mint, 7_000_000n)])).toEqual(["ok", "ok"]);
+    expect(spotSwapRouteCheck).toHaveBeenCalledTimes(1);
+  }, 10_000);
 });
 
 describe("isStockSourceUnavailable", () => {

@@ -29,6 +29,18 @@ export function parseSpotSwapAmount(value: unknown): string | null {
   return number > 0 && number <= SPOT_SWAP_MAX_USDC ? trimmed : null;
 }
 
+/** Minimum output the user confirmed, in the token's raw units: a positive integer string that fits in a u64. */
+export function parseRawMinOut(value: unknown): bigint | null {
+  if (typeof value !== "string" || !/^[1-9]\d{0,19}$/.test(value)) return null;
+  const raw = BigInt(value);
+  return raw <= 18_446_744_073_709_551_615n ? raw : null;
+}
+
+/** A parsed JSON body that is a plain object (JSON `null`, arrays and scalars are not). */
+export function jsonObject(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
 /** Underlying ticker as listed (upper case letters, digits, dot), e.g. "TSLA", "BRK.B". */
 export function parseUnderlying(value: unknown): string | null {
   return typeof value === "string" && /^[A-Z0-9.]{1,12}$/.test(value) ? value : null;

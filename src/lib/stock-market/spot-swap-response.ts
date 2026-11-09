@@ -18,6 +18,7 @@ import { SpotSwapNoRouteError } from "@/server/transactions/spot-swap";
 const USER_FACING: Partial<Record<SpotSwapErrorCode, string | null>> = {
   spot_swap_price_impact: null,
   spot_swap_fee_not_configured: null,
+  spot_swap_quote_changed: null,
   spot_swap_amount_too_small: "This amount is too small to buy.",
   spot_swap_token_unavailable: "This stock token can't be bought right now.",
   spot_swap_token_not_allowed: "This stock token can't be bought in the app.",
@@ -39,7 +40,9 @@ export function spotSwapErrorResponse(error: unknown, fallback: string, route: s
     const message = known ? USER_FACING[error.code] ?? error.message : SPOT_SWAP_SAFETY_MESSAGE;
     if (!known) logSafeError(fallback, error);
     const sol = error.code === "spot_swap_insufficient_sol" ? { sol: error.detail } : {};
-    return Response.json({ error: message, code: error.code, ...sol }, { status, headers });
+    // The new route terms, for the modal to show and the user to confirm again (amounts only, no internals).
+    const terms = error.code === "spot_swap_quote_changed" ? { quote: error.detail } : {};
+    return Response.json({ error: message, code: error.code, ...sol, ...terms }, { status, headers });
   }
   if (error instanceof SpotSwapNoRouteError || error instanceof JupiterNoRouteError) {
     return Response.json({ error: new SpotSwapNoRouteError().message, code: "spot_swap_no_route" }, { status: 400, headers });

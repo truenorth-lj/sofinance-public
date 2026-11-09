@@ -12,7 +12,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createJupiterRelayStore } from "@/lib/jupiter/browser-relay";
 import { formatPriceImpact, formatSol, formatTokenRaw, formatUsdc, STOCK_NOTICE_TEXT } from "@/lib/stock-market/format";
 import { parseSpotSwapAmount, SPOT_SWAP_MAX_USDC, type StockBuyOption } from "@/lib/stock-market/public";
-import { fetchSpotSwapQuote, spotSwapTxAdapter, type SpotSwapQuoteResult } from "@/lib/stock-market/spot-swap-client";
+import { fetchSpotSwapQuote, spotSwapTxAdapter, type SpotSwapChangedTerms, type SpotSwapQuoteResult } from "@/lib/stock-market/spot-swap-client";
 import { useTxPipeline } from "@/components/transactions/use-tx-pipeline";
 import { BUTTON, FIELD, TxStatus } from "@/components/unified-positions/registry-tools";
 import { useWalletConnection } from "@/components/wallet-connection";
@@ -67,8 +67,13 @@ export function SpotSwapModal({ option, onClose }: { option: StockBuyOption; onC
   }, [key, parsed, option.underlying, wallet, tx.locked]);
 
   const [expanded, setExpanded] = useState(false);
+  // Terms of the route prepare actually built, when its minimum fell below the quoted one. They replace the quote's
+  // amounts for this amount + wallet (a later re-quote may differ from what prepare builds), so Buy confirms exactly them.
+  const [repriced, setRepriced] = useState<{ key: string; terms: SpotSwapChangedTerms } | null>(null);
   const current = quote && quote.key === key ? quote : null;
-  const quoted = current?.value?.quote ?? null;
+  const changed = repriced && repriced.key === key ? repriced.terms : null;
+  const fetched = current?.value?.quote ?? null;
+  const quoted = fetched && changed ? { ...fetched, ...changed } : fetched;
   const check = current?.value?.wallet ?? null;
   const solLow = Boolean(check && !check.solSufficient);
   const usdcLow = Boolean(check && !check.usdcSufficient);
@@ -84,7 +89,9 @@ export function SpotSwapModal({ option, onClose }: { option: StockBuyOption; onC
 
   const submit = async () => {
     if (!quoted || !parsed) return;
-    await tx.run({ underlying: option.underlying, mint: quoted.outputMint, amount: parsed, store: relayStore.current });
+    const runKey = key;
+    await tx.run({ underlying: option.underlying, mint: quoted.outputMint, amount: parsed, minOut: quoted.minOut, store: relayStore.current,
+      onQuoteChanged: (terms) => setRepriced({ key: runKey, terms }) });
   };
 
   const symbol = quoted?.outputSymbol ?? option.symbol;
@@ -114,7 +121,7 @@ export function SpotSwapModal({ option, onClose }: { option: StockBuyOption; onC
         {parsed && current && !current.value && !current.error ? <p role="status" className="flex items-center gap-2"><LoaderCircle aria-hidden="true" className="size-4 animate-spin" />Getting a price…</p> : null}
         {current?.error ? <p role="alert" data-testid={current.refused ? "spot-swap-refused" : "spot-swap-quote-error"}>{current.error}</p> : null}
         {quoted ? <>
-          <p className={ROW}><span>You receive (quoted)</span><span className="text-right font-data text-cream" data-testid="spot-swap-quoted">{formatTokenRaw(quoted.quotedOut, quoted.outputDecimals, symbol)}</span></p>
+          <p className={ROW}><span>You receive (quoted){changed ? " · updated" : ""}</span><span className="text-right font-data text-cream" data-testid="spot-swap-quoted">{formatTokenRaw(quoted.quotedOut, quoted.outputDecimals, symbol)}</span></p>
           <button type="button" aria-expanded={expanded} aria-controls="spot-swap-details" onClick={() => setExpanded((value) => !value)} data-testid="spot-swap-summary"
             data-high-impact={highImpact ? "true" : undefined}
             className={`flex w-full items-center justify-between gap-2 rounded-xl py-1 text-left text-xs outline-none focus-visible:shadow-[0_0_0_2px_var(--color-lilac)] ${highImpact ? "text-[#ffb86b]" : "text-smoke hover:text-cream"}`}>

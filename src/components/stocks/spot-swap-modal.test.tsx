@@ -112,7 +112,25 @@ describe("SpotSwapModal", () => {
     expect(submit.disabled).toBe(false);
     expect(submit.textContent).toBe("Buy TSLAx");
     await act(async () => submit.click());
-    expect(run).toHaveBeenCalledWith(expect.objectContaining({ underlying: "TSLA", mint: option.mint, amount: "2" }));
+    expect(run).toHaveBeenCalledWith(expect.objectContaining({ underlying: "TSLA", mint: option.mint, amount: "2", minOut: "4477500" }));
+  });
+
+  it("when the price moved, shows the new amount on You receive (details stay closed) and the next Buy confirms exactly it", async () => {
+    Object.assign(wallet, { address: "Wallet11111111111111111111111111111111111111", connected: true });
+    act(() => root.render(<SpotSwapModal option={option} onClose={() => undefined} />));
+    fetchSpotSwapQuote.mockImplementation(async () => ({ ...quote, wallet: { walletLamports: "50000000", outputAccountExists: true, requiredLamports: "5000", solSufficient: true, usdcBalance: "5000000", usdcSufficient: true } }));
+    await typeAmount("2");
+    const submit = host.querySelector('[data-testid="spot-swap-submit"]') as HTMLButtonElement;
+    await act(async () => submit.click());
+    const first = run.mock.calls[0]![0] as { onQuoteChanged: (terms: { quotedOut: string; minOut: string; priceImpactPct: string | null }) => void };
+    await act(async () => first.onQuoteChanged({ quotedOut: "2250000", minOut: "2238750", priceImpactPct: "0.0009" }));
+    expect(text("spot-swap-quote")).toContain("You receive (quoted) · updated");
+    expect(text("spot-swap-quoted")).toBe("0.0225 TSLAx");
+    expect(document.querySelector('[data-testid="spot-swap-details"]')).toBeNull(); // details stay closed
+    await act(async () => (document.querySelector('[data-testid="spot-swap-summary"]') as HTMLButtonElement).click());
+    expect(text("spot-swap-min")).toBe("0.022387 TSLAx");
+    await act(async () => submit.click());
+    expect(run).toHaveBeenLastCalledWith(expect.objectContaining({ minOut: "2238750" }));
   });
 });
 

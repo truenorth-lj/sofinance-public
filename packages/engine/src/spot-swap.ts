@@ -15,7 +15,7 @@ import {
 import { ComputeBudgetProgram, PublicKey, type AccountInfo, type Connection, type VersionedTransaction } from "@solana/web3.js";
 import { parseTokenAmount } from "./amount";
 import { NATIVE_SOL_MINT, USDC_MINT } from "./ids";
-import { stampPreparedBlockhash, restampVersionedTransaction } from "./fresh-blockhash";
+import { stampPreparedBlockhash } from "./fresh-blockhash";
 import { JUPITER_MAX_ACCOUNTS, withJupiterRouteRetries, type JupiterRouteConstraints } from "./jupiter-route-retry";
 import { assertOpenTransactionSize, compactAtaInstructions, compileCompactOpenTransaction, openLookupTableReader } from "./open-transaction";
 import { defaultRpcConnection, rpcConnection } from "./rpc";
@@ -74,7 +74,10 @@ export type SpotSwapErrorCode =
   | "spot_swap_fee_not_configured" | "spot_swap_amount_too_small" | "spot_swap_insufficient_usdc"
   | "spot_swap_insufficient_sol" | "spot_swap_fee_mismatch" | "spot_swap_usdc_mismatch"
   | "spot_swap_min_out" | "spot_swap_signer" | "spot_swap_sol_debit" | "spot_swap_state_changed"
-  | "spot_swap_simulation_failed" | "spot_swap_price_impact";
+  | "spot_swap_simulation_failed" | "spot_swap_price_impact" | "spot_swap_quote_changed";
+
+/** New terms when the built route's minimum is below the one the user confirmed (`spot_swap_quote_changed`). */
+export type SpotSwapChangedTerms = { quotedOut: string; minOut: string; priceImpactPct: string | null };
 
 export class SpotSwapError extends Error {
   constructor(readonly code: SpotSwapErrorCode, message: string, readonly detail?: unknown) {
@@ -403,10 +406,12 @@ async function simulateWithBalances(ctx: Context, transaction: VersionedTransact
 /**
  * Build and simulate a USDC -> stock token swap for `wallet`. `usdcAmount` is in
  * whole USDC (e.g. "2.5"); the fee is taken from it. `allowlist` comes from the
- * token registry (caller); `outputMint` must be on it exactly.
+ * token registry (caller); `outputMint` must be on it exactly. `minOutAtLeast`
+ * is the minimum output (raw) the user confirmed; a route below it throws
+ * `spot_swap_quote_changed` with the new terms.
  */
 export async function buildAndSimulateSpotSwap(walletAddress: string, outputMintAddress: string, usdcAmount: string,
-  options: { allowlist: SpotSwapAllowlist; connection?: Connection }): Promise<{ summary: SpotSwapSummary; transaction: VersionedTransaction }> {
+  options: { allowlist: SpotSwapAllowlist; connection?: Connection; minOutAtLeast?: bigint }): Promise<{ summary: SpotSwapSummary; transaction: VersionedTransaction }> {
   const connection = options.connection ?? rpcConnection();
   const token = spotSwapTokenFor(options.allowlist, outputMintAddress);
   const wallet = new PublicKey(walletAddress);
@@ -436,8 +441,11 @@ export async function buildAndSimulateSpotSwap(walletAddress: string, outputMint
   const outputAccountExists = Boolean(outputInfo);
   const outputRent = outputAccountExists ? 0n : (await associatedTokenAccountRents(connection, [token.mint]))[0]!.rentLamports;
   const walletLamports = BigInt(walletInfo?.lamports ?? 0);
+  // The simulated SOL debit already includes the network fee (the simulation charges the fee payer), so the fee is
+  // added only to the deposit, never to the debit. Same fee both times: no compute-unit price, one signature.
   const requirement = (networkFee: bigint, simulatedDebit = 0n): SpotSwapSolRequirement => {
-    const required = (simulatedDebit > outputRent ? simulatedDebit : outputRent) + networkFee;
+    const floor = outputRent + networkFee;
+    const required = simulatedDebit > floor ? simulatedDebit : floor;
     return {
       outputAccountExists, outputAccountRentLamports: outputRent.toString(), networkFeeLamports: networkFee.toString(),
       requiredLamports: required.toString(), walletLamports: walletLamports.toString(), sufficient: walletLamports >= required,
@@ -480,9 +488,16 @@ export async function buildAndSimulateSpotSwap(walletAddress: string, outputMint
     const blockhash = (await connection.getLatestBlockhash("confirmed")).blockhash;
     const transaction = compileCompactOpenTransaction({ payerKey: wallet, recentBlockhash: blockhash, instructions }, tables).transaction;
     assertOpenTransactionSize(transaction);
-    return { leg, route, instructions, intermediates, tables, blockhash, transaction };
+    return { leg, route, instructions, intermediates, tables, transaction };
   });
   assertWalletOnlySigner(built.transaction, wallet);
+  // Bind to what the user confirmed: the route's on-chain minimum (Jupiter otherAmountThreshold) must not be below the
+  // minimum shown with the quote. A lower one is returned as new terms for the user to confirm, never signed silently.
+  if (options.minOutAtLeast !== undefined && built.leg.minOut < options.minOutAtLeast) {
+    const terms: SpotSwapChangedTerms = { quotedOut: built.route.outAmount, minOut: built.leg.minOut.toString(), priceImpactPct: built.route.priceImpactPct ?? null };
+    throw new SpotSwapError("spot_swap_quote_changed",
+      "The price moved since your quote, so nothing was prepared. Check the new amount and press Buy again.", terms);
+  }
 
   const simulated = await simulateWithBalances(ctx, built.transaction, built.intermediates);
   const checked = verifySpotSwapSimulation({
@@ -495,12 +510,13 @@ export async function buildAndSimulateSpotSwap(walletAddress: string, outputMint
   if (limitIndex < 0) throw new Error("Spot swap is missing its compute-unit limit");
   const sized = built.instructions.map((ix, index) => index === limitIndex
     ? ComputeBudgetProgram.setComputeUnitLimit({ units: measuredComputeUnitLimit(simulated.unitsConsumed) }) : ix);
-  const final = compileCompactOpenTransaction({ payerKey: wallet, recentBlockhash: built.blockhash, instructions: sized }, built.tables).transaction;
+  // One compact compile with the latest blockhash. Re-stamping with every route table would undo the compaction and can
+  // push a transaction that fit back over 1,232 bytes, after the route retries are already over.
   const latest = await connection.getLatestBlockhash("confirmed");
-  const restamped = restampVersionedTransaction(final, latest.blockhash, built.tables);
-  assertWalletOnlySigner(restamped, wallet);
-  const sizeBytes = assertOpenTransactionSize(restamped);
-  const networkFee = await estimateFeeForMessage(connection, restamped.message, "confirmed", {
+  const final = compileCompactOpenTransaction({ payerKey: wallet, recentBlockhash: latest.blockhash, instructions: sized }, built.tables).transaction;
+  assertWalletOnlySigner(final, wallet);
+  const sizeBytes = assertOpenTransactionSize(final);
+  const networkFee = await estimateFeeForMessage(connection, final.message, "confirmed", {
     fallback: defaultRpcConnection, emptyError: OPEN_FEE_ESTIMATE_MESSAGE,
   });
   const solRequirement = requirement(BigInt(networkFee), checked.solDebit > 0n ? checked.solDebit : 0n);
@@ -515,7 +531,7 @@ export async function buildAndSimulateSpotSwap(walletAddress: string, outputMint
     simulatedOut: checked.received.toString(), solRequirement, sizeBytes, unitsConsumed: simulated.unitsConsumed,
     ...stampPreparedBlockhash(latest),
   };
-  return { summary, transaction: restamped };
+  return { summary, transaction: final };
 }
 
 export type SpotSwapQuote = {
