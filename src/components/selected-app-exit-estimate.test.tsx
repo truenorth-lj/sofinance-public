@@ -171,7 +171,9 @@ describe("stock summary and position detail hierarchy", () => {
     expect(container.querySelector('[data-testid="stocks-overview"]')).not.toBeNull();
     expect(container.querySelector('#performance-view [data-testid="stock-performance"]')).toBeNull();
     expect(container.querySelector('#performance-view')?.textContent).toContain("Position details");
-    expect(container.querySelector('#performance-view')?.textContent).toContain("In range");
+    // Range and the per-token rows are shown once, above the tabs: not repeated in Performance.
+    expect(container.querySelector('#performance-view')?.textContent).not.toContain("In range");
+    expect(container.querySelector('[data-testid="position-assets-collapse"]')?.getAttribute("data-open")).toBe("false");
   });
   it("selects a position from the stock drilldown and updates the existing position details", async () => {
     // Expire overview fixtures cached by earlier cases that had no stock report.
