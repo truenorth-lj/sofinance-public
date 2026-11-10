@@ -52,3 +52,13 @@ receipts (wallets, wallet token accounts, bin arrays) is replaced with a
 deterministic hash. Self-CPI event data is kept verbatim. Signatures, logs and
 blockhashes are dropped (labels are used instead). Claimed fees replayed from
 these receipts equal the position's on-chain `total_claimed_fee_x/y`.
+
+`stock-entry-price-nvda.json` reproduces the deposit-time entry price of the
+NVDA/NVDAx Raydium position opened in `deposit` (2026-11-09 18:49:33 UTC). For
+the NVDA/USDC (Orca) and NVDAx/USDC (Raydium) reference pools it holds
+`getSignaturesForAddress(pool, { before: deposit, limit: 12 })` and each
+`getTransaction` (jsonParsed, `maxSupportedTransactionVersion: 1`; 21 of the 24
+are v1 transactions), trimmed to block time, version, account keys, error and
+token balances. Pool, vault and mint keys are real; every other account key is
+a deterministic hash and token-balance owners are dropped. Signatures are real
+public transaction ids. Fetched from mainnet on 2026-11-10.

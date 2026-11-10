@@ -295,3 +295,29 @@ export const rwaMeteoraTvlDaily = pgTable("rwa_meteora_tvl_daily", {
   check("rwa_meteora_tvl_daily_pool_address_check", sql`pool_address ~ '^[1-9A-HJ-NP-Za-km-z]{32,44}$'`),
   check("rwa_meteora_tvl_daily_tvl_usd_check", sql`tvl_usd >= 0`),
 ]);
+
+/**
+ * Deposit-time entry price of a same-stock position deposit, from trades in a reference stock/USDC pool just before it
+ * (`stock-entry-price-lookup.ts`). Keyed by the deposit transaction, so Raydium, Orca and Meteora positions share it.
+ * Written once per deposit (`ok` or `no_trade`) and never re-fetched; transient RPC failures are not stored. A row with an
+ * older `method_version` is ignored on read and replaced on the next write.
+ */
+export const positionEntryPrices = pgTable("position_entry_prices", {
+  depositSignature: text("deposit_signature").notNull(),
+  priceMint: text("price_mint").notNull(),
+  depositSlot: bigint("deposit_slot", { mode: "number" }).notNull(),
+  depositBlockTime: bigint("deposit_block_time", { mode: "number" }).notNull(),
+  referencePool: text("reference_pool").notNull(),
+  status: text("status").$type<"ok" | "no_trade">().notNull(),
+  priceUsd: numeric("price_usd", { mode: "number" }),
+  trades: jsonb("trades").$type<import("../lib/stock-entry-price-trades").PoolTrade[]>().default([]).notNull(),
+  methodVersion: integer("method_version").notNull(),
+  computedAt: timestamp("computed_at", { withTimezone: true, mode: "string" }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.depositSignature, table.priceMint], name: "position_entry_prices_pkey" }),
+  check("position_entry_prices_signature_check", sql`deposit_signature ~ '^[1-9A-HJ-NP-Za-km-z]{64,88}$'`),
+  check("position_entry_prices_keys_check", sql`price_mint ~ '^[1-9A-HJ-NP-Za-km-z]{32,44}$' AND reference_pool ~ '^[1-9A-HJ-NP-Za-km-z]{32,44}$'`),
+  check("position_entry_prices_deposit_check", sql`deposit_slot BETWEEN 0 AND 9007199254740991 AND deposit_block_time >= 0 AND method_version > 0`),
+  check("position_entry_prices_status_check", sql`(status = 'ok' AND price_usd IS NOT NULL AND price_usd > 0 AND price_usd < 'Infinity'::numeric) OR (status = 'no_trade' AND price_usd IS NULL)`),
+  check("position_entry_prices_trades_check", sql`jsonb_typeof(trades) = 'array' AND jsonb_array_length(trades) <= 3 AND (status = 'ok' OR trades = '[]'::jsonb)`),
+]);
