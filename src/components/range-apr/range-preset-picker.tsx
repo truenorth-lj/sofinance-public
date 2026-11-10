@@ -78,9 +78,7 @@ function Headline({ apr, sized, preview, selection, best, others }: {
       )}
       {best && (
         <p className="mt-1 text-[11px] leading-5 text-smoke" data-testid="best-explainer">
-          {best.fallback
-            ? `${BEST_LABEL} for this pool is ${best.resolvedLabel}: the range that fits${sized ? ` a ~${formatDepositUsd(sized.referenceCapitalUsd)} deposit` : " this amount"}. Not a prediction.`
-            : `${BEST_LABEL} for this pool is ${best.resolvedLabel}: the highest estimated fee APR of the candidate ranges over the last 7 days${sized ? ` for a ~${formatDepositUsd(sized.referenceCapitalUsd)} deposit` : ""}. Not a prediction.`}
+          {`${BEST_LABEL} for this pool is ${best.resolvedLabel}: the highest estimated fee APR of the candidate ranges over the last 7 days${sized ? ` for a ~${formatDepositUsd(sized.referenceCapitalUsd)} deposit` : ""}. Not a prediction.`}
         </p>
       )}
       {others.length > 0 && (

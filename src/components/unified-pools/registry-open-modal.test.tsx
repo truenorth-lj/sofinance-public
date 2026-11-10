@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => ({ runSteps: vi.fn(async () => null), tx: {} as R
 vi.mock("../wallet-connection", () => ({ useWalletConnection: () => ({ address: mocks.connected ? WALLET : undefined, connected: mocks.connected, connect: vi.fn(), signTransaction: vi.fn(), signAndSendTransaction: vi.fn() }) }));
 vi.mock("../transactions/use-tx-pipeline", () => ({ useTxPipeline: () => ({ status: "idle", locked: false, closeLocked: false, runSteps: mocks.runSteps, retry: vi.fn(), interrupted: null, dismissInterrupted: vi.fn(), ...mocks.tx }) }));
 
-import { APR_UNAVAILABLE, openInputs, presetOptions, RegistryOpenModal, NETWORK_FEE_COPY, SOL_REFUSED_COPY } from "./registry-open-modal";
+import { APR_UNAVAILABLE, NO_RANGE_FITS_COPY, openInputs, presetOptions, RegistryOpenModal, NETWORK_FEE_COPY, SOL_REFUSED_COPY } from "./registry-open-modal";
 
 const descriptor = dexDescriptors.descriptorFor("meteora-dlmm")!;
 const pool = { key: "solana:met1", poolAddress: "met1", chain: "solana", protocol: "meteora-dlmm", pairLabel: "TSLAx/TSLA", symbolA: "TSLAx", symbolB: "TSLA",
@@ -84,6 +84,7 @@ describe("RegistryOpenModal", () => {
     await render();
     expect(container.querySelector<HTMLButtonElement>("[data-testid=preset-wide]")!.disabled).toBe(true);
     expect(container.textContent).toContain("Not available to open yet");
+    expect(container.textContent).not.toContain(NO_RANGE_FITS_COPY);
     const select = container.querySelector<HTMLSelectElement>("#registry-open-token")!;
     await act(async () => { select.value = USDC_MINT; select.dispatchEvent(new Event("change", { bubbles: true })); });
     await type("1");
@@ -103,6 +104,23 @@ describe("RegistryOpenModal", () => {
     const [first] = mocks.runSteps.mock.calls[0] as unknown as [{ request: unknown; context: unknown }];
     expect(first.request).toEqual({ poolId: "met1", range: { kind: "preset", presetId: "standard" }, input: { token: USDC_MINT, amountRaw: "1000000" }, slippageBps: 50 });
     expect(first.context).toEqual({ step: 1, priorSignatures: [] });
+  });
+
+  it("when every preset exceeds the per-position cap, says no range of this pool fits one position", async () => {
+    await render({
+      ranges: {
+        ...ranges,
+        presets: [
+          { id: "micro", lowerUnit: -80, upperUnit: 79, units: 160, priceLower: 0.8, priceUpper: 1.2 },
+          { id: "tight", lowerUnit: -90, upperUnit: 89, units: 180, priceLower: 0.7, priceUpper: 1.3 },
+          { id: "standard", lowerUnit: -100, upperUnit: 99, units: 200, priceLower: 0.6, priceUpper: 1.4 },
+          { id: "wide", lowerUnit: -150, upperUnit: 149, units: 300, priceLower: 0.4, priceUpper: 1.6 },
+        ],
+      },
+    });
+    expect(container.textContent).toContain(NO_RANGE_FITS_COPY);
+    expect([...container.querySelectorAll("[role=alert]")].some((node) => node.textContent === NO_RANGE_FITS_COPY)).toBe(true);
+    expect(openButton().disabled).toBe(true);
   });
 
   it("APR feed down with the server's ranges present: every APR reads \"APR unavailable\" and the position can still be opened", async () => {

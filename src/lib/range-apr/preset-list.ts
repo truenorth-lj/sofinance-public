@@ -55,8 +55,6 @@ export type BestButton = {
   /** Short name of the range it resolved to, e.g. "Tight". */
   resolvedLabel: string;
   estimate: RangeAprEstimate;
-  /** True when the typed deposit fits no candidate and Best fell back to the widest available range. */
-  fallback?: boolean;
 };
 
 export type PresetButton = { id: OpenRangeUiPreset["id"]; label: string; estimate: RangeAprEstimate | null };

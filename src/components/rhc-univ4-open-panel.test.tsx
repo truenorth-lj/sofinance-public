@@ -107,6 +107,8 @@ describe("RhcUniv4OpenPanel", () => {
     // The dialog shows no 24h APR (the 7-day estimate on the card is the only APR).
     expect(container.querySelector("[data-testid=estimated-apr]")).toBeNull();
     expect(text()).not.toContain("APR · 24h");
+    expect(text()).toContain("7-day estimate is shown on the pool card.");
+    expect(text()).not.toContain("Estimate unavailable right now");
     const button = (label: string) => [...container.querySelectorAll("button")].find(b => b.textContent === label)!;
     expect(button("Connect wallet")).toBeTruthy();
     expect(button("Preview open (simulated)")).toBeUndefined();

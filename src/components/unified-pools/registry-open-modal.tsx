@@ -37,6 +37,7 @@ export const SOL_RESERVE_COPY = "Keep some SOL beyond the rent. Your wallet may 
 export const SOL_REFUSED_COPY = "SOL can't be used to open a position. Use one of the listed tokens.";
 export const RANGE_TOO_WIDE_COPY = (units: number, max: number, unit: string) =>
   `Not available to open yet: this range spans ${units} ${unit}s, and one position holds at most ${max}.`;
+export const NO_RANGE_FITS_COPY = "No range of this pool fits one position, so it is not available to open yet.";
 
 /** Exact text of a preset's APR when the volume / APR feed has no estimate for it (never 0% or a guess). */
 export const APR_UNAVAILABLE = "APR unavailable";
@@ -270,6 +271,9 @@ export function RegistryOpenModal({ pool, descriptor, ranges, apr = null, onClos
         showCustom: false,
         unavailable,
       }}
+      rangeHint={!rangesError && payload && presets.length > 0 && !presets.some((item) => item.available)
+        ? <p role="alert" className="mt-2 text-sm text-cream/80">{NO_RANGE_FITS_COPY}</p>
+        : null}
       notes={<>
         {rangesError ? <p role="alert" data-testid="registry-open-ranges-error" className="mt-4 text-sm text-cream/80">{rangesError}</p> : null}
         {!rangesError && !payload ? <p role="status" className="mt-4 flex items-center gap-2 text-sm text-cream/80"><LoaderCircle aria-hidden="true" className="size-4 animate-spin" />Loading this pool&apos;s ranges…</p> : null}

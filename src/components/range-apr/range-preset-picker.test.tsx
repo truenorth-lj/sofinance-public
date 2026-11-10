@@ -130,6 +130,7 @@ describe("RangePresetPicker", () => {
   it("tells the truth about Best (automatic highest estimated APR, not a model) in the tooltip and the note", () => {
     render(readyWith({ micro: 1, tight: 38, standard: 2, wide: 3 }), { selected: "tight" });
     expect(container.textContent).toMatch(/Best for this pool is Tight: the highest estimated fee APR of the candidate ranges over the last 7 days for a ~\$1,000 deposit\. Not a prediction/);
+    expect(container.textContent).not.toMatch(/the range that fits/);
     const info = container.querySelector<HTMLButtonElement>("button[aria-label='About Best']")!;
     vi.spyOn(info, "getBoundingClientRect").mockReturnValue({ left: 10, right: 20, top: 10, bottom: 20, width: 10, height: 10, x: 10, y: 10, toJSON: () => ({}) });
     act(() => { info.dispatchEvent(new MouseEvent("mouseover", { bubbles: true })); });

@@ -268,7 +268,7 @@ export function RhcRangeButtons({
       <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.04] p-3 text-xs" aria-live="polite">
         <p className="text-smoke">Est. fee APR · not a prediction</p>
         <p className="mt-2 flex h-7 items-center text-[1.75rem] font-medium leading-none tracking-[-0.035em] text-smoke" data-testid="range-apr-headline">—</p>
-        <p className="mt-2 text-[11px] leading-5 text-smoke">Estimate unavailable right now. Creating a position is not affected.</p>
+        <p className="mt-2 text-[11px] leading-5 text-smoke">7-day estimate is shown on the pool card.</p>
       </div>
     </>
   );
