@@ -5,9 +5,10 @@ import type { TokenNativeMetrics } from "@sofinance/engine/position-performance-
 import type { PositionCashflowEvent } from "./position-performance-events";
 import { buildStockPerformance } from "./stock-performance-build";
 import { ENTRY_PRICE_PENDING_REASON, MAX_ENTRY_PRICE_LOOKUPS_PER_READ, resolveStockEntry, type StockEntryInput } from "./stock-entry";
-import { ENTRY_PRICE_SIGNATURE_PAGE, lookupDepositEntryPrice, type EntryPriceRpc } from "./stock-entry-price-lookup";
+import { lookupDepositEntryPrice, type EntryPriceRpc } from "./stock-entry-price-lookup";
 import {
-  entryPriceStoreRequestSchema, type EntryPriceStoreRequest, type StockEntryPriceRow, type StockEntryPriceStore,
+  canReplaceEntryPriceRow, entryPriceStoreRequestSchema, isReusableEntryPriceRow, STOCK_ENTRY_PRICE_METHOD_VERSION,
+  type EntryPriceStoreRequest, type StockEntryPriceRow, type StockEntryPriceStore,
 } from "./stock-entry-price-store-types";
 import type { RawPoolTransaction } from "./stock-entry-price-trades";
 import { stockReferencePool, type StockReferencePool } from "./stock-reference-pools";
@@ -50,10 +51,14 @@ function memoryStore() {
       requests.push(parsed);
       if (parsed.op === "read") return parsed.signatures.flatMap((signature) => {
         const row = rows.get(`${signature}:${parsed.priceMint}`);
-        return row && row.methodVersion === parsed.methodVersion ? [row] : [];
+        return row && isReusableEntryPriceRow(row, parsed.methodVersion) ? [row] : [];
       }) as never;
       let written = 0;
-      for (const row of parsed.rows) if (!rows.has(`${row.depositSignature}:${row.priceMint}`)) { rows.set(`${row.depositSignature}:${row.priceMint}`, row); written++; }
+      for (const row of parsed.rows) {
+        const key = `${row.depositSignature}:${row.priceMint}`;
+        const existing = rows.get(key);
+        if (!existing || canReplaceEntryPriceRow(existing, row)) { rows.set(key, row); written++; }
+      }
       return written as never;
     },
   };
@@ -69,12 +74,15 @@ const entryInput = (overrides: Partial<StockEntryInput> = {}): StockEntryInput =
 });
 
 describe("lookupDepositEntryPrice on the NVDA example", () => {
-  it("NVDA/USDC (base side): 13 calls, the median of the trades 2, 3 and 4 s before the deposit", async () => {
+  it("NVDA/USDC (base side): groups of 4 until 3 trades, the median of the trades 2, 3 and 4 s before the deposit", async () => {
     const { rpc, calls } = fixtureRpc();
     const result = await lookupDepositEntryPrice(rpc, stockReferencePool(NVDA)!, deposit);
-    expect(result).toMatchObject({ status: "ok", rpcCalls: 1 + ENTRY_PRICE_SIGNATURE_PAGE });
+    expect(result.status).toBe("ok");
     expect(result.priceUsd).toBeCloseTo(176.998, 3);
-    expect(calls).toHaveLength(13);
+    expect(result.rpcCalls).toBe(calls.length);
+    expect(calls[0]).toMatch(/^signatures:/);
+    expect(calls.slice(1).every((call) => call.startsWith("transaction:"))).toBe(true);
+    expect(result.trades).toHaveLength(3);
   });
 
   it("NVDAx/USDC: stops after the first group of 4 transactions once 3 trades are in hand", async () => {
@@ -109,7 +117,8 @@ describe("resolveStockEntry", () => {
     expect(entry?.entryPriceUsd).toBeCloseTo(176.998, 3);
     expect(entry?.sharesIn).toBeCloseTo(0.344847 + 0.31431638 / 0.9995, 9);
     expect(entry?.source).toMatch(/NVDA\/USDC trades in the hour before each deposit/);
-    expect(first.calls).toHaveLength(13);
+    expect(first.calls[0]).toMatch(/^signatures:/);
+    expect(first.calls.length).toBeGreaterThan(1);
     expect([...rows.values()]).toMatchObject([{ depositSignature: deposit.signature, priceMint: NVDA, status: "ok",
       referencePool: fixture.pools.NVDA.pool, depositSlot: deposit.slot, depositBlockTime: deposit.blockTime }]);
     const second = fixtureRpc();
@@ -160,6 +169,25 @@ describe("resolveStockEntry", () => {
     const entry = await resolveStockEntry(entryInput({ history: late, deps: { store, rpc: fixtureRpc().rpc } }));
     expect([...rows.values()][0]).toMatchObject({ status: "no_trade", priceUsd: null, trades: [] });
     expect(entry).toMatchObject({ entryPriceUsd: null, reason: null });
+  });
+  it("looks up again when a stored no_trade is from an older method version, and leaves an older ok alone", async () => {
+    const { store, rows } = memoryStore();
+    const key = `${deposit.signature}:${NVDA}`;
+    rows.set(key, { depositSignature: deposit.signature, priceMint: NVDA, depositSlot: deposit.slot,
+      depositBlockTime: deposit.blockTime, referencePool: fixture.pools.NVDA.pool, methodVersion: 1,
+      status: "no_trade", priceUsd: null, trades: [] });
+    const recompute = fixtureRpc();
+    const entry = await resolveStockEntry(entryInput({ deps: { store, rpc: recompute.rpc } }));
+    expect(entry?.entryPriceUsd).toBeCloseTo(176.998, 3);
+    expect(recompute.calls.length).toBeGreaterThan(1);
+    expect(rows.get(key)).toMatchObject({ status: "ok", methodVersion: STOCK_ENTRY_PRICE_METHOD_VERSION });
+    const ok = fixtureRpc();
+    rows.set(key, { ...rows.get(key)!, methodVersion: 1, status: "ok", priceUsd: 176.998,
+      trades: [{ signature: "t".repeat(64), blockTime: deposit.blockTime - 2, priceUsd: 176.998, usdcSize: 10 }] });
+    const kept = await resolveStockEntry(entryInput({ deps: { store, rpc: ok.rpc } }));
+    expect(kept?.entryPriceUsd).toBeCloseTo(176.998, 3);
+    expect(ok.calls).toHaveLength(0);
+    expect(rows.get(key)?.methodVersion).toBe(1);
   });
 });
 
