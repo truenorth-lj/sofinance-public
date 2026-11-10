@@ -22,7 +22,6 @@ export function HomepageWalletRoot() {
 function WalletBridge() {
   const { address, connected, connect, disconnect } = useWalletConnection();
   const { connectRequests } = useHomepageWallet();
-  const handled = useRef(0);
   const current = connected && address ? address : null;
   // The provider's functions are new on every render: keep the latest in a ref instead of reporting them.
   const latestDisconnect = useRef(disconnect);
@@ -32,10 +31,9 @@ function WalletBridge() {
     return () => homepageWallet.unmounted();
   }, []);
   useEffect(() => { homepageWallet.report(current); }, [current]);
+  // Answered once per click across roots (the store remembers), so coming back to the homepage replays nothing.
   useEffect(() => {
-    if (connectRequests <= handled.current) return;
-    handled.current = connectRequests;
-    if (!current) connect();
+    if (homepageWallet.takeConnectRequest() && !current) connect();
   }, [connectRequests, current, connect]);
   return null;
 }

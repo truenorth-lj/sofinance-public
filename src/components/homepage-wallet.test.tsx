@@ -71,6 +71,22 @@ describe("homepage wallet", () => {
     expect(wallet.providerMounts).toBe(1);
   });
 
+  it("leaving the homepage and coming back does not replay an old Connect wallet click (no picker opens by itself)", async () => {
+    await act(async () => root.render(page()));
+    await act(async () => button().click());
+    expect(wallet.value.connect).toHaveBeenCalledTimes(1);
+    // The visitor dismisses the picker without connecting, goes to another page (the homepage unmounts)…
+    await act(async () => root.unmount());
+    // …and comes back: a new island and root mount, with the click count still in the store.
+    root = createRoot(host);
+    await act(async () => root.render(page()));
+    expect(wallet.providerMounts).toBe(2);
+    expect(wallet.value.connect).toHaveBeenCalledTimes(1);
+    // A new click still opens it.
+    await act(async () => button().click());
+    expect(wallet.value.connect).toHaveBeenCalledTimes(2);
+  });
+
   it("shows the connected wallet like the app bar, and a click disconnects it", async () => {
     wallet.value = connection({ address: ADDRESS, connected: true });
     await act(async () => root.render(page()));

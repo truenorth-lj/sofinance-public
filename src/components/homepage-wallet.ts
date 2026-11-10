@@ -30,6 +30,12 @@ const listeners = new Set<() => void>();
  * putting it in the state would re-render the root, which re-renders the provider, which hands out a new one (a loop).
  */
 let disconnectWallet: (() => void) | null = null;
+/**
+ * How many Connect wallet clicks a root has answered. Kept here, not in the root, because the store outlives the root:
+ * a root mounted again after the visitor comes back to the homepage must not answer an old click (the picker would open
+ * by itself).
+ */
+let answeredConnectRequests = 0;
 
 /** Notifies only when a value really changed, so a report of the same wallet re-renders nothing. */
 function set(patch: Partial<HomepageWalletState>) {
@@ -50,6 +56,12 @@ export const homepageWallet = {
   openBuy: (option: StockBuyOption) => set({ mounted: true, buy: option }),
   closeBuy: () => set({ buy: null }),
   disconnect: () => disconnectWallet?.(),
+  /** True once for each Connect wallet click no root has answered yet (the caller then opens the picker). */
+  takeConnectRequest: () => {
+    if (state.connectRequests <= answeredConnectRequests) return false;
+    answeredConnectRequests = state.connectRequests;
+    return true;
+  },
   /** Called by the root: the providers are up, with this wallet (or none). */
   report: (address: string | null) => set({ ready: true, address }),
   /** Called by the root: how to disconnect (not part of the state, see `disconnectWallet`). */
@@ -57,7 +69,7 @@ export const homepageWallet = {
   /** The root unmounted (the visitor left the homepage): nothing it reported is true any more. */
   unmounted: () => { disconnectWallet = null; set({ ready: false, address: null, buy: null }); },
   /** Tests only. */
-  reset: () => { state = INITIAL; disconnectWallet = null; for (const listener of listeners) listener(); },
+  reset: () => { state = INITIAL; disconnectWallet = null; answeredConnectRequests = 0; for (const listener of listeners) listener(); },
 };
 
 export function useHomepageWallet(): HomepageWalletState {
