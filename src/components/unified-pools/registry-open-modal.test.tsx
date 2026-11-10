@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => ({ runSteps: vi.fn(async () => null), tx: {} as R
 vi.mock("../wallet-connection", () => ({ useWalletConnection: () => ({ address: mocks.connected ? WALLET : undefined, connected: mocks.connected, connect: vi.fn(), signTransaction: vi.fn(), signAndSendTransaction: vi.fn() }) }));
 vi.mock("../transactions/use-tx-pipeline", () => ({ useTxPipeline: () => ({ status: "idle", locked: false, closeLocked: false, runSteps: mocks.runSteps, retry: vi.fn(), interrupted: null, dismissInterrupted: vi.fn(), ...mocks.tx }) }));
 
-import { APR_UNAVAILABLE, NO_RANGE_FITS_COPY, openInputs, presetOptions, RegistryOpenModal, NETWORK_FEE_COPY, SOL_REFUSED_COPY } from "./registry-open-modal";
+import { APR_UNAVAILABLE, NO_RANGE_FITS_COPY, openInputs, preferredOpenPresetId, presetOptions, RegistryOpenModal, NETWORK_FEE_COPY, SOL_REFUSED_COPY } from "./registry-open-modal";
 
 const descriptor = dexDescriptors.descriptorFor("meteora-dlmm")!;
 const pool = { key: "solana:met1", poolAddress: "met1", chain: "solana", protocol: "meteora-dlmm", pairLabel: "TSLAx/TSLA", symbolA: "TSLAx", symbolB: "TSLA",
@@ -50,6 +50,31 @@ describe("presetOptions / openInputs", () => {
   it("never offers native SOL as an input", () => {
     const tokens = openInputs({ ...pool, mintB: NATIVE_SOL_MINT, symbolB: "SOL" }, descriptor, { a: 8, b: 9 });
     expect(tokens.map((item) => item.id)).toEqual(["mintA", USDC_MINT]);
+  });
+});
+
+const allRanges = [
+  { id: "micro" as const, lowerUnit: -2, upperUnit: 1, units: 4, priceLower: 0.99, priceUpper: 1.01 },
+  { id: "tight" as const, lowerUnit: -6, upperUnit: 5, units: 12, priceLower: 0.97, priceUpper: 1.03 },
+  { id: "standard" as const, lowerUnit: -30, upperUnit: 29, units: 60, priceLower: 0.9, priceUpper: 1.1 },
+  { id: "wide" as const, lowerUnit: -100, upperUnit: 99, units: 200, priceLower: 0.5, priceUpper: 1.5 },
+];
+const RANKED_TICKS = { micro: [-20, 20], tight: [-60, 60], standard: [-300, 300], wide: [-1000, 1000] } as const;
+const rankedApr = (aprs: { micro: number | null; tight: number | null; standard: number | null; wide: number | null }): PoolRangeAprPayload =>
+  ({ pool: { tickSpacing: 10 }, sample: { degraded: false }, presets: (["micro", "tight", "standard", "wide"] as const).map((id) => ({
+    id, tickLower: RANKED_TICKS[id][0], tickUpper: RANKED_TICKS[id][1],
+    estimate: aprs[id] === null ? { status: "unavailable", reason: "no-volume" } : { status: "ok", aprPct: aprs[id], inRangeVolumePct: 50, feesPerDayUsd: 1 },
+  })) }) as unknown as PoolRangeAprPayload;
+
+describe("preferredOpenPresetId", () => {
+  const options = presetOptions(allRanges, descriptor);
+  it("selects Best when that range is available to open", () => {
+    expect(preferredOpenPresetId(options, rankedApr({ micro: 41, tight: 44, standard: 17, wide: 5 }))).toBe("tight");
+  });
+  it("falls back to the first available preset when Best is over the cap or there is no APR", () => {
+    expect(preferredOpenPresetId(options, null)).toBe("micro");
+    expect(preferredOpenPresetId(options, new Error("Pool volume unavailable"))).toBe("micro");
+    expect(preferredOpenPresetId(options, rankedApr({ micro: null, tight: null, standard: null, wide: 99 }))).toBe("micro");
   });
 });
 
@@ -104,6 +129,31 @@ describe("RegistryOpenModal", () => {
     const [first] = mocks.runSteps.mock.calls[0] as unknown as [{ request: unknown; context: unknown }];
     expect(first.request).toEqual({ poolId: "met1", range: { kind: "preset", presetId: "standard" }, input: { token: USDC_MINT, amountRaw: "1000000" }, slippageBps: 50 });
     expect(first.context).toEqual({ step: 1, priorSignatures: [] });
+  });
+
+  const pressedIds = () => [...container.querySelectorAll("[aria-label='Price range presets'] button[aria-pressed='true']")]
+    .map((button) => button.getAttribute("data-testid"));
+
+  it("opens with Best selected when that range is available, and the headline matches it", async () => {
+    await render({
+      ranges: { ...ranges, presets: allRanges },
+      apr: rankedApr({ micro: 41, tight: 44, standard: 17, wide: 5 }),
+    });
+    expect(pressedIds()).toEqual(["preset-best"]);
+    expect(container.querySelector("[data-testid=best-resolved]")!.textContent).toBe("Tight");
+    expect(container.querySelector("[data-testid=range-apr-headline]")!.textContent).toBe("~44%");
+    expect(container.querySelector("[data-testid=preset-standard]")!.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("falls back to the first available preset when Best is disabled or there is no APR", async () => {
+    for (const props of [
+      { apr: new Error("Pool volume unavailable") as Error },
+      { apr: rankedApr({ micro: null, tight: null, standard: null, wide: 99 }) },
+    ]) {
+      await render(props);
+      expect(pressedIds()).toEqual(["preset-micro"]);
+      expect(container.querySelector("[data-testid=preset-best]")).toBeNull();
+    }
   });
 
   it("when every preset exceeds the per-position cap, says no range of this pool fits one position", async () => {

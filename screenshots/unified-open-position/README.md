@@ -29,10 +29,10 @@ Captured 10 Nov 2026, Asia/Taipei.
   `GET https://sofinancelab.xyz/api/pool-range-apr?poolId=8k2c9Kiavx5pbWc2dmzhL7vFp11sLgMcKFfSueq8haAh`
   (Meteora TSLAx/TSLA, `protocol: meteora-dlmm`; read-only). Snapshot
   taken 10 Nov 2026. After the $1,000 preview reprice and fee cap: Best
-  resolves to Tight ~44%; the dialog defaults to Standard, so the
-  headline is ~17%; other ranges Tight ~44%, Micro ~41%, Wide — (this
-  range spans 200 bins; one position holds at most 70). Scrolled so the
-  costs box and the Create position button are visible.
+  (Tight) is the only selected range and the headline is ~44%; other
+  ranges Micro ~41%, Standard ~17%, Wide — (this range spans 200 bins;
+  one position holds at most 70). Scrolled so the costs box and the
+  Create position button are visible.
 
 - `rhc-open-modal-1280.png`, `rhc-open-modal-375.png`: the dialog does
   not call `/api/pool-range-apr`. The APR panel shows “—” and “7-day

@@ -19,6 +19,8 @@ import { depositTooSmallMessage, dexTxAdapter, OPEN_RANGES_UNAVAILABLE, openSolN
 import { createJupiterRelayStore } from "@/lib/jupiter/browser-relay";
 import { BALANCES_REFRESH_EVENT } from "@/lib/tx-pipeline";
 import { formatAprPct } from "@/lib/range-apr/format";
+import { rangeAprPayload } from "@/lib/range-apr/display-policy";
+import { pickHighestAprPreset } from "@/lib/range-apr/preset-list";
 import type { RangeAprPresetId, PoolRangeAprPayload } from "@/lib/range-apr/types";
 import type { UnifiedPool } from "@/lib/unified-pools/model";
 import type { TokenRef } from "@/lib/unified-positions/model";
@@ -69,6 +71,24 @@ export function presetOptions(presets: readonly OpenRangePreset[], descriptor: P
     return { id: preset.id, units: preset.units, priceLower: preset.priceLower, priceUpper: preset.priceUpper, available,
       reason: available ? null : RANGE_TOO_WIDE_COPY(preset.units, max!, descriptor.meta.rangeUnit), apr: presetApr(preset, apr) };
   });
+}
+
+/**
+ * Initial Create-position range: Best among enabled presets (same ranking as RangePresetPicker),
+ * otherwise the first enabled preset. A Best that is over the venue cap is ignored.
+ */
+export function preferredOpenPresetId(
+  presets: readonly PresetOption[],
+  apr: PoolRangeAprPayload | Error | null,
+): RangeAprPresetId | "" {
+  const available = presets.filter((item) => item.available);
+  if (!available.length) return "";
+  const first = available[0]!.id;
+  if (!apr || apr instanceof Error || apr.sample?.degraded) return first;
+  const blocked = new Set(presets.filter((item) => !item.available).map((item) => item.id));
+  const priced = apr.model?.bins ? rangeAprPayload(apr, null) : apr;
+  const winner = pickHighestAprPreset(priced.presets.filter((item) => !blocked.has(item.id)));
+  return winner && available.some((item) => item.id === winner.id) ? winner.id : first;
 }
 
 /** Tokens the open accepts: the pool's two plus the descriptor's extra inputs, never native SOL. */
@@ -140,7 +160,10 @@ export function RegistryOpenModal({ pool, descriptor, ranges, apr = null, onClos
   const [presetId, setPresetId] = useState<RangeAprPresetId | "">("");
   const [amount, setAmount] = useState("");
   const token = tokens.find((item) => item.id === tokenId) ?? tokens[0];
-  const preset = presets.find((item) => item.id === presetId && item.available) ?? presets.find((item) => item.available && item.id === "standard") ?? presets.find((item) => item.available);
+  const preferred = useMemo(() => preferredOpenPresetId(presets, apr), [presets, apr]);
+  const preset = presets.find((item) => item.id === presetId && item.available)
+    ?? presets.find((item) => item.id === preferred && item.available)
+    ?? presets.find((item) => item.available);
   const unavailable = useMemo(() => {
     const next: Partial<Record<RangeAprPresetId, string>> = {};
     for (const item of presets) if (!item.available && item.reason) next[item.id] = item.reason;
