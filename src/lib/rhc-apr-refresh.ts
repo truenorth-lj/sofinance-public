@@ -31,8 +31,9 @@ import { ALGORITHM_VERSION, type Lease, type ProfileFetchState, type RwaStore, t
  *      card stays "Data delayed", or
  *    - ONE GeckoTerminal hourly-candle call (daily USD volume from the same candles: both tokens are the same
  *      stock; two calls without a token price), unless an earlier fetch failed and its backoff is still running.
- *      A current (already-today) history is reused unless this run's batch shows volume or trades — then it
- *      fetches OHLCV (volume came back).
+ *      A current (already-today) history is reused even when this run's batch shows volume or trades, unless
+ *      that history was rolled forward from a quiet period (its last real OHLCV fetch is older than 6 h or
+ *      earlier than coveredUntil) — then it fetches OHLCV (volume came back).
  *    A pool whose fetch hit a 429 is not saved (`throttled`): the queue ends the run and it goes first next run.
  */
 export const RHC_PROFILE_MAX_AGE_MS = 6 * 3_600_000;
@@ -137,6 +138,19 @@ function marketShowsActivity(market: Univ4MarketData | undefined): boolean {
     || (typeof market.volume24hUsd === "number" && market.volume24hUsd > 0));
 }
 
+/** Last real hourly OHLCV fetch. Ignores the quiet-roll freshness stamp on `profile.observedAt.hourly`. */
+function lastRealOhlcvFetchMs(cached: StoredProfile): number {
+  const stamp = cached.fetchState?.ohlcvFetchedAt ?? cached.profile.observedAt?.hourly;
+  return stamp ? Date.parse(stamp) : Number.NaN;
+}
+
+/** History was rolled forward while quiet: last real OHLCV fetch is older than 6 h, or earlier than coveredUntil. */
+function historyCameFromQuietRoll(cached: StoredProfile, nowMs: number): boolean {
+  const fetched = lastRealOhlcvFetchMs(cached);
+  if (!Number.isFinite(fetched)) return false;
+  return nowMs - fetched >= RHC_PROFILE_MAX_AGE_MS || fetched < coveredUntil(cached);
+}
+
 /** No trades in GeckoTerminal's last 24 h and the saved history reaches back to that window. */
 function isQuietSinceSaved(cached: StoredProfile, market: Univ4MarketData | undefined, nowMs: number): boolean {
   return marketConfirmedQuiet(market) && !cached.profile.stale
@@ -157,8 +171,9 @@ export function planRhcProfileFetches(
     const cached = usableProfile(spec, profiles[id]);
     const priority = rhcProfilePriority(cached, nowMs);
     if (priority === 3) {
-      // Already today's window and recent: reuse, unless this run's batch shows volume or trades.
-      plan.set(id, { action: marketShowsActivity(market.get(id)) ? "fetch" : "reuse", cached });
+      // Already today's window and recent: reuse, unless volume came back after a quiet roll.
+      const refetch = !!cached && marketShowsActivity(market.get(id)) && historyCameFromQuietRoll(cached, nowMs);
+      plan.set(id, { action: refetch ? "fetch" : "reuse", cached });
       continue;
     }
     if (cached && priority > 0 && isQuietSinceSaved(cached, market.get(id), nowMs)) { plan.set(id, { action: "roll", cached }); continue; }
@@ -210,10 +225,15 @@ export function rollRhcProfileForward(
   const observedAt = marketConfirmedQuiet(market)
     ? { economics: nowIso, daily: cached.profile.observedAt?.daily ?? null, hourly: nowIso }
     : cached.profile.observedAt;
+  // Keep (or backfill from hourly) the last real OHLCV fetch; do not use the freshness stamp written above.
+  const ohlcvFetchedAt = cached.fetchState?.ohlcvFetchedAt ?? cached.profile.observedAt?.hourly;
   return {
     ...cached, windowEndUtc: volumeWindowEnd(nowMs), observedAt: nowIso,
     profile: { ...cached.profile, daily, ...(observedAt ? { observedAt } : {}) },
-    fetchState: { lastAttemptAt: cached.fetchState?.lastAttemptAt ?? cached.observedAt, failures: 0, coveredUntil: nowIso },
+    fetchState: {
+      lastAttemptAt: cached.fetchState?.lastAttemptAt ?? cached.observedAt, failures: 0, coveredUntil: nowIso,
+      ...(ohlcvFetchedAt ? { ohlcvFetchedAt } : {}),
+    },
   };
 }
 
@@ -314,11 +334,13 @@ export async function prepareRhcRun(input: {
         const attemptAt = new Date(clock()).toISOString();
         const previous = (cached ?? roster.profiles[poolId])?.fetchState;
         if (hasPriceHistory(fresh)) {
-          stored = storedFrom(fresh, nowMs, { lastAttemptAt: attemptAt, failures: 0, coveredUntil: fresh.observedAt?.hourly ?? attemptAt });
+          const fetchedAt = fresh.observedAt?.hourly ?? attemptAt;
+          stored = storedFrom(fresh, nowMs, { lastAttemptAt: attemptAt, failures: 0, coveredUntil: fetchedAt, ohlcvFetchedAt: fetchedAt });
           stats.fetched += 1;
         } else {
           const fetchState: ProfileFetchState = { lastAttemptAt: attemptAt, failures: (previous?.failures ?? 0) + 1,
-            ...(previous?.coveredUntil ? { coveredUntil: previous.coveredUntil } : {}) };
+            ...(previous?.coveredUntil ? { coveredUntil: previous.coveredUntil } : {}),
+            ...(previous?.ohlcvFetchedAt ? { ohlcvFetchedAt: previous.ohlcvFetchedAt } : {}) };
           stored = stored
             ? { ...stored, fetchState, profile: { ...stored.profile, stale: true, issues: [...fresh.issues, "Using previously saved price history"] } }
             : storedFrom(fresh, nowMs, fetchState);

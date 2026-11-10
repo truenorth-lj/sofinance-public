@@ -50,6 +50,10 @@ function profile(spec: (typeof POOLS)[number], over: ProfileOver = {}): StoredPr
   };
 }
 
+const quietMarket = (): Univ4MarketData => ({
+  source: "geckoterminal", volume24hUsd: 0, tvlUsd: 1, txns24h: 0, reserves: null, priceUsd: { token0: 10, token1: 10 },
+});
+
 describe("RHC cron profile planning (backoff, roll-forward)", () => {
   it("ranks missing < older UTC window < old/stale < current", () => {
     expect(rhcProfilePriority(null, NOW)).toBe(0);
@@ -118,9 +122,6 @@ describe("RHC cron profile planning (backoff, roll-forward)", () => {
     expect(rolled.profile.daily).toMatchObject({ avgDailyVolumeUsd: 40 / days, days });
   });
 
-  const quietMarket = (): Univ4MarketData => ({
-    source: "geckoterminal", volume24hUsd: 0, tvlUsd: 1, txns24h: 0, reserves: null, priceUsd: { token0: 10, token1: 10 },
-  });
   const volumeDelayed = (stored: StoredProfile, nowMs = NOW) => aprSnapshotDelayed({
     chainObservedAt: new Date(nowMs).toISOString(),
     volumeObservedAt: stored.profile.observedAt?.hourly ?? stored.observedAt,
@@ -138,13 +139,29 @@ describe("RHC cron profile planning (backoff, roll-forward)", () => {
     expect(volumeDelayed(dex)).toBe(false);
   });
 
-  it("fetches instead of reusing when the fresh batch shows volume or trades coming back", () => {
+  it("an active pool already fetched this window is reused even when the batch shows activity", () => {
     const id = SPCX.poolId.toLowerCase();
-    const profiles = { [id]: profile(SPCX) };
+    const at = new Date(NOW - 60_000).toISOString();
+    const fetched = profile(SPCX, { hourlyAt: NOW - 60_000, fetchState: { lastAttemptAt: at, failures: 0, coveredUntil: at, ohlcvFetchedAt: at } });
     const action = (market?: Univ4MarketData) => planRhcProfileFetches(
-      [SPCX], profiles, NOW, market ? new Map([[id, market]]) : new Map(),
+      [SPCX], { [id]: fetched }, NOW, market ? new Map([[id, market]]) : new Map(),
     ).get(id)!.action;
     expect(action()).toBe("reuse");
+    expect(action(quietMarket())).toBe("reuse");
+    expect(action({ ...quietMarket(), txns24h: 2, volume24hUsd: 19.85 })).toBe("reuse");
+    expect(action({ ...quietMarket(), txns24h: 0, volume24hUsd: 5 })).toBe("reuse");
+    expect(action({ ...quietMarket(), txns24h: 1, volume24hUsd: 0 })).toBe("reuse");
+  });
+
+  it("a quiet-rolled pool whose volume came back is fetched", () => {
+    const old = NOW - 3 * 86_400_000;
+    const cached = profile(SPCX, { windowEndUtc: volumeWindowEnd(NOW - 86_400_000), hourlyAt: old });
+    const rolled = rollRhcProfileForward(cached, SPCX, NOW, 10, quietMarket());
+    expect(rolled.profile.observedAt?.hourly).toBe(new Date(NOW).toISOString());
+    const id = SPCX.poolId.toLowerCase();
+    const action = (market?: Univ4MarketData) => planRhcProfileFetches(
+      [SPCX], { [id]: rolled }, NOW, market ? new Map([[id, market]]) : new Map(),
+    ).get(id)!.action;
     expect(action(quietMarket())).toBe("reuse");
     expect(action({ ...quietMarket(), txns24h: 2, volume24hUsd: 19.85 })).toBe("fetch");
     expect(action({ ...quietMarket(), txns24h: 0, volume24hUsd: 5 })).toBe("fetch");
@@ -398,6 +415,30 @@ describe("RHC pools in the APR queue (prepareRhcRun + refreshPool)", () => {
     const stamped = new Date(NOW).toISOString();
     expect(h.saves.every((save) => save.profile!.profile.observedAt?.hourly === stamped)).toBe(true);
     expect(h.saves.every((save) => save.profile!.profile.observedAt?.economics === stamped)).toBe(true);
+  });
+
+  it("an active pool already fetched this window reuses it, with no OHLCV call", async () => {
+    const at = NOW - 60_000;
+    const atIso = new Date(at).toISOString();
+    const profiles = Object.fromEntries(POOLS.map((spec) => [spec.poolId.toLowerCase(), profile(spec, {
+      hourlyAt: at, fetchState: { lastAttemptAt: atIso, failures: 0, coveredUntil: atIso, ohlcvFetchedAt: atIso },
+    })]));
+    const h = harness({ profiles, gecko: pricedGecko(3) });
+    const result = await h.run();
+    expect(h.ohlcv()).toHaveLength(0);
+    expect(result.stats).toMatchObject({ fetched: 0, reused: POOLS.length });
+  });
+
+  it("a quiet-rolled pool whose volume came back fetches", async () => {
+    const old = NOW - 3 * 86_400_000;
+    const profiles = Object.fromEntries(POOLS.map((spec) => {
+      const cached = profile(spec, { windowEndUtc: volumeWindowEnd(NOW - 86_400_000), hourlyAt: old });
+      return [spec.poolId.toLowerCase(), rollRhcProfileForward(cached, spec, NOW, 10, quietMarket())];
+    }));
+    const h = harness({ profiles, gecko: pricedGecko(3) });
+    const result = await h.run();
+    expect(h.ohlcv()).toHaveLength(POOLS.length);
+    expect(result.stats).toMatchObject({ fetched: POOLS.length, reused: 0 });
   });
 
   it("on a 429 saves nothing for that pool and reports it throttled (it keeps its place in the queue)", async () => {
