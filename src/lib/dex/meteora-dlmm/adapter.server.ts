@@ -36,7 +36,7 @@ function uiReport(report: NonNullable<Awaited<ReturnType<typeof getMeteoraPositi
     openedAtIso: report.openedAtIso, evaluatedAtIso: report.evaluatedAtIso, truncated: report.truncated,
     signatureCount: report.signatureCount, ownsNft: report.ownsNft,
     cashflows: { openCount: report.cashflows.openCount, increaseCount: report.cashflows.increaseCount, decreaseCount: report.cashflows.decreaseCount },
-    metrics: report.metrics, tokenNative: report.tokenNative, pricing: report.pricing,
+    metrics: report.metrics, tokenNative: report.tokenNative, stock: report.stock ?? null, pricing: report.pricing,
     assumptions: report.assumptions, method: report.method, realizedFeeAprSeries: report.realizedFeeAprSeries,
   };
 }

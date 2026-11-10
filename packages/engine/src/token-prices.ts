@@ -6,16 +6,30 @@ const STABLE_USD_MINTS = new Set([
   "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", // USDT
 ]);
 
-export async function fetchJupiterPricesUsd(
+/** One Jupiter Price v3 row: the USD price plus the fields the stock view reads (24h change, liquidity). */
+export type JupiterPriceQuote = {
+  usdPrice: number;
+  /** Jupiter `priceChange24h`, in percent (rolling 24h of on-chain trading, not a US session). */
+  priceChange24hPct: number | null;
+  liquidityUsd: number | null;
+};
+
+const finiteNumber = (raw: unknown): number | null => {
+  const value = typeof raw === "number" ? raw : typeof raw === "string" && raw.trim() ? Number(raw) : NaN;
+  return Number.isFinite(value) ? value : null;
+};
+
+/** Jupiter Price v3 for `mints` in one call; a mint without a usable price is left out. Never throws. */
+export async function fetchJupiterPriceQuotes(
   mints: string[],
   fetcher: typeof fetch = fetch,
   apiKey?: string,
-): Promise<Map<string, number>> {
+): Promise<Map<string, JupiterPriceQuote>> {
   const unique = [...new Set(mints.filter(Boolean))];
-  const prices = new Map<string, number>();
-  if (!unique.length) return prices;
+  const quotes = new Map<string, JupiterPriceQuote>();
+  if (!unique.length) return quotes;
   try {
-    const body = await jupiterRequest<Record<string, { usdPrice?: number | string } | null>>({
+    const body = await jupiterRequest<Record<string, { usdPrice?: unknown; priceChange24h?: unknown; liquidity?: unknown } | null>>({
       path: JUPITER_PRICE_V3_PATH,
       query: { ids: unique.join(",") },
       fetcher,
@@ -26,14 +40,24 @@ export async function fetchJupiterPricesUsd(
       signal: AbortSignal.timeout(5_000),
     });
     for (const mint of unique) {
-      const raw = body[mint]?.usdPrice;
-      const value = typeof raw === "number" ? raw : raw !== null && raw !== undefined ? Number(raw) : NaN;
-      if (Number.isFinite(value) && value >= 0) prices.set(mint, value);
+      const row = body[mint];
+      const usdPrice = finiteNumber(row?.usdPrice);
+      if (usdPrice === null || usdPrice < 0) continue;
+      quotes.set(mint, { usdPrice, priceChange24hPct: finiteNumber(row?.priceChange24h), liquidityUsd: finiteNumber(row?.liquidity) });
     }
   } catch {
     // Price fetch failed, return empty map
   }
-  return prices;
+  return quotes;
+}
+
+export async function fetchJupiterPricesUsd(
+  mints: string[],
+  fetcher: typeof fetch = fetch,
+  apiKey?: string,
+): Promise<Map<string, number>> {
+  const quotes = await fetchJupiterPriceQuotes(mints, fetcher, apiKey);
+  return new Map([...quotes].map(([mint, quote]) => [mint, quote.usdPrice]));
 }
 
 export async function fetchRaydiumPoolUsdPrices(

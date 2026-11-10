@@ -38,7 +38,9 @@ import {
 } from "@sofinance/engine/position-performance-math";
 import { matchWrapPairShape } from "./rwa-pairing";
 import { JUPITER_PRICE_V3 } from "@sofinance/engine/jupiter/urls";
-import { fetchJupiterPricesUsd } from "@sofinance/engine/token-prices";
+import { fetchJupiterPriceQuotes, type JupiterPriceQuote } from "@sofinance/engine/token-prices";
+import { buildStockPerformance } from "./stock-performance-build";
+import type { StockPerformance } from "./position-performance-report";
 import { getTokenMetadata } from "@sofinance/engine/token-metadata";
 import {
   buildRealizedFeeAprSeries,
@@ -111,6 +113,8 @@ export type PositionPerformanceResult = {
   metrics: PositionPerformanceMetrics;
   /** Token-native inventory + preferred TE for same-asset RWA wrap pairs. USD stays secondary. */
   tokenNative: TokenNativeMetrics;
+  /** Same-stock pools: the stock view (share price, 24h, entry price, fees in shares); null otherwise or when pricing is skipped. */
+  stock: StockPerformance | null;
   pricing: {
     source: "jupiter-price-v3" | "raydium-pool-stable" | "none";
     label: string;
@@ -347,15 +351,16 @@ export async function getPositionPerformance(
   let pricingSource: "jupiter-price-v3" | "raydium-pool-stable" | "none" = "none";
   let pricingLabel = "USD pricing skipped; token-raw / token-native metrics only.";
   const pricingStarted = Date.now();
+  let quotes = new Map<string, JupiterPriceQuote>();
   if (!options.skipPricing) {
     try {
-      const prices = await fetchJupiterPricesUsd(
+      quotes = await fetchJupiterPriceQuotes(
         [mintA, mintB],
         fetcher,
         options.jupiterApiKey ?? getJupiterApiKey(),
       );
-      priceUsdA = prices.get(mintA) ?? null;
-      priceUsdB = prices.get(mintB) ?? null;
+      priceUsdA = quotes.get(mintA)?.usdPrice ?? null;
+      priceUsdB = quotes.get(mintB)?.usdPrice ?? null;
       if (priceUsdA !== null && priceUsdB !== null) {
         pricingSource = "jupiter-price-v3";
         pricingLabel =
@@ -472,6 +477,13 @@ export async function getPositionPerformance(
   });
   if (incomplete) realizedFeeAprSeries.points = [];
 
+  const stock = options.skipPricing ? null : await buildStockPerformance({
+    history, positionId: positionMint, poolId: poolId.toBase58(), mintA, mintB,
+    decimalsA: pool.mintDecimalsA, decimalsB: pool.mintDecimalsB, tokenNative,
+    incomplete: incomplete || truncated || !history.some((item) => item.events.some((event) => event.kind === "open")),
+    quotes, nowSeconds, fetcher, signal,
+  });
+
   return {
     wallet: options.wallet ?? null,
     ownsNft,
@@ -508,6 +520,7 @@ export async function getPositionPerformance(
     },
     metrics,
     tokenNative,
+    stock,
     pricing: {
       source: pricingSource,
       label: pricingLabel,

@@ -7,7 +7,7 @@
  * estimate is greyed with `capabilities.exitPreview.reason` until a DEX supports it.
  */
 import { LoaderCircle } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchDexPerformance, type PositionPerformance } from "@/lib/dex/client";
 import { PerformancePoolChart, PerformanceSummary, money } from "../position-performance-summary";
 import { useTokenMetadata } from "../use-token-metadata";
@@ -17,17 +17,24 @@ const CARD = "mt-3 rounded-[28px] border border-white/12 bg-char p-5 sm:p-7";
 
 type Loaded = { key: string; attempt: number; data: PositionPerformance | null; error: string | null };
 
-export function RegistryPerformancePanel({ position, descriptor, capabilities }: Pick<RegistryToolProps, "position" | "descriptor" | "capabilities">) {
+export function RegistryPerformancePanel({ position, descriptor, capabilities, onPerformance }: Pick<RegistryToolProps, "position" | "descriptor" | "capabilities" | "onPerformance">) {
   const [attempt, setAttempt] = useState(0);
+  const onPerformanceRef = useRef(onPerformance);
+  useEffect(() => { onPerformanceRef.current = onPerformance; });
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const metadata = useTokenMetadata([position.tokenA.id, position.tokenB.id]);
   useEffect(() => {
     const controller = new AbortController();
     fetchDexPerformance(descriptor, position.key, { signal: controller.signal })
-      .then((data) => { if (!controller.signal.aborted) setLoaded({ key: position.key, attempt, data, error: null }); })
+      .then((data) => {
+        if (controller.signal.aborted) return;
+        setLoaded({ key: position.key, attempt, data, error: null });
+        onPerformanceRef.current?.(position.key, { report: data.report ?? null, error: false });
+      })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
         setLoaded({ key: position.key, attempt, data: null, error: error instanceof Error && error.message ? error.message : "Performance could not be loaded." });
+        onPerformanceRef.current?.(position.key, { report: null, error: true });
       });
     return () => controller.abort();
   }, [descriptor, position.key, attempt]);

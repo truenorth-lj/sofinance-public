@@ -66,6 +66,44 @@ type Metrics = {
   feesCollectedRaw: { a: string; b: string };
 };
 
+/**
+ * The stock view of a same-stock pool position (FOOx/FOO): every number in one share price, the more liquid side's
+ * Jupiter price. Built by `computeStockPerformance` (`@/lib/stock-performance`); absent for other pools.
+ */
+export type StockPerformance = {
+  /** Plain ticker, e.g. "NVDA". */
+  symbol: string;
+  /** The mint whose Jupiter price is the share price (the side with more Jupiter liquidity). */
+  priceMint: string | null;
+  priceUsd: number | null;
+  /** Jupiter `priceChange24h` of `priceMint`, percent: rolling 24h of on-chain trading, not a US session. */
+  change24hPct: number | null;
+  /** Shares in the position now: liquidity plus unclaimed fees. */
+  sharesNow: number;
+  valueUsd: number | null;
+  /** Shares put in and still in the position: deposits minus withdrawn principal. */
+  sharesIn: number | null;
+  firstDepositAtIso: string | null;
+  /** Share-weighted average of each deposit day's daily close. */
+  entryPriceUsd: number | null;
+  /** sharesIn × (priceUsd − entryPriceUsd). */
+  priceChangeUsd: number | null;
+  priceChangePct: number | null;
+  /** Fees earned since the first deposit (collected plus unclaimed), in shares. */
+  feeShares: number;
+  feeUsd: number | null;
+  /** priceChangeUsd + feeUsd. */
+  totalUsd: number | null;
+  /** Hourly closes over the last 24h, oldest first (empty when unavailable). */
+  sparkline24h: number[];
+  /** Daily closes from the first deposit day to today, oldest first, at most 60 points. */
+  sparklineSinceEntry: number[];
+  /** Where the entry price came from, for the footnote. */
+  entryPriceSource: string | null;
+  /** Why the entry price is missing, when it is. */
+  entryUnavailableReason: string | null;
+};
+
 export type PositionPerformanceReport = {
   positionMint: string;
   poolId: string;
@@ -90,6 +128,8 @@ export type PositionPerformanceReport = {
   };
   metrics: Metrics;
   tokenNative?: TokenNative;
+  /** Same-stock pools only. */
+  stock?: StockPerformance | null;
   pricing: { source: string; label: string; priceUsdA: number | null; priceUsdB: number | null };
   assumptions: string;
   method: string;

@@ -13,7 +13,8 @@ import {
   ASSUMPTIONS_LABEL, computePositionPerformance, computeTokenNativeMetrics, PERFORMANCE_METHOD, TOKEN_NATIVE_ASSUMPTIONS,
 } from "@sofinance/engine/position-performance-math";
 import { rpcConnection, rpcProvider, type RpcProvider } from "@sofinance/engine/rpc";
-import { fetchJupiterPricesUsd } from "@sofinance/engine/token-prices";
+import { fetchJupiterPriceQuotes, type JupiterPriceQuote } from "@sofinance/engine/token-prices";
+import { buildStockPerformance } from "./stock-performance-build";
 import { getTokenMetadata } from "@sofinance/engine/token-metadata";
 import { getJupiterApiKey } from "@sofinance/engine/config/server-env";
 import { parseMeteoraPositionCashflowEvents, type MeteoraEventContext } from "./meteora-position-events";
@@ -339,11 +340,12 @@ export async function getMeteoraPositionPerformance(positionAccount: string, opt
   let pricingSource: PositionPerformanceResult["pricing"]["source"] = "none";
   let pricingLabel = "USD pricing skipped; token-raw / token-native metrics only.";
   const pricingStarted = Date.now();
+  let quotes = new Map<string, JupiterPriceQuote>();
   if (!options.skipPricing) {
     try {
-      const prices = await fetchJupiterPricesUsd([pool.tokenXMint, pool.tokenYMint], fetcher, options.jupiterApiKey ?? getJupiterApiKey());
-      priceUsdA = prices.get(pool.tokenXMint) ?? null;
-      priceUsdB = prices.get(pool.tokenYMint) ?? null;
+      quotes = await fetchJupiterPriceQuotes([pool.tokenXMint, pool.tokenYMint], fetcher, options.jupiterApiKey ?? getJupiterApiKey());
+      priceUsdA = quotes.get(pool.tokenXMint)?.usdPrice ?? null;
+      priceUsdB = quotes.get(pool.tokenYMint)?.usdPrice ?? null;
       if (priceUsdA !== null && priceUsdB !== null) {
         pricingSource = "jupiter-price-v3";
         pricingLabel = "USD uses Jupiter Price API v3 at evaluation time (current), NOT historical tx-time prices.";
@@ -407,6 +409,10 @@ export async function getMeteoraPositionPerformance(positionAccount: string, opt
     priceUsdA, priceUsdB, decimalsA: snapshot.decimalsX, decimalsB: snapshot.decimalsY, openedAt,
   });
   if (incomplete) realizedFeeAprSeries.points = [];
+  const stock = options.skipPricing ? null : await buildStockPerformance({
+    history, positionId: snapshot.positionAccount, poolId: snapshot.poolId, mintA: pool.tokenXMint, mintB: pool.tokenYMint,
+    decimalsA: snapshot.decimalsX, decimalsB: snapshot.decimalsY, tokenNative, incomplete, quotes, nowSeconds, fetcher, signal,
+  });
 
   return {
     wallet: options.wallet ?? null,
@@ -439,6 +445,7 @@ export async function getMeteoraPositionPerformance(positionAccount: string, opt
     },
     metrics,
     tokenNative,
+    stock,
     pricing: { source: pricingSource, label: pricingLabel, priceUsdA, priceUsdB },
     method: PERFORMANCE_METHOD,
     assumptions,

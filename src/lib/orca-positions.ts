@@ -13,7 +13,8 @@ import {
   ASSUMPTIONS_LABEL, computePositionPerformance, computeTokenNativeMetrics, PERFORMANCE_METHOD, TOKEN_NATIVE_ASSUMPTIONS,
 } from "@sofinance/engine/position-performance-math";
 import { rpcConnection, rpcProvider, type RpcProvider } from "@sofinance/engine/rpc";
-import { fetchJupiterPricesUsd } from "@sofinance/engine/token-prices";
+import { fetchJupiterPriceQuotes, type JupiterPriceQuote } from "@sofinance/engine/token-prices";
+import { buildStockPerformance } from "./stock-performance-build";
 import { getTokenMetadata } from "@sofinance/engine/token-metadata";
 import { getJupiterApiKey } from "@sofinance/engine/config/server-env";
 import { parseOrcaPositionCashflowEvents } from "./orca-position-events";
@@ -283,11 +284,12 @@ export async function getOrcaPositionPerformance(positionMint: string, options: 
   let pricingSource: PositionPerformanceResult["pricing"]["source"] = "none";
   let pricingLabel = "USD pricing skipped; token-raw / token-native metrics only.";
   const pricingStarted = Date.now();
+  let quotes = new Map<string, JupiterPriceQuote>();
   if (!options.skipPricing) {
     try {
-      const prices = await fetchJupiterPricesUsd([pool.tokenMintA, pool.tokenMintB], fetcher, options.jupiterApiKey ?? getJupiterApiKey());
-      priceUsdA = prices.get(pool.tokenMintA) ?? null;
-      priceUsdB = prices.get(pool.tokenMintB) ?? null;
+      quotes = await fetchJupiterPriceQuotes([pool.tokenMintA, pool.tokenMintB], fetcher, options.jupiterApiKey ?? getJupiterApiKey());
+      priceUsdA = quotes.get(pool.tokenMintA)?.usdPrice ?? null;
+      priceUsdB = quotes.get(pool.tokenMintB)?.usdPrice ?? null;
       if (priceUsdA !== null && priceUsdB !== null) {
         pricingSource = "jupiter-price-v3";
         pricingLabel = "USD uses Jupiter Price API v3 at evaluation time (current), NOT historical tx-time prices.";
@@ -346,6 +348,10 @@ export async function getOrcaPositionPerformance(positionMint: string, options: 
     priceUsdA, priceUsdB, decimalsA: snapshot.decimalsA, decimalsB: snapshot.decimalsB, openedAt,
   });
   if (incomplete) realizedFeeAprSeries.points = [];
+  const stock = options.skipPricing ? null : await buildStockPerformance({
+    history, positionId: positionMint, poolId: snapshot.poolId, mintA: pool.tokenMintA, mintB: pool.tokenMintB,
+    decimalsA: snapshot.decimalsA, decimalsB: snapshot.decimalsB, tokenNative, incomplete, quotes, nowSeconds, fetcher, signal,
+  });
 
   return {
     wallet: options.wallet ?? null,
@@ -378,6 +384,7 @@ export async function getOrcaPositionPerformance(positionMint: string, options: 
     },
     metrics,
     tokenNative,
+    stock,
     pricing: { source: pricingSource, label: pricingLabel, priceUsdA, priceUsdB },
     method: PERFORMANCE_METHOD,
     assumptions,

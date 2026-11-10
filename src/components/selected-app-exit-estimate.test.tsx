@@ -125,10 +125,11 @@ describe("Performance deep link /app?view=performance&mint=X: the exit estimate 
     expect(param(exitUrls()[0]!, "nftAccount")).toBeNull();
   });
 
-  it("deep link to one of several positions the wallet holds: exactly one performance read and one exit estimate, for that position", async () => {
+  it("deep link to one of several positions the wallet holds: that position is read once, first, and gets the one exit estimate", async () => {
     await mount({ wallet: OWN_WALLET, positions: [OTHER_OWNED_MINT, OWNED_MINT], stateOk: true, initialMint: OWNED_MINT });
     await settle();
-    expect(perfMints()).toEqual([OWNED_MINT]);
+    // The panel reads the linked position; the All positions overview reuses that read and reads only the other one.
+    expect(perfMints()).toEqual([OWNED_MINT, OTHER_OWNED_MINT]);
     expect(exitUrls().map((u) => [param(u, "positionId"), param(u, "nftAccount")])).toEqual([[OWNED_MINT, NFT_ATA]]);
     expect(exitSection()?.textContent).toContain("1.000000 USDC + 0.008580200 SOL");
     expect(container.textContent).not.toContain("Showing the linked position");

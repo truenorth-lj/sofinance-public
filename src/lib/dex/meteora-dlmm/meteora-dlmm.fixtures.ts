@@ -270,10 +270,15 @@ export function createFakeChain(options: { autoLand?: boolean } = {}) {
 
 /**
  * Jupiter replay: an ExactIn quote at a flat 100 out per 1 in (TSLA 6 dp → TSLAx 8 dp), 0.5% slippage, the platform fee
- * Jupiter reports for `platformFeeBps`, and a swap instruction that pays it into `feeAccount` (writable).
+ * Jupiter reports for `platformFeeBps`, and a swap instruction that pays it into `feeAccount` (writable). Also answers the
+ * CoinGecko price reads of the Performance stock view.
  */
 export function jupiterReplay(url: string, init?: RequestInit): Response | undefined {
   const parsed = new URL(url);
+  // Performance stock view: CoinGecko daily / hourly prices by token address (shape of /coins/solana/contract/{mint}/market_chart).
+  if (parsed.host === "api.coingecko.com" && parsed.pathname.endsWith("/market_chart")) {
+    return Response.json({ prices: [[Date.parse("2026-10-30T00:00:00Z"), 410.5], [Date.parse("2026-11-01T00:00:00Z"), 400.1]] });
+  }
   if (parsed.host !== JUPITER_API_HOST) return undefined;
   if (parsed.pathname.endsWith("/quote")) {
     const params = parsed.searchParams;
