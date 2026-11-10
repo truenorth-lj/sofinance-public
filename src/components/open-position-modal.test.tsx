@@ -198,10 +198,8 @@ describe("range presets and estimated APR", () => {
     expect(quoteBodies.at(-1)).toMatchObject({ rangePreset: "standard" });
   });
 
-  it("re-ranks Best for the typed amount after a debounce, hiding ranges the deposit does not fit", async () => {
-    // Flat fixture pool: 1e9 liquidity per 1-tick bin. At 0.12 SOL (~$18) every range fits and the narrowest
-    // (Micro) has the highest estimate; at 1,500 SOL (~$225k) Micro would be over half the active liquidity
-    // and the narrower ranges' edges are within 3x the estimated impact, so Best moves to Wide.
+  it("re-prices Best for the typed amount after a debounce without hiding ranges", async () => {
+    // Flat fixture pool: Micro stays the highest-APR candidate at both a small and a large deposit.
     stubApr(payloadFixture(), { solPrice: true });
     await mount();
     await advance(400);
@@ -211,14 +209,13 @@ describe("range presets and estimated APR", () => {
     await advance(100);
     expect(container.querySelector("[data-testid='best-resolved']")!.textContent).toBe("Micro");
     await advance(400);
-    expect(container.querySelector("[data-testid='best-resolved']")!.textContent).toBe("Wide");
-    // Ranges the deposit does not fit are not offered at all, and the default Standard falls back to Best.
-    for (const id of ["micro", "tight"]) {
-      expect(container.querySelector(`[data-testid='preset-${id}']`)).toBeNull();
-      expect(container.querySelector(`[data-testid='apr-${id}']`)).toBeNull();
-    }
-    expect(container.textContent).not.toMatch(/doesn't fit|large vs pool liquidity|edge near est\. price impact/);
-    expect(mocks.controller!.rangePreset).toBe("wide");
+    expect(container.querySelector("[data-testid='best-resolved']")!.textContent).toBe("Micro");
+    expect(container.textContent).toContain("For a ~$225,000 deposit");
+    expect(container.querySelector("[data-testid='preset-tight']")).not.toBeNull();
+    expect(container.querySelector("[data-testid='preset-standard']")).not.toBeNull();
+    expect(container.querySelector("[data-testid='preset-wide']")).not.toBeNull();
+    expect(container.querySelector("[data-testid='lower-amount']")).toBeNull();
+    expect(container.textContent).not.toMatch(/doesn't fit|large vs pool liquidity|edge near est\. price impact|Lower the amount to open/);
     expect(vi.mocked(fetch).mock.calls.filter(([url]) => String(url).startsWith("/api/pool-range-apr"))).toHaveLength(1);
   });
 

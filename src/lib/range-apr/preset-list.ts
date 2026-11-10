@@ -4,10 +4,8 @@ import "@/lib/engine-host";
  * and the pair cards so both always agree).
  *
  * "Best" is the candidate with the highest estimated fee APR, ties going to the wider
- * range. When the payload was re-priced for the typed amount (`payloadForCapital`), candidates the deposit
- * does not fit (`sizeFit.status === "excluded"`) are skipped and not offered as buttons either. If none fits
- * nothing is offered and `tooLarge` is set. No excluded candidate is promoted to an actionable Best. Best resolves to
- * that candidate's exact ticks, so quote/prepare use the ordinary preset path and what is signed is what was priced.
+ * range. Best resolves to that candidate's exact ticks, so quote/prepare use the ordinary preset path and what
+ * is signed is what was priced.
  */
 import type { OpenRangeUiPreset } from "@sofinance/engine/open-range-presets";
 import type { RangeAprEstimate } from "./range-apr";
@@ -18,7 +16,6 @@ const TIE_RELATIVE_EPSILON = 1e-9;
 type OkPreset = RangeAprPresetEstimate & { estimate: Extract<RangeAprEstimate, { status: "ok" }> };
 
 const isOk = (preset: RangeAprPresetEstimate): preset is OkPreset => preset.estimate.status === "ok";
-const fits = (preset: RangeAprPresetEstimate) => preset.sizeFit?.status !== "excluded";
 
 const width = (preset: RangeAprPresetEstimate) => preset.tickUpper - preset.tickLower;
 const sameRange = (left: RangeAprPresetEstimate, right: RangeAprPresetEstimate) =>
@@ -35,7 +32,7 @@ export function pickHighestAprPreset(
 ): RangeAprPresetEstimate | null {
   let winner: OkPreset | null = null;
   const rank = (preset: RangeAprPresetEstimate) => order.indexOf(preset.id);
-  for (const candidate of candidates.filter((preset): preset is OkPreset => isOk(preset) && fits(preset))) {
+  for (const candidate of candidates.filter((preset): preset is OkPreset => isOk(preset))) {
     if (!winner) {
       winner = candidate;
       continue;
@@ -58,8 +55,6 @@ export type BestButton = {
   /** Short name of the range it resolved to, e.g. "Tight". */
   resolvedLabel: string;
   estimate: RangeAprEstimate;
-  /** True when the typed deposit fits no candidate and Best fell back to the widest available range. */
-  fallback?: boolean;
 };
 
 export type PresetButton = { id: OpenRangeUiPreset["id"]; label: string; estimate: RangeAprEstimate | null };
@@ -68,12 +63,9 @@ export type PresetList = {
   /** Leftmost button; null while loading, on error, or when no candidate has an estimate. */
   best: BestButton | null;
   /**
-   * The remaining candidates, narrow to wide, without the resolved one and without ranges the typed deposit
-   * does not fit. "Custom" is appended by the UI.
+   * The remaining candidates, narrow to wide, without the resolved one. "Custom" is appended by the UI.
    */
   buttons: PresetButton[];
-  /** True when the payload was sized for the typed amount and no range fits it, so none is offered. */
-  tooLarge?: boolean;
 };
 
 /**
@@ -92,15 +84,10 @@ export function buildPresetList(
   const order = uiPresets.map((preset) => preset.id) as RangeAprPresetId[];
   const ranked = payload && !degraded ? pickHighestAprPreset(payload.presets, order) : null;
   const winner = ranked;
-  if (payload && !degraded && !winner && payload.presets.length > 0 && payload.presets.every((preset) => !fits(preset))) {
-    return { best: null, buttons: [], tooLarge: true };
-  }
   if (!payload || !winner) {
     return {
       best: null,
-      buttons: uiPresets
-        .filter((preset) => { const candidate = payload?.presets.find((item) => item.id === preset.id); return !candidate || fits(candidate); })
-        .map((preset) => ({ id: preset.id, label: preset.label, estimate: estimateOf(preset.id) })),
+      buttons: uiPresets.map((preset) => ({ id: preset.id, label: preset.label, estimate: estimateOf(preset.id) })),
     };
   }
   const resolved = uiPresets.find((preset) => preset.id === winner.id);
@@ -110,7 +97,7 @@ export function buildPresetList(
       .filter((preset) => {
         if (preset.id === winner.id) return false;
         const candidate = payload.presets.find((item) => item.id === preset.id);
-        return !candidate || (fits(candidate) && !sameRange(candidate, winner));
+        return !candidate || !sameRange(candidate, winner);
       })
       .map((preset) => ({ id: preset.id, label: preset.label, estimate: estimateOf(preset.id) })),
   };

@@ -56,7 +56,7 @@ describe("docs routes and copy guards", () => {
 
   it("links APR explanations and open confirm to docs pages", () => {
     const picker = readFileSync(resolve("src/components/range-apr/range-preset-picker.tsx"), "utf8");
-    const open = readFileSync(resolve("src/components/open-position-modal.tsx"), "utf8");
+    const open = readFileSync(resolve("src/components/open-position/open-position-chrome.tsx"), "utf8");
     const selected = readFileSync(resolve("src/components/selected-app.tsx"), "utf8");
     expect(picker).toContain("DOCS_ROUTES.feeApr");
     expect(open).toContain("DOCS_ROUTES.risks");

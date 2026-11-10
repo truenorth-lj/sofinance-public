@@ -11,19 +11,6 @@ export type RangeAprPresetEstimate = {
   priceLower: number;
   priceUpper: number;
   estimate: RangeAprEstimate;
-  /** Client-side only: whether the typed deposit fits this range (see `size-aware.ts`). */
-  sizeFit?: SizeFit;
-};
-
-/** Facts behind a size check: own share of active liquidity, nearer-edge distance and estimated impact. */
-export type SizeFit = {
-  status: "ok" | "excluded";
-  reason?: "crowded" | "near-edge" | "cross-band";
-  ownSharePct: number;
-  edgeBps: number;
-  impactBps: number;
-  /** Distance (bps) to the nearer tick-spacing-band edge; prepare rejects a swap that leaves this band. */
-  bandBps?: number;
 };
 
 export type SampleConfidence = "ok" | "low";

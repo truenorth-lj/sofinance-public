@@ -51,12 +51,15 @@ describe("summarizeApr7d: the best range's APR at a $1,000 deposit, held only to
   /** Yearly % of a $1,000 deposit that took every fee the pool's LPs earned. */
   const allFeesPct = (feesPerDay: number) => feesPerDay * 365 / CARD_APR_DEPOSIT_USD * 100;
 
-  it("SKHYx-like $126 pool: no APR when all preview ranges are excluded; the pool fee cap still holds", () => {
+  it("SKHYx-like $126 pool: shows the fee-capped 7-day APR", () => {
     const payload = thin(126);
     const fees = 1000 * 0.0005 * 0.84; // 7d avg volume × fee × LP share = $0.42 a day
     expect(poolLpFeesPerDayUsd(payload)).toBeCloseTo(fees, 12);
     const state = summarizeApr7d(payload, "raydium-clmm", NOW);
-    expect(state.status).toBe("missing"); // all ranges fail the common $1,000 size-fit check
+    expect(state.status).toBe("ready");
+    expect(state.status === "ready" && state.aprPct).toBeGreaterThan(0);
+    expect(state.status === "ready" && state.aprPct).toBeLessThanOrEqual(allFeesPct(fees) + 1e-9);
+    expect(state).toMatchObject({ status: "ready", rangeLabel: expect.any(String) });
     expect(capAprAtPoolFees(1e6, { poolLpFeesPerDayUsd: fees, poolTvlUsd: 0 })).toBeCloseTo(allFeesPct(fees), 9);
   });
   it("a range that earns above the pool's average fee rate keeps its own number (no pool-average cap)", () => {
@@ -80,26 +83,24 @@ describe("summarizeApr7d: the best range's APR at a $1,000 deposit, held only to
     expect(capAprAtPoolFees(5, { poolLpFeesPerDayUsd: 1_000, poolTvlUsd: 10_000 })).toBe(5);
     expect(capAprAtPoolFees(500, { poolLpFeesPerDayUsd: null, poolTvlUsd: 126 })).toBe(500);
   });
-  it("does not name an actionable range when all $1,000 candidates are size-excluded", () => {
+  it("names the best range on a thin pool's card", () => {
     const payload = thin(126);
-    // The card must preserve the same exclusions as the Create position form.
-    expect(payloadForCapital(payload, CARD_APR_DEPOSIT_USD).presets.some((preset) => preset.sizeFit?.status === "excluded")).toBe(true);
-    expect(summarizeApr7d(payload, "raydium-clmm", NOW)).toMatchObject({ status: "missing" });
+    expect(summarizeApr7d(payload, "raydium-clmm", NOW)).toMatchObject({ status: "ready", rangeLabel: expect.any(String) });
   });
 });
 
-describe("summarizeApr7d: protocol-specific size-fit eligibility", () => {
+describe("summarizeApr7d: every protocol shows the best 7-day range", () => {
   const protocols: UnifiedProtocol[] = ["raydium-clmm", "orca-whirlpool", "meteora-dlmm", "uniswap-v4-rhc"];
 
-  it.each(protocols)("%s only applies Raydium size-fit exclusions to Raydium cards", (protocol) => {
+  it.each(protocols)("%s ignores leftover size-fit metadata and shows the highest range", (protocol) => {
     const payload = fresh(cardPayloadWithAprs({ micro: 40, tight: 30, standard: 20, wide: 10 }));
     payload.presets = payload.presets.map((preset) => ({ ...preset, sizeFit: {
       status: "excluded", reason: "cross-band", ownSharePct: 1, edgeBps: 100, impactBps: 2, bandBps: 1,
     } }));
     const state = summarizeApr7d(payload, protocol, NOW);
-    expect(state).toMatchObject(protocol === "raydium-clmm"
-      ? { status: "missing" }
-      : { status: "ready", aprPct: 40, rangeLabel: protocol === "uniswap-v4-rhc" ? "Min (±10 ticks)" : "Micro" });
+    expect(state).toMatchObject({
+      status: "ready", aprPct: 40, rangeLabel: protocol === "uniswap-v4-rhc" ? "Min (±10 ticks)" : "Micro",
+    });
   });
 
   it.each(protocols)("%s retains the shared preview, fee cap and missing-data gates", (protocol) => {
@@ -120,7 +121,7 @@ describe("summarizeApr7d: protocol-specific size-fit eligibility", () => {
     expect(summarizeApr7d(young, protocol, Date.parse(SNAPSHOT) + 49 * 3_600_000).status).toBe("missing");
   });
 
-  it("keeps the real RHC Min candidate when only Raydium's constant-liquidity band guard fails", () => {
+  it("keeps the real RHC Min candidate (and the same number on Raydium)", () => {
     const payload = fresh(payloadFixture());
     payload.model.currentSqrt = 1.0001 ** 0.125;
     payload.pool.currentPrice = payload.model.currentSqrt ** 2;
@@ -130,17 +131,13 @@ describe("summarizeApr7d: protocol-specific size-fit eligibility", () => {
     }));
     const repriced = payloadForCapital(payload, CARD_APR_DEPOSIT_USD);
     expect(repriced.presets.map((preset) => preset.id)).toEqual(["micro", "standard", "wide"]);
-    for (const preset of repriced.presets) {
-      expect(preset.sizeFit).toMatchObject({ status: "excluded", reason: "cross-band" });
-      expect(preset.sizeFit!.ownSharePct).toBeLessThan(10);
-      expect(preset.sizeFit!.edgeBps).toBeGreaterThan(9);
-      expect(preset.sizeFit!.impactBps).toBeCloseTo(1, 3);
-      expect(preset.sizeFit!.bandBps).toBeCloseTo(0.25, 3);
-    }
+    for (const preset of repriced.presets) expect(preset).not.toHaveProperty("sizeFit");
     const state = summarizeApr7d(payload, "uniswap-v4-rhc", NOW);
     expect(state).toMatchObject({ status: "ready", rangeLabel: "Min (±10 ticks)" });
     expect(state.status === "ready" && state.aprPct).toBeCloseTo(1.3940008194, 9);
-    expect(summarizeApr7d(payload, "raydium-clmm", NOW)).toMatchObject({ status: "missing" });
+    const raydium = summarizeApr7d(payload, "raydium-clmm", NOW);
+    expect(raydium).toMatchObject({ status: "ready", rangeLabel: "Micro" });
+    expect(raydium.status === "ready" && raydium.aprPct).toBeCloseTo(1.3940008194, 9);
   });
 });
 

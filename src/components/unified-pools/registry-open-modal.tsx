@@ -10,32 +10,36 @@
  * reason) → each step through `dexTxAdapter("open")` + `useTxPipeline().runSteps`: loading → success / failure with a
  * Solscan link → balances refresh (the pipeline's notice asks every panel to re-read).
  */
-import { LoaderCircle, X } from "lucide-react";
+import { LoaderCircle } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { OPEN_RANGE_UI_PRESETS } from "@sofinance/engine/open-range-presets";
 import { formatAmount, parseTokenAmount } from "@sofinance/engine/amount";
 import { NATIVE_SOL_MINT } from "@sofinance/engine/ids";
 import { depositTooSmallMessage, dexTxAdapter, OPEN_RANGES_UNAVAILABLE, openSolNeed, openSolPartsFromQuote, type DexDescriptor, type DexPreparedStep, type DexStepInput, type OpenQuote, type OpenRangePreset, type OpenRanges } from "@/lib/dex/client";
 import { createJupiterRelayStore } from "@/lib/jupiter/browser-relay";
 import { BALANCES_REFRESH_EVENT } from "@/lib/tx-pipeline";
 import { formatAprPct } from "@/lib/range-apr/format";
+import { rangeAprPayload } from "@/lib/range-apr/display-policy";
+import { pickHighestAprPreset } from "@/lib/range-apr/preset-list";
 import type { RangeAprPresetId, PoolRangeAprPayload } from "@/lib/range-apr/types";
 import type { UnifiedPool } from "@/lib/unified-pools/model";
 import type { TokenRef } from "@/lib/unified-positions/model";
+import type { PoolRangeAprState } from "../range-apr/use-pool-range-apr";
+import { OpenPositionForm } from "../open-position/open-position-form";
 import { useTxPipeline } from "../transactions/use-tx-pipeline";
-import { BUTTON, feeLine, FIELD, LABEL, openRentLines, TxStatus, tokenAccountRentLine } from "../unified-positions/registry-tools";
+import { feeLine, openRentLines, TxStatus, tokenAccountRentLine } from "../unified-positions/registry-tools";
 import { useWalletConnection } from "../wallet-connection";
 
 /** Slippage for the swap legs of an open (code constant; PR10 rule: no new env flags). */
 export const OPEN_SLIPPAGE_BPS = 50;
 /** Wait after the last keystroke before asking for a quote. */
 const QUOTE_DEBOUNCE_MS = 400;
-const PRESET_LABEL: Record<RangeAprPresetId, string> = { micro: "Micro", tight: "Tight", standard: "Standard", wide: "Wide" };
-
 export const NETWORK_FEE_COPY = "Network fee is set by your wallet.";
 export const SOL_RESERVE_COPY = "Keep some SOL beyond the rent. Your wallet may add a priority fee to each step (often about 0.001–0.002 SOL), and that fee must also fit in your SOL.";
 export const SOL_REFUSED_COPY = "SOL can't be used to open a position. Use one of the listed tokens.";
 export const RANGE_TOO_WIDE_COPY = (units: number, max: number, unit: string) =>
   `Not available to open yet: this range spans ${units} ${unit}s, and one position holds at most ${max}.`;
+export const NO_RANGE_FITS_COPY = "No range of this pool fits one position, so it is not available to open yet.";
 
 /** Exact text of a preset's APR when the volume / APR feed has no estimate for it (never 0% or a guess). */
 export const APR_UNAVAILABLE = "APR unavailable";
@@ -43,15 +47,20 @@ export const APR_UNAVAILABLE = "APR unavailable";
 export type PresetOption = { id: RangeAprPresetId; units: number; priceLower: number; priceUpper: number; available: boolean; reason: string | null; apr: string };
 
 /**
- * APR of one server-worked-out preset from the range APR payload: the same preset id over the same bounds (payload ticks
- * are unit × tick spacing; the upper bound is exclusive) with an "ok" estimate from a non-degraded sample. Anything
- * else is APR_UNAVAILABLE.
+ * APR of one server-worked-out preset from the range APR payload. Prefer the same preset id over the same bounds
+ * (payload ticks are unit × tick spacing; the upper bound is exclusive). When the live open-ranges bounds have drifted
+ * from the snapshot (the price moved), fall back to the same preset id: "Micro" is the same width around the current
+ * price. A degraded or missing feed, or a preset with no usable estimate, stays APR_UNAVAILABLE (never 0% or a guess).
  */
+const formatOkApr = (estimate: { status: string; aprPct?: number } | undefined): string | null =>
+  estimate?.status === "ok" && typeof estimate.aprPct === "number" && Number.isFinite(estimate.aprPct)
+    ? `Est. APR ${formatAprPct(estimate.aprPct)}` : null;
+
 export function presetApr(preset: OpenRangePreset, apr: PoolRangeAprPayload | Error | null): string {
   if (!apr || apr instanceof Error || apr.sample?.degraded) return APR_UNAVAILABLE;
   const spacing = Math.max(1, apr.pool.tickSpacing);
-  const match = apr.presets?.find((item) => item.id === preset.id && item.tickLower / spacing === preset.lowerUnit && item.tickUpper / spacing - 1 === preset.upperUnit);
-  return match?.estimate.status === "ok" && Number.isFinite(match.estimate.aprPct) ? `Est. APR ${formatAprPct(match.estimate.aprPct)}` : APR_UNAVAILABLE;
+  const sameBounds = apr.presets?.find((item) => item.id === preset.id && item.tickLower / spacing === preset.lowerUnit && item.tickUpper / spacing - 1 === preset.upperUnit);
+  return formatOkApr(sameBounds?.estimate) ?? formatOkApr(apr.presets?.find((item) => item.id === preset.id)?.estimate) ?? APR_UNAVAILABLE;
 }
 
 /** The server's preset ranges with their width, whether one position can hold them, and their APR (or APR_UNAVAILABLE). */
@@ -62,6 +71,24 @@ export function presetOptions(presets: readonly OpenRangePreset[], descriptor: P
     return { id: preset.id, units: preset.units, priceLower: preset.priceLower, priceUpper: preset.priceUpper, available,
       reason: available ? null : RANGE_TOO_WIDE_COPY(preset.units, max!, descriptor.meta.rangeUnit), apr: presetApr(preset, apr) };
   });
+}
+
+/**
+ * Initial Create-position range: Best among enabled presets (same ranking as RangePresetPicker),
+ * otherwise the first enabled preset. A Best that is over the venue cap is ignored.
+ */
+export function preferredOpenPresetId(
+  presets: readonly PresetOption[],
+  apr: PoolRangeAprPayload | Error | null,
+): RangeAprPresetId | "" {
+  const available = presets.filter((item) => item.available);
+  if (!available.length) return "";
+  const first = available[0]!.id;
+  if (!apr || apr instanceof Error || apr.sample?.degraded) return first;
+  const blocked = new Set(presets.filter((item) => !item.available).map((item) => item.id));
+  const priced = apr.model?.bins ? rangeAprPayload(apr, null) : apr;
+  const winner = pickHighestAprPreset(priced.presets.filter((item) => !blocked.has(item.id)));
+  return winner && available.some((item) => item.id === winner.id) ? winner.id : first;
 }
 
 /** Tokens the open accepts: the pool's two plus the descriptor's extra inputs, never native SOL. */
@@ -133,7 +160,19 @@ export function RegistryOpenModal({ pool, descriptor, ranges, apr = null, onClos
   const [presetId, setPresetId] = useState<RangeAprPresetId | "">("");
   const [amount, setAmount] = useState("");
   const token = tokens.find((item) => item.id === tokenId) ?? tokens[0];
-  const preset = presets.find((item) => item.id === presetId && item.available) ?? presets.find((item) => item.available && item.id === "standard") ?? presets.find((item) => item.available);
+  const preferred = useMemo(() => preferredOpenPresetId(presets, apr), [presets, apr]);
+  const preset = presets.find((item) => item.id === presetId && item.available)
+    ?? presets.find((item) => item.id === preferred && item.available)
+    ?? presets.find((item) => item.available);
+  const unavailable = useMemo(() => {
+    const next: Partial<Record<RangeAprPresetId, string>> = {};
+    for (const item of presets) if (!item.available && item.reason) next[item.id] = item.reason;
+    return next;
+  }, [presets]);
+  const aprState: PoolRangeAprState = !apr ? { status: "loading" }
+    : apr instanceof Error ? { status: "error", message: apr.message }
+    : { status: "ready", data: apr };
+  const pickerSelected = preset?.id ?? "standard";
 
   let raw: bigint | null = null;
   let problem = "";
@@ -204,71 +243,86 @@ export function RegistryOpenModal({ pool, descriptor, ranges, apr = null, onClos
   const walletNote = tx.status === "wallet" && prepared ? tokenAccountRentLine(prepared.createsTokenAccounts, (mint) => tokens.find((item) => item.id === mint)?.symbol ?? "token") : null;
   const stepText = tx.step?.of && tx.step.of > 1 && tx.locked ? `Step ${tx.step.step} of ${tx.step.of}` : null;
 
-  return <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 sm:items-center" data-testid="registry-open-modal">
-    <section role="dialog" aria-modal="true" aria-labelledby="registry-open-heading"
-      className="max-h-[100dvh] w-full overflow-y-auto rounded-t-[28px] border border-white/12 bg-char p-5 text-cream sm:max-w-lg sm:rounded-[28px] sm:p-8">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h2 id="registry-open-heading" className="text-lg font-semibold">Open a position</h2>
-          <p className="mt-1 text-sm text-smoke">{pool.pairLabel} · {descriptor.displayName}</p>
+  const assets = tokens.map((item) => {
+    const have = balances?.byMint[item.id];
+    const symbol = item.symbol || "token";
+    return {
+      id: item.id,
+      label: have !== undefined ? `${symbol} · ${formatAmount(have, item.decimals)}` : symbol,
+    };
+  });
+  const rangesError = ranges instanceof Error
+    ? (ranges.message === OPEN_RANGES_UNAVAILABLE ? ranges.message
+      : `This pool's price ranges could not be worked out, so it can't be opened right now: ${ranges.message}`)
+    : null;
+
+  return <div data-testid="registry-open-modal">
+    <OpenPositionForm
+      labelledBy="registry-open-heading"
+      pairLabel={pool.pairLabel}
+      venueName={descriptor.displayName}
+      explainer="Choose a wallet asset and price range. We swap into the pool tokens as needed, then create a new LP position."
+      closeLocked={tx.closeLocked}
+      onClose={onClose}
+      assets={assets}
+      assetId={token?.id ?? ""}
+      onAssetChange={(id) => { setTokenId(id); setAmount(""); }}
+      assetSelectId="registry-open-token"
+      assetPlaceholder="Select a token"
+      assetDisabled={tx.locked}
+      assetNote={solIsPoolToken ? <p data-testid="registry-open-sol" className="mt-2 text-xs text-smoke">{SOL_REFUSED_COPY}</p> : null}
+      amount={amount}
+      onAmountChange={setAmount}
+      amountInputId="registry-open-amount"
+      amountDisabled={tx.locked}
+      amountProblem={problem ? <p role="alert" className="mt-2 text-xs text-cream/80">{problem}</p> : null}
+      onFillMax={() => {
+        if (token && balances?.byMint[token.id]) setAmount(formatAmount(balances.byMint[token.id]!, token.decimals, token.decimals).replace(/,/g, ""));
+      }}
+      maxDisabled={tx.locked}
+      range={{
+        presets: OPEN_RANGE_UI_PRESETS,
+        selected: pickerSelected,
+        onSelect: (id) => { if (id !== "custom") setPresetId(id); },
+        minPrice: "",
+        maxPrice: "",
+        onMinPrice: () => {},
+        onMaxPrice: () => {},
+        apr: aprState,
+        quotedRange: null,
+        capitalUsd: null,
+        showCustom: false,
+        unavailable,
+      }}
+      rangeHint={!rangesError && payload && presets.length > 0 && !presets.some((item) => item.available)
+        ? <p role="alert" className="mt-2 text-sm text-cream/80">{NO_RANGE_FITS_COPY}</p>
+        : null}
+      notes={<>
+        {rangesError ? <p role="alert" data-testid="registry-open-ranges-error" className="mt-4 text-sm text-cream/80">{rangesError}</p> : null}
+        {!rangesError && !payload ? <p role="status" className="mt-4 flex items-center gap-2 text-sm text-cream/80"><LoaderCircle aria-hidden="true" className="size-4 animate-spin" />Loading this pool&apos;s ranges…</p> : null}
+        <div className="mt-5 space-y-2 rounded-2xl border border-white/10 bg-white/[0.04] p-3 text-xs text-cream/80" data-testid="registry-open-costs">
+          {current && !current.value && !current.error ? <p role="status" className="flex items-center gap-2"><LoaderCircle aria-hidden="true" className="size-4 animate-spin" />Getting a quote…</p> : null}
+          {current?.error ? <p role="alert">{current.error}</p> : null}
+          {quoted ? <p>Range: {price(quoted.range.lowerPrice)} – {price(quoted.range.upperPrice)} ({quoted.range.units} {descriptor.meta.rangeUnit}s)</p> : null}
+          {rent.lines.length ? rent.lines.map((line) => <p key={line}>{line}</p>) : descriptor.meta.rent ? <p>{descriptor.meta.rent.disclosure}</p> : null}
+          <p>{feeLine(descriptor.meta.feePolicy.open, "into the pool tokens")}{quoted && token && /^\d+$/.test(quoted.platformFeeRaw) && quoted.platformFeeRaw !== "0" ? ` About ${formatAmount(quoted.platformFeeRaw, token.decimals)} ${token.symbol} on this open.` : ""}</p>
+          <p>{NETWORK_FEE_COPY} {SOL_RESERVE_COPY}</p>
+          {steps > 1 ? <p>Your wallet asks you to approve {steps} transactions, one after the other.</p> : null}
+          {solUnknown ? <p role="alert" data-testid="registry-open-sol-unknown">{solUnknown}</p> : null}
+          {solShort ? <p role="alert" data-testid="registry-open-sol-short">{solShortCopy(solNeed, balances!.sol!)}</p> : null}
+          {blocked ? <p role="alert" data-testid="registry-open-blocked">{blocked}</p> : null}
+          {tooSmall ? <p role="alert" data-testid="registry-open-too-small">{tooSmall}</p> : null}
         </div>
-        <button type="button" aria-label="Close" disabled={tx.closeLocked} onClick={onClose} className="rounded-full p-2 text-cream/80 hover:text-cream disabled:opacity-40"><X className="size-5" aria-hidden="true" /></button>
-      </div>
-      {!connected ? <>
-        <p className="mt-4 text-sm text-smoke">Connect your wallet to open a position.</p>
-        <button type="button" onClick={connect} className={BUTTON}>Connect wallet</button>
-      </> : ranges instanceof Error ? <>
-          <p role="alert" data-testid="registry-open-ranges-error" className="mt-4 text-sm text-cream/80">{ranges.message === OPEN_RANGES_UNAVAILABLE ? ranges.message
-            : <>This pool&apos;s price ranges could not be worked out, so it can&apos;t be opened right now: {ranges.message}</>}</p>
-          <button type="button" disabled className={BUTTON}>Open position</button>
-        </>
-        : !payload ? <p role="status" className="mt-4 flex items-center gap-2 text-sm text-cream/80"><LoaderCircle aria-hidden="true" className="size-4 animate-spin" />Loading this pool&apos;s ranges…</p>
-        : <>
-          <label htmlFor="registry-open-token" className={LABEL}>Token to deposit</label>
-          <select id="registry-open-token" disabled={tx.locked} value={token?.id ?? ""} onChange={(event) => { setTokenId(event.target.value); setAmount(""); }} className={`mt-2 ${FIELD}`}>
-            {tokens.map((item) => <option key={item.id} value={item.id}>{item.symbol}</option>)}
-          </select>
-          {solIsPoolToken ? <p data-testid="registry-open-sol" className="mt-2 text-xs text-smoke">{SOL_REFUSED_COPY}</p> : null}
-          <div className="mt-5 flex items-center justify-between">
-            <label htmlFor="registry-open-amount" className="text-xs font-medium uppercase tracking-[0.16em] text-smoke">Amount</label>
-            {token && balances?.byMint[token.id] ? <button type="button" disabled={tx.locked} className="text-xs text-smoke underline"
-              onClick={() => setAmount(formatAmount(balances.byMint[token.id]!, token.decimals, token.decimals).replace(/,/g, ""))}>
-              Wallet: {formatAmount(balances.byMint[token.id]!, token.decimals)} · Max</button> : null}
-          </div>
-          <input id="registry-open-amount" disabled={tx.locked} inputMode="decimal" placeholder="0.00" value={amount} onChange={(event) => setAmount(event.target.value)} className={`mt-2 ${FIELD}`} />
-          {problem ? <p role="alert" className="mt-2 text-xs text-cream/80">{problem}</p> : null}
-
-          <p className={LABEL}>Price range</p>
-          <div role="radiogroup" aria-label="Price range" className="mt-2 grid gap-2">
-            {presets.map((item) => <button key={item.id} type="button" role="radio" aria-checked={preset?.id === item.id} disabled={!item.available || tx.locked}
-              data-testid={`registry-open-preset-${item.id}`} onClick={() => setPresetId(item.id)}
-              className={`rounded-2xl border px-4 py-3 text-left text-sm ${preset?.id === item.id ? "border-white/60" : "border-white/20"} disabled:cursor-not-allowed disabled:opacity-50`}>
-              <span className="flex justify-between gap-2 font-semibold"><span>{PRESET_LABEL[item.id]}</span><span className="font-normal text-smoke">{item.units} {descriptor.meta.rangeUnit}s</span></span>
-              <span className="flex justify-between gap-2 text-xs text-smoke"><span>{price(item.priceLower)} – {price(item.priceUpper)}</span><span data-testid={`registry-open-apr-${item.id}`}>{item.apr}</span></span>
-              {item.reason ? <span className="mt-1 block text-xs text-cream/80">{item.reason}</span> : null}
-            </button>)}
-          </div>
-          {!presets.some((item) => item.available) ? <p role="alert" className="mt-2 text-sm text-cream/80">No range of this pool fits one position, so it is not available to open yet.</p> : null}
-
-          <div className="mt-5 space-y-2 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80" data-testid="registry-open-costs">
-            {current && !current.value && !current.error ? <p role="status" className="flex items-center gap-2"><LoaderCircle aria-hidden="true" className="size-4 animate-spin" />Getting a quote…</p> : null}
-            {current?.error ? <p role="alert">{current.error}</p> : null}
-            {quoted ? <p>Range: {price(quoted.range.lowerPrice)} – {price(quoted.range.upperPrice)} ({quoted.range.units} {descriptor.meta.rangeUnit}s)</p> : null}
-            {rent.lines.length ? rent.lines.map((line) => <p key={line}>{line}</p>) : descriptor.meta.rent ? <p>{descriptor.meta.rent.disclosure}</p> : null}
-            <p>{feeLine(descriptor.meta.feePolicy.open, "into the pool tokens")}{quoted && token && /^\d+$/.test(quoted.platformFeeRaw) && quoted.platformFeeRaw !== "0" ? ` About ${formatAmount(quoted.platformFeeRaw, token.decimals)} ${token.symbol} on this open.` : ""}</p>
-            <p>{NETWORK_FEE_COPY} {SOL_RESERVE_COPY}</p>
-            {steps > 1 ? <p>Your wallet asks you to approve {steps} transactions, one after the other.</p> : null}
-            {solUnknown ? <p role="alert" data-testid="registry-open-sol-unknown">{solUnknown}</p> : null}
-            {solShort ? <p role="alert" data-testid="registry-open-sol-short">{solShortCopy(solNeed, balances!.sol!)}</p> : null}
-            {blocked ? <p role="alert" data-testid="registry-open-blocked">{blocked}</p> : null}
-            {tooSmall ? <p role="alert" data-testid="registry-open-too-small">{tooSmall}</p> : null}
-          </div>
-
-          <button type="button" disabled={!ready} onClick={() => void submit()} className={BUTTON}>
-            {tx.locked ? <LoaderCircle aria-hidden="true" className="size-4 animate-spin" /> : null}{stepText ? `${stepText}…` : "Open position"}
-          </button>
-          <TxStatus tx={tx} walletNote={walletNote} successText="Position opened. It shows under My positions." />
-        </>}
-    </section>
+        <TxStatus tx={tx} walletNote={walletNote} successText="Position opened. It shows under My positions." />
+      </>}
+      connected={connected}
+      onConnect={connect}
+      submitLabel={stepText ? `${stepText}…` : "Create position"}
+      onSubmit={() => { void submit(); }}
+      submitDisabled={!ready}
+      submitBusy={tx.locked}
+      submitBusyLabel={stepText ? `${stepText}…` : "Create position"}
+      submitTestId="registry-open-submit"
+    />
   </div>;
 }

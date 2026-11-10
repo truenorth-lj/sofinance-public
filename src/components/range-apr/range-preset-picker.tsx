@@ -5,7 +5,7 @@ import { useEffect, useMemo } from "react";
 import { LoaderCircle } from "lucide-react";
 import type { OpenRangePreset, OpenRangeUiPreset } from "@sofinance/engine/open-range-presets";
 import Link from "next/link";
-import { LOWER_AMOUNT_TO_OPEN, BEST_HELP, BEST_LABEL, APR_ESTIMATE_CAVEAT, APR_ESTIMATE_LABEL } from "@/lib/range-apr/copy";
+import { BEST_HELP, BEST_LABEL, APR_ESTIMATE_CAVEAT, APR_ESTIMATE_LABEL } from "@/lib/range-apr/copy";
 import { DOCS_ROUTES } from "@/lib/public-urls";
 import { formatEstimate, unavailableReasonText } from "@/lib/range-apr/format";
 import { MICRO_PRESET_ID, microBandLabel } from "@sofinance/engine/range-apr/micro-range";
@@ -30,7 +30,8 @@ type OtherRange = { id: string; name: string; text: string };
 
 /** "$1,000" style deposit label; cents only below $10. */
 export function formatDepositUsd(value: number): string {
-  return `$${value.toLocaleString("en-US", { maximumFractionDigits: value < 10 ? 2 : 0 })}`;
+  const amount = Number.isFinite(value) ? value : 1_000;
+  return `$${amount.toLocaleString("en-US", { maximumFractionDigits: amount < 10 ? 2 : 0 })}`;
 }
 
 function Headline({ apr, sized, preview, selection, best, others }: {
@@ -77,9 +78,7 @@ function Headline({ apr, sized, preview, selection, best, others }: {
       )}
       {best && (
         <p className="mt-1 text-[11px] leading-5 text-smoke" data-testid="best-explainer">
-          {best.fallback
-            ? `${BEST_LABEL} for this pool is ${best.resolvedLabel}: the range that fits${sized ? ` a ~${formatDepositUsd(sized.referenceCapitalUsd)} deposit` : " this amount"}. Not a prediction.`
-            : `${BEST_LABEL} for this pool is ${best.resolvedLabel}: the highest estimated fee APR of the candidate ranges over the last 7 days${sized ? ` for a ~${formatDepositUsd(sized.referenceCapitalUsd)} deposit` : ""}. Not a prediction.`}
+          {`${BEST_LABEL} for this pool is ${best.resolvedLabel}: the highest estimated fee APR of the candidate ranges over the last 7 days${sized ? ` for a ~${formatDepositUsd(sized.referenceCapitalUsd)} deposit` : ""}. Not a prediction.`}
         </p>
       )}
       {others.length > 0 && (
@@ -101,6 +100,7 @@ function Headline({ apr, sized, preview, selection, best, others }: {
 
 export function RangePresetPicker({
   presets, selected, onSelect, minPrice, maxPrice, onMinPrice, onMaxPrice, apr, quotedRange, capitalUsd,
+  showCustom = true, unavailable = {},
 }: {
   presets: readonly OpenRangeUiPreset[];
   selected: OpenRangePreset;
@@ -114,10 +114,22 @@ export function RangePresetPicker({
   quotedRange: TickRange | null;
   /** USD value of the typed deposit (debounced); missing/invalid uses the common $1,000 preview. */
   capitalUsd?: number | null;
+  /** Raydium custom min–max. Meteora has no custom-bin editor yet. */
+  showCustom?: boolean;
+  /** Venue caps (e.g. Meteora 70 bins) that hide a preset from Best and disable its button. */
+  unavailable?: Partial<Record<OpenRangeUiPreset["id"], string>>;
 }) {
   const served = apr.status === "ready" ? apr.data : null;
-  // Re-priced locally for the typed amount; ranges the deposit does not fit drop out of Best.
-  const data = useMemo(() => (served ? rangeAprPayload(served, capitalUsd) : null), [served, capitalUsd]);
+  // Re-priced locally for the typed amount (fee share changes with deposit size); ranking is by APR only.
+  const data = useMemo(() => {
+    if (!served) return null;
+    // A payload without the bin model (tests, or a partial snapshot) cannot be re-priced; rank the served estimates as-is.
+    const priced = served.model?.bins
+      ? rangeAprPayload(served, capitalUsd)
+      : served;
+    const blocked = (Object.keys(unavailable) as OpenRangeUiPreset["id"][]).filter((id) => unavailable[id]);
+    return blocked.length ? { ...priced, presets: priced.presets.filter((item) => !unavailable[item.id]) } : priced;
+  }, [served, capitalUsd, unavailable]);
   const sized = data;
   const preview = !(typeof capitalUsd === "number" && Number.isFinite(capitalUsd) && capitalUsd > 0);
   const selection = data ? estimateForSelection(data, { preset: selected, minPrice, maxPrice }, quotedRange) : null;
@@ -125,7 +137,7 @@ export function RangePresetPicker({
   const list = buildPresetList(presets, data);
   const best = list.best;
   const bestActive = selected === best?.id;
-  // A preset the typed amount no longer fits is not offered, so a selection of it falls back to Best.
+  // A preset hidden by a venue cap (e.g. Meteora's 70-bin max) falls back to Best.
   const hiddenSelection = !!best && selected !== "custom" && selected !== best.id
     && !list.buttons.some((button) => button.id === selected);
   const bestId = best?.id;
@@ -192,15 +204,17 @@ export function RangePresetPicker({
               key={button.id}
               type="button"
               aria-pressed={selected === button.id}
+              disabled={Boolean(unavailable[button.id])}
+              title={unavailable[button.id] ?? undefined}
               onClick={() => onSelect(button.id)}
-              className={`${CELL} ${cellTone(selected === button.id)}`}
+              className={`${CELL} ${cellTone(selected === button.id)} disabled:cursor-not-allowed disabled:opacity-50`}
               data-testid={`preset-${button.id}`}
             >
               <span className="max-w-full truncate text-xs font-semibold leading-4">{preset(button.id)?.shortLabel ?? button.label}</span>
               <span className={`leading-3 ${BAND}`}>{band(button.id)}</span>
             </button>
           ))}
-          <button
+          {showCustom ? <button
             type="button"
             aria-pressed={selected === "custom"}
             onClick={() => onSelect("custom")}
@@ -209,10 +223,12 @@ export function RangePresetPicker({
           >
             <span className="max-w-full truncate text-xs font-semibold leading-4">Custom</span>
             <span className={`leading-3 ${BAND}`}>Min–max</span>
-          </button>
+          </button> : null}
         </div>
+        {Object.entries(unavailable).map(([id, reason]) => reason
+          ? <p key={id} className="mt-2 text-xs leading-5 text-cream/80">{reason}</p> : null)}
       </div>
-      {selected === "custom" && (
+      {showCustom && selected === "custom" && (
         <div className="mt-2 grid grid-cols-2 gap-2">
           <input
             aria-label="Minimum price"
@@ -230,16 +246,7 @@ export function RangePresetPicker({
           />
         </div>
       )}
-      {list.tooLarge ? (
-        <>
-          {preview && data && <p className="mt-3 text-[11px] leading-5 text-smoke">Preview assumes a ~{formatDepositUsd(data.referenceCapitalUsd)} deposit.</p>}
-          <p className="mt-3 rounded-2xl border border-white/10 bg-white/[0.04] p-3 text-xs leading-5 text-cream/90" role="status" data-testid="lower-amount">
-            {LOWER_AMOUNT_TO_OPEN}
-          </p>
-        </>
-      ) : (
-        <Headline apr={apr} sized={sized} preview={preview} selection={selection} best={bestActive ? best : null} others={others} />
-      )}
+      <Headline apr={apr} sized={sized} preview={preview} selection={selection} best={bestActive ? best : null} others={others} />
     </>
   );
 }

@@ -1,7 +1,6 @@
 import { OPEN_RANGE_UI_PRESETS } from "@sofinance/engine/open-range-presets";
 import { highestRangeSummary } from "@/lib/range-apr/preset-list";
 import { rangeAprPayload } from "@/lib/range-apr/display-policy";
-import { enforcesRangeAprSizeFit } from "@/lib/dex/range-apr-policy";
 export { poolLpFeesPerDayUsd } from "@/lib/range-apr/estimate-policy";
 import type { PoolRangeAprPayload } from "@/lib/range-apr/types";
 import { aprSnapshotExpired, aprSnapshotLate } from "@/lib/rwa-freshness";
@@ -47,11 +46,12 @@ export function cardDataDays(payload: PoolRangeAprPayload): number {
  * deposit can never earn more than all of them), so a thin $126 pool cannot show a range APR its fees never paid. It is
  * not held to the pool's average fee rate: a concentrated range earns above that average by design, so that cap
  * replaced the range's number on most cards (15 of 20 live pools on 2026-11-10).
+ *
  */
 export function summarizeApr7d(payload: PoolRangeAprPayload, protocol: UnifiedProtocol, nowMs: number): Exclude<Apr7dState, { status: "loading" }> {
   const expired = aprSnapshotExpired(payload, nowMs);
-  const summary = !expired ? highestRangeSummary(OPEN_RANGE_UI_PRESETS,
-    rangeAprPayload(payload, undefined, { enforceSizeFit: enforcesRangeAprSizeFit(protocol) })) : null;
+  const priced = !expired ? rangeAprPayload(payload) : null;
+  const summary = priced ? highestRangeSummary(OPEN_RANGE_UI_PRESETS, priced) : null;
   // Product rule: the number stays, labelled "Data delayed", while the snapshot is under 48h old; past 48h it is
   // "—" (`aprSnapshotExpired`). "Data delayed": server `stale` (older than 26h, or computed from saved price history,
   // see `aprSnapshotDelayed`), a failed last refresh, or a snapshot this browser already sees as late (cached response).

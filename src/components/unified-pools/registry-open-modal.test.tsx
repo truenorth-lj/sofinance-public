@@ -10,11 +10,11 @@ import type { UnifiedPool } from "@/lib/unified-pools/model";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const WALLET = "EweT1111111111111111111111111111111111111111";
-const mocks = vi.hoisted(() => ({ runSteps: vi.fn(async () => null), tx: {} as Record<string, unknown> }));
-vi.mock("../wallet-connection", () => ({ useWalletConnection: () => ({ address: WALLET, connected: true, connect: vi.fn(), signTransaction: vi.fn(), signAndSendTransaction: vi.fn() }) }));
+const mocks = vi.hoisted(() => ({ runSteps: vi.fn(async () => null), tx: {} as Record<string, unknown>, connected: true }));
+vi.mock("../wallet-connection", () => ({ useWalletConnection: () => ({ address: mocks.connected ? WALLET : undefined, connected: mocks.connected, connect: vi.fn(), signTransaction: vi.fn(), signAndSendTransaction: vi.fn() }) }));
 vi.mock("../transactions/use-tx-pipeline", () => ({ useTxPipeline: () => ({ status: "idle", locked: false, closeLocked: false, runSteps: mocks.runSteps, retry: vi.fn(), interrupted: null, dismissInterrupted: vi.fn(), ...mocks.tx }) }));
 
-import { APR_UNAVAILABLE, openInputs, presetOptions, RegistryOpenModal, NETWORK_FEE_COPY, SOL_REFUSED_COPY } from "./registry-open-modal";
+import { APR_UNAVAILABLE, NO_RANGE_FITS_COPY, openInputs, preferredOpenPresetId, presetOptions, RegistryOpenModal, NETWORK_FEE_COPY, SOL_REFUSED_COPY } from "./registry-open-modal";
 
 const descriptor = dexDescriptors.descriptorFor("meteora-dlmm")!;
 const pool = { key: "solana:met1", poolAddress: "met1", chain: "solana", protocol: "meteora-dlmm", pairLabel: "TSLAx/TSLA", symbolA: "TSLAx", symbolB: "TSLA",
@@ -37,11 +37,15 @@ describe("presetOptions / openInputs", () => {
     expect(options[2]!.reason).toBe("Not available to open yet: this range spans 200 bins, and one position holds at most 70.");
     expect(options.map((item) => item.apr)).toEqual([APR_UNAVAILABLE, "Est. APR ~12%", APR_UNAVAILABLE]);
   });
-  it("APR reads exactly \"APR unavailable\" when the feed failed, is degraded, or covers other bounds; never 0% or a guess", () => {
-    for (const feed of [null, new Error("Pool volume unavailable"), { ...apr, sample: { degraded: true } } as unknown as PoolRangeAprPayload,
-      { ...apr, pool: { tickSpacing: 1 } } as unknown as PoolRangeAprPayload]) {
+  it("APR reads exactly \"APR unavailable\" when the feed failed or is degraded; never 0% or a guess", () => {
+    for (const feed of [null, new Error("Pool volume unavailable"), { ...apr, sample: { degraded: true } } as unknown as PoolRangeAprPayload]) {
       expect(presetOptions(ranges.presets, descriptor, feed).map((item) => item.apr)).toEqual([APR_UNAVAILABLE, APR_UNAVAILABLE, APR_UNAVAILABLE]);
     }
+  });
+  it("uses the same preset id when live bounds have drifted from the snapshot (price moved)", () => {
+    // tickSpacing 1 makes the exact-bound join fail (snapshot was priced on spacing 10); "standard" still has an ok estimate.
+    const drifted = { ...apr, pool: { tickSpacing: 1 } } as unknown as PoolRangeAprPayload;
+    expect(presetOptions(ranges.presets, descriptor, drifted).map((item) => item.apr)).toEqual([APR_UNAVAILABLE, "Est. APR ~12%", APR_UNAVAILABLE]);
   });
   it("never offers native SOL as an input", () => {
     const tokens = openInputs({ ...pool, mintB: NATIVE_SOL_MINT, symbolB: "SOL" }, descriptor, { a: 8, b: 9 });
@@ -49,11 +53,36 @@ describe("presetOptions / openInputs", () => {
   });
 });
 
+const allRanges = [
+  { id: "micro" as const, lowerUnit: -2, upperUnit: 1, units: 4, priceLower: 0.99, priceUpper: 1.01 },
+  { id: "tight" as const, lowerUnit: -6, upperUnit: 5, units: 12, priceLower: 0.97, priceUpper: 1.03 },
+  { id: "standard" as const, lowerUnit: -30, upperUnit: 29, units: 60, priceLower: 0.9, priceUpper: 1.1 },
+  { id: "wide" as const, lowerUnit: -100, upperUnit: 99, units: 200, priceLower: 0.5, priceUpper: 1.5 },
+];
+const RANKED_TICKS = { micro: [-20, 20], tight: [-60, 60], standard: [-300, 300], wide: [-1000, 1000] } as const;
+const rankedApr = (aprs: { micro: number | null; tight: number | null; standard: number | null; wide: number | null }): PoolRangeAprPayload =>
+  ({ pool: { tickSpacing: 10 }, sample: { degraded: false }, presets: (["micro", "tight", "standard", "wide"] as const).map((id) => ({
+    id, tickLower: RANKED_TICKS[id][0], tickUpper: RANKED_TICKS[id][1],
+    estimate: aprs[id] === null ? { status: "unavailable", reason: "no-volume" } : { status: "ok", aprPct: aprs[id], inRangeVolumePct: 50, feesPerDayUsd: 1 },
+  })) }) as unknown as PoolRangeAprPayload;
+
+describe("preferredOpenPresetId", () => {
+  const options = presetOptions(allRanges, descriptor);
+  it("selects Best when that range is available to open", () => {
+    expect(preferredOpenPresetId(options, rankedApr({ micro: 41, tight: 44, standard: 17, wide: 5 }))).toBe("tight");
+  });
+  it("falls back to the first available preset when Best is over the cap or there is no APR", () => {
+    expect(preferredOpenPresetId(options, null)).toBe("micro");
+    expect(preferredOpenPresetId(options, new Error("Pool volume unavailable"))).toBe("micro");
+    expect(preferredOpenPresetId(options, rankedApr({ micro: null, tight: null, standard: null, wide: 99 }))).toBe("micro");
+  });
+});
+
 let solLamports = "1000000000";
 let root: Root; let container: HTMLDivElement; let quoteBody: Record<string, unknown>; let calls: { url: string; body: unknown }[];
 beforeEach(() => {
   vi.useFakeTimers({ shouldAdvanceTime: true });
-  mocks.tx = {}; mocks.runSteps.mockClear(); calls = []; solLamports = "1000000000";
+  mocks.tx = {}; mocks.runSteps.mockClear(); mocks.connected = true; calls = []; solLamports = "1000000000";
   quoteBody = { poolId: "met1", range: { lowerPrice: 0.9, upperPrice: 1.1, units: 60 }, steps: 2, platformFeeRaw: "1000",
     rent: { refundableLamports: "41899840", nonRefundableLamports: "0", tokenAccountLamports: "2039280" },
     sol: { networkFeeLamports: "15000", swapAccountsLamports: "4245880", reserveLamports: "10000000" } };
@@ -73,13 +102,14 @@ const type = async (value: string) => {
   await act(async () => { setter.call(input, value); input.dispatchEvent(new Event("input", { bubbles: true })); });
   await act(async () => { await vi.advanceTimersByTimeAsync(500); });
 };
-const openButton = () => [...container.querySelectorAll("button")].find((b) => b.textContent?.includes("Open position"))!;
+const openButton = () => container.querySelector<HTMLButtonElement>("[data-testid=registry-open-submit]")!;
 
 describe("RegistryOpenModal", () => {
   it("quotes the default preset through the registry route and shows rent, the 0.1% fee, the wallet fee and SOL reserve notes", async () => {
     await render();
-    expect(container.querySelector<HTMLButtonElement>("[data-testid=registry-open-preset-wide]")!.disabled).toBe(true);
+    expect(container.querySelector<HTMLButtonElement>("[data-testid=preset-wide]")!.disabled).toBe(true);
     expect(container.textContent).toContain("Not available to open yet");
+    expect(container.textContent).not.toContain(NO_RANGE_FITS_COPY);
     const select = container.querySelector<HTMLSelectElement>("#registry-open-token")!;
     await act(async () => { select.value = USDC_MINT; select.dispatchEvent(new Event("change", { bubbles: true })); });
     await type("1");
@@ -101,9 +131,52 @@ describe("RegistryOpenModal", () => {
     expect(first.context).toEqual({ step: 1, priorSignatures: [] });
   });
 
+  const pressedIds = () => [...container.querySelectorAll("[aria-label='Price range presets'] button[aria-pressed='true']")]
+    .map((button) => button.getAttribute("data-testid"));
+
+  it("opens with Best selected when that range is available, and the headline matches it", async () => {
+    await render({
+      ranges: { ...ranges, presets: allRanges },
+      apr: rankedApr({ micro: 41, tight: 44, standard: 17, wide: 5 }),
+    });
+    expect(pressedIds()).toEqual(["preset-best"]);
+    expect(container.querySelector("[data-testid=best-resolved]")!.textContent).toBe("Tight");
+    expect(container.querySelector("[data-testid=range-apr-headline]")!.textContent).toBe("~44%");
+    expect(container.querySelector("[data-testid=preset-standard]")!.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("falls back to the first available preset when Best is disabled or there is no APR", async () => {
+    for (const props of [
+      { apr: new Error("Pool volume unavailable") as Error },
+      { apr: rankedApr({ micro: null, tight: null, standard: null, wide: 99 }) },
+    ]) {
+      await render(props);
+      expect(pressedIds()).toEqual(["preset-micro"]);
+      expect(container.querySelector("[data-testid=preset-best]")).toBeNull();
+    }
+  });
+
+  it("when every preset exceeds the per-position cap, says no range of this pool fits one position", async () => {
+    await render({
+      ranges: {
+        ...ranges,
+        presets: [
+          { id: "micro", lowerUnit: -80, upperUnit: 79, units: 160, priceLower: 0.8, priceUpper: 1.2 },
+          { id: "tight", lowerUnit: -90, upperUnit: 89, units: 180, priceLower: 0.7, priceUpper: 1.3 },
+          { id: "standard", lowerUnit: -100, upperUnit: 99, units: 200, priceLower: 0.6, priceUpper: 1.4 },
+          { id: "wide", lowerUnit: -150, upperUnit: 149, units: 300, priceLower: 0.4, priceUpper: 1.6 },
+        ],
+      },
+    });
+    expect(container.textContent).toContain(NO_RANGE_FITS_COPY);
+    expect([...container.querySelectorAll("[role=alert]")].some((node) => node.textContent === NO_RANGE_FITS_COPY)).toBe(true);
+    expect(openButton().disabled).toBe(true);
+  });
+
   it("APR feed down with the server's ranges present: every APR reads \"APR unavailable\" and the position can still be opened", async () => {
     await render({ apr: new Error("Pool volume unavailable") });
-    for (const id of ["micro", "standard", "wide"]) expect(container.querySelector(`[data-testid=registry-open-apr-${id}]`)!.textContent).toBe(APR_UNAVAILABLE);
+    expect(container.querySelector("[data-testid=range-apr-headline]")!.textContent).toMatch(/—|Estimating|unavailable/i);
+    expect(container.textContent).toContain("Estimate unavailable right now.");
     expect(container.textContent).not.toMatch(/\b0(\.0)?%/);
     const select = container.querySelector<HTMLSelectElement>("#registry-open-token")!;
     await act(async () => { select.value = USDC_MINT; select.dispatchEvent(new Event("change", { bubbles: true })); });
@@ -201,7 +274,18 @@ describe("RegistryOpenModal", () => {
   it("says why SOL is not offered when it is a pool token", async () => {
     await render({ pool: { ...pool, mintB: NATIVE_SOL_MINT, symbolB: "SOL" } as UnifiedPool, ranges: { ...ranges, decimals: { mintA: 8, [NATIVE_SOL_MINT]: 9 } } });
     expect(container.querySelector("[data-testid=registry-open-sol]")!.textContent).toBe(SOL_REFUSED_COPY);
-    expect([...container.querySelectorAll("#registry-open-token option")].map((o) => o.textContent)).toEqual(["TSLAx", "USDC"]);
+    expect([...container.querySelectorAll("#registry-open-token option")].map((o) => o.textContent?.split(" · ")[0])).toEqual(["TSLAx", "USDC"]);
+  });
+
+  it("shows the full form without a wallet, with Connect wallet instead of hiding the fields", async () => {
+    mocks.connected = false;
+    await render();
+    expect(container.querySelector("#registry-open-token")).not.toBeNull();
+    expect(container.querySelector("#registry-open-amount")).not.toBeNull();
+    expect(container.querySelector("[data-testid=preset-best], [data-testid=range-apr-headline]")).not.toBeNull();
+    expect([...container.querySelectorAll("button")].some((button) => button.textContent === "Connect wallet")).toBe(true);
+    expect(container.querySelector("[data-testid=registry-open-submit]")).toBeNull();
+    expect(container.textContent).not.toContain("Connect your wallet to open a position");
   });
 
   it("success says opened with a Solscan link; the close button is locked while the wallet is open", async () => {

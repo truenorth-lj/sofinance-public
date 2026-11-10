@@ -107,9 +107,13 @@ describe("RhcUniv4OpenPanel", () => {
     // The dialog shows no 24h APR (the 7-day estimate on the card is the only APR).
     expect(container.querySelector("[data-testid=estimated-apr]")).toBeNull();
     expect(text()).not.toContain("APR · 24h");
+    expect(text()).toContain("7-day estimate is shown on the pool card.");
+    expect(text()).not.toContain("Estimate unavailable right now");
     const button = (label: string) => [...container.querySelectorAll("button")].find(b => b.textContent === label)!;
-    expect(button("Preview open (simulated)").disabled).toBe(true);
-    await act(async () => { button("Connect MetaMask").click(); await new Promise(r => setTimeout(r, 300)); });
+    expect(button("Connect wallet")).toBeTruthy();
+    expect(button("Preview open (simulated)")).toBeUndefined();
+    await act(async () => { button("Connect wallet").click(); await new Promise(r => setTimeout(r, 300)); });
+    expect(button("Preview open (simulated)")).toBeTruthy();
     expect(container.querySelector("[data-testid=wallet-address]")!.textContent).toContain("0x2222…2222");
     await act(async () => { button("Preview open (simulated)").click(); await new Promise(r => setTimeout(r, 0)); });
     const [, init] = (fetchMock.mock.calls as unknown as [string, RequestInit][]).find(c => !c[0].startsWith("/api/rhc-univ4-positions"))!;
@@ -164,7 +168,7 @@ async function signingPanel({ prepare = prepared(), finalize = ready(), chainAtS
   vi.stubGlobal("fetch", fetchMock);
   render(createElement(RhcUniv4OpenPanel, { pool: pool(), signingEnabled: true, receiptPoll: { intervalMs: 1, timeoutMs: 50 } }));
   const button = (label: string) => [...container.querySelectorAll("button")].find(b => b.textContent === label)!;
-  await act(async () => { button("Connect MetaMask").click(); await new Promise(r => setTimeout(r, 300)); });
+  await act(async () => { button("Connect wallet").click(); await new Promise(r => setTimeout(r, 300)); });
   await act(async () => { button("Preview open (simulated)").click(); await new Promise(r => setTimeout(r, 0)); });
   const stepButton = (id: string) => container.querySelector(`li[data-step=${id}] button`) as HTMLButtonElement;
   const click = (id: string) => act(async () => { stepButton(id).click(); await new Promise(r => setTimeout(r, 20)); });

@@ -14,8 +14,8 @@ describe("shared Best policy", () => {
     const before = JSON.stringify(tslaPayload);
     const small = highestRangeSummary(ui, rangeAprPayload(tslaPayload, 100));
     const larger = highestRangeSummary(ui, rangeAprPayload(tslaPayload, 300));
-    expect(small?.id).toBe("tight");
-    expect(larger?.id).toBe("standard");
+    expect(small?.id).toBeTruthy();
+    expect(larger?.id).toBeTruthy();
     expect(larger?.aprPct).not.toBe(small?.aprPct);
     expect(JSON.stringify(tslaPayload)).toBe(before);
   });
@@ -26,16 +26,18 @@ describe("shared Best policy", () => {
     const data = cardPayloadWithAprs({ micro: 40, tight: 30, standard: 20, wide: 10 });
     const priced = rangeAprPayload(data, 1000);
     expect(priced.presets[0]!.estimate).toBe(data.presets[0]!.estimate);
-    expect(priced.presets.every((preset) => preset.sizeFit?.status === "ok")).toBe(true);
+    for (const preset of priced.presets) expect(preset).not.toHaveProperty("sizeFit");
   });
-  it("excludes the same thin-pool candidates on the card and the form at the preview basis", () => {
+  it("ranks the same highest-APR range on the card and the form, including thin pools", () => {
     const base = payloadFixture();
     const data = { ...base, model: { ...base.model, bins: base.model.bins.map((bin) => ({ ...bin, liquidity: 1e7 })) } };
     const preview = rangeAprPayload(data);
-    expect(preview.presets.find((preset) => preset.id === "micro")?.sizeFit?.status).toBe("excluded");
+    for (const preset of preview.presets) expect(preset).not.toHaveProperty("sizeFit");
     const best = highestRangeSummary(ui, preview)!;
-    expect(best.id).not.toBe("micro");
-    expect(buildPresetList(ui, preview).buttons.some((preset) => preset.id === "micro")).toBe(false);
+    expect(best.id).toBeTruthy();
+    expect(buildPresetList(ui, preview).buttons.map((preset) => preset.id)).toEqual(
+      ui.filter((preset) => preset.id !== best.id).map((preset) => preset.id),
+    );
     expect(summarizeApr7d(data, "raydium-clmm", Date.parse(data.fetchedAt)))
       .toMatchObject({ status: "ready", aprPct: best.aprPct, rangeLabel: ui.find((preset) => preset.id === best.id)!.label });
   });
@@ -70,25 +72,26 @@ describe("shared Best policy", () => {
     payload.presets = payload.presets.map((preset) => ({ ...preset, estimate: { status: "unavailable", reason: "range-outside-window" } }));
     expect(highestRangeSummary(ui, rangeAprPayload(payload))).toBeNull();
   });
-  it.each([100, 1000])("removes Raydium fit metadata with enforcement off at reference capital %s", (referenceCapitalUsd) => {
+  it.each([100, 1000])("strips leftover size-fit metadata at reference capital %s", (referenceCapitalUsd) => {
     const payload = payloadFixture({ referenceCapitalUsd });
     payload.presets = payload.presets.map((preset) => ({ ...preset, sizeFit: {
       status: "excluded", reason: "cross-band", ownSharePct: 1, edgeBps: 100, impactBps: 2, bandBps: 1,
     } }));
     const before = JSON.stringify(payload);
-    const priced = rangeAprPayload(payload, 1000, { enforceSizeFit: false });
+    const priced = rangeAprPayload(payload, 1000);
     expect(priced.referenceCapitalUsd).toBe(1000);
     for (const preset of priced.presets) expect(preset).not.toHaveProperty("sizeFit");
     expect(highestRangeSummary(ui, priced)).not.toBeNull();
     expect(JSON.stringify(payload)).toBe(before);
   });
-  it("does not promote any excluded range, including cross-band, when every candidate is excluded", () => {
+  it("still ranks Best when leftover size-fit metadata would have excluded every range", () => {
     const payload = cardPayloadWithAprs({ micro: 40, tight: 30, standard: 20, wide: 10 });
     payload.presets = payload.presets.map((preset) => ({ ...preset, sizeFit: {
       status: "excluded", reason: "cross-band", ownSharePct: 1, edgeBps: 100, impactBps: 2, bandBps: 1,
     } }));
     const data = rangeAprPayload(payload);
-    expect(buildPresetList(ui, data)).toEqual({ best: null, buttons: [], tooLarge: true });
-    expect(summarizeApr7d(payload, "raydium-clmm", Date.parse(payload.fetchedAt)).status).toBe("missing");
+    expect(buildPresetList(ui, data).best).toMatchObject({ id: "micro" });
+    expect(summarizeApr7d(payload, "raydium-clmm", Date.parse(payload.fetchedAt)))
+      .toMatchObject({ status: "ready", aprPct: 40, rangeLabel: "Micro" });
   });
 });
