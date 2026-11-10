@@ -140,7 +140,7 @@ describe("/app unified All positions", () => {
 
   it("empty Robinhood Chain wallet: the group stays with a disabled 'No positions found' row and the open-a-position link", async () => {
     state.solWallet = SOL_WALLET; state.scan = [];
-    await render();
+    await render({ initialView: "deposit" });
     expect(groups()).toEqual([["Solana", ["No positions found"]], ["Robinhood Chain", ["No positions found"]]]);
     expect(rows()).toHaveLength(0);
     expect(container.querySelector("[data-testid=positions-empty]")).not.toBeNull();

@@ -105,10 +105,14 @@ describe("All positions wallet-wide leftover recovery", () => {
   it("keeps position compound fenced during read-only B to eligible-input reconciliation", async () => {
     positions = [fixture.state.positionMint, otherMint];
     await mount();
-    await act(async () => container.querySelector<HTMLButtonElement>(`[data-testid="position-fallback-select"][data-position-key="raydium-clmm:${otherMint}"]`)!.click());
+    // Compound fees has no All positions card: the position comes from the dropdown beside its title.
+    const select = container.querySelector<HTMLSelectElement>("#compound-position")!;
+    await act(async () => { select.value = `raydium-clmm:${otherMint}`; select.dispatchEvent(new Event("change", { bubbles: true })); });
     await settle();
     const before = probe.commits.length;
     eligible = true;
+    // Rescan wallet lives in All positions, on the other tabs; the Compound controller stays mounted across tabs.
+    await act(async () => button("Add to position").click()); await settle();
     await act(async () => button("Rescan wallet").click()); await settle();
     const transition = probe.commits.slice(before);
     expect(transition.some(c => c.mint === undefined)).toBe(true);

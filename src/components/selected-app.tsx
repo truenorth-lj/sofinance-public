@@ -32,6 +32,7 @@ import { toolOptions, type ToolMeta } from "@/lib/unified-positions/capabilities
 import { capabilitiesFor, firstSupportedTool, parsePositionKey, positionKey, toolUnavailableReason, type ToolId, type UnifiedPosition } from "@/lib/unified-positions/model";
 import { CLOSED_LABEL, groupPositions, isClosed, positionOptionLabel, SOLANA_CONNECT_EMPTY_OPTION, type PositionGroup } from "@/lib/unified-positions/rows";
 import type { ExternalPositions } from "./unified-positions/external-positions";
+import { GroupedPositionSelect } from "./unified-positions/grouped-position-select";
 import { RegistryPositionDetails, RegistryPositionHeader, useRegistryPositions } from "./unified-positions/registry-positions";
 import { RegistryPositionTool, type ToolBalance } from "./unified-positions/registry-tools";
 import { useStoredTokenIcons } from "./use-stored-token-icons";
@@ -224,7 +225,8 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
       tool: (item: UnifiedPosition, view: ToolId) => <RegistryPositionTool key={item.key} position={item} descriptor={registry.descriptor(item)!}
         capabilities={registry.capabilities(item)!} view={view} balances={walletBalances} symbolOf={(token) => tokenSymbol(token.id, metadata, token.symbol)}
         onConfirmed={() => { setOtherKey(item.key); setRegistryRefresh((value) => value + 1); void refreshDiscovery(); }}
-        onPerformance={(key, result) => setPanelResult({ key, ...result })} showStockPerformance={!stockShownInOverview} />,
+        onPerformance={(key, result) => setPanelResult({ key, ...result })} showStockPerformance={!stockShownInOverview}
+        positionPicker={view === "compound" ? compoundPicker : undefined} />,
       capabilities: registry.capabilities(otherSelected)! }
     : otherSelected && external ? { header: external.header, details: external.details, tool: external.tool, capabilities: capabilitiesFor(external.source, otherSelected) }
       : null;
@@ -256,6 +258,22 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
   const optionLabel = (item: UnifiedPosition, group: PositionGroup) =>
     positionOptionLabel(item.source === positionSource.id ? positionSource : registry.owns(item) ? registry.optionSource(item, metadata) : external!.source as never, item as never, { showSourceName: group.showSourceName, metadata });
   const anyBusy = busy || Boolean(external?.busy);
+  // Compound fees tab: no All positions card. The position to compound is picked from a small dropdown beside the
+  // panel title, listing only positions that can compound, and only when there is more than one of them.
+  const canCompound = (item: UnifiedPosition) => (item.source === positionSource.id ? capabilitiesFor(positionSource, item)
+    : registry.owns(item) ? registry.capabilities(item) : external ? capabilitiesFor(external.source, item) : null)?.compound.supported ?? false;
+  const compoundGroups = groups.map((group) => ({ ...group, positions: group.positions.filter(canCompound) })).filter((group) => group.positions.length);
+  const compoundPicker = compoundGroups.reduce((count, group) => count + group.positions.length, 0) > 1
+    // The wrapper bounds the select to the card on phones (a long pair label would otherwise widen it).
+    ? <div className="w-full min-w-0 sm:w-auto sm:max-w-[26rem]"><GroupedPositionSelect id="compound-position" label="Position to compound" value={selectedKey}
+      disabled={anyBusy} onChange={pickKey} groups={compoundGroups} optionLabel={optionLabel} emptyOption={() => ""}
+      className="w-full rounded-full border border-white/20 bg-white/[0.06] py-1.5 pl-3 text-base sm:text-sm text-cream outline-none focus:border-white/40 disabled:opacity-50" /></div>
+    : connected && discovery && !loadingDiscovery && !allPositions.length && !registry.loadingNames.length
+      ? <a href={APP_ROUTES.rwaPairs} className="text-xs font-semibold text-cream underline underline-offset-4">Explore pools to open a position</a>
+      : null;
+  // Hidden only while a Compound panel (which carries the picker) is shown for a connected Solana wallet. Without one the
+  // card stays for its connect prompt; an unavailable Compound keeps it to switch positions from.
+  const showAllPositions = activeView !== "compound" || !connected || Boolean(unavailableReason);
   const assetOptions = discovery?.assets || [];
   const poolLabel = (mint: string) => {
     const asset = assetOptions.find((item) => item.mint === mint);
@@ -329,7 +347,7 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
 
       <ActionSelector value={activeView} onChange={changeView} options={toolOptions(capabilities, TOOL_META,
         otherSelected ? {} : { withdraw: !state || !wallet || (busy && activeView !== "withdraw") })} />
-      <section aria-labelledby="all-positions-heading" className="mt-3 rounded-[28px] border border-white/12 bg-char p-5 sm:p-7">
+      {showAllPositions && <section aria-labelledby="all-positions-heading" className="mt-3 rounded-[28px] border border-white/12 bg-char p-5 sm:p-7">
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <h2 id="all-positions-heading" className="text-base font-semibold text-cream">All positions</h2>
           <button type="button" disabled={(!wallet && !(external && onRescan)) || anyBusy} onClick={rescan} className="text-xs font-semibold text-cream/80 transition-opacity hover:opacity-70 disabled:opacity-40">Rescan wallet</button>
@@ -366,14 +384,14 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
           </button>
         </div>}
         </div>
-      </section>
+      </section>}
       {unavailableReason ? <UnavailableTool id={`${activeView}-view`} reason={unavailableReason} />
         : otherSelected && otherBinding ? <div id={`${activeView}-view`}>{otherBinding.tool(otherSelected, activeView)}</div> : <>
       {activeView === "withdraw" && <div id="withdraw-view">{shownWithdraw ? <WithdrawPanel key={`${shownWithdraw.wallet}:${shownWithdraw.positionMint}`} wallet={shownWithdraw.wallet} positionMint={shownWithdraw.positionMint} mintA={shownWithdraw.mintA} mintB={shownWithdraw.mintB} label={poolLabel} outputs={capabilities.withdrawOutputs} onClose={()=>setActiveView("compound")} onBusyChange={onWithdrawBusy} onConfirmed={()=>{void refreshState();void refreshDiscovery();}} /> : <p className="mt-4 text-sm text-smoke">Connect your wallet and choose a position to withdraw.</p>}</div>}
       {compound.historyWarning && <div role="status" className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-xs text-cream/80"><span>{compound.historyWarning}</span><button type="button" className="font-semibold underline" onClick={() => setActiveView("compound")}>View compound status</button></div>}
       <main>
         <div id="compound-view" hidden={activeView !== "compound"}>
-          <CompoundPanel controller={compound} tokenLabel={poolLabel} onConnect={connect} />
+          <CompoundPanel controller={compound} tokenLabel={poolLabel} onConnect={connect} positionPicker={compoundPicker} />
         </div>
         <div id="performance-view" hidden={activeView !== "performance"} className="mt-3 space-y-3">
           {activeView === "performance" && linkedForeignPosition && <p role="status" className="rounded-2xl border border-white/15 bg-white/[0.04] px-4 py-3 text-xs leading-5 text-smoke">

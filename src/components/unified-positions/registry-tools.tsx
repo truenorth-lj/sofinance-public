@@ -9,7 +9,7 @@
  * success / failure with a Solscan link, balances refresh; the pipeline's success notice stays until dismissed.
  */
 import { CircleAlert, LoaderCircle } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { formatAmount, parseTokenAmount } from "@sofinance/engine/amount";
 import { DEPOSIT_MINIMUM_UNAVAILABLE, depositTooSmallMessage, dexTxAdapter, fetchAddQuote, type AddQuote, type DexCapabilities, type DexPreparedStep, type DexDescriptor, type DexStepInput, type DexStepOp, type FeeRule, type RentQuote } from "@/lib/dex/client";
 import { createJupiterRelayStore } from "@/lib/jupiter/browser-relay";
@@ -35,6 +35,8 @@ export type RegistryToolProps = {
   symbolOf: (token: TokenRef) => string;
   /** A send of this position landed: re-read positions and balances. */
   onConfirmed: () => void;
+  /** Compound fees tab: which position to compound, beside the title (the tab has no All positions card). */
+  positionPicker?: ReactNode;
   /** The Performance tab read this position (report null on failure), so the all-stocks overview need not read it again. */
   onPerformance?: (key: string, result: { report: PositionPerformanceReport | null; error: boolean }) => void;
 };
@@ -399,7 +401,7 @@ export function compoundBlockedReason(position: UnifiedPosition, symbolOf: (toke
   return `There are no ${symbolOf(kept)} fees to put back while the price is outside the range. Claim the ${symbolOf(other)} fees to your wallet instead.`;
 }
 
-function RegistryCompoundPanel({ position, descriptor, symbolOf, onConfirmed }: RegistryToolProps) {
+function RegistryCompoundPanel({ position, descriptor, symbolOf, onConfirmed, positionPicker }: RegistryToolProps) {
   const op = usePositionTx("compound", position, onConfirmed);
   const { tx, send, connected, locked } = op;
   const fees = position.holdings?.unclaimedFeesRaw ?? null;
@@ -410,7 +412,7 @@ function RegistryCompoundPanel({ position, descriptor, symbolOf, onConfirmed }: 
   const rentLine = tokenAccountRentLine(op.prepared?.createsTokenAccounts, (mint) => { const token = tokenFor(mint); return token ? symbolOf(token) : "pool token"; });
   const submit = () => void send({ descriptor, positionKey: position.key });
   return <section className={CARD} data-testid="registry-compound" aria-labelledby="registry-compound-heading">
-    <h2 id="registry-compound-heading" className="text-lg font-semibold text-cream">Compound fees</h2>
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-2"><h2 id="registry-compound-heading" className="text-lg font-semibold text-cream">Compound fees</h2>{positionPicker}</div>
     <p className="mt-2 text-xs leading-5 text-smoke">Claims the unclaimed swap fees and adds them back into this position at its current price range, in one transaction. No swap is needed. {feeLine(descriptor.meta.feePolicy.compound, "")}</p>
     {fees ? <p className="mt-3 text-sm text-cream/80">Unclaimed: {formatAmount(fees.a, position.tokenA.decimals)} {symbolOf(position.tokenA)} · {formatAmount(fees.b, position.tokenB.decimals)} {symbolOf(position.tokenB)}</p> : null}
     {rangeLine ? <p data-testid="registry-compound-range" className="mt-4 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80">{rangeLine}</p> : null}

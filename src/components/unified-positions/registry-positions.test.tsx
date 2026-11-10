@@ -94,6 +94,8 @@ async function render(props: Record<string, unknown> = {}) {
   await act(async () => root.render(createElement(SelectedApp as FunctionComponent<Record<string, unknown>>, props)));
   await settle();
 }
+/** A tab that shows All positions: Compound fees (the default) hides it once a Solana wallet is connected. */
+const LISTED = { initialView: "deposit" } as const;
 const rows = () => [...container.querySelectorAll<HTMLButtonElement>('[data-testid="position-fallback-select"]')];
 const selectedKey = () => rows().find((row) => row.getAttribute("aria-pressed") === "true")?.getAttribute("data-position-key");
 const groups = () => [...container.querySelectorAll('[data-testid="position-chain-group"]')].map((group) => [group.getAttribute("aria-label"),
@@ -104,12 +106,17 @@ describe("/app My positions with registry DEXes", () => {
   it("lists the wallet's served-DEX positions in the Solana group and selects one when the scan has none", async () => {
     await render();
     expect(state.dexCalls).toEqual([["/api/dex/meteora-dlmm/positions", { owner: WALLET }]]);
-    expect(groups()).toEqual([["Solana", [`Meteora · TSLA/TSLAx · range 0.9800–1.0200 · In range · #${POSITION.slice(0, 4)}…${POSITION.slice(-4)}`]]]);
-    expect(selectedKey()).toBe(`meteora-dlmm:${POSITION}`);
-    expect(container.querySelector("[data-testid=registry-position-header]")?.textContent).toBe("In rangeRange 0.9800–1.0200");
     // PR8: the page's default tool (Compound) now has a registry panel, never the Raydium one.
     expect(container.querySelector("[data-testid=registry-compound]")).toBeTruthy();
     expect(container.querySelector("#compound-view")?.textContent).not.toContain("Meteora");
+    // Compound fees has no All positions card, and one position needs no dropdown beside its title.
+    expect(container.querySelector('[aria-labelledby="all-positions-heading"]')).toBeNull();
+    expect(container.querySelector("#compound-position")).toBeNull();
+    await act(async () => tab("Add to position").click());
+    await settle();
+    expect(groups()).toEqual([["Solana", [`Meteora · TSLA/TSLAx · range 0.9800–1.0200 · In range · #${POSITION.slice(0, 4)}…${POSITION.slice(-4)}`]]]);
+    expect(selectedKey()).toBe(`meteora-dlmm:${POSITION}`);
+    expect(container.querySelector("[data-testid=registry-position-header]")?.textContent).toBe("In rangeRange 0.9800–1.0200");
     // PR9: Performance has a registry panel too (never the Raydium one).
     await act(async () => tab("Performance").click());
     await settle();
@@ -410,7 +417,7 @@ describe("/app My positions with registry DEXes", () => {
 
   it("the header uses the stored token icons (same source as the pairs list) instead of the first-letter placeholder", async () => {
     state.icons = { solana: { [MINT_A]: "https://example.test/tsla.png", [MINT_B]: "https://example.test/tslax.png" }, robinhood: {} };
-    await render();
+    await render(LISTED);
     const srcs = [...container.querySelectorAll<HTMLImageElement>("[data-testid=registry-position-assets] img")].map((img) => img.getAttribute("src"));
     expect(srcs).toEqual(["https://example.test/tsla.png", "https://example.test/tslax.png"]);
   });
@@ -430,7 +437,7 @@ describe("/app My positions with registry DEXes", () => {
   });
 
   it("shows the shared Liquidity and Unclaimed fees rows for the selected registry position (no USD until priced)", async () => {
-    await render();
+    await render(LISTED);
     const rows = [...container.querySelectorAll("[data-testid=registry-position-assets] dl")].map((row) => [...row.querySelectorAll("dt, dd")].map((cell) => cell.textContent));
     expect(rows).toHaveLength(2);
     // One grid per token: label | amount + symbol | USD, each cell exactly one value (PM 11/1: no wrapped second dash).
@@ -446,25 +453,25 @@ describe("/app My positions with registry DEXes", () => {
 
   it("a registry position whose amounts were not read shows a dash on both rows, never zero (same rule as Robinhood Chain)", async () => {
     state.dex = { status: 200, body: { positions: [meteoraRow("5000", "omit")] } };
-    await render();
+    await render(LISTED);
     const values = [...container.querySelectorAll("[data-testid=registry-position-assets] dd")].map((cell) => cell.textContent);
     expect(values.map((cell) => cell?.replace(/\s+/g, " "))).toEqual(["— TSLA", "—", "— TSLA", "—", "— TSLAx", "—", "— TSLAx", "—"]);
     state.dex = { status: 200, body: { positions: [meteoraRow("5000", { liquidityRaw: null, unclaimedFeesRaw: null })] } };
     await act(async () => root.unmount()); root = createRoot(container);
-    await render();
+    await render(LISTED);
     expect([...container.querySelectorAll("[data-testid=registry-position-assets] dd")].map((cell) => cell.textContent)).toEqual(values);
   });
 
   it("a ?position= deep link to a registry position selects it over the scanned positions", async () => {
     state.raydium = [raydiumRow];
-    await render({ initialPositionKey: `meteora-dlmm:${POSITION}` });
+    await render({ ...LISTED, initialPositionKey: `meteora-dlmm:${POSITION}` });
     expect(selectedKey()).toBe(`meteora-dlmm:${POSITION}`);
     expect(groups()[0]![1]).toHaveLength(2);
   });
 
   it("a deployment that does not serve the route (404) renders the Raydium-only page: no source names, no Meteora text", async () => {
     state.dex = { status: 404, body: null }; state.raydium = [raydiumRow];
-    await render();
+    await render(LISTED);
     const [[label, options]] = groups() as [[string, string[]]];
     expect(label).toBe("Solana");
     expect(options).toHaveLength(1);
@@ -474,7 +481,7 @@ describe("/app My positions with registry DEXes", () => {
 
   it("where the dex route is off (production today) nothing is requested and the page is the Raydium-only page", async () => {
     state.routeOn = false; state.raydium = [raydiumRow];
-    await render();
+    await render(LISTED);
     expect(state.dexCalls).toEqual([]);
     const [[, options]] = groups() as [[string, string[]]];
     expect(options).toHaveLength(1);
@@ -484,7 +491,7 @@ describe("/app My positions with registry DEXes", () => {
 
   it("a DEX that fails shows its plain error and leaves the scanned positions usable", async () => {
     state.dex = { status: 502, body: { error: "Solana RPC is temporarily unavailable. Try again shortly." } }; state.raydium = [raydiumRow];
-    await render();
+    await render(LISTED);
     expect(container.querySelector("[data-testid=registry-positions-error]")?.textContent)
       .toBe("Meteora: Solana RPC is temporarily unavailable. Try again shortly.");
     expect(selectedKey()).toBe(`raydium-clmm:${RAYDIUM_MINT}`);
@@ -492,7 +499,7 @@ describe("/app My positions with registry DEXes", () => {
 
   it("rejects a response whose rows are not this DEX's positions", async () => {
     state.dex = { status: 200, body: { positions: [{ ...meteoraRow(), source: "raydium-clmm" }] } };
-    await render();
+    await render(LISTED);
     expect(container.querySelector("[data-testid=registry-positions-error]")?.textContent).toBe("Meteora: Meteora returned positions in an unexpected shape.");
     expect(container.textContent).not.toContain("TSLA/TSLAx");
   });

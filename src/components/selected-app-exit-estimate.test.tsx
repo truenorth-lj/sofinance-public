@@ -185,20 +185,22 @@ describe("stock summary and position detail hierarchy", () => {
     await settle();
     expect(perfMints().at(-1)).toBe(OTHER_OWNED_MINT);
   });
-  it("locks fallback selection and rescan during a compound without unmounting the selected operation", async () => {
+  it("Compound fees has no All positions card: the position dropdown beside its title locks during a compound", async () => {
     compoundMock.busy = true;
     await mount({ wallet: OWN_WALLET, positions: [OWNED_MINT, OTHER_OWNED_MINT], stateOk: true, initialMint: OWNED_MINT, initialView: "compound" });
     await settle();
-    const entry = container.querySelector('[aria-labelledby="all-positions-heading"]')!;
-    const rows = [...entry.querySelectorAll<HTMLButtonElement>('[data-testid="position-fallback-select"]')];
-    expect(rows).toHaveLength(2);
-    expect(rows.every((row) => row.disabled)).toBe(true);
-    const rescan = [...entry.querySelectorAll("button")].find((button) => button.textContent === "Rescan wallet")!;
-    expect(rescan.disabled).toBe(true);
-    const before = calls.length;
-    await act(async () => { rows[0]!.click(); rescan.click(); }); await settle();
-    expect(calls.length).toBe(before);
+    expect(container.querySelector('[aria-labelledby="all-positions-heading"]')).toBeNull();
+    const select = container.querySelector<HTMLSelectElement>("#compound-view #compound-position")!;
+    expect([...select.options].map((option) => option.value).sort()).toEqual([`raydium-clmm:${OWNED_MINT}`, `raydium-clmm:${OTHER_OWNED_MINT}`].sort());
+    expect(select.value).toBe(`raydium-clmm:${OWNED_MINT}`);
+    expect(select.disabled).toBe(true);
     expect(container.querySelector('#compound-view')).not.toBeNull();
+  });
+  it("Compound fees with one position shows no dropdown", async () => {
+    await mount({ wallet: OWN_WALLET, positions: [OWNED_MINT], stateOk: true, initialMint: OWNED_MINT, initialView: "compound" });
+    await settle();
+    expect(container.querySelector('[aria-labelledby="all-positions-heading"]')).toBeNull();
+    expect(container.querySelector("#compound-position")).toBeNull();
   });
   it("uses lightweight rows outside Performance without reading any history", async () => {
     await mount({ wallet: OWN_WALLET, positions: [OWNED_MINT, OTHER_OWNED_MINT], stateOk: true, initialMint: OWNED_MINT, initialView: "deposit" });

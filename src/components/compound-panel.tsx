@@ -2,7 +2,7 @@
 import "@/lib/engine-host";
 
 import { ArrowUpRight, CircleAlert, LoaderCircle, RefreshCw, Sprout } from "lucide-react";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { CompoundOverview } from "./compound-overview";
 import { CompoundSubmitDialog } from "./compound-submit-dialog";
 import { useSolUsdcPrices } from "./use-sol-usdc-price";
@@ -20,8 +20,10 @@ const statusText = {
   "manual-review": "Transaction result requires verification. New operations are available.",
 } as const;
 
-export function CompoundPanel({ controller: c, tokenLabel = short, onConnect }: {
+export function CompoundPanel({ controller: c, tokenLabel = short, onConnect, positionPicker }: {
   controller: CompoundController; tokenLabel?: (mint: string) => string; onConnect?: () => void;
+  /** Beside the title: which position to compound (the Compound fees tab has no All positions card). */
+  positionPicker?: ReactNode;
 }) {
   const [importSignature, setImportSignature] = useState("");
   const prices = useSolUsdcPrices();
@@ -60,7 +62,7 @@ export function CompoundPanel({ controller: c, tokenLabel = short, onConnect }: 
       </div>;
   return <section aria-labelledby="compound-heading" className="mt-6 rounded-[28px] border border-white/12 bg-char p-5 sm:p-8">
     <div className="flex items-center justify-between gap-4">
-      <div><h2 id="compound-heading" className="flex items-center gap-2 text-lg font-semibold text-cream"><Sprout className="h-5 w-5 text-cream/80" />Compound fees</h2>
+      <div className="min-w-0"><div className="flex flex-wrap items-center gap-x-4 gap-y-2"><h2 id="compound-heading" className="flex items-center gap-2 text-lg font-semibold text-cream"><Sprout className="h-5 w-5 text-cream/80" />Compound fees</h2>{positionPicker}</div>
         <p className="mt-2 text-xs leading-5 text-smoke">Harvest this position&apos;s fees, swap to ratio needed for original range, then add back to original NFT. After confirmation, approve a cleanup transaction to merge leftover fees and return account rent.</p></div>
       <button type="button" onClick={() => void c.refreshState()} disabled={!c.wallet || !c.positionMint || c.loading || c.busy}
         className="shrink-0 text-xs font-semibold text-cream/80 transition-opacity hover:opacity-70 disabled:opacity-40"><RefreshCw className={`mb-1 inline h-3.5 w-3.5 ${c.loading ? "animate-spin" : ""}`} /> Reload fees</button>

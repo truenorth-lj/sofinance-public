@@ -3,7 +3,7 @@ import { VersionedTransaction } from "@solana/web3.js";
 import type { Page } from "@playwright/test";
 import { expect, test } from "../fixtures";
 import { ConnectModal } from "../../pages/connect-modal";
-import { selectPosition } from "../../pages/all-positions";
+import { selectCompoundPosition, selectPosition } from "../../pages/all-positions";
 import { randomAddress, buildSingleSignerTx } from "../../support/tx";
 import type { FakeWallet } from "../../fake-wallet/node-signer";
 
@@ -167,7 +167,7 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 
     await expect(success).toBeVisible();
     await page.locator("summary").filter({ hasText: "Other positions (1 records)" }).click();
     await expect(page.getByRole("button", { name: "Retrieve this balance" })).toBeVisible();
-    await selectPosition(page, `raydium-clmm:${flow.oldMint}`);
+    await selectCompoundPosition(page, `raydium-clmm:${flow.oldMint}`);
     await expect(management).toContainText("1 records for this position");
     await expect(compoundPanel.getByRole("alert")).toBeHidden();
     await expect(success).toBeVisible();

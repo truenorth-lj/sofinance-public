@@ -78,7 +78,8 @@ for (const width of widths) {
       const check = checker(page, width, phone);
       await page.goto("/app", { waitUntil: "domcontentloaded" });
       await new ConnectModal(page, wallet).connect();
-      await page.getByText("Price within range").first().waitFor();
+      // Compound fees (the default view) has no All positions card, so the range chip shows on the other tabs only.
+      await page.getByRole("region", { name: "Compound fees", exact: true }).getByLabel("Position to compound", { exact: true }).waitFor();
       const show = async (view: string) => {
         if (phone) await page.locator("#position-action").selectOption(view);
         else {
