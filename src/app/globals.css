@@ -12,9 +12,18 @@
   --color-coral: #ff9c85;
   --color-smoke: #98948b;
 
+  /* Corner radii nest from the outside in: a box inset p inside a container of radius R gets R − p, so both corners
+     share one centre (never under 4px; pills and circles stay round). `--radius-inset` is for boxes straight inside
+     a surface; a surface whose padding is not 12px sets it to its own radius minus its padding. */
+  --radius-surface: 1.75rem; /* 28px: cards, tables, dialogs */
+  --radius-inset: 1rem;
+
   --animate-rise: rise 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
   --animate-settle: settle 0.35s cubic-bezier(0.2, 0.7, 0.2, 1) both;
   --animate-halo: halo 3.2s ease-in-out infinite;
+  /* Content that appears because of an element (a tooltip from its ⓘ, a search hint from its field) grows out of it:
+     `--emerge-from` is the side it comes from (negative: from above). */
+  --animate-emerge: emerge 0.18s cubic-bezier(0.2, 0.7, 0.2, 1) both;
 
   @keyframes rise {
     from { opacity: 0; transform: translateY(16px); }
@@ -29,6 +38,10 @@
     0%, 100% { opacity: calc(var(--halo, 0.4) * 0.55); }
     50% { opacity: var(--halo, 0.4); }
   }
+  @keyframes emerge {
+    from { opacity: 0; transform: translateY(var(--emerge-from, -4px)) scale(0.98); }
+    to { opacity: 1; transform: none; }
+  }
 }
 
 /* The font variables are set on <html> by the root layout; resolve them where they are used. */
@@ -42,6 +55,16 @@ html { background: #0b0b0b; }
 body { margin: 0; }
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; }
+
+/*
+ * Continuous corners (homepage and the Buy modal): the same border-radius drawn as a superellipse, which eases into
+ * the straight edge instead of meeting it with a circular arc. Progressive enhancement: Chrome and Edge 139+ draw it;
+ * Safari and Firefox skip this block and keep the plain border-radius. Pills and circles stay round.
+ */
+@supports (corner-shape: superellipse(1.25)) {
+  :where(.continuous-corners, .continuous-corners *) { corner-shape: superellipse(1.25); }
+  :where(.continuous-corners .rounded-full) { corner-shape: round; }
+}
 
 /*
  * Border beam: a short streak of light that travels around an element's border (the pool card's "Calculate shares").

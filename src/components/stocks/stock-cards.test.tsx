@@ -25,14 +25,21 @@ beforeEach(() => { host = document.createElement("div"); document.body.append(ho
 afterEach(() => { act(() => root.unmount()); host.remove(); });
 
 describe("StockCardsView", () => {
-  it("shows the rows it is given, each with its Buy button", () => {
+  it("shows the rows it is given; there is no Buy button, the whole row opens Buy", () => {
     const onBuy = vi.fn();
     act(() => root.render(<StockCardsView stocks={stocks} onBuy={onBuy} />));
     const gainers = host.querySelector('[data-testid="stock-card-gainers"]')!;
     expect(gainers.textContent).toContain("Top Gainers");
     expect(host.querySelector('[data-testid="stock-card-stocks"]')!.textContent).toContain("Top Stocks");
     expect([...gainers.querySelectorAll('[data-testid^="stock-row-"]')].map((row) => row.getAttribute("data-testid"))).toEqual(["stock-row-TSLA", "stock-row-AMZN"]);
-    expect(gainers.querySelector('[data-testid="stock-buy-TSLA"]')).not.toBeNull();
+    // The row's only control is the row itself: one button spanning the row, with no visible "Buy" label.
+    const tsla = gainers.querySelector('[data-testid="stock-row-TSLA"]')!;
+    const rowButton = tsla.querySelector<HTMLButtonElement>('button[data-testid="stock-buy-TSLA"]')!;
+    expect(tsla.querySelectorAll("button")).toHaveLength(1);
+    expect(rowButton.textContent).toContain("Tesla");
+    expect(rowButton.textContent).toContain("$250.50");
+    expect([...host.querySelectorAll("button")].some((button) => button.textContent?.trim() === "Buy")).toBe(false);
+    expect(rowButton.querySelector(".sr-only")!.textContent).toBe(": buy Tesla with USDC");
     // No greyed "Not supported yet" anywhere: unsupported stocks are not listed at all (the server leaves them out).
     expect(host.textContent).not.toContain("Not supported yet");
     expect(host.querySelector("button[disabled]")).toBeNull();

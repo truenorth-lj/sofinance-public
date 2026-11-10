@@ -152,7 +152,7 @@ export function SpotSwapModal({ option, onClose }: { option: StockBuyOption; onC
 
   return <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 sm:items-center" data-testid="spot-swap-modal" onClick={(event) => { if (event.target === event.currentTarget) close(); }}>
     <section role="dialog" aria-modal="true" aria-labelledby="spot-swap-heading"
-      className="max-h-[100dvh] w-full overflow-y-auto rounded-t-[28px] border border-white/12 bg-char p-5 text-cream sm:max-w-md sm:rounded-[28px] sm:p-7">
+      className="continuous-corners max-h-[100dvh] w-full overflow-y-auto rounded-t-surface border border-white/12 bg-char p-5 text-cream [--radius-inset:0.5rem] sm:max-w-md sm:rounded-surface">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 id="spot-swap-heading" className="text-lg font-semibold">Buy {option.company}</h2>
@@ -166,7 +166,7 @@ export function SpotSwapModal({ option, onClose }: { option: StockBuyOption; onC
         onChange={(event) => setAmount(event.target.value)} className={`mt-2 ${FIELD}`} />
       {problem ? <p role="alert" className="mt-2 text-xs text-cream/80">{problem}</p> : null}
 
-      <div className="mt-4 space-y-2 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80" data-testid="spot-swap-quote">
+      <div className="mt-4 space-y-2 rounded-inset border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80" data-testid="spot-swap-quote">
         {!parsed ? <p className="text-smoke">Enter an amount to see the price.</p> : null}
         {parsed && current && !current.value && !current.error ? <p role="status" className="flex items-center gap-2"><LoaderCircle aria-hidden="true" className="size-4 animate-spin" />Getting a price…</p> : null}
         {current?.error ? <p role="alert" data-testid={current.refused ? "spot-swap-refused" : "spot-swap-quote-error"}>{current.error}</p> : null}
@@ -174,7 +174,7 @@ export function SpotSwapModal({ option, onClose }: { option: StockBuyOption; onC
           <p className={ROW}><span>You receive (quoted){changed ? " · updated" : ""}</span><span className="text-right font-data text-cream" data-testid="spot-swap-quoted">{formatTokenRaw(quoted.quotedOut, quoted.outputDecimals, symbol)}</span></p>
           <button type="button" aria-expanded={expanded} aria-controls="spot-swap-details" onClick={() => setExpanded((value) => !value)} data-testid="spot-swap-summary"
             data-high-impact={highImpact ? "true" : undefined}
-            className={`flex w-full items-center justify-between gap-2 rounded-xl py-1 text-left text-xs outline-none focus-visible:shadow-[0_0_0_2px_var(--color-lilac)] ${highImpact ? "text-[#ffb86b]" : "text-smoke hover:text-cream"}`}>
+            className={`flex w-full items-center justify-between gap-2 rounded-sm py-1 text-left text-xs outline-none focus-visible:shadow-[0_0_0_2px_var(--color-lilac)] ${highImpact ? "text-[#ffb86b]" : "text-smoke hover:text-cream"}`}>
             <span>Price impact {formatPriceImpact(quoted.priceImpactPct)} · Fee {(quoted.feeBps / 100).toFixed(1)}%</span>
             <ChevronRight aria-hidden="true" className={`size-4 shrink-0 transition-transform ${expanded ? "rotate-90" : ""}`} />
             <span className="sr-only">{expanded ? "Hide details" : "Show details"}</span>
