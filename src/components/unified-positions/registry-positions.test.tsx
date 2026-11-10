@@ -90,8 +90,10 @@ async function render(props: Record<string, unknown> = {}) {
   await act(async () => root.render(createElement(SelectedApp as FunctionComponent<Record<string, unknown>>, props)));
   await settle();
 }
-const select = () => container.querySelector<HTMLSelectElement>("select#position")!;
-const groups = () => [...select().querySelectorAll("optgroup")].map((g) => [g.label, [...g.querySelectorAll("option")].map((o) => o.textContent)]);
+const rows = () => [...container.querySelectorAll<HTMLButtonElement>('[data-testid="position-fallback-select"]')];
+const selectedKey = () => rows().find((row) => row.getAttribute("aria-pressed") === "true")?.getAttribute("data-position-key");
+const groups = () => [...container.querySelectorAll('[data-testid="position-chain-group"]')].map((group) => [group.getAttribute("aria-label"),
+  group.querySelector("button") ? [...group.querySelectorAll("button")].map((row) => row.firstChild?.textContent) : [...group.querySelectorAll("p")].map((row) => row.textContent)]);
 const tab = (label: string) => [...container.querySelectorAll<HTMLButtonElement>("nav[aria-label='Position operations'] button")].find((b) => b.textContent === label)!;
 
 describe("/app My positions with registry DEXes", () => {
@@ -99,7 +101,7 @@ describe("/app My positions with registry DEXes", () => {
     await render();
     expect(state.dexCalls).toEqual([["/api/dex/meteora-dlmm/positions", { owner: WALLET }]]);
     expect(groups()).toEqual([["Solana", [`Meteora · TSLA/TSLAx · range 0.9800–1.0200 · In range · #${POSITION.slice(0, 4)}…${POSITION.slice(-4)}`]]]);
-    expect(select().value).toBe(`meteora-dlmm:${POSITION}`);
+    expect(selectedKey()).toBe(`meteora-dlmm:${POSITION}`);
     expect(container.querySelector("[data-testid=registry-position-header]")?.textContent).toBe("In rangeRange 0.9800–1.0200");
     // PR8: the page's default tool (Compound) now has a registry panel, never the Raydium one.
     expect(container.querySelector("[data-testid=registry-compound]")).toBeTruthy();
@@ -402,7 +404,7 @@ describe("/app My positions with registry DEXes", () => {
   it("a ?position= deep link to a registry position selects it over the scanned positions", async () => {
     state.raydium = [raydiumRow];
     await render({ initialPositionKey: `meteora-dlmm:${POSITION}` });
-    expect(select().value).toBe(`meteora-dlmm:${POSITION}`);
+    expect(selectedKey()).toBe(`meteora-dlmm:${POSITION}`);
     expect(groups()[0]![1]).toHaveLength(2);
   });
 
@@ -431,7 +433,7 @@ describe("/app My positions with registry DEXes", () => {
     await render();
     expect(container.querySelector("[data-testid=registry-positions-error]")?.textContent)
       .toBe("Meteora: Solana RPC is temporarily unavailable. Try again shortly.");
-    expect(select().value).toBe(`raydium-clmm:${RAYDIUM_MINT}`);
+    expect(selectedKey()).toBe(`raydium-clmm:${RAYDIUM_MINT}`);
   });
 
   it("rejects a response whose rows are not this DEX's positions", async () => {

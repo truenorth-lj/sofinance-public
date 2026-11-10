@@ -11,9 +11,9 @@ import { USDC_MINT } from "@sofinance/engine/ids";
 vi.mock("./use-sol-usdc-price", () => ({ useSolUsdcPrices: () => ({ rate: null, usdcUsd: null }) }));
 vi.mock("next/navigation", () => ({ usePathname: () => "/app" }));
 vi.mock("./use-token-metadata", () => ({ useTokenMetadata: () => ({}) }));
-const compoundMock = vi.hoisted(() => ({ state: null as unknown }));
+const compoundMock = vi.hoisted(() => ({ state: null as unknown, busy: false }));
 vi.mock("./use-compound-controller", () => ({ useCompoundController: () => ({
-  wallet: undefined, state: compoundMock.state, preview: null, attempt: null, stage: "idle", busy: false, canCompound: false,
+  wallet: undefined, state: compoundMock.state, preview: null, attempt: null, stage: "idle", busy: compoundMock.busy, canCompound: false,
   compound: vi.fn(), receipts: [], priorReceipts: [], error: "" }) }));
 vi.mock("./transaction-status-dialog", () => ({ TransactionStatusDialog: () => null }));
 vi.mock("./pool-daily-apr-panel", () => ({ PoolDailyAprChart: () => null }));
@@ -45,7 +45,7 @@ const stockFixture = {
   feeShares: 0.01, feeUsd: 1, totalUsd: null, sparkline24h: [], sparklineSinceEntry: [],
   entryPriceSource: null, entryUnavailableReason: "Entry price unavailable.",
 };
-type Mode = { wallet: string | null; positions: string[]; stateOk: boolean; initialMint: string; stock?: boolean };
+type Mode = { wallet: string | null; positions: string[]; stateOk: boolean; initialMint: string; stock?: boolean; performanceFail?: boolean; initialView?: "performance" | "compound" | "deposit" | "withdraw" };
 let container: HTMLDivElement; let root: Root;
 let calls: string[];
 const count = (prefix: string) => calls.filter((u) => u.startsWith(prefix)).length;
@@ -62,6 +62,7 @@ function mount(mode: Mode) {
       return mode.stateOk ? Response.json(selectedState(param(url, "positionMint")!))
         : Response.json({ error: "Selected position reading failed" }, { status: 500 });
     }
+    if (url.startsWith("/api/position-performance?") && mode.performanceFail) return Response.json({ error: "Performance unavailable" }, { status: 503 });
     if (url.startsWith("/api/position-performance?")) return Response.json({ ...fixture, positionMint: param(url, "positionMint"), ...(mode.stock ? { stock: stockFixture } : {}) });
     if (url.startsWith("/api/lp-decision/exit-preview?")) return Response.json(exitBody);
     return Response.json({});
@@ -69,7 +70,7 @@ function mount(mode: Mode) {
   const connection: WalletConnection = { address: mode.wallet ?? "", connected, connect: vi.fn(), disconnect: vi.fn(), isMobile: false,
     walletsCount: 1, connectionError: "", signTransaction: async (tx) => tx };
   return act(async () => root.render(createElement(WalletConnectionContext.Provider, { value: connection },
-    createElement(SelectedApp as unknown as FunctionComponent<{ initialView: string; initialMint: string }>, { initialView: "performance", initialMint: mode.initialMint }))));
+    createElement(SelectedApp as unknown as FunctionComponent<{ initialView: string; initialMint: string }>, { initialView: mode.initialView ?? "performance", initialMint: mode.initialMint }))));
 }
 const exitSection = () => container.querySelector('[aria-label="Exit estimates"]');
 const exitUrls = () => calls.filter((u) => u.startsWith("/api/lp-decision/exit-preview?"));
@@ -85,7 +86,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   calls = [];
-  compoundMock.state = null;
+  compoundMock.state = null; compoundMock.busy = false;
   container = document.createElement("div"); document.body.append(container); root = createRoot(container);
 });
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.useRealTimers(); vi.unstubAllGlobals(); });
@@ -123,7 +124,8 @@ describe("Performance deep link /app?view=performance&mint=X: the exit estimate 
   it("deep link to a position held by someone else: the link wins over the wallet's own first position", async () => {
     await mount({ wallet: OWN_WALLET, positions: [OWNED_MINT], stateOk: true, initialMint: DEEP_LINK_MINT });
     await settle();
-    expect(perfMints()).toEqual([DEEP_LINK_MINT]);
+    // The single owned position now belongs to the overview too; the linked report remains first and is not re-read.
+    expect(perfMints()).toEqual([DEEP_LINK_MINT, OWNED_MINT]);
     expect(container.textContent).toContain("Showing the linked position Deep…1111");
     expectNeverSpins();
     expect(count("/api/lp-decision/exit-preview")).toBe(0);
@@ -145,11 +147,8 @@ describe("Performance deep link /app?view=performance&mint=X: the exit estimate 
   it("choosing another position in the selector replaces the deep link", async () => {
     await mount({ wallet: OWN_WALLET, positions: [OTHER_OWNED_MINT, OWNED_MINT], stateOk: true, initialMint: OWNED_MINT });
     await settle();
-    const select = [...container.querySelectorAll("select")].find((item) => [...item.options].some((option) => option.value === `raydium-clmm:${OTHER_OWNED_MINT}`))!;
-    await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!.call(select, `raydium-clmm:${OTHER_OWNED_MINT}`);
-      select.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    const pick = container.querySelector<HTMLButtonElement>(`[data-testid="position-fallback-select"][data-position-key="raydium-clmm:${OTHER_OWNED_MINT}"]`)!;
+    await act(async () => pick.click());
     await settle();
     expect(perfMints().at(-1)).toBe(OTHER_OWNED_MINT);
     expect(exitUrls().map((u) => param(u, "positionId")).at(-1)).toBe(OTHER_OWNED_MINT);
@@ -165,6 +164,54 @@ describe("Performance deep link /app?view=performance&mint=X: the exit estimate 
 });
 
 describe("stock summary and position detail hierarchy", () => {
+  it("keeps the zero-position entry and rescan control visible", async () => {
+    await mount({ wallet: OWN_WALLET, positions: [], stateOk: true, initialMint: "" });
+    await settle();
+    const entry = container.querySelector('[aria-labelledby="all-positions-heading"]')!;
+    expect(entry.textContent).toContain("No identifiable position found");
+    const rescan = [...entry.querySelectorAll("button")].find((button) => button.textContent === "Rescan wallet")!;
+    const before = count("/api/wallet?");
+    await act(async () => rescan.click()); await settle();
+    expect(count("/api/wallet?")).toBe(before + 1);
+  });
+  it("keeps all positions selectable when every performance read fails", async () => {
+    await flush(60_001);
+    await mount({ wallet: OWN_WALLET, positions: [OWNED_MINT, OTHER_OWNED_MINT], stateOk: true, initialMint: OWNED_MINT, performanceFail: true });
+    await settle();
+    const rows = [...container.querySelectorAll<HTMLButtonElement>('[data-testid="position-fallback-select"]')];
+    expect(rows.map((row) => row.getAttribute("data-position-key")).sort()).toEqual([OWNED_MINT, OTHER_OWNED_MINT].map((mint) => `raydium-clmm:${mint}`).sort());
+    expect(container.textContent).toContain("2 positions could not be read");
+    await act(async () => rows.find((row) => row.getAttribute("data-position-key") === `raydium-clmm:${OTHER_OWNED_MINT}`)!.click());
+    await settle();
+    expect(perfMints().at(-1)).toBe(OTHER_OWNED_MINT);
+  });
+  it("locks fallback selection and rescan during a compound without unmounting the selected operation", async () => {
+    compoundMock.busy = true;
+    await mount({ wallet: OWN_WALLET, positions: [OWNED_MINT, OTHER_OWNED_MINT], stateOk: true, initialMint: OWNED_MINT, initialView: "compound" });
+    await settle();
+    const entry = container.querySelector('[aria-labelledby="all-positions-heading"]')!;
+    const rows = [...entry.querySelectorAll<HTMLButtonElement>('[data-testid="position-fallback-select"]')];
+    expect(rows).toHaveLength(2);
+    expect(rows.every((row) => row.disabled)).toBe(true);
+    const rescan = [...entry.querySelectorAll("button")].find((button) => button.textContent === "Rescan wallet")!;
+    expect(rescan.disabled).toBe(true);
+    const before = calls.length;
+    await act(async () => { rows[0]!.click(); rescan.click(); }); await settle();
+    expect(calls.length).toBe(before);
+    expect(container.querySelector('#compound-view')).not.toBeNull();
+  });
+  it("uses lightweight rows outside Performance without reading any history", async () => {
+    await mount({ wallet: OWN_WALLET, positions: [OWNED_MINT, OTHER_OWNED_MINT], stateOk: true, initialMint: OWNED_MINT, initialView: "deposit" });
+    await settle();
+    expect(perfMints()).toEqual([]);
+    expect(container.querySelectorAll('[data-testid="position-fallback-select"]')).toHaveLength(2);
+    expect(container.querySelector('[data-testid="stocks-overview"]')).toBeNull();
+    const pick = container.querySelector<HTMLButtonElement>(`[data-position-key="raydium-clmm:${OTHER_OWNED_MINT}"]`)!;
+    await act(async () => pick.click()); await settle();
+    expect(perfMints()).toEqual([]);
+    expect(container.querySelector('[data-testid="position-assets-collapse"]')?.getAttribute("data-open")).toBe("true");
+    expect(new URL(window.location.href).searchParams.get("position")).toBe(`raydium-clmm:${OTHER_OWNED_MINT}`);
+  });
   it("shows stock cards only in the overview, retaining details for the selected position", async () => {
     await mount({ wallet: OWN_WALLET, positions: [OTHER_OWNED_MINT, OWNED_MINT], stateOk: true, initialMint: OWNED_MINT, stock: true });
     await settle();
@@ -190,11 +237,17 @@ describe("stock summary and position detail hierarchy", () => {
     expect(container.querySelector('#performance-view [data-testid="position-detail-identity"]')?.textContent).toContain(OTHER_OWNED_MINT);
     expect(container.querySelector('#performance-view [data-testid="stock-performance"]')).toBeNull();
   });
-  it("keeps cards when the wallet has only one position and no overview", async () => {
+  it("uses All positions as the only entry, including a single stock drilldown", async () => {
     await mount({ wallet: OWN_WALLET, positions: [OWNED_MINT], stateOk: true, initialMint: OWNED_MINT, stock: true });
     await settle();
-    expect(container.querySelector('[data-testid="stocks-overview"]')).toBeNull();
-    expect(container.querySelector('#performance-view [data-testid="stock-performance"]')).not.toBeNull();
+    const entry = container.querySelector('section[aria-labelledby="all-positions-heading"]')!;
+    expect(entry).not.toBeNull();
+    expect(container.textContent).not.toContain("My positions");
+    expect(container.querySelector('select#position')).toBeNull();
+    expect(entry.querySelector('[data-testid="stocks-overview"]')).not.toBeNull();
+    expect(entry.querySelectorAll('[data-testid="position-fallback-select"]')).toHaveLength(0);
+    expect(entry.querySelectorAll('[data-testid="stock-position-select"]')).toHaveLength(1);
+    expect(container.querySelector('#performance-view [data-testid="stock-performance"]')).toBeNull();
   });
   it("keeps a foreign linked position's cards when that position is not represented in the overview", async () => {
     await mount({ wallet: OWN_WALLET, positions: [OWNED_MINT, OTHER_OWNED_MINT], stateOk: true, initialMint: DEEP_LINK_MINT, stock: true });

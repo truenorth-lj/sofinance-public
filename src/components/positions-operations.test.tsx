@@ -56,7 +56,7 @@ describe("Positions operations while disconnected", () => {
     expect(container.querySelector("#perf-heading")).toBeNull();
     expect(container.querySelector('[aria-label="Performance results"]')?.textContent).toContain("Connect your wallet above to view performance.");
     expect(container.textContent).not.toContain("Compute performance");
-    await act(async () => button("Connect Solana wallet", container.querySelector('[aria-labelledby="position-heading"]')!).click());
+    await act(async () => button("Connect Solana wallet", container.querySelector('[aria-labelledby="all-positions-heading"]')!).click());
     expect(mocks.connect).toHaveBeenCalledOnce();
   });
   it("connects on compound without starting a transaction and links Auto Copilot to Use AI", async () => {

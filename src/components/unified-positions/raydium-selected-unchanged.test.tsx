@@ -1,7 +1,6 @@
 // @vitest-environment happy-dom
-// The Raydium selected state on /app is unchanged by the registry DEXes (PR5): a `?position=raydium-clmm:<mint>` deep link
-// selects that Raydium position, and the rendered panel matches the snapshot recorded on the PR4 tree (830ce5b, before
-// PR5). Where the dex route is on but the deployment does not serve a DEX (404), the page is the same markup.
+// Raydium selection, deep links and route-off/404/empty parity remain unchanged by registry discovery.
+// The full-page snapshots intentionally track the new All positions layout (not the former My positions card).
 import { act, createElement, type FunctionComponent } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -62,14 +61,24 @@ async function renderLinked() {
   // React's useId counter differs between roots; everything else is compared verbatim.
   return container.innerHTML.replace(/_r_[0-9a-z]+_/g, "_r_id_");
 }
-const select = () => container.querySelector<HTMLSelectElement>("select#position")!;
+const rows = () => [...container.querySelectorAll<HTMLButtonElement>('[data-testid="position-fallback-select"]')];
+const selectedKey = () => rows().find((row) => row.getAttribute("aria-pressed") === "true")?.getAttribute("data-position-key");
 
 describe("/app Raydium selected state (unchanged by the registry DEXes)", () => {
-  it("?position=raydium-clmm:<mint> selects that Raydium position, and the panel matches the pre-PR5 snapshot", async () => {
+  it("?position=raydium-clmm:<mint> selects that Raydium position, and the panel matches the All positions snapshot", async () => {
     const html = await renderLinked();
-    expect(select().value).toBe(`raydium-clmm:${LINKED}`);
-    expect([...select().querySelectorAll("option")].map((option) => option.textContent).join("\n")).not.toMatch(/Raydium|Meteora/);
+    expect(selectedKey()).toBe(`raydium-clmm:${LINKED}`);
+    expect(rows().map((row) => row.firstChild?.textContent).join("\n")).not.toMatch(/Raydium|Meteora/);
     expect(html).toMatchSnapshot();
+  });
+
+  it("keeps read-only selection reachable when no eligible input asset exists", async () => {
+    await renderLinked();
+    const target = rows().find((row) => row.getAttribute("data-position-key") === `raydium-clmm:${FIRST}`)!;
+    await act(async () => target.click());
+    await settle();
+    expect(selectedKey()).toBe(`raydium-clmm:${FIRST}`);
+    expect(new URL(window.location.href).searchParams.get("position")).toBe(`raydium-clmm:${FIRST}`);
   });
 
   it("with the dex route on and the DEX not served (404) the markup is identical to the route-off page", async () => {
@@ -94,7 +103,7 @@ describe("/app Raydium selected state (unchanged by the registry DEXes)", () => 
     const on = await renderLinked();
     expect(state.dexCalls).toBe(1);
     expect(on).toBe(off);
-    expect([...select().querySelectorAll("option")].map((option) => option.textContent).join("\n")).not.toMatch(/Raydium|Meteora/);
+    expect(rows().map((row) => row.firstChild?.textContent).join("\n")).not.toMatch(/Raydium|Meteora/);
     expect(on).toMatchSnapshot();
   });
 
@@ -102,15 +111,15 @@ describe("/app Raydium selected state (unchanged by the registry DEXes)", () => 
     state.routeOn = true; state.dex = "hang";
     await renderLinked();
     expect(state.dexCalls).toBe(1);
-    expect(select().value).toBe(`raydium-clmm:${LINKED}`);
-    expect([...select().querySelectorAll("option")].map((option) => option.value).sort()).toEqual([`raydium-clmm:${FIRST}`, `raydium-clmm:${LINKED}`].sort());
+    expect(selectedKey()).toBe(`raydium-clmm:${LINKED}`);
+    expect(rows().map((row) => row.getAttribute("data-position-key")).sort()).toEqual([`raydium-clmm:${FIRST}`, `raydium-clmm:${LINKED}`].sort());
   });
 
   it("a failing (500) Meteora positions read leaves the Raydium list in place and only adds its plain error", async () => {
     state.routeOn = true; state.dex = "500";
     await renderLinked();
-    expect(select().value).toBe(`raydium-clmm:${LINKED}`);
-    expect([...select().querySelectorAll("option")].map((option) => option.value).sort()).toEqual([`raydium-clmm:${FIRST}`, `raydium-clmm:${LINKED}`].sort());
+    expect(selectedKey()).toBe(`raydium-clmm:${LINKED}`);
+    expect(rows().map((row) => row.getAttribute("data-position-key")).sort()).toEqual([`raydium-clmm:${FIRST}`, `raydium-clmm:${LINKED}`].sort());
     expect(container.textContent).toContain("Meteora is down");
   });
 });

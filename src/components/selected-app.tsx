@@ -32,7 +32,6 @@ import { toolOptions, type ToolMeta } from "@/lib/unified-positions/capabilities
 import { capabilitiesFor, firstSupportedTool, parsePositionKey, positionKey, toolUnavailableReason, type ToolId, type UnifiedPosition } from "@/lib/unified-positions/model";
 import { CLOSED_LABEL, groupPositions, isClosed, positionOptionLabel, SOLANA_CONNECT_EMPTY_OPTION, type PositionGroup } from "@/lib/unified-positions/rows";
 import type { ExternalPositions } from "./unified-positions/external-positions";
-import { GroupedPositionSelect } from "./unified-positions/grouped-position-select";
 import { RegistryPositionDetails, RegistryPositionHeader, useRegistryPositions } from "./unified-positions/registry-positions";
 import { RegistryPositionTool, type ToolBalance } from "./unified-positions/registry-tools";
 import { useStoredTokenIcons } from "./use-stored-token-icons";
@@ -75,12 +74,12 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
   previewPoolId?: string;
   /** `?position=<key>` (any source). A key of the inline Solana source selects through `initialMint`, as before. */
   initialPositionKey?: string;
-  /** Other chains' positions, in the same "My positions" dropdown under their own group (`/app`: Robinhood Chain). */
+  /** Other chains' positions, in All positions under their own chain group (`/app`: Robinhood Chain). */
   external?: ExternalPositions;
-  /** Called by "Rescan wallet" alongside the Solana rescan, so the other chains' positions in "My positions" rescan too. */
+  /** Called by "Rescan wallet" alongside the Solana rescan, so the other chains' positions in All positions rescan too. */
   onRescan?: () => void;
 } = {}) {
-  // The inline (scanned) Solana source keeps its `?mint=` path; every other source's key selects through the shared dropdown.
+  // The inline (scanned) Solana source keeps its `?mint=` path; every other source's key selects through All positions.
   const linkedKey = parsePositionKey(initialKeyProp);
   const linksInline = linkedKey?.source === positionSource.id;
   const initialMint = linksInline ? linkedKey.nativeId : initialMintProp;
@@ -100,7 +99,24 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
   const totalCostPercent = quote && typeof quote.roundtripCostInput === "string" && BigInt(quote.requested) > 0n
     ? (Number(quote.roundtripCostInput) / Number(quote.requested) * 100).toFixed(2)
     : null;
-  const compound = useCompoundController({ wallet: wallet || undefined, positionMint: selection?.positionMint,
+  // Read-only picks survive missing Add inputs, but never survive a wallet commit or removal.
+  // Reconcile the controller before exposing any operation target, including the render before effects run.
+  const [pickWallet, setPickWallet] = useState(wallet);
+  const [inlinePick, setInlinePick] = useState<{ wallet: string; mint: string } | null>(null);
+  if (pickWallet !== wallet) {
+    setPickWallet(wallet);
+    setInlinePick(null);
+  }
+  const ownedPick = pickWallet === wallet && inlinePick && inlinePick.wallet === wallet
+    && discovery?.positions.some((item) => item.positionMint === inlinePick.mint) ? inlinePick : null;
+  if (inlinePick && !ownedPick) setInlinePick(null);
+  const inlineMint = ownedPick?.mint || selection?.positionMint
+    || (discovery?.positions.some((item) => item.positionMint === initialMint) ? initialMint : discovery?.positions[0]?.positionMint) || "";
+  const selectionAligned = Boolean(connected && wallet && pickWallet === wallet
+    && selection?.positionMint === inlineMint);
+  const pickPosition = (positionMint: string) => { setPickedPosition(true); setInlinePick({ wallet: wallet || "", mint: positionMint }); choosePosition(positionMint); };
+  const compound = useCompoundController({ wallet: wallet || undefined, positionMint: selectionAligned ? selection?.positionMint : undefined,
+    // Selection alignment gates positionMint above, not wallet-wide leftover recovery.
     externalBlocked: addBusy || withdrawBusy,
     onConfirmed: () => { void refreshState(); } });
   // Unclaimed fees come from the compound reader (same accrual formula as the Performance card); its snapshot also carries the
@@ -110,12 +126,15 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
   const feeState = state && compound.state?.positionMint === state.positionMint ? compound.state : null;
   const assets = feeState ?? state;
   const busy = addBusy || compound.busy || withdrawBusy;
-  const actionDisabled = connected && (addDisabled || compound.busy || withdrawBusy);
+  useLayoutEffect(() => {
+    if (!busy && ownedPick && selection && selection.positionMint !== ownedPick.mint) choosePosition(ownedPick.mint);
+  }, [busy, ownedPick, selection, choosePosition]);
+  const actionDisabled = connected && (!selectionAligned || addDisabled || compound.busy || withdrawBusy);
   const actionLoading = connected && (busy || calculating);
   const buttonLabel = !connected ? "Connect wallet" : compound.busy ? "Another operation in progress…" :
     calculating ? "Estimating liquidity…" : actionLabel;
   const buttonClass = `inline-flex w-full items-center justify-center gap-2 rounded-full bg-lemon px-5 py-4 text-sm font-semibold text-ink transition-colors hover:bg-[#fff27f] ${actionLoading ? "cursor-wait disabled:opacity-100" : "disabled:cursor-not-allowed disabled:opacity-40"}`;
-  const primaryAction = () => { if (!connected) { connect(); return; } if (!compound.busy) addAction(); };
+  const primaryAction = () => { if (!connected) { connect(); return; } if (selectionAligned && !busy) addAction(); };
   const metadataMints = [
     ...(discovery?.assets.map((asset) => asset.mint) || []),
     ...(discovery?.positions.flatMap((item) => [item.mintA, item.mintB]) || []),
@@ -135,7 +154,7 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
   // position (`state` becomes null). Unmounting the Withdraw panel then aborted its run before step 2 (convert)
   // was prepared. So while a withdrawal is running or partly done (busy, or a checkpoint/Resume is pending),
   // the panel stays pinned to its position, but only while that position is still the one selected.
-  const liveWithdraw = state && wallet && state.positionMint === selection?.positionMint ? { wallet, positionMint: state.positionMint, mintA: state.mintA, mintB: state.mintB } : null;
+  const liveWithdraw = selectionAligned && state && wallet && state.positionMint === selection?.positionMint ? { wallet, positionMint: state.positionMint, mintA: state.mintA, mintB: state.mintB } : null;
   const liveWithdrawRef = useRef(liveWithdraw);
   useLayoutEffect(() => { liveWithdrawRef.current = liveWithdraw; });
   const [withdrawTarget, setWithdrawTarget] = useState<typeof liveWithdraw>(null);
@@ -146,7 +165,7 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
   }, []);
   const pinnedWithdraw = withdrawBusy && withdrawTarget && withdrawTarget.wallet === wallet
     && withdrawTarget.positionMint === selection?.positionMint ? withdrawTarget : null;
-  const shownWithdraw = liveWithdraw ?? pinnedWithdraw;
+  const shownWithdraw = selectionAligned ? liveWithdraw ?? pinnedWithdraw : null;
   // Toasts sit above the phone-only bottom action bar instead of covering its button.
   // The same measured height (incl. the iPhone home-bar inset) pads the page bottom on phones, so the bar never hides content.
   const actionBarRef = useRef<HTMLDivElement | null>(null);
@@ -166,9 +185,8 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
       choosePosition(initialMint);
     }
   }, [initialMint, discovery, wallet, choosePosition]);
-  const pickPosition = (positionMint: string) => { setPickedPosition(true); choosePosition(positionMint); };
   const linkActive = Boolean(initialMint) && !pickedPosition;
-  const performanceMint = linkActive ? initialMint : selection?.positionMint || initialMint;
+  const performanceMint = linkActive ? initialMint : inlineMint || initialMint;
   const nftAccountLookup = resolveNftAccountLookup({ connected, targetMint: performanceMint, discovery, state,
     loadingDiscovery, loadingState, hasError: Boolean(stateError) });
   const linkedForeignPosition = linkActive && connected && discovery !== null && !loadingDiscovery
@@ -185,7 +203,7 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
   // Positions are read through the Raydium position source (unified-positions PR-A); same list and order as the scan.
   const solanaPositions = positionSource.fromDiscovery(discovery);
   const positionOptions = solanaPositions.map((position) => position.native);
-  // One dropdown for every chain (unified positions). Tools and header come from the selected position's source.
+  // One entry for every chain (unified positions). Tools and header come from the selected position's source.
   // "Other" positions are everything not read by the inline scan: registry DEXes on Solana and the other chain's binding.
   const externalPositions = external?.positions ?? [];
   const otherPositions: UnifiedPosition[] = [...(connected ? registry.positions : []), ...externalPositions];
@@ -210,10 +228,10 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
       capabilities: registry.capabilities(otherSelected)! }
     : otherSelected && external ? { header: external.header, details: external.details, tool: external.tool, capabilities: capabilitiesFor(external.source, otherSelected) }
       : null;
-  const selectedSolana = selection ? solanaPositions.find((item) => item.nativeId === selection.positionMint) ?? null : null;
+  const selectedSolana = solanaPositions.find((item) => item.nativeId === inlineMint) ?? null;
   const capabilities = otherSelected && otherBinding ? otherBinding.capabilities : capabilitiesFor(positionSource, selectedSolana);
   const unavailableReason = toolUnavailableReason(capabilities, activeView);
-  const selectedKey = otherSelected?.key ?? (selection ? positionKey(positionSource.id, selection.positionMint) : "");
+  const selectedKey = otherSelected?.key ?? (inlineMint ? positionKey(positionSource.id, inlineMint) : "");
   // Landing on a position whose current tool is unavailable opens its first available tool (a greyed tab clicked later stays).
   const [viewCheckedFor, setViewCheckedFor] = useState(selectedKey);
   if (viewCheckedFor !== selectedKey) {
@@ -276,33 +294,46 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
       load: async (signal) => (await fetchDexPerformance(registry.descriptor(item)!, item.key, { signal })).report ?? null,
       fromPanel: fromPanel(item.key) })),
   ];
-  const stockShownInOverview = overviewPositions.length > 1 && panelResult?.key === panelKey
+  const stockShownInOverview = overviewPositions.length > 0 && panelResult?.key === panelKey
     && Boolean(panelResult.report?.stock) && overviewPositions.some((item) => item.key === panelKey);
   // "Rescan wallet": the Solana scan (unchanged) plus, on /app, the Robinhood Chain scan via the parent's refresh counter.
   const rescan = () => { if (wallet) { void refreshDiscovery(); setRegistryRefresh((value) => value + 1); } onRescan?.(); };
+  // Only uncovered positions get lightweight rows. Stock positions remain reachable through their drilldown;
+  // non-Performance tools never mount the overview or start history reads just to select a position.
+  const renderPositionRows = (coveredKeys: ReadonlySet<string>) => <div className="space-y-4" data-testid="position-fallback-rows">
+    {groups.map((group) => {
+      const remaining = group.positions.filter((item) => !coveredKeys.has(item.key));
+      if (group.positions.length && !remaining.length) return null;
+      return <section key={group.chain} aria-label={group.label} data-testid="position-chain-group">
+        <h3 className="mb-2 text-xs font-semibold text-smoke">{group.label}</h3>
+        {remaining.length ? <ul className="space-y-2">{remaining.map((item) => <li key={item.key}>
+          <button type="button" data-testid="position-fallback-select" data-position-key={item.key}
+            aria-pressed={selectedKey === item.key} disabled={anyBusy} onClick={() => pickKey(item.key)}
+            className={`w-full rounded-xl border px-4 py-3 text-left text-sm transition-colors enabled:hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50 ${selectedKey === item.key ? "border-mint/40 bg-mint/5" : "border-white/10"}`}>
+            {optionLabel(item, group)}{selectedKey === item.key && <span className="ml-3 text-xs text-mint">Selected</span>}
+          </button>
+        </li>)}</ul> : <p className="text-xs text-smoke">{group.chain === external?.chain ? external.emptyOption : connected ? "No positions found" : SOLANA_CONNECT_EMPTY_OPTION}</p>}
+      </section>;
+    })}
+    {!allPositions.length && <p className="text-sm text-smoke">{loadingDiscovery ? "Loading positions…" : connected ? "No identifiable position found" : "Connect wallet to view positions"}</p>}
+  </div>;
   return <div className="min-h-screen bg-canvas text-cream">
     <div className="relative mx-auto max-w-[1280px] px-3 pb-32 pt-3 max-sm:pb-[max(8rem,calc(var(--tx-notice-bottom-offset,0px)+2rem))] sm:px-5 sm:pt-5">
       <InkNav wallet={wallet} connected={connected} onConnect={connect} onDisconnect={disconnect} />
 
-      <div className="mt-3 grid gap-3 lg:grid-cols-12">
-      <InkHero stacked className="mt-0 border border-transparent lg:col-span-7" label="Positions" title="Manage my liquidity positions">Add fees back to original position, or invest new capital.</InkHero>
+      <InkHero stacked className="mt-3 border border-transparent" label="Positions" title="Manage my liquidity positions">Add fees back to original position, or invest new capital.</InkHero>
 
-      <section aria-labelledby="position-heading" className="flex flex-col rounded-[28px] border border-white/12 bg-char p-6 sm:p-9 lg:col-span-5">
-        <div className="flex flex-1 flex-col justify-center">
-        <div className="flex items-center justify-between gap-3"><h2 id="position-heading" className="text-base font-semibold text-cream">My positions</h2><button type="button" disabled={(!wallet && !(external && onRescan)) || anyBusy} onClick={rescan} className="text-xs font-semibold text-cream/80 transition-opacity hover:opacity-70 disabled:opacity-40">Rescan wallet</button></div>
-        {connected || external ? <GroupedPositionSelect
-          id="position"
-          label="Select position"
-          value={selectedKey}
-          disabled={!allPositions.length || anyBusy}
-          onChange={pickKey}
-          groups={groups}
-          optionLabel={optionLabel}
-          emptyOption={(group) => group.chain === external?.chain ? external.emptyOption : connected ? "No positions found" : SOLANA_CONNECT_EMPTY_OPTION}
-          placeholder={!allPositions.length ? (connected ? "No identifiable position found" : "Connect wallet to view positions") : undefined}
-          className="mt-3 w-full rounded-2xl border border-white/20 bg-white/[0.06] px-3 py-3 text-base text-cream outline-none focus:border-white/40 sm:text-sm"
-        /> : null}
-        {/* The Solana connect prompt belongs to Solana: with another chain's position selected it lives in the dropdown's empty Solana group instead. */}
+      <ActionSelector value={activeView} onChange={changeView} options={toolOptions(capabilities, TOOL_META,
+        otherSelected ? {} : { withdraw: !state || !wallet || (busy && activeView !== "withdraw") })} />
+      <section aria-labelledby="all-positions-heading" className="mt-3 rounded-[28px] border border-white/12 bg-char p-5 sm:p-7">
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+          <h2 id="all-positions-heading" className="text-base font-semibold text-cream">All positions</h2>
+          <button type="button" disabled={(!wallet && !(external && onRescan)) || anyBusy} onClick={rescan} className="text-xs font-semibold text-cream/80 transition-opacity hover:opacity-70 disabled:opacity-40">Rescan wallet</button>
+        </div>
+        {activeView === "performance" ? <StocksOverview embedded positions={overviewPositions} selectedPositionKey={selectedKey} onSelectPosition={pickKey} selectionDisabled={anyBusy} renderRemainingPositions={renderPositionRows} /> : renderPositionRows(new Set())}
+        <div className="mt-5 border-t border-white/10 pt-4" data-testid="selected-position-detail">
+        {(otherSelected ?? selectedSolana) && <p className="mb-3 break-all text-xs text-smoke">Selected position · {(otherSelected ?? selectedSolana)!.key}</p>}
+        {/* The Solana connect prompt belongs to Solana: with another chain's position selected it lives in the empty Solana group instead. */}
         {!connected && !otherSelected && <div className="mt-3"><ConnectWalletPrompt onConnect={connect} /></div>}
         {connected && discovery && positionOptions.length === 0 && !otherSelected && <a href={APP_ROUTES.rwaPairs} className="mt-3 text-sm font-semibold text-cream underline underline-offset-4">Explore pools to open a position</a>}
         {(otherSelected ?? selectedSolana) && isClosed((otherSelected ?? selectedSolana)!) && <p className="mt-3 w-fit rounded-full border border-white/20 px-2.5 py-1 text-xs font-semibold text-smoke" data-testid="position-closed">{CLOSED_LABEL}: no liquidity left</p>}
@@ -324,19 +355,14 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
         {registry.loadingNames.length ? <p role="status" className="mt-2 text-xs text-smoke" data-testid="registry-positions-loading">Loading {registry.loadingNames.join(", ")} positions…</p> : null}
         {registry.errors.map((message) => <p key={message} role="alert" className="mt-2 text-xs text-cream/80" data-testid="registry-positions-error">{message}</p>)}
         {external?.status}
-        </div>
         {(connected || otherSelected) && <div className="mt-6 border-t border-white/10 pt-5 text-sm leading-relaxed">
           <button type="button" aria-haspopup="dialog" onClick={() => setAssetRisksOpen(true)}
             className="text-xs font-semibold text-cream/80 transition-opacity hover:opacity-70 disabled:opacity-40">
             Learn more details
           </button>
         </div>}
+        </div>
       </section>
-      </div>
-
-      <ActionSelector value={activeView} onChange={changeView} options={toolOptions(capabilities, TOOL_META,
-        otherSelected ? {} : { withdraw: !state || !wallet || (busy && activeView !== "withdraw") })} />
-      {activeView === "performance" && overviewPositions.length > 1 && <div className="mt-3"><StocksOverview positions={overviewPositions} selectedPositionKey={panelKey} onSelectPosition={pickKey} selectionDisabled={anyBusy} /></div>}
       {unavailableReason ? <UnavailableTool id={`${activeView}-view`} reason={unavailableReason} />
         : otherSelected && otherBinding ? <div id={`${activeView}-view`}>{otherBinding.tool(otherSelected, activeView)}</div> : <>
       {activeView === "withdraw" && <div id="withdraw-view">{shownWithdraw ? <WithdrawPanel key={`${shownWithdraw.wallet}:${shownWithdraw.positionMint}`} wallet={shownWithdraw.wallet} positionMint={shownWithdraw.positionMint} mintA={shownWithdraw.mintA} mintB={shownWithdraw.mintB} label={poolLabel} outputs={capabilities.withdrawOutputs} onClose={()=>setActiveView("compound")} onBusyChange={onWithdrawBusy} onConfirmed={()=>{void refreshState();void refreshDiscovery();}} /> : <p className="mt-4 text-sm text-smoke">Connect your wallet and choose a position to withdraw.</p>}</div>}
@@ -396,7 +422,7 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
     </AssetRisksDialog>
     <TransactionStatusDialog attempt={visibleAttempt} status={attemptStatus} error={error} open={statusDialogOpen}
       onOpenChange={setStatusDialogOpen}
-      onRetry={retryAdd ? () => { setStatusDialogOpen(false); retryAdd(); } : undefined} />
+      onRetry={selectionAligned && !busy && retryAdd ? () => { if (!selectionAligned || busy) return; setStatusDialogOpen(false); retryAdd(); } : undefined} />
     {activeView === "deposit" && !otherSelected && !unavailableReason && <div ref={actionBarRef} data-testid="mobile-action-bar" className="fixed inset-x-0 bottom-0 z-10 border-t border-white/12 bg-canvas/95 p-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] backdrop-blur sm:hidden"><button className={buttonClass} disabled={actionDisabled} aria-busy={actionLoading} onClick={primaryAction}>{actionLoading ? <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin motion-reduce:animate-none" /> : <ArrowDown aria-hidden="true" className="h-4 w-4" />}{buttonLabel}</button></div>}
   </div>;
 }

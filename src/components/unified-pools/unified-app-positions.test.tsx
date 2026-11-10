@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// /app My positions, unified: one dropdown grouped Solana / Robinhood Chain; tools come from the selected position's
+// /app All positions: lightweight chain rows plus stock drilldown; tools come from the selected position's
 // capabilities (no chain checks in the UI). Robinhood Chain: only Withdraw (the full Close); the other tabs are greyed but
 // clickable and say why inline. URL state: ?position=<key>&view=<tool>.
 import { act, createElement } from "react";
@@ -56,26 +56,37 @@ async function render(selected: Record<string, unknown> = {}) {
     createElement(UnifiedApp, { selected, flags: { orca: false, meteora: false, meteoraOpen: false, rhc: true }, rhcSigningEnabled: false }))); });
   await settle();
 }
-const select = () => container.querySelector<HTMLSelectElement>("select#position")!;
-const groups = () => [...select().querySelectorAll("optgroup")].map((g) => [g.label, [...g.querySelectorAll("option")].map((o) => o.textContent)]);
+const rows = () => [...container.querySelectorAll<HTMLButtonElement>('[data-testid="position-fallback-select"]')];
+const selectedKey = () => rows().find((row) => row.getAttribute("aria-pressed") === "true")?.getAttribute("data-position-key");
+const groups = () => [...container.querySelectorAll('[data-testid="position-chain-group"]')].map((group) => [group.getAttribute("aria-label"),
+  group.querySelector("button") ? [...group.querySelectorAll("button")].map((row) => row.firstChild?.textContent) : [...group.querySelectorAll("p")].map((row) => row.textContent)]);
 const tab = (label: string) => [...container.querySelectorAll<HTMLButtonElement>("nav[aria-label='Position operations'] button")].find((b) => b.textContent === label)!;
 const click = async (el: HTMLElement) => { await act(async () => { el.click(); }); await settle(); };
 async function choose(value: string) {
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!.call(select(), value);
-    select().dispatchEvent(new Event("change", { bubbles: true }));
-  });
+  await act(async () => rows().find((row) => row.getAttribute("data-position-key") === value)!.click());
   await settle();
 }
 
-describe("/app unified My positions", () => {
+describe("/app unified All positions", () => {
+  it("keeps unsupported RHC positions selectable inside Performance without a history overview", async () => {
+    await render();
+    await click(tab("Performance"));
+    expect(container.querySelector('[data-testid="stocks-overview"]')).toBeNull();
+    expect(rows()).toHaveLength(3);
+    const entry = container.querySelector('[aria-labelledby="all-positions-heading"]')!;
+    expect(entry.querySelector('[aria-label="Position NFT number"]')).not.toBeNull();
+    await choose("rhc-uniswap-v4:7");
+    expect(selectedKey()).toBe("rhc-uniswap-v4:7");
+    expect(container.querySelector('[data-testid="tool-unavailable"]')).not.toBeNull();
+    expect(new URL(window.location.href).searchParams.get("position")).toBe("rhc-uniswap-v4:7");
+  });
   it("EVM wallet only: Solana group says connect, Robinhood Chain group with Closed last, first position selected on its Withdraw", async () => {
     await render();
     expect(groups()).toEqual([["Solana", [SOLANA_CONNECT_EMPTY_OPTION]], ["Robinhood Chain", [
       expect.stringMatching(/^#9 · .+ · range 0\.98778–1\.0077 SPCXon per SPCX$/),
       "#7 · ticks -123 to 77",
       expect.stringMatching(/^#8 · .+ · Closed$/)]]]);
-    expect(select().value).toBe("rhc-uniswap-v4:9");
+    expect(selectedKey()).toBe("rhc-uniswap-v4:9");
     expect(tab("Withdraw").getAttribute("aria-pressed")).toBe("true");
     expect(container.querySelector("[data-testid=rhc-withdraw]")?.getAttribute("data-position")).toBe("9");
     expect(container.querySelector("[data-testid=rhc-range]")!.textContent).toBe("Range 0.98778–1.0077 SPCXon per SPCX");
@@ -108,7 +119,7 @@ describe("/app unified My positions", () => {
 
   it("?position= opens that Robinhood Chain position; ?view=compound lands on its first available tool", async () => {
     await render({ initialPositionKey: "rhc-uniswap-v4:8", initialView: "compound" });
-    expect(select().value).toBe("rhc-uniswap-v4:8");
+    expect(selectedKey()).toBe("rhc-uniswap-v4:8");
     expect(tab("Withdraw").getAttribute("aria-pressed")).toBe("true");
   });
 
@@ -124,14 +135,14 @@ describe("/app unified My positions", () => {
     expect(groups().map(([label]) => label)).toEqual(["Solana", "Robinhood Chain"]);
     expect(groups()[0]![1]).toEqual(["No positions found"]);
     expect((groups()[1]![1] as string[]).every((label) => !label.startsWith("Uniswap v4"))).toBe(true);
-    expect(select().value).toBe("rhc-uniswap-v4:9");
+    expect(selectedKey()).toBe("rhc-uniswap-v4:9");
   });
 
   it("empty Robinhood Chain wallet: the group stays with a disabled 'No positions found' row and the open-a-position link", async () => {
     state.solWallet = SOL_WALLET; state.scan = [];
     await render();
     expect(groups()).toEqual([["Solana", ["No positions found"]], ["Robinhood Chain", ["No positions found"]]]);
-    expect([...select().querySelectorAll("option")].every((o) => o.disabled || o.value === "")).toBe(true);
+    expect(rows()).toHaveLength(0);
     expect(container.querySelector("[data-testid=positions-empty]")).not.toBeNull();
   });
 });
@@ -148,10 +159,11 @@ describe("/app Closed positions", () => {
 describe("/app shared detail panel for a Robinhood Chain position (PM review of #270)", () => {
   it("no Solana connect prompt inside the panel while a Robinhood Chain position is selected; it is the Solana group's empty row", async () => {
     await render();
-    expect(select().value).toBe("rhc-uniswap-v4:9");
+    expect(selectedKey()).toBe("rhc-uniswap-v4:9");
     expect(container.textContent).not.toContain("Connect your Solana wallet to find your Solana liquidity positions");
-    const solana = select().querySelector("optgroup[label='Solana']")!;
-    expect([...solana.querySelectorAll("option")].map((o) => [o.textContent, o.disabled])).toEqual([[SOLANA_CONNECT_EMPTY_OPTION, true]]);
+    const solana = container.querySelector('[data-testid="position-chain-group"][aria-label="Solana"]')!;
+    expect(solana.querySelector("p")?.textContent).toBe(SOLANA_CONNECT_EMPTY_OPTION);
+    expect(solana.querySelector("button")).toBeNull();
   });
 
   it("with nothing selected (no Robinhood Chain positions) the Solana connect prompt still shows", async () => {
