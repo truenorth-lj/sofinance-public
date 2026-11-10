@@ -133,50 +133,23 @@ describe("degraded payloads (no price history)", () => {
   });
 });
 
-describe("size-aware Best", () => {
-  type Fit = "ok" | "crowded" | "near-edge" | "cross-band";
-  const fit = (status: Fit) => status === "ok"
-    ? { status: "ok" as const, ownSharePct: 1, edgeBps: 10, impactBps: 1 }
-    : { status: "excluded" as const, reason: status, ownSharePct: 1, edgeBps: 10, impactBps: 9 };
-  const withFits = (fits: Record<string, Fit>) => {
+describe("ranking ignores leftover size-fit metadata", () => {
+  it("picks the highest estimated APR even if a stale sizeFit marks that range excluded", () => {
     const payload = payloadWithAprs({ micro: 10, tight: 38, standard: 20, wide: 5 });
-    return { ...payload, presets: payload.presets.map((preset) => ({ ...preset, sizeFit: fit(fits[preset.id] ?? "ok") })) };
-  };
-  const allUnfit = (wide: Fit) => withFits({ micro: "near-edge", tight: "crowded", standard: "cross-band", wide });
-
-  it("skips candidates the deposit does not fit and does not offer them as buttons", () => {
-    const list = buildPresetList(OPEN_RANGE_UI_PRESETS, withFits({ tight: "near-edge" }));
-    expect(list.best).toMatchObject({ id: "standard" });
-    expect(list.best?.fallback).toBeUndefined();
-    expect(ids(list)).toEqual(["micro", "wide"]);
-    expect(list.tooLarge).toBeUndefined();
+    payload.presets = payload.presets.map((preset) => ({
+      ...preset,
+      sizeFit: preset.id === "tight"
+        ? { status: "excluded" as const, reason: "near-edge" as const, ownSharePct: 1, edgeBps: 10, impactBps: 9 }
+        : { status: "ok" as const, ownSharePct: 1, edgeBps: 10, impactBps: 1 },
+    }));
+    const list = buildPresetList(OPEN_RANGE_UI_PRESETS, payload);
+    expect(list.best).toMatchObject({ id: "tight" });
+    expect(ids(list)).toEqual(["micro", "standard", "wide"]);
+    expect(list).not.toHaveProperty("tooLarge");
   });
 
-  it("hides every unfit range, including a cross-band-only Wide", () => {
-    const list = buildPresetList(OPEN_RANGE_UI_PRESETS, allUnfit("cross-band"));
-    expect(list.best).toBeNull();
-    expect(ids(list)).toEqual([]);
-    expect(list.tooLarge).toBe(true);
-  });
-
-  it("does not fall back to excluded Wide or Standard when none fits", () => {
-    const all = withFits({ micro: "cross-band", tight: "cross-band", standard: "cross-band", wide: "cross-band" });
-    expect(buildPresetList(OPEN_RANGE_UI_PRESETS, all)).toEqual({ best: null, buttons: [], tooLarge: true });
-    const noWide = { ...all, presets: all.presets.map((preset) => preset.id === "wide"
-      ? { ...preset, estimate: { status: "unavailable" as const, reason: "range-outside-window" as const } } : preset) };
-    expect(buildPresetList(OPEN_RANGE_UI_PRESETS, noWide)).toEqual({ best: null, buttons: [], tooLarge: true });
-  });
-
-  it("offers no range and flags tooLarge when even the widest range is crowded or near its edge", () => {
-    for (const wide of ["crowded", "near-edge"] as const) {
-      const list = buildPresetList(OPEN_RANGE_UI_PRESETS, allUnfit(wide));
-      expect(list).toEqual({ best: null, buttons: [], tooLarge: true });
-    }
-  });
-
-  it("ranks exactly as before when the payload was not sized (no sizeFit)", () => {
+  it("ranks exactly as before when the payload has no sizeFit", () => {
     expect(buildPresetList(OPEN_RANGE_UI_PRESETS, payloadWithAprs({ micro: 10, tight: 38, standard: 20, wide: 5 })).best)
       .toMatchObject({ id: "tight" });
   });
 });
-

@@ -4,7 +4,6 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { OPEN_RANGE_UI_PRESETS, type OpenRangePreset } from "@sofinance/engine/open-range-presets";
-import { LOWER_AMOUNT_TO_OPEN } from "@/lib/range-apr/copy";
 import { formatEstimate } from "@/lib/range-apr/format";
 import { cardPayloadWithAprs, degradedPayloadFixture, payloadFixture, payloadWithAprs } from "@/lib/range-apr/payload.fixture";
 import { rangeAprPayload } from "@/lib/range-apr/display-policy";
@@ -213,78 +212,30 @@ describe("RangePresetPicker", () => {
     expect(container.textContent).not.toMatch(/Best for this pool/);
   });
 
-  type Fit = "ok" | "crowded" | "near-edge" | "cross-band";
-  const sizedWith = (fits: Record<string, Fit>) => {
+  it("still offers every range when leftover size-fit metadata would have hidden some", () => {
     const data = cardPayloadWithAprs({ micro: 40, tight: 35, standard: 32, wide: 29 });
-    data.presets = data.presets.map((preset) => {
-      const status = fits[preset.id] ?? "ok";
-      return {
-        ...preset,
-        sizeFit: status === "ok"
-          ? { status: "ok" as const, ownSharePct: 1, edgeBps: 10, impactBps: 1, bandBps: 5 }
-          : { status: "excluded" as const, reason: status, ownSharePct: 1, edgeBps: 10, impactBps: 20, bandBps: 5 },
-      };
-    });
-    return { status: "ready", data } as PoolRangeAprState;
-  };
-  const noSizeCopy = () => {
-    expect(container.textContent).not.toMatch(/doesn't fit|too large for pool depth|large vs pool liquidity|edge near est/);
-    expect(container.querySelector(".line-through, .opacity-45, [data-size-fit]")).toBeNull();
-  };
-
-  it("hides ranges the deposit does not fit: no button, no Other ranges entry, no strikethrough (SNDK $500)", () => {
-    render(sizedWith({ micro: "cross-band", tight: "near-edge" }), { selected: "standard" });
-    expect(labels()).toEqual(["Best", "Wide", "Custom"]);
-    expect(text("[data-testid='best-resolved']")).toBe("Standard");
-    expect(container.querySelector("[data-testid='preset-micro']")).toBeNull();
-    expect(container.querySelector("[data-testid='preset-tight']")).toBeNull();
-    expect(container.querySelector("[data-testid='apr-micro']")).toBeNull();
-    expect(container.querySelector("[data-testid='apr-tight']")).toBeNull();
-    expect(text("[data-testid='apr-wide']")).toBe("~29%");
-    noSizeCopy();
+    data.presets = data.presets.map((preset) => ({
+      ...preset,
+      sizeFit: { status: "excluded" as const, reason: "cross-band" as const, ownSharePct: 1, edgeBps: 10, impactBps: 20, bandBps: 5 },
+    }));
+    render({ status: "ready", data }, { selected: "standard" });
+    expect(labels()).toEqual(["Best", "Tight", "Standard", "Wide", "Custom"]);
+    expect(text("[data-testid='best-resolved']")).toBe("Micro");
+    expect(container.querySelector("[data-testid='lower-amount']")).toBeNull();
+    expect(text("[data-testid='apr-tight']")).toBe("~35%");
   });
 
-  it("shows Lower amount instead of an excluded cross-band Wide fallback", () => {
-    render(sizedWith({ micro: "cross-band", tight: "near-edge", standard: "cross-band", wide: "cross-band" }), { selected: "wide" });
-    expect(labels()).toEqual(["Custom"]);
-    expect(text("[data-testid='best-resolved']")).toBeNull();
-    expect(text("[data-testid='lower-amount']")).toBe(LOWER_AMOUNT_TO_OPEN);
-    expect(container.textContent).not.toContain("Other ranges");
-    noSizeCopy();
-  });
-
-  it("falls back to Best when the selected range stops fitting after the amount changes", () => {
-    const { onSelect } = render(sizedWith({}), { selected: "tight" });
-    expect(onSelect).not.toHaveBeenCalled();
-    act(() => root.render(createElement(RangePresetPicker, {
-      presets: OPEN_RANGE_UI_PRESETS, selected: "tight", onSelect, minPrice: "", maxPrice: "",
-      onMinPrice: vi.fn(), onMaxPrice: vi.fn(), apr: sizedWith({ micro: "cross-band", tight: "near-edge" }), quotedRange: null,
-    })));
-    expect(onSelect).toHaveBeenCalledTimes(1);
-    expect(onSelect).toHaveBeenCalledWith("standard");
-  });
-
-  it("keeps a custom selection when ranges are hidden", () => {
-    const { onSelect } = render(sizedWith({ micro: "cross-band", tight: "near-edge" }), { selected: "custom" });
+  it("keeps a custom selection when other ranges stay visible", () => {
+    const { onSelect } = render({ status: "ready", data: cardPayloadWithAprs({ micro: 40, tight: 35, standard: 32, wide: 29 }) }, { selected: "custom" });
     expect(onSelect).not.toHaveBeenCalled();
   });
 
-  it("shows one plain message and no ranges when the amount fits none of them", () => {
-    render(sizedWith({ micro: "crowded", tight: "crowded", standard: "near-edge", wide: "near-edge" }), { selected: "standard" });
-    expect(labels()).toEqual(["Custom"]);
-    expect(text("[data-testid='lower-amount']")).toBe(LOWER_AMOUNT_TO_OPEN);
-    expect(container.querySelector("[data-testid='range-apr-headline']")).toBeNull();
-    expect(container.textContent).not.toContain("Other ranges");
-    expect(container.textContent).not.toMatch(/Best for this pool|Low confidence|widest range/);
-    noSizeCopy();
-  });
-
-  it("hides ranges for a real oversized deposit and keeps Best on a fitting one", () => {
+  it("still ranks Best for a large typed deposit", () => {
     const data = payloadForCapital(payloadFixture(), 150_000);
     render({ status: "ready", data }, { selected: "wide", capitalUsd: 150_000 });
-    expect(container.querySelector("[data-testid='preset-micro']")).toBeNull();
-    expect(container.querySelector("[data-testid='apr-micro']")).toBeNull();
-    noSizeCopy();
+    expect(container.querySelector("[data-testid='preset-best']")).not.toBeNull();
+    expect(container.querySelector("[data-testid='lower-amount']")).toBeNull();
+    expect(container.querySelector("[data-testid='preset-micro']") || container.querySelector("[data-testid='best-resolved']")).toBeTruthy();
   });
 
   it("shows no number for a custom range on a degraded payload", () => {

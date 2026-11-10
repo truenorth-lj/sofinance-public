@@ -100,38 +100,34 @@ The saved snapshot was not expired, not degraded, and had enough data days
 (`MIN_DATA_DAYS = 7`; this pool has 17). rwa-refresh was **not** triggered
 (standing rule). The cron's last snapshot for this pool succeeded at 00:18 UTC.
 
-### 1.1 Honest "always a number" rule
+### 1.1 Honest "always a number" rule (LJ, 2026-11-10: cut size-fit)
 
-Size-fit answers *"can I safely open this much in this range?"* That belongs on
-the Create-position form, once the user has typed an amount. The card answers
-*"what 7-day fee APR did the best candidate range earn?"* Those must not share
-one failure mode.
+LJ (t865u): do not keep the $1,000 size-fit check at all — "不要有這個檢查 直接砍掉".
+The card and the Create-position form no longer exclude presets by crowded /
+near-edge / cross-band preview fit, and the form no longer blocks with
+"Lower the amount to open a position."
 
-Ladder, applied by `summarizeApr7d` (pure; cards, table, homepage snapshot all
-call it):
+`summarizeApr7d` (pure; cards, table, homepage snapshot all call it) now:
 
-1. **Current path** — best *fitting* range at the $1,000 preview, fee-capped.
-2. **New fallback, this pool's case** — sample is usable (not expired, not
-   degraded, enough data days) but every $1,000 candidate is size-excluded:
-   rank again **without** size-fit, still fee-capped at the same preview
-   deposit. Show that number and that range's name (here: **Micro ~16%**, capped
-   at 18.1% so it stays ~16%). Highest range becomes "Micro" again.
-3. **True data gap** (degraded / no preset estimates / expired snapshot) — do
+1. Rank the sample's presets by 7-day fee APR (ties go wider), still fee-capped
+   at the shared $1,000 preview basis. For this pool that is **Micro ~16%**
+   (under the ~18.1% whole-pool fee cap). Highest range becomes "Micro" again.
+2. **True data gap** (degraded / no preset estimates / expired snapshot) — do
    **not** invent a range APR. Keep today's copy ("Not enough recent trading
    data…" / "No 7-day estimate right now." / "APR data is temporarily
    unavailable."). A pool-level fee/TVL figure from a shorter window would be a
    second APR and would break "only the 7-day estimate, mentioned at most once"
-   plus the existing "never guess when the sample is degraded" tests. That
-   fallback is a product call (see §8).
+   plus the existing "never guess when the sample is degraded" tests.
+
+The form ranks the same way for the typed amount (or the $1,000 preview before
+one is entered). Genuine on-chain / build failures stay: prepare errors,
+insufficient balance, and Meteora's 70-bin max, in plain language.
+`staysInLiquidityBand` remains a quote/prepare check in the engine (a real
+build failure), not a preview that hides ranges.
 
 Copy stays 7-day (it *is* a 7-day estimate). No "earn" / "yield" / "guaranteed"
 / "backtest". "Fees not guaranteed" remains OK in the existing caveat. Errors
 stay plain language, no codes.
-
-The Create-position form **keeps** size-fit for Raydium: Best and the preset
-row still drop ranges the typed amount does not fit (`tooLarge` when none fit).
-Custom remains available. That is prepare-safety, not a reason to blank the
-card.
 
 ---
 
@@ -217,7 +213,6 @@ export type SignerKind = "solana-wallet" | "evm-wallet";
 
 export type OpenCapabilities = {
   customRange: boolean;          // Raydium min–max; off for Meteora (bin cap) unless added later
-  sizeFit: boolean;              // only Raydium's constant-liquidity prepare
   maxRangeUnits: number | null;  // Meteora 70
   rangeUnit: RangeUnit;
   rentNote: boolean;
@@ -303,7 +298,6 @@ Visual contract: Raydium's `OpenPositionModal` (the look LJ prefers).
 - Input asset `<select>` (Raydium styling) + Amount + Max.
 - **`RangePresetPicker`** for every venue that exposes the four presets.
   New optional props, defaults preserve today's Raydium behaviour:
-  - `enforceSizeFit` (default `true`; Meteora / RHC pass `false`)
   - `showCustom` (default `true`; Meteora passes `false` until custom bins exist)
   - `unitSlot` — when `capabilities.maxRangeUnits` is set, a muted "N bins"
     under the band, and the existing "not available to open yet" copy on
@@ -390,10 +384,11 @@ changes, no DB migrations.
 
 ## 8. Decisions for PM / LJ
 
-1. **Card number when $1,000 does not fit (this pool):** show the 7-day
-   highest-range APR anyway (Micro ~16% on today's snapshot), fee-capped.
-   Size-fit stays on the Raydium form. Recommended: yes — the sample is real;
-   hiding it called a good estimate "unavailable".
+1. **Size-fit (LJ t865u, 2026-11-10):** removed entirely — card and form no
+   longer filter presets by a $1,000 preview fit, and the form no longer shows
+   "Lower the amount to open a position." The card shows the best 7-day range
+   APR (Micro ~16% on today's snapshot), fee-capped. Genuine prepare / balance
+   / 70-bin errors stay.
 2. **Degraded / no sample:** keep "—" and today's plain-language reason, so we
    do not introduce a second, non-7-day APR. Change only if LJ wants a
    fee/TVL stand-in labelled "Estimated" (never "7-day").

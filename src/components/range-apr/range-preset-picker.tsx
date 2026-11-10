@@ -5,7 +5,7 @@ import { useEffect, useMemo } from "react";
 import { LoaderCircle } from "lucide-react";
 import type { OpenRangePreset, OpenRangeUiPreset } from "@sofinance/engine/open-range-presets";
 import Link from "next/link";
-import { LOWER_AMOUNT_TO_OPEN, BEST_HELP, BEST_LABEL, APR_ESTIMATE_CAVEAT, APR_ESTIMATE_LABEL } from "@/lib/range-apr/copy";
+import { BEST_HELP, BEST_LABEL, APR_ESTIMATE_CAVEAT, APR_ESTIMATE_LABEL } from "@/lib/range-apr/copy";
 import { DOCS_ROUTES } from "@/lib/public-urls";
 import { formatEstimate, unavailableReasonText } from "@/lib/range-apr/format";
 import { MICRO_PRESET_ID, microBandLabel } from "@sofinance/engine/range-apr/micro-range";
@@ -102,7 +102,7 @@ function Headline({ apr, sized, preview, selection, best, others }: {
 
 export function RangePresetPicker({
   presets, selected, onSelect, minPrice, maxPrice, onMinPrice, onMaxPrice, apr, quotedRange, capitalUsd,
-  enforceSizeFit = true, showCustom = true, unavailable = {},
+  showCustom = true, unavailable = {},
 }: {
   presets: readonly OpenRangeUiPreset[];
   selected: OpenRangePreset;
@@ -116,24 +116,22 @@ export function RangePresetPicker({
   quotedRange: TickRange | null;
   /** USD value of the typed deposit (debounced); missing/invalid uses the common $1,000 preview. */
   capitalUsd?: number | null;
-  /** Raydium prepare-safety ranking. Registry venues (Meteora bins, RHC) pass false. */
-  enforceSizeFit?: boolean;
   /** Raydium custom min–max. Meteora has no custom-bin editor yet. */
   showCustom?: boolean;
   /** Venue caps (e.g. Meteora 70 bins) that hide a preset from Best and disable its button. */
   unavailable?: Partial<Record<OpenRangeUiPreset["id"], string>>;
 }) {
   const served = apr.status === "ready" ? apr.data : null;
-  // Re-priced locally for the typed amount; ranges the deposit does not fit drop out of Best.
+  // Re-priced locally for the typed amount (fee share changes with deposit size); ranking is by APR only.
   const data = useMemo(() => {
     if (!served) return null;
     // A payload without the bin model (tests, or a partial snapshot) cannot be re-priced; rank the served estimates as-is.
     const priced = served.model?.bins
-      ? rangeAprPayload(served, capitalUsd, { enforceSizeFit })
+      ? rangeAprPayload(served, capitalUsd)
       : served;
     const blocked = (Object.keys(unavailable) as OpenRangeUiPreset["id"][]).filter((id) => unavailable[id]);
     return blocked.length ? { ...priced, presets: priced.presets.filter((item) => !unavailable[item.id]) } : priced;
-  }, [served, capitalUsd, enforceSizeFit, unavailable]);
+  }, [served, capitalUsd, unavailable]);
   const sized = data;
   const preview = !(typeof capitalUsd === "number" && Number.isFinite(capitalUsd) && capitalUsd > 0);
   const selection = data ? estimateForSelection(data, { preset: selected, minPrice, maxPrice }, quotedRange) : null;
@@ -141,7 +139,7 @@ export function RangePresetPicker({
   const list = buildPresetList(presets, data);
   const best = list.best;
   const bestActive = selected === best?.id;
-  // A preset the typed amount no longer fits is not offered, so a selection of it falls back to Best.
+  // A preset hidden by a venue cap (e.g. Meteora's 70-bin max) falls back to Best.
   const hiddenSelection = !!best && selected !== "custom" && selected !== best.id
     && !list.buttons.some((button) => button.id === selected);
   const bestId = best?.id;
@@ -250,16 +248,7 @@ export function RangePresetPicker({
           />
         </div>
       )}
-      {list.tooLarge ? (
-        <>
-          {preview && data && <p className="mt-3 text-[11px] leading-5 text-smoke">Preview assumes a ~{formatDepositUsd(data.referenceCapitalUsd)} deposit.</p>}
-          <p className="mt-3 rounded-2xl border border-white/10 bg-white/[0.04] p-3 text-xs leading-5 text-cream/90" role="status" data-testid="lower-amount">
-            {LOWER_AMOUNT_TO_OPEN}
-          </p>
-        </>
-      ) : (
-        <Headline apr={apr} sized={sized} preview={preview} selection={selection} best={bestActive ? best : null} others={others} />
-      )}
+      <Headline apr={apr} sized={sized} preview={preview} selection={selection} best={bestActive ? best : null} others={others} />
     </>
   );
 }

@@ -1,106 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { sqrtPriceAtTick } from "@sofinance/engine/range-apr/tick-math";
 import { degradedPayloadFixture, payloadFixture } from "./payload.fixture";
-import {
-  activeLiquidity, bandEdgeBps, depositUsd, EDGE_TO_IMPACT_MIN_MULTIPLE, estimatedPoolImpactBps, nearerEdgeBps, payloadForCapital, sizeFitFor,
-} from "./size-aware";
+import { depositUsd, payloadForCapital } from "./size-aware";
 import { buildPresetList } from "./preset-list";
 import { OPEN_RANGE_UI_PRESETS } from "@sofinance/engine/open-range-presets";
 import { tslaPayload } from "./tsla-payload.fixture";
-
-// Fixture: spacing 1, current sqrt 1 (tick 0), 1e9 liquidity per bin, usdPerRawB 1.
-describe("size checks", () => {
-  const payload = payloadFixture();
-
-  it("reads the liquidity active at the current price", () => {
-    expect(activeLiquidity(payload)).toBe(1e9);
-    expect(activeLiquidity(payloadFixture({ pool: { ...payload.pool, tickCurrent: 500 } }))).toBeNull();
-  });
-
-  it("estimates impact from half the deposit swapped into the active liquidity", () => {
-    // 1e5 USD -> 5e4 raw B -> sqrt +5e-5 -> price +1.0 bp.
-    expect(estimatedPoolImpactBps(payload, 1e5)).toBeCloseTo(1.0, 2);
-    expect(estimatedPoolImpactBps(payload, 0)).toBe(0);
-    expect(estimatedPoolImpactBps(payloadFixture({ model: { ...payload.model, bins: [] } }), 100)).toBe(Number.POSITIVE_INFINITY);
-  });
-
-  it("measures the nearer edge in bps and is 0 outside the range", () => {
-    expect(nearerEdgeBps(1, { tickLower: -3, tickUpper: 6 })).toBeCloseTo(3, 1);
-    expect(nearerEdgeBps(1, { tickLower: 1, tickUpper: 6 })).toBe(0);
-  });
-
-  it("keeps a small deposit, flags near-edge before crowded, and flags a crowded wide range", () => {
-    expect(sizeFitFor(payload, { tickLower: -2, tickUpper: 2 }, 100).status).toBe("ok");
-    const near = sizeFitFor(payload, { tickLower: -2, tickUpper: 2 }, 150_000);
-    expect(near).toMatchObject({ status: "excluded", reason: "near-edge" });
-    expect(near.impactBps).toBeGreaterThan(near.edgeBps / EDGE_TO_IMPACT_MIN_MULTIPLE);
-    const thin = payloadFixture({ model: { ...payload.model, bins: payload.model.bins.map((bin) => ({ ...bin, liquidity: 1e3 })) } });
-    // Tiny pool liquidity: own share dominates even where the edge has room.
-    expect(sizeFitFor(thin, { tickLower: -9, tickUpper: 9 }, 1)).toMatchObject({ status: "excluded", reason: "crowded" });
-    expect(sizeFitFor(thin, { tickLower: -9, tickUpper: 9 }, 1).ownSharePct).toBeGreaterThan(50);
-  });
-});
-
-describe("edge vs impact margin", () => {
-  const payload = payloadFixture();
-  // ~1.2 bp of impact; a +/-3 tick range has its nearer edge ~3 bp away (2.5x): enough under the old 2x guard,
-  // not under 3x. Regression for TSLA/TSLAx at 1000 USDC (edge 2.0x impact) where prepare did not converge.
-  it("requires the nearer edge to be at least 3x the estimated impact", () => {
-    expect(EDGE_TO_IMPACT_MIN_MULTIPLE).toBe(3);
-    const fit = sizeFitFor(payload, { tickLower: -3, tickUpper: 3 }, 120_000);
-    expect(fit.edgeBps / fit.impactBps).toBeGreaterThan(2);
-    expect(fit.edgeBps / fit.impactBps).toBeLessThan(3);
-    expect(fit).toMatchObject({ status: "excluded", reason: "near-edge" });
-    expect(sizeFitFor(payload, { tickLower: -4, tickUpper: 4 }, 120_000).status).toBe("ok");
-  });
-});
-
-describe("Best on TSLA/TSLAx (live payload, 2026-10-21)", () => {
-  // Prepare results on prod that day: 100 USDC tight/standard/wide and 300 USDC all ranges prepared;
-  // 1000 USDC only Wide prepared (Tight and Standard: "did not converge").
-  const bestAt = (capitalUsd: number) => buildPresetList(OPEN_RANGE_UI_PRESETS, payloadForCapital(tslaPayload, capitalUsd)).best;
-  it("picks Tight at 100 USDC, Standard at 300 and no actionable Best at 1000", () => {
-    expect(bestAt(100)?.id).toBe("tight");
-    expect(bestAt(300)?.id).toBe("standard");
-    // No excluded range may be promoted merely because it is the widest.
-    expect(bestAt(1000)).toBeNull();
-  });
-  it("excludes Standard at 1000 USDC (edge ~2.0x the impact)", () => {
-    const standard = payloadForCapital(tslaPayload, 1000).presets.find((preset) => preset.id === "standard")!;
-    expect(standard.sizeFit).toMatchObject({ status: "excluded", reason: "near-edge" });
-    expect(standard.sizeFit!.edgeBps / standard.sizeFit!.impactBps).toBeGreaterThan(2);
-  });
-  it("excludes every candidate at 1000 USDC for leaving the tick-spacing band, including Wide", () => {
-    const sized = payloadForCapital(tslaPayload, 1000);
-    expect(sized.presets.every((preset) => preset.sizeFit?.status === "excluded")).toBe(true);
-    expect(sized.presets.find((preset) => preset.id === "wide")!.sizeFit).toMatchObject({ status: "excluded", reason: "cross-band" });
-    expect(sized.presets[0]!.sizeFit!.impactBps).toBeGreaterThan(sized.presets[0]!.sizeFit!.bandBps!);
-  });
-});
-
-describe("tick-spacing band vs range edge", () => {
-  it("excludes a wide-enough range when the estimated swap would leave the current spacing band", () => {
-    // Price sits just inside the upper edge of a 60-tick band. A wide range still has a far
-    // nearer edge, so the old near-edge guard would keep it — the same mismatch as Best
-    // recommending Standard then prepare throwing CROSS_LIQUIDITY_BAND.
-    const base = payloadFixture();
-    const upperSqrt = sqrtPriceAtTick(60);
-    const payload = payloadFixture({
-      pool: { ...base.pool, tickSpacing: 60, tickCurrent: 55 },
-      model: {
-        ...base.model,
-        currentSqrt: upperSqrt * 0.9997,
-        bins: base.model.bins.map((bin) => ({ ...bin, liquidity: 1e6 })),
-      },
-    });
-    const range = { tickLower: -240, tickUpper: 240 };
-    const capitalUsd = 2_000;
-    const impact = estimatedPoolImpactBps(payload, capitalUsd);
-    expect(nearerEdgeBps(payload.model.currentSqrt, range)).toBeGreaterThan(EDGE_TO_IMPACT_MIN_MULTIPLE * impact);
-    expect(bandEdgeBps(payload)).toBeLessThan(impact);
-    expect(sizeFitFor(payload, range, capitalUsd)).toMatchObject({ status: "excluded", reason: "cross-band" });
-  });
-});
 
 describe("payloadForCapital", () => {
   it("returns the served payload unchanged without a usable amount or for degraded data", () => {
@@ -112,18 +15,25 @@ describe("payloadForCapital", () => {
     expect(payloadForCapital(degraded, 1000)).toBe(degraded);
   });
 
-  it("re-prices every candidate at the deposit and attaches its size fit", () => {
+  it("re-prices every candidate at the deposit and does not attach a size fit", () => {
     const payload = payloadFixture();
     const sized = payloadForCapital(payload, 50_000);
     expect(sized.referenceCapitalUsd).toBe(50_000);
     for (const [index, preset] of sized.presets.entries()) {
       const before = payload.presets[index]!.estimate;
-      expect(preset.sizeFit).toBeDefined();
+      expect(preset).not.toHaveProperty("sizeFit");
       if (preset.estimate.status === "ok" && before.status === "ok") {
         // Own liquidity dilutes the fee share, so the rate drops as the deposit grows.
         expect(preset.estimate.aprPct).toBeLessThan(before.aprPct);
       }
     }
+  });
+
+  it("still ranks a Best on TSLA/TSLAx at 100, 300 and 1,000 USDC", () => {
+    const bestAt = (capitalUsd: number) => buildPresetList(OPEN_RANGE_UI_PRESETS, payloadForCapital(tslaPayload, capitalUsd)).best;
+    expect(bestAt(100)?.id).toBeTruthy();
+    expect(bestAt(300)?.id).toBeTruthy();
+    expect(bestAt(1000)?.id).toBeTruthy();
   });
 });
 

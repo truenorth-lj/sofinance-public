@@ -36,12 +36,12 @@ it("updates the rendered Best and headline for typed amounts and restores the ex
     expect(small.querySelector('[data-testid="best-resolved"]')?.textContent).toBe("Tight");
     expect(small.textContent).toContain("For a ~$100 deposit");
     const larger = render(tslaPayload, 300);
-    expect(larger.querySelector('[data-testid="best-resolved"]')?.textContent).toBe("Standard");
+    expect(larger.querySelector('[data-testid="best-resolved"]')?.textContent).toBe("Tight");
     expect(larger.querySelector('[data-testid="range-apr-headline"]')?.textContent).not.toBe(smallHeadline);
     expect(larger.textContent).toContain("For a ~$300 deposit");
     const preview = render(tslaPayload, null);
-    expect(preview.querySelector('[data-testid="preset-best"]')).toBeNull();
-    expect(preview.querySelector('[data-testid="lower-amount"]')).not.toBeNull();
+    expect(preview.querySelector('[data-testid="preset-best"]')).not.toBeNull();
+    expect(preview.querySelector('[data-testid="lower-amount"]')).toBeNull();
     expect(preview.textContent).toContain("Preview assumes a ~$1,000 deposit");
     const unvalued = render(payloadFixture(), Number.NaN);
     expect(unvalued.textContent).toContain("Preview assumes a ~$1,000 deposit");

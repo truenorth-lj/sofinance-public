@@ -266,7 +266,6 @@ export function RegistryOpenModal({ pool, descriptor, ranges, apr = null, onClos
             apr={aprState}
             quotedRange={null}
             capitalUsd={null}
-            enforceSizeFit={false}
             showCustom={false}
             unavailable={unavailable}
           />

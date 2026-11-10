@@ -51,11 +51,10 @@ describe("summarizeApr7d: the best range's APR at a $1,000 deposit, held only to
   /** Yearly % of a $1,000 deposit that took every fee the pool's LPs earned. */
   const allFeesPct = (feesPerDay: number) => feesPerDay * 365 / CARD_APR_DEPOSIT_USD * 100;
 
-  it("SKHYx-like $126 pool: still shows the fee-capped 7-day APR when every $1,000 preview range is excluded", () => {
+  it("SKHYx-like $126 pool: shows the fee-capped 7-day APR", () => {
     const payload = thin(126);
     const fees = 1000 * 0.0005 * 0.84; // 7d avg volume × fee × LP share = $0.42 a day
     expect(poolLpFeesPerDayUsd(payload)).toBeCloseTo(fees, 12);
-    expect(payloadForCapital(payload, CARD_APR_DEPOSIT_USD).presets.every((preset) => preset.sizeFit?.status === "excluded")).toBe(true);
     const state = summarizeApr7d(payload, "raydium-clmm", NOW);
     expect(state.status).toBe("ready");
     expect(state.status === "ready" && state.aprPct).toBeGreaterThan(0);
@@ -84,24 +83,21 @@ describe("summarizeApr7d: the best range's APR at a $1,000 deposit, held only to
     expect(capAprAtPoolFees(5, { poolLpFeesPerDayUsd: 1_000, poolTvlUsd: 10_000 })).toBe(5);
     expect(capAprAtPoolFees(500, { poolLpFeesPerDayUsd: null, poolTvlUsd: 126 })).toBe(500);
   });
-  it("names the unconstrained best range on the card when all $1,000 candidates are size-excluded", () => {
+  it("names the best range on a thin pool's card", () => {
     const payload = thin(126);
-    // The Create position form still excludes those ranges for a $1,000 deposit; the card does not hide the estimate.
-    expect(payloadForCapital(payload, CARD_APR_DEPOSIT_USD).presets.some((preset) => preset.sizeFit?.status === "excluded")).toBe(true);
     expect(summarizeApr7d(payload, "raydium-clmm", NOW)).toMatchObject({ status: "ready", rangeLabel: expect.any(String) });
   });
 });
 
-describe("summarizeApr7d: protocol-specific size-fit eligibility", () => {
+describe("summarizeApr7d: every protocol shows the best 7-day range", () => {
   const protocols: UnifiedProtocol[] = ["raydium-clmm", "orca-whirlpool", "meteora-dlmm", "uniswap-v4-rhc"];
 
-  it.each(protocols)("%s only applies Raydium size-fit exclusions to Raydium cards", (protocol) => {
+  it.each(protocols)("%s ignores leftover size-fit metadata and shows the highest range", (protocol) => {
     const payload = fresh(cardPayloadWithAprs({ micro: 40, tight: 30, standard: 20, wide: 10 }));
     payload.presets = payload.presets.map((preset) => ({ ...preset, sizeFit: {
       status: "excluded", reason: "cross-band", ownSharePct: 1, edgeBps: 100, impactBps: 2, bandBps: 1,
     } }));
     const state = summarizeApr7d(payload, protocol, NOW);
-    // Size-fit is a form ranking rule, not a reason to blank the card: every protocol shows the 7-day number.
     expect(state).toMatchObject({
       status: "ready", aprPct: 40, rangeLabel: protocol === "uniswap-v4-rhc" ? "Min (±10 ticks)" : "Micro",
     });
@@ -125,7 +121,7 @@ describe("summarizeApr7d: protocol-specific size-fit eligibility", () => {
     expect(summarizeApr7d(young, protocol, Date.parse(SNAPSHOT) + 49 * 3_600_000).status).toBe("missing");
   });
 
-  it("keeps the real RHC Min candidate when only Raydium's constant-liquidity band guard fails", () => {
+  it("keeps the real RHC Min candidate (and the same number on Raydium)", () => {
     const payload = fresh(payloadFixture());
     payload.model.currentSqrt = 1.0001 ** 0.125;
     payload.pool.currentPrice = payload.model.currentSqrt ** 2;
@@ -135,13 +131,7 @@ describe("summarizeApr7d: protocol-specific size-fit eligibility", () => {
     }));
     const repriced = payloadForCapital(payload, CARD_APR_DEPOSIT_USD);
     expect(repriced.presets.map((preset) => preset.id)).toEqual(["micro", "standard", "wide"]);
-    for (const preset of repriced.presets) {
-      expect(preset.sizeFit).toMatchObject({ status: "excluded", reason: "cross-band" });
-      expect(preset.sizeFit!.ownSharePct).toBeLessThan(10);
-      expect(preset.sizeFit!.edgeBps).toBeGreaterThan(9);
-      expect(preset.sizeFit!.impactBps).toBeCloseTo(1, 3);
-      expect(preset.sizeFit!.bandBps).toBeCloseTo(0.25, 3);
-    }
+    for (const preset of repriced.presets) expect(preset).not.toHaveProperty("sizeFit");
     const state = summarizeApr7d(payload, "uniswap-v4-rhc", NOW);
     expect(state).toMatchObject({ status: "ready", rangeLabel: "Min (±10 ticks)" });
     expect(state.status === "ready" && state.aprPct).toBeCloseTo(1.3940008194, 9);
