@@ -38,7 +38,7 @@ const fresh = (payload: ReturnType<typeof payloadFixture>) => {
   return payload;
 };
 
-describe("summarizeApr7d: held to the pool's real fees at a $1,000 deposit (the calculator's cap)", () => {
+describe("summarizeApr7d: the best range's APR at a $1,000 deposit, held only to all of the pool's fees", () => {
   /** A thin pool: little liquidity in each bin, so a $1,000 deposit would take nearly all the fees of its range. */
   const thin = (tvlUsd: number) => {
     const base = payloadFixture();
@@ -47,18 +47,26 @@ describe("summarizeApr7d: held to the pool's real fees at a $1,000 deposit (the 
   const uncappedAt1000 = (payload: ReturnType<typeof payloadFixture>) => highestRangeSummary(OPEN_RANGE_UI_PRESETS, {
     ...payload, presets: payloadForCapital(payload, CARD_APR_DEPOSIT_USD).presets.map((preset) => { const copy = { ...preset }; delete copy.sizeFit; return copy; }),
   })!.aprPct;
+  /** Yearly % of a $1,000 deposit that took every fee the pool's LPs earned. */
+  const allFeesPct = (feesPerDay: number) => feesPerDay * 365 / CARD_APR_DEPOSIT_USD * 100;
 
-  it("SKHYx-like $126 pool: the range APR is capped at fees × 1000 / (TVL + 1000), yearly", () => {
+  it("SKHYx-like $126 pool: never more than every fee the pool's LPs took (fees × 365 / $1,000)", () => {
     const payload = thin(126);
     const fees = 1000 * 0.0005 * 0.84; // 7d avg volume × fee × LP share = $0.42 a day
     expect(poolLpFeesPerDayUsd(payload)).toBeCloseTo(fees, 12);
-    const capPct = fees * CARD_APR_DEPOSIT_USD / (126 + CARD_APR_DEPOSIT_USD) * 365 / CARD_APR_DEPOSIT_USD * 100; // 13.61%
-    const uncapped = uncappedAt1000(payload);
-    expect(uncapped).toBeGreaterThan(capPct);
     const state = summarizeApr7d(payload, "raydium-clmm", NOW);
-    expect(state.status === "ready" && state.aprPct).toBeCloseTo(capPct, 9);
-    expect(state).toMatchObject({ status: "ready", capped: true });
-    expect(capAprAtPoolFees(uncapped, { poolLpFeesPerDayUsd: fees, poolTvlUsd: 126 })).toBeCloseTo(capPct, 9);
+    expect(state.status === "ready" && state.aprPct).toBeCloseTo(Math.min(uncappedAt1000(payload), allFeesPct(fees)), 9);
+    expect(capAprAtPoolFees(1e6, { poolLpFeesPerDayUsd: fees, poolTvlUsd: 0 })).toBeCloseTo(allFeesPct(fees), 9);
+  });
+  it("a range that earns above the pool's average fee rate keeps its own number (no pool-average cap)", () => {
+    const payload = thin(1e9);
+    const poolAvgPct = capAprAtPoolFees(1e6, { poolLpFeesPerDayUsd: poolLpFeesPerDayUsd(payload), poolTvlUsd: payload.pool.tvlUsd });
+    const best = uncappedAt1000(payload);
+    expect(best).toBeGreaterThan(poolAvgPct);
+    expect(best).toBeLessThan(allFeesPct(poolLpFeesPerDayUsd(payload)!));
+    const state = summarizeApr7d(payload, "raydium-clmm", NOW);
+    expect(state.status === "ready" && state.aprPct).toBeCloseTo(best, 9);
+    expect(state).toMatchObject({ status: "ready", rangeLabel: expect.any(String) });
   });
   it("never raises an APR under the cap, and leaves it when the pool's fees are unknown", () => {
     expect(capAprAtPoolFees(5, { poolLpFeesPerDayUsd: 1_000, poolTvlUsd: 10_000 })).toBe(5);
@@ -69,15 +77,6 @@ describe("summarizeApr7d: held to the pool's real fees at a $1,000 deposit (the 
     // The Create position modal would exclude every range for $1,000 here; the card still prices one.
     expect(payloadForCapital(payload, CARD_APR_DEPOSIT_USD).presets.some((preset) => preset.sizeFit?.status === "excluded")).toBe(true);
     expect(summarizeApr7d(payload, "raydium-clmm", NOW)).toMatchObject({ status: "ready", rangeLabel: expect.any(String) });
-  });
-  it("a pool whose fees cover the range APR keeps it (uncapped)", () => {
-    const payload = thin(1e9);
-    const fees = poolLpFeesPerDayUsd(payload)!;
-    payload.pool.tvlUsd = 0; // cap = all the pool's fees: far above the range APR
-    const state = summarizeApr7d(payload, "raydium-clmm", NOW);
-    expect(fees * 365 / CARD_APR_DEPOSIT_USD * 100).toBeGreaterThan(uncappedAt1000(payload));
-    expect(state.status === "ready" && state.aprPct).toBeCloseTo(uncappedAt1000(payload), 9);
-    expect(state).toMatchObject({ status: "ready", capped: false });
   });
 });
 
@@ -97,7 +96,7 @@ describe("cardDataDays: the calculator's strict count (days with volume and TVL)
 describe("rankGroupLookup", () => {
   it("puts a pool whose APR state is new in the New pool group; Not supported yet still wins", () => {
     const pool = (key: string, over: Partial<UnifiedPool> = {}) => ({ key, tvlUsd: 20_000, ...over }) as UnifiedPool;
-    const apr: Record<string, Apr7dState> = { a: { status: "new", days: 3 }, b: { status: "ready", aprPct: 1, rangeLabel: "Tight", lowConfidence: false, capped: false, avgDailyVolumeUsd: 1 } };
+    const apr: Record<string, Apr7dState> = { a: { status: "new", days: 3 }, b: { status: "ready", aprPct: 1, rangeLabel: "Tight", lowConfidence: false, avgDailyVolumeUsd: 1 } };
     const group = rankGroupLookup(apr);
     expect(group(pool("a"))).toBe(2);
     expect(group(pool("b"))).toBe(0);

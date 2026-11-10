@@ -17,11 +17,6 @@ export type Apr7dState =
     rangeLabel: string;
     /** Thin or patchy recent trading behind the estimate. */
     lowConfidence: boolean;
-    /**
-     * The pool-fee cap (`capAprAtPoolFees`) lowered the range APR, so `aprPct` is the pool's average fee APR for the
-     * deposit, not a range's: the card names no range.
-     */
-    capped: boolean;
     /** 7-day average daily volume behind the estimate (for the volume divergence note). */
     avgDailyVolumeUsd: number | null;
     freshness?: AprFreshness;
@@ -70,9 +65,10 @@ export function cardDataDays(payload: PoolRangeAprPayload): number {
  * `highestRangeSummary` the cards and the Create position modal use. Pure, so `/app/rwa-pairs` (client) and the
  * homepage snapshot (server) resolve the identical number from the identical payload.
  *
- * The APR is for a `CARD_APR_DEPOSIT_USD` deposit and is held to what the pool really paid (`capAprAtPoolFees`, the
- * calculator's cap): the LPs' fees per day split by that deposit's share of the pool once it is in. A $126 pool
- * cannot then show a range APR its fees never paid.
+ * The APR is the best range's, for a `CARD_APR_DEPOSIT_USD` deposit, held only to every fee the pool's LPs took (a
+ * deposit can never earn more than all of them), so a thin $126 pool cannot show a range APR its fees never paid. It is
+ * not held to the pool's average fee rate: a concentrated range earns above that average by design, so that cap
+ * replaced the range's number on most cards (15 of 20 live pools on 2026-11-10).
  */
 export function summarizeApr7d(payload: PoolRangeAprPayload, protocol: UnifiedProtocol, nowMs: number): Exclude<Apr7dState, { status: "loading" }> {
   const expired = aprSnapshotExpired(payload, nowMs);
@@ -94,9 +90,10 @@ export function summarizeApr7d(payload: PoolRangeAprPayload, protocol: UnifiedPr
       reason: payload.sample.degraded ? "Not enough recent trading data for a 7-day estimate." : "No 7-day estimate right now.",
     };
   }
-  const aprPct = capAprAtPoolFees(summary.aprPct, { poolLpFeesPerDayUsd: poolLpFeesPerDayUsd(payload), poolTvlUsd: payload.pool.tvlUsd, depositUsd: CARD_APR_DEPOSIT_USD });
+  // TVL 0: the cap is the pool's whole LP fee income (the deposit takes all of it), not a share of it.
+  const aprPct = capAprAtPoolFees(summary.aprPct, { poolLpFeesPerDayUsd: poolLpFeesPerDayUsd(payload), poolTvlUsd: 0, depositUsd: CARD_APR_DEPOSIT_USD });
   return {
-    status: "ready", freshness, aprPct, capped: aprPct < summary.aprPct,
+    status: "ready", freshness, aprPct,
     rangeLabel: protocol === "uniswap-v4-rhc" && summary.id === "micro"
       ? "Min (±10 ticks)"
       : OPEN_RANGE_UI_PRESETS.find((preset) => preset.id === summary.id)?.label ?? summary.label,
