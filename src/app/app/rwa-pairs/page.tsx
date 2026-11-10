@@ -1,3 +1,4 @@
+import { RegionNotice } from "@/components/region-notice";
 import { PoolsPage } from "@/components/unified-pools/pools-page";
 import { unifiedPoolFlags } from "@/lib/unified-pools/flags";
 
@@ -12,5 +13,8 @@ export default async function RwaPairsPage({ searchParams }: {
   const first = (value: string | string[] | undefined) => Array.isArray(value) ? value[0] || "" : value || "";
   const deepLinkPool = first(query.openPool) || (first(query.open) === "1" ? first(query.pool) : "");
   const { rhcSigning, ...flags } = unifiedPoolFlags();
-  return <PoolsPage flags={flags} rhcSigningEnabled={rhcSigning} deepLinkPool={deepLinkPool || undefined} />;
+  return <>
+    <RegionNotice />
+    <PoolsPage flags={flags} rhcSigningEnabled={rhcSigning} deepLinkPool={deepLinkPool || undefined} />
+  </>;
 }

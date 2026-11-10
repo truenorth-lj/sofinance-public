@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { RegionNotice } from "@/components/region-notice";
 import { UnifiedApp } from "@/components/unified-pools/unified-app";
 import { openPoolRedirect } from "@/lib/unified-pools/deep-link";
 import { unifiedPoolFlags } from "@/lib/unified-pools/flags";
@@ -20,7 +21,10 @@ export default async function AppHome({ searchParams }: {
   const { rhcSigning, ...flags } = unifiedPoolFlags();
   // `?position=<source>:<id>&view=` (unified positions); old `?mint=` / `?positionMint=` links still select a Solana position.
   const selection = initialSelectionFromQuery(query);
-  return <UnifiedApp key={`${selection.initialView}:${selection.initialMint || selection.initialPositionKey}:${first(query.wallet)}`}
-    selected={{ ...selection, initialWallet: first(query.wallet), previewPoolId: first(query.pool) }}
-    flags={flags} rhcSigningEnabled={rhcSigning} />;
+  return <>
+    <RegionNotice />
+    <UnifiedApp key={`${selection.initialView}:${selection.initialMint || selection.initialPositionKey}:${first(query.wallet)}`}
+      selected={{ ...selection, initialWallet: first(query.wallet), previewPoolId: first(query.pool) }}
+      flags={flags} rhcSigningEnabled={rhcSigning} />
+  </>;
 }

@@ -5,16 +5,21 @@ import { NextRequest } from "next/server";
 import { proxy } from "../proxy";
 import {
   hasRegionNoticeCookie,
+  hasRegionNoticeDismissCookie,
   isRegionNoticePath,
   REGION_NOTICE_COOKIE,
   REGION_NOTICE_COUNTRIES,
+  REGION_NOTICE_DISMISS_COOKIE,
   REGION_NOTICE_FORCE_COUNTRY_PARAM,
   REGION_NOTICE_FORCE_PARAM,
   REGION_NOTICE_LINK_TEXT,
   REGION_NOTICE_PATHS,
+  REGION_NOTICE_REQUEST_HEADER,
   REGION_NOTICE_TEXT,
+  regionNoticeDismissSetCookie,
   regionNoticeForCountry,
   resolveNoticeCountry,
+  shouldShowRegionNotice,
   XSTOCKS_ELIGIBILITY_TERMS_URL,
 } from "./region-notice";
 
@@ -25,6 +30,10 @@ function visit(path: string, country?: string, cookie?: string) {
   if (country) headers.set("x-vercel-ip-country", country);
   if (cookie) headers.set("cookie", cookie);
   return proxy(new NextRequest(`https://sofinancelab.xyz${path}`, { headers }));
+}
+
+function requestNoticeHeader(response: Response): string | null {
+  return response.headers.get(`x-middleware-request-${REGION_NOTICE_REQUEST_HEADER}`);
 }
 
 afterEach(() => vi.unstubAllEnvs());
@@ -72,6 +81,32 @@ describe("region notice paths", () => {
   });
 });
 
+describe("shouldShowRegionNotice", () => {
+  it("shows for listed countries on /app and /app/rwa-pairs only", () => {
+    expect(shouldShowRegionNotice({ countryHeader: "US", pathname: "/app" })).toBe(true);
+    expect(shouldShowRegionNotice({ countryHeader: "CA", pathname: "/app/rwa-pairs" })).toBe(true);
+    expect(shouldShowRegionNotice({ countryHeader: "GB", pathname: "/" })).toBe(false);
+    expect(shouldShowRegionNotice({ countryHeader: "AU", pathname: "/app/ai" })).toBe(false);
+  });
+
+  it("hides for unlisted or missing country", () => {
+    expect(shouldShowRegionNotice({ countryHeader: "TW", pathname: "/app" })).toBe(false);
+    expect(shouldShowRegionNotice({ countryHeader: "DE", pathname: "/app" })).toBe(false);
+    expect(shouldShowRegionNotice({ countryHeader: "", pathname: "/app" })).toBe(false);
+    expect(shouldShowRegionNotice({ countryHeader: null, pathname: "/app" })).toBe(false);
+  });
+
+  it("hides when dismissed", () => {
+    expect(shouldShowRegionNotice({ countryHeader: "US", pathname: "/app", dismissed: true })).toBe(false);
+  });
+
+  it("honors forceRegionNotice outside production and ignores it in production", () => {
+    const forced = new URLSearchParams(`${REGION_NOTICE_FORCE_PARAM}=1`);
+    expect(shouldShowRegionNotice({ pathname: "/app", searchParams: forced, vercelEnv: "preview" })).toBe(true);
+    expect(shouldShowRegionNotice({ pathname: "/app", searchParams: forced, vercelEnv: "production" })).toBe(false);
+  });
+});
+
 describe("region notice copy", () => {
   it("names xStocks availability and links to the official eligibility terms", () => {
     expect(REGION_NOTICE_TEXT).toBe(
@@ -102,6 +137,18 @@ describe("non-production country override", () => {
   });
 });
 
+describe("dismiss cookie", () => {
+  it("reads only the exact dismiss cookie and builds a Path=/ Set-Cookie", () => {
+    expect(hasRegionNoticeDismissCookie(`${REGION_NOTICE_DISMISS_COOKIE}=1`)).toBe(true);
+    expect(hasRegionNoticeDismissCookie(`${REGION_NOTICE_DISMISS_COOKIE}=0`)).toBe(false);
+    expect(hasRegionNoticeDismissCookie("")).toBe(false);
+    expect(regionNoticeDismissSetCookie(false)).toContain(`${REGION_NOTICE_DISMISS_COOKIE}=1`);
+    expect(regionNoticeDismissSetCookie(false)).toContain("Path=/");
+    expect(regionNoticeDismissSetCookie(false)).not.toContain("Secure");
+    expect(regionNoticeDismissSetCookie(true)).toContain("Secure");
+  });
+});
+
 describe("Proxy never blocks notice countries", () => {
   for (const code of NOTICE) {
     it(`${code}: page and app load normally and get the notice flag`, () => {
@@ -114,6 +161,15 @@ describe("Proxy never blocks notice countries", () => {
       }
     });
   }
+
+  it("sets the SSR request header only on /app and /app/rwa-pairs", () => {
+    expect(requestNoticeHeader(visit("/app", "US"))).toBe("1");
+    expect(requestNoticeHeader(visit("/app/rwa-pairs", "CA"))).toBe("1");
+    expect(requestNoticeHeader(visit("/", "US"))).not.toBe("1");
+    expect(requestNoticeHeader(visit("/app/ai", "US"))).not.toBe("1");
+    expect(requestNoticeHeader(visit("/app", "TW"))).not.toBe("1");
+    expect(requestNoticeHeader(visit("/app"))).not.toBe("1");
+  });
 
   it("does not set the flag elsewhere or without a geo header, and clears a stale one", () => {
     expect(visit("/app", "TW").cookies.get(REGION_NOTICE_COOKIE)).toBeUndefined();
@@ -135,11 +191,15 @@ describe("Proxy never blocks notice countries", () => {
 
   it("sets the flag from forceRegionNotice outside production", () => {
     vi.stubEnv("VERCEL_ENV", "preview");
-    expect(visit(`/app?${REGION_NOTICE_FORCE_PARAM}=1`).cookies.get(REGION_NOTICE_COOKIE)?.value).toBe("1");
+    const response = visit(`/app?${REGION_NOTICE_FORCE_PARAM}=1`);
+    expect(response.cookies.get(REGION_NOTICE_COOKIE)?.value).toBe("1");
+    expect(requestNoticeHeader(response)).toBe("1");
   });
 
   it("ignores forceRegionNotice in production", () => {
     vi.stubEnv("VERCEL_ENV", "production");
-    expect(visit(`/app?${REGION_NOTICE_FORCE_PARAM}=1`).cookies.get(REGION_NOTICE_COOKIE)).toBeUndefined();
+    const response = visit(`/app?${REGION_NOTICE_FORCE_PARAM}=1`);
+    expect(response.cookies.get(REGION_NOTICE_COOKIE)).toBeUndefined();
+    expect(requestNoticeHeader(response)).not.toBe("1");
   });
 });

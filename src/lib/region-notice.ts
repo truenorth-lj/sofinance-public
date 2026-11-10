@@ -5,9 +5,12 @@ import { APP_ROUTES } from "@/lib/public-urls";
  *
  * Notice only: no IP block, no redirect, no 403/451, and no disabled connect / open / withdraw.
  * The country comes from Vercel's free `x-vercel-ip-country` header (ISO 3166-1 alpha-2), read in
- * `src/proxy.ts`, which sets a short-lived flag cookie so pages stay static and CDN-cached.
- * `<RegionNotice />` reads that cookie and renders only on `/app` and `/app/rwa-pairs`.
- * Missing or unknown country → no banner.
+ * `src/proxy.ts`. The Proxy sets:
+ * - a short-lived flag cookie (`sf_region_notice`) for visitors in the country list
+ * - a request header (`x-sofi-region-notice: 1`) when the notice should appear on this path, so
+ *   the server component can put the banner in the initial HTML (no post-hydration layout shift)
+ * Missing or unknown country → no banner. Shown only on `/app` and `/app/rwa-pairs`.
+ * Dismissal is a cookie the server reads, so a dismissed banner stays out of the HTML.
  *
  * Country list (ISO 3166-1 alpha-2), fetched 2026-11-10 (Asia/Taipei):
  * - https://xstocks.com/documents/xstocks-terms-of-service.pdf §1.3
@@ -36,14 +39,22 @@ export const REGION_NOTICE_TEXT =
 
 export const REGION_NOTICE_LINK_TEXT = "xStocks' eligibility terms";
 
-/** Pages that may show the notice. Other routes never render it, even if the flag cookie is set. */
+/** Pages that may show the notice. Other routes never render it. */
 export const REGION_NOTICE_PATHS = [APP_ROUTES.home, APP_ROUTES.rwaPairs] as const;
 
 /** Readable flag cookie set by the Proxy for visitors in `REGION_NOTICE_COUNTRIES`. Holds no country code. */
 export const REGION_NOTICE_COOKIE = "sf_region_notice";
 export const REGION_NOTICE_COOKIE_MAX_AGE = 60 * 60 * 24;
-/** localStorage key for "dismissed in this browser". Bumped so the xStocks-specific copy is seen once. */
-export const REGION_NOTICE_DISMISS_KEY = "sofinance:region-notice-xstocks-dismissed";
+
+/** Set by the client when the visitor dismisses the notice; the server reads it so HTML omits the banner. */
+export const REGION_NOTICE_DISMISS_COOKIE = "sf_region_notice_dismissed";
+export const REGION_NOTICE_DISMISS_MAX_AGE = 60 * 60 * 24 * 365;
+
+/**
+ * Request header the Proxy sets to `1` when this response should include the banner.
+ * Read by the server component; not a security control (the notice never blocks).
+ */
+export const REGION_NOTICE_REQUEST_HEADER = "x-sofi-region-notice";
 
 /** Local-build / screenshot override. Ignored when VERCEL_ENV is production. */
 export const REGION_NOTICE_FORCE_PARAM = "forceRegionNotice";
@@ -83,6 +94,26 @@ export function resolveNoticeCountry(
   return header;
 }
 
+export function shouldShowRegionNotice(input: {
+  countryHeader?: string | null;
+  pathname?: string | null;
+  searchParams?: SearchParams | null;
+  vercelEnv?: string | null;
+  dismissed?: boolean;
+}): boolean {
+  if (input.dismissed) return false;
+  if (!isRegionNoticePath(input.pathname)) return false;
+  return regionNoticeForCountry(resolveNoticeCountry(input.countryHeader, input.searchParams, input.vercelEnv)) === true;
+}
+
 export function hasRegionNoticeCookie(cookieHeader: string): boolean {
   return cookieHeader.split(";").some((part) => part.trim() === `${REGION_NOTICE_COOKIE}=1`);
+}
+
+export function hasRegionNoticeDismissCookie(cookieHeader: string): boolean {
+  return cookieHeader.split(";").some((part) => part.trim() === `${REGION_NOTICE_DISMISS_COOKIE}=1`);
+}
+
+export function regionNoticeDismissSetCookie(secure: boolean): string {
+  return `${REGION_NOTICE_DISMISS_COOKIE}=1; Path=/; Max-Age=${REGION_NOTICE_DISMISS_MAX_AGE}; SameSite=Lax${secure ? "; Secure" : ""}`;
 }
