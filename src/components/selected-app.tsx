@@ -278,7 +278,11 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
     : performanceMint ? positionKey(positionSource.id, performanceMint) : "";
   const fromPanel = (key: string): OverviewPosition["fromPanel"] => key !== panelKey ? undefined
     : panelResult?.key === key ? { report: panelResult.report, error: panelResult.error } : "loading";
-  const overviewPositions: OverviewPosition[] = !connected || !wallet ? [] : [
+  // A registry scan can finish before the inline wallet scan. Until default selection is known,
+  // keep its rows selectable but let the eventual selected panel own the first report read.
+  // Explicit picks/deep links can read immediately; a failed wallet scan must not stall the overview.
+  const awaitingDefaultSelection = !discovery && !stateError && !otherSelected && !performanceMint;
+  const overviewPositions: OverviewPosition[] = !connected || !wallet || awaitingDefaultSelection ? [] : [
     ...solanaPositions.filter((item) => !isClosed(item)).map((item): OverviewPosition => ({ key: item.key,
       positionId: item.nativeId, pool: { id: item.poolId, source: positionSource.displayName,
         label: `${poolLabel(item.tokenA.id)} / ${poolLabel(item.tokenB.id)}` }, load: async (signal) => {

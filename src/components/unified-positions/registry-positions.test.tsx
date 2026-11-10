@@ -20,7 +20,7 @@ const POSITION = testKeypair(94).publicKey.toBase58();
 const MINT_A = "TSLAqBbv4CNCnzWFeB7LmydAyEiNMJtve7DYKLpdK4S";
 const MINT_B = "XsDoVfqeBukxuZHWhdvWHBhgEHjGNst4MLodqsJHzoB";
 const state = vi.hoisted(() => ({ dex: { status: 200, body: {} as unknown }, op: { status: 422, body: {} as unknown }, raydium: [] as unknown[], dexCalls: [] as [string, unknown][], routeOn: true, icons: null as unknown, hold: null as Promise<void> | null,
-  performance: { status: 200, body: {} as unknown }, quoteAdd: { status: 200, body: {} as unknown } }));
+  performance: { status: 200, body: {} as unknown }, walletHold: null as Promise<void> | null, positionsHold: null as Promise<void> | null, quoteAdd: { status: 200, body: {} as unknown } }));
 
 vi.mock("@/lib/protocol-flags", async (importOriginal) => ({ ...await importOriginal<typeof import("@/lib/protocol-flags")>(),
   isDexTxRouteEnabled: () => state.routeOn }));
@@ -59,13 +59,16 @@ let container: HTMLDivElement; let root: Root;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true); localStorage.clear(); resetTxNotices();
   state.dex = { status: 200, body: { positions: [meteoraRow()] } }; state.raydium = []; state.dexCalls = []; state.routeOn = true; state.icons = null; state.hold = null; resetPositionOpLocks();
-  state.performance = { status: 200, body: performanceBody() };
+  state.performance = { status: 200, body: performanceBody() }; state.walletHold = null; state.positionsHold = null;
   state.quoteAdd = { status: 200, body: {} };
   state.op = { status: 422, body: { error: "This pool pays farming rewards, and claiming them isn't available here yet.", code: "UNSUPPORTED" } };
   window.history.replaceState(null, "", "/app");
   vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(String(input), "http://x");
-    if (url.pathname === "/api/wallet") return Response.json({ wallet: WALLET, slot: 1, fetchedAt: 1, positions: state.raydium, assets: [] });
+    if (url.pathname === "/api/wallet") {
+      if (state.walletHold) await state.walletHold;
+      return Response.json({ wallet: WALLET, slot: 1, fetchedAt: 1, positions: state.raydium, assets: [] });
+    }
     if (url.pathname === "/api/rwa-pairs" && state.icons) return Response.json({ pairs: [], tokenIcons: state.icons });
     if (url.pathname.startsWith("/api/dex/")) {
       state.dexCalls.push([url.pathname, JSON.parse(String(init?.body))]);
@@ -75,6 +78,7 @@ beforeEach(() => {
         if (state.hold) await state.hold; // a prepare still in flight
         return Response.json(state.op.body, { status: state.op.status });
       }
+      if (state.positionsHold) await state.positionsHold;
       return state.dex.status === 404 ? new Response(null, { status: 404 }) : Response.json(state.dex.body, { status: state.dex.status });
     }
     return Response.json({ error: "not in this test" }, { status: 503 });
@@ -155,6 +159,7 @@ describe("/app My positions with registry DEXes", () => {
     const panel = () => container.querySelector("[data-testid=registry-performance]")!;
     expect(panel().querySelector("[role=alert]")?.textContent).toBe("No Meteora position exists at that address.");
     expect(panel().querySelector("[data-testid=exit-preview-unavailable]")).toBeNull();
+    expect(state.dexCalls.filter(([path]) => path.endsWith("/performance"))).toHaveLength(1);
     state.performance = { status: 200, body: performanceBody() };
     const retry = [...panel().querySelectorAll("button")].find((button) => button.textContent === "Retry performance")!;
     await act(async () => retry.click());
@@ -162,6 +167,55 @@ describe("/app My positions with registry DEXes", () => {
     expect(panel().querySelector("[role=alert]")).toBeNull();
     expect(panel().textContent).toContain("4.71%");
     expect(state.dexCalls.filter(([path]) => path.endsWith("/performance"))).toHaveLength(2);
+  });
+
+  it.each(["registry-first", "wallet-first"] as const)("cold default selection shares its report read when %s", async (order) => {
+    // Unique keys prevent a previous test's overview cache from concealing a duplicate read.
+    const id = testKeypair(order === "registry-first" ? 181 : 182).publicKey.toBase58();
+    const key = `meteora-dlmm:${id}`;
+    state.dex.body = { positions: [{ ...meteoraRow(), key, nativeId: id }] };
+    const body = performanceBody();
+    const success = { ...body, key, report: { ...body.report, positionMint: id } };
+    state.performance = { status: 404, body: { error: "Position temporarily unavailable" } };
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => { release = resolve; });
+    if (order === "registry-first") state.walletHold = pending;
+    else state.positionsHold = pending;
+    try {
+      await render({ initialView: "performance" });
+      // No report belongs to an unresolved default selection yet. The registry row remains navigable.
+      expect(state.dexCalls.filter(([path]) => path.endsWith("/performance"))).toHaveLength(0);
+      if (order === "registry-first") expect(rows().map((row) => row.getAttribute("data-position-key"))).toContain(key);
+      await act(async () => { release(); }); await settle();
+      expect(state.dexCalls.filter(([path]) => path.endsWith("/performance"))).toEqual([
+        ["/api/dex/meteora-dlmm/performance", { positionKey: key }],
+      ]);
+      const panel = () => container.querySelector("[data-testid=registry-performance]")!;
+      expect(panel().querySelector("[role=alert]")?.textContent).toBe("Position temporarily unavailable");
+      state.performance = { status: 200, body: success };
+      const retry = [...panel().querySelectorAll("button")].find((button) => button.textContent === "Retry performance")!;
+      await act(async () => retry.click()); await settle();
+      expect(panel().querySelector("[role=alert]")).toBeNull();
+      expect(panel().textContent).toContain("4.71%");
+      expect(state.dexCalls.filter(([path]) => path.endsWith("/performance"))).toHaveLength(2);
+    } finally { await act(async () => { release(); }); }
+  });
+
+  it("does not delay an explicitly linked registry selection behind wallet discovery", async () => {
+    const id = testKeypair(183).publicKey.toBase58();
+    const key = `meteora-dlmm:${id}`;
+    state.dex.body = { positions: [{ ...meteoraRow(), key, nativeId: id }] };
+    const body = performanceBody();
+    state.performance = { status: 200, body: { ...body, key, report: { ...body.report, positionMint: id } } };
+    let release!: () => void;
+    state.walletHold = new Promise<void>((resolve) => { release = resolve; });
+    try {
+      await render({ initialView: "performance", initialPositionKey: key });
+      expect(container.querySelector("[data-testid=registry-performance]")?.textContent).toContain("4.71%");
+      expect(state.dexCalls.filter(([path]) => path.endsWith("/performance"))).toHaveLength(1);
+      await act(async () => { release(); }); await settle();
+      expect(state.dexCalls.filter(([path]) => path.endsWith("/performance"))).toHaveLength(1);
+    } finally { await act(async () => { release(); }); }
   });
 
   it("every registry tab follows the descriptor (no panel-level overrides)", () => {
