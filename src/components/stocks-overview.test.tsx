@@ -106,6 +106,10 @@ describe("StocksOverview", () => {
     expect(button.getAttribute("aria-expanded")).toBe("false");
     await act(async () => button.click());
     expect(button.getAttribute("aria-expanded")).toBe("true");
+    const expanded = document.getElementById(button.getAttribute("aria-controls")!)!;
+    const tiles = expanded.querySelector('[data-testid="stock-performance"]')!;
+    expect(tiles.parentElement?.classList.contains("pt-3")).toBe(true);
+    expect(tiles.querySelector(".grid")?.classList.contains("gap-3")).toBe(true);
   });
 
   it("shows nothing for a single position", async () => {

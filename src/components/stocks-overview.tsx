@@ -162,7 +162,7 @@ function StockRowItem({ row, open, onToggle }: { row: StockRow; open: boolean; o
     </button>
     <div id={panelId} inert={!open} className={cn("grid transition-[grid-template-rows] duration-200 ease-out motion-reduce:transition-none", open ? "grid-rows-[1fr]" : "grid-rows-[0fr]")}>
       <div className="overflow-hidden">
-        <div className="px-5 pb-5 pt-1"><StockPerformanceTiles stock={row} showHeader={false} showFootnote={false} /></div>
+        <div className="px-5 pb-5 pt-3"><StockPerformanceTiles stock={row} showHeader={false} showFootnote={false} /></div>
       </div>
     </div>
   </div>;
