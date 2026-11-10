@@ -221,9 +221,10 @@ export function RegistryOpenModal({ pool, descriptor, ranges, apr = null, onClos
 
   const assets = tokens.map((item) => {
     const have = balances?.byMint[item.id];
+    const symbol = item.symbol || "token";
     return {
       id: item.id,
-      label: have !== undefined ? `${item.symbol} · ${formatAmount(have, item.decimals)}` : item.symbol,
+      label: have !== undefined ? `${symbol} · ${formatAmount(have, item.decimals)}` : symbol,
     };
   });
   const rangesError = ranges instanceof Error
