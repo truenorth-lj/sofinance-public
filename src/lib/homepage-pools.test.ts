@@ -118,6 +118,20 @@ describe("buildHomepagePools / two chains", () => {
     expect(homepageRows(pools.slice(0, 3), apr7d).map((row) => row.poolAddress)).toEqual(["spcx-pool", "mstr-pool"]);
   });
 
+  it("leaves out pools whose tokens are not supported yet, so a supported pool of the same pair takes its place", () => {
+    const multiplier = { unsupported: { issues: ["ScaledUiAmount multiplier not 1"], mints: ["nvdax"] } };
+    const pools = buildHomepagePools({ solana: [
+      solanaRow("NVDAx", "NVDA", 90_000, { poolAddress: "nvda-unsupported", ...multiplier }),
+      solanaRow("NVDAx", "NVDA", 8_000, { poolAddress: "nvda-ok" }),
+      solanaRow("SPCXx", "SPCX", 20_000),
+    ] });
+    expect(pools.map((row) => row.poolAddress)).toEqual(["nvda-ok", "spcx-pool"]);
+    expect(rwaPairsDefaultOrder(pools, () => null).map((row) => row.poolAddress)).toEqual(["spcx-pool", "nvda-ok"]);
+    // The server snapshot drops them too (no row, no APR, no icons).
+    const snapshot = toHomepagePoolsSnapshot({ solana: { pairs: [solanaRow("NVDAx", "NVDA", 90_000, { poolAddress: "nvda-unsupported", ...multiplier })], fetchedAt: "2026-11-10T00:00:00.000Z", stale: false } });
+    expect(snapshot.pools).toEqual([]);
+  });
+
   it("keeps every candidate pool, and applies the /app/rwa-pairs duplicate rule per chain without merging chains", () => {
     const pools = buildHomepagePools({ solana, rhc: rhcSummaries() });
     expect(pools.filter((row) => row.pairLabel === "SPCXx/SPCX").map((row) => row.poolAddress)).toEqual(["spcx-pool", "spcx-small"]);

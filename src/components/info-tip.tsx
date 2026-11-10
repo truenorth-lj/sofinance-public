@@ -52,8 +52,10 @@ export function InfoTip({
         <span
           id={id}
           role="tooltip"
-          style={{ position: "fixed", left: position.left, top: position.top, bottom: position.bottom, width: TIP_WIDTH }}
-          className="pointer-events-none z-[60] max-w-[calc(100vw-16px)] whitespace-normal rounded-lg border border-white/20 bg-char px-3 py-2 text-left font-display text-xs font-normal normal-case leading-5 tracking-normal text-cream/90 shadow-xl"
+          style={{ position: "fixed", left: position.left, top: position.top, bottom: position.bottom, width: TIP_WIDTH,
+            // Grows out of the ⓘ: from just above it when shown below, from just below it when shown above.
+            transformOrigin: placement === "below" ? "top left" : "bottom left", ["--emerge-from" as string]: placement === "below" ? "-4px" : "4px" }}
+          className="pointer-events-none z-[60] motion-safe:animate-emerge max-w-[calc(100vw-16px)] whitespace-normal rounded-lg border border-white/20 bg-char px-3 py-2 text-left font-display text-xs font-normal normal-case leading-5 tracking-normal text-cream/90 shadow-xl"
         >
           {children}
         </span>
