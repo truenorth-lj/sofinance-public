@@ -58,4 +58,19 @@ describe("portfolioTotals", () => {
     expect(totals.feeUsd).toBeCloseTo(8.59, 10);
     expect(totals.totalUsd).toBeCloseTo(-0.17, 10);
   });
+
+  it("recovers the totals once the missing stock has an entry price (the SPCX / SNDK case)", () => {
+    const sndk = stock({ symbol: "SNDK", valueUsd: 1116.62, priceChangeUsd: -162.36, sharesIn: 1, entryPriceUsd: 1278.98, feeUsd: 2.1 });
+    const spcxMissing = stock({ symbol: "SPCX", valueUsd: 489.07, sharesIn: 3.4488, entryPriceUsd: null, priceChangeUsd: null,
+      feeUsd: 1.03, entryUnavailableReason: "Entry price was not recorded for this position." });
+    const before = portfolioTotals(groupByStock([{ key: "sndk", stock: sndk }, { key: "spcx", stock: spcxMissing }]));
+    expect(before.priceChangeUsd).toBeNull();
+    expect(before.totalUsd).toBeNull();
+    const spcxPriced = stock({ symbol: "SPCX", valueUsd: 489.07, sharesIn: 3.4488, entryPriceUsd: 136.81,
+      priceChangeUsd: 3.4488 * (141.6 - 136.81), feeUsd: 1.03, entryUnavailableReason: null });
+    const after = portfolioTotals(groupByStock([{ key: "sndk", stock: sndk }, { key: "spcx", stock: spcxPriced }]));
+    expect(after.priceChangeUsd).toBeCloseTo(-162.36 + 3.4488 * (141.6 - 136.81), 6);
+    expect(after.totalUsd).toBeCloseTo(after.priceChangeUsd! + 2.1 + 1.03, 6);
+    expect(after.costUsd).toBeCloseTo(1 * 1278.98 + 3.4488 * 136.81, 6);
+  });
 });

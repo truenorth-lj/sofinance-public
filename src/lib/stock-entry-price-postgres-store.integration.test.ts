@@ -27,21 +27,26 @@ describe.skipIf(!url)("Stock entry price PostgreSQL persistence", () => {
     if (db) { await db.unsafe(`DROP SCHEMA IF EXISTS ${schema} CASCADE`); await db.end(); }
   }, 30_000);
 
-  it("writes a deposit once, keeps the first result and reads only the requested method version", async () => {
+  it("writes a deposit once, reuses ok rows of any method version, and hides old-version no_trade", async () => {
     const a = "a".repeat(64), b = "b".repeat(64);
     expect(await store!.request({ op: "write", rows: [ok(a), { ...ok(b), status: "no_trade", priceUsd: null, trades: [] }] })).toBe(2);
     expect(await store!.request({ op: "write", rows: [ok(a, 999)] })).toBe(0);
-    const rows = await store!.request({ op: "read", priceMint: mint, methodVersion: 1, signatures: [a, b, "c".repeat(64)] });
-    expect(rows.find((row) => row.depositSignature === a)).toMatchObject({ status: "ok", priceUsd: 176.998, trades: [{ usdcSize: 258.69 }] });
-    expect(rows.find((row) => row.depositSignature === b)).toMatchObject({ status: "no_trade", priceUsd: null, trades: [] });
-    expect(await store!.request({ op: "read", priceMint: mint, methodVersion: 2, signatures: [a] })).toEqual([]);
+    const v1 = await store!.request({ op: "read", priceMint: mint, methodVersion: 1, signatures: [a, b, "c".repeat(64)] });
+    expect(v1.find((row) => row.depositSignature === a)).toMatchObject({ status: "ok", priceUsd: 176.998, trades: [{ usdcSize: 258.69 }] });
+    expect(v1.find((row) => row.depositSignature === b)).toMatchObject({ status: "no_trade", priceUsd: null, trades: [] });
+    const v2 = await store!.request({ op: "read", priceMint: mint, methodVersion: 2, signatures: [a, b] });
+    expect(v2.find((row) => row.depositSignature === a)).toMatchObject({ status: "ok", priceUsd: 176.998, methodVersion: 1 });
+    expect(v2.find((row) => row.depositSignature === b)).toBeUndefined();
   });
 
-  it("replaces a row only with a newer method version", async () => {
-    const d = "d".repeat(64);
+  it("replaces only an older no_trade with a newer method version, and never an ok", async () => {
+    const d = "d".repeat(64), g = "g".repeat(64);
     await store!.request({ op: "write", rows: [ok(d, 100)] });
-    expect(await store!.request({ op: "write", rows: [ok(d, 101, 2)] })).toBe(1);
-    expect(await store!.request({ op: "read", priceMint: mint, methodVersion: 2, signatures: [d] })).toMatchObject([{ priceUsd: 101 }]);
+    expect(await store!.request({ op: "write", rows: [ok(d, 101, 2)] })).toBe(0);
+    expect(await store!.request({ op: "read", priceMint: mint, methodVersion: 2, signatures: [d] })).toMatchObject([{ priceUsd: 100, methodVersion: 1 }]);
+    await store!.request({ op: "write", rows: [{ ...ok(g, 100), status: "no_trade", priceUsd: null, trades: [] }] });
+    expect(await store!.request({ op: "write", rows: [ok(g, 101, 2)] })).toBe(1);
+    expect(await store!.request({ op: "read", priceMint: mint, methodVersion: 2, signatures: [g] })).toMatchObject([{ priceUsd: 101, methodVersion: 2 }]);
   });
 
   it("rejects rows the checks forbid", async () => {

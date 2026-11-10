@@ -5,13 +5,13 @@ import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import * as schema from "../db/schema";
 import { assertRwaDatabaseIdentity } from "./rwa-database";
 import {
-  entryPriceRowSchema, entryPriceStoreRequestSchema, StockEntryPriceStoreError,
+  entryPriceRowSchema, entryPriceStoreRequestSchema, isReusableEntryPriceRow, StockEntryPriceStoreError,
   type EntryPriceStoreOperation, type EntryPriceStoreRequest, type EntryPriceStoreResultMap, type StockEntryPriceRow, type StockEntryPriceStore,
 } from "./stock-entry-price-store-types";
 
 const { positionEntryPrices: prices } = schema;
 
-/** One row per deposit: insert once, replace only with a newer method version. */
+/** One row per deposit: insert once; replace only an older `no_trade` (leave `ok` alone). */
 export class PostgresStockEntryPriceStore implements StockEntryPriceStore {
   private readonly orm: PostgresJsDatabase<typeof schema>;
   constructor(public readonly db: postgres.Sql) { this.orm = drizzle(db, { schema }); }
@@ -25,12 +25,12 @@ export class PostgresStockEntryPriceStore implements StockEntryPriceStore {
 
   private async read(input: EntryPriceStoreRequest<"read">): Promise<StockEntryPriceRow[]> {
     const rows = await this.orm.select().from(prices).where(and(eq(prices.priceMint, input.priceMint),
-      eq(prices.methodVersion, input.methodVersion), inArray(prices.depositSignature, input.signatures)));
+      inArray(prices.depositSignature, input.signatures)));
     return rows.flatMap((row) => {
       const parsed = entryPriceRowSchema.safeParse({ depositSignature: row.depositSignature, priceMint: row.priceMint,
         depositSlot: row.depositSlot, depositBlockTime: row.depositBlockTime, referencePool: row.referencePool,
         methodVersion: row.methodVersion, status: row.status, priceUsd: row.priceUsd, trades: row.trades });
-      return parsed.success ? [parsed.data] : [];
+      return parsed.success && isReusableEntryPriceRow(parsed.data, input.methodVersion) ? [parsed.data] : [];
     });
   }
 
@@ -43,7 +43,7 @@ export class PostgresStockEntryPriceStore implements StockEntryPriceStore {
         set: { depositSlot: sql`excluded.deposit_slot`, depositBlockTime: sql`excluded.deposit_block_time`,
           referencePool: sql`excluded.reference_pool`, status: sql`excluded.status`, priceUsd: sql`excluded.price_usd`,
           trades: sql`excluded.trades`, methodVersion: sql`excluded.method_version`, computedAt: sql`excluded.computed_at` },
-        setWhere: sql`${prices.methodVersion} < excluded.method_version`,
+        setWhere: sql`${prices.methodVersion} < excluded.method_version AND ${prices.status} = 'no_trade'`,
       }).returning({ signature: prices.depositSignature });
     return written.length;
   }

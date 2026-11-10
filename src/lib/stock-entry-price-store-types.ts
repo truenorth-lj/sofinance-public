@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-/** Bump when the lookup method changes: rows with another version are ignored on read and replaced on write. */
-export const STOCK_ENTRY_PRICE_METHOD_VERSION = 1;
+/** Bump when the lookup method changes. `ok` rows of any version are reused; old-version `no_trade` is treated as missing and replaced on write. */
+export const STOCK_ENTRY_PRICE_METHOD_VERSION = 2;
 export const MAX_ENTRY_PRICE_READ = 200;
 export const MAX_ENTRY_PRICE_WRITE = 20;
 
@@ -30,12 +30,23 @@ export type EntryPriceStoreRequest<K extends EntryPriceStoreOperation = EntryPri
 }[K];
 export type EntryPriceStoreResultMap = {
   read: StockEntryPriceRow[];
-  /** Rows inserted or replaced (an existing row of the same method version is kept). */
+  /** Rows inserted or replaced (an existing `ok` row is kept; an older `no_trade` is replaced). */
   write: number;
 };
 export interface StockEntryPriceStore {
   request<K extends EntryPriceStoreOperation>(input: EntryPriceStoreRequest<K>): Promise<EntryPriceStoreResultMap[K]>;
 }
+
+/** `ok` at any method version is final; `no_trade` is final only at the requested version. */
+export function isReusableEntryPriceRow(row: StockEntryPriceRow, methodVersion: number): boolean {
+  return row.status === "ok" || row.methodVersion === methodVersion;
+}
+
+/** Overwrite only an older `no_trade` (never an `ok` price). */
+export function canReplaceEntryPriceRow(existing: StockEntryPriceRow, incoming: StockEntryPriceRow): boolean {
+  return existing.status === "no_trade" && existing.methodVersion < incoming.methodVersion;
+}
+
 export class StockEntryPriceStoreError extends Error {
   constructor(public readonly code: string) { super(code); }
 }

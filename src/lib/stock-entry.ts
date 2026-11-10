@@ -1,9 +1,11 @@
 import "server-only";
 /**
  * Shares put in and their average deposit-time price for the Performance stock view.
- * Prices are recorded once per deposit (`position_entry_prices`): a read uses stored rows, looks up at most
- * `MAX_ENTRY_PRICE_LOOKUPS_PER_READ` missing deposits over the history transport, stores the definite results, and
- * leaves the rest for a later view. No store means no lookups: an unrecorded price is never recomputed per view.
+ * Prices are recorded once per deposit (`position_entry_prices`): a read uses stored rows (`ok` at any method
+ * version; current-version `no_trade`), looks up at most `MAX_ENTRY_PRICE_LOOKUPS_PER_READ` missing deposits
+ * (including old-version `no_trade`) over the history transport, stores the definite results, and leaves the rest
+ * for a later view. Each lookup is one signatures call plus at most 40 transactions; the whole read is budgeted at
+ * `LOOKUP_BUDGET_MS`. No store means no lookups: an unrecorded price is never recomputed per view.
  * Never throws.
  */
 import { createHistoryRpcConnections } from "./position-history-rpc";
@@ -17,7 +19,8 @@ import { ENTRY_PRICE_TRADES } from "./stock-entry-price-trades";
 import { stockReferencePool, type StockReferencePool } from "./stock-reference-pools";
 
 export const MAX_ENTRY_PRICE_LOOKUPS_PER_READ = 4;
-const LOOKUP_BUDGET_MS = 15_000;
+/** Wall-clock budget for the lookups in one read. Four lookups at up to 41 RPC each still fit when groups of four run in parallel. */
+export const LOOKUP_BUDGET_MS = 15_000;
 /** The one temporary reason; every other missing price is "not recorded" (the stock view's default reason). */
 export const ENTRY_PRICE_PENDING_REASON = "Entry price is still being recorded; it appears on a later view.";
 
