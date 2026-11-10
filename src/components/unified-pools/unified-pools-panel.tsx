@@ -32,7 +32,7 @@ import type { RhcPoolView } from "../rhc-univ4-open-panel";
 import type { OpenPositionPair } from "../use-open-position-controller";
 import { useWalletConnection } from "../wallet-connection";
 import { usePoolsApr7d, type Apr7dState } from "./use-pools-apr7d";
-import { APR7D_SHORT, Apr7dValue, rangeApr7dLabel, ChainBadge, chip, COLUMNS, iconPair, LowTvlTag, money, OpenButton, PoolTable, type OpenAction } from "./pool-list";
+import { APR7D_SHORT, Apr7dValue, newPoolTitle, rangeApr7dLabel, ChainBadge, chip, COLUMNS, iconPair, LowTvlTag, money, OpenButton, PoolTable, type OpenAction } from "./pool-list";
 import { dataDaysLabel, MIN_DATA_DAYS } from "@/lib/min-data-days";
 import { rankGroupLookup } from "@/lib/unified-pools/apr7d";
 
@@ -67,16 +67,14 @@ async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
 
 const raydiumPoolUrl = (poolId: string) => `https://raydium.io/clmm/create-position/?pool_id=${poolId}`;
 /**
- * The card's APR label split at its last " · " ("Standard-range APR" + "· 7d"): each part never wraps inside, and the tip
- * sits in the tail's no-wrap span, so a narrow card breaks cleanly into two lines.
+ * The card APR's ⓘ: what the number is ("Standard-range APR · 7d", or the new-pool / missing wording) on its first line,
+ * then how it is estimated. The card shows no label line under the APR any more (Sophie, 2026-11-10); this is where it went.
  */
-function AprLabelWithTip({ label, children }: { label: string; children?: ReactNode }) {
-  const cut = label.lastIndexOf(" · ");
-  const head = cut > 0 ? label.slice(0, cut) : "", tail = cut > 0 ? label.slice(cut + 1) : label;
-  return <span data-testid="apr7d-label">
-    {head && <span className="whitespace-nowrap">{head}</span>}{head && " "}
-    <span className="inline-flex items-center gap-1 whitespace-nowrap align-middle">{tail}{children}</span>
-  </span>;
+function AprTip({ label, children }: { label: string; children?: ReactNode }) {
+  return <InfoTip label="About Est. highest range APR" tone="light">
+    <span data-testid="apr7d-label" className="block font-semibold">{label}</span>
+    {children ? <span className="mt-1 block">{children}</span> : null}
+  </InfoTip>;
 }
 
 const cardEyebrow = "font-data text-[10px] uppercase tracking-[0.12em] text-ink/60";
@@ -89,15 +87,9 @@ const cardEyebrow = "font-data text-[10px] uppercase tracking-[0.12em] text-ink/
  * Raydium, not in the DEX registry yet, keeps its link); Raydium pools also link the pool on Raydium.
  */
 /**
- * Card pair name: it may break after the "/" and each half is cut with "…" if it alone is too wide, so a long pair
- * never runs under the APR pill on a 375 px card (the full name is the title). The narrowest cards (phones, and the
- * three-column grid below 2xl) use a smaller name and icons so names like "GOOGLx/" fit whole.
+ * Card pair name: always one line ("INTCx/INTC", never "INTCx/" over "INTC"), cut with "…" if it is ever too wide (the
+ * full name is the title). The narrowest cards (phones, and the three-column grid below 2xl) use a smaller name and icons.
  */
-function cardPairName(label: string) {
-  const slash = label.indexOf("/");
-  const parts = slash < 0 ? [label] : [label.slice(0, slash + 1), label.slice(slash + 1)];
-  return parts.map((part, index) => <span key={index} className="inline-block max-w-full truncate align-bottom">{part}</span>);
-}
 
 function PoolCard({ pool, apr, action, icons, onCalculate }: {
   pool: UnifiedPool; apr: Apr7dState | undefined; action: OpenAction; icons: TokenIconMap | undefined;
@@ -120,22 +112,19 @@ function PoolCard({ pool, apr, action, icons, onCalculate }: {
       <div className="flex min-w-0 items-center gap-3 max-sm:gap-2 xl:max-2xl:gap-2">
         <PairTokenIcons pair={iconPair(pool)} icons={icons} chain={pool.chain} iconClassName="h-10 w-10 max-sm:h-8 max-sm:w-8 xl:max-2xl:h-8 xl:max-2xl:w-8" />
         <div className="min-w-0">
-          <h3 className="text-xl font-medium max-sm:text-lg xl:max-2xl:text-lg leading-tight tracking-[-0.02em]" title={pool.pairLabel} data-testid="pool-card-name">{cardPairName(pool.pairLabel)}</h3>
+          <h3 className="truncate whitespace-nowrap text-xl font-medium max-sm:text-lg xl:max-2xl:text-lg leading-tight tracking-[-0.02em]" title={pool.pairLabel} data-testid="pool-card-name">{pool.pairLabel}</h3>
           <p className="truncate text-xs text-ink/65" title={`${pool.nameA} / ${pool.nameB}`}>{pairIssuerLabel(pool.nameA, pool.nameB)}</p>
         </div>
       </div>
-      {/* Capped on phones so a long range label ("Standard-range APR · 7d") wraps instead of squeezing the pair name. */}
-      <div className="shrink-0 text-right max-sm:max-w-[8.5rem]">
+      {/* The APR pill with its ⓘ beside it on one row; what the number is lives in the ⓘ, not in a label line. */}
+      <div className="flex shrink-0 items-center gap-1.5" data-testid="apr7d-row">
         <Apr7dValue state={apr} />
-        {/* Breaks only before the " · 7d" tail, and the ⓘ stays on the tail's line (never "7D" alone under it). */}
-        <p className={cn("mt-1.5 text-right", cardEyebrow)}>
-          <AprLabelWithTip label={ready ? rangeApr7dLabel(ready.rangeLabel) : apr?.status === "new" ? dataDaysLabel(apr.days) : APR7D_SHORT}>
-            {ready && <InfoTip label="About Est. highest range APR" tone="light">
-              {withVolumeNote(CARD_RANGE_APR_7D_HELP)}{ready.lowConfidence ? " Low confidence for this pool: thin or patchy recent trading." : ""}
-            </InfoTip>}
-            {apr?.status === "missing" && apr.degraded && <InfoTip label="About Est. highest range APR" tone="light">{unavailableReasonText("degraded-data")}.</InfoTip>}
-          </AprLabelWithTip>
-        </p>
+        {ready ? <AprTip label={rangeApr7dLabel(ready.rangeLabel)}>
+          {withVolumeNote(CARD_RANGE_APR_7D_HELP)}{ready.lowConfidence ? " Low confidence for this pool: thin or patchy recent trading." : ""}
+        </AprTip>
+          : apr?.status === "new" ? <AprTip label={dataDaysLabel(apr.days)}>{newPoolTitle(apr.days)}</AprTip>
+          : apr?.status === "missing" ? <AprTip label={APR7D_SHORT}>{apr.degraded ? `${unavailableReasonText("degraded-data")}.` : apr.reason}</AprTip>
+          : <AprTip label={APR7D_SHORT} />}
       </div>
     </div>
     {apr?.status === "missing" && <p className="mt-2 text-xs text-ink/60">{apr.reason}</p>}

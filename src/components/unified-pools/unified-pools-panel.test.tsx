@@ -106,12 +106,14 @@ describe("UnifiedPoolsPanel", () => {
     expect(container.textContent).toContain("Show duplicates (1)");
   });
 
-  it("card pair names can break after the slash and cut each half, so a long name never runs under the APR at 375 px", async () => {
+  it("card pair names stay on one line (never 'SPCXx/' over 'SPCX'), cut with … if ever too wide, the full name in the title", async () => {
     await render();
     const name = container.querySelector<HTMLElement>('[data-pool="solana:spcxA"] [data-testid=pool-card-name]')!;
     expect(name.getAttribute("title")).toBe("SPCXx/SPCX");
-    expect([...name.children].map((part) => [part.textContent, part.className])).toEqual([
-      ["SPCXx/", "inline-block max-w-full truncate align-bottom"], ["SPCX", "inline-block max-w-full truncate align-bottom"]]);
+    expect(name.textContent).toBe("SPCXx/SPCX");
+    expect(name.children).toHaveLength(0);
+    expect(name.className).toMatch(/\btruncate\b/);
+    expect(name.className).toMatch(/\bwhitespace-nowrap\b/);
   });
 
   it("shows hidden duplicates with the Show duplicates pill and hides them again", async () => {
@@ -352,7 +354,10 @@ describe("UnifiedPoolsPanel cards (the RWA pairs card fields)", () => {
     expect(shown().indexOf("solana:spcxA")).toBeGreaterThan(shown().indexOf("solana:tsla"));
     const amzn = card("solana:spcxA");
     expect(amzn.querySelector("[data-testid=apr7d]")!.textContent).toBe("New pool");
-    expect(amzn.querySelector("[data-testid=apr7d-label]")!.textContent).toBe("6 days of data");
+    // The day count is in the ⓘ next to the pill now, not in a line under it.
+    act(() => { amzn.querySelector<HTMLButtonElement>("button[aria-label='About Est. highest range APR']")!.focus(); });
+    expect(amzn.querySelector("[role=tooltip] [data-testid=apr7d-label]")!.textContent).toBe("6 days of data");
+    expect(amzn.querySelector("[role=tooltip]")!.textContent).toContain("An APR shows once it has 7 days.");
     expect(amzn.querySelector("[data-testid=apr7d-new-note]")!.textContent).toContain("7 days of data");
     expect(amzn.querySelector("[data-testid=highest-range]")!.textContent).toBe("—");
     expect(amzn.querySelector("[data-testid=pool-fee-apr]")).toBeNull();
@@ -403,21 +408,22 @@ describe("UnifiedPoolsPanel cards (the RWA pairs card fields)", () => {
     };
     await render();
     const tsla = card("solana:tsla");
-    expect(tsla.querySelector("[data-testid=apr7d-label]")!.textContent).toBe("Tight-range APR · 7d");
+    // No label line on the card: "Tight-range APR · 7d" is the first line of the ⓘ, above how it is estimated.
+    expect(tsla.querySelector("[data-testid=apr7d-label]")).toBeNull();
+    expect(tsla.textContent).not.toContain("Tight-range APR");
     expect(tsla.querySelector("[data-testid=highest-range]")!.textContent).toBe("Tight (±0.05%)");
     const tip = tsla.querySelector("button[aria-label='About Est. highest range APR']");
     act(() => { (tip as HTMLButtonElement).focus(); });
-    expect(tsla.querySelector("[role=tooltip]")!.textContent).toBe(CARD_RANGE_APR_7D_HELP);
+    expect(tsla.querySelector("[role=tooltip] [data-testid=apr7d-label]")!.textContent).toBe("Tight-range APR · 7d");
+    expect(tsla.querySelector("[role=tooltip]")!.textContent).toBe(`Tight-range APR · 7d${CARD_RANGE_APR_7D_HELP}`);
     // No "Pool avg APR" swap: the card's number is always the best range's.
     const spcx = card("solana:spcxA");
     expect(spcx.querySelector("[data-testid=apr7d]")!.textContent).toBe("51.75%");
     expect(spcx.querySelector("[data-testid=highest-range]")!.textContent).toBe("Micro");
     expect(spcx.textContent).not.toMatch(/Pool avg/i);
-    // Narrow cards break only before "· 7d", and the ⓘ shares the tail's no-wrap line.
-    const parts = [...tsla.querySelectorAll("[data-testid=apr7d-label] > span")];
-    expect(parts.map((part) => part.firstChild?.textContent)).toEqual(["Tight-range APR", "· 7d"]);
-    expect(parts.every((part) => part.className.includes("whitespace-nowrap"))).toBe(true);
-    expect(parts[1]!.querySelector("button[aria-label='About Est. highest range APR']")).not.toBeNull();
+    // The ⓘ sits right beside the yellow APR pill, in the same row.
+    const row = tsla.querySelector("[data-testid=apr7d-row]")!;
+    expect([...row.children].map((child) => child.querySelector("[data-testid=apr7d]") || child.matches("[data-testid=apr7d]") ? "pill" : child.querySelector("button[aria-label='About Est. highest range APR']") ? "tip" : "?")).toEqual(["pill", "tip"]);
   });
 
   it("shows token icons from the database (wrapped first, Raydium fallback), short issuer names, the share calculator and the pool on Raydium", async () => {

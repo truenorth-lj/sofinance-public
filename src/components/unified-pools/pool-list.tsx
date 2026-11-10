@@ -86,7 +86,7 @@ export function Apr7dValue({ state, size = "lg", lowTvl = false }: {
 function Apr7dPill({ state, size, text }: { state: Apr7dState | undefined; size: "lg" | "sm"; text: string }) {
   return <span data-testid="apr7d" data-apr-status={state?.status ?? "loading"} title={state?.status === "missing" ? state.reason : state?.status === "new" ? newPoolTitle(state.days) : undefined}
     className={cn("inline-flex items-center justify-center whitespace-nowrap rounded-full font-semibold tabular-nums",
-      size === "lg" ? "h-10 px-4 text-xl" : "h-7 min-w-[3.5rem] px-2.5 text-sm max-md:min-w-0 max-md:px-2 max-md:text-[13px]",
+      size === "lg" ? "h-10 px-4 text-xl max-sm:h-8 max-sm:px-3 max-sm:text-base" : "h-7 min-w-[3.5rem] px-2.5 text-sm max-md:min-w-0 max-md:px-2 max-md:text-[13px]",
       state?.status === "ready" ? "bg-lemon text-ink" : size === "lg" ? "bg-ink/10 text-ink/70" : "bg-white/[0.06] text-cream/70")}>{text}</span>;
 }
 
