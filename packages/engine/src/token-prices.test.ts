@@ -46,7 +46,9 @@ function mockFetch(handler: (url: string) => Response | Promise<Response>) {
 }
 
 beforeEach(() => {
+  // Hermetic: test:env-matrix sets E2E_KEYLESS_JUPITER=1, which would drop an explicit api key.
   vi.stubEnv("JUPITER_API_KEY", "");
+  vi.stubEnv("E2E_KEYLESS_JUPITER", undefined);
   resetJupiterRuntime();
   resetTokenPriceRuntime({ jupiterSpacingMs: 0, dexScreenerSpacingMs: 0 });
 });
