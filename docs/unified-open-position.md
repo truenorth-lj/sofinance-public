@@ -287,6 +287,16 @@ the RHC session. Flags that disable a source (`ORCA_*`, `METEORA_*`,
 
 ---
 
+## 5. Shared form (`src/components/open-position/open-position-form.tsx`)
+
+Implemented as `OpenPositionForm` (chrome + body) and `OpenPositionFormFields`
+(the body: input asset, amount + Max, range picker, notes slot, CTA). Raydium,
+Meteora (registry), and RHC all render through this form. Venue-specific copy
+(rent, 70-bin cap, fee disclosure, approval steps, RHC tick presets) goes in
+adapter-provided notes / the range slot. The form is shown even without a
+wallet; the CTA is “Connect wallet” until one is connected. Subtitle is always
+`{pair} · {venue}`.
+
 ## 5. Shared shell (`src/components/open-position/open-position-shell.tsx`)
 
 Visual contract: Raydium's `OpenPositionModal` (the look LJ prefers).

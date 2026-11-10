@@ -1,19 +1,16 @@
 "use client";
 import "@/lib/engine-host";
 
-import Link from "next/link";
-
-import { useEffect, useId, useState } from "react";
+import { useId, useState } from "react";
 import { formatSolCost } from "@/lib/sol-cost";
 import { useSolUsdcPrice } from "./use-sol-usdc-price";
 import { formatAmount } from "@sofinance/engine/amount";
 import { formatPositionPriceRange, formatRangeStatus, tokenSymbol } from "@/lib/position-label";
-import { ChevronDown, Info, LoaderCircle, RefreshCw, X } from "lucide-react";
+import { ChevronDown, Info, RefreshCw } from "lucide-react";
 import { useOpenPositionController, type OpenPositionPair } from "./use-open-position-controller";
-import { RangePresetPicker } from "./range-apr/range-preset-picker";
 import { smallAmountNarrowRangeHint } from "@/lib/open-range-hint";
 import { usePoolRangeApr } from "./range-apr/use-pool-range-apr";
-import { DOCS_ROUTES } from "@/lib/public-urls";
+import { OpenPositionForm } from "./open-position/open-position-form";
 import { NATIVE_SOL_MINT, USDC_MINT } from "@sofinance/engine/ids";
 import { SOL_INPUT_DISABLED_MESSAGE } from "@/lib/feature-flags";
 import { isSolInputBlocked } from "@/lib/sol-input-policy";
@@ -101,12 +98,6 @@ export function OpenPositionModal({
   const detailWarnings = quote?.warnings.filter(isDetailWarning) ?? [];
   const upfrontCost = quote ? BigInt(quote.rent.refundableLamports) + BigInt(quote.rent.nonRefundableLamports)
     + BigInt(quote.rent.walletTokenAccountLamports ?? "0") + BigInt(quote.networkFeeLamportsEstimate) : 0n;
-  const label = quote
-    ? `${tokenSymbol(quote.mintA, undefined, pair.symbolA)}/${tokenSymbol(quote.mintB, undefined, pair.symbolB)} · range ${formatPositionPriceRange({
-      tickLower: quote.tickLower, tickUpper: quote.tickUpper,
-      decimalsA: quote.decimalsA, decimalsB: quote.decimalsB,
-    })}${formatRangeStatus(quote.rangeSide) ? ` · ${formatRangeStatus(quote.rangeSide)}` : ""}`
-    : `${pair.wrappedSymbol}/${pair.plainSymbol}`;
 
   const stepPrefix = c.openStep ? `Step ${c.openStep}/2 · ` : "";
   const swapStatus = c.submitStage === "swap-preparing" ? "Preparing SOL swap…"
@@ -129,111 +120,23 @@ export function OpenPositionModal({
           : c.quoteLoading && !quote ? "Fetching quote…"
             : c.actionBlockedReason || "Ready to sign";
 
-  // While signing or sending, a stray backdrop tap must not hide the result.
-  const requestClose = () => { if (!c.closeLocked) onClose(); };
-  // Escape closes it like the other dialogs, under the same lock as the close button.
-  const closeLocked = c.closeLocked;
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape" && !event.defaultPrevented && !closeLocked) onClose(); };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [closeLocked, onClose]);
-  return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center" role="dialog" aria-modal="true" aria-labelledby="open-position-title">
-      <button className="absolute inset-0 bg-black/70" aria-label="Close create position" onClick={requestClose} disabled={c.closeLocked} />
-      <div className="relative z-10 max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-[20px] border border-white/12 bg-char p-5 sm:rounded-[28px] sm:p-6">
-        <div className="mb-4 flex items-start justify-between gap-3">
-          <div>
-            <h2 id="open-position-title" className="text-base font-semibold text-cream">Create position</h2>
-            <p className="mt-1 text-xs leading-5 text-smoke">{label}</p>
-            <p className="mt-2 text-xs leading-5 text-smoke">Choose a wallet asset and price range. We swap into the pool tokens as needed, then create a new LP position and add liquidity in one transaction.</p>
-          </div>
-          <button onClick={requestClose} disabled={c.closeLocked} title={c.closeLocked ? "Wait until the transaction is sent" : undefined}
-            className="rounded-lg p-1 text-smoke hover:text-cream/90 disabled:cursor-not-allowed disabled:opacity-40" aria-label="Close">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+  const pairLabel = `${pair.wrappedSymbol}/${pair.plainSymbol}`;
+  const assets = c.inputAssets.map((asset) => {
+    const symbol = asset.kind === "native"
+      ? "SOL"
+      : asset.mint === pair.mintA
+        ? tokenSymbol(asset.mint, undefined, pair.symbolA)
+        : asset.mint === pair.mintB
+          ? tokenSymbol(asset.mint, undefined, pair.symbolB)
+          : tokenSymbol(asset.mint);
+    return {
+      id: `${asset.kind}:${asset.mint}`,
+      label: `${symbol} · ${formatAmount(asset.balance, asset.decimals)}${asset.eligible ? "" : ` (${asset.reason || "ineligible"})`}`,
+      disabled: isSolInputBlocked(asset.kind),
+    };
+  });
 
-        <div className="mb-4 flex flex-wrap items-center gap-1">
-          <Link href={DOCS_ROUTES.risks} className="text-[11px] text-lemon underline underline-offset-2 hover:text-[#fff27f]">
-            Read risks before you confirm
-          </Link>
-        </div>
-
-        <label className="block text-xs text-smoke" htmlFor="open-input-asset">Input asset</label>
-        <div className="relative mt-1">
-          <select
-            id="open-input-asset"
-            className="w-full min-w-0 max-w-full appearance-none truncate rounded-2xl border border-white/20 bg-white/[0.06] py-2 pl-3 pr-12 text-base sm:text-sm text-cream"
-            value={c.inputMint ? `${c.inputKind}:${c.inputMint}` : ""}
-            onChange={(event) => {
-              const [kind, mint] = event.target.value.split(":");
-              if ((kind === "native" || kind === "token") && mint) c.chooseAsset(kind, mint);
-            }}
-          >
-            <option value="">Select SOL, USDC, or a pool token</option>
-            {c.inputAssets.map((asset) => {
-              const label = asset.kind === "native"
-                ? "SOL"
-                : asset.mint === pair.mintA
-                  ? tokenSymbol(asset.mint, undefined, pair.symbolA)
-                  : asset.mint === pair.mintB
-                    ? tokenSymbol(asset.mint, undefined, pair.symbolB)
-                    : tokenSymbol(asset.mint);
-              return (
-                <option key={`${asset.kind}:${asset.mint}`} value={`${asset.kind}:${asset.mint}`}
-                  disabled={isSolInputBlocked(asset.kind)}>
-                  {label} · {formatAmount(asset.balance, asset.decimals)}
-                  {asset.eligible ? "" : ` (${asset.reason || "ineligible"})`}
-                </option>
-              );
-            })}
-          </select>
-          <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-cream" aria-hidden="true" />
-        </div>
-        {c.inputAssets.some((asset) => isSolInputBlocked(asset.kind)) && (
-          <p className="mt-1 text-xs text-smoke" data-testid="sol-input-disabled-note">{SOL_INPUT_DISABLED_MESSAGE}</p>
-        )}
-
-        <div className="mt-3 flex items-end gap-2">
-          <div className="flex-1">
-            <label className="block text-xs text-smoke" htmlFor="open-amount">Amount</label>
-            <input
-              id="open-amount"
-              className="mt-1 w-full rounded-2xl border border-white/20 bg-white/[0.06] px-3 py-2 text-base sm:text-sm text-cream"
-              value={c.amount}
-              onChange={(event) => c.changeAmount(event.target.value)}
-              inputMode="decimal"
-              placeholder="0.0"
-            />
-          </div>
-          <button
-            className="rounded-full border border-white/20 px-3 py-2 text-xs font-semibold text-cream/80"
-            onClick={c.fillMax}
-            type="button"
-          >
-            Max
-          </button>
-        </div>
-
-        <RangePresetPicker
-          presets={c.presets}
-          selected={c.rangePreset}
-          onSelect={c.choosePreset}
-          minPrice={c.minPrice}
-          maxPrice={c.maxPrice}
-          onMinPrice={c.setMinPrice}
-          onMaxPrice={c.setMaxPrice}
-          apr={rangeApr}
-          quotedRange={quotedRange}
-          capitalUsd={capitalUsd}
-        />
-        {rangeHint && (
-          <p data-testid="small-amount-narrow-range-hint" className="mt-2 text-xs leading-5 text-smoke">
-            {rangeHint}
-          </p>
-        )}
-
+  const notes = <>
         {quote && (
           <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.04] p-3 text-xs text-cream/80">
             <dl className="space-y-2">
@@ -337,31 +240,56 @@ export function OpenPositionModal({
             </a>
             <button type="button" onClick={c.createAnother} className="text-cream/90 underline">Create another position</button>
           </div>
-        ) : !c.connected ? (
-          <button
-            type="button"
-            onClick={c.connect}
-            className="mt-4 w-full rounded-full bg-lemon px-5 py-3 text-sm font-semibold text-ink transition-colors hover:bg-[#fff27f]"
-          >
-            Connect wallet
-          </button>
-        ) : (
-          <button
-            type="button"
-            disabled={c.actionDisabled}
-            title={c.actionBlockedReason || undefined}
-            onClick={() => void c.signAndSend()}
-            className="mt-4 w-full rounded-full bg-lemon px-5 py-3 text-sm font-semibold text-ink transition-colors hover:bg-[#fff27f] disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {c.busy ? (
-              <span className="inline-flex items-center gap-2">
-                <LoaderCircle className="h-4 w-4 animate-spin" />
-                {status}
-              </span>
-            ) : c.pendingSwap ? "Continue open (2/2)" : c.solTwoStep ? "Create position (2 steps)" : "Create position"}
-          </button>
-        )}
-      </div>
-    </div>
+        ) : null}
+  </>;
+
+  return (
+    <OpenPositionForm
+      labelledBy="open-position-title"
+      pairLabel={pairLabel}
+      venueName="Raydium"
+      explainer="Choose a wallet asset and price range. We swap into the pool tokens as needed, then create a new LP position and add liquidity in one transaction."
+      closeLocked={c.closeLocked}
+      onClose={onClose}
+      assets={assets}
+      assetId={c.inputMint ? `${c.inputKind}:${c.inputMint}` : ""}
+      onAssetChange={(value) => {
+        const [kind, mint] = value.split(":");
+        if ((kind === "native" || kind === "token") && mint) c.chooseAsset(kind, mint);
+      }}
+      assetPlaceholder="Select SOL, USDC, or a pool token"
+      assetNote={c.inputAssets.some((asset) => isSolInputBlocked(asset.kind))
+        ? <p className="mt-1 text-xs text-smoke" data-testid="sol-input-disabled-note">{SOL_INPUT_DISABLED_MESSAGE}</p>
+        : null}
+      amount={c.amount}
+      onAmountChange={c.changeAmount}
+      onFillMax={c.fillMax}
+      range={{
+        presets: c.presets,
+        selected: c.rangePreset,
+        onSelect: c.choosePreset,
+        minPrice: c.minPrice,
+        maxPrice: c.maxPrice,
+        onMinPrice: c.setMinPrice,
+        onMaxPrice: c.setMaxPrice,
+        apr: rangeApr,
+        quotedRange,
+        capitalUsd,
+        showCustom: true,
+      }}
+      rangeHint={rangeHint ? (
+        <p data-testid="small-amount-narrow-range-hint" className="mt-2 text-xs leading-5 text-smoke">{rangeHint}</p>
+      ) : null}
+      notes={notes}
+      connected={c.connected}
+      onConnect={c.connect}
+      submitLabel={c.pendingSwap ? "Continue open (2/2)" : c.solTwoStep ? "Create position (2 steps)" : "Create position"}
+      onSubmit={() => { void c.signAndSend(); }}
+      submitDisabled={c.actionDisabled}
+      submitTitle={c.actionBlockedReason || undefined}
+      submitBusy={c.busy}
+      submitBusyLabel={status}
+      hideSubmit={c.submitStage === "confirmed"}
+    />
   );
 }

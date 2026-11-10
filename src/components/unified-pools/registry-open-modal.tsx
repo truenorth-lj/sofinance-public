@@ -22,11 +22,10 @@ import { formatAprPct } from "@/lib/range-apr/format";
 import type { RangeAprPresetId, PoolRangeAprPayload } from "@/lib/range-apr/types";
 import type { UnifiedPool } from "@/lib/unified-pools/model";
 import type { TokenRef } from "@/lib/unified-positions/model";
-import { RangePresetPicker } from "../range-apr/range-preset-picker";
 import type { PoolRangeAprState } from "../range-apr/use-pool-range-apr";
-import { OpenPositionChrome, OPEN_POSITION_SUBMIT } from "../open-position/open-position-chrome";
+import { OpenPositionForm } from "../open-position/open-position-form";
 import { useTxPipeline } from "../transactions/use-tx-pipeline";
-import { feeLine, FIELD, openRentLines, TxStatus, tokenAccountRentLine } from "../unified-positions/registry-tools";
+import { feeLine, openRentLines, TxStatus, tokenAccountRentLine } from "../unified-positions/registry-tools";
 import { useWalletConnection } from "../wallet-connection";
 
 /** Slippage for the swap legs of an open (code constant; PR10 rule: no new env flags). */
@@ -220,75 +219,82 @@ export function RegistryOpenModal({ pool, descriptor, ranges, apr = null, onClos
   const walletNote = tx.status === "wallet" && prepared ? tokenAccountRentLine(prepared.createsTokenAccounts, (mint) => tokens.find((item) => item.id === mint)?.symbol ?? "token") : null;
   const stepText = tx.step?.of && tx.step.of > 1 && tx.locked ? `Step ${tx.step.step} of ${tx.step.of}` : null;
 
+  const assets = tokens.map((item) => {
+    const have = balances?.byMint[item.id];
+    return {
+      id: item.id,
+      label: have !== undefined ? `${item.symbol} · ${formatAmount(have, item.decimals)}` : item.symbol,
+    };
+  });
+  const rangesError = ranges instanceof Error
+    ? (ranges.message === OPEN_RANGES_UNAVAILABLE ? ranges.message
+      : `This pool's price ranges could not be worked out, so it can't be opened right now: ${ranges.message}`)
+    : null;
+
   return <div data-testid="registry-open-modal">
-    <OpenPositionChrome
+    <OpenPositionForm
       labelledBy="registry-open-heading"
-      subtitle={<>{pool.pairLabel} · {descriptor.displayName}</>}
+      pairLabel={pool.pairLabel}
+      venueName={descriptor.displayName}
       explainer="Choose a wallet asset and price range. We swap into the pool tokens as needed, then create a new LP position."
       closeLocked={tx.closeLocked}
       onClose={onClose}
-    >
-      {!connected ? <>
-        <p className="mt-4 text-sm text-smoke">Connect your wallet to open a position.</p>
-        <button type="button" onClick={connect} className={OPEN_POSITION_SUBMIT}>Connect wallet</button>
-      </> : ranges instanceof Error ? <>
-          <p role="alert" data-testid="registry-open-ranges-error" className="mt-4 text-sm text-cream/80">{ranges.message === OPEN_RANGES_UNAVAILABLE ? ranges.message
-            : <>This pool&apos;s price ranges could not be worked out, so it can&apos;t be opened right now: {ranges.message}</>}</p>
-          <button type="button" disabled data-testid="registry-open-submit" className={OPEN_POSITION_SUBMIT}>Create position</button>
-        </>
-        : !payload ? <p role="status" className="mt-4 flex items-center gap-2 text-sm text-cream/80"><LoaderCircle aria-hidden="true" className="size-4 animate-spin" />Loading this pool&apos;s ranges…</p>
-        : <>
-          <label htmlFor="registry-open-token" className="block text-xs text-smoke">Input asset</label>
-          <select id="registry-open-token" disabled={tx.locked} value={token?.id ?? ""} onChange={(event) => { setTokenId(event.target.value); setAmount(""); }} className={`mt-1 ${FIELD}`}>
-            {tokens.map((item) => <option key={item.id} value={item.id}>{item.symbol}</option>)}
-          </select>
-          {solIsPoolToken ? <p data-testid="registry-open-sol" className="mt-2 text-xs text-smoke">{SOL_REFUSED_COPY}</p> : null}
-          <div className="mt-3 flex items-end gap-2">
-            <div className="flex-1">
-              <label htmlFor="registry-open-amount" className="block text-xs text-smoke">Amount</label>
-              <input id="registry-open-amount" disabled={tx.locked} inputMode="decimal" placeholder="0.00" value={amount} onChange={(event) => setAmount(event.target.value)} className={`mt-1 ${FIELD}`} />
-            </div>
-            {token && balances?.byMint[token.id] ? <button type="button" disabled={tx.locked} className="rounded-full border border-white/20 px-3 py-2 text-xs font-semibold text-cream/80"
-              onClick={() => setAmount(formatAmount(balances.byMint[token.id]!, token.decimals, token.decimals).replace(/,/g, ""))}>
-              Max</button> : null}
-          </div>
-          {token && balances?.byMint[token.id] ? <p className="mt-1 text-xs text-smoke">Wallet: {formatAmount(balances.byMint[token.id]!, token.decimals)}</p> : null}
-          {problem ? <p role="alert" className="mt-2 text-xs text-cream/80">{problem}</p> : null}
-
-          <RangePresetPicker
-            presets={OPEN_RANGE_UI_PRESETS}
-            selected={pickerSelected}
-            onSelect={(id) => { if (id !== "custom") setPresetId(id); }}
-            minPrice=""
-            maxPrice=""
-            onMinPrice={() => {}}
-            onMaxPrice={() => {}}
-            apr={aprState}
-            quotedRange={null}
-            capitalUsd={null}
-            showCustom={false}
-            unavailable={unavailable}
-          />
-
-          <div className="mt-5 space-y-2 rounded-2xl border border-white/10 bg-white/[0.04] p-3 text-xs text-cream/80" data-testid="registry-open-costs">
-            {current && !current.value && !current.error ? <p role="status" className="flex items-center gap-2"><LoaderCircle aria-hidden="true" className="size-4 animate-spin" />Getting a quote…</p> : null}
-            {current?.error ? <p role="alert">{current.error}</p> : null}
-            {quoted ? <p>Range: {price(quoted.range.lowerPrice)} – {price(quoted.range.upperPrice)} ({quoted.range.units} {descriptor.meta.rangeUnit}s)</p> : null}
-            {rent.lines.length ? rent.lines.map((line) => <p key={line}>{line}</p>) : descriptor.meta.rent ? <p>{descriptor.meta.rent.disclosure}</p> : null}
-            <p>{feeLine(descriptor.meta.feePolicy.open, "into the pool tokens")}{quoted && token && /^\d+$/.test(quoted.platformFeeRaw) && quoted.platformFeeRaw !== "0" ? ` About ${formatAmount(quoted.platformFeeRaw, token.decimals)} ${token.symbol} on this open.` : ""}</p>
-            <p>{NETWORK_FEE_COPY} {SOL_RESERVE_COPY}</p>
-            {steps > 1 ? <p>Your wallet asks you to approve {steps} transactions, one after the other.</p> : null}
-            {solUnknown ? <p role="alert" data-testid="registry-open-sol-unknown">{solUnknown}</p> : null}
-            {solShort ? <p role="alert" data-testid="registry-open-sol-short">{solShortCopy(solNeed, balances!.sol!)}</p> : null}
-            {blocked ? <p role="alert" data-testid="registry-open-blocked">{blocked}</p> : null}
-            {tooSmall ? <p role="alert" data-testid="registry-open-too-small">{tooSmall}</p> : null}
-          </div>
-
-          <button type="button" disabled={!ready} onClick={() => void submit()} data-testid="registry-open-submit" className={OPEN_POSITION_SUBMIT}>
-            {tx.locked ? <LoaderCircle aria-hidden="true" className="size-4 animate-spin" /> : null}{stepText ? `${stepText}…` : "Create position"}
-          </button>
-          <TxStatus tx={tx} walletNote={walletNote} successText="Position opened. It shows under My positions." />
-        </>}
-    </OpenPositionChrome>
+      assets={assets}
+      assetId={token?.id ?? ""}
+      onAssetChange={(id) => { setTokenId(id); setAmount(""); }}
+      assetSelectId="registry-open-token"
+      assetPlaceholder="Select a token"
+      assetDisabled={tx.locked}
+      assetNote={solIsPoolToken ? <p data-testid="registry-open-sol" className="mt-2 text-xs text-smoke">{SOL_REFUSED_COPY}</p> : null}
+      amount={amount}
+      onAmountChange={setAmount}
+      amountInputId="registry-open-amount"
+      amountDisabled={tx.locked}
+      amountProblem={problem ? <p role="alert" className="mt-2 text-xs text-cream/80">{problem}</p> : null}
+      onFillMax={() => {
+        if (token && balances?.byMint[token.id]) setAmount(formatAmount(balances.byMint[token.id]!, token.decimals, token.decimals).replace(/,/g, ""));
+      }}
+      maxDisabled={tx.locked}
+      range={{
+        presets: OPEN_RANGE_UI_PRESETS,
+        selected: pickerSelected,
+        onSelect: (id) => { if (id !== "custom") setPresetId(id); },
+        minPrice: "",
+        maxPrice: "",
+        onMinPrice: () => {},
+        onMaxPrice: () => {},
+        apr: aprState,
+        quotedRange: null,
+        capitalUsd: null,
+        showCustom: false,
+        unavailable,
+      }}
+      notes={<>
+        {rangesError ? <p role="alert" data-testid="registry-open-ranges-error" className="mt-4 text-sm text-cream/80">{rangesError}</p> : null}
+        {!rangesError && !payload ? <p role="status" className="mt-4 flex items-center gap-2 text-sm text-cream/80"><LoaderCircle aria-hidden="true" className="size-4 animate-spin" />Loading this pool&apos;s ranges…</p> : null}
+        <div className="mt-5 space-y-2 rounded-2xl border border-white/10 bg-white/[0.04] p-3 text-xs text-cream/80" data-testid="registry-open-costs">
+          {current && !current.value && !current.error ? <p role="status" className="flex items-center gap-2"><LoaderCircle aria-hidden="true" className="size-4 animate-spin" />Getting a quote…</p> : null}
+          {current?.error ? <p role="alert">{current.error}</p> : null}
+          {quoted ? <p>Range: {price(quoted.range.lowerPrice)} – {price(quoted.range.upperPrice)} ({quoted.range.units} {descriptor.meta.rangeUnit}s)</p> : null}
+          {rent.lines.length ? rent.lines.map((line) => <p key={line}>{line}</p>) : descriptor.meta.rent ? <p>{descriptor.meta.rent.disclosure}</p> : null}
+          <p>{feeLine(descriptor.meta.feePolicy.open, "into the pool tokens")}{quoted && token && /^\d+$/.test(quoted.platformFeeRaw) && quoted.platformFeeRaw !== "0" ? ` About ${formatAmount(quoted.platformFeeRaw, token.decimals)} ${token.symbol} on this open.` : ""}</p>
+          <p>{NETWORK_FEE_COPY} {SOL_RESERVE_COPY}</p>
+          {steps > 1 ? <p>Your wallet asks you to approve {steps} transactions, one after the other.</p> : null}
+          {solUnknown ? <p role="alert" data-testid="registry-open-sol-unknown">{solUnknown}</p> : null}
+          {solShort ? <p role="alert" data-testid="registry-open-sol-short">{solShortCopy(solNeed, balances!.sol!)}</p> : null}
+          {blocked ? <p role="alert" data-testid="registry-open-blocked">{blocked}</p> : null}
+          {tooSmall ? <p role="alert" data-testid="registry-open-too-small">{tooSmall}</p> : null}
+        </div>
+        <TxStatus tx={tx} walletNote={walletNote} successText="Position opened. It shows under My positions." />
+      </>}
+      connected={connected}
+      onConnect={connect}
+      submitLabel={stepText ? `${stepText}…` : "Create position"}
+      onSubmit={() => { void submit(); }}
+      submitDisabled={!ready}
+      submitBusy={tx.locked}
+      submitBusyLabel={stepText ? `${stepText}…` : "Create position"}
+      submitTestId="registry-open-submit"
+    />
   </div>;
 }

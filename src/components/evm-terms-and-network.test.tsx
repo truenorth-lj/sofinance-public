@@ -147,7 +147,7 @@ describe("EVM connect goes through the terms step", () => {
   it("the Robinhood Chain dialog's connect goes through the same step and updates the nav", async () => {
     await render(createElement("div", null, nav(), createElement(RhcOpenDialog, { pool: POOL, signingEnabled: false, onClose: () => {} })));
     const props = panels.open.mock.lastCall![0] as { connectWallet: () => Promise<unknown>; autoConnect: boolean };
-    expect(props.autoConnect).toBe(true);
+    expect(props.autoConnect).toBe(false);
     let connected: unknown;
     await act(async () => { props.connectWallet().then(w => { connected = w; }); });
     await flush();

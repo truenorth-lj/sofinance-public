@@ -10,8 +10,8 @@ import type { UnifiedPool } from "@/lib/unified-pools/model";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const WALLET = "EweT1111111111111111111111111111111111111111";
-const mocks = vi.hoisted(() => ({ runSteps: vi.fn(async () => null), tx: {} as Record<string, unknown> }));
-vi.mock("../wallet-connection", () => ({ useWalletConnection: () => ({ address: WALLET, connected: true, connect: vi.fn(), signTransaction: vi.fn(), signAndSendTransaction: vi.fn() }) }));
+const mocks = vi.hoisted(() => ({ runSteps: vi.fn(async () => null), tx: {} as Record<string, unknown>, connected: true }));
+vi.mock("../wallet-connection", () => ({ useWalletConnection: () => ({ address: mocks.connected ? WALLET : undefined, connected: mocks.connected, connect: vi.fn(), signTransaction: vi.fn(), signAndSendTransaction: vi.fn() }) }));
 vi.mock("../transactions/use-tx-pipeline", () => ({ useTxPipeline: () => ({ status: "idle", locked: false, closeLocked: false, runSteps: mocks.runSteps, retry: vi.fn(), interrupted: null, dismissInterrupted: vi.fn(), ...mocks.tx }) }));
 
 import { APR_UNAVAILABLE, openInputs, presetOptions, RegistryOpenModal, NETWORK_FEE_COPY, SOL_REFUSED_COPY } from "./registry-open-modal";
@@ -57,7 +57,7 @@ let solLamports = "1000000000";
 let root: Root; let container: HTMLDivElement; let quoteBody: Record<string, unknown>; let calls: { url: string; body: unknown }[];
 beforeEach(() => {
   vi.useFakeTimers({ shouldAdvanceTime: true });
-  mocks.tx = {}; mocks.runSteps.mockClear(); calls = []; solLamports = "1000000000";
+  mocks.tx = {}; mocks.runSteps.mockClear(); mocks.connected = true; calls = []; solLamports = "1000000000";
   quoteBody = { poolId: "met1", range: { lowerPrice: 0.9, upperPrice: 1.1, units: 60 }, steps: 2, platformFeeRaw: "1000",
     rent: { refundableLamports: "41899840", nonRefundableLamports: "0", tokenAccountLamports: "2039280" },
     sol: { networkFeeLamports: "15000", swapAccountsLamports: "4245880", reserveLamports: "10000000" } };
@@ -206,7 +206,18 @@ describe("RegistryOpenModal", () => {
   it("says why SOL is not offered when it is a pool token", async () => {
     await render({ pool: { ...pool, mintB: NATIVE_SOL_MINT, symbolB: "SOL" } as UnifiedPool, ranges: { ...ranges, decimals: { mintA: 8, [NATIVE_SOL_MINT]: 9 } } });
     expect(container.querySelector("[data-testid=registry-open-sol]")!.textContent).toBe(SOL_REFUSED_COPY);
-    expect([...container.querySelectorAll("#registry-open-token option")].map((o) => o.textContent)).toEqual(["TSLAx", "USDC"]);
+    expect([...container.querySelectorAll("#registry-open-token option")].map((o) => o.textContent?.split(" · ")[0])).toEqual(["TSLAx", "USDC"]);
+  });
+
+  it("shows the full form without a wallet, with Connect wallet instead of hiding the fields", async () => {
+    mocks.connected = false;
+    await render();
+    expect(container.querySelector("#registry-open-token")).not.toBeNull();
+    expect(container.querySelector("#registry-open-amount")).not.toBeNull();
+    expect(container.querySelector("[data-testid=preset-best], [data-testid=range-apr-headline]")).not.toBeNull();
+    expect([...container.querySelectorAll("button")].some((button) => button.textContent === "Connect wallet")).toBe(true);
+    expect(container.querySelector("[data-testid=registry-open-submit]")).toBeNull();
+    expect(container.textContent).not.toContain("Connect your wallet to open a position");
   });
 
   it("success says opened with a Solscan link; the close button is locked while the wallet is open", async () => {

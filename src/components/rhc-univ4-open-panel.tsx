@@ -16,8 +16,8 @@ import { assertRhcOpenAttempt, clearRhcOpenAttempt, isRhcTxHash, parseRhcOpenAtt
   reconcileRhcOpenAttempt, rhcOpenAttemptKey, rhcOpenStorage, RHC_HISTORY_ERROR, RHC_UNKNOWN_SEND,
   subscribeRhcOpenAttempt, writeRhcOpenAttempt, type RhcOpenAttempt } from "@/lib/rhc-wallet/open-attempt";
 import type { RhcPoolView } from "@/lib/rhc-wallet/pool-view";
-import { rhcPairLabel } from "@/lib/unified-pools/rows";
 import type { EvmWallet } from "@/lib/rhc-wallet/evm-session";
+import { OpenPositionFormFields, RhcRangeButtons } from "./open-position/open-position-form";
 
 /**
  * Robinhood Chain (4663) Uniswap v4 open-position flow (design §6 PR5), behind `RHC_UNIV4_TRADING_ENABLED`.
@@ -404,49 +404,55 @@ export function RhcUniv4OpenPanel({ pool, signingEnabled, receiptPoll, initialWa
   const needsApproval = result?.state === "needs_signature" && result.approvalTx !== null;
   const current: OpenStepId | null = busy || hasPending || walletChanged ? null : step;
 
-  return <section className="mt-6 rounded-2xl border border-white/12 bg-white/[0.03] p-4 sm:p-5" aria-label="Open a Robinhood Chain position">
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <div>
-        <p className="text-base font-semibold text-cream">{rhcPairLabel(pool.poolId, " / ") ?? `${pool.token0.symbol} / ${pool.token1.symbol}`} · Uniswap v4 · Robinhood Chain</p>
-      </div>
-      {wallet && !walletChanged
-        ? <div className="text-right">
-            <p className="text-xs text-smoke" data-testid="wallet-address">{wallet.name}: {wallet.address.slice(0, 6)}…{wallet.address.slice(-4)} · Robinhood Chain</p>
-            {balances ? <p className="text-xs text-smoke" data-testid="wallet-balances">
+  const token0Bal = balances ? fmtBalance(balances.tokens[pool.token0.address.toLowerCase()] ?? 0n, pool.token0.decimals) : null;
+  const token1Bal = balances ? fmtBalance(balances.tokens[pool.token1.address.toLowerCase()] ?? 0n, pool.token1.decimals) : null;
+
+  return <div aria-label="Open a Robinhood Chain position">
+    <OpenPositionFormFields
+      assets={[
+        { id: "0", label: token0Bal ? `${pool.token0.symbol} · ${token0Bal}` : pool.token0.symbol },
+        { id: "1", label: token1Bal ? `${pool.token1.symbol} · ${token1Bal}` : pool.token1.symbol },
+      ]}
+      assetId={String(side)}
+      onAssetChange={(id) => { setSide(Number(id) as 0 | 1); reset(); }}
+      amount={amount}
+      onAmountChange={(value) => { setAmount(value); reset(); }}
+      onFillMax={() => {
+        if (!balances) return;
+        const raw = side === 0 ? (balances.tokens[pool.token0.address.toLowerCase()] ?? 0n) : (balances.tokens[pool.token1.address.toLowerCase()] ?? 0n);
+        setAmount(fmt(raw, token.decimals, token.decimals));
+        reset();
+      }}
+      rangeSlot={<RhcRangeButtons halfWidth={halfWidth} onChange={(ticks) => { setHalfWidth(ticks); reset(); }} disabled={busy} />}
+      notes={<>
+        {wallet && !walletChanged ? (
+          <div className="mt-3 text-xs text-smoke">
+            <p data-testid="wallet-address">{wallet.name}: {wallet.address.slice(0, 6)}…{wallet.address.slice(-4)} · Robinhood Chain</p>
+            {balances ? <p data-testid="wallet-balances">
               {fmtBalance(balances.eth)} ETH · {fmtBalance(balances.tokens[pool.token0.address.toLowerCase()] ?? 0n, pool.token0.decimals)} {pool.token0.symbol} · {fmtBalance(balances.tokens[pool.token1.address.toLowerCase()] ?? 0n, pool.token1.decimals)} {pool.token1.symbol}
             </p> : null}
           </div>
-        : <button type="button" onClick={connect} disabled={busy} className="rounded-xl border border-white/25 px-4 py-2 text-sm font-semibold text-cream disabled:opacity-40">Connect MetaMask</button>}
-    </div>
-    {pool.status !== "listed" ? <p role="alert" className="mt-3 text-sm text-red-200">This pool is delisted; opening is disabled.</p> : null}
-    <div className="mt-4 grid gap-3 sm:grid-cols-3">
-      <label className="text-xs text-smoke">Deposit token
-        <select value={side} onChange={e => { setSide(Number(e.target.value) as 0 | 1); reset(); }} className="mt-1 block w-full rounded-lg bg-black/30 p-2 text-base sm:text-sm text-cream">
-          <option value={0}>{pool.token0.symbol}</option><option value={1}>{pool.token1.symbol}</option>
-        </select>
-      </label>
-      <label className="text-xs text-smoke">Amount
-        <input inputMode="decimal" value={amount} onChange={e => { setAmount(e.target.value); reset(); }} className="mt-1 block w-full rounded-lg bg-black/30 p-2 text-base sm:text-sm text-cream" />
-      </label>
-      <label className="text-xs text-smoke">Range (minimum ±10 ticks)
-        <select value={halfWidth} onChange={e => { setHalfWidth(Number(e.target.value)); reset(); }} className="mt-1 block w-full rounded-lg bg-black/30 p-2 text-base sm:text-sm text-cream">
-          {RANGE_PRESETS.map(h => <option key={h} value={h}>±{h} ticks (≈±{((1.0001 ** h - 1) * 100).toFixed(2)}%)</option>)}
-        </select>
-      </label>
-    </div>
-    <button type="button" onClick={preview} disabled={!wallet || busy || hasPending || walletChanged || pool.status !== "listed" || pool.tick === null}
-      className="mt-4 rounded-xl border border-white/25 px-4 py-2 text-sm font-semibold text-cream disabled:opacity-40">Preview open (simulated)</button>
-    {hasPending ? <div className="mt-3 rounded-xl border border-amber-300/40 p-3 text-sm" role="status">
-      <p>{history.invalid ? RHC_HISTORY_ERROR : history.attempt?.hash ? "Check the original Robinhood Chain transaction before opening again." : RHC_UNKNOWN_SEND}</p>
-      {history.attempt?.hash ? <>
-        <TxStatus sent={{ kind: history.attempt.kind, hash: history.attempt.hash, status: "pending" }} />
-        <button type="button" disabled={busy} onClick={() => void recheck()} className="mt-2 underline disabled:opacity-40">Check original transaction</button>
-      </> : null}
-    </div> : null}
-    {error ? <p role="alert" className="mt-3 text-sm text-red-200">{error}</p> : null}
-    {result ? <OpenPreview result={exec ?? result} pool={pool} /> : null}
-    {result && result.state !== "failed" ? <StepList needsApproval={needsApproval} current={current} signingEnabled={signingEnabled} onStep={runStep} /> : null}
-    {sent && !history.attempt?.hash ? <TxStatus sent={sent} /> : null}
-    {showPositions ? <RhcUniv4PositionsPanel wallet={wallet} signingEnabled={signingEnabled} refreshKey={positionsKey} onChanged={() => void refreshBalances()} receiptPoll={receiptPoll} /> : null}
-  </section>;
+        ) : null}
+        {pool.status !== "listed" ? <p role="alert" className="mt-3 text-sm text-red-200">This pool is delisted; opening is disabled.</p> : null}
+        {hasPending ? <div className="mt-3 rounded-xl border border-amber-300/40 p-3 text-sm" role="status">
+          <p>{history.invalid ? RHC_HISTORY_ERROR : history.attempt?.hash ? "Check the original Robinhood Chain transaction before opening again." : RHC_UNKNOWN_SEND}</p>
+          {history.attempt?.hash ? <>
+            <TxStatus sent={{ kind: history.attempt.kind, hash: history.attempt.hash, status: "pending" }} />
+            <button type="button" disabled={busy} onClick={() => void recheck()} className="mt-2 underline disabled:opacity-40">Check original transaction</button>
+          </> : null}
+        </div> : null}
+        {error ? <p role="alert" className="mt-3 text-sm text-red-200">{error}</p> : null}
+        {result ? <OpenPreview result={exec ?? result} pool={pool} /> : null}
+        {result && result.state !== "failed" ? <StepList needsApproval={needsApproval} current={current} signingEnabled={signingEnabled} onStep={runStep} /> : null}
+        {sent && !history.attempt?.hash ? <TxStatus sent={sent} /> : null}
+        {showPositions ? <RhcUniv4PositionsPanel wallet={wallet} signingEnabled={signingEnabled} refreshKey={positionsKey} onChanged={() => void refreshBalances()} receiptPoll={receiptPoll} /> : null}
+      </>}
+      connected={Boolean(wallet && !walletChanged)}
+      onConnect={() => { void connect(); }}
+      submitLabel="Preview open (simulated)"
+      onSubmit={() => { void preview(); }}
+      submitDisabled={!wallet || busy || hasPending || walletChanged || pool.status !== "listed" || pool.tick === null}
+      submitBusy={busy}
+    />
+  </div>;
 }

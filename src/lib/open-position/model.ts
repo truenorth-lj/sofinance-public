@@ -1,7 +1,7 @@
 /**
- * Shared open-position venue contract. The shell reads this view-model; it never branches on a
- * protocol id. Each venue adapter (Raydium controller, registry dexTxAdapter, RHC open panel)
- * fills it in without changing how transactions are built. See /workspace/unified-open-position/DESIGN.md.
+ * Shared open-position venue contract. OpenPositionForm reads adapter-provided fields; it never
+ * branches on a protocol id. Each venue adapter (Raydium controller, registry dexTxAdapter, RHC
+ * open panel) fills the form without changing how transactions are built.
  */
 export type OpenVenueId = "raydium-clmm" | "orca-whirlpool" | "meteora-dlmm" | "rhc-uniswap-v4";
 export type RangeUnit = "tick" | "bin" | "rhc-tick";

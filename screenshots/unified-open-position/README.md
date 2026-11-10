@@ -7,8 +7,9 @@ uses the live prod `/api/pool-range-apr` payload for
 `4bMbJzxWyiokwyQC4ndST5sJv6Qnb4viyACzhyFUgRbd` (snapshot 2026-11-10) so the
 4.35% / Standard figure is the post-fix number.
 
-No wallet was connected (no Phantom / EweT). Meteora therefore shows the shared
-chrome and Connect wallet. Robinhood Chain shows the shared chrome plus its
-panel after cancelling the pre-connect Terms prompt.
+All three Create-position modals were captured with a connected mocked wallet
+(Solana Wallet Standard “E2E Wallet” for Raydium and Meteora; injected
+MetaMask on Robinhood Chain 4663 for RHC). Terms acceptance was pre-seeded so
+the form — not a connect-only prompt — is what you see.
 
 Captured 10 Nov 2026, Asia/Taipei.

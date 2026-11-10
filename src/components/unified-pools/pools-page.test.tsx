@@ -51,7 +51,7 @@ describe("PoolsPage (/app/rwa-pairs)", () => {
     expect(dialog.textContent).toContain("Create position");
     expect(dialog.textContent).toContain("Robinhood Chain");
     expect(dialog.textContent).not.toMatch(/Solana|Phantom|Raydium/);
-    expect(seen.panel).toHaveBeenLastCalledWith(expect.objectContaining({ autoConnect: true, showPositions: false, signingEnabled: true, initialWallet: null }));
+    expect(seen.panel).toHaveBeenLastCalledWith(expect.objectContaining({ autoConnect: false, showPositions: false, signingEnabled: true, initialWallet: null }));
     await act(async () => { container.querySelector<HTMLButtonElement>("button[aria-label='Close']")!.click(); });
     expect(container.querySelector("[role=dialog]")).toBeNull();
   });
