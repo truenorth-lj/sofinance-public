@@ -4,6 +4,7 @@ import "@/lib/engine-host";
  * Presets use the ticks the server resolved; a custom band is converted here, so typing a price updates the
  * estimate instantly with no request.
  */
+import { capRangeEstimate } from "./estimate-policy";
 import type { OpenRangePreset } from "@sofinance/engine/open-range-presets";
 import { parsePriceInput, ticksFromPriceBand } from "./price-band";
 import { estimateRangeApr, type RangeAprEstimate, type RangeAprInputs } from "./range-apr";
@@ -63,13 +64,17 @@ export function estimateForSelection(
   // ranges are priced in the browser, so they are gated here as well as on the server.
   return payload.sample.degraded && result.status === "ready"
     ? { ...result, estimate: { status: "unavailable", reason: "degraded-data" } }
-    : result;
+    : result.status === "ready" ? { ...result, estimate: capRangeEstimate(payload, result.estimate) } : result;
 }
 
 function estimateUngated(
   payload: PoolRangeAprPayload, selection: RangeSelection, quotedRange?: TickRange | null,
 ): SelectionEstimate {
   if (quotedRange) {
+    const preset = selection.preset !== "custom" ? payload.presets.find((item) => item.id === selection.preset) : null;
+    if (preset && preset.tickLower === quotedRange.tickLower && preset.tickUpper === quotedRange.tickUpper) {
+      return { status: "ready", range: quotedRange, estimate: preset.estimate };
+    }
     const estimate = estimateRangeApr(toRangeAprInputs(payload), quotedRange);
     if (estimate.status === "ok") return { status: "ready", range: quotedRange, estimate };
   }

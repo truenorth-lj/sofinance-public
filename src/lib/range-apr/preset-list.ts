@@ -6,8 +6,7 @@ import "@/lib/engine-host";
  * "Best" is the candidate with the highest estimated fee APR, ties going to the wider
  * range. When the payload was re-priced for the typed amount (`payloadForCapital`), candidates the deposit
  * does not fit (`sizeFit.status === "excluded"`) are skipped and not offered as buttons either. If none fits
- * and the only thing ruling out Wide (then Standard) is the cross-band estimate, Best falls back to it (prepare
- * accepts that widest range in practice); otherwise nothing is offered and `tooLarge` is set. Best resolves to
+ * nothing is offered and `tooLarge` is set. No excluded candidate is promoted to an actionable Best. Best resolves to
  * that candidate's exact ticks, so quote/prepare use the ordinary preset path and what is signed is what was priced.
  */
 import type { OpenRangeUiPreset } from "@sofinance/engine/open-range-presets";
@@ -21,14 +20,6 @@ type OkPreset = RangeAprPresetEstimate & { estimate: Extract<RangeAprEstimate, {
 const isOk = (preset: RangeAprPresetEstimate): preset is OkPreset => preset.estimate.status === "ok";
 const fits = (preset: RangeAprPresetEstimate) => preset.sizeFit?.status !== "excluded";
 
-/**
- * A fallback range may stand in for Best only when the cross-band estimate alone rules it out: a crowded or
- * near-edge widest range means the amount is too large for this pool.
- */
-const fallbackFits = (preset: RangeAprPresetEstimate) =>
-  preset.sizeFit?.status === "excluded" && preset.sizeFit.reason === "cross-band";
-/** Order tried when the deposit fits no candidate: the most room around the price first. */
-const SIZE_FALLBACK_ORDER: readonly RangeAprPresetId[] = ["wide", "standard"];
 const width = (preset: RangeAprPresetEstimate) => preset.tickUpper - preset.tickLower;
 const sameRange = (left: RangeAprPresetEstimate, right: RangeAprPresetEstimate) =>
   left.tickLower === right.tickLower && left.tickUpper === right.tickUpper;
@@ -100,13 +91,7 @@ export function buildPresetList(
   // A degraded payload (no price history) is never ranked or shown with numbers, even if a caller hands over estimates.
   const order = uiPresets.map((preset) => preset.id) as RangeAprPresetId[];
   const ranked = payload && !degraded ? pickHighestAprPreset(payload.presets, order) : null;
-  const widest = payload && !degraded && !ranked
-    ? SIZE_FALLBACK_ORDER.map((id) => payload.presets.find((preset) => preset.id === id))
-      .find((preset): preset is RangeAprPresetEstimate => !!preset && isOk(preset)) ?? null
-    : null;
-  // The widest priced range decides: if it is crowded or near its edge, a narrower one is no better.
-  const fallback = widest && fallbackFits(widest) ? widest : null;
-  const winner = ranked ?? fallback;
+  const winner = ranked;
   if (payload && !degraded && !winner && payload.presets.length > 0 && payload.presets.every((preset) => !fits(preset))) {
     return { best: null, buttons: [], tooLarge: true };
   }
@@ -120,7 +105,7 @@ export function buildPresetList(
   }
   const resolved = uiPresets.find((preset) => preset.id === winner.id);
   return {
-    best: { id: winner.id, resolvedLabel: resolved?.shortLabel ?? winner.id, estimate: winner.estimate, ...(winner === fallback ? { fallback: true } : {}) },
+    best: { id: winner.id, resolvedLabel: resolved?.shortLabel ?? winner.id, estimate: winner.estimate },
     buttons: uiPresets
       .filter((preset) => {
         if (preset.id === winner.id) return false;

@@ -59,13 +59,11 @@ describe("Best on TSLA/TSLAx (live payload, 2026-10-21)", () => {
   // Prepare results on prod that day: 100 USDC tight/standard/wide and 300 USDC all ranges prepared;
   // 1000 USDC only Wide prepared (Tight and Standard: "did not converge").
   const bestAt = (capitalUsd: number) => buildPresetList(OPEN_RANGE_UI_PRESETS, payloadForCapital(tslaPayload, capitalUsd)).best;
-  it("picks Tight at 100 USDC, Standard at 300 and Wide at 1000", () => {
+  it("picks Tight at 100 USDC, Standard at 300 and no actionable Best at 1000", () => {
     expect(bestAt(100)?.id).toBe("tight");
     expect(bestAt(300)?.id).toBe("standard");
-    expect(bestAt(1000)?.id).toBe("wide");
-    // $1000's estimated own-pool move leaves the current spacing band, so Wide is the
-    // fallback suggestion rather than a highest-APR fit (prepare would reject the others).
-    expect(bestAt(1000)?.fallback).toBe(true);
+    // No excluded range may be promoted merely because it is the widest.
+    expect(bestAt(1000)).toBeNull();
   });
   it("excludes Standard at 1000 USDC (edge ~2.0x the impact)", () => {
     const standard = payloadForCapital(tslaPayload, 1000).presets.find((preset) => preset.id === "standard")!;

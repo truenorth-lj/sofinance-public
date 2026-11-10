@@ -13,7 +13,7 @@ vi.mock("@/lib/feature-flags", async (importOriginal) => ({
 }));
 import { NATIVE_SOL_MINT, QUOTE_TTL_MS } from "@sofinance/engine/ids";
 import type { OpenPositionQuote } from "@sofinance/engine/open-types";
-import { payloadFixture, payloadWithAprs } from "../lib/range-apr/payload.fixture";
+import { payloadFixture, cardPayloadWithAprs } from "../lib/range-apr/payload.fixture";
 import { clearPoolRangeAprClientCache } from "./range-apr/pool-range-apr-client";
 import { OpenPositionModal } from "./open-position-modal";
 import type { OpenPositionPair, useOpenPositionController } from "./use-open-position-controller";
@@ -146,8 +146,8 @@ describe("range presets and estimated APR", () => {
     [...container.querySelectorAll<HTMLButtonElement>("[aria-label='Price range presets'] button")]
       .find((button) => button.querySelector("span")?.textContent === label)!;
 
-  // `solPrice: false` leaves the typed SOL amount without a USD value, so ranking uses the payload's own
-  // (reference-capital) estimates; that isolates the row/Best layout from the size-aware re-pricing.
+  // `solPrice: false` leaves the typed SOL amount without a USD value. Hand-set layout APRs use
+  // cardPayloadWithAprs: the common $1,000 preview basis and nonbinding fee cap; real repricing is tested below.
   const stubApr = (data: ReturnType<typeof payloadFixture>, { solPrice = false } = {}) => {
     const original = fetch as unknown as (url: string, init?: RequestInit) => Promise<unknown>;
     vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) =>
@@ -158,7 +158,7 @@ describe("range presets and estimated APR", () => {
   const rowLabels = () => [...container.querySelectorAll("[aria-label='Price range presets'] button")].map((b) => b.querySelector("span")?.textContent);
 
   it("lists Best leftmost, then the remaining candidates narrow to wide, then Custom; Standard stays selected", async () => {
-    stubApr(payloadWithAprs({ micro: 10, tight: 38, standard: 20, wide: 5 }));
+    stubApr(cardPayloadWithAprs({ micro: 10, tight: 38, standard: 20, wide: 5 }));
     await mount();
     expect(rowLabels()).toEqual(["Best", "Micro", "Standard", "Wide", "Custom"]);
     expect(container.querySelector("[data-testid='best-resolved']")!.textContent).toBe("Tight");
@@ -169,7 +169,7 @@ describe("range presets and estimated APR", () => {
   });
 
   it("clicking Best requests the resolved candidate's own preset ('tight'), so what is signed is what was priced", async () => {
-    stubApr(payloadWithAprs({ micro: 10, tight: 38, standard: 20, wide: 5 }));
+    stubApr(cardPayloadWithAprs({ micro: 10, tight: 38, standard: 20, wide: 5 }));
     await mount();
     await act(async () => { container.querySelector<HTMLButtonElement>("[data-testid='preset-best']")!.click(); });
     await advance(450);
@@ -191,7 +191,7 @@ describe("range presets and estimated APR", () => {
   });
 
   it("when Standard is the Best pick, the default selection is Best and Standard is not listed twice", async () => {
-    stubApr(payloadWithAprs({ micro: 1, tight: 2, standard: 40, wide: 3 }));
+    stubApr(cardPayloadWithAprs({ micro: 1, tight: 2, standard: 40, wide: 3 }));
     await mount();
     expect(rowLabels()).toEqual(["Best", "Micro", "Tight", "Wide", "Custom"]);
     expect(container.querySelector("[data-testid='preset-best']")!.getAttribute("aria-pressed")).toBe("true");
