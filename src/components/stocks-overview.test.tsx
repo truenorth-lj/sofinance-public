@@ -82,7 +82,144 @@ describe("missing price explanations", () => {
   });
 });
 
+const drilldownPosition = (key: string, poolId: string, stock = nvda, source = "Raydium"): OverviewPosition => ({
+  key, positionId: `position-${key}-full-id`, pool: { id: poolId, label: "NVDA / NVDAx", source },
+  load: async () => { throw new Error("Must reuse the loaded report"); },
+  fromPanel: { report: { ...report(stock), poolId }, error: false },
+});
+const expandStock = async (symbol = "NVDA") => {
+  const button = [...container.querySelectorAll<HTMLButtonElement>('[data-testid="stock-row"] > button')]
+    .find((item) => item.textContent?.startsWith(symbol))!;
+  await act(async () => button.click());
+  return document.getElementById(button.getAttribute("aria-controls")!)!;
+};
+
 describe("StocksOverview", () => {
+  it("drills into two pools for one stock without duplicating stock aggregates", async () => {
+    const positions = [drilldownPosition("pool-a-position", "pool-aaaaaaaaaaaa"),
+      drilldownPosition("pool-b-position", "pool-bbbbbbbbbbbb", { ...nvda, valueUsd: 100, feeUsd: 2 }, "Orca")];
+    await act(async () => root.render(createElement(StocksOverview, { positions })));
+    const expanded = await expandStock();
+    const groups = expanded.querySelectorAll('[data-testid="stock-pool-group"]');
+    expect(groups).toHaveLength(2);
+    expect(groups[0]!.textContent).toContain("Raydium");
+    expect(groups[1]!.textContent).toContain("Orca");
+    for (const group of groups) expect(group.textContent).toContain("NVDA / NVDAx");
+    expect(groups[0]!.querySelector('[title="pool-aaaaaaaaaaaa"]')?.textContent).toBe("pool-a…aaaa");
+    const positionRows = expanded.querySelectorAll('[data-testid="stock-position"]');
+    expect(positionRows).toHaveLength(2);
+    expect(positionRows[0]!.querySelector('[title="position-pool-a-position-full-id"]')?.textContent).toBe("positi…l-id");
+    expect(positionRows[0]!.textContent).toContain("Value $446.38");
+    expect(positionRows[0]!.textContent).toContain("Fees $5.50");
+    expect(positionRows[1]!.textContent).toContain("Value $100.00");
+    expect(positionRows[1]!.textContent).toContain("Fees $2.00");
+    expect(expanded.querySelectorAll('[data-testid="stock-performance"]')).toHaveLength(1);
+    expect(expanded.querySelectorAll('[data-testid="stock-total"]')).toHaveLength(1);
+    expect(text("overview-tile-fees")).toContain("$7.50");
+    expect(text("stocks-overview")).toContain("Portfolio value$546.38");
+    expect(expanded.querySelector('[data-testid="stock-tile-fees"]')?.textContent).toContain("$7.50");
+    expect(expanded.querySelectorAll('[data-testid="stock-position"] button, button[data-testid="stock-position"], a')).toHaveLength(0);
+  });
+
+  it("keeps same-pool positions distinct and selects their exact keys with controlled pressed state", async () => {
+    const positions = [drilldownPosition("source:first:exact-key", "shared-pool"),
+      drilldownPosition("source:second:exact-key", "shared-pool", { ...nvda, valueUsd: 80, feeUsd: 1 })];
+    const selected: string[] = [];
+    const onSelectPosition = (key: string) => selected.push(key);
+    await act(async () => root.render(createElement(StocksOverview, {
+      positions, selectedPositionKey: positions[0]!.key, onSelectPosition,
+    })));
+    const expanded = await expandStock();
+    expect(expanded.querySelectorAll('[data-testid="stock-pool-group"]')).toHaveLength(1);
+    const buttons = expanded.querySelectorAll<HTMLButtonElement>('[data-testid="stock-position"] button');
+    expect(buttons).toHaveLength(2);
+    expect(buttons[0]!.getAttribute("aria-pressed")).toBe("true");
+    expect(buttons[0]!.textContent).toContain("Selected");
+    expect(buttons[1]!.getAttribute("aria-pressed")).toBe("false");
+    await act(async () => buttons[1]!.click());
+    expect(selected).toEqual(["source:second:exact-key"]);
+    await act(async () => root.render(createElement(StocksOverview, {
+      positions, selectedPositionKey: positions[1]!.key, onSelectPosition,
+    })));
+    expect(buttons[0]!.getAttribute("aria-pressed")).toBe("false");
+    expect(buttons[1]!.getAttribute("aria-pressed")).toBe("true");
+    expect(text("overview-tile-fees")).toContain("$6.50");
+    expect(text("stocks-overview")).toContain("Portfolio value$526.38");
+  });
+
+  it("disables position selection while leaving stock expansion usable", async () => {
+    const positions = [drilldownPosition("disabled-a", "pool-a"), drilldownPosition("disabled-b", "pool-b")];
+    const selected: string[] = [];
+    const onSelectPosition = (key: string) => selected.push(key);
+    await act(async () => root.render(createElement(StocksOverview, {
+      positions, onSelectPosition, selectedPositionKey: "disabled-a", selectionDisabled: true,
+    })));
+    const expanded = await expandStock();
+    const buttons = expanded.querySelectorAll<HTMLButtonElement>('[data-testid="stock-position"] button');
+    expect(buttons).toHaveLength(2);
+    expect(buttons[0]!.getAttribute("data-testid")).toBe("stock-position-select");
+    expect(buttons[0]!.getAttribute("data-position-key")).toBe("disabled-a");
+    expect(buttons[1]!.getAttribute("data-position-key")).toBe("disabled-b");
+    for (const button of buttons) {
+      expect(button.disabled).toBe(true);
+      await act(async () => button.click());
+    }
+    expect(selected).toEqual([]);
+    expect(buttons[0]!.getAttribute("aria-pressed")).toBe("true");
+    await act(async () => root.render(createElement(StocksOverview, {
+      positions, onSelectPosition, selectionDisabled: false,
+    })));
+    expect(buttons[1]!.disabled).toBe(false);
+    await act(async () => buttons[1]!.click());
+    expect(selected).toEqual(["disabled-b"]);
+  });
+
+  it("does not group identical pool IDs across different protocols", async () => {
+    const positions = [drilldownPosition("raydium-position", "same-pool-id"),
+      drilldownPosition("orca-position", "same-pool-id", nvda, "Orca")];
+    await act(async () => root.render(createElement(StocksOverview, { positions })));
+    const expanded = await expandStock();
+    expect(expanded.querySelectorAll('[data-testid="stock-pool-group"]')).toHaveLength(2);
+    for (const group of expanded.querySelectorAll('[data-testid="stock-pool-group"]')) {
+      expect(group.querySelectorAll('[data-testid="stock-position"]')).toHaveLength(1);
+    }
+  });
+
+  it("falls back to loaded report IDs or keys for metadata-less read-only positions", async () => {
+    const positions: OverviewPosition[] = [
+      { key: "legacy-a", load: async () => ({ ...report(nvda), poolId: "legacy-pool", positionMint: "legacy-position" }) },
+      { key: "legacy-b", load: async () => ({ ...report(nvda), poolId: "legacy-pool" }) },
+      { key: "legacy-c", load: async () => report({ ...nvda, valueUsd: null, feeUsd: null }) },
+    ];
+    await act(async () => root.render(createElement(StocksOverview, { positions })));
+    const expanded = await expandStock();
+    const groups = expanded.querySelectorAll('[data-testid="stock-pool-group"]');
+    expect(groups).toHaveLength(2);
+    expect(groups[0]!.querySelectorAll('[data-testid="stock-position"]')).toHaveLength(2);
+    expect(groups[0]!.querySelector('[title="legacy-pool"]')).not.toBeNull();
+    expect(groups[0]!.querySelector('[title="legacy-position"]')).not.toBeNull();
+    expect(groups[0]!.querySelector('[title="legacy-b"]')).not.toBeNull();
+    expect(groups[1]!.querySelector('[title="legacy-c"]')).not.toBeNull();
+    expect(groups[1]!.textContent).toContain("Value —");
+    expect(groups[1]!.textContent).toContain("Fees —");
+    expect(expanded.querySelectorAll("button, a")).toHaveLength(0);
+  });
+
+  it("includes a selectable position for a stock held in only one position", async () => {
+    const positions = [drilldownPosition("only-nvda", "nvda-pool"), drilldownPosition("only-tsla", "tsla-pool", tsla)];
+    const selected: string[] = [];
+    await act(async () => root.render(createElement(StocksOverview, {
+      positions, onSelectPosition: (key: string) => selected.push(key),
+    })));
+    const expanded = await expandStock("TSLA");
+    const buttons = expanded.querySelectorAll<HTMLButtonElement>('[data-testid="stock-position-select"]');
+    expect(buttons).toHaveLength(1);
+    expect(buttons[0]!.getAttribute("data-position-key")).toBe("only-tsla");
+    await act(async () => buttons[0]!.click());
+    expect(selected).toEqual(["only-tsla"]);
+    expect(expanded.textContent).not.toContain("position-only-nvda");
+  });
+
   it("adds up every stock once all positions are read, one row per stock", async () => {
     let releaseSecond!: () => void;
     const positions: OverviewPosition[] = [

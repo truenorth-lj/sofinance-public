@@ -17,7 +17,7 @@ const CARD = "mt-3 rounded-[28px] border border-white/12 bg-char p-5 sm:p-7";
 
 type Loaded = { key: string; attempt: number; data: PositionPerformance | null; error: string | null };
 
-export function RegistryPerformancePanel({ position, descriptor, capabilities, onPerformance }: Pick<RegistryToolProps, "position" | "descriptor" | "capabilities" | "onPerformance">) {
+export function RegistryPerformancePanel({ position, descriptor, capabilities, onPerformance, showStockPerformance = true }: Pick<RegistryToolProps, "position" | "descriptor" | "capabilities" | "onPerformance" | "showStockPerformance">) {
   const [attempt, setAttempt] = useState(0);
   const onPerformanceRef = useRef(onPerformance);
   useEffect(() => { onPerformanceRef.current = onPerformance; });
@@ -43,14 +43,14 @@ export function RegistryPerformancePanel({ position, descriptor, capabilities, o
   const report = current?.data?.report ?? null;
   const exitPreview = capabilities.exitPreview;
 
-  return <section aria-label="Performance results" data-testid="registry-performance" className={CARD}>
-    <h3 className="mb-5 text-base font-semibold text-cream">Performance results</h3>
+  return <section aria-label={showStockPerformance ? "Performance results" : "Position details"} data-testid="registry-performance" className={CARD}>
+    <h3 className="mb-5 text-base font-semibold text-cream">{showStockPerformance ? "Performance results" : "Position details"}</h3>
     {!current ? <div role="status" className="flex items-center gap-2 text-sm text-smoke">
       <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin" />Loading performance…
     </div> : current.error ? <div className="space-y-3">
       <p role="alert" className="rounded-2xl border border-white/20 bg-white/[0.04] px-3 py-2 text-sm text-cream/80">{current.error}</p>
       <button type="button" onClick={retry} className="inline-flex items-center gap-2 rounded-full bg-lemon px-5 py-3 text-sm font-semibold text-ink">Retry performance</button>
-    </div> : report ? <PerformanceSummary data={report} embedded metadata={metadata} />
+    </div> : report ? <PerformanceSummary data={report} embedded metadata={metadata} showStockPerformance={showStockPerformance} />
       : current.data ? <dl data-testid="registry-performance-summary" className="grid gap-2 text-sm text-cream/90 sm:grid-cols-2">
         <div><dt className="text-[11px] uppercase tracking-wide text-smoke">Current value (USD)</dt><dd>{money(current.data.currentValueUsd)}</dd></div>
         <div><dt className="text-[11px] uppercase tracking-wide text-smoke">PnL (USD)</dt><dd>{money(current.data.pnlUsd)}</dd></div>

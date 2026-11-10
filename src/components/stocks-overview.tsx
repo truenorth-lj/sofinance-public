@@ -20,6 +20,8 @@ type Loaded = { report: PositionPerformanceReport | null; error: boolean };
 
 export type OverviewPosition = {
   key: string;
+  pool?: { id: string; label: string; source: string };
+  positionId?: string;
   load: (signal: AbortSignal) => Promise<PositionPerformanceReport | null>;
   /** Read by the selected position's panel: "loading" until it finishes, then its result. */
   fromPanel?: Loaded | "loading";
@@ -31,7 +33,13 @@ const reportCache = new Map<string, { at: number; report: PositionPerformanceRep
 
 const toneClass = { up: "text-mint", down: "text-coral", flat: "text-smoke" } as const;
 
-export function StocksOverview({ positions }: { positions: OverviewPosition[] }) {
+type PositionSelection = {
+  selectedPositionKey?: string;
+  onSelectPosition?: (key: string) => void;
+  selectionDisabled?: boolean;
+};
+
+export function StocksOverview({ positions, selectedPositionKey, onSelectPosition, selectionDisabled }: { positions: OverviewPosition[] } & PositionSelection) {
   const [loaded, setLoaded] = useState<Record<string, Loaded>>({});
   const [attempt, setAttempt] = useState(0);
   /** Panel-read positions whose read failed and the user pressed Retry: the overview reads them itself. */
@@ -69,7 +77,7 @@ export function StocksOverview({ positions }: { positions: OverviewPosition[] })
   }, [keys, attempt]);
 
   if (positions.length < 2) return null;
-  const current = positions.map((item) => ({ key: item.key,
+  const current = positions.map((item) => ({ key: item.key, position: item,
     state: ownRead(item) ? loaded[item.key] : item.fromPanel === "loading" ? undefined : item.fromPanel }));
   const pending = current.filter((item) => !item.state).length;
   const failed = current.filter((item) => item.state?.error).length;
@@ -121,6 +129,9 @@ export function StocksOverview({ positions }: { positions: OverviewPosition[] })
         </div>
         <div className="sm:border-t sm:border-white/10">
           {rows.map((row) => <StockRowItem key={row.symbol} row={row} open={open === row.symbol}
+            selectedPositionKey={selectedPositionKey} onSelectPosition={onSelectPosition} selectionDisabled={selectionDisabled}
+            positions={current.flatMap((item) => row.positionKeys.includes(item.key) && item.state?.report?.stock
+              ? [{ position: item.position, report: item.state.report }] : [])}
             onToggle={() => setOpen((value) => value === row.symbol ? null : row.symbol)} />)}
         </div>
       </div>}
@@ -129,7 +140,58 @@ export function StocksOverview({ positions }: { positions: OverviewPosition[] })
   </section>;
 }
 
-function StockRowItem({ row, open, onToggle }: { row: StockRow; open: boolean; onToggle: () => void }) {
+type LoadedPosition = { position: OverviewPosition; report: PositionPerformanceReport };
+
+const shortId = (id: string) => id.length > 12 ? `${id.slice(0, 6)}…${id.slice(-4)}` : id;
+
+function StockPools({ positions, selectedPositionKey, onSelectPosition, selectionDisabled }: { positions: LoadedPosition[] } & PositionSelection) {
+  const groups = new Map<string, { id: string; label: string; source: string; positions: LoadedPosition[] }>();
+  for (const item of positions) {
+    const { position, report } = item;
+    const id = position.pool?.id ?? report.poolId ?? position.key;
+    const source = position.pool?.source ?? "Unknown protocol";
+    const label = position.pool?.label ?? (report.tokenNative?.symbolA && report.tokenNative.symbolB
+      ? `${report.tokenNative.symbolA} / ${report.tokenNative.symbolB}` : "Pair unavailable");
+    const key = JSON.stringify([source, id]);
+    const group = groups.get(key) ?? { id, label, source, positions: [] };
+    group.positions.push(item);
+    groups.set(key, group);
+  }
+  return <div className="mt-3 space-y-3" aria-label="Pools and positions">
+    {[...groups.entries()].map(([key, group]) => <section key={key} aria-label={`${group.source} · ${group.label} · ${group.id}`}
+      data-testid="stock-pool-group" className="rounded-xl border border-white/10 p-3">
+      <h4 className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-[12px] text-smoke">
+        <span className="font-medium text-cream">{group.source} · {group.label}</span>
+        <span>Pool <span title={group.id}>{shortId(group.id)}</span></span>
+      </h4>
+      <ul className="mt-3 space-y-3">
+        {group.positions.map(({ position, report }) => {
+          const id = position.positionId ?? report.positionMint ?? position.key;
+          const selected = selectedPositionKey === position.key;
+          const content = <>
+            <span className="text-cream">Position <span title={id}>{shortId(id)}</span></span>
+            <span className="flex flex-wrap gap-3 tabular-nums text-smoke">
+              <span>Value {formatUsd(report.stock!.valueUsd)}</span><span>Fees {formatUsd(report.stock!.feeUsd)}</span>
+              {selected && <span className="text-mint">Selected</span>}
+            </span>
+          </>;
+          return <li key={position.key} data-testid="stock-position" className="flex flex-wrap items-center justify-between gap-3 text-[13px]">
+            {onSelectPosition ? <button type="button" aria-pressed={selected} onClick={() => onSelectPosition(position.key)}
+              disabled={selectionDisabled} data-testid="stock-position-select" data-position-key={position.key}
+              className={cn("flex w-full flex-wrap items-center justify-between gap-3 rounded-lg border p-3 text-left transition-colors enabled:hover:bg-white/5 focus-visible:outline-2 focus-visible:outline-mint disabled:cursor-not-allowed disabled:opacity-50",
+                selected ? "border-mint/40 bg-mint/5" : "border-white/10")}>
+              {content}
+            </button> : content}
+          </li>;
+        })}
+      </ul>
+    </section>)}
+  </div>;
+}
+
+function StockRowItem({ row, positions, open, onToggle, selectedPositionKey, onSelectPosition, selectionDisabled }: {
+  row: StockRow; positions: LoadedPosition[]; open: boolean; onToggle: () => void;
+} & PositionSelection) {
   const since = formatShortDate(row.firstDepositAtIso);
   const sub = row.positionKeys.length > 1 ? `${row.positionKeys.length} positions` : since ? `since ${since}` : "";
   const panelId = `stock-row-${row.symbol}`;
@@ -162,7 +224,9 @@ function StockRowItem({ row, open, onToggle }: { row: StockRow; open: boolean; o
     </button>
     <div id={panelId} inert={!open} className={cn("grid transition-[grid-template-rows] duration-200 ease-out motion-reduce:transition-none", open ? "grid-rows-[1fr]" : "grid-rows-[0fr]")}>
       <div className="overflow-hidden">
-        <div className="px-5 pb-5 pt-3"><StockPerformanceTiles stock={row} showHeader={false} showFootnote={false} /></div>
+        <div className="px-5 pb-5 pt-3"><StockPerformanceTiles stock={row} showHeader={false} showFootnote={false} />
+          <StockPools positions={positions} selectedPositionKey={selectedPositionKey} onSelectPosition={onSelectPosition} selectionDisabled={selectionDisabled} />
+        </div>
       </div>
     </div>
   </div>;

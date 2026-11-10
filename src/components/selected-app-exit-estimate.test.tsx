@@ -38,7 +38,14 @@ const selectedState = (positionMint: string) => ({ wallet: OWN_WALLET, slot: 1, 
   currentAmounts: { a: "500000000", b: "520000000" }, ownsNft: true, paused: false, transferFee: false, frozen: false, unsupportedExtensions: [],
   solLamports: 1_000_000_000, sufficientSol: true, pricing: { priceUsdA: 100, priceUsdB: 50 } });
 
-type Mode = { wallet: string | null; positions: string[]; stateOk: boolean; initialMint: string };
+const stockFixture = {
+  symbol: "SPCX", priceMint: fixture.mintA, priceUsd: 100, change24hPct: 1,
+  sharesNow: 2, valueUsd: 200, sharesIn: null, firstDepositAtIso: null,
+  entryPriceUsd: null, priceChangeUsd: null, priceChangePct: null,
+  feeShares: 0.01, feeUsd: 1, totalUsd: null, sparkline24h: [], sparklineSinceEntry: [],
+  entryPriceSource: null, entryUnavailableReason: "Entry price unavailable.",
+};
+type Mode = { wallet: string | null; positions: string[]; stateOk: boolean; initialMint: string; stock?: boolean };
 let container: HTMLDivElement; let root: Root;
 let calls: string[];
 const count = (prefix: string) => calls.filter((u) => u.startsWith(prefix)).length;
@@ -55,7 +62,7 @@ function mount(mode: Mode) {
       return mode.stateOk ? Response.json(selectedState(param(url, "positionMint")!))
         : Response.json({ error: "Selected position reading failed" }, { status: 500 });
     }
-    if (url.startsWith("/api/position-performance?")) return Response.json({ ...fixture, positionMint: param(url, "positionMint") });
+    if (url.startsWith("/api/position-performance?")) return Response.json({ ...fixture, positionMint: param(url, "positionMint"), ...(mode.stock ? { stock: stockFixture } : {}) });
     if (url.startsWith("/api/lp-decision/exit-preview?")) return Response.json(exitBody);
     return Response.json({});
   }));
@@ -154,6 +161,43 @@ describe("Performance deep link /app?view=performance&mint=X: the exit estimate 
     expect(exitUrls().map((u) => [param(u, "positionId"), param(u, "nftAccount")])).toEqual([[OWNED_MINT, NFT_ATA]]);
     expect(exitSection()?.textContent).toContain("1.000000 USDC + 0.008580200 SOL");
     expect(manualPreview()).toBeUndefined();
+  });
+});
+
+describe("stock summary and position detail hierarchy", () => {
+  it("shows stock cards only in the overview, retaining details for the selected position", async () => {
+    await mount({ wallet: OWN_WALLET, positions: [OTHER_OWNED_MINT, OWNED_MINT], stateOk: true, initialMint: OWNED_MINT, stock: true });
+    await settle();
+    expect(container.querySelector('[data-testid="stocks-overview"]')).not.toBeNull();
+    expect(container.querySelector('#performance-view [data-testid="stock-performance"]')).toBeNull();
+    expect(container.querySelector('#performance-view')?.textContent).toContain("Position details");
+    expect(container.querySelector('#performance-view')?.textContent).toContain("In range");
+  });
+  it("selects a position from the stock drilldown and updates the existing position details", async () => {
+    // Expire overview fixtures cached by earlier cases that had no stock report.
+    await flush(60_001);
+    await mount({ wallet: OWN_WALLET, positions: [OTHER_OWNED_MINT, OWNED_MINT], stateOk: true, initialMint: OWNED_MINT, stock: true });
+    await settle();
+    const rowToggle = container.querySelector('[data-testid="stock-row"] button') as HTMLButtonElement;
+    await act(async () => rowToggle.click());
+    const pick = container.querySelector(`[data-testid="stock-position-select"][data-position-key="raydium-clmm:${OTHER_OWNED_MINT}"]`) as HTMLButtonElement;
+    expect(pick).not.toBeNull();
+    await act(async () => pick.click());
+    await settle();
+    expect(perfMints().at(-1)).toBe(OTHER_OWNED_MINT);
+    expect(container.querySelector('#performance-view [data-testid="position-detail-identity"]')?.textContent).toContain(OTHER_OWNED_MINT);
+    expect(container.querySelector('#performance-view [data-testid="stock-performance"]')).toBeNull();
+  });
+  it("keeps cards when the wallet has only one position and no overview", async () => {
+    await mount({ wallet: OWN_WALLET, positions: [OWNED_MINT], stateOk: true, initialMint: OWNED_MINT, stock: true });
+    await settle();
+    expect(container.querySelector('[data-testid="stocks-overview"]')).toBeNull();
+    expect(container.querySelector('#performance-view [data-testid="stock-performance"]')).not.toBeNull();
+  });
+  it("keeps a foreign linked position's cards when that position is not represented in the overview", async () => {
+    await mount({ wallet: OWN_WALLET, positions: [OWNED_MINT, OTHER_OWNED_MINT], stateOk: true, initialMint: DEEP_LINK_MINT, stock: true });
+    await settle();
+    expect(container.querySelector('#performance-view [data-testid="stock-performance"]')).not.toBeNull();
   });
 });
 

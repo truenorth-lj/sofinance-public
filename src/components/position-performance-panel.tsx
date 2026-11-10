@@ -26,11 +26,13 @@ export function PositionPerformancePanel({
   selectedNftAccount,
   nftAccountPending = false,
   onResult,
+  showStockPerformance = true,
 }: {
   initialMint?: string;
   initialWallet?: string;
   previewPoolId?: string;
   embedded?: boolean;
+  showStockPerformance?: boolean;
   selectedMint?: string;
   selectedNftAccount?: string;
   /** The parent is still resolving the holder's NFT token account (see resolveNftAccountLookup). */
@@ -295,8 +297,8 @@ export function PositionPerformancePanel({
     </section>}
 
     {(embedded || data || previewPoolId) && (
-    <section aria-label="Performance results" className="rounded-[28px] border border-white/12 bg-char p-5 sm:p-7 lg:col-span-12">
-      <h3 className="mb-5 text-base font-semibold text-cream">Performance results</h3>
+    <section aria-label={showStockPerformance ? "Performance results" : "Position details"} className="rounded-[28px] border border-white/12 bg-char p-5 sm:p-7 lg:col-span-12">
+      <h3 className="mb-5 text-base font-semibold text-cream">{showStockPerformance ? "Performance results" : "Position details"}</h3>
       {embedded && !data && !error && (
         autoLoadSharedPosition ? <div role="status" className="flex items-center gap-2 text-sm text-smoke">
           <LoaderCircle className="h-4 w-4 animate-spin" />Loading performance…
@@ -310,7 +312,7 @@ export function PositionPerformancePanel({
         </button>
       </div>}
 
-      {data && <PerformanceSummary data={data} embedded={embedded} metadata={positionMetadata}
+      {data && <PerformanceSummary data={data} embedded={embedded} metadata={positionMetadata} showStockPerformance={showStockPerformance}
         loadingRemaining={Boolean(loadingContext)} onLoadRemaining={() => void load()} />}
 
 

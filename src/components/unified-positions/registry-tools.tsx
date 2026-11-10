@@ -29,6 +29,7 @@ export type RegistryToolProps = {
   descriptor: DexDescriptor;
   capabilities: DexCapabilities;
   view: ToolId;
+  showStockPerformance?: boolean;
   /** Wallet balances by token id; a missing entry means "not read" (the server still checks). */
   balances: Readonly<Record<string, ToolBalance | undefined>>;
   symbolOf: (token: TokenRef) => string;
