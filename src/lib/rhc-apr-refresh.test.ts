@@ -22,6 +22,7 @@ import {
 } from "./rhc-apr-refresh";
 import type { Univ4MarketData } from "@sofinance/engine/protocols/uniswap-v4/market-data";
 import { volumeWindowEnd } from "./rwa-daily";
+import { aprSnapshotDelayed } from "./rwa-freshness";
 import { ALGORITHM_VERSION, type Lease, type RwaStore, type StoredProfile } from "./rwa-store-types";
 
 const POOLS = UNIV4_RHC_ALLOWLISTED_POOLS;
@@ -115,6 +116,53 @@ describe("RHC cron profile planning (backoff, roll-forward)", () => {
     const days = Math.min(7, (today - 86_400 - createdDay) / 86_400 + 1);
     expect(days).toBeGreaterThanOrEqual(2);
     expect(rolled.profile.daily).toMatchObject({ avgDailyVolumeUsd: 40 / days, days });
+  });
+
+  const quietMarket = (): Univ4MarketData => ({
+    source: "geckoterminal", volume24hUsd: 0, tvlUsd: 1, txns24h: 0, reserves: null, priceUsd: { token0: 10, token1: 10 },
+  });
+  const volumeDelayed = (stored: StoredProfile, nowMs = NOW) => aprSnapshotDelayed({
+    chainObservedAt: new Date(nowMs).toISOString(),
+    volumeObservedAt: stored.profile.observedAt?.hourly ?? stored.observedAt,
+    windowEndUtc: stored.windowEndUtc,
+  }, nowMs);
+
+  it("a quiet roll confirmed by this run's market batch is no longer delayed", () => {
+    const old = NOW - 3 * 86_400_000;
+    const cached = profile(SPCX, { windowEndUtc: volumeWindowEnd(NOW - 86_400_000), hourlyAt: old });
+    const gecko = rollRhcProfileForward(cached, SPCX, NOW, 10, quietMarket());
+    expect(gecko.profile.observedAt?.hourly).toBe(new Date(NOW).toISOString());
+    expect(gecko.profile.observedAt?.economics).toBe(new Date(NOW).toISOString());
+    expect(volumeDelayed(gecko)).toBe(false);
+    const dex = rollRhcProfileForward(cached, SPCX, NOW, 10, { ...quietMarket(), source: "dexscreener" });
+    expect(volumeDelayed(dex)).toBe(false);
+  });
+
+  it("fetches instead of reusing when the fresh batch shows volume or trades coming back", () => {
+    const id = SPCX.poolId.toLowerCase();
+    const profiles = { [id]: profile(SPCX) };
+    const action = (market?: Univ4MarketData) => planRhcProfileFetches(
+      [SPCX], profiles, NOW, market ? new Map([[id, market]]) : new Map(),
+    ).get(id)!.action;
+    expect(action()).toBe("reuse");
+    expect(action(quietMarket())).toBe("reuse");
+    expect(action({ ...quietMarket(), txns24h: 2, volume24hUsd: 19.85 })).toBe("fetch");
+    expect(action({ ...quietMarket(), txns24h: 0, volume24hUsd: 5 })).toBe("fetch");
+    expect(action({ ...quietMarket(), txns24h: 1, volume24hUsd: 0 })).toBe("fetch");
+  });
+
+  it("a missing or failed market batch keeps the pool delayed (no stamp)", () => {
+    const old = NOW - 3 * 86_400_000;
+    const cached = profile(SPCX, { windowEndUtc: volumeWindowEnd(NOW - 86_400_000), hourlyAt: old });
+    const oldIso = new Date(old).toISOString();
+    const assertUnstamped = (rolled: StoredProfile) => {
+      expect(rolled.profile.observedAt?.hourly).toBe(oldIso);
+      expect(rolled.profile.observedAt?.economics).toBe(oldIso);
+      expect(volumeDelayed(rolled)).toBe(true);
+    };
+    assertUnstamped(rollRhcProfileForward(cached, SPCX, NOW, 10));
+    assertUnstamped(rollRhcProfileForward(cached, SPCX, NOW, 10, undefined));
+    assertUnstamped(rollRhcProfileForward(cached, SPCX, NOW, 10, { ...quietMarket(), txns24h: 2, volume24hUsd: 19.85 }));
   });
 
   it("ignores a saved profile for another token pair or algorithm", () => {
@@ -347,6 +395,9 @@ describe("RHC pools in the APR queue (prepareRhcRun + refreshPool)", () => {
     expect(h.ohlcv()).toHaveLength(0);
     expect(result.stats).toMatchObject({ fetched: 0, rolledForward: POOLS.length });
     expect(h.saves.every((save) => save.payload && save.profile!.windowEndUtc === volumeWindowEnd(NOW))).toBe(true);
+    const stamped = new Date(NOW).toISOString();
+    expect(h.saves.every((save) => save.profile!.profile.observedAt?.hourly === stamped)).toBe(true);
+    expect(h.saves.every((save) => save.profile!.profile.observedAt?.economics === stamped)).toBe(true);
   });
 
   it("on a 429 saves nothing for that pool and reports it throttled (it keeps its place in the queue)", async () => {
