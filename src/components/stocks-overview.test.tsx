@@ -38,6 +38,10 @@ describe("StockPerformanceTiles", () => {
     expect(text("stock-tile-fees")).not.toContain("at $");
     expect(text("stock-total")).toContain("−$21.62");
     expect(container.querySelectorAll('[data-testid="stock-sparkline"]')).toHaveLength(2);
+    const credit = container.querySelector('[data-testid="stock-footnote"] a')!;
+    expect(container.querySelector('[data-testid="stock-footnote"]')!.textContent).toContain("Powered by CoinGecko.");
+    expect(credit.textContent).toBe("CoinGecko");
+    expect(credit.getAttribute("href")).toBe("https://www.coingecko.com/en/api");
   });
 
   it("keeps every tile label on one line", () => {

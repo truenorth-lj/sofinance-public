@@ -90,13 +90,18 @@ export function StockPerformanceTiles({ stock, pairLabel, showHeader = true, sho
         change={`${stock.feeShares > 0 ? "↑ " : ""}${formatShares(stock.feeShares)} ${stock.symbol}`} changeTone={stock.feeShares > 0 ? "up" : "flat"} />
     </div>
     <StockTotalRow priceUsd={stock.priceChangeUsd} feeUsd={stock.feeUsd} totalUsd={stock.totalUsd} />
-    {showFootnote && <StockFootnote source={stock.entryPriceSource} />}
+    {showFootnote && <StockFootnote />}
   </section>;
 }
 
-export function StockFootnote({ source }: { source?: string | null }) {
+/** CoinGecko's free Demo plan requires attribution with a link to its API page (pricing page terms, 2026-11-10). */
+export const COINGECKO_ATTRIBUTION_URL = "https://www.coingecko.com/en/api";
+
+export function StockFootnote() {
   return <p className="text-[11px] leading-relaxed text-smoke" data-testid="stock-footnote">
     24h is the rolling 24-hour change of on-chain trading, not one US market session. Entry price is the daily close of each deposit day,
-    averaged by shares{source ? ` (${source})` : ""}. USD uses the current share price.
+    averaged by shares. USD uses the current share price. Powered by{" "}
+    <a href={COINGECKO_ATTRIBUTION_URL} target="_blank" rel="noopener noreferrer"
+      className="underline underline-offset-2 transition-colors hover:text-cream">CoinGecko</a>.
   </p>;
 }

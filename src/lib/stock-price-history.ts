@@ -10,7 +10,7 @@ import "server-only";
  *
  * Key: `COINGECKO_API_KEY` (a free Demo key: 10,000 calls/month, 100/min, one year of history), sent as
  * `x-cg-demo-api-key`. Without it the keyless public API is used (lower, shared-IP limits).
- * Budget: per stock token, at most one daily read per 12 h and one hourly read per hour on each server instance, one
+ * Budget: per stock token, at most one daily read per 12 h and one hourly read per 3 h on each server instance, one
  * call at a time, and a cooldown after a 429. Failures return null and never throw.
  */
 import { ThrottleGate } from "./range-apr/throttle-gate";
@@ -19,7 +19,9 @@ import type { PriceClose } from "./stock-performance";
 export const COINGECKO_API = "https://api.coingecko.com/api/v3";
 const DAY = 86_400;
 const DAILY_TTL_MS = 12 * 60 * 60_000;
-const HOURLY_TTL_MS = 60 * 60_000;
+/** 3 h: 16 stocks × (2 daily + 8 hourly) = 160 calls/day per instance at most, well inside the Demo plan's 10,000/month.
+ * The 24h line still ends at the live Jupiter price (`computeStockPerformance`). */
+const HOURLY_TTL_MS = 3 * 60 * 60_000;
 const FAILURE_TTL_MS = 5 * 60_000;
 const TIMEOUT_MS = 6_000;
 
