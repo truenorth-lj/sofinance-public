@@ -31,9 +31,9 @@ const short = (value: string) => `${value.slice(0, 4)}…${value.slice(-4)}`;
  * it shows the wallet like the app bar does, and a click disconnects it, as there.
  */
 export function HomepageConnectButton() {
-  const { mounted, ready, address, disconnect } = useHomepageWallet();
+  const { mounted, ready, address } = useHomepageWallet();
   if (address) {
-    return <button type="button" onClick={() => disconnect?.()} data-testid="home-wallet" data-connected="true"
+    return <button type="button" onClick={homepageWallet.disconnect} data-testid="home-wallet" data-connected="true"
       title="Disconnect Solana wallet" aria-label={`Solana wallet ${short(address)}, connected. Disconnect`}
       className={cn(pill, "border border-white/40 px-4 font-medium text-cream hover:border-white/70 focus-visible:border-lemon")}>
       <Wallet className="hidden h-4 w-4 shrink-0 sm:block" aria-hidden="true" />

@@ -20,15 +20,20 @@ export type HomepageWalletState = {
   address: string | null;
   /** The stock whose Buy modal is open. */
   buy: StockBuyOption | null;
-  /** Disconnects the wallet (set by the root once loaded). */
-  disconnect: (() => void) | null;
 };
 
-const INITIAL: HomepageWalletState = { mounted: false, ready: false, connectRequests: 0, address: null, buy: null, disconnect: null };
+const INITIAL: HomepageWalletState = { mounted: false, ready: false, connectRequests: 0, address: null, buy: null };
 let state = INITIAL;
 const listeners = new Set<() => void>();
+/**
+ * The root's disconnect, kept outside the state: the wallet provider hands out a new function on every render, and
+ * putting it in the state would re-render the root, which re-renders the provider, which hands out a new one (a loop).
+ */
+let disconnectWallet: (() => void) | null = null;
 
+/** Notifies only when a value really changed, so a report of the same wallet re-renders nothing. */
 function set(patch: Partial<HomepageWalletState>) {
+  if ((Object.keys(patch) as (keyof HomepageWalletState)[]).every((key) => Object.is(state[key], patch[key]))) return;
   state = { ...state, ...patch };
   for (const listener of listeners) listener();
 }
@@ -44,10 +49,15 @@ export const homepageWallet = {
   requestConnect: () => set({ mounted: true, connectRequests: state.connectRequests + 1 }),
   openBuy: (option: StockBuyOption) => set({ mounted: true, buy: option }),
   closeBuy: () => set({ buy: null }),
+  disconnect: () => disconnectWallet?.(),
   /** Called by the root: the providers are up, with this wallet (or none). */
-  report: (address: string | null, disconnect: () => void) => set({ ready: true, address, disconnect }),
+  report: (address: string | null) => set({ ready: true, address }),
+  /** Called by the root: how to disconnect (not part of the state, see `disconnectWallet`). */
+  setDisconnect: (disconnect: (() => void) | null) => { disconnectWallet = disconnect; },
+  /** The root unmounted (the visitor left the homepage): nothing it reported is true any more. */
+  unmounted: () => { disconnectWallet = null; set({ ready: false, address: null, buy: null }); },
   /** Tests only. */
-  reset: () => { state = INITIAL; for (const listener of listeners) listener(); },
+  reset: () => { state = INITIAL; disconnectWallet = null; for (const listener of listeners) listener(); },
 };
 
 export function useHomepageWallet(): HomepageWalletState {

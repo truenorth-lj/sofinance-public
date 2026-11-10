@@ -24,7 +24,14 @@ function WalletBridge() {
   const { connectRequests } = useHomepageWallet();
   const handled = useRef(0);
   const current = connected && address ? address : null;
-  useEffect(() => { homepageWallet.report(current, disconnect); }, [current, disconnect]);
+  // The provider's functions are new on every render: keep the latest in a ref instead of reporting them.
+  const latestDisconnect = useRef(disconnect);
+  useEffect(() => { latestDisconnect.current = disconnect; });
+  useEffect(() => {
+    homepageWallet.setDisconnect(() => latestDisconnect.current());
+    return () => homepageWallet.unmounted();
+  }, []);
+  useEffect(() => { homepageWallet.report(current); }, [current]);
   useEffect(() => {
     if (connectRequests <= handled.current) return;
     handled.current = connectRequests;
