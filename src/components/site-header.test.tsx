@@ -25,6 +25,17 @@ describe("SiteHeader", () => {
     expect([...home, ...other].some((href) => href?.endsWith("#agents"))).toBe(false);
   });
 
+  it("has Positions in the nav and no Open app; only the homepage has the wallet button (it connects in place)", () => {
+    const home = renderToStaticMarkup(createElement(SiteHeader, { onHomepage: true }));
+    const other = renderToStaticMarkup(createElement(SiteHeader));
+    for (const html of [home, other]) {
+      expect(html).toMatch(/<a[^>]*href="\/app"[^>]*>Positions<\/a>/);
+      expect(html).not.toContain("Open app");
+    }
+    expect(home).toMatch(/<button[^>]*data-testid="home-wallet"[^>]*>Connect wallet<\/button>/);
+    expect(other).not.toContain('data-testid="home-wallet"');
+  });
+
   it("is the header on the blog, docs, FAQ and terms pages, not the app bar", () => {
     const pages = {
       blog: createElement(BlogShell, null, "x"),
