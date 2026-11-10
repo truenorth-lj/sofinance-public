@@ -1,4 +1,4 @@
-import { PublicKey, type AccountInfo } from "@solana/web3.js";
+import { Keypair, PublicKey, type AccountInfo } from "@solana/web3.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const issues = new Map<string, string[]>();
@@ -39,7 +39,7 @@ describe("computeStockBuyEligibility", () => {
   } };
 
   it("gives a Buy to the engine's selection (xStocks first) and keeps the allowlist with Jupiter metadata", async () => {
-    const result = await computeStockBuyEligibility(market, ["TSLA"], { readMints, checkRoute: async () => "ok", isUnavailable: () => false });
+    const result = await computeStockBuyEligibility(market, [["TSLA"]], { readMints, checkRoute: async () => "ok", isUnavailable: () => false });
     expect(result.options.TSLA).toMatchObject({ mint: TSLAX, issuerName: "xStocks", company: "Tesla", symbol: "TSLAx" });
     expect(result.options.TSLA!.mintShort).toBe("XsDo…oB");
     expect(spotSwapAllowlistFor(result.candidates.TSLA!)[1]).toEqual({ mint: TSLA_BP, symbol: "TSLA", underlying: "TSLA", xstocks: false,
@@ -48,13 +48,13 @@ describe("computeStockBuyEligibility", () => {
   });
 
   it("falls back to the next issuer when xStocks has no route", async () => {
-    const result = await computeStockBuyEligibility(market, ["TSLA"], { readMints,
+    const result = await computeStockBuyEligibility(market, [["TSLA"]], { readMints,
       checkRoute: async (mint) => (mint === TSLAX ? "no_route" : "ok"), isUnavailable: () => false });
     expect(result.options.TSLA).toMatchObject({ mint: TSLA_BP, issuerName: "Tesla - Backpack Securities" });
   });
 
   it("no route for any issuer -> no Buy", async () => {
-    const result = await computeStockBuyEligibility(market, ["TSLA"], { readMints, checkRoute: async () => "no_route", isUnavailable: () => false });
+    const result = await computeStockBuyEligibility(market, [["TSLA"]], { readMints, checkRoute: async () => "no_route", isUnavailable: () => false });
     expect(result.options.TSLA).toBeUndefined();
     expect(result.unsupported.TSLA).toBe(NO_ROUTE_REASON);
   });
@@ -63,21 +63,21 @@ describe("computeStockBuyEligibility", () => {
     issues.set(TSLAX, ["ScaledUiAmount multiplier not 1"]);
     issues.set(TSLA_BP, ["ScaledUiAmount multiplier not 1"]);
     const checkRoute = vi.fn(async () => "ok" as const);
-    const result = await computeStockBuyEligibility(market, ["TSLA"], { readMints, checkRoute, isUnavailable: () => false });
+    const result = await computeStockBuyEligibility(market, [["TSLA"]], { readMints, checkRoute, isUnavailable: () => false });
     expect(result.options.TSLA).toBeUndefined();
     expect(result.unsupported.TSLA).toBe("This token uses a balance multiplier, which we don't support yet.");
     expect(checkRoute).not.toHaveBeenCalled();
   });
 
   it("a selected stock has no unsupported reason", async () => {
-    const result = await computeStockBuyEligibility(market, ["TSLA"], { readMints, checkRoute: async () => "ok", isUnavailable: () => false });
+    const result = await computeStockBuyEligibility(market, [["TSLA"]], { readMints, checkRoute: async () => "ok", isUnavailable: () => false });
     expect(result.unsupported).toEqual({});
   });
 
   it("drops a token whose mint has an issue (e.g. multiplier not 1): it is never bought", async () => {
     issues.set(TSLAX, ["scaled UI amount multiplier is not 1"]);
     const checkRoute = vi.fn(async () => "ok" as const);
-    const result = await computeStockBuyEligibility(market, ["TSLA"], { readMints, checkRoute, isUnavailable: () => false });
+    const result = await computeStockBuyEligibility(market, [["TSLA"]], { readMints, checkRoute, isUnavailable: () => false });
     expect(result.candidates.TSLA!.map((item) => item.mint)).toEqual([TSLA_BP]);
     expect(result.options.TSLA!.mint).toBe(TSLA_BP);
     expect(checkRoute).not.toHaveBeenCalledWith(TSLAX, expect.anything());
@@ -87,25 +87,55 @@ describe("computeStockBuyEligibility", () => {
     const unverified = { tokensByUnderlying: { MSTR: [token(MSTR_ON, "MSTR", "ondo", { jupiterTags: ["stocks"] })] } };
     const nameless = { tokensByUnderlying: { MSTR: [token(MSTR_ON, "MSTR", "ondo", { jupiterName: null })] } };
     for (const item of [unverified, nameless]) {
-      const result = await computeStockBuyEligibility(item, ["MSTR"], { readMints, checkRoute: async () => "ok", isUnavailable: () => false });
+      const result = await computeStockBuyEligibility(item, [["MSTR"]], { readMints, checkRoute: async () => "ok", isUnavailable: () => false });
       expect(result.options.MSTR).toBeUndefined();
     }
   });
 
   it("a missing mint account never gets a Buy", async () => {
-    const result = await computeStockBuyEligibility(market, ["MSTR"], { readMints: async (mints) => mints.map(() => null), checkRoute: async () => "ok", isUnavailable: () => false });
+    const result = await computeStockBuyEligibility(market, [["MSTR"]], { readMints: async (mints) => mints.map(() => null), checkRoute: async () => "ok", isUnavailable: () => false });
     expect(result.options.MSTR).toBeUndefined();
   });
 
   it("rethrows an outage or unexpected error so it is not cached as 'not buyable'; a token refusal removes only that Buy", async () => {
     const outage = new Error("down");
-    await expect(computeStockBuyEligibility(market, ["TSLA"], { readMints, checkRoute: async () => { throw outage; }, isUnavailable: (error) => error === outage }))
+    await expect(computeStockBuyEligibility(market, [["TSLA"]], { readMints, checkRoute: async () => { throw outage; }, isUnavailable: (error) => error === outage }))
       .rejects.toBe(outage);
-    const result = await computeStockBuyEligibility(market, ["MSTR", "TSLA"], { readMints,
+    const result = await computeStockBuyEligibility(market, [["MSTR", "TSLA"]], { readMints,
       checkRoute: async (mint) => { if (mint === MSTR_ON) throw new SpotSwapError("spot_swap_token_unavailable", "bad"); return "ok"; }, isUnavailable: () => false });
     expect(Object.keys(result.options)).toEqual(["TSLA"]);
     const config = new Error("Server-side key not set");
-    await expect(computeStockBuyEligibility(market, ["TSLA"], { readMints, checkRoute: async () => { throw config; }, isUnavailable: () => false }))
+    await expect(computeStockBuyEligibility(market, [["TSLA"]], { readMints, checkRoute: async () => { throw config; }, isUnavailable: () => false }))
       .rejects.toBe(config);
+  });
+});
+
+describe("filling the cards with buyable stocks", () => {
+  // Seven stocks, one xStocks token each; the cards are rankings of these underlyings, best first.
+  const names = ["AAA", "BBB", "CCC", "DDD", "EEE", "FFF", "GGG"];
+  const mints = Object.fromEntries(names.map((name) => [name, Keypair.generate().publicKey.toBase58()]));
+  const underlyingOf = Object.fromEntries(names.map((name) => [mints[name]!, name]));
+  const market = { tokensByUnderlying: Object.fromEntries(names.map((name) => [name, [token(mints[name]!, name, "xstocks")]])) };
+
+  it("checks in rank order, skips unsupported stocks for the next ones, and stops once each card has its rows", async () => {
+    issues.set(mints.AAA!, ["ScaledUiAmount multiplier not 1"]);           // refused by the mint check, never probed
+    const probed: string[] = [];
+    const checkRoute = vi.fn(async (mint: string) => { probed.push(underlyingOf[mint]!); return underlyingOf[mint] === "EEE" ? "no_route" as const : "ok" as const; });
+    const gainers = ["AAA", "BBB", "CCC", "DDD"];
+    const stocks = ["BBB", "EEE", "FFF", "GGG"];
+    const result = await computeStockBuyEligibility(market, [gainers, stocks], { readMints, checkRoute, isUnavailable: () => false }, 2);
+    expect(Object.keys(result.options).sort()).toEqual(["BBB", "CCC", "FFF"]);
+    expect(Object.keys(result.unsupported).sort()).toEqual(["AAA", "EEE"]);
+    // BBB is probed once for both cards; DDD and GGG are never needed.
+    expect(probed).toEqual(["BBB", "EEE", "CCC", "FFF"]);
+    // The cheap mint check reads the whole pool in one call.
+    expect(readMints).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns what it found when fewer stocks than rows can be bought", async () => {
+    const result = await computeStockBuyEligibility(market, [["AAA", "BBB"]], { readMints,
+      checkRoute: async (mint) => (underlyingOf[mint] === "BBB" ? "ok" : "no_route"), isUnavailable: () => false }, 5);
+    expect(Object.keys(result.options)).toEqual(["BBB"]);
+    expect(result.unsupported.AAA).toBe(NO_ROUTE_REASON);
   });
 });

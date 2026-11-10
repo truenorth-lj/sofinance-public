@@ -29,15 +29,6 @@
    "change24hPct": 4.839376798860451
   },
   {
-   "underlying": "MSTR",
-   "company": "MicroStrategy",
-   "mint": "XsP7xzNPvEHS1m6qfanPUGjNmdnmsLKEoNAnHjdxxyZ",
-   "symbol": "MSTRx",
-   "icon": null,
-   "priceUsd": 136.77487115469842,
-   "change24hPct": 3.903018477370627
-  },
-  {
    "underlying": "AAPL",
    "company": "Apple",
    "mint": "XsbEhLAtcf6HdfpFZ5xEMdqW8nfAvcsP5bdudRLJzJp",
@@ -67,16 +58,6 @@
    "priceUsd": 376.4573098998088,
    "change24hPct": -6.741728454382577,
    "mcapUsd": 86447279.540132
-  },
-  {
-   "underlying": "MSTR",
-   "company": "MicroStrategy",
-   "mint": "XsP7xzNPvEHS1m6qfanPUGjNmdnmsLKEoNAnHjdxxyZ",
-   "symbol": "MSTRx",
-   "icon": null,
-   "priceUsd": 136.77487115469842,
-   "change24hPct": 3.903018477370627,
-   "mcapUsd": 82229160.70309095
   },
   {
    "underlying": "SPY",
@@ -164,8 +145,5 @@
    "issuerName": "xStocks",
    "symbol": "NVDAx"
   }
- },
- "unsupported": {
-  "MSTR": "This token uses a balance multiplier, which we don't support yet."
  }
 }
