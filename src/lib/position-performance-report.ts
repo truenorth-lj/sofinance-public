@@ -67,13 +67,13 @@ type Metrics = {
 };
 
 /**
- * The stock view of a same-stock pool position (FOOx/FOO): every number in one share price, the more liquid side's
- * Jupiter price. Built by `computeStockPerformance` (`@/lib/stock-performance`); absent for other pools.
+ * The stock view of a same-stock pool position (FOOx/FOO): existing report amounts and per-side USD valuations.
+ * The share quote is in the token-equivalent base-side mint, not the more liquid mint's unit. Built by `computeStockPerformance` (`@/lib/stock-performance`); absent for other pools.
  */
 export type StockPerformance = {
   /** Plain ticker, e.g. "NVDA". */
   symbol: string;
-  /** The mint whose Jupiter price is the share price (the side with more Jupiter liquidity). */
+  /** The token-equivalent base-side mint whose Jupiter quote is displayed. */
   priceMint: string | null;
   priceUsd: number | null;
   /** Jupiter `priceChange24h` of `priceMint`, percent: rolling 24h of on-chain trading, not a US session. */
@@ -84,7 +84,7 @@ export type StockPerformance = {
   /** Shares put in and still in the position: deposits minus withdrawn principal. */
   sharesIn: number | null;
   firstDepositAtIso: string | null;
-  /** Share-weighted average of each deposit day's daily close. */
+  /** Recorded deposit-time entry price; null until reliable records exist. */
   entryPriceUsd: number | null;
   /** sharesIn × (priceUsd − entryPriceUsd). */
   priceChangeUsd: number | null;

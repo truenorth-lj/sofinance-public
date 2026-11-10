@@ -51,11 +51,10 @@ export function StockTile({ label, value, sparkline, change, changeTone: tone = 
 }
 
 export function StockTotalRow({ priceUsd, feeUsd, totalUsd }: { priceUsd: number | null; feeUsd: number | null; totalUsd: number | null }) {
-  if (totalUsd === null) return null;
   return <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2 rounded-xl border border-white/10 px-5 py-4" data-testid="stock-total">
     <span className="whitespace-nowrap text-[13px] tracking-[0.02em] text-smoke">Total since deposit</span>
     <span className="whitespace-nowrap text-[13px] tabular-nums tracking-[0.02em]">
-      <span className="mr-3 text-smoke">price {formatUsd(priceUsd, { signed: true })} + fees {formatUsd(feeUsd)}</span>
+      <span className="mr-3 text-smoke">{totalUsd === null ? "Entry price unavailable" : <>price {formatUsd(priceUsd, { signed: true })} + fees {formatUsd(feeUsd)}</>}</span>
       <span className={cn("text-base font-medium", toneClass[changeTone(totalUsd)])}>{formatUsd(totalUsd, { signed: true })}</span>
     </span>
   </div>;
@@ -70,7 +69,7 @@ export function StockPerformanceTiles({ stock, pairLabel, showHeader = true, sho
   showFootnote?: boolean;
 }) {
   const since = formatShortDate(stock.firstDepositAtIso);
-  const sharesLabel = stock.sharesIn !== null && since ? `${formatShares(stock.sharesIn)} shares since ${since}` : "Your shares since deposit";
+  const sharesLabel = stock.sharesIn !== null && since ? `${formatShares(stock.sharesIn)} shares since ${since}` : "Price change since deposit";
   return <section aria-label={`${stock.symbol} performance`} className="space-y-3" data-testid="stock-performance">
     {showHeader && <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
       <div className="text-base font-medium text-cream">{stock.symbol}
@@ -87,21 +86,19 @@ export function StockPerformanceTiles({ stock, pairLabel, showHeader = true, sho
         aside={stock.entryPriceUsd !== null ? `from ${formatUsd(stock.entryPriceUsd)}` : undefined}
         note={stock.priceChangeUsd === null ? stock.entryUnavailableReason : null} />
       <StockTile testId="stock-tile-fees" label="Earned from fees" value={formatUsd(stock.feeUsd)}
-        change={`${stock.feeShares > 0 ? "↑ " : ""}${formatShares(stock.feeShares)} ${stock.symbol}`} changeTone={stock.feeShares > 0 ? "up" : "flat"} />
+        change={`${stock.feeShares > 0 ? "↑ " : ""}${formatShares(stock.feeShares)} ${stock.symbol}`} changeTone={stock.feeShares > 0 ? "up" : "flat"}
+        note="Collected plus unclaimed fees, valued at current prices." />
     </div>
     <StockTotalRow priceUsd={stock.priceChangeUsd} feeUsd={stock.feeUsd} totalUsd={stock.totalUsd} />
     {showFootnote && <StockFootnote />}
   </section>;
 }
 
-/** CoinGecko's free Demo plan requires attribution with a link to its API page (pricing page terms, 2026-11-10). */
-export const COINGECKO_ATTRIBUTION_URL = "https://www.coingecko.com/en/api";
-
 export function StockFootnote() {
   return <p className="text-[11px] leading-relaxed text-smoke" data-testid="stock-footnote">
-    24h is the rolling 24-hour change of on-chain trading, not one US market session. Entry price is the daily close of each deposit day,
-    averaged by shares. USD uses the current share price. Powered by{" "}
-    <a href={COINGECKO_ATTRIBUTION_URL} target="_blank" rel="noopener noreferrer"
-      className="underline underline-offset-2 transition-colors hover:text-cream">CoinGecko</a>.
+    24h is the rolling token-price change, not your realized return or one US market session.
+    Position value and fees reuse the existing report at current prices. Position value includes unclaimed fees;
+    do not add cumulative fees to it. Price change since deposit and its total remain unavailable when entry prices were not recorded.
+    Charts are shown only when recorded time-series data is available.
   </p>;
 }

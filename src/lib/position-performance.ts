@@ -479,7 +479,7 @@ export async function getPositionPerformance(
 
   const stock = options.skipPricing ? null : await buildStockPerformance({
     history, positionId: positionMint, poolId: poolId.toBase58(), mintA, mintB,
-    decimalsA: pool.mintDecimalsA, decimalsB: pool.mintDecimalsB, tokenNative,
+    decimalsA: pool.mintDecimalsA, decimalsB: pool.mintDecimalsB, tokenNative, metrics,
     incomplete: incomplete || truncated || !history.some((item) => item.events.some((event) => event.kind === "open")),
     quotes, nowSeconds, fetcher, signal,
   });

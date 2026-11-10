@@ -38,10 +38,8 @@ describe("StockPerformanceTiles", () => {
     expect(text("stock-tile-fees")).not.toContain("at $");
     expect(text("stock-total")).toContain("−$21.62");
     expect(container.querySelectorAll('[data-testid="stock-sparkline"]')).toHaveLength(2);
-    const credit = container.querySelector('[data-testid="stock-footnote"] a')!;
-    expect(container.querySelector('[data-testid="stock-footnote"]')!.textContent).toContain("Powered by CoinGecko.");
-    expect(credit.textContent).toBe("CoinGecko");
-    expect(credit.getAttribute("href")).toBe("https://www.coingecko.com/en/api");
+    expect(text("stock-footnote")).toContain("reuse the existing report");
+    expect(text("stock-footnote")).not.toContain("CoinGecko");
   });
 
   it("keeps every tile label on one line", () => {
@@ -57,7 +55,8 @@ describe("StockPerformanceTiles", () => {
       totalUsd: null, entryUnavailableReason: "Past prices for this stock are unavailable right now." } })));
     expect(text("stock-tile-shares")).toContain("—");
     expect(text("stock-tile-shares")).toContain("Past prices for this stock are unavailable right now.");
-    expect(container.querySelector('[data-testid="stock-total"]')).toBeNull();
+    expect(text("stock-total")).toContain("Entry price unavailable");
+    expect(text("stock-total")).toContain("—");
   });
 });
 

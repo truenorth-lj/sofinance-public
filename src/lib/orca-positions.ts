@@ -350,7 +350,7 @@ export async function getOrcaPositionPerformance(positionMint: string, options: 
   if (incomplete) realizedFeeAprSeries.points = [];
   const stock = options.skipPricing ? null : await buildStockPerformance({
     history, positionId: positionMint, poolId: snapshot.poolId, mintA: pool.tokenMintA, mintB: pool.tokenMintB,
-    decimalsA: snapshot.decimalsA, decimalsB: snapshot.decimalsB, tokenNative, incomplete, quotes, nowSeconds, fetcher, signal,
+    decimalsA: snapshot.decimalsA, decimalsB: snapshot.decimalsB, tokenNative, metrics, incomplete, quotes, nowSeconds, fetcher, signal,
   });
 
   return {

@@ -411,7 +411,7 @@ export async function getMeteoraPositionPerformance(positionAccount: string, opt
   if (incomplete) realizedFeeAprSeries.points = [];
   const stock = options.skipPricing ? null : await buildStockPerformance({
     history, positionId: snapshot.positionAccount, poolId: snapshot.poolId, mintA: pool.tokenXMint, mintB: pool.tokenYMint,
-    decimalsA: snapshot.decimalsX, decimalsB: snapshot.decimalsY, tokenNative, incomplete, quotes, nowSeconds, fetcher, signal,
+    decimalsA: snapshot.decimalsX, decimalsB: snapshot.decimalsY, tokenNative, metrics, incomplete, quotes, nowSeconds, fetcher, signal,
   });
 
   return {
