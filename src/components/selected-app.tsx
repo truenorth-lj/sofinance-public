@@ -267,7 +267,7 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
     // The wrapper bounds the select to the card on phones (a long pair label would otherwise widen it).
     ? <div className="w-full min-w-0 sm:w-auto sm:max-w-[26rem]"><GroupedPositionSelect id="compound-position" label="Position to compound" value={selectedKey}
       disabled={anyBusy} onChange={pickKey} groups={compoundGroups} optionLabel={optionLabel} emptyOption={() => ""}
-      className="w-full rounded-full border border-white/20 bg-white/[0.06] py-1.5 pl-3 text-xs text-cream outline-none focus:border-white/40 disabled:opacity-50" /></div>
+      className="w-full rounded-full border border-white/20 bg-white/[0.06] py-1.5 pl-3 text-base sm:text-sm text-cream outline-none focus:border-white/40 disabled:opacity-50" /></div>
     : connected && discovery && !loadingDiscovery && !allPositions.length && !registry.loadingNames.length
       ? <a href={APP_ROUTES.rwaPairs} className="text-xs font-semibold text-cream underline underline-offset-4">Explore pools to open a position</a>
       : null;
